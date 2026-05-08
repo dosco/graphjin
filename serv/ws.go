@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -35,26 +35,29 @@ type Payload struct {
 	Errors []core.Error    `json:"errors,omitempty"`
 }
 
-var baseUpgrader = websocket.Upgrader{
-	EnableCompression: true,
-	ReadBufferSize:    1024,
-	WriteBufferSize:   1024,
-	HandshakeTimeout:  10 * time.Second,
-	Subprotocols:      []string{"graphql-ws", "graphql-transport-ws"},
-}
+const wsWriteTimeout = 10 * time.Second
 
-var initMsg *websocket.PreparedMessage
+var initMsg []byte
 
 func init() {
 	msg, err := json.Marshal(wsReq{ID: "1", Type: "connection_ack"})
 	if err != nil {
 		panic(err)
 	}
+	initMsg = msg
+}
 
-	initMsg, err = websocket.NewPreparedMessage(websocket.TextMessage, msg)
-	if err != nil {
-		panic(err)
+// isWebSocketUpgrade reports whether r is a WebSocket upgrade request.
+// Cheap-check on the Upgrade header first so non-WS requests skip the
+// allocating ToLower path on the Connection header.
+func isWebSocketUpgrade(r *http.Request) bool {
+	if r.Header.Get("Upgrade") == "" {
+		return false
 	}
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return false
+	}
+	return strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
 }
 
 type wsConn struct {
@@ -75,17 +78,32 @@ type wsState struct {
 	done chan bool
 }
 
+// writeText serializes a single text frame write with a per-write timeout.
+func (wc *wsConn) writeText(msg []byte) error {
+	ctx, cancel := context.WithTimeout(wc.c, wsWriteTimeout)
+	defer cancel()
+	wc.connMutex.Lock()
+	defer wc.connMutex.Unlock()
+	return wc.conn.Write(ctx, websocket.MessageText, msg)
+}
+
 // apiV1Ws handles the websocket connection
 func (s *graphjinService) apiV1Ws(w http.ResponseWriter, r *http.Request, ah auth.HandlerFunc) {
-	upgrader := baseUpgrader
-	upgrader.CheckOrigin = s.checkWebSocketOrigin
-
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		renderErr(w, err)
+	if !s.checkWebSocketOrigin(r) {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
 		return
 	}
-	defer conn.Close() //nolint:errcheck
+
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		Subprotocols:       []string{"graphql-ws", "graphql-transport-ws"},
+		CompressionMode:    websocket.CompressionContextTakeover,
+		InsecureSkipVerify: true, // origin already validated above
+	})
+	if err != nil {
+		// Accept already wrote a response on failure.
+		return
+	}
+	defer conn.CloseNow() //nolint:errcheck
 	conn.SetReadLimit(2048)
 
 	wc := wsConn{
@@ -102,7 +120,7 @@ func (s *graphjinService) apiV1Ws(w http.ResponseWriter, r *http.Request, ah aut
 		var b []byte
 		var req wsReq
 
-		if _, b, err = conn.ReadMessage(); err != nil {
+		if _, b, err = conn.Read(wc.c); err != nil {
 			break
 		}
 
@@ -115,8 +133,8 @@ func (s *graphjinService) apiV1Ws(w http.ResponseWriter, r *http.Request, ah aut
 		}
 	}
 
-	if e, ok := err.(*websocket.CloseError); !ok ||
-		(e.Code != websocket.CloseNormalClosure && e.Code != websocket.CloseGoingAway) {
+	status := websocket.CloseStatus(err)
+	if status != websocket.StatusNormalClosure && status != websocket.StatusGoingAway {
 		s.zlog.Error("Subscription", []zapcore.Field{zap.Error(err)}...)
 	}
 
@@ -217,11 +235,7 @@ func (s *graphjinService) subSwitch(wc *wsConn, req wsReq) (err error) {
 			return
 		}
 
-		wc.connMutex.Lock()
-		err = wc.conn.WritePreparedMessage(initMsg)
-		wc.connMutex.Unlock()
-
-		if err != nil {
+		if err = wc.writeText(initMsg); err != nil {
 			return
 		}
 
@@ -294,17 +308,14 @@ func (s *graphjinService) subSwitch(wc *wsConn, req wsReq) (err error) {
 // waitForData waits for data from the subscription
 func (s *graphjinService) waitForData(wc *wsConn, st *wsState, useNext bool) {
 	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
 
-	var ptype string
-	var err error
-
+	ptype := "data"
 	if useNext {
 		ptype = "next"
-	} else {
-		ptype = "data"
 	}
 
-	enc := json.NewEncoder(&buf)
+	var err error
 	for {
 		select {
 		case v := <-st.m.Result:
@@ -316,11 +327,9 @@ func (s *graphjinService) waitForData(wc *wsConn, st *wsState, useNext bool) {
 				break
 			}
 			msg := buf.Bytes()
-			buf.Reset()
 
-			wc.connMutex.Lock()
-			err = wc.conn.WriteMessage(websocket.TextMessage, msg)
-			wc.connMutex.Unlock()
+			err = wc.writeText(msg)
+			buf.Reset()
 
 			if err != nil {
 				s.zlog.Error("Subscription", []zapcore.Field{zap.Error(err)}...)
@@ -344,8 +353,8 @@ func (s *graphjinService) waitForData(wc *wsConn, st *wsState, useNext bool) {
 // allowedWSHeaders is the set of headers that clients are permitted to set
 // via the WebSocket connection_init payload.
 var allowedWSHeaders = map[string]bool{
-	"authorization":   true,
-	"x-request-id":    true,
+	"authorization":    true,
+	"x-request-id":     true,
 	"x-correlation-id": true,
 }
 
@@ -394,16 +403,30 @@ func extractDiscoveryDatabase(vars json.RawMessage) string {
 	return ""
 }
 
+type discoveryPayload struct {
+	Discovery discoveryInner `json:"_discovery"`
+}
+
+type discoveryInner struct {
+	Database         string `json:"database"`
+	Tables           any    `json:"tables"`
+	Insights         any    `json:"insights"`
+	DatabaseOverview any    `json:"database_overview"`
+}
+
 // waitForDiscoveryData waits for discovery document updates and sends them over WebSocket.
 func (s *graphjinService) waitForDiscoveryData(wc *wsConn, st *wsState, ds *DiscoverySubscription, useNext bool) {
-	var buf bytes.Buffer
+	var dataBuf bytes.Buffer
+	dataEnc := json.NewEncoder(&dataBuf)
+
+	var outBuf bytes.Buffer
+	outEnc := json.NewEncoder(&outBuf)
 
 	ptype := "data"
 	if useNext {
 		ptype = "next"
 	}
 
-	enc := json.NewEncoder(&buf)
 	for {
 		select {
 		case doc := <-ds.Result:
@@ -411,33 +434,33 @@ func (s *graphjinService) waitForDiscoveryData(wc *wsConn, st *wsState, ds *Disc
 				continue
 			}
 
-			payload := map[string]any{
-				"_discovery": map[string]any{
-					"database":          doc.Database,
-					"tables":            doc.Tables,
-					"insights":          doc.Insights,
-					"database_overview": doc.DatabaseOverview,
+			dataBuf.Reset()
+			payload := discoveryPayload{
+				Discovery: discoveryInner{
+					Database:         doc.Database,
+					Tables:           doc.Tables,
+					Insights:         doc.Insights,
+					DatabaseOverview: doc.DatabaseOverview,
 				},
 			}
-			data, err := json.Marshal(payload)
-			if err != nil {
+			if err := dataEnc.Encode(payload); err != nil {
 				continue
+			}
+			// json.Encoder.Encode appends a trailing newline; strip it.
+			data := dataBuf.Bytes()
+			if n := len(data); n > 0 && data[n-1] == '\n' {
+				data = data[:n-1]
 			}
 
 			res := wsRes{ID: st.ID, Type: ptype}
-			res.Payload.Data = data
+			res.Payload.Data = json.RawMessage(data)
 
-			if err := enc.Encode(res); err != nil {
+			outBuf.Reset()
+			if err := outEnc.Encode(res); err != nil {
 				break
 			}
-			msg := buf.Bytes()
-			buf.Reset()
 
-			wc.connMutex.Lock()
-			err = wc.conn.WriteMessage(websocket.TextMessage, msg)
-			wc.connMutex.Unlock()
-
-			if err != nil {
+			if err := wc.writeText(outBuf.Bytes()); err != nil {
 				ds.Unsubscribe()
 				return
 			}
@@ -459,8 +482,5 @@ func sendError(wc *wsConn, id string, cerr error) (err error) {
 		return
 	}
 
-	wc.connMutex.Lock()
-	defer wc.connMutex.Unlock()
-	err = wc.conn.WriteMessage(websocket.TextMessage, msg)
-	return
+	return wc.writeText(msg)
 }

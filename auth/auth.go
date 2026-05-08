@@ -40,9 +40,9 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -200,7 +200,7 @@ func NewAuth(ac Auth, log *zap.Logger, opt Options, hFn ...HandlerFunc) (
 
 	return func(next http.Handler) http.Handler {
 		ah := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if wsAuthSupported && websocket.IsWebSocketUpgrade(r) {
+			if wsAuthSupported && isWebSocketUpgrade(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -342,4 +342,15 @@ func UserIDInt(c context.Context) int {
 		return v
 	}
 	return -1
+}
+
+// isWebSocketUpgrade reports whether r is a WebSocket upgrade request.
+func isWebSocketUpgrade(r *http.Request) bool {
+	if r.Header.Get("Upgrade") == "" {
+		return false
+	}
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return false
+	}
+	return strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
 }

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -52,7 +51,7 @@ func initConfigWatcher(s1 *HttpService) {
 func startHTTP(s1 *HttpService) {
 	s := s1.Load().(*graphjinService)
 
-	r := chi.NewRouter()
+	r := http.NewServeMux()
 	routes, err := routesHandler(s1, r, s.namespace)
 	if err != nil {
 		s.log.Fatalf("error setting up routes: %s", err)

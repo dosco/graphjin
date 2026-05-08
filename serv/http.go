@@ -15,7 +15,6 @@ import (
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/serv/v3/internal/etags"
-	"github.com/gorilla/websocket"
 	"github.com/klauspost/compress/gzhttp"
 	"github.com/rs/cors"
 
@@ -98,7 +97,10 @@ func apiV1Handler(s1 *HttpService, ns *string, h http.Handler, ah auth.HandlerFu
 	}
 
 	if s.conf.HTTPGZip {
-		gz, err := gzhttp.NewWrapper(gzhttp.CompressionLevel(6))
+		gz, err := gzhttp.NewWrapper(
+			gzhttp.CompressionLevel(6),
+			gzhttp.ExceptContentTypes([]string{"text/event-stream"}),
+		)
 		if err != nil {
 			s.log.Fatalf("api: error with compression: %s", err)
 		}
@@ -120,7 +122,7 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 
 		w.Header().Set("Content-Type", "application/json")
 
-		if websocket.IsWebSocketUpgrade(r) {
+		if isWebSocketUpgrade(r) {
 			s.apiV1Ws(w, r, ah)
 			return
 		}
@@ -171,8 +173,13 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 			rc.SetNamespace(*ns)
 		}
 
+		if isSSERequest(r) {
+			s.apiV1SSE(ctx, w, r, req, &rc)
+			return
+		}
+
 		if req.OpName == "subscription" {
-			err := errors.New("use websockets for subscriptions")
+			err := errors.New("use websockets or SSE (Accept: text/event-stream) for subscriptions")
 			spanError(span, err)
 			renderErr(w, err)
 			return
@@ -225,7 +232,7 @@ func (s1 *HttpService) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 
 		w.Header().Set("Content-Type", "application/json")
 
-		if websocket.IsWebSocketUpgrade(r) {
+		if isWebSocketUpgrade(r) {
 			s.apiV1Ws(w, r, ah)
 			return
 		}
@@ -237,14 +244,14 @@ func (s1 *HttpService) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 		ctx, span = s.spanStart(ctx, "REST Request", opts...)
 		defer span.End()
 
-		if len(r.RequestURI) < rLen {
+		if len(r.RequestURI) <= rLen {
 			err := errors.New("no query name defined")
 			spanError(span, err)
 			renderErr(w, err)
 			return
 		}
 
-		queryName := r.RequestURI[rLen-1:]
+		queryName := r.RequestURI[rLen:]
 		if n := strings.IndexRune(queryName, '?'); n != -1 {
 			queryName = queryName[:n]
 		}

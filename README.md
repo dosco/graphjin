@@ -258,7 +258,40 @@ subscription {
 - Automatic change detection - updates only sent when data actually changes
 - Built-in cursor pagination for feeds and infinite scroll
 
-Works from Node.js, Go, or any WebSocket client.
+Subscribe over **WebSockets** (`graphql-ws` / `graphql-transport-ws` subprotocols) or **Server-Sent Events** — set `Accept: text/event-stream` on a `POST /api/v1/graphql` request and GraphJin streams `event: next` frames for each result, terminated by `event: complete`. Works from Node.js, Go, or any browser `EventSource` / WebSocket client.
+
+## HTTP API Routes
+
+`graphjin serve` exposes everything under a single host/port. All routes go through the configured auth handler unless noted.
+
+| Route | Methods | Purpose |
+|---|---|---|
+| `/api/v1/graphql` | `GET`, `POST` | GraphQL queries and mutations. Subscriptions if the request is a WebSocket upgrade or carries `Accept: text/event-stream` (SSE). |
+| `/api/v1/rest/<name>` | `GET`, `POST` | Run a saved/persisted query by name. Variables go in `?variables=…` (GET) or the JSON body (POST). |
+| `/api/v1/workflows/<name>` | `POST` | Execute the JS workflow at `./workflows/<name>.js` with the JSON body as `input`. |
+| `/api/v1/openapi.json` | `GET` | OpenAPI 3 spec generated from your saved REST queries. |
+| `/api/v1/mcp` | `POST` | MCP (Model Context Protocol) HTTP transport — Streamable HTTP, stateless. |
+| `/api/v1/mcp/message` | `POST` | MCP HTTP transport for stateless message integrations. |
+| `/api/v1/discovery` | `GET` | Discovery document (tables, insights, database overview) for the default database. |
+| `/api/v1/discovery/<section>` | `GET` | Drill into a discovery sub-section (e.g. `tables`, `insights`). |
+| `/api/v1/admin/tables` | `GET` | Admin: list known tables (Web UI). |
+| `/api/v1/admin/tables/<name>` | `GET` | Admin: schema for a single table. |
+| `/api/v1/admin/queries` | `GET` | Admin: list saved queries. |
+| `/api/v1/admin/queries/<name>` | `GET` | Admin: details for a saved query. |
+| `/api/v1/admin/fragments` | `GET` | Admin: list GraphQL fragments. |
+| `/api/v1/admin/config` | `GET` | Admin: effective runtime config. |
+| `/api/v1/admin/database` / `/api/v1/admin/databases` | `GET` | Admin: connected database info. |
+| `/api/v1/auth/device` | `POST` | OIDC device-flow start (only if `auth_login.enabled`). |
+| `/api/v1/auth/device/token` | `POST` | OIDC device-flow poll. |
+| `/api/v1/auth/login` | `GET` | OIDC login redirect. |
+| `/api/v1/auth/callback` | `GET` | OIDC callback. |
+| `/health` | `GET` | Liveness probe. **No auth.** |
+| `/` | `GET` | Built-in Web UI (only when `webui: true`). |
+
+**Mode flags that change which routes are live:**
+- `mcp.disable: true` — removes `/api/v1/mcp` and `/api/v1/mcp/message`.
+- `mcp.only: true` — keeps only `/health`, `/api/v1/mcp*`, `/api/v1/workflows/*`, and `/api/v1/discovery*`. The GraphQL/REST/OpenAPI/Web UI routes are not registered.
+- `webui: false` — drops `/` and the `/api/v1/admin/*` routes.
 
 ## MCP Tools
 
