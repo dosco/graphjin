@@ -5,10 +5,10 @@ go 1.24.0
 require (
 	github.com/coder/websocket v1.8.14
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
-	github.com/dosco/graphjin/auth/v3 v3.18.11
-	github.com/dosco/graphjin/core/v3 v3.18.11
+	github.com/dosco/graphjin/auth/v3 v3.18.12
+	github.com/dosco/graphjin/core/v3 v3.18.12
 	github.com/dosco/graphjin/mongodriver v0.0.0
-	github.com/dosco/graphjin/plugin/otel/v3 v3.18.11
+	github.com/dosco/graphjin/plugin/otel/v3 v3.18.12
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v1.0.0
