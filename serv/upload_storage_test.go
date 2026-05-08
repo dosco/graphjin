@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,6 +135,3 @@ func TestGenerateUploadKey_DateMarker(t *testing.T) {
 	}
 }
 
-// silenceUnused keeps the linter happy when this file is parsed in
-// isolation; io is used transitively by other tests.
-var _ = io.EOF
