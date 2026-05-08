@@ -884,7 +884,7 @@ Every GET in the spec is classified into one of:
 | **Row-join** | `GET /resource/{id}` with a matching `joins:` entry | Exposed as a child field on the parent DB table. The parent column's value populates the path parameter at query time. |
 | **Top-level (single)** | `GET /resource/{id}` without a `joins:` entry | Exposed as a top-level GraphQL field. The path parameter becomes a required field argument. |
 | **Top-level (list)** | `GET /resources` with optional query filters | Exposed as a top-level GraphQL field. Each query parameter becomes an optional field argument. |
-| **Skipped** | Async (Location header), binary response, mutating verb (POST/PUT/PATCH/DELETE), nested or multi-segment path params | Reason logged at boot. |
+| **Skipped** | Async (Location header), binary response, mutating verb (POST/PUT/PATCH/DELETE), multi-segment path params, or single non-trailing path param without an explicit opt-in | Reason logged at boot. Single non-trailing path params can be opted in with `expose_top_level: true` (see Operation Overrides). |
 
 #### Top-level virtual tables
 
@@ -1010,7 +1010,7 @@ Without these caps, a 1000-row parent select would spawn 1000 parallel requests 
 
 ### Operation Overrides
 
-Tweak per-operation presentation without changing classification:
+Tweak per-operation presentation:
 
 ```yaml
 openapi:
@@ -1020,7 +1020,24 @@ openapi:
         expose_as: audit_logs       # rename auto-derived field
         result_path: data.records   # override auto-detected wrapper path
         disabled: false             # set true to hide an operation entirely
+      exportUsers:
+        expose_top_level: true      # opt-in classification (see below)
+        expose_as: is_users
 ```
+
+#### `expose_top_level`
+
+Operations whose path has a single non-trailing path parameter — for example `GET /api/dataset/{datasetId}/users.json` — are skipped by default because the semantics ("nested resource" vs "list scoped by an arg") aren't safe to auto-infer. Set `expose_top_level: true` to opt the operation in:
+
+- The path parameter becomes a required GraphQL field argument.
+- Mode is chosen from the response shape (array → list, object → single record).
+- Result-path stripping and field filtering work exactly as for auto-classified top-level ops.
+
+```graphql
+{ is_users(datasetId: "abc", pageSize: "200") { items { id email } } }
+```
+
+`expose_top_level` does not opt-in operations that are skipped for other reasons (mutating verb, async, non-JSON, multi-segment path params).
 
 ### Result Path Auto-Detection
 
@@ -1034,6 +1051,25 @@ Auto-derived field names use `<spec_key>_<operationId_snake>`:
 
 Override per-operation via `expose_as:` (under `joins:` for row-joins, under `operations:` for everything else).
 
+### Collision Defence
+
+GraphJin validates synthesised remote tables at boot so an OpenAPI op cannot silently shadow a real table.
+
+| Collision | Behaviour |
+|---|---|
+| `expose_as` matches a real (non-remote) table in the primary schema | **Hard fail at boot.** Error names the operation and the YAML path to fix. |
+| Two operations resolve to the same `expose_as` | **Hard fail at boot.** Error names both operations. |
+| `expose_as` matches a configured table alias | **Warn.** OpenAPI remote takes precedence; alias still queryable under its other name. |
+| `expose_as` matches a user-declared `resolvers:` entry | **Warn.** Registration order decides; review and rename if needed. |
+
+Default `<spec_key>_<operationId_snake>` namespacing makes these rare. Overrides via `expose_as` are the usual cause.
+
+Example error:
+
+```
+openapi: operation interaction_studio/exportUsers exposes as "users" which collides with a real table in schema public; set 'expose_as' under openapi.interaction_studio.joins.exportUsers to a unique name
+```
+
 ### Boot Log Output
 
 GraphJin reports the OpenAPI integration state at startup so you can verify what's loaded before queries arrive:
@@ -1043,6 +1079,7 @@ openapi: loaded interaction_studio.yaml (5 active, 12 skipped)
 openapi: GET /exports/{jobId} — skipped: non-JSON response (application/octet-stream)
 openapi: GET /jobs/{jobId}/status — skipped: async pattern (Location header on success response)
 openapi: POST /users — skipped: mutating verb (write-side not yet supported)
+openapi: GET /api/dataset/{datasetId}/users.json — skipped: path parameter not in trailing position (set expose_top_level: true to opt in)
 ```
 
 ### Limitations
