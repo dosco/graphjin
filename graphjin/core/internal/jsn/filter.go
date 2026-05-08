@@ -169,6 +169,12 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 			}
 			field++
 		}
+
+		// Reset the consecutive-backslash counter so a later `"` parity
+		// check only considers `\`s immediately preceding it. Without
+		// this, multiple escape sequences in a string accumulate the
+		// count and break the parity check on the closing quote.
+		slash = 0
 	}
 
 	if item != 0 {

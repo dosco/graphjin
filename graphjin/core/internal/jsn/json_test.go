@@ -329,6 +329,23 @@ func TestFilter1(t *testing.T) {
 	}
 }
 
+func TestFilterEscapedQuotesAcrossRecords(t *testing.T) {
+	// Regression: filter was dropping records after one whose string
+	// value contained multiple `\"` sequences (e.g. an embedded
+	// stringified JSON object). The slash counter accumulated and the
+	// closing quote of the value was misread as escaped, parking the
+	// parser inside the string and consuming subsequent records.
+	value := `[{"id":1,"meta":"{\"a\":\"x\",\"b\":\"y\"}"},{"id":2,"meta":"{\"a\":\"z\"}"},{"id":3,"meta":"{}"}]`
+
+	var b bytes.Buffer
+	if err := jsn.Filter(&b, []byte(value), []string{"id"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.String(); got != `[{"id":1},{"id":2},{"id":3}]` {
+		t.Errorf("got: %s", got)
+	}
+}
+
 func TestFilter2(t *testing.T) {
 	value := `[{"id":1,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":100,"amount_refunded":0,"date":"01/01/2019","application":null,"billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}},   {"id":2,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":150,"amount_refunded":0,"date":"02/18/2019","billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}},{"id":3,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":150,"amount_refunded":50,"date":"03/21/2019","billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}}]`
 

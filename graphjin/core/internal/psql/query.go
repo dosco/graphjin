@@ -256,7 +256,7 @@ func (co *Compiler) CompileQuery(
 	for _, id := range qc.Roots {
 		sel := &qc.Selects[id]
 
-		if sel.SkipRender == qcode.SkipTypeDrop {
+		if sel.SkipRender == qcode.SkipTypeDrop || sel.SkipRender == qcode.SkipTypeRemote {
 			continue
 		}
 

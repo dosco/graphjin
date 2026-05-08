@@ -8,3 +8,8 @@ require (
 	golang.org/x/sync v0.19.0
 	golang.org/x/text v0.33.0
 )
+
+require (
+	github.com/getkin/kin-openapi v0.131.0 // indirect
+	golang.org/x/time v0.10.0 // indirect
+)

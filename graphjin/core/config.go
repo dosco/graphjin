@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/openapi"
 )
 
 // DefaultDBName is the canonical name used for the primary/default database
@@ -223,6 +224,19 @@ type Config struct {
 	// The configs for custom resolvers. For example the `remote_api`
 	// resolver would join json from a remote API into your query response
 	Resolvers []ResolverConfig `jsonschema:"-"`
+
+	// OpenAPISpecsDir is the directory that GraphJin scans at startup for
+	// OpenAPI 3 specification files (*.yaml / *.yml). Each spec dropped in
+	// is parsed, classified, and exposed as remote-joinable fields and/or
+	// top-level virtual tables. Defaults to "./config/specs" when empty.
+	OpenAPISpecsDir string `mapstructure:"openapi_specs_dir" json:"openapi_specs_dir" yaml:"openapi_specs_dir" jsonschema:"title=OpenAPI Specs Directory,default=./config/specs"`
+
+	// OpenAPI carries per-spec configuration keyed by the spec filename
+	// without extension (e.g. "interaction_studio" matches
+	// "config/specs/interaction_studio.yaml"). Operations classifiable from
+	// the spec are auto-exposed; entries here add credentials, base URL
+	// overrides, DB-to-API join wiring, and concurrency caps.
+	OpenAPI map[string]openapi.SpecConfig `mapstructure:"openapi" json:"openapi" yaml:"openapi" jsonschema:"-"`
 
 	// All table specific configuration such as aliased tables and relationships
 	// between tables
