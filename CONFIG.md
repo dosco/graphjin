@@ -811,7 +811,7 @@ resolvers:
 
 ## OpenAPI Integration
 
-GraphJin can join data from any HTTP API that publishes an **OpenAPI 3** specification. Drop the spec into `config/specs/`, declare credentials and join wiring in `config.yml`, and the API's GET endpoints become joinable from your existing tables — without writing a custom resolver per integration.
+GraphJin can join data from any HTTP API that publishes an **OpenAPI 3** specification. Drop the spec into `config/specs/`, declare credentials and join wiring in your environment config (`dev.yml`/`prod.yml`), and the API's GET endpoints become joinable from your existing tables — without writing a custom resolver per integration.
 
 The OpenAPI integration is the spec-driven counterpart to `remote_api` (above). Use `remote_api` for ad-hoc URL joins; use OpenAPI when the upstream publishes a spec and you want auth, parameter wiring, and response shape derived automatically.
 
@@ -826,7 +826,7 @@ The OpenAPI integration is the spec-driven counterpart to `remote_api` (above). 
        interaction_studio.yaml    # vendor-supplied, untouched
    ```
 
-2. Add an `openapi:` section to your `config.yml`:
+2. Add an `openapi:` section to your environment config (`dev.yml`/`prod.yml`):
 
    ```yaml
    openapi_specs_dir: ./config/specs   # default
