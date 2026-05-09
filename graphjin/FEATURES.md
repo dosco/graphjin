@@ -12,6 +12,7 @@ GraphJin is a high-performance GraphQL to SQL compiler that automatically genera
   - [Relationship Queries](#relationship-queries)
   - [Recursive Queries](#recursive-queries)
   - [Aggregations](#aggregations)
+  - [Window Functions](#window-functions)
   - [Full-Text Search](#full-text-search)
   - [JSON Operations](#json-operations)
   - [GraphQL Fragments](#graphql-fragments)
@@ -27,12 +28,16 @@ GraphJin is a high-performance GraphQL to SQL compiler that automatically genera
   - [Validation](#validation)
   - [Updates](#updates)
 - [Real-time Subscriptions](#real-time-subscriptions)
+- [File Uploads](#file-uploads)
+- [Filesystem Tables](#filesystem-tables)
+- [Apollo Federation v2](#apollo-federation-v2)
 - [Security Features](#security-features)
   - [Role-Based Access Control](#role-based-access-control)
   - [Row-Level Security](#row-level-security)
   - [Column Blocking](#column-blocking)
   - [Read-Only Databases](#read-only-databases)
   - [Query Allow Lists](#query-allow-lists)
+  - [Response Caching (SWR)](#response-caching-swr)
 - [Advanced Features](#advanced-features)
   - [Synthetic Tables](#synthetic-tables)
   - [Views Support](#views-support)
@@ -419,6 +424,52 @@ query {
 }
 # Returns: {"products":[{"count_id":100,"max_price":110.5}]}
 ```
+
+### Window Functions
+
+Tag any aggregate or function field with `@window` to emit a SQL window function — `<func>(...) OVER (PARTITION BY ... ORDER BY ... <frame>)`. Window queries return one row per input row (no GROUP BY collapse), so they compose with regular column selections.
+
+```graphql
+query {
+  orders {
+    user_id
+    total
+    rank: row_number @window(
+      partition: ["user_id"],
+      order: ["total desc nulls last"]
+    )
+    running: sum_total @window(
+      partition: ["user_id"],
+      order: ["created_at"],
+      frame: "rows between 5 preceding and current row"
+    )
+  }
+}
+```
+
+**Frame grammar** — full standard SQL is accepted; numeric offsets are parsed as integers (no SQL-fragment passthrough):
+
+```
+ROWS|RANGE UNBOUNDED PRECEDING
+ROWS|RANGE CURRENT ROW
+ROWS|RANGE <n> PRECEDING
+ROWS|RANGE <n> FOLLOWING
+ROWS|RANGE BETWEEN <bound> AND <bound>
+```
+
+where `<bound>` is `UNBOUNDED PRECEDING` / `UNBOUNDED FOLLOWING` / `CURRENT ROW` / `<n> PRECEDING` / `<n> FOLLOWING`.
+
+**Order entries** accept `"col [asc|desc] [nulls first|last]"`. NULLS placement is honoured by Snowflake / Postgres / Oracle, silently ignored elsewhere (per dialect spec).
+
+**Empty `@window`** is valid — emits a bare `OVER ()` for ranking functions that don't need a partition or order:
+
+```graphql
+{ products { id, total: sum_price @window } }
+```
+
+**Validation** — partition and order columns are validated against the table; numeric offsets are parsed as non-negative integers; frame text is canonicalised before emission. The frame argument cannot smuggle SQL fragments past the parser.
+
+**Dialect support** — Postgres, MySQL 8.0+, MariaDB 10.2+, MSSQL 2012+, Oracle, SQLite 3.25+, Snowflake, CockroachDB. (MySQL 5.7 and pre-10.2 MariaDB don't support window functions; the emitted SQL would error at exec time on those.)
 
 ### Full-Text Search
 
@@ -967,6 +1018,174 @@ subscription {
 
 ---
 
+## File Uploads
+
+The GraphQL endpoint accepts `multipart/form-data` POSTs alongside JSON, following the [graphql-multipart-request-spec](https://github.com/jaydenseric/graphql-multipart-request-spec). Files are placed at variable paths declared in the request's `map` field.
+
+```yaml
+uploads:
+  enabled: true
+  max_size: 25_000_000              # bytes; defaults to 25 MB
+  allowed_mime: ["image/*", "application/pdf"]
+  storage: avatars                   # optional: filesystem table to stream into
+  storage_key_prefix: "{date}/"     # optional: {date} → YYYY/MM/DD
+```
+
+**Two modes**, controlled by whether `storage` is set:
+
+**Inline base64** (no `storage`) — the file becomes a JSON object inside the variable:
+
+```json
+{ "filename": "logo.png", "content_type": "image/png",
+  "size": 12345, "data": "<base64 bytes>" }
+```
+
+Mutations bind this object to a JSONB column or to a PL/pgSQL function that decodes `data` into `bytea`.
+
+**Streamed to a filesystem table** (`storage: avatars`) — the body is written to the named [filesystem table](#filesystem-tables) and the variable becomes a stable reference:
+
+```json
+{ "key": "2026/05/08/abc123.png",
+  "url":  "https://s3.../...?presigned",
+  "size": 12345,
+  "content_type": "image/png" }
+```
+
+This keeps large bodies out of the GraphQL request/response and gives mutations a queryable handle to the stored object.
+
+**Generated keys** are `<prefix>/<8-byte-hex><ext>` — collisions are near-impossible and the upstream filename never reaches storage (useful when filenames are user-supplied).
+
+**Validation** — total request bounded by `max_size`, MIME type checked against `allowed_mime` (glob patterns supported: `image/*`, `application/pdf`).
+
+---
+
+## Filesystem Tables
+
+Object stores show up as ordinary tables in the GraphQL schema. Declare a filesystem in config and it gets the same query surface as a database table — no per-storage GraphQL plumbing needed.
+
+```yaml
+filesystems:
+  - name: avatars
+    backend: s3
+    bucket: my-bucket
+    prefix: avatars/
+    region: us-east-1
+    presign_ttl: 15m
+
+  - name: invoices
+    backend: gcs
+    bucket: invoices
+    prefix: 2026/
+
+  - name: uploads_local
+    backend: local
+    root: /var/lib/graphjin/uploads
+```
+
+Every filesystem table exposes the same columns regardless of backend:
+
+| Column | Type | Description |
+|---|---|---|
+| `key` | text (PK) | Object's path within the table's effective root |
+| `size` | bigint | Bytes |
+| `content_type` | text | MIME type, best-effort |
+| `etag` | text | Backend-defined identifier |
+| `modified_at` | timestamp | Last-modified timestamp (RFC3339) |
+| `url` | text | Presigned GET URL by default |
+| `data` | text | base64 body — populated only when `inline_data: true` |
+
+**List queries**:
+
+```graphql
+{ avatars(prefix: "users/", limit: 50, after: $cursor) {
+    key size content_type modified_at url
+  }
+}
+```
+
+**Single-key fetch** (HEAD-equivalent + presigned URL):
+
+```graphql
+{ avatars(key: "users/42.png") { key size url } }
+```
+
+**Inline body** (small files only — heavyweight path):
+
+```graphql
+{ avatars(key: "users/42.png", inline_data: true) {
+    key size url data    # data is base64
+  }
+}
+```
+
+**Per-table options**:
+
+| Field | Purpose |
+|---|---|
+| `presign_ttl` | URL validity (default 15 min) |
+| `public_base_url` | When set, replaces presigned URLs with `<base>/<key>` — useful for CDN fronting |
+| `endpoint` | S3 endpoint override (MinIO, localstack, R2, etc.) |
+| `max_list_page_size` | Caps `limit:` for list queries (default 1000) |
+
+**Authentication** — uses each platform's standard credential chain, never embedded in GraphJin config:
+- **S3**: env vars / `~/.aws/credentials` / IRSA / EC2 IMDS
+- **GCS**: Application Default Credentials (env, GCE/GKE metadata server, `gcloud auth`)
+- **Local**: filesystem permissions
+
+**Build-tag gating** — slim builds drop SDK weight. `-tags no_s3` excludes the S3 backend, `-tags no_gcs` excludes GCS. Local is always built in.
+
+**Custom backends** — register through `core.OptionSetFilesystemBackend(name, factory)` to plug in Azure Blob, R2, or anything implementing the `fstable.Backend` interface.
+
+---
+
+## Apollo Federation v2
+
+GraphJin can register as a federation subgraph so it composes alongside other services behind Apollo Router / Cosmo / Hive Gateway:
+
+```yaml
+federation:
+  enabled: true
+  version: "v2.5"
+  keys:                              # auto-derived from PKs by default
+    users: ["id"]
+    orders: ["id", "tenant_id"]      # composite keys via override
+  shareable: ["Tag.name"]
+  inaccessible: ["Users.encrypted_password"]
+  tags:
+    Users.full_name: ["pii"]
+```
+
+**`_service { sdl }`** — returns a federation-flavoured SDL describing every non-blocked, primary-keyed table:
+
+```graphql
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.5",
+  import: ["@key","@shareable","@external","@requires","@provides","@inaccessible","@tag"])
+
+type Users @key(fields: "id") {
+  id: ID!
+  full_name: String! @tag(name: "pii")
+  email: String! @shareable
+  encrypted_password: String! @inaccessible
+}
+
+scalar _Any
+type _Service { sdl: String! }
+union _Entity = Users | Products | ...
+
+extend type Query {
+  _service: _Service!
+  _entities(representations: [_Any!]!): [_Entity]!
+}
+```
+
+**Composition succeeds out-of-the-box** — Apollo Router can register the subgraph and route non-entity queries straight to GraphJin.
+
+**`_entities` resolution is on the roadmap** — the engine returns a clear "not yet implemented" error today rather than silent failures, so cross-subgraph entity references will surface the gap to gateway operators instead of producing confusing partial responses.
+
+**Detection is fast** — token-bounded substring scan over the raw query, so JSON traffic costs one extra MIME parse only when federation is enabled.
+
+---
+
 ## Security Features
 
 ### Role-Based Access Control
@@ -1044,6 +1263,28 @@ conf := &core.Config{
 ```
 
 Queries are saved locally during development and locked in production.
+
+### Response Caching (SWR)
+
+Cache GraphQL responses with automatic invalidation on mutations. Pluggable backend — Redis for shared cache across instances, in-memory LRU as the no-config fallback.
+
+```yaml
+caching:
+  ttl: 3600           # hard expiry (seconds); entry is dropped after this
+  fresh_ttl: 300      # soft expiry; entries past this trigger SWR refresh
+  exclude_tables: ["sessions"]
+```
+
+**Stale-while-revalidate** — when an entry is past `fresh_ttl` but inside `ttl`:
+
+1. The stale response is returned to the caller immediately (single-digit ms)
+2. A background worker re-runs the query under the same role and overwrites the cache entry
+3. Concurrent refreshes for the same key are deduplicated via singleflight
+4. The worker pool is bounded so a thundering herd of stale hits can't spawn unbounded goroutines
+
+**Automatic invalidation** — mutations that touch a row drop every cached query that depended on that row. Indexing is row-level for small results (≤500 rows) and falls back to table-level for large results — so analytic queries don't pay row-tracking overhead.
+
+**Cache key** — includes operation name, query text, variables, role, and (for ABAC) user ID. Anonymous queries (no operation name, no APQ key) bypass the cache entirely.
 
 ---
 
