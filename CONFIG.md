@@ -15,6 +15,9 @@ This document provides a comprehensive reference for all GraphJin configuration 
 - [MCP Configuration](#mcp-configuration)
 - [Redis Configuration](#redis-configuration)
 - [Caching Configuration](#caching-configuration)
+- [Uploads Configuration](#uploads-configuration)
+- [Filesystems Configuration](#filesystems-configuration)
+- [Federation Configuration](#federation-configuration)
 - [Schema Configuration](#schema-configuration)
 - [OpenAPI Integration](#openapi-integration)
 - [Role-Based Access Control](#role-based-access-control)
@@ -633,25 +636,201 @@ redis:
 
 ## Caching Configuration
 
-Response caching with automatic invalidation on mutations.
+Response caching with automatic invalidation on mutations and stale-while-revalidate (SWR) for cheap stale serving.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `caching.disable` | boolean | `false` | Disable response caching |
-| `caching.ttl` | integer | `3600` | Cache TTL in seconds (hard TTL) |
-| `caching.fresh_ttl` | integer | `300` | Soft TTL for stale-while-revalidate |
-| `caching.exclude_tables` | []string | - | Tables to exclude from caching |
+| `caching.disable` | boolean | `false` | Disable response caching entirely |
+| `caching.ttl` | integer | `3600` | Hard TTL (seconds). Entries past this are dropped. |
+| `caching.fresh_ttl` | integer | `300` | Soft TTL (seconds). Entries past this trigger background SWR refresh; set to `0` to disable SWR. |
+| `caching.exclude_tables` | []string | - | Tables whose row changes won't invalidate cached queries (and queries touching them are not cached) |
+
+### Backend selection
+
+Caching is enabled by default with an in-memory LRU cache. Configure `redis.url` to switch to Redis for shared cache across instances:
+
+```yaml
+redis:
+  url: redis://localhost:6379/0
+caching:
+  ttl: 3600
+  fresh_ttl: 300
+```
+
+### Stale-while-revalidate semantics
+
+When `fresh_ttl < ttl` and an entry is past `fresh_ttl` but inside `ttl`:
+
+1. The stale response is returned to the caller immediately
+2. A background worker re-runs the query under the original role and overwrites the cache entry
+3. Concurrent refreshes for the same key are deduplicated via singleflight
+4. The worker pool is bounded so a thundering herd of stale hits cannot spawn unbounded goroutines
+
+Set `fresh_ttl: 0` (or equal to `ttl`) to disable SWR — entries are then served fresh until the hard expiry.
+
+### Invalidation
+
+Mutations that touch a row drop every cached query that depended on that row. Tracking is row-level for small results (≤500 rows) and falls back to table-level for larger results, so analytic queries don't pay row-tracking overhead.
+
+The cache key is derived from operation name, query text, variables, role, and (for ABAC) user ID. Anonymous queries (no operation name, no APQ key) bypass the cache entirely.
 
 ### Example
 
 ```yaml
 caching:
   disable: false
-  ttl: 3600        # 1 hour hard TTL
-  fresh_ttl: 300   # 5 minute soft TTL
+  ttl: 3600        # 1 hour hard expiry
+  fresh_ttl: 300   # 5 minute fresh window; stale-but-valid for the next 55 min
   exclude_tables:
     - audit_logs
     - sessions
+```
+
+---
+
+## Uploads Configuration
+
+GraphQL endpoint accepts `multipart/form-data` POSTs per the [graphql-multipart-request-spec](https://github.com/jaydenseric/graphql-multipart-request-spec). See the [File Uploads](FEATURES.md#file-uploads) feature reference for the on-the-wire shape.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `uploads.enabled` | boolean | `false` | Accept multipart/form-data POSTs on `/api/v1/graphql` |
+| `uploads.max_size` | integer | `26214400` (25 MB) | Per-request body limit, in bytes |
+| `uploads.allowed_mime` | []string | - | When non-empty, restricts content types. Glob-aware (`image/*`, `application/pdf`) |
+| `uploads.storage` | string | - | Filesystem table name to stream into. When empty, files are inlined as base64 in the variable. |
+| `uploads.storage_key_prefix` | string | - | Prefix for streamed-file keys. `{date}` is substituted with `YYYY/MM/DD` at request time. |
+
+### Two modes
+
+**Inline base64** (`storage` empty) — the multipart file becomes a JSON object inside the variable: `{filename, content_type, size, data}`. Useful for small uploads going into a `bytea` column.
+
+**Streamed to a filesystem table** (`storage: avatars`) — the body is written to the named [filesystem](#filesystems-configuration) and the variable becomes `{key, content_type, size, url, etag, modified_at}`. Keeps large bodies out of the request/response.
+
+### Example
+
+```yaml
+uploads:
+  enabled: true
+  max_size: 25_000_000
+  allowed_mime: ["image/*", "application/pdf"]
+  storage: avatars                 # name of an entry in `filesystems:`
+  storage_key_prefix: "{date}/"    # → 2026/05/08/<8-byte-hex>.png
+```
+
+---
+
+## Filesystems Configuration
+
+Object stores (local directories, S3, GCS) exposed as virtual GraphQL tables. See the [Filesystem Tables](FEATURES.md#filesystem-tables) feature reference for the query surface.
+
+`filesystems` is a list — declare one entry per logical table:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `name` | string | required | Table name surfaced in GraphQL |
+| `backend` | string | required | `local`, `s3`, or `gcs` |
+| `bucket` | string | - | S3/GCS bucket (required for those backends) |
+| `region` | string | - | S3 region |
+| `endpoint` | string | - | S3 endpoint override (MinIO, localstack, R2, etc.) — forces path-style addressing |
+| `prefix` | string | - | Prepended to every key (effective root for the table) |
+| `root` | string | - | Local filesystem root directory (required for `local`) |
+| `presign_ttl` | duration | `15m` | TTL for generated presigned URLs |
+| `public_base_url` | string | - | When set, replaces presigned URLs with `<base>/<key>` — useful for CDN fronting |
+| `max_list_page_size` | integer | `1000` | Caps `limit:` for list queries |
+
+### Authentication
+
+Each backend uses its platform's standard credential chain — never embedded in GraphJin config:
+
+- **S3**: env vars (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`), `~/.aws/credentials`, IRSA on EKS, EC2 IMDS
+- **GCS**: Application Default Credentials (`GOOGLE_APPLICATION_CREDENTIALS` env, GCE/GKE metadata server, `gcloud auth application-default login`)
+- **Local**: filesystem permissions of the GraphJin process
+
+### Build-tag gating
+
+Slim builds drop SDK weight:
+
+- `-tags no_s3` — excludes the S3 backend (drops AWS SDK from the binary)
+- `-tags no_gcs` — excludes the GCS backend (drops Google Cloud SDK from the binary)
+- `local` is always built in
+
+Configuring an excluded backend produces a clear startup error.
+
+### Custom backends
+
+Plug in Azure Blob, Cloudflare R2, or anything implementing `fstable.Backend` via `core.OptionSetFilesystemBackend(name, factory)` from your own setup code.
+
+### Examples
+
+```yaml
+filesystems:
+  - name: avatars
+    backend: s3
+    bucket: my-bucket
+    prefix: avatars/
+    region: us-east-1
+    presign_ttl: 15m
+    public_base_url: https://cdn.example.com
+
+  - name: invoices
+    backend: gcs
+    bucket: invoices
+    prefix: 2026/
+
+  - name: uploads_local
+    backend: local
+    root: /var/lib/graphjin/uploads
+
+  # MinIO / localstack via S3-compatible endpoint:
+  - name: dev_blob
+    backend: s3
+    bucket: dev
+    region: us-east-1
+    endpoint: http://localhost:9000
+```
+
+---
+
+## Federation Configuration
+
+Register GraphJin as an Apollo Federation v2 subgraph so it composes alongside other services behind Apollo Router / Cosmo / Hive Gateway. See the [Apollo Federation v2](FEATURES.md#apollo-federation-v2) feature reference for the SDL surface.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `federation.enabled` | boolean | `false` | Emit federation SDL and answer `_service { sdl }` queries |
+| `federation.version` | string | `v2.5` | Federation spec version (the value used in the `@link` directive) |
+| `federation.keys` | map | - | Per-table override for `@key(fields: ...)`. Auto-derived from primary keys when absent. |
+| `federation.shareable` | []string | - | `Type.field` identifiers tagged `@shareable` |
+| `federation.inaccessible` | []string | - | `Type.field` identifiers tagged `@inaccessible` |
+| `federation.tags` | map | - | `Type.field` → list of `@tag(name:...)` annotations |
+
+When `enabled: true`:
+
+- `_service { sdl }` returns a federation-flavoured SDL covering every non-blocked, primary-keyed table
+- `_entities(representations: [_Any!]!)` is recognised but currently returns a clear "not yet implemented" error — composition still succeeds in the gateway
+- All other queries flow through the regular pipeline unchanged. Detection is a token-bounded substring scan over the raw query.
+
+### Example
+
+```yaml
+federation:
+  enabled: true
+  version: "v2.5"
+
+  keys:
+    users:  ["id"]                   # default — auto-derived
+    orders: ["id", "tenant_id"]      # composite key override
+
+  shareable:
+    - Tag.name
+
+  inaccessible:
+    - Users.encrypted_password
+    - Users.reset_password_token
+
+  tags:
+    Users.full_name: ["pii"]
+    Users.email:     ["pii", "exportable"]
 ```
 
 ---
