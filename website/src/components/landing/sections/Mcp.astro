@@ -1,0 +1,53 @@
+---
+import FeatureSection from "../FeatureSection.astro";
+import McpFlow from "../diagrams/McpFlow.astro";
+import CodeCard from "../CodeCard.astro";
+
+const install = `# install for Claude Code (or codex / cursor / custom)
+graphjin mcp install --client claude --scope global --yes
+
+# or set up against a hosted GraphJin
+graphjin mcp setup https://api.example.com`;
+
+const claudeConfig = `// claude_desktop_config.json
+{
+  "mcpServers": {
+    "graphjin": {
+      "command": "graphjin",
+      "args": ["mcp", "--config", "/etc/graphjin"],
+      "env": {
+        "GRAPHJIN_USER_ID": "system",
+        "GRAPHJIN_USER_ROLE": "user"
+      }
+    }
+  }
+}`;
+---
+
+<FeatureSection
+  id="mcp"
+  eyebrow="AI INTEGRATION"
+  title="A native MCP server for any AI assistant."
+  lede="GraphJin ships a Model Context Protocol server with the tools an assistant actually needs: schema discovery, saved queries, where-clause validation, fragments, query execution, audit logs, and health checks. Same engine, same RBAC, same allow-lists — everything that protects your HTTP API protects the AI."
+>
+  <Fragment slot="body">
+    <p>
+      One install command wires GraphJin into Claude Desktop, Codex, or any
+      MCP host. Tools are <strong>discoverable, narrow, and audited</strong>:
+      no shell access, no raw SQL by default, no surprise mutations. Mutation
+      support is opt-in per role; raw queries can be locked out entirely.
+    </p>
+    <p>
+      For development, <code>graphjin mcp</code> runs over stdio. For team
+      access, run it as a long-lived HTTP+SSE endpoint, gated by the same JWT
+      or OIDC flow as the main API.
+    </p>
+  </Fragment>
+
+  <McpFlow slot="diagram" />
+
+  <Fragment slot="snippet">
+    <CodeCard filename="terminal" code={install} />
+    <CodeCard filename="claude_desktop_config.json" language="json" code={claudeConfig} />
+  </Fragment>
+</FeatureSection>

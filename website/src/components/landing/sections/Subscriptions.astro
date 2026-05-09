@@ -1,0 +1,57 @@
+---
+import FeatureSection from "../FeatureSection.astro";
+import SubscriptionsTransport from "../diagrams/SubscriptionsTransport.astro";
+import CodeCard from "../CodeCard.astro";
+
+const subscription = `subscription LiveOrders($since: Cursor) {
+  orders(
+    where: { status: { eq: "open" } }
+    after: $since
+    first: 50
+    order_by: { id: asc }
+  ) {
+    id
+    total
+    customer { id full_name }
+    cursor
+  }
+}`;
+
+const config = `# config/prod.yml
+subs_poll_duration: "2s"   # adaptive batched polling
+subs_max_clients: 10000
+
+# both transports active at once
+http:
+  sse: true
+  websocket: true
+`;
+---
+
+<FeatureSection
+  id="subscriptions"
+  eyebrow="REALTIME"
+  title="Live queries with cursors that survive reconnects."
+  lede="Subscribe with the same GraphQL you'd use for a query. GraphJin streams deltas over SSE or WebSockets, batches database polls into one statement, and emits cursors so clients can resume after a network hiccup without missing rows."
+>
+  <Fragment slot="body">
+    <p>
+      The subscription API is just <strong>queries with a cursor</strong> —
+      no new schema, no resolver tree, no pub/sub bus to operate. Cursor-based
+      pagination keeps feeds and chat-style UIs deterministic; the adaptive
+      poll sizer keeps load predictable as subscriber count grows.
+    </p>
+    <p>
+      Multiple subscriptions can share a single WebSocket. Per-message
+      timeouts and JWT expiry are enforced at the transport layer, not by
+      hand-rolled middleware.
+    </p>
+  </Fragment>
+
+  <SubscriptionsTransport slot="diagram" />
+
+  <Fragment slot="snippet">
+    <CodeCard filename="live_orders.graphql" language="graphql" code={subscription} />
+    <CodeCard filename="config/prod.yml" language="yaml" code={config} />
+  </Fragment>
+</FeatureSection>

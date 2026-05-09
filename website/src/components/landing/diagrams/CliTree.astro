@@ -1,0 +1,55 @@
+---
+// Command tree: graphjin -> serve / db / cli / mcp -> common subcommands.
+---
+
+<div class="diagram-wrap">
+  <svg
+    viewBox="0 0 800 320"
+    role="img"
+    aria-label="GraphJin command tree with serve, db, cli and mcp subcommand groups"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    {/* root */}
+    <g class="diag-node diag-accent">
+      <rect x="320" y="20" width="160" height="50" rx="12" />
+      <text x="400" y="48" text-anchor="middle" class="diag-label">$ graphjin</text>
+    </g>
+
+    {/* groups */}
+    <g class="diag-node">
+      <rect x="20" y="120" width="170" height="50" rx="10" />
+      <text x="105" y="148" text-anchor="middle" class="diag-label">serve</text>
+    </g>
+    <g class="diag-node">
+      <rect x="220" y="120" width="170" height="50" rx="10" />
+      <text x="305" y="148" text-anchor="middle" class="diag-label">db</text>
+    </g>
+    <g class="diag-node">
+      <rect x="420" y="120" width="170" height="50" rx="10" />
+      <text x="505" y="148" text-anchor="middle" class="diag-label">cli</text>
+    </g>
+    <g class="diag-node">
+      <rect x="620" y="120" width="160" height="50" rx="10" />
+      <text x="700" y="148" text-anchor="middle" class="diag-label">mcp</text>
+    </g>
+
+    {/* subcommands */}
+    <text x="105" y="200" text-anchor="middle" class="diag-sub">--demo · prod</text>
+    <text x="105" y="218" text-anchor="middle" class="diag-sub">test · subscribe</text>
+
+    <text x="305" y="200" text-anchor="middle" class="diag-sub">setup · diff</text>
+    <text x="305" y="218" text-anchor="middle" class="diag-sub">migrate · seed</text>
+
+    <text x="505" y="200" text-anchor="middle" class="diag-sub">setup · query</text>
+    <text x="505" y="218" text-anchor="middle" class="diag-sub">workflow · audit</text>
+
+    <text x="700" y="200" text-anchor="middle" class="diag-sub">install · setup</text>
+    <text x="700" y="218" text-anchor="middle" class="diag-sub">info · plugin</text>
+
+    {/* lines */}
+    <path d="M400 70 L400 95 L105 95 L105 120" class="diag-line" />
+    <path d="M400 70 L400 95 L305 95 L305 120" class="diag-line" />
+    <path d="M400 70 L400 95 L505 95 L505 120" class="diag-line" />
+    <path d="M400 70 L400 95 L700 95 L700 120" class="diag-line" />
+  </svg>
+</div>

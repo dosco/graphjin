@@ -1,0 +1,86 @@
+---
+interface Item {
+  id: string;
+  label: string;
+}
+
+interface Props {
+  items: Item[];
+}
+
+const { items } = Astro.props;
+---
+
+<aside
+  class="otp hidden lg:block fixed top-24 right-6 xl:right-10 w-52 z-30"
+  aria-label="On this page"
+>
+  <div
+    class="rounded-xl border p-4 backdrop-blur"
+    style="background: color-mix(in srgb, var(--color-bg) 75%, transparent); border-color: var(--color-border)"
+  >
+    <p
+      class="text-[10px] font-mono uppercase tracking-[0.18em] mb-3"
+      style="color: var(--color-muted)"
+    >
+      On this page
+    </p>
+    <ul class="space-y-1.5">
+      {items.map((item) => (
+        <li>
+          <a
+            href={`#${item.id}`}
+            data-otp-link={item.id}
+            class="otp-link block text-[13px] leading-snug py-1 px-2 -mx-2 rounded transition-colors"
+            style="color: var(--color-muted)"
+          >
+            {item.label}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+</aside>
+
+<style>
+  .otp-link[data-active="true"] {
+    color: var(--color-accent) !important;
+    background: var(--color-accent-soft);
+  }
+  .otp-link:hover {
+    color: var(--color-text) !important;
+  }
+</style>
+
+<script>
+  const links = document.querySelectorAll<HTMLAnchorElement>("[data-otp-link]");
+  if (links.length) {
+    const ids = Array.from(links)
+      .map((l) => l.getAttribute("data-otp-link"))
+      .filter((v): v is string => Boolean(v));
+    const targets = ids
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => Boolean(el));
+
+    let activeId: string | null = null;
+    const setActive = (id: string | null) => {
+      if (id === activeId) return;
+      activeId = id;
+      links.forEach((link) => {
+        const linkId = link.getAttribute("data-otp-link");
+        link.setAttribute("data-active", linkId === id ? "true" : "false");
+      });
+    };
+
+    const onScroll = () => {
+      const fromTop = window.scrollY + 160;
+      let current: string | null = null;
+      for (const t of targets) {
+        if (t.offsetTop <= fromTop) current = t.id;
+      }
+      setActive(current);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+  }
+</script>

@@ -1,0 +1,56 @@
+---
+// Apollo-style architecture diagram: GraphQL -> GraphJin compiler -> SQL -> DBs.
+// Uses currentColor for strokes, var(--color-accent) for the active path.
+---
+
+<div class="diagram-wrap">
+  <svg
+    viewBox="0 0 800 320"
+    role="img"
+    aria-label="GraphJin compiles GraphQL queries into optimized SQL for many databases"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <defs>
+      <marker id="cf-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" fill="var(--color-accent)" />
+      </marker>
+    </defs>
+
+    {/* Client */}
+    <g class="diag-node">
+      <rect x="20" y="120" width="140" height="80" rx="12" />
+      <text x="90" y="155" text-anchor="middle" class="diag-label">CLIENT</text>
+      <text x="90" y="178" text-anchor="middle" class="diag-sub">GraphQL request</text>
+    </g>
+
+    {/* Compiler */}
+    <g class="diag-node diag-accent">
+      <rect x="240" y="80" width="180" height="160" rx="14" />
+      <text x="330" y="115" text-anchor="middle" class="diag-label">GRAPHJIN</text>
+      <text x="330" y="140" text-anchor="middle" class="diag-sub">Schema discovery</text>
+      <text x="330" y="160" text-anchor="middle" class="diag-sub">Compile → AST → SQL</text>
+      <text x="330" y="180" text-anchor="middle" class="diag-sub">RBAC · cache · subs</text>
+      <text x="330" y="210" text-anchor="middle" class="diag-pill">1 SQL / query</text>
+    </g>
+
+    {/* DB nodes */}
+    <g class="diag-node">
+      <rect x="500" y="40" width="160" height="60" rx="10" />
+      <text x="580" y="76" text-anchor="middle" class="diag-label">PostgreSQL</text>
+    </g>
+    <g class="diag-node">
+      <rect x="500" y="120" width="160" height="60" rx="10" />
+      <text x="580" y="156" text-anchor="middle" class="diag-label">MySQL · MariaDB</text>
+    </g>
+    <g class="diag-node">
+      <rect x="500" y="200" width="160" height="60" rx="10" />
+      <text x="580" y="236" text-anchor="middle" class="diag-label">Mongo · SQLite · Oracle · MSSQL</text>
+    </g>
+
+    {/* Lines */}
+    <path d="M160 160 L240 160" class="diag-line" marker-end="url(#cf-arrow)" />
+    <path d="M420 160 C 460 160, 460 70, 500 70" class="diag-line" marker-end="url(#cf-arrow)" />
+    <path d="M420 160 L500 150" class="diag-line" marker-end="url(#cf-arrow)" />
+    <path d="M420 160 C 460 160, 460 230, 500 230" class="diag-line" marker-end="url(#cf-arrow)" />
+  </svg>
+</div>
