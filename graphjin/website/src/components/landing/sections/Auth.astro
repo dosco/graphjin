@@ -1,0 +1,63 @@
+---
+import FeatureSection from "../FeatureSection.astro";
+import AuthModes from "../diagrams/AuthModes.astro";
+import CodeCard from "../CodeCard.astro";
+
+const config = `# config/prod.yml
+auth:
+  type: jwt
+  jwt:
+    provider: "auth0"          # or firebase, okta, custom
+    audience: "https://api.example.com"
+    jwks_url: "https://example.auth0.com/.well-known/jwks.json"
+  cookie: "gj_session"
+
+auth_login:
+  enabled: true                # OIDC device-code login for CLI / MCP
+  provider: "https://login.example.com"
+  client_id: "graphjin-cli"
+  scopes: ["openid", "email", "offline_access"]
+`;
+
+const rbac = `# config/roles.yml
+roles:
+  - name: anon
+    tables:
+      products: { query: { columns: [id, name, price] } }
+
+  - name: user
+    tables:
+      orders:
+        query:  { filters: ["{ user_id: { eq: $user_id } }"] }
+        insert: { columns: [product_id, quantity] }
+        update: { filters: ["{ status: { eq: \"draft\" } }"] }
+`;
+---
+
+<FeatureSection
+  id="auth"
+  eyebrow="SECURITY"
+  title="OAuth, JWT, OIDC — and row-level rules."
+  lede="JWT from Auth0, Firebase, Okta, or any JWKS endpoint. Header- or cookie-based sessions for legacy stacks. OIDC device-code login for the CLI and MCP. Whatever the source, every request lands in the same context — and RBAC + row-level filters do the rest."
+>
+  <Fragment slot="body">
+    <p>
+      Configure once. Every transport — HTTP, WebSocket, SSE, MCP — runs the
+      same auth pipeline. <strong>Roles + row-level filters</strong> are
+      authored in YAML and enforced inside the compiler, so even a workflow
+      cannot read or write outside its lane.
+    </p>
+    <p>
+      The CLI and MCP authenticate via OIDC device-code: open a URL, approve,
+      done. Tokens refresh automatically — no copy-pasting bearer strings into
+      shell history.
+    </p>
+  </Fragment>
+
+  <AuthModes slot="diagram" />
+
+  <Fragment slot="snippet">
+    <CodeCard filename="config/prod.yml" language="yaml" code={config} />
+    <CodeCard filename="config/roles.yml" language="yaml" code={rbac} />
+  </Fragment>
+</FeatureSection>

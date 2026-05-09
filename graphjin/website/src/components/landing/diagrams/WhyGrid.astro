@@ -1,0 +1,54 @@
+---
+// Three-up "Why GraphJin" cards (Auto-discovery / One SQL per query / Production-grade).
+---
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+  <div class="why-card">
+    <div class="why-tick">01</div>
+    <h3 class="why-title">Auto-discovery</h3>
+    <p class="why-body">Introspects tables, columns and relationships on boot. Add a column and the GraphQL schema updates without a redeploy.</p>
+  </div>
+  <div class="why-card">
+    <div class="why-tick">02</div>
+    <h3 class="why-title">One SQL per query</h3>
+    <p class="why-body">Every nested GraphQL request compiles to a single optimized SQL statement. No N+1, no resolver code, no ORM tax.</p>
+  </div>
+  <div class="why-card">
+    <div class="why-tick">03</div>
+    <h3 class="why-title">Production-grade</h3>
+    <p class="why-body">RBAC, JWT, row-level rules, query allow-lists, Redis caching, audit logs. Ready for the AI era and for production.</p>
+  </div>
+</div>
+
+<style>
+  .why-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    padding: 1.75rem 1.5rem;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .why-card:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+    transform: translateY(-2px);
+  }
+  .why-tick {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-accent);
+    letter-spacing: 0.2em;
+    margin-bottom: 0.75rem;
+  }
+  .why-title {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--color-text);
+    margin-bottom: 0.5rem;
+  }
+  .why-body {
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: var(--color-muted);
+  }
+</style>

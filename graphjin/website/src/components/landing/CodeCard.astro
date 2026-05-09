@@ -1,0 +1,69 @@
+---
+interface Props {
+  filename?: string;
+  language?: string;
+  code: string;
+  class?: string;
+}
+
+const { filename, language = "text", code, class: className = "" } = Astro.props;
+---
+
+<div
+  class={`rounded-2xl border overflow-hidden ${className}`}
+  style="background: var(--color-code-bg); border-color: var(--color-border)"
+>
+  {filename && (
+    <div
+      class="flex items-center justify-between px-4 py-2.5 border-b"
+      style="border-color: rgba(255,255,255,0.08); background: rgba(255,255,255,0.03)"
+    >
+      <div class="flex items-center gap-2">
+        <span
+          class="text-[11px] font-mono px-2 py-0.5 rounded"
+          style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.7)"
+        >
+          {filename}
+        </span>
+        {language && language !== "text" && (
+          <span
+            class="text-[11px] font-mono uppercase tracking-wider"
+            style="color: rgba(255,255,255,0.35)"
+          >
+            {language}
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        class="copy-btn text-[11px] font-mono px-2 py-1 rounded transition-colors"
+        style="color: rgba(255,255,255,0.5); background: transparent"
+        data-code={code}
+        aria-label="Copy code"
+      >
+        Copy
+      </button>
+    </div>
+  )}
+  <pre
+    class="p-5 md:p-6 text-sm md:text-[13px] font-mono leading-relaxed overflow-x-auto"
+    style={`color: var(--color-code-text)`}
+  ><code>{code}</code></pre>
+</div>
+
+<script>
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    if (!target.classList.contains("copy-btn")) return;
+    const code = target.getAttribute("data-code") || "";
+    navigator.clipboard.writeText(code).then(() => {
+      const original = target.textContent;
+      target.textContent = "Copied";
+      target.style.color = "rgb(74, 222, 128)";
+      setTimeout(() => {
+        target.textContent = original;
+        target.style.color = "rgba(255,255,255,0.5)";
+      }, 1500);
+    });
+  });
+</script>

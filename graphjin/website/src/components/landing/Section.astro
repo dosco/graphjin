@@ -1,0 +1,53 @@
+---
+import Eyebrow from "./Eyebrow.astro";
+
+interface Props {
+  id?: string;
+  eyebrow?: string;
+  title: string;
+  lede?: string;
+  align?: "left" | "center";
+  divider?: boolean;
+  class?: string;
+}
+
+const {
+  id,
+  eyebrow,
+  title,
+  lede,
+  align = "left",
+  divider = true,
+  class: className = "",
+} = Astro.props;
+
+const alignClass = align === "center" ? "text-center mx-auto" : "";
+---
+
+<section
+  id={id}
+  class={`relative py-20 md:py-28 ${divider ? "border-t" : ""} ${className}`}
+  style={divider ? "border-color: var(--color-border)" : ""}
+>
+  <div class="container-doc">
+    <header class={`max-w-3xl mb-10 md:mb-14 ${alignClass}`}>
+      {eyebrow && <Eyebrow label={eyebrow} />}
+      <h2
+        class="mt-4 text-3xl md:text-5xl font-display font-bold tracking-tight"
+        style="color: var(--color-text); line-height: 1.08"
+      >
+        {title}
+      </h2>
+      {lede && (
+        <p
+          class="mt-4 text-lg md:text-xl leading-relaxed"
+          style="color: var(--color-muted)"
+        >
+          {lede}
+        </p>
+      )}
+    </header>
+
+    <slot />
+  </div>
+</section>

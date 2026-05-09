@@ -1,26 +1,12 @@
-import React, { useState, useRef, useEffect } from "react";
-import { Copy, Check } from "lucide-react";
+import { useState } from "react";
+import { Copy, Check, Terminal } from "lucide-react";
 import { motion } from "framer-motion";
 
 const tabs = [
-  {
-    id: "npm",
-    label: "Global",
-    command: "npx graphjin serve",
-    description: "Use with Node.js projects",
-  },
-  {
-    id: "brew",
-    label: "MacOS",
-    command: "brew install dosco/graphjin/graphjin",
-    description: "Install the GraphJin binary",
-  },
-  {
-    id: "scoop",
-    label: "Windows",
-    command: "scoop install graphjin",
-    description: "Install the GraphJin binary",
-  },
+  { id: "npm", label: "npx", command: "npx graphjin serve --demo" },
+  { id: "brew", label: "macOS", command: "brew install dosco/graphjin/graphjin" },
+  { id: "scoop", label: "Windows", command: "scoop install graphjin" },
+  { id: "curl", label: "curl", command: "curl -fsSL https://graphjin.com/install.sh | bash" },
 ];
 
 const mcpClients = [
@@ -29,16 +15,12 @@ const mcpClients = [
     name: "Claude Code",
     logo: "/logos/claude-code.svg",
     command: "graphjin mcp install --client claude --scope global --yes",
-    description:
-      "Global-scoped non-interactive install for Claude Code (default server: http://localhost:8080/)",
   },
   {
     id: "openai-codex",
     name: "OpenAI Codex",
     logo: "/logos/openai-codex.svg",
     command: "graphjin mcp install --client codex --scope global --yes",
-    description:
-      "Global-scoped non-interactive install for OpenAI Codex (default server: http://localhost:8080/)",
   },
 ];
 
@@ -46,193 +28,167 @@ export default function QuickStart() {
   const [activeTab, setActiveTab] = useState("npm");
   const [copied, setCopied] = useState(false);
   const [copiedMCP, setCopiedMCP] = useState<string | null>(null);
-  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
-  const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const activeTabData = tabs.find((t) => t.id === activeTab);
-  const activeCommand = activeTabData?.command || "";
-  const activeDescription = activeTabData?.description || "";
+  const active = tabs.find((t) => t.id === activeTab) || tabs[0];
 
-  useEffect(() => {
-    const activeIndex = tabs.findIndex((t) => t.id === activeTab);
-    const activeButton = tabsRef.current[activeIndex];
-    if (activeButton) {
-      setIndicatorStyle({
-        left: activeButton.offsetLeft,
-        width: activeButton.offsetWidth,
-      });
-    }
-  }, [activeTab]);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(activeCommand);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleCopyMCP = (id: string, command: string) => {
-    navigator.clipboard.writeText(command);
-    setCopiedMCP(id);
-    setTimeout(() => setCopiedMCP(null), 2000);
+  const handleCopy = (text: string, setter: (v: any) => void, value: any) => {
+    navigator.clipboard.writeText(text);
+    setter(value);
+    setTimeout(() => setter(null), 1800);
   };
 
   return (
-    <section id="quickstart" className="py-24">
-      <div className="max-w-4xl mx-auto px-4">
-        <h2 className="text-2xl md:text-3xl font-display font-bold text-gj-text text-center mb-6">
-          Quick Start
-        </h2>
+    <section
+      id="quickstart"
+      className="py-20 md:py-28 border-t"
+      style={{ borderColor: "var(--color-border)" }}
+    >
+      <div className="container-doc max-w-4xl">
+        <header className="mb-10">
+          <span className="eyebrow">QUICKSTART</span>
+          <h2
+            className="mt-4 text-3xl md:text-5xl font-display font-bold tracking-tight"
+            style={{ color: "var(--color-text)", lineHeight: 1.1 }}
+          >
+            Run it in under a minute.
+          </h2>
+          <p className="mt-4 text-lg leading-relaxed" style={{ color: "var(--color-muted)" }}>
+            Pick your platform, copy the command, and you're querying. The demo flag
+            ships a real schema and example queries so there's something to point
+            an AI client at on the very first run.
+          </p>
+        </header>
 
-        {/* Terminal Window */}
-        <div className="rounded-2xl border border-white/10 bg-black overflow-hidden shadow-xl">
-          {/* Header with tabs */}
-          <div className="bg-black/90 px-4 py-4 border-b border-white/10">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
-                <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
-                <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
-
-                <div className="relative flex ml-6 gap-1 bg-white/5 rounded-lg p-1">
-                  {/* Animated indicator */}
-                  <motion.div
-                    className="absolute top-1 bottom-1 bg-white/10 rounded-md"
-                    initial={false}
-                    animate={{
-                      left: indicatorStyle.left,
-                      width: indicatorStyle.width,
+        {/* terminal-like card */}
+        <div
+          className="rounded-2xl border overflow-hidden"
+          style={{
+            background: "var(--color-code-bg)",
+            borderColor: "var(--color-border)",
+          }}
+        >
+          <div
+            className="flex items-center justify-between px-4 py-2.5 border-b"
+            style={{ borderColor: "rgba(255,255,255,0.08)" }}
+          >
+            <div className="flex items-center gap-2 flex-wrap">
+              <Terminal className="w-3.5 h-3.5" style={{ color: "rgba(255,255,255,0.5)" }} />
+              <div className="flex items-center gap-1">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className="px-3 py-1 text-xs font-mono rounded-md transition-colors"
+                    style={{
+                      color:
+                        activeTab === tab.id
+                          ? "var(--color-accent)"
+                          : "rgba(255,255,255,0.5)",
+                      background:
+                        activeTab === tab.id
+                          ? "rgba(34,211,238,0.12)"
+                          : "transparent",
                     }}
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                  />
-
-                  {tabs.map((tab, index) => (
-                    <button
-                      type="button"
-                      key={tab.id}
-                      ref={(el) => {
-                        tabsRef.current[index] = el;
-                      }}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`relative z-10 px-4 py-1.5 text-sm font-medium rounded-md transition-colors
-                        ${
-                          activeTab === tab.id
-                            ? "text-white"
-                            : "text-white/50 hover:text-white/80"
-                        }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="p-2 text-white/50 hover:text-white transition-colors rounded-lg hover:bg-white/5"
-                title="Copy to clipboard"
-                aria-label={`Copy install command for ${activeTabData?.label || "active tab"}`}
-              >
-                {copied ? (
-                  <Check className="w-5 h-5 text-emerald-400" />
-                ) : (
-                  <Copy className="w-5 h-5" />
-                )}
-              </button>
             </div>
-          </div>
-
-          {/* Command */}
-          <div className="p-8 bg-black">
-            <div className="flex items-start gap-4 font-mono">
-              <span className="text-white/50 text-lg select-none">$</span>
-              <motion.code
-                key={activeTab}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className="text-white text-lg md:text-xl break-all leading-relaxed"
-              >
-                {activeCommand}
-              </motion.code>
-            </div>
-
-            {/* Description */}
-            <motion.p
-              key={`desc-${activeTab}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.2, delay: 0.1 }}
-              className="mt-4 text-white/40 text-sm pl-8"
+            <button
+              type="button"
+              onClick={() => handleCopy(active.command, setCopied as any, true)}
+              className="p-1.5 rounded-md transition-colors"
+              style={{ color: "rgba(255,255,255,0.6)" }}
+              aria-label="Copy install command"
             >
-              {activeDescription}
-            </motion.p>
+              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            </button>
+          </div>
+          <div className="px-6 py-7 font-mono">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18 }}
+              className="flex items-center gap-3 text-base md:text-lg"
+              style={{ color: "var(--color-code-text)" }}
+            >
+              <span style={{ color: "rgba(255,255,255,0.4)" }}>$</span>
+              <code className="break-all">{active.command}</code>
+            </motion.div>
           </div>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-white/10 bg-black/80 p-4 md:p-6">
+        {/* MCP install */}
+        <div
+          className="mt-6 rounded-2xl border p-5 md:p-6"
+          style={{
+            background: "var(--color-surface)",
+            borderColor: "var(--color-border)",
+          }}
+        >
           <div className="flex items-center justify-between gap-4">
-            <h3 className="text-base md:text-lg font-semibold tracking-wide text-white/90">
-              MCP Client Setup
+            <h3
+              className="text-base md:text-lg font-display font-semibold"
+              style={{ color: "var(--color-text)" }}
+            >
+              Wire it into your AI client
             </h3>
-            <span className="text-xs text-white/40">
-              Copy and run one command
+            <span className="text-xs font-mono" style={{ color: "var(--color-muted)" }}>
+              one command
             </span>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-3">
             {mcpClients.map((client) => (
               <div
                 key={client.id}
-                className="rounded-xl border border-white/10 bg-black p-5"
+                className="rounded-xl border p-4"
+                style={{
+                  background: "var(--color-bg)",
+                  borderColor: "var(--color-border)",
+                }}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <img
-                      src={client.logo}
-                      alt={`${client.name} logo`}
-                      className="w-[180px] h-[40px] md:w-[220px] md:h-[48px] object-contain object-left"
-                      loading="lazy"
-                    />
-                  </div>
-
+                  <img
+                    src={client.logo}
+                    alt={`${client.name} logo`}
+                    className="h-7 md:h-8 object-contain object-left"
+                    loading="lazy"
+                  />
                   <button
                     type="button"
-                    onClick={() => handleCopyMCP(client.id, client.command)}
-                    className="p-2 text-white/50 hover:text-white transition-colors rounded-lg hover:bg-white/5"
-                    title={`Copy ${client.name} command`}
-                    aria-label={`Copy MCP install command for ${client.name}`}
+                    onClick={() => handleCopy(client.command, setCopiedMCP, client.id)}
+                    className="p-1.5 rounded-md transition-colors"
+                    style={{ color: "var(--color-muted)" }}
+                    aria-label={`Copy command for ${client.name}`}
                   >
                     {copiedMCP === client.id ? (
-                      <Check className="w-4 h-4 text-emerald-400" />
+                      <Check className="w-4 h-4" style={{ color: "var(--color-accent)" }} />
                     ) : (
                       <Copy className="w-4 h-4" />
                     )}
                   </button>
                 </div>
-
-                <p className="mt-3 text-sm text-white/50">
-                  {client.description}
-                </p>
-                <code className="mt-3 block text-sm md:text-[15px] font-mono text-white/90 break-all leading-relaxed">
+                <code
+                  className="mt-3 block text-sm font-mono break-all leading-relaxed"
+                  style={{ color: "var(--color-text)" }}
+                >
                   {client.command}
                 </code>
               </div>
             ))}
           </div>
 
-          <p className="mt-4 text-xs text-white/50">
-            Prefer interactive setup? Run:{" "}
-            <code className="font-mono text-white/80">
+          <p className="mt-4 text-xs" style={{ color: "var(--color-muted)" }}>
+            Prefer interactive setup?{" "}
+            <code className="font-mono" style={{ color: "var(--color-text)" }}>
               graphjin mcp install
             </code>
           </p>
         </div>
-
-        <p className="text-center text-gj-muted text-sm mt-8">
-          Works on macOS, Windows, and Linux. Supports PostgreSQL, MySQL,
-          SQLite, MongoDB, and more.
-        </p>
       </div>
     </section>
   );

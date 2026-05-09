@@ -1,0 +1,32 @@
+---
+import Section from "./Section.astro";
+
+interface Props {
+  id: string;
+  eyebrow: string;
+  title: string;
+  lede: string;
+  divider?: boolean;
+}
+
+const { id, eyebrow, title, lede, divider = true } = Astro.props;
+---
+
+<Section id={id} eyebrow={eyebrow} title={title} lede={lede} divider={divider}>
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+    {/* Left: prose + diagram */}
+    <div class="lg:col-span-7 space-y-8">
+      <div class="prose-doc">
+        <slot name="body" />
+      </div>
+      <div>
+        <slot name="diagram" />
+      </div>
+    </div>
+
+    {/* Right: code snippets */}
+    <div class="lg:col-span-5 space-y-4 lg:sticky lg:top-24">
+      <slot name="snippet" />
+    </div>
+  </div>
+</Section>

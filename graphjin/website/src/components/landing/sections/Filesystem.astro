@@ -1,0 +1,59 @@
+---
+import FeatureSection from "../FeatureSection.astro";
+import FstablePipeline from "../diagrams/FstablePipeline.astro";
+import CodeCard from "../CodeCard.astro";
+
+const config = `# config/prod.yml
+filesystems:
+  - name: "media"
+    type: s3            # local | s3 | gcs
+    bucket: "graphjin-media"
+    region: "us-east-1"
+    prefix: "uploads/"
+
+uploads:
+  enabled: true
+  storage: "media"
+  storage_key_prefix: "avatars/{date}/"
+  allowed_mime: ["image/*", "application/pdf"]
+  max_size: 25_000_000
+`;
+
+const mutation = `# graphql-multipart-request-spec
+mutation ($file: Upload!) {
+  avatars(insert: { file: $file, user_id: $auth.user_id }) {
+    id
+    file_url
+    file_size
+    content_type
+  }
+}`;
+---
+
+<FeatureSection
+  id="fstable"
+  eyebrow="STORAGE"
+  title="Files as queryable tables. Local, S3, or GCS."
+  lede="GraphJin streams multipart uploads straight to local disk, S3, Cloudflare R2, or Google Cloud Storage. Each backend exposes a virtual table — list, stat, get, put, delete, presign — and joins seamlessly with the rest of your schema."
+>
+  <Fragment slot="body">
+    <p>
+      Uploads follow the <strong>graphql-multipart-request-spec</strong>: send
+      a single request, GraphJin parses, validates, signs, and persists.
+      Returned rows include the storage URL and metadata, ready for the next
+      mutation or a presigned download.
+    </p>
+    <p>
+      Bring your own bucket: GCS uses Application Default Credentials, S3
+      respects the standard AWS chain, local writes go to a configured volume.
+      Backends are pluggable behind one interface.
+    </p>
+  </Fragment>
+
+  <FstablePipeline slot="diagram" />
+
+  <Fragment slot="snippet">
+    <CodeCard filename="config/prod.yml" language="yaml" code={config} />
+    <CodeCard filename="upload.graphql" language="graphql" code={mutation} />
+  </Fragment>
+</FeatureSection>

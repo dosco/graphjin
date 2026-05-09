@@ -1,5 +1,5 @@
 ---
-const primaryDatabases = [
+const databases = [
   { name: 'PostgreSQL', logo: '/logos/postgresql.svg' },
   { name: 'MySQL', logo: '/logos/mysql.svg' },
   { name: 'MariaDB', logo: '/logos/mariadb.svg' },
@@ -8,63 +8,108 @@ const primaryDatabases = [
   { name: 'SQL Server', logo: '/logos/mssql.svg' },
   { name: 'Oracle', logo: '/logos/oracle.svg' },
   { name: 'CockroachDB', logo: '/logos/cockroachdb.svg' },
-];
-
-const cloudDatabases = [
-  { name: 'AWS Aurora', logo: '/logos/aws-aurora.svg' },
-  { name: 'Google Cloud SQL', logo: '/logos/google-cloud-sql.svg' },
   { name: 'YugabyteDB', logo: '/logos/yugabytedb.svg' },
+  { name: 'Snowflake', logo: '/logos/snowflake.svg' },
+  { name: 'AWS Aurora', logo: '/logos/aws-aurora.svg' },
+  { name: 'Cloud SQL', logo: '/logos/google-cloud-sql.svg' },
 ];
 ---
 
-<section class="py-24 border-t border-white/10">
-  <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-    <p class="text-center text-gj-muted text-sm uppercase tracking-wider mb-10">
-      Works With Your Databases
-    </p>
+<section
+  class="py-20 md:py-24 border-t"
+  style="border-color: var(--color-border)"
+>
+  <div class="container-doc">
+    <header class="max-w-3xl mb-12">
+      <span class="eyebrow">DATABASES</span>
+      <h2
+        class="mt-4 text-3xl md:text-5xl font-display font-bold tracking-tight"
+        style="color: var(--color-text); line-height: 1.08"
+      >
+        Works with all your databases.
+      </h2>
+      <p
+        class="mt-4 text-lg md:text-xl leading-relaxed"
+        style="color: var(--color-muted)"
+      >
+        Point GraphJin at <strong style="color: var(--color-text)">as many databases as you need</strong>
+        — Postgres for users, MySQL for orders, Snowflake for analytics, MongoDB for events —
+        and query them through a single GraphQL endpoint. Joins, subscriptions, and mutations
+        compose <strong style="color: var(--color-text)">across databases in one request</strong>,
+        so an AI assistant can ask "show me top customers and last week's revenue" without ever
+        knowing there are three engines underneath.
+      </p>
+    </header>
 
-    {/* Primary databases row */}
-    <div class="flex flex-wrap justify-center items-center gap-8 md:gap-12 mb-8">
-      {primaryDatabases.map((db) => (
-        <div
-          class="group relative flex flex-col items-center gap-2"
-          title={db.name}
-        >
-          <div class="w-12 h-12 md:w-14 md:h-14 flex items-center justify-center opacity-50 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300">
-            <img
-              src={db.logo}
-              alt={db.name}
-              class="w-full h-full object-contain"
-              loading="lazy"
-            />
+    <ul class="db-grid">
+      {databases.map((db) => (
+        <li class="db-item">
+          <div class="db-icon">
+            <img src={db.logo} alt={db.name} loading="lazy" />
           </div>
-          <span class="text-xs text-gj-muted opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-300 whitespace-nowrap">
-            {db.name}
-          </span>
-        </div>
+          <span class="db-name">{db.name}</span>
+        </li>
       ))}
-    </div>
-
-    {/* Cloud databases row */}
-    <div class="flex flex-wrap justify-center items-center gap-8 md:gap-12">
-      {cloudDatabases.map((db) => (
-        <div
-          class="group relative flex flex-col items-center gap-2"
-          title={db.name}
-        >
-          <div class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300">
-            <img
-              src={db.logo}
-              alt={db.name}
-              class="w-full h-full object-contain"
-              loading="lazy"
-            />
-          </div>
-          <span class="text-xs text-gj-muted opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-300 whitespace-nowrap">
-            {db.name}
-          </span>
-        </div>
-      ))}
-    </div>
+    </ul>
   </div>
 </section>
+
+<style>
+  .db-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem 1.5rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  @media (min-width: 640px) {
+    .db-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 768px) {
+    .db-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 2.5rem 1.5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .db-grid {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  .db-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    transition: transform 0.18s ease;
+  }
+  .db-item:hover {
+    transform: translateY(-2px);
+  }
+
+  .db-icon {
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .db-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .db-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--color-muted);
+    text-align: center;
+    white-space: nowrap;
+  }
+</style>
