@@ -1,127 +1,106 @@
-import React from 'react';
-import { motion } from 'framer-motion';
-import { Sparkles, Check, ChevronDown, ArrowRight } from 'lucide-react';
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.15 },
-  },
-};
-
-const ease = [0.25, 0.46, 0.45, 0.94] as const;
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease },
-  },
-};
+import { Sparkles, Check, ChevronDown, ArrowRight } from "lucide-react";
 
 const graphqlQuery = `{ customers { id full_name email purchases { quantity product { price } } } }`;
 
 const results = [
   {
-    rank: '\u{1F947}',
-    name: 'Antwan Friesen',
-    email: 'francohirthe@medhurst.com',
+    rank: "\u{1F947}",
+    name: "Antwan Friesen",
+    email: "francohirthe@medhurst.com",
     orders: 20,
     items: 124,
-    total: '$928.45',
+    total: "$928.45",
   },
   {
-    rank: '\u{1F948}',
-    name: 'Lon Cruickshank',
-    email: 'margaretbailey@ruecker.info',
+    rank: "\u{1F948}",
+    name: "Lon Cruickshank",
+    email: "margaretbailey@ruecker.info",
     orders: 20,
     items: 94,
-    total: '$586.50',
+    total: "$586.50",
   },
   {
-    rank: '\u{1F949}',
-    name: 'Susana Schaefer',
-    email: 'jewelpowlowski@osinski.biz',
+    rank: "\u{1F949}",
+    name: "Susana Schaefer",
+    email: "jewelpowlowski@osinski.biz",
     orders: 20,
     items: 91,
-    total: '$580.72',
+    total: "$580.72",
   },
 ];
 
 export default function ClaudeShowcase() {
   return (
-    <section className="py-24 border-t border-black/10">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-14">
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            className="text-3xl md:text-5xl font-display font-bold text-gj-text mb-4"
+    <section
+      id="ai-queries"
+      className="py-20 md:py-28 border-t"
+      style={{ borderColor: "var(--color-border)" }}
+    >
+      <div className="container-doc">
+        <header className="max-w-3xl mb-12 mx-auto text-center">
+          <span className="eyebrow">AI-POWERED QUERIES</span>
+          <h2
+            className="mt-4 text-3xl md:text-5xl font-display font-bold tracking-tight"
+            style={{ color: "var(--color-text)", lineHeight: 1.08 }}
           >
-            AI-Powered Database Queries
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="text-gj-muted text-lg"
+            Ask in plain English. Get real data back.
+          </h2>
+          <p
+            className="mt-4 text-lg md:text-xl leading-relaxed"
+            style={{ color: "var(--color-muted)" }}
           >
-            Ask questions in plain English. GraphJin + Claude Desktop handles the rest.
-          </motion.p>
-        </div>
+            Claude Desktop, Codex, or any MCP client talks to GraphJin —
+            GraphJin compiles the query, hits your database, and the assistant
+            answers with rows it can reason over.
+          </p>
+        </header>
 
-        {/* Chat window */}
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="max-w-4xl mx-auto"
-        >
-          <div className="bg-indigo-900 rounded-2xl border border-white/10 shadow-2xl overflow-hidden">
-            {/* Window chrome */}
-            <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
+        {/* Claude Desktop window — kept indigo on purpose since it represents
+            the actual Claude UI; reads well against both light and dark pages. */}
+        <div className="max-w-4xl mx-auto">
+          <div
+            className="rounded-2xl overflow-hidden border"
+            style={{
+              background: "#312e81", // indigo-900
+              borderColor: "rgba(255, 255, 255, 0.08)",
+              boxShadow:
+                "0 30px 80px -20px rgba(49, 46, 129, 0.45), 0 12px 32px -12px rgba(0,0,0,0.35)",
+            }}
+          >
+            {/* window chrome */}
+            <div
+              className="px-4 py-3 border-b flex items-center gap-2"
+              style={{ borderColor: "rgba(255, 255, 255, 0.08)" }}
+            >
               <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
               <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
               <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
               <div className="ml-2 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#D97757]" />
-                <span className="text-xs text-white/50 font-medium">Claude Desktop</span>
+                <span className="text-xs text-white/60 font-medium">
+                  Claude Desktop
+                </span>
               </div>
             </div>
 
-            {/* Chat area */}
-            <motion.div
-              className="p-4 md:p-8 flex flex-col gap-6"
-              variants={containerVariants}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true }}
-            >
-              {/* User message */}
-              <motion.div variants={itemVariants} className="flex justify-end">
+            {/* chat */}
+            <div className="p-4 md:p-8 flex flex-col gap-6">
+              {/* user message */}
+              <div className="flex justify-end">
                 <div className="bg-white/10 rounded-2xl rounded-br-sm px-5 py-3 max-w-md">
-                  <p className="text-gj-text text-sm">who's the top customer?</p>
+                  <p className="text-white text-sm">who's the top customer?</p>
                 </div>
-              </motion.div>
+              </div>
 
-              {/* Claude response */}
-              <motion.div variants={itemVariants} className="flex gap-3">
-                {/* Avatar */}
+              {/* assistant message */}
+              <div className="flex gap-3">
                 <div className="w-8 h-8 rounded-full bg-[#D97757]/20 flex items-center justify-center shrink-0 mt-1">
                   <Sparkles className="w-4 h-4 text-[#D97757]" />
                 </div>
 
                 <div className="flex flex-col gap-3 min-w-0 flex-1">
-                  {/* Tool call block */}
-                  <motion.div variants={itemVariants} className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-                    <div className="px-4 py-2.5 flex items-center gap-2 text-xs text-white/50">
+                  <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+                    <div className="px-4 py-2.5 flex items-center gap-2 text-xs text-white/60">
                       <ChevronDown className="w-3.5 h-3.5" />
                       <span className="font-medium">execute_graphql</span>
                     </div>
@@ -130,70 +109,81 @@ export default function ClaudeShowcase() {
                         {graphqlQuery}
                       </pre>
                     </div>
-                  </motion.div>
+                  </div>
 
-                  {/* Done indicator */}
-                  <motion.div variants={itemVariants} className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5">
                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-xs text-emerald-400 font-medium">Done</span>
-                  </motion.div>
+                    <span className="text-xs text-emerald-400 font-medium">
+                      Done
+                    </span>
+                  </div>
 
-                  {/* Response text */}
-                  <motion.p variants={itemVariants} className="text-sm text-gj-text/90 leading-relaxed">
-                    Based on the purchase data, here are the top customers ranked by total spend:
-                  </motion.p>
+                  <p className="text-sm text-white/90 leading-relaxed">
+                    Based on the purchase data, here are the top customers
+                    ranked by total spend:
+                  </p>
 
-                  {/* Results table */}
-                  <motion.div variants={itemVariants} className="overflow-x-auto">
+                  <div className="overflow-x-auto">
                     <table className="w-full text-xs text-left">
                       <thead>
-                        <tr className="border-b border-white/10 text-white/40">
+                        <tr className="border-b border-white/10 text-white/50">
                           <th className="pb-2 pr-4 font-medium">Rank</th>
                           <th className="pb-2 pr-4 font-medium">Customer</th>
-                          <th className="pb-2 pr-4 font-medium hidden sm:table-cell">Email</th>
-                          <th className="pb-2 pr-4 font-medium text-right">Orders</th>
-                          <th className="pb-2 pr-4 font-medium text-right">Items</th>
-                          <th className="pb-2 font-medium text-right">Total Spent</th>
+                          <th className="pb-2 pr-4 font-medium hidden sm:table-cell">
+                            Email
+                          </th>
+                          <th className="pb-2 pr-4 font-medium text-right">
+                            Orders
+                          </th>
+                          <th className="pb-2 pr-4 font-medium text-right">
+                            Items
+                          </th>
+                          <th className="pb-2 font-medium text-right">
+                            Total Spent
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
                         {results.map((r) => (
                           <tr key={r.name} className="border-b border-white/5">
                             <td className="py-2 pr-4">{r.rank}</td>
-                            <td className="py-2 pr-4 text-gj-text font-medium whitespace-nowrap">{r.name}</td>
-                            <td className="py-2 pr-4 text-white/40 hidden sm:table-cell">{r.email}</td>
-                            <td className="py-2 pr-4 text-white/60 text-right">{r.orders}</td>
-                            <td className="py-2 pr-4 text-white/60 text-right">{r.items}</td>
-                            <td className="py-2 text-emerald-400 font-medium text-right whitespace-nowrap">{r.total}</td>
+                            <td className="py-2 pr-4 text-white font-medium whitespace-nowrap">
+                              {r.name}
+                            </td>
+                            <td className="py-2 pr-4 text-white/50 hidden sm:table-cell">
+                              {r.email}
+                            </td>
+                            <td className="py-2 pr-4 text-white/70 text-right">
+                              {r.orders}
+                            </td>
+                            <td className="py-2 pr-4 text-white/70 text-right">
+                              {r.items}
+                            </td>
+                            <td className="py-2 text-emerald-400 font-medium text-right whitespace-nowrap">
+                              {r.total}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                  </motion.div>
+                  </div>
 
-                  {/* Summary */}
-                  <motion.p variants={itemVariants} className="text-sm text-gj-text/90 leading-relaxed">
-                    Antwan Friesen is the top customer with almost $1,000 in purchases — about 60% more than the runner-up.
-                  </motion.p>
+                  <p className="text-sm text-white/90 leading-relaxed">
+                    Antwan Friesen is the top customer with almost $1,000 in
+                    purchases — about 60% more than the runner-up.
+                  </p>
                 </div>
-              </motion.div>
-            </motion.div>
+              </div>
+            </div>
           </div>
-        </motion.div>
+        </div>
 
-        {/* CTA */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="text-center mt-10"
-        >
+        <div className="text-center mt-10">
           <a href="#quickstart" className="btn-primary">
-            Try It Yourself
+            Try it yourself
             <ArrowRight className="w-4 h-4" />
           </a>
-        </motion.div>
+        </div>
       </div>
     </section>
   );

@@ -19,12 +19,14 @@ import OnThisPage from '../components/landing/OnThisPage.astro';
 import FeatureGrid from '../components/react/FeatureGrid';
 import QuickStart from '../components/react/QuickStart';
 import GetStarted from '../components/react/GetStarted';
+import ClaudeShowcase from '../components/react/ClaudeShowcase';
 import Footer from '../components/Footer.astro';
 
 const tocItems = [
   { id: 'how', label: 'How it works' },
   { id: 'why', label: 'Why GraphJin' },
   { id: 'mcp', label: 'MCP' },
+  { id: 'ai-queries', label: 'AI queries' },
   { id: 'fstable', label: 'Filesystem' },
   { id: 'openapi', label: 'Remote APIs' },
   { id: 'cli', label: 'CLI' },
@@ -49,6 +51,7 @@ const tocItems = [
     <WhyGraphjin />
 
     <Mcp />
+    <ClaudeShowcase client:visible />
     <Filesystem />
     <OpenApi />
     <Cli />
