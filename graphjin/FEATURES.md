@@ -19,6 +19,7 @@ GraphJin is a high-performance GraphQL to SQL compiler that automatically genera
   - [Polymorphic Relationships](#polymorphic-relationships)
   - [Directives](#directives)
   - [Remote API Joins](#remote-api-joins)
+  - [OpenAPI Integration](#openapi-integration)
   - [Database Functions](#database-functions)
 - [Mutation Capabilities](#mutation-capabilities)
   - [Simple Inserts](#simple-inserts)
@@ -679,7 +680,7 @@ query {
 
 ### Remote API Joins
 
-Combine database data with external REST APIs:
+Combine database data with external REST APIs as child fields on a parent table:
 
 ```go
 conf.Resolvers = []core.ResolverConfig{{
@@ -703,6 +704,94 @@ query {
   }
 }
 ```
+
+`remote_api` is the right tool for ad-hoc URL joins. For APIs that publish an OpenAPI spec, the [OpenAPI integration](#openapi-integration) (below) is usually a better fit — it derives auth, parameter wiring, and the response shape from the spec instead of asking you to wire each endpoint by hand.
+
+### OpenAPI Integration
+
+Drop an OpenAPI 3 spec into `config/specs/`, declare credentials and join wiring in your environment config, and every classifiable operation in the spec becomes a GraphQL field. Two shapes are emitted automatically:
+
+**Row-join fields** — `GET /resource/{id}` declared in `joins:` shows up as a child field on a parent DB table:
+
+```yaml
+# config/dev.yml
+openapi:
+  interaction_studio:
+    base_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api
+    auth:
+      scheme: token_exchange
+      token_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api/token
+      request:
+        body:
+          apiKeyId: ${IS_API_KEY}
+          apiKeySecret: ${IS_API_SECRET}
+      response:
+        token_field: access_token
+        expires_field: expires_in
+    joins:
+      getUserById:
+        parent_table: users
+        parent_column: email
+        param: userId
+        expose_as: is_profile
+```
+
+```graphql
+query {
+  users(where: { id: { eq: 42 } }) {
+    id
+    email
+    is_profile {           # → GET /users/{userId} with userId = users.email
+      lastSeenAt
+      segments { id name }
+    }
+  }
+}
+```
+
+**Top-level virtual tables** — `GET /resource/{id}` (single) or `GET /resources` (list) without a `joins:` entry surface as their own root fields, with path/query parameters mapped to GraphQL field arguments:
+
+```graphql
+query {
+  is_get_user_by_id(userId: "u_123") {   # path param
+    lastSeenAt
+  }
+  is_list_audit_logs(actorId: "u_123") { # query param
+    items { ts action }
+  }
+}
+```
+
+**What gets classified** — every GET operation in the spec is auto-categorised:
+
+| Mode | Path shape | Behaviour |
+|---|---|---|
+| Row-join | `GET /resource/{id}` with a matching `joins:` entry | Child field on the parent DB table; parent column populates the path param |
+| Top-level (single) | `GET /resource/{id}` without a `joins:` entry | Root field; path param becomes a required field argument |
+| Top-level (list) | `GET /resources` with optional query filters | Root field; each query param becomes an optional field argument |
+| Skipped | Non-JSON response, mutating verb (POST/PUT/DELETE), or unsupported auth | Logged at boot; not exposed |
+
+**Authentication** — declared in YAML, applied automatically to every request to the upstream:
+
+| Scheme | Use for |
+|---|---|
+| `bearer` | static or pass-through tokens |
+| `basic` | username/password |
+| `api_key` | header or query param |
+| `oauth2_client_credentials` | machine-to-machine OAuth |
+| `token_exchange` | vendor-specific POST → JSON token flows |
+
+**Per-spec concurrency, response shaping, and overrides** — `result_path` strips JSON wrappers, `expose_as` renames a field on collision, `concurrency_limit` caps parallel calls per spec. See the [OpenAPI Integration config reference](CONFIG.md#openapi-integration) for the full surface.
+
+**Boot log** reports what loaded and what was skipped:
+
+```
+openapi: loaded interaction_studio.yaml (5 active, 12 skipped)
+openapi: GET /exports/{jobId} — skipped: non-JSON response (application/octet-stream)
+openapi: GET /users/{userId} — exposed as is_profile (row-join on users.email)
+```
+
+The integration is read-only today (GET only). Mutating verbs are a deferred feature — the [Filesystem Tables](#filesystem-tables) abstraction is the recommended path for write-side object-store operations.
 
 ### Database Functions
 
