@@ -35,25 +35,9 @@ func (b *openapiBridge) callTopLevel(ctx context.Context, sel *qcode.Select) ([]
 	if b.op == nil {
 		return nil, fmt.Errorf("openapi: top-level bridge missing operation metadata")
 	}
-	args := sel.ExtraArgs
-	p := openapi.CallParams{
-		PathValues:  map[string]string{},
-		QueryValues: map[string]string{},
-	}
-	for _, ps := range b.op.PathParams {
-		v, ok := args[ps.Name]
-		if !ok {
-			if ps.Required {
-				return nil, fmt.Errorf("openapi: required path param %q missing for %s", ps.Name, b.op.OperationID)
-			}
-			continue
-		}
-		p.PathValues[ps.Name] = v
-	}
-	for _, qs := range b.op.QueryParams {
-		if v, ok := args[qs.Name]; ok {
-			p.QueryValues[qs.Name] = v
-		}
+	p, err := b.op.ResolveCallParams(sel.ExtraArgs)
+	if err != nil {
+		return nil, err
 	}
 	return b.caller.Call(ctx, p)
 }

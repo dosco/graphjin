@@ -380,6 +380,63 @@ paths:
 	}
 }
 
+func TestClassifyAppliesOperationDefaults(t *testing.T) {
+	doc := loadDoc(t, `
+openapi: 3.0.0
+info: { title: Test, version: 1.0.0 }
+paths:
+  /api/region/{region}/widgets.json:
+    get:
+      operationId: listWidgets
+      parameters:
+        - { name: region, in: path,  required: true, schema: { type: string } }
+        - { name: limit,  in: query,                 schema: { type: integer } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+`)
+
+	spec := &Spec{Key: "widgets"}
+	cfg := SpecConfig{Operations: map[string]OperationOverride{
+		"listWidgets": {
+			ExposeTopLevel: true,
+			Defaults: map[string]string{
+				"region": "us-east",
+				"limit":  "25",
+			},
+		},
+	}}
+	ops, _ := classifyAll(spec, doc, cfg)
+	if len(ops) != 1 {
+		t.Fatalf("want 1 op, got %d", len(ops))
+	}
+	op := ops[0]
+	if op.Mode != OpModeList {
+		t.Fatalf("mode = %v, want OpModeList", op.Mode)
+	}
+	if got := op.Defaults["region"]; got != "us-east" {
+		t.Errorf("Defaults[region] = %q, want us-east", got)
+	}
+	if got := op.Defaults["limit"]; got != "25" {
+		t.Errorf("Defaults[limit] = %q, want 25", got)
+	}
+
+	// Mutating the descriptor's defaults must not leak back into the
+	// caller's config map — confirms the classifier copied the map.
+	op.Defaults["region"] = "mutated"
+	if cfg.Operations["listWidgets"].Defaults["region"] != "us-east" {
+		t.Errorf("classifier did not isolate the override Defaults map from the descriptor copy")
+	}
+}
+
 // contains is a tiny stand-in for strings.Contains kept local so the
 // classifier_test file doesn't drag in extra imports for one call site.
 func contains(s, sub string) bool {
