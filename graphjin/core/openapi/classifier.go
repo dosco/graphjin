@@ -177,9 +177,21 @@ func classifyOne(
 	}
 
 	if len(override.Defaults) > 0 {
+		// Viper lowercases YAML keys; restore the spec's param casing.
+		canonical := make(map[string]string, len(d.PathParams)+len(d.QueryParams))
+		for _, ps := range d.PathParams {
+			canonical[strings.ToLower(ps.Name)] = ps.Name
+		}
+		for _, ps := range d.QueryParams {
+			canonical[strings.ToLower(ps.Name)] = ps.Name
+		}
 		d.Defaults = make(map[string]string, len(override.Defaults))
 		for k, v := range override.Defaults {
-			d.Defaults[k] = v
+			if c, ok := canonical[strings.ToLower(k)]; ok {
+				d.Defaults[c] = v
+			} else {
+				d.Defaults[k] = v
+			}
 		}
 	}
 

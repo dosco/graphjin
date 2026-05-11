@@ -429,11 +429,60 @@ paths:
 		t.Errorf("Defaults[limit] = %q, want 25", got)
 	}
 
-	// Mutating the descriptor's defaults must not leak back into the
-	// caller's config map — confirms the classifier copied the map.
 	op.Defaults["region"] = "mutated"
 	if cfg.Operations["listWidgets"].Defaults["region"] != "us-east" {
 		t.Errorf("classifier did not isolate the override Defaults map from the descriptor copy")
+	}
+}
+
+func TestClassifyCanonicalisesDefaultsKeyCasing(t *testing.T) {
+	doc := loadDoc(t, `
+openapi: 3.0.0
+info: { title: Test, version: 1.0.0 }
+paths:
+  /api/partner/{partnerId}/widgets.json:
+    get:
+      operationId: listPartnerWidgets
+      parameters:
+        - { name: partnerId, in: path,  required: true, schema: { type: string } }
+        - { name: pageSize,  in: query,                 schema: { type: integer } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, properties: { id: { type: string } } }
+`)
+
+	spec := &Spec{Key: "widgets"}
+	cfg := SpecConfig{Operations: map[string]OperationOverride{
+		"listPartnerWidgets": {
+			ExposeTopLevel: true,
+			Defaults: map[string]string{
+				"partnerid": "acme",
+				"pagesize":  "50",
+			},
+		},
+	}}
+	ops, _ := classifyAll(spec, doc, cfg)
+	if len(ops) != 1 {
+		t.Fatalf("want 1 op, got %d", len(ops))
+	}
+	op := ops[0]
+	if got := op.Defaults["partnerId"]; got != "acme" {
+		t.Errorf("Defaults[partnerId] = %q, want acme — classifier did not restore camelCase from lowercased viper key", got)
+	}
+	if got := op.Defaults["pageSize"]; got != "50" {
+		t.Errorf("Defaults[pageSize] = %q, want 50", got)
+	}
+	p, err := op.ResolveCallParams(nil)
+	if err != nil {
+		t.Fatalf("ResolveCallParams: %v", err)
+	}
+	if p.PathValues["partnerId"] != "acme" {
+		t.Errorf("PathValues[partnerId] = %q, want acme", p.PathValues["partnerId"])
 	}
 }
 

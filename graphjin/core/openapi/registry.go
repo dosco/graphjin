@@ -110,18 +110,12 @@ type OpDescriptor struct {
 	// tables so they are visible to GraphQL introspection.
 	ResponseSchema *openapi3.SchemaRef
 
-	// Defaults supplies fallback values for path/query parameters at call
-	// time, populated from OperationOverride.Defaults after env-var
-	// expansion. Caller-supplied GraphQL args always win.
+	// Defaults: fallback values for path/query params; caller args win.
 	Defaults map[string]string
 }
 
-// ResolveCallParams maps GraphQL field arguments onto CallParams for the
-// caller. For each declared path/query parameter, the value comes from
-// args first, then op.Defaults, then nothing. A path parameter that is
-// declared required and ends up with no value is a hard error since the
-// URL template can't be completed. The returned maps are always non-nil
-// to simplify the call site even when no params apply.
+// ResolveCallParams maps args onto CallParams, falling back to op.Defaults.
+// Returns an error if a required path param has neither an arg nor a default.
 func (op *OpDescriptor) ResolveCallParams(args map[string]string) (CallParams, error) {
 	p := CallParams{
 		PathValues:  map[string]string{},

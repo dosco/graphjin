@@ -2,10 +2,6 @@ package openapi
 
 import "testing"
 
-// ResolveCallParams is the seam between GraphQL field arguments and the
-// outgoing HTTP request. The cases below cover the precedence rules
-// (arg wins over default), the missing-required guard, and the optional
-// query-param pass-through behaviour the bridge previously had inline.
 func TestResolveCallParams_DefaultFillsMissingPathParam(t *testing.T) {
 	op := &OpDescriptor{
 		OperationID:  "listWidgets",
