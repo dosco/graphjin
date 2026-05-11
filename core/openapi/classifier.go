@@ -176,6 +176,13 @@ func classifyOne(
 		d.ExposeAs = d.Join.ExposeAs
 	}
 
+	if len(override.Defaults) > 0 {
+		d.Defaults = make(map[string]string, len(override.Defaults))
+		for k, v := range override.Defaults {
+			d.Defaults[k] = v
+		}
+	}
+
 	return d
 }
 

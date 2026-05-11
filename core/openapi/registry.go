@@ -1,6 +1,10 @@
 package openapi
 
-import "github.com/getkin/kin-openapi/openapi3"
+import (
+	"fmt"
+
+	"github.com/getkin/kin-openapi/openapi3"
+)
 
 // OpMode is the GraphJin exposure mode an operation falls into after
 // classification. Each mode corresponds to a distinct integration path:
@@ -105,6 +109,51 @@ type OpDescriptor struct {
 	// by the bridge to synthesise DBColumn entries for top-level virtual
 	// tables so they are visible to GraphQL introspection.
 	ResponseSchema *openapi3.SchemaRef
+
+	// Defaults supplies fallback values for path/query parameters at call
+	// time, populated from OperationOverride.Defaults after env-var
+	// expansion. Caller-supplied GraphQL args always win.
+	Defaults map[string]string
+}
+
+// ResolveCallParams maps GraphQL field arguments onto CallParams for the
+// caller. For each declared path/query parameter, the value comes from
+// args first, then op.Defaults, then nothing. A path parameter that is
+// declared required and ends up with no value is a hard error since the
+// URL template can't be completed. The returned maps are always non-nil
+// to simplify the call site even when no params apply.
+func (op *OpDescriptor) ResolveCallParams(args map[string]string) (CallParams, error) {
+	p := CallParams{
+		PathValues:  map[string]string{},
+		QueryValues: map[string]string{},
+	}
+	for _, ps := range op.PathParams {
+		v, ok := args[ps.Name]
+		if !ok {
+			if d, has := op.Defaults[ps.Name]; has {
+				v, ok = d, true
+			}
+		}
+		if !ok {
+			if ps.Required {
+				return p, fmt.Errorf("openapi: required path param %q missing for %s", ps.Name, op.OperationID)
+			}
+			continue
+		}
+		p.PathValues[ps.Name] = v
+	}
+	for _, qs := range op.QueryParams {
+		v, ok := args[qs.Name]
+		if !ok {
+			if d, has := op.Defaults[qs.Name]; has {
+				v, ok = d, true
+			}
+		}
+		if ok {
+			p.QueryValues[qs.Name] = v
+		}
+	}
+	return p, nil
 }
 
 // Spec is the loader's per-file output: the parsed OpenAPI document, the
