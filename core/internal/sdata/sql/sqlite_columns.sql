@@ -29,4 +29,17 @@ LEFT JOIN pragma_foreign_key_list(m.name) fk ON fk."from" = p.name
 WHERE (m.type = 'table' OR m.type = 'view')
 AND m.name NOT LIKE 'sqlite_%'
 AND m.name NOT LIKE '_gj_%'
+AND (m.sql IS NULL OR LOWER(m.sql) NOT LIKE '%using fts%')
+AND NOT EXISTS (
+  SELECT 1 FROM sqlite_master fm
+  WHERE fm.type = 'table'
+    AND LOWER(fm.sql) LIKE '%using fts%'
+    AND m.name IN (
+      fm.name || '_data',
+      fm.name || '_idx',
+      fm.name || '_content',
+      fm.name || '_docsize',
+      fm.name || '_config'
+    )
+)
 ORDER BY m.name, p.cid;

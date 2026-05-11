@@ -254,3 +254,323 @@
 :root[data-theme="dark"] .diag-node.diag-accent .diag-sub {
   fill: rgba(255, 255, 255, 0.78);
 }
+
+/* CodeSQL landing showcase. Kept global because this section is composed through
+   shared Astro section wrappers, and scoped styles can miss slotted content. */
+.codesql-showcase {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 18%, var(--color-border));
+  border-radius: 28px;
+  padding: clamp(1rem, 2.4vw, 1.35rem);
+  background:
+    radial-gradient(circle at 14% 12%, color-mix(in srgb, var(--color-accent-soft) 64%, transparent), transparent 32%),
+    linear-gradient(135deg, var(--color-bg), var(--color-surface));
+  box-shadow: 0 18px 56px rgba(2, 8, 23, 0.06);
+}
+
+:root[data-theme="dark"] .codesql-showcase {
+  background:
+    radial-gradient(circle at 14% 12%, rgba(34, 211, 238, 0.08), transparent 34%),
+    linear-gradient(135deg, var(--color-surface), var(--color-bg));
+}
+
+.codesql-topline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.34fr);
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.codesql-ask,
+.codesql-config-card,
+.codesql-source-card,
+.codesql-results,
+.codesql-lens,
+.codesql-table-cloud span {
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+  box-shadow: 0 12px 30px rgba(2, 8, 23, 0.045);
+}
+
+.codesql-ask {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.45rem 1rem;
+  align-items: center;
+  padding: 0.78rem 0.95rem;
+  border-radius: 18px;
+}
+
+.codesql-ask span,
+.codesql-results header,
+.codesql-lens span {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.codesql-ask strong {
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 2.45vw, 1.85rem);
+  line-height: 1.05;
+}
+
+.codesql-ask code {
+  grid-column: 2;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.codesql-config-card {
+  overflow: hidden;
+  border-radius: 18px;
+  font-family: var(--font-mono);
+}
+
+.codesql-config-card header {
+  padding: 0.55rem 0.72rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 0.68rem;
+}
+
+.codesql-config-card pre {
+  margin: 0;
+  padding: 0.72rem;
+  color: var(--color-text);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.codesql-config-card span {
+  color: var(--color-accent-strong);
+}
+
+.codesql-config-card em {
+  color: var(--color-muted);
+  font-style: normal;
+}
+
+.codesql-map {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(150px, 0.46fr) minmax(0, 0.96fr);
+  grid-template-areas:
+    "source lens results"
+    "source tables results";
+  gap: 0.75rem clamp(0.85rem, 2vw, 1.15rem);
+  align-items: center;
+  min-height: 255px;
+  padding: 0.35rem clamp(0.35rem, 1.4vw, 0.75rem) 0.25rem;
+}
+
+.codesql-thread {
+  position: absolute;
+  top: 48%;
+  height: 1px;
+  background: color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
+  opacity: 0.8;
+}
+
+.codesql-thread-a {
+  left: 31%;
+  right: 55%;
+}
+
+.codesql-thread-b {
+  left: 54%;
+  right: 32%;
+}
+
+.codesql-source-card,
+.codesql-results,
+.codesql-lens,
+.codesql-table-cloud span {
+  position: relative;
+  z-index: 1;
+}
+
+.codesql-source-card {
+  grid-area: source;
+  overflow: hidden;
+  border-radius: 18px;
+}
+
+.codesql-source-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.62rem 0.78rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.codesql-source-card header em {
+  color: var(--color-accent);
+  font-style: normal;
+}
+
+.codesql-source-card pre {
+  margin: 0;
+  padding: 0.78rem 0.85rem;
+  overflow: auto;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: clamp(0.72rem, 1vw, 0.84rem);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.tok-key,
+.tok-fn {
+  color: var(--color-accent-strong);
+  font-weight: 650;
+}
+
+.tok-var {
+  color: var(--color-text);
+}
+
+.tok-str {
+  color: color-mix(in srgb, var(--color-text) 78%, var(--color-accent));
+}
+
+.tok-punc {
+  color: color-mix(in srgb, var(--color-muted) 70%, transparent);
+}
+
+.codesql-lens {
+  grid-area: lens;
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  padding: 1rem;
+  border-radius: 26px;
+  text-align: center;
+}
+
+.codesql-lens strong {
+  margin-top: 0.35rem;
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 1.6vw, 1.22rem);
+  line-height: 1.08;
+}
+
+.codesql-lens em {
+  margin-top: 0.35rem;
+  color: var(--color-muted);
+  font-size: 0.84rem;
+  font-style: normal;
+}
+
+.codesql-table-cloud {
+  grid-area: tables;
+  position: relative;
+  inset: auto;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.38rem;
+  align-self: start;
+}
+
+.codesql-table-cloud span {
+  padding: 0.34rem 0.48rem;
+  border-radius: 999px;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+}
+
+.codesql-results {
+  grid-area: results;
+  border-radius: 18px;
+  padding: 0.85rem 0.95rem;
+}
+
+.codesql-results header {
+  margin-bottom: 0.75rem;
+}
+
+.codesql-results div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.2rem 0.7rem;
+  padding: 0.52rem 0;
+  border-top: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+}
+
+.codesql-results span {
+  color: var(--color-accent-strong);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.codesql-results strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codesql-results em {
+  grid-column: 2;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+  @media (max-width: 900px) {
+  .codesql-topline,
+  .codesql-ask,
+  .codesql-map {
+    grid-template-columns: 1fr;
+  }
+
+  .codesql-ask code {
+    grid-column: 1;
+  }
+
+  .codesql-map {
+    min-height: 0;
+    grid-template-areas: none;
+  }
+
+  .codesql-source-card,
+  .codesql-lens,
+  .codesql-table-cloud,
+  .codesql-results {
+    grid-area: auto;
+  }
+
+  .codesql-thread {
+    display: none;
+  }
+
+  .codesql-lens {
+    min-height: auto;
+    padding: 1.25rem;
+    border-radius: 22px;
+  }
+
+  .codesql-table-cloud {
+    position: relative;
+    inset: auto;
+    order: 4;
+  }
+}

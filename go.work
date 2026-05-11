@@ -4,6 +4,7 @@ use (
 	./auth
 	./cmd
 	./conf
+	./codesql
 	./core
 	./mongodriver
 	./plugin/otel

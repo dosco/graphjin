@@ -13,11 +13,13 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.uber.org/zap/zapcore"
 )
 
 func init() {
 	if log == nil {
-		log = newLogger(false).Sugar()
+		log = newLoggerWithOutput(false, zapcore.AddSync(io.Discard)).Sugar()
 	}
 }
 

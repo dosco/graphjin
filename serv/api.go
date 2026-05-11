@@ -73,15 +73,17 @@ const (
 type HookFn func(*core.Result)
 
 type graphjinService struct {
-	log      *zap.SugaredLogger // logger
-	zlog     *zap.Logger        // faster logger
-	logLevel int                // log level
-	conf     *Config            // parsed config
-	dbs      map[string]*sql.DB // named database connections (all equal)
-	gj       *core.GraphJin
-	disc     *DiscoveryManager
-	srv      *http.Server
-	fs       core.FS
+	log         *zap.SugaredLogger // logger
+	zlog        *zap.Logger        // faster logger
+	logLevel    int                // log level
+	conf        *Config            // parsed config
+	dbs         map[string]*sql.DB // named database connections (all equal)
+	managedDBs  map[string]managedDB
+	runtimeCore *core.Config
+	gj          *core.GraphJin
+	disc        *DiscoveryManager
+	srv         *http.Server
+	fs          core.FS
 	// asec         [32]byte
 	closeFn func()
 	chash   string
@@ -161,6 +163,37 @@ func NewGraphJinService(conf *Config, options ...Option) (*HttpService, error) {
 	return s1, nil
 }
 
+// Close shuts down the in-process service resources owned by HttpService.
+// It is useful for embedded use and tests that do not call Start().
+func (s *HttpService) Close() error {
+	if s == nil {
+		return nil
+	}
+	gs, ok := s.Load().(*graphjinService)
+	if !ok || gs == nil {
+		return nil
+	}
+	if gs.gj != nil {
+		gs.gj.Close()
+	}
+	if gs.closeFn != nil {
+		gs.closeFn()
+	}
+	if gs.cache != nil {
+		gs.cache.Close() //nolint:errcheck
+	}
+	closedManaged := gs.closeManagedDBs(nil)
+	for name, db := range gs.dbs {
+		if _, ok := closedManaged[name]; ok {
+			continue
+		}
+		if db != nil {
+			db.Close() //nolint:errcheck
+		}
+	}
+	return nil
+}
+
 // OptionSetDB sets a new db client. The connection is stored under the
 // DefaultDBName key in the dbs map for backward compatibility.
 func OptionSetDB(db *sql.DB) Option {
@@ -236,13 +269,14 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	conf.Core.Production = prod
 
 	s := &graphjinService{
-		conf:   conf,
-		zlog:   zlog,
-		log:    zlog.Sugar(),
-		dbs:    dbs,
-		chash:  conf.hash,
-		prod:   prod,
-		tracer: otel.Tracer("graphjin.com/serv"),
+		conf:       conf,
+		zlog:       zlog,
+		log:        zlog.Sugar(),
+		dbs:        dbs,
+		managedDBs: make(map[string]managedDB),
+		chash:      conf.hash,
+		prod:       prod,
+		tracer:     otel.Tracer("graphjin.com/serv"),
 	}
 	if s.dbs == nil {
 		s.dbs = make(map[string]*sql.DB)
@@ -360,9 +394,13 @@ func (s *graphjinService) normalStart() error {
 	}
 
 	opts := s.buildCoreOptions()
+	coreConf := &s.conf.Core
+	if s.runtimeCore != nil {
+		coreConf = s.runtimeCore
+	}
 
 	var err error
-	s.gj, err = core.NewGraphJin(&s.conf.Core, s.anyDB(), opts...)
+	s.gj, err = core.NewGraphJin(coreConf, s.anyDB(), opts...)
 	if err != nil {
 		return err
 	}

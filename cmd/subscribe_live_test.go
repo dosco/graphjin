@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap/zapcore"
+
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/serv/v3"
 	_ "github.com/mattn/go-sqlite3"
@@ -55,7 +57,10 @@ func newLiveCLIServer(t *testing.T) (string, *sql.DB, func()) {
 	conf.Serv.MCP.Disable = true
 	conf.Serv.ConfigPath = dir // valid base for initFS
 
-	hs, err := serv.NewGraphJinService(conf, serv.OptionSetDB(db))
+	hs, err := serv.NewGraphJinService(conf,
+		serv.OptionSetDB(db),
+		serv.OptionSetLogOutput(zapcore.AddSync(io.Discard)),
+	)
 	if err != nil {
 		db.Close()
 		t.Fatalf("NewGraphJinService: %v", err)

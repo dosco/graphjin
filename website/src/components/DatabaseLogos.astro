@@ -12,6 +12,8 @@ const databases = [
   { name: 'Snowflake', logo: '/logos/snowflake.svg' },
   { name: 'AWS Aurora', logo: '/logos/aws-aurora.svg' },
   { name: 'Cloud SQL', logo: '/logos/google-cloud-sql.svg' },
+  { name: 'S3 / GCS / Files', label: 'OBJ' },
+  { name: 'Code', label: '{ }' },
 ];
 ---
 
@@ -26,18 +28,18 @@ const databases = [
         class="mt-4 text-3xl md:text-5xl font-display font-bold tracking-tight"
         style="color: var(--color-text); line-height: 1.08"
       >
-        Works with all your databases.
+        Works with all your databases. And more.
       </h2>
       <p
         class="mt-4 text-lg md:text-xl leading-relaxed"
         style="color: var(--color-muted)"
       >
-        Point GraphJin at <strong style="color: var(--color-text)">as many databases as you need</strong>
-        — Postgres for users, MySQL for orders, Snowflake for analytics, MongoDB for events —
-        and query them through a single GraphQL endpoint. Joins, subscriptions, and mutations
-        compose <strong style="color: var(--color-text)">across databases in one request</strong>,
-        so an AI assistant can ask "show me top customers and last week's revenue" without ever
-        knowing there are three engines underneath.
+        Point GraphJin at <strong style="color: var(--color-text)">as many systems as you need</strong>
+        — Postgres for users, MySQL for orders, Snowflake for analytics, MongoDB for events,
+        object storage for files, and CodeSQL for source trees — and query them through a
+        single GraphQL endpoint. Joins, subscriptions, search, and mutations compose
+        <strong style="color: var(--color-text)">across systems in one request</strong>, so an AI
+        assistant can reason across the data, files, and code without learning every backend.
       </p>
     </header>
 
@@ -45,7 +47,11 @@ const databases = [
       {databases.map((db) => (
         <li class="db-item">
           <div class="db-icon">
-            <img src={db.logo} alt={db.name} loading="lazy" />
+            {db.logo ? (
+              <img src={db.logo} alt={db.name} loading="lazy" />
+            ) : (
+              <span class="db-label-icon" aria-hidden="true">{db.label}</span>
+            )}
           </div>
           <span class="db-name">{db.name}</span>
         </li>
@@ -102,6 +108,20 @@ const databases = [
     width: 100%;
     height: 100%;
     object-fit: contain;
+  }
+  .db-label-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 14px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 700;
   }
 
   .db-name {
