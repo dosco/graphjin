@@ -2,10 +2,6 @@ package openapi
 
 import "testing"
 
-// expandSpecConfig must walk OperationOverride.Defaults values through
-// the same ${VAR} expansion already applied to auth credentials, so
-// operators can keep environment-specific defaults out of the config
-// file. The expansion must not mutate the caller's input map.
 func TestExpandSpecConfigDefaultsEnv(t *testing.T) {
 	t.Setenv("TEST_OAPI_DEFAULT_REGION", "us-west")
 

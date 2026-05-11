@@ -2,10 +2,6 @@ package openapi
 
 import "testing"
 
-// A required path/query parameter that has a default value must surface
-// as a nullable column so GraphQL introspection-driven clients (and the
-// validator) accept queries that omit it. Without a default, the
-// underlying p.Required must still drive NotNull.
 func TestSynthesiseArgsDefaultsRelaxNotNull(t *testing.T) {
 	op := OpDescriptor{
 		PathParams: []ParamSpec{

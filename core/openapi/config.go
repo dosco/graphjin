@@ -128,12 +128,7 @@ type OperationOverride struct {
 	Disabled       bool   `mapstructure:"disabled" json:"disabled" yaml:"disabled"`
 	ExposeTopLevel bool   `mapstructure:"expose_top_level" json:"expose_top_level" yaml:"expose_top_level"`
 
-	// Defaults supplies fallback values for path/query parameters when a
-	// query omits them. Caller-supplied arguments always win. Values
-	// participate in ${VAR} env-var expansion at load time. Path params
-	// with a default are treated as optional in the synthesised GraphQL
-	// schema so introspection-driven clients don't reject queries that
-	// rely on the default.
+	// Defaults supplies fallback values for path/query params; caller args win.
 	Defaults map[string]string `mapstructure:"defaults" json:"defaults" yaml:"defaults"`
 }
 
