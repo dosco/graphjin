@@ -1,3 +1,5 @@
+//go:build cgo
+
 package codesql
 
 import (
@@ -50,11 +52,17 @@ func OpenManaged(ctx context.Context, opts Options) (*Managed, *Stats, error) {
 		return nil, nil, err
 	}
 
+	languages := commonLanguages()
+	if len(languages) == 0 {
+		db.Close() //nolint:errcheck
+		return nil, nil, fmt.Errorf("codesql requires a cgo-enabled build with bundled tree-sitter grammars")
+	}
+
 	idx := &indexer{
 		db:        db,
 		root:      root,
 		cachePath: cachePath,
-		languages: commonLanguages(),
+		languages: languages,
 	}
 	stats, err := idx.Reconcile(ctx)
 	if err != nil {
