@@ -51,20 +51,28 @@ func SynthesiseArgs(schema, table string, op OpDescriptor) []sdata.DBColumn {
 		out = append(out, sdata.DBColumn{
 			Schema: schema, Table: table, Name: p.Name,
 			Type:    paramTypeToSQL(p.Type),
-			NotNull: p.Required,
+			NotNull: p.Required && !hasDefault(op, p.Name),
 		})
 	}
 	for _, p := range op.QueryParams {
 		out = append(out, sdata.DBColumn{
 			Schema: schema, Table: table, Name: p.Name,
 			Type:    paramTypeToSQL(p.Type),
-			NotNull: p.Required,
+			NotNull: p.Required && !hasDefault(op, p.Name),
 		})
 	}
 	for i := range out {
 		out[i].ID = int32(i)
 	}
 	return out
+}
+
+func hasDefault(op OpDescriptor, name string) bool {
+	if len(op.Defaults) == 0 {
+		return false
+	}
+	_, ok := op.Defaults[name]
+	return ok
 }
 
 func walkResultPath(s *openapi3.Schema, path []string) *openapi3.Schema {

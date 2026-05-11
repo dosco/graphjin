@@ -127,6 +127,9 @@ type OperationOverride struct {
 	ResultPath     string `mapstructure:"result_path" json:"result_path" yaml:"result_path"`
 	Disabled       bool   `mapstructure:"disabled" json:"disabled" yaml:"disabled"`
 	ExposeTopLevel bool   `mapstructure:"expose_top_level" json:"expose_top_level" yaml:"expose_top_level"`
+
+	// Defaults supplies fallback values for path/query params; caller args win.
+	Defaults map[string]string `mapstructure:"defaults" json:"defaults" yaml:"defaults"`
 }
 
 // ConcurrencyConfig bounds outgoing-request fan-out per spec.

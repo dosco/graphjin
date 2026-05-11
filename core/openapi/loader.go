@@ -203,6 +203,13 @@ func expandSpecConfig(in SpecConfig) SpecConfig {
 	if len(in.Operations) > 0 {
 		out.Operations = make(map[string]OperationOverride, len(in.Operations))
 		for k, v := range in.Operations {
+			if len(v.Defaults) > 0 {
+				expanded := make(map[string]string, len(v.Defaults))
+				for dk, dv := range v.Defaults {
+					expanded[dk] = expandEnv(dv)
+				}
+				v.Defaults = expanded
+			}
 			out.Operations[k] = v
 		}
 	}
