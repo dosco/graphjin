@@ -50,6 +50,13 @@ const { items } = Astro.props;
   .otp-link:hover {
     color: var(--color-text) !important;
   }
+  .otp > div {
+    max-height: calc(100vh - 7rem);
+    overflow: auto;
+  }
+  :global(section[id]) {
+    scroll-margin-top: 6rem;
+  }
 </style>
 
 <script>
@@ -72,15 +79,53 @@ const { items } = Astro.props;
       });
     };
 
-    const onScroll = () => {
-      const fromTop = window.scrollY + 160;
-      let current: string | null = null;
-      for (const t of targets) {
-        if (t.offsetTop <= fromTop) current = t.id;
+    const currentSectionId = () => {
+      if (!targets.length) return null;
+
+      if (
+        window.innerHeight + window.scrollY >=
+        document.documentElement.scrollHeight - 4
+      ) {
+        return targets[targets.length - 1].id;
       }
-      setActive(current);
+
+      const anchorY = Math.min(window.innerHeight * 0.35, 220);
+      let current: string | null = targets[0].id;
+
+      for (const target of targets) {
+        const rect = target.getBoundingClientRect();
+
+        if (rect.top <= anchorY && rect.bottom > anchorY) {
+          return target.id;
+        }
+
+        if (rect.top <= anchorY) {
+          current = target.id;
+        }
+      }
+
+      return current;
     };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
+
+    let scheduled = false;
+    const scheduleUpdate = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        setActive(currentSectionId());
+      });
+    };
+
+    links.forEach((link) => {
+      link.addEventListener("click", () => {
+        setActive(link.getAttribute("data-otp-link"));
+      });
+    });
+
+    scheduleUpdate();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("load", scheduleUpdate);
   }
 </script>

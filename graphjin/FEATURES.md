@@ -31,6 +31,7 @@ GraphJin is a high-performance GraphQL to SQL compiler that automatically genera
 - [Real-time Subscriptions](#real-time-subscriptions)
 - [File Uploads](#file-uploads)
 - [Filesystem Tables](#filesystem-tables)
+- [CodeSQL Source Indexes](#codesql-source-indexes)
 - [Apollo Federation v2](#apollo-federation-v2)
 - [Security Features](#security-features)
   - [Role-Based Access Control](#role-based-access-control)
@@ -1224,6 +1225,52 @@ Every filesystem table exposes the same columns regardless of backend:
 **Build-tag gating** — slim builds drop SDK weight. `-tags no_s3` excludes the S3 backend, `-tags no_gcs` excludes GCS. Local is always built in.
 
 **Custom backends** — register through `core.OptionSetFilesystemBackend(name, factory)` to plug in Azure Blob, R2, or anything implementing the `fstable.Backend` interface.
+
+---
+
+## CodeSQL Source Indexes
+
+CodeSQL makes a source tree behave like another database in GraphJin. Configure a folder, and GraphJin creates a managed SQLite cache under `config/codesql/`, indexes source files with tree-sitter, reconciles new/changed/deleted files on startup, and watches the tree while the service runs.
+
+```yaml
+databases:
+  warehouse:
+    type: snowflake
+    connection_string: user@account/warehouse/public?warehouse=compute_wh
+
+  app_code:
+    type: codesql
+    path: /srv/app
+```
+
+The cache filename uses the database config name as a prefix, for example `config/codesql/app_code-<source-root-hash>.sqlite`. Legacy single-database config uses `default-<hash>.sqlite`.
+
+CodeSQL stores three useful layers:
+
+| Layer | Tables | Purpose |
+|-------|--------|---------|
+| Source/index state | `code_languages`, `code_grammars`, `code_query_packs`, `code_files`, `code_file_versions`, `code_index_status`, `code_parse_errors` | What was indexed, when, with which grammar/query-pack versions |
+| Raw syntax | `code_nodes`, `code_captures` | Tree-sitter nodes, byte/range positions, named/error/missing flags, query captures |
+| Code intelligence | `code_symbols`, `code_scopes`, `code_locals`, `code_refs`, `code_imports`, `code_edges`, `code_injections`, docs/text FTS | Searchable symbols, imports, refs, locals, injections, docs, and file text |
+
+```graphql
+query {
+  code_symbols(
+    where: { name: { iregex: "handler|resolver|workflow" } }
+    order_by: { name: asc }
+    limit: 20
+  ) {
+    name
+    kind
+    language
+    start_row
+  }
+}
+```
+
+Because CodeSQL is projected through SQLite, it composes with the rest of GraphJin: an agent can query operational systems and the code that operates them from one MCP surface. That is the practical unlock for organizations: the LLM can inspect tables, workflows, imports, call sites, and docs together without raw shell access or a separate source-code service. It can answer questions like "which endpoints write orders?", "which code paths mention this column?", and "what changed around this data flow?" using the same audited GraphJin interface.
+
+Boundaries are intentionally clear in v1: CodeSQL stores syntax structure, captures, scopes, local bindings, imports, references, calls, comments/docs, parse errors, and injected-language regions. It does not claim semantic type resolution, full cross-file symbol binding, inheritance correctness, or LSP-grade go-to-definition.
 
 ---
 

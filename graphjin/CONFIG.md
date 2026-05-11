@@ -213,6 +213,7 @@ cache_control: "public, max-age=300, s-maxage=600"
 | `mssql` | No | Yes | Microsoft SQL Server |
 | `mongodb` | No | Yes | MongoDB (multi-db only) |
 | `snowflake` | Yes | Yes | Requires `connection_string` |
+| `codesql` | Yes | Yes | Managed SQLite cache over a source folder, indexed with tree-sitter |
 
 ### Database Configuration Examples
 
@@ -259,6 +260,31 @@ database:
   # Or in-memory with shared cache
   # connection_string: file:memdb?mode=memory&cache=shared&_busy_timeout=5000
 ```
+
+#### CodeSQL
+
+CodeSQL is a logical database type for source code. Set only `type: codesql` and `path`; GraphJin creates a managed SQLite cache in `config/codesql/<database-name>-<source-root-hash>.sqlite`, reconciles new/changed/deleted files on startup, and watches the source tree while running.
+
+```yaml
+database:
+  type: codesql
+  path: /path/to/source
+```
+
+For multi-database setups the cache filename prefix is the database config name:
+
+```yaml
+databases:
+  app:
+    type: postgres
+    connection_string: postgres://app:secret@db/app
+
+  code:
+    type: codesql
+    path: /path/to/source
+```
+
+At runtime GraphJin treats CodeSQL as `sqlite` with `read_only: true` and `analytics_mode: true`. The generated schema includes source/index state tables (`code_files`, `code_file_versions`, `code_index_status`, `code_parse_errors`), raw tree-sitter tables (`code_nodes`, `code_captures`), and code-intelligence tables (`code_symbols`, `code_scopes`, `code_locals`, `code_refs`, `code_imports`, `code_edges`, `code_injections`, docs/text FTS).
 
 #### Oracle
 
@@ -1441,7 +1467,13 @@ databases:
     dbname: legacy_app
     user: app_user
     password: secret
+
+  code:
+    type: codesql
+    path: /srv/myapp
 ```
+
+`codesql` entries are useful beside production and analytics databases: the same GraphJin service can expose data tables and source-code tables to an MCP agent, while keeping the generated code cache read-only from GraphQL.
 
 ### Per-Database Read-Only Mode
 

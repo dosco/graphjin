@@ -7,9 +7,9 @@
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=go)](https://pkg.go.dev/github.com/dosco/graphjin/core/v3)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin/core/v3)
 
-Point GraphJin at any database and AI assistants can query it instantly. Auto-discovers your schema, understands relationships, compiles to optimized SQL. No configuration required.
+Point GraphJin at any database or source tree and AI assistants can query it instantly. Auto-discovers your schema, understands relationships, indexes code with tree-sitter, and compiles to optimized SQL. No configuration required.
 
-Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake - and models from Claude/GPT-4 to local 7B models.
+Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, CodeSQL source indexes - and models from Claude/GPT-4 to local 7B models.
 
 ## Installation
 
@@ -194,11 +194,42 @@ Copy paste the Claude Desktop Config provided by `graphjin serve` into the Claud
 
 1. **Connects to database** - Reads your schema automatically
 2. **Discovers relationships** - Foreign keys become navigable joins
-3. **Exposes MCP tools** - Teach any LLM the query syntax
-4. **Runs JS workflows** - Chain multiple GraphJin MCP tools in one reusable workflow
-5. **Compiles to SQL** - Every request becomes a single optimized query
+3. **Indexes source code** - CodeSQL turns tree-sitter syntax trees into a managed SQLite database
+4. **Exposes MCP tools** - Teach any LLM the query syntax
+5. **Runs JS workflows** - Chain multiple GraphJin MCP tools in one reusable workflow
+6. **Compiles to SQL** - Every request becomes a single optimized query
 
 No resolvers. No ORM. No N+1 queries. Just point and query.
+
+## CodeSQL: Query Source Code Like a Database
+
+CodeSQL is a managed database type for source trees. Configure a source folder and GraphJin creates a SQLite cache under `config/codesql/`, indexes it with tree-sitter, updates it on restart, and watches for changes while the service runs.
+
+```yaml
+databases:
+  appdb:
+    type: postgres
+    connection_string: postgres://app:secret@db/app
+
+  code:
+    type: codesql
+    path: /srv/app
+```
+
+GraphJin exposes the code index through ordinary tables such as `code_files`, `code_symbols`, `code_refs`, `code_imports`, `code_nodes`, `code_captures`, and FTS-backed docs/text tables:
+
+```graphql
+query {
+  code_symbols(where: { name: { iregex: "handler|resolver" } }, limit: 20) {
+    name
+    kind
+    language
+    start_row
+  }
+}
+```
+
+This is where the model gets genuinely powerful: the same agent can inspect production data systems and the code that operates them. It can ask, "which handlers touch customer invoices?", "what tables do these workflows depend on?", or "show me the imports and call sites near this data path" without switching tools or inventing a new backend.
 
 ## What AI Can Do
 

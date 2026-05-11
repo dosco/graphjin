@@ -89,7 +89,11 @@ func startHTTP(s1 *HttpService) {
 		if s.cache != nil {
 			s.cache.Close() //nolint:errcheck
 		}
+		closedManaged := s.closeManagedDBs(nil)
 		for name, db := range s.dbs {
+			if _, ok := closedManaged[name]; ok {
+				continue
+			}
 			if db != nil {
 				db.Close() //nolint:errcheck
 				s.log.Infof("closed database connection: %s", name)

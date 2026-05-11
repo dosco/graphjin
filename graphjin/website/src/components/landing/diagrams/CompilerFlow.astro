@@ -1,56 +1,328 @@
 ---
-// Apollo-style architecture diagram: GraphQL -> GraphJin compiler -> SQL -> DBs.
-// Uses currentColor for strokes, var(--color-accent) for the active path.
+const clients = [
+  { label: "AI assistants", detail: "MCP tools" },
+  { label: "Apps", detail: "GraphQL · REST" },
+  { label: "Routers", detail: "Federation v2" },
+];
+
+const targets = [
+  { label: "Databases", detail: "Postgres · MySQL · Mongo · Oracle", tone: "cyan" },
+  { label: "Files", detail: "Local · S3 · GCS · R2", tone: "gold" },
+  { label: "Code", detail: "Symbols · refs · docs · FTS", tone: "cyan" },
+  { label: "Remote APIs", detail: "OpenAPI joins", tone: "blue" },
+  { label: "Workflows", detail: "Queries + JS steps", tone: "gold" },
+];
+
+const proof = [
+  "Schema discovery",
+  "RBAC + allow-lists",
+  "Audit logs",
+  "Subscriptions",
+  "One GraphQL endpoint",
+];
 ---
 
-<div class="diagram-wrap">
-  <svg
-    viewBox="0 0 800 320"
-    role="img"
-    aria-label="GraphJin compiles GraphQL queries into optimized SQL for many databases"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <defs>
-      <marker id="cf-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-        <path d="M0,0 L8,4 L0,8 Z" fill="var(--color-accent)" />
-      </marker>
-    </defs>
+<div class="compiler-map" role="img" aria-label="GraphJin connects AI clients, apps, and routers to databases, object storage, code, remote APIs, and workflows through one compiler">
+  <div class="compiler-map-grid" aria-hidden="true"></div>
 
-    {/* Client */}
-    <g class="diag-node">
-      <rect x="20" y="120" width="140" height="80" rx="12" />
-      <text x="90" y="155" text-anchor="middle" class="diag-label">CLIENT</text>
-      <text x="90" y="178" text-anchor="middle" class="diag-sub">GraphQL request</text>
-    </g>
+  <div class="compiler-clients">
+    <div class="compiler-kicker">Any client</div>
+    {clients.map((client, index) => (
+      <div class="compiler-node compiler-client" style={`--delay: ${index * 0.16}s`}>
+        <strong>{client.label}</strong>
+        <span>{client.detail}</span>
+      </div>
+    ))}
+  </div>
 
-    {/* Compiler */}
-    <g class="diag-node diag-accent">
-      <rect x="240" y="80" width="180" height="160" rx="14" />
-      <text x="330" y="115" text-anchor="middle" class="diag-label">GRAPHJIN</text>
-      <text x="330" y="140" text-anchor="middle" class="diag-sub">Schema discovery</text>
-      <text x="330" y="160" text-anchor="middle" class="diag-sub">Compile → AST → SQL</text>
-      <text x="330" y="180" text-anchor="middle" class="diag-sub">RBAC · cache · subs</text>
-      <text x="330" y="210" text-anchor="middle" class="diag-pill">1 SQL / query</text>
-    </g>
+  <div class="compiler-lanes compiler-lanes-in" aria-hidden="true">
+    <span></span>
+    <span></span>
+    <span></span>
+  </div>
 
-    {/* DB nodes */}
-    <g class="diag-node">
-      <rect x="500" y="40" width="160" height="60" rx="10" />
-      <text x="580" y="76" text-anchor="middle" class="diag-label">PostgreSQL</text>
-    </g>
-    <g class="diag-node">
-      <rect x="500" y="120" width="160" height="60" rx="10" />
-      <text x="580" y="156" text-anchor="middle" class="diag-label">MySQL · MariaDB</text>
-    </g>
-    <g class="diag-node">
-      <rect x="500" y="200" width="160" height="60" rx="10" />
-      <text x="580" y="236" text-anchor="middle" class="diag-label">Mongo · SQLite · Oracle · MSSQL</text>
-    </g>
+  <div class="compiler-core">
+    <div class="compiler-core-ring" aria-hidden="true"></div>
+    <div class="compiler-core-inner">
+      <span>GRAPHJIN</span>
+      <strong>one compiler plane</strong>
+      <p>GraphQL in. Optimized queries, API calls, file ops, and code search out.</p>
+      <div class="compiler-core-pill">No resolver sprawl. No tool zoo.</div>
+    </div>
+  </div>
 
-    {/* Lines */}
-    <path d="M160 160 L240 160" class="diag-line" marker-end="url(#cf-arrow)" />
-    <path d="M420 160 C 460 160, 460 70, 500 70" class="diag-line" marker-end="url(#cf-arrow)" />
-    <path d="M420 160 L500 150" class="diag-line" marker-end="url(#cf-arrow)" />
-    <path d="M420 160 C 460 160, 460 230, 500 230" class="diag-line" marker-end="url(#cf-arrow)" />
-  </svg>
+  <div class="compiler-lanes compiler-lanes-out" aria-hidden="true">
+    <span></span>
+    <span></span>
+    <span></span>
+    <span></span>
+    <span></span>
+  </div>
+
+  <div class="compiler-targets">
+    <div class="compiler-kicker">Any system</div>
+    {targets.map((target, index) => (
+      <div class={`compiler-node compiler-target compiler-target-${target.tone}`} style={`--delay: ${0.18 + index * 0.13}s`}>
+        <strong>{target.label}</strong>
+        <span>{target.detail}</span>
+      </div>
+    ))}
+  </div>
+
+  <div class="compiler-proof" aria-label="Shared production controls">
+    {proof.map((item) => (
+      <span>{item}</span>
+    ))}
+  </div>
 </div>
+
+<style>
+  .compiler-map {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(150px, 0.92fr) minmax(64px, 0.35fr) minmax(240px, 1.25fr) minmax(78px, 0.45fr) minmax(210px, 1.08fr);
+    gap: 1rem;
+    align-items: center;
+    min-height: 470px;
+    padding: clamp(1rem, 3vw, 1.5rem);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
+    border-radius: 24px;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--color-accent-soft) 28%, transparent), transparent 48%),
+      var(--color-surface);
+    box-shadow: 0 18px 52px rgba(2, 8, 23, 0.055);
+  }
+
+  :root[data-theme="dark"] .compiler-map {
+    background:
+      linear-gradient(180deg, rgba(34, 211, 238, 0.055), transparent 52%),
+      var(--color-surface);
+    box-shadow: 0 18px 52px rgba(0, 0, 0, 0.22);
+  }
+
+  .compiler-map-grid {
+    position: absolute;
+    inset: 0;
+    opacity: 0.09;
+    background-image:
+      linear-gradient(var(--color-border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(circle at center, #000, transparent 75%);
+  }
+
+  .compiler-clients,
+  .compiler-lanes,
+  .compiler-core,
+  .compiler-targets,
+  .compiler-proof {
+    position: relative;
+    z-index: 1;
+  }
+
+  .compiler-clients,
+  .compiler-targets {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .compiler-kicker {
+    color: var(--color-accent);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .compiler-node {
+    position: relative;
+    overflow: hidden;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid var(--color-border);
+    border-left: 3px solid color-mix(in srgb, var(--color-accent) 70%, var(--color-border));
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--color-bg) 86%, transparent);
+    box-shadow: 0 8px 22px rgba(2, 8, 23, 0.04);
+  }
+
+  .compiler-node strong,
+  .compiler-node span {
+    position: relative;
+    z-index: 1;
+    display: block;
+  }
+
+  .compiler-node strong {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+
+  .compiler-node span {
+    margin-top: 0.22rem;
+    color: var(--color-muted);
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  .compiler-target-cyan,
+  .compiler-target-gold,
+  .compiler-target-blue {
+    border-left-color: color-mix(in srgb, var(--color-accent) 70%, var(--color-border));
+  }
+
+  .compiler-lanes {
+    display: grid;
+    gap: 1.15rem;
+  }
+
+  .compiler-lanes span {
+    position: relative;
+    display: block;
+    height: 1px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-accent) 34%, var(--color-border));
+  }
+
+  .compiler-lanes span::after {
+    display: none;
+  }
+
+  .compiler-core {
+    min-height: 280px;
+    display: grid;
+    place-items: center;
+  }
+
+  .compiler-core-ring {
+    position: absolute;
+    width: min(100%, 17rem);
+    aspect-ratio: 1;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border));
+    background: transparent;
+  }
+
+  .compiler-core-ring::after {
+    display: none;
+  }
+
+  .compiler-core-inner {
+    position: relative;
+    max-width: 17rem;
+    padding: 1.4rem;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 28%, var(--color-border));
+    border-radius: 24px;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--color-accent-soft) 35%, var(--color-bg)), var(--color-bg));
+    box-shadow: 0 16px 44px rgba(2, 8, 23, 0.055);
+    text-align: center;
+  }
+
+  :root[data-theme="dark"] .compiler-core-inner {
+    background:
+      linear-gradient(180deg, rgba(34, 211, 238, 0.08), rgba(2, 6, 23, 0.88));
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.24);
+  }
+
+  .compiler-core-inner span {
+    color: var(--color-accent-strong);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    letter-spacing: 0.16em;
+  }
+
+  .compiler-core-inner strong {
+    display: block;
+    margin-top: 0.55rem;
+    color: var(--color-text);
+    font-family: var(--font-display);
+    font-size: clamp(1.35rem, 3vw, 2rem);
+    line-height: 1.02;
+  }
+
+  .compiler-core-inner p {
+    margin: 0.75rem 0 0;
+    color: var(--color-muted);
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+
+  .compiler-core-pill {
+    display: inline-flex;
+    margin-top: 1rem;
+    padding: 0.42rem 0.65rem;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 36%, var(--color-border));
+    border-radius: 999px;
+    color: var(--color-accent-strong);
+    background: color-mix(in srgb, var(--color-accent-soft) 28%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+  }
+
+  .compiler-proof {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    justify-content: center;
+    margin-top: 0.5rem;
+  }
+
+  .compiler-proof span {
+    padding: 0.48rem 0.72rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-bg) 74%, transparent);
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+  }
+
+  @media (max-width: 900px) {
+    .compiler-map {
+      grid-template-columns: 1fr;
+      min-height: 0;
+    }
+
+    .compiler-lanes {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.55rem;
+      transform: rotate(90deg);
+      width: 4.5rem;
+      justify-self: center;
+      margin: -0.25rem 0;
+    }
+
+    .compiler-lanes-out {
+      grid-template-columns: repeat(5, 1fr);
+      width: 6.5rem;
+    }
+
+    .compiler-core {
+      min-height: 250px;
+    }
+
+    .compiler-proof {
+      justify-content: flex-start;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .compiler-map {
+      border-radius: 22px;
+    }
+
+    .compiler-clients,
+    .compiler-targets {
+      grid-template-columns: 1fr;
+    }
+
+    .compiler-core-ring {
+      width: 15rem;
+    }
+  }
+</style>

@@ -399,7 +399,7 @@ type FilesystemConfig struct {
 // DatabaseConfig defines configuration for a single database in multi-database mode
 type DatabaseConfig struct {
 	// Database type (postgres, mysql, mariadb, sqlite, oracle, mongodb, snowflake)
-	Type string `mapstructure:"type" json:"type" yaml:"type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle,enum=mongodb,enum=snowflake"`
+	Type string `mapstructure:"type" json:"type" yaml:"type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle,enum=mongodb,enum=snowflake,enum=codesql"`
 
 	// Connection string for the database (alternative to individual params)
 	ConnString string `mapstructure:"connection_string" json:"connection_string" yaml:"connection_string" jsonschema:"title=Connection String"`

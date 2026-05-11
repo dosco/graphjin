@@ -534,8 +534,8 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			password := dbConf.Password
 			dbName := dbConf.DBName
 
-			// Skip connection test for SQLite (file-based)
-			if dbType == "sqlite" {
+			// Skip connection test for file-managed databases.
+			if dbType == "sqlite" || isCodeSQLType(dbType) {
 				continue
 			}
 
@@ -940,8 +940,11 @@ func parseDBConfig(m map[string]any) (core.DatabaseConfig, error) {
 		return conf, fmt.Errorf("database type is required")
 	}
 	conf.Type = strings.ToLower(strings.TrimSpace(conf.Type))
-	if err := core.ValidateMultiDBType(conf.Type); err != nil {
+	if err := validateServiceMultiDBType(conf.Type); err != nil {
 		return conf, err
+	}
+	if isCodeSQLType(conf.Type) && strings.TrimSpace(conf.Path) == "" {
+		return conf, fmt.Errorf("codesql requires path")
 	}
 
 	if conf.Type == "snowflake" && strings.TrimSpace(conf.ConnString) == "" {
@@ -1335,6 +1338,8 @@ func parseResolverConfig(m map[string]any) (core.ResolverConfig, error) {
 
 type stagedRuntimeState struct {
 	dbs            map[string]*sql.DB
+	managedDBs     map[string]managedDB
+	runtimeCore    *core.Config
 	gj             *core.GraphJin
 	availableDBs   []string
 	newConnections map[string]*sql.DB
@@ -1345,7 +1350,20 @@ func (st *stagedRuntimeState) close() {
 	if st.gj != nil {
 		st.gj.Close()
 	}
-	for _, db := range st.newConnections {
+	closedManaged := make(map[string]struct{})
+	for name, managed := range st.managedDBs {
+		if managed.handle != nil {
+			if st.newConnections[name] != managed.handle.DB {
+				continue
+			}
+			managed.handle.Close() //nolint:errcheck
+			closedManaged[name] = struct{}{}
+		}
+	}
+	for name, db := range st.newConnections {
+		if _, ok := closedManaged[name]; ok {
+			continue
+		}
 		if db != nil {
 			db.Close() //nolint:errcheck
 		}
@@ -1488,8 +1506,11 @@ func primaryDBTypeFromCore(conf *core.Config) string {
 }
 
 func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotExists bool) (*stagedRuntimeState, error) {
+	runtimeCore := cloneCoreConfig(*stagedCore)
 	stage := &stagedRuntimeState{
 		dbs:            make(map[string]*sql.DB),
+		managedDBs:     make(map[string]managedDB),
+		runtimeCore:    &runtimeCore,
 		newConnections: make(map[string]*sql.DB),
 	}
 
@@ -1507,10 +1528,18 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 			dbConf := stagedCore.Databases[name]
 			if existing, ok := currentDBs[name]; ok && reflect.DeepEqual(currentConfigs[name], dbConf) {
 				stage.dbs[name] = existing
+				if managed, ok := ms.service.managedDBs[name]; ok {
+					stage.managedDBs[name] = managed
+				}
+				if ms.service.runtimeCore != nil {
+					if runtime, ok := ms.service.runtimeCore.Databases[name]; ok {
+						stage.runtimeCore.Databases[name] = runtime
+					}
+				}
 				continue
 			}
 
-			if createIfNotExists {
+			if createIfNotExists && !isCodeSQLType(dbConf.Type) {
 				dbType := strings.ToLower(dbConf.Type)
 				dbName := dbConf.DBName
 				if dbName == "" {
@@ -1525,7 +1554,7 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 				continue
 			}
 
-			db, err := ms.service.newDBFromDatabaseConfig(name, dbConf)
+			db, err := ms.service.newDBFromDatabaseConfigInto(name, dbConf, stage.runtimeCore, stage.managedDBs)
 			if err != nil {
 				return stage, fmt.Errorf("database '%s' connection failed: %w", name, err)
 			}
@@ -1544,16 +1573,16 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 		return stage, nil
 	}
 
-	gj, err := core.NewGraphJin(stagedCore, anyDBFromMap(stage.dbs), ms.service.buildCoreOptionsWithDBs(stage.dbs)...)
+	gj, err := core.NewGraphJin(stage.runtimeCore, anyDBFromMap(stage.dbs), ms.service.buildCoreOptionsWithDBs(stage.dbs)...)
 	if err != nil {
 		return stage, err
 	}
 	stage.gj = gj
 
 	if db := anyDBFromMap(stage.dbs); db != nil {
-		stage.availableDBs, _ = listDatabaseNames(db, primaryDBTypeFromCore(stagedCore))
+		stage.availableDBs, _ = listDatabaseNames(db, primaryDBTypeFromCore(stage.runtimeCore))
 		if !ms.service.conf.MCP.DefaultDBAllowed {
-			stage.availableDBs = filterSystemDatabases(primaryDBTypeFromCore(stagedCore), stage.availableDBs)
+			stage.availableDBs = filterSystemDatabases(primaryDBTypeFromCore(stage.runtimeCore), stage.availableDBs)
 		}
 	}
 
@@ -1568,6 +1597,7 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRuntimeState) {
 	oldGJ := ms.service.gj
 	oldDBs := ms.service.dbs
+	oldManagedDBs := ms.service.managedDBs
 	hadDatabaseMap := len(ms.service.conf.Core.Databases) > 0
 	prevLegacyDB := ms.service.conf.DB
 	prevDBType := ms.service.conf.DBType
@@ -1575,7 +1605,7 @@ func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRu
 	ms.service.conf.Core = stagedCore
 	switch {
 	case len(stagedCore.Databases) > 0:
-		syncDBFromDatabases(ms.service.conf)
+		syncRuntimeDBFromDatabases(ms.service.conf, stage.runtimeCore)
 	case hadDatabaseMap:
 		ms.service.conf.DB = Database{}
 		ms.service.conf.DBType = ""
@@ -1585,16 +1615,33 @@ func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRu
 	}
 
 	ms.service.dbs = stage.dbs
+	ms.service.managedDBs = stage.managedDBs
+	ms.service.runtimeCore = stage.runtimeCore
 	ms.service.gj = stage.gj
 	if oldGJ != nil && oldGJ != stage.gj {
 		oldGJ.Close()
 	}
-	ms.closeSupersededConnections(oldDBs, stage.dbs)
+	ms.closeSupersededConnections(oldDBs, oldManagedDBs, stage.dbs)
 }
 
-func (ms *mcpServer) closeSupersededConnections(oldDBs, newDBs map[string]*sql.DB) {
+func (ms *mcpServer) closeSupersededConnections(oldDBs map[string]*sql.DB, oldManagedDBs map[string]managedDB, newDBs map[string]*sql.DB) {
+	closedManaged := make(map[string]struct{})
+	for name, managed := range oldManagedDBs {
+		if managed.handle == nil {
+			continue
+		}
+		if newDBs[name] == managed.handle.DB {
+			continue
+		}
+		managed.handle.Close() //nolint:errcheck
+		closedManaged[name] = struct{}{}
+		ms.service.log.Infof("Closed replaced managed codesql database: %s", name)
+	}
 	for name, db := range oldDBs {
 		if db == nil {
+			continue
+		}
+		if _, ok := closedManaged[name]; ok {
 			continue
 		}
 		if newDBs[name] == db {
@@ -1662,6 +1709,19 @@ func syncDBFromDatabases(conf *Config) bool {
 	return true
 }
 
+func syncRuntimeDBFromDatabases(conf *Config, runtimeCore *core.Config) bool {
+	if runtimeCore == nil {
+		return syncDBFromDatabases(conf)
+	}
+	tmp := &Config{Core: *runtimeCore}
+	if !syncDBFromDatabases(tmp) {
+		return false
+	}
+	conf.DB = tmp.DB
+	conf.DBType = tmp.DBType
+	return true
+}
+
 // ensureDBConnections creates connections for all configured databases that
 // don't already have a live connection, and removes connections for databases
 // that are no longer in the config.
@@ -1671,11 +1731,20 @@ func (ms *mcpServer) ensureDBConnections() {
 	if s.dbs == nil {
 		s.dbs = make(map[string]*sql.DB)
 	}
+	if s.runtimeCore == nil {
+		runtimeCore := cloneCoreConfig(*conf)
+		s.runtimeCore = &runtimeCore
+	}
 
 	// Remove connections for databases no longer in config
 	for name, db := range s.dbs {
 		if _, exists := conf.Databases[name]; !exists {
-			db.Close() //nolint:errcheck
+			if managed, ok := s.managedDBs[name]; ok && managed.handle != nil {
+				managed.handle.Close() //nolint:errcheck
+				delete(s.managedDBs, name)
+			} else {
+				db.Close() //nolint:errcheck
+			}
 			delete(s.dbs, name)
 			s.log.Infof("Closed removed database connection: %s", name)
 		}
@@ -1696,7 +1765,7 @@ func (ms *mcpServer) ensureDBConnections() {
 		if dbConf.ConnString == "" && dbConf.Host == "" && dbConf.Path == "" {
 			continue
 		}
-		db, err := s.newDBFromDatabaseConfig(name, dbConf)
+		db, err := s.newDBFromDatabaseConfigInto(name, dbConf, s.runtimeCore, s.managedDBs)
 		if err != nil {
 			s.log.Warnf("Database '%s' connection failed: %s", name, err)
 			continue
@@ -1707,7 +1776,7 @@ func (ms *mcpServer) ensureDBConnections() {
 
 	// Sync legacy conf.DB from first database
 	if len(s.dbs) > 0 {
-		syncDBFromDatabases(s.conf)
+		syncRuntimeDBFromDatabases(s.conf, s.runtimeCore)
 	}
 }
 
@@ -1717,13 +1786,17 @@ func (ms *mcpServer) ensureDBConnections() {
 func (ms *mcpServer) tryInitializeGraphJin(createIfNotExists bool) ([]string, error) {
 	s := ms.service
 
-	// Bridge Databases map -> conf.DB fields
-	if !syncDBFromDatabases(s.conf) {
+	if len(s.conf.Core.Databases) == 0 {
 		return nil, fmt.Errorf("no database configuration found in databases map")
+	}
+	if s.runtimeCore == nil {
+		runtimeCore := cloneCoreConfig(s.conf.Core)
+		s.runtimeCore = &runtimeCore
 	}
 
 	// Create the database on the server if requested
-	if createIfNotExists {
+	if createIfNotExists && !isCodeSQLType(primaryDBTypeFromCore(&s.conf.Core)) {
+		syncDBFromDatabases(s.conf)
 		if err := createDatabaseIfNotExists(s.conf, s.log); err != nil {
 			s.log.Warnf("create_if_not_exists: %v", err)
 			// Don't fail hard — the DB may already exist
@@ -1739,7 +1812,12 @@ func (ms *mcpServer) tryInitializeGraphJin(createIfNotExists bool) ([]string, er
 	// Initialize GraphJin core
 	if err := s.normalStart(); err != nil {
 		// Clean up on failure
+		closedManaged := s.closeManagedDBs(nil)
 		for name, db := range s.dbs {
+			if _, ok := closedManaged[name]; ok {
+				delete(s.dbs, name)
+				continue
+			}
 			db.Close() //nolint:errcheck
 			delete(s.dbs, name)
 		}
@@ -1759,7 +1837,12 @@ func (ms *mcpServer) tryInitializeGraphJin(createIfNotExists bool) ([]string, er
 		}
 		// Clean up so next call retries from scratch
 		s.gj = nil
+		closedManaged := s.closeManagedDBs(nil)
 		for name, db := range s.dbs {
+			if _, ok := closedManaged[name]; ok {
+				delete(s.dbs, name)
+				continue
+			}
 			db.Close() //nolint:errcheck
 			delete(s.dbs, name)
 		}

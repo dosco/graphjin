@@ -183,7 +183,7 @@ type AuthLoginOIDC struct {
 // Database configuration
 type Database struct {
 	ConnString string `mapstructure:"connection_string" jsonschema:"title=Connection String"`
-	Type       string `jsonschema:"title=Type,enum=postgres,enum=mysql,enum=mariadb,enum=mssql,enum=sqlite,enum=oracle,enum=mongodb,enum=snowflake"`
+	Type       string `jsonschema:"title=Type,enum=postgres,enum=mysql,enum=mariadb,enum=mssql,enum=sqlite,enum=oracle,enum=mongodb,enum=snowflake,enum=codesql"`
 	Host       string `jsonschema:"title=Host"`
 	Port       uint16 `jsonschema:"title=Port"`
 	DBName     string `jsonschema:"title=Database Name"`

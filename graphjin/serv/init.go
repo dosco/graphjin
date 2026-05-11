@@ -70,8 +70,9 @@ func (s *graphjinService) initConfig() error {
 		c.DBType = c.DB.Type
 	}
 
-	// Validate database type early
-	if err := core.ValidateDBType(c.DBType); err != nil {
+	// Validate database type early. CodeSQL is a service-level logical type;
+	// it is translated to SQLite before core initialization.
+	if err := validateServiceDBType(c.DBType); err != nil {
 		return err
 	}
 
@@ -126,6 +127,9 @@ func (s *graphjinService) isDatabaseConfigured() bool {
 	if s.conf.DB.ConnString != "" {
 		return true
 	}
+	if s.conf.DB.Path != "" {
+		return true
+	}
 	// Check if host and dbname are provided (minimal required fields for auto-connect)
 	if s.conf.DB.Host != "" && s.conf.DB.DBName != "" {
 		return true
@@ -144,6 +148,8 @@ func (s *graphjinService) initDB() error {
 	if len(s.dbs) > 0 {
 		return nil
 	}
+	runtimeCore := cloneCoreConfig(s.conf.Core)
+	s.runtimeCore = &runtimeCore
 
 	// In dev mode, allow starting without a database configured
 	if !s.conf.Serv.Production && !s.isDatabaseConfigured() {
@@ -181,7 +187,7 @@ func (s *graphjinService) initAllDBs() error {
 	sort.Strings(dbNames)
 	for _, name := range dbNames {
 		dbConf := s.conf.Core.Databases[name]
-		db, err := s.newDBFromDatabaseConfig(name, dbConf)
+		db, err := s.newDBFromDatabaseConfigInto(name, dbConf, s.runtimeCore, s.managedDBs)
 		if err != nil {
 			if s.conf.Serv.Production {
 				return fmt.Errorf("database %s: %w", name, err)
@@ -193,13 +199,42 @@ func (s *graphjinService) initAllDBs() error {
 	}
 	// Sync legacy conf.DB from first database for code that still reads it
 	if len(s.dbs) > 0 {
-		syncDBFromDatabases(s.conf)
+		syncRuntimeDBFromDatabases(s.conf, s.runtimeCore)
 	}
 	return nil
 }
 
 // initLegacyDB creates a single connection from the legacy conf.DB fields.
 func (s *graphjinService) initLegacyDB() error {
+	if isCodeSQLType(s.conf.DB.Type) || isCodeSQLType(s.conf.DBType) {
+		dbConf := core.DatabaseConfig{
+			Type:            dbTypeCodeSQL,
+			Path:            s.conf.DB.Path,
+			PingTimeout:     s.conf.DB.PingTimeout,
+			PoolSize:        s.conf.DB.PoolSize,
+			MaxConnections:  s.conf.DB.MaxConnections,
+			MaxConnIdleTime: s.conf.DB.MaxConnIdleTime,
+			MaxConnLifeTime: s.conf.DB.MaxConnLifeTime,
+		}
+		db, err := s.newDBFromDatabaseConfigInto(core.DefaultDBName, dbConf, s.runtimeCore, s.managedDBs)
+		if err != nil {
+			if s.conf.Serv.Production {
+				return err
+			}
+			s.log.Warnf("CodeSQL database initialization failed: %s. Server starting without database — use MCP to configure.", err)
+			return nil
+		}
+		s.dbs[core.DefaultDBName] = db
+		if s.runtimeCore.Databases != nil {
+			runtime := s.runtimeCore.Databases[core.DefaultDBName]
+			s.conf.DB.Type = runtime.Type
+			s.conf.DB.Path = runtime.Path
+			s.conf.DB.ConnString = runtime.ConnString
+			s.conf.DBType = runtime.Type
+		}
+		return nil
+	}
+
 	var db *sql.DB
 	var err error
 
@@ -232,9 +267,37 @@ func (s *graphjinService) initLegacyDB() error {
 
 // newDBFromDatabaseConfig creates a *sql.DB from a core.DatabaseConfig.
 func (s *graphjinService) newDBFromDatabaseConfig(name string, dbConf core.DatabaseConfig) (*sql.DB, error) {
+	return s.newDBFromDatabaseConfigInto(name, dbConf, &s.conf.Core, s.managedDBs)
+}
+
+func (s *graphjinService) newDBFromDatabaseConfigInto(name string, dbConf core.DatabaseConfig, runtimeCore *core.Config, managed map[string]managedDB) (*sql.DB, error) {
 	dbType := strings.ToLower(dbConf.Type)
 	if dbType == "" {
 		dbType = "postgres"
+	}
+
+	if isCodeSQLType(dbType) {
+		db, runtime, handle, stats, err := s.openCodeSQLDatabase(name, dbConf)
+		if err != nil {
+			return nil, err
+		}
+		if runtimeCore != nil {
+			if runtimeCore.Databases == nil {
+				runtimeCore.Databases = make(map[string]core.DatabaseConfig)
+			}
+			runtimeCore.Databases[name] = runtime
+			if runtimeCore.DBType == "" || isCodeSQLType(runtimeCore.DBType) {
+				runtimeCore.DBType = runtime.Type
+			}
+		}
+		if managed != nil {
+			managed[name] = managedDB{handle: handle}
+		}
+		if stats != nil {
+			s.log.Infof("codesql database %q indexed: added=%d changed=%d deleted=%d skipped=%d cache=%s",
+				name, stats.FilesAdded, stats.FilesChanged, stats.FilesDeleted, stats.FilesSkipped, handle.CachePath)
+		}
+		return db, nil
 	}
 
 	// Configured databases must honor the per-database ping_timeout. Fall back
