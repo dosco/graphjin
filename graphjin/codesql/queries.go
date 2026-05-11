@@ -1,3 +1,5 @@
+//go:build cgo
+
 package codesql
 
 func pack(kind, source string) queryPack {
