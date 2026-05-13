@@ -9,6 +9,7 @@ import (
 )
 
 type SQLiteDialect struct {
+	DBVersion int
 }
 
 func (d *SQLiteDialect) Name() string {

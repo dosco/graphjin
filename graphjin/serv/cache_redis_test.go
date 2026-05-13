@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 )
@@ -173,6 +174,59 @@ func TestRedisCache_FilterExcludedTables(t *testing.T) {
 		if ref.Table == "audit_logs" || ref.Table == "sessions" {
 			t.Errorf("excluded table %q should not be in filtered results", ref.Table)
 		}
+	}
+}
+
+func TestRedisCache_PerEntryTTLsCapButDoNotExtendDefaults(t *testing.T) {
+	conf := CachingConfig{TTL: 60, FreshTTL: 30}
+
+	ttl, fresh, ok := cacheEntryTTLs(conf, core.CacheEntryOptions{
+		HardTTL:  10 * time.Second,
+		FreshTTL: 5 * time.Second,
+	})
+	if !ok {
+		t.Fatal("expected cacheable options")
+	}
+	if ttl != 10*time.Second || fresh != 5*time.Second {
+		t.Fatalf("expected capped ttl/fresh 10s/5s, got %s/%s", ttl, fresh)
+	}
+
+	ttl, fresh, ok = cacheEntryTTLs(conf, core.CacheEntryOptions{
+		HardTTL:  time.Hour,
+		FreshTTL: time.Hour,
+	})
+	if !ok {
+		t.Fatal("expected cacheable options")
+	}
+	if ttl != 60*time.Second || fresh != 30*time.Second {
+		t.Fatalf("expected global ttl/fresh 60s/30s, got %s/%s", ttl, fresh)
+	}
+
+	if _, _, ok = cacheEntryTTLs(conf, core.CacheEntryOptions{NoStore: true}); ok {
+		t.Fatal("expected no-store options to skip caching")
+	}
+}
+
+func TestRedisCache_FilterExcludedSourceScopedRefs(t *testing.T) {
+	rc := &RedisCache{
+		excludeTable: map[string]bool{
+			"remote:billing":       true,
+			"codesql:repo:gj_deps": true,
+		},
+	}
+
+	refs := []core.RowRef{
+		core.RemoteResolverRef("billing", "customer-1"),
+		core.CodeSQLTableRefs("repo", []string{"gj_deps"})[0],
+		core.DBTableRef("default", "gj_deps"),
+	}
+
+	filtered := rc.filterExcludedTables(refs)
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 ref after scoped filtering, got %d: %+v", len(filtered), filtered)
+	}
+	if filtered[0].Source != core.CacheSourceDB {
+		t.Fatalf("expected db ref to remain, got %+v", filtered[0])
 	}
 }
 

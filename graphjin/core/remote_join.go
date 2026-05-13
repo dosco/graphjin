@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/jsn"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
@@ -97,43 +98,68 @@ func (s *gstate) resolveRemotes(
 			defer wg.Done()
 
 			ctx1, span := s.gj.spanStart(ctx, "Execute Remote Request")
+			defer span.End()
 
-			b, err := r.Fn.Resolve(ctx1, ResolverReq{
-				ID: string(id), Sel: sel, Log: s.gj.log, RequestConfig: s.r.requestconfig,
-			})
+			source := r.Source
+			if source == "" {
+				source = "remote"
+			}
+			scope := r.Scope
+			if scope == "" {
+				scope = rkey
+			}
+			cacheKey := s.remoteFragmentKey(ctx1, source, scope, r.Fingerprint, id, sel)
+			cacheOpts := s.remoteFragmentCacheOptions(source, scope)
+			produce := func(c context.Context) ([]byte, []RowRef, error) {
+				b, err := r.Fn.Resolve(c, ResolverReq{
+					ID: string(id), Sel: sel, Log: s.gj.log, RequestConfig: s.r.requestconfig,
+				})
+				if err != nil {
+					return nil, nil, err
+				}
+
+				if len(r.Path) != 0 {
+					b = jsn.Strip(b, r.Path)
+				}
+
+				var ob bytes.Buffer
+				if len(sel.Fields) != 0 {
+					if err = jsn.Filter(&ob, b, fieldsToList(sel.Fields)); err != nil {
+						return nil, nil, err
+					}
+				} else {
+					ob.WriteString("null")
+				}
+
+				return ob.Bytes(), remoteFragmentRefs(source, scope, id, sel), nil
+			}
+
+			parentCtx := context.WithoutCancel(ctx)
+			if !cacheOpts.NoStore {
+				if cached, ok := s.fragmentCacheGet(ctx1, cacheKey, func() ([]byte, []RowRef, CacheEntryOptions, error) {
+					c, cancel := context.WithTimeout(parentCtx, swrRefreshTimeout)
+					defer cancel()
+					data, refs, err := produce(c)
+					return data, refs, cacheOpts, err
+				}); ok {
+					to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: cached}
+					return
+				}
+			}
+
+			start := time.Now()
+			b, refs, err := produce(ctx1)
 			if err != nil {
 				cerrMutex.Lock()
 				cerr = fmt.Errorf("%s: %s", sel.Table, err)
 				spanErr := cerr
 				cerrMutex.Unlock()
 				span.Error(spanErr)
-			}
-			span.End()
-
-			if err != nil {
 				return
 			}
 
-			if len(r.Path) != 0 {
-				b = jsn.Strip(b, r.Path)
-			}
-
-			var ob bytes.Buffer
-
-			if len(sel.Fields) != 0 {
-				err = jsn.Filter(&ob, b, fieldsToList(sel.Fields))
-				if err != nil {
-					cerrMutex.Lock()
-					cerr = fmt.Errorf("%s: %w", sel.Table, err)
-					cerrMutex.Unlock()
-					return
-				}
-
-			} else {
-				ob.WriteString("null")
-			}
-
-			to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: ob.Bytes()}
+			s.fragmentCacheSet(ctx1, cacheKey, b, refs, start, cacheOpts)
+			to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: b}
 		}(i, rid, sel)
 	}
 	wg.Wait()

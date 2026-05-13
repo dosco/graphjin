@@ -1431,7 +1431,9 @@ func (d *MSSQLDialect) renderInlineJSONFields(ctx Context, r InlineChildRenderer
 
 		// Expression-aggregate path: route through the shared scalar-expr
 		// renderer.
-		if len(f.Args) == 1 && f.Args[0].Type == qcode.ArgTypeExpr {
+		if f.Window != nil {
+			r.RenderWindowFunction(sel, f, t)
+		} else if len(f.Args) == 1 && f.Args[0].Type == qcode.ArgTypeExpr {
 			if f.Func.Name != "" {
 				ctx.WriteString(f.Func.Name)
 				ctx.WriteString(`(`)
@@ -1613,7 +1615,9 @@ func (d *MSSQLDialect) renderBaseColumns(ctx Context, r InlineChildRenderer, sel
 			ctx.WriteString(` THEN `)
 		}
 
-		if f.Func.Name != "" {
+		if f.Window != nil {
+			r.RenderWindowFunction(sel, f, t)
+		} else if f.Func.Name != "" {
 			// MSSQL requires user-defined functions to be called with at least a two-part name
 			// Built-in aggregates (count, sum, max, etc.) have Agg=true and empty Schema - no prefix needed
 			if f.Func.Schema != "" {

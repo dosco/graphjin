@@ -15,7 +15,9 @@ import (
 const dbTypeCodeSQL = "codesql"
 
 type managedDB struct {
-	handle *codesql.Managed
+	handle   *codesql.Managed
+	watch    bool
+	readOnly bool
 }
 
 func isCodeSQLType(dbType string) bool {
@@ -50,18 +52,26 @@ func (s *graphjinService) openCodeSQLDatabase(name string, dbConf core.DatabaseC
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	inferDBRefs := true
+	if dbConf.InferDBRefs != nil {
+		inferDBRefs = *dbConf.InferDBRefs
+	}
+	watch := !dbConf.ReadOnly
 	managed, stats, err := codesql.OpenManaged(ctx, codesql.Options{
-		Name:     name,
-		Root:     root,
-		CacheDir: filepath.Join(base, dbTypeCodeSQL),
-		Watch:    true,
+		Name:        name,
+		Root:        root,
+		CacheDir:    filepath.Join(base, dbTypeCodeSQL),
+		Watch:       watch,
+		InferDBRefs: inferDBRefs,
 	})
 	if err != nil {
 		return nil, core.DatabaseConfig{}, nil, nil, err
 	}
+	s.bindCodeSQLCacheHook(name, managed)
 
 	analyticsMode := true
 	runtime := dbConf
+	runtime.ManagedType = dbTypeCodeSQL
 	runtime.Type = "sqlite"
 	runtime.ConnString = managed.CachePath
 	runtime.Path = managed.CachePath
@@ -87,4 +97,25 @@ func (s *graphjinService) closeManagedDBs(keep map[string]*sql.DB) map[string]st
 		s.log.Infof("closed managed codesql database: %s", name)
 	}
 	return closed
+}
+
+func (s *graphjinService) bindCodeSQLCacheHooks() {
+	for name, managed := range s.managedDBs {
+		if managed.handle == nil {
+			continue
+		}
+		s.bindCodeSQLCacheHook(name, managed.handle)
+	}
+}
+
+func (s *graphjinService) bindCodeSQLCacheHook(name string, managed *codesql.Managed) {
+	if s.cache == nil || managed == nil {
+		return
+	}
+	tables := codesql.ManagedCacheTables()
+	managed.SetSourceChangeHook(func() {
+		if err := s.cache.InvalidateRows(context.Background(), core.CodeSQLTableRefs(name, tables)); err != nil && s.log != nil {
+			s.log.Warnf("codesql cache invalidation failed for %s: %s", name, err)
+		}
+	})
 }

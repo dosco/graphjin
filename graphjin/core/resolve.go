@@ -1,6 +1,9 @@
 package core
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -10,9 +13,12 @@ import (
 type ResolverFn func(v ResolverProps) (Resolver, error)
 
 type resItem struct {
-	IDField []byte
-	Path    [][]byte
-	Fn      Resolver
+	IDField     []byte
+	Path        [][]byte
+	Fn          Resolver
+	Source      string
+	Scope       string
+	Fingerprint string
 }
 
 // newRTMap returns a map of resolver functions
@@ -139,9 +145,12 @@ func (gj *graphjinEngine) initRemote(
 	}
 
 	rf := resItem{
-		IDField: []byte(idk),
-		Path:    path,
-		Fn:      fn,
+		IDField:     []byte(idk),
+		Path:        path,
+		Fn:          fn,
+		Source:      rc.Type,
+		Scope:       rc.Name,
+		Fingerprint: resolverConfigFingerprint(rc),
 	}
 
 	// Index resolver obj by parent and child names
@@ -178,6 +187,15 @@ func (gj *graphjinEngine) initToplevelRemote(
 		}
 	}
 
-	gj.rmap[rc.Name] = resItem{Path: path, Fn: fn}
+	gj.rmap[rc.Name] = resItem{Path: path, Fn: fn, Source: rc.Type, Scope: rc.Name, Fingerprint: resolverConfigFingerprint(rc)}
 	return nil
+}
+
+func resolverConfigFingerprint(rc ResolverConfig) string {
+	b, err := json.Marshal(rc)
+	if err != nil {
+		b = []byte(fmt.Sprintf("%s|%s|%s|%s|%s|%s", rc.Name, rc.Type, rc.Schema, rc.Table, rc.Column, rc.StripPath))
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }

@@ -1601,6 +1601,27 @@ func TestQuerySyntaxReference_HasRemoteJoins(t *testing.T) {
 	}
 }
 
+func TestQuerySyntaxReference_HasWindowFunctions(t *testing.T) {
+	ref := querySyntaxReference
+	if len(ref.WindowFunctions.Functions) == 0 {
+		t.Fatal("expected window function syntax reference")
+	}
+	for _, want := range []string{"row_number", "dense_rank", "lag_<column>", "first_value_<column>"} {
+		if !strings.Contains(strings.Join(ref.WindowFunctions.Functions, "\n"), want) {
+			t.Errorf("window functions should mention %q; got %#v", want, ref.WindowFunctions.Functions)
+		}
+	}
+	if !strings.Contains(ref.WindowFunctions.Arguments, "frame") {
+		t.Errorf("window arguments should describe frame syntax; got %q", ref.WindowFunctions.Arguments)
+	}
+	if len(ref.WindowFunctions.Rules) == 0 {
+		t.Fatal("expected window function rules")
+	}
+	if len(ref.Examples.Windows) == 0 {
+		t.Fatal("expected window examples")
+	}
+}
+
 // =============================================================================
 // enhanceError Tests
 // =============================================================================

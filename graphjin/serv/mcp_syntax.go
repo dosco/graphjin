@@ -15,6 +15,7 @@ type QuerySyntaxReference struct {
 	Pagination         PaginationSyntax       `json:"pagination"`
 	Ordering           OrderingSyntax         `json:"ordering"`
 	Aggregations       AggregationsSyntax     `json:"aggregations"`
+	WindowFunctions    WindowFunctionsSyntax  `json:"window_functions"`
 	Recursive          RecursiveSyntax        `json:"recursive"`
 	FullTextSearch     string                 `json:"full_text_search"`
 	Directives         map[string]string      `json:"directives"`
@@ -29,6 +30,15 @@ type AggregationsSyntax struct {
 	Functions []string `json:"functions"`
 	Usage     string   `json:"usage"`
 	WithGroup string   `json:"with_group"`
+}
+
+// WindowFunctionsSyntax describes SQL analytic/window functions.
+type WindowFunctionsSyntax struct {
+	Functions []string `json:"functions"`
+	Usage     string   `json:"usage"`
+	Arguments string   `json:"arguments"`
+	Rules     []string `json:"rules"`
+	Dialects  string   `json:"dialects"`
 }
 
 // VariablesSyntax shows how to use variables in queries
@@ -52,6 +62,7 @@ type QueryExamplesForSyntax struct {
 	Relationships []QueryExample `json:"relationships"`
 	Pagination    []QueryExample `json:"pagination"`
 	Aggregations  []QueryExample `json:"aggregations"`
+	Windows       []QueryExample `json:"windows"`
 	Recursive     []QueryExample `json:"recursive"`
 	Spatial       []QueryExample `json:"spatial"`
 	RemoteJoins   []QueryExample `json:"remote_joins"`
@@ -96,12 +107,23 @@ type RecursiveSyntax struct {
 type MutationSyntaxReference struct {
 	AnalyticsModeRules []string           `json:"analytics_mode_rules,omitempty"`
 	Operations         MutationOperations `json:"operations"`
+	CodeSQL            CodeSQLMutationDSL `json:"codesql,omitempty"`
 	NestedMutations    NestedMutationInfo `json:"nested_mutations"`
 	ConnectDisconnect  ConnectDisconnect  `json:"connect_disconnect"`
 	Returning          ReturningInfo      `json:"returning"`
 	Validation         ValidationSyntax   `json:"validation"`
 	CommonMistakes     []MistakeExample   `json:"common_mistakes"`
 	Examples           []QueryExample     `json:"examples"`
+}
+
+// CodeSQLMutationDSL describes the GraphQL-native CodeSQL edit workflow.
+type CodeSQLMutationDSL struct {
+	ReadBeforeWrite string   `json:"read_before_write"`
+	Preview         string   `json:"preview"`
+	Apply           string   `json:"apply"`
+	Locks           string   `json:"locks"`
+	FileOps         []string `json:"file_ops"`
+	Rules           []string `json:"rules"`
 }
 
 // ReturningInfo describes the returning clause behavior
@@ -186,6 +208,24 @@ var querySyntaxReference = QuerySyntaxReference{
 		Usage:     "{ products { count_id sum_price avg_price revenue: sum(expr: { mul: [price, quantity] }) } }",
 		WithGroup: "{ products(distinct: [category_id]) { category_id count_id sum_price revenue: sum(expr: { mul: [price, quantity] }) } } - group by category",
 	},
+	WindowFunctions: WindowFunctionsSyntax{
+		Functions: []string{
+			"sum_<column> @window / avg_<column> @window / count_<column> @window - aggregate over a window without collapsing rows",
+			"row_number @window / rank @window / dense_rank @window - rank rows inside a partition",
+			"lag_<column> @window / lead_<column> @window - previous or next row value",
+			"first_value_<column> @window / last_value_<column> @window - first or last value in the frame",
+		},
+		Usage:     `{ orders { account_id month rank: row_number @window(partition: ["account_id"], order: ["total desc"]) previous_total: lag_total @window(partition: ["account_id"], order: ["month"]) running_total: sum_total @window(partition: ["account_id"], order: ["month"], frame: "rows unbounded preceding") } }`,
+		Arguments: `@window(partition: ["account_id"], order: ["month asc", "id"], frame: "rows between unbounded preceding and current row"). partition/order columns must exist on the table. Empty @window emits OVER ().`,
+		Rules: []string{
+			"Built-in analytic functions require @window; row_number without @window is invalid.",
+			"Windowed aggregates return one row per input row and do not trigger GROUP BY collapse.",
+			"Use window functions for running totals, ranking, period-over-period comparisons, first/last value in a frame, and business-reporting row metrics.",
+			"order entries are strings: \"column\", \"column desc\", or \"column desc nulls last\".",
+			"NULLS FIRST/LAST is rejected at compile time on dialects without native support.",
+		},
+		Dialects: "Postgres, MySQL 8.0+, MariaDB 10.2+, MSSQL 2012+, Oracle, SQLite 3.25+, Snowflake, CockroachDB. MongoDB is unsupported. NULLS FIRST/LAST in @window order is rejected on dialects without native support.",
+	},
 	Recursive: RecursiveSyntax{
 		FindParents:  "comments(find: \"parents\") - walks up the tree via self-referencing FK",
 		FindChildren: "comments(find: \"children\") - walks down the tree via self-referencing FK",
@@ -201,6 +241,7 @@ var querySyntaxReference = QuerySyntaxReference{
 		"@through(table:)":       "Specify the intermediate join table for many-to-many relationships",
 		"@through(column:)":      "Disambiguate when the parent and the nested target share multiple foreign keys — name the FK column to follow. For composite foreign keys, naming any one column of the composite is sufficient. Example: billofmaterials { product @through(column: \"componentid\") { name } }",
 		"@notRelated":            "Disable automatic relationship detection for a field",
+		"@window":                "Attach SQL window semantics to an aggregate or built-in analytic field. Example: running_total: sum_total @window(partition: [\"account_id\"], order: [\"month\"], frame: \"rows unbounded preceding\")",
 		"@cacheControl(maxAge:)": "Set cache TTL in seconds for this query",
 		"@database(name:)":       "Assign table to a named database (REQUIRED on every table when multiple databases are configured). Used in schema definitions, e.g.: type users @database(name: \"mydb\") { ... }",
 	},
@@ -262,6 +303,14 @@ var querySyntaxReference = QuerySyntaxReference{
 			{Description: "Ratio-of-aggregates — bare expression with nested sum/avg nodes", Query: "{ order_items { margin_pct: ratio(expr: { div: [{ sum: { mul: [unitprice, quantity] } }, { sum: linetotal }] }) } }"},
 			{Description: "Joined column via FK dot-notation (up to 3 hops)", Query: "{ order_items(distinct: [product_id]) { gross: sum(expr: { mul: [quantity, { sub: [unitprice, \"product.standardcost\"] }] }) } }"},
 			{Description: "Conditional aggregate — SUM(CASE WHEN … THEN … ELSE 0 END)", Query: "{ orders(distinct: [customer_id]) { big_ticket: sum(expr: { case: { arms: [{ when: { total: { gt: 100 } }, then: total }], else: 0 } }) } }"},
+			{Description: "Window running total — aggregate without collapsing rows", Query: `{ orders { account_id month total running_total: sum_total @window(partition: ["account_id"], order: ["month"], frame: "rows unbounded preceding") } }`},
+			{Description: "Window ranking and prior value", Query: `{ orders { account_id total rank: row_number @window(partition: ["account_id"], order: ["total desc"]) previous_total: lag_total @window(partition: ["account_id"], order: ["created_at"]) } }`},
+		},
+		Windows: []QueryExample{
+			{Description: "Running total per account", Query: `{ orders { account_id month total running_total: sum_total @window(partition: ["account_id"], order: ["month"], frame: "rows unbounded preceding") } }`},
+			{Description: "Rank rows inside each partition", Query: `{ orders { account_id total rank: row_number @window(partition: ["account_id"], order: ["total desc"]) dense_rank: dense_rank @window(partition: ["account_id"], order: ["total desc"]) } }`},
+			{Description: "Previous and next row values for period comparison", Query: `{ orders { account_id month total previous_total: lag_total @window(partition: ["account_id"], order: ["month"]) next_total: lead_total @window(partition: ["account_id"], order: ["month"]) } }`},
+			{Description: "First and last value in the frame", Query: `{ orders { account_id month total first_total: first_value_total @window(partition: ["account_id"], order: ["month"]) last_total: last_value_total @window(partition: ["account_id"], order: ["month"]) } }`},
 		},
 		Recursive: []QueryExample{
 			{Description: "Find all children (descendants)", Query: "{ comments(id: $id) { id body replies: comments(find: \"children\") { id body } } }"},
@@ -292,6 +341,25 @@ var mutationSyntaxReference = MutationSyntaxReference{
 		UpdateWhere: "products(where: { price: { lt: 10 } }, update: { on_sale: true })",
 		Upsert:      "products(upsert: { id: $id, name: \"Name\" }) - insert or update based on id",
 		Delete:      "products(delete: true, where: { id: { eq: $id } })",
+	},
+	CodeSQL: CodeSQLMutationDSL{
+		ReadBeforeWrite: `Query code_symbols/code_nodes/code_captures first and request code or code_context plus code_files { path hash } before editing source.`,
+		Preview:         `mutation { code_change_sets(insert: { action: "preview", title: "...", edits: [{ op: "replace", path: "main.go", expected_hash: "...", replacements: [{ start_byte: 10, end_byte: 20, old_text: "old", new_text: "new" }] }] }) { id status diff errors } }`,
+		Apply:           `mutation { code_change_sets(id: 123, update: { id: 123, action: "apply" }) { id status files_changed files_reindexed errors } }`,
+		Locks:           `mutation { code_locks(insert: { action: "acquire", path: "main.go", ranges: [{ start_byte: 10, end_byte: 20 }], owner: "agent" }) { id lease_token status } } For create/rename target reservation, acquire whole_file: true on the target path.`,
+		FileOps: []string{
+			`create: { op: "create", path: "new.go", content: "package main\n", mkdirs: true }`,
+			`delete: { op: "delete", path: "old.go", expected_hash: "current-file-hash" }`,
+			`rename: { op: "rename", path: "old.go", new_path: "pkg/new.go", expected_hash: "current-file-hash", mkdirs: true }`,
+		},
+		Rules: []string{
+			"Never mutate derived CodeSQL index tables like code_files, code_symbols, code_nodes, or code_captures directly.",
+			"Always query code/code_context first, then include the exact expected_hash for replace/delete/rename and exact old_text in replacements.",
+			"Create does not use expected_hash, but fails if the target path already exists.",
+			"Preview before apply. Apply fails if the file hash changed, old_text no longer matches, or an overlapping lock exists.",
+			"On stale expected_hash, re-query CodeSQL source and submit a new preview.",
+			"Use code_locks only for longer edit sessions; short preview/apply flows rely on automatic range locking.",
+		},
 	},
 	NestedMutations: NestedMutationInfo{
 		Description: "Insert across multiple related tables atomically in a single mutation",
@@ -336,7 +404,7 @@ func (ms *mcpServer) registerResources() {
 		mcp.NewResource(
 			QuerySyntaxResourceURI,
 			"GraphJin Query Syntax Guide",
-			mcp.WithResourceDescription("Complete GraphJin query DSL reference including operators, pagination, aggregations, and examples"),
+			mcp.WithResourceDescription("Complete GraphJin query DSL reference including operators, pagination, aggregations, window functions, and examples"),
 			mcp.WithMIMEType("application/json"),
 		),
 		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
@@ -392,14 +460,15 @@ func (ms *mcpServer) registerResources() {
 					"  Tables can have hundreds of thousands of rows. You cannot predict sizes in advance.",
 					"- Queries inside workflows must be TOP-DOWN: start from the grouping/parent table",
 					"  and nest into children. NEVER filter bottom-up from leaf tables.",
-					"- order_by does NOT work on aggregation aliases (sum_*, count_*, etc).",
-					"  Sort aggregated results in workflow JavaScript, not in the query.",
+					"- order_by can target aggregation aliases when distinct is present and can target expression aggregate aliases.",
+					"  Sort in workflow JavaScript only for metrics computed after query execution.",
 					"- Use distinct: [columns] for GROUP BY — group_by does not exist.",
 				},
 				MutationWorkflow: []string{
 					"1. Call get_mutation_syntax to learn mutation syntax",
-					"2. Call describe_table to understand required columns",
-					"3. Call execute_graphql with the mutation",
+					"2. For CodeSQL replace/delete/rename, query code/code_context and code_files.hash first",
+					"3. Preview replace/create/delete/rename edits with code_change_sets(action: \"preview\")",
+					"4. Apply with code_change_sets(action: \"apply\") only after the diff looks correct",
 				},
 			}
 			data, err := mcpMarshalJSON(guide, true)
@@ -420,13 +489,13 @@ func (ms *mcpServer) registerSyntaxTools() {
 	// get_query_syntax - Returns GraphJin query DSL reference
 	ms.srv.AddTool(mcp.NewTool(
 		"get_query_syntax",
-		mcp.WithDescription("Get GraphJin query syntax reference. CALL THIS FIRST before writing queries. GraphJin uses its own DSL that differs from standard GraphQL."),
+		mcp.WithDescription("Get GraphJin query syntax reference, including filters, pagination, aggregations, and @window analytics. CALL THIS FIRST before writing queries. GraphJin uses its own DSL that differs from standard GraphQL."),
 	), ms.handleGetQuerySyntax)
 
 	// get_mutation_syntax - Returns GraphJin mutation DSL reference
 	ms.srv.AddTool(mcp.NewTool(
 		"get_mutation_syntax",
-		mcp.WithDescription("Get GraphJin mutation syntax reference. Call this before writing mutations to learn insert, update, upsert, delete, and nested mutation syntax."),
+		mcp.WithDescription("Get GraphJin mutation syntax reference. Call this before writing mutations to learn insert, update, upsert, delete, nested mutation syntax, and the CodeSQL preview/apply edit flow."),
 	), ms.handleGetMutationSyntax)
 }
 

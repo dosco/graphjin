@@ -198,6 +198,14 @@ mcp:
 # GJ_DATABASE_USER
 # GJ_DATABASE_PASSWORD
 
+# Metadata graph is enabled by default in dev. It exposes GraphJin-discovered
+# schema as read-only gj_* tables and can auto-link to one CodeSQL database.
+# metadata:
+#   enabled: true
+#   database: graphjin
+#   auto_code_relations: true
+#   # code_databases: [code]
+
 # databases:
 #   default:
 #     type: postgres

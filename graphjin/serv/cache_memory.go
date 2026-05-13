@@ -2,6 +2,7 @@ package serv
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,10 +31,10 @@ type MemoryCache struct {
 	excludeTable map[string]bool
 	workerPool   *SWRWorkerPool
 
-	// Row index: rowKey -> set of response keys
+	// Dependency index: dependency key -> set of fragment keys
 	rowIndex   map[string]map[string]bool
 	tableIndex map[string]map[string]bool
-	modTimes   map[string]int64 // modKey -> modification timestamp (ms)
+	modTimes   map[string]int64 // dependency key -> modification timestamp (ms)
 	mu         sync.RWMutex
 
 	// OpenTelemetry metric instruments
@@ -69,7 +70,10 @@ func NewMemoryCache(conf CachingConfig, maxEntries int) (*MemoryCache, error) {
 
 	// Build exclude table lookup
 	for _, t := range conf.ExcludeTables {
-		mc.excludeTable[t] = true
+		t = strings.TrimSpace(t)
+		if t != "" {
+			mc.excludeTable[t] = true
+		}
 	}
 
 	// Initialize OpenTelemetry metrics
@@ -96,7 +100,6 @@ func NewMemoryCache(conf CachingConfig, maxEntries int) (*MemoryCache, error) {
 		mc.workerPool = NewSWRWorkerPool(swrWorkers, mc)
 	}
 
-
 	return mc, nil
 }
 
@@ -107,6 +110,14 @@ func (mc *MemoryCache) SubmitRefresh(key string, fn core.RefreshFn) bool {
 		return false
 	}
 	return mc.workerPool.TrySubmit(key, fn)
+}
+
+// SubmitRefreshWithOptions enqueues an option-aware stale-while-revalidate refresh.
+func (mc *MemoryCache) SubmitRefreshWithOptions(key string, fn core.RefreshFnWithOptions) bool {
+	if mc.workerPool == nil {
+		return false
+	}
+	return mc.workerPool.TrySubmitWithOptions(key, fn)
 }
 
 // Get retrieves a cached response
@@ -153,6 +164,18 @@ func (mc *MemoryCache) Set(
 	refs []core.RowRef,
 	queryStartTime time.Time,
 ) error {
+	return mc.SetWithOptions(ctx, key, data, refs, queryStartTime, core.CacheEntryOptions{})
+}
+
+// SetWithOptions stores a response with dependency indices and per-entry TTL caps.
+func (mc *MemoryCache) SetWithOptions(
+	ctx context.Context,
+	key string,
+	data []byte,
+	refs []core.RowRef,
+	queryStartTime time.Time,
+	opts core.CacheEntryOptions,
+) error {
 	// Filter out excluded tables
 	filteredRefs := mc.filterExcludedTables(refs)
 
@@ -162,6 +185,12 @@ func (mc *MemoryCache) Set(
 		if !safe {
 			return nil
 		}
+	}
+
+	now := time.Now()
+	ttl, freshTTL, ok := cacheEntryTTLs(mc.conf, opts)
+	if !ok {
+		return nil
 	}
 
 	// Compress if beneficial
@@ -179,13 +208,6 @@ func (mc *MemoryCache) Set(
 			data = compData
 			compressed = true
 		}
-	}
-
-	now := time.Now()
-	ttl := time.Duration(mc.conf.TTL) * time.Second
-	freshTTL := time.Duration(mc.conf.FreshTTL) * time.Second
-	if freshTTL == 0 {
-		freshTTL = ttl // No SWR - fresh until hard TTL
 	}
 
 	entry := &memoryCacheEntry{
@@ -208,26 +230,18 @@ func (mc *MemoryCache) Set(
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
-	if len(filteredRefs) <= rowLevelThreshold {
-		// Row-level indexing
-		for _, ref := range filteredRefs {
-			rowKey := mc.rowKey(ref.Table, ref.ID)
-			if mc.rowIndex[rowKey] == nil {
-				mc.rowIndex[rowKey] = make(map[string]bool)
-			}
-			mc.rowIndex[rowKey][key] = true
+	indexRefs := cacheIndexRefs(filteredRefs, len(filteredRefs) <= rowLevelThreshold)
+	for _, ref := range indexRefs {
+		depKey := ref.DependencyKey()
+		if mc.rowIndex[depKey] == nil {
+			mc.rowIndex[depKey] = make(map[string]bool)
 		}
-	} else {
-		// Table-level indexing for large results
-		tables := make(map[string]bool)
-		for _, ref := range filteredRefs {
-			tables[ref.Table] = true
-		}
-		for table := range tables {
-			if mc.tableIndex[table] == nil {
-				mc.tableIndex[table] = make(map[string]bool)
+		mc.rowIndex[depKey][key] = true
+		if ref.Normalize().Kind == core.CacheKindTable {
+			if mc.tableIndex[depKey] == nil {
+				mc.tableIndex[depKey] = make(map[string]bool)
 			}
-			mc.tableIndex[table][key] = true
+			mc.tableIndex[depKey][key] = true
 		}
 	}
 
@@ -256,34 +270,20 @@ func (mc *MemoryCache) InvalidateRows(ctx context.Context, refs []core.RowRef) e
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
-	// Record modification timestamps
-	for _, ref := range filteredRefs {
-		modKey := mc.modKey(ref.Table, ref.ID)
-		mc.modTimes[modKey] = now
-	}
-
-	// Collect all response keys to invalidate
+	invalidateRefs := cacheIndexRefs(filteredRefs, true)
 	keysToDelete := make(map[string]bool)
 
-	// From row-level indices
-	for _, ref := range filteredRefs {
-		rowKey := mc.rowKey(ref.Table, ref.ID)
-		for respKey := range mc.rowIndex[rowKey] {
+	for _, ref := range invalidateRefs {
+		depKey := ref.DependencyKey()
+		mc.modTimes[depKey] = now
+		for respKey := range mc.rowIndex[depKey] {
 			keysToDelete[respKey] = true
 		}
-		delete(mc.rowIndex, rowKey)
-	}
-
-	// From table-level indices
-	tables := make(map[string]bool)
-	for _, ref := range filteredRefs {
-		tables[ref.Table] = true
-	}
-	for table := range tables {
-		for respKey := range mc.tableIndex[table] {
+		delete(mc.rowIndex, depKey)
+		for respKey := range mc.tableIndex[depKey] {
 			keysToDelete[respKey] = true
 		}
-		delete(mc.tableIndex, table)
+		delete(mc.tableIndex, depKey)
 	}
 
 	// Delete cached responses
@@ -295,25 +295,38 @@ func (mc *MemoryCache) InvalidateRows(ctx context.Context, refs []core.RowRef) e
 	return nil
 }
 
+// InvalidateTables invalidates cache entries that reference any of the given tables.
+func (mc *MemoryCache) InvalidateTables(ctx context.Context, tables []string) error {
+	if len(tables) == 0 {
+		return nil
+	}
+	refs := make([]core.RowRef, 0, len(tables))
+	for _, table := range tables {
+		table = strings.TrimSpace(table)
+		ref := core.RowRef{Kind: core.CacheKindTable, Table: table}
+		if table == "" || refExcludedByConfig(mc.excludeTable, ref) {
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	return mc.InvalidateRows(ctx, refs)
+}
+
 // checkModificationSafety verifies no rows were modified during query execution
 func (mc *MemoryCache) checkModificationSafety(refs []core.RowRef, queryStartTime time.Time) bool {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 
 	queryStartMs := queryStartTime.UnixMilli()
-	for _, ref := range refs {
-		modKey := mc.modKey(ref.Table, ref.ID)
-		if ts, ok := mc.modTimes[modKey]; ok {
-			if ts > queryStartMs {
-				// Row was modified during query - unsafe to cache
-				return false
-			}
+	for _, ref := range cacheIndexRefs(refs, true) {
+		if ts, ok := mc.modTimes[ref.DependencyKey()]; ok && ts > queryStartMs {
+			return false
 		}
 	}
 	return true
 }
 
-// filterExcludedTables removes refs for excluded tables
+// filterExcludedTables removes refs excluded by table or source-aware keys.
 func (mc *MemoryCache) filterExcludedTables(refs []core.RowRef) []core.RowRef {
 	if len(mc.excludeTable) == 0 {
 		return refs
@@ -321,7 +334,7 @@ func (mc *MemoryCache) filterExcludedTables(refs []core.RowRef) []core.RowRef {
 
 	filtered := make([]core.RowRef, 0, len(refs))
 	for _, ref := range refs {
-		if !mc.excludeTable[ref.Table] {
+		if !refExcludedByConfig(mc.excludeTable, ref) {
 			filtered = append(filtered, ref)
 		}
 	}
@@ -330,11 +343,15 @@ func (mc *MemoryCache) filterExcludedTables(refs []core.RowRef) []core.RowRef {
 
 // Key helpers
 func (mc *MemoryCache) rowKey(table, id string) string {
-	return "row:" + table + ":" + id
+	return core.RowRef{Table: table, ID: id}.DependencyKey()
 }
 
 func (mc *MemoryCache) modKey(table, id string) string {
-	return "mod:" + table + ":" + id
+	return core.RowRef{Table: table, ID: id}.DependencyKey()
+}
+
+func (mc *MemoryCache) tableModKey(table string) string {
+	return core.RowRef{Kind: core.CacheKindTable, Table: table}.DependencyKey()
 }
 
 // Metric recording helpers (record both internal metrics and OTel metrics)

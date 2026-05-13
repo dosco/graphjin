@@ -18,45 +18,45 @@ func TestDBTableDatabaseField(t *testing.T) {
 // TestIsCrossDatabase verifies the IsCrossDatabase method on DBRel.
 func TestIsCrossDatabase(t *testing.T) {
 	tests := []struct {
-		name     string
-		leftDB   string
-		rightDB  string
+		name      string
+		leftDB    string
+		rightDB   string
 		wantCross bool
 	}{
 		{
 			name:      "both empty (same default)",
-			leftDB:   "",
-			rightDB:  "",
+			leftDB:    "",
+			rightDB:   "",
 			wantCross: false,
 		},
 		{
 			name:      "left empty, right set",
-			leftDB:   "",
-			rightDB:  "analytics",
+			leftDB:    "",
+			rightDB:   "analytics",
 			wantCross: false, // Empty means default, not cross-DB
 		},
 		{
 			name:      "left set, right empty",
-			leftDB:   "main",
-			rightDB:  "",
+			leftDB:    "main",
+			rightDB:   "",
 			wantCross: false, // Empty means default, not cross-DB
 		},
 		{
 			name:      "same database",
-			leftDB:   "main",
-			rightDB:  "main",
+			leftDB:    "main",
+			rightDB:   "main",
 			wantCross: false,
 		},
 		{
 			name:      "different databases",
-			leftDB:   "main",
-			rightDB:  "analytics",
+			leftDB:    "main",
+			rightDB:   "analytics",
 			wantCross: true,
 		},
 		{
 			name:      "case sensitive",
-			leftDB:   "Main",
-			rightDB:  "main",
+			leftDB:    "Main",
+			rightDB:   "main",
 			wantCross: true, // Case matters
 		},
 	}
@@ -216,8 +216,8 @@ func TestCrossDBRelStoredAsMetadata(t *testing.T) {
 	if !dbRel.IsCrossDatabase() {
 		t.Error("expected IsCrossDatabase() = true for cross-database FK relationship")
 	}
-	if dbRel.Right.Ti.Database != "ats" {
-		t.Errorf("Right.Ti.Database = %q, want %q", dbRel.Right.Ti.Database, "ats")
+	if dbRel.Left.Ti.Database != "ats" {
+		t.Errorf("Left.Ti.Database = %q, want %q", dbRel.Left.Ti.Database, "ats")
 	}
 }
 
@@ -288,8 +288,8 @@ func TestCrossDBRelWithLocalCollision(t *testing.T) {
 	if !ok {
 		t.Fatal("FindCrossDBPath() should find cross-DB path even with local name collision")
 	}
-	if tp.RT.Database != "ats" {
-		t.Errorf("cross-DB path target Database = %q, want %q", tp.RT.Database, "ats")
+	if tp.LT.Database != "ats" {
+		t.Errorf("cross-DB path target Database = %q, want %q", tp.LT.Database, "ats")
 	}
 }
 

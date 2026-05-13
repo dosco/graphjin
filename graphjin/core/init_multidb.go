@@ -184,6 +184,10 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 		return fmt.Errorf("database %s: add functions failed: %w", ctx.name, err)
 	}
 
+	if dbConf, ok := gj.conf.Databases[ctx.name]; ok && dbConf.ManagedType == "codesql" {
+		addCodeSQLVirtualColumns(ctx.dbinfo)
+	}
+
 	// Create schema
 	var err error
 	ctx.schema, err = sdata.NewDBSchema(ctx.dbinfo, getDBTableAliases(gj.conf))
@@ -225,6 +229,18 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 	ctx.psqlCompiler.SetSchemaInfo(ctx.schema.GetTables())
 
 	return nil
+}
+
+func addCodeSQLVirtualColumns(di *sdata.DBInfo) {
+	for _, table := range []string{"code_symbols", "code_nodes", "code_captures"} {
+		for _, col := range []string{"code", "code_context"} {
+			_ = di.AddColumn(di.Schema, table, sdata.DBColumn{
+				Name:           col,
+				Type:           "text",
+				CodeSQLVirtual: col,
+			})
+		}
+	}
 }
 
 // initDBContext creates a fully initialized database context for runtime additions.

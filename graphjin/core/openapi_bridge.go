@@ -2,8 +2,12 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -197,9 +201,10 @@ func synthesiseResolvers(reg *openapi.Registry) []ResolverConfig {
 					Table:  op.Join.ParentTable,
 					Column: op.Join.ParentColumn,
 					Props: ResolverProps{
-						"spec_key":     op.SpecKey,
-						"operation_id": op.OperationID,
-						"path_param":   pathName,
+						"spec_key":         op.SpecKey,
+						"operation_id":     op.OperationID,
+						"path_param":       pathName,
+						"spec_fingerprint": openAPISpecFingerprint(sp),
 					},
 				})
 			case openapi.OpModeSingleByID, openapi.OpModeList:
@@ -208,12 +213,83 @@ func synthesiseResolvers(reg *openapi.Registry) []ResolverConfig {
 					Type: "openapi",
 					// Table left empty: signals top-level to initRemote.
 					Props: ResolverProps{
-						"spec_key":     op.SpecKey,
-						"operation_id": op.OperationID,
+						"spec_key":         op.SpecKey,
+						"operation_id":     op.OperationID,
+						"spec_fingerprint": openAPISpecFingerprint(sp),
 					},
 				})
 			}
 		}
+	}
+	return out
+}
+
+func openAPISpecFingerprint(sp *openapi.Spec) string {
+	h := sha256.New()
+	if sp != nil {
+		h.Write([]byte(sp.Key))
+		h.Write([]byte{0})
+		h.Write([]byte(sp.BaseURL))
+		h.Write([]byte{0})
+		writeFingerprintJSON(h, sp.Auth)
+		writeFingerprintJSON(h, sp.Concurrency)
+		writeFingerprintJSON(h, openAPIOperationFingerprintParts(sp.Operations))
+		if sp.SourcePath != "" {
+			if b, err := os.ReadFile(sp.SourcePath); err == nil {
+				h.Write(b)
+			} else {
+				h.Write([]byte(sp.SourcePath))
+			}
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func writeFingerprintJSON(h hashWriter, v interface{}) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	h.Write(b)
+	h.Write([]byte{0})
+}
+
+type hashWriter interface {
+	Write([]byte) (int, error)
+}
+
+type openAPIOpFingerprint struct {
+	SpecKey         string
+	OperationID     string
+	Method          string
+	PathTemplate    string
+	Mode            string
+	PathParams      []openapi.ParamSpec
+	QueryParams     []openapi.ParamSpec
+	HeaderParams    []openapi.ParamSpec
+	ResultPath      []string
+	IsArrayResponse bool
+	ExposeAs        string
+	Join            *openapi.JoinConfig
+}
+
+func openAPIOperationFingerprintParts(ops []openapi.OpDescriptor) []openAPIOpFingerprint {
+	out := make([]openAPIOpFingerprint, 0, len(ops))
+	for _, op := range ops {
+		out = append(out, openAPIOpFingerprint{
+			SpecKey:         op.SpecKey,
+			OperationID:     op.OperationID,
+			Method:          op.Method,
+			PathTemplate:    op.PathTemplate,
+			Mode:            op.Mode.String(),
+			PathParams:      op.PathParams,
+			QueryParams:     op.QueryParams,
+			HeaderParams:    op.HeaderParams,
+			ResultPath:      op.ResultPath,
+			IsArrayResponse: op.IsArrayResponse,
+			ExposeAs:        op.ExposeAs,
+			Join:            op.Join,
+		})
 	}
 	return out
 }

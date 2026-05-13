@@ -12,6 +12,7 @@ const databases = [
   { name: 'Snowflake', logo: '/logos/snowflake.svg' },
   { name: 'AWS Aurora', logo: '/logos/aws-aurora.svg' },
   { name: 'Cloud SQL', logo: '/logos/google-cloud-sql.svg' },
+  { name: 'HTTP APIs', label: 'API' },
   { name: 'S3 / GCS / Files', label: 'OBJ' },
   { name: 'Code', label: '{ }' },
 ];
@@ -36,10 +37,11 @@ const databases = [
       >
         Point GraphJin at <strong style="color: var(--color-text)">as many systems as you need</strong>
         — Postgres for users, MySQL for orders, Snowflake for analytics, MongoDB for events,
-        object storage for files, and CodeSQL for source trees — and query them through a
-        single GraphQL endpoint. Joins, subscriptions, search, and mutations compose
+        HTTP APIs for remote services, object storage for files, and CodeSQL for source
+        trees — and query them through a single GraphQL endpoint. Joins, remote joins,
+        subscriptions, search, and mutations compose
         <strong style="color: var(--color-text)">across systems in one request</strong>, so an AI
-        assistant can reason across the data, files, and code without learning every backend.
+        assistant can reason across the data, APIs, files, and code without learning every backend.
       </p>
     </header>
 

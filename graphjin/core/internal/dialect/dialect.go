@@ -45,6 +45,8 @@ type InlineChildRenderer interface {
 	Quoted(s string)
 	Squoted(s string)
 	RenderExp(ti sdata.DBTable, ex *qcode.Exp)
+	RenderFieldFunction(sel *qcode.Select, f qcode.Field)
+	RenderWindowFunction(sel *qcode.Select, f qcode.Field, table string)
 	// RenderScalarExp emits SQL for a scalar expression tree (arithmetic,
 	// case, cast, coalesce, agg-of-expr, ...). Exposed here so dialects
 	// that build their own JSON-field renderer (mariadb, mssql inline
@@ -85,6 +87,7 @@ type Dialect interface {
 	RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcode.Exp)
 	RenderSearchRank(ctx Context, sel *qcode.Select, f qcode.Field)
 	RenderSearchHeadline(ctx Context, sel *qcode.Select, f qcode.Field)
+	ValidateWindowFunction(f qcode.Field) error
 	RenderValVar(ctx Context, ex *qcode.Exp, val string) bool
 	RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32)
 	RenderArray(ctx Context, items []string)

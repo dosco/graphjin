@@ -167,3 +167,11 @@ databases:
 
     # Required for tls. Can be a file path or the contents of the pem file
     # client_key: ./client-key.pem
+
+# Metadata graph is disabled by default in production. Enable explicitly if
+# you want read-only gj_* schema tables and optional CodeSQL code references.
+# metadata:
+#   enabled: false
+#   database: graphjin
+#   auto_code_relations: false
+#   # code_databases: [code]

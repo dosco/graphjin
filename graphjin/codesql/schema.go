@@ -255,6 +255,38 @@ CREATE TABLE IF NOT EXISTS code_edges (
   confidence TEXT NOT NULL DEFAULT 'syntax'
 );
 
+CREATE TABLE IF NOT EXISTS code_db_refs (
+  id INTEGER PRIMARY KEY,
+  file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
+  symbol_id INTEGER REFERENCES code_symbols(id) ON DELETE SET NULL,
+  node_id INTEGER REFERENCES code_nodes(id) ON DELETE SET NULL,
+  database_name TEXT NOT NULL DEFAULT '',
+  schema_name TEXT NOT NULL DEFAULT '',
+  table_name TEXT NOT NULL DEFAULT '',
+  column_name TEXT NOT NULL DEFAULT '',
+  table_key TEXT NOT NULL DEFAULT '',
+  column_key TEXT NOT NULL DEFAULT '',
+  ref_kind TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0,
+  evidence TEXT NOT NULL DEFAULT '',
+  source_text TEXT NOT NULL DEFAULT '',
+  start_byte INTEGER NOT NULL DEFAULT 0,
+  end_byte INTEGER NOT NULL DEFAULT 0,
+  start_row INTEGER NOT NULL DEFAULT 0,
+  start_col INTEGER NOT NULL DEFAULT 0,
+  end_row INTEGER NOT NULL DEFAULT 0,
+  end_col INTEGER NOT NULL DEFAULT 0,
+  resolved BOOLEAN NOT NULL DEFAULT 0,
+  ambiguous BOOLEAN NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_code_db_refs_table_key ON code_db_refs(table_key);
+CREATE INDEX IF NOT EXISTS idx_code_db_refs_column_key ON code_db_refs(column_key);
+CREATE INDEX IF NOT EXISTS idx_code_db_refs_table ON code_db_refs(table_name);
+CREATE INDEX IF NOT EXISTS idx_code_db_refs_column ON code_db_refs(column_name);
+CREATE INDEX IF NOT EXISTS idx_code_db_refs_file ON code_db_refs(file_id);
+CREATE INDEX IF NOT EXISTS idx_code_db_refs_symbol ON code_db_refs(symbol_id);
+
 CREATE TABLE IF NOT EXISTS code_injections (
   id INTEGER PRIMARY KEY,
   file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
@@ -320,6 +352,52 @@ CREATE TRIGGER IF NOT EXISTS code_file_text_chunks_au AFTER UPDATE ON code_file_
   INSERT INTO code_file_text_chunks_fts(code_file_text_chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
   INSERT INTO code_file_text_chunks_fts(rowid, text) VALUES (new.id, new.text);
 END;
+
+CREATE TABLE IF NOT EXISTS code_change_sets (
+  id INTEGER PRIMARY KEY,
+  action TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  owner TEXT NOT NULL DEFAULT '',
+  edits JSON NOT NULL DEFAULT '[]',
+  lock_tokens JSON NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'pending',
+  diff TEXT NOT NULL DEFAULT '',
+  errors JSON NOT NULL DEFAULT '[]',
+  files_changed JSON NOT NULL DEFAULT '[]',
+  files_reindexed JSON NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  applied_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS code_locks (
+  id INTEGER PRIMARY KEY,
+  action TEXT NOT NULL DEFAULT '',
+  path TEXT NOT NULL,
+  ranges JSON NOT NULL DEFAULT '[]',
+  owner TEXT NOT NULL DEFAULT '',
+  lease_token TEXT NOT NULL DEFAULT '',
+  ttl_seconds INTEGER NOT NULL DEFAULT 120,
+  whole_file BOOLEAN NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_code_locks_path_status ON code_locks(path, status);
+CREATE INDEX IF NOT EXISTS idx_code_locks_expires_at ON code_locks(expires_at);
+
+CREATE TABLE IF NOT EXISTS code_change_audit (
+  id INTEGER PRIMARY KEY,
+  change_set_id INTEGER REFERENCES code_change_sets(id) ON DELETE SET NULL,
+  lock_id INTEGER REFERENCES code_locks(id) ON DELETE SET NULL,
+  event TEXT NOT NULL,
+  path TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  details JSON NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 `
 
 func ensureSchema(ctx context.Context, db *sql.DB) error {

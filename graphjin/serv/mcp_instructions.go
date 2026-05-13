@@ -28,12 +28,19 @@ Check list_workflows first — reuse an existing workflow if one fits. Otherwise
 
 - GROUP BY does not exist. Use distinct: [columns] instead.
 - Aggregation fields use the pattern <fn>_<column>: count_id, sum_price, avg_quantity, etc.
+- Window functions for analytics/reporting use @window on an aggregate or built-in
+  analytic field. Use sum_<column> @window for running totals, row_number/rank/
+  dense_rank @window for ranking, and lag_<column>/lead_<column>/first_value_<column>/
+  last_value_<column> @window for period comparisons. These return one row per
+  input row, unlike plain aggregates.
 - For any metric involving ARITHMETIC (revenue = price × qty, margin, discounted totals,
   ratios), use EXPRESSION AGGREGATES — sum_<col> × sum_<col> is mathematically wrong.
   See "Expression aggregates" below.
 - Filter operators: eq, neq, gt, gte, lt, lte, in (array), nin, is_null, like, ilike (needs % wildcards).
 - in/nin values MUST be arrays: { id: { in: [1,2,3] } }
 - Cursor pagination: { products(first: 20, after: $products_cursor) { id } products_cursor }
+- MongoDB does not support SQL window functions. SQL dialects with known-old
+  versions fail at compile time with clear @window errors.
 
 ## Expression aggregates — USE THESE FIRST for any arithmetic metric
 
@@ -82,6 +89,32 @@ Joined columns: "related.field" (quoted, dots allowed) traverses FK joins
 up to 3 hops.
 
 For the full grammar and more patterns, call get_query_syntax.
+
+## Window functions — analytics/reporting rows without GROUP BY collapse
+
+Use @window when you need report-friendly row metrics such as running totals,
+rank within a segment, previous-period values, or first/last value in a frame:
+
+  {
+    orders(limit: 100) {
+      account_id
+      month
+      total
+      rank: row_number @window(partition: ["account_id"], order: ["total desc"])
+      previous_total: lag_total @window(partition: ["account_id"], order: ["month"])
+      running_total: sum_total @window(
+        partition: ["account_id"],
+        order: ["month"],
+        frame: "rows unbounded preceding"
+      )
+    }
+  }
+
+Supported built-ins: row_number, rank, dense_rank, lag_<column>, lead_<column>,
+first_value_<column>, last_value_<column>. Built-in analytic functions require
+@window. Window order entries use strings like "month asc" or
+"total desc nulls last"; NULLS FIRST/LAST is accepted only on dialects with
+native support.
 
 ## CRITICAL: Default row limits
 
@@ -136,4 +169,17 @@ Example query for use inside a workflow — top products by territory:
 - Use find_path(from_table, to_table) to find the join path between any two tables.
 - Use explore_relationships(table, depth) to map out the data model neighborhood around a table.
 - Never guess at join paths or FK relationships — always verify with these tools first.
+
+## CodeSQL source mutations
+
+When editing source through a CodeSQL database:
+
+1. Query code_symbols, code_nodes, or code_captures first and request code or code_context.
+2. Also request code_files { path hash } so you have the current expected_hash for replace/delete/rename.
+3. Preview edits with code_change_sets(action: "preview") before applying.
+4. Use edit op "replace", "create", "delete", or "rename"; create requires content and no expected_hash.
+5. Include the exact old_text for each byte range replacement.
+6. Apply with code_change_sets(action: "apply") only after the preview diff looks correct.
+7. If a hash is stale, re-read CodeSQL source and create a fresh preview.
+8. Never mutate code_files, code_symbols, code_nodes, or other derived CodeSQL tables directly.
 `

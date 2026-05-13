@@ -124,6 +124,11 @@ func TestGuidanceToolsReturnGuideAndNext(t *testing.T) {
 	if !strings.Contains(out.GuideMarkdown, "Query Guide for Table: users") {
 		t.Fatalf("expected users query guide markdown, got %q", out.GuideMarkdown)
 	}
+	for _, want := range []string{"Window Functions", "@window", "row_number", "lag_"} {
+		if !strings.Contains(out.GuideMarkdown, want) {
+			t.Fatalf("expected write_query guide to include %q, got %q", want, out.GuideMarkdown)
+		}
+	}
 	if out.Next == nil {
 		t.Fatal("expected next guidance")
 	}
@@ -143,6 +148,52 @@ func TestGuidanceToolsReturnGuideAndNext(t *testing.T) {
 	}
 	if !strings.Contains(assertToolSuccess(t, res), "Query Error Analysis") {
 		t.Fatal("expected fix_query_error tool to return analysis markdown")
+	}
+}
+
+func TestGetMutationSyntax_IncludesCodeSQLWorkflow(t *testing.T) {
+	ms := newSQLiteReadyMCPServer(t, nil, nil)
+
+	res, err := ms.handleGetMutationSyntax(context.Background(), newToolRequest(map[string]any{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := assertToolStructuredMap(t, res)
+	codesqlSection, ok := out["codesql"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected codesql mutation guidance, got %#v", out["codesql"])
+	}
+	if !strings.Contains(codesqlSection["preview"].(string), "code_change_sets") {
+		t.Fatalf("expected preview example in codesql section, got %#v", codesqlSection["preview"])
+	}
+	rules, ok := codesqlSection["rules"].([]any)
+	if !ok || len(rules) == 0 {
+		t.Fatalf("expected codesql rules, got %#v", codesqlSection["rules"])
+	}
+}
+
+func TestWriteMutation_CodeSQLGuide(t *testing.T) {
+	ms := newSQLiteReadyMCPServer(t, nil, nil)
+
+	res, err := ms.handleWriteMutationTool(context.Background(), newToolRequest(map[string]any{
+		"operation": "preview",
+		"table":     "code_change_sets",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var out struct {
+		GuideMarkdown string `json:"guide_markdown"`
+	}
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	for _, want := range []string{"code_files { path hash }", `action: "preview"`, "old_text", "code_context"} {
+		if !strings.Contains(out.GuideMarkdown, want) {
+			t.Fatalf("expected CodeSQL guide to include %q, got %q", want, out.GuideMarkdown)
+		}
 	}
 }
 
@@ -1023,14 +1074,14 @@ func TestCanonicalQueryPatterns(t *testing.T) {
 
 func TestStripAliasSuffix(t *testing.T) {
 	cases := map[string]string{
-		"":                       "",
-		"orders":                 "orders",
-		"orders_0":               "orders",
-		"salesorderdetail_42":    "salesorderdetail",
-		"order_items":            "order_items", // _items isn't numeric — preserved
-		"orders_":                "orders_",     // trailing underscore — preserved
-		"my_table_5_extra":       "my_table_5_extra", // not a trailing numeric suffix
-		"my_table_5":             "my_table",
+		"":                    "",
+		"orders":              "orders",
+		"orders_0":            "orders",
+		"salesorderdetail_42": "salesorderdetail",
+		"order_items":         "order_items",      // _items isn't numeric — preserved
+		"orders_":             "orders_",          // trailing underscore — preserved
+		"my_table_5_extra":    "my_table_5_extra", // not a trailing numeric suffix
+		"my_table_5":          "my_table",
 	}
 	for in, want := range cases {
 		if got := stripAliasSuffix(in); got != want {

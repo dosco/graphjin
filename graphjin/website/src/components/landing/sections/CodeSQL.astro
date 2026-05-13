@@ -3,25 +3,25 @@ import Section from "../Section.astro";
 
 const facts = [
   { label: "symbol", value: "createInvoiceHandler", meta: "api/invoices.ts" },
-  { label: "workflow", value: "SyncInvoices", meta: "workflows/billing.go" },
-  { label: "schema ref", value: "invoices.customer_id", meta: "db/schema.sql" },
+  { label: "column ref", value: "users.email", meta: "api/users.go" },
+  { label: "refresh", value: "dev live watch", meta: "prod restart sync" },
 ];
 
-const tables = ["code_symbols", "code_refs", "code_imports", "code_docs"];
+const tables = ["gj_columns", "code_db_refs", "code_symbols", "code_docs", "code_files"];
 ---
 
 <Section
   id="codesql"
   eyebrow="CODE INTELLIGENCE"
-  title="Query your code as well."
-  lede="CodeSQL indexes your repo like a database. Ask GraphQL questions about symbols, imports, refs, docs, and embedded code blocks without giving an agent shell access."
+  title="CodeSQL: query your code as well"
+  lede="GraphJin turns databases, HTTP APIs, discovered metadata, source code, and filesystems into one governed graph for AI agents. CodeSQL keeps dev indexes live as files change, refreshes production indexes on restart, and lets agents ask where a column exists, which code references it, and which symbol owns that reference without shell access."
 >
   <div class="codesql-showcase" aria-label="CodeSQL turns source code into queryable tables">
     <div class="codesql-topline">
       <div class="codesql-ask">
         <span>agent asks</span>
-        <strong>Which handlers touch invoices?</strong>
-        <code>code_symbols(where: &#123; name: &#123; iregex: "invoice" &#125; &#125;)</code>
+        <strong>Where is users.email used?</strong>
+        <code>gj_columns &#123; code_db_refs &#123; file &#123; path &#125; symbol &#123; name &#125; &#125; &#125;</code>
       </div>
 
       <aside class="codesql-config-card" aria-label="CodeSQL configuration example">
@@ -48,8 +48,8 @@ const tables = ["code_symbols", "code_refs", "code_imports", "code_docs"];
 
       <div class="codesql-lens">
         <span>CodeSQL</span>
-        <strong>tree-sitter index</strong>
-        <em>SQLite FTS cache</em>
+        <strong>tree-sitter + metadata</strong>
+        <em>read-only SQLite graph</em>
       </div>
 
       <div class="codesql-table-cloud" aria-label="Queryable CodeSQL tables">

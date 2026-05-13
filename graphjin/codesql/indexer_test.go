@@ -186,8 +186,173 @@ func TestMarkdownFencesBecomeVirtualIndexedFiles(t *testing.T) {
 	assertCount(t, managed.DB, `SELECT count(*) FROM code_symbols WHERE name = 'FromFence'`, 1)
 }
 
+func TestDBRefsInferAndResolveAgainstTargets(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(t.TempDir(), "codesql")
+	writeFile(t, filepath.Join(root, "main.go"), `package main
+
+type User struct {
+	Email string `+"`db:\"email\" json:\"email\"`"+`
+	Name  string `+"`gorm:\"column:name\"`"+`
+}
+
+func LoadUser() {
+	query := "SELECT users.email FROM users JOIN teams ON teams.id = users.team_id WHERE users.id = ?"
+	_ = query
+}
+`)
+	writeFile(t, filepath.Join(root, "queries", "users.graphql"), `query {
+	users {
+		id
+		email
+		name
+	}
+}
+`)
+	writeFile(t, filepath.Join(root, "migrations", "001_users.sql"), `CREATE TABLE users (
+	id integer primary key,
+	email text not null,
+	team_id integer REFERENCES teams(id)
+);
+
+INSERT INTO users (email) VALUES ('a@example.com');
+`)
+	writeFile(t, filepath.Join(root, "config", "dev.yml"), `tables:
+  - name: users
+    columns:
+      - name: team_id
+        related_to: teams.id
+`)
+
+	managed, _, err := OpenManaged(context.Background(), Options{
+		Name:        "code",
+		Root:        root,
+		CacheDir:    cacheDir,
+		InferDBRefs: true,
+		RefTargets: []DBRefTarget{
+			{DatabaseName: "app", SchemaName: "main", TableName: "users", Columns: []string{"id", "email", "name", "team_id"}},
+			{DatabaseName: "app", SchemaName: "main", TableName: "teams", Columns: []string{"id"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer managed.Close()
+
+	assertMinCount(t, managed.DB, `SELECT count(*) FROM code_db_refs WHERE table_key = 'app:main.users' AND resolved = 1`, 10)
+	assertCount(t, managed.DB, `SELECT count(*) FROM code_db_refs WHERE column_key = 'app:main.users.email' AND ref_kind = 'graphql'`, 1)
+	assertCount(t, managed.DB, `SELECT count(*) FROM code_db_refs WHERE column_key = 'app:main.users.email' AND ref_kind = 'struct_tag'`, 1)
+	assertCount(t, managed.DB, `SELECT count(*) FROM code_db_refs WHERE column_key = 'app:main.teams.id' AND evidence = 'sql_references'`, 1)
+	assertCount(t, managed.DB, `SELECT count(*) FROM code_db_refs WHERE ref_kind = 'config' AND table_key = 'app:main.users'`, 1)
+	assertMinCount(t, managed.DB, `SELECT count(*) FROM code_db_refs r JOIN code_symbols s ON s.id = r.symbol_id WHERE r.ref_kind = 'sql_string' AND s.name = 'LoadUser'`, 4)
+}
+
+func TestDBRefsLeaveDuplicateTablesAmbiguous(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(t.TempDir(), "codesql")
+	writeFile(t, filepath.Join(root, "query.sql"), `SELECT * FROM users`)
+
+	managed, _, err := OpenManaged(context.Background(), Options{
+		Name:        "code",
+		Root:        root,
+		CacheDir:    cacheDir,
+		InferDBRefs: true,
+		RefTargets: []DBRefTarget{
+			{DatabaseName: "app", SchemaName: "main", TableName: "users", Columns: []string{"id"}},
+			{DatabaseName: "analytics", SchemaName: "main", TableName: "users", Columns: []string{"id"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer managed.Close()
+
+	assertCount(t, managed.DB, `SELECT count(*) FROM code_db_refs WHERE table_name = 'users' AND resolved = 0 AND ambiguous = 1 AND table_key = ''`, 1)
+}
+
+func TestInferDBRefsReloadBackfillsUnchangedCache(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(t.TempDir(), "codesql")
+	writeFile(t, filepath.Join(root, "main.go"), `package main
+
+func LookupUser() {
+	query := "SELECT users.email FROM users WHERE users.id = ?"
+	_ = query
+}
+`)
+
+	managed, _, err := OpenManaged(context.Background(), Options{
+		Name:        "code",
+		Root:        root,
+		CacheDir:    cacheDir,
+		InferDBRefs: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCount(t, managed.DB, `SELECT count(*) FROM code_db_refs`, 0)
+	if err := managed.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	managed, _, err = OpenManaged(context.Background(), Options{
+		Name:        "code",
+		Root:        root,
+		CacheDir:    cacheDir,
+		InferDBRefs: true,
+		RefTargets: []DBRefTarget{
+			{DatabaseName: "app", SchemaName: "main", TableName: "users", Columns: []string{"id", "email"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer managed.Close()
+
+	assertCount(t, managed.DB, `SELECT count(*) FROM code_db_refs WHERE column_key = 'app:main.users.email' AND resolved = 1`, 1)
+}
+
+func TestInferDBRefsReloadDisabledClearsStaleRefs(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(t.TempDir(), "codesql")
+	writeFile(t, filepath.Join(root, "query.sql"), `SELECT users.email FROM users WHERE users.id = ?`)
+
+	managed, _, err := OpenManaged(context.Background(), Options{
+		Name:        "code",
+		Root:        root,
+		CacheDir:    cacheDir,
+		InferDBRefs: true,
+		RefTargets: []DBRefTarget{
+			{DatabaseName: "app", SchemaName: "main", TableName: "users", Columns: []string{"id", "email"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCount(t, managed.DB, `SELECT count(*) FROM code_db_refs WHERE column_key = 'app:main.users.email' AND resolved = 1`, 1)
+	if err := managed.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	managed, _, err = OpenManaged(context.Background(), Options{
+		Name:        "code",
+		Root:        root,
+		CacheDir:    cacheDir,
+		InferDBRefs: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer managed.Close()
+
+	assertCount(t, managed.DB, `SELECT count(*) FROM code_db_refs`, 0)
+}
+
 func writeFile(t *testing.T, path, text string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -201,5 +366,16 @@ func assertCount(t *testing.T, db *sql.DB, query string, want int) {
 	}
 	if got != want {
 		t.Fatalf("query %q count = %d, want %d", query, got, want)
+	}
+}
+
+func assertMinCount(t *testing.T, db *sql.DB, query string, wantMin int) {
+	t.Helper()
+	var got int
+	if err := db.QueryRowContext(context.Background(), query).Scan(&got); err != nil {
+		t.Fatalf("query %q failed: %v", query, err)
+	}
+	if got < wantMin {
+		t.Fatalf("query %q count = %d, want at least %d", query, got, wantMin)
 	}
 }

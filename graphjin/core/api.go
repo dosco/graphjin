@@ -111,6 +111,11 @@ type graphjinEngine struct {
 	// instantiates one Backend per FilesystemConfig entry during init.
 	fsFactories map[string]FilesystemBackendFactory
 	fsBackends  map[string]fstable.Backend
+
+	// Managed mutation handlers intercept selected mutation tables before
+	// normal SQL execution. The runtime database can remain read-only while
+	// a service-owned handler applies guarded side effects.
+	managedMutationHandlers map[string]ManagedMutationHandler
 }
 
 // primaryDB returns the default database context.
@@ -263,6 +268,19 @@ func (g *GraphJin) FilesystemBackend(name string) (fstable.Backend, bool) {
 	}
 	b, ok := gj.fsBackends[name]
 	return b, ok
+}
+
+// InvalidateCacheRefs invalidates response-cache entries associated with the
+// supplied dependency refs. It is a no-op when response caching is disabled.
+func (g *GraphJin) InvalidateCacheRefs(ctx context.Context, refs []RowRef) error {
+	gj, err := g.getEngine()
+	if err != nil {
+		return err
+	}
+	if gj.responseCache == nil || len(refs) == 0 {
+		return nil
+	}
+	return gj.responseCache.InvalidateRows(ctx, refs)
 }
 
 // Close stops GraphJin background tasks. It is safe to call multiple times.
@@ -469,6 +487,53 @@ func OptionSetResponseCache(cache ResponseCacheProvider) Option {
 	return func(s *graphjinEngine) error {
 		s.responseCache = cache
 		s.cacheKeyBuilder = NewCacheKeyBuilder()
+		return nil
+	}
+}
+
+// ManagedMutationField describes one selected return field on a managed
+// mutation root.
+type ManagedMutationField struct {
+	Name   string
+	Column string
+}
+
+// ManagedMutationRoot describes one root mutation routed to a managed handler.
+type ManagedMutationRoot struct {
+	FieldName string
+	Table     string
+	Operation string
+	Input     map[string]interface{}
+	Fields    []ManagedMutationField
+}
+
+// ManagedMutationRequest is passed to service-owned mutation handlers.
+type ManagedMutationRequest struct {
+	Database  string
+	Operation string
+	Roots     []ManagedMutationRoot
+}
+
+// ManagedMutationHandler handles GraphQL mutations for service-managed tables.
+type ManagedMutationHandler interface {
+	ManagedMutationTables() []string
+	ExecuteManagedMutation(context.Context, ManagedMutationRequest) (json.RawMessage, error)
+}
+
+// OptionSetManagedMutationHandler registers a handler for service-managed
+// mutation tables in a database.
+func OptionSetManagedMutationHandler(database string, handler ManagedMutationHandler) Option {
+	return func(s *graphjinEngine) error {
+		if database == "" {
+			database = s.defaultDB
+		}
+		if handler == nil {
+			return errors.New("managed mutation handler: nil handler")
+		}
+		if s.managedMutationHandlers == nil {
+			s.managedMutationHandlers = make(map[string]ManagedMutationHandler)
+		}
+		s.managedMutationHandlers[database] = handler
 		return nil
 	}
 }
@@ -770,7 +835,7 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 	resp.res.Data = json.RawMessage(s.data)
 	resp.res.Hash = s.dhash
 	resp.res.role = s.role
-	resp.res.cacheHit = s.cacheHit
+	resp.res.cacheHit = s.cacheHit || (s.fragmentHits.Load() > 0 && s.fragmentMisses.Load() == 0)
 
 	if err != nil {
 		resp.res.Errors = newError(err)
@@ -945,15 +1010,15 @@ type RelationInfo struct {
 
 // TableSchema represents full table schema with relationships
 type TableSchema struct {
-	Name            string       `json:"name"`
-	Schema          string       `json:"schema,omitempty"`
-	Database        string       `json:"database,omitempty"`
-	Type            string       `json:"type"`
-	Comment         string       `json:"comment,omitempty"`
-	Blocked         bool         `json:"blocked,omitempty"`
-	PrimaryKey      string       `json:"primary_key,omitempty"`
-	PrimaryKeys     []string     `json:"primary_keys,omitempty"`
-	FullTextColumns []string     `json:"full_text_columns,omitempty"`
+	Name                 string       `json:"name"`
+	Schema               string       `json:"schema,omitempty"`
+	Database             string       `json:"database,omitempty"`
+	Type                 string       `json:"type"`
+	Comment              string       `json:"comment,omitempty"`
+	Blocked              bool         `json:"blocked,omitempty"`
+	PrimaryKey           string       `json:"primary_key,omitempty"`
+	PrimaryKeys          []string     `json:"primary_keys,omitempty"`
+	FullTextColumns      []string     `json:"full_text_columns,omitempty"`
 	PartitionKey         string       `json:"partition_key,omitempty"`
 	ImplicitPartitionKey string       `json:"implicit_partition_key,omitempty"`
 	Columns              []ColumnInfo `json:"columns"`

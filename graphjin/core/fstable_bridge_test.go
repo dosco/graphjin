@@ -3,11 +3,15 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/dosco/graphjin/core/v3/fstable"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
@@ -174,6 +178,153 @@ func TestBridge_PublicBaseURLOverride(t *testing.T) {
 	}
 	if !strings.Contains(string(resp), `"url":"https://cdn.example.com/x.png"`) {
 		t.Errorf("expected CDN-rewritten url, got: %s", resp)
+	}
+}
+
+func TestBridge_PresignRerunsForEachResolve(t *testing.T) {
+	backend := &rotatingPresignBackend{}
+	bridge := &filesystemBridge{
+		name:    "uploads",
+		backend: backend,
+		conf:    FilesystemConfig{Name: "uploads", Backend: "s3", PresignTTL: time.Minute},
+	}
+	sel := &qcode.Select{ExtraArgs: map[string]string{"key": "users/1/avatar.png"}}
+
+	first, err := bridge.Resolve(context.Background(), ResolverReq{Sel: sel})
+	if err != nil {
+		t.Fatalf("first resolve: %v", err)
+	}
+	second, err := bridge.Resolve(context.Background(), ResolverReq{Sel: sel})
+	if err != nil {
+		t.Fatalf("second resolve: %v", err)
+	}
+	if !strings.Contains(string(first), `"url":"https://signed.example/1/users/1/avatar.png"`) {
+		t.Fatalf("first response did not include first signed url: %s", first)
+	}
+	if !strings.Contains(string(second), `"url":"https://signed.example/2/users/1/avatar.png"`) {
+		t.Fatalf("second response did not include second signed url: %s", second)
+	}
+}
+
+type rotatingPresignBackend struct {
+	count int
+}
+
+func (b *rotatingPresignBackend) Name() string { return "s3" }
+
+func (b *rotatingPresignBackend) List(context.Context, fstable.ListOpts) ([]fstable.Entry, string, error) {
+	return nil, "", nil
+}
+
+func (b *rotatingPresignBackend) Stat(_ context.Context, key string) (fstable.Entry, error) {
+	return fstable.Entry{Key: key, ModifiedAt: time.Now()}, nil
+}
+
+func (b *rotatingPresignBackend) Get(context.Context, string) (io.ReadCloser, fstable.Entry, error) {
+	return nil, fstable.Entry{}, fstable.ErrUnsupported
+}
+
+func (b *rotatingPresignBackend) Put(context.Context, string, io.Reader, fstable.PutMeta) (fstable.Entry, error) {
+	return fstable.Entry{}, fstable.ErrUnsupported
+}
+
+func (b *rotatingPresignBackend) Delete(context.Context, string) error { return nil }
+
+func (b *rotatingPresignBackend) Presign(_ context.Context, key string, _ fstable.PresignOp, _ time.Duration) (string, error) {
+	b.count++
+	return fmt.Sprintf("https://signed.example/%d/%s", b.count, key), nil
+}
+
+type recordingResponseCache struct {
+	refs []RowRef
+}
+
+func (c *recordingResponseCache) Get(context.Context, string) ([]byte, bool, bool) {
+	return nil, false, false
+}
+
+func (c *recordingResponseCache) Set(context.Context, string, []byte, []RowRef, time.Time) error {
+	return nil
+}
+
+func (c *recordingResponseCache) InvalidateRows(_ context.Context, refs []RowRef) error {
+	c.refs = append(c.refs, refs...)
+	return nil
+}
+
+func TestBridge_LocalWritesInvalidateFilesystemCacheRefs(t *testing.T) {
+	root := t.TempDir()
+	cache := &recordingResponseCache{}
+	gj := fsTestEngine(t, "public", []FilesystemConfig{
+		{Name: "uploads", Backend: "local", Root: root},
+	})
+	gj.responseCache = cache
+
+	if err := gj.loadFilesystemIntegration(); err != nil {
+		t.Fatal(err)
+	}
+
+	backend, ok := gj.fsBackends["uploads"]
+	if !ok {
+		t.Fatal("expected uploads backend to be registered")
+	}
+	if _, err := backend.Put(
+		context.Background(),
+		"users/1/avatar.png",
+		strings.NewReader("hi"),
+		fstable.PutMeta{ContentType: "image/png"},
+	); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	want := map[string]bool{
+		RowRef{Source: CacheSourceFS, Scope: "uploads", Kind: CacheKindKey, ID: "users/1/avatar.png"}.DependencyKey(): false,
+		RowRef{Source: CacheSourceFS, Scope: "uploads", Kind: CacheKindPrefix, ID: ""}.DependencyKey():                false,
+		RowRef{Source: CacheSourceFS, Scope: "uploads", Kind: CacheKindPrefix, ID: "users/"}.DependencyKey():          false,
+		RowRef{Source: CacheSourceFS, Scope: "uploads", Kind: CacheKindPrefix, ID: "users"}.DependencyKey():           false,
+		RowRef{Source: CacheSourceFS, Scope: "uploads", Kind: CacheKindPrefix, ID: "users/1/"}.DependencyKey():        false,
+		RowRef{Source: CacheSourceFS, Scope: "uploads", Kind: CacheKindPrefix, ID: "users/1"}.DependencyKey():         false,
+	}
+	for _, ref := range cache.refs {
+		key := ref.DependencyKey()
+		if _, ok := want[key]; ok {
+			want[key] = true
+		}
+		if ref.Source == CacheSourceDB {
+			t.Fatalf("filesystem write invalidated DB ref unexpectedly: %+v", ref)
+		}
+	}
+	for key, found := range want {
+		if !found {
+			t.Fatalf("missing invalidated ref %q; got %+v", key, cache.refs)
+		}
+	}
+}
+
+func TestBridge_ReadOnlyFilesystemBlocksManagedWrites(t *testing.T) {
+	root := t.TempDir()
+	gj := fsTestEngine(t, "public", []FilesystemConfig{
+		{Name: "uploads", Backend: "local", Root: root, ReadOnly: true},
+	})
+
+	if err := gj.loadFilesystemIntegration(); err != nil {
+		t.Fatal(err)
+	}
+
+	backend, ok := gj.fsBackends["uploads"]
+	if !ok {
+		t.Fatal("expected uploads backend to be registered")
+	}
+	if _, err := backend.Put(
+		context.Background(),
+		"users/1/avatar.png",
+		strings.NewReader("hi"),
+		fstable.PutMeta{ContentType: "image/png"},
+	); err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("Put err = %v, want read-only", err)
+	}
+	if err := backend.Delete(context.Background(), "users/1/avatar.png"); err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("Delete err = %v, want read-only", err)
 	}
 }
 

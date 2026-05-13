@@ -142,7 +142,7 @@ func (ms *mcpServer) registerPrompts() {
 	// write_query - Help LLMs construct complete GraphJin queries
 	ms.srv.AddPrompt(mcp.NewPrompt(
 		"write_query",
-		mcp.WithPromptDescription("Generate a complete GraphJin query with proper syntax. Returns table schema, relationship info, and a query template."),
+		mcp.WithPromptDescription("Generate a complete GraphJin query with proper syntax. Returns table schema, relationship info, aggregation examples, and @window analytics patterns."),
 		mcp.WithArgument("table",
 			mcp.ArgumentDescription("Primary table to query"),
 			mcp.RequiredArgument(),
@@ -167,9 +167,9 @@ func (ms *mcpServer) registerPrompts() {
 	// write_mutation - Help LLMs construct GraphJin mutations
 	ms.srv.AddPrompt(mcp.NewPrompt(
 		"write_mutation",
-		mcp.WithPromptDescription("Generate a GraphJin mutation with proper syntax for insert, update, upsert, or delete operations."),
+		mcp.WithPromptDescription("Generate a GraphJin mutation with proper syntax for insert, update, upsert, delete, or CodeSQL preview/apply edit operations."),
 		mcp.WithArgument("operation",
-			mcp.ArgumentDescription("Mutation type: insert, update, upsert, or delete"),
+			mcp.ArgumentDescription("Mutation type: insert, update, upsert, delete, or CodeSQL preview/apply/acquire/release"),
 			mcp.RequiredArgument(),
 		),
 		mcp.WithArgument("table",
@@ -485,7 +485,15 @@ func (ms *mcpServer) handleWriteQuery(ctx context.Context, req mcp.GetPromptRequ
 	// Find two numeric columns for a richer example (arithmetic needs at
 	// least one; the second demonstrates the expression aggregate form).
 	var firstNumeric, secondNumeric string
+	partitionCol := ""
+	orderCol := ""
 	for _, col := range schema.Columns {
+		if partitionCol == "" && col.ForeignKey != "" {
+			partitionCol = col.Name
+		}
+		if orderCol == "" && normalizeColumnType(col.Type) == "timestamp" {
+			orderCol = col.Name
+		}
 		if normalizeColumnType(col.Type) != "numeric" {
 			continue
 		}
@@ -498,11 +506,55 @@ func (ms *mcpServer) handleWriteQuery(ctx context.Context, req mcp.GetPromptRequ
 			break
 		}
 	}
+	if partitionCol == "" {
+		for _, col := range schema.Columns {
+			if col.PrimaryKey {
+				partitionCol = col.Name
+				break
+			}
+		}
+	}
+	if orderCol == "" {
+		for _, col := range schema.Columns {
+			if col.PrimaryKey {
+				orderCol = col.Name
+				break
+			}
+		}
+	}
+	if partitionCol == "" && len(schema.Columns) > 0 {
+		partitionCol = schema.Columns[0].Name
+	}
+	if orderCol == "" && len(schema.Columns) > 0 {
+		orderCol = schema.Columns[0].Name
+	}
 	if firstNumeric != "" {
 		sb.WriteString(fmt.Sprintf("{ %s { sum_%s avg_%s min_%s max_%s } }  # Numeric aggregations\n",
 			table, firstNumeric, firstNumeric, firstNumeric, firstNumeric))
 	}
 	sb.WriteString("```\n\n")
+
+	// Window functions
+	if firstNumeric != "" && partitionCol != "" && orderCol != "" {
+		sb.WriteString("## Window Functions (analytics/reporting)\n\n")
+		sb.WriteString("Use `@window` for running totals, ranks, previous/next values, and first/last values ")
+		sb.WriteString("without collapsing rows like a plain aggregate. Built-in analytic functions require `@window`.\n\n")
+		sb.WriteString("```graphql\n")
+		sb.WriteString(fmt.Sprintf("{ %s(limit: 100) {\n", table))
+		sb.WriteString(fmt.Sprintf("    %s\n", partitionCol))
+		if orderCol != partitionCol {
+			sb.WriteString(fmt.Sprintf("    %s\n", orderCol))
+		}
+		sb.WriteString(fmt.Sprintf("    %s\n", firstNumeric))
+		sb.WriteString(fmt.Sprintf("    rank: row_number @window(partition: [\"%s\"], order: [\"%s\"])\n", partitionCol, firstNumeric+" desc"))
+		sb.WriteString(fmt.Sprintf("    previous_%s: lag_%s @window(partition: [\"%s\"], order: [\"%s\"])\n", firstNumeric, firstNumeric, partitionCol, orderCol))
+		sb.WriteString(fmt.Sprintf("    running_%s: sum_%s @window(partition: [\"%s\"], order: [\"%s\"], frame: \"rows unbounded preceding\")\n", firstNumeric, firstNumeric, partitionCol, orderCol))
+		sb.WriteString("  }\n")
+		sb.WriteString("}\n")
+		sb.WriteString("```\n\n")
+		sb.WriteString("Other built-ins: `rank`, `dense_rank`, `lead_<column>`, `first_value_<column>`, `last_value_<column>`. ")
+		sb.WriteString("MongoDB does not support SQL window functions; known-old SQL dialect versions fail at compile time.\n\n")
+	}
 
 	// Expression aggregates (the `<fn>_<col>` form only handles single
 	// columns — any arithmetic across columns needs the expr: syntax).
@@ -553,6 +605,9 @@ func (ms *mcpServer) handleWriteMutation(ctx context.Context, req mcp.GetPromptR
 	}
 	if err := ms.requirePromptDB(); err != nil {
 		return nil, err
+	}
+	if isCodeSQLManagedMutationTable(table) {
+		return ms.handleWriteCodeSQLMutationPrompt(operation, table)
 	}
 
 	// Validate operation
@@ -709,6 +764,138 @@ func (ms *mcpServer) handleWriteMutation(ctx context.Context, req mcp.GetPromptR
 
 	return mcp.NewGetPromptResult(
 		fmt.Sprintf("%s mutation guide for %s", capitalizeFirst(operation), table),
+		[]mcp.PromptMessage{
+			mcp.NewPromptMessage(
+				mcp.RoleAssistant,
+				mcp.NewTextContent(sb.String()),
+			),
+		},
+	), nil
+}
+
+func isCodeSQLManagedMutationTable(table string) bool {
+	switch table {
+	case "code_change_sets", "code_locks":
+		return true
+	default:
+		return false
+	}
+}
+
+func (ms *mcpServer) handleWriteCodeSQLMutationPrompt(operation, table string) (*mcp.GetPromptResult, error) {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("# %s Mutation Guide for Table: %s\n\n", capitalizeFirst(operation), table))
+	sb.WriteString("## Workflow\n\n")
+	sb.WriteString("1. Query `code` or `code_context` first on `code_symbols`, `code_nodes`, or `code_captures`.\n")
+	sb.WriteString("2. Also request `code_files { path hash }` from the same query before replace/delete/rename.\n")
+	sb.WriteString("3. Preview the edit with `code_change_sets(action: \"preview\")`.\n")
+	sb.WriteString("4. Apply only after the preview diff looks correct.\n\n")
+	sb.WriteString("## Rules\n\n")
+	sb.WriteString("- Use `op: \"replace\"`, `op: \"create\"`, `op: \"delete\"`, or `op: \"rename\"` in each edit.\n")
+	sb.WriteString("- Include the exact current `expected_hash` for replace/delete/rename. Create does not use `expected_hash` and fails if the target exists.\n")
+	sb.WriteString("- Include the exact `old_text` for every replacement range.\n")
+	sb.WriteString("- For create/rename into new directories, set `mkdirs: true`.\n")
+	sb.WriteString("- If apply reports stale hash, re-read CodeSQL source and submit a fresh preview.\n")
+	sb.WriteString("- Never mutate `code_files`, `code_symbols`, `code_nodes`, or `code_captures` directly.\n")
+	sb.WriteString("- Use `code_locks` only for longer edit sessions that need an explicit lease; reserve create/rename targets with `whole_file: true`.\n\n")
+	sb.WriteString("## Query Before Editing\n\n")
+	sb.WriteString("```graphql\n")
+	sb.WriteString(`query {
+  code_symbols(where: { name: { eq: "LoadUser" } }) {
+    name
+    start_byte
+    end_byte
+    code
+    code_context
+    code_files { path hash }
+  }
+}`)
+	sb.WriteString("\n```\n\n")
+
+	switch table {
+	case "code_change_sets":
+		sb.WriteString("## Mutation Template\n\n```graphql\n")
+		switch operation {
+		case "apply", "update":
+			sb.WriteString(`mutation {
+  code_change_sets(id: 123, update: { id: 123, action: "apply" }) {
+    id
+    status
+    files_changed
+    files_reindexed
+    errors
+  }
+}`)
+		default:
+			sb.WriteString(`mutation {
+  code_change_sets(insert: {
+    action: "preview"
+    title: "update LoadUser"
+    edits: [{
+      op: "replace"
+      path: "main.go"
+      expected_hash: "current-file-hash"
+      replacements: [{
+        start_byte: 10
+        end_byte: 20
+        old_text: "old code"
+        new_text: "new code"
+      }]
+    }, {
+      op: "create"
+      path: "pkg/new_file.go"
+      content: "package pkg\n"
+      mkdirs: true
+    }, {
+      op: "delete"
+      path: "old_file.go"
+      expected_hash: "current-file-hash"
+    }, {
+      op: "rename"
+      path: "old_name.go"
+      new_path: "pkg/new_name.go"
+      expected_hash: "current-file-hash"
+      mkdirs: true
+    }]
+  }) {
+    id
+    status
+    diff
+    errors
+  }
+}`)
+		}
+		sb.WriteString("\n```\n")
+	case "code_locks":
+		sb.WriteString("## Mutation Template\n\n```graphql\n")
+		if operation == "release" || operation == "update" {
+			sb.WriteString(`mutation {
+  code_locks(id: 7, update: { id: 7, action: "release", lease_token: "lock-token" }) {
+    id
+    status
+    path
+  }
+}`)
+		} else {
+			sb.WriteString(`mutation {
+  code_locks(insert: {
+    action: "acquire"
+    path: "main.go"
+    owner: "agent"
+    ranges: [{ start_byte: 10, end_byte: 20 }]
+  }) {
+    id
+    lease_token
+    status
+    expires_at
+  }
+}`)
+		}
+		sb.WriteString("\n```\n")
+	}
+
+	return mcp.NewGetPromptResult(
+		fmt.Sprintf("Mutation guide for %s", table),
 		[]mcp.PromptMessage{
 			mcp.NewPromptMessage(
 				mcp.RoleAssistant,

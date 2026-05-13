@@ -9,7 +9,7 @@
 
 Point GraphJin at any database or source tree and AI assistants can query it instantly. Auto-discovers your schema, understands relationships, indexes code with tree-sitter, and compiles to optimized SQL. No configuration required.
 
-Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, CodeSQL source indexes - and models from Claude/GPT-4 to local 7B models.
+Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, S3/GCS/files, CodeSQL source indexes - and models from Claude/GPT-4 to local 7B models.
 
 ## Installation
 
@@ -194,16 +194,17 @@ Copy paste the Claude Desktop Config provided by `graphjin serve` into the Claud
 
 1. **Connects to database** - Reads your schema automatically
 2. **Discovers relationships** - Foreign keys become navigable joins
-3. **Indexes source code** - CodeSQL turns tree-sitter syntax trees into a managed SQLite database
-4. **Exposes MCP tools** - Teach any LLM the query syntax
-5. **Runs JS workflows** - Chain multiple GraphJin MCP tools in one reusable workflow
-6. **Compiles to SQL** - Every request becomes a single optimized query
+3. **Exposes metadata** - `gj_*` tables make discovered databases, tables, columns, relationships, functions, and indexes queryable
+4. **Indexes source code** - CodeSQL turns tree-sitter syntax trees and database references into a managed SQLite database
+5. **Exposes MCP tools** - Teach any LLM the query syntax
+6. **Runs JS workflows** - Chain multiple GraphJin MCP tools in one reusable workflow
+7. **Compiles to SQL** - Every request becomes a single optimized query
 
 No resolvers. No ORM. No N+1 queries. Just point and query.
 
 ## CodeSQL: Query Source Code Like a Database
 
-CodeSQL is a managed database type for source trees. Configure a source folder and GraphJin creates a SQLite cache under `config/codesql/`, indexes it with tree-sitter, updates it on restart, and watches for changes while the service runs.
+CodeSQL is a managed database type for source trees. Configure a source folder and GraphJin creates a SQLite cache under `config/codesql/`, indexes it with tree-sitter, and updates it on restart. In development it also watches for changes while the service runs; in production live watching is disabled.
 
 ```yaml
 databases:
@@ -216,7 +217,7 @@ databases:
     path: /srv/app
 ```
 
-GraphJin exposes the code index through ordinary tables such as `code_files`, `code_symbols`, `code_refs`, `code_imports`, `code_nodes`, `code_captures`, and FTS-backed docs/text tables:
+GraphJin exposes the code index through ordinary tables such as `code_files`, `code_symbols`, `code_refs`, `code_imports`, `code_nodes`, `code_captures`, `code_db_refs`, and FTS-backed docs/text tables:
 
 ```graphql
 query {
@@ -225,6 +226,24 @@ query {
     kind
     language
     start_row
+  }
+}
+```
+
+In development, GraphJin also creates a read-only metadata database named `graphjin` by default. That gives you `gj_databases`, `gj_tables`, `gj_columns`, `gj_relationships`, `gj_functions`, and `gj_indexes` for application databases only; GraphJin-managed metadata and CodeSQL cache databases are omitted so the graph does not describe itself. When one CodeSQL database is active, GraphJin links metadata to code references automatically:
+
+```graphql
+query {
+  gj_columns(where: { table_name: { eq: "users" }, column_name: { eq: "email" } }) {
+    database_name
+    table_name
+    column_name
+    code_db_refs {
+      ref_kind
+      confidence
+      file { path }
+      symbol { name kind }
+    }
   }
 }
 ```
@@ -261,6 +280,7 @@ This is where the model gets genuinely powerful: the same agent can inspect prod
     user_id
     total
     rank: row_number @window(partition: ["user_id"], order: ["total desc nulls last"])
+    previous_total: lag_total @window(partition: ["user_id"], order: ["created_at"])
     running: sum_total @window(
       partition: ["user_id"],
       order: ["created_at"],
@@ -269,7 +289,7 @@ This is where the model gets genuinely powerful: the same agent can inspect prod
   }
 }
 ```
-Compiles to `<func>(...) OVER (PARTITION BY ... ORDER BY ... <frame>)`. The frame parser accepts the standard SQL grammar — both `ROWS` and `RANGE`, `UNBOUNDED PRECEDING/FOLLOWING`, `CURRENT ROW`, numeric offsets (`<n> PRECEDING/FOLLOWING`), and full `BETWEEN <bound> AND <bound>` combinations. Partition and order columns are validated against the table; numeric offsets are parsed as integers (no SQL-fragment passthrough). Works on PostgreSQL, MySQL 8.0+, MariaDB 10.2+, MSSQL 2012+, Oracle, SQLite 3.25+, Snowflake, and CockroachDB. `NULLS FIRST/LAST` in the order clause is honoured by Snowflake/Postgres/Oracle and silently ignored elsewhere.
+Compiles to `<func>(...) OVER (PARTITION BY ... ORDER BY ... <frame>)`. Built-in analytics include `row_number`, `rank`, `dense_rank`, `lag_<column>`, `lead_<column>`, `first_value_<column>`, and `last_value_<column>`. The frame parser accepts the standard SQL grammar — both `ROWS` and `RANGE`, `UNBOUNDED PRECEDING/FOLLOWING`, `CURRENT ROW`, numeric offsets (`<n> PRECEDING/FOLLOWING`), and full `BETWEEN <bound> AND <bound>` combinations. Partition and order columns are validated against the table; numeric offsets are parsed as integers (no SQL-fragment passthrough). Works on PostgreSQL, MySQL 8.0+, MariaDB 10.2+, MSSQL 2012+, Oracle, SQLite 3.25+, Snowflake, and CockroachDB. MongoDB and known-old SQL versions fail at compile time with clear errors. `NULLS FIRST/LAST` in the window order clause is honoured by Snowflake/Postgres/Oracle and rejected on dialects that do not support it.
 
 **Mutations:**
 ```graphql

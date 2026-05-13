@@ -32,6 +32,7 @@ GraphJin is a high-performance GraphQL to SQL compiler that automatically genera
 - [File Uploads](#file-uploads)
 - [Filesystem Tables](#filesystem-tables)
 - [CodeSQL Source Indexes](#codesql-source-indexes)
+- [Metadata Graph](#metadata-graph)
 - [Apollo Federation v2](#apollo-federation-v2)
 - [Security Features](#security-features)
   - [Role-Based Access Control](#role-based-access-control)
@@ -429,7 +430,7 @@ query {
 
 ### Window Functions
 
-Tag any aggregate or function field with `@window` to emit a SQL window function — `<func>(...) OVER (PARTITION BY ... ORDER BY ... <frame>)`. Window queries return one row per input row (no GROUP BY collapse), so they compose with regular column selections.
+Tag an aggregate or built-in analytic field with `@window` to emit a SQL window function — `<func>(...) OVER (PARTITION BY ... ORDER BY ... <frame>)`. Window queries return one row per input row (no GROUP BY collapse), so they compose with regular column selections.
 
 ```graphql
 query {
@@ -440,6 +441,10 @@ query {
       partition: ["user_id"],
       order: ["total desc nulls last"]
     )
+    previous_total: lag_total @window(
+      partition: ["user_id"],
+      order: ["created_at"]
+    )
     running: sum_total @window(
       partition: ["user_id"],
       order: ["created_at"],
@@ -448,6 +453,8 @@ query {
   }
 }
 ```
+
+Built-in analytic functions: `row_number`, `rank`, `dense_rank`, `lag_<column>`, `lead_<column>`, `first_value_<column>`, `last_value_<column>`. These functions require `@window`.
 
 **Frame grammar** — full standard SQL is accepted; numeric offsets are parsed as integers (no SQL-fragment passthrough):
 
@@ -461,7 +468,7 @@ ROWS|RANGE BETWEEN <bound> AND <bound>
 
 where `<bound>` is `UNBOUNDED PRECEDING` / `UNBOUNDED FOLLOWING` / `CURRENT ROW` / `<n> PRECEDING` / `<n> FOLLOWING`.
 
-**Order entries** accept `"col [asc|desc] [nulls first|last]"`. NULLS placement is honoured by Snowflake / Postgres / Oracle, silently ignored elsewhere (per dialect spec).
+**Order entries** accept `"col [asc|desc] [nulls first|last]"`. NULLS placement is honoured by Snowflake / Postgres / Oracle and rejected with a clear compile-time error on dialects that do not support it.
 
 **Empty `@window`** is valid — emits a bare `OVER ()` for ranking functions that don't need a partition or order:
 
@@ -471,7 +478,11 @@ where `<bound>` is `UNBOUNDED PRECEDING` / `UNBOUNDED FOLLOWING` / `CURRENT ROW`
 
 **Validation** — partition and order columns are validated against the table; numeric offsets are parsed as non-negative integers; frame text is canonicalised before emission. The frame argument cannot smuggle SQL fragments past the parser.
 
-**Dialect support** — Postgres, MySQL 8.0+, MariaDB 10.2+, MSSQL 2012+, Oracle, SQLite 3.25+, Snowflake, CockroachDB. (MySQL 5.7 and pre-10.2 MariaDB don't support window functions; the emitted SQL would error at exec time on those.)
+**Dialect support** — Postgres, MySQL 8.0+, MariaDB 10.2+, MSSQL 2012+, Oracle, SQLite 3.25+, Snowflake, CockroachDB. MongoDB does not support SQL window functions. When GraphJin knows a database version is too old, compilation fails with a dialect-specific error.
+
+The MCP `get_query_syntax` resource and `write_query` prompt also expose these
+window patterns so AI agents can generate running-total, ranking, lag/lead, and
+first/last-value reporting queries directly from schema context.
 
 ### Full-Text Search
 
@@ -1230,7 +1241,7 @@ Every filesystem table exposes the same columns regardless of backend:
 
 ## CodeSQL Source Indexes
 
-CodeSQL makes a source tree behave like another database in GraphJin. Configure a folder, and GraphJin creates a managed SQLite cache under `config/codesql/`, indexes source files with tree-sitter, reconciles new/changed/deleted files on startup, and watches the tree while the service runs.
+CodeSQL makes a source tree behave like another database in GraphJin. Configure a folder, and GraphJin creates a managed SQLite cache under `config/codesql/`, indexes source files with tree-sitter, and reconciles new/changed/deleted files on startup. Development services also watch the tree while running; production services do not live-watch source changes and refresh the cache on restart.
 
 ```yaml
 databases:
@@ -1251,7 +1262,7 @@ CodeSQL stores three useful layers:
 |-------|--------|---------|
 | Source/index state | `code_languages`, `code_grammars`, `code_query_packs`, `code_files`, `code_file_versions`, `code_index_status`, `code_parse_errors` | What was indexed, when, with which grammar/query-pack versions |
 | Raw syntax | `code_nodes`, `code_captures` | Tree-sitter nodes, byte/range positions, named/error/missing flags, query captures |
-| Code intelligence | `code_symbols`, `code_scopes`, `code_locals`, `code_refs`, `code_imports`, `code_edges`, `code_injections`, docs/text FTS | Searchable symbols, imports, refs, locals, injections, docs, and file text |
+| Code intelligence | `code_symbols`, `code_scopes`, `code_locals`, `code_refs`, `code_imports`, `code_edges`, `code_injections`, `code_db_refs`, docs/text FTS | Searchable symbols, imports, refs, locals, injections, docs, file text, and best-effort database references |
 
 ```graphql
 query {
@@ -1268,9 +1279,86 @@ query {
 }
 ```
 
+CodeSQL also populates `code_db_refs`, a best-effort syntax index of where database tables and columns appear in SQL files, SQL strings, GraphQL operations, GraphJin config/allowlist files, migrations, and common struct/model tags.
+
 Because CodeSQL is projected through SQLite, it composes with the rest of GraphJin: an agent can query operational systems and the code that operates them from one MCP surface. That is the practical unlock for organizations: the LLM can inspect tables, workflows, imports, call sites, and docs together without raw shell access or a separate source-code service. It can answer questions like "which endpoints write orders?", "which code paths mention this column?", and "what changed around this data flow?" using the same audited GraphJin interface.
 
 Boundaries are intentionally clear in v1: CodeSQL stores syntax structure, captures, scopes, local bindings, imports, references, calls, comments/docs, parse errors, and injected-language regions. It does not claim semantic type resolution, full cross-file symbol binding, inheritance correctness, or LSP-grade go-to-definition.
+
+CodeSQL source edits go through the managed `code_change_sets` workflow. Agents first query source plus `code_files { path hash }`, preview a guarded change set, inspect the diff, then apply it. A change set can replace byte ranges, create files, delete files, or rename files:
+
+```graphql
+mutation {
+  code_change_sets(insert: {
+    action: "preview"
+    title: "move source files"
+    edits: [
+      { op: "create", path: "pkg/new_file.go", content: "package pkg\n", mkdirs: true }
+      { op: "delete", path: "old_file.go", expected_hash: "current-file-hash" }
+      { op: "rename", path: "old_name.go", new_path: "pkg/new_name.go", expected_hash: "current-file-hash", mkdirs: true }
+    ]
+  }) {
+    id
+    status
+    diff
+    errors
+  }
+}
+```
+
+`replace`, `delete`, and `rename` require the current file hash. `create` does not use `expected_hash` and fails if the target path already exists. Long-running edit sessions can reserve source or target paths with `code_locks`, using `whole_file: true` for create and rename target reservations.
+
+---
+
+## Metadata Graph
+
+The metadata graph exposes GraphJin's discovered database schema as queryable read-only tables in a managed SQLite database named `graphjin` by default. It is enabled in development, disabled in production unless explicitly enabled, and regenerated on startup.
+
+The graph only describes application databases. GraphJin-managed databases, including the `graphjin` metadata database and CodeSQL SQLite caches, are omitted from `gj_*` rows so the metadata graph never loops back into itself. CodeSQL remains reachable through explicit `code_db_refs` links.
+
+```yaml
+metadata:
+  enabled: true
+  database: graphjin
+  auto_code_relations: true
+
+databases:
+  app:
+    type: postgres
+    connection_string: postgres://app:secret@db/app
+  code:
+    type: codesql
+    path: /srv/app
+```
+
+Metadata tables:
+
+| Table | What it exposes |
+|-------|------------------|
+| `gj_databases` | Configured database names, types, default/read-only flags |
+| `gj_tables` | Database/schema/table names, table type, primary key, column counts |
+| `gj_columns` | Column type, nullability, primary/unique/index flags, comments, stable keys |
+| `gj_relationships` | Source and target column IDs, relationship type, cross-database flag |
+| `gj_functions` | Discovered database functions and aggregates |
+| `gj_indexes` | Index names and uniqueness |
+
+When exactly one CodeSQL database is selected, GraphJin automatically links `gj_tables.code_db_refs_id` to `code_db_refs.table_key` and `gj_columns.code_db_refs_id` to `code_db_refs.column_key`:
+
+```graphql
+query {
+  gj_columns(where: { table_name: { eq: "users" }, column_name: { eq: "email" } }) {
+    type
+    code_db_refs {
+      ref_kind
+      confidence
+      file { path }
+      symbol { name kind }
+    }
+  }
+}
+```
+
+This makes an organization's data systems and codebase accessible through one governed graph. An LLM can move from "what is this column?" to "where is it read or written?" without shell access, repository-specific glue, or a separate code-search API.
 
 ---
 

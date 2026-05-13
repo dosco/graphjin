@@ -22,6 +22,11 @@ func (co *Compiler) compileFields(
 	sel.Fields = make([]Field, 0, len(field.Children))
 	sel.BCols = make([]Column, 0, len(field.Children))
 
+	if sel.Rel.Type == sdata.RelDatabaseJoin {
+		co.compileDatabaseJoinPassthroughFields(st, op, sel, field)
+		return co.addColumns(qc, sel)
+	}
+
 	if err = co.compileChildColumns(st, op, qc, sel, field, tr, role); err != nil {
 		return
 	}
@@ -50,6 +55,43 @@ func (co *Compiler) compileFields(
 	}
 
 	return nil
+}
+
+func (co *Compiler) compileDatabaseJoinPassthroughFields(
+	st *util.StackInt32,
+	op *graph.Operation,
+	sel *Select,
+	gf graph.Field,
+) {
+	for _, cid := range gf.Children {
+		f := op.Fields[cid]
+		if f.Type == graph.FieldKeyword {
+			continue
+		}
+		name := co.ParseName(f.Name)
+		if len(f.Children) != 0 {
+			val := f.ID | (sel.ID << 16)
+			st.Push(val)
+			continue
+		}
+
+		fieldName := f.Name
+		if f.Alias != "" {
+			fieldName = f.Alias
+		}
+		sel.Fields = append(sel.Fields, Field{
+			ID:        int32(len(sel.Fields)),
+			ParentID:  sel.ID,
+			Type:      FieldTypeCol,
+			FieldName: fieldName,
+			Col: sdata.DBColumn{
+				Name:     name,
+				Schema:   sel.Ti.Schema,
+				Table:    sel.Ti.Name,
+				Database: sel.Ti.Database,
+			},
+		})
+	}
 }
 
 func (co *Compiler) compileChildColumns(
@@ -116,6 +158,7 @@ func (co *Compiler) compileChildColumns(
 			field.Type = FieldTypeFunc
 			field.Func = fn.Func
 			field.Args = fn.Args
+			field.WindowFunc = fn.WindowFunc
 			// Defer flipping the GROUP BY flag until after directive
 			// compilation: an aggregate carrying @window emits one row
 			// per input row and must NOT trigger GROUP BY.
@@ -145,6 +188,9 @@ func (co *Compiler) compileChildColumns(
 
 		if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
 			return err
+		}
+		if field.WindowFunc != WindowFuncNone && field.Window == nil {
+			return fmt.Errorf("window function %q requires @window", field.WindowFunc.String())
 		}
 
 		// Aggregates without @window participate in GROUP BY; windowed

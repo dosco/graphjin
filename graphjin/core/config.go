@@ -333,6 +333,56 @@ type Config struct {
 	// table with a fixed shape — key/size/content_type/etag/modified_at/url/data —
 	// and routes queries through a pluggable Backend.
 	Filesystems []FilesystemConfig `mapstructure:"filesystems" json:"filesystems" yaml:"filesystems" jsonschema:"title=Filesystem Tables"`
+
+	// Metadata exposes GraphJin-discovered database metadata as a managed
+	// read-only SQLite database. When enabled, tables like gj_tables and
+	// gj_columns can be queried through GraphQL and joined to CodeSQL refs.
+	Metadata MetadataConfig `mapstructure:"metadata" json:"metadata" yaml:"metadata" jsonschema:"title=Metadata Graph"`
+}
+
+// MetadataConfig controls the managed metadata graph database.
+type MetadataConfig struct {
+	// Enabled controls whether GraphJin exposes discovered metadata tables.
+	// When omitted, it defaults to enabled in dev and disabled in production.
+	Enabled *bool `mapstructure:"enabled" json:"enabled,omitempty" yaml:"enabled,omitempty" jsonschema:"title=Enable Metadata Graph"`
+
+	// Database is the virtual database name. Defaults to "graphjin".
+	Database string `mapstructure:"database" json:"database" yaml:"database" jsonschema:"title=Metadata Database,default=graphjin"`
+
+	// AutoCodeRelations controls automatic relationships from gj_tables /
+	// gj_columns to CodeSQL's code_db_refs. When omitted, it follows Enabled.
+	AutoCodeRelations *bool `mapstructure:"auto_code_relations" json:"auto_code_relations,omitempty" yaml:"auto_code_relations,omitempty" jsonschema:"title=Auto Code Relations"`
+
+	// CodeDatabases optionally pins which CodeSQL database should be linked.
+	// Empty means auto-detect, but only when exactly one CodeSQL DB exists.
+	CodeDatabases []string `mapstructure:"code_databases" json:"code_databases,omitempty" yaml:"code_databases,omitempty" jsonschema:"title=CodeSQL Databases"`
+}
+
+func (c *Config) MetadataEnabled() bool {
+	if c == nil {
+		return false
+	}
+	if c.Metadata.Enabled != nil {
+		return *c.Metadata.Enabled
+	}
+	return !c.Production
+}
+
+func (c *Config) MetadataDatabaseName() string {
+	if c == nil || strings.TrimSpace(c.Metadata.Database) == "" {
+		return "graphjin"
+	}
+	return strings.TrimSpace(c.Metadata.Database)
+}
+
+func (c *Config) MetadataAutoCodeRelationsEnabled() bool {
+	if c == nil {
+		return false
+	}
+	if c.Metadata.AutoCodeRelations != nil {
+		return *c.Metadata.AutoCodeRelations
+	}
+	return c.MetadataEnabled()
 }
 
 // FilesystemConfig declares one filesystem-backed virtual table.
@@ -391,6 +441,10 @@ type FilesystemConfig struct {
 	// when objects are fronted by a CDN. The path is appended unchanged.
 	PublicBaseURL string `mapstructure:"public_base_url" json:"public_base_url" yaml:"public_base_url" jsonschema:"title=Public Base URL"`
 
+	// ReadOnly disables GraphJin-managed writes and local filesystem watch
+	// invalidation for this filesystem table.
+	ReadOnly bool `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
+
 	// MaxListPageSize caps the number of entries returned per list call.
 	// Defaults to 1000 when zero.
 	MaxListPageSize int `mapstructure:"max_list_page_size" json:"max_list_page_size" yaml:"max_list_page_size" jsonschema:"title=Max List Page Size,default=1000"`
@@ -400,6 +454,10 @@ type FilesystemConfig struct {
 type DatabaseConfig struct {
 	// Database type (postgres, mysql, mariadb, sqlite, oracle, mongodb, snowflake)
 	Type string `mapstructure:"type" json:"type" yaml:"type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle,enum=mongodb,enum=snowflake,enum=codesql"`
+
+	// ManagedType preserves the service-level logical database type after a
+	// managed database has been translated to its runtime driver.
+	ManagedType string `mapstructure:"-" json:"-" yaml:"-" jsonschema:"-"`
 
 	// Connection string for the database (alternative to individual params)
 	ConnString string `mapstructure:"connection_string" json:"connection_string" yaml:"connection_string" jsonschema:"title=Connection String"`
@@ -464,6 +522,10 @@ type DatabaseConfig struct {
 	ReadOnly bool `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
 
 	AnalyticsMode *bool `mapstructure:"analytics_mode" json:"analytics_mode,omitempty" yaml:"analytics_mode,omitempty" jsonschema:"title=Analytics Mode (per-DB override)"`
+
+	// InferDBRefs controls CodeSQL's best-effort code-to-database reference
+	// inference. It is only used for databases with type: codesql.
+	InferDBRefs *bool `mapstructure:"infer_db_refs" json:"infer_db_refs,omitempty" yaml:"infer_db_refs,omitempty" jsonschema:"title=Infer Database References"`
 }
 
 func (c *Config) EffectiveAnalyticsMode(database string) bool {
@@ -516,8 +578,8 @@ type PartitionConfig struct {
 	Column string `mapstructure:"column" json:"column" yaml:"column" jsonschema:"title=Partition Column,example=created_at"`
 	// DefaultRangeDays is the number of days to auto-filter when no partition filter
 	// is present in the query. Set to 0 to only warn without injecting a filter.
-	DefaultRangeDays int `mapstructure:"default_range_days" json:"default_range_days,omitempty" yaml:"default_range_days,omitempty" jsonschema:"title=Default Range Days,example=30"`
-	None bool `mapstructure:"none" json:"none,omitempty" yaml:"none,omitempty" jsonschema:"title=Disable Partition Check"`
+	DefaultRangeDays int  `mapstructure:"default_range_days" json:"default_range_days,omitempty" yaml:"default_range_days,omitempty" jsonschema:"title=Default Range Days,example=30"`
+	None             bool `mapstructure:"none" json:"none,omitempty" yaml:"none,omitempty" jsonschema:"title=Disable Partition Check"`
 }
 
 // Configuration for a database table column

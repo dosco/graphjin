@@ -14,6 +14,7 @@ import (
 // store a refreshed entry and bump metrics.
 type swrTarget interface {
 	Set(ctx context.Context, key string, data []byte, refs []core.RowRef, queryStartTime time.Time) error
+	SetWithOptions(ctx context.Context, key string, data []byte, refs []core.RowRef, queryStartTime time.Time, opts core.CacheEntryOptions) error
 	recordSWRRefresh(ctx context.Context)
 }
 
@@ -31,7 +32,7 @@ type SWRWorkerPool struct {
 
 type swrJob struct {
 	key string
-	fn  core.RefreshFn
+	fn  core.RefreshFnWithOptions
 }
 
 // NewSWRWorkerPool starts a fixed-size pool of refresh workers.
@@ -59,9 +60,9 @@ func (p *SWRWorkerPool) worker() {
 		// Single-flight: only one refresh per key at a time across the pool.
 		_, _, _ = p.singleFlight.Do(job.key, func() (interface{}, error) {
 			ctx := context.Background()
-			data, refs, err := job.fn()
+			data, refs, opts, err := job.fn()
 			if err == nil && len(data) > 0 {
-				_ = p.target.Set(ctx, job.key, data, refs, time.Now())
+				_ = p.target.SetWithOptions(ctx, job.key, data, refs, time.Now(), opts)
 				p.target.recordSWRRefresh(ctx)
 			}
 			return nil, err
@@ -72,6 +73,17 @@ func (p *SWRWorkerPool) worker() {
 // TrySubmit enqueues a refresh job. Returns false if the pool is full or
 // shutting down — the caller should treat that as "skip this refresh."
 func (p *SWRWorkerPool) TrySubmit(key string, fn core.RefreshFn) bool {
+	if fn == nil {
+		return false
+	}
+	return p.TrySubmitWithOptions(key, func() ([]byte, []core.RowRef, core.CacheEntryOptions, error) {
+		data, refs, err := fn()
+		return data, refs, core.CacheEntryOptions{}, err
+	})
+}
+
+// TrySubmitWithOptions enqueues a refresh job with per-entry cache options.
+func (p *SWRWorkerPool) TrySubmitWithOptions(key string, fn core.RefreshFnWithOptions) bool {
 	if p.shutdown.Load() || fn == nil || key == "" {
 		return false
 	}

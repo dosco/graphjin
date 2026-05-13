@@ -72,14 +72,20 @@ func NewCompiler(conf Config) *Compiler {
 	var d dialect.Dialect
 	switch conf.DBType {
 	case "mysql":
-		d = &dialect.MySQLDialect{EnableCamelcase: conf.EnableCamelcase}
+		d = &dialect.MySQLDialect{
+			EnableCamelcase: conf.EnableCamelcase,
+			DBVersion:       conf.DBVersion,
+		}
 	case "mariadb":
 		d = &dialect.MariaDBDialect{
-			MySQLDialect: dialect.MySQLDialect{EnableCamelcase: conf.EnableCamelcase},
-			DBVersion:    conf.DBVersion,
+			MySQLDialect: dialect.MySQLDialect{
+				EnableCamelcase: conf.EnableCamelcase,
+				DBVersion:       conf.DBVersion,
+			},
+			DBVersion: conf.DBVersion,
 		}
 	case "sqlite":
-		d = &dialect.SQLiteDialect{}
+		d = &dialect.SQLiteDialect{DBVersion: conf.DBVersion}
 	case "oracle":
 		d = &dialect.OracleDialect{EnableCamelcase: conf.EnableCamelcase}
 	case "mssql":
@@ -136,6 +142,10 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 	// The current Snowflake emulator drops result rows when a leading block comment is present.
 	if co.dialect.Name() != "mongodb" && co.dialect.Name() != "snowflake" {
 		w.WriteString(`/* action='` + qc.Name + `',controller='graphql',framework='graphjin' */ `)
+	}
+
+	if err = co.validateWindowFunctions(qc); err != nil {
+		return md, err
 	}
 
 	switch qc.Type {

@@ -46,6 +46,64 @@ type WindowOrder struct {
 	Nulls NullsHandling
 }
 
+// WindowFunc is a built-in SQL analytic/window function exposed at the
+// GraphQL field level. These are not regular database functions: they
+// only make sense with @window and are rendered by the SQL compiler.
+type WindowFunc int8
+
+const (
+	WindowFuncNone WindowFunc = iota
+	WindowFuncRowNumber
+	WindowFuncRank
+	WindowFuncDenseRank
+	WindowFuncLag
+	WindowFuncLead
+	WindowFuncFirstValue
+	WindowFuncLastValue
+)
+
+func (wf WindowFunc) String() string {
+	switch wf {
+	case WindowFuncRowNumber:
+		return "row_number"
+	case WindowFuncRank:
+		return "rank"
+	case WindowFuncDenseRank:
+		return "dense_rank"
+	case WindowFuncLag:
+		return "lag"
+	case WindowFuncLead:
+		return "lead"
+	case WindowFuncFirstValue:
+		return "first_value"
+	case WindowFuncLastValue:
+		return "last_value"
+	default:
+		return ""
+	}
+}
+
+func (wf WindowFunc) IsValueFunc() bool {
+	switch wf {
+	case WindowFuncLag, WindowFuncLead, WindowFuncFirstValue, WindowFuncLastValue:
+		return true
+	default:
+		return false
+	}
+}
+
+func WindowSpecHasNulls(w *WindowSpec) bool {
+	if w == nil {
+		return false
+	}
+	for _, ord := range w.OrderBy {
+		if ord.Nulls != NullsDefault {
+			return true
+		}
+	}
+	return false
+}
+
 // compileDirectiveWindow parses an @window directive and attaches the
 // resulting WindowSpec to the field. Column names in `partition` and
 // `order` are validated against the enclosing select's table — only

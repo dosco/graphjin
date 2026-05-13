@@ -3,17 +3,19 @@ package core
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/jsn"
 	"github.com/dosco/graphjin/core/v3/internal/psql"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 // execDatabaseJoins fetches data from other databases for cross-database relationships.
@@ -86,14 +88,16 @@ func (s *gstate) resolveDatabaseJoins(
 			return nil, fmt.Errorf("database not found: %s", targetDB)
 		}
 
-		// Extract parent ID value
-		idVal := jsn.Value(id.Value)
+		// Extract parent ID value. Keep the raw JSON token around so a string
+		// primary key like "null" is not confused with a JSON null.
+		rawIDVal := bytes.TrimSpace(id.Value)
+		idVal := jsn.Value(rawIDVal)
 
-		go func(n int, idVal []byte, sel *qcode.Select, dbCtx *dbContext, parentTable string) {
+		go func(n int, idVal, rawIDVal []byte, sel *qcode.Select, dbCtx *dbContext, parentTable string) {
 			defer wg.Done()
 
 			// Handle null/empty parent IDs gracefully
-			if len(idVal) == 0 || string(idVal) == "null" {
+			if len(idVal) == 0 || bytes.Equal(rawIDVal, []byte("null")) {
 				to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: []byte("null")}
 				return
 			}
@@ -124,22 +128,8 @@ func (s *gstate) resolveDatabaseJoins(
 			// Unwrap root JSON object: {"orders": [...]} -> [...]
 			b = jsn.Strip(b, [][]byte{[]byte(sel.Table)})
 
-			// Filter to only requested fields if specified
-			var ob bytes.Buffer
-			if len(sel.Fields) != 0 {
-				err = jsn.Filter(&ob, b, fieldsToList(sel.Fields))
-				if err != nil {
-					cerrMutex.Lock()
-					cerr = fmt.Errorf("database join %s: %w", sel.Table, err)
-					cerrMutex.Unlock()
-					return
-				}
-			} else {
-				ob.Write(b)
-			}
-
-			to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: ob.Bytes()}
-		}(i, idVal, sel, dbCtx, p.Table)
+			to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: b}
+		}(i, idVal, rawIDVal, sel, dbCtx, p.Table)
 	}
 
 	wg.Wait()
@@ -158,8 +148,8 @@ func (s *gstate) executeDatabaseJoinQuery(
 	selects := s.cs.st.qc.Selects
 
 	// Build a GraphQL sub-query for the child table
-	fkColName := sel.Rel.Left.Col.Name
-	subQuery := buildChildGraphQLQuery(sel, selects, fkColName, parentID)
+	fkCol := sel.Rel.Left.Col
+	subQuery := buildChildGraphQLQuery(sel, selects, fkCol, parentID)
 
 	// Compile QCode using the target database's compiler
 	qc, err := dbCtx.qcodeCompiler.Compile(subQuery, nil, s.role, s.r.namespace)
@@ -193,15 +183,47 @@ func (s *gstate) executeDatabaseJoinQuery(
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare query args: %w", err)
 	}
-	row := conn.QueryRowContext(ctx, querySQL, queryArgs...)
-	if err := row.Scan(&data); err != nil {
+
+	cacheKey := s.dbFragmentKey(ctx, fragmentKindDBJoin, dbCtx.name, querySQL, queryArgs, qc)
+	produce := func(c context.Context, useConn *sql.Conn) ([]byte, error) {
+		raw, err := scanJSONRow(c, dbCtx.dbtype, useConn, nil, querySQL, queryArgs)
 		if err == sql.ErrNoRows {
 			if sel.Singular {
-				return []byte(`{"` + sel.Table + `": null}`), nil
+				raw = []byte(`{"` + sel.Table + `": null}`)
+			} else {
+				raw = []byte(`{"` + sel.Table + `": []}`)
 			}
-			return []byte(`{"` + sel.Table + `": []}`), nil
+		} else if err != nil {
+			return nil, fmt.Errorf("query execution failed: %w", err)
 		}
-		return nil, fmt.Errorf("query execution failed: %w", err)
+		return raw, nil
+	}
+
+	if cached, ok := s.fragmentCacheGet(ctx, cacheKey, func() ([]byte, []RowRef, CacheEntryOptions, error) {
+		c, cancel := context.WithTimeout(context.WithoutCancel(ctx), swrRefreshTimeout)
+		defer cancel()
+		refreshConn, err := dbCtx.db.Conn(c)
+		if err != nil {
+			return nil, nil, CacheEntryOptions{}, err
+		}
+		defer refreshConn.Close() //nolint:errcheck
+		data, err := produce(c, refreshConn)
+		if err != nil {
+			return nil, nil, CacheEntryOptions{}, err
+		}
+		cachedData, refs, err := s.processDBFragmentForCache(dbCtx.name, qc, data)
+		return cachedData, refs, CacheEntryOptions{}, err
+	}); ok {
+		return cached, nil
+	}
+
+	start := time.Now()
+	data, err = produce(ctx, conn)
+	if err != nil {
+		return nil, err
+	}
+	if cachedData, refs, perr := s.processDBFragmentForCache(dbCtx.name, qc, data); perr == nil {
+		s.fragmentCacheSet(ctx, cacheKey, cachedData, refs, start, CacheEntryOptions{})
 	}
 
 	return data, nil
@@ -209,7 +231,7 @@ func (s *gstate) executeDatabaseJoinQuery(
 
 // buildChildGraphQLQuery constructs a GraphQL query for a cross-database child table.
 // For example: query { orders(where: {user_id: {eq: 42}}) { id total items { name qty } } }
-func buildChildGraphQLQuery(sel *qcode.Select, selects []qcode.Select, fkColName string, parentID []byte) []byte {
+func buildChildGraphQLQuery(sel *qcode.Select, selects []qcode.Select, fkCol sdata.DBColumn, parentID []byte) []byte {
 	var buf bytes.Buffer
 
 	buf.WriteString("query { ")
@@ -217,10 +239,9 @@ func buildChildGraphQLQuery(sel *qcode.Select, selects []qcode.Select, fkColName
 
 	// Add WHERE filter on the FK column matching the parent ID
 	buf.WriteString("(where: {")
-	buf.WriteString(fkColName)
+	buf.WriteString(fkCol.Name)
 	buf.WriteString(": {eq: ")
-	// Write the parent ID value — if it's a string (quoted), keep it; if numeric, write as-is
-	buf.Write(parentID)
+	writeGraphQLLiteral(&buf, fkCol, parentID)
 	buf.WriteString("}})")
 
 	// Write the requested fields
@@ -230,6 +251,104 @@ func buildChildGraphQLQuery(sel *qcode.Select, selects []qcode.Select, fkColName
 
 	buf.WriteString(" }")
 	return buf.Bytes()
+}
+
+func writeGraphQLLiteral(buf *bytes.Buffer, col sdata.DBColumn, val []byte) {
+	s := strings.TrimSpace(string(val))
+	if s == "" {
+		buf.WriteString("null")
+		return
+	}
+
+	if isGraphQLStringColumnType(col.Type) {
+		writeGraphQLStringLiteral(buf, s)
+		return
+	}
+
+	if isJSONStringLiteral(s) || isBareGraphQLLiteral(s) {
+		buf.WriteString(s)
+		return
+	}
+
+	writeGraphQLStringLiteral(buf, s)
+}
+
+func writeGraphQLStringLiteral(buf *bytes.Buffer, s string) {
+	if isJSONStringLiteral(s) {
+		buf.WriteString(s)
+		return
+	}
+
+	b, err := json.Marshal(s)
+	if err != nil {
+		buf.WriteString("null")
+		return
+	}
+	buf.Write(b)
+}
+
+func isJSONStringLiteral(s string) bool {
+	if len(s) < 2 || s[0] != '"' {
+		return false
+	}
+
+	var v string
+	return json.Unmarshal([]byte(s), &v) == nil
+}
+
+func isBareGraphQLLiteral(s string) bool {
+	switch s {
+	case "null", "true", "false":
+		return true
+	}
+
+	return isGraphQLNumberLiteral(s)
+}
+
+func isGraphQLNumberLiteral(s string) bool {
+	if s == "" || strings.HasPrefix(s, "+") {
+		return false
+	}
+
+	for i, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case i == 0 && r == '-':
+		case r == '.' || r == 'e' || r == 'E' || r == '+':
+		default:
+			return false
+		}
+	}
+
+	_, err := strconv.ParseFloat(s, 64)
+	return err == nil
+}
+
+func isGraphQLStringColumnType(typ string) bool {
+	t := strings.ToLower(strings.TrimSpace(typ))
+	if i := strings.IndexByte(t, '('); i >= 0 {
+		t = strings.TrimSpace(t[:i])
+	}
+
+	switch t {
+	case "text", "varchar", "char", "character", "character varying",
+		"uuid", "uniqueidentifier", "citext", "bpchar", "clob", "nclob",
+		"date", "time", "timetz", "timestamp", "timestamptz", "datetime",
+		"json", "jsonb", "xml",
+		"string":
+		return true
+	}
+
+	return strings.HasPrefix(t, "varchar") ||
+		strings.HasPrefix(t, "nvarchar") ||
+		strings.HasPrefix(t, "char") ||
+		strings.HasPrefix(t, "nchar") ||
+		strings.HasPrefix(t, "text") ||
+		strings.HasPrefix(t, "ntext") ||
+		strings.HasSuffix(t, "text") ||
+		strings.HasPrefix(t, "time") ||
+		strings.HasPrefix(t, "timestamp") ||
+		strings.HasPrefix(t, "datetime")
 }
 
 // writeSelectFields writes the field list for a Select, recursing into children.
@@ -246,8 +365,11 @@ func writeSelectFields(buf *bytes.Buffer, sel *qcode.Select, selects []qcode.Sel
 	// Recurse into child selects (nested relationships within the same target DB)
 	for _, cid := range sel.Children {
 		csel := &selects[cid]
-		// Skip cross-database join children — they'll be handled separately
-		if csel.SkipRender == qcode.SkipTypeDatabaseJoin || csel.SkipRender == qcode.SkipTypeRemote {
+		// Skip independent cross-database join children. When the parent is
+		// already a database-join select, its children are passthrough fields for
+		// the target database subquery and must be preserved.
+		if sel.SkipRender != qcode.SkipTypeDatabaseJoin &&
+			(csel.SkipRender == qcode.SkipTypeDatabaseJoin || csel.SkipRender == qcode.SkipTypeRemote) {
 			continue
 		}
 		if !first {
@@ -682,20 +804,69 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare query args for %s: %w", dbName, err)
 	}
-	row := conn.QueryRowContext(ctx, querySQL, queryArgs...)
-	if err := row.Scan(&data); err != nil {
+
+	cacheKey := s.dbFragmentKey(ctx, fragmentKindDBRoot, dbName, querySQL, queryArgs, qc)
+	produce := func(c context.Context, useConn *sql.Conn) ([]byte, error) {
+		raw, err := scanJSONRow(c, dbCtx.dbtype, useConn, nil, querySQL, queryArgs)
 		if err == sql.ErrNoRows {
 			return json.RawMessage(`{}`), nil
 		}
-		return nil, fmt.Errorf("query execution failed for %s: %w", dbName, err)
+		if err != nil {
+			return nil, fmt.Errorf("query execution failed for %s: %w", dbName, err)
+		}
+		encrypted, _, err := encryptResultFragment(raw, s.gj.printFormat, s.gj.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("encryption failed for %s: %w", dbName, err)
+		}
+		return encrypted, nil
 	}
 
-	// Handle encryption if needed
-	dhash := sha256.Sum256(data)
-	data, err = encryptValues(data, s.gj.printFormat, decPrefix, dhash[:], s.gj.encryptionKey)
+	if cached, ok := s.fragmentCacheGet(ctx, cacheKey, func() ([]byte, []RowRef, CacheEntryOptions, error) {
+		c, cancel := context.WithTimeout(context.WithoutCancel(ctx), swrRefreshTimeout)
+		defer cancel()
+		refreshConn, err := db.Conn(c)
+		if err != nil {
+			return nil, nil, CacheEntryOptions{}, err
+		}
+		defer refreshConn.Close() //nolint:errcheck
+		data, err := produce(c, refreshConn)
+		if err != nil {
+			return nil, nil, CacheEntryOptions{}, err
+		}
+		cachedData, refs, err := s.processDBFragmentForCache(dbName, qc, data)
+		return cachedData, refs, CacheEntryOptions{}, err
+	}); ok {
+		return s.resolveDatabaseRootRemotes(ctx, dbName, qc, cached)
+	}
+
+	start := time.Now()
+	data, err = produce(ctx, conn)
 	if err != nil {
-		return nil, fmt.Errorf("encryption failed for %s: %w", dbName, err)
+		return nil, err
+	}
+	if cachedData, refs, perr := s.processDBFragmentForCache(dbName, qc, data); perr == nil {
+		s.fragmentCacheSet(ctx, cacheKey, cachedData, refs, start, CacheEntryOptions{})
 	}
 
-	return json.RawMessage(data), nil
+	return s.resolveDatabaseRootRemotes(ctx, dbName, qc, data)
+}
+
+func (s *gstate) resolveDatabaseRootRemotes(
+	ctx context.Context,
+	dbName string,
+	qc *qcode.QCode,
+	data []byte,
+) (json.RawMessage, error) {
+	if qc == nil || qc.Remotes == 0 || len(data) == 0 {
+		return json.RawMessage(data), nil
+	}
+
+	sub := *s
+	sub.database = dbName
+	sub.data = injectRemoteMarkers(data, qc)
+	sub.cs = &cstate{st: stmt{qc: qc}}
+	if err := sub.execRemoteJoin(ctx); err != nil {
+		return nil, err
+	}
+	return json.RawMessage(sub.data), nil
 }

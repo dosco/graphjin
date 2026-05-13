@@ -22,7 +22,7 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithDescription("Get current GraphJin configuration. Returns databases, tables, roles, blocklist, functions, and resolvers. "+
 				"Use this to understand the current configuration before making changes."),
 			mcp.WithString("section",
-				mcp.Description("Optional section to retrieve: 'databases', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', or 'all' (default)"),
+				mcp.Description("Optional section to retrieve: 'databases', 'metadata', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', or 'all' (default)"),
 			),
 		), ms.handleGetCurrentConfig)
 	}
@@ -33,7 +33,7 @@ func (ms *mcpServer) registerConfigTools() {
 			"update_current_config",
 			mcp.WithDescription("Update GraphJin configuration and automatically reload. "+
 				"Changes are applied in-memory and take effect immediately. "+
-				"Supports databases, tables, roles, blocklist, functions, and resolvers. "+
+				"Supports databases, metadata, tables, roles, blocklist, functions, and resolvers. "+
 				"System database names (postgres, mysql, information_schema, master, etc.) "+
 				"are rejected by default — use a user database name instead. "+
 				"Use create_if_not_exists: true to create a new database on the server before connecting (dev mode only). "+
@@ -41,7 +41,10 @@ func (ms *mcpServer) registerConfigTools() {
 				"WARNING: Changes are lost on restart unless persisted separately. "+
 				"Use get_current_config first to understand the current state."),
 			mcp.WithObject("databases",
-				mcp.Description("Map of database configs to add/update. Key is database name, value is DatabaseConfig with type, host, port, dbname, user, password, read_only, etc. NOTE: read_only cannot be changed from true to false at runtime if it was set in the config file."),
+				mcp.Description("Map of database configs to add/update. Key is database name, value is DatabaseConfig with type, host, port, dbname, user, password, read_only, infer_db_refs for CodeSQL, etc. NOTE: read_only cannot be changed from true to false at runtime if it was set in the config file."),
+			),
+			mcp.WithObject("metadata",
+				mcp.Description("Metadata graph config: enabled, database, auto_code_relations, and code_databases. Dev defaults on; production defaults off."),
 			),
 			mcp.WithArray("tables",
 				mcp.Description("Array of table configs to add/update. Each table has name, database (optional), blocklist (optional), columns (optional), order_by (optional)."),
@@ -239,6 +242,7 @@ func (ms *mcpServer) registerConfigTools() {
 type MCPConfigResponse struct {
 	ActiveDatabase string                         `json:"active_database,omitempty"`
 	Databases      map[string]core.DatabaseConfig `json:"databases,omitempty"`
+	Metadata       core.MetadataConfig            `json:"metadata,omitempty"`
 	Tables         []core.Table                   `json:"tables,omitempty"`
 	Roles          []RoleInfo                     `json:"roles,omitempty"`
 	Blocklist      []string                       `json:"blocklist,omitempty"`
@@ -271,6 +275,8 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 	switch strings.ToLower(section) {
 	case "databases":
 		result.Databases = conf.Databases
+	case "metadata":
+		result.Metadata = conf.Metadata
 	case "tables":
 		result.Tables = conf.Tables
 	case "roles":
@@ -283,13 +289,14 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 		result.Resolvers = conf.Resolvers
 	case "all":
 		result.Databases = conf.Databases
+		result.Metadata = conf.Metadata
 		result.Tables = conf.Tables
 		result.Roles = convertRolesToInfo(conf.Roles)
 		result.Blocklist = conf.Blocklist
 		result.Functions = conf.Functions
 		result.Resolvers = conf.Resolvers
 	default:
-		return mcp.NewToolResultError(fmt.Sprintf("unknown section: %s. Valid sections: databases, tables, roles, blocklist, functions, resolvers, all", section)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("unknown section: %s. Valid sections: databases, metadata, tables, roles, blocklist, functions, resolvers, all", section)), nil
 	}
 	return ms.toolResultJSON("get_current_config", args, result)
 }
@@ -325,6 +332,7 @@ func convertRolesToInfo(roles []core.Role) []RoleInfo {
 // ConfigUpdateRequest represents the update request structure
 type ConfigUpdateRequest struct {
 	Databases map[string]DatabaseConfigInput `json:"databases,omitempty"`
+	Metadata  *core.MetadataConfig           `json:"metadata,omitempty"`
 	Tables    []TableConfigInput             `json:"tables,omitempty"`
 	Roles     []RoleConfigInput              `json:"roles,omitempty"`
 	Blocklist []string                       `json:"blocklist,omitempty"`
@@ -333,16 +341,17 @@ type ConfigUpdateRequest struct {
 
 // DatabaseConfigInput represents a database config for input
 type DatabaseConfigInput struct {
-	Type       string `json:"type"`
-	ConnString string `json:"connection_string,omitempty"`
-	Host       string `json:"host,omitempty"`
-	Port       int    `json:"port,omitempty"`
-	DBName     string `json:"dbname,omitempty"`
-	User       string `json:"user,omitempty"`
-	Password   string `json:"password,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Schema     string `json:"schema,omitempty"`
-	ReadOnly   bool   `json:"read_only,omitempty"`
+	Type        string `json:"type"`
+	ConnString  string `json:"connection_string,omitempty"`
+	Host        string `json:"host,omitempty"`
+	Port        int    `json:"port,omitempty"`
+	DBName      string `json:"dbname,omitempty"`
+	User        string `json:"user,omitempty"`
+	Password    string `json:"password,omitempty"`
+	Path        string `json:"path,omitempty"`
+	Schema      string `json:"schema,omitempty"`
+	ReadOnly    bool   `json:"read_only,omitempty"`
+	InferDBRefs *bool  `json:"infer_db_refs,omitempty"`
 }
 
 // TableConfigInput represents a table config for input
@@ -585,6 +594,12 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			conf.Databases[pdb.name] = pdb.config
 			changes = append(changes, fmt.Sprintf("added/updated database: %s", pdb.name))
 		}
+	}
+
+	// Process metadata graph config
+	if metadata, ok := args["metadata"].(map[string]any); ok && len(metadata) > 0 {
+		conf.Metadata = parseMetadataConfig(metadata, conf.Metadata)
+		changes = append(changes, "updated metadata graph config")
 	}
 
 	// Process tables
@@ -925,6 +940,9 @@ func parseDBConfig(m map[string]any) (core.DatabaseConfig, error) {
 	if ro, ok := m["read_only"].(bool); ok {
 		conf.ReadOnly = ro
 	}
+	if infer, ok := m["infer_db_refs"].(bool); ok {
+		conf.InferDBRefs = &infer
+	}
 	if pkp, ok := m["private_key_path"].(string); ok {
 		conf.PrivateKeyPath = pkp
 	}
@@ -952,6 +970,27 @@ func parseDBConfig(m map[string]any) (core.DatabaseConfig, error) {
 	}
 
 	return conf, nil
+}
+
+func parseMetadataConfig(m map[string]any, current core.MetadataConfig) core.MetadataConfig {
+	if enabled, ok := m["enabled"].(bool); ok {
+		current.Enabled = &enabled
+	}
+	if database, ok := m["database"].(string); ok {
+		current.Database = database
+	}
+	if auto, ok := m["auto_code_relations"].(bool); ok {
+		current.AutoCodeRelations = &auto
+	}
+	if raw, ok := m["code_databases"].([]any); ok {
+		current.CodeDatabases = current.CodeDatabases[:0]
+		for _, v := range raw {
+			if s, ok := v.(string); ok && s != "" {
+				current.CodeDatabases = append(current.CodeDatabases, s)
+			}
+		}
+	}
+	return current
 }
 
 // parseTableConfig parses a table config from a map
@@ -1340,6 +1379,7 @@ type stagedRuntimeState struct {
 	dbs            map[string]*sql.DB
 	managedDBs     map[string]managedDB
 	runtimeCore    *core.Config
+	metadataDB     string
 	gj             *core.GraphJin
 	availableDBs   []string
 	newConnections map[string]*sql.DB
@@ -1378,6 +1418,9 @@ func cloneCoreConfig(src core.Config) core.Config {
 		for name, dbConf := range src.Databases {
 			dst.Databases[name] = dbConf
 		}
+	}
+	if src.Metadata.CodeDatabases != nil {
+		dst.Metadata.CodeDatabases = append([]string(nil), src.Metadata.CodeDatabases...)
 	}
 	if src.Tables != nil {
 		dst.Tables = append([]core.Table(nil), src.Tables...)
@@ -1573,7 +1616,21 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 		return stage, nil
 	}
 
-	gj, err := core.NewGraphJin(stage.runtimeCore, anyDBFromMap(stage.dbs), ms.service.buildCoreOptionsWithDBs(stage.dbs)...)
+	if oldMetadataDB := ms.service.metadataDB; oldMetadataDB != "" {
+		if _, configured := stagedCore.Databases[oldMetadataDB]; !configured {
+			delete(stage.dbs, oldMetadataDB)
+		}
+	}
+	metadataDB, err := ms.service.initMetadataGraphForRuntime(stagedCore, stage.runtimeCore, stage.dbs, stage.managedDBs)
+	if err != nil {
+		return stage, err
+	}
+	stage.metadataDB = metadataDB
+	if metadataDB != "" {
+		stage.newConnections[metadataDB] = stage.dbs[metadataDB]
+	}
+
+	gj, err := core.NewGraphJin(stage.runtimeCore, anyDBFromMap(stage.dbs), ms.service.buildCoreOptionsFor(stage.dbs, stage.managedDBs)...)
 	if err != nil {
 		return stage, err
 	}
@@ -1590,8 +1647,37 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 		stage.schemaNotReady = true
 		return stage, fmt.Errorf("database connected but schema discovery found no tables")
 	}
+	if stage.metadataDB != "" && stagedRuntimeHasApplicationDatabase(stagedCore, stage.managedDBs) {
+		snapshot, err := stage.gj.MetadataSnapshot(ms.service.metadataSnapshotExcludesFor(stage.metadataDB, stagedCore, stage.managedDBs)...)
+		if err != nil {
+			return stage, err
+		}
+		if len(snapshot.Tables) == 0 {
+			stage.schemaNotReady = true
+			return stage, fmt.Errorf("database connected but schema discovery found no tables")
+		}
+	}
+	if err := ms.service.refreshMetadataGraphForRuntime(stage.gj, stagedCore, stage.metadataDB, stage.dbs, stage.managedDBs); err != nil {
+		return stage, err
+	}
 
 	return stage, nil
+}
+
+func stagedRuntimeHasApplicationDatabase(conf *core.Config, managedDBs map[string]managedDB) bool {
+	if conf == nil {
+		return false
+	}
+	for name, dbConf := range conf.Databases {
+		if _, ok := managedDBs[name]; ok {
+			continue
+		}
+		if isCodeSQLType(dbConf.Type) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRuntimeState) {
@@ -1617,6 +1703,7 @@ func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRu
 	ms.service.dbs = stage.dbs
 	ms.service.managedDBs = stage.managedDBs
 	ms.service.runtimeCore = stage.runtimeCore
+	ms.service.metadataDB = stage.metadataDB
 	ms.service.gj = stage.gj
 	if oldGJ != nil && oldGJ != stage.gj {
 		oldGJ.Close()
@@ -1888,6 +1975,7 @@ func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 	if conf.Databases != nil {
 		v.Set("databases", conf.Databases)
 	}
+	v.Set("metadata", conf.Metadata)
 	if conf.Tables != nil {
 		v.Set("tables", conf.Tables)
 	}

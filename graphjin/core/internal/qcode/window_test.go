@@ -209,10 +209,10 @@ func TestWindow_NullsHandling(t *testing.T) {
 // (before they reach the SQL renderer).
 func TestWindow_BadNullsHandling(t *testing.T) {
 	bads := []string{
-		`["created_at nulls"]`,          // no FIRST/LAST
-		`["created_at nulls maybe"]`,    // bogus side
-		`["created_at desc nulls"]`,     // trailing
-		`["created_at asc desc"]`,       // two directions
+		`["created_at nulls"]`,       // no FIRST/LAST
+		`["created_at nulls maybe"]`, // bogus side
+		`["created_at desc nulls"]`,  // trailing
+		`["created_at asc desc"]`,    // two directions
 	}
 	for _, in := range bads {
 		qc := newWindowCompiler(t)
@@ -247,5 +247,92 @@ func TestWindow_MixedAggregatesAndWindows(t *testing.T) {
 	sel := result.Selects[0]
 	if !sel.GroupCols {
 		t.Errorf("expected GroupCols=true (pure aggregate forces GROUP BY)")
+	}
+}
+
+func TestWindow_RankingFunctionsParsed(t *testing.T) {
+	cases := []struct {
+		field string
+		want  qcode.WindowFunc
+	}{
+		{"row_number", qcode.WindowFuncRowNumber},
+		{"rank", qcode.WindowFuncRank},
+		{"dense_rank", qcode.WindowFuncDenseRank},
+	}
+	for _, c := range cases {
+		qc := newWindowCompiler(t)
+		result, err := qc.Compile([]byte(`
+			query {
+				products {
+					metric: `+c.field+` @window(partition: ["user_id"], order: ["price desc"])
+				}
+			}`), nil, "user", "")
+		if err != nil {
+			t.Fatalf("%s: compile failed: %v", c.field, err)
+		}
+		f := result.Selects[0].Fields[0]
+		if f.WindowFunc != c.want {
+			t.Errorf("%s: WindowFunc = %v, want %v", c.field, f.WindowFunc, c.want)
+		}
+		if f.Window == nil {
+			t.Fatalf("%s: expected @window spec", c.field)
+		}
+	}
+}
+
+func TestWindow_ValueFunctionsParsed(t *testing.T) {
+	cases := []struct {
+		field string
+		want  qcode.WindowFunc
+	}{
+		{"lag_price", qcode.WindowFuncLag},
+		{"lead_price", qcode.WindowFuncLead},
+		{"first_value_price", qcode.WindowFuncFirstValue},
+		{"last_value_price", qcode.WindowFuncLastValue},
+	}
+	for _, c := range cases {
+		qc := newWindowCompiler(t)
+		result, err := qc.Compile([]byte(`
+			query {
+				products {
+					metric: `+c.field+` @window(partition: ["user_id"], order: ["created_at"])
+				}
+			}`), nil, "user", "")
+		if err != nil {
+			t.Fatalf("%s: compile failed: %v", c.field, err)
+		}
+		f := result.Selects[0].Fields[0]
+		if f.WindowFunc != c.want {
+			t.Errorf("%s: WindowFunc = %v, want %v", c.field, f.WindowFunc, c.want)
+		}
+		if len(f.Args) != 1 || f.Args[0].Type != qcode.ArgTypeCol || f.Args[0].Col.Name != "price" {
+			t.Errorf("%s: expected price column arg, got %+v", c.field, f.Args)
+		}
+	}
+}
+
+func TestWindow_FunctionRequiresDirective(t *testing.T) {
+	qc := newWindowCompiler(t)
+	_, err := qc.Compile([]byte(`
+		query {
+			products {
+				row_number
+			}
+		}`), nil, "user", "")
+	if err == nil || !strings.Contains(err.Error(), "requires @window") {
+		t.Fatalf("expected requires @window error, got: %v", err)
+	}
+}
+
+func TestWindow_ValueFunctionRejectsUnknownColumn(t *testing.T) {
+	qc := newWindowCompiler(t)
+	_, err := qc.Compile([]byte(`
+		query {
+			products {
+				metric: lag_bogus @window(partition: ["user_id"], order: ["created_at"])
+			}
+		}`), nil, "user", "")
+	if err == nil || !strings.Contains(err.Error(), "bogus") {
+		t.Fatalf("expected unknown suffix column error, got: %v", err)
 	}
 }

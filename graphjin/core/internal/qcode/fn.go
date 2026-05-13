@@ -26,6 +26,10 @@ func (co *Compiler) isFunction(sel *Select, name string, f graph.Field) (
 		}
 	}
 
+	if fn, isFunc, err = co.compileWindowFunction(sel, name); isFunc || err != nil {
+		return
+	}
+
 	switch {
 	case name == "search_rank":
 		isFunc = true
@@ -65,6 +69,59 @@ func (co *Compiler) isFunction(sel *Select, name string, f graph.Field) (
 	}
 
 	return
+}
+
+func (co *Compiler) compileWindowFunction(sel *Select, name string) (
+	fn Function, isFunc bool, err error,
+) {
+	switch name {
+	case "row_number":
+		return newWindowFunction(name, "bigint", WindowFuncRowNumber), true, nil
+	case "rank":
+		return newWindowFunction(name, "bigint", WindowFuncRank), true, nil
+	case "dense_rank":
+		return newWindowFunction(name, "bigint", WindowFuncDenseRank), true, nil
+	}
+
+	prefixes := []struct {
+		prefix string
+		wf     WindowFunc
+	}{
+		{"first_value_", WindowFuncFirstValue},
+		{"last_value_", WindowFuncLastValue},
+		{"lag_", WindowFuncLag},
+		{"lead_", WindowFuncLead},
+	}
+	for _, p := range prefixes {
+		if !strings.HasPrefix(name, p.prefix) {
+			continue
+		}
+		colName := name[len(p.prefix):]
+		if colName == "" {
+			return fn, true, fmt.Errorf("window function %q requires a column suffix", strings.TrimSuffix(p.prefix, "_"))
+		}
+		col, err := sel.Ti.GetColumn(colName)
+		if err != nil {
+			return fn, true, fmt.Errorf("window function %q: %w", strings.TrimSuffix(p.prefix, "_"), err)
+		}
+		fn = newWindowFunction(strings.TrimSuffix(p.prefix, "_"), col.Type, p.wf)
+		fn.Args = []Arg{{Type: ArgTypeCol, Col: col}}
+		return fn, true, nil
+	}
+
+	return fn, false, nil
+}
+
+func newWindowFunction(name, typ string, wf WindowFunc) Function {
+	return Function{
+		Name:       name,
+		WindowFunc: wf,
+		Func: sdata.DBFunction{
+			Name: name,
+			Type: typ,
+			Agg:  false,
+		},
+	}
 }
 
 // compileExprFunction handles the `<name>(expr: <expression>)` syntax.

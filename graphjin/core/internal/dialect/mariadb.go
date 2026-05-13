@@ -485,6 +485,12 @@ func (d *MariaDBDialect) renderInlineJSONFields(ctx Context, r InlineChildRender
 			t = fmt.Sprintf("%s_%d", t, sel.ID)
 		}
 
+		if f.Window != nil {
+			r.RenderWindowFunction(sel, f, t)
+			i++
+			continue
+		}
+
 		// Expression-aggregate path: route through the shared scalar-expr
 		// renderer so arithmetic / case / cast / agg-of-expr work the
 		// same way MariaDB's inline JSON builder does for simple aggregates.
@@ -667,7 +673,9 @@ func (d *MariaDBDialect) renderBaseColumns(ctx Context, r InlineChildRenderer, s
 		// Expression-aggregate path: route through the shared scalar-expr
 		// renderer. Both the wrap-in-aggregate (e.g. SUM(<expr>)) and
 		// bare-expression (ratio-of-aggregates) cases are handled.
-		if len(f.Args) == 1 && f.Args[0].Type == qcode.ArgTypeExpr {
+		if f.Window != nil {
+			r.RenderWindowFunction(sel, f, t)
+		} else if len(f.Args) == 1 && f.Args[0].Type == qcode.ArgTypeExpr {
 			if f.Func.Name != "" {
 				ctx.WriteString(f.Func.Name)
 				ctx.WriteString(`(`)

@@ -123,8 +123,8 @@ type Select struct {
 	Rel       sdata.DBRel
 	// ExtraArgs holds GraphQL field arguments that don't match a known
 	// qcode arg name. Populated only for selects whose Ti.Type=="remote".
-	ExtraArgs map[string]string
-	Joins     []Join
+	ExtraArgs               map[string]string
+	Joins                   []Join
 	PartitionFilterRequired string
 	Unrestricted            bool
 	order                   Order
@@ -161,6 +161,7 @@ type Field struct {
 	Type        FieldType
 	Col         sdata.DBColumn
 	Func        sdata.DBFunction
+	WindowFunc  WindowFunc
 	FieldName   string
 	FieldFilter Filter
 	Args        []Arg
@@ -180,9 +181,10 @@ type Column struct {
 type Function struct {
 	Name string
 	// Col       sdata.DBColumn
-	Func sdata.DBFunction
-	Args []Arg
-	Agg  bool
+	Func       sdata.DBFunction
+	Args       []Arg
+	Agg        bool
+	WindowFunc WindowFunc
 }
 
 type Filter struct {
@@ -632,6 +634,19 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 		if err := co.compileSelectorDirectives(qc, sel, field.Directives, role); err != nil {
 			return err
+		}
+
+		if parentID != -1 && int(parentID) < len(qc.Selects) && qc.Selects[parentID].SkipRender == SkipTypeDatabaseJoin {
+			psel := &qc.Selects[parentID]
+			psel.Children = append(psel.Children, sel.ID)
+			sel.SkipRender = SkipTypeDatabaseJoin
+			sel.Database = psel.Database
+			sel.Table = name
+			sel.Ti = sdata.DBTable{Name: name, Database: psel.Database}
+			co.compileDatabaseJoinPassthroughFields(st, op, sel, field)
+			qc.Selects = append(qc.Selects, s1)
+			id++
+			continue
 		}
 
 		if err := co.addRelInfo(name, op, qc, sel, field); err != nil {
