@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"time"
@@ -40,25 +41,8 @@ func Example_queryWithOpenAPITopLevel() {
 		fmt.Fprintf(w, `{"data":[{"id":"e1","action":"login by %s"},{"id":"e2","action":"export by %s"}]}`, actor, actor) //nolint:errcheck
 	})
 
-	listener, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		panic(err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-
-	server := &http.Server{Handler: mux}
-	go func() {
-		log.Fatal(server.Serve(listener)) //nolint:gosec
-	}()
-
-	for i := 0; i < 100; i++ {
-		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/audit-logs?actorId=ping", port))
-		if err == nil {
-			resp.Body.Close() //nolint:errcheck
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	server := httptest.NewServer(mux)
+	defer server.Close()
 
 	specsDir, err := os.MkdirTemp("", "graphjin-openapi-toplevel-*")
 	if err != nil {
@@ -70,7 +54,7 @@ func Example_queryWithOpenAPITopLevel() {
 openapi: 3.0.0
 info: { title: Audit, version: '1.0' }
 servers:
-  - url: http://localhost:%d
+  - url: %s
 paths:
   /audit-logs:
     get:
@@ -92,7 +76,7 @@ paths:
                       properties:
                         id: { type: string }
                         action: { type: string }
-`, port)
+`, server.URL)
 
 	specPath := filepath.Join(specsDir, "audit.yaml")
 	if err := os.WriteFile(specPath, []byte(specYAML), 0o644); err != nil {

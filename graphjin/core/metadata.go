@@ -236,8 +236,38 @@ func (gj *graphjinEngine) metadataSnapshot(skip map[string]struct{}) *MetadataSn
 			})
 		}
 	}
+	dedupeMetadataSnapshot(out)
+	return out
+}
+
+func dedupeMetadataSnapshot(out *MetadataSnapshot) {
+	out.Tables = uniqueMetadataByID(out.Tables, func(v MetadataTable) string { return v.ID })
+	out.Columns = uniqueMetadataByID(out.Columns, func(v MetadataColumn) string { return v.ID })
+	out.Relationships = uniqueMetadataByID(out.Relationships, func(v MetadataRelationship) string { return v.ID })
+	out.Functions = uniqueMetadataByID(out.Functions, func(v MetadataFunction) string { return v.ID })
+	out.Indexes = uniqueMetadataByID(out.Indexes, func(v MetadataIndex) string { return v.ID })
+
+	sort.SliceStable(out.Tables, func(i, j int) bool { return out.Tables[i].ID < out.Tables[j].ID })
+	sort.SliceStable(out.Columns, func(i, j int) bool { return out.Columns[i].ID < out.Columns[j].ID })
 	sort.SliceStable(out.Relationships, func(i, j int) bool { return out.Relationships[i].ID < out.Relationships[j].ID })
+	sort.SliceStable(out.Functions, func(i, j int) bool { return out.Functions[i].ID < out.Functions[j].ID })
 	sort.SliceStable(out.Indexes, func(i, j int) bool { return out.Indexes[i].ID < out.Indexes[j].ID })
+}
+
+func uniqueMetadataByID[T any](items []T, id func(T) string) []T {
+	if len(items) < 2 {
+		return items
+	}
+	seen := make(map[string]struct{}, len(items))
+	out := items[:0]
+	for _, item := range items {
+		key := id(item)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
 	return out
 }
 
