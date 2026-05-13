@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -115,6 +117,19 @@ func (gj *graphjinEngine) loadFilesystemIntegration() error {
 		if err != nil {
 			return fmt.Errorf("filesystems[%q]: backend init: %w", fc.Name, err)
 		}
+		if fc.ReadOnly {
+			backend = readOnlyFilesystemBackend{
+				name:    fc.Name,
+				backend: backend,
+			}
+		}
+		if gj.responseCache != nil {
+			backend = cacheInvalidatingFilesystemBackend{
+				name:    fc.Name,
+				backend: backend,
+				cache:   gj.responseCache,
+			}
+		}
 		gj.fsBackends[fc.Name] = backend
 
 		t := sdata.NewDBTable(schema, fc.Name, "remote", fixedFilesystemColumns(schema, fc.Name))
@@ -127,11 +142,21 @@ func (gj *graphjinEngine) loadFilesystemIntegration() error {
 			Schema:    schema,
 			StripPath: "items",
 			Props: ResolverProps{
-				"fs_name": fc.Name,
+				"fs_name":        fc.Name,
+				"fs_fingerprint": filesystemConfigFingerprint(fc),
 			},
 		})
 	}
 	return nil
+}
+
+func filesystemConfigFingerprint(fc FilesystemConfig) string {
+	b, err := json.Marshal(fc)
+	if err != nil {
+		b = []byte(fmt.Sprintf("%s|%s|%s|%s|%s", fc.Name, fc.Backend, fc.Root, fc.Bucket, fc.Prefix))
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 // newFilesystemResolverFn returns the factory registered under
@@ -228,7 +253,7 @@ func (b *filesystemBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte
 func (b *filesystemBridge) entryToRow(ctx context.Context, e fstable.Entry, inlineData bool) (map[string]any, error) {
 	ttl := b.conf.PresignTTL
 	if ttl == 0 {
-		ttl = 15 * time.Minute
+		ttl = defaultFilesystemPresignTTL
 	}
 
 	url, err := b.backend.Presign(ctx, e.Key, fstable.PresignGet, ttl)

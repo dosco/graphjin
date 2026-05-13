@@ -162,6 +162,140 @@ func TestSubmitSWRRefresh_NonRefresherIsNoOp(t *testing.T) {
 	s.submitSWRRefresh(context.Background())
 }
 
+func TestFragmentCacheGet_StaleHitDispatchesFragmentRefresh(t *testing.T) {
+	fake := newFakeStaleCache()
+	gj := minimalEngine(fake)
+	s := &gstate{
+		gj:   gj,
+		r:    newReq("getUsers", "query getUsers { users { id } }"),
+		role: "anon",
+	}
+
+	refresh := func() ([]byte, []RowRef, CacheEntryOptions, error) {
+		return []byte(`{"users":[]}`), []RowRef{DBTableRef("default", "users")}, CacheEntryOptions{}, nil
+	}
+	data, hit := s.fragmentCacheGet(context.Background(), "fragment-key", refresh)
+	if !hit {
+		t.Fatalf("expected fragment cache hit")
+	}
+	if string(data) != string(fake.staleData) {
+		t.Fatalf("unexpected cached data: %s", data)
+	}
+	if got := fake.submitCount.Load(); got != 1 {
+		t.Fatalf("expected 1 fragment refresh submission, got %d", got)
+	}
+	if s.fragmentHits.Load() != 1 || s.fragmentMisses.Load() != 0 {
+		t.Fatalf("unexpected fragment hit/miss counters: hits=%d misses=%d",
+			s.fragmentHits.Load(), s.fragmentMisses.Load())
+	}
+}
+
+func TestFragmentCacheGet_UsesOptionAwareRefresh(t *testing.T) {
+	fake := &fakeOptionSWRCache{
+		staleData: []byte(`{"items":[]}`),
+		stale:     true,
+		found:     true,
+	}
+	gj := minimalEngine(fake)
+	s := &gstate{
+		gj:   gj,
+		r:    newReq("getFiles", "query getFiles { files { key url } }"),
+		role: "anon",
+	}
+
+	opts := CacheEntryOptions{HardTTL: time.Minute}
+	refresh := func() ([]byte, []RowRef, CacheEntryOptions, error) {
+		return []byte(`{"items":[]}`), []RowRef{FilesystemPrefixRef("files", "")}, opts, nil
+	}
+	if _, hit := s.fragmentCacheGet(context.Background(), "fragment-key", refresh); !hit {
+		t.Fatalf("expected fragment cache hit")
+	}
+	if got := fake.submitOptionsCount.Load(); got != 1 {
+		t.Fatalf("expected option-aware refresh submission, got %d", got)
+	}
+	fn := fake.lastOptionsFn()
+	if fn == nil {
+		t.Fatal("expected option-aware refresh fn to be stored")
+	}
+	data, refs, gotOpts, err := fn()
+	if err != nil {
+		t.Fatalf("refresh fn: %v", err)
+	}
+	if string(data) != `{"items":[]}` || len(refs) != 1 || gotOpts != opts {
+		t.Fatalf("unexpected refresh output data=%s refs=%+v opts=%+v", data, refs, gotOpts)
+	}
+}
+
+func TestFragmentCacheSet_UsesSetWithOptions(t *testing.T) {
+	fake := &fakeOptionSWRCache{}
+	gj := minimalEngine(fake)
+	s := &gstate{
+		gj:   gj,
+		r:    newReq("getFiles", "query getFiles { files { key url } }"),
+		role: "anon",
+	}
+
+	opts := CacheEntryOptions{HardTTL: time.Minute}
+	s.fragmentCacheSet(context.Background(), "fragment-key", []byte(`[]`), []RowRef{FilesystemPrefixRef("files", "")}, time.Now(), opts)
+	if fake.setOptions != opts {
+		t.Fatalf("expected SetWithOptions opts %+v, got %+v", opts, fake.setOptions)
+	}
+}
+
+type fakeOptionSWRCache struct {
+	staleData          []byte
+	stale              bool
+	found              bool
+	setOptions         CacheEntryOptions
+	submitOptionsCount atomic.Int64
+	lastFn             atomic.Value // RefreshFnWithOptions
+}
+
+func (c *fakeOptionSWRCache) Get(ctx context.Context, key string) ([]byte, bool, bool) {
+	return c.staleData, c.stale, c.found
+}
+
+func (c *fakeOptionSWRCache) Set(
+	ctx context.Context,
+	key string,
+	data []byte,
+	refs []RowRef,
+	queryStartTime time.Time,
+) error {
+	return c.SetWithOptions(ctx, key, data, refs, queryStartTime, CacheEntryOptions{})
+}
+
+func (c *fakeOptionSWRCache) SetWithOptions(
+	ctx context.Context,
+	key string,
+	data []byte,
+	refs []RowRef,
+	queryStartTime time.Time,
+	opts CacheEntryOptions,
+) error {
+	c.setOptions = opts
+	return nil
+}
+
+func (c *fakeOptionSWRCache) InvalidateRows(ctx context.Context, refs []RowRef) error {
+	return nil
+}
+
+func (c *fakeOptionSWRCache) SubmitRefresh(key string, fn RefreshFn) bool {
+	return false
+}
+
+func (c *fakeOptionSWRCache) SubmitRefreshWithOptions(key string, fn RefreshFnWithOptions) bool {
+	c.submitOptionsCount.Add(1)
+	c.lastFn.Store(fn)
+	return true
+}
+
+func (c *fakeOptionSWRCache) lastOptionsFn() RefreshFnWithOptions {
+	fn, _ := c.lastFn.Load().(RefreshFnWithOptions)
+	return fn
+}
+
 type fakeNoSWRCache struct{}
 
 func (c *fakeNoSWRCache) Get(ctx context.Context, key string) ([]byte, bool, bool) {

@@ -291,7 +291,7 @@ func (s *graphjinService) newDBFromDatabaseConfigInto(name string, dbConf core.D
 			}
 		}
 		if managed != nil {
-			managed[name] = managedDB{handle: handle}
+			managed[name] = managedDB{handle: handle, watch: !dbConf.ReadOnly, readOnly: dbConf.ReadOnly}
 		}
 		if stats != nil {
 			s.log.Infof("codesql database %q indexed: added=%d changed=%d deleted=%d skipped=%d cache=%s",

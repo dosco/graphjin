@@ -109,3 +109,33 @@ func TestGetByNameRejectsEscapingImports(t *testing.T) {
 		t.Fatalf("expected invalid import path error, got %v", err)
 	}
 }
+
+func TestSetPurgesCachedQuery(t *testing.T) {
+	fs := &testFS{files: map[string][]byte{
+		"/queries/getProducts.gql": []byte("query getProducts { products { id } }"),
+	}}
+	al, err := New(nil, fs, false)
+	if err != nil {
+		t.Fatalf("new allow list: %v", err)
+	}
+
+	item, err := al.GetByName("getProducts", true)
+	if err != nil {
+		t.Fatalf("initial get: %v", err)
+	}
+	if !strings.Contains(string(item.Query), "products") {
+		t.Fatalf("unexpected initial query: %s", item.Query)
+	}
+
+	if err := al.Set(Item{Name: "getProducts", Query: []byte("query getProducts { users { id } }")}); err != nil {
+		t.Fatalf("set replacement: %v", err)
+	}
+
+	item, err = al.GetByName("getProducts", true)
+	if err != nil {
+		t.Fatalf("second get: %v", err)
+	}
+	if !strings.Contains(string(item.Query), "users") {
+		t.Fatalf("expected cache purge to expose replacement query, got %s", item.Query)
+	}
+}

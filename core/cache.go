@@ -15,20 +15,48 @@ type ResponseCacheProvider interface {
 	// Returns (data, isStale, found). isStale is true if the entry is past soft TTL (SWR).
 	Get(ctx context.Context, key string) (data []byte, isStale bool, found bool)
 
-	// Set stores a response with row-level indices for invalidation.
-	// refs contains (table, row_id) pairs for fine-grained cache invalidation.
+	// Set stores a response with dependency refs for invalidation.
+	// refs may represent DB rows/tables, filesystem keys/prefixes, or resolver outputs.
 	// queryStartTime is used for race condition detection.
 	Set(ctx context.Context, key string, data []byte, refs []RowRef, queryStartTime time.Time) error
 
-	// InvalidateRows invalidates cache entries for specific rows.
-	// Called after mutations with the affected row IDs.
+	// InvalidateRows invalidates cache entries for dependency refs.
 	InvalidateRows(ctx context.Context, refs []RowRef) error
+}
+
+// CacheEntryOptions lets callers narrow cache lifetime for one entry without
+// changing provider-wide defaults.
+type CacheEntryOptions struct {
+	// HardTTL caps the provider hard TTL. Providers must not extend their
+	// configured TTL to satisfy this value.
+	HardTTL time.Duration
+	// FreshTTL caps the provider fresh TTL used for SWR. Providers must not
+	// extend their configured fresh TTL to satisfy this value.
+	FreshTTL time.Duration
+	// NoStore tells providers to skip storing this entry.
+	NoStore bool
+}
+
+// ResponseCacheProviderWithOptions is an optional extension implemented by
+// providers that can honor per-entry cache lifetime options.
+type ResponseCacheProviderWithOptions interface {
+	SetWithOptions(
+		ctx context.Context,
+		key string,
+		data []byte,
+		refs []RowRef,
+		queryStartTime time.Time,
+		opts CacheEntryOptions,
+	) error
 }
 
 // RefreshFn produces a fresh response for stale-while-revalidate.
 // Implementations should run the original query and return cleaned response
 // bytes plus row references suitable for cache indexing.
 type RefreshFn func() (data []byte, refs []RowRef, err error)
+
+// RefreshFnWithOptions is the option-aware equivalent of RefreshFn.
+type RefreshFnWithOptions func() (data []byte, refs []RowRef, opts CacheEntryOptions, err error)
 
 // SWRRefresher is an optional interface a ResponseCacheProvider can implement
 // to support stale-while-revalidate background refreshes. When the cache
@@ -41,6 +69,12 @@ type RefreshFn func() (data []byte, refs []RowRef, err error)
 // stores the resulting data on success, and records the refresh in metrics.
 type SWRRefresher interface {
 	SubmitRefresh(key string, fn RefreshFn) bool
+}
+
+// SWRRefresherWithOptions is an optional extension for providers that can
+// store SWR refresh results with per-entry cache lifetime options.
+type SWRRefresherWithOptions interface {
+	SubmitRefreshWithOptions(key string, fn RefreshFnWithOptions) bool
 }
 
 // Cache provides local in-memory caching for APQ and introspection

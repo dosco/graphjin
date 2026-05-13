@@ -10,12 +10,33 @@ func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, f qcod
 	c.dialect.RenderSearchHeadline(c, sel, f)
 }
 
+func (co *Compiler) validateWindowFunctions(qc *qcode.QCode) error {
+	for i := range qc.Selects {
+		sel := &qc.Selects[i]
+		for _, f := range sel.Fields {
+			if f.Window == nil {
+				continue
+			}
+			if err := co.dialect.ValidateWindowFunction(f); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (c *compilerContext) renderTableFunction(sel *qcode.Select) {
 	c.renderFunction(sel.Table, sel.Args)
 	c.alias(sel.Table)
 }
 
 func (c *compilerContext) renderFieldFunction(sel *qcode.Select, f qcode.Field) {
+	if f.WindowFunc != qcode.WindowFuncNone {
+		c.renderFieldWindowFunction(sel, f, sel.Table)
+		c.renderWindowOver(sel, f)
+		return
+	}
+
 	// Expression-aggregate path: a single ArgTypeExpr arg means the
 	// field was compiled via the new `expr:` syntax. f.Func.Name is
 	// either an aggregate name (sum/avg/min/max/count) — wrap the
@@ -36,9 +57,22 @@ func (c *compilerContext) renderFieldFunction(sel *qcode.Select, f qcode.Field) 
 	c.renderWindowOver(sel, f)
 }
 
+func (c *compilerContext) renderFieldWindowFunction(sel *qcode.Select, f qcode.Field, table string) {
+	c.w.WriteString(f.WindowFunc.String())
+	c.w.WriteString("(")
+	if f.WindowFunc.IsValueFunc() && len(f.Args) > 0 {
+		c.colWithTable(table, f.Args[0].Col.Name)
+	}
+	c.w.WriteString(")")
+}
+
 // renderWindowOver appends the OVER (...) clause for fields tagged with
 // the @window directive. No-op when f.Window is nil.
 func (c *compilerContext) renderWindowOver(sel *qcode.Select, f qcode.Field) {
+	c.renderWindowOverWithTable(sel, f, sel.Table)
+}
+
+func (c *compilerContext) renderWindowOverWithTable(sel *qcode.Select, f qcode.Field, table string) {
 	if f.Window == nil {
 		return
 	}
@@ -50,7 +84,7 @@ func (c *compilerContext) renderWindowOver(sel *qcode.Select, f qcode.Field) {
 			if i > 0 {
 				c.w.WriteString(", ")
 			}
-			c.colWithTable(sel.Table, col)
+			c.colWithTable(table, col)
 		}
 	}
 	if len(w.OrderBy) > 0 {
@@ -62,7 +96,7 @@ func (c *compilerContext) renderWindowOver(sel *qcode.Select, f qcode.Field) {
 			if i > 0 {
 				c.w.WriteString(", ")
 			}
-			c.colWithTable(sel.Table, ord.Col)
+			c.colWithTable(table, ord.Col)
 			if ord.Desc {
 				c.w.WriteString(" DESC")
 			}
@@ -137,10 +171,44 @@ func (c *compilerContext) renderFunction(name string, args []qcode.Arg) {
 	_, _ = c.w.WriteString(`)`)
 }
 
+func (c *compilerContext) renderFunctionWithTable(name string, args []qcode.Arg, table string) {
+	c.w.WriteString(name)
+	c.w.WriteString(`(`)
+
+	i := 0
+	for _, a := range args {
+		if a.Name == "" {
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
+			c.renderFuncArgValWithTable(a, table)
+			i++
+		}
+	}
+	for _, a := range args {
+		if a.Name != "" {
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
+			c.w.WriteString(a.Name + ` => `)
+			c.renderFuncArgValWithTable(a, table)
+			i++
+		}
+	}
+	_, _ = c.w.WriteString(`)`)
+}
+
 func (c *compilerContext) renderFuncArgVal(a qcode.Arg) {
+	c.renderFuncArgValWithTable(a, a.Col.Table)
+}
+
+func (c *compilerContext) renderFuncArgValWithTable(a qcode.Arg, table string) {
 	switch a.Type {
 	case qcode.ArgTypeCol:
-		c.colWithTable(a.Col.Table, a.Col.Name)
+		if table == "" {
+			table = a.Col.Table
+		}
+		c.colWithTable(table, a.Col.Name)
 	case qcode.ArgTypeVar:
 		c.renderParam(Param{Name: a.Val, Type: a.DType})
 		// Add proper casting for JSON/JSONB parameters

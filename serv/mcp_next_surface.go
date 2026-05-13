@@ -233,15 +233,36 @@ func mutationDraftFromArgs(args map[string]any) string {
 	}
 
 	switch strings.ToLower(stringArg(args, "operation")) {
+	case "apply":
+		if table == "code_change_sets" {
+			return "mutation {\n  code_change_sets(id: 123, update: {\n    id: 123\n    action: \"apply\"\n  }) {\n    id\n    status\n    files_changed\n    files_reindexed\n    errors\n  }\n}"
+		}
+	case "release":
+		if table == "code_locks" {
+			return "mutation {\n  code_locks(id: 7, update: {\n    id: 7\n    action: \"release\"\n    lease_token: \"lock-token\"\n  }) {\n    id\n    status\n    path\n  }\n}"
+		}
 	case "update":
+		if table == "code_change_sets" {
+			return "mutation {\n  code_change_sets(id: 123, update: {\n    id: 123\n    action: \"apply\"\n  }) {\n    id\n    status\n    files_changed\n    files_reindexed\n    errors\n  }\n}"
+		}
+		if table == "code_locks" {
+			return "mutation {\n  code_locks(id: 7, update: {\n    id: 7\n    action: \"release\"\n    lease_token: \"lock-token\"\n  }) {\n    id\n    status\n    path\n  }\n}"
+		}
 		return fmt.Sprintf("mutation {\n  %s(id: $id, update: {\n    /* fields */\n  }) {\n    id\n  }\n}", table)
 	case "upsert":
 		return fmt.Sprintf("mutation {\n  %s(upsert: {\n    id: $id\n    /* fields */\n  }) {\n    id\n  }\n}", table)
 	case "delete":
 		return fmt.Sprintf("mutation {\n  %s(delete: true, where: { id: { eq: $id } }) {\n    id\n  }\n}", table)
 	default:
+		if table == "code_change_sets" {
+			return "mutation {\n  code_change_sets(insert: {\n    action: \"preview\"\n    title: \"describe the source edit\"\n    edits: [{\n      op: \"replace\"\n      path: \"main.go\"\n      expected_hash: \"current-file-hash\"\n      replacements: [{\n        start_byte: 10\n        end_byte: 20\n        old_text: \"old code\"\n        new_text: \"new code\"\n      }]\n    }, {\n      op: \"create\"\n      path: \"pkg/new_file.go\"\n      content: \"package pkg\\n\"\n      mkdirs: true\n    }, {\n      op: \"delete\"\n      path: \"old_file.go\"\n      expected_hash: \"current-file-hash\"\n    }, {\n      op: \"rename\"\n      path: \"old_name.go\"\n      new_path: \"pkg/new_name.go\"\n      expected_hash: \"current-file-hash\"\n      mkdirs: true\n    }]\n  }) {\n    id\n    status\n    diff\n    errors\n  }\n}"
+		}
+		if table == "code_locks" {
+			return "mutation {\n  code_locks(insert: {\n    action: \"acquire\"\n    path: \"main.go\"\n    owner: \"agent\"\n    ranges: [{ start_byte: 10, end_byte: 20 }]\n    # For create/rename target reservation, use whole_file: true on the target path.\n  }) {\n    id\n    lease_token\n    status\n  }\n}"
+		}
 		return fmt.Sprintf("mutation {\n  %s(insert: {\n    /* fields */\n  }) {\n    id\n  }\n}", table)
 	}
+	return fmt.Sprintf("mutation {\n  %s(id: $id, update: {\n    /* fields */\n  }) {\n    id\n  }\n}", table)
 }
 
 func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload any) *NextGuidance {
@@ -268,6 +289,10 @@ func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload a
 			optionWithTemplate(
 				nextOption("write_mutation", 2, "Use the guided mutation author to produce an insert/update/upsert/delete skeleton.", "Generate a mutation draft tied to one table.", []string{"operation", "table"}, []string{"data_intent", "nested", "database"}),
 				map[string]any{"operation": "insert", "table": "<table_name>"},
+			),
+			optionWithTemplate(
+				nextOption("execute_graphql", 3, "For CodeSQL edits, read code/code_context and code_files.hash before drafting preview/apply mutations.", "Query the live source slice first.", []string{"query"}, []string{"variables", "namespace"}),
+				map[string]any{"query": "query {\n  code_symbols(where: { name: { eq: \"<symbol_name>\" } }) {\n    name\n    start_byte\n    end_byte\n    code\n    code_context\n    code_files { path hash }\n  }\n}"},
 			),
 		})
 

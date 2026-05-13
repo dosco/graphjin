@@ -13,6 +13,7 @@ import (
 
 type MySQLDialect struct {
 	EnableCamelcase bool
+	DBVersion       int
 }
 
 func (d *MySQLDialect) SplitQuery(query string) (parts []string) {

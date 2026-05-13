@@ -158,9 +158,9 @@ func TestTableDatabaseField(t *testing.T) {
 // TestCountDatabaseJoins verifies counting of cross-database joins in QCode.
 func TestCountDatabaseJoins(t *testing.T) {
 	tests := []struct {
-		name  string
-		qc    *qcode.QCode
-		want  int32
+		name string
+		qc   *qcode.QCode
+		want int32
 	}{
 		{
 			name: "no database joins",
@@ -610,7 +610,7 @@ func TestBuildChildGraphQLQuery(t *testing.T) {
 		name     string
 		sel      *qcode.Select
 		selects  []qcode.Select
-		fkCol    string
+		fkCol    sdata.DBColumn
 		parentID []byte
 		want     string
 	}{
@@ -624,7 +624,7 @@ func TestBuildChildGraphQLQuery(t *testing.T) {
 				},
 			},
 			selects:  []qcode.Select{},
-			fkCol:    "user_id",
+			fkCol:    sdata.DBColumn{Name: "user_id", Type: "bigint"},
 			parentID: []byte("42"),
 			want:     "query { orders(where: {user_id: {eq: 42}}) { id total } }",
 		},
@@ -638,7 +638,7 @@ func TestBuildChildGraphQLQuery(t *testing.T) {
 				},
 			},
 			selects:  []qcode.Select{},
-			fkCol:    "user_id",
+			fkCol:    sdata.DBColumn{Name: "user_id", Type: "bigint"},
 			parentID: []byte(`"abc"`),
 			want:     `query { orders(where: {user_id: {eq: "abc"}}) { id total } }`,
 		},
@@ -667,7 +667,7 @@ func TestBuildChildGraphQLQuery(t *testing.T) {
 					},
 				},
 			},
-			fkCol:    "user_id",
+			fkCol:    sdata.DBColumn{Name: "user_id", Type: "bigint"},
 			parentID: []byte("7"),
 			want:     "query { orders(where: {user_id: {eq: 7}}) { id total items { name qty } } }",
 		},
@@ -698,7 +698,7 @@ func TestBuildChildGraphQLQuery(t *testing.T) {
 					Table: "api_data",
 				},
 			},
-			fkCol:    "user_id",
+			fkCol:    sdata.DBColumn{Name: "user_id", Type: "bigint"},
 			parentID: []byte("99"),
 			want:     "query { orders(where: {user_id: {eq: 99}}) { id } }",
 		},
@@ -711,6 +711,149 @@ func TestBuildChildGraphQLQuery(t *testing.T) {
 				t.Errorf("buildChildGraphQLQuery() =\n  %q\nwant:\n  %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestWriteGraphQLLiteralColumnTypes(t *testing.T) {
+	tests := []struct {
+		name string
+		col  sdata.DBColumn
+		val  []byte
+		want string
+	}{
+		{
+			name: "numeric FK keeps numeric literal bare",
+			col:  sdata.DBColumn{Type: "bigint"},
+			val:  []byte("42"),
+			want: "42",
+		},
+		{
+			name: "text FK quotes raw string",
+			col:  sdata.DBColumn{Type: "text"},
+			val:  []byte("abc"),
+			want: `"abc"`,
+		},
+		{
+			name: "varchar FK quotes numeric-looking string",
+			col:  sdata.DBColumn{Type: "varchar"},
+			val:  []byte("123"),
+			want: `"123"`,
+		},
+		{
+			name: "uuid FK quotes uuid string",
+			col:  sdata.DBColumn{Type: "uuid"},
+			val:  []byte("70f7f9f6-a037-4a92-b6fd-4621d53297e6"),
+			want: `"70f7f9f6-a037-4a92-b6fd-4621d53297e6"`,
+		},
+		{
+			name: "text FK JSON escapes raw special characters",
+			col:  sdata.DBColumn{Type: "text"},
+			val:  []byte(`abc"def\ghi`),
+			want: `"abc\"def\\ghi"`,
+		},
+		{
+			name: "already quoted JSON string remains quoted",
+			col:  sdata.DBColumn{Type: "text"},
+			val:  []byte(`"abc"`),
+			want: `"abc"`,
+		},
+		{
+			name: "boolean FK keeps true bare",
+			col:  sdata.DBColumn{Type: "boolean"},
+			val:  []byte("true"),
+			want: "true",
+		},
+		{
+			name: "text FK quotes true as string",
+			col:  sdata.DBColumn{Type: "text"},
+			val:  []byte("true"),
+			want: `"true"`,
+		},
+		{
+			name: "numeric FK keeps null bare",
+			col:  sdata.DBColumn{Type: "bigint"},
+			val:  []byte("null"),
+			want: "null",
+		},
+		{
+			name: "text FK quotes null as string",
+			col:  sdata.DBColumn{Type: "text"},
+			val:  []byte("null"),
+			want: `"null"`,
+		},
+		{
+			name: "malformed bare numeric is quoted",
+			col:  sdata.DBColumn{Type: "bigint"},
+			val:  []byte("12x"),
+			want: `"12x"`,
+		},
+		{
+			name: "invalid exponent is quoted",
+			col:  sdata.DBColumn{Type: "bigint"},
+			val:  []byte("1e"),
+			want: `"1e"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			writeGraphQLLiteral(&buf, tt.col, tt.val)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("writeGraphQLLiteral() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildChildGraphQLQueryNestedDatabaseJoin(t *testing.T) {
+	sel := &qcode.Select{
+		Field: qcode.Field{
+			ID:         0,
+			FieldName:  "orders",
+			SkipRender: qcode.SkipTypeDatabaseJoin,
+		},
+		Table: "orders",
+		Fields: []qcode.Field{
+			{FieldName: "id"},
+		},
+		Children: []int32{1, 2},
+	}
+	selects := []qcode.Select{
+		*sel,
+		{
+			Field: qcode.Field{
+				FieldName:  "customer",
+				SkipRender: qcode.SkipTypeDatabaseJoin,
+			},
+			Table: "customer",
+			Fields: []qcode.Field{
+				{FieldName: "id"},
+				{FieldName: "name"},
+			},
+		},
+		{
+			Field: qcode.Field{
+				FieldName:  "items",
+				SkipRender: qcode.SkipTypeNone,
+			},
+			Table: "items",
+			Fields: []qcode.Field{
+				{FieldName: "sku"},
+				{FieldName: "qty"},
+			},
+		},
+	}
+
+	got := string(buildChildGraphQLQuery(
+		sel,
+		selects,
+		sdata.DBColumn{Name: "account_id", Type: "varchar"},
+		[]byte("acct-123"),
+	))
+	want := `query { orders(where: {account_id: {eq: "acct-123"}}) { id customer { id name } items { sku qty } } }`
+	if got != want {
+		t.Errorf("buildChildGraphQLQuery() =\n  %q\nwant:\n  %q", got, want)
 	}
 }
 
@@ -805,6 +948,98 @@ func TestWriteSelectFields(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWriteSelectFieldsDatabaseJoinChildPassthrough(t *testing.T) {
+	t.Run("normal parent skips independent database join and remote children", func(t *testing.T) {
+		sel := &qcode.Select{
+			Field: qcode.Field{ID: 0},
+			Fields: []qcode.Field{
+				{FieldName: "id"},
+			},
+			Children: []int32{1, 2, 3},
+		}
+		selects := []qcode.Select{
+			*sel,
+			{
+				Field: qcode.Field{
+					FieldName:  "remote_svc",
+					SkipRender: qcode.SkipTypeRemote,
+				},
+			},
+			{
+				Field: qcode.Field{
+					FieldName:  "cross_db",
+					SkipRender: qcode.SkipTypeDatabaseJoin,
+				},
+				Fields: []qcode.Field{{FieldName: "name"}},
+			},
+			{
+				Field: qcode.Field{
+					FieldName:  "local",
+					SkipRender: qcode.SkipTypeNone,
+				},
+				Fields: []qcode.Field{{FieldName: "val"}},
+			},
+		}
+
+		var buf bytes.Buffer
+		writeSelectFields(&buf, sel, selects)
+		if got, want := buf.String(), "id local { val }"; got != want {
+			t.Errorf("writeSelectFields() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("database join parent preserves child passthrough fields recursively", func(t *testing.T) {
+		sel := &qcode.Select{
+			Field: qcode.Field{
+				ID:         0,
+				SkipRender: qcode.SkipTypeDatabaseJoin,
+			},
+			Fields: []qcode.Field{
+				{FieldName: "id"},
+			},
+			Children: []int32{1, 3},
+		}
+		selects := []qcode.Select{
+			*sel,
+			{
+				Field: qcode.Field{
+					FieldName:  "customer",
+					SkipRender: qcode.SkipTypeDatabaseJoin,
+				},
+				Fields: []qcode.Field{
+					{FieldName: "id"},
+					{FieldName: "name"},
+				},
+				Children: []int32{2},
+			},
+			{
+				Field: qcode.Field{
+					FieldName:  "profile",
+					SkipRender: qcode.SkipTypeNone,
+				},
+				Fields: []qcode.Field{{FieldName: "status"}},
+			},
+			{
+				Field: qcode.Field{
+					FieldName:  "items",
+					SkipRender: qcode.SkipTypeNone,
+				},
+				Fields: []qcode.Field{
+					{FieldName: "sku"},
+					{FieldName: "qty"},
+				},
+			},
+		}
+
+		var buf bytes.Buffer
+		writeSelectFields(&buf, sel, selects)
+		want := "id customer { id name profile { status } } items { sku qty }"
+		if got := buf.String(); got != want {
+			t.Errorf("writeSelectFields() = %q, want %q", got, want)
+		}
+	})
 }
 
 // TestResolveDatabaseJoinsNullID verifies that null/empty parent IDs produce null output.

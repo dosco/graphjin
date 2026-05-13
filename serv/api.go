@@ -80,6 +80,7 @@ type graphjinService struct {
 	dbs         map[string]*sql.DB // named database connections (all equal)
 	managedDBs  map[string]managedDB
 	runtimeCore *core.Config
+	metadataDB  string
 	gj          *core.GraphJin
 	disc        *DiscoveryManager
 	srv         *http.Server
@@ -116,6 +117,10 @@ func (s *graphjinService) buildCoreOptions() []core.Option {
 }
 
 func (s *graphjinService) buildCoreOptionsWithDBs(dbs map[string]*sql.DB) []core.Option {
+	return s.buildCoreOptionsFor(dbs, s.managedDBs)
+}
+
+func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs map[string]managedDB) []core.Option {
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
@@ -128,6 +133,14 @@ func (s *graphjinService) buildCoreOptionsWithDBs(dbs map[string]*sql.DB) []core
 	}
 	if len(dbs) > 0 {
 		opts = append(opts, core.OptionSetDatabases(dbs))
+	}
+	for name, managed := range managedDBs {
+		if managed.handle != nil {
+			opts = append(opts, core.OptionSetManagedMutationHandler(name, codeSQLMutationAdapter{
+				managed:  managed.handle,
+				readOnly: managed.readOnly,
+			}))
+		}
 	}
 	// Register filesystem backends contributed by this package's
 	// init() blocks (s3, gcs) — gated by build tags. Local lives in
@@ -348,6 +361,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	if err := s.initResponseCache(); err != nil {
 		s.log.Warnf("response cache init error: %s", err)
 	}
+	s.bindCodeSQLCacheHooks()
 
 	// Initialize MCP cursor cache (non-fatal if unavailable)
 	if err := s.initCursorCache(); err != nil {
@@ -371,6 +385,9 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	// }
 
 	if err != nil {
+		if isMetadataStartupError(err) {
+			return nil, err
+		}
 		if !s.conf.Serv.Production {
 			s.gj = nil // Ensure gj is nil so checkGraphJinInitialized() works
 			s.log.Warnf("GraphJin core initialization failed: %s", err)
@@ -378,6 +395,11 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 			// Continue with gj = nil, MCP tools still work
 		} else {
 			return nil, err
+		}
+	}
+	if err == nil {
+		if werr := s.startLocalFilesystemCacheWatchers(); werr != nil {
+			s.log.Warnf("filesystem cache watcher init error: %s", werr)
 		}
 	}
 
@@ -392,6 +414,9 @@ func (s *graphjinService) normalStart() error {
 		s.log.Info("GraphJin core not initialized - waiting for database configuration via MCP")
 		return nil
 	}
+	if err := s.initMetadataGraphBeforeCore(); err != nil {
+		return err
+	}
 
 	opts := s.buildCoreOptions()
 	coreConf := &s.conf.Core
@@ -402,6 +427,9 @@ func (s *graphjinService) normalStart() error {
 	var err error
 	s.gj, err = core.NewGraphJin(coreConf, s.anyDB(), opts...)
 	if err != nil {
+		return err
+	}
+	if err := s.refreshMetadataGraph(); err != nil {
 		return err
 	}
 	s.disc = NewDiscoveryManager(s.gj)
@@ -469,8 +497,10 @@ func (s *HttpService) Deploy(conf *Config, options ...Option) error {
 		return err
 	}
 	s1.srv = os.srv
-	s1.closeFn = os.closeFn
 	s1.namespace = os.namespace
+	if os.closeFn != nil {
+		os.closeFn()
+	}
 
 	s.Store(s1)
 	return nil

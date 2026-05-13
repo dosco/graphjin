@@ -86,14 +86,14 @@ type DBTable struct {
 	Type       string
 	// Database is the name of the database this table belongs to (for multi-database support).
 	// Empty string means the default database.
-	Database           string
-	Columns            []DBColumn
-	PrimaryCols        []DBColumn
-	PrimaryCol         DBColumn // backward compat: alias for PrimaryCols[0]
-	SecondaryCol       DBColumn
-	FullText           []DBColumn
-	Blocked            bool
-	Func               DBFunction
+	Database             string
+	Columns              []DBColumn
+	PrimaryCols          []DBColumn
+	PrimaryCol           DBColumn // backward compat: alias for PrimaryCols[0]
+	SecondaryCol         DBColumn
+	FullText             []DBColumn
+	Blocked              bool
+	Func                 DBFunction
 	ClusteringKeys       []string // Snowflake clustering key columns (normalized to snake_case)
 	PartitionKey         string   // Partition column name (from config, e.g., "created_at")
 	PartitionRangeDays   int      // Default range in days for auto-injected partition filter (0 = warn only)
@@ -485,6 +485,25 @@ func (di *DBInfo) AddTable(t DBTable) {
 	di.tableMap[(t.Schema + ":" + t.Name)] = i
 }
 
+// AddColumn adds a column to an existing table and updates the lookup maps.
+func (di *DBInfo) AddColumn(schema, table string, c DBColumn) error {
+	t, err := di.GetTable(schema, table)
+	if err != nil {
+		return err
+	}
+	if _, ok := t.colMap[c.Name]; ok {
+		return nil
+	}
+	c.Schema = schema
+	c.Table = table
+	c.ID = int32(len(t.Columns) + 1)
+	i := len(t.Columns)
+	t.Columns = append(t.Columns, c)
+	t.colMap[c.Name] = i
+	di.colMap[(schema + ":" + table + ":" + c.Name)] = i
+	return nil
+}
+
 // GetTable returns a table from the DBInfo object
 func (di *DBInfo) GetColumn(schema, table, column string) (*DBColumn, error) {
 	t, err := di.GetTable(schema, table)
@@ -512,31 +531,32 @@ func (di *DBInfo) GetTable(schema, table string) (*DBTable, error) {
 
 // DBColumn returns the column as a string
 type DBColumn struct {
-	Comment      string
-	ID           int32
-	Name         string
-	OrigName     string // Original name before normalization (e.g., PascalCase for MSSQL)
-	Type         string
-	Array        bool
-	NotNull      bool
-	PrimaryKey   bool
-	UniqueKey    bool
-	FullText     bool
-	FKRecursive  bool
-	FKeyDatabase string // Target database for cross-database FKs (empty = same db)
-	FKeySchema   string
-	FKeyTable    string
-	FKeyCol      string
-	FKeyIsUnique bool // True if FK target column is PK/unique (for correct rel type)
-	Blocked      bool
-	Table        string
-	Schema       string
-	Database     string
-	Default      string
-	Index        bool
-	IndexName    string
-	FKOnDelete   string
-	FKOnUpdate   string
+	Comment        string
+	ID             int32
+	Name           string
+	OrigName       string // Original name before normalization (e.g., PascalCase for MSSQL)
+	Type           string
+	Array          bool
+	NotNull        bool
+	PrimaryKey     bool
+	UniqueKey      bool
+	FullText       bool
+	FKRecursive    bool
+	FKeyDatabase   string // Target database for cross-database FKs (empty = same db)
+	FKeySchema     string
+	FKeyTable      string
+	FKeyCol        string
+	FKeyIsUnique   bool // True if FK target column is PK/unique (for correct rel type)
+	Blocked        bool
+	Table          string
+	Schema         string
+	Database       string
+	Default        string
+	Index          bool
+	IndexName      string
+	FKOnDelete     string
+	FKOnUpdate     string
+	CodeSQLVirtual string
 
 	// Original names before normalization (used to build dialect name maps for MSSQL)
 	OrigTable      string
@@ -909,7 +929,7 @@ func containsStr(ss []string, s string) bool {
 
 // inferDefaultSchema picks the schema that contains the most distinct tables
 // from the discovered columns. Used as a fallback when the database reports
-// an empty default schema (e.g., PostgreSQL with search_path='').
+// an empty default schema (e.g., PostgreSQL with search_path=”).
 func inferDefaultSchema(cols []DBColumn) string {
 	type st struct{ schema, table string }
 	seen := make(map[st]bool)

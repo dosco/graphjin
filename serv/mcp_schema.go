@@ -686,6 +686,12 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		"2. Call describe_table to understand required columns and types",
 		"3. Check list_saved_queries for existing mutation queries",
 	)
+	if len(ms.service.selectedCodeSQLDatabases()) != 0 {
+		guide.MutationWorkflow = append(guide.MutationWorkflow,
+			"3.25 For CodeSQL replace/delete/rename edits, query code/code_context plus code_files.hash before drafting a mutation",
+			"3.75 Preview CodeSQL replace/create/delete/rename edits with code_change_sets(action: \"preview\") before apply",
+		)
+	}
 	if has("write_mutation") {
 		guide.MutationWorkflow = append(guide.MutationWorkflow, "3.5 Call write_mutation for a guided mutation skeleton")
 	}
@@ -712,14 +718,21 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	guide.Tips = append(guide.Tips,
 		"ALWAYS call list_workflows first — reuse an existing workflow if one fits the question.",
 		"Queries inside workflows must be TOP-DOWN: start from the grouping/parent table, nest into children. NEVER filter bottom-up from leaf tables.",
-		"order_by does NOT work on aggregation aliases (sum_*, count_*). Sort aggregated results in workflow JavaScript.",
+		"order_by can target aggregation aliases when distinct is present and expression aggregate aliases; sort in workflow JavaScript only for metrics computed after query execution.",
 		"Use distinct: [columns] for GROUP BY — group_by does not exist.",
+		"Use @window for analytics/reporting rows: running totals, row_number/rank/dense_rank, lag/lead, and first_value/last_value without GROUP BY collapse.",
 		"Use find_path or explore_relationships to discover join paths — NEVER guess at FK relationships.",
 		"Aggregations like count_id, sum_price are available on all tables (see describe_table)",
 		"Use the write_where_clause prompt or validate_where_clause tool for help building complex filters",
 		"Use @object directive when you expect a single result: { user @object { id } }",
 		"For multi-database deployments, use the `database` parameter in list_tables and describe_table to filter by database.",
 	)
+	if len(ms.service.selectedCodeSQLDatabases()) != 0 {
+		guide.Tips = append(guide.Tips,
+			"For CodeSQL source edits, read code/code_context first, then preview replace/create/delete/rename operations with code_change_sets before apply.",
+			"CodeSQL applies are guarded by expected_hash for replace/delete/rename, exact old_text for replacements, target-exists checks for creates, and lock overlap checks; stale previews must be requeried and regenerated.",
+		)
+	}
 	if has("write_query") {
 		guide.Tips = append(guide.Tips, "Use write_query to generate schema-aware starter queries when prompts/resources are not available in the client")
 	}
@@ -786,6 +799,9 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			[]string{"get_mutation_syntax", "describe_table", "execute_graphql"},
 			"get_mutation_syntax → describe_table → execute_graphql",
 		)
+		if len(ms.service.selectedCodeSQLDatabases()) != 0 {
+			guide.ToolSequences["codesql_mutation"] = "get_mutation_syntax → execute_graphql(query code/code_context first) → write_mutation → execute_graphql(preview) → execute_graphql(apply)"
+		}
 		addSequence("multi_database_exploration",
 			[]string{"list_tables", "describe_table", "execute_graphql"},
 			"list_tables → describe_table(database: 'db_name') → execute_graphql",

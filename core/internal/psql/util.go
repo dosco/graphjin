@@ -118,6 +118,21 @@ func (c *compilerContext) RenderExp(ti sdata.DBTable, ex *qcode.Exp) {
 	c.renderExp(ti, ex, false)
 }
 
+func (c *compilerContext) RenderFieldFunction(sel *qcode.Select, f qcode.Field) {
+	c.renderFieldFunction(sel, f)
+}
+
+func (c *compilerContext) RenderWindowFunction(sel *qcode.Select, f qcode.Field, table string) {
+	if f.WindowFunc != qcode.WindowFuncNone {
+		c.renderFieldWindowFunction(sel, f, table)
+	} else if len(f.Args) == 1 && f.Args[0].Type == qcode.ArgTypeExpr {
+		c.renderFieldExprFunction(sel, f)
+	} else {
+		c.renderFunctionWithTable(f.Func.Name, f.Args, table)
+	}
+	c.renderWindowOverWithTable(sel, f, table)
+}
+
 func (c *compilerContext) RenderInlineChild(psel, sel *qcode.Select) {
 	c.dialect.RenderInlineChild(c, c, psel, sel)
 }

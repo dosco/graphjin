@@ -52,8 +52,6 @@ func (c *compilerContext) renderStdColumn(sel *qcode.Select, f qcode.Field) {
 		c.w.WriteString(` THEN `)
 	}
 
-
-
 	c.colWithTableID(sel.Table, sel.ID, f.Col.Name)
 
 	if f.FieldFilter.Exp != nil {
@@ -122,9 +120,9 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 				}
 			}
 
-				// return the cursor for the this child selector as part of the parents json
-				// Only for LATERAL supporting dialects - SQLite/MariaDB/Snowflake handle cursor differently
-				if csel.Paging.Cursor && (c.dialect.SupportsLateral() || c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake") {
+			// return the cursor for the this child selector as part of the parents json
+			// Only for LATERAL supporting dialects - SQLite/MariaDB/Snowflake handle cursor differently
+			if csel.Paging.Cursor && (c.dialect.SupportsLateral() || c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake") {
 				c.w.WriteString(`, `)
 				c.colWithTableID("__sj", csel.ID, "__cursor")
 				c.w.WriteString(` AS `)
@@ -209,7 +207,11 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 			c.w.WriteString(`, `)
 		}
 		// Handle JSON table columns in SQLite
-		if c.dialect.Name() == "sqlite" && (sel.Ti.Type == "json" || sel.Ti.Type == "jsonb") {
+		if col.Col.CodeSQLVirtual != "" {
+			c.renderCodeSQLVirtualColumn(sel, col.Col)
+			c.w.WriteString(` AS `)
+			c.quoted(col.Col.Name)
+		} else if c.dialect.Name() == "sqlite" && (sel.Ti.Type == "json" || sel.Ti.Type == "jsonb") {
 			c.w.WriteString(`json_extract(`)
 			c.quoted("__sr_" + strconv.Itoa(int(sel.ID)))
 			c.w.WriteString(`."value", '$."`)
@@ -247,6 +249,28 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 	if i == 0 && c.dialect.RequiresNullOnEmptySelect() {
 		c.w.WriteString(`NULL`)
 	}
+}
+
+func (c *compilerContext) renderCodeSQLVirtualColumn(sel *qcode.Select, col sdata.DBColumn) {
+	contextFlag := "0"
+	if col.CodeSQLVirtual == "code_context" {
+		contextFlag = "1"
+	}
+	c.w.WriteString(`codesql_source((SELECT `)
+	c.quoted("abs_path")
+	c.w.WriteString(` FROM `)
+	c.quoted("code_files")
+	c.w.WriteString(` WHERE `)
+	c.quoted("id")
+	c.w.WriteString(` = `)
+	c.colWithTable(sel.Table, "file_id")
+	c.w.WriteString(`), `)
+	c.colWithTable(sel.Table, "start_byte")
+	c.w.WriteString(`, `)
+	c.colWithTable(sel.Table, "end_byte")
+	c.w.WriteString(`, `)
+	c.w.WriteString(contextFlag)
+	c.w.WriteString(`)`)
 }
 
 func (c *compilerContext) renderTypename(sel *qcode.Select) {

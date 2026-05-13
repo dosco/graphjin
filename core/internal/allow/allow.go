@@ -104,7 +104,11 @@ func (al *List) Set(item Item) error {
 	}
 
 	al.saveChan <- req
-	return <-req.done
+	err := <-req.done
+	if err == nil {
+		al.cache.Purge()
+	}
+	return err
 }
 
 // GetByName returns a query by name

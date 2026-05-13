@@ -333,3 +333,31 @@ func TestShouldCache(t *testing.T) {
 		})
 	}
 }
+
+func TestCacheKeyBuilder_DatabaseIsolation(t *testing.T) {
+	builder := NewCacheKeyBuilder()
+	ctx := context.Background()
+	query := []byte(`query GetUsers { users { id } }`)
+
+	keyCode := builder.Build(ctx, "GetUsers", "", query, nil, "user", "code")
+	keyApp := builder.Build(ctx, "GetUsers", "", query, nil, "user", "app")
+
+	if keyCode == keyApp {
+		t.Fatalf("expected different keys for different database scopes")
+	}
+}
+
+func TestBuildCacheKey_DatabaseScope(t *testing.T) {
+	ctx := context.Background()
+	query := []byte(`query GetUsers { users { id } }`)
+
+	key1 := BuildCacheKey(ctx, "GetUsers", "", query, nil, "user", "db_a")
+	key2 := BuildCacheKey(ctx, "GetUsers", "", query, nil, "user", "db_b")
+
+	if key1 == "" || key2 == "" {
+		t.Fatal("expected non-empty keys with database scope")
+	}
+	if key1 == key2 {
+		t.Fatalf("expected BuildCacheKey to include database scope")
+	}
+}

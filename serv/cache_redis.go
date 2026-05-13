@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -18,13 +19,13 @@ import (
 
 // Hardcoded constants for cache behavior
 const (
-	cachePrefix          = "gj:cache"                   // Redis key prefix
-	swrWorkers           = 10                           // SWR worker pool size
-	compressionThreshold = 1024                         // Only compress > 1KB
-	rowLevelThreshold    = 500                          // Switch to table-level above this
-	maxResponseSize      = 1 << 20                      // 1MB max cacheable response
-	redisTimeout         = 100 * time.Millisecond       // Redis operation timeout
-	redisRetryInterval   = 30 * time.Second             // Retry interval when Redis unavailable
+	cachePrefix          = "gj:cache"             // Redis key prefix
+	swrWorkers           = 10                     // SWR worker pool size
+	compressionThreshold = 1024                   // Only compress > 1KB
+	rowLevelThreshold    = 500                    // Switch to table-level above this
+	maxResponseSize      = 1 << 20                // 1MB max cacheable response
+	redisTimeout         = 100 * time.Millisecond // Redis operation timeout
+	redisRetryInterval   = 30 * time.Second       // Retry interval when Redis unavailable
 )
 
 // Redis key prefixes
@@ -33,6 +34,7 @@ const (
 	rowKeyPrefix   = "row:"
 	tableKeyPrefix = "table:"
 	modKeyPrefix   = "mod:"
+	tableModPrefix = "tablemod:"
 )
 
 // CacheEntry represents a cached response with metadata
@@ -90,7 +92,10 @@ func NewRedisCache(redisURL string, conf CachingConfig) (*RedisCache, error) {
 
 	// Build exclude table lookup
 	for _, t := range conf.ExcludeTables {
-		rc.excludeTable[t] = true
+		t = strings.TrimSpace(t)
+		if t != "" {
+			rc.excludeTable[t] = true
+		}
 	}
 
 	// Initialize OpenTelemetry metrics
@@ -134,6 +139,18 @@ func (c *RedisCache) tableKey(table string) string {
 
 func (c *RedisCache) modKey(table, id string) string {
 	return cachePrefix + ":" + modKeyPrefix + table + ":" + id
+}
+
+func (c *RedisCache) tableModKey(table string) string {
+	return cachePrefix + ":" + tableModPrefix + table
+}
+
+func (c *RedisCache) depKey(ref core.RowRef) string {
+	return cachePrefix + ":" + rowKeyPrefix + ref.DependencyKey()
+}
+
+func (c *RedisCache) depModKey(ref core.RowRef) string {
+	return cachePrefix + ":" + modKeyPrefix + ref.DependencyKey()
 }
 
 // Get retrieves a cached response
@@ -198,6 +215,18 @@ func (c *RedisCache) Set(
 	refs []core.RowRef,
 	queryStartTime time.Time,
 ) error {
+	return c.SetWithOptions(ctx, key, data, refs, queryStartTime, core.CacheEntryOptions{})
+}
+
+// SetWithOptions stores a response with dependency indices and per-entry TTL caps.
+func (c *RedisCache) SetWithOptions(
+	ctx context.Context,
+	key string,
+	data []byte,
+	refs []core.RowRef,
+	queryStartTime time.Time,
+	opts core.CacheEntryOptions,
+) error {
 	if !c.isAvailable() {
 		return nil
 	}
@@ -211,6 +240,12 @@ func (c *RedisCache) Set(
 		if err != nil || !safe {
 			return err
 		}
+	}
+
+	now := time.Now()
+	ttl, freshTTL, ok := cacheEntryTTLs(c.conf, opts)
+	if !ok {
+		return nil
 	}
 
 	// Compress if beneficial
@@ -228,13 +263,6 @@ func (c *RedisCache) Set(
 			data = compData
 			compressed = true
 		}
-	}
-
-	now := time.Now()
-	ttl := time.Duration(c.conf.TTL) * time.Second
-	freshTTL := time.Duration(c.conf.FreshTTL) * time.Second
-	if freshTTL == 0 {
-		freshTTL = ttl // No SWR - fresh until hard TTL
 	}
 
 	entry := CacheEntry{
@@ -258,25 +286,10 @@ func (c *RedisCache) Set(
 	// Store response
 	pipe.Set(ctx, c.respKey(key), entryJSON, ttl)
 
-	// Create indices based on ref count
-	if len(filteredRefs) <= rowLevelThreshold {
-		// Row-level indexing for precise invalidation
-		for _, ref := range filteredRefs {
-			rowKey := c.rowKey(ref.Table, ref.ID)
-			pipe.SAdd(ctx, rowKey, key)
-			pipe.Expire(ctx, rowKey, ttl)
-		}
-	} else {
-		// Table-level indexing for large results
-		tables := make(map[string]bool)
-		for _, ref := range filteredRefs {
-			tables[ref.Table] = true
-		}
-		for table := range tables {
-			tableKey := c.tableKey(table)
-			pipe.SAdd(ctx, tableKey, key)
-			pipe.Expire(ctx, tableKey, ttl)
-		}
+	for _, ref := range cacheIndexRefs(filteredRefs, len(filteredRefs) <= rowLevelThreshold) {
+		depKey := c.depKey(ref)
+		pipe.SAdd(ctx, depKey, key)
+		pipe.Expire(ctx, depKey, ttl)
 	}
 
 	_, err = pipe.Exec(ctx)
@@ -311,39 +324,21 @@ func (c *RedisCache) InvalidateRows(ctx context.Context, refs []core.RowRef) err
 
 	now := time.Now().UnixMilli()
 	ttl := time.Duration(c.conf.TTL) * time.Second
+	invalidateRefs := cacheIndexRefs(filteredRefs, true)
 
 	// Record modification timestamps first
 	pipe := c.client.Pipeline()
-	for _, ref := range filteredRefs {
-		modKey := c.modKey(ref.Table, ref.ID)
-		pipe.Set(ctx, modKey, now, ttl)
+	for _, ref := range invalidateRefs {
+		pipe.Set(ctx, c.depModKey(ref), now, ttl)
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		c.handleError(err)
 		return err
 	}
 
-	// Collect all query hashes to invalidate from row-level indices
 	hashesToDelete := make(map[string]bool)
-	for _, ref := range filteredRefs {
-		rowKey := c.rowKey(ref.Table, ref.ID)
-		hashes, err := c.client.SMembers(ctx, rowKey).Result()
-		if err != nil && err != redis.Nil {
-			continue
-		}
-		for _, hash := range hashes {
-			hashesToDelete[hash] = true
-		}
-	}
-
-	// Also check table-level indices
-	tables := make(map[string]bool)
-	for _, ref := range filteredRefs {
-		tables[ref.Table] = true
-	}
-	for table := range tables {
-		tableKey := c.tableKey(table)
-		hashes, err := c.client.SMembers(ctx, tableKey).Result()
+	for _, ref := range invalidateRefs {
+		hashes, err := c.client.SMembers(ctx, c.depKey(ref)).Result()
 		if err != nil && err != redis.Nil {
 			continue
 		}
@@ -361,11 +356,8 @@ func (c *RedisCache) InvalidateRows(ctx context.Context, refs []core.RowRef) err
 	for hash := range hashesToDelete {
 		pipe.Del(ctx, c.respKey(hash))
 	}
-	for _, ref := range filteredRefs {
-		pipe.Del(ctx, c.rowKey(ref.Table, ref.ID))
-	}
-	for table := range tables {
-		pipe.Del(ctx, c.tableKey(table))
+	for _, ref := range invalidateRefs {
+		pipe.Del(ctx, c.depKey(ref))
 	}
 
 	_, err := pipe.Exec(ctx)
@@ -377,6 +369,23 @@ func (c *RedisCache) InvalidateRows(ctx context.Context, refs []core.RowRef) err
 
 	c.recordInvalidation(ctx, int64(len(hashesToDelete)))
 	return nil
+}
+
+// InvalidateTables invalidates cache entries associated with whole tables.
+func (c *RedisCache) InvalidateTables(ctx context.Context, tables []string) error {
+	if !c.isAvailable() || len(tables) == 0 {
+		return nil
+	}
+	refs := make([]core.RowRef, 0, len(tables))
+	for _, table := range tables {
+		table = strings.TrimSpace(table)
+		ref := core.RowRef{Kind: core.CacheKindTable, Table: table}
+		if table == "" || refExcludedByConfig(c.excludeTable, ref) {
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	return c.InvalidateRows(ctx, refs)
 }
 
 // checkModificationSafety verifies no rows were modified during query execution
@@ -393,10 +402,11 @@ func (c *RedisCache) checkModificationSafety(
 	defer cancel()
 
 	pipe := c.client.Pipeline()
-	cmds := make([]*redis.StringCmd, len(refs))
+	indexRefs := cacheIndexRefs(refs, true)
+	cmds := make([]*redis.StringCmd, 0, len(indexRefs))
 
-	for i, ref := range refs {
-		cmds[i] = pipe.Get(ctx, c.modKey(ref.Table, ref.ID))
+	for _, ref := range indexRefs {
+		cmds = append(cmds, pipe.Get(ctx, c.depModKey(ref)))
 	}
 
 	_, _ = pipe.Exec(ctx)
@@ -414,7 +424,7 @@ func (c *RedisCache) checkModificationSafety(
 	return true, nil
 }
 
-// filterExcludedTables removes refs for excluded tables
+// filterExcludedTables removes refs excluded by table or source-aware keys.
 func (c *RedisCache) filterExcludedTables(refs []core.RowRef) []core.RowRef {
 	if len(c.excludeTable) == 0 {
 		return refs
@@ -422,7 +432,7 @@ func (c *RedisCache) filterExcludedTables(refs []core.RowRef) []core.RowRef {
 
 	filtered := make([]core.RowRef, 0, len(refs))
 	for _, ref := range refs {
-		if !c.excludeTable[ref.Table] {
+		if !refExcludedByConfig(c.excludeTable, ref) {
 			filtered = append(filtered, ref)
 		}
 	}
@@ -538,6 +548,14 @@ func (c *RedisCache) SubmitRefresh(key string, fn core.RefreshFn) bool {
 		return false
 	}
 	return c.workerPool.TrySubmit(key, fn)
+}
+
+// SubmitRefreshWithOptions enqueues an option-aware stale-while-revalidate refresh.
+func (c *RedisCache) SubmitRefreshWithOptions(key string, fn core.RefreshFnWithOptions) bool {
+	if c.workerPool == nil || !c.isAvailable() {
+		return false
+	}
+	return c.workerPool.TrySubmitWithOptions(key, fn)
 }
 
 // CacheMetrics tracks cache performance

@@ -8,6 +8,7 @@ This document provides a comprehensive reference for all GraphJin configuration 
 - [Quick Start](#quick-start)
 - [Service Configuration](#service-configuration)
 - [Database Configuration](#database-configuration)
+- [Metadata Graph Configuration](#metadata-graph-configuration)
 - [Authentication Configuration](#authentication-configuration)
 - [Core Compiler Configuration](#core-compiler-configuration)
 - [Security & Admin Configuration](#security--admin-configuration)
@@ -263,7 +264,7 @@ database:
 
 #### CodeSQL
 
-CodeSQL is a logical database type for source code. Set only `type: codesql` and `path`; GraphJin creates a managed SQLite cache in `config/codesql/<database-name>-<source-root-hash>.sqlite`, reconciles new/changed/deleted files on startup, and watches the source tree while running.
+CodeSQL is a logical database type for source code. Set only `type: codesql` and `path`; GraphJin creates a managed SQLite cache in `config/codesql/<database-name>-<source-root-hash>.sqlite` and reconciles new/changed/deleted files on startup. In development, it also watches the source tree while running; in production, live watching is disabled and the cache updates on restart.
 
 ```yaml
 database:
@@ -282,9 +283,12 @@ databases:
   code:
     type: codesql
     path: /path/to/source
+    infer_db_refs: true
 ```
 
-At runtime GraphJin treats CodeSQL as `sqlite` with `read_only: true` and `analytics_mode: true`. The generated schema includes source/index state tables (`code_files`, `code_file_versions`, `code_index_status`, `code_parse_errors`), raw tree-sitter tables (`code_nodes`, `code_captures`), and code-intelligence tables (`code_symbols`, `code_scopes`, `code_locals`, `code_refs`, `code_imports`, `code_edges`, `code_injections`, docs/text FTS).
+At runtime GraphJin treats CodeSQL as `sqlite` with `read_only: true` and `analytics_mode: true`. The generated schema includes source/index state tables (`code_files`, `code_file_versions`, `code_index_status`, `code_parse_errors`), raw tree-sitter tables (`code_nodes`, `code_captures`), and code-intelligence tables (`code_symbols`, `code_scopes`, `code_locals`, `code_refs`, `code_imports`, `code_edges`, `code_injections`, `code_db_refs`, docs/text FTS).
+
+`infer_db_refs` is CodeSQL-only and defaults to `true`. It records best-effort references from SQL files and strings, GraphQL files and strings, GraphJin config/allowlist files, migration references, and common struct/model tags.
 
 #### Oracle
 
@@ -391,6 +395,56 @@ database:
   server_cert: ./certs/server-ca.pem
   client_cert: ./certs/client-cert.pem
   client_key: ./certs/client-key.pem
+```
+
+---
+
+## Metadata Graph Configuration
+
+The metadata graph exposes GraphJin's discovered schema as ordinary read-only GraphQL tables. It is enabled by default in development and disabled by default in production.
+
+GraphJin-managed databases are intentionally excluded from `gj_*` rows: the metadata database itself and CodeSQL SQLite caches do not appear in metadata discovery, which prevents recursive self-description. CodeSQL can still be linked through `code_db_refs` relationships.
+
+```yaml
+metadata:
+  enabled: true
+  database: graphjin
+  auto_code_relations: true
+  code_databases: [code]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `metadata.enabled` | `true` in dev, `false` in prod | Creates the managed read-only SQLite metadata database and exposes `gj_*` tables |
+| `metadata.database` | `graphjin` | Virtual database name for metadata tables. Startup fails if this collides with a configured database |
+| `metadata.auto_code_relations` | same as `metadata.enabled` | Adds automatic GraphQL relationships from `gj_tables` and `gj_columns` to CodeSQL `code_db_refs` |
+| `metadata.code_databases` | auto-detect | Optional list of CodeSQL databases to link. Empty means auto-detect, but auto-relations are created only when exactly one CodeSQL DB is selected |
+
+Metadata tables:
+
+```text
+gj_databases
+gj_tables
+gj_columns
+gj_relationships
+gj_functions
+gj_indexes
+```
+
+With CodeSQL enabled, you can query database metadata and code usage in the same graph:
+
+```graphql
+query {
+  gj_columns(where: { table_name: { eq: "users" }, column_name: { eq: "email" } }) {
+    type
+    code_db_refs {
+      ref_kind
+      confidence
+      file { path }
+      symbol { name kind }
+    }
+  }
+}
 ```
 
 ---
@@ -579,6 +633,14 @@ workloads:
 In multi-database deployments you can set `analytics_mode` globally and override
 it per database — typically `true` for an analytics warehouse and `false` for an
 OLTP application database. See [Multi-Database Configuration](#multi-database-configuration).
+
+Window functions (`@window`) are query syntax, not a separate config flag. They
+work well with analytics mode for business-reporting queries such as running
+totals, row ranking, previous-period values, and first/last values in a frame.
+GraphJin validates support from the selected dialect and detected database
+version: MongoDB rejects SQL window functions, known-old MySQL/MariaDB/SQLite/
+MSSQL versions fail at compile time, and unsupported `NULLS FIRST/LAST` window
+ordering is rejected with a clear error.
 
 ---
 

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
@@ -39,10 +40,12 @@ type gstate struct {
 	dbGroups map[string][]string
 
 	// Cache-related fields
-	cacheKey     string    // Cache key for this query
-	queryStarted time.Time // When query started (for race condition detection)
-	cacheHit     bool      // True if response was served from cache
-	skipCache    bool      // True if caching should be skipped for this query
+	cacheKey       string    // Cache key for this query
+	queryStarted   time.Time // When query started (for race condition detection)
+	cacheHit       bool      // True if response was served from cache
+	skipCache      bool      // True if caching should be skipped for this query
+	fragmentHits   atomic.Int64
+	fragmentMisses atomic.Int64
 }
 
 type cstate struct {
@@ -271,13 +274,6 @@ func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
 	// Record query start time for cache race condition detection
 	s.queryStarted = time.Now()
 
-	// Try cache lookup for queries (before compilation)
-	if s.gj.responseCache != nil && s.r.operation == qcode.QTQuery {
-		if s.tryCacheGet(c) {
-			return nil
-		}
-	}
-
 	// Check for multi-database queries BEFORE compilation
 	// This is done by parsing root fields without schema validation
 	if s.gj.isMultiDB() {
@@ -325,13 +321,10 @@ func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
 		}
 	}
 
-	// Cache the response for queries, or invalidate cache for mutations
-	if s.gj.responseCache != nil {
-		if s.r.operation == qcode.QTQuery && !s.skipCache {
-			s.tryCacheSet(c)
-		} else if s.r.operation != qcode.QTQuery {
-			s.invalidateCache(c)
-		}
+	// Whole responses are intentionally not cached. Fragment caches are
+	// handled at each source fetch; mutations only publish invalidations.
+	if s.gj.responseCache != nil && s.r.operation != qcode.QTQuery {
+		s.invalidateCache(c)
 	}
 
 	return
@@ -394,6 +387,11 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 			s.data = seedRemotePlaceholders(qc)
 			return
 		}
+	}
+
+	if handled, err1 := s.executeManagedMutation(c); handled {
+		err = err1
+		return
 	}
 
 	// Block mutations on read-only databases (absolute, independent of roles)
@@ -655,15 +653,48 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 		return err
 	}
 
-	var row *sql.Row
-	if tx := s.tx(); tx != nil {
-		row = tx.QueryRowContext(c1, querySQL, queryArgs...)
-		err = row.Scan(&s.data)
+	dbCtx := s.getTargetDBCtx()
+	dbName := dbCtx.name
+	cacheKey := s.dbFragmentKey(c1, fragmentKindDBRoot, dbName, querySQL, queryArgs, cs.st.qc)
+	produce := func(ctx context.Context, useConn *sql.Conn) ([]byte, [sha256.Size]byte, error) {
+		raw, err := scanJSONRow(ctx, dbType, useConn, s.tx(), querySQL, queryArgs)
+		if err == sql.ErrNoRows {
+			return nil, [sha256.Size]byte{}, nil
+		}
+		if err != nil {
+			return nil, [sha256.Size]byte{}, err
+		}
+		encrypted, dhash, err := encryptResultFragment(raw, s.gj.printFormat, s.gj.encryptionKey)
+		return encrypted, dhash, err
+	}
+
+	if cached, ok := s.fragmentCacheGet(c1, cacheKey, func() ([]byte, []RowRef, CacheEntryOptions, error) {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(c), swrRefreshTimeout)
+		defer cancel()
+		refreshConn, err := dbCtx.db.Conn(ctx)
+		if err != nil {
+			return nil, nil, CacheEntryOptions{}, err
+		}
+		defer refreshConn.Close() //nolint:errcheck
+		data, _, err := produce(ctx, refreshConn)
+		if err != nil {
+			return nil, nil, CacheEntryOptions{}, err
+		}
+		cachedData, refs, err := s.processDBFragmentForCache(dbName, cs.st.qc, data)
+		return cachedData, refs, CacheEntryOptions{}, err
+	}); ok {
+		s.data = cached
+		s.dhash = sha256.Sum256(cached)
+		err = nil
 	} else {
-		err = retryOperationForDB(c1, dbType, func() (err1 error) {
-			row = conn.QueryRowContext(c1, querySQL, queryArgs...)
-			return row.Scan(&s.data)
-		})
+		start := time.Now()
+		s.data, s.dhash, err = produce(c1, conn)
+		if err == nil {
+			cachedData, refs, perr := s.processDBFragmentForCache(dbName, cs.st.qc, s.data)
+			if perr == nil {
+				s.fragmentCacheSet(c1, cacheKey, cachedData, refs, start, CacheEntryOptions{})
+			}
+		}
 	}
 
 	if err != nil && err != sql.ErrNoRows {
@@ -684,17 +715,9 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 		span.SetAttributesString(attrs...)
 	}
 
-	if err == sql.ErrNoRows {
-		err = nil
-	}
 	if err != nil {
 		return
 	}
-
-	s.dhash = sha256.Sum256(s.data)
-
-	s.data, err = encryptValues(s.data,
-		s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
 
 	return
 }
@@ -838,7 +861,7 @@ func (s *gstate) tryCacheGet(c context.Context) bool {
 	}
 
 	// Build cache key
-	s.cacheKey = s.gj.cacheKeyBuilder.Build(c, s.r.name, s.getAPQKey(), s.r.query, s.r.vars, s.role)
+	s.cacheKey = s.gj.cacheKeyBuilder.Build(c, s.r.name, s.getAPQKey(), s.r.query, s.r.vars, s.role, s.cacheDatabaseScope())
 
 	// Skip if anonymous query (no operation name or APQ key)
 	if s.cacheKey == "" || !s.gj.cacheKeyBuilder.ShouldCache(s.r.name, s.getAPQKey()) {
@@ -863,6 +886,41 @@ func (s *gstate) tryCacheGet(c context.Context) bool {
 	}
 
 	return true
+}
+
+func (s *gstate) cacheDatabaseScope() string {
+	if s.multiDB && len(s.dbGroups) > 0 {
+		dbs := make([]string, 0, len(s.dbGroups))
+		for db := range s.dbGroups {
+			dbs = append(dbs, db)
+		}
+		sort.Strings(dbs)
+		return strings.Join(dbs, ",")
+	}
+	if s.database != "" {
+		return s.database
+	}
+	if s.gj != nil && s.gj.isMultiDB() {
+		roots := s.extractAllRootFields()
+		if len(roots) != 0 {
+			byDB := s.groupRootsByDatabase(roots)
+			if len(byDB) > 1 {
+				dbs := make([]string, 0, len(byDB))
+				for db := range byDB {
+					dbs = append(dbs, db)
+				}
+				sort.Strings(dbs)
+				return strings.Join(dbs, ",")
+			}
+			for db := range byDB {
+				return db
+			}
+		}
+	}
+	if s.gj != nil {
+		return s.gj.defaultDB
+	}
+	return ""
 }
 
 // swrRefreshTimeout bounds how long a background refresh can run. The
@@ -1017,6 +1075,11 @@ func (s *gstate) invalidateCache(c context.Context) {
 	// Extract affected row IDs from mutation response
 	refs := ExtractMutationRefs(cs.st.qc, s.data)
 	if len(refs) > 0 {
+		dbName := s.database
+		if dbName == "" {
+			dbName = s.gj.defaultDB
+		}
+		refs = s.scopeDBRefs(dbName, refs)
 		_ = s.gj.responseCache.InvalidateRows(c, refs)
 	}
 }

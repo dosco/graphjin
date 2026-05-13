@@ -383,6 +383,25 @@ func (s *DBSchema) FindCrossDBPath(childName, parentName string) (TPath, bool) {
 		// GraphQL: { job_crew { employees { ... } } }
 		// FindPath is called as FindPath("employees", "job_crew")
 		if rel.SourceTable.Name == parentName && rel.TargetTable == childName {
+			return TPath{
+				Rel: RelOneToOne,
+				LT: DBTable{
+					Name:     rel.TargetTable,
+					Schema:   rel.TargetSchema,
+					Database: rel.TargetDB,
+				},
+				LC: DBColumn{
+					Name:     rel.TargetCol,
+					Schema:   rel.TargetSchema,
+					Table:    rel.TargetTable,
+					Database: rel.TargetDB,
+				},
+				RT: rel.SourceTable,
+				RC: rel.SourceCol,
+			}, true
+		}
+		// Reverse: child has the FK, parent is the remote target
+		if rel.TargetTable == parentName && rel.SourceTable.Name == childName {
 			relType := RelOneToMany
 			if rel.IsOneToOne {
 				relType = RelOneToOne
@@ -402,29 +421,6 @@ func (s *DBSchema) FindCrossDBPath(childName, parentName string) (TPath, bool) {
 					Table:    rel.TargetTable,
 					Database: rel.TargetDB,
 				},
-			}, true
-		}
-		// Reverse: child has the FK, parent is the remote target
-		if rel.TargetTable == parentName && rel.SourceTable.Name == childName {
-			relType := RelOneToOne
-			if rel.IsOneToOne {
-				relType = RelOneToMany
-			}
-			return TPath{
-				Rel: relType,
-				LT: DBTable{
-					Name:     rel.TargetTable,
-					Schema:   rel.TargetSchema,
-					Database: rel.TargetDB,
-				},
-				LC: DBColumn{
-					Name:     rel.TargetCol,
-					Schema:   rel.TargetSchema,
-					Table:    rel.TargetTable,
-					Database: rel.TargetDB,
-				},
-				RT:  rel.SourceTable,
-				RC:  rel.SourceCol,
 			}, true
 		}
 	}

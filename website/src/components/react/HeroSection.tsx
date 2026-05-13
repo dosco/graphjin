@@ -11,12 +11,12 @@ const INSTALL_COMMANDS = [
 type CommandId = (typeof INSTALL_COMMANDS)[number]["id"];
 
 const PILLS = [
-  "8+ databases",
-  "Federation v2",
+  "Databases",
+  "HTTP APIs",
+  "Source code",
+  "S3 · GCS · files",
   "MCP server",
-  "OAuth · OIDC",
-  "Live queries",
-  "S3 · GCS uploads",
+  "One query graph",
 ];
 
 export default function HeroSection() {
@@ -77,9 +77,10 @@ export default function HeroSection() {
             className="mt-5 text-lg md:text-xl leading-relaxed max-w-2xl"
             style={{ color: "var(--color-muted)" }}
           >
-            Auto-learns your schema. Compiles GraphQL into one optimized SQL
-            statement. Works as an MCP server, a federation v2 subgraph, and a
-            full HTTP API — all from a single binary.
+            Auto-learns your schema and gives AI agents one governed query
+            graph across your databases, APIs, source code, and filesystems.
+            Ask about the data, the services that enrich it, the code that
+            touches it, and the files around it from one MCP-ready binary.
           </p>
 
           <div
