@@ -861,11 +861,23 @@ func (s *gstate) resolveDatabaseRootRemotes(
 		return json.RawMessage(data), nil
 	}
 
-	sub := *s
-	sub.database = dbName
-	sub.data = injectRemoteMarkers(data, qc)
-	sub.cs = &cstate{st: stmt{qc: qc}}
-	if err := sub.execRemoteJoin(ctx); err != nil {
+	sub := gstate{
+		gj:        s.gj,
+		r:         s.r,
+		cs:        &cstate{st: stmt{qc: qc}},
+		data:      injectRemoteMarkers(data, qc),
+		role:      s.role,
+		database:  dbName,
+		skipCache: s.skipCache,
+	}
+	err := sub.execRemoteJoin(ctx)
+	if hits := sub.fragmentHits.Load(); hits != 0 {
+		s.fragmentHits.Add(hits)
+	}
+	if misses := sub.fragmentMisses.Load(); misses != 0 {
+		s.fragmentMisses.Add(misses)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return json.RawMessage(sub.data), nil

@@ -3,12 +3,10 @@ package tests_test
 import (
 	"context"
 	"fmt"
-	"log"
-	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/core/v3/openapi"
@@ -17,12 +15,12 @@ import (
 // Example_queryWithOpenAPIJoin exercises the full OpenAPI integration
 // against a real GraphJin engine, end-to-end:
 //
-//   • A temp OpenAPI 3 spec is dropped in a tempdir.
-//   • The mock upstream verifies that bearer auth was applied — if the
+//   - A temp OpenAPI 3 spec is dropped in a tempdir.
+//   - The mock upstream verifies that bearer auth was applied — if the
 //     header is missing the server panics, failing the test loudly.
-//   • A GraphJin Config carries the OpenAPISpecsDir + OpenAPI block with
+//   - A GraphJin Config carries the OpenAPISpecsDir + OpenAPI block with
 //     credentials and join wiring.
-//   • The resulting GraphQL query joins the upstream's response onto the
+//   - The resulting GraphQL query joins the upstream's response onto the
 //     parent users table via the synthesised "openapi" resolver type.
 //
 // This test runs against every dialect the harness is configured for
@@ -51,29 +49,8 @@ func Example_queryWithOpenAPIJoin() {
 		fmt.Fprintf(w, `{"data":{"desc":"Payment for %s","amount":100}}`, id) //nolint:errcheck
 	})
 
-	// Bind to a free port — same pattern Example_queryWithRemoteAPIJoin
-	// uses, kept consistent so this test reads naturally next to it.
-	listener, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		panic(err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-
-	server := &http.Server{Handler: mux}
-	go func() {
-		log.Fatal(server.Serve(listener)) //nolint:gosec
-	}()
-
-	// Wait until the upstream responds. Polling beats time.Sleep because
-	// startup latency varies by host and CI runner.
-	for i := 0; i < 100; i++ {
-		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/payments/probe", port))
-		if err == nil {
-			resp.Body.Close() //nolint:errcheck
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	server := httptest.NewServer(mux)
+	defer server.Close()
 
 	// Drop a minimal OpenAPI spec into a tempdir. The loader scans this
 	// directory at NewGraphJin time and classifies the single GET as a
@@ -88,7 +65,7 @@ func Example_queryWithOpenAPIJoin() {
 openapi: 3.0.0
 info: { title: Payments, version: '1.0' }
 servers:
-  - url: http://localhost:%d
+  - url: %s
 paths:
   /payments/{paymentId}:
     get:
@@ -108,7 +85,7 @@ paths:
                     properties:
                       desc:   { type: string }
                       amount: { type: integer }
-`, port)
+`, server.URL)
 
 	specPath := filepath.Join(specsDir, "payments.yaml")
 	if err := os.WriteFile(specPath, []byte(specYAML), 0o644); err != nil {
