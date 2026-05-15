@@ -2,6 +2,7 @@ package serv
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -78,36 +79,34 @@ func validateServiceSourceModeConfig(conf *Config) error {
 		}
 		return conf.Core.ValidateSourceMode()
 	}
-	if (conf.viper != nil && conf.viper.InConfig("database")) || serviceDatabaseConfigured(conf.DB) {
+	if hasUserSuppliedLegacyDatabase(conf) {
 		return fmt.Errorf("database is legacy database-only config; move SQL providers to sources")
 	}
 	return conf.Core.ValidateSourceMode()
 }
 
-func serviceDatabaseConfigured(db Database) bool {
-	return db.ConnString != "" ||
-		db.Type != "" ||
-		db.Host != "" ||
-		db.Port != 0 ||
-		db.DBName != "" ||
-		db.User != "" ||
-		db.Password != "" ||
-		db.Schema != "" ||
-		db.Path != "" ||
-		db.MaxConnections != 0 ||
-		db.MaxConnIdleTime != 0 ||
-		db.MaxConnLifeTime != 0 ||
-		db.PingTimeout != 0 ||
-		db.EnableTLS ||
-		db.ServerName != "" ||
-		db.ServerCert != "" ||
-		db.ClientCert != "" ||
-		db.ClientKey != "" ||
-		db.Encrypt != nil ||
-		db.TrustServerCertificate != nil ||
-		db.PrivateKeyPath != "" ||
-		db.PrivateKeyPEM != "" ||
-		db.KeyPassphrase != ""
+// hasUserSuppliedLegacyDatabase reports whether the user has explicitly
+// configured a top-level legacy `database:` provider — either via the
+// YAML config file or via GJ_DATABASE_* / SJ_DATABASE_* / SG_DATABASE_*
+// environment variables. Defaults baked into the viper instance by
+// newViperWithDefaults are intentionally ignored: they are not user
+// intent and would otherwise cause every source-mode config to be
+// wrongly rejected.
+func hasUserSuppliedLegacyDatabase(conf *Config) bool {
+	if conf == nil {
+		return false
+	}
+	if conf.viper != nil && conf.viper.InConfig("database") {
+		return true
+	}
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "GJ_DATABASE_") ||
+			strings.HasPrefix(e, "SJ_DATABASE_") ||
+			strings.HasPrefix(e, "SG_DATABASE_") {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeServiceSources(conf *Config) error {
