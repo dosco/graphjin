@@ -1021,16 +1021,33 @@ func newConfig(c *core.Config) *core.Config {
 
 	// MongoDB needs explicit relationship configuration since it has no foreign keys
 	if c.DBType == "mongodb" {
+		sourceName := ""
+		if c.SourceMode() {
+			for _, source := range c.Sources {
+				kind := strings.TrimSpace(strings.ToLower(source.Kind))
+				if kind != "sql" && kind != "codesql" {
+					continue
+				}
+				if sourceName == "" || source.Default {
+					sourceName = source.Name
+				}
+				if source.Default {
+					break
+				}
+			}
+		}
 		mongoTables := []core.Table{
 			{
-				Name: "products",
+				Name:   "products",
+				Source: sourceName,
 				Columns: []core.Column{
 					{Name: "owner_id", ForeignKey: "users.id"},
 					{Name: "name", FullText: true}, // Enable full-text search on name
 				},
 			},
 			{
-				Name: "comments",
+				Name:   "comments",
+				Source: sourceName,
 				Columns: []core.Column{
 					{Name: "product_id", ForeignKey: "products.id"},
 					{Name: "commenter_id", ForeignKey: "users.id"},
@@ -1038,21 +1055,24 @@ func newConfig(c *core.Config) *core.Config {
 				},
 			},
 			{
-				Name: "purchases",
+				Name:   "purchases",
+				Source: sourceName,
 				Columns: []core.Column{
 					{Name: "customer_id", ForeignKey: "users.id"},
 					{Name: "product_id", ForeignKey: "products.id"},
 				},
 			},
 			{
-				Name: "graph_edge",
+				Name:   "graph_edge",
+				Source: sourceName,
 				Columns: []core.Column{
 					{Name: "src_node", ForeignKey: "graph_node.id"},
 					{Name: "dst_node", ForeignKey: "graph_node.id"},
 				},
 			},
 			{
-				Name: "chats",
+				Name:   "chats",
+				Source: sourceName,
 			},
 		}
 
@@ -1063,6 +1083,9 @@ func newConfig(c *core.Config) *core.Config {
 				if t.Name == mt.Name && t.Schema == mt.Schema {
 					// Merge columns into existing table
 					c.Tables[i].Columns = append(c.Tables[i].Columns, mt.Columns...)
+					if c.Tables[i].Source == "" {
+						c.Tables[i].Source = mt.Source
+					}
 					found = true
 					break
 				}

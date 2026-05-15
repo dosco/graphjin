@@ -41,20 +41,22 @@ func (gj *graphjinEngine) newRTMap() map[string]ResolverFn {
 func (gj *graphjinEngine) initResolvers() error {
 	gj.rmap = make(map[string]resItem)
 
-	// Load OpenAPI integration before the rtmap is built so the
-	// "openapi" factory in newRTMap can see gj.openapiRuntime, and
-	// before the resolver loop so any synthesised ResolverConfigs are
-	// processed in the same pass as user-declared ones.
-	if err := gj.loadOpenAPIIntegration(); err != nil {
-		return err
-	}
+	if gj.conf.SourceMode() {
+		// Load OpenAPI integration before the rtmap is built so the
+		// "openapi" factory in newRTMap can see gj.openapiRuntime, and
+		// before the resolver loop so any synthesised ResolverConfigs are
+		// processed in the same pass as user-declared ones.
+		if err := gj.loadOpenAPIIntegration(); err != nil {
+			return err
+		}
 
-	// Filesystem virtual tables: install the built-in "local" factory
-	// before the bridge loads so locally-declared filesystems work
-	// out-of-the-box; serv layer adds s3/gcs via OptionSetFilesystemBackend.
-	gj.registerBuiltinFilesystemFactories()
-	if err := gj.loadFilesystemIntegration(); err != nil {
-		return err
+		// Filesystem virtual tables: install the built-in "local" factory
+		// before the bridge loads so locally-declared filesystems work
+		// out-of-the-box; serv layer adds s3/gcs via OptionSetFilesystemBackend.
+		gj.registerBuiltinFilesystemFactories()
+		if err := gj.loadFilesystemIntegration(); err != nil {
+			return err
+		}
 	}
 
 	if gj.rtmap == nil {

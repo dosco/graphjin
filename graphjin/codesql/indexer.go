@@ -226,6 +226,9 @@ func (idx *indexer) Reconcile(ctx context.Context) (*Stats, error) {
 	}
 	stats.Duration = time.Since(start)
 	err = idx.finishStatus(ctx, statusID, stats, nil)
+	if err == nil {
+		err = RefreshPublicGraph(ctx, idx.db)
+	}
 	if err == nil && (stats.FilesAdded != 0 || stats.FilesChanged != 0 || stats.FilesDeleted != 0) {
 		notifySourceChange = true
 	}

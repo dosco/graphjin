@@ -99,8 +99,8 @@ func TestNextForApplyDatabaseSetup_SchemaReady(t *testing.T) {
 	if next.StateCode != "apply_success_schema_ready" {
 		t.Fatalf("expected state_code=apply_success_schema_ready, got %s", next.StateCode)
 	}
-	if next.RecommendedTool != "list_tables" {
-		t.Fatalf("expected recommended_tool=list_tables, got %s", next.RecommendedTool)
+	if next.RecommendedTool != "query_catalog" {
+		t.Fatalf("expected recommended_tool=query_catalog, got %s", next.RecommendedTool)
 	}
 }
 

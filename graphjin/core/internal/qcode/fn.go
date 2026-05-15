@@ -98,11 +98,11 @@ func (co *Compiler) compileWindowFunction(sel *Select, name string) (
 		}
 		colName := name[len(p.prefix):]
 		if colName == "" {
-			return fn, true, fmt.Errorf("window function %q requires a column suffix", strings.TrimSuffix(p.prefix, "_"))
+			return fn, true, fmt.Errorf("analytics function %q is internal; use GraphJin analytics directives on a column field", strings.TrimSuffix(p.prefix, "_"))
 		}
 		col, err := sel.Ti.GetColumn(colName)
 		if err != nil {
-			return fn, true, fmt.Errorf("window function %q: %w", strings.TrimSuffix(p.prefix, "_"), err)
+			return fn, true, fmt.Errorf("analytics function %q is internal; use GraphJin analytics directives on a column field: %w", strings.TrimSuffix(p.prefix, "_"), err)
 		}
 		fn = newWindowFunction(strings.TrimSuffix(p.prefix, "_"), col.Type, p.wf)
 		fn.Args = []Arg{{Type: ArgTypeCol, Col: col}}

@@ -108,6 +108,10 @@ mcp:
   # SECURITY: Only allow saved queries in production (not raw GraphQL)
   allow_raw_queries: false
 
+  # SECURITY: Keep the legacy execute_workflow MCP compatibility tool disabled.
+  # Use gj_workflow_execution(insert) through GraphQL; block it with read_only.
+  allow_workflow_execution: false
+
 # ============================================================================
 # DATABASE CONFIGURATION
 # ============================================================================
@@ -168,10 +172,11 @@ databases:
     # Required for tls. Can be a file path or the contents of the pem file
     # client_key: ./client-key.pem
 
-# Metadata graph is disabled by default in production. Enable explicitly if
-# you want read-only gj_* schema tables and optional CodeSQL code references.
-# metadata:
-#   enabled: false
-#   database: graphjin
-#   auto_code_relations: false
-#   # code_databases: [code]
+# In sources mode, add a GraphJin source to expose read-only gj_* metadata,
+# catalog items, and control-plane roots.
+# sources:
+#   - name: graphjin
+#     kind: graphjin
+#     metadata: true
+#     catalog: true
+#     control_plane: true

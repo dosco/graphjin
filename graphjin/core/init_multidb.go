@@ -186,6 +186,7 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 
 	if dbConf, ok := gj.conf.Databases[ctx.name]; ok && dbConf.ManagedType == "codesql" {
 		addCodeSQLVirtualColumns(ctx.dbinfo)
+		hideRawCodeSQLTables(ctx.dbinfo)
 	}
 
 	// Create schema
@@ -232,13 +233,41 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 }
 
 func addCodeSQLVirtualColumns(di *sdata.DBInfo) {
-	for _, table := range []string{"code_symbols", "code_nodes", "code_captures"} {
+	for _, table := range []string{"code_symbols", "code_nodes", "code_captures", "gj_code"} {
 		for _, col := range []string{"code", "code_context"} {
 			_ = di.AddColumn(di.Schema, table, sdata.DBColumn{
 				Name:           col,
 				Type:           "text",
 				CodeSQLVirtual: col,
 			})
+		}
+	}
+	for _, colName := range []string{"file_id", "symbol_id", "parent_id", "target_symbol_id"} {
+		col, err := di.GetColumn(di.Schema, "gj_code", colName)
+		if err != nil {
+			continue
+		}
+		col.FKeySchema = di.Schema
+		col.FKeyTable = "gj_code"
+		col.FKeyCol = "id"
+		col.FKeyIsUnique = true
+	}
+}
+
+func hideRawCodeSQLTables(di *sdata.DBInfo) {
+	if di == nil {
+		return
+	}
+	for i := range di.Tables {
+		name := strings.ToLower(di.Tables[i].Name)
+		if name == "gj_code" {
+			continue
+		}
+		if strings.HasPrefix(name, "code_") {
+			di.Tables[i].Blocked = true
+			for j := range di.Tables[i].Columns {
+				di.Tables[i].Columns[j].Blocked = true
+			}
 		}
 	}
 }

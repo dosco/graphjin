@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dosco/graphjin/core/v3"
 	"github.com/spf13/afero"
 )
 
@@ -55,7 +56,7 @@ func TestRunNamedWorkflow_LoadsFromWorkflowsDir(t *testing.T) {
 
 	s := &graphjinService{
 		fs:   newAferoFS(mem, "/"),
-		conf: &Config{},
+		conf: &Config{Serv: Serv{MCP: MCPConfig{AllowWorkflowExecution: true}}},
 	}
 
 	out, err := s.runNamedWorkflow(context.Background(), "hello", map[string]any{"value": 7}, nil)
@@ -76,6 +77,35 @@ func TestRunNamedWorkflow_LoadsFromWorkflowsDir(t *testing.T) {
 	}
 }
 
+func TestRunNamedWorkflow_UsesWorkflowSourcePath(t *testing.T) {
+	mem := afero.NewMemMapFs()
+	if err := mem.MkdirAll("/custom_flows", 0o755); err != nil {
+		t.Fatalf("mkdir workflows: %v", err)
+	}
+	if err := afero.WriteFile(mem, "/custom_flows/hello.js", []byte(`function main() { return { ok: true }; }`), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	s := &graphjinService{
+		fs: newAferoFS(mem, "/"),
+		conf: &Config{Core: core.Config{Sources: []core.SourceConfig{
+			{Name: "flows", Kind: "workflows", Path: "custom_flows", Runtime: "goja"},
+		}}},
+	}
+
+	out, err := s.runNamedWorkflow(context.Background(), "hello", map[string]any{}, nil)
+	if err != nil {
+		t.Fatalf("runNamedWorkflow error: %v", err)
+	}
+	res, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map result, got %T", out)
+	}
+	if okVal, _ := res["ok"].(bool); !okVal {
+		t.Fatalf("expected ok=true, got %#v", res["ok"])
+	}
+}
+
 func TestRunNamedWorkflow_CanCallGJTools(t *testing.T) {
 	mem := afero.NewMemMapFs()
 	if err := mem.MkdirAll("/workflows", 0o755); err != nil {
@@ -91,7 +121,7 @@ function main() {
 
 	s := &graphjinService{
 		fs:   newAferoFS(mem, "/"),
-		conf: &Config{},
+		conf: &Config{Serv: Serv{MCP: MCPConfig{AllowWorkflowExecution: true}}},
 	}
 
 	out, err := s.runNamedWorkflow(context.Background(), "syntax", map[string]any{}, nil)
@@ -155,7 +185,7 @@ func TestHandleExecuteWorkflow_PassesVariables(t *testing.T) {
 
 	s := &graphjinService{
 		fs:   newAferoFS(mem, "/"),
-		conf: &Config{},
+		conf: &Config{Serv: Serv{MCP: MCPConfig{AllowWorkflowExecution: true}}},
 	}
 	ms := &mcpServer{service: s}
 
@@ -197,7 +227,7 @@ function main(input) { return { seen: input.value }; }
 
 	s := &graphjinService{
 		fs:   newAferoFS(mem, "/"),
-		conf: &Config{},
+		conf: &Config{Serv: Serv{MCP: MCPConfig{AllowWorkflowExecution: true}}},
 	}
 	ms := &mcpServer{service: s}
 

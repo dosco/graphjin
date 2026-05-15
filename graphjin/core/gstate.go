@@ -93,6 +93,64 @@ func newGState(c context.Context, gj *graphjinEngine, r GraphqlReq) (s gstate, e
 	return
 }
 
+func (s *gstate) cloneForDatabaseRoot(dbName string) gstate {
+	return gstate{
+		gj:        s.gj,
+		r:         cloneGraphqlReq(s.r),
+		vmap:      cloneRawMessageMap(s.vmap),
+		role:      s.role,
+		database:  dbName,
+		skipCache: s.skipCache,
+	}
+}
+
+func cloneGraphqlReq(r GraphqlReq) GraphqlReq {
+	out := r
+	out.query = cloneBytes(r.query)
+	out.vars = json.RawMessage(cloneBytes(r.vars))
+	out.aschema = cloneRawMessageMap(r.aschema)
+	out.requestconfig = cloneRequestConfig(r.requestconfig)
+	return out
+}
+
+func cloneRequestConfig(rc *RequestConfig) *RequestConfig {
+	if rc == nil {
+		return nil
+	}
+	out := *rc
+	if rc.ns != nil {
+		ns := *rc.ns
+		out.ns = &ns
+	}
+	if rc.Vars != nil {
+		out.Vars = make(map[string]interface{}, len(rc.Vars))
+		for k, v := range rc.Vars {
+			out.Vars[k] = v
+		}
+	}
+	return &out
+}
+
+func cloneRawMessageMap(in map[string]json.RawMessage) map[string]json.RawMessage {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]json.RawMessage, len(in))
+	for k, v := range in {
+		out[k] = json.RawMessage(cloneBytes(v))
+	}
+	return out
+}
+
+func cloneBytes(in []byte) []byte {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]byte, len(in))
+	copy(out, in)
+	return out
+}
+
 func (s *gstate) compile() (err error) {
 	if !s.gj.prodSec {
 		err = s.compileQueryForRole()
@@ -188,6 +246,17 @@ func (s *gstate) compileWithCompilers(st stmt, vars map[string]json.RawMessage, 
 		s.role,
 		s.r.namespace); err != nil {
 		return
+	}
+
+	if dbCtx, ok := s.gj.GetDatabase(dbName); ok && dbCtx.nano != nil {
+		st.sql = ""
+		s.database = dbName
+		if s.cs == nil {
+			s.cs = &cstate{st: st}
+		} else {
+			s.cs.st = st
+		}
+		return nil
 	}
 
 	var w bytes.Buffer
@@ -384,7 +453,20 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 			}
 		}
 		if allRemote {
+			s.setDefaultVars()
 			s.data = seedRemotePlaceholders(qc)
+			return
+		}
+	}
+
+	if handled, err1 := s.executeManagedQuery(c); handled {
+		err = err1
+		return
+	}
+
+	if s.r.operation == qcode.QTMutation {
+		if table, ok := s.readOnlyMutationRoot(); ok {
+			err = fmt.Errorf("mutations blocked: table %s is read-only", table)
 			return
 		}
 	}
@@ -408,6 +490,11 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 
 	// set default variables
 	s.setDefaultVars()
+
+	if dbCtx := s.getTargetDBCtx(); dbCtx != nil && dbCtx.nano != nil {
+		err = s.executeNanoDB(c, dbCtx)
+		return
+	}
 
 	var conn *sql.Conn
 

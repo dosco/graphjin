@@ -166,9 +166,10 @@ type Field struct {
 	FieldFilter Filter
 	Args        []Arg
 	SkipRender  SkipType
-	// Window, when non-nil, marks this aggregate/function field as a SQL
-	// window function. The SQL emitter wraps the function call with
-	// `OVER (PARTITION BY ... ORDER BY ... <frame>)`. Set via @window.
+	// Window, when non-nil, marks this aggregate/function field as backend
+	// analytic-window IR. The SQL emitter wraps the function call with
+	// `OVER (PARTITION BY ... ORDER BY ... <frame>)`. Public GraphQL builds this
+	// through analytics directives like @running, @previous, and @rank.
 	Window *WindowSpec
 }
 

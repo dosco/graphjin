@@ -23,21 +23,25 @@ const (
 )
 
 var workflowCallableToolNames = map[string]struct{}{
-	"describe_table":        {},
-	"execute_graphql":       {},
-	"execute_saved_query":   {},
-	"find_path":             {},
-	"get_mutation_syntax":   {},
-	"get_query_syntax":      {},
-	"get_table_sample":      {},
-	"get_saved_query":       {},
-	"get_fragment":          {},
-	"list_fragments":        {},
-	"list_saved_queries":    {},
-	"list_tables":           {},
-	"search_fragments":      {},
-	"search_saved_queries":  {},
-	"validate_where_clause": {},
+	"get_catalog_card":         {},
+	"get_catalog_capabilities": {},
+	"get_catalog_entrypoints":  {},
+	"query_catalog":            {},
+	"describe_table":           {},
+	"execute_graphql":          {},
+	"execute_saved_query":      {},
+	"find_path":                {},
+	"get_mutation_syntax":      {},
+	"get_query_syntax":         {},
+	"get_table_sample":         {},
+	"get_saved_query":          {},
+	"get_fragment":             {},
+	"list_fragments":           {},
+	"list_tables":              {},
+	"list_saved_queries":       {},
+	"search_fragments":         {},
+	"search_saved_queries":     {},
+	"validate_where_clause":    {},
 }
 
 // extendDeadlineForWorkflow lifts the per-request read/write deadlines so a
@@ -69,6 +73,10 @@ func (s1 *HttpService) apiV1Workflows(ns *string) http.Handler {
 
 	h := func(w http.ResponseWriter, r *http.Request) {
 		s := s1.Load().(*graphjinService)
+		if !s.conf.legacyDiscoveryEnabled() {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		extendDeadlineForWorkflow(w, s.conf)
 
@@ -136,18 +144,47 @@ func parseWorkflowInput(r *http.Request) (any, error) {
 	}
 }
 
+func (s *graphjinService) workflowBasePath() string {
+	if s == nil || s.conf == nil {
+		return workflowsPath
+	}
+	source, ok := s.conf.Core.WorkflowsSource()
+	if !ok || strings.TrimSpace(source.Path) == "" {
+		return workflowsPath
+	}
+	path := filepath.Clean(strings.TrimSpace(source.Path))
+	if path == "." {
+		return workflowsPath
+	}
+	return path
+}
+
+func (s *graphjinService) workflowRuntime() string {
+	if s == nil || s.conf == nil {
+		return "goja"
+	}
+	source, ok := s.conf.Core.WorkflowsSource()
+	if !ok || strings.TrimSpace(source.Runtime) == "" {
+		return "goja"
+	}
+	return strings.TrimSpace(source.Runtime)
+}
+
 func (s *graphjinService) runNamedWorkflow(ctx context.Context, name string, input any, ns *string) (any, error) {
 	normName, err := normalizeWorkflowName(name)
 	if err != nil {
 		return nil, err
 	}
 
-	scriptFile := filepath.Join(workflowsPath, normName+workflowExt)
-	src, err := s.fs.Get(scriptFile)
+	wf, ok := s.workflowByName(normName, s.workflowTimeoutSeconds())
+	if !ok {
+		return nil, fmt.Errorf("workflow not found: %s", normName)
+	}
+	src, err := s.fs.Get(wf.Path)
 	if err != nil {
 		return nil, fmt.Errorf("workflow not found: %s", normName)
 	}
-	meta, _ := parseWorkflowMeta(string(src))
+	meta := WorkflowMeta{Variables: workflowVariablesFromCatalog(wf.Variables)}
 	if err := validateWorkflowInput(meta, input); err != nil {
 		return nil, err
 	}

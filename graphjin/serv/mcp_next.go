@@ -367,12 +367,12 @@ func (ms *mcpServer) nextForApplyDatabaseSetup(result ApplyDatabaseSetupResult) 
 	if result.Success && result.TableCount > 0 {
 		return ms.newNextGuidance("apply_success_schema_ready", []NextOption{
 			nextOption(
-				"list_tables",
+				"query_catalog",
 				1,
 				"Database setup applied and schema has tables.",
-				"Continue with schema exploration.",
+				"Continue with catalog-driven schema exploration.",
 				nil,
-				nil,
+				[]string{"search", "where"},
 			),
 			nextOption(
 				"get_onboarding_status",
@@ -487,12 +487,12 @@ func (ms *mcpServer) nextForOnboardingStatus(result OnboardingStatusResult) *Nex
 
 	return ms.newNextGuidance("schema_ready", []NextOption{
 		nextOption(
-			"list_tables",
+			"query_catalog",
 			1,
 			"Onboarding is complete and schema is ready.",
-			"Continue with table/schema exploration.",
+			"Continue with catalog-driven table/schema exploration.",
 			nil,
-			nil,
+			[]string{"search", "where"},
 		),
 	})
 }
@@ -574,12 +574,12 @@ func (ms *mcpServer) nextForConfigUpdate(result ConfigUpdateResult) *NextGuidanc
 		if ms.service.gj != nil && ms.service.gj.SchemaReady() {
 			return ms.newNextGuidance("config_applied_schema_ready", []NextOption{
 				nextOption(
-					"list_tables",
+					"query_catalog",
 					1,
 					"Configuration applied and schema is ready.",
-					"Proceed to table discovery and query planning.",
+					"Proceed to catalog discovery and query planning.",
 					nil,
-					nil,
+					[]string{"search", "where"},
 				),
 			})
 		}

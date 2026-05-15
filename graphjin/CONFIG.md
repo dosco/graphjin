@@ -6,6 +6,7 @@ This document provides a comprehensive reference for all GraphJin configuration 
 
 - [Introduction](#introduction)
 - [Quick Start](#quick-start)
+- [Sources Mode](#sources-mode)
 - [Service Configuration](#service-configuration)
 - [Database Configuration](#database-configuration)
 - [Metadata Graph Configuration](#metadata-graph-configuration)
@@ -109,6 +110,88 @@ auth_fail_block: true
 
 database:
   dbname: myapp_production
+```
+
+---
+
+## Sources Mode
+
+`sources:` is the canonical config for every non-legacy graph provider: SQL databases, CodeSQL source indexes, filesystem tables, OpenAPI specs, GraphJin system/catalog roots, and workflows.
+
+If `sources:` is absent, GraphJin runs in legacy database-only mode. Existing `database`, `databases`, and `tables[].database` SQL configs continue to work there. Legacy mode rejects CodeSQL, top-level `filesystems`, top-level `openapi` / `openapi_specs_dir`, top-level `metadata`, and top-level `catalog`; move those to `sources`.
+
+If `sources:` is present, source mode is active. In source mode:
+
+- Configure SQL and CodeSQL through `sources`; do not use legacy `database` or `databases`.
+- Every `tables[]` entry must set `source`, not `database`.
+- `kind: graphjin` is required for catalog, metadata, and control-plane `gj_*` roots.
+- `kind: workflows` is required for workflow catalog items and workflow GraphQL roots.
+- `tables[].read_only` blocks normal and managed mutations for that root.
+- `relationships: [{ from, to, as? }]` adds graph edges; cardinality and reverse traversal are inferred.
+- Legacy MCP discovery/action tools and legacy HTTP helper endpoints (`/api/v1/discovery*`, `/api/v1/workflows/*`) are disabled by default; set `mcp.legacy_discovery: true` as an escape hatch.
+
+```yaml
+sources:
+  - name: app
+    kind: sql
+    type: postgres
+    connection_string: ${APP_DATABASE_URL}
+    default: true
+
+  - name: code
+    kind: codesql
+    path: /srv/app
+    infer_db_refs: true
+
+  - name: avatars
+    kind: filesystem
+    backend: s3
+    bucket: app-assets
+    prefix: avatars/
+
+  - name: upstream
+    kind: openapi
+    specs_dir: ./config/specs
+    specs:
+      interaction_studio:
+        base_url: https://${IS_ACCOUNT}.example.com/api
+        auth: {}
+
+  - name: graphjin
+    kind: graphjin
+    catalog: true
+    metadata: true
+    control_plane: true
+
+  - name: workflows
+    kind: workflows
+    path: ./workflows
+    runtime: goja
+    read_only: false
+
+tables:
+  - name: users
+    source: app
+
+  - name: gj_code
+    source: code
+    read_only: true
+
+  - name: avatars
+    source: avatars
+
+  - name: gj_catalog
+    source: graphjin
+    read_only: true
+
+  - name: gj_workflow
+    source: workflows
+    read_only: false
+
+relationships:
+  - from: gj_catalog.code_refs_id
+    to: code:gj_code.db_object_id
+    as: gj_code
 ```
 
 ---
@@ -264,29 +347,40 @@ database:
 
 #### CodeSQL
 
-CodeSQL is a logical database type for source code. Set only `type: codesql` and `path`; GraphJin creates a managed SQLite cache in `config/codesql/<database-name>-<source-root-hash>.sqlite` and reconciles new/changed/deleted files on startup. In development, it also watches the source tree while running; in production, live watching is disabled and the cache updates on restart.
+CodeSQL is configured as `sources[].kind: codesql`. Set `path`; GraphJin creates a managed SQLite cache in `config/codesql/<source-name>-<source-root-hash>.sqlite` and reconciles new/changed/deleted files on startup. In development, it also watches the source tree while running; in production, live watching is disabled and the cache updates on restart.
 
 ```yaml
-database:
-  type: codesql
-  path: /path/to/source
+sources:
+  - name: code
+    kind: codesql
+    path: /path/to/source
 ```
 
-For multi-database setups the cache filename prefix is the database config name:
+For mixed application-data and code graphs, declare both sources and attach tables to sources:
 
 ```yaml
-databases:
-  app:
+sources:
+  - name: app
+    kind: sql
     type: postgres
     connection_string: postgres://app:secret@db/app
+    default: true
 
-  code:
-    type: codesql
+  - name: code
+    kind: codesql
     path: /path/to/source
     infer_db_refs: true
+
+tables:
+  - name: users
+    source: app
+
+  - name: gj_code
+    source: code
+    read_only: true
 ```
 
-At runtime GraphJin treats CodeSQL as `sqlite` with `read_only: true` and `analytics_mode: true`. The generated schema includes source/index state tables (`code_files`, `code_file_versions`, `code_index_status`, `code_parse_errors`), raw tree-sitter tables (`code_nodes`, `code_captures`), and code-intelligence tables (`code_symbols`, `code_scopes`, `code_locals`, `code_refs`, `code_imports`, `code_edges`, `code_injections`, `code_db_refs`, docs/text FTS).
+At runtime GraphJin treats CodeSQL as `sqlite` with `read_only: true` and `analytics_mode: true`. The public graph exposes one root, `gj_code`, where `kind` selects files, symbols, references, imports, edges, database references, injections, docs, text chunks, parse errors, AST nodes, captures, index status, change sets, and locks. Raw CodeSQL storage tables stay internal by default.
 
 `infer_db_refs` is CodeSQL-only and defaults to `true`. It records best-effort references from SQL files and strings, GraphQL files and strings, GraphJin config/allowlist files, migration references, and common struct/model tags.
 
@@ -399,49 +493,60 @@ database:
 
 ---
 
-## Metadata Graph Configuration
+## Catalog Graph Configuration
 
-The metadata graph exposes GraphJin's discovered schema as ordinary read-only GraphQL tables. It is enabled by default in development and disabled by default in production.
+The catalog graph exposes GraphJin's discovered schema, workflow read data, and system guidance as ordinary read-only GraphQL tables backed by nanoDB. In source mode it is enabled by adding a `kind: graphjin` source with `metadata: true`.
 
-GraphJin-managed databases are intentionally excluded from `gj_*` rows: the metadata database itself and CodeSQL SQLite caches do not appear in metadata discovery, which prevents recursive self-description. CodeSQL can still be linked through `code_db_refs` relationships.
+GraphJin-managed databases are intentionally excluded from catalog rows: the system graph itself and CodeSQL SQLite caches do not appear as application metadata, which prevents recursive self-description. CodeSQL can still be linked through `gj_catalog` to `gj_code` relationships.
 
 ```yaml
-metadata:
-  enabled: true
-  database: graphjin
-  auto_code_relations: true
-  code_databases: [code]
+sources:
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+
+tables:
+  - name: gj_catalog
+    source: graphjin
+    read_only: true
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `metadata.enabled` | `true` in dev, `false` in prod | Creates the managed read-only SQLite metadata database and exposes `gj_*` tables |
-| `metadata.database` | `graphjin` | Virtual database name for metadata tables. Startup fails if this collides with a configured database |
-| `metadata.auto_code_relations` | same as `metadata.enabled` | Adds automatic GraphQL relationships from `gj_tables` and `gj_columns` to CodeSQL `code_db_refs` |
-| `metadata.code_databases` | auto-detect | Optional list of CodeSQL databases to link. Empty means auto-detect, but auto-relations are created only when exactly one CodeSQL DB is selected |
+| `sources[].kind: graphjin` | - | Enables GraphJin system roots |
+| `sources[].metadata` | `true` | Creates the managed read-only nanoDB system graph and exposes catalog metadata through `gj_catalog` |
+| `sources[].catalog` | `true` | Exposes the `gj_catalog` catalog item root |
+| `sources[].control_plane` | `true` | Exposes control-plane roots such as `gj_config` |
 
-Metadata tables:
+Catalog item kinds include:
 
 ```text
-gj_databases
-gj_tables
-gj_columns
-gj_relationships
-gj_functions
-gj_indexes
+database
+table
+column
+relationship
+workflow
+directive
+operator_set
+query_pattern
+mutation_pattern
+config
+entrypoint
+capability
+system_capability
 ```
 
-With CodeSQL enabled, you can query database metadata and code usage in the same graph:
+With CodeSQL enabled, you can query database catalog metadata and code usage in the same graph:
 
 ```graphql
 query {
-  gj_columns(where: { table_name: { eq: "users" }, column_name: { eq: "email" } }) {
+  gj_catalog(where: { kind: { eq: "column" }, table_name: { eq: "users" }, column_name: { eq: "email" } }) {
     type
-    code_db_refs {
+    gj_code {
+      kind
       ref_kind
-      confidence
-      file { path }
-      symbol { name kind }
+      path
+      symbol_id
     }
   }
 }
@@ -634,13 +739,13 @@ In multi-database deployments you can set `analytics_mode` globally and override
 it per database — typically `true` for an analytics warehouse and `false` for an
 OLTP application database. See [Multi-Database Configuration](#multi-database-configuration).
 
-Window functions (`@window`) are query syntax, not a separate config flag. They
-work well with analytics mode for business-reporting queries such as running
-totals, row ranking, previous-period values, and first/last values in a frame.
+Analytics directives such as `@running`, `@moving`, `@previous`, and `@rank`
+are query syntax, not a separate config flag. They work well with analytics
+mode for business-reporting queries such as running totals, moving averages,
+row ranking, previous-period values, and first/last values in an ordered group.
 GraphJin validates support from the selected dialect and detected database
-version: MongoDB rejects SQL window functions, known-old MySQL/MariaDB/SQLite/
-MSSQL versions fail at compile time, and unsupported `NULLS FIRST/LAST` window
-ordering is rejected with a clear error.
+version: MongoDB and known-old MySQL/MariaDB/SQLite/MSSQL versions fail at
+compile time with clear errors.
 
 ---
 
@@ -682,13 +787,15 @@ Model Context Protocol (MCP) enables AI assistants to interact with GraphJin.
 | `mcp.disable` | boolean | `false` | Disable the MCP server |
 | `mcp.allow_mutations` | boolean | `true` | Allow mutation operations |
 | `mcp.allow_raw_queries` | boolean | `true` | Allow arbitrary GraphQL queries |
+| `mcp.legacy_discovery` | boolean | `false` | Re-enable legacy MCP discovery/action tools and legacy HTTP helper endpoints in source mode |
 | `mcp.stdio_user_id` | string | - | Default user ID for stdio transport |
 | `mcp.stdio_user_role` | string | - | Default user role for stdio transport |
-| `mcp.only` | boolean | `false` | MCP-only mode (disable other endpoints) |
+| `mcp.only` | boolean | `false` | MCP-only mode; legacy HTTP helpers remain only when `mcp.legacy_discovery` is true |
 | `mcp.cursor_cache_ttl` | integer | `1800` | Cursor cache TTL in seconds (30 min) |
 | `mcp.cursor_cache_size` | integer | `10000` | Max in-memory cursor cache entries |
 | `mcp.allow_config_updates` | boolean | `false` | Allow LLMs to modify config (dangerous) |
 | `mcp.allow_schema_reload` | boolean | `false` | Allow schema reload via MCP (auto-enabled in dev mode) |
+| `mcp.allow_workflow_execution` | boolean | `false` | Allow legacy `execute_workflow` MCP tool; GraphQL `gj_workflow_execution` is controlled by `read_only` table/source config |
 
 ### Example
 
@@ -703,6 +810,7 @@ mcp:
   cursor_cache_size: 5000
   allow_config_updates: false  # Keep disabled for security
   allow_schema_reload: true  # Enabled by default in dev mode
+  allow_workflow_execution: false
 ```
 
 ---
@@ -792,7 +900,7 @@ GraphQL endpoint accepts `multipart/form-data` POSTs per the [graphql-multipart-
 
 **Inline base64** (`storage` empty) — the multipart file becomes a JSON object inside the variable: `{filename, content_type, size, data}`. Useful for small uploads going into a `bytea` column.
 
-**Streamed to a filesystem table** (`storage: avatars`) — the body is written to the named [filesystem](#filesystems-configuration) and the variable becomes `{key, content_type, size, url, etag, modified_at}`. Keeps large bodies out of the request/response.
+**Streamed to a filesystem table** (`storage: avatars`) — the body is written to the named [filesystem source](#filesystems-configuration) and the variable becomes `{key, content_type, size, url, etag, modified_at}`. Keeps large bodies out of the request/response.
 
 ### Example
 
@@ -801,7 +909,7 @@ uploads:
   enabled: true
   max_size: 25_000_000
   allowed_mime: ["image/*", "application/pdf"]
-  storage: avatars                 # name of an entry in `filesystems:`
+  storage: avatars                 # name of a filesystem source/table
   storage_key_prefix: "{date}/"    # → 2026/05/08/<8-byte-hex>.png
 ```
 
@@ -809,9 +917,23 @@ uploads:
 
 ## Filesystems Configuration
 
-Object stores (local directories, S3, GCS) exposed as virtual GraphQL tables. See the [Filesystem Tables](FEATURES.md#filesystem-tables) feature reference for the query surface.
+Object stores (local directories, S3, GCS) exposed as virtual GraphQL tables. They use the normal read surface (`id`, `where`, `order_by`, `limit`, `offset`, cursor-style page args) over portable object metadata; see the [Filesystem Tables](FEATURES.md#filesystem-tables) feature reference for examples.
 
-`filesystems` is a list — declare one entry per logical table:
+Declare each object store as `sources[].kind: filesystem`, then attach the table to that source:
+
+```yaml
+sources:
+  - name: avatars
+    kind: filesystem
+    backend: s3
+    bucket: app-assets
+    prefix: avatars/
+
+tables:
+  - name: avatars
+    source: avatars
+    read_only: true
+```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -851,8 +973,9 @@ Plug in Azure Blob, Cloudflare R2, or anything implementing `fstable.Backend` vi
 ### Examples
 
 ```yaml
-filesystems:
+sources:
   - name: avatars
+    kind: filesystem
     backend: s3
     bucket: my-bucket
     prefix: avatars/
@@ -861,20 +984,38 @@ filesystems:
     public_base_url: https://cdn.example.com
 
   - name: invoices
+    kind: filesystem
     backend: gcs
     bucket: invoices
     prefix: 2026/
 
   - name: uploads_local
+    kind: filesystem
     backend: local
     root: /var/lib/graphjin/uploads
 
   # MinIO / localstack via S3-compatible endpoint:
   - name: dev_blob
+    kind: filesystem
     backend: s3
     bucket: dev
     region: us-east-1
     endpoint: http://localhost:9000
+
+tables:
+  - name: avatars
+    source: avatars
+    read_only: true
+
+  - name: invoices
+    source: invoices
+    read_only: true
+
+  - name: uploads_local
+    source: uploads_local
+
+  - name: dev_blob
+    source: dev_blob
 ```
 
 ---
@@ -1093,31 +1234,43 @@ The OpenAPI integration is the spec-driven counterpart to `remote_api` (above). 
        interaction_studio.yaml    # vendor-supplied, untouched
    ```
 
-2. Add an `openapi:` section to your environment config (`dev.yml`/`prod.yml`):
+2. Add an OpenAPI source to your environment config (`dev.yml`/`prod.yml`):
 
    ```yaml
-   openapi_specs_dir: ./config/specs   # default
+   sources:
+     - name: app
+       kind: sql
+       type: postgres
+       connection_string: ${APP_DATABASE_URL}
+       default: true
 
-   openapi:
-     interaction_studio:
-       base_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api
-       auth:
-         scheme: token_exchange
-         token_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api/token
-         request:
-           body:
-             apiKeyId: ${IS_API_KEY}
-             apiKeySecret: ${IS_API_SECRET}
-         response:
-           token_field: access_token
-           expires_field: expires_in
+     - name: upstream
+       kind: openapi
+       specs_dir: ./config/specs
+       specs:
+         interaction_studio:
+           base_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api
+           auth:
+             scheme: token_exchange
+             token_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api/token
+             request:
+               body:
+                 apiKeyId: ${IS_API_KEY}
+                 apiKeySecret: ${IS_API_SECRET}
+             response:
+               token_field: access_token
+               expires_field: expires_in
 
-       joins:
-         getUserById:
-           parent_table: users
-           parent_column: email
-           param: userId
-           expose_as: is_profile
+           joins:
+             getUserById:
+               parent_table: users
+               parent_column: email
+               param: userId
+               expose_as: is_profile
+
+   tables:
+     - name: users
+       source: app
    ```
 
 3. Restart GraphJin. Boot logs report what was loaded:
@@ -1185,11 +1338,14 @@ query {
 Default GraphQL field name is `<spec_key>_<operation_id_snake>`; override per-operation under `operations:`:
 
 ```yaml
-openapi:
-  is:
-    operations:
-      listAuditLogs:
-        expose_as: audit_logs
+sources:
+  - name: upstream
+    kind: openapi
+    specs:
+      is:
+        operations:
+          listAuditLogs:
+            expose_as: audit_logs
 ```
 
 ### Authentication
@@ -1266,11 +1422,14 @@ auth:
 Each spec gets its own concurrency budget, applied collectively across every operation against that spec:
 
 ```yaml
-openapi:
-  interaction_studio:
-    concurrency:
-      max_concurrent: 8           # in-flight requests cap (default: 8)
-      rate_limit_per_second: 50   # token-bucket RPS cap (default: 50)
+sources:
+  - name: upstream
+    kind: openapi
+    specs:
+      interaction_studio:
+        concurrency:
+          max_concurrent: 8           # in-flight requests cap (default: 8)
+          rate_limit_per_second: 50   # token-bucket RPS cap (default: 50)
 ```
 
 Without these caps, a 1000-row parent select would spawn 1000 parallel requests upstream — a reliable way to get rate-limited.
@@ -1280,16 +1439,19 @@ Without these caps, a 1000-row parent select would spawn 1000 parallel requests 
 Tweak per-operation presentation:
 
 ```yaml
-openapi:
-  interaction_studio:
-    operations:
-      listAuditLogs:
-        expose_as: audit_logs       # rename auto-derived field
-        result_path: data.records   # override auto-detected wrapper path
-        disabled: false             # set true to hide an operation entirely
-      exportUsers:
-        expose_top_level: true      # opt-in classification (see below)
-        expose_as: is_users
+sources:
+  - name: upstream
+    kind: openapi
+    specs:
+      interaction_studio:
+        operations:
+          listAuditLogs:
+            expose_as: audit_logs       # rename auto-derived field
+            result_path: data.records   # override auto-detected wrapper path
+            disabled: false             # set true to hide an operation entirely
+          exportUsers:
+            expose_top_level: true      # opt-in classification (see below)
+            expose_as: is_users
 ```
 
 #### `expose_top_level`
@@ -1492,7 +1654,7 @@ roles:
 
 ## Multi-Database Configuration
 
-GraphJin supports querying across multiple databases in a single GraphQL request.
+GraphJin supports querying across multiple SQL databases in a single GraphQL request. `databases:` is the legacy database-only spelling and remains supported when `sources:` is absent. In source mode, declare these same databases as `sources[].kind: sql`.
 
 ### Database Map Structure
 
@@ -1529,13 +1691,9 @@ databases:
     dbname: legacy_app
     user: app_user
     password: secret
-
-  code:
-    type: codesql
-    path: /srv/myapp
 ```
 
-`codesql` entries are useful beside production and analytics databases: the same GraphJin service can expose data tables and source-code tables to an MCP agent, while keeping the generated code cache read-only from GraphQL.
+CodeSQL is no longer configured under `databases:`. Move source-code indexes to `sources[].kind: codesql`.
 
 ### Per-Database Read-Only Mode
 

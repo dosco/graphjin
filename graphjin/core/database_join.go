@@ -157,6 +157,18 @@ func (s *gstate) executeDatabaseJoinQuery(
 		return nil, fmt.Errorf("qcode compile failed: %w", err)
 	}
 
+	if dbCtx.nano != nil {
+		raw, err := s.renderNanoDBQuery(dbCtx, qc)
+		if err == nil && len(raw) == 0 {
+			if sel.Singular {
+				raw = []byte(`{"` + sel.Table + `": null}`)
+			} else {
+				raw = []byte(`{"` + sel.Table + `": []}`)
+			}
+		}
+		return raw, err
+	}
+
 	// Compile to SQL using the target database's SQL compiler
 	var sqlBuf bytes.Buffer
 	md, err := dbCtx.psqlCompiler.Compile(&sqlBuf, qc)
@@ -461,9 +473,11 @@ func (s *gstate) groupSelectsByDatabase() []dbGroup {
 
 // dbResult holds the result from executing a query against one database.
 type dbResult struct {
-	database string
-	data     json.RawMessage
-	err      error
+	database       string
+	data           json.RawMessage
+	fragmentHits   int64
+	fragmentMisses int64
+	err            error
 }
 
 // mergeRootResults merges results from multiple databases into a single JSON response.
@@ -712,26 +726,37 @@ func (s *gstate) executeParallelRoots(c context.Context) error {
 		wg.Add(1)
 		go func(idx int, db string, fields []string) {
 			defer wg.Done()
+			rootState := s.cloneForDatabaseRoot(db)
 
 			ctx1, span := s.gj.spanStart(c, "Execute Parallel Root")
 			span.SetAttributesString(StringAttr{"query.database", db})
 			defer span.End()
 
-			data, err := s.executeForDatabaseRoots(ctx1, db, fields)
+			data, err := rootState.executeForDatabaseRoots(ctx1, db, fields)
 			if err != nil {
 				span.Error(err)
 			}
 
 			results[idx] = dbResult{
-				database: db,
-				data:     data,
-				err:      err,
+				database:       db,
+				data:           data,
+				fragmentHits:   rootState.fragmentHits.Load(),
+				fragmentMisses: rootState.fragmentMisses.Load(),
+				err:            err,
 			}
 		}(i, dbName, rootFields)
 		i++
 	}
 
 	wg.Wait()
+	for _, result := range results {
+		if result.fragmentHits != 0 {
+			s.fragmentHits.Add(result.fragmentHits)
+		}
+		if result.fragmentMisses != 0 {
+			s.fragmentMisses.Add(result.fragmentMisses)
+		}
+	}
 	return s.mergeRootResults(results)
 }
 
@@ -775,6 +800,18 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 	qc, err := qcodeCompiler.Compile(subQuery, vars, s.role, s.r.namespace)
 	if err != nil {
 		return nil, fmt.Errorf("qcode compile failed for %s: %w", dbName, err)
+	}
+
+	if dbCtx.nano != nil {
+		raw, err := s.renderNanoDBQuery(dbCtx, qc)
+		if err != nil {
+			return nil, fmt.Errorf("nanodb query failed for %s: %w", dbName, err)
+		}
+		encrypted, _, err := encryptResultFragment(raw, s.gj.printFormat, s.gj.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("encryption failed for %s: %w", dbName, err)
+		}
+		return encrypted, nil
 	}
 
 	// Compile SQL
@@ -863,7 +900,7 @@ func (s *gstate) resolveDatabaseRootRemotes(
 
 	sub := gstate{
 		gj:        s.gj,
-		r:         s.r,
+		r:         cloneGraphqlReq(s.r),
 		cs:        &cstate{st: stmt{qc: qc}},
 		data:      injectRemoteMarkers(data, qc),
 		role:      s.role,

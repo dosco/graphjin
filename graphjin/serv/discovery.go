@@ -19,6 +19,10 @@ func discoveryHandler(s1 *HttpService) http.Handler {
 		}
 
 		s := s1.Load().(*graphjinService)
+		if !s.conf.legacyDiscoveryEnabled() {
+			http.NotFound(w, r)
+			return
+		}
 		if s.disc == nil {
 			http.Error(w, "Discovery not available. Schema may not be ready yet.", http.StatusServiceUnavailable)
 			return
@@ -49,6 +53,10 @@ func discoveryWildcardHandler(s1 *HttpService) http.Handler {
 		section = strings.Trim(section, "/")
 
 		s := s1.Load().(*graphjinService)
+		if !s.conf.legacyDiscoveryEnabled() {
+			http.NotFound(w, r)
+			return
+		}
 		if s.disc == nil {
 			http.Error(w, "Discovery not available. Schema may not be ready yet.", http.StatusServiceUnavailable)
 			return

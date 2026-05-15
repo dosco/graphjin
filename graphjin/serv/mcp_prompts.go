@@ -122,10 +122,18 @@ func getValidOperators(dbType string, isArray bool) []string {
 
 // registerPrompts registers all MCP prompts with the server
 func (ms *mcpServer) registerPrompts() {
+	if ms.service.conf.MCP.Disable {
+		return
+	}
+
+	queryPromptDesc := "Generate a complete GraphJin query with proper syntax. Uses catalog-first schema/language guidance plus relationship, aggregation, and analytics patterns."
+	if ms.service.conf.legacyMCPToolsEnabled() {
+		queryPromptDesc = "Generate a complete GraphJin query with proper syntax. Returns table schema, relationship info, aggregation examples, and analytics directive patterns."
+	}
 	// write_where_clause - Help LLMs construct valid where clauses
 	ms.srv.AddPrompt(mcp.NewPrompt(
 		"write_where_clause",
-		mcp.WithPromptDescription("Generate a valid GraphJin where clause for filtering data. Returns table schema with column types and valid operators for each column."),
+		mcp.WithPromptDescription("Generate a valid GraphJin where clause for filtering data. Uses catalog/operator context and returns valid operators for each column."),
 		mcp.WithArgument("table",
 			mcp.ArgumentDescription("Table name to filter"),
 			mcp.RequiredArgument(),
@@ -142,7 +150,7 @@ func (ms *mcpServer) registerPrompts() {
 	// write_query - Help LLMs construct complete GraphJin queries
 	ms.srv.AddPrompt(mcp.NewPrompt(
 		"write_query",
-		mcp.WithPromptDescription("Generate a complete GraphJin query with proper syntax. Returns table schema, relationship info, aggregation examples, and @window analytics patterns."),
+		mcp.WithPromptDescription(queryPromptDesc),
 		mcp.WithArgument("table",
 			mcp.ArgumentDescription("Primary table to query"),
 			mcp.RequiredArgument(),
@@ -534,11 +542,11 @@ func (ms *mcpServer) handleWriteQuery(ctx context.Context, req mcp.GetPromptRequ
 	}
 	sb.WriteString("```\n\n")
 
-	// Window functions
+	// Analytics directives
 	if firstNumeric != "" && partitionCol != "" && orderCol != "" {
-		sb.WriteString("## Window Functions (analytics/reporting)\n\n")
-		sb.WriteString("Use `@window` for running totals, ranks, previous/next values, and first/last values ")
-		sb.WriteString("without collapsing rows like a plain aggregate. Built-in analytic functions require `@window`.\n\n")
+		sb.WriteString("## Analytics Directives (reporting rows)\n\n")
+		sb.WriteString("Use analytics directives for running metrics, moving averages, ranks, previous/next values, ")
+		sb.WriteString("and first/last values without collapsing rows like a plain aggregate.\n\n")
 		sb.WriteString("```graphql\n")
 		sb.WriteString(fmt.Sprintf("{ %s(limit: 100) {\n", table))
 		sb.WriteString(fmt.Sprintf("    %s\n", partitionCol))
@@ -546,14 +554,14 @@ func (ms *mcpServer) handleWriteQuery(ctx context.Context, req mcp.GetPromptRequ
 			sb.WriteString(fmt.Sprintf("    %s\n", orderCol))
 		}
 		sb.WriteString(fmt.Sprintf("    %s\n", firstNumeric))
-		sb.WriteString(fmt.Sprintf("    rank: row_number @window(partition: [\"%s\"], order: [\"%s\"])\n", partitionCol, firstNumeric+" desc"))
-		sb.WriteString(fmt.Sprintf("    previous_%s: lag_%s @window(partition: [\"%s\"], order: [\"%s\"])\n", firstNumeric, firstNumeric, partitionCol, orderCol))
-		sb.WriteString(fmt.Sprintf("    running_%s: sum_%s @window(partition: [\"%s\"], order: [\"%s\"], frame: \"rows unbounded preceding\")\n", firstNumeric, firstNumeric, partitionCol, orderCol))
+		sb.WriteString(fmt.Sprintf("    running_%s: %s @running(aggregate: sum, by: \"%s\", orderBy: { %s: asc })\n", firstNumeric, firstNumeric, partitionCol, orderCol))
+		sb.WriteString(fmt.Sprintf("    moving_avg_%s: %s @moving(aggregate: avg, rows: 6, by: \"%s\", orderBy: { %s: asc })\n", firstNumeric, firstNumeric, partitionCol, orderCol))
+		sb.WriteString(fmt.Sprintf("    previous_%s: %s @previous(by: \"%s\", orderBy: { %s: asc })\n", firstNumeric, firstNumeric, partitionCol, orderCol))
+		sb.WriteString(fmt.Sprintf("    rank_by_%s: %s @rank(by: \"%s\", order: desc)\n", firstNumeric, firstNumeric, partitionCol))
 		sb.WriteString("  }\n")
 		sb.WriteString("}\n")
 		sb.WriteString("```\n\n")
-		sb.WriteString("Other built-ins: `rank`, `dense_rank`, `lead_<column>`, `first_value_<column>`, `last_value_<column>`. ")
-		sb.WriteString("MongoDB does not support SQL window functions; known-old SQL dialect versions fail at compile time.\n\n")
+		sb.WriteString("Use grouped aggregates with `distinct` for one-row-per-group summaries; use analytics directives when each original row should remain visible.\n\n")
 	}
 
 	// Expression aggregates (the `<fn>_<col>` form only handles single
@@ -574,7 +582,11 @@ func (ms *mcpServer) handleWriteQuery(ctx context.Context, req mcp.GetPromptRequ
 		sb.WriteString("  }\n")
 		sb.WriteString("}\n")
 		sb.WriteString("```\n")
-		sb.WriteString("\nCall `get_query_syntax` for the full expression grammar ")
+		if ms.service.conf.legacyMCPToolsEnabled() {
+			sb.WriteString("\nCall `get_query_syntax` for the full expression grammar ")
+		} else {
+			sb.WriteString("\nCall `query_catalog` with `search: \"expression aggregate\"` and `where: { kind: { eq: \"query_pattern\" } }` for the full expression grammar ")
+		}
 		sb.WriteString("(add/sub/div, case, cast, coalesce, dot-notation for joined columns).\n")
 	}
 
@@ -775,7 +787,7 @@ func (ms *mcpServer) handleWriteMutation(ctx context.Context, req mcp.GetPromptR
 
 func isCodeSQLManagedMutationTable(table string) bool {
 	switch table {
-	case "code_change_sets", "code_locks":
+	case "gj_code":
 		return true
 	default:
 		return false
@@ -786,9 +798,9 @@ func (ms *mcpServer) handleWriteCodeSQLMutationPrompt(operation, table string) (
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("# %s Mutation Guide for Table: %s\n\n", capitalizeFirst(operation), table))
 	sb.WriteString("## Workflow\n\n")
-	sb.WriteString("1. Query `code` or `code_context` first on `code_symbols`, `code_nodes`, or `code_captures`.\n")
-	sb.WriteString("2. Also request `code_files { path hash }` from the same query before replace/delete/rename.\n")
-	sb.WriteString("3. Preview the edit with `code_change_sets(action: \"preview\")`.\n")
+	sb.WriteString("1. Query `gj_code` by `kind` first and request `code` or `code_context` plus `path` and `hash`.\n")
+	sb.WriteString("2. Use `kind: \"symbol\"`, `kind: \"file\"`, or `kind: \"db_reference\"` to find the right source item.\n")
+	sb.WriteString("3. Preview the edit with `gj_code(kind: \"change_set\", action: \"preview\")`.\n")
 	sb.WriteString("4. Apply only after the preview diff looks correct.\n\n")
 	sb.WriteString("## Rules\n\n")
 	sb.WriteString("- Use `op: \"replace\"`, `op: \"create\"`, `op: \"delete\"`, or `op: \"rename\"` in each edit.\n")
@@ -796,39 +808,42 @@ func (ms *mcpServer) handleWriteCodeSQLMutationPrompt(operation, table string) (
 	sb.WriteString("- Include the exact `old_text` for every replacement range.\n")
 	sb.WriteString("- For create/rename into new directories, set `mkdirs: true`.\n")
 	sb.WriteString("- If apply reports stale hash, re-read CodeSQL source and submit a fresh preview.\n")
-	sb.WriteString("- Never mutate `code_files`, `code_symbols`, `code_nodes`, or `code_captures` directly.\n")
-	sb.WriteString("- Use `code_locks` only for longer edit sessions that need an explicit lease; reserve create/rename targets with `whole_file: true`.\n\n")
+	sb.WriteString("- Never query or mutate raw CodeSQL roots like `code_files`, `code_symbols`, `code_nodes`, or `code_captures` directly.\n")
+	sb.WriteString("- Use `gj_code` with `kind: \"lock\"` only for longer edit sessions that need an explicit lease; reserve create/rename targets with `whole_file: true`.\n\n")
 	sb.WriteString("## Query Before Editing\n\n")
 	sb.WriteString("```graphql\n")
 	sb.WriteString(`query {
-  code_symbols(where: { name: { eq: "LoadUser" } }) {
+  gj_code(where: { kind: { eq: "symbol" }, name: { eq: "LoadUser" } }) {
     name
     start_byte
     end_byte
     code
     code_context
-    code_files { path hash }
+    path
+    hash
   }
 }`)
 	sb.WriteString("\n```\n\n")
 
 	switch table {
-	case "code_change_sets":
+	case "gj_code":
 		sb.WriteString("## Mutation Template\n\n```graphql\n")
 		switch operation {
 		case "apply", "update":
 			sb.WriteString(`mutation {
-  code_change_sets(id: 123, update: { id: 123, action: "apply" }) {
+  gj_code(id: "change_set:123", update: { kind: "change_set", id: 123, action: "apply" }) {
     id
+    kind
     status
     files_changed
     files_reindexed
-    errors
+    errors_json
   }
 }`)
 		default:
 			sb.WriteString(`mutation {
-  code_change_sets(insert: {
+  gj_code(insert: {
+    kind: "change_set"
     action: "preview"
     title: "update LoadUser"
     edits: [{
@@ -859,35 +874,37 @@ func (ms *mcpServer) handleWriteCodeSQLMutationPrompt(operation, table string) (
     }]
   }) {
     id
+    kind
     status
     diff
-    errors
+    errors_json
   }
 }`)
 		}
 		sb.WriteString("\n```\n")
-	case "code_locks":
-		sb.WriteString("## Mutation Template\n\n```graphql\n")
-		if operation == "release" || operation == "update" {
+		sb.WriteString("\n## Explicit Lock Template\n\n```graphql\n")
+		if operation == "release" || operation == "unlock" {
 			sb.WriteString(`mutation {
-  code_locks(id: 7, update: { id: 7, action: "release", lease_token: "lock-token" }) {
+  gj_code(id: "lock:7", update: { kind: "lock", id: 7, action: "release", lease_token: "lock-token" }) {
     id
+    kind
     status
     path
   }
 }`)
 		} else {
 			sb.WriteString(`mutation {
-  code_locks(insert: {
+  gj_code(insert: {
+    kind: "lock"
     action: "acquire"
     path: "main.go"
     owner: "agent"
     ranges: [{ start_byte: 10, end_byte: 20 }]
   }) {
     id
+    kind
     lease_token
     status
-    expires_at
   }
 }`)
 		}

@@ -65,6 +65,13 @@ func (s *graphjinService) initConfig() error {
 	c := s.conf
 	c.dirty = true
 
+	if err := validateServiceSourceModeConfig(c); err != nil {
+		return err
+	}
+	if err := normalizeServiceSources(c); err != nil {
+		return err
+	}
+
 	// copy over db_type from database.type
 	if c.DBType == "" {
 		c.DBType = c.DB.Type
@@ -154,6 +161,13 @@ func (s *graphjinService) initDB() error {
 	// In dev mode, allow starting without a database configured
 	if !s.conf.Serv.Production && !s.isDatabaseConfigured() {
 		s.log.Warn("No databases configured. Use MCP to add a database configuration.")
+		return nil
+	}
+
+	// In source mode, absence of SQL/CodeSQL connection details means there is
+	// no legacy database to fall back to. Virtual/system sources get a small
+	// host database in normalStart when needed.
+	if s.conf.Core.SourceMode() && !s.hasDatabaseConfigs() {
 		return nil
 	}
 

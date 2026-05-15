@@ -92,6 +92,9 @@ func (co *Compiler) compileFieldDirectives(sel *Select,
 		case "window":
 			err = co.compileDirectiveWindow(sel, f, d)
 
+		case "running", "moving", "previous", "next", "first", "last", "rank", "denseRank", "rowNumber":
+			err = co.compileDirectiveAnalytics(sel, f, d)
+
 		default:
 			err = fmt.Errorf("unknown field directive: %s", d.Name)
 		}

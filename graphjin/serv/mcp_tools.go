@@ -17,7 +17,7 @@ func (ms *mcpServer) registerExecutionTools() {
 		ms.srv.AddTool(mcp.NewTool(
 			"execute_graphql",
 			mcp.WithDescription("Execute a GraphJin GraphQL query or mutation against the database. "+
-				"Use get_query_syntax to learn the DSL syntax."),
+				"Use query_catalog and get_catalog_card to learn the DSL syntax first."),
 			mcp.WithString("query",
 				mcp.Required(),
 				mcp.Description("The GraphQL query or mutation to execute. Use GraphJin DSL syntax."),
@@ -49,23 +49,26 @@ func (ms *mcpServer) registerExecutionTools() {
 		),
 	), ms.handleExecuteSavedQuery)
 
-	// execute_workflow - Execute a named JS workflow from ./workflows
-	ms.srv.AddTool(mcp.NewTool(
-		"execute_workflow",
-		mcp.WithDescription("Execute a named JavaScript workflow from ./workflows/<name>.js. "+
-			"Use get_js_runtime_api first to see runtime globals and callable gj.tools.* functions. "+
-			"If the workflow declares variables in metadata, provide them here."),
-		mcp.WithString("name",
-			mcp.Required(),
-			mcp.Description("Workflow name, with or without .js extension"),
-		),
-		mcp.WithObject("variables",
-			mcp.Description("Workflow input payload passed to global `input` and `main(input)`"),
-		),
-		mcp.WithString("namespace",
-			mcp.Description("Optional namespace for multi-tenant deployments"),
-		),
-	), ms.handleExecuteWorkflow)
+	if ms.service.conf.legacyMCPToolsEnabled() && ms.service.conf.MCP.AllowWorkflowExecution {
+		// execute_workflow - Execute a named JS workflow from ./workflows
+		ms.srv.AddTool(mcp.NewTool(
+			"execute_workflow",
+			mcp.WithDescription("Compatibility tool for the GraphQL control-plane mutation gj_workflow_execution(insert). Execute a named JavaScript workflow from ./workflows/<name>.js. "+
+				"Discover reusable workflows first with query_catalog(where: {kind: {eq: 'workflow'}}). "+
+				"Use get_js_runtime_api first to see runtime globals and callable gj.tools.* functions. "+
+				"If the workflow declares variables in metadata, provide them here."),
+			mcp.WithString("name",
+				mcp.Required(),
+				mcp.Description("Workflow name, with or without .js extension"),
+			),
+			mcp.WithObject("variables",
+				mcp.Description("Workflow input payload passed to global `input` and `main(input)`"),
+			),
+			mcp.WithString("namespace",
+				mcp.Description("Optional namespace for multi-tenant deployments"),
+			),
+		), ms.handleExecuteWorkflow)
+	}
 }
 
 // ExecuteResult represents the result of a query execution
@@ -191,6 +194,10 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 
 // handleExecuteWorkflow executes a named JS workflow from ./workflows.
 func (ms *mcpServer) handleExecuteWorkflow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !ms.service.conf.MCP.AllowWorkflowExecution {
+		return mcp.NewToolResultError("workflow execution is not allowed. Enable allow_workflow_execution in MCP config."), nil
+	}
+
 	args := req.GetArguments()
 	name, _ := args["name"].(string)
 	namespace, _ := args["namespace"].(string)
@@ -209,14 +216,24 @@ func (ms *mcpServer) handleExecuteWorkflow(ctx context.Context, req mcp.CallTool
 		ns = ms.getNamespace()
 	}
 
-	var nsPtr *string
-	if ns != "" {
-		nsPtr = &ns
-	}
-
-	out, err := ms.service.runNamedWorkflow(ctx, name, input, nsPtr)
+	row, err := newControlPlaneGraphQL(ms.service).runWorkflow(ctx, core.ManagedMutationRoot{
+		Input: map[string]interface{}{
+			"workflow_name": name,
+			"variables":     input,
+			"namespace":     ns,
+		},
+	})
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if status, _ := row["status"].(string); status == "error" {
+		return mcp.NewToolResultError(fmt.Sprint(row["error"])), nil
+	}
+	var out any
+	if raw, _ := row["result_json"].(string); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &out); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 	}
 
 	return ms.toolResultJSON("execute_workflow", args, map[string]any{"data": out})

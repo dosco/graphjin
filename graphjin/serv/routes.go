@@ -63,18 +63,23 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		if ns == nil {
 			mux.Handle(routeGraphQL, s1.GraphQL(ah))
 			mux.Handle(routeREST, s1.REST(ah))
-			mux.Handle(routeWorkflows, s1.Workflows(ah))
+			if s.conf.legacyDiscoveryEnabled() {
+				mux.Handle(routeWorkflows, s1.Workflows(ah))
+			}
 			mux.Handle(routeOpenAPI, apiV1Handler(s1, nil, s1.OpenAPI(), ah))
 		} else {
 			mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
 			mux.Handle(routeREST, s1.RESTWithNS(ah, *ns))
-			mux.Handle(routeWorkflows, s1.WorkflowsWithNS(ah, *ns))
+			if s.conf.legacyDiscoveryEnabled() {
+				mux.Handle(routeWorkflows, s1.WorkflowsWithNS(ah, *ns))
+			}
 			mux.Handle(routeOpenAPI, apiV1Handler(s1, ns, s1.OpenAPIWithNS(*ns), ah))
 		}
 	}
 
-	// Keep workflow endpoint available in MCP-only mode for JS orchestration.
-	if s.conf.MCP.Only {
+	// Keep the legacy workflow endpoint available in MCP-only mode only when
+	// legacy discovery/action surfaces are explicitly enabled.
+	if s.conf.MCP.Only && s.conf.legacyDiscoveryEnabled() {
 		ah, err := auth.NewAuthHandlerFunc(s.conf.Auth)
 		if err != nil {
 			s.log.Fatalf("api: error initializing auth handler: %s", err)
@@ -91,9 +96,9 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		}
 	}
 
-	// Discovery API
-	// Available regardless of MCP-only mode — backend servers need this
-	{
+	// Legacy Discovery API. In source mode this is disabled unless
+	// mcp.legacy_discovery is enabled; use catalog/control-plane GraphQL instead.
+	if s.conf.legacyDiscoveryEnabled() {
 		discAuth, err := auth.NewAuthHandlerFunc(s.conf.Auth)
 		if err != nil {
 			s.log.Fatalf("api: error initializing discovery auth handler: %s", err)

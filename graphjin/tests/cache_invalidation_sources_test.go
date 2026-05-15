@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -45,24 +46,16 @@ func WatchMe() int {
 	}))
 	t.Cleanup(api.Close)
 
-	metadataEnabled := false
 	gjs, err := serv.NewGraphJinService(&serv.Config{
 		Core: core.Config{
 			DisableAllowList:     true,
 			DBSchemaPollDuration: -1,
 			DefaultLimit:         10,
-			Metadata: core.MetadataConfig{
-				Enabled: &metadataEnabled,
+			Sources: []core.SourceConfig{
+				{Name: "app", Kind: "sql", Type: "sqlite", Path: appDBPath, Default: true},
+				{Name: "code", Kind: "codesql", Path: codeRoot},
+				{Name: "uploads", Kind: "filesystem", Backend: "local", Root: fsRoot},
 			},
-			Databases: map[string]core.DatabaseConfig{
-				"app":  {Type: "sqlite", Path: appDBPath},
-				"code": {Type: "codesql", Path: codeRoot},
-			},
-			Filesystems: []core.FilesystemConfig{{
-				Name:    "uploads",
-				Backend: "local",
-				Root:    fsRoot,
-			}},
 			Resolvers: []core.ResolverConfig{{
 				Name:      "payments",
 				Type:      "remote_api",
@@ -99,6 +92,15 @@ func WatchMe() int {
 	if got := apiCalls.Load(); got != 1 {
 		t.Fatalf("api calls after cached query = %d, want 1", got)
 	}
+	for _, cached := range queryCombinedSourcesConcurrently(t, gj, 8) {
+		assertCombinedEmail(t, cached, "initial@test.com")
+		assertCombinedPaymentVersion(t, cached, 1)
+		assertCombinedUpload(t, cached, "docs/guide.txt")
+		assertCombinedCode(t, cached, "return 1")
+	}
+	if got := apiCalls.Load(); got != 1 {
+		t.Fatalf("api calls after concurrent cached queries = %d, want 1", got)
+	}
 
 	if _, err := gj.GraphQL(ctx, `mutation {
 		users(id: 1, update: { email: "updated@test.com" }) { id email }
@@ -129,9 +131,9 @@ func WatchMe() int {
 }
 `)
 	afterCode := waitForCombinedSources(t, gj, func(out combinedSourcesResult) bool {
-		return len(out.CodeSymbols) == 1 &&
-			strings.Contains(out.CodeSymbols[0].Code, "return 2") &&
-			out.CodeSymbols[0].CodeFiles.Hash != initialCodeHash
+		return len(out.GJCode) == 1 &&
+			strings.Contains(out.GJCode[0].Code, "return 2") &&
+			out.GJCode[0].Hash != initialCodeHash
 	})
 	assertCombinedEmail(t, afterCode, "updated@test.com")
 	assertCombinedPaymentVersion(t, afterCode, 1)
@@ -171,12 +173,10 @@ const combinedSourcesQuery = `query CombinedSources {
 		key
 		etag
 	}
-	code_symbols(where: { name: { eq: "WatchMe" } }, limit: 1) {
+	gj_code(where: { kind: { eq: "symbol" }, name: { eq: "WatchMe" } }, limit: 1) {
 		name
 		code
-		code_files {
-			hash
-		}
+		hash
 	}
 }`
 
@@ -194,13 +194,11 @@ type combinedSourcesResult struct {
 		Key  string `json:"key"`
 		ETag string `json:"etag"`
 	} `json:"uploads"`
-	CodeSymbols []struct {
-		Name      string `json:"name"`
-		Code      string `json:"code"`
-		CodeFiles struct {
-			Hash string `json:"hash"`
-		} `json:"code_files"`
-	} `json:"code_symbols"`
+	GJCode []struct {
+		Name string `json:"name"`
+		Code string `json:"code"`
+		Hash string `json:"hash"`
+	} `json:"gj_code"`
 }
 
 func createCacheInvalidationAppDB(t *testing.T) string {
@@ -238,13 +236,51 @@ func writeCacheInvalidationFile(t *testing.T, path, body string) {
 
 func queryCombinedSources(t *testing.T, gj *core.GraphJin) combinedSourcesResult {
 	t.Helper()
-	res, err := gj.GraphQL(context.Background(), combinedSourcesQuery, nil, nil)
+	out, err := queryCombinedSourcesResult(gj)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return out
+}
+
+func queryCombinedSourcesResult(gj *core.GraphJin) (combinedSourcesResult, error) {
+	res, err := gj.GraphQL(context.Background(), combinedSourcesQuery, nil, nil)
+	if err != nil {
+		return combinedSourcesResult{}, err
+	}
 	var out combinedSourcesResult
 	if err := json.Unmarshal(res.Data, &out); err != nil {
-		t.Fatalf("combined response: %v\n%s", err, res.Data)
+		return combinedSourcesResult{}, fmt.Errorf("combined response: %w\n%s", err, res.Data)
+	}
+	return out, nil
+}
+
+func queryCombinedSourcesConcurrently(t *testing.T, gj *core.GraphJin, n int) []combinedSourcesResult {
+	t.Helper()
+	type queryResult struct {
+		out combinedSourcesResult
+		err error
+	}
+
+	results := make(chan queryResult, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			out, err := queryCombinedSourcesResult(gj)
+			results <- queryResult{out: out, err: err}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	out := make([]combinedSourcesResult, 0, n)
+	for result := range results {
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		out = append(out, result.out)
 	}
 	return out
 }
@@ -304,14 +340,14 @@ func uploadETag(out combinedSourcesResult, key string) string {
 
 func assertCombinedCode(t *testing.T, out combinedSourcesResult, wantSnippet string) string {
 	t.Helper()
-	if len(out.CodeSymbols) != 1 {
-		t.Fatalf("code_symbols len = %d, want 1: %+v", len(out.CodeSymbols), out.CodeSymbols)
+	if len(out.GJCode) != 1 {
+		t.Fatalf("gj_code symbol len = %d, want 1: %+v", len(out.GJCode), out.GJCode)
 	}
-	if !strings.Contains(out.CodeSymbols[0].Code, wantSnippet) {
-		t.Fatalf("code = %q, want snippet %q", out.CodeSymbols[0].Code, wantSnippet)
+	if !strings.Contains(out.GJCode[0].Code, wantSnippet) {
+		t.Fatalf("code = %q, want snippet %q", out.GJCode[0].Code, wantSnippet)
 	}
-	if out.CodeSymbols[0].CodeFiles.Hash == "" {
-		t.Fatalf("missing code file hash: %+v", out.CodeSymbols[0].CodeFiles)
+	if out.GJCode[0].Hash == "" {
+		t.Fatalf("missing code file hash: %+v", out.GJCode[0])
 	}
-	return out.CodeSymbols[0].CodeFiles.Hash
+	return out.GJCode[0].Hash
 }

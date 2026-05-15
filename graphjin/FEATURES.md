@@ -12,7 +12,7 @@ GraphJin is a high-performance GraphQL to SQL compiler that automatically genera
   - [Relationship Queries](#relationship-queries)
   - [Recursive Queries](#recursive-queries)
   - [Aggregations](#aggregations)
-  - [Window Functions](#window-functions)
+  - [Analytics Directives](#analytics-directives)
   - [Full-Text Search](#full-text-search)
   - [JSON Operations](#json-operations)
   - [GraphQL Fragments](#graphql-fragments)
@@ -428,61 +428,54 @@ query {
 # Returns: {"products":[{"count_id":100,"max_price":110.5}]}
 ```
 
-### Window Functions
+### Analytics Directives
 
-Tag an aggregate or built-in analytic field with `@window` to emit a SQL window function — `<func>(...) OVER (PARTITION BY ... ORDER BY ... <frame>)`. Window queries return one row per input row (no GROUP BY collapse), so they compose with regular column selections.
+Attach analytics directives to real columns when you want reporting metrics
+without collapsing the original rows. Use grouped aggregates with `distinct` for
+one-row-per-group summaries; use analytics directives for running totals, moving
+averages, previous/next values, first/last values, and ranking inside a group.
 
 ```graphql
 query {
   orders {
-    user_id
+    account_id
+    month
     total
-    rank: row_number @window(
-      partition: ["user_id"],
-      order: ["total desc nulls last"]
+    running_total: total @running(
+      aggregate: sum,
+      by: "account_id",
+      orderBy: { month: asc }
     )
-    previous_total: lag_total @window(
-      partition: ["user_id"],
-      order: ["created_at"]
+    moving_avg_total: total @moving(
+      aggregate: avg,
+      rows: 6,
+      by: "account_id",
+      orderBy: { month: asc }
     )
-    running: sum_total @window(
-      partition: ["user_id"],
-      order: ["created_at"],
-      frame: "rows between 5 preceding and current row"
+    previous_total: total @previous(
+      by: "account_id",
+      orderBy: { month: asc }
     )
+    rank_by_total: total @rank(by: "account_id", order: desc)
   }
 }
 ```
 
-Built-in analytic functions: `row_number`, `rank`, `dense_rank`, `lag_<column>`, `lead_<column>`, `first_value_<column>`, `last_value_<column>`. These functions require `@window`.
+Supported directives: `@running`, `@moving`, `@previous`, `@next`, `@first`,
+`@last`, `@rank`, `@denseRank`, and `@rowNumber`.
 
-**Frame grammar** — full standard SQL is accepted; numeric offsets are parsed as integers (no SQL-fragment passthrough):
+`@running` and `@moving` require `aggregate: sum|avg|count|min|max`.
+`@moving` also requires `rows: N`, a positive trailing row count including the
+current row. All analytics directives require `orderBy: { col: asc|desc }` or
+the shorthand `order: asc|desc` to order by the annotated column. Optional `by`
+accepts a single column or a list of columns when the metric should be scoped
+within groups.
 
-```
-ROWS|RANGE UNBOUNDED PRECEDING
-ROWS|RANGE CURRENT ROW
-ROWS|RANGE <n> PRECEDING
-ROWS|RANGE <n> FOLLOWING
-ROWS|RANGE BETWEEN <bound> AND <bound>
-```
-
-where `<bound>` is `UNBOUNDED PRECEDING` / `UNBOUNDED FOLLOWING` / `CURRENT ROW` / `<n> PRECEDING` / `<n> FOLLOWING`.
-
-**Order entries** accept `"col [asc|desc] [nulls first|last]"`. NULLS placement is honoured by Snowflake / Postgres / Oracle and rejected with a clear compile-time error on dialects that do not support it.
-
-**Empty `@window`** is valid — emits a bare `OVER ()` for ranking functions that don't need a partition or order:
-
-```graphql
-{ products { id, total: sum_price @window } }
-```
-
-**Validation** — partition and order columns are validated against the table; numeric offsets are parsed as non-negative integers; frame text is canonicalised before emission. The frame argument cannot smuggle SQL fragments past the parser.
-
-**Dialect support** — Postgres, MySQL 8.0+, MariaDB 10.2+, MSSQL 2012+, Oracle, SQLite 3.25+, Snowflake, CockroachDB. MongoDB does not support SQL window functions. When GraphJin knows a database version is too old, compilation fails with a dialect-specific error.
+**Dialect support** — Postgres, MySQL 8.0+, MariaDB 10.2+, MSSQL 2012+, Oracle, SQLite 3.25+, Snowflake, CockroachDB. MongoDB does not support analytics directives. When GraphJin knows a database version is too old, compilation fails with a dialect-specific error.
 
 The MCP `get_query_syntax` resource and `write_query` prompt also expose these
-window patterns so AI agents can generate running-total, ranking, lag/lead, and
-first/last-value reporting queries directly from schema context.
+analytics patterns so AI agents can generate reporting queries directly from
+schema context.
 
 ### Full-Text Search
 
@@ -727,25 +720,39 @@ Drop an OpenAPI 3 spec into `config/specs/`, declare credentials and join wiring
 
 ```yaml
 # config/dev.yml
-openapi:
-  interaction_studio:
-    base_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api
-    auth:
-      scheme: token_exchange
-      token_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api/token
-      request:
-        body:
-          apiKeyId: ${IS_API_KEY}
-          apiKeySecret: ${IS_API_SECRET}
-      response:
-        token_field: access_token
-        expires_field: expires_in
-    joins:
-      getUserById:
-        parent_table: users
-        parent_column: email
-        param: userId
-        expose_as: is_profile
+sources:
+  - name: app
+    kind: sql
+    type: postgres
+    connection_string: ${APP_DATABASE_URL}
+    default: true
+
+  - name: upstream
+    kind: openapi
+    specs_dir: ./config/specs
+    specs:
+      interaction_studio:
+        base_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api
+        auth:
+          scheme: token_exchange
+          token_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api/token
+          request:
+            body:
+              apiKeyId: ${IS_API_KEY}
+              apiKeySecret: ${IS_API_SECRET}
+          response:
+            token_field: access_token
+            expires_field: expires_in
+        joins:
+          getUserById:
+            parent_table: users
+            parent_column: email
+            param: userId
+            expose_as: is_profile
+
+tables:
+  - name: users
+    source: app
 ```
 
 ```graphql
@@ -1162,11 +1169,12 @@ This keeps large bodies out of the GraphQL request/response and gives mutations 
 
 ## Filesystem Tables
 
-Object stores show up as ordinary tables in the GraphQL schema. Declare a filesystem in config and it gets the same query surface as a database table — no per-storage GraphQL plumbing needed.
+Object stores show up as ordinary tables in the GraphQL schema. Declare a filesystem source and attach a table to it; it gets the same query surface as a database table — no per-storage GraphQL plumbing needed.
 
 ```yaml
-filesystems:
+sources:
   - name: avatars
+    kind: filesystem
     backend: s3
     bucket: my-bucket
     prefix: avatars/
@@ -1174,13 +1182,27 @@ filesystems:
     presign_ttl: 15m
 
   - name: invoices
+    kind: filesystem
     backend: gcs
     bucket: invoices
     prefix: 2026/
 
   - name: uploads_local
+    kind: filesystem
     backend: local
     root: /var/lib/graphjin/uploads
+
+tables:
+  - name: avatars
+    source: avatars
+    read_only: true
+
+  - name: invoices
+    source: invoices
+    read_only: true
+
+  - name: uploads_local
+    source: uploads_local
 ```
 
 Every filesystem table exposes the same columns regardless of backend:
@@ -1193,31 +1215,50 @@ Every filesystem table exposes the same columns regardless of backend:
 | `etag` | text | Backend-defined identifier |
 | `modified_at` | timestamp | Last-modified timestamp (RFC3339) |
 | `url` | text | Presigned GET URL by default |
-| `data` | text | base64 body — populated only when `inline_data: true` |
+| `data` | text | base64 body — populated when selected |
 
-**List queries**:
+**List queries** use the same GraphJin query surface as database tables where it maps cleanly:
 
 ```graphql
-{ avatars(prefix: "users/", limit: 50, after: $cursor) {
+{ avatars(
+    where: { key: { like: "users/%" } }
+    order_by: { key: asc }
+    limit: 50
+  ) {
     key size content_type modified_at url
   }
+}
+```
+
+The older `prefix: "users/"`, `key: "users/42.png"`, and `inline_data: true` shortcuts are still accepted for compatibility, but the normal GraphJin read surface is preferred for new callers. Filesystem tables accept `id`, `where`, `order_by`, `limit`, `offset`, `first`, `last`, `after`, and `before`; cursor inputs use the same variable-based shape as database tables.
+
+Cursor pagination returns the usual root cursor field:
+
+```graphql
+query Files($cursor: Cursor) {
+  avatars(first: 50, after: $cursor, order_by: { key: asc }) {
+    key size url
+  }
+  avatars_cursor
 }
 ```
 
 **Single-key fetch** (HEAD-equivalent + presigned URL):
 
 ```graphql
-{ avatars(key: "users/42.png") { key size url } }
+{ avatars(id: "users/42.png") { key size url } }
 ```
 
 **Inline body** (small files only — heavyweight path):
 
 ```graphql
-{ avatars(key: "users/42.png", inline_data: true) {
+{ avatars(id: "users/42.png") {
     key size url data    # data is base64
   }
 }
 ```
+
+`where` and `order_by` are supported on portable metadata columns: `key`, `size`, `content_type`, `etag`, and `modified_at`. `url` and `data` are generated response fields, so they are selected but not filtered or sorted.
 
 **Per-table options**:
 
@@ -1244,19 +1285,26 @@ Every filesystem table exposes the same columns regardless of backend:
 CodeSQL makes a source tree behave like another database in GraphJin. Configure a folder, and GraphJin creates a managed SQLite cache under `config/codesql/`, indexes source files with tree-sitter, and reconciles new/changed/deleted files on startup. Development services also watch the tree while running; production services do not live-watch source changes and refresh the cache on restart.
 
 ```yaml
-databases:
-  warehouse:
+sources:
+  - name: warehouse
+    kind: sql
     type: snowflake
     connection_string: user@account/warehouse/public?warehouse=compute_wh
+    default: true
 
-  app_code:
-    type: codesql
+  - name: app_code
+    kind: codesql
     path: /srv/app
+
+tables:
+  - name: gj_code
+    source: app_code
+    read_only: true
 ```
 
-The cache filename uses the database config name as a prefix, for example `config/codesql/app_code-<source-root-hash>.sqlite`. Legacy single-database config uses `default-<hash>.sqlite`.
+The cache filename uses the source name as a prefix, for example `config/codesql/app_code-<source-root-hash>.sqlite`.
 
-CodeSQL stores three useful layers:
+CodeSQL stores three useful internal layers and projects them into one public GraphQL root, `gj_code`:
 
 | Layer | Tables | Purpose |
 |-------|--------|---------|
@@ -1266,30 +1314,33 @@ CodeSQL stores three useful layers:
 
 ```graphql
 query {
-  code_symbols(
-    where: { name: { iregex: "handler|resolver|workflow" } }
+  gj_code(
+    where: { kind: { eq: "symbol" }, name: { iregex: "handler|resolver|workflow" } }
     order_by: { name: asc }
     limit: 20
   ) {
     name
-    kind
+    symbol_kind
     language
     start_row
+    path
+    hash
   }
 }
 ```
 
-CodeSQL also populates `code_db_refs`, a best-effort syntax index of where database tables and columns appear in SQL files, SQL strings, GraphQL operations, GraphJin config/allowlist files, migrations, and common struct/model tags.
+CodeSQL also projects database references as `gj_code(where: { kind: { eq: "db_reference" } })`, a best-effort syntax index of where database tables and columns appear in SQL files, SQL strings, GraphQL operations, GraphJin config/allowlist files, migrations, and common struct/model tags.
 
-Because CodeSQL is projected through SQLite, it composes with the rest of GraphJin: an agent can query operational systems and the code that operates them from one MCP surface. That is the practical unlock for organizations: the LLM can inspect tables, workflows, imports, call sites, and docs together without raw shell access or a separate source-code service. It can answer questions like "which endpoints write orders?", "which code paths mention this column?", and "what changed around this data flow?" using the same audited GraphJin interface.
+Because CodeSQL is projected through `gj_code`, it composes with the rest of GraphJin: an agent can query operational systems and the code that operates them through normal GraphJin GraphQL. That is the practical unlock for organizations: the LLM can inspect catalog items, workflows, imports, call sites, and docs together without raw shell access or a separate source-code service. It can answer questions like "which endpoints write orders?", "which code paths mention this column?", and "what changed around this data flow?" using the same audited GraphJin interface.
 
 Boundaries are intentionally clear in v1: CodeSQL stores syntax structure, captures, scopes, local bindings, imports, references, calls, comments/docs, parse errors, and injected-language regions. It does not claim semantic type resolution, full cross-file symbol binding, inheritance correctness, or LSP-grade go-to-definition.
 
-CodeSQL source edits go through the managed `code_change_sets` workflow. Agents first query source plus `code_files { path hash }`, preview a guarded change set, inspect the diff, then apply it. A change set can replace byte ranges, create files, delete files, or rename files:
+CodeSQL source edits go through `gj_code` mutations with `kind: "change_set"`. Agents first query `gj_code` source fields plus `path` and `hash`, preview a guarded change set, inspect the diff, then apply it. A change set can replace byte ranges, create files, delete files, or rename files:
 
 ```graphql
 mutation {
-  code_change_sets(insert: {
+  gj_code(insert: {
+    kind: "change_set"
     action: "preview"
     title: "move source files"
     edits: [
@@ -1299,60 +1350,75 @@ mutation {
     ]
   }) {
     id
+    kind
     status
     diff
-    errors
+    errors_json
   }
 }
 ```
 
-`replace`, `delete`, and `rename` require the current file hash. `create` does not use `expected_hash` and fails if the target path already exists. Long-running edit sessions can reserve source or target paths with `code_locks`, using `whole_file: true` for create and rename target reservations.
+`replace`, `delete`, and `rename` require the current file hash. `create` does not use `expected_hash` and fails if the target path already exists. Long-running edit sessions can reserve source or target paths with `gj_code` mutations using `kind: "lock"` and `whole_file: true` for create and rename target reservations.
 
 ---
 
-## Metadata Graph
+## Catalog Graph
 
-The metadata graph exposes GraphJin's discovered database schema as queryable read-only tables in a managed SQLite database named `graphjin` by default. It is enabled in development, disabled in production unless explicitly enabled, and regenerated on startup.
+The catalog graph exposes GraphJin-owned catalog and workflow read data as queryable read-only nanoDB tables in a managed database named `graphjin` by default. Enable it with a `kind: graphjin` source; it is regenerated on startup.
 
-The graph only describes application databases. GraphJin-managed databases, including the `graphjin` metadata database and CodeSQL SQLite caches, are omitted from `gj_*` rows so the metadata graph never loops back into itself. CodeSQL remains reachable through explicit `code_db_refs` links.
+The graph only describes application databases. GraphJin-managed databases, including the `graphjin` catalog database and CodeSQL SQLite caches, are omitted from catalog rows so the catalog graph never loops back into itself. CodeSQL remains reachable through explicit `gj_catalog` to `gj_code` relationships.
 
 ```yaml
-metadata:
-  enabled: true
-  database: graphjin
-  auto_code_relations: true
-
-databases:
-  app:
+sources:
+  - name: app
+    kind: sql
     type: postgres
     connection_string: postgres://app:secret@db/app
-  code:
-    type: codesql
+    default: true
+
+  - name: code
+    kind: codesql
     path: /srv/app
+
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+
+tables:
+  - name: users
+    source: app
+
+  - name: gj_code
+    source: code
+    read_only: true
+
+  - name: gj_catalog
+    source: graphjin
+    read_only: true
 ```
 
-Metadata tables:
+Catalog item kinds:
 
-| Table | What it exposes |
-|-------|------------------|
-| `gj_databases` | Configured database names, types, default/read-only flags |
-| `gj_tables` | Database/schema/table names, table type, primary key, column counts |
-| `gj_columns` | Column type, nullability, primary/unique/index flags, comments, stable keys |
-| `gj_relationships` | Source and target column IDs, relationship type, cross-database flag |
-| `gj_functions` | Discovered database functions and aggregates |
-| `gj_indexes` | Index names and uniqueness |
+| Kind | What it exposes |
+|------|------------------|
+| `database` | Configured application database names and types |
+| `table` | Database/schema/table names, table type, primary key, column counts |
+| `column` | Column type, nullability, primary/unique/index flags, comments, stable keys |
+| `relationship` | Source and target columns, relationship type, cross-database flag |
+| `workflow` | Workflow discovery rows and workflow-catalog linkage |
+| `directive`, `operator_set`, `query_pattern`, `mutation_pattern`, `entrypoint`, `capability`, `system_capability` | GraphJin language and system guidance |
 
-When exactly one CodeSQL database is selected, GraphJin automatically links `gj_tables.code_db_refs_id` to `code_db_refs.table_key` and `gj_columns.code_db_refs_id` to `code_db_refs.column_key`:
+When exactly one CodeSQL source is selected, GraphJin automatically links `gj_catalog.code_refs_id` to `code:gj_code.db_object_id`:
 
 ```graphql
 query {
-  gj_columns(where: { table_name: { eq: "users" }, column_name: { eq: "email" } }) {
+  gj_catalog(where: { kind: { eq: "column" }, table_name: { eq: "users" }, column_name: { eq: "email" } }) {
     type
-    code_db_refs {
+    gj_code {
+      kind
       ref_kind
-      confidence
-      file { path }
-      symbol { name kind }
+      path
+      symbol_id
     }
   }
 }
