@@ -133,7 +133,7 @@ func (gj *graphjinEngine) metadataSnapshot(skip map[string]struct{}) *MetadataSn
 		})
 
 		for _, t := range ctx.schema.GetTables() {
-			if t.Blocked {
+			if t.Blocked || t.Type == "managed" || strings.HasPrefix(strings.ToLower(t.Name), "gj_") {
 				continue
 			}
 			tableID := metadataTableID(dbName, t.Schema, t.Name)

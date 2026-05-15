@@ -35,6 +35,14 @@ func (f *aferoFS) Put(path string, data []byte) (err error) {
 	return afero.WriteFile(f.fs, path, data, os.ModePerm)
 }
 
+func (f *aferoFS) Stat(path string) (os.FileInfo, error) {
+	return f.fs.Stat(path)
+}
+
+func (f *aferoFS) Delete(path string) error {
+	return f.fs.Remove(path)
+}
+
 // Exists checks if a file exists in the file system
 func (f *aferoFS) Exists(path string) (exists bool, err error) {
 	return afero.Exists(f.fs, path)

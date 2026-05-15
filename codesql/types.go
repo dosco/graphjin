@@ -95,6 +95,7 @@ var managedCacheTables = []string{
 	"code_change_sets",
 	"code_locks",
 	"code_change_audit",
+	"gj_code",
 }
 
 // ManagedCacheTables returns the CodeSQL tables whose cached GraphQL query

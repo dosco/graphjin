@@ -14,6 +14,18 @@ import (
 func (gj *graphjinEngine) initConfig() error {
 	c := gj.conf
 
+	if err := c.ValidateSourceMode(); err != nil {
+		return err
+	}
+	if err := c.NormalizeSources(); err != nil {
+		return err
+	}
+	if !c.SourceMode() {
+		if err := c.applyRelationshipOverlays(); err != nil {
+			return err
+		}
+	}
+
 	// Validate configuration before proceeding
 	if err := c.Validate(); err != nil {
 		return err

@@ -264,11 +264,19 @@ type MCPConfig struct {
 	// Disable the MCP server (MCP is enabled by default)
 	Disable bool `jsonschema:"title=Disable MCP Server,default=false"`
 
-	// Allow mutation operations via MCP
-	AllowMutations bool `mapstructure:"allow_mutations" jsonschema:"title=Allow Mutations,default=true"`
+	// Allow mutation operations via raw MCP GraphQL execution.
+	// Auto-enabled in dev mode. Default: false
+	AllowMutations bool `mapstructure:"allow_mutations" jsonschema:"title=Allow Mutations,default=false"`
 
 	// Allow arbitrary GraphQL queries (vs only saved queries from allow-list)
-	AllowRawQueries bool `mapstructure:"allow_raw_queries" jsonschema:"title=Allow Raw Queries,default=true"`
+	// Auto-enabled in dev mode. Default: false
+	AllowRawQueries bool `mapstructure:"allow_raw_queries" jsonschema:"title=Allow Raw Queries,default=false"`
+
+	// LegacyDiscovery registers the older MCP discovery/syntax tools and legacy
+	// HTTP helper endpoints such as /api/v1/discovery and /api/v1/workflows.
+	// Disabled by default in source mode because catalog/control-plane GraphQL
+	// is now the primary AI discovery and action surface.
+	LegacyDiscovery bool `mapstructure:"legacy_discovery" jsonschema:"title=Enable Legacy Discovery Tools,default=false"`
 
 	// Default user ID for stdio transport (CLI). Can be overridden by GRAPHJIN_USER_ID env var.
 	StdioUserID string `mapstructure:"stdio_user_id" jsonschema:"title=Stdio User ID"`
@@ -277,7 +285,8 @@ type MCPConfig struct {
 	StdioUserRole string `mapstructure:"stdio_user_role" jsonschema:"title=Stdio User Role"`
 
 	// Run in MCP-only mode - disables GraphQL, REST saved-query API, WebUI, and OpenAPI endpoints.
-	// Health check, MCP endpoints, and /api/v1/workflows/* remain available.
+	// Health check and MCP endpoints remain available. Legacy HTTP helper endpoints
+	// also remain available only when legacy_discovery is enabled.
 	Only bool `mapstructure:"only" jsonschema:"title=MCP Only Mode,default=false"`
 
 	// CursorCacheTTL in seconds for cursor ID cache (default: 1800 = 30 min)
@@ -301,11 +310,19 @@ type MCPConfig struct {
 	// Uses db.graphql format. Auto-enabled in dev mode. Default: false
 	AllowSchemaUpdates bool `mapstructure:"allow_schema_updates" jsonschema:"title=Allow Schema Updates,default=false"`
 
-	// AllowWorkflowUpdates enables the save_workflow MCP tool so LLMs can author
-	// and persist JavaScript workflows to ./workflows/. Saved workflows are
-	// discoverable via list_workflows and executable via execute_workflow.
+	// AllowWorkflowUpdates enables workflow writes through gj_workflow and,
+	// when legacy MCP discovery is enabled, the save_workflow compatibility tool.
+	// Saved workflows are discoverable via workflow catalog items. Execution
+	// through gj_workflow_execution is controlled by normal read_only table/source
+	// configuration because it is an insert-shaped managed mutation.
 	// Auto-enabled in dev mode. Default: false
 	AllowWorkflowUpdates bool `mapstructure:"allow_workflow_updates" jsonschema:"title=Allow Workflow Updates,default=false"`
+
+	// AllowWorkflowExecution enables the execute_workflow compatibility tool
+	// when legacy MCP discovery is enabled. GraphQL execution through
+	// gj_workflow_execution is controlled by normal read_only table/source config.
+	// Auto-enabled in dev mode. Default: false
+	AllowWorkflowExecution bool `mapstructure:"allow_workflow_execution" jsonschema:"title=Allow Workflow Execution,default=false"`
 
 	// AllowDevTools enables advanced introspection MCP tools (explain_query, explore_relationships, audit_role_permissions).
 	// These expose SQL, relationship graphs, and role permissions — useful for development/debugging.
@@ -493,6 +510,9 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	config := &Config{viper: viper}
 	config.ConfigPath = cp
 
+	if err := normalizeCatalogAutoBools(viper); err != nil {
+		return nil, err
+	}
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
@@ -526,11 +546,46 @@ func NewConfig(config, format string) (*Config, error) {
 
 	c := &Config{viper: viper}
 
+	if err := normalizeCatalogAutoBools(viper); err != nil {
+		return nil, err
+	}
 	if err := viper.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 
 	return c, nil
+}
+
+func normalizeCatalogAutoBools(v *viper.Viper) error {
+	catalogEnabledAuto := !v.GetBool("production")
+	if err := normalizeAutoBoolSetting(v, "catalog.enabled", catalogEnabledAuto); err != nil {
+		return err
+	}
+
+	autoCodeRelationsAuto := catalogEnabledAuto
+	if v.IsSet("catalog.enabled") {
+		autoCodeRelationsAuto = v.GetBool("catalog.enabled")
+	}
+	return normalizeAutoBoolSetting(v, "catalog.auto_code_relations", autoCodeRelationsAuto)
+}
+
+func normalizeAutoBoolSetting(v *viper.Viper, key string, autoValue bool) error {
+	if !v.IsSet(key) {
+		return nil
+	}
+
+	raw := strings.TrimSpace(strings.ToLower(v.GetString(key)))
+	switch raw {
+	case "", "auto":
+		v.Set(key, autoValue)
+	case "true", "1", "yes", "on":
+		v.Set(key, true)
+	case "false", "0", "no", "off":
+		v.Set(key, false)
+	default:
+		return fmt.Errorf("%s must be true, false, or auto", key)
+	}
+	return nil
 }
 
 // newViperWithDefaults returns a new viper instance with the default settings
@@ -566,8 +621,7 @@ func newViperWithDefaults() *viper.Viper {
 
 	// MCP defaults (MCP enabled by default, use mcp.disable: true to turn off)
 	vi.SetDefault("mcp.disable", false)
-	vi.SetDefault("mcp.allow_mutations", true)
-	vi.SetDefault("mcp.allow_raw_queries", true)
+	vi.SetDefault("mcp.legacy_discovery", false)
 	vi.SetDefault("mcp.only", false)
 	vi.SetDefault("mcp.cursor_cache_ttl", 1800)   // 30 minutes
 	vi.SetDefault("mcp.cursor_cache_size", 10000) // max in-memory entries

@@ -181,6 +181,205 @@ func TestBridge_PublicBaseURLOverride(t *testing.T) {
 	}
 }
 
+func TestBridge_GraphJinStyleWhereLimitAndOrder(t *testing.T) {
+	root := t.TempDir()
+	for _, k := range []string{"a/1.png", "a/2.png", "a/3.png", "b/1.png"} {
+		mkfile(t, root, k, []byte(k))
+	}
+
+	gj := fsTestEngine(t, "public", []FilesystemConfig{
+		{Name: "avatars", Backend: "local", Root: root, MaxListPageSize: 2},
+	})
+	if err := gj.loadFilesystemIntegration(); err != nil {
+		t.Fatal(err)
+	}
+	rfn := gj.newFilesystemResolverFn()
+	r, err := rfn(ResolverProps{"fs_name": "avatars"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyCol := sdata.DBColumn{Name: "key"}
+	where := &qcode.Exp{Op: qcode.OpLike}
+	where.Left.Col = keyCol
+	where.Right.ValType = qcode.ValStr
+	where.Right.Val = "a/%"
+	resp, err := r.Resolve(context.Background(), ResolverReq{
+		Sel: &qcode.Select{
+			Paging:  qcode.Paging{Limit: 2},
+			Where:   qcode.Filter{Exp: where},
+			OrderBy: []qcode.OrderBy{{Col: keyCol, Order: qcode.OrderDesc}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	items := decodeFilesystemItems(t, resp)
+	if got := filesystemItemKeys(items); strings.Join(got, ",") != "a/3.png,a/2.png" {
+		t.Fatalf("keys = %v, want a/3.png,a/2.png (resp=%s)", got, resp)
+	}
+}
+
+func TestBridge_GraphJinStyleWhereKeyVariableUsesStat(t *testing.T) {
+	root := t.TempDir()
+	mkfile(t, root, "a/1.png", []byte("one"))
+	mkfile(t, root, "a/2.png", []byte("two"))
+
+	gj := fsTestEngine(t, "public", []FilesystemConfig{
+		{Name: "avatars", Backend: "local", Root: root},
+	})
+	if err := gj.loadFilesystemIntegration(); err != nil {
+		t.Fatal(err)
+	}
+	rfn := gj.newFilesystemResolverFn()
+	r, err := rfn(ResolverProps{"fs_name": "avatars"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyCol := sdata.DBColumn{Name: "key"}
+	where := &qcode.Exp{Op: qcode.OpEquals}
+	where.Left.Col = keyCol
+	where.Right.ValType = qcode.ValVar
+	where.Right.Val = "key"
+	resp, err := r.Resolve(context.Background(), ResolverReq{
+		Sel: &qcode.Select{
+			Where: qcode.Filter{Exp: where},
+		},
+		Vars: map[string]json.RawMessage{"key": json.RawMessage(`"a/2.png"`)},
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	items := decodeFilesystemItems(t, resp)
+	if got := filesystemItemKeys(items); strings.Join(got, ",") != "a/2.png" {
+		t.Fatalf("keys = %v, want a/2.png (resp=%s)", got, resp)
+	}
+}
+
+func TestBridge_GraphJinQuerySurfaceEndToEnd(t *testing.T) {
+	root := t.TempDir()
+	mkfile(t, root, "a/1.txt", []byte("one"))
+	mkfile(t, root, "a/2.txt", []byte("two"))
+	mkfile(t, root, "a/3.txt", []byte("three"))
+	mkfile(t, root, "b/1.txt", []byte("nope"))
+
+	cfgRoot := t.TempDir()
+	schema := []byte(`# dbinfo:postgres,120005,public
+
+type users {
+  id: Bigint! @id @unique
+}
+`)
+	if err := os.WriteFile(filepath.Join(cfgRoot, "db.graphql"), schema, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	gj, err := NewGraphJinWithFS(&Config{
+		MockDB:           true,
+		EnableSchema:     true,
+		DisableAllowList: true,
+		DBType:           "postgres",
+		Sources: []SourceConfig{
+			{Name: "app", Kind: "sql", Type: "postgres", Default: true},
+			{Name: "avatars", Kind: "filesystem", Backend: "local", Root: root, MaxListPageSize: 2},
+		},
+	}, nil, NewOsFS(cfgRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), `query Avatars($prefix: String!, $limit: Int!) {
+		avatars(where: { key: { like: $prefix } }, order_by: { key: desc }, limit: $limit) {
+			key
+			size
+		}
+	}`, json.RawMessage(`{"prefix":"a/%","limit":2}`), nil)
+	if err != nil {
+		t.Fatalf("GraphQL list: %v", err)
+	}
+	var list struct {
+		Avatars []struct {
+			Key  string `json:"key"`
+			Size int64  `json:"size"`
+		} `json:"avatars"`
+	}
+	if err := json.Unmarshal(res.Data, &list); err != nil {
+		t.Fatalf("list response: %v\n%s", err, res.Data)
+	}
+	if got := []string{list.Avatars[0].Key, list.Avatars[1].Key}; strings.Join(got, ",") != "a/3.txt,a/2.txt" {
+		t.Fatalf("keys = %v, want a/3.txt,a/2.txt (data=%s)", got, res.Data)
+	}
+
+	res, err = gj.GraphQL(context.Background(), `query Avatar($key: ID!) {
+		avatars(id: $key) {
+			key
+			data
+		}
+	}`, json.RawMessage(`{"key":"a/1.txt"}`), nil)
+	if err != nil {
+		t.Fatalf("GraphQL id/data: %v", err)
+	}
+	var one struct {
+		Avatars struct {
+			Key  string  `json:"key"`
+			Data *string `json:"data"`
+		} `json:"avatars"`
+	}
+	if err := json.Unmarshal(res.Data, &one); err != nil {
+		t.Fatalf("single response: %v\n%s", err, res.Data)
+	}
+	if one.Avatars.Key != "a/1.txt" || one.Avatars.Data == nil || *one.Avatars.Data != "b25l" {
+		t.Fatalf("single = %+v, want key a/1.txt with base64 data b25l (data=%s)", one.Avatars, res.Data)
+	}
+
+	res, err = gj.GraphQL(context.Background(), `query AvatarsPage1 {
+		avatars(first: 2, order_by: { key: asc }) {
+			key
+		}
+		avatars_cursor
+	}`, nil, nil)
+	if err != nil {
+		t.Fatalf("GraphQL cursor page 1: %v", err)
+	}
+	var page struct {
+		Avatars []struct {
+			Key string `json:"key"`
+		} `json:"avatars"`
+		Cursor string `json:"avatars_cursor"`
+	}
+	if err := json.Unmarshal(res.Data, &page); err != nil {
+		t.Fatalf("page response: %v\n%s", err, res.Data)
+	}
+	if len(page.Avatars) != 2 || page.Avatars[0].Key != "a/1.txt" || page.Avatars[1].Key != "a/2.txt" {
+		t.Fatalf("page 1 = %+v, want a/1.txt,a/2.txt (data=%s)", page.Avatars, res.Data)
+	}
+	if !strings.HasPrefix(page.Cursor, string(decPrefix)) {
+		t.Fatalf("cursor = %q, want encrypted cursor prefix", page.Cursor)
+	}
+
+	res, err = gj.GraphQL(context.Background(), `query AvatarsPage2($cursor: Cursor) {
+		avatars(first: 1, after: $cursor, order_by: { key: asc }) {
+			key
+		}
+	}`, json.RawMessage(fmt.Sprintf(`{"cursor":%q}`, page.Cursor)), nil)
+	if err != nil {
+		t.Fatalf("GraphQL cursor page 2: %v", err)
+	}
+	var page2 struct {
+		Avatars []struct {
+			Key string `json:"key"`
+		} `json:"avatars"`
+	}
+	if err := json.Unmarshal(res.Data, &page2); err != nil {
+		t.Fatalf("page 2 response: %v\n%s", err, res.Data)
+	}
+	if len(page2.Avatars) != 1 || page2.Avatars[0].Key != "a/3.txt" {
+		t.Fatalf("page 2 = %+v, want a/3.txt (data=%s)", page2.Avatars, res.Data)
+	}
+}
+
 func TestBridge_PresignRerunsForEachResolve(t *testing.T) {
 	backend := &rotatingPresignBackend{}
 	bridge := &filesystemBridge{
@@ -233,6 +432,25 @@ func (b *rotatingPresignBackend) Delete(context.Context, string) error { return 
 func (b *rotatingPresignBackend) Presign(_ context.Context, key string, _ fstable.PresignOp, _ time.Duration) (string, error) {
 	b.count++
 	return fmt.Sprintf("https://signed.example/%d/%s", b.count, key), nil
+}
+
+func decodeFilesystemItems(t *testing.T, resp []byte) []map[string]any {
+	t.Helper()
+	var wrap struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(resp, &wrap); err != nil {
+		t.Fatalf("response is not the expected wrapper shape: %v\n%s", err, resp)
+	}
+	return wrap.Items
+}
+
+func filesystemItemKeys(items []map[string]any) []string {
+	keys := make([]string, 0, len(items))
+	for _, item := range items {
+		keys = append(keys, item["key"].(string))
+	}
+	return keys
 }
 
 type recordingResponseCache struct {

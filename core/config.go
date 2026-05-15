@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -17,10 +18,10 @@ import (
 const DefaultDBName = "default"
 
 // SupportedDBTypes lists the database types supported for single-database mode
-var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql", "mongodb", "snowflake"}
+var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql", "mongodb", "snowflake", "nanodb"}
 
 // SupportedMultiDBTypes lists the database types supported for multi-database mode
-var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql", "snowflake"}
+var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql", "snowflake", "nanodb"}
 
 // ValidateDBType checks if the given database type is supported
 func ValidateDBType(dbType string) error {
@@ -52,6 +53,12 @@ func ValidateMultiDBType(dbType string) error {
 
 // Validate checks the configuration for errors
 func (c *Config) Validate() error {
+	if !c.sourceModeNormalized {
+		if err := c.ValidateSourceMode(); err != nil {
+			return err
+		}
+	}
+
 	// Validate primary database type
 	if err := ValidateDBType(c.DBType); err != nil {
 		return err
@@ -88,6 +95,108 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// ValidateSourceMode checks the public config mode boundary before any
+// source entries are normalized into legacy runtime fields.
+func (c *Config) ValidateSourceMode() error {
+	if c == nil {
+		return nil
+	}
+	if c.SourceMode() {
+		return c.validateSourceMode()
+	}
+	return c.validateLegacyMode()
+}
+
+func (c *Config) validateLegacyMode() error {
+	for name, dbConf := range c.Databases {
+		if strings.EqualFold(strings.TrimSpace(dbConf.Type), "codesql") {
+			return fmt.Errorf("database %q uses type codesql; move CodeSQL configuration to sources with kind: codesql", name)
+		}
+	}
+	if len(c.Filesystems) != 0 {
+		return fmt.Errorf("top-level filesystems is no longer supported; move filesystem providers to sources with kind: filesystem")
+	}
+	if strings.TrimSpace(c.OpenAPISpecsDir) != "" || len(c.OpenAPI) != 0 {
+		return fmt.Errorf("top-level openapi/openapi_specs_dir is no longer supported; move OpenAPI providers to sources with kind: openapi")
+	}
+	if c.metadataConfigured() {
+		return fmt.Errorf("top-level metadata is no longer supported; add a sources entry with kind: graphjin and metadata: true")
+	}
+	if c.catalogConfigured() {
+		return fmt.Errorf("top-level catalog is no longer supported; add a sources entry with kind: graphjin and catalog: true")
+	}
+	return nil
+}
+
+func (c *Config) validateSourceMode() error {
+	if len(c.Databases) != 0 && !c.sourceModeNormalized {
+		return fmt.Errorf("databases is legacy database-only config; move SQL/CodeSQL providers to sources")
+	}
+	if len(c.Filesystems) != 0 && !c.sourceModeNormalized {
+		return fmt.Errorf("top-level filesystems is legacy config; move filesystem providers to sources")
+	}
+	if (strings.TrimSpace(c.OpenAPISpecsDir) != "" || len(c.OpenAPI) != 0) && !c.sourceModeNormalized {
+		return fmt.Errorf("top-level openapi/openapi_specs_dir is legacy config; move OpenAPI providers to sources")
+	}
+	if c.metadataConfigured() {
+		return fmt.Errorf("top-level metadata is legacy config; configure GraphJin metadata through sources")
+	}
+	if c.catalogConfigured() {
+		return fmt.Errorf("top-level catalog is legacy config; configure GraphJin catalog through sources")
+	}
+
+	seen := make(map[string]struct{}, len(c.Sources))
+	for i, source := range c.Sources {
+		name := strings.TrimSpace(source.Name)
+		if name == "" {
+			return fmt.Errorf("sources[%d]: name is required", i)
+		}
+		if _, ok := seen[name]; ok {
+			return fmt.Errorf("sources: duplicate source name %q", name)
+		}
+		seen[name] = struct{}{}
+		if !validSourceKind(source.Kind) {
+			return fmt.Errorf("sources[%q]: unsupported kind %q (supported: sql, codesql, filesystem, openapi, graphjin, workflows)", name, source.Kind)
+		}
+	}
+	for _, table := range c.Tables {
+		if strings.TrimSpace(table.Source) == "" {
+			return fmt.Errorf("tables[%q]: source is required when sources is configured", table.Name)
+		}
+		if table.Database != "" && !c.sourceModeNormalized {
+			return fmt.Errorf("tables[%q]: database is legacy config; use source instead", table.Name)
+		}
+		if _, ok := seen[table.Source]; !ok {
+			return fmt.Errorf("tables[%q]: unknown source %q", table.Name, table.Source)
+		}
+	}
+	return nil
+}
+
+func validSourceKind(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "sql", "codesql", "filesystem", "openapi", "graphjin", "workflows":
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Config) metadataConfigured() bool {
+	return c.Metadata.Enabled != nil ||
+		strings.TrimSpace(c.Metadata.Database) != "" ||
+		c.Metadata.AutoCodeRelations != nil ||
+		len(c.Metadata.CodeDatabases) != 0
+}
+
+func (c *Config) catalogConfigured() bool {
+	return c.Catalog.Enabled != nil ||
+		strings.TrimSpace(c.Catalog.Database) != "" ||
+		strings.TrimSpace(c.Catalog.Samples) != "" ||
+		c.Catalog.AutoCodeRelations != nil ||
+		len(c.Catalog.CodeDatabases) != 0
+}
+
 // clone returns a shallow copy of Config with deep copies of the mutable
 // slices and maps (Tables, Databases, Roles, etc.) so that engine init
 // never mutates the caller's original Config.
@@ -97,6 +206,24 @@ func (c *Config) clone() *Config {
 	if c.Tables != nil {
 		out.Tables = make([]Table, len(c.Tables))
 		copy(out.Tables, c.Tables)
+	}
+
+	if c.Sources != nil {
+		out.Sources = make([]SourceConfig, len(c.Sources))
+		copy(out.Sources, c.Sources)
+		for i := range out.Sources {
+			if c.Sources[i].Specs != nil {
+				out.Sources[i].Specs = make(map[string]openapi.SpecConfig, len(c.Sources[i].Specs))
+				for k, v := range c.Sources[i].Specs {
+					out.Sources[i].Specs[k] = v
+				}
+			}
+		}
+	}
+
+	if c.Relationships != nil {
+		out.Relationships = make([]RelationshipConfig, len(c.Relationships))
+		copy(out.Relationships, c.Relationships)
 	}
 
 	if c.Databases != nil {
@@ -118,6 +245,272 @@ func (c *Config) clone() *Config {
 	}
 
 	return &out
+}
+
+// SourceMode returns true when the public config is using the new sources
+// boundary. Without sources, GraphJin stays in legacy database-only mode.
+func (c *Config) SourceMode() bool {
+	return c != nil && c.Sources != nil
+}
+
+// NormalizeSources translates public sources into the existing runtime config
+// fields consumed by the engine and service. It is intentionally idempotent.
+func (c *Config) NormalizeSources() error {
+	if c == nil || !c.SourceMode() || c.sourceModeNormalized {
+		return nil
+	}
+	if err := c.ValidateSourceMode(); err != nil {
+		return err
+	}
+
+	sqlSources := make([]string, 0, len(c.Sources))
+	c.Databases = make(map[string]DatabaseConfig)
+	c.Filesystems = nil
+	c.OpenAPISpecsDir = ""
+	c.OpenAPI = nil
+
+	for _, source := range c.Sources {
+		name := strings.TrimSpace(source.Name)
+		switch strings.ToLower(strings.TrimSpace(source.Kind)) {
+		case "sql":
+			dbConf := source.databaseConfig()
+			if dbConf.Type == "" {
+				dbConf.Type = "postgres"
+			}
+			if strings.EqualFold(dbConf.Type, "codesql") {
+				return fmt.Errorf("sources[%q]: use kind: codesql instead of kind: sql with type: codesql", name)
+			}
+			c.Databases[name] = dbConf
+			sqlSources = append(sqlSources, name)
+		case "codesql":
+			dbConf := source.databaseConfig()
+			dbConf.Type = "codesql"
+			c.Databases[name] = dbConf
+			sqlSources = append(sqlSources, name)
+		case "filesystem":
+			c.Filesystems = append(c.Filesystems, source.filesystemConfig())
+		case "openapi":
+			if source.SpecsDir != "" {
+				if c.OpenAPISpecsDir != "" && c.OpenAPISpecsDir != source.SpecsDir {
+					return fmt.Errorf("sources[%q]: multiple openapi specs_dir values are not supported", name)
+				}
+				c.OpenAPISpecsDir = source.SpecsDir
+			}
+			if len(source.Specs) != 0 {
+				if c.OpenAPI == nil {
+					c.OpenAPI = make(map[string]openapi.SpecConfig, len(source.Specs))
+				}
+				for key, spec := range source.Specs {
+					if _, exists := c.OpenAPI[key]; exists {
+						return fmt.Errorf("sources[%q]: duplicate openapi spec config %q", name, key)
+					}
+					c.OpenAPI[key] = spec
+				}
+			}
+		case "graphjin", "workflows":
+			// Service-managed sources are exposed through managed handlers.
+		}
+	}
+
+	defaultDB := c.defaultSQLSource(sqlSources)
+	for i := range c.Tables {
+		source, _ := c.SourceByName(c.Tables[i].Source)
+		if source.ReadOnly {
+			c.Tables[i].ReadOnly = true
+		}
+		switch strings.ToLower(strings.TrimSpace(source.Kind)) {
+		case "sql", "codesql":
+			c.Tables[i].Database = source.Name
+		default:
+			c.Tables[i].Database = defaultDB
+		}
+	}
+	if err := c.applyRelationshipOverlays(); err != nil {
+		return err
+	}
+
+	c.sourceModeNormalized = true
+	return nil
+}
+
+func (c *Config) defaultSQLSource(sqlSources []string) string {
+	for _, source := range c.Sources {
+		if source.Default {
+			kind := strings.ToLower(strings.TrimSpace(source.Kind))
+			if kind == "sql" || kind == "codesql" {
+				return source.Name
+			}
+		}
+	}
+	if len(sqlSources) != 0 {
+		sort.Strings(sqlSources)
+		return sqlSources[0]
+	}
+	return DefaultDBName
+}
+
+func (s SourceConfig) databaseConfig() DatabaseConfig {
+	return DatabaseConfig{
+		Type:                   s.Type,
+		ConnString:             s.ConnString,
+		Host:                   s.Host,
+		Port:                   s.Port,
+		DBName:                 s.DBName,
+		User:                   s.User,
+		Password:               s.Password,
+		Path:                   s.Path,
+		MaxOpenConns:           s.MaxOpenConns,
+		MaxIdleConns:           s.MaxIdleConns,
+		Schema:                 s.Schema,
+		PoolSize:               s.PoolSize,
+		MaxConnections:         s.MaxConnections,
+		MaxConnIdleTime:        s.MaxConnIdleTime,
+		MaxConnLifeTime:        s.MaxConnLifeTime,
+		PingTimeout:            s.PingTimeout,
+		EnableTLS:              s.EnableTLS,
+		ServerName:             s.ServerName,
+		ServerCert:             s.ServerCert,
+		ClientCert:             s.ClientCert,
+		ClientKey:              s.ClientKey,
+		Encrypt:                s.Encrypt,
+		TrustServerCertificate: s.TrustServerCertificate,
+		PrivateKeyPath:         s.PrivateKeyPath,
+		PrivateKeyPEM:          s.PrivateKeyPEM,
+		KeyPassphrase:          s.KeyPassphrase,
+		ReadOnly:               s.ReadOnly,
+		AnalyticsMode:          s.AnalyticsMode,
+		InferDBRefs:            s.InferDBRefs,
+	}
+}
+
+func (s SourceConfig) filesystemConfig() FilesystemConfig {
+	return FilesystemConfig{
+		Name:            s.Name,
+		Backend:         s.Backend,
+		Bucket:          s.Bucket,
+		Region:          s.Region,
+		Endpoint:        s.Endpoint,
+		Prefix:          s.Prefix,
+		Root:            s.Root,
+		PresignTTL:      s.PresignTTL,
+		PublicBaseURL:   s.PublicBaseURL,
+		ReadOnly:        s.ReadOnly,
+		MaxListPageSize: s.MaxListPageSize,
+	}
+}
+
+func (c *Config) SourceByName(name string) (SourceConfig, bool) {
+	if c == nil {
+		return SourceConfig{}, false
+	}
+	for _, source := range c.Sources {
+		if source.Name == name {
+			return source, true
+		}
+	}
+	return SourceConfig{}, false
+}
+
+func (c *Config) GraphJinSource() (SourceConfig, bool) {
+	if c == nil {
+		return SourceConfig{}, false
+	}
+	for _, source := range c.Sources {
+		if strings.EqualFold(strings.TrimSpace(source.Kind), "graphjin") {
+			return source, true
+		}
+	}
+	return SourceConfig{}, false
+}
+
+func (c *Config) WorkflowsSource() (SourceConfig, bool) {
+	if c == nil {
+		return SourceConfig{}, false
+	}
+	for _, source := range c.Sources {
+		if strings.EqualFold(strings.TrimSpace(source.Kind), "workflows") {
+			return source, true
+		}
+	}
+	return SourceConfig{}, false
+}
+
+func sourceBool(v *bool, def bool) bool {
+	if v == nil {
+		return def
+	}
+	return *v
+}
+
+func (c *Config) applyRelationshipOverlays() error {
+	for i, rel := range c.Relationships {
+		fromTable, fromColumn, err := splitRelationshipEndpoint(rel.From)
+		if err != nil {
+			return fmt.Errorf("relationships[%d].from: %w", i, err)
+		}
+		if _, _, err := splitRelationshipEndpoint(rel.To); err != nil {
+			return fmt.Errorf("relationships[%d].to: %w", i, err)
+		}
+		idx := c.findTableIndex(fromTable)
+		if idx == -1 {
+			return fmt.Errorf("relationships[%d]: from table %q is not configured in tables", i, fromTable)
+		}
+		table := &c.Tables[idx]
+		found := false
+		for ci := range table.Columns {
+			if table.Columns[ci].Name == fromColumn {
+				table.Columns[ci].ForeignKey = rel.To
+				found = true
+				break
+			}
+		}
+		if !found {
+			table.Columns = append(table.Columns, Column{Name: fromColumn, ForeignKey: rel.To})
+		}
+	}
+	return nil
+}
+
+func splitRelationshipEndpoint(endpoint string) (string, string, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return "", "", fmt.Errorf("must not be empty")
+	}
+	idx := strings.LastIndex(endpoint, ".")
+	if idx <= 0 || idx == len(endpoint)-1 {
+		return "", "", fmt.Errorf("must be table.column, schema.table.column, or source:schema.table.column")
+	}
+	return endpoint[:idx], endpoint[idx+1:], nil
+}
+
+func (c *Config) findTableIndex(path string) int {
+	db, schema, table := splitTablePath(path)
+	for i := range c.Tables {
+		t := c.Tables[i]
+		if db != "" && t.Database != db && t.Source != db {
+			continue
+		}
+		if schema != "" && t.Schema != "" && t.Schema != schema {
+			continue
+		}
+		if t.Name == table || t.Table == table {
+			return i
+		}
+	}
+	return -1
+}
+
+func splitTablePath(path string) (string, string, string) {
+	db := ""
+	if idx := strings.IndexByte(path, ':'); idx != -1 {
+		db = path[:idx]
+		path = path[idx+1:]
+	}
+	parts := strings.Split(path, ".")
+	if len(parts) >= 2 {
+		return db, strings.Join(parts[:len(parts)-1], "."), parts[len(parts)-1]
+	}
+	return db, "", path
 }
 
 // NormalizeDatabases ensures the primary database is represented as an entry
@@ -188,7 +581,7 @@ func (c *Config) NormalizeDatabases() {
 // Configuration for the GraphJin compiler core
 type Config struct {
 	// Is used to encrypt opaque values such as the cursor. Auto-generated when not set
-	SecretKey string `mapstructure:"secret_key" json:"secret_key" yaml:"secret_key"  jsonschema:"title=Secret Key"`
+	SecretKey string `mapstructure:"secret_key" json:"secret_key" yaml:"secret_key"  jsonschema:"title=Secret Key" jsonschema_extras:"x-graphjin-sensitive=secret"`
 
 	// When set to true it disables the allow list workflow
 	DisableAllowList bool `mapstructure:"disable_allow_list" json:"disable_allow_list" yaml:"disable_allow_list" jsonschema:"title=Disable Allow List,default=false"`
@@ -225,6 +618,11 @@ type Config struct {
 	// resolver would join json from a remote API into your query response
 	Resolvers []ResolverConfig `jsonschema:"-"`
 
+	// Sources is the canonical graph provider config. When present, all SQL,
+	// CodeSQL, filesystem, OpenAPI, GraphJin system, and workflow providers must
+	// be declared here instead of legacy top-level sections.
+	Sources []SourceConfig `mapstructure:"sources" json:"sources" yaml:"sources" jsonschema:"title=Sources"`
+
 	// OpenAPISpecsDir is the directory that GraphJin scans at startup for
 	// OpenAPI 3 specification files (*.yaml / *.yml). Each spec dropped in
 	// is parsed, classified, and exposed as remote-joinable fields and/or
@@ -242,6 +640,11 @@ type Config struct {
 	// between tables
 	Tables []Table `jsonschema:"title=Tables"`
 
+	// Relationships adds graph edges between typed table columns. Cardinality is
+	// inferred from existing primary/unique metadata and reverse edges are still
+	// generated by the schema graph.
+	Relationships []RelationshipConfig `mapstructure:"relationships" json:"relationships" yaml:"relationships" jsonschema:"title=Relationships"`
+
 	// All function specific configuration such as return types
 	Functions []Function `jsonschema:"title=Functions"`
 
@@ -254,8 +657,8 @@ type Config struct {
 	// and 'anon' when it's not. Use the 'Roles Query' config to add more custom roles
 	Roles []Role
 
-	// Database type name Defaults to 'postgres' (options: postgres, mysql, mariadb, sqlite, oracle, mssql)
-	DBType string `mapstructure:"db_type" json:"db_type" yaml:"db_type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle,enum=mssql,enum=snowflake"`
+	// Database type name Defaults to 'postgres' (options: postgres, mysql, mariadb, sqlite, oracle, mssql, nanodb)
+	DBType string `mapstructure:"db_type" json:"db_type" yaml:"db_type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle,enum=mssql,enum=snowflake,enum=nanodb"`
 
 	// Log warnings and other debug information
 	Debug bool `jsonschema:"title=Debug,default=false"`
@@ -304,6 +707,10 @@ type Config struct {
 	// For example allow lists are enforced.
 	Production bool `jsonschema:"title=Production Mode,default=false"`
 
+	// SecurityMode selects the secure-default matrix used for security
+	// reporting and agent-facing guidance. Empty derives from Production.
+	SecurityMode string `mapstructure:"security_mode" json:"security_mode" yaml:"security_mode" jsonschema:"title=Security Mode,enum=dev,enum=prod,enum=agentic"`
+
 	// Duration for polling the database to detect schema changes
 	DBSchemaPollDuration time.Duration `mapstructure:"db_schema_poll_duration" json:"db_schema_poll_duration" yaml:"db_schema_poll_duration" jsonschema:"title=Schema Change Detection Polling Duration,default=10s"`
 
@@ -334,10 +741,74 @@ type Config struct {
 	// and routes queries through a pluggable Backend.
 	Filesystems []FilesystemConfig `mapstructure:"filesystems" json:"filesystems" yaml:"filesystems" jsonschema:"title=Filesystem Tables"`
 
-	// Metadata exposes GraphJin-discovered database metadata as a managed
-	// read-only SQLite database. When enabled, tables like gj_tables and
-	// gj_columns can be queried through GraphQL and joined to CodeSQL refs.
+	// Metadata exposes GraphJin-discovered database metadata for legacy
+	// internal helpers. Public GraphQL discovery should use gj_catalog
+	// catalog items instead of separate table/column roots.
 	Metadata MetadataConfig `mapstructure:"metadata" json:"metadata" yaml:"metadata" jsonschema:"title=Metadata Graph"`
+
+	// Catalog exposes GraphJin's AI-first self-model as a managed read-only
+	// database. It supersedes the older metadata-only graph.
+	Catalog CatalogConfig `mapstructure:"catalog" json:"catalog" yaml:"catalog" jsonschema:"title=Catalog Graph"`
+
+	sourceModeNormalized bool
+}
+
+// SourceConfig declares one graph provider in source mode.
+type SourceConfig struct {
+	Name    string `mapstructure:"name" json:"name" yaml:"name" jsonschema:"title=Name"`
+	Kind    string `mapstructure:"kind" json:"kind" yaml:"kind" jsonschema:"title=Kind,enum=sql,enum=codesql,enum=filesystem,enum=openapi,enum=graphjin,enum=workflows"`
+	Default bool   `mapstructure:"default" json:"default" yaml:"default" jsonschema:"title=Default Source"`
+
+	Type                   string                        `mapstructure:"type" json:"type" yaml:"type" jsonschema:"title=Database Type"`
+	ConnString             string                        `mapstructure:"connection_string" json:"connection_string" yaml:"connection_string" jsonschema:"title=Connection String" jsonschema_extras:"x-graphjin-sensitive=connection"`
+	Host                   string                        `mapstructure:"host" json:"host" yaml:"host" jsonschema:"title=Host"`
+	Port                   int                           `mapstructure:"port" json:"port" yaml:"port" jsonschema:"title=Port"`
+	DBName                 string                        `mapstructure:"dbname" json:"dbname" yaml:"dbname" jsonschema:"title=Database Name"`
+	User                   string                        `mapstructure:"user" json:"user" yaml:"user" jsonschema:"title=User"`
+	Password               string                        `mapstructure:"password" json:"password" yaml:"password" jsonschema:"title=Password" jsonschema_extras:"x-graphjin-sensitive=secret"`
+	Path                   string                        `mapstructure:"path" json:"path" yaml:"path" jsonschema:"title=Path"`
+	MaxOpenConns           int                           `mapstructure:"max_open_conns" json:"max_open_conns" yaml:"max_open_conns" jsonschema:"title=Max Open Connections"`
+	MaxIdleConns           int                           `mapstructure:"max_idle_conns" json:"max_idle_conns" yaml:"max_idle_conns" jsonschema:"title=Max Idle Connections"`
+	Schema                 string                        `mapstructure:"schema" json:"schema" yaml:"schema" jsonschema:"title=Schema"`
+	PoolSize               int                           `mapstructure:"pool_size" json:"pool_size" yaml:"pool_size" jsonschema:"title=Connection Pool Size"`
+	MaxConnections         int                           `mapstructure:"max_connections" json:"max_connections" yaml:"max_connections" jsonschema:"title=Maximum Connections"`
+	MaxConnIdleTime        time.Duration                 `mapstructure:"max_connection_idle_time" json:"max_connection_idle_time" yaml:"max_connection_idle_time" jsonschema:"title=Connection Idle Time"`
+	MaxConnLifeTime        time.Duration                 `mapstructure:"max_connection_life_time" json:"max_connection_life_time" yaml:"max_connection_life_time" jsonschema:"title=Connection Life Time"`
+	PingTimeout            time.Duration                 `mapstructure:"ping_timeout" json:"ping_timeout" yaml:"ping_timeout" jsonschema:"title=Healthcheck Ping Timeout"`
+	EnableTLS              bool                          `mapstructure:"enable_tls" json:"enable_tls" yaml:"enable_tls" jsonschema:"title=Enable TLS"`
+	ServerName             string                        `mapstructure:"server_name" json:"server_name" yaml:"server_name" jsonschema:"title=TLS Server Name"`
+	ServerCert             string                        `mapstructure:"server_cert" json:"server_cert" yaml:"server_cert" jsonschema:"title=Server Certificate" jsonschema_extras:"x-graphjin-sensitive=certificate"`
+	ClientCert             string                        `mapstructure:"client_cert" json:"client_cert" yaml:"client_cert" jsonschema:"title=Client Certificate" jsonschema_extras:"x-graphjin-sensitive=certificate"`
+	ClientKey              string                        `mapstructure:"client_key" json:"client_key" yaml:"client_key" jsonschema:"title=Client Key" jsonschema_extras:"x-graphjin-sensitive=key_material"`
+	Encrypt                *bool                         `mapstructure:"encrypt" json:"encrypt,omitempty" yaml:"encrypt,omitempty" jsonschema:"title=MSSQL Encrypt"`
+	TrustServerCertificate *bool                         `mapstructure:"trust_server_certificate" json:"trust_server_certificate,omitempty" yaml:"trust_server_certificate,omitempty" jsonschema:"title=MSSQL Trust Server Certificate"`
+	PrivateKeyPath         string                        `mapstructure:"private_key_path" json:"private_key_path" yaml:"private_key_path" jsonschema:"title=Private Key File Path (Snowflake)" jsonschema_extras:"x-graphjin-sensitive=secret_ref"`
+	PrivateKeyPEM          string                        `mapstructure:"private_key_pem" json:"private_key_pem" yaml:"private_key_pem" jsonschema:"title=Private Key PEM (Snowflake)" jsonschema_extras:"x-graphjin-sensitive=key_material"`
+	KeyPassphrase          string                        `mapstructure:"key_passphrase" json:"key_passphrase" yaml:"key_passphrase" jsonschema:"title=Key Passphrase (Snowflake)" jsonschema_extras:"x-graphjin-sensitive=secret"`
+	ReadOnly               bool                          `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
+	AnalyticsMode          *bool                         `mapstructure:"analytics_mode" json:"analytics_mode,omitempty" yaml:"analytics_mode,omitempty" jsonschema:"title=Analytics Mode"`
+	InferDBRefs            *bool                         `mapstructure:"infer_db_refs" json:"infer_db_refs,omitempty" yaml:"infer_db_refs,omitempty" jsonschema:"title=Infer Database References"`
+	Backend                string                        `mapstructure:"backend" json:"backend" yaml:"backend" jsonschema:"title=Filesystem Backend"`
+	Bucket                 string                        `mapstructure:"bucket" json:"bucket" yaml:"bucket" jsonschema:"title=Bucket"`
+	Region                 string                        `mapstructure:"region" json:"region" yaml:"region" jsonschema:"title=Region"`
+	Endpoint               string                        `mapstructure:"endpoint" json:"endpoint" yaml:"endpoint" jsonschema:"title=Endpoint"`
+	Prefix                 string                        `mapstructure:"prefix" json:"prefix" yaml:"prefix" jsonschema:"title=Prefix"`
+	Root                   string                        `mapstructure:"root" json:"root" yaml:"root" jsonschema:"title=Root"`
+	PresignTTL             time.Duration                 `mapstructure:"presign_ttl" json:"presign_ttl" yaml:"presign_ttl" jsonschema:"title=Presigned URL TTL"`
+	PublicBaseURL          string                        `mapstructure:"public_base_url" json:"public_base_url" yaml:"public_base_url" jsonschema:"title=Public Base URL"`
+	MaxListPageSize        int                           `mapstructure:"max_list_page_size" json:"max_list_page_size" yaml:"max_list_page_size" jsonschema:"title=Max List Page Size"`
+	SpecsDir               string                        `mapstructure:"specs_dir" json:"specs_dir" yaml:"specs_dir" jsonschema:"title=OpenAPI Specs Directory"`
+	Specs                  map[string]openapi.SpecConfig `mapstructure:"specs" json:"specs" yaml:"specs" jsonschema:"-"`
+	Catalog                *bool                         `mapstructure:"catalog" json:"catalog,omitempty" yaml:"catalog,omitempty" jsonschema:"title=Catalog"`
+	Metadata               *bool                         `mapstructure:"metadata" json:"metadata,omitempty" yaml:"metadata,omitempty" jsonschema:"title=Metadata"`
+	ControlPlane           *bool                         `mapstructure:"control_plane" json:"control_plane,omitempty" yaml:"control_plane,omitempty" jsonschema:"title=Control Plane"`
+	Runtime                string                        `mapstructure:"runtime" json:"runtime" yaml:"runtime" jsonschema:"title=Workflow Runtime"`
+}
+
+type RelationshipConfig struct {
+	From string `mapstructure:"from" json:"from" yaml:"from" jsonschema:"title=From"`
+	To   string `mapstructure:"to" json:"to" yaml:"to" jsonschema:"title=To"`
+	As   string `mapstructure:"as" json:"as,omitempty" yaml:"as,omitempty" jsonschema:"title=Alias"`
 }
 
 // MetadataConfig controls the managed metadata graph database.
@@ -349,8 +820,8 @@ type MetadataConfig struct {
 	// Database is the virtual database name. Defaults to "graphjin".
 	Database string `mapstructure:"database" json:"database" yaml:"database" jsonschema:"title=Metadata Database,default=graphjin"`
 
-	// AutoCodeRelations controls automatic relationships from gj_tables /
-	// gj_columns to CodeSQL's code_db_refs. When omitted, it follows Enabled.
+	// AutoCodeRelations controls automatic relationships from catalog items
+	// to CodeSQL's public gj_code projection. When omitted, it follows Enabled.
 	AutoCodeRelations *bool `mapstructure:"auto_code_relations" json:"auto_code_relations,omitempty" yaml:"auto_code_relations,omitempty" jsonschema:"title=Auto Code Relations"`
 
 	// CodeDatabases optionally pins which CodeSQL database should be linked.
@@ -358,31 +829,107 @@ type MetadataConfig struct {
 	CodeDatabases []string `mapstructure:"code_databases" json:"code_databases,omitempty" yaml:"code_databases,omitempty" jsonschema:"title=CodeSQL Databases"`
 }
 
+// CatalogConfig controls the managed AI-first catalog graph database.
+type CatalogConfig struct {
+	// Enabled controls whether GraphJin exposes catalog tables.
+	// When omitted, it defaults to enabled in dev and disabled in production.
+	Enabled any `mapstructure:"enabled" json:"enabled,omitempty" yaml:"enabled,omitempty" jsonschema:"title=Enable Catalog Graph,enum=auto,enum=true,enum=false,default=auto"`
+
+	// Database is the virtual database name. Defaults to "graphjin".
+	Database string `mapstructure:"database" json:"database" yaml:"database" jsonschema:"title=Catalog Database,default=graphjin"`
+
+	// Samples controls whether live sample/profile data is inlined or fetched on
+	// demand. Default: on_demand.
+	Samples string `mapstructure:"samples" json:"samples" yaml:"samples" jsonschema:"title=Catalog Sample Mode,enum=on_demand,enum=inline,enum=off,default=on_demand"`
+
+	// AutoCodeRelations controls automatic relationships from catalog/schema
+	// tables to CodeSQL's code_db_refs. When omitted, it follows Enabled.
+	AutoCodeRelations any `mapstructure:"auto_code_relations" json:"auto_code_relations,omitempty" yaml:"auto_code_relations,omitempty" jsonschema:"title=Auto Code Relations,enum=auto,enum=true,enum=false,default=auto"`
+
+	// CodeDatabases optionally pins which CodeSQL database should be linked.
+	// Empty means auto-detect, but only when exactly one CodeSQL DB exists.
+	CodeDatabases []string `mapstructure:"code_databases" json:"code_databases,omitempty" yaml:"code_databases,omitempty" jsonschema:"title=CodeSQL Databases"`
+}
+
+func (c *Config) CatalogEnabled() bool {
+	if c == nil {
+		return false
+	}
+	source, ok := c.GraphJinSource()
+	return ok && sourceBool(source.Catalog, true)
+}
+
+func (c *Config) CatalogDatabaseName() string {
+	if c == nil {
+		return "graphjin"
+	}
+	if source, ok := c.GraphJinSource(); ok && strings.TrimSpace(source.Name) != "" {
+		return strings.TrimSpace(source.Name)
+	}
+	return "graphjin"
+}
+
+func (c *Config) CatalogAutoCodeRelationsEnabled() bool {
+	if c == nil {
+		return false
+	}
+	return c.CatalogEnabled()
+}
+
+func (c *Config) CatalogCodeDatabases() []string {
+	return nil
+}
+
 func (c *Config) MetadataEnabled() bool {
 	if c == nil {
 		return false
 	}
-	if c.Metadata.Enabled != nil {
-		return *c.Metadata.Enabled
-	}
-	return !c.Production
+	source, ok := c.GraphJinSource()
+	return ok && sourceBool(source.Metadata, true)
 }
 
 func (c *Config) MetadataDatabaseName() string {
-	if c == nil || strings.TrimSpace(c.Metadata.Database) == "" {
-		return "graphjin"
-	}
-	return strings.TrimSpace(c.Metadata.Database)
+	return c.CatalogDatabaseName()
 }
 
 func (c *Config) MetadataAutoCodeRelationsEnabled() bool {
-	if c == nil {
-		return false
+	return c.CatalogAutoCodeRelationsEnabled()
+}
+
+func optionalBool(v any) (bool, bool) {
+	switch x := v.(type) {
+	case nil:
+		return false, false
+	case bool:
+		return x, true
+	case *bool:
+		if x == nil {
+			return false, false
+		}
+		return *x, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "", "auto":
+			return false, false
+		case "true", "1", "yes", "on":
+			return true, true
+		case "false", "0", "no", "off":
+			return false, true
+		default:
+			return false, false
+		}
+	default:
+		switch strings.ToLower(strings.TrimSpace(fmt.Sprint(x))) {
+		case "", "auto":
+			return false, false
+		case "true", "1", "yes", "on":
+			return true, true
+		case "false", "0", "no", "off":
+			return false, true
+		default:
+			return false, false
+		}
 	}
-	if c.Metadata.AutoCodeRelations != nil {
-		return *c.Metadata.AutoCodeRelations
-	}
-	return c.MetadataEnabled()
 }
 
 // FilesystemConfig declares one filesystem-backed virtual table.
@@ -452,15 +999,15 @@ type FilesystemConfig struct {
 
 // DatabaseConfig defines configuration for a single database in multi-database mode
 type DatabaseConfig struct {
-	// Database type (postgres, mysql, mariadb, sqlite, oracle, mongodb, snowflake)
-	Type string `mapstructure:"type" json:"type" yaml:"type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle,enum=mongodb,enum=snowflake,enum=codesql"`
+	// Database type (postgres, mysql, mariadb, sqlite, oracle, mongodb, snowflake, nanodb)
+	Type string `mapstructure:"type" json:"type" yaml:"type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle,enum=mongodb,enum=snowflake,enum=nanodb,enum=codesql"`
 
 	// ManagedType preserves the service-level logical database type after a
 	// managed database has been translated to its runtime driver.
 	ManagedType string `mapstructure:"-" json:"-" yaml:"-" jsonschema:"-"`
 
 	// Connection string for the database (alternative to individual params)
-	ConnString string `mapstructure:"connection_string" json:"connection_string" yaml:"connection_string" jsonschema:"title=Connection String"`
+	ConnString string `mapstructure:"connection_string" json:"connection_string" yaml:"connection_string" jsonschema:"title=Connection String" jsonschema_extras:"x-graphjin-sensitive=connection"`
 
 	// Database host
 	Host string `mapstructure:"host" json:"host" yaml:"host" jsonschema:"title=Host"`
@@ -475,7 +1022,7 @@ type DatabaseConfig struct {
 	User string `mapstructure:"user" json:"user" yaml:"user" jsonschema:"title=User"`
 
 	// Database password
-	Password string `mapstructure:"password" json:"password" yaml:"password" jsonschema:"title=Password"`
+	Password string `mapstructure:"password" json:"password" yaml:"password" jsonschema:"title=Password" jsonschema_extras:"x-graphjin-sensitive=secret"`
 
 	// File path for SQLite databases
 	Path string `mapstructure:"path" json:"path" yaml:"path" jsonschema:"title=File Path (SQLite)"`
@@ -501,9 +1048,9 @@ type DatabaseConfig struct {
 	// TLS settings
 	EnableTLS  bool   `mapstructure:"enable_tls" json:"enable_tls" yaml:"enable_tls" jsonschema:"title=Enable TLS"`
 	ServerName string `mapstructure:"server_name" json:"server_name" yaml:"server_name" jsonschema:"title=TLS Server Name"`
-	ServerCert string `mapstructure:"server_cert" json:"server_cert" yaml:"server_cert" jsonschema:"title=Server Certificate"`
-	ClientCert string `mapstructure:"client_cert" json:"client_cert" yaml:"client_cert" jsonschema:"title=Client Certificate"`
-	ClientKey  string `mapstructure:"client_key" json:"client_key" yaml:"client_key" jsonschema:"title=Client Key"`
+	ServerCert string `mapstructure:"server_cert" json:"server_cert" yaml:"server_cert" jsonschema:"title=Server Certificate" jsonschema_extras:"x-graphjin-sensitive=certificate"`
+	ClientCert string `mapstructure:"client_cert" json:"client_cert" yaml:"client_cert" jsonschema:"title=Client Certificate" jsonschema_extras:"x-graphjin-sensitive=certificate"`
+	ClientKey  string `mapstructure:"client_key" json:"client_key" yaml:"client_key" jsonschema:"title=Client Key" jsonschema_extras:"x-graphjin-sensitive=key_material"`
 
 	// MSSQL-specific: disable TLS encryption (go-mssqldb defaults to encrypt=true)
 	Encrypt *bool `mapstructure:"encrypt" json:"encrypt,omitempty" yaml:"encrypt,omitempty" jsonschema:"title=MSSQL Encrypt"`
@@ -513,9 +1060,9 @@ type DatabaseConfig struct {
 
 	// Snowflake key pair authentication (PKCS#8 PEM format).
 	// Generate key: openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8
-	PrivateKeyPath string `mapstructure:"private_key_path" json:"private_key_path" yaml:"private_key_path" jsonschema:"title=Private Key File Path (Snowflake)"`
-	PrivateKeyPEM  string `mapstructure:"private_key_pem" json:"private_key_pem" yaml:"private_key_pem" jsonschema:"title=Private Key PEM (Snowflake)"`
-	KeyPassphrase  string `mapstructure:"key_passphrase" json:"key_passphrase" yaml:"key_passphrase" jsonschema:"title=Key Passphrase (Snowflake)"`
+	PrivateKeyPath string `mapstructure:"private_key_path" json:"private_key_path" yaml:"private_key_path" jsonschema:"title=Private Key File Path (Snowflake)" jsonschema_extras:"x-graphjin-sensitive=secret_ref"`
+	PrivateKeyPEM  string `mapstructure:"private_key_pem" json:"private_key_pem" yaml:"private_key_pem" jsonschema:"title=Private Key PEM (Snowflake)" jsonschema_extras:"x-graphjin-sensitive=key_material"`
+	KeyPassphrase  string `mapstructure:"key_passphrase" json:"key_passphrase" yaml:"key_passphrase" jsonschema:"title=Key Passphrase (Snowflake)" jsonschema_extras:"x-graphjin-sensitive=secret"`
 
 	// Read-only mode — blocks all mutations and DDL against this database.
 	// Once set in config, cannot be changed at runtime via MCP tools.
@@ -556,9 +1103,12 @@ type Table struct {
 	Schema string
 	Table  string // Inherits Table
 	Type   string
+	// Source is required in source mode and points at one sources[].name.
+	Source string `mapstructure:"source" json:"source" yaml:"source" jsonschema:"title=Source"`
 	// Database name for multi-database support. References a key in Config.Databases.
 	// If empty, uses the default database.
 	Database  string `mapstructure:"database" json:"database" yaml:"database" jsonschema:"title=Database"`
+	ReadOnly  bool   `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
 	Blocklist []string
 	Columns   []Column
 	// Permitted order by options
@@ -739,9 +1289,10 @@ type ResolverConfig struct {
 }
 
 type ResolverReq struct {
-	ID  string
-	Sel *qcode.Select
-	Log *log.Logger
+	ID   string
+	Sel  *qcode.Select
+	Log  *log.Logger
+	Vars map[string]json.RawMessage
 	*RequestConfig
 }
 

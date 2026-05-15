@@ -5,10 +5,9 @@ import (
 	"testing"
 )
 
-// TestParseFrameClause exercises the full grammar the @window directive
-// accepts. These shapes are what Snowflake / Postgres / Oracle / SQLite
-// 3.25+ all consume verbatim — we keep the canonicalised output
-// uppercase so the on-disk SQL is consistent across runs.
+// TestParseFrameClause exercises the backend frame grammar used by the internal
+// analytics IR. Public GraphQL exposes concept directives instead of raw frame
+// text, but keeping this parser covered protects the renderer contract.
 func TestParseFrameClause(t *testing.T) {
 	cases := []struct {
 		in, want string
@@ -103,4 +102,3 @@ func TestParseFrameClause_Errors(t *testing.T) {
 		}
 	}
 }
-

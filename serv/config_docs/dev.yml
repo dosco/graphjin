@@ -180,6 +180,9 @@ mcp:
   # Allow raw GraphQL queries (not just saved queries)
   allow_raw_queries: true
 
+  # Allow the legacy execute_workflow MCP compatibility tool
+  allow_workflow_execution: true
+
 # ============================================================================
 # DATABASE CONFIGURATION
 # ============================================================================
@@ -198,13 +201,14 @@ mcp:
 # GJ_DATABASE_USER
 # GJ_DATABASE_PASSWORD
 
-# Metadata graph is enabled by default in dev. It exposes GraphJin-discovered
-# schema as read-only gj_* tables and can auto-link to one CodeSQL database.
-# metadata:
-#   enabled: true
-#   database: graphjin
-#   auto_code_relations: true
-#   # code_databases: [code]
+# In sources mode, add a GraphJin source to expose read-only gj_* metadata,
+# catalog items, and control-plane roots.
+# sources:
+#   - name: graphjin
+#     kind: graphjin
+#     metadata: true
+#     catalog: true
+#     control_plane: true
 
 # databases:
 #   default:

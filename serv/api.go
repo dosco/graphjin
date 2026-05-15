@@ -73,18 +73,19 @@ const (
 type HookFn func(*core.Result)
 
 type graphjinService struct {
-	log         *zap.SugaredLogger // logger
-	zlog        *zap.Logger        // faster logger
-	logLevel    int                // log level
-	conf        *Config            // parsed config
-	dbs         map[string]*sql.DB // named database connections (all equal)
-	managedDBs  map[string]managedDB
-	runtimeCore *core.Config
-	metadataDB  string
-	gj          *core.GraphJin
-	disc        *DiscoveryManager
-	srv         *http.Server
-	fs          core.FS
+	log          *zap.SugaredLogger // logger
+	zlog         *zap.Logger        // faster logger
+	logLevel     int                // log level
+	conf         *Config            // parsed config
+	dbs          map[string]*sql.DB // named database connections (all equal)
+	managedDBs   map[string]managedDB
+	runtimeCore  *core.Config
+	metadataDB   string
+	systemNanoDB *core.NanoDB
+	gj           *core.GraphJin
+	disc         *DiscoveryManager
+	srv          *http.Server
+	fs           core.FS
 	// asec         [32]byte
 	closeFn func()
 	chash   string
@@ -97,6 +98,11 @@ type graphjinService struct {
 	tracer               trace.Tracer
 	cache                ResponseCache // Response cache (Redis or in-memory)
 	cursorCache          CursorCache   // MCP cursor cache for short numeric IDs
+	configMu             sync.Mutex
+	workflowMu           sync.Mutex
+	workflowCache        *workflowRegistrySnapshot
+	catalogMu            sync.Mutex
+	catalogCache         *catalogCacheEntry
 	onboardingMu         sync.RWMutex
 	onboardingCandidates map[string]cachedDiscoveredCandidate
 	authLogin            *authLoginService // built-in OIDC login (optional)
@@ -121,9 +127,17 @@ func (s *graphjinService) buildCoreOptionsWithDBs(dbs map[string]*sql.DB) []core
 }
 
 func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs map[string]managedDB) []core.Option {
+	controlPlane := newControlPlaneGraphQL(s)
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
+	}
+	if s.conf != nil && (s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled()) {
+		targetDB := s.metadataDB
+		if targetDB == "" {
+			targetDB = core.DefaultDBName
+		}
+		opts = append(opts, core.OptionSetManagedMutationHandler(targetDB, controlPlane))
 	}
 	if s.namespace != nil {
 		opts = append(opts, core.OptionSetNamespace(*s.namespace))
@@ -133,6 +147,9 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	}
 	if len(dbs) > 0 {
 		opts = append(opts, core.OptionSetDatabases(dbs))
+	}
+	if s.systemNanoDB != nil && s.metadataDB != "" {
+		opts = append(opts, core.OptionSetNanoDatabases(map[string]*core.NanoDB{s.metadataDB: s.systemNanoDB}))
 	}
 	for name, managed := range managedDBs {
 		if managed.handle != nil {
@@ -299,6 +316,18 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		return nil, err
 	}
 
+	// Default raw MCP execution to true in dev mode when MCP is enabled.
+	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_raw_queries") {
+			s.conf.MCP.AllowRawQueries = true
+			s.log.Info("MCP raw GraphQL execution enabled by default (dev mode)")
+		}
+		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_mutations") {
+			s.conf.MCP.AllowMutations = true
+			s.log.Info("MCP raw GraphQL mutations enabled by default (dev mode)")
+		}
+	}
+
 	// Default AllowConfigUpdates to true in dev mode when MCP is enabled
 	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
 		// Only set default if not explicitly configured by user
@@ -329,6 +358,14 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_workflow_updates") {
 			s.conf.MCP.AllowWorkflowUpdates = true
 			s.log.Info("MCP workflow updates enabled by default (dev mode)")
+		}
+	}
+
+	// Default legacy MCP workflow execution to true in dev mode when MCP is enabled.
+	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_workflow_execution") {
+			s.conf.MCP.AllowWorkflowExecution = true
+			s.log.Info("MCP workflow execution enabled by default (dev mode)")
 		}
 	}
 
@@ -385,7 +422,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	// }
 
 	if err != nil {
-		if isMetadataStartupError(err) {
+		if isNonRecoverableStartupError(err) {
 			return nil, err
 		}
 		if !s.conf.Serv.Production {
@@ -409,13 +446,21 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 
 // normalStart starts the service in normal mode
 func (s *graphjinService) normalStart() error {
-	// Skip GraphJin core initialization if no database is configured (dev mode only)
-	if len(s.dbs) == 0 && !s.conf.Serv.Production {
-		s.log.Info("GraphJin core not initialized - waiting for database configuration via MCP")
-		return nil
-	}
 	if err := s.initMetadataGraphBeforeCore(); err != nil {
 		return err
+	}
+	if s.systemNanoDB == nil {
+		if err := s.ensureSystemHostDBBeforeCore(); err != nil {
+			return err
+		}
+	}
+	// Skip GraphJin core initialization if no database is configured (dev mode only)
+	if len(s.dbs) == 0 && s.systemNanoDB == nil {
+		if !s.conf.Serv.Production {
+			s.log.Info("GraphJin core not initialized - waiting for database configuration via MCP")
+			return nil
+		}
+		return fmt.Errorf("no database source configured")
 	}
 
 	opts := s.buildCoreOptions()

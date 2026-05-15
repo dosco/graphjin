@@ -1,0 +1,1121 @@
+package serv
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/dosco/graphjin/core/v3"
+	"github.com/mark3labs/mcp-go/mcp"
+)
+
+type controlPlaneGraphQL struct {
+	service *graphjinService
+}
+
+type deleteFS interface {
+	Delete(path string) error
+}
+
+func newControlPlaneGraphQL(s *graphjinService) controlPlaneGraphQL {
+	return controlPlaneGraphQL{service: s}
+}
+
+func (h controlPlaneGraphQL) ManagedQueryTables() []core.ManagedTable {
+	var out []core.ManagedTable
+	if h.service != nil && h.service.conf != nil && (h.service.conf.catalogToolsEnabled() || h.service.conf.graphjinControlPlaneEnabled()) {
+		out = append(out, graphjinControlPlaneTables()...)
+	}
+	if h.service != nil && h.service.conf != nil && h.service.conf.workflowsSourceEnabled() {
+		out = append(out, workflowControlPlaneTables()...)
+	}
+	return out
+}
+
+func (h controlPlaneGraphQL) ManagedMutationTables() []string {
+	var tables []string
+	if h.service != nil && h.service.conf != nil && h.service.conf.workflowsSourceEnabled() {
+		tables = append(tables, "gj_workflow", "gj_workflow_execution")
+	}
+	if h.service != nil && h.service.conf != nil && h.service.conf.graphjinControlPlaneEnabled() {
+		tables = append(tables, "gj_config")
+	}
+	return tables
+}
+
+func graphjinControlPlaneTables() []core.ManagedTable {
+	return []core.ManagedTable{
+		managedTable("gj_catalog", []core.ManagedColumn{
+			cpCol("id", "text", true), cpCol("kind", "text", false), cpCol("title", "text", false), cpCol("summary", "text", false),
+			cpCol("name", "text", false),
+			cpCol("database_name", "text", false), cpCol("schema_name", "text", false), cpCol("table_name", "text", false), cpCol("column_name", "text", false),
+			cpCol("source", "text", false), cpCol("risk_level", "text", false), cpCol("confidence", "text", false), cpCol("sensitive", "boolean", false),
+			cpCol("sensitivity", "text", false), cpCol("evidence_json", "json", false), cpCol("examples_json", "json", false), cpCol("suggested_next_json", "json", false),
+			cpCol("detail_ref", "text", false), cpCol("details_json", "json", false), cpCol("edges_json", "json", false),
+			cpCol("query_json", "json", false), cpCol("input_schema_json", "json", false), cpCol("output_schema_json", "json", false),
+			cpCol("safety_json", "json", false), cpCol("enabled", "boolean", false), cpCol("capability_kind", "text", false),
+			cpCol("graphql_query", "text", false), cpCol("graphql_mutation", "text", false),
+			cpCol("created_at", "text", false), cpCol("updated_at", "text", false), cpCol("score", "float", false), cpFullTextCol("search_vector"),
+		}),
+		managedTable("gj_config", []core.ManagedColumn{
+			cpCol("id", "text", true), cpCol("source_mode", "boolean", false), cpCol("config_path", "text", false), cpCol("active_database", "text", false),
+			cpCol("sources", "json", false), cpCol("databases", "json", false), cpCol("relationships", "json", false), cpCol("tables", "json", false),
+			cpCol("roles", "json", false), cpCol("blocklist", "json", false), cpCol("functions", "json", false), cpCol("resolvers", "json", false),
+			cpCol("mcp", "json", false), cpCol("config_json", "json", false), cpCol("redacted_paths", "json", false), cpCol("updated_at", "text", false), cpCol("catalog_revision", "text", false),
+		}),
+	}
+}
+
+func workflowControlPlaneTables() []core.ManagedTable {
+	return []core.ManagedTable{
+		managedTable("gj_workflow", []core.ManagedColumn{
+			cpCol("name", "text", true), cpCol("description", "text", false), cpCol("tags", "json", false), cpCol("tags_json", "json", false),
+			cpCol("variables", "json", false), cpCol("variables_json", "json", false), cpCol("code", "text", false), cpCol("path", "text", false),
+			cpCol("source_hash", "text", false), cpCol("runtime", "text", false), cpCol("timeout_seconds", "integer", false),
+			cpCol("created_at", "text", false), cpCol("updated_at", "text", false), cpCol("workflow_revision", "text", false),
+			cpCol("catalog_item_id", "text", false), cpCol("catalog_revision", "text", false), cpCol("deleted", "boolean", false),
+		}),
+		managedTable("gj_workflow_execution", []core.ManagedColumn{cpCol("id", "text", true), cpCol("workflow_name", "text", false), cpCol("namespace", "text", false), cpCol("variables", "json", false), cpCol("status", "text", false), cpCol("result_json", "json", false), cpCol("error", "text", false), cpCol("duration_ms", "integer", false)}),
+	}
+}
+
+func managedTable(name string, cols []core.ManagedColumn) core.ManagedTable {
+	return core.ManagedTable{Name: name, Columns: cols}
+}
+
+func cpCol(name, typ string, pk bool) core.ManagedColumn {
+	return core.ManagedColumn{Name: name, Type: typ, PrimaryKey: pk}
+}
+
+func cpFullTextCol(name string) core.ManagedColumn {
+	return core.ManagedColumn{Name: name, Type: "text", FullText: true}
+}
+
+func (h controlPlaneGraphQL) ExecuteManagedQuery(ctx context.Context, req core.ManagedQueryRequest) (json.RawMessage, error) {
+	out := make(map[string]any, len(req.Roots))
+	for _, root := range req.Roots {
+		rows, err := h.queryRows(ctx, root)
+		if err != nil {
+			return nil, err
+		}
+		out[root.FieldName] = filterRows(rows, root.Fields)
+	}
+	return json.Marshal(out)
+}
+
+func (h controlPlaneGraphQL) queryRows(ctx context.Context, root core.ManagedQueryRoot) ([]map[string]any, error) {
+	switch root.Table {
+	case "gj_catalog":
+		return h.queryCatalog(root)
+	case "gj_workflow":
+		return applyManagedQuery(h.workflowRows(true), root), nil
+	case "gj_workflow_execution":
+		return nil, fmt.Errorf("gj_workflow_execution is mutation-only and does not store run history")
+	case "gj_config":
+		return applyManagedQuery([]map[string]any{h.configRow()}, root), nil
+	default:
+		return nil, fmt.Errorf("unsupported GraphJin system query root: %s", root.Table)
+	}
+}
+
+func (h controlPlaneGraphQL) queryCatalog(root core.ManagedQueryRoot) ([]map[string]any, error) {
+	snap, err := h.service.catalogSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	search, where := splitSearchWhere(root.Where)
+	if search == "" {
+		return applyManagedQuery(h.allCatalogRows(snap, core.CatalogQueryOutput{Cards: snap.Cards}), root), nil
+	}
+	orderBy := make(map[string]string, len(root.OrderBy))
+	for _, ob := range root.OrderBy {
+		orderBy[ob.Column] = strings.ToLower(ob.Order)
+	}
+	result, err := snap.QueryResult(core.CatalogQuery{
+		Search:  search,
+		Where:   where,
+		OrderBy: orderBy,
+		Limit:   root.Limit,
+		Explain: true,
+	})
+	if err != nil {
+		return applyManagedQuery(h.allCatalogRows(snap, core.CatalogQueryOutput{Cards: snap.Cards}), root), nil
+	}
+	rows := h.catalogRowsFromCards(snap, result)
+	rows = append(rows, applyManagedQuery(h.catalogEntrypointRows(snap), root)...)
+	rows = append(rows, applyManagedQuery(h.catalogCapabilityRows(snap), root)...)
+	rows = append(rows, applyManagedQuery(h.catalogSystemCapabilityRows(), root)...)
+	sortRows(rows, root.OrderBy)
+	if root.Limit > 0 && root.Limit < len(rows) {
+		rows = rows[:root.Limit]
+	}
+	return rows, nil
+}
+
+func (h controlPlaneGraphQL) allCatalogRows(snap *core.CatalogSnapshot, result core.CatalogQueryOutput) []map[string]any {
+	rows := h.catalogRowsFromCards(snap, result)
+	rows = append(rows, h.catalogEntrypointRows(snap)...)
+	rows = append(rows, h.catalogCapabilityRows(snap)...)
+	rows = append(rows, h.catalogSystemCapabilityRows()...)
+	return rows
+}
+
+func (h controlPlaneGraphQL) catalogRowsFromCards(snap *core.CatalogSnapshot, result core.CatalogQueryOutput) []map[string]any {
+	rawRows := structRows(result.Cards)
+	rows := rawRows[:0]
+	for _, row := range rawRows {
+		if fmt.Sprint(row["kind"]) == "capability" {
+			continue
+		}
+		id, _ := row["id"].(string)
+		row["name"] = catalogItemName(row)
+		row["details_json"] = mustMarshalString(snap.CardDetails(id))
+		row["edges_json"] = mustMarshalString(snap.CardEdges(id))
+		if match, ok := result.Matches[id]; ok {
+			row["score"] = match.Score
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func (h controlPlaneGraphQL) catalogEntrypointRows(snap *core.CatalogSnapshot) []map[string]any {
+	rows := structRows(snap.EntryPoints)
+	for _, row := range rows {
+		row["kind"] = "entrypoint"
+		row["title"] = row["name"]
+		row["score"] = 0
+	}
+	return rows
+}
+
+func (h controlPlaneGraphQL) catalogCapabilityRows(snap *core.CatalogSnapshot) []map[string]any {
+	rows := structRows(snap.Capabilities)
+	for _, row := range rows {
+		row["capability_kind"] = row["kind"]
+		row["kind"] = "capability"
+		row["title"] = row["name"]
+		row["score"] = 0
+	}
+	return rows
+}
+
+func (h controlPlaneGraphQL) catalogSystemCapabilityRows() []map[string]any {
+	rows := h.systemCapabilityRows()
+	for _, row := range rows {
+		row["capability_kind"] = row["kind"]
+		row["kind"] = "system_capability"
+		row["title"] = row["name"]
+		row["score"] = 0
+	}
+	return rows
+}
+
+func catalogItemName(row map[string]any) string {
+	for _, key := range []string{"name", "table_name", "column_name", "title", "id"} {
+		raw := row[key]
+		if raw == nil {
+			continue
+		}
+		if value := strings.TrimSpace(fmt.Sprint(raw)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (h controlPlaneGraphQL) workflowRows(includeSource bool) []map[string]any {
+	workflowSnap := h.service.workflowSnapshot(h.service.workflowTimeoutSeconds())
+	rows := make([]map[string]any, 0, len(workflowSnap.workflows))
+	revision := ""
+	if snap, err := h.service.catalogSnapshot(); err == nil {
+		revision = snap.Revision
+	}
+	for _, wf := range workflowSnap.workflows {
+		row := map[string]any{
+			"name":              wf.Name,
+			"description":       wf.Description,
+			"tags":              wf.Tags,
+			"tags_json":         mustMarshalString(wf.Tags),
+			"variables":         wf.Variables,
+			"variables_json":    mustMarshalString(wf.Variables),
+			"path":              wf.Path,
+			"source_hash":       wf.SourceHash,
+			"runtime":           wf.Runtime,
+			"timeout_seconds":   wf.TimeoutSeconds,
+			"created_at":        wf.CreatedAt,
+			"updated_at":        wf.UpdatedAt,
+			"workflow_revision": workflowSnap.revision,
+			"catalog_item_id":   "workflow:" + wf.Name,
+			"catalog_revision":  revision,
+		}
+		if includeSource {
+			if src, err := h.service.fs.Get(wf.Path); err == nil {
+				row["code"] = workflowCodeWithoutMeta(string(src))
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func workflowCodeWithoutMeta(src string) string {
+	if !strings.HasPrefix(src, workflowMetaPrefix) {
+		return src
+	}
+	if idx := strings.IndexByte(src, '\n'); idx != -1 {
+		return src[idx+1:]
+	}
+	return ""
+}
+
+func (h controlPlaneGraphQL) configRow() map[string]any {
+	conf := h.service.conf
+	coreConf := &conf.Core
+	sources := redactedConfigValue(coreConf.Sources)
+	databases := redactedConfigValue(coreConf.Databases)
+	mcpConfig := mcpConfigMap(conf)
+	row := map[string]any{
+		"id":              "current",
+		"source_mode":     coreConf.SourceMode(),
+		"config_path":     conf.ConfigPath,
+		"active_database": (&mcpServer{service: h.service}).getActiveDatabase(),
+		"sources":         sources,
+		"databases":       databases,
+		"relationships":   redactedConfigValue(coreConf.Relationships),
+		"tables":          redactedConfigValue(coreConf.Tables),
+		"roles":           convertRolesToInfo(coreConf.Roles),
+		"blocklist":       coreConf.Blocklist,
+		"functions":       redactedConfigValue(coreConf.Functions),
+		"resolvers":       redactedConfigValue(coreConf.Resolvers),
+		"mcp":             mcpConfig,
+		"redacted_paths":  []string{},
+		"updated_at":      time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	row["config_json"] = map[string]any{
+		"active_database": row["active_database"],
+		"sources":         row["sources"],
+		"databases":       row["databases"],
+		"relationships":   row["relationships"],
+		"tables":          row["tables"],
+		"roles":           row["roles"],
+		"blocklist":       row["blocklist"],
+		"functions":       row["functions"],
+		"resolvers":       row["resolvers"],
+		"mcp":             row["mcp"],
+	}
+	if snap, err := h.service.catalogSnapshot(); err == nil {
+		row["catalog_revision"] = snap.Revision
+	}
+	return row
+}
+
+func mcpConfigMap(conf *Config) map[string]any {
+	mcpConf := MCPConfig{}
+	if conf != nil {
+		mcpConf = conf.MCP
+	}
+	return map[string]any{
+		"disable":                  mcpConf.Disable,
+		"allow_mutations":          mcpConf.AllowMutations,
+		"allow_raw_queries":        mcpConf.AllowRawQueries,
+		"allow_workflow_updates":   mcpConf.AllowWorkflowUpdates,
+		"allow_workflow_execution": mcpConf.AllowWorkflowExecution,
+		"allow_config_updates":     mcpConf.AllowConfigUpdates,
+		"allow_schema_reload":      mcpConf.AllowSchemaReload,
+		"allow_schema_updates":     mcpConf.AllowSchemaUpdates,
+		"allow_dev_tools":          mcpConf.AllowDevTools,
+		"legacy_discovery":         mcpConf.LegacyDiscovery,
+		"stdio_user_id":            mcpConf.StdioUserID,
+		"stdio_user_role":          mcpConf.StdioUserRole,
+		"only":                     mcpConf.Only,
+		"cursor_cache_ttl":         mcpConf.CursorCacheTTL,
+		"cursor_cache_size":        mcpConf.CursorCacheSize,
+	}
+}
+
+func redactedConfigValue(v any) any {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out any
+	if err := json.Unmarshal(data, &out); err != nil {
+		return v
+	}
+	return redactConfigJSON(out)
+}
+
+func redactConfigJSON(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, val := range x {
+			if isSensitiveConfigKey(k) {
+				x[k] = "[REDACTED]"
+				continue
+			}
+			x[k] = redactConfigJSON(val)
+		}
+		return x
+	case []any:
+		for i := range x {
+			x[i] = redactConfigJSON(x[i])
+		}
+		return x
+	default:
+		return v
+	}
+}
+
+func isSensitiveConfigKey(key string) bool {
+	k := strings.ToLower(key)
+	if strings.Contains(k, "password") ||
+		strings.Contains(k, "secret") ||
+		strings.Contains(k, "token") ||
+		strings.Contains(k, "passphrase") ||
+		strings.Contains(k, "private_key") ||
+		strings.Contains(k, "client_key") ||
+		k == "connection_string" {
+		return true
+	}
+	return false
+}
+
+func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
+	conf := h.service.conf.MCP
+	workflowWriteEnabled := conf.AllowWorkflowUpdates && !h.controlPlaneRootReadOnly("gj_workflow")
+	workflowExecutionEnabled := !h.controlPlaneRootReadOnly("gj_workflow_execution")
+	configWriteEnabled := conf.AllowConfigUpdates && !h.controlPlaneRootReadOnly("gj_config")
+	caps := []map[string]any{
+		{
+			"name": "gj_workflow.insert_update_delete", "kind": "mutation", "enabled": workflowWriteEnabled,
+			"summary":          "Create, update, and delete JavaScript workflow definition files.",
+			"graphql_mutation": "gj_workflow(insert/update/delete)",
+			"safety_json":      mustMarshalString(map[string]any{"writes_files": true, "requires_config": "mcp.allow_workflow_updates", "blocked_by": "read_only"}),
+		},
+		{
+			"name": "gj_workflow_execution.insert", "kind": "execution", "enabled": workflowExecutionEnabled,
+			"summary":          "Execute a saved JavaScript workflow and return an ephemeral result row. This is mutation-only and does not store run history.",
+			"graphql_mutation": "gj_workflow_execution(insert)",
+			"details_json": mustMarshalString(map[string]any{
+				"root":          "gj_workflow_execution",
+				"mutation_only": true,
+				"ephemeral":     true,
+				"stores_runs":   false,
+				"input_shape":   `gj_workflow_execution(insert: { workflow_name: "...", variables: {...} })`,
+				"return_fields": []string{"id", "workflow_name", "namespace", "status", "result_json", "error", "duration_ms"},
+			}),
+			"safety_json": mustMarshalString(map[string]any{"preferred_for_data_questions": true, "mutation_only": true, "ephemeral": true, "blocked_by": "read_only"}),
+		},
+		{"name": "gj_config.update", "kind": "mutation", "enabled": configWriteEnabled, "summary": "Update GraphJin configuration.", "graphql_mutation": `gj_config(id: "current", update: ...)`},
+		{"name": "reload_schema", "kind": "mutation", "enabled": conf.AllowSchemaReload, "summary": "Reload database schema metadata through the MCP tool surface."},
+		{"name": "preview_schema_changes", "kind": "mutation", "enabled": conf.AllowSchemaUpdates, "summary": "Preview db.graphql schema changes through the MCP tool surface."},
+		{"name": "apply_schema_changes", "kind": "mutation", "enabled": conf.AllowSchemaUpdates, "summary": "Apply db.graphql schema changes through the MCP tool surface."},
+		{"name": "validate_where_clause", "kind": "validation", "enabled": true, "summary": "Validate where clauses against schema/operator metadata through the MCP tool surface."},
+		{"name": "fix_query_error", "kind": "repair", "enabled": true, "summary": "Classify GraphJin query errors and suggest repairs through the MCP tool surface."},
+		{
+			"name": "gj_security.query", "kind": "security", "enabled": true,
+			"summary":       "Read GraphJin security posture, effective policy rows, and audit findings from the gj_security NanoDB table.",
+			"graphql_query": `gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }) { id severity title recommendation evidence_json }`,
+			"details_json": mustMarshalString(map[string]any{
+				"root":       "gj_security",
+				"kinds":      []string{"summary", "policy", "finding"},
+				"modes":      []string{"dev", "prod", "agentic"},
+				"filter_by":  []string{"kind", "report", "mode", "severity", "layer", "source", "source_kind", "capability", "action", "weakens_default"},
+				"read_shape": `gj_security(where: { kind: { eq: "policy" } }) { id capability action default_effective effective weakens_default }`,
+			}),
+			"examples_json": mustMarshalString([]map[string]string{
+				{"name": "summary", "query": `query { gj_security(id: "summary") { id kind mode summary_json } }`},
+				{"name": "high critical findings", "query": `query { gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }, order_by: { severity_rank: desc }) { id severity title recommendation evidence_json } }`},
+				{"name": "effective policy", "query": `query { gj_security(where: { kind: { eq: "policy" } }) { id mode source capability action default_effective effective weakens_default } }`},
+			}),
+			"safety_json": mustMarshalString(map[string]any{
+				"read_only": true,
+				"guidance":  "Check gj_security before config, workflow, schema, filesystem, or CodeSQL changes. Use findings as evidence; apply changes through the normal guarded config/control-plane APIs.",
+			}),
+		},
+	}
+	for _, cap := range caps {
+		if _, ok := cap["safety_json"]; !ok {
+			cap["safety_json"] = mustMarshalString(map[string]any{"enabled": cap["enabled"]})
+		}
+	}
+	return caps
+}
+
+func (h controlPlaneGraphQL) ExecuteManagedMutation(ctx context.Context, req core.ManagedMutationRequest) (json.RawMessage, error) {
+	out := make(map[string]any, len(req.Roots))
+	for _, root := range req.Roots {
+		row, err := h.mutateRow(ctx, root)
+		if err != nil {
+			return nil, err
+		}
+		out[root.FieldName] = filterRow(row, root.Fields)
+	}
+	return json.Marshal(out)
+}
+
+func (h controlPlaneGraphQL) mutateRow(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
+	if h.controlPlaneRootReadOnly(root.Table) {
+		return nil, fmt.Errorf("mutations blocked: table %s is read-only", root.Table)
+	}
+	if root.Table == "gj_workflow" || root.Table == "gj_workflow_execution" {
+		if h.service != nil && h.service.conf != nil && h.service.conf.workflowsSourceReadOnly() {
+			return nil, fmt.Errorf("mutations blocked: workflows source is read-only")
+		}
+	} else if h.service != nil && h.service.conf != nil && h.service.conf.graphjinSourceReadOnly() {
+		return nil, fmt.Errorf("mutations blocked: graphjin source is read-only")
+	}
+
+	switch root.Table {
+	case "gj_workflow":
+		return h.mutateWorkflow(root)
+	case "gj_workflow_execution":
+		return h.runWorkflow(ctx, root)
+	case "gj_config":
+		return h.mutateConfig(ctx, root)
+	default:
+		return nil, fmt.Errorf("unsupported GraphJin system mutation root: %s", root.Table)
+	}
+}
+
+func (h controlPlaneGraphQL) controlPlaneRootReadOnly(table string) bool {
+	if h.service == nil || h.service.conf == nil {
+		return true
+	}
+	return controlPlaneTableReadOnly(h.service.conf, h.service.metadataDB, table)
+}
+
+func (h controlPlaneGraphQL) mutateWorkflow(root core.ManagedMutationRoot) (map[string]any, error) {
+	if !h.service.conf.MCP.AllowWorkflowUpdates {
+		return nil, fmt.Errorf("workflow updates are not allowed; enable mcp.allow_workflow_updates")
+	}
+	switch root.Operation {
+	case "insert", "upsert", "update":
+		input := root.Input
+		if input == nil {
+			input = map[string]interface{}{}
+		}
+		name := stringFrom(input, "name")
+		if name == "" {
+			name = stringFromWhere(root.Where, "name")
+		}
+		description := stringFrom(input, "description")
+		code := stringFrom(input, "code")
+		if name == "" {
+			return nil, fmt.Errorf("workflow name is required")
+		}
+		if description == "" {
+			return nil, fmt.Errorf("workflow description is required")
+		}
+		if code == "" {
+			return nil, fmt.Errorf("workflow code is required")
+		}
+		if !workflowNameRe.MatchString(name) {
+			return nil, fmt.Errorf("invalid workflow name: must be alphanumeric with hyphens/underscores, 1-64 chars")
+		}
+		if !strings.Contains(code, "function main") {
+			return nil, fmt.Errorf("code must define a function main(input) entry point")
+		}
+		tags := stringSliceFrom(input["tags"])
+		vars, err := parseWorkflowVariables(input["variables"])
+		if err != nil {
+			return nil, err
+		}
+		path := filepath.Join(h.service.workflowBasePath(), name+workflowExt)
+		now := time.Now().UTC()
+		existingMeta := WorkflowMeta{}
+		if src, err := h.service.fs.Get(path); err == nil {
+			existingMeta, _ = parseWorkflowMeta(string(src))
+			existingMeta = catalogWorkflowMeta(existingMeta)
+		}
+		createdAt, _ := h.service.workflowTimestamps(path, existingMeta, now)
+		metaJSON, err := json.Marshal(WorkflowMeta{
+			Description: description,
+			Tags:        tags,
+			Variables:   vars,
+			CreatedAt:   createdAt,
+			UpdatedAt:   formatWorkflowTime(now),
+		})
+		if err != nil {
+			return nil, err
+		}
+		body := workflowMetaPrefix + string(metaJSON) + "\n" + code
+		if err := h.service.fs.Put(path, []byte(body)); err != nil {
+			return nil, err
+		}
+		h.service.markWorkflowChanged("workflow mutation")
+		return h.workflowMutationRow(name, false), nil
+	case "delete":
+		name := stringFromWhere(root.Where, "name")
+		if name == "" {
+			name = stringFrom(root.Input, "name")
+		}
+		if name == "" {
+			return nil, fmt.Errorf("workflow delete requires where: { name: { eq: ... } } or name input")
+		}
+		if !workflowNameRe.MatchString(name) {
+			return nil, fmt.Errorf("invalid workflow name: %s", name)
+		}
+		fs, ok := h.service.fs.(deleteFS)
+		if !ok {
+			return nil, fmt.Errorf("workflow delete is not supported by this filesystem")
+		}
+		if err := fs.Delete(filepath.Join(h.service.workflowBasePath(), name+workflowExt)); err != nil {
+			return nil, err
+		}
+		h.service.markWorkflowChanged("workflow mutation")
+		return h.workflowMutationRow(name, true), nil
+	default:
+		return nil, fmt.Errorf("unsupported gj_workflow operation: %s", root.Operation)
+	}
+}
+
+func (h controlPlaneGraphQL) workflowMutationRow(name string, deleted bool) map[string]any {
+	revision := ""
+	if snap, err := h.service.catalogSnapshot(); err == nil {
+		revision = snap.Revision
+	}
+	workflowSnap := h.service.workflowSnapshot(h.service.workflowTimeoutSeconds())
+	row := map[string]any{
+		"name":              name,
+		"catalog_item_id":   "workflow:" + name,
+		"catalog_revision":  revision,
+		"workflow_revision": workflowSnap.revision,
+		"deleted":           deleted,
+	}
+	for _, wf := range workflowSnap.workflows {
+		if wf.Name == name {
+			row["description"] = wf.Description
+			row["tags"] = wf.Tags
+			row["tags_json"] = mustMarshalString(wf.Tags)
+			row["variables"] = wf.Variables
+			row["variables_json"] = mustMarshalString(wf.Variables)
+			row["path"] = wf.Path
+			row["source_hash"] = wf.SourceHash
+			row["runtime"] = wf.Runtime
+			row["timeout_seconds"] = wf.TimeoutSeconds
+			row["created_at"] = wf.CreatedAt
+			row["updated_at"] = wf.UpdatedAt
+			break
+		}
+	}
+	return row
+}
+
+func (h controlPlaneGraphQL) runWorkflow(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
+	input := root.Input
+	name := stringFrom(input, "workflow_name")
+	if name == "" {
+		name = stringFrom(input, "name")
+	}
+	if name == "" {
+		return nil, fmt.Errorf("workflow_name is required")
+	}
+	namespace := stringFrom(input, "namespace")
+	var nsPtr *string
+	if namespace != "" {
+		nsPtr = &namespace
+	}
+	vars, _ := input["variables"].(map[string]interface{})
+	if vars == nil {
+		vars = map[string]interface{}{}
+	}
+	start := time.Now()
+	out, err := h.service.runNamedWorkflow(ctx, name, vars, nsPtr)
+	duration := time.Since(start).Milliseconds()
+	row := map[string]any{
+		"id":            fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%s:%d", name, start.UnixNano()))))[:16],
+		"workflow_name": name,
+		"namespace":     namespace,
+		"variables":     vars,
+		"duration_ms":   duration,
+	}
+	if err != nil {
+		row["status"] = "error"
+		row["error"] = err.Error()
+		return row, nil
+	}
+	row["status"] = "ok"
+	row["result_json"] = mustMarshalString(out)
+	return row, nil
+}
+
+func (h controlPlaneGraphQL) mutateConfig(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
+	if !h.service.conf.MCP.AllowConfigUpdates {
+		return nil, fmt.Errorf("config updates are not allowed; enable mcp.allow_config_updates")
+	}
+	switch root.Operation {
+	case "update", "upsert":
+	default:
+		return nil, fmt.Errorf("gj_config supports update and upsert mutations only")
+	}
+	ms := &mcpServer{service: h.service, ctx: ctx}
+	res, err := ms.handleUpdateCurrentConfig(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: root.Input}})
+	payload := mcpResultPayload(res, err)
+	if payload["success"] == false {
+		return nil, fmt.Errorf("%s", firstPayloadError(payload))
+	}
+	h.service.markCatalogChanged("config mutation")
+	return h.configRow(), nil
+}
+
+func firstPayloadError(payload map[string]any) string {
+	for _, item := range anySlice(payload["errors"]) {
+		if s := strings.TrimSpace(fmt.Sprint(item)); s != "" {
+			return s
+		}
+	}
+	if s := strings.TrimSpace(fmt.Sprint(payload["message"])); s != "" {
+		return s
+	}
+	return "config update failed"
+}
+
+func (h controlPlaneGraphQL) reloadSchema(root core.ManagedMutationRoot) (map[string]any, error) {
+	if !h.service.conf.MCP.AllowSchemaReload {
+		return nil, fmt.Errorf("schema reload is not allowed; enable mcp.allow_schema_reload")
+	}
+	row := map[string]any{"id": stableID("schema_reload", time.Now().String())}
+	if h.service.gj == nil {
+		row["reloaded"] = false
+		row["error"] = "GraphJin engine is not initialized"
+		return row, nil
+	}
+	if err := h.service.gj.Reload(); err != nil {
+		row["reloaded"] = false
+		row["error"] = err.Error()
+		return row, nil
+	}
+	h.service.markCatalogChanged("schema reload")
+	row["reloaded"] = true
+	if snap, err := h.service.catalogSnapshot(); err == nil {
+		row["catalog_revision"] = snap.Revision
+	}
+	_ = root
+	return row, nil
+}
+
+func (h controlPlaneGraphQL) schemaChangeSet(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
+	if !h.service.conf.MCP.AllowSchemaUpdates {
+		return nil, fmt.Errorf("schema changes are not allowed; enable mcp.allow_schema_updates")
+	}
+	input := root.Input
+	action := strings.ToLower(stringFrom(input, "action"))
+	if action == "" {
+		action = "preview"
+	}
+	args := map[string]any{
+		"schema":      stringFrom(input, "schema"),
+		"database":    stringFrom(input, "database"),
+		"destructive": boolFrom(input, "destructive"),
+	}
+	ms := &mcpServer{service: h.service, ctx: ctx}
+	var res *mcp.CallToolResult
+	var err error
+	if action == "apply" {
+		res, err = ms.handleApplySchemaChanges(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: args}})
+	} else {
+		res, err = ms.handlePreviewSchemaChanges(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: args}})
+	}
+	payload := mcpResultPayload(res, err)
+	row := map[string]any{
+		"id":           stableID("schema_change", action, args["database"], args["schema"]),
+		"action":       action,
+		"schema":       args["schema"],
+		"database":     args["database"],
+		"destructive":  args["destructive"],
+		"preview_json": mustMarshalString(payload),
+		"applied":      action == "apply" && payload["success"] != false,
+		"errors_json":  mustMarshalString(payload["errors"]),
+	}
+	if row["applied"] == true {
+		h.service.markCatalogChanged("schema change set")
+	}
+	if snap, err := h.service.catalogSnapshot(); err == nil {
+		row["catalog_revision"] = snap.Revision
+	}
+	return row, nil
+}
+
+func (h controlPlaneGraphQL) validateQueryWhere(root core.ManagedMutationRoot) (map[string]any, error) {
+	input := root.Input
+	table := stringFrom(input, "table")
+	database := stringFrom(input, "database")
+	rawWhere := input["where"]
+	if table == "" {
+		return nil, fmt.Errorf("table is required")
+	}
+	var schema *core.TableSchema
+	var err error
+	if database != "" {
+		schema, err = h.service.gj.GetTableSchemaForDatabase(database, table)
+	} else {
+		schema, err = h.service.gj.GetTableSchema(table)
+	}
+	if err != nil {
+		return nil, err
+	}
+	columnTypes := make(map[string]core.ColumnInfo)
+	for _, col := range schema.Columns {
+		columnTypes[col.Name] = col
+	}
+	whereData, err := parseWhereClauseArg(rawWhere)
+	if err != nil {
+		return map[string]any{"valid": false, "errors_json": mustMarshalString([]string{err.Error()})}, nil
+	}
+	errors := validateWhereClause(whereData, columnTypes, "")
+	if errors == nil {
+		errors = []WhereValidationError{}
+	}
+	return map[string]any{
+		"id":            stableID("validate", table, mustMarshalString(whereData)),
+		"table":         table,
+		"database":      database,
+		"where":         whereData,
+		"valid":         len(errors) == 0,
+		"errors_json":   mustMarshalString(errors),
+		"warnings_json": "[]",
+	}, nil
+}
+
+func (h controlPlaneGraphQL) repairQuery(root core.ManagedMutationRoot) map[string]any {
+	input := root.Input
+	query := stringFrom(input, "query")
+	errText := stringFrom(input, "error")
+	ms := &mcpServer{service: h.service}
+	repair := buildFixQueryErrorRepair(query, errText, ms.analyticsModeOn())
+	return map[string]any{
+		"id":                   stableID("repair", query, errText),
+		"query":                query,
+		"error":                errText,
+		"kind":                 repair.Kind,
+		"diagnosis":            repair.Diagnosis,
+		"fixed_query":          repair.RepairedQuery,
+		"explanation_json":     mustMarshalString(repair),
+		"follow_up_tools_json": mustMarshalString(repair.FollowUpTools),
+	}
+}
+
+func structRows[T any](items []T) []map[string]any {
+	rows := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		var row map[string]any
+		data, err := json.Marshal(item)
+		if err != nil {
+			continue
+		}
+		if err := json.Unmarshal(data, &row); err != nil {
+			continue
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func applyManagedQuery(rows []map[string]any, root core.ManagedQueryRoot) []map[string]any {
+	out := rows[:0]
+	for _, row := range rows {
+		if rowMatchesWhere(row, root.Where) {
+			out = append(out, row)
+		}
+	}
+	sortRows(out, root.OrderBy)
+	start := root.Offset
+	if start > len(out) {
+		return nil
+	}
+	out = out[start:]
+	if root.Limit > 0 && root.Limit < len(out) {
+		out = out[:root.Limit]
+	}
+	return out
+}
+
+func rowMatchesWhere(row map[string]any, where map[string]interface{}) bool {
+	if len(where) == 0 {
+		return true
+	}
+	for key, value := range where {
+		switch key {
+		case "and":
+			for _, item := range anySlice(value) {
+				m, _ := item.(map[string]interface{})
+				if !rowMatchesWhere(row, m) {
+					return false
+				}
+			}
+		case "or":
+			ok := false
+			for _, item := range anySlice(value) {
+				m, _ := item.(map[string]interface{})
+				if rowMatchesWhere(row, m) {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				return false
+			}
+		case "not":
+			m, _ := value.(map[string]interface{})
+			if rowMatchesWhere(row, m) {
+				return false
+			}
+		case "search":
+			needle := strings.ToLower(fmt.Sprint(value))
+			if needle != "" && !strings.Contains(strings.ToLower(mustMarshalString(row)), needle) {
+				return false
+			}
+		default:
+			if !matchColumn(row[key], value) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func matchColumn(got any, cond any) bool {
+	ops, ok := cond.(map[string]interface{})
+	if !ok {
+		return fmt.Sprint(got) == fmt.Sprint(cond)
+	}
+	for op, want := range ops {
+		switch op {
+		case "eq":
+			if fmt.Sprint(got) != fmt.Sprint(want) {
+				return false
+			}
+		case "neq":
+			if fmt.Sprint(got) == fmt.Sprint(want) {
+				return false
+			}
+		case "in":
+			if !containsString(anySlice(want), fmt.Sprint(got)) {
+				return false
+			}
+		case "nin":
+			if containsString(anySlice(want), fmt.Sprint(got)) {
+				return false
+			}
+		case "like", "ilike":
+			if !likeMatch(fmt.Sprint(got), fmt.Sprint(want), op == "ilike") {
+				return false
+			}
+		case "is_null":
+			isNull := got == nil || fmt.Sprint(got) == ""
+			if isNull != boolValue(want) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func splitSearchWhere(where map[string]interface{}) (string, map[string]any) {
+	if len(where) == 0 {
+		return "", nil
+	}
+	if v, ok := where["search"]; ok {
+		out := cloneWhere(where)
+		delete(out, "search")
+		return fmt.Sprint(v), out
+	}
+	if items, ok := where["and"]; ok {
+		var search string
+		var rest []any
+		for _, item := range anySlice(items) {
+			m, _ := item.(map[string]interface{})
+			s, w := splitSearchWhere(m)
+			if s != "" && search == "" {
+				search = s
+			}
+			if len(w) != 0 {
+				rest = append(rest, w)
+			}
+		}
+		if len(rest) == 0 {
+			return search, nil
+		}
+		return search, map[string]any{"and": rest}
+	}
+	return "", where
+}
+
+func cloneWhere(in map[string]interface{}) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func sortRows(rows []map[string]any, orderBy []core.ManagedOrderBy) {
+	if len(orderBy) == 0 {
+		return
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		for _, ob := range orderBy {
+			iv := fmt.Sprint(rows[i][ob.Column])
+			jv := fmt.Sprint(rows[j][ob.Column])
+			if iv == jv {
+				continue
+			}
+			if strings.Contains(strings.ToLower(ob.Order), "desc") {
+				return iv > jv
+			}
+			return iv < jv
+		}
+		return false
+	})
+}
+
+func filterRows(rows []map[string]any, fields []core.ManagedMutationField) []map[string]any {
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, filterRow(row, fields))
+	}
+	return out
+}
+
+func filterRow(row map[string]any, fields []core.ManagedMutationField) map[string]any {
+	if len(fields) == 0 {
+		return row
+	}
+	out := make(map[string]any, len(fields))
+	for _, field := range fields {
+		if field.Name == "__typename" {
+			continue
+		}
+		if value, ok := row[field.Column]; ok {
+			out[field.Name] = value
+		} else {
+			out[field.Name] = nil
+		}
+	}
+	return out
+}
+
+func anySlice(v any) []any {
+	switch x := v.(type) {
+	case []any:
+		return x
+	default:
+		return nil
+	}
+}
+
+func containsString(items []any, value string) bool {
+	for _, item := range items {
+		if fmt.Sprint(item) == value {
+			return true
+		}
+	}
+	return false
+}
+
+func likeMatch(got, pattern string, insensitive bool) bool {
+	if insensitive {
+		got = strings.ToLower(got)
+		pattern = strings.ToLower(pattern)
+	}
+	pattern = strings.Trim(pattern, "%")
+	return strings.Contains(got, pattern)
+}
+
+func boolValue(v any) bool {
+	b, _ := v.(bool)
+	return b
+}
+
+func stringFrom(m map[string]interface{}, key string) string {
+	if m == nil {
+		return ""
+	}
+	s, _ := m[key].(string)
+	return strings.TrimSpace(s)
+}
+
+func boolFrom(m map[string]interface{}, key string) bool {
+	if m == nil {
+		return false
+	}
+	b, _ := m[key].(bool)
+	return b
+}
+
+func stringFromWhere(where map[string]interface{}, key string) string {
+	if where == nil {
+		return ""
+	}
+	if cond, ok := where[key].(map[string]interface{}); ok {
+		if v, ok := cond["eq"]; ok {
+			return strings.TrimSpace(fmt.Sprint(v))
+		}
+	}
+	if items, ok := where["and"]; ok {
+		for _, item := range anySlice(items) {
+			if m, ok := item.(map[string]interface{}); ok {
+				if v := stringFromWhere(m, key); v != "" {
+					return v
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func stringSliceFrom(v any) []string {
+	var out []string
+	switch x := v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for key := range x {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if s, ok := x[key].(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+	default:
+		for _, item := range anySlice(v) {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+	}
+	return out
+}
+
+func stableID(parts ...any) string {
+	h := sha256.New()
+	for _, part := range parts {
+		_, _ = h.Write([]byte(fmt.Sprint(part)))
+		_, _ = h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+func mcpResultPayload(res *mcp.CallToolResult, err error) map[string]any {
+	if err != nil {
+		return map[string]any{"success": false, "errors": []string{err.Error()}}
+	}
+	if res == nil {
+		return map[string]any{"success": false, "errors": []string{"empty MCP result"}}
+	}
+	if res.StructuredContent != nil {
+		if m, ok := res.StructuredContent.(map[string]any); ok {
+			return m
+		}
+	}
+	return map[string]any{"success": !res.IsError, "errors": []string{}}
+}

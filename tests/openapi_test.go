@@ -18,8 +18,7 @@ import (
 //   - A temp OpenAPI 3 spec is dropped in a tempdir.
 //   - The mock upstream verifies that bearer auth was applied — if the
 //     header is missing the server panics, failing the test loudly.
-//   - A GraphJin Config carries the OpenAPISpecsDir + OpenAPI block with
-//     credentials and join wiring.
+//   - A GraphJin Config carries an openapi source with credentials and join wiring.
 //   - The resulting GraphQL query joins the upstream's response onto the
 //     parent users table via the synthesised "openapi" resolver type.
 //
@@ -96,24 +95,31 @@ paths:
 		DBType:           dbType,
 		DisableAllowList: true,
 		DefaultLimit:     2,
-		OpenAPISpecsDir:  specsDir,
-		OpenAPI: map[string]openapi.SpecConfig{
-			// Spec key matches the filename without extension. The
-			// loader uses this to look up auth + joins.
-			"payments": {
-				Auth: openapi.AuthConfig{
-					Scheme: "bearer",
-					Token:  "test-tok",
-				},
-				Joins: map[string]openapi.JoinConfig{
-					// Wires GET /payments/{paymentId} onto users.stripe_id
-					// — the same join shape Example_queryWithRemoteAPIJoin
-					// exercises, but spec-driven instead of URL-templated.
-					"getPaymentById": {
-						ParentTable:  "users",
-						ParentColumn: "stripe_id",
-						Param:        "paymentId",
-						ExposeAs:     "payment",
+		Sources: []core.SourceConfig{
+			{Name: core.DefaultDBName, Kind: "sql", Type: dbType, Default: true},
+			{
+				Name:     "upstream",
+				Kind:     "openapi",
+				SpecsDir: specsDir,
+				Specs: map[string]openapi.SpecConfig{
+					// Spec key matches the filename without extension. The
+					// loader uses this to look up auth + joins.
+					"payments": {
+						Auth: openapi.AuthConfig{
+							Scheme: "bearer",
+							Token:  "test-tok",
+						},
+						Joins: map[string]openapi.JoinConfig{
+							// Wires GET /payments/{paymentId} onto users.stripe_id
+							// - the same join shape Example_queryWithRemoteAPIJoin
+							// exercises, but spec-driven instead of URL-templated.
+							"getPaymentById": {
+								ParentTable:  "users",
+								ParentColumn: "stripe_id",
+								Param:        "paymentId",
+								ExposeAs:     "payment",
+							},
+						},
 					},
 				},
 			},

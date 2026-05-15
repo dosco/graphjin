@@ -22,7 +22,7 @@ func TestHandleSaveWorkflow(t *testing.T) {
 	res, err := ms.handleSaveWorkflow(context.Background(), newToolRequest(map[string]any{
 		"name":        "order_pnl",
 		"description": "Fetch all orders and compute profit & loss",
-		"code":        "function main(input) {\n  var tables = gj.tools.listTables();\n  return { tables: tables };\n}\n",
+		"code":        "function main(input) {\n  var tables = gj.tools.queryCatalog({where: {kind: {eq: \"table\"}}}).cards;\n  return { tables: tables };\n}\n",
 		"tags":        []any{"orders", "finance", "pnl"},
 		"variables": []any{
 			map[string]any{
@@ -160,6 +160,9 @@ function main(input) { return {}; }
 			}
 			if len(w.Variables) != 1 || w.Variables[0].Name != "customer_id" || !w.Variables[0].Required {
 				t.Fatalf("wrong variables: %v", w.Variables)
+			}
+			if w.CreatedAt == "" || w.UpdatedAt == "" {
+				t.Fatalf("expected workflow timestamps: %+v", w)
 			}
 		}
 	}

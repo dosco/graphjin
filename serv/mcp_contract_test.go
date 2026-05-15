@@ -19,7 +19,7 @@ import (
 )
 
 func TestMCPToolSchemasMatchHandlerContracts(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{AllowWorkflowUpdates: true})
+	ms := mockMcpServerWithConfig(MCPConfig{AllowWorkflowUpdates: true, LegacyDiscovery: true})
 	ms.service.conf.Serv.Production = false
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 	ms.registerTools()
@@ -124,9 +124,14 @@ func TestGuidanceToolsReturnGuideAndNext(t *testing.T) {
 	if !strings.Contains(out.GuideMarkdown, "Query Guide for Table: users") {
 		t.Fatalf("expected users query guide markdown, got %q", out.GuideMarkdown)
 	}
-	for _, want := range []string{"Window Functions", "@window", "row_number", "lag_"} {
+	for _, want := range []string{"Analytics Directives", "@running", "@previous", "@rank"} {
 		if !strings.Contains(out.GuideMarkdown, want) {
 			t.Fatalf("expected write_query guide to include %q, got %q", want, out.GuideMarkdown)
+		}
+	}
+	for _, stale := range []string{"@window", "lag_", "lead_", "partition:", "frame:"} {
+		if strings.Contains(out.GuideMarkdown, stale) {
+			t.Fatalf("write_query guide should not include stale analytics syntax %q: %q", stale, out.GuideMarkdown)
 		}
 	}
 	if out.Next == nil {
@@ -164,7 +169,7 @@ func TestGetMutationSyntax_IncludesCodeSQLWorkflow(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected codesql mutation guidance, got %#v", out["codesql"])
 	}
-	if !strings.Contains(codesqlSection["preview"].(string), "code_change_sets") {
+	if !strings.Contains(codesqlSection["preview"].(string), "gj_code") {
 		t.Fatalf("expected preview example in codesql section, got %#v", codesqlSection["preview"])
 	}
 	rules, ok := codesqlSection["rules"].([]any)
@@ -178,7 +183,7 @@ func TestWriteMutation_CodeSQLGuide(t *testing.T) {
 
 	res, err := ms.handleWriteMutationTool(context.Background(), newToolRequest(map[string]any{
 		"operation": "preview",
-		"table":     "code_change_sets",
+		"table":     "gj_code",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -190,7 +195,7 @@ func TestWriteMutation_CodeSQLGuide(t *testing.T) {
 	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	for _, want := range []string{"code_files { path hash }", `action: "preview"`, "old_text", "code_context"} {
+	for _, want := range []string{"gj_code", "hash", `action: "preview"`, "old_text", "code_context"} {
 		if !strings.Contains(out.GuideMarkdown, want) {
 			t.Fatalf("expected CodeSQL guide to include %q, got %q", want, out.GuideMarkdown)
 		}
@@ -459,11 +464,13 @@ func TestHandleGetWorkflowGuide_UsesRegisteredToolSurface(t *testing.T) {
 
 	t.Run("full surface includes authoring flows", func(t *testing.T) {
 		ms := mockMcpServerWithConfig(MCPConfig{
-			AllowRawQueries:      true,
-			AllowConfigUpdates:   true,
-			AllowSchemaReload:    true,
-			AllowWorkflowUpdates: true,
-			AllowDevTools:        true,
+			AllowRawQueries:        true,
+			AllowConfigUpdates:     true,
+			AllowSchemaReload:      true,
+			AllowWorkflowUpdates:   true,
+			AllowWorkflowExecution: true,
+			AllowDevTools:          true,
+			LegacyDiscovery:        true,
 		})
 		ms.service.conf.Serv.Production = false
 		ms.srv = server.NewMCPServer("test", "0.0.0")
@@ -800,53 +807,53 @@ func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
 			errorMsg:     `ambiguous relationship orders -> users: multiple foreign keys (customer_id, salesperson_id). Disambiguate by adding @through(column: "customer_id") or @through(column: "salesperson_id") on the nested selection`,
 			wantKind:     fixKindMultiFKAmbiguity,
 			wantInRepair: []string{`@through(column: "customer_id")`, "candidates: customer_id, salesperson_id"},
-			wantTools:    []string{"describe_table", "get_table_sample"},
+			wantTools:    []string{"query_catalog", "get_catalog_card"},
 		},
 		{
 			name:         "distinct_join_shape",
 			errorMsg:     `nested selection 'salesorderheader' joins through parent column 'salesorderdetail.salesorderid', which is not in distinct: [productid]. The GROUP BY collapses 'salesorderid' away.`,
 			wantKind:     fixKindDistinctJoinShape,
 			wantInRepair: []string{"<dimension_table>", "salesorderdetail", "salesorderheader", "productid", "metric_by_dimension"},
-			wantTools:    []string{"get_query_syntax", "get_workflow_guide"},
+			wantTools:    []string{"query_catalog", "get_catalog_card"},
 		},
 		{
 			name:         "partition_filter_required",
 			errorMsg:     `table "salesorderdetail" requires a filter on temporal column "modifieddate" (e.g., { modifieddate: { gt: "2026-01-01" } }); pass unrestricted: true to override`,
 			wantKind:     fixKindPartitionFilter,
 			wantInRepair: []string{"salesorderdetail", "modifieddate", "unrestricted: true"},
-			wantTools:    []string{"get_table_sample"},
+			wantTools:    []string{"query_catalog", "validate_where_clause"},
 		},
 		{
 			name:      "unknown_relationship",
 			errorMsg:  `relationship not found: foo -> bar`,
 			wantKind:  fixKindUnknownRelationship,
-			wantTools: []string{"find_path"},
+			wantTools: []string{"query_catalog"},
 		},
 		{
 			name:      "table_not_found",
 			errorMsg:  `table not found: usrs`,
 			wantKind:  fixKindTableNotFound,
-			wantTools: []string{"list_tables"},
+			wantTools: []string{"query_catalog"},
 		},
 		{
 			name:      "column_not_found_postgres",
 			errorMsg:  `pq: column purchases_0.customer_id does not exist`,
 			wantKind:  fixKindColumnNotFound,
-			wantTools: []string{"describe_table"},
+			wantTools: []string{"query_catalog"},
 		},
 		{
 			name:         "field_not_on_table",
 			errorMsg:     `field 'id' is not a column or a function`,
 			wantKind:     fixKindFieldNotOnTable,
 			wantInRepair: []string{"<actual_pk_column>", "<actual_name_column>"},
-			wantTools:    []string{"describe_table", "get_query_syntax"},
+			wantTools:    []string{"query_catalog", "get_catalog_card"},
 		},
 		{
 			name:         "wrong_dialect_argument",
 			errorMsg:     `unknown argument 'aggregation' on field 'orders'`,
 			wantKind:     fixKindWrongDialect,
 			wantInRepair: []string{"sum(expr:", "sum_<numeric_col>", "count_<pk_column>"},
-			wantTools:    []string{"get_query_syntax", "describe_table"},
+			wantTools:    []string{"query_catalog", "get_catalog_card"},
 		},
 		{
 			name:         "wrong_dialect_aggregate_suffix",
@@ -854,7 +861,7 @@ func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
 			query:        `query { orders_aggregate { aggregate { count } } }`,
 			wantKind:     fixKindWrongDialect,
 			wantInRepair: []string{"orders", "sum(expr:", "_aggregate"},
-			wantTools:    []string{"get_query_syntax"},
+			wantTools:    []string{"query_catalog"},
 		},
 		{
 			name:     "generic_fallback",

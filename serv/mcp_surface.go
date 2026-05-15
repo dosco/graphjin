@@ -9,26 +9,29 @@ type MCPCLIResource struct {
 }
 
 const (
-	QuerySyntaxResourceURI    = "graphjin://syntax/query"
-	MutationSyntaxResourceURI = "graphjin://syntax/mutation"
-	WorkflowGuideResourceURI  = "graphjin://guides/workflow"
+	CatalogOverviewResourceURI     = "graphjin://catalog/overview"
+	CatalogEntrypointsResourceURI  = "graphjin://catalog/entrypoints"
+	CatalogCapabilitiesResourceURI = "graphjin://catalog/capabilities"
+	QuerySyntaxResourceURI         = "graphjin://syntax/query"
+	MutationSyntaxResourceURI      = "graphjin://syntax/mutation"
+	WorkflowGuideResourceURI       = "graphjin://guides/workflow"
 )
 
 var mcpCLIResources = []MCPCLIResource{
 	{
-		Command: "query_syntax",
-		URI:     QuerySyntaxResourceURI,
-		Short:   "Read the GraphJin query syntax resource",
+		Command: "catalog_overview",
+		URI:     CatalogOverviewResourceURI,
+		Short:   "Read the GraphJin catalog overview resource",
 	},
 	{
-		Command: "mutation_syntax",
-		URI:     MutationSyntaxResourceURI,
-		Short:   "Read the GraphJin mutation syntax resource",
+		Command: "catalog_entrypoints",
+		URI:     CatalogEntrypointsResourceURI,
+		Short:   "Read the GraphJin catalog entrypoints resource",
 	},
 	{
-		Command: "workflow_guide",
-		URI:     WorkflowGuideResourceURI,
-		Short:   "Read the GraphJin workflow guide resource",
+		Command: "catalog_capabilities",
+		URI:     CatalogCapabilitiesResourceURI,
+		Short:   "Read the GraphJin catalog capabilities resource",
 	},
 	{
 		Command: "js_runtime_api",
@@ -48,6 +51,7 @@ func MCPAllToolNames() []string {
 	conf.MCP.AllowSchemaUpdates = true
 	conf.MCP.AllowDevTools = true
 	conf.MCP.AllowRawQueries = true
+	conf.MCP.LegacyDiscovery = true
 
 	out := mcpToolList(conf)
 	return append([]string(nil), out...)

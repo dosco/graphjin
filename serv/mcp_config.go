@@ -3,12 +3,14 @@ package serv
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/openapi"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/viper"
 )
@@ -19,10 +21,10 @@ func (ms *mcpServer) registerConfigTools() {
 	if !ms.service.conf.Serv.Production {
 		ms.srv.AddTool(mcp.NewTool(
 			"get_current_config",
-			mcp.WithDescription("Get current GraphJin configuration. Returns databases, tables, roles, blocklist, functions, and resolvers. "+
+			mcp.WithDescription("Get current GraphJin configuration. Returns sources, databases, relationships, tables, roles, blocklist, functions, resolvers, and MCP settings. "+
 				"Use this to understand the current configuration before making changes."),
 			mcp.WithString("section",
-				mcp.Description("Optional section to retrieve: 'databases', 'metadata', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', or 'all' (default)"),
+				mcp.Description("Optional section to retrieve: 'sources', 'databases', 'relationships', 'metadata', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', 'mcp', or 'all' (default)"),
 			),
 		), ms.handleGetCurrentConfig)
 	}
@@ -31,9 +33,9 @@ func (ms *mcpServer) registerConfigTools() {
 	if ms.service.conf.MCP.AllowConfigUpdates {
 		ms.srv.AddTool(mcp.NewTool(
 			"update_current_config",
-			mcp.WithDescription("Update GraphJin configuration and automatically reload. "+
+			mcp.WithDescription("Compatibility tool for the GraphQL control-plane mutation gj_config(id: \"current\", update: ...). Update GraphJin configuration and automatically reload. "+
 				"Changes are applied in-memory and take effect immediately. "+
-				"Supports databases, metadata, tables, roles, blocklist, functions, and resolvers. "+
+				"Supports sources, databases, relationships, MCP settings, metadata, tables, roles, blocklist, functions, and resolvers. "+
 				"System database names (postgres, mysql, information_schema, master, etc.) "+
 				"are rejected by default — use a user database name instead. "+
 				"Use create_if_not_exists: true to create a new database on the server before connecting (dev mode only). "+
@@ -241,13 +243,16 @@ func (ms *mcpServer) registerConfigTools() {
 // MCPConfigResponse represents a section of the configuration for MCP
 type MCPConfigResponse struct {
 	ActiveDatabase string                         `json:"active_database,omitempty"`
+	Sources        []core.SourceConfig            `json:"sources,omitempty"`
 	Databases      map[string]core.DatabaseConfig `json:"databases,omitempty"`
+	Relationships  []core.RelationshipConfig      `json:"relationships,omitempty"`
 	Metadata       core.MetadataConfig            `json:"metadata,omitempty"`
 	Tables         []core.Table                   `json:"tables,omitempty"`
 	Roles          []RoleInfo                     `json:"roles,omitempty"`
 	Blocklist      []string                       `json:"blocklist,omitempty"`
 	Functions      []core.Function                `json:"functions,omitempty"`
 	Resolvers      []core.ResolverConfig          `json:"resolvers,omitempty"`
+	MCP            MCPConfig                      `json:"mcp,omitempty"`
 }
 
 // RoleInfo provides role information safe for JSON serialization
@@ -273,6 +278,10 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 	result.ActiveDatabase = ms.getActiveDatabase()
 
 	switch strings.ToLower(section) {
+	case "sources":
+		result.Sources = conf.Sources
+	case "relationships":
+		result.Relationships = conf.Relationships
 	case "databases":
 		result.Databases = conf.Databases
 	case "metadata":
@@ -287,16 +296,21 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 		result.Functions = conf.Functions
 	case "resolvers":
 		result.Resolvers = conf.Resolvers
+	case "mcp":
+		result.MCP = ms.service.conf.MCP
 	case "all":
+		result.Sources = conf.Sources
 		result.Databases = conf.Databases
+		result.Relationships = conf.Relationships
 		result.Metadata = conf.Metadata
 		result.Tables = conf.Tables
 		result.Roles = convertRolesToInfo(conf.Roles)
 		result.Blocklist = conf.Blocklist
 		result.Functions = conf.Functions
 		result.Resolvers = conf.Resolvers
+		result.MCP = ms.service.conf.MCP
 	default:
-		return mcp.NewToolResultError(fmt.Sprintf("unknown section: %s. Valid sections: databases, metadata, tables, roles, blocklist, functions, resolvers, all", section)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("unknown section: %s. Valid sections: sources, databases, relationships, metadata, tables, roles, blocklist, functions, resolvers, mcp, all", section)), nil
 	}
 	return ms.toolResultJSON("get_current_config", args, result)
 }
@@ -357,7 +371,9 @@ type DatabaseConfigInput struct {
 // TableConfigInput represents a table config for input
 type TableConfigInput struct {
 	Name      string              `json:"name"`
+	Source    string              `json:"source,omitempty"`
 	Database  string              `json:"database,omitempty"`
+	ReadOnly  bool                `json:"read_only,omitempty"`
 	Blocklist []string            `json:"blocklist,omitempty"`
 	Columns   []ColumnConfigInput `json:"columns,omitempty"`
 	OrderBy   map[string][]string `json:"order_by,omitempty"`
@@ -472,6 +488,11 @@ type ConfigUpdateResult struct {
 
 // handleUpdateCurrentConfig updates the configuration and reloads
 func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if ms.service != nil {
+		ms.service.configMu.Lock()
+		defer ms.service.configMu.Unlock()
+	}
+
 	args := req.GetArguments()
 
 	var changes []string
@@ -488,6 +509,36 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	if createIfNotExists && ms.service.conf.Serv.Production {
 		errors = append(errors, "create_if_not_exists is only available in dev mode")
 		createIfNotExists = false
+	}
+
+	var mcpPatch map[string]interface{}
+	if rawMCP, ok := args["mcp"].(map[string]interface{}); ok && len(rawMCP) > 0 {
+		if _, err := validateMCPConfigPatch(rawMCP); err != nil {
+			errors = append(errors, err.Error())
+		} else {
+			mcpPatch = rawMCP
+			changes = append(changes, "updated mcp config")
+		}
+	}
+
+	if sources, ok := args["sources"].([]any); ok {
+		parsed, err := parseSourceConfigList(sources)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("sources: %v", err))
+		} else {
+			conf.Sources = parsed
+			changes = append(changes, "updated sources")
+		}
+	}
+
+	if relationships, ok := args["relationships"].([]any); ok {
+		parsed, err := parseRelationshipConfigList(relationships)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("relationships: %v", err))
+		} else {
+			conf.Relationships = parsed
+			changes = append(changes, "updated relationships")
+		}
 	}
 
 	// Process databases: parse, validate, test connections, then commit
@@ -839,9 +890,21 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		data, _ := mcpMarshalJSON(result, true)
 		return mcpToolResultJSONBytes(data), nil
 	}
+	if len(errors) > 0 {
+		result := ConfigUpdateResult{
+			Success: false,
+			Message: "Config validation failed, changes not applied",
+			Changes: changes,
+			Errors:  errors,
+		}
+		result.Next = ms.nextForConfigUpdate(result)
+		data, _ := mcpMarshalJSON(result, true)
+		return mcpToolResultJSONBytes(data), nil
+	}
 
 	var availableDBs []string
-	if len(changes) > 0 {
+	coreChanged := !reflect.DeepEqual(stagedCore, ms.service.conf.Core)
+	if coreChanged {
 		stage, err := ms.prepareStagedRuntime(conf, createIfNotExists)
 		if err != nil {
 			if stage != nil {
@@ -875,11 +938,20 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		}
 	}
 
+	if mcpPatch != nil && len(errors) == 0 {
+		mcpChanges, err := applyMCPConfigPatch(ms.service.conf, mcpPatch)
+		if err != nil {
+			errors = append(errors, err.Error())
+		} else {
+			changes = append(changes, mcpChanges...)
+		}
+	}
+
 	// Save to disk only after successful reload (dev mode only)
 	if len(changes) > 0 && !ms.service.conf.Serv.Production {
 		if err := ms.saveConfigToDisk(); err != nil {
 			ms.service.log.Warnf("Failed to save config to disk: %v", err)
-			errors = append(errors, fmt.Sprintf("config save warning: %v (changes applied in-memory only)", err))
+			changes = append(changes, fmt.Sprintf("config save warning: %v (changes applied in-memory only)", err))
 		} else {
 			ms.service.log.Info("Configuration saved to disk")
 			changes = append(changes, "configuration saved to disk")
@@ -904,6 +976,76 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
 	}
 	return mcpToolResultJSONBytes(data), nil
+}
+
+func parseSourceConfigList(items []any) ([]core.SourceConfig, error) {
+	data, err := json.Marshal(items)
+	if err != nil {
+		return nil, err
+	}
+	var out []core.SourceConfig
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func parseRelationshipConfigList(items []any) ([]core.RelationshipConfig, error) {
+	data, err := json.Marshal(items)
+	if err != nil {
+		return nil, err
+	}
+	var out []core.RelationshipConfig
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func validateMCPConfigPatch(patch map[string]interface{}) ([]string, error) {
+	var changes []string
+	for key, value := range patch {
+		if _, ok := value.(bool); !ok {
+			return changes, fmt.Errorf("mcp.%s must be boolean", key)
+		}
+		switch key {
+		case "allow_workflow_updates", "allow_workflow_execution", "allow_config_updates", "allow_schema_reload", "allow_schema_updates", "allow_dev_tools", "allow_raw_queries", "legacy_discovery":
+			changes = append(changes, "updated mcp."+key)
+		default:
+			return changes, fmt.Errorf("unsupported mcp config key: %s", key)
+		}
+	}
+	sort.Strings(changes)
+	return changes, nil
+}
+
+func applyMCPConfigPatch(conf *Config, patch map[string]interface{}) ([]string, error) {
+	changes, err := validateMCPConfigPatch(patch)
+	if err != nil {
+		return changes, err
+	}
+	for key, value := range patch {
+		v := value.(bool)
+		switch key {
+		case "allow_workflow_updates":
+			conf.MCP.AllowWorkflowUpdates = v
+		case "allow_workflow_execution":
+			conf.MCP.AllowWorkflowExecution = v
+		case "allow_config_updates":
+			conf.MCP.AllowConfigUpdates = v
+		case "allow_schema_reload":
+			conf.MCP.AllowSchemaReload = v
+		case "allow_schema_updates":
+			conf.MCP.AllowSchemaUpdates = v
+		case "allow_dev_tools":
+			conf.MCP.AllowDevTools = v
+		case "allow_raw_queries":
+			conf.MCP.AllowRawQueries = v
+		case "legacy_discovery":
+			conf.MCP.LegacyDiscovery = v
+		}
+	}
+	return changes, nil
 }
 
 // parseDBConfig parses a database config from a map
@@ -1005,6 +1147,12 @@ func parseTableConfig(m map[string]any) (core.Table, error) {
 
 	if db, ok := m["database"].(string); ok {
 		table.Database = db
+	}
+	if source, ok := m["source"].(string); ok {
+		table.Source = source
+	}
+	if readOnly, ok := m["read_only"].(bool); ok {
+		table.ReadOnly = readOnly
 	}
 	if schema, ok := m["schema"].(string); ok {
 		table.Schema = schema
@@ -1418,6 +1566,20 @@ func cloneCoreConfig(src core.Config) core.Config {
 		for name, dbConf := range src.Databases {
 			dst.Databases[name] = dbConf
 		}
+	}
+	if src.Sources != nil {
+		dst.Sources = append([]core.SourceConfig(nil), src.Sources...)
+		for i := range dst.Sources {
+			if src.Sources[i].Specs != nil {
+				dst.Sources[i].Specs = make(map[string]openapi.SpecConfig, len(src.Sources[i].Specs))
+				for name, spec := range src.Sources[i].Specs {
+					dst.Sources[i].Specs[name] = spec
+				}
+			}
+		}
+	}
+	if src.Relationships != nil {
+		dst.Relationships = append([]core.RelationshipConfig(nil), src.Relationships...)
 	}
 	if src.Metadata.CodeDatabases != nil {
 		dst.Metadata.CodeDatabases = append([]string(nil), src.Metadata.CodeDatabases...)
@@ -1972,10 +2134,19 @@ func (ms *mcpServer) saveConfigToDisk() error {
 func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 	conf := &ms.service.conf.Core
 
-	if conf.Databases != nil {
+	if conf.SourceMode() {
+		if conf.Sources != nil {
+			v.Set("sources", conf.Sources)
+		}
+		if conf.Relationships != nil {
+			v.Set("relationships", conf.Relationships)
+		}
+	} else if conf.Databases != nil {
 		v.Set("databases", conf.Databases)
 	}
-	v.Set("metadata", conf.Metadata)
+	if !conf.SourceMode() {
+		v.Set("metadata", conf.Metadata)
+	}
 	if conf.Tables != nil {
 		v.Set("tables", conf.Tables)
 	}
@@ -1991,4 +2162,5 @@ func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 	if conf.Resolvers != nil {
 		v.Set("resolvers", conf.Resolvers)
 	}
+	v.Set("mcp", ms.service.conf.MCP)
 }

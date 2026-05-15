@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
+	"github.com/dosco/graphjin/core/v3"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -24,6 +23,8 @@ type WorkflowMeta struct {
 	Description string             `json:"description"`
 	Tags        []string           `json:"tags,omitempty"`
 	Variables   []WorkflowVariable `json:"variables,omitempty"`
+	CreatedAt   string             `json:"created_at,omitempty"`
+	UpdatedAt   string             `json:"updated_at,omitempty"`
 }
 
 // WorkflowVariable describes one input variable expected by a saved workflow.
@@ -36,10 +37,13 @@ type WorkflowVariable struct {
 
 // WorkflowInfo is returned by list_workflows.
 type WorkflowInfo struct {
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	Tags        []string           `json:"tags,omitempty"`
-	Variables   []WorkflowVariable `json:"variables,omitempty"`
+	Name             string             `json:"name"`
+	Description      string             `json:"description"`
+	Tags             []string           `json:"tags,omitempty"`
+	Variables        []WorkflowVariable `json:"variables,omitempty"`
+	CreatedAt        string             `json:"created_at,omitempty"`
+	UpdatedAt        string             `json:"updated_at,omitempty"`
+	WorkflowRevision string             `json:"workflow_revision,omitempty"`
 }
 
 var workflowNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
@@ -47,25 +51,27 @@ var workflowVariableNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // registerWorkflowMgmtTools registers save_workflow and list_workflows.
 func (ms *mcpServer) registerWorkflowMgmtTools() {
-	// list_workflows — always available (read-only)
-	ms.srv.AddTool(mcp.NewTool(
-		"list_workflows",
-		mcp.WithDescription("List all saved JavaScript workflows in ./workflows/. "+
-			"Returns name, description, and tags for each workflow. "+
-			"Check here FIRST before authoring a new workflow — a reusable one may already exist."),
-	), ms.handleListWorkflows)
+	if !ms.service.conf.legacyMCPToolsEnabled() {
+		return
+	}
+	if ms.service.conf.legacyMCPToolsEnabled() {
+		ms.srv.AddTool(mcp.NewTool(
+			"list_workflows",
+			mcp.WithDescription("Legacy workflow discovery tool. Prefer query_catalog(where: {kind: {eq: 'workflow'}}). List saved JavaScript workflows in ./workflows/."),
+		), ms.handleListWorkflows)
+	}
 
 	// save_workflow — gated by AllowWorkflowUpdates
 	if ms.service.conf.MCP.AllowWorkflowUpdates {
 		ms.srv.AddTool(mcp.NewTool(
 			"save_workflow",
-			mcp.WithDescription("Save a JavaScript workflow to ./workflows/<name>.js. "+
-				"The workflow can then be executed with execute_workflow. "+
+			mcp.WithDescription("Compatibility tool for the GraphQL control-plane mutation gj_workflow(insert/update/delete). Save a JavaScript workflow to ./workflows/<name>.js. "+
+				"The workflow can then be executed with gj_workflow_execution(insert), or execute_workflow when the legacy MCP tool is enabled. "+
 				"Call get_js_runtime_api FIRST to learn the available gj.tools.* functions. "+
 				"The code MUST define a `function main(input) { ... }` entry point. "+
-				"Declare reusable workflow variables in metadata so execute_workflow callers know what to pass. "+
-				"Use gj.tools.* to call MCP tools (e.g., gj.tools.listTables(), "+
-				"gj.tools.describeTable({table:'orders'}), gj.tools.executeGraphql({query:'...'}))."),
+				"Declare reusable workflow variables in metadata so callers know what to pass. "+
+				"Use gj.tools.* to call MCP tools (e.g., gj.tools.queryCatalog({where:{kind:{eq:'table'}}}), "+
+				"gj.tools.getCatalogCard({id:'table:...'}), gj.tools.executeSavedQuery({name:'...'}))."),
 			mcp.WithString("name",
 				mcp.Required(),
 				mcp.Description("Workflow name (alphanumeric, hyphens, underscores; max 64 chars). "+
@@ -118,38 +124,20 @@ func (ms *mcpServer) registerWorkflowMgmtTools() {
 // handleListWorkflows returns all workflows with their metadata.
 func (ms *mcpServer) handleListWorkflows(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := req.GetArguments()
-	files, err := ms.service.fs.List(workflowsPath)
-	if err != nil {
-		// No workflows directory yet — return empty list
-		return ms.toolResultJSON("list_workflows", args, map[string]any{"workflows": []any{}, "count": 0})
-	}
-
-	workflows := make([]WorkflowInfo, 0, len(files))
-	for _, name := range files {
-		if !strings.HasSuffix(name, workflowExt) {
-			continue
+	snap := ms.service.workflowSnapshot(ms.service.workflowTimeoutSeconds())
+	workflows := make([]WorkflowInfo, 0, len(snap.workflows))
+	for _, wf := range snap.workflows {
+		info := WorkflowInfo{
+			Name:             wf.Name,
+			Description:      wf.Description,
+			Tags:             append([]string(nil), wf.Tags...),
+			Variables:        workflowVariablesFromCatalog(wf.Variables),
+			CreatedAt:        wf.CreatedAt,
+			UpdatedAt:        wf.UpdatedAt,
+			WorkflowRevision: snap.revision,
 		}
-
-		baseName := strings.TrimSuffix(name, workflowExt)
-		info := WorkflowInfo{Name: baseName}
-
-		// Try to read metadata from file header
-		src, err := ms.service.fs.Get(filepath.Join(workflowsPath, name))
-		if err == nil {
-			if meta, ok := parseWorkflowMeta(string(src)); ok {
-				info.Description = meta.Description
-				info.Tags = meta.Tags
-				info.Variables = meta.Variables
-			}
-		}
-
 		workflows = append(workflows, info)
 	}
-
-	// Sort by name so output is deterministic regardless of fs.List ordering.
-	sort.SliceStable(workflows, func(i, j int) bool {
-		return workflows[i].Name < workflows[j].Name
-	})
 
 	result := map[string]any{
 		"workflows": workflows,
@@ -165,92 +153,25 @@ func (ms *mcpServer) handleSaveWorkflow(ctx context.Context, req mcp.CallToolReq
 	}
 
 	args := req.GetArguments()
-	name, _ := args["name"].(string)
-	description, _ := args["description"].(string)
-	code, _ := args["code"].(string)
-
-	if name == "" {
-		return mcp.NewToolResultError("name is required"), nil
-	}
-	if description == "" {
-		return mcp.NewToolResultError("description is required"), nil
-	}
-	if code == "" {
-		return mcp.NewToolResultError("code is required"), nil
-	}
-
-	// Validate name
-	if !workflowNameRe.MatchString(name) {
-		return mcp.NewToolResultError(
-			"invalid workflow name: must be alphanumeric with hyphens/underscores, 1-64 chars"), nil
-	}
-
-	// Validate code contains main function
-	if !strings.Contains(code, "function main") {
-		return mcp.NewToolResultError(
-			"code must define a `function main(input) { ... }` entry point"), nil
-	}
-
-	// Build tags
-	var tags []string
-	if rawTags, ok := args["tags"]; ok {
-		switch v := rawTags.(type) {
-		case []any:
-			for _, t := range v {
-				if s, ok := t.(string); ok {
-					tags = append(tags, s)
-				}
-			}
-		case map[string]any:
-			// MCP object type — extract values if they're strings
-			for _, val := range v {
-				if s, ok := val.(string); ok {
-					tags = append(tags, s)
-				}
-			}
-		}
-	}
-
-	variables, err := parseWorkflowVariables(args["variables"])
+	row, err := newControlPlaneGraphQL(ms.service).mutateWorkflow(core.ManagedMutationRoot{
+		Operation: "insert",
+		Input:     args,
+	})
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	// Build metadata header
-	meta := WorkflowMeta{
-		Description: description,
-		Tags:        tags,
-		Variables:   variables,
-	}
-	metaJSON, err := json.Marshal(meta)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode metadata: %v", err)), nil
-	}
-
-	// Compose file: metadata header + code
-	var sb strings.Builder
-	sb.WriteString(workflowMetaPrefix)
-	sb.Write(metaJSON)
-	sb.WriteString("\n")
-	sb.WriteString(code)
-	if !strings.HasSuffix(code, "\n") {
-		sb.WriteString("\n")
-	}
-
-	// Write to filesystem
-	filePath := filepath.Join(workflowsPath, name+workflowExt)
-	if err := ms.service.fs.Put(filePath, []byte(sb.String())); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to save workflow: %v", err)), nil
-	}
-
 	result := map[string]any{
 		"saved":       true,
-		"name":        name,
-		"path":        filePath,
-		"description": description,
-		"tags":        tags,
-		"variables":   variables,
-		"hint":        "Now call execute_workflow with name: " + name,
+		"name":        row["name"],
+		"path":        row["path"],
+		"description": row["description"],
+		"tags":        row["tags"],
+		"variables":   row["variables"],
+		"source_hash": row["source_hash"],
+		"created_at":  row["created_at"],
+		"updated_at":  row["updated_at"],
+		"hint":        "Now run gj_workflow_execution(insert), or call execute_workflow when the legacy MCP tool is enabled, with name: " + fmt.Sprint(row["name"]),
 	}
 	return ms.toolResultJSON("save_workflow", args, result)
 }
@@ -331,4 +252,17 @@ func parseWorkflowVariable(m map[string]any) (WorkflowVariable, error) {
 	}
 
 	return v, nil
+}
+
+func workflowVariablesFromCatalog(vars []core.CatalogWorkflowVariable) []WorkflowVariable {
+	out := make([]WorkflowVariable, len(vars))
+	for i, v := range vars {
+		out[i] = WorkflowVariable{
+			Name:        v.Name,
+			Type:        v.Type,
+			Description: v.Description,
+			Required:    v.Required,
+		}
+	}
+	return out
 }

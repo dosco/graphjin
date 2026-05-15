@@ -3,12 +3,15 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/jsn"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
@@ -31,7 +34,7 @@ func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 		return
 	}
 
-	to, err := s.resolveRemotes(c, from, sfmap)
+	to, extra, err := s.resolveRemotes(c, from, sfmap, s.requestedRootCursorFields())
 	if err != nil {
 		return
 	}
@@ -41,6 +44,13 @@ func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 		return
 	}
 	s.data = ob.Bytes()
+	if len(extra) != 0 {
+		if s.data, err = mergeRemoteRootFields(s.data, extra); err != nil {
+			return
+		}
+		s.dhash = sha256.Sum256(s.data)
+		s.data, err = encryptValues(s.data, s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
+	}
 	return
 }
 
@@ -49,12 +59,15 @@ func (s *gstate) resolveRemotes(
 	ctx context.Context,
 	from []jsn.Field,
 	sfmap map[string]*qcode.Select,
-) ([]jsn.Field, error) {
+	cursorFields map[string]struct{},
+) ([]jsn.Field, map[string]json.RawMessage, error) {
 	selects := s.cs.st.qc.Selects
 
 	// replacement data for the marked insertion points
 	// key and value will be replaced by whats below
 	to := make([]jsn.Field, len(from))
+	extra := make(map[string]json.RawMessage)
+	var extraMutex sync.Mutex
 
 	var wg sync.WaitGroup
 	wg.Add(len(from))
@@ -66,7 +79,7 @@ func (s *gstate) resolveRemotes(
 		// use the json key to find the related Select object
 		sel, ok := sfmap[string(id.Key)]
 		if !ok {
-			return nil, fmt.Errorf("invalid remote field key")
+			return nil, nil, fmt.Errorf("invalid remote field key")
 		}
 
 		// Lookup the resolver. Top-level remotes (ParentID == -1) are
@@ -86,15 +99,15 @@ func (s *gstate) resolveRemotes(
 			if ok {
 				rid = jsn.Value(id.Value)
 				if len(rid) == 0 {
-					return nil, fmt.Errorf("invalid remote field id")
+					return nil, nil, fmt.Errorf("invalid remote field id")
 				}
 			}
 		}
 		if !ok {
-			return nil, fmt.Errorf("no resolver found for remote %q", rkey)
+			return nil, nil, fmt.Errorf("no resolver found for remote %q", rkey)
 		}
 
-		go func(n int, id []byte, sel *qcode.Select) {
+		go func(n int, id []byte, sel *qcode.Select, r resItem, rkey string) {
 			defer wg.Done()
 
 			ctx1, span := s.gj.spanStart(ctx, "Execute Remote Request")
@@ -108,15 +121,22 @@ func (s *gstate) resolveRemotes(
 			if scope == "" {
 				scope = rkey
 			}
+			cursorField := sel.FieldName + "_cursor"
+			_, cursorWanted := cursorFields[cursorField]
+			cursorWanted = cursorWanted && sel.ParentID == -1
 			cacheKey := s.remoteFragmentKey(ctx1, source, scope, r.Fingerprint, id, sel)
 			cacheOpts := s.remoteFragmentCacheOptions(source, scope)
-			produce := func(c context.Context) ([]byte, []RowRef, error) {
+			if cursorWanted {
+				cacheOpts.NoStore = true
+			}
+			produce := func(c context.Context) ([]byte, []RowRef, string, error) {
 				b, err := r.Fn.Resolve(c, ResolverReq{
-					ID: string(id), Sel: sel, Log: s.gj.log, RequestConfig: s.r.requestconfig,
+					ID: string(id), Sel: sel, Log: s.gj.log, Vars: s.vmap, RequestConfig: s.r.requestconfig,
 				})
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, "", err
 				}
+				cursor := remoteCursorValue(b)
 
 				if len(r.Path) != 0 {
 					b = jsn.Strip(b, r.Path)
@@ -125,13 +145,13 @@ func (s *gstate) resolveRemotes(
 				var ob bytes.Buffer
 				if len(sel.Fields) != 0 {
 					if err = jsn.Filter(&ob, b, fieldsToList(sel.Fields)); err != nil {
-						return nil, nil, err
+						return nil, nil, "", err
 					}
 				} else {
 					ob.WriteString("null")
 				}
 
-				return ob.Bytes(), remoteFragmentRefs(source, scope, id, sel), nil
+				return ob.Bytes(), remoteFragmentRefs(source, scope, id, sel), cursor, nil
 			}
 
 			parentCtx := context.WithoutCancel(ctx)
@@ -139,7 +159,7 @@ func (s *gstate) resolveRemotes(
 				if cached, ok := s.fragmentCacheGet(ctx1, cacheKey, func() ([]byte, []RowRef, CacheEntryOptions, error) {
 					c, cancel := context.WithTimeout(parentCtx, swrRefreshTimeout)
 					defer cancel()
-					data, refs, err := produce(c)
+					data, refs, _, err := produce(c)
 					return data, refs, cacheOpts, err
 				}); ok {
 					to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: cached}
@@ -148,7 +168,7 @@ func (s *gstate) resolveRemotes(
 			}
 
 			start := time.Now()
-			b, refs, err := produce(ctx1)
+			b, refs, cursor, err := produce(ctx1)
 			if err != nil {
 				cerrMutex.Lock()
 				cerr = fmt.Errorf("%s: %s", sel.Table, err)
@@ -160,10 +180,59 @@ func (s *gstate) resolveRemotes(
 
 			s.fragmentCacheSet(ctx1, cacheKey, b, refs, start, cacheOpts)
 			to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: b}
-		}(i, rid, sel)
+			if cursorWanted {
+				extraMutex.Lock()
+				if cursor == "" {
+					extra[cursorField] = json.RawMessage("null")
+				} else {
+					extra[cursorField] = json.RawMessage(fmt.Sprintf("%q", string(s.gj.printFormat)+cursor))
+				}
+				extraMutex.Unlock()
+			}
+		}(i, rid, sel, r, rkey)
 	}
 	wg.Wait()
-	return to, cerr
+	return to, extra, cerr
+}
+
+func (s *gstate) requestedRootCursorFields() map[string]struct{} {
+	op, err := graph.Parse(s.r.query)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]struct{})
+	for _, f := range op.Fields {
+		if f.ParentID == -1 && f.Type == graph.FieldKeyword && strings.HasSuffix(f.Name, "_cursor") {
+			out[f.Name] = struct{}{}
+		}
+	}
+	return out
+}
+
+func remoteCursorValue(b []byte) string {
+	var wrapper struct {
+		Cursor string `json:"cursor"`
+	}
+	if err := json.Unmarshal(b, &wrapper); err != nil {
+		return ""
+	}
+	return wrapper.Cursor
+}
+
+func mergeRemoteRootFields(data []byte, extra map[string]json.RawMessage) ([]byte, error) {
+	var m map[string]json.RawMessage
+	if len(data) != 0 {
+		if err := json.Unmarshal(data, &m); err != nil {
+			return nil, err
+		}
+	}
+	if m == nil {
+		m = make(map[string]json.RawMessage, len(extra))
+	}
+	for k, v := range extra {
+		m[k] = v
+	}
+	return json.Marshal(m)
 }
 
 // parentFieldIds fetches the field name used within the db response json

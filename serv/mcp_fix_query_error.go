@@ -24,6 +24,7 @@ const (
 	fixKindTableNotFound       = "table_not_found"
 	fixKindColumnNotFound      = "column_not_found"
 	fixKindFieldNotOnTable     = "field_not_on_table"
+	fixKindAnalyticsDirective  = "analytics_directive"
 	fixKindWrongDialect        = "wrong_dialect"
 	fixKindOperatorInvalid     = "operator_or_syntax_invalid"
 	fixKindSyntaxParse         = "syntax_or_parse_error"
@@ -54,6 +55,8 @@ func buildFixQueryErrorRepair(query, errorMsg string, analyticsMode bool) FixQue
 		fillDistinctJoinShapeArm(&res, errorMsg)
 	case rePartitionReq.MatchString(errorMsg):
 		fillPartitionFilterArm(&res, errorMsg)
+	case isAnalyticsDirectiveError(errLower):
+		fillAnalyticsDirectiveArm(&res)
 	case reFieldNotOnTable.MatchString(errorMsg):
 		fillFieldNotOnTableArm(&res, errorMsg)
 	case isWrongDialectError(errorMsg, query):
@@ -82,9 +85,40 @@ func buildFixQueryErrorRepair(query, errorMsg string, analyticsMode bool) FixQue
 	return res
 }
 
+func isAnalyticsDirectiveError(errLower string) bool {
+	return strings.Contains(errLower, "@window has been replaced") ||
+		strings.Contains(errLower, "analytics directive") ||
+		strings.Contains(errLower, "analytics directives") ||
+		strings.Contains(errLower, "@running") ||
+		strings.Contains(errLower, "@moving") ||
+		strings.Contains(errLower, "@previous") ||
+		strings.Contains(errLower, "@next") ||
+		strings.Contains(errLower, "@first") ||
+		strings.Contains(errLower, "@last") ||
+		strings.Contains(errLower, "@rank") ||
+		strings.Contains(errLower, "@denserank") ||
+		strings.Contains(errLower, "@rownumber")
+}
+
+func fillAnalyticsDirectiveArm(res *FixQueryErrorResult) {
+	res.Kind = fixKindAnalyticsDirective
+	res.FollowUpTools = []string{"query_catalog", "get_catalog_card"}
+	res.Diagnosis = "Use GraphJin analytics directives on real columns for reporting metrics. Use @running or @moving for row-level aggregates, @previous/@next for period comparisons, and @rank/@denseRank/@rowNumber for ranking. Use distinct plus aggregate fields for ordinary one-row-per-group summaries."
+	res.RepairedQuery = `query {
+  orders {
+    account_id
+    month
+    total
+    running_total: total @running(aggregate: sum, by: "account_id", orderBy: { month: asc })
+    previous_total: total @previous(by: "account_id", orderBy: { month: asc })
+    rank_by_total: total @rank(by: "account_id", order: desc)
+  }
+}`
+}
+
 func fillMultiFKArm(res *FixQueryErrorResult, errorMsg string) {
 	res.Kind = fixKindMultiFKAmbiguity
-	res.FollowUpTools = []string{"describe_table", "get_table_sample"}
+	res.FollowUpTools = []string{"query_catalog", "get_catalog_card"}
 
 	m := reAmbiguousRel.FindStringSubmatch(errorMsg)
 	if m == nil {
@@ -102,23 +136,20 @@ func fillMultiFKArm(res *FixQueryErrorResult, errorMsg string) {
 
 func fillDistinctJoinShapeArm(res *FixQueryErrorResult, errorMsg string) {
 	res.Kind = fixKindDistinctJoinShape
-	// get_query_syntax leads — most agents call it before authoring and
-	// it now carries the same QueryPatterns content. get_workflow_guide
-	// is listed too for the workflow-using minority.
-	res.FollowUpTools = []string{"get_query_syntax", "get_workflow_guide", "get_table_sample", "describe_table"}
+	res.FollowUpTools = []string{"query_catalog", "get_catalog_card", "validate_where_clause"}
 
 	m := reNestedShape.FindStringSubmatch(errorMsg)
 	if m == nil {
-		res.Diagnosis = "Cannot nest a join through a column outside the distinct/group-by; root the query at the dimension table instead. See get_query_syntax → patterns → metric_by_dimension."
+		res.Diagnosis = "Cannot nest a join through a column outside the distinct/group-by; root the query at the dimension table instead. See catalog query_pattern items for metric_by_dimension."
 		return
 	}
 	child, parent, parentCol, distinctCSV := m[1], m[2], m[3], m[4]
 	res.Diagnosis = fmt.Sprintf(
-		"Nested selection '%s' joins through '%s.%s', which is not in distinct: [%s]. The GROUP BY collapses '%s' away, leaving the join undefined. Root at the dimension instead (see get_query_syntax → patterns → metric_by_dimension) — or drop the nested join.",
+		"Nested selection '%s' joins through '%s.%s', which is not in distinct: [%s]. The GROUP BY collapses '%s' away, leaving the join undefined. Root at the dimension instead (see catalog query_pattern items for metric_by_dimension) — or drop the nested join.",
 		child, parent, parentCol, distinctCSV, parentCol)
 	res.RepairedQuery = fmt.Sprintf(
 		`# Option A (preferred): root at the dimension table, nest the fact at the leaf.
-# This is the "metric_by_dimension" pattern — see get_query_syntax.patterns.
+# This is the "metric_by_dimension" pattern — see query_catalog(where: { kind: { eq: "query_pattern" } }).
 query {
   <dimension_table> {
     id
@@ -140,7 +171,7 @@ query {
 
 func fillPartitionFilterArm(res *FixQueryErrorResult, errorMsg string) {
 	res.Kind = fixKindPartitionFilter
-	res.FollowUpTools = []string{"get_table_sample", "describe_table"}
+	res.FollowUpTools = []string{"query_catalog", "get_catalog_card", "validate_where_clause"}
 
 	m := rePartitionReq.FindStringSubmatch(errorMsg)
 	if m == nil {
@@ -170,7 +201,7 @@ query {
 // instead of substituting in the table's real PK / name columns.
 func fillFieldNotOnTableArm(res *FixQueryErrorResult, errorMsg string) {
 	res.Kind = fixKindFieldNotOnTable
-	res.FollowUpTools = []string{"describe_table", "get_table_sample", "get_query_syntax"}
+	res.FollowUpTools = []string{"query_catalog", "get_catalog_card", "validate_where_clause"}
 
 	m := reFieldNotOnTable.FindStringSubmatch(errorMsg)
 	field := "<field>"
@@ -181,7 +212,7 @@ func fillFieldNotOnTableArm(res *FixQueryErrorResult, errorMsg string) {
 		"Field '%s' isn't a column on the queried table. Most often this means a canonical pattern (e.g. metric_by_dimension) was copied verbatim — those templates use placeholder names like <pk_column> / <name_column> that need to be substituted with this table's real columns.",
 		field)
 	res.RepairedQuery = fmt.Sprintf(
-		`# Use describe_table to find the table's actual primary key and name
+		`# Use query_catalog/get_catalog_card to find the table's actual primary key and name
 # columns, then substitute them where the pattern said '%s'.
 query {
   <table> {
@@ -206,7 +237,7 @@ func isWrongDialectError(errorMsg, query string) bool {
 
 func fillWrongDialectArm(res *FixQueryErrorResult, errorMsg, query string) {
 	res.Kind = fixKindWrongDialect
-	res.FollowUpTools = []string{"get_query_syntax", "describe_table", "get_table_sample"}
+	res.FollowUpTools = []string{"query_catalog", "get_catalog_card", "validate_where_clause"}
 
 	tableHint := "<table>"
 	if m := reWrongDialectField.FindStringSubmatch(query); m != nil {
@@ -214,10 +245,10 @@ func fillWrongDialectArm(res *FixQueryErrorResult, errorMsg, query string) {
 	}
 
 	if reWrongDialectArg.MatchString(errorMsg) {
-		res.Diagnosis = "Query used the Hasura/PostgREST `aggregation`/`aggregate` argument. GraphJin has no such argument — aggregates are leaf-level fields: `sum_<col>`, `avg_<col>`, `count_<col>`, or `<alias>: sum(expr: { mul: [<col_a>, <col_b>] })` for arithmetic. Call get_query_syntax for the full grammar."
+		res.Diagnosis = "Query used the Hasura/PostgREST `aggregation`/`aggregate` argument. GraphJin has no such argument — aggregates are leaf-level fields: `sum_<col>`, `avg_<col>`, `count_<col>`, or `<alias>: sum(expr: { mul: [<col_a>, <col_b>] })` for arithmetic. Use query_catalog language/query-pattern items for the full grammar."
 	} else {
 		res.Diagnosis = fmt.Sprintf(
-			"Query referenced `%s_aggregate` — the Hasura aggregate-table shape. GraphJin has no `_aggregate` suffix; aggregates live as leaf fields on the original table: `sum_<col>`, `count_<col>`, or `<alias>: sum(expr: { ... })` for arithmetic. Call get_query_syntax for the full grammar.",
+			"Query referenced `%s_aggregate` — the Hasura aggregate-table shape. GraphJin has no `_aggregate` suffix; aggregates live as leaf fields on the original table: `sum_<col>`, `count_<col>`, or `<alias>: sum(expr: { ... })` for arithmetic. Use query_catalog language/query-pattern items for the full grammar.",
 			tableHint)
 	}
 
@@ -237,32 +268,32 @@ query {
 func fillUnknownRelArm(res *FixQueryErrorResult, errorMsg string) {
 	res.Kind = fixKindUnknownRelationship
 	res.Diagnosis = "GraphJin has no relationship between the named tables. Confirm the join path before retrying."
-	res.FollowUpTools = []string{"find_path", "get_table_sample", "describe_table"}
+	res.FollowUpTools = []string{"query_catalog", "get_catalog_card"}
 	_ = errorMsg
 }
 
 func fillTableNotFoundArm(res *FixQueryErrorResult) {
 	res.Kind = fixKindTableNotFound
 	res.Diagnosis = "Table name not found. Check spelling and namespace; some databases are case-sensitive."
-	res.FollowUpTools = []string{"list_tables", "list_namespaces"}
+	res.FollowUpTools = []string{"query_catalog", "get_catalog_entrypoints"}
 }
 
 func fillColumnNotFoundArm(res *FixQueryErrorResult) {
 	res.Kind = fixKindColumnNotFound
-	res.Diagnosis = "Column not found on the named table. If the column actually exists, this often signals an upstream relationship issue (the compiler emitted a CTE that drops the column). Check describe_table; if the column is there, look for a distinct/group-by + nested-join shape mismatch."
-	res.FollowUpTools = []string{"describe_table", "get_table_sample", "fix_query_error"}
+	res.Diagnosis = "Column not found on the named table. If the column actually exists, this often signals an upstream relationship issue (the compiler emitted a CTE that drops the column). Check catalog table/column items; if the column is there, look for a distinct/group-by + nested-join shape mismatch."
+	res.FollowUpTools = []string{"query_catalog", "get_catalog_card", "fix_query_error"}
 }
 
 func fillOperatorArm(res *FixQueryErrorResult) {
 	res.Kind = fixKindOperatorInvalid
 	res.Diagnosis = "Invalid operator or operand shape."
-	res.FollowUpTools = []string{"get_query_syntax", "validate_where_clause"}
+	res.FollowUpTools = []string{"query_catalog", "validate_where_clause"}
 }
 
 func fillSyntaxArm(res *FixQueryErrorResult) {
 	res.Kind = fixKindSyntaxParse
 	res.Diagnosis = "GraphQL syntax or parse error."
-	res.FollowUpTools = []string{"get_query_syntax"}
+	res.FollowUpTools = []string{"query_catalog"}
 }
 
 func fillPermissionArm(res *FixQueryErrorResult) {
@@ -280,13 +311,13 @@ func fillMutationNotAllowedArm(res *FixQueryErrorResult) {
 func fillVariableArm(res *FixQueryErrorResult) {
 	res.Kind = fixKindVariable
 	res.Diagnosis = "Variable reference is missing, mistyped, or unbound."
-	res.FollowUpTools = []string{"get_query_syntax"}
+	res.FollowUpTools = []string{"query_catalog"}
 }
 
 func fillGenericArm(res *FixQueryErrorResult) {
 	res.Kind = fixKindGeneric
 	res.Diagnosis = "Unrecognized error class — fall back to schema verification and incremental query simplification."
-	res.FollowUpTools = []string{"list_tables", "describe_table", "get_query_syntax", "list_saved_queries"}
+	res.FollowUpTools = []string{"query_catalog", "get_catalog_card", "list_saved_queries"}
 }
 
 func splitAndTrim(csv string) []string {

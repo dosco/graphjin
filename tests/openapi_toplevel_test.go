@@ -87,16 +87,23 @@ paths:
 		DBType:           dbType,
 		DisableAllowList: true,
 		DefaultLimit:     2,
-		OpenAPISpecsDir:  specsDir,
-		OpenAPI: map[string]openapi.SpecConfig{
-			"audit": {
-				Auth: openapi.AuthConfig{
-					Scheme: "bearer",
-					Token:  "top-tok",
-				},
-				Operations: map[string]openapi.OperationOverride{
-					"listAuditLogs": {
-						ExposeAs: "audit_logs",
+		Sources: []core.SourceConfig{
+			{Name: core.DefaultDBName, Kind: "sql", Type: dbType, Default: true},
+			{
+				Name:     "upstream",
+				Kind:     "openapi",
+				SpecsDir: specsDir,
+				Specs: map[string]openapi.SpecConfig{
+					"audit": {
+						Auth: openapi.AuthConfig{
+							Scheme: "bearer",
+							Token:  "top-tok",
+						},
+						Operations: map[string]openapi.OperationOverride{
+							"listAuditLogs": {
+								ExposeAs: "audit_logs",
+							},
+						},
 					},
 				},
 			},
@@ -195,11 +202,18 @@ paths:
 		DBType:           dbType,
 		DisableAllowList: true,
 		DefaultLimit:     2,
-		OpenAPISpecsDir:  specsDir,
-		OpenAPI: map[string]openapi.SpecConfig{
-			"audit": {
-				Operations: map[string]openapi.OperationOverride{
-					"listAuditLogs": {ExposeAs: "audit_logs"},
+		Sources: []core.SourceConfig{
+			{Name: core.DefaultDBName, Kind: "sql", Type: dbType, Default: true},
+			{
+				Name:     "upstream",
+				Kind:     "openapi",
+				SpecsDir: specsDir,
+				Specs: map[string]openapi.SpecConfig{
+					"audit": {
+						Operations: map[string]openapi.OperationOverride{
+							"listAuditLogs": {ExposeAs: "audit_logs"},
+						},
+					},
 				},
 			},
 		},

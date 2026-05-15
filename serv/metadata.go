@@ -3,6 +3,7 @@ package serv
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -104,23 +105,126 @@ CREATE TABLE IF NOT EXISTS gj_indexes (
   name TEXT NOT NULL,
   unique_index BOOLEAN NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS gj_catalog_cards (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  database_name TEXT NOT NULL DEFAULT '',
+  schema_name TEXT NOT NULL DEFAULT '',
+  table_name TEXT NOT NULL DEFAULT '',
+  column_name TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
+  risk_level TEXT NOT NULL DEFAULT '',
+  confidence TEXT NOT NULL DEFAULT '',
+  sensitive BOOLEAN NOT NULL DEFAULT 0,
+  sensitivity TEXT NOT NULL DEFAULT '',
+  evidence_json TEXT NOT NULL DEFAULT '',
+  examples_json TEXT NOT NULL DEFAULT '',
+  suggested_next_json TEXT NOT NULL DEFAULT '',
+  detail_ref TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_gj_catalog_cards_kind ON gj_catalog_cards(kind);
+CREATE INDEX IF NOT EXISTS idx_gj_catalog_cards_target ON gj_catalog_cards(database_name, schema_name, table_name, column_name);
+
+CREATE TABLE IF NOT EXISTS gj_catalog_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS gj_catalog_card_details (
+  id TEXT PRIMARY KEY,
+  card_id TEXT NOT NULL REFERENCES gj_catalog_cards(id) ON DELETE CASCADE,
+  section TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  data_json TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS gj_nodes (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  card_id TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS gj_edges (
+  id TEXT PRIMARY KEY,
+  from_id TEXT NOT NULL,
+  to_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS gj_entrypoints (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  query_json TEXT NOT NULL DEFAULT '',
+  suggested_next_json TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS gj_capabilities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  input_schema_json TEXT NOT NULL DEFAULT '',
+  output_schema_json TEXT NOT NULL DEFAULT '',
+  safety_json TEXT NOT NULL DEFAULT ''
+);
 `
 
 func (s *graphjinService) initMetadataGraphBeforeCore() error {
-	if !s.conf.Core.MetadataEnabled() {
+	if !s.conf.Core.MetadataEnabled() && !s.conf.catalogToolsEnabled() && !s.conf.graphjinControlPlaneEnabled() && !s.conf.workflowsSourceEnabled() {
 		s.metadataDB = ""
+		return nil
+	}
+	return s.initSystemNanoDBBeforeCore()
+}
+
+func (s *graphjinService) ensureSystemHostDBBeforeCore() error {
+	if s == nil || s.conf == nil || len(s.dbs) != 0 {
+		return nil
+	}
+	if !s.conf.needsSystemHostDB() {
 		return nil
 	}
 	if s.runtimeCore == nil {
 		runtimeCore := cloneCoreConfig(s.conf.Core)
 		s.runtimeCore = &runtimeCore
 	}
-	s.ensureRuntimeDatabaseEntries()
-	name, err := s.initMetadataGraphForRuntime(&s.conf.Core, s.runtimeCore, s.dbs, s.managedDBs)
+
+	dsn := fmt.Sprintf("file:graphjin_system_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return err
 	}
-	s.metadataDB = name
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS graphjin_system_anchor (id TEXT PRIMARY KEY)`); err != nil {
+		db.Close() //nolint:errcheck
+		return err
+	}
+	if s.dbs == nil {
+		s.dbs = make(map[string]*sql.DB)
+	}
+	s.dbs[core.DefaultDBName] = db
+	if s.runtimeCore.Databases == nil {
+		s.runtimeCore.Databases = make(map[string]core.DatabaseConfig)
+	}
+	analyticsMode := true
+	s.runtimeCore.Databases[core.DefaultDBName] = core.DatabaseConfig{
+		Type:          "sqlite",
+		ConnString:    dsn,
+		Path:          dsn,
+		ReadOnly:      true,
+		AnalyticsMode: &analyticsMode,
+	}
 	return nil
 }
 
@@ -153,6 +257,10 @@ func (s *graphjinService) initMetadataGraphForRuntime(conf *core.Config, runtime
 		db.Close() //nolint:errcheck
 		return "", fmt.Errorf("metadata schema: %w", err)
 	}
+	if err := ensureMetadataCatalogCardColumns(context.Background(), db); err != nil {
+		db.Close() //nolint:errcheck
+		return "", fmt.Errorf("metadata schema migration: %w", err)
+	}
 
 	dbs[name] = db
 	if runtimeCore.Databases == nil {
@@ -183,6 +291,48 @@ func isMetadataStartupError(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "metadata database")
+}
+
+func isNonRecoverableStartupError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return isMetadataStartupError(err) ||
+		strings.Contains(msg, "reserved GraphJin system table prefix gj_") ||
+		strings.Contains(msg, "reserved GraphJin system table")
+}
+
+func ensureMetadataCatalogCardColumns(ctx context.Context, db *sql.DB) error {
+	cols := make(map[string]struct{})
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(gj_catalog_cards)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		cols[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, col := range []string{"created_at", "updated_at"} {
+		if _, ok := cols[col]; ok {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, "ALTER TABLE gj_catalog_cards ADD COLUMN "+col+" TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *graphjinService) ensureRuntimeDatabaseEntries() {
@@ -230,6 +380,9 @@ func (s *graphjinService) refreshMetadataGraph() error {
 }
 
 func (s *graphjinService) refreshMetadataGraphForRuntime(gj *core.GraphJin, conf *core.Config, metadataDB string, dbs map[string]*sql.DB, managedDBs map[string]managedDB) error {
+	if s.systemNanoDB != nil {
+		return s.refreshMetadataGraphForRuntimeNano(context.Background(), gj, conf, metadataDB)
+	}
 	if gj == nil || conf == nil || !conf.MetadataEnabled() || metadataDB == "" {
 		return nil
 	}
@@ -237,11 +390,13 @@ func (s *graphjinService) refreshMetadataGraphForRuntime(gj *core.GraphJin, conf
 	if db == nil {
 		return nil
 	}
-	snapshot, err := gj.MetadataSnapshot(s.metadataSnapshotExcludesFor(metadataDB, conf, managedDBs)...)
+	excludes := s.metadataSnapshotExcludesFor(metadataDB, conf, managedDBs)
+	snapshot, err := gj.MetadataSnapshot(excludes...)
 	if err != nil {
 		return err
 	}
-	if err := populateMetadataDB(context.Background(), db, snapshot); err != nil {
+	catalogSnapshot := core.BuildCatalogSnapshotWithOptions(snapshot, conf, s.catalogBuildOptions())
+	if err := populateMetadataDB(context.Background(), db, snapshot, catalogSnapshot); err != nil {
 		return err
 	}
 
@@ -258,7 +413,52 @@ func (s *graphjinService) refreshMetadataGraphForRuntime(gj *core.GraphJin, conf
 	return nil
 }
 
-func populateMetadataDB(ctx context.Context, db *sql.DB, snapshot *core.MetadataSnapshot) error {
+type metadataExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+var metadataCatalogTables = []string{
+	"gj_capabilities",
+	"gj_entrypoints",
+	"gj_edges",
+	"gj_nodes",
+	"gj_catalog_card_details",
+	"gj_catalog_meta",
+	"gj_catalog_cards",
+}
+
+func (s *graphjinService) refreshMetadataCatalogMirror() error {
+	if s == nil || s.gj == nil || s.conf == nil || !s.conf.Core.MetadataEnabled() || s.metadataDB == "" {
+		return nil
+	}
+	db := s.dbs[s.metadataDB]
+	if db == nil {
+		return nil
+	}
+	snapshot, err := s.gj.MetadataSnapshot(s.metadataSnapshotExcludesFor(s.metadataDB, &s.conf.Core, s.managedDBs)...)
+	if err != nil {
+		return err
+	}
+	catalogSnapshot := core.BuildCatalogSnapshotWithOptions(snapshot, &s.conf.Core, s.catalogBuildOptions())
+	return populateMetadataCatalogDB(context.Background(), db, catalogSnapshot)
+}
+
+func populateMetadataDB(ctx context.Context, db *sql.DB, snapshot *core.MetadataSnapshot, catalogSnapshots ...*core.CatalogSnapshot) error {
+	if snapshot == nil {
+		snapshot = &core.MetadataSnapshot{}
+	}
+	if err := ensureMetadataCatalogCardColumns(ctx, db); err != nil {
+		return err
+	}
+	dedupeMetadataSnapshotForInsert(snapshot)
+	var catalogSnapshot *core.CatalogSnapshot
+	if len(catalogSnapshots) != 0 {
+		catalogSnapshot = catalogSnapshots[0]
+	}
+	if catalogSnapshot == nil {
+		catalogSnapshot = core.BuildCatalogSnapshot(snapshot, nil)
+	}
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -318,7 +518,121 @@ func populateMetadataDB(ctx context.Context, db *sql.DB, snapshot *core.Metadata
 			return err
 		}
 	}
+	if err := replaceMetadataCatalogTables(ctx, tx, catalogSnapshot); err != nil {
+		tx.Rollback() //nolint:errcheck
+		return err
+	}
 	return tx.Commit()
+}
+
+func populateMetadataCatalogDB(ctx context.Context, db *sql.DB, catalogSnapshot *core.CatalogSnapshot) error {
+	if catalogSnapshot == nil {
+		catalogSnapshot = core.BuildCatalogSnapshot(&core.MetadataSnapshot{}, nil)
+	}
+	if err := ensureMetadataCatalogCardColumns(ctx, db); err != nil {
+		return err
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if err := replaceMetadataCatalogTables(ctx, tx, catalogSnapshot); err != nil {
+		tx.Rollback() //nolint:errcheck
+		return err
+	}
+	return tx.Commit()
+}
+
+func replaceMetadataCatalogTables(ctx context.Context, exec metadataExecer, catalogSnapshot *core.CatalogSnapshot) error {
+	for _, table := range metadataCatalogTables {
+		if _, err := exec.ExecContext(ctx, "DELETE FROM "+table); err != nil {
+			return err
+		}
+	}
+	for _, card := range catalogSnapshot.Cards {
+		if _, err := exec.ExecContext(ctx, `INSERT INTO gj_catalog_cards(id, kind, title, summary, database_name, schema_name, table_name, column_name,
+		  source, risk_level, confidence, sensitive, sensitivity, evidence_json, examples_json, suggested_next_json, detail_ref, created_at, updated_at)
+		  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			card.ID, card.Kind, card.Title, card.Summary, card.DatabaseName, card.SchemaName, card.TableName, card.ColumnName,
+			card.Source, card.RiskLevel, card.Confidence, card.Sensitive, card.Sensitivity, card.EvidenceJSON, card.ExamplesJSON, card.SuggestedNext, card.DetailRef,
+			card.CreatedAt, card.UpdatedAt); err != nil {
+			return err
+		}
+	}
+	if _, err := exec.ExecContext(ctx, `INSERT INTO gj_catalog_meta(key, value) VALUES (?, ?)`, "revision", catalogSnapshot.Revision); err != nil {
+		return err
+	}
+	if _, err := exec.ExecContext(ctx, `INSERT INTO gj_catalog_meta(key, value) VALUES (?, ?)`, "source_revisions", mustMarshalString(catalogSnapshot.SourceRevisions)); err != nil {
+		return err
+	}
+	for _, detail := range catalogSnapshot.Details {
+		if _, err := exec.ExecContext(ctx, `INSERT INTO gj_catalog_card_details(id, card_id, section, content, data_json)
+		  VALUES (?, ?, ?, ?, ?)`, detail.ID, detail.CardID, detail.Section, detail.Content, detail.DataJSON); err != nil {
+			return err
+		}
+	}
+	for _, node := range catalogSnapshot.Nodes {
+		if _, err := exec.ExecContext(ctx, `INSERT INTO gj_nodes(id, kind, name, summary, card_id)
+		  VALUES (?, ?, ?, ?, ?)`, node.ID, node.Kind, node.Name, node.Summary, node.CardID); err != nil {
+			return err
+		}
+	}
+	for _, edge := range catalogSnapshot.Edges {
+		if _, err := exec.ExecContext(ctx, `INSERT INTO gj_edges(id, from_id, to_id, kind, summary)
+		  VALUES (?, ?, ?, ?, ?)`, edge.ID, edge.FromID, edge.ToID, edge.Kind, edge.Summary); err != nil {
+			return err
+		}
+	}
+	for _, ep := range catalogSnapshot.EntryPoints {
+		if _, err := exec.ExecContext(ctx, `INSERT INTO gj_entrypoints(id, name, summary, query_json, suggested_next_json)
+		  VALUES (?, ?, ?, ?, ?)`, ep.ID, ep.Name, ep.Summary, ep.QueryJSON, ep.SuggestedNext); err != nil {
+			return err
+		}
+	}
+	for _, cap := range catalogSnapshot.Capabilities {
+		if _, err := exec.ExecContext(ctx, `INSERT INTO gj_capabilities(id, name, kind, summary, input_schema_json, output_schema_json, safety_json)
+		  VALUES (?, ?, ?, ?, ?, ?, ?)`, cap.ID, cap.Name, cap.Kind, cap.Summary, cap.InputSchemaJSON, cap.OutputSchemaJSON, cap.SafetyJSON); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func dedupeMetadataSnapshotForInsert(snapshot *core.MetadataSnapshot) {
+	if snapshot == nil {
+		return
+	}
+	snapshot.Databases = uniqueMetadataRows(snapshot.Databases, func(v core.MetadataDatabase) string { return v.ID })
+	snapshot.Tables = uniqueMetadataRows(snapshot.Tables, func(v core.MetadataTable) string { return v.ID })
+	snapshot.Columns = uniqueMetadataRows(snapshot.Columns, func(v core.MetadataColumn) string { return v.ID })
+	snapshot.Relationships = uniqueMetadataRows(snapshot.Relationships, func(v core.MetadataRelationship) string { return v.ID })
+	snapshot.Functions = uniqueMetadataRows(snapshot.Functions, func(v core.MetadataFunction) string { return v.ID })
+	snapshot.Indexes = uniqueMetadataRows(snapshot.Indexes, func(v core.MetadataIndex) string { return v.ID })
+}
+
+func uniqueMetadataRows[T any](items []T, id func(T) string) []T {
+	if len(items) < 2 {
+		return items
+	}
+	seen := make(map[string]struct{}, len(items))
+	out := items[:0]
+	for _, item := range items {
+		key := id(item)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
+func mustMarshalString(v any) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
 
 func (s *graphjinService) injectMetadataCodeRelationships(metadataDB, codeDB string) {
@@ -329,10 +643,13 @@ func injectMetadataCodeRelationships(runtimeCore *core.Config, metadataDB, codeD
 	if runtimeCore == nil {
 		return
 	}
-	add := func(table, column, target string) {
+	add := func(database, table, column, target string) {
 		for i := range runtimeCore.Tables {
 			t := &runtimeCore.Tables[i]
-			if t.Database == metadataDB && t.Schema == "main" && t.Name == table {
+			if t.Database == database && t.Schema == "main" && t.Name == table {
+				if t.Source == "" {
+					t.Source = database
+				}
 				for _, c := range t.Columns {
 					if c.Name == column && c.ForeignKey == target {
 						return
@@ -343,14 +660,17 @@ func injectMetadataCodeRelationships(runtimeCore *core.Config, metadataDB, codeD
 			}
 		}
 		runtimeCore.Tables = append(runtimeCore.Tables, core.Table{
-			Database: metadataDB,
+			Database: database,
+			Source:   database,
 			Schema:   "main",
 			Name:     table,
 			Columns:  []core.Column{{Name: column, ForeignKey: target}},
 		})
 	}
-	add("gj_tables", "code_db_refs_id", codeDB+":code_db_refs.table_key")
-	add("gj_columns", "code_db_refs_id", codeDB+":code_db_refs.column_key")
+	add(metadataDB, "gj_catalog", "code_refs_id", codeDB+":gj_code.db_object_id")
+	add(codeDB, "gj_code", "catalog_item_id", metadataDB+":gj_catalog.id")
+	add(codeDB, "gj_code", "table_catalog_item_id", metadataDB+":gj_catalog.id")
+	add(codeDB, "gj_code", "column_catalog_item_id", metadataDB+":gj_catalog.id")
 }
 
 func (s *graphjinService) metadataSnapshotExcludes() []string {
@@ -381,9 +701,10 @@ func (s *graphjinService) selectedCodeSQLDatabasesFor(conf *core.Config, managed
 	if conf == nil {
 		return nil
 	}
-	if len(conf.Metadata.CodeDatabases) > 0 {
-		out := make([]string, 0, len(conf.Metadata.CodeDatabases))
-		for _, name := range conf.Metadata.CodeDatabases {
+	codeDatabases := conf.CatalogCodeDatabases()
+	if len(codeDatabases) > 0 {
+		out := make([]string, 0, len(codeDatabases))
+		for _, name := range codeDatabases {
 			if s.isConfiguredCodeSQLDatabaseFor(name, conf, managedDBs) {
 				out = append(out, name)
 				continue

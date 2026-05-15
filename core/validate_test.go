@@ -130,6 +130,50 @@ func TestConfigValidate(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "legacy codesql database rejected",
+			config: Config{
+				Databases: map[string]DatabaseConfig{"code": {Type: "codesql"}},
+			},
+			wantErr: true,
+			errMsg:  "kind: codesql",
+		},
+		{
+			name: "source mode rejects legacy databases",
+			config: Config{
+				Sources:   []SourceConfig{{Name: "app", Kind: "sql", Type: "postgres"}},
+				Databases: map[string]DatabaseConfig{"app": {Type: "postgres"}},
+			},
+			wantErr: true,
+			errMsg:  "databases is legacy",
+		},
+		{
+			name: "empty sources still selects source mode",
+			config: Config{
+				Sources:   []SourceConfig{},
+				Databases: map[string]DatabaseConfig{"app": {Type: "postgres"}},
+			},
+			wantErr: true,
+			errMsg:  "databases is legacy",
+		},
+		{
+			name: "source mode requires table source",
+			config: Config{
+				Sources: []SourceConfig{{Name: "app", Kind: "sql", Type: "postgres"}},
+				Tables:  []Table{{Name: "users"}},
+			},
+			wantErr: true,
+			errMsg:  "source is required",
+		},
+		{
+			name: "source mode rejects table database",
+			config: Config{
+				Sources: []SourceConfig{{Name: "app", Kind: "sql", Type: "postgres"}},
+				Tables:  []Table{{Name: "users", Source: "app", Database: "app"}},
+			},
+			wantErr: true,
+			errMsg:  "database is legacy",
+		},
 	}
 
 	for _, tt := range tests {
@@ -142,5 +186,42 @@ func TestConfigValidate(t *testing.T) {
 				t.Errorf("Config.Validate() error = %v, should contain %q", err, tt.errMsg)
 			}
 		})
+	}
+}
+
+func TestNormalizeSourcesMapsSourcesAndRelationships(t *testing.T) {
+	conf := &Config{
+		Sources: []SourceConfig{
+			{Name: "app", Kind: "sql", Type: "postgres", Default: true},
+			{Name: "code", Kind: "codesql", Path: "/src", ReadOnly: true},
+			{Name: "avatars", Kind: "filesystem", Backend: "local", Root: "/tmp/avatars"},
+			{Name: "graphjin", Kind: "graphjin"},
+			{Name: "workflows", Kind: "workflows", ReadOnly: true},
+		},
+		Tables: []Table{
+			{Name: "users", Source: "app"},
+			{Name: "code_files", Source: "code"},
+			{Name: "avatars", Source: "avatars"},
+			{Name: "gj_workflow", Source: "workflows"},
+		},
+		Relationships: []RelationshipConfig{{From: "users.id", To: "code:code_db_refs.table_key"}},
+	}
+	if err := conf.NormalizeSources(); err != nil {
+		t.Fatalf("NormalizeSources: %v", err)
+	}
+	if conf.Databases["app"].Type != "postgres" || conf.Databases["code"].Type != "codesql" {
+		t.Fatalf("unexpected database normalization: %+v", conf.Databases)
+	}
+	if len(conf.Filesystems) != 1 || conf.Filesystems[0].Name != "avatars" {
+		t.Fatalf("unexpected filesystem normalization: %+v", conf.Filesystems)
+	}
+	if conf.Tables[0].Database != "app" || conf.Tables[1].Database != "code" || conf.Tables[2].Database != "app" {
+		t.Fatalf("unexpected table database mapping: %+v", conf.Tables)
+	}
+	if !conf.Tables[1].ReadOnly || !conf.Tables[3].ReadOnly {
+		t.Fatalf("source read_only was not applied to tables: %+v", conf.Tables)
+	}
+	if len(conf.Tables[0].Columns) != 1 || conf.Tables[0].Columns[0].ForeignKey != "code:code_db_refs.table_key" {
+		t.Fatalf("relationship overlay not applied: %+v", conf.Tables[0].Columns)
 	}
 }

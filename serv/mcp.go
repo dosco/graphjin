@@ -86,32 +86,49 @@ func mcpToolList(conf *Config) []string {
 		return nil
 	}
 
-	// Always-on tools
+	legacyTools := conf.legacyMCPToolsEnabled()
+	catalogTools := conf.catalogToolsEnabled()
+
+	// Always-on GraphQL/action tools
 	tools := []string{
-		"get_query_syntax",
-		"get_mutation_syntax",
 		"get_js_runtime_api",
 		"write_query",
 		"write_mutation",
 		"fix_query_error",
-		"list_namespaces",
-		"list_tables",
-		"describe_table",
-		"get_discovery_schema",
-		"find_path",
-		"get_table_sample",
 		"validate_where_clause",
-		"get_workflow_guide",
-		"get_schema_insights",
-		"explore_relationships",
 		"execute_saved_query",
-		"execute_workflow",
-		"list_workflows",
 		"get_config_docs",
+	}
+	if catalogTools {
+		tools = append(tools,
+			"query_catalog",
+			"get_catalog_card",
+			"get_catalog_entrypoints",
+			"get_catalog_capabilities",
+		)
+	}
+	if legacyTools {
+		tools = append(tools,
+			"get_query_syntax",
+			"get_mutation_syntax",
+			"list_namespaces",
+			"list_tables",
+			"describe_table",
+			"get_discovery_schema",
+			"find_path",
+			"get_table_sample",
+			"get_workflow_guide",
+			"get_schema_insights",
+			"explore_relationships",
+			"list_workflows",
+		)
 	}
 
 	// Conditionally registered
-	if conf.MCP.AllowWorkflowUpdates {
+	if legacyTools && conf.MCP.AllowWorkflowExecution {
+		tools = append(tools, "execute_workflow")
+	}
+	if legacyTools && conf.MCP.AllowWorkflowUpdates {
 		tools = append(tools, "save_workflow")
 	}
 	if !conf.Serv.Production {
@@ -173,7 +190,7 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		server.WithPromptCapabilities(true),
 		server.WithResourceCapabilities(true, false),
 		server.WithHooks(hooks),
-		server.WithInstructions(serverInstructions),
+		server.WithInstructions(mcpServerInstructions(s.conf)),
 	)
 
 	// Snapshot which databases are read-only from the config file.
@@ -206,15 +223,30 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 
 // registerTools registers all MCP tools with the server
 func (ms *mcpServer) registerTools() {
-	// Syntax Reference Tools (call these first!)
-	ms.registerSyntaxTools()
+	if ms.service.conf.MCP.Disable {
+		return
+	}
+
+	// Catalog Tools (primary discovery surface)
+	if ms.service.conf.catalogToolsEnabled() {
+		ms.registerCatalogTools()
+	}
+
+	// Syntax and discovery compatibility tools.
+	legacyTools := ms.service.conf.legacyMCPToolsEnabled()
+	if legacyTools {
+		ms.registerSyntaxTools()
+	}
 	ms.registerJSRuntimeTools()
 	ms.registerGuidanceTools()
 
-	// Schema Discovery Tools
+	// Schema tools. Legacy discovery endpoints are registered only when
+	// explicitly enabled, while validation/reload action tools remain available.
 	ms.registerSchemaTools()
-	ms.registerInsightsTools()
-	ms.registerExploreTools()
+	if legacyTools {
+		ms.registerInsightsTools()
+		ms.registerExploreTools()
+	}
 
 	// Query Execution Tools
 	ms.registerExecutionTools()

@@ -398,6 +398,93 @@ CREATE TABLE IF NOT EXISTS code_change_audit (
   details JSON NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS gj_code (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  path TEXT NOT NULL DEFAULT '',
+  abs_path TEXT NOT NULL DEFAULT '',
+  language TEXT NOT NULL DEFAULT '',
+  hash TEXT NOT NULL DEFAULT '',
+  symbol_kind TEXT NOT NULL DEFAULT '',
+  qualified_name TEXT NOT NULL DEFAULT '',
+  signature TEXT NOT NULL DEFAULT '',
+  doc TEXT NOT NULL DEFAULT '',
+  db_object_id TEXT NOT NULL DEFAULT '',
+  database_name TEXT NOT NULL DEFAULT '',
+  schema_name TEXT NOT NULL DEFAULT '',
+  table_name TEXT NOT NULL DEFAULT '',
+  column_name TEXT NOT NULL DEFAULT '',
+  catalog_item_id TEXT NOT NULL DEFAULT '',
+  table_catalog_item_id TEXT NOT NULL DEFAULT '',
+  column_catalog_item_id TEXT NOT NULL DEFAULT '',
+  file_id TEXT,
+  symbol_id TEXT,
+  parent_id TEXT,
+  target_symbol_id TEXT,
+  source_table TEXT NOT NULL DEFAULT '',
+  source_id INTEGER NOT NULL DEFAULT 0,
+  node_type TEXT NOT NULL DEFAULT '',
+  edge_kind TEXT NOT NULL DEFAULT '',
+  ref_kind TEXT NOT NULL DEFAULT '',
+  import_path TEXT NOT NULL DEFAULT '',
+  alias TEXT NOT NULL DEFAULT '',
+  start_byte INTEGER NOT NULL DEFAULT 0,
+  end_byte INTEGER NOT NULL DEFAULT 0,
+  start_row INTEGER NOT NULL DEFAULT 0,
+  start_col INTEGER NOT NULL DEFAULT 0,
+  end_row INTEGER NOT NULL DEFAULT 0,
+  end_col INTEGER NOT NULL DEFAULT 0,
+  action TEXT NOT NULL DEFAULT '',
+  owner TEXT NOT NULL DEFAULT '',
+  edits JSON NOT NULL DEFAULT '[]',
+  lock_tokens JSON NOT NULL DEFAULT '[]',
+  ranges JSON NOT NULL DEFAULT '[]',
+  lease_token TEXT NOT NULL DEFAULT '',
+  ttl_seconds INTEGER NOT NULL DEFAULT 0,
+  whole_file BOOLEAN NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT '',
+  diff TEXT NOT NULL DEFAULT '',
+  errors_json JSON NOT NULL DEFAULT '[]',
+  files_changed JSON NOT NULL DEFAULT '[]',
+  files_reindexed JSON NOT NULL DEFAULT '[]',
+  details_json JSON NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT '',
+  search_rank REAL NOT NULL DEFAULT 0,
+  search_vector TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_gj_code_kind ON gj_code(kind);
+CREATE INDEX IF NOT EXISTS idx_gj_code_path ON gj_code(path);
+CREATE INDEX IF NOT EXISTS idx_gj_code_db_object ON gj_code(db_object_id);
+CREATE INDEX IF NOT EXISTS idx_gj_code_catalog_item ON gj_code(catalog_item_id);
+CREATE INDEX IF NOT EXISTS idx_gj_code_file ON gj_code(file_id);
+CREATE INDEX IF NOT EXISTS idx_gj_code_symbol ON gj_code(symbol_id);
+CREATE INDEX IF NOT EXISTS idx_gj_code_parent ON gj_code(parent_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS gj_code_fts USING fts5(
+  name, title, summary, path, qualified_name, signature, doc, search_vector,
+  content='gj_code', content_rowid='rowid'
+);
+
+CREATE TRIGGER IF NOT EXISTS gj_code_ai AFTER INSERT ON gj_code BEGIN
+  INSERT INTO gj_code_fts(rowid, name, title, summary, path, qualified_name, signature, doc, search_vector)
+  VALUES (new.rowid, new.name, new.title, new.summary, new.path, new.qualified_name, new.signature, new.doc, new.search_vector);
+END;
+CREATE TRIGGER IF NOT EXISTS gj_code_ad AFTER DELETE ON gj_code BEGIN
+  INSERT INTO gj_code_fts(gj_code_fts, rowid, name, title, summary, path, qualified_name, signature, doc, search_vector)
+  VALUES ('delete', old.rowid, old.name, old.title, old.summary, old.path, old.qualified_name, old.signature, old.doc, old.search_vector);
+END;
+CREATE TRIGGER IF NOT EXISTS gj_code_au AFTER UPDATE ON gj_code BEGIN
+  INSERT INTO gj_code_fts(gj_code_fts, rowid, name, title, summary, path, qualified_name, signature, doc, search_vector)
+  VALUES ('delete', old.rowid, old.name, old.title, old.summary, old.path, old.qualified_name, old.signature, old.doc, old.search_vector);
+  INSERT INTO gj_code_fts(rowid, name, title, summary, path, qualified_name, signature, doc, search_vector)
+  VALUES (new.rowid, new.name, new.title, new.summary, new.path, new.qualified_name, new.signature, new.doc, new.search_vector);
+END;
 `
 
 func ensureSchema(ctx context.Context, db *sql.DB) error {

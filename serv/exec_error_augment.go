@@ -30,12 +30,12 @@ func (ms *mcpServer) enhanceExecError(errMsg, currentTool string) string {
 		ms.fillColumnNotFoundAugment(&enhanced, class)
 	case ExecKindTableNotFound:
 		enhanced.Suggestion = "Table not found. Check spelling and the database/schema namespace; some dialects are case-sensitive."
-		enhanced.RelatedTool = "list_tables"
-		enhanced.Hint = "If the table genuinely exists, the error may be from an alias or the role/permission layer."
+		enhanced.RelatedTool = "query_catalog"
+		enhanced.Hint = "Search query_catalog(where: { kind: { eq: \"table\" } }) to verify the table item, database, schema, and role-visible discovery surface."
 	case ExecKindTypeMismatch:
 		enhanced.Suggestion = "Value cannot be coerced to the column's type. Verify variable types and quoting."
-		enhanced.RelatedTool = "describe_table"
-		enhanced.Hint = "describe_table reports each column's type so you can match the literal/variable shape."
+		enhanced.RelatedTool = "query_catalog"
+		enhanced.Hint = "Search query_catalog(where: { kind: { eq: \"column\" } }) for the column item so you can match the literal or variable shape."
 	case ExecKindSyntaxError:
 		enhanced.Suggestion = "Database rejected the generated SQL as syntactically invalid. This usually means an upstream compiler issue rather than a user mistake."
 		enhanced.RelatedTool = "fix_query_error"
@@ -57,8 +57,8 @@ func (ms *mcpServer) enhanceExecError(errMsg, currentTool string) string {
 // fillColumnNotFoundAugment cross-checks against the schema and reframes the error when the column actually exists.
 func (ms *mcpServer) fillColumnNotFoundAugment(enhanced *EnhancedError, class ExecErrorClass) {
 	if class.Column == "" {
-		enhanced.Suggestion = "Column not found. Use describe_table to see available columns."
-		enhanced.RelatedTool = "describe_table"
+		enhanced.Suggestion = "Column not found. Use query_catalog(where: { kind: { eq: \"column\" } }) to see available columns."
+		enhanced.RelatedTool = "query_catalog"
 		return
 	}
 
@@ -74,9 +74,9 @@ func (ms *mcpServer) fillColumnNotFoundAugment(enhanced *EnhancedError, class Ex
 	}
 
 	enhanced.Suggestion = fmt.Sprintf(
-		"Column '%s' not found%s. Use describe_table to see available columns.",
+		"Column '%s' not found%s. Use query_catalog(where: { kind: { eq: \"column\" } }) to see available columns.",
 		class.Column, tableSuffix(class.Table))
-	enhanced.RelatedTool = "describe_table"
+	enhanced.RelatedTool = "query_catalog"
 }
 
 // columnExistsAcrossSchema reports whether the column exists on the named table; falls back to a full scan when table is empty.

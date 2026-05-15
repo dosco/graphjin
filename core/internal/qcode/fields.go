@@ -160,8 +160,8 @@ func (co *Compiler) compileChildColumns(
 			field.Args = fn.Args
 			field.WindowFunc = fn.WindowFunc
 			// Defer flipping the GROUP BY flag until after directive
-			// compilation: an aggregate carrying @window emits one row
-			// per input row and must NOT trigger GROUP BY.
+			// compilation: an aggregate carrying analytics window metadata
+			// emits one row per input row and must NOT trigger GROUP BY.
 			fieldAgg = fn.Agg
 			// For the new expression-aggregate path, run the AST validator
 			// with the role's column allowlist. This enforces type-checks
@@ -190,11 +190,11 @@ func (co *Compiler) compileChildColumns(
 			return err
 		}
 		if field.WindowFunc != WindowFuncNone && field.Window == nil {
-			return fmt.Errorf("window function %q requires @window", field.WindowFunc.String())
+			return fmt.Errorf("analytics function %q is internal; use GraphJin analytics directives like @previous, @rank, or @rowNumber on a column field", field.WindowFunc.String())
 		}
 
-		// Aggregates without @window participate in GROUP BY; windowed
-		// aggregates do not (the OVER clause produces a row per input).
+		// Plain aggregates participate in GROUP BY; analytics aggregates do not
+		// (the backend window clause produces a row per input).
 		if fieldAgg && field.Window == nil {
 			aggExists = true
 		}

@@ -388,6 +388,17 @@ func (in *Introspection) addRemoteTable(table sdata.DBTable, alias string) error
 		}
 		ft.addArg(a.Name, base)
 	}
+	if isFilesystemRemoteTable(table) {
+		ft.addOrReplaceArg("id", newTypeRef("", "ID", nil))
+		ft.addOrReplaceArg("limit", newTypeRef("", "Int", nil))
+		ft.addOrReplaceArg("offset", newTypeRef("", "Int", nil))
+		ft.addOrReplaceArg("first", newTypeRef("", "Int", nil))
+		ft.addOrReplaceArg("last", newTypeRef("", "Int", nil))
+		ft.addOrReplaceArg("after", newTypeRef("", "Cursor", nil))
+		ft.addOrReplaceArg("before", newTypeRef("", "Cursor", nil))
+		in.addOrderByType(table, &ft)
+		in.addWhereType(table, &ft)
+	}
 
 	in.addType(ft)
 	in.addTypeTo("Query", ft)

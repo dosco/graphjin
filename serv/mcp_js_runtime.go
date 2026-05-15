@@ -113,7 +113,7 @@ func (ms *mcpServer) buildJSRuntimeAPI() JSRuntimeAPI {
 				Name:        "gj.tools.call",
 				Description: "Call a workflow-callable MCP tool by name. Equivalent to calling gj.tools.<camelCaseTool>(args) for allowed tools.",
 				Arguments: map[string]any{
-					"tool": "string (workflow-callable MCP tool name, example: list_tables)",
+					"tool": "string (workflow-callable MCP tool name, example: query_catalog)",
 					"args": "object (tool arguments)",
 				},
 				Required: []string{"tool"},
@@ -127,8 +127,9 @@ func (ms *mcpServer) buildJSRuntimeAPI() JSRuntimeAPI {
 			"IMPORTANT: All gj.tools.* functions return DECODED native JavaScript objects — ready to use directly.",
 			"Direct MCP callers (NOT inside gj.tools.*): tool results are MCP-wrapped — prefer `result.structuredContent` when present (populated for tools with output schemas); otherwise `JSON.parse(result.content[0].text)`. gj.tools.* unwraps this for you.",
 			"Example: var result = gj.tools.executeGraphql({query: 'query GetOrders { orders { id total } }'}); var orders = result.data.orders;",
-			"Example: var tables = gj.tools.listTables().tables;",
-			"Example: var schema = gj.tools.describeTable({table: 'orders'});",
+			"Example: var tables = gj.tools.queryCatalog({where: {kind: {eq: 'table'}}}).cards;",
+			"Example: var workflows = gj.tools.queryCatalog({search: 'workflow', where: {kind: {eq: 'workflow'}}}).cards;",
+			"Example: var schema = gj.tools.queryCatalog({where: {kind: {eq: 'table'}, table_name: {eq: 'orders'}}}).cards[0];",
 			"PAGINATION: Queries have a default row limit (typically 20). To fetch all rows, use cursor pagination with variables: " +
 				"var cursor = null; var all = []; while (true) { " +
 				"var r = gj.tools.executeGraphql({query: '{ orders(first: 20, after: $orders_cursor) { id } orders_cursor }', variables: { orders_cursor: cursor }}); " +
@@ -139,10 +140,10 @@ func (ms *mcpServer) buildJSRuntimeAPI() JSRuntimeAPI {
 			"Tool errors throw JavaScript exceptions — use try/catch to handle them.",
 			"Tool-level auth and policy checks are enforced exactly as in direct MCP calls.",
 			"Function names are generated from MCP tool names by converting snake_case to camelCase.",
-			"Example: list_tables -> gj.tools.listTables",
+			"Example: query_catalog -> gj.tools.queryCatalog",
 			"`execute_graphql` is available inside workflow scripts when allow_raw_queries is enabled.",
 			"`execute_workflow`, `save_workflow`, `list_workflows`, config updates, and schema update tools are intentionally blocked inside workflow scripts.",
-			"Named workflow execution endpoint: /api/v1/workflows/<name> (loads ./workflows/<name>.js).",
+			"Legacy named workflow HTTP endpoint, when mcp.legacy_discovery is enabled: /api/v1/workflows/<name> (loads ./workflows/<name>.js).",
 			"Workflow variables are supported: POST JSON body is passed to global `input` and `main(input)`.",
 			"GET variables are supported via query param: /api/v1/workflows/<name>?variables={...json...}.",
 			"Inside scripts you can read variables from either `input` global or the `main(input)` argument.",

@@ -69,6 +69,7 @@ func (s *gstate) executeManagedMutation(c context.Context) (bool, error) {
 			FieldName: sel.FieldName,
 			Table:     sel.Ti.Name,
 			Operation: req.Operation,
+			Where:     managedFilterToValue(sel.Where.Exp, s.vmap),
 			Fields:    make([]ManagedMutationField, 0, len(sel.Fields)),
 		}
 		for _, f := range sel.Fields {

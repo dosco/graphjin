@@ -22,8 +22,8 @@ func Handler() {}
 
 	conf := &Config{
 		Core: Core{
-			Databases: map[string]core.DatabaseConfig{
-				"code": {Type: "codesql", Path: source},
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "codesql", Path: source},
 			},
 		},
 		Serv: Serv{
@@ -54,8 +54,8 @@ func Handler() {}
 	if !strings.HasPrefix(filepath.Base(runtime.Path), "code-") {
 		t.Fatalf("cache filename = %q, want database-name prefix", filepath.Base(runtime.Path))
 	}
-	assertGraphJinTable(t, s, "code", "code_symbols")
-	assertServiceCount(t, s, "code", `SELECT count(*) FROM code_symbols WHERE name = 'Handler'`, 1)
+	assertGraphJinTable(t, s, "code", "gj_code")
+	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'symbol' AND name = 'Handler'`, 1)
 	if managed := s.managedDBs["code"]; !managed.watch {
 		t.Fatalf("codesql watcher disabled in development, want enabled")
 	}
@@ -71,8 +71,8 @@ func Handler() {}
 	conf := &Config{
 		Core: Core{
 			DisableAllowList: true,
-			Databases: map[string]core.DatabaseConfig{
-				"code": {Type: "codesql", Path: source},
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "codesql", Path: source},
 			},
 		},
 		Serv: Serv{
@@ -88,7 +88,7 @@ func Handler() {}
 	}
 	defer closeTestService(s)
 
-	assertServiceCount(t, s, "code", `SELECT count(*) FROM code_symbols WHERE name = 'Handler'`, 1)
+	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'symbol' AND name = 'Handler'`, 1)
 	if managed := s.managedDBs["code"]; !managed.watch {
 		t.Fatalf("codesql watcher disabled in production, want enabled")
 	}
@@ -104,8 +104,8 @@ func Handler() {}
 	conf := &Config{
 		Core: Core{
 			DisableAllowList: true,
-			Databases: map[string]core.DatabaseConfig{
-				"code": {Type: "codesql", Path: source, ReadOnly: true},
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "codesql", Path: source, ReadOnly: true},
 			},
 		},
 		Serv: Serv{
@@ -121,7 +121,7 @@ func Handler() {}
 	}
 	defer closeTestService(s)
 
-	assertServiceCount(t, s, "code", `SELECT count(*) FROM code_symbols WHERE name = 'Handler'`, 1)
+	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'symbol' AND name = 'Handler'`, 1)
 	if managed := s.managedDBs["code"]; managed.watch {
 		t.Fatalf("codesql watcher enabled for read-only database, want disabled")
 	}
@@ -137,8 +137,8 @@ func Handler() {}
 	conf := &Config{
 		Core: Core{
 			DisableAllowList: true,
-			Databases: map[string]core.DatabaseConfig{
-				"code": {Type: "codesql", Path: source, ReadOnly: true},
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "codesql", Path: source, ReadOnly: true},
 			},
 		},
 		Serv: Serv{
@@ -154,7 +154,8 @@ func Handler() {}
 	defer closeTestService(s)
 
 	_, err = s.gj.GraphQL(context.Background(), `mutation {
-		code_locks(insert: {
+		gj_code(insert: {
+			kind: "lock",
 			action: "acquire",
 			path: "main.go",
 			owner: "test",
@@ -166,7 +167,7 @@ func Handler() {}
 	}
 }
 
-func TestCodeSQLLegacyUsesDefaultCachePrefix(t *testing.T) {
+func TestCodeSQLLegacyConfigRejected(t *testing.T) {
 	source := t.TempDir()
 	writeTestFile(t, filepath.Join(source, "main.go"), `package main
 
@@ -182,20 +183,13 @@ func Legacy() {}
 	}
 
 	s, err := newGraphJinService(conf, nil)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		closeTestService(s)
+		t.Fatal("expected legacy CodeSQL database config to be rejected")
 	}
-	defer closeTestService(s)
-
-	runtime := s.runtimeCore.Databases[core.DefaultDBName]
-	if runtime.Type != "sqlite" {
-		t.Fatalf("runtime type = %q, want sqlite", runtime.Type)
+	if !strings.Contains(err.Error(), "kind: codesql") {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.HasPrefix(filepath.Base(runtime.Path), "default-") {
-		t.Fatalf("cache filename = %q, want default prefix", filepath.Base(runtime.Path))
-	}
-	assertGraphJinTable(t, s, core.DefaultDBName, "code_symbols")
-	assertServiceCount(t, s, core.DefaultDBName, `SELECT count(*) FROM code_symbols WHERE name = 'Legacy'`, 1)
 }
 
 func TestCodeSQLGraphQLSourceMutationsPreviewApplyAndLocks(t *testing.T) {
@@ -211,8 +205,8 @@ func LoadUser(id int64) int64 {
 	conf := &Config{
 		Core: Core{
 			DisableAllowList: true,
-			Databases: map[string]core.DatabaseConfig{
-				"code": {Type: "codesql", Path: source},
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "codesql", Path: source},
 			},
 		},
 		Serv: Serv{
@@ -228,13 +222,14 @@ func LoadUser(id int64) int64 {
 	defer closeTestService(s)
 
 	query := `query GetLoadUserSource {
-		code_symbols(where: { name: { eq: "LoadUser" } }) {
+		gj_code(where: { kind: { eq: "symbol" }, name: { eq: "LoadUser" } }) {
 			name
 			start_byte
 			end_byte
 			code
 			code_context
-			code_files { path hash }
+			path
+			hash
 		}
 	}`
 	res, err := s.gj.GraphQL(context.Background(), query, nil, nil)
@@ -242,25 +237,23 @@ func LoadUser(id int64) int64 {
 		t.Fatal(err)
 	}
 	var read struct {
-		CodeSymbols []struct {
+		GJCode []struct {
 			Name        string `json:"name"`
 			StartByte   int64  `json:"start_byte"`
 			EndByte     int64  `json:"end_byte"`
 			Code        string `json:"code"`
 			CodeContext string `json:"code_context"`
-			CodeFiles   struct {
-				Path string `json:"path"`
-				Hash string `json:"hash"`
-			} `json:"code_files"`
-		} `json:"code_symbols"`
+			Path        string `json:"path"`
+			Hash        string `json:"hash"`
+		} `json:"gj_code"`
 	}
 	if err := json.Unmarshal(res.Data, &read); err != nil {
 		t.Fatalf("read response: %v\n%s", err, res.Data)
 	}
-	if len(read.CodeSymbols) != 1 {
-		t.Fatalf("code_symbols len = %d, want 1; data=%s", len(read.CodeSymbols), res.Data)
+	if len(read.GJCode) != 1 {
+		t.Fatalf("gj_code symbols len = %d, want 1; data=%s", len(read.GJCode), res.Data)
 	}
-	sym := read.CodeSymbols[0]
+	sym := read.GJCode[0]
 	if !strings.Contains(sym.Code, "func LoadUser") || !strings.Contains(sym.CodeContext, "package main") {
 		t.Fatalf("virtual code fields missing source: %#v", sym)
 	}
@@ -268,18 +261,19 @@ func LoadUser(id int64) int64 {
 	if sym.Code != oldText {
 		t.Fatalf("code field = %q, want file slice %q", sym.Code, oldText)
 	}
-	if sym.CodeFiles.Path != "main.go" || sym.CodeFiles.Hash == "" {
-		t.Fatalf("code_files relation = %#v", sym.CodeFiles)
+	if sym.Path != "main.go" || sym.Hash == "" {
+		t.Fatalf("gj_code symbol source fields = %#v", sym)
 	}
 
 	newText := strings.Replace(oldText, "return id", "return id + 1", 1)
 	previewVars, err := json.Marshal(map[string]interface{}{
 		"input": map[string]interface{}{
+			"kind":   "change_set",
 			"action": "preview",
 			"title":  "increment LoadUser",
 			"edits": []map[string]interface{}{{
 				"path":          "main.go",
-				"expected_hash": sym.CodeFiles.Hash,
+				"expected_hash": sym.Hash,
 				"replacements": []map[string]interface{}{{
 					"start_byte": sym.StartByte,
 					"end_byte":   sym.EndByte,
@@ -293,123 +287,126 @@ func LoadUser(id int64) int64 {
 		t.Fatal(err)
 	}
 	preview := `mutation {
-		code_change_sets(insert: $input) { id status diff errors }
+		gj_code(insert: $input) { id kind status diff errors_json }
 	}`
 	res, err = s.gj.GraphQL(context.Background(), preview, previewVars, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var previewOut struct {
-		CodeChangeSets struct {
+		GJCode struct {
 			ID     int64    `json:"id"`
+			Kind   string   `json:"kind"`
 			Status string   `json:"status"`
 			Diff   string   `json:"diff"`
-			Errors []string `json:"errors"`
-		} `json:"code_change_sets"`
+			Errors []string `json:"errors_json"`
+		} `json:"gj_code"`
 	}
 	if err := json.Unmarshal(res.Data, &previewOut); err != nil {
 		t.Fatalf("preview response: %v\n%s", err, res.Data)
 	}
-	if previewOut.CodeChangeSets.ID == 0 || previewOut.CodeChangeSets.Status != "previewed" || len(previewOut.CodeChangeSets.Errors) != 0 {
-		t.Fatalf("preview output = %#v data=%s", previewOut.CodeChangeSets, res.Data)
+	if previewOut.GJCode.ID == 0 || previewOut.GJCode.Kind != "change_set" || previewOut.GJCode.Status != "previewed" || len(previewOut.GJCode.Errors) != 0 {
+		t.Fatalf("preview output = %#v data=%s", previewOut.GJCode, res.Data)
 	}
-	if !strings.Contains(previewOut.CodeChangeSets.Diff, "+func LoadUser") {
-		t.Fatalf("preview diff missing new source: %s", previewOut.CodeChangeSets.Diff)
+	if !strings.Contains(previewOut.GJCode.Diff, "+func LoadUser") {
+		t.Fatalf("preview diff missing new source: %s", previewOut.GJCode.Diff)
 	}
 	if got := readTestFile(t, filepath.Join(source, "main.go")); got != before {
 		t.Fatalf("preview changed source file:\n%s", got)
 	}
 
 	apply := fmt.Sprintf(`mutation {
-		code_change_sets(id: %d, update: { id: %d, action: "apply" }) {
+		gj_code(id: "change_set:%d", update: { kind: "change_set", id: %d, action: "apply" }) {
 			id
+			kind
 			status
 			files_changed
 			files_reindexed
-			errors
+			errors_json
 		}
-	}`, previewOut.CodeChangeSets.ID, previewOut.CodeChangeSets.ID)
+	}`, previewOut.GJCode.ID, previewOut.GJCode.ID)
 	res, err = s.gj.GraphQL(context.Background(), apply, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var applyOut struct {
-		CodeChangeSets struct {
+		GJCode struct {
+			Kind           string   `json:"kind"`
 			Status         string   `json:"status"`
 			FilesChanged   []string `json:"files_changed"`
 			FilesReindexed []string `json:"files_reindexed"`
-			Errors         []string `json:"errors"`
-		} `json:"code_change_sets"`
+			Errors         []string `json:"errors_json"`
+		} `json:"gj_code"`
 	}
 	if err := json.Unmarshal(res.Data, &applyOut); err != nil {
 		t.Fatalf("apply response: %v\n%s", err, res.Data)
 	}
-	if applyOut.CodeChangeSets.Status != "applied" || len(applyOut.CodeChangeSets.Errors) != 0 {
-		t.Fatalf("apply output = %#v data=%s", applyOut.CodeChangeSets, res.Data)
+	if applyOut.GJCode.Kind != "change_set" || applyOut.GJCode.Status != "applied" || len(applyOut.GJCode.Errors) != 0 {
+		t.Fatalf("apply output = %#v data=%s", applyOut.GJCode, res.Data)
 	}
-	if len(applyOut.CodeChangeSets.FilesChanged) != 1 || applyOut.CodeChangeSets.FilesChanged[0] != "main.go" {
-		t.Fatalf("files_changed = %#v", applyOut.CodeChangeSets.FilesChanged)
+	if len(applyOut.GJCode.FilesChanged) != 1 || applyOut.GJCode.FilesChanged[0] != "main.go" {
+		t.Fatalf("files_changed = %#v", applyOut.GJCode.FilesChanged)
 	}
 	if got := readTestFile(t, filepath.Join(source, "main.go")); !strings.Contains(got, "return id + 1") {
 		t.Fatalf("apply did not update source:\n%s", got)
 	}
-	assertServiceCount(t, s, "code", `SELECT count(*) FROM code_symbols WHERE name = 'LoadUser'`, 1)
+	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'symbol' AND name = 'LoadUser'`, 1)
 	res, err = s.gj.GraphQL(context.Background(), query, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var reread struct {
-		CodeSymbols []struct {
-			Code      string `json:"code"`
-			CodeFiles struct {
-				Hash string `json:"hash"`
-			} `json:"code_files"`
-		} `json:"code_symbols"`
+		GJCode []struct {
+			Code string `json:"code"`
+			Hash string `json:"hash"`
+		} `json:"gj_code"`
 	}
 	if err := json.Unmarshal(res.Data, &reread); err != nil {
 		t.Fatalf("reread response: %v\n%s", err, res.Data)
 	}
-	if len(reread.CodeSymbols) != 1 {
-		t.Fatalf("reread symbols = %d, want 1", len(reread.CodeSymbols))
+	if len(reread.GJCode) != 1 {
+		t.Fatalf("reread symbols = %d, want 1", len(reread.GJCode))
 	}
-	if !strings.Contains(reread.CodeSymbols[0].Code, "return id + 1") {
-		t.Fatalf("expected refreshed code after apply, got %q", reread.CodeSymbols[0].Code)
+	if !strings.Contains(reread.GJCode[0].Code, "return id + 1") {
+		t.Fatalf("expected refreshed code after apply, got %q", reread.GJCode[0].Code)
 	}
-	if reread.CodeSymbols[0].CodeFiles.Hash == sym.CodeFiles.Hash {
-		t.Fatalf("expected refreshed hash after apply, still %q", reread.CodeSymbols[0].CodeFiles.Hash)
+	if reread.GJCode[0].Hash == sym.Hash {
+		t.Fatalf("expected refreshed hash after apply, still %q", reread.GJCode[0].Hash)
 	}
 
 	lockMutation := `mutation {
-		code_locks(insert: {
+		gj_code(insert: {
+			kind: "lock",
 			action: "acquire",
 			path: "main.go",
 			owner: "test",
 			ranges: [{ start_byte: 0, end_byte: 20 }]
-		}) { id status lease_token path }
+		}) { id kind status lease_token path }
 	}`
 	res, err = s.gj.GraphQL(context.Background(), lockMutation, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var lockOut struct {
-		CodeLocks struct {
+		GJCode struct {
 			ID         int64  `json:"id"`
+			Kind       string `json:"kind"`
 			Status     string `json:"status"`
 			LeaseToken string `json:"lease_token"`
 			Path       string `json:"path"`
-		} `json:"code_locks"`
+		} `json:"gj_code"`
 	}
 	if err := json.Unmarshal(res.Data, &lockOut); err != nil {
 		t.Fatalf("lock response: %v\n%s", err, res.Data)
 	}
-	if lockOut.CodeLocks.ID == 0 || lockOut.CodeLocks.Status != "active" || lockOut.CodeLocks.LeaseToken == "" || lockOut.CodeLocks.Path != "main.go" {
-		t.Fatalf("lock output = %#v data=%s", lockOut.CodeLocks, res.Data)
+	if lockOut.GJCode.ID == 0 || lockOut.GJCode.Kind != "lock" || lockOut.GJCode.Status != "active" || lockOut.GJCode.LeaseToken == "" || lockOut.GJCode.Path != "main.go" {
+		t.Fatalf("lock output = %#v data=%s", lockOut.GJCode, res.Data)
 	}
 	release := fmt.Sprintf(`mutation {
-		code_locks(id: %d, update: { id: %d, action: "release", lease_token: %q }) {
-			id status path
+		gj_code(id: "lock:%d", update: { kind: "lock", id: %d, action: "release", lease_token: %q }) {
+			id kind status path
 		}
-	}`, lockOut.CodeLocks.ID, lockOut.CodeLocks.ID, lockOut.CodeLocks.LeaseToken)
+	}`, lockOut.GJCode.ID, lockOut.GJCode.ID, lockOut.GJCode.LeaseToken)
 	res, err = s.gj.GraphQL(context.Background(), release, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -429,8 +426,8 @@ func TestCodeSQLGraphQLFileLifecycleMutations(t *testing.T) {
 	conf := &Config{
 		Core: Core{
 			DisableAllowList: true,
-			Databases: map[string]core.DatabaseConfig{
-				"code": {Type: "codesql", Path: source},
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "codesql", Path: source},
 			},
 		},
 		Serv: Serv{
@@ -447,21 +444,21 @@ func TestCodeSQLGraphQLFileLifecycleMutations(t *testing.T) {
 
 	hashes := map[string]string{}
 	res, err := s.gj.GraphQL(context.Background(), `query {
-		code_files(order_by: { path: asc }) { path hash }
+		gj_code(where: { kind: { eq: "file" } }, order_by: { path: asc }) { path hash }
 	}`, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var filesOut struct {
-		CodeFiles []struct {
+		GJCode []struct {
 			Path string `json:"path"`
 			Hash string `json:"hash"`
-		} `json:"code_files"`
+		} `json:"gj_code"`
 	}
 	if err := json.Unmarshal(res.Data, &filesOut); err != nil {
-		t.Fatalf("code_files response: %v\n%s", err, res.Data)
+		t.Fatalf("gj_code file response: %v\n%s", err, res.Data)
 	}
-	for _, file := range filesOut.CodeFiles {
+	for _, file := range filesOut.GJCode {
 		hashes[file.Path] = file.Hash
 	}
 	if hashes["delete_me.go"] == "" || hashes["move_me.go"] == "" {
@@ -470,6 +467,7 @@ func TestCodeSQLGraphQLFileLifecycleMutations(t *testing.T) {
 
 	vars, err := json.Marshal(map[string]interface{}{
 		"input": map[string]interface{}{
+			"kind":   "change_set",
 			"action": "preview",
 			"title":  "file lifecycle batch",
 			"edits": []map[string]interface{}{
@@ -497,65 +495,69 @@ func TestCodeSQLGraphQLFileLifecycleMutations(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err = s.gj.GraphQL(context.Background(), `mutation {
-		code_change_sets(insert: $input) {
+		gj_code(insert: $input) {
 			id
+			kind
 			status
 			diff
-			errors
+			errors_json
 		}
 	}`, vars, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var previewOut struct {
-		CodeChangeSets struct {
+		GJCode struct {
 			ID     int64    `json:"id"`
+			Kind   string   `json:"kind"`
 			Status string   `json:"status"`
 			Diff   string   `json:"diff"`
-			Errors []string `json:"errors"`
-		} `json:"code_change_sets"`
+			Errors []string `json:"errors_json"`
+		} `json:"gj_code"`
 	}
 	if err := json.Unmarshal(res.Data, &previewOut); err != nil {
 		t.Fatalf("preview response: %v\n%s", err, res.Data)
 	}
-	if previewOut.CodeChangeSets.Status != "previewed" || len(previewOut.CodeChangeSets.Errors) != 0 {
-		t.Fatalf("preview output = %#v data=%s", previewOut.CodeChangeSets, res.Data)
+	if previewOut.GJCode.Kind != "change_set" || previewOut.GJCode.Status != "previewed" || len(previewOut.GJCode.Errors) != 0 {
+		t.Fatalf("preview output = %#v data=%s", previewOut.GJCode, res.Data)
 	}
 	for _, part := range []string{"+++ b/created.go", "--- a/delete_me.go", "+++ b/pkg/moved.go"} {
-		if !strings.Contains(previewOut.CodeChangeSets.Diff, part) {
-			t.Fatalf("preview diff missing %q:\n%s", part, previewOut.CodeChangeSets.Diff)
+		if !strings.Contains(previewOut.GJCode.Diff, part) {
+			t.Fatalf("preview diff missing %q:\n%s", part, previewOut.GJCode.Diff)
 		}
 	}
 
 	apply := fmt.Sprintf(`mutation {
-		code_change_sets(id: %d, update: { id: %d, action: "apply" }) {
+		gj_code(id: "change_set:%d", update: { kind: "change_set", id: %d, action: "apply" }) {
+			kind
 			status
 			files_changed
 			files_reindexed
-			errors
+			errors_json
 		}
-	}`, previewOut.CodeChangeSets.ID, previewOut.CodeChangeSets.ID)
+	}`, previewOut.GJCode.ID, previewOut.GJCode.ID)
 	res, err = s.gj.GraphQL(context.Background(), apply, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var applyOut struct {
-		CodeChangeSets struct {
+		GJCode struct {
+			Kind           string   `json:"kind"`
 			Status         string   `json:"status"`
 			FilesChanged   []string `json:"files_changed"`
 			FilesReindexed []string `json:"files_reindexed"`
-			Errors         []string `json:"errors"`
-		} `json:"code_change_sets"`
+			Errors         []string `json:"errors_json"`
+		} `json:"gj_code"`
 	}
 	if err := json.Unmarshal(res.Data, &applyOut); err != nil {
 		t.Fatalf("apply response: %v\n%s", err, res.Data)
 	}
-	if applyOut.CodeChangeSets.Status != "applied" || len(applyOut.CodeChangeSets.Errors) != 0 {
-		t.Fatalf("apply output = %#v data=%s", applyOut.CodeChangeSets, res.Data)
+	if applyOut.GJCode.Kind != "change_set" || applyOut.GJCode.Status != "applied" || len(applyOut.GJCode.Errors) != 0 {
+		t.Fatalf("apply output = %#v data=%s", applyOut.GJCode, res.Data)
 	}
 	wantChanged := []string{"created.go", "delete_me.go", "move_me.go", "pkg/moved.go"}
-	if strings.Join(applyOut.CodeChangeSets.FilesChanged, ",") != strings.Join(wantChanged, ",") {
-		t.Fatalf("files_changed = %#v, want %#v", applyOut.CodeChangeSets.FilesChanged, wantChanged)
+	if strings.Join(applyOut.GJCode.FilesChanged, ",") != strings.Join(wantChanged, ",") {
+		t.Fatalf("files_changed = %#v, want %#v", applyOut.GJCode.FilesChanged, wantChanged)
 	}
 	if _, err := os.Stat(filepath.Join(source, "delete_me.go")); !os.IsNotExist(err) {
 		t.Fatalf("delete_me.go stat err = %v, want not exists", err)
@@ -566,13 +568,13 @@ func TestCodeSQLGraphQLFileLifecycleMutations(t *testing.T) {
 	if got := readTestFile(t, filepath.Join(source, "pkg", "moved.go")); got != moveSrc {
 		t.Fatalf("moved.go content = %q", got)
 	}
-	assertServiceCount(t, s, "code", `SELECT count(*) FROM code_files WHERE path = 'created.go'`, 1)
-	assertServiceCount(t, s, "code", `SELECT count(*) FROM code_files WHERE path = 'delete_me.go'`, 0)
-	assertServiceCount(t, s, "code", `SELECT count(*) FROM code_files WHERE path = 'move_me.go'`, 0)
-	assertServiceCount(t, s, "code", `SELECT count(*) FROM code_files WHERE path = 'pkg/moved.go'`, 1)
+	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'file' AND path = 'created.go'`, 1)
+	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'file' AND path = 'delete_me.go'`, 0)
+	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'file' AND path = 'move_me.go'`, 0)
+	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'file' AND path = 'pkg/moved.go'`, 1)
 }
 
-func TestCodeSQLDerivedTableMutationBlocked(t *testing.T) {
+func TestCodeSQLRawTableMutationRootsUnavailable(t *testing.T) {
 	source := t.TempDir()
 	writeTestFile(t, filepath.Join(source, "main.go"), `package main
 
@@ -582,8 +584,8 @@ func Blocked() {}
 	conf := &Config{
 		Core: Core{
 			DisableAllowList: true,
-			Databases: map[string]core.DatabaseConfig{
-				"code": {Type: "codesql", Path: source},
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "codesql", Path: source},
 			},
 		},
 		Serv: Serv{
@@ -600,8 +602,8 @@ func Blocked() {}
 	_, err = s.gj.GraphQL(context.Background(), `mutation {
 		code_files(insert: { path: "x.go", abs_path: "x.go", language: "go", hash: "x", size: 1, mtime_unix: 1, indexed_at: "now" }) { id }
 	}`, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "read-only") {
-		t.Fatalf("direct derived mutation err = %v, want read-only block", err)
+	if err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("direct derived mutation err = %v, want blocked raw CodeSQL root", err)
 	}
 }
 
@@ -618,8 +620,8 @@ func WatchMe() int {
 	conf := &Config{
 		Core: Core{
 			DisableAllowList: true,
-			Databases: map[string]core.DatabaseConfig{
-				"code": {Type: "codesql", Path: source},
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "codesql", Path: source},
 			},
 		},
 		Serv: Serv{
@@ -635,9 +637,9 @@ func WatchMe() int {
 	defer closeTestService(s)
 
 	query := `query GetWatchMe {
-		code_symbols(where: { name: { eq: "WatchMe" } }) {
+		gj_code(where: { kind: { eq: "symbol" }, name: { eq: "WatchMe" } }) {
 			code
-			code_files { hash }
+			hash
 		}
 	}`
 	res, err := s.gj.GraphQL(context.Background(), query, nil, nil)
@@ -645,18 +647,16 @@ func WatchMe() int {
 		t.Fatal(err)
 	}
 	var initial struct {
-		CodeSymbols []struct {
-			Code      string `json:"code"`
-			CodeFiles struct {
-				Hash string `json:"hash"`
-			} `json:"code_files"`
-		} `json:"code_symbols"`
+		GJCode []struct {
+			Code string `json:"code"`
+			Hash string `json:"hash"`
+		} `json:"gj_code"`
 	}
 	if err := json.Unmarshal(res.Data, &initial); err != nil {
 		t.Fatalf("initial response: %v\n%s", err, res.Data)
 	}
-	if len(initial.CodeSymbols) != 1 {
-		t.Fatalf("initial symbols = %d, want 1", len(initial.CodeSymbols))
+	if len(initial.GJCode) != 1 {
+		t.Fatalf("initial symbols = %d, want 1", len(initial.GJCode))
 	}
 
 	after := strings.Replace(before, "return 1", "return 2", 1)
@@ -669,19 +669,17 @@ func WatchMe() int {
 			t.Fatal(err)
 		}
 		var current struct {
-			CodeSymbols []struct {
-				Code      string `json:"code"`
-				CodeFiles struct {
-					Hash string `json:"hash"`
-				} `json:"code_files"`
-			} `json:"code_symbols"`
+			GJCode []struct {
+				Code string `json:"code"`
+				Hash string `json:"hash"`
+			} `json:"gj_code"`
 		}
 		if err := json.Unmarshal(res.Data, &current); err != nil {
 			t.Fatalf("current response: %v\n%s", err, res.Data)
 		}
-		for _, symbol := range current.CodeSymbols {
+		for _, symbol := range current.GJCode {
 			if strings.Contains(symbol.Code, "return 2") &&
-				symbol.CodeFiles.Hash != initial.CodeSymbols[0].CodeFiles.Hash {
+				symbol.Hash != initial.GJCode[0].Hash {
 				return
 			}
 		}

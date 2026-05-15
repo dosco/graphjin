@@ -66,8 +66,8 @@ func (c *compilerContext) renderFieldWindowFunction(sel *qcode.Select, f qcode.F
 	c.w.WriteString(")")
 }
 
-// renderWindowOver appends the OVER (...) clause for fields tagged with
-// the @window directive. No-op when f.Window is nil.
+// renderWindowOver appends the backend OVER (...) clause for fields produced by
+// analytics directives. No-op when f.Window is nil.
 func (c *compilerContext) renderWindowOver(sel *qcode.Select, f qcode.Field) {
 	c.renderWindowOverWithTable(sel, f, sel.Table)
 }

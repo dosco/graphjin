@@ -18,6 +18,10 @@ func mockMcpServerWithConfig(cfg MCPConfig) *mcpServer {
 	svc := &graphjinService{
 		cursorCache: NewMemoryCursorCache(100, time.Hour),
 		conf: &Config{
+			Core: core.Config{Sources: []core.SourceConfig{
+				{Name: "graphjin", Kind: "graphjin"},
+				{Name: "workflows", Kind: "workflows"},
+			}},
 			Serv: Serv{MCP: cfg},
 		},
 	}
@@ -1601,24 +1605,54 @@ func TestQuerySyntaxReference_HasRemoteJoins(t *testing.T) {
 	}
 }
 
-func TestQuerySyntaxReference_HasWindowFunctions(t *testing.T) {
+func TestQuerySyntaxReference_HasAnalyticsDirectives(t *testing.T) {
 	ref := querySyntaxReference
-	if len(ref.WindowFunctions.Functions) == 0 {
-		t.Fatal("expected window function syntax reference")
+	if len(ref.AnalyticsDirectives.Directives) == 0 {
+		t.Fatal("expected analytics directive syntax reference")
 	}
-	for _, want := range []string{"row_number", "dense_rank", "lag_<column>", "first_value_<column>"} {
-		if !strings.Contains(strings.Join(ref.WindowFunctions.Functions, "\n"), want) {
-			t.Errorf("window functions should mention %q; got %#v", want, ref.WindowFunctions.Functions)
+	for _, want := range []string{
+		"@running",
+		"@moving",
+		"@previous",
+		"@next",
+		"@first",
+		"@last",
+		"@rank",
+		"@denseRank",
+		"@rowNumber",
+	} {
+		if !strings.Contains(strings.Join(ref.AnalyticsDirectives.Directives, "\n"), want) {
+			t.Errorf("analytics directives should mention %q; got %#v", want, ref.AnalyticsDirectives.Directives)
 		}
 	}
-	if !strings.Contains(ref.WindowFunctions.Arguments, "frame") {
-		t.Errorf("window arguments should describe frame syntax; got %q", ref.WindowFunctions.Arguments)
+	if !strings.Contains(ref.AnalyticsDirectives.Arguments, "orderBy") {
+		t.Errorf("analytics arguments should describe orderBy syntax; got %q", ref.AnalyticsDirectives.Arguments)
 	}
-	if len(ref.WindowFunctions.Rules) == 0 {
-		t.Fatal("expected window function rules")
+	if len(ref.AnalyticsDirectives.Rules) == 0 {
+		t.Fatal("expected analytics directive rules")
 	}
-	if len(ref.Examples.Windows) == 0 {
-		t.Fatal("expected window examples")
+	if len(ref.Examples.Analytics) == 0 {
+		t.Fatal("expected analytics examples")
+	}
+	refJSON, err := json.Marshal(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stale := range []string{
+		"@window",
+		"window_functions",
+		"lag_",
+		"lead_",
+		"first_value",
+		"last_value",
+		"partition:",
+		"frame:",
+		"NULLS FIRST",
+		"NULLS LAST",
+	} {
+		if strings.Contains(string(refJSON), stale) {
+			t.Errorf("query syntax reference should not expose stale analytics syntax %q", stale)
+		}
 	}
 }
 
@@ -1881,28 +1915,28 @@ func TestEnhanceError(t *testing.T) {
 			errMsg:        "table not found: users",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "list_tables",
+			expectedTool:  "query_catalog",
 		},
 		{
 			name:          "relation does not exist",
 			errMsg:        "ERROR: relation \"orders\" does not exist",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "list_tables",
+			expectedTool:  "query_catalog",
 		},
 		{
 			name:          "no such table",
 			errMsg:        "no such table: products",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "list_tables",
+			expectedTool:  "query_catalog",
 		},
 		{
 			name:          "unknown table",
 			errMsg:        "unknown table 'items'",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "list_tables",
+			expectedTool:  "query_catalog",
 		},
 
 		// Column-related errors
@@ -1911,21 +1945,21 @@ func TestEnhanceError(t *testing.T) {
 			errMsg:        "column not found: email",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "describe_table",
+			expectedTool:  "query_catalog",
 		},
 		{
 			name:          "unknown column",
 			errMsg:        "unknown column 'age' in field list",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "describe_table",
+			expectedTool:  "query_catalog",
 		},
 		{
 			name:          "no such column",
 			errMsg:        "no such column: phone",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "describe_table",
+			expectedTool:  "query_catalog",
 		},
 
 		// Operator-related errors
@@ -1934,14 +1968,14 @@ func TestEnhanceError(t *testing.T) {
 			errMsg:        "invalid operator: LIKE",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "get_query_syntax",
+			expectedTool:  "query_catalog",
 		},
 		{
 			name:          "unsupported operator",
 			errMsg:        "unsupported operator 'between'",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "get_query_syntax",
+			expectedTool:  "query_catalog",
 		},
 
 		// Syntax errors
@@ -1950,14 +1984,14 @@ func TestEnhanceError(t *testing.T) {
 			errMsg:        "syntax error at or near '}'",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "get_query_syntax",
+			expectedTool:  "query_catalog",
 		},
 		{
 			name:          "parse error",
 			errMsg:        "parse error: unexpected token",
 			currentTool:   "execute_graphql",
 			shouldEnhance: true,
-			expectedTool:  "get_query_syntax",
+			expectedTool:  "query_catalog",
 		},
 
 		// Permission errors

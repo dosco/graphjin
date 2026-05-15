@@ -55,6 +55,7 @@ type dbContext struct {
 	name          string          // Database name (key in Config.Databases)
 	db            *sql.DB         // Connection pool for this database
 	dbtype        string          // Database type (postgres, mysql, sqlite, etc.)
+	nano          *NanoDB         // Pure-Go compact system/catalog/workflow source
 	dbinfo        *sdata.DBInfo   // Raw schema metadata
 	schema        *sdata.DBSchema // Processed schema with relationships
 	qcodeCompiler *qcode.Compiler // GraphQL to QCode compiler (validates against this DB's schema)
@@ -116,6 +117,10 @@ type graphjinEngine struct {
 	// normal SQL execution. The runtime database can remain read-only while
 	// a service-owned handler applies guarded side effects.
 	managedMutationHandlers map[string]ManagedMutationHandler
+
+	// Managed query handlers expose service-owned, synthetic read roots through
+	// GraphJin's normal GraphQL query surface without hitting user tables.
+	managedQueryHandlers map[string]ManagedQueryHandler
 }
 
 // primaryDB returns the default database context.
@@ -384,7 +389,12 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		return
 	}
 
-	// Phase 3: Finalize schemas and compilers for all databases
+	// Phase 3: Managed service-owned tables (adds synthetic gj_* roots)
+	if err = gj.initManagedQueryTables(); err != nil {
+		return
+	}
+
+	// Phase 4: Finalize schemas and compilers for all databases
 	if err = gj.finalizeAllDatabases(); err != nil {
 		return
 	}
@@ -498,12 +508,56 @@ type ManagedMutationField struct {
 	Column string
 }
 
+// ManagedColumn describes a synthetic service-owned table column.
+type ManagedColumn struct {
+	Name       string
+	Type       string
+	PrimaryKey bool
+	FullText   bool
+}
+
+// ManagedTable describes a synthetic service-owned GraphQL table.
+type ManagedTable struct {
+	Name    string
+	Columns []ManagedColumn
+}
+
+// ManagedOrderBy describes one order_by entry on a managed query root.
+type ManagedOrderBy struct {
+	Column string
+	Order  string
+}
+
+// ManagedQueryRoot describes one root query routed to a managed handler.
+type ManagedQueryRoot struct {
+	FieldName string
+	Table     string
+	Fields    []ManagedMutationField
+	Where     map[string]interface{}
+	OrderBy   []ManagedOrderBy
+	Limit     int
+	Offset    int
+}
+
+// ManagedQueryRequest is passed to service-owned query handlers.
+type ManagedQueryRequest struct {
+	Database string
+	Roots    []ManagedQueryRoot
+}
+
+// ManagedQueryHandler handles GraphQL queries for service-managed tables.
+type ManagedQueryHandler interface {
+	ManagedQueryTables() []ManagedTable
+	ExecuteManagedQuery(context.Context, ManagedQueryRequest) (json.RawMessage, error)
+}
+
 // ManagedMutationRoot describes one root mutation routed to a managed handler.
 type ManagedMutationRoot struct {
 	FieldName string
 	Table     string
 	Operation string
 	Input     map[string]interface{}
+	Where     map[string]interface{}
 	Fields    []ManagedMutationField
 }
 
@@ -533,7 +587,29 @@ func OptionSetManagedMutationHandler(database string, handler ManagedMutationHan
 		if s.managedMutationHandlers == nil {
 			s.managedMutationHandlers = make(map[string]ManagedMutationHandler)
 		}
-		s.managedMutationHandlers[database] = handler
+		combined, err := combineManagedMutationHandlers(s.managedMutationHandlers[database], handler)
+		if err != nil {
+			return err
+		}
+		s.managedMutationHandlers[database] = combined
+		return nil
+	}
+}
+
+// OptionSetManagedQueryHandler registers a handler for service-managed query
+// tables in a database.
+func OptionSetManagedQueryHandler(database string, handler ManagedQueryHandler) Option {
+	return func(s *graphjinEngine) error {
+		if database == "" {
+			database = s.defaultDB
+		}
+		if handler == nil {
+			return errors.New("managed query handler: nil handler")
+		}
+		if s.managedQueryHandlers == nil {
+			s.managedQueryHandlers = make(map[string]ManagedQueryHandler)
+		}
+		s.managedQueryHandlers[database] = handler
 		return nil
 	}
 }
@@ -1073,9 +1149,30 @@ func (g *GraphJin) SchemaReady() bool {
 		return false
 	}
 	for _, ctx := range gj.databases {
-		if ctx.schema != nil {
+		if schemaHasApplicationTables(ctx.schema) {
 			return true
 		}
+	}
+	return false
+}
+
+func schemaHasApplicationTables(schema *sdata.DBSchema) bool {
+	if schema == nil {
+		return false
+	}
+	for _, table := range schema.GetTables() {
+		name := strings.ToLower(table.Name)
+		if table.Blocked || table.Type == "managed" {
+			continue
+		}
+		switch name {
+		case "gj_catalog", "gj_security", "gj_workflow", "gj_config", "gj_code":
+			return true
+		}
+		if strings.HasPrefix(name, "gj_") {
+			continue
+		}
+		return true
 	}
 	return false
 }

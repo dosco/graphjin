@@ -194,7 +194,7 @@ Copy paste the Claude Desktop Config provided by `graphjin serve` into the Claud
 
 1. **Connects to database** - Reads your schema automatically
 2. **Discovers relationships** - Foreign keys become navigable joins
-3. **Exposes metadata** - `gj_*` tables make discovered databases, tables, columns, relationships, functions, and indexes queryable
+3. **Exposes metadata** - `gj_*` tables make discovered databases, tables, columns, relationships, functions, and indexes queryable when the GraphJin source is enabled
 4. **Indexes source code** - CodeSQL turns tree-sitter syntax trees and database references into a managed SQLite database
 5. **Exposes MCP tools** - Teach any LLM the query syntax
 6. **Runs JS workflows** - Chain multiple GraphJin MCP tools in one reusable workflow
@@ -204,45 +204,62 @@ No resolvers. No ORM. No N+1 queries. Just point and query.
 
 ## CodeSQL: Query Source Code Like a Database
 
-CodeSQL is a managed database type for source trees. Configure a source folder and GraphJin creates a SQLite cache under `config/codesql/`, indexes it with tree-sitter, and updates it on restart. In development it also watches for changes while the service runs; in production live watching is disabled.
+CodeSQL is a managed source kind for source trees. Configure a source folder and GraphJin creates a SQLite cache under `config/codesql/`, indexes it with tree-sitter, and updates it on restart. In development it also watches for changes while the service runs; in production live watching is disabled.
 
 ```yaml
-databases:
-  appdb:
+sources:
+  - name: app
+    kind: sql
     type: postgres
     connection_string: postgres://app:secret@db/app
+    default: true
 
-  code:
-    type: codesql
+  - name: code
+    kind: codesql
     path: /srv/app
+    infer_db_refs: true
+
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+
+tables:
+  - name: users
+    source: app
+
+  - name: gj_code
+    source: code
+    read_only: true
 ```
 
-GraphJin exposes the code index through ordinary tables such as `code_files`, `code_symbols`, `code_refs`, `code_imports`, `code_nodes`, `code_captures`, `code_db_refs`, and FTS-backed docs/text tables:
+GraphJin exposes CodeSQL through one ordinary GraphQL root, `gj_code`. Use `kind` to select files, symbols, references, imports, database references, docs, parse errors, change sets, and locks:
 
 ```graphql
 query {
-  code_symbols(where: { name: { iregex: "handler|resolver" } }, limit: 20) {
+  gj_code(where: { kind: { eq: "symbol" }, name: { iregex: "handler|resolver" } }, limit: 20) {
     name
-    kind
+    symbol_kind
     language
     start_row
+    path
+    hash
   }
 }
 ```
 
-In development, GraphJin also creates a read-only metadata database named `graphjin` by default. That gives you `gj_databases`, `gj_tables`, `gj_columns`, `gj_relationships`, `gj_functions`, and `gj_indexes` for application databases only; GraphJin-managed metadata and CodeSQL cache databases are omitted so the graph does not describe itself. When one CodeSQL database is active, GraphJin links metadata to code references automatically:
+With a `kind: graphjin` source, GraphJin creates a read-only system graph named `graphjin` by default. Schema, catalog, entrypoint, capability, workflow, and system metadata are catalog items in `gj_catalog`; table and column metadata are selected by `kind`. When one CodeSQL source is active, GraphJin links catalog items to code references automatically:
 
 ```graphql
 query {
-  gj_columns(where: { table_name: { eq: "users" }, column_name: { eq: "email" } }) {
+  gj_catalog(where: { kind: { eq: "column" }, table_name: { eq: "users" }, column_name: { eq: "email" } }) {
     database_name
     table_name
     column_name
-    code_db_refs {
+    gj_code {
+      kind
       ref_kind
-      confidence
-      file { path }
-      symbol { name kind }
+      path
+      symbol_id
     }
   }
 }
@@ -273,23 +290,21 @@ This is where the model gets genuinely powerful: the same agent can inspect prod
 { products { count_id sum_price avg_price } }
 ```
 
-**Window functions** (`@window`):
+**Analytics directives:**
 ```graphql
 {
   orders {
-    user_id
+    account_id
+    month
     total
-    rank: row_number @window(partition: ["user_id"], order: ["total desc nulls last"])
-    previous_total: lag_total @window(partition: ["user_id"], order: ["created_at"])
-    running: sum_total @window(
-      partition: ["user_id"],
-      order: ["created_at"],
-      frame: "rows between 5 preceding and current row"
-    )
+    running_total: total @running(aggregate: sum, by: "account_id", orderBy: { month: asc })
+    moving_avg_total: total @moving(aggregate: avg, rows: 6, by: "account_id", orderBy: { month: asc })
+    previous_total: total @previous(by: "account_id", orderBy: { month: asc })
+    rank_by_total: total @rank(by: "account_id", order: desc)
   }
 }
 ```
-Compiles to `<func>(...) OVER (PARTITION BY ... ORDER BY ... <frame>)`. Built-in analytics include `row_number`, `rank`, `dense_rank`, `lag_<column>`, `lead_<column>`, `first_value_<column>`, and `last_value_<column>`. The frame parser accepts the standard SQL grammar — both `ROWS` and `RANGE`, `UNBOUNDED PRECEDING/FOLLOWING`, `CURRENT ROW`, numeric offsets (`<n> PRECEDING/FOLLOWING`), and full `BETWEEN <bound> AND <bound>` combinations. Partition and order columns are validated against the table; numeric offsets are parsed as integers (no SQL-fragment passthrough). Works on PostgreSQL, MySQL 8.0+, MariaDB 10.2+, MSSQL 2012+, Oracle, SQLite 3.25+, Snowflake, and CockroachDB. MongoDB and known-old SQL versions fail at compile time with clear errors. `NULLS FIRST/LAST` in the window order clause is honoured by Snowflake/Postgres/Oracle and rejected on dialects that do not support it.
+Use analytics directives when each original row should remain visible while adding report metrics such as running totals, moving averages, previous/next values, first/last values, and rank within a group. Ordinary one-row-per-group summaries still use `distinct` plus aggregate fields. Supported SQL databases validate analytics support at compile time; MongoDB and known-old database versions return clear errors.
 
 **Mutations:**
 ```graphql
@@ -333,8 +348,9 @@ Subscribe over **WebSockets** (`graphql-ws` / `graphql-transport-ws` subprotocol
 Object stores show up as ordinary tables in your GraphQL schema. Declare them in config and they get the same query surface as a database table — no per-storage GraphQL plumbing on your side.
 
 ```yaml
-filesystems:
+sources:
   - name: avatars
+    kind: filesystem
     backend: s3
     bucket: my-bucket
     prefix: avatars/
@@ -342,28 +358,49 @@ filesystems:
     presign_ttl: 15m
 
   - name: invoices
+    kind: filesystem
     backend: gcs
     bucket: invoices
     prefix: 2026/
 
   - name: uploads_local
+    kind: filesystem
     backend: local
     root: /var/lib/graphjin/uploads
+
+tables:
+  - name: avatars
+    source: avatars
+    read_only: true
+
+  - name: invoices
+    source: invoices
+    read_only: true
+
+  - name: uploads_local
+    source: uploads_local
 ```
 
 Every filesystem table exposes the same columns regardless of backend:
 
 ```graphql
-{ avatars(prefix: "users/", limit: 50) {
+{ avatars(
+    where: { key: { like: "users/%" } }
+    order_by: { key: asc }
+    limit: 50
+  ) {
     key size content_type modified_at url
   }
 }
 
-{ avatars(key: "users/42.png", inline_data: true) {
-    key size url data    # data is base64; only populated when inline_data=true
+{ avatars(id: "users/42.png") {
+    key size url data    # data is base64 because the field was selected
   }
 }
 ```
+
+The legacy `prefix`, `key`, and `inline_data` arguments remain accepted, but new callers should use the normal GraphJin read surface: `id`, `where`, `order_by`, `limit`, `offset`, `first`, `last`, `after`, and `before`.
+For cursor pagination, request the standard root cursor field, e.g. `avatars_cursor`, and pass it back through `after: $cursor`.
 
 `url` is a presigned GET URL by default (15 min, configurable per table). Auth follows the standard credential chain: AWS env / `~/.aws` / IRSA / EC2 IMDS for S3, Application Default Credentials for GCS — never embedded in GraphJin config.
 
@@ -418,12 +455,12 @@ federation:
 |---|---|---|
 | `/api/v1/graphql` | `GET`, `POST` | GraphQL queries and mutations. Subscriptions if the request is a WebSocket upgrade or carries `Accept: text/event-stream` (SSE). |
 | `/api/v1/rest/<name>` | `GET`, `POST` | Run a saved/persisted query by name. Variables go in `?variables=…` (GET) or the JSON body (POST). |
-| `/api/v1/workflows/<name>` | `POST` | Execute the JS workflow at `./workflows/<name>.js` with the JSON body as `input`. |
+| `/api/v1/workflows/<name>` | `GET`, `POST` | Legacy workflow execution endpoint. In source mode it is registered only when `mcp.legacy_discovery: true`; use `gj_workflow_execution(insert)` through GraphQL otherwise. |
 | `/api/v1/openapi.json` | `GET` | OpenAPI 3 spec generated from your saved REST queries. |
 | `/api/v1/mcp` | `POST` | MCP (Model Context Protocol) HTTP transport — Streamable HTTP, stateless. |
 | `/api/v1/mcp/message` | `POST` | MCP HTTP transport for stateless message integrations. |
-| `/api/v1/discovery` | `GET` | Discovery document (tables, insights, database overview) for the default database. |
-| `/api/v1/discovery/<section>` | `GET` | Drill into a discovery sub-section (e.g. `tables`, `insights`). |
+| `/api/v1/discovery` | `GET` | Legacy discovery document. In source mode it is registered only when `mcp.legacy_discovery: true`; use catalog GraphQL roots otherwise. |
+| `/api/v1/discovery/<section>` | `GET` | Legacy discovery drill-down (e.g. `tables`, `insights`), gated the same way as `/api/v1/discovery`. |
 | `/api/v1/admin/tables` | `GET` | Admin: list known tables (Web UI). |
 | `/api/v1/admin/tables/<name>` | `GET` | Admin: schema for a single table. |
 | `/api/v1/admin/queries` | `GET` | Admin: list saved queries. |
@@ -440,20 +477,30 @@ federation:
 
 **Mode flags that change which routes are live:**
 - `mcp.disable: true` — removes `/api/v1/mcp` and `/api/v1/mcp/message`.
-- `mcp.only: true` — keeps only `/health`, `/api/v1/mcp*`, `/api/v1/workflows/*`, and `/api/v1/discovery*`. The GraphQL/REST/OpenAPI/Web UI routes are not registered.
+- `mcp.only: true` — keeps only `/health` and `/api/v1/mcp*`. Legacy `/api/v1/workflows/*` and `/api/v1/discovery*` remain only when `mcp.legacy_discovery: true`.
+- Source mode (`sources:` present) disables legacy `/api/v1/workflows/*` and `/api/v1/discovery*` unless `mcp.legacy_discovery: true`.
 - `webui: false` — drops `/` and the `/api/v1/admin/*` routes.
 
 ## MCP Tools
 
-GraphJin exposes several tools that guide AI models to write valid queries. Key tools: `list_tables` and `describe_table` for schema discovery, `get_query_syntax` for learning the DSL, `execute_graphql` for running queries, and `execute_saved_query` for production-approved queries.
+GraphJin exposes a catalog-first agent surface that guides AI models to discover before acting. Start with `query_catalog`, then inspect evidence with `get_catalog_card` before writing queries, choosing relationships, or using GraphJin-specific syntax. For actions, agents can use GraphJin control-plane GraphQL roots such as `gj_workflow_execution(insert)`, `gj_workflow(insert/update/delete)`, and `gj_config(id: "current", update: ...)`. Schema reloads, schema changes, where-clause validation, and query repair remain MCP action tools. The legacy discovery tools are migration shims and are disabled unless `mcp.legacy_discovery: true`.
+
+For teams building MCP agents, internal copilots, workflow agents, or enterprise automation, see [AGENTIC.md](AGENTIC.md). It explains the catalog-first agent loop in detail: discover, inspect, validate, act, observe, and refine.
+
+Key discovery tools:
+- `get_catalog_entrypoints` to choose a discovery path when the task is broad
+- `query_catalog` to search schema, relationship, workflow, language, config, policy, capability, and query-pattern items. Use `search` for ranked text discovery and `where` for exact filters.
+- `get_catalog_card` to inspect evidence, examples, details, safety notes, and graph edges
+- `validate_where_clause` to validate filters before execution
 
 For JS orchestration, use:
+- `query_catalog` with `where: { kind: { eq: "workflow" } }` to discover reusable workflows
 - `get_js_runtime_api` to discover exactly which globals/functions are available inside workflow scripts
-- `execute_workflow` to run `./workflows/<name>.js` with input variables
+- `gj_workflow_execution(insert: { workflow_name: "...", variables: {...} })` to run `./workflows/<name>.js` through GraphQL. This is mutation-only and returns an ephemeral result row; it does not store run history. Mark the workflows source or `gj_workflow_execution` table `read_only` to block it. The `execute_workflow` MCP compatibility tool is available only when `mcp.legacy_discovery: true` and `mcp.allow_workflow_execution: true`.
 
 Prompts like `write_query` and `fix_query_error` help models construct and debug queries.
 
-## JS Workflows (MCP + REST)
+## JS Workflows (GraphQL + REST)
 
 Workflows let an LLM run multi-step logic in JavaScript while still using GraphJin MCP tools for DB-aware operations.
 
@@ -461,7 +508,9 @@ Create a file in `./workflows`, for example `./workflows/customer_insights.js`:
 
 ```js
 function main(input) {
-  const tables = gj.tools.listTables({});
+  const tables = gj.tools.queryCatalog({
+    where: { kind: { eq: "table" } }
+  }).cards;
   const top = gj.tools.executeSavedQuery({
     name: "top_customers",
     variables: { limit: input.limit || 5 }
@@ -470,15 +519,26 @@ function main(input) {
 }
 ```
 
-### Run via MCP
+### Run via GraphQL
 
-Call:
-- `get_js_runtime_api` first (for exact runtime schema)
-- `execute_workflow` with:
-  - `name`: workflow file name (with or without `.js`)
-  - `variables`: input payload passed to global `input` and `main(input)`
+```graphql
+mutation {
+  gj_workflow_execution(insert: {
+    workflow_name: "customer_insights"
+    variables: { limit: 5 }
+  }) {
+    status
+    result_json
+    error
+  }
+}
+```
+
+Legacy MCP clients can call `execute_workflow` only when `mcp.legacy_discovery: true`.
 
 ### Run via REST
+
+This legacy HTTP endpoint is available in legacy database mode, or in source mode only when `mcp.legacy_discovery: true`.
 
 - `POST /api/v1/workflows/<name>` with JSON body
 - `GET /api/v1/workflows/<name>?variables={...json...}`
@@ -509,15 +569,15 @@ Real conversations showing how an AI assistant uses GraphJin MCP tools to help y
 >
 > *calls `update_current_config` with databases: {"main": {type: "postgres", host: "localhost", port: 5432, user: "postgres", dbname: "myapp"}}*
 >
-> Connected successfully! Let me see what tables you have.
+> Connected successfully! Let me discover the catalog surface.
 >
-> *calls `list_tables`*
+> *calls `query_catalog` with `where: {kind: {eq: "table"}}`*
 >
 > Your database has these tables: `users`, `orders`, `products`, `reviews`. Want me to write a query?
 
 > **You:** Show me users with their orders.
 
-> **Claude:** *calls `get_query_syntax` then `execute_graphql`*
+> **Claude:** *calls `query_catalog` with `search: "join users orders", where: {kind: {eq: "relationship"}}`, then `get_catalog_card`, then `execute_graphql`*
 > ```graphql
 > { users { id name email orders { id total status } } }
 > ```
@@ -544,13 +604,13 @@ Real conversations showing how an AI assistant uses GraphJin MCP tools to help y
 
 > **Claude:** *calls `update_current_config` with the full credentials*
 >
-> Connected! Let me explore the schema.
+> Connected! Let me explore the catalog.
 >
-> *calls `list_tables`*
+> *calls `query_catalog` with `where: {kind: {eq: "table"}}`*
 >
 > Tables found: `customers`, `products`, `orders`, `order_items`, `categories`. Let me check how they relate.
 >
-> *calls `explore_relationships` with table: "orders"*
+> *calls `query_catalog` with `search: "join orders customers order_items products", where: {kind: {eq: "relationship"}}`, then `get_catalog_card` for the relevant relationship items*
 >
 > `orders` connects to `customers` (via customer_id) and `order_items` (via order_id), and `order_items` links to `products`. Here's a nested query:
 >
@@ -575,13 +635,13 @@ Real conversations showing how an AI assistant uses GraphJin MCP tools to help y
 >
 > Connected! Let me see your tables.
 >
-> *calls `list_tables`*
+> *calls `query_catalog` with `where: {kind: {eq: "table"}}`*
 >
 > Tables: `tasks`, `projects`, `tags`, `task_tags`. Want to query something?
 
 > **You:** Show me all tasks with their project name, sorted by due date.
 
-> **Claude:** *calls `execute_graphql`*
+> **Claude:** *calls `query_catalog` with `search: "join tasks projects", where: {kind: {eq: "relationship"}}`, then `get_catalog_card`, then `execute_graphql`*
 > ```graphql
 > { tasks(order_by: {due_date: asc}) { id title due_date completed project { name } } }
 > ```

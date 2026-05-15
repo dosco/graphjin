@@ -56,8 +56,8 @@ func TestMCPCLIParity(t *testing.T) {
 	}
 }
 
-// TestMCPCLIResourceParity enforces the same rule for static MCP
-// resources (query_syntax, mutation_syntax, workflow_guide, etc.).
+// TestMCPCLIResourceParity enforces the same rule for first-class MCP
+// resource shortcuts (catalog_overview, catalog_entrypoints, etc.).
 // Surfaced via mcpParityResourceCmds in cmd_cli.go.
 func TestMCPCLIResourceParity(t *testing.T) {
 	serverResources := serv.MCPCLIResources()

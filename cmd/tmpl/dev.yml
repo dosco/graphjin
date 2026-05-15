@@ -180,6 +180,9 @@ mcp:
   # Allow raw GraphQL queries (not just saved queries)
   allow_raw_queries: true
 
+  # Allow the legacy execute_workflow MCP compatibility tool
+  allow_workflow_execution: true
+
 # ============================================================================
 # DATABASE CONFIGURATION
 # ============================================================================

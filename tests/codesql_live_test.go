@@ -32,11 +32,8 @@ func Handler() {
 	gjs, err := serv.NewGraphJinService(&serv.Config{
 		Core: core.Config{
 			DisableAllowList: true,
-			Databases: map[string]core.DatabaseConfig{
-				"code": {
-					Type: "codesql",
-					Path: sourceRoot,
-				},
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "codesql", Path: sourceRoot},
 			},
 		},
 		Serv: serv.Serv{
@@ -80,17 +77,13 @@ func LookupUser() {
 }
 `)
 
-	metadataEnabled := true
 	gjs, err := serv.NewGraphJinService(&serv.Config{
 		Core: core.Config{
 			DisableAllowList: true,
-			Metadata: core.MetadataConfig{
-				Enabled:       &metadataEnabled,
-				CodeDatabases: []string{"code"},
-			},
-			Databases: map[string]core.DatabaseConfig{
-				"app":  {Type: "sqlite", Path: appPath},
-				"code": {Type: "codesql", Path: sourceRoot},
+			Sources: []core.SourceConfig{
+				{Name: "app", Kind: "sql", Type: "sqlite", Path: appPath, Default: true},
+				{Name: "code", Kind: "codesql", Path: sourceRoot},
+				{Name: "graphjin", Kind: "graphjin"},
 			},
 		},
 		Serv: serv.Serv{
@@ -103,26 +96,21 @@ func LookupUser() {
 	}
 	t.Cleanup(func() { _ = gjs.Close() })
 
-	body := []byte(`{"query":"query { gj_columns(where: { table_name: { eq: \"users\" }, column_name: { eq: \"email\" } }, limit: 1) { table_name column_name code_db_refs { ref_kind confidence file { path } symbol { name kind } } } }"}`)
+	body := []byte(`{"query":"query { gj_catalog(where: { kind: { eq: \"column\" }, table_name: { eq: \"users\" }, column_name: { eq: \"email\" } }, limit: 1) { table_name column_name gj_code { kind ref_kind path symbol_id } } }"}`)
 	res := postGraphQL(t, gjs.GraphQL(nil), body)
 
 	var out struct {
 		Data struct {
-			GJColumns []struct {
+			GJCatalog []struct {
 				TableName  string `json:"table_name"`
 				ColumnName string `json:"column_name"`
-				CodeDBRefs []struct {
-					RefKind    string  `json:"ref_kind"`
-					Confidence float64 `json:"confidence"`
-					File       struct {
-						Path string `json:"path"`
-					} `json:"file"`
-					Symbol struct {
-						Name string `json:"name"`
-						Kind string `json:"kind"`
-					} `json:"symbol"`
-				} `json:"code_db_refs"`
-			} `json:"gj_columns"`
+				GJCode     []struct {
+					Kind     string `json:"kind"`
+					RefKind  string `json:"ref_kind"`
+					Path     string `json:"path"`
+					SymbolID string `json:"symbol_id"`
+				} `json:"gj_code"`
+			} `json:"gj_catalog"`
 		} `json:"data"`
 		Errors []struct {
 			Message string `json:"message"`
@@ -134,15 +122,15 @@ func LookupUser() {
 	if len(out.Errors) != 0 {
 		t.Fatalf("graphql errors: %+v", out.Errors)
 	}
-	if len(out.Data.GJColumns) != 1 {
-		t.Fatalf("gj_columns len = %d, want 1: %s", len(out.Data.GJColumns), string(res))
+	if len(out.Data.GJCatalog) != 1 {
+		t.Fatalf("gj_catalog len = %d, want 1: %s", len(out.Data.GJCatalog), string(res))
 	}
-	col := out.Data.GJColumns[0]
+	col := out.Data.GJCatalog[0]
 	if col.TableName != "users" || col.ColumnName != "email" {
 		t.Fatalf("column = %s.%s, want users.email", col.TableName, col.ColumnName)
 	}
-	for _, ref := range col.CodeDBRefs {
-		if ref.RefKind == "sql_string" && ref.File.Path == "main.go" && ref.Symbol.Name == "LookupUser" {
+	for _, ref := range col.GJCode {
+		if ref.Kind == "db_reference" && ref.RefKind == "sql_string" && ref.Path == "main.go" && ref.SymbolID != "" {
 			return
 		}
 	}
@@ -173,7 +161,7 @@ func waitForCodeSQLSymbol(t *testing.T, h http.Handler, name, kind string) {
 
 func queryCodeSQLSymbol(t *testing.T, h http.Handler, name string) string {
 	t.Helper()
-	body := []byte(`{"query":"query($name: String!) { code_symbols(where: { name: { eq: $name } }, limit: 1) { name kind language } }","variables":{"name":` + strconvQuote(name) + `}}`)
+	body := []byte(`{"query":"query($name: String!) { gj_code(where: { kind: { eq: \"symbol\" }, name: { eq: $name } }, limit: 1) { name symbol_kind language } }","variables":{"name":` + strconvQuote(name) + `}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/graphql", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	res := httptest.NewRecorder()
@@ -184,10 +172,10 @@ func queryCodeSQLSymbol(t *testing.T, h http.Handler, name string) string {
 
 	var out struct {
 		Data struct {
-			CodeSymbols []struct {
+			GJCode []struct {
 				Name string `json:"name"`
-				Kind string `json:"kind"`
-			} `json:"code_symbols"`
+				Kind string `json:"symbol_kind"`
+			} `json:"gj_code"`
 		} `json:"data"`
 		Errors []struct {
 			Message string `json:"message"`
@@ -199,10 +187,10 @@ func queryCodeSQLSymbol(t *testing.T, h http.Handler, name string) string {
 	if len(out.Errors) != 0 {
 		t.Fatalf("graphql errors: %+v", out.Errors)
 	}
-	if len(out.Data.CodeSymbols) == 0 {
+	if len(out.Data.GJCode) == 0 {
 		return ""
 	}
-	return out.Data.CodeSymbols[0].Kind
+	return out.Data.GJCode[0].Kind
 }
 
 func postGraphQL(t *testing.T, h http.Handler, body []byte) []byte {

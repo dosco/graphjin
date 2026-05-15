@@ -35,6 +35,10 @@ func (f *osFS) Put(path string, data []byte) (err error) {
 	return os.WriteFile(path, data, os.ModePerm)
 }
 
+func (f *osFS) Delete(path string) error {
+	return os.Remove(filepath.Join(f.basePath, path))
+}
+
 // Exists checks if the file exists
 func (f *osFS) Exists(path string) (ok bool, err error) {
 	path = filepath.Join(f.basePath, path)

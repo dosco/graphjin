@@ -140,7 +140,7 @@ type filesystemAction struct {
 
 // ManagedMutationTables returns CodeSQL's service-managed mutation tables.
 func ManagedMutationTables() []string {
-	return []string{"code_change_sets", "code_locks"}
+	return []string{"gj_code"}
 }
 
 // ExecuteManagedMutation handles CodeSQL preview/apply/lock GraphQL mutations.
@@ -149,14 +149,20 @@ func (m *Managed) ExecuteManagedMutation(ctx context.Context, req MutationReques
 		return nil, errors.New("codesql managed database is not open")
 	}
 	out := make(map[string]interface{}, len(req.Roots))
+	needsRefresh := false
 	for _, root := range req.Roots {
 		var row map[string]interface{}
 		var err error
 		switch root.Table {
+		case "gj_code":
+			row, err = m.handleGJCodeMutation(ctx, root)
+			needsRefresh = true
 		case "code_change_sets":
 			row, err = m.handleChangeSetMutation(ctx, root)
+			needsRefresh = true
 		case "code_locks":
 			row, err = m.handleLockMutation(ctx, root)
+			needsRefresh = true
 		default:
 			err = fmt.Errorf("table %q is not a managed CodeSQL mutation table", root.Table)
 		}
@@ -165,7 +171,38 @@ func (m *Managed) ExecuteManagedMutation(ctx context.Context, req MutationReques
 		}
 		out[root.FieldName] = filterMutationFields(row, root.Fields)
 	}
+	if needsRefresh {
+		if err := RefreshPublicGraph(ctx, m.DB); err != nil {
+			if !strings.Contains(err.Error(), "SQLITE_BUSY") && !strings.Contains(err.Error(), "database is locked") {
+				return nil, err
+			}
+		}
+	}
 	return json.Marshal(out)
+}
+
+func (m *Managed) handleGJCodeMutation(ctx context.Context, root MutationRoot) (map[string]interface{}, error) {
+	kind := strings.ToLower(stringInput(root.Input, "kind"))
+	switch kind {
+	case "change_set", "changeset":
+		row, err := m.handleChangeSetMutation(ctx, root)
+		if err != nil {
+			return nil, err
+		}
+		row["kind"] = "change_set"
+		row["errors_json"] = row["errors"]
+		return row, nil
+	case "lock":
+		row, err := m.handleLockMutation(ctx, root)
+		if err != nil {
+			return nil, err
+		}
+		row["kind"] = "lock"
+		row["errors_json"] = row["errors"]
+		return row, nil
+	default:
+		return nil, fmt.Errorf("gj_code kind must be change_set or lock for mutations")
+	}
 }
 
 func (m *Managed) handleChangeSetMutation(ctx context.Context, root MutationRoot) (map[string]interface{}, error) {

@@ -36,8 +36,8 @@ func TestHandleGetJSRuntimeAPI_IncludesMappedTools(t *testing.T) {
 	if api.Runtime != "goja" {
 		t.Fatalf("expected runtime goja, got %q", api.Runtime)
 	}
-	if !hasJSFunction(api.Functions, "gj.tools.listTables") {
-		t.Fatal("expected gj.tools.listTables to be exposed")
+	if !hasJSFunction(api.Functions, "gj.tools.queryCatalog") {
+		t.Fatal("expected gj.tools.queryCatalog to be exposed")
 	}
 	if !hasJSFunction(api.Functions, "gj.tools.executeGraphql") {
 		t.Fatal("expected gj.tools.executeGraphql to be exposed when raw queries are enabled")
@@ -54,25 +54,25 @@ func TestHandleGetJSRuntimeAPI_IncludesMappedTools(t *testing.T) {
 	if hasJSFunction(api.Functions, "gj.tools.saveWorkflow") {
 		t.Fatal("did not expect save_workflow to be exposed as a runtime tool function")
 	}
-	if !hasNote(api.Notes, "describeTable({table: 'orders'})") {
-		t.Fatal("expected describeTable example to use the table argument")
+	if !hasNote(api.Notes, "queryCatalog({where: {kind: {eq: 'table'}, table_name: {eq: 'orders'}}})") {
+		t.Fatal("expected queryCatalog example to use GraphJin-style where")
 	}
 	if !hasNote(api.Notes, "Only workflow-callable tools are available inside scripts") {
 		t.Fatal("expected runtime notes to describe workflow tool allowlist")
 	}
 	if hasNote(api.Notes, ".table;") {
-		t.Fatal("did not expect describeTable docs to mention a .table suffix")
+		t.Fatal("did not expect catalog docs to mention a .table suffix")
 	}
 	if hasNote(api.Notes, "GraphQL queries MUST be named") {
 		t.Fatal("did not expect unsupported named-query guidance in JS runtime notes")
 	}
 
-	describeTable := findJSFunction(api.Functions, "gj.tools.describeTable")
-	if describeTable == nil {
-		t.Fatal("expected gj.tools.describeTable to be exposed")
+	queryCatalog := findJSFunction(api.Functions, "gj.tools.queryCatalog")
+	if queryCatalog == nil {
+		t.Fatal("expected gj.tools.queryCatalog to be exposed")
 	}
-	if _, ok := describeTable.Arguments["table"]; !ok {
-		t.Fatal("expected gj.tools.describeTable arguments to expose table")
+	if _, ok := queryCatalog.Arguments["where"]; !ok {
+		t.Fatal("expected gj.tools.queryCatalog arguments to expose where")
 	}
 }
 
@@ -101,6 +101,32 @@ func TestHandleGetJSRuntimeAPI_RespectsToolGates(t *testing.T) {
 	}
 	if hasJSFunction(api.Functions, "gj.tools.getCurrentConfig") {
 		t.Fatal("get_current_config should not be exposed in workflow runtime")
+	}
+	if hasJSFunction(api.Functions, "gj.tools.listTables") {
+		t.Fatal("legacy list_tables should not be exposed without legacy_discovery")
+	}
+}
+
+func TestHandleGetJSRuntimeAPI_LegacyDiscoveryExposesLegacyListTables(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{LegacyDiscovery: true})
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerTools()
+
+	res, err := ms.handleGetJSRuntimeAPI(context.Background(), newToolRequest(map[string]any{}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, res)
+	var api JSRuntimeAPI
+	if err := json.Unmarshal([]byte(text), &api); err != nil {
+		t.Fatalf("failed to decode API response: %v", err)
+	}
+	if !hasJSFunction(api.Functions, "gj.tools.listTables") {
+		t.Fatal("expected legacy list_tables to be exposed when legacy_discovery is enabled")
+	}
+	if hasJSFunction(api.Functions, "gj.tools.listWorkflows") {
+		t.Fatal("list_workflows should remain blocked inside workflow runtime")
 	}
 }
 

@@ -11,6 +11,17 @@ func optionWithTemplate(opt NextOption, template map[string]any) NextOption {
 	return opt
 }
 
+func workflowCatalogOption(priority int, reason, when string) NextOption {
+	return optionWithTemplate(
+		nextOption("query_catalog", priority, reason, when, nil, []string{"search", "where", "order_by", "limit"}),
+		map[string]any{
+			"search": "workflow",
+			"where":  map[string]any{"kind": map[string]any{"eq": "workflow"}},
+			"limit":  20,
+		},
+	)
+}
+
 func mergeArgTemplates(base, override map[string]any) map[string]any {
 	if len(base) == 0 && len(override) == 0 {
 		return nil
@@ -53,6 +64,13 @@ func stringArg(args map[string]any, key string) string {
 		return strings.TrimSpace(s)
 	}
 	return ""
+}
+
+func valueOrPlaceholder(value, placeholder string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	return placeholder
 }
 
 func carryArgs(template map[string]any, args map[string]any, keys ...string) map[string]any {
@@ -234,19 +252,16 @@ func mutationDraftFromArgs(args map[string]any) string {
 
 	switch strings.ToLower(stringArg(args, "operation")) {
 	case "apply":
-		if table == "code_change_sets" {
-			return "mutation {\n  code_change_sets(id: 123, update: {\n    id: 123\n    action: \"apply\"\n  }) {\n    id\n    status\n    files_changed\n    files_reindexed\n    errors\n  }\n}"
+		if table == "gj_code" {
+			return "mutation {\n  gj_code(id: \"change_set:123\", update: {\n    kind: \"change_set\"\n    id: 123\n    action: \"apply\"\n  }) {\n    id\n    kind\n    status\n    files_changed\n    files_reindexed\n    errors_json\n  }\n}"
 		}
 	case "release":
-		if table == "code_locks" {
-			return "mutation {\n  code_locks(id: 7, update: {\n    id: 7\n    action: \"release\"\n    lease_token: \"lock-token\"\n  }) {\n    id\n    status\n    path\n  }\n}"
+		if table == "gj_code" {
+			return "mutation {\n  gj_code(id: \"lock:7\", update: {\n    kind: \"lock\"\n    id: 7\n    action: \"release\"\n    lease_token: \"lock-token\"\n  }) {\n    id\n    kind\n    status\n    path\n  }\n}"
 		}
 	case "update":
-		if table == "code_change_sets" {
-			return "mutation {\n  code_change_sets(id: 123, update: {\n    id: 123\n    action: \"apply\"\n  }) {\n    id\n    status\n    files_changed\n    files_reindexed\n    errors\n  }\n}"
-		}
-		if table == "code_locks" {
-			return "mutation {\n  code_locks(id: 7, update: {\n    id: 7\n    action: \"release\"\n    lease_token: \"lock-token\"\n  }) {\n    id\n    status\n    path\n  }\n}"
+		if table == "gj_code" {
+			return "mutation {\n  gj_code(id: \"change_set:123\", update: {\n    kind: \"change_set\"\n    id: 123\n    action: \"apply\"\n  }) {\n    id\n    kind\n    status\n    files_changed\n    files_reindexed\n    errors_json\n  }\n}"
 		}
 		return fmt.Sprintf("mutation {\n  %s(id: $id, update: {\n    /* fields */\n  }) {\n    id\n  }\n}", table)
 	case "upsert":
@@ -254,11 +269,8 @@ func mutationDraftFromArgs(args map[string]any) string {
 	case "delete":
 		return fmt.Sprintf("mutation {\n  %s(delete: true, where: { id: { eq: $id } }) {\n    id\n  }\n}", table)
 	default:
-		if table == "code_change_sets" {
-			return "mutation {\n  code_change_sets(insert: {\n    action: \"preview\"\n    title: \"describe the source edit\"\n    edits: [{\n      op: \"replace\"\n      path: \"main.go\"\n      expected_hash: \"current-file-hash\"\n      replacements: [{\n        start_byte: 10\n        end_byte: 20\n        old_text: \"old code\"\n        new_text: \"new code\"\n      }]\n    }, {\n      op: \"create\"\n      path: \"pkg/new_file.go\"\n      content: \"package pkg\\n\"\n      mkdirs: true\n    }, {\n      op: \"delete\"\n      path: \"old_file.go\"\n      expected_hash: \"current-file-hash\"\n    }, {\n      op: \"rename\"\n      path: \"old_name.go\"\n      new_path: \"pkg/new_name.go\"\n      expected_hash: \"current-file-hash\"\n      mkdirs: true\n    }]\n  }) {\n    id\n    status\n    diff\n    errors\n  }\n}"
-		}
-		if table == "code_locks" {
-			return "mutation {\n  code_locks(insert: {\n    action: \"acquire\"\n    path: \"main.go\"\n    owner: \"agent\"\n    ranges: [{ start_byte: 10, end_byte: 20 }]\n    # For create/rename target reservation, use whole_file: true on the target path.\n  }) {\n    id\n    lease_token\n    status\n  }\n}"
+		if table == "gj_code" {
+			return "mutation {\n  gj_code(insert: {\n    kind: \"change_set\"\n    action: \"preview\"\n    title: \"describe the source edit\"\n    edits: [{\n      op: \"replace\"\n      path: \"main.go\"\n      expected_hash: \"current-file-hash\"\n      replacements: [{\n        start_byte: 10\n        end_byte: 20\n        old_text: \"old code\"\n        new_text: \"new code\"\n      }]\n    }, {\n      op: \"create\"\n      path: \"pkg/new_file.go\"\n      content: \"package pkg\\n\"\n      mkdirs: true\n    }, {\n      op: \"delete\"\n      path: \"old_file.go\"\n      expected_hash: \"current-file-hash\"\n    }, {\n      op: \"rename\"\n      path: \"old_name.go\"\n      new_path: \"pkg/new_name.go\"\n      expected_hash: \"current-file-hash\"\n      mkdirs: true\n    }]\n  }) {\n    id\n    kind\n    status\n    diff\n    errors_json\n  }\n}"
 		}
 		return fmt.Sprintf("mutation {\n  %s(insert: {\n    /* fields */\n  }) {\n    id\n  }\n}", table)
 	}
@@ -267,9 +279,34 @@ func mutationDraftFromArgs(args map[string]any) string {
 
 func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload any) *NextGuidance {
 	switch tool {
+	case "query_catalog":
+		return ms.newNextGuidance("catalog_results", []NextOption{
+			optionWithTemplate(
+				nextOption("get_catalog_card", 1, "Inspect the most relevant catalog result in detail.", "Use a catalog item id returned by query_catalog.", []string{"id"}, nil),
+				map[string]any{"id": "<catalog_item_id>"},
+			),
+			optionWithTemplate(
+				nextOption("validate_where_clause", 2, "Validate filters after selecting table and column catalog items.", "Use when planning a query filter.", []string{"table", "where"}, []string{"database"}),
+				carryArgs(map[string]any{"table": "<table_name>", "where": map[string]any{"id": map[string]any{"eq": "<value>"}}}, args, "database", "table"),
+			),
+			workflowCatalogOption(3, "Check for an existing workflow after discovery.", "Prefer workflows for data questions."),
+		})
+
+	case "get_catalog_card":
+		return ms.newNextGuidance("catalog_card_ready", []NextOption{
+			optionWithTemplate(
+				nextOption("query_catalog", 1, "Search for related catalog items.", "Use search plus where filters to continue discovery.", nil, []string{"search", "where", "order_by", "limit"}),
+				map[string]any{"search": "<related topic>", "where": map[string]any{"kind": map[string]any{"in": []string{"table", "column", "relationship", "directive", "query_pattern"}}}},
+			),
+			optionWithTemplate(
+				nextOption("write_query", 2, "Draft a query from the selected catalog context.", "Use after selecting a table or query pattern catalog item.", []string{"table"}, []string{"fields", "relationships", "filter_intent", "pagination", "database"}),
+				map[string]any{"table": "<table_name>", "fields": "id, name", "pagination": "limit"},
+			),
+		})
+
 	case "get_query_syntax":
 		return ms.newNextGuidance("query_syntax_ready", []NextOption{
-			nextOption("list_tables", 1, "Start from the live schema surface before drafting a query.", "Discover available tables first.", nil, []string{"database"}),
+			nextOption("query_catalog", 1, "Start from the catalog before drafting a query.", "Discover schema and language catalog items first.", nil, []string{"search", "where"}),
 			optionWithTemplate(
 				nextOption("write_query", 2, "Use the guided query author instead of drafting raw DSL from scratch.", "Generate a starter query for a specific table.", []string{"table"}, []string{"fields", "relationships", "filter_intent", "pagination", "database"}),
 				map[string]any{"table": "<table_name>", "fields": "id, name", "pagination": "limit"},
@@ -283,28 +320,28 @@ func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload a
 	case "get_mutation_syntax":
 		return ms.newNextGuidance("mutation_syntax_ready", []NextOption{
 			optionWithTemplate(
-				nextOption("describe_table", 1, "Inspect the target schema before building a mutation.", "Check settable columns and relationships.", []string{"table"}, []string{"database"}),
-				map[string]any{"table": "<table_name>"},
+				nextOption("query_catalog", 1, "Inspect the target schema before building a mutation.", "Search table/config catalog items for settable columns and relationships.", nil, []string{"search", "where"}),
+				map[string]any{"where": map[string]any{"kind": map[string]any{"eq": "table"}, "table_name": map[string]any{"eq": "<table_name>"}}},
 			),
 			optionWithTemplate(
 				nextOption("write_mutation", 2, "Use the guided mutation author to produce an insert/update/upsert/delete skeleton.", "Generate a mutation draft tied to one table.", []string{"operation", "table"}, []string{"data_intent", "nested", "database"}),
 				map[string]any{"operation": "insert", "table": "<table_name>"},
 			),
 			optionWithTemplate(
-				nextOption("execute_graphql", 3, "For CodeSQL edits, read code/code_context and code_files.hash before drafting preview/apply mutations.", "Query the live source slice first.", []string{"query"}, []string{"variables", "namespace"}),
-				map[string]any{"query": "query {\n  code_symbols(where: { name: { eq: \"<symbol_name>\" } }) {\n    name\n    start_byte\n    end_byte\n    code\n    code_context\n    code_files { path hash }\n  }\n}"},
+				nextOption("execute_graphql", 3, "For CodeSQL edits, read gj_code code/code_context and hash before drafting preview/apply mutations.", "Query the live source slice first.", []string{"query"}, []string{"variables", "namespace"}),
+				map[string]any{"query": "query {\n  gj_code(where: { kind: { eq: \"symbol\" }, name: { eq: \"<symbol_name>\" } }) {\n    name\n    start_byte\n    end_byte\n    code\n    code_context\n    path\n    hash\n  }\n}"},
 			),
 		})
 
 	case "get_js_runtime_api":
 		return ms.newNextGuidance("workflow_runtime_ready", []NextOption{
-			nextOption("list_workflows", 1, "Check whether a reusable workflow already exists.", "Reuse before authoring a new script.", nil, nil),
+			workflowCatalogOption(1, "Check whether a reusable workflow already exists.", "Reuse before authoring a new script."),
 			optionWithTemplate(
 				nextOption("save_workflow", 2, "Persist a reusable JS workflow once you know the runtime API.", "Author and save a workflow for repeated execution.", []string{"name", "description", "code"}, []string{"tags", "variables"}),
 				map[string]any{
 					"name":        "<workflow_name>",
 					"description": "<what this workflow does>",
-					"code":        "function main(input) {\n  return gj.tools.listTables();\n}\n",
+					"code":        "function main(input) {\n  return gj.tools.queryCatalog({where: {kind: {eq: \"table\"}}});\n}\n",
 				},
 			),
 			optionWithTemplate(
@@ -327,8 +364,8 @@ func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload a
 				map[string]any{"query": queryDraftFromArgs(args)},
 			),
 			optionWithTemplate(
-				nextOption("describe_table", 3, "Return to schema details if the draft needs more columns or relationships.", "Inspect the target table again.", []string{"table"}, []string{"database"}),
-				carryArgs(map[string]any{"table": "<table_name>"}, args, "table", "database"),
+				nextOption("query_catalog", 3, "Return to catalog details if the draft needs more columns or relationships.", "Inspect the target table again.", nil, []string{"where"}),
+				map[string]any{"where": map[string]any{"kind": map[string]any{"eq": "table"}, "table_name": map[string]any{"eq": valueOrPlaceholder(stringArg(args, "table"), "<table_name>")}}},
 			),
 		})
 
@@ -339,8 +376,8 @@ func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload a
 				map[string]any{"query": mutationDraftFromArgs(args)},
 			),
 			optionWithTemplate(
-				nextOption("describe_table", 2, "Inspect the table again if required fields or relationships are unclear.", "Double-check settable columns.", []string{"table"}, []string{"database"}),
-				carryArgs(map[string]any{"table": "<table_name>"}, args, "table", "database"),
+				nextOption("query_catalog", 2, "Inspect the table again if required fields or relationships are unclear.", "Double-check settable columns.", nil, []string{"where"}),
+				map[string]any{"where": map[string]any{"kind": map[string]any{"eq": "table"}, "table_name": map[string]any{"eq": valueOrPlaceholder(stringArg(args, "table"), "<table_name>")}}},
 			),
 			nextOption("get_mutation_syntax", 3, "Return to the mutation reference if you need exact DSL semantics.", "Use the syntax reference for edge cases.", nil, nil),
 		})
@@ -351,10 +388,10 @@ func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload a
 				nextOption("execute_graphql", 1, "Retry execution after correcting the query.", "Run the revised query or mutation.", []string{"query"}, []string{"variables", "namespace"}),
 				carryArgs(map[string]any{"query": stringArg(args, "query")}, args, "namespace"),
 			),
-			nextOption("get_query_syntax", 2, "Use the syntax reference to correct operator or structure issues.", "Helpful when the error points to DSL syntax.", nil, nil),
+			nextOption("query_catalog", 2, "Use language and mistake catalog items to correct operator or structure issues.", "Helpful when the error points to DSL syntax.", nil, []string{"search", "where"}),
 			optionWithTemplate(
-				nextOption("describe_table", 3, "Inspect the schema again if the error mentions unknown columns or tables.", "Use when the problem is likely schema-related.", []string{"table"}, []string{"database"}),
-				map[string]any{"table": "<table_name>"},
+				nextOption("query_catalog", 3, "Inspect schema catalog items again if the error mentions unknown columns or tables.", "Use when the problem is likely schema-related.", nil, []string{"where"}),
+				map[string]any{"where": map[string]any{"kind": map[string]any{"eq": "table"}, "table_name": map[string]any{"eq": "<table_name>"}}},
 			),
 		})
 
@@ -442,7 +479,7 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 		return ms.newNextGuidance("workflow_guide_ready", []NextOption{
 			nextOption("list_tables", 1, "Begin schema discovery from the live database.", "This is the usual first step for new tasks.", nil, []string{"database"}),
 			nextOption("list_saved_queries", 2, "Check for a reusable saved query before drafting a new one.", "Prefer allow-listed queries when possible.", nil, []string{"namespace"}),
-			nextOption("list_workflows", 3, "Check for reusable JS workflows before authoring a new one.", "Useful for orchestration-heavy tasks.", nil, nil),
+			workflowCatalogOption(3, "Check for reusable JS workflows before authoring a new one.", "Useful for orchestration-heavy tasks."),
 		})
 
 	case "explore_relationships":
@@ -516,7 +553,7 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 
 	case "execute_workflow":
 		return ms.newNextGuidance("workflow_executed", []NextOption{
-			nextOption("list_workflows", 1, "Review other reusable workflows after executing one successfully.", "Check whether adjacent workflows already exist.", nil, nil),
+			workflowCatalogOption(1, "Review other reusable workflows after executing one successfully.", "Check whether adjacent workflows already exist."),
 			nextOption("get_js_runtime_api", 2, "Inspect the runtime again if you need to extend or debug workflow code.", "Use before editing workflow scripts.", nil, nil),
 		})
 
@@ -543,7 +580,7 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 				nextOption("execute_workflow", 1, "Run the workflow you just saved.", "Verify the new workflow end to end.", []string{"name"}, []string{"variables", "namespace"}),
 				carryArgs(map[string]any{"name": "<workflow_name>", "variables": map[string]any{}}, args, "name"),
 			),
-			nextOption("list_workflows", 2, "Refresh the workflow catalog after saving a new script.", "Confirm discoverability metadata.", nil, nil),
+			workflowCatalogOption(2, "Refresh workflow catalog discovery after saving a new script.", "Confirm discoverability metadata."),
 			nextOption("get_js_runtime_api", 3, "Revisit the runtime contract if the script needs more capabilities.", "Useful before a follow-up edit.", nil, nil),
 		})
 
@@ -632,10 +669,10 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 
 	case "reload_schema":
 		return ms.newNextGuidance("schema_reloaded", []NextOption{
-			nextOption("list_tables", 1, "Inspect the refreshed table list after reload.", "Confirm the new schema state.", nil, []string{"database"}),
+			nextOption("query_catalog", 1, "Inspect the refreshed catalog after reload.", "Confirm the new schema state.", nil, []string{"search", "where"}),
 			optionWithTemplate(
-				nextOption("describe_table", 2, "Inspect a newly visible table in detail.", "Review columns, relationships, and aggregations.", []string{"table"}, []string{"database"}),
-				carryArgs(map[string]any{"table": "<table_name>"}, args, "database"),
+				nextOption("query_catalog", 2, "Inspect a newly visible table in detail.", "Review columns, relationships, and aggregations.", nil, []string{"where"}),
+				map[string]any{"where": map[string]any{"kind": map[string]any{"eq": "table"}, "table_name": map[string]any{"eq": "<table_name>"}}},
 			),
 		})
 
@@ -645,15 +682,15 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 				nextOption("apply_schema_changes", 1, "Apply the reviewed schema diff when the preview looks correct.", "Use the same schema payload to execute the change.", []string{"schema", "database"}, []string{"destructive"}),
 				carryArgs(map[string]any{"schema": "<db.graphql schema>"}, args, "schema", "database", "destructive"),
 			),
-			nextOption("list_tables", 2, "Compare the current schema surface before applying changes.", "Inspect live tables before the DDL run.", nil, []string{"database"}),
+			nextOption("query_catalog", 2, "Compare the current catalog surface before applying changes.", "Inspect live tables before the DDL run.", nil, []string{"search", "where"}),
 		})
 
 	case "apply_schema_changes":
 		return ms.newNextGuidance("schema_applied", []NextOption{
-			nextOption("list_tables", 1, "Inspect the updated schema surface after applying changes.", "Confirm that new tables are now queryable.", nil, []string{"database"}),
+			nextOption("query_catalog", 1, "Inspect the updated catalog surface after applying changes.", "Confirm that new tables are now queryable.", nil, []string{"search", "where"}),
 			optionWithTemplate(
-				nextOption("describe_table", 2, "Inspect a newly created or changed table in detail.", "Review columns and relationships after the DDL apply.", []string{"table"}, []string{"database"}),
-				carryArgs(map[string]any{"table": "<table_name>"}, args, "database"),
+				nextOption("query_catalog", 2, "Inspect a newly created or changed table in detail.", "Review columns and relationships after the DDL apply.", nil, []string{"where"}),
+				map[string]any{"where": map[string]any{"kind": map[string]any{"eq": "table"}, "table_name": map[string]any{"eq": "<table_name>"}}},
 			),
 			nextOption("reload_schema", 3, "Force a fresh schema load if you want to verify state explicitly.", "Useful after out-of-band schema changes.", nil, nil),
 		})
@@ -673,8 +710,8 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 	case "audit_role_permissions":
 		return ms.newNextGuidance("role_permissions_audited", []NextOption{
 			optionWithTemplate(
-				nextOption("describe_table", 1, "Inspect a table alongside the permission matrix.", "Compare schema shape with role restrictions.", []string{"table"}, []string{"database"}),
-				map[string]any{"table": "<table_name>"},
+				nextOption("query_catalog", 1, "Inspect a table alongside the permission matrix.", "Compare schema shape with role restrictions.", nil, []string{"where"}),
+				map[string]any{"where": map[string]any{"kind": map[string]any{"eq": "table"}, "table_name": map[string]any{"eq": "<table_name>"}}},
 			),
 			nextOption("get_current_config", 2, "Inspect current config before changing permission rules.", "Review the active roles and table policies.", nil, nil),
 			nextOption("update_current_config", 3, "Apply a targeted permission change after reviewing the audit.", "Use config updates to adjust roles or table policies.", nil, []string{"roles"}),
@@ -684,7 +721,7 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 		return ms.newNextGuidance("databases_listed", []NextOption{
 			nextOption("get_onboarding_status", 1, "Check readiness after reviewing the configured database list.", "See whether GraphJin is already connected and schema-ready.", nil, nil),
 			nextOption("update_current_config", 2, "Point GraphJin at a different database or alias after reviewing the list.", "Use this when the configured DB is not the one you want.", nil, []string{"databases"}),
-			nextOption("list_tables", 3, "Inspect tables from the currently active database connection.", "Continue with schema exploration if readiness is already good.", nil, []string{"database"}),
+			nextOption("query_catalog", 3, "Inspect tables from the currently active database connection.", "Continue with catalog exploration if readiness is already good.", nil, []string{"search", "where"}),
 		})
 
 	case "check_health":
@@ -692,8 +729,8 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 		switch {
 		case result.Status == "healthy" && result.SchemaReady:
 			return ms.newNextGuidance("health_ok_schema_ready", []NextOption{
-				nextOption("list_tables", 1, "Health is good and schema is ready, so continue with schema exploration.", "Start querying against the healthy database surface.", nil, []string{"database"}),
-				nextOption("describe_table", 2, "Inspect a table in detail now that the connection is healthy.", "Review columns and relationships before querying.", []string{"table"}, []string{"database"}),
+				nextOption("query_catalog", 1, "Health is good and schema is ready, so continue with catalog exploration.", "Start querying against the healthy database surface.", nil, []string{"search", "where"}),
+				nextOption("get_catalog_card", 2, "Inspect a catalog item in detail now that the connection is healthy.", "Review columns and relationships before querying.", []string{"id"}, nil),
 			})
 		case result.Status == "healthy":
 			return ms.newNextGuidance("health_ok_schema_not_ready", []NextOption{
@@ -709,6 +746,6 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 	}
 
 	return ms.newNextGuidance("continue", []NextOption{
-		nextOption("get_workflow_guide", 1, "Use the workflow guide when the next best tool is unclear.", "This is the fallback planner for the MCP surface.", nil, nil),
+		nextOption("get_catalog_entrypoints", 1, "Use catalog entrypoints when the next best step is unclear.", "This is the fallback planner for catalog-first GraphJin guidance.", nil, nil),
 	})
 }

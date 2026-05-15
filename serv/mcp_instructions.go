@@ -1,6 +1,81 @@
 package serv
 
-const serverInstructions = `GraphJin is a GraphQL-to-SQL compiler. You query databases using GraphJin's own DSL (not standard GraphQL).
+func mcpServerInstructions(conf *Config) string {
+	if conf != nil && conf.MCP.Disable {
+		return disabledServerInstructions
+	}
+	if conf != nil && conf.legacyMCPToolsEnabled() {
+		return legacyServerInstructions
+	}
+	if conf != nil && !conf.catalogToolsEnabled() {
+		return sourceGraphQLServerInstructions
+	}
+	return catalogServerInstructions
+}
+
+const disabledServerInstructions = `GraphJin MCP is disabled by configuration.
+
+No MCP discovery, prompt, resource, execution, workflow, config, schema, or catalog tools are available from this server. Do not recommend MCP tool calls unless MCP is enabled in configuration.
+`
+
+const sourceGraphQLServerInstructions = `GraphJin is running in sources mode without the GraphJin catalog source.
+
+Use the GraphQL endpoint and registered execution/control-plane tools that are actually available on this server. Do not recommend legacy discovery tools unless mcp.legacy_discovery is enabled, and do not recommend catalog tools unless a sources entry with kind: graphjin enables catalog.
+`
+
+const catalogServerInstructions = `GraphJin is a GraphQL-to-SQL compiler. You query databases using GraphJin's own DSL (not standard GraphQL).
+
+## Catalog-first operating loop
+
+Discovery means selecting evidence-backed catalog items before acting. Do not write queries from memory.
+
+1. Query gj_catalog to find relevant schema, relationship, workflow, language, config, policy, capability, query-pattern, mutation-pattern, or common-mistake items. Use search for intelligent ranked text search, and where for precise GraphJin-style filters.
+2. Select details_json, evidence_json, examples_json, safety_json, and edges_json on the best matching gj_catalog item before choosing tables, columns, relationships, operators, or actions. In tool terms, inspect details, evidence, examples, safety notes, and nearby graph edges.
+3. Resolve ambiguity by inspecting candidate items. If multiple tables or columns match, do not guess from names alone.
+4. Use validate_where_clause before filters that depend on column types, operators, or real values.
+5. Before config, workflow, schema, filesystem, or CodeSQL changes, inspect gj_catalog for gj_security.query and then query gj_security for high/critical findings and effective policy.
+6. Prefer GraphJin control-plane GraphQL mutations for workflow/config actions after discovery: gj_workflow_execution(insert) for workflow execution, gj_workflow(insert/update/delete) for workflow management, and gj_config(id: "current", update: ...) for config changes. Use MCP tools such as reload_schema, validate_where_clause, and fix_query_error for schema refresh, filter checks, and query repair.
+7. Prefer workflows for broad data questions after discovery. Workflows can page and aggregate safely.
+8. Observe results, then return to catalog items when the result, error, or follow-up question changes the facts you need.
+
+Legacy discovery tools such as list_tables, describe_table, find_path, get_table_sample, get_query_syntax, get_mutation_syntax, get_workflow_guide, and list_workflows are not available unless mcp.legacy_discovery is enabled. Do not recommend disabled legacy tools.
+
+## Discovery recipes
+
+- Catalog helpers, when registered, are get_catalog_entrypoints, query_catalog, and get_catalog_card; the canonical GraphQL root is still gj_catalog.
+- Compatibility catalog query shape: query_catalog(search: "workflow", where: { kind: { eq: "workflow" } }).
+- Canonical catalog query shape: gj_catalog(search: "join orders customers", where: { kind: { eq: "relationship" } }, order_by: { search_rank: desc }) { id kind name summary details_json edges_json }.
+- Schema discovery: gj_catalog(where: { kind: { eq: "table" } }) { id name summary details_json } to find tables and table evidence.
+- Column discovery: gj_catalog(where: { kind: { eq: "column" }, table_name: { eq: "<table>" } }) { id name type summary evidence_json } to find columns, types, sensitivity notes, indexes, and filter hints.
+- Relationship discovery: gj_catalog(search: "join <source> <target>", where: { kind: { eq: "relationship" } }) { id name summary evidence_json edges_json } before nesting related selectors.
+- GraphJin language discovery: gj_catalog(where: { kind: { in: ["directive", "operator_set", "query_pattern", "mutation_pattern"] } }) { id kind name summary examples_json } before using GraphJin-specific syntax.
+- Analytics discovery: gj_catalog(search: "running revenue rank window", where: { kind: { in: ["directive", "query_pattern", "deprecated_feature"] } }, order_by: { search_rank: desc }) { id kind name summary examples_json } for reporting/window-style features.
+- Value-sensitive filters: if a filter depends on real status strings, enum labels, tenant names, or conventions, inspect sample/profile availability on table or column items before choosing values.
+- Config and policy discovery: gj_catalog(search: "permission role blocked", where: { kind: { in: ["config", "capability"] } }) { id kind name summary safety_json } explains enabled behavior with sensitive values redacted. Changes go through control-plane GraphQL mutations when enabled.
+- Security posture: find guidance with gj_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } }) { name summary details_json examples_json safety_json }, then query gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }) { id severity title recommendation evidence_json }.
+- Workflow reuse: gj_catalog(search: "workflow", where: { kind: { eq: "workflow" } }) { id name summary input_schema_json } to find reusable workflows, then run mutation { gj_workflow_execution(insert: { workflow_name: "...", variables: {...} }) { status result_json error duration_ms } }. gj_workflow_execution is mutation-only and returns an ephemeral result row; it does not store run history. Mark the workflows source or gj_workflow_execution table read_only to block it. The execute_workflow MCP tool is a legacy compatibility wrapper gated by mcp.legacy_discovery and mcp.allow_workflow_execution.
+- Workflow create/update/delete: use mutation { gj_workflow(insert/update/delete: ...) { name source_hash catalog_revision } } when mcp.allow_workflow_updates is enabled.
+- GraphQL catalog discovery: use gj_catalog as the single discovery root, for example gj_catalog(where: { kind: { eq: "table" } }) { id kind name summary } or gj_catalog(where: { kind: { eq: "capability" } }) { name summary safety_json }.
+- Config and schema actions: use gj_config(id: "current", update: ...) for config changes and MCP tools such as reload_schema, preview_schema_changes, and apply_schema_changes for schema operations.
+- Query repair: call fix_query_error with the query and error, then inspect relevant schema or language items before retrying.
+
+## Key DSL rules
+
+- GROUP BY does not exist. Use distinct: [columns] instead.
+- Aggregation fields use the pattern <fn>_<column>: count_id, sum_price, avg_quantity, etc.
+- For arithmetic metrics such as revenue = price * qty, use expression aggregates like sum(expr: { mul: [price, qty] }).
+- Analytics/reporting directives attach to real columns. Use @running, @moving, @previous, @next, @first, @last, @rank, @denseRank, and @rowNumber.
+- Filter operators are typed. Use validate_where_clause when unsure.
+- in/nin values MUST be arrays: { id: { in: [1,2,3] } }.
+- Every query level has a default row limit. Set explicit limits on top-level and nested selectors.
+- Never infer relationship paths from column names alone. Use relationship items, evidence, and graph edges.
+
+## Discovery vs action
+
+Catalog tools own nouns, facts, context, and evidence. In GraphQL terms, gj_catalog is the single catalog discovery root: filter by kind for tables, columns, relationships, workflows, language features, entrypoints, capabilities, and system capabilities. Control-plane GraphQL mutation roots own workflow/config verbs: gj_workflow, gj_workflow_execution, and gj_config. MCP action tools handle schema reloads, schema changes, where-clause validation, and query repair. Discover first, act second.
+`
+
+const legacyServerInstructions = `GraphJin is a GraphQL-to-SQL compiler. You query databases using GraphJin's own DSL (not standard GraphQL).
 
 ## Before answering any data question
 
@@ -28,19 +103,19 @@ Check list_workflows first — reuse an existing workflow if one fits. Otherwise
 
 - GROUP BY does not exist. Use distinct: [columns] instead.
 - Aggregation fields use the pattern <fn>_<column>: count_id, sum_price, avg_quantity, etc.
-- Window functions for analytics/reporting use @window on an aggregate or built-in
-  analytic field. Use sum_<column> @window for running totals, row_number/rank/
-  dense_rank @window for ranking, and lag_<column>/lead_<column>/first_value_<column>/
-  last_value_<column> @window for period comparisons. These return one row per
-  input row, unlike plain aggregates.
+- Analytics/reporting directives attach to real columns. Use @running for running
+  totals, @moving for moving averages/totals, @previous/@next for period
+  comparisons, @first/@last for group endpoints, and @rank/@denseRank/@rowNumber
+  for row ranking. Use by only when the metric should be scoped within groups.
+  These return one row per input row, unlike plain aggregates.
 - For any metric involving ARITHMETIC (revenue = price × qty, margin, discounted totals,
   ratios), use EXPRESSION AGGREGATES — sum_<col> × sum_<col> is mathematically wrong.
   See "Expression aggregates" below.
 - Filter operators: eq, neq, gt, gte, lt, lte, in (array), nin, is_null, like, ilike (needs % wildcards).
 - in/nin values MUST be arrays: { id: { in: [1,2,3] } }
 - Cursor pagination: { products(first: 20, after: $products_cursor) { id } products_cursor }
-- MongoDB does not support SQL window functions. SQL dialects with known-old
-  versions fail at compile time with clear @window errors.
+- MongoDB and known-old SQL database versions reject analytics directives at
+  compile time with clear errors.
 
 ## Expression aggregates — USE THESE FIRST for any arithmetic metric
 
@@ -90,31 +165,26 @@ up to 3 hops.
 
 For the full grammar and more patterns, call get_query_syntax.
 
-## Window functions — analytics/reporting rows without GROUP BY collapse
+## Analytics directives — reporting metrics while keeping rows visible
 
-Use @window when you need report-friendly row metrics such as running totals,
-rank within a segment, previous-period values, or first/last value in a frame:
+Use analytics directives when you need report-friendly row metrics such as
+running totals, moving averages, rank within a segment, previous-period values,
+or first/last value in an ordered group:
 
   {
     orders(limit: 100) {
       account_id
       month
       total
-      rank: row_number @window(partition: ["account_id"], order: ["total desc"])
-      previous_total: lag_total @window(partition: ["account_id"], order: ["month"])
-      running_total: sum_total @window(
-        partition: ["account_id"],
-        order: ["month"],
-        frame: "rows unbounded preceding"
-      )
+      running_total: total @running(aggregate: sum, by: "account_id", orderBy: { month: asc })
+      moving_avg_total: total @moving(aggregate: avg, rows: 6, by: "account_id", orderBy: { month: asc })
+      previous_total: total @previous(by: "account_id", orderBy: { month: asc })
+      rank_by_total: total @rank(by: "account_id", order: desc)
     }
   }
 
-Supported built-ins: row_number, rank, dense_rank, lag_<column>, lead_<column>,
-first_value_<column>, last_value_<column>. Built-in analytic functions require
-@window. Window order entries use strings like "month asc" or
-"total desc nulls last"; NULLS FIRST/LAST is accepted only on dialects with
-native support.
+For ordinary grouped summaries, continue using distinct plus aggregate fields:
+  { orders(distinct: [account_id]) { account_id sum_total } }.
 
 ## CRITICAL: Default row limits
 
@@ -174,12 +244,12 @@ Example query for use inside a workflow — top products by territory:
 
 When editing source through a CodeSQL database:
 
-1. Query code_symbols, code_nodes, or code_captures first and request code or code_context.
-2. Also request code_files { path hash } so you have the current expected_hash for replace/delete/rename.
-3. Preview edits with code_change_sets(action: "preview") before applying.
+1. Query gj_code by kind first, for example gj_code(search: "...", where: { kind: { in: ["file", "symbol", "reference"] } }) { id kind path name summary }.
+2. Request path/hash plus code or code_context from gj_code so you have the current source context for replace/delete/rename.
+3. Preview edits with gj_code(insert: { kind: "change_set", action: "preview", ... }) before applying.
 4. Use edit op "replace", "create", "delete", or "rename"; create requires content and no expected_hash.
 5. Include the exact old_text for each byte range replacement.
-6. Apply with code_change_sets(action: "apply") only after the preview diff looks correct.
+6. Apply with gj_code(update: { kind: "change_set", action: "apply", ... }) only after the preview diff looks correct.
 7. If a hash is stale, re-read CodeSQL source and create a fresh preview.
-8. Never mutate code_files, code_symbols, code_nodes, or other derived CodeSQL tables directly.
+8. Never use raw CodeSQL roots directly; use gj_code filtered by kind.
 `
