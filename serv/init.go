@@ -64,6 +64,9 @@ func (s *graphjinService) initFS() error {
 func (s *graphjinService) initConfig() error {
 	c := s.conf
 	c.dirty = true
+	if err := normalizeConfigMode(c); err != nil {
+		return err
+	}
 
 	if err := validateServiceIsSourcesUsedConfig(c); err != nil {
 		return err
@@ -114,7 +117,6 @@ func (s *graphjinService) initConfig() error {
 		s.conf.hostPort = defaultHP
 	}
 
-	c.Core.Production = c.Serv.Production
 	return nil
 }
 

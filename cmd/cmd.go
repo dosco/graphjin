@@ -104,15 +104,21 @@ func setup(cpath string) {
 			"AppNameSlug": appNameSlug,
 		})
 
-		configFile := filepath.Join(cp, cn+".yml")
-		v, err := tmpl.get(cn + ".yml")
-		if err != nil {
-			log.Fatalf("Failed to generate default config: %s", err)
+		templateNames := []string{cn + ".yml"}
+		if cn == "dev" || cn == "prod" || cn == "agentic" {
+			templateNames = []string{"dev.yml", "prod.yml", "agentic.yml"}
 		}
-		if err := os.WriteFile(configFile, v, 0o600); err != nil {
-			log.Fatalf("Failed to write default config: %s", err)
+		for _, templateName := range templateNames {
+			configFile := filepath.Join(cp, templateName)
+			v, err := tmpl.get(templateName)
+			if err != nil {
+				log.Fatalf("Failed to generate default config: %s", err)
+			}
+			if err := os.WriteFile(configFile, v, 0o600); err != nil {
+				log.Fatalf("Failed to write default config: %s", err)
+			}
+			log.Infof("Created default config: %s", configFile)
 		}
-		log.Infof("Created default config: %s", configFile)
 	}
 
 	if conf, err = serv.ReadInConfig(path.Join(cp, cn)); err != nil {

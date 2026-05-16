@@ -18,7 +18,7 @@ func sourceCapabilityKeys(kind string) []string {
 
 func (c *Config) sourceCapabilityForSource(source core.SourceConfig, capability string) (value bool, explicit bool) {
 	kind := source.CanonicalKind()
-	def := sourceCapabilityDefault(effectiveSecurityMode(c), kind, capability)
+	def := sourceCapabilityDefault(effectiveMode(c), kind, capability)
 	if source.Capabilities != nil {
 		if value, ok := source.Capabilities[capability]; ok {
 			return value, true

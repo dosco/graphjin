@@ -1,0 +1,69 @@
+app_name: "{{- .AppName }} Agentic"
+mode: agentic
+production: true
+host_port: 0.0.0.0:8080
+web_ui: false
+log_level: "warn"
+log_format: "json"
+http_compress: true
+auth_fail_block: true
+enable_tracing: false
+reload_on_config_change: false
+hot_deploy: true
+
+# Agentic deployments keep legacy MCP compatibility tools disabled. Agents
+# should use catalog/control-plane GraphQL roots instead.
+mcp:
+  disable: false
+  allow_config_updates: false
+  allow_mutations: true
+  allow_raw_queries: false
+  allow_workflow_execution: false
+  allow_workflow_updates: false
+  allow_schema_reload: false
+  allow_schema_updates: false
+  allow_dev_tools: false
+  legacy_discovery: false
+
+# Agentic sources are explicit because GraphJin supports only one inheritance
+# level, and prod.yml already inherits dev.yml.
+sources:
+  - name: default
+    kind: database
+    default: true
+    type: postgres
+    host: ${GJ_DATABASE_HOST}
+    port: ${GJ_DATABASE_PORT}
+    dbname: ${GJ_DATABASE_NAME}
+    user: ${GJ_DATABASE_USER}
+    password: ${GJ_DATABASE_PASSWORD}
+    #schema: "public"
+    #read_only: false
+    #connection_string: ${GJ_DATABASE_URL}
+    ping_timeout: 5m
+    enable_tls: false
+
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+    catalog: true
+    control_plane: true
+    capabilities:
+      catalog.read: true
+      security.read: false
+      config.read: false
+      config.write: false
+      raw_graphql.query: false
+      raw_graphql.mutate: false
+      schema.reload: false
+      schema.write: false
+      dev_tools.read: false
+      legacy_discovery.read: false
+
+  - name: workflows
+    kind: workflow
+    runtime: javascript
+    capabilities:
+      workflow.execute: true
+      workflow.read: false
+      workflow.write: false

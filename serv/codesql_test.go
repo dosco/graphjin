@@ -460,7 +460,15 @@ func TestCodeSQLGraphQLFileLifecycleMutations(t *testing.T) {
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "code", Kind: "code", Path: source},
+				{
+					Name: "code",
+					Kind: "code",
+					Path: source,
+					Capabilities: map[string]bool{
+						"code.write": true,
+						"code.watch": false,
+					},
+				},
 			},
 		},
 		Serv: Serv{

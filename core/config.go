@@ -24,6 +24,43 @@ var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracl
 // SupportedMultiDBTypes lists the database types supported for multi-database mode
 var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql", "snowflake", "nanodb"}
 
+// CanonicalMode normalizes the public top-level mode value.
+func CanonicalMode(mode string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "":
+		return "", nil
+	case "dev", "development":
+		return sourcecap.ModeDev, nil
+	case "prod", "production":
+		return sourcecap.ModeProd, nil
+	case "agent", "agentic":
+		return sourcecap.ModeAgentic, nil
+	default:
+		return "", fmt.Errorf("unsupported mode %q: supported modes are dev, prod, agentic", mode)
+	}
+}
+
+// NormalizeMode makes mode the single deployment-mode selector. When mode is
+// omitted, existing production:true configs continue to imply prod mode.
+func (c *Config) NormalizeMode() error {
+	if c == nil {
+		return nil
+	}
+	mode, err := CanonicalMode(c.Mode)
+	if err != nil {
+		return err
+	}
+	if mode == "" {
+		if c.Production {
+			mode = sourcecap.ModeProd
+		} else {
+			mode = sourcecap.ModeDev
+		}
+	}
+	c.Mode = mode
+	return nil
+}
+
 // ValidateDBType checks if the given database type is supported
 func ValidateDBType(dbType string) error {
 	if dbType == "" {
@@ -54,6 +91,9 @@ func ValidateMultiDBType(dbType string) error {
 
 // Validate checks the configuration for errors
 func (c *Config) Validate() error {
+	if err := c.NormalizeMode(); err != nil {
+		return err
+	}
 	if !c.sourcesNormalized {
 		if err := c.ValidateIsSourcesUsed(); err != nil {
 			return err
@@ -732,13 +772,11 @@ type Config struct {
 	// Enable automatic coversion of camel case in GraphQL to snake case in SQL
 	EnableCamelcase bool `mapstructure:"enable_camelcase" json:"enable_camelcase" yaml:"enable_camelcase" jsonschema:"title=Enable Camel Case,default=false"`
 
-	// When enabled GraphJin runs with production level security defaults.
-	// For example allow lists are enforced.
+	// Legacy production switch. Prefer Mode for new configs.
 	Production bool `jsonschema:"title=Production Mode,default=false"`
 
-	// SecurityMode selects the secure-default matrix used for security
-	// reporting and agent-facing guidance. Empty derives from Production.
-	SecurityMode string `mapstructure:"security_mode" json:"security_mode" yaml:"security_mode" jsonschema:"title=Security Mode,enum=dev,enum=prod,enum=agentic"`
+	// Mode selects the deployment-mode defaults. Empty derives from Production.
+	Mode string `mapstructure:"mode" json:"mode" yaml:"mode" jsonschema:"title=Mode,enum=dev,enum=prod,enum=agentic"`
 
 	// Duration for polling the database to detect schema changes
 	DBSchemaPollDuration time.Duration `mapstructure:"db_schema_poll_duration" json:"db_schema_poll_duration" yaml:"db_schema_poll_duration" jsonschema:"title=Schema Change Detection Polling Duration,default=10s"`

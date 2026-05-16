@@ -37,8 +37,8 @@ func (c *Config) mcpDisabled() bool {
 	if c.MCP.disableExplicit {
 		return false
 	}
-	mode := effectiveSecurityMode(c)
-	return !c.Core.IsSourcesUsed() && mode == securityModeProd
+	mode := effectiveMode(c)
+	return !c.Core.IsSourcesUsed() && mode == modeProd
 }
 
 func (c *Config) graphjinControlPlaneEnabled() bool {

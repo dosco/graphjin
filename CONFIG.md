@@ -5,6 +5,7 @@ This document provides a comprehensive reference for all GraphJin configuration 
 ## Table of Contents
 
 - [Introduction](#introduction)
+- [What Changed: Database vs Sources](#what-changed-database-vs-sources)
 - [Quick Start](#quick-start)
 - [Sources Mode](#sources-mode)
 - [Service Configuration](#service-configuration)
@@ -36,6 +37,7 @@ This document provides a comprehensive reference for all GraphJin configuration 
 GraphJin supports both YAML and JSON configuration files:
 - `config/dev.yml` - Development configuration
 - `config/prod.yml` - Production configuration
+- `config/agentic.yml` - Agentic deployment configuration
 - `config/dev.json` - JSON format alternative
 
 ### Environment-Based Config Selection
@@ -46,9 +48,12 @@ GraphJin automatically selects the configuration file based on the `GO_ENV` envi
 |-------------|-------------|
 | `development`, `dev`, or empty | `dev.yml` |
 | `production`, `prod` | `prod.yml` |
+| `agentic`, `agent` | `agentic.yml` |
 | `staging`, `stage` | `stage.yml` |
 | `testing`, `test` | `test.yml` |
 | Other values | `{value}.yml` |
+
+The selected config name also supplies the default `mode`: `dev.yml` defaults to `mode: dev`, `prod.yml` defaults to `mode: prod`, and `agentic.yml` defaults to `mode: agentic`. `agentic.yml` is required for `GO_ENV=agentic`; use `inherits: prod` inside `agentic.yml` when an agentic deployment should reuse production settings.
 
 ### Config Inheritance
 
@@ -58,7 +63,7 @@ Use the `inherits` field to inherit configuration from another file, allowing yo
 # prod.yml - inherits all settings from dev.yml and overrides specific ones
 inherits: dev
 
-production: true
+mode: prod
 log_level: "warn"
 web_ui: false
 ```
@@ -74,6 +79,68 @@ export GJ_DATABASE_HOST=mydb.example.com
 # Override database port
 export GJ_DATABASE_PORT=5433
 ```
+
+---
+
+## What Changed: Database vs Sources
+
+Use the legacy `database:` / `databases:` shape only for database-only configs that do not define `sources:`. Once `sources:` is present, every graph provider is declared as a source and tables point at `tables[].source` instead of `tables[].database`.
+
+**Old / legacy database-only config:**
+
+```yaml
+databases:
+  app:
+    type: postgres
+    connection_string: ${APP_DATABASE_URL}
+
+  analytics:
+    type: snowflake
+    connection_string: ${ANALYTICS_DSN}
+
+tables:
+  - name: users
+    database: app
+
+  - name: events
+    database: analytics
+```
+
+**New / sources config, shown as `agentic.yml`:**
+
+```yaml
+sources:
+  - name: app
+    kind: database
+    type: postgres
+    connection_string: ${APP_DATABASE_URL}
+    default: true
+
+  - name: analytics
+    kind: database
+    type: snowflake
+    connection_string: ${ANALYTICS_DSN}
+
+  - name: graphjin
+    kind: graphjin
+    catalog: true
+    control_plane: true
+
+tables:
+  - name: users
+    source: app
+
+  - name: events
+    source: analytics
+
+  - name: gj_catalog
+    source: graphjin
+    read_only: true
+```
+
+Canonical source kinds are `database`, `code`, `file`, `api`, `graphjin`, and `workflow`. Old implementation names such as `sql`, `codesql`, `filesystem`, `openapi`, and `workflows` are rejected with errors that name the replacement.
+
+Use `mode: agentic` or `GO_ENV=agentic` for deployments where authenticated company users interact with GraphJin through an approved agent. Agentic mode applies production-oriented source and control-plane defaults, enables safe discovery and approved workflow execution by default, and keeps detailed security/config/workflow-code surfaces blocked unless explicitly enabled with source capabilities. Existing `production: true` configs still work and imply `mode: prod` when `mode` is omitted.
 
 ---
 
@@ -102,7 +169,7 @@ database:
 inherits: dev
 
 app_name: "My App Production"
-production: true
+mode: prod
 web_ui: false
 log_level: "warn"
 log_format: "json"
@@ -116,16 +183,17 @@ database:
 
 ## Sources Mode
 
-`sources:` is the canonical config for every non-legacy graph provider: SQL databases, CodeSQL source indexes, filesystem tables, OpenAPI specs, GraphJin system/catalog roots, and workflows.
+`sources:` is the canonical config for every non-legacy graph provider: databases, code indexes, file/object-store tables, OpenAPI-backed APIs, GraphJin system/catalog roots, and workflows.
 
 If `sources:` is absent, GraphJin runs in legacy database-only mode. Existing `database`, `databases`, and `tables[].database` SQL configs continue to work there. Legacy mode rejects CodeSQL, top-level `filesystems`, top-level `openapi` / `openapi_specs_dir`, top-level `metadata`, and top-level `catalog`; move those to `sources`.
 
 If `sources:` is present, source mode is active. In source mode:
 
-- Configure SQL and CodeSQL through `sources`; do not use legacy `database` or `databases`.
+- Configure databases and code indexes through `sources`; do not use legacy `database` or `databases`.
 - Every `tables[]` entry must set `source`, not `database`.
 - `kind: graphjin` is required for catalog, metadata, and control-plane `gj_*` roots.
-- `kind: workflows` is required for workflow catalog items and workflow GraphQL roots.
+- `kind: workflow` is required for workflow catalog items and workflow GraphQL roots.
+- Use `sources[].capabilities` to enable or block source surfaces; valid capability keys depend on the source kind.
 - `tables[].read_only` blocks normal and managed mutations for that root.
 - `relationships: [{ from, to, as? }]` adds graph edges; cardinality and reverse traversal are inferred.
 - Legacy MCP discovery/action tools and legacy HTTP helper endpoints (`/api/v1/discovery*`, `/api/v1/workflows/*`) are disabled by default; set `mcp.legacy_discovery: true` as an escape hatch.
@@ -133,24 +201,24 @@ If `sources:` is present, source mode is active. In source mode:
 ```yaml
 sources:
   - name: app
-    kind: sql
+    kind: database
     type: postgres
     connection_string: ${APP_DATABASE_URL}
     default: true
 
   - name: code
-    kind: codesql
+    kind: code
     path: /srv/app
     infer_db_refs: true
 
   - name: avatars
-    kind: filesystem
+    kind: file
     backend: s3
     bucket: app-assets
     prefix: avatars/
 
   - name: upstream
-    kind: openapi
+    kind: api
     specs_dir: ./config/specs
     specs:
       interaction_studio:
@@ -164,7 +232,7 @@ sources:
     control_plane: true
 
   - name: workflows
-    kind: workflows
+    kind: workflow
     path: ./workflows
     runtime: goja
     read_only: false
@@ -194,6 +262,47 @@ relationships:
     as: gj_code
 ```
 
+### Source Capabilities
+
+Each source can define a `capabilities` map. A value of `true` enables the capability for authenticated default users, `false` disables it, and an omitted key uses the secure default for the active mode. Anonymous access is never granted by source capabilities. `read_only: true` still hard-blocks writes, deletes, watches, and workflow execution where applicable.
+
+Deployment modes:
+
+| Mode | Intended audience | Default posture |
+|------|-------------------|-----------------|
+| `dev` | Developers | Broad catalog, config, security, workflow-code, raw GraphQL, schema, and dev-tool access for local development |
+| `prod` | Production applications | Production protections, allow-list discipline, and blocked detailed system/control-plane surfaces unless explicitly enabled |
+| `agentic` | Authenticated company end users using an approved agent | Production protections plus `catalog.read` and approved `workflow.execute`; detailed `security.read`, `config.read`, `workflow.read`, writes, raw GraphQL, schema writes, dev tools, and legacy discovery stay blocked unless explicitly enabled |
+
+| Source kind | Capability keys |
+|-------------|-----------------|
+| `database` | `data.read`, `data.write`, `schema.read`, `schema.write` |
+| `code` | `code.search`, `code.read`, `code.write`, `code.watch`, `code.infer_db_refs` |
+| `file` | `files.list`, `files.read`, `files.write`, `files.delete`, `files.watch` |
+| `api` | `api.read`, `api.write` |
+| `graphjin` | `catalog.read`, `security.read`, `config.read`, `config.write`, `raw_graphql.query`, `raw_graphql.mutate`, `schema.reload`, `schema.write`, `dev_tools.read`, `legacy_discovery.read` |
+| `workflow` | `workflow.execute`, `workflow.read`, `workflow.write` |
+
+```yaml
+sources:
+  - name: graphjin
+    kind: graphjin
+    catalog: true
+    control_plane: true
+    capabilities:
+      catalog.read: true
+      security.read: true
+      config.read: false
+
+  - name: workflows
+    kind: workflow
+    path: ./workflows
+    capabilities:
+      workflow.execute: true
+      workflow.read: false
+      workflow.write: false
+```
+
 ---
 
 ## Service Configuration
@@ -204,7 +313,7 @@ relationships:
 | `host_port` | string | `0.0.0.0:8080` | Host and port the service runs on |
 | `host` | string | - | Host to run the service on (alternative to host_port) |
 | `port` | string | - | Port to run the service on (alternative to host_port) |
-| `production` | boolean | `false` | Enable production mode with security defaults |
+| `production` | boolean | `false` | Legacy production switch; prefer `mode: prod` or `mode: agentic` in new configs |
 | `web_ui` | boolean | `false` | Enable the GraphJin web UI |
 | `log_level` | string | `info` | Logging level: `debug`, `error`, `warn`, `info` |
 | `log_format` | string | `auto` | Log format: `auto`, `json`, `simple` |
@@ -297,7 +406,8 @@ cache_control: "public, max-age=300, s-maxage=600"
 | `mssql` | No | Yes | Microsoft SQL Server |
 | `mongodb` | No | Yes | MongoDB (multi-db only) |
 | `snowflake` | Yes | Yes | Requires `connection_string` |
-| `codesql` | Yes | Yes | Managed SQLite cache over a source folder, indexed with tree-sitter |
+
+CodeSQL is not a `database.type`; configure repository/code indexes as `sources[].kind: code`.
 
 ### Database Configuration Examples
 
@@ -345,14 +455,14 @@ database:
   # connection_string: file:memdb?mode=memory&cache=shared&_busy_timeout=5000
 ```
 
-#### CodeSQL
+#### Code Source (CodeSQL)
 
-CodeSQL is configured as `sources[].kind: codesql`. Set `path`; GraphJin creates a managed SQLite cache in `config/codesql/<source-name>-<source-root-hash>.sqlite` and reconciles new/changed/deleted files on startup. In development, it also watches the source tree while running; in production, live watching is disabled and the cache updates on restart.
+Code indexes are configured as `sources[].kind: code` and backed by CodeSQL internally. Set `path`; GraphJin creates a managed SQLite cache in `config/codesql/<source-name>-<source-root-hash>.sqlite` and reconciles new/changed/deleted files on startup. In development, it also watches the source tree while running; in production, live watching is disabled and the cache updates on restart.
 
 ```yaml
 sources:
   - name: code
-    kind: codesql
+    kind: code
     path: /path/to/source
 ```
 
@@ -361,13 +471,13 @@ For mixed application-data and code graphs, declare both sources and attach tabl
 ```yaml
 sources:
   - name: app
-    kind: sql
+    kind: database
     type: postgres
     connection_string: postgres://app:secret@db/app
     default: true
 
   - name: code
-    kind: codesql
+    kind: code
     path: /path/to/source
     infer_db_refs: true
 
@@ -693,6 +803,7 @@ When `development: true`, you can set user context via headers:
 | `default_block` | boolean | `true` | Block all tables for anonymous users |
 | `default_limit` | integer | `20` | Default row limit for queries |
 | `analytics_mode` | boolean | `false` | OLAP mode: skip implicit row limits and require partition filters on partitioned tables |
+| `mode` | string | derived from `production` | Deployment mode: `dev`, `prod`, or `agentic` |
 | `subs_poll_duration` | duration | `5s` | Subscription polling interval |
 | `db_schema_poll_duration` | duration | `10s` | Schema change detection interval |
 | `disable_agg_functions` | boolean | `false` | Disable aggregation functions |
@@ -919,12 +1030,12 @@ uploads:
 
 Object stores (local directories, S3, GCS) exposed as virtual GraphQL tables. They use the normal read surface (`id`, `where`, `order_by`, `limit`, `offset`, cursor-style page args) over portable object metadata; see the [Filesystem Tables](FEATURES.md#filesystem-tables) feature reference for examples.
 
-Declare each object store as `sources[].kind: filesystem`, then attach the table to that source:
+Declare each object store as `sources[].kind: file`, then attach the table to that source:
 
 ```yaml
 sources:
   - name: avatars
-    kind: filesystem
+    kind: file
     backend: s3
     bucket: app-assets
     prefix: avatars/
@@ -975,7 +1086,7 @@ Plug in Azure Blob, Cloudflare R2, or anything implementing `fstable.Backend` vi
 ```yaml
 sources:
   - name: avatars
-    kind: filesystem
+    kind: file
     backend: s3
     bucket: my-bucket
     prefix: avatars/
@@ -984,19 +1095,19 @@ sources:
     public_base_url: https://cdn.example.com
 
   - name: invoices
-    kind: filesystem
+    kind: file
     backend: gcs
     bucket: invoices
     prefix: 2026/
 
   - name: uploads_local
-    kind: filesystem
+    kind: file
     backend: local
     root: /var/lib/graphjin/uploads
 
   # MinIO / localstack via S3-compatible endpoint:
   - name: dev_blob
-    kind: filesystem
+    kind: file
     backend: s3
     bucket: dev
     region: us-east-1
@@ -1234,18 +1345,18 @@ The OpenAPI integration is the spec-driven counterpart to `remote_api` (above). 
        interaction_studio.yaml    # vendor-supplied, untouched
    ```
 
-2. Add an OpenAPI source to your environment config (`dev.yml`/`prod.yml`):
+2. Add an API source for OpenAPI specs to your environment config (`dev.yml`/`prod.yml`):
 
    ```yaml
    sources:
      - name: app
-       kind: sql
+       kind: database
        type: postgres
        connection_string: ${APP_DATABASE_URL}
        default: true
 
      - name: upstream
-       kind: openapi
+       kind: api
        specs_dir: ./config/specs
        specs:
          interaction_studio:
@@ -1340,7 +1451,7 @@ Default GraphQL field name is `<spec_key>_<operation_id_snake>`; override per-op
 ```yaml
 sources:
   - name: upstream
-    kind: openapi
+    kind: api
     specs:
       is:
         operations:
@@ -1424,7 +1535,7 @@ Each spec gets its own concurrency budget, applied collectively across every ope
 ```yaml
 sources:
   - name: upstream
-    kind: openapi
+    kind: api
     specs:
       interaction_studio:
         concurrency:
@@ -1441,7 +1552,7 @@ Tweak per-operation presentation:
 ```yaml
 sources:
   - name: upstream
-    kind: openapi
+    kind: api
     specs:
       interaction_studio:
         operations:
@@ -1654,7 +1765,7 @@ roles:
 
 ## Multi-Database Configuration
 
-GraphJin supports querying across multiple SQL databases in a single GraphQL request. `databases:` is the legacy database-only spelling and remains supported when `sources:` is absent. In source mode, declare these same databases as `sources[].kind: sql`.
+GraphJin supports querying across multiple SQL databases in a single GraphQL request. `databases:` is the legacy database-only spelling and remains supported when `sources:` is absent. In source mode, declare these same databases as `sources[].kind: database`.
 
 ### Database Map Structure
 
@@ -1662,7 +1773,6 @@ GraphJin supports querying across multiple SQL databases in a single GraphQL req
 databases:
   primary:
     type: postgres
-    default: true
     host: localhost
     port: 5432
     dbname: myapp
@@ -1693,7 +1803,7 @@ databases:
     password: secret
 ```
 
-CodeSQL is no longer configured under `databases:`. Move source-code indexes to `sources[].kind: codesql`.
+CodeSQL is no longer configured under `databases:`. Move source-code indexes to `sources[].kind: code`.
 
 ### Per-Database Read-Only Mode
 
@@ -1781,7 +1891,6 @@ Configure a cross-database foreign key using `related_to` in the table config:
 databases:
   primary:
     type: postgres
-    default: true
   analytics:
     type: sqlite
     host: /data/analytics.db
@@ -1889,7 +1998,7 @@ The `GJ_` prefix is stripped, then underscores are converted to dots until a mat
 
 | Variable | Maps To |
 |----------|---------|
-| `GO_ENV` | Config file selection |
+| `GO_ENV` | Config file and default mode selection (`agentic` loads required `agentic.yml` with `mode: agentic`) |
 | `HOST` | `host` |
 | `PORT` | `port` |
 
@@ -1971,7 +2080,7 @@ inherits: dev
 app_name: "My App Production"
 host_port: 0.0.0.0:8080
 web_ui: false
-production: true
+mode: prod
 log_level: "warn"
 log_format: "json"
 http_compress: true
@@ -2026,7 +2135,6 @@ database:
 databases:
   primary:
     type: postgres
-    default: true
     host: localhost
     port: 5432
     dbname: primary_db
@@ -2075,7 +2183,7 @@ auth:
 
 | Setting | Development | Production |
 |---------|-------------|------------|
-| `production` | `false` | `true` |
+| `mode` | `dev` | `prod` |
 | `web_ui` | `true` | `false` |
 | `log_level` | `debug` | `warn` or `info` |
 | `log_format` | `plain` | `json` |

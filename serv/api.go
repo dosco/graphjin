@@ -293,10 +293,12 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	if conf == nil {
 		conf = &Config{Core: Core{Debug: true}}
 	}
+	if err := normalizeConfigMode(conf); err != nil {
+		return nil, err
+	}
 
 	zlog := util.NewLogger(conf.ShouldUseJSONLogs())
 	prod := conf.Serv.Production
-	conf.Core.Production = prod
 
 	s := &graphjinService{
 		conf:       conf,

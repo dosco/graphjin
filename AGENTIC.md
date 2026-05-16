@@ -363,7 +363,7 @@ other write-capable actions.
 | :--- | :--- |
 | `summary` | One row named `summary` with active mode, production state, policy count, finding count, severity counts, and generated time in `summary_json`. |
 | `policy` | One row per guarded capability/action. It compares the secure default for the active mode with the actual configured behavior. |
-| `finding` | A generated warning when current configuration weakens the secure default, or when agentic mode is missing production protections. |
+| `finding` | A generated warning when current configuration weakens the secure default. |
 
 Effective policy means "what GraphJin will currently allow for this capability."
 Each policy row includes:
@@ -388,9 +388,9 @@ default, plus agentic-mode safety checks. Examples:
   writes changed from `block` to `allow`.
 - A CodeSQL or filesystem source with `read_only: false` can create a high
   finding because source writes changed from `read_only` to `read_write`.
-- `security_mode: agentic` without production protections can create a critical
-  finding because agentic deployments are expected to run with production data
-  protections.
+- `mode: agentic` applies production-oriented source and control-plane
+  defaults; weakening production protections with options like
+  `disable_production_security: true` can create a critical finding.
 
 A high config-write finding can look like this:
 

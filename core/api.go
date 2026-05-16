@@ -316,6 +316,9 @@ func (g *GraphJin) newGraphJin(conf *Config,
 	// ensureDiscoveredTablesInConfig would accumulate side-effects across
 	// repeated NewGraphJin calls that share the same *Config.
 	conf = conf.clone()
+	if err := conf.NormalizeMode(); err != nil {
+		return err
+	}
 
 	t := time.Now()
 

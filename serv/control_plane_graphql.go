@@ -455,7 +455,7 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 				"mode_definitions": map[string]string{
 					"dev":     "developer audit mode with detailed security/config/workflow visibility",
 					"prod":    "strict production, system discovery/audit/control-plane reads blocked unless explicitly granted",
-					"agentic": "production for authenticated company end users: gj_catalog and approved workflow execution are available; detailed audit/config/workflow-code surfaces require explicit authenticated grants",
+					"agentic": "agentic deployment for authenticated company end users: gj_catalog and approved workflow execution are available; detailed audit/config/workflow-code surfaces require explicit authenticated grants",
 				},
 			}),
 			"examples_json": mustMarshalString([]map[string]string{

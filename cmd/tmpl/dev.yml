@@ -1,4 +1,5 @@
 app_name: "{{- .AppName }} Development"
+mode: dev
 host_port: 0.0.0.0:8080
 web_ui: true
 
@@ -180,17 +181,18 @@ mcp:
   # Allow raw GraphQL queries (not just saved queries)
   allow_raw_queries: true
 
-  # Allow the legacy execute_workflow MCP compatibility tool
+  # Allow the legacy execute_workflow MCP compatibility tool in legacy mode.
+  # In sources mode, use gj_workflow_execution(insert) through GraphQL instead.
   allow_workflow_execution: true
 
 # ============================================================================
-# DATABASE CONFIGURATION
+# SOURCES CONFIGURATION
 # ============================================================================
-# In development mode, the database section is optional. You can:
-# 1. Configure a database below, OR
-# 2. Start without a database and add one via MCP config API
+# In development mode, application database sources are optional. This template
+# starts with GraphJin's system/control-plane sources enabled so MCP and catalog
+# tools can help you add database sources dynamically.
 #
-# Uncomment and modify the section for your database type.
+# Uncomment and modify one database source below for your database type.
 # You can use either individual fields OR a connection_string (not both).
 # Supported types: postgres, mysql, sqlite, oracle, mssql, mongodb, snowflake
 # ============================================================================
@@ -201,8 +203,22 @@ mcp:
 # GJ_DATABASE_USER
 # GJ_DATABASE_PASSWORD
 
-# databases:
-#   default:
+sources:
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+    catalog: true
+    control_plane: true
+
+  - name: workflows
+    kind: workflow
+    runtime: javascript
+
+# --- App database ---
+# sources:
+#   - name: default
+#     kind: database
+#     default: true
 #     type: postgres
 #     host: localhost
 #     port: 5432
@@ -215,8 +231,10 @@ mcp:
 #     #connection_string: postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca&pool_max_conns=10
 
 # --- PostgreSQL ---
-# databases:
-#   default:
+# sources:
+#   - name: default
+#     kind: database
+#     default: true
 #     type: postgres
 #     host: localhost
 #     port: 5432
@@ -227,8 +245,10 @@ mcp:
 #     # connection_string: postgres://user:password@localhost:5432/myapp?sslmode=disable
 
 # --- MySQL / MariaDB ---
-# databases:
-#   default:
+# sources:
+#   - name: default
+#     kind: database
+#     default: true
 #     type: mysql
 #     host: localhost
 #     port: 3306
@@ -239,8 +259,10 @@ mcp:
 #     # Note: multiStatements, parseTime, and interpolateParams are recommended for full functionality
 
 # --- SQLite ---
-# databases:
-#   default:
+# sources:
+#   - name: default
+#     kind: database
+#     default: true
 #     type: sqlite
 #     # File-based: set host to the database file path
 #     host: /path/to/database.db
@@ -248,8 +270,10 @@ mcp:
 #     # connection_string: file:memdb?mode=memory&cache=shared&_busy_timeout=5000
 
 # --- Oracle ---
-# databases:
-#   default:
+# sources:
+#   - name: default
+#     kind: database
+#     default: true
 #     type: oracle
 #     host: localhost
 #     port: 1521
@@ -259,8 +283,10 @@ mcp:
 #     # connection_string: oracle://user:password@localhost:1521/FREEPDB1
 
 # --- MS SQL Server ---
-# databases:
-#   default:
+# sources:
+#   - name: default
+#     kind: database
+#     default: true
 #     type: mssql
 #     host: localhost
 #     port: 1433
@@ -270,8 +296,10 @@ mcp:
 #     # connection_string: sqlserver://sa:YourStrong!Passw0rd@localhost:1433?database=myapp
 
 # --- MongoDB ---
-# databases:
-#   default:
+# sources:
+#   - name: default
+#     kind: database
+#     default: true
 #     type: mongodb
 #     host: localhost
 #     port: 27017
@@ -279,8 +307,10 @@ mcp:
 #     # Note: MongoDB has no foreign keys, so relationships must be configured explicitly
 
 # --- Snowflake ---
-# databases:
-#   default:
+# sources:
+#   - name: default
+#     kind: database
+#     default: true
 #     type: snowflake
 #     # Snowflake requires connection_string (host/port fields are not used)
 #     # Example (emulator style):
