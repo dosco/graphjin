@@ -27,20 +27,22 @@ const claudeConfig = `// claude_desktop_config.json
 <FeatureSection
   id="mcp"
   eyebrow="AI INTEGRATION"
-  title="A native MCP server for any AI assistant."
-  lede="GraphJin ships a Model Context Protocol server with the tools an assistant actually needs: schema discovery, saved queries, where-clause validation, fragments, query execution, audit logs, and health checks. Same engine, same RBAC, same allow-lists — everything that protects your HTTP API protects the AI."
+  title="A native MCP server that starts with discovery."
+  lede="GraphJin ships a Model Context Protocol server with the tools an assistant actually needs: catalog-first discovery, saved queries, where-clause validation, query repair, gj_security guidance, query execution, audit logs, and health checks. Same engine, same RBAC, same allow-lists — everything that protects your HTTP API protects the AI."
 >
   <Fragment slot="body">
     <p>
       One install command wires GraphJin into Claude Desktop, Codex, or any
       MCP host. Tools are <strong>discoverable, narrow, and audited</strong>:
-      no shell access, no raw SQL by default, no surprise mutations. Mutation
-      support is opt-in per role; raw queries can be locked out entirely.
+      agents search <code>gj_catalog</code>, inspect evidence and examples,
+      validate filters, check <code>gj_security</code>, then run approved
+      queries or workflows through the same governed surface.
     </p>
     <p>
       For development, <code>graphjin mcp</code> runs over stdio. For team
       access, run it as a long-lived HTTP+SSE endpoint, gated by the same JWT
-      or OIDC flow as the main API.
+      or OIDC flow as the main API. No shell access, no raw SQL by default, no
+      surprise mutations.
     </p>
   </Fragment>
 
