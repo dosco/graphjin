@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/dosco/graphjin/core/v3"
 )
 
 // enhanceExecError augments a driver error with structured repair fields and a schema cross-check; falls back to enhanceError when unclassifiable.
@@ -38,8 +40,8 @@ func (ms *mcpServer) enhanceExecError(errMsg, currentTool string) string {
 		enhanced.Hint = "Search query_catalog(where: { kind: { eq: \"column\" } }) for the column item so you can match the literal or variable shape."
 	case ExecKindSyntaxError:
 		enhanced.Suggestion = "Database rejected the generated SQL as syntactically invalid. This usually means an upstream compiler issue rather than a user mistake."
-		enhanced.RelatedTool = "fix_query_error"
-		enhanced.Hint = "Pass this error and the original GraphQL to fix_query_error for a structured repair."
+		enhanced.RelatedTool = "query_catalog"
+		enhanced.Hint = "Use the graphjin_repair error extension and catalog rows to repair the original GraphQL."
 	case ExecKindPermission:
 		enhanced.Suggestion = "Current role lacks permission. Check role configuration or use a saved query that's allowlisted."
 		enhanced.RelatedTool = "audit_role_permissions"
@@ -54,6 +56,27 @@ func (ms *mcpServer) enhanceExecError(errMsg, currentTool string) string {
 	return string(data)
 }
 
+func (ms *mcpServer) errorInfo(query, errMsg, currentTool string) ErrorInfo {
+	info := ErrorInfo{Message: ms.enhanceExecError(errMsg, currentTool)}
+	if repair := core.BuildGraphJinErrorRepair(query, errMsg); repair.Known() {
+		info.Extensions = map[string]any{"graphjin_repair": repair}
+	}
+	return info
+}
+
+func (ms *mcpServer) errorInfoFromCoreError(query string, err core.Error, currentTool string) ErrorInfo {
+	info := ErrorInfo{
+		Message:    ms.enhanceExecError(err.Message, currentTool),
+		Extensions: err.Extensions,
+	}
+	if len(info.Extensions) == 0 {
+		if repair := core.BuildGraphJinErrorRepair(query, err.Message); repair.Known() {
+			info.Extensions = map[string]any{"graphjin_repair": repair}
+		}
+	}
+	return info
+}
+
 // fillColumnNotFoundAugment cross-checks against the schema and reframes the error when the column actually exists.
 func (ms *mcpServer) fillColumnNotFoundAugment(enhanced *EnhancedError, class ExecErrorClass) {
 	if class.Column == "" {
@@ -66,10 +89,10 @@ func (ms *mcpServer) fillColumnNotFoundAugment(enhanced *EnhancedError, class Ex
 	if exists {
 		enhanced.Table = resolvedTable
 		enhanced.Hint = fmt.Sprintf(
-			"Column '%s' DOES exist on '%s'. The driver-level 'does not exist' here is misleading — it usually means the SQL emitter dropped this column from a CTE projection (e.g. a distinct+aggregate GROUP BY collapsed it). Pass this error and the original GraphQL to fix_query_error for a structured repair instead of re-checking spelling.",
+			"Column '%s' DOES exist on '%s'. The driver-level 'does not exist' here is misleading — it usually means the SQL emitter dropped this column from a CTE projection (e.g. a distinct+aggregate GROUP BY collapsed it). Use the graphjin_repair error extension for structured repair guidance instead of re-checking spelling.",
 			class.Column, resolvedTable)
 		enhanced.Suggestion = "Misleading error — column actually exists on the table. Likely an upstream query-shape issue, not a typo."
-		enhanced.RelatedTool = "fix_query_error"
+		enhanced.RelatedTool = "query_catalog"
 		return
 	}
 

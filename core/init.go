@@ -14,13 +14,13 @@ import (
 func (gj *graphjinEngine) initConfig() error {
 	c := gj.conf
 
-	if err := c.ValidateSourceMode(); err != nil {
+	if err := c.ValidateIsSourcesUsed(); err != nil {
 		return err
 	}
 	if err := c.NormalizeSources(); err != nil {
 		return err
 	}
-	if !c.SourceMode() {
+	if !c.IsSourcesUsed() {
 		if err := c.applyRelationshipOverlays(); err != nil {
 			return err
 		}
@@ -459,9 +459,12 @@ func addFunctions(conf *Config, di *sdata.DBInfo) error {
 }
 
 // addRoles adds roles to the compiler
-func addRoles(c *Config, qc *qcode.Compiler) error {
+func addRoles(c *Config, qc *qcode.Compiler, database string) error {
 	for _, r := range c.Roles {
 		for _, t := range r.Tables {
+			if t.Database != "" && database != "" && t.Database != database {
+				continue
+			}
 			if err := addRole(qc, r, t, c.DefaultBlock); err != nil {
 				return err
 			}

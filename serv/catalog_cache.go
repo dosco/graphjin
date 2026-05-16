@@ -113,7 +113,54 @@ func (s *graphjinService) catalogBuildOptions() core.CatalogBuildOptions {
 		workflowSnap := s.workflowSnapshot(opts.WorkflowTimeoutSeconds)
 		opts.Workflows = workflowSnap.workflows
 	}
+	if s.gj != nil {
+		opts.Fragments = catalogFragmentsFromGraphJin(s.gj)
+		opts.SavedQueries = catalogSavedQueriesFromGraphJin(s.gj)
+	}
 	return opts
+}
+
+func catalogFragmentsFromGraphJin(gj *core.GraphJin) []core.CatalogFragment {
+	fragments, err := gj.ListFragments()
+	if err != nil {
+		return nil
+	}
+	out := make([]core.CatalogFragment, 0, len(fragments))
+	for _, fragment := range fragments {
+		details, err := gj.GetFragment(qualifyAllowListName(fragment.Namespace, fragment.Name))
+		if err != nil {
+			continue
+		}
+		out = append(out, core.CatalogFragment{
+			Name:       details.Name,
+			Namespace:  details.Namespace,
+			Definition: details.Definition,
+			On:         details.On,
+		})
+	}
+	return out
+}
+
+func catalogSavedQueriesFromGraphJin(gj *core.GraphJin) []core.CatalogSavedQuery {
+	queries, err := gj.ListSavedQueries()
+	if err != nil {
+		return nil
+	}
+	out := make([]core.CatalogSavedQuery, 0, len(queries))
+	for _, query := range queries {
+		details, err := gj.GetSavedQuery(qualifyAllowListName(query.Namespace, query.Name))
+		if err != nil {
+			continue
+		}
+		out = append(out, core.CatalogSavedQuery{
+			Name:      details.Name,
+			Namespace: details.Namespace,
+			Operation: details.Operation,
+			Query:     details.Query,
+			Variables: details.Variables,
+		})
+	}
+	return out
 }
 
 func (s *graphjinService) workflowTimeoutSeconds() int {

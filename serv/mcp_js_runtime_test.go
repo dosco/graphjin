@@ -39,8 +39,8 @@ func TestHandleGetJSRuntimeAPI_IncludesMappedTools(t *testing.T) {
 	if !hasJSFunction(api.Functions, "gj.tools.queryCatalog") {
 		t.Fatal("expected gj.tools.queryCatalog to be exposed")
 	}
-	if !hasJSFunction(api.Functions, "gj.tools.executeGraphql") {
-		t.Fatal("expected gj.tools.executeGraphql to be exposed when raw queries are enabled")
+	if hasJSFunction(api.Functions, "gj.tools.executeGraphql") {
+		t.Fatal("did not expect gj.tools.executeGraphql in sources-used default runtime surface")
 	}
 	if hasJSFunction(api.Functions, "gj.tools.getCurrentConfig") {
 		t.Fatal("did not expect get_current_config to be exposed inside workflow runtime")
@@ -108,7 +108,7 @@ func TestHandleGetJSRuntimeAPI_RespectsToolGates(t *testing.T) {
 }
 
 func TestHandleGetJSRuntimeAPI_LegacyDiscoveryExposesLegacyListTables(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{LegacyDiscovery: true})
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{LegacyDiscovery: true})
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 	ms.registerTools()
 
@@ -132,7 +132,7 @@ func TestHandleGetJSRuntimeAPI_LegacyDiscoveryExposesLegacyListTables(t *testing
 
 func TestHandleGetJSRuntimeAPI_ExposesWorkflowTimeout(t *testing.T) {
 	// Configured timeout should be surfaced
-	ms := mockMcpServerWithConfig(MCPConfig{WorkflowTimeout: 120})
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{WorkflowTimeout: 120})
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 	ms.registerTools()
 
@@ -154,7 +154,7 @@ func TestHandleGetJSRuntimeAPI_ExposesWorkflowTimeout(t *testing.T) {
 
 func TestHandleGetJSRuntimeAPI_DefaultWorkflowTimeout(t *testing.T) {
 	// When not configured, should show the default (5s)
-	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{})
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 	ms.registerTools()
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/openapi"
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
 
 // DefaultDBName is the canonical name used for the primary/default database
@@ -53,8 +54,8 @@ func ValidateMultiDBType(dbType string) error {
 
 // Validate checks the configuration for errors
 func (c *Config) Validate() error {
-	if !c.sourceModeNormalized {
-		if err := c.ValidateSourceMode(); err != nil {
+	if !c.sourcesNormalized {
+		if err := c.ValidateIsSourcesUsed(); err != nil {
 			return err
 		}
 	}
@@ -95,14 +96,14 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// ValidateSourceMode checks the public config mode boundary before any
+// ValidateIsSourcesUsed checks the public config mode boundary before any
 // source entries are normalized into legacy runtime fields.
-func (c *Config) ValidateSourceMode() error {
+func (c *Config) ValidateIsSourcesUsed() error {
 	if c == nil {
 		return nil
 	}
-	if c.SourceMode() {
-		return c.validateSourceMode()
+	if c.IsSourcesUsed() {
+		return c.validateIsSourcesUsed()
 	}
 	return c.validateLegacyMode()
 }
@@ -110,14 +111,14 @@ func (c *Config) ValidateSourceMode() error {
 func (c *Config) validateLegacyMode() error {
 	for name, dbConf := range c.Databases {
 		if strings.EqualFold(strings.TrimSpace(dbConf.Type), "codesql") {
-			return fmt.Errorf("database %q uses type codesql; move CodeSQL configuration to sources with kind: codesql", name)
+			return fmt.Errorf("database %q uses type codesql; move CodeSQL configuration to sources with kind: code", name)
 		}
 	}
 	if len(c.Filesystems) != 0 {
-		return fmt.Errorf("top-level filesystems is no longer supported; move filesystem providers to sources with kind: filesystem")
+		return fmt.Errorf("top-level filesystems is no longer supported; move file providers to sources with kind: file")
 	}
 	if strings.TrimSpace(c.OpenAPISpecsDir) != "" || len(c.OpenAPI) != 0 {
-		return fmt.Errorf("top-level openapi/openapi_specs_dir is no longer supported; move OpenAPI providers to sources with kind: openapi")
+		return fmt.Errorf("top-level openapi/openapi_specs_dir is no longer supported; move API providers to sources with kind: api")
 	}
 	if c.metadataConfigured() {
 		return fmt.Errorf("top-level metadata is no longer supported; add a sources entry with kind: graphjin and metadata: true")
@@ -128,15 +129,15 @@ func (c *Config) validateLegacyMode() error {
 	return nil
 }
 
-func (c *Config) validateSourceMode() error {
-	if len(c.Databases) != 0 && !c.sourceModeNormalized {
+func (c *Config) validateIsSourcesUsed() error {
+	if len(c.Databases) != 0 && !c.sourcesNormalized {
 		return fmt.Errorf("databases is legacy database-only config; move SQL/CodeSQL providers to sources")
 	}
-	if len(c.Filesystems) != 0 && !c.sourceModeNormalized {
-		return fmt.Errorf("top-level filesystems is legacy config; move filesystem providers to sources")
+	if len(c.Filesystems) != 0 && !c.sourcesNormalized {
+		return fmt.Errorf("top-level filesystems is legacy config; move file providers to sources")
 	}
-	if (strings.TrimSpace(c.OpenAPISpecsDir) != "" || len(c.OpenAPI) != 0) && !c.sourceModeNormalized {
-		return fmt.Errorf("top-level openapi/openapi_specs_dir is legacy config; move OpenAPI providers to sources")
+	if (strings.TrimSpace(c.OpenAPISpecsDir) != "" || len(c.OpenAPI) != 0) && !c.sourcesNormalized {
+		return fmt.Errorf("top-level openapi/openapi_specs_dir is legacy config; move API providers to sources")
 	}
 	if c.metadataConfigured() {
 		return fmt.Errorf("top-level metadata is legacy config; configure GraphJin metadata through sources")
@@ -155,15 +156,22 @@ func (c *Config) validateSourceMode() error {
 			return fmt.Errorf("sources: duplicate source name %q", name)
 		}
 		seen[name] = struct{}{}
-		if !validSourceKind(source.Kind) {
-			return fmt.Errorf("sources[%q]: unsupported kind %q (supported: sql, codesql, filesystem, openapi, graphjin, workflows)", name, source.Kind)
+		kind, err := sourcecap.CanonicalKind(source.Kind)
+		if err != nil {
+			return fmt.Errorf("sources[%q]: %w", name, err)
+		}
+		for key := range source.Capabilities {
+			if _, ok := sourcecap.Lookup(kind, key); !ok {
+				return fmt.Errorf("sources[%q].capabilities.%s: unsupported capability for kind %q (supported: %s)",
+					name, key, kind, sourcecap.ValidKeyList(kind))
+			}
 		}
 	}
 	for _, table := range c.Tables {
 		if strings.TrimSpace(table.Source) == "" {
 			return fmt.Errorf("tables[%q]: source is required when sources is configured", table.Name)
 		}
-		if table.Database != "" && !c.sourceModeNormalized {
+		if table.Database != "" && !c.sourcesNormalized {
 			return fmt.Errorf("tables[%q]: database is legacy config; use source instead", table.Name)
 		}
 		if _, ok := seen[table.Source]; !ok {
@@ -173,13 +181,8 @@ func (c *Config) validateSourceMode() error {
 	return nil
 }
 
-func validSourceKind(kind string) bool {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "sql", "codesql", "filesystem", "openapi", "graphjin", "workflows":
-		return true
-	default:
-		return false
-	}
+func CanonicalSourceKind(kind string) (string, error) {
+	return sourcecap.CanonicalKind(kind)
 }
 
 func (c *Config) metadataConfigured() bool {
@@ -212,6 +215,12 @@ func (c *Config) clone() *Config {
 		out.Sources = make([]SourceConfig, len(c.Sources))
 		copy(out.Sources, c.Sources)
 		for i := range out.Sources {
+			if c.Sources[i].Capabilities != nil {
+				out.Sources[i].Capabilities = make(map[string]bool, len(c.Sources[i].Capabilities))
+				for k, v := range c.Sources[i].Capabilities {
+					out.Sources[i].Capabilities[k] = v
+				}
+			}
 			if c.Sources[i].Specs != nil {
 				out.Sources[i].Specs = make(map[string]openapi.SpecConfig, len(c.Sources[i].Specs))
 				for k, v := range c.Sources[i].Specs {
@@ -247,19 +256,19 @@ func (c *Config) clone() *Config {
 	return &out
 }
 
-// SourceMode returns true when the public config is using the new sources
+// IsSourcesUsed returns true when the public config is using the new sources
 // boundary. Without sources, GraphJin stays in legacy database-only mode.
-func (c *Config) SourceMode() bool {
+func (c *Config) IsSourcesUsed() bool {
 	return c != nil && c.Sources != nil
 }
 
 // NormalizeSources translates public sources into the existing runtime config
 // fields consumed by the engine and service. It is intentionally idempotent.
 func (c *Config) NormalizeSources() error {
-	if c == nil || !c.SourceMode() || c.sourceModeNormalized {
+	if c == nil || !c.IsSourcesUsed() || c.sourcesNormalized {
 		return nil
 	}
-	if err := c.ValidateSourceMode(); err != nil {
+	if err := c.ValidateIsSourcesUsed(); err != nil {
 		return err
 	}
 
@@ -271,25 +280,29 @@ func (c *Config) NormalizeSources() error {
 
 	for _, source := range c.Sources {
 		name := strings.TrimSpace(source.Name)
-		switch strings.ToLower(strings.TrimSpace(source.Kind)) {
-		case "sql":
+		kind, err := CanonicalSourceKind(source.Kind)
+		if err != nil {
+			return fmt.Errorf("sources[%q]: %w", name, err)
+		}
+		switch kind {
+		case "database":
 			dbConf := source.databaseConfig()
 			if dbConf.Type == "" {
 				dbConf.Type = "postgres"
 			}
 			if strings.EqualFold(dbConf.Type, "codesql") {
-				return fmt.Errorf("sources[%q]: use kind: codesql instead of kind: sql with type: codesql", name)
+				return fmt.Errorf("sources[%q]: use kind: code instead of kind: database with type: codesql", name)
 			}
 			c.Databases[name] = dbConf
 			sqlSources = append(sqlSources, name)
-		case "codesql":
+		case "code":
 			dbConf := source.databaseConfig()
 			dbConf.Type = "codesql"
 			c.Databases[name] = dbConf
 			sqlSources = append(sqlSources, name)
-		case "filesystem":
+		case "file":
 			c.Filesystems = append(c.Filesystems, source.filesystemConfig())
-		case "openapi":
+		case "api":
 			if source.SpecsDir != "" {
 				if c.OpenAPISpecsDir != "" && c.OpenAPISpecsDir != source.SpecsDir {
 					return fmt.Errorf("sources[%q]: multiple openapi specs_dir values are not supported", name)
@@ -307,7 +320,7 @@ func (c *Config) NormalizeSources() error {
 					c.OpenAPI[key] = spec
 				}
 			}
-		case "graphjin", "workflows":
+		case "graphjin", "workflow":
 			// Service-managed sources are exposed through managed handlers.
 		}
 	}
@@ -318,8 +331,8 @@ func (c *Config) NormalizeSources() error {
 		if source.ReadOnly {
 			c.Tables[i].ReadOnly = true
 		}
-		switch strings.ToLower(strings.TrimSpace(source.Kind)) {
-		case "sql", "codesql":
+		switch source.CanonicalKind() {
+		case "database", "code":
 			c.Tables[i].Database = source.Name
 		default:
 			c.Tables[i].Database = defaultDB
@@ -329,15 +342,15 @@ func (c *Config) NormalizeSources() error {
 		return err
 	}
 
-	c.sourceModeNormalized = true
+	c.sourcesNormalized = true
 	return nil
 }
 
 func (c *Config) defaultSQLSource(sqlSources []string) string {
 	for _, source := range c.Sources {
 		if source.Default {
-			kind := strings.ToLower(strings.TrimSpace(source.Kind))
-			if kind == "sql" || kind == "codesql" {
+			kind, _ := CanonicalSourceKind(source.Kind)
+			if kind == "database" || kind == "code" {
 				return source.Name
 			}
 		}
@@ -411,12 +424,25 @@ func (c *Config) SourceByName(name string) (SourceConfig, bool) {
 	return SourceConfig{}, false
 }
 
+func (s SourceConfig) CanonicalKind() string {
+	kind, _ := CanonicalSourceKind(s.Kind)
+	return kind
+}
+
+func (s SourceConfig) Capability(key string) (bool, bool) {
+	if s.Capabilities == nil {
+		return false, false
+	}
+	value, ok := s.Capabilities[key]
+	return value, ok
+}
+
 func (c *Config) GraphJinSource() (SourceConfig, bool) {
 	if c == nil {
 		return SourceConfig{}, false
 	}
 	for _, source := range c.Sources {
-		if strings.EqualFold(strings.TrimSpace(source.Kind), "graphjin") {
+		if source.CanonicalKind() == sourcecap.KindGraphJin {
 			return source, true
 		}
 	}
@@ -428,7 +454,7 @@ func (c *Config) WorkflowsSource() (SourceConfig, bool) {
 		return SourceConfig{}, false
 	}
 	for _, source := range c.Sources {
-		if strings.EqualFold(strings.TrimSpace(source.Kind), "workflows") {
+		if source.CanonicalKind() == sourcecap.KindWorkflow {
 			return source, true
 		}
 	}
@@ -565,6 +591,9 @@ func (c *Config) NormalizeDatabases() {
 		for ri := range c.Roles {
 			for ti := range c.Roles[ri].Tables {
 				rt := &c.Roles[ri].Tables[ti]
+				if rt.Database != "" && rt.Database != dbName {
+					continue
+				}
 				// Match tables that belong to this database
 				for _, tbl := range c.Tables {
 					if tbl.Database == dbName && strings.EqualFold(tbl.Name, rt.Name) {
@@ -750,13 +779,13 @@ type Config struct {
 	// database. It supersedes the older metadata-only graph.
 	Catalog CatalogConfig `mapstructure:"catalog" json:"catalog" yaml:"catalog" jsonschema:"title=Catalog Graph"`
 
-	sourceModeNormalized bool
+	sourcesNormalized bool
 }
 
-// SourceConfig declares one graph provider in source mode.
+// SourceConfig declares one graph provider in sources used.
 type SourceConfig struct {
 	Name    string `mapstructure:"name" json:"name" yaml:"name" jsonschema:"title=Name"`
-	Kind    string `mapstructure:"kind" json:"kind" yaml:"kind" jsonschema:"title=Kind,enum=sql,enum=codesql,enum=filesystem,enum=openapi,enum=graphjin,enum=workflows"`
+	Kind    string `mapstructure:"kind" json:"kind" yaml:"kind" jsonschema:"title=Kind,enum=database,enum=code,enum=file,enum=api,enum=graphjin,enum=workflow"`
 	Default bool   `mapstructure:"default" json:"default" yaml:"default" jsonschema:"title=Default Source"`
 
 	Type                   string                        `mapstructure:"type" json:"type" yaml:"type" jsonschema:"title=Database Type"`
@@ -803,6 +832,7 @@ type SourceConfig struct {
 	Metadata               *bool                         `mapstructure:"metadata" json:"metadata,omitempty" yaml:"metadata,omitempty" jsonschema:"title=Metadata"`
 	ControlPlane           *bool                         `mapstructure:"control_plane" json:"control_plane,omitempty" yaml:"control_plane,omitempty" jsonschema:"title=Control Plane"`
 	Runtime                string                        `mapstructure:"runtime" json:"runtime" yaml:"runtime" jsonschema:"title=Workflow Runtime"`
+	Capabilities           map[string]bool               `mapstructure:"capabilities" json:"capabilities,omitempty" yaml:"capabilities,omitempty" jsonschema:"title=Capabilities"`
 }
 
 type RelationshipConfig struct {
@@ -1103,7 +1133,7 @@ type Table struct {
 	Schema string
 	Table  string // Inherits Table
 	Type   string
-	// Source is required in source mode and points at one sources[].name.
+	// Source is required in sources used and points at one sources[].name.
 	Source string `mapstructure:"source" json:"source" yaml:"source" jsonschema:"title=Source"`
 	// Database name for multi-database support. References a key in Config.Databases.
 	// If empty, uses the default database.
@@ -1162,7 +1192,8 @@ type Role struct {
 type RoleTable struct {
 	Name     string
 	Schema   string
-	ReadOnly bool `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
+	Database string `mapstructure:"database" json:"database" yaml:"database" jsonschema:"title=Database"`
+	ReadOnly bool   `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
 
 	Query  *Query
 	Insert *Insert

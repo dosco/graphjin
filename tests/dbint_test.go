@@ -1022,10 +1022,10 @@ func newConfig(c *core.Config) *core.Config {
 	// MongoDB needs explicit relationship configuration since it has no foreign keys
 	if c.DBType == "mongodb" {
 		sourceName := ""
-		if c.SourceMode() {
+		if c.IsSourcesUsed() {
 			for _, source := range c.Sources {
 				kind := strings.TrimSpace(strings.ToLower(source.Kind))
-				if kind != "sql" && kind != "codesql" {
+				if kind != "database" && kind != "code" {
 					continue
 				}
 				if sourceName == "" || source.Default {

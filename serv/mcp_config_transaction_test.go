@@ -216,7 +216,7 @@ func TestHandleUpdateCurrentConfig_MetadataReloadSwitchesCodeDatabasesAndInferDB
 		"code": {Type: "codesql", Path: t.TempDir()},
 	}}}
 	_, err := newGraphJinService(conf, nil)
-	if err == nil || !strings.Contains(err.Error(), "kind: codesql") {
+	if err == nil || !strings.Contains(err.Error(), "kind: code") {
 		t.Fatalf("legacy codesql config error = %v, want migration guidance", err)
 	}
 }

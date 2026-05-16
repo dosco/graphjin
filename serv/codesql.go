@@ -10,6 +10,7 @@ import (
 
 	"github.com/dosco/graphjin/codesql"
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
 
 const dbTypeCodeSQL = "codesql"
@@ -56,7 +57,7 @@ func (s *graphjinService) openCodeSQLDatabase(name string, dbConf core.DatabaseC
 	if dbConf.InferDBRefs != nil {
 		inferDBRefs = *dbConf.InferDBRefs
 	}
-	watch := !dbConf.ReadOnly
+	_, watch := s.codeSQLSourcePolicy(name, dbConf)
 	managed, stats, err := codesql.OpenManaged(ctx, codesql.Options{
 		Name:        name,
 		Root:        root,
@@ -79,6 +80,24 @@ func (s *graphjinService) openCodeSQLDatabase(name string, dbConf core.DatabaseC
 	runtime.AnalyticsMode = &analyticsMode
 
 	return managed.DB, runtime, managed, stats, nil
+}
+
+func (s *graphjinService) codeSQLSourcePolicy(name string, dbConf core.DatabaseConfig) (readOnly, watch bool) {
+	readOnly = dbConf.ReadOnly
+	watch = !dbConf.ReadOnly
+	if s == nil || s.conf == nil || !s.conf.Core.IsSourcesUsed() {
+		return readOnly, watch
+	}
+	source, ok := s.conf.Core.SourceByName(name)
+	if !ok || source.CanonicalKind() != sourcecap.KindCode {
+		return readOnly, watch
+	}
+	if source.ReadOnly {
+		return true, false
+	}
+	writeAllowed, _ := s.conf.sourceCapabilityForSource(source, sourcecap.KeyCodeWrite)
+	watchAllowed, _ := s.conf.sourceCapabilityForSource(source, sourcecap.KeyCodeWatch)
+	return !writeAllowed, watchAllowed
 }
 
 func (s *graphjinService) closeManagedDBs(keep map[string]*sql.DB) map[string]struct{} {

@@ -26,6 +26,7 @@ var workflowCallableToolNames = map[string]struct{}{
 	"get_catalog_card":         {},
 	"get_catalog_capabilities": {},
 	"get_catalog_entrypoints":  {},
+	"graphql_help":             {},
 	"query_catalog":            {},
 	"describe_table":           {},
 	"execute_graphql":          {},

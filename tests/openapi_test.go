@@ -96,10 +96,10 @@ paths:
 		DisableAllowList: true,
 		DefaultLimit:     2,
 		Sources: []core.SourceConfig{
-			{Name: core.DefaultDBName, Kind: "sql", Type: dbType, Default: true},
+			{Name: core.DefaultDBName, Kind: "database", Type: dbType, Default: true},
 			{
 				Name:     "upstream",
-				Kind:     "openapi",
+				Kind:     "api",
 				SpecsDir: specsDir,
 				Specs: map[string]openapi.SpecConfig{
 					// Spec key matches the filename without extension. The

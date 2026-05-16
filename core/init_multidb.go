@@ -215,7 +215,7 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 	}
 
 	// Add roles to the compiler
-	if err := addRoles(gj.conf, ctx.qcodeCompiler); err != nil {
+	if err := addRoles(gj.conf, ctx.qcodeCompiler, ctx.name); err != nil {
 		return fmt.Errorf("database %s: add roles failed: %w", ctx.name, err)
 	}
 

@@ -26,7 +26,8 @@ func (ms *mcpServer) requireDB() *mcp.CallToolResult {
 
 // registerSchemaTools registers the schema discovery tools
 func (ms *mcpServer) registerSchemaTools() {
-	if ms.service.conf.legacyMCPToolsEnabled() {
+	sourcesUsed := ms.service.conf.Core.IsSourcesUsed()
+	if !sourcesUsed && ms.service.conf.legacyMCPToolsEnabled() {
 		// list_namespaces - One-query rollup of (database, schema) namespaces
 		ms.srv.AddTool(mcp.NewTool(
 			"list_namespaces",
@@ -67,7 +68,7 @@ func (ms *mcpServer) registerSchemaTools() {
 		// describe_table - Get detailed table schema with relationships
 		ms.srv.AddTool(mcp.NewTool(
 			"describe_table",
-			mcp.WithDescription("Legacy discovery tool. Prefer get_catalog_card on a table item. Get detailed schema for a table."),
+			mcp.WithDescription("Legacy discovery tool. Prefer query_catalog(id: ...) on a table item. Get detailed schema for a table."),
 			mcp.WithString("table",
 				mcp.Required(),
 				mcp.Description("Name of the table to describe"),
@@ -148,7 +149,7 @@ func (ms *mcpServer) registerSchemaTools() {
 		),
 	), ms.handleValidateWhereClause)
 
-	if ms.service.conf.legacyMCPToolsEnabled() {
+	if !sourcesUsed && ms.service.conf.legacyMCPToolsEnabled() {
 		// get_workflow_guide - Returns recommended workflow for using MCP tools
 		ms.srv.AddTool(mcp.NewTool(
 			"get_workflow_guide",
@@ -158,12 +159,12 @@ func (ms *mcpServer) registerSchemaTools() {
 		// get_discovery_schema - JSON schemas for every discovery tool's response.
 		ms.srv.AddTool(mcp.NewTool(
 			"get_discovery_schema",
-			mcp.WithDescription("Legacy discovery schema tool. Prefer query_catalog/get_catalog_card output schemas."),
+			mcp.WithDescription("Legacy discovery schema tool. Prefer query_catalog and query_catalog(id: ...) output schemas."),
 		), ms.handleGetDiscoverySchema)
 	}
 
 	// reload_schema - Only registered when allow_schema_reload is true
-	if ms.service.conf.MCP.AllowSchemaReload {
+	if !sourcesUsed && ms.service.conf.MCP.AllowSchemaReload {
 		ms.srv.AddTool(mcp.NewTool(
 			"reload_schema",
 			mcp.WithDescription("Reload the database schema to discover new or modified tables. "+
@@ -785,39 +786,60 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	}
 	if has("execute_workflow") {
 		addSequence("data_question",
-			[]string{"query_catalog", "get_catalog_card", "execute_workflow"},
-			"query_catalog(where: {kind: {eq: 'workflow'}}) → get_catalog_card → execute_workflow (ALWAYS use workflows for data questions)",
+			[]string{"query_catalog", "execute_workflow"},
+			"query_catalog(where: {kind: {eq: 'workflow'}}) → query_catalog(id: '<workflow_id>') → execute_workflow (ALWAYS use workflows for data questions)",
 		)
 	}
 	if has("execute_graphql") {
 		addSequence("mutation",
-			[]string{"query_catalog", "get_catalog_card", "execute_graphql"},
-			"query_catalog(where: {kind: {eq: 'mutation_pattern'}}) → get_catalog_card → execute_graphql",
+			[]string{"query_catalog", "execute_graphql"},
+			"query_catalog(where: {kind: {eq: 'mutation_pattern'}}) → query_catalog(id: '<mutation_pattern_id>') → execute_graphql",
 		)
 		if len(ms.service.selectedCodeSQLDatabases()) != 0 {
 			guide.ToolSequences["codesql_mutation"] = "query_catalog(search: 'CodeSQL') → execute_graphql(query code/code_context first) → write_mutation → execute_graphql(preview) → execute_graphql(apply)"
 		}
 		addSequence("multi_database_exploration",
-			[]string{"query_catalog", "get_catalog_card", "execute_graphql"},
-			"query_catalog(where: {kind: {eq: 'table'}, database_name: {eq: 'db_name'}}) → get_catalog_card → execute_graphql",
+			[]string{"query_catalog", "execute_graphql"},
+			"query_catalog(where: {kind: {eq: 'table'}, database_name: {eq: 'db_name'}}) → query_catalog(id: '<table_id>') → execute_graphql",
 		)
 	} else {
-		addSequence("saved_query_only",
+		if has("list_saved_queries") && has("get_saved_query") && has("execute_saved_query") {
+			addSequence("saved_query_only",
+				[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
+				"list_saved_queries → get_saved_query → execute_saved_query",
+			)
+			addSequence("mutation",
+				[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
+				"list_saved_queries → get_saved_query → execute_saved_query",
+			)
+		} else if has("query_catalog") && has("execute_saved_query") {
+			addSequence("saved_query_only",
+				[]string{"query_catalog", "execute_saved_query"},
+				"query_catalog(where: {kind: {eq: 'saved_query'}}) → query_catalog(id: '<saved_query_id>') → execute_saved_query",
+			)
+			addSequence("mutation",
+				[]string{"query_catalog", "execute_saved_query"},
+				"query_catalog(where: {kind: {eq: 'saved_query'}}) → query_catalog(id: '<saved_query_id>') → execute_saved_query",
+			)
+		} else if has("execute_saved_query") {
+			guide.ToolSequences["saved_query_only"] = "execute_saved_query"
+			guide.ToolSequences["mutation"] = "execute_saved_query"
+		}
+	}
+	if has("list_saved_queries") && has("get_saved_query") && has("execute_saved_query") {
+		addSequence("use_saved_query",
 			[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
 			"list_saved_queries → get_saved_query → execute_saved_query",
 		)
-		addSequence("mutation",
-			[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
-			"list_saved_queries → get_saved_query → execute_saved_query",
+	} else if has("query_catalog") && has("execute_saved_query") {
+		addSequence("use_saved_query",
+			[]string{"query_catalog", "execute_saved_query"},
+			"query_catalog(where: {kind: {eq: 'saved_query'}}) → query_catalog(id: '<saved_query_id>') → execute_saved_query",
 		)
 	}
-	addSequence("use_saved_query",
-		[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
-		"list_saved_queries → get_saved_query → execute_saved_query",
-	)
 	addSequence("explore_schema",
-		[]string{"query_catalog", "get_catalog_card"},
-		"query_catalog(where: {kind: {eq: 'table'}}) → get_catalog_card (for each relevant table/relationship)",
+		[]string{"query_catalog"},
+		"query_catalog(where: {kind: {eq: 'table'}}) → query_catalog(id: '<catalog_item_id>') for each relevant table/relationship",
 	)
 	addSequence("build_where_clause",
 		[]string{"query_catalog", "validate_where_clause"},
@@ -825,14 +847,14 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	)
 	if has("write_query") && has("validate_where_clause") && has("execute_graphql") {
 		addSequence("query_authoring",
-			[]string{"query_catalog", "get_catalog_card", "write_query", "validate_where_clause"},
-			"query_catalog → get_catalog_card → write_query → validate_where_clause → execute_graphql",
+			[]string{"query_catalog", "write_query", "validate_where_clause"},
+			"query_catalog → query_catalog(id: '<catalog_item_id>') → write_query → validate_where_clause → execute_graphql",
 		)
 	}
 	if has("write_mutation") && has("execute_graphql") {
 		addSequence("mutation_authoring",
-			[]string{"query_catalog", "get_catalog_card", "write_mutation"},
-			"query_catalog(where: {kind: {eq: 'mutation_pattern'}}) → get_catalog_card → write_mutation → execute_graphql",
+			[]string{"query_catalog", "write_mutation"},
+			"query_catalog(where: {kind: {eq: 'mutation_pattern'}}) → query_catalog(id: '<mutation_pattern_id>') → write_mutation → execute_graphql",
 		)
 	}
 	if has("fix_query_error") && has("execute_graphql") {
@@ -867,14 +889,14 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	}
 	if has("execute_workflow") {
 		addSequence("js_workflow_reuse",
-			[]string{"query_catalog", "get_catalog_card", "execute_workflow"},
-			"query_catalog(where: {kind: {eq: 'workflow'}}) → get_catalog_card → execute_workflow",
+			[]string{"query_catalog", "execute_workflow"},
+			"query_catalog(where: {kind: {eq: 'workflow'}}) → query_catalog(id: '<workflow_id>') → execute_workflow",
 		)
 	}
 	if has("save_workflow") {
 		addSequence("js_workflow_authoring",
-			[]string{"get_js_runtime_api", "query_catalog", "get_catalog_card", "save_workflow", "execute_workflow"},
-			"query_catalog(where: {kind: {eq: 'workflow'}}) → get_js_runtime_api → get_catalog_card → save_workflow → execute_workflow",
+			[]string{"get_js_runtime_api", "query_catalog", "save_workflow", "execute_workflow"},
+			"query_catalog(where: {kind: {eq: 'workflow'}}) → get_js_runtime_api → query_catalog(id: '<workflow_id>') → save_workflow → execute_workflow",
 		)
 	}
 	if has("list_workflows") {
@@ -1015,9 +1037,13 @@ func findSubstring(s, substr string) int {
 
 // WhereValidationResult represents the result of where clause validation
 type WhereValidationResult struct {
-	Valid      bool                      `json:"valid"`
-	Errors     []WhereValidationError    `json:"errors,omitempty"`
-	ColumnInfo map[string]ColumnTypeInfo `json:"column_info,omitempty"`
+	Valid          bool                      `json:"valid"`
+	Errors         []WhereValidationError    `json:"errors,omitempty"`
+	Warnings       []string                  `json:"warnings,omitempty"`
+	CompilerErrors []string                  `json:"compiler_errors,omitempty"`
+	ValidatedBy    string                    `json:"validated_by,omitempty"`
+	ExampleQuery   string                    `json:"example_query,omitempty"`
+	ColumnInfo     map[string]ColumnTypeInfo `json:"column_info,omitempty"`
 }
 
 // WhereValidationError represents a single validation error
@@ -1070,7 +1096,9 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 		columnTypes[col.Name] = col
 	}
 
-	whereData, err := parseWhereClauseArg(rawWhere)
+	compileResult := ms.validateWhereClauseByCompilation(table, database, rawWhere, schema)
+	whereData := compileResult.WhereData
+	err = compileResult.ParseErr
 	if err != nil {
 		// Return parse error
 		result := WhereValidationResult{
@@ -1087,8 +1115,19 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 		return ms.toolResultJSON("validate_where_clause", args, result)
 	}
 
-	// Validate the where clause
-	errors := validateWhereClause(whereData, columnTypes, "")
+	// Validate the where clause with the lightweight advisory validator.
+	var errors []WhereValidationError
+	if whereData != nil {
+		errors = validateWhereClause(whereData, columnTypes, "")
+	}
+	for _, compilerErr := range compileResult.CompilerErrors {
+		errors = append(errors, WhereValidationError{
+			Path:       "",
+			Error:      "compiler_error",
+			Message:    compilerErr,
+			Suggestion: "Use fix_query_error with the example_query and compiler error, or inspect query_catalog for valid columns and relationships.",
+		})
+	}
 
 	// Build column info for response
 	columnInfo := make(map[string]ColumnTypeInfo)
@@ -1100,11 +1139,67 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 	}
 
 	result := WhereValidationResult{
-		Valid:      len(errors) == 0,
-		Errors:     errors,
-		ColumnInfo: columnInfo,
+		Valid:          len(errors) == 0,
+		Errors:         errors,
+		Warnings:       compileResult.Warnings,
+		CompilerErrors: compileResult.CompilerErrors,
+		ValidatedBy:    "compiler",
+		ExampleQuery:   compileResult.ExampleQuery,
+		ColumnInfo:     columnInfo,
 	}
 	return ms.toolResultJSON("validate_where_clause", args, result)
+}
+
+type whereCompileValidationResult struct {
+	WhereData      map[string]any
+	WhereLiteral   string
+	ParseErr       error
+	ExampleQuery   string
+	CompilerErrors []string
+	Warnings       []string
+}
+
+func (ms *mcpServer) validateWhereClauseByCompilation(table, database string, rawWhere any, schema *core.TableSchema) whereCompileValidationResult {
+	var result whereCompileValidationResult
+
+	whereData, whereLiteral, err := parseWhereClauseInput(rawWhere)
+	if err != nil {
+		result.ParseErr = err
+		return result
+	}
+	result.WhereData = whereData
+	result.WhereLiteral = whereLiteral
+
+	field := validationSelectField(schema)
+	query, err := buildWhereValidationQuery(table, database, whereLiteral, field)
+	if err != nil {
+		result.ParseErr = err
+		return result
+	}
+	result.ExampleQuery = query
+
+	if ms == nil || ms.service == nil || ms.service.gj == nil {
+		result.CompilerErrors = append(result.CompilerErrors, "GraphJin compiler is not initialized")
+		return result
+	}
+
+	var exp *core.QueryExplanation
+	if database != "" {
+		exp, err = ms.service.gj.ExplainQueryForDatabase(database, query, nil, "")
+	} else {
+		exp, err = ms.service.gj.ExplainQuery(query, nil, "")
+	}
+	if err != nil {
+		result.CompilerErrors = append(result.CompilerErrors, err.Error())
+		return result
+	}
+	if exp != nil && len(exp.Errors) != 0 {
+		result.CompilerErrors = append(result.CompilerErrors, exp.Errors...)
+	}
+	if database != "" && !strings.Contains(query, "@database") {
+		result.Warnings = append(result.Warnings, "database was used for schema lookup; compile validation follows GraphJin's configured database routing for the generated query")
+	}
+	return result
 }
 
 func (ms *mcpServer) availableToolSet() map[string]bool {
@@ -1117,21 +1212,133 @@ func (ms *mcpServer) availableToolSet() map[string]bool {
 }
 
 func parseWhereClauseArg(value any) (map[string]any, error) {
+	whereData, _, err := parseWhereClauseInput(value)
+	if err != nil {
+		return nil, err
+	}
+	if whereData == nil {
+		return nil, fmt.Errorf("where clause must be a JSON object for this caller")
+	}
+	return whereData, nil
+}
+
+func parseWhereClauseInput(value any) (map[string]any, string, error) {
 	switch v := value.(type) {
 	case map[string]any:
-		return v, nil
+		literal, err := graphQLInputLiteral(v)
+		if err != nil {
+			return nil, "", err
+		}
+		return v, literal, nil
 	case string:
-		if strings.TrimSpace(v) == "" {
-			return nil, fmt.Errorf("empty where clause")
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil, "", fmt.Errorf("empty where clause")
 		}
 		var whereData map[string]any
-		if err := json.Unmarshal([]byte(v), &whereData); err != nil {
-			return nil, err
+		if err := json.Unmarshal([]byte(trimmed), &whereData); err == nil {
+			literal, err := graphQLInputLiteral(whereData)
+			if err != nil {
+				return nil, "", err
+			}
+			return whereData, literal, nil
+		} else if looksLikeMalformedJSONObject(trimmed) {
+			return nil, "", err
 		}
-		return whereData, nil
+		if !strings.HasPrefix(trimmed, "{") || !strings.HasSuffix(trimmed, "}") {
+			return nil, "", fmt.Errorf("where literal must be an object")
+		}
+		return nil, trimmed, nil
 	default:
-		return nil, fmt.Errorf("unsupported where clause type %T", value)
+		return nil, "", fmt.Errorf("unsupported where clause type %T", value)
 	}
+}
+
+func looksLikeMalformedJSONObject(value string) bool {
+	if !strings.HasPrefix(value, "{") {
+		return false
+	}
+	rest := strings.TrimLeft(value[1:], " \t\r\n")
+	return strings.HasPrefix(rest, `"`)
+}
+
+func graphQLInputLiteral(value any) (string, error) {
+	value = catalogJSONAny(value)
+	switch v := value.(type) {
+	case nil:
+		return "null", nil
+	case string:
+		return catalogQuote(v), nil
+	case bool:
+		if v {
+			return "true", nil
+		}
+		return "false", nil
+	case float64:
+		return fmt.Sprintf("%v", v), nil
+	case []any:
+		items := make([]string, 0, len(v))
+		for _, item := range v {
+			literal, err := graphQLInputLiteral(item)
+			if err != nil {
+				return "", err
+			}
+			items = append(items, literal)
+		}
+		return "[" + strings.Join(items, ", ") + "]", nil
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			if !catalogValidName(key) {
+				return "", fmt.Errorf("unsupported where field %q", key)
+			}
+			literal, err := graphQLInputLiteral(v[key])
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, key+": "+literal)
+		}
+		return "{ " + strings.Join(parts, ", ") + " }", nil
+	default:
+		return "", fmt.Errorf("unsupported where value %T", value)
+	}
+}
+
+func validationSelectField(schema *core.TableSchema) string {
+	if schema == nil {
+		return ""
+	}
+	if schema.PrimaryKey != "" {
+		return schema.PrimaryKey
+	}
+	for _, col := range schema.Columns {
+		if !col.Array {
+			return col.Name
+		}
+	}
+	if len(schema.Columns) != 0 {
+		return schema.Columns[0].Name
+	}
+	return ""
+}
+
+func buildWhereValidationQuery(table, database, whereLiteral, field string) (string, error) {
+	if !catalogValidName(table) {
+		return "", fmt.Errorf("unsupported table name %q", table)
+	}
+	if !catalogValidName(field) {
+		return "", fmt.Errorf("no selectable scalar field found for table %q", table)
+	}
+	directive := ""
+	if database != "" {
+		directive = fmt.Sprintf(" @database(name: %s)", catalogQuote(database))
+	}
+	return fmt.Sprintf("query __gj_validate_where { %s(where: %s, limit: 1)%s { %s } }", table, whereLiteral, directive, field), nil
 }
 
 // validateWhereClause recursively validates a where clause structure
@@ -1211,16 +1418,79 @@ func validateWhereClause(where map[string]any, columnTypes map[string]core.Colum
 
 // isOperator returns true if the string is a known GraphJin operator
 func isOperator(s string) bool {
-	operators := map[string]bool{
-		"eq": true, "neq": true, "gt": true, "gte": true, "lt": true, "lte": true,
-		"in": true, "nin": true, "is_null": true,
-		"like": true, "ilike": true, "regex": true, "iregex": true, "similar": true,
-		"has_key": true, "has_key_any": true, "has_key_all": true, "contains": true, "contained_in": true,
-		"st_dwithin": true, "st_within": true, "st_contains": true, "st_intersects": true,
-		"st_coveredby": true, "st_covers": true, "st_touches": true, "st_overlaps": true, "near": true,
-		"has_in_common": true,
+	return canonicalWhereOperator(s) != ""
+}
+
+func canonicalWhereOperator(op string) string {
+	if op != "" && op[0] == '_' {
+		op = op[1:]
 	}
-	return operators[s]
+	switch op {
+	case "eq", "equals":
+		return "eq"
+	case "neq", "notEquals", "not_equals":
+		return "neq"
+	case "gt", "greaterThan", "greater_than":
+		return "gt"
+	case "gte", "gteq", "greaterOrEquals", "greater_or_equals":
+		return "gte"
+	case "lt", "lesserThan", "lesser_than":
+		return "lt"
+	case "lte", "lteq", "lesserOrEquals", "lesser_or_equals":
+		return "lte"
+	case "in":
+		return "in"
+	case "nin", "notIn", "not_in":
+		return "nin"
+	case "like", "nlike", "notLike", "not_like":
+		return "like"
+	case "ilike", "iLike", "nilike", "notILike", "not_ilike":
+		return "ilike"
+	case "similar", "nsimilar", "notSimiliar", "not_similar":
+		return "similar"
+	case "regex", "nregex", "notRegex", "not_regex":
+		return "regex"
+	case "iregex", "niregex", "notIRegex", "not_iregex":
+		return "iregex"
+	case "contains":
+		return "contains"
+	case "containedIn", "contained_in":
+		return "contained_in"
+	case "hasInCommon", "has_in_common":
+		return "has_in_common"
+	case "hasKey", "has_key":
+		return "has_key"
+	case "hasKeyAny", "has_key_any":
+		return "has_key_any"
+	case "hasKeyAll", "has_key_all":
+		return "has_key_all"
+	case "isNull", "is_null":
+		return "is_null"
+	case "notDistinct", "ndis", "not_distinct":
+		return "not_distinct"
+	case "dis", "distinct":
+		return "distinct"
+	case "st_dwithin", "stDWithin", "st_d_within", "dwithin":
+		return "st_dwithin"
+	case "st_within", "stWithin", "within":
+		return "st_within"
+	case "st_contains", "stContains", "geoContains":
+		return "st_contains"
+	case "st_intersects", "stIntersects", "intersects":
+		return "st_intersects"
+	case "st_coveredby", "stCoveredBy", "coveredBy", "covered_by":
+		return "st_coveredby"
+	case "st_covers", "stCovers", "covers":
+		return "st_covers"
+	case "st_touches", "stTouches", "touches":
+		return "st_touches"
+	case "st_overlaps", "stOverlaps", "overlaps":
+		return "st_overlaps"
+	case "near", "geoNear":
+		return "near"
+	default:
+		return ""
+	}
 }
 
 // validateColumnOperators validates operators and values for a column
@@ -1243,9 +1513,13 @@ func validateColumnOperators(operators map[string]any, col core.ColumnInfo, path
 	for _, op := range opKeys {
 		value := operators[op]
 		opPath := path + "." + op
+		canonicalOp := canonicalWhereOperator(op)
+		if canonicalOp == "" {
+			canonicalOp = op
+		}
 
 		// Check if operator is valid for this column type
-		if !validOpsMap[op] {
+		if !validOpsMap[canonicalOp] {
 			errors = append(errors, WhereValidationError{
 				Path:       opPath,
 				Error:      "invalid_operator",
@@ -1257,7 +1531,7 @@ func validateColumnOperators(operators map[string]any, col core.ColumnInfo, path
 		}
 
 		// Validate value type matches operator expectations
-		valueErr := validateOperatorValue(op, value, normalizedType, opPath)
+		valueErr := validateOperatorValue(canonicalOp, value, normalizedType, opPath)
 		if valueErr != nil {
 			errors = append(errors, *valueErr)
 		}

@@ -1,8 +1,14 @@
 package serv
 
 func mcpServerInstructions(conf *Config) string {
-	if conf != nil && conf.MCP.Disable {
+	if conf != nil && conf.mcpDisabled() {
 		return disabledServerInstructions
+	}
+	if conf != nil && conf.Core.IsSourcesUsed() {
+		if !conf.catalogToolsEnabled() {
+			return sourceGraphQLServerInstructions
+		}
+		return catalogServerInstructions
 	}
 	if conf != nil && conf.legacyMCPToolsEnabled() {
 		return legacyServerInstructions
@@ -20,7 +26,7 @@ No MCP discovery, prompt, resource, execution, workflow, config, schema, or cata
 
 const sourceGraphQLServerInstructions = `GraphJin is running in sources mode without the GraphJin catalog source.
 
-Use the GraphQL endpoint and registered execution/control-plane tools that are actually available on this server. Do not recommend legacy discovery tools unless mcp.legacy_discovery is enabled, and do not recommend catalog tools unless a sources entry with kind: graphjin enables catalog.
+Use the GraphQL endpoint and registered execution/control-plane tools that are actually available on this server. Do not recommend legacy discovery tools in sources mode, and do not recommend catalog tools unless a sources entry with kind: graphjin enables catalog.
 `
 
 const catalogServerInstructions = `GraphJin is a GraphQL-to-SQL compiler. You query databases using GraphJin's own DSL (not standard GraphQL).
@@ -29,20 +35,22 @@ const catalogServerInstructions = `GraphJin is a GraphQL-to-SQL compiler. You qu
 
 Discovery means selecting evidence-backed catalog items before acting. Do not write queries from memory.
 
-1. Query gj_catalog to find relevant schema, relationship, workflow, language, config, policy, capability, query-pattern, mutation-pattern, or common-mistake items. Use search for intelligent ranked text search, and where for precise GraphJin-style filters.
-2. Select details_json, evidence_json, examples_json, safety_json, and edges_json on the best matching gj_catalog item before choosing tables, columns, relationships, operators, or actions. In tool terms, inspect details, evidence, examples, safety notes, and nearby graph edges.
-3. Resolve ambiguity by inspecting candidate items. If multiple tables or columns match, do not guess from names alone.
-4. Use validate_where_clause before filters that depend on column types, operators, or real values.
-5. Before config, workflow, schema, filesystem, or CodeSQL changes, inspect gj_catalog for gj_security.query and then query gj_security for high/critical findings and effective policy.
-6. Prefer GraphJin control-plane GraphQL mutations for workflow/config actions after discovery: gj_workflow_execution(insert) for workflow execution, gj_workflow(insert/update/delete) for workflow management, and gj_config(id: "current", update: ...) for config changes. Use MCP tools such as reload_schema, validate_where_clause, and fix_query_error for schema refresh, filter checks, and query repair.
-7. Prefer workflows for broad data questions after discovery. Workflows can page and aggregate safely.
-8. Observe results, then return to catalog items when the result, error, or follow-up question changes the facts you need.
+1. When unsure, call graphql_help(for: "discovery") first. It returns curated catalog rows plus the exact gj_catalog GraphQL query it used.
+2. Query gj_catalog to find relevant schema, relationship, workflow, language, config, policy, capability, query-pattern, mutation-pattern, or common-mistake items. Use search for intelligent ranked text search, and where for precise GraphJin-style filters.
+3. Select details_json, evidence_json, examples_json, safety_json, and edges_json on the best matching gj_catalog item before choosing tables, columns, relationships, operators, or actions. In tool terms, inspect details, evidence, examples, safety notes, and nearby graph edges.
+4. Resolve ambiguity by inspecting candidate items. If multiple tables or columns match, do not guess from names alone.
+5. Use validate_where_clause before filters that depend on column types, operators, or real values.
+6. Before config, workflow, schema, file, or code-source changes, inspect gj_catalog for gj_security.query and then query gj_security for high/critical findings and effective policy.
+7. Prefer GraphJin control-plane GraphQL mutations for workflow/config actions after discovery: gj_workflow_execution(insert) for workflow execution, gj_workflow(insert/update/delete) for workflow management, and gj_config(id: "current", update: ...) for config changes. Use MCP tools such as reload_schema and validate_where_clause for schema refresh and filter checks; use errors[].extensions.graphjin_repair for query repair.
+8. Prefer workflows for broad data questions after discovery. Workflows can page and aggregate safely.
+9. Observe results, then return to catalog items when the result, error, or follow-up question changes the facts you need.
 
-Legacy discovery tools such as list_tables, describe_table, find_path, get_table_sample, get_query_syntax, get_mutation_syntax, get_workflow_guide, and list_workflows are not available unless mcp.legacy_discovery is enabled. Do not recommend disabled legacy tools.
+Legacy discovery tools such as list_tables, describe_table, find_path, get_table_sample, get_query_syntax, get_mutation_syntax, get_workflow_guide, and list_workflows are not available in sources mode. Do not recommend disabled legacy tools.
 
 ## Discovery recipes
 
-- Catalog helpers, when registered, are get_catalog_entrypoints, query_catalog, and get_catalog_card; the canonical GraphQL root is still gj_catalog.
+- Catalog discovery uses query_catalog and query_catalog(id); the canonical GraphQL root is still gj_catalog.
+- Help routing uses graphql_help(for: "query" | "filters" | "schema" | "workflows" | "config" | "security" | "code" | "errors" | ...). The response includes graphql_query so you can reuse or modify the exact gj_catalog query shape.
 - Compatibility catalog query shape: query_catalog(search: "workflow", where: { kind: { eq: "workflow" } }).
 - Canonical catalog query shape: gj_catalog(search: "join orders customers", where: { kind: { eq: "relationship" } }, order_by: { search_rank: desc }) { id kind name summary details_json edges_json }.
 - Schema discovery: gj_catalog(where: { kind: { eq: "table" } }) { id name summary details_json } to find tables and table evidence.
@@ -52,12 +60,12 @@ Legacy discovery tools such as list_tables, describe_table, find_path, get_table
 - Analytics discovery: gj_catalog(search: "running revenue rank window", where: { kind: { in: ["directive", "query_pattern", "deprecated_feature"] } }, order_by: { search_rank: desc }) { id kind name summary examples_json } for reporting/window-style features.
 - Value-sensitive filters: if a filter depends on real status strings, enum labels, tenant names, or conventions, inspect sample/profile availability on table or column items before choosing values.
 - Config and policy discovery: gj_catalog(search: "permission role blocked", where: { kind: { in: ["config", "capability"] } }) { id kind name summary safety_json } explains enabled behavior with sensitive values redacted. Changes go through control-plane GraphQL mutations when enabled.
-- Security posture: find guidance with gj_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } }) { name summary details_json examples_json safety_json }, then query gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }) { id severity title recommendation evidence_json }.
-- Workflow reuse: gj_catalog(search: "workflow", where: { kind: { eq: "workflow" } }) { id name summary input_schema_json } to find reusable workflows, then run mutation { gj_workflow_execution(insert: { workflow_name: "...", variables: {...} }) { status result_json error duration_ms } }. gj_workflow_execution is mutation-only and returns an ephemeral result row; it does not store run history. Mark the workflows source or gj_workflow_execution table read_only to block it. The execute_workflow MCP tool is a legacy compatibility wrapper gated by mcp.legacy_discovery and mcp.allow_workflow_execution.
+- Security posture: find guidance with gj_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } }) { name summary details_json examples_json safety_json }, then query gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }) { id scope config_id mode severity title recommendation evidence_json }. In agentic deployments, normal company users should rely on gj_catalog and approved gj_workflow_execution(insert); detailed gj_security, gj_config, and gj_workflow.code require an explicit authenticated grant.
+- Workflow reuse: gj_catalog(search: "workflow", where: { kind: { eq: "workflow" } }) { id name summary input_schema_json } to find reusable workflows, then run mutation { gj_workflow_execution(insert: { workflow_name: "...", variables: {...} }) { status result_json error duration_ms } }. gj_workflow_execution is mutation-only and returns an ephemeral result row; it does not store run history. Mark the workflow source or gj_workflow_execution table read_only to block it. The execute_workflow MCP tool is a legacy compatibility wrapper gated by mcp.legacy_discovery and mcp.allow_workflow_execution.
 - Workflow create/update/delete: use mutation { gj_workflow(insert/update/delete: ...) { name source_hash catalog_revision } } when mcp.allow_workflow_updates is enabled.
 - GraphQL catalog discovery: use gj_catalog as the single discovery root, for example gj_catalog(where: { kind: { eq: "table" } }) { id kind name summary } or gj_catalog(where: { kind: { eq: "capability" } }) { name summary safety_json }.
 - Config and schema actions: use gj_config(id: "current", update: ...) for config changes and MCP tools such as reload_schema, preview_schema_changes, and apply_schema_changes for schema operations.
-- Query repair: call fix_query_error with the query and error, then inspect relevant schema or language items before retrying.
+- Query repair: inspect errors[].extensions.graphjin_repair, then inspect relevant schema or language items before retrying.
 
 ## Key DSL rules
 

@@ -3,6 +3,8 @@ package catalog
 import (
 	"strings"
 	"testing"
+
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
 
 func TestBuildWithOptionsWorkflowCards(t *testing.T) {
@@ -76,6 +78,30 @@ func TestBuildWithOptionsWorkflowCards(t *testing.T) {
 	}
 	if !hasEntrypoint(snap, "discover_workflows") {
 		t.Fatalf("expected discover_workflows entrypoint")
+	}
+}
+
+func TestSourceCardsUseCapabilityRegistry(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{
+		Sources: []Source{{
+			Name: "graphjin",
+			Kind: sourcecap.KindGraphJin,
+			Capabilities: map[string]bool{
+				sourcecap.KeySecurityRead: true,
+			},
+		}},
+	})
+	card, ok := findCatalogCard(snap, "source:graphjin")
+	if !ok {
+		t.Fatalf("source card not found: %+v", snap.Cards)
+	}
+	if !strings.Contains(card.EvidenceJSON, "supported_capabilities") ||
+		!strings.Contains(card.EvidenceJSON, sourcecap.KeySecurityRead) ||
+		!strings.Contains(card.EvidenceJSON, sourcecap.EnforcementRuntime) {
+		t.Fatalf("source card should expose registry-derived capability guidance: %s", card.EvidenceJSON)
+	}
+	if !strings.Contains(card.ExamplesJSON, sourcecap.KeySecurityRead) {
+		t.Fatalf("source examples should come from registry, got %s", card.ExamplesJSON)
 	}
 }
 
@@ -170,6 +196,66 @@ func TestWorkflowCardsAreSearchableByMetadata(t *testing.T) {
 	}
 }
 
+func TestBuildWithOptionsFragmentCards(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{
+		Tables: []MetadataTable{{
+			ID:           "default.public.users",
+			DatabaseName: "default",
+			SchemaName:   "public",
+			TableName:    "users",
+		}},
+	}, nil, BuildOptions{
+		EnabledTools: []string{"query_catalog", "get_catalog_card", "get_fragment"},
+		Fragments: []Fragment{{
+			Name:       "user_fields",
+			Namespace:  "shop",
+			Definition: "fragment UserFields on users { id email }",
+			On:         "users",
+		}},
+	})
+
+	card, ok := findCatalogCard(snap, "fragment:shop.user_fields")
+	if !ok {
+		t.Fatalf("fragment card not found: %+v", snap.Cards)
+	}
+	if card.Kind != "fragment" || card.Title != "shop.user_fields" || card.TableName != "users" {
+		t.Fatalf("unexpected fragment card: %+v", card)
+	}
+	for _, want := range []string{`"namespace":"shop"`, `#import \"./fragments/shop.user_fields\"`, `"on":"users"`, `"source_hash"`} {
+		if !strings.Contains(card.EvidenceJSON, want) {
+			t.Fatalf("expected evidence to contain %q, got %s", want, card.EvidenceJSON)
+		}
+	}
+
+	details := detailsForCard(snap, card.ID)
+	if len(details) != 1 || details[0].Section != "fragment_definition" || !strings.Contains(details[0].DataJSON, "fragment UserFields on users") {
+		t.Fatalf("expected fragment definition detail, got %+v", details)
+	}
+	if !hasEntrypoint(snap, "discover_fragments") {
+		t.Fatalf("expected discover_fragments entrypoint")
+	}
+	if !hasEdge(snap, "node:fragment:shop.user_fields", "node:table:default.public.users", "applies_to") {
+		t.Fatalf("expected fragment-to-table edge")
+	}
+}
+
+func TestFragmentRevisionChangesWithDefinition(t *testing.T) {
+	base := &MetadataSnapshot{}
+	opts := BuildOptions{
+		Fragments: []Fragment{{
+			Name:       "user_fields",
+			Definition: "fragment UserFields on users { id }",
+			On:         "users",
+		}},
+	}
+	rev1 := RevisionFromSourceRevisions(SourceRevisions(base, nil, opts))
+	opts.Fragments[0].Definition = "fragment UserFields on users { id email }"
+	rev2 := RevisionFromSourceRevisions(SourceRevisions(base, nil, opts))
+	if rev1 == rev2 {
+		t.Fatalf("expected fragment definition change to change revision")
+	}
+}
+
 func TestActionCapabilitiesAreNotCatalogCards(t *testing.T) {
 	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{
 		EnabledTools: []string{
@@ -255,6 +341,55 @@ func TestKnownEmptyToolManifestDoesNotInventToolCapabilities(t *testing.T) {
 	}
 	if hasEdge(snap, "node:workflow:daily_report", "capability.execute_workflow", "uses_capability") {
 		t.Fatalf("workflow card should not link to disabled execute_workflow capability")
+	}
+}
+
+func TestBuildIncludesHelpRows(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{EnabledTools: []string{"query_catalog", "validate_where_clause", "execute_saved_query"}})
+
+	for _, id := range []string{"help:discovery", "help:query", "help:mutations", "help:saved_queries", "help:workflow_runtime", "help:security", "help:errors"} {
+		card, ok := findCatalogCard(snap, id)
+		if !ok {
+			t.Fatalf("expected help card %s", id)
+		}
+		if card.Kind != "help" || card.QueryJSON == "" || card.SafetyJSON == "" || card.GraphQLQuery == "" {
+			t.Fatalf("help card should include query/safety/graphql guidance: %+v", card)
+		}
+		if len(detailsForCard(snap, id)) == 0 {
+			t.Fatalf("expected help details for %s", id)
+		}
+	}
+
+	result, err := snap.Query(Query{Where: map[string]any{"kind": map[string]any{"eq": "help"}}, Limit: 50})
+	if err != nil {
+		t.Fatalf("query help rows: %v", err)
+	}
+	if len(result.Cards) < len(helpTopics) {
+		t.Fatalf("expected at least %d help rows, got %d", len(helpTopics), len(result.Cards))
+	}
+}
+
+func TestBuildWithOptionsSavedQueryCards(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{
+		EnabledTools: []string{"query_catalog", "execute_saved_query"},
+		SavedQueries: []SavedQuery{{
+			Name:      "users_by_id",
+			Namespace: "shop",
+			Operation: "query",
+			Query:     `query { users(id: $id) { id email } }`,
+			Variables: map[string]any{"id": "number"},
+		}},
+	})
+
+	card, ok := findCatalogCard(snap, "saved_query:shop.users_by_id")
+	if !ok {
+		t.Fatalf("expected saved query card")
+	}
+	if card.Kind != "saved_query" || card.InputSchemaJSON == "" || card.SafetyJSON == "" || !strings.Contains(card.SuggestedNext, "execute_saved_query") {
+		t.Fatalf("saved query card missing execution guidance: %+v", card)
+	}
+	if !strings.Contains(card.GraphQLQuery, "users") {
+		t.Fatalf("expected saved query text in GraphQLQuery: %+v", card)
 	}
 }
 

@@ -52,9 +52,9 @@ func WatchMe() int {
 			DBSchemaPollDuration: -1,
 			DefaultLimit:         10,
 			Sources: []core.SourceConfig{
-				{Name: "app", Kind: "sql", Type: "sqlite", Path: appDBPath, Default: true},
-				{Name: "code", Kind: "codesql", Path: codeRoot},
-				{Name: "uploads", Kind: "filesystem", Backend: "local", Root: fsRoot},
+				{Name: "app", Kind: "database", Type: "sqlite", Path: appDBPath, Default: true},
+				{Name: "code", Kind: "code", Path: codeRoot},
+				{Name: "uploads", Kind: "file", Backend: "local", Root: fsRoot},
 			},
 			Resolvers: []core.ResolverConfig{{
 				Name:      "payments",

@@ -67,7 +67,7 @@ var languageFeatures = []Feature{
 			`{ billofmaterials { product @through(column: "componentid") { name } } }`,
 		},
 		CommonMistakes: []string{"Guessing the FK path instead of asking the catalog for relationship items."},
-		SuggestedNext:  []string{"query_catalog", "get_catalog_card"},
+		SuggestedNext:  []string{"query_catalog", "query_catalog(id)"},
 	},
 	{
 		ID:        "directive.schema",
@@ -249,7 +249,7 @@ var languageFeatures = []Feature{
 		ReplacementFor: []string{"@window"},
 		CommonMistakes: []string{"Using partition/frame/lag_/lead_ syntax copied from older examples."},
 		Examples:       []string{`running_total: total @running(aggregate: sum, by: "account_id", orderBy: { month: asc })`},
-		SuggestedNext:  []string{"query_catalog", "fix_query_error"},
+		SuggestedNext:  []string{"query_catalog", "graphjin_repair"},
 	},
 	{
 		ID:      "operator.filters",

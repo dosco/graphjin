@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 )
 
-const catalogModelRevision = "catalog-v1"
+const catalogModelRevision = "catalog-v2"
 
 func SourceRevisions(snapshot *MetadataSnapshot, conf any, opts BuildOptions) map[string]string {
 	if snapshot == nil {
@@ -14,12 +14,15 @@ func SourceRevisions(snapshot *MetadataSnapshot, conf any, opts BuildOptions) ma
 	}
 	opts = normalizeBuildOptions(opts)
 	return map[string]string{
-		"catalog":   hashJSON(catalogModelRevision),
-		"schema":    hashJSON(snapshot),
-		"config":    hashJSON(ConfigFingerprint(conf)),
-		"language":  hashJSON(languageFeatures),
-		"tools":     hashJSON(map[string]any{"known": opts.EnabledToolsKnown, "enabled": opts.EnabledTools}),
-		"workflows": hashJSON(opts.Workflows),
+		"catalog":       hashJSON(catalogModelRevision),
+		"schema":        hashJSON(snapshot),
+		"config":        hashJSON(ConfigFingerprint(conf)),
+		"sources":       hashJSON(opts.Sources),
+		"language":      hashJSON(languageFeatures),
+		"tools":         hashJSON(map[string]any{"known": opts.EnabledToolsKnown, "enabled": opts.EnabledTools}),
+		"workflows":     hashJSON(opts.Workflows),
+		"fragments":     hashJSON(opts.Fragments),
+		"saved_queries": hashJSON(opts.SavedQueries),
 	}
 }
 

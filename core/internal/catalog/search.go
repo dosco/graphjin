@@ -288,6 +288,8 @@ func catalogFieldValue(card Card, field string) (any, bool) {
 		return card.ColumnName, true
 	case "source":
 		return card.Source, true
+	case "source_kind":
+		return card.SourceKind, true
 	case "risk_level":
 		return card.RiskLevel, true
 	case "confidence":
@@ -677,6 +679,7 @@ func cardSearchFields(card Card, detailText string) []weightedText {
 		{field: "examples", text: card.ExamplesJSON, weight: 3},
 		{field: "details", text: detailText, weight: 2},
 		{field: "source", text: card.Source, weight: 2},
+		{field: "source_kind", text: card.SourceKind, weight: 2},
 		{field: "created_at", text: card.CreatedAt, weight: 1},
 		{field: "updated_at", text: card.UpdatedAt, weight: 1},
 		{field: "generated_tags", text: strings.Join(generatedSearchTags(card), " "), weight: 6},
@@ -838,6 +841,10 @@ func generatedSearchTags(card Card) []string {
 		tags = append(tags, "capability", "tool", "mcp", "action", "workflow", "validate", "execute", "repair")
 	case "workflow":
 		tags = append(tags, "workflow", "workflows", "automation", "agent", "runtime", "javascript", "goja", "orchestration", "reusable")
+	case "help":
+		tags = append(tags, "help", "guide", "bootstrap", "discovery", "graphql", "catalog", "mcp")
+	case "saved_query":
+		tags = append(tags, "saved", "query", "allowlist", "allow_list", "execute_saved_query", "variables")
 	case "table":
 		tags = append(tags, "table", "dataset", "records", "rows", "schema", "sample", "profile", "columns")
 	case "column":

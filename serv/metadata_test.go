@@ -28,8 +28,8 @@ func LookupUser() {
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "app", Kind: "sql", Type: "sqlite", Path: appPath, Default: true},
-				{Name: "code", Kind: "codesql", Path: source},
+				{Name: "app", Kind: "database", Type: "sqlite", Path: appPath, Default: true},
+				{Name: "code", Kind: "code", Path: source},
 				{Name: defaultMetadataDBName, Kind: "graphjin"},
 			},
 		},
@@ -240,9 +240,9 @@ func TestMetadataCatalogMirrorRefreshesWorkflowRowsAfterMutation(t *testing.T) {
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "app", Kind: "sql", Type: "sqlite", Path: appPath, Default: true},
+				{Name: "app", Kind: "database", Type: "sqlite", Path: appPath, Default: true},
 				{Name: defaultMetadataDBName, Kind: "graphjin"},
-				{Name: "workflows", Kind: "workflows"},
+				{Name: "workflows", Kind: "workflow"},
 			},
 		},
 		Serv: Serv{
@@ -414,7 +414,7 @@ func TestMetadataDatabaseNameCollisionFailsStartup(t *testing.T) {
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: defaultMetadataDBName, Kind: "sql", Type: "sqlite", Path: appPath, Default: true},
+				{Name: defaultMetadataDBName, Kind: "database", Type: "sqlite", Path: appPath, Default: true},
 				{Name: defaultMetadataDBName, Kind: "graphjin"},
 			},
 		},

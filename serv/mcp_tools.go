@@ -12,12 +12,13 @@ import (
 
 // registerExecutionTools registers the query execution tools
 func (ms *mcpServer) registerExecutionTools() {
+	sourcesUsed := ms.service.conf.Core.IsSourcesUsed()
 	// execute_graphql - Only registered when AllowRawQueries is true
-	if ms.service.conf.MCP.AllowRawQueries {
+	if !sourcesUsed && ms.service.conf.MCP.AllowRawQueries {
 		ms.srv.AddTool(mcp.NewTool(
 			"execute_graphql",
 			mcp.WithDescription("Execute a GraphJin GraphQL query or mutation against the database. "+
-				"Use query_catalog and get_catalog_card to learn the DSL syntax first."),
+				"Use query_catalog and query_catalog(id: ...) to learn the DSL syntax first."),
 			mcp.WithString("query",
 				mcp.Required(),
 				mcp.Description("The GraphQL query or mutation to execute. Use GraphJin DSL syntax."),
@@ -36,7 +37,7 @@ func (ms *mcpServer) registerExecutionTools() {
 		"execute_saved_query",
 		mcp.WithDescription("Execute a pre-defined saved query from the allow-list by name. "+
 			"PREFER this over execute_graphql when a matching saved query exists - "+
-			"saved queries are pre-validated and safer. Use list_saved_queries to find available queries."),
+			"saved queries are pre-validated and safer. Use query_catalog to find available saved queries."),
 		mcp.WithString("name",
 			mcp.Required(),
 			mcp.Description("Name of the saved query to execute"),
@@ -49,13 +50,13 @@ func (ms *mcpServer) registerExecutionTools() {
 		),
 	), ms.handleExecuteSavedQuery)
 
-	if ms.service.conf.legacyMCPToolsEnabled() && ms.service.conf.MCP.AllowWorkflowExecution {
+	if !sourcesUsed && ms.service.conf.legacyMCPToolsEnabled() && ms.service.conf.MCP.AllowWorkflowExecution {
 		// execute_workflow - Execute a named JS workflow from ./workflows
 		ms.srv.AddTool(mcp.NewTool(
 			"execute_workflow",
 			mcp.WithDescription("Compatibility tool for the GraphQL control-plane mutation gj_workflow_execution(insert). Execute a named JavaScript workflow from ./workflows/<name>.js. "+
 				"Discover reusable workflows first with query_catalog(where: {kind: {eq: 'workflow'}}). "+
-				"Use get_js_runtime_api first to see runtime globals and callable gj.tools.* functions. "+
+				"Use catalog workflow/runtime rows to inspect runtime globals and callable gj.tools.* functions. "+
 				"If the workflow declares variables in metadata, provide them here."),
 			mcp.WithString("name",
 				mcp.Required(),
@@ -79,7 +80,8 @@ type ExecuteResult struct {
 
 // ErrorInfo represents an error from query execution
 type ErrorInfo struct {
-	Message string `json:"message"`
+	Message    string         `json:"message"`
+	Extensions map[string]any `json:"extensions,omitempty"`
 }
 
 // handleExecuteGraphQL executes a GraphQL query or mutation
@@ -131,12 +133,12 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 
 	result := ExecuteResult{}
 	if err != nil {
-		result.Errors = []ErrorInfo{{Message: ms.enhanceExecError(err.Error(), "execute_graphql")}}
+		result.Errors = []ErrorInfo{ms.errorInfo(query, err.Error(), "execute_graphql")}
 	} else {
 		// Replace encrypted cursors with short numeric IDs for LLM-friendly responses
 		result.Data = ms.processCursorsForMCP(ctx, res.Data)
 		for _, e := range res.Errors {
-			result.Errors = append(result.Errors, ErrorInfo{Message: ms.enhanceExecError(e.Message, "execute_graphql")})
+			result.Errors = append(result.Errors, ms.errorInfoFromCoreError(query, e, "execute_graphql"))
 		}
 	}
 	return ms.toolResultJSON("execute_graphql", args, result)
@@ -181,12 +183,12 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 
 	result := ExecuteResult{}
 	if err != nil {
-		result.Errors = []ErrorInfo{{Message: ms.enhanceExecError(err.Error(), "execute_saved_query")}}
+		result.Errors = []ErrorInfo{ms.errorInfo("", err.Error(), "execute_saved_query")}
 	} else {
 		// Replace encrypted cursors with short numeric IDs for LLM-friendly responses
 		result.Data = ms.processCursorsForMCP(ctx, res.Data)
 		for _, e := range res.Errors {
-			result.Errors = append(result.Errors, ErrorInfo{Message: ms.enhanceExecError(e.Message, "execute_saved_query")})
+			result.Errors = append(result.Errors, ms.errorInfoFromCoreError("", e, "execute_saved_query"))
 		}
 	}
 	return ms.toolResultJSON("execute_saved_query", args, result)

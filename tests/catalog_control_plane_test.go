@@ -292,9 +292,9 @@ func newCatalogControlPlaneService(t *testing.T, mcp serv.MCPConfig) *serv.HttpS
 		DBType:           dbType,
 		DisableAllowList: true,
 		Sources: []core.SourceConfig{
-			{Name: core.DefaultDBName, Kind: "sql", Type: dbType, Default: true},
+			{Name: core.DefaultDBName, Kind: "database", Type: dbType, Default: true},
 			{Name: "graphjin", Kind: "graphjin"},
-			{Name: "workflows", Kind: "workflows"},
+			{Name: "workflows", Kind: "workflow"},
 		},
 	})
 	svcConf := &serv.Config{

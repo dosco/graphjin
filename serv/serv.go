@@ -182,11 +182,11 @@ func printDevModeInfo(s *graphjinService) {
 	if s.conf.legacyDiscoveryEnabled() {
 		fmt.Printf("  Workflows:   http://%s/api/v1/workflows/<name>\n", displayHost)
 	}
-	if !s.conf.MCP.Disable {
+	if !s.conf.mcpDisabled() {
 		fmt.Printf("  MCP:         http://%s/api/v1/mcp\n", displayHost)
 	}
 
-	if !s.conf.MCP.Disable {
+	if !s.conf.mcpDisabled() {
 		fmt.Println()
 		fmt.Println("Claude Desktop Configuration")
 		fmt.Println("────────────────────────────")
@@ -199,7 +199,7 @@ func printDevModeInfo(s *graphjinService) {
 
 // mcpMode returns a short string describing the MCP server mode
 func mcpMode(s *graphjinService) string {
-	if s.conf.MCP.Disable {
+	if s.conf.mcpDisabled() {
 		return "disabled"
 	}
 	if s.conf.MCP.Only {
@@ -210,7 +210,7 @@ func mcpMode(s *graphjinService) string {
 
 // printMCPInfo prints which MCP tools are registered on startup (debug log level only)
 func printMCPInfo(s *graphjinService) {
-	if s.conf.MCP.Disable || s.conf.LogLevel != "debug" {
+	if s.conf.mcpDisabled() || s.conf.LogLevel != "debug" {
 		return
 	}
 

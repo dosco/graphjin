@@ -122,7 +122,11 @@ func getValidOperators(dbType string, isArray bool) []string {
 
 // registerPrompts registers all MCP prompts with the server
 func (ms *mcpServer) registerPrompts() {
-	if ms.service.conf.MCP.Disable {
+	if ms.service.conf.mcpDisabled() {
+		return
+	}
+
+	if ms.service.conf.Core.IsSourcesUsed() {
 		return
 	}
 

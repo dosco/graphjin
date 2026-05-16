@@ -51,6 +51,9 @@ func (co *Compiler) compileSelectorDirectives(qc *QCode,
 		case "schema":
 			err = co.compileDirectiveSchema(sel, d)
 
+		case "database":
+			err = co.compileDirectiveDatabase(sel, d)
+
 		case "notRelated", "not_related":
 			err = co.compileDirectiveNotRelated(sel, d)
 
@@ -111,6 +114,15 @@ func (co *Compiler) compileDirectiveSchema(sel *Select, d graph.Directive) (err 
 		return
 	}
 	sel.Schema = arg.Val.Val
+	return
+}
+
+func (co *Compiler) compileDirectiveDatabase(sel *Select, d graph.Directive) (err error) {
+	arg, err := getArg(d.Args, "name", graph.NodeStr)
+	if err != nil {
+		return
+	}
+	sel.Database = arg.Val.Val
 	return
 }
 

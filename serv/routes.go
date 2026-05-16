@@ -96,7 +96,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		}
 	}
 
-	// Legacy Discovery API. In source mode this is disabled unless
+	// Legacy Discovery API. In sources used this is disabled unless
 	// mcp.legacy_discovery is enabled; use catalog/control-plane GraphQL instead.
 	if s.conf.legacyDiscoveryEnabled() {
 		discAuth, err := auth.NewAuthHandlerFunc(s.conf.Auth)
@@ -110,7 +110,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 	// MCP (Model Context Protocol) API
 	// Transport is implicit: HTTP service uses SSE/HTTP, CLI uses stdio via RunMCPStdio()
 	// Auth: Uses same auth middleware as GraphQL/REST endpoints
-	if !s.conf.MCP.Disable {
+	if !s.conf.mcpDisabled() {
 		mcpAuth, err := auth.NewAuthHandlerFunc(s.conf.Auth)
 		if err != nil {
 			s.log.Fatalf("api: error initializing MCP auth handler: %s", err)

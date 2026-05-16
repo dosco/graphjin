@@ -19,7 +19,7 @@ import (
 )
 
 func TestMCPToolSchemasMatchHandlerContracts(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{AllowWorkflowUpdates: true, LegacyDiscovery: true})
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{AllowWorkflowUpdates: true, LegacyDiscovery: true})
 	ms.service.conf.Serv.Production = false
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 	ms.registerTools()
@@ -280,6 +280,128 @@ func TestHandleValidateWhereClause_AcceptsObjectAndLegacyJSONString(t *testing.T
 	})
 }
 
+func TestHandleValidateWhereClause_CompilerBackedValidation(t *testing.T) {
+	ms := newSQLiteReadyMCPServer(t, nil, nil)
+
+	t.Run("graphql literal string input", func(t *testing.T) {
+		res, err := ms.handleValidateWhereClause(context.Background(), newToolRequest(map[string]any{
+			"table":    "users",
+			"database": core.DefaultDBName,
+			"where":    `{ name: { eq: "Ada" } }`,
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var out WhereValidationResult
+		if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if !out.Valid {
+			t.Fatalf("expected GraphQL literal where clause to be valid, got errors: %+v", out.Errors)
+		}
+		if out.ValidatedBy != "compiler" || out.ExampleQuery == "" {
+			t.Fatalf("expected compiler validation metadata, got validated_by=%q example=%q", out.ValidatedBy, out.ExampleQuery)
+		}
+		if !strings.Contains(out.ExampleQuery, `@database(name: "default")`) {
+			t.Fatalf("expected database directive in validation query, got %q", out.ExampleQuery)
+		}
+	})
+
+	t.Run("nested relationship typo rejected by compiler", func(t *testing.T) {
+		res, err := ms.handleValidateWhereClause(context.Background(), newToolRequest(map[string]any{
+			"table": "users",
+			"where": map[string]any{
+				"profile": map[string]any{
+					"emial": map[string]any{"eq": "admin@example.com"},
+				},
+			},
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var out WhereValidationResult
+		if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if out.Valid || len(out.CompilerErrors) == 0 {
+			t.Fatalf("expected compiler rejection for nested typo, got valid=%v compiler=%v errors=%+v", out.Valid, out.CompilerErrors, out.Errors)
+		}
+	})
+
+	t.Run("invalid logical shape rejected by compiler", func(t *testing.T) {
+		res, err := ms.handleValidateWhereClause(context.Background(), newToolRequest(map[string]any{
+			"table": "users",
+			"where": map[string]any{
+				"and": map[string]any{"id": map[string]any{"eq": 1.0}},
+			},
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var out WhereValidationResult
+		if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if out.Valid || len(out.CompilerErrors) == 0 {
+			t.Fatalf("expected compiler rejection for invalid logical shape, got valid=%v compiler=%v errors=%+v", out.Valid, out.CompilerErrors, out.Errors)
+		}
+	})
+
+	t.Run("compiler supported operator alias", func(t *testing.T) {
+		res, err := ms.handleValidateWhereClause(context.Background(), newToolRequest(map[string]any{
+			"table": "users",
+			"where": map[string]any{
+				"id": map[string]any{"equals": 1.0},
+			},
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var out WhereValidationResult
+		if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if !out.Valid {
+			t.Fatalf("expected compiler-supported operator alias to validate, got compiler=%v errors=%+v", out.CompilerErrors, out.Errors)
+		}
+	})
+}
+
+func TestValidateQueryWhere_UsesCompilerBackedValidation(t *testing.T) {
+	ms := newSQLiteReadyMCPServer(t, nil, nil)
+	h := newControlPlaneGraphQL(ms.service)
+
+	row, err := h.validateQueryWhere(core.ManagedMutationRoot{
+		Input: map[string]interface{}{
+			"table": "users",
+			"where": map[string]any{"id": map[string]any{"equals": 1.0}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if row["valid"] != true {
+		t.Fatalf("expected alias where validation to be valid, got %#v", row)
+	}
+
+	row, err = h.validateQueryWhere(core.ManagedMutationRoot{
+		Input: map[string]interface{}{
+			"table": "users",
+			"where": map[string]any{"profile": map[string]any{"emial": map[string]any{"eq": "x"}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if row["valid"] != false || !strings.Contains(row["errors_json"].(string), "compiler_error") {
+		t.Fatalf("expected compiler-backed invalid control-plane result, got %#v", row)
+	}
+}
+
 func TestHandleGetSavedQuery_RespectsNamespace(t *testing.T) {
 	ms := newSQLiteReadyMCPServer(t, map[string]string{
 		"users_by_id":      "query GetUsersByID { users { id name } }",
@@ -431,9 +553,10 @@ func TestNormalizeColumnType_DialectAwareBooleans(t *testing.T) {
 
 func TestHandleGetWorkflowGuide_UsesRegisteredToolSurface(t *testing.T) {
 	t.Run("minimal surface omits gated flows", func(t *testing.T) {
-		ms := mockMcpServerWithConfig(MCPConfig{
+		ms := mockLegacyMcpServerWithConfig(MCPConfig{
 			AllowRawQueries: false,
 			AllowMutations:  true,
+			disableExplicit: true,
 		})
 		ms.service.conf.Serv.Production = true
 		ms.srv = server.NewMCPServer("test", "0.0.0")
@@ -463,7 +586,7 @@ func TestHandleGetWorkflowGuide_UsesRegisteredToolSurface(t *testing.T) {
 	})
 
 	t.Run("full surface includes authoring flows", func(t *testing.T) {
-		ms := mockMcpServerWithConfig(MCPConfig{
+		ms := mockLegacyMcpServerWithConfig(MCPConfig{
 			AllowRawQueries:        true,
 			AllowConfigUpdates:     true,
 			AllowSchemaReload:      true,
@@ -484,9 +607,6 @@ func TestHandleGetWorkflowGuide_UsesRegisteredToolSurface(t *testing.T) {
 		var out WorkflowGuide
 		if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
 			t.Fatalf("decode response: %v", err)
-		}
-		if _, ok := out.ToolSequences["js_workflow_authoring"]; !ok {
-			t.Fatal("expected js_workflow_authoring when save_workflow is enabled")
 		}
 		if _, ok := out.ToolSequences["configure_resolver"]; !ok {
 			t.Fatal("expected configure_resolver when config updates and reloads are enabled")

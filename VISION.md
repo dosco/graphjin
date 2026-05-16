@@ -199,6 +199,18 @@ governed gateway to the organization's data systems, APIs, metadata, files, and
 code. Not a hundred fragile wrappers. One place to see access and tighten it,
 without handing agents the keys to everything.
 
+The point of governance is not to reduce model intelligence to a handful of
+human-derived gates. Dashboards, fixed reports, narrow APIs, and pre-scripted
+workflows reflect what someone already knew to ask. Current models, and the
+stronger models that will follow them, become most useful when they can explore
+the organization inside rules that are explicit, enforceable, and inspectable.
+
+That is the difference between confinement and governed exploration. Humans
+should define ownership, permissions, privacy boundaries, approval requirements,
+cost limits, and audit trails. The model should be free to traverse the live
+graph within those boundaries, discover relationships the human did not know to
+look for, validate its path, and bring back evidence.
+
 The goal is not to make agents harmless by making them powerless. The goal is
 to make them useful inside boundaries the organization can understand. When an
 agent asks to edit source, GraphJin does not trust a plausible patch. It checks

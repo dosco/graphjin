@@ -149,7 +149,7 @@ func Parse(gql []byte) (op Operation, err error) {
 			break
 		}
 
-		if p.peekVal(fragmentToken) {
+		if p.peek(itemName) && p.peekVal(fragmentToken) {
 			p.ignore()
 			if _, err = p.parseFragment(); err != nil {
 				return
@@ -157,7 +157,7 @@ func Parse(gql []byte) (op Operation, err error) {
 
 		} else {
 			if !qf &&
-				(p.peekVal(queryToken, mutationToken, fragmentToken, subscriptionToken) ||
+				((p.peek(itemName) && p.peekVal(queryToken, mutationToken, fragmentToken, subscriptionToken)) ||
 					p.peek(itemObjOpen)) {
 				qs = p.pos
 				qf = true

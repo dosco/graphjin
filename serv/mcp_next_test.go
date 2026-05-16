@@ -3,7 +3,7 @@ package serv
 import "testing"
 
 func TestNextForDiscover_NoCandidates(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{
 		AllowDevTools:      true,
 		AllowConfigUpdates: true,
 	})
@@ -21,7 +21,7 @@ func TestNextForDiscover_NoCandidates(t *testing.T) {
 }
 
 func TestNextForSetupPlan_ReadyCandidate(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{
 		AllowDevTools:      true,
 		AllowConfigUpdates: true,
 	})
@@ -44,7 +44,7 @@ func TestNextForSetupPlan_ReadyCandidate(t *testing.T) {
 }
 
 func TestNextForSetupPlan_ReadyCandidateWithoutConfigUpdates(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{
 		AllowDevTools:      true,
 		AllowConfigUpdates: false,
 	})
@@ -64,7 +64,7 @@ func TestNextForSetupPlan_ReadyCandidateWithoutConfigUpdates(t *testing.T) {
 }
 
 func TestNextForConnectionTest_AuthFailed(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{
 		AllowDevTools: true,
 	})
 
@@ -105,7 +105,7 @@ func TestNextForApplyDatabaseSetup_SchemaReady(t *testing.T) {
 }
 
 func TestNextForOnboardingStatus_NoConfiguredDatabases(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{
 		AllowDevTools: true,
 	})
 
@@ -122,7 +122,7 @@ func TestNextForOnboardingStatus_NoConfiguredDatabases(t *testing.T) {
 }
 
 func TestNextForConfigUpdate_ConnectionFailed(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{
 		AllowDevTools: true,
 	})
 

@@ -261,8 +261,11 @@ type RateLimiter struct {
 // - HTTP transport uses the same auth as GraphQL/REST (JWT, headers, etc.)
 // - Stdio transport uses env vars (GRAPHJIN_USER_ID, GRAPHJIN_USER_ROLE) or config values
 type MCPConfig struct {
-	// Disable the MCP server (MCP is enabled by default)
-	Disable bool `jsonschema:"title=Disable MCP Server,default=false"`
+	// Disable the MCP server. MCP is enabled by default except for legacy
+	// database-only prod/agentic configs, where it must be explicitly enabled.
+	Disable bool `mapstructure:"disable" jsonschema:"title=Disable MCP Server,default=false"`
+
+	disableExplicit bool
 
 	// Allow mutation operations via raw MCP GraphQL execution.
 	// Auto-enabled in dev mode. Default: false
@@ -274,7 +277,7 @@ type MCPConfig struct {
 
 	// LegacyDiscovery registers the older MCP discovery/syntax tools and legacy
 	// HTTP helper endpoints such as /api/v1/discovery and /api/v1/workflows.
-	// Disabled by default in source mode because catalog/control-plane GraphQL
+	// Disabled by default in sources used because catalog/control-plane GraphQL
 	// is now the primary AI discovery and action surface.
 	LegacyDiscovery bool `mapstructure:"legacy_discovery" jsonschema:"title=Enable Legacy Discovery Tools,default=false"`
 
@@ -516,6 +519,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
+	config.MCP.disableExplicit = viper.IsSet("mcp.disable")
 
 	return config, nil
 }
@@ -552,6 +556,7 @@ func NewConfig(config, format string) (*Config, error) {
 	if err := viper.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
+	c.MCP.disableExplicit = viper.IsSet("mcp.disable")
 
 	return c, nil
 }
@@ -619,8 +624,8 @@ func newViperWithDefaults() *viper.Viper {
 
 	vi.SetDefault("auth.subs_creds_in_vars", false)
 
-	// MCP defaults (MCP enabled by default, use mcp.disable: true to turn off)
-	vi.SetDefault("mcp.disable", false)
+	// MCP defaults. mcp.disable intentionally has no viper default so we can
+	// tell whether production legacy configs explicitly enabled MCP.
 	vi.SetDefault("mcp.legacy_discovery", false)
 	vi.SetDefault("mcp.only", false)
 	vi.SetDefault("mcp.cursor_cache_ttl", 1800)   // 30 minutes
