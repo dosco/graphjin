@@ -5,9 +5,11 @@ import Hero from '../components/Hero.astro';
 import DatabaseLogos from '../components/DatabaseLogos.astro';
 
 import HowItWorks from '../components/landing/sections/HowItWorks.astro';
+import Agentic from '../components/landing/sections/Agentic.astro';
 import WhyGraphjin from '../components/landing/sections/WhyGraphjin.astro';
 import Federation from '../components/landing/sections/Federation.astro';
 import Mcp from '../components/landing/sections/Mcp.astro';
+import SecurityModel from '../components/landing/sections/SecurityModel.astro';
 import CodeSQL from '../components/landing/sections/CodeSQL.astro';
 import Filesystem from '../components/landing/sections/Filesystem.astro';
 import OpenApi from '../components/landing/sections/OpenApi.astro';
@@ -25,8 +27,10 @@ import Footer from '../components/Footer.astro';
 
 const tocItems = [
   { id: 'how', label: 'How it works' },
+  { id: 'agentic', label: 'Agentic' },
   { id: 'why', label: 'Why GraphJin' },
   { id: 'mcp', label: 'MCP' },
+  { id: 'security-model', label: 'Security model' },
   { id: 'ai-queries', label: 'AI queries' },
   { id: 'codesql', label: 'CodeSQL' },
   { id: 'fstable', label: 'Filesystem' },
@@ -40,7 +44,10 @@ const tocItems = [
 ];
 ---
 
-<Layout title="GraphJin — The compiler that connects AI to your databases">
+<Layout
+  title="GraphJin — The compiler that connects AI to your organization"
+  description="GraphJin auto-learns your schema and gives AI agents one governed query graph across databases, APIs, source code, filesystems, workflows, and security posture."
+>
   <Navbar />
 
   <OnThisPage items={tocItems} />
@@ -50,9 +57,11 @@ const tocItems = [
     <DatabaseLogos />
 
     <HowItWorks />
+    <Agentic />
     <WhyGraphjin />
 
     <Mcp />
+    <SecurityModel />
     <ClaudeShowcase client:visible />
     <CodeSQL />
     <Filesystem />

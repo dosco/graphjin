@@ -38,19 +38,19 @@ roles:
   id="auth"
   eyebrow="SECURITY"
   title="OAuth, JWT, OIDC — and row-level rules."
-  lede="JWT from Auth0, Firebase, Okta, or any JWKS endpoint. Header- or cookie-based sessions for legacy stacks. OIDC device-code login for the CLI and MCP. Whatever the source, every request lands in the same context — and RBAC + row-level filters do the rest."
+  lede="JWT from Auth0, Firebase, Okta, or any JWKS endpoint. Header- or cookie-based sessions for legacy stacks. OIDC device-code login for the CLI and MCP. Whatever the source, every request lands in the same context, so one AI surface can be governed with RBAC, row-level filters, and audited policy."
 >
   <Fragment slot="body">
     <p>
       Configure once. Every transport — HTTP, WebSocket, SSE, MCP — runs the
       same auth pipeline. <strong>Roles + row-level filters</strong> are
-      authored in YAML and enforced inside the compiler, so even a workflow
-      cannot read or write outside its lane.
+      authored in YAML and enforced inside the compiler, so even an agent-run
+      workflow cannot read or write outside its lane.
     </p>
     <p>
       The CLI and MCP authenticate via OIDC device-code: open a URL, approve,
-      done. Tokens refresh automatically — no copy-pasting bearer strings into
-      shell history.
+      done. Tokens refresh automatically, and the resulting permissions are the
+      same ones reflected back through catalog and security posture rows.
     </p>
   </Fragment>
 

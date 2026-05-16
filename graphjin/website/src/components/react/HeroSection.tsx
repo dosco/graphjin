@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Copy, Check, ArrowRight, Github } from "lucide-react";
+import { Copy, Check, ArrowRight, Shield } from "lucide-react";
 import GraphField from "./GraphField";
 
 const INSTALL_COMMANDS = [
@@ -12,11 +12,12 @@ type CommandId = (typeof INSTALL_COMMANDS)[number]["id"];
 
 const PILLS = [
   "Databases",
-  "HTTP APIs",
+  "APIs",
   "Source code",
-  "S3 · GCS · files",
-  "MCP server",
-  "One query graph",
+  "Files",
+  "Workflows",
+  "Security posture",
+  "MCP + GraphQL",
 ];
 
 export default function HeroSection() {
@@ -70,7 +71,7 @@ export default function HeroSection() {
               maxWidth: "20ch",
             }}
           >
-            The compiler that connects AI to your databases.
+            The compiler that connects AI to your organization.
           </h1>
 
           <p
@@ -78,9 +79,23 @@ export default function HeroSection() {
             style={{ color: "var(--color-muted)" }}
           >
             Auto-learns your schema and gives AI agents one governed query
-            graph across your databases, APIs, source code, and filesystems.
-            Ask about the data, the services that enrich it, the code that
-            touches it, and the files around it from one MCP-ready binary.
+            graph across your databases, APIs, source code, filesystems, and
+            workflows. Ask about the data, the services that enrich it, the code
+            that touches it, and the files around it from one MCP-ready binary.
+          </p>
+
+          <p
+            className="mt-4 max-w-3xl rounded-xl border px-4 py-3 text-sm md:text-base leading-relaxed"
+            style={{
+              color: "var(--color-muted)",
+              background: "color-mix(in srgb, var(--color-surface) 78%, transparent)",
+              borderColor: "color-mix(in srgb, var(--color-accent) 28%, var(--color-border))",
+            }}
+          >
+            <strong style={{ color: "var(--color-text)" }}>One config</strong>{" "}
+            defines what agents can discover, query, execute, edit, and never
+            touch. Humans can audit it. Models can inspect it. GraphJin enforces
+            it across your entire AI surface.
           </p>
 
           <div
@@ -100,14 +115,14 @@ export default function HeroSection() {
 
           {/* install bar */}
           <div
-            className="mt-10 inline-flex items-center rounded-xl border overflow-hidden"
+            className="mt-10 flex w-full max-w-xl flex-col overflow-hidden rounded-xl border sm:inline-flex sm:w-auto sm:max-w-none sm:flex-row sm:items-center"
             style={{
               background: "var(--color-surface)",
               borderColor: "var(--color-border)",
             }}
           >
             <div
-              className="flex items-center border-r"
+              className="flex items-center justify-center border-b sm:border-b-0 sm:border-r"
               style={{ borderColor: "var(--color-border)" }}
             >
               {INSTALL_COMMANDS.map((cmd) => (
@@ -130,7 +145,7 @@ export default function HeroSection() {
               ))}
             </div>
             <code
-              className="px-4 py-2.5 text-sm font-mono whitespace-nowrap"
+              className="px-4 py-2.5 text-sm font-mono break-all sm:whitespace-nowrap"
               style={{ color: "var(--color-text)" }}
             >
               {activeCommand.command}
@@ -138,7 +153,7 @@ export default function HeroSection() {
             <button
               type="button"
               onClick={handleCopy}
-              className="px-3 py-2.5 transition-colors border-l"
+              className="px-3 py-2.5 transition-colors border-t sm:border-l sm:border-t-0"
               style={{
                 borderColor: "var(--color-border)",
                 color: "var(--color-muted)",
@@ -154,19 +169,17 @@ export default function HeroSection() {
           </div>
 
           {/* CTAs */}
-          <div className="mt-7 flex items-center justify-center gap-3">
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             <a href="#quickstart" className="btn-primary">
               Get started
               <ArrowRight className="w-4 h-4" />
             </a>
             <a
-              href="https://github.com/dosco/graphjin"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="#security-model"
               className="btn-secondary"
             >
-              <Github className="w-4 h-4" />
-              GitHub
+              <Shield className="w-4 h-4" />
+              Security model
             </a>
           </div>
         </div>

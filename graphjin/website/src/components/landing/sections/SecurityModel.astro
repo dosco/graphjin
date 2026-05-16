@@ -1,0 +1,208 @@
+---
+import Section from "../Section.astro";
+import CodeCard from "../CodeCard.astro";
+
+const controls = [
+  {
+    title: "One auditable config",
+    body: "Databases, sources, roles, MCP settings, saved queries, mutations, read-only boundaries, and workflow access live in one policy artifact.",
+  },
+  {
+    title: "Same auth everywhere",
+    body: "HTTP, WebSocket, SSE, CLI, workflows, and MCP land in the same request context before GraphJin compiles or executes work.",
+  },
+  {
+    title: "RBAC and row filters",
+    body: "Roles, table permissions, column blocks, automatic filters, and mutation limits are enforced inside the compiler.",
+  },
+  {
+    title: "Saved queries and allow-lists",
+    body: "Production agents can run named, reviewed query contracts instead of inventing arbitrary operations at runtime.",
+  },
+  {
+    title: "Read-only source boundaries",
+    body: "Filesystems, CodeSQL, databases, and control-plane tables can expose discovery without granting writes.",
+  },
+  {
+    title: "Preview before change",
+    body: "CodeSQL change sets require file hashes, exact ranges, old text, optional locks, and a preview/apply loop.",
+  },
+];
+
+const securityQuery = `query {
+  summary: gj_security(id: "summary") {
+    mode
+    summary
+    summary_json
+  }
+
+  findings: gj_security(
+    where: {
+      kind: { eq: "finding" }
+      severity: { in: ["high", "critical"] }
+    }
+    order_by: { severity_rank: desc }
+  ) {
+    severity
+    title
+    recommendation
+    evidence_json
+  }
+
+  policy: gj_security(where: { kind: { eq: "policy" } }) {
+    capability
+    action
+    effective
+    weakens_default
+    read_only
+  }
+}`;
+---
+
+<Section
+  id="security-model"
+  eyebrow="SECURITY MODEL"
+  title="Safer agents, not smaller agents."
+  lede="GraphJin makes agents safer by giving them explicit boundaries, not by making them blind. Agents can explore more of the live organization because policy, evidence, and action paths are inspectable and enforced."
+>
+  <div class="security-layout">
+    <div class="security-copy">
+      <div class="security-thesis">
+        <h3>One config defines the AI surface.</h3>
+        <p>
+          Humans can review and diff the policy. Models can inspect the same
+          posture through <code>gj_catalog</code> and <code>gj_security</code>
+          before acting. GraphJin enforces that policy across GraphQL, MCP,
+          workflows, code, files, APIs, and databases.
+        </p>
+      </div>
+
+      <div class="security-controls">
+        {controls.map((control) => (
+          <article>
+            <h3>{control.title}</h3>
+            <p>{control.body}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+
+    <aside class="security-query">
+      <CodeCard filename="policy-before-action.graphql" language="graphql" code={securityQuery} />
+      <p>
+        <strong>Policy before action:</strong> agents check high-risk findings,
+        effective permissions, and read-only state before requesting a write,
+        workflow execution, config update, file operation, or code edit.
+      </p>
+    </aside>
+  </div>
+</Section>
+
+<style>
+  .security-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  .security-copy {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .security-thesis {
+    border: 1px solid color-mix(in srgb, var(--color-accent) 26%, var(--color-border));
+    border-radius: 16px;
+    padding: 1.35rem;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--color-accent-soft) 35%, transparent), transparent 72%),
+      var(--color-surface);
+  }
+
+  :root[data-theme="dark"] .security-thesis {
+    background:
+      linear-gradient(180deg, rgba(34, 211, 238, 0.08), transparent 72%),
+      var(--color-surface);
+  }
+
+  .security-thesis h3,
+  .security-controls h3 {
+    color: var(--color-text);
+    font-family: var(--font-display);
+    font-weight: 700;
+  }
+
+  .security-thesis h3 {
+    font-size: clamp(1.35rem, 3vw, 2rem);
+    line-height: 1.08;
+  }
+
+  .security-thesis p,
+  .security-controls p,
+  .security-query p {
+    margin-top: 0.55rem;
+    color: var(--color-muted);
+    line-height: 1.65;
+  }
+
+  .security-thesis code {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  .security-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .security-controls article {
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 1rem;
+    background: var(--color-surface);
+  }
+
+  .security-controls h3 {
+    font-size: 1rem;
+  }
+
+  .security-controls p {
+    font-size: 0.9rem;
+  }
+
+  .security-query {
+    position: sticky;
+    top: 6rem;
+  }
+
+  .security-query p {
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 1rem;
+    background: var(--color-surface);
+    font-size: 0.94rem;
+  }
+
+  .security-query strong {
+    color: var(--color-text);
+  }
+
+  @media (max-width: 980px) {
+    .security-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .security-query {
+      position: static;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .security-controls {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

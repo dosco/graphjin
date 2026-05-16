@@ -14,26 +14,26 @@ import {
 const EASE = [0.25, 0.46, 0.45, 0.94] as const;
 
 const stats = [
-  { value: "1", label: "SQL statement per query, regardless of nesting depth." },
-  { value: "8+", label: "Databases supported with the same GraphQL surface." },
+  { value: "1", label: "Auditable config for agent access across the AI surface." },
+  { value: "8+", label: "Databases supported through the same GraphQL surface." },
   { value: "0", label: "Lines of resolver code. The compiler does the work." },
 ];
 
 const features = [
   {
     icon: Search,
-    title: "Auto schema discovery",
-    body: "Tables, columns, foreign keys, views — introspected on boot and refreshed live.",
+    title: "Catalog discovery spine",
+    body: "Agents discover tables, columns, relationships, syntax, workflows, and safety notes through gj_catalog.",
   },
   {
     icon: Cpu,
-    title: "Cross-database joins",
-    body: "Compose data across multiple databases in a single GraphQL request.",
+    title: "Compiler engine",
+    body: "GraphQL compiles into optimized database work, with cross-database composition when sources allow it.",
   },
   {
     icon: Shield,
-    title: "Production security",
-    body: "RBAC, JWT, row-level rules, allow-lists, audit logs — out of the box.",
+    title: "Security posture graph",
+    body: "gj_security exposes policy rows and findings so agents can check risk before write-capable actions.",
   },
   {
     icon: Radio,
@@ -42,8 +42,8 @@ const features = [
   },
   {
     icon: Database,
-    title: "Workflows",
-    body: "Chain queries with JS — invoke from REST, MCP, or another workflow.",
+    title: "Governed workflows",
+    body: "Discover approved workflows, inspect variable contracts, and execute through GraphQL, REST, MCP, or CLI.",
   },
   {
     icon: Lock,
@@ -57,13 +57,13 @@ const features = [
   },
   {
     icon: GitBranch,
-    title: "Recursive queries",
-    body: "Walk graphs and hierarchies natively — no custom resolvers.",
+    title: "CodeSQL preview/apply",
+    body: "Source edits use hashes, exact ranges, old text, optional locks, and preview diffs before apply.",
   },
   {
     icon: Layers,
-    title: "Redis cache",
-    body: "Response caching with mutation-driven invalidation.",
+    title: "Auditable config",
+    body: "One YAML surface defines roles, sources, saved queries, MCP permissions, and read-only boundaries.",
   },
 ];
 
@@ -87,12 +87,12 @@ export default function FeatureGrid() {
             className="mt-4 text-3xl md:text-5xl font-display font-bold tracking-tight"
             style={{ color: "var(--color-text)", lineHeight: 1.1 }}
           >
-            Everything a real backend needs.
+            Everything a governed AI surface needs.
           </h2>
           <p className="mt-4 text-lg leading-relaxed" style={{ color: "var(--color-muted)" }}>
-            One binary, one config file — federation, MCP, uploads, auth,
-            subscriptions, and a CLI. No plugins, no add-ons, no surprise
-            billing tiers.
+            One binary, one config file — compiler, catalog, MCP, auth,
+            workflows, CodeSQL, subscriptions, and a CLI. The agent sees a
+            map; the organization keeps the controls.
           </p>
         </header>
 
