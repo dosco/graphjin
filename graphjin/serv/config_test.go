@@ -42,12 +42,66 @@ sources:
 	}
 }
 
-func TestSourceModeRejectsLegacyDatabaseSection(t *testing.T) {
+func TestLegacyProductionDisablesMCPByDefault(t *testing.T) {
+	conf, err := NewConfig(`
+production: true
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if !conf.mcpDisabled() {
+		t.Fatal("legacy production config should disable MCP by default")
+	}
+}
+
+func TestLegacyProductionCanEnableMCPExplicitly(t *testing.T) {
+	conf, err := NewConfig(`
+production: true
+mcp:
+  disable: false
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if conf.mcpDisabled() {
+		t.Fatal("explicit mcp.disable=false should enable MCP in legacy production config")
+	}
+}
+
+func TestLegacyAgenticKeepsMCPEnabledByDefault(t *testing.T) {
+	conf, err := NewConfig(`
+production: true
+security_mode: agentic
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if conf.mcpDisabled() {
+		t.Fatal("legacy agentic config should keep MCP enabled by default")
+	}
+}
+
+func TestSourcesProductionKeepsMCPEnabledByDefault(t *testing.T) {
+	conf, err := NewConfig(`
+production: true
+sources:
+  - name: graphjin
+    kind: graphjin
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if conf.mcpDisabled() {
+		t.Fatal("sources production config should keep MCP enabled by default")
+	}
+}
+
+func TestIsSourcesUsedRejectsLegacyDatabaseSection(t *testing.T) {
 	clearLegacyDatabaseEnv(t)
 	conf, err := NewConfig(`
 sources:
   - name: app
-    kind: sql
+    kind: database
     type: sqlite
     path: /tmp/app.sqlite
 
@@ -70,12 +124,12 @@ database:
 // user-supplied legacy database, so any sources-only config was
 // wrongly rejected. The validator must only fail when the user
 // actually wrote a `database:` block (or set GJ_DATABASE_* env).
-func TestSourceModeAcceptsSourcesWithoutLegacyDatabase(t *testing.T) {
+func TestIsSourcesUsedAcceptsSourcesWithoutLegacyDatabase(t *testing.T) {
 	clearLegacyDatabaseEnv(t)
 	conf, err := NewConfig(`
 sources:
   - name: app
-    kind: sql
+    kind: database
     type: sqlite
     path: /tmp/app.sqlite
     default: true
@@ -90,13 +144,13 @@ sources:
 	}
 }
 
-func TestSourceModeRejectsLegacyDatabaseEnv(t *testing.T) {
+func TestIsSourcesUsedRejectsLegacyDatabaseEnv(t *testing.T) {
 	clearLegacyDatabaseEnv(t)
 	t.Setenv("GJ_DATABASE_HOST", "legacy-host")
 	conf, err := NewConfig(`
 sources:
   - name: app
-    kind: sql
+    kind: database
     type: sqlite
     path: /tmp/app.sqlite
 `, "yaml")

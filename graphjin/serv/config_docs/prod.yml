@@ -95,8 +95,9 @@ hot_deploy: true
 # ============================================================================
 
 mcp:
-  # Disable MCP endpoints entirely
-  disable: false
+  # Disable MCP endpoints entirely. Legacy database-only production configs
+  # default to disabled; set this to false only for trusted MCP deployments.
+  disable: true
 
   # SECURITY: Config updates disabled in production
   # Databases, tables, roles must be configured in this file or via hot deploy

@@ -282,7 +282,7 @@ func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload a
 	case "query_catalog":
 		return ms.newNextGuidance("catalog_results", []NextOption{
 			optionWithTemplate(
-				nextOption("get_catalog_card", 1, "Inspect the most relevant catalog result in detail.", "Use a catalog item id returned by query_catalog.", []string{"id"}, nil),
+				nextOption("query_catalog", 1, "Inspect the most relevant catalog result in detail.", "Use a catalog item id returned by query_catalog.", []string{"id"}, nil),
 				map[string]any{"id": "<catalog_item_id>"},
 			),
 			optionWithTemplate(
@@ -730,7 +730,7 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 		case result.Status == "healthy" && result.SchemaReady:
 			return ms.newNextGuidance("health_ok_schema_ready", []NextOption{
 				nextOption("query_catalog", 1, "Health is good and schema is ready, so continue with catalog exploration.", "Start querying against the healthy database surface.", nil, []string{"search", "where"}),
-				nextOption("get_catalog_card", 2, "Inspect a catalog item in detail now that the connection is healthy.", "Review columns and relationships before querying.", []string{"id"}, nil),
+				nextOption("query_catalog", 2, "Inspect a catalog item in detail now that the connection is healthy.", "Review columns and relationships before querying.", []string{"id"}, nil),
 			})
 		case result.Status == "healthy":
 			return ms.newNextGuidance("health_ok_schema_not_ready", []NextOption{

@@ -65,9 +65,10 @@ func (s *graphjinService) initConfig() error {
 	c := s.conf
 	c.dirty = true
 
-	if err := validateServiceSourceModeConfig(c); err != nil {
+	if err := validateServiceIsSourcesUsedConfig(c); err != nil {
 		return err
 	}
+	applySourceCapabilitySourceDefaults(c)
 	if err := normalizeServiceSources(c); err != nil {
 		return err
 	}
@@ -164,10 +165,10 @@ func (s *graphjinService) initDB() error {
 		return nil
 	}
 
-	// In source mode, absence of SQL/CodeSQL connection details means there is
+	// In sources used, absence of SQL/CodeSQL connection details means there is
 	// no legacy database to fall back to. Virtual/system sources get a small
 	// host database in normalStart when needed.
-	if s.conf.Core.SourceMode() && !s.hasDatabaseConfigs() {
+	if s.conf.Core.IsSourcesUsed() && !s.hasDatabaseConfigs() {
 		return nil
 	}
 
@@ -295,6 +296,7 @@ func (s *graphjinService) newDBFromDatabaseConfigInto(name string, dbConf core.D
 		if err != nil {
 			return nil, err
 		}
+		readOnly, watch := s.codeSQLSourcePolicy(name, dbConf)
 		if runtimeCore != nil {
 			if runtimeCore.Databases == nil {
 				runtimeCore.Databases = make(map[string]core.DatabaseConfig)
@@ -305,7 +307,7 @@ func (s *graphjinService) newDBFromDatabaseConfigInto(name string, dbConf core.D
 			}
 		}
 		if managed != nil {
-			managed[name] = managedDB{handle: handle, watch: !dbConf.ReadOnly, readOnly: dbConf.ReadOnly}
+			managed[name] = managedDB{handle: handle, watch: watch, readOnly: readOnly}
 		}
 		if stats != nil {
 			s.log.Infof("codesql database %q indexed: added=%d changed=%d deleted=%d skipped=%d cache=%s",
@@ -452,7 +454,7 @@ func (s *graphjinService) initResponseCache() error {
 // This cache maps short numeric IDs to encrypted cursor strings for LLM-friendly pagination
 func (s *graphjinService) initCursorCache() error {
 	// Skip if MCP is disabled
-	if s.conf.MCP.Disable {
+	if s.conf.mcpDisabled() {
 		return nil
 	}
 

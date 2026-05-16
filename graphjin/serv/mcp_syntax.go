@@ -407,7 +407,11 @@ var mutationSyntaxReference = MutationSyntaxReference{
 
 // registerResources registers MCP resources that clients can prefetch.
 func (ms *mcpServer) registerResources() {
-	if ms.service != nil && ms.service.conf != nil && ms.service.conf.MCP.Disable {
+	if ms.service != nil && ms.service.conf != nil && ms.service.conf.mcpDisabled() {
+		return
+	}
+
+	if ms.service != nil && ms.service.conf != nil && ms.service.conf.Core.IsSourcesUsed() {
 		return
 	}
 

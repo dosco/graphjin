@@ -54,6 +54,16 @@ func MCPAllToolNames() []string {
 	conf.MCP.LegacyDiscovery = true
 
 	out := mcpToolList(conf)
+	found := false
+	for _, name := range out {
+		if name == "graphql_help" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		out = append(out, "graphql_help")
+	}
 	return append([]string(nil), out...)
 }
 

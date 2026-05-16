@@ -112,7 +112,7 @@ func TestRegisterConfigTools_GetCurrentConfigDevOnly(t *testing.T) {
 }
 
 func TestRegisterTools_QuickSetupNotRegistered(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{
 		AllowRawQueries:    true,
 		AllowConfigUpdates: true,
 		AllowSchemaReload:  true,
@@ -160,6 +160,58 @@ func TestMCPDisabledRegistersNoPromptsOrResources(t *testing.T) {
 	}
 }
 
+func TestLegacyProductionMCPDisabledByDefault(t *testing.T) {
+	conf := &Config{Serv: Serv{Production: true}}
+	if listed := mcpToolList(conf); len(listed) != 0 {
+		t.Fatalf("expected legacy production MCP tool list to be empty by default, got %v", listed)
+	}
+
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Serv.Production = true
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerTools()
+
+	if tools := ms.srv.ListTools(); len(tools) != 0 {
+		t.Fatalf("expected legacy production to register no tools by default, got %v", toolNamesFromServer(tools))
+	}
+}
+
+func TestLegacyProductionMCPExplicitEnable(t *testing.T) {
+	conf := &Config{
+		Serv: Serv{
+			Production: true,
+			MCP:        MCPConfig{disableExplicit: true},
+		},
+	}
+	if listed := mcpToolList(conf); len(listed) == 0 {
+		t.Fatal("expected explicit mcp.disable=false to enable legacy production MCP tools")
+	}
+}
+
+func TestLegacyAgenticMCPEnabledByDefault(t *testing.T) {
+	conf := &Config{
+		Core: core.Config{SecurityMode: "agentic"},
+		Serv: Serv{Production: true},
+	}
+	if listed := mcpToolList(conf); len(listed) == 0 {
+		t.Fatal("expected legacy agentic MCP tools to be enabled by default")
+	}
+}
+
+func TestSourcesUsedRegistersNoDefaultPromptsOrResources(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.srv = server.NewMCPServer("test", "0.0.0", server.WithPromptCapabilities(true), server.WithResourceCapabilities(true, false))
+	ms.registerPrompts()
+	ms.registerResources()
+
+	if prompts := promptNamesFromServer(t, ms.srv); len(prompts) != 0 {
+		t.Fatalf("expected no prompts in sources-used mode, got %v", prompts)
+	}
+	if resources := resourceURIsFromServer(t, ms.srv); len(resources) != 0 {
+		t.Fatalf("expected no resources in sources-used mode, got %v", resources)
+	}
+}
+
 func TestMCPServerInstructions_Disabled(t *testing.T) {
 	text := mcpServerInstructions(&Config{Serv: Serv{MCP: MCPConfig{Disable: true}}})
 	if !strings.Contains(text, "GraphJin MCP is disabled by configuration") {
@@ -184,26 +236,75 @@ func TestRegisterTools_CatalogDefaultHidesLegacyDiscovery(t *testing.T) {
 	ms.registerTools()
 
 	tools := ms.srv.ListTools()
-	for _, name := range []string{"query_catalog", "get_catalog_card", "get_catalog_entrypoints", "get_catalog_capabilities"} {
+	if listed := mcpToolList(ms.service.conf); strings.Join(listed, ",") != "graphql_help,query_catalog,execute_saved_query,validate_where_clause" {
+		t.Fatalf("unexpected sources-used mcpToolList: %v", listed)
+	}
+	for _, name := range []string{"graphql_help", "query_catalog", "execute_saved_query", "validate_where_clause"} {
 		if _, exists := tools[name]; !exists {
 			t.Fatalf("%s should be registered by default", name)
 		}
 	}
-	for _, name := range []string{"list_tables", "describe_table", "find_path", "get_table_sample", "get_query_syntax", "get_mutation_syntax", "get_workflow_guide", "list_workflows"} {
+	if len(tools) != 4 {
+		t.Fatalf("sources-used default tools should be exactly 4, got %v", toolNamesFromServer(tools))
+	}
+	for _, name := range []string{"get_catalog_card", "get_catalog_entrypoints", "get_catalog_capabilities", "list_tables", "describe_table", "find_path", "get_table_sample", "get_query_syntax", "get_mutation_syntax", "get_workflow_guide", "list_workflows", "write_query", "write_mutation", "fix_query_error", "get_config_docs"} {
 		if _, exists := tools[name]; exists {
-			t.Fatalf("%s should be hidden unless mcp.legacy_discovery is enabled", name)
+			t.Fatalf("%s should be hidden in sources-used default MCP registration", name)
 		}
 	}
 }
 
-func TestRegisterTools_LegacyDiscoveryOptIn(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{LegacyDiscovery: true})
+func TestRegisterTools_SourcesUsedIgnoresLegacyDiscoveryFlag(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{LegacyDiscovery: true, AllowRawQueries: true, AllowWorkflowExecution: true})
 	ms.service.conf.Serv.Production = false
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 	ms.registerTools()
 
 	tools := ms.srv.ListTools()
-	for _, name := range []string{"query_catalog", "list_tables", "describe_table", "find_path", "get_query_syntax", "get_workflow_guide", "list_workflows"} {
+	if listed := mcpToolList(ms.service.conf); strings.Join(listed, ",") != "graphql_help,query_catalog,execute_saved_query,validate_where_clause" {
+		t.Fatalf("unexpected sources-used mcpToolList with legacy discovery: %v", listed)
+	}
+	if len(tools) != 4 {
+		t.Fatalf("sources-used tools should ignore legacy discovery and raw-query gates, got %v", toolNamesFromServer(tools))
+	}
+	for _, name := range []string{"get_query_syntax", "list_tables", "execute_workflow", "execute_graphql"} {
+		if _, exists := tools[name]; exists {
+			t.Fatalf("%s should remain hidden in sources-used mode", name)
+		}
+	}
+}
+
+func TestRegisterTools_SourcesUsedWithoutCatalogDoesNotAdvertiseQueryCatalog(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Core.Sources = []core.SourceConfig{{Name: "app", Kind: "database"}}
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerTools()
+
+	tools := ms.srv.ListTools()
+	if listed := strings.Join(mcpToolList(ms.service.conf), ","); listed != "execute_saved_query,validate_where_clause" {
+		t.Fatalf("unexpected sources-used tool list without catalog: %s", listed)
+	}
+	if _, exists := tools["query_catalog"]; exists {
+		t.Fatal("query_catalog should not register without the graphjin catalog source")
+	}
+	if _, exists := tools["graphql_help"]; exists {
+		t.Fatal("graphql_help should not register without the graphjin catalog source")
+	}
+	for _, name := range []string{"execute_saved_query", "validate_where_clause"} {
+		if _, exists := tools[name]; !exists {
+			t.Fatalf("%s should still register in sources-used mode without catalog", name)
+		}
+	}
+}
+
+func TestRegisterTools_LegacyDiscoveryOptIn(t *testing.T) {
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{LegacyDiscovery: true})
+	ms.service.conf.Serv.Production = false
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerTools()
+
+	tools := ms.srv.ListTools()
+	for _, name := range []string{"list_tables", "describe_table", "find_path", "get_query_syntax", "get_workflow_guide", "list_workflows"} {
 		if _, exists := tools[name]; !exists {
 			t.Fatalf("%s should be registered when legacy discovery is enabled", name)
 		}
@@ -212,7 +313,7 @@ func TestRegisterTools_LegacyDiscoveryOptIn(t *testing.T) {
 
 func TestRegisterTools_LegacyExecuteWorkflowRequiresGate(t *testing.T) {
 	t.Run("hidden without execution gate", func(t *testing.T) {
-		ms := mockMcpServerWithConfig(MCPConfig{LegacyDiscovery: true})
+		ms := mockLegacyMcpServerWithConfig(MCPConfig{LegacyDiscovery: true})
 		ms.srv = server.NewMCPServer("test", "0.0.0")
 		ms.registerTools()
 
@@ -222,7 +323,7 @@ func TestRegisterTools_LegacyExecuteWorkflowRequiresGate(t *testing.T) {
 	})
 
 	t.Run("registered when legacy discovery and execution gate are enabled", func(t *testing.T) {
-		ms := mockMcpServerWithConfig(MCPConfig{LegacyDiscovery: true, AllowWorkflowExecution: true})
+		ms := mockLegacyMcpServerWithConfig(MCPConfig{LegacyDiscovery: true, AllowWorkflowExecution: true})
 		ms.srv = server.NewMCPServer("test", "0.0.0")
 		ms.registerTools()
 
@@ -233,10 +334,10 @@ func TestRegisterTools_LegacyExecuteWorkflowRequiresGate(t *testing.T) {
 }
 
 func TestHandleQueryCatalog_SearchWhereOrderExplain(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
 
 	res, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{
-		"search":   "runing total",
+		"search":   "running total",
 		"where":    map[string]any{"kind": map[string]any{"in": []any{"directive", "query_pattern"}}},
 		"order_by": map[string]any{"score": "desc"},
 		"explain":  true,
@@ -262,31 +363,56 @@ func TestHandleQueryCatalog_SearchWhereOrderExplain(t *testing.T) {
 	}
 }
 
+func TestHandleCatalogEntrypointsAndCapabilitiesUseGraphQL(t *testing.T) {
+	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
+
+	entryRes, err := ms.handleGetCatalogEntrypoints(context.Background(), newToolRequest(nil))
+	if err != nil {
+		t.Fatalf("handle get_catalog_entrypoints: %v", err)
+	}
+	entryText := assertToolSuccess(t, entryRes)
+	var entryOut CatalogEntrypointsResult
+	if err := json.Unmarshal([]byte(entryText), &entryOut); err != nil {
+		t.Fatalf("decode get_catalog_entrypoints response: %v", err)
+	}
+	if len(entryOut.Entrypoints) == 0 || entryOut.Entrypoints[0].Kind != "entrypoint" {
+		t.Fatalf("expected GraphQL-backed catalog entrypoints, got %+v", entryOut.Entrypoints)
+	}
+
+	capRes, err := ms.handleGetCatalogCapabilities(context.Background(), newToolRequest(nil))
+	if err != nil {
+		t.Fatalf("handle get_catalog_capabilities: %v", err)
+	}
+	capText := assertToolSuccess(t, capRes)
+	var capOut CatalogCapabilitiesResult
+	if err := json.Unmarshal([]byte(capText), &capOut); err != nil {
+		t.Fatalf("decode get_catalog_capabilities response: %v", err)
+	}
+	if len(capOut.Capabilities) == 0 || capOut.Capabilities[0].Kind != "capability" {
+		t.Fatalf("expected GraphQL-backed catalog capabilities, got %+v", capOut.Capabilities)
+	}
+}
+
 func TestRegisterResources_CatalogDefaultHidesLegacyResources(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.srv = server.NewMCPServer("test", "0.0.0", server.WithResourceCapabilities(true, false))
 	ms.registerResources()
 
 	uris := resourceURIsFromServer(t, ms.srv)
-	for _, uri := range []string{CatalogOverviewResourceURI, CatalogEntrypointsResourceURI, CatalogCapabilitiesResourceURI, JSRuntimeResourceURI} {
-		if !uris[uri] {
-			t.Fatalf("%s should be registered by default", uri)
-		}
-	}
-	for _, uri := range []string{QuerySyntaxResourceURI, MutationSyntaxResourceURI, WorkflowGuideResourceURI} {
+	for _, uri := range []string{CatalogOverviewResourceURI, CatalogEntrypointsResourceURI, CatalogCapabilitiesResourceURI, JSRuntimeResourceURI, QuerySyntaxResourceURI, MutationSyntaxResourceURI, WorkflowGuideResourceURI} {
 		if uris[uri] {
-			t.Fatalf("%s should be hidden unless mcp.legacy_discovery is enabled", uri)
+			t.Fatalf("%s should be hidden in sources-used MCP resource registration", uri)
 		}
 	}
 }
 
 func TestRegisterResources_LegacyDiscoveryOptIn(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{LegacyDiscovery: true})
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{LegacyDiscovery: true})
 	ms.srv = server.NewMCPServer("test", "0.0.0", server.WithResourceCapabilities(true, false))
 	ms.registerResources()
 
 	uris := resourceURIsFromServer(t, ms.srv)
-	for _, uri := range []string{CatalogOverviewResourceURI, QuerySyntaxResourceURI, MutationSyntaxResourceURI, WorkflowGuideResourceURI} {
+	for _, uri := range []string{QuerySyntaxResourceURI, MutationSyntaxResourceURI, WorkflowGuideResourceURI} {
 		if !uris[uri] {
 			t.Fatalf("%s should be registered when legacy discovery is enabled", uri)
 		}
@@ -294,11 +420,12 @@ func TestRegisterResources_LegacyDiscoveryOptIn(t *testing.T) {
 }
 
 func TestMCPServerInstructions_CatalogDefaultDoesNotRecommendLegacyTools(t *testing.T) {
-	text := mcpServerInstructions(&Config{Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}, {Name: "workflows", Kind: "workflows"}}}})
+	text := mcpServerInstructions(&Config{Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}, {Name: "workflows", Kind: "workflow"}}}})
 	for _, required := range []string{
-		"get_catalog_entrypoints",
+		`graphql_help(for: "discovery")`,
+		"graphql_query",
 		"query_catalog",
-		"get_catalog_card",
+		"query_catalog(id)",
 		"validate_where_clause",
 		"Discovery means selecting evidence-backed catalog items before acting",
 		"details, evidence, examples, safety notes, and nearby graph edges",
@@ -329,6 +456,31 @@ func TestMCPServerInstructions_CatalogDefaultDoesNotRecommendLegacyTools(t *test
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("catalog instructions should not recommend disabled legacy tool via %q:\n%s", forbidden, text)
+		}
+	}
+}
+
+func TestMCPServerInstructions_SourcesUsedIgnoresLegacyDiscoveryPrompt(t *testing.T) {
+	text := mcpServerInstructions(&Config{
+		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Serv: Serv{MCP: MCPConfig{LegacyDiscovery: true}},
+	})
+	for _, required := range []string{
+		`graphql_help(for: "discovery")`,
+		"query_catalog(id)",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("sources-used instructions should include %q:\n%s", required, text)
+		}
+	}
+	for _, forbidden := range []string{
+		"Call tool get_query_syntax",
+		"Call tool list_tables",
+		"Use describe_table",
+		"Check list_workflows first",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("sources-used instructions should not use legacy prompt text via %q:\n%s", forbidden, text)
 		}
 	}
 }
@@ -387,7 +539,7 @@ func TestMCPToolListMatchesRegisteredTools(t *testing.T) {
 			conf := &Config{
 				Core: core.Config{Sources: []core.SourceConfig{
 					{Name: "graphjin", Kind: "graphjin"},
-					{Name: "workflows", Kind: "workflows"},
+					{Name: "workflows", Kind: "workflow"},
 				}},
 				Serv: Serv{Production: tc.production, MCP: tc.cfg},
 			}

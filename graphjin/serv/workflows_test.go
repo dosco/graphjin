@@ -89,7 +89,7 @@ func TestRunNamedWorkflow_UsesWorkflowSourcePath(t *testing.T) {
 	s := &graphjinService{
 		fs: newAferoFS(mem, "/"),
 		conf: &Config{Core: core.Config{Sources: []core.SourceConfig{
-			{Name: "flows", Kind: "workflows", Path: "custom_flows", Runtime: "goja"},
+			{Name: "flows", Kind: "workflow", Path: "custom_flows", Runtime: "goja"},
 		}}},
 	}
 

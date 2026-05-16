@@ -317,7 +317,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	}
 
 	// Default raw MCP execution to true in dev mode when MCP is enabled.
-	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+	if !s.conf.Serv.Production && !s.conf.mcpDisabled() {
 		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_raw_queries") {
 			s.conf.MCP.AllowRawQueries = true
 			s.log.Info("MCP raw GraphQL execution enabled by default (dev mode)")
@@ -329,7 +329,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	}
 
 	// Default AllowConfigUpdates to true in dev mode when MCP is enabled
-	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+	if !s.conf.Serv.Production && !s.conf.mcpDisabled() {
 		// Only set default if not explicitly configured by user
 		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_config_updates") {
 			s.conf.MCP.AllowConfigUpdates = true
@@ -338,7 +338,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	}
 
 	// Default AllowSchemaReload to true in dev mode when MCP is enabled
-	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+	if !s.conf.Serv.Production && !s.conf.mcpDisabled() {
 		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_schema_reload") {
 			s.conf.MCP.AllowSchemaReload = true
 			s.log.Info("MCP schema reload enabled by default (dev mode)")
@@ -346,7 +346,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	}
 
 	// Default AllowSchemaUpdates to true in dev mode when MCP is enabled
-	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+	if !s.conf.Serv.Production && !s.conf.mcpDisabled() {
 		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_schema_updates") {
 			s.conf.MCP.AllowSchemaUpdates = true
 			s.log.Info("MCP schema updates enabled by default (dev mode)")
@@ -354,7 +354,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	}
 
 	// Default AllowWorkflowUpdates to true in dev mode when MCP is enabled
-	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+	if !s.conf.Serv.Production && !s.conf.mcpDisabled() {
 		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_workflow_updates") {
 			s.conf.MCP.AllowWorkflowUpdates = true
 			s.log.Info("MCP workflow updates enabled by default (dev mode)")
@@ -362,7 +362,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	}
 
 	// Default legacy MCP workflow execution to true in dev mode when MCP is enabled.
-	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+	if !s.conf.Serv.Production && !s.conf.mcpDisabled() {
 		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_workflow_execution") {
 			s.conf.MCP.AllowWorkflowExecution = true
 			s.log.Info("MCP workflow execution enabled by default (dev mode)")
@@ -370,12 +370,13 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	}
 
 	// Default AllowDevTools to true in dev mode when MCP is enabled
-	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+	if !s.conf.Serv.Production && !s.conf.mcpDisabled() {
 		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_dev_tools") {
 			s.conf.MCP.AllowDevTools = true
 			s.log.Info("MCP dev tools enabled by default (dev mode)")
 		}
 	}
+	applySourceCapabilityMCPDefaults(s.conf)
 
 	if err := s.initFS(); err != nil {
 		return nil, err

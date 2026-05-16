@@ -29,7 +29,7 @@ func newLegacySurfaceRouteHandler(t *testing.T, conf *Config) http.Handler {
 	return handler
 }
 
-func TestSourceModeHidesLegacyRESTDiscoveryAndWorkflows(t *testing.T) {
+func TestIsSourcesUsedHidesLegacyRESTDiscoveryAndWorkflows(t *testing.T) {
 	handler := newLegacySurfaceRouteHandler(t, &Config{
 		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
 		Serv: Serv{MCP: MCPConfig{Disable: true}},
@@ -54,7 +54,7 @@ func TestSourceModeHidesLegacyRESTDiscoveryAndWorkflows(t *testing.T) {
 	}
 }
 
-func TestSourceModeLegacyDiscoveryEnablesLegacyRESTSurfaces(t *testing.T) {
+func TestIsSourcesUsedLegacyDiscoveryEnablesLegacyRESTSurfaces(t *testing.T) {
 	handler := newLegacySurfaceRouteHandler(t, &Config{
 		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
 		Serv: Serv{MCP: MCPConfig{Disable: true, LegacyDiscovery: true}},
@@ -78,7 +78,7 @@ func TestSourceModeLegacyDiscoveryEnablesLegacyRESTSurfaces(t *testing.T) {
 	}
 }
 
-func TestSourceModeMCPOnlyHidesLegacyRESTSurfaces(t *testing.T) {
+func TestIsSourcesUsedMCPOnlyHidesLegacyRESTSurfaces(t *testing.T) {
 	handler := newLegacySurfaceRouteHandler(t, &Config{
 		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
 		Serv: Serv{MCP: MCPConfig{Only: true, Disable: true}},
@@ -111,6 +111,30 @@ func TestLegacyModeKeepsLegacyRESTSurfaces(t *testing.T) {
 			handler.ServeHTTP(rec, req)
 			if rec.Code == http.StatusNotFound {
 				t.Fatalf("expected legacy mode to register REST surface %s", tc.path)
+			}
+		})
+	}
+}
+
+func TestLegacyProductionHidesMCPRoutesByDefault(t *testing.T) {
+	handler := newLegacySurfaceRouteHandler(t, &Config{
+		Core: core.Config{},
+		Serv: Serv{Production: true},
+	})
+
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/mcp"},
+		{method: http.MethodPost, path: "/api/v1/mcp/message"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("expected 404 for disabled legacy production MCP route %s, got %d: %s", tc.path, rec.Code, rec.Body.String())
 			}
 		})
 	}

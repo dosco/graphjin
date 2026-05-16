@@ -615,7 +615,8 @@ func OptionSetManagedQueryHandler(database string, handler ManagedQueryHandler) 
 }
 
 type Error struct {
-	Message string `json:"message"`
+	Message    string         `json:"message"`
+	Extensions map[string]any `json:"extensions,omitempty"`
 }
 
 // Result struct contains the output of the GraphQL function this includes resulting json from the
@@ -873,7 +874,7 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 	if gj.conf.Federation.Enabled && r.operation == qcode.QTQuery {
 		handled, data, ferr := gj.handleFederationQuery(r)
 		if ferr != nil {
-			resp.res.Errors = newError(ferr)
+			resp.res.Errors = newError(string(r.query), ferr)
 			err = ferr
 			return
 		}
@@ -914,7 +915,7 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 	resp.res.cacheHit = s.cacheHit || (s.fragmentHits.Load() > 0 && s.fragmentMisses.Load() == 0)
 
 	if err != nil {
-		resp.res.Errors = newError(err)
+		resp.res.Errors = newError(string(r.query), err)
 	}
 
 	if len(s.verrs) != 0 {
@@ -1005,8 +1006,12 @@ func getFS(conf *Config) (fs FS, err error) {
 }
 
 // newError creates a new error list
-func newError(err error) (errList []Error) {
-	errList = []Error{{Message: err.Error()}}
+func newError(query string, err error) (errList []Error) {
+	e := Error{Message: err.Error()}
+	if repair := BuildGraphJinErrorRepair(query, err.Error()); repair.Known() {
+		e.Extensions = map[string]any{"graphjin_repair": repair}
+	}
+	errList = []Error{e}
 	return
 }
 
@@ -1661,6 +1666,15 @@ func (g *GraphJin) ExplainQuery(query string, vars json.RawMessage, role string)
 	return gj.explainQuery(query, vars, role)
 }
 
+// ExplainQueryForDatabase compiles a GraphQL query against a specific configured database without executing it.
+func (g *GraphJin) ExplainQueryForDatabase(database, query string, vars json.RawMessage, role string) (*QueryExplanation, error) {
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
+	return gj.explainQueryForDatabase(database, query, vars, role)
+}
+
 // ExploreRelationships returns a graph of all reachable tables from the given table up to the specified depth.
 func (g *GraphJin) ExploreRelationships(table string, depth int) (*RelationshipGraph, error) {
 	gj, err := g.getEngine()
@@ -1814,6 +1828,123 @@ func (gj *graphjinEngine) explainQuery(query string, vars json.RawMessage, role 
 	}
 
 	return exp, nil
+}
+
+func (gj *graphjinEngine) explainQueryForDatabase(database, query string, vars json.RawMessage, role string) (*QueryExplanation, error) {
+	if !gj.anyDatabaseReady() {
+		return nil, fmt.Errorf("schema not initialized")
+	}
+
+	dbCtx, ok := gj.GetDatabase(database)
+	if !ok {
+		return nil, fmt.Errorf("database not found: %s", database)
+	}
+
+	queryBytes := []byte(query)
+	h, err := graph.FastParseBytes(queryBytes)
+	if err != nil {
+		return &QueryExplanation{
+			Database: database,
+			Errors:   []string{fmt.Sprintf("parse error: %s", err.Error())},
+		}, nil
+	}
+
+	r := gj.newGraphqlReq(nil, h.Operation, h.Name, queryBytes, vars)
+	s, err := newGState(context.Background(), gj, r)
+	if err != nil {
+		return &QueryExplanation{
+			Database: database,
+			Errors:   []string{fmt.Sprintf("state error: %s", err.Error())},
+		}, nil
+	}
+	if role != "" {
+		s.role = role
+	}
+
+	st := stmt{role: s.role}
+	var found bool
+	if st.roc, found = gj.roles[s.role]; !found {
+		return &QueryExplanation{
+			Operation: h.Operation,
+			Name:      h.Name,
+			Role:      s.role,
+			Database:  database,
+			Errors:    []string{fmt.Sprintf(`roles '%s' not defined in c.gj.config`, s.role)},
+		}, nil
+	}
+
+	var compileVars map[string]json.RawMessage
+	if len(s.r.aschema) != 0 {
+		compileVars = s.r.aschema
+	} else {
+		compileVars = s.vmap
+	}
+
+	if err := s.compileForDatabase(st, compileVars, dbCtx); err != nil {
+		return &QueryExplanation{
+			Operation: h.Operation,
+			Name:      h.Name,
+			Role:      s.role,
+			Database:  database,
+			Errors:    []string{err.Error()},
+		}, nil
+	}
+
+	return queryExplanationFromState(&s), nil
+}
+
+func queryExplanationFromState(s *gstate) *QueryExplanation {
+	exp := &QueryExplanation{
+		CompiledQuery: s.cs.st.sql,
+		Operation:     s.cs.st.qc.Type.String(),
+		Name:          s.cs.st.qc.Name,
+		Role:          s.cs.st.role,
+		Database:      s.database,
+	}
+
+	params := s.cs.st.md.Params()
+	for _, p := range params {
+		exp.Params = append(exp.Params, ParamInfo{
+			Name:    p.Name,
+			Type:    p.Type,
+			IsArray: p.IsArray,
+		})
+	}
+
+	maxDepth := 0
+	for i := range s.cs.st.qc.Selects {
+		sel := &s.cs.st.qc.Selects[i]
+		if sel.SkipRender != 0 {
+			continue
+		}
+		exp.Tables = append(exp.Tables, SelectInfo{
+			Table:    sel.Table,
+			Schema:   sel.Schema,
+			Database: sel.Database,
+			Singular: sel.Singular,
+			Children: len(sel.Children),
+		})
+
+		depth := 0
+		pid := sel.ParentID
+		for pid != -1 {
+			depth++
+			if int(pid) < len(s.cs.st.qc.Selects) {
+				pid = s.cs.st.qc.Selects[pid].ParentID
+			} else {
+				break
+			}
+		}
+		if depth > maxDepth {
+			maxDepth = depth
+		}
+	}
+	exp.JoinDepth = maxDepth
+
+	if s.cs.st.qc.Cache.Header != "" {
+		exp.CacheHeader = s.cs.st.qc.Cache.Header
+	}
+	return exp
 }
 
 // explainForDatabase compiles a sub-query for a single database and returns its explanation.

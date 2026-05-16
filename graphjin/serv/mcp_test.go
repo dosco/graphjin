@@ -20,8 +20,19 @@ func mockMcpServerWithConfig(cfg MCPConfig) *mcpServer {
 		conf: &Config{
 			Core: core.Config{Sources: []core.SourceConfig{
 				{Name: "graphjin", Kind: "graphjin"},
-				{Name: "workflows", Kind: "workflows"},
+				{Name: "workflows", Kind: "workflow"},
 			}},
+			Serv: Serv{MCP: cfg},
+		},
+	}
+	return &mcpServer{service: svc, ctx: context.Background()}
+}
+
+func mockLegacyMcpServerWithConfig(cfg MCPConfig) *mcpServer {
+	svc := &graphjinService{
+		cursorCache: NewMemoryCursorCache(100, time.Hour),
+		conf: &Config{
+			Core: core.Config{},
 			Serv: Serv{MCP: cfg},
 		},
 	}
@@ -978,7 +989,7 @@ func TestAllowConfigUpdates_DefaultsToTrueInDevMode(t *testing.T) {
 			}
 
 			// Apply the logic from newGraphJinService
-			if !conf.Serv.Production && !conf.MCP.Disable {
+			if !conf.Serv.Production && !conf.mcpDisabled() {
 				if conf.viper != nil && !conf.viper.IsSet("mcp.allow_config_updates") {
 					conf.MCP.AllowConfigUpdates = true
 				}

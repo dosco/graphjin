@@ -41,7 +41,7 @@ func (gj *graphjinEngine) newRTMap() map[string]ResolverFn {
 func (gj *graphjinEngine) initResolvers() error {
 	gj.rmap = make(map[string]resItem)
 
-	if gj.conf.SourceMode() {
+	if gj.conf.IsSourcesUsed() {
 		// Load OpenAPI integration before the rtmap is built so the
 		// "openapi" factory in newRTMap can see gj.openapiRuntime, and
 		// before the resolver loop so any synthesised ResolverConfigs are

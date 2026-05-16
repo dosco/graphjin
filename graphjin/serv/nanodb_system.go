@@ -40,6 +40,7 @@ func (s *graphjinService) initSystemNanoDBBeforeCore() error {
 	}
 	s.runtimeCore.Databases[name] = core.DatabaseConfig{Type: "nanodb", ReadOnly: true}
 	s.injectSystemNanoTables(name)
+	applySystemRoleQueryDefaults(s.conf, s.runtimeCore, name)
 	codeDB := ""
 	if s.conf.Core.MetadataAutoCodeRelationsEnabled() {
 		codeDBs := s.selectedCodeSQLDatabasesFor(&s.conf.Core, s.managedDBs)
@@ -126,6 +127,7 @@ func catalogNanoColumns(codeDB string) []core.NanoColumn {
 		{Name: "table_name", Type: "text", Index: true},
 		{Name: "column_name", Type: "text", Index: true},
 		{Name: "source", Type: "text"},
+		{Name: "source_kind", Type: "text", Index: true},
 		{Name: "risk_level", Type: "text"},
 		{Name: "confidence", Type: "text"},
 		{Name: "sensitive", Type: "boolean"},
@@ -138,6 +140,7 @@ func catalogNanoColumns(codeDB string) []core.NanoColumn {
 		{Name: "capability_kind", Type: "text"},
 		{Name: "evidence_json", Type: "json"},
 		{Name: "examples_json", Type: "json"},
+		{Name: "suggested_next_json", Type: "json"},
 		{Name: "detail_ref", Type: "text"},
 		{Name: "details_json", Type: "json"},
 		{Name: "edges_json", Type: "json"},
@@ -167,10 +170,24 @@ func securityNanoColumns() []core.NanoColumn {
 		{Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
 		{Name: "kind", Type: "text", Index: true},
 		{Name: "report", Type: "text", Index: true},
+		{Name: "scope", Type: "text", Index: true},
+		{Name: "config_id", Type: "text", Index: true},
+		{Name: "config_name", Type: "text", Index: true},
+		{Name: "config_file", Type: "text", Index: true},
+		{Name: "config_path", Type: "text"},
+		{Name: "config_inherits", Type: "text", Index: true},
+		{Name: "config_active", Type: "boolean", Index: true},
 		{Name: "mode", Type: "text", Index: true},
+		{Name: "audience", Type: "text", Index: true},
 		{Name: "layer", Type: "text", Index: true},
+		{Name: "surface", Type: "text", Index: true},
+		{Name: "transport", Type: "text", Index: true},
+		{Name: "database_name", Type: "text", Index: true},
 		{Name: "source", Type: "text", Index: true},
 		{Name: "source_kind", Type: "text", Index: true},
+		{Name: "table_name", Type: "text", Index: true},
+		{Name: "column_name", Type: "text", Index: true},
+		{Name: "role", Type: "text", Index: true},
 		{Name: "capability", Type: "text", Index: true},
 		{Name: "action", Type: "text", Index: true},
 		{Name: "title", Type: "text"},
@@ -182,10 +199,13 @@ func securityNanoColumns() []core.NanoColumn {
 		{Name: "override_key", Type: "text", Index: true},
 		{Name: "override_value", Type: "text"},
 		{Name: "override_explicit", Type: "boolean", Index: true},
+		{Name: "override_source", Type: "text", Index: true},
 		{Name: "weakens_default", Type: "boolean", Index: true},
 		{Name: "read_only", Type: "boolean", Index: true},
 		{Name: "severity", Type: "text", Index: true},
 		{Name: "severity_rank", Type: "integer", Index: true},
+		{Name: "confidence", Type: "text", Index: true},
+		{Name: "status", Type: "text", Index: true},
 		{Name: "reason", Type: "text"},
 		{Name: "recommendation", Type: "text"},
 		{Name: "summary_json", Type: "json"},
@@ -239,7 +259,7 @@ func workflowExecutionNanoColumns() []core.NanoColumn {
 func configNanoColumns() []core.NanoColumn {
 	return []core.NanoColumn{
 		{Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
-		{Name: "source_mode", Type: "boolean"},
+		{Name: "sources_used", Type: "boolean"},
 		{Name: "config_path", Type: "text"},
 		{Name: "active_database", Type: "text"},
 		{Name: "sources", Type: "json"},

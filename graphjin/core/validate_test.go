@@ -136,19 +136,19 @@ func TestConfigValidate(t *testing.T) {
 				Databases: map[string]DatabaseConfig{"code": {Type: "codesql"}},
 			},
 			wantErr: true,
-			errMsg:  "kind: codesql",
+			errMsg:  "kind: code",
 		},
 		{
-			name: "source mode rejects legacy databases",
+			name: "sources used rejects legacy databases",
 			config: Config{
-				Sources:   []SourceConfig{{Name: "app", Kind: "sql", Type: "postgres"}},
+				Sources:   []SourceConfig{{Name: "app", Kind: "database", Type: "postgres"}},
 				Databases: map[string]DatabaseConfig{"app": {Type: "postgres"}},
 			},
 			wantErr: true,
 			errMsg:  "databases is legacy",
 		},
 		{
-			name: "empty sources still selects source mode",
+			name: "empty sources still selects sources used",
 			config: Config{
 				Sources:   []SourceConfig{},
 				Databases: map[string]DatabaseConfig{"app": {Type: "postgres"}},
@@ -157,22 +157,45 @@ func TestConfigValidate(t *testing.T) {
 			errMsg:  "databases is legacy",
 		},
 		{
-			name: "source mode requires table source",
+			name: "sources used requires table source",
 			config: Config{
-				Sources: []SourceConfig{{Name: "app", Kind: "sql", Type: "postgres"}},
+				Sources: []SourceConfig{{Name: "app", Kind: "database", Type: "postgres"}},
 				Tables:  []Table{{Name: "users"}},
 			},
 			wantErr: true,
 			errMsg:  "source is required",
 		},
 		{
-			name: "source mode rejects table database",
+			name: "sources used rejects table database",
 			config: Config{
-				Sources: []SourceConfig{{Name: "app", Kind: "sql", Type: "postgres"}},
+				Sources: []SourceConfig{{Name: "app", Kind: "database", Type: "postgres"}},
 				Tables:  []Table{{Name: "users", Source: "app", Database: "app"}},
 			},
 			wantErr: true,
 			errMsg:  "database is legacy",
+		},
+		{
+			name: "sources used accepts valid capabilities",
+			config: Config{
+				Sources: []SourceConfig{{
+					Name:         "graphjin",
+					Kind:         "graphjin",
+					Capabilities: map[string]bool{"security.read": true},
+				}},
+			},
+			wantErr: false,
+		},
+		{
+			name: "sources used rejects unknown capability",
+			config: Config{
+				Sources: []SourceConfig{{
+					Name:         "graphjin",
+					Kind:         "graphjin",
+					Capabilities: map[string]bool{"security.audit": true},
+				}},
+			},
+			wantErr: true,
+			errMsg:  "supported: catalog.read",
 		},
 	}
 
@@ -192,11 +215,11 @@ func TestConfigValidate(t *testing.T) {
 func TestNormalizeSourcesMapsSourcesAndRelationships(t *testing.T) {
 	conf := &Config{
 		Sources: []SourceConfig{
-			{Name: "app", Kind: "sql", Type: "postgres", Default: true},
-			{Name: "code", Kind: "codesql", Path: "/src", ReadOnly: true},
-			{Name: "avatars", Kind: "filesystem", Backend: "local", Root: "/tmp/avatars"},
+			{Name: "app", Kind: "database", Type: "postgres", Default: true},
+			{Name: "code", Kind: "code", Path: "/src", ReadOnly: true},
+			{Name: "avatars", Kind: "file", Backend: "local", Root: "/tmp/avatars"},
 			{Name: "graphjin", Kind: "graphjin"},
-			{Name: "workflows", Kind: "workflows", ReadOnly: true},
+			{Name: "workflows", Kind: "workflow", ReadOnly: true},
 		},
 		Tables: []Table{
 			{Name: "users", Source: "app"},

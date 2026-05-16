@@ -11,7 +11,7 @@ import (
 
 func TestRegisterOnboardingTools_Gating(t *testing.T) {
 	t.Run("not registered when AllowDevTools is false", func(t *testing.T) {
-		ms := mockMcpServerWithConfig(MCPConfig{
+		ms := mockLegacyMcpServerWithConfig(MCPConfig{
 			AllowDevTools:      false,
 			AllowConfigUpdates: true,
 		})
@@ -24,7 +24,7 @@ func TestRegisterOnboardingTools_Gating(t *testing.T) {
 	})
 
 	t.Run("apply tool requires config updates permission", func(t *testing.T) {
-		ms := mockMcpServerWithConfig(MCPConfig{
+		ms := mockLegacyMcpServerWithConfig(MCPConfig{
 			AllowDevTools:      true,
 			AllowConfigUpdates: false,
 		})
@@ -41,7 +41,7 @@ func TestRegisterOnboardingTools_Gating(t *testing.T) {
 }
 
 func TestRegisterOnboardingTools_SchemaIncludesScanUnixSockets(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{
 		AllowDevTools: true,
 	})
 	ms.srv = server.NewMCPServer("test", "0.0.0")
@@ -66,7 +66,7 @@ func TestRegisterOnboardingTools_SchemaIncludesScanUnixSockets(t *testing.T) {
 }
 
 func TestResolveCandidate_FromExplicitConfig(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{AllowDevTools: true})
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{AllowDevTools: true})
 	args := map[string]any{
 		"config": map[string]any{
 			"type":   "postgres",
@@ -89,7 +89,7 @@ func TestResolveCandidate_FromExplicitConfig(t *testing.T) {
 }
 
 func TestResolveCandidate_SnowflakeRequiresConnectionString(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{AllowDevTools: true})
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{AllowDevTools: true})
 	args := map[string]any{
 		"config": map[string]any{
 			"type": "snowflake",
@@ -103,7 +103,7 @@ func TestResolveCandidate_SnowflakeRequiresConnectionString(t *testing.T) {
 }
 
 func TestHandlePlanDatabaseSetup_ReturnsChecklist(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{AllowDevTools: true})
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{AllowDevTools: true})
 	req := newToolRequest(map[string]any{
 		"scan_local":  true,
 		"skip_docker": true,
@@ -134,7 +134,7 @@ func TestHandlePlanDatabaseSetup_ReturnsChecklist(t *testing.T) {
 }
 
 func TestResolveCandidate_UsesCacheWithoutDiscoveryOptions(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{AllowDevTools: true})
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{AllowDevTools: true})
 	candidate := DiscoveredDatabase{
 		Type:          "postgres",
 		Host:          "127.0.0.1",
@@ -156,7 +156,7 @@ func TestResolveCandidate_UsesCacheWithoutDiscoveryOptions(t *testing.T) {
 }
 
 func TestResolveCandidate_FallsBackToSnapshot(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{AllowDevTools: true})
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{AllowDevTools: true})
 	got, err := ms.resolveCandidate(map[string]any{
 		"candidate_snapshot": map[string]any{
 			"type": "postgres",
@@ -177,7 +177,7 @@ func TestResolveCandidate_FallsBackToSnapshot(t *testing.T) {
 }
 
 func TestHandleApplyDatabaseSetup_BlocksUnverifiedByDefault(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{
 		AllowDevTools:      true,
 		AllowConfigUpdates: true,
 	})
@@ -216,7 +216,7 @@ func TestHandleApplyDatabaseSetup_BlocksUnverifiedByDefault(t *testing.T) {
 }
 
 func TestHandleApplyDatabaseSetup_AllowsUnverifiedOverride(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{
+	ms := mockLegacyMcpServerWithConfig(MCPConfig{
 		AllowDevTools:      true,
 		AllowConfigUpdates: true,
 	})

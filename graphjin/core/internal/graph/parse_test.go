@@ -46,7 +46,13 @@ fragment userFields2 on user {
 	first_name
 	last_name
 	__typename
-}`)
+	}`)
+
+func TestParseAllowsReservedWordsInStringValues(t *testing.T) {
+	if _, err := Parse([]byte(`query { gj_catalog(where: { kind: { eq: "fragment" } }) { id } }`)); err != nil {
+		t.Fatalf("parse query with reserved string value: %v", err)
+	}
+}
 
 func BenchmarkParse(b *testing.B) {
 	b.ResetTimer()

@@ -18,11 +18,23 @@ type Snapshot struct {
 }
 
 type BuildOptions struct {
-	Workflows              []Workflow `json:"workflows,omitempty"`
-	EnabledTools           []string   `json:"enabled_tools,omitempty"`
-	EnabledToolsKnown      bool       `json:"enabled_tools_known,omitempty"`
-	WorkflowRuntime        string     `json:"workflow_runtime,omitempty"`
-	WorkflowTimeoutSeconds int        `json:"workflow_timeout_seconds,omitempty"`
+	Sources                []Source     `json:"sources,omitempty"`
+	Workflows              []Workflow   `json:"workflows,omitempty"`
+	Fragments              []Fragment   `json:"fragments,omitempty"`
+	SavedQueries           []SavedQuery `json:"saved_queries,omitempty"`
+	EnabledTools           []string     `json:"enabled_tools,omitempty"`
+	EnabledToolsKnown      bool         `json:"enabled_tools_known,omitempty"`
+	WorkflowRuntime        string       `json:"workflow_runtime,omitempty"`
+	WorkflowTimeoutSeconds int          `json:"workflow_timeout_seconds,omitempty"`
+}
+
+type Source struct {
+	Name         string          `json:"name"`
+	Kind         string          `json:"kind"`
+	Type         string          `json:"type,omitempty"`
+	Default      bool            `json:"default,omitempty"`
+	ReadOnly     bool            `json:"read_only,omitempty"`
+	Capabilities map[string]bool `json:"capabilities,omitempty"`
 }
 
 type Workflow struct {
@@ -43,6 +55,23 @@ type WorkflowVariable struct {
 	Type        string `json:"type,omitempty"`
 	Description string `json:"description,omitempty"`
 	Required    bool   `json:"required,omitempty"`
+}
+
+type Fragment struct {
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace,omitempty"`
+	Definition string `json:"definition,omitempty"`
+	On         string `json:"on,omitempty"`
+	SourceHash string `json:"source_hash,omitempty"`
+}
+
+type SavedQuery struct {
+	Name       string         `json:"name"`
+	Namespace  string         `json:"namespace,omitempty"`
+	Operation  string         `json:"operation,omitempty"`
+	Query      string         `json:"query,omitempty"`
+	Variables  map[string]any `json:"variables,omitempty"`
+	SourceHash string         `json:"source_hash,omitempty"`
 }
 
 type Query struct {
@@ -74,25 +103,32 @@ type Match struct {
 }
 
 type Card struct {
-	ID            string `json:"id"`
-	Kind          string `json:"kind"`
-	Title         string `json:"title"`
-	Summary       string `json:"summary"`
-	DatabaseName  string `json:"database_name,omitempty"`
-	SchemaName    string `json:"schema_name,omitempty"`
-	TableName     string `json:"table_name,omitempty"`
-	ColumnName    string `json:"column_name,omitempty"`
-	Source        string `json:"source,omitempty"`
-	RiskLevel     string `json:"risk_level,omitempty"`
-	Confidence    string `json:"confidence,omitempty"`
-	Sensitive     bool   `json:"sensitive,omitempty"`
-	Sensitivity   string `json:"sensitivity,omitempty"`
-	EvidenceJSON  string `json:"evidence_json,omitempty"`
-	ExamplesJSON  string `json:"examples_json,omitempty"`
-	SuggestedNext string `json:"suggested_next_json,omitempty"`
-	DetailRef     string `json:"detail_ref,omitempty"`
-	CreatedAt     string `json:"created_at,omitempty"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
+	ID               string `json:"id"`
+	Kind             string `json:"kind"`
+	Title            string `json:"title"`
+	Summary          string `json:"summary"`
+	DatabaseName     string `json:"database_name,omitempty"`
+	SchemaName       string `json:"schema_name,omitempty"`
+	TableName        string `json:"table_name,omitempty"`
+	ColumnName       string `json:"column_name,omitempty"`
+	Source           string `json:"source,omitempty"`
+	SourceKind       string `json:"source_kind,omitempty"`
+	RiskLevel        string `json:"risk_level,omitempty"`
+	Confidence       string `json:"confidence,omitempty"`
+	Sensitive        bool   `json:"sensitive,omitempty"`
+	Sensitivity      string `json:"sensitivity,omitempty"`
+	EvidenceJSON     string `json:"evidence_json,omitempty"`
+	ExamplesJSON     string `json:"examples_json,omitempty"`
+	SuggestedNext    string `json:"suggested_next_json,omitempty"`
+	DetailRef        string `json:"detail_ref,omitempty"`
+	QueryJSON        string `json:"query_json,omitempty"`
+	InputSchemaJSON  string `json:"input_schema_json,omitempty"`
+	OutputSchemaJSON string `json:"output_schema_json,omitempty"`
+	SafetyJSON       string `json:"safety_json,omitempty"`
+	GraphQLQuery     string `json:"graphql_query,omitempty"`
+	GraphQLMutation  string `json:"graphql_mutation,omitempty"`
+	CreatedAt        string `json:"created_at,omitempty"`
+	UpdatedAt        string `json:"updated_at,omitempty"`
 }
 
 type CardDetail struct {

@@ -4,12 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 	"github.com/spf13/afero"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap/zaptest"
@@ -55,6 +57,105 @@ func TestGraphQLControlPlaneCatalogQuery(t *testing.T) {
 	}
 	if out.Items[0].Score <= 0 {
 		t.Fatalf("expected positive search score, got %+v", out.Items[0])
+	}
+}
+
+func TestGraphQLControlPlaneCatalogIncludesFragments(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "app.sqlite3", true))
+	if err := svc.fs.Put("/queries/fragments/shop.user_fields.gql", []byte("fragment UserFields on users { id email }")); err != nil {
+		t.Fatalf("write fragment: %v", err)
+	}
+	if err := svc.refreshSystemNanoDB(); err != nil {
+		t.Fatalf("refresh system nanodb: %v", err)
+	}
+
+	res, err := svc.gj.GraphQL(context.Background(), `query {
+		gj_catalog(where: { kind: { eq: "fragment" } }) {
+			id
+			kind
+			name
+			table_name
+			details_json
+			evidence_json
+		}
+	}`, nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("fragment catalog query error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("fragment catalog query returned errors: %+v", res.Errors)
+	}
+
+	var out struct {
+		Items []struct {
+			ID           string `json:"id"`
+			Kind         string `json:"kind"`
+			Name         string `json:"name"`
+			TableName    string `json:"table_name"`
+			DetailsJSON  string `json:"details_json"`
+			EvidenceJSON string `json:"evidence_json"`
+		} `json:"gj_catalog"`
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatalf("decode fragment catalog query: %v\n%s", err, string(res.Data))
+	}
+	if len(out.Items) != 1 {
+		t.Fatalf("expected one fragment item, got %+v", out.Items)
+	}
+	item := out.Items[0]
+	if item.ID != "fragment:shop.user_fields" || item.Kind != "fragment" || item.Name != "shop.user_fields" || item.TableName != "users" {
+		t.Fatalf("unexpected fragment catalog item: %+v", item)
+	}
+	if !strings.Contains(item.DetailsJSON, "fragment UserFields on users") || !strings.Contains(item.EvidenceJSON, "shop.user_fields") {
+		t.Fatalf("expected fragment details/evidence, got %+v", item)
+	}
+}
+
+func TestGraphQLControlPlaneCatalogIncludesSourceRows(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "app.sqlite3", true))
+
+	res, err := svc.gj.GraphQL(context.Background(), `query {
+		gj_catalog(where: { kind: { eq: "source" } }, order_by: { source_kind: asc }) {
+			id
+			kind
+			name
+			source
+			source_kind
+			evidence_json
+			examples_json
+			safety_json
+		}
+	}`, nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("catalog source rows query error: %v", err)
+	}
+	var out struct {
+		Items []struct {
+			ID           string `json:"id"`
+			Kind         string `json:"kind"`
+			Name         string `json:"name"`
+			Source       string `json:"source"`
+			SourceKind   string `json:"source_kind"`
+			EvidenceJSON string `json:"evidence_json"`
+			ExamplesJSON string `json:"examples_json"`
+			SafetyJSON   string `json:"safety_json"`
+		} `json:"gj_catalog"`
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatalf("decode catalog source rows: %v\n%s", err, string(res.Data))
+	}
+	kinds := map[string]bool{}
+	for _, item := range out.Items {
+		if item.Kind != "source" || item.SourceKind == "" || !strings.Contains(item.EvidenceJSON, `"source_kind":"`+item.SourceKind+`"`) ||
+			!strings.Contains(item.EvidenceJSON, "supported_capabilities") {
+			t.Fatalf("unexpected source row: %+v", item)
+		}
+		kinds[item.SourceKind] = true
+	}
+	for _, kind := range []string{"database", "graphjin", "workflow"} {
+		if !kinds[kind] {
+			t.Fatalf("missing source kind %q in rows %+v", kind, out.Items)
+		}
 	}
 }
 
@@ -397,7 +498,7 @@ func TestSystemNanoSnapshotIncludesSecurity(t *testing.T) {
 	for _, col := range table.Columns {
 		cols[col.Name] = true
 	}
-	for _, name := range []string{"id", "kind", "report", "mode", "capability", "severity", "summary_json", "evidence_json", "examples_json", "safety_json"} {
+	for _, name := range []string{"id", "kind", "report", "scope", "config_id", "config_file", "config_active", "mode", "audience", "surface", "transport", "database_name", "source", "source_kind", "table_name", "role", "capability", "status", "severity", "summary_json", "evidence_json", "examples_json", "safety_json"} {
 		if !cols[name] {
 			t.Fatalf("expected gj_security.%s column", name)
 		}
@@ -485,6 +586,109 @@ func TestGraphQLControlPlaneSecurityQuery(t *testing.T) {
 	}
 }
 
+func TestGraphQLControlPlaneSecurityConfigScan(t *testing.T) {
+	dbPath := createSQLiteDBFile(t, "config-scan.sqlite3", true)
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, dbPath)
+	devConfig := fmt.Sprintf(`
+sources:
+  - name: main
+    kind: database
+    type: sqlite
+    path: %q
+    default: true
+  - name: graphjin
+    kind: graphjin
+  - name: workflows
+    kind: workflow
+`, dbPath)
+	prodConfig := `
+inherits: dev.yml
+production: true
+security_mode: prod
+mcp:
+  allow_raw_queries: true
+`
+	if err := svc.fs.Put("dev.yml", []byte(devConfig)); err != nil {
+		t.Fatalf("write dev config: %v", err)
+	}
+	if err := svc.fs.Put("prod.yml", []byte(prodConfig)); err != nil {
+		t.Fatalf("write prod config: %v", err)
+	}
+	if err := svc.refreshSystemNanoDB(); err != nil {
+		t.Fatalf("refresh system nanodb: %v", err)
+	}
+
+	res, err := svc.gj.GraphQL(context.Background(), `query {
+		summary: gj_security(id: "config:prod:summary") {
+			id
+			scope
+			config_id
+			mode
+			summary_json
+		}
+		findings: gj_security(
+			where: {
+				scope: { eq: "config" }
+				config_id: { eq: "prod" }
+				kind: { eq: "finding" }
+				status: { eq: "finding" }
+			}
+			order_by: { severity_rank: desc }
+		) {
+			id
+			scope
+			config_id
+			config_file
+			mode
+			status
+			severity
+			override_key
+			recommendation
+		}
+	}`, nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("security config scan query error: %v", err)
+	}
+	var out struct {
+		Summary struct {
+			ID          string         `json:"id"`
+			Scope       string         `json:"scope"`
+			ConfigID    string         `json:"config_id"`
+			Mode        string         `json:"mode"`
+			SummaryJSON map[string]any `json:"summary_json"`
+		} `json:"summary"`
+		Findings []struct {
+			ConfigID    string `json:"config_id"`
+			ConfigFile  string `json:"config_file"`
+			Mode        string `json:"mode"`
+			Status      string `json:"status"`
+			Severity    string `json:"severity"`
+			OverrideKey string `json:"override_key"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatalf("decode config scan query: %v\n%s", err, string(res.Data))
+	}
+	if out.Summary.ID != "config:prod:summary" || out.Summary.Scope != "config" || out.Summary.ConfigID != "prod" || out.Summary.Mode != "prod" {
+		t.Fatalf("unexpected prod config summary: %+v", out.Summary)
+	}
+	if out.Summary.SummaryJSON["config_inherits"] != "dev.yml" {
+		t.Fatalf("expected prod config inheritance evidence, got %+v", out.Summary.SummaryJSON)
+	}
+	var sawRawQueryFinding bool
+	for _, finding := range out.Findings {
+		if finding.ConfigID != "prod" || finding.ConfigFile != "prod.yml" || finding.Mode != "prod" || finding.Status != "finding" {
+			t.Fatalf("unexpected config finding: %+v", finding)
+		}
+		if finding.OverrideKey == "mcp.allow_raw_queries" && (finding.Severity == "high" || finding.Severity == "medium") {
+			sawRawQueryFinding = true
+		}
+	}
+	if !sawRawQueryFinding {
+		t.Fatalf("expected prod mcp.allow_raw_queries finding, got %s", string(res.Data))
+	}
+}
+
 func TestGraphQLControlPlaneRejectsSecurityMutations(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "app.sqlite3", true))
 
@@ -496,6 +700,148 @@ func TestGraphQLControlPlaneRejectsSecurityMutations(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected security mutation to be rejected")
 	}
+}
+
+func TestApplySystemRoleQueryDefaultsDatabaseScoped(t *testing.T) {
+	conf := &Config{
+		Core: core.Config{
+			SecurityMode: "agentic",
+			Roles: []core.Role{{
+				Name: "user",
+				Tables: []core.RoleTable{{
+					Database: "main",
+					Name:     "gj_security",
+					Query:    &core.Query{Block: false},
+				}},
+			}},
+		},
+	}
+	runtimeCore := cloneCoreConfig(conf.Core)
+	applySystemRoleQueryDefaults(conf, &runtimeCore, "graphjin")
+
+	var sawMainGrant, sawGraphjinBlock bool
+	for _, role := range runtimeCore.Roles {
+		if role.Name != "user" {
+			continue
+		}
+		for _, table := range role.Tables {
+			if table.Name != "gj_security" {
+				continue
+			}
+			switch table.Database {
+			case "main":
+				sawMainGrant = table.Query != nil && !table.Query.Block
+			case "graphjin":
+				sawGraphjinBlock = table.Query != nil && table.Query.Block
+			}
+		}
+	}
+	if !sawMainGrant || !sawGraphjinBlock {
+		t.Fatalf("expected database-scoped role defaults to keep main grant and add graphjin block: main=%v graphjin=%v roles=%+v",
+			sawMainGrant, sawGraphjinBlock, runtimeCore.Roles)
+	}
+}
+
+func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
+	userCtx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
+
+	t.Run("normal user gets catalog but not detailed audit config or workflow code", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-perms.sqlite3", true), func(conf *Config) {
+			conf.Core.SecurityMode = "agentic"
+		})
+		if err := svc.fs.Put(filepath.Join(svc.workflowBasePath(), "daily_report.js"), []byte(`function main(input) { return { ok: true }; }`)); err != nil {
+			t.Fatalf("write workflow: %v", err)
+		}
+		if err := svc.refreshSystemNanoDB(); err != nil {
+			t.Fatalf("refresh system nanodb: %v", err)
+		}
+
+		res, err := svc.gj.GraphQL(userCtx, `query {
+			catalog: gj_catalog(limit: 1) { id }
+			security: gj_security(id: "summary") { id }
+			config: gj_config(id: "current") { id }
+			workflow: gj_workflow(id: "daily_report") { name code }
+		}`, nil, &core.RequestConfig{})
+		if err != nil {
+			t.Fatalf("agentic permissions query error: %v", err)
+		}
+		var out map[string]json.RawMessage
+		if err := json.Unmarshal(res.Data, &out); err != nil {
+			t.Fatalf("decode permissions response: %v\n%s", err, string(res.Data))
+		}
+		if string(out["catalog"]) == "null" || len(out["catalog"]) == 0 {
+			t.Fatalf("expected agentic user catalog access, got %s", string(res.Data))
+		}
+		for _, key := range []string{"security", "config", "workflow"} {
+			if string(out[key]) != "null" {
+				t.Fatalf("expected %s to be blocked for normal agentic user, got %s", key, string(res.Data))
+			}
+		}
+	})
+
+	t.Run("explicit security grant unblocks only gj_security", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-security-grant.sqlite3", true), func(conf *Config) {
+			conf.Core.SecurityMode = "agentic"
+			conf.Core.Roles = append(conf.Core.Roles, core.Role{
+				Name: "user",
+				Tables: []core.RoleTable{{
+					Database: "graphjin",
+					Name:     "gj_security",
+					Query:    &core.Query{Block: false},
+				}},
+			})
+		})
+
+		res, err := svc.gj.GraphQL(userCtx, `query {
+			security: gj_security(id: "summary") { id scope mode }
+			config: gj_config(id: "current") { id }
+		}`, nil, &core.RequestConfig{})
+		if err != nil {
+			t.Fatalf("agentic explicit grant query error: %v", err)
+		}
+		var out struct {
+			Security *struct {
+				ID string `json:"id"`
+			} `json:"security"`
+			Config *struct {
+				ID string `json:"id"`
+			} `json:"config"`
+		}
+		if err := json.Unmarshal(res.Data, &out); err != nil {
+			t.Fatalf("decode explicit grant response: %v\n%s", err, string(res.Data))
+		}
+		if out.Security == nil || out.Security.ID != "summary" {
+			t.Fatalf("expected gj_security grant to return summary, got %s", string(res.Data))
+		}
+		if out.Config != nil {
+			t.Fatalf("expected gj_config to remain blocked, got %s", string(res.Data))
+		}
+	})
+
+	t.Run("prod blocks catalog by default", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "prod-perms.sqlite3", true), func(conf *Config) {
+			conf.Core.SecurityMode = "prod"
+			conf.Serv.Production = true
+			conf.Core.Production = true
+		})
+
+		res, err := svc.gj.GraphQL(userCtx, `query {
+			catalog: gj_catalog(limit: 1) { id }
+		}`, nil, &core.RequestConfig{})
+		if err != nil {
+			if !strings.Contains(err.Error(), "blocked") && !strings.Contains(err.Error(), "invalid query") {
+				t.Fatalf("prod catalog query returned unexpected error: %v", err)
+			}
+			return
+		}
+		var out map[string]json.RawMessage
+		if err := json.Unmarshal(res.Data, &out); err != nil {
+			t.Fatalf("decode prod catalog response: %v\n%s", err, string(res.Data))
+		}
+		if string(out["catalog"]) != "null" {
+			t.Fatalf("expected prod catalog to be blocked by default, got %s", string(res.Data))
+		}
+	})
 }
 
 func TestGraphQLControlPlaneCatalogSecurityGuidance(t *testing.T) {
@@ -545,7 +891,7 @@ func TestSecurityNanoRowsModes(t *testing.T) {
 			SecurityMode: "agentic",
 			Sources: []core.SourceConfig{
 				{Name: "graphjin", Kind: "graphjin"},
-				{Name: "workflows", Kind: "workflows"},
+				{Name: "workflows", Kind: "workflow"},
 			},
 			Tables: []core.Table{{Name: "gj_workflow", ReadOnly: false}},
 		},
@@ -578,13 +924,151 @@ func TestSecurityNanoRowsModes(t *testing.T) {
 	}
 }
 
+func TestSecurityNanoRowsSourceCapabilities(t *testing.T) {
+	conf := &Config{
+		Core: core.Config{
+			SecurityMode: "agentic",
+			Sources: []core.SourceConfig{
+				{Name: "graphjin", Kind: "graphjin", Capabilities: map[string]bool{"security.read": true}},
+				{Name: "workflows", Kind: "workflow", Capabilities: map[string]bool{"workflow.execute": false}},
+			},
+		},
+		Serv: Serv{Production: true},
+	}
+	conf.Core.Production = true
+	rows := securityNanoRows(&graphjinService{conf: conf})
+
+	var sawSecurityRead, sawWorkflowExecute bool
+	for _, row := range rows {
+		if row["kind"] != "policy" {
+			continue
+		}
+		if row["source_kind"] == "graphjin" && row["capability"] == "security.read" {
+			sawSecurityRead = true
+			if row["override_key"] != "sources[graphjin].capabilities.security.read" ||
+				row["override_explicit"] != true ||
+				row["default_effective"] != "block" ||
+				row["effective"] != "allow" ||
+				row["weakens_default"] != true ||
+				row["severity"] != "high" {
+				t.Fatalf("unexpected security.read policy: %+v", row)
+			}
+			evidence, ok := row["evidence_json"].(map[string]any)
+			def, _ := sourcecap.Lookup(sourcecap.KindGraphJin, sourcecap.KeySecurityRead)
+			if !ok || evidence["enforcement"] != def.Enforcement {
+				t.Fatalf("expected runtime enforcement evidence, got %+v", row["evidence_json"])
+			}
+		}
+		if row["source_kind"] == "workflow" && row["capability"] == "workflow.execute" {
+			sawWorkflowExecute = true
+			if row["override_key"] != "sources[workflows].capabilities.workflow.execute" ||
+				row["override_explicit"] != true ||
+				row["default_effective"] != "allow" ||
+				row["effective"] != "block" {
+				t.Fatalf("unexpected workflow.execute policy: %+v", row)
+			}
+		}
+	}
+	if !sawSecurityRead || !sawWorkflowExecute {
+		t.Fatalf("missing source capability policies: security_read=%v workflow_execute=%v rows=%+v", sawSecurityRead, sawWorkflowExecute, rows)
+	}
+}
+
+func TestFileSourceCapabilitiesUseCoarseReadOnlyEnforcement(t *testing.T) {
+	conf := &Config{
+		Core: core.Config{
+			SecurityMode: "agentic",
+			Sources: []core.SourceConfig{
+				{
+					Name: "docs",
+					Kind: "file",
+					Capabilities: map[string]bool{
+						"files.write":  true,
+						"files.delete": false,
+					},
+				},
+			},
+		},
+		Serv: Serv{Production: true},
+	}
+	conf.Core.Production = true
+	applySourceCapabilitySourceDefaults(conf)
+	if !conf.Core.Sources[0].ReadOnly {
+		t.Fatalf("file source should be read-only when either coarse mutating capability is disabled")
+	}
+
+	rows := securityNanoRows(&graphjinService{conf: conf})
+	var sawWriteEvidence bool
+	for _, row := range rows {
+		if row["kind"] != "policy" || row["source_kind"] != "file" || row["capability"] != "files.write" {
+			continue
+		}
+		sawWriteEvidence = true
+		if row["effective"] != "read_only" || row["read_only"] != true {
+			t.Fatalf("expected files.write to be blocked by read-only, got %+v", row)
+		}
+		evidence, ok := row["evidence_json"].(map[string]any)
+		if !ok || evidence["enforcement"] != "runtime_coarse_read_only" {
+			t.Fatalf("expected coarse read-only enforcement evidence, got %+v", row["evidence_json"])
+		}
+	}
+	if !sawWriteEvidence {
+		t.Fatalf("missing files.write policy evidence rows=%+v", rows)
+	}
+}
+
+func TestSecurityNanoRowsCoverSourceCapabilityRegistry(t *testing.T) {
+	conf := &Config{
+		Core: core.Config{
+			SecurityMode: "agentic",
+			Sources: []core.SourceConfig{
+				{Name: "app", Kind: sourcecap.KindDatabase},
+				{Name: "repo", Kind: sourcecap.KindCode},
+				{Name: "docs", Kind: sourcecap.KindFile},
+				{Name: "upstream", Kind: sourcecap.KindAPI},
+				{Name: "graphjin", Kind: sourcecap.KindGraphJin},
+				{Name: "workflows", Kind: sourcecap.KindWorkflow},
+			},
+		},
+		Serv: Serv{Production: true},
+	}
+	rows := securityNanoRows(&graphjinService{conf: conf})
+	seen := map[string]core.NanoRow{}
+	for _, row := range rows {
+		if row["kind"] != "policy" || row["scope"] != "runtime" {
+			continue
+		}
+		key := fmt.Sprint(row["source_kind"]) + "." + fmt.Sprint(row["capability"])
+		seen[key] = row
+	}
+	for _, kind := range sourcecap.Kinds() {
+		for _, def := range sourcecap.Definitions(kind) {
+			row, ok := seen[kind+"."+def.Key]
+			if !ok {
+				t.Fatalf("missing gj_security policy row for %s.%s", kind, def.Key)
+			}
+			if row["action"] != def.Action || row["severity"] != def.Severity {
+				t.Fatalf("policy row drift for %s.%s: %+v", kind, def.Key, row)
+			}
+			if !strings.Contains(fmt.Sprint(row["recommendation"]), def.Recommendation) {
+				t.Fatalf("policy row recommendation drift for %s.%s: %+v", kind, def.Key, row)
+			}
+			evidence, ok := row["evidence_json"].(map[string]any)
+			if !ok || evidence["enforcement"] != def.Enforcement {
+				t.Fatalf("policy row evidence drift for %s.%s: %+v", kind, def.Key, row["evidence_json"])
+			}
+		}
+	}
+}
+
 func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
 	t.Run("prod mode blocks execution by table default", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "prod.sqlite3", true), func(conf *Config) {
 			conf.Core.SecurityMode = "prod"
 		})
 
-		_, err := svc.gj.GraphQL(context.Background(), `mutation {
+		ctx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
+		_, err := svc.gj.GraphQL(ctx, `mutation {
 			gj_workflow_execution(insert: { workflow_name: "daily_report" }) { status error }
 		}`, nil, &core.RequestConfig{})
 		if err == nil || !strings.Contains(err.Error(), "read-only") {
@@ -597,7 +1081,8 @@ func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
 			conf.Core.SecurityMode = "agentic"
 		})
 
-		res, err := svc.gj.GraphQL(context.Background(), `mutation {
+		ctx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
+		res, err := svc.gj.GraphQL(ctx, `mutation {
 			gj_workflow_execution(insert: { workflow_name: "missing_workflow" }) { status error }
 		}`, nil, &core.RequestConfig{})
 		if err != nil {
@@ -614,11 +1099,39 @@ func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
 			conf.Core.Sources[2].ReadOnly = true
 		})
 
-		_, err := svc.gj.GraphQL(context.Background(), `mutation {
+		ctx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
+		_, err := svc.gj.GraphQL(ctx, `mutation {
 			gj_workflow_execution(insert: { workflow_name: "daily_report" }) { status error }
 		}`, nil, &core.RequestConfig{})
 		if err == nil || !strings.Contains(err.Error(), "read-only") {
 			t.Fatalf("expected read-only workflows source to block execution, got %v", err)
+		}
+	})
+
+	t.Run("agentic mode blocks anonymous execution by role default", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-anon.sqlite3", true), func(conf *Config) {
+			conf.Core.SecurityMode = "agentic"
+		})
+
+		_, err := svc.gj.GraphQL(context.Background(), `mutation {
+			gj_workflow_execution(insert: { workflow_name: "missing_workflow" }) { status error }
+		}`, nil, &core.RequestConfig{})
+		if err == nil || !strings.Contains(err.Error(), "blocked") {
+			t.Fatalf("expected anonymous agentic workflow execution block, got %v", err)
+		}
+	})
+
+	t.Run("workflow execution rejects non-insert mutations", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-update.sqlite3", true), func(conf *Config) {
+			conf.Core.SecurityMode = "agentic"
+		})
+
+		ctx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
+		_, err := svc.gj.GraphQL(ctx, `mutation {
+			gj_workflow_execution(where: { id: { eq: "run" } }, update: { status: "ok" }) { status error }
+		}`, nil, &core.RequestConfig{})
+		if err == nil || !strings.Contains(err.Error(), "only supports insert") {
+			t.Fatalf("expected non-insert workflow execution mutation block, got %v", err)
 		}
 	})
 }
@@ -763,7 +1276,7 @@ func TestGraphQLControlPlaneAllowsAppGJPrefixWithSystemSource(t *testing.T) {
 			DBType:           "sqlite",
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "main", Kind: "sql", Type: "sqlite", Path: dbPath, Default: true},
+				{Name: "main", Kind: "database", Type: "sqlite", Path: dbPath, Default: true},
 				{Name: "graphjin", Kind: "graphjin"},
 			},
 		},
@@ -798,9 +1311,9 @@ func newControlPlaneGraphQLTestServiceWithConfig(t *testing.T, cfg MCPConfig, db
 			Production:       false,
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "main", Kind: "sql", Type: "sqlite", Path: dbPath, Default: true},
+				{Name: "main", Kind: "database", Type: "sqlite", Path: dbPath, Default: true},
 				{Name: "graphjin", Kind: "graphjin"},
-				{Name: "workflows", Kind: "workflows"},
+				{Name: "workflows", Kind: "workflow"},
 			},
 		},
 		Serv: Serv{Production: false, MCP: cfg},
@@ -808,6 +1321,7 @@ func newControlPlaneGraphQLTestServiceWithConfig(t *testing.T, cfg MCPConfig, db
 	if configure != nil {
 		configure(conf)
 	}
+	applySourceCapabilitySourceDefaults(conf)
 	svc := &graphjinService{
 		conf:   conf,
 		dbs:    map[string]*sql.DB{"main": db},
@@ -818,6 +1332,7 @@ func newControlPlaneGraphQLTestServiceWithConfig(t *testing.T, cfg MCPConfig, db
 	if err := normalizeServiceSources(conf); err != nil {
 		t.Fatalf("normalize sources: %v", err)
 	}
+	applySourceCapabilityMCPDefaults(conf)
 	runtimeCore := cloneCoreConfig(conf.Core)
 	svc.runtimeCore = &runtimeCore
 	if err := svc.initSystemNanoDBBeforeCore(); err != nil {

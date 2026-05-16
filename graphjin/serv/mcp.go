@@ -82,8 +82,17 @@ func (ms *mcpServer) toolResultJSON(tool string, args map[string]any, payload an
 // mcpToolList returns the names of MCP tools that will be registered
 // based on the current configuration flags.
 func mcpToolList(conf *Config) []string {
-	if conf.MCP.Disable {
+	if conf.mcpDisabled() {
 		return nil
+	}
+
+	if conf.Core.IsSourcesUsed() {
+		tools := []string{}
+		if conf.catalogToolsEnabled() {
+			tools = append(tools, "graphql_help", "query_catalog")
+		}
+		tools = append(tools, "execute_saved_query", "validate_where_clause")
+		return tools
 	}
 
 	legacyTools := conf.legacyMCPToolsEnabled()
@@ -223,7 +232,16 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 
 // registerTools registers all MCP tools with the server
 func (ms *mcpServer) registerTools() {
-	if ms.service.conf.MCP.Disable {
+	if ms.service.conf.mcpDisabled() {
+		return
+	}
+
+	if ms.service.conf.Core.IsSourcesUsed() {
+		if ms.service.conf.catalogToolsEnabled() {
+			ms.registerCatalogTools()
+		}
+		ms.registerExecutionTools()
+		ms.registerSchemaTools()
 		return
 	}
 
@@ -291,7 +309,7 @@ func (ms *mcpServer) isDBReadOnly(database string) bool {
 func (s *HttpService) RunMCPStdio(ctx context.Context) error {
 	s1 := s.Load().(*graphjinService)
 
-	if s1.conf.MCP.Disable {
+	if s1.conf.mcpDisabled() {
 		s1.log.Warn("MCP is disabled in configuration")
 	}
 
@@ -328,7 +346,7 @@ func (s *HttpService) MCPHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s1 := s.Load().(*graphjinService)
 
-		if s1.conf.MCP.Disable {
+		if s1.conf.mcpDisabled() {
 			http.Error(w, "MCP is disabled", http.StatusNotFound)
 			return
 		}
@@ -359,7 +377,7 @@ func (s *HttpService) MCPMessageHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s1 := s.Load().(*graphjinService)
 
-		if s1.conf.MCP.Disable {
+		if s1.conf.mcpDisabled() {
 			http.Error(w, "MCP is disabled", http.StatusNotFound)
 			return
 		}

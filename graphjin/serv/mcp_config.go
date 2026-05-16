@@ -104,6 +104,7 @@ func (ms *mcpServer) registerConfigTools() {
 								"properties": map[string]any{
 									"name":      map[string]any{"type": "string", "description": "Table name"},
 									"schema":    map[string]any{"type": "string", "description": "Schema name"},
+									"database":  map[string]any{"type": "string", "description": "Database/source name for multi-database or system NanoDB tables such as graphjin.gj_security"},
 									"read_only": map[string]any{"type": "boolean", "description": "Read-only access"},
 									"query": map[string]any{
 										"type":        "object",
@@ -401,6 +402,7 @@ type RoleConfigInput struct {
 type RoleTableConfigInput struct {
 	Name     string             `json:"name"`
 	Schema   string             `json:"schema,omitempty"`
+	Database string             `json:"database,omitempty"`
 	ReadOnly bool               `json:"read_only,omitempty"`
 	Query    *QueryConfigInput  `json:"query,omitempty"`
 	Insert   *InsertConfigInput `json:"insert,omitempty"`
@@ -1257,6 +1259,9 @@ func parseRoleTableConfig(m map[string]any) (core.RoleTable, error) {
 	if schema, ok := m["schema"].(string); ok {
 		rt.Schema = schema
 	}
+	if database, ok := m["database"].(string); ok {
+		rt.Database = database
+	}
 	if readOnly, ok := m["read_only"].(bool); ok {
 		rt.ReadOnly = readOnly
 	}
@@ -1570,6 +1575,12 @@ func cloneCoreConfig(src core.Config) core.Config {
 	if src.Sources != nil {
 		dst.Sources = append([]core.SourceConfig(nil), src.Sources...)
 		for i := range dst.Sources {
+			if src.Sources[i].Capabilities != nil {
+				dst.Sources[i].Capabilities = make(map[string]bool, len(src.Sources[i].Capabilities))
+				for name, value := range src.Sources[i].Capabilities {
+					dst.Sources[i].Capabilities[name] = value
+				}
+			}
 			if src.Sources[i].Specs != nil {
 				dst.Sources[i].Specs = make(map[string]openapi.SpecConfig, len(src.Sources[i].Specs))
 				for name, spec := range src.Sources[i].Specs {
@@ -2134,7 +2145,7 @@ func (ms *mcpServer) saveConfigToDisk() error {
 func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 	conf := &ms.service.conf.Core
 
-	if conf.SourceMode() {
+	if conf.IsSourcesUsed() {
 		if conf.Sources != nil {
 			v.Set("sources", conf.Sources)
 		}
@@ -2144,7 +2155,7 @@ func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 	} else if conf.Databases != nil {
 		v.Set("databases", conf.Databases)
 	}
-	if !conf.SourceMode() {
+	if !conf.IsSourcesUsed() {
 		v.Set("metadata", conf.Metadata)
 	}
 	if conf.Tables != nil {

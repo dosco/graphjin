@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -55,7 +56,7 @@ func graphjinControlPlaneTables() []core.ManagedTable {
 			cpCol("id", "text", true), cpCol("kind", "text", false), cpCol("title", "text", false), cpCol("summary", "text", false),
 			cpCol("name", "text", false),
 			cpCol("database_name", "text", false), cpCol("schema_name", "text", false), cpCol("table_name", "text", false), cpCol("column_name", "text", false),
-			cpCol("source", "text", false), cpCol("risk_level", "text", false), cpCol("confidence", "text", false), cpCol("sensitive", "boolean", false),
+			cpCol("source", "text", false), cpCol("source_kind", "text", false), cpCol("risk_level", "text", false), cpCol("confidence", "text", false), cpCol("sensitive", "boolean", false),
 			cpCol("sensitivity", "text", false), cpCol("evidence_json", "json", false), cpCol("examples_json", "json", false), cpCol("suggested_next_json", "json", false),
 			cpCol("detail_ref", "text", false), cpCol("details_json", "json", false), cpCol("edges_json", "json", false),
 			cpCol("query_json", "json", false), cpCol("input_schema_json", "json", false), cpCol("output_schema_json", "json", false),
@@ -64,7 +65,7 @@ func graphjinControlPlaneTables() []core.ManagedTable {
 			cpCol("created_at", "text", false), cpCol("updated_at", "text", false), cpCol("score", "float", false), cpFullTextCol("search_vector"),
 		}),
 		managedTable("gj_config", []core.ManagedColumn{
-			cpCol("id", "text", true), cpCol("source_mode", "boolean", false), cpCol("config_path", "text", false), cpCol("active_database", "text", false),
+			cpCol("id", "text", true), cpCol("sources_used", "boolean", false), cpCol("config_path", "text", false), cpCol("active_database", "text", false),
 			cpCol("sources", "json", false), cpCol("databases", "json", false), cpCol("relationships", "json", false), cpCol("tables", "json", false),
 			cpCol("roles", "json", false), cpCol("blocklist", "json", false), cpCol("functions", "json", false), cpCol("resolvers", "json", false),
 			cpCol("mcp", "json", false), cpCol("config_json", "json", false), cpCol("redacted_paths", "json", false), cpCol("updated_at", "text", false), cpCol("catalog_revision", "text", false),
@@ -174,7 +175,11 @@ func (h controlPlaneGraphQL) catalogRowsFromCards(snap *core.CatalogSnapshot, re
 			continue
 		}
 		id, _ := row["id"].(string)
-		row["name"] = catalogItemName(row)
+		if fmt.Sprint(row["kind"]) == "fragment" {
+			row["name"] = row["title"]
+		} else {
+			row["name"] = catalogItemName(row)
+		}
 		row["details_json"] = mustMarshalString(snap.CardDetails(id))
 		row["edges_json"] = mustMarshalString(snap.CardEdges(id))
 		if match, ok := result.Matches[id]; ok {
@@ -283,7 +288,7 @@ func (h controlPlaneGraphQL) configRow() map[string]any {
 	mcpConfig := mcpConfigMap(conf)
 	row := map[string]any{
 		"id":              "current",
-		"source_mode":     coreConf.SourceMode(),
+		"sources_used":    coreConf.IsSourcesUsed(),
 		"config_path":     conf.ConfigPath,
 		"active_database": (&mcpServer{service: h.service}).getActiveDatabase(),
 		"sources":         sources,
@@ -417,27 +422,54 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 		{"name": "reload_schema", "kind": "mutation", "enabled": conf.AllowSchemaReload, "summary": "Reload database schema metadata through the MCP tool surface."},
 		{"name": "preview_schema_changes", "kind": "mutation", "enabled": conf.AllowSchemaUpdates, "summary": "Preview db.graphql schema changes through the MCP tool surface."},
 		{"name": "apply_schema_changes", "kind": "mutation", "enabled": conf.AllowSchemaUpdates, "summary": "Apply db.graphql schema changes through the MCP tool surface."},
-		{"name": "validate_where_clause", "kind": "validation", "enabled": true, "summary": "Validate where clauses against schema/operator metadata through the MCP tool surface."},
-		{"name": "fix_query_error", "kind": "repair", "enabled": true, "summary": "Classify GraphJin query errors and suggest repairs through the MCP tool surface."},
+		{"name": "validate_where_clause", "kind": "validation", "enabled": true, "summary": "Validate where clauses with schema/operator guidance and compile-only GraphJin verification through the MCP tool surface."},
+		{
+			"name": "graphjin_error_repair", "kind": "repair", "enabled": true,
+			"summary":      "Normal GraphJin errors include errors[].extensions.graphjin_repair with structured repair guidance for known query mistakes.",
+			"details_json": mustMarshalString(map[string]any{"graphql_error_extension": "errors[].extensions.graphjin_repair", "fields": []string{"kind", "diagnosis", "repaired_query", "next"}}),
+		},
+		{
+			"name": "graphjin_config_docs", "kind": "documentation", "enabled": true,
+			"summary":       "Static GraphJin configuration documentation and examples are discoverable through catalog rows instead of the get_config_docs MCP tool in sources-used mode.",
+			"details_json":  mustMarshalString(map[string]any{"recommended_filters": []string{`kind = "system_capability"`, `name = "graphjin_config_docs"`}, "runtime_config": "Use gj_config only when role permissions explicitly allow it."}),
+			"examples_json": mustMarshalString([]string{`query_catalog(search: "config docs", where: { kind: { eq: "system_capability" } })`}),
+		},
 		{
 			"name": "gj_security.query", "kind": "security", "enabled": true,
-			"summary":       "Read GraphJin security posture, effective policy rows, and audit findings from the gj_security NanoDB table.",
-			"graphql_query": `gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }) { id severity title recommendation evidence_json }`,
+			"summary":       "Read GraphJin security posture, effective policy rows, config audits, runtime evidence, and findings from the read-only gj_security NanoDB table.",
+			"graphql_query": `gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }) { id scope config_id mode severity title recommendation evidence_json }`,
 			"details_json": mustMarshalString(map[string]any{
-				"root":       "gj_security",
-				"kinds":      []string{"summary", "policy", "finding"},
-				"modes":      []string{"dev", "prod", "agentic"},
-				"filter_by":  []string{"kind", "report", "mode", "severity", "layer", "source", "source_kind", "capability", "action", "weakens_default"},
-				"read_shape": `gj_security(where: { kind: { eq: "policy" } }) { id capability action default_effective effective weakens_default }`,
+				"root":                "gj_security",
+				"kinds":               []string{"summary", "policy", "finding"},
+				"scopes":              []string{"runtime", "config"},
+				"modes":               []string{"dev", "prod", "agentic"},
+				"source_kinds":        sourcecap.Kinds(),
+				"severity_levels":     []string{"critical", "high", "medium", "low"},
+				"agentic_audience":    "ordinary company end users using an approved agentic deployment",
+				"filter_by":           []string{"kind", "report", "scope", "config_id", "config_active", "mode", "status", "severity", "severity_rank", "surface", "transport", "database_name", "source", "source_kind", "table_name", "column_name", "role", "audience", "capability", "action", "default_effective", "effective", "weakens_default", "read_only", "override_key", "override_explicit", "override_source"},
+				"json_fields":         []string{"summary_json", "evidence_json", "details_json", "examples_json", "safety_json"},
+				"read_shape":          `gj_security(where: { kind: { eq: "policy" } }) { id scope config_id mode surface role capability action default_effective effective weakens_default evidence_json }`,
+				"singleton_shape":     `gj_security(id: "summary") { id kind scope mode summary_json }`,
+				"per_config_ids":      []string{"config:prod:summary", "config:prod:policy:<surface>", "config:prod:finding:<severity>:<surface>"},
+				"source_capabilities": sourcecap.CapabilityMap(),
+				"mode_definitions": map[string]string{
+					"dev":     "developer audit mode with detailed security/config/workflow visibility",
+					"prod":    "strict production, system discovery/audit/control-plane reads blocked unless explicitly granted",
+					"agentic": "production for authenticated company end users: gj_catalog and approved workflow execution are available; detailed audit/config/workflow-code surfaces require explicit authenticated grants",
+				},
 			}),
 			"examples_json": mustMarshalString([]map[string]string{
-				{"name": "summary", "query": `query { gj_security(id: "summary") { id kind mode summary_json } }`},
-				{"name": "high critical findings", "query": `query { gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }, order_by: { severity_rank: desc }) { id severity title recommendation evidence_json } }`},
-				{"name": "effective policy", "query": `query { gj_security(where: { kind: { eq: "policy" } }) { id mode source capability action default_effective effective weakens_default } }`},
+				{"name": "active summary", "query": `query { gj_security(id: "summary") { id kind scope mode summary_json safety_json } }`},
+				{"name": "high critical findings across all configs", "query": `query { gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }, order_by: { severity_rank: desc }) { id scope config_id mode severity title recommendation evidence_json } }`},
+				{"name": "prod config findings", "query": `query { gj_security(where: { scope: { eq: "config" }, mode: { eq: "prod" }, kind: { eq: "finding" } }) { id config_id config_file severity title recommendation } }`},
+				{"name": "agentic effective policy", "query": `query { gj_security(where: { kind: { eq: "policy" }, mode: { eq: "agentic" } }) { id scope config_id surface role capability action default_effective effective weakens_default } }`},
+				{"name": "source capability policy", "query": `query { gj_security(where: { kind: { eq: "policy" }, source_kind: { eq: "graphjin" }, capability: { eq: "security.read" } }) { id source source_kind capability override_explicit default_effective effective evidence_json } }`},
+				{"name": "explicit override review", "query": `query { gj_security(where: { override_explicit: { eq: true } }) { id scope config_id mode override_key override_source default_effective effective weakens_default } }`},
 			}),
 			"safety_json": mustMarshalString(map[string]any{
 				"read_only": true,
-				"guidance":  "Check gj_security before config, workflow, schema, filesystem, or CodeSQL changes. Use findings as evidence; apply changes through the normal guarded config/control-plane APIs.",
+				"guidance":  "Check gj_catalog first to discover the gj_security API, then query gj_security before config, workflow, schema, file-source, or code-source changes. Use findings as evidence; apply changes through normal guarded config/control-plane APIs.",
+				"agentic":   "Normal agentic users should discover through gj_catalog and execute approved workflows. Detailed gj_security, gj_config, and gj_workflow.code require an explicit authenticated grant.",
 			}),
 		},
 	}
@@ -467,7 +499,7 @@ func (h controlPlaneGraphQL) mutateRow(ctx context.Context, root core.ManagedMut
 	}
 	if root.Table == "gj_workflow" || root.Table == "gj_workflow_execution" {
 		if h.service != nil && h.service.conf != nil && h.service.conf.workflowsSourceReadOnly() {
-			return nil, fmt.Errorf("mutations blocked: workflows source is read-only")
+			return nil, fmt.Errorf("mutations blocked: workflow source is read-only")
 		}
 	} else if h.service != nil && h.service.conf != nil && h.service.conf.graphjinSourceReadOnly() {
 		return nil, fmt.Errorf("mutations blocked: graphjin source is read-only")
@@ -477,6 +509,9 @@ func (h controlPlaneGraphQL) mutateRow(ctx context.Context, root core.ManagedMut
 	case "gj_workflow":
 		return h.mutateWorkflow(root)
 	case "gj_workflow_execution":
+		if root.Operation != "insert" {
+			return nil, fmt.Errorf("workflow execution only supports insert mutations")
+		}
 		return h.runWorkflow(ctx, root)
 	case "gj_config":
 		return h.mutateConfig(ctx, root)
@@ -762,26 +797,37 @@ func (h controlPlaneGraphQL) validateQueryWhere(root core.ManagedMutationRoot) (
 	if err != nil {
 		return nil, err
 	}
+	ms := &mcpServer{service: h.service}
+	compileResult := ms.validateWhereClauseByCompilation(table, database, rawWhere, schema)
+	if compileResult.ParseErr != nil {
+		return map[string]any{"valid": false, "errors_json": mustMarshalString([]string{compileResult.ParseErr.Error()})}, nil
+	}
 	columnTypes := make(map[string]core.ColumnInfo)
 	for _, col := range schema.Columns {
 		columnTypes[col.Name] = col
 	}
-	whereData, err := parseWhereClauseArg(rawWhere)
-	if err != nil {
-		return map[string]any{"valid": false, "errors_json": mustMarshalString([]string{err.Error()})}, nil
+	var errors []WhereValidationError
+	if compileResult.WhereData != nil {
+		errors = validateWhereClause(compileResult.WhereData, columnTypes, "")
 	}
-	errors := validateWhereClause(whereData, columnTypes, "")
+	for _, compilerErr := range compileResult.CompilerErrors {
+		errors = append(errors, WhereValidationError{
+			Path:    "",
+			Error:   "compiler_error",
+			Message: compilerErr,
+		})
+	}
 	if errors == nil {
 		errors = []WhereValidationError{}
 	}
 	return map[string]any{
-		"id":            stableID("validate", table, mustMarshalString(whereData)),
+		"id":            stableID("validate", table, compileResult.WhereLiteral),
 		"table":         table,
 		"database":      database,
-		"where":         whereData,
+		"where":         compileResult.WhereData,
 		"valid":         len(errors) == 0,
 		"errors_json":   mustMarshalString(errors),
-		"warnings_json": "[]",
+		"warnings_json": mustMarshalString(compileResult.Warnings),
 	}, nil
 }
 

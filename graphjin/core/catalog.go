@@ -1,6 +1,10 @@
 package core
 
-import "github.com/dosco/graphjin/core/v3/internal/catalog"
+import (
+	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/catalog"
+)
 
 type CatalogSnapshot catalog.Snapshot
 type CatalogCard = catalog.Card
@@ -17,6 +21,9 @@ type CatalogMatch = catalog.Match
 type CatalogBuildOptions = catalog.BuildOptions
 type CatalogWorkflow = catalog.Workflow
 type CatalogWorkflowVariable = catalog.WorkflowVariable
+type CatalogFragment = catalog.Fragment
+type CatalogSavedQuery = catalog.SavedQuery
+type CatalogSource = catalog.Source
 
 // LanguageFeatures returns the structured GraphJin language registry used by
 // the AI catalog, MCP guidance, and drift tests.
@@ -39,9 +46,64 @@ func (g *GraphJin) CatalogSnapshot(exclude ...string) (*CatalogSnapshot, error) 
 		}
 	}
 	md := gj.metadataSnapshot(skip)
-	snap := catalog.Build(catalogMetadataSnapshot(md), gj.conf)
+	opts := CatalogBuildOptions{
+		Fragments:    g.catalogFragments(),
+		SavedQueries: g.catalogSavedQueries(),
+	}
+	opts = catalogBuildOptionsFromConfig(gj.conf, opts)
+	snap := catalog.BuildWithOptions(catalogMetadataSnapshot(md), gj.conf, opts)
 	out := CatalogSnapshot(*snap)
 	return &out, nil
+}
+
+func (g *GraphJin) catalogFragments() []CatalogFragment {
+	fragments, err := g.ListFragments()
+	if err != nil {
+		return nil
+	}
+	out := make([]CatalogFragment, 0, len(fragments))
+	for _, fragment := range fragments {
+		details, err := g.GetFragment(qualifiedFragmentName(fragment.Namespace, fragment.Name))
+		if err != nil {
+			continue
+		}
+		out = append(out, CatalogFragment{
+			Name:       details.Name,
+			Namespace:  details.Namespace,
+			Definition: details.Definition,
+			On:         details.On,
+		})
+	}
+	return out
+}
+
+func (g *GraphJin) catalogSavedQueries() []CatalogSavedQuery {
+	queries, err := g.ListSavedQueries()
+	if err != nil {
+		return nil
+	}
+	out := make([]CatalogSavedQuery, 0, len(queries))
+	for _, query := range queries {
+		details, err := g.GetSavedQuery(qualifiedFragmentName(query.Namespace, query.Name))
+		if err != nil {
+			continue
+		}
+		out = append(out, CatalogSavedQuery{
+			Name:      details.Name,
+			Namespace: details.Namespace,
+			Operation: details.Operation,
+			Query:     details.Query,
+			Variables: details.Variables,
+		})
+	}
+	return out
+}
+
+func qualifiedFragmentName(namespace, name string) string {
+	if namespace == "" {
+		return name
+	}
+	return namespace + "." + name
 }
 
 // BuildCatalogSnapshot builds a catalog from an existing metadata snapshot.
@@ -52,13 +114,55 @@ func BuildCatalogSnapshot(md *MetadataSnapshot, conf *Config) *CatalogSnapshot {
 }
 
 func BuildCatalogSnapshotWithOptions(md *MetadataSnapshot, conf *Config, opts CatalogBuildOptions) *CatalogSnapshot {
+	opts = catalogBuildOptionsFromConfig(conf, opts)
 	snap := catalog.BuildWithOptions(catalogMetadataSnapshot(md), conf, opts)
 	out := CatalogSnapshot(*snap)
 	return &out
 }
 
 func CatalogSourceRevisions(md *MetadataSnapshot, conf *Config, opts CatalogBuildOptions) map[string]string {
+	opts = catalogBuildOptionsFromConfig(conf, opts)
 	return catalog.SourceRevisions(catalogMetadataSnapshot(md), conf, opts)
+}
+
+func catalogBuildOptionsFromConfig(conf *Config, opts CatalogBuildOptions) CatalogBuildOptions {
+	if conf != nil && len(opts.Sources) == 0 {
+		opts.Sources = catalogSourcesFromConfig(conf)
+	}
+	return opts
+}
+
+func catalogSourcesFromConfig(conf *Config) []CatalogSource {
+	if conf == nil {
+		return nil
+	}
+	out := make([]CatalogSource, 0, len(conf.Sources))
+	for _, source := range conf.Sources {
+		kind := source.CanonicalKind()
+		if kind == "" {
+			continue
+		}
+		name := strings.TrimSpace(source.Name)
+		if name == "" {
+			name = kind
+		}
+		capabilities := make(map[string]bool, len(source.Capabilities))
+		for key, value := range source.Capabilities {
+			capabilities[key] = value
+		}
+		if len(capabilities) == 0 {
+			capabilities = nil
+		}
+		out = append(out, CatalogSource{
+			Name:         name,
+			Kind:         kind,
+			Type:         strings.TrimSpace(source.Type),
+			Default:      source.Default,
+			ReadOnly:     source.ReadOnly,
+			Capabilities: capabilities,
+		})
+	}
+	return out
 }
 
 func CatalogRevisionFromSourceRevisions(source map[string]string) string {

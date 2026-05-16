@@ -62,21 +62,29 @@ When adding new features to GraphJin (operators, syntax, capabilities), remember
     -   `queryExamples` - add example queries demonstrating new features
 -   **Why**: AI assistants using MCP call `get_query_syntax` to learn available operators. Undocumented operators won't be used by AI agents.
 
-### 3. Modifying Schema Discovery
+### 3. Source Capability Maintenance
+
+When adding a new `sources[].capabilities` key, add it first to the central registry in `core/sourcecap`. Do not introduce ad hoc capability strings in catalog, security, MCP, or source-default code.
+
+-   **What the registry owns**: canonical source kinds, capability keys, mode defaults, action, severity, enforcement type, read-only behavior, summaries, recommendations, and examples.
+-   **What subsystems own**: actual runtime enforcement hooks for their surface (for example CodeSQL, filesystem read-only, control-plane tables, or MCP tools).
+-   **Tests**: registry, catalog, security, config validation, and permission tests must pass. If a capability is not runtime-enforced yet, mark it as `config_audit`.
+
+### 4. Modifying Schema Discovery
 If you need to change how GraphJin discovers tables or relationships:
 -   Focus on `core/internal/sdata/schema.go` and `tables.go`.
 -   Modifications here affect the graph used for query planning.
 
-### 4. Error Handling
+### 5. Error Handling
 -   Use standard Go error wrapping (`fmt.Errorf("%w", err)`).
 -   Fail fast during initialization (`NewGraphJin`).
 -   During query execution, return meaningful error messages that help the user debug their GraphQL query.
 
-### 5. Performance
+### 6. Performance
 -   **Zero Allocation**: Strive for zero-allocation in the hot path (`GraphQL` execution).
 -   **Pre-computation**: Do heavy lifting (schema analysis, allow-list preparation) at initialization time, not request time.
 
-### 6. Configuration
+### 7. Configuration
 -   **YAML Config**: Use `dev.yml` for development, `prod.yml` for production.
 -   **Production Mode**: In production, all queries must be pre-saved (no dynamic client queries). This is a security feature.
 -   **Environment Variables**: Secrets and connection strings should come from environment variables, not config files.

@@ -8,6 +8,8 @@ import (
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/spf13/afero"
+	"go.opentelemetry.io/otel"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestQueryCatalogReturnsWorkflowCards(t *testing.T) {
@@ -39,41 +41,111 @@ function main(input) { return {secretSource:"do-not-index-source"}; }
 	if out.Cards[0].ID != "workflow:order_pnl" {
 		t.Fatalf("expected order_pnl workflow card, got %+v", out.Cards[0])
 	}
-	if out.Revision == "" || out.SourceRevisions["workflows"] == "" {
-		t.Fatalf("expected catalog revision metadata, got revision=%q sources=%+v", out.Revision, out.SourceRevisions)
+	if out.Revision == "" {
+		t.Fatalf("expected catalog revision metadata")
 	}
 }
 
-func TestGetCatalogCardWorkflowDetails(t *testing.T) {
+func TestQueryCatalogByIDReturnsWorkflowDetails(t *testing.T) {
 	ms := workflowCatalogTestServer(t, MCPConfig{}, map[string]string{
 		"order_pnl.js": `// @graphjin-workflow {"description":"Compute P&L from orders","tags":["orders","finance","pnl"],"variables":[{"name":"customer_id","type":"number","description":"Customer to analyze","required":true}]}
 function main(input) { return {}; }
 `,
 	})
 
-	res, err := ms.handleGetCatalogCard(context.Background(), newToolRequest(map[string]any{
+	res, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{
 		"id": "workflow:order_pnl",
 	}))
 	if err != nil {
-		t.Fatalf("get workflow card: %v", err)
+		t.Fatalf("query workflow card: %v", err)
 	}
 	text := assertToolSuccess(t, res)
 
-	var out CatalogCardResult
+	var out CatalogQueryResult
 	if err := json.Unmarshal([]byte(text), &out); err != nil {
-		t.Fatalf("decode get_catalog_card response: %v", err)
+		t.Fatalf("decode query_catalog response: %v", err)
 	}
-	if out.Card.Kind != "workflow" {
-		t.Fatalf("expected workflow card, got %+v", out.Card)
+	if out.Count != 1 || out.Cards[0].Kind != "workflow" {
+		t.Fatalf("expected one workflow card, got %+v", out.Cards)
 	}
-	if strings.Contains(out.Card.SuggestedNext, "execute_workflow") || strings.Contains(out.Card.ExamplesJSON, "gj_workflow_execution") {
-		t.Fatalf("workflow catalog card should not expose execution actions: %+v", out.Card)
+	card := out.Cards[0]
+	if strings.Contains(card.SuggestedNext, "execute_workflow") || strings.Contains(card.ExamplesJSON, "gj_workflow_execution") {
+		t.Fatalf("workflow catalog card should not expose execution actions: %+v", card)
 	}
-	if len(out.Details) == 0 || !strings.Contains(out.Details[0].DataJSON, "customer_id") {
-		t.Fatalf("expected workflow variable metadata in details: %+v", out.Details)
+	if !strings.Contains(card.DetailsJSON, "customer_id") {
+		t.Fatalf("expected workflow variable metadata in details_json: %+v", card)
 	}
-	if len(out.Edges) != 0 {
-		t.Fatalf("did not expect workflow action edges: %+v", out.Edges)
+	if card.EdgesJSON != "" && card.EdgesJSON != "[]" && card.EdgesJSON != "null" {
+		t.Fatalf("did not expect workflow action edges: %+v", card.EdgesJSON)
+	}
+}
+
+func TestGraphQLHelpTopicsUseCatalogGraphQL(t *testing.T) {
+	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
+
+	for _, topic := range graphQLHelpTopics() {
+		t.Run(topic, func(t *testing.T) {
+			res, err := ms.handleGraphQLHelp(context.Background(), newToolRequest(map[string]any{"for": topic}))
+			if err != nil {
+				t.Fatalf("graphql_help: %v", err)
+			}
+			text := assertToolSuccess(t, res)
+			var out GraphQLHelpResult
+			if err := json.Unmarshal([]byte(text), &out); err != nil {
+				t.Fatalf("decode graphql_help: %v\n%s", err, text)
+			}
+			if out.For != topic || out.GraphQLQuery == "" || !strings.Contains(out.GraphQLQuery, "gj_catalog") {
+				t.Fatalf("expected graphql query guidance for %s, got %+v", topic, out)
+			}
+			if out.GraphQLVariables == nil {
+				t.Fatalf("expected stable graphql_variables map")
+			}
+			if len(out.CatalogRows) == 0 {
+				t.Fatalf("expected catalog rows for %s", topic)
+			}
+			if out.Next == nil || out.Next.RecommendedTool == "" {
+				t.Fatalf("expected next guidance for %s: %+v", topic, out.Next)
+			}
+			wantID := "help:" + topic
+			foundHelp := false
+			for _, row := range out.CatalogRows {
+				if row.ID == wantID {
+					foundHelp = true
+					break
+				}
+			}
+			if !foundHelp {
+				t.Fatalf("expected %s in graphql_help rows: %+v", wantID, out.CatalogRows)
+			}
+		})
+	}
+}
+
+func TestQueryCatalogByIDReturnsHelpDetails(t *testing.T) {
+	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
+
+	res, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{"id": "help:query"}))
+	if err != nil {
+		t.Fatalf("query help card: %v", err)
+	}
+	text := assertToolSuccess(t, res)
+	var out CatalogQueryResult
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("decode query_catalog response: %v", err)
+	}
+	if out.Count != 1 || out.Cards[0].ID != "help:query" {
+		t.Fatalf("expected help:query detail row, got %+v", out.Cards)
+	}
+	card := out.Cards[0]
+	for name, value := range map[string]string{
+		"details_json":  card.DetailsJSON,
+		"evidence_json": card.EvidenceJSON,
+		"examples_json": card.ExamplesJSON,
+		"safety_json":   card.SafetyJSON,
+	} {
+		if strings.TrimSpace(value) == "" {
+			t.Fatalf("expected %s on help detail row: %+v", name, card)
+		}
 	}
 }
 
@@ -130,7 +202,7 @@ func TestCatalogCacheReusesRevisionAndUpdatesAfterSaveWorkflow(t *testing.T) {
 	}
 }
 
-func TestCatalogCacheRevisionChangesWhenEnabledToolsChange(t *testing.T) {
+func TestCatalogCacheRevisionStableWhenRemovedSourceToolFlagChanges(t *testing.T) {
 	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
 	s := ms.service
 
@@ -144,11 +216,11 @@ func TestCatalogCacheRevisionChangesWhenEnabledToolsChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("updated catalog snapshot: %v", err)
 	}
-	if updated.Revision == first.Revision {
-		t.Fatalf("expected enabled tool manifest change to alter catalog revision")
+	if updated.Revision != first.Revision {
+		t.Fatalf("expected removed sources-used tool flag to leave catalog revision unchanged")
 	}
-	if updated.SourceRevisions["tools"] == first.SourceRevisions["tools"] {
-		t.Fatalf("expected tools source revision to change")
+	if updated.SourceRevisions["tools"] != first.SourceRevisions["tools"] {
+		t.Fatalf("expected tools source revision to remain unchanged")
 	}
 }
 
@@ -274,17 +346,26 @@ func workflowCatalogTestServer(t *testing.T, cfg MCPConfig, files map[string]str
 	}
 
 	s := &graphjinService{
-		fs: newAferoFS(mem, "/"),
+		fs:     newAferoFS(mem, "/"),
+		log:    zaptest.NewLogger(t).Sugar(),
+		tracer: otel.Tracer("graphjin-workflow-catalog-test"),
 		conf: &Config{
 			Core: core.Config{
 				Sources: []core.SourceConfig{
 					{Name: "graphjin", Kind: "graphjin"},
-					{Name: "workflows", Kind: "workflows"},
+					{Name: "workflows", Kind: "workflow"},
 				},
 			},
 			Serv: Serv{MCP: cfg},
 		},
 	}
+	if err := normalizeServiceSources(s.conf); err != nil {
+		t.Fatalf("normalize workflow catalog test sources: %v", err)
+	}
+	if err := s.normalStart(); err != nil {
+		t.Fatalf("start workflow catalog test service: %v", err)
+	}
+	t.Cleanup(func() { closeTestService(s) })
 	return &mcpServer{service: s, ctx: context.Background()}
 }
 

@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
 
 func Build(snapshot *MetadataSnapshot, conf any) *Snapshot {
@@ -21,17 +23,163 @@ func BuildWithOptions(snapshot *MetadataSnapshot, conf any, opts BuildOptions) *
 	opts = normalizeBuildOptions(opts)
 
 	addEntryPoints(out, opts)
+	addHelp(out, opts)
+	addSources(out, opts)
 	sampleMode := catalogSampleMode(conf)
 	addCapabilities(out, sampleMode, opts)
 	addSchema(out, snapshot, sampleMode, opts)
 	addLanguage(out, opts)
 	addConfig(out, conf)
 	addWorkflows(out, opts)
+	addFragments(out, snapshot, opts)
+	addSavedQueries(out, opts)
 	sortSnapshot(out)
 	out.SourceRevisions = SourceRevisions(snapshot, conf, opts)
 	out.Revision = RevisionFromSourceRevisions(out.SourceRevisions)
 	out.search = newSearchIndex(out)
 	return out
+}
+
+func addSources(out *Snapshot, opts BuildOptions) {
+	for _, source := range opts.Sources {
+		name := strings.TrimSpace(source.Name)
+		kind := strings.TrimSpace(source.Kind)
+		if name == "" || kind == "" {
+			continue
+		}
+		canonicalKind, err := sourcecap.CanonicalKind(kind)
+		if err == nil {
+			kind = canonicalKind
+		}
+		cardID := "source:" + name
+		summary := fmt.Sprintf("%s source", kind)
+		if source.Type != "" {
+			summary = fmt.Sprintf("%s source (%s)", kind, source.Type)
+		}
+		if source.Default {
+			summary += " default"
+		}
+		if source.ReadOnly {
+			summary += " read-only"
+		}
+		details := map[string]any{
+			"name":                   name,
+			"source_kind":            kind,
+			"type":                   source.Type,
+			"default":                source.Default,
+			"read_only":              source.ReadOnly,
+			"capabilities":           source.Capabilities,
+			"canonical_kinds":        sourcecap.Kinds(),
+			"supported_capabilities": sourcecap.ValidKeys(kind),
+			"capability_details":     sourceCapabilityDetails(kind),
+		}
+		out.Cards = append(out.Cards, Card{
+			ID:            cardID,
+			Kind:          "source",
+			Title:         name,
+			Summary:       summary,
+			Source:        name,
+			SourceKind:    kind,
+			RiskLevel:     riskForReadOnly(source.ReadOnly),
+			Confidence:    "high",
+			EvidenceJSON:  mustJSON(details),
+			ExamplesJSON:  sourceExamples(source),
+			SafetyJSON:    mustJSON(map[string]any{"capabilities": "Source capabilities grant authenticated user access only; anonymous access is controlled separately.", "read_only_blocks_mutation": source.ReadOnly}),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog"),
+			DetailRef:     cardID,
+		})
+		out.Details = append(out.Details, CardDetail{
+			ID:       cardID + ":capabilities",
+			CardID:   cardID,
+			Section:  "source_capabilities",
+			Content:  "Source capabilities are the primary interface for enabling or blocking source, control-plane, and workflow surfaces.",
+			DataJSON: mustJSON(details),
+		})
+		out.Nodes = append(out.Nodes, Node{ID: "node:" + cardID, Kind: "source", Name: name, Summary: summary, CardID: cardID})
+	}
+}
+
+type helpTopic struct {
+	Key      string
+	Title    string
+	Summary  string
+	Search   string
+	Kinds    []string
+	Examples []string
+	Safety   map[string]any
+	Next     []string
+	Replaces []string
+}
+
+var helpTopics = []helpTopic{
+	{Key: "discovery", Title: "Discovery help", Summary: "Start here when you are unsure which catalog rows or GraphJin surface to inspect.", Search: "catalog discovery schema workflow query security", Kinds: []string{"help", "entrypoint", "capability", "system_capability"}, Examples: []string{`graphql_help(for: "discovery")`, `query_catalog(where: { kind: { eq: "table" } })`}, Next: []string{"query_catalog"}, Replaces: []string{"get_workflow_guide", "get_discovery_schema"}},
+	{Key: "catalog", Title: "Catalog help", Summary: "Use gj_catalog/query_catalog for evidence-backed discovery and query_catalog(id) for one detailed item.", Search: "catalog detail evidence examples edges safety", Kinds: []string{"help", "entrypoint", "capability", "system_capability"}, Examples: []string{`query_catalog(search: "join orders customers", where: { kind: { eq: "relationship" } })`, `query_catalog(id: "help:catalog")`}, Next: []string{"query_catalog"}},
+	{Key: "schema", Title: "Schema help", Summary: "Discover tables, columns, relationships, functions, indexes, and row-shape hints from catalog rows.", Search: "schema table column relationship function index sample profile", Kinds: []string{"help", "database", "table", "column", "relationship", "function"}, Examples: []string{`query_catalog(where: { kind: { in: ["table", "column", "relationship"] } })`}, Next: []string{"query_catalog", "validate_where_clause"}, Replaces: []string{"get_schema_insights", "get_discovery_schema"}},
+	{Key: "tables", Title: "Table help", Summary: "Find table names, primary keys, row-shape hints, sample/profile availability, and related graph edges.", Search: "tables primary key sample profile row count", Kinds: []string{"help", "table", "relationship", "column"}, Examples: []string{`query_catalog(where: { kind: { eq: "table" } })`, `query_catalog(id: "table:<database.schema.table>")`}, Next: []string{"query_catalog", "validate_where_clause"}, Replaces: []string{"list_tables", "describe_table", "get_table_sample"}},
+	{Key: "columns", Title: "Column help", Summary: "Find column names, types, sensitivity notes, filter hints, indexes, and sample/profile availability.", Search: "columns fields types filters sensitive sample profile", Kinds: []string{"help", "column", "table", "operator_set"}, Examples: []string{`query_catalog(where: { kind: { eq: "column" }, table_name: { eq: "<table>" } })`}, Next: []string{"query_catalog", "validate_where_clause"}, Replaces: []string{"describe_table", "get_table_sample"}},
+	{Key: "relationships", Title: "Relationship help", Summary: "Find safe join paths and @through hints before nesting related selectors.", Search: "relationship join path foreign key through nested selector", Kinds: []string{"help", "relationship", "directive", "table"}, Examples: []string{`query_catalog(search: "join orders customers", where: { kind: { eq: "relationship" } })`}, Next: []string{"query_catalog"}, Replaces: []string{"find_path", "explore_relationships"}},
+	{Key: "query", Title: "Query help", Summary: "Learn GraphJin query DSL syntax, query patterns, aggregations, analytics directives, and common mistakes.", Search: "query syntax dsl aggregate analytics directive pattern distinct limit", Kinds: []string{"help", "directive", "operator_set", "query_pattern", "deprecated_feature"}, Examples: []string{`query_catalog(where: { kind: { in: ["directive", "operator_set", "query_pattern"] } })`}, Next: []string{"query_catalog", "validate_where_clause"}, Replaces: []string{"get_query_syntax"}},
+	{Key: "filters", Title: "Filter help", Summary: "Learn typed where operators and validate filters against table and column metadata.", Search: "where filter operators eq in ilike is_null validate", Kinds: []string{"help", "operator_set", "column", "query_pattern"}, Examples: []string{`validate_where_clause(table: "<table>", where: { id: { eq: 1 } })`}, Next: []string{"query_catalog", "validate_where_clause"}},
+	{Key: "mutations", Title: "Mutation help", Summary: "Learn insert, update, upsert, delete, nested mutation, and code-source preview/apply patterns.", Search: "mutation insert update upsert delete code source preview apply", Kinds: []string{"help", "mutation_pattern", "operator_set", "system_capability"}, Examples: []string{`query_catalog(where: { kind: { eq: "mutation_pattern" } })`}, Next: []string{"query_catalog"}, Replaces: []string{"get_mutation_syntax", "write_mutation"}},
+	{Key: "saved_queries", Title: "Saved query help", Summary: "Find allow-listed saved queries, inspect variable contracts, then run execute_saved_query.", Search: "saved query allow list variables execute_saved_query", Kinds: []string{"help", "saved_query", "capability"}, Examples: []string{`query_catalog(where: { kind: { eq: "saved_query" } })`, `execute_saved_query(name: "<saved_query_name>", variables: {})`}, Next: []string{"query_catalog", "execute_saved_query"}, Replaces: []string{"list_saved_queries", "search_saved_queries", "get_saved_query"}},
+	{Key: "fragments", Title: "Fragment help", Summary: "Discover reusable GraphQL fragments and import guidance before repeating field selections.", Search: "fragments graphql reusable field selection import", Kinds: []string{"help", "fragment", "table"}, Examples: []string{`query_catalog(where: { kind: { eq: "fragment" } })`}, Next: []string{"query_catalog"}, Replaces: []string{"list_fragments", "search_fragments", "get_fragment"}},
+	{Key: "workflows", Title: "Workflow help", Summary: "Discover reusable workflows, variable schemas, execution policy, and workflow control-plane guidance.", Search: "workflow reusable variables execution gj_workflow_execution", Kinds: []string{"help", "workflow", "system_capability", "capability"}, Examples: []string{`query_catalog(where: { kind: { eq: "workflow" } })`}, Next: []string{"query_catalog", "execute_saved_query"}},
+	{Key: "workflow_runtime", Title: "Workflow runtime help", Summary: "Learn JavaScript workflow runtime concepts, callable tool guidance, and safety constraints.", Search: "javascript workflow runtime goja gj tools queryCatalog executeSavedQuery", Kinds: []string{"help", "workflow", "capability", "system_capability"}, Examples: []string{`query_catalog(search: "workflow runtime goja tools")`}, Next: []string{"query_catalog"}, Replaces: []string{"get_js_runtime_api"}},
+	{Key: "config", Title: "Config help", Summary: "Discover redacted configuration documentation, roles, permissions, sources, and safe config update guidance.", Search: "config docs sources roles permissions redacted update gj_config", Kinds: []string{"help", "config", "system_capability", "capability"}, Examples: []string{`query_catalog(search: "config docs", where: { kind: { in: ["help", "config", "system_capability"] } })`}, Next: []string{"query_catalog"}, Replaces: []string{"get_config_docs"}},
+	{Key: "security", Title: "Security help", Summary: "Discover gj_security guidance, policy rows, findings, severity filters, and agentic safety expectations.", Search: "security findings policy posture gj_security agentic production", Kinds: []string{"help", "system_capability", "config"}, Examples: []string{`query_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } })`}, Next: []string{"query_catalog"}},
+	{Key: "code", Title: "Code help", Summary: "Discover code-source catalog rows and safe source-edit preview/apply guidance when code sources are configured.", Search: "code source file symbol preview apply lock", Kinds: []string{"help", "mutation_pattern", "system_capability", "table", "column"}, Examples: []string{`query_catalog(search: "code source preview apply source edit")`}, Next: []string{"query_catalog"}},
+	{Key: "errors", Title: "Error help", Summary: "Use errors[].extensions.graphjin_repair, then inspect relevant schema or language catalog rows before retrying.", Search: "error repair graphjin_repair syntax table column relationship", Kinds: []string{"help", "deprecated_feature", "query_pattern", "operator_set", "system_capability"}, Examples: []string{`query_catalog(search: "error repair syntax relationship")`}, Next: []string{"query_catalog", "validate_where_clause"}},
+}
+
+func addHelp(out *Snapshot, opts BuildOptions) {
+	for _, topic := range helpTopics {
+		cardID := "help:" + topic.Key
+		queryJSON := helpQueryJSON(topic)
+		safety := topic.Safety
+		if safety == nil {
+			safety = map[string]any{"read_only": true, "catalog_backed": true}
+		}
+		out.Cards = append(out.Cards, Card{
+			ID:            cardID,
+			Kind:          "help",
+			Title:         topic.Title,
+			Summary:       topic.Summary,
+			Source:        "core.catalog.help",
+			RiskLevel:     "low",
+			Confidence:    "high",
+			EvidenceJSON:  mustJSON(map[string]any{"for": topic.Key, "related_kinds": topic.Kinds, "replaces_legacy_tools": topic.Replaces}),
+			ExamplesJSON:  mustJSON(topic.Examples),
+			SuggestedNext: suggestedNextJSON(opts, topic.Next...),
+			DetailRef:     cardID,
+			QueryJSON:     queryJSON,
+			SafetyJSON:    mustJSON(safety),
+			GraphQLQuery:  helpGraphQLQuery(topic),
+		})
+		out.Details = append(out.Details, CardDetail{
+			ID:       cardID + ":guide",
+			CardID:   cardID,
+			Section:  "graphql_help",
+			Content:  topic.Summary,
+			DataJSON: mustJSON(map[string]any{"for": topic.Key, "query": queryJSON, "examples": topic.Examples, "safety": safety}),
+		})
+		out.Nodes = append(out.Nodes, Node{ID: "node:" + cardID, Kind: "help", Name: topic.Key, Summary: topic.Summary, CardID: cardID})
+	}
+}
+
+func helpQueryJSON(topic helpTopic) string {
+	return mustJSON(map[string]any{
+		"search": topic.Search,
+		"where":  map[string]any{"kind": map[string]any{"in": topic.Kinds}},
+		"limit":  25,
+	})
+}
+
+func helpGraphQLQuery(topic helpTopic) string {
+	kinds := make([]string, 0, len(topic.Kinds))
+	for _, kind := range topic.Kinds {
+		kinds = append(kinds, fmt.Sprintf("%q", kind))
+	}
+	return fmt.Sprintf(`query { gj_catalog(search: %q, where: { kind: { in: [%s] } }, limit: 25) { id kind name summary details_json examples_json safety_json edges_json } }`, topic.Search, strings.Join(kinds, ", "))
 }
 
 func addEntryPoints(out *Snapshot, opts BuildOptions) {
@@ -41,10 +189,10 @@ func addEntryPoints(out *Snapshot, opts BuildOptions) {
 			Name:    "catalog_overview",
 			Summary: "Start here to discover available data, GraphJin language features, config, policies, and safe next actions.",
 			QueryJSON: mustJSON(map[string]any{
-				"where": map[string]any{"kind": map[string]any{"in": []string{"database", "table", "directive", "operator_set", "query_pattern", "mutation_pattern", "capability"}}},
+				"where": map[string]any{"kind": map[string]any{"in": []string{"database", "table", "fragment", "directive", "operator_set", "query_pattern", "mutation_pattern", "capability"}}},
 				"limit": 50,
 			}),
-			SuggestedNext: suggestedNextJSON(opts, "query_catalog", "get_catalog_card"),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog"),
 		},
 		EntryPoint{
 			ID:      "entrypoint.catalog.schema",
@@ -53,7 +201,7 @@ func addEntryPoints(out *Snapshot, opts BuildOptions) {
 			QueryJSON: mustJSON(map[string]any{
 				"where": map[string]any{"kind": map[string]any{"in": []string{"table", "column", "relationship"}}},
 			}),
-			SuggestedNext: suggestedNextJSON(opts, "query_catalog", "get_catalog_card", "validate_where_clause"),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog", "validate_where_clause"),
 		},
 		EntryPoint{
 			ID:      "entrypoint.catalog.language",
@@ -72,7 +220,16 @@ func addEntryPoints(out *Snapshot, opts BuildOptions) {
 				"where":  map[string]any{"kind": map[string]any{"in": []string{"table", "column"}}},
 				"search": "sample profile",
 			}),
-			SuggestedNext: suggestedNextJSON(opts, "get_catalog_card", "query_catalog"),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog"),
+		},
+		EntryPoint{
+			ID:      "entrypoint.catalog.fragments",
+			Name:    "discover_fragments",
+			Summary: "Find reusable GraphQL fragments before repeating field selections in new queries.",
+			QueryJSON: mustJSON(map[string]any{
+				"where": map[string]any{"kind": map[string]any{"eq": "fragment"}},
+			}),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog", "get_fragment"),
 		},
 		EntryPoint{
 			ID:      "entrypoint.catalog.workflows",
@@ -81,7 +238,7 @@ func addEntryPoints(out *Snapshot, opts BuildOptions) {
 			QueryJSON: mustJSON(map[string]any{
 				"where": map[string]any{"kind": map[string]any{"eq": "workflow"}},
 			}),
-			SuggestedNext: suggestedNextJSON(opts, "query_catalog", "get_catalog_card"),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog"),
 		},
 	)
 }
@@ -128,7 +285,7 @@ func addCapabilities(out *Snapshot, sampleMode string, opts BuildOptions) {
 			Source:        "core.catalog.capability",
 			RiskLevel:     "low",
 			Confidence:    "high",
-			SuggestedNext: suggestedNextJSON(opts, "get_catalog_card"),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog"),
 		})
 		out.Nodes = append(out.Nodes, Node{ID: cap.ID, Kind: "capability", Name: cap.Name, Summary: cap.Summary, CardID: cap.ID})
 	}
@@ -206,7 +363,7 @@ func systemGraphQLCapabilities(enabled map[string]struct{}) []Capability {
 			}),
 			OutputSchemaJSON: mustJSON(map[string]any{
 				"root":   "gj_config",
-				"fields": []string{"id", "source_mode", "config_path", "active_database", "sources", "databases", "relationships", "tables", "roles", "blocklist", "functions", "resolvers", "mcp", "config_json", "redacted_paths", "updated_at", "catalog_revision"},
+				"fields": []string{"id", "sources_used", "config_path", "active_database", "sources", "databases", "relationships", "tables", "roles", "blocklist", "functions", "resolvers", "mcp", "config_json", "redacted_paths", "updated_at", "catalog_revision"},
 			}),
 			SafetyJSON: mustJSON(map[string]any{"graphql_mutation": `gj_config(id: "current", update: ...)`, "requires_config": "mcp.allow_config_updates", "serialized_by": "service config mutex"}),
 		})
@@ -220,7 +377,7 @@ func capabilityTemplates(sampleMode string) map[string]Capability {
 		"get_catalog_card":         {ID: "capability.get_catalog_card", Name: "get_catalog_card", Kind: "catalog_read", Summary: "Fetch a single catalog item with rich details and nearby edges.", SafetyJSON: mustJSON(map[string]any{"read_only": true})},
 		"get_catalog_entrypoints":  {ID: "capability.get_catalog_entrypoints", Name: "get_catalog_entrypoints", Kind: "catalog_read", Summary: "List recommended catalog entrypoints for discovery.", SafetyJSON: mustJSON(map[string]any{"read_only": true})},
 		"get_catalog_capabilities": {ID: "capability.get_catalog_capabilities", Name: "get_catalog_capabilities", Kind: "catalog_read", Summary: "List catalog-described GraphJin capabilities and safety notes.", SafetyJSON: mustJSON(map[string]any{"read_only": true})},
-		"validate_where_clause":    {ID: "capability.validate_where_clause", Name: "validate_where_clause", Kind: "validation", Summary: "Validate a where clause against table columns and GraphJin operators.", SafetyJSON: mustJSON(map[string]any{"read_only": true})},
+		"validate_where_clause":    {ID: "capability.validate_where_clause", Name: "validate_where_clause", Kind: "validation", Summary: "Validate a where clause with table/operator guidance and compile-only GraphJin verification.", SafetyJSON: mustJSON(map[string]any{"read_only": true})},
 		"fix_query_error":          {ID: "capability.fix_query_error", Name: "fix_query_error", Kind: "repair", Summary: "Classify and repair GraphJin query errors using catalog language/schema context.", SafetyJSON: mustJSON(map[string]any{"read_only": true})},
 		"execute_graphql":          {ID: "capability.execute_graphql", Name: "execute_graphql", Kind: "execution", Summary: "Execute raw GraphJin GraphQL when enabled by MCP config.", SafetyJSON: mustJSON(map[string]any{"requires_config": "mcp.allow_raw_queries"})},
 		"execute_saved_query":      {ID: "capability.execute_saved_query", Name: "execute_saved_query", Kind: "execution", Summary: "Execute a saved allow-list query by name.", SafetyJSON: mustJSON(map[string]any{"prefers_saved_queries": true})},
@@ -280,7 +437,7 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 			Confidence:    "high",
 			EvidenceJSON:  mustJSON(t),
 			ExamplesJSON:  tableExamples(t, keyCols),
-			SuggestedNext: suggestedNextJSON(opts, "get_catalog_card", "validate_where_clause"),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog", "validate_where_clause"),
 			DetailRef:     cardID,
 		})
 		out.Details = append(out.Details, CardDetail{
@@ -298,7 +455,7 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 			DataJSON: mustJSON(map[string]any{
 				"mode":                          sampleMode,
 				"base_card_contains_row_values": sampleMode == "inline",
-				"suggested_next":                suggestedNext(opts, "get_catalog_card", "query_catalog"),
+				"suggested_next":                suggestedNext(opts, "query_catalog"),
 			}),
 		})
 		out.Nodes = append(out.Nodes, Node{ID: nodeID, Kind: "table", Name: t.TableName, Summary: summary, CardID: cardID})
@@ -430,6 +587,16 @@ func addConfig(out *Snapshot, conf any) {
 		Content:  "Sensitive values are represented as has_value plus sensitivity class and never include raw secret material.",
 		DataJSON: mustJSON(fields),
 	})
+	out.Details = append(out.Details, CardDetail{
+		ID:      cardID + ":source_capabilities",
+		CardID:  cardID,
+		Section: "source_capabilities",
+		Content: "sources[].capabilities is a source-kind-specific boolean map. Valid keys come from the source capability registry and are also exposed on source catalog rows.",
+		DataJSON: mustJSON(map[string]any{
+			"source_kinds":        sourcecap.Kinds(),
+			"source_capabilities": sourcecap.CapabilityMap(),
+		}),
+	})
 }
 
 func addWorkflows(out *Snapshot, opts BuildOptions) {
@@ -452,7 +619,7 @@ func addWorkflows(out *Snapshot, opts BuildOptions) {
 			RiskLevel:     "medium",
 			Confidence:    workflowConfidence(wf),
 			EvidenceJSON:  mustJSON(evidence),
-			SuggestedNext: suggestedNextJSON(opts, "get_catalog_card", "query_catalog"),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog"),
 			DetailRef:     cardID,
 			CreatedAt:     wf.CreatedAt,
 			UpdatedAt:     wf.UpdatedAt,
@@ -477,6 +644,180 @@ func addWorkflows(out *Snapshot, opts BuildOptions) {
 		})
 		out.Nodes = append(out.Nodes, Node{ID: "node:" + cardID, Kind: "workflow", Name: wf.Name, Summary: summary, CardID: cardID})
 	}
+}
+
+func addFragments(out *Snapshot, snapshot *MetadataSnapshot, opts BuildOptions) {
+	tableNodes := uniqueFragmentTableNodes(snapshot)
+	for _, frag := range opts.Fragments {
+		qualified := fragmentQualifiedName(frag)
+		if qualified == "" {
+			continue
+		}
+		cardID := "fragment:" + qualified
+		summary := fragmentSummary(frag)
+		importDirective := fmt.Sprintf(`#import "./fragments/%s"`, qualified)
+		out.Cards = append(out.Cards, Card{
+			ID:            cardID,
+			Kind:          "fragment",
+			Title:         qualified,
+			Summary:       summary,
+			TableName:     frag.On,
+			Source:        "core.allow_list.fragments",
+			RiskLevel:     "low",
+			Confidence:    "high",
+			EvidenceJSON:  mustJSON(fragmentEvidence(frag, qualified, importDirective)),
+			ExamplesJSON:  mustJSON([]string{importDirective, fmt.Sprintf("{ %s { ...%s } }", valueOrDefault(frag.On, "<table>"), frag.Name)}),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog", "get_fragment"),
+			DetailRef:     cardID,
+		})
+		out.Details = append(out.Details, CardDetail{
+			ID:      cardID + ":definition",
+			CardID:  cardID,
+			Section: "fragment_definition",
+			Content: "Full GraphQL fragment definition.",
+			DataJSON: mustJSON(map[string]any{
+				"definition":       frag.Definition,
+				"import_directive": importDirective,
+			}),
+		})
+		nodeID := "node:" + cardID
+		out.Nodes = append(out.Nodes, Node{ID: nodeID, Kind: "fragment", Name: qualified, Summary: summary, CardID: cardID})
+		if targetNodeID := tableNodes[strings.ToLower(strings.TrimSpace(frag.On))]; targetNodeID != "" {
+			out.Edges = append(out.Edges, Edge{ID: "edge:fragment-table:" + qualified, FromID: nodeID, ToID: targetNodeID, Kind: "applies_to", Summary: "Fragment type condition matches table"})
+		}
+	}
+}
+
+func addSavedQueries(out *Snapshot, opts BuildOptions) {
+	for _, sq := range opts.SavedQueries {
+		qualified := savedQueryQualifiedName(sq)
+		if qualified == "" {
+			continue
+		}
+		cardID := "saved_query:" + qualified
+		operation := valueOrDefault(sq.Operation, "query")
+		out.Cards = append(out.Cards, Card{
+			ID:              cardID,
+			Kind:            "saved_query",
+			Title:           qualified,
+			Summary:         fmt.Sprintf("Allow-listed %s ready for execute_saved_query.", operation),
+			Source:          "core.allow_list",
+			RiskLevel:       riskForSavedQuery(operation),
+			Confidence:      "high",
+			EvidenceJSON:    mustJSON(savedQueryEvidence(sq, qualified)),
+			ExamplesJSON:    mustJSON([]string{fmt.Sprintf(`execute_saved_query(name: %q, variables: {...})`, qualified)}),
+			SuggestedNext:   suggestedNextJSON(opts, "execute_saved_query", "query_catalog"),
+			DetailRef:       cardID,
+			InputSchemaJSON: mustJSON(map[string]any{"name": qualified, "namespace": sq.Namespace, "variables": sq.Variables}),
+			SafetyJSON:      mustJSON(map[string]any{"allow_listed": true, "execute_with": "execute_saved_query", "operation": operation}),
+			GraphQLQuery:    sq.Query,
+		})
+		out.Details = append(out.Details, CardDetail{
+			ID:      cardID + ":definition",
+			CardID:  cardID,
+			Section: "saved_query_definition",
+			Content: "Saved query definition and variable contract from the allow-list.",
+			DataJSON: mustJSON(map[string]any{
+				"name":      sq.Name,
+				"namespace": sq.Namespace,
+				"operation": operation,
+				"query":     sq.Query,
+				"variables": sq.Variables,
+			}),
+		})
+		out.Nodes = append(out.Nodes, Node{ID: "node:" + cardID, Kind: "saved_query", Name: qualified, Summary: operation + " saved query", CardID: cardID})
+	}
+}
+
+func savedQueryQualifiedName(sq SavedQuery) string {
+	name := strings.TrimSpace(sq.Name)
+	if name == "" {
+		return ""
+	}
+	namespace := strings.TrimSpace(sq.Namespace)
+	if namespace == "" {
+		return name
+	}
+	return namespace + "." + name
+}
+
+func savedQueryEvidence(sq SavedQuery, qualified string) map[string]any {
+	return map[string]any{
+		"name":           sq.Name,
+		"namespace":      sq.Namespace,
+		"qualified_name": qualified,
+		"operation":      valueOrDefault(sq.Operation, "query"),
+		"source_hash":    sq.SourceHash,
+	}
+}
+
+func riskForSavedQuery(operation string) string {
+	switch strings.ToLower(strings.TrimSpace(operation)) {
+	case "mutation":
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func fragmentEvidence(frag Fragment, qualified, importDirective string) map[string]any {
+	return map[string]any{
+		"name":             frag.Name,
+		"namespace":        frag.Namespace,
+		"qualified_name":   qualified,
+		"on":               frag.On,
+		"import_directive": importDirective,
+		"source_hash":      frag.SourceHash,
+	}
+}
+
+func fragmentSummary(frag Fragment) string {
+	if strings.TrimSpace(frag.On) == "" {
+		return "Reusable GraphQL fragment field selection."
+	}
+	return "Reusable GraphQL fragment field selection on " + frag.On + "."
+}
+
+func fragmentQualifiedName(frag Fragment) string {
+	name := strings.TrimSpace(frag.Name)
+	if name == "" {
+		return ""
+	}
+	namespace := strings.TrimSpace(frag.Namespace)
+	if namespace == "" {
+		return name
+	}
+	return namespace + "." + name
+}
+
+func uniqueFragmentTableNodes(snapshot *MetadataSnapshot) map[string]string {
+	counts := make(map[string]int)
+	nodes := make(map[string]string)
+	add := func(key, nodeID string) {
+		key = strings.ToLower(strings.TrimSpace(key))
+		if key == "" {
+			return
+		}
+		counts[key]++
+		nodes[key] = nodeID
+	}
+	for _, table := range snapshot.Tables {
+		nodeID := "node:table:" + table.ID
+		keys := map[string]struct{}{
+			table.TableName: {},
+			qualifiedName("", table.SchemaName, table.TableName):                 {},
+			qualifiedName(table.DatabaseName, table.SchemaName, table.TableName): {},
+		}
+		for key := range keys {
+			add(key, nodeID)
+		}
+	}
+	for key, count := range counts {
+		if count != 1 {
+			delete(nodes, key)
+		}
+	}
+	return nodes
 }
 
 func workflowDetailContent(wf Workflow) string {
@@ -528,6 +869,29 @@ func suggestedNextJSON(opts BuildOptions, names ...string) string {
 	return mustJSON(suggestedNext(opts, names...))
 }
 
+func sourceExamples(source Source) string {
+	return mustJSON(sourcecap.Examples(source.Kind, valueOrDefault(source.Name, "<source>")))
+}
+
+func sourceCapabilityDetails(kind string) []map[string]any {
+	defs := sourcecap.Definitions(kind)
+	out := make([]map[string]any, 0, len(defs))
+	for _, def := range defs {
+		out = append(out, map[string]any{
+			"key":              def.Key,
+			"action":           def.Action,
+			"summary":          def.Summary,
+			"default_dev":      def.DefaultDev,
+			"default_prod":     def.DefaultProd,
+			"default_agentic":  def.DefaultAgentic,
+			"severity":         def.Severity,
+			"enforcement":      def.Enforcement,
+			"read_only_blocks": def.ReadOnlyBlocks,
+		})
+	}
+	return out
+}
+
 func suggestedNext(opts BuildOptions, names ...string) []string {
 	out := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
@@ -574,6 +938,17 @@ func normalizeBuildOptions(opts BuildOptions) BuildOptions {
 	if opts.WorkflowRuntime == "" {
 		opts.WorkflowRuntime = "goja"
 	}
+	for i := range opts.Sources {
+		opts.Sources[i].Name = strings.TrimSpace(opts.Sources[i].Name)
+		opts.Sources[i].Kind = strings.TrimSpace(opts.Sources[i].Kind)
+		opts.Sources[i].Type = strings.TrimSpace(opts.Sources[i].Type)
+	}
+	sort.Slice(opts.Sources, func(i, j int) bool {
+		if opts.Sources[i].Kind != opts.Sources[j].Kind {
+			return opts.Sources[i].Kind < opts.Sources[j].Kind
+		}
+		return opts.Sources[i].Name < opts.Sources[j].Name
+	})
 	for i := range opts.Workflows {
 		opts.Workflows[i].Name = strings.TrimSpace(opts.Workflows[i].Name)
 		opts.Workflows[i].Description = strings.TrimSpace(opts.Workflows[i].Description)
@@ -593,6 +968,38 @@ func normalizeBuildOptions(opts BuildOptions) BuildOptions {
 		})
 	}
 	sort.Slice(opts.Workflows, func(i, j int) bool { return opts.Workflows[i].Name < opts.Workflows[j].Name })
+	for i := range opts.Fragments {
+		opts.Fragments[i].Name = strings.TrimSpace(opts.Fragments[i].Name)
+		opts.Fragments[i].Namespace = strings.TrimSpace(opts.Fragments[i].Namespace)
+		opts.Fragments[i].Definition = strings.TrimSpace(opts.Fragments[i].Definition)
+		opts.Fragments[i].On = strings.TrimSpace(opts.Fragments[i].On)
+		opts.Fragments[i].SourceHash = strings.TrimSpace(opts.Fragments[i].SourceHash)
+		if opts.Fragments[i].SourceHash == "" && opts.Fragments[i].Definition != "" {
+			opts.Fragments[i].SourceHash = hashJSON(opts.Fragments[i].Definition)
+		}
+	}
+	sort.Slice(opts.Fragments, func(i, j int) bool {
+		if opts.Fragments[i].Namespace != opts.Fragments[j].Namespace {
+			return opts.Fragments[i].Namespace < opts.Fragments[j].Namespace
+		}
+		return opts.Fragments[i].Name < opts.Fragments[j].Name
+	})
+	for i := range opts.SavedQueries {
+		opts.SavedQueries[i].Name = strings.TrimSpace(opts.SavedQueries[i].Name)
+		opts.SavedQueries[i].Namespace = strings.TrimSpace(opts.SavedQueries[i].Namespace)
+		opts.SavedQueries[i].Operation = strings.TrimSpace(opts.SavedQueries[i].Operation)
+		opts.SavedQueries[i].Query = strings.TrimSpace(opts.SavedQueries[i].Query)
+		opts.SavedQueries[i].SourceHash = strings.TrimSpace(opts.SavedQueries[i].SourceHash)
+		if opts.SavedQueries[i].SourceHash == "" && opts.SavedQueries[i].Query != "" {
+			opts.SavedQueries[i].SourceHash = hashJSON(opts.SavedQueries[i].Query)
+		}
+	}
+	sort.Slice(opts.SavedQueries, func(i, j int) bool {
+		if opts.SavedQueries[i].Namespace != opts.SavedQueries[j].Namespace {
+			return opts.SavedQueries[i].Namespace < opts.SavedQueries[j].Namespace
+		}
+		return opts.SavedQueries[i].Name < opts.SavedQueries[j].Name
+	})
 	return opts
 }
 
@@ -707,9 +1114,9 @@ func columnExamples(c MetadataColumn) string {
 
 func columnSuggestedNext(c MetadataColumn) []string {
 	if looksMetricColumn(c) || looksDateColumn(c) || looksStatusColumn(c) {
-		return []string{"get_catalog_card", "validate_where_clause"}
+		return []string{"query_catalog", "validate_where_clause"}
 	}
-	return []string{"get_catalog_card", "query_catalog"}
+	return []string{"query_catalog"}
 }
 
 func relationshipExample(r MetadataRelationship) string {

@@ -23,7 +23,7 @@ func Handler() {}
 	conf := &Config{
 		Core: Core{
 			Sources: []core.SourceConfig{
-				{Name: "code", Kind: "codesql", Path: source},
+				{Name: "code", Kind: "code", Path: source},
 			},
 		},
 		Serv: Serv{
@@ -61,7 +61,7 @@ func Handler() {}
 	}
 }
 
-func TestCodeSQLProductionEnablesLiveWatcher(t *testing.T) {
+func TestCodeSQLProductionDisablesLiveWatcherByDefault(t *testing.T) {
 	source := t.TempDir()
 	writeTestFile(t, filepath.Join(source, "main.go"), `package main
 
@@ -72,7 +72,40 @@ func Handler() {}
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "code", Kind: "codesql", Path: source},
+				{Name: "code", Kind: "code", Path: source},
+			},
+		},
+		Serv: Serv{
+			Production: true,
+			ConfigPath: filepath.Join(t.TempDir(), "config"),
+			MCP:        MCPConfig{Disable: true},
+		},
+	}
+
+	s, err := newGraphJinService(conf, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestService(s)
+
+	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'symbol' AND name = 'Handler'`, 1)
+	if managed := s.managedDBs["code"]; managed.watch {
+		t.Fatalf("codesql watcher enabled in production by default, want disabled")
+	}
+}
+
+func TestCodeSQLProductionEnablesLiveWatcherWithCapability(t *testing.T) {
+	source := t.TempDir()
+	writeTestFile(t, filepath.Join(source, "main.go"), `package main
+
+func Handler() {}
+`)
+
+	conf := &Config{
+		Core: Core{
+			DisableAllowList: true,
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "code", Path: source, Capabilities: map[string]bool{"code.watch": true}},
 			},
 		},
 		Serv: Serv{
@@ -90,7 +123,7 @@ func Handler() {}
 
 	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'symbol' AND name = 'Handler'`, 1)
 	if managed := s.managedDBs["code"]; !managed.watch {
-		t.Fatalf("codesql watcher disabled in production, want enabled")
+		t.Fatalf("codesql watcher disabled with code.watch capability, want enabled")
 	}
 }
 
@@ -105,7 +138,7 @@ func Handler() {}
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "code", Kind: "codesql", Path: source, ReadOnly: true},
+				{Name: "code", Kind: "code", Path: source, ReadOnly: true},
 			},
 		},
 		Serv: Serv{
@@ -138,7 +171,7 @@ func Handler() {}
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "code", Kind: "codesql", Path: source, ReadOnly: true},
+				{Name: "code", Kind: "code", Path: source, ReadOnly: true},
 			},
 		},
 		Serv: Serv{
@@ -187,7 +220,7 @@ func Legacy() {}
 		closeTestService(s)
 		t.Fatal("expected legacy CodeSQL database config to be rejected")
 	}
-	if !strings.Contains(err.Error(), "kind: codesql") {
+	if !strings.Contains(err.Error(), "kind: code") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -206,7 +239,7 @@ func LoadUser(id int64) int64 {
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "code", Kind: "codesql", Path: source},
+				{Name: "code", Kind: "code", Path: source},
 			},
 		},
 		Serv: Serv{
@@ -427,7 +460,7 @@ func TestCodeSQLGraphQLFileLifecycleMutations(t *testing.T) {
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "code", Kind: "codesql", Path: source},
+				{Name: "code", Kind: "code", Path: source},
 			},
 		},
 		Serv: Serv{
@@ -585,7 +618,7 @@ func Blocked() {}
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "code", Kind: "codesql", Path: source},
+				{Name: "code", Kind: "code", Path: source},
 			},
 		},
 		Serv: Serv{
@@ -621,7 +654,7 @@ func WatchMe() int {
 		Core: Core{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "code", Kind: "codesql", Path: source},
+				{Name: "code", Kind: "code", Path: source},
 			},
 		},
 		Serv: Serv{

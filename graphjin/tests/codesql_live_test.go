@@ -33,7 +33,7 @@ func Handler() {
 		Core: core.Config{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "code", Kind: "codesql", Path: sourceRoot},
+				{Name: "code", Kind: "code", Path: sourceRoot},
 			},
 		},
 		Serv: serv.Serv{
@@ -81,8 +81,8 @@ func LookupUser() {
 		Core: core.Config{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "app", Kind: "sql", Type: "sqlite", Path: appPath, Default: true},
-				{Name: "code", Kind: "codesql", Path: sourceRoot},
+				{Name: "app", Kind: "database", Type: "sqlite", Path: appPath, Default: true},
+				{Name: "code", Kind: "code", Path: sourceRoot},
 				{Name: "graphjin", Kind: "graphjin"},
 			},
 		},

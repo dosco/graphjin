@@ -281,8 +281,8 @@ type users {
 		DisableAllowList: true,
 		DBType:           "postgres",
 		Sources: []SourceConfig{
-			{Name: "app", Kind: "sql", Type: "postgres", Default: true},
-			{Name: "avatars", Kind: "filesystem", Backend: "local", Root: root, MaxListPageSize: 2},
+			{Name: "app", Kind: "database", Type: "postgres", Default: true},
+			{Name: "avatars", Kind: "file", Backend: "local", Root: root, MaxListPageSize: 2},
 		},
 	}, nil, NewOsFS(cfgRoot))
 	if err != nil {
