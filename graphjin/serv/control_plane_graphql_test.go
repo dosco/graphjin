@@ -604,7 +604,7 @@ sources:
 	prodConfig := `
 inherits: dev.yml
 production: true
-security_mode: prod
+mode: prod
 mcp:
   allow_raw_queries: true
 `
@@ -705,7 +705,7 @@ func TestGraphQLControlPlaneRejectsSecurityMutations(t *testing.T) {
 func TestApplySystemRoleQueryDefaultsDatabaseScoped(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
-			SecurityMode: "agentic",
+			Mode: "agentic",
 			Roles: []core.Role{{
 				Name: "user",
 				Tables: []core.RoleTable{{
@@ -747,7 +747,7 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 
 	t.Run("normal user gets catalog but not detailed audit config or workflow code", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-perms.sqlite3", true), func(conf *Config) {
-			conf.Core.SecurityMode = "agentic"
+			conf.Core.Mode = "agentic"
 		})
 		if err := svc.fs.Put(filepath.Join(svc.workflowBasePath(), "daily_report.js"), []byte(`function main(input) { return { ok: true }; }`)); err != nil {
 			t.Fatalf("write workflow: %v", err)
@@ -781,7 +781,7 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 
 	t.Run("explicit security grant unblocks only gj_security", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-security-grant.sqlite3", true), func(conf *Config) {
-			conf.Core.SecurityMode = "agentic"
+			conf.Core.Mode = "agentic"
 			conf.Core.Roles = append(conf.Core.Roles, core.Role{
 				Name: "user",
 				Tables: []core.RoleTable{{
@@ -820,7 +820,7 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 
 	t.Run("prod blocks catalog by default", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "prod-perms.sqlite3", true), func(conf *Config) {
-			conf.Core.SecurityMode = "prod"
+			conf.Core.Mode = "prod"
 			conf.Serv.Production = true
 			conf.Core.Production = true
 		})
@@ -888,7 +888,7 @@ func TestGraphQLControlPlaneCatalogSecurityGuidance(t *testing.T) {
 func TestSecurityNanoRowsModes(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
-			SecurityMode: "agentic",
+			Mode: "agentic",
 			Sources: []core.SourceConfig{
 				{Name: "graphjin", Kind: "graphjin"},
 				{Name: "workflows", Kind: "workflow"},
@@ -927,7 +927,7 @@ func TestSecurityNanoRowsModes(t *testing.T) {
 func TestSecurityNanoRowsSourceCapabilities(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
-			SecurityMode: "agentic",
+			Mode: "agentic",
 			Sources: []core.SourceConfig{
 				{Name: "graphjin", Kind: "graphjin", Capabilities: map[string]bool{"security.read": true}},
 				{Name: "workflows", Kind: "workflow", Capabilities: map[string]bool{"workflow.execute": false}},
@@ -977,7 +977,7 @@ func TestSecurityNanoRowsSourceCapabilities(t *testing.T) {
 func TestFileSourceCapabilitiesUseCoarseReadOnlyEnforcement(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
-			SecurityMode: "agentic",
+			Mode: "agentic",
 			Sources: []core.SourceConfig{
 				{
 					Name: "docs",
@@ -1020,7 +1020,7 @@ func TestFileSourceCapabilitiesUseCoarseReadOnlyEnforcement(t *testing.T) {
 func TestSecurityNanoRowsCoverSourceCapabilityRegistry(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
-			SecurityMode: "agentic",
+			Mode: "agentic",
 			Sources: []core.SourceConfig{
 				{Name: "app", Kind: sourcecap.KindDatabase},
 				{Name: "repo", Kind: sourcecap.KindCode},
@@ -1064,7 +1064,7 @@ func TestSecurityNanoRowsCoverSourceCapabilityRegistry(t *testing.T) {
 func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
 	t.Run("prod mode blocks execution by table default", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "prod.sqlite3", true), func(conf *Config) {
-			conf.Core.SecurityMode = "prod"
+			conf.Core.Mode = "prod"
 		})
 
 		ctx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
@@ -1078,7 +1078,7 @@ func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
 
 	t.Run("agentic mode allows execution unless read-only is configured", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic.sqlite3", true), func(conf *Config) {
-			conf.Core.SecurityMode = "agentic"
+			conf.Core.Mode = "agentic"
 		})
 
 		ctx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
@@ -1095,7 +1095,7 @@ func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
 
 	t.Run("workflow source read-only blocks execution in agentic mode", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-readonly.sqlite3", true), func(conf *Config) {
-			conf.Core.SecurityMode = "agentic"
+			conf.Core.Mode = "agentic"
 			conf.Core.Sources[2].ReadOnly = true
 		})
 
@@ -1110,7 +1110,7 @@ func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
 
 	t.Run("agentic mode blocks anonymous execution by role default", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-anon.sqlite3", true), func(conf *Config) {
-			conf.Core.SecurityMode = "agentic"
+			conf.Core.Mode = "agentic"
 		})
 
 		_, err := svc.gj.GraphQL(context.Background(), `mutation {
@@ -1123,7 +1123,7 @@ func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
 
 	t.Run("workflow execution rejects non-insert mutations", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-update.sqlite3", true), func(conf *Config) {
-			conf.Core.SecurityMode = "agentic"
+			conf.Core.Mode = "agentic"
 		})
 
 		ctx := context.WithValue(context.Background(), core.UserIDKey, "company-user")

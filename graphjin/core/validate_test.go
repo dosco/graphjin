@@ -66,6 +66,41 @@ func TestValidateMultiDBType(t *testing.T) {
 	}
 }
 
+func TestNormalizeMode(t *testing.T) {
+	tests := []struct {
+		name           string
+		mode           string
+		production     bool
+		wantMode       string
+		wantProduction bool
+		wantErr        bool
+	}{
+		{name: "empty dev", wantMode: "dev"},
+		{name: "empty prod from production", production: true, wantMode: "prod", wantProduction: true},
+		{name: "dev", mode: "dev", production: true, wantMode: "dev", wantProduction: true},
+		{name: "prod", mode: "prod", wantMode: "prod"},
+		{name: "agentic", mode: "agentic", wantMode: "agentic"},
+		{name: "invalid", mode: "secure-ish", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conf := Config{Mode: tt.mode, Production: tt.production}
+			err := conf.NormalizeMode()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("NormalizeMode() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if conf.Mode != tt.wantMode || conf.Production != tt.wantProduction {
+				t.Fatalf("NormalizeMode() = mode %q production %v, want mode %q production %v",
+					conf.Mode, conf.Production, tt.wantMode, tt.wantProduction)
+			}
+		})
+	}
+}
+
 func TestConfigValidate(t *testing.T) {
 	tests := []struct {
 		name    string

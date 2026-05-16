@@ -36,7 +36,7 @@ production mode (conf.Serv.Production).`,
 		Short: "Print annotated example config files (MCP: get_config_docs)",
 		Long: `Print the annotated example GraphJin config templates.
 
-Optional variant: dev (verbose, default), prod (minimal), or both.
+Optional variant: dev (verbose), prod (production), agentic, or both/all.
 
 These are the same templates that 'graphjin serve new' writes when scaffolding
 a new app — every config option is documented inline. Useful as a reference

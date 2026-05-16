@@ -52,8 +52,7 @@ type Serv struct {
 	// Application name is used in log and debug messages
 	AppName string `mapstructure:"app_name" jsonschema:"title=Application Name"`
 
-	// When enabled runs the service with production level security defaults.
-	// For example allow lists are enforced.
+	// Legacy production switch. Prefer top-level mode for new configs.
 	Production bool `jsonschema:"title=Production Mode,default=false"`
 
 	// The default path to find all configuration files and scripts
@@ -471,7 +470,9 @@ func ReadInConfigFS(configFile string, fs afero.Fs) (*Config, error) {
 // readInConfig function reads in the config file for the environment specified in the GO_ENV
 func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	cp := filepath.Dir(configFile)
-	viper := newViper(cp, filepath.Base(configFile))
+	configName := filepath.Base(configFile)
+	selectedMode := modeFromConfigName(configName)
+	viper := newViper(cp, configName)
 
 	if fs != nil {
 		viper.SetFs(fs)
@@ -509,6 +510,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 			util.SetKeyValue(viper, kv[0], kv[1])
 		}
 	}
+	applyConfigNameMode(viper, selectedMode)
 
 	config := &Config{viper: viper}
 	config.ConfigPath = cp
@@ -518,6 +520,9 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	}
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
+	}
+	if err := normalizeConfigMode(config); err != nil {
+		return nil, err
 	}
 	config.MCP.disableExplicit = viper.IsSet("mcp.disable")
 
@@ -556,13 +561,20 @@ func NewConfig(config, format string) (*Config, error) {
 	if err := viper.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
+	if err := normalizeConfigMode(c); err != nil {
+		return nil, err
+	}
 	c.MCP.disableExplicit = viper.IsSet("mcp.disable")
 
 	return c, nil
 }
 
 func normalizeCatalogAutoBools(v *viper.Viper) error {
-	catalogEnabledAuto := !v.GetBool("production")
+	prod, err := productionFromViperMode(v)
+	if err != nil {
+		return err
+	}
+	catalogEnabledAuto := !prod
 	if err := normalizeAutoBoolSetting(v, "catalog.enabled", catalogEnabledAuto); err != nil {
 		return err
 	}
@@ -572,6 +584,63 @@ func normalizeCatalogAutoBools(v *viper.Viper) error {
 		autoCodeRelationsAuto = v.GetBool("catalog.enabled")
 	}
 	return normalizeAutoBoolSetting(v, "catalog.auto_code_relations", autoCodeRelationsAuto)
+}
+
+func applyConfigNameMode(v *viper.Viper, mode string) {
+	if mode == "" {
+		return
+	}
+	if mode == "agentic" {
+		v.Set("mode", mode)
+		return
+	}
+	if !v.IsSet("mode") {
+		v.Set("mode", mode)
+	}
+}
+
+func modeFromConfigName(configFile string) string {
+	name := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(filepath.Base(configFile), filepath.Ext(configFile))))
+	switch name {
+	case "development", "dev":
+		return "dev"
+	case "production", "prod":
+		return "prod"
+	case "agent", "agentic":
+		return "agentic"
+	default:
+		return ""
+	}
+}
+
+func normalizeConfigMode(c *Config) error {
+	if c == nil {
+		return nil
+	}
+	if c.Serv.Production {
+		c.Core.Production = true
+	}
+	if err := c.Core.NormalizeMode(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func productionFromViperMode(v *viper.Viper) (bool, error) {
+	mode, err := core.CanonicalMode(v.GetString("mode"))
+	if err != nil {
+		return false, err
+	}
+	switch mode {
+	case "":
+		return v.GetBool("production"), nil
+	case "dev":
+		return false, nil
+	case "prod", "agentic":
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 func normalizeAutoBoolSetting(v *viper.Viper, key string, autoValue bool) error {
@@ -705,6 +774,9 @@ func GetConfigName() string {
 	switch goEnv {
 	case "production", "prod":
 		return "prod"
+
+	case "agent", "agentic":
+		return "agentic"
 
 	case "staging", "stage":
 		return "stage"

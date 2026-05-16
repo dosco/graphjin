@@ -42,6 +42,13 @@ sources:
 	}
 }
 
+func TestGetConfigNameAgentic(t *testing.T) {
+	t.Setenv("GO_ENV", "agentic")
+	if got := GetConfigName(); got != "agentic" {
+		t.Fatalf("GetConfigName() = %q, want agentic", got)
+	}
+}
+
 func TestLegacyProductionDisablesMCPByDefault(t *testing.T) {
 	conf, err := NewConfig(`
 production: true
@@ -68,16 +75,64 @@ mcp:
 	}
 }
 
-func TestLegacyAgenticKeepsMCPEnabledByDefault(t *testing.T) {
+func TestModeAgenticKeepsMCPEnabledByDefault(t *testing.T) {
 	conf, err := NewConfig(`
-production: true
-security_mode: agentic
+mode: agentic
 `, "yaml")
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
+	if conf.Core.Mode != "agentic" || conf.Serv.Production || conf.Core.Production {
+		t.Fatalf("agentic mode normalization drift: mode=%q serv_prod=%v core_prod=%v",
+			conf.Core.Mode, conf.Serv.Production, conf.Core.Production)
+	}
 	if conf.mcpDisabled() {
-		t.Fatal("legacy agentic config should keep MCP enabled by default")
+		t.Fatal("agentic config should keep MCP enabled by default")
+	}
+}
+
+func TestModeProdDisablesLegacyMCPByDefault(t *testing.T) {
+	conf, err := NewConfig(`
+mode: prod
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if conf.Core.Mode != "prod" || conf.Serv.Production || conf.Core.Production {
+		t.Fatalf("prod mode normalization drift: mode=%q serv_prod=%v core_prod=%v",
+			conf.Core.Mode, conf.Serv.Production, conf.Core.Production)
+	}
+	if !conf.mcpDisabled() {
+		t.Fatal("legacy prod mode config should disable MCP by default")
+	}
+}
+
+func TestModeDevControlsCatalogAutoEvenWithLegacyProduction(t *testing.T) {
+	conf, err := NewConfig(`
+production: true
+mode: dev
+sources:
+  - name: graphjin
+    kind: graphjin
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if conf.Core.Mode != "dev" || !conf.Serv.Production || !conf.Core.Production {
+		t.Fatalf("dev mode normalization drift: mode=%q serv_prod=%v core_prod=%v",
+			conf.Core.Mode, conf.Serv.Production, conf.Core.Production)
+	}
+	if !conf.Core.CatalogEnabled() {
+		t.Fatal("catalog.enabled: auto should follow dev mode even if legacy production is true")
+	}
+}
+
+func TestInvalidModeIsRejected(t *testing.T) {
+	_, err := NewConfig(`
+mode: secure-ish
+`, "yaml")
+	if err == nil || !strings.Contains(err.Error(), "unsupported mode") {
+		t.Fatalf("expected unsupported mode error, got %v", err)
 	}
 }
 

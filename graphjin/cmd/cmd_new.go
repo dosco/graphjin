@@ -112,6 +112,14 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		}
 	})
 
+	ifNotExists(path.Join(appPath, "agentic.yml"), func(p string) error {
+		if v, err := tmpl.get("agentic.yml"); err == nil {
+			return os.WriteFile(p, v, 0o600)
+		} else {
+			return err
+		}
+	})
+
 	log.Infof("App initialized: %s", name)
 }
 

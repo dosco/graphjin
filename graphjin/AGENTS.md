@@ -85,7 +85,7 @@ If you need to change how GraphJin discovers tables or relationships:
 -   **Pre-computation**: Do heavy lifting (schema analysis, allow-list preparation) at initialization time, not request time.
 
 ### 7. Configuration
--   **YAML Config**: Use `dev.yml` for development, `prod.yml` for production.
+-   **YAML Config**: Use `dev.yml` for development, `prod.yml` for production, and `agentic.yml` for agentic deployments; `GO_ENV=agentic` requires `agentic.yml`, and agentic configs can use `inherits: prod` to reuse production settings.
 -   **Production Mode**: In production, all queries must be pre-saved (no dynamic client queries). This is a security feature.
 -   **Environment Variables**: Secrets and connection strings should come from environment variables, not config files.
 

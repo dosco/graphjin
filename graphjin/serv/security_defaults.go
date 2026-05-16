@@ -82,14 +82,14 @@ func sourceCapabilityAllowed(conf *Config, kind, capability string) bool {
 		value, _ := conf.sourceCapabilityForSource(source, capability)
 		return value
 	}
-	return sourceCapabilityDefault(effectiveSecurityMode(conf), kind, capability)
+	return sourceCapabilityDefault(effectiveMode(conf), kind, capability)
 }
 
 func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, database string) {
 	if conf == nil || runtimeCore == nil {
 		return
 	}
-	mode := effectiveSecurityMode(conf)
+	mode := effectiveMode(conf)
 
 	systemTables := []string{"gj_catalog", "gj_security", "gj_config", "gj_workflow", "gj_workflow_execution"}
 	for _, role := range []string{"user", "anon"} {
@@ -119,7 +119,7 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 			appendRuntimeRoleTable(runtimeCore, role, rt)
 		}
 	}
-	if mode == securityModeAgentic && !systemRoleTableConfigured(&conf.Core, "anon", "gj_catalog", database) {
+	if mode == modeAgentic && !systemRoleTableConfigured(&conf.Core, "anon", "gj_catalog", database) {
 		appendRuntimeRoleTable(runtimeCore, "anon", core.RoleTable{
 			Name:     "gj_catalog",
 			Database: database,
@@ -137,7 +137,7 @@ func systemReadAllowedBySource(conf *Config, mode, role, table string) bool {
 		return false
 	}
 	if role == "anon" {
-		return mode == securityModeDev && conf != nil && !conf.DefaultBlock && defaultSystemReadAllowed(mode, "user", table)
+		return mode == modeDev && conf != nil && !conf.DefaultBlock && defaultSystemReadAllowed(mode, "user", table)
 	}
 	if role != "user" {
 		return false

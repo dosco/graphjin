@@ -3,6 +3,7 @@
 inherits: dev
 
 app_name: "{{- .AppName }} Production"
+mode: prod
 host_port: 0.0.0.0:8080
 web_ui: false
 
@@ -95,9 +96,8 @@ hot_deploy: true
 # ============================================================================
 
 mcp:
-  # Disable MCP endpoints entirely. Legacy database-only production configs
-  # default to disabled; set this to false only for trusted MCP deployments.
-  disable: true
+  # Disable MCP endpoints entirely
+  disable: false
 
   # SECURITY: Config updates disabled in production
   # Databases, tables, roles must be configured in this file or via hot deploy
@@ -114,7 +114,7 @@ mcp:
   allow_workflow_execution: false
 
 # ============================================================================
-# DATABASE CONFIGURATION
+# SOURCES CONFIGURATION
 # ============================================================================
 # Production mode REQUIRES a database to be configured.
 # Use environment variables for sensitive values:
@@ -126,8 +126,10 @@ mcp:
 # Note: Snowflake requires connection_string.
 # ============================================================================
 
-databases:
-  default:
+sources:
+  - name: default
+    kind: database
+    default: true
     type: postgres
     host: ${GJ_DATABASE_HOST}
     port: ${GJ_DATABASE_PORT}
@@ -173,11 +175,27 @@ databases:
     # Required for tls. Can be a file path or the contents of the pem file
     # client_key: ./client-key.pem
 
-# In sources mode, add a GraphJin source to expose read-only gj_* metadata,
-# catalog items, and control-plane roots.
-# sources:
-#   - name: graphjin
-#     kind: graphjin
-#     metadata: true
-#     catalog: true
-#     control_plane: true
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+    catalog: true
+    control_plane: true
+    capabilities:
+      catalog.read: true
+      security.read: false
+      config.read: false
+      config.write: false
+      raw_graphql.query: false
+      raw_graphql.mutate: false
+      schema.reload: false
+      schema.write: false
+      dev_tools.read: false
+      legacy_discovery.read: false
+
+  - name: workflows
+    kind: workflow
+    runtime: javascript
+    capabilities:
+      workflow.execute: false
+      workflow.read: false
+      workflow.write: false

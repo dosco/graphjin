@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	securityModeDev     = "dev"
-	securityModeProd    = "prod"
-	securityModeAgentic = "agentic"
+	modeDev     = "dev"
+	modeProd    = "prod"
+	modeAgentic = "agentic"
 
 	securityKindSummary = "summary"
 	securityKindPolicy  = "policy"
@@ -144,7 +144,7 @@ func securityRuntimeContext(s *graphjinService, _ string) securityReportContext 
 	if s != nil {
 		conf = s.conf
 	}
-	mode := effectiveSecurityMode(conf)
+	mode := effectiveMode(conf)
 	return securityReportContext{
 		Service:      s,
 		Conf:         conf,
@@ -172,7 +172,7 @@ func securityConfigAuditContexts(s *graphjinService) []securityReportContext {
 			ConfigID:   "config_scan",
 			ConfigName: "config scan",
 			ConfigPath: configPath,
-			Mode:       effectiveSecurityMode(s.conf),
+			Mode:       effectiveMode(s.conf),
 			IDPrefix:   "config:config_scan:",
 			SummaryID:  "config:config_scan:summary",
 			LoadErr:    err,
@@ -192,13 +192,13 @@ func securityConfigAuditContexts(s *graphjinService) []securityReportContext {
 			ConfigPath:     configPath,
 			ConfigInherits: inherited,
 			ConfigActive:   activeFile != "" && strings.EqualFold(filepath.Base(file), activeFile),
-			Mode:           effectiveSecurityMode(conf),
+			Mode:           effectiveMode(conf),
 			IDPrefix:       "config:" + securityIDPart(id) + ":",
 			SummaryID:      "config:" + securityIDPart(id) + ":summary",
 			LoadErr:        err,
 		}
 		if err == nil {
-			ctx.Mode = effectiveSecurityMode(conf)
+			ctx.Mode = effectiveMode(conf)
 			ctx.ConfigName = securityConfigDisplayName(conf, id)
 		}
 		ctxs = append(ctxs, ctx)
@@ -415,21 +415,21 @@ func securityActiveConfigFile(conf *Config) string {
 	return ""
 }
 
-func effectiveSecurityMode(conf *Config) string {
+func effectiveMode(conf *Config) string {
 	if conf != nil {
-		switch strings.ToLower(strings.TrimSpace(conf.Core.SecurityMode)) {
+		switch strings.ToLower(strings.TrimSpace(conf.Core.Mode)) {
 		case "dev", "development":
-			return securityModeDev
+			return modeDev
 		case "prod", "production":
-			return securityModeProd
+			return modeProd
 		case "agent", "agentic":
-			return securityModeAgentic
+			return modeAgentic
 		}
 		if conf.Serv.Production || conf.Core.Production {
-			return securityModeProd
+			return modeProd
 		}
 	}
-	return securityModeDev
+	return modeDev
 }
 
 func securityPolicyEvaluations(conf *Config, mode string) []securityPolicyEval {
@@ -450,7 +450,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 	conf := ctx.Conf
 	mode := ctx.Mode
 	if mode == "" {
-		mode = effectiveSecurityMode(conf)
+		mode = effectiveMode(conf)
 	}
 	production := conf != nil && (conf.Serv.Production || conf.Core.Production)
 	prodSecurity := production && conf != nil && !conf.Core.DisableProdSecurity
@@ -955,9 +955,9 @@ func securityAudienceFor(mode, role string) string {
 		return "anonymous"
 	}
 	switch mode {
-	case securityModeAgentic:
+	case modeAgentic:
 		return "company_end_user"
-	case securityModeProd:
+	case modeProd:
 		return "authenticated_user"
 	default:
 		return "developer"
@@ -1035,9 +1035,9 @@ func securityTableFor(capability, action string) string {
 
 func defaultAllow(mode string, dev, prod, agentic bool) bool {
 	switch mode {
-	case securityModeProd:
+	case modeProd:
 		return prod
-	case securityModeAgentic:
+	case modeAgentic:
 		return agentic
 	default:
 		return dev
@@ -1140,7 +1140,7 @@ func securityWorkflowExecutionInsertAllowed(conf *Config, mode, role string, wor
 	if rt, ok := securityRoleTable(conf, role, "gj_workflow_execution"); ok {
 		return rt.Insert == nil || !rt.Insert.Block
 	}
-	if role == "anon" && (mode == securityModeProd || mode == securityModeAgentic) {
+	if role == "anon" && (mode == modeProd || mode == modeAgentic) {
 		return false
 	}
 	if role == "anon" && conf != nil && conf.DefaultBlock {
@@ -1299,7 +1299,7 @@ func securityPolicyDetails(row securityPolicyEval) map[string]any {
 	return map[string]any{
 		"title":              row.Title,
 		"summary":            row.Summary,
-		"mode_definition":    securityModeDefinition(row.Mode),
+		"mode_definition":    modeDefinition(row.Mode),
 		"matrix_expectation": row.DefaultEffective,
 		"default_effective":  row.DefaultEffective,
 		"effective":          row.Effective,
@@ -1334,12 +1334,12 @@ func securityCapabilityEnforcement(row securityPolicyEval) string {
 	}
 }
 
-func securityModeDefinition(mode string) string {
+func modeDefinition(mode string) string {
 	switch mode {
-	case securityModeProd:
+	case modeProd:
 		return "Strict production: allow-list/security defaults are enforced and system discovery/control-plane surfaces are blocked unless explicitly granted."
-	case securityModeAgentic:
-		return "Agentic production for ordinary company end users: app-data protections stay on; gj_catalog and approved workflow execution can be available, while detailed audit/config/workflow-code surfaces require explicit grants."
+	case modeAgentic:
+		return "Agentic mode for ordinary company end users: production-oriented source and control-plane defaults apply; gj_catalog and approved workflow execution can be available, while detailed audit/config/workflow-code surfaces require explicit grants."
 	default:
 		return "Development: discovery and audit surfaces favor iteration for developers."
 	}
@@ -1418,42 +1418,6 @@ func securityFindingNanoRows(ctx securityReportContext, policies []securityPolic
 			policy,
 			now,
 		))
-	}
-	conf := ctx.Conf
-	mode := ctx.Mode
-	if mode == securityModeAgentic && conf != nil && !conf.Serv.Production && !conf.Core.Production {
-		policy := securityPolicyEval{
-			ID:             "policy:core.agentic_requires_production",
-			Scope:          ctx.Scope,
-			ConfigID:       ctx.ConfigID,
-			ConfigName:     ctx.ConfigName,
-			ConfigFile:     ctx.ConfigFile,
-			ConfigPath:     ctx.ConfigPath,
-			ConfigInherits: ctx.ConfigInherits,
-			ConfigActive:   ctx.ConfigActive,
-			Layer:          "core",
-			Source:         "graphjin",
-			SourceKind:     "graphjin",
-			Surface:        "production_security",
-			Transport:      "graphql",
-			Capability:     "production_security",
-			Action:         "enforce",
-			Title:          "Agentic mode without production",
-			Mode:           mode,
-			RiskSeverity:   "critical",
-			Confidence:     "high",
-			Status:         securityStatusFinding,
-			Reason:         "Agentic mode is intended to run with production data protections enabled.",
-			Recommendation: "Set production: true when security_mode is agentic.",
-			Evidence: map[string]any{
-				"mode":       mode,
-				"production": false,
-			},
-		}
-		if ctx.IDPrefix != "" {
-			policy.ID = ctx.IDPrefix + policy.ID
-		}
-		rows = append(rows, securityFindingNanoRow(securityFindingID(policy, "critical"), mode, "critical", policy.Title, policy.Reason, policy.Recommendation, policy, now))
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		return fmt.Sprint(rows[i]["id"]) < fmt.Sprint(rows[j]["id"])
@@ -1836,9 +1800,9 @@ func securityRuntimeInfoRows(ctx securityReportContext, now string) []core.NanoR
 func securitySummaryDetails() map[string]any {
 	return map[string]any{
 		"modes": map[string]string{
-			securityModeDev:     "Development defaults favor iteration and discovery.",
-			securityModeProd:    "Production defaults enforce allow-lists and block agent/system write surfaces unless explicitly opened.",
-			securityModeAgentic: "Governed production for trusted agents: app-data production protections stay on while selected control-plane reads/execution can be available.",
+			modeDev:     "Development defaults favor iteration and discovery.",
+			modeProd:    "Production defaults enforce allow-lists and block agent/system write surfaces unless explicitly opened.",
+			modeAgentic: "Governed agentic deployment for company users: production-oriented source and control-plane defaults apply while selected catalog/workflow execution surfaces can be available.",
 		},
 		"kinds": []string{securityKindSummary, securityKindPolicy, securityKindFinding},
 		"columns": map[string]string{
@@ -1848,7 +1812,7 @@ func securitySummaryDetails() map[string]any {
 			"surface":           "High-level surface such as app data, control_plane, mcp, http, auth, code, file, api, or database.",
 			"role":              "Role evaluated for role/table-controlled surfaces.",
 			"effective":         "The resolved current behavior.",
-			"default_effective": "The secure default for the active security mode.",
+			"default_effective": "The secure default for the active deployment mode.",
 			"weakens_default":   "True when current config is more permissive than the secure default.",
 			"status":            "pass, finding, info, or load_error.",
 			"severity":          "Finding severity: low, medium, high, or critical.",

@@ -101,7 +101,7 @@ type Definition struct {
 	ExampleValue   string
 }
 
-// Default returns the secure default for a security mode.
+// Default returns the secure default for a deployment mode.
 func (d Definition) Default(mode string) bool {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case ModeDev:

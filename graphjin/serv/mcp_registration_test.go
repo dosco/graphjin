@@ -190,7 +190,7 @@ func TestLegacyProductionMCPExplicitEnable(t *testing.T) {
 
 func TestLegacyAgenticMCPEnabledByDefault(t *testing.T) {
 	conf := &Config{
-		Core: core.Config{SecurityMode: "agentic"},
+		Core: core.Config{Mode: "agentic"},
 		Serv: Serv{Production: true},
 	}
 	if listed := mcpToolList(conf); len(listed) == 0 {
