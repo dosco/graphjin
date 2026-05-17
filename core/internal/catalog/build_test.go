@@ -347,7 +347,7 @@ func TestKnownEmptyToolManifestDoesNotInventToolCapabilities(t *testing.T) {
 func TestBuildIncludesHelpRows(t *testing.T) {
 	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{EnabledTools: []string{"query_catalog", "validate_where_clause", "execute_saved_query"}})
 
-	for _, id := range []string{"help:discovery", "help:query", "help:mutations", "help:saved_queries", "help:workflow_runtime", "help:security", "help:errors"} {
+	for _, id := range []string{"help:discovery", "help:mcp_tools", "help:query", "help:mutations", "help:saved_queries", "help:workflow_runtime", "help:security", "help:errors"} {
 		card, ok := findCatalogCard(snap, id)
 		if !ok {
 			t.Fatalf("expected help card %s", id)
@@ -366,6 +366,29 @@ func TestBuildIncludesHelpRows(t *testing.T) {
 	}
 	if len(result.Cards) < len(helpTopics) {
 		t.Fatalf("expected at least %d help rows, got %d", len(helpTopics), len(result.Cards))
+	}
+
+	for _, oldTool := range []string{"get_query_syntax", "get_catalog_card", "get_js_runtime_api", "get_config_docs", "fix_query_error", "list_saved_queries", "get_fragment"} {
+		result, err := snap.Query(Query{Search: oldTool, Where: map[string]any{"kind": map[string]any{"eq": "help"}}, Limit: 10})
+		if err != nil {
+			t.Fatalf("search help rows for %s: %v", oldTool, err)
+		}
+		found := false
+		for _, card := range result.Cards {
+			details := detailsForCard(snap, card.ID)
+			for _, detail := range details {
+				if strings.Contains(detail.Content, oldTool) || strings.Contains(detail.DataJSON, oldTool) {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected help row search for legacy tool %s, got %+v", oldTool, result.Cards)
+		}
 	}
 }
 

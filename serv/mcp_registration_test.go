@@ -423,10 +423,15 @@ func TestMCPServerInstructions_CatalogDefaultDoesNotRecommendLegacyTools(t *test
 	text := mcpServerInstructions(&Config{Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}, {Name: "workflows", Kind: "workflow"}}}})
 	for _, required := range []string{
 		`graphql_help(for: "discovery")`,
+		`graphql_help(for: "mcp_tools")`,
+		`graphql_help -> query_catalog/query_catalog(id) -> validate_where_clause -> execute_saved_query`,
+		"Topic routing",
 		"graphql_query",
 		"query_catalog",
 		"query_catalog(id)",
+		`query_catalog(id: "help:query")`,
 		"validate_where_clause",
+		"Legacy discovery MCP tools are gone in sources mode",
 		"Discovery means selecting evidence-backed catalog items before acting",
 		"details, evidence, examples, safety notes, and nearby graph edges",
 		"Resolve ambiguity by inspecting candidate items",
@@ -456,6 +461,48 @@ func TestMCPServerInstructions_CatalogDefaultDoesNotRecommendLegacyTools(t *test
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("catalog instructions should not recommend disabled legacy tool via %q:\n%s", forbidden, text)
+		}
+	}
+}
+
+func TestSourcesUsedBootstrapToolDescriptions(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerTools()
+
+	tools := ms.srv.ListTools()
+	helpDesc := tools["graphql_help"].Tool.Description
+	for _, topic := range graphQLHelpTopics() {
+		if !strings.Contains(helpDesc, topic) {
+			t.Fatalf("graphql_help description should mention topic %q:\n%s", topic, helpDesc)
+		}
+	}
+	for _, required := range []string{
+		"Replaces legacy MCP discovery",
+		"get_query_syntax",
+		"get_catalog_card",
+		"fix_query_error",
+		"replaces_tools",
+	} {
+		if !strings.Contains(helpDesc, required) {
+			t.Fatalf("graphql_help description should include %q:\n%s", required, helpDesc)
+		}
+	}
+
+	catalogDesc := tools["query_catalog"].Tool.Description
+	for _, required := range []string{
+		`query_catalog(id: "help:query")`,
+		`query_catalog(id: "help:schema")`,
+		`query_catalog(where: { kind: { eq: "table" } })`,
+		`query_catalog(where: { kind: { eq: "saved_query" } })`,
+		"details_json",
+		"evidence_json",
+		"examples_json",
+		"safety_json",
+		"edges_json",
+	} {
+		if !strings.Contains(catalogDesc, required) {
+			t.Fatalf("query_catalog description should include %q:\n%s", required, catalogDesc)
 		}
 	}
 }

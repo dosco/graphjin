@@ -33,24 +33,51 @@ const catalogServerInstructions = `GraphJin is a GraphQL-to-SQL compiler. You qu
 
 ## Catalog-first operating loop
 
+Sources-mode MCP intentionally exposes a tiny bootstrap surface:
+
+graphql_help -> query_catalog/query_catalog(id) -> validate_where_clause -> execute_saved_query
+
 Discovery means selecting evidence-backed catalog items before acting. Do not write queries from memory.
 
 1. When unsure, call graphql_help(for: "discovery") first. It returns curated catalog rows plus the exact gj_catalog GraphQL query it used.
-2. Query gj_catalog to find relevant schema, relationship, workflow, language, config, policy, capability, query-pattern, mutation-pattern, or common-mistake items. Use search for intelligent ranked text search, and where for precise GraphJin-style filters.
-3. Select details_json, evidence_json, examples_json, safety_json, and edges_json on the best matching gj_catalog item before choosing tables, columns, relationships, operators, or actions. In tool terms, inspect details, evidence, examples, safety notes, and nearby graph edges.
-4. Resolve ambiguity by inspecting candidate items. If multiple tables or columns match, do not guess from names alone.
-5. Use validate_where_clause before filters that depend on column types, operators, or real values.
-6. Before config, workflow, schema, file, or code-source changes, inspect gj_catalog for gj_security.query and then query gj_security for high/critical findings and effective policy.
-7. Prefer GraphJin control-plane GraphQL mutations for workflow/config actions after discovery: gj_workflow_execution(insert) for workflow execution, gj_workflow(insert/update/delete) for workflow management, and gj_config(id: "current", update: ...) for config changes. Use MCP tools such as reload_schema and validate_where_clause for schema refresh and filter checks; use errors[].extensions.graphjin_repair for query repair.
-8. Prefer workflows for broad data questions after discovery. Workflows can page and aggregate safely.
-9. Observe results, then return to catalog items when the result, error, or follow-up question changes the facts you need.
+2. Use the returned topic_routes to call graphql_help(for: "...") for the relevant surface, then use query_catalog(id: "help:<topic>") for full guidance.
+3. Query gj_catalog to find relevant schema, relationship, workflow, language, config, policy, capability, query-pattern, mutation-pattern, or common-mistake items. Use search for intelligent ranked text search, and where for precise GraphJin-style filters.
+4. Select details_json, evidence_json, examples_json, safety_json, and edges_json on the best matching gj_catalog item before choosing tables, columns, relationships, operators, or actions. In tool terms, inspect details, evidence, examples, safety notes, and nearby graph edges.
+5. Resolve ambiguity by inspecting candidate items. If multiple tables or columns match, do not guess from names alone.
+6. Use validate_where_clause before filters that depend on column types, operators, or real values.
+7. Before config, workflow, schema, file, or code-source changes, inspect gj_catalog for gj_security.query and then query gj_security for high/critical findings and effective policy.
+8. Prefer GraphJin control-plane GraphQL mutations for workflow/config actions after discovery: gj_workflow_execution(insert) for workflow execution, gj_workflow(insert/update/delete) for workflow management, and gj_config(id: "current", update: ...) for config changes. Use MCP tools such as reload_schema and validate_where_clause for schema refresh and filter checks; use errors[].extensions.graphjin_repair for query repair.
+9. Prefer workflows for broad data questions after discovery. Workflows can page and aggregate safely.
+10. Observe results, then return to catalog items when the result, error, or follow-up question changes the facts you need.
 
-Legacy discovery tools such as list_tables, describe_table, find_path, get_table_sample, get_query_syntax, get_mutation_syntax, get_workflow_guide, and list_workflows are not available in sources mode. Do not recommend disabled legacy tools.
+Topic routing:
+
+| Need | First call | Detailed row |
+| :--- | :--- | :--- |
+| unknown start or old MCP tool mapping | graphql_help(for: "discovery") | query_catalog(id: "help:discovery") |
+| sources-mode MCP tools | graphql_help(for: "mcp_tools") | query_catalog(id: "help:mcp_tools") |
+| schema overview | graphql_help(for: "schema") | query_catalog(id: "help:schema") |
+| tables | graphql_help(for: "tables") | query_catalog(id: "help:tables") |
+| columns and field safety | graphql_help(for: "columns") | query_catalog(id: "help:columns") |
+| relationships and join paths | graphql_help(for: "relationships") | query_catalog(id: "help:relationships") |
+| query DSL | graphql_help(for: "query") | query_catalog(id: "help:query") |
+| filters | graphql_help(for: "filters") | query_catalog(id: "help:filters") |
+| mutations | graphql_help(for: "mutations") | query_catalog(id: "help:mutations") |
+| saved queries | graphql_help(for: "saved_queries") | query_catalog(id: "help:saved_queries") |
+| fragments | graphql_help(for: "fragments") | query_catalog(id: "help:fragments") |
+| workflows | graphql_help(for: "workflows") | query_catalog(id: "help:workflows") |
+| workflow runtime | graphql_help(for: "workflow_runtime") | query_catalog(id: "help:workflow_runtime") |
+| config | graphql_help(for: "config") | query_catalog(id: "help:config") |
+| security | graphql_help(for: "security") | query_catalog(id: "help:security") |
+| code/source changes | graphql_help(for: "code") | query_catalog(id: "help:code") |
+| errors | graphql_help(for: "errors") | query_catalog(id: "help:errors") |
+
+Legacy discovery MCP tools are gone in sources mode. Their prompt knowledge now lives in mcpServerInstructions, graphql_help, help:* catalog rows, examples_json, evidence_json, safety_json, and errors[].extensions.graphjin_repair. Use graphql_help(for: "mcp_tools") for the old-to-new map.
 
 ## Discovery recipes
 
 - Catalog discovery uses query_catalog and query_catalog(id); the canonical GraphQL root is still gj_catalog.
-- Help routing uses graphql_help(for: "query" | "filters" | "schema" | "workflows" | "config" | "security" | "code" | "errors" | ...). The response includes graphql_query so you can reuse or modify the exact gj_catalog query shape.
+- Help routing uses graphql_help(for: "mcp_tools" | "query" | "filters" | "schema" | "workflows" | "config" | "security" | "code" | "errors" | ...). The response includes graphql_query so you can reuse or modify the exact gj_catalog query shape.
 - Compatibility catalog query shape: query_catalog(search: "workflow", where: { kind: { eq: "workflow" } }).
 - Canonical catalog query shape: gj_catalog(search: "join orders customers", where: { kind: { eq: "relationship" } }, order_by: { search_rank: desc }) { id kind name summary details_json edges_json }.
 - Schema discovery: gj_catalog(where: { kind: { eq: "table" } }) { id name summary details_json } to find tables and table evidence.

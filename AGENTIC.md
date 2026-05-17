@@ -174,11 +174,11 @@ efficiently.
 
 Agents use MCP for:
 
-- catalog discovery helpers
-- catalog overview, entrypoint, and capability resources
-- prompt helpers for writing or repairing GraphJin queries and mutations
+- a compact bootstrap prompt in `mcpServerInstructions`
+- `graphql_help` topic routing into catalog-backed help rows
+- `query_catalog` discovery and `query_catalog(id: "...")` detail lookups
 - validation tools such as where-clause checks
-- schema, config, workflow, and query-repair actions
+- approved saved-query execution
 - structured `next` guidance returned by tools
 
 The important split is:
@@ -186,27 +186,29 @@ The important split is:
 | Path | Use it for |
 | :--- | :--- |
 | Direct GraphQL | Composed queries over `gj_catalog`, application roots, `gj_security`, `gj_code`, workflows, and config. |
-| MCP catalog helpers | Fast model ergonomics over `gj_catalog`: discover entrypoints, search catalog rows, inspect one catalog card, and list capabilities. |
-| MCP validation/repair/action tools | Operations that benefit from structured tool contracts, previews, repair hints, or multi-step safety checks. |
+| MCP bootstrap helpers | Teach a fresh model the catalog-first loop: `graphql_help`, `query_catalog`, `validate_where_clause`, and `execute_saved_query`. |
+| Catalog help rows | Durable replacement for old discovery tool descriptions: syntax, schema, relationships, workflows, config, security, code, fragments, saved queries, and errors. |
+| Control-plane GraphQL | Governed workflow/config/security/code actions through normal GraphJin roots when policy allows them. |
 
-Catalog helper tools are conveniences over catalog queries:
+Sources-mode MCP intentionally keeps the tool list small:
 
 | Tool | Agent use |
 | :--- | :--- |
-| `get_catalog_entrypoints` | Start broad discovery without guessing which `kind` to query first. |
-| `query_catalog` | Search and filter `gj_catalog` with a compact tool call. |
-| `get_catalog_card` | Inspect one returned item with details, examples, evidence, safety notes, and graph edges. |
-| `get_catalog_capabilities` | Learn available GraphJin/MCP capabilities and their safety notes. |
+| `graphql_help` | First-call router. It returns bootstrap steps, topic routes, old-to-new tool replacements, catalog rows, examples, safety notes, next guidance, and the exact internal `gj_catalog` query it used. |
+| `query_catalog` | Search/filter `gj_catalog`, or fetch one detailed row with `query_catalog(id: "...")`. |
+| `validate_where_clause` | Validate filters against discovered table and column metadata. |
+| `execute_saved_query` | Run an approved saved query after inspecting its `saved_query` catalog row. |
 
 The MCP loop for an end-user request is:
 
 ```text
 user intent
-  -> get_catalog_entrypoints when the domain is broad or ambiguous
+  -> graphql_help(for: "discovery") when the path is unclear
+  -> graphql_help(for: "<topic>") for schema/query/workflow/config/security/code help
   -> query_catalog or direct gj_catalog query for candidate nouns and patterns
-  -> get_catalog_card for evidence, examples, safety, and nearby edges
+  -> query_catalog(id: "...") for evidence, examples, safety, and nearby edges
   -> gj_security for policy rows and findings before write-capable actions
-  -> validation, preview, query repair, workflow, config, or schema MCP tools
+  -> validation, preview, workflow, config, or schema GraphQL/control-plane action
   -> direct GraphQL against application/system roots
   -> observe result and follow tool `next` guidance back into the graph
 ```
@@ -214,6 +216,26 @@ user intent
 Models should treat MCP responses as guidance and the graph as evidence. A tool
 may recommend a next step, but the agent still grounds table names, column
 names, policy posture, workflow inputs, and code paths in GraphQL-visible rows.
+
+### Bootstrap Prompt Chain
+
+The old MCP surface taught models by placing many specialized tool
+descriptions into the prompt. Sources mode compresses that prompt mass into one
+bootstrap chain:
+
+```text
+mcpServerInstructions
+  -> graphql_help(for: "discovery")
+  -> topic_routes / replaces_tools
+  -> query_catalog(id: "help:<topic>")
+  -> direct gj_catalog, gj_security, gj_code, workflow, config, or app-data query
+```
+
+The model only needs one memorized first move: call
+`graphql_help(for: "discovery")` when unsure. That response teaches the next
+query shape by returning the exact `gj_catalog` GraphQL query it executed. The
+larger knowledge surface lives in catalog help rows, not in a long list of MCP
+tool descriptions.
 
 ## Discovery Recipes
 
@@ -702,7 +724,7 @@ Config is similar: discover the shape and policy through `gj_catalog` and
 query {
   gj_config(id: "current") {
     id
-    source_mode
+    sources_used
     active_database
     sources
     databases
@@ -738,34 +760,41 @@ edit path.
 The prompt that teaches models to use GraphJin is not one giant static string.
 It is a layered contract:
 
-- MCP server instructions define the catalog-first operating loop.
-- Catalog overview resources expose entrypoints, capabilities, and guidance.
-- Tool descriptions and output schemas explain how to call catalog, validation,
-  repair, schema, workflow, and config tools.
+- MCP server instructions define the catalog-first operating loop and the
+  exact sources-mode tool chain.
+- The `graphql_help` tool description is the prompt replacement entrypoint. It
+  lists the valid topics and tells the model where old discovery surfaces went.
+- `graphql_help` responses expose `bootstrap`, `topic_routes`,
+  `replaces_tools`, examples, safety notes, next guidance, and the exact
+  `gj_catalog` GraphQL query executed internally.
+- `query_catalog` is the detailed lookup path, including
+  `query_catalog(id: "help:<topic>")`.
 - `next` guidance in tool responses gives machine-readable follow-up actions.
-- Prompt helpers such as `write_query`, `write_where_clause`, `write_mutation`,
-  and `fix_query_error` generate schema-aware guidance when the client supports
-  prompts.
 - `gj_catalog` itself contains language, operator, pattern, capability, and
   safety items so the model can learn the local DSL from the graph.
+- `errors[].extensions.graphjin_repair` carries deterministic repair guidance
+  for every client instead of requiring a separate repair MCP tool.
 
 The stable model instructions are:
 
-1. Use `gj_catalog` first. Search for intent and filter by `kind`.
-2. Inspect `details_json`, `evidence_json`, `examples_json`, `safety_json`, and
+1. Call `graphql_help(for: "discovery")` when unsure.
+2. Use `topic_routes` to choose the right help topic, then inspect
+   `query_catalog(id: "help:<topic>")`.
+3. Use `gj_catalog` for evidence. Search for intent and filter by `kind`.
+4. Inspect `details_json`, `evidence_json`, `examples_json`, `safety_json`, and
    `edges_json` before selecting tables, columns, relationships, operators,
    workflows, actions, or code paths.
-3. Resolve ambiguity by comparing catalog items. Do not guess from names alone.
-4. Check `gj_security` before config, workflow, schema, filesystem, CodeSQL, or
+5. Resolve ambiguity by comparing catalog items. Do not guess from names alone.
+6. Check `gj_security` before config, workflow, schema, filesystem, CodeSQL, or
    other write-capable actions.
-5. Validate filters with the validation surface when column types, operators, or
+7. Validate filters with the validation surface when column types, operators, or
    real values matter.
-6. Prefer workflows for broad or repeatable data work after discovery.
-7. Use `gj_code` for source intelligence and preview/apply flows. Do not mutate
+8. Prefer workflows for broad or repeatable data work after discovery.
+9. Use `gj_code` for source intelligence and preview/apply flows. Do not mutate
    raw CodeSQL internals directly.
-8. Use `gj_config`, `gj_workflow`, and `gj_workflow_execution` for governed
+10. Use `gj_config`, `gj_workflow`, and `gj_workflow_execution` for governed
    control-plane actions when policy allows them.
-9. Observe results and errors, then return to catalog/security/code when the
+11. Observe results and errors, then return to catalog/security/code when the
    facts needed for the next step change.
 
 ## End-To-End Agent Loops
@@ -781,6 +810,294 @@ intent
   -> observe rows/result
   -> return to gj_catalog if follow-up changes the entity, relationship, or syntax
 ```
+
+### Cold Start Example: "How Many Sales Did We Have Last Week?"
+
+Assume a model knows nothing about GraphJin except the sources-mode MCP tools
+in its prompt:
+
+```text
+graphql_help
+query_catalog
+validate_where_clause
+execute_saved_query
+```
+
+The model should not guess an `orders` table, a date column, or whether "sales"
+means paid orders, completed transactions, or revenue. It should bootstrap from
+the catalog:
+
+```json
+graphql_help({ "for": "discovery" })
+```
+
+Then route to the relevant knowledge:
+
+```json
+graphql_help({ "for": "saved_queries" })
+graphql_help({ "for": "tables" })
+graphql_help({ "for": "query" })
+```
+
+Because sources-mode MCP does not expose arbitrary GraphQL execution by
+default, the model should search for an approved saved query first:
+
+```json
+query_catalog({
+  "search": "sales count last week orders transactions revenue",
+  "where": { "kind": { "eq": "saved_query" } },
+  "limit": 10
+})
+```
+
+If a matching saved query exists, inspect its contract:
+
+```json
+query_catalog({ "id": "saved_query:sales_count_by_period" })
+```
+
+Then execute it with the resolved date range. For example, if "today" is
+`2026-05-16` in `America/Vancouver`, the previous completed calendar week is:
+
+```text
+start: 2026-05-04T00:00:00-07:00
+end:   2026-05-11T00:00:00-07:00
+```
+
+```json
+execute_saved_query({
+  "name": "sales_count_by_period",
+  "variables": {
+    "start": "2026-05-04T00:00:00-07:00",
+    "end": "2026-05-11T00:00:00-07:00"
+  }
+})
+```
+
+If no saved query exists, discover the real schema and query pattern:
+
+```json
+query_catalog({
+  "search": "sales orders transactions purchases completed paid",
+  "where": {
+    "kind": { "in": ["table", "column", "relationship", "query_pattern"] }
+  },
+  "limit": 20
+})
+```
+
+Inspect likely table and column rows with `query_catalog(id: "...")`, then
+validate the candidate filter:
+
+```json
+validate_where_clause({
+  "table": "orders",
+  "where": {
+    "created_at": {
+      "gte": "2026-05-04T00:00:00-07:00",
+      "lt": "2026-05-11T00:00:00-07:00"
+    },
+    "status": { "in": ["paid", "completed"] }
+  }
+})
+```
+
+At that point, if the deployment also gives the client direct GraphQL access,
+the discovered query might be:
+
+```graphql
+query {
+  orders(
+    where: {
+      created_at: {
+        gte: "2026-05-04T00:00:00-07:00"
+        lt: "2026-05-11T00:00:00-07:00"
+      }
+      status: { in: ["paid", "completed"] }
+    }
+  ) {
+    count_id
+  }
+}
+```
+
+If direct GraphQL is not available and no approved saved query or workflow
+exists, the correct agentic behavior is to stop with evidence: report the
+validated query shape, explain that execution requires an approved saved query,
+workflow, or direct GraphQL access, and avoid fabricating the count.
+
+### Cold Start Example: Data Plus Code Provenance
+
+Now take a broader question:
+
+```text
+How many paid sales did we have last week, and where in the code is the sale
+status set?
+```
+
+The model still starts from the same tiny MCP surface:
+
+```json
+graphql_help({ "for": "discovery" })
+```
+
+Then it routes into both the data and code sides:
+
+```json
+graphql_help({ "for": "saved_queries" })
+graphql_help({ "for": "tables" })
+graphql_help({ "for": "columns" })
+graphql_help({ "for": "code" })
+```
+
+For the data answer, it should prefer an approved saved query:
+
+```json
+query_catalog({
+  "search": "sales paid orders transactions last week count",
+  "where": { "kind": { "eq": "saved_query" } },
+  "limit": 10
+})
+```
+
+If it finds `saved_query:sales_count_by_period`, inspect and execute it:
+
+```json
+query_catalog({ "id": "saved_query:sales_count_by_period" })
+```
+
+```json
+execute_saved_query({
+  "name": "sales_count_by_period",
+  "variables": {
+    "start": "2026-05-04T00:00:00-07:00",
+    "end": "2026-05-11T00:00:00-07:00",
+    "status": ["paid", "completed"]
+  }
+})
+```
+
+Then it should discover the schema facts behind the answer:
+
+```json
+query_catalog({
+  "search": "sales orders paid completed status",
+  "where": {
+    "kind": { "in": ["table", "column", "relationship"] }
+  },
+  "limit": 20
+})
+```
+
+The model is looking for evidence such as:
+
+```text
+table: orders
+column: orders.status
+column: orders.paid_at
+column: orders.created_at
+relationship: orders -> payments
+```
+
+It should inspect exact catalog rows before claiming what the count means:
+
+```json
+query_catalog({ "id": "table:app.public.orders" })
+query_catalog({ "id": "column:app.public.orders.status" })
+query_catalog({ "id": "column:app.public.orders.paid_at" })
+```
+
+For the code side, first inspect the catalog's code guidance:
+
+```json
+query_catalog({ "id": "help:code" })
+```
+
+Then search for code/source-related catalog evidence:
+
+```json
+query_catalog({
+  "search": "orders status paid completed code db_reference payment",
+  "where": {
+    "kind": { "in": ["table", "column", "relationship", "system_capability"] }
+  },
+  "limit": 20
+})
+```
+
+If direct GraphQL access to `gj_code` is available and policy permits it, the
+natural provenance query is:
+
+```graphql
+query {
+  gj_code(
+    search: "orders status paid completed"
+    where: {
+      kind: { eq: "db_reference" }
+      table_name: { eq: "orders" }
+      column_name: { eq: "status" }
+    }
+    order_by: { search_rank: desc }
+    limit: 20
+  ) {
+    id
+    kind
+    path
+    symbol_name
+    ref_kind
+    table_name
+    column_name
+    start_row
+    start_col
+    code_context
+    search_rank
+  }
+}
+```
+
+Then inspect likely files or symbols:
+
+```graphql
+query {
+  gj_code(
+    where: {
+      kind: { in: ["symbol", "reference"] }
+      path: { eq: "services/payments/settlement.go" }
+    }
+    limit: 20
+  ) {
+    id
+    kind
+    name
+    path
+    start_row
+    end_row
+    code_context
+  }
+}
+```
+
+The final answer should be evidence-shaped:
+
+```text
+Paid sales last week: 1,284
+
+Count source:
+- saved_query:sales_count_by_period
+- table: orders
+- filter: paid_at >= 2026-05-04T00:00:00-07:00 and < 2026-05-11T00:00:00-07:00
+- status in ["paid", "completed"]
+
+Code provenance:
+- orders.status is written in services/payments/settlement.go, symbol markOrderPaid
+- orders.paid_at is set in the same transaction after payment capture succeeds
+- refunds appear to update orders.status in services/refunds/refund.go, so the count excludes refunded/cancelled statuses
+```
+
+If the model only has MCP and no direct GraphQL access to `gj_code`, it should
+not pretend to have inspected code. It can run the approved sales count, report
+the catalog/code capability it found, and explain that proving code references
+requires direct `gj_code` access or an approved workflow/saved query.
 
 ### Trace Data To Code
 
@@ -874,3 +1191,34 @@ composable surface:
 That is the point of Agentic GraphJin: the model does not merely receive a
 prompt. It enters a governed graph, discovers evidence, acts through explicit
 boundaries, and keeps humans and agents on the same map.
+
+## Old MCP Discovery Surface In The Catalog World
+
+The old MCP surface taught models by putting many discovery tool descriptions
+directly into the prompt. Sources mode keeps the prompt small and moves that
+knowledge into `mcpServerInstructions`, `graphql_help`, and `gj_catalog` help
+rows.
+
+| Old MCP surface | Catalog-world path |
+| :--- | :--- |
+| `get_catalog_entrypoints` | `graphql_help(for: "discovery")` or `gj_catalog(where: { kind: { eq: "entrypoint" } })` |
+| `get_catalog_card` | `query_catalog(id: "...")` |
+| `get_catalog_capabilities` | `query_catalog(where: { kind: { in: ["capability", "system_capability"] } })` |
+| `get_query_syntax` | `graphql_help(for: "query")` and `query_catalog(id: "help:query")` |
+| `get_mutation_syntax` | `graphql_help(for: "mutations")` and `query_catalog(id: "help:mutations")` |
+| `get_discovery_schema` | `graphql_help(for: "catalog")` and `query_catalog(id: "help:catalog")` |
+| `get_table_sample` | `graphql_help(for: "tables")`, `graphql_help(for: "columns")`, sample/profile catalog guidance, then permitted app-data queries or workflows |
+| `get_workflow_guide` | `graphql_help(for: "workflows")` and workflow catalog rows |
+| `get_schema_insights` | `graphql_help(for: "schema")` |
+| `explore_relationships` / `find_path` | `graphql_help(for: "relationships")`, relationship rows, and `edges_json` |
+| saved-query discovery tools | `graphql_help(for: "saved_queries")`, `saved_query` rows, then `execute_saved_query` |
+| fragment discovery tools | `graphql_help(for: "fragments")` and `fragment` rows |
+| `get_config_docs` | `graphql_help(for: "config")`, config catalog rows, and `gj_config` when permitted |
+| `get_js_runtime_api` | `graphql_help(for: "workflow_runtime")` and workflow runtime catalog rows |
+| `write_query` / `write_mutation` | `graphql_help(for: "query" | "mutations")`, catalog examples, then direct GraphQL or saved workflow/query |
+| `fix_query_error` | `errors[].extensions.graphjin_repair` and `graphql_help(for: "errors")` |
+| `execute_workflow` | `gj_workflow_execution(insert)` in GraphQL |
+
+The principle is simple: old MCP tools carried knowledge in tool descriptions;
+sources mode carries that knowledge in catalog rows, help rows, examples,
+evidence, safety metadata, and the bootstrap prompt.

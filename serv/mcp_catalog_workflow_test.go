@@ -97,6 +97,12 @@ func TestGraphQLHelpTopicsUseCatalogGraphQL(t *testing.T) {
 			if out.For != topic || out.GraphQLQuery == "" || !strings.Contains(out.GraphQLQuery, "gj_catalog") {
 				t.Fatalf("expected graphql query guidance for %s, got %+v", topic, out)
 			}
+			if out.RecommendedFirstQuery == "" {
+				t.Fatalf("expected recommended first query for %s", topic)
+			}
+			if len(out.Bootstrap) == 0 {
+				t.Fatalf("expected bootstrap guidance for %s", topic)
+			}
 			if out.GraphQLVariables == nil {
 				t.Fatalf("expected stable graphql_variables map")
 			}
@@ -116,6 +122,28 @@ func TestGraphQLHelpTopicsUseCatalogGraphQL(t *testing.T) {
 			}
 			if !foundHelp {
 				t.Fatalf("expected %s in graphql_help rows: %+v", wantID, out.CatalogRows)
+			}
+			if topic == "discovery" {
+				if len(out.TopicRoutes) == 0 || len(out.ReplacesTools) == 0 {
+					t.Fatalf("expected discovery help to include topic routes and replacement map: %+v", out)
+				}
+				foundMCPTools := false
+				foundOldTool := false
+				for _, route := range out.TopicRoutes {
+					if route.For == "mcp_tools" && strings.Contains(route.DetailQuery, "help:mcp_tools") {
+						foundMCPTools = true
+						break
+					}
+				}
+				for _, repl := range out.ReplacesTools {
+					if repl.Tool == "get_query_syntax" && strings.Contains(repl.Replacement, "graphql_help") {
+						foundOldTool = true
+						break
+					}
+				}
+				if !foundMCPTools || !foundOldTool {
+					t.Fatalf("discovery help missing mcp_tools route or old tool replacement: routes=%+v replacements=%+v", out.TopicRoutes, out.ReplacesTools)
+				}
 			}
 		})
 	}

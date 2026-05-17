@@ -104,11 +104,13 @@ const securityQuery = `query {
     grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
     gap: 1.25rem;
     align-items: start;
+    min-width: 0;
   }
 
   .security-copy {
     display: grid;
     gap: 1rem;
+    min-width: 0;
   }
 
   .security-thesis {
@@ -163,6 +165,7 @@ const securityQuery = `query {
     border-radius: 12px;
     padding: 1rem;
     background: var(--color-surface);
+    min-width: 0;
   }
 
   .security-controls h3 {
@@ -176,6 +179,7 @@ const securityQuery = `query {
   .security-query {
     position: sticky;
     top: 6rem;
+    min-width: 0;
   }
 
   .security-query p {

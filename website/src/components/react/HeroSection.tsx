@@ -1,39 +1,16 @@
-import { useState, useCallback } from "react";
-import { Copy, Check, ArrowRight, Shield } from "lucide-react";
+import { ArrowRight, Shield } from "lucide-react";
 import GraphField from "./GraphField";
 
-const INSTALL_COMMANDS = [
-  { id: "npx", label: "npx", command: "npx graphjin serve" },
-  { id: "brew", label: "brew", command: "brew install dosco/graphjin/graphjin" },
-  { id: "curl", label: "curl", command: "curl -fsSL https://graphjin.com/install.sh | bash" },
-] as const;
-
-type CommandId = (typeof INSTALL_COMMANDS)[number]["id"];
-
-const PILLS = [
-  "Databases",
-  "APIs",
-  "Source code",
-  "Files",
-  "Workflows",
-  "Security posture",
-  "MCP + GraphQL",
+const PROOF_STEPS = [
+  { title: "Auto-learn", detail: "schema + sources" },
+  { title: "Compile", detail: "optimized DB work" },
+  { title: "Govern", detail: "policy boundaries" },
+  { title: "Audit", detail: "human/model review" },
 ];
 
 export default function HeroSection() {
-  const [activeCmd, setActiveCmd] = useState<CommandId>("npx");
-  const [copied, setCopied] = useState(false);
-
-  const activeCommand = INSTALL_COMMANDS.find((c) => c.id === activeCmd)!;
-
-  const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(activeCommand.command);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [activeCommand]);
-
   return (
-    <section className="relative pt-32 pb-20 md:pt-40 md:pb-28 overflow-hidden">
+    <section className="relative overflow-hidden pt-28 pb-16 sm:pt-32 md:pt-40 md:pb-24">
       {/* gradient halo */}
       <div
         className="absolute inset-0 -z-20 pointer-events-none"
@@ -45,12 +22,12 @@ export default function HeroSection() {
 
       {/* animated graph backdrop — theme-aware via CSS variables */}
       <div
-        className="absolute inset-0 -z-10 pointer-events-none"
+        className="absolute inset-0 -z-10 pointer-events-none opacity-75"
         style={{
           maskImage:
-            "radial-gradient(ellipse 85% 70% at 50% 35%, black 30%, transparent 85%)",
+            "radial-gradient(ellipse 90% 76% at 50% 30%, black 26%, transparent 86%)",
           WebkitMaskImage:
-            "radial-gradient(ellipse 85% 70% at 50% 35%, black 30%, transparent 85%)",
+            "radial-gradient(ellipse 90% 76% at 50% 30%, black 26%, transparent 86%)",
         }}
       >
         <GraphField />
@@ -58,132 +35,108 @@ export default function HeroSection() {
 
       <div className="container-doc max-w-5xl">
         <div className="flex flex-col items-center text-center">
-          <span className="eyebrow" style={{ marginBottom: "1rem" }}>
-            v3 · Apache 2.0
-          </span>
+          <span className="eyebrow mb-4">v3 · Apache 2.0</span>
 
           <h1
-            className="font-display font-bold tracking-tight text-balance"
+            className="hero-title text-balance font-semibold tracking-normal sm:font-bold"
             style={{
               color: "var(--color-text)",
-              fontSize: "clamp(2.4rem, 5vw, 4.5rem)",
-              lineHeight: 1.05,
-              maxWidth: "20ch",
+              fontFamily: "var(--font-body)",
+              fontSize: "2.85rem",
+              lineHeight: 1.02,
+              maxWidth: "11ch",
             }}
           >
-            The compiler that connects AI to your organization.
+            Automatic GraphQL for AI agents.
           </h1>
 
           <p
-            className="mt-5 text-lg md:text-xl leading-relaxed max-w-2xl"
+            className="mt-5 max-w-3xl text-base leading-relaxed sm:text-lg md:text-xl"
             style={{ color: "var(--color-muted)" }}
           >
-            Auto-learns your schema and gives AI agents one governed query
-            graph across your databases, APIs, source code, filesystems, and
-            workflows. Ask about the data, the services that enrich it, the code
-            that touches it, and the files around it from one MCP-ready binary.
+            Point GraphJin at your databases, APIs, source code, files, and
+            workflows. It auto-learns the shape, compiles queries into
+            optimized database work, and exposes one governed GraphQL + MCP
+            surface for agents.
           </p>
 
           <p
-            className="mt-4 max-w-3xl rounded-xl border px-4 py-3 text-sm md:text-base leading-relaxed"
-            style={{
-              color: "var(--color-muted)",
-              background: "color-mix(in srgb, var(--color-surface) 78%, transparent)",
-              borderColor: "color-mix(in srgb, var(--color-accent) 28%, var(--color-border))",
-            }}
-          >
-            <strong style={{ color: "var(--color-text)" }}>One config</strong>{" "}
-            defines what agents can discover, query, execute, edit, and never
-            touch. Humans can audit it. Models can inspect it. GraphJin enforces
-            it across your entire AI surface.
-          </p>
-
-          <div
-            className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[13px] font-mono"
+            className="mt-4 max-w-2xl text-sm leading-relaxed sm:text-base"
             style={{ color: "var(--color-muted)" }}
           >
-            {PILLS.map((p) => (
-              <span key={p} className="inline-flex items-center gap-1.5">
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: "var(--color-accent)" }}
-                />
-                {p}
-              </span>
+            <span
+              className="font-semibold"
+              style={{ color: "var(--color-text)" }}
+            >
+              One config
+            </span>{" "}
+            controls what agents can discover, query, execute, edit, and never
+            touch.
+          </p>
+
+          <div className="mt-7 grid w-full max-w-3xl grid-cols-2 gap-2 sm:grid-cols-4">
+            {PROOF_STEPS.map((step, index) => (
+              <div
+                key={step.title}
+                className="relative rounded-lg border px-3 py-3 text-left sm:text-center"
+                style={{
+                  background:
+                    "color-mix(in srgb, var(--color-surface) 76%, transparent)",
+                  borderColor:
+                    index === 0
+                      ? "color-mix(in srgb, var(--color-accent) 38%, var(--color-border))"
+                      : "var(--color-border)",
+                }}
+              >
+                <div
+                  className="font-mono text-[11px] uppercase tracking-[0.16em]"
+                  style={{ color: "var(--color-accent)" }}
+                >
+                  {String(index + 1).padStart(2, "0")}
+                </div>
+                <div
+                  className="mt-1 font-semibold"
+                  style={{ color: "var(--color-text)" }}
+                >
+                  {step.title}
+                </div>
+                <div
+                  className="mt-1 text-xs leading-snug"
+                  style={{ color: "var(--color-muted)" }}
+                >
+                  {step.detail}
+                </div>
+              </div>
             ))}
           </div>
 
-          {/* install bar */}
-          <div
-            className="mt-10 flex w-full max-w-xl flex-col overflow-hidden rounded-xl border sm:inline-flex sm:w-auto sm:max-w-none sm:flex-row sm:items-center"
-            style={{
-              background: "var(--color-surface)",
-              borderColor: "var(--color-border)",
-            }}
-          >
-            <div
-              className="flex items-center justify-center border-b sm:border-b-0 sm:border-r"
-              style={{ borderColor: "var(--color-border)" }}
-            >
-              {INSTALL_COMMANDS.map((cmd) => (
-                <button
-                  key={cmd.id}
-                  type="button"
-                  onClick={() => setActiveCmd(cmd.id)}
-                  className="px-3 py-2.5 font-mono text-xs transition-colors"
-                  style={{
-                    color:
-                      activeCmd === cmd.id
-                        ? "var(--color-accent)"
-                        : "var(--color-muted)",
-                    background:
-                      activeCmd === cmd.id ? "var(--color-accent-soft)" : "transparent",
-                  }}
-                >
-                  {cmd.label}
-                </button>
-              ))}
-            </div>
-            <code
-              className="px-4 py-2.5 text-sm font-mono break-all sm:whitespace-nowrap"
-              style={{ color: "var(--color-text)" }}
-            >
-              {activeCommand.command}
-            </code>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="px-3 py-2.5 transition-colors border-t sm:border-l sm:border-t-0"
-              style={{
-                borderColor: "var(--color-border)",
-                color: "var(--color-muted)",
-              }}
-              aria-label="Copy command"
-            >
-              {copied ? (
-                <Check className="w-4 h-4" style={{ color: "var(--color-accent)" }} />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-            </button>
-          </div>
-
-          {/* CTAs */}
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <a href="#quickstart" className="btn-primary">
               Get started
               <ArrowRight className="w-4 h-4" />
             </a>
-            <a
-              href="#security-model"
-              className="btn-secondary"
-            >
+            <a href="#security-model" className="btn-secondary">
               <Shield className="w-4 h-4" />
               Security model
             </a>
           </div>
         </div>
       </div>
+
+      <style>{`
+        @media (min-width: 640px) {
+          .hero-title {
+            font-size: 4rem !important;
+            max-width: 13ch !important;
+          }
+        }
+
+        @media (min-width: 768px) {
+          .hero-title {
+            font-size: 4.5rem !important;
+          }
+        }
+      `}</style>
     </section>
   );
 }
