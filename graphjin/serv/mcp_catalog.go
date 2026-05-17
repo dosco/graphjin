@@ -61,6 +61,9 @@ type CatalogQueryResult struct {
 type GraphQLHelpResult struct {
 	For                   string         `json:"for"`
 	Summary               string         `json:"summary"`
+	Bootstrap             []string       `json:"bootstrap,omitempty"`
+	TopicRoutes           []HelpRoute    `json:"topic_routes,omitempty"`
+	ReplacesTools         []ToolReplaces `json:"replaces_tools,omitempty"`
 	RecommendedFirstQuery string         `json:"recommended_first_query"`
 	GraphQLQuery          string         `json:"graphql_query"`
 	GraphQLVariables      map[string]any `json:"graphql_variables"`
@@ -68,6 +71,19 @@ type GraphQLHelpResult struct {
 	Examples              []string       `json:"examples,omitempty"`
 	Safety                map[string]any `json:"safety,omitempty"`
 	Next                  *NextGuidance  `json:"next,omitempty"`
+}
+
+type HelpRoute struct {
+	Need        string `json:"need"`
+	For         string `json:"for"`
+	FirstCall   string `json:"first_call"`
+	DetailQuery string `json:"detail_query"`
+}
+
+type ToolReplaces struct {
+	Tool        string `json:"tool"`
+	Replacement string `json:"replacement"`
+	For         string `json:"for,omitempty"`
 }
 
 type CatalogCardResult struct {
@@ -100,7 +116,7 @@ func (ms *mcpServer) registerCatalogTools() {
 	if ms.service != nil && ms.service.conf != nil && ms.service.conf.Core.IsSourcesUsed() {
 		ms.srv.AddTool(mcp.NewTool(
 			"graphql_help",
-			mcp.WithDescription("Read-only bootstrap helper for sources-mode GraphJin. Use this when deciding how to discover schema, query syntax, mutations, workflows, config, security, CodeSQL, saved queries, fragments, or error repair. It queries gj_catalog internally and returns both the catalog rows and the exact GraphQL query it used."),
+			mcp.WithDescription(graphQLHelpToolDescription()),
 			mcp.WithString("for",
 				mcp.Required(),
 				mcp.Description("Help topic. Start with discovery when unsure."),
@@ -112,9 +128,9 @@ func (ms *mcpServer) registerCatalogTools() {
 
 	ms.srv.AddTool(mcp.NewTool(
 		"query_catalog",
-		mcp.WithDescription("Search GraphJin's AI-first catalog for schema, relationships, workflows, saved queries, fragments, language features, directives, operators, config, security, and capabilities. In sources mode, call graphql_help(for: \"discovery\") when unsure, use query_catalog for filtered discovery, query_catalog(id: \"...\") for full details/evidence/examples/safety/edges, validate_where_clause for filters, and execute_saved_query for approved saved queries."),
+		mcp.WithDescription(queryCatalogToolDescription()),
 		mcp.WithString("id",
-			mcp.Description("Optional catalog item id. When set, returns one detailed row with details_json and edges_json."),
+			mcp.Description("Optional catalog item id. When set, returns one detailed row with details_json, evidence_json, examples_json, safety_json, and edges_json."),
 		),
 		mcp.WithString("search",
 			mcp.Description("Optional full-text search over catalog identifiers, @directives, relationship intent, analytics intent, summaries, and evidence."),
@@ -176,6 +192,16 @@ func (ms *mcpServer) registerCatalogTools() {
 		mcp.WithDescription("List catalog-described GraphJin capabilities and safety notes."),
 		mcp.WithOutputSchema[CatalogCapabilitiesResult](),
 	), ms.handleGetCatalogCapabilities)
+}
+
+func graphQLHelpToolDescription() string {
+	return "Read-only bootstrap helper for sources-mode GraphJin. Start with graphql_help(for: \"discovery\") when unsure. Valid for values: " +
+		strings.Join(graphQLHelpTopics(), ", ") +
+		". Replaces legacy MCP discovery prompts/tools such as get_query_syntax, get_mutation_syntax, get_catalog_card, get_config_docs, get_js_runtime_api, fix_query_error, saved-query discovery, fragment discovery, table/schema discovery, and relationship exploration by querying gj_catalog help rows. Returns bootstrap steps, topic_routes, replaces_tools, catalog rows, examples, safety notes, next guidance, and the exact internal gj_catalog GraphQL query."
+}
+
+func queryCatalogToolDescription() string {
+	return "Search GraphJin's AI-first catalog for schema, relationships, workflows, saved queries, fragments, language features, directives, operators, config, security, and capabilities. In sources mode, call graphql_help(for: \"discovery\") when unsure. Use query_catalog(id: \"...\") for one full-detail row with details_json, evidence_json, examples_json, safety_json, and edges_json. Examples: query_catalog(id: \"help:query\"), query_catalog(id: \"help:schema\"), query_catalog(where: { kind: { eq: \"table\" } }), query_catalog(where: { kind: { eq: \"saved_query\" } }). Use validate_where_clause for filters and execute_saved_query for approved saved queries."
 }
 
 func (ms *mcpServer) registerCatalogResources() {
@@ -332,6 +358,9 @@ func (ms *mcpServer) handleGraphQLHelp(ctx context.Context, req mcp.CallToolRequ
 	result := GraphQLHelpResult{
 		For:                   spec.For,
 		Summary:               spec.Summary,
+		Bootstrap:             graphQLHelpBootstrap(),
+		TopicRoutes:           graphQLHelpTopicRoutesFor(spec.For),
+		ReplacesTools:         graphQLHelpReplacementsFor(spec.For),
 		RecommendedFirstQuery: spec.RecommendedFirstQuery,
 		GraphQLQuery:          query,
 		GraphQLVariables:      map[string]any{},
@@ -352,6 +381,93 @@ type graphQLHelpSpec struct {
 	Examples              []string
 	Safety                map[string]any
 	Limit                 int
+}
+
+func graphQLHelpBootstrap() []string {
+	return []string{
+		`Call graphql_help(for: "discovery") when unsure; it is the sources-mode prompt replacement.`,
+		`Use topic_routes to choose a narrower graphql_help(for: "...") topic.`,
+		`Use query_catalog(id: "help:<topic>") for full guidance with details_json, evidence_json, examples_json, safety_json, and edges_json.`,
+		`Use query_catalog(search/where/order_by/limit) or direct gj_catalog queries for evidence-backed discovery.`,
+		`Use validate_where_clause before non-trivial filters and execute_saved_query only after inspecting a saved_query row.`,
+	}
+}
+
+func graphQLHelpTopicRoutes() []HelpRoute {
+	return []HelpRoute{
+		{Need: "unknown starting point, old MCP tool mapping, available discovery surfaces", For: "discovery", FirstCall: `graphql_help(for: "discovery")`, DetailQuery: `query_catalog(id: "help:discovery")`},
+		{Need: "tiny sources-mode MCP tool surface and removed legacy tool replacements", For: "mcp_tools", FirstCall: `graphql_help(for: "mcp_tools")`, DetailQuery: `query_catalog(id: "help:mcp_tools")`},
+		{Need: "catalog row shape, details, evidence, examples, safety, edges, capabilities", For: "catalog", FirstCall: `graphql_help(for: "catalog")`, DetailQuery: `query_catalog(id: "help:catalog")`},
+		{Need: "databases, tables, columns, relationships, functions, indexes", For: "schema", FirstCall: `graphql_help(for: "schema")`, DetailQuery: `query_catalog(id: "help:schema")`},
+		{Need: "table names, primary keys, row shape, sample/profile guidance", For: "tables", FirstCall: `graphql_help(for: "tables")`, DetailQuery: `query_catalog(id: "help:tables")`},
+		{Need: "column names, types, sensitivity, indexes, filter hints", For: "columns", FirstCall: `graphql_help(for: "columns")`, DetailQuery: `query_catalog(id: "help:columns")`},
+		{Need: "join paths, nested selectors, @through hints", For: "relationships", FirstCall: `graphql_help(for: "relationships")`, DetailQuery: `query_catalog(id: "help:relationships")`},
+		{Need: "GraphJin query DSL, directives, aggregates, analytics, pagination", For: "query", FirstCall: `graphql_help(for: "query")`, DetailQuery: `query_catalog(id: "help:query")`},
+		{Need: "where operators and filter validation", For: "filters", FirstCall: `graphql_help(for: "filters")`, DetailQuery: `query_catalog(id: "help:filters")`},
+		{Need: "insert, update, upsert, delete, nested writes, preview/apply patterns", For: "mutations", FirstCall: `graphql_help(for: "mutations")`, DetailQuery: `query_catalog(id: "help:mutations")`},
+		{Need: "approved allow-list queries and variable contracts", For: "saved_queries", FirstCall: `graphql_help(for: "saved_queries")`, DetailQuery: `query_catalog(id: "help:saved_queries")`},
+		{Need: "reusable GraphQL fragments", For: "fragments", FirstCall: `graphql_help(for: "fragments")`, DetailQuery: `query_catalog(id: "help:fragments")`},
+		{Need: "workflow discovery, variables, execution policy", For: "workflows", FirstCall: `graphql_help(for: "workflows")`, DetailQuery: `query_catalog(id: "help:workflows")`},
+		{Need: "JavaScript workflow runtime and callable GraphJin tool guidance", For: "workflow_runtime", FirstCall: `graphql_help(for: "workflow_runtime")`, DetailQuery: `query_catalog(id: "help:workflow_runtime")`},
+		{Need: "redacted config docs, roles, permissions, safe config changes", For: "config", FirstCall: `graphql_help(for: "config")`, DetailQuery: `query_catalog(id: "help:config")`},
+		{Need: "gj_security posture, policy rows, findings, severity filters", For: "security", FirstCall: `graphql_help(for: "security")`, DetailQuery: `query_catalog(id: "help:security")`},
+		{Need: "code/source intelligence and safe preview/apply edit flows", For: "code", FirstCall: `graphql_help(for: "code")`, DetailQuery: `query_catalog(id: "help:code")`},
+		{Need: "GraphJin error repair hints", For: "errors", FirstCall: `graphql_help(for: "errors")`, DetailQuery: `query_catalog(id: "help:errors")`},
+	}
+}
+
+func graphQLHelpTopicRoutesFor(topic string) []HelpRoute {
+	if topic == "discovery" || topic == "mcp_tools" {
+		return graphQLHelpTopicRoutes()
+	}
+	for _, route := range graphQLHelpTopicRoutes() {
+		if route.For == topic {
+			return []HelpRoute{route}
+		}
+	}
+	return nil
+}
+
+func graphQLHelpToolReplacements() []ToolReplaces {
+	return []ToolReplaces{
+		{Tool: "get_catalog_entrypoints", Replacement: `graphql_help(for: "discovery") or gj_catalog(where: { kind: { eq: "entrypoint" } })`, For: "discovery"},
+		{Tool: "get_catalog_card", Replacement: `query_catalog(id: "...")`, For: "catalog"},
+		{Tool: "get_catalog_capabilities", Replacement: `query_catalog(where: { kind: { in: ["capability", "system_capability"] } })`, For: "catalog"},
+		{Tool: "get_query_syntax", Replacement: `graphql_help(for: "query") and query_catalog(id: "help:query")`, For: "query"},
+		{Tool: "get_mutation_syntax", Replacement: `graphql_help(for: "mutations") and query_catalog(id: "help:mutations")`, For: "mutations"},
+		{Tool: "get_discovery_schema", Replacement: `graphql_help(for: "catalog") and query_catalog(id: "help:catalog")`, For: "catalog"},
+		{Tool: "get_table_sample", Replacement: `graphql_help(for: "tables"), graphql_help(for: "columns"), sample/profile catalog guidance, then permitted app-data queries or workflows`, For: "tables"},
+		{Tool: "get_workflow_guide", Replacement: `graphql_help(for: "workflows") and workflow catalog rows`, For: "workflows"},
+		{Tool: "get_schema_insights", Replacement: `graphql_help(for: "schema")`, For: "schema"},
+		{Tool: "explore_relationships", Replacement: `graphql_help(for: "relationships"), relationship rows, and edges_json`, For: "relationships"},
+		{Tool: "find_path", Replacement: `graphql_help(for: "relationships"), relationship rows, and edges_json`, For: "relationships"},
+		{Tool: "list_saved_queries", Replacement: `graphql_help(for: "saved_queries") and saved_query rows`, For: "saved_queries"},
+		{Tool: "search_saved_queries", Replacement: `graphql_help(for: "saved_queries") and saved_query rows`, For: "saved_queries"},
+		{Tool: "get_saved_query", Replacement: `query_catalog(id: "saved_query:<name>") or query_catalog(where: { kind: { eq: "saved_query" } })`, For: "saved_queries"},
+		{Tool: "list_fragments", Replacement: `graphql_help(for: "fragments") and fragment rows`, For: "fragments"},
+		{Tool: "search_fragments", Replacement: `graphql_help(for: "fragments") and fragment rows`, For: "fragments"},
+		{Tool: "get_fragment", Replacement: `query_catalog(id: "fragment:<name>") or query_catalog(where: { kind: { eq: "fragment" } })`, For: "fragments"},
+		{Tool: "get_config_docs", Replacement: `graphql_help(for: "config") and config catalog rows`, For: "config"},
+		{Tool: "get_js_runtime_api", Replacement: `graphql_help(for: "workflow_runtime") and workflow runtime catalog rows`, For: "workflow_runtime"},
+		{Tool: "write_query", Replacement: `graphql_help(for: "query"), catalog examples, then direct GraphQL or saved query/workflow`, For: "query"},
+		{Tool: "write_mutation", Replacement: `graphql_help(for: "mutations"), catalog examples, then governed GraphQL mutation or workflow`, For: "mutations"},
+		{Tool: "fix_query_error", Replacement: `errors[].extensions.graphjin_repair and graphql_help(for: "errors")`, For: "errors"},
+		{Tool: "execute_workflow", Replacement: `gj_workflow_execution(insert) in GraphQL`, For: "workflows"},
+	}
+}
+
+func graphQLHelpReplacementsFor(topic string) []ToolReplaces {
+	all := graphQLHelpToolReplacements()
+	if topic == "discovery" || topic == "mcp_tools" {
+		return all
+	}
+	out := make([]ToolReplaces, 0, len(all))
+	for _, repl := range all {
+		if repl.For == topic {
+			out = append(out, repl)
+		}
+	}
+	return out
 }
 
 func (s graphQLHelpSpec) catalogQuery() catalogGraphQLQuery {
@@ -398,6 +514,7 @@ func (ms *mcpServer) graphQLHelpNext(spec graphQLHelpSpec) *NextGuidance {
 
 var graphQLHelpTopicOrder = []string{
 	"discovery",
+	"mcp_tools",
 	"catalog",
 	"schema",
 	"tables",
@@ -422,7 +539,8 @@ func graphQLHelpTopics() []string {
 
 func graphQLHelpSpecFor(topic string) (graphQLHelpSpec, bool) {
 	specs := map[string]graphQLHelpSpec{
-		"discovery":        helpSpec("discovery", "Start here when unsure. Routes to catalog entrypoints, capabilities, and high-level help rows.", "catalog discovery schema workflow query security", []string{"help", "entrypoint", "capability", "system_capability"}, `graphql_help(for: "discovery")`, []string{`query_catalog(where: { kind: { eq: "table" } })`}),
+		"discovery":        helpSpec("discovery", "Start here when unsure. Routes to catalog entrypoints, capabilities, high-level help rows, and the legacy-tool replacement map.", "catalog discovery schema workflow query security mcp tools legacy", []string{"help", "entrypoint", "capability", "system_capability"}, `graphql_help(for: "discovery")`, []string{`query_catalog(id: "help:mcp_tools")`, `query_catalog(where: { kind: { eq: "table" } })`}),
+		"mcp_tools":        helpSpec("mcp_tools", "Learn the tiny sources-mode MCP surface and how removed legacy discovery tools map into catalog/help rows.", "mcp tools legacy discovery get_query_syntax get_catalog_card get_js_runtime_api fix_query_error", []string{"help", "capability", "system_capability", "entrypoint"}, `query_catalog(id: "help:mcp_tools")`, []string{`graphql_help(for: "query")`, `query_catalog(id: "help:query")`, `query_catalog(where: { kind: { in: ["capability", "system_capability"] } })`}),
 		"catalog":          helpSpec("catalog", "Use gj_catalog/query_catalog for discovery and query_catalog(id) for full item evidence.", "catalog detail evidence examples edges safety", []string{"help", "entrypoint", "capability", "system_capability"}, `query_catalog(id: "help:catalog")`, []string{`query_catalog(search: "join orders customers", where: { kind: { eq: "relationship" } })`}),
 		"schema":           helpSpec("schema", "Discover databases, tables, columns, relationships, functions, indexes, and row-shape hints.", "schema table column relationship function index sample profile", []string{"help", "database", "table", "column", "relationship", "function"}, `query_catalog(id: "help:schema")`, []string{`query_catalog(where: { kind: { in: ["table", "column", "relationship"] } })`}),
 		"tables":           helpSpec("tables", "Find table names, primary keys, row-shape hints, sample/profile availability, and graph edges.", "tables primary key sample profile row count", []string{"help", "table", "relationship", "column"}, `query_catalog(where: { kind: { eq: "table" } })`, []string{`query_catalog(id: "table:<database.schema.table>")`}),

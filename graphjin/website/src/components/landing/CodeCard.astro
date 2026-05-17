@@ -10,7 +10,7 @@ const { filename, language = "text", code, class: className = "" } = Astro.props
 ---
 
 <div
-  class={`rounded-2xl border overflow-hidden ${className}`}
+  class={`rounded-2xl border overflow-hidden min-w-0 ${className}`}
   style="background: var(--color-code-bg); border-color: var(--color-border)"
 >
   {filename && (
@@ -46,7 +46,7 @@ const { filename, language = "text", code, class: className = "" } = Astro.props
     </div>
   )}
   <pre
-    class="p-5 md:p-6 text-sm md:text-[13px] font-mono leading-relaxed overflow-x-auto"
+    class="min-w-0 p-5 md:p-6 text-sm md:text-[13px] font-mono leading-relaxed overflow-x-auto"
     style={`color: var(--color-code-text)`}
   ><code>{code}</code></pre>
 </div>

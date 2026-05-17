@@ -16,14 +16,14 @@ const navItems = [
   class="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl border-b"
   style="background: color-mix(in srgb, var(--color-bg) 80%, transparent); border-color: var(--color-border)"
 >
-  <div class="container-wide flex items-center justify-between h-16">
+  <div class="container-wide flex items-center justify-between h-14 sm:h-16">
     <a
       href="/"
-      class="text-lg font-display font-bold flex items-center gap-2 hover:opacity-80 transition-opacity"
+      class="text-base sm:text-lg font-display font-bold flex items-center gap-2 hover:opacity-80 transition-opacity"
       style="color: var(--color-text)"
     >
       <span
-        class="inline-block w-2 h-2 rounded-full"
+        class="inline-block w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
         style="background: var(--color-accent); box-shadow: 0 0 12px var(--color-accent)"
       ></span>
       GraphJin
@@ -41,7 +41,7 @@ const navItems = [
       ))}
     </div>
 
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-2 sm:gap-3">
       <ThemeToggle client:load />
 
       <a
@@ -63,7 +63,7 @@ const navItems = [
 
       <a
         href="#quickstart"
-        class="btn-primary !py-2 !px-4 text-sm"
+        class="btn-primary !py-1.5 !px-3 text-xs sm:!py-2 sm:!px-4 sm:text-sm"
       >
         Get started
       </a>
