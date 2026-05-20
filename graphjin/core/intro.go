@@ -193,6 +193,7 @@ var stdTypes = []FullType{
 type Introspection struct {
 	schema      *sdata.DBSchema
 	camelCase   bool
+	disableAgg  bool
 	types       map[string]FullType
 	enumValues  map[string]EnumValue
 	inputValues map[string]InputValue
@@ -204,6 +205,7 @@ func (gj *graphjinEngine) introQuery() (result json.RawMessage, err error) {
 	// Initialize the introspection object
 	in := Introspection{
 		camelCase:   gj.conf.EnableCamelcase,
+		disableAgg:  gj.conf.DisableAgg,
 		types:       make(map[string]FullType),
 		enumValues:  make(map[string]EnumValue),
 		inputValues: make(map[string]InputValue),
@@ -328,7 +330,9 @@ func (in *Introspection) addTable(table sdata.DBTable, alias string) (err error)
 		return
 	}
 	in.addTypeTo("Query", ftQS)
+	in.addCursorFieldTo("Query", ftQS.Name)
 	in.addTypeTo("Subscription", ftQS)
+	in.addCursorFieldTo("Subscription", ftQS.Name)
 
 	var ftM FullType
 
@@ -388,7 +392,8 @@ func (in *Introspection) addRemoteTable(table sdata.DBTable, alias string) error
 		}
 		ft.addArg(a.Name, base)
 	}
-	if isFilesystemRemoteTable(table) {
+	filesystemRemote := isFilesystemRemoteTable(table)
+	if filesystemRemote {
 		ft.addOrReplaceArg("id", newTypeRef("", "ID", nil))
 		ft.addOrReplaceArg("limit", newTypeRef("", "Int", nil))
 		ft.addOrReplaceArg("offset", newTypeRef("", "Int", nil))
@@ -402,6 +407,9 @@ func (in *Introspection) addRemoteTable(table sdata.DBTable, alias string) error
 
 	in.addType(ft)
 	in.addTypeTo("Query", ft)
+	if filesystemRemote {
+		in.addCursorFieldTo("Query", ft.Name)
+	}
 	return nil
 }
 
@@ -428,6 +436,12 @@ func (in *Introspection) addTypeTo(op string, ft FullType) {
 		Type:        newTypeRef("", ft.Name, nil),
 	})
 	in.types[op] = qt
+}
+
+func (in *Introspection) addCursorFieldTo(op, name string) {
+	ft := in.types[op]
+	addCursorField(&ft, name)
+	in.types[op] = ft
 }
 
 // getName returns the name of the type
@@ -528,6 +542,8 @@ func (in *Introspection) addTableTypeWithDepth(
 		ft.Fields = append(ft.Fields, f1)
 	}
 
+	in.addAggregateFields(table, &ft)
+
 	relNodes1, err := in.schema.GetFirstDegree(table)
 	if err != nil {
 		return
@@ -547,6 +563,9 @@ func (in *Introspection) addTableTypeWithDepth(
 		}
 		if !skip {
 			ft.Fields = append(ft.Fields, f)
+			if relationshipSupportsCursor(relNode.Type, f.Type) {
+				addCursorField(&ft, f.Name)
+			}
 		}
 	}
 
@@ -907,6 +926,118 @@ func (in *Introspection) getFunctionField(t sdata.DBTable, fn sdata.DBFunction) 
 	return
 }
 
+func (in *Introspection) addAggregateFields(table sdata.DBTable, ft *FullType) {
+	if in.disableAgg {
+		return
+	}
+
+	for _, c := range table.Columns {
+		if c.Blocked {
+			continue
+		}
+
+		ft.addFieldIfAbsent(in.getAggregateField(table, c, "count"))
+
+		if !isIntroNumericColumn(c) {
+			continue
+		}
+
+		ft.addFieldIfAbsent(in.getAggregateField(table, c, "sum"))
+		ft.addFieldIfAbsent(in.getAggregateField(table, c, "avg"))
+		ft.addFieldIfAbsent(in.getAggregateField(table, c, "min"))
+		ft.addFieldIfAbsent(in.getAggregateField(table, c, "max"))
+	}
+}
+
+func (in *Introspection) getAggregateField(table sdata.DBTable, col sdata.DBColumn, fn string) FieldObject {
+	return FieldObject{
+		Name: in.getName(fn + "_" + col.Name),
+		Args: []InputValue{{
+			Name: "includeIf", Type: newTypeRef("", (table.Name + SUFFIX_WHERE), nil),
+		}, {
+			Name: "skipIf", Type: newTypeRef("", (table.Name + SUFFIX_WHERE), nil),
+		}},
+		Type: aggregateFieldType(fn, col),
+	}
+}
+
+func aggregateFieldType(fn string, col sdata.DBColumn) *TypeRef {
+	switch fn {
+	case "count":
+		return newTypeRef("", TYPE_INT, nil)
+	case "avg":
+		return newTypeRef("", TYPE_FLOAT, nil)
+	default:
+		return newTypeRef("", introNumericType(col.Type), nil)
+	}
+}
+
+func isIntroNumericColumn(col sdata.DBColumn) bool {
+	if col.Array {
+		return false
+	}
+
+	raw := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(col.Type)), " ", "")
+	if strings.Contains(raw, "[]") || strings.Contains(raw, "array") {
+		return false
+	}
+	if isIntroBooleanColumnType(introTrimColumnTypeModifier(raw)) {
+		return false
+	}
+
+	switch introBaseColumnType(col.Type) {
+	case "int", "int2", "int4", "int8",
+		"integer", "bigint", "smallint", "tinyint", "mediumint",
+		"serial", "smallserial", "bigserial",
+		"decimal", "dec", "numeric", "number",
+		"real", "float", "float4", "float8",
+		"double", "doubleprecision", "money":
+		return true
+	default:
+		return false
+	}
+}
+
+func introNumericType(t string) string {
+	switch introBaseColumnType(t) {
+	case "int", "int2", "int4", "int8",
+		"integer", "bigint", "smallint", "tinyint", "mediumint",
+		"serial", "smallserial", "bigserial":
+		return TYPE_INT
+	default:
+		return TYPE_FLOAT
+	}
+}
+
+func introBaseColumnType(t string) string {
+	t = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(t)), " ", "")
+	if i := strings.IndexAny(t, "(["); i != -1 {
+		t = t[:i]
+	}
+	return introTrimColumnTypeModifier(t)
+}
+
+func isIntroBooleanColumnType(t string) bool {
+	switch t {
+	case "bool", "boolean", "bit", "tinyint(1)", "number(1)", "number(1,0)":
+		return true
+	default:
+		return false
+	}
+}
+
+func introTrimColumnTypeModifier(t string) string {
+	t = strings.TrimSuffix(t, "unsigned")
+	return strings.TrimSuffix(t, "signed")
+}
+
+func relationshipSupportsCursor(relType sdata.RelType, tr *TypeRef) bool {
+	if tr != nil && tr.Kind == KIND_LIST {
+		return true
+	}
+	return relType == sdata.RelOneToMany
+}
+
 // getTableField returns the field object for the given table
 func (in *Introspection) getTableField(relNode sdata.RelNode) (
 	f FieldObject, skip bool, err error,
@@ -1006,6 +1137,23 @@ func (in *Introspection) addDirValidateType() {
 		})
 	}
 	in.result.Schema.Directives = append(in.result.Schema.Directives, d)
+}
+
+func (ft *FullType) addFieldIfAbsent(field FieldObject) {
+	for _, f := range ft.Fields {
+		if f.Name == field.Name {
+			return
+		}
+	}
+	ft.Fields = append(ft.Fields, field)
+}
+
+func addCursorField(ft *FullType, name string) {
+	ft.addFieldIfAbsent(FieldObject{
+		Name: name + "_cursor",
+		Args: []InputValue{},
+		Type: newTypeRef("", "Cursor", nil),
+	})
 }
 
 // addArg adds an argument to the full type

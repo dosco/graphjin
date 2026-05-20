@@ -86,18 +86,56 @@ jobs:
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version: $NEW_VERSION"
 
+      - name: Prepare release target
+        id: release_target
+        run: |
+          set -euo pipefail
+
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          WORKFLOW_SHA="${{ github.event.workflow_run.head_sha }}"
+
+          git fetch origin master:refs/remotes/origin/master --tags
+
+          REMOTE_SHA=$(git rev-parse origin/master)
+          if [ "$REMOTE_SHA" = "$WORKFLOW_SHA" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "mode=create" >> "$GITHUB_OUTPUT"
+            echo "Release target is current master"
+            exit 0
+          fi
+
+          REMOTE_VERSION=$(git show origin/master:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          REMOTE_SUBJECT=$(git log -1 --pretty=%s origin/master)
+          EXPECTED_SUBJECT="chore: bump version to v$NEW_VERSION [skip-release]"
+
+          if [ "$REMOTE_VERSION" = "$NEW_VERSION" ] && [ "$REMOTE_SUBJECT" = "$EXPECTED_SUBJECT" ]; then
+            git checkout -B release-target origin/master
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "mode=reuse" >> "$GITHUB_OUTPUT"
+            echo "Reusing release commit already on master"
+            exit 0
+          fi
+
+          echo "should_release=false" >> "$GITHUB_OUTPUT"
+          echo "mode=skip" >> "$GITHUB_OUTPUT"
+          echo "::notice ::Skipping release because master advanced from $WORKFLOW_SHA to $REMOTE_SHA"
+          echo "::notice ::Remote master version is $REMOTE_VERSION; planned version is $NEW_VERSION"
+
       - name: Update package.json version
+        if: steps.release_target.outputs.mode == 'create'
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
           npm version $NEW_VERSION --no-git-tag-version
           echo "Updated package.json to version $NEW_VERSION"
 
       - name: Set up Go
+        if: steps.release_target.outputs.should_release == 'true'
         uses: actions/setup-go@v4
         with:
           go-version: "1.23.1"
 
       - name: Cache Go modules
+        if: steps.release_target.outputs.should_release == 'true'
         uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
@@ -106,6 +144,7 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Update Go module versions
+        if: steps.release_target.outputs.mode == 'create'
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
           chmod +x ./release.sh
@@ -113,45 +152,75 @@ jobs:
           echo "Updated Go modules to version $NEW_VERSION"
 
       - name: Configure Git
+        if: steps.release_target.outputs.mode == 'create'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
 
       - name: Commit version updates
+        if: steps.release_target.outputs.mode == 'create'
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
           git add .
           git commit -m "chore: bump version to v$NEW_VERSION [skip-release]"
 
       - name: Create and push tags
+        id: push_release
+        if: steps.release_target.outputs.should_release == 'true'
         run: |
-          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          set -euo pipefail
 
-          # Delete existing tags locally and remotely if they exist (handles re-runs gracefully)
-          for tag in "auth/v$NEW_VERSION" "cmd/v$NEW_VERSION" "conf/v$NEW_VERSION" \
-                     "core/v$NEW_VERSION" "plugin/otel/v$NEW_VERSION" "serv/v$NEW_VERSION" \
-                     "tests/v$NEW_VERSION" "v$NEW_VERSION"; do
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          RELEASE_MODE="${{ steps.release_target.outputs.mode }}"
+          WORKFLOW_SHA="${{ github.event.workflow_run.head_sha }}"
+
+          tags=(
+            "auth/v$NEW_VERSION"
+            "cmd/v$NEW_VERSION"
+            "conf/v$NEW_VERSION"
+            "core/v$NEW_VERSION"
+            "plugin/otel/v$NEW_VERSION"
+            "serv/v$NEW_VERSION"
+            "tests/v$NEW_VERSION"
+            "v$NEW_VERSION"
+          )
+          tag_refs=()
+
+          # Delete existing local tags if they exist (handles re-runs gracefully).
+          for tag in "${tags[@]}"; do
             git tag -d "$tag" 2>/dev/null || true
-            git push origin --delete "$tag" 2>/dev/null || true
           done
 
-          # Create all module tags
-          git tag "auth/v$NEW_VERSION"
-          git tag "cmd/v$NEW_VERSION"
-          git tag "conf/v$NEW_VERSION"
-          git tag "core/v$NEW_VERSION"
-          git tag "plugin/otel/v$NEW_VERSION"
-          git tag "serv/v$NEW_VERSION"
-          git tag "tests/v$NEW_VERSION"
-          git tag "v$NEW_VERSION"
+          # Create all module tags.
+          for tag in "${tags[@]}"; do
+            git tag "$tag"
+            tag_refs+=("refs/tags/$tag")
+          done
 
-          # Push changes and tags
-          git push origin HEAD:master
-          git push --tags
+          if [ "$RELEASE_MODE" = "create" ]; then
+            git fetch origin master:refs/remotes/origin/master
+            REMOTE_SHA=$(git rev-parse origin/master)
+            if [ "$REMOTE_SHA" != "$WORKFLOW_SHA" ]; then
+              echo "pushed=false" >> "$GITHUB_OUTPUT"
+              echo "::notice ::Skipping release push because master advanced from $WORKFLOW_SHA to $REMOTE_SHA"
+              exit 0
+            fi
+
+            git push origin HEAD:master
+          fi
+
+          # Replace remote release tags only after the branch push is complete.
+          for tag in "${tags[@]}"; do
+            git push origin ":refs/tags/$tag" 2>/dev/null || true
+          done
+
+          git push origin "${tag_refs[@]}"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
 
           echo "Created and pushed tags for version $NEW_VERSION"
 
       - name: Delete existing release if any
+        if: steps.push_release.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -159,6 +228,7 @@ jobs:
           gh release delete "v$NEW_VERSION" --yes 2>/dev/null || true
 
       - name: Import GPG key
+        if: steps.push_release.outputs.pushed == 'true'
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@v4
         with:
@@ -166,12 +236,14 @@ jobs:
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Login to Docker Hub
+        if: steps.push_release.outputs.pushed == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Run GoReleaser
+        if: steps.push_release.outputs.pushed == 'true'
         uses: goreleaser/goreleaser-action@v4
         with:
           distribution: goreleaser
@@ -183,6 +255,7 @@ jobs:
           KO_DOCKER_REPO: dosco/graphjin
 
       - name: Publish to npm
+        if: steps.push_release.outputs.pushed == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
