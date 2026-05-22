@@ -246,6 +246,35 @@ func TestFKColumnRelationNameCollisionUsesTargetTable(t *testing.T) {
 	}
 }
 
+func TestMultipleFKsToSameTableKeepColumnRelationshipNames(t *testing.T) {
+	di := sdata.NewDBInfo("postgres", 0, "public", "", nil, nil, nil)
+	di.AddTable(sdata.NewDBTable("public", "graph_node", "", []sdata.DBColumn{
+		{Name: "id", Type: "varchar", PrimaryKey: true, UniqueKey: true},
+	}))
+	di.AddTable(sdata.NewDBTable("public", "graph_edge", "", []sdata.DBColumn{
+		{Name: "id", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+		{Name: "src_node", Type: "varchar", FKeySchema: "public", FKeyTable: "graph_node", FKeyCol: "id"},
+		{Name: "dst_node", Type: "varchar", FKeySchema: "public", FKeyTable: "graph_node", FKeyCol: "id"},
+	}))
+	schema, err := sdata.NewDBSchema(di, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qc, _ := qcode.NewCompiler(schema, qcode.Config{})
+
+	_, err = qc.Compile([]byte(`
+	query {
+		graph_node {
+			id
+			src_node { id }
+			dst_node { id }
+		}
+	}`), nil, "user", "")
+	if err != nil {
+		t.Fatalf("expected join-table relationships to compile by FK column names, got: %v", err)
+	}
+}
+
 func TestInvalidCompile1(t *testing.T) {
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
 	_, err := qcompile.Compile([]byte(`#`), nil, "user", "")
