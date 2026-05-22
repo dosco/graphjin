@@ -129,8 +129,10 @@ func (s *DBSchema) addToGraph(
 	switch rt {
 	case RelOneToOne:
 		rt2 = RelOneToMany
+		relT = nonConflictingRelName(lti, relT, rti.Name)
 	case RelOneToMany:
 		rt2 = RelOneToOne
+		relT = nonConflictingRelName(lti, relT, rti.Name)
 	case RelPolymorphic:
 		rt2 = rt
 		relT = rti.Name
@@ -200,6 +202,16 @@ func (s *DBSchema) addToGraph(
 	// fmt.Printf("3. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", relT, e2.ID(), rti.Name, rcol.Name, rn.ID(), lti.Name, lcol.Name, ln.ID(), rt2.String())
 	// fmt.Println("-----")
 	return nil
+}
+
+func nonConflictingRelName(t DBTable, name, fallback string) string {
+	if _, ok := t.getColumn(name); !ok {
+		return name
+	}
+	if _, ok := t.getColumn(fallback); !ok {
+		return fallback
+	}
+	return name
 }
 
 // addEdge creates a relationship between two tables

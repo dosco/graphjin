@@ -258,6 +258,44 @@ func TestIntrospectionSyntheticAggregateCollisionPreservesPhysicalField(t *testi
 	}
 }
 
+func TestIntrospectionFKColumnRelationNameCollision(t *testing.T) {
+	di := sdata.NewDBInfo("postgres", 0, "public", "", nil, nil, nil)
+	di.AddTable(sdata.NewDBTable("public", "organization", "", []sdata.DBColumn{
+		{Name: "org_key", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+		{Name: "name", Type: "varchar"},
+	}))
+	di.AddTable(sdata.NewDBTable("public", "employees", "", []sdata.DBColumn{
+		{Name: "id", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+		{Name: "org_key", Type: "bigint", FKeySchema: "public", FKeyTable: "organization", FKeyCol: "org_key"},
+	}))
+
+	introResult := introspectDBInfo(t, di, &Config{DBType: "postgres"})
+	employees := requireIntroType(t, introResult, "employees")
+
+	orgKeyFields := introFieldsNamed(employees, "org_key")
+	if len(orgKeyFields) != 1 {
+		t.Fatalf("employees.org_key fields = %d, want exactly one scalar field", len(orgKeyFields))
+	}
+	if got := introFieldTypeName(orgKeyFields[0].Type); got != "Int" {
+		t.Fatalf("employees.org_key type = %q, want Int", got)
+	}
+
+	orgRel := requireIntroField(t, employees, "organization")
+	if got := introFieldTypeName(orgRel.Type); got != "organization" {
+		t.Fatalf("employees.organization type = %q, want organization", got)
+	}
+
+	organization := requireIntroType(t, introResult, "organization")
+	orgPKFields := introFieldsNamed(organization, "org_key")
+	if len(orgPKFields) != 1 {
+		t.Fatalf("organization.org_key fields = %d, want exactly one scalar field", len(orgPKFields))
+	}
+	if got := introFieldTypeName(orgPKFields[0].Type); got != "ID" {
+		t.Fatalf("organization.org_key type = %q, want ID", got)
+	}
+	requireNoIntroField(t, organization, "organization")
+}
+
 func TestIntrospectionSkipsSyntheticAggregatesWhenDisabled(t *testing.T) {
 	introResult := introspectTestDB(t, &Config{DBType: "postgres", DisableAgg: true})
 	products := requireIntroType(t, introResult, "products")
@@ -415,4 +453,14 @@ func introFieldNames(ft *FullType) []string {
 		names[i] = field.Name
 	}
 	return names
+}
+
+func introFieldsNamed(ft *FullType, name string) []FieldObject {
+	fields := []FieldObject{}
+	for _, field := range ft.Fields {
+		if field.Name == name {
+			fields = append(fields, field)
+		}
+	}
+	return fields
 }

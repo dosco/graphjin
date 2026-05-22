@@ -524,11 +524,26 @@ func (s *DBSchema) GetSecondDegree(t DBTable) (items []RelNode, err error) {
 	for _, id := range relatedNodes1 {
 		relatedNodes2 := s.relationshipGraph.Connections(id)
 		for _, id1 := range relatedNodes2 {
+			if id1 == currNode.nodeID && s.visibleRelNodeCount(id1, id) <= 1 {
+				continue
+			}
 			v := s.getRelNodes(id1, id)
 			items = append(items, v...)
 		}
 	}
 	return
+}
+
+func (s *DBSchema) visibleRelNodeCount(fromID, toID int32) int {
+	var n int
+	edges := s.relationshipGraph.GetEdges(fromID, toID)
+	for _, e := range edges {
+		e1 := s.allEdges[e.ID]
+		if e1.name != "" {
+			n++
+		}
+	}
+	return n
 }
 
 // getRelNodes returns the relationship nodes

@@ -204,6 +204,48 @@ func TestWhereNestedFKColumnNotMisinterpreted(t *testing.T) {
 	}
 }
 
+func TestFKColumnRelationNameCollisionUsesTargetTable(t *testing.T) {
+	di := sdata.NewDBInfo("postgres", 0, "public", "", nil, nil, nil)
+	di.AddTable(sdata.NewDBTable("public", "organization", "", []sdata.DBColumn{
+		{Name: "org_key", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+		{Name: "name", Type: "varchar"},
+	}))
+	di.AddTable(sdata.NewDBTable("public", "employees", "", []sdata.DBColumn{
+		{Name: "id", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+		{Name: "org_key", Type: "bigint", FKeySchema: "public", FKeyTable: "organization", FKeyCol: "org_key"},
+	}))
+	schema, err := sdata.NewDBSchema(di, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qc, _ := qcode.NewCompiler(schema, qcode.Config{})
+
+	_, err = qc.Compile([]byte(`
+	query {
+		employees {
+			org_key
+			organization {
+				name
+			}
+		}
+	}`), nil, "user", "")
+	if err != nil {
+		t.Fatalf("expected FK scalar plus target-table relationship to compile, got: %v", err)
+	}
+
+	_, err = qc.Compile([]byte(`
+	query {
+		employees {
+			org_key {
+				name
+			}
+		}
+	}`), nil, "user", "")
+	if err == nil {
+		t.Fatal("expected FK column name with a child selection to be rejected")
+	}
+}
+
 func TestInvalidCompile1(t *testing.T) {
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
 	_, err := qcompile.Compile([]byte(`#`), nil, "user", "")
