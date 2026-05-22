@@ -1,4 +1,3 @@
-
 package tests_test
 
 import (
@@ -6,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -180,14 +180,18 @@ func Example_subscriptionWithCursor() {
 
 	msgCount := 0
 	maxRetries := 50 // prevent infinite loop
+	msgTimeout := 15 * time.Second
+	if dbType == "snowflake" && os.Getenv("GRAPHJIN_SNOWFLAKE_MOCK") == "1" {
+		msgTimeout = 60 * time.Second
+	}
 	for retries := 0; msgCount < 19 && retries < maxRetries; retries++ {
-		// Per-message timeout: insertions are 3s apart, so 15s is plenty.
-		// Without this, a stuck subscription would hang the test for the
-		// entire Go test timeout (default 10m, configurable to 30m+).
+		// Per-message timeout: insertions are 3s apart. The Snowflake mock
+		// gets a longer window because DuckDB execution under -race is slower.
+		// Without this, a stuck subscription would hang until the package timeout.
 		var msg *core.Result
 		select {
 		case msg = <-m2.Result:
-		case <-time.After(15 * time.Second):
+		case <-time.After(msgTimeout):
 			fmt.Printf("timeout waiting for message %d/19 after %d empty results\n", msgCount+1, retries-msgCount)
 			return
 		}
