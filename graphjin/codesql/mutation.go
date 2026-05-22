@@ -143,6 +143,18 @@ func ManagedMutationTables() []string {
 	return []string{"gj_code"}
 }
 
+func (m *Managed) execWriteContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	if m == nil || m.DB == nil {
+		return nil, errors.New("codesql managed database is not open")
+	}
+	if m.writeMu == nil {
+		return m.DB.ExecContext(ctx, query, args...)
+	}
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+	return m.DB.ExecContext(ctx, query, args...)
+}
+
 // ExecuteManagedMutation handles CodeSQL preview/apply/lock GraphQL mutations.
 func (m *Managed) ExecuteManagedMutation(ctx context.Context, req MutationRequest) (json.RawMessage, error) {
 	if m == nil || m.DB == nil {
@@ -172,7 +184,7 @@ func (m *Managed) ExecuteManagedMutation(ctx context.Context, req MutationReques
 		out[root.FieldName] = filterMutationFields(row, root.Fields)
 	}
 	if needsRefresh {
-		if err := RefreshPublicGraph(ctx, m.DB); err != nil {
+		if err := m.RefreshPublicGraph(ctx); err != nil {
 			if !strings.Contains(err.Error(), "SQLITE_BUSY") && !strings.Contains(err.Error(), "database is locked") {
 				return nil, err
 			}
@@ -243,7 +255,7 @@ func (m *Managed) previewChangeSet(ctx context.Context, input map[string]interfa
 	editsJSON := mustJSON(edits)
 	errorsJSON := mustJSON(errs)
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	res, err := m.DB.ExecContext(ctx, `INSERT INTO code_change_sets(action, title, owner, edits, lock_tokens, status, diff, errors, files_changed, files_reindexed, created_at, updated_at)
+	res, err := m.execWriteContext(ctx, `INSERT INTO code_change_sets(action, title, owner, edits, lock_tokens, status, diff, errors, files_changed, files_reindexed, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?)`,
 		"preview", title, owner, editsJSON, mustJSON(rootTokens), status, diff, errorsJSON, now, now)
 	if err != nil {
@@ -330,7 +342,7 @@ func (m *Managed) applyChangeSet(ctx context.Context, input map[string]interface
 	}
 
 	now := time.Now().UTC()
-	_, err = m.DB.ExecContext(ctx, `UPDATE code_change_sets
+	_, err = m.execWriteContext(ctx, `UPDATE code_change_sets
 		SET action = 'apply', status = ?, errors = '[]', files_changed = ?, files_reindexed = ?, updated_at = ?, applied_at = ?
 		WHERE id = ?`,
 		changeStatusApplied, mustJSON(changed), mustJSON(reindexed), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), id)
@@ -410,7 +422,7 @@ func (m *Managed) acquireExplicitLock(ctx context.Context, input map[string]inte
 		return nil, err
 	}
 
-	res, err := m.DB.ExecContext(ctx, `INSERT INTO code_locks(path, ranges, owner, lease_token, ttl_seconds, whole_file, status, expires_at, created_at, updated_at)
+	res, err := m.execWriteContext(ctx, `INSERT INTO code_locks(path, ranges, owner, lease_token, ttl_seconds, whole_file, status, expires_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rel, mustJSON(ranges), owner, token, int(ttl.Seconds()), boolToInt(wholeFile), lockStatusActive,
 		expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
@@ -456,7 +468,7 @@ func (m *Managed) releaseExplicitLock(ctx context.Context, input map[string]inte
 		return nil, fmt.Errorf("code_locks lease_token does not match")
 	}
 	now := time.Now().UTC()
-	_, err := m.DB.ExecContext(ctx, `UPDATE code_locks SET action = 'release', status = ?, updated_at = ? WHERE id = ?`,
+	_, err := m.execWriteContext(ctx, `UPDATE code_locks SET action = 'release', status = ?, updated_at = ? WHERE id = ?`,
 		lockStatusReleased, now.Format(time.RFC3339Nano), id)
 	if err != nil {
 		return nil, err
@@ -1317,7 +1329,7 @@ func (m *Managed) cleanupExpiredLocksLocked(ctx context.Context, now time.Time) 
 		if now.Before(lock.ExpiresAt) {
 			continue
 		}
-		_, _ = m.DB.ExecContext(ctx, `UPDATE code_locks SET status = ?, updated_at = ? WHERE id = ? AND status = 'active'`,
+		_, _ = m.execWriteContext(ctx, `UPDATE code_locks SET status = ?, updated_at = ? WHERE id = ? AND status = 'active'`,
 			lockStatusExpired, now.Format(time.RFC3339Nano), id)
 		delete(m.locks, id)
 	}
@@ -1582,7 +1594,7 @@ func conflictStatus(errs []string) string {
 }
 
 func (m *Managed) updateChangeSetFailure(ctx context.Context, id int64, status string, errs []string) error {
-	_, err := m.DB.ExecContext(ctx, `UPDATE code_change_sets SET action = 'apply', status = ?, errors = ?, updated_at = ? WHERE id = ?`,
+	_, err := m.execWriteContext(ctx, `UPDATE code_change_sets SET action = 'apply', status = ?, errors = ?, updated_at = ? WHERE id = ?`,
 		status, mustJSON(errs), time.Now().UTC().Format(time.RFC3339Nano), id)
 	return err
 }
@@ -1600,7 +1612,7 @@ func (m *Managed) audit(ctx context.Context, changeSetID, lockID int64, event, p
 	if lockID != 0 {
 		lID = lockID
 	}
-	_, err := m.DB.ExecContext(ctx, `INSERT INTO code_change_audit(change_set_id, lock_id, event, path, message, details, created_at)
+	_, err := m.execWriteContext(ctx, `INSERT INTO code_change_audit(change_set_id, lock_id, event, path, message, details, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		csID, lID, event, path, message, detailsJSON, time.Now().UTC().Format(time.RFC3339Nano))
 	return err

@@ -90,6 +90,10 @@ func newDBRefResolver(targets []DBRefTarget) *dbRefResolver {
 func (idx *indexer) setDBRefTargets(ctx context.Context, targets []DBRefTarget) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
+	if idx.writeMu != nil {
+		idx.writeMu.Lock()
+		defer idx.writeMu.Unlock()
+	}
 	idx.dbRefResolver = newDBRefResolver(targets)
 	if !idx.inferDBRefs {
 		return nil

@@ -8,7 +8,7 @@ import (
 const schemaSQL = `
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
-PRAGMA busy_timeout=5000;
+PRAGMA busy_timeout=30000;
 
 CREATE TABLE IF NOT EXISTS code_languages (
   id INTEGER PRIMARY KEY,

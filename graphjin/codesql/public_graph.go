@@ -38,6 +38,20 @@ func RefreshPublicGraph(ctx context.Context, db *sql.DB) error {
 	return tx.Commit()
 }
 
+// RefreshPublicGraph refreshes the public gj_code facade while serializing
+// against other managed CodeSQL writes.
+func (m *Managed) RefreshPublicGraph(ctx context.Context) error {
+	if m == nil {
+		return nil
+	}
+	if m.writeMu == nil {
+		return RefreshPublicGraph(ctx, m.DB)
+	}
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+	return RefreshPublicGraph(ctx, m.DB)
+}
+
 func shortSQL(stmt string) string {
 	const max = 80
 	stmt = strings.Join(strings.Fields(stmt), " ")
