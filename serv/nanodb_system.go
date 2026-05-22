@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/codesql"
 	"github.com/dosco/graphjin/core/v3"
 )
 
@@ -439,7 +438,7 @@ func (s *graphjinService) refreshMetadataGraphForRuntimeNano(ctx context.Context
 			if err := managed.handle.SetDBRefTargets(ctx, targets); err != nil {
 				return err
 			}
-			if err := codesql.RefreshPublicGraph(ctx, managed.handle.DB); err != nil {
+			if err := managed.handle.RefreshPublicGraph(ctx); err != nil {
 				return err
 			}
 		}

@@ -48,6 +48,7 @@ type Managed struct {
 	reconciler reconciler
 	notifier   sourceChangeNotifier
 
+	writeMu     *sync.Mutex
 	lockMu      sync.Mutex
 	locksLoaded bool
 	locks       map[int64]*sourceLock

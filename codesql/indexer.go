@@ -42,7 +42,7 @@ func OpenManaged(ctx context.Context, opts Options) (*Managed, *Stats, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	db, err := sql.Open("sqlite", cachePath)
+	db, err := sql.Open("sqlite", managedSQLiteDSN(cachePath))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -59,6 +59,7 @@ func OpenManaged(ctx context.Context, opts Options) (*Managed, *Stats, error) {
 		return nil, nil, fmt.Errorf("codesql requires a cgo-enabled build with bundled tree-sitter grammars")
 	}
 
+	writeMu := &sync.Mutex{}
 	idx := &indexer{
 		db:            db,
 		root:          root,
@@ -66,6 +67,7 @@ func OpenManaged(ctx context.Context, opts Options) (*Managed, *Stats, error) {
 		languages:     languages,
 		inferDBRefs:   opts.InferDBRefs,
 		dbRefResolver: newDBRefResolver(opts.RefTargets),
+		writeMu:       writeMu,
 	}
 	stats, err := idx.Reconcile(ctx)
 	if err != nil {
@@ -73,7 +75,7 @@ func OpenManaged(ctx context.Context, opts Options) (*Managed, *Stats, error) {
 		return nil, nil, err
 	}
 
-	m := &Managed{DB: db, CachePath: cachePath, Root: root, refTargets: idx, reconciler: idx}
+	m := &Managed{DB: db, CachePath: cachePath, Root: root, refTargets: idx, reconciler: idx, writeMu: writeMu}
 	m.notifier = idx
 	if err := m.loadActiveLocks(ctx); err != nil {
 		db.Close() //nolint:errcheck
@@ -91,9 +93,18 @@ func OpenManaged(ctx context.Context, opts Options) (*Managed, *Stats, error) {
 	return m, stats, nil
 }
 
+func managedSQLiteDSN(path string) string {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + "_pragma=busy_timeout%3d30000&_pragma=foreign_keys%3dON&_pragma=journal_mode%3dWAL"
+}
+
 type indexer struct {
 	mu             sync.Mutex
 	hookMu         sync.RWMutex
+	writeMu        *sync.Mutex
 	db             *sql.DB
 	root           string
 	cachePath      string
@@ -112,6 +123,10 @@ func (idx *indexer) Reconcile(ctx context.Context) (*Stats, error) {
 		}
 	}()
 	defer idx.mu.Unlock()
+	if idx.writeMu != nil {
+		idx.writeMu.Lock()
+		defer idx.writeMu.Unlock()
+	}
 	start := time.Now()
 	stats := &Stats{}
 	statusID, err := idx.startStatus(ctx)
