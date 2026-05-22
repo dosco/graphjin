@@ -58,6 +58,7 @@ examples/nodejs/config/**/*.gql
 *.txt
 
 test.db
+tests/.snowflake-capture/
 
 cmd/cmd
 
