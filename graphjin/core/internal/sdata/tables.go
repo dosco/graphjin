@@ -42,22 +42,28 @@ func snowflakeKeyColumnUsageAvailable(ctx context.Context, db *sql.DB) bool {
 func discoverSnowflakeColumns(ctx context.Context, db *sql.DB) (*sql.Rows, error) {
 	if snowflakeKeyColumnUsageAvailable(ctx, db) {
 		qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
-		defer cancel()
 		if rows, err := db.QueryContext(qctx, snowflakeColumnsStmt); err == nil {
 			return rows, nil
+		} else {
+			cancel()
 		}
 		qctx2, cancel2 := context.WithTimeout(ctx, introspectionQueryTimeout)
-		defer cancel2()
 		if rows, err := db.QueryContext(qctx2, snowflakeColumnsNoOverridesStmt); err == nil {
 			return rows, nil
+		} else {
+			cancel2()
 		}
 	}
 	if rows, err := discoverSnowflakeColumnsViaShow(ctx, db); err == nil {
 		return rows, nil
 	}
 	qctx3, cancel3 := context.WithTimeout(ctx, introspectionQueryTimeout)
-	defer cancel3()
-	return db.QueryContext(qctx3, snowflakeColumnsBasicStmt)
+	rows, err := db.QueryContext(qctx3, snowflakeColumnsBasicStmt)
+	if err != nil {
+		cancel3()
+		return nil, err
+	}
+	return rows, nil
 }
 
 // DBInfo holds the database schema information

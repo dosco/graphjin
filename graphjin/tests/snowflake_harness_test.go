@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dosco/graphjin/tests/v3/snowflakeemu"
 	"github.com/snowflakedb/gosnowflake"
 )
 
@@ -17,6 +18,42 @@ const snowflakeConnEnv = "SNOWFLAKE_TEST_CONN"
 
 func init() {
 	_ = gosnowflake.GetLogger().SetLogLevel("fatal")
+}
+
+func startSnowflakeDB(ctx context.Context) (func(context.Context) error, *sql.DB, error) {
+	if os.Getenv("GRAPHJIN_SNOWFLAKE_MOCK") == "1" {
+		sqlDB := sql.OpenDB(snowflakeemu.NewConnector(snowflakeemu.Config{
+			SeedPath:   "./snowflake.sql",
+			CaptureDir: strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_CAPTURE_DIR")),
+			TestName:   strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_TEST_NAME")),
+			RunID:      strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_RUN_ID")),
+			Backend:    strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_BACKEND")),
+			Fallback:   strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_FALLBACK")),
+			Discovery:  strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_DISCOVERY")),
+		}))
+		cleanup := func(context.Context) error {
+			return sqlDB.Close()
+		}
+		if err := sqlDB.PingContext(ctx); err != nil {
+			_ = cleanup(ctx)
+			return nil, nil, err
+		}
+		return cleanup, sqlDB, nil
+	}
+
+	cleanup, dsn, err := startSnowflake(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	sqlDB, err := sql.Open("snowflake", dsn)
+	if err != nil {
+		_ = cleanup(ctx)
+		return nil, nil, err
+	}
+	return func(ctx context.Context) error {
+		_ = sqlDB.Close()
+		return cleanup(ctx)
+	}, sqlDB, nil
 }
 
 func startSnowflake(ctx context.Context) (func(context.Context) error, string, error) {

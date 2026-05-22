@@ -701,6 +701,7 @@ func TestMain(m *testing.M) {
 			name:      "snowflake",
 			driver:    "snowflake",
 			startFunc: startSnowflake,
+			dbFunc:    startSnowflakeDB,
 		},
 		{
 			name:   "mongodb",
