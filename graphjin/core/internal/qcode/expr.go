@@ -52,13 +52,13 @@ func (co *Compiler) compileExprNode(sel *Select, node *graph.Node, depth int) (*
 	// compat and for cases where explicit disambiguation is preferred.
 	switch node.Type {
 	case graph.NodeLabel:
-		return co.compileExprColFromName(sel, node.Val)
+		return co.compileExprColFromName(sel.Ti, node.Val)
 	case graph.NodeStr:
 		// Quoted strings are column references (the dot-notation case
 		// needs quotes because GraphQL identifiers can't contain dots).
 		// v1 has no string literals in expressions; if one is needed
 		// later, { str: "..." } remains available as an escape hatch.
-		return co.compileExprColFromName(sel, node.Val)
+		return co.compileExprColFromName(sel.Ti, node.Val)
 	case graph.NodeNum:
 		ex := newExpOp(OpLiteral)
 		ex.Lit = ExpLit{Val: node.Val, ValType: ValNum}
@@ -128,7 +128,7 @@ func (co *Compiler) compileExprCol(sel *Select, node *graph.Node) (*Exp, error) 
 	if node.Type != graph.NodeStr && node.Type != graph.NodeLabel {
 		return nil, fmt.Errorf("expr.col: expected column name, got %s", parserTypeName(node.Type))
 	}
-	return co.compileExprColFromName(sel, node.Val)
+	return co.compileExprColFromName(sel.Ti, node.Val)
 }
 
 // compileExprColFromName resolves a column name string (from either the
@@ -137,14 +137,14 @@ func (co *Compiler) compileExprCol(sel *Select, node *graph.Node) (*Exp, error) 
 // (e.g. "product.standardcost"); relationship traversal is delegated to
 // compileExprRelCol which supports single-hop and multi-hop belongs-to
 // chains up to exprMaxRelHops.
-func (co *Compiler) compileExprColFromName(sel *Select, name string) (*Exp, error) {
+func (co *Compiler) compileExprColFromName(ti sdata.DBTable, name string) (*Exp, error) {
 	if name == "" {
 		return nil, errors.New("expr: empty column name")
 	}
 	if i := strings.IndexByte(name, '.'); i > 0 {
-		return co.compileExprRelCol(sel, name[:i], name[i+1:])
+		return co.compileExprRelCol(ti, name[:i], name[i+1:])
 	}
-	col, err := sel.Ti.GetColumn(name)
+	col, err := ti.GetColumn(name)
 	if err != nil {
 		return nil, fmt.Errorf("expr.col: %w", err)
 	}
@@ -186,23 +186,23 @@ const exprMaxRelHops = 3
 //
 // Composite FKs at any hop become AND-joined equality predicates in
 // that hop's WHERE.
-func (co *Compiler) compileExprRelCol(sel *Select, relName, colName string) (*Exp, error) {
+func (co *Compiler) compileExprRelCol(ti sdata.DBTable, relName, colName string) (*Exp, error) {
 	if relName == "" || colName == "" {
 		return nil, fmt.Errorf("expr.col: empty relationship or column name in %q", relName+"."+colName)
 	}
 
 	// FindPath resolves from → to via the schema's relationship graph.
 	// Each element in the returned slice represents one FK hop.
-	paths, err := co.s.FindPath(sel.Ti.Name, relName, "")
+	paths, err := co.s.FindPath(ti.Name, relName, "")
 	if err != nil {
-		return nil, fmt.Errorf("expr.col: no relationship %q from %q: %w", relName, sel.Ti.Name, err)
+		return nil, fmt.Errorf("expr.col: no relationship %q from %q: %w", relName, ti.Name, err)
 	}
 	if len(paths) == 0 {
-		return nil, fmt.Errorf("expr.col: no relationship path from %q to %q", sel.Ti.Name, relName)
+		return nil, fmt.Errorf("expr.col: no relationship path from %q to %q", ti.Name, relName)
 	}
 	if len(paths) > exprMaxRelHops {
 		return nil, fmt.Errorf("expr.col: relationship %q from %q needs %d hops, exceeds limit of %d",
-			relName, sel.Ti.Name, len(paths), exprMaxRelHops)
+			relName, ti.Name, len(paths), exprMaxRelHops)
 	}
 
 	// Validate every hop is a scalar belongs-to. Any one-to-many hop
@@ -211,11 +211,11 @@ func (co *Compiler) compileExprRelCol(sel *Select, relName, colName string) (*Ex
 	for i, path := range paths {
 		if path.Rel != sdata.RelOneToOne {
 			return nil, fmt.Errorf("expr.col: hop %d of relationship %q from %q has cardinality %s — scalar expressions require belongs-to at every hop",
-				i+1, relName, sel.Ti.Name, path.Rel)
+				i+1, relName, ti.Name, path.Rel)
 		}
 		if path.LC.Array || path.RC.Array {
 			return nil, fmt.Errorf("expr.col: hop %d of relationship %q from %q uses an array column — scalar expressions require scalar FKs",
-				i+1, relName, sel.Ti.Name)
+				i+1, relName, ti.Name)
 		}
 	}
 

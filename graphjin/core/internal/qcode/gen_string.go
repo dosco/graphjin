@@ -173,11 +173,12 @@ func _() {
 	_ = x[ValDBVar-7]
 	_ = x[ValSubQuery-8]
 	_ = x[ValPartitionBound-9]
+	_ = x[ValRef-10]
 }
 
-const _ValType_name = "ValStrValNumValBoolValListValObjValVarValDBVarValSubQueryRenders as NOW() - INTERVAL N days (dialect-specific)"
+const _ValType_name = "ValStrValNumValBoolValListValObjValVarValDBVarValSubQueryRenders as NOW() - INTERVAL N days (dialect-specific)ValRef"
 
-var _ValType_index = [...]uint8{0, 6, 12, 19, 26, 32, 38, 46, 57, 110}
+var _ValType_index = [...]uint8{0, 6, 12, 19, 26, 32, 38, 46, 57, 110, 116}
 
 func (i ValType) String() string {
 	idx := int(i) - 1

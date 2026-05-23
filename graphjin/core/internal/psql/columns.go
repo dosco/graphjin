@@ -48,7 +48,7 @@ func (c *compilerContext) renderColumns(sel *qcode.Select) {
 func (c *compilerContext) renderStdColumn(sel *qcode.Select, f qcode.Field) {
 	if f.FieldFilter.Exp != nil {
 		c.w.WriteString(`(CASE WHEN `)
-		c.renderExp(sel.Ti, f.FieldFilter.Exp, false)
+		c.renderExpForSel(sel, f.FieldFilter.Exp, false)
 		c.w.WriteString(` THEN `)
 	}
 
@@ -235,7 +235,7 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 
 		if f.FieldFilter.Exp != nil {
 			c.w.WriteString(`(CASE WHEN `)
-			c.renderExp(sel.Ti, f.FieldFilter.Exp, false)
+			c.renderExpForSel(sel, f.FieldFilter.Exp, false)
 			c.w.WriteString(` THEN `)
 		}
 		c.renderFieldFunction(sel, f)

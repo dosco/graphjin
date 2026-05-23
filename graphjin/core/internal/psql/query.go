@@ -433,7 +433,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 
 		if sel.FieldFilter.Exp != nil {
 			c.w.WriteString(`(CASE WHEN `)
-			c.renderExp(sel.Ti, sel.FieldFilter.Exp, false)
+			c.renderExpForSel(sel, sel.FieldFilter.Exp, false)
 			c.w.WriteString(` THEN (SELECT `)
 		}
 
@@ -471,7 +471,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		c.w.WriteString(`SELECT `)
 		if sel.FieldFilter.Exp != nil {
 			c.w.WriteString(`(CASE WHEN `)
-			c.renderExp(sel.Ti, sel.FieldFilter.Exp, false)
+			c.renderExpForSel(sel, sel.FieldFilter.Exp, false)
 			if c.dialect.Name() == "snowflake" {
 				c.w.WriteString(` THEN `)
 			} else {
@@ -714,7 +714,7 @@ func (c *compilerContext) renderWhere(sel *qcode.Select) {
 	}
 
 	c.w.WriteString(` WHERE `)
-	c.renderExp(sel.Ti, sel.Where.Exp, false)
+	c.renderExpForSel(sel, sel.Where.Exp, false)
 }
 
 func (c *compilerContext) renderGroupBy(sel *qcode.Select) {

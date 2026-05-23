@@ -52,7 +52,7 @@ func TestOracleRepro(t *testing.T) {
 							Table: "users",
 							ColName: "id",
 						},
-						Right: struct{ValType qcode.ValType; Val string; ID int32; Table string; Col sdata.DBColumn; ColName string; ListType qcode.ValType; ListVal []string; Path []string}{
+						Right: struct{ValType qcode.ValType; Val string; ID int32; Table string; Col sdata.DBColumn; ColName string; ListType qcode.ValType; ListVal []string; Path []string; RelPath []sdata.DBRel}{
 							ValType: qcode.ValNum,
 							Val: "2",
 						},
