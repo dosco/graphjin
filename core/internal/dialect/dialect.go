@@ -28,6 +28,7 @@ type Context interface {
 	RenderExp(ti sdata.DBTable, ex *qcode.Exp)
 	GetStaticVar(name string) (string, bool) // Get config-level variable
 	GetSecPrefix() string                    // Get security prefix for cursor encryption
+	SetError(err error)                      // Surface a render-time error
 }
 
 // InlineChildRenderer is passed to dialects for rendering inline children

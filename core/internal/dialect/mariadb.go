@@ -1475,7 +1475,9 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 		ctx.WriteString(` (`)
 
 		// Render right side
-		if ex.Right.Col.Name != "" {
+		if ex.Right.ValType == qcode.ValRef {
+			d.renderColRefRight(ctx, r, sel, ex)
+		} else if ex.Right.Col.Name != "" {
 			// Check for cursor CTE reference first
 			// qcode sets ex.Right.Table = "__cur" for cursor pagination filters
 			if ex.Right.Table == "__cur" {
@@ -2600,4 +2602,80 @@ func (d *MariaDBDialect) RequiresNullOnEmptySelect() bool {
 	return true // MariaDB needs NULL when no columns rendered
 }
 
+// renderColRefRight emits a same-table column reference or a multi-hop
+// belongs-to correlated subquery for the right operand.
+func (d *MariaDBDialect) renderColRefRight(ctx Context, r InlineChildRenderer, sel *qcode.Select, ex *qcode.Exp) {
+	if len(ex.Right.RelPath) == 0 {
+		t := ex.Right.Col.Table
+		if t == sel.Ti.Name && sel.ID >= 0 {
+			t = fmt.Sprintf("%s_%d", t, sel.ID)
+		}
+		r.ColWithTable(t, ex.Right.Col.Name)
+		return
+	}
+
+	path := ex.Right.RelPath
+	closeParens := len(path)
+
+	lastHop := path[len(path)-1]
+	ctx.WriteString(`SELECT `)
+	r.ColWithTable(ex.Right.Col.Table, ex.Right.Col.Name)
+	ctx.WriteString(` FROM `)
+	d.writeQualifiedTable(ctx, lastHop.Right.Ti)
+	ctx.WriteString(` WHERE `)
+	r.ColWithTable(lastHop.Right.Col.Table, lastHop.Right.Col.Name)
+	ctx.WriteString(` = `)
+
+	for i := len(path) - 2; i >= 0; i-- {
+		hop := path[i]
+		outerHop := path[i+1]
+		ctx.WriteString(`(SELECT `)
+		r.ColWithTable(outerHop.Left.Col.Table, outerHop.Left.Col.Name)
+		ctx.WriteString(` FROM `)
+		d.writeQualifiedTable(ctx, hop.Right.Ti)
+		ctx.WriteString(` WHERE `)
+		r.ColWithTable(hop.Right.Col.Table, hop.Right.Col.Name)
+		ctx.WriteString(` = `)
+		if i > 0 {
+			continue
+		}
+		d.writeOuterColRefMariaDB(ctx, r, sel, hop.Left.Col)
+		for _, pair := range hop.ExtraPairs {
+			ctx.WriteString(` AND `)
+			r.ColWithTable(pair.R.Table, pair.R.Name)
+			ctx.WriteString(` = `)
+			d.writeOuterColRefMariaDB(ctx, r, sel, pair.L)
+		}
+	}
+
+	if len(path) == 1 {
+		d.writeOuterColRefMariaDB(ctx, r, sel, path[0].Left.Col)
+		for _, pair := range path[0].ExtraPairs {
+			ctx.WriteString(` AND `)
+			r.ColWithTable(pair.R.Table, pair.R.Name)
+			ctx.WriteString(` = `)
+			d.writeOuterColRefMariaDB(ctx, r, sel, pair.L)
+		}
+	}
+
+	for i := 1; i < closeParens; i++ {
+		ctx.WriteString(`)`)
+	}
+}
+
+func (d *MariaDBDialect) writeQualifiedTable(ctx Context, ti sdata.DBTable) {
+	if ti.Schema != "" {
+		ctx.Quote(ti.Schema)
+		ctx.WriteString(`.`)
+	}
+	ctx.Quote(ti.Name)
+}
+
+func (d *MariaDBDialect) writeOuterColRefMariaDB(ctx Context, r InlineChildRenderer, sel *qcode.Select, col sdata.DBColumn) {
+	t := col.Table
+	if sel != nil && t == sel.Ti.Name && sel.ID >= 0 {
+		t = fmt.Sprintf("%s_%d", t, sel.ID)
+	}
+	r.ColWithTable(t, col.Name)
+}
 
