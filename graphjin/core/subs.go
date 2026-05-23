@@ -801,6 +801,9 @@ func (c *stringContext) GetSecPrefix() string                    { return "" }
 func (c *stringContext) RenderExp(ti sdata.DBTable, ex *qcode.Exp) {
 	// Not implemented for stringContext - only used for subscription unboxing
 }
+func (c *stringContext) SetError(err error) {
+	// stringContext is fire-and-forget; no error path
+}
 
 // renderJSONArray function is called on the graphjin struct to render a json array.
 func renderJSONArray(v []json.RawMessage) json.RawMessage {
