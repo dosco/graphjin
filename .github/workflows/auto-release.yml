@@ -106,7 +106,7 @@ jobs:
 
           REMOTE_VERSION=$(git show origin/master:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
           REMOTE_SUBJECT=$(git log -1 --pretty=%s origin/master)
-          EXPECTED_SUBJECT="chore: bump version to v$NEW_VERSION [skip-release]"
+          EXPECTED_SUBJECT="chore: bump version to v$NEW_VERSION [skip-release] [skip ci]"
 
           if [ "$REMOTE_VERSION" = "$NEW_VERSION" ] && [ "$REMOTE_SUBJECT" = "$EXPECTED_SUBJECT" ]; then
             git checkout -B release-target origin/master
@@ -162,7 +162,7 @@ jobs:
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
           git add .
-          git commit -m "chore: bump version to v$NEW_VERSION [skip-release]"
+          git commit -m "chore: bump version to v$NEW_VERSION [skip-release] [skip ci]"
 
       - name: Create and push tags
         id: push_release
