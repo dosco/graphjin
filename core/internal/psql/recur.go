@@ -108,7 +108,7 @@ func (c *compilerContext) renderRecursiveColumns(sel *qcode.Select) {
 		}
 		if f.FieldFilter.Exp != nil {
 			c.w.WriteString(`(CASE WHEN `)
-			c.renderExp(sel.Ti, f.FieldFilter.Exp, false)
+			c.renderExpForSel(sel, f.FieldFilter.Exp, false)
 			c.w.WriteString(` THEN `)
 		}
 		if f.Type == qcode.FieldTypeFunc {

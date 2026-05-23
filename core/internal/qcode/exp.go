@@ -200,6 +200,10 @@ func (ast *aexpst) parseNode(av aexp, node *graph.Node, selID int32) (*Exp, erro
 			ex.Right.Path = append(ex.Right.Path, vn.Name)
 		}
 
+		if ex.Right.ValType == ValRef {
+			return ex, nil
+		}
+
 		if ex.Right.ValType, err = getExpType(vn); err != nil {
 			return nil, err
 		}
@@ -307,6 +311,12 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 		name = node.Name[1:]
 	} else {
 		name = node.Name
+	}
+
+	if ok, err := ast.processColRefOperand(ex, name, node); err != nil {
+		return false, err
+	} else if ok {
+		return true, nil
 	}
 
 	switch name {
@@ -420,6 +430,81 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 		return false, nil
 	}
 
+	return true, nil
+}
+
+// isColRefOperand reports whether the operator value is { col: "..." }.
+func isColRefOperand(node *graph.Node) bool {
+	if node.Type != graph.NodeObj || len(node.Children) != 1 {
+		return false
+	}
+	c := node.Children[0]
+	return strings.EqualFold(c.Name, "col") &&
+		(c.Type == graph.NodeStr || c.Type == graph.NodeLabel)
+}
+
+// colRefOpFor returns the ExpOp for ops that accept a column-ref operand.
+func colRefOpFor(name string) (ExpOp, bool) {
+	switch name {
+	case "eq", "equals":
+		return OpEquals, true
+	case "neq", "notEquals", "not_equals":
+		return OpNotEquals, true
+	case "gt", "greaterThan", "greater_than":
+		return OpGreaterThan, true
+	case "lt", "lesserThan", "lesser_than":
+		return OpLesserThan, true
+	case "gte", "gteq", "greaterOrEquals", "greater_or_equals":
+		return OpGreaterOrEquals, true
+	case "lte", "lteq", "lesserOrEquals", "lesser_or_equals":
+		return OpLesserOrEquals, true
+	case "notDistinct", "ndis", "not_distinct":
+		return OpNotDistinct, true
+	case "dis", "distinct":
+		return OpDistinct, true
+	case "like":
+		return OpLike, true
+	case "nlike", "notLike", "not_like":
+		return OpNotLike, true
+	case "ilike", "iLike":
+		return OpILike, true
+	case "nilike", "notILike", "not_ilike":
+		return OpNotILike, true
+	case "similar":
+		return OpSimilar, true
+	case "nsimilar", "notSimiliar", "not_similar":
+		return OpNotSimilar, true
+	case "regex":
+		return OpRegex, true
+	case "nregex", "notRegex", "not_regex":
+		return OpNotRegex, true
+	case "iregex":
+		return OpIRegex, true
+	case "niregex", "notIRegex", "not_iregex":
+		return OpNotIRegex, true
+	}
+	return 0, false
+}
+
+// processColRefOperand handles { <op>: { col: "<name>" } } in WHERE.
+func (ast *aexpst) processColRefOperand(ex *Exp, opName string, node *graph.Node) (bool, error) {
+	if !isColRefOperand(node) {
+		return false, nil
+	}
+	op, ok := colRefOpFor(opName)
+	if !ok {
+		return false, fmt.Errorf("[Where] operator %q does not accept a column reference operand", opName)
+	}
+	colName := node.Children[0].Val
+	refExp, err := ast.co.compileExprColFromName(ast.ti, colName)
+	if err != nil {
+		return false, fmt.Errorf("[Where] %w", err)
+	}
+	ex.Op = op
+	ex.Right.ValType = ValRef
+	ex.Right.Col = refExp.Left.Col
+	ex.Right.Table = refExp.Left.Table
+	ex.Right.RelPath = refExp.RelPath
 	return true, nil
 }
 
@@ -803,6 +888,10 @@ func (ast *aexpst) processJSONPath(av aexp, ex *Exp, node *graph.Node, selID int
 				return false, err
 			} else if !ok {
 				return false, fmt.Errorf("[Where] unknown operator in JSON path: %s", nextNode.Name)
+			}
+
+			if ex.Right.ValType == ValRef {
+				return true, nil
 			}
 
 			if ex.Right.ValType, err = getExpType(nextNode); err != nil {
