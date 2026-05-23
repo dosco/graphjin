@@ -13,6 +13,7 @@ import (
 type expContext struct {
 	*compilerContext
 	ti         sdata.DBTable
+	sel        *qcode.Select // optional, for outer-alias resolution
 	prefixPath []string
 	skipNested bool
 }
@@ -26,6 +27,16 @@ func (c *compilerContext) renderExpPath(ti sdata.DBTable, ex *qcode.Exp, skipNes
 		compilerContext: c,
 		ti:              ti,
 		prefixPath:      prefixPath,
+		skipNested:      skipNested,
+	}
+	ec.render(ex)
+}
+
+func (c *compilerContext) renderExpForSel(sel *qcode.Select, ex *qcode.Exp, skipNested bool) {
+	ec := expContext{
+		compilerContext: c,
+		ti:              sel.Ti,
+		sel:             sel,
 		skipNested:      skipNested,
 	}
 	ec.render(ex)
@@ -284,6 +295,9 @@ func (c *expContext) renderValPrefix(ex *qcode.Exp) bool {
 
 func (c *expContext) renderVal(ex *qcode.Exp) {
 	switch {
+	case ex.Right.ValType == qcode.ValRef:
+		c.renderColRefVal(ex)
+
 	case ex.Right.ValType == qcode.ValDBVar:
 		c.dialect.RenderVar(c, ex.Right.Val)
 
@@ -447,5 +461,78 @@ func (c *expContext) renderPartitionBound(daysStr string) {
 		c.w.WriteString(`(CURRENT_TIMESTAMP - INTERVAL '`)
 		c.w.WriteString(daysStr)
 		c.w.WriteString(` days')`)
+	}
+}
+
+// renderColRefVal emits the right-hand column reference for col-ref operands.
+func (c *expContext) renderColRefVal(ex *qcode.Exp) {
+	c.w.WriteString(`(`)
+	if len(ex.Right.RelPath) > 0 {
+		c.renderRelColRefVal(ex)
+	} else {
+		c.writeLocalColRef(ex.Right.Col)
+	}
+	c.w.WriteString(`)`)
+}
+
+// writeLocalColRef emits a reference to a column on c.ti, respecting
+// the dialect's base-table aliasing convention.
+func (c *expContext) writeLocalColRef(col sdata.DBColumn) {
+	if c.sel != nil && col.Table == c.sel.Table && dialectAliasesBaseTable(c.dialect) {
+		c.colWithTableID(c.sel.Table, c.sel.ID, col.Name)
+		return
+	}
+	c.colWithTable(col.Table, col.Name)
+}
+
+// renderRelColRefVal emits nested correlated subqueries for a multi-hop
+// belongs-to column reference on the RIGHT of a WHERE comparison.
+func (c *expContext) renderRelColRefVal(ex *qcode.Exp) {
+	path := ex.Right.RelPath
+	closeParens := len(path)
+
+	lastHop := path[len(path)-1]
+	c.w.WriteString(`SELECT `)
+	c.colWithTable(ex.Right.Col.Table, ex.Right.Col.Name)
+	c.w.WriteString(` FROM `)
+	c.writeQualifiedTable(lastHop.Right.Ti)
+	c.w.WriteString(` WHERE `)
+	c.colWithTable(lastHop.Right.Col.Table, lastHop.Right.Col.Name)
+	c.w.WriteString(` = `)
+
+	for i := len(path) - 2; i >= 0; i-- {
+		hop := path[i]
+		outerHop := path[i+1]
+		c.w.WriteString(`(SELECT `)
+		c.colWithTable(outerHop.Left.Col.Table, outerHop.Left.Col.Name)
+		c.w.WriteString(` FROM `)
+		c.writeQualifiedTable(hop.Right.Ti)
+		c.w.WriteString(` WHERE `)
+		c.colWithTable(hop.Right.Col.Table, hop.Right.Col.Name)
+		c.w.WriteString(` = `)
+		if i > 0 {
+			continue
+		}
+		c.writeLocalColRef(hop.Left.Col)
+		for _, pair := range hop.ExtraPairs {
+			c.w.WriteString(` AND `)
+			c.colWithTable(pair.R.Table, pair.R.Name)
+			c.w.WriteString(` = `)
+			c.writeLocalColRef(pair.L)
+		}
+	}
+
+	if len(path) == 1 {
+		c.writeLocalColRef(path[0].Left.Col)
+		for _, pair := range path[0].ExtraPairs {
+			c.w.WriteString(` AND `)
+			c.colWithTable(pair.R.Table, pair.R.Name)
+			c.w.WriteString(` = `)
+			c.writeLocalColRef(pair.L)
+		}
+	}
+
+	for i := 1; i < closeParens; i++ {
+		c.w.WriteString(`)`)
 	}
 }

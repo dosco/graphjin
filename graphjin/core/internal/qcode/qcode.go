@@ -215,6 +215,7 @@ type Exp struct {
 		ListType ValType
 		ListVal  []string
 		Path     []string
+		RelPath  []sdata.DBRel // set when Right.Col lives on a related table
 	}
 	Geo       *GeoExp // GIS-specific expression data
 	Children  []*Exp
@@ -421,6 +422,7 @@ const (
 	ValDBVar
 	ValSubQuery
 	ValPartitionBound // Renders as NOW() - INTERVAL N days (dialect-specific)
+	ValRef
 )
 
 // GeoUnit represents distance units for GIS operations
