@@ -170,7 +170,7 @@ func (c *compilerContext) renderScalarCase(sel *qcode.Select, ex *qcode.Exp) err
 		// when sub-tree uses the boolean predicate renderer; pass
 		// sel.Ti so column refs inside the predicate are resolved
 		// against the current selection's table.
-		c.renderExp(sel.Ti, arm.When, false)
+		c.renderExpForSel(sel, arm.When, false)
 		c.w.WriteString(" THEN ")
 		if err := c.renderScalarExp(sel, arm.Then); err != nil {
 			return err
