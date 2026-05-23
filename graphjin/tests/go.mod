@@ -4,10 +4,10 @@ go 1.24.0
 
 require (
 	github.com/antlr4-go/antlr/v4 v4.13.1
-	github.com/dosco/graphjin/conf/v3 v3.18.24
-	github.com/dosco/graphjin/core/v3 v3.18.24
+	github.com/dosco/graphjin/conf/v3 v3.18.25
+	github.com/dosco/graphjin/core/v3 v3.18.25
 	github.com/dosco/graphjin/mongodriver v0.0.0
-	github.com/dosco/graphjin/serv/v3 v3.18.24
+	github.com/dosco/graphjin/serv/v3 v3.18.25
 	github.com/duckdb/duckdb-go/v2 v2.10502.0
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/lib/pq v1.10.9
