@@ -82,6 +82,12 @@ func (c *compilerContext) Quote(s string) {
 	c.quoted(s)
 }
 
+func (c *compilerContext) SetError(err error) {
+	if c.err == nil {
+		c.err = err
+	}
+}
+
 func (c *compilerContext) ColWithTable(table, col string) {
 	c.colWithTable(table, col)
 }

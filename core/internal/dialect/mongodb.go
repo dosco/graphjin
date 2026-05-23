@@ -2981,6 +2981,20 @@ func (d *MongoDBDialect) renderRecursiveWhereCondition(ctx Context, exp *qcode.E
 
 // renderRecursiveComparisonValue renders a value for comparison in recursive where
 func (d *MongoDBDialect) renderRecursiveComparisonValue(ctx Context, exp *qcode.Exp) {
+	if exp.Right.ValType == qcode.ValRef {
+		if len(exp.Right.RelPath) > 0 {
+			ctx.SetError(fmt.Errorf("mongodb: cross-table column reference operands in recursive lookups are not supported"))
+			return
+		}
+		rightName := exp.Right.Col.Name
+		if rightName == "id" {
+			rightName = "_id"
+		}
+		ctx.WriteString(`"$$item.`)
+		ctx.WriteString(rightName)
+		ctx.WriteString(`"`)
+		return
+	}
 	if exp.Right.ValType == qcode.ValVar {
 		ctx.AddParam(Param{Name: exp.Right.Val, Type: "any"})
 	} else {
@@ -3833,6 +3847,11 @@ func (d *MongoDBDialect) renderExpression(ctx Context, exp *qcode.Exp) {
 		}
 		d.RenderGeoOp(ctx, "", colName, exp)
 	default:
+		if exp.Right.ValType == qcode.ValRef {
+			d.renderColRefExpression(ctx, exp)
+			return
+		}
+
 		// Simple comparison: field op value
 		colName := exp.Left.Col.Name
 		if colName == "" {
@@ -3857,6 +3876,55 @@ func (d *MongoDBDialect) renderExpression(ctx Context, exp *qcode.Exp) {
 
 		d.renderComparisonValue(ctx, exp)
 	}
+}
+
+// renderColRefExpression emits a same-collection column comparison via $expr.
+// Multi-hop belongs-to comparisons are not supported on MongoDB without
+// pre-injecting a $lookup stage in the pipeline, which is outside the scope
+// of the WHERE-clause renderer; reject those at compile time.
+func (d *MongoDBDialect) renderColRefExpression(ctx Context, exp *qcode.Exp) {
+	if len(exp.Right.RelPath) > 0 {
+		ctx.SetError(fmt.Errorf("mongodb: cross-table column reference operands (multi-hop) are not supported; use a same-collection column reference instead"))
+		return
+	}
+	op, ok := colRefMongoOp(exp.Op)
+	if !ok {
+		ctx.SetError(fmt.Errorf("mongodb: operator %s does not support column reference operands", exp.Op))
+		return
+	}
+	leftName := exp.Left.Col.Name
+	if leftName == "id" {
+		leftName = "_id"
+	}
+	rightName := exp.Right.Col.Name
+	if rightName == "id" {
+		rightName = "_id"
+	}
+	ctx.WriteString(`"$expr":{"`)
+	ctx.WriteString(op)
+	ctx.WriteString(`":["$`)
+	ctx.WriteString(leftName)
+	ctx.WriteString(`","$`)
+	ctx.WriteString(rightName)
+	ctx.WriteString(`"]}`)
+}
+
+func colRefMongoOp(op qcode.ExpOp) (string, bool) {
+	switch op {
+	case qcode.OpEquals:
+		return "$eq", true
+	case qcode.OpNotEquals:
+		return "$ne", true
+	case qcode.OpGreaterThan:
+		return "$gt", true
+	case qcode.OpGreaterOrEquals:
+		return "$gte", true
+	case qcode.OpLesserThan:
+		return "$lt", true
+	case qcode.OpLesserOrEquals:
+		return "$lte", true
+	}
+	return "", false
 }
 
 // renderComparisonValue renders the right side of a comparison
