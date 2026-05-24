@@ -89,6 +89,21 @@ var snowflakeColumnsShowStmt string
 //go:embed sql/snowflake_clustering.sql
 var snowflakeClusteringStmt string
 
+//go:embed sql/bigquery_info.sql
+var bigqueryInfo string
+
+//go:embed sql/bigquery_columns.sql
+var bigqueryColumnsStmt string
+
+//go:embed sql/bigquery_constraints_count.sql
+var bigqueryConstraintsCountStmt string
+
+//go:embed sql/bigquery_primary_keys.sql
+var bigqueryPrimaryKeysStmt string
+
+//go:embed sql/bigquery_foreign_keys.sql
+var bigqueryForeignKeysStmt string
+
 //go:embed sql/mongodb_info.json
 var mongodbInfo string
 

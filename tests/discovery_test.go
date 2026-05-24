@@ -143,12 +143,22 @@ func TestDiscovery(t *testing.T) {
 		// namespaces present in the loaded table list. Agents must never
 		// see RowCountApprox=0 lying about a non-empty seeded table.
 		page := dm.TableIndexPage(ctx, dbName, serv.TableListOptions{Limit: 500})
-		require.NotEmpty(t, page.Tables, "expected tables (dialect=%s)", dbType)
 		var sawUsersWithRows bool
-		for _, e := range page.Tables {
-			if e.Name == "users" && e.RowCountApprox != nil && *e.RowCountApprox >= 100 {
-				sawUsersWithRows = true
+		for {
+			require.NotEmpty(t, page.Tables, "expected tables (dialect=%s)", dbType)
+			for _, e := range page.Tables {
+				if e.Name == "users" && e.RowCountApprox != nil && *e.RowCountApprox >= 100 {
+					sawUsersWithRows = true
+				}
 			}
+			if sawUsersWithRows || dbType != "bigquery" {
+				break
+			}
+			if ctx.Err() != nil {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+			page = dm.TableIndexPage(ctx, dbName, serv.TableListOptions{Limit: 500})
 		}
 		assert.Truef(t, sawUsersWithRows, "expected users.row_count_approx >= 100 on cheap path (dialect=%s)", dbType)
 	})

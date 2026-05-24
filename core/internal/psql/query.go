@@ -101,6 +101,16 @@ func NewCompiler(conf Config) *Compiler {
 				SecPrefix:       conf.SecPrefix,
 			},
 		}
+	case "bigquery":
+		d = &dialect.BigQueryDialect{
+			SnowflakeDialect: dialect.SnowflakeDialect{
+				PostgresDialect: dialect.PostgresDialect{
+					DBVersion:       conf.DBVersion,
+					EnableCamelcase: conf.EnableCamelcase,
+					SecPrefix:       conf.SecPrefix,
+				},
+			},
+		}
 	case "mongodb":
 		d = &dialect.MongoDBDialect{EnableCamelcase: conf.EnableCamelcase}
 	default:
@@ -138,9 +148,9 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 		return md, fmt.Errorf("qcode is nil")
 	}
 
-	// Skip SQL comment for MongoDB (it generates JSON, not SQL) and Snowflake emulator.
-	// The current Snowflake emulator drops result rows when a leading block comment is present.
-	if co.dialect.Name() != "mongodb" && co.dialect.Name() != "snowflake" {
+	// Skip SQL comment for MongoDB (it generates JSON, not SQL) and hosted
+	// warehouse emulators that classify statements from the SQL prefix.
+	if co.dialect.Name() != "mongodb" && co.dialect.Name() != "snowflake" && co.dialect.Name() != "bigquery" {
 		w.WriteString(`/* action='` + qc.Name + `',controller='graphql',framework='graphjin' */ `)
 	}
 
@@ -455,7 +465,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 				c.w.WriteString(` || ':' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_arrayagg(__cur_`)
 				int32String(c.w, int32(i))
 				c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
-			} else if c.dialect.Name() == "snowflake" {
+			} else if c.dialect.Name() == "snowflake" || c.dialect.Name() == "bigquery" {
 				c.w.WriteString(` || ',' || COALESCE(TO_VARCHAR(GET(ARRAY_AGG(__cur_`)
 				int32String(c.w, int32(i))
 				c.w.WriteString(`), COUNT(*) - 1)), '')`)

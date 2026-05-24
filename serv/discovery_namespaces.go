@@ -31,6 +31,8 @@ func buildNamespaceRollup(ctx context.Context, gj *core.GraphJin, database strin
 		rows, err = mysqlNamespaceRollup(qctx, db)
 	case "snowflake":
 		rows, err = snowflakeNamespaceRollup(qctx, db)
+	case "bigquery":
+		rows, err = bigqueryNamespaceRollup(qctx, db)
 	case "sqlite":
 		rows, err = sqliteNamespaceRollup(qctx, db)
 	case "oracle":
@@ -108,6 +110,29 @@ WHERE TABLE_TYPE = 'BASE TABLE'
   AND TABLE_SCHEMA <> 'INFORMATION_SCHEMA'
 GROUP BY TABLE_CATALOG, TABLE_SCHEMA`
 	return scanNamespaceRollup(ctx, db, q, true)
+}
+
+func bigqueryNamespaceRollup(ctx context.Context, db *sql.DB) ([]NamespaceRollup, error) {
+	const q = `
+SELECT COALESCE(@@project_id, '') AS db,
+       TABLE_SCHEMA AS sch,
+       COUNT(*) AS table_count,
+       COALESCE(SUM(TOTAL_ROWS), 0) AS approx_row_total
+FROM INFORMATION_SCHEMA.TABLE_STORAGE
+WHERE TABLE_TYPE = 'BASE TABLE'
+  AND (
+    COALESCE(@@dataset_id, '') = ''
+    OR LOWER(TABLE_SCHEMA) = LOWER(COALESCE(@@dataset_id, ''))
+  )
+GROUP BY TABLE_SCHEMA`
+	rows, err := scanNamespaceRollup(ctx, db, q, true)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		rows[i].Schema = strings.ToLower(rows[i].Schema)
+	}
+	return rows, nil
 }
 
 func sqliteNamespaceRollup(ctx context.Context, db *sql.DB) ([]NamespaceRollup, error) {

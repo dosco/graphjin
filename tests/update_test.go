@@ -292,6 +292,8 @@ func Example_setArrayColumnToEmpty() {
 }
 
 func TestMultiAliasUpdate(t *testing.T) {
+	skipBigQueryMutationsUnsupported(t)
+
 	gql := `mutation {
 		p1: products(id: 87, update: $data1) {
 			id
@@ -353,6 +355,8 @@ func TestMultiAliasUpdate(t *testing.T) {
 // same table produce unique CTE names (orders_0, orders_1, orders_2) and
 // do not collide. This was the original reported bug.
 func TestMultiAliasUpdateThreeRoots(t *testing.T) {
+	skipBigQueryMutationsUnsupported(t)
+
 	gql := `mutation {
 		a1: products(id: 81, update: $d1) { id name }
 		a2: products(id: 82, update: $d2) { id name }
@@ -412,6 +416,8 @@ func TestMultiAliasUpdateThreeRoots(t *testing.T) {
 }
 
 func TestMultiAliasDelete(t *testing.T) {
+	skipBigQueryMutationsUnsupported(t)
+
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	require.NoError(t, err)

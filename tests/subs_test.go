@@ -227,6 +227,8 @@ func Example_subscriptionWithCursor() {
 }
 
 func TestSubscription(t *testing.T) {
+	skipBigQuerySubscriptionsUnsupported(t)
+
 	gql := `subscription test {
 		users(where: { or: { id: { eq: $id }, id: { eq: $id2 } } }) @object {
 			id

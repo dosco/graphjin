@@ -25,6 +25,8 @@ func approxRowCount(ctx context.Context, db *sql.DB, dbtype string, schema *core
 		return mysqlRowCount(qctx, db, schema)
 	case "snowflake":
 		return snowflakeRowCount(qctx, db, schema)
+	case "bigquery":
+		return bigqueryRowCount(qctx, db, schema)
 	case "sqlite":
 		return sqliteRowCount(qctx, db, schema)
 	case "oracle":
@@ -91,6 +93,22 @@ func snowflakeRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema
 		return n.Int64, true
 	} else if err != nil {
 		log.Printf("discovery rowcount: snowflake information_schema lookup failed for %s.%s: %v", schema.Schema, schema.Name, err)
+	}
+	return 0, false
+}
+
+func bigqueryRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (int64, bool) {
+	var n sql.NullInt64
+	q := `SELECT TOTAL_ROWS FROM INFORMATION_SCHEMA.TABLE_STORAGE WHERE LOWER(TABLE_NAME) = LOWER(?) AND TABLE_TYPE = 'BASE TABLE'`
+	args := []any{schema.Name}
+	if schema.Schema != "" {
+		q = `SELECT TOTAL_ROWS FROM INFORMATION_SCHEMA.TABLE_STORAGE WHERE LOWER(TABLE_SCHEMA) = LOWER(?) AND LOWER(TABLE_NAME) = LOWER(?) AND TABLE_TYPE = 'BASE TABLE'`
+		args = []any{schema.Schema, schema.Name}
+	}
+	if err := db.QueryRowContext(ctx, q, args...).Scan(&n); err == nil && n.Valid && n.Int64 >= 0 {
+		return n.Int64, true
+	} else if err != nil {
+		log.Printf("discovery rowcount: bigquery information_schema lookup failed for %s.%s: %v", schema.Schema, schema.Name, err)
 	}
 	return 0, false
 }
@@ -183,6 +201,8 @@ func buildRowCountsForNamespace(ctx context.Context, gj *core.GraphJin, database
 		return mysqlNamespaceRowCounts(qctx, db, namespaceForSingleTier(database, schema))
 	case "snowflake":
 		return snowflakeNamespaceRowCounts(qctx, db, schema)
+	case "bigquery":
+		return bigqueryNamespaceRowCounts(qctx, db, schema)
 	case "sqlite":
 		return sqliteNamespaceRowCounts(qctx, db)
 	case "oracle":
@@ -240,6 +260,24 @@ SELECT TABLE_NAME, ROW_COUNT
 FROM INFORMATION_SCHEMA.TABLES
 WHERE UPPER(TABLE_SCHEMA) = UPPER(?) AND TABLE_TYPE = 'BASE TABLE'`
 	out, err := scanRowCountPairs(ctx, db, q, schema)
+	return lowercaseKeys(out), err
+}
+
+func bigqueryNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (map[string]int64, error) {
+	q := `
+SELECT TABLE_NAME, TOTAL_ROWS
+FROM INFORMATION_SCHEMA.TABLE_STORAGE
+WHERE TABLE_TYPE = 'BASE TABLE'
+  AND (
+    COALESCE(@@dataset_id, '') = ''
+    OR LOWER(TABLE_SCHEMA) = LOWER(COALESCE(@@dataset_id, ''))
+  )`
+	var args []any
+	if schema != "" {
+		q += ` AND LOWER(TABLE_SCHEMA) = LOWER(?)`
+		args = append(args, schema)
+	}
+	out, err := scanRowCountPairs(ctx, db, q, args...)
 	return lowercaseKeys(out), err
 }
 

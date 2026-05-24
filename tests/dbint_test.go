@@ -704,6 +704,11 @@ func TestMain(m *testing.M) {
 			dbFunc:    startSnowflakeDB,
 		},
 		{
+			name:   "bigquery",
+			driver: "bigquery",
+			dbFunc: startBigQueryDB,
+		},
+		{
 			name:   "mongodb",
 			driver: "mongodb", // Not used since we use dbFunc
 			dbFunc: func(ctx context.Context) (func(context.Context) error, *sql.DB, error) {

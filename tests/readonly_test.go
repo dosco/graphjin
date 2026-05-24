@@ -221,6 +221,8 @@ func TestReadOnlyDB_AnonRole(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWritableDB_MutationsAllowed(t *testing.T) {
+	skipBigQueryMutationsUnsupported(t)
+
 	conf := newConfig(&core.Config{
 		DBType:           dbType,
 		DisableAllowList: true,

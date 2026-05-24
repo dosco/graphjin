@@ -89,6 +89,7 @@ func skipSchemaDiffUnsupported(t *testing.T) {
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
 	}
+	skipBigQuerySchemaDiffUnsupported(t)
 }
 
 // TestSchemaDiff_CreateTable tests creating new tables from schema diff

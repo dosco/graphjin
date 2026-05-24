@@ -612,6 +612,8 @@ func openDuckDB(seedSQL string, catalog any, adapter Adapter) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("duckdb open: %w", err)
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	stmts, err := adapter.TranslateSetup(seedSQL, catalog)
 	if err != nil {
 		_ = db.Close()

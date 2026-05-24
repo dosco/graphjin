@@ -366,7 +366,9 @@ func parseColumnDef(item string) *Column {
 	col.NotNull = strings.Contains(upperRest, " NOT NULL")
 	col.PrimaryKey = strings.Contains(upperRest, " PRIMARY KEY")
 	col.UniqueKey = strings.Contains(upperRest, " UNIQUE")
-	col.Array = strings.EqualFold(col.Type, "ARRAY") || strings.HasSuffix(col.Type, "[]")
+	col.Array = strings.EqualFold(col.Type, "ARRAY") ||
+		strings.HasPrefix(strings.ToUpper(col.Type), "ARRAY<") ||
+		strings.HasSuffix(col.Type, "[]")
 
 	if idx := strings.Index(upperRest, " REFERENCES "); idx >= 0 {
 		ref := strings.TrimSpace(rest[idx+len(" REFERENCES "):])
@@ -539,11 +541,11 @@ func NormIdent(s string) string {
 
 func TrimIdent(s string) string {
 	s = strings.TrimSpace(s)
-	s = strings.Trim(s, `"[]`)
+	s = strings.Trim(s, "`\"[]")
 	if dot := strings.LastIndexByte(s, '.'); dot >= 0 {
 		s = s[dot+1:]
 	}
-	return strings.Trim(s, `"[]`)
+	return strings.Trim(s, "`\"[]")
 }
 
 func appendUnique(in []string, val string) []string {
