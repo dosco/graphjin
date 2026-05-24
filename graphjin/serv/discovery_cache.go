@@ -35,6 +35,14 @@ type DiscoveryManager struct {
 
 const warmupTopK = 5
 
+type discoveryCapabilities struct {
+	BatchSchemaMetadata            bool
+	BatchRowCounts                 bool
+	AsyncRowCountWarmup            bool
+	ConstraintPreflight            bool
+	ExactPerTableRowCountByDefault bool
+}
+
 type dbTablesPayload struct {
 	Tables           []TableIndexEntry
 	DatabaseOverview DatabaseOverview
@@ -52,6 +60,30 @@ func NewDiscoveryManager(gj *core.GraphJin) *DiscoveryManager {
 		dm.Invalidate()
 	})
 	return dm
+}
+
+func (dm *DiscoveryManager) discoveryCapabilities(database string) discoveryCapabilities {
+	caps := discoveryCapabilities{
+		BatchSchemaMetadata:            true,
+		BatchRowCounts:                 true,
+		ExactPerTableRowCountByDefault: false,
+	}
+	if dm == nil || dm.gj == nil {
+		return caps
+	}
+	_, dbtype, err := dm.gj.DBForDatabase(database)
+	if err != nil {
+		return caps
+	}
+	switch strings.ToLower(dbtype) {
+	case "bigquery":
+		caps.AsyncRowCountWarmup = true
+		caps.ConstraintPreflight = true
+	case "mongodb":
+		caps.BatchRowCounts = false
+	default:
+	}
+	return caps
 }
 
 func getSchemas(gj *core.GraphJin, database string) []*core.TableSchema {
@@ -84,25 +116,34 @@ func (dm *DiscoveryManager) ensureTables(database string) {
 		}
 		tables := dm.gj.GetTablesForDatabase(database)
 		index := buildCheapTableIndex(tables)
-		dm.populateRowCounts(database, index)
 		overview := buildCheapDatabaseOverview(database, tables, dm.gj.GetFunctionsForDatabase(database), dm.gj.EffectiveAnalyticsMode(database))
-		dm.tablesCache.Store(database, &dbTablesPayload{Tables: index, DatabaseOverview: overview})
+		payload := &dbTablesPayload{Tables: index, DatabaseOverview: overview}
+		caps := dm.discoveryCapabilities(database)
+		if caps.AsyncRowCountWarmup {
+			dm.tablesCache.Store(database, payload)
+			dm.scheduleAsyncRowCounts(database, payload)
+			return nil, nil
+		}
+		index, _ = dm.withRowCounts(context.Background(), database, index)
+		payload.Tables = index
+		dm.tablesCache.Store(database, payload)
 		return nil, nil
 	})
 }
 
-// populateRowCounts fires one batched catalog query per namespace in
+// withRowCounts fires one batched catalog query per namespace in
 // `index`. Cost: O(distinct namespaces). Cached in dm.rowCountCache.
-func (dm *DiscoveryManager) populateRowCounts(database string, index []TableIndexEntry) {
+func (dm *DiscoveryManager) withRowCounts(ctx context.Context, database string, index []TableIndexEntry) ([]TableIndexEntry, bool) {
 	if len(index) == 0 {
-		return
+		return index, false
 	}
 	bySchema := map[string][]int{}
 	for i, e := range index {
 		bySchema[e.Schema] = append(bySchema[e.Schema], i)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), rowCountQueryTimeout*2)
+	ctx, cancel := context.WithTimeout(ctx, rowCountQueryTimeout*2)
 	defer cancel()
+	changed := false
 	for schema, idxs := range bySchema {
 		counts := dm.RowCountsForNamespace(ctx, database, schema)
 		if len(counts) == 0 {
@@ -112,9 +153,41 @@ func (dm *DiscoveryManager) populateRowCounts(database string, index []TableInde
 			if n, ok := counts[index[i].Name]; ok {
 				v := n
 				index[i].RowCountApprox = &v
+				changed = true
 			}
 		}
 	}
+	return index, changed
+}
+
+func (dm *DiscoveryManager) scheduleAsyncRowCounts(database string, payload *dbTablesPayload) {
+	if payload == nil || len(payload.Tables) == 0 {
+		return
+	}
+	go func() {
+		index := cloneTableIndex(payload.Tables)
+		index, changed := dm.withRowCounts(context.Background(), database, index)
+		if !changed {
+			return
+		}
+		current, ok := dm.tablesCache.Load(database)
+		if !ok || current != payload {
+			return
+		}
+		dm.tablesCache.Store(database, &dbTablesPayload{
+			Tables:           index,
+			DatabaseOverview: payload.DatabaseOverview,
+		})
+	}()
+}
+
+func cloneTableIndex(in []TableIndexEntry) []TableIndexEntry {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]TableIndexEntry, len(in))
+	copy(out, in)
+	return out
 }
 
 func (dm *DiscoveryManager) ensureFullTables(database string) {
@@ -201,6 +274,9 @@ func (dm *DiscoveryManager) Namespaces(ctx context.Context, database string) []N
 
 // scheduleWarmup fires a goroutine that pre-warms the largest namespace.
 func (dm *DiscoveryManager) scheduleWarmup(database string, rollup []NamespaceRollup) {
+	if dm.discoveryCapabilities(database).AsyncRowCountWarmup {
+		return
+	}
 	if len(rollup) == 0 {
 		return
 	}
@@ -260,17 +336,24 @@ func (dm *DiscoveryManager) RowCountsForNamespace(ctx context.Context, database,
 	if v, ok := dm.rowCountCache.Load(key); ok {
 		return v.(map[string]int64)
 	}
-	v, _, _ := dm.rowCountGroup.Do(key, func() (any, error) {
+	v, err, shared := dm.rowCountGroup.Do(key, func() (any, error) {
 		if cached, ok := dm.rowCountCache.Load(key); ok {
 			return cached, nil
 		}
 		counts, err := buildRowCountsForNamespace(ctx, dm.gj, database, schema)
 		if err != nil {
-			counts = map[string]int64{}
+			return counts, err
 		}
 		dm.rowCountCache.Store(key, counts)
 		return counts, nil
 	})
+	if err != nil && shared && ctx.Err() == nil {
+		counts, retryErr := buildRowCountsForNamespace(ctx, dm.gj, database, schema)
+		if retryErr == nil {
+			dm.rowCountCache.Store(key, counts)
+			return counts
+		}
+	}
 	if v == nil {
 		return map[string]int64{}
 	}
@@ -305,7 +388,17 @@ func (dm *DiscoveryManager) DatabaseOverview(database string) DatabaseOverview {
 }
 
 func (dm *DiscoveryManager) decorateOverviewWithRollup(ov *DatabaseOverview, database string) {
-	rollup := dm.Namespaces(context.Background(), database)
+	var rollup []NamespaceRollup
+	if dm.discoveryCapabilities(database).AsyncRowCountWarmup {
+		if v, ok := dm.namespaceCache.Load(database); ok {
+			rollup = v.([]NamespaceRollup)
+		} else {
+			dm.scheduleNamespaceRollup(database)
+			return
+		}
+	} else {
+		rollup = dm.Namespaces(context.Background(), database)
+	}
 	if len(rollup) == 0 {
 		return
 	}
@@ -349,6 +442,20 @@ func (dm *DiscoveryManager) decorateOverviewWithRollup(ov *DatabaseOverview, dat
 	if len(top) > 0 {
 		ov.TopNamespacesByRows = top
 	}
+}
+
+func (dm *DiscoveryManager) scheduleNamespaceRollup(database string) {
+	if database == "" {
+		return
+	}
+	if _, ok := dm.namespaceCache.Load(database); ok {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), rowCountQueryTimeout*2)
+		defer cancel()
+		_ = dm.Namespaces(ctx, database)
+	}()
 }
 
 func (dm *DiscoveryManager) FullTables(database string) []TableDetailEntry {

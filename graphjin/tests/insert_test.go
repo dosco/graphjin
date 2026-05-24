@@ -777,6 +777,8 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 }
 
 func TestAllowListWithMutations(t *testing.T) {
+	skipBigQueryMutationsUnsupported(t)
+
 	gql := `
 	mutation getProducts {
 		users(insert: $data) {

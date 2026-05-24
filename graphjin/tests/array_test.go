@@ -18,6 +18,9 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 	if dbType == "snowflake" {
 		t.Skip("snowflake: test assumes Postgres-style insertion order; Snowflake doesn't guarantee order without ORDER BY")
 	}
+	if dbType == "bigquery" {
+		t.Skip("bigquery: array-column relationship joins need UNNEST lowering in the dialect/simulator")
+	}
 
 	gql := `
 	query {
@@ -63,8 +66,8 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 }
 
 func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
-	if dbType == "sqlite" || dbType == "mssql" || dbType == "snowflake" {
-		t.Skip("skipping test for sqlite/mssql/snowflake (array-column connect mutations are not fully implemented)")
+	if dbType == "sqlite" || dbType == "mssql" || dbType == "snowflake" || dbType == "bigquery" {
+		t.Skip("skipping test for sqlite/mssql/snowflake/bigquery (array-column connect mutations are not fully implemented)")
 	}
 
 	gql := `mutation {
@@ -119,6 +122,9 @@ func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
 	}
 	if dbType == "snowflake" {
 		t.Skip("snowflake: VARIANT as JSON-virtual-table needs RelEmbedded/RenderFromEdge lateral-join compiler support (not yet implemented)")
+	}
+	if dbType == "bigquery" {
+		t.Skip("bigquery: JSON virtual tables over arrays need RelEmbedded UNNEST lowering in the dialect/simulator")
 	}
 
 	gql := `query {

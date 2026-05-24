@@ -121,8 +121,8 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 			}
 
 			// return the cursor for the this child selector as part of the parents json
-			// Only for LATERAL supporting dialects - SQLite/MariaDB/Snowflake handle cursor differently
-			if csel.Paging.Cursor && (c.dialect.SupportsLateral() || c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake") {
+			// Only for LATERAL supporting dialects - SQLite/MariaDB/warehouse inline dialects handle cursor differently
+			if csel.Paging.Cursor && (c.dialect.SupportsLateral() || c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake" || c.dialect.Name() == "bigquery") {
 				c.w.WriteString(`, `)
 				c.colWithTableID("__sj", csel.ID, "__cursor")
 				c.w.WriteString(` AS `)

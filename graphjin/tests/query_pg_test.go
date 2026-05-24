@@ -401,6 +401,9 @@ func TestMutiSchema(t *testing.T) {
 	if dbType == "snowflake" {
 		t.Skip("skipping test for snowflake: test uses Postgres-specific DDL (BIGSERIAL/JSONB/TIMESTAMPTZ)")
 	}
+	if dbType == "bigquery" {
+		t.Skip("skipping test for bigquery: test uses Postgres-specific DDL (BIGSERIAL/JSONB/TIMESTAMPTZ) instead of BigQuery datasets")
+	}
 	if dbType == "mongodb" {
 		t.Skip("skipping test for mongodb: MongoDB uses databases instead of schemas")
 	}

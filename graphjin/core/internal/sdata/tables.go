@@ -202,11 +202,13 @@ func getDBInfoOnce(
 			row = db.QueryRowContext(qctx, mssqlInfo)
 		case "snowflake":
 			row = db.QueryRowContext(qctx, snowflakeInfo)
+		case "bigquery":
+			row = db.QueryRowContext(qctx, bigqueryInfo)
 		case "mongodb":
 			// MongoDB returns info via the driver's introspection
 			row = db.QueryRowContext(qctx, mongodbInfo)
 		default:
-			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, mongodb", dbType)
+			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb", dbType)
 		}
 
 		if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
@@ -608,11 +610,13 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 		sqlStmt = mssqlColumnsStmt
 	case "snowflake":
 		sqlStmt = snowflakeColumnsStmt
+	case "bigquery":
+		return discoverBigQueryColumns(ctx, db, blockList)
 	case "mongodb":
 		// MongoDB uses JSON query DSL - the driver handles introspection
 		sqlStmt = mongodbColumnsStmt
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, mongodb", dbtype)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb", dbtype)
 	}
 
 	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
@@ -628,11 +632,71 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 	if err != nil {
 		return nil, fmt.Errorf("error fetching columns: %w", err)
 	}
-	defer rows.Close()
 
 	cmap := make(map[string]DBColumn)
+	if err := scanDiscoveredColumnRows(rows, dbtype, blockList, cmap); err != nil {
+		return nil, err
+	}
 
-	i := 0
+	return enrichAndCollectColumns(ctx, db, dbtype, cmap), nil
+}
+
+func discoverBigQueryColumns(ctx context.Context, db *sql.DB, blockList []string) ([]DBColumn, error) {
+	cmap := make(map[string]DBColumn)
+
+	if err := queryAndScanDiscoveredColumns(ctx, db, "bigquery", blockList, cmap, bigqueryColumnsStmt); err != nil {
+		return nil, fmt.Errorf("error fetching columns: %w", err)
+	}
+
+	hasConstraints, err := bigQueryHasConstraints(ctx, db)
+	if err != nil {
+		return nil, fmt.Errorf("error checking bigquery constraints: %w", err)
+	}
+	if hasConstraints {
+		if err := queryAndScanDiscoveredColumns(ctx, db, "bigquery", blockList, cmap, bigqueryPrimaryKeysStmt); err != nil {
+			return nil, fmt.Errorf("error fetching bigquery primary keys: %w", err)
+		}
+		if err := queryAndScanDiscoveredColumns(ctx, db, "bigquery", blockList, cmap, bigqueryForeignKeysStmt); err != nil {
+			return nil, fmt.Errorf("error fetching bigquery foreign keys: %w", err)
+		}
+	}
+
+	return enrichAndCollectColumns(ctx, db, "bigquery", cmap), nil
+}
+
+func bigQueryHasConstraints(ctx context.Context, db *sql.DB) (bool, error) {
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	var n int
+	if err := db.QueryRowContext(qctx, bigqueryConstraintsCountStmt).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func queryAndScanDiscoveredColumns(
+	ctx context.Context,
+	db *sql.DB,
+	dbtype string,
+	blockList []string,
+	cmap map[string]DBColumn,
+	stmt string,
+) error {
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, stmt)
+	if err != nil {
+		return err
+	}
+	return scanDiscoveredColumnRows(rows, dbtype, blockList, cmap)
+}
+
+func scanDiscoveredColumnRows(rows *sql.Rows, dbtype string, blockList []string, cmap map[string]DBColumn) error {
+	defer rows.Close()
+
+	i := len(cmap)
 	// we have to rescan and update columns to overcome
 	// weird bugs in mysql like joins with information_schema
 	// don't work in 8.0.22 etc.
@@ -640,7 +704,7 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 		var c DBColumn
 		c.ID = int32(i)
 
-		err = rows.Scan(&c.Schema,
+		err := rows.Scan(&c.Schema,
 			&c.Table,
 			&c.Name,
 			&c.Type,
@@ -653,15 +717,15 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 			&c.FKeyTable,
 			&c.FKeyCol)
 
+		if err != nil {
+			return err
+		}
+
 		c.FKeySchema = strings.TrimSpace(c.FKeySchema)
 		c.FKeyTable = strings.TrimSpace(c.FKeyTable)
 		c.FKeyCol = strings.TrimSpace(c.FKeyCol)
 
-		if err != nil {
-			return nil, err
-		}
-
-		if dbtype == "mssql" || dbtype == "snowflake" {
+		if dbtype == "mssql" || dbtype == "snowflake" || dbtype == "bigquery" {
 			c.OrigName = c.Name
 			c.OrigTable = c.Table
 			c.OrigSchema = c.Schema
@@ -670,7 +734,7 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 			c.OrigFKeyCol = c.FKeyCol
 		}
 
-		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake" {
+		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake" || dbtype == "bigquery" {
 			c.Name = util.ToSnake(c.Name)
 			c.Table = strings.ToLower(c.Table)
 			c.Schema = strings.ToLower(c.Schema)
@@ -726,9 +790,12 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error scanning columns: %w", err)
+		return fmt.Errorf("error scanning columns: %w", err)
 	}
+	return nil
+}
 
+func enrichAndCollectColumns(ctx context.Context, db *sql.DB, dbtype string, cmap map[string]DBColumn) []DBColumn {
 	// View PK detection: views lack PK constraints in system catalogs, so the
 	// main column query reports primary_key=false for all view columns. We run
 	// a supplementary query to trace view columns back to source base table PKs.
@@ -793,7 +860,7 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 		cols = append(cols, c)
 	}
 
-	return cols, nil
+	return cols
 }
 
 // hasUserViews returns true if the database has at least one user-visible view.
@@ -990,6 +1057,8 @@ func DiscoverCompositeFKs(ctx context.Context, db *sql.DB, dbtype string) ([]Com
 		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQueryMSSQL)
 	case "snowflake":
 		result, err = discoverSnowflakeCompositeFKsViaShow(ctx, db)
+	case "bigquery":
+		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQueryBigQuery)
 	default:
 		return nil, nil
 	}
@@ -1104,6 +1173,39 @@ FROM _gj_fk_metadata
 GROUP BY table_schema, table_name, foreign_table_schema, foreign_table_name
 HAVING COUNT(*) > 1`
 
+const compositeFKQueryBigQuery = `
+SELECT fk_kcu.table_schema, fk_kcu.table_name, fk_kcu.constraint_name,
+       STRING_AGG(fk_kcu.column_name, ',' ORDER BY fk_kcu.ordinal_position) AS local_columns,
+       pk_kcu.table_schema AS fkey_schema,
+       pk_kcu.table_name AS fkey_table,
+       STRING_AGG(pk_kcu.column_name, ',' ORDER BY fk_kcu.ordinal_position) AS fkey_columns
+FROM information_schema.key_column_usage fk_kcu
+JOIN information_schema.table_constraints tc
+  ON fk_kcu.constraint_catalog = tc.constraint_catalog
+ AND fk_kcu.constraint_schema = tc.constraint_schema
+ AND fk_kcu.constraint_name = tc.constraint_name
+JOIN information_schema.constraint_column_usage ccu
+  ON ccu.constraint_catalog = fk_kcu.constraint_catalog
+ AND ccu.constraint_schema = fk_kcu.constraint_schema
+ AND ccu.constraint_name = fk_kcu.constraint_name
+JOIN information_schema.key_column_usage pk_kcu
+  ON pk_kcu.table_schema = ccu.table_schema
+ AND pk_kcu.table_name = ccu.table_name
+ AND pk_kcu.ordinal_position = fk_kcu.position_in_unique_constraint
+JOIN information_schema.table_constraints pk_tc
+  ON pk_tc.constraint_catalog = pk_kcu.constraint_catalog
+ AND pk_tc.constraint_schema = pk_kcu.constraint_schema
+ AND pk_tc.constraint_name = pk_kcu.constraint_name
+ AND pk_tc.constraint_type = 'PRIMARY KEY'
+WHERE tc.constraint_type = 'FOREIGN KEY'
+  AND (
+    COALESCE(@@dataset_id, '') = ''
+    OR LOWER(fk_kcu.table_schema) = LOWER(COALESCE(@@dataset_id, ''))
+  )
+GROUP BY fk_kcu.table_schema, fk_kcu.table_name, fk_kcu.constraint_name,
+         pk_kcu.table_schema, pk_kcu.table_name
+HAVING COUNT(*) > 1`
+
 func discoverCompositeFKsPostgres(ctx context.Context, db *sql.DB) ([]CompositeFKInfo, error) {
 	const query = `
 SELECT
@@ -1167,7 +1269,7 @@ func discoverCompositeFKsCSV(ctx context.Context, db *sql.DB, dbtype, query stri
 	}
 	defer rows.Close()
 
-	normalize := dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake"
+	normalize := dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake" || dbtype == "bigquery"
 
 	var result []CompositeFKInfo
 	for rows.Next() {
@@ -1272,11 +1374,15 @@ func DiscoverFunctions(ctx context.Context, db *sql.DB, dbtype string, blockList
 		// Snowflake emulator does not expose information_schema.functions consistently.
 		// Return no discovered functions for now.
 		return nil, nil
+	case "bigquery":
+		// BigQuery routines need dataset-qualified INFORMATION_SCHEMA queries.
+		// Skip routine discovery until the BigQuery connector carries dataset scope.
+		return nil, nil
 	case "mongodb":
 		// MongoDB doesn't have user-defined functions in the SQL sense
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, mongodb", dbtype)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb", dbtype)
 	}
 
 	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)

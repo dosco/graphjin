@@ -376,7 +376,7 @@ func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 
 func Example_queryWithWhere1() {
 	gql := `query {
-		products(where: {
+		products(order_by: { id: asc }, where: {
 			id: [3, 34],
 			or: {
 				name: { iregex: $name },
@@ -1610,6 +1610,8 @@ func TestQueryWithJsonColumn(t *testing.T) {
 	if dbType == "snowflake" {
 		t.Skip("snowflake: VARIANT JSON-virtual-table relationship resolution needs shared-code compiler support")
 	}
+	skipBigQueryJSONVirtualTablesUnsupported(t)
+
 	gql := `query {
 		users(id: 1) {
 			id
