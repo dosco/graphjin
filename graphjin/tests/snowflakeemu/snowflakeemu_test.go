@@ -61,8 +61,53 @@ func TestConnectorSatisfiesSnowflakeDiscovery(t *testing.T) {
 		TestName:   "discovery",
 		RunID:      "unit",
 		Backend:    BackendDuckDB,
+		Fallback:   FallbackStrict,
 	}))
 	defer db.Close()
+
+	assertSnowflakeDiscovery(t, db)
+}
+
+func TestConnectorSatisfiesSnowflakeShowDiscovery(t *testing.T) {
+	dir := t.TempDir()
+	db := sql.OpenDB(NewConnector(Config{
+		SeedPath:   "../snowflake.sql",
+		CaptureDir: dir,
+		TestName:   "show discovery",
+		RunID:      "unit",
+		Backend:    BackendDuckDB,
+		Fallback:   FallbackStrict,
+		Discovery:  "show",
+	}))
+	defer db.Close()
+
+	assertSnowflakeDiscovery(t, db)
+
+	data, err := os.ReadFile(CapturePath(dir, "show discovery"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture := strings.ToUpper(string(data))
+	for _, stmt := range []string{
+		"SHOW COLUMNS IN SCHEMA",
+		"SHOW PRIMARY KEYS IN SCHEMA",
+		"SHOW UNIQUE KEYS IN SCHEMA",
+		"SHOW IMPORTED KEYS IN SCHEMA",
+	} {
+		if !strings.Contains(capture, stmt) {
+			t.Fatalf("capture missing %q:\n%s", stmt, data)
+		}
+	}
+	if strings.Contains(capture, "SHOW COLUMNS IN DATABASE") ||
+		strings.Contains(capture, "SHOW PRIMARY KEYS IN DATABASE") ||
+		strings.Contains(capture, "SHOW UNIQUE KEYS IN DATABASE") ||
+		strings.Contains(capture, "SHOW IMPORTED KEYS IN DATABASE") {
+		t.Fatalf("capture used database-wide SHOW statements:\n%s", data)
+	}
+}
+
+func assertSnowflakeDiscovery(t *testing.T, db *sql.DB) {
+	t.Helper()
 
 	conf := &core.Config{
 		DBType:               "snowflake",
@@ -155,7 +200,7 @@ func TestCaptureJSONL(t *testing.T) {
 	}))
 	defer db.Close()
 
-	if _, err := db.ExecContext(context.Background(), "SHOW IMPORTED KEYS IN DATABASE"); err != nil {
+	if _, err := db.ExecContext(context.Background(), "SHOW IMPORTED KEYS IN SCHEMA"); err != nil {
 		t.Fatal(err)
 	}
 	var qid string

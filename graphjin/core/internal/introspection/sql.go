@@ -1,4 +1,4 @@
-package sdata
+package introspection
 
 import _ "embed"
 
@@ -11,8 +11,14 @@ var mysqlFunctionsStmt string
 //go:embed sql/postgres_info.sql
 var postgresInfo string
 
-//go:embed sql/postgres_columns.sql
-var postgresColumnsStmt string
+//go:embed sql/postgres_columns_basic.sql
+var postgresColumnsBasicStmt string
+
+//go:embed sql/postgres_constraints_count.sql
+var postgresConstraintsCountStmt string
+
+//go:embed sql/postgres_constraint_columns.sql
+var postgresConstraintColumnsStmt string
 
 //go:embed sql/mysql_info.sql
 var mysqlInfo string
@@ -77,14 +83,29 @@ var snowflakeInfo string
 //go:embed sql/snowflake_columns.sql
 var snowflakeColumnsStmt string
 
-//go:embed sql/snowflake_columns_no_overrides.sql
-var snowflakeColumnsNoOverridesStmt string
-
 //go:embed sql/snowflake_columns_basic.sql
 var snowflakeColumnsBasicStmt string
 
+//go:embed sql/snowflake_constraints_count.sql
+var snowflakeConstraintsCountStmt string
+
+//go:embed sql/snowflake_constraint_columns.sql
+var snowflakeConstraintColumnsStmt string
+
+//go:embed sql/snowflake_foreign_keys.sql
+var snowflakeForeignKeysStmt string
+
+//go:embed sql/snowflake_fk_metadata_exists.sql
+var snowflakeFKMetadataExistsStmt string
+
+//go:embed sql/snowflake_fk_metadata.sql
+var snowflakeFKMetadataStmt string
+
 //go:embed sql/snowflake_columns_show.sql
 var snowflakeColumnsShowStmt string
+
+//go:embed sql/snowflake_columns_show_basic.sql
+var snowflakeColumnsShowBasicStmt string
 
 //go:embed sql/snowflake_clustering.sql
 var snowflakeClusteringStmt string

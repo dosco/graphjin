@@ -464,22 +464,31 @@ func showResultScanStatements(kind string) []string {
 		insert = `INSERT INTO _gj_sf_result_scan (query_id, scan_type, schema_name, table_name, column_name, data_type, key_sequence)
 SELECT (SELECT last_query_id FROM _gj_sf_session LIMIT 1), 'columns', table_schema, table_name, column_name, snowflake_show_data_type, ordinal_position
 FROM _gj_sf_columns
+WHERE UPPER(table_schema) = UPPER((SELECT schema_name FROM _gj_sf_session LIMIT 1))
 ORDER BY table_schema, table_name, ordinal_position`
 	case "pks":
 		insert = `INSERT INTO _gj_sf_result_scan (query_id, scan_type, schema_name, table_name, column_name, key_sequence)
 SELECT (SELECT last_query_id FROM _gj_sf_session LIMIT 1), 'pks', k.table_schema, k.table_name, k.column_name, k.ordinal_position
 FROM _gj_sf_key_column_usage k
 JOIN _gj_sf_table_constraints c
-  ON c.constraint_schema = k.constraint_schema AND c.constraint_name = k.constraint_name
+  ON c.constraint_schema = k.constraint_schema
+ AND c.constraint_name = k.constraint_name
+ AND c.table_schema = k.table_schema
+ AND c.table_name = k.table_name
 WHERE c.constraint_type = 'PRIMARY KEY'
+  AND UPPER(k.table_schema) = UPPER((SELECT schema_name FROM _gj_sf_session LIMIT 1))
 ORDER BY k.table_schema, k.table_name, k.ordinal_position`
 	case "uks":
 		insert = `INSERT INTO _gj_sf_result_scan (query_id, scan_type, schema_name, table_name, column_name, key_sequence)
 SELECT (SELECT last_query_id FROM _gj_sf_session LIMIT 1), 'uks', k.table_schema, k.table_name, k.column_name, k.ordinal_position
 FROM _gj_sf_key_column_usage k
 JOIN _gj_sf_table_constraints c
-  ON c.constraint_schema = k.constraint_schema AND c.constraint_name = k.constraint_name
+  ON c.constraint_schema = k.constraint_schema
+ AND c.constraint_name = k.constraint_name
+ AND c.table_schema = k.table_schema
+ AND c.table_name = k.table_name
 WHERE c.constraint_type IN ('UNIQUE', 'PRIMARY KEY')
+  AND UPPER(k.table_schema) = UPPER((SELECT schema_name FROM _gj_sf_session LIMIT 1))
 ORDER BY k.table_schema, k.table_name, k.ordinal_position`
 	case "fks":
 		insert = `INSERT INTO _gj_sf_result_scan (query_id, scan_type, fk_schema_name, fk_table_name, fk_column_name, pk_schema_name, pk_table_name, pk_column_name, fk_name, key_sequence)
@@ -494,6 +503,7 @@ JOIN _gj_sf_key_column_usage pk
   ON pk.constraint_schema = r.unique_constraint_schema
  AND pk.constraint_name = r.unique_constraint_name
  AND pk.ordinal_position = fk.position_in_unique_constraint
+WHERE UPPER(fk.table_schema) = UPPER((SELECT schema_name FROM _gj_sf_session LIMIT 1))
 ORDER BY fk.table_schema, fk.table_name, fk.constraint_name, fk.ordinal_position`
 	default:
 		insert = `INSERT INTO _gj_sf_result_scan (query_id, scan_type)

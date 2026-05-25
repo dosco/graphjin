@@ -9,6 +9,7 @@ import (
 	"time"
 
 	core "github.com/dosco/graphjin/core/v3"
+	corediscovery "github.com/dosco/graphjin/core/v3/discovery"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -35,14 +36,6 @@ type DiscoveryManager struct {
 
 const warmupTopK = 5
 
-type discoveryCapabilities struct {
-	BatchSchemaMetadata            bool
-	BatchRowCounts                 bool
-	AsyncRowCountWarmup            bool
-	ConstraintPreflight            bool
-	ExactPerTableRowCountByDefault bool
-}
-
 type dbTablesPayload struct {
 	Tables           []TableIndexEntry
 	DatabaseOverview DatabaseOverview
@@ -62,28 +55,11 @@ func NewDiscoveryManager(gj *core.GraphJin) *DiscoveryManager {
 	return dm
 }
 
-func (dm *DiscoveryManager) discoveryCapabilities(database string) discoveryCapabilities {
-	caps := discoveryCapabilities{
-		BatchSchemaMetadata:            true,
-		BatchRowCounts:                 true,
-		ExactPerTableRowCountByDefault: false,
+func (dm *DiscoveryManager) discoveryCapabilities(database string) corediscovery.Capabilities {
+	if dm == nil {
+		return corediscovery.DefaultCapabilities()
 	}
-	if dm == nil || dm.gj == nil {
-		return caps
-	}
-	_, dbtype, err := dm.gj.DBForDatabase(database)
-	if err != nil {
-		return caps
-	}
-	switch strings.ToLower(dbtype) {
-	case "bigquery":
-		caps.AsyncRowCountWarmup = true
-		caps.ConstraintPreflight = true
-	case "mongodb":
-		caps.BatchRowCounts = false
-	default:
-	}
-	return caps
+	return corediscovery.CapabilitiesFor(dm.gj, database)
 }
 
 func getSchemas(gj *core.GraphJin, database string) []*core.TableSchema {
@@ -141,7 +117,7 @@ func (dm *DiscoveryManager) withRowCounts(ctx context.Context, database string, 
 	for i, e := range index {
 		bySchema[e.Schema] = append(bySchema[e.Schema], i)
 	}
-	ctx, cancel := context.WithTimeout(ctx, rowCountQueryTimeout*2)
+	ctx, cancel := context.WithTimeout(ctx, corediscovery.QueryTimeout*2)
 	defer cancel()
 	changed := false
 	for schema, idxs := range bySchema {
@@ -258,7 +234,7 @@ func (dm *DiscoveryManager) Namespaces(ctx context.Context, database string) []N
 		if cached, ok := dm.namespaceCache.Load(database); ok {
 			return cached, nil
 		}
-		rows, err := buildNamespaceRollup(ctx, dm.gj, database)
+		rows, err := corediscovery.Namespaces(ctx, dm.gj, database)
 		if err != nil {
 			return []NamespaceRollup(nil), nil
 		}
@@ -340,7 +316,7 @@ func (dm *DiscoveryManager) RowCountsForNamespace(ctx context.Context, database,
 		if cached, ok := dm.rowCountCache.Load(key); ok {
 			return cached, nil
 		}
-		counts, err := buildRowCountsForNamespace(ctx, dm.gj, database, schema)
+		counts, err := corediscovery.RowCountsForNamespace(ctx, dm.gj, database, schema)
 		if err != nil {
 			return counts, err
 		}
@@ -348,7 +324,7 @@ func (dm *DiscoveryManager) RowCountsForNamespace(ctx context.Context, database,
 		return counts, nil
 	})
 	if err != nil && shared && ctx.Err() == nil {
-		counts, retryErr := buildRowCountsForNamespace(ctx, dm.gj, database, schema)
+		counts, retryErr := corediscovery.RowCountsForNamespace(ctx, dm.gj, database, schema)
 		if retryErr == nil {
 			dm.rowCountCache.Store(key, counts)
 			return counts
@@ -452,7 +428,7 @@ func (dm *DiscoveryManager) scheduleNamespaceRollup(database string) {
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), rowCountQueryTimeout*2)
+		ctx, cancel := context.WithTimeout(context.Background(), corediscovery.QueryTimeout*2)
 		defer cancel()
 		_ = dm.Namespaces(ctx, database)
 	}()

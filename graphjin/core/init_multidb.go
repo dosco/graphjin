@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dosco/graphjin/core/v3/internal/introspection"
 	"github.com/dosco/graphjin/core/v3/internal/psql"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -72,7 +73,7 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 		return nil
 	}
 
-	dbinfo, err := sdata.GetDBInfo(context.Background(), ctx.db, ctx.dbtype, gj.conf.Blocklist)
+	dbinfo, err := introspection.GetDBInfo(context.Background(), ctx.db, ctx.dbtype, gj.conf.Blocklist)
 	if err != nil {
 		return fmt.Errorf("database %s: schema discovery failed: %w", ctx.name, err)
 	}

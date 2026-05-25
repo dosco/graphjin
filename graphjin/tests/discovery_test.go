@@ -68,6 +68,15 @@ func seededSchemaForDialect(gj *core.GraphJin) string {
 	return ""
 }
 
+func rowCountsWarmAsyncForDialect() bool {
+	switch dbType {
+	case "bigquery", "snowflake", "postgres":
+		return true
+	default:
+		return false
+	}
+}
+
 func TestDiscovery(t *testing.T) {
 	gj, dm := newDiscoveryDM(t)
 
@@ -151,7 +160,7 @@ func TestDiscovery(t *testing.T) {
 					sawUsersWithRows = true
 				}
 			}
-			if sawUsersWithRows || dbType != "bigquery" {
+			if sawUsersWithRows || !rowCountsWarmAsyncForDialect() {
 				break
 			}
 			if ctx.Err() != nil {
@@ -230,8 +239,27 @@ func TestDiscovery(t *testing.T) {
 	})
 
 	t.Run("Caching", func(t *testing.T) {
-		a, _ := json.Marshal(dm.Payload(gj.DefaultDatabase()))
-		b, _ := json.Marshal(dm.Payload(gj.DefaultDatabase()))
+		dbName := gj.DefaultDatabase()
+		if rowCountsWarmAsyncForDialect() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = dm.Namespaces(ctx, dbName)
+			for {
+				page := dm.TableIndexPage(ctx, dbName, serv.TableListOptions{Limit: 500})
+				var sawUsersWithRows bool
+				for _, e := range page.Tables {
+					if e.Name == "users" && e.RowCountApprox != nil && *e.RowCountApprox >= 100 {
+						sawUsersWithRows = true
+					}
+				}
+				if sawUsersWithRows || ctx.Err() != nil {
+					break
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}
+		a, _ := json.Marshal(dm.Payload(dbName))
+		b, _ := json.Marshal(dm.Payload(dbName))
 		assert.JSONEq(t, string(a), string(b))
 	})
 

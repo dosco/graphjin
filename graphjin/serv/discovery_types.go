@@ -2,15 +2,16 @@ package serv
 
 import (
 	core "github.com/dosco/graphjin/core/v3"
+	corediscovery "github.com/dosco/graphjin/core/v3/discovery"
 )
 
 type TableIndexEntry struct {
-	Name              string          `json:"name"`
-	Schema            string          `json:"schema,omitempty"`
-	Database          string          `json:"database,omitempty"`
-	Type              string          `json:"type,omitempty"`
-	Comment           string          `json:"comment,omitempty"`
-	ColumnCount       int             `json:"column_count,omitempty"`
+	Name        string `json:"name"`
+	Schema      string `json:"schema,omitempty"`
+	Database    string `json:"database,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Comment     string `json:"comment,omitempty"`
+	ColumnCount int    `json:"column_count,omitempty"`
 	// nil = unknown (catalog stats unavailable); 0 = measured zero.
 	RowCountApprox    *int64          `json:"row_count_approx,omitempty"`
 	PrimaryKeys       []string        `json:"primary_keys,omitempty"`
@@ -88,13 +89,7 @@ type DatabaseOverview struct {
 	Functions           []core.FunctionInfo `json:"functions,omitempty"`
 }
 
-type NamespaceRollup struct {
-	Database          string `json:"database"`
-	Schema            string `json:"schema,omitempty"`
-	TableCount        int    `json:"table_count"`
-	ApproxRowTotal    int64  `json:"approx_row_total"`
-	RowCountAvailable bool   `json:"row_count_available"`
-}
+type NamespaceRollup = corediscovery.NamespaceRollup
 
 type ListNamespacesResult struct {
 	Database   string            `json:"database,omitempty"`
@@ -215,27 +210,27 @@ type TableSampleResult struct {
 	Status   string        `json:"status"`
 	Stats    *TableProfile `json:"stats,omitempty"`
 
-	PrimaryKeys            []string                `json:"primary_keys,omitempty"`
-	ForeignKeys            []ForeignKeyRef         `json:"foreign_keys,omitempty"`
-	OutgoingRels           []RelationshipRef       `json:"outgoing_relationships,omitempty"`
-	IncomingRels           []RelationshipRef       `json:"incoming_relationships,omitempty"`
-	FKDisambiguation       []FKDisambiguationEntry `json:"fk_disambiguation,omitempty"`
-	Indexes                []IndexInfo             `json:"indexes,omitempty"`
-	Aggregations           *AggregationInfo        `json:"aggregations,omitempty"`
-	ExampleQueries         []ExampleQuery          `json:"example_queries,omitempty"`
-	AnalyticsModeRules     []string                `json:"analytics_mode_rules,omitempty"`
-	AggregationHint        string                  `json:"aggregation_hint,omitempty"`
-	TemporalFilterWarning  string                  `json:"temporal_filter_warning,omitempty"`
+	PrimaryKeys           []string                `json:"primary_keys,omitempty"`
+	ForeignKeys           []ForeignKeyRef         `json:"foreign_keys,omitempty"`
+	OutgoingRels          []RelationshipRef       `json:"outgoing_relationships,omitempty"`
+	IncomingRels          []RelationshipRef       `json:"incoming_relationships,omitempty"`
+	FKDisambiguation      []FKDisambiguationEntry `json:"fk_disambiguation,omitempty"`
+	Indexes               []IndexInfo             `json:"indexes,omitempty"`
+	Aggregations          *AggregationInfo        `json:"aggregations,omitempty"`
+	ExampleQueries        []ExampleQuery          `json:"example_queries,omitempty"`
+	AnalyticsModeRules    []string                `json:"analytics_mode_rules,omitempty"`
+	AggregationHint       string                  `json:"aggregation_hint,omitempty"`
+	TemporalFilterWarning string                  `json:"temporal_filter_warning,omitempty"`
 
 	Cost DiscoveryCost `json:"cost"`
 }
 
 // FKDisambiguationEntry signals multiple FKs to the same target; needs @through(column:).
 type FKDisambiguationEntry struct {
-	Target     string                       `json:"target"`
-	Ambiguous  bool                         `json:"ambiguous"`
-	Candidates []FKDisambiguationCandidate  `json:"candidates"`
-	SyntaxHint string                       `json:"syntax_hint"`
+	Target     string                      `json:"target"`
+	Ambiguous  bool                        `json:"ambiguous"`
+	Candidates []FKDisambiguationCandidate `json:"candidates"`
+	SyntaxHint string                      `json:"syntax_hint"`
 }
 
 type FKDisambiguationCandidate struct {

@@ -1,4 +1,4 @@
-package serv
+package discovery
 
 import (
 	"context"
@@ -11,11 +11,11 @@ import (
 	core "github.com/dosco/graphjin/core/v3"
 )
 
-const rowCountQueryTimeout = 5 * time.Second
+const QueryTimeout = 5 * time.Second
 
-// approxRowCount: single-table reltuples-equivalent lookup for TableSample.
-func approxRowCount(ctx context.Context, db *sql.DB, dbtype string, schema *core.TableSchema) (int64, bool) {
-	qctx, cancel := context.WithTimeout(ctx, rowCountQueryTimeout)
+// ApproxRowCount returns a single-table reltuples-equivalent lookup.
+func ApproxRowCount(ctx context.Context, db *sql.DB, dbtype string, schema *core.TableSchema) (int64, bool) {
+	qctx, cancel := context.WithTimeout(ctx, QueryTimeout)
 	defer cancel()
 
 	switch strings.ToLower(dbtype) {
@@ -180,8 +180,8 @@ func mongodbRowCount(_ context.Context, _ *sql.DB, _ *core.TableSchema) (int64, 
 	return 0, false
 }
 
-// buildRowCountsForNamespace: one catalog query returns counts for every table in one namespace.
-func buildRowCountsForNamespace(ctx context.Context, gj *core.GraphJin, database, schema string) (map[string]int64, error) {
+// RowCountsForNamespace returns counts for every table in one namespace with one catalog query.
+func RowCountsForNamespace(ctx context.Context, gj *core.GraphJin, database, schema string) (map[string]int64, error) {
 	out := map[string]int64{}
 	db, dbtype, err := gj.DBForDatabase(database)
 	if err != nil {
@@ -191,14 +191,14 @@ func buildRowCountsForNamespace(ctx context.Context, gj *core.GraphJin, database
 		return out, nil
 	}
 
-	qctx, cancel := context.WithTimeout(ctx, rowCountQueryTimeout)
+	qctx, cancel := context.WithTimeout(ctx, QueryTimeout)
 	defer cancel()
 
 	switch strings.ToLower(dbtype) {
 	case "postgres", "postgresql", "cockroachdb", "cockroach":
 		return postgresNamespaceRowCounts(qctx, db, schema)
 	case "mysql", "mariadb":
-		return mysqlNamespaceRowCounts(qctx, db, namespaceForSingleTier(database, schema))
+		return mysqlNamespaceRowCounts(qctx, db, NamespaceForSingleTier(database, schema))
 	case "snowflake":
 		return snowflakeNamespaceRowCounts(qctx, db, schema)
 	case "bigquery":
@@ -215,8 +215,8 @@ func buildRowCountsForNamespace(ctx context.Context, gj *core.GraphJin, database
 	return out, nil
 }
 
-// namespaceForSingleTier: mysql/mariadb where database == schema.
-func namespaceForSingleTier(database, schema string) string {
+// NamespaceForSingleTier returns the namespace for mysql/mariadb where database == schema.
+func NamespaceForSingleTier(database, schema string) string {
 	if schema != "" {
 		return schema
 	}
