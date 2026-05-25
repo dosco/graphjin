@@ -10,6 +10,7 @@ const databases = [
   { name: 'CockroachDB', logo: '/logos/cockroachdb.svg' },
   { name: 'YugabyteDB', logo: '/logos/yugabytedb.svg' },
   { name: 'Snowflake', logo: '/logos/snowflake.svg' },
+  { name: 'BigQuery', label: 'BQ' },
   { name: 'AWS Aurora', logo: '/logos/aws-aurora.svg' },
   { name: 'Cloud SQL', logo: '/logos/google-cloud-sql.svg' },
   { name: 'HTTP APIs', label: 'API' },
@@ -36,7 +37,7 @@ const databases = [
         style="color: var(--color-muted)"
       >
         Point GraphJin at <strong style="color: var(--color-text)">as many systems as you need</strong>
-        — Postgres for users, MySQL for orders, Snowflake for analytics, MongoDB for events,
+        — Postgres for users, MySQL for orders, Snowflake and BigQuery for analytics, MongoDB for events,
         HTTP APIs for remote services, object storage for files, and CodeSQL for source
         trees — and query them through a single GraphQL endpoint. Joins, remote joins,
         subscriptions, search, and mutations compose

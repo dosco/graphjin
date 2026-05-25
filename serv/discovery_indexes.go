@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	core "github.com/dosco/graphjin/core/v3"
+	corediscovery "github.com/dosco/graphjin/core/v3/discovery"
 )
 
 // loadIndexes runs one dialect-specific catalog query. nil on failure or
@@ -18,7 +19,7 @@ func loadIndexes(ctx context.Context, gj *core.GraphJin, database string, schema
 		return nil
 	}
 
-	qctx, cancel := context.WithTimeout(ctx, rowCountQueryTimeout)
+	qctx, cancel := context.WithTimeout(ctx, corediscovery.QueryTimeout)
 	defer cancel()
 
 	var idx []IndexInfo
@@ -26,7 +27,7 @@ func loadIndexes(ctx context.Context, gj *core.GraphJin, database string, schema
 	case "postgres", "postgresql", "cockroachdb", "cockroach":
 		idx, err = postgresIndexes(qctx, db, schema)
 	case "mysql", "mariadb":
-		idx, err = mysqlIndexes(qctx, db, namespaceForSingleTier(database, schema.Schema), schema.Name)
+		idx, err = mysqlIndexes(qctx, db, corediscovery.NamespaceForSingleTier(database, schema.Schema), schema.Name)
 	case "sqlite":
 		idx, err = sqliteIndexes(qctx, db, schema.Name)
 	case "oracle":

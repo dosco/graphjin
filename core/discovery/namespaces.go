@@ -1,4 +1,4 @@
-package serv
+package discovery
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 	core "github.com/dosco/graphjin/core/v3"
 )
 
-// buildNamespaceRollup: one catalog query per dialect → all (db, schema) rows.
-func buildNamespaceRollup(ctx context.Context, gj *core.GraphJin, database string) ([]NamespaceRollup, error) {
+// Namespaces returns one catalog rollup per (database, schema).
+func Namespaces(ctx context.Context, gj *core.GraphJin, database string) ([]NamespaceRollup, error) {
 	db, dbtype, err := gj.DBForDatabase(database)
 	if err != nil {
 		return nil, err
@@ -20,7 +20,7 @@ func buildNamespaceRollup(ctx context.Context, gj *core.GraphJin, database strin
 		return nil, nil
 	}
 
-	qctx, cancel := context.WithTimeout(ctx, rowCountQueryTimeout)
+	qctx, cancel := context.WithTimeout(ctx, QueryTimeout)
 	defer cancel()
 
 	var rows []NamespaceRollup
@@ -30,7 +30,7 @@ func buildNamespaceRollup(ctx context.Context, gj *core.GraphJin, database strin
 	case "mysql", "mariadb":
 		rows, err = mysqlNamespaceRollup(qctx, db)
 	case "snowflake":
-		rows, err = snowflakeNamespaceRollup(qctx, db)
+		rows, err = snowflakeNamespaceRollup(qctx, db, loadedSchemas(gj, database))
 	case "bigquery":
 		rows, err = bigqueryNamespaceRollup(qctx, db)
 	case "sqlite":
@@ -53,6 +53,21 @@ func buildNamespaceRollup(ctx context.Context, gj *core.GraphJin, database strin
 	}
 	sortNamespaceRollup(rows)
 	return rows, nil
+}
+
+func loadedSchemas(gj *core.GraphJin, database string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range gj.GetTablesForDatabase(database) {
+		schema := strings.TrimSpace(t.Schema)
+		if schema == "" || seen[strings.ToLower(schema)] {
+			continue
+		}
+		seen[strings.ToLower(schema)] = true
+		out = append(out, schema)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func sortNamespaceRollup(rows []NamespaceRollup) {
@@ -100,16 +115,34 @@ GROUP BY TABLE_SCHEMA`
 	return rows, nil
 }
 
-func snowflakeNamespaceRollup(ctx context.Context, db *sql.DB) ([]NamespaceRollup, error) {
-	const q = `
+func snowflakeNamespaceRollup(ctx context.Context, db *sql.DB, schemas []string) ([]NamespaceRollup, error) {
+	if len(schemas) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(schemas))
+	args := make([]any, len(schemas))
+	for i, schema := range schemas {
+		placeholders[i] = "UPPER(?)"
+		args[i] = schema
+	}
+
+	q := `
 SELECT TABLE_CATALOG, TABLE_SCHEMA,
        COUNT(*) AS table_count,
        COALESCE(SUM(ROW_COUNT), 0) AS approx_row_total
 FROM INFORMATION_SCHEMA.TABLES
 WHERE TABLE_TYPE = 'BASE TABLE'
-  AND TABLE_SCHEMA <> 'INFORMATION_SCHEMA'
+  AND UPPER(TABLE_SCHEMA) IN (` + strings.Join(placeholders, ", ") + `)
 GROUP BY TABLE_CATALOG, TABLE_SCHEMA`
-	return scanNamespaceRollup(ctx, db, q, true)
+	rows, err := scanNamespaceRollup(ctx, db, q, true, args...)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		rows[i].Schema = strings.ToLower(rows[i].Schema)
+	}
+	return rows, nil
 }
 
 func bigqueryNamespaceRollup(ctx context.Context, db *sql.DB) ([]NamespaceRollup, error) {
@@ -212,8 +245,8 @@ func fallbackNamespaceRollup(gj *core.GraphJin, database string) []NamespaceRoll
 }
 
 // scanNamespaceRollup: 4-column scan (db, schema, table_count, row_total).
-func scanNamespaceRollup(ctx context.Context, db *sql.DB, q string, rowCountsAvailable bool) ([]NamespaceRollup, error) {
-	rows, err := db.QueryContext(ctx, q)
+func scanNamespaceRollup(ctx context.Context, db *sql.DB, q string, rowCountsAvailable bool, args ...any) ([]NamespaceRollup, error) {
+	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

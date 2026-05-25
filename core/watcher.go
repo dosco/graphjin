@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/introspection"
 )
 
 // initDBWatcher initializes the database schema watcher
@@ -54,7 +54,7 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 				continue
 			}
 
-			latestDi, err := sdata.GetDBInfo(
+			latestDi, err := introspection.GetDBInfo(
 				context.Background(),
 				ctx.db,
 				ctx.dbtype,

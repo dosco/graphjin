@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	core "github.com/dosco/graphjin/core/v3"
+	corediscovery "github.com/dosco/graphjin/core/v3/discovery"
 	"github.com/lib/pq"
 )
 
@@ -17,7 +18,7 @@ func loadColumnStats(ctx context.Context, gj *core.GraphJin, database string, sc
 	if err != nil || db == nil {
 		return nil
 	}
-	qctx, cancel := context.WithTimeout(ctx, rowCountQueryTimeout)
+	qctx, cancel := context.WithTimeout(ctx, corediscovery.QueryTimeout)
 	defer cancel()
 
 	var out map[string]ColumnStats

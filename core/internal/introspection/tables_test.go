@@ -1,12 +1,19 @@
-package sdata
+package introspection
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
+	"fmt"
+	"io"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/dosco/graphjin/core/v3/internal/util"
 )
 
@@ -80,10 +87,10 @@ func TestParseClusteringKey(t *testing.T) {
 
 func TestAutoSetPartitionFromClustering(t *testing.T) {
 	tests := []struct {
-		name            string
-		clusteringKeys  []string
-		columns         []DBColumn
-		wantPartition   string
+		name           string
+		clusteringKeys []string
+		columns        []DBColumn
+		wantPartition  string
 	}{
 		{
 			name:           "leading temporal column becomes partition key",
@@ -152,7 +159,7 @@ func TestAutoSetPartitionFromClustering(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			table := NewDBTable("public", "test_table", "", tt.columns)
+			table := sdata.NewDBTable("public", "test_table", "", tt.columns)
 			table.ClusteringKeys = tt.clusteringKeys
 			autoSetPartitionFromClustering(&table)
 			if table.PartitionKey != tt.wantPartition {
@@ -172,7 +179,7 @@ func TestAutoSetPartitionFromClustering(t *testing.T) {
 func TestSnowflakeAutoPartitionFilter(t *testing.T) {
 	// Verify that GetTestSnowflakeDBInfo auto-sets partition key AND default
 	// range from clustering keys — enables auto-injection of time-range filter.
-	di := GetTestSnowflakeDBInfo()
+	di := sdata.GetTestSnowflakeDBInfo()
 	for _, table := range di.Tables {
 		if table.Name == "products" {
 			if table.PartitionKey != "created_at" {
@@ -218,14 +225,14 @@ func TestCompositeFKQueryConstants(t *testing.T) {
 // parses comma-separated column lists and applies normalization per DB type.
 func TestDiscoverCompositeFKsCSVParsing(t *testing.T) {
 	tests := []struct {
-		name           string
-		dbtype         string
-		localCSV       string
-		fkeyCSV        string
-		wantLocalCols  []string
-		wantFKeyCols   []string
-		wantSchema     string
-		inputSchema    string
+		name          string
+		dbtype        string
+		localCSV      string
+		fkeyCSV       string
+		wantLocalCols []string
+		wantFKeyCols  []string
+		wantSchema    string
+		inputSchema   string
 	}{
 		{
 			name:          "mysql: no normalization",
@@ -456,7 +463,7 @@ func TestNewDBTableCompositePK(t *testing.T) {
 		{Name: "session_id", Type: "integer", PrimaryKey: true},
 		{Name: "data", Type: "text"},
 	}
-	ti := NewDBTable("public", "user_sessions", "table", cols)
+	ti := sdata.NewDBTable("public", "user_sessions", "table", cols)
 
 	if len(ti.PrimaryCols) != 2 {
 		t.Fatalf("expected 2 PrimaryCols, got %d", len(ti.PrimaryCols))
@@ -474,7 +481,7 @@ func TestNewDBTableCompositePK(t *testing.T) {
 
 // TestHasCompositePK verifies the HasCompositePK helper.
 func TestHasCompositePK(t *testing.T) {
-	single := NewDBTable("public", "users", "table", []DBColumn{
+	single := sdata.NewDBTable("public", "users", "table", []DBColumn{
 		{Name: "id", Type: "integer", PrimaryKey: true},
 		{Name: "name", Type: "text"},
 	})
@@ -482,7 +489,7 @@ func TestHasCompositePK(t *testing.T) {
 		t.Error("single PK table should not report HasCompositePK")
 	}
 
-	composite := NewDBTable("public", "user_sessions", "table", []DBColumn{
+	composite := sdata.NewDBTable("public", "user_sessions", "table", []DBColumn{
 		{Name: "user_id", Type: "integer", PrimaryKey: true},
 		{Name: "session_id", Type: "integer", PrimaryKey: true},
 	})
@@ -490,7 +497,7 @@ func TestHasCompositePK(t *testing.T) {
 		t.Error("composite PK table should report HasCompositePK")
 	}
 
-	noPK := NewDBTable("public", "logs", "table", []DBColumn{
+	noPK := sdata.NewDBTable("public", "logs", "table", []DBColumn{
 		{Name: "data", Type: "text"},
 	})
 	if noPK.HasCompositePK() {
@@ -500,7 +507,7 @@ func TestHasCompositePK(t *testing.T) {
 
 // TestPKColNames verifies the PKColNames helper.
 func TestPKColNames(t *testing.T) {
-	ti := NewDBTable("public", "order_items", "table", []DBColumn{
+	ti := sdata.NewDBTable("public", "order_items", "table", []DBColumn{
 		{Name: "order_id", Type: "integer", PrimaryKey: true},
 		{Name: "product_id", Type: "integer", PrimaryKey: true},
 		{Name: "quantity", Type: "integer"},
@@ -513,7 +520,7 @@ func TestPKColNames(t *testing.T) {
 
 // TestIsPKCol verifies the IsPKCol helper.
 func TestIsPKCol(t *testing.T) {
-	ti := NewDBTable("public", "order_items", "table", []DBColumn{
+	ti := sdata.NewDBTable("public", "order_items", "table", []DBColumn{
 		{Name: "order_id", Type: "integer", PrimaryKey: true},
 		{Name: "product_id", Type: "integer", PrimaryKey: true},
 		{Name: "quantity", Type: "integer"},
@@ -583,13 +590,13 @@ func TestInferViewPKsFromBaseTables(t *testing.T) {
 		{
 			name: "view matches base table by non-PK column overlap",
 			cols: map[string]DBColumn{
-				"public:users:id":                  {Schema: "public", Table: "users", Name: "id", PrimaryKey: true},
-				"public:users:full_name":           {Schema: "public", Table: "users", Name: "full_name"},
-				"public:users:email":               {Schema: "public", Table: "users", Name: "email"},
-				"public:products:id":               {Schema: "public", Table: "products", Name: "id", PrimaryKey: true},
-				"public:products:name":             {Schema: "public", Table: "products", Name: "name"},
-				"public:user_products:id":          {Schema: "public", Table: "user_products", Name: "id"},
-				"public:user_products:full_name":   {Schema: "public", Table: "user_products", Name: "full_name"},
+				"public:users:id":                   {Schema: "public", Table: "users", Name: "id", PrimaryKey: true},
+				"public:users:full_name":            {Schema: "public", Table: "users", Name: "full_name"},
+				"public:users:email":                {Schema: "public", Table: "users", Name: "email"},
+				"public:products:id":                {Schema: "public", Table: "products", Name: "id", PrimaryKey: true},
+				"public:products:name":              {Schema: "public", Table: "products", Name: "name"},
+				"public:user_products:id":           {Schema: "public", Table: "user_products", Name: "id"},
+				"public:user_products:full_name":    {Schema: "public", Table: "user_products", Name: "full_name"},
 				"public:user_products:product_name": {Schema: "public", Table: "user_products", Name: "product_name"},
 			},
 			wantPK: []string{"public:user_products:id"},
@@ -618,4 +625,198 @@ func TestInferViewPKsFromBaseTables(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPostgresDiscoverColumnsSkipsConstraintRowsWhenPreflightIsEmpty(t *testing.T) {
+	state := &postgresDiscoveryFakeState{
+		basicRows: [][]driver.Value{
+			{"public", "users", "id", "integer", true, false, false, false, false, "", "", ""},
+			{"public", "users", "email", "text", false, false, false, false, false, "", "", ""},
+		},
+	}
+	db := openPostgresDiscoveryFakeDB(t, state)
+	defer db.Close()
+
+	cols, err := DiscoverColumns(context.Background(), db, "postgres", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cols) != 2 {
+		t.Fatalf("len(cols) = %d, want 2", len(cols))
+	}
+	if state.count("basic") != 1 {
+		t.Fatalf("basic discovery queries = %d, want 1", state.count("basic"))
+	}
+	if state.count("constraint_preflight") != 1 {
+		t.Fatalf("constraint preflight queries = %d, want 1", state.count("constraint_preflight"))
+	}
+	if state.count("constraints") != 0 {
+		t.Fatalf("constraint row queries = %d, want 0", state.count("constraints"))
+	}
+}
+
+func TestPostgresDiscoverColumnsMergesBatchedConstraintRows(t *testing.T) {
+	state := &postgresDiscoveryFakeState{
+		hasConstraints: true,
+		basicRows: [][]driver.Value{
+			{"public", "products", "id", "integer", true, false, false, false, false, "", "", ""},
+			{"public", "order_items", "id", "integer", true, false, false, false, false, "", "", ""},
+			{"public", "order_items", "product_id", "integer", true, false, false, false, false, "", "", ""},
+		},
+		constraintRows: [][]driver.Value{
+			{"public", "products", "id", "", false, true, false, false, false, "", "", ""},
+			{"public", "order_items", "id", "", false, true, false, false, false, "", "", ""},
+			{"public", "order_items", "product_id", "", false, false, false, false, false, "public", "products", "id"},
+		},
+	}
+	db := openPostgresDiscoveryFakeDB(t, state)
+	defer db.Close()
+
+	cols, err := DiscoverColumns(context.Background(), db, "postgres", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.count("constraints") != 1 {
+		t.Fatalf("constraint row queries = %d, want 1", state.count("constraints"))
+	}
+
+	byColumn := map[string]DBColumn{}
+	for _, c := range cols {
+		byColumn[c.Schema+":"+c.Table+":"+c.Name] = c
+	}
+	if got := byColumn["public:products:id"]; !got.PrimaryKey || !got.UniqueKey {
+		t.Fatalf("products.id flags = primary:%v unique:%v, want both true", got.PrimaryKey, got.UniqueKey)
+	}
+	if got := byColumn["public:order_items:product_id"]; got.FKeySchema != "public" || got.FKeyTable != "products" || got.FKeyCol != "id" {
+		t.Fatalf("order_items.product_id FK = %s.%s.%s, want public.products.id", got.FKeySchema, got.FKeyTable, got.FKeyCol)
+	}
+}
+
+var postgresDiscoveryFakeSeq atomic.Uint64
+
+func openPostgresDiscoveryFakeDB(t *testing.T, state *postgresDiscoveryFakeState) *sql.DB {
+	t.Helper()
+
+	name := fmt.Sprintf("postgres_discovery_fake_%d", postgresDiscoveryFakeSeq.Add(1))
+	sql.Register(name, postgresDiscoveryFakeDriver{state: state})
+	db, err := sql.Open(name, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	return db
+}
+
+type postgresDiscoveryFakeState struct {
+	mu             sync.Mutex
+	counts         map[string]int
+	hasConstraints bool
+	basicRows      [][]driver.Value
+	constraintRows [][]driver.Value
+}
+
+func (s *postgresDiscoveryFakeState) count(kind string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.counts[kind]
+}
+
+func (s *postgresDiscoveryFakeState) record(kind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.counts == nil {
+		s.counts = map[string]int{}
+	}
+	s.counts[kind]++
+}
+
+type postgresDiscoveryFakeDriver struct {
+	state *postgresDiscoveryFakeState
+}
+
+func (d postgresDiscoveryFakeDriver) Open(_ string) (driver.Conn, error) {
+	return postgresDiscoveryFakeConn{state: d.state}, nil
+}
+
+type postgresDiscoveryFakeConn struct {
+	state *postgresDiscoveryFakeState
+}
+
+func (c postgresDiscoveryFakeConn) Prepare(string) (driver.Stmt, error) {
+	return nil, fmt.Errorf("Prepare is not implemented")
+}
+
+func (c postgresDiscoveryFakeConn) Close() error {
+	return nil
+}
+
+func (c postgresDiscoveryFakeConn) Begin() (driver.Tx, error) {
+	return nil, fmt.Errorf("Begin is not implemented")
+}
+
+func (c postgresDiscoveryFakeConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	switch {
+	case query == postgresColumnsBasicStmt:
+		c.state.record("basic")
+		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.basicRows), nil
+	case query == postgresConstraintsCountStmt:
+		c.state.record("constraint_preflight")
+		var n int64
+		if c.state.hasConstraints {
+			n = 1
+		}
+		return newPostgresDiscoveryFakeRows([]string{"has_constraints"}, [][]driver.Value{{n}}), nil
+	case query == postgresConstraintColumnsStmt:
+		c.state.record("constraints")
+		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.constraintRows), nil
+	case strings.Contains(query, "relkind IN ('v','m')"):
+		c.state.record("view_preflight")
+		return newPostgresDiscoveryFakeRows([]string{"exists"}, nil), nil
+	default:
+		return nil, fmt.Errorf("unexpected query: %.120s", query)
+	}
+}
+
+func discoveredColumnScanColumns() []string {
+	return []string{
+		"schema",
+		"table",
+		"column",
+		"type",
+		"not_null",
+		"primary_key",
+		"unique_key",
+		"is_array",
+		"full_text",
+		"foreignkey_schema",
+		"foreignkey_table",
+		"foreignkey_column",
+	}
+}
+
+type postgresDiscoveryFakeRows struct {
+	cols []string
+	rows [][]driver.Value
+	pos  int
+}
+
+func newPostgresDiscoveryFakeRows(cols []string, rows [][]driver.Value) *postgresDiscoveryFakeRows {
+	return &postgresDiscoveryFakeRows{cols: cols, rows: rows}
+}
+
+func (r *postgresDiscoveryFakeRows) Columns() []string {
+	return r.cols
+}
+
+func (r *postgresDiscoveryFakeRows) Close() error {
+	return nil
+}
+
+func (r *postgresDiscoveryFakeRows) Next(dest []driver.Value) error {
+	if r.pos >= len(r.rows) {
+		return io.EOF
+	}
+	copy(dest, r.rows[r.pos])
+	r.pos++
+	return nil
 }

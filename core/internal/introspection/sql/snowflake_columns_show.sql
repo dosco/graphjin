@@ -46,5 +46,5 @@ FROM cols c
 LEFT JOIN pks ON pks.sch_name = c.sch_name AND pks.tbl_name = c.tbl_name AND pks.col_name = c.col_name
 LEFT JOIN uks ON uks.sch_name = c.sch_name AND uks.tbl_name = c.tbl_name AND uks.col_name = c.col_name
 LEFT JOIN fks ON fks.sch_name = c.sch_name AND fks.tbl_name = c.tbl_name AND fks.col_name = c.col_name
-WHERE c.sch_name = CURRENT_SCHEMA()
+WHERE UPPER(c.sch_name) = UPPER(CURRENT_SCHEMA())
 ORDER BY c.sch_name, c.tbl_name, c.col_name

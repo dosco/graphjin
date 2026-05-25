@@ -9,6 +9,7 @@ import (
 	"time"
 
 	core "github.com/dosco/graphjin/core/v3"
+	corediscovery "github.com/dosco/graphjin/core/v3/discovery"
 )
 
 const tableSampleQueryTimeout = 10 * time.Second
@@ -143,7 +144,7 @@ func buildTableSample(ctx context.Context, gj *core.GraphJin, database string, s
 		EnumValues:   make(map[string]EnumProfile),
 		NumericStats: make(map[string]NumericStats),
 	}
-	if n, ok := approxRowCount(qctx, db, dbtype, schema); ok {
+	if n, ok := corediscovery.ApproxRowCount(qctx, db, dbtype, schema); ok {
 		v := n
 		profile.RowCountApprox = &v
 	}

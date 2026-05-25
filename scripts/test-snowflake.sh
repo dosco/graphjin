@@ -3,6 +3,13 @@ set -e
 cd "$(dirname "$0")/../tests"
 echo "Running Snowflake tests..."
 
+export GRAPHJIN_SNOWFLAKE_MOCK="${GRAPHJIN_SNOWFLAKE_MOCK:-1}"
+if [ "$GRAPHJIN_SNOWFLAKE_MOCK" = "1" ]; then
+	export GRAPHJIN_SNOWFLAKE_BACKEND="${GRAPHJIN_SNOWFLAKE_BACKEND:-duckdb}"
+	export GRAPHJIN_SNOWFLAKE_FALLBACK="${GRAPHJIN_SNOWFLAKE_FALLBACK:-strict}"
+	echo "Using Snowflake simulator (${GRAPHJIN_SNOWFLAKE_BACKEND} backend)"
+fi
+
 MAX_RETRIES=${SNOWFLAKE_TEST_RETRIES:-3}
 
 for attempt in $(seq 1 "$MAX_RETRIES"); do

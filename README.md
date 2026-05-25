@@ -9,7 +9,7 @@
 
 Point GraphJin at any database or source tree and AI assistants can query it instantly. Auto-discovers your schema, understands relationships, indexes code with tree-sitter, and compiles to optimized SQL. No configuration required.
 
-Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, S3/GCS/files, CodeSQL source indexes - and models from Claude/GPT-4 to local 7B models.
+Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, BigQuery, S3/GCS/files, CodeSQL source indexes - and models from Claude/GPT-4 to local 7B models.
 
 ## Installation
 
@@ -659,9 +659,10 @@ Real conversations showing how an AI assistant uses GraphJin MCP tools to help y
 | SQLite | Yes | Yes | Yes | FTS5 | SpatiaLite |
 | MongoDB | Yes | Yes | Yes | Yes | Yes |
 | Snowflake | Yes | Yes | No | No | No |
+| BigQuery | Yes (experimental) | No | No | No | No |
 | CockroachDB | Yes | Yes | Yes | Yes | No |
 
-Also works with AWS Aurora/RDS, Google Cloud SQL, and YugabyteDB. Snowflake supports key pair (JWT) authentication.
+Also works with AWS Aurora/RDS, Google Cloud SQL, and YugabyteDB. Snowflake supports key pair (JWT) authentication. BigQuery support is experimental and query-focused.
 
 ## Production Security
 

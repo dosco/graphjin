@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dosco/graphjin/core/v3/internal/introspection"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
@@ -56,7 +57,7 @@ func SchemaDiff(db *sql.DB, dbType string, schemaBytes []byte, blocklist []strin
 	attachClusteringKeys(expected, ds.ClusteringKeys, schema, dbType)
 
 	// Get current database schema
-	current, err := sdata.GetDBInfo(context.Background(), db, dbType, blocklist)
+	current, err := introspection.GetDBInfo(context.Background(), db, dbType, blocklist)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover database schema: %w", err)
 	}
@@ -453,7 +454,7 @@ func SchemaDiffMultiDB(
 		attachClusteringKeys(expected, ds.ClusteringKeys, schema, dbType)
 
 		// Get current database schema
-		current, err := sdata.GetDBInfo(context.Background(), dbConn, dbType, blocklist)
+		current, err := introspection.GetDBInfo(context.Background(), dbConn, dbType, blocklist)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get schema for %s: %w", dbName, err)
 		}

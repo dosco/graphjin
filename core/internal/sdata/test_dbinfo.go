@@ -215,7 +215,8 @@ func GetTestSnowflakeDBInfo() *DBInfo {
 	for i := range di.Tables {
 		if di.Tables[i].Name == "products" {
 			di.Tables[i].ClusteringKeys = []string{"created_at", "user_id"}
-			autoSetPartitionFromClustering(&di.Tables[i])
+			di.Tables[i].PartitionKey = "created_at"
+			di.Tables[i].PartitionRangeDays = 60
 		}
 	}
 
