@@ -17,6 +17,13 @@ func (gj *graphjinEngine) prepareRoleStmt() error {
 		return fmt.Errorf("roles_query: $user_id variable missing")
 	}
 
+	if isGraphQLRoleQuery(gj.conf.RolesQuery) {
+		gj.roleQueryMode = roleQueryGraphQL
+		return gj.prepareGraphQLRoleStmt()
+	}
+
+	gj.roleQueryMode = roleQuerySQL
+
 	pdb := gj.primaryDB()
 	if pdb == nil || pdb.psqlCompiler == nil {
 		return fmt.Errorf("roles_query: primary database not initialized")

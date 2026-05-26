@@ -25,5 +25,4 @@ SELECT
     '' AS foreignkey_table,
     '' AS foreignkey_column
 FROM cols c
-WHERE UPPER(c.sch_name) = UPPER(CURRENT_SCHEMA())
 ORDER BY c.sch_name, c.tbl_name, c.col_name

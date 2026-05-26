@@ -21,4 +21,4 @@ SELECT col.table_schema AS schema_name,
 	'' AS foreignkey_table,
 	'' AS foreignkey_column
 FROM information_schema.columns col
-WHERE UPPER(col.table_schema) = UPPER(CURRENT_SCHEMA());
+WHERE UPPER(col.table_schema) = UPPER(?);

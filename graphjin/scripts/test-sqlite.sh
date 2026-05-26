@@ -11,6 +11,8 @@ echo "Running SQLite tests..."
 docker run --rm \
     -e CGO_ENABLED=1 \
     -e GOTOOLCHAIN=auto \
+    -v graphjin-sqlite-go-mod:/go/pkg/mod \
+    -v graphjin-sqlite-go-build:/root/.cache/go-build \
     -w /app/tests \
     graphjin-sqlite-test \
     go test -v -timeout 30m -db=sqlite -tags "sqlite sqlite_fts5 libsqlite3" "$@" .

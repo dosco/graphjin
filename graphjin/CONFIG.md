@@ -1639,16 +1639,44 @@ Dynamically assign roles based on user attributes.
 
 ```yaml
 # The query receives $user_id as a parameter
-# Column names become context values for role matching
+# SQL mode: column names become context values for role matching
 roles_query: "SELECT role, org_id FROM user_roles WHERE user_id = $user_id:bigint"
 ```
+
+`roles_query` can also be written as a GraphQL query. GraphQL mode is selected when
+the value starts with `{`, `query`, or `fragment`. The query must return zero rows
+or one object from a single root field; returning more than one row is treated as a
+configuration error. In GraphQL mode, `match` is evaluated against the returned
+object in role configuration order:
+
+```yaml
+roles_query: |
+  query {
+    users(id: $user_id) {
+      role
+      userid: id
+      account {
+        tier
+      }
+    }
+  }
+
+roles:
+  - name: admin
+    match: role = 'the_admin_dude' or userid < 10 or account.tier = 'enterprise'
+```
+
+GraphQL `match` supports a portable predicate subset: identifiers and dotted
+paths, string/number/boolean/null literals, `=`, `!=`, `<>`, `<`, `<=`, `>`,
+`>=`, `and`, `or`, `not`, parentheses, `is null`, and `is not null`. SQL
+functions and casts are available only with SQL `roles_query`.
 
 ### Role Configuration
 
 | Option | Type | Description |
 |--------|------|-------------|
 | `name` | string | Role name (e.g., `user`, `admin`, `anon`) |
-| `match` | string | SQL condition to match role (uses roles_query columns) |
+| `match` | string | Role predicate. SQL condition in SQL roles_query mode; portable predicate over returned fields in GraphQL roles_query mode. |
 | `comment` | string | Description of the role |
 | `tables` | []RoleTable | Per-table configurations |
 

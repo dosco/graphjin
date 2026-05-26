@@ -406,6 +406,15 @@ tables:
 
 # Variables used require a type suffix eg. $user_id:bigint
 #roles_query: "SELECT * FROM users WHERE id = $user_id:bigint"
+# You can also use GraphQL. In GraphQL mode, role `match` is evaluated
+# against the single returned object using a portable SQL-like predicate subset.
+#roles_query: |
+#  query {
+#    users(id: $user_id) {
+#      role
+#      userid: id
+#    }
+#  }
 
 roles:
   # if `auth.type` is set to a valid auth type then

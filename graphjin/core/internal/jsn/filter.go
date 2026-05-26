@@ -8,13 +8,12 @@ import (
 // Filter function filters the JSON keeping only the provided keys and removing all others
 func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 	var err error
-	kmap := make(map[uint64]struct{}, len(keys))
+	kmap := make(map[uint64]int, len(keys))
+	var collisions map[uint64][]int
 	h := maphash.Hash{}
 
 	for i := range keys {
-		_, _ = h.WriteString(keys[i])
-		kmap[h.Sum64()] = struct{}{}
-		h.Reset()
+		addKeyHash(kmap, &collisions, hashString(&h, keys[i]), i)
 	}
 
 	// is an list
@@ -107,7 +106,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 		case state == expectObjClose && d == 0 && b[i] == '}':
 			e = i
 
-		case state == expectValue && (b[i] >= '0' && b[i] <= '9'):
+		case state == expectValue && (b[i] == '-' || (b[i] >= '0' && b[i] <= '9')):
 			state = expectNumClose
 
 		case state == expectNumClose &&
@@ -134,11 +133,9 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 			cb := b[s:(e + 1)]
 			e = 0
 
-			_, _ = h.Write(k)
-			_, ok := kmap[h.Sum64()]
-			h.Reset()
-
-			if !ok {
+			sum := hashBytes(&h, k)
+			n, ok := kmap[sum]
+			if !ok || !lookupStringKeyHash(keys, collisions, sum, n, k) {
 				continue
 			}
 

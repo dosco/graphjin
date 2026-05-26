@@ -26,6 +26,15 @@ var mysqlInfo string
 //go:embed sql/mysql_columns.sql
 var mysqlColumnsStmt string
 
+//go:embed sql/mysql_columns_basic.sql
+var mysqlColumnsBasicStmt string
+
+//go:embed sql/mysql_constraints_count.sql
+var mysqlConstraintsCountStmt string
+
+//go:embed sql/mysql_constraint_columns.sql
+var mysqlConstraintColumnsStmt string
+
 //go:embed sql/sqlite_functions.sql
 var sqliteFunctionsStmt string
 
@@ -52,6 +61,15 @@ var mariadbInfo string
 
 //go:embed sql/mariadb_columns.sql
 var mariadbColumnsStmt string
+
+//go:embed sql/mariadb_columns_basic.sql
+var mariadbColumnsBasicStmt string
+
+//go:embed sql/mariadb_constraints_count.sql
+var mariadbConstraintsCountStmt string
+
+//go:embed sql/mariadb_constraint_columns.sql
+var mariadbConstraintColumnsStmt string
 
 //go:embed sql/mssql_functions.sql
 var mssqlFunctionsStmt string

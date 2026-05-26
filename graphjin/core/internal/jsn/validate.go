@@ -4,14 +4,17 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 	"unsafe"
 )
+
+const maxValidateDepth = 10000
 
 // Validate function validates JSON
 func Validate(s string) error {
 	s = skipWS(s)
 
-	tail, err := validateValue(s)
+	tail, err := validateValue(s, 0)
 	if err != nil {
 		return fmt.Errorf("cannot parse JSON: %s; unparsed tail: %q", err, startEndString(tail))
 	}
@@ -27,20 +30,24 @@ func ValidateBytes(b []byte) error {
 	return Validate(b2s(b))
 }
 
-func validateValue(s string) (string, error) {
+func validateValue(s string, depth int) (string, error) {
 	if len(s) == 0 {
 		return s, fmt.Errorf("cannot parse empty string")
 	}
 
+	if depth > maxValidateDepth {
+		return s, fmt.Errorf("exceeded max JSON depth of %d", maxValidateDepth)
+	}
+
 	if s[0] == '{' {
-		tail, err := validateObject(s[1:])
+		tail, err := validateObject(s[1:], depth+1)
 		if err != nil {
 			return tail, fmt.Errorf("cannot parse object: %s", err)
 		}
 		return tail, nil
 	}
 	if s[0] == '[' {
-		tail, err := validateArray(s[1:])
+		tail, err := validateArray(s[1:], depth+1)
 		if err != nil {
 			return tail, fmt.Errorf("cannot parse array: %s", err)
 		}
@@ -50,6 +57,9 @@ func validateValue(s string) (string, error) {
 		sv, tail, err := validateString(s[1:])
 		if err != nil {
 			return tail, fmt.Errorf("cannot parse string: %s", err)
+		}
+		if !utf8.ValidString(sv) {
+			return tail, fmt.Errorf("string contains invalid UTF-8")
 		}
 		// Scan the string for control chars.
 		for i := 0; i < len(sv); i++ {
@@ -85,7 +95,11 @@ func validateValue(s string) (string, error) {
 	return tail, nil
 }
 
-func validateArray(s string) (string, error) {
+func validateArray(s string, depth int) (string, error) {
+	if depth > maxValidateDepth {
+		return s, fmt.Errorf("exceeded max JSON depth of %d", maxValidateDepth)
+	}
+
 	s = skipWS(s)
 	if len(s) == 0 {
 		return s, fmt.Errorf("missing ']'")
@@ -98,7 +112,7 @@ func validateArray(s string) (string, error) {
 		var err error
 
 		s = skipWS(s)
-		s, err = validateValue(s)
+		s, err = validateValue(s, depth)
 		if err != nil {
 			return s, fmt.Errorf("cannot parse array value: %s", err)
 		}
@@ -119,7 +133,11 @@ func validateArray(s string) (string, error) {
 	}
 }
 
-func validateObject(s string) (string, error) {
+func validateObject(s string, depth int) (string, error) {
+	if depth > maxValidateDepth {
+		return s, fmt.Errorf("exceeded max JSON depth of %d", maxValidateDepth)
+	}
+
 	s = skipWS(s)
 	if len(s) == 0 {
 		return s, fmt.Errorf("missing '}'")
@@ -142,6 +160,9 @@ func validateObject(s string) (string, error) {
 		if err != nil {
 			return s, fmt.Errorf("cannot parse object key: %s", err)
 		}
+		if !utf8.ValidString(key) {
+			return s, fmt.Errorf("object key contains invalid UTF-8")
+		}
 		// Scan the key for control chars.
 		for i := 0; i < len(key); i++ {
 			if key[i] < 0x20 {
@@ -156,7 +177,7 @@ func validateObject(s string) (string, error) {
 
 		// Parse value
 		s = skipWS(s)
-		s, err = validateValue(s)
+		s, err = validateValue(s, depth)
 		if err != nil {
 			return s, fmt.Errorf("cannot parse object value: %s", err)
 		}

@@ -19,6 +19,7 @@ const defaultMemoryCacheSize = 10000
 type memoryCacheEntry struct {
 	entry      CacheEntry
 	refs       []core.RowRef
+	indexRefs  []core.RowRef
 	storedAt   time.Time
 	queryStart time.Time
 }
@@ -32,9 +33,10 @@ type MemoryCache struct {
 	workerPool   *SWRWorkerPool
 
 	// Dependency index: dependency key -> set of fragment keys
-	rowIndex   map[string]map[string]bool
-	tableIndex map[string]map[string]bool
+	rowIndex   map[string]map[string]struct{}
+	tableIndex map[string]map[string]struct{}
 	modTimes   map[string]int64 // dependency key -> modification timestamp (ms)
+	cacheMu    sync.Mutex
 	mu         sync.RWMutex
 
 	// OpenTelemetry metric instruments
@@ -53,20 +55,19 @@ func NewMemoryCache(conf CachingConfig, maxEntries int) (*MemoryCache, error) {
 		maxEntries = defaultMemoryCacheSize
 	}
 
-	cache, err := lru.New[string, *memoryCacheEntry](maxEntries)
-	if err != nil {
-		return nil, err
-	}
-
 	mc := &MemoryCache{
-		cache:        cache,
 		conf:         conf,
 		metrics:      &CacheMetrics{},
 		excludeTable: make(map[string]bool),
-		rowIndex:     make(map[string]map[string]bool),
-		tableIndex:   make(map[string]map[string]bool),
+		rowIndex:     make(map[string]map[string]struct{}),
+		tableIndex:   make(map[string]map[string]struct{}),
 		modTimes:     make(map[string]int64),
 	}
+	cache, err := lru.NewWithEvict[string, *memoryCacheEntry](maxEntries, mc.removeEntryIndexes)
+	if err != nil {
+		return nil, err
+	}
+	mc.cache = cache
 
 	// Build exclude table lookup
 	for _, t := range conf.ExcludeTables {
@@ -133,7 +134,11 @@ func (mc *MemoryCache) Get(ctx context.Context, key string) ([]byte, bool, bool)
 
 	// Expired (past hard TTL)
 	if now >= entry.entry.StaleUntil {
-		mc.cache.Remove(key)
+		mc.cacheMu.Lock()
+		if current, ok := mc.cache.Peek(key); ok && current == entry {
+			mc.cache.Remove(key)
+		}
+		mc.cacheMu.Unlock()
 		mc.recordMiss(ctx)
 		return nil, false, false
 	}
@@ -179,14 +184,6 @@ func (mc *MemoryCache) SetWithOptions(
 	// Filter out excluded tables
 	filteredRefs := mc.filterExcludedTables(refs)
 
-	// Check for race condition - verify no rows were modified during query
-	if len(filteredRefs) > 0 {
-		safe := mc.checkModificationSafety(filteredRefs, queryStartTime)
-		if !safe {
-			return nil
-		}
-	}
-
 	now := time.Now()
 	ttl, freshTTL, ok := cacheEntryTTLs(mc.conf, opts)
 	if !ok {
@@ -196,15 +193,12 @@ func (mc *MemoryCache) SetWithOptions(
 	// Compress if beneficial
 	compressed := false
 	originalSize := len(data)
+	savedBytes := int64(0)
 
 	if len(data) > compressionThreshold {
 		compData, err := compress(data)
 		if err == nil && len(compData) < len(data) {
-			saved := int64(len(data) - len(compData))
-			mc.metrics.BytesSaved.Add(saved)
-			if mc.otelBytesSavedGauge != nil {
-				mc.otelBytesSavedGauge.Add(ctx, saved)
-			}
+			savedBytes = int64(len(data) - len(compData))
 			data = compData
 			compressed = true
 		}
@@ -219,29 +213,32 @@ func (mc *MemoryCache) SetWithOptions(
 			StaleUntil:   now.Add(ttl).Unix(),
 		},
 		refs:       filteredRefs,
+		indexRefs:  cacheIndexRefs(filteredRefs, len(filteredRefs) <= rowLevelThreshold),
 		storedAt:   now,
 		queryStart: queryStartTime,
 	}
 
-	// Store in cache
+	mc.cacheMu.Lock()
+	defer mc.cacheMu.Unlock()
+
+	// Check for race condition - verify no rows were modified during query.
+	if len(filteredRefs) > 0 && !mc.checkModificationSafety(filteredRefs, queryStartTime) {
+		return nil
+	}
+
+	if previous, exists := mc.cache.Peek(key); exists {
+		mc.removeEntryIndexes(key, previous)
+	}
 	mc.cache.Add(key, entry)
 
-	// Update indices
 	mc.mu.Lock()
-	defer mc.mu.Unlock()
+	mc.addEntryIndexesLocked(key, entry)
+	mc.mu.Unlock()
 
-	indexRefs := cacheIndexRefs(filteredRefs, len(filteredRefs) <= rowLevelThreshold)
-	for _, ref := range indexRefs {
-		depKey := ref.DependencyKey()
-		if mc.rowIndex[depKey] == nil {
-			mc.rowIndex[depKey] = make(map[string]bool)
-		}
-		mc.rowIndex[depKey][key] = true
-		if ref.Normalize().Kind == core.CacheKindTable {
-			if mc.tableIndex[depKey] == nil {
-				mc.tableIndex[depKey] = make(map[string]bool)
-			}
-			mc.tableIndex[depKey][key] = true
+	if savedBytes > 0 {
+		mc.metrics.BytesSaved.Add(savedBytes)
+		if mc.otelBytesSavedGauge != nil {
+			mc.otelBytesSavedGauge.Add(ctx, savedBytes)
 		}
 	}
 
@@ -267,26 +264,28 @@ func (mc *MemoryCache) InvalidateRows(ctx context.Context, refs []core.RowRef) e
 
 	now := time.Now().UnixMilli()
 
+	mc.cacheMu.Lock()
+	defer mc.cacheMu.Unlock()
+
 	mc.mu.Lock()
-	defer mc.mu.Unlock()
 
 	invalidateRefs := cacheIndexRefs(filteredRefs, true)
-	keysToDelete := make(map[string]bool)
+	keysToDelete := make(map[string]struct{})
 
 	for _, ref := range invalidateRefs {
 		depKey := ref.DependencyKey()
 		mc.modTimes[depKey] = now
 		for respKey := range mc.rowIndex[depKey] {
-			keysToDelete[respKey] = true
+			keysToDelete[respKey] = struct{}{}
 		}
 		delete(mc.rowIndex, depKey)
 		for respKey := range mc.tableIndex[depKey] {
-			keysToDelete[respKey] = true
+			keysToDelete[respKey] = struct{}{}
 		}
 		delete(mc.tableIndex, depKey)
 	}
+	mc.mu.Unlock()
 
-	// Delete cached responses
 	for key := range keysToDelete {
 		mc.cache.Remove(key)
 	}
@@ -324,6 +323,53 @@ func (mc *MemoryCache) checkModificationSafety(refs []core.RowRef, queryStartTim
 		}
 	}
 	return true
+}
+
+func (mc *MemoryCache) addEntryIndexesLocked(key string, entry *memoryCacheEntry) {
+	for _, ref := range entry.indexRefs {
+		ref = ref.Normalize()
+		depKey := ref.DependencyKey()
+		if mc.rowIndex[depKey] == nil {
+			mc.rowIndex[depKey] = make(map[string]struct{})
+		}
+		mc.rowIndex[depKey][key] = struct{}{}
+		if ref.Kind == core.CacheKindTable {
+			if mc.tableIndex[depKey] == nil {
+				mc.tableIndex[depKey] = make(map[string]struct{})
+			}
+			mc.tableIndex[depKey][key] = struct{}{}
+		}
+	}
+}
+
+func (mc *MemoryCache) removeEntryIndexes(key string, entry *memoryCacheEntry) {
+	if entry == nil || len(entry.indexRefs) == 0 {
+		return
+	}
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	mc.removeEntryIndexesLocked(key, entry)
+}
+
+func (mc *MemoryCache) removeEntryIndexesLocked(key string, entry *memoryCacheEntry) {
+	for _, ref := range entry.indexRefs {
+		ref = ref.Normalize()
+		depKey := ref.DependencyKey()
+		if keys := mc.rowIndex[depKey]; keys != nil {
+			delete(keys, key)
+			if len(keys) == 0 {
+				delete(mc.rowIndex, depKey)
+			}
+		}
+		if ref.Kind == core.CacheKindTable {
+			if keys := mc.tableIndex[depKey]; keys != nil {
+				delete(keys, key)
+				if len(keys) == 0 {
+					delete(mc.tableIndex, depKey)
+				}
+			}
+		}
+	}
 }
 
 // filterExcludedTables removes refs excluded by table or source-aware keys.
@@ -400,6 +446,12 @@ func (mc *MemoryCache) Close() error {
 	if mc.workerPool != nil {
 		mc.workerPool.Shutdown()
 	}
+	mc.cacheMu.Lock()
+	defer mc.cacheMu.Unlock()
 	mc.cache.Purge()
+	mc.mu.Lock()
+	mc.rowIndex = make(map[string]map[string]struct{})
+	mc.tableIndex = make(map[string]map[string]struct{})
+	mc.mu.Unlock()
 	return nil
 }

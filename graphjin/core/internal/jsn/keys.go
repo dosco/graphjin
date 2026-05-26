@@ -96,7 +96,7 @@ func Keys(b []byte) [][]byte {
 			e = i
 			i = s
 
-		case state == expectValue && (b[i] >= '0' && b[i] <= '9'):
+		case state == expectValue && (b[i] == '-' || (b[i] >= '0' && b[i] <= '9')):
 			state = expectNumClose
 			s = i
 

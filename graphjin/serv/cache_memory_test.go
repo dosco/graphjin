@@ -2,6 +2,7 @@ package serv
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -413,4 +414,187 @@ func TestMemoryCache_LRUEviction(t *testing.T) {
 	if !found {
 		t.Errorf("expected last entry to exist")
 	}
+}
+
+func TestMemoryCache_LRUEvictionPrunesIndexes(t *testing.T) {
+	conf := CachingConfig{TTL: 3600}
+	mc, err := NewMemoryCache(conf, 1)
+	if err != nil {
+		t.Fatalf("failed to create memory cache: %v", err)
+	}
+	defer mc.Close() //nolint:errcheck
+
+	ctx := context.Background()
+	ref := core.RowRef{Table: "users", ID: "1"}
+	tableRef := core.RowRef{Kind: core.CacheKindTable, Table: "users"}
+	if err := mc.Set(ctx, "users-1", []byte(`{}`), []core.RowRef{ref}, time.Now()); err != nil {
+		t.Fatalf("set indexed entry: %v", err)
+	}
+	assertMemoryCacheRowIndex(t, mc, ref, "users-1", true)
+	assertMemoryCacheTableIndex(t, mc, tableRef, "users-1", true)
+
+	if err := mc.Set(ctx, "other", []byte(`{}`), nil, time.Now()); err != nil {
+		t.Fatalf("set evicting entry: %v", err)
+	}
+	assertMemoryCacheRowIndex(t, mc, ref, "users-1", false)
+	assertMemoryCacheTableIndex(t, mc, tableRef, "users-1", false)
+}
+
+func TestMemoryCache_HardTTLExpiryPrunesIndexes(t *testing.T) {
+	conf := CachingConfig{TTL: 3600, FreshTTL: 300}
+	mc, err := NewMemoryCache(conf, 100)
+	if err != nil {
+		t.Fatalf("failed to create memory cache: %v", err)
+	}
+	defer mc.Close() //nolint:errcheck
+
+	ctx := context.Background()
+	ref := core.RowRef{Table: "users", ID: "1"}
+	if err := mc.SetWithOptions(ctx, "short", []byte(`{}`), []core.RowRef{ref}, time.Now(), core.CacheEntryOptions{
+		HardTTL: time.Second,
+	}); err != nil {
+		t.Fatalf("set short ttl entry: %v", err)
+	}
+	assertMemoryCacheRowIndex(t, mc, ref, "short", true)
+
+	time.Sleep(1200 * time.Millisecond)
+	if _, _, found := mc.Get(ctx, "short"); found {
+		t.Fatal("expected expired entry to miss")
+	}
+	assertMemoryCacheRowIndex(t, mc, ref, "short", false)
+	assertMemoryCacheTableIndex(t, mc, core.RowRef{Kind: core.CacheKindTable, Table: "users"}, "short", false)
+}
+
+func TestMemoryCache_ReplacePrunesOldIndexes(t *testing.T) {
+	conf := CachingConfig{TTL: 3600}
+	mc, err := NewMemoryCache(conf, 100)
+	if err != nil {
+		t.Fatalf("failed to create memory cache: %v", err)
+	}
+	defer mc.Close() //nolint:errcheck
+
+	ctx := context.Background()
+	oldRef := core.RowRef{Table: "users", ID: "1"}
+	newRef := core.RowRef{Table: "products", ID: "2"}
+	if err := mc.Set(ctx, "same-key", []byte(`{"v":1}`), []core.RowRef{oldRef}, time.Now()); err != nil {
+		t.Fatalf("set old entry: %v", err)
+	}
+	if err := mc.Set(ctx, "same-key", []byte(`{"v":2}`), []core.RowRef{newRef}, time.Now()); err != nil {
+		t.Fatalf("replace entry: %v", err)
+	}
+
+	assertMemoryCacheRowIndex(t, mc, oldRef, "same-key", false)
+	assertMemoryCacheTableIndex(t, mc, core.RowRef{Kind: core.CacheKindTable, Table: "users"}, "same-key", false)
+	assertMemoryCacheRowIndex(t, mc, newRef, "same-key", true)
+	assertMemoryCacheTableIndex(t, mc, core.RowRef{Kind: core.CacheKindTable, Table: "products"}, "same-key", true)
+}
+
+func TestMemoryCache_TableFallbackIndexesArePruned(t *testing.T) {
+	conf := CachingConfig{TTL: 3600}
+	mc, err := NewMemoryCache(conf, 1)
+	if err != nil {
+		t.Fatalf("failed to create memory cache: %v", err)
+	}
+	defer mc.Close() //nolint:errcheck
+
+	ctx := context.Background()
+	refs := make([]core.RowRef, rowLevelThreshold+1)
+	for i := range refs {
+		refs[i] = core.RowRef{Table: "events", ID: strconv.Itoa(i)}
+	}
+	tableRef := core.RowRef{Kind: core.CacheKindTable, Table: "events"}
+	if err := mc.Set(ctx, "bulk", []byte(`{}`), refs, time.Now()); err != nil {
+		t.Fatalf("set bulk entry: %v", err)
+	}
+	assertMemoryCacheRowIndex(t, mc, refs[0], "bulk", false)
+	assertMemoryCacheRowIndex(t, mc, tableRef, "bulk", true)
+	assertMemoryCacheTableIndex(t, mc, tableRef, "bulk", true)
+
+	if err := mc.Set(ctx, "other", []byte(`{}`), nil, time.Now()); err != nil {
+		t.Fatalf("set evicting entry: %v", err)
+	}
+	assertMemoryCacheRowIndex(t, mc, tableRef, "bulk", false)
+	assertMemoryCacheTableIndex(t, mc, tableRef, "bulk", false)
+}
+
+func TestMemoryCache_ClosePurgesIndexes(t *testing.T) {
+	conf := CachingConfig{TTL: 3600}
+	mc, err := NewMemoryCache(conf, 100)
+	if err != nil {
+		t.Fatalf("failed to create memory cache: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := mc.Set(ctx, "users-1", []byte(`{}`), []core.RowRef{{Table: "users", ID: "1"}}, time.Now()); err != nil {
+		t.Fatalf("set indexed entry: %v", err)
+	}
+	if err := mc.Close(); err != nil {
+		t.Fatalf("close cache: %v", err)
+	}
+	if got := mc.cache.Len(); got != 0 {
+		t.Fatalf("cache len after close = %d, want 0", got)
+	}
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	if len(mc.rowIndex) != 0 {
+		t.Fatalf("rowIndex len after close = %d, want 0", len(mc.rowIndex))
+	}
+	if len(mc.tableIndex) != 0 {
+		t.Fatalf("tableIndex len after close = %d, want 0", len(mc.tableIndex))
+	}
+}
+
+func BenchmarkMemoryCacheInvalidateAfterLRUChurn(b *testing.B) {
+	conf := CachingConfig{TTL: 3600}
+	mc, err := NewMemoryCache(conf, 64)
+	if err != nil {
+		b.Fatalf("failed to create memory cache: %v", err)
+	}
+	defer mc.Close() //nolint:errcheck
+
+	ctx := context.Background()
+	for i := 0; i < 4096; i++ {
+		ref := core.RemoteResolverRef("bench", strconv.Itoa(i))
+		if err := mc.Set(ctx, "key-"+strconv.Itoa(i), []byte(`{}`), []core.RowRef{ref}, time.Now()); err != nil {
+			b.Fatalf("set churn entry: %v", err)
+		}
+	}
+	evictedRef := []core.RowRef{core.RemoteResolverRef("bench", "0")}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := mc.InvalidateRows(ctx, evictedRef); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func assertMemoryCacheRowIndex(t *testing.T, mc *MemoryCache, ref core.RowRef, key string, want bool) {
+	t.Helper()
+	got := memoryCacheIndexContains(mc, mc.rowIndex, ref, key)
+	if got != want {
+		t.Fatalf("rowIndex[%q][%q] = %v, want %v", ref.DependencyKey(), key, got, want)
+	}
+}
+
+func assertMemoryCacheTableIndex(t *testing.T, mc *MemoryCache, ref core.RowRef, key string, want bool) {
+	t.Helper()
+	got := memoryCacheIndexContains(mc, mc.tableIndex, ref, key)
+	if got != want {
+		t.Fatalf("tableIndex[%q][%q] = %v, want %v", ref.DependencyKey(), key, got, want)
+	}
+}
+
+func memoryCacheIndexContains(
+	mc *MemoryCache,
+	index map[string]map[string]struct{},
+	ref core.RowRef,
+	key string,
+) bool {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	keys := index[ref.DependencyKey()]
+	_, ok := keys[key]
+	return ok
 }
