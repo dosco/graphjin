@@ -28,5 +28,5 @@ FROM information_schema.key_column_usage kcu
 		AND kcu.table_schema = tc.table_schema
 		AND kcu.table_name = tc.table_name
 	)
-WHERE UPPER(kcu.table_schema) = UPPER(CURRENT_SCHEMA())
+WHERE UPPER(kcu.table_schema) = UPPER(?)
 	AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE');

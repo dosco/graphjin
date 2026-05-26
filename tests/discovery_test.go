@@ -70,7 +70,7 @@ func seededSchemaForDialect(gj *core.GraphJin) string {
 
 func rowCountsWarmAsyncForDialect() bool {
 	switch dbType {
-	case "bigquery", "snowflake", "postgres":
+	case "bigquery", "snowflake", "postgres", "mysql", "mariadb", "mssql", "oracle":
 		return true
 	default:
 		return false

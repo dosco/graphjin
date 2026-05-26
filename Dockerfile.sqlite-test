@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # Dockerfile for running SQLite tests with SpatiaLite extension
 FROM golang:1.24rc1-bookworm
 
@@ -10,10 +12,18 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy entire project (uses Go workspace)
-COPY . .
+COPY go.work go.work.sum ./
+COPY auth/go.mod auth/go.sum auth/
+COPY cmd/go.mod cmd/go.sum cmd/
+COPY codesql/go.mod codesql/go.sum codesql/
+COPY conf/go.mod conf/go.sum conf/
+COPY core/go.mod core/go.sum core/
+COPY mongodriver/go.mod mongodriver/go.sum mongodriver/
+COPY plugin/otel/go.mod plugin/otel/go.sum plugin/otel/
+COPY serv/go.mod serv/go.sum serv/
+COPY tests/go.mod tests/go.sum tests/
 
-# Remove wasm from go.work since it's excluded by .dockerignore
+# Remove wasm from go.work since it is not needed for integration tests.
 RUN sed -i '/wasm/d' go.work
 
 # Allow Go to auto-download required toolchain version
@@ -21,4 +31,11 @@ ENV GOTOOLCHAIN=auto
 ENV CGO_ENABLED=1
 
 # Download dependencies
-RUN go work sync
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go work sync
+
+# Copy the source after dependency warmup so normal code edits do not invalidate
+# the expensive module-download layer.
+COPY . .
+RUN sed -i '/wasm/d' go.work

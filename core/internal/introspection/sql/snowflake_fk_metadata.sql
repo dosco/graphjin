@@ -11,4 +11,3 @@ SELECT m.table_schema AS schema_name,
 	m.foreign_table_name AS foreignkey_table,
 	m.foreign_column_name AS foreignkey_column
 FROM _gj_fk_metadata m
-WHERE UPPER(m.table_schema) = UPPER(CURRENT_SCHEMA());

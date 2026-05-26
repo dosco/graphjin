@@ -22,4 +22,4 @@ FROM information_schema.referential_constraints rc
 		AND rc.unique_constraint_name = pk_kcu.constraint_name
 		AND fk_kcu.position_in_unique_constraint = pk_kcu.ordinal_position
 	)
-WHERE UPPER(fk_kcu.table_schema) = UPPER(CURRENT_SCHEMA());
+WHERE UPPER(fk_kcu.table_schema) = UPPER(?);

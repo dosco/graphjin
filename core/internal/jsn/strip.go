@@ -6,6 +6,10 @@ import (
 
 // Strip function strips out all values from the JSON data expect for the provided path
 func Strip(b []byte, path [][]byte) []byte {
+	if len(path) == 0 {
+		return b
+	}
+
 	s, e, d := 0, 0, 0
 
 	ob := b
@@ -77,7 +81,7 @@ func Strip(b []byte, path [][]byte) []byte {
 		case state == expectObjClose && d == 0 && b[i] == '}':
 			e = i
 
-		case state == expectValue && (b[i] >= '0' && b[i] <= '9'):
+		case state == expectValue && (b[i] == '-' || (b[i] >= '0' && b[i] <= '9')):
 			state = expectNumClose
 			s = i
 

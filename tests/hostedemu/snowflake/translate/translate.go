@@ -82,6 +82,9 @@ func TranslateDirect(sql string, args []driver.NamedValue, _ *catalog.Schema) (s
 func TranslateDiscoveryQuery(sql string, args []driver.NamedValue, schema *catalog.Schema) (string, []driver.NamedValue, error) {
 	norm := strings.TrimSpace(catalog.StripSQLComments(sql))
 	upper := strings.ToUpper(hostedNormalize(norm))
+	if discoveryMode(schema) == "show" && strings.Contains(upper, "INFORMATION_SCHEMA.COLUMNS") {
+		return "", args, fmt.Errorf("snowflake emulator: information_schema column discovery disabled in show mode")
+	}
 	if strings.Contains(upper, "INFORMATION_SCHEMA.VIEWS") && strings.Contains(upper, "KEY_COLUMN_USAGE") && discoveryMode(schema) == "show" {
 		return "SELECT 0 AS count", args, nil
 	}

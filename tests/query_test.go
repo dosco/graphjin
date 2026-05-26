@@ -1922,6 +1922,44 @@ func Example_queryBlockWithRoles() {
 	// Output: {"users":null}
 }
 
+func Example_queryBlockWithGraphQLRoles() {
+	gql := `query {
+		users {
+			id
+			full_name
+			email
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	conf.RolesQuery = `query {
+		users(id: $user_id) {
+			disabled
+		}
+	}`
+	conf.Roles = []core.Role{{Name: "disabled_user", Match: "disabled = true or disabled = 1"}}
+
+	err := conf.AddRoleTable("disabled_user", "users", core.Query{Block: true})
+	if err != nil {
+		panic(err)
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 50)
+	res, err := gj.GraphQL(ctx, gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"users":null}
+}
+
 func Example_queryWithCamelToSnakeCase() {
 	// Skip for MongoDB: hot_products view/collection not set up in MongoDB test data
 	if dbType == "mongodb" {

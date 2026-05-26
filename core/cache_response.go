@@ -1,12 +1,14 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/dosco/graphjin/core/v3/internal/jsn"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
@@ -268,9 +270,23 @@ func (rp *ResponseProcessor) ProcessForCache(data []byte) (cleaned []byte, refs 
 		}
 	}
 
-	// Re-serialize cleaned response
-	cleaned, err = json.Marshal(result)
+	cleaned, err = stripCacheTrackingFields(data)
 	return
+}
+
+func stripCacheTrackingFields(data []byte) ([]byte, error) {
+	fields := jsn.Get(data, [][]byte{[]byte("__gj_id")})
+	if len(fields) == 0 {
+		return data, nil
+	}
+
+	to := make([]jsn.Field, len(fields))
+	var buf bytes.Buffer
+	buf.Grow(len(data))
+	if err := jsn.Replace(&buf, data, fields, to); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func (rp *ResponseProcessor) processNode(

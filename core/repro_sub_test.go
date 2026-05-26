@@ -74,3 +74,55 @@ func TestReproSubHang(t *testing.T) {
 		}
 	}
 }
+
+func TestSubscriptionRoleQueryWithNilRequestConfig(t *testing.T) {
+	db, err := sql.Open("sqlite3", t.TempDir()+"/roles.sqlite3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close() //nolint:errcheck
+
+	_, err = db.Exec(`
+		CREATE TABLE users (
+			id INTEGER PRIMARY KEY,
+			email TEXT,
+			disabled INTEGER
+		);
+		INSERT INTO users (id, email, disabled) VALUES (1, 'disabled@test.com', 1);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conf := &core.Config{
+		DBType:           "sqlite",
+		DisableAllowList: true,
+		RolesQuery:       "SELECT * FROM users WHERE id = $user_id",
+		Roles: []core.Role{
+			{Name: "disabled_user", Match: "disabled = 1"},
+		},
+	}
+	if err := conf.AddRoleTable("disabled_user", "users", core.Query{}); err != nil {
+		t.Fatal(err)
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	gql := `subscription {
+		users(id: 1) {
+			id
+			email
+		}
+	}`
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 1)
+	m, err := gj.Subscribe(ctx, gql, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Unsubscribe()
+}

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"testing"
@@ -246,6 +247,42 @@ func TestResponseProcessor_NoDataField(t *testing.T) {
 	}
 }
 
+func TestStripCacheTrackingFields(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []byte
+		want []byte
+	}{
+		{
+			name: "first field",
+			in:   []byte(`{"__gj_id":1,"id":1}`),
+			want: []byte(`{"id":1}`),
+		},
+		{
+			name: "nested duplicate values",
+			in:   []byte(`{"data":{"users":{"__gj_id":1,"id":1,"posts":[{"__gj_id":1,"id":1},{"id":2,"__gj_id":2}]}}}`),
+			want: []byte(`{"data":{"users":{"id":1,"posts":[{"id":1},{"id":2}]}}}`),
+		},
+		{
+			name: "no tracking field",
+			in:   []byte(`{"data":{"users":{"id":1}}}`),
+			want: []byte(`{"data":{"users":{"id":1}}}`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := stripCacheTrackingFields(tt.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, tt.want) {
+				t.Fatalf("got %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResponseProcessor_SingleObject(t *testing.T) {
 	// Create qcode with one selection for "users" table
 	qc := &qcode.QCode{
@@ -293,6 +330,21 @@ func TestResponseProcessor_SingleObject(t *testing.T) {
 	}
 	if usersMap["id"] != float64(1) {
 		t.Errorf("id field should be preserved")
+	}
+}
+
+func BenchmarkStripCacheTrackingFields(b *testing.B) {
+	data := []byte(`{"data":{"users":{"__gj_id":1,"id":1,"name":"Ada","posts":[{"__gj_id":10,"id":10,"title":"First"},{"id":11,"title":"Second","__gj_id":11}]}}}`)
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		cleaned, err := stripCacheTrackingFields(data)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(cleaned) == 0 {
+			b.Fatal("empty cleaned response")
+		}
 	}
 }
 

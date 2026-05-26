@@ -19,18 +19,19 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 
 	h := maphash.Hash{}
 	tmap := make(map[uint64]int, len(from))
+	var collisions map[uint64][]int
 
 	for i, f := range from {
+		h.Reset()
 		if _, err := h.Write(f.Key); err != nil {
 			return err
 		}
 		if _, err := h.Write(f.Value); err != nil {
 			return err
 		}
-
-		tmap[h.Sum64()] = i
-		h.Reset()
+		addFieldHash(tmap, &collisions, h.Sum64(), i)
 	}
+	h.Reset()
 
 	// dec := json.NewDecoder(bytes.NewReader(b))
 
@@ -55,6 +56,7 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 
 	s, e, d := 0, 0, 0
 
+	var k []byte
 	state := expectKey
 	ws, we := -1, len(b)
 
@@ -94,6 +96,8 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 
 		case state == expectKeyClose && (b[i] == '"' && (slash%2 == 0)):
 			state = expectColon
+			k = b[(s + 1):i]
+			h.Reset()
 			if _, err := h.Write(b[(s + 1):i]); err != nil {
 				return err
 			}
@@ -125,7 +129,7 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 		case state == expectObjClose && d == 0 && b[i] == '}':
 			e = i
 
-		case state == expectValue && (b[i] >= '0' && b[i] <= '9'):
+		case state == expectValue && (b[i] == '-' || (b[i] >= '0' && b[i] <= '9')):
 			state = expectNumClose
 			s = i
 
@@ -165,17 +169,20 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 				return errors.New("invalid json")
 			}
 
-			n, ok := tmap[h.Sum64()]
+			sum := h.Sum64()
+			n, ok := tmap[sum]
+			if ok {
+				n, ok = lookupFieldHash(from, collisions, sum, n, k, b[s:e])
+			}
 			h.Reset()
 
 			if ok {
-				if _, err := w.Write(b[ws:(we + 1)]); err != nil {
-					return err
-				}
-
 				if len(to[n].Key) != 0 {
 					var err error
 
+					if _, err := w.Write(b[ws:(we + 1)]); err != nil {
+						return err
+					}
 					if _, err := w.Write(to[n].Key); err != nil {
 						return err
 					}
@@ -192,10 +199,22 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 					}
 
 					ws = e
-				} else if b[e] == ',' {
-					ws = e + 1
 				} else {
-					ws = e
+					next := e
+					for next < len(b) && (b[next] == ' ' || b[next] == '\t' || b[next] == '\n' || b[next] == '\r') {
+						next++
+					}
+					if next < len(b) && b[next] == ',' {
+						if _, err := w.Write(b[ws:we]); err != nil {
+							return err
+						}
+						ws = next + 1
+					} else {
+						if _, err := w.Write(b[ws:removePrefixEnd(b, we)]); err != nil {
+							return err
+						}
+						ws = e
+					}
 				}
 			}
 
@@ -214,10 +233,28 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 	}
 
 	if ws == -1 || (ws == 0 && we == len(b)) {
-		w.Write(b)
+		_, err := w.Write(b)
+		return err
 	} else if ws < we {
-		w.Write(b[ws:we])
+		_, err := w.Write(b[ws:we])
+		return err
 	}
 
 	return nil
+}
+
+func removePrefixEnd(b []byte, keyStart int) int {
+	end := keyStart
+	for end > 0 {
+		switch b[end-1] {
+		case ' ', '\t', '\n', '\r':
+			end--
+		default:
+			if b[end-1] == ',' {
+				return end - 1
+			}
+			return keyStart
+		}
+	}
+	return keyStart
 }

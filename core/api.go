@@ -77,6 +77,9 @@ type graphjinEngine struct {
 	roles                 map[string]*Role
 	roleStatement         string
 	roleStatementMetadata psql.Metadata
+	roleQueryMode         roleQueryMode
+	roleGraphQLStmt       stmt
+	roleGraphQLMatches    []compiledRoleMatch
 	tmap                  map[string]qcode.TConfig
 	rtmap                 map[string]ResolverFn
 	rmap                  map[string]resItem
@@ -1027,33 +1030,11 @@ func stripGjIdFields(data []byte) []byte {
 		return data
 	}
 
-	var obj interface{}
-	if err := json.Unmarshal(data, &obj); err != nil {
-		return data // Return original on parse error
-	}
-
-	removeGjIdKey(obj)
-
-	result, err := json.Marshal(obj)
+	result, err := stripCacheTrackingFields(data)
 	if err != nil {
-		return data // Return original on marshal error
+		return data // Return original on strip error
 	}
 	return result
-}
-
-// removeGjIdKey recursively removes "__gj_id" from all objects in the JSON structure.
-func removeGjIdKey(v interface{}) {
-	switch val := v.(type) {
-	case map[string]interface{}:
-		delete(val, "__gj_id")
-		for _, child := range val {
-			removeGjIdKey(child)
-		}
-	case []interface{}:
-		for _, item := range val {
-			removeGjIdKey(item)
-		}
-	}
 }
 
 // TableInfo represents basic table information for MCP/API consumers

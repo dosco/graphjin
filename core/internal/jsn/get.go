@@ -25,13 +25,16 @@ type Field struct {
 
 // Value function is a utility function to sanitize returned values
 func Value(b []byte) []byte {
+	if len(b) == 0 {
+		return nil
+	}
 	e := (len(b) - 1)
 	switch {
-	case b[0] == '"' && b[e] == '"':
+	case len(b) > 1 && b[0] == '"' && b[e] == '"':
 		return b[1:(len(b) - 1)]
-	case b[0] == '[' && b[e] == ']':
+	case len(b) > 1 && b[0] == '[' && b[e] == ']':
 		return nil
-	case b[0] == '{' && b[e] == '}':
+	case len(b) > 1 && b[0] == '{' && b[e] == '}':
 		return nil
 	default:
 		return b
@@ -40,13 +43,12 @@ func Value(b []byte) []byte {
 
 // Keys function fetches values for the provided keys
 func Get(b []byte, keys [][]byte) []Field {
-	kmap := make(map[uint64]struct{}, len(keys))
+	kmap := make(map[uint64]int, len(keys))
+	var collisions map[uint64][]int
 	h := maphash.Hash{}
 
 	for i := range keys {
-		_, _ = h.Write(keys[i])
-		kmap[h.Sum64()] = struct{}{}
-		h.Reset()
+		addKeyHash(kmap, &collisions, hashBytes(&h, keys[i]), i)
 	}
 
 	res := make([]Field, 0, 20)
@@ -118,7 +120,7 @@ func Get(b []byte, keys [][]byte) []Field {
 			e = i
 			i = s
 
-		case state == expectValue && (b[i] >= '0' && b[i] <= '9'):
+		case state == expectValue && (b[i] == '-' || (b[i] >= '0' && b[i] <= '9')):
 			state = expectNumClose
 			s = i
 
@@ -144,11 +146,9 @@ func Get(b []byte, keys [][]byte) []Field {
 		}
 
 		if e != 0 {
-			_, _ = h.Write(k)
-			_, ok := kmap[h.Sum64()]
-			h.Reset()
-
-			if ok {
+			sum := hashBytes(&h, k)
+			ki, ok := kmap[sum]
+			if ok && lookupBytesKeyHash(keys, collisions, sum, ki, k) {
 				res = append(res, Field{k, b[s:(e + 1)]})
 				n++
 			}

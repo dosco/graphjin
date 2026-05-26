@@ -64,17 +64,12 @@ func (gj *graphjinEngine) executeRoleQuery(c context.Context,
 	}
 
 	pdb := gj.primaryDB()
-	ar, err := gj.argList(c,
-		gj.roleStatementMetadata,
-		vmap,
-		rc,
-		false,
-		pdb.psqlCompiler)
-	if err != nil {
+	if pdb == nil || pdb.db == nil || pdb.psqlCompiler == nil {
+		err = errors.New("roles_query: primary database not initialized")
 		return
 	}
 
-	needsConn := ((rc != nil && rc.Tx == nil) && conn == nil)
+	needsConn := conn == nil && (rc == nil || rc.Tx == nil)
 	if needsConn {
 		c1, span := gj.spanStart(c, "Get Connection")
 		defer span.End()
@@ -89,9 +84,34 @@ func (gj *graphjinEngine) executeRoleQuery(c context.Context,
 		}
 		defer conn.Close() //nolint:errcheck
 	}
+	if conn == nil && (rc == nil || rc.Tx == nil) {
+		err = errors.New("roles_query: database connection not initialized")
+		return
+	}
 
 	c1, span := gj.spanStart(c, "Execute Role Query")
 	defer span.End()
+
+	if gj.roleQueryMode == roleQueryGraphQL {
+		role, err = gj.executeGraphQLRoleQuery(c1, conn, vmap, rc)
+		if err != nil {
+			span.Error(err)
+			return
+		}
+		span.SetAttributesString(StringAttr{"role", role})
+		return
+	}
+
+	ar, err := gj.argList(c,
+		gj.roleStatementMetadata,
+		vmap,
+		rc,
+		false,
+		pdb.psqlCompiler)
+	if err != nil {
+		span.Error(err)
+		return
+	}
 
 	roleQuery, roleArgs, err := prepareQueryArgsForDB(pdb.dbtype, gj.roleStatement, ar.values)
 	if err != nil {

@@ -293,6 +293,18 @@ func TestGet4(t *testing.T) {
 }
 
 func TestValue(t *testing.T) {
+	if jsn.Value(nil) != nil {
+		t.Fatal("Nil value is not nil")
+	}
+
+	if jsn.Value([]byte{}) != nil {
+		t.Fatal("Empty value is not nil")
+	}
+
+	if !bytes.Equal(jsn.Value([]byte(`"`)), []byte(`"`)) {
+		t.Fatal("Single quote value invalid")
+	}
+
 	v1 := []byte("12345")
 	if !bytes.Equal(jsn.Value(v1), v1) {
 		t.Fatal("Number value invalid")
@@ -311,6 +323,78 @@ func TestValue(t *testing.T) {
 	v4 := []byte(`[ "hello", "world" ]`)
 	if jsn.Value(v4) != nil {
 		t.Fatal("List value is not nil")
+	}
+}
+
+func TestScannersHandleNegativeNumbers(t *testing.T) {
+	value := []byte(`{"data":{"skip":-9,"items":[{"id":-1,"score":-12.5,"exp":-1.2e-3},{"id":2,"score":3}]},"id":-3}`)
+
+	fields := jsn.Get(value, [][]byte{
+		[]byte("id"),
+		[]byte("score"),
+		[]byte("exp"),
+	})
+	expectedFields := []string{
+		"id=-1",
+		"score=-12.5",
+		"exp=-1.2e-3",
+		"id=2",
+		"score=3",
+		"id=-3",
+	}
+	if len(fields) != len(expectedFields) {
+		t.Fatalf("expected %d fields, got %d: %#v", len(expectedFields), len(fields), fields)
+	}
+	for i := range fields {
+		got := string(fields[i].Key) + "=" + string(fields[i].Value)
+		if got != expectedFields[i] {
+			t.Fatalf("expected field %q, got %q", expectedFields[i], got)
+		}
+	}
+
+	var buf bytes.Buffer
+	err := jsn.Filter(&buf, []byte(`[{"id":-1,"score":-12.5,"name":"a"},{"id":-2,"score":3}]`), []string{"id", "score"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); got != `[{"id":-1,"score":-12.5},{"id":-2,"score":3}]` {
+		t.Fatalf("unexpected filter output: %s", got)
+	}
+
+	buf.Reset()
+	err = jsn.Replace(
+		&buf,
+		[]byte(`{"id":-1,"score":-12.5,"keep":true}`),
+		[]jsn.Field{
+			{Key: []byte("id"), Value: []byte(`-1`)},
+			{Key: []byte("score"), Value: []byte(`-12.5`)},
+		},
+		[]jsn.Field{
+			{Key: []byte("id"), Value: []byte(`1`)},
+			{Key: []byte("score"), Value: []byte(`0`)},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); got != `{"id":1,"score":0,"keep":true}` {
+		t.Fatalf("unexpected replace output: %s", got)
+	}
+
+	stripped := jsn.Strip([]byte(`{"data":{"skip":-9,"items":[{"id":-1}]}}`), [][]byte{[]byte("data"), []byte("items")})
+	if !bytes.Equal(stripped, []byte(`[{"id":-1}]`)) {
+		t.Fatalf("unexpected strip output: %s", stripped)
+	}
+
+	keys := jsn.Keys([]byte(`{"id":-1,"nested":{"score":-1.5}}`))
+	expectedKeys := []string{"id", "nested", "score"}
+	if len(keys) != len(expectedKeys) {
+		t.Fatalf("expected %d keys, got %d", len(expectedKeys), len(keys))
+	}
+	for i := range keys {
+		if string(keys[i]) != expectedKeys[i] {
+			t.Fatalf("expected key %q, got %q", expectedKeys[i], keys[i])
+		}
 	}
 }
 
@@ -346,6 +430,35 @@ func TestFilterEscapedQuotesAcrossRecords(t *testing.T) {
 	}
 }
 
+func TestEscapedBackslashesAcrossScanners(t *testing.T) {
+	value := []byte(`[{"id":1,"meta":"{\"path\":\"c:\\\\tmp\",\"quote\":\"\\\"\"}","child":{"id":2}},{"id":3,"meta":"slash\\\\quote\\\"end"}]`)
+
+	fields := jsn.Get(value, [][]byte{[]byte("id")})
+	expected := []string{"1", "2", "3"}
+	if len(fields) != len(expected) {
+		t.Fatalf("expected %d id fields, got %d", len(expected), len(fields))
+	}
+	for i := range fields {
+		if string(fields[i].Value) != expected[i] {
+			t.Fatalf("expected id value %q, got %q", expected[i], fields[i].Value)
+		}
+	}
+
+	var buf bytes.Buffer
+	err := jsn.Replace(
+		&buf,
+		value,
+		[]jsn.Field{{Key: []byte("id"), Value: []byte("2")}},
+		[]jsn.Field{{Key: []byte("id"), Value: []byte("20")}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `"child":{"id":20}`) {
+		t.Fatalf("nested replacement failed: %s", buf.String())
+	}
+}
+
 func TestFilter2(t *testing.T) {
 	value := `[{"id":1,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":100,"amount_refunded":0,"date":"01/01/2019","application":null,"billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}},   {"id":2,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":150,"amount_refunded":0,"date":"02/18/2019","billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}},{"id":3,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":150,"amount_refunded":50,"date":"03/21/2019","billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}}]`
 
@@ -364,6 +477,10 @@ func TestFilter2(t *testing.T) {
 }
 
 func TestStrip(t *testing.T) {
+	if stripped := jsn.Strip([]byte(input3), nil); !bytes.Equal(stripped, []byte(input3)) {
+		t.Error("[Empty path] Does not match expected json")
+	}
+
 	path1 := [][]byte{[]byte("data"), []byte("users")}
 	value1 := jsn.Strip([]byte(input3), path1)
 
@@ -400,6 +517,61 @@ func TestValidateFalse(t *testing.T) {
 	if err == nil {
 		t.Error("JSON validation failed to detect invalid json")
 	}
+}
+
+func TestValidateRejectsInvalidUTF8(t *testing.T) {
+	if err := jsn.ValidateBytes([]byte{'"', 0xff, '"'}); err == nil {
+		t.Fatal("expected invalid UTF-8 in string to fail validation")
+	}
+
+	if err := jsn.ValidateBytes([]byte{'{', '"', 0xff, '"', ':', '1', '}'}); err == nil {
+		t.Fatal("expected invalid UTF-8 in object key to fail validation")
+	}
+}
+
+func TestValidateRejectsExcessiveDepth(t *testing.T) {
+	depth := 10001
+	value := strings.Repeat("[", depth) + strings.Repeat("]", depth)
+
+	if err := jsn.Validate(value); err == nil {
+		t.Fatal("expected excessive nesting depth to fail validation")
+	}
+}
+
+func TestScannerHelpersDoNotPanicOnMalformedInputs(t *testing.T) {
+	from := []jsn.Field{
+		{Key: []byte("__twitter_id"), Value: []byte(`[{ "name": "hello" }, { "name": "world"}]`)},
+		{Key: []byte("__twitter_id"), Value: []byte(`"ABC123"`)},
+	}
+	to := []jsn.Field{
+		{Key: []byte("__twitter_id"), Value: []byte(`"1234567890"`)},
+		{Key: []byte("some_list"), Value: []byte(`[{"id":1}]`)},
+	}
+
+	for _, input := range crasherJSONInputs {
+		data := []byte(input)
+		assertNoPanic(t, input, func() {
+			_ = jsn.Get(data, [][]byte{[]byte("id"), []byte("__twitter_id")})
+			_ = jsn.Strip(data, [][]byte{[]byte("data"), []byte("users")})
+			_ = jsn.Keys(data)
+			_ = jsn.Value(data)
+
+			var buf bytes.Buffer
+			_ = jsn.Filter(&buf, data, []string{"id", "full_name", "embed"})
+			buf.Reset()
+			_ = jsn.Replace(&buf, data, from, to)
+		})
+	}
+}
+
+func assertNoPanic(t *testing.T, input string, fn func()) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panic for input %q: %v", input, r)
+		}
+	}()
+	fn()
 }
 
 func TestReplace(t *testing.T) {
@@ -471,6 +643,58 @@ func TestReplace1(t *testing.T) {
 	if output != expected {
 		t.Log(output)
 		t.Error("Does not match expected json")
+	}
+}
+
+func TestReplaceRemovesFields(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "first field",
+			in:   `{"__gj_id":1,"id":1}`,
+			want: `{"id":1}`,
+		},
+		{
+			name: "middle field",
+			in:   `{"id":1,"__gj_id":2,"name":"Ada"}`,
+			want: `{"id":1,"name":"Ada"}`,
+		},
+		{
+			name: "last field",
+			in:   `{"id":1,"__gj_id":2}`,
+			want: `{"id":1}`,
+		},
+		{
+			name: "only field",
+			in:   `{"__gj_id":1}`,
+			want: `{}`,
+		},
+		{
+			name: "spaced last field",
+			in:   `{"id":1, "__gj_id":2 }`,
+			want: `{"id":1 }`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := jsn.Replace(
+				&buf,
+				[]byte(tt.in),
+				[]jsn.Field{{Key: []byte("__gj_id"), Value: []byte("1")}, {Key: []byte("__gj_id"), Value: []byte("2")}},
+				[]jsn.Field{{}, {}},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := buf.String(); got != tt.want {
+				t.Fatalf("got %s, want %s", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -673,22 +897,4 @@ func BenchmarkReplace(b *testing.B) {
 		}
 		buf.Reset()
 	}
-}
-
-func BenchmarkTest(b *testing.B) {
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	var test string
-	hello := "hello"
-
-	for n := 0; n < b.N; n++ {
-		var buf bytes.Buffer
-		buf.WriteString(hello)
-		buf.WriteString("world")
-		test = buf.String()
-		buf.Reset()
-	}
-
-	fmt.Println(test)
 }

@@ -692,6 +692,65 @@ func TestPostgresDiscoverColumnsMergesBatchedConstraintRows(t *testing.T) {
 	}
 }
 
+func TestDiscoverColumnsScaleUsesBatchedMetadata(t *testing.T) {
+	const tableCount = 5000
+	tests := []struct {
+		dbtype     string
+		schema     string
+		maxQueries int
+	}{
+		{dbtype: "postgres", schema: "public", maxQueries: 3},
+		{dbtype: "mysql", schema: "app", maxQueries: 3},
+		{dbtype: "mariadb", schema: "app", maxQueries: 3},
+		{dbtype: "mssql", schema: "dbo", maxQueries: 2},
+		{dbtype: "oracle", schema: "APP", maxQueries: 2},
+		{dbtype: "sqlite", schema: "main", maxQueries: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.dbtype, func(t *testing.T) {
+			state := &scaleDiscoveryFakeState{
+				dbtype: tt.dbtype,
+				rows:   scaleColumnRows(tt.schema, tableCount),
+			}
+			db := openScaleDiscoveryFakeDB(t, state)
+			defer db.Close()
+
+			var (
+				eventMu sync.Mutex
+				events  []discoveryQueryEvent
+			)
+			ctx := withDiscoveryQueryRecorder(context.Background(), func(ev discoveryQueryEvent) {
+				eventMu.Lock()
+				defer eventMu.Unlock()
+				events = append(events, ev)
+			})
+
+			cols, err := DiscoverColumns(ctx, db, tt.dbtype, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(cols) != tableCount {
+				t.Fatalf("len(cols) = %d, want %d", len(cols), tableCount)
+			}
+			eventMu.Lock()
+			gotEvents := append([]discoveryQueryEvent(nil), events...)
+			eventMu.Unlock()
+			if len(gotEvents) > tt.maxQueries {
+				t.Fatalf("discovery query count = %d, want <= %d", len(gotEvents), tt.maxQueries)
+			}
+			for _, ev := range gotEvents {
+				if ev.TableSpecific {
+					t.Fatalf("table-specific discovery query detected for %s: %s", tt.dbtype, ev.SQL)
+				}
+			}
+			if state.tableSpecificQueries() != 0 {
+				t.Fatalf("fake driver saw %d table-specific metadata queries, want 0", state.tableSpecificQueries())
+			}
+		})
+	}
+}
+
 var postgresDiscoveryFakeSeq atomic.Uint64
 
 func openPostgresDiscoveryFakeDB(t *testing.T, state *postgresDiscoveryFakeState) *sql.DB {
@@ -819,4 +878,120 @@ func (r *postgresDiscoveryFakeRows) Next(dest []driver.Value) error {
 	copy(dest, r.rows[r.pos])
 	r.pos++
 	return nil
+}
+
+var scaleDiscoveryFakeSeq atomic.Uint64
+
+func openScaleDiscoveryFakeDB(t *testing.T, state *scaleDiscoveryFakeState) *sql.DB {
+	t.Helper()
+
+	name := fmt.Sprintf("scale_discovery_fake_%d", scaleDiscoveryFakeSeq.Add(1))
+	sql.Register(name, scaleDiscoveryFakeDriver{state: state})
+	db, err := sql.Open(name, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(4)
+	return db
+}
+
+type scaleDiscoveryFakeState struct {
+	mu            sync.Mutex
+	dbtype        string
+	rows          [][]driver.Value
+	tableSpecific int
+}
+
+func (s *scaleDiscoveryFakeState) tableSpecificQueries() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tableSpecific
+}
+
+func (s *scaleDiscoveryFakeState) recordQuery(query string) {
+	if !strings.Contains(strings.ToLower(query), "scale_table_") {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tableSpecific++
+}
+
+type scaleDiscoveryFakeDriver struct {
+	state *scaleDiscoveryFakeState
+}
+
+func (d scaleDiscoveryFakeDriver) Open(_ string) (driver.Conn, error) {
+	return scaleDiscoveryFakeConn{state: d.state}, nil
+}
+
+type scaleDiscoveryFakeConn struct {
+	state *scaleDiscoveryFakeState
+}
+
+func (c scaleDiscoveryFakeConn) Prepare(string) (driver.Stmt, error) {
+	return nil, fmt.Errorf("Prepare is not implemented")
+}
+
+func (c scaleDiscoveryFakeConn) Close() error {
+	return nil
+}
+
+func (c scaleDiscoveryFakeConn) Begin() (driver.Tx, error) {
+	return nil, fmt.Errorf("Begin is not implemented")
+}
+
+func (c scaleDiscoveryFakeConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	c.state.recordQuery(query)
+	switch {
+	case query == postgresColumnsBasicStmt ||
+		query == mysqlColumnsBasicStmt ||
+		query == mariadbColumnsBasicStmt ||
+		query == mssqlColumnsStmt ||
+		query == oracleColumnsStmt ||
+		query == sqliteColumnsStmt:
+		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.rows), nil
+	case query == postgresConstraintsCountStmt ||
+		query == mysqlConstraintsCountStmt ||
+		query == mariadbConstraintsCountStmt:
+		return newPostgresDiscoveryFakeRows([]string{"count"}, [][]driver.Value{{int64(0)}}), nil
+	case query == postgresConstraintColumnsStmt ||
+		query == mysqlConstraintColumnsStmt ||
+		query == mariadbConstraintColumnsStmt:
+		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), nil), nil
+	case isScaleViewPreflightQuery(query):
+		return newPostgresDiscoveryFakeRows([]string{"exists"}, nil), nil
+	default:
+		return nil, fmt.Errorf("unexpected %s scale query: %.160s", c.state.dbtype, query)
+	}
+}
+
+func isScaleViewPreflightQuery(query string) bool {
+	upper := strings.ToUpper(query)
+	return strings.Contains(upper, "PG_CLASS C") ||
+		strings.Contains(upper, "INFORMATION_SCHEMA.VIEWS") ||
+		strings.Contains(upper, "SYS.VIEWS") ||
+		strings.Contains(upper, "ALL_VIEWS") ||
+		strings.Contains(upper, "SQLITE_MASTER")
+}
+
+func scaleColumnRows(schema string, n int) [][]driver.Value {
+	rows := make([][]driver.Value, 0, n)
+	for i := 0; i < n; i++ {
+		rows = append(rows, []driver.Value{
+			schema,
+			fmt.Sprintf("scale_table_%04d", i),
+			"id",
+			"integer",
+			true,
+			false,
+			false,
+			false,
+			false,
+			"",
+			"",
+			"",
+		})
+	}
+	return rows
 }
