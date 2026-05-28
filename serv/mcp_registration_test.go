@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -261,16 +262,77 @@ func TestRegisterTools_SourcesUsedIgnoresLegacyDiscoveryFlag(t *testing.T) {
 	ms.registerTools()
 
 	tools := ms.srv.ListTools()
-	if listed := mcpToolList(ms.service.conf); strings.Join(listed, ",") != "graphql_help,query_catalog,execute_saved_query,validate_where_clause" {
+	if listed := mcpToolList(ms.service.conf); strings.Join(listed, ",") != "graphql_help,query_catalog,execute_saved_query,validate_where_clause,execute_graphql" {
 		t.Fatalf("unexpected sources-used mcpToolList with legacy discovery: %v", listed)
 	}
-	if len(tools) != 4 {
-		t.Fatalf("sources-used tools should ignore legacy discovery and raw-query gates, got %v", toolNamesFromServer(tools))
+	if len(tools) != 5 {
+		t.Fatalf("sources-used tools should keep legacy discovery/workflow tools hidden, got %v", toolNamesFromServer(tools))
 	}
-	for _, name := range []string{"get_query_syntax", "list_tables", "execute_workflow", "execute_graphql"} {
+	if _, exists := tools["execute_graphql"]; !exists {
+		t.Fatal("execute_graphql should be registered in sources-used mode when raw queries are enabled")
+	}
+	for _, name := range []string{"get_query_syntax", "list_tables", "execute_workflow"} {
 		if _, exists := tools[name]; exists {
 			t.Fatalf("%s should remain hidden in sources-used mode", name)
 		}
+	}
+}
+
+func TestRegisterTools_SourcesUsedRawGraphQLCapabilityControlsTool(t *testing.T) {
+	testCases := []struct {
+		name         string
+		mcp          MCPConfig
+		capability   bool
+		wantFlag     bool
+		wantTool     bool
+		wantToolList string
+	}{
+		{
+			name:         "capability enables raw execution",
+			mcp:          MCPConfig{},
+			capability:   true,
+			wantFlag:     true,
+			wantTool:     true,
+			wantToolList: "graphql_help,query_catalog,execute_saved_query,validate_where_clause,execute_graphql",
+		},
+		{
+			name:         "capability suppresses mcp flag",
+			mcp:          MCPConfig{AllowRawQueries: true},
+			capability:   false,
+			wantFlag:     false,
+			wantTool:     false,
+			wantToolList: "graphql_help,query_catalog,execute_saved_query,validate_where_clause",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ms := mockMcpServerWithConfig(tc.mcp)
+			for i := range ms.service.conf.Core.Sources {
+				source := &ms.service.conf.Core.Sources[i]
+				if source.CanonicalKind() == sourcecap.KindGraphJin {
+					source.Capabilities = map[string]bool{
+						sourcecap.KeyRawGraphQLQuery: tc.capability,
+					}
+				}
+			}
+			applySourceCapabilityMCPDefaults(ms.service.conf)
+			if ms.service.conf.MCP.AllowRawQueries != tc.wantFlag {
+				t.Fatalf("AllowRawQueries = %v, want %v", ms.service.conf.MCP.AllowRawQueries, tc.wantFlag)
+			}
+
+			ms.srv = server.NewMCPServer("test", "0.0.0")
+			ms.registerTools()
+
+			tools := ms.srv.ListTools()
+			if listed := strings.Join(mcpToolList(ms.service.conf), ","); listed != tc.wantToolList {
+				t.Fatalf("unexpected sources-used mcpToolList: %s", listed)
+			}
+			_, exists := tools["execute_graphql"]
+			if exists != tc.wantTool {
+				t.Fatalf("execute_graphql registered = %v, want %v; tools=%v", exists, tc.wantTool, toolNamesFromServer(tools))
+			}
+		})
 	}
 }
 

@@ -230,7 +230,7 @@ func TestCatalogCacheReusesRevisionAndUpdatesAfterSaveWorkflow(t *testing.T) {
 	}
 }
 
-func TestCatalogCacheRevisionStableWhenRemovedSourceToolFlagChanges(t *testing.T) {
+func TestCatalogCacheRevisionStableWhenRemovedSourceWorkflowFlagChanges(t *testing.T) {
 	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
 	s := ms.service
 
@@ -239,13 +239,13 @@ func TestCatalogCacheRevisionStableWhenRemovedSourceToolFlagChanges(t *testing.T
 		t.Fatalf("first catalog snapshot: %v", err)
 	}
 
-	s.conf.MCP.AllowRawQueries = true
+	s.conf.MCP.AllowWorkflowExecution = true
 	updated, err := s.catalogSnapshot()
 	if err != nil {
 		t.Fatalf("updated catalog snapshot: %v", err)
 	}
 	if updated.Revision != first.Revision {
-		t.Fatalf("expected removed sources-used tool flag to leave catalog revision unchanged")
+		t.Fatalf("expected removed sources-used workflow flag to leave catalog revision unchanged")
 	}
 	if updated.SourceRevisions["tools"] != first.SourceRevisions["tools"] {
 		t.Fatalf("expected tools source revision to remain unchanged")

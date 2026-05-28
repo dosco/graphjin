@@ -39,8 +39,8 @@ func TestHandleGetJSRuntimeAPI_IncludesMappedTools(t *testing.T) {
 	if !hasJSFunction(api.Functions, "gj.tools.queryCatalog") {
 		t.Fatal("expected gj.tools.queryCatalog to be exposed")
 	}
-	if hasJSFunction(api.Functions, "gj.tools.executeGraphql") {
-		t.Fatal("did not expect gj.tools.executeGraphql in sources-used default runtime surface")
+	if !hasJSFunction(api.Functions, "gj.tools.executeGraphql") {
+		t.Fatal("expected gj.tools.executeGraphql when raw queries are enabled")
 	}
 	if hasJSFunction(api.Functions, "gj.tools.getCurrentConfig") {
 		t.Fatal("did not expect get_current_config to be exposed inside workflow runtime")
