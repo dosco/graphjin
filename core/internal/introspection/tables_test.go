@@ -692,6 +692,148 @@ func TestPostgresDiscoverColumnsMergesBatchedConstraintRows(t *testing.T) {
 	}
 }
 
+func TestSnowflakeDiscoverColumnsFallsBackWhenSchemaEnumerationIsEmpty(t *testing.T) {
+	state := &snowflakeDiscoveryFakeState{
+		basicRows: [][]driver.Value{
+			snowflakeColumnRow("ANALYTICS", "EVENTS", "ID"),
+		},
+	}
+	db := openSnowflakeDiscoveryFakeDB(t, state)
+	defer db.Close()
+
+	cols, err := DiscoverColumns(context.Background(), db, "snowflake", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cols) != 1 {
+		t.Fatalf("len(cols) = %d, want 1", len(cols))
+	}
+	if got := cols[0].Schema + ":" + cols[0].Table + ":" + cols[0].Name; got != "analytics:events:id" {
+		t.Fatalf("column = %q, want analytics:events:id", got)
+	}
+	if state.count("schemas") != 1 {
+		t.Fatalf("schema enumeration queries = %d, want 1", state.count("schemas"))
+	}
+	if state.count("basic") != 1 {
+		t.Fatalf("basic fallback queries = %d, want 1", state.count("basic"))
+	}
+}
+
+func TestSnowflakeDiscoverColumnsFallsBackWhenSchemaColumnDiscoveryIsEmpty(t *testing.T) {
+	state := &snowflakeDiscoveryFakeState{
+		schemas:         []string{"PUBLIC"},
+		columnsBySchema: map[string][][]driver.Value{},
+		basicRows: [][]driver.Value{
+			snowflakeColumnRow("PUBLIC", "USERS", "ID"),
+		},
+	}
+	db := openSnowflakeDiscoveryFakeDB(t, state)
+	defer db.Close()
+
+	cols, err := DiscoverColumns(context.Background(), db, "snowflake", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cols) != 1 {
+		t.Fatalf("len(cols) = %d, want 1", len(cols))
+	}
+	if got := cols[0].Schema + ":" + cols[0].Table + ":" + cols[0].Name; got != "public:users:id" {
+		t.Fatalf("column = %q, want public:users:id", got)
+	}
+	if state.count("columns") != 1 {
+		t.Fatalf("schema column queries = %d, want 1", state.count("columns"))
+	}
+	if state.count("basic") != 1 {
+		t.Fatalf("basic fallback queries = %d, want 1", state.count("basic"))
+	}
+}
+
+func TestSnowflakeDiscoverColumnsFallsBackWhenForcedShowDiscoveryIsEmpty(t *testing.T) {
+	t.Setenv("GRAPHJIN_SNOWFLAKE_DISCOVERY", "show")
+	state := &snowflakeDiscoveryFakeState{
+		schemas:         []string{"PUBLIC"},
+		columnsBySchema: map[string][][]driver.Value{},
+		basicRows: [][]driver.Value{
+			snowflakeColumnRow("PUBLIC", "ACCOUNTS", "ID"),
+		},
+	}
+	db := openSnowflakeDiscoveryFakeDB(t, state)
+	defer db.Close()
+
+	cols, err := DiscoverColumns(context.Background(), db, "snowflake", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cols) != 1 {
+		t.Fatalf("len(cols) = %d, want 1", len(cols))
+	}
+	if got := cols[0].Schema + ":" + cols[0].Table + ":" + cols[0].Name; got != "public:accounts:id" {
+		t.Fatalf("column = %q, want public:accounts:id", got)
+	}
+	if state.count("show_exec") == 0 {
+		t.Fatal("expected forced SHOW discovery to execute SHOW statements")
+	}
+	if state.count("show_scan") == 0 {
+		t.Fatal("expected forced SHOW discovery to scan SHOW results")
+	}
+	if state.count("basic") != 1 {
+		t.Fatalf("basic fallback queries = %d, want 1", state.count("basic"))
+	}
+}
+
+func TestSnowflakeDiscoverColumnsRunsMultiSchemaCatalogWithBoundedParallelism(t *testing.T) {
+	const (
+		schemaCount     = 40
+		tablesPerSchema = 125
+		totalTables     = schemaCount * tablesPerSchema
+	)
+	state := &snowflakeDiscoveryFakeState{
+		delay:           time.Millisecond,
+		columnsBySchema: map[string][][]driver.Value{},
+	}
+	for i := 0; i < schemaCount; i++ {
+		schema := fmt.Sprintf("SCHEMA_%02d", i)
+		state.schemas = append(state.schemas, schema)
+		rows := make([][]driver.Value, 0, tablesPerSchema)
+		for j := 0; j < tablesPerSchema; j++ {
+			rows = append(rows, snowflakeColumnRow(schema, fmt.Sprintf("TABLE_%02d_%03d", i, j), "ID"))
+		}
+		state.columnsBySchema[schema] = rows
+	}
+	db := openSnowflakeDiscoveryFakeDB(t, state)
+	defer db.Close()
+
+	cols, err := DiscoverColumns(context.Background(), db, "snowflake", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cols) != totalTables {
+		t.Fatalf("len(cols) = %d, want %d", len(cols), totalTables)
+	}
+	seenIDs := map[int32]bool{}
+	seenSchemas := map[string]bool{}
+	for _, col := range cols {
+		if seenIDs[col.ID] {
+			t.Fatalf("duplicate column ID %d in %+v", col.ID, cols)
+		}
+		seenIDs[col.ID] = true
+		seenSchemas[col.Schema] = true
+	}
+	if len(seenSchemas) != schemaCount {
+		t.Fatalf("schemas discovered = %d, want %d", len(seenSchemas), schemaCount)
+	}
+	if state.count("columns") != schemaCount {
+		t.Fatalf("schema column queries = %d, want %d", state.count("columns"), schemaCount)
+	}
+	maxActive := state.maxActiveColumns()
+	if maxActive <= 1 {
+		t.Fatalf("max concurrent schema column queries = %d, want > 1", maxActive)
+	}
+	if maxActive > 4 {
+		t.Fatalf("max concurrent schema column queries = %d, want <= 4", maxActive)
+	}
+}
+
 func TestDiscoverColumnsScaleUsesBatchedMetadata(t *testing.T) {
 	const tableCount = 5000
 	tests := []struct {
@@ -994,4 +1136,171 @@ func scaleColumnRows(schema string, n int) [][]driver.Value {
 		})
 	}
 	return rows
+}
+
+var snowflakeDiscoveryFakeSeq atomic.Uint64
+
+func openSnowflakeDiscoveryFakeDB(t *testing.T, state *snowflakeDiscoveryFakeState) *sql.DB {
+	t.Helper()
+
+	name := fmt.Sprintf("snowflake_discovery_fake_%d", snowflakeDiscoveryFakeSeq.Add(1))
+	sql.Register(name, snowflakeDiscoveryFakeDriver{state: state})
+	db, err := sql.Open(name, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(8)
+	return db
+}
+
+type snowflakeDiscoveryFakeState struct {
+	mu                  sync.Mutex
+	schemas             []string
+	columnsBySchema     map[string][][]driver.Value
+	basicRows           [][]driver.Value
+	showRows            [][]driver.Value
+	counts              map[string]int
+	lastQueryID         int
+	delay               time.Duration
+	activeColumnQueries int
+	maxColumnQueries    int
+}
+
+func (s *snowflakeDiscoveryFakeState) count(kind string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.counts[kind]
+}
+
+func (s *snowflakeDiscoveryFakeState) record(kind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.counts == nil {
+		s.counts = map[string]int{}
+	}
+	s.counts[kind]++
+}
+
+func (s *snowflakeDiscoveryFakeState) beginColumnQuery() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeColumnQueries++
+	if s.activeColumnQueries > s.maxColumnQueries {
+		s.maxColumnQueries = s.activeColumnQueries
+	}
+}
+
+func (s *snowflakeDiscoveryFakeState) endColumnQuery() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeColumnQueries--
+}
+
+func (s *snowflakeDiscoveryFakeState) maxActiveColumns() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.maxColumnQueries
+}
+
+type snowflakeDiscoveryFakeDriver struct {
+	state *snowflakeDiscoveryFakeState
+}
+
+func (d snowflakeDiscoveryFakeDriver) Open(_ string) (driver.Conn, error) {
+	return snowflakeDiscoveryFakeConn{state: d.state}, nil
+}
+
+type snowflakeDiscoveryFakeConn struct {
+	state *snowflakeDiscoveryFakeState
+}
+
+func (c snowflakeDiscoveryFakeConn) Prepare(string) (driver.Stmt, error) {
+	return nil, fmt.Errorf("Prepare is not implemented")
+}
+
+func (c snowflakeDiscoveryFakeConn) Close() error {
+	return nil
+}
+
+func (c snowflakeDiscoveryFakeConn) Begin() (driver.Tx, error) {
+	return nil, fmt.Errorf("Begin is not implemented")
+}
+
+func (c snowflakeDiscoveryFakeConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
+	upper := strings.ToUpper(strings.TrimSpace(query))
+	if strings.HasPrefix(upper, "SHOW ") {
+		c.state.record("show_exec")
+		c.state.mu.Lock()
+		c.state.lastQueryID++
+		c.state.mu.Unlock()
+		return driver.RowsAffected(0), nil
+	}
+	return nil, fmt.Errorf("unexpected snowflake discovery exec: %.160s", query)
+}
+
+func (c snowflakeDiscoveryFakeConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	switch {
+	case isSnowflakeUserSchemasQuery(query):
+		c.state.record("schemas")
+		rows := make([][]driver.Value, 0, len(c.state.schemas))
+		for _, schema := range c.state.schemas {
+			rows = append(rows, []driver.Value{schema})
+		}
+		return newPostgresDiscoveryFakeRows([]string{"table_schema"}, rows), nil
+	case query == snowflakeFKMetadataExistsStmt:
+		c.state.record("fk_metadata_exists")
+		return newPostgresDiscoveryFakeRows([]string{"count"}, [][]driver.Value{{int64(0)}}), nil
+	case query == snowflakeColumnsStmt:
+		c.state.record("columns")
+		c.state.beginColumnQuery()
+		defer c.state.endColumnQuery()
+		if c.state.delay != 0 {
+			time.Sleep(c.state.delay)
+		}
+		schema := strings.ToUpper(namedValueString(args, 0))
+		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.columnsBySchema[schema]), nil
+	case query == snowflakeConstraintsCountStmt:
+		c.state.record("constraints_preflight")
+		return newPostgresDiscoveryFakeRows([]string{"count"}, [][]driver.Value{{int64(0)}}), nil
+	case strings.Contains(strings.ToUpper(query), "SELECT LAST_QUERY_ID()"):
+		c.state.record("last_query_id")
+		return newPostgresDiscoveryFakeRows([]string{"LAST_QUERY_ID"}, [][]driver.Value{{"QID"}}), nil
+	case query == snowflakeColumnsShowStmt || query == snowflakeColumnsShowBasicStmt:
+		c.state.record("show_scan")
+		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.showRows), nil
+	case query == snowflakeColumnsBasicStmt:
+		c.state.record("basic")
+		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.basicRows), nil
+	default:
+		return nil, fmt.Errorf("unexpected snowflake discovery query: %.160s", query)
+	}
+}
+
+func isSnowflakeUserSchemasQuery(query string) bool {
+	upper := strings.ToUpper(strings.Join(strings.Fields(query), " "))
+	return strings.Contains(upper, "SELECT DISTINCT TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
+}
+
+func namedValueString(args []driver.NamedValue, i int) string {
+	if i >= len(args) || args[i].Value == nil {
+		return ""
+	}
+	return fmt.Sprint(args[i].Value)
+}
+
+func snowflakeColumnRow(schema, table, column string) []driver.Value {
+	return []driver.Value{
+		schema,
+		table,
+		column,
+		"NUMBER",
+		true,
+		false,
+		false,
+		false,
+		false,
+		"",
+		"",
+		"",
+	}
 }
