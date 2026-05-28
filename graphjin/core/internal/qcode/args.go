@@ -235,6 +235,9 @@ func (co *Compiler) compileArgSearch(sel *Select, arg graph.Arg) (err error) {
 }
 
 func (co *Compiler) compileArgWhere(sel *Select, arg graph.Arg, role string) (err error) {
+	if arg.Val.Type == graph.NodeVar {
+		return fmt.Errorf("where must be an inline object; use variables only inside filter values")
+	}
 	if err = validateArg(arg, graph.NodeObj); err != nil {
 		return
 	}

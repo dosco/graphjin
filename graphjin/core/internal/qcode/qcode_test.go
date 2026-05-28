@@ -204,6 +204,42 @@ func TestWhereNestedFKColumnNotMisinterpreted(t *testing.T) {
 	}
 }
 
+func TestWhereVariableRejected(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+
+	_, err := qc.Compile([]byte(`
+	query($where: UsersWhereInput) {
+		users(where: $where) {
+			id
+		}
+	}`), nil, "user", "")
+
+	if err == nil {
+		t.Fatal("expected where variable to be rejected")
+	}
+	if !strings.Contains(err.Error(), "where must be an inline object; use variables only inside filter values") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSubscriptionWhereVariableRejected(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+
+	_, err := qc.Compile([]byte(`
+	subscription($where: UsersWhereInput) {
+		users(where: $where) {
+			id
+		}
+	}`), nil, "user", "")
+
+	if err == nil {
+		t.Fatal("expected subscription where variable to be rejected")
+	}
+	if !strings.Contains(err.Error(), "where must be an inline object; use variables only inside filter values") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestFKColumnRelationNameCollisionUsesTargetTable(t *testing.T) {
 	di := sdata.NewDBInfo("postgres", 0, "public", "", nil, nil, nil)
 	di.AddTable(sdata.NewDBTable("public", "organization", "", []sdata.DBColumn{

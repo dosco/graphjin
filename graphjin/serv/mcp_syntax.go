@@ -255,12 +255,13 @@ var querySyntaxReference = QuerySyntaxReference{
 		"@database(name:)":       "Assign table to a named database (REQUIRED on every table when multiple databases are configured). Used in schema definitions, e.g.: type users @database(name: \"mydb\") { ... }",
 	},
 	Variables: VariablesSyntax{
-		Declaration: "Variables are declared with $ prefix and passed via variables parameter",
+		Declaration: "Variables are declared with $ prefix and passed via variables parameter. In where filters, keep the filter object inline and use variables only as filter values.",
 		Types:       []string{"$id: Int", "$name: String", "$ids: [Int]", "$active: Boolean"},
-		Example:     "query($id: Int!) { products(id: $id) { name } }",
+		Example:     "query($label: String) { user_fields(where: { label: { eq: $label } }) { id label } }",
 	},
 	JSONPaths: "For JSONB columns, use underscore notation: metadata_key_subkey maps to metadata->'key'->'subkey'",
 	CommonMistakes: []MistakeExample{
+		{Wrong: `where: $where`, Right: `where: { label: { eq: $label } }`, Reason: "GraphJin does not accept a variable for the whole where object; variables are supported only inside the inline filter shape"},
 		{Wrong: `where: { price: { gt: "50" } }`, Right: `where: { price: { gt: 50 } }`, Reason: "Numeric operators need numbers, not strings"},
 		{Wrong: `where: { id: { in: 1 } }`, Right: `where: { id: { in: [1] } }`, Reason: "in/nin operators need arrays, even for single values"},
 		{Wrong: `where: { name: { ilike: "test" } }`, Right: `where: { name: { ilike: "%test%" } }`, Reason: "ilike needs % wildcards for partial matching"},

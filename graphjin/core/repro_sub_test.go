@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,4 +126,48 @@ func TestSubscriptionRoleQueryWithNilRequestConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Unsubscribe()
+}
+
+func TestSubscriptionWhereVariableRejected(t *testing.T) {
+	db, err := sql.Open("sqlite3", t.TempDir()+"/where-var.sqlite3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close() //nolint:errcheck
+
+	_, err = db.Exec(`
+		CREATE TABLE users (
+			id INTEGER PRIMARY KEY,
+			email TEXT
+		);
+		INSERT INTO users (id, email) VALUES (1, 'user@test.com');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conf := &core.Config{
+		DBType:           "sqlite",
+		DisableAllowList: true,
+	}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	gql := `subscription($where: UsersWhereInput) {
+		users(where: $where) {
+			id
+			email
+		}
+	}`
+
+	_, err = gj.Subscribe(context.Background(), gql, json.RawMessage(`{"where":{"id":{"eq":1}}}`), nil)
+	if err == nil {
+		t.Fatal("expected where variable to be rejected")
+	}
+	if !strings.Contains(err.Error(), "where must be an inline object; use variables only inside filter values") {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
