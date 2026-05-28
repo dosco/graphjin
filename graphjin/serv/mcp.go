@@ -92,6 +92,9 @@ func mcpToolList(conf *Config) []string {
 			tools = append(tools, "graphql_help", "query_catalog")
 		}
 		tools = append(tools, "execute_saved_query", "validate_where_clause")
+		if conf.MCP.AllowRawQueries {
+			tools = append(tools, "execute_graphql")
+		}
 		return tools
 	}
 

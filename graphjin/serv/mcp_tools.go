@@ -14,7 +14,7 @@ import (
 func (ms *mcpServer) registerExecutionTools() {
 	sourcesUsed := ms.service.conf.Core.IsSourcesUsed()
 	// execute_graphql - Only registered when AllowRawQueries is true
-	if !sourcesUsed && ms.service.conf.MCP.AllowRawQueries {
+	if ms.service.conf.MCP.AllowRawQueries {
 		ms.srv.AddTool(mcp.NewTool(
 			"execute_graphql",
 			mcp.WithDescription("Execute a GraphJin GraphQL query or mutation against the database. "+

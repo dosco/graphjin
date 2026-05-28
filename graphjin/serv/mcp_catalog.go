@@ -201,7 +201,7 @@ func graphQLHelpToolDescription() string {
 }
 
 func queryCatalogToolDescription() string {
-	return "Search GraphJin's AI-first catalog for schema, relationships, workflows, saved queries, fragments, language features, directives, operators, config, security, and capabilities. In sources mode, call graphql_help(for: \"discovery\") when unsure. Use query_catalog(id: \"...\") for one full-detail row with details_json, evidence_json, examples_json, safety_json, and edges_json. Examples: query_catalog(id: \"help:query\"), query_catalog(id: \"help:schema\"), query_catalog(where: { kind: { eq: \"table\" } }), query_catalog(where: { kind: { eq: \"saved_query\" } }). Use validate_where_clause for filters and execute_saved_query for approved saved queries."
+	return "Search GraphJin's AI-first catalog for schema, relationships, workflows, saved queries, fragments, language features, directives, operators, config, security, and capabilities. In sources mode, call graphql_help(for: \"discovery\") when unsure. Use query_catalog(id: \"...\") for one full-detail row with details_json, evidence_json, examples_json, safety_json, and edges_json. Examples: query_catalog(id: \"help:query\"), query_catalog(id: \"help:schema\"), query_catalog(where: { kind: { eq: \"table\" } }), query_catalog(where: { kind: { eq: \"saved_query\" } }). Use validate_where_clause for filters, execute_saved_query for approved saved queries, and execute_graphql only when raw execution is enabled."
 }
 
 func (ms *mcpServer) registerCatalogResources() {
@@ -389,7 +389,7 @@ func graphQLHelpBootstrap() []string {
 		`Use topic_routes to choose a narrower graphql_help(for: "...") topic.`,
 		`Use query_catalog(id: "help:<topic>") for full guidance with details_json, evidence_json, examples_json, safety_json, and edges_json.`,
 		`Use query_catalog(search/where/order_by/limit) or direct gj_catalog queries for evidence-backed discovery.`,
-		`Use validate_where_clause before non-trivial filters and execute_saved_query only after inspecting a saved_query row.`,
+		`Use validate_where_clause before non-trivial filters, execute_saved_query after inspecting a saved_query row, and execute_graphql only when raw execution is enabled.`,
 	}
 }
 

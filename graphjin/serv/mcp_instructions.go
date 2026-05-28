@@ -37,6 +37,8 @@ Sources-mode MCP intentionally exposes a tiny bootstrap surface:
 
 graphql_help -> query_catalog/query_catalog(id) -> validate_where_clause -> execute_saved_query
 
+When raw execution is explicitly enabled, execute_graphql is also available as an action tool. Prefer execute_saved_query when a matching saved query exists.
+
 Discovery means selecting evidence-backed catalog items before acting. Do not write queries from memory.
 
 1. When unsure, call graphql_help(for: "discovery") first. It returns curated catalog rows plus the exact gj_catalog GraphQL query it used.
@@ -45,10 +47,11 @@ Discovery means selecting evidence-backed catalog items before acting. Do not wr
 4. Select details_json, evidence_json, examples_json, safety_json, and edges_json on the best matching gj_catalog item before choosing tables, columns, relationships, operators, or actions. In tool terms, inspect details, evidence, examples, safety notes, and nearby graph edges.
 5. Resolve ambiguity by inspecting candidate items. If multiple tables or columns match, do not guess from names alone.
 6. Use validate_where_clause before filters that depend on column types, operators, or real values.
-7. Before config, workflow, schema, file, or code-source changes, inspect gj_catalog for gj_security.query and then query gj_security for high/critical findings and effective policy.
-8. Prefer GraphJin control-plane GraphQL mutations for workflow/config actions after discovery: gj_workflow_execution(insert) for workflow execution, gj_workflow(insert/update/delete) for workflow management, and gj_config(id: "current", update: ...) for config changes. Use MCP tools such as reload_schema and validate_where_clause for schema refresh and filter checks; use errors[].extensions.graphjin_repair for query repair.
-9. Prefer workflows for broad data questions after discovery. Workflows can page and aggregate safely.
-10. Observe results, then return to catalog items when the result, error, or follow-up question changes the facts you need.
+7. Prefer execute_saved_query for approved allow-list queries. Use execute_graphql only when the server exposes it and raw execution is enabled.
+8. Before config, workflow, schema, file, or code-source changes, inspect gj_catalog for gj_security.query and then query gj_security for high/critical findings and effective policy.
+9. Prefer GraphJin control-plane GraphQL mutations for workflow/config actions after discovery: gj_workflow_execution(insert) for workflow execution, gj_workflow(insert/update/delete) for workflow management, and gj_config(id: "current", update: ...) for config changes. Use MCP tools such as reload_schema and validate_where_clause for schema refresh and filter checks; use errors[].extensions.graphjin_repair for query repair.
+10. Prefer workflows for broad data questions after discovery. Workflows can page and aggregate safely.
+11. Observe results, then return to catalog items when the result, error, or follow-up question changes the facts you need.
 
 Topic routing:
 
