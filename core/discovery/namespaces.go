@@ -115,34 +115,11 @@ GROUP BY TABLE_SCHEMA`
 	return rows, nil
 }
 
-func snowflakeNamespaceRollup(ctx context.Context, db *sql.DB, schemas []string) ([]NamespaceRollup, error) {
-	if len(schemas) == 0 {
-		return nil, nil
-	}
-
-	placeholders := make([]string, len(schemas))
-	args := make([]any, len(schemas))
-	for i, schema := range schemas {
-		placeholders[i] = "UPPER(?)"
-		args[i] = schema
-	}
-
-	q := `
-SELECT TABLE_CATALOG, TABLE_SCHEMA,
-       COUNT(*) AS table_count,
-       COALESCE(SUM(ROW_COUNT), 0) AS approx_row_total
-FROM INFORMATION_SCHEMA.TABLES
-WHERE TABLE_TYPE = 'BASE TABLE'
-  AND UPPER(TABLE_SCHEMA) IN (` + strings.Join(placeholders, ", ") + `)
-GROUP BY TABLE_CATALOG, TABLE_SCHEMA`
-	rows, err := scanNamespaceRollup(ctx, db, q, true, args...)
-	if err != nil {
-		return nil, err
-	}
-	for i := range rows {
-		rows[i].Schema = strings.ToLower(rows[i].Schema)
-	}
-	return rows, nil
+func snowflakeNamespaceRollup(_ context.Context, _ *sql.DB, _ []string) ([]NamespaceRollup, error) {
+	// INFORMATION_SCHEMA is restricted on some Snowflake accounts; return nothing
+	// so the caller falls back to metadata-derived table counts (no row totals)
+	// rather than depending on it.
+	return nil, nil
 }
 
 func bigqueryNamespaceRollup(ctx context.Context, db *sql.DB) ([]NamespaceRollup, error) {

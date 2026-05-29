@@ -68,6 +68,38 @@ func TestConnectorSatisfiesSnowflakeDiscovery(t *testing.T) {
 	assertSnowflakeDiscovery(t, db)
 }
 
+func TestSnowflakeDiscoveryUsesShowForKeys(t *testing.T) {
+	dir := t.TempDir()
+	db := sql.OpenDB(NewConnector(Config{
+		SeedPath:   "../snowflake.sql",
+		CaptureDir: dir,
+		TestName:   "show-keys",
+		RunID:      "unit",
+		Backend:    BackendDuckDB,
+		Fallback:   FallbackStrict,
+	}))
+	defer db.Close()
+
+	assertSnowflakeDiscovery(t, db)
+
+	data, err := os.ReadFile(CapturePath(dir, "show-keys"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture := strings.ToUpper(string(data))
+	for _, stmt := range []string{"SHOW COLUMNS", "SHOW PRIMARY KEYS", "SHOW UNIQUE KEYS", "SHOW IMPORTED KEYS"} {
+		if !strings.Contains(capture, stmt) {
+			t.Fatalf("capture missing %q:\n%s", stmt, data)
+		}
+	}
+	// INFORMATION_SCHEMA is restricted on real Snowflake accounts; discovery must
+	// never query it. Translated SQL would surface as _GJ_SF_* emulator tables, so
+	// a literal INFORMATION_SCHEMA reference means a source query still uses it.
+	if strings.Contains(capture, "FROM INFORMATION_SCHEMA") {
+		t.Fatalf("unexpected INFORMATION_SCHEMA use in discovery capture:\n%s", data)
+	}
+}
+
 func assertSnowflakeDiscovery(t *testing.T, db *sql.DB) {
 	t.Helper()
 

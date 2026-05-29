@@ -130,15 +130,6 @@ func getDBInfoOnce(
 		return nil
 	})
 
-	if dbType == "snowflake" && !snowflakeSkipClusteringDiscovery() {
-		g.Go(func() error {
-			ck, err := discoverClusteringKeys(gctx, db)
-			if err == nil {
-				snowflakeClustering = ck
-			}
-			return nil
-		})
-	}
 
 	g.Go(func() error {
 		var err error
@@ -169,6 +160,16 @@ func getDBInfoOnce(
 
 	if err := g.Wait(); err != nil {
 		return nil, err
+	}
+
+	// Snowflake clustering runs sequentially (not in the group above) because it
+	// uses SHOW + LAST_QUERY_ID like column/key discovery; running them on
+	// separate connections concurrently is fine on real Snowflake (per-session
+	// query ids) but races the shared session in the test emulator. Non-fatal.
+	if dbType == "snowflake" && !snowflakeSkipClusteringDiscovery() {
+		if ck, err := discoverClusteringKeys(ctx, db); err == nil {
+			snowflakeClustering = ck
+		}
 	}
 
 	// When the database returns an empty default schema (e.g., PostgreSQL with
@@ -401,37 +402,99 @@ func mysqlHasConstraints(ctx context.Context, db *sql.DB, stmt string) (bool, er
 	return n > 0, nil
 }
 
+// snowflakeIntrospectionTimeout is more generous than the shared discovery
+// timeout: a cold warehouse resume plus a large schema's SHOW COLUMNS (tens of
+// thousands of columns) and several sources discovering at once can exceed 30s.
+const snowflakeIntrospectionTimeout = 90 * time.Second
+
 func discoverSnowflakeColumns(ctx context.Context, db *sql.DB, blockList []string) ([]DBColumn, error) {
-	cmap := make(map[string]DBColumn)
-	if err := queryAndScanDiscoveredColumns(ctx, db, "snowflake", blockList, cmap, snowflakeColumnsStmt); err != nil {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching columns: %w", err)
+	}
+	defer conn.Close()
+
+	// Snowflake restricts INFORMATION_SCHEMA, so columns come from SHOW COLUMNS
+	// read back via RESULT_SCAN. Bare SHOW scopes to the session's pinned schema;
+	// all statements share this one connection so RESULT_SCAN can see them.
+	colsQID, err := snowflakeShowQueryID(ctx, conn, "SHOW COLUMNS")
+	if err != nil {
 		return nil, fmt.Errorf("error fetching columns: %w", err)
 	}
 
-	hasOverrides, err := snowflakeFKMetadataExists(ctx, db)
-	if err != nil {
-		return nil, fmt.Errorf("error checking snowflake _gj_fk_metadata: %w", err)
+	cmap := make(map[string]DBColumn)
+	if err := snowflakeQueryColumns(ctx, conn, blockList, cmap, snowflakeColumnsShowStmt, colsQID); err != nil {
+		return nil, fmt.Errorf("error fetching columns: %w", err)
 	}
-	if hasOverrides {
-		if err := queryAndScanDiscoveredColumns(ctx, db, "snowflake", blockList, cmap, snowflakeFKMetadataStmt); err != nil {
-			return nil, fmt.Errorf("error fetching snowflake _gj_fk_metadata: %w", err)
-		}
-	}
+
+	// PK/UK/FK flags merge onto the discovered columns. Fetched and merged
+	// separately rather than joined in SQL: joining the RESULT_SCANs is far slower
+	// on large schemas, and best-effort here means a role without key access still
+	// gets usable columns.
+	snowflakeMergeShowKeys(ctx, conn, blockList, cmap)
+
+	// _gj_fk_metadata is an optional user-supplied FK override table, absent on
+	// most sources and unprobeable without INFORMATION_SCHEMA, so this is
+	// best-effort: a missing table just means no overrides.
+	_ = queryAndScanDiscoveredColumns(ctx, db, "snowflake", blockList, cmap, snowflakeFKMetadataStmt)
 
 	return enrichAndCollectColumns(ctx, db, "snowflake", cmap), nil
 }
 
-func snowflakeFKMetadataExists(ctx context.Context, db *sql.DB) (bool, error) {
-	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+// snowflakeMergeShowKeys runs SHOW PRIMARY/UNIQUE/IMPORTED KEYS on conn (scoped to
+// the pinned schema) and merges the PK/UK/FK flags onto cmap. Best-effort: any
+// failure leaves the already-discovered columns intact without key metadata.
+func snowflakeMergeShowKeys(ctx context.Context, conn *sql.Conn, blockList []string, cmap map[string]DBColumn) {
+	pksQID, err := snowflakeShowQueryID(ctx, conn, "SHOW PRIMARY KEYS")
+	if err != nil {
+		return
+	}
+	uksQID, err := snowflakeShowQueryID(ctx, conn, "SHOW UNIQUE KEYS")
+	if err != nil {
+		return
+	}
+	fksQID, err := snowflakeShowQueryID(ctx, conn, "SHOW IMPORTED KEYS")
+	if err != nil {
+		return
+	}
+	_ = snowflakeQueryColumns(ctx, conn, blockList, cmap, snowflakeKeysShowStmt, pksQID, uksQID, fksQID)
+}
+
+// snowflakeQueryColumns runs a RESULT_SCAN-based discovered-column query on conn
+// (with the Snowflake introspection timeout) and merges the rows into cmap.
+func snowflakeQueryColumns(ctx context.Context, conn *sql.Conn, blockList []string, cmap map[string]DBColumn, stmt string, args ...any) error {
+	qctx, cancel := context.WithTimeout(ctx, snowflakeIntrospectionTimeout)
+	defer cancel()
+	start := time.Now()
+	rows, err := conn.QueryContext(qctx, stmt, args...)
+	recordDiscoveryQuery(ctx, "schema_metadata", stmt, time.Since(start))
+	if err != nil {
+		return err
+	}
+	return scanDiscoveredColumnRows(rows, "snowflake", blockList, cmap)
+}
+
+// snowflakeShowQueryID executes a SHOW statement on conn and returns the query id
+// so its result set can later be read back via RESULT_SCAN.
+func snowflakeShowQueryID(ctx context.Context, conn *sql.Conn, stmt string) (string, error) {
+	sctx, cancel := context.WithTimeout(ctx, snowflakeIntrospectionTimeout)
 	defer cancel()
 
-	var n int
 	start := time.Now()
-	err := db.QueryRowContext(qctx, snowflakeFKMetadataExistsStmt).Scan(&n)
-	recordDiscoveryQuery(ctx, "constraint_preflight", snowflakeFKMetadataExistsStmt, time.Since(start))
-	if err != nil {
-		return false, err
+	if _, err := conn.ExecContext(sctx, stmt); err != nil {
+		recordDiscoveryQuery(ctx, "schema_metadata", stmt, time.Since(start))
+		return "", err
 	}
-	return n > 0, nil
+	recordDiscoveryQuery(ctx, "schema_metadata", stmt, time.Since(start))
+
+	var qid string
+	start = time.Now()
+	err := conn.QueryRowContext(sctx, "SELECT LAST_QUERY_ID()").Scan(&qid)
+	recordDiscoveryQuery(ctx, "schema_metadata", "SELECT LAST_QUERY_ID()", time.Since(start))
+	if err != nil {
+		return "", err
+	}
+	return qid, nil
 }
 
 func discoverBigQueryColumns(ctx context.Context, db *sql.DB, blockList []string) ([]DBColumn, error) {
@@ -1060,27 +1123,19 @@ AND rs.name NOT IN (
 GROUP BY s.name, t.name, fkc.constraint_object_id, rs.name, rt.name
 HAVING COUNT(*) > 1`
 
-const compositeFKQuerySnowflake = `
-SELECT fk_kcu.table_schema, fk_kcu.table_name, fk_kcu.constraint_name,
-       LISTAGG(fk_kcu.column_name, ',') WITHIN GROUP (ORDER BY fk_kcu.ordinal_position) AS local_columns,
-       pk_kcu.table_schema AS fkey_schema,
-       pk_kcu.table_name AS fkey_table,
-       LISTAGG(pk_kcu.column_name, ',') WITHIN GROUP (ORDER BY fk_kcu.ordinal_position) AS fkey_columns
-FROM information_schema.referential_constraints rc
-JOIN information_schema.key_column_usage fk_kcu ON (
-	rc.constraint_catalog = fk_kcu.constraint_catalog
-	AND rc.constraint_schema = fk_kcu.constraint_schema
-	AND rc.constraint_name = fk_kcu.constraint_name
-)
-JOIN information_schema.key_column_usage pk_kcu ON (
-	rc.unique_constraint_catalog = pk_kcu.constraint_catalog
-	AND rc.unique_constraint_schema = pk_kcu.constraint_schema
-	AND rc.unique_constraint_name = pk_kcu.constraint_name
-	AND fk_kcu.position_in_unique_constraint = pk_kcu.ordinal_position
-)
-WHERE UPPER(fk_kcu.table_schema) NOT IN ('INFORMATION_SCHEMA')
-GROUP BY fk_kcu.table_schema, fk_kcu.table_name, fk_kcu.constraint_name,
-         pk_kcu.table_schema, pk_kcu.table_name
+// snowflakeCompositeFKShowStmt aggregates the RESULT_SCAN of SHOW IMPORTED KEYS
+// into multi-column foreign keys. INFORMATION_SCHEMA can't be used here because
+// Snowflake has no KEY_COLUMN_USAGE view.
+const snowflakeCompositeFKShowStmt = `
+SELECT "fk_schema_name" AS table_schema,
+       "fk_table_name" AS table_name,
+       "fk_name" AS constraint_name,
+       LISTAGG("fk_column_name", ',') WITHIN GROUP (ORDER BY "key_sequence") AS local_columns,
+       "pk_schema_name" AS fkey_schema,
+       "pk_table_name" AS fkey_table,
+       LISTAGG("pk_column_name", ',') WITHIN GROUP (ORDER BY "key_sequence") AS fkey_columns
+FROM TABLE(RESULT_SCAN(?))
+GROUP BY "fk_schema_name", "fk_table_name", "fk_name", "pk_schema_name", "pk_table_name"
 HAVING COUNT(*) > 1`
 
 const compositeFKQuerySnowflakeOverrides = `
@@ -1356,24 +1411,70 @@ func isInList(val string, s []string) bool {
 }
 
 func discoverSnowflakeCompositeFKs(ctx context.Context, db *sql.DB) ([]CompositeFKInfo, error) {
-	result, err := discoverCompositeFKsCSV(ctx, db, "snowflake", compositeFKQuerySnowflake)
+	result, err := discoverSnowflakeCompositeFKsViaShow(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 
-	hasOverrides, err := snowflakeFKMetadataExists(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-	if !hasOverrides {
-		return result, nil
-	}
-
+	// _gj_fk_metadata composite overrides are optional and can't be probed without
+	// INFORMATION_SCHEMA, so this is best-effort: a missing/unreadable table just
+	// means no overrides to merge.
 	overrides, err := discoverCompositeFKsCSV(ctx, db, "snowflake", compositeFKQuerySnowflakeOverrides)
 	if err != nil {
-		return nil, err
+		return result, nil
 	}
 	return mergeCompositeFKInfos(result, overrides), nil
+}
+
+// discoverSnowflakeCompositeFKsViaShow reads composite foreign keys from the
+// RESULT_SCAN of SHOW IMPORTED KEYS (scoped to the session's current schema).
+func discoverSnowflakeCompositeFKsViaShow(ctx context.Context, db *sql.DB) ([]CompositeFKInfo, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	qid, err := snowflakeShowQueryID(ctx, conn, "SHOW IMPORTED KEYS")
+	if err != nil {
+		return nil, err
+	}
+
+	qctx, cancel := context.WithTimeout(ctx, snowflakeIntrospectionTimeout)
+	defer cancel()
+	start := time.Now()
+	rows, err := conn.QueryContext(qctx, snowflakeCompositeFKShowStmt, qid)
+	recordDiscoveryQuery(ctx, "schema_metadata", snowflakeCompositeFKShowStmt, time.Since(start))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []CompositeFKInfo
+	for rows.Next() {
+		var info CompositeFKInfo
+		var localCSV, fkeyCSV string
+		if err := rows.Scan(
+			&info.Schema, &info.Table, &info.ConstraintName,
+			&localCSV, &info.FKeySchema, &info.FKeyTable, &fkeyCSV,
+		); err != nil {
+			return nil, err
+		}
+		info.LocalCols = strings.Split(localCSV, ",")
+		info.FKeyCols = strings.Split(fkeyCSV, ",")
+		info.Schema = strings.ToLower(info.Schema)
+		info.Table = strings.ToLower(info.Table)
+		info.FKeySchema = strings.ToLower(info.FKeySchema)
+		info.FKeyTable = strings.ToLower(info.FKeyTable)
+		for i := range info.LocalCols {
+			info.LocalCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.LocalCols[i])))
+		}
+		for i := range info.FKeyCols {
+			info.FKeyCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.FKeyCols[i])))
+		}
+		result = append(result, info)
+	}
+	return result, rows.Err()
 }
 
 func mergeCompositeFKInfos(base, overrides []CompositeFKInfo) []CompositeFKInfo {
@@ -1400,14 +1501,27 @@ func compositeFKKey(info CompositeFKInfo) string {
 		info.FKeySchema + ":" + info.FKeyTable
 }
 
-// discoverClusteringKeys queries Snowflake's information_schema.tables for
-// clustering key metadata. Returns a map of "schema:table" → []column_name.
+// discoverClusteringKeys reads Snowflake clustering keys from RESULT_SCAN of SHOW
+// TABLES. Returns a map of "schema:table" → []column_name.
 func discoverClusteringKeys(ctx context.Context, db *sql.DB) (map[string][]string, error) {
-	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	// cluster_by comes from RESULT_SCAN of SHOW TABLES (scoped to the pinned
+	// schema), so both statements must run on this one connection.
+	qid, err := snowflakeShowQueryID(ctx, conn, "SHOW TABLES")
+	if err != nil {
+		return nil, fmt.Errorf("error fetching clustering keys: %w", err)
+	}
+
+	qctx, cancel := context.WithTimeout(ctx, snowflakeIntrospectionTimeout)
 	defer cancel()
 
 	start := time.Now()
-	rows, err := db.QueryContext(qctx, snowflakeClusteringStmt)
+	rows, err := conn.QueryContext(qctx, snowflakeClusteringStmt, qid)
 	recordDiscoveryQuery(ctx, "schema_metadata", snowflakeClusteringStmt, time.Since(start))
 	if err != nil {
 		return nil, fmt.Errorf("error fetching clustering keys: %w", err)

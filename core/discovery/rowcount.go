@@ -81,19 +81,11 @@ func mysqlRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (i
 	return 0, false
 }
 
-func snowflakeRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (int64, bool) {
-	var n sql.NullInt64
-	q := `SELECT ROW_COUNT FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = UPPER(?)`
-	args := []any{schema.Name}
-	if schema.Schema != "" {
-		q = `SELECT ROW_COUNT FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_SCHEMA) = UPPER(?) AND UPPER(TABLE_NAME) = UPPER(?)`
-		args = []any{schema.Schema, schema.Name}
-	}
-	if err := db.QueryRowContext(ctx, q, args...).Scan(&n); err == nil && n.Valid && n.Int64 >= 0 {
-		return n.Int64, true
-	} else if err != nil {
-		log.Printf("discovery rowcount: snowflake information_schema lookup failed for %s.%s: %v", schema.Schema, schema.Name, err)
-	}
+func snowflakeRowCount(_ context.Context, _ *sql.DB, _ *core.TableSchema) (int64, bool) {
+	// INFORMATION_SCHEMA is restricted on some Snowflake accounts, so discovery
+	// must never depend on it. Approximate row counts are unavailable via this
+	// path; SHOW TABLES exposes a "rows" column but needs a pinned RESULT_SCAN
+	// session, so it is left as a future enhancement.
 	return 0, false
 }
 
@@ -250,17 +242,10 @@ WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'`
 	return scanRowCountPairs(ctx, db, q, schema)
 }
 
-func snowflakeNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (map[string]int64, error) {
-	if schema == "" {
-		return map[string]int64{}, nil
-	}
-	// NULL ROW_COUNT → unknown.
-	const q = `
-SELECT TABLE_NAME, ROW_COUNT
-FROM INFORMATION_SCHEMA.TABLES
-WHERE UPPER(TABLE_SCHEMA) = UPPER(?) AND TABLE_TYPE = 'BASE TABLE'`
-	out, err := scanRowCountPairs(ctx, db, q, schema)
-	return lowercaseKeys(out), err
+func snowflakeNamespaceRowCounts(_ context.Context, _ *sql.DB, _ string) (map[string]int64, error) {
+	// INFORMATION_SCHEMA is restricted on some Snowflake accounts; skip it so
+	// discovery never depends on it. Row counts are unavailable via this path.
+	return map[string]int64{}, nil
 }
 
 func bigqueryNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (map[string]int64, error) {

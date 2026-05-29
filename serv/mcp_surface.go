@@ -54,15 +54,20 @@ func MCPAllToolNames() []string {
 	conf.MCP.LegacyDiscovery = true
 
 	out := mcpToolList(conf)
-	found := false
-	for _, name := range out {
-		if name == "graphql_help" {
-			found = true
-			break
+	// graphql_help and query_catalog are the catalog-first discovery tools the
+	// server exposes in sources mode; make sure the CLI always publishes them so
+	// `graphjin cli query_catalog` works against a sources-mode server.
+	for _, required := range []string{"graphql_help", "query_catalog"} {
+		present := false
+		for _, name := range out {
+			if name == required {
+				present = true
+				break
+			}
 		}
-	}
-	if !found {
-		out = append(out, "graphql_help")
+		if !present {
+			out = append(out, required)
+		}
 	}
 	return append([]string(nil), out...)
 }
