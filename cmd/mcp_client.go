@@ -510,3 +510,81 @@ func runToolCmdWithFallback(cmd *cobra.Command, toolName string, args map[string
 		os.Exit(1)
 	}
 }
+
+// emitSchemaTables lists tables: it tries the legacy list_tables tool first and,
+// when a sources-mode server hides it, pages query_catalog to completion so the
+// full table set is returned in one command rather than a truncated first page.
+func emitSchemaTables(cmd *cobra.Command, database string) {
+	mcpClientRedirectLog()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if payload, err := callTool(ctx, cmd, "list_tables", cleanToolArgs(map[string]any{"database": database})); err == nil {
+		emitOrExit(payload)
+		return
+	} else if !isToolNotFound(err) {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		os.Exit(1)
+	}
+
+	where := map[string]any{"kind": map[string]any{"eq": "table"}}
+	if database != "" {
+		where["database_name"] = map[string]any{"eq": database}
+	}
+	merged, err := callCatalogPaginated(ctx, cmd, where, 500)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		os.Exit(1)
+	}
+	emitOrExit(merged)
+}
+
+func emitOrExit(payload json.RawMessage) {
+	if err := emitResult(payload); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
+// callCatalogPaginated pages query_catalog (offset += limit) until the server
+// stops reporting truncated, then returns one merged result holding every card.
+// Servers predating the truncated/offset fields simply return one page and stop.
+func callCatalogPaginated(ctx context.Context, cmd *cobra.Command, where map[string]any, pageLimit int) (json.RawMessage, error) {
+	const maxPages = 100 // safety bound (maxPages*pageLimit items) against a stuck truncated flag
+	var merged map[string]any
+	var allCards []any
+	offset := 0
+
+	for page := 0; page < maxPages; page++ {
+		args := map[string]any{"where": where, "limit": pageLimit}
+		if offset > 0 {
+			args["offset"] = offset
+		}
+		raw, err := callTool(ctx, cmd, "query_catalog", args)
+		if err != nil {
+			return nil, err
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return nil, fmt.Errorf("decode query_catalog page: %w", err)
+		}
+		if merged == nil {
+			merged = obj
+		}
+		cards, _ := obj["cards"].([]any)
+		allCards = append(allCards, cards...)
+		if truncated, _ := obj["truncated"].(bool); !truncated || len(cards) == 0 {
+			break
+		}
+		offset += pageLimit
+	}
+	if merged == nil {
+		merged = map[string]any{}
+	}
+	merged["cards"] = allCards
+	merged["count"] = len(allCards)
+	merged["truncated"] = false
+	delete(merged, "offset")
+	delete(merged, "next")
+	return json.Marshal(merged)
+}

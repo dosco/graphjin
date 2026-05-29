@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -151,6 +152,100 @@ func TestCallTool_ReturnsStructuredContent(t *testing.T) {
 	}
 	if len(tables) != 2 || tables[0]["name"] != "users" {
 		t.Fatalf("tables = %v", tables)
+	}
+}
+
+func TestCallCatalogPaginated_PagesUntilNotTruncated(t *testing.T) {
+	var offsets []int
+	srv := newTestMCPServer(t, func(req *jsonRPCRequest, _ *http.Request) (any, *jsonRPCError, int) {
+		args, _ := req.Params["arguments"].(map[string]any)
+		offset := 0
+		if v, ok := args["offset"].(float64); ok {
+			offset = int(v)
+		}
+		offsets = append(offsets, offset)
+		var body string
+		switch offset {
+		case 0:
+			body = `{"count":2,"limit":2,"offset":0,"truncated":true,"cards":[{"id":"t1"},{"id":"t2"}],"next":{"x":1}}`
+		case 2:
+			body = `{"count":2,"limit":2,"offset":2,"truncated":true,"cards":[{"id":"t3"},{"id":"t4"}]}`
+		case 4:
+			body = `{"count":1,"limit":2,"offset":4,"truncated":false,"cards":[{"id":"t5"}]}`
+		default:
+			t.Fatalf("unexpected offset %d", offset)
+		}
+		return mcpToolResult{
+			StructuredContent: json.RawMessage(body),
+			Content:           []mcpContent{{Type: "text", Text: body}},
+		}, nil, http.StatusOK
+	})
+	defer srv.Close()
+	resetMCPClientFlags(srv.URL)
+
+	merged, err := callCatalogPaginated(context.Background(), newEmptyCobraCmd(),
+		map[string]any{"kind": map[string]any{"eq": "table"}}, 2)
+	if err != nil {
+		t.Fatalf("callCatalogPaginated: %v", err)
+	}
+
+	var out struct {
+		Count     int              `json:"count"`
+		Truncated bool             `json:"truncated"`
+		Offset    *int             `json:"offset"`
+		Next      json.RawMessage  `json:"next"`
+		Cards     []map[string]any `json:"cards"`
+	}
+	if err := json.Unmarshal(merged, &out); err != nil {
+		t.Fatalf("unmarshal merged: %v (%s)", err, merged)
+	}
+	if len(out.Cards) != 5 || out.Count != 5 {
+		t.Fatalf("merged cards=%d count=%d, want 5/5: %s", len(out.Cards), out.Count, merged)
+	}
+	if out.Cards[0]["id"] != "t1" || out.Cards[4]["id"] != "t5" {
+		t.Fatalf("merged cards out of order/missing: %s", merged)
+	}
+	if out.Truncated {
+		t.Fatal("merged result must report truncated=false after paging to completion")
+	}
+	if out.Offset != nil || out.Next != nil {
+		t.Fatalf("merged result should drop paging artifacts (offset/next): %s", merged)
+	}
+	if want := []int{0, 2, 4}; !reflect.DeepEqual(offsets, want) {
+		t.Fatalf("requested offsets = %v, want %v", offsets, want)
+	}
+}
+
+func TestCallCatalogPaginated_StopsWhenServerOmitsTruncated(t *testing.T) {
+	calls := 0
+	srv := newTestMCPServer(t, func(*jsonRPCRequest, *http.Request) (any, *jsonRPCError, int) {
+		calls++
+		// A pre-paging server returns a full page with no truncated field.
+		body := `{"count":2,"cards":[{"id":"a"},{"id":"b"}]}`
+		return mcpToolResult{
+			StructuredContent: json.RawMessage(body),
+			Content:           []mcpContent{{Type: "text", Text: body}},
+		}, nil, http.StatusOK
+	})
+	defer srv.Close()
+	resetMCPClientFlags(srv.URL)
+
+	merged, err := callCatalogPaginated(context.Background(), newEmptyCobraCmd(),
+		map[string]any{"kind": map[string]any{"eq": "table"}}, 2)
+	if err != nil {
+		t.Fatalf("callCatalogPaginated: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("server calls = %d, want 1 (must not loop without a truncated signal)", calls)
+	}
+	var out struct {
+		Cards []map[string]any `json:"cards"`
+	}
+	if err := json.Unmarshal(merged, &out); err != nil {
+		t.Fatalf("unmarshal merged: %v", err)
+	}
+	if len(out.Cards) != 2 {
+		t.Fatalf("merged cards = %d, want 2", len(out.Cards))
 	}
 }
 

@@ -22,15 +22,10 @@ var mcpSchemaDatabase string
 func mcpSchemaTablesCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "tables",
-		Short: "List all database tables (MCP: list_tables, falls back to query_catalog)",
+		Short: "List all database tables (MCP: list_tables; falls back to paged query_catalog)",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
-			runToolCmdWithFallback(cmd, "list_tables", map[string]any{
-				"database": mcpSchemaDatabase,
-			}, "query_catalog", map[string]any{
-				"where": map[string]any{"kind": map[string]any{"eq": "table"}},
-				"limit": 500,
-			})
+			emitSchemaTables(cmd, mcpSchemaDatabase)
 		},
 	}
 	c.Flags().StringVar(&mcpSchemaDatabase, "database", "", "Filter by database name (optional)")
