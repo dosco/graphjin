@@ -205,7 +205,7 @@ func TestCompositeFKQueryConstants(t *testing.T) {
 		"sqlite":    compositeFKQuerySQLite,
 		"oracle":    compositeFKQueryOracle,
 		"mssql":     compositeFKQueryMSSQL,
-		"snowflake": compositeFKQuerySnowflake,
+		"snowflake": snowflakeCompositeFKShowStmt,
 	}
 	for db, q := range queries {
 		if len(q) < 50 {
@@ -692,7 +692,7 @@ func TestPostgresDiscoverColumnsMergesBatchedConstraintRows(t *testing.T) {
 	}
 }
 
-func TestSnowflakeDiscoverColumnsUsesBulkMetadataOnly(t *testing.T) {
+func TestSnowflakeDiscoverColumnsScopedBulkAndShowKeys(t *testing.T) {
 	state := &snowflakeDiscoveryFakeState{
 		columnRows: [][]driver.Value{
 			snowflakeColumnRow("PUBLIC", "ACCOUNTS", "ID"),
@@ -714,16 +714,18 @@ func TestSnowflakeDiscoverColumnsUsesBulkMetadataOnly(t *testing.T) {
 	if state.count("columns") != 1 {
 		t.Fatalf("bulk column queries = %d, want 1", state.count("columns"))
 	}
-	if state.count("show_exec") != 0 || state.count("show_scan") != 0 {
-		t.Fatalf("SHOW discovery was used: exec=%d scan=%d, want 0", state.count("show_exec"), state.count("show_scan"))
+	if state.count("keys_show") != 1 {
+		t.Fatalf("SHOW keys RESULT_SCAN queries = %d, want 1", state.count("keys_show"))
 	}
 }
 
-func TestSnowflakeDiscoverColumnsMergesBulkConstraintRows(t *testing.T) {
+func TestSnowflakeDiscoverColumnsMergesShowKeyRows(t *testing.T) {
 	state := &snowflakeDiscoveryFakeState{
 		columnRows: [][]driver.Value{
 			snowflakeColumnRow("PUBLIC", "PRODUCTS", "ID"),
 			snowflakeColumnRow("PUBLIC", "ORDER_ITEMS", "PRODUCT_ID"),
+		},
+		keyRows: [][]driver.Value{
 			{"PUBLIC", "PRODUCTS", "ID", "", false, true, false, false, false, "", "", ""},
 			{"PUBLIC", "ORDER_ITEMS", "PRODUCT_ID", "", false, false, false, false, false, "PUBLIC", "PRODUCTS", "ID"},
 		},
@@ -741,8 +743,8 @@ func TestSnowflakeDiscoverColumnsMergesBulkConstraintRows(t *testing.T) {
 	if state.count("columns") != 1 {
 		t.Fatalf("bulk column queries = %d, want 1", state.count("columns"))
 	}
-	if state.count("constraints") != 0 || state.count("foreign_keys") != 0 {
-		t.Fatalf("separate constraint queries used: constraints=%d foreign_keys=%d, want 0", state.count("constraints"), state.count("foreign_keys"))
+	if state.count("keys_show") != 1 {
+		t.Fatalf("SHOW keys queries = %d, want 1", state.count("keys_show"))
 	}
 
 	byColumn := map[string]DBColumn{}
@@ -780,9 +782,6 @@ func TestSnowflakeDiscoverColumnsAppliesFKMetadataOverlay(t *testing.T) {
 	got := cols[0]
 	if got.FKeySchema != "public" || got.FKeyTable != "products" || got.FKeyCol != "id" {
 		t.Fatalf("overlay FK = %s.%s.%s, want public.products.id", got.FKeySchema, got.FKeyTable, got.FKeyCol)
-	}
-	if state.count("fk_metadata_exists") != 1 {
-		t.Fatalf("_gj_fk_metadata exists checks = %d, want 1", state.count("fk_metadata_exists"))
 	}
 	if state.count("fk_metadata") != 1 {
 		t.Fatalf("_gj_fk_metadata row queries = %d, want 1", state.count("fk_metadata"))
@@ -835,19 +834,21 @@ func TestSnowflakeDiscoverColumnsRunsLargeMultiSchemaCatalogWithOneBulkQuery(t *
 	if state.count("constraint_schemas") != 0 {
 		t.Fatalf("constraint schema preflight queries = %d, want 0", state.count("constraint_schemas"))
 	}
-	if state.count("show_exec") != 0 || state.count("show_scan") != 0 {
-		t.Fatalf("SHOW discovery was used: exec=%d scan=%d, want 0", state.count("show_exec"), state.count("show_scan"))
+	// SHOW discovery is a fixed cost (1 SHOW COLUMNS + 3 SHOW KEYS execs, plus
+	// their RESULT_SCAN reads), independent of the 5000-table / 40-schema size.
+	if state.count("show_exec") != 4 {
+		t.Fatalf("SHOW execs = %d, want 4 (SHOW COLUMNS + PK/UK/FK, independent of catalog size)", state.count("show_exec"))
+	}
+	if state.count("keys_show") != 1 {
+		t.Fatalf("SHOW keys RESULT_SCAN queries = %d, want 1", state.count("keys_show"))
 	}
 	if state.count("constraints") != 0 || state.count("foreign_keys") != 0 || state.count("basic") != 0 {
 		t.Fatalf("extra metadata queries used: constraints=%d foreign_keys=%d basic=%d, want 0",
 			state.count("constraints"), state.count("foreign_keys"), state.count("basic"))
 	}
-	if state.count("fk_metadata_exists") != 1 {
-		t.Fatalf("_gj_fk_metadata exists checks = %d, want 1", state.count("fk_metadata_exists"))
-	}
 }
 
-func TestSnowflakeDiscoverCompositeFKsUsesInformationSchemaAndOverrides(t *testing.T) {
+func TestSnowflakeDiscoverCompositeFKsUsesShowImportedKeysAndOverrides(t *testing.T) {
 	state := &snowflakeDiscoveryFakeState{
 		fkMetadataExists: true,
 		compositeRows: [][]driver.Value{
@@ -868,13 +869,13 @@ func TestSnowflakeDiscoverCompositeFKsUsesInformationSchemaAndOverrides(t *testi
 		t.Fatalf("len(fks) = %d, want 2", len(fks))
 	}
 	if state.count("composite_fks") != 1 {
-		t.Fatalf("composite FK information_schema queries = %d, want 1", state.count("composite_fks"))
+		t.Fatalf("composite FK SHOW queries = %d, want 1", state.count("composite_fks"))
 	}
 	if state.count("composite_fk_overrides") != 1 {
 		t.Fatalf("composite FK override queries = %d, want 1", state.count("composite_fk_overrides"))
 	}
-	if state.count("show_exec") != 0 || state.count("show_scan") != 0 {
-		t.Fatalf("SHOW discovery was used: exec=%d scan=%d, want 0", state.count("show_exec"), state.count("show_scan"))
+	if state.count("show_exec") != 1 {
+		t.Fatalf("SHOW IMPORTED KEYS execs = %d, want 1", state.count("show_exec"))
 	}
 
 	byTable := map[string]CompositeFKInfo{}
@@ -1214,6 +1215,8 @@ func openSnowflakeDiscoveryFakeDB(t *testing.T, state *snowflakeDiscoveryFakeSta
 type snowflakeDiscoveryFakeState struct {
 	mu                    sync.Mutex
 	columnRows            [][]driver.Value
+	keyRows               [][]driver.Value
+	clusteringRows        [][]driver.Value
 	fkMetadataExists      bool
 	fkMetadataRows        [][]driver.Value
 	compositeRows         [][]driver.Value
@@ -1265,39 +1268,45 @@ func (c snowflakeDiscoveryFakeConn) ExecContext(_ context.Context, query string,
 	upper := strings.ToUpper(strings.TrimSpace(query))
 	if strings.HasPrefix(upper, "SHOW ") {
 		c.state.record("show_exec")
-		return nil, fmt.Errorf("unexpected Snowflake SHOW discovery exec: %.160s", query)
+		return driver.RowsAffected(0), nil
 	}
 	return nil, fmt.Errorf("unexpected snowflake discovery exec: %.160s", query)
 }
 
 func (c snowflakeDiscoveryFakeConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	switch {
-	case query == snowflakeFKMetadataExistsStmt:
-		c.state.record("fk_metadata_exists")
-		var n int64
-		if c.state.fkMetadataExists {
-			n = 1
-		}
-		return newPostgresDiscoveryFakeRows([]string{"count"}, [][]driver.Value{{n}}), nil
-	case query == snowflakeColumnsStmt:
+	case query == snowflakeColumnsShowStmt:
 		c.state.record("columns")
 		if c.state.delay != 0 {
 			time.Sleep(c.state.delay)
 		}
 		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.columnRows), nil
+	case query == snowflakeKeysShowStmt:
+		c.state.record("keys_show")
+		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.keyRows), nil
+	case query == snowflakeClusteringStmt:
+		c.state.record("clustering")
+		return newPostgresDiscoveryFakeRows([]string{"schema_name", "table_name", "clustering_key"}, c.state.clusteringRows), nil
 	case query == snowflakeFKMetadataStmt:
+		// _gj_fk_metadata is probed best-effort; an absent table surfaces as a
+		// query error, which discovery ignores.
 		c.state.record("fk_metadata")
+		if !c.state.fkMetadataExists {
+			return nil, fmt.Errorf("snowflake: object _gj_fk_metadata does not exist")
+		}
 		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.fkMetadataRows), nil
-	case query == compositeFKQuerySnowflake:
+	case query == snowflakeCompositeFKShowStmt:
 		c.state.record("composite_fks")
 		return newPostgresDiscoveryFakeRows(compositeFKScanColumns(), c.state.compositeRows), nil
 	case query == compositeFKQuerySnowflakeOverrides:
 		c.state.record("composite_fk_overrides")
+		if !c.state.fkMetadataExists {
+			return nil, fmt.Errorf("snowflake: object _gj_fk_metadata does not exist")
+		}
 		return newPostgresDiscoveryFakeRows(compositeFKScanColumns(), c.state.compositeOverrideRows), nil
 	case strings.Contains(strings.ToUpper(query), "SELECT LAST_QUERY_ID()"):
 		c.state.record("last_query_id")
-		c.state.record("show_scan")
-		return nil, fmt.Errorf("unexpected Snowflake LAST_QUERY_ID discovery query")
+		return newPostgresDiscoveryFakeRows([]string{"qid"}, [][]driver.Value{{"QID"}}), nil
 	default:
 		return nil, fmt.Errorf("unexpected snowflake discovery query: %.160s", query)
 	}

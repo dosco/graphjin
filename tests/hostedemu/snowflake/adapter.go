@@ -100,6 +100,23 @@ func (Adapter) ClassifyPhase(sql string) string {
 	}
 }
 
+// IsQueryIDProducer reports whether sql is a SHOW that sets the session's last
+// query id (read back later via RESULT_SCAN).
+func (Adapter) IsQueryIDProducer(sql string) bool {
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(hostedemu.NormalizeSQL(sql))), "SHOW ")
+}
+
+// IsQueryIDQuery reports whether sql reads the session's last query id.
+func (Adapter) IsQueryIDQuery(sql string) bool {
+	return strings.Contains(strings.ToUpper(sql), "LAST_QUERY_ID()")
+}
+
+// CaptureQueryIDSQL returns a query for the current session query id, run right
+// after a SHOW so the harness records it per connection.
+func (Adapter) CaptureQueryIDSQL() string {
+	return "SELECT last_query_id FROM _gj_sf_session LIMIT 1"
+}
+
 type Session struct {
 	schema *catalog.Schema
 	mu     sync.Mutex

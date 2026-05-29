@@ -72,22 +72,25 @@ func TestDiscoveryUsesBatchMetadataForLargeCatalog(t *testing.T) {
 				tableSpecificMetadata++
 			}
 		}
-		if strings.Contains(norm, "SHOW COLUMNS") ||
-			strings.Contains(norm, "SHOW PRIMARY KEYS") ||
-			strings.Contains(norm, "SHOW UNIQUE KEYS") ||
-			strings.Contains(norm, "SHOW IMPORTED KEYS") {
+		// Count actual SHOW executions (not RESULT_SCAN read-backs whose SQL
+		// comments mention SHOW), so the metric reflects real discovery cost.
+		if ev.Op == "exec" && strings.HasPrefix(norm, "SHOW ") {
 			showMetadata++
 		}
 	}
 	t.Logf("Snowflake discovery query count=%d table-specific metadata queries=%d SHOW metadata queries=%d", discoveryQueries, tableSpecificMetadata, showMetadata)
-	if discoveryQueries > 10 {
-		t.Fatalf("discovery query count = %d, want <= 10", discoveryQueries)
+	if discoveryQueries > 12 {
+		t.Fatalf("discovery query count = %d, want <= 12", discoveryQueries)
 	}
 	if tableSpecificMetadata != 0 {
 		t.Fatalf("table-specific metadata queries = %d, want 0", tableSpecificMetadata)
 	}
-	if showMetadata != 0 {
-		t.Fatalf("SHOW metadata queries = %d, want 0", showMetadata)
+	// All metadata comes from SHOW (Snowflake restricts INFORMATION_SCHEMA). The
+	// SHOW count is fixed — SHOW COLUMNS + PK/UK/FK + SHOW TABLES (clustering),
+	// plus at most one composite-FK SHOW — and must not grow with the 5000-table
+	// catalog.
+	if showMetadata > 6 {
+		t.Fatalf("SHOW metadata queries = %d, want <= 6 (must not scale with catalog size)", showMetadata)
 	}
 }
 

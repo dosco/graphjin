@@ -119,30 +119,52 @@ func snowflakeNamespaceRollup(ctx context.Context, db *sql.DB, schemas []string)
 	if len(schemas) == 0 {
 		return nil, nil
 	}
-
-	placeholders := make([]string, len(schemas))
-	args := make([]any, len(schemas))
-	for i, schema := range schemas {
-		placeholders[i] = "UPPER(?)"
-		args[i] = schema
-	}
-
-	q := `
-SELECT TABLE_CATALOG, TABLE_SCHEMA,
-       COUNT(*) AS table_count,
-       COALESCE(SUM(ROW_COUNT), 0) AS approx_row_total
-FROM INFORMATION_SCHEMA.TABLES
-WHERE TABLE_TYPE = 'BASE TABLE'
-  AND UPPER(TABLE_SCHEMA) IN (` + strings.Join(placeholders, ", ") + `)
-GROUP BY TABLE_CATALOG, TABLE_SCHEMA`
-	rows, err := scanNamespaceRollup(ctx, db, q, true, args...)
+	// Per-schema table counts and approximate row totals from SHOW TABLES read via
+	// RESULT_SCAN (no INFORMATION_SCHEMA). SHOW + RESULT_SCAN share one connection.
+	conn, err := db.Conn(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for i := range rows {
-		rows[i].Schema = strings.ToLower(rows[i].Schema)
+	defer conn.Close()
+
+	var dbName string
+	_ = conn.QueryRowContext(ctx, "SELECT COALESCE(CURRENT_DATABASE(), '')").Scan(&dbName)
+
+	if _, err := conn.ExecContext(ctx, "SHOW TABLES"); err != nil {
+		return nil, err
 	}
-	return rows, nil
+	var qid string
+	if err := conn.QueryRowContext(ctx, "SELECT LAST_QUERY_ID()").Scan(&qid); err != nil {
+		return nil, err
+	}
+
+	const q = `SELECT LOWER("schema_name") AS schema_name,
+       COUNT(*) AS table_count,
+       COALESCE(SUM("rows"), 0) AS approx_row_total
+FROM TABLE(RESULT_SCAN(?))
+GROUP BY LOWER("schema_name")`
+	rows, err := conn.QueryContext(ctx, q, qid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []NamespaceRollup
+	for rows.Next() {
+		var sch sql.NullString
+		var tableCount, rowTotal sql.NullInt64
+		if err := rows.Scan(&sch, &tableCount, &rowTotal); err != nil {
+			return nil, err
+		}
+		out = append(out, NamespaceRollup{
+			Database:          dbName,
+			Schema:            sch.String,
+			TableCount:        int(tableCount.Int64),
+			ApproxRowTotal:    rowTotal.Int64,
+			RowCountAvailable: true,
+		})
+	}
+	return out, rows.Err()
 }
 
 func bigqueryNamespaceRollup(ctx context.Context, db *sql.DB) ([]NamespaceRollup, error) {
