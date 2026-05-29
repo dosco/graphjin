@@ -81,12 +81,58 @@ func mysqlRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (i
 	return 0, false
 }
 
-func snowflakeRowCount(_ context.Context, _ *sql.DB, _ *core.TableSchema) (int64, bool) {
-	// INFORMATION_SCHEMA is restricted on some Snowflake accounts, so discovery
-	// must never depend on it. Approximate row counts are unavailable via this
-	// path; SHOW TABLES exposes a "rows" column but needs a pinned RESULT_SCAN
-	// session, so it is left as a future enhancement.
+func snowflakeRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (int64, bool) {
+	counts, err := snowflakeShowTableRows(ctx, db)
+	if err != nil {
+		log.Printf("discovery rowcount: snowflake SHOW TABLES failed for %s.%s: %v", schema.Schema, schema.Name, err)
+		return 0, false
+	}
+	if n, ok := counts[strings.ToLower(schema.Name)]; ok && n >= 0 {
+		return n, true
+	}
 	return 0, false
+}
+
+// snowflakeShowTableRows reads approximate per-table row counts from the
+// RESULT_SCAN of SHOW TABLES (scoped to the session's pinned schema). Snowflake
+// restricts INFORMATION_SCHEMA, so SHOW is the only metadata source. Returns a
+// map keyed by lowercased table name. SHOW + RESULT_SCAN must share one
+// connection, so it pins its own.
+func snowflakeShowTableRows(ctx context.Context, db *sql.DB) (map[string]int64, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, "SHOW TABLES"); err != nil {
+		return nil, err
+	}
+	var qid string
+	if err := conn.QueryRowContext(ctx, "SELECT LAST_QUERY_ID()").Scan(&qid); err != nil {
+		return nil, err
+	}
+	const q = `SELECT LOWER("name") AS table_name, "rows" AS row_count
+FROM TABLE(RESULT_SCAN(?))
+WHERE "rows" IS NOT NULL`
+	rows, err := conn.QueryContext(ctx, q, qid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]int64)
+	for rows.Next() {
+		var name string
+		var n sql.NullInt64
+		if err := rows.Scan(&name, &n); err != nil {
+			return nil, err
+		}
+		if n.Valid && n.Int64 >= 0 {
+			out[name] = n.Int64
+		}
+	}
+	return out, rows.Err()
 }
 
 func bigqueryRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (int64, bool) {
@@ -242,10 +288,12 @@ WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'`
 	return scanRowCountPairs(ctx, db, q, schema)
 }
 
-func snowflakeNamespaceRowCounts(_ context.Context, _ *sql.DB, _ string) (map[string]int64, error) {
-	// INFORMATION_SCHEMA is restricted on some Snowflake accounts; skip it so
-	// discovery never depends on it. Row counts are unavailable via this path.
-	return map[string]int64{}, nil
+func snowflakeNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (map[string]int64, error) {
+	if schema == "" {
+		return map[string]int64{}, nil
+	}
+	// Scoped to the session's pinned schema via SHOW TABLES (no INFORMATION_SCHEMA).
+	return snowflakeShowTableRows(ctx, db)
 }
 
 func bigqueryNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (map[string]int64, error) {

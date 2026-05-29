@@ -115,11 +115,56 @@ GROUP BY TABLE_SCHEMA`
 	return rows, nil
 }
 
-func snowflakeNamespaceRollup(_ context.Context, _ *sql.DB, _ []string) ([]NamespaceRollup, error) {
-	// INFORMATION_SCHEMA is restricted on some Snowflake accounts; return nothing
-	// so the caller falls back to metadata-derived table counts (no row totals)
-	// rather than depending on it.
-	return nil, nil
+func snowflakeNamespaceRollup(ctx context.Context, db *sql.DB, schemas []string) ([]NamespaceRollup, error) {
+	if len(schemas) == 0 {
+		return nil, nil
+	}
+	// Per-schema table counts and approximate row totals from SHOW TABLES read via
+	// RESULT_SCAN (no INFORMATION_SCHEMA). SHOW + RESULT_SCAN share one connection.
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	var dbName string
+	_ = conn.QueryRowContext(ctx, "SELECT COALESCE(CURRENT_DATABASE(), '')").Scan(&dbName)
+
+	if _, err := conn.ExecContext(ctx, "SHOW TABLES"); err != nil {
+		return nil, err
+	}
+	var qid string
+	if err := conn.QueryRowContext(ctx, "SELECT LAST_QUERY_ID()").Scan(&qid); err != nil {
+		return nil, err
+	}
+
+	const q = `SELECT LOWER("schema_name") AS schema_name,
+       COUNT(*) AS table_count,
+       COALESCE(SUM("rows"), 0) AS approx_row_total
+FROM TABLE(RESULT_SCAN(?))
+GROUP BY LOWER("schema_name")`
+	rows, err := conn.QueryContext(ctx, q, qid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []NamespaceRollup
+	for rows.Next() {
+		var sch sql.NullString
+		var tableCount, rowTotal sql.NullInt64
+		if err := rows.Scan(&sch, &tableCount, &rowTotal); err != nil {
+			return nil, err
+		}
+		out = append(out, NamespaceRollup{
+			Database:          dbName,
+			Schema:            sch.String,
+			TableCount:        int(tableCount.Int64),
+			ApproxRowTotal:    rowTotal.Int64,
+			RowCountAvailable: true,
+		})
+	}
+	return out, rows.Err()
 }
 
 func bigqueryNamespaceRollup(ctx context.Context, db *sql.DB) ([]NamespaceRollup, error) {

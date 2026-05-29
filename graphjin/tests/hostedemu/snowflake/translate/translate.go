@@ -156,7 +156,7 @@ func metadataCreateSQL(schema *catalog.Schema) []string {
 		"CREATE TABLE _gj_sf_table_constraints (constraint_catalog VARCHAR, constraint_schema VARCHAR, constraint_name VARCHAR, table_schema VARCHAR, table_name VARCHAR, constraint_type VARCHAR)",
 		"CREATE TABLE _gj_sf_key_column_usage (constraint_catalog VARCHAR, constraint_schema VARCHAR, constraint_name VARCHAR, table_schema VARCHAR, table_name VARCHAR, column_name VARCHAR, ordinal_position BIGINT, position_in_unique_constraint BIGINT)",
 		"CREATE TABLE _gj_sf_referential_constraints (constraint_catalog VARCHAR, constraint_schema VARCHAR, constraint_name VARCHAR, unique_constraint_catalog VARCHAR, unique_constraint_schema VARCHAR, unique_constraint_name VARCHAR)",
-		"CREATE TABLE _gj_sf_result_scan (query_id VARCHAR, scan_type VARCHAR, schema_name VARCHAR, table_name VARCHAR, column_name VARCHAR, data_type VARCHAR, fk_schema_name VARCHAR, fk_table_name VARCHAR, fk_column_name VARCHAR, pk_schema_name VARCHAR, pk_table_name VARCHAR, pk_column_name VARCHAR, fk_name VARCHAR, key_sequence BIGINT, name VARCHAR, cluster_by VARCHAR, total_rows BIGINT)",
+		"CREATE TABLE _gj_sf_result_scan (query_id VARCHAR, scan_type VARCHAR, schema_name VARCHAR, table_name VARCHAR, column_name VARCHAR, data_type VARCHAR, fk_schema_name VARCHAR, fk_table_name VARCHAR, fk_column_name VARCHAR, pk_schema_name VARCHAR, pk_table_name VARCHAR, pk_column_name VARCHAR, fk_name VARCHAR, key_sequence BIGINT, name VARCHAR, cluster_by VARCHAR, \"rows\" BIGINT)",
 		"CREATE TABLE _gj_fk_metadata (table_schema VARCHAR, table_name VARCHAR, column_name VARCHAR, foreign_table_schema VARCHAR, foreign_table_name VARCHAR, foreign_column_name VARCHAR)",
 	}
 }
@@ -511,7 +511,7 @@ JOIN _gj_sf_key_column_usage pk
 WHERE UPPER(fk.table_schema) = UPPER((SELECT schema_name FROM _gj_sf_session LIMIT 1))
 ORDER BY fk.table_schema, fk.table_name, fk.constraint_name, fk.ordinal_position`
 	case "tables":
-		insert = `INSERT INTO _gj_sf_result_scan (query_id, scan_type, schema_name, name, cluster_by, total_rows)
+		insert = `INSERT INTO _gj_sf_result_scan (query_id, scan_type, schema_name, name, cluster_by, "rows")
 SELECT (SELECT last_query_id FROM _gj_sf_session LIMIT 1), 'tables', table_schema, table_name, clustering_key, row_count
 FROM _gj_sf_tables
 WHERE table_type = 'BASE TABLE'
