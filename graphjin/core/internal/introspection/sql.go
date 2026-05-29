@@ -98,11 +98,11 @@ var mysqlViewPKsStmt string
 //go:embed sql/snowflake_info.sql
 var snowflakeInfo string
 
-//go:embed sql/snowflake_columns.sql
-var snowflakeColumnsStmt string
+//go:embed sql/snowflake_columns_show.sql
+var snowflakeColumnsShowStmt string
 
-//go:embed sql/snowflake_fk_metadata_exists.sql
-var snowflakeFKMetadataExistsStmt string
+//go:embed sql/snowflake_keys_show.sql
+var snowflakeKeysShowStmt string
 
 //go:embed sql/snowflake_fk_metadata.sql
 var snowflakeFKMetadataStmt string

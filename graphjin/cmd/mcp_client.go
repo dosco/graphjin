@@ -449,12 +449,8 @@ func readGraphQLArg(arg string) (string, error) {
 
 // runToolCmd is a shared Run function: marshals args, calls the tool, emits
 // the result. Any error exits the process with status 1.
-func runToolCmd(cmd *cobra.Command, toolName string, args map[string]any) {
-	mcpClientRedirectLog()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Strip nil / empty values so server-side defaults apply.
+// cleanToolArgs strips nil / empty values so server-side defaults apply.
+func cleanToolArgs(args map[string]any) map[string]any {
 	clean := map[string]any{}
 	for k, v := range args {
 		switch vv := v.(type) {
@@ -474,8 +470,37 @@ func runToolCmd(cmd *cobra.Command, toolName string, args map[string]any) {
 			clean[k] = v
 		}
 	}
+	return clean
+}
 
-	payload, err := callTool(ctx, cmd, toolName, clean)
+// isToolNotFound reports whether err is a JSON-RPC "tool not found" (-32602),
+// which a catalog-first (sources mode) server returns for legacy discovery tools.
+func isToolNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "tool not found") ||
+		(strings.Contains(s, "-32602") && strings.Contains(s, "not found"))
+}
+
+func runToolCmd(cmd *cobra.Command, toolName string, args map[string]any) {
+	runToolCmdWithFallback(cmd, toolName, args, "", nil)
+}
+
+// runToolCmdWithFallback calls toolName; if the server does not expose it (a
+// sources-mode server hides legacy discovery tools behind the catalog), it
+// retries fallbackTool. This lets schema commands work against both legacy and
+// catalog-first servers without the caller knowing which mode is in use.
+func runToolCmdWithFallback(cmd *cobra.Command, toolName string, args map[string]any, fallbackTool string, fallbackArgs map[string]any) {
+	mcpClientRedirectLog()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	payload, err := callTool(ctx, cmd, toolName, cleanToolArgs(args))
+	if err != nil && fallbackTool != "" && isToolNotFound(err) {
+		payload, err = callTool(ctx, cmd, fallbackTool, cleanToolArgs(fallbackArgs))
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		os.Exit(1)

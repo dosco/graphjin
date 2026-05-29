@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -150,4 +151,30 @@ func mustTestSchema(t *testing.T) *sdata.DBSchema {
 		t.Fatalf("create test schema: %v", err)
 	}
 	return schema
+}
+
+// TestDiscoverAllDatabasesConcurrent checks the bounded errgroup fan-out visits
+// every database and preserves each one's dbinfo. n exceeds the concurrency
+// limit so the queueing path is exercised; run with -race to catch fan-out
+// races. True concurrent live discovery is covered by integration tests.
+func TestDiscoverAllDatabasesConcurrent(t *testing.T) {
+	const n = 16
+	engine := &graphjinEngine{databases: make(map[string]*dbContext, n)}
+	want := make(map[string]*sdata.DBInfo, n)
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("db_%02d", i)
+		info := sdata.GetTestDBInfo()
+		engine.databases[name] = &dbContext{name: name, dbtype: "postgres", dbinfo: info}
+		want[name] = info
+	}
+	engine.defaultDB = "db_00"
+
+	if err := engine.discoverAllDatabases(); err != nil {
+		t.Fatalf("discoverAllDatabases: %v", err)
+	}
+	for name, info := range want {
+		if engine.databases[name].dbinfo != info {
+			t.Fatalf("db %s: dbinfo dropped or replaced by concurrent discovery", name)
+		}
+	}
 }
