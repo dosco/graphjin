@@ -22,12 +22,10 @@ var mcpSchemaDatabase string
 func mcpSchemaTablesCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "tables",
-		Short: "List all database tables (MCP: list_tables)",
+		Short: "List all database tables (MCP: list_tables; falls back to paged query_catalog)",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
-			runToolCmd(cmd, "list_tables", map[string]any{
-				"database": mcpSchemaDatabase,
-			})
+			emitSchemaTables(cmd, mcpSchemaDatabase)
 		},
 	}
 	c.Flags().StringVar(&mcpSchemaDatabase, "database", "", "Filter by database name (optional)")
@@ -39,12 +37,16 @@ var mcpSchemaDescribeDatabase string
 func mcpSchemaDescribeCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "describe <table>",
-		Short: "Show a table's columns, relationships, and aggregations (MCP: describe_table)",
+		Short: "Show a table's columns, relationships, and aggregations (MCP: describe_table, falls back to query_catalog)",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			runToolCmd(cmd, "describe_table", map[string]any{
+			runToolCmdWithFallback(cmd, "describe_table", map[string]any{
 				"table":    args[0],
 				"database": mcpSchemaDescribeDatabase,
+			}, "query_catalog", map[string]any{
+				"search": args[0],
+				"where":  map[string]any{"kind": map[string]any{"in": []any{"table", "column"}}},
+				"limit":  200,
 			})
 		},
 	}

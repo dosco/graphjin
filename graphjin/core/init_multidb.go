@@ -13,17 +13,24 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/psql"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"golang.org/x/sync/errgroup"
 )
 
 // discoverAllDatabases runs Phase 1: schema discovery for all databases.
 // This populates ctx.dbinfo for each database context.
 func (gj *graphjinEngine) discoverAllDatabases() error {
+	// Discover sources concurrently — each writes only its own ctx.dbinfo, so
+	// there is no shared state to race on. Bounded so a config with many sources
+	// doesn't open a large number of connections at once.
+	var g errgroup.Group
+	g.SetLimit(8)
 	for _, ctx := range gj.databases {
-		if err := gj.discoverDatabase(ctx); err != nil {
-			return err
-		}
+		ctx := ctx
+		g.Go(func() error {
+			return gj.discoverDatabase(ctx)
+		})
 	}
-	return nil
+	return g.Wait()
 }
 
 // discoverDatabase discovers raw schema metadata for a single database.

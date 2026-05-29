@@ -53,9 +53,14 @@ type CatalogQueryResult struct {
 	Revision        string                       `json:"revision,omitempty"`
 	SourceRevisions map[string]string            `json:"source_revisions,omitempty"`
 	Count           int                          `json:"count"`
-	Cards           []CatalogItem                `json:"cards"`
-	Matches         map[string]core.CatalogMatch `json:"matches,omitempty"`
-	Next            *NextGuidance                `json:"next,omitempty"`
+	Limit           int                          `json:"limit,omitempty"`
+	Offset          int                          `json:"offset,omitempty"`
+	// Truncated is true when this page filled the limit and more matching items
+	// likely exist. Page with offset (or narrow with search/where) until false.
+	Truncated bool                         `json:"truncated"`
+	Cards     []CatalogItem                `json:"cards"`
+	Matches   map[string]core.CatalogMatch `json:"matches,omitempty"`
+	Next      *NextGuidance                `json:"next,omitempty"`
 }
 
 type GraphQLHelpResult struct {
@@ -160,9 +165,16 @@ func (ms *mcpServer) registerCatalogTools() {
 			mcp.Description("Compatibility shorthand for where.column_name.eq."),
 		),
 		mcp.WithNumber("limit",
-			mcp.Description("Maximum catalog items to return. Defaults to 100, max 500."),
+			mcp.Description("Maximum catalog items to return per call. Defaults to 100, max 500 "+
+				"(payloads are large). When the result's `truncated` field is true there are "+
+				"more matching items — page with `offset`, or narrow with `search`/`where`."),
 			mcp.Min(1),
 			mcp.Max(500),
+		),
+		mcp.WithNumber("offset",
+			mcp.Description("Number of matching items to skip, for paging past the limit. "+
+				"Use offset = previous offset + limit while the result stays `truncated`."),
+			mcp.Min(0),
 		),
 		mcp.WithOutputSchema[CatalogQueryResult](),
 	), ms.handleQueryCatalog)
@@ -318,20 +330,38 @@ func (ms *mcpServer) handleQueryCatalog(ctx context.Context, req mcp.CallToolReq
 		Table:    stringArg(args, "table"),
 		Column:   stringArg(args, "column"),
 		Limit:    catalogIntArg(args, "limit"),
+		Offset:   catalogIntArg(args, "offset"),
 	}
 	rows, err := ms.queryCatalogGraphQL(ctx, q)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	// A full page means more matching items likely exist beyond this call's
+	// limit. Surface that explicitly (with a paging option) so callers don't
+	// silently miss tables. ID lookups return at most one row and never page.
+	eff := catalogEffectiveLimit(q)
+	truncated := q.ID == "" && len(rows) >= eff
+	nextOptions := []NextOption{
+		nextOption("query_catalog", 1, "Inspect a returned catalog item in detail.", "Call query_catalog with the id of the most relevant item.", []string{"id"}, nil),
+		nextOption("validate_where_clause", 2, "Validate filters after choosing a table/column.", "Use for where clauses against discovered schema.", []string{"table", "where"}, []string{"database"}),
+	}
+	if truncated {
+		nextOptions = append([]NextOption{
+			nextOption("query_catalog", 0,
+				"More items exist — fetch the next page or narrow the query.",
+				fmt.Sprintf("Repeat with offset: %d (same limit/where) until truncated is false, or add search/where to narrow.", q.Offset+eff),
+				nil, []string{"offset", "search", "where", "limit"}),
+		}, nextOptions...)
+	}
 	result := CatalogQueryResult{
 		GeneratedAt: time.Now().UTC().Format("2006-01-02T15:04:05Z07:00"),
 		Revision:    ms.catalogRevisionGraphQL(ctx),
 		Count:       len(rows),
+		Limit:       eff,
+		Offset:      q.Offset,
+		Truncated:   truncated,
 		Cards:       rows,
-		Next: ms.newNextGuidance("catalog_results", []NextOption{
-			nextOption("query_catalog", 1, "Inspect a returned catalog item in detail.", "Call query_catalog with the id of the most relevant item.", []string{"id"}, nil),
-			nextOption("validate_where_clause", 2, "Validate filters after choosing a table/column.", "Use for where clauses against discovered schema.", []string{"table", "where"}, []string{"database"}),
-		}),
+		Next:        ms.newNextGuidance("catalog_results", nextOptions),
 	}
 	if q.Explain && q.Search != "" {
 		result.Matches = catalogMatchesFromRows(rows)
@@ -644,6 +674,7 @@ type catalogGraphQLQuery struct {
 	Where   map[string]any
 	OrderBy map[string]string
 	Limit   int
+	Offset  int
 	Explain bool
 
 	Kind     string
@@ -736,6 +767,9 @@ func catalogGraphQLArgs(q catalogGraphQLQuery) (string, error) {
 		args = append(args, "order_by: "+value)
 	}
 	args = append(args, fmt.Sprintf("limit: %d", catalogEffectiveLimit(q)))
+	if q.Offset > 0 {
+		args = append(args, fmt.Sprintf("offset: %d", q.Offset))
+	}
 	return strings.Join(args, ", "), nil
 }
 

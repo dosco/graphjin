@@ -113,6 +113,7 @@ type state struct {
 	catalog any
 	session Session
 	mu      sync.Mutex
+	qidMu   sync.Mutex // serializes query-id-producing execs + their capture
 	seq     int64
 	file    *os.File
 	duck    *sql.DB
@@ -193,6 +194,25 @@ func (s *state) close() error {
 
 type conn struct {
 	state *state
+	// lastQueryID models Snowflake's per-session LAST_QUERY_ID(): real Snowflake
+	// scopes it per connection, so the shared _gj_sf_session table cannot be
+	// trusted under concurrent discovery. Captured per connection right after a
+	// query-id-producing exec (e.g. SHOW), under state.qidMu.
+	lastQueryID string
+}
+
+// QueryIDTracker is an optional Adapter capability for dialects (Snowflake) whose
+// discovery reads a prior statement's result back via a session-scoped query id
+// (LAST_QUERY_ID() + RESULT_SCAN). The harness captures the id per connection so
+// concurrent discoveries don't race on shared emulator session state. Adapters
+// that don't implement it (BigQuery) are unaffected.
+type QueryIDTracker interface {
+	// IsQueryIDProducer reports whether sql sets the session's last query id.
+	IsQueryIDProducer(sql string) bool
+	// IsQueryIDQuery reports whether sql reads the session's last query id.
+	IsQueryIDQuery(sql string) bool
+	// CaptureQueryIDSQL returns a one-row, one-column query for the current id.
+	CaptureQueryIDSQL() string
 }
 
 func (c *conn) Prepare(query string) (driver.Stmt, error) {
@@ -213,22 +233,57 @@ func (c *conn) CheckNamedValue(*driver.NamedValue) error { return nil }
 
 func (c *conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	phase := c.state.adapter.ClassifyPhase(query)
+
+	// For query-id-producing execs (Snowflake SHOW), hold qidMu across the exec
+	// and the per-connection id capture so a concurrent connection's SHOW can't
+	// clobber the shared last_query_id between them.
+	tracker, _ := c.state.adapter.(QueryIDTracker)
+	produces := tracker != nil && tracker.IsQueryIDProducer(query)
+	if produces {
+		c.state.qidMu.Lock()
+		defer c.state.qidMu.Unlock()
+	}
+
 	res, result, trace, err := c.state.exec(ctx, phase, query, args)
 	c.state.capture("exec", phase, query, args, result, err, trace)
 	if err != nil {
 		return nil, err
+	}
+	if produces {
+		c.captureQueryID(ctx, tracker.CaptureQueryIDSQL())
 	}
 	return res, nil
 }
 
 func (c *conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	phase := c.state.adapter.ClassifyPhase(query)
+
+	// Serve LAST_QUERY_ID() from this connection's captured id rather than the
+	// shared session table, matching real Snowflake's per-session semantics.
+	if tracker, ok := c.state.adapter.(QueryIDTracker); ok && tracker.IsQueryIDQuery(query) {
+		rows := NewRows([]string{"LAST_QUERY_ID"}, []driver.Value{c.lastQueryID})
+		c.state.capture("query", phase, query, args, "rows:1", nil, backendTrace{Backend: c.state.conf.Backend})
+		return rows, nil
+	}
+
 	rows, result, trace, err := c.state.query(ctx, phase, query, args)
 	c.state.capture("query", phase, query, args, result, err, trace)
 	if err != nil {
 		return nil, err
 	}
 	return rows, nil
+}
+
+// captureQueryID reads the current session query id into this connection's
+// per-connection slot. Called under state.qidMu right after a producing exec.
+func (c *conn) captureQueryID(ctx context.Context, sql string) {
+	if sql == "" || c.state.duck == nil {
+		return
+	}
+	var qid string
+	if err := c.state.duck.QueryRowContext(ctx, sql).Scan(&qid); err == nil {
+		c.lastQueryID = qid
+	}
 }
 
 type stmt struct {

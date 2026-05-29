@@ -425,6 +425,43 @@ func TestHandleQueryCatalog_SearchWhereOrderExplain(t *testing.T) {
 	}
 }
 
+// TestHandleQueryCatalog_TruncationAndOffset guards against silent truncation:
+// a full page must report truncated + echo limit/offset, and offset must page to
+// the next item so callers can reach every table rather than miss the tail.
+func TestHandleQueryCatalog_TruncationAndOffset(t *testing.T) {
+	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
+
+	res, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{"limit": 1}))
+	if err != nil {
+		t.Fatalf("handle query_catalog: %v", err)
+	}
+	var page1 CatalogQueryResult
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &page1); err != nil {
+		t.Fatalf("decode page1: %v", err)
+	}
+	if page1.Count != 1 || page1.Limit != 1 {
+		t.Fatalf("page1 count/limit = %d/%d, want 1/1", page1.Count, page1.Limit)
+	}
+	if !page1.Truncated {
+		t.Fatal("page1 must be truncated when more catalog items exist beyond the limit")
+	}
+
+	res2, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{"limit": 1, "offset": 1}))
+	if err != nil {
+		t.Fatalf("handle query_catalog offset: %v", err)
+	}
+	var page2 CatalogQueryResult
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, res2)), &page2); err != nil {
+		t.Fatalf("decode page2: %v", err)
+	}
+	if page2.Offset != 1 {
+		t.Fatalf("page2 offset = %d, want 1", page2.Offset)
+	}
+	if len(page1.Cards) == 1 && len(page2.Cards) == 1 && page1.Cards[0].ID == page2.Cards[0].ID {
+		t.Fatalf("offset did not advance: both pages returned %s", page1.Cards[0].ID)
+	}
+}
+
 func TestHandleCatalogEntrypointsAndCapabilitiesUseGraphQL(t *testing.T) {
 	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
 
