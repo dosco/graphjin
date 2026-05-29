@@ -101,29 +101,11 @@ var snowflakeInfo string
 //go:embed sql/snowflake_columns.sql
 var snowflakeColumnsStmt string
 
-//go:embed sql/snowflake_columns_basic.sql
-var snowflakeColumnsBasicStmt string
-
-//go:embed sql/snowflake_constraints_count.sql
-var snowflakeConstraintsCountStmt string
-
-//go:embed sql/snowflake_constraint_columns.sql
-var snowflakeConstraintColumnsStmt string
-
-//go:embed sql/snowflake_foreign_keys.sql
-var snowflakeForeignKeysStmt string
-
 //go:embed sql/snowflake_fk_metadata_exists.sql
 var snowflakeFKMetadataExistsStmt string
 
 //go:embed sql/snowflake_fk_metadata.sql
 var snowflakeFKMetadataStmt string
-
-//go:embed sql/snowflake_columns_show.sql
-var snowflakeColumnsShowStmt string
-
-//go:embed sql/snowflake_columns_show_basic.sql
-var snowflakeColumnsShowBasicStmt string
 
 //go:embed sql/snowflake_clustering.sql
 var snowflakeClusteringStmt string

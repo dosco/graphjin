@@ -10,7 +10,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -29,11 +28,6 @@ type CompositeFKInfo = sdata.CompositeFKInfo
 // query. Without this, a hung network read from the driver (seen with
 // go-ora against Oracle) could block a test run indefinitely.
 const introspectionQueryTimeout = 30 * time.Second
-
-var (
-	errSnowflakeNoUserSchemas = errors.New("snowflake: no user schemas found")
-	errSnowflakeNoColumns     = errors.New("snowflake: no columns found")
-)
 
 // GetDBInfo returns the database schema information.
 //
@@ -408,135 +402,22 @@ func mysqlHasConstraints(ctx context.Context, db *sql.DB, stmt string) (bool, er
 }
 
 func discoverSnowflakeColumns(ctx context.Context, db *sql.DB, blockList []string) ([]DBColumn, error) {
-	if snowflakeUseShowDiscovery() {
-		if cols, err := discoverSnowflakeColumnsViaShow(ctx, db, blockList, true); err == nil && len(cols) != 0 {
-			return cols, nil
-		}
-	}
-
-	cols, showIncludeKeys, err := discoverSnowflakeColumnsViaInformationSchema(ctx, db, blockList)
-	if err == nil && len(cols) != 0 {
-		return cols, nil
-	}
-	if errors.Is(err, errSnowflakeNoUserSchemas) {
-		if cols, err := discoverSnowflakeColumnsViaBasic(ctx, db, blockList); err == nil && len(cols) != 0 {
-			return cols, nil
-		}
-	}
-	if cols, err := discoverSnowflakeColumnsViaShow(ctx, db, blockList, showIncludeKeys); err == nil {
-		if len(cols) != 0 {
-			return cols, nil
-		}
-	}
-
-	return discoverSnowflakeColumnsViaBasic(ctx, db, blockList)
-}
-
-func discoverSnowflakeColumnsViaBasic(ctx context.Context, db *sql.DB, blockList []string) ([]DBColumn, error) {
 	cmap := make(map[string]DBColumn)
-	if err := queryAndScanDiscoveredColumns(ctx, db, "snowflake", blockList, cmap, snowflakeColumnsBasicStmt); err != nil {
+	if err := queryAndScanDiscoveredColumns(ctx, db, "snowflake", blockList, cmap, snowflakeColumnsStmt); err != nil {
 		return nil, fmt.Errorf("error fetching columns: %w", err)
 	}
-	return enrichAndCollectColumns(ctx, db, "snowflake", cmap), nil
-}
 
-func discoverSnowflakeColumnsViaInformationSchema(
-	ctx context.Context,
-	db *sql.DB,
-	blockList []string,
-) ([]DBColumn, bool, error) {
-	schemas, err := discoverSnowflakeUserSchemas(ctx, db)
+	hasOverrides, err := snowflakeFKMetadataExists(ctx, db)
 	if err != nil {
-		return nil, true, fmt.Errorf("error fetching snowflake schemas: %w", err)
+		return nil, fmt.Errorf("error checking snowflake _gj_fk_metadata: %w", err)
 	}
-	if len(schemas) == 0 {
-		return nil, true, errSnowflakeNoUserSchemas
-	}
-
-	cmap := make(map[string]DBColumn)
-	var hasOverrides bool
-
-	hasOverrides, err = snowflakeFKMetadataExists(ctx, db)
-	if err != nil {
-		return nil, true, fmt.Errorf("error checking snowflake _gj_fk_metadata: %w", err)
-	}
-
-	var anyConstraints bool
-	var mu sync.Mutex
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(4)
-	for _, schema := range schemas {
-		schema := schema
-		g.Go(func() error {
-			local := make(map[string]DBColumn)
-			if err := queryAndScanDiscoveredColumns(gctx, db, "snowflake", blockList, local, snowflakeColumnsStmt, schema); err != nil {
-				return fmt.Errorf("error fetching snowflake columns for schema %q: %w", schema, err)
-			}
-
-			hasConstraints, err := snowflakeHasConstraints(gctx, db, schema)
-			if err != nil {
-				return fmt.Errorf("error checking snowflake constraints for schema %q: %w", schema, err)
-			}
-			if hasConstraints {
-				constraints := make(map[string]DBColumn)
-				fkeys := make(map[string]DBColumn)
-				cg, cgctx := errgroup.WithContext(gctx)
-				cg.Go(func() error {
-					if err := queryAndScanDiscoveredColumns(cgctx, db, "snowflake", blockList, constraints, snowflakeConstraintColumnsStmt, schema); err != nil {
-						return fmt.Errorf("error fetching snowflake constraints: %w", err)
-					}
-					return nil
-				})
-				cg.Go(func() error {
-					if err := queryAndScanDiscoveredColumns(cgctx, db, "snowflake", blockList, fkeys, snowflakeForeignKeysStmt, schema); err != nil {
-						return fmt.Errorf("error fetching snowflake foreign keys: %w", err)
-					}
-					return nil
-				})
-				if err := cg.Wait(); err != nil {
-					return err
-				}
-				mergeDiscoveredColumnMaps(local, constraints)
-				mergeDiscoveredColumnMaps(local, fkeys)
-			}
-
-			mu.Lock()
-			mergeDiscoveredColumnMaps(cmap, local)
-			if hasConstraints {
-				anyConstraints = true
-			}
-			mu.Unlock()
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return nil, anyConstraints, err
-	}
-
 	if hasOverrides {
 		if err := queryAndScanDiscoveredColumns(ctx, db, "snowflake", blockList, cmap, snowflakeFKMetadataStmt); err != nil {
-			return nil, anyConstraints, fmt.Errorf("error fetching snowflake _gj_fk_metadata: %w", err)
+			return nil, fmt.Errorf("error fetching snowflake _gj_fk_metadata: %w", err)
 		}
 	}
-	if len(cmap) == 0 {
-		return nil, anyConstraints, errSnowflakeNoColumns
-	}
 
-	return enrichAndCollectColumns(ctx, db, "snowflake", cmap), anyConstraints, nil
-}
-
-func snowflakeHasConstraints(ctx context.Context, db *sql.DB, schema string) (bool, error) {
-	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
-	defer cancel()
-
-	var n int
-	start := time.Now()
-	err := db.QueryRowContext(qctx, snowflakeConstraintsCountStmt, schema).Scan(&n)
-	recordDiscoveryQuery(ctx, "constraint_preflight", snowflakeConstraintsCountStmt, time.Since(start))
-	if err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	return enrichAndCollectColumns(ctx, db, "snowflake", cmap), nil
 }
 
 func snowflakeFKMetadataExists(ctx context.Context, db *sql.DB) (bool, error) {
@@ -599,10 +480,6 @@ func discoverBigQueryColumns(ctx context.Context, db *sql.DB, blockList []string
 	}
 
 	return enrichAndCollectColumns(ctx, db, "bigquery", cmap), nil
-}
-
-func snowflakeUseShowDiscovery() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_DISCOVERY")), "show")
 }
 
 func snowflakeSkipClusteringDiscovery() bool {
@@ -1076,7 +953,7 @@ func DiscoverCompositeFKs(ctx context.Context, db *sql.DB, dbtype string) ([]Com
 	case "mssql":
 		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQueryMSSQL)
 	case "snowflake":
-		result, err = discoverSnowflakeCompositeFKsViaShow(ctx, db)
+		result, err = discoverSnowflakeCompositeFKs(ctx, db)
 	case "bigquery":
 		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQueryBigQuery)
 	default:
@@ -1184,6 +1061,29 @@ GROUP BY s.name, t.name, fkc.constraint_object_id, rs.name, rt.name
 HAVING COUNT(*) > 1`
 
 const compositeFKQuerySnowflake = `
+SELECT fk_kcu.table_schema, fk_kcu.table_name, fk_kcu.constraint_name,
+       LISTAGG(fk_kcu.column_name, ',') WITHIN GROUP (ORDER BY fk_kcu.ordinal_position) AS local_columns,
+       pk_kcu.table_schema AS fkey_schema,
+       pk_kcu.table_name AS fkey_table,
+       LISTAGG(pk_kcu.column_name, ',') WITHIN GROUP (ORDER BY fk_kcu.ordinal_position) AS fkey_columns
+FROM information_schema.referential_constraints rc
+JOIN information_schema.key_column_usage fk_kcu ON (
+	rc.constraint_catalog = fk_kcu.constraint_catalog
+	AND rc.constraint_schema = fk_kcu.constraint_schema
+	AND rc.constraint_name = fk_kcu.constraint_name
+)
+JOIN information_schema.key_column_usage pk_kcu ON (
+	rc.unique_constraint_catalog = pk_kcu.constraint_catalog
+	AND rc.unique_constraint_schema = pk_kcu.constraint_schema
+	AND rc.unique_constraint_name = pk_kcu.constraint_name
+	AND fk_kcu.position_in_unique_constraint = pk_kcu.ordinal_position
+)
+WHERE UPPER(fk_kcu.table_schema) NOT IN ('INFORMATION_SCHEMA')
+GROUP BY fk_kcu.table_schema, fk_kcu.table_name, fk_kcu.constraint_name,
+         pk_kcu.table_schema, pk_kcu.table_name
+HAVING COUNT(*) > 1`
+
+const compositeFKQuerySnowflakeOverrides = `
 SELECT table_schema, table_name,
        table_schema || ':' || table_name || ':' || foreign_table_name AS constraint_name,
        LISTAGG(column_name, ',') WITHIN GROUP (ORDER BY column_name) AS local_columns,
@@ -1455,257 +1355,49 @@ func isInList(val string, s []string) bool {
 	return false
 }
 
-func discoverSnowflakeCompositeFKsViaShow(ctx context.Context, db *sql.DB) ([]CompositeFKInfo, error) {
-	schemas, err := discoverSnowflakeUserSchemas(ctx, db)
-	if err != nil || len(schemas) == 0 {
-		schemas = []string{""}
-	}
-
-	aggQuery := `
-SELECT "fk_schema_name" AS table_schema,
-       "fk_table_name" AS table_name,
-       "fk_name" AS constraint_name,
-       LISTAGG("fk_column_name", ',') WITHIN GROUP (ORDER BY "key_sequence") AS local_columns,
-       "pk_schema_name" AS fkey_schema,
-       "pk_table_name" AS fkey_table,
-       LISTAGG("pk_column_name", ',') WITHIN GROUP (ORDER BY "key_sequence") AS fkey_columns
-FROM TABLE(RESULT_SCAN(?))
-GROUP BY "fk_schema_name", "fk_table_name", "fk_name", "pk_schema_name", "pk_table_name"
-HAVING COUNT(*) > 1`
-
-	var result []CompositeFKInfo
-	var mu sync.Mutex
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(4)
-
-	for _, schema := range schemas {
-		schema := schema
-		g.Go(func() error {
-			conn, err := db.Conn(gctx)
-			if err != nil {
-				return err
-			}
-			defer conn.Close()
-
-			sctx, cancel := context.WithTimeout(gctx, introspectionQueryTimeout)
-			stmt := snowflakeShowInSchemaStmt("SHOW IMPORTED KEYS IN SCHEMA", schema)
-			start := time.Now()
-			if _, err := conn.ExecContext(sctx, stmt); err != nil {
-				recordDiscoveryQuery(ctx, "schema_metadata", stmt, time.Since(start))
-				cancel()
-				return err
-			}
-			recordDiscoveryQuery(ctx, "schema_metadata", stmt, time.Since(start))
-			var qid string
-			start = time.Now()
-			if err := conn.QueryRowContext(sctx, "SELECT LAST_QUERY_ID()").Scan(&qid); err != nil {
-				recordDiscoveryQuery(ctx, "schema_metadata", "SELECT LAST_QUERY_ID()", time.Since(start))
-				cancel()
-				return err
-			}
-			recordDiscoveryQuery(ctx, "schema_metadata", "SELECT LAST_QUERY_ID()", time.Since(start))
-			cancel()
-
-			var local []CompositeFKInfo
-			qctx, qcancel := context.WithTimeout(gctx, introspectionQueryTimeout)
-			start = time.Now()
-			rows, err := conn.QueryContext(qctx, aggQuery, qid)
-			recordDiscoveryQuery(ctx, "schema_metadata", aggQuery, time.Since(start))
-			if err != nil {
-				qcancel()
-				return err
-			}
-			for rows.Next() {
-				var info CompositeFKInfo
-				var localCSV, fkeyCSV string
-				if err := rows.Scan(
-					&info.Schema, &info.Table, &info.ConstraintName,
-					&localCSV,
-					&info.FKeySchema, &info.FKeyTable,
-					&fkeyCSV,
-				); err != nil {
-					rows.Close()
-					qcancel()
-					return err
-				}
-				info.LocalCols = strings.Split(localCSV, ",")
-				info.FKeyCols = strings.Split(fkeyCSV, ",")
-				info.Schema = strings.ToLower(info.Schema)
-				info.Table = strings.ToLower(info.Table)
-				info.FKeySchema = strings.ToLower(info.FKeySchema)
-				info.FKeyTable = strings.ToLower(info.FKeyTable)
-				for i := range info.LocalCols {
-					info.LocalCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.LocalCols[i])))
-				}
-				for i := range info.FKeyCols {
-					info.FKeyCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.FKeyCols[i])))
-				}
-				local = append(local, info)
-			}
-			if err := rows.Err(); err != nil {
-				rows.Close()
-				qcancel()
-				return err
-			}
-			rows.Close()
-			qcancel()
-			mu.Lock()
-			result = append(result, local...)
-			mu.Unlock()
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func discoverSnowflakeColumnsViaShow(ctx context.Context, db *sql.DB, blockList []string, includeKeys bool) ([]DBColumn, error) {
-	schemas, err := discoverSnowflakeUserSchemas(ctx, db)
-	if err != nil || len(schemas) == 0 {
-		schemas = []string{""}
-	}
-
-	cmap := make(map[string]DBColumn)
-	var mu sync.Mutex
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(4)
-
-	for _, schema := range schemas {
-		schema := schema
-		g.Go(func() error {
-			conn, err := db.Conn(gctx)
-			if err != nil {
-				return err
-			}
-			defer conn.Close()
-
-			runShow := func(stmt string) (string, error) {
-				sctx, cancel := context.WithTimeout(gctx, introspectionQueryTimeout)
-				defer cancel()
-				start := time.Now()
-				if _, err := conn.ExecContext(sctx, stmt); err != nil {
-					recordDiscoveryQuery(ctx, "schema_metadata", stmt, time.Since(start))
-					return "", err
-				}
-				recordDiscoveryQuery(ctx, "schema_metadata", stmt, time.Since(start))
-				var qid string
-				start = time.Now()
-				if err := conn.QueryRowContext(sctx, "SELECT LAST_QUERY_ID()").Scan(&qid); err != nil {
-					recordDiscoveryQuery(ctx, "schema_metadata", "SELECT LAST_QUERY_ID()", time.Since(start))
-					return "", err
-				}
-				recordDiscoveryQuery(ctx, "schema_metadata", "SELECT LAST_QUERY_ID()", time.Since(start))
-				return qid, nil
-			}
-
-			local := make(map[string]DBColumn)
-			colsQID, err := runShow(snowflakeShowInSchemaStmt("SHOW COLUMNS IN SCHEMA", schema))
-			if err != nil {
-				return fmt.Errorf("snowflake SHOW COLUMNS: %w", err)
-			}
-
-			if !includeKeys {
-				qctx, cancel := context.WithTimeout(gctx, introspectionQueryTimeout)
-				start := time.Now()
-				rows, err := conn.QueryContext(qctx, snowflakeColumnsShowBasicStmt, colsQID)
-				recordDiscoveryQuery(ctx, "schema_metadata", snowflakeColumnsShowBasicStmt, time.Since(start))
-				if err != nil {
-					cancel()
-					return err
-				}
-				if err := scanDiscoveredColumnRows(rows, "snowflake", blockList, local); err != nil {
-					cancel()
-					return err
-				}
-				cancel()
-
-				mu.Lock()
-				mergeDiscoveredColumnMaps(cmap, local)
-				mu.Unlock()
-				return nil
-			}
-
-			pksQID, err := runShow(snowflakeShowInSchemaStmt("SHOW PRIMARY KEYS IN SCHEMA", schema))
-			if err != nil {
-				return fmt.Errorf("snowflake SHOW PRIMARY KEYS: %w", err)
-			}
-			uksQID, err := runShow(snowflakeShowInSchemaStmt("SHOW UNIQUE KEYS IN SCHEMA", schema))
-			if err != nil {
-				return fmt.Errorf("snowflake SHOW UNIQUE KEYS: %w", err)
-			}
-			fksQID, err := runShow(snowflakeShowInSchemaStmt("SHOW IMPORTED KEYS IN SCHEMA", schema))
-			if err != nil {
-				return fmt.Errorf("snowflake SHOW IMPORTED KEYS: %w", err)
-			}
-
-			qctx, cancel := context.WithTimeout(gctx, introspectionQueryTimeout)
-			start := time.Now()
-			rows, err := conn.QueryContext(qctx, snowflakeColumnsShowStmt, colsQID, pksQID, uksQID, fksQID)
-			recordDiscoveryQuery(ctx, "schema_metadata", snowflakeColumnsShowStmt, time.Since(start))
-			if err != nil {
-				cancel()
-				return err
-			}
-			if err := scanDiscoveredColumnRows(rows, "snowflake", blockList, local); err != nil {
-				cancel()
-				return err
-			}
-			cancel()
-
-			mu.Lock()
-			mergeDiscoveredColumnMaps(cmap, local)
-			mu.Unlock()
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-	return enrichAndCollectColumns(ctx, db, "snowflake", cmap), nil
-}
-
-func discoverSnowflakeUserSchemas(ctx context.Context, db *sql.DB) ([]string, error) {
-	const stmt = `
-SELECT DISTINCT table_schema
-FROM information_schema.tables
-WHERE UPPER(table_schema) NOT IN ('INFORMATION_SCHEMA')
-ORDER BY table_schema`
-
-	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
-	defer cancel()
-	start := time.Now()
-	rows, err := db.QueryContext(qctx, stmt)
-	recordDiscoveryQuery(ctx, "schema_metadata", stmt, time.Since(start))
+func discoverSnowflakeCompositeFKs(ctx context.Context, db *sql.DB) ([]CompositeFKInfo, error) {
+	result, err := discoverCompositeFKsCSV(ctx, db, "snowflake", compositeFKQuerySnowflake)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var schemas []string
-	for rows.Next() {
-		var schema string
-		if err := rows.Scan(&schema); err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(schema) != "" {
-			schemas = append(schemas, schema)
-		}
+	hasOverrides, err := snowflakeFKMetadataExists(ctx, db)
+	if err != nil {
+		return nil, err
 	}
-	return schemas, rows.Err()
+	if !hasOverrides {
+		return result, nil
+	}
+
+	overrides, err := discoverCompositeFKsCSV(ctx, db, "snowflake", compositeFKQuerySnowflakeOverrides)
+	if err != nil {
+		return nil, err
+	}
+	return mergeCompositeFKInfos(result, overrides), nil
 }
 
-func snowflakeShowInSchemaStmt(prefix, schema string) string {
-	schema = strings.TrimSpace(schema)
-	if schema == "" {
-		return prefix
+func mergeCompositeFKInfos(base, overrides []CompositeFKInfo) []CompositeFKInfo {
+	result := append([]CompositeFKInfo(nil), base...)
+	index := make(map[string]int, len(result))
+	for i := range result {
+		index[compositeFKKey(result[i])] = i
 	}
-	return prefix + " " + snowflakeQuoteIdent(schema)
+	for _, info := range overrides {
+		key := compositeFKKey(info)
+		if i, ok := index[key]; ok {
+			result[i] = info
+			continue
+		}
+		index[key] = len(result)
+		result = append(result, info)
+	}
+	return result
 }
 
-func snowflakeQuoteIdent(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+func compositeFKKey(info CompositeFKInfo) string {
+	return info.Schema + ":" + info.Table + ":" +
+		strings.Join(info.LocalCols, ",") + ":" +
+		info.FKeySchema + ":" + info.FKeyTable
 }
 
 // discoverClusteringKeys queries Snowflake's information_schema.tables for
