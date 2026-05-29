@@ -130,6 +130,16 @@ func getDBInfoOnce(
 		return nil
 	})
 
+	if dbType == "snowflake" && !snowflakeSkipClusteringDiscovery() {
+		g.Go(func() error {
+			// Clustering uses SHOW + LAST_QUERY_ID, but runs on its own connection
+			// (its own session), so it is safe concurrently with column discovery.
+			if ck, err := discoverClusteringKeys(gctx, db); err == nil {
+				snowflakeClustering = ck
+			}
+			return nil
+		})
+	}
 
 	g.Go(func() error {
 		var err error
@@ -160,16 +170,6 @@ func getDBInfoOnce(
 
 	if err := g.Wait(); err != nil {
 		return nil, err
-	}
-
-	// Snowflake clustering runs sequentially (not in the group above) because it
-	// uses SHOW + LAST_QUERY_ID like column/key discovery; running them on
-	// separate connections concurrently is fine on real Snowflake (per-session
-	// query ids) but races the shared session in the test emulator. Non-fatal.
-	if dbType == "snowflake" && !snowflakeSkipClusteringDiscovery() {
-		if ck, err := discoverClusteringKeys(ctx, db); err == nil {
-			snowflakeClustering = ck
-		}
 	}
 
 	// When the database returns an empty default schema (e.g., PostgreSQL with
