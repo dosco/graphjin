@@ -692,68 +692,9 @@ func TestPostgresDiscoverColumnsMergesBatchedConstraintRows(t *testing.T) {
 	}
 }
 
-func TestSnowflakeDiscoverColumnsFallsBackWhenSchemaEnumerationIsEmpty(t *testing.T) {
+func TestSnowflakeDiscoverColumnsUsesBulkMetadataOnly(t *testing.T) {
 	state := &snowflakeDiscoveryFakeState{
-		basicRows: [][]driver.Value{
-			snowflakeColumnRow("ANALYTICS", "EVENTS", "ID"),
-		},
-	}
-	db := openSnowflakeDiscoveryFakeDB(t, state)
-	defer db.Close()
-
-	cols, err := DiscoverColumns(context.Background(), db, "snowflake", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cols) != 1 {
-		t.Fatalf("len(cols) = %d, want 1", len(cols))
-	}
-	if got := cols[0].Schema + ":" + cols[0].Table + ":" + cols[0].Name; got != "analytics:events:id" {
-		t.Fatalf("column = %q, want analytics:events:id", got)
-	}
-	if state.count("schemas") != 1 {
-		t.Fatalf("schema enumeration queries = %d, want 1", state.count("schemas"))
-	}
-	if state.count("basic") != 1 {
-		t.Fatalf("basic fallback queries = %d, want 1", state.count("basic"))
-	}
-}
-
-func TestSnowflakeDiscoverColumnsFallsBackWhenSchemaColumnDiscoveryIsEmpty(t *testing.T) {
-	state := &snowflakeDiscoveryFakeState{
-		schemas:         []string{"PUBLIC"},
-		columnsBySchema: map[string][][]driver.Value{},
-		basicRows: [][]driver.Value{
-			snowflakeColumnRow("PUBLIC", "USERS", "ID"),
-		},
-	}
-	db := openSnowflakeDiscoveryFakeDB(t, state)
-	defer db.Close()
-
-	cols, err := DiscoverColumns(context.Background(), db, "snowflake", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cols) != 1 {
-		t.Fatalf("len(cols) = %d, want 1", len(cols))
-	}
-	if got := cols[0].Schema + ":" + cols[0].Table + ":" + cols[0].Name; got != "public:users:id" {
-		t.Fatalf("column = %q, want public:users:id", got)
-	}
-	if state.count("columns") != 1 {
-		t.Fatalf("schema column queries = %d, want 1", state.count("columns"))
-	}
-	if state.count("basic") != 1 {
-		t.Fatalf("basic fallback queries = %d, want 1", state.count("basic"))
-	}
-}
-
-func TestSnowflakeDiscoverColumnsFallsBackWhenForcedShowDiscoveryIsEmpty(t *testing.T) {
-	t.Setenv("GRAPHJIN_SNOWFLAKE_DISCOVERY", "show")
-	state := &snowflakeDiscoveryFakeState{
-		schemas:         []string{"PUBLIC"},
-		columnsBySchema: map[string][][]driver.Value{},
-		basicRows: [][]driver.Value{
+		columnRows: [][]driver.Value{
 			snowflakeColumnRow("PUBLIC", "ACCOUNTS", "ID"),
 		},
 	}
@@ -770,35 +711,98 @@ func TestSnowflakeDiscoverColumnsFallsBackWhenForcedShowDiscoveryIsEmpty(t *test
 	if got := cols[0].Schema + ":" + cols[0].Table + ":" + cols[0].Name; got != "public:accounts:id" {
 		t.Fatalf("column = %q, want public:accounts:id", got)
 	}
-	if state.count("show_exec") == 0 {
-		t.Fatal("expected forced SHOW discovery to execute SHOW statements")
+	if state.count("columns") != 1 {
+		t.Fatalf("bulk column queries = %d, want 1", state.count("columns"))
 	}
-	if state.count("show_scan") == 0 {
-		t.Fatal("expected forced SHOW discovery to scan SHOW results")
-	}
-	if state.count("basic") != 1 {
-		t.Fatalf("basic fallback queries = %d, want 1", state.count("basic"))
+	if state.count("show_exec") != 0 || state.count("show_scan") != 0 {
+		t.Fatalf("SHOW discovery was used: exec=%d scan=%d, want 0", state.count("show_exec"), state.count("show_scan"))
 	}
 }
 
-func TestSnowflakeDiscoverColumnsRunsMultiSchemaCatalogWithBoundedParallelism(t *testing.T) {
+func TestSnowflakeDiscoverColumnsMergesBulkConstraintRows(t *testing.T) {
+	state := &snowflakeDiscoveryFakeState{
+		columnRows: [][]driver.Value{
+			snowflakeColumnRow("PUBLIC", "PRODUCTS", "ID"),
+			snowflakeColumnRow("PUBLIC", "ORDER_ITEMS", "PRODUCT_ID"),
+			{"PUBLIC", "PRODUCTS", "ID", "", false, true, false, false, false, "", "", ""},
+			{"PUBLIC", "ORDER_ITEMS", "PRODUCT_ID", "", false, false, false, false, false, "PUBLIC", "PRODUCTS", "ID"},
+		},
+	}
+	db := openSnowflakeDiscoveryFakeDB(t, state)
+	defer db.Close()
+
+	cols, err := DiscoverColumns(context.Background(), db, "snowflake", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cols) != 2 {
+		t.Fatalf("len(cols) = %d, want 2", len(cols))
+	}
+	if state.count("columns") != 1 {
+		t.Fatalf("bulk column queries = %d, want 1", state.count("columns"))
+	}
+	if state.count("constraints") != 0 || state.count("foreign_keys") != 0 {
+		t.Fatalf("separate constraint queries used: constraints=%d foreign_keys=%d, want 0", state.count("constraints"), state.count("foreign_keys"))
+	}
+
+	byColumn := map[string]DBColumn{}
+	for _, c := range cols {
+		byColumn[c.Schema+":"+c.Table+":"+c.Name] = c
+	}
+	if got := byColumn["public:products:id"]; !got.PrimaryKey || !got.UniqueKey {
+		t.Fatalf("products.id flags = primary:%v unique:%v, want both true", got.PrimaryKey, got.UniqueKey)
+	}
+	if got := byColumn["public:order_items:product_id"]; got.FKeySchema != "public" || got.FKeyTable != "products" || got.FKeyCol != "id" {
+		t.Fatalf("order_items.product_id FK = %s.%s.%s, want public.products.id", got.FKeySchema, got.FKeyTable, got.FKeyCol)
+	}
+}
+
+func TestSnowflakeDiscoverColumnsAppliesFKMetadataOverlay(t *testing.T) {
+	state := &snowflakeDiscoveryFakeState{
+		fkMetadataExists: true,
+		columnRows: [][]driver.Value{
+			snowflakeColumnRow("PUBLIC", "ORDER_ITEMS", "PRODUCT_ID"),
+		},
+		fkMetadataRows: [][]driver.Value{
+			{"PUBLIC", "ORDER_ITEMS", "PRODUCT_ID", "", false, false, false, false, false, "PUBLIC", "PRODUCTS", "ID"},
+		},
+	}
+	db := openSnowflakeDiscoveryFakeDB(t, state)
+	defer db.Close()
+
+	cols, err := DiscoverColumns(context.Background(), db, "snowflake", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cols) != 1 {
+		t.Fatalf("len(cols) = %d, want 1", len(cols))
+	}
+	got := cols[0]
+	if got.FKeySchema != "public" || got.FKeyTable != "products" || got.FKeyCol != "id" {
+		t.Fatalf("overlay FK = %s.%s.%s, want public.products.id", got.FKeySchema, got.FKeyTable, got.FKeyCol)
+	}
+	if state.count("fk_metadata_exists") != 1 {
+		t.Fatalf("_gj_fk_metadata exists checks = %d, want 1", state.count("fk_metadata_exists"))
+	}
+	if state.count("fk_metadata") != 1 {
+		t.Fatalf("_gj_fk_metadata row queries = %d, want 1", state.count("fk_metadata"))
+	}
+}
+
+func TestSnowflakeDiscoverColumnsRunsLargeMultiSchemaCatalogWithOneBulkQuery(t *testing.T) {
 	const (
 		schemaCount     = 40
 		tablesPerSchema = 125
 		totalTables     = schemaCount * tablesPerSchema
 	)
 	state := &snowflakeDiscoveryFakeState{
-		delay:           time.Millisecond,
-		columnsBySchema: map[string][][]driver.Value{},
+		delay: time.Millisecond,
 	}
 	for i := 0; i < schemaCount; i++ {
 		schema := fmt.Sprintf("SCHEMA_%02d", i)
-		state.schemas = append(state.schemas, schema)
-		rows := make([][]driver.Value, 0, tablesPerSchema)
 		for j := 0; j < tablesPerSchema; j++ {
-			rows = append(rows, snowflakeColumnRow(schema, fmt.Sprintf("TABLE_%02d_%03d", i, j), "ID"))
+			state.columnRows = append(state.columnRows, snowflakeColumnRow(schema, fmt.Sprintf("TABLE_%02d_%03d", i, j), "ID"))
 		}
-		state.columnsBySchema[schema] = rows
 	}
 	db := openSnowflakeDiscoveryFakeDB(t, state)
 	defer db.Close()
@@ -822,15 +826,69 @@ func TestSnowflakeDiscoverColumnsRunsMultiSchemaCatalogWithBoundedParallelism(t 
 	if len(seenSchemas) != schemaCount {
 		t.Fatalf("schemas discovered = %d, want %d", len(seenSchemas), schemaCount)
 	}
-	if state.count("columns") != schemaCount {
-		t.Fatalf("schema column queries = %d, want %d", state.count("columns"), schemaCount)
+	if state.count("columns") != 1 {
+		t.Fatalf("bulk column queries = %d, want 1", state.count("columns"))
 	}
-	maxActive := state.maxActiveColumns()
-	if maxActive <= 1 {
-		t.Fatalf("max concurrent schema column queries = %d, want > 1", maxActive)
+	if state.count("schemas") != 0 {
+		t.Fatalf("schema enumeration queries = %d, want 0", state.count("schemas"))
 	}
-	if maxActive > 4 {
-		t.Fatalf("max concurrent schema column queries = %d, want <= 4", maxActive)
+	if state.count("constraint_schemas") != 0 {
+		t.Fatalf("constraint schema preflight queries = %d, want 0", state.count("constraint_schemas"))
+	}
+	if state.count("show_exec") != 0 || state.count("show_scan") != 0 {
+		t.Fatalf("SHOW discovery was used: exec=%d scan=%d, want 0", state.count("show_exec"), state.count("show_scan"))
+	}
+	if state.count("constraints") != 0 || state.count("foreign_keys") != 0 || state.count("basic") != 0 {
+		t.Fatalf("extra metadata queries used: constraints=%d foreign_keys=%d basic=%d, want 0",
+			state.count("constraints"), state.count("foreign_keys"), state.count("basic"))
+	}
+	if state.count("fk_metadata_exists") != 1 {
+		t.Fatalf("_gj_fk_metadata exists checks = %d, want 1", state.count("fk_metadata_exists"))
+	}
+}
+
+func TestSnowflakeDiscoverCompositeFKsUsesInformationSchemaAndOverrides(t *testing.T) {
+	state := &snowflakeDiscoveryFakeState{
+		fkMetadataExists: true,
+		compositeRows: [][]driver.Value{
+			{"PUBLIC", "ORDER_LINES", "ORDER_LINES_ORDER_FK", "ORDER_ID,PRODUCT_ID", "PUBLIC", "ORDERS", "ID,PRODUCT_ID"},
+		},
+		compositeOverrideRows: [][]driver.Value{
+			{"PUBLIC", "LINE_ITEMS", "PUBLIC:LINE_ITEMS:PRODUCTS", "ORDER_ID,PRODUCT_ID", "PUBLIC", "PRODUCTS", "ORDER_ID,ID"},
+		},
+	}
+	db := openSnowflakeDiscoveryFakeDB(t, state)
+	defer db.Close()
+
+	fks, err := DiscoverCompositeFKs(context.Background(), db, "snowflake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fks) != 2 {
+		t.Fatalf("len(fks) = %d, want 2", len(fks))
+	}
+	if state.count("composite_fks") != 1 {
+		t.Fatalf("composite FK information_schema queries = %d, want 1", state.count("composite_fks"))
+	}
+	if state.count("composite_fk_overrides") != 1 {
+		t.Fatalf("composite FK override queries = %d, want 1", state.count("composite_fk_overrides"))
+	}
+	if state.count("show_exec") != 0 || state.count("show_scan") != 0 {
+		t.Fatalf("SHOW discovery was used: exec=%d scan=%d, want 0", state.count("show_exec"), state.count("show_scan"))
+	}
+
+	byTable := map[string]CompositeFKInfo{}
+	for _, fk := range fks {
+		byTable[fk.Table] = fk
+	}
+	if got := byTable["order_lines"]; !reflect.DeepEqual(got.LocalCols, []string{"order_id", "product_id"}) ||
+		!reflect.DeepEqual(got.FKeyCols, []string{"id", "product_id"}) {
+		t.Fatalf("order_lines composite FK = local:%v fkey:%v", got.LocalCols, got.FKeyCols)
+	}
+	if got := byTable["line_items"]; got.FKeyTable != "products" ||
+		!reflect.DeepEqual(got.LocalCols, []string{"order_id", "product_id"}) ||
+		!reflect.DeepEqual(got.FKeyCols, []string{"order_id", "id"}) {
+		t.Fatalf("line_items override FK = table:%s local:%v fkey:%v", got.FKeyTable, got.LocalCols, got.FKeyCols)
 	}
 }
 
@@ -1154,16 +1212,14 @@ func openSnowflakeDiscoveryFakeDB(t *testing.T, state *snowflakeDiscoveryFakeSta
 }
 
 type snowflakeDiscoveryFakeState struct {
-	mu                  sync.Mutex
-	schemas             []string
-	columnsBySchema     map[string][][]driver.Value
-	basicRows           [][]driver.Value
-	showRows            [][]driver.Value
-	counts              map[string]int
-	lastQueryID         int
-	delay               time.Duration
-	activeColumnQueries int
-	maxColumnQueries    int
+	mu                    sync.Mutex
+	columnRows            [][]driver.Value
+	fkMetadataExists      bool
+	fkMetadataRows        [][]driver.Value
+	compositeRows         [][]driver.Value
+	compositeOverrideRows [][]driver.Value
+	counts                map[string]int
+	delay                 time.Duration
 }
 
 func (s *snowflakeDiscoveryFakeState) count(kind string) int {
@@ -1179,27 +1235,6 @@ func (s *snowflakeDiscoveryFakeState) record(kind string) {
 		s.counts = map[string]int{}
 	}
 	s.counts[kind]++
-}
-
-func (s *snowflakeDiscoveryFakeState) beginColumnQuery() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.activeColumnQueries++
-	if s.activeColumnQueries > s.maxColumnQueries {
-		s.maxColumnQueries = s.activeColumnQueries
-	}
-}
-
-func (s *snowflakeDiscoveryFakeState) endColumnQuery() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.activeColumnQueries--
-}
-
-func (s *snowflakeDiscoveryFakeState) maxActiveColumns() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.maxColumnQueries
 }
 
 type snowflakeDiscoveryFakeDriver struct {
@@ -1230,62 +1265,54 @@ func (c snowflakeDiscoveryFakeConn) ExecContext(_ context.Context, query string,
 	upper := strings.ToUpper(strings.TrimSpace(query))
 	if strings.HasPrefix(upper, "SHOW ") {
 		c.state.record("show_exec")
-		c.state.mu.Lock()
-		c.state.lastQueryID++
-		c.state.mu.Unlock()
-		return driver.RowsAffected(0), nil
+		return nil, fmt.Errorf("unexpected Snowflake SHOW discovery exec: %.160s", query)
 	}
 	return nil, fmt.Errorf("unexpected snowflake discovery exec: %.160s", query)
 }
 
-func (c snowflakeDiscoveryFakeConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+func (c snowflakeDiscoveryFakeConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	switch {
-	case isSnowflakeUserSchemasQuery(query):
-		c.state.record("schemas")
-		rows := make([][]driver.Value, 0, len(c.state.schemas))
-		for _, schema := range c.state.schemas {
-			rows = append(rows, []driver.Value{schema})
-		}
-		return newPostgresDiscoveryFakeRows([]string{"table_schema"}, rows), nil
 	case query == snowflakeFKMetadataExistsStmt:
 		c.state.record("fk_metadata_exists")
-		return newPostgresDiscoveryFakeRows([]string{"count"}, [][]driver.Value{{int64(0)}}), nil
+		var n int64
+		if c.state.fkMetadataExists {
+			n = 1
+		}
+		return newPostgresDiscoveryFakeRows([]string{"count"}, [][]driver.Value{{n}}), nil
 	case query == snowflakeColumnsStmt:
 		c.state.record("columns")
-		c.state.beginColumnQuery()
-		defer c.state.endColumnQuery()
 		if c.state.delay != 0 {
 			time.Sleep(c.state.delay)
 		}
-		schema := strings.ToUpper(namedValueString(args, 0))
-		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.columnsBySchema[schema]), nil
-	case query == snowflakeConstraintsCountStmt:
-		c.state.record("constraints_preflight")
-		return newPostgresDiscoveryFakeRows([]string{"count"}, [][]driver.Value{{int64(0)}}), nil
+		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.columnRows), nil
+	case query == snowflakeFKMetadataStmt:
+		c.state.record("fk_metadata")
+		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.fkMetadataRows), nil
+	case query == compositeFKQuerySnowflake:
+		c.state.record("composite_fks")
+		return newPostgresDiscoveryFakeRows(compositeFKScanColumns(), c.state.compositeRows), nil
+	case query == compositeFKQuerySnowflakeOverrides:
+		c.state.record("composite_fk_overrides")
+		return newPostgresDiscoveryFakeRows(compositeFKScanColumns(), c.state.compositeOverrideRows), nil
 	case strings.Contains(strings.ToUpper(query), "SELECT LAST_QUERY_ID()"):
 		c.state.record("last_query_id")
-		return newPostgresDiscoveryFakeRows([]string{"LAST_QUERY_ID"}, [][]driver.Value{{"QID"}}), nil
-	case query == snowflakeColumnsShowStmt || query == snowflakeColumnsShowBasicStmt:
 		c.state.record("show_scan")
-		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.showRows), nil
-	case query == snowflakeColumnsBasicStmt:
-		c.state.record("basic")
-		return newPostgresDiscoveryFakeRows(discoveredColumnScanColumns(), c.state.basicRows), nil
+		return nil, fmt.Errorf("unexpected Snowflake LAST_QUERY_ID discovery query")
 	default:
 		return nil, fmt.Errorf("unexpected snowflake discovery query: %.160s", query)
 	}
 }
 
-func isSnowflakeUserSchemasQuery(query string) bool {
-	upper := strings.ToUpper(strings.Join(strings.Fields(query), " "))
-	return strings.Contains(upper, "SELECT DISTINCT TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES")
-}
-
-func namedValueString(args []driver.NamedValue, i int) string {
-	if i >= len(args) || args[i].Value == nil {
-		return ""
+func compositeFKScanColumns() []string {
+	return []string{
+		"table_schema",
+		"table_name",
+		"constraint_name",
+		"local_columns",
+		"foreignkey_schema",
+		"foreignkey_table",
+		"foreignkey_columns",
 	}
-	return fmt.Sprint(args[i].Value)
 }
 
 func snowflakeColumnRow(schema, table, column string) []driver.Value {

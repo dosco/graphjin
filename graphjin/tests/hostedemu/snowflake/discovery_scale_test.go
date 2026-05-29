@@ -60,22 +60,34 @@ func TestDiscoveryUsesBatchMetadataForLargeCatalog(t *testing.T) {
 	}
 	var discoveryQueries int
 	var tableSpecificMetadata int
+	var showMetadata int
 	for _, ev := range events {
-		if ev.Phase != "discovery" || ev.Op != "query" {
+		if ev.Phase != "discovery" {
 			continue
 		}
-		discoveryQueries++
 		norm := strings.ToUpper(ev.NormalizedSQL)
-		if strings.Contains(norm, "SCALE_TABLE_") && !strings.Contains(norm, "INFORMATION_SCHEMA") {
-			tableSpecificMetadata++
+		if ev.Op == "query" {
+			discoveryQueries++
+			if strings.Contains(norm, "SCALE_TABLE_") && !strings.Contains(norm, "INFORMATION_SCHEMA") {
+				tableSpecificMetadata++
+			}
+		}
+		if strings.Contains(norm, "SHOW COLUMNS") ||
+			strings.Contains(norm, "SHOW PRIMARY KEYS") ||
+			strings.Contains(norm, "SHOW UNIQUE KEYS") ||
+			strings.Contains(norm, "SHOW IMPORTED KEYS") {
+			showMetadata++
 		}
 	}
-	t.Logf("Snowflake discovery query count=%d table-specific metadata queries=%d", discoveryQueries, tableSpecificMetadata)
+	t.Logf("Snowflake discovery query count=%d table-specific metadata queries=%d SHOW metadata queries=%d", discoveryQueries, tableSpecificMetadata, showMetadata)
 	if discoveryQueries > 10 {
 		t.Fatalf("discovery query count = %d, want <= 10", discoveryQueries)
 	}
 	if tableSpecificMetadata != 0 {
 		t.Fatalf("table-specific metadata queries = %d, want 0", tableSpecificMetadata)
+	}
+	if showMetadata != 0 {
+		t.Fatalf("SHOW metadata queries = %d, want 0", showMetadata)
 	}
 }
 

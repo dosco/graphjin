@@ -29,7 +29,6 @@ func startSnowflakeDB(ctx context.Context) (func(context.Context) error, *sql.DB
 			RunID:      strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_RUN_ID")),
 			Backend:    strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_BACKEND")),
 			Fallback:   strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_FALLBACK")),
-			Discovery:  strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_DISCOVERY")),
 		}))
 		cleanup := func(context.Context) error {
 			return sqlDB.Close()
