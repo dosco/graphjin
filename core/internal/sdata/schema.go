@@ -5,6 +5,7 @@ package sdata
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/dosco/graphjin/core/v3/internal/util"
 )
@@ -48,6 +49,15 @@ type DBSchema struct {
 	relationshipGraph *util.Graph             // relationship graph
 	crossDBRels       []CrossDBRel            // cross-database FK relationships
 	compositeFKs      []CompositeFKInfo       // composite FK metadata (Postgres only)
+	reachability      [][]uint64              // reachable table bitsets by node
+	fkCycles          fkCycleInfo             // diagnostic logical FK cycle metadata
+	pathCache         map[pathCacheKey][]int32
+	pathCacheMu       sync.RWMutex
+}
+
+type fkCycleInfo struct {
+	Self       []int32
+	Components [][]int32
 }
 
 type RelType int
@@ -121,6 +131,7 @@ func NewDBSchema(
 		allEdges:          make(map[int32]TEdge),
 		relationshipGraph: util.NewGraph(),
 		compositeFKs:      info.CompositeFKs,
+		pathCache:         make(map[pathCacheKey][]int32),
 	}
 
 	for i := range info.Tables {
@@ -158,6 +169,9 @@ func NewDBSchema(
 			}
 		}
 	}
+
+	schema.buildReachability()
+	schema.buildFKCycles()
 
 	// add some standard common functions into the schema
 	for _, v := range funcList {
@@ -213,7 +227,8 @@ func (s *DBSchema) addJsonRel(t DBTable) error {
 		return err
 	}
 
-	return s.addToGraph(t, t.PrimaryCol, st, sc, RelEmbedded)
+	_, err = s.addToGraph(t, t.PrimaryCol, st, sc, RelEmbedded)
+	return err
 }
 
 // addPolymorphicRel adds a polymorphic relationship to the schema
@@ -233,7 +248,8 @@ func (s *DBSchema) addPolymorphicRel(t DBTable) error {
 		return err
 	}
 
-	return s.addToGraph(t, t.PrimaryCol, pt, pc, RelPolymorphic)
+	_, err = s.addToGraph(t, t.PrimaryCol, pt, pc, RelPolymorphic)
+	return err
 }
 
 // addRemoteRel adds a remote relationship to the schema. A remote with
@@ -253,13 +269,12 @@ func (s *DBSchema) addRemoteRel(t DBTable) error {
 		return err
 	}
 
-	return s.addToGraph(t, t.PrimaryCol, pt, pc, RelRemote)
+	_, err = s.addToGraph(t, t.PrimaryCol, pt, pc, RelRemote)
+	return err
 }
 
 // addColumnRels adds column relationships to the schema
 func (s *DBSchema) addColumnRels(t DBTable) error {
-	var err error
-
 	// Build lookup for composite FK columns belonging to this table.
 	// Key: column name → constraint name
 	compositeCols := make(map[string]string)
@@ -272,7 +287,7 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 	}
 
 	// Track which composite FK constraints have already had their primary edge added.
-	// Key: constraint name → list of edge IDs (forward + reverse in s.allEdges)
+	// Key: constraint name → list of edge IDs (forward, reverse, and reverse alias)
 	compositeEdges := make(map[string][]int32)
 
 	for _, c := range t.Columns {
@@ -348,24 +363,14 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 			rt = RelOneToMany
 		}
 
-		if err = s.addToGraph(t, c, ft, fc, rt); err != nil {
+		edgeIDs, err := s.addToGraph(t, c, ft, fc, rt)
+		if err != nil {
 			return err
 		}
 
-		// If this was the first column of a composite FK, record the edge IDs
-		// (both forward and reverse edges)
+		// If this was the first column of a composite FK, record every edge ID
+		// that represents the relationship so later columns annotate aliases too.
 		if conName, isComposite := compositeCols[c.Name]; isComposite {
-			k1 := t.Schema + ":" + t.Name
-			k2 := c.FKeySchema + ":" + c.FKeyTable
-			fn := s.tindex[k1].nodeID
-			tn := s.tindex[k2].nodeID
-			var edgeIDs []int32
-			for eid, edge := range s.allEdges {
-				if (edge.From == fn && edge.To == tn && edge.L.Name == c.Name) ||
-					(edge.From == tn && edge.To == fn && edge.R.Name == c.Name) {
-					edgeIDs = append(edgeIDs, eid)
-				}
-			}
 			compositeEdges[conName] = edgeIDs
 		}
 	}

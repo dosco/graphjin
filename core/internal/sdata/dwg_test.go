@@ -90,6 +90,15 @@ func TestDWG_CompositeFK_ColumnHintMatchesExtraPair(t *testing.T) {
 	if len(paths[0].ExtraPairs) == 0 {
 		t.Fatalf("composite ExtraPairs missing on edge resolved via course_id: %+v", paths[0])
 	}
+
+	paths, err = s.FindPathByColumn("course_offering", "enrollment", "course_id")
+	assert.NoErrorFatal(t, err)
+	if len(paths) == 0 {
+		t.Fatal("expected non-empty reverse path for course_id")
+	}
+	if len(paths[0].ExtraPairs) == 0 {
+		t.Fatalf("composite ExtraPairs missing on reverse edge resolved via course_id: %+v", paths[0])
+	}
 }
 
 func TestDWG_AmbiguousPath_DisambiguatedByColumn(t *testing.T) {

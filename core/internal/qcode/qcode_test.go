@@ -462,10 +462,10 @@ var gql = []byte(`
 		order_by: { price: desc },
 
 		# no duplicate prices returned
-		distinct: [ price ]
+		distinct: [ price ],
 
 		# only items with an id >= 30 and < 30 are returned
-		where: { id: { greater_or_equals: 20, lt: 28 } }) {
+		where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
 		id
 		name
 		price
