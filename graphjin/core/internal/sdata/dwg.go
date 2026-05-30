@@ -12,6 +12,7 @@ var (
 	ErrFromEdgeNotFound   = errors.New("from edge not found")
 	ErrToEdgeNotFound     = errors.New("to edge not found")
 	ErrPathNotFound       = errors.New("path not found")
+	ErrPathSearchLimit    = errors.New("path search limit reached")
 	ErrThoughNodeNotFound = errors.New("though node not found")
 )
 
@@ -103,7 +104,7 @@ func (s *DBSchema) addToGraph(
 	lti DBTable, lcol DBColumn,
 	rti DBTable, rcol DBColumn,
 	rt RelType,
-) error {
+) ([]int32, error) {
 	var err error
 
 	var rt2 RelType
@@ -112,12 +113,12 @@ func (s *DBSchema) addToGraph(
 
 	fn, ok := s.tindex[k1]
 	if !ok {
-		return fmt.Errorf("addEdge: unknown node: %s", k1)
+		return nil, fmt.Errorf("addEdge: unknown node: %s", k1)
 	}
 
 	tn, ok := s.tindex[k2]
 	if !ok {
-		return fmt.Errorf("addEdge: unknown node: %s", k2)
+		return nil, fmt.Errorf("addEdge: unknown node: %s", k2)
 	}
 
 	ln := fn.nodeID
@@ -148,7 +149,7 @@ func (s *DBSchema) addToGraph(
 		weight = 8
 		relT = rti.Name
 	default:
-		return nil
+		return nil, nil
 	}
 
 	var edgeID1, edgeID2 int32
@@ -165,7 +166,7 @@ func (s *DBSchema) addToGraph(
 	}
 
 	if edgeID1, err = s.addEdge(lti.Name, e1, true); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Add reverse edge from parent table -> column_name
@@ -180,28 +181,31 @@ func (s *DBSchema) addToGraph(
 	}
 
 	if edgeID2, err = s.addEdge(relT, e2, true); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := s.relationshipGraph.UpdateEdge(ln, rn, edgeID1, edgeID2); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := s.relationshipGraph.UpdateEdge(rn, ln, edgeID2, edgeID1); err != nil {
-		return err
+		return nil, err
 	}
 
+	edgeIDs := []int32{edgeID1, edgeID2}
 	if rti.Name != relT {
-		if _, err := s.addEdge(rti.Name, e2, false); err != nil {
-			return err
+		edgeID, err := s.addEdge(rti.Name, e2, false)
+		if err != nil {
+			return nil, err
 		}
+		edgeIDs = append(edgeIDs, edgeID)
 	}
 
 	// fmt.Printf("1. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", lti.Name, e1.ID(), lti.Name, lcol.Name, ln.ID(), rti.Name, rcol.Name, rn.ID(), rt.String())
 	// fmt.Printf("2. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", rti.Name, e2.ID(), rti.Name, rcol.Name, rn.ID(), lti.Name, lcol.Name, ln.ID(), rt2.String())
 	// fmt.Printf("3. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", relT, e2.ID(), rti.Name, rcol.Name, rn.ID(), lti.Name, lcol.Name, ln.ID(), rt2.String())
 	// fmt.Println("-----")
-	return nil
+	return edgeIDs, nil
 }
 
 func nonConflictingRelName(t DBTable, c DBColumn, name, fallback string) string {
@@ -340,7 +344,10 @@ func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 		return nil, ErrToEdgeNotFound
 	}
 
-	res, err := s.between(fl, tl, through)
+	res, err := s.resolvePath(fl, tl, pathOptions{
+		kind:    pathThroughTable,
+		through: through,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -373,77 +380,45 @@ type graphResult struct {
 	edges    []int32
 }
 
-// between finds a path between two tables
-func (s *DBSchema) between(from, to []edgeInfo, through string) (res graphResult, err error) {
-	// TODO: picking a path
-	// 1. first look for a direct edge to other table
-	// 2. then find shortest path using relevant edges
-
-	for _, f := range from {
-		for _, t := range to {
-			res, err = s.pickPath(f, t, through)
-			if err == ErrPathNotFound {
-				continue
-			} else {
-				return
-			}
-		}
+// FindPathByColumn returns a path between two tables, disambiguating by the FK
+// column name when the two tables have multiple foreign keys between them.
+func (s *DBSchema) FindPathByColumn(from, to, col string) ([]TPath, error) {
+	fl, ok := s.edgesIndex[from]
+	if !ok {
+		return nil, ErrFromEdgeNotFound
 	}
-	return res, ErrPathNotFound
+	tl, ok := s.edgesIndex[to]
+	if !ok {
+		return nil, ErrToEdgeNotFound
+	}
+
+	res, err := s.resolvePath(fl, tl, pathOptions{
+		kind:    pathThroughColumn,
+		through: col,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	path := []TPath{}
+	for _, eid := range res.edges {
+		edge := s.allEdges[eid]
+		path = append(path, TPath{
+			Rel:        edge.Type,
+			LT:         edge.LT,
+			LC:         edge.L,
+			RT:         edge.RT,
+			RC:         edge.R,
+			ExtraPairs: edge.ExtraPairs,
+		})
+	}
+	if len(path) == 0 {
+		return nil, ErrPathNotFound
+	}
+	return path, nil
 }
 
-// pickPath picks a path between two tables
-func (s *DBSchema) pickPath(from, to edgeInfo, through string) (res graphResult, err error) {
-	res.from = from
-	res.to = to
-
-	fn := from.nodeID
-	tn := to.nodeID
-	paths := s.relationshipGraph.AllPaths(fn, tn)
-
-	if through != "" {
-		paths, err = s.pickThroughPath(paths, through)
-		if err != nil {
-			return
-		}
-	} else {
-		if cands := s.detectDirectAmbiguity(paths, from); len(cands) > 1 {
-			return res, &AmbiguousPathError{
-				From:       s.tables[from.nodeID].Name,
-				To:         s.tables[to.nodeID].Name,
-				Candidates: cands,
-			}
-		}
-	}
-
-	for _, path := range paths {
-		edges, ok := s.pickEdges(path, from, to)
-		if ok {
-			res.edges = edges
-			return
-		}
-	}
-	return res, ErrPathNotFound
-}
-
-// detectDirectAmbiguity returns FK candidates when two tables share multiple
-// distinct foreign keys via a direct (single-hop) edge. Returns nil for
-// multi-hop or unambiguous relationships; multi-hop disambiguation goes
-// through the existing min-weight selection.
-func (s *DBSchema) detectDirectAmbiguity(paths [][]int32, from edgeInfo) []FKCandidate {
-	var direct []int32
-	for _, p := range paths {
-		if len(p) == 2 {
-			direct = p
-			break
-		}
-	}
-	if direct == nil {
-		return nil
-	}
-
-	lines := s.relationshipGraph.GetEdges(direct[0], direct[1])
-
+func (s *DBSchema) detectDirectAmbiguityFromLines(lines []util.Edge, from edgeInfo) []FKCandidate {
 	// Dedup forward+reverse halves of the same FK constraint without
 	// silencing genuine multi-FK ambiguity. Two edges in the same bucket
 	// are "the same FK" iff they're each other's opposites — true only
@@ -490,22 +465,19 @@ func (s *DBSchema) detectDirectAmbiguity(paths [][]int32, from edgeInfo) []FKCan
 		// FK column; for reverse edges R is the FK column. The FK column
 		// is the one whose owning DBColumn declares FKeyTable.
 		var fkCol DBColumn
-		var fkTable, refCol string
+		var refCol string
 		switch {
 		case edge.L.FKeyTable != "":
 			fkCol = edge.L
-			fkTable = edge.LT.Name
 			refCol = edge.R.Name
 		case edge.R.FKeyTable != "":
 			fkCol = edge.R
-			fkTable = edge.RT.Name
 			refCol = edge.L.Name
 		default:
 			// Neither side declares an FK — skip (ambiguous edges from
 			// non-FK relationships like polymorphic / virtual tables).
 			continue
 		}
-		_ = fkTable
 
 		if _, dup := colSeen[fkCol.Name]; dup {
 			continue
@@ -535,225 +507,6 @@ func (s *DBSchema) detectDirectAmbiguity(paths [][]int32, from edgeInfo) []FKCan
 	return cands
 }
 
-// pickEdges picks edges between two tables
-func (s *DBSchema) pickEdges(path []int32, from, to edgeInfo) (edges []int32, allFound bool) {
-	pathLen := len(path)
-	peID := int32(-2) // must be -2 so does not match default -1
-
-	for i := 1; i < pathLen; i++ {
-		fn := path[i-1]
-		tn := path[i]
-		lines := s.relationshipGraph.GetEdges(fn, tn)
-
-		// s.PrintLines(lines)
-
-		switch {
-		case i == 1:
-			if v := pickLine(lines, from, peID); v != nil {
-				edges = append(edges, v.ID)
-				peID = v.ID
-			} else {
-				return
-			}
-
-		case i == (pathLen - 1):
-			if v := pickLine(lines, to, peID); v != nil {
-				edges = append(edges, v.ID)
-				peID = v.ID
-
-			} else {
-				v := minWeightedLine(lines, peID)
-				edges = append(edges, v.ID)
-				peID = v.ID
-			}
-
-		default:
-			v := minWeightedLine(lines, peID)
-			edges = append(edges, v.ID)
-			peID = v.ID
-		}
-	}
-	allFound = true
-	return
-}
-
-// FindPathByColumn returns a path between two tables, disambiguating by the FK
-// column name when the two tables have multiple foreign keys between them.
-func (s *DBSchema) FindPathByColumn(from, to, col string) ([]TPath, error) {
-	fl, ok := s.edgesIndex[from]
-	if !ok {
-		return nil, ErrFromEdgeNotFound
-	}
-	tl, ok := s.edgesIndex[to]
-	if !ok {
-		return nil, ErrToEdgeNotFound
-	}
-
-	res, err := s.betweenByColumn(fl, tl, col)
-	if err != nil {
-		return nil, err
-	}
-
-	path := []TPath{}
-	for _, eid := range res.edges {
-		edge := s.allEdges[eid]
-		path = append(path, TPath{
-			Rel:        edge.Type,
-			LT:         edge.LT,
-			LC:         edge.L,
-			RT:         edge.RT,
-			RC:         edge.R,
-			ExtraPairs: edge.ExtraPairs,
-		})
-	}
-	if len(path) == 0 {
-		return nil, ErrPathNotFound
-	}
-	return path, nil
-}
-
-func (s *DBSchema) betweenByColumn(from, to []edgeInfo, col string) (res graphResult, err error) {
-	for _, f := range from {
-		for _, t := range to {
-			res, err = s.pickPathByColumn(f, t, col)
-			if err == ErrPathNotFound {
-				continue
-			}
-			return
-		}
-	}
-	return res, ErrPathNotFound
-}
-
-func (s *DBSchema) pickPathByColumn(from, to edgeInfo, col string) (res graphResult, err error) {
-	res.from = from
-	res.to = to
-
-	paths := s.relationshipGraph.AllPaths(from.nodeID, to.nodeID)
-	for _, path := range paths {
-		edges, ok := s.pickEdgesByColumn(path, from, to, col)
-		if ok {
-			res.edges = edges
-			return
-		}
-	}
-	return res, ErrPathNotFound
-}
-
-// pickEdgesByColumn mirrors pickEdges but restricts candidate edges at each
-// hop to those whose FK column (either side) matches col (case-insensitive).
-// This is how @through(column:) disambiguates when two tables share multiple
-// foreign keys.
-func (s *DBSchema) pickEdgesByColumn(path []int32, from, to edgeInfo, col string) (edges []int32, allFound bool) {
-	pathLen := len(path)
-	peID := int32(-2)
-
-	for i := 1; i < pathLen; i++ {
-		fn := path[i-1]
-		tn := path[i]
-		lines := s.filterLinesByColumn(s.relationshipGraph.GetEdges(fn, tn), col)
-		if len(lines) == 0 {
-			return
-		}
-
-		switch {
-		case i == 1:
-			v := pickLine(lines, from, peID)
-			if v == nil {
-				return
-			}
-			edges = append(edges, v.ID)
-			peID = v.ID
-
-		case i == (pathLen - 1):
-			if v := pickLine(lines, to, peID); v != nil {
-				edges = append(edges, v.ID)
-				peID = v.ID
-			} else {
-				v := minWeightedLine(lines, peID)
-				if v == nil {
-					return
-				}
-				edges = append(edges, v.ID)
-				peID = v.ID
-			}
-
-		default:
-			v := minWeightedLine(lines, peID)
-			if v == nil {
-				return
-			}
-			edges = append(edges, v.ID)
-			peID = v.ID
-		}
-	}
-	allFound = true
-	return
-}
-
-func (s *DBSchema) filterLinesByColumn(lines []util.Edge, col string) []util.Edge {
-	if col == "" {
-		return lines
-	}
-	out := make([]util.Edge, 0, len(lines))
-	for _, v := range lines {
-		edge, ok := s.allEdges[v.ID]
-		if !ok {
-			continue
-		}
-		match := strings.EqualFold(edge.L.Name, col) || strings.EqualFold(edge.R.Name, col)
-		if !match {
-			// Composite FKs: the first column lives in L/R, the rest in ExtraPairs.
-			// Naming any column of the composite is enough to identify it.
-			for _, p := range edge.ExtraPairs {
-				if strings.EqualFold(p.L.Name, col) || strings.EqualFold(p.R.Name, col) {
-					match = true
-					break
-				}
-			}
-		}
-		if match {
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-// pickThroughPath picks a path through a node
-func (s *DBSchema) pickThroughPath(paths [][]int32, through string) ([][]int32, error) {
-	var npaths [][]int32
-
-	if len(paths) == 1 && len(paths[0]) == 2 {
-		return paths, nil
-	}
-
-	v, ok := s.tindex[(s.DBSchema() + ":" + through)]
-	if !ok {
-		return nil, ErrThoughNodeNotFound
-	}
-
-	for i := range paths {
-		for j := range paths[i] {
-			if paths[i][j] == v.nodeID {
-				npaths = append(npaths, paths[i])
-			}
-		}
-	}
-	return npaths, nil
-}
-
-// pickLine picks a line between two tables
-func pickLine(lines []util.Edge, ei edgeInfo, peID int32) *util.Edge {
-	for _, v := range lines {
-		for _, eid := range ei.edgeIDs {
-			if v.ID == eid && v.OppID != peID {
-				return &v
-			}
-		}
-	}
-	return nil
-}
-
 // PathToRel converts a table path to a relationship
 func PathToRel(p TPath) DBRel {
 	return DBRel{
@@ -762,48 +515,6 @@ func PathToRel(p TPath) DBRel {
 		Right:      DBRelRight{Ti: p.RT, Col: p.RC},
 		ExtraPairs: p.ExtraPairs,
 	}
-}
-
-// minWeightedLine returns the line with the minimum weight
-func minWeightedLine(lines []util.Edge, peID int32) *util.Edge {
-	var min int32 = 100
-	var line *util.Edge
-
-	for i, v := range lines {
-		if v.Weight < min && v.OppID != peID {
-			min = v.Weight
-			line = &lines[i]
-		}
-	}
-
-	if line == nil && len(lines) != 0 {
-		return &lines[0]
-	}
-
-	return line
-}
-
-// PrintLines prints the graph lines
-func (s *DBSchema) PrintLines(lines []util.Edge) {
-	for _, v := range lines {
-		e := s.allEdges[v.ID]
-		f := s.tables[e.From]
-		t := s.tables[e.To]
-
-		fmt.Printf("- (EdgeID: %d, OppEdge: %d, W:%d, N:%s) %s TableID:%d -> %s TableID:%d\n",
-			v.ID, v.OppID, v.Weight, e.name, f.Name, e.From, t.Name, e.To)
-	}
-	fmt.Println("---")
-}
-
-// PrintEdgeInfo prints edge info
-func (s *DBSchema) PrintEdgeInfo(e edgeInfo) {
-	t := s.tables[e.nodeID]
-	fmt.Printf("-- EdgeInfo %s %+v\n", t.Name, e.edgeIDs)
-
-	// for _, id := range e.edgeIDs {
-	// 	e := s.ae[id]
-	// }
 }
 
 // String returns a string representation of a table path
