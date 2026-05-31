@@ -76,6 +76,10 @@ func (s *DBSchema) resolvePathPair(from, to edgeInfo, opts pathOptions) (res gra
 				return res, nil
 			}
 		}
+		if edges, ok := s.directPathEdgesByType(from, to, opts, RelEmbedded); ok {
+			res.edges = edges
+			return res, nil
+		}
 	} else if opts.kind == pathThroughColumn {
 		opts.through = strings.ToLower(opts.through)
 		if from.nodeID == to.nodeID {
@@ -83,6 +87,10 @@ func (s *DBSchema) resolvePathPair(from, to edgeInfo, opts pathOptions) (res gra
 				res.edges = edges
 				return res, nil
 			}
+		}
+		if edges, ok := s.directPathEdges(from, to, opts); ok {
+			res.edges = edges
+			return res, nil
 		}
 	}
 
@@ -114,6 +122,31 @@ func (s *DBSchema) directPathEdges(from, to edgeInfo, opts pathOptions) ([]int32
 			continue
 		}
 		if opts.kind == pathThroughColumn && !s.lineMatchesColumn(*line, opts.through) {
+			continue
+		}
+		if best == nil || line.Weight < best.Weight {
+			best = line
+		}
+	}
+	if best == nil {
+		return nil, false
+	}
+	return []int32{best.ID}, true
+}
+
+func (s *DBSchema) directPathEdgesByType(from, to edgeInfo, opts pathOptions, relType RelType) ([]int32, bool) {
+	lines := s.relationshipGraph.GetEdges(from.nodeID, to.nodeID)
+	var best *util.Edge
+	for i := range lines {
+		line := &lines[i]
+		if !edgeIDIn(from.edgeIDs, line.ID) {
+			continue
+		}
+		if opts.kind == pathThroughColumn && !s.lineMatchesColumn(*line, opts.through) {
+			continue
+		}
+		edge, ok := s.allEdges[line.ID]
+		if !ok || edge.Type != relType {
 			continue
 		}
 		if best == nil || line.Weight < best.Weight {

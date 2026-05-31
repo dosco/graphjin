@@ -193,6 +193,59 @@ func TestFindPathThroughCycleDoesNotLoop(t *testing.T) {
 	}
 }
 
+func TestFindPathPrefersDirectRelationshipOverCheaperIndirectPath(t *testing.T) {
+	cols := []DBColumn{
+		testPK("users"),
+		{Schema: "public", Table: "users", Name: "category_counts", Type: "json"},
+		testPK("products"),
+		testFK("products", "owner_id", "users"),
+		testFK("products", "category_ids", "categories"),
+		testPK("categories"),
+	}
+	di := NewDBInfo("postgres", 140000, "public", "db", cols, nil, nil)
+
+	categoryCounts := NewDBTable("public", "category_counts", "json", []DBColumn{
+		testFK("category_counts", "category_id", "categories"),
+		{Schema: "public", Table: "category_counts", Name: "count", Type: "int"},
+	})
+	categoryCounts.PrimaryCol = DBColumn{
+		Schema:     "public",
+		Table:      "users",
+		Name:       "category_counts",
+		Type:       "json",
+		PrimaryKey: true,
+	}
+	categoryCounts.SecondaryCol = DBColumn{
+		Schema:     "public",
+		Table:      "users",
+		Name:       "id",
+		Type:       "bigint",
+		PrimaryKey: true,
+		UniqueKey:  true,
+	}
+	di.AddTable(categoryCounts)
+
+	s, err := NewDBSchema(di, nil)
+	if err != nil {
+		t.Fatalf("NewDBSchema: %v", err)
+	}
+
+	paths, err := s.FindPath("category_counts", "owner", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("expected direct embedded path, got %d hops: %+v", len(paths), paths)
+	}
+	if paths[0].Rel != RelEmbedded {
+		t.Fatalf("expected RelEmbedded path, got %s: %+v", paths[0].Rel, paths[0])
+	}
+	if paths[0].LC.Table != "users" || paths[0].LC.Name != "category_counts" {
+		t.Fatalf("expected users.category_counts as embedded source, got %s.%s",
+			paths[0].LC.Table, paths[0].LC.Name)
+	}
+}
+
 func densePathSchema(tb testing.TB, n, branch int) *DBSchema {
 	tb.Helper()
 
