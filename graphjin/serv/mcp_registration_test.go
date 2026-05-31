@@ -540,6 +540,9 @@ func TestMCPServerInstructions_CatalogDefaultDoesNotRecommendLegacyTools(t *test
 		"gj_workflow_execution(insert)",
 		"gj_workflow(insert/update/delete)",
 		`gj_config(id: "current", update: ...)`,
+		`graphql_help(for: "runtime")`,
+		"gj_runtime",
+		"decision support, not audit history",
 		`query_catalog(search: "workflow", where: { kind: { eq: "workflow" } })`,
 	} {
 		if !strings.Contains(text, required) {

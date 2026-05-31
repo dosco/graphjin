@@ -48,10 +48,11 @@ Discovery means selecting evidence-backed catalog items before acting. Do not wr
 5. Resolve ambiguity by inspecting candidate items. If multiple tables or columns match, do not guess from names alone.
 6. Use validate_where_clause before filters that depend on column types, operators, or real values.
 7. Prefer execute_saved_query for approved allow-list queries. Use execute_graphql only when the server exposes it and raw execution is enabled.
-8. Before config, workflow, schema, file, or code-source changes, inspect gj_catalog for gj_security.query and then query gj_security for high/critical findings and effective policy.
-9. Prefer GraphJin control-plane GraphQL mutations for workflow/config actions after discovery: gj_workflow_execution(insert) for workflow execution, gj_workflow(insert/update/delete) for workflow management, and gj_config(id: "current", update: ...) for config changes. Use MCP tools such as reload_schema and validate_where_clause for schema refresh and filter checks; use errors[].extensions.graphjin_repair for query repair.
-10. Prefer workflows for broad data questions after discovery. Workflows can page and aggregate safely.
-11. Observe results, then return to catalog items when the result, error, or follow-up question changes the facts you need.
+8. In agentic mode, query gj_runtime before workflow, config, or schema actions, after GraphJin errors, and when results suggest stale schema, disconnected databases, degraded Redis, reload, discovery, or catalog refresh problems. Use gj_runtime for decision support, not audit history; if status is degraded, follow next_action before continuing.
+9. Before config, workflow, schema, file, or code-source changes, inspect gj_catalog for gj_security.query and then query gj_security for high/critical findings and effective policy.
+10. Prefer GraphJin control-plane GraphQL mutations for workflow/config actions after discovery: gj_workflow_execution(insert) for workflow execution, gj_workflow(insert/update/delete) for workflow management, and gj_config(id: "current", update: ...) for config changes. Use MCP tools such as reload_schema and validate_where_clause for schema refresh and filter checks; use errors[].extensions.graphjin_repair for query repair.
+11. Prefer workflows for broad data questions after discovery. Workflows can page and aggregate safely.
+12. Observe results, then return to catalog items or gj_runtime when the result, error, or follow-up question changes the facts you need.
 
 Topic routing:
 
@@ -72,6 +73,7 @@ Topic routing:
 | workflow runtime | graphql_help(for: "workflow_runtime") | query_catalog(id: "help:workflow_runtime") |
 | config | graphql_help(for: "config") | query_catalog(id: "help:config") |
 | security | graphql_help(for: "security") | query_catalog(id: "help:security") |
+| runtime status and recent structured events | graphql_help(for: "runtime") | query_catalog(id: "help:runtime") |
 | code/source changes | graphql_help(for: "code") | query_catalog(id: "help:code") |
 | errors | graphql_help(for: "errors") | query_catalog(id: "help:errors") |
 
@@ -80,7 +82,7 @@ Legacy discovery MCP tools are gone in sources mode. Their prompt knowledge now 
 ## Discovery recipes
 
 - Catalog discovery uses query_catalog and query_catalog(id); the canonical GraphQL root is still gj_catalog.
-- Help routing uses graphql_help(for: "mcp_tools" | "query" | "filters" | "schema" | "workflows" | "config" | "security" | "code" | "errors" | ...). The response includes graphql_query so you can reuse or modify the exact gj_catalog query shape.
+- Help routing uses graphql_help(for: "mcp_tools" | "query" | "filters" | "schema" | "workflows" | "config" | "security" | "runtime" | "code" | "errors" | ...). The response includes graphql_query so you can reuse or modify the exact gj_catalog query shape.
 - Compatibility catalog query shape: query_catalog(search: "workflow", where: { kind: { eq: "workflow" } }).
 - Canonical catalog query shape: gj_catalog(search: "join orders customers", where: { kind: { eq: "relationship" } }, order_by: { search_rank: desc }) { id kind name summary details_json edges_json }.
 - Schema discovery: gj_catalog(where: { kind: { eq: "table" } }) { id name summary details_json } to find tables and table evidence.
@@ -91,6 +93,7 @@ Legacy discovery MCP tools are gone in sources mode. Their prompt knowledge now 
 - Value-sensitive filters: if a filter depends on real status strings, enum labels, tenant names, or conventions, inspect sample/profile availability on table or column items before choosing values.
 - Config and policy discovery: gj_catalog(search: "permission role blocked", where: { kind: { in: ["config", "capability"] } }) { id kind name summary safety_json } explains enabled behavior with sensitive values redacted. Changes go through control-plane GraphQL mutations when enabled.
 - Security posture: find guidance with gj_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } }) { name summary details_json examples_json safety_json }, then query gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }) { id scope config_id mode severity title recommendation evidence_json }. In agentic deployments, normal company users should rely on gj_catalog and approved gj_workflow_execution(insert); detailed gj_security, gj_config, and gj_workflow.code require an explicit authenticated grant.
+- Runtime status: in agentic mode, find guidance with gj_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_runtime.query" } }) { name summary details_json examples_json safety_json }, then query gj_runtime(where: { kind: { in: ["status", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind status severity summary next_action details_json }. Use this before guarded workflow/config/schema actions, after errors, and when stale schema, disconnected DBs, degraded Redis, reload, discovery, or catalog refresh issues are suspected. gj_runtime is bounded decision support, not audit history.
 - Workflow reuse: gj_catalog(search: "workflow", where: { kind: { eq: "workflow" } }) { id name summary input_schema_json } to find reusable workflows, then run mutation { gj_workflow_execution(insert: { workflow_name: "...", variables: {...} }) { status result_json error duration_ms } }. gj_workflow_execution is mutation-only and returns an ephemeral result row; it does not store run history. Mark the workflow source or gj_workflow_execution table read_only to block it. The execute_workflow MCP tool is a legacy compatibility wrapper gated by mcp.legacy_discovery and mcp.allow_workflow_execution.
 - Workflow create/update/delete: use mutation { gj_workflow(insert/update/delete: ...) { name source_hash catalog_revision } } when mcp.allow_workflow_updates is enabled.
 - GraphQL catalog discovery: use gj_catalog as the single discovery root, for example gj_catalog(where: { kind: { eq: "table" } }) { id kind name summary } or gj_catalog(where: { kind: { eq: "capability" } }) { name summary safety_json }.

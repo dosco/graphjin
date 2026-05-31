@@ -49,12 +49,12 @@ type CatalogItem struct {
 }
 
 type CatalogQueryResult struct {
-	GeneratedAt     string                       `json:"generated_at"`
-	Revision        string                       `json:"revision,omitempty"`
-	SourceRevisions map[string]string            `json:"source_revisions,omitempty"`
-	Count           int                          `json:"count"`
-	Limit           int                          `json:"limit,omitempty"`
-	Offset          int                          `json:"offset,omitempty"`
+	GeneratedAt     string            `json:"generated_at"`
+	Revision        string            `json:"revision,omitempty"`
+	SourceRevisions map[string]string `json:"source_revisions,omitempty"`
+	Count           int               `json:"count"`
+	Limit           int               `json:"limit,omitempty"`
+	Offset          int               `json:"offset,omitempty"`
 	// Truncated is true when this page filled the limit and more matching items
 	// likely exist. Page with offset (or narrow with search/where) until false.
 	Truncated bool                         `json:"truncated"`
@@ -441,6 +441,7 @@ func graphQLHelpTopicRoutes() []HelpRoute {
 		{Need: "JavaScript workflow runtime and callable GraphJin tool guidance", For: "workflow_runtime", FirstCall: `graphql_help(for: "workflow_runtime")`, DetailQuery: `query_catalog(id: "help:workflow_runtime")`},
 		{Need: "redacted config docs, roles, permissions, safe config changes", For: "config", FirstCall: `graphql_help(for: "config")`, DetailQuery: `query_catalog(id: "help:config")`},
 		{Need: "gj_security posture, policy rows, findings, severity filters", For: "security", FirstCall: `graphql_help(for: "security")`, DetailQuery: `query_catalog(id: "help:security")`},
+		{Need: "agentic runtime health, recent structured events, stale schema, disconnected DBs, degraded Redis, reload or discovery problems", For: "runtime", FirstCall: `graphql_help(for: "runtime")`, DetailQuery: `query_catalog(id: "help:runtime")`},
 		{Need: "code/source intelligence and safe preview/apply edit flows", For: "code", FirstCall: `graphql_help(for: "code")`, DetailQuery: `query_catalog(id: "help:code")`},
 		{Need: "GraphJin error repair hints", For: "errors", FirstCall: `graphql_help(for: "errors")`, DetailQuery: `query_catalog(id: "help:errors")`},
 	}
@@ -559,6 +560,7 @@ var graphQLHelpTopicOrder = []string{
 	"workflow_runtime",
 	"config",
 	"security",
+	"runtime",
 	"code",
 	"errors",
 }
@@ -585,6 +587,7 @@ func graphQLHelpSpecFor(topic string) (graphQLHelpSpec, bool) {
 		"workflow_runtime": helpSpec("workflow_runtime", "Learn JavaScript workflow runtime concepts, callable tool guidance, and safety constraints.", "javascript workflow runtime goja gj tools queryCatalog executeSavedQuery", []string{"help", "workflow", "capability", "system_capability"}, `query_catalog(id: "help:workflow_runtime")`, []string{`query_catalog(search: "workflow runtime goja tools")`}),
 		"config":           helpSpec("config", "Discover redacted configuration documentation, roles, permissions, sources, and safe config update guidance.", "config docs sources roles permissions redacted update gj_config", []string{"help", "config", "system_capability", "capability"}, `query_catalog(id: "help:config")`, []string{`query_catalog(search: "config docs", where: { kind: { in: ["help", "config", "system_capability"] } })`}),
 		"security":         helpSpec("security", "Discover gj_security guidance, policy rows, findings, severity filters, and agentic safety expectations.", "security findings policy posture gj_security agentic production", []string{"help", "system_capability", "config"}, `query_catalog(id: "help:security")`, []string{`query_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } })`}),
+		"runtime":          helpSpec("runtime", "Use gj_runtime in agentic mode for compact current health, recent structured events, and suggested next actions.", "runtime status health events system degraded redis schema reload discovery gj_runtime", []string{"help", "system_capability"}, `query_catalog(id: "help:runtime")`, []string{`query { gj_runtime(where: { kind: { in: ["status", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind status severity summary next_action details_json } }`}),
 		"code":             helpSpec("code", "Discover code-source catalog rows and safe source-edit preview/apply guidance when code sources are configured.", "code source file symbol preview apply lock", []string{"help", "mutation_pattern", "system_capability", "table", "column"}, `query_catalog(id: "help:code")`, []string{`query_catalog(search: "code source preview apply source edit")`}),
 		"errors":           helpSpec("errors", "Use errors[].extensions.graphjin_repair, then inspect relevant schema or language rows before retrying.", "error repair graphjin_repair syntax table column relationship", []string{"help", "deprecated_feature", "query_pattern", "operator_set", "system_capability"}, `query_catalog(id: "help:errors")`, []string{`query_catalog(search: "error repair syntax relationship")`}),
 	}

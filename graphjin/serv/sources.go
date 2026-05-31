@@ -57,6 +57,26 @@ func (c *Config) workflowsSourceEnabled() bool {
 	return ok
 }
 
+func (c *Config) runtimeRootSourceEnabled() bool {
+	if !c.runtimeRootRegistered() {
+		return false
+	}
+	source, ok := c.sourceByCanonicalKind(sourcecap.KindGraphJin)
+	if !ok {
+		return false
+	}
+	allowed, _ := c.sourceCapabilityForSource(source, sourcecap.KeyRuntimeRead)
+	return allowed
+}
+
+func (c *Config) runtimeRootRegistered() bool {
+	if c == nil || effectiveMode(c) != modeAgentic || !c.Core.IsSourcesUsed() {
+		return false
+	}
+	_, ok := c.sourceByCanonicalKind(sourcecap.KindGraphJin)
+	return ok
+}
+
 func (c *Config) sourceCapability(kind, key string, fallback bool) bool {
 	if c == nil {
 		return fallback

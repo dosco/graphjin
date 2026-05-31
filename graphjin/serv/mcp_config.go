@@ -628,6 +628,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				Errors:  errors,
 			}
 			result.Next = ms.nextForConfigUpdate(result)
+			ms.recordConfigUpdateRuntimeEvent(ctx, result)
 			data, _ := mcpMarshalJSON(result, true)
 			return mcpToolResultJSONBytes(data), nil
 		}
@@ -889,6 +890,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			Message: "No changes provided",
 		}
 		result.Next = ms.nextForConfigUpdate(result)
+		ms.recordConfigUpdateRuntimeEvent(ctx, result)
 		data, _ := mcpMarshalJSON(result, true)
 		return mcpToolResultJSONBytes(data), nil
 	}
@@ -900,6 +902,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			Errors:  errors,
 		}
 		result.Next = ms.nextForConfigUpdate(result)
+		ms.recordConfigUpdateRuntimeEvent(ctx, result)
 		data, _ := mcpMarshalJSON(result, true)
 		return mcpToolResultJSONBytes(data), nil
 	}
@@ -929,6 +932,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				Databases: availableDBs,
 			}
 			result.Next = ms.nextForConfigUpdate(result)
+			ms.recordConfigUpdateRuntimeEvent(ctx, result)
 			data, _ := mcpMarshalJSON(result, true)
 			return mcpToolResultJSONBytes(data), nil
 		}
@@ -972,6 +976,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		result.Message = "Configuration partially updated with some errors"
 	}
 	result.Next = ms.nextForConfigUpdate(result)
+	ms.recordConfigUpdateRuntimeEvent(ctx, result)
 
 	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
@@ -1853,6 +1858,38 @@ func stagedRuntimeHasApplicationDatabase(conf *core.Config, managedDBs map[strin
 	return false
 }
 
+func (ms *mcpServer) recordConfigUpdateRuntimeEvent(ctx context.Context, result ConfigUpdateResult) {
+	if ms == nil || ms.service == nil {
+		return
+	}
+	status := runtimeStatusReady
+	severity := "info"
+	summary := "Guarded config update completed."
+	nextAction := "Query gj_runtime again before workflow, config, or schema actions if system state matters."
+	errorCode := ""
+	if !result.Success {
+		status = runtimeStatusFailed
+		severity = "warn"
+		summary = "Guarded config update did not apply cleanly."
+		nextAction = "Review config update errors and retry with a smaller, validated change."
+		errorCode = "config_update_failed"
+	}
+	ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+		Phase:      "config",
+		Status:     status,
+		Severity:   severity,
+		Summary:    summary,
+		NextAction: nextAction,
+		ErrorCode:  errorCode,
+		Details: map[string]any{
+			"message":        result.Message,
+			"change_count":   len(result.Changes),
+			"error_count":    len(result.Errors),
+			"database_count": len(result.Databases),
+		},
+	})
+}
+
 func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRuntimeState) {
 	oldGJ := ms.service.gj
 	oldDBs := ms.service.dbs
@@ -1878,6 +1915,19 @@ func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRu
 	ms.service.runtimeCore = stage.runtimeCore
 	ms.service.metadataDB = stage.metadataDB
 	ms.service.gj = stage.gj
+	ms.service.reinitRuntimeObservability()
+	ms.service.recordRuntimeEvent(context.Background(), runtimeEvent{
+		Phase:      "config",
+		Status:     runtimeStatusReady,
+		Severity:   "info",
+		Summary:    "GraphJin runtime was reloaded after a guarded config update.",
+		NextAction: "Query gj_runtime before the next workflow, config, or schema action if system state matters.",
+		Details: map[string]any{
+			"database_count": len(stage.dbs),
+			"metadata_db":    stage.metadataDB,
+		},
+	})
+	ms.service.registerRuntimeSchemaCallbacks()
 	if oldGJ != nil && oldGJ != stage.gj {
 		oldGJ.Close()
 	}

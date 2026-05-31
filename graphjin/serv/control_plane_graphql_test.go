@@ -844,6 +844,140 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 	})
 }
 
+func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
+	userCtx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
+	query := `query {
+		gj_runtime(where: { kind: { in: ["status", "event"] } }, order_by: { created_at: desc }, limit: 20) {
+			kind
+			status
+			severity
+			summary
+			next_action
+			details_json
+		}
+	}`
+
+	t.Run("unavailable outside agentic mode", func(t *testing.T) {
+		for _, mode := range []string{"dev", "prod"} {
+			mode := mode
+			t.Run(mode, func(t *testing.T) {
+				svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-"+mode+".sqlite3", true), func(conf *Config) {
+					conf.Core.Mode = mode
+				})
+				_, err := svc.gj.GraphQL(userCtx, query, nil, &core.RequestConfig{})
+				if err == nil {
+					t.Fatalf("expected gj_runtime to be unavailable in %s mode", mode)
+				}
+			})
+		}
+	})
+
+	t.Run("agentic user can read bounded runtime rows", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-agentic.sqlite3", true), func(conf *Config) {
+			conf.Core.Mode = "agentic"
+		})
+		svc.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:      "test",
+			Status:     runtimeStatusDegraded,
+			Severity:   "warn",
+			Summary:    "Test runtime event.",
+			NextAction: "Follow the test next action.",
+			Details:    map[string]any{"password": "secret", "safe": "visible"},
+		})
+		res, err := svc.gj.GraphQL(userCtx, query, nil, &core.RequestConfig{})
+		if err != nil {
+			t.Fatalf("runtime query error: %v", err)
+		}
+		var out struct {
+			Runtime []struct {
+				Kind        string `json:"kind"`
+				Status      string `json:"status"`
+				Severity    string `json:"severity"`
+				Summary     string `json:"summary"`
+				NextAction  string `json:"next_action"`
+				DetailsJSON string `json:"details_json"`
+			} `json:"gj_runtime"`
+		}
+		if err := json.Unmarshal(res.Data, &out); err != nil {
+			t.Fatalf("decode runtime response: %v\n%s", err, string(res.Data))
+		}
+		if len(out.Runtime) == 0 {
+			t.Fatalf("expected runtime rows, got %s", string(res.Data))
+		}
+		var sawStatus, sawRedacted bool
+		for _, row := range out.Runtime {
+			if row.Kind == runtimeKindStatus && row.Status != "" {
+				sawStatus = true
+			}
+			if row.Summary == "Test runtime event." && strings.Contains(row.DetailsJSON, `"password":"[REDACTED]"`) && strings.Contains(row.DetailsJSON, `"safe":"visible"`) {
+				sawRedacted = true
+			}
+		}
+		if !sawStatus || !sawRedacted {
+			t.Fatalf("expected status and redacted event rows, got %s", string(res.Data))
+		}
+	})
+
+	t.Run("anon and runtime read false are blocked", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-agentic-blocks.sqlite3", true), func(conf *Config) {
+			conf.Core.Mode = "agentic"
+		})
+		res, err := svc.gj.GraphQL(context.Background(), query, nil, &core.RequestConfig{})
+		if err != nil {
+			t.Fatalf("anon runtime query should be blocked by role, not fail compile: %v", err)
+		}
+		var anonOut map[string]json.RawMessage
+		if err := json.Unmarshal(res.Data, &anonOut); err != nil {
+			t.Fatalf("decode anon response: %v\n%s", err, string(res.Data))
+		}
+		if string(anonOut["gj_runtime"]) != "null" {
+			t.Fatalf("expected anon gj_runtime to be blocked, got %s", string(res.Data))
+		}
+		res, err = svc.gj.GraphQL(context.WithValue(context.Background(), core.UserRoleKey, "user"), query, nil, &core.RequestConfig{})
+		if err != nil {
+			t.Fatalf("explicit user role runtime query error: %v", err)
+		}
+		var roleOut map[string]json.RawMessage
+		if err := json.Unmarshal(res.Data, &roleOut); err != nil {
+			t.Fatalf("decode user role response: %v\n%s", err, string(res.Data))
+		}
+		if string(roleOut["gj_runtime"]) == "null" {
+			t.Fatalf("expected explicit user role to read gj_runtime, got %s", string(res.Data))
+		}
+		res, err = svc.gj.GraphQL(context.WithValue(userCtx, core.UserRoleKey, "anon"), query, nil, &core.RequestConfig{})
+		if err != nil {
+			t.Fatalf("explicit anon role runtime query should be blocked by role, not fail compile: %v", err)
+		}
+		var forcedAnonOut map[string]json.RawMessage
+		if err := json.Unmarshal(res.Data, &forcedAnonOut); err != nil {
+			t.Fatalf("decode forced anon response: %v\n%s", err, string(res.Data))
+		}
+		if string(forcedAnonOut["gj_runtime"]) != "null" {
+			t.Fatalf("expected explicit anon role to block gj_runtime, got %s", string(res.Data))
+		}
+
+		disabled := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-agentic-disabled.sqlite3", true), func(conf *Config) {
+			conf.Core.Mode = "agentic"
+			for i := range conf.Core.Sources {
+				if conf.Core.Sources[i].Kind == "graphjin" {
+					conf.Core.Sources[i].Capabilities = map[string]bool{sourcecap.KeyRuntimeRead: false}
+				}
+			}
+		})
+		res, err = disabled.gj.GraphQL(userCtx, query, nil, &core.RequestConfig{})
+		if err != nil {
+			t.Fatalf("runtime.read false query should be blocked by role, not fail compile: %v", err)
+		}
+		var disabledOut map[string]json.RawMessage
+		if err := json.Unmarshal(res.Data, &disabledOut); err != nil {
+			t.Fatalf("decode disabled response: %v\n%s", err, string(res.Data))
+		}
+		if string(disabledOut["gj_runtime"]) != "null" {
+			t.Fatalf("expected runtime.read false to block gj_runtime, got %s", string(res.Data))
+		}
+	})
+}
+
 func TestGraphQLControlPlaneCatalogSecurityGuidance(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "app.sqlite3", true))
 
@@ -882,6 +1016,51 @@ func TestGraphQLControlPlaneCatalogSecurityGuidance(t *testing.T) {
 		!strings.Contains(item.SafetyJSON, "read_only") ||
 		!strings.Contains(item.GraphQLQuery, "gj_security") {
 		t.Fatalf("security guidance missing LLM metadata: %+v", item)
+	}
+}
+
+func TestGraphQLControlPlaneCatalogRuntimeGuidance(t *testing.T) {
+	svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-guidance.sqlite3", true), func(conf *Config) {
+		conf.Core.Mode = "agentic"
+	})
+
+	res, err := svc.gj.GraphQL(context.WithValue(context.Background(), core.UserIDKey, "company-user"), `query {
+		gj_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_runtime.query" } }, limit: 1) {
+			name
+			summary
+			details_json
+			examples_json
+			safety_json
+			graphql_query
+		}
+	}`, nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("catalog runtime guidance query error: %v", err)
+	}
+	var out struct {
+		Items []struct {
+			Name         string `json:"name"`
+			Summary      string `json:"summary"`
+			DetailsJSON  string `json:"details_json"`
+			ExamplesJSON string `json:"examples_json"`
+			SafetyJSON   string `json:"safety_json"`
+			GraphQLQuery string `json:"graphql_query"`
+		} `json:"gj_catalog"`
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatalf("decode catalog runtime guidance: %v\n%s", err, string(res.Data))
+	}
+	if len(out.Items) != 1 || out.Items[0].Name != "gj_runtime.query" {
+		t.Fatalf("expected gj_runtime catalog guidance, got %+v", out.Items)
+	}
+	item := out.Items[0]
+	for _, want := range []string{"gj_runtime", "runtime.read", "decision", "degraded"} {
+		if !strings.Contains(item.DetailsJSON+item.SafetyJSON+item.GraphQLQuery, want) {
+			t.Fatalf("runtime guidance missing %q: %+v", want, item)
+		}
+	}
+	if !strings.Contains(item.ExamplesJSON, "latest runtime decision context") {
+		t.Fatalf("runtime guidance missing examples: %+v", item)
 	}
 }
 
@@ -1335,6 +1514,9 @@ func newControlPlaneGraphQLTestServiceWithConfig(t *testing.T, cfg MCPConfig, db
 	applySourceCapabilityMCPDefaults(conf)
 	runtimeCore := cloneCoreConfig(conf.Core)
 	svc.runtimeCore = &runtimeCore
+	if err := svc.initRuntimeObservability(); err != nil {
+		t.Fatalf("init runtime observability: %v", err)
+	}
 	if err := svc.initSystemNanoDBBeforeCore(); err != nil {
 		t.Fatalf("init system nanodb: %v", err)
 	}

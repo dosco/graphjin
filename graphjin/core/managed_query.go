@@ -25,11 +25,6 @@ func (gj *graphjinEngine) initManagedQueryTables() error {
 			return fmt.Errorf("managed query handler database %q has no schema metadata", dbName)
 		}
 		schema := dbctx.dbinfo.Schema
-		for _, table := range dbctx.dbinfo.Tables {
-			if strings.HasPrefix(strings.ToLower(table.Name), "gj_") {
-				return fmt.Errorf("reserved GraphJin system table prefix gj_ conflicts with existing table %q", table.Name)
-			}
-		}
 		for _, table := range handler.ManagedQueryTables() {
 			if strings.TrimSpace(table.Name) == "" {
 				return fmt.Errorf("managed query table name is required")

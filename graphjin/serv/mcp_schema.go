@@ -911,10 +911,28 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 // handleReloadSchema triggers a schema reload
 func (ms *mcpServer) handleReloadSchema(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := ms.requireDB(); err != nil {
+		ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+			Phase:      "schema",
+			Status:     runtimeStatusFailed,
+			Severity:   "warn",
+			Summary:    "MCP schema reload was blocked because the database is unavailable.",
+			NextAction: "Configure or reconnect the database before retrying schema reload.",
+			ErrorCode:  "schema_reload_blocked",
+			Details:    map[string]any{"error": errNoDB},
+		})
 		return err, nil
 	}
 	err := ms.service.gj.Reload()
 	if err != nil {
+		ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+			Phase:      "schema",
+			Status:     runtimeStatusFailed,
+			Severity:   "error",
+			Summary:    "MCP schema reload failed.",
+			NextAction: "Inspect database connectivity and schema discovery errors before retrying.",
+			ErrorCode:  "schema_reload_failed",
+			Details:    map[string]any{"error": err.Error()},
+		})
 		return mcp.NewToolResultError(fmt.Sprintf("failed to reload schema: %s", err.Error())), nil
 	}
 
@@ -938,6 +956,14 @@ func (ms *mcpServer) handleReloadSchema(ctx context.Context, req mcp.CallToolReq
 			result.Tables = append(result.Tables, t.Name)
 		}
 	}
+	ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+		Phase:      "schema",
+		Status:     runtimeStatusReady,
+		Severity:   "info",
+		Summary:    "MCP schema reload completed.",
+		NextAction: "Refresh catalog-guided planning before using newly discovered tables or relationships.",
+		Details:    map[string]any{"table_count": len(tables)},
+	})
 
 	return ms.toolResultJSON("reload_schema", req.GetArguments(), result)
 }
