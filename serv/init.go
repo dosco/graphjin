@@ -2,6 +2,7 @@ package serv
 
 import (
 	// "crypto/sha256"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -206,6 +207,16 @@ func (s *graphjinService) initAllDBs() error {
 		dbConf := s.conf.Core.Databases[name]
 		db, err := s.newDBFromDatabaseConfigInto(name, dbConf, s.runtimeCore, s.managedDBs)
 		if err != nil {
+			s.recordRuntimeEvent(context.Background(), runtimeEvent{
+				Phase:        "database",
+				Status:       runtimeStatusFailed,
+				Severity:     "error",
+				Summary:      "Database connection failed.",
+				NextAction:   "Fix this database source configuration or choose another active database before application queries.",
+				DatabaseName: name,
+				ErrorCode:    "database_connect_failed",
+				Details:      map[string]any{"database": name, "database_type": dbConf.Type, "error": err.Error()},
+			})
 			if s.conf.Serv.Production {
 				return fmt.Errorf("database %s: %w", name, err)
 			}
@@ -213,6 +224,15 @@ func (s *graphjinService) initAllDBs() error {
 			continue
 		}
 		s.dbs[name] = db
+		s.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:        "database",
+			Status:       runtimeStatusReady,
+			Severity:     "info",
+			Summary:      "Database connection established.",
+			NextAction:   "Proceed with schema discovery and catalog-guided queries.",
+			DatabaseName: name,
+			Details:      map[string]any{"database": name, "database_type": dbConf.Type},
+		})
 	}
 	// Sync legacy conf.DB from first database for code that still reads it
 	if len(s.dbs) > 0 {
@@ -235,6 +255,16 @@ func (s *graphjinService) initLegacyDB() error {
 		}
 		db, err := s.newDBFromDatabaseConfigInto(core.DefaultDBName, dbConf, s.runtimeCore, s.managedDBs)
 		if err != nil {
+			s.recordRuntimeEvent(context.Background(), runtimeEvent{
+				Phase:        "database",
+				Status:       runtimeStatusFailed,
+				Severity:     "error",
+				Summary:      "CodeSQL database initialization failed.",
+				NextAction:   "Inspect CodeSQL source configuration before application queries.",
+				DatabaseName: core.DefaultDBName,
+				ErrorCode:    "database_connect_failed",
+				Details:      map[string]any{"database": core.DefaultDBName, "database_type": dbTypeCodeSQL, "error": err.Error()},
+			})
 			if s.conf.Serv.Production {
 				return err
 			}
@@ -242,6 +272,15 @@ func (s *graphjinService) initLegacyDB() error {
 			return nil
 		}
 		s.dbs[core.DefaultDBName] = db
+		s.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:        "database",
+			Status:       runtimeStatusReady,
+			Severity:     "info",
+			Summary:      "CodeSQL database initialized.",
+			NextAction:   "Proceed with schema discovery and catalog-guided queries.",
+			DatabaseName: core.DefaultDBName,
+			Details:      map[string]any{"database": core.DefaultDBName, "database_type": dbTypeCodeSQL},
+		})
 		if s.runtimeCore.Databases != nil {
 			runtime := s.runtimeCore.Databases[core.DefaultDBName]
 			s.conf.DB.Type = runtime.Type
@@ -258,11 +297,31 @@ func (s *graphjinService) initLegacyDB() error {
 	if s.conf.Serv.Production {
 		db, err = newDB(s.conf, true, true, s.log, s.fs)
 		if err != nil {
+			s.recordRuntimeEvent(context.Background(), runtimeEvent{
+				Phase:        "database",
+				Status:       runtimeStatusFailed,
+				Severity:     "error",
+				Summary:      "Database connection failed.",
+				NextAction:   "Fix database configuration before starting GraphJin in production.",
+				DatabaseName: core.DefaultDBName,
+				ErrorCode:    "database_connect_failed",
+				Details:      map[string]any{"database": core.DefaultDBName, "database_type": s.conf.DB.Type, "error": err.Error()},
+			})
 			return err
 		}
 	} else {
 		db, err = newDBOnce(s.conf, true, true, s.log, s.fs)
 		if err != nil {
+			s.recordRuntimeEvent(context.Background(), runtimeEvent{
+				Phase:        "database",
+				Status:       runtimeStatusFailed,
+				Severity:     "error",
+				Summary:      "Database connection failed.",
+				NextAction:   "Use MCP/config tools to fix the database configuration before application queries.",
+				DatabaseName: core.DefaultDBName,
+				ErrorCode:    "database_connect_failed",
+				Details:      map[string]any{"database": core.DefaultDBName, "database_type": s.conf.DB.Type, "error": err.Error()},
+			})
 			s.log.Warnf("Database connection failed: %s. Server starting without database — use MCP to configure.", err)
 			return nil
 		}
@@ -279,6 +338,15 @@ func (s *graphjinService) initLegacyDB() error {
 		name = names[0]
 	}
 	s.dbs[name] = db
+	s.recordRuntimeEvent(context.Background(), runtimeEvent{
+		Phase:        "database",
+		Status:       runtimeStatusReady,
+		Severity:     "info",
+		Summary:      "Database connection established.",
+		NextAction:   "Proceed with schema discovery and catalog-guided queries.",
+		DatabaseName: name,
+		Details:      map[string]any{"database": name, "database_type": s.conf.DB.Type},
+	})
 	return nil
 }
 

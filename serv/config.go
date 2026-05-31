@@ -122,6 +122,9 @@ type Serv struct {
 	// Redis configuration
 	Redis RedisConfig `mapstructure:"redis" jsonschema:"title=Redis Configuration"`
 
+	// Runtime event configuration
+	RuntimeEvents RuntimeEventsConfig `mapstructure:"runtime_events" jsonschema:"title=Runtime Events Configuration"`
+
 	// Response caching configuration
 	Caching CachingConfig `mapstructure:"caching" jsonschema:"title=Caching Configuration"`
 
@@ -344,6 +347,15 @@ type MCPConfig struct {
 type RedisConfig struct {
 	// Redis connection URL (e.g., redis://localhost:6379/0)
 	URL string `mapstructure:"url" jsonschema:"title=Redis URL"`
+}
+
+// RuntimeEventsConfig configures bounded agentic runtime observability rows.
+type RuntimeEventsConfig struct {
+	// MaxEvents is the maximum number of recent event rows retained.
+	MaxEvents int `mapstructure:"max_events" jsonschema:"title=Runtime Event Limit,default=1000"`
+
+	// TTLSeconds controls how long event rows are retained.
+	TTLSeconds int `mapstructure:"ttl_seconds" jsonschema:"title=Runtime Event TTL Seconds,default=86400"`
 }
 
 // UploadsConfig configures the multipart-form upload endpoint following

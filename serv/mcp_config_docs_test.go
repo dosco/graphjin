@@ -31,4 +31,7 @@ func TestAgenticConfigDocsTemplate(t *testing.T) {
 	if !strings.Contains(agenticConfigTemplate, "workflow.execute: true") {
 		t.Fatalf("agentic docs template should allow approved workflow execution:\n%s", agenticConfigTemplate)
 	}
+	if !strings.Contains(agenticConfigTemplate, "runtime.read: true") {
+		t.Fatalf("agentic docs template should allow runtime observability:\n%s", agenticConfigTemplate)
+	}
 }

@@ -48,3 +48,22 @@ func TestCanonicalKindRejectsOldNames(t *testing.T) {
 		}
 	}
 }
+
+func TestRuntimeReadCapabilityDefaults(t *testing.T) {
+	def, ok := Lookup(KindGraphJin, KeyRuntimeRead)
+	if !ok {
+		t.Fatal("runtime.read capability not registered")
+	}
+	if def.Default(ModeDev) {
+		t.Fatal("runtime.read should default false in dev")
+	}
+	if def.Default(ModeProd) {
+		t.Fatal("runtime.read should default false in prod")
+	}
+	if !def.Default(ModeAgentic) {
+		t.Fatal("runtime.read should default true in agentic")
+	}
+	if def.Enforcement != EnforcementRuntime || def.Action != ActionRead || def.ReadOnlyBlocks {
+		t.Fatalf("unexpected runtime.read definition: %+v", def)
+	}
+}

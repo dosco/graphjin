@@ -73,6 +73,7 @@ const (
 	KeySecurityRead        = "security.read"
 	KeyConfigRead          = "config.read"
 	KeyConfigWrite         = "config.write"
+	KeyRuntimeRead         = "runtime.read"
 	KeyRawGraphQLQuery     = "raw_graphql.query"
 	KeyRawGraphQLMutate    = "raw_graphql.mutate"
 	KeySchemaReload        = "schema.reload"
@@ -140,6 +141,7 @@ var definitions = []Definition{
 	def(KindGraphJin, KeySecurityRead, ActionRead, true, false, false, "high", EnforcementRuntime, false, "Read detailed GraphJin security audit rows.", kindReason(KindGraphJin), readRecommendation),
 	def(KindGraphJin, KeyConfigRead, ActionRead, true, false, false, "high", EnforcementRuntime, false, "Read GraphJin configuration rows.", kindReason(KindGraphJin), readRecommendation),
 	def(KindGraphJin, KeyConfigWrite, ActionWrite, true, false, false, "critical", EnforcementRuntime, true, "Write GraphJin configuration.", kindReason(KindGraphJin), mutateRecommendation, mcp(MCPAllowConfigUpdates)),
+	def(KindGraphJin, KeyRuntimeRead, ActionRead, false, false, true, "medium", EnforcementRuntime, false, "Read compact GraphJin runtime status and recent redacted events.", kindReason(KindGraphJin), readRecommendation),
 	def(KindGraphJin, KeyRawGraphQLQuery, ActionQuery, true, false, false, "high", EnforcementRuntime, false, "Execute raw GraphQL queries through MCP.", kindReason(KindGraphJin), mutateRecommendation, mcp(MCPAllowRawQueries)),
 	def(KindGraphJin, KeyRawGraphQLMutate, ActionMutate, true, false, false, "critical", EnforcementRuntime, true, "Execute raw GraphQL mutations through MCP.", kindReason(KindGraphJin), mutateRecommendation, mcp(MCPAllowMutations)),
 	def(KindGraphJin, KeySchemaReload, ActionReload, true, false, false, "high", EnforcementRuntime, true, "Reload GraphJin schema metadata.", kindReason(KindGraphJin), mutateRecommendation, mcp(MCPAllowSchemaReload)),
@@ -183,7 +185,7 @@ func def(kind, key, action string, dev, prod, agentic bool, severity, enforcemen
 		opt(&d)
 	}
 	switch key {
-	case KeySecurityRead, KeyConfigRead, KeyWorkflowExecute, KeyCodeRead, KeyFilesRead, KeyAPIRead, KeyDataRead, KeyDataWrite:
+	case KeySecurityRead, KeyConfigRead, KeyRuntimeRead, KeyWorkflowExecute, KeyCodeRead, KeyFilesRead, KeyAPIRead, KeyDataRead, KeyDataWrite:
 		d.ExampleValue = "true"
 	case KeyWorkflowRead, KeyCodeWrite, KeyFilesWrite, KeyAPIWrite:
 		d.ExampleValue = "false"

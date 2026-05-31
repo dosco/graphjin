@@ -152,6 +152,58 @@ func TestHandleUpdateCurrentConfig_TransactionalSuccessSwapsRuntime(t *testing.T
 	}
 }
 
+func TestHandleUpdateCurrentConfig_RuntimeReadDisabledStopsRuntimeStore(t *testing.T) {
+	livePath := createSQLiteDBFile(t, "live.sqlite3", true)
+	conf := &Config{
+		Core: core.Config{
+			Mode: modeAgentic,
+			Sources: []core.SourceConfig{
+				{Name: "main", Kind: "database", Type: "sqlite", Path: livePath},
+				{Name: "graphjin", Kind: "graphjin"},
+			},
+		},
+		Serv: Serv{Production: false},
+	}
+	svc, err := newGraphJinService(conf, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { closeTestService(svc) })
+
+	oldStore := &trackingRuntimeStore{name: "tracking"}
+	svc.runtimeEvents = oldStore
+	ms := &mcpServer{
+		service:     svc,
+		ctx:         context.Background(),
+		readOnlyDBs: map[string]bool{},
+	}
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"sources": []any{
+			map[string]any{
+				"name": "main",
+				"kind": "database",
+				"type": "sqlite",
+				"path": livePath,
+			},
+			map[string]any{
+				"name":         "graphjin",
+				"kind":         "graphjin",
+				"capabilities": map[string]any{"runtime.read": false},
+			},
+		},
+	})
+	if !out.Success {
+		t.Fatalf("expected runtime.read disable update to succeed, got %+v", out)
+	}
+	if !oldStore.closed {
+		t.Fatal("expected old runtime event store to be closed")
+	}
+	if svc.runtimeEvents != nil {
+		t.Fatalf("expected runtime event store to be disabled, got %#v", svc.runtimeEvents)
+	}
+}
+
 func TestHandleUpdateCurrentConfig_SerializesConcurrentUpdates(t *testing.T) {
 	livePath := createSQLiteDBFile(t, "live.sqlite3", true)
 	ms := newTransactionalConfigMCPServer(t, livePath)
@@ -425,4 +477,29 @@ func newTransactionalConfigMCPServerWithOptions(t *testing.T, dbPath string, pro
 		ctx:         context.Background(),
 		readOnlyDBs: map[string]bool{},
 	}
+}
+
+type trackingRuntimeStore struct {
+	name   string
+	closed bool
+}
+
+func (s *trackingRuntimeStore) Name() string {
+	return s.name
+}
+
+func (s *trackingRuntimeStore) NodeID() string {
+	return "tracking-node"
+}
+
+func (s *trackingRuntimeStore) Record(context.Context, runtimeEvent) {
+}
+
+func (s *trackingRuntimeStore) Rows(context.Context, runtimeStatus) []map[string]any {
+	return nil
+}
+
+func (s *trackingRuntimeStore) Close() error {
+	s.closed = true
+	return nil
 }

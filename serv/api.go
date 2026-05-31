@@ -98,6 +98,7 @@ type graphjinService struct {
 	tracer               trace.Tracer
 	cache                ResponseCache // Response cache (Redis or in-memory)
 	cursorCache          CursorCache   // MCP cursor cache for short numeric IDs
+	runtimeEvents        runtimeEventStore
 	configMu             sync.Mutex
 	workflowMu           sync.Mutex
 	workflowCache        *workflowRegistrySnapshot
@@ -138,6 +139,16 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 			targetDB = core.DefaultDBName
 		}
 		opts = append(opts, core.OptionSetManagedMutationHandler(targetDB, controlPlane))
+	}
+	if s.conf != nil && s.conf.runtimeRootRegistered() {
+		targetDB := s.metadataDB
+		if targetDB == "" {
+			targetDB = s.conf.Core.CatalogDatabaseName()
+		}
+		if targetDB == "" {
+			targetDB = core.DefaultDBName
+		}
+		opts = append(opts, core.OptionSetManagedQueryHandler(targetDB, runtimeQueryHandler{service: s}))
 	}
 	if s.namespace != nil {
 		opts = append(opts, core.OptionSetNamespace(*s.namespace))
@@ -211,6 +222,9 @@ func (s *HttpService) Close() error {
 	}
 	if gs.cache != nil {
 		gs.cache.Close() //nolint:errcheck
+	}
+	if gs.runtimeEvents != nil {
+		gs.runtimeEvents.Close() //nolint:errcheck
 	}
 	closedManaged := gs.closeManagedDBs(nil)
 	for name, db := range gs.dbs {
@@ -393,7 +407,20 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	initLogLevel(s)
 	validateConf(s)
 
+	if err := s.initRuntimeObservability(); err != nil {
+		s.log.Warnf("runtime observability init error: %s", err)
+	}
+
 	if err := s.initDB(); err != nil {
+		s.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:      "database",
+			Status:     runtimeStatusFailed,
+			Severity:   "error",
+			Summary:    "Database initialization failed.",
+			NextAction: "Inspect database configuration and retry GraphJin initialization.",
+			ErrorCode:  "database_init_failed",
+			Details:    map[string]any{"error": err.Error()},
+		})
 		return nil, err
 	}
 
@@ -425,6 +452,15 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	// }
 
 	if err != nil {
+		s.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:      "graphjin_init",
+			Status:     runtimeStatusFailed,
+			Severity:   "error",
+			Summary:    "GraphJin core initialization failed.",
+			NextAction: "Inspect gj_runtime events and repair configuration or database connectivity before retrying.",
+			ErrorCode:  "graphjin_init_failed",
+			Details:    map[string]any{"error": err.Error()},
+		})
 		if isNonRecoverableStartupError(err) {
 			return nil, err
 		}
@@ -438,6 +474,15 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		}
 	}
 	if err == nil {
+		s.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:       "graphjin_init",
+			Status:      runtimeStatusReady,
+			Severity:    "info",
+			Summary:     "GraphJin core initialized successfully.",
+			NextAction:  "Use gj_runtime after errors or before guarded workflow, config, or schema actions.",
+			SchemaReady: s.gj != nil && s.gj.SchemaReady(),
+		})
+		s.registerRuntimeSchemaCallbacks()
 		if werr := s.startLocalFilesystemCacheWatchers(); werr != nil {
 			s.log.Warnf("filesystem cache watcher init error: %s", werr)
 		}

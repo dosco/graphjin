@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"context"
 	"os"
 	"sort"
 	"strings"
@@ -94,6 +95,15 @@ func (s *graphjinService) markCatalogChanged(reason string) {
 			reason = "catalog change"
 		}
 		s.log.Warnf("metadata catalog refresh after %s failed: %v", reason, err)
+		s.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:      "catalog",
+			Status:     runtimeStatusDegraded,
+			Severity:   "warn",
+			Summary:    "Metadata catalog refresh failed after a runtime change.",
+			NextAction: "Check recent config/schema events, then retry catalog discovery or reload schema.",
+			ErrorCode:  "catalog_refresh_failed",
+			Details:    map[string]any{"reason": reason, "error": err.Error()},
+		})
 	}
 }
 

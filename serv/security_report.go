@@ -458,6 +458,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 	graphjinControlPlane := conf != nil && conf.graphjinControlPlaneEnabled()
 	workflowsEnabled := conf != nil && conf.workflowsSourceEnabled()
 	catalogEnabled := conf != nil && conf.catalogToolsEnabled()
+	runtimeRegistered := conf != nil && conf.runtimeRootRegistered()
 	configReadOnly := controlPlaneTableReadOnly(conf, "", "gj_config")
 	workflowReadOnly := controlPlaneTableReadOnly(conf, "", "gj_workflow")
 	workflowExecutionReadOnly := controlPlaneTableReadOnly(conf, "", "gj_workflow_execution")
@@ -529,6 +530,22 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			securitySystemReadExplicit(conf, "user", "gj_config", sourcecap.KindGraphJin, sourcecap.KeyConfigRead), "critical",
 			"Configuration rows can reveal database names, role rules, enabled tools, and redacted secret locations.",
 			"Grant gj_config read only through an explicit authenticated role or source capability."),
+		newSecurityPolicy(mode, "serve.runtime_read", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "runtime", "read",
+			"Runtime status read access",
+			"Controls whether normal authenticated users can read compact gj_runtime status and recent redacted events.",
+			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead), securitySystemReadAllowed(conf, "gj_runtime", mode, "user", runtimeRegistered),
+			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead, "roles[user].tables.gj_runtime.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_runtime", sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead),
+			securitySystemReadExplicit(conf, "user", "gj_runtime", sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead), "medium",
+			"gj_runtime is decision support for agentic clients; it exposes bounded operational summaries, not audit history.",
+			"Enable runtime.read only for authenticated agentic users who should inspect current system state."),
+		newSecurityPolicy(mode, "serve.runtime_read_anon", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "runtime", "read",
+			"Anonymous runtime status read access",
+			"Controls whether unauthenticated users can read gj_runtime.",
+			false, securitySystemReadAllowed(conf, "gj_runtime", mode, "anon", runtimeRegistered),
+			"roles[anon].tables.gj_runtime.query.block", securityRoleQueryValue(conf, "anon", "gj_runtime"),
+			securityRoleTableExplicit(conf, "anon", "gj_runtime"), "high",
+			"Runtime state is for authenticated agentic clients and can reveal degraded infrastructure components.",
+			"Keep anon gj_runtime blocked; authenticate agentic users so they receive the user role."),
 		newSecurityPolicy(mode, "serve.workflow_read", "serve", sourcecap.KindWorkflow, sourcecap.KindWorkflow, "workflow", "read",
 			"Workflow definition read access",
 			"Controls whether normal authenticated users can read gj_workflow definitions, including workflow code.",
@@ -1022,6 +1039,8 @@ func securityTableFor(capability, action string) string {
 		return "gj_security"
 	case "config":
 		return "gj_config"
+	case "runtime":
+		return "gj_runtime"
 	case "workflow":
 		if action == "execute" {
 			return "gj_workflow_execution"
@@ -1126,6 +1145,8 @@ func defaultSystemReadAllowed(mode, role, table string) bool {
 		return sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeySecurityRead)
 	case "gj_config":
 		return sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyConfigRead)
+	case "gj_runtime":
+		return sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead)
 	case "gj_workflow":
 		return sourceCapabilityDefault(mode, sourcecap.KindWorkflow, sourcecap.KeyWorkflowRead)
 	default:

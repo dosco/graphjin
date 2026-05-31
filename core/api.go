@@ -615,7 +615,11 @@ func OptionSetManagedQueryHandler(database string, handler ManagedQueryHandler) 
 		if s.managedQueryHandlers == nil {
 			s.managedQueryHandlers = make(map[string]ManagedQueryHandler)
 		}
-		s.managedQueryHandlers[database] = handler
+		combined, err := combineManagedQueryHandlers(s.managedQueryHandlers[database], handler)
+		if err != nil {
+			return err
+		}
+		s.managedQueryHandlers[database] = combined
 		return nil
 	}
 }

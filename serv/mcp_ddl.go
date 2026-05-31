@@ -263,6 +263,16 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 
 	ops, err := ms.computeSchemaOps(schema, destructive, database)
 	if err != nil {
+		ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+			Phase:        "schema",
+			Status:       runtimeStatusFailed,
+			Severity:     "warn",
+			Summary:      "MCP schema apply diff computation failed.",
+			NextAction:   "Review the db.graphql schema input and retry preview before applying changes.",
+			DatabaseName: database,
+			ErrorCode:    "schema_diff_failed",
+			Details:      map[string]any{"error": err.Error(), "destructive": destructive},
+		})
 		return mcp.NewToolResultError(fmt.Sprintf("failed to compute schema diff: %v", err)), nil
 	}
 
@@ -272,6 +282,15 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 			OperationsApplied: 0,
 			Message:           "No schema changes needed - database already matches the provided schema",
 		}
+		ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+			Phase:        "schema",
+			Status:       runtimeStatusReady,
+			Severity:     "info",
+			Summary:      "MCP schema apply completed with no database changes.",
+			NextAction:   "Continue with the current schema; query gj_catalog if table shape matters.",
+			DatabaseName: database,
+			Details:      map[string]any{"operations_applied": 0, "destructive": destructive},
+		})
 		return ms.toolResultJSON("apply_schema_changes", args, result)
 	}
 
@@ -283,12 +302,31 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 			OperationsApplied: 0,
 			Message:           "No SQL to execute",
 		}
+		ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+			Phase:        "schema",
+			Status:       runtimeStatusReady,
+			Severity:     "info",
+			Summary:      "MCP schema apply completed without executable statements.",
+			NextAction:   "Continue with the current schema; query gj_catalog if table shape matters.",
+			DatabaseName: database,
+			Details:      map[string]any{"operation_count": len(ops), "destructive": destructive},
+		})
 		return ms.toolResultJSON("apply_schema_changes", args, result)
 	}
 
 	// Apply changes in a transaction
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
+		ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+			Phase:        "schema",
+			Status:       runtimeStatusFailed,
+			Severity:     "error",
+			Summary:      "MCP schema apply failed to start a database transaction.",
+			NextAction:   "Check database connectivity and transaction support before retrying.",
+			DatabaseName: database,
+			ErrorCode:    "schema_apply_begin_failed",
+			Details:      map[string]any{"error": err.Error()},
+		})
 		return mcp.NewToolResultError(fmt.Sprintf("failed to begin transaction: %v", err)), nil
 	}
 
@@ -297,11 +335,35 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 			if rbErr := tx.Rollback(); rbErr != nil {
 				ms.service.log.Warnf("Rollback failed: %s", rbErr)
 			}
+			ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+				Phase:        "schema",
+				Status:       runtimeStatusFailed,
+				Severity:     "error",
+				Summary:      "MCP schema apply failed while executing a generated statement.",
+				NextAction:   "Run preview_schema_changes, inspect the database error, and retry with a corrected schema.",
+				DatabaseName: database,
+				ErrorCode:    "schema_apply_exec_failed",
+				Details: map[string]any{
+					"error":           err.Error(),
+					"statement_count": len(sqls),
+					"destructive":     destructive,
+				},
+			})
 			return mcp.NewToolResultError(fmt.Sprintf("failed to execute SQL: %s\nError: %v", sqlStmt, err)), nil
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
+		ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+			Phase:        "schema",
+			Status:       runtimeStatusFailed,
+			Severity:     "error",
+			Summary:      "MCP schema apply failed to commit.",
+			NextAction:   "Check database transaction state, then rerun schema discovery before retrying.",
+			DatabaseName: database,
+			ErrorCode:    "schema_apply_commit_failed",
+			Details:      map[string]any{"error": err.Error(), "statement_count": len(sqls)},
+		})
 		return mcp.NewToolResultError(fmt.Sprintf("failed to commit transaction: %v", err)), nil
 	}
 
@@ -321,6 +383,16 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 	if ms.service.gj != nil {
 		if err := ms.service.gj.Reload(); err != nil {
 			ms.service.log.Warnf("Schema reload after DDL failed: %s", err)
+			ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+				Phase:        "schema",
+				Status:       runtimeStatusDegraded,
+				Severity:     "warn",
+				Summary:      "MCP schema apply succeeded but schema reload failed.",
+				NextAction:   "Retry reload_schema before relying on newly applied schema changes.",
+				DatabaseName: database,
+				ErrorCode:    "schema_reload_after_apply_failed",
+				Details:      map[string]any{"error": err.Error(), "statement_count": len(sqls)},
+			})
 		}
 	}
 
@@ -331,5 +403,19 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 		ColumnsAdded:      columnsAdded,
 		Message:           "Schema changes applied successfully",
 	}
+	ms.service.recordRuntimeEvent(ctx, runtimeEvent{
+		Phase:        "schema",
+		Status:       runtimeStatusReady,
+		Severity:     "info",
+		Summary:      "MCP schema changes were applied successfully.",
+		NextAction:   "Query gj_catalog before using newly created or changed tables.",
+		DatabaseName: database,
+		Details: map[string]any{
+			"operations_applied": len(sqls),
+			"tables_created":     tablesCreated,
+			"columns_added":      columnsAdded,
+			"destructive":        destructive,
+		},
+	})
 	return ms.toolResultJSON("apply_schema_changes", args, result)
 }

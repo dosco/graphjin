@@ -52,7 +52,7 @@ func controlPlaneSourceReadOnly(conf *Config, table string) bool {
 		return conf.workflowsSourceReadOnly()
 	case "gj_config":
 		return conf.graphjinSourceReadOnly()
-	case "gj_catalog", "gj_security":
+	case "gj_catalog", "gj_security", "gj_runtime":
 		return true
 	default:
 		return false
@@ -67,7 +67,7 @@ func defaultControlPlaneTableReadOnly(conf *Config, table string) bool {
 		return !sourceCapabilityAllowed(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowExecute)
 	case "gj_config":
 		return !sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeyConfigWrite)
-	case "gj_catalog", "gj_security":
+	case "gj_catalog", "gj_security", "gj_runtime":
 		return true
 	default:
 		return false
@@ -92,6 +92,9 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 	mode := effectiveMode(conf)
 
 	systemTables := []string{"gj_catalog", "gj_security", "gj_config", "gj_workflow", "gj_workflow_execution"}
+	if conf.runtimeRootRegistered() {
+		systemTables = append(systemTables, "gj_runtime")
+	}
 	for _, role := range []string{"user", "anon"} {
 		for _, table := range systemTables {
 			if systemReadAllowedBySource(conf, mode, role, table) {
@@ -149,6 +152,8 @@ func systemReadAllowedBySource(conf *Config, mode, role, table string) bool {
 		return sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeySecurityRead)
 	case "gj_config":
 		return sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeyConfigRead)
+	case "gj_runtime":
+		return sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead)
 	case "gj_workflow":
 		return sourceCapabilityAllowed(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowRead)
 	case "gj_workflow_execution":
@@ -165,6 +170,8 @@ func systemReadSourceEnabled(conf *Config, table string) bool {
 	switch strings.ToLower(strings.TrimSpace(table)) {
 	case "gj_catalog", "gj_security", "gj_config":
 		return conf.catalogToolsEnabled() || conf.graphjinControlPlaneEnabled()
+	case "gj_runtime":
+		return conf != nil && conf.runtimeRootRegistered()
 	case "gj_workflow", "gj_workflow_execution":
 		return conf.workflowsSourceEnabled()
 	default:

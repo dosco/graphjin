@@ -472,6 +472,41 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 				"agentic":   "Normal agentic users should discover through gj_catalog and execute approved workflows. Detailed gj_security, gj_config, and gj_workflow.code require an explicit authenticated grant.",
 			}),
 		},
+		{
+			"name": "gj_runtime.query", "kind": "runtime", "enabled": h.service != nil && h.service.conf != nil && h.service.conf.runtimeRootSourceEnabled(),
+			"summary":       "Read compact agentic GraphJin runtime health, recent structured events, and suggested next actions from gj_runtime.",
+			"graphql_query": `gj_runtime(where: { kind: { in: ["status", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind status severity summary next_action details_json }`,
+			"details_json": mustMarshalString(map[string]any{
+				"root":               "gj_runtime",
+				"kinds":              []string{"status", "event"},
+				"agentic_only":       true,
+				"source_capability":  "runtime.read",
+				"role_default":       "authenticated user allowed in agentic mode; anon blocked",
+				"decision_support":   true,
+				"audit_history":      false,
+				"memory_defaults":    map[string]any{"max_events": runtimeDefaultMaxEvents, "ttl_seconds": int(runtimeDefaultTTL.Seconds())},
+				"redis_preferred":    "When redis.url is configured and reachable, Redis stores shared events and per-node statuses for horizontally scaled GraphJin.",
+				"filter_by":          []string{"kind", "created_at", "node_id", "mode", "store", "phase", "status", "severity", "source", "source_kind", "database_name", "active_database", "schema_ready", "catalog_revision", "error_code"},
+				"json_fields":        []string{"details_json", "suggested_next_json"},
+				"when_to_use":        []string{"before workflow/config/schema actions", "after GraphJin errors", "when stale schema is suspected", "when a database appears disconnected", "when Redis is degraded", "when reload/discovery/catalog refresh problems are suspected"},
+				"degraded_guidance":  "When a status row is degraded, follow next_action before continuing.",
+				"example_query":      `query { gj_runtime(where: { kind: { in: ["status", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind status severity summary next_action details_json } }`,
+				"excluded_from_rows": []string{"raw_sql", "variables", "headers", "result_bodies", "connection_strings", "secrets", "stack_traces", "full_request_payloads"},
+			}),
+			"examples_json": mustMarshalString([]map[string]string{
+				{"name": "latest runtime decision context", "query": `query { gj_runtime(where: { kind: { in: ["status", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind status severity summary next_action details_json } }`},
+				{"name": "degraded status rows", "query": `query { gj_runtime(where: { kind: { eq: "status" }, status: { neq: "ready" } }) { node_id store status severity summary next_action suggested_next_json } }`},
+				{"name": "recent schema and database events", "query": `query { gj_runtime(where: { phase: { in: ["schema", "database"] } }, order_by: { created_at: desc }, limit: 10) { created_at phase status severity database_name summary next_action } }`},
+			}),
+			"safety_json": mustMarshalString(map[string]any{
+				"read_only":         true,
+				"agentic_only":      true,
+				"not_audit_history": true,
+				"bounded":           true,
+				"redacted":          true,
+				"guidance":          "Use gj_runtime for current decision support, not forensic history. Follow next_action when status is degraded.",
+			}),
+		},
 	}
 	for _, cap := range caps {
 		if _, ok := cap["safety_json"]; !ok {
@@ -586,6 +621,14 @@ func (h controlPlaneGraphQL) mutateWorkflow(root core.ManagedMutationRoot) (map[
 			return nil, err
 		}
 		h.service.markWorkflowChanged("workflow mutation")
+		h.service.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:      "workflow",
+			Status:     runtimeStatusReady,
+			Severity:   "info",
+			Summary:    "Workflow definition was saved through a guarded mutation.",
+			NextAction: "Query gj_catalog or gj_workflow before executing the updated workflow.",
+			Details:    map[string]any{"workflow_name": name, "operation": root.Operation},
+		})
 		return h.workflowMutationRow(name, false), nil
 	case "delete":
 		name := stringFromWhere(root.Where, "name")
@@ -606,6 +649,14 @@ func (h controlPlaneGraphQL) mutateWorkflow(root core.ManagedMutationRoot) (map[
 			return nil, err
 		}
 		h.service.markWorkflowChanged("workflow mutation")
+		h.service.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:      "workflow",
+			Status:     runtimeStatusReady,
+			Severity:   "info",
+			Summary:    "Workflow definition was deleted through a guarded mutation.",
+			NextAction: "Refresh catalog-guided planning before referencing the deleted workflow.",
+			Details:    map[string]any{"workflow_name": name, "operation": root.Operation},
+		})
 		return h.workflowMutationRow(name, true), nil
 	default:
 		return nil, fmt.Errorf("unsupported gj_workflow operation: %s", root.Operation)
@@ -675,10 +726,29 @@ func (h controlPlaneGraphQL) runWorkflow(ctx context.Context, root core.ManagedM
 	if err != nil {
 		row["status"] = "error"
 		row["error"] = err.Error()
+		h.service.recordRuntimeEvent(ctx, runtimeEvent{
+			Phase:      "workflow",
+			Status:     runtimeStatusFailed,
+			Severity:   "warn",
+			Summary:    "Workflow execution failed.",
+			NextAction: "Inspect the workflow definition and runtime error before retrying.",
+			DurationMS: duration,
+			ErrorCode:  "workflow_execution_failed",
+			Details:    map[string]any{"workflow_name": name, "namespace": namespace, "error": err.Error()},
+		})
 		return row, nil
 	}
 	row["status"] = "ok"
 	row["result_json"] = mustMarshalString(out)
+	h.service.recordRuntimeEvent(ctx, runtimeEvent{
+		Phase:      "workflow",
+		Status:     runtimeStatusReady,
+		Severity:   "info",
+		Summary:    "Workflow execution completed.",
+		NextAction: "Continue with the workflow result; query gj_runtime again if follow-up state is uncertain.",
+		DurationMS: duration,
+		Details:    map[string]any{"workflow_name": name, "namespace": namespace},
+	})
 	return row, nil
 }
 
@@ -721,11 +791,28 @@ func (h controlPlaneGraphQL) reloadSchema(root core.ManagedMutationRoot) (map[st
 	if h.service.gj == nil {
 		row["reloaded"] = false
 		row["error"] = "GraphJin engine is not initialized"
+		h.service.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:      "schema",
+			Status:     runtimeStatusFailed,
+			Severity:   "warn",
+			Summary:    "GraphQL schema reload was blocked because GraphJin is not initialized.",
+			NextAction: "Fix configuration or database connectivity before retrying schema reload.",
+			ErrorCode:  "schema_reload_blocked",
+		})
 		return row, nil
 	}
 	if err := h.service.gj.Reload(); err != nil {
 		row["reloaded"] = false
 		row["error"] = err.Error()
+		h.service.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:      "schema",
+			Status:     runtimeStatusFailed,
+			Severity:   "error",
+			Summary:    "GraphQL schema reload failed.",
+			NextAction: "Inspect database connectivity and schema discovery errors before retrying.",
+			ErrorCode:  "schema_reload_failed",
+			Details:    map[string]any{"error": err.Error()},
+		})
 		return row, nil
 	}
 	h.service.markCatalogChanged("schema reload")
@@ -733,6 +820,14 @@ func (h controlPlaneGraphQL) reloadSchema(root core.ManagedMutationRoot) (map[st
 	if snap, err := h.service.catalogSnapshot(); err == nil {
 		row["catalog_revision"] = snap.Revision
 	}
+	h.service.recordRuntimeEvent(context.Background(), runtimeEvent{
+		Phase:      "schema",
+		Status:     runtimeStatusReady,
+		Severity:   "info",
+		Summary:    "GraphQL schema reload completed.",
+		NextAction: "Refresh catalog-guided planning before using newly discovered tables or relationships.",
+		Details:    map[string]any{"catalog_revision": row["catalog_revision"]},
+	})
 	_ = root
 	return row, nil
 }

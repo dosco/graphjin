@@ -13,7 +13,7 @@ func (s *graphjinService) initSystemNanoDBBeforeCore() error {
 	if s == nil || s.conf == nil {
 		return nil
 	}
-	if !(s.conf.catalogToolsEnabled() || s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled()) {
+	if !(s.conf.catalogToolsEnabled() || s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled() || s.conf.runtimeRootRegistered()) {
 		s.metadataDB = ""
 		return nil
 	}
@@ -416,6 +416,15 @@ func (s *graphjinService) markSystemNanoChanged(reason string) {
 			reason = "system graph change"
 		}
 		s.log.Warnf("nanodb refresh after %s failed: %v", reason, err)
+		s.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:      "catalog",
+			Status:     runtimeStatusDegraded,
+			Severity:   "warn",
+			Summary:    "System NanoDB catalog refresh failed after a runtime change.",
+			NextAction: "Check recent config/schema events, then retry catalog discovery or reload schema.",
+			ErrorCode:  "catalog_refresh_failed",
+			Details:    map[string]any{"reason": reason, "error": err.Error()},
+		})
 	}
 }
 
