@@ -398,7 +398,7 @@ func TestRegisterTools_LegacyExecuteWorkflowRequiresGate(t *testing.T) {
 func TestHandleQueryCatalog_SearchWhereOrderExplain(t *testing.T) {
 	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
 
-	res, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{
+	res, err := ms.handleQueryCatalog(sourceModeUserTestContext(), newToolRequest(map[string]any{
 		"search":   "running total",
 		"where":    map[string]any{"kind": map[string]any{"in": []any{"directive", "query_pattern"}}},
 		"order_by": map[string]any{"score": "desc"},
@@ -431,7 +431,7 @@ func TestHandleQueryCatalog_SearchWhereOrderExplain(t *testing.T) {
 func TestHandleQueryCatalog_TruncationAndOffset(t *testing.T) {
 	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
 
-	res, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{"limit": 1}))
+	res, err := ms.handleQueryCatalog(sourceModeUserTestContext(), newToolRequest(map[string]any{"limit": 1}))
 	if err != nil {
 		t.Fatalf("handle query_catalog: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestHandleQueryCatalog_TruncationAndOffset(t *testing.T) {
 		t.Fatal("page1 must be truncated when more catalog items exist beyond the limit")
 	}
 
-	res2, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{"limit": 1, "offset": 1}))
+	res2, err := ms.handleQueryCatalog(sourceModeUserTestContext(), newToolRequest(map[string]any{"limit": 1, "offset": 1}))
 	if err != nil {
 		t.Fatalf("handle query_catalog offset: %v", err)
 	}
@@ -465,7 +465,8 @@ func TestHandleQueryCatalog_TruncationAndOffset(t *testing.T) {
 func TestHandleCatalogEntrypointsAndCapabilitiesUseGraphQL(t *testing.T) {
 	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
 
-	entryRes, err := ms.handleGetCatalogEntrypoints(context.Background(), newToolRequest(nil))
+	ctx := sourceModeUserTestContext()
+	entryRes, err := ms.handleGetCatalogEntrypoints(ctx, newToolRequest(nil))
 	if err != nil {
 		t.Fatalf("handle get_catalog_entrypoints: %v", err)
 	}
@@ -478,7 +479,7 @@ func TestHandleCatalogEntrypointsAndCapabilitiesUseGraphQL(t *testing.T) {
 		t.Fatalf("expected GraphQL-backed catalog entrypoints, got %+v", entryOut.Entrypoints)
 	}
 
-	capRes, err := ms.handleGetCatalogCapabilities(context.Background(), newToolRequest(nil))
+	capRes, err := ms.handleGetCatalogCapabilities(ctx, newToolRequest(nil))
 	if err != nil {
 		t.Fatalf("handle get_catalog_capabilities: %v", err)
 	}

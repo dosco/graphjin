@@ -3,6 +3,8 @@ package serv
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strconv"
 	"strings"
@@ -139,6 +141,52 @@ func TestRuntimeRedisFallbackUsesMemoryAndDegradedStatus(t *testing.T) {
 	}
 	if !sawFallback {
 		t.Fatalf("expected redis fallback event, got %+v", rows)
+	}
+}
+
+func TestObservedAuthHandlerRecordsJWTFailure(t *testing.T) {
+	conf := &Config{
+		Core: core.Config{
+			Mode: "agentic",
+			Sources: []core.SourceConfig{{
+				Name: "graphjin",
+				Kind: "graphjin",
+			}},
+		},
+		Serv: Serv{Auth: Auth{Type: "jwt"}},
+	}
+	svc := &graphjinService{
+		conf:   conf,
+		log:    zaptest.NewLogger(t).Sugar(),
+		tracer: otel.Tracer("runtime-events-test"),
+	}
+	if err := normalizeServiceSources(conf); err != nil {
+		t.Fatalf("normalize sources: %v", err)
+	}
+	if err := svc.initRuntimeObservability(); err != nil {
+		t.Fatalf("init runtime observability: %v", err)
+	}
+
+	ah := svc.observeAuthHandler(func(_ http.ResponseWriter, r *http.Request) (context.Context, error) {
+		return r.Context(), fmt.Errorf("no jwt token found in cookie or authorization header")
+	})
+	_, err := ah(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/v1/graphql", nil))
+	if err == nil {
+		t.Fatal("expected auth error")
+	}
+
+	rows := svc.runtimeEvents.Rows(context.Background(), svc.runtimeCurrentStatus())
+	var sawMissing bool
+	for _, row := range rows {
+		if row["error_code"] == "jwt_missing" {
+			sawMissing = true
+			if strings.Contains(fmt.Sprint(row["details_json"]), "authorization header") {
+				t.Fatalf("runtime auth failure details should not store raw auth error: %+v", row)
+			}
+		}
+	}
+	if !sawMissing {
+		t.Fatalf("expected jwt_missing runtime event, got %+v", rows)
 	}
 }
 

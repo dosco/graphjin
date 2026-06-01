@@ -124,12 +124,14 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 	} else {
 		rc.SetNamespace(ms.getNamespace())
 	}
+	ctx = ms.service.applyIdentityContext(ctx)
 
 	if err := ms.service.checkGraphJinInitialized(); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	res, err := ms.service.gj.GraphQL(ctx, query, varsJSON, &rc)
+	ms.service.recordGraphQLAccessFailures(ctx, query, res, err)
 
 	result := ExecuteResult{}
 	if err != nil {

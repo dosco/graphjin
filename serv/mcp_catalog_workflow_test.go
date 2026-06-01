@@ -19,7 +19,7 @@ function main(input) { return {secretSource:"do-not-index-source"}; }
 `,
 	})
 
-	res, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{
+	res, err := ms.handleQueryCatalog(sourceModeUserTestContext(), newToolRequest(map[string]any{
 		"where": map[string]any{"kind": map[string]any{"eq": "workflow"}},
 		"limit": 10,
 	}))
@@ -53,7 +53,7 @@ function main(input) { return {}; }
 `,
 	})
 
-	res, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{
+	res, err := ms.handleQueryCatalog(sourceModeUserTestContext(), newToolRequest(map[string]any{
 		"id": "workflow:order_pnl",
 	}))
 	if err != nil {
@@ -85,7 +85,7 @@ func TestGraphQLHelpTopicsUseCatalogGraphQL(t *testing.T) {
 
 	for _, topic := range graphQLHelpTopics() {
 		t.Run(topic, func(t *testing.T) {
-			res, err := ms.handleGraphQLHelp(context.Background(), newToolRequest(map[string]any{"for": topic}))
+			res, err := ms.handleGraphQLHelp(sourceModeUserTestContext(), newToolRequest(map[string]any{"for": topic}))
 			if err != nil {
 				t.Fatalf("graphql_help: %v", err)
 			}
@@ -152,7 +152,7 @@ func TestGraphQLHelpTopicsUseCatalogGraphQL(t *testing.T) {
 func TestQueryCatalogByIDReturnsHelpDetails(t *testing.T) {
 	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
 
-	res, err := ms.handleQueryCatalog(context.Background(), newToolRequest(map[string]any{"id": "help:query"}))
+	res, err := ms.handleQueryCatalog(sourceModeUserTestContext(), newToolRequest(map[string]any{"id": "help:query"}))
 	if err != nil {
 		t.Fatalf("query help card: %v", err)
 	}

@@ -192,6 +192,10 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 		return fmt.Errorf("database %s: add functions failed: %w", ctx.name, err)
 	}
 
+	if err := gj.applySourceAccessRules(ctx.dbinfo, ctx.name); err != nil {
+		return fmt.Errorf("database %s: source access failed: %w", ctx.name, err)
+	}
+
 	if dbConf, ok := gj.conf.Databases[ctx.name]; ok && dbConf.ManagedType == "codesql" {
 		addCodeSQLVirtualColumns(ctx.dbinfo)
 		hideRawCodeSQLTables(ctx.dbinfo)

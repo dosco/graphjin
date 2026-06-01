@@ -129,6 +129,7 @@ func (s *graphjinService) buildCoreOptionsWithDBs(dbs map[string]*sql.DB) []core
 
 func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs map[string]managedDB) []core.Option {
 	controlPlane := newControlPlaneGraphQL(s)
+	artifacts := newArtifactControlPlane(s)
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
@@ -149,6 +150,18 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 			targetDB = core.DefaultDBName
 		}
 		opts = append(opts, core.OptionSetManagedQueryHandler(targetDB, runtimeQueryHandler{service: s}))
+	}
+	if s.conf != nil && s.conf.Core.Artifacts.Enabled {
+		targetDB := s.metadataDB
+		if targetDB == "" {
+			targetDB = s.conf.Core.CatalogDatabaseName()
+		}
+		if targetDB == "" {
+			targetDB = core.DefaultDBName
+		}
+		opts = append(opts,
+			core.OptionSetManagedQueryHandler(targetDB, artifacts),
+			core.OptionSetManagedMutationHandler(targetDB, artifacts))
 	}
 	if s.namespace != nil {
 		opts = append(opts, core.OptionSetNamespace(*s.namespace))
@@ -494,6 +507,9 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 
 // normalStart starts the service in normal mode
 func (s *graphjinService) normalStart() error {
+	if err := s.initArtifactsBeforeCore(); err != nil {
+		return err
+	}
 	if err := s.initMetadataGraphBeforeCore(); err != nil {
 		return err
 	}

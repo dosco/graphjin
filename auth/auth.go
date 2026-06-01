@@ -73,7 +73,6 @@ type Auth struct {
 	// set the expiry parameter of this cookie (ex. "20m", "2h")
 	// CookieExpiry string `mapstructure:"cookie_expiry"`
 
-
 	// JWT authentication
 	JWT JWTConfig
 
@@ -106,6 +105,7 @@ type authCtxKey int
 const (
 	userEmailKey authCtxKey = iota
 	userNameKey
+	userClaimsKey
 )
 
 // UserEmail returns the verified email claim attached to ctx by JwtHandler,
@@ -126,6 +126,23 @@ func UserName(ctx context.Context) string {
 	}
 	v, _ := ctx.Value(userNameKey).(string)
 	return v
+}
+
+// UserClaims returns a shallow copy of verified JWT claims attached to ctx by
+// JwtHandler. Raw tokens are never stored here.
+func UserClaims(ctx context.Context) map[string]interface{} {
+	if ctx == nil {
+		return nil
+	}
+	claims, _ := ctx.Value(userClaimsKey).(map[string]interface{})
+	if claims == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(claims))
+	for k, v := range claims {
+		out[k] = v
+	}
+	return out
 }
 
 type Options struct {
@@ -255,6 +272,12 @@ func SimpleHandler(ac Auth) (HandlerFunc, error) {
 		userRole := r.Header.Get("X-User-Role")
 		if userRole != "" {
 			c = context.WithValue(c, core.UserRoleKey, userRole)
+			c = context.WithValue(c, core.IdentityRolesKey, []string{userRole})
+		}
+
+		accountID := r.Header.Get("X-Account-ID")
+		if accountID != "" {
+			c = context.WithValue(c, core.IdentityVarsKey, map[string]interface{}{"account_id": accountID})
 		}
 
 		return c, nil

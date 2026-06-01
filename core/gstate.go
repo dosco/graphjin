@@ -66,16 +66,7 @@ func newGState(c context.Context, gj *graphjinEngine, r GraphqlReq) (s gstate, e
 	s.gj = gj
 	s.r = r
 
-	if v, ok := c.Value(UserRoleKey).(string); ok {
-		s.role = v
-	} else {
-		switch c.Value(UserIDKey).(type) {
-		case string, int:
-			s.role = "user"
-		default:
-			s.role = "anon"
-		}
-	}
+	s.role = gj.initialRequestRole(c)
 
 	// convert variable json to a go map also decrypted encrypted values
 	if len(r.vars) != 0 {
@@ -91,6 +82,79 @@ func newGState(c context.Context, gj *graphjinEngine, r GraphqlReq) (s gstate, e
 		}
 	}
 	return
+}
+
+func (gj *graphjinEngine) initialRequestRole(ctx context.Context) string {
+	if ctx == nil {
+		return "anon"
+	}
+	if gj != nil && gj.conf != nil {
+		candidates := contextIdentityRoles(ctx)
+		if len(candidates) != 0 {
+			if role := gj.firstConfiguredRole(candidates); role != "" {
+				return role
+			}
+		}
+	}
+	if v, ok := ctx.Value(UserRoleKey).(string); ok && strings.TrimSpace(v) != "" {
+		return v
+	}
+	switch ctx.Value(UserIDKey).(type) {
+	case string, int:
+		return "user"
+	default:
+		return "anon"
+	}
+}
+
+func contextIdentityRoles(ctx context.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	switch roles := ctx.Value(IdentityRolesKey).(type) {
+	case []string:
+		return roles
+	case []interface{}:
+		out := make([]string, 0, len(roles))
+		for _, role := range roles {
+			if s, ok := role.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		if strings.TrimSpace(roles) == "" {
+			return nil
+		}
+		return []string{roles}
+	default:
+		return nil
+	}
+}
+
+func (gj *graphjinEngine) firstConfiguredRole(candidates []string) string {
+	if gj == nil || gj.conf == nil || len(candidates) == 0 {
+		return ""
+	}
+	cset := make(map[string]struct{}, len(candidates))
+	for _, role := range candidates {
+		role = strings.ToLower(strings.TrimSpace(role))
+		if role != "" {
+			cset[role] = struct{}{}
+		}
+	}
+	for _, role := range gj.conf.Roles {
+		name := strings.ToLower(strings.TrimSpace(role.Name))
+		if _, ok := cset[name]; ok {
+			return role.Name
+		}
+	}
+	for _, name := range []string{"user", "anon"} {
+		if _, ok := cset[name]; ok {
+			return name
+		}
+	}
+	return ""
 }
 
 func (s *gstate) cloneForDatabaseRoot(dbName string) gstate {
@@ -438,6 +502,10 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 
 	// Compile query for the role (this also determines target database for multi-DB)
 	if err = s.compile(); err != nil {
+		err = s.sourceModeAuthorizeCompileError(err)
+		return
+	}
+	if err = s.sourceModeBlockedRootError(); err != nil {
 		return
 	}
 
@@ -541,6 +609,40 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 		s.data = injectRemoteMarkers(s.data, qc)
 	}
 	return
+}
+
+func (s *gstate) sourceModeAuthorizeCompileError(err error) error {
+	if err == nil || s == nil || s.gj == nil || s.gj.conf == nil || !s.gj.conf.IsSourcesUsed() {
+		return err
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, " blocked") || strings.Contains(msg, "blocked:") {
+		return fmt.Errorf("unauthorized: %w", err)
+	}
+	return err
+}
+
+func (s *gstate) sourceModeBlockedRootError() error {
+	if s == nil || s.gj == nil || s.gj.conf == nil || !s.gj.conf.IsSourcesUsed() || s.cs == nil || s.cs.st.qc == nil {
+		return nil
+	}
+	qc := s.cs.st.qc
+	if qc.Type != qcode.QTQuery {
+		return nil
+	}
+	for _, rid := range qc.Roots {
+		sel := qc.Selects[rid]
+		if sel.Ti.Name == "" || strings.HasPrefix(strings.ToLower(sel.Ti.Name), "gj_") {
+			continue
+		}
+		switch sel.SkipRender {
+		case qcode.SkipTypeBlocked:
+			return fmt.Errorf("unauthorized: table %s is blocked for role %s", sel.Ti.Name, s.role)
+		case qcode.SkipTypeUserNeeded:
+			return fmt.Errorf("unauthorized: table %s requires authenticated access", sel.Ti.Name)
+		}
+	}
+	return nil
 }
 
 func (s *gstate) setDefaultVars() {

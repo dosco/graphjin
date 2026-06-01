@@ -13,7 +13,7 @@ func (s *graphjinService) initSystemNanoDBBeforeCore() error {
 	if s == nil || s.conf == nil {
 		return nil
 	}
-	if !(s.conf.catalogToolsEnabled() || s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled() || s.conf.runtimeRootRegistered()) {
+	if !(s.conf.catalogToolsEnabled() || s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled() || s.conf.runtimeRootRegistered() || s.conf.Core.Artifacts.Enabled) {
 		s.metadataDB = ""
 		return nil
 	}

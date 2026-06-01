@@ -40,7 +40,6 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		if err != nil {
 			s.log.Fatalf("api: error initializing auth handler: %s", err)
 		}
-
 		if s.conf.Auth.Development {
 			s.log.Warn("api: auth.development=true this allows clients to bypass authentication")
 		}
@@ -115,6 +114,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		if err != nil {
 			s.log.Fatalf("api: error initializing MCP auth handler: %s", err)
 		}
+		mcpAuth = s.observeAuthHandler(mcpAuth)
 		// SSE transport for web-based integrations (with auth)
 		mux.Handle(routeMCP, s1.MCPHandlerWithAuth(mcpAuth))
 		// HTTP transport for stateless API integrations (with auth)

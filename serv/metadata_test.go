@@ -55,7 +55,7 @@ func LookupUser() {
 	assertGraphJinTable(t, s, defaultMetadataDBName, "gj_catalog")
 	assertGraphJinTable(t, s, defaultMetadataDBName, "gj_workflow")
 	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'db_reference' AND db_object_id = 'app:main.users.email'`, 1)
-	res, err := s.gj.GraphQL(context.Background(), `query {
+	res, err := s.gj.GraphQL(sourceModeUserTestContext(), `query {
 		gj_catalog(where: { kind: { eq: "column" }, database_name: { eq: "app" }, table_name: { eq: "users" }, column_name: { eq: "email" } }, limit: 1) {
 			id
 			kind
@@ -258,7 +258,7 @@ func TestMetadataCatalogMirrorRefreshesWorkflowRowsAfterMutation(t *testing.T) {
 	defer closeTestService(s)
 
 	assertWorkflowCatalogRows(t, s, "daily_report", "", 0)
-	res, err := s.gj.GraphQL(context.Background(), `mutation {
+	res, err := s.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
 		gj_workflow(insert: {
 			name: "daily_report"
 			description: "Daily report"
@@ -278,7 +278,7 @@ func TestMetadataCatalogMirrorRefreshesWorkflowRowsAfterMutation(t *testing.T) {
 	assertWorkflowCatalogRows(t, s, "daily_report", "Daily report", 1)
 
 	time.Sleep(2 * time.Millisecond)
-	res, err = s.gj.GraphQL(context.Background(), `mutation {
+	res, err = s.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
 		gj_workflow(where: { name: { eq: "daily_report" } }, update: {
 			description: "Updated daily report"
 			code: "function main(input) { return { updated: true }; }"
@@ -296,7 +296,7 @@ func TestMetadataCatalogMirrorRefreshesWorkflowRowsAfterMutation(t *testing.T) {
 	}
 	assertWorkflowCatalogRows(t, s, "daily_report", "Updated daily report", 1)
 
-	res, err = s.gj.GraphQL(context.Background(), `mutation {
+	res, err = s.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
 		gj_workflow(where: { name: { eq: "daily_report" } }, delete: true) {
 			name
 			deleted
@@ -456,7 +456,7 @@ func assertWorkflowCatalogRows(t *testing.T, s *graphjinService, name, summary s
 		where += `, summary: { eq: ` + strconv.Quote(summary) + ` }`
 	}
 	query := `query { gj_catalog(where: { ` + where + ` }) { id summary } }`
-	res, err := s.gj.GraphQL(context.Background(), query, nil, nil)
+	res, err := s.gj.GraphQL(sourceModeUserTestContext(), query, nil, nil)
 	if err != nil {
 		t.Fatalf("query workflow catalog row: %v", err)
 	}

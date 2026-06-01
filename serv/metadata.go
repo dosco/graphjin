@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS gj_capabilities (
 `
 
 func (s *graphjinService) initMetadataGraphBeforeCore() error {
-	if !s.conf.Core.MetadataEnabled() && !s.conf.catalogToolsEnabled() && !s.conf.graphjinControlPlaneEnabled() && !s.conf.workflowsSourceEnabled() && !s.conf.runtimeRootRegistered() {
+	if !s.conf.Core.MetadataEnabled() && !s.conf.catalogToolsEnabled() && !s.conf.graphjinControlPlaneEnabled() && !s.conf.workflowsSourceEnabled() && !s.conf.runtimeRootRegistered() && !s.conf.Core.Artifacts.Enabled {
 		s.metadataDB = ""
 		return nil
 	}

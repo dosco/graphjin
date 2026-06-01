@@ -65,6 +65,7 @@ func apiV1Handler(s1 *HttpService, ns *string, h http.Handler, ah auth.HandlerFu
 	}
 
 	if ah != nil {
+		ah = s.observeAuthHandler(ah)
 		authOpt := auth.Options{AuthFailBlock: s.conf.AuthFailBlock}
 		useAuth, err := auth.NewAuth(s.conf.Auth, zlog, authOpt, ah)
 		if err != nil {
@@ -190,6 +191,7 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 		if ns != nil {
 			rc.SetNamespace(*ns)
 		}
+		ctx = s.applyIdentityContext(ctx)
 
 		if isSSERequest(r) {
 			s.apiV1SSE(ctx, w, r, req, &rc)
@@ -209,6 +211,7 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 		}
 
 		res, err := s.gj.GraphQL(ctx, req.Query, req.Vars, &rc)
+		s.recordGraphQLAccessFailures(ctx, req.Query, res, err)
 		if res == nil && err != nil {
 			renderErr(w, err)
 			return
@@ -297,6 +300,7 @@ func (s1 *HttpService) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 		if ns != nil {
 			rc.SetNamespace(*ns)
 		}
+		ctx = s.applyIdentityContext(ctx)
 
 		if err := s.checkGraphJinInitialized(); err != nil {
 			renderErr(w, err)

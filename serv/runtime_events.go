@@ -344,7 +344,7 @@ func (h runtimeQueryHandler) ExecuteManagedQuery(ctx context.Context, req core.M
 		}
 		return json.Marshal(out)
 	}
-	authorized := h.service.runtimeObservabilityEnabled() && runtimeContextRole(ctx) == "user"
+	authorized := h.service.runtimeRootQueryAuthorized(ctx)
 	current := h.service.runtimeCurrentStatus()
 	for _, root := range req.Roots {
 		if !strings.EqualFold(root.Table, runtimeRootTable) {
@@ -363,6 +363,16 @@ func (h runtimeQueryHandler) ExecuteManagedQuery(ctx context.Context, req core.M
 		out[root.FieldName] = filterRows(rows, root.Fields)
 	}
 	return json.Marshal(out)
+}
+
+func (s *graphjinService) runtimeRootQueryAuthorized(ctx context.Context) bool {
+	if s == nil || !s.runtimeObservabilityEnabled() {
+		return false
+	}
+	if s.conf != nil && s.conf.Core.IsSourcesUsed() {
+		return s.sourceModeRootAccessAllowed(runtimeRootTable, runtimeRoleClass(ctx))
+	}
+	return runtimeContextRole(ctx) == "user"
 }
 
 func runtimeManagedTable() core.ManagedTable {

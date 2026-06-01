@@ -75,8 +75,17 @@ func JwtHandler(ac Auth) (HandlerFunc, error) {
 			if name, ok := claims["name"].(string); ok && name != "" {
 				ctx = context.WithValue(ctx, userNameKey, name)
 			}
+			ctx = context.WithValue(ctx, userClaimsKey, cloneJWTClaims(claims))
 			return ctx, nil
 		}
 		return nil, fmt.Errorf("invalid claims")
 	}, nil
+}
+
+func cloneJWTClaims(claims jwt.MapClaims) map[string]interface{} {
+	out := make(map[string]interface{}, len(claims))
+	for k, v := range claims {
+		out[k] = v
+	}
+	return out
 }

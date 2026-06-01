@@ -130,9 +130,20 @@ func (c *Config) workflowsSourceReadOnly() bool {
 	return ok && source.ReadOnly
 }
 
+func (c *Config) artifactSourceReadOnly() bool {
+	if c == nil || !c.Core.Artifacts.Enabled {
+		return false
+	}
+	source, ok := c.Core.SourceByName(c.Core.EffectiveArtifactsConfig().Source)
+	return ok && source.ReadOnly
+}
+
 func (c *Config) needsSystemHostDB() bool {
 	if c == nil || !c.Core.IsSourcesUsed() {
 		return false
+	}
+	if c.Core.Artifacts.Enabled {
+		return true
 	}
 	for _, source := range c.Core.Sources {
 		switch source.CanonicalKind() {

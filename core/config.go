@@ -170,6 +170,11 @@ func (c *Config) validateLegacyMode() error {
 }
 
 func (c *Config) validateIsSourcesUsed() error {
+	identityQuery := strings.TrimSpace(c.Identity.Query)
+	rolesQuery := strings.TrimSpace(c.RolesQuery)
+	if identityQuery != "" && rolesQuery != "" && identityQuery != rolesQuery {
+		return fmt.Errorf("identity.query and roles_query are aliases in source mode; configure only identity.query or keep both values identical")
+	}
 	if len(c.Databases) != 0 && !c.sourcesNormalized {
 		return fmt.Errorf("databases is legacy database-only config; move SQL/CodeSQL providers to sources")
 	}
@@ -206,6 +211,9 @@ func (c *Config) validateIsSourcesUsed() error {
 					name, key, kind, sourcecap.ValidKeyList(kind))
 			}
 		}
+		if err := validateSourceAccessConfig(name, kind, source.Access); err != nil {
+			return err
+		}
 	}
 	for _, table := range c.Tables {
 		if strings.TrimSpace(table.Source) == "" {
@@ -217,6 +225,16 @@ func (c *Config) validateIsSourcesUsed() error {
 		if _, ok := seen[table.Source]; !ok {
 			return fmt.Errorf("tables[%q]: unknown source %q", table.Name, table.Source)
 		}
+	}
+	for _, role := range c.Roles {
+		for _, table := range role.Tables {
+			if !table.Generated {
+				return fmt.Errorf("roles[%q].tables is legacy table access config and is not supported when sources is configured; use sources[].access", role.Name)
+			}
+		}
+	}
+	if err := c.validateArtifactsConfig(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -255,6 +273,7 @@ func (c *Config) clone() *Config {
 		out.Sources = make([]SourceConfig, len(c.Sources))
 		copy(out.Sources, c.Sources)
 		for i := range out.Sources {
+			out.Sources[i].Access = c.Sources[i].Access.clone()
 			if c.Sources[i].Capabilities != nil {
 				out.Sources[i].Capabilities = make(map[string]bool, len(c.Sources[i].Capabilities))
 				for k, v := range c.Sources[i].Capabilities {
@@ -293,6 +312,9 @@ func (c *Config) clone() *Config {
 		}
 	}
 
+	out.Identity = c.Identity.clone()
+	out.Artifacts = c.Artifacts.clone()
+
 	return &out
 }
 
@@ -300,6 +322,318 @@ func (c *Config) clone() *Config {
 // boundary. Without sources, GraphJin stays in legacy database-only mode.
 func (c *Config) IsSourcesUsed() bool {
 	return c != nil && c.Sources != nil
+}
+
+const (
+	AccessModeBlocked       = "blocked"
+	AccessModePublic        = "public"
+	AccessModeAuthenticated = "authenticated"
+	AccessModeAccount       = "account"
+	AccessModeOwner         = "owner"
+	AccessModeAdmin         = "admin"
+
+	MissingNamespaceBlock = "block"
+	MissingNamespaceAllow = "allow"
+)
+
+func normalizeAccessMode(mode string) string {
+	return strings.ToLower(strings.TrimSpace(mode))
+}
+
+func validReadAccessMode(mode string) bool {
+	switch normalizeAccessMode(mode) {
+	case "", AccessModeBlocked, AccessModePublic, AccessModeAuthenticated, AccessModeAccount, AccessModeOwner, AccessModeAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+func validWriteAccessMode(mode string) bool {
+	switch normalizeAccessMode(mode) {
+	case "", AccessModeBlocked, AccessModeAuthenticated, AccessModeAccount, AccessModeOwner, AccessModeAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+func validMissingNamespaceMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", MissingNamespaceBlock, MissingNamespaceAllow:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateSourceAccessConfig(source, kind string, access SourceAccessConfig) error {
+	if !validReadAccessMode(access.Read) {
+		return fmt.Errorf("sources[%q].access.read: unsupported access mode %q", source, access.Read)
+	}
+	if !validWriteAccessMode(access.Write) {
+		if normalizeAccessMode(access.Write) == AccessModePublic {
+			return fmt.Errorf("sources[%q].access.write: public write is not supported", source)
+		}
+		return fmt.Errorf("sources[%q].access.write: unsupported access mode %q", source, access.Write)
+	}
+	if !validWriteAccessMode(access.Delete) {
+		if normalizeAccessMode(access.Delete) == AccessModePublic {
+			return fmt.Errorf("sources[%q].access.delete: public delete is not supported", source)
+		}
+		return fmt.Errorf("sources[%q].access.delete: unsupported access mode %q", source, access.Delete)
+	}
+	if !validMissingNamespaceMode(access.MissingNamespaceColumn) {
+		return fmt.Errorf("sources[%q].access.missing_namespace_column: unsupported behavior %q", source, access.MissingNamespaceColumn)
+	}
+	for root, mode := range access.Roots {
+		if strings.TrimSpace(root) == "" {
+			return fmt.Errorf("sources[%q].access.roots: root name is required", source)
+		}
+		if !validReadAccessMode(mode) {
+			return fmt.Errorf("sources[%q].access.roots.%s: unsupported access mode %q", source, root, mode)
+		}
+	}
+	if kind == sourcecap.KindGraphJin {
+		return nil
+	}
+	if len(access.Roots) != 0 {
+		return fmt.Errorf("sources[%q].access.roots applies only to sources with kind: graphjin", source)
+	}
+	return nil
+}
+
+func (c *Config) validateArtifactsConfig() error {
+	if c == nil || !c.Artifacts.Enabled {
+		return nil
+	}
+	sourceName := strings.TrimSpace(c.Artifacts.Source)
+	if sourceName == "" {
+		for _, source := range c.Sources {
+			if source.CanonicalKind() == sourcecap.KindDatabase {
+				sourceName = source.Name
+				break
+			}
+		}
+	}
+	if sourceName == "" {
+		return fmt.Errorf("artifacts.source is required when no database source is configured")
+	}
+	source, ok := c.SourceByName(sourceName)
+	if !ok {
+		return fmt.Errorf("artifacts.source %q is not configured", sourceName)
+	}
+	if source.CanonicalKind() != sourcecap.KindDatabase {
+		return fmt.Errorf("artifacts.source %q must be a writable SQL database source", sourceName)
+	}
+	switch strings.ToLower(strings.TrimSpace(source.Type)) {
+	case "mongodb", "nanodb":
+		return fmt.Errorf("artifacts.source %q must be a writable SQL database source", sourceName)
+	}
+	if source.ReadOnly {
+		return fmt.Errorf("artifacts.source %q is read-only", sourceName)
+	}
+	return nil
+}
+
+func (c *Config) normalizeIdentityDefaults() {
+	if c == nil || !c.IsSourcesUsed() {
+		return
+	}
+	if strings.TrimSpace(c.Identity.UserIDClaim) == "" {
+		c.Identity.UserIDClaim = "sub"
+	}
+	if len(c.Identity.RoleClaims) == 0 {
+		c.Identity.RoleClaims = []string{"role", "roles"}
+	}
+	if strings.TrimSpace(c.Identity.NamespaceClaim) == "" {
+		c.Identity.NamespaceClaim = "account_id"
+	}
+	if len(c.Identity.AdminRoles) == 0 {
+		c.Identity.AdminRoles = []string{"admin"}
+	}
+	if strings.TrimSpace(c.Identity.Query) == "" && strings.TrimSpace(c.RolesQuery) != "" {
+		c.Identity.Query = c.RolesQuery
+	}
+	if strings.TrimSpace(c.RolesQuery) == "" && strings.TrimSpace(c.Identity.Query) != "" {
+		c.RolesQuery = c.Identity.Query
+	}
+}
+
+func (c *Config) normalizeArtifactsDefaults() {
+	if c == nil || !c.Artifacts.Enabled {
+		return
+	}
+	if strings.TrimSpace(c.Artifacts.Source) == "" {
+		for _, source := range c.Sources {
+			if source.CanonicalKind() == sourcecap.KindDatabase {
+				c.Artifacts.Source = source.Name
+				break
+			}
+		}
+	}
+	if strings.TrimSpace(c.Artifacts.Schema) == "" {
+		c.Artifacts.Schema = "_graphjin"
+	}
+	if strings.TrimSpace(c.Artifacts.GlobalsPath) == "" {
+		c.Artifacts.GlobalsPath = "./config"
+	}
+	if c.Artifacts.AutoInit == nil {
+		c.Artifacts.AutoInit = boolPtr(true)
+	}
+}
+
+func (c *Config) normalizeSourceAccessDefaults() {
+	if c == nil || !c.IsSourcesUsed() {
+		return
+	}
+	for i := range c.Sources {
+		kind := c.Sources[i].CanonicalKind()
+		switch kind {
+		case sourcecap.KindDatabase:
+			c.Sources[i].Access = effectiveDatabaseAccess(c.Sources[i].Access)
+		case sourcecap.KindGraphJin:
+			c.Sources[i].Access = effectiveGraphJinAccess(c.Sources[i].Access)
+		}
+	}
+}
+
+func effectiveDatabaseAccess(access SourceAccessConfig) SourceAccessConfig {
+	if strings.TrimSpace(access.Read) == "" {
+		access.Read = AccessModeAccount
+	} else {
+		access.Read = normalizeAccessMode(access.Read)
+	}
+	if strings.TrimSpace(access.Write) == "" {
+		access.Write = AccessModeBlocked
+	} else {
+		access.Write = normalizeAccessMode(access.Write)
+	}
+	if strings.TrimSpace(access.Delete) == "" {
+		access.Delete = AccessModeBlocked
+	} else {
+		access.Delete = normalizeAccessMode(access.Delete)
+	}
+	if strings.TrimSpace(access.NamespaceColumn) == "" {
+		access.NamespaceColumn = "account_id"
+	}
+	if strings.TrimSpace(access.OwnerColumn) == "" {
+		access.OwnerColumn = "user_id"
+	}
+	if strings.TrimSpace(access.MissingNamespaceColumn) == "" {
+		access.MissingNamespaceColumn = MissingNamespaceBlock
+	} else {
+		access.MissingNamespaceColumn = strings.ToLower(strings.TrimSpace(access.MissingNamespaceColumn))
+	}
+	return access
+}
+
+func effectiveGraphJinAccess(access SourceAccessConfig) SourceAccessConfig {
+	access = effectiveDatabaseAccess(access)
+	if access.Roots == nil {
+		access.Roots = make(map[string]string)
+	}
+	defaults := map[string]string{
+		"gj_catalog":            AccessModeAuthenticated,
+		"gj_artifacts":          AccessModeAccount,
+		"gj_workflow":           AccessModeAdmin,
+		"gj_workflow_execution": AccessModeAccount,
+		"gj_runtime":            AccessModeAdmin,
+		"gj_security":           AccessModeAdmin,
+		"gj_config":             AccessModeAdmin,
+	}
+	for root, mode := range defaults {
+		if strings.TrimSpace(access.Roots[root]) == "" {
+			access.Roots[root] = mode
+		}
+	}
+	for root, mode := range access.Roots {
+		delete(access.Roots, root)
+		access.Roots[strings.ToLower(strings.TrimSpace(root))] = normalizeAccessMode(mode)
+	}
+	return access
+}
+
+func (c IdentityConfig) clone() IdentityConfig {
+	out := c
+	if c.RoleClaims != nil {
+		out.RoleClaims = append([]string(nil), c.RoleClaims...)
+	}
+	if c.AdminRoles != nil {
+		out.AdminRoles = append([]string(nil), c.AdminRoles...)
+	}
+	return out
+}
+
+func (c ArtifactsConfig) clone() ArtifactsConfig {
+	out := c
+	if c.AutoInit != nil {
+		v := *c.AutoInit
+		out.AutoInit = &v
+	}
+	return out
+}
+
+func (c ArtifactsConfig) AutoInitEnabled() bool {
+	return c.AutoInit == nil || *c.AutoInit
+}
+
+func boolPtr(v bool) *bool {
+	return &v
+}
+
+func (c SourceAccessConfig) clone() SourceAccessConfig {
+	out := c
+	if c.PublicTables != nil {
+		out.PublicTables = append([]string(nil), c.PublicTables...)
+	}
+	if c.AdminTables != nil {
+		out.AdminTables = append([]string(nil), c.AdminTables...)
+	}
+	if c.BlockedTables != nil {
+		out.BlockedTables = append([]string(nil), c.BlockedTables...)
+	}
+	if c.Roots != nil {
+		out.Roots = make(map[string]string, len(c.Roots))
+		for k, v := range c.Roots {
+			out.Roots[k] = v
+		}
+	}
+	return out
+}
+
+// EffectiveIdentityConfig returns identity config with source-mode defaults.
+func (c *Config) EffectiveIdentityConfig() IdentityConfig {
+	if c == nil {
+		return IdentityConfig{UserIDClaim: "sub", RoleClaims: []string{"role", "roles"}, NamespaceClaim: "account_id", AdminRoles: []string{"admin"}}
+	}
+	out := c.Identity.clone()
+	tmp := &Config{Identity: out, RolesQuery: c.RolesQuery, Sources: c.Sources}
+	tmp.normalizeIdentityDefaults()
+	return tmp.Identity
+}
+
+// EffectiveArtifactsConfig returns artifact config with source-mode defaults.
+func (c *Config) EffectiveArtifactsConfig() ArtifactsConfig {
+	if c == nil {
+		return ArtifactsConfig{Schema: "_graphjin", GlobalsPath: "./config"}
+	}
+	out := c.Artifacts.clone()
+	tmp := &Config{Artifacts: out, Sources: c.Sources}
+	tmp.normalizeArtifactsDefaults()
+	return tmp.Artifacts
+}
+
+// EffectiveSourceAccess returns a source's access config with source-kind defaults.
+func (c *Config) EffectiveSourceAccess(source SourceConfig) SourceAccessConfig {
+	switch source.CanonicalKind() {
+	case sourcecap.KindGraphJin:
+		return effectiveGraphJinAccess(source.Access.clone())
+	case sourcecap.KindDatabase:
+		return effectiveDatabaseAccess(source.Access.clone())
+	default:
+		return source.Access.clone()
+	}
 }
 
 // NormalizeSources translates public sources into the existing runtime config
@@ -311,6 +645,9 @@ func (c *Config) NormalizeSources() error {
 	if err := c.ValidateIsSourcesUsed(); err != nil {
 		return err
 	}
+	c.normalizeIdentityDefaults()
+	c.normalizeArtifactsDefaults()
+	c.normalizeSourceAccessDefaults()
 
 	sqlSources := make([]string, 0, len(c.Sources))
 	c.Databases = make(map[string]DatabaseConfig)
@@ -692,6 +1029,14 @@ type Config struct {
 	// be declared here instead of legacy top-level sections.
 	Sources []SourceConfig `mapstructure:"sources" json:"sources" yaml:"sources" jsonschema:"title=Sources"`
 
+	// Identity declares the request-wide claims and optional enrichment query
+	// used by source-mode access generation.
+	Identity IdentityConfig `mapstructure:"identity" json:"identity" yaml:"identity" jsonschema:"title=Identity"`
+
+	// Artifacts configures GraphJin-managed mutable agent artifacts exposed as
+	// the gj_artifacts system root.
+	Artifacts ArtifactsConfig `mapstructure:"artifacts" json:"artifacts" yaml:"artifacts" jsonschema:"title=Artifacts"`
+
 	// OpenAPISpecsDir is the directory that GraphJin scans at startup for
 	// OpenAPI 3 specification files (*.yaml / *.yml). Each spec dropped in
 	// is parsed, classified, and exposed as remote-joinable fields and/or
@@ -820,6 +1165,40 @@ type Config struct {
 	sourcesNormalized bool
 }
 
+// IdentityConfig declares how request-wide identity is extracted in source mode.
+type IdentityConfig struct {
+	UserIDClaim    string   `mapstructure:"user_id_claim" json:"user_id_claim" yaml:"user_id_claim" jsonschema:"title=User ID Claim,default=sub"`
+	RoleClaims     []string `mapstructure:"role_claims" json:"role_claims" yaml:"role_claims" jsonschema:"title=Role Claims"`
+	NamespaceClaim string   `mapstructure:"namespace_claim" json:"namespace_claim" yaml:"namespace_claim" jsonschema:"title=Namespace Claim,default=account_id"`
+	AdminRoles     []string `mapstructure:"admin_roles" json:"admin_roles" yaml:"admin_roles" jsonschema:"title=Admin Roles"`
+	Query          string   `mapstructure:"query" json:"query" yaml:"query" jsonschema:"title=Identity Enrichment Query"`
+}
+
+// ArtifactsConfig declares the GraphJin-managed SQL artifact store.
+type ArtifactsConfig struct {
+	Enabled     bool   `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Artifacts"`
+	Source      string `mapstructure:"source" json:"source" yaml:"source" jsonschema:"title=Artifact Source"`
+	Schema      string `mapstructure:"schema" json:"schema" yaml:"schema" jsonschema:"title=Artifact Schema,default=_graphjin"`
+	AutoInit    *bool  `mapstructure:"auto_init" json:"auto_init" yaml:"auto_init" jsonschema:"title=Auto Initialize Artifact Tables,default=true"`
+	GlobalsPath string `mapstructure:"globals_path" json:"globals_path" yaml:"globals_path" jsonschema:"title=Global Config Artifact Path,default=./config"`
+}
+
+// SourceAccessConfig declares source-level access defaults plus table/root
+// classifications. It is intentionally small; it compiles down to legacy role
+// table rules before qcode runs.
+type SourceAccessConfig struct {
+	Read                   string            `mapstructure:"read" json:"read" yaml:"read" jsonschema:"title=Read Access Mode"`
+	Write                  string            `mapstructure:"write" json:"write" yaml:"write" jsonschema:"title=Write Access Mode"`
+	Delete                 string            `mapstructure:"delete" json:"delete" yaml:"delete" jsonschema:"title=Delete Access Mode"`
+	NamespaceColumn        string            `mapstructure:"namespace_column" json:"namespace_column" yaml:"namespace_column" jsonschema:"title=Namespace Column,default=account_id"`
+	OwnerColumn            string            `mapstructure:"owner_column" json:"owner_column" yaml:"owner_column" jsonschema:"title=Owner Column,default=user_id"`
+	MissingNamespaceColumn string            `mapstructure:"missing_namespace_column" json:"missing_namespace_column" yaml:"missing_namespace_column" jsonschema:"title=Missing Namespace Column Behavior,enum=block,enum=allow"`
+	PublicTables           []string          `mapstructure:"public_tables" json:"public_tables" yaml:"public_tables" jsonschema:"title=Public Tables"`
+	AdminTables            []string          `mapstructure:"admin_tables" json:"admin_tables" yaml:"admin_tables" jsonschema:"title=Admin Tables"`
+	BlockedTables          []string          `mapstructure:"blocked_tables" json:"blocked_tables" yaml:"blocked_tables" jsonschema:"title=Blocked Tables"`
+	Roots                  map[string]string `mapstructure:"roots" json:"roots" yaml:"roots" jsonschema:"title=GraphJin System Root Access"`
+}
+
 // SourceConfig declares one graph provider in sources used.
 type SourceConfig struct {
 	Name    string `mapstructure:"name" json:"name" yaml:"name" jsonschema:"title=Name"`
@@ -871,6 +1250,7 @@ type SourceConfig struct {
 	ControlPlane           *bool                         `mapstructure:"control_plane" json:"control_plane,omitempty" yaml:"control_plane,omitempty" jsonschema:"title=Control Plane"`
 	Runtime                string                        `mapstructure:"runtime" json:"runtime" yaml:"runtime" jsonschema:"title=Workflow Runtime"`
 	Capabilities           map[string]bool               `mapstructure:"capabilities" json:"capabilities,omitempty" yaml:"capabilities,omitempty" jsonschema:"title=Capabilities"`
+	Access                 SourceAccessConfig            `mapstructure:"access" json:"access" yaml:"access" jsonschema:"title=Access"`
 }
 
 type RelationshipConfig struct {
@@ -1228,10 +1608,11 @@ type Role struct {
 
 // Table configuration for a specific role (user role)
 type RoleTable struct {
-	Name     string
-	Schema   string
-	Database string `mapstructure:"database" json:"database" yaml:"database" jsonschema:"title=Database"`
-	ReadOnly bool   `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
+	Name      string
+	Schema    string
+	Database  string `mapstructure:"database" json:"database" yaml:"database" jsonschema:"title=Database"`
+	ReadOnly  bool   `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
+	Generated bool   `mapstructure:"-" json:"-" yaml:"-" jsonschema:"-"`
 
 	Query  *Query
 	Insert *Insert
