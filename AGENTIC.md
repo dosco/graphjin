@@ -12,9 +12,10 @@ code, security posture, workflows, config, and source-backed external systems.
 The model-facing rule is simple:
 
 ```text
-discover from gj_catalog
+start with the user's instruction
+  -> search gj_catalog for that intent
   -> inspect evidence
-  -> check gj_security before risky actions
+  -> check gj_security and gj_runtime before risky actions
   -> join into application data, gj_code, workflows, or config
   -> validate or preview
   -> act through the governed GraphJin surface
@@ -22,7 +23,11 @@ discover from gj_catalog
 ```
 
 The important part is that the agent learns the company system from the graph
-itself, not from memory, pasted schema, or guessed conventions.
+itself, not from memory, pasted schema, or guessed conventions. A model should
+not need to know root names like `gj_config` or `gj_security` before it begins.
+Its first reliable move is an intent search such as
+`query_catalog(search: "<user instruction>")`; catalog rows then teach the exact
+roots, capabilities, safety checks, and next actions.
 
 ## Graph Surfaces And Boundaries
 
@@ -114,6 +119,18 @@ search_rank
 ```
 
 Agents do not need to memorize many discovery APIs. They learn one pattern:
+search by intent, then inspect the best row by id.
+
+With MCP, the cold-start call is:
+
+```json
+query_catalog({
+  "search": "add admin role account security config",
+  "limit": 10
+})
+```
+
+When the agent has direct GraphQL access, the same search is:
 
 ```graphql
 query {
@@ -186,7 +203,7 @@ The important split is:
 | Path | Use it for |
 | :--- | :--- |
 | Direct GraphQL | Composed queries over `gj_catalog`, application roots, `gj_security`, `gj_code`, workflows, and config. |
-| MCP bootstrap helpers | Teach a fresh model the catalog-first loop: `graphql_help`, `query_catalog`, `validate_where_clause`, and `execute_saved_query`. |
+| MCP bootstrap helpers | Teach a fresh model the catalog-first loop: `query_catalog`, `graphql_help`, `validate_where_clause`, and `execute_saved_query`. |
 | Catalog help rows | Durable replacement for old discovery tool descriptions: syntax, schema, relationships, workflows, config, security, code, fragments, saved queries, and errors. |
 | Control-plane GraphQL | Governed workflow/config/security/code actions through normal GraphJin roots when policy allows them. |
 
@@ -194,8 +211,8 @@ Sources-mode MCP intentionally keeps the tool list small:
 
 | Tool | Agent use |
 | :--- | :--- |
-| `graphql_help` | First-call router. It returns bootstrap steps, topic routes, old-to-new tool replacements, catalog rows, examples, safety notes, next guidance, and the exact internal `gj_catalog` query it used. |
-| `query_catalog` | Search/filter `gj_catalog`, or fetch one detailed row with `query_catalog(id: "...")`. |
+| `query_catalog` | Goal-driven search/filter over `gj_catalog`, or one detailed row with `query_catalog(id: "...")`. |
+| `graphql_help` | Topic router and fallback. It returns bootstrap steps, topic routes, old-to-new tool replacements, catalog rows, examples, safety notes, next guidance, and the exact internal `gj_catalog` query it used. |
 | `validate_where_clause` | Validate filters against discovered table and column metadata. |
 | `execute_saved_query` | Run an approved saved query after inspecting its `saved_query` catalog row. |
 
@@ -203,11 +220,12 @@ The MCP loop for an end-user request is:
 
 ```text
 user intent
-  -> graphql_help(for: "discovery") when the path is unclear
-  -> graphql_help(for: "<topic>") for schema/query/workflow/config/security/code help
-  -> query_catalog or direct gj_catalog query for candidate nouns and patterns
+  -> query_catalog(search: "<user intent>") for candidate nouns, patterns, help, and capabilities
+  -> graphql_help(for: "discovery") only when the path or topic route is unclear
+  -> graphql_help(for: "<topic>") when a returned catalog row points to topic help
   -> query_catalog(id: "...") for evidence, examples, safety, and nearby edges
   -> gj_security for policy rows and findings before write-capable actions
+  -> gj_runtime for recent decision-support events before config/workflow/schema actions
   -> validation, preview, workflow, config, or schema GraphQL/control-plane action
   -> direct GraphQL against application/system roots
   -> observe result and follow tool `next` guidance back into the graph
@@ -225,17 +243,19 @@ bootstrap chain:
 
 ```text
 mcpServerInstructions
-  -> graphql_help(for: "discovery")
-  -> topic_routes / replaces_tools
+  -> query_catalog(search: "<user instruction>")
+  -> catalog rows with details_json / examples_json / safety_json / suggested_next_json
+  -> query_catalog(id: "<best row>")
+  -> optional graphql_help(for: "discovery" | "<topic>") when routing is unclear
   -> query_catalog(id: "help:<topic>")
   -> direct gj_catalog, gj_security, gj_code, workflow, config, or app-data query
 ```
 
-The model only needs one memorized first move: call
-`graphql_help(for: "discovery")` when unsure. That response teaches the next
-query shape by returning the exact `gj_catalog` GraphQL query it executed. The
-larger knowledge surface lives in catalog help rows, not in a long list of MCP
-tool descriptions.
+The model only needs one memorized first move for goal-driven work:
+`query_catalog(search: "<the user's instruction>")`. `graphql_help` is still the
+topic router and fallback when the model does not know how to shape the next
+catalog query. The larger knowledge surface lives in catalog help rows, not in a
+long list of MCP tool descriptions.
 
 ## Discovery Recipes
 
@@ -735,6 +755,266 @@ query {
 }
 ```
 
+## Config And Security Change Playbook
+
+Config changes are privileged actions. An agent must never invent a YAML shape
+from memory, paste secrets, or bypass GraphJin policy. It should discover the
+local config surface, inspect policy, read redacted state, apply the smallest
+allowed update, and verify the new posture.
+
+### 1. Discover The Admin Intent
+
+For goal-driven config work, start with the user's actual words:
+
+```json
+query_catalog({
+  "search": "add support role account scoped access config security",
+  "limit": 10
+})
+```
+
+The useful rows are usually `help`, `config`, `system_capability`,
+`capability`, `table`, `database`, `source`, and future `config_recipe` rows.
+Inspect the best row before acting:
+
+```json
+query_catalog({ "id": "help:config" })
+```
+
+If the result points to a capability, inspect that too:
+
+```json
+query_catalog({ "id": "capability.gj_config.update" })
+```
+
+### 2. Check Policy And Runtime First
+
+Before config, workflow, schema, file, or code-source writes, inspect security
+and recent runtime context. `gj_security` explains policy. `gj_runtime` explains
+recent redacted operational outcomes and next actions. It is bounded decision
+support, not forensic audit history.
+
+```graphql
+query {
+  findings: gj_security(
+    where: {
+      kind: { eq: "finding" }
+      severity: { in: ["high", "critical"] }
+    }
+    order_by: { severity_rank: desc }
+  ) {
+    id
+    severity
+    title
+    capability
+    action
+    source
+    root
+    recommendation
+    evidence_json
+  }
+
+  runtime: gj_runtime(
+    where: { kind: { in: ["status", "event"] } }
+    order_by: { created_at: desc }
+    limit: 20
+  ) {
+    kind
+    phase
+    status
+    severity
+    source
+    root
+    reason
+    next_action
+    details_json
+  }
+}
+```
+
+If policy blocks the action, the correct agentic behavior is to report the
+blocking policy and the smallest config permission that would need to change. Do
+not keep trying mutations.
+
+### 3. Read Redacted Config State
+
+Read the current singleton only when the caller has permission:
+
+```graphql
+query {
+  gj_config(id: "current") {
+    id
+    catalog_revision
+    sources_used
+    active_database
+    sources
+    roles
+    mcp
+    redacted_paths
+    config_json
+  }
+}
+```
+
+`gj_config` is redacted state. It should not expose raw JWTs, connection strings,
+or secrets. Agents should preserve unknown config sections unless the user
+explicitly asked to change them.
+
+### 4. Build The Smallest Patch
+
+In source mode, table access belongs under `sources[].access`. Roles describe
+identity and matching. They do not carry per-table filters or mutation presets.
+
+| User intent | Configure | Do not configure |
+| :--- | :--- | :--- |
+| Map JWT claims | `identity.user_id_claim`, `identity.role_claims`, `identity.namespace_claim`, `identity.admin_roles` | Per-source JWT claim names |
+| Add a role | `roles[].name`, `roles[].comment`, `roles[].match` | `roles[].tables` |
+| Account-scope a database | `sources[].access.read/write/delete`, `namespace_column` | Repeated `roles[].tables.query.filters` |
+| Shared read-only reference data | `public_tables` | `read: public` on the whole source unless intended |
+| Admin-only data | `admin_tables` or root access `admin` | Hidden ad hoc table filters |
+| Fully blocked data | `blocked_tables` | Returning empty rows as a fake block |
+| System root access | `sources[].kind: graphjin.access.roots` | Source-specific JWT interpretation |
+| Mutable account artifacts | `artifacts` config and `gj_artifacts` root | alternate artifact-store keys or config-folder mutation |
+
+Typical source-mode security shape:
+
+```yaml
+identity:
+  user_id_claim: sub
+  role_claims: [role, roles]
+  namespace_claim: account_id
+  admin_roles: [admin]
+
+sources:
+  - name: app
+    kind: database
+    access:
+      read: account
+      write: blocked
+      delete: blocked
+      namespace_column: account_id
+      missing_namespace_column: block
+      public_tables: [countries, currencies, plans]
+      admin_tables: [audit_logs]
+      blocked_tables: [internal_events]
+
+  - name: graphjin
+    kind: graphjin
+    access:
+      roots:
+        gj_catalog: authenticated
+        gj_artifacts: account
+        gj_workflow: admin
+        gj_workflow_execution: account
+        gj_runtime: admin
+        gj_security: admin
+        gj_config: admin
+```
+
+For V1, `identity.query` is the source-mode spelling for the existing
+`roles_query` enrichment path. It is not arbitrary enrichment for `user_id`,
+`account_id`, or trusted variables. Agents should not configure both names with
+different values.
+
+Adding a JWT-backed role in source mode should look like role identity metadata:
+
+```yaml
+roles:
+  - name: support
+    comment: Support staff
+    match: "role = 'support'"
+```
+
+It should not reintroduce legacy table rules:
+
+```yaml
+# Rejected in source mode.
+roles:
+  - name: user
+    tables:
+      orders:
+        query:
+          filters:
+            - "{ account_id: { eq: $account_id } }"
+```
+
+Mutable user or account artifacts use `artifacts` and the `gj_artifacts` root:
+
+```yaml
+artifacts:
+  enabled: true
+  source: app
+  schema: _graphjin
+  auto_init: true
+  globals_path: ./config
+```
+
+Config-folder fragments, saved queries, and workflows remain global,
+read-only artifacts. Database-backed artifacts are account-scoped by default and
+can override same-name globals without changing config files.
+
+### 5. Apply And Verify
+
+When config writes are enabled and policy allows them, apply the smallest update
+through the singleton. For list fields such as `roles` and `sources`, preserve
+existing entries unless the user explicitly asked to remove them:
+
+```graphql
+mutation {
+  gj_config(
+    id: "current"
+    update: {
+      roles: [
+        {
+          name: "support"
+          comment: "Support staff"
+          match: "role = 'support'"
+        }
+      ]
+    }
+  ) {
+    id
+    catalog_revision
+    updated_at
+  }
+}
+```
+
+`gj_config` mutation requires both authorization to the `gj_config` root and the
+deployment's config-write gate, such as `mcp.allow_config_updates`. If either is
+blocked, the agent should stop with the policy evidence instead of trying a
+different route.
+
+After the mutation, re-read `gj_security`, check recent `gj_runtime` events, and
+compare `catalog_revision`. If the revision did not change or a runtime event
+reports a failed config reload, stop and report the exact reason.
+
+### Current And Target Agent Affordances
+
+Current behavior gives models enough to operate safely:
+
+- `query_catalog(search: "<intent>")` for goal-driven discovery.
+- `graphql_help(for: "...")` for topic routing and exact catalog query shapes.
+- `gj_security` for effective policy and findings.
+- `gj_runtime` for bounded, redacted decision support.
+- `gj_config(id: "current")` for redacted state and guarded updates.
+- Current `gj_config.update` support is limited to implemented update fields
+  such as `sources`, `roles`, `relationships`, `databases`, `tables`,
+  `blocklist`, `functions`, and `mcp`.
+
+The next hardening layer should make config changes even more explicit:
+
+- `config_recipe` catalog rows for add-role, identity claims, source access,
+  table classifications, GraphJin roots, artifacts, and legacy migration.
+- Recipe fields such as `required_capabilities`, `preflight`,
+  `mutation_template`, `postflight`, `warnings`, and `rollback_hint`.
+- Machine-actionable errors with `next_action`, for example pointing
+  `roles[].tables` failures to the legacy migration recipe.
+- A config validation or dry-run path before live `gj_config` mutation.
+
+Until those recipe rows and dry-run semantics exist everywhere, docs and catalog
+help should describe them as target hardening, not as guaranteed runtime rows.
+
 ## Sources In The Agentic Story
 
 Agentic GraphJin does not make agents switch mental models for each source.
@@ -762,13 +1042,16 @@ It is a layered contract:
 
 - MCP server instructions define the catalog-first operating loop and the
   exact sources-mode tool chain.
-- The `graphql_help` tool description is the prompt replacement entrypoint. It
-  lists the valid topics and tells the model where old discovery surfaces went.
+- `query_catalog` is the goal-driven entrypoint. It searches with the user's
+  instruction and returns catalog rows with details, examples, safety, and next
+  guidance.
+- The `graphql_help` tool description is the topic router and fallback. It lists
+  valid topics and tells the model where old discovery surfaces went.
 - `graphql_help` responses expose `bootstrap`, `topic_routes`,
   `replaces_tools`, examples, safety notes, next guidance, and the exact
   `gj_catalog` GraphQL query executed internally.
-- `query_catalog` is the detailed lookup path, including
-  `query_catalog(id: "help:<topic>")`.
+- `query_catalog(id: "...")` is the detailed lookup path, including
+  `query_catalog(id: "help:<topic>")` when topic help is needed.
 - `next` guidance in tool responses gives machine-readable follow-up actions.
 - `gj_catalog` itself contains language, operator, pattern, capability, and
   safety items so the model can learn the local DSL from the graph.
@@ -777,24 +1060,28 @@ It is a layered contract:
 
 The stable model instructions are:
 
-1. Call `graphql_help(for: "discovery")` when unsure.
-2. Use `topic_routes` to choose the right help topic, then inspect
-   `query_catalog(id: "help:<topic>")`.
-3. Use `gj_catalog` for evidence. Search for intent and filter by `kind`.
-4. Inspect `details_json`, `evidence_json`, `examples_json`, `safety_json`, and
+1. Start goal-driven work with `query_catalog(search: "<user instruction>")`.
+2. Call `graphql_help(for: "discovery")` only when the route or query shape is
+   unclear.
+3. Use topic routes to choose the right help topic, then inspect
+   `query_catalog(id: "help:<topic>")` when needed.
+4. Use `gj_catalog` for evidence. Search for intent and filter by `kind`.
+5. Inspect `details_json`, `evidence_json`, `examples_json`, `safety_json`, and
    `edges_json` before selecting tables, columns, relationships, operators,
    workflows, actions, or code paths.
-5. Resolve ambiguity by comparing catalog items. Do not guess from names alone.
-6. Check `gj_security` before config, workflow, schema, filesystem, CodeSQL, or
+6. Resolve ambiguity by comparing catalog items. Do not guess from names alone.
+7. Check `gj_security` before config, workflow, schema, filesystem, CodeSQL, or
    other write-capable actions.
-7. Validate filters with the validation surface when column types, operators, or
+8. Check `gj_runtime` before config, workflow, or schema actions and after
+   GraphJin errors.
+9. Validate filters with the validation surface when column types, operators, or
    real values matter.
-8. Prefer workflows for broad or repeatable data work after discovery.
-9. Use `gj_code` for source intelligence and preview/apply flows. Do not mutate
+10. Prefer workflows for broad or repeatable data work after discovery.
+11. Use `gj_code` for source intelligence and preview/apply flows. Do not mutate
    raw CodeSQL internals directly.
-10. Use `gj_config`, `gj_workflow`, and `gj_workflow_execution` for governed
+12. Use `gj_config`, `gj_workflow`, and `gj_workflow_execution` for governed
    control-plane actions when policy allows them.
-11. Observe results and errors, then return to catalog/security/code when the
+13. Observe results and errors, then return to catalog/security/runtime/code when the
    facts needed for the next step change.
 
 ## End-To-End Agent Loops
@@ -803,6 +1090,7 @@ The stable model instructions are:
 
 ```text
 intent
+  -> query_catalog(search: "<data question>")
   -> gj_catalog: find candidate tables, columns, relationships, query patterns
   -> gj_security: check policy rows and findings if the path is broad or sensitive
   -> validate filters and limits
@@ -817,23 +1105,27 @@ Assume a model knows nothing about GraphJin except the sources-mode MCP tools
 in its prompt:
 
 ```text
-graphql_help
 query_catalog
+graphql_help
 validate_where_clause
 execute_saved_query
 ```
 
 The model should not guess an `orders` table, a date column, or whether "sales"
 means paid orders, completed transactions, or revenue. It should bootstrap from
-the catalog:
+the catalog with the user's intent:
+
+```json
+query_catalog({
+  "search": "how many sales did we have last week",
+  "limit": 10
+})
+```
+
+If the returned rows are too broad, route to topic help:
 
 ```json
 graphql_help({ "for": "discovery" })
-```
-
-Then route to the relevant knowledge:
-
-```json
 graphql_help({ "for": "saved_queries" })
 graphql_help({ "for": "tables" })
 graphql_help({ "for": "query" })
@@ -935,15 +1227,20 @@ How many paid sales did we have last week, and where in the code is the sale
 status set?
 ```
 
-The model still starts from the same tiny MCP surface:
+The model still starts with an intent search:
+
+```json
+query_catalog({
+  "search": "paid sales last week count code where status set",
+  "limit": 10
+})
+```
+
+If the route is unclear, it asks for discovery and then routes into both the
+data and code sides:
 
 ```json
 graphql_help({ "for": "discovery" })
-```
-
-Then it routes into both the data and code sides:
-
-```json
 graphql_help({ "for": "saved_queries" })
 graphql_help({ "for": "tables" })
 graphql_help({ "for": "columns" })
@@ -1103,6 +1400,7 @@ requires direct `gj_code` access or an approved workflow/saved query.
 
 ```text
 intent
+  -> query_catalog(search: "<table, column, or business concept>")
   -> gj_catalog: identify the table or column
   -> gj_code: find db_reference rows for that identity
   -> gj_code: follow file, symbol, reference, and import rows
@@ -1117,6 +1415,7 @@ intent
 
 ```text
 intent
+  -> query_catalog(search: "<workflow intent>")
   -> gj_catalog: discover existing workflow items and workflow patterns
   -> gj_security: confirm workflow execute/write policy and review findings
   -> gj_workflow: inspect reusable workflow metadata or source
@@ -1129,11 +1428,15 @@ intent
 
 ```text
 intent
-  -> gj_catalog: inspect config and capability items
-  -> gj_security: inspect config policy rows and high/critical findings
-  -> gj_config: read redacted current state
+  -> query_catalog(search: "<exact config/security instruction>")
+  -> query_catalog(id: "<best config/help/capability row>")
+  -> gj_security: inspect effective policy and high/critical findings
+  -> gj_runtime: inspect recent config/auth/access failures and next_action
+  -> gj_config: read redacted current state when permitted
+  -> build the smallest update against source-mode fields
   -> gj_config: update only when policy allows it
-  -> observe catalog_revision and refresh discovery
+  -> verify catalog_revision, gj_security, and gj_runtime
+  -> refresh discovery before the next action
 ```
 
 ## Design Principles
