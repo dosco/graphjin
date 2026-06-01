@@ -232,6 +232,51 @@ func TestConfigValidate(t *testing.T) {
 			wantErr: true,
 			errMsg:  "supported: catalog.read",
 		},
+		{
+			name: "sources used rejects legacy role table access",
+			config: Config{
+				Sources: []SourceConfig{{Name: "app", Kind: "database", Type: "postgres"}},
+				Roles:   []Role{{Name: "user", Tables: []RoleTable{{Name: "users"}}}},
+			},
+			wantErr: true,
+			errMsg:  "roles[\"user\"].tables is legacy",
+		},
+		{
+			name: "sources used rejects conflicting identity query aliases",
+			config: Config{
+				Sources:    []SourceConfig{{Name: "app", Kind: "database", Type: "postgres"}},
+				RolesQuery: `SELECT * FROM legacy_roles WHERE id = $user_id`,
+				Identity:   IdentityConfig{Query: `SELECT * FROM source_roles WHERE id = $user_id`},
+			},
+			wantErr: true,
+			errMsg:  "identity.query and roles_query are aliases",
+		},
+		{
+			name: "sources used rejects public write",
+			config: Config{
+				Sources: []SourceConfig{{Name: "app", Kind: "database", Type: "postgres", Access: SourceAccessConfig{Write: "public"}}},
+			},
+			wantErr: true,
+			errMsg:  "public write",
+		},
+		{
+			name: "sources used rejects artifact source on non database",
+			config: Config{
+				Sources:   []SourceConfig{{Name: "code", Kind: "code", Type: "sqlite"}},
+				Artifacts: ArtifactsConfig{Enabled: true, Source: "code"},
+			},
+			wantErr: true,
+			errMsg:  "writable SQL database source",
+		},
+		{
+			name: "sources used rejects artifact source on mongodb",
+			config: Config{
+				Sources:   []SourceConfig{{Name: "mongo", Kind: "database", Type: "mongodb"}},
+				Artifacts: ArtifactsConfig{Enabled: true, Source: "mongo"},
+			},
+			wantErr: true,
+			errMsg:  "writable SQL database source",
+		},
 	}
 
 	for _, tt := range tests {
@@ -245,6 +290,68 @@ func TestConfigValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) {
+	conf := &Config{
+		RolesQuery: `SELECT * FROM users WHERE id = $user_id`,
+		Sources: []SourceConfig{
+			{Name: "app", Kind: "database", Type: "postgres", Default: true},
+			{Name: "graphjin", Kind: "graphjin"},
+		},
+		Artifacts: ArtifactsConfig{Enabled: true},
+	}
+	if err := conf.NormalizeSources(); err != nil {
+		t.Fatalf("NormalizeSources: %v", err)
+	}
+	if conf.Identity.UserIDClaim != "sub" || conf.Identity.NamespaceClaim != "account_id" || conf.Identity.Query != conf.RolesQuery {
+		t.Fatalf("identity defaults not applied: %+v", conf.Identity)
+	}
+	if conf.Artifacts.Source != "app" || conf.Artifacts.Schema != "_graphjin" || conf.Artifacts.GlobalsPath != "./config" || !conf.Artifacts.AutoInitEnabled() {
+		t.Fatalf("artifact defaults not applied: %+v", conf.Artifacts)
+	}
+	app, _ := conf.SourceByName("app")
+	if app.Access.Read != AccessModeAccount || app.Access.Write != AccessModeBlocked || app.Access.Delete != AccessModeBlocked ||
+		app.Access.NamespaceColumn != "account_id" || app.Access.MissingNamespaceColumn != MissingNamespaceBlock {
+		t.Fatalf("database access defaults not applied: %+v", app.Access)
+	}
+	gj, _ := conf.SourceByName("graphjin")
+	if gj.Access.Roots["gj_security"] != AccessModeAdmin || gj.Access.Roots["gj_runtime"] != AccessModeAdmin ||
+		gj.Access.Roots["gj_artifacts"] != AccessModeAccount {
+		t.Fatalf("graphjin root access defaults not applied: %+v", gj.Access.Roots)
+	}
+}
+
+func TestNormalizeSourcesTreatsIdentityQueryAsV1LiteRolesQueryAlias(t *testing.T) {
+	sourceMode := []SourceConfig{{Name: "app", Kind: "database", Type: "postgres", Default: true}}
+
+	t.Run("identity query populates roles query", func(t *testing.T) {
+		conf := &Config{
+			Sources:  sourceMode,
+			Identity: IdentityConfig{Query: `SELECT * FROM roles WHERE id = $user_id`},
+		}
+		if err := conf.NormalizeSources(); err != nil {
+			t.Fatalf("NormalizeSources: %v", err)
+		}
+		if conf.RolesQuery != conf.Identity.Query {
+			t.Fatalf("identity.query should normalize to roles_query in V1-lite mode: identity=%q roles_query=%q",
+				conf.Identity.Query, conf.RolesQuery)
+		}
+	})
+
+	t.Run("roles query populates identity query", func(t *testing.T) {
+		conf := &Config{
+			Sources:    sourceMode,
+			RolesQuery: `SELECT * FROM roles WHERE id = $user_id`,
+		}
+		if err := conf.NormalizeSources(); err != nil {
+			t.Fatalf("NormalizeSources: %v", err)
+		}
+		if conf.Identity.Query != conf.RolesQuery {
+			t.Fatalf("roles_query should remain a deprecated identity.query alias in source mode: identity=%q roles_query=%q",
+				conf.Identity.Query, conf.RolesQuery)
+		}
+	})
 }
 
 func TestNormalizeSourcesMapsSourcesAndRelationships(t *testing.T) {

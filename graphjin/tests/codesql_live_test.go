@@ -81,7 +81,9 @@ func LookupUser() {
 		Core: core.Config{
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: "app", Kind: "database", Type: "sqlite", Path: appPath, Default: true},
+				{Name: "app", Kind: "database", Type: "sqlite", Path: appPath, Default: true, Access: core.SourceAccessConfig{
+					Read: core.AccessModeAuthenticated,
+				}},
 				{Name: "code", Kind: "code", Path: sourceRoot},
 				{Name: "graphjin", Kind: "graphjin"},
 			},
@@ -96,8 +98,16 @@ func LookupUser() {
 	}
 	t.Cleanup(func() { _ = gjs.Close() })
 
-	body := []byte(`{"query":"query { gj_catalog(where: { kind: { eq: \"column\" }, table_name: { eq: \"users\" }, column_name: { eq: \"email\" } }, limit: 1) { table_name column_name gj_code { kind ref_kind path symbol_id } } }"}`)
-	res := postGraphQL(t, gjs.GraphQL(nil), body)
+	resData, err := gjs.GetGraphJin().GraphQL(sourceModeIntegrationUserContext(), `query {
+		gj_catalog(where: { kind: { eq: "column" }, table_name: { eq: "users" }, column_name: { eq: "email" } }, limit: 1) {
+			table_name
+			column_name
+			gj_code { kind ref_kind path symbol_id }
+		}
+	}`, nil, nil)
+	if err != nil {
+		t.Fatalf("metadata graphql query: %v", err)
+	}
 
 	var out struct {
 		Data struct {
@@ -115,6 +125,10 @@ func LookupUser() {
 		Errors []struct {
 			Message string `json:"message"`
 		} `json:"errors"`
+	}
+	res, err := json.Marshal(resData)
+	if err != nil {
+		t.Fatalf("marshal metadata response: %v", err)
 	}
 	if err := json.Unmarshal(res, &out); err != nil {
 		t.Fatalf("decode metadata response: %v\n%s", err, string(res))

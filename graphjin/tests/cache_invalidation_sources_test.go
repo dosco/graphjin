@@ -1,7 +1,6 @@
 package tests_test
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -20,7 +19,7 @@ import (
 )
 
 func TestCombinedCacheInvalidationSources(t *testing.T) {
-	ctx := context.Background()
+	ctx := sourceModeIntegrationUserContext()
 
 	appDBPath := createCacheInvalidationAppDB(t)
 	fsRoot := t.TempDir()
@@ -52,7 +51,10 @@ func WatchMe() int {
 			DBSchemaPollDuration: -1,
 			DefaultLimit:         10,
 			Sources: []core.SourceConfig{
-				{Name: "app", Kind: "database", Type: "sqlite", Path: appDBPath, Default: true},
+				{Name: "app", Kind: "database", Type: "sqlite", Path: appDBPath, Default: true, Access: core.SourceAccessConfig{
+					Read:  core.AccessModeAuthenticated,
+					Write: core.AccessModeAuthenticated,
+				}},
 				{Name: "code", Kind: "code", Path: codeRoot},
 				{Name: "uploads", Kind: "file", Backend: "local", Root: fsRoot},
 			},
@@ -244,7 +246,7 @@ func queryCombinedSources(t *testing.T, gj *core.GraphJin) combinedSourcesResult
 }
 
 func queryCombinedSourcesResult(gj *core.GraphJin) (combinedSourcesResult, error) {
-	res, err := gj.GraphQL(context.Background(), combinedSourcesQuery, nil, nil)
+	res, err := gj.GraphQL(sourceModeIntegrationUserContext(), combinedSourcesQuery, nil, nil)
 	if err != nil {
 		return combinedSourcesResult{}, err
 	}

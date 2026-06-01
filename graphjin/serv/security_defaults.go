@@ -50,6 +50,8 @@ func controlPlaneSourceReadOnly(conf *Config, table string) bool {
 	switch strings.ToLower(strings.TrimSpace(table)) {
 	case "gj_workflow", "gj_workflow_execution":
 		return conf.workflowsSourceReadOnly()
+	case "gj_artifacts":
+		return conf.Core.Artifacts.Enabled && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case "gj_config":
 		return conf.graphjinSourceReadOnly()
 	case "gj_catalog", "gj_security", "gj_runtime":
@@ -95,15 +97,39 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 	if conf.runtimeRootRegistered() {
 		systemTables = append(systemTables, "gj_runtime")
 	}
-	for _, role := range []string{"user", "anon"} {
+	if conf.Core.Artifacts.Enabled {
+		systemTables = append(systemTables, "gj_artifacts")
+	}
+	roles := []string{"user", "anon"}
+	if conf.Core.IsSourcesUsed() {
+		roles = sourceModeSystemRoleNames(conf)
+	}
+	for _, role := range roles {
 		for _, table := range systemTables {
-			if systemReadAllowedBySource(conf, mode, role, table) {
+			allowed := systemReadAllowedBySource(conf, mode, role, table)
+			if conf.Core.IsSourcesUsed() {
+				if systemRoleTableConfigured(runtimeCore, role, table, database) {
+					continue
+				}
+				block := !allowed
+				appendRuntimeRoleTable(runtimeCore, role, core.RoleTable{
+					Name:     table,
+					Database: database,
+					Query:    &core.Query{Block: block},
+					Insert:   &core.Insert{Block: block},
+					Update:   &core.Update{Block: block},
+					Upsert:   &core.Upsert{Block: block},
+					Delete:   &core.Delete{Block: block},
+				})
+				continue
+			}
+			if allowed {
 				continue
 			}
 			if systemRoleTableConfigured(&conf.Core, role, table, database) {
 				continue
 			}
-			rt := core.RoleTable{Name: table, Database: database, Query: &core.Query{Block: true}}
+			rt := core.RoleTable{Name: table, Database: database, Generated: true, Query: &core.Query{Block: true}}
 			if role == "anon" {
 				insertBlock := true
 				if strings.EqualFold(table, "gj_workflow_execution") {
@@ -124,20 +150,58 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 	}
 	if mode == modeAgentic && !systemRoleTableConfigured(&conf.Core, "anon", "gj_catalog", database) {
 		appendRuntimeRoleTable(runtimeCore, "anon", core.RoleTable{
-			Name:     "gj_catalog",
-			Database: database,
-			Query:    &core.Query{Block: true},
-			Insert:   &core.Insert{Block: true},
-			Update:   &core.Update{Block: true},
-			Upsert:   &core.Upsert{Block: true},
-			Delete:   &core.Delete{Block: true},
+			Name:      "gj_catalog",
+			Database:  database,
+			Generated: true,
+			Query:     &core.Query{Block: true},
+			Insert:    &core.Insert{Block: true},
+			Update:    &core.Update{Block: true},
+			Upsert:    &core.Upsert{Block: true},
+			Delete:    &core.Delete{Block: true},
 		})
 	}
+}
+
+func sourceModeSystemRoleNames(conf *Config) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	add := func(role string) {
+		role = strings.TrimSpace(role)
+		if role == "" {
+			return
+		}
+		key := strings.ToLower(role)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, role)
+	}
+	add("user")
+	add("anon")
+	if conf == nil {
+		return out
+	}
+	for _, role := range conf.Core.Roles {
+		add(role.Name)
+	}
+	for _, role := range conf.Core.EffectiveIdentityConfig().AdminRoles {
+		add(role)
+	}
+	return out
 }
 
 func systemReadAllowedBySource(conf *Config, mode, role, table string) bool {
 	if !systemReadSourceEnabled(conf, table) {
 		return false
+	}
+	if conf != nil && conf.Core.IsSourcesUsed() {
+		if source, ok := conf.Core.GraphJinSource(); ok {
+			access := conf.Core.EffectiveSourceAccess(source)
+			if rootMode := access.Roots[strings.ToLower(strings.TrimSpace(table))]; rootMode != "" {
+				return systemRootAccessAllowed(rootMode, role, conf.Core.EffectiveIdentityConfig().AdminRoles, mode, conf.DefaultBlock)
+			}
+		}
 	}
 	if role == "anon" {
 		return mode == modeDev && conf != nil && !conf.DefaultBlock && defaultSystemReadAllowed(mode, "user", table)
@@ -154,10 +218,30 @@ func systemReadAllowedBySource(conf *Config, mode, role, table string) bool {
 		return sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeyConfigRead)
 	case "gj_runtime":
 		return sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead)
+	case "gj_artifacts":
+		return conf.Core.Artifacts.Enabled
 	case "gj_workflow":
 		return sourceCapabilityAllowed(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowRead)
 	case "gj_workflow_execution":
 		return defaultSystemReadAllowed(mode, role, table)
+	default:
+		return false
+	}
+}
+
+func systemRootAccessAllowed(accessMode, role string, adminRoles []string, mode string, defaultBlock bool) bool {
+	switch strings.ToLower(strings.TrimSpace(accessMode)) {
+	case core.AccessModePublic:
+		return true
+	case core.AccessModeAuthenticated, core.AccessModeAccount, core.AccessModeOwner:
+		return !strings.EqualFold(role, "anon")
+	case core.AccessModeAdmin:
+		for _, admin := range adminRoles {
+			if strings.EqualFold(strings.TrimSpace(admin), role) {
+				return true
+			}
+		}
+		return false
 	default:
 		return false
 	}
@@ -172,6 +256,8 @@ func systemReadSourceEnabled(conf *Config, table string) bool {
 		return conf.catalogToolsEnabled() || conf.graphjinControlPlaneEnabled()
 	case "gj_runtime":
 		return conf != nil && conf.runtimeRootRegistered()
+	case "gj_artifacts":
+		return conf != nil && conf.Core.Artifacts.Enabled
 	case "gj_workflow", "gj_workflow_execution":
 		return conf.workflowsSourceEnabled()
 	default:
@@ -200,6 +286,7 @@ func systemRoleTableConfigured(conf *core.Config, role, table, database string) 
 }
 
 func appendRuntimeRoleTable(conf *core.Config, role string, table core.RoleTable) {
+	table.Generated = true
 	for i := range conf.Roles {
 		if strings.EqualFold(conf.Roles[i].Name, role) {
 			if !runtimeRoleTableExists(conf.Roles[i], table.Name, table.Database) {

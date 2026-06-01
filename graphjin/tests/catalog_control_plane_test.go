@@ -292,7 +292,10 @@ func newCatalogControlPlaneService(t *testing.T, mcp serv.MCPConfig) *serv.HttpS
 		DBType:           dbType,
 		DisableAllowList: true,
 		Sources: []core.SourceConfig{
-			{Name: core.DefaultDBName, Kind: "database", Type: dbType, Default: true},
+			{Name: core.DefaultDBName, Kind: "database", Type: dbType, Default: true, Access: core.SourceAccessConfig{
+				Read:  core.AccessModeAuthenticated,
+				Write: core.AccessModeAuthenticated,
+			}},
 			{Name: "graphjin", Kind: "graphjin"},
 			{Name: "workflows", Kind: "workflow"},
 		},
@@ -319,7 +322,7 @@ func newCatalogControlPlaneService(t *testing.T, mcp serv.MCPConfig) *serv.HttpS
 func runControlPlaneGraphQL(t *testing.T, gj *core.GraphJin, query string) []byte {
 	t.Helper()
 
-	res, err := gj.GraphQL(context.Background(), query, nil, nil)
+	res, err := gj.GraphQL(sourceModeIntegrationAdminContext(), query, nil, nil)
 	if err != nil {
 		t.Fatalf("graphql execution error: %v", err)
 	}

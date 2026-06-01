@@ -1,7 +1,6 @@
 package tests_test
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -96,7 +95,9 @@ paths:
 		DisableAllowList: true,
 		DefaultLimit:     2,
 		Sources: []core.SourceConfig{
-			{Name: core.DefaultDBName, Kind: "database", Type: dbType, Default: true},
+			{Name: core.DefaultDBName, Kind: "database", Type: dbType, Default: true, Access: core.SourceAccessConfig{
+				Read: core.AccessModeAuthenticated,
+			}},
 			{
 				Name:     "upstream",
 				Kind:     "api",
@@ -143,7 +144,7 @@ paths:
 		}
 	}`
 
-	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	res, err := gj.GraphQL(sourceModeIntegrationUserContext(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {

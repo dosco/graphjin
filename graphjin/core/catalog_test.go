@@ -44,6 +44,44 @@ func TestCatalogSnapshotIncludesSchemaAndLanguageCards(t *testing.T) {
 	}
 }
 
+func TestCatalogSnapshotHidesSourceModeAdminAndBlockedTables(t *testing.T) {
+	md := &MetadataSnapshot{
+		Databases: []MetadataDatabase{{ID: "app", Name: "app", Type: "postgres", IsDefault: true}},
+		Tables: []MetadataTable{
+			{ID: "app.public.products", DatabaseName: "app", SchemaName: "public", TableName: "products"},
+			{ID: "app.public.audit_logs", DatabaseName: "app", SchemaName: "public", TableName: "audit_logs"},
+			{ID: "app.public.internal_events", DatabaseName: "app", SchemaName: "public", TableName: "internal_events"},
+		},
+		Columns: []MetadataColumn{
+			{ID: "app.public.products.id", TableID: "app.public.products", DatabaseName: "app", SchemaName: "public", TableName: "products", ColumnName: "id"},
+			{ID: "app.public.audit_logs.id", TableID: "app.public.audit_logs", DatabaseName: "app", SchemaName: "public", TableName: "audit_logs", ColumnName: "id"},
+			{ID: "app.public.internal_events.id", TableID: "app.public.internal_events", DatabaseName: "app", SchemaName: "public", TableName: "internal_events", ColumnName: "id"},
+		},
+	}
+	conf := &Config{Sources: []SourceConfig{{
+		Name: "app",
+		Kind: "database",
+		Access: SourceAccessConfig{
+			AdminTables:   []string{"audit_logs"},
+			BlockedTables: []string{"internal_events"},
+		},
+	}}}
+
+	snapshot := BuildCatalogSnapshot(md, conf)
+	if len(snapshot.Query(CatalogQuery{Kind: "table", Table: "products"})) != 1 {
+		t.Fatal("expected ordinary table in catalog")
+	}
+	if len(snapshot.Query(CatalogQuery{Kind: "table", Table: "audit_logs"})) != 0 {
+		t.Fatal("expected admin table to be hidden from catalog")
+	}
+	if len(snapshot.Query(CatalogQuery{Kind: "table", Table: "internal_events"})) != 0 {
+		t.Fatal("expected blocked table to be hidden from catalog")
+	}
+	if len(snapshot.Query(CatalogQuery{Kind: "column", Table: "audit_logs"})) != 0 {
+		t.Fatal("expected admin table columns to be hidden from catalog")
+	}
+}
+
 func TestCatalogConfigRedactsSensitiveValues(t *testing.T) {
 	conf := &Config{
 		SecretKey: "super-secret",

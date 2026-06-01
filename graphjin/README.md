@@ -668,15 +668,25 @@ Also works with AWS Aurora/RDS, Google Cloud SQL, and YugabyteDB. Snowflake supp
 
 **Query allow-lists** - In production, only saved queries can run. AI models call `execute_saved_query` with pre-approved queries. No arbitrary SQL injection possible.
 
-**Role-based access** - Different roles see different data:
+**Source-mode access** - New multi-user deployments should use `sources:` with request-wide `identity` and source-level access defaults. GraphJin compiles those defaults into the existing qcode/SQL enforcement path, so account filters and trusted mutation presets are enforced by the generated database query.
+
 ```yaml
-roles:
-  user:
-    tables:
-      - name: orders
-        query:
-          filters: ["{ user_id: { eq: $user_id } }"]
+identity:
+  user_id_claim: sub
+  role_claims: [role, roles]
+  namespace_claim: account_id
+
+sources:
+  - name: app
+    kind: database
+    access:
+      read: account
+      write: blocked
+      delete: blocked
+      namespace_column: account_id
 ```
+
+See [SECURITY.md](SECURITY.md) for the security model and [Source Mode Migration](docs/SOURCE-MODE-MIGRATION.md) for legacy `roles[].tables` migration steps. In source mode, user-written `roles[].tables` rules are rejected intentionally.
 
 **JWT authentication** - Supports Auth0, Firebase, JWKS endpoints.
 

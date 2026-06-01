@@ -695,6 +695,7 @@ func (ms *mcpServer) queryCatalogGraphQL(ctx context.Context, q catalogGraphQLQu
 	if err != nil {
 		return nil, err
 	}
+	ctx = ms.service.applyIdentityContext(ctx)
 	var rc core.RequestConfig
 	if namespace := ms.getNamespace(); namespace != "" {
 		rc.SetNamespace(namespace)
@@ -719,23 +720,26 @@ func (ms *mcpServer) catalogRevisionGraphQL(ctx context.Context) string {
 	if ms == nil || ms.service == nil || ms.service.gj == nil || !ms.service.conf.graphjinControlPlaneEnabled() {
 		return ""
 	}
+	ctx = ms.service.applyIdentityContext(ctx)
 	var rc core.RequestConfig
 	if namespace := ms.getNamespace(); namespace != "" {
 		rc.SetNamespace(namespace)
 	}
 	res, err := ms.service.gj.GraphQL(ctx, `query { gj_config(id: "current") { catalog_revision } }`, nil, &rc)
-	if err != nil || len(res.Errors) != 0 {
-		return ""
+	if err == nil && len(res.Errors) == 0 {
+		var out struct {
+			Config struct {
+				CatalogRevision string `json:"catalog_revision"`
+			} `json:"gj_config"`
+		}
+		if err := json.Unmarshal(res.Data, &out); err == nil && out.Config.CatalogRevision != "" {
+			return out.Config.CatalogRevision
+		}
 	}
-	var out struct {
-		Config struct {
-			CatalogRevision string `json:"catalog_revision"`
-		} `json:"gj_config"`
+	if snap, err := ms.catalogSnapshot(); err == nil && snap != nil {
+		return snap.Revision
 	}
-	if err := json.Unmarshal(res.Data, &out); err != nil {
-		return ""
-	}
-	return out.Config.CatalogRevision
+	return ""
 }
 
 func buildCatalogGraphQLQuery(q catalogGraphQLQuery) (string, error) {

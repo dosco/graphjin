@@ -43,6 +43,14 @@ const (
 
 	// User role if pre-defined
 	UserRoleKey
+
+	// IdentityVarsKey carries trusted request-wide identity variables such as
+	// account_id that may be referenced by generated source-mode filters.
+	IdentityVarsKey
+
+	// IdentityRolesKey carries candidate roles extracted from the verified
+	// request identity before roles_query / match fallback.
+	IdentityRolesKey
 )
 
 const (

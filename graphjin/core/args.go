@@ -78,8 +78,15 @@ func (gj *graphjinEngine) argList(c context.Context,
 			ar.cindxs = append(ar.cindxs, i)
 
 		default:
-			// Check for named cursor variables (e.g., products_cursor, users_cursor, products_cursor_1)
-			if strings.Contains(p.Name, "_cursor") {
+			if gj.sourceModeTrustedIdentityParam(p.Name) {
+				v, ok := identityContextVar(c, p.Name)
+				if !ok || !identityValuePresent(v) {
+					return ar, fmt.Errorf("unauthorized: identity variable '%s' is required", p.Name)
+				}
+				vl[i] = convertBoolIfNeeded(pc, v)
+
+				// Check for named cursor variables (e.g., products_cursor, users_cursor, products_cursor_1)
+			} else if strings.Contains(p.Name, "_cursor") {
 				if v, ok := fields[p.Name]; ok && len(v) > 0 && v[0] == '"' {
 					vl[i] = string(v[1 : len(v)-1])
 				} else {
@@ -122,6 +129,9 @@ func (gj *graphjinEngine) argList(c context.Context,
 				// Convert Go bool to int (1/0) before it reaches the driver
 				vl[i] = convertBoolIfNeeded(pc, vl[i])
 
+			} else if v, ok := identityContextVar(c, p.Name); ok {
+				vl[i] = convertBoolIfNeeded(pc, v)
+
 			} else if rc != nil {
 				if v, ok := rc.Vars[p.Name]; ok {
 					switch v1 := v.(type) {
@@ -148,6 +158,48 @@ func (gj *graphjinEngine) argList(c context.Context,
 		}
 	}
 	return ar, nil
+}
+
+func (gj *graphjinEngine) sourceModeTrustedIdentityParam(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" || gj == nil || gj.conf == nil || !gj.conf.IsSourcesUsed() {
+		return false
+	}
+	id := gj.conf.EffectiveIdentityConfig()
+	trusted := []string{
+		"account_id",
+		"user_id",
+		strings.ToLower(strings.TrimSpace(id.NamespaceClaim)),
+		strings.ToLower(strings.TrimSpace(id.UserIDClaim)),
+	}
+	for _, item := range trusted {
+		if item != "" && name == item {
+			return true
+		}
+	}
+	return false
+}
+
+func identityValuePresent(v interface{}) bool {
+	if v == nil {
+		return false
+	}
+	if s, ok := v.(string); ok {
+		return strings.TrimSpace(s) != ""
+	}
+	return true
+}
+
+func identityContextVar(ctx context.Context, name string) (interface{}, bool) {
+	if ctx == nil || strings.TrimSpace(name) == "" {
+		return nil, false
+	}
+	vars, ok := ctx.Value(IdentityVarsKey).(map[string]interface{})
+	if !ok || vars == nil {
+		return nil, false
+	}
+	v, ok := vars[name]
+	return v, ok
 }
 
 func parseVarVal(v json.RawMessage) interface{} {

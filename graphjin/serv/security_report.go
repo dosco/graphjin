@@ -693,6 +693,8 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 	}
 
 	rows = append(rows, securitySourcePolicyEvaluations(conf, mode)...)
+	rows = append(rows, securitySourceAccessPolicyEvaluations(conf, mode)...)
+	rows = append(rows, securitySourceAccessSchemaFindings(ctx, mode)...)
 	for i := range rows {
 		securityApplyReportContext(&rows[i], ctx)
 		rows[i].WeakensDefault = securityWeakensDefault(rows[i])
@@ -784,6 +786,343 @@ func securitySourcePolicyEvaluations(conf *Config, mode string) []securityPolicy
 			"Set read_only: true on production and agentic CodeSQL databases unless source mutation is explicitly needed."))
 	}
 	return rows
+}
+
+func securitySourceAccessPolicyEvaluations(conf *Config, mode string) []securityPolicyEval {
+	if conf == nil || !conf.Core.IsSourcesUsed() {
+		return nil
+	}
+	identity := conf.Core.EffectiveIdentityConfig()
+	rows := []securityPolicyEval{
+		newSecurityPolicy(mode, "source_access.identity", "core", "graphjin", "graphjin", "identity", "read",
+			"Source-mode identity",
+			"Shows request-wide identity claim names used for generated source access rules.",
+			true, true,
+			"identity", "configured",
+			true, "medium",
+			"Identity must be request-wide, not source-specific, so all generated access rules resolve the same user/account context.",
+			"Keep JWT claims minimal and add identity.query only when the database enrichment is needed."),
+	}
+	rows[0].Details = map[string]any{
+		"user_id_claim":          identity.UserIDClaim,
+		"role_claims":            identity.RoleClaims,
+		"namespace_claim":        identity.NamespaceClaim,
+		"admin_roles":            identity.AdminRoles,
+		"identity_query_enabled": strings.TrimSpace(identity.Query) != "",
+	}
+
+	for _, source := range conf.Core.Sources {
+		name := strings.TrimSpace(source.Name)
+		if name == "" {
+			continue
+		}
+		kind := source.CanonicalKind()
+		access := conf.Core.EffectiveSourceAccess(source)
+		if kind == sourcecap.KindDatabase {
+			rows = append(rows, sourceAccessDefaultPolicy(mode, name, kind, "read", access.Read, true))
+			rows = append(rows, sourceAccessDefaultPolicy(mode, name, kind, "write", access.Write, sourceWriteModeSafe(access.Write)))
+			rows = append(rows, sourceAccessDefaultPolicy(mode, name, kind, "delete", access.Delete, sourceDeleteModeSafe(mode, access.Delete)))
+			rows[len(rows)-3].Details = sourceAccessDetails(access)
+			rows[len(rows)-2].Details = sourceAccessDetails(access)
+			rows[len(rows)-1].Details = sourceAccessDetails(access)
+			rows = append(rows, sourceAccessClassificationPolicies(mode, name, kind, access)...)
+		}
+		if kind == sourcecap.KindGraphJin {
+			for root, accessMode := range access.Roots {
+				safe := graphjinRootAccessSafe(root, accessMode)
+				row := newSecurityPolicy(mode, "source_access.root."+securityIDPart(root), "core", name, kind, root, "read",
+					fmt.Sprintf("%s root access", root),
+					"Shows source-mode access policy for a GraphJin system root.",
+					safe, normalizeSourceAccessAllowed(accessMode),
+					fmt.Sprintf("sources[%s].access.roots.%s", name, root), accessMode,
+					true, graphjinRootRisk(root),
+					"Sensitive gj_* roots should be admin-only; account-scoped roots must enforce account context in their handler.",
+					"Set sensitive roots such as gj_security, gj_runtime, and gj_config to admin.")
+				row.TableName = root
+				row.Details = map[string]any{"access_mode": accessMode, "admin_roles": identity.AdminRoles}
+				rows = append(rows, row)
+			}
+		}
+	}
+	if conf.Core.Artifacts.Enabled {
+		cfg := conf.Core.EffectiveArtifactsConfig()
+		source, ok := conf.Core.SourceByName(cfg.Source)
+		validSource := ok && source.CanonicalKind() == sourcecap.KindDatabase && !source.ReadOnly && artifactSecuritySourceSQL(source)
+		row := newSecurityPolicy(mode, "source_access.artifacts", "core", cfg.Source, "database", "gj_artifacts", "write",
+			"Artifact store",
+			"Shows the durable SQL source used by gj_artifacts and whether auto-init is enabled.",
+			true, validSource,
+			"artifacts", cfg.Source,
+			true, "high",
+			"gj_artifacts must be backed by a writable SQL database source; config-folder globals stay read-only.",
+			"Use a writable database source for artifacts and keep globals_path read-only through configuration review.")
+		row.TableName = artifactsRootTable
+		row.Details = map[string]any{
+			"enabled":      cfg.Enabled,
+			"source":       cfg.Source,
+			"schema":       cfg.Schema,
+			"auto_init":    cfg.AutoInitEnabled(),
+			"globals_path": cfg.GlobalsPath,
+			"valid_source": validSource,
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func artifactSecuritySourceSQL(source core.SourceConfig) bool {
+	switch strings.ToLower(strings.TrimSpace(source.Type)) {
+	case "mongodb", "nanodb":
+		return false
+	default:
+		return true
+	}
+}
+
+func sourceAccessDefaultPolicy(mode, source, kind, action, accessMode string, safe bool) securityPolicyEval {
+	effectiveAllowed := normalizeSourceAccessAllowed(accessMode)
+	defaultAllowed := effectiveAllowed
+	if action == "write" || action == "delete" {
+		defaultAllowed = effectiveAllowed && safe
+	}
+	row := newSecurityPolicy(mode, "source_access."+securityIDPart(source)+"."+action, "core", source, kind, "access."+action, action,
+		fmt.Sprintf("%s default %s access", source, action),
+		"Shows source-level access default compiled into generated role table rules.",
+		defaultAllowed, effectiveAllowed,
+		fmt.Sprintf("sources[%s].access.%s", source, action), accessMode,
+		true, sourceAccessRisk(action),
+		"Source-mode access defaults are generated into the existing qcode role enforcement path.",
+		"Use account or owner for row-scoped reads, keep writes explicit, and keep delete blocked outside development.")
+	row.Details = map[string]any{"access_mode": accessMode}
+	return row
+}
+
+func sourceAccessClassificationPolicies(mode, source, kind string, access core.SourceAccessConfig) []securityPolicyEval {
+	var rows []securityPolicyEval
+	add := func(name string, tables []string, accessMode, summary string) {
+		if len(tables) == 0 {
+			return
+		}
+		row := newSecurityPolicy(mode, "source_access."+securityIDPart(source)+"."+name, "core", source, kind, "classification."+name, "read",
+			fmt.Sprintf("%s %s tables", source, name),
+			summary,
+			true, true,
+			fmt.Sprintf("sources[%s].access.%s_tables", source, name), strings.Join(tables, ","),
+			true, "medium",
+			"Table classifications are exceptions to source defaults and are compiled into generated role rules.",
+			"Keep public lists to immutable reference data, admin lists to audit/control data, and blocked lists to internal-only tables.")
+		row.Details = map[string]any{"tables": tables, "access_mode": accessMode}
+		rows = append(rows, row)
+	}
+	add("public", access.PublicTables, core.AccessModePublic, "Read-only shared/reference tables with no account filter.")
+	add("admin", access.AdminTables, core.AccessModeAdmin, "Read-only admin tables.")
+	add("blocked", access.BlockedTables, core.AccessModeBlocked, "Fully blocked tables hidden from normal discovery.")
+	return rows
+}
+
+func securitySourceAccessSchemaFindings(ctx securityReportContext, mode string) []securityPolicyEval {
+	if !ctx.Runtime || ctx.Service == nil || ctx.Service.gj == nil || ctx.Conf == nil || !ctx.Conf.Core.IsSourcesUsed() {
+		return nil
+	}
+	snapshot, err := ctx.Service.gj.MetadataSnapshot(ctx.Service.metadataSnapshotExcludesFor(ctx.Service.metadataDB, &ctx.Conf.Core, ctx.Service.managedDBs)...)
+	if err != nil || snapshot == nil {
+		return nil
+	}
+
+	columns := make(map[string]map[string]struct{}, len(snapshot.Tables))
+	for _, col := range snapshot.Columns {
+		key := sourceAccessMetadataTableKey(col.DatabaseName, col.SchemaName, col.TableName)
+		if columns[key] == nil {
+			columns[key] = make(map[string]struct{})
+		}
+		columns[key][strings.ToLower(strings.TrimSpace(col.ColumnName))] = struct{}{}
+	}
+
+	var rows []securityPolicyEval
+	for _, source := range ctx.Conf.Core.Sources {
+		name := strings.TrimSpace(source.Name)
+		if name == "" || source.CanonicalKind() != sourcecap.KindDatabase {
+			continue
+		}
+		access := ctx.Conf.Core.EffectiveSourceAccess(source)
+		for _, table := range snapshot.Tables {
+			if table.DatabaseName != name || table.Type == "remote" || table.Type == "managed" {
+				continue
+			}
+			if sourceAccessMetadataTableListed(access.PublicTables, table) ||
+				sourceAccessMetadataTableListed(access.AdminTables, table) ||
+				sourceAccessMetadataTableListed(access.BlockedTables, table) ||
+				sourceAccessMetadataIsArtifactPhysicalTable(ctx.Conf, source, table) {
+				continue
+			}
+			actions := sourceAccessNamespaceActions(access)
+			if len(actions) == 0 {
+				continue
+			}
+			namespaceColumn := strings.ToLower(strings.TrimSpace(access.NamespaceColumn))
+			if namespaceColumn == "" {
+				namespaceColumn = "account_id"
+			}
+			if _, ok := columns[sourceAccessMetadataTableKey(table.DatabaseName, table.SchemaName, table.TableName)][namespaceColumn]; ok {
+				continue
+			}
+
+			effectiveAllowed := !strings.EqualFold(strings.TrimSpace(access.MissingNamespaceColumn), core.MissingNamespaceBlock)
+			row := newSecurityPolicy(mode,
+				"source_access."+securityIDPart(name)+"."+securityIDPart(table.TableName)+".missing_namespace",
+				"core", name, sourcecap.KindDatabase, "access.namespace_column", "read",
+				"Account access table missing namespace column",
+				"Account-scoped source access needs a namespace column on every unclassified table it protects.",
+				false, effectiveAllowed,
+				fmt.Sprintf("sources[%s].access.namespace_column", name), access.NamespaceColumn,
+				true, "high",
+				"Generated account filters cannot safely scope this table because the configured namespace column is not present.",
+				"Add the namespace column, classify the table as public/admin/blocked, or switch the source/table access mode.")
+			row.Status = securityStatusFinding
+			row.DatabaseName = table.DatabaseName
+			row.TableName = table.TableName
+			row.ColumnName = access.NamespaceColumn
+			row.Details = map[string]any{
+				"source":                   name,
+				"database_name":            table.DatabaseName,
+				"schema_name":              table.SchemaName,
+				"table_name":               table.TableName,
+				"namespace_column":         access.NamespaceColumn,
+				"missing_namespace_column": access.MissingNamespaceColumn,
+				"actions":                  actions,
+				"effective_behavior":       sourceAccessMissingNamespaceBehavior(access),
+			}
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+func sourceAccessNamespaceActions(access core.SourceAccessConfig) []string {
+	var actions []string
+	if strings.EqualFold(strings.TrimSpace(access.Read), core.AccessModeAccount) {
+		actions = append(actions, "read")
+	}
+	if strings.EqualFold(strings.TrimSpace(access.Write), core.AccessModeAccount) {
+		actions = append(actions, "write")
+	}
+	if strings.EqualFold(strings.TrimSpace(access.Delete), core.AccessModeAccount) {
+		actions = append(actions, "delete")
+	}
+	return actions
+}
+
+func sourceAccessMissingNamespaceBehavior(access core.SourceAccessConfig) string {
+	if strings.EqualFold(strings.TrimSpace(access.MissingNamespaceColumn), core.MissingNamespaceBlock) {
+		return "blocked"
+	}
+	return "allowed"
+}
+
+func sourceAccessMetadataTableKey(database, schema, table string) string {
+	return strings.ToLower(strings.TrimSpace(database)) + ":" +
+		strings.ToLower(strings.TrimSpace(schema)) + ":" +
+		strings.ToLower(strings.TrimSpace(table))
+}
+
+func sourceAccessMetadataTableListed(list []string, table core.MetadataTable) bool {
+	for _, item := range list {
+		item = strings.ToLower(strings.TrimSpace(item))
+		if item == "" {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(table.TableName))
+		schemaName := strings.ToLower(strings.TrimSpace(table.SchemaName))
+		databaseName := strings.ToLower(strings.TrimSpace(table.DatabaseName))
+		if item == name ||
+			item == schemaName+"."+name ||
+			item == databaseName+":"+name ||
+			item == databaseName+":"+schemaName+"."+name {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceAccessMetadataIsArtifactPhysicalTable(conf *Config, source core.SourceConfig, table core.MetadataTable) bool {
+	if conf == nil || !conf.Core.Artifacts.Enabled {
+		return false
+	}
+	cfg := conf.Core.EffectiveArtifactsConfig()
+	if cfg.Source != source.Name || table.DatabaseName != source.Name {
+		return false
+	}
+	schema := strings.ToLower(strings.TrimSpace(cfg.Schema))
+	tableName := strings.ToLower(strings.TrimSpace(table.TableName))
+	schemaName := strings.ToLower(strings.TrimSpace(table.SchemaName))
+	return (schemaName == schema && (tableName == "artifacts" || tableName == "artifact_revisions")) ||
+		tableName == schema+"_artifacts" ||
+		tableName == schema+"_artifact_revisions"
+}
+
+func sourceAccessDetails(access core.SourceAccessConfig) map[string]any {
+	return map[string]any{
+		"read":                     access.Read,
+		"write":                    access.Write,
+		"delete":                   access.Delete,
+		"namespace_column":         access.NamespaceColumn,
+		"owner_column":             access.OwnerColumn,
+		"missing_namespace_column": access.MissingNamespaceColumn,
+		"public_tables":            access.PublicTables,
+		"admin_tables":             access.AdminTables,
+		"blocked_tables":           access.BlockedTables,
+	}
+}
+
+func normalizeSourceAccessAllowed(accessMode string) bool {
+	return !strings.EqualFold(strings.TrimSpace(accessMode), core.AccessModeBlocked)
+}
+
+func sourceWriteModeSafe(accessMode string) bool {
+	return strings.EqualFold(strings.TrimSpace(accessMode), core.AccessModeBlocked) ||
+		strings.EqualFold(strings.TrimSpace(accessMode), core.AccessModeAdmin)
+}
+
+func sourceDeleteModeSafe(mode, accessMode string) bool {
+	return strings.EqualFold(strings.TrimSpace(accessMode), core.AccessModeBlocked) ||
+		(mode == modeDev && !strings.EqualFold(strings.TrimSpace(accessMode), core.AccessModePublic))
+}
+
+func sourceAccessRisk(action string) string {
+	switch action {
+	case "delete":
+		return "critical"
+	case "write":
+		return "high"
+	default:
+		return "medium"
+	}
+}
+
+func graphjinRootAccessSafe(root, accessMode string) bool {
+	root = strings.ToLower(strings.TrimSpace(root))
+	accessMode = strings.ToLower(strings.TrimSpace(accessMode))
+	switch root {
+	case "gj_security", "gj_runtime", "gj_config":
+		return accessMode == core.AccessModeAdmin || accessMode == core.AccessModeBlocked
+	case "gj_artifacts", "gj_workflow", "gj_workflow_execution":
+		return accessMode == core.AccessModeAccount || accessMode == core.AccessModeAdmin || accessMode == core.AccessModeBlocked
+	case "gj_catalog":
+		return accessMode == core.AccessModeAuthenticated || accessMode == core.AccessModeAccount || accessMode == core.AccessModeAdmin || accessMode == core.AccessModePublic
+	default:
+		return accessMode != core.AccessModePublic
+	}
+}
+
+func graphjinRootRisk(root string) string {
+	switch strings.ToLower(strings.TrimSpace(root)) {
+	case "gj_security", "gj_config":
+		return "critical"
+	case "gj_runtime", "gj_workflow":
+		return "high"
+	default:
+		return "medium"
+	}
 }
 
 func securityActionForSourceCapability(capability string) string {
@@ -1317,7 +1656,7 @@ func securityEvidence(row securityPolicyEval, production, prodSecurity bool) map
 }
 
 func securityPolicyDetails(row securityPolicyEval) map[string]any {
-	return map[string]any{
+	out := map[string]any{
 		"title":              row.Title,
 		"summary":            row.Summary,
 		"mode_definition":    modeDefinition(row.Mode),
@@ -1334,6 +1673,10 @@ func securityPolicyDetails(row securityPolicyEval) map[string]any {
 		"reason":         row.Reason,
 		"recommendation": row.Recommendation,
 	}
+	for k, v := range row.Details {
+		out[k] = v
+	}
+	return out
 }
 
 func securityCapabilityEnforcement(row securityPolicyEval) string {
@@ -1422,7 +1765,7 @@ func securityPolicyNanoRow(policy securityPolicyEval, now string) core.NanoRow {
 func securityFindingNanoRows(ctx securityReportContext, policies []securityPolicyEval, now string) []core.NanoRow {
 	var rows []core.NanoRow
 	for _, policy := range policies {
-		if !policy.WeakensDefault {
+		if !policy.WeakensDefault && policy.Status != securityStatusFinding {
 			continue
 		}
 		severity := policy.RiskSeverity
@@ -1493,7 +1836,7 @@ func securityFindingNanoRow(id, mode, severity, title, reason, recommendation st
 		"override_value":    policy.OverrideValue,
 		"override_explicit": policy.OverrideExplicit,
 		"override_source":   policy.OverrideSource,
-		"weakens_default":   true,
+		"weakens_default":   policy.WeakensDefault,
 		"read_only":         policy.ReadOnly,
 		"severity":          severity,
 		"severity_rank":     securitySeverityRank(severity),

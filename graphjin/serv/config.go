@@ -712,6 +712,11 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.cursor_cache_ttl", 1800)   // 30 minutes
 	vi.SetDefault("mcp.cursor_cache_size", 10000) // max in-memory entries
 
+	// Artifact store defaults.
+	vi.SetDefault("artifacts.auto_init", true)
+	vi.SetDefault("artifacts.schema", "_graphjin")
+	vi.SetDefault("artifacts.globals_path", "./config")
+
 	// Caching defaults
 	vi.SetDefault("caching.enable", false)
 	vi.SetDefault("caching.ttl", 3600)

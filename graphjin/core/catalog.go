@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/catalog"
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
 
 type CatalogSnapshot catalog.Snapshot
@@ -115,14 +116,14 @@ func BuildCatalogSnapshot(md *MetadataSnapshot, conf *Config) *CatalogSnapshot {
 
 func BuildCatalogSnapshotWithOptions(md *MetadataSnapshot, conf *Config, opts CatalogBuildOptions) *CatalogSnapshot {
 	opts = catalogBuildOptionsFromConfig(conf, opts)
-	snap := catalog.BuildWithOptions(catalogMetadataSnapshot(md), conf, opts)
+	snap := catalog.BuildWithOptions(catalogMetadataSnapshot(catalogVisibleMetadataSnapshot(md, conf)), conf, opts)
 	out := CatalogSnapshot(*snap)
 	return &out
 }
 
 func CatalogSourceRevisions(md *MetadataSnapshot, conf *Config, opts CatalogBuildOptions) map[string]string {
 	opts = catalogBuildOptionsFromConfig(conf, opts)
-	return catalog.SourceRevisions(catalogMetadataSnapshot(md), conf, opts)
+	return catalog.SourceRevisions(catalogMetadataSnapshot(catalogVisibleMetadataSnapshot(md, conf)), conf, opts)
 }
 
 func catalogBuildOptionsFromConfig(conf *Config, opts CatalogBuildOptions) CatalogBuildOptions {
@@ -163,6 +164,92 @@ func catalogSourcesFromConfig(conf *Config) []CatalogSource {
 		})
 	}
 	return out
+}
+
+func catalogVisibleMetadataSnapshot(md *MetadataSnapshot, conf *Config) *MetadataSnapshot {
+	if md == nil || conf == nil || !conf.IsSourcesUsed() {
+		return md
+	}
+	hiddenTables := make(map[string]struct{})
+	for _, source := range conf.Sources {
+		if source.CanonicalKind() != sourcecap.KindDatabase {
+			continue
+		}
+		access := conf.EffectiveSourceAccess(source)
+		for _, table := range md.Tables {
+			if !strings.EqualFold(table.DatabaseName, source.Name) {
+				continue
+			}
+			if catalogSourceAccessTableListed(access.AdminTables, table) ||
+				catalogSourceAccessTableListed(access.BlockedTables, table) {
+				hiddenTables[catalogMetadataTableKey(table.DatabaseName, table.SchemaName, table.TableName)] = struct{}{}
+			}
+		}
+	}
+	if len(hiddenTables) == 0 {
+		return md
+	}
+
+	out := &MetadataSnapshot{}
+	out.Databases = append(out.Databases, md.Databases...)
+	for _, table := range md.Tables {
+		if _, hidden := hiddenTables[catalogMetadataTableKey(table.DatabaseName, table.SchemaName, table.TableName)]; !hidden {
+			out.Tables = append(out.Tables, table)
+		}
+	}
+	for _, col := range md.Columns {
+		if _, hidden := hiddenTables[catalogMetadataTableKey(col.DatabaseName, col.SchemaName, col.TableName)]; !hidden {
+			out.Columns = append(out.Columns, col)
+		}
+	}
+	for _, rel := range md.Relationships {
+		fromHidden := catalogMetadataTableHidden(hiddenTables, rel.FromDatabaseName, rel.FromSchemaName, rel.FromTableName)
+		toHidden := catalogMetadataTableHidden(hiddenTables, rel.ToDatabaseName, rel.ToSchemaName, rel.ToTableName)
+		if !fromHidden && !toHidden {
+			out.Relationships = append(out.Relationships, rel)
+		}
+	}
+	for _, fn := range md.Functions {
+		if _, hidden := hiddenTables[catalogMetadataTableKey(fn.DatabaseName, fn.SchemaName, fn.Name)]; !hidden {
+			out.Functions = append(out.Functions, fn)
+		}
+	}
+	for _, idx := range md.Indexes {
+		if _, hidden := hiddenTables[catalogMetadataTableKey(idx.DatabaseName, idx.SchemaName, idx.TableName)]; !hidden {
+			out.Indexes = append(out.Indexes, idx)
+		}
+	}
+	return out
+}
+
+func catalogMetadataTableHidden(hidden map[string]struct{}, database, schema, table string) bool {
+	_, ok := hidden[catalogMetadataTableKey(database, schema, table)]
+	return ok
+}
+
+func catalogMetadataTableKey(database, schema, table string) string {
+	return strings.ToLower(strings.TrimSpace(database)) + ":" +
+		strings.ToLower(strings.TrimSpace(schema)) + ":" +
+		strings.ToLower(strings.TrimSpace(table))
+}
+
+func catalogSourceAccessTableListed(list []string, table MetadataTable) bool {
+	for _, item := range list {
+		item = strings.ToLower(strings.TrimSpace(item))
+		if item == "" {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(table.TableName))
+		schemaName := strings.ToLower(strings.TrimSpace(table.SchemaName))
+		databaseName := strings.ToLower(strings.TrimSpace(table.DatabaseName))
+		if item == name ||
+			item == schemaName+"."+name ||
+			item == databaseName+":"+name ||
+			item == databaseName+":"+schemaName+"."+name {
+			return true
+		}
+	}
+	return false
 }
 
 func CatalogRevisionFromSourceRevisions(source map[string]string) string {

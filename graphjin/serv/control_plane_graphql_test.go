@@ -21,7 +21,7 @@ import (
 func TestGraphQLControlPlaneCatalogQuery(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "app.sqlite3", true))
 
-	res, err := svc.gj.GraphQL(context.Background(), `query {
+	res, err := svc.gj.GraphQL(sourceModeUserTestContext(), `query {
 		gj_catalog(search: "users", where: { kind: { eq: "table" } }, order_by: { search_rank: desc }, limit: 5) {
 			id
 			kind
@@ -69,7 +69,7 @@ func TestGraphQLControlPlaneCatalogIncludesFragments(t *testing.T) {
 		t.Fatalf("refresh system nanodb: %v", err)
 	}
 
-	res, err := svc.gj.GraphQL(context.Background(), `query {
+	res, err := svc.gj.GraphQL(sourceModeUserTestContext(), `query {
 		gj_catalog(where: { kind: { eq: "fragment" } }) {
 			id
 			kind
@@ -114,7 +114,7 @@ func TestGraphQLControlPlaneCatalogIncludesFragments(t *testing.T) {
 func TestGraphQLControlPlaneCatalogIncludesSourceRows(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "app.sqlite3", true))
 
-	res, err := svc.gj.GraphQL(context.Background(), `query {
+	res, err := svc.gj.GraphQL(sourceModeUserTestContext(), `query {
 		gj_catalog(where: { kind: { eq: "source" } }, order_by: { source_kind: asc }) {
 			id
 			kind
@@ -161,6 +161,7 @@ func TestGraphQLControlPlaneCatalogIncludesSourceRows(t *testing.T) {
 
 func TestGraphQLControlPlaneWorkflowLifecycle(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowWorkflowUpdates: true}, createSQLiteDBFile(t, "app.sqlite3", true))
+	workflowCtx := sourceModeAdminTestContext()
 
 	create := `mutation {
 		gj_workflow(insert: {
@@ -179,7 +180,7 @@ func TestGraphQLControlPlaneWorkflowLifecycle(t *testing.T) {
 			catalog_revision
 		}
 	}`
-	res, err := svc.gj.GraphQL(context.Background(), create, nil, &core.RequestConfig{})
+	res, err := svc.gj.GraphQL(workflowCtx, create, nil, &core.RequestConfig{})
 	if err != nil {
 		t.Fatalf("workflow create error: %v", err)
 	}
@@ -226,7 +227,7 @@ func TestGraphQLControlPlaneWorkflowLifecycle(t *testing.T) {
 			catalog_revision
 		}
 	}`
-	res, err = svc.gj.GraphQL(context.Background(), update, nil, &core.RequestConfig{})
+	res, err = svc.gj.GraphQL(workflowCtx, update, nil, &core.RequestConfig{})
 	if err != nil {
 		t.Fatalf("workflow update error: %v", err)
 	}
@@ -260,7 +261,7 @@ func TestGraphQLControlPlaneWorkflowLifecycle(t *testing.T) {
 		t.Fatalf("expected update to change catalog_revision, got create=%q update=%q", created.Workflow.CatalogRevision, updated.Workflow.CatalogRevision)
 	}
 
-	res, err = svc.gj.GraphQL(context.Background(), `query {
+	res, err = svc.gj.GraphQL(workflowCtx, `query {
 		gj_workflow(where: { name: { eq: "customer_margin" } }) {
 			name
 			source_hash
@@ -303,7 +304,7 @@ func TestGraphQLControlPlaneWorkflowLifecycle(t *testing.T) {
 			error
 		}
 	}`
-	res, err = svc.gj.GraphQL(context.Background(), run, nil, &core.RequestConfig{})
+	res, err = svc.gj.GraphQL(workflowCtx, run, nil, &core.RequestConfig{})
 	if err != nil {
 		t.Fatalf("workflow run error: %v", err)
 	}
@@ -325,7 +326,7 @@ func TestGraphQLControlPlaneWorkflowLifecycle(t *testing.T) {
 		t.Fatalf("unexpected workflow run response: %+v", ran.Run)
 	}
 
-	res, err = svc.gj.GraphQL(context.Background(), `query {
+	res, err = svc.gj.GraphQL(workflowCtx, `query {
 		gj_workflow(where: { name: { eq: "customer_margin" } }) {
 			name
 			workflow_revision
@@ -354,7 +355,7 @@ func TestGraphQLControlPlaneWorkflowLifecycle(t *testing.T) {
 		t.Fatalf("workflow run should not invalidate workflow/catalog revisions: before=%+v after=%+v", updated.Workflow, afterRun.Workflows)
 	}
 
-	res, err = svc.gj.GraphQL(context.Background(), `mutation {
+	res, err = svc.gj.GraphQL(workflowCtx, `mutation {
 		gj_workflow(where: { name: { eq: "customer_margin" } }, delete: true) {
 			name
 			deleted
@@ -398,9 +399,10 @@ func TestWorkflowTimestampFormatIsLexSortable(t *testing.T) {
 
 func TestGraphQLControlPlaneWorkflowLifecycleSorting(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowWorkflowUpdates: true}, createSQLiteDBFile(t, "app.sqlite3", true))
+	workflowCtx := sourceModeAdminTestContext()
 
 	for _, name := range []string{"alpha", "bravo"} {
-		res, err := svc.gj.GraphQL(context.Background(), `mutation {
+		res, err := svc.gj.GraphQL(workflowCtx, `mutation {
 			gj_workflow(insert: {
 				name: "`+name+`"
 				description: "Workflow `+name+`"
@@ -416,7 +418,7 @@ func TestGraphQLControlPlaneWorkflowLifecycleSorting(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 
-	res, err := svc.gj.GraphQL(context.Background(), `query {
+	res, err := svc.gj.GraphQL(workflowCtx, `query {
 		gj_workflow(order_by: { updated_at: desc }) {
 			name
 			updated_at
@@ -518,7 +520,7 @@ func TestGraphQLControlPlaneSecurityQuery(t *testing.T) {
 		t.Fatalf("refresh system nanodb: %v", err)
 	}
 
-	res, err := svc.gj.GraphQL(context.Background(), `query {
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `query {
 		summary: gj_security(id: "summary") {
 			id
 			kind
@@ -586,6 +588,79 @@ func TestGraphQLControlPlaneSecurityQuery(t *testing.T) {
 	}
 }
 
+func TestGraphQLControlPlaneSecurityReportsSourceAccessPolicy(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "source-access-security.sqlite3", true))
+
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `query {
+		identity: gj_security(id: "policy:source_access.identity") {
+			id
+			kind
+			status
+			details_json
+		}
+		policy: gj_security(id: "policy:source_access.main.users.missing_namespace") {
+			id
+			kind
+			status
+			table_name
+			column_name
+			details_json
+		}
+		finding: gj_security(id: "finding:high:source_access.main.users.missing_namespace") {
+			id
+			kind
+			status
+			severity
+			table_name
+		}
+	}`, nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("security source access query error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("security source access query returned errors: %+v", res.Errors)
+	}
+
+	var out struct {
+		Identity *struct {
+			ID          string         `json:"id"`
+			Kind        string         `json:"kind"`
+			Status      string         `json:"status"`
+			DetailsJSON map[string]any `json:"details_json"`
+		} `json:"identity"`
+		Policy *struct {
+			ID          string         `json:"id"`
+			Kind        string         `json:"kind"`
+			Status      string         `json:"status"`
+			TableName   string         `json:"table_name"`
+			ColumnName  string         `json:"column_name"`
+			DetailsJSON map[string]any `json:"details_json"`
+		} `json:"policy"`
+		Finding *struct {
+			ID        string `json:"id"`
+			Kind      string `json:"kind"`
+			Status    string `json:"status"`
+			Severity  string `json:"severity"`
+			TableName string `json:"table_name"`
+		} `json:"finding"`
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatalf("decode security source access query: %v\n%s", err, string(res.Data))
+	}
+	if out.Identity == nil || out.Identity.Kind != "policy" || out.Identity.DetailsJSON["namespace_claim"] != "account_id" {
+		t.Fatalf("expected source access identity policy, got %s", string(res.Data))
+	}
+	if out.Policy == nil || out.Policy.Kind != "policy" || out.Policy.Status != "finding" ||
+		out.Policy.TableName != "users" || out.Policy.ColumnName != "account_id" ||
+		out.Policy.DetailsJSON["effective_behavior"] != "blocked" {
+		t.Fatalf("expected missing namespace source access policy finding, got %s", string(res.Data))
+	}
+	if out.Finding == nil || out.Finding.Kind != "finding" || out.Finding.Status != "finding" ||
+		out.Finding.Severity != "high" || out.Finding.TableName != "users" {
+		t.Fatalf("expected missing namespace finding row, got %s", string(res.Data))
+	}
+}
+
 func TestGraphQLControlPlaneSecurityConfigScan(t *testing.T) {
 	dbPath := createSQLiteDBFile(t, "config-scan.sqlite3", true)
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, dbPath)
@@ -618,7 +693,7 @@ mcp:
 		t.Fatalf("refresh system nanodb: %v", err)
 	}
 
-	res, err := svc.gj.GraphQL(context.Background(), `query {
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `query {
 		summary: gj_security(id: "config:prod:summary") {
 			id
 			scope
@@ -702,6 +777,20 @@ func TestGraphQLControlPlaneRejectsSecurityMutations(t *testing.T) {
 	}
 }
 
+func sourceModeAdminTestContext() context.Context {
+	ctx := context.WithValue(context.Background(), core.UserIDKey, "admin-user")
+	ctx = context.WithValue(ctx, core.IdentityVarsKey, map[string]interface{}{"account_id": "admin-account", "user_id": "admin-user"})
+	ctx = context.WithValue(ctx, core.IdentityRolesKey, []string{"admin"})
+	return ctx
+}
+
+func sourceModeUserTestContext() context.Context {
+	ctx := context.WithValue(context.Background(), core.UserIDKey, "app-user")
+	ctx = context.WithValue(ctx, core.IdentityVarsKey, map[string]interface{}{"account_id": "app-account", "user_id": "app-user"})
+	ctx = context.WithValue(ctx, core.IdentityRolesKey, []string{"user"})
+	return ctx
+}
+
 func TestApplySystemRoleQueryDefaultsDatabaseScoped(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
@@ -740,6 +829,72 @@ func TestApplySystemRoleQueryDefaultsDatabaseScoped(t *testing.T) {
 		t.Fatalf("expected database-scoped role defaults to keep main grant and add graphjin block: main=%v graphjin=%v roles=%+v",
 			sawMainGrant, sawGraphjinBlock, runtimeCore.Roles)
 	}
+}
+
+func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
+	t.Run("dev anon cannot bypass admin root", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "source-mode-dev-anon.sqlite3", true), func(conf *Config) {
+			conf.Core.Mode = "dev"
+			conf.Core.DefaultBlock = false
+		})
+
+		res, err := svc.gj.GraphQL(context.Background(), `query {
+			security: gj_security(id: "summary") { id }
+		}`, nil, &core.RequestConfig{})
+		if err != nil {
+			if !strings.Contains(strings.ToLower(err.Error()), "blocked") &&
+				!strings.Contains(strings.ToLower(err.Error()), "unauthorized") {
+				t.Fatalf("unexpected source-mode anon security error: %v", err)
+			}
+			return
+		}
+		var out struct {
+			Security *struct {
+				ID string `json:"id"`
+			} `json:"security"`
+		}
+		if err := json.Unmarshal(res.Data, &out); err != nil {
+			t.Fatalf("decode anon source-mode response: %v\n%s", err, string(res.Data))
+		}
+		if out.Security != nil {
+			t.Fatalf("expected source-mode anon to be blocked from gj_security, got %s", string(res.Data))
+		}
+	})
+
+	t.Run("configured non-admin role gets catalog but not security", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "source-mode-custom-role.sqlite3", true), func(conf *Config) {
+			conf.Core.Mode = "agentic"
+			conf.Core.Roles = append(conf.Core.Roles, core.Role{Name: "member"})
+		})
+		ctx := context.WithValue(context.Background(), core.UserIDKey, "user_1")
+		ctx = context.WithValue(ctx, core.IdentityVarsKey, map[string]interface{}{"account_id": "acct_1", "user_id": "user_1"})
+		ctx = context.WithValue(ctx, core.IdentityRolesKey, []string{"member"})
+
+		res, err := svc.gj.GraphQL(ctx, `query {
+			catalog: gj_catalog(limit: 1) { id }
+			security: gj_security(id: "summary") { id }
+		}`, nil, &core.RequestConfig{})
+		if err != nil {
+			t.Fatalf("source-mode custom role query error: %v", err)
+		}
+		var out struct {
+			Catalog []struct {
+				ID string `json:"id"`
+			} `json:"catalog"`
+			Security *struct {
+				ID string `json:"id"`
+			} `json:"security"`
+		}
+		if err := json.Unmarshal(res.Data, &out); err != nil {
+			t.Fatalf("decode custom role source-mode response: %v\n%s", err, string(res.Data))
+		}
+		if len(out.Catalog) == 0 {
+			t.Fatalf("expected source-mode custom role to read gj_catalog, got %s", string(res.Data))
+		}
+		if out.Security != nil {
+			t.Fatalf("expected source-mode custom role to be blocked from gj_security, got %s", string(res.Data))
+		}
+	})
 }
 
 func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
@@ -782,14 +937,11 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 	t.Run("explicit security grant unblocks only gj_security", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-security-grant.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "agentic"
-			conf.Core.Roles = append(conf.Core.Roles, core.Role{
-				Name: "user",
-				Tables: []core.RoleTable{{
-					Database: "graphjin",
-					Name:     "gj_security",
-					Query:    &core.Query{Block: false},
-				}},
-			})
+			for i := range conf.Core.Sources {
+				if conf.Core.Sources[i].Name == "graphjin" {
+					conf.Core.Sources[i].Access.Roots = map[string]string{"gj_security": core.AccessModeAuthenticated}
+				}
+			}
 		})
 
 		res, err := svc.gj.GraphQL(userCtx, `query {
@@ -846,6 +998,7 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 
 func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 	userCtx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
+	adminCtx := sourceModeAdminTestContext()
 	query := `query {
 		gj_runtime(where: { kind: { in: ["status", "event"] } }, order_by: { created_at: desc }, limit: 20) {
 			kind
@@ -872,7 +1025,7 @@ func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 		}
 	})
 
-	t.Run("agentic user can read bounded runtime rows", func(t *testing.T) {
+	t.Run("agentic admin can read bounded runtime rows", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-agentic.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "agentic"
 		})
@@ -884,7 +1037,7 @@ func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 			NextAction: "Follow the test next action.",
 			Details:    map[string]any{"password": "secret", "safe": "visible"},
 		})
-		res, err := svc.gj.GraphQL(userCtx, query, nil, &core.RequestConfig{})
+		res, err := svc.gj.GraphQL(adminCtx, query, nil, &core.RequestConfig{})
 		if err != nil {
 			t.Fatalf("runtime query error: %v", err)
 		}
@@ -918,7 +1071,7 @@ func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 		}
 	})
 
-	t.Run("anon and runtime read false are blocked", func(t *testing.T) {
+	t.Run("anon, non-admin, and runtime read false are blocked", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-agentic-blocks.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "agentic"
 		})
@@ -935,14 +1088,14 @@ func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 		}
 		res, err = svc.gj.GraphQL(context.WithValue(context.Background(), core.UserRoleKey, "user"), query, nil, &core.RequestConfig{})
 		if err != nil {
-			t.Fatalf("explicit user role runtime query error: %v", err)
+			t.Fatalf("explicit user role runtime query should be blocked by role, not fail compile: %v", err)
 		}
 		var roleOut map[string]json.RawMessage
 		if err := json.Unmarshal(res.Data, &roleOut); err != nil {
 			t.Fatalf("decode user role response: %v\n%s", err, string(res.Data))
 		}
-		if string(roleOut["gj_runtime"]) == "null" {
-			t.Fatalf("expected explicit user role to read gj_runtime, got %s", string(res.Data))
+		if string(roleOut["gj_runtime"]) != "null" {
+			t.Fatalf("expected explicit user role to block gj_runtime, got %s", string(res.Data))
 		}
 		res, err = svc.gj.GraphQL(context.WithValue(userCtx, core.UserRoleKey, "anon"), query, nil, &core.RequestConfig{})
 		if err != nil {
@@ -964,7 +1117,7 @@ func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 				}
 			}
 		})
-		res, err = disabled.gj.GraphQL(userCtx, query, nil, &core.RequestConfig{})
+		res, err = disabled.gj.GraphQL(adminCtx, query, nil, &core.RequestConfig{})
 		if err != nil {
 			t.Fatalf("runtime.read false query should be blocked by role, not fail compile: %v", err)
 		}
@@ -981,7 +1134,7 @@ func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 func TestGraphQLControlPlaneCatalogSecurityGuidance(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "app.sqlite3", true))
 
-	res, err := svc.gj.GraphQL(context.Background(), `query {
+	res, err := svc.gj.GraphQL(sourceModeUserTestContext(), `query {
 		gj_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } }, limit: 1) {
 			name
 			summary
@@ -1374,7 +1527,7 @@ func TestGraphQLControlPlaneRemovesLegacyConfigRoots(t *testing.T) {
 func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "app.sqlite3", true))
 
-	res, err := svc.gj.GraphQL(context.Background(), `mutation {
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
 		gj_config(id: "current", update: {
 			mcp: { allow_raw_queries: true, allow_workflow_execution: true }
 		}) {
@@ -1415,7 +1568,7 @@ func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 		t.Fatal("expected config update to update mcp.allow_workflow_execution")
 	}
 
-	_, err = svc.gj.GraphQL(context.Background(), `mutation {
+	_, err = svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
 		gj_config(id: "current", update: {
 			mcp: { unsupported_flag: true }
 		}) {
