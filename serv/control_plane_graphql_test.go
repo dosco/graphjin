@@ -121,6 +121,8 @@ func TestGraphQLControlPlaneCatalogIncludesSourceRows(t *testing.T) {
 			name
 			source
 			source_kind
+			owner_source
+			owner_sources_json
 			evidence_json
 			examples_json
 			safety_json
@@ -136,6 +138,8 @@ func TestGraphQLControlPlaneCatalogIncludesSourceRows(t *testing.T) {
 			Name         string `json:"name"`
 			Source       string `json:"source"`
 			SourceKind   string `json:"source_kind"`
+			OwnerSource  string `json:"owner_source"`
+			OwnerSources string `json:"owner_sources_json"`
 			EvidenceJSON string `json:"evidence_json"`
 			ExamplesJSON string `json:"examples_json"`
 			SafetyJSON   string `json:"safety_json"`
@@ -147,7 +151,8 @@ func TestGraphQLControlPlaneCatalogIncludesSourceRows(t *testing.T) {
 	kinds := map[string]bool{}
 	for _, item := range out.Items {
 		if item.Kind != "source" || item.SourceKind == "" || !strings.Contains(item.EvidenceJSON, `"source_kind":"`+item.SourceKind+`"`) ||
-			!strings.Contains(item.EvidenceJSON, "supported_capabilities") {
+			!strings.Contains(item.EvidenceJSON, "supported_capabilities") ||
+			item.OwnerSource != item.Source || !strings.Contains(item.OwnerSources, `"`+item.Source+`"`) {
 			t.Fatalf("unexpected source row: %+v", item)
 		}
 		kinds[item.SourceKind] = true
@@ -156,6 +161,159 @@ func TestGraphQLControlPlaneCatalogIncludesSourceRows(t *testing.T) {
 		if !kinds[kind] {
 			t.Fatalf("missing source kind %q in rows %+v", kind, out.Items)
 		}
+	}
+}
+
+func TestSystemNanoDBRefreshForSourcesPatchesOnlyOwnedCatalogRows(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "app.sqlite3", true))
+
+	if err := core.UpdateNanoDB(svc.systemNanoDB, func(tx *core.NanoUpdate) error {
+		if err := tx.ReplaceRows("main", "gj_catalog", nil, []core.NanoRow{
+			{"id": "table:main.public.stale", "kind": "table", "title": "stale", "owner_source": "main", "owner_sources_json": `["main"]`},
+			{"id": "table:other.public.keep", "kind": "table", "title": "keep", "owner_source": "other", "owner_sources_json": `["other"]`},
+		}); err != nil {
+			return err
+		}
+		return tx.ReplaceRows("main", "gj_security", nil, []core.NanoRow{
+			{"id": "finding:stale", "kind": "finding", "summary_json": `{"stale":true}`},
+		})
+	}); err != nil {
+		t.Fatalf("seed catalog rows: %v", err)
+	}
+	if err := svc.refreshSystemNanoDBForSources([]string{"main"}); err != nil {
+		t.Fatalf("source scoped refresh: %v", err)
+	}
+
+	rows, ok := svc.systemNanoDB.Snapshot().Rows("main", "gj_catalog")
+	if !ok {
+		t.Fatal("missing gj_catalog rows")
+	}
+	ids := map[string]bool{}
+	for _, row := range rows {
+		ids[fmt.Sprint(row["id"])] = true
+	}
+	if ids["table:main.public.stale"] {
+		t.Fatalf("stale main-owned row survived scoped refresh")
+	}
+	if !ids["table:other.public.keep"] {
+		t.Fatalf("unrelated owner row was removed by scoped refresh")
+	}
+	if !ids["table:main:main.users"] {
+		t.Fatalf("refreshed main users table row missing; ids=%v", ids)
+	}
+	securityRows, ok := svc.systemNanoDB.Snapshot().Rows("main", "gj_security")
+	if !ok || len(securityRows) == 0 {
+		t.Fatalf("security rows missing after scoped refresh")
+	}
+	for _, row := range securityRows {
+		if row["id"] == "finding:stale" {
+			t.Fatalf("stale security row survived scoped refresh")
+		}
+	}
+}
+
+func TestGraphQLConfigUpdatePatchesCatalogRowsForChangedSource(t *testing.T) {
+	livePath := createSQLiteDBFile(t, "live.sqlite3", true)
+	replacementPath := createSQLiteDBFile(t, "replacement.sqlite3", true)
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, livePath)
+
+	if err := core.UpdateNanoDB(svc.systemNanoDB, func(tx *core.NanoUpdate) error {
+		if err := tx.ReplaceRows("main", "gj_catalog", nil, []core.NanoRow{
+			{"id": "table:main.public.stale", "kind": "table", "title": "stale", "owner_source": "main", "owner_sources_json": `["main"]`},
+			{"id": "table:other.public.keep", "kind": "table", "title": "keep", "owner_source": "other", "owner_sources_json": `["other"]`},
+		}); err != nil {
+			return err
+		}
+		return tx.ReplaceTable("main", "gj_config", []core.NanoRow{{"id": "current", "catalog_revision": "old"}})
+	}); err != nil {
+		t.Fatalf("seed catalog rows: %v", err)
+	}
+
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			sources: [{
+				name: "main",
+				kind: "database",
+				type: "sqlite",
+				path: %q,
+				default: true
+			}, {
+				name: "graphjin",
+				kind: "graphjin"
+			}, {
+				name: "workflows",
+				kind: "workflow"
+			}]
+		}) {
+			id
+			catalog_revision
+		}
+	}`, replacementPath), nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("config update error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("config update returned errors: %+v", res.Errors)
+	}
+
+	rows, ok := svc.systemNanoDB.Snapshot().Rows("main", "gj_catalog")
+	if !ok {
+		t.Fatal("missing gj_catalog rows")
+	}
+	ids := map[string]bool{}
+	for _, row := range rows {
+		ids[fmt.Sprint(row["id"])] = true
+	}
+	if ids["table:main.public.stale"] {
+		t.Fatalf("stale main-owned row survived config-scoped catalog refresh")
+	}
+	if !ids["table:other.public.keep"] {
+		t.Fatalf("unrelated owner row was removed by config-scoped catalog refresh")
+	}
+	if !ids["table:main:main.users"] {
+		t.Fatalf("refreshed main users table row missing; ids=%v", ids)
+	}
+	configRows, ok := svc.systemNanoDB.Snapshot().Rows("main", "gj_config")
+	if !ok || len(configRows) != 1 || configRows[0]["catalog_revision"] == "old" || fmt.Sprint(configRows[0]["catalog_revision"]) == "" {
+		t.Fatalf("expected gj_config catalog revision to update, rows=%#v ok=%v", configRows, ok)
+	}
+}
+
+func TestCoreConfigSourceScopedCatalogChangeDetection(t *testing.T) {
+	oldCore := core.Config{
+		Sources: []core.SourceConfig{{Name: "app", Kind: "database", Type: "sqlite"}, {Name: "graphjin", Kind: "graphjin"}},
+		Databases: map[string]core.DatabaseConfig{
+			"app": {Type: "sqlite", Path: "old.sqlite3"},
+		},
+	}
+	newCore := cloneCoreConfig(oldCore)
+	newCore.Databases["app"] = core.DatabaseConfig{Type: "sqlite", Path: "new.sqlite3"}
+
+	changed := changedCatalogSources(oldCore, newCore)
+	if len(changed) != 1 {
+		t.Fatalf("changed sources = %+v", changed)
+	}
+	if _, ok := changed["app"]; !ok {
+		t.Fatalf("expected app source to change, got %+v", changed)
+	}
+	if !coreConfigChangeScopedToSources(oldCore, newCore, changed) {
+		t.Fatal("database config for matching source should be source scoped")
+	}
+	if !sourceScopedCatalogPatchAllowed(oldCore, newCore, changed) {
+		t.Fatal("database source change should allow source-scoped catalog patch")
+	}
+
+	graphjinChanged := cloneCoreConfig(oldCore)
+	graphjinChanged.Sources[1].ReadOnly = true
+	graphjinSources := changedCatalogSources(oldCore, graphjinChanged)
+	if sourceScopedCatalogPatchAllowed(oldCore, graphjinChanged, graphjinSources) {
+		t.Fatal("graphjin source changes should use full catalog refresh")
+	}
+
+	broad := cloneCoreConfig(newCore)
+	broad.DefaultBlock = !broad.DefaultBlock
+	if coreConfigChangeScopedToSources(oldCore, broad, changedCatalogSources(oldCore, broad)) {
+		t.Fatal("broader core config change should not use source-scoped catalog patch")
 	}
 }
 

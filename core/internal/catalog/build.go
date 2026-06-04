@@ -74,19 +74,21 @@ func addSources(out *Snapshot, opts BuildOptions) {
 			"capability_details":     sourceCapabilityDetails(kind),
 		}
 		out.Cards = append(out.Cards, Card{
-			ID:            cardID,
-			Kind:          "source",
-			Title:         name,
-			Summary:       summary,
-			Source:        name,
-			SourceKind:    kind,
-			RiskLevel:     riskForReadOnly(source.ReadOnly),
-			Confidence:    "high",
-			EvidenceJSON:  mustJSON(details),
-			ExamplesJSON:  sourceExamples(source),
-			SafetyJSON:    mustJSON(map[string]any{"capabilities": "Source capabilities grant authenticated user access only; anonymous access is controlled separately.", "read_only_blocks_mutation": source.ReadOnly}),
-			SuggestedNext: suggestedNextJSON(opts, "query_catalog"),
-			DetailRef:     cardID,
+			ID:               cardID,
+			Kind:             "source",
+			Title:            name,
+			Summary:          summary,
+			Source:           name,
+			SourceKind:       kind,
+			OwnerSource:      name,
+			OwnerSourcesJSON: ownerSourcesJSON(name),
+			RiskLevel:        riskForReadOnly(source.ReadOnly),
+			Confidence:       "high",
+			EvidenceJSON:     mustJSON(details),
+			ExamplesJSON:     sourceExamples(source),
+			SafetyJSON:       mustJSON(map[string]any{"capabilities": "Source capabilities grant authenticated user access only; anonymous access is controlled separately.", "read_only_blocks_mutation": source.ReadOnly}),
+			SuggestedNext:    suggestedNextJSON(opts, "query_catalog"),
+			DetailRef:        cardID,
 		})
 		out.Details = append(out.Details, CardDetail{
 			ID:       cardID + ":capabilities",
@@ -440,15 +442,17 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 			summary += ", read-only"
 		}
 		out.Cards = append(out.Cards, Card{
-			ID:           id,
-			Kind:         "database",
-			Title:        db.Name,
-			Summary:      summary,
-			DatabaseName: db.Name,
-			Source:       "core.metadata",
-			RiskLevel:    riskForReadOnly(db.ReadOnly),
-			Confidence:   "high",
-			EvidenceJSON: mustJSON(db),
+			ID:               id,
+			Kind:             "database",
+			Title:            db.Name,
+			Summary:          summary,
+			DatabaseName:     db.Name,
+			Source:           "core.metadata",
+			OwnerSource:      db.Name,
+			OwnerSourcesJSON: ownerSourcesJSON(db.Name),
+			RiskLevel:        riskForReadOnly(db.ReadOnly),
+			Confidence:       "high",
+			EvidenceJSON:     mustJSON(db),
 		})
 		out.Nodes = append(out.Nodes, Node{ID: id, Kind: "database", Name: db.Name, Summary: summary, CardID: id})
 	}
@@ -467,20 +471,22 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 		keyCols := keyColumns(columnsByTable[t.ID])
 		summary := tableSummary(t, keyCols)
 		out.Cards = append(out.Cards, Card{
-			ID:            cardID,
-			Kind:          "table",
-			Title:         qualifiedName(t.DatabaseName, t.SchemaName, t.TableName),
-			Summary:       summary,
-			DatabaseName:  t.DatabaseName,
-			SchemaName:    t.SchemaName,
-			TableName:     t.TableName,
-			Source:        "core.metadata",
-			RiskLevel:     "low",
-			Confidence:    "high",
-			EvidenceJSON:  mustJSON(t),
-			ExamplesJSON:  tableExamples(t, keyCols),
-			SuggestedNext: suggestedNextJSON(opts, "query_catalog", "validate_where_clause"),
-			DetailRef:     cardID,
+			ID:               cardID,
+			Kind:             "table",
+			Title:            qualifiedName(t.DatabaseName, t.SchemaName, t.TableName),
+			Summary:          summary,
+			DatabaseName:     t.DatabaseName,
+			SchemaName:       t.SchemaName,
+			TableName:        t.TableName,
+			Source:           "core.metadata",
+			OwnerSource:      t.DatabaseName,
+			OwnerSourcesJSON: ownerSourcesJSON(t.DatabaseName),
+			RiskLevel:        "low",
+			Confidence:       "high",
+			EvidenceJSON:     mustJSON(t),
+			ExamplesJSON:     tableExamples(t, keyCols),
+			SuggestedNext:    suggestedNextJSON(opts, "query_catalog", "validate_where_clause"),
+			DetailRef:        cardID,
 		})
 		out.Details = append(out.Details, CardDetail{
 			ID:       cardID + ":columns",
@@ -510,23 +516,25 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 		sensitive, sensitivity := columnSensitivity(c)
 		summary := columnSummary(c, sensitive, sensitivity)
 		out.Cards = append(out.Cards, Card{
-			ID:            cardID,
-			Kind:          "column",
-			Title:         qualifiedName(c.DatabaseName, c.SchemaName, c.TableName) + "." + c.ColumnName,
-			Summary:       summary,
-			DatabaseName:  c.DatabaseName,
-			SchemaName:    c.SchemaName,
-			TableName:     c.TableName,
-			ColumnName:    c.ColumnName,
-			Source:        "core.metadata",
-			RiskLevel:     riskForSensitive(sensitive),
-			Confidence:    "medium",
-			Sensitive:     sensitive,
-			Sensitivity:   sensitivity,
-			EvidenceJSON:  mustJSON(c),
-			ExamplesJSON:  columnExamples(c),
-			SuggestedNext: suggestedNextJSON(opts, columnSuggestedNext(c)...),
-			DetailRef:     cardID,
+			ID:               cardID,
+			Kind:             "column",
+			Title:            qualifiedName(c.DatabaseName, c.SchemaName, c.TableName) + "." + c.ColumnName,
+			Summary:          summary,
+			DatabaseName:     c.DatabaseName,
+			SchemaName:       c.SchemaName,
+			TableName:        c.TableName,
+			ColumnName:       c.ColumnName,
+			Source:           "core.metadata",
+			OwnerSource:      c.DatabaseName,
+			OwnerSourcesJSON: ownerSourcesJSON(c.DatabaseName),
+			RiskLevel:        riskForSensitive(sensitive),
+			Confidence:       "medium",
+			Sensitive:        sensitive,
+			Sensitivity:      sensitivity,
+			EvidenceJSON:     mustJSON(c),
+			ExamplesJSON:     columnExamples(c),
+			SuggestedNext:    suggestedNextJSON(opts, columnSuggestedNext(c)...),
+			DetailRef:        cardID,
 		})
 		out.Nodes = append(out.Nodes, Node{ID: nodeID, Kind: "column", Name: c.ColumnName, Summary: summary, CardID: cardID})
 		out.Edges = append(out.Edges, Edge{ID: "edge:table-column:" + c.ID, FromID: "node:table:" + c.TableID, ToID: nodeID, Kind: "has_column", Summary: "Table has column"})
@@ -535,20 +543,27 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 	for _, r := range snapshot.Relationships {
 		cardID := "relationship:" + r.ID
 		summary := fmt.Sprintf("%s.%s -> %s.%s", r.FromTableName, r.FromColumnName, r.ToTableName, r.ToColumnName)
+		owners := relationshipOwnerSources(r)
+		ownerSource := ""
+		if len(owners) != 0 {
+			ownerSource = owners[0]
+		}
 		out.Cards = append(out.Cards, Card{
-			ID:           cardID,
-			Kind:         "relationship",
-			Title:        summary,
-			Summary:      "Relationship discovered from database metadata. Use it to plan nested GraphJin queries instead of guessing join paths.",
-			DatabaseName: r.FromDatabaseName,
-			SchemaName:   r.FromSchemaName,
-			TableName:    r.FromTableName,
-			ColumnName:   r.FromColumnName,
-			Source:       valueOrDefault(r.Source, "core.metadata"),
-			RiskLevel:    "low",
-			Confidence:   "high",
-			EvidenceJSON: mustJSON(r),
-			ExamplesJSON: mustJSON([]string{relationshipExample(r)}),
+			ID:               cardID,
+			Kind:             "relationship",
+			Title:            summary,
+			Summary:          "Relationship discovered from database metadata. Use it to plan nested GraphJin queries instead of guessing join paths.",
+			DatabaseName:     r.FromDatabaseName,
+			SchemaName:       r.FromSchemaName,
+			TableName:        r.FromTableName,
+			ColumnName:       r.FromColumnName,
+			Source:           valueOrDefault(r.Source, "core.metadata"),
+			OwnerSource:      ownerSource,
+			OwnerSourcesJSON: mustJSON(owners),
+			RiskLevel:        "low",
+			Confidence:       "high",
+			EvidenceJSON:     mustJSON(r),
+			ExamplesJSON:     mustJSON([]string{relationshipExample(r)}),
 		})
 		out.Edges = append(out.Edges, Edge{ID: "edge:" + cardID, FromID: "node:column:" + r.FromColumnID, ToID: "node:column:" + r.ToColumnID, Kind: "references", Summary: summary})
 	}
@@ -556,16 +571,18 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 	for _, fn := range snapshot.Functions {
 		cardID := "function:" + fn.ID
 		out.Cards = append(out.Cards, Card{
-			ID:           cardID,
-			Kind:         "function",
-			Title:        fn.Name,
-			Summary:      functionSummary(fn),
-			DatabaseName: fn.DatabaseName,
-			SchemaName:   fn.SchemaName,
-			Source:       "core.metadata",
-			RiskLevel:    "low",
-			Confidence:   "high",
-			EvidenceJSON: mustJSON(fn),
+			ID:               cardID,
+			Kind:             "function",
+			Title:            fn.Name,
+			Summary:          functionSummary(fn),
+			DatabaseName:     fn.DatabaseName,
+			SchemaName:       fn.SchemaName,
+			Source:           "core.metadata",
+			OwnerSource:      fn.DatabaseName,
+			OwnerSourcesJSON: ownerSourcesJSON(fn.DatabaseName),
+			RiskLevel:        "low",
+			Confidence:       "high",
+			EvidenceJSON:     mustJSON(fn),
 		})
 	}
 }
@@ -1163,6 +1180,14 @@ func columnSuggestedNext(c MetadataColumn) []string {
 
 func relationshipExample(r MetadataRelationship) string {
 	return fmt.Sprintf("{ %s { %s { %s } } }", r.FromTableName, r.ToTableName, r.ToColumnName)
+}
+
+func ownerSourcesJSON(values ...string) string {
+	return mustJSON(sortedStrings(values))
+}
+
+func relationshipOwnerSources(r MetadataRelationship) []string {
+	return sortedStrings([]string{r.FromDatabaseName, r.ToDatabaseName})
 }
 
 func functionSummary(fn MetadataFunction) string {

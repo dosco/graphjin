@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS gj_catalog_cards (
   table_name TEXT NOT NULL DEFAULT '',
   column_name TEXT NOT NULL DEFAULT '',
   source TEXT NOT NULL DEFAULT '',
+  owner_source TEXT NOT NULL DEFAULT '',
+  owner_sources_json TEXT NOT NULL DEFAULT '',
   risk_level TEXT NOT NULL DEFAULT '',
   confidence TEXT NOT NULL DEFAULT '',
   sensitive BOOLEAN NOT NULL DEFAULT 0,
@@ -180,11 +182,28 @@ CREATE TABLE IF NOT EXISTS gj_capabilities (
 `
 
 func (s *graphjinService) initMetadataGraphBeforeCore() error {
-	if !s.conf.Core.MetadataEnabled() && !s.conf.catalogToolsEnabled() && !s.conf.graphjinControlPlaneEnabled() && !s.conf.workflowsSourceEnabled() && !s.conf.runtimeRootRegistered() && !s.conf.Core.Artifacts.Enabled {
+	if !s.metadataGraphEnabledForCore(&s.conf.Core) {
 		s.metadataDB = ""
 		return nil
 	}
 	return s.initSystemNanoDBBeforeCore()
+}
+
+func (s *graphjinService) metadataGraphEnabledForCore(conf *core.Config) bool {
+	if conf == nil {
+		return false
+	}
+	if conf.MetadataEnabled() || conf.CatalogEnabled() || conf.Artifacts.Enabled {
+		return true
+	}
+	if s == nil || s.conf == nil {
+		return false
+	}
+	scoped := *s.conf
+	scoped.Core = *conf
+	return scoped.graphjinControlPlaneEnabled() ||
+		scoped.workflowsSourceEnabled() ||
+		scoped.runtimeRootRegistered()
 }
 
 func (s *graphjinService) ensureSystemHostDBBeforeCore() error {
@@ -229,7 +248,7 @@ func (s *graphjinService) ensureSystemHostDBBeforeCore() error {
 }
 
 func (s *graphjinService) initMetadataGraphForRuntime(conf *core.Config, runtimeCore *core.Config, dbs map[string]*sql.DB, managedDBs map[string]managedDB) (string, error) {
-	if conf == nil || !conf.MetadataEnabled() {
+	if conf == nil || !s.metadataGraphEnabledForCore(conf) {
 		return "", nil
 	}
 	if runtimeCore == nil {
@@ -324,7 +343,7 @@ func ensureMetadataCatalogCardColumns(ctx context.Context, db *sql.DB) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	for _, col := range []string{"created_at", "updated_at"} {
+	for _, col := range []string{"created_at", "updated_at", "owner_source", "owner_sources_json"} {
 		if _, ok := cols[col]; ok {
 			continue
 		}
@@ -551,10 +570,10 @@ func replaceMetadataCatalogTables(ctx context.Context, exec metadataExecer, cata
 	}
 	for _, card := range catalogSnapshot.Cards {
 		if _, err := exec.ExecContext(ctx, `INSERT INTO gj_catalog_cards(id, kind, title, summary, database_name, schema_name, table_name, column_name,
-		  source, risk_level, confidence, sensitive, sensitivity, evidence_json, examples_json, suggested_next_json, detail_ref, created_at, updated_at)
-		  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  source, owner_source, owner_sources_json, risk_level, confidence, sensitive, sensitivity, evidence_json, examples_json, suggested_next_json, detail_ref, created_at, updated_at)
+		  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			card.ID, card.Kind, card.Title, card.Summary, card.DatabaseName, card.SchemaName, card.TableName, card.ColumnName,
-			card.Source, card.RiskLevel, card.Confidence, card.Sensitive, card.Sensitivity, card.EvidenceJSON, card.ExamplesJSON, card.SuggestedNext, card.DetailRef,
+			card.Source, card.OwnerSource, card.OwnerSourcesJSON, card.RiskLevel, card.Confidence, card.Sensitive, card.Sensitivity, card.EvidenceJSON, card.ExamplesJSON, card.SuggestedNext, card.DetailRef,
 			card.CreatedAt, card.UpdatedAt); err != nil {
 			return err
 		}

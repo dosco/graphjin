@@ -723,6 +723,25 @@ func (c *Config) NormalizeSources() error {
 	return nil
 }
 
+// RenormalizeSources re-runs source normalization after a runtime update has
+// replaced the public sources list on a config that was already normalized.
+func (c *Config) RenormalizeSources() error {
+	if c == nil {
+		return nil
+	}
+	c.sourcesNormalized = false
+	if c.IsSourcesUsed() {
+		c.Databases = nil
+		c.Filesystems = nil
+		c.OpenAPISpecsDir = ""
+		c.OpenAPI = nil
+		for i := range c.Tables {
+			c.Tables[i].Database = ""
+		}
+	}
+	return c.NormalizeSources()
+}
+
 func (c *Config) defaultSQLSource(sqlSources []string) string {
 	for _, source := range c.Sources {
 		if source.Default {

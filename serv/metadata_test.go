@@ -204,7 +204,7 @@ func TestMetadataCatalogCardsLifecycleColumns(t *testing.T) {
 	if _, err := db.Exec(metadataSchemaSQL); err != nil {
 		t.Fatal(err)
 	}
-	for _, col := range []string{"created_at", "updated_at"} {
+	for _, col := range []string{"created_at", "updated_at", "owner_source", "owner_sources_json"} {
 		var found int
 		if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('gj_catalog_cards') WHERE name = ?`, col).Scan(&found); err != nil {
 			t.Fatalf("check column %s: %v", col, err)
@@ -342,7 +342,7 @@ func TestEnsureMetadataCatalogCardColumnsMigratesExistingTable(t *testing.T) {
 	if err := ensureMetadataCatalogCardColumns(context.Background(), db); err != nil {
 		t.Fatalf("migrate catalog card columns: %v", err)
 	}
-	for _, col := range []string{"created_at", "updated_at"} {
+	for _, col := range []string{"created_at", "updated_at", "owner_source", "owner_sources_json"} {
 		var found int
 		if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('gj_catalog_cards') WHERE name = ?`, col).Scan(&found); err != nil {
 			t.Fatalf("check migrated column %s: %v", col, err)

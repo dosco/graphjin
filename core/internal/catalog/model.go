@@ -113,6 +113,8 @@ type Card struct {
 	ColumnName       string `json:"column_name,omitempty"`
 	Source           string `json:"source,omitempty"`
 	SourceKind       string `json:"source_kind,omitempty"`
+	OwnerSource      string `json:"owner_source,omitempty"`
+	OwnerSourcesJSON string `json:"owner_sources_json,omitempty"`
 	RiskLevel        string `json:"risk_level,omitempty"`
 	Confidence       string `json:"confidence,omitempty"`
 	Sensitive        bool   `json:"sensitive,omitempty"`

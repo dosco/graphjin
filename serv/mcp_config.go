@@ -550,7 +550,11 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			errors = append(errors, fmt.Sprintf("sources: %v", err))
 		} else {
 			conf.Sources = parsed
-			changes = append(changes, "updated sources")
+			if err := conf.RenormalizeSources(); err != nil {
+				errors = append(errors, fmt.Sprintf("sources: %v", err))
+			} else {
+				changes = append(changes, "updated sources")
+			}
 		}
 	}
 
@@ -929,6 +933,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	}
 
 	var availableDBs []string
+	oldCore := cloneCoreConfig(ms.service.conf.Core)
 	var sealedKeystore *localKeystore
 	var sealedSecretRefs map[string]struct{}
 	coreChanged := !reflect.DeepEqual(stagedCore, ms.service.conf.Core)
@@ -1028,6 +1033,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			}
 		}
 		ms.commitStagedRuntime(persistedCore, stage)
+		if err := ms.service.refreshCatalogAfterCoreConfigChange(oldCore, persistedCore, "config mutation"); err != nil {
+			errors = append(errors, fmt.Sprintf("catalog refresh error: %s", redactRuntimeError(err)))
+		}
 		if ms.service.gj != nil && ms.service.gj.SchemaReady() {
 			changes = append(changes, "configuration validated and runtime reloaded transactionally")
 		}
@@ -1039,6 +1047,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			errors = append(errors, err.Error())
 		} else {
 			changes = append(changes, mcpChanges...)
+			ms.service.markCatalogChanged("config mutation")
 		}
 	}
 
@@ -1941,8 +1950,10 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 			return stage, fmt.Errorf("database connected but schema discovery found no tables")
 		}
 	}
-	if err := ms.service.refreshMetadataGraphForRuntime(stage.gj, stagedCore, stage.metadataDB, stage.dbs, stage.managedDBs); err != nil {
-		return stage, err
+	if ms.service.systemNanoDB == nil {
+		if err := ms.service.refreshMetadataGraphForRuntime(stage.gj, stagedCore, stage.metadataDB, stage.dbs, stage.managedDBs); err != nil {
+			return stage, err
+		}
 	}
 
 	return stage, nil
