@@ -243,17 +243,17 @@ func (ms *mcpServer) registerConfigTools() {
 
 // MCPConfigResponse represents a section of the configuration for MCP
 type MCPConfigResponse struct {
-	ActiveDatabase string                         `json:"active_database,omitempty"`
-	Sources        []core.SourceConfig            `json:"sources,omitempty"`
-	Databases      map[string]core.DatabaseConfig `json:"databases,omitempty"`
-	Relationships  []core.RelationshipConfig      `json:"relationships,omitempty"`
-	Metadata       core.MetadataConfig            `json:"metadata,omitempty"`
-	Tables         []core.Table                   `json:"tables,omitempty"`
-	Roles          []RoleInfo                     `json:"roles,omitempty"`
-	Blocklist      []string                       `json:"blocklist,omitempty"`
-	Functions      []core.Function                `json:"functions,omitempty"`
-	Resolvers      []core.ResolverConfig          `json:"resolvers,omitempty"`
-	MCP            MCPConfig                      `json:"mcp,omitempty"`
+	ActiveDatabase string              `json:"active_database,omitempty"`
+	Sources        any                 `json:"sources,omitempty"`
+	Databases      any                 `json:"databases,omitempty"`
+	Relationships  any                 `json:"relationships,omitempty"`
+	Metadata       core.MetadataConfig `json:"metadata,omitempty"`
+	Tables         any                 `json:"tables,omitempty"`
+	Roles          any                 `json:"roles,omitempty"`
+	Blocklist      []string            `json:"blocklist,omitempty"`
+	Functions      any                 `json:"functions,omitempty"`
+	Resolvers      any                 `json:"resolvers,omitempty"`
+	MCP            MCPConfig           `json:"mcp,omitempty"`
 }
 
 // RoleInfo provides role information safe for JSON serialization
@@ -280,35 +280,35 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 
 	switch strings.ToLower(section) {
 	case "sources":
-		result.Sources = conf.Sources
+		result.Sources = redactedConfigValue(conf.Sources)
 	case "relationships":
-		result.Relationships = conf.Relationships
+		result.Relationships = redactedConfigValue(conf.Relationships)
 	case "databases":
-		result.Databases = conf.Databases
+		result.Databases = redactedConfigValue(conf.Databases)
 	case "metadata":
 		result.Metadata = conf.Metadata
 	case "tables":
-		result.Tables = conf.Tables
+		result.Tables = redactedConfigValue(conf.Tables)
 	case "roles":
-		result.Roles = convertRolesToInfo(conf.Roles)
+		result.Roles = redactedConfigValue(convertRolesToInfo(conf.Roles))
 	case "blocklist":
 		result.Blocklist = conf.Blocklist
 	case "functions":
-		result.Functions = conf.Functions
+		result.Functions = redactedConfigValue(conf.Functions)
 	case "resolvers":
-		result.Resolvers = conf.Resolvers
+		result.Resolvers = redactedConfigValue(conf.Resolvers)
 	case "mcp":
 		result.MCP = ms.service.conf.MCP
 	case "all":
-		result.Sources = conf.Sources
-		result.Databases = conf.Databases
-		result.Relationships = conf.Relationships
+		result.Sources = redactedConfigValue(conf.Sources)
+		result.Databases = redactedConfigValue(conf.Databases)
+		result.Relationships = redactedConfigValue(conf.Relationships)
 		result.Metadata = conf.Metadata
-		result.Tables = conf.Tables
-		result.Roles = convertRolesToInfo(conf.Roles)
+		result.Tables = redactedConfigValue(conf.Tables)
+		result.Roles = redactedConfigValue(convertRolesToInfo(conf.Roles))
 		result.Blocklist = conf.Blocklist
-		result.Functions = conf.Functions
-		result.Resolvers = conf.Resolvers
+		result.Functions = redactedConfigValue(conf.Functions)
+		result.Resolvers = redactedConfigValue(conf.Resolvers)
 		result.MCP = ms.service.conf.MCP
 	default:
 		return mcp.NewToolResultError(fmt.Sprintf("unknown section: %s. Valid sections: sources, databases, relationships, metadata, tables, roles, blocklist, functions, resolvers, mcp, all", section)), nil
@@ -497,6 +497,27 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 
 	args := req.GetArguments()
 
+	if paths := plaintextSecretUpdatePaths(args); len(paths) > 0 {
+		var err error
+		switch {
+		case strings.TrimSpace(ms.service.conf.Secrets.Keystore.Key) == "":
+			err = missingLocalKeystoreKeyError(paths)
+		default:
+			_, err = ms.service.localKeystore()
+		}
+		if err != nil {
+			result := ConfigUpdateResult{
+				Success: false,
+				Message: "Secret config update rejected, changes not applied",
+				Errors:  []string{redactRuntimeError(err)},
+			}
+			result.Next = ms.nextForConfigUpdate(result)
+			ms.recordConfigUpdateRuntimeEvent(ctx, result)
+			data, _ := mcpMarshalJSON(result, true)
+			return mcpToolResultJSONBytes(data), nil
+		}
+	}
+
 	var changes []string
 	var errors []string
 
@@ -604,7 +625,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			// If create_if_not_exists, try to create the database first
 			if createIfNotExists {
 				if err := createDatabaseOnServer(dbType, host, port, user, password, dbName, ms.service.log); err != nil {
-					ms.service.log.Warnf("create_if_not_exists for '%s': %v", pdb.name, err)
+					ms.service.log.Warnf("create_if_not_exists for '%s': %s", pdb.name, redactRuntimeError(err))
 					if dbType == "snowflake" {
 						changes = append(changes, fmt.Sprintf("database %s: create_if_not_exists is not supported for snowflake; continuing with connection test", pdb.name))
 					}
@@ -615,7 +636,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			_, err := testDatabaseConnection(dbType, host, port, user, password, dbName, dbConf.ConnString)
 			if err != nil {
 				connErrors = append(connErrors, fmt.Sprintf("database '%s' (%s@%s:%d/%s): connection failed: %v",
-					pdb.name, user, host, port, dbName, err))
+					pdb.name, user, host, port, dbName, redactRuntimeError(err)))
 			}
 		}
 
@@ -908,6 +929,8 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	}
 
 	var availableDBs []string
+	var sealedKeystore *localKeystore
+	var sealedSecretRefs map[string]struct{}
 	coreChanged := !reflect.DeepEqual(stagedCore, ms.service.conf.Core)
 	if coreChanged {
 		stage, err := ms.prepareStagedRuntime(conf, createIfNotExists)
@@ -917,8 +940,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				stage.close()
 			}
 
-			message := fmt.Sprintf("Config reload failed, changes not persisted: %v", err)
-			errs := append(errors, fmt.Sprintf("reload error: %v", err))
+			errText := redactRuntimeError(err)
+			message := fmt.Sprintf("Config reload failed, changes not persisted: %s", errText)
+			errs := append(errors, fmt.Sprintf("reload error: %s", errText))
 			if stage != nil && stage.schemaNotReady {
 				message = "Config validation failed, changes not applied: database connected but schema discovery found no tables. Try a different database from the databases list, or create tables first."
 				errs = append(errs, "schema not ready after staged reload")
@@ -938,7 +962,72 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		}
 
 		availableDBs = stage.availableDBs
-		ms.commitStagedRuntime(stagedCore, stage)
+		persistedCore := cloneCoreConfig(stagedCore)
+		if strings.TrimSpace(ms.service.conf.Secrets.Keystore.Key) != "" || configContainsSecretRefs(&persistedCore) {
+			ks, err := ms.service.localKeystore()
+			if err != nil {
+				stage.close()
+				result := ConfigUpdateResult{
+					Success:   false,
+					Message:   "Config secret sealing failed, changes not applied",
+					Changes:   changes,
+					Errors:    []string{redactRuntimeError(err)},
+					Databases: availableDBs,
+				}
+				result.Next = ms.nextForConfigUpdate(result)
+				ms.recordConfigUpdateRuntimeEvent(ctx, result)
+				data, _ := mcpMarshalJSON(result, true)
+				return mcpToolResultJSONBytes(data), nil
+			}
+			if !ks.hasKey() && configContainsSecretRefs(&persistedCore) {
+				stage.close()
+				result := ConfigUpdateResult{
+					Success:   false,
+					Message:   "Config secret hydration failed, changes not applied",
+					Changes:   changes,
+					Errors:    []string{missingLocalKeystoreKeyError(secretRefsInConfig(&persistedCore)).Error()},
+					Databases: availableDBs,
+				}
+				result.Next = ms.nextForConfigUpdate(result)
+				ms.recordConfigUpdateRuntimeEvent(ctx, result)
+				data, _ := mcpMarshalJSON(result, true)
+				return mcpToolResultJSONBytes(data), nil
+			}
+			if ks.hasKey() {
+				usedRefs, err := sealCoreConfigSecrets(&persistedCore, ks)
+				if err != nil {
+					stage.close()
+					result := ConfigUpdateResult{
+						Success:   false,
+						Message:   "Config secret sealing failed, changes not applied",
+						Changes:   changes,
+						Errors:    []string{redactRuntimeError(err)},
+						Databases: availableDBs,
+					}
+					result.Next = ms.nextForConfigUpdate(result)
+					ms.recordConfigUpdateRuntimeEvent(ctx, result)
+					data, _ := mcpMarshalJSON(result, true)
+					return mcpToolResultJSONBytes(data), nil
+				}
+				if err := ks.Save(nil); err != nil {
+					stage.close()
+					result := ConfigUpdateResult{
+						Success:   false,
+						Message:   "Config secret keystore save failed, changes not applied",
+						Changes:   changes,
+						Errors:    []string{redactRuntimeError(err)},
+						Databases: availableDBs,
+					}
+					result.Next = ms.nextForConfigUpdate(result)
+					ms.recordConfigUpdateRuntimeEvent(ctx, result)
+					data, _ := mcpMarshalJSON(result, true)
+					return mcpToolResultJSONBytes(data), nil
+				}
+				sealedKeystore = ks
+				sealedSecretRefs = usedRefs
+			}
+		}
+		ms.commitStagedRuntime(persistedCore, stage)
 		if ms.service.gj != nil && ms.service.gj.SchemaReady() {
 			changes = append(changes, "configuration validated and runtime reloaded transactionally")
 		}
@@ -956,11 +1045,19 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	// Save to disk only after successful reload (dev mode only)
 	if len(changes) > 0 && !ms.service.conf.Serv.Production {
 		if err := ms.saveConfigToDisk(); err != nil {
-			ms.service.log.Warnf("Failed to save config to disk: %v", err)
-			changes = append(changes, fmt.Sprintf("config save warning: %v (changes applied in-memory only)", err))
+			msg := redactRuntimeError(err)
+			ms.service.log.Warnf("Failed to save config to disk: %s", msg)
+			changes = append(changes, fmt.Sprintf("config save warning: %s (changes applied in-memory only)", msg))
 		} else {
 			ms.service.log.Info("Configuration saved to disk")
 			changes = append(changes, "configuration saved to disk")
+			if sealedKeystore != nil && sealedSecretRefs != nil {
+				if err := sealedKeystore.Save(sealedSecretRefs); err != nil {
+					msg := redactRuntimeError(err)
+					ms.service.log.Warnf("Failed to prune secrets keystore: %s", msg)
+					changes = append(changes, fmt.Sprintf("secret keystore prune warning: %s (stale encrypted entries retained)", msg))
+				}
+			}
 		}
 	}
 
@@ -1728,6 +1825,9 @@ func primaryDBTypeFromCore(conf *core.Config) string {
 
 func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotExists bool) (*stagedRuntimeState, error) {
 	runtimeCore := cloneCoreConfig(*stagedCore)
+	if err := ms.service.hydrateCoreConfigSecrets(&runtimeCore); err != nil {
+		return nil, err
+	}
 	stage := &stagedRuntimeState{
 		dbs:            make(map[string]*sql.DB),
 		managedDBs:     make(map[string]managedDB),
@@ -1747,6 +1847,12 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 
 		for _, name := range dbNames {
 			dbConf := stagedCore.Databases[name]
+			runtimeDBConf := dbConf
+			if runtimeCore.Databases != nil {
+				if hydrated, ok := runtimeCore.Databases[name]; ok {
+					runtimeDBConf = hydrated
+				}
+			}
 			if existing, ok := currentDBs[name]; ok && reflect.DeepEqual(currentConfigs[name], dbConf) {
 				stage.dbs[name] = existing
 				if managed, ok := ms.service.managedDBs[name]; ok {
@@ -1761,23 +1867,23 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 			}
 
 			if createIfNotExists && !isCodeSQLType(dbConf.Type) {
-				dbType := strings.ToLower(dbConf.Type)
-				dbName := dbConf.DBName
+				dbType := strings.ToLower(runtimeDBConf.Type)
+				dbName := runtimeDBConf.DBName
 				if dbName == "" {
 					dbName = name
 				}
-				if err := createDatabaseOnServer(dbType, dbConf.Host, dbConf.Port, dbConf.User, dbConf.Password, dbName, ms.service.log); err != nil {
-					ms.service.log.Warnf("create_if_not_exists for '%s': %v", name, err)
+				if err := createDatabaseOnServer(dbType, runtimeDBConf.Host, runtimeDBConf.Port, runtimeDBConf.User, runtimeDBConf.Password, dbName, ms.service.log); err != nil {
+					ms.service.log.Warnf("create_if_not_exists for '%s': %s", name, redactRuntimeError(err))
 				}
 			}
 
-			if dbConf.ConnString == "" && dbConf.Host == "" && dbConf.Path == "" {
+			if runtimeDBConf.ConnString == "" && runtimeDBConf.Host == "" && runtimeDBConf.Path == "" {
 				continue
 			}
 
-			db, err := ms.service.newDBFromDatabaseConfigInto(name, dbConf, stage.runtimeCore, stage.managedDBs)
+			db, err := ms.service.newDBFromDatabaseConfigInto(name, runtimeDBConf, stage.runtimeCore, stage.managedDBs)
 			if err != nil {
-				return stage, fmt.Errorf("database '%s' connection failed: %w", name, err)
+				return stage, fmt.Errorf("database '%s' connection failed: %s", name, redactRuntimeError(err))
 			}
 			stage.dbs[name] = db
 			stage.newConnections[name] = db
@@ -2043,6 +2149,10 @@ func (ms *mcpServer) ensureDBConnections() {
 	}
 	if s.runtimeCore == nil {
 		runtimeCore := cloneCoreConfig(*conf)
+		if err := s.hydrateCoreConfigSecrets(&runtimeCore); err != nil {
+			s.log.Warnf("Failed to hydrate encrypted config secrets: %s", redactRuntimeError(err))
+			return
+		}
 		s.runtimeCore = &runtimeCore
 	}
 
@@ -2068,16 +2178,22 @@ func (ms *mcpServer) ensureDBConnections() {
 	sort.Strings(dbConfNames)
 	for _, name := range dbConfNames {
 		dbConf := conf.Databases[name]
+		runtimeDBConf := dbConf
+		if s.runtimeCore != nil && s.runtimeCore.Databases != nil {
+			if hydrated, ok := s.runtimeCore.Databases[name]; ok {
+				runtimeDBConf = hydrated
+			}
+		}
 		if _, exists := s.dbs[name]; exists {
 			continue // already connected
 		}
 		// Skip entries without connection info
-		if dbConf.ConnString == "" && dbConf.Host == "" && dbConf.Path == "" {
+		if runtimeDBConf.ConnString == "" && runtimeDBConf.Host == "" && runtimeDBConf.Path == "" {
 			continue
 		}
-		db, err := s.newDBFromDatabaseConfigInto(name, dbConf, s.runtimeCore, s.managedDBs)
+		db, err := s.newDBFromDatabaseConfigInto(name, runtimeDBConf, s.runtimeCore, s.managedDBs)
 		if err != nil {
-			s.log.Warnf("Database '%s' connection failed: %s", name, err)
+			s.log.Warnf("Database '%s' connection failed: %s", name, redactRuntimeError(err))
 			continue
 		}
 		s.dbs[name] = db
@@ -2101,6 +2217,9 @@ func (ms *mcpServer) tryInitializeGraphJin(createIfNotExists bool) ([]string, er
 	}
 	if s.runtimeCore == nil {
 		runtimeCore := cloneCoreConfig(s.conf.Core)
+		if err := s.hydrateCoreConfigSecrets(&runtimeCore); err != nil {
+			return nil, err
+		}
 		s.runtimeCore = &runtimeCore
 	}
 
@@ -2108,7 +2227,7 @@ func (ms *mcpServer) tryInitializeGraphJin(createIfNotExists bool) ([]string, er
 	if createIfNotExists && !isCodeSQLType(primaryDBTypeFromCore(&s.conf.Core)) {
 		syncDBFromDatabases(s.conf)
 		if err := createDatabaseIfNotExists(s.conf, s.log); err != nil {
-			s.log.Warnf("create_if_not_exists: %v", err)
+			s.log.Warnf("create_if_not_exists: %s", redactRuntimeError(err))
 			// Don't fail hard — the DB may already exist
 		}
 	}

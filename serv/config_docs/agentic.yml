@@ -11,6 +11,14 @@ enable_tracing: false
 reload_on_config_change: false
 hot_deploy: true
 
+# Local encrypted keystore for write-only model-supplied secrets.
+# Set GJ_SECRETS_KEYSTORE_KEY to a base64-encoded 32-byte key before using
+# gj_config or MCP config updates to add database URIs, API keys, or tokens.
+# secrets:
+#   keystore:
+#     key: ${GJ_SECRETS_KEYSTORE_KEY}
+#     path: secrets.enc.yml
+
 # Agentic deployments keep legacy MCP compatibility tools disabled. Agents
 # should use catalog/control-plane GraphQL roots instead.
 mcp:

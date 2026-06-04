@@ -295,7 +295,7 @@ func (h controlPlaneGraphQL) configRow() map[string]any {
 		"databases":       databases,
 		"relationships":   redactedConfigValue(coreConf.Relationships),
 		"tables":          redactedConfigValue(coreConf.Tables),
-		"roles":           convertRolesToInfo(coreConf.Roles),
+		"roles":           redactedConfigValue(convertRolesToInfo(coreConf.Roles)),
 		"blocklist":       coreConf.Blocklist,
 		"functions":       redactedConfigValue(coreConf.Functions),
 		"resolvers":       redactedConfigValue(coreConf.Resolvers),
@@ -380,13 +380,19 @@ func redactConfigJSON(v any) any {
 
 func isSensitiveConfigKey(key string) bool {
 	k := strings.ToLower(key)
+	k = strings.ReplaceAll(k, "-", "_")
 	if strings.Contains(k, "password") ||
 		strings.Contains(k, "secret") ||
 		strings.Contains(k, "token") ||
 		strings.Contains(k, "passphrase") ||
 		strings.Contains(k, "private_key") ||
 		strings.Contains(k, "client_key") ||
-		k == "connection_string" {
+		strings.Contains(k, "api_key") ||
+		strings.Contains(k, "apikey") ||
+		strings.Contains(k, "authorization") ||
+		strings.Contains(k, "cookie") ||
+		k == "connection_string" ||
+		k == "key_value" {
 		return true
 	}
 	return false

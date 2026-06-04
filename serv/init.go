@@ -160,6 +160,12 @@ func (s *graphjinService) initDB() error {
 		return nil
 	}
 	runtimeCore := cloneCoreConfig(s.conf.Core)
+	if err := s.hydrateCoreConfigSecrets(&runtimeCore); err != nil {
+		return err
+	}
+	if err := s.hydrateLegacyDatabaseSecrets(&s.conf.DB); err != nil {
+		return err
+	}
 	s.runtimeCore = &runtimeCore
 
 	// In dev mode, allow starting without a database configured
@@ -205,7 +211,13 @@ func (s *graphjinService) initAllDBs() error {
 	sort.Strings(dbNames)
 	for _, name := range dbNames {
 		dbConf := s.conf.Core.Databases[name]
-		db, err := s.newDBFromDatabaseConfigInto(name, dbConf, s.runtimeCore, s.managedDBs)
+		runtimeDBConf := dbConf
+		if s.runtimeCore != nil && s.runtimeCore.Databases != nil {
+			if hydrated, ok := s.runtimeCore.Databases[name]; ok {
+				runtimeDBConf = hydrated
+			}
+		}
+		db, err := s.newDBFromDatabaseConfigInto(name, runtimeDBConf, s.runtimeCore, s.managedDBs)
 		if err != nil {
 			s.recordRuntimeEvent(context.Background(), runtimeEvent{
 				Phase:        "database",
@@ -215,12 +227,12 @@ func (s *graphjinService) initAllDBs() error {
 				NextAction:   "Fix this database source configuration or choose another active database before application queries.",
 				DatabaseName: name,
 				ErrorCode:    "database_connect_failed",
-				Details:      map[string]any{"database": name, "database_type": dbConf.Type, "error": err.Error()},
+				Details:      map[string]any{"database": name, "database_type": dbConf.Type, "error": redactRuntimeStringValue(err.Error())},
 			})
 			if s.conf.Serv.Production {
-				return fmt.Errorf("database %s: %w", name, err)
+				return fmt.Errorf("database %s: %s", name, redactRuntimeStringValue(err.Error()))
 			}
-			s.log.Warnf("Database '%s' connection failed: %s. Skipping.", name, err)
+			s.log.Warnf("Database '%s' connection failed: %s. Skipping.", name, redactRuntimeStringValue(err.Error()))
 			continue
 		}
 		s.dbs[name] = db
@@ -263,12 +275,12 @@ func (s *graphjinService) initLegacyDB() error {
 				NextAction:   "Inspect CodeSQL source configuration before application queries.",
 				DatabaseName: core.DefaultDBName,
 				ErrorCode:    "database_connect_failed",
-				Details:      map[string]any{"database": core.DefaultDBName, "database_type": dbTypeCodeSQL, "error": err.Error()},
+				Details:      map[string]any{"database": core.DefaultDBName, "database_type": dbTypeCodeSQL, "error": redactRuntimeStringValue(err.Error())},
 			})
 			if s.conf.Serv.Production {
-				return err
+				return fmt.Errorf("%s", redactRuntimeStringValue(err.Error()))
 			}
-			s.log.Warnf("CodeSQL database initialization failed: %s. Server starting without database — use MCP to configure.", err)
+			s.log.Warnf("CodeSQL database initialization failed: %s. Server starting without database — use MCP to configure.", redactRuntimeStringValue(err.Error()))
 			return nil
 		}
 		s.dbs[core.DefaultDBName] = db
@@ -305,9 +317,9 @@ func (s *graphjinService) initLegacyDB() error {
 				NextAction:   "Fix database configuration before starting GraphJin in production.",
 				DatabaseName: core.DefaultDBName,
 				ErrorCode:    "database_connect_failed",
-				Details:      map[string]any{"database": core.DefaultDBName, "database_type": s.conf.DB.Type, "error": err.Error()},
+				Details:      map[string]any{"database": core.DefaultDBName, "database_type": s.conf.DB.Type, "error": redactRuntimeStringValue(err.Error())},
 			})
-			return err
+			return fmt.Errorf("%s", redactRuntimeStringValue(err.Error()))
 		}
 	} else {
 		db, err = newDBOnce(s.conf, true, true, s.log, s.fs)
@@ -320,9 +332,9 @@ func (s *graphjinService) initLegacyDB() error {
 				NextAction:   "Use MCP/config tools to fix the database configuration before application queries.",
 				DatabaseName: core.DefaultDBName,
 				ErrorCode:    "database_connect_failed",
-				Details:      map[string]any{"database": core.DefaultDBName, "database_type": s.conf.DB.Type, "error": err.Error()},
+				Details:      map[string]any{"database": core.DefaultDBName, "database_type": s.conf.DB.Type, "error": redactRuntimeStringValue(err.Error())},
 			})
-			s.log.Warnf("Database connection failed: %s. Server starting without database — use MCP to configure.", err)
+			s.log.Warnf("Database connection failed: %s. Server starting without database — use MCP to configure.", redactRuntimeStringValue(err.Error()))
 			return nil
 		}
 	}

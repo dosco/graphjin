@@ -119,6 +119,9 @@ type Serv struct {
 	// MCP (Model Context Protocol) server configuration
 	MCP MCPConfig `mapstructure:"mcp" jsonschema:"title=MCP Configuration"`
 
+	// Local encrypted secrets configuration
+	Secrets SecretsConfig `mapstructure:"secrets" jsonschema:"title=Secrets"`
+
 	// Redis configuration
 	Redis RedisConfig `mapstructure:"redis" jsonschema:"title=Redis Configuration"`
 
@@ -133,6 +136,17 @@ type Serv struct {
 
 	// Built-in OIDC login that mints local JWTs for the CLI / MCP client
 	AuthLogin AuthLogin `mapstructure:"auth_login" jsonschema:"title=Built-in Login (OIDC)"`
+}
+
+// SecretsConfig configures secret storage for write-only config inputs.
+type SecretsConfig struct {
+	Keystore KeystoreConfig `mapstructure:"keystore" jsonschema:"title=Encrypted Keystore"`
+}
+
+// KeystoreConfig configures the local encrypted keystore.
+type KeystoreConfig struct {
+	Key  string `mapstructure:"key" jsonschema:"title=Keystore Key" jsonschema_extras:"x-graphjin-sensitive=secret"`
+	Path string `mapstructure:"path" jsonschema:"title=Keystore Path"`
 }
 
 // AuthLogin configures the built-in OIDC sign-in flow that issues local JWTs
@@ -714,6 +728,10 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.only", false)
 	vi.SetDefault("mcp.cursor_cache_ttl", 1800)   // 30 minutes
 	vi.SetDefault("mcp.cursor_cache_size", 10000) // max in-memory entries
+
+	// Local encrypted keystore defaults.
+	vi.SetDefault("secrets.keystore.key", "")
+	vi.SetDefault("secrets.keystore.path", "")
 
 	// Artifact store defaults.
 	vi.SetDefault("artifacts.auto_init", true)

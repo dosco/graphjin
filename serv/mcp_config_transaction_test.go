@@ -108,6 +108,322 @@ func TestHandleUpdateCurrentConfig_StagedFailureDoesNotSaveConfigFile(t *testing
 	}
 }
 
+func TestHandleUpdateCurrentConfig_RejectsPlaintextSecretWithoutKeystoreKey(t *testing.T) {
+	livePath := createSQLiteDBFile(t, "live.sqlite3", true)
+	replacementPath := createSQLiteDBFile(t, "replacement.sqlite3", true)
+	ms := newTransactionalConfigMCPServer(t, livePath)
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"databases": map[string]any{
+			"main": map[string]any{
+				"type":              "sqlite",
+				"connection_string": replacementPath,
+			},
+		},
+	})
+	if out.Success {
+		t.Fatalf("expected missing keystore key rejection, got %+v", out)
+	}
+	if len(out.Errors) == 0 || !strings.Contains(out.Errors[0], "secrets.keystore.key") {
+		t.Fatalf("expected secrets.keystore.key error, got %+v", out.Errors)
+	}
+	if got := ms.service.conf.Core.Databases["main"].ConnString; got != "" {
+		t.Fatalf("expected persisted config to remain unchanged, got connection_string %q", got)
+	}
+	if got := ms.service.conf.Core.Databases["main"].Path; got != livePath {
+		t.Fatalf("expected live path %q to remain unchanged, got %q", livePath, got)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_RejectsPlaintextSecretWithInvalidKeystoreKey(t *testing.T) {
+	livePath := createSQLiteDBFile(t, "live.sqlite3", true)
+	replacementPath := createSQLiteDBFile(t, "replacement.sqlite3", true)
+	ms := newTransactionalConfigMCPServer(t, livePath)
+	ms.service.conf.Secrets.Keystore.Key = "not-base64"
+	ms.service.conf.Secrets.Keystore.Path = filepath.Join(t.TempDir(), "secrets.enc.yml")
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"databases": map[string]any{
+			"main": map[string]any{
+				"type":              "sqlite",
+				"connection_string": replacementPath,
+			},
+		},
+	})
+	if out.Success {
+		t.Fatalf("expected invalid keystore key rejection, got %+v", out)
+	}
+	if len(out.Errors) == 0 || !strings.Contains(out.Errors[0], "32 bytes") {
+		t.Fatalf("expected 32-byte key error, got %+v", out.Errors)
+	}
+	if got := ms.service.conf.Core.Databases["main"].Path; got != livePath {
+		t.Fatalf("expected live path %q to remain unchanged, got %q", livePath, got)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_SealsPlaintextSecretHydratesRuntimeAndSavesRefs(t *testing.T) {
+	livePath := createSQLiteDBFile(t, "live.sqlite3", true)
+	replacementPath := createSQLiteDBFile(t, "replacement.sqlite3", true)
+
+	confPath := filepath.Join(t.TempDir(), "dev.yml")
+	if err := os.WriteFile(confPath, []byte("app_name: test\n"), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+	v := viper.New()
+	v.SetConfigFile(confPath)
+	v.SetConfigType("yaml")
+	if err := v.ReadInConfig(); err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+	ms := newTransactionalConfigMCPServerWithOptions(t, livePath, false, v)
+	keystorePath := filepath.Join(t.TempDir(), "secrets.enc.yml")
+	ms.service.conf.Secrets.Keystore.Key = testKeystoreKey(4)
+	ms.service.conf.Secrets.Keystore.Path = keystorePath
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"databases": map[string]any{
+			"main": map[string]any{
+				"type":              "sqlite",
+				"connection_string": replacementPath,
+			},
+		},
+	})
+	if !out.Success {
+		t.Fatalf("expected config update to succeed, got %+v", out)
+	}
+	ref := "gjsecret://databases/main/connection_string"
+	if got := ms.service.conf.Core.Databases["main"].ConnString; got != ref {
+		t.Fatalf("persisted connection string = %q, want %q", got, ref)
+	}
+	if got := ms.service.runtimeCore.Databases["main"].ConnString; got != replacementPath {
+		t.Fatalf("runtime connection string = %q, want %q", got, replacementPath)
+	}
+
+	savedConfig, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if strings.Contains(string(savedConfig), replacementPath) {
+		t.Fatalf("saved config leaked plaintext path:\n%s", string(savedConfig))
+	}
+	if !strings.Contains(string(savedConfig), ref) {
+		t.Fatalf("saved config missing secret ref %q:\n%s", ref, string(savedConfig))
+	}
+	savedKeystore, err := os.ReadFile(keystorePath)
+	if err != nil {
+		t.Fatalf("read keystore: %v", err)
+	}
+	if strings.Contains(string(savedKeystore), replacementPath) {
+		t.Fatalf("keystore leaked plaintext path:\n%s", string(savedKeystore))
+	}
+
+	res, err := ms.handleGetCurrentConfig(context.Background(), newToolRequest(map[string]any{"section": "databases"}))
+	if err != nil {
+		t.Fatalf("get_current_config error: %v", err)
+	}
+	payload := assertToolSuccess(t, res)
+	if strings.Contains(payload, replacementPath) {
+		t.Fatalf("get_current_config leaked plaintext: %s", payload)
+	}
+	if strings.Contains(payload, ref) {
+		t.Fatalf("get_current_config exposed stable secret ref instead of redacting: %s", payload)
+	}
+
+	restartedConf := &Config{
+		Core: core.Config{
+			Databases: map[string]core.DatabaseConfig{
+				"main": {Type: "sqlite", ConnString: ref},
+			},
+		},
+		Serv: Serv{
+			Production: false,
+			Secrets: SecretsConfig{Keystore: KeystoreConfig{
+				Key:  testKeystoreKey(4),
+				Path: keystorePath,
+			}},
+		},
+	}
+	restarted, err := newGraphJinService(restartedConf, nil)
+	if err != nil {
+		t.Fatalf("restart with encrypted ref: %v", err)
+	}
+	t.Cleanup(func() { closeTestService(restarted) })
+	if got := restarted.conf.Core.Databases["main"].ConnString; got != ref {
+		t.Fatalf("restart persisted config = %q, want %q", got, ref)
+	}
+	if got := restarted.runtimeCore.Databases["main"].ConnString; got != replacementPath {
+		t.Fatalf("restart runtime connection string = %q, want %q", got, replacementPath)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_ConfigSaveFailureKeepsRemovedKeystoreEntry(t *testing.T) {
+	livePath := createSQLiteDBFile(t, "live.sqlite3", true)
+	oldPath := createSQLiteDBFile(t, "old.sqlite3", true)
+	confPath := filepath.Join(t.TempDir(), "dev.yml")
+	oldRef := "gjsecret://databases/old/connection_string"
+	before := []byte("databases:\n  main:\n    type: sqlite\n    path: " + livePath + "\n  old:\n    type: sqlite\n    connection_string: " + oldRef + "\n")
+	if err := os.WriteFile(confPath, before, 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+	v := viper.New()
+	v.SetConfigFile(confPath)
+	v.SetConfigType("yaml")
+	if err := v.ReadInConfig(); err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+
+	ms := newTransactionalConfigMCPServerWithOptions(t, livePath, false, v)
+	keystorePath := filepath.Join(t.TempDir(), "secrets.enc.yml")
+	seedKeystoreRef(t, ms, keystorePath, testKeystoreKey(8), oldRef, oldPath)
+	ms.service.conf.Core.Databases["old"] = core.DatabaseConfig{Type: "sqlite", ConnString: oldRef}
+
+	if err := os.Chmod(confPath, 0o400); err != nil {
+		t.Fatalf("make config read-only: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(confPath, 0o600)
+	})
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"remove_databases": []any{"old"},
+	})
+	if !out.Success {
+		t.Fatalf("expected runtime update to succeed with config save warning, got %+v", out)
+	}
+	if !configUpdateChangesContain(out.Changes, "config save warning") {
+		t.Fatalf("expected config save warning, got changes %+v", out.Changes)
+	}
+
+	after, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("expected failed config save to leave on-disk config unchanged\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+
+	reopened, err := newLocalKeystore(&Config{Serv: Serv{Secrets: SecretsConfig{Keystore: KeystoreConfig{
+		Key:  testKeystoreKey(8),
+		Path: keystorePath,
+	}}}})
+	if err != nil {
+		t.Fatalf("reopen keystore: %v", err)
+	}
+	got, err := reopened.Open(oldRef)
+	if err != nil {
+		t.Fatalf("expected removed ref to remain after failed config save: %v", err)
+	}
+	if got != oldPath {
+		t.Fatalf("old ref decrypted to %q, want %q", got, oldPath)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_ConfigSaveSuccessPrunesRemovedKeystoreEntry(t *testing.T) {
+	livePath := createSQLiteDBFile(t, "live.sqlite3", true)
+	oldPath := createSQLiteDBFile(t, "old.sqlite3", true)
+	confPath := filepath.Join(t.TempDir(), "dev.yml")
+	oldRef := "gjsecret://databases/old/connection_string"
+	if err := os.WriteFile(confPath, []byte("app_name: test\n"), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+	v := viper.New()
+	v.SetConfigFile(confPath)
+	v.SetConfigType("yaml")
+	if err := v.ReadInConfig(); err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+
+	ms := newTransactionalConfigMCPServerWithOptions(t, livePath, false, v)
+	keystorePath := filepath.Join(t.TempDir(), "secrets.enc.yml")
+	seedKeystoreRef(t, ms, keystorePath, testKeystoreKey(9), oldRef, oldPath)
+	ms.service.conf.Core.Databases["old"] = core.DatabaseConfig{Type: "sqlite", ConnString: oldRef}
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"remove_databases": []any{"old"},
+	})
+	if !out.Success {
+		t.Fatalf("expected config update to succeed, got %+v", out)
+	}
+
+	savedConfig, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if strings.Contains(string(savedConfig), oldRef) {
+		t.Fatalf("saved config still references removed secret ref:\n%s", string(savedConfig))
+	}
+
+	reopened, err := newLocalKeystore(&Config{Serv: Serv{Secrets: SecretsConfig{Keystore: KeystoreConfig{
+		Key:  testKeystoreKey(9),
+		Path: keystorePath,
+	}}}})
+	if err != nil {
+		t.Fatalf("reopen keystore: %v", err)
+	}
+	if _, err := reopened.Open(oldRef); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected removed ref to be pruned after successful config save, got %v", err)
+	}
+}
+
+func TestNewGraphJinServiceLoadsPlaintextSecretConfigWithoutKeystoreKey(t *testing.T) {
+	dbPath := createSQLiteDBFile(t, "plaintext.sqlite3", true)
+	conf := &Config{
+		Core: core.Config{
+			Databases: map[string]core.DatabaseConfig{
+				"main": {Type: "sqlite", ConnString: dbPath},
+			},
+		},
+		Serv: Serv{Production: false},
+	}
+	svc, err := newGraphJinService(conf, nil)
+	if err != nil {
+		t.Fatalf("expected plaintext bootstrap config to load without keystore key: %v", err)
+	}
+	t.Cleanup(func() { closeTestService(svc) })
+	if got := svc.runtimeCore.Databases["main"].ConnString; got != dbPath {
+		t.Fatalf("runtime connection string = %q, want %q", got, dbPath)
+	}
+}
+
+func TestNewGraphJinServiceRequiresKeystoreForEncryptedRefs(t *testing.T) {
+	ref := "gjsecret://databases/main/connection_string"
+	baseCore := core.Config{Databases: map[string]core.DatabaseConfig{
+		"main": {Type: "sqlite", ConnString: ref},
+	}}
+
+	_, err := newGraphJinService(&Config{Core: baseCore, Serv: Serv{Production: false}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "secrets.keystore.key") {
+		t.Fatalf("expected missing key startup error, got %v", err)
+	}
+
+	missingPath := filepath.Join(t.TempDir(), "missing.yml")
+	_, err = newGraphJinService(&Config{
+		Core: baseCore,
+		Serv: Serv{Production: false, Secrets: SecretsConfig{Keystore: KeystoreConfig{
+			Key:  testKeystoreKey(5),
+			Path: missingPath,
+		}}},
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected missing keystore entry startup error, got %v", err)
+	}
+
+	corruptPath := filepath.Join(t.TempDir(), "corrupt.yml")
+	if err := os.WriteFile(corruptPath, []byte("secrets: ["), 0o600); err != nil {
+		t.Fatalf("write corrupt keystore: %v", err)
+	}
+	_, err = newGraphJinService(&Config{
+		Core: baseCore,
+		Serv: Serv{Production: false, Secrets: SecretsConfig{Keystore: KeystoreConfig{
+			Key:  testKeystoreKey(5),
+			Path: corruptPath,
+		}}},
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "parse secrets keystore") {
+		t.Fatalf("expected corrupt keystore startup error, got %v", err)
+	}
+}
+
 func TestHandleUpdateCurrentConfig_TransactionalSuccessSwapsRuntime(t *testing.T) {
 	livePath := createSQLiteDBFile(t, "live.sqlite3", true)
 	replacementPath := createSQLiteDBFile(t, "replacement.sqlite3", true)
@@ -376,6 +692,32 @@ func applyConfigUpdate(t *testing.T, ms *mcpServer, args map[string]any) ConfigU
 		t.Fatalf("decode response: %v", err)
 	}
 	return out
+}
+
+func seedKeystoreRef(t *testing.T, ms *mcpServer, path, key, ref, plaintext string) {
+	t.Helper()
+
+	ms.service.conf.Secrets.Keystore.Key = key
+	ms.service.conf.Secrets.Keystore.Path = path
+	ks, err := ms.service.localKeystore()
+	if err != nil {
+		t.Fatalf("new keystore: %v", err)
+	}
+	if err := ks.Seal(ref, plaintext); err != nil {
+		t.Fatalf("seal ref: %v", err)
+	}
+	if err := ks.Save(map[string]struct{}{ref: {}}); err != nil {
+		t.Fatalf("save keystore: %v", err)
+	}
+}
+
+func configUpdateChangesContain(changes []string, needle string) bool {
+	for _, change := range changes {
+		if strings.Contains(change, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func assertMetadataCodeRefPaths(t *testing.T, s *graphjinService, want []string) {
