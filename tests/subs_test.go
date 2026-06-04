@@ -228,6 +228,7 @@ func Example_subscriptionWithCursor() {
 
 func TestSubscription(t *testing.T) {
 	skipBigQuerySubscriptionsUnsupported(t)
+	skipCassandra(t, "shared subscription query isn't single-partition-bound (CQL needs a pinned partition key)")
 
 	gql := `subscription test {
 		users(where: { or: { id: { eq: $id }, id: { eq: $id2 } } }) @object {

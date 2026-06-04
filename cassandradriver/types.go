@@ -72,28 +72,31 @@ func BindValue(cqlType string, v any) (any, error) {
 		return bindMap(kv[0], kv[1], v)
 	}
 
+	// Type names arrive in two vocabularies: native CQL types (from the driver's
+	// own introspection) and GraphJin SQL types (the dialect emits these in
+	// column_types, since sdata stores the introspected SQL type). Handle both.
 	switch t {
-	case "blob":
+	case "blob", "bytea":
 		s, ok := v.(string)
 		if !ok {
 			return nil, fmt.Errorf("cassandradriver: blob expects a base64 string, got %T", v)
 		}
 		return base64.StdEncoding.DecodeString(s)
-	case "timestamp":
+	case "timestamp", "timestamptz":
 		return bindTime(v)
-	case "tinyint", "smallint", "int", "bigint", "counter":
+	case "tinyint", "smallint", "int", "integer", "bigint", "counter":
 		return toInt64(v)
-	case "float", "double":
+	case "float", "double", "double precision", "real":
 		return toFloat64(v)
-	case "boolean":
+	case "boolean", "bool":
 		b, ok := v.(bool)
 		if !ok {
 			return nil, fmt.Errorf("cassandradriver: boolean expects bool, got %T", v)
 		}
 		return b, nil
 	default:
-		// uuid/timeuuid/inet/decimal/varint/text/varchar/ascii/date/time → bound as
-		// their string form; the gocql layer (M2) parses string → native.
+		// uuid/inet/decimal/varint/numeric/text/date/time/json → bound as their
+		// string form; the gocql layer parses string → native.
 		return v, nil
 	}
 }
@@ -200,12 +203,12 @@ func DecodeValue(cqlType string, v any) (any, error) {
 	}
 
 	switch t {
-	case "blob":
+	case "blob", "bytea":
 		if b, ok := v.([]byte); ok {
 			return base64.StdEncoding.EncodeToString(b), nil
 		}
 		return v, nil
-	case "timestamp":
+	case "timestamp", "timestamptz":
 		if tm, ok := v.(time.Time); ok {
 			return tm.UTC().Format(tsLayout), nil
 		}
