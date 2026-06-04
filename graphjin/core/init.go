@@ -215,6 +215,16 @@ func updateTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 		}
 	}
 
+	if table.Cassandra != nil {
+		t1.AllowFiltering = table.Cassandra.AllowFiltering
+		if len(table.Cassandra.PartitionKeys) > 0 {
+			t1.PartitionKeys = table.Cassandra.PartitionKeys
+		}
+		if len(table.Cassandra.ClusteringKeys) > 0 {
+			t1.ClusteringKeys = table.Cassandra.ClusteringKeys
+		}
+	}
+
 	return nil
 }
 

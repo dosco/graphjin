@@ -130,3 +130,12 @@ var mongodbInfo string
 
 //go:embed sql/mongodb_columns.json
 var mongodbColumnsStmt string
+
+//go:embed sql/cassandra_info.json
+var cassandraInfo string
+
+//go:embed sql/cassandra_columns.json
+var cassandraColumnsStmt string
+
+//go:embed sql/cassandra_keys.json
+var cassandraKeysStmt string
