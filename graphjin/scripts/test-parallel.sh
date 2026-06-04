@@ -59,11 +59,13 @@ db_test_cmd() {
         sqlite)  tags="-tags \"sqlite fts5\"" ;;
         mssql)   tags="-tags mssql" ;;
     esac
-    # Cassandra runs a focused, dialect-appropriate suite (no joins/cross-partition),
-    # so restrict to its own tests rather than the shared Example suite.
+    # Cassandra runs the shared webshop schema + the Test* suite (servable tests
+    # pass for real; unsupported features honestly skip). The Example query tests
+    # are excluded: CQL can't serve full scans/aggregates/serial-inserts and Go
+    # Examples can't be skipped, so running them would require faking output.
     local run=""
     case "$db" in
-        cassandra) run="-run Cassandra" ;;
+        cassandra) run="-run Test" ;;
     esac
     echo "cd tests && go test -v -timeout 30m -race -db=$db $tags $run ."
 }

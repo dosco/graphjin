@@ -1108,11 +1108,28 @@ func newConfig(c *core.Config) *core.Config {
 		}
 	}
 
-	// Cassandra has no foreign keys either — declare relationships in config.
+	// Cassandra has no foreign keys either — declare the webshop relationships in
+	// config (like MongoDB). allow_filtering is enabled on the small test tables so
+	// non-partition-key reads in the shared suite are servable.
 	if c.DBType == "cassandra" {
+		af := &core.CassandraConfig{AllowFiltering: true}
 		c.Tables = append(c.Tables,
-			core.Table{Name: "posts", Columns: []core.Column{{Name: "user_id", ForeignKey: "users.id"}}},
-			core.Table{Name: "profiles", Columns: []core.Column{{Name: "user_id", ForeignKey: "users.id"}}},
+			core.Table{Name: "users", Cassandra: af},
+			core.Table{Name: "products", Cassandra: af, Columns: []core.Column{
+				{Name: "owner_id", ForeignKey: "users.id"},
+			}},
+			core.Table{Name: "purchases", Cassandra: af, Columns: []core.Column{
+				{Name: "customer_id", ForeignKey: "users.id"},
+				{Name: "product_id", ForeignKey: "products.id"},
+			}},
+			core.Table{Name: "comments", Cassandra: af, Columns: []core.Column{
+				{Name: "product_id", ForeignKey: "products.id"},
+				{Name: "commenter_id", ForeignKey: "users.id"},
+				{Name: "reply_to_id", ForeignKey: "comments.id"},
+			}},
+			core.Table{Name: "categories", Cassandra: af},
+			core.Table{Name: "chats", Cassandra: af},
+			core.Table{Name: "notifications", Cassandra: af},
 		)
 	}
 
@@ -1142,4 +1159,15 @@ var re = regexp.MustCompile(`([:,])\s|`)
 func printJSONString(val string) {
 	v := re.ReplaceAllString(val, `$1`)
 	fmt.Println(v)
+}
+
+// skipCassandra honestly skips a Test that exercises a feature CQL/Cassandra
+// cannot serve (full scans, has-many joins, serial inserts, schema DDL, OR
+// filters, aggregates, …). Cassandra runs the shared webshop suite; the servable
+// subset passes for real and these are skipped with a clear reason — no fakes.
+func skipCassandra(t *testing.T, reason string) {
+	t.Helper()
+	if dbType == "cassandra" {
+		t.Skipf("cassandra: %s", reason)
+	}
 }

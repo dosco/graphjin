@@ -293,6 +293,7 @@ func Example_setArrayColumnToEmpty() {
 
 func TestMultiAliasUpdate(t *testing.T) {
 	skipBigQueryMutationsUnsupported(t)
+	skipCassandra(t, "multi-root/related mutations aren't supported (single-table by PK only)")
 
 	gql := `mutation {
 		p1: products(id: 87, update: $data1) {
@@ -356,6 +357,7 @@ func TestMultiAliasUpdate(t *testing.T) {
 // do not collide. This was the original reported bug.
 func TestMultiAliasUpdateThreeRoots(t *testing.T) {
 	skipBigQueryMutationsUnsupported(t)
+	skipCassandra(t, "multi-root/related mutations aren't supported (single-table by PK only)")
 
 	gql := `mutation {
 		a1: products(id: 81, update: $d1) { id name }
@@ -417,6 +419,7 @@ func TestMultiAliasUpdateThreeRoots(t *testing.T) {
 
 func TestMultiAliasDelete(t *testing.T) {
 	skipBigQueryMutationsUnsupported(t)
+	skipCassandra(t, "multi-root/related mutations aren't supported (single-table by PK only)")
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)

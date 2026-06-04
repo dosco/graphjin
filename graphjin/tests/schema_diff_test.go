@@ -86,8 +86,8 @@ func schemaForDB() string {
 }
 
 func skipSchemaDiffUnsupported(t *testing.T) {
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 	skipBigQuerySchemaDiffUnsupported(t)
 }
@@ -97,8 +97,8 @@ func TestSchemaDiff_CreateTable(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
 	// Skip for MongoDB (no schema support)
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
 	tableName := "test_sd_create_" + randomSuffix()
@@ -163,8 +163,8 @@ type %s {
 func TestSchemaDiff_AddColumn(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
 	tableName := "test_sd_addcol_" + randomSuffix()
@@ -219,8 +219,8 @@ type %s {
 func TestSchemaDiff_ForeignKey(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
 	parentTable := "test_sd_fk_parent_" + randomSuffix()
@@ -280,8 +280,8 @@ type %s {
 func TestSchemaDiff_UniqueIndex(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 	if dbType == "snowflake" {
 		t.Skip("unique index test not applicable for snowflake emulator constraint DDL")
@@ -400,8 +400,8 @@ type %s {
 func TestSchemaDiff_Destructive(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
 	tableName := "test_sd_dest_" + randomSuffix()
@@ -460,8 +460,8 @@ type %s {
 func TestSchemaDiff_DropTable(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
 	tableName := "test_sd_droptbl_" + randomSuffix()
@@ -505,8 +505,8 @@ type %s {
 func TestSchemaDiff_Idempotency(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
 	tableName := "test_sd_idemp_" + randomSuffix()
@@ -547,8 +547,8 @@ type %s {
 func TestSchemaDiff_DialectSpecific(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
 	tableName := "test_sd_dialect_" + randomSuffix()
@@ -607,8 +607,8 @@ type %s {
 func TestSchemaDiff_MultipleTypes(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
 	table1 := "test_sd_multi1_" + randomSuffix()
@@ -662,8 +662,8 @@ type %s {
 func TestSchemaDiff_NotNullColumn(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" {
-		t.Skip("schema diff not applicable for MongoDB")
+	if dbType == "mongodb" || dbType == "cassandra" {
+		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
 	tableName := "test_sd_notnull_" + randomSuffix()

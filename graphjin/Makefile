@@ -59,7 +59,7 @@ test-mongodb:
 
 test-cassandra:
 	@echo "Running Cassandra tests..."
-	@cd tests; go test -v -timeout 30m -race -db=cassandra -run Cassandra .
+	@cd tests; go test -v -timeout 30m -race -db=cassandra -run Test .
 
 test-large:
 	@echo "Running large-scale tests..."
