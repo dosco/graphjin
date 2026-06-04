@@ -1750,6 +1750,155 @@ func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 	}
 }
 
+func TestGraphQLConfigUpdateSourcesPatchPreservesSourcesAndRecordsCatalogEvent(t *testing.T) {
+	replacementPath := createSQLiteDBFile(t, "replacement-source.sqlite3", true)
+	svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "app.sqlite3", true), func(conf *Config) {
+		allowAgenticGraphJinConfigWrite(conf)
+	})
+
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			update_sources: [{ name: "main", path: %q }]
+		}) {
+			id
+			catalog_revision
+		}
+	}`, replacementPath), nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("source patch config update error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("source patch config update returned errors: %+v", res.Errors)
+	}
+
+	main, ok := svc.conf.Core.SourceByName("main")
+	if !ok {
+		t.Fatal("expected main source after source patch")
+	}
+	if main.Path != replacementPath || main.Kind != sourcecap.KindDatabase || main.Type != "sqlite" || !main.Default {
+		t.Fatalf("source patch did not preserve/update expected fields: %+v", main)
+	}
+	if _, ok := svc.conf.Core.SourceByName("graphjin"); !ok {
+		t.Fatal("update_sources should preserve graphjin source")
+	}
+	if _, ok := svc.conf.Core.SourceByName("workflows"); !ok {
+		t.Fatal("update_sources should preserve workflows source")
+	}
+	if got := svc.conf.Core.Databases["main"].Path; got != replacementPath {
+		t.Fatalf("renormalized database path = %q, want %q", got, replacementPath)
+	}
+
+	details := latestRuntimeEventDetails(t, svc, "catalog", "refresh_mode", "source_scoped")
+	if details["reason"] != "config mutation" {
+		t.Fatalf("catalog event reason = %+v", details)
+	}
+	changed, _ := details["changed_sources"].([]any)
+	if len(changed) != 1 || changed[0] != "main" {
+		t.Fatalf("catalog event changed_sources = %+v", details["changed_sources"])
+	}
+}
+
+func TestGraphQLConfigUpdateGlobalRecordsFullCatalogEvent(t *testing.T) {
+	svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "full-catalog.sqlite3", true), func(conf *Config) {
+		allowAgenticGraphJinConfigWrite(conf)
+	})
+
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
+		gj_config(id: "current", update: {
+			blocklist: ["users.name"]
+		}) {
+			id
+		}
+	}`, nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("global config update error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("global config update returned errors: %+v", res.Errors)
+	}
+
+	details := latestRuntimeEventDetails(t, svc, "catalog", "refresh_mode", "full")
+	if details["reason"] != "config mutation" {
+		t.Fatalf("catalog event reason = %+v", details)
+	}
+}
+
+func TestGraphQLConfigRemoveSourcesPrunesOwnedCatalogRows(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "remove-source.sqlite3", true))
+
+	before := queryCatalogOwnerIDs(t, svc, "workflows")
+	if len(before) == 0 {
+		t.Fatal("expected workflow-owned catalog rows before removing workflow source")
+	}
+
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
+		gj_config(id: "current", update: {
+			remove_sources: ["workflows"]
+		}) {
+			id
+		}
+	}`, nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("remove source config update error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("remove source config update returned errors: %+v", res.Errors)
+	}
+	if _, ok := svc.conf.Core.SourceByName("workflows"); ok {
+		t.Fatal("expected workflows source to be removed")
+	}
+	after := queryCatalogOwnerIDs(t, svc, "workflows")
+	if len(after) != 0 {
+		t.Fatalf("expected workflow-owned catalog rows to be pruned, got %v", after)
+	}
+}
+
+func TestMCPReloadSchemaDatabaseUsesSourceScopedReload(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowSchemaReload: true}, createSQLiteDBFile(t, "reload-source.sqlite3", true))
+	ms := &mcpServer{service: svc}
+
+	res, err := ms.handleReloadSchema(context.Background(), newToolRequest(map[string]any{"database": "main"}))
+	if err != nil {
+		t.Fatalf("reload schema tool error: %v", err)
+	}
+	var scoped struct {
+		Success    bool   `json:"success"`
+		ReloadMode string `json:"reload_mode"`
+		Database   string `json:"database"`
+		TableCount int    `json:"table_count"`
+	}
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &scoped); err != nil {
+		t.Fatalf("decode source-scoped reload: %v", err)
+	}
+	if !scoped.Success || scoped.ReloadMode != "source_scoped" || scoped.Database != "main" || scoped.TableCount == 0 {
+		t.Fatalf("unexpected source-scoped reload response: %+v", scoped)
+	}
+
+	res, err = ms.handleReloadSchema(context.Background(), newToolRequest(map[string]any{}))
+	if err != nil {
+		t.Fatalf("full reload schema tool error: %v", err)
+	}
+	var full struct {
+		Success    bool   `json:"success"`
+		ReloadMode string `json:"reload_mode"`
+		Database   string `json:"database"`
+	}
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &full); err != nil {
+		t.Fatalf("decode full reload: %v", err)
+	}
+	if !full.Success || full.ReloadMode != "full" || full.Database != "" {
+		t.Fatalf("unexpected full reload response: %+v", full)
+	}
+
+	res, err = ms.handleReloadSchema(context.Background(), newToolRequest(map[string]any{"database": "graphjin"}))
+	if err != nil {
+		t.Fatalf("unsupported reload schema tool returned Go error: %v", err)
+	}
+	if res == nil || !res.IsError || !strings.Contains(fmt.Sprint(res.Content), "source-scoped schema reload only supports database sources") {
+		t.Fatalf("expected unsupported source-scoped reload error, got %+v", res)
+	}
+}
+
 func TestGraphQLControlPlaneConfigRejectsPlaintextSecretWithoutKeystoreKey(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "app.sqlite3", true))
 
@@ -1799,6 +1948,60 @@ func TestGraphQLControlPlaneAllowsAppGJPrefixWithSystemSource(t *testing.T) {
 	if svc != nil {
 		closeTestService(svc)
 	}
+}
+
+func latestRuntimeEventDetails(t *testing.T, svc *graphjinService, phase, detailKey, detailValue string) map[string]any {
+	t.Helper()
+	if svc == nil || svc.runtimeEvents == nil {
+		t.Fatal("runtime event store is not initialized")
+	}
+	rows := svc.runtimeEvents.Rows(context.Background(), svc.runtimeCurrentStatus())
+	for _, row := range rows {
+		if row["kind"] != runtimeKindEvent || row["phase"] != phase {
+			continue
+		}
+		var details map[string]any
+		if err := json.Unmarshal([]byte(fmt.Sprint(row["details_json"])), &details); err != nil {
+			t.Fatalf("decode runtime details: %v: %+v", err, row)
+		}
+		if fmt.Sprint(details[detailKey]) == detailValue {
+			return details
+		}
+	}
+	t.Fatalf("runtime event phase=%s with %s=%s not found in %+v", phase, detailKey, detailValue, rows)
+	return nil
+}
+
+func allowAgenticGraphJinConfigWrite(conf *Config) {
+	conf.Core.Mode = "agentic"
+	for i := range conf.Core.Sources {
+		if conf.Core.Sources[i].CanonicalKind() != sourcecap.KindGraphJin {
+			continue
+		}
+		if conf.Core.Sources[i].Capabilities == nil {
+			conf.Core.Sources[i].Capabilities = make(map[string]bool)
+		}
+		conf.Core.Sources[i].Capabilities[sourcecap.KeyConfigWrite] = true
+		conf.Core.Sources[i].Capabilities[sourcecap.KeyRuntimeRead] = true
+	}
+}
+
+func queryCatalogOwnerIDs(t *testing.T, svc *graphjinService, owner string) []string {
+	t.Helper()
+	if svc == nil || svc.systemNanoDB == nil {
+		t.Fatal("system nanodb is not initialized")
+	}
+	rows, ok := svc.systemNanoDB.Snapshot().Rows("main", "gj_catalog")
+	if !ok {
+		t.Fatal("gj_catalog rows are missing")
+	}
+	ids := make([]string, 0)
+	for _, row := range rows {
+		if fmt.Sprint(row["owner_source"]) == owner {
+			ids = append(ids, fmt.Sprint(row["id"]))
+		}
+	}
+	return ids
 }
 
 func newControlPlaneGraphQLTestService(t *testing.T, cfg MCPConfig, dbPath string) *graphjinService {

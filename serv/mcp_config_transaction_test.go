@@ -12,12 +12,86 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap/zaptest"
 	_ "modernc.org/sqlite"
 )
+
+func TestApplySourceConfigPatchesMergePatchSemantics(t *testing.T) {
+	existing := []core.SourceConfig{{
+		Name:         "main",
+		Kind:         sourcecap.KindDatabase,
+		Type:         "sqlite",
+		Path:         "old.sqlite3",
+		Default:      true,
+		ReadOnly:     true,
+		Capabilities: map[string]bool{sourcecap.KeyDataRead: true, sourcecap.KeySchemaRead: true},
+		Access: core.SourceAccessConfig{
+			PublicTables:  []string{"users"},
+			BlockedTables: []string{"secrets"},
+		},
+	}}
+
+	updated, changes, err := applySourceConfigPatches(existing, []any{map[string]any{
+		"name":      "main",
+		"path":      "new.sqlite3",
+		"read_only": nil,
+		"capabilities": map[string]any{
+			sourcecap.KeySchemaRead: false,
+			sourcecap.KeyDataWrite:  true,
+		},
+		"access": map[string]any{
+			"public_tables":  []any{"accounts"},
+			"blocked_tables": nil,
+		},
+	}})
+	if err != nil {
+		t.Fatalf("apply source patch: %v", err)
+	}
+	if len(changes) != 1 || changes[0] != "updated source: main" {
+		t.Fatalf("changes = %v", changes)
+	}
+	if len(updated) != 1 {
+		t.Fatalf("updated len = %d", len(updated))
+	}
+	got := updated[0]
+	if got.Kind != sourcecap.KindDatabase || got.Type != "sqlite" || !got.Default {
+		t.Fatalf("omitted fields were not preserved: %+v", got)
+	}
+	if got.Path != "new.sqlite3" {
+		t.Fatalf("path = %q, want new.sqlite3", got.Path)
+	}
+	if got.ReadOnly {
+		t.Fatalf("read_only should be cleared by null: %+v", got)
+	}
+	if !got.Capabilities[sourcecap.KeyDataRead] || got.Capabilities[sourcecap.KeySchemaRead] || !got.Capabilities[sourcecap.KeyDataWrite] {
+		t.Fatalf("capabilities merge failed: %+v", got.Capabilities)
+	}
+	if len(got.Access.PublicTables) != 1 || got.Access.PublicTables[0] != "accounts" || len(got.Access.BlockedTables) != 0 {
+		t.Fatalf("nested access merge failed: %+v", got.Access)
+	}
+
+	updated, changes, err = applySourceConfigPatches(updated, []any{map[string]any{
+		"name": "logs",
+		"kind": sourcecap.KindDatabase,
+		"type": "sqlite",
+		"path": "logs.sqlite3",
+	}})
+	if err != nil {
+		t.Fatalf("apply new source patch: %v", err)
+	}
+	if len(updated) != 2 || changes[0] != "added source: logs" {
+		t.Fatalf("new source update = %+v changes=%v", updated, changes)
+	}
+
+	if _, _, err := applySourceConfigPatches(existing, []any{map[string]any{"name": "missing_kind"}}); err == nil ||
+		!strings.Contains(err.Error(), "requires kind") {
+		t.Fatalf("expected new source kind error, got %v", err)
+	}
+}
 
 func TestHandleUpdateCurrentConfig_TransactionalFailureLeavesLiveStateUntouched(t *testing.T) {
 	livePath := createSQLiteDBFile(t, "live.sqlite3", true)

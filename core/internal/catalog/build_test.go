@@ -352,7 +352,7 @@ func TestActionCapabilitiesAreNotCatalogCards(t *testing.T) {
 	if configCap == nil {
 		t.Fatal("expected gj_config update capability")
 	}
-	for _, want := range []string{`gj_config(id: \"current\", update: { ... })`, "singleton_id", "mcp_fields", "normal GraphQL errors"} {
+	for _, want := range []string{`gj_config(id: \"current\", update: { ... })`, "singleton_id", "update_sources", "remove_sources", "source_patch_semantics", "mcp_fields", "normal GraphQL errors"} {
 		if !strings.Contains(configCap.InputSchemaJSON, want) {
 			t.Fatalf("expected gj_config input schema to mention %q, got %s", want, configCap.InputSchemaJSON)
 		}

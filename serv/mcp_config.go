@@ -35,13 +35,25 @@ func (ms *mcpServer) registerConfigTools() {
 			"update_current_config",
 			mcp.WithDescription("Compatibility tool for the GraphQL control-plane mutation gj_config(id: \"current\", update: ...). Update GraphJin configuration and automatically reload. "+
 				"Changes are applied in-memory and take effect immediately. "+
-				"Supports sources, databases, relationships, MCP settings, metadata, tables, roles, blocklist, functions, and resolvers. "+
+				"Supports sources, update_sources, remove_sources, databases, relationships, MCP settings, metadata, tables, roles, blocklist, functions, and resolvers. "+
 				"System database names (postgres, mysql, information_schema, master, etc.) "+
 				"are rejected by default — use a user database name instead. "+
 				"Use create_if_not_exists: true to create a new database on the server before connecting (dev mode only). "+
 				"Response includes machine-readable next-step guidance in the `next` field. "+
 				"WARNING: Changes are lost on restart unless persisted separately. "+
 				"Use get_current_config first to understand the current state."),
+			mcp.WithArray("sources",
+				mcp.Description("Replace-all source list. Use update_sources/remove_sources for focused edits that preserve omitted sources."),
+				mcp.Items(sourceConfigInputSchema([]string{"name", "kind"})),
+			),
+			mcp.WithArray("update_sources",
+				mcp.Description("Merge-patch sources by name. Existing source patches require name. New source patches require name and kind. Omitted fields are preserved, null clears fields, arrays replace, nested objects merge."),
+				mcp.Items(sourceConfigInputSchema([]string{"name"})),
+			),
+			mcp.WithArray("remove_sources",
+				mcp.Description("Array of source names to remove from configuration."),
+				mcp.WithStringItems(),
+			),
 			mcp.WithObject("databases",
 				mcp.Description("Map of database configs to add/update. Key is database name, value is DatabaseConfig with type, host, port, dbname, user, password, read_only, infer_db_refs for CodeSQL, etc. NOTE: read_only cannot be changed from true to false at runtime if it was set in the config file."),
 			),
@@ -554,6 +566,34 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				errors = append(errors, fmt.Sprintf("sources: %v", err))
 			} else {
 				changes = append(changes, "updated sources")
+			}
+		}
+	}
+
+	if patches, ok := args["update_sources"].([]any); ok {
+		updated, patchChanges, err := applySourceConfigPatches(conf.Sources, patches)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("update_sources: %v", err))
+		} else {
+			conf.Sources = updated
+			if err := conf.RenormalizeSources(); err != nil {
+				errors = append(errors, fmt.Sprintf("update_sources: %v", err))
+			} else {
+				changes = append(changes, patchChanges...)
+			}
+		}
+	}
+
+	if removeSources, ok := args["remove_sources"].([]any); ok {
+		updated, removeChanges, err := removeSourceConfigs(conf.Sources, removeSources)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("remove_sources: %v", err))
+		} else if len(removeChanges) != 0 {
+			conf.Sources = updated
+			if err := conf.RenormalizeSources(); err != nil {
+				errors = append(errors, fmt.Sprintf("remove_sources: %v", err))
+			} else {
+				changes = append(changes, removeChanges...)
 			}
 		}
 	}
@@ -1101,6 +1141,221 @@ func parseSourceConfigList(items []any) ([]core.SourceConfig, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func sourceConfigInputSchema(required []string) map[string]any {
+	props := map[string]any{
+		"name":                     map[string]any{"type": "string", "description": "Source name"},
+		"kind":                     map[string]any{"type": "string", "enum": []string{"database", "code", "file", "api", "graphjin", "workflow"}, "description": "Source kind"},
+		"default":                  map[string]any{"type": "boolean", "description": "Default source"},
+		"type":                     map[string]any{"type": "string", "description": "Database type"},
+		"connection_string":        map[string]any{"type": "string", "description": "Database connection string"},
+		"host":                     map[string]any{"type": "string", "description": "Database host"},
+		"port":                     map[string]any{"type": "number", "description": "Database port"},
+		"dbname":                   map[string]any{"type": "string", "description": "Database name"},
+		"user":                     map[string]any{"type": "string", "description": "Database user"},
+		"password":                 map[string]any{"type": "string", "description": "Database password"},
+		"path":                     map[string]any{"type": "string", "description": "Database/file path"},
+		"schema":                   map[string]any{"type": "string", "description": "Database schema"},
+		"read_only":                map[string]any{"type": "boolean", "description": "Read-only source"},
+		"analytics_mode":           map[string]any{"type": "boolean", "description": "Analytics mode"},
+		"infer_db_refs":            map[string]any{"type": "boolean", "description": "Infer database references"},
+		"backend":                  map[string]any{"type": "string", "description": "Filesystem backend"},
+		"bucket":                   map[string]any{"type": "string", "description": "Filesystem bucket"},
+		"region":                   map[string]any{"type": "string", "description": "Cloud region"},
+		"endpoint":                 map[string]any{"type": "string", "description": "Cloud endpoint"},
+		"prefix":                   map[string]any{"type": "string", "description": "Filesystem prefix"},
+		"root":                     map[string]any{"type": "string", "description": "Filesystem root"},
+		"specs_dir":                map[string]any{"type": "string", "description": "OpenAPI specs directory"},
+		"catalog":                  map[string]any{"type": "boolean", "description": "Expose catalog roots"},
+		"metadata":                 map[string]any{"type": "boolean", "description": "Expose metadata roots"},
+		"control_plane":            map[string]any{"type": "boolean", "description": "Expose control-plane roots"},
+		"runtime":                  map[string]any{"type": "string", "description": "Workflow runtime"},
+		"capabilities":             map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "boolean"}, "description": "Source capabilities"},
+		"access":                   map[string]any{"type": "object", "description": "Source access policy"},
+		"max_open_conns":           map[string]any{"type": "number", "description": "Maximum open connections"},
+		"max_idle_conns":           map[string]any{"type": "number", "description": "Maximum idle connections"},
+		"pool_size":                map[string]any{"type": "number", "description": "Pool size"},
+		"max_connections":          map[string]any{"type": "number", "description": "Maximum connections"},
+		"enable_tls":               map[string]any{"type": "boolean", "description": "Enable TLS"},
+		"server_name":              map[string]any{"type": "string", "description": "TLS server name"},
+		"server_cert":              map[string]any{"type": "string", "description": "TLS server certificate"},
+		"client_cert":              map[string]any{"type": "string", "description": "TLS client certificate"},
+		"client_key":               map[string]any{"type": "string", "description": "TLS client key"},
+		"encrypt":                  map[string]any{"type": "boolean", "description": "MSSQL encrypt"},
+		"trust_server_certificate": map[string]any{"type": "boolean", "description": "MSSQL trust server certificate"},
+		"private_key_path":         map[string]any{"type": "string", "description": "Snowflake private key path"},
+		"private_key_pem":          map[string]any{"type": "string", "description": "Snowflake private key PEM"},
+		"key_passphrase":           map[string]any{"type": "string", "description": "Snowflake private key passphrase"},
+	}
+	return map[string]any{
+		"type":                 "object",
+		"required":             required,
+		"properties":           props,
+		"additionalProperties": true,
+	}
+}
+
+func applySourceConfigPatches(existing []core.SourceConfig, patches []any) ([]core.SourceConfig, []string, error) {
+	out := append([]core.SourceConfig(nil), existing...)
+	positions := make(map[string]int, len(out))
+	for i, source := range out {
+		name := strings.TrimSpace(source.Name)
+		if name == "" {
+			return nil, nil, fmt.Errorf("existing source at index %d is missing name", i)
+		}
+		key := strings.ToLower(name)
+		if _, ok := positions[key]; ok {
+			return nil, nil, fmt.Errorf("duplicate existing source %q", name)
+		}
+		positions[key] = i
+	}
+
+	seenPatches := make(map[string]struct{}, len(patches))
+	changes := make([]string, 0, len(patches))
+	for i, item := range patches {
+		patch, name, err := sourcePatchMap(item)
+		if err != nil {
+			return nil, nil, fmt.Errorf("[%d]: %w", i, err)
+		}
+		key := strings.ToLower(name)
+		if _, ok := seenPatches[key]; ok {
+			return nil, nil, fmt.Errorf("[%d]: duplicate source patch %q", i, name)
+		}
+		seenPatches[key] = struct{}{}
+
+		pos, exists := positions[key]
+		var base map[string]any
+		if exists {
+			base, err = sourceConfigMap(out[pos])
+			if err != nil {
+				return nil, nil, fmt.Errorf("[%d]: source %q: %w", i, name, err)
+			}
+		} else {
+			if strings.TrimSpace(sourcePatchString(patch, "kind")) == "" {
+				return nil, nil, fmt.Errorf("[%d]: new source %q requires kind", i, name)
+			}
+			base = make(map[string]any)
+		}
+
+		mergeJSONPatch(base, patch)
+		base["name"] = name
+		if strings.TrimSpace(sourcePatchString(base, "kind")) == "" {
+			return nil, nil, fmt.Errorf("[%d]: source %q kind cannot be empty", i, name)
+		}
+		parsed, err := parseSourceConfigList([]any{base})
+		if err != nil {
+			return nil, nil, fmt.Errorf("[%d]: source %q: %w", i, name, err)
+		}
+		if len(parsed) != 1 {
+			return nil, nil, fmt.Errorf("[%d]: source %q parsed to %d entries", i, name, len(parsed))
+		}
+		if exists {
+			out[pos] = parsed[0]
+			changes = append(changes, fmt.Sprintf("updated source: %s", name))
+			continue
+		}
+		positions[key] = len(out)
+		out = append(out, parsed[0])
+		changes = append(changes, fmt.Sprintf("added source: %s", name))
+	}
+
+	return out, changes, nil
+}
+
+func removeSourceConfigs(existing []core.SourceConfig, names []any) ([]core.SourceConfig, []string, error) {
+	remove := make(map[string]string, len(names))
+	for i, item := range names {
+		name, ok := item.(string)
+		if !ok {
+			return nil, nil, fmt.Errorf("[%d]: source name must be a string", i)
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil, nil, fmt.Errorf("[%d]: source name is required", i)
+		}
+		key := strings.ToLower(name)
+		if _, ok := remove[key]; !ok {
+			remove[key] = name
+		}
+	}
+	if len(remove) == 0 {
+		return append([]core.SourceConfig(nil), existing...), nil, nil
+	}
+
+	out := make([]core.SourceConfig, 0, len(existing))
+	changes := make([]string, 0, len(remove))
+	for _, source := range existing {
+		key := strings.ToLower(strings.TrimSpace(source.Name))
+		name, shouldRemove := remove[key]
+		if !shouldRemove {
+			out = append(out, source)
+			continue
+		}
+		changes = append(changes, fmt.Sprintf("removed source: %s", name))
+		delete(remove, key)
+	}
+	return out, changes, nil
+}
+
+func sourcePatchMap(item any) (map[string]any, string, error) {
+	patch, ok := item.(map[string]any)
+	if !ok {
+		return nil, "", fmt.Errorf("source patch must be an object")
+	}
+	rawName, ok := patch["name"]
+	if !ok {
+		return nil, "", fmt.Errorf("source patch requires name")
+	}
+	name, ok := rawName.(string)
+	if !ok || strings.TrimSpace(name) == "" {
+		return nil, "", fmt.Errorf("source patch name must be a non-empty string")
+	}
+	if patch["name"] == nil {
+		return nil, "", fmt.Errorf("source patch name cannot be null")
+	}
+	cp := make(map[string]any, len(patch))
+	for k, v := range patch {
+		cp[k] = v
+	}
+	return cp, strings.TrimSpace(name), nil
+}
+
+func sourceConfigMap(source core.SourceConfig) (map[string]any, error) {
+	data, err := json.Marshal(source)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func sourcePatchString(m map[string]any, key string) string {
+	value, ok := m[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func mergeJSONPatch(dst, patch map[string]any) {
+	for key, value := range patch {
+		if value == nil {
+			delete(dst, key)
+			continue
+		}
+		pm, patchIsMap := value.(map[string]any)
+		dm, dstIsMap := dst[key].(map[string]any)
+		if patchIsMap && dstIsMap {
+			mergeJSONPatch(dm, pm)
+			dst[key] = dm
+			continue
+		}
+		dst[key] = value
+	}
 }
 
 func parseRelationshipConfigList(items []any) ([]core.RelationshipConfig, error) {
