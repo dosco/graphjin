@@ -390,3 +390,33 @@ func TestNormalizeSourcesMapsSourcesAndRelationships(t *testing.T) {
 		t.Fatalf("relationship overlay not applied: %+v", conf.Tables[0].Columns)
 	}
 }
+
+func TestRenormalizeSourcesRebuildsGeneratedRuntimeFields(t *testing.T) {
+	conf := &Config{
+		Sources: []SourceConfig{
+			{Name: "app", Kind: "database", Type: "sqlite", Path: "old.sqlite3", Default: true},
+			{Name: "graphjin", Kind: "graphjin"},
+		},
+		Tables: []Table{{Name: "users", Source: "app"}},
+	}
+	if err := conf.NormalizeSources(); err != nil {
+		t.Fatalf("NormalizeSources: %v", err)
+	}
+	if got := conf.Databases["app"].Path; got != "old.sqlite3" {
+		t.Fatalf("normalized database path = %q", got)
+	}
+	if got := conf.Tables[0].Database; got != "app" {
+		t.Fatalf("normalized table database = %q", got)
+	}
+
+	conf.Sources[0].Path = "new.sqlite3"
+	if err := conf.RenormalizeSources(); err != nil {
+		t.Fatalf("RenormalizeSources: %v", err)
+	}
+	if got := conf.Databases["app"].Path; got != "new.sqlite3" {
+		t.Fatalf("renormalized database path = %q", got)
+	}
+	if got := conf.Tables[0].Database; got != "app" {
+		t.Fatalf("renormalized table database = %q", got)
+	}
+}

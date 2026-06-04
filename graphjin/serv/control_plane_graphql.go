@@ -56,7 +56,8 @@ func graphjinControlPlaneTables() []core.ManagedTable {
 			cpCol("id", "text", true), cpCol("kind", "text", false), cpCol("title", "text", false), cpCol("summary", "text", false),
 			cpCol("name", "text", false),
 			cpCol("database_name", "text", false), cpCol("schema_name", "text", false), cpCol("table_name", "text", false), cpCol("column_name", "text", false),
-			cpCol("source", "text", false), cpCol("source_kind", "text", false), cpCol("risk_level", "text", false), cpCol("confidence", "text", false), cpCol("sensitive", "boolean", false),
+			cpCol("source", "text", false), cpCol("source_kind", "text", false), cpCol("owner_source", "text", false), cpCol("owner_sources_json", "json", false),
+			cpCol("risk_level", "text", false), cpCol("confidence", "text", false), cpCol("sensitive", "boolean", false),
 			cpCol("sensitivity", "text", false), cpCol("evidence_json", "json", false), cpCol("examples_json", "json", false), cpCol("suggested_next_json", "json", false),
 			cpCol("detail_ref", "text", false), cpCol("details_json", "json", false), cpCol("edges_json", "json", false),
 			cpCol("query_json", "json", false), cpCol("input_schema_json", "json", false), cpCol("output_schema_json", "json", false),
@@ -773,7 +774,6 @@ func (h controlPlaneGraphQL) mutateConfig(ctx context.Context, root core.Managed
 	if payload["success"] == false {
 		return nil, fmt.Errorf("%s", firstPayloadError(payload))
 	}
-	h.service.markCatalogChanged("config mutation")
 	return h.configRow(), nil
 }
 

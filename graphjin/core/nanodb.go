@@ -13,8 +13,38 @@ type NanoTable = nanodb.Table
 type NanoColumn = nanodb.Column
 type NanoRow = nanodb.Row
 
+type NanoUpdate struct {
+	inner *nanodb.Update
+}
+
 func NewNanoDB(snapshot NanoSnapshot) (*NanoDB, error) {
 	return nanodb.New(snapshot)
+}
+
+func UpdateNanoDB(db *NanoDB, fn func(*NanoUpdate) error) error {
+	if db == nil {
+		return errors.New("nanodb is nil")
+	}
+	if fn == nil {
+		return errors.New("nanodb update callback is required")
+	}
+	return db.Update(func(tx *nanodb.Update) error {
+		return fn(&NanoUpdate{inner: tx})
+	})
+}
+
+func (tx *NanoUpdate) ReplaceRows(schema, table string, remove func(NanoRow) bool, insert []NanoRow) error {
+	if tx == nil || tx.inner == nil {
+		return errors.New("nanodb update is nil")
+	}
+	return tx.inner.ReplaceRows(schema, table, remove, insert)
+}
+
+func (tx *NanoUpdate) ReplaceTable(schema, table string, rows []NanoRow) error {
+	if tx == nil || tx.inner == nil {
+		return errors.New("nanodb update is nil")
+	}
+	return tx.inner.ReplaceTable(schema, table, rows)
 }
 
 func OptionSetNanoDatabases(databases map[string]*NanoDB) Option {

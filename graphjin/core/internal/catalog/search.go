@@ -290,6 +290,10 @@ func catalogFieldValue(card Card, field string) (any, bool) {
 		return card.Source, true
 	case "source_kind":
 		return card.SourceKind, true
+	case "owner_source":
+		return card.OwnerSource, true
+	case "owner_sources_json":
+		return card.OwnerSourcesJSON, true
 	case "risk_level":
 		return card.RiskLevel, true
 	case "confidence":
@@ -680,6 +684,8 @@ func cardSearchFields(card Card, detailText string) []weightedText {
 		{field: "details", text: detailText, weight: 2},
 		{field: "source", text: card.Source, weight: 2},
 		{field: "source_kind", text: card.SourceKind, weight: 2},
+		{field: "owner_source", text: card.OwnerSource, weight: 2},
+		{field: "owner_sources", text: card.OwnerSourcesJSON, weight: 1},
 		{field: "created_at", text: card.CreatedAt, weight: 1},
 		{field: "updated_at", text: card.UpdatedAt, weight: 1},
 		{field: "generated_tags", text: strings.Join(generatedSearchTags(card), " "), weight: 6},

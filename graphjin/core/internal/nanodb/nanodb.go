@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unicode"
 
@@ -55,7 +56,8 @@ type tableData struct {
 }
 
 type DB struct {
-	snap atomic.Pointer[Snapshot]
+	snap    atomic.Pointer[Snapshot]
+	writeMu sync.Mutex
 }
 
 func New(snapshot Snapshot) (*DB, error) {
@@ -71,6 +73,8 @@ func (db *DB) Refresh(snapshot Snapshot) error {
 	if err != nil {
 		return err
 	}
+	db.writeMu.Lock()
+	defer db.writeMu.Unlock()
 	db.snap.Store(s)
 	return nil
 }
@@ -80,6 +84,168 @@ func (db *DB) Snapshot() *Snapshot {
 		return nil
 	}
 	return db.snap.Load()
+}
+
+// Update applies a copy-on-write patch to the current snapshot and atomically
+// publishes the result after the callback succeeds.
+func (db *DB) Update(fn func(*Update) error) error {
+	if db == nil {
+		return fmt.Errorf("nanodb is nil")
+	}
+	if fn == nil {
+		return fmt.Errorf("nanodb update callback is required")
+	}
+	db.writeMu.Lock()
+	defer db.writeMu.Unlock()
+
+	base := db.snap.Load()
+	if base == nil {
+		base = &Snapshot{Schema: DefaultSchema}
+	}
+	tx := newUpdate(base)
+	if err := fn(tx); err != nil {
+		return err
+	}
+	next, err := tx.snapshot()
+	if err != nil {
+		return err
+	}
+	db.snap.Store(next)
+	return nil
+}
+
+type Update struct {
+	base     *Snapshot
+	schema   string
+	tables   []Table
+	tablePos map[string]int
+	touched  map[string]struct{}
+}
+
+func newUpdate(base *Snapshot) *Update {
+	schema := base.Schema
+	if strings.TrimSpace(schema) == "" {
+		schema = DefaultSchema
+	}
+	tx := &Update{
+		base:     base,
+		schema:   schema,
+		tables:   make([]Table, len(base.Tables)),
+		tablePos: make(map[string]int, len(base.Tables)),
+		touched:  make(map[string]struct{}),
+	}
+	copy(tx.tables, base.Tables)
+	for i, table := range tx.tables {
+		if strings.TrimSpace(table.Schema) == "" {
+			table.Schema = schema
+			tx.tables[i] = table
+		}
+		tx.tablePos[tableKey(table.Schema, table.Name)] = i
+	}
+	return tx
+}
+
+// ReplaceRows removes matching rows from a table, appends the replacement rows,
+// and rebuilds that table's indexes when the update commits.
+func (tx *Update) ReplaceRows(schema, table string, remove func(Row) bool, insert []Row) error {
+	idx, err := tx.tableIndex(schema, table)
+	if err != nil {
+		return err
+	}
+	next := tx.mutableTable(idx)
+	rows := make([]Row, 0, len(next.Rows)+len(insert))
+	for _, row := range next.Rows {
+		if remove != nil && remove(row) {
+			continue
+		}
+		rows = append(rows, cloneRow(row))
+	}
+	rows = append(rows, cloneRows(insert)...)
+	next.Rows = rows
+	tx.tables[idx] = next
+	tx.markTouched(idx)
+	return nil
+}
+
+// ReplaceTable replaces all rows for an existing table while preserving its
+// schema definition.
+func (tx *Update) ReplaceTable(schema, table string, rows []Row) error {
+	idx, err := tx.tableIndex(schema, table)
+	if err != nil {
+		return err
+	}
+	next := tx.mutableTable(idx)
+	next.Rows = cloneRows(rows)
+	tx.tables[idx] = next
+	tx.markTouched(idx)
+	return nil
+}
+
+func (tx *Update) tableIndex(schema, table string) (int, error) {
+	if tx == nil {
+		return 0, fmt.Errorf("nanodb update is nil")
+	}
+	if strings.TrimSpace(schema) == "" {
+		schema = tx.schema
+	}
+	idx, ok := tx.tablePos[tableKey(schema, table)]
+	if !ok {
+		return 0, fmt.Errorf("nanodb table not found: %s.%s", schema, table)
+	}
+	return idx, nil
+}
+
+func (tx *Update) mutableTable(idx int) Table {
+	table := tx.tables[idx]
+	table.Columns = cloneColumns(table.Columns)
+	table.Rows = cloneRows(table.Rows)
+	if strings.TrimSpace(table.Schema) == "" {
+		table.Schema = tx.schema
+	}
+	return table
+}
+
+func (tx *Update) markTouched(idx int) {
+	table := tx.tables[idx]
+	tx.touched[tableKey(table.Schema, table.Name)] = struct{}{}
+}
+
+func (tx *Update) snapshot() (*Snapshot, error) {
+	if tx == nil {
+		return nil, fmt.Errorf("nanodb update is nil")
+	}
+	out := &Snapshot{
+		Schema: tx.schema,
+		Tables: make([]Table, len(tx.tables)),
+		tables: make(map[string]*tableData, len(tx.tables)),
+	}
+	for i, table := range tx.tables {
+		if strings.TrimSpace(table.Name) == "" {
+			return nil, fmt.Errorf("nanodb table name is required")
+		}
+		if strings.TrimSpace(table.Schema) == "" {
+			table.Schema = tx.schema
+		}
+		key := tableKey(table.Schema, table.Name)
+		if _, exists := out.tables[key]; exists {
+			return nil, fmt.Errorf("duplicate nanodb table %s.%s", table.Schema, table.Name)
+		}
+		out.Tables[i] = table
+		if _, ok := tx.touched[key]; ok {
+			out.Tables[i].Columns = cloneColumns(table.Columns)
+			out.Tables[i].Rows = cloneRows(table.Rows)
+			out.tables[key] = buildTableData(out.Tables[i])
+			continue
+		}
+		if tx.base != nil {
+			if td := tx.base.tableData(table.Schema, table.Name); td != nil {
+				out.tables[key] = td
+				continue
+			}
+		}
+		out.tables[key] = buildTableData(table)
+	}
+	return out, nil
 }
 
 func normalize(snapshot Snapshot) (*Snapshot, error) {
@@ -322,13 +488,17 @@ func cloneColumns(in []Column) []Column {
 func cloneRows(in []Row) []Row {
 	out := make([]Row, len(in))
 	for i, row := range in {
-		cp := make(Row, len(row))
-		for k, v := range row {
-			cp[k] = v
-		}
-		out[i] = cp
+		out[i] = cloneRow(row)
 	}
 	return out
+}
+
+func cloneRow(row Row) Row {
+	cp := make(Row, len(row))
+	for k, v := range row {
+		cp[k] = v
+	}
+	return cp
 }
 
 func valueKey(v any) string {

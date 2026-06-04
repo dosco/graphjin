@@ -103,6 +103,49 @@ func TestSourceCardsUseCapabilityRegistry(t *testing.T) {
 	if !strings.Contains(card.ExamplesJSON, sourcecap.KeySecurityRead) {
 		t.Fatalf("source examples should come from registry, got %s", card.ExamplesJSON)
 	}
+	if card.OwnerSource != "graphjin" || card.OwnerSourcesJSON != `["graphjin"]` {
+		t.Fatalf("source card owner fields = %q %s", card.OwnerSource, card.OwnerSourcesJSON)
+	}
+}
+
+func TestSchemaCardsIncludeSourceOwnership(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{
+		Databases: []MetadataDatabase{{Name: "app", Type: "postgres"}, {Name: "billing", Type: "postgres"}},
+		Tables: []MetadataTable{
+			{ID: "app.public.users", DatabaseName: "app", SchemaName: "public", TableName: "users", ColumnCount: 1},
+			{ID: "billing.public.invoices", DatabaseName: "billing", SchemaName: "public", TableName: "invoices", ColumnCount: 1},
+		},
+		Columns: []MetadataColumn{
+			{ID: "app.public.users.id", TableID: "app.public.users", DatabaseName: "app", SchemaName: "public", TableName: "users", ColumnName: "id", Type: "int"},
+			{ID: "billing.public.invoices.user_id", TableID: "billing.public.invoices", DatabaseName: "billing", SchemaName: "public", TableName: "invoices", ColumnName: "user_id", Type: "int"},
+		},
+		Relationships: []MetadataRelationship{{
+			ID:               "billing.public.invoices.user_id->app.public.users.id",
+			FromDatabaseName: "billing",
+			FromSchemaName:   "public",
+			FromTableName:    "invoices",
+			FromColumnName:   "user_id",
+			FromColumnID:     "billing.public.invoices.user_id",
+			ToDatabaseName:   "app",
+			ToSchemaName:     "public",
+			ToTableName:      "users",
+			ToColumnName:     "id",
+			ToColumnID:       "app.public.users.id",
+		}},
+	}, nil, BuildOptions{})
+
+	table, ok := findCatalogCard(snap, "table:app.public.users")
+	if !ok || table.OwnerSource != "app" || table.OwnerSourcesJSON != `["app"]` {
+		t.Fatalf("table ownership = %+v, ok=%v", table, ok)
+	}
+	column, ok := findCatalogCard(snap, "column:billing.public.invoices.user_id")
+	if !ok || column.OwnerSource != "billing" || column.OwnerSourcesJSON != `["billing"]` {
+		t.Fatalf("column ownership = %+v, ok=%v", column, ok)
+	}
+	relationship, ok := findCatalogCard(snap, "relationship:billing.public.invoices.user_id->app.public.users.id")
+	if !ok || relationship.OwnerSource != "app" || relationship.OwnerSourcesJSON != `["app","billing"]` {
+		t.Fatalf("relationship ownership = %+v, ok=%v", relationship, ok)
+	}
 }
 
 func TestWorkflowCardsSortByLifecycleFields(t *testing.T) {
@@ -435,14 +478,19 @@ func TestWorkflowRevisionChangesWithWorkflowSourceHash(t *testing.T) {
 
 func TestRevisionChangesWithSchemaMetadata(t *testing.T) {
 	opts := BuildOptions{EnabledTools: []string{"query_catalog"}}
-	rev1 := RevisionFromSourceRevisions(SourceRevisions(&MetadataSnapshot{
+	sources1 := SourceRevisions(&MetadataSnapshot{
 		Tables: []MetadataTable{{ID: "default.public.orders", DatabaseName: "default", SchemaName: "public", TableName: "orders"}},
-	}, nil, opts))
-	rev2 := RevisionFromSourceRevisions(SourceRevisions(&MetadataSnapshot{
+	}, nil, opts)
+	sources2 := SourceRevisions(&MetadataSnapshot{
 		Tables: []MetadataTable{{ID: "default.public.customers", DatabaseName: "default", SchemaName: "public", TableName: "customers"}},
-	}, nil, opts))
+	}, nil, opts)
+	rev1 := RevisionFromSourceRevisions(sources1)
+	rev2 := RevisionFromSourceRevisions(sources2)
 	if rev1 == rev2 {
 		t.Fatalf("expected schema metadata change to change revision")
+	}
+	if sources1["schema:default"] == "" || sources2["schema:default"] == "" || sources1["schema:default"] == sources2["schema:default"] {
+		t.Fatalf("expected default source schema revision to change: %q -> %q", sources1["schema:default"], sources2["schema:default"])
 	}
 }
 

@@ -2,11 +2,15 @@ package serv
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
 
 func (s *graphjinService) initSystemNanoDBBeforeCore() error {
@@ -76,6 +80,79 @@ func (s *graphjinService) refreshSystemNanoDB() error {
 	return s.systemNanoDB.Refresh(s.systemNanoSnapshotFromCatalog(catalogSnapshot))
 }
 
+func (s *graphjinService) refreshSystemNanoDBForSources(sourceNames []string) error {
+	if s == nil || s.systemNanoDB == nil || s.metadataDB == "" {
+		return nil
+	}
+	sourceSet := catalogSourceSet(sourceNames)
+	if len(sourceSet) == 0 || s.gj == nil || s.conf == nil {
+		return s.refreshSystemNanoDB()
+	}
+	snapshot, err := s.gj.MetadataSnapshot(s.metadataSnapshotExcludesFor(s.metadataDB, &s.conf.Core, s.managedDBs)...)
+	if err != nil {
+		return err
+	}
+	if err := s.refreshCodeSQLTargetsForMetadata(context.Background(), snapshot); err != nil {
+		return err
+	}
+
+	opts := s.catalogBuildOptions()
+	fullCatalog := core.BuildCatalogSnapshotWithOptions(snapshot, &s.conf.Core, opts)
+	scopedSnapshot := filterMetadataSnapshotForCatalogSources(snapshot, sourceSet)
+	scopedOpts := filterCatalogBuildOptionsForSources(opts, sourceSet)
+	scopedCatalog := core.BuildCatalogSnapshotWithOptions(scopedSnapshot, &s.conf.Core, scopedOpts)
+	cp := newControlPlaneGraphQL(s)
+
+	var catalogRows []core.NanoRow
+	for _, row := range cp.allCatalogRows(scopedCatalog, core.CatalogQueryOutput{Cards: scopedCatalog.Cards}) {
+		if catalogRowOwnedBySources(row, sourceSet) {
+			catalogRows = append(catalogRows, normalizeCatalogNanoRow(row))
+		}
+	}
+	var configRows []core.NanoRow
+	if s.conf.graphjinControlPlaneEnabled() {
+		row := copyNanoRow(cp.configRow())
+		row["catalog_revision"] = fullCatalog.Revision
+		configRows = []core.NanoRow{row}
+	}
+
+	if err := core.UpdateNanoDB(s.systemNanoDB, func(tx *core.NanoUpdate) error {
+		if err := tx.ReplaceRows("main", "gj_catalog", func(row core.NanoRow) bool {
+			return catalogNanoRowOwnedBySources(row, sourceSet)
+		}, catalogRows); err != nil {
+			return err
+		}
+		if err := tx.ReplaceTable("main", "gj_security", securityNanoRows(s)); err != nil {
+			return err
+		}
+		return tx.ReplaceTable("main", "gj_config", configRows)
+	}); err != nil {
+		return err
+	}
+	s.catalogMu.Lock()
+	s.catalogCache = &catalogCacheEntry{revision: fullCatalog.Revision, snapshot: fullCatalog}
+	s.catalogMu.Unlock()
+	return nil
+}
+
+func (s *graphjinService) refreshCatalogAfterCoreConfigChange(oldCore, newCore core.Config, reason string) error {
+	if s == nil {
+		return nil
+	}
+	s.invalidateCatalogCache()
+	if s.systemNanoDB == nil {
+		s.markCatalogChanged(reason)
+		return nil
+	}
+	changedSources := changedCatalogSources(oldCore, newCore)
+	if len(changedSources) != 0 &&
+		sourceScopedCatalogPatchAllowed(oldCore, newCore, changedSources) &&
+		coreConfigChangeScopedToSources(oldCore, newCore, changedSources) {
+		return s.refreshSystemNanoDBForSources(sortedSourceSet(changedSources))
+	}
+	return s.refreshSystemNanoDB()
+}
+
 func (s *graphjinService) systemNanoSnapshotFromCatalog(catalogSnapshot *core.CatalogSnapshot) core.NanoSnapshot {
 	codeDB := ""
 	codeDBs := s.selectedCodeSQLDatabasesFor(&s.conf.Core, s.managedDBs)
@@ -127,6 +204,8 @@ func catalogNanoColumns(codeDB string) []core.NanoColumn {
 		{Name: "column_name", Type: "text", Index: true},
 		{Name: "source", Type: "text"},
 		{Name: "source_kind", Type: "text", Index: true},
+		{Name: "owner_source", Type: "text", Index: true},
+		{Name: "owner_sources_json", Type: "json"},
 		{Name: "risk_level", Type: "text"},
 		{Name: "confidence", Type: "text"},
 		{Name: "sensitive", Type: "boolean"},
@@ -325,6 +404,8 @@ func normalizeCatalogNanoRow(in map[string]any) core.NanoRow {
 		fmt.Sprint(row["database_name"]),
 		fmt.Sprint(row["table_name"]),
 		fmt.Sprint(row["column_name"]),
+		fmt.Sprint(row["owner_source"]),
+		fmt.Sprint(row["owner_sources_json"]),
 	}, " ")
 	return row
 }
@@ -440,20 +521,276 @@ func (s *graphjinService) refreshMetadataGraphForRuntimeNano(ctx context.Context
 	if err != nil {
 		return err
 	}
-	codeDBs := s.selectedCodeSQLDatabasesFor(conf, s.managedDBs)
-	if len(codeDBs) == 1 {
-		if managed, ok := s.managedDBs[codeDBs[0]]; ok && managed.handle != nil {
-			targets := codeSQLTargetsFromMetadata(snapshot, nil)
-			if err := managed.handle.SetDBRefTargets(ctx, targets); err != nil {
-				return err
-			}
-			if err := managed.handle.RefreshPublicGraph(ctx); err != nil {
-				return err
-			}
-		}
+	if err := s.refreshCodeSQLTargetsForMetadata(ctx, snapshot); err != nil {
+		return err
 	}
 	catalogSnapshot := core.BuildCatalogSnapshotWithOptions(snapshot, conf, s.catalogBuildOptions())
 	return s.systemNanoDB.Refresh(s.systemNanoSnapshotFromCatalog(catalogSnapshot))
+}
+
+func (s *graphjinService) refreshCodeSQLTargetsForMetadata(ctx context.Context, snapshot *core.MetadataSnapshot) error {
+	if s == nil || s.conf == nil {
+		return nil
+	}
+	codeDBs := s.selectedCodeSQLDatabasesFor(&s.conf.Core, s.managedDBs)
+	if len(codeDBs) != 1 {
+		return nil
+	}
+	if managed, ok := s.managedDBs[codeDBs[0]]; ok && managed.handle != nil {
+		targets := codeSQLTargetsFromMetadata(snapshot, nil)
+		if err := managed.handle.SetDBRefTargets(ctx, targets); err != nil {
+			return err
+		}
+		if err := managed.handle.RefreshPublicGraph(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func catalogSourceSet(sourceNames []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(sourceNames))
+	for _, name := range sourceNames {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			out[name] = struct{}{}
+		}
+	}
+	return out
+}
+
+func filterMetadataSnapshotForCatalogSources(snapshot *core.MetadataSnapshot, sources map[string]struct{}) *core.MetadataSnapshot {
+	if snapshot == nil {
+		return &core.MetadataSnapshot{}
+	}
+	owns := func(name string) bool {
+		_, ok := sources[strings.TrimSpace(name)]
+		return ok
+	}
+	out := &core.MetadataSnapshot{}
+	for _, db := range snapshot.Databases {
+		if owns(db.Name) {
+			out.Databases = append(out.Databases, db)
+		}
+	}
+	for _, table := range snapshot.Tables {
+		if owns(table.DatabaseName) {
+			out.Tables = append(out.Tables, table)
+		}
+	}
+	for _, column := range snapshot.Columns {
+		if owns(column.DatabaseName) {
+			out.Columns = append(out.Columns, column)
+		}
+	}
+	for _, rel := range snapshot.Relationships {
+		if owns(rel.FromDatabaseName) || owns(rel.ToDatabaseName) {
+			out.Relationships = append(out.Relationships, rel)
+		}
+	}
+	for _, fn := range snapshot.Functions {
+		if owns(fn.DatabaseName) {
+			out.Functions = append(out.Functions, fn)
+		}
+	}
+	for _, idx := range snapshot.Indexes {
+		if owns(idx.DatabaseName) {
+			out.Indexes = append(out.Indexes, idx)
+		}
+	}
+	return out
+}
+
+func filterCatalogBuildOptionsForSources(opts core.CatalogBuildOptions, sources map[string]struct{}) core.CatalogBuildOptions {
+	filtered := opts
+	filtered.Sources = nil
+	for _, source := range opts.Sources {
+		if _, ok := sources[strings.TrimSpace(source.Name)]; ok {
+			filtered.Sources = append(filtered.Sources, source)
+		}
+	}
+	filtered.Workflows = nil
+	filtered.Fragments = nil
+	filtered.SavedQueries = nil
+	return filtered
+}
+
+func catalogRowOwnedBySources(row map[string]any, sources map[string]struct{}) bool {
+	if len(sources) == 0 {
+		return false
+	}
+	if sourceInSet(fmt.Sprint(row["owner_source"]), sources) {
+		return true
+	}
+	if catalogOwnerJSONContainsSource(row["owner_sources_json"], sources) {
+		return true
+	}
+	if sourceInSet(fmt.Sprint(row["database_name"]), sources) {
+		return true
+	}
+	id := fmt.Sprint(row["id"])
+	for source := range sources {
+		if id == "source:"+source || id == "database:"+source {
+			return true
+		}
+	}
+	evidence := fmt.Sprint(row["evidence_json"])
+	for source := range sources {
+		if strings.Contains(evidence, `"DatabaseName":"`+source+`"`) ||
+			strings.Contains(evidence, `"FromDatabaseName":"`+source+`"`) ||
+			strings.Contains(evidence, `"ToDatabaseName":"`+source+`"`) {
+			return true
+		}
+	}
+	return false
+}
+
+func catalogNanoRowOwnedBySources(row core.NanoRow, sources map[string]struct{}) bool {
+	return catalogRowOwnedBySources(map[string]any(row), sources)
+}
+
+func sourceInSet(source string, sources map[string]struct{}) bool {
+	_, ok := sources[strings.TrimSpace(source)]
+	return ok
+}
+
+func catalogOwnerJSONContainsSource(raw any, sources map[string]struct{}) bool {
+	switch value := raw.(type) {
+	case []string:
+		for _, source := range value {
+			if sourceInSet(source, sources) {
+				return true
+			}
+		}
+	case []any:
+		for _, source := range value {
+			if sourceInSet(fmt.Sprint(source), sources) {
+				return true
+			}
+		}
+	case string:
+		var list []string
+		if err := json.Unmarshal([]byte(value), &list); err == nil {
+			for _, source := range list {
+				if sourceInSet(source, sources) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func sortedSourceSet(sources map[string]struct{}) []string {
+	out := make([]string, 0, len(sources))
+	for source := range sources {
+		out = append(out, source)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func changedCatalogSources(oldCore, newCore core.Config) map[string]struct{} {
+	changed := make(map[string]struct{})
+	oldSources := sourceConfigByCatalogName(oldCore.Sources)
+	newSources := sourceConfigByCatalogName(newCore.Sources)
+	sourceNames := make(map[string]struct{}, len(oldSources)+len(newSources))
+	for name, oldSource := range oldSources {
+		sourceNames[name] = struct{}{}
+		if newSource, ok := newSources[name]; !ok || !reflect.DeepEqual(oldSource, newSource) {
+			changed[name] = struct{}{}
+		}
+	}
+	for name, newSource := range newSources {
+		sourceNames[name] = struct{}{}
+		if oldSource, ok := oldSources[name]; !ok || !reflect.DeepEqual(oldSource, newSource) {
+			changed[name] = struct{}{}
+		}
+	}
+	for name, oldDB := range oldCore.Databases {
+		if _, ok := sourceNames[name]; !ok {
+			continue
+		}
+		if newDB, ok := newCore.Databases[name]; !ok || !reflect.DeepEqual(oldDB, newDB) {
+			changed[name] = struct{}{}
+		}
+	}
+	for name, newDB := range newCore.Databases {
+		if _, ok := sourceNames[name]; !ok {
+			continue
+		}
+		if oldDB, ok := oldCore.Databases[name]; !ok || !reflect.DeepEqual(oldDB, newDB) {
+			changed[name] = struct{}{}
+		}
+	}
+	return changed
+}
+
+func sourceConfigByCatalogName(sources []core.SourceConfig) map[string]core.SourceConfig {
+	out := make(map[string]core.SourceConfig, len(sources))
+	for _, source := range sources {
+		name := catalogSourceConfigName(source)
+		if name != "" {
+			out[name] = source
+		}
+	}
+	return out
+}
+
+func catalogSourceConfigName(source core.SourceConfig) string {
+	name := strings.TrimSpace(source.Name)
+	if name != "" {
+		return name
+	}
+	return strings.TrimSpace(source.CanonicalKind())
+}
+
+func coreConfigChangeScopedToSources(oldCore, newCore core.Config, sources map[string]struct{}) bool {
+	oldCopy := cloneCoreConfig(oldCore)
+	newCopy := cloneCoreConfig(newCore)
+	oldCopy.Sources = filterSourcesOutsideSet(oldCopy.Sources, sources)
+	newCopy.Sources = filterSourcesOutsideSet(newCopy.Sources, sources)
+	for source := range sources {
+		delete(oldCopy.Databases, source)
+		delete(newCopy.Databases, source)
+	}
+	return reflect.DeepEqual(oldCopy, newCopy)
+}
+
+func sourceScopedCatalogPatchAllowed(oldCore, newCore core.Config, sources map[string]struct{}) bool {
+	oldSources := sourceConfigByCatalogName(oldCore.Sources)
+	newSources := sourceConfigByCatalogName(newCore.Sources)
+	for name := range sources {
+		oldKind := ""
+		if oldSource, ok := oldSources[name]; ok {
+			oldKind = oldSource.CanonicalKind()
+		}
+		newKind := ""
+		if newSource, ok := newSources[name]; ok {
+			newKind = newSource.CanonicalKind()
+		}
+		if oldKind != "" && oldKind != sourcecap.KindDatabase {
+			return false
+		}
+		if newKind != "" && newKind != sourcecap.KindDatabase {
+			return false
+		}
+		if oldKind == "" && newKind == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func filterSourcesOutsideSet(sources []core.SourceConfig, remove map[string]struct{}) []core.SourceConfig {
+	out := make([]core.SourceConfig, 0, len(sources))
+	for _, source := range sources {
+		if _, ok := remove[catalogSourceConfigName(source)]; ok {
+			continue
+		}
+		out = append(out, source)
+	}
+	return out
 }
 
 func nowNanoTimestamp() string {
