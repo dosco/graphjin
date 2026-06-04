@@ -12,7 +12,7 @@
 set -u
 
 # All supported database suites
-ALL_DBS="postgres mysql mariadb sqlite oracle mssql mongodb snowflake bigquery"
+ALL_DBS="postgres mysql mariadb sqlite oracle mssql mongodb cassandra snowflake bigquery"
 
 # Allow caller to select a subset via env var
 DBS="${PARALLEL_DBS:-$ALL_DBS}"
@@ -59,7 +59,13 @@ db_test_cmd() {
         sqlite)  tags="-tags \"sqlite fts5\"" ;;
         mssql)   tags="-tags mssql" ;;
     esac
-    echo "cd tests && go test -v -timeout 30m -race -db=$db $tags ."
+    # Cassandra runs a focused, dialect-appropriate suite (no joins/cross-partition),
+    # so restrict to its own tests rather than the shared Example suite.
+    local run=""
+    case "$db" in
+        cassandra) run="-run Cassandra" ;;
+    esac
+    echo "cd tests && go test -v -timeout 30m -race -db=$db $tags $run ."
 }
 
 # Convert space-separated list to array

@@ -727,6 +727,8 @@ func getDialectForType(ct string) dialect.Dialect {
 		return &dialect.SnowflakeDialect{}
 	case "mongodb":
 		return &dialect.MongoDBDialect{}
+	case "cassandra":
+		return &dialect.CassandraDialect{}
 	default:
 		return &dialect.PostgresDialect{}
 	}

@@ -41,9 +41,12 @@ type DBTable struct {
 	FullText             []DBColumn
 	Blocked              bool
 	Func                 DBFunction
-	ClusteringKeys       []string // Warehouse clustering key columns (normalized to snake_case)
-	PartitionKey         string   // Partition column name (from config, e.g., "created_at")
-	PartitionRangeDays   int      // Default range in days for auto-injected partition filter (0 = warn only)
+	ClusteringKeys       []string          // Warehouse clustering key columns (normalized to snake_case)
+	ClusteringOrder      map[string]string // Cassandra clustering column -> asc|desc
+	PartitionKeys        []string          // Cassandra composite partition key columns (in order)
+	AllowFiltering       bool              // Cassandra: per-table ALLOW FILTERING opt-in
+	PartitionKey         string            // Partition column name (from config, e.g., "created_at")
+	PartitionRangeDays   int               // Default range in days for auto-injected partition filter (0 = warn only)
 	PartitionNone        bool
 	ImplicitPartitionKey string
 	colMap               map[string]int

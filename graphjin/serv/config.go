@@ -185,7 +185,7 @@ type AuthLoginOIDC struct {
 // Database configuration
 type Database struct {
 	ConnString string `mapstructure:"connection_string" jsonschema:"title=Connection String"`
-	Type       string `jsonschema:"title=Type,enum=postgres,enum=mysql,enum=mariadb,enum=mssql,enum=sqlite,enum=oracle,enum=mongodb,enum=snowflake,enum=codesql"`
+	Type       string `jsonschema:"title=Type,enum=postgres,enum=mysql,enum=mariadb,enum=mssql,enum=sqlite,enum=oracle,enum=mongodb,enum=snowflake,enum=cassandra,enum=codesql"`
 	Host       string `jsonschema:"title=Host"`
 	Port       uint16 `jsonschema:"title=Port"`
 	DBName     string `jsonschema:"title=Database Name"`
@@ -238,6 +238,9 @@ type Database struct {
 	PrivateKeyPath string `mapstructure:"private_key_path" jsonschema:"title=Private Key File Path (Snowflake)"`
 	PrivateKeyPEM  string `mapstructure:"private_key_pem" jsonschema:"title=Private Key PEM (Snowflake)"`
 	KeyPassphrase  string `mapstructure:"key_passphrase" jsonschema:"title=Key Passphrase (Snowflake)"`
+
+	// Cassandra / Amazon Keyspaces consistency level (default LOCAL_QUORUM).
+	Consistency string `mapstructure:"consistency" jsonschema:"title=Cassandra Consistency Level"`
 }
 
 // RateLimiter sets the API rate limits

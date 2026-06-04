@@ -113,6 +113,10 @@ func NewCompiler(conf Config) *Compiler {
 		}
 	case "mongodb":
 		d = &dialect.MongoDBDialect{EnableCamelcase: conf.EnableCamelcase}
+	case "cassandra":
+		d = &dialect.CassandraDialect{
+			MongoDBDialect: dialect.MongoDBDialect{EnableCamelcase: conf.EnableCamelcase},
+		}
 	default:
 		d = &dialect.PostgresDialect{
 			DBVersion:       conf.DBVersion,
