@@ -2,9 +2,10 @@ go 1.25.0
 
 use (
 	./auth
+	./cassandradriver
 	./cmd
-	./conf
 	./codesql
+	./conf
 	./core
 	./mongodriver
 	./plugin/otel

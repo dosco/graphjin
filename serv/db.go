@@ -74,6 +74,9 @@ func detectDBType(conf *Config) {
 		if strings.HasPrefix(cs, "snowflake://") {
 			conf.DBType = "snowflake"
 		}
+		if strings.HasPrefix(cs, "cassandra://") {
+			conf.DBType = "cassandra"
+		}
 	}
 }
 
@@ -104,8 +107,10 @@ func initDBDriver(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		dc, err = initMongo(conf, openDB, useTelemetry, fs)
 	case "snowflake":
 		dc, err = initSnowflake(conf, openDB, useTelemetry, fs)
+	case "cassandra":
+		dc, err = initCassandra(conf, openDB, useTelemetry, fs)
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, mssql, sqlite, oracle, mongodb, snowflake", conf.DBType)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, mssql, sqlite, oracle, mongodb, snowflake, cassandra", conf.DBType)
 	}
 
 	if err != nil {
