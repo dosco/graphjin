@@ -80,6 +80,7 @@ type graphjinService struct {
 	dbs          map[string]*sql.DB // named database connections (all equal)
 	managedDBs   map[string]managedDB
 	runtimeCore  *core.Config
+	secretStore  *localKeystore
 	metadataDB   string
 	systemNanoDB *core.NanoDB
 	gj           *core.GraphJin

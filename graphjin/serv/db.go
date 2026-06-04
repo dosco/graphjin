@@ -147,15 +147,17 @@ func newDB(
 			db.SetConnMaxIdleTime(conf.DB.MaxConnIdleTime)
 			db.SetConnMaxLifetime(conf.DB.MaxConnLifeTime)
 
-			if err := db.Ping(); err == nil {
+			if pingErr := db.Ping(); pingErr == nil {
 				return db, nil
 			} else {
 				db.Close() //nolint:errcheck
-				log.Warnf("database ping: %s", err)
+				log.Warnf("database ping: %s", redactRuntimeError(pingErr))
+				err = fmt.Errorf("database ping: %s", redactRuntimeError(pingErr))
 			}
 
 		} else {
-			log.Warnf("database open: %s", err)
+			log.Warnf("database open: %s", redactRuntimeError(err))
+			err = fmt.Errorf("database open: %s", redactRuntimeError(err))
 		}
 
 		time.Sleep(time.Duration(i*100) * time.Millisecond)
@@ -186,7 +188,7 @@ func newDBOnce(
 	} else {
 		db, err = sql.Open(dc.driverName, dc.connString)
 		if err != nil {
-			return nil, fmt.Errorf("database open: %w", err)
+			return nil, fmt.Errorf("database open: %s", redactRuntimeError(err))
 		}
 	}
 
@@ -197,7 +199,7 @@ func newDBOnce(
 
 	if err := db.Ping(); err != nil {
 		db.Close() //nolint:errcheck
-		return nil, fmt.Errorf("database ping: %w", err)
+		return nil, fmt.Errorf("database ping: %s", redactRuntimeError(err))
 	}
 
 	return db, nil

@@ -84,6 +84,62 @@ func TestMemoryRuntimeEventStoreTrimTTLRedactionOrderingAndStatus(t *testing.T) 
 	}
 }
 
+func TestRuntimeSecretRedactionCoversDatabaseErrorShapes(t *testing.T) {
+	cases := []struct {
+		name      string
+		input     string
+		forbidden []string
+	}{
+		{
+			name:      "generic uri credentials",
+			input:     `connect failed: custom+db://agent:swordfish@example.test/app`,
+			forbidden: []string{"swordfish", "agent:swordfish"},
+		},
+		{
+			name:      "oracle uri credentials",
+			input:     `ping failed: oracle://scott:tiger@oracle.example.test:1521/XEPDB1`,
+			forbidden: []string{"tiger", "scott:tiger"},
+		},
+		{
+			name:      "mysql tcp dsn",
+			input:     `open failed: app_user:mysql-secret@tcp(mysql.example.test:3306)/app?timeout=10s`,
+			forbidden: []string{"mysql-secret", "app_user:mysql-secret"},
+		},
+		{
+			name:      "mysql unix dsn",
+			input:     `open failed: root:socket-secret@unix(/tmp/mysql.sock)/app`,
+			forbidden: []string{"socket-secret", "root:socket-secret"},
+		},
+		{
+			name:      "key value secrets",
+			input:     `password=db-pass token=tok123 private_key=pem-data connection_string=postgres://u:p@example.test/db`,
+			forbidden: []string{"db-pass", "tok123", "pem-data", "postgres://u:p@example.test/db"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := redactRuntimeStringValue(tc.input)
+			if !strings.Contains(got, "[REDACTED]") {
+				t.Fatalf("expected redaction marker in %q", got)
+			}
+			for _, forbidden := range tc.forbidden {
+				if strings.Contains(got, forbidden) {
+					t.Fatalf("redacted output %q still contains %q", got, forbidden)
+				}
+			}
+		})
+	}
+
+	errText := redactRuntimeError(fmt.Errorf("admin connection failed: app_user:mysql-secret@tcp(mysql.example.test:3306)/app"))
+	if strings.Contains(errText, "mysql-secret") || !strings.Contains(errText, "[REDACTED]") {
+		t.Fatalf("redactRuntimeError did not redact native MySQL DSN: %q", errText)
+	}
+	if got := redactRuntimeError(nil); got != "" {
+		t.Fatalf("nil error redaction = %q, want empty", got)
+	}
+}
+
 func TestRuntimeRedisKeysAreScopedAndSanitized(t *testing.T) {
 	keys := runtimeKeys(runtimeScope(&Config{
 		Core: core.Config{},

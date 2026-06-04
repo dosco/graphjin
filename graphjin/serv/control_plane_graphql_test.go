@@ -1592,6 +1592,26 @@ func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 	}
 }
 
+func TestGraphQLControlPlaneConfigRejectsPlaintextSecretWithoutKeystoreKey(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "app.sqlite3", true))
+
+	_, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
+		gj_config(id: "current", update: {
+			sources: [{
+				name: "main",
+				kind: "database",
+				type: "sqlite",
+				connection_string: "/tmp/model-supplied-secret.sqlite3"
+			}]
+		}) {
+			id
+		}
+	}`, nil, &core.RequestConfig{})
+	if err == nil || !strings.Contains(err.Error(), "secrets.keystore.key") {
+		t.Fatalf("expected missing keystore key error, got %v", err)
+	}
+}
+
 func TestGraphQLControlPlaneAllowsAppGJPrefixWithSystemSource(t *testing.T) {
 	dbPath := createSQLiteDBFile(t, "reserved.sqlite3", true)
 	db, err := sql.Open("sqlite", dbPath)

@@ -137,8 +137,10 @@ type runtimeRedisKeys struct {
 }
 
 var runtimeSecretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\b[^\s"'@:;=/]+:[^\s"'@;]+@(?:tcp|unix)\([^)]+\)/[^\s"']*`),
+	regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'/@:]+:[^\s"'@/]*@[^\s"']+`),
 	regexp.MustCompile(`(?i)\b(postgres|postgresql|mysql|mariadb|sqlserver|redis|mongodb|snowflake)://[^\s"']+`),
-	regexp.MustCompile(`(?i)\b(password|pwd|token|secret|private_key|connection_string)=([^\s;]+)`),
+	regexp.MustCompile(`(?i)\b(password|pwd|token|secret|private_key|connection_string|key_passphrase|client_key|api_key|apikey)=([^\s;&,]+)`),
 }
 
 type runtimeQueryHandler struct {
@@ -1016,6 +1018,13 @@ func redactRuntimeStringValue(value string) string {
 		out = pattern.ReplaceAllString(out, "[REDACTED]")
 	}
 	return out
+}
+
+func redactRuntimeError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return redactRuntimeStringValue(err.Error())
 }
 
 func redactRuntimeStringSlice(values []string) []string {
