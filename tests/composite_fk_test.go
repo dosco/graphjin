@@ -15,7 +15,7 @@ import (
 // matching product_variants row. Without composite FK support, the join
 // would only use one column and return the wrong variant.
 func TestCompositeFKJoinOrderItemToVariant(t *testing.T) {
-	if dbType == "mongodb" {
+	if dbType == "mongodb" || dbType == "cassandra" {
 		t.Skipf("skipping composite FK test for %s", dbType)
 	}
 
@@ -88,7 +88,7 @@ func TestCompositeFKJoinOrderItemToVariant(t *testing.T) {
 // correct product_variant — not just a single row. This catches bugs where
 // only one column of the composite FK is used in the join condition.
 func TestCompositeFKAllRowsMatch(t *testing.T) {
-	if dbType == "mongodb" {
+	if dbType == "mongodb" || dbType == "cassandra" {
 		t.Skipf("skipping composite FK test for %s", dbType)
 	}
 
@@ -155,7 +155,7 @@ func TestCompositeFKAllRowsMatch(t *testing.T) {
 // TestCompositeFKReverseJoin tests the reverse direction: querying
 // product_variants and getting their associated order_items.
 func TestCompositeFKReverseJoin(t *testing.T) {
-	if dbType == "mongodb" {
+	if dbType == "mongodb" || dbType == "cassandra" {
 		t.Skipf("skipping composite FK test for %s", dbType)
 	}
 

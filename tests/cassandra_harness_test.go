@@ -3,25 +3,43 @@ package tests_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/dosco/graphjin/cassandradriver"
-	core "github.com/dosco/graphjin/core/v3"
 	"github.com/gocql/gocql"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-const cassandraKeyspace = "gjtest"
+const cassandraKeyspace = "graphjin_test"
 
-// startCassandraDB boots a cassandra:5 container, seeds a partition-key-first
-// schema, and returns a *sql.DB backed by the cassandradriver connector — the
-// same dbFunc connector path MongoDB uses in this harness.
+// startCassandraDB boots a cassandra:5 container, seeds the shared webshop schema
+// (same data the other dialects use), and returns a *sql.DB backed by the
+// cassandradriver connector. Cassandra runs the shared Example/Test suite like
+// MongoDB; per-test cassandra branches handle shapes CQL can't serve.
 func startCassandraDB(ctx context.Context) (func(context.Context) error, *sql.DB, error) {
+	// Reuse an already-running cluster (fast local iteration) when pointed at one.
+	if hosts := os.Getenv("CASSANDRA_TEST_HOSTS"); hosts != "" {
+		cluster := gocql.NewCluster(strings.Split(hosts, ",")...)
+		cluster.ProtoVersion = 4
+		cluster.Consistency = gocql.Quorum
+		cluster.ConnectTimeout = 20 * time.Second
+		cluster.Timeout = 20 * time.Second
+		session, err := cluster.CreateSession()
+		if err != nil {
+			return nil, nil, fmt.Errorf("cassandra session (reuse): %w", err)
+		}
+		if err := seedCassandraWebshop(session); err != nil {
+			session.Close()
+			return nil, nil, fmt.Errorf("cassandra seed: %w", err)
+		}
+		db := sql.OpenDB(cassandradriver.NewConnector(session, cassandraKeyspace))
+		return func(context.Context) error { db.Close(); session.Close(); return nil }, db, nil
+	}
+
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "cassandra:5",
@@ -40,7 +58,6 @@ func startCassandraDB(ctx context.Context) (func(context.Context) error, *sql.DB
 	if err != nil {
 		return nil, nil, fmt.Errorf("cassandra container: %w", err)
 	}
-
 	host, err := container.Host(ctx)
 	if err != nil {
 		_ = container.Terminate(ctx)
@@ -59,7 +76,6 @@ func startCassandraDB(ctx context.Context) (func(context.Context) error, *sql.DB
 	cluster.ConnectTimeout = 20 * time.Second
 	cluster.Timeout = 20 * time.Second
 
-	// The CQL port can listen before the node is query-ready; retry the session.
 	var session *gocql.Session
 	for i := 0; i < 90; i++ {
 		if session, err = cluster.CreateSession(); err == nil {
@@ -72,7 +88,7 @@ func startCassandraDB(ctx context.Context) (func(context.Context) error, *sql.DB
 		return nil, nil, fmt.Errorf("cassandra session: %w", err)
 	}
 
-	if err := seedCassandra(session); err != nil {
+	if err := seedCassandraWebshop(session); err != nil {
 		session.Close()
 		_ = container.Terminate(ctx)
 		return nil, nil, fmt.Errorf("cassandra seed: %w", err)
@@ -87,201 +103,63 @@ func startCassandraDB(ctx context.Context) (func(context.Context) error, *sql.DB
 	return cleanup, sqlDB, nil
 }
 
-func seedCassandra(s *gocql.Session) error {
+// createdAt mirrors the timestamp the other dialects seed.
+var cassandraCreatedAt = time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC)
+
+func seedCassandraWebshop(s *gocql.Session) error {
 	ddl := []string{
-		`CREATE KEYSPACE IF NOT EXISTS gjtest WITH replication = {'class':'SimpleStrategy','replication_factor':1}`,
-		`CREATE TABLE IF NOT EXISTS gjtest.users (id text PRIMARY KEY, name text, email text)`,
-		`CREATE TABLE IF NOT EXISTS gjtest.posts (user_id text, id text, title text, PRIMARY KEY ((user_id), id))`,
-		`CREATE TABLE IF NOT EXISTS gjtest.profiles (user_id text PRIMARY KEY, bio text)`,
-		`CREATE TABLE IF NOT EXISTS gjtest.post_stats (post_id text PRIMARY KEY, views counter)`,
+		`CREATE KEYSPACE IF NOT EXISTS graphjin_test WITH replication = {'class':'SimpleStrategy','replication_factor':1}`,
+		`CREATE TABLE IF NOT EXISTS graphjin_test.users (id int PRIMARY KEY, full_name text, email text, phone text, stripe_id text, disabled boolean, created_at timestamp)`,
+		`CREATE TABLE IF NOT EXISTS graphjin_test.products (id int PRIMARY KEY, name text, description text, price double, owner_id int, country_code text, created_at timestamp)`,
+		`CREATE TABLE IF NOT EXISTS graphjin_test.purchases (id int PRIMARY KEY, customer_id int, product_id int, quantity int, created_at timestamp)`,
+		`CREATE TABLE IF NOT EXISTS graphjin_test.comments (id int PRIMARY KEY, body text, product_id int, commenter_id int, reply_to_id int, created_at timestamp)`,
+		`CREATE TABLE IF NOT EXISTS graphjin_test.categories (id int PRIMARY KEY, name text, description text, created_at timestamp)`,
+		`CREATE TABLE IF NOT EXISTS graphjin_test.chats (id int PRIMARY KEY, body text, created_at timestamp)`,
+		`CREATE TABLE IF NOT EXISTS graphjin_test.notifications (id int PRIMARY KEY, verb text, subject_type text, subject_id int, user_id int, created_at timestamp)`,
 	}
 	for _, q := range ddl {
 		if err := s.Query(q).Exec(); err != nil {
 			return err
 		}
 	}
-	for i := 1; i <= 3; i++ {
-		id := fmt.Sprintf("u%d", i)
-		if err := s.Query(`INSERT INTO gjtest.users (id, name, email) VALUES (?, ?, ?)`,
-			id, fmt.Sprintf("User %d", i), fmt.Sprintf("user%d@test.com", i)).Exec(); err != nil {
+
+	for i := 1; i <= 100; i++ {
+		if err := s.Query(`INSERT INTO graphjin_test.users (id, full_name, email, phone, stripe_id, disabled, created_at) VALUES (?,?,?,?,?,?,?)`,
+			i, fmt.Sprintf("User %d", i), fmt.Sprintf("user%d@test.com", i), nil,
+			fmt.Sprintf("payment_id_%d", i+1000), i == 50, cassandraCreatedAt).Exec(); err != nil {
 			return err
 		}
-		if err := s.Query(`INSERT INTO gjtest.profiles (user_id, bio) VALUES (?, ?)`,
-			id, fmt.Sprintf("bio for %s", id)).Exec(); err != nil {
+		if err := s.Query(`INSERT INTO graphjin_test.products (id, name, description, price, owner_id, country_code, created_at) VALUES (?,?,?,?,?,?,?)`,
+			i, fmt.Sprintf("Product %d", i), fmt.Sprintf("Description for product %d", i),
+			float64(i)+10.5, i, "US", cassandraCreatedAt).Exec(); err != nil {
 			return err
 		}
-		for j := 1; j <= 3; j++ {
-			if err := s.Query(`INSERT INTO gjtest.posts (user_id, id, title) VALUES (?, ?, ?)`,
-				id, fmt.Sprintf("p%d", j), fmt.Sprintf("Post %d of %s", j, id)).Exec(); err != nil {
-				return err
-			}
+		customerID := i + 1
+		if i >= 100 {
+			customerID = 1
+		}
+		if err := s.Query(`INSERT INTO graphjin_test.purchases (id, customer_id, product_id, quantity, created_at) VALUES (?,?,?,?,?)`,
+			i, customerID, i, i*10, cassandraCreatedAt).Exec(); err != nil {
+			return err
+		}
+		replyTo := 0
+		if i >= 2 {
+			replyTo = i - 1
+		}
+		if err := s.Query(`INSERT INTO graphjin_test.comments (id, body, product_id, commenter_id, reply_to_id, created_at) VALUES (?,?,?,?,?,?)`,
+			i, fmt.Sprintf("This is comment number %d", i), i, i, replyTo, cassandraCreatedAt).Exec(); err != nil {
+			return err
+		}
+	}
+	for i := 1; i <= 5; i++ {
+		if err := s.Query(`INSERT INTO graphjin_test.categories (id, name, description, created_at) VALUES (?,?,?,?)`,
+			i, fmt.Sprintf("Category %d", i), fmt.Sprintf("Description for category %d", i), cassandraCreatedAt).Exec(); err != nil {
+			return err
+		}
+		if err := s.Query(`INSERT INTO graphjin_test.chats (id, body, created_at) VALUES (?,?,?)`,
+			i, fmt.Sprintf("This is chat message number %d", i), cassandraCreatedAt).Exec(); err != nil {
+			return err
 		}
 	}
 	return nil
-}
-
-// --- helpers ---
-
-func cassandraGJ(t *testing.T) *core.GraphJin {
-	t.Helper()
-	conf := newConfig(&core.Config{
-		DBType:           dbType,
-		DisableAllowList: true,
-		DefaultBlock:     false,
-	})
-	gj, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		t.Fatalf("NewGraphJin: %v", err)
-	}
-	return gj
-}
-
-func cassandraQuery(t *testing.T, gj *core.GraphJin, gql string, vars string) (json.RawMessage, error) {
-	t.Helper()
-	var v json.RawMessage
-	if vars != "" {
-		v = json.RawMessage(vars)
-	}
-	res, err := gj.GraphQL(context.Background(), gql, v, nil)
-	if res != nil {
-		return res.Data, err
-	}
-	return nil, err
-}
-
-func requireContains(t *testing.T, data json.RawMessage, subs ...string) {
-	t.Helper()
-	s := string(data)
-	for _, sub := range subs {
-		if !strings.Contains(s, sub) {
-			t.Fatalf("result %s missing %q", s, sub)
-		}
-	}
-}
-
-// --- integration tests (run via: -db=cassandra -run Cassandra) ---
-
-func TestCassandraSinglePartitionRead(t *testing.T) {
-	if dbType != "cassandra" {
-		t.Skip("cassandra-only integration test")
-	}
-	gj := cassandraGJ(t)
-	defer gj.Close()
-	data, err := cassandraQuery(t, gj, `query { users(where: { id: { eq: "u1" } }) { id name email } }`, "")
-	if err != nil {
-		t.Fatalf("query: %v", err)
-	}
-	requireContains(t, data, `"name":"User 1"`, `"email":"user1@test.com"`)
-}
-
-func TestCassandraNestedOneToMany(t *testing.T) {
-	if dbType != "cassandra" {
-		t.Skip("cassandra-only integration test")
-	}
-	gj := cassandraGJ(t)
-	defer gj.Close()
-	data, err := cassandraQuery(t, gj,
-		`query { users(where: { id: { eq: "u1" } }) { id posts(order_by: { id: asc }) { id title } } }`, "")
-	if err != nil {
-		t.Fatalf("query: %v", err)
-	}
-	requireContains(t, data, `"Post 1 of u1"`, `"Post 2 of u1"`, `"Post 3 of u1"`)
-}
-
-func TestCassandraNestedOneToOne(t *testing.T) {
-	if dbType != "cassandra" {
-		t.Skip("cassandra-only integration test")
-	}
-	gj := cassandraGJ(t)
-	defer gj.Close()
-	data, err := cassandraQuery(t, gj,
-		`query { users(where: { id: { eq: "u2" } }) { id name profiles { bio } } }`, "")
-	if err != nil {
-		t.Fatalf("query: %v", err)
-	}
-	requireContains(t, data, `"bio for u2"`)
-}
-
-func TestCassandraInsertReadAfterWrite(t *testing.T) {
-	if dbType != "cassandra" {
-		t.Skip("cassandra-only integration test")
-	}
-	gj := cassandraGJ(t)
-	defer gj.Close()
-	data, err := cassandraQuery(t, gj,
-		`mutation ($data: users_insert_input!) { users(insert: $data) { id name } }`,
-		`{"data":{"id":"u100","name":"Inserted","email":"u100@test.com"}}`)
-	if err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	requireContains(t, data, `"Inserted"`)
-
-	got, err := cassandraQuery(t, gj, `query { users(where: { id: { eq: "u100" } }) { name } }`, "")
-	if err != nil {
-		t.Fatalf("read back: %v", err)
-	}
-	requireContains(t, got, `"Inserted"`)
-}
-
-func TestCassandraUpdateByPK(t *testing.T) {
-	if dbType != "cassandra" {
-		t.Skip("cassandra-only integration test")
-	}
-	gj := cassandraGJ(t)
-	defer gj.Close()
-	_, err := cassandraQuery(t, gj,
-		`mutation ($data: users_update_input!) { users(update: $data, where: { id: { eq: "u3" } }) { id name } }`,
-		`{"data":{"name":"Renamed"}}`)
-	if err != nil {
-		t.Fatalf("update: %v", err)
-	}
-	got, err := cassandraQuery(t, gj, `query { users(where: { id: { eq: "u3" } }) { name } }`, "")
-	if err != nil {
-		t.Fatalf("read back: %v", err)
-	}
-	requireContains(t, got, `"Renamed"`)
-}
-
-func TestCassandraServabilityRejection(t *testing.T) {
-	if dbType != "cassandra" {
-		t.Skip("cassandra-only integration test")
-	}
-	gj := cassandraGJ(t)
-	defer gj.Close()
-
-	// != is not expressible in CQL WHERE — must be a compile error.
-	if _, err := cassandraQuery(t, gj,
-		`query { users(where: { id: { neq: "u1" } }) { id } }`, ""); err == nil {
-		t.Fatal("expected rejection for neq on Cassandra")
-	}
-
-	// Filtering on a non-key column without allow_filtering is a full scan.
-	if _, err := cassandraQuery(t, gj,
-		`query { users(where: { email: { eq: "user1@test.com" } }) { id } }`, ""); err == nil {
-		t.Fatal("expected rejection for non-key filter on Cassandra")
-	}
-}
-
-func TestCassandraPaging(t *testing.T) {
-	if dbType != "cassandra" {
-		t.Skip("cassandra-only integration test")
-	}
-	gj := cassandraGJ(t)
-	defer gj.Close()
-	data, err := cassandraQuery(t, gj,
-		`query { posts(where: { user_id: { eq: "u1" } }, first: 2, order_by: { id: asc }) { id } }`, "")
-	if err != nil {
-		t.Fatalf("paged query: %v", err)
-	}
-	var res struct {
-		Posts []struct {
-			ID string `json:"id"`
-		} `json:"posts"`
-	}
-	if err := json.Unmarshal(data, &res); err != nil {
-		t.Fatalf("unmarshal %s: %v", data, err)
-	}
-	if len(res.Posts) != 2 {
-		t.Fatalf("first:2 should return 2 posts, got %d: %s", len(res.Posts), data)
-	}
 }
