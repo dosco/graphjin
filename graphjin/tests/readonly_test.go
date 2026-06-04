@@ -100,6 +100,7 @@ func assertQueryAllowed(t *testing.T, gj *core.GraphJin, ctx context.Context) {
 // ---------------------------------------------------------------------------
 
 func TestReadOnlyDB_WithRolesAndTables(t *testing.T) {
+	skipCassandra(t, "fixture relies on serial-PK inserts CQL lacks")
 	conf := newConfig(&core.Config{
 		DBType:           dbType,
 		DisableAllowList: true,
@@ -163,6 +164,7 @@ func TestReadOnlyDB_NoRolesNoTables(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestReadOnlyDB_RolesButNoTableConfig(t *testing.T) {
+	skipCassandra(t, "fixture relies on serial-PK inserts CQL lacks")
 	conf := newConfig(&core.Config{
 		DBType:           dbType,
 		DisableAllowList: true,
@@ -222,6 +224,7 @@ func TestReadOnlyDB_AnonRole(t *testing.T) {
 
 func TestWritableDB_MutationsAllowed(t *testing.T) {
 	skipBigQueryMutationsUnsupported(t)
+	skipCassandra(t, "fixture relies on serial-PK inserts CQL lacks")
 
 	conf := newConfig(&core.Config{
 		DBType:           dbType,

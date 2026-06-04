@@ -374,6 +374,7 @@ func TestConfigRoleManagement(t *testing.T) {
 }
 
 func TestParallelRuns(t *testing.T) {
+	skipCassandra(t, "uses per-role full-table queries that aren't partition-bound")
 	gql := `query {
 		me {
 			id
