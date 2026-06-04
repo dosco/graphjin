@@ -957,6 +957,12 @@ func TestMain(m *testing.M) {
 			},
 		},
 		{
+			name:    "cassandra",
+			driver:  "cassandra",
+			disable: true, // only runs when explicitly selected via -db=cassandra
+			dbFunc:  startCassandraDB,
+		},
+		{
 			name:    "adventureworks",
 			driver:  "postgres",
 			disable: true,
@@ -1100,6 +1106,14 @@ func newConfig(c *core.Config) *core.Config {
 				c.Tables = append(c.Tables, mt)
 			}
 		}
+	}
+
+	// Cassandra has no foreign keys either — declare relationships in config.
+	if c.DBType == "cassandra" {
+		c.Tables = append(c.Tables,
+			core.Table{Name: "posts", Columns: []core.Column{{Name: "user_id", ForeignKey: "users.id"}}},
+			core.Table{Name: "profiles", Columns: []core.Column{{Name: "user_id", ForeignKey: "users.id"}}},
+		)
 	}
 
 	return c

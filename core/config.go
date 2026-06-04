@@ -19,10 +19,10 @@ import (
 const DefaultDBName = "default"
 
 // SupportedDBTypes lists the database types supported for single-database mode
-var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql", "mongodb", "snowflake", "bigquery", "nanodb"}
+var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql", "mongodb", "snowflake", "bigquery", "nanodb", "cassandra"}
 
 // SupportedMultiDBTypes lists the database types supported for multi-database mode
-var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql", "snowflake", "bigquery", "nanodb"}
+var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql", "snowflake", "bigquery", "nanodb", "cassandra"}
 
 // CanonicalMode normalizes the public top-level mode value.
 func CanonicalMode(mode string) (string, error) {
@@ -427,7 +427,7 @@ func (c *Config) validateArtifactsConfig() error {
 		return fmt.Errorf("artifacts.source %q must be a writable SQL database source", sourceName)
 	}
 	switch strings.ToLower(strings.TrimSpace(source.Type)) {
-	case "mongodb", "nanodb":
+	case "mongodb", "nanodb", "cassandra":
 		return fmt.Errorf("artifacts.source %q must be a writable SQL database source", sourceName)
 	}
 	if source.ReadOnly {
@@ -1565,6 +1565,20 @@ type Table struct {
 	// When set, queries without a filter on the partition column will either get a
 	// default time-range filter injected or produce a warning.
 	Partition *PartitionConfig `mapstructure:"partition" json:"partition,omitempty" yaml:"partition,omitempty" jsonschema:"title=Partition Configuration"`
+	// Cassandra per-table options (allow_filtering escape hatch + key overrides).
+	Cassandra *CassandraConfig `mapstructure:"cassandra" json:"cassandra,omitempty" yaml:"cassandra,omitempty" jsonschema:"title=Cassandra Table Configuration"`
+}
+
+// CassandraConfig declares per-table Cassandra options. Keys are normally
+// introspected from system_schema; the override lists are a fail-fast/assertion
+// mechanism, not required config.
+type CassandraConfig struct {
+	// AllowFiltering is the only ALLOW FILTERING escape hatch — enable only for
+	// known-small tables. It never relaxes OR/NOT/LIKE/IS NULL rejections.
+	AllowFiltering bool `mapstructure:"allow_filtering" json:"allow_filtering,omitempty" yaml:"allow_filtering,omitempty" jsonschema:"title=Allow Filtering"`
+	// PartitionKeys / ClusteringKeys optionally override the introspected key roles.
+	PartitionKeys  []string `mapstructure:"partition_keys" json:"partition_keys,omitempty" yaml:"partition_keys,omitempty" jsonschema:"title=Partition Keys"`
+	ClusteringKeys []string `mapstructure:"clustering_keys" json:"clustering_keys,omitempty" yaml:"clustering_keys,omitempty" jsonschema:"title=Clustering Keys"`
 }
 
 // PartitionConfig declares the partition key for a warehouse table.

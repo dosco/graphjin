@@ -88,6 +88,7 @@ func getDBInfoOnce(
 	var funcs []DBFunction
 	var compositeFKs []CompositeFKInfo
 	var snowflakeClustering map[string][]string
+	var cassandraKeys map[string]cassandraKeyInfo
 
 	g, gctx := errgroup.WithContext(ctx)
 
@@ -117,8 +118,11 @@ func getDBInfoOnce(
 		case "mongodb":
 			// MongoDB returns info via the driver's introspection
 			row = db.QueryRowContext(qctx, mongodbInfo)
+		case "cassandra":
+			// Cassandra returns info via the driver's introspection
+			row = db.QueryRowContext(qctx, cassandraInfo)
 		default:
-			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb", dbType)
+			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb, cassandra", dbType)
 		}
 
 		if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
@@ -136,6 +140,17 @@ func getDBInfoOnce(
 			// (its own session), so it is safe concurrently with column discovery.
 			if ck, err := discoverClusteringKeys(gctx, db); err == nil {
 				snowflakeClustering = ck
+			}
+			return nil
+		})
+	}
+
+	if dbType == "cassandra" {
+		g.Go(func() error {
+			// Partition vs clustering roles come from system_schema; the column
+			// contract can't carry them. Non-fatal: a failure just leaves keys unset.
+			if ck, err := discoverCassandraKeys(gctx, db); err == nil {
+				cassandraKeys = ck
 			}
 			return nil
 		})
@@ -208,6 +223,18 @@ func getDBInfoOnce(
 		}
 	}
 
+	// For Cassandra, attach partition/clustering key roles + clustering order so
+	// the dialect can plan servability.
+	if dbType == "cassandra" && len(cassandraKeys) != 0 {
+		for i := range di.Tables {
+			if ki, ok := cassandraKeys[di.Tables[i].Name]; ok {
+				di.Tables[i].PartitionKeys = ki.partition
+				di.Tables[i].ClusteringKeys = ki.clustering
+				di.Tables[i].ClusteringOrder = ki.order
+			}
+		}
+	}
+
 	return di, nil
 }
 
@@ -254,6 +281,49 @@ func isRetryableDiscoveryError(err error) bool {
 		strings.Contains(msg, "broken pipe")
 }
 
+// cassandraKeyInfo holds a Cassandra table's partition/clustering key roles.
+type cassandraKeyInfo struct {
+	partition  []string
+	clustering []string
+	order      map[string]string // clustering column -> asc|desc
+}
+
+// discoverCassandraKeys reads partition/clustering key roles from the driver's
+// introspect_keys operation (backed by system_schema). Rows arrive ordered by
+// table then key position, so appends preserve key order.
+func discoverCassandraKeys(ctx context.Context, db *sql.DB) (map[string]cassandraKeyInfo, error) {
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, cassandraKeysStmt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]cassandraKeyInfo{}
+	for rows.Next() {
+		var table, column, kind, clustOrder string
+		var pos int
+		if err := rows.Scan(&table, &column, &kind, &pos, &clustOrder); err != nil {
+			return nil, err
+		}
+		ki := out[table]
+		switch kind {
+		case "partition_key":
+			ki.partition = append(ki.partition, column)
+		case "clustering":
+			ki.clustering = append(ki.clustering, column)
+			if ki.order == nil {
+				ki.order = map[string]string{}
+			}
+			ki.order[column] = clustOrder
+		}
+		out[table] = ki
+	}
+	return out, rows.Err()
+}
+
 // DiscoverColumns returns the columns of a table
 func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList []string) ([]DBColumn, error) {
 	var sqlStmt string
@@ -278,8 +348,11 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 	case "mongodb":
 		// MongoDB uses JSON query DSL - the driver handles introspection
 		sqlStmt = mongodbColumnsStmt
+	case "cassandra":
+		// Cassandra uses JSON query DSL - the driver handles introspection
+		sqlStmt = cassandraColumnsStmt
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb", dbtype)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb, cassandra", dbtype)
 	}
 
 	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
@@ -1337,8 +1410,11 @@ func DiscoverFunctions(ctx context.Context, db *sql.DB, dbtype string, blockList
 	case "mongodb":
 		// MongoDB doesn't have user-defined functions in the SQL sense
 		return nil, nil
+	case "cassandra":
+		// Cassandra has no queryable user-defined functions for GraphJin's purposes
+		return nil, nil
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb", dbtype)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb, cassandra", dbtype)
 	}
 
 	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
