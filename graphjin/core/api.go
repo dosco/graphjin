@@ -961,6 +961,37 @@ func (g *GraphJin) Reload() error {
 	return nil
 }
 
+// ReloadDatabase rediscovers and rebuilds one configured database context.
+// It is intended for source-local schema changes. Call Reload for global
+// config, auth, relationship, resolver, API, filesystem, or workflow changes.
+func (g *GraphJin) ReloadDatabase(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("database name is required")
+	}
+	g.reloadMu.Lock()
+	defer g.reloadMu.Unlock()
+
+	gj, err := g.getEngine()
+	if err != nil {
+		return err
+	}
+	if _, ok := gj.databases[name]; !ok {
+		return fmt.Errorf("database %q not configured", name)
+	}
+	if err := g.newGraphJinReloadingDatabase(gj, name); err != nil {
+		return err
+	}
+	next, err := g.getEngine()
+	if err != nil {
+		return err
+	}
+	if ctx, ok := next.databases[name]; ok && ctx.dbinfo != nil {
+		g.fireSchemaCallbacks(name, fmt.Sprintf("%x", ctx.dbinfo.Hash()))
+	}
+	return nil
+}
+
 // ReloadWithDB redoes database discover with a new primary DB connection.
 func (g *GraphJin) ReloadWithDB(db *sql.DB) error {
 	g.reloadMu.Lock()
@@ -970,6 +1001,152 @@ func (g *GraphJin) ReloadWithDB(db *sql.DB) error {
 		return err
 	}
 	return g.newGraphJin(gj.conf, db, nil, gj.fs, gj.opts...)
+}
+
+func (g *GraphJin) newGraphJinReloadingDatabase(base *graphjinEngine, database string) error {
+	if base == nil {
+		return errors.New("graphjin engine is not initialized")
+	}
+	conf := base.conf.clone()
+	if conf.IsSourcesUsed() {
+		for i := range conf.Tables {
+			if conf.Tables[i].Source == "" && conf.Tables[i].Database != "" {
+				conf.Tables[i].Source = conf.Tables[i].Database
+			}
+		}
+	}
+	if err := conf.NormalizeMode(); err != nil {
+		return err
+	}
+
+	log := base.log
+	if log == nil {
+		log = _log.New(os.Stderr, "", 0)
+	}
+	trace := base.trace
+	if trace == nil {
+		trace = &tracer{}
+	}
+	printFormat := append([]byte(nil), base.printFormat...)
+	if len(printFormat) == 0 {
+		printFormat = []byte(fmt.Sprintf("gj-%x:", time.Now().UnixNano()))
+	}
+
+	gj := &graphjinEngine{
+		conf:        conf,
+		log:         log,
+		prod:        conf.Production,
+		prodSec:     conf.Production,
+		printFormat: printFormat,
+		opts:        base.opts,
+		fs:          base.fs,
+		trace:       trace,
+		namespace:   base.namespace,
+		done:        g.done,
+	}
+	if gj.conf.DisableProdSecurity {
+		gj.prodSec = false
+	}
+	if err := gj.initCache(); err != nil {
+		return err
+	}
+	if err := gj.initConfig(); err != nil {
+		return err
+	}
+	gj.defaultDB = base.defaultDB
+	if gj.defaultDB == "" {
+		names := make([]string, 0, len(gj.conf.Databases))
+		for name := range gj.conf.Databases {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		if len(names) != 0 {
+			gj.defaultDB = names[0]
+		}
+	}
+
+	for _, op := range base.opts {
+		if err := op(gj); err != nil {
+			return err
+		}
+	}
+
+	gj.databases = make(map[string]*dbContext, len(base.databases))
+	for name, ctx := range base.databases {
+		gj.databases[name] = cloneDBContextForReload(ctx)
+	}
+	target := gj.databases[database]
+	if target == nil {
+		return fmt.Errorf("database %q not configured", database)
+	}
+	target.dbinfo = nil
+	target.schema = nil
+	target.qcodeCompiler = nil
+	target.psqlCompiler = nil
+
+	if target.nano != nil {
+		snap := target.nano.Snapshot()
+		if snap == nil {
+			return fmt.Errorf("database %q has no nanodb snapshot", database)
+		}
+		target.dbtype = "nanodb"
+		target.dbinfo = snap.DBInfo(database)
+	} else if err := gj.discoverDatabase(target); err != nil {
+		return err
+	}
+
+	if database == gj.defaultDB {
+		if err := gj.initResolvers(); err != nil {
+			return err
+		}
+	} else {
+		gj.rtmap = base.rtmap
+		gj.rmap = base.rmap
+		gj.openapiRuntime = base.openapiRuntime
+		gj.fsBackends = base.fsBackends
+	}
+	if handler := gj.managedQueryHandlers[database]; handler != nil {
+		if err := gj.initManagedQueryTablesForDatabase(database, handler); err != nil {
+			return err
+		}
+	}
+	if err := gj.finalizeDatabaseSchema(target); err != nil {
+		return err
+	}
+	if gj.anyDatabaseReady() {
+		if err := gj.initAllowList(); err != nil {
+			return err
+		}
+		if err := gj.prepareRoleStmt(); err != nil {
+			return err
+		}
+		if err := gj.initIntro(); err != nil {
+			return err
+		}
+	}
+	if conf.SecretKey != "" {
+		sk := sha256.Sum256([]byte(conf.SecretKey))
+		gj.encryptionKey = sk
+		gj.encryptionKeySet = true
+	}
+	g.Store(gj)
+	return nil
+}
+
+func cloneDBContextForReload(ctx *dbContext) *dbContext {
+	if ctx == nil {
+		return nil
+	}
+	return &dbContext{
+		name:          ctx.name,
+		db:            ctx.db,
+		dbtype:        ctx.dbtype,
+		nano:          ctx.nano,
+		dbinfo:        ctx.dbinfo,
+		schema:        ctx.schema,
+		qcodeCompiler: ctx.qcodeCompiler,
+		psqlCompiler:  ctx.psqlCompiler,
+	}
 }
 
 // SetOptions replaces the options slice so the next Reload picks them up.

@@ -67,7 +67,8 @@ func graphjinControlPlaneTables() []core.ManagedTable {
 		}),
 		managedTable("gj_config", []core.ManagedColumn{
 			cpCol("id", "text", true), cpCol("sources_used", "boolean", false), cpCol("config_path", "text", false), cpCol("active_database", "text", false),
-			cpCol("sources", "json", false), cpCol("databases", "json", false), cpCol("relationships", "json", false), cpCol("tables", "json", false),
+			cpCol("sources", "json", false), cpCol("update_sources", "json", false), cpCol("remove_sources", "json", false),
+			cpCol("databases", "json", false), cpCol("relationships", "json", false), cpCol("tables", "json", false),
 			cpCol("roles", "json", false), cpCol("blocklist", "json", false), cpCol("functions", "json", false), cpCol("resolvers", "json", false),
 			cpCol("mcp", "json", false), cpCol("config_json", "json", false), cpCol("redacted_paths", "json", false), cpCol("updated_at", "text", false), cpCol("catalog_revision", "text", false),
 		}),
@@ -807,9 +808,12 @@ func (h controlPlaneGraphQL) reloadSchema(root core.ManagedMutationRoot) (map[st
 		})
 		return row, nil
 	}
-	if err := h.service.gj.Reload(); err != nil {
+	database, _ := root.Input["database"].(string)
+	reload, err := h.service.reloadSchema(context.Background(), database)
+	if err != nil {
+		errText := redactRuntimeError(err)
 		row["reloaded"] = false
-		row["error"] = err.Error()
+		row["error"] = errText
 		h.service.recordRuntimeEvent(context.Background(), runtimeEvent{
 			Phase:      "schema",
 			Status:     runtimeStatusFailed,
@@ -817,24 +821,33 @@ func (h controlPlaneGraphQL) reloadSchema(root core.ManagedMutationRoot) (map[st
 			Summary:    "GraphQL schema reload failed.",
 			NextAction: "Inspect database connectivity and schema discovery errors before retrying.",
 			ErrorCode:  "schema_reload_failed",
-			Details:    map[string]any{"error": err.Error()},
+			Details:    map[string]any{"error": errText, "database": strings.TrimSpace(database)},
 		})
 		return row, nil
 	}
-	h.service.markCatalogChanged("schema reload")
 	row["reloaded"] = true
-	if snap, err := h.service.catalogSnapshot(); err == nil {
-		row["catalog_revision"] = snap.Revision
+	row["reload_mode"] = reload.Mode
+	if reload.Database != "" {
+		row["database"] = reload.Database
+	}
+	if reload.CatalogRevision != "" {
+		row["catalog_revision"] = reload.CatalogRevision
 	}
 	h.service.recordRuntimeEvent(context.Background(), runtimeEvent{
-		Phase:      "schema",
-		Status:     runtimeStatusReady,
-		Severity:   "info",
-		Summary:    "GraphQL schema reload completed.",
-		NextAction: "Refresh catalog-guided planning before using newly discovered tables or relationships.",
-		Details:    map[string]any{"catalog_revision": row["catalog_revision"]},
+		Phase:           "schema",
+		Status:          runtimeStatusReady,
+		Severity:        "info",
+		Summary:         "GraphQL schema reload completed.",
+		NextAction:      "Refresh catalog-guided planning before using newly discovered tables or relationships.",
+		DatabaseName:    reload.Database,
+		CatalogRevision: reload.CatalogRevision,
+		Details: map[string]any{
+			"catalog_revision": reload.CatalogRevision,
+			"database":         reload.Database,
+			"reload_mode":      reload.Mode,
+			"table_count":      len(reload.Tables),
+		},
 	})
-	_ = root
 	return row, nil
 }
 

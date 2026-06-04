@@ -384,6 +384,8 @@ func systemGraphQLCapabilities(enabled map[string]struct{}) []Capability {
 				"singleton_id":     "current",
 				"update_fields": []string{
 					"sources",
+					"update_sources",
+					"remove_sources",
 					"databases",
 					"relationships",
 					"tables",
@@ -393,6 +395,7 @@ func systemGraphQLCapabilities(enabled map[string]struct{}) []Capability {
 					"resolvers",
 					"mcp",
 				},
+				"source_patch_semantics": "sources is replace-all. update_sources merge-patches by source name; existing source patches require name, new source patches require name and kind. Omitted fields are preserved, null clears fields, arrays replace, and nested objects merge. remove_sources deletes by source name.",
 				"mcp_fields": []string{
 					"allow_workflow_updates",
 					"allow_workflow_execution",

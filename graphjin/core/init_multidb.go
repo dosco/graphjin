@@ -430,6 +430,7 @@ func (gj *graphjinEngine) ensureDiscoveredTablesInConfig(ctx *dbContext) {
 			Name:     dt.Name,
 			Schema:   dt.Schema,
 			Database: ctx.name,
+			Source:   ctx.name,
 		})
 	}
 }

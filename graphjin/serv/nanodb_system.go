@@ -140,17 +140,67 @@ func (s *graphjinService) refreshCatalogAfterCoreConfigChange(oldCore, newCore c
 		return nil
 	}
 	s.invalidateCatalogCache()
+	mode := "full"
+	var changed []string
+	var err error
 	if s.systemNanoDB == nil {
 		s.markCatalogChanged(reason)
+		s.recordCatalogRefreshRuntimeEvent(context.Background(), mode, nil, reason, nil)
 		return nil
 	}
 	changedSources := changedCatalogSources(oldCore, newCore)
 	if len(changedSources) != 0 &&
 		sourceScopedCatalogPatchAllowed(oldCore, newCore, changedSources) &&
 		coreConfigChangeScopedToSources(oldCore, newCore, changedSources) {
-		return s.refreshSystemNanoDBForSources(sortedSourceSet(changedSources))
+		mode = "source_scoped"
+		changed = sortedSourceSet(changedSources)
+		err = s.refreshSystemNanoDBForSources(changed)
+	} else {
+		changed = sortedSourceSet(changedSources)
+		err = s.refreshSystemNanoDB()
 	}
-	return s.refreshSystemNanoDB()
+	s.recordCatalogRefreshRuntimeEvent(context.Background(), mode, changed, reason, err)
+	return err
+}
+
+func (s *graphjinService) recordCatalogRefreshRuntimeEvent(ctx context.Context, mode string, changedSources []string, reason string, err error) {
+	if s == nil {
+		return
+	}
+	status := runtimeStatusReady
+	severity := "info"
+	summary := "Catalog refresh completed after a runtime config change."
+	nextAction := "Use gj_catalog/query_catalog for planning with the refreshed catalog."
+	errorCode := ""
+	details := map[string]any{
+		"refresh_mode": mode,
+		"reason":       reason,
+	}
+	if len(changedSources) != 0 {
+		details["changed_sources"] = changedSources
+	}
+	if err != nil {
+		status = runtimeStatusDegraded
+		severity = "warn"
+		summary = "Catalog refresh failed after a runtime config change."
+		nextAction = "Check recent config/schema events, then retry catalog discovery or reload schema."
+		errorCode = "catalog_refresh_failed"
+		details["error"] = redactRuntimeError(err)
+	}
+	event := runtimeEvent{
+		Phase:      "catalog",
+		Status:     status,
+		Severity:   severity,
+		Summary:    summary,
+		NextAction: nextAction,
+		ErrorCode:  errorCode,
+		Details:    details,
+	}
+	if snap, snapErr := s.catalogSnapshot(); snapErr == nil {
+		event.CatalogRevision = snap.Revision
+		details["catalog_revision"] = snap.Revision
+	}
+	s.recordRuntimeEvent(ctx, event)
 }
 
 func (s *graphjinService) systemNanoSnapshotFromCatalog(catalogSnapshot *core.CatalogSnapshot) core.NanoSnapshot {
@@ -341,6 +391,8 @@ func configNanoColumns() []core.NanoColumn {
 		{Name: "config_path", Type: "text"},
 		{Name: "active_database", Type: "text"},
 		{Name: "sources", Type: "json"},
+		{Name: "update_sources", Type: "json"},
+		{Name: "remove_sources", Type: "json"},
 		{Name: "databases", Type: "json"},
 		{Name: "relationships", Type: "json"},
 		{Name: "tables", Type: "json"},

@@ -17,26 +17,36 @@ func (gj *graphjinEngine) initManagedQueryTables() error {
 		return nil
 	}
 	for dbName, handler := range gj.managedQueryHandlers {
-		dbctx := gj.databases[dbName]
-		if dbctx == nil {
-			return fmt.Errorf("managed query handler database %q not configured", dbName)
+		if err := gj.initManagedQueryTablesForDatabase(dbName, handler); err != nil {
+			return err
 		}
-		if dbctx.dbinfo == nil {
-			return fmt.Errorf("managed query handler database %q has no schema metadata", dbName)
+	}
+	return nil
+}
+
+func (gj *graphjinEngine) initManagedQueryTablesForDatabase(dbName string, handler ManagedQueryHandler) error {
+	if handler == nil {
+		return nil
+	}
+	dbctx := gj.databases[dbName]
+	if dbctx == nil {
+		return fmt.Errorf("managed query handler database %q not configured", dbName)
+	}
+	if dbctx.dbinfo == nil {
+		return fmt.Errorf("managed query handler database %q has no schema metadata", dbName)
+	}
+	schema := dbctx.dbinfo.Schema
+	for _, table := range handler.ManagedQueryTables() {
+		if strings.TrimSpace(table.Name) == "" {
+			return fmt.Errorf("managed query table name is required")
 		}
-		schema := dbctx.dbinfo.Schema
-		for _, table := range handler.ManagedQueryTables() {
-			if strings.TrimSpace(table.Name) == "" {
-				return fmt.Errorf("managed query table name is required")
-			}
-			if !strings.HasPrefix(table.Name, "gj_") {
-				return fmt.Errorf("managed query table %q must use reserved gj_ prefix", table.Name)
-			}
-			if _, err := dbctx.dbinfo.GetTable(schema, table.Name); err == nil {
-				return fmt.Errorf("reserved GraphJin system table %q conflicts with an existing table", table.Name)
-			}
-			dbctx.dbinfo.AddTable(managedDBTable(schema, table))
+		if !strings.HasPrefix(table.Name, "gj_") {
+			return fmt.Errorf("managed query table %q must use reserved gj_ prefix", table.Name)
 		}
+		if _, err := dbctx.dbinfo.GetTable(schema, table.Name); err == nil {
+			return fmt.Errorf("reserved GraphJin system table %q conflicts with an existing table", table.Name)
+		}
+		dbctx.dbinfo.AddTable(managedDBTable(schema, table))
 	}
 	return nil
 }

@@ -171,7 +171,11 @@ func (ms *mcpServer) registerSchemaTools() {
 				"Use this tool when: (1) the user says a table exists but query_catalog(where: {kind: {eq: 'table'}}) doesn't show it, "+
 				"(2) the user has just created new tables or modified the database structure, "+
 				"(3) the user explicitly asks to reload, refresh, or recheck the database schema. "+
-				"This triggers immediate discovery without waiting for the automatic polling interval."),
+				"This triggers immediate discovery without waiting for the automatic polling interval. "+
+				"Pass database for a source-scoped reload of one configured database source; omit it for a full reload."),
+			mcp.WithString("database",
+				mcp.Description("Optional configured database/source name for source-scoped schema reload. Omit for full reload."),
+			),
 		), ms.handleReloadSchema)
 	}
 }
@@ -922,8 +926,11 @@ func (ms *mcpServer) handleReloadSchema(ctx context.Context, req mcp.CallToolReq
 		})
 		return err, nil
 	}
-	err := ms.service.gj.Reload()
+	args := req.GetArguments()
+	database, _ := args["database"].(string)
+	reload, err := ms.service.reloadSchema(ctx, database)
 	if err != nil {
+		errText := redactRuntimeError(err)
 		ms.service.recordRuntimeEvent(ctx, runtimeEvent{
 			Phase:      "schema",
 			Status:     runtimeStatusFailed,
@@ -931,23 +938,32 @@ func (ms *mcpServer) handleReloadSchema(ctx context.Context, req mcp.CallToolReq
 			Summary:    "MCP schema reload failed.",
 			NextAction: "Inspect database connectivity and schema discovery errors before retrying.",
 			ErrorCode:  "schema_reload_failed",
-			Details:    map[string]any{"error": err.Error()},
+			Details:    map[string]any{"error": errText, "database": strings.TrimSpace(database)},
 		})
-		return mcp.NewToolResultError(fmt.Sprintf("failed to reload schema: %s", err.Error())), nil
+		return mcp.NewToolResultError(fmt.Sprintf("failed to reload schema: %s", errText)), nil
 	}
 
 	// Get updated table list to confirm
-	tables := ms.service.gj.GetTables()
+	tables := reload.Tables
 
 	result := struct {
-		Success    bool     `json:"success"`
-		Message    string   `json:"message"`
-		TableCount int      `json:"table_count"`
-		Tables     []string `json:"tables,omitempty"`
+		Success         bool     `json:"success"`
+		Message         string   `json:"message"`
+		ReloadMode      string   `json:"reload_mode"`
+		Database        string   `json:"database,omitempty"`
+		CatalogRevision string   `json:"catalog_revision,omitempty"`
+		TableCount      int      `json:"table_count"`
+		Tables          []string `json:"tables,omitempty"`
 	}{
-		Success:    true,
-		Message:    "Schema reloaded successfully",
-		TableCount: len(tables),
+		Success:         true,
+		Message:         "Schema reloaded successfully",
+		ReloadMode:      reload.Mode,
+		Database:        reload.Database,
+		CatalogRevision: reload.CatalogRevision,
+		TableCount:      len(tables),
+	}
+	if reload.Mode == "source_scoped" {
+		result.Message = fmt.Sprintf("Schema reloaded successfully for database %s", reload.Database)
 	}
 
 	// Include table names if not too many
@@ -957,12 +973,19 @@ func (ms *mcpServer) handleReloadSchema(ctx context.Context, req mcp.CallToolReq
 		}
 	}
 	ms.service.recordRuntimeEvent(ctx, runtimeEvent{
-		Phase:      "schema",
-		Status:     runtimeStatusReady,
-		Severity:   "info",
-		Summary:    "MCP schema reload completed.",
-		NextAction: "Refresh catalog-guided planning before using newly discovered tables or relationships.",
-		Details:    map[string]any{"table_count": len(tables)},
+		Phase:           "schema",
+		Status:          runtimeStatusReady,
+		Severity:        "info",
+		Summary:         "MCP schema reload completed.",
+		NextAction:      "Refresh catalog-guided planning before using newly discovered tables or relationships.",
+		DatabaseName:    reload.Database,
+		CatalogRevision: reload.CatalogRevision,
+		Details: map[string]any{
+			"table_count":      len(tables),
+			"reload_mode":      reload.Mode,
+			"database":         reload.Database,
+			"catalog_revision": reload.CatalogRevision,
+		},
 	})
 
 	return ms.toolResultJSON("reload_schema", req.GetArguments(), result)
