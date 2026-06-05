@@ -11,6 +11,7 @@ import (
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/core/v3/openapi"
+	"github.com/dosco/graphjin/core/v3/sourcecap"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/viper"
 )
@@ -492,12 +493,16 @@ type SetHeaderInput struct {
 
 // ConfigUpdateResult represents the result of a config update
 type ConfigUpdateResult struct {
-	Success   bool          `json:"success"`
-	Message   string        `json:"message"`
-	Changes   []string      `json:"changes,omitempty"`
-	Errors    []string      `json:"errors,omitempty"`
-	Databases []string      `json:"databases,omitempty"`
-	Next      *NextGuidance `json:"next,omitempty"`
+	Success         bool          `json:"success"`
+	Message         string        `json:"message"`
+	Changes         []string      `json:"changes,omitempty"`
+	Errors          []string      `json:"errors,omitempty"`
+	Databases       []string      `json:"databases,omitempty"`
+	ReloadMode      string        `json:"reload_mode,omitempty"`
+	ChangedSources  []string      `json:"changed_sources,omitempty"`
+	ReloadFallback  bool          `json:"reload_fallback,omitempty"`
+	CatalogRevision string        `json:"catalog_revision,omitempty"`
+	Next            *NextGuidance `json:"next,omitempty"`
 }
 
 // handleUpdateCurrentConfig updates the configuration and reloads
@@ -976,9 +981,21 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	oldCore := cloneCoreConfig(ms.service.conf.Core)
 	var sealedKeystore *localKeystore
 	var sealedSecretRefs map[string]struct{}
+	var reloadPlan configRuntimeReloadPlan
 	coreChanged := !reflect.DeepEqual(stagedCore, ms.service.conf.Core)
 	if coreChanged {
-		stage, err := ms.prepareStagedRuntime(conf, createIfNotExists)
+		reloadPlan = classifyConfigRuntimeReload(oldCore, stagedCore)
+		if reloadPlan.mode == "source_scoped" && ms.service.systemNanoDB == nil && ms.service.metadataGraphEnabledForCore(&stagedCore) {
+			reloadPlan.mode = "full"
+			reloadPlan.fallback = true
+		}
+		var stage *stagedRuntimeState
+		var err error
+		if reloadPlan.mode == "source_scoped" {
+			stage, err = ms.prepareSourceScopedRuntime(conf, reloadPlan.changedSources, createIfNotExists)
+		} else {
+			stage, err = ms.prepareStagedRuntime(conf, createIfNotExists)
+		}
 		if err != nil {
 			if stage != nil {
 				availableDBs = stage.availableDBs
@@ -1000,6 +1017,11 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				Errors:    errs,
 				Databases: availableDBs,
 			}
+			if reloadPlan.mode != "" {
+				result.ReloadMode = reloadPlan.mode
+				result.ChangedSources = reloadPlan.changedSources
+				result.ReloadFallback = reloadPlan.fallback
+			}
 			result.Next = ms.nextForConfigUpdate(result)
 			ms.recordConfigUpdateRuntimeEvent(ctx, result)
 			data, _ := mcpMarshalJSON(result, true)
@@ -1019,6 +1041,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					Errors:    []string{redactRuntimeError(err)},
 					Databases: availableDBs,
 				}
+				result.ReloadMode = reloadPlan.mode
+				result.ChangedSources = reloadPlan.changedSources
+				result.ReloadFallback = reloadPlan.fallback
 				result.Next = ms.nextForConfigUpdate(result)
 				ms.recordConfigUpdateRuntimeEvent(ctx, result)
 				data, _ := mcpMarshalJSON(result, true)
@@ -1033,6 +1058,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					Errors:    []string{missingLocalKeystoreKeyError(secretRefsInConfig(&persistedCore)).Error()},
 					Databases: availableDBs,
 				}
+				result.ReloadMode = reloadPlan.mode
+				result.ChangedSources = reloadPlan.changedSources
+				result.ReloadFallback = reloadPlan.fallback
 				result.Next = ms.nextForConfigUpdate(result)
 				ms.recordConfigUpdateRuntimeEvent(ctx, result)
 				data, _ := mcpMarshalJSON(result, true)
@@ -1049,6 +1077,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 						Errors:    []string{redactRuntimeError(err)},
 						Databases: availableDBs,
 					}
+					result.ReloadMode = reloadPlan.mode
+					result.ChangedSources = reloadPlan.changedSources
+					result.ReloadFallback = reloadPlan.fallback
 					result.Next = ms.nextForConfigUpdate(result)
 					ms.recordConfigUpdateRuntimeEvent(ctx, result)
 					data, _ := mcpMarshalJSON(result, true)
@@ -1063,6 +1094,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 						Errors:    []string{redactRuntimeError(err)},
 						Databases: availableDBs,
 					}
+					result.ReloadMode = reloadPlan.mode
+					result.ChangedSources = reloadPlan.changedSources
+					result.ReloadFallback = reloadPlan.fallback
 					result.Next = ms.nextForConfigUpdate(result)
 					ms.recordConfigUpdateRuntimeEvent(ctx, result)
 					data, _ := mcpMarshalJSON(result, true)
@@ -1072,12 +1106,37 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				sealedSecretRefs = usedRefs
 			}
 		}
-		ms.commitStagedRuntime(persistedCore, stage)
+		if reloadPlan.mode == "source_scoped" {
+			if err := ms.commitSourceScopedRuntime(persistedCore, stage, reloadPlan); err != nil {
+				stage.close()
+				errText := redactRuntimeError(err)
+				result := ConfigUpdateResult{
+					Success:        false,
+					Message:        fmt.Sprintf("Config reload failed, changes not persisted: %s", errText),
+					Changes:        changes,
+					Errors:         append(errors, fmt.Sprintf("reload error: %s", errText)),
+					Databases:      availableDBs,
+					ReloadMode:     reloadPlan.mode,
+					ChangedSources: reloadPlan.changedSources,
+					ReloadFallback: reloadPlan.fallback,
+				}
+				result.Next = ms.nextForConfigUpdate(result)
+				ms.recordConfigUpdateRuntimeEvent(ctx, result)
+				data, _ := mcpMarshalJSON(result, true)
+				return mcpToolResultJSONBytes(data), nil
+			}
+		} else {
+			ms.commitStagedRuntime(persistedCore, stage)
+		}
 		if err := ms.service.refreshCatalogAfterCoreConfigChange(oldCore, persistedCore, "config mutation"); err != nil {
 			errors = append(errors, fmt.Sprintf("catalog refresh error: %s", redactRuntimeError(err)))
 		}
 		if ms.service.gj != nil && ms.service.gj.SchemaReady() {
-			changes = append(changes, "configuration validated and runtime reloaded transactionally")
+			if reloadPlan.mode == "source_scoped" {
+				changes = append(changes, "configuration validated and runtime reloaded source-scoped")
+			} else {
+				changes = append(changes, "configuration validated and runtime reloaded transactionally")
+			}
 		}
 	}
 
@@ -1116,6 +1175,14 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		Changes:   changes,
 		Errors:    errors,
 		Databases: availableDBs,
+	}
+	if reloadPlan.mode != "" {
+		result.ReloadMode = reloadPlan.mode
+		result.ChangedSources = reloadPlan.changedSources
+		result.ReloadFallback = reloadPlan.fallback
+	}
+	if snap, err := ms.service.catalogSnapshot(); err == nil && snap != nil {
+		result.CatalogRevision = snap.Revision
 	}
 
 	if len(errors) > 0 {
@@ -2087,6 +2154,130 @@ func primaryDBTypeFromCore(conf *core.Config) string {
 	return conf.Databases[names[0]].Type
 }
 
+type configRuntimeReloadPlan struct {
+	mode           string
+	changedSources []string
+	fallback       bool
+}
+
+func classifyConfigRuntimeReload(oldCore, newCore core.Config) configRuntimeReloadPlan {
+	plan := configRuntimeReloadPlan{mode: "full"}
+	changed := changedCatalogSources(oldCore, newCore)
+	if len(changed) == 0 {
+		return plan
+	}
+	plan.changedSources = sortedSourceSet(changed)
+	plan.fallback = true
+
+	if !oldCore.IsSourcesUsed() || !newCore.IsSourcesUsed() {
+		return plan
+	}
+	if !sourceScopedCatalogPatchAllowed(oldCore, newCore, changed) ||
+		!coreConfigChangeScopedToSources(oldCore, newCore, changed) {
+		return plan
+	}
+	if sourceScopedTouchesSystemSource(oldCore, newCore, changed) {
+		return plan
+	}
+	if !databaseSourceRuntimePatchAllowed(oldCore, newCore, changed) {
+		return plan
+	}
+
+	plan.mode = "source_scoped"
+	plan.fallback = false
+	return plan
+}
+
+func sourceScopedTouchesSystemSource(oldCore, newCore core.Config, sources map[string]struct{}) bool {
+	systemNames := map[string]struct{}{
+		oldCore.CatalogDatabaseName():  {},
+		newCore.CatalogDatabaseName():  {},
+		oldCore.MetadataDatabaseName(): {},
+		newCore.MetadataDatabaseName(): {},
+	}
+	for name := range sources {
+		if _, ok := systemNames[name]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func databaseSourceRuntimePatchAllowed(oldCore, newCore core.Config, sources map[string]struct{}) bool {
+	oldSources := sourceConfigByCatalogName(oldCore.Sources)
+	newSources := sourceConfigByCatalogName(newCore.Sources)
+	for name := range sources {
+		oldSource, hadOldSource := oldSources[name]
+		newSource, hasNewSource := newSources[name]
+		if !hadOldSource && !hasNewSource {
+			return false
+		}
+		if hadOldSource && oldSource.CanonicalKind() != sourcecap.KindDatabase {
+			return false
+		}
+		if hasNewSource && newSource.CanonicalKind() != sourcecap.KindDatabase {
+			return false
+		}
+		if hasNewSource {
+			dbConf, ok := newCore.Databases[name]
+			if !ok {
+				return false
+			}
+			if !reflect.DeepEqual(newSourceDatabaseConfig(newSource), dbConf) {
+				return false
+			}
+		}
+		if hadOldSource {
+			dbConf, ok := oldCore.Databases[name]
+			if !ok {
+				return false
+			}
+			if !reflect.DeepEqual(newSourceDatabaseConfig(oldSource), dbConf) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func newSourceDatabaseConfig(source core.SourceConfig) core.DatabaseConfig {
+	dbConf := core.DatabaseConfig{
+		Type:                   source.Type,
+		ConnString:             source.ConnString,
+		Host:                   source.Host,
+		Port:                   source.Port,
+		DBName:                 source.DBName,
+		User:                   source.User,
+		Password:               source.Password,
+		Path:                   source.Path,
+		MaxOpenConns:           source.MaxOpenConns,
+		MaxIdleConns:           source.MaxIdleConns,
+		Schema:                 source.Schema,
+		PoolSize:               source.PoolSize,
+		MaxConnections:         source.MaxConnections,
+		MaxConnIdleTime:        source.MaxConnIdleTime,
+		MaxConnLifeTime:        source.MaxConnLifeTime,
+		PingTimeout:            source.PingTimeout,
+		EnableTLS:              source.EnableTLS,
+		ServerName:             source.ServerName,
+		ServerCert:             source.ServerCert,
+		ClientCert:             source.ClientCert,
+		ClientKey:              source.ClientKey,
+		Encrypt:                source.Encrypt,
+		TrustServerCertificate: source.TrustServerCertificate,
+		PrivateKeyPath:         source.PrivateKeyPath,
+		PrivateKeyPEM:          source.PrivateKeyPEM,
+		KeyPassphrase:          source.KeyPassphrase,
+		ReadOnly:               source.ReadOnly,
+		AnalyticsMode:          source.AnalyticsMode,
+		InferDBRefs:            source.InferDBRefs,
+	}
+	if dbConf.Type == "" {
+		dbConf.Type = "postgres"
+	}
+	return dbConf
+}
+
 func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotExists bool) (*stagedRuntimeState, error) {
 	runtimeCore := cloneCoreConfig(*stagedCore)
 	if err := ms.service.hydrateCoreConfigSecrets(&runtimeCore); err != nil {
@@ -2214,6 +2405,136 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 	return stage, nil
 }
 
+func (ms *mcpServer) prepareSourceScopedRuntime(stagedCore *core.Config, changedSources []string, createIfNotExists bool) (*stagedRuntimeState, error) {
+	runtimeCore := cloneCoreConfig(*stagedCore)
+	if err := ms.service.hydrateCoreConfigSecrets(&runtimeCore); err != nil {
+		return nil, err
+	}
+	stage := &stagedRuntimeState{
+		dbs:            make(map[string]*sql.DB),
+		managedDBs:     make(map[string]managedDB),
+		runtimeCore:    &runtimeCore,
+		newConnections: make(map[string]*sql.DB),
+	}
+	changed := make(map[string]struct{}, len(changedSources))
+	for _, name := range changedSources {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			changed[name] = struct{}{}
+		}
+	}
+	if len(changed) == 0 {
+		return stage, fmt.Errorf("source-scoped reload requires at least one changed source")
+	}
+
+	currentDBs := ms.service.dbs
+	currentConfigs := ms.service.conf.Core.Databases
+	dbNames := make([]string, 0, len(stagedCore.Databases))
+	for name := range stagedCore.Databases {
+		dbNames = append(dbNames, name)
+	}
+	sort.Strings(dbNames)
+
+	for _, name := range dbNames {
+		dbConf := stagedCore.Databases[name]
+		runtimeDBConf := dbConf
+		if runtimeCore.Databases != nil {
+			if hydrated, ok := runtimeCore.Databases[name]; ok {
+				runtimeDBConf = hydrated
+			}
+		}
+		_, isChanged := changed[name]
+		if existing, ok := currentDBs[name]; ok && !isChanged && reflect.DeepEqual(currentConfigs[name], dbConf) {
+			stage.dbs[name] = existing
+			if managed, ok := ms.service.managedDBs[name]; ok {
+				stage.managedDBs[name] = managed
+			}
+			if ms.service.runtimeCore != nil {
+				if runtime, ok := ms.service.runtimeCore.Databases[name]; ok {
+					stage.runtimeCore.Databases[name] = runtime
+				}
+			}
+			continue
+		}
+		if !isChanged {
+			return stage, fmt.Errorf("source-scoped reload encountered unclassified database change: %s", name)
+		}
+
+		if createIfNotExists && !isCodeSQLType(dbConf.Type) {
+			dbType := strings.ToLower(runtimeDBConf.Type)
+			dbName := runtimeDBConf.DBName
+			if dbName == "" {
+				dbName = name
+			}
+			if err := createDatabaseOnServer(dbType, runtimeDBConf.Host, runtimeDBConf.Port, runtimeDBConf.User, runtimeDBConf.Password, dbName, ms.service.log); err != nil {
+				ms.service.log.Warnf("create_if_not_exists for '%s': %s", name, redactRuntimeError(err))
+			}
+		}
+
+		if runtimeDBConf.ConnString == "" && runtimeDBConf.Host == "" && runtimeDBConf.Path == "" {
+			continue
+		}
+
+		db, err := ms.service.newDBFromDatabaseConfigInto(name, runtimeDBConf, stage.runtimeCore, stage.managedDBs)
+		if err != nil {
+			return stage, fmt.Errorf("database '%s' connection failed: %s", name, redactRuntimeError(err))
+		}
+		stage.dbs[name] = db
+		stage.newConnections[name] = db
+	}
+
+	if len(stage.dbs) == 0 && len(stagedCore.Databases) > 0 {
+		return stage, fmt.Errorf("database connection failed: no connections established")
+	}
+
+	if oldMetadataDB := ms.service.metadataDB; oldMetadataDB != "" {
+		if _, configured := stagedCore.Databases[oldMetadataDB]; !configured {
+			delete(stage.dbs, oldMetadataDB)
+		}
+	}
+	if ms.service.systemNanoDB != nil && ms.service.metadataGraphEnabledForCore(stagedCore) {
+		metadataDB := stagedCore.MetadataDatabaseName()
+		if metadataDB == "" {
+			metadataDB = defaultMetadataDBName
+		}
+		stage.metadataDB = metadataDB
+		if stage.runtimeCore.Databases == nil {
+			stage.runtimeCore.Databases = make(map[string]core.DatabaseConfig)
+		}
+		stage.runtimeCore.Databases[metadataDB] = core.DatabaseConfig{Type: "nanodb", ReadOnly: true}
+		scopedConf := *ms.service.conf
+		scopedConf.Core = *stagedCore
+		injectSystemNanoTablesInto(&scopedConf, stage.runtimeCore, metadataDB)
+		applySystemRoleQueryDefaults(&scopedConf, stage.runtimeCore, metadataDB)
+		if stagedCore.MetadataAutoCodeRelationsEnabled() {
+			codeDBs := ms.service.selectedCodeSQLDatabasesFor(stagedCore, stage.managedDBs)
+			if len(codeDBs) == 1 {
+				injectMetadataCodeRelationships(stage.runtimeCore, metadataDB, codeDBs[0])
+			} else if len(codeDBs) > 1 {
+				ms.service.log.Warnf("metadata auto_code_relations skipped: multiple CodeSQL databases selected: %s", strings.Join(codeDBs, ", "))
+			}
+		}
+	} else {
+		metadataDB, err := ms.service.initMetadataGraphForRuntime(stagedCore, stage.runtimeCore, stage.dbs, stage.managedDBs)
+		if err != nil {
+			return stage, err
+		}
+		stage.metadataDB = metadataDB
+		if metadataDB != "" {
+			stage.newConnections[metadataDB] = stage.dbs[metadataDB]
+		}
+	}
+
+	if db := anyDBFromMap(stage.dbs); db != nil {
+		stage.availableDBs, _ = listDatabaseNames(db, primaryDBTypeFromCore(stage.runtimeCore))
+		if !ms.service.conf.MCP.DefaultDBAllowed {
+			stage.availableDBs = filterSystemDatabases(primaryDBTypeFromCore(stage.runtimeCore), stage.availableDBs)
+		}
+	}
+
+	return stage, nil
+}
+
 func stagedRuntimeHasApplicationDatabase(conf *core.Config, managedDBs map[string]managedDB) bool {
 	if conf == nil {
 		return false
@@ -2246,6 +2567,24 @@ func (ms *mcpServer) recordConfigUpdateRuntimeEvent(ctx context.Context, result 
 		nextAction = "Review config update errors and retry with a smaller, validated change."
 		errorCode = "config_update_failed"
 	}
+	details := map[string]any{
+		"message":        result.Message,
+		"change_count":   len(result.Changes),
+		"error_count":    len(result.Errors),
+		"database_count": len(result.Databases),
+	}
+	if result.ReloadMode != "" {
+		details["reload_mode"] = result.ReloadMode
+	}
+	if len(result.ChangedSources) != 0 {
+		details["changed_sources"] = result.ChangedSources
+	}
+	if result.ReloadFallback {
+		details["reload_fallback"] = true
+	}
+	if result.CatalogRevision != "" {
+		details["catalog_revision"] = result.CatalogRevision
+	}
 	ms.service.recordRuntimeEvent(ctx, runtimeEvent{
 		Phase:      "config",
 		Status:     status,
@@ -2253,13 +2592,56 @@ func (ms *mcpServer) recordConfigUpdateRuntimeEvent(ctx context.Context, result 
 		Summary:    summary,
 		NextAction: nextAction,
 		ErrorCode:  errorCode,
+		Details:    details,
+	})
+}
+
+func (ms *mcpServer) commitSourceScopedRuntime(stagedCore core.Config, stage *stagedRuntimeState, plan configRuntimeReloadPlan) error {
+	oldDBs := ms.service.dbs
+	oldManagedDBs := ms.service.managedDBs
+	hadDatabaseMap := len(ms.service.conf.Core.Databases) > 0
+	prevLegacyDB := ms.service.conf.DB
+	prevDBType := ms.service.conf.DBType
+
+	opts := ms.service.buildCoreOptionsFor(stage.dbs, stage.managedDBs)
+	if err := ms.service.gj.ReloadConfigDatabases(stage.runtimeCore, plan.changedSources, opts...); err != nil {
+		return err
+	}
+
+	ms.service.conf.Core = stagedCore
+	switch {
+	case len(stagedCore.Databases) > 0:
+		syncRuntimeDBFromDatabases(ms.service.conf, stage.runtimeCore)
+	case hadDatabaseMap:
+		ms.service.conf.DB = Database{}
+		ms.service.conf.DBType = ""
+	default:
+		ms.service.conf.DB = prevLegacyDB
+		ms.service.conf.DBType = prevDBType
+	}
+
+	ms.service.dbs = stage.dbs
+	ms.service.managedDBs = stage.managedDBs
+	ms.service.runtimeCore = stage.runtimeCore
+	ms.service.metadataDB = stage.metadataDB
+	ms.service.reinitRuntimeObservability()
+	ms.service.recordRuntimeEvent(context.Background(), runtimeEvent{
+		Phase:      "config",
+		Status:     runtimeStatusReady,
+		Severity:   "info",
+		Summary:    "GraphJin runtime was source-scoped reloaded after a guarded config update.",
+		NextAction: "Query gj_runtime before the next workflow, config, or schema action if system state matters.",
 		Details: map[string]any{
-			"message":        result.Message,
-			"change_count":   len(result.Changes),
-			"error_count":    len(result.Errors),
-			"database_count": len(result.Databases),
+			"database_count":  len(stage.dbs),
+			"metadata_db":     stage.metadataDB,
+			"reload_mode":     plan.mode,
+			"changed_sources": plan.changedSources,
+			"reload_fallback": plan.fallback,
 		},
 	})
+	ms.service.registerRuntimeSchemaCallbacks()
+	ms.closeSupersededConnections(oldDBs, oldManagedDBs, stage.dbs)
+	return nil
 }
 
 func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRuntimeState) {
@@ -2297,6 +2679,7 @@ func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRu
 		Details: map[string]any{
 			"database_count": len(stage.dbs),
 			"metadata_db":    stage.metadataDB,
+			"reload_mode":    "full",
 		},
 	})
 	ms.service.registerRuntimeSchemaCallbacks()

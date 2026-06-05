@@ -521,19 +521,23 @@ func nonEmptyStrings(values ...any) []string {
 }
 
 func (s *graphjinService) injectSystemNanoTables(database string) {
-	if s.runtimeCore == nil {
+	injectSystemNanoTablesInto(s.conf, s.runtimeCore, database)
+}
+
+func injectSystemNanoTablesInto(conf *Config, runtimeCore *core.Config, database string) {
+	if runtimeCore == nil {
 		return
 	}
 	addTableConfig := func(name string, aliases ...string) {
-		for _, table := range s.runtimeCore.Tables {
+		for _, table := range runtimeCore.Tables {
 			if table.Database == database && table.Name == name && table.Table == "" {
 				return
 			}
 		}
-		readOnly := controlPlaneTableReadOnly(s.conf, database, name)
-		s.runtimeCore.Tables = append(s.runtimeCore.Tables, core.Table{Database: database, Source: database, Schema: "main", Name: name, ReadOnly: readOnly})
+		readOnly := controlPlaneTableReadOnly(conf, database, name)
+		runtimeCore.Tables = append(runtimeCore.Tables, core.Table{Database: database, Source: database, Schema: "main", Name: name, ReadOnly: readOnly})
 		for _, alias := range aliases {
-			s.runtimeCore.Tables = append(s.runtimeCore.Tables, core.Table{Database: database, Source: database, Schema: "main", Name: alias, Table: name, ReadOnly: readOnly})
+			runtimeCore.Tables = append(runtimeCore.Tables, core.Table{Database: database, Source: database, Schema: "main", Name: alias, Table: name, ReadOnly: readOnly})
 		}
 	}
 	addTableConfig("gj_catalog", "parent", "children", "columns", "relationships")

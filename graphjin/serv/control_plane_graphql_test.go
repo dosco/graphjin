@@ -1755,6 +1755,8 @@ func TestGraphQLConfigUpdateSourcesPatchPreservesSourcesAndRecordsCatalogEvent(t
 	svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "app.sqlite3", true), func(conf *Config) {
 		allowAgenticGraphJinConfigWrite(conf)
 	})
+	oldGJ := svc.gj
+	oldMain := svc.dbs["main"]
 
 	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
 		gj_config(id: "current", update: {
@@ -1786,6 +1788,15 @@ func TestGraphQLConfigUpdateSourcesPatchPreservesSourcesAndRecordsCatalogEvent(t
 	}
 	if got := svc.conf.Core.Databases["main"].Path; got != replacementPath {
 		t.Fatalf("renormalized database path = %q, want %q", got, replacementPath)
+	}
+	if svc.gj != oldGJ {
+		t.Fatal("expected GraphQL gj_config source patch to preserve the GraphJin wrapper")
+	}
+	if svc.dbs["main"] == oldMain {
+		t.Fatal("expected GraphQL gj_config source patch to replace the changed database handle")
+	}
+	if err := oldMain.Ping(); err == nil {
+		t.Fatal("expected old GraphQL gj_config database handle to be closed")
 	}
 
 	details := latestRuntimeEventDetails(t, svc, "catalog", "refresh_mode", "source_scoped")

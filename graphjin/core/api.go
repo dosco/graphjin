@@ -13,6 +13,7 @@ import (
 	_log "log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -992,6 +993,56 @@ func (g *GraphJin) ReloadDatabase(name string) error {
 	return nil
 }
 
+// ReloadConfigDatabases swaps to conf while rediscoving and rebuilding only the
+// named database contexts. It is intended for service-owned config commits that
+// have already proved the change is database-source scoped. Use Reload for
+// global config, auth, relationship, resolver, API, filesystem, or workflow
+// changes.
+func (g *GraphJin) ReloadConfigDatabases(conf *Config, databases []string, opts ...Option) error {
+	if conf == nil {
+		return fmt.Errorf("config is required")
+	}
+	reloadSet := make(map[string]struct{}, len(databases))
+	for _, name := range databases {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			reloadSet[name] = struct{}{}
+		}
+	}
+	if len(reloadSet) == 0 {
+		return fmt.Errorf("at least one database name is required")
+	}
+
+	g.reloadMu.Lock()
+	defer g.reloadMu.Unlock()
+
+	base, err := g.getEngine()
+	if err != nil {
+		return err
+	}
+	if len(opts) == 0 {
+		opts = base.opts
+	}
+	if err := g.newGraphJinReloadingConfigDatabases(base, conf, reloadSet, opts...); err != nil {
+		return err
+	}
+	next, err := g.getEngine()
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0, len(reloadSet))
+	for name := range reloadSet {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if ctx, ok := next.databases[name]; ok && ctx.dbinfo != nil {
+			g.fireSchemaCallbacks(name, fmt.Sprintf("%x", ctx.dbinfo.Hash()))
+		}
+	}
+	return nil
+}
+
 // ReloadWithDB redoes database discover with a new primary DB connection.
 func (g *GraphJin) ReloadWithDB(db *sql.DB) error {
 	g.reloadMu.Lock()
@@ -1001,6 +1052,164 @@ func (g *GraphJin) ReloadWithDB(db *sql.DB) error {
 		return err
 	}
 	return g.newGraphJin(gj.conf, db, nil, gj.fs, gj.opts...)
+}
+
+func (g *GraphJin) newGraphJinReloadingConfigDatabases(base *graphjinEngine, nextConf *Config, reloadSet map[string]struct{}, opts ...Option) error {
+	if base == nil {
+		return errors.New("graphjin engine is not initialized")
+	}
+	conf := nextConf.clone()
+	if conf.IsSourcesUsed() {
+		for i := range conf.Tables {
+			if conf.Tables[i].Source == "" && conf.Tables[i].Database != "" {
+				conf.Tables[i].Source = conf.Tables[i].Database
+			}
+		}
+	}
+	if err := conf.NormalizeMode(); err != nil {
+		return err
+	}
+
+	log := base.log
+	if log == nil {
+		log = _log.New(os.Stderr, "", 0)
+	}
+	trace := base.trace
+	if trace == nil {
+		trace = &tracer{}
+	}
+	printFormat := append([]byte(nil), base.printFormat...)
+	if len(printFormat) == 0 {
+		printFormat = []byte(fmt.Sprintf("gj-%x:", time.Now().UnixNano()))
+	}
+
+	gj := &graphjinEngine{
+		conf:        conf,
+		log:         log,
+		prod:        conf.Production,
+		prodSec:     conf.Production,
+		printFormat: printFormat,
+		opts:        opts,
+		fs:          base.fs,
+		trace:       trace,
+		namespace:   base.namespace,
+		done:        g.done,
+	}
+	if gj.conf.DisableProdSecurity {
+		gj.prodSec = false
+	}
+	if err := gj.initCache(); err != nil {
+		return err
+	}
+	if err := gj.initConfig(); err != nil {
+		return err
+	}
+	names := make([]string, 0, len(gj.conf.Databases))
+	for name := range gj.conf.Databases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) != 0 {
+		gj.defaultDB = names[0]
+	}
+
+	for _, op := range opts {
+		if err := op(gj); err != nil {
+			return err
+		}
+	}
+	if gj.databases == nil {
+		gj.databases = make(map[string]*dbContext)
+	}
+
+	for name, ctx := range gj.databases {
+		if _, reload := reloadSet[name]; reload {
+			continue
+		}
+		baseCtx := base.databases[name]
+		if baseCtx == nil {
+			reloadSet[name] = struct{}{}
+			continue
+		}
+		if !reflect.DeepEqual(base.conf.Databases[name], conf.Databases[name]) || baseCtx.db != ctx.db || baseCtx.nano != ctx.nano {
+			reloadSet[name] = struct{}{}
+			continue
+		}
+		gj.databases[name] = cloneDBContextForReload(baseCtx)
+	}
+
+	reloadDefault := base.defaultDB != gj.defaultDB
+	for name := range reloadSet {
+		if name == gj.defaultDB {
+			reloadDefault = true
+			break
+		}
+	}
+	if reloadDefault {
+		if err := gj.initResolvers(); err != nil {
+			return err
+		}
+	} else {
+		gj.rtmap = base.rtmap
+		gj.rmap = base.rmap
+		gj.openapiRuntime = base.openapiRuntime
+		gj.fsBackends = base.fsBackends
+	}
+
+	reloadNames := make([]string, 0, len(reloadSet))
+	for name := range reloadSet {
+		reloadNames = append(reloadNames, name)
+	}
+	sort.Strings(reloadNames)
+	for _, name := range reloadNames {
+		target := gj.databases[name]
+		if target == nil {
+			continue
+		}
+		target.dbinfo = nil
+		target.schema = nil
+		target.qcodeCompiler = nil
+		target.psqlCompiler = nil
+		if target.nano != nil {
+			snap := target.nano.Snapshot()
+			if snap == nil {
+				return fmt.Errorf("database %q has no nanodb snapshot", name)
+			}
+			target.dbtype = "nanodb"
+			target.dbinfo = snap.DBInfo(name)
+		} else if err := gj.discoverDatabase(target); err != nil {
+			return err
+		}
+		if handler := gj.managedQueryHandlers[name]; handler != nil {
+			if err := gj.initManagedQueryTablesForDatabase(name, handler); err != nil {
+				return err
+			}
+		}
+		if err := gj.finalizeDatabaseSchema(target); err != nil {
+			return err
+		}
+		if target.nano == nil && !schemaHasApplicationTables(target.schema) {
+			return fmt.Errorf("database connected but schema discovery found no tables")
+		}
+	}
+	if gj.anyDatabaseReady() {
+		if err := gj.initAllowList(); err != nil {
+			return err
+		}
+		if err := gj.prepareRoleStmt(); err != nil {
+			return err
+		}
+		if err := gj.initIntro(); err != nil {
+			return err
+		}
+	}
+	if conf.SecretKey != "" {
+		sk := sha256.Sum256([]byte(conf.SecretKey))
+		gj.encryptionKey = sk
+		gj.encryptionKeySet = true
+	}
+	g.Store(gj)
+	return nil
 }
 
 func (g *GraphJin) newGraphJinReloadingDatabase(base *graphjinEngine, database string) error {

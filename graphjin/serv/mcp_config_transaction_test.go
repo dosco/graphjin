@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -594,6 +595,186 @@ func TestHandleUpdateCurrentConfig_RuntimeReadDisabledStopsRuntimeStore(t *testi
 	}
 }
 
+func TestHandleUpdateCurrentConfig_SourcePatchUsesSourceScopedReload(t *testing.T) {
+	mainPath := createSQLiteDBFile(t, "main.sqlite3", true)
+	analyticsPath := createSQLiteDBFile(t, "analytics.sqlite3", true)
+	replacementPath := createSQLiteDBFile(t, "replacement.sqlite3", true)
+	ms := newSourceModeConfigMCPServer(t, map[string]string{
+		"main":      mainPath,
+		"analytics": analyticsPath,
+	})
+
+	oldGJ := ms.service.gj
+	oldMain := ms.service.dbs["main"]
+	oldAnalytics := ms.service.dbs["analytics"]
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"update_sources": []any{map[string]any{
+			"name": "main",
+			"path": replacementPath,
+		}},
+	})
+	assertSourceScopedConfigResult(t, out, "main")
+	if out.CatalogRevision == "" {
+		t.Fatalf("expected catalog revision in source-scoped result: %+v", out)
+	}
+	if ms.service.gj != oldGJ {
+		t.Fatal("expected source-scoped config reload to preserve the GraphJin wrapper")
+	}
+	if ms.service.dbs["main"] == oldMain {
+		t.Fatal("expected changed source database handle to be replaced")
+	}
+	if ms.service.dbs["analytics"] != oldAnalytics {
+		t.Fatal("expected untouched source database handle to be reused")
+	}
+	if err := oldMain.Ping(); err == nil {
+		t.Fatal("expected old changed-source database handle to be closed")
+	}
+	if err := oldAnalytics.Ping(); err != nil {
+		t.Fatalf("expected untouched source database handle to remain open: %v", err)
+	}
+	details := latestRuntimeEventDetails(t, ms.service, "config", "reload_mode", "source_scoped")
+	changed, _ := details["changed_sources"].([]any)
+	if len(changed) != 1 || changed[0] != "main" {
+		t.Fatalf("config event changed_sources = %+v", details["changed_sources"])
+	}
+}
+
+func TestHandleUpdateCurrentConfig_AddSourceUsesSourceScopedReload(t *testing.T) {
+	mainPath := createSQLiteDBFile(t, "main.sqlite3", true)
+	logsPath := createSQLiteDBFile(t, "logs.sqlite3", true)
+	ms := newSourceModeConfigMCPServer(t, map[string]string{"main": mainPath})
+
+	oldGJ := ms.service.gj
+	oldMain := ms.service.dbs["main"]
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"update_sources": []any{map[string]any{
+			"name": "logs",
+			"kind": sourcecap.KindDatabase,
+			"type": "sqlite",
+			"path": logsPath,
+		}},
+	})
+	assertSourceScopedConfigResult(t, out, "logs")
+	if ms.service.gj != oldGJ {
+		t.Fatal("expected source add to preserve the GraphJin wrapper")
+	}
+	if ms.service.dbs["main"] != oldMain {
+		t.Fatal("expected existing source database handle to be reused")
+	}
+	if ms.service.dbs["logs"] == nil {
+		t.Fatal("expected added source database handle")
+	}
+	if err := oldMain.Ping(); err != nil {
+		t.Fatalf("expected existing source database handle to remain open: %v", err)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_RemoveSourceUsesSourceScopedReload(t *testing.T) {
+	mainPath := createSQLiteDBFile(t, "main.sqlite3", true)
+	analyticsPath := createSQLiteDBFile(t, "analytics.sqlite3", true)
+	ms := newSourceModeConfigMCPServer(t, map[string]string{
+		"main":      mainPath,
+		"analytics": analyticsPath,
+	})
+
+	oldGJ := ms.service.gj
+	oldMain := ms.service.dbs["main"]
+	oldAnalytics := ms.service.dbs["analytics"]
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"remove_sources": []any{"analytics"},
+	})
+	assertSourceScopedConfigResult(t, out, "analytics")
+	if ms.service.gj != oldGJ {
+		t.Fatal("expected source removal to preserve the GraphJin wrapper")
+	}
+	if ms.service.dbs["main"] != oldMain {
+		t.Fatal("expected untouched source database handle to be reused")
+	}
+	if _, ok := ms.service.dbs["analytics"]; ok {
+		t.Fatal("expected removed source database handle to be omitted")
+	}
+	if err := oldMain.Ping(); err != nil {
+		t.Fatalf("expected untouched source database handle to remain open: %v", err)
+	}
+	if err := oldAnalytics.Ping(); err == nil {
+		t.Fatal("expected removed source database handle to be closed")
+	}
+}
+
+func TestHandleUpdateCurrentConfig_MultiSourcePatchUsesSourceScopedReload(t *testing.T) {
+	mainPath := createSQLiteDBFile(t, "main.sqlite3", true)
+	analyticsPath := createSQLiteDBFile(t, "analytics.sqlite3", true)
+	mainReplacement := createSQLiteDBFile(t, "main-replacement.sqlite3", true)
+	analyticsReplacement := createSQLiteDBFile(t, "analytics-replacement.sqlite3", true)
+	ms := newSourceModeConfigMCPServer(t, map[string]string{
+		"main":      mainPath,
+		"analytics": analyticsPath,
+	})
+
+	oldGJ := ms.service.gj
+	oldMain := ms.service.dbs["main"]
+	oldAnalytics := ms.service.dbs["analytics"]
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"update_sources": []any{
+			map[string]any{"name": "main", "path": mainReplacement},
+			map[string]any{"name": "analytics", "path": analyticsReplacement},
+		},
+	})
+	assertSourceScopedConfigResult(t, out, "analytics", "main")
+	if ms.service.gj != oldGJ {
+		t.Fatal("expected multi-source patch to preserve the GraphJin wrapper")
+	}
+	if ms.service.dbs["main"] == oldMain || ms.service.dbs["analytics"] == oldAnalytics {
+		t.Fatal("expected both changed source database handles to be replaced")
+	}
+	if err := oldMain.Ping(); err == nil {
+		t.Fatal("expected old main database handle to be closed")
+	}
+	if err := oldAnalytics.Ping(); err == nil {
+		t.Fatal("expected old analytics database handle to be closed")
+	}
+}
+
+func TestHandleUpdateCurrentConfig_SourcePatchWithGlobalEditFallsBackToFullReload(t *testing.T) {
+	mainPath := createSQLiteDBFile(t, "main.sqlite3", true)
+	analyticsPath := createSQLiteDBFile(t, "analytics.sqlite3", true)
+	replacementPath := createSQLiteDBFile(t, "replacement.sqlite3", true)
+	ms := newSourceModeConfigMCPServer(t, map[string]string{
+		"main":      mainPath,
+		"analytics": analyticsPath,
+	})
+
+	oldGJ := ms.service.gj
+
+	out := applyConfigUpdate(t, ms, map[string]any{
+		"update_sources": []any{map[string]any{
+			"name": "main",
+			"path": replacementPath,
+		}},
+		"blocklist": []any{"users.name"},
+	})
+	if !out.Success {
+		t.Fatalf("expected mixed config update to succeed via full fallback, got %+v", out)
+	}
+	if out.ReloadMode != "full" || !out.ReloadFallback {
+		t.Fatalf("reload result = mode %q fallback %v, want full fallback", out.ReloadMode, out.ReloadFallback)
+	}
+	if len(out.ChangedSources) != 1 || out.ChangedSources[0] != "main" {
+		t.Fatalf("changed sources = %v, want [main]", out.ChangedSources)
+	}
+	if ms.service.gj == oldGJ {
+		t.Fatal("expected full fallback to replace the GraphJin wrapper")
+	}
+	details := latestRuntimeEventDetails(t, ms.service, "config", "reload_mode", "full")
+	if details["reload_fallback"] != true {
+		t.Fatalf("expected config event reload_fallback=true, details=%+v", details)
+	}
+}
+
 func TestHandleUpdateCurrentConfig_SerializesConcurrentUpdates(t *testing.T) {
 	livePath := createSQLiteDBFile(t, "live.sqlite3", true)
 	ms := newTransactionalConfigMCPServer(t, livePath)
@@ -766,6 +947,69 @@ func applyConfigUpdate(t *testing.T, ms *mcpServer, args map[string]any) ConfigU
 		t.Fatalf("decode response: %v", err)
 	}
 	return out
+}
+
+func assertSourceScopedConfigResult(t *testing.T, out ConfigUpdateResult, expectedSources ...string) {
+	t.Helper()
+	if !out.Success {
+		t.Fatalf("expected source-scoped update to succeed, got %+v", out)
+	}
+	if out.ReloadMode != "source_scoped" || out.ReloadFallback {
+		t.Fatalf("reload result = mode %q fallback %v, want source_scoped without fallback", out.ReloadMode, out.ReloadFallback)
+	}
+	if len(out.ChangedSources) != len(expectedSources) {
+		t.Fatalf("changed sources = %v, want %v", out.ChangedSources, expectedSources)
+	}
+	for i, want := range expectedSources {
+		if out.ChangedSources[i] != want {
+			t.Fatalf("changed sources = %v, want %v", out.ChangedSources, expectedSources)
+		}
+	}
+}
+
+func newSourceModeConfigMCPServer(t *testing.T, dbPaths map[string]string) *mcpServer {
+	t.Helper()
+
+	names := make([]string, 0, len(dbPaths))
+	for name := range dbPaths {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	sources := make([]core.SourceConfig, 0, len(names)+1)
+	for _, name := range names {
+		sources = append(sources, core.SourceConfig{
+			Name:    name,
+			Kind:    sourcecap.KindDatabase,
+			Type:    "sqlite",
+			Path:    dbPaths[name],
+			Default: name == "main",
+		})
+	}
+	sources = append(sources, core.SourceConfig{Name: "graphjin", Kind: sourcecap.KindGraphJin})
+
+	conf := &Config{
+		Core: core.Config{
+			Mode:             modeAgentic,
+			Production:       false,
+			DisableAllowList: true,
+			Sources:          sources,
+		},
+		Serv: Serv{
+			Production: false,
+			MCP:        MCPConfig{AllowConfigUpdates: true},
+		},
+	}
+	svc, err := newGraphJinService(conf, nil)
+	if err != nil {
+		t.Fatalf("init source-mode service: %v", err)
+	}
+	t.Cleanup(func() { closeTestService(svc) })
+
+	return &mcpServer{
+		service:     svc,
+		ctx:         context.Background(),
+		readOnlyDBs: map[string]bool{},
+	}
 }
 
 func seedKeystoreRef(t *testing.T, ms *mcpServer, path, key, ref, plaintext string) {
