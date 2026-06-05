@@ -757,8 +757,19 @@ func intentBoost(card Card, terms []string) (float64, string) {
 				return 55, "analytics intent"
 			}
 		}
-	case hasAnyTerm(termSet, "permission", "permissions", "role", "roles", "blocked", "policy", "config", "configuration", "secret", "token", "password", "env", "environment"):
-		if card.Kind == "config" || card.Kind == "capability" {
+	case hasAnyTerm(termSet,
+		"permission", "permissions", "role", "roles", "blocked", "block", "deny", "denied", "hide", "hidden",
+		"policy", "config", "configuration", "secret", "token", "password", "env", "environment",
+		"tenant", "account", "namespace", "org", "organization", "workspace", "claim", "claims", "jwt",
+		"admin", "public", "readonly", "read", "write", "delete", "artifact", "artifacts", "audit",
+		"runtime", "security", "access", "identity", "root", "roots", "source", "sources", "migration", "migrate"):
+		if card.Kind == "config_recipe" {
+			if hasAnyTerm(termSet, "add", "enable", "migrate", "migration", "block", "blocked", "allow", "set", "make", "lock", "deny", "hide", "admin") {
+				return 95, "config recipe action intent"
+			}
+			return 70, "config recipe intent"
+		}
+		if card.Kind == "config" || card.Kind == "capability" || card.Kind == "system_capability" || card.Kind == "help" {
 			return 45, "config/policy intent"
 		}
 	case hasAnyTerm(termSet, "workflow", "workflows", "automation", "agent", "runtime"):
@@ -843,6 +854,14 @@ func generatedSearchTags(card Card) []string {
 		tags = append(tags, "deprecated", "migration", "replacement", "mistake")
 	case "config":
 		tags = append(tags, "config", "configuration", "policy", "permission", "permissions", "role", "blocked", "redacted", "secret", "token", "environment", "production")
+	case "config_recipe":
+		tags = append(tags,
+			"config", "configuration", "recipe", "policy", "permission", "permissions", "security",
+			"role", "roles", "jwt", "claim", "claims", "identity", "tenant", "account", "namespace",
+			"org", "workspace", "admin", "public", "blocked", "block", "deny", "hide", "readonly",
+			"read", "write", "delete", "access", "source", "sources", "root", "roots", "gj_catalog",
+			"gj_artifacts", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config",
+			"artifact", "artifacts", "audit", "migration", "migrate", "legacy", "roles_tables")
 	case "capability":
 		tags = append(tags, "capability", "tool", "mcp", "action", "workflow", "validate", "execute", "repair")
 	case "workflow":

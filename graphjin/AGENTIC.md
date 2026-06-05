@@ -235,6 +235,55 @@ Models should treat MCP responses as guidance and the graph as evidence. A tool
 may recommend a next step, but the agent still grounds table names, column
 names, policy posture, workflow inputs, and code paths in GraphQL-visible rows.
 
+### Caller-Aware MCP Guidance
+
+GraphJin builds MCP servers from the current request or configured stdio
+identity. The model-visible MCP surface is therefore caller-aware: `tools/list`,
+`graphql_help`, and `query_catalog` reflect the caller's effective role, source
+mode status, visible tools, visible `gj_*` roots, blocked roots, catalog
+revision, visible capability rows, recommended entrypoint, and safety notes.
+
+The cold-start loop for an LLM is:
+
+```text
+initialize / tools/list
+  -> inspect _meta.graphjin and capability_profile when present
+  -> call query_catalog(search: "<user instruction>") when query_catalog is available
+  -> call graphql_help(for: "discovery") only when the intent is unclear or search is not useful
+  -> inspect query_catalog(id: "<best row>")
+  -> follow recipe/help preflight, preview/apply, verify, and stop conditions
+  -> act only through tools or roots visible to this caller
+```
+
+`tools/list` is the first access check a model sees. Tools backed by unavailable
+roots are omitted; for example, an anonymous caller should not see
+`query_catalog` when `gj_catalog` is authenticated-only, and a non-admin caller
+should not see config update tooling when `gj_config` is admin-only. Listed
+tools include compact `_meta.graphjin` hints such as category, capability ids,
+required roots, whether discovery should happen first, and whether config
+preview/apply is required. Tool annotations mark discovery/help/validation as
+read-only and update/apply/raw execution surfaces as potentially mutating.
+
+`graphql_help` and broad or operator-oriented `query_catalog` results include a
+redacted `capability_profile`. That profile never includes raw JWTs, user IDs,
+account IDs, secrets, connection strings, full config, hidden table names, full
+queries, or variables. Use it to decide whether to continue, request a stronger
+identity, or switch to a safer available path.
+
+Typical caller profiles:
+
+| Caller | Expected MCP shape |
+| :--- | :--- |
+| Normal authenticated user | `query_catalog`, `graphql_help`, `validate_where_clause`, and approved execution tools; `gj_catalog`, `gj_artifacts`, and `gj_workflow_execution` may be available; `gj_security`, `gj_runtime`, `gj_config`, and `gj_workflow` are usually unavailable. |
+| Workflow operator | Catalog plus workflow execution, and possibly workflow management if policy grants `gj_workflow`; config/security roots remain unavailable unless the role is explicitly admin/operator. |
+| Admin/operator | Catalog plus admin roots such as `gj_security`, `gj_runtime`, and `gj_config`; config recipes may lead to `gj_config` preview/apply with `source_patches`. |
+
+If `gj_catalog` is not visible, the model must stop and request
+authenticated/admin access instead of inventing schema. Proxy fallback
+initialize text is intentionally minimal and may be stale; cached `tools/list`
+is only a temporary hint while disconnected. The authoritative profile is the
+live server response from `tools/list`, `graphql_help`, or `query_catalog`.
+
 ### Bootstrap Prompt Chain
 
 The old MCP surface taught models by placing many specialized tool
@@ -773,8 +822,8 @@ query_catalog({
 })
 ```
 
-The useful rows are usually `help`, `config`, `system_capability`,
-`capability`, `table`, `database`, `source`, and future `config_recipe` rows.
+The useful rows are usually `config_recipe`, `help`, `config`,
+`system_capability`, `capability`, `table`, `database`, and `source` rows.
 Inspect the best row before acting:
 
 ```json
@@ -997,23 +1046,26 @@ Current behavior gives models enough to operate safely:
 - `graphql_help(for: "...")` for topic routing and exact catalog query shapes.
 - `gj_security` for effective policy and findings.
 - `gj_runtime` for bounded, redacted decision support.
-- `gj_config(id: "current")` for redacted state and guarded updates.
+- `gj_config(id: "current")` for redacted state and guarded updates. In source
+  mode, writes require `mode: "preview"` with `expected_catalog_revision`, then
+  `mode: "apply"` with the returned `preview_id` and the exact same payload.
 - Current `gj_config.update` support is limited to implemented update fields
-  such as `sources`, `roles`, `relationships`, `databases`, `tables`,
-  `blocklist`, `functions`, and `mcp`.
+  such as `source_patches`, `sources`, `roles`, `relationships`, `databases`,
+  `tables`, `blocklist`, `functions`, and `mcp`. Prefer `source_patches` for
+  source access and GraphJin root policy so the model patches one source by
+  exact name while preserving unmentioned fields.
 
-The next hardening layer should make config changes even more explicit:
+The current hardening layer makes config changes explicit:
 
 - `config_recipe` catalog rows for add-role, identity claims, source access,
   table classifications, GraphJin roots, artifacts, and legacy migration.
-- Recipe fields such as `required_capabilities`, `preflight`,
-  `mutation_template`, `postflight`, `warnings`, and `rollback_hint`.
+- Recipe fields such as `intent_examples`, `preflight`, `apply`,
+  `unsupported_apply`, `verify`, `stop_conditions`, and `forbidden_patterns`.
 - Machine-actionable errors with `next_action`, for example pointing
   `roles[].tables` failures to the legacy migration recipe.
-- A config validation or dry-run path before live `gj_config` mutation.
-
-Until those recipe rows and dry-run semantics exist everywhere, docs and catalog
-help should describe them as target hardening, not as guaranteed runtime rows.
+- Preview/apply is now the source-mode config validation path. It is not a
+  separate dry-run root, and preview records store hashes and redacted summaries
+  only, not raw config or secrets.
 
 ## Sources In The Agentic Story
 

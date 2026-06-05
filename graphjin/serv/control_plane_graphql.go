@@ -71,6 +71,8 @@ func graphjinControlPlaneTables() []core.ManagedTable {
 			cpCol("databases", "json", false), cpCol("relationships", "json", false), cpCol("tables", "json", false),
 			cpCol("roles", "json", false), cpCol("blocklist", "json", false), cpCol("functions", "json", false), cpCol("resolvers", "json", false),
 			cpCol("mcp", "json", false), cpCol("config_json", "json", false), cpCol("redacted_paths", "json", false), cpCol("updated_at", "text", false), cpCol("catalog_revision", "text", false),
+			cpCol("mode", "text", false), cpCol("preview_id", "text", false), cpCol("expected_catalog_revision", "text", false), cpCol("source_patches", "json", false),
+			cpCol("valid", "boolean", false), cpCol("applied", "boolean", false), cpCol("expires_at", "text", false), cpCol("change_summary_json", "json", false), cpCol("findings_json", "json", false), cpCol("errors_json", "json", false),
 		}),
 	}
 }
@@ -154,7 +156,11 @@ func (h controlPlaneGraphQL) queryCatalog(root core.ManagedQueryRoot) ([]map[str
 	rows = append(rows, applyManagedQuery(h.catalogEntrypointRows(snap), root)...)
 	rows = append(rows, applyManagedQuery(h.catalogCapabilityRows(snap), root)...)
 	rows = append(rows, applyManagedQuery(h.catalogSystemCapabilityRows(), root)...)
-	sortRows(rows, root.OrderBy)
+	if len(root.OrderBy) != 0 {
+		sortRows(rows, root.OrderBy)
+	} else {
+		sortCatalogSearchRows(rows)
+	}
 	if root.Limit > 0 && root.Limit < len(rows) {
 		rows = rows[:root.Limit]
 	}
@@ -763,7 +769,7 @@ func (h controlPlaneGraphQL) runWorkflow(ctx context.Context, root core.ManagedM
 
 func (h controlPlaneGraphQL) mutateConfig(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
 	if !h.service.conf.MCP.AllowConfigUpdates {
-		return nil, fmt.Errorf("config updates are not allowed; enable mcp.allow_config_updates")
+		return nil, fmt.Errorf("config updates are not allowed; enable mcp.allow_config_updates; next_action: query_catalog(search: \"enable config updates gj_config.update\")")
 	}
 	switch root.Operation {
 	case "update", "upsert":
@@ -776,7 +782,18 @@ func (h controlPlaneGraphQL) mutateConfig(ctx context.Context, root core.Managed
 	if payload["success"] == false {
 		return nil, fmt.Errorf("%s", firstPayloadError(payload))
 	}
-	return h.configRow(), nil
+	mode, _ := payload["mode"].(string)
+	row := h.configRow()
+	overlayKeys := []string{"valid", "applied", "mode", "preview_id", "expires_at", "change_summary_json", "findings_json", "errors_json"}
+	if mode == "preview" {
+		overlayKeys = append(overlayKeys, "catalog_revision")
+	}
+	for _, key := range overlayKeys {
+		if value, ok := payload[key]; ok {
+			row[key] = value
+		}
+	}
+	return row, nil
 }
 
 func firstPayloadError(payload map[string]any) string {
@@ -1124,6 +1141,14 @@ func sortRows(rows []map[string]any, orderBy []core.ManagedOrderBy) {
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		for _, ob := range orderBy {
+			if iv, iok := numericRowScore(rows[i][ob.Column]); iok {
+				if jv, jok := numericRowScore(rows[j][ob.Column]); jok && iv != jv {
+					if strings.Contains(strings.ToLower(ob.Order), "desc") {
+						return iv > jv
+					}
+					return iv < jv
+				}
+			}
 			iv := fmt.Sprint(rows[i][ob.Column])
 			jv := fmt.Sprint(rows[j][ob.Column])
 			if iv == jv {
@@ -1136,6 +1161,49 @@ func sortRows(rows []map[string]any, orderBy []core.ManagedOrderBy) {
 		}
 		return false
 	})
+}
+
+func sortCatalogSearchRows(rows []map[string]any) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		left := rowSearchScore(rows[i])
+		right := rowSearchScore(rows[j])
+		if left != right {
+			return left > right
+		}
+		return fmt.Sprint(rows[i]["id"]) < fmt.Sprint(rows[j]["id"])
+	})
+}
+
+func rowSearchScore(row map[string]any) float64 {
+	if v, ok := row["search_rank"]; ok {
+		if score, ok := numericRowScore(v); ok {
+			return score
+		}
+	}
+	if v, ok := row["score"]; ok {
+		if score, ok := numericRowScore(v); ok {
+			return score
+		}
+	}
+	return 0
+}
+
+func numericRowScore(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	case int:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	case json.Number:
+		f, err := x.Float64()
+		return f, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func filterRows(rows []map[string]any, fields []core.ManagedMutationField) []map[string]any {

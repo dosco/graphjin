@@ -100,6 +100,7 @@ type graphjinService struct {
 	cache                ResponseCache // Response cache (Redis or in-memory)
 	cursorCache          CursorCache   // MCP cursor cache for short numeric IDs
 	runtimeEvents        runtimeEventStore
+	configPreviews       *configPreviewStore
 	configMu             sync.Mutex
 	workflowMu           sync.Mutex
 	workflowCache        *workflowRegistrySnapshot
@@ -329,14 +330,15 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	prod := conf.Serv.Production
 
 	s := &graphjinService{
-		conf:       conf,
-		zlog:       zlog,
-		log:        zlog.Sugar(),
-		dbs:        dbs,
-		managedDBs: make(map[string]managedDB),
-		chash:      conf.hash,
-		prod:       prod,
-		tracer:     otel.Tracer("graphjin.com/serv"),
+		conf:           conf,
+		zlog:           zlog,
+		log:            zlog.Sugar(),
+		dbs:            dbs,
+		managedDBs:     make(map[string]managedDB),
+		configPreviews: newConfigPreviewStore(),
+		chash:          conf.hash,
+		prod:           prod,
+		tracer:         otel.Tracer("graphjin.com/serv"),
 	}
 	if s.dbs == nil {
 		s.dbs = make(map[string]*sql.DB)

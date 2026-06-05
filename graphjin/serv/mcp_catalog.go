@@ -57,25 +57,27 @@ type CatalogQueryResult struct {
 	Offset          int               `json:"offset,omitempty"`
 	// Truncated is true when this page filled the limit and more matching items
 	// likely exist. Page with offset (or narrow with search/where) until false.
-	Truncated bool                         `json:"truncated"`
-	Cards     []CatalogItem                `json:"cards"`
-	Matches   map[string]core.CatalogMatch `json:"matches,omitempty"`
-	Next      *NextGuidance                `json:"next,omitempty"`
+	Truncated         bool                         `json:"truncated"`
+	Cards             []CatalogItem                `json:"cards"`
+	Matches           map[string]core.CatalogMatch `json:"matches,omitempty"`
+	CapabilityProfile *MCPCapabilityProfile        `json:"capability_profile,omitempty"`
+	Next              *NextGuidance                `json:"next,omitempty"`
 }
 
 type GraphQLHelpResult struct {
-	For                   string         `json:"for"`
-	Summary               string         `json:"summary"`
-	Bootstrap             []string       `json:"bootstrap,omitempty"`
-	TopicRoutes           []HelpRoute    `json:"topic_routes,omitempty"`
-	ReplacesTools         []ToolReplaces `json:"replaces_tools,omitempty"`
-	RecommendedFirstQuery string         `json:"recommended_first_query"`
-	GraphQLQuery          string         `json:"graphql_query"`
-	GraphQLVariables      map[string]any `json:"graphql_variables"`
-	CatalogRows           []CatalogItem  `json:"catalog_rows"`
-	Examples              []string       `json:"examples,omitempty"`
-	Safety                map[string]any `json:"safety,omitempty"`
-	Next                  *NextGuidance  `json:"next,omitempty"`
+	For                   string                `json:"for"`
+	Summary               string                `json:"summary"`
+	Bootstrap             []string              `json:"bootstrap,omitempty"`
+	TopicRoutes           []HelpRoute           `json:"topic_routes,omitempty"`
+	ReplacesTools         []ToolReplaces        `json:"replaces_tools,omitempty"`
+	RecommendedFirstQuery string                `json:"recommended_first_query"`
+	GraphQLQuery          string                `json:"graphql_query"`
+	GraphQLVariables      map[string]any        `json:"graphql_variables"`
+	CatalogRows           []CatalogItem         `json:"catalog_rows"`
+	Examples              []string              `json:"examples,omitempty"`
+	Safety                map[string]any        `json:"safety,omitempty"`
+	CapabilityProfile     *MCPCapabilityProfile `json:"capability_profile,omitempty"`
+	Next                  *NextGuidance         `json:"next,omitempty"`
 }
 
 type HelpRoute struct {
@@ -207,13 +209,13 @@ func (ms *mcpServer) registerCatalogTools() {
 }
 
 func graphQLHelpToolDescription() string {
-	return "Read-only bootstrap helper for sources-mode GraphJin. Start with graphql_help(for: \"discovery\") when unsure. Valid for values: " +
+	return "Read-only bootstrap helper for sources-mode GraphJin. For goal-driven work, first call query_catalog(search: \"<user instruction>\"); use graphql_help(for: \"discovery\") when the user intent is unclear or catalog search is not useful. Valid for values: " +
 		strings.Join(graphQLHelpTopics(), ", ") +
 		". Replaces legacy MCP discovery prompts/tools such as get_query_syntax, get_mutation_syntax, get_catalog_card, get_config_docs, get_js_runtime_api, fix_query_error, saved-query discovery, fragment discovery, table/schema discovery, and relationship exploration by querying gj_catalog help rows. Returns bootstrap steps, topic_routes, replaces_tools, catalog rows, examples, safety notes, next guidance, and the exact internal gj_catalog GraphQL query."
 }
 
 func queryCatalogToolDescription() string {
-	return "Search GraphJin's AI-first catalog for schema, relationships, workflows, saved queries, fragments, language features, directives, operators, config, security, and capabilities. In sources mode, call graphql_help(for: \"discovery\") when unsure. Use query_catalog(id: \"...\") for one full-detail row with details_json, evidence_json, examples_json, safety_json, and edges_json. Examples: query_catalog(id: \"help:query\"), query_catalog(id: \"help:schema\"), query_catalog(where: { kind: { eq: \"table\" } }), query_catalog(where: { kind: { eq: \"saved_query\" } }). Use validate_where_clause for filters, execute_saved_query for approved saved queries, and execute_graphql only when raw execution is enabled."
+	return "Search GraphJin's AI-first catalog for schema, relationships, workflows, saved queries, fragments, language features, directives, operators, config_recipe, config, security, and capabilities. For goal-driven work, start with query_catalog(search: \"<user instruction>\"); use graphql_help(for: \"discovery\") only when the user intent is unclear or search returns no useful rows. Use query_catalog(id: \"...\") for one full-detail row with details_json, evidence_json, examples_json, safety_json, and edges_json. Examples: query_catalog(search: \"add role from jwt\"), query_catalog(id: \"help:query\"), query_catalog(id: \"help:schema\"), query_catalog(where: { kind: { eq: \"table\" } }), query_catalog(where: { kind: { eq: \"saved_query\" } }). Use validate_where_clause for filters, execute_saved_query for approved saved queries, and execute_graphql only when raw execution is enabled."
 }
 
 func (ms *mcpServer) registerCatalogResources() {
@@ -308,6 +310,7 @@ func (ms *mcpServer) catalogSnapshot() (*core.CatalogSnapshot, error) {
 }
 
 func (ms *mcpServer) handleQueryCatalog(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	args := req.GetArguments()
 	where, err := catalogObjectArg(args, "where")
 	if err != nil {
@@ -341,17 +344,18 @@ func (ms *mcpServer) handleQueryCatalog(ctx context.Context, req mcp.CallToolReq
 	// silently miss tables. ID lookups return at most one row and never page.
 	eff := catalogEffectiveLimit(q)
 	truncated := q.ID == "" && len(rows) >= eff
-	nextOptions := []NextOption{
-		nextOption("query_catalog", 1, "Inspect a returned catalog item in detail.", "Call query_catalog with the id of the most relevant item.", []string{"id"}, nil),
-		nextOption("validate_where_clause", 2, "Validate filters after choosing a table/column.", "Use for where clauses against discovered schema.", []string{"table", "where"}, []string{"database"}),
-	}
+	nextOptions := ms.catalogNextOptions(ctx, q, rows)
 	if truncated {
-		nextOptions = append([]NextOption{
-			nextOption("query_catalog", 0,
-				"More items exist — fetch the next page or narrow the query.",
-				fmt.Sprintf("Repeat with offset: %d (same limit/where) until truncated is false, or add search/where to narrow.", q.Offset+eff),
-				nil, []string{"offset", "search", "where", "limit"}),
-		}, nextOptions...)
+		pageOption := nextOption("query_catalog", 0,
+			"More items exist — fetch the next page or narrow the query.",
+			fmt.Sprintf("Repeat with offset: %d (same limit/where) until truncated is false, or add search/where to narrow.", q.Offset+eff),
+			nil, []string{"offset", "search", "where", "limit"})
+		if _, ok := firstConfigRecipe(rows); ok {
+			pageOption.Priority = 50
+			nextOptions = append(nextOptions, pageOption)
+		} else {
+			nextOptions = append([]NextOption{pageOption}, nextOptions...)
+		}
 	}
 	result := CatalogQueryResult{
 		GeneratedAt: time.Now().UTC().Format("2006-01-02T15:04:05Z07:00"),
@@ -361,7 +365,10 @@ func (ms *mcpServer) handleQueryCatalog(ctx context.Context, req mcp.CallToolReq
 		Offset:      q.Offset,
 		Truncated:   truncated,
 		Cards:       rows,
-		Next:        ms.newNextGuidance("catalog_results", nextOptions),
+		Next:        ms.newNextGuidanceForContext(ctx, catalogNextStateCode(q, rows), nextOptions),
+	}
+	if ms.catalogResultNeedsCapabilityProfile(q, rows) {
+		result.CapabilityProfile = ms.callerCapabilityProfile(ctx, true)
 	}
 	if q.Explain && q.Search != "" {
 		result.Matches = catalogMatchesFromRows(rows)
@@ -369,7 +376,70 @@ func (ms *mcpServer) handleQueryCatalog(ctx context.Context, req mcp.CallToolReq
 	return ms.toolResultJSON("query_catalog", args, result)
 }
 
+func catalogNextStateCode(q catalogGraphQLQuery, rows []CatalogItem) string {
+	if len(rows) != 0 && q.ID != "" && rows[0].Kind == "config_recipe" {
+		return "config_recipe_detail"
+	}
+	if _, ok := firstConfigRecipe(rows); ok {
+		return "config_recipe_results"
+	}
+	return "catalog_results"
+}
+
+func (ms *mcpServer) catalogNextOptions(ctx context.Context, q catalogGraphQLQuery, rows []CatalogItem) []NextOption {
+	if len(rows) != 0 && q.ID != "" && rows[0].Kind == "config_recipe" {
+		out := []NextOption{
+			optionWithTemplate(
+				nextOption("query_catalog", 1, "Inspect required system capabilities before applying this config recipe.", "Follow the recipe details preflight/apply/verify sections; use this if root availability is unclear.", nil, []string{"search", "where", "limit"}),
+				map[string]any{
+					"search": "gj_config.update gj_security gj_runtime",
+					"where":  map[string]any{"kind": map[string]any{"eq": "system_capability"}},
+					"limit":  20,
+				},
+			),
+		}
+		if !ms.rootVisibleForContext(ctx, "gj_config") || !ms.rootVisibleForContext(ctx, "gj_security") {
+			out[0].Reason = "Inspect caller-visible system capabilities; apply-oriented steps require admin roots that may not be available to this caller."
+		}
+		return out
+	}
+	if recipe, ok := firstConfigRecipe(rows); ok {
+		out := []NextOption{
+			optionWithTemplate(
+				nextOption("query_catalog", 1, "Inspect the matching config recipe in detail before acting.", "Recipe details contain preflight, apply or unsupported_apply, verify, stop_conditions, and forbidden_patterns.", []string{"id"}, nil),
+				map[string]any{"id": recipe.ID},
+			),
+			optionWithTemplate(
+				nextOption("query_catalog", 2, "Inspect config/security system capabilities for this recipe.", "Use when you need to confirm gj_config.update, gj_security, or gj_runtime availability.", nil, []string{"search", "where", "limit"}),
+				map[string]any{
+					"search": "gj_config.update gj_security gj_runtime",
+					"where":  map[string]any{"kind": map[string]any{"eq": "system_capability"}},
+					"limit":  20,
+				},
+			),
+		}
+		if !ms.rootVisibleForContext(ctx, "gj_config") {
+			out[1].Reason = "Inspect caller-visible system capabilities before considering config changes; gj_config may require admin access."
+		}
+		return out
+	}
+	return []NextOption{
+		nextOption("query_catalog", 1, "Inspect a returned catalog item in detail.", "Call query_catalog with the id of the most relevant item.", []string{"id"}, nil),
+		nextOption("validate_where_clause", 2, "Validate filters after choosing a table/column.", "Use for where clauses against discovered schema.", []string{"table", "where"}, []string{"database"}),
+	}
+}
+
+func firstConfigRecipe(rows []CatalogItem) (CatalogItem, bool) {
+	for _, row := range rows {
+		if row.Kind == "config_recipe" {
+			return row, true
+		}
+	}
+	return CatalogItem{}, false
+}
+
 func (ms *mcpServer) handleGraphQLHelp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	args := req.GetArguments()
 	helpFor := strings.ToLower(strings.TrimSpace(stringArg(args, "for")))
 	spec, ok := graphQLHelpSpecFor(helpFor)
@@ -397,7 +467,8 @@ func (ms *mcpServer) handleGraphQLHelp(ctx context.Context, req mcp.CallToolRequ
 		CatalogRows:           rows,
 		Examples:              spec.Examples,
 		Safety:                spec.Safety,
-		Next:                  ms.graphQLHelpNext(spec),
+		CapabilityProfile:     ms.callerCapabilityProfile(ctx, true),
+		Next:                  ms.graphQLHelpNext(ctx, spec),
 	}
 	return ms.toolResultJSON("graphql_help", args, result)
 }
@@ -415,7 +486,8 @@ type graphQLHelpSpec struct {
 
 func graphQLHelpBootstrap() []string {
 	return []string{
-		`Call graphql_help(for: "discovery") when unsure; it is the sources-mode prompt replacement.`,
+		`For goal-driven work, first call query_catalog(search: "<user instruction>").`,
+		`Call graphql_help(for: "discovery") when the user intent is unclear or catalog search returns no useful rows.`,
 		`Use topic_routes to choose a narrower graphql_help(for: "...") topic.`,
 		`Use query_catalog(id: "help:<topic>") for full guidance with details_json, evidence_json, examples_json, safety_json, and edges_json.`,
 		`Use query_catalog(search/where/order_by/limit) or direct gj_catalog queries for evidence-backed discovery.`,
@@ -425,6 +497,7 @@ func graphQLHelpBootstrap() []string {
 
 func graphQLHelpTopicRoutes() []HelpRoute {
 	return []HelpRoute{
+		{Need: "goal-driven user request, config/security/operator change, schema/query/workflow task", For: "catalog", FirstCall: `query_catalog(search: "<user instruction>")`, DetailQuery: `query_catalog(id: "<best_result_id>")`},
 		{Need: "unknown starting point, old MCP tool mapping, available discovery surfaces", For: "discovery", FirstCall: `graphql_help(for: "discovery")`, DetailQuery: `query_catalog(id: "help:discovery")`},
 		{Need: "tiny sources-mode MCP tool surface and removed legacy tool replacements", For: "mcp_tools", FirstCall: `graphql_help(for: "mcp_tools")`, DetailQuery: `query_catalog(id: "help:mcp_tools")`},
 		{Need: "catalog row shape, details, evidence, examples, safety, edges, capabilities", For: "catalog", FirstCall: `graphql_help(for: "catalog")`, DetailQuery: `query_catalog(id: "help:catalog")`},
@@ -439,8 +512,8 @@ func graphQLHelpTopicRoutes() []HelpRoute {
 		{Need: "reusable GraphQL fragments", For: "fragments", FirstCall: `graphql_help(for: "fragments")`, DetailQuery: `query_catalog(id: "help:fragments")`},
 		{Need: "workflow discovery, variables, execution policy", For: "workflows", FirstCall: `graphql_help(for: "workflows")`, DetailQuery: `query_catalog(id: "help:workflows")`},
 		{Need: "JavaScript workflow runtime and callable GraphJin tool guidance", For: "workflow_runtime", FirstCall: `graphql_help(for: "workflow_runtime")`, DetailQuery: `query_catalog(id: "help:workflow_runtime")`},
-		{Need: "redacted config docs, roles, permissions, safe config changes", For: "config", FirstCall: `graphql_help(for: "config")`, DetailQuery: `query_catalog(id: "help:config")`},
-		{Need: "gj_security posture, policy rows, findings, severity filters", For: "security", FirstCall: `graphql_help(for: "security")`, DetailQuery: `query_catalog(id: "help:security")`},
+		{Need: "redacted config docs, roles, permissions, safe config changes", For: "config", FirstCall: `query_catalog(search: "<user instruction>")`, DetailQuery: `query_catalog(id: "help:config")`},
+		{Need: "gj_security posture, policy rows, findings, severity filters", For: "security", FirstCall: `query_catalog(search: "<user instruction>")`, DetailQuery: `query_catalog(id: "help:security")`},
 		{Need: "agentic runtime health, recent structured events, stale schema, disconnected DBs, degraded Redis, reload or discovery problems", For: "runtime", FirstCall: `graphql_help(for: "runtime")`, DetailQuery: `query_catalog(id: "help:runtime")`},
 		{Need: "code/source intelligence and safe preview/apply edit flows", For: "code", FirstCall: `graphql_help(for: "code")`, DetailQuery: `query_catalog(id: "help:code")`},
 		{Need: "GraphJin error repair hints", For: "errors", FirstCall: `graphql_help(for: "errors")`, DetailQuery: `query_catalog(id: "help:errors")`},
@@ -519,7 +592,7 @@ func (s graphQLHelpSpec) catalogQuery() catalogGraphQLQuery {
 	}
 }
 
-func (ms *mcpServer) graphQLHelpNext(spec graphQLHelpSpec) *NextGuidance {
+func (ms *mcpServer) graphQLHelpNext(ctx context.Context, spec graphQLHelpSpec) *NextGuidance {
 	options := []NextOption{
 		optionWithTemplate(
 			nextOption("query_catalog", 1, "Inspect the canonical help row in detail.", "Use this before acting on a new GraphJin surface.", []string{"id"}, nil),
@@ -540,7 +613,7 @@ func (ms *mcpServer) graphQLHelpNext(spec graphQLHelpSpec) *NextGuidance {
 	case "saved_queries":
 		options = append(options, nextOption("execute_saved_query", 3, "Run an approved saved query after inspecting its catalog row.", "Use when a saved_query row matches the task.", []string{"name"}, []string{"variables", "namespace"}))
 	}
-	return ms.newNextGuidance("graphql_help_"+spec.For, options)
+	return ms.newNextGuidanceForContext(ctx, "graphql_help_"+spec.For, options)
 }
 
 var graphQLHelpTopicOrder = []string{
@@ -571,7 +644,7 @@ func graphQLHelpTopics() []string {
 
 func graphQLHelpSpecFor(topic string) (graphQLHelpSpec, bool) {
 	specs := map[string]graphQLHelpSpec{
-		"discovery":        helpSpec("discovery", "Start here when unsure. Routes to catalog entrypoints, capabilities, high-level help rows, and the legacy-tool replacement map.", "catalog discovery schema workflow query security mcp tools legacy", []string{"help", "entrypoint", "capability", "system_capability"}, `graphql_help(for: "discovery")`, []string{`query_catalog(id: "help:mcp_tools")`, `query_catalog(where: { kind: { eq: "table" } })`}),
+		"discovery":        helpSpec("discovery", "Start here when search intent is unclear. Goal-driven work should start with query_catalog(search: \"<user instruction>\").", "catalog discovery schema workflow query security config recipe mcp tools legacy", []string{"help", "entrypoint", "config_recipe", "capability", "system_capability"}, `query_catalog(search: "<user instruction>")`, []string{`graphql_help(for: "discovery")`, `query_catalog(id: "help:mcp_tools")`, `query_catalog(where: { kind: { eq: "table" } })`}),
 		"mcp_tools":        helpSpec("mcp_tools", "Learn the tiny sources-mode MCP surface and how removed legacy discovery tools map into catalog/help rows.", "mcp tools legacy discovery get_query_syntax get_catalog_card get_js_runtime_api fix_query_error", []string{"help", "capability", "system_capability", "entrypoint"}, `query_catalog(id: "help:mcp_tools")`, []string{`graphql_help(for: "query")`, `query_catalog(id: "help:query")`, `query_catalog(where: { kind: { in: ["capability", "system_capability"] } })`}),
 		"catalog":          helpSpec("catalog", "Use gj_catalog/query_catalog for discovery and query_catalog(id) for full item evidence.", "catalog detail evidence examples edges safety", []string{"help", "entrypoint", "capability", "system_capability"}, `query_catalog(id: "help:catalog")`, []string{`query_catalog(search: "join orders customers", where: { kind: { eq: "relationship" } })`}),
 		"schema":           helpSpec("schema", "Discover databases, tables, columns, relationships, functions, indexes, and row-shape hints.", "schema table column relationship function index sample profile", []string{"help", "database", "table", "column", "relationship", "function"}, `query_catalog(id: "help:schema")`, []string{`query_catalog(where: { kind: { in: ["table", "column", "relationship"] } })`}),
@@ -585,8 +658,8 @@ func graphQLHelpSpecFor(topic string) (graphQLHelpSpec, bool) {
 		"fragments":        helpSpec("fragments", "Discover reusable GraphQL fragments and import guidance before repeating field selections.", "fragments graphql reusable field selection import", []string{"help", "fragment", "table"}, `query_catalog(where: { kind: { eq: "fragment" } })`, []string{`query_catalog(id: "help:fragments")`}),
 		"workflows":        helpSpec("workflows", "Discover reusable workflows, variable schemas, execution policy, and workflow control-plane guidance.", "workflow reusable variables execution gj_workflow_execution", []string{"help", "workflow", "system_capability", "capability"}, `query_catalog(where: { kind: { eq: "workflow" } })`, []string{`mutation { gj_workflow_execution(insert: { workflow_name: "...", variables: {} }) { status result_json error duration_ms } }`}),
 		"workflow_runtime": helpSpec("workflow_runtime", "Learn JavaScript workflow runtime concepts, callable tool guidance, and safety constraints.", "javascript workflow runtime goja gj tools queryCatalog executeSavedQuery", []string{"help", "workflow", "capability", "system_capability"}, `query_catalog(id: "help:workflow_runtime")`, []string{`query_catalog(search: "workflow runtime goja tools")`}),
-		"config":           helpSpec("config", "Discover redacted configuration documentation, roles, permissions, sources, and safe config update guidance.", "config docs sources roles permissions redacted update gj_config", []string{"help", "config", "system_capability", "capability"}, `query_catalog(id: "help:config")`, []string{`query_catalog(search: "config docs", where: { kind: { in: ["help", "config", "system_capability"] } })`}),
-		"security":         helpSpec("security", "Discover gj_security guidance, policy rows, findings, severity filters, and agentic safety expectations.", "security findings policy posture gj_security agentic production", []string{"help", "system_capability", "config"}, `query_catalog(id: "help:security")`, []string{`query_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } })`}),
+		"config":           helpSpec("config", "Discover config_recipe rows, redacted configuration documentation, roles, permissions, sources, and safe config update guidance.", "config recipe docs sources roles permissions redacted update gj_config add role access artifacts", []string{"help", "config_recipe", "config", "system_capability", "capability"}, `query_catalog(search: "<user instruction>")`, []string{`query_catalog(search: "add role from jwt")`, `query_catalog(search: "make audit_logs admin only")`, `query_catalog(id: "help:config")`}),
+		"security":         helpSpec("security", "Discover config_recipe rows, gj_security guidance, policy rows, findings, severity filters, and agentic safety expectations.", "security recipe findings policy posture gj_security agentic production admin blocked roots", []string{"help", "config_recipe", "system_capability", "config"}, `query_catalog(search: "<user instruction>")`, []string{`query_catalog(search: "block internal_events")`, `query_catalog(id: "help:security")`, `query_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } })`}),
 		"runtime":          helpSpec("runtime", "Use gj_runtime in agentic mode for compact current health, source health, recent structured events, and suggested next actions.", "runtime status source health events system degraded redis schema reload discovery gj_runtime", []string{"help", "system_capability"}, `query_catalog(id: "help:runtime")`, []string{`query { gj_runtime(where: { kind: { in: ["status", "source", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind source source_kind status severity summary next_action details_json } }`}),
 		"code":             helpSpec("code", "Discover code-source catalog rows and safe source-edit preview/apply guidance when code sources are configured.", "code source file symbol preview apply lock", []string{"help", "mutation_pattern", "system_capability", "table", "column"}, `query_catalog(id: "help:code")`, []string{`query_catalog(search: "code source preview apply source edit")`}),
 		"errors":           helpSpec("errors", "Use errors[].extensions.graphjin_repair, then inspect relevant schema or language rows before retrying.", "error repair graphjin_repair syntax table column relationship", []string{"help", "deprecated_feature", "query_pattern", "operator_set", "system_capability"}, `query_catalog(id: "help:errors")`, []string{`query_catalog(search: "error repair syntax relationship")`}),
@@ -695,7 +768,7 @@ func (ms *mcpServer) queryCatalogGraphQL(ctx context.Context, q catalogGraphQLQu
 	if err != nil {
 		return nil, err
 	}
-	ctx = ms.service.applyIdentityContext(ctx)
+	ctx = ms.service.applyIdentityContext(ms.effectiveContext(ctx))
 	var rc core.RequestConfig
 	if namespace := ms.getNamespace(); namespace != "" {
 		rc.SetNamespace(namespace)
@@ -717,10 +790,15 @@ func (ms *mcpServer) queryCatalogGraphQL(ctx context.Context, q catalogGraphQLQu
 }
 
 func (ms *mcpServer) catalogRevisionGraphQL(ctx context.Context) string {
+	if ms != nil {
+		if snap, err := ms.catalogSnapshot(); err == nil && snap != nil && snap.Revision != "" {
+			return snap.Revision
+		}
+	}
 	if ms == nil || ms.service == nil || ms.service.gj == nil || !ms.service.conf.graphjinControlPlaneEnabled() {
 		return ""
 	}
-	ctx = ms.service.applyIdentityContext(ctx)
+	ctx = ms.service.applyIdentityContext(ms.effectiveContext(ctx))
 	var rc core.RequestConfig
 	if namespace := ms.getNamespace(); namespace != "" {
 		rc.SetNamespace(namespace)
@@ -735,9 +813,6 @@ func (ms *mcpServer) catalogRevisionGraphQL(ctx context.Context) string {
 		if err := json.Unmarshal(res.Data, &out); err == nil && out.Config.CatalogRevision != "" {
 			return out.Config.CatalogRevision
 		}
-	}
-	if snap, err := ms.catalogSnapshot(); err == nil && snap != nil {
-		return snap.Revision
 	}
 	return ""
 }
@@ -772,6 +847,8 @@ func catalogGraphQLArgs(q catalogGraphQLQuery) (string, error) {
 			return "", err
 		}
 		args = append(args, "order_by: "+value)
+	} else if q.Search != "" {
+		args = append(args, `order_by: { search_rank: desc }`)
 	}
 	args = append(args, fmt.Sprintf("limit: %d", catalogEffectiveLimit(q)))
 	if q.Offset > 0 {

@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"context"
 	"sort"
 	"strings"
 )
@@ -64,6 +65,30 @@ func (ms *mcpServer) newNextGuidance(stateCode string, options []NextOption) *Ne
 
 	for _, opt := range options {
 		if ms.toolAvailable(opt.Tool) {
+			opt.ArgsTemplate = ms.enrichNextOptionTemplate(opt)
+			out.Options = append(out.Options, opt)
+		}
+	}
+
+	sort.SliceStable(out.Options, func(i, j int) bool {
+		if out.Options[i].Priority != out.Options[j].Priority {
+			return out.Options[i].Priority < out.Options[j].Priority
+		}
+		return out.Options[i].Tool < out.Options[j].Tool
+	})
+
+	if len(out.Options) > 0 {
+		out.RecommendedTool = out.Options[0].Tool
+	}
+
+	return out
+}
+
+func (ms *mcpServer) newNextGuidanceForContext(ctx context.Context, stateCode string, options []NextOption) *NextGuidance {
+	out := &NextGuidance{StateCode: stateCode}
+
+	for _, opt := range options {
+		if ms.toolAvailableForContext(ctx, opt.Tool) {
 			opt.ArgsTemplate = ms.enrichNextOptionTemplate(opt)
 			out.Options = append(out.Options, opt)
 		}

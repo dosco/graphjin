@@ -48,6 +48,27 @@ In source mode:
 Legacy role table security still exists for legacy configurations, but source
 mode is intentionally stricter and is the migration target.
 
+For LLM or MCP operators, discovery is intent-first. Start goal-driven config or
+security work with:
+
+```graphql
+query_catalog(search: "<user instruction>")
+```
+
+The best result should usually be a `config_recipe` row for roles, identity,
+source access, table classifications, artifacts, GraphJin system roots, or
+legacy `roles[].tables` migration. Inspect it with `query_catalog(id: "...")`
+before reading `gj_config` or attempting a `gj_config(id: "current", update: ...)`
+mutation. Use `graphql_help(for: "discovery")` only when the user intent is
+unclear or catalog search returns no useful rows.
+
+MCP discovery is caller-aware. The live `tools/list`, `graphql_help`, and
+`query_catalog` responses include the caller's available tools, visible `gj_*`
+roots, blocked roots, visible capability rows, recommended entrypoint, and
+safety notes. If `gj_catalog`, `gj_security`, `gj_runtime`, or `gj_config` is
+not visible to the caller, the operator or model must request the required
+authenticated/admin access instead of guessing schema or policy.
+
 ## Source Mode And Legacy Mode
 
 `sources:` changes GraphJin into source mode. In that mode, old top-level
@@ -417,6 +438,24 @@ legacy role table rules.
 
 Use [Source Mode Migration](docs/SOURCE-MODE-MIGRATION.md) for step-by-step
 before/after examples. This section summarizes the security intent.
+
+For agent-assisted migrations, the model-facing starting point is:
+
+```graphql
+query_catalog(search: "migrate legacy roles tables to source access")
+```
+
+The returned `config_recipe` row distinguishes currently supported
+`gj_config.update` fields from changes that still require direct config-file
+edits or future mutation support. Source-mode `gj_config.update` writes are
+two-step: first run `mode: "preview"` with `expected_catalog_revision`, then
+resend the exact same payload with `mode: "apply"` and the returned
+`preview_id`. Preview IDs are bounded in memory, expire after 10 minutes, and
+store only a patch hash, base catalog revision, expiry, and redacted summaries.
+Source access and GraphJin root policy changes should use `source_patches` by
+exact source name so unmentioned source fields are preserved automatically.
+Top-level `identity` and `artifacts` changes still require direct config-file
+edits or future mutation support.
 
 When migrating:
 

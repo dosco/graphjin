@@ -112,6 +112,15 @@ func TestGraphQLHelpTopicsUseCatalogGraphQL(t *testing.T) {
 			if out.Next == nil || out.Next.RecommendedTool == "" {
 				t.Fatalf("expected next guidance for %s: %+v", topic, out.Next)
 			}
+			if out.CapabilityProfile == nil {
+				t.Fatalf("expected caller capability_profile for %s", topic)
+			}
+			if !stringSliceContains(out.CapabilityProfile.AvailableTools, "query_catalog") {
+				t.Fatalf("expected query_catalog in capability_profile for %s: %+v", topic, out.CapabilityProfile)
+			}
+			if strings.Contains(text, "app-user") || strings.Contains(text, "app-account") {
+				t.Fatalf("graphql_help leaked plaintext identity values for %s: %s", topic, text)
+			}
 			wantID := "help:" + topic
 			foundHelp := false
 			for _, row := range out.CatalogRows {

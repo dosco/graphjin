@@ -277,7 +277,7 @@ func (s *graphjinService) recordDeniedSourceModeRootAccess(ctx context.Context, 
 			Status:     runtimeStatusFailed,
 			Severity:   "warn",
 			Summary:    "GraphQL request denied by source-mode root access policy.",
-			NextAction: "Check gj_security for the effective source/root policy and retry with the required role.",
+			NextAction: `Check gj_security for the effective source/root policy and retry with the required role; if unsure, run query_catalog(search: "graphjin root access gj_security gj_config admin").`,
 			ErrorCode:  "access_unauthorized",
 			Details: map[string]any{
 				"reason": "access_unauthorized",

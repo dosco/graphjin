@@ -2,12 +2,15 @@ package serv
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/core/v3/openapi"
@@ -35,14 +38,23 @@ func (ms *mcpServer) registerConfigTools() {
 		ms.srv.AddTool(mcp.NewTool(
 			"update_current_config",
 			mcp.WithDescription("Compatibility tool for the GraphQL control-plane mutation gj_config(id: \"current\", update: ...). Update GraphJin configuration and automatically reload. "+
-				"Changes are applied in-memory and take effect immediately. "+
-				"Supports sources, update_sources, remove_sources, databases, relationships, MCP settings, metadata, tables, roles, blocklist, functions, and resolvers. "+
+				"Legacy config changes are applied in-memory immediately. Source-mode config writes require mode: preview first, then mode: apply with the returned preview_id and the exact same payload. "+
+				"Supports sources, update_sources, remove_sources, source_patches, databases, relationships, MCP settings, metadata, tables, roles, blocklist, functions, and resolvers. "+
 				"System database names (postgres, mysql, information_schema, master, etc.) "+
 				"are rejected by default — use a user database name instead. "+
 				"Use create_if_not_exists: true to create a new database on the server before connecting (dev mode only). "+
 				"Response includes machine-readable next-step guidance in the `next` field. "+
 				"WARNING: Changes are lost on restart unless persisted separately. "+
 				"Use get_current_config first to understand the current state."),
+			mcp.WithString("mode",
+				mcp.Description("Source mode only. Use \"preview\" to validate and receive preview_id, then \"apply\" with the same payload plus preview_id. Legacy mode may omit this field."),
+			),
+			mcp.WithString("preview_id",
+				mcp.Description("Source mode apply only. Returned by a successful preview; expires after 10 minutes and requires the exact same patch payload."),
+			),
+			mcp.WithString("expected_catalog_revision",
+				mcp.Description("Source mode preview/apply guard. Read gj_config(id: \"current\") { catalog_revision } immediately before preview/apply and send that value."),
+			),
 			mcp.WithArray("sources",
 				mcp.Description("Replace-all source list. Use update_sources/remove_sources for focused edits that preserve omitted sources."),
 				mcp.Items(sourceConfigInputSchema([]string{"name", "kind"})),
@@ -54,6 +66,35 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithArray("remove_sources",
 				mcp.Description("Array of source names to remove from configuration."),
 				mcp.WithStringItems(),
+			),
+			mcp.WithArray("source_patches",
+				mcp.Description("Source mode patch-by-name updates for existing sources. Preserves unmentioned source fields. Supports access read/write/delete, namespace_column, owner_column, missing_namespace_column, public/admin/blocked table add/remove, and GraphJin roots_set/roots_remove."),
+				mcp.Items(map[string]any{
+					"type":     "object",
+					"required": []string{"name"},
+					"properties": map[string]any{
+						"name": map[string]any{"type": "string", "description": "Exact existing source name"},
+						"access": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"read":                     map[string]any{"type": "string", "enum": []string{"blocked", "public", "authenticated", "account", "owner", "admin"}},
+								"write":                    map[string]any{"type": "string", "enum": []string{"blocked", "authenticated", "account", "owner", "admin"}},
+								"delete":                   map[string]any{"type": "string", "enum": []string{"blocked", "authenticated", "account", "owner", "admin"}},
+								"namespace_column":         map[string]any{"type": "string"},
+								"owner_column":             map[string]any{"type": "string"},
+								"missing_namespace_column": map[string]any{"type": "string", "enum": []string{"block", "allow"}},
+								"public_tables_add":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+								"public_tables_remove":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+								"admin_tables_add":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+								"admin_tables_remove":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+								"blocked_tables_add":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+								"blocked_tables_remove":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+								"roots_set":                map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+								"roots_remove":             map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							},
+						},
+					},
+				}),
 			),
 			mcp.WithObject("databases",
 				mcp.Description("Map of database configs to add/update. Key is database name, value is DatabaseConfig with type, host, port, dbname, user, password, read_only, infer_db_refs for CodeSQL, etc. NOTE: read_only cannot be changed from true to false at runtime if it was set in the config file."),
@@ -279,6 +320,7 @@ type RoleInfo struct {
 
 // handleGetCurrentConfig returns the current configuration
 func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	args := req.GetArguments()
 	section, _ := args["section"].(string)
 	if section == "" {
@@ -493,26 +535,158 @@ type SetHeaderInput struct {
 
 // ConfigUpdateResult represents the result of a config update
 type ConfigUpdateResult struct {
-	Success         bool          `json:"success"`
-	Message         string        `json:"message"`
-	Changes         []string      `json:"changes,omitempty"`
-	Errors          []string      `json:"errors,omitempty"`
-	Databases       []string      `json:"databases,omitempty"`
-	ReloadMode      string        `json:"reload_mode,omitempty"`
-	ChangedSources  []string      `json:"changed_sources,omitempty"`
-	ReloadFallback  bool          `json:"reload_fallback,omitempty"`
-	CatalogRevision string        `json:"catalog_revision,omitempty"`
-	Next            *NextGuidance `json:"next,omitempty"`
+	Success           bool          `json:"success"`
+	Message           string        `json:"message"`
+	Changes           []string      `json:"changes,omitempty"`
+	Errors            []string      `json:"errors,omitempty"`
+	Databases         []string      `json:"databases,omitempty"`
+	ReloadMode        string        `json:"reload_mode,omitempty"`
+	ChangedSources    []string      `json:"changed_sources,omitempty"`
+	ReloadFallback    bool          `json:"reload_fallback,omitempty"`
+	Valid             bool          `json:"valid,omitempty"`
+	Applied           bool          `json:"applied,omitempty"`
+	Mode              string        `json:"mode,omitempty"`
+	PreviewID         string        `json:"preview_id,omitempty"`
+	ExpiresAt         string        `json:"expires_at,omitempty"`
+	CatalogRevision   string        `json:"catalog_revision,omitempty"`
+	ChangeSummaryJSON string        `json:"change_summary_json,omitempty"`
+	FindingsJSON      string        `json:"findings_json,omitempty"`
+	ErrorsJSON        string        `json:"errors_json,omitempty"`
+	Next              *NextGuidance `json:"next,omitempty"`
+}
+
+func (ms *mcpServer) ensureConfigPreviewStore() *configPreviewStore {
+	if ms == nil || ms.service == nil {
+		return nil
+	}
+	if ms.service.configPreviews == nil {
+		ms.service.configPreviews = newConfigPreviewStore()
+	}
+	return ms.service.configPreviews
+}
+
+func configStringArg(args map[string]interface{}, key string) string {
+	if args == nil {
+		return ""
+	}
+	if s, ok := args[key].(string); ok {
+		return strings.TrimSpace(s)
+	}
+	return ""
+}
+
+func configUpdatePatchHash(args map[string]interface{}) string {
+	clean := make(map[string]any, len(args))
+	for key, value := range args {
+		switch key {
+		case "mode", "preview_id", "valid", "applied", "expires_at", "change_summary_json", "findings_json", "errors_json":
+			continue
+		default:
+			clean[key] = value
+		}
+	}
+	data, _ := json.Marshal(clean)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func jsonStringValue(v any) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(data)
+}
+
+func (ms *mcpServer) currentConfigCatalogRevision(ctx context.Context) string {
+	if ms == nil {
+		return ""
+	}
+	if ms.service != nil {
+		if snap, err := ms.service.catalogSnapshot(); err == nil && snap != nil {
+			return snap.Revision
+		}
+	}
+	if rev := ms.catalogRevisionGraphQL(ctx); strings.TrimSpace(rev) != "" {
+		return rev
+	}
+	return ""
+}
+
+func (ms *mcpServer) sourceModeConfigGate(ctx context.Context, args map[string]interface{}) (mode string, expectedRev string, patchHash string, previewID string, fail *ConfigUpdateResult) {
+	mode = strings.ToLower(configStringArg(args, "mode"))
+	expectedRev = configStringArg(args, "expected_catalog_revision")
+	previewID = configStringArg(args, "preview_id")
+	patchHash = configUpdatePatchHash(args)
+	currentRev := ms.currentConfigCatalogRevision(ctx)
+	failure := func(message string, errs ...string) *ConfigUpdateResult {
+		if len(errs) == 0 {
+			errs = []string{message}
+		}
+		return &ConfigUpdateResult{
+			Success:         false,
+			Message:         message,
+			Errors:          errs,
+			Valid:           false,
+			Applied:         false,
+			Mode:            mode,
+			CatalogRevision: currentRev,
+			ErrorsJSON:      jsonStringValue(errs),
+		}
+	}
+	switch mode {
+	case "preview", "apply":
+	default:
+		return mode, expectedRev, patchHash, previewID, failure("source-mode gj_config updates require mode: \"preview\" first, then mode: \"apply\" with preview_id", "missing or unsupported mode for source-mode config update; next_action: query_catalog(search: \"safe gj_config preview apply source_patches\")")
+	}
+	if currentRev != "" && expectedRev == "" {
+		return mode, expectedRev, patchHash, previewID, failure("source-mode gj_config updates require expected_catalog_revision", "read gj_config(id: \"current\") { catalog_revision } before preview/apply")
+	}
+	if currentRev != "" && expectedRev != "" && expectedRev != currentRev {
+		return mode, expectedRev, patchHash, previewID, failure("expected_catalog_revision is stale; read gj_config again before retrying", fmt.Sprintf("expected_catalog_revision %q does not match current catalog_revision %q", expectedRev, currentRev))
+	}
+	if mode == "apply" {
+		if previewID == "" {
+			return mode, expectedRev, patchHash, previewID, failure("source-mode config apply requires preview_id", "run mode: \"preview\" first, then resend the same payload with mode: \"apply\" and preview_id")
+		}
+		rec, ok := ms.ensureConfigPreviewStore().get(previewID)
+		if !ok {
+			return mode, expectedRev, patchHash, previewID, failure("config preview is unknown or expired; run preview again", "unknown or expired preview_id")
+		}
+		if rec.BaseCatalogRevision != expectedRev {
+			return mode, expectedRev, patchHash, previewID, failure("config preview was created for a different catalog revision; run preview again", "preview catalog revision mismatch")
+		}
+		if rec.PatchHash != patchHash {
+			return mode, expectedRev, patchHash, previewID, failure("config apply payload does not match preview payload; resend the exact same patch", "preview payload hash mismatch")
+		}
+	}
+	return mode, expectedRev, patchHash, previewID, nil
+}
+
+func (ms *mcpServer) finishConfigUpdate(ctx context.Context, result ConfigUpdateResult) (*mcp.CallToolResult, error) {
+	result.Next = ms.nextForConfigUpdate(result)
+	ms.recordConfigUpdateRuntimeEvent(ctx, result)
+	data, err := mcpMarshalJSON(result, true)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
+	}
+	return mcpToolResultJSONBytes(data), nil
 }
 
 // handleUpdateCurrentConfig updates the configuration and reloads
 func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	if ms.service != nil {
 		ms.service.configMu.Lock()
 		defer ms.service.configMu.Unlock()
 	}
 
 	args := req.GetArguments()
+	sourceMode := ms.service != nil && ms.service.conf != nil && ms.service.conf.Core.IsSourcesUsed()
+	mode, expectedRev, patchHash, previewID, gateFailure := ms.sourceModeConfigGate(ctx, args)
+	if sourceMode && gateFailure != nil {
+		return ms.finishConfigUpdate(ctx, *gateFailure)
+	}
 
 	if paths := plaintextSecretUpdatePaths(args); len(paths) > 0 {
 		var err error
@@ -527,11 +701,16 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				Success: false,
 				Message: "Secret config update rejected, changes not applied",
 				Errors:  []string{redactRuntimeError(err)},
+				Mode:    mode,
 			}
-			result.Next = ms.nextForConfigUpdate(result)
-			ms.recordConfigUpdateRuntimeEvent(ctx, result)
-			data, _ := mcpMarshalJSON(result, true)
-			return mcpToolResultJSONBytes(data), nil
+			if sourceMode {
+				result.Valid = false
+				result.Applied = false
+				result.CatalogRevision = expectedRev
+				result.ChangeSummaryJSON = "[]"
+				result.ErrorsJSON = jsonStringValue(result.Errors)
+			}
+			return ms.finishConfigUpdate(ctx, result)
 		}
 	}
 
@@ -576,7 +755,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	}
 
 	if patches, ok := args["update_sources"].([]any); ok {
-		updated, patchChanges, err := applySourceConfigPatches(conf.Sources, patches)
+		updated, patchChanges, err := applySourceConfigMergePatches(conf.Sources, patches)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("update_sources: %v", err))
 		} else {
@@ -600,6 +779,15 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			} else {
 				changes = append(changes, removeChanges...)
 			}
+		}
+	}
+
+	if sourcePatches, ok := args["source_patches"].([]any); ok {
+		patchChanges, err := applySourceAccessConfigPatches(conf, sourcePatches)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("source_patches: %v", err))
+		} else {
+			changes = append(changes, patchChanges...)
 		}
 	}
 
@@ -696,11 +884,15 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				Success: false,
 				Message: "Database connection test failed — config changes not applied",
 				Errors:  errors,
+				Mode:    mode,
 			}
-			result.Next = ms.nextForConfigUpdate(result)
-			ms.recordConfigUpdateRuntimeEvent(ctx, result)
-			data, _ := mcpMarshalJSON(result, true)
-			return mcpToolResultJSONBytes(data), nil
+			if sourceMode {
+				result.Valid = false
+				result.Applied = false
+				result.CatalogRevision = expectedRev
+				result.ErrorsJSON = jsonStringValue(errors)
+			}
+			return ms.finishConfigUpdate(ctx, result)
 		}
 
 		// All connections passed — commit database configs
@@ -958,11 +1150,16 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		result := ConfigUpdateResult{
 			Success: true,
 			Message: "No changes provided",
+			Mode:    mode,
 		}
-		result.Next = ms.nextForConfigUpdate(result)
-		ms.recordConfigUpdateRuntimeEvent(ctx, result)
-		data, _ := mcpMarshalJSON(result, true)
-		return mcpToolResultJSONBytes(data), nil
+		if sourceMode {
+			result.Valid = true
+			result.Applied = false
+			result.CatalogRevision = expectedRev
+			result.ChangeSummaryJSON = "[]"
+			result.ErrorsJSON = "[]"
+		}
+		return ms.finishConfigUpdate(ctx, result)
 	}
 	if len(errors) > 0 {
 		result := ConfigUpdateResult{
@@ -970,11 +1167,16 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			Message: "Config validation failed, changes not applied",
 			Changes: changes,
 			Errors:  errors,
+			Mode:    mode,
 		}
-		result.Next = ms.nextForConfigUpdate(result)
-		ms.recordConfigUpdateRuntimeEvent(ctx, result)
-		data, _ := mcpMarshalJSON(result, true)
-		return mcpToolResultJSONBytes(data), nil
+		if sourceMode {
+			result.Valid = false
+			result.Applied = false
+			result.CatalogRevision = expectedRev
+			result.ChangeSummaryJSON = jsonStringValue(changes)
+			result.ErrorsJSON = jsonStringValue(errors)
+		}
+		return ms.finishConfigUpdate(ctx, result)
 	}
 
 	var availableDBs []string
@@ -1016,19 +1218,55 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				Changes:   changes,
 				Errors:    errs,
 				Databases: availableDBs,
+				Mode:      mode,
 			}
 			if reloadPlan.mode != "" {
 				result.ReloadMode = reloadPlan.mode
 				result.ChangedSources = reloadPlan.changedSources
 				result.ReloadFallback = reloadPlan.fallback
 			}
-			result.Next = ms.nextForConfigUpdate(result)
-			ms.recordConfigUpdateRuntimeEvent(ctx, result)
-			data, _ := mcpMarshalJSON(result, true)
-			return mcpToolResultJSONBytes(data), nil
+			if sourceMode {
+				result.Valid = false
+				result.Applied = false
+				result.CatalogRevision = expectedRev
+				result.ChangeSummaryJSON = jsonStringValue(changes)
+				result.ErrorsJSON = jsonStringValue(errs)
+			}
+			return ms.finishConfigUpdate(ctx, result)
 		}
 
 		availableDBs = stage.availableDBs
+		if sourceMode && mode == "preview" {
+			findingsJSON := ms.stagedConfigSecurityFindingsJSON(conf)
+			stage.close()
+			rec := ms.ensureConfigPreviewStore().put(configPreviewRecord{
+				PatchHash:           patchHash,
+				BaseCatalogRevision: expectedRev,
+				ChangeSummaryJSON:   jsonStringValue(changes),
+				FindingsJSON:        findingsJSON,
+				ErrorsJSON:          "[]",
+			})
+			result := ConfigUpdateResult{
+				Success:           true,
+				Message:           "Config preview is valid; resend the same payload with mode: \"apply\" and preview_id before expiry.",
+				Changes:           changes,
+				Databases:         availableDBs,
+				ReloadMode:        reloadPlan.mode,
+				ChangedSources:    reloadPlan.changedSources,
+				ReloadFallback:    reloadPlan.fallback,
+				Valid:             true,
+				Applied:           false,
+				Mode:              mode,
+				PreviewID:         rec.ID,
+				ExpiresAt:         rec.ExpiresAt.Format(time.RFC3339Nano),
+				CatalogRevision:   expectedRev,
+				ChangeSummaryJSON: rec.ChangeSummaryJSON,
+				FindingsJSON:      rec.FindingsJSON,
+				ErrorsJSON:        rec.ErrorsJSON,
+			}
+			return ms.finishConfigUpdate(ctx, result)
+		}
+
 		persistedCore := cloneCoreConfig(stagedCore)
 		if strings.TrimSpace(ms.service.conf.Secrets.Keystore.Key) != "" || configContainsSecretRefs(&persistedCore) {
 			ks, err := ms.service.localKeystore()
@@ -1040,14 +1278,19 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					Changes:   changes,
 					Errors:    []string{redactRuntimeError(err)},
 					Databases: availableDBs,
+					Mode:      mode,
 				}
 				result.ReloadMode = reloadPlan.mode
 				result.ChangedSources = reloadPlan.changedSources
 				result.ReloadFallback = reloadPlan.fallback
-				result.Next = ms.nextForConfigUpdate(result)
-				ms.recordConfigUpdateRuntimeEvent(ctx, result)
-				data, _ := mcpMarshalJSON(result, true)
-				return mcpToolResultJSONBytes(data), nil
+				if sourceMode {
+					result.Valid = false
+					result.Applied = false
+					result.CatalogRevision = expectedRev
+					result.ChangeSummaryJSON = jsonStringValue(changes)
+					result.ErrorsJSON = jsonStringValue(result.Errors)
+				}
+				return ms.finishConfigUpdate(ctx, result)
 			}
 			if !ks.hasKey() && configContainsSecretRefs(&persistedCore) {
 				stage.close()
@@ -1057,14 +1300,19 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					Changes:   changes,
 					Errors:    []string{missingLocalKeystoreKeyError(secretRefsInConfig(&persistedCore)).Error()},
 					Databases: availableDBs,
+					Mode:      mode,
 				}
 				result.ReloadMode = reloadPlan.mode
 				result.ChangedSources = reloadPlan.changedSources
 				result.ReloadFallback = reloadPlan.fallback
-				result.Next = ms.nextForConfigUpdate(result)
-				ms.recordConfigUpdateRuntimeEvent(ctx, result)
-				data, _ := mcpMarshalJSON(result, true)
-				return mcpToolResultJSONBytes(data), nil
+				if sourceMode {
+					result.Valid = false
+					result.Applied = false
+					result.CatalogRevision = expectedRev
+					result.ChangeSummaryJSON = jsonStringValue(changes)
+					result.ErrorsJSON = jsonStringValue(result.Errors)
+				}
+				return ms.finishConfigUpdate(ctx, result)
 			}
 			if ks.hasKey() {
 				usedRefs, err := sealCoreConfigSecrets(&persistedCore, ks)
@@ -1076,14 +1324,19 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 						Changes:   changes,
 						Errors:    []string{redactRuntimeError(err)},
 						Databases: availableDBs,
+						Mode:      mode,
 					}
 					result.ReloadMode = reloadPlan.mode
 					result.ChangedSources = reloadPlan.changedSources
 					result.ReloadFallback = reloadPlan.fallback
-					result.Next = ms.nextForConfigUpdate(result)
-					ms.recordConfigUpdateRuntimeEvent(ctx, result)
-					data, _ := mcpMarshalJSON(result, true)
-					return mcpToolResultJSONBytes(data), nil
+					if sourceMode {
+						result.Valid = false
+						result.Applied = false
+						result.CatalogRevision = expectedRev
+						result.ChangeSummaryJSON = jsonStringValue(changes)
+						result.ErrorsJSON = jsonStringValue(result.Errors)
+					}
+					return ms.finishConfigUpdate(ctx, result)
 				}
 				if err := ks.Save(nil); err != nil {
 					stage.close()
@@ -1093,14 +1346,19 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 						Changes:   changes,
 						Errors:    []string{redactRuntimeError(err)},
 						Databases: availableDBs,
+						Mode:      mode,
 					}
 					result.ReloadMode = reloadPlan.mode
 					result.ChangedSources = reloadPlan.changedSources
 					result.ReloadFallback = reloadPlan.fallback
-					result.Next = ms.nextForConfigUpdate(result)
-					ms.recordConfigUpdateRuntimeEvent(ctx, result)
-					data, _ := mcpMarshalJSON(result, true)
-					return mcpToolResultJSONBytes(data), nil
+					if sourceMode {
+						result.Valid = false
+						result.Applied = false
+						result.CatalogRevision = expectedRev
+						result.ChangeSummaryJSON = jsonStringValue(changes)
+						result.ErrorsJSON = jsonStringValue(result.Errors)
+					}
+					return ms.finishConfigUpdate(ctx, result)
 				}
 				sealedKeystore = ks
 				sealedSecretRefs = usedRefs
@@ -1119,11 +1377,16 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					ReloadMode:     reloadPlan.mode,
 					ChangedSources: reloadPlan.changedSources,
 					ReloadFallback: reloadPlan.fallback,
+					Mode:           mode,
 				}
-				result.Next = ms.nextForConfigUpdate(result)
-				ms.recordConfigUpdateRuntimeEvent(ctx, result)
-				data, _ := mcpMarshalJSON(result, true)
-				return mcpToolResultJSONBytes(data), nil
+				if sourceMode {
+					result.Valid = false
+					result.Applied = false
+					result.CatalogRevision = expectedRev
+					result.ChangeSummaryJSON = jsonStringValue(changes)
+					result.ErrorsJSON = jsonStringValue(result.Errors)
+				}
+				return ms.finishConfigUpdate(ctx, result)
 			}
 		} else {
 			ms.commitStagedRuntime(persistedCore, stage)
@@ -1138,6 +1401,33 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				changes = append(changes, "configuration validated and runtime reloaded transactionally")
 			}
 		}
+	}
+
+	if sourceMode && mode == "preview" {
+		findingsJSON := ms.stagedConfigSecurityFindingsJSON(conf)
+		rec := ms.ensureConfigPreviewStore().put(configPreviewRecord{
+			PatchHash:           patchHash,
+			BaseCatalogRevision: expectedRev,
+			ChangeSummaryJSON:   jsonStringValue(changes),
+			FindingsJSON:        findingsJSON,
+			ErrorsJSON:          "[]",
+		})
+		result := ConfigUpdateResult{
+			Success:           true,
+			Message:           "Config preview is valid; resend the same payload with mode: \"apply\" and preview_id before expiry.",
+			Changes:           changes,
+			Databases:         availableDBs,
+			Valid:             true,
+			Applied:           false,
+			Mode:              mode,
+			PreviewID:         rec.ID,
+			ExpiresAt:         rec.ExpiresAt.Format(time.RFC3339Nano),
+			CatalogRevision:   expectedRev,
+			ChangeSummaryJSON: rec.ChangeSummaryJSON,
+			FindingsJSON:      rec.FindingsJSON,
+			ErrorsJSON:        rec.ErrorsJSON,
+		}
+		return ms.finishConfigUpdate(ctx, result)
 	}
 
 	if mcpPatch != nil && len(errors) == 0 {
@@ -1175,6 +1465,18 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		Changes:   changes,
 		Errors:    errors,
 		Databases: availableDBs,
+		Mode:      mode,
+	}
+	if sourceMode {
+		result.Applied = len(errors) == 0 && mode == "apply"
+		result.Valid = len(errors) == 0
+		result.PreviewID = previewID
+		result.CatalogRevision = ms.currentConfigCatalogRevision(ctx)
+		result.ChangeSummaryJSON = jsonStringValue(changes)
+		result.ErrorsJSON = jsonStringValue(errors)
+		if result.Applied {
+			ms.ensureConfigPreviewStore().delete(previewID)
+		}
 	}
 	if reloadPlan.mode != "" {
 		result.ReloadMode = reloadPlan.mode
@@ -1188,14 +1490,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	if len(errors) > 0 {
 		result.Message = "Configuration partially updated with some errors"
 	}
-	result.Next = ms.nextForConfigUpdate(result)
-	ms.recordConfigUpdateRuntimeEvent(ctx, result)
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
-	}
-	return mcpToolResultJSONBytes(data), nil
+	return ms.finishConfigUpdate(ctx, result)
 }
 
 func parseSourceConfigList(items []any) ([]core.SourceConfig, error) {
@@ -1263,7 +1558,7 @@ func sourceConfigInputSchema(required []string) map[string]any {
 	}
 }
 
-func applySourceConfigPatches(existing []core.SourceConfig, patches []any) ([]core.SourceConfig, []string, error) {
+func applySourceConfigMergePatches(existing []core.SourceConfig, patches []any) ([]core.SourceConfig, []string, error) {
 	out := append([]core.SourceConfig(nil), existing...)
 	positions := make(map[string]int, len(out))
 	for i, source := range out {
@@ -1423,6 +1718,329 @@ func mergeJSONPatch(dst, patch map[string]any) {
 		}
 		dst[key] = value
 	}
+}
+
+type sourceConfigPatch struct {
+	Name   string                   `json:"name"`
+	Access *sourceAccessConfigPatch `json:"access,omitempty"`
+}
+
+type sourceAccessConfigPatch struct {
+	Read                   *string           `json:"read,omitempty"`
+	Write                  *string           `json:"write,omitempty"`
+	Delete                 *string           `json:"delete,omitempty"`
+	NamespaceColumn        *string           `json:"namespace_column,omitempty"`
+	OwnerColumn            *string           `json:"owner_column,omitempty"`
+	MissingNamespaceColumn *string           `json:"missing_namespace_column,omitempty"`
+	PublicTablesAdd        []string          `json:"public_tables_add,omitempty"`
+	PublicTablesRemove     []string          `json:"public_tables_remove,omitempty"`
+	AdminTablesAdd         []string          `json:"admin_tables_add,omitempty"`
+	AdminTablesRemove      []string          `json:"admin_tables_remove,omitempty"`
+	BlockedTablesAdd       []string          `json:"blocked_tables_add,omitempty"`
+	BlockedTablesRemove    []string          `json:"blocked_tables_remove,omitempty"`
+	RootsSet               map[string]string `json:"roots_set,omitempty"`
+	RootsRemove            []string          `json:"roots_remove,omitempty"`
+}
+
+func applySourceAccessConfigPatches(conf *core.Config, items []any) ([]string, error) {
+	if conf == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("at least one source patch is required")
+	}
+	data, err := json.Marshal(items)
+	if err != nil {
+		return nil, err
+	}
+	var patches []sourceConfigPatch
+	if err := json.Unmarshal(data, &patches); err != nil {
+		return nil, err
+	}
+	if len(patches) == 0 {
+		return nil, fmt.Errorf("at least one source patch is required")
+	}
+
+	exact := make(map[string]int, len(conf.Sources))
+	folded := make(map[string][]string, len(conf.Sources))
+	for i, source := range conf.Sources {
+		name := strings.TrimSpace(source.Name)
+		if name == "" {
+			continue
+		}
+		if _, exists := exact[name]; exists {
+			return nil, fmt.Errorf("duplicate configured source name %q", name)
+		}
+		exact[name] = i
+		key := strings.ToLower(name)
+		folded[key] = append(folded[key], name)
+	}
+
+	seenPatch := make(map[string]struct{}, len(patches))
+	var changes []string
+	for _, patch := range patches {
+		name := strings.TrimSpace(patch.Name)
+		if name == "" {
+			return changes, fmt.Errorf("source patch name is required")
+		}
+		if _, exists := seenPatch[name]; exists {
+			return changes, fmt.Errorf("duplicate source patch for %q", name)
+		}
+		seenPatch[name] = struct{}{}
+
+		idx, ok := exact[name]
+		if !ok {
+			matches := folded[strings.ToLower(name)]
+			switch len(matches) {
+			case 0:
+				return changes, fmt.Errorf("source %q is not configured", name)
+			case 1:
+				return changes, fmt.Errorf("source %q is not configured; source names must match exactly (did you mean %q?)", name, matches[0])
+			default:
+				return changes, fmt.Errorf("source %q is ambiguous; configured source names differ only by case: %s", name, strings.Join(matches, ", "))
+			}
+		}
+
+		if patch.Access == nil {
+			continue
+		}
+		source := &conf.Sources[idx]
+		patchChanges, err := applySourceAccessPatch(source, *patch.Access)
+		if err != nil {
+			return changes, fmt.Errorf("%s.access: %w", name, err)
+		}
+		changes = append(changes, patchChanges...)
+	}
+	if err := conf.ValidateIsSourcesUsed(); err != nil {
+		return changes, err
+	}
+	sort.Strings(changes)
+	return changes, nil
+}
+
+func applySourceAccessPatch(source *core.SourceConfig, patch sourceAccessConfigPatch) ([]string, error) {
+	var changes []string
+	setMode := func(label string, ptr *string, valid func(string) bool) error {
+		if ptr == nil {
+			return nil
+		}
+		mode := strings.ToLower(strings.TrimSpace(*ptr))
+		if mode == "" {
+			return fmt.Errorf("%s must not be empty", label)
+		}
+		if !valid(mode) {
+			return fmt.Errorf("%s: unsupported access mode %q", label, *ptr)
+		}
+		switch label {
+		case "read":
+			source.Access.Read = mode
+		case "write":
+			source.Access.Write = mode
+		case "delete":
+			source.Access.Delete = mode
+		}
+		changes = append(changes, fmt.Sprintf("updated source %s access.%s", source.Name, label))
+		return nil
+	}
+	if err := setMode("read", patch.Read, validSourcePatchReadMode); err != nil {
+		return changes, err
+	}
+	if err := setMode("write", patch.Write, validSourcePatchWriteMode); err != nil {
+		if patch.Write != nil && strings.EqualFold(strings.TrimSpace(*patch.Write), core.AccessModePublic) {
+			return changes, fmt.Errorf("write: public write is not supported")
+		}
+		return changes, err
+	}
+	if err := setMode("delete", patch.Delete, validSourcePatchWriteMode); err != nil {
+		if patch.Delete != nil && strings.EqualFold(strings.TrimSpace(*patch.Delete), core.AccessModePublic) {
+			return changes, fmt.Errorf("delete: public delete is not supported")
+		}
+		return changes, err
+	}
+	if patch.NamespaceColumn != nil {
+		value := strings.TrimSpace(*patch.NamespaceColumn)
+		if value == "" {
+			return changes, fmt.Errorf("namespace_column must not be empty")
+		}
+		source.Access.NamespaceColumn = value
+		changes = append(changes, fmt.Sprintf("updated source %s access.namespace_column", source.Name))
+	}
+	if patch.OwnerColumn != nil {
+		value := strings.TrimSpace(*patch.OwnerColumn)
+		if value == "" {
+			return changes, fmt.Errorf("owner_column must not be empty")
+		}
+		source.Access.OwnerColumn = value
+		changes = append(changes, fmt.Sprintf("updated source %s access.owner_column", source.Name))
+	}
+	if patch.MissingNamespaceColumn != nil {
+		value := strings.ToLower(strings.TrimSpace(*patch.MissingNamespaceColumn))
+		switch value {
+		case core.MissingNamespaceBlock, core.MissingNamespaceAllow:
+			source.Access.MissingNamespaceColumn = value
+			changes = append(changes, fmt.Sprintf("updated source %s access.missing_namespace_column", source.Name))
+		default:
+			return changes, fmt.Errorf("missing_namespace_column: unsupported behavior %q", *patch.MissingNamespaceColumn)
+		}
+	}
+	classChanges, err := applySourceClassificationPatch(source, patch)
+	if err != nil {
+		return changes, err
+	}
+	changes = append(changes, classChanges...)
+
+	if len(patch.RootsSet) != 0 || len(patch.RootsRemove) != 0 {
+		if source.CanonicalKind() != "graphjin" {
+			return changes, fmt.Errorf("roots_set and roots_remove apply only to sources with kind: graphjin")
+		}
+		if source.Access.Roots == nil {
+			source.Access.Roots = make(map[string]string)
+		}
+		for root, mode := range patch.RootsSet {
+			root = strings.ToLower(strings.TrimSpace(root))
+			mode = strings.ToLower(strings.TrimSpace(mode))
+			if root == "" {
+				return changes, fmt.Errorf("roots_set root name is required")
+			}
+			if mode == "" || !validSourcePatchReadMode(mode) {
+				return changes, fmt.Errorf("roots_set.%s: unsupported access mode %q", root, mode)
+			}
+			source.Access.Roots[root] = mode
+			changes = append(changes, fmt.Sprintf("updated source %s access.roots.%s", source.Name, root))
+		}
+		for _, root := range patch.RootsRemove {
+			root = strings.ToLower(strings.TrimSpace(root))
+			if root == "" {
+				return changes, fmt.Errorf("roots_remove root name is required")
+			}
+			delete(source.Access.Roots, root)
+			changes = append(changes, fmt.Sprintf("removed source %s access.roots.%s override", source.Name, root))
+		}
+	}
+	return changes, nil
+}
+
+func validSourcePatchReadMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case core.AccessModeBlocked, core.AccessModePublic, core.AccessModeAuthenticated, core.AccessModeAccount, core.AccessModeOwner, core.AccessModeAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSourcePatchWriteMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case core.AccessModeBlocked, core.AccessModeAuthenticated, core.AccessModeAccount, core.AccessModeOwner, core.AccessModeAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+func applySourceClassificationPatch(source *core.SourceConfig, patch sourceAccessConfigPatch) ([]string, error) {
+	adds := map[string][]string{
+		"public_tables":  patch.PublicTablesAdd,
+		"admin_tables":   patch.AdminTablesAdd,
+		"blocked_tables": patch.BlockedTablesAdd,
+	}
+	removes := map[string][]string{
+		"public_tables":  patch.PublicTablesRemove,
+		"admin_tables":   patch.AdminTablesRemove,
+		"blocked_tables": patch.BlockedTablesRemove,
+	}
+	addTargets := make(map[string]string)
+	for group, values := range adds {
+		seen, err := normalizedStringSet(values)
+		if err != nil {
+			return nil, fmt.Errorf("%s_add: %w", group, err)
+		}
+		for table := range seen {
+			key := strings.ToLower(table)
+			if other, exists := addTargets[key]; exists && other != group {
+				return nil, fmt.Errorf("table %q appears in multiple classification add lists (%s, %s)", table, other, group)
+			}
+			addTargets[key] = group
+		}
+	}
+
+	var changes []string
+	for group, values := range removes {
+		set, err := normalizedStringSet(values)
+		if err != nil {
+			return changes, fmt.Errorf("%s_remove: %w", group, err)
+		}
+		for table := range set {
+			switch group {
+			case "public_tables":
+				source.Access.PublicTables = removeStringFold(source.Access.PublicTables, table)
+			case "admin_tables":
+				source.Access.AdminTables = removeStringFold(source.Access.AdminTables, table)
+			case "blocked_tables":
+				source.Access.BlockedTables = removeStringFold(source.Access.BlockedTables, table)
+			}
+			changes = append(changes, fmt.Sprintf("removed %s from source %s access.%s", table, source.Name, group))
+		}
+	}
+	for group, values := range adds {
+		set, err := normalizedStringSet(values)
+		if err != nil {
+			return changes, fmt.Errorf("%s_add: %w", group, err)
+		}
+		for table := range set {
+			source.Access.PublicTables = removeStringFold(source.Access.PublicTables, table)
+			source.Access.AdminTables = removeStringFold(source.Access.AdminTables, table)
+			source.Access.BlockedTables = removeStringFold(source.Access.BlockedTables, table)
+			switch group {
+			case "public_tables":
+				source.Access.PublicTables = appendUniqueFold(source.Access.PublicTables, table)
+			case "admin_tables":
+				source.Access.AdminTables = appendUniqueFold(source.Access.AdminTables, table)
+			case "blocked_tables":
+				source.Access.BlockedTables = appendUniqueFold(source.Access.BlockedTables, table)
+			}
+			changes = append(changes, fmt.Sprintf("added %s to source %s access.%s", table, source.Name, group))
+		}
+	}
+	return changes, nil
+}
+
+func normalizedStringSet(values []string) (map[string]struct{}, error) {
+	out := make(map[string]struct{}, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return nil, fmt.Errorf("values must not be empty")
+		}
+		key := strings.ToLower(value)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out[value] = struct{}{}
+	}
+	return out, nil
+}
+
+func appendUniqueFold(values []string, value string) []string {
+	for _, existing := range values {
+		if strings.EqualFold(existing, value) {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func removeStringFold(values []string, value string) []string {
+	out := values[:0]
+	for _, existing := range values {
+		if strings.EqualFold(existing, value) {
+			continue
+		}
+		out = append(out, existing)
+	}
+	return out
 }
 
 func parseRelationshipConfigList(items []any) ([]core.RelationshipConfig, error) {
@@ -2555,6 +3173,13 @@ func (ms *mcpServer) recordConfigUpdateRuntimeEvent(ctx context.Context, result 
 	if ms == nil || ms.service == nil {
 		return
 	}
+	phase := "config"
+	switch result.Mode {
+	case "preview":
+		phase = "config.preview"
+	case "apply":
+		phase = "config.apply"
+	}
 	status := runtimeStatusReady
 	severity := "info"
 	summary := "Guarded config update completed."
@@ -2573,6 +3198,11 @@ func (ms *mcpServer) recordConfigUpdateRuntimeEvent(ctx context.Context, result 
 		"error_count":    len(result.Errors),
 		"database_count": len(result.Databases),
 	}
+	if result.Mode != "" {
+		details["mode"] = result.Mode
+		details["valid"] = result.Valid
+		details["applied"] = result.Applied
+	}
 	if result.ReloadMode != "" {
 		details["reload_mode"] = result.ReloadMode
 	}
@@ -2586,7 +3216,7 @@ func (ms *mcpServer) recordConfigUpdateRuntimeEvent(ctx context.Context, result 
 		details["catalog_revision"] = result.CatalogRevision
 	}
 	ms.service.recordRuntimeEvent(ctx, runtimeEvent{
-		Phase:      "config",
+		Phase:      phase,
 		Status:     status,
 		Severity:   severity,
 		Summary:    summary,
@@ -2642,6 +3272,37 @@ func (ms *mcpServer) commitSourceScopedRuntime(stagedCore core.Config, stage *st
 	ms.service.registerRuntimeSchemaCallbacks()
 	ms.closeSupersededConnections(oldDBs, oldManagedDBs, stage.dbs)
 	return nil
+}
+
+func (ms *mcpServer) stagedConfigSecurityFindingsJSON(stagedCore *core.Config) string {
+	if ms == nil || ms.service == nil || stagedCore == nil {
+		return "[]"
+	}
+	conf := *ms.service.conf
+	conf.Core = cloneCoreConfig(*stagedCore)
+	temp := &graphjinService{conf: &conf, fs: ms.service.fs}
+	now := nowNanoTimestamp()
+	reportCtx := securityRuntimeContext(temp, now)
+	policies := securityPolicyEvaluationsForContext(reportCtx)
+	rows := securityFindingNanoRows(reportCtx, policies, now)
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		severity := strings.ToLower(fmt.Sprint(row["severity"]))
+		if severity != "high" && severity != "critical" {
+			continue
+		}
+		finding := map[string]any{}
+		for _, key := range []string{"kind", "severity", "source", "source_kind", "table_name", "root", "surface", "capability", "action", "reason", "recommendation"} {
+			if value, ok := row[key]; ok && strings.TrimSpace(fmt.Sprint(value)) != "" {
+				finding[key] = value
+			}
+		}
+		out = append(out, finding)
+		if len(out) >= 20 {
+			break
+		}
+	}
+	return jsonStringValue(out)
 }
 
 func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRuntimeState) {

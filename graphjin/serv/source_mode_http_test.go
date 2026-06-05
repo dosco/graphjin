@@ -180,6 +180,9 @@ func TestSourceModeHTTPRuntimeDenialEventsAreRedacted(t *testing.T) {
 			strings.Contains(row.DetailsJSON, `"role":"member"`) &&
 			strings.Contains(row.DetailsJSON, `"reason":"`+row.ErrorCode+`"`) &&
 			strings.Contains(row.DetailsJSON, `"root":"gj_security"`) {
+			if !strings.Contains(row.NextAction, `query_catalog(search: "graphjin root access gj_security gj_config admin")`) {
+				t.Fatalf("expected root access recovery hint, got %+v", row)
+			}
 			sawSecurityDenied = true
 		}
 		if row.Phase == "access" && row.Status == runtimeStatusFailed &&

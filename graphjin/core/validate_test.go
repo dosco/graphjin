@@ -239,7 +239,7 @@ func TestConfigValidate(t *testing.T) {
 				Roles:   []Role{{Name: "user", Tables: []RoleTable{{Name: "users"}}}},
 			},
 			wantErr: true,
-			errMsg:  "roles[\"user\"].tables is legacy",
+			errMsg:  `query_catalog(search: "migrate legacy roles tables to source access")`,
 		},
 		{
 			name: "sources used rejects conflicting identity query aliases",
