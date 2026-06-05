@@ -308,7 +308,7 @@ host_port: "0.0.0.0:8080"
 production: false
 log_level: "info"          # debug, info, warn, error
 log_format: "json"         # json, simple
-web_ui: true
+web_ui: true               # defaults on in dev/agentic, off in prod
 enable_tracing: true
 watch_and_reload: true     # Dev only
 http_gzip: true

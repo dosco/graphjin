@@ -461,25 +461,18 @@ federation:
 | `/api/v1/mcp/message` | `POST` | MCP HTTP transport for stateless message integrations. |
 | `/api/v1/discovery` | `GET` | Legacy discovery document. In source mode it is registered only when `mcp.legacy_discovery: true`; use catalog GraphQL roots otherwise. |
 | `/api/v1/discovery/<section>` | `GET` | Legacy discovery drill-down (e.g. `tables`, `insights`), gated the same way as `/api/v1/discovery`. |
-| `/api/v1/admin/tables` | `GET` | Admin: list known tables (Web UI). |
-| `/api/v1/admin/tables/<name>` | `GET` | Admin: schema for a single table. |
-| `/api/v1/admin/queries` | `GET` | Admin: list saved queries. |
-| `/api/v1/admin/queries/<name>` | `GET` | Admin: details for a saved query. |
-| `/api/v1/admin/fragments` | `GET` | Admin: list GraphQL fragments. |
-| `/api/v1/admin/config` | `GET` | Admin: effective runtime config. |
-| `/api/v1/admin/database` / `/api/v1/admin/databases` | `GET` | Admin: connected database info. |
 | `/api/v1/auth/device` | `POST` | OIDC device-flow start (only if `auth_login.enabled`). |
 | `/api/v1/auth/device/token` | `POST` | OIDC device-flow poll. |
 | `/api/v1/auth/login` | `GET` | OIDC login redirect. |
 | `/api/v1/auth/callback` | `GET` | OIDC callback. |
 | `/health` | `GET` | Liveness probe. **No auth.** |
-| `/` | `GET` | Built-in Web UI (only when `webui: true`). |
+| `/` | `GET` | Built-in Web UI. Defaults on in `dev` and `agentic` modes, off in `prod`; set `web_ui` explicitly to override. The UI uses `/api/v1/graphql` and GraphJin system roots such as `gj_catalog`, `gj_security`, `gj_runtime`, `gj_code`, and `gj_config`; there is no separate admin REST API. |
 
 **Mode flags that change which routes are live:**
 - `mcp.disable: true` — removes `/api/v1/mcp` and `/api/v1/mcp/message`.
 - `mcp.only: true` — keeps only `/health` and `/api/v1/mcp*`. Legacy `/api/v1/workflows/*` and `/api/v1/discovery*` remain only when `mcp.legacy_discovery: true`.
 - Source mode (`sources:` present) disables legacy `/api/v1/workflows/*` and `/api/v1/discovery*` unless `mcp.legacy_discovery: true`.
-- `webui: false` — drops `/` and the `/api/v1/admin/*` routes.
+- `web_ui: false` — drops `/` even in dev or agentic mode.
 
 ## MCP Tools
 

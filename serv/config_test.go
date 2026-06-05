@@ -127,6 +127,87 @@ sources:
 	}
 }
 
+func TestWebUIDefaultsFollowMode(t *testing.T) {
+	clearWebUIEnv(t)
+
+	tests := []struct {
+		name   string
+		config string
+		want   bool
+	}{
+		{name: "implicit dev", config: `app_name: test`, want: true},
+		{name: "dev", config: `mode: dev`, want: true},
+		{name: "agentic", config: `mode: agentic`, want: true},
+		{name: "prod", config: `mode: prod`, want: false},
+		{name: "legacy production", config: `production: true`, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conf, err := NewConfig(tt.config, "yaml")
+			if err != nil {
+				t.Fatalf("NewConfig: %v", err)
+			}
+			if conf.Serv.WebUI != tt.want {
+				t.Fatalf("web_ui = %v, want %v", conf.Serv.WebUI, tt.want)
+			}
+		})
+	}
+}
+
+func TestWebUIExplicitOverride(t *testing.T) {
+	clearWebUIEnv(t)
+
+	tests := []struct {
+		name   string
+		config string
+		want   bool
+	}{
+		{name: "dev disabled", config: `
+mode: dev
+web_ui: false
+`, want: false},
+		{name: "agentic disabled", config: `
+mode: agentic
+web_ui: false
+`, want: false},
+		{name: "prod enabled", config: `
+mode: prod
+web_ui: true
+`, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conf, err := NewConfig(tt.config, "yaml")
+			if err != nil {
+				t.Fatalf("NewConfig: %v", err)
+			}
+			if conf.Serv.WebUI != tt.want {
+				t.Fatalf("web_ui = %v, want %v", conf.Serv.WebUI, tt.want)
+			}
+			if !conf.webUIExplicit {
+				t.Fatal("web_ui explicit marker should be set")
+			}
+		})
+	}
+}
+
+func clearWebUIEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{"GJ_WEB_UI", "SG_WEB_UI", "SJ_WEB_UI"} {
+		value, ok := os.LookupEnv(key)
+		if !ok {
+			continue
+		}
+		k, v := key, value
+		t.Cleanup(func() {
+			os.Setenv(k, v) //nolint:errcheck
+		})
+		os.Unsetenv(key) //nolint:errcheck
+	}
+}
+
 func TestInvalidModeIsRejected(t *testing.T) {
 	_, err := NewConfig(`
 mode: secure-ish

@@ -36,6 +36,8 @@ type Config struct {
 	name     string
 	dirty    bool
 	viper    *viper.Viper
+
+	webUIExplicit bool
 }
 
 // Configuration for admin service
@@ -83,7 +85,7 @@ type Serv struct {
 	// Enables the Server-Timing HTTP header
 	ServerTiming bool `mapstructure:"server_timing" jsonschema:"title=Server Timing HTTP Header,default=true"`
 
-	// Enable the web UI. Disabled in production
+	// Enable the web UI. Defaults on in dev and agentic modes, off in prod.
 	WebUI bool `mapstructure:"web_ui" jsonschema:"title=Enable Web UI,default=false"`
 
 	// Enable OpenTrace request tracing
@@ -544,6 +546,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	config := &Config{viper: viper}
 	config.ConfigPath = cp
 
+	webUIExplicit := webUISettingExplicit(viper)
 	if err := normalizeCatalogAutoBools(viper); err != nil {
 		return nil, err
 	}
@@ -553,7 +556,9 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	if err := normalizeConfigMode(config); err != nil {
 		return nil, err
 	}
+	normalizeWebUIDefault(config, webUIExplicit)
 	config.MCP.disableExplicit = viper.IsSet("mcp.disable")
+	config.webUIExplicit = webUIExplicit
 
 	return config, nil
 }
@@ -584,6 +589,7 @@ func NewConfig(config, format string) (*Config, error) {
 
 	c := &Config{viper: viper}
 
+	webUIExplicit := webUISettingExplicit(viper)
 	if err := normalizeCatalogAutoBools(viper); err != nil {
 		return nil, err
 	}
@@ -593,9 +599,33 @@ func NewConfig(config, format string) (*Config, error) {
 	if err := normalizeConfigMode(c); err != nil {
 		return nil, err
 	}
+	normalizeWebUIDefault(c, webUIExplicit)
 	c.MCP.disableExplicit = viper.IsSet("mcp.disable")
+	c.webUIExplicit = webUIExplicit
 
 	return c, nil
+}
+
+func normalizeWebUIDefault(c *Config, explicit bool) {
+	if c == nil || explicit {
+		return
+	}
+	c.Serv.WebUI = c.Core.Mode == "dev" || c.Core.Mode == "agentic"
+}
+
+func webUISettingExplicit(v *viper.Viper) bool {
+	if v == nil {
+		return false
+	}
+	if v.InConfig("web_ui") {
+		return true
+	}
+	for _, key := range []string{"GJ_WEB_UI", "SG_WEB_UI", "SJ_WEB_UI"} {
+		if value, ok := os.LookupEnv(key); ok && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeCatalogAutoBools(v *viper.Viper) error {
@@ -716,9 +746,10 @@ func newViperWithDefaults() *viper.Viper {
 
 	vi.SetDefault("env", "development")
 
-	vi.BindEnv("env", "GO_ENV") //nolint:errcheck
-	vi.BindEnv("host", "HOST")  //nolint:errcheck
-	vi.BindEnv("port", "PORT")  //nolint:errcheck
+	vi.BindEnv("env", "GO_ENV")                                 //nolint:errcheck
+	vi.BindEnv("host", "HOST")                                  //nolint:errcheck
+	vi.BindEnv("port", "PORT")                                  //nolint:errcheck
+	vi.BindEnv("web_ui", "GJ_WEB_UI", "SG_WEB_UI", "SJ_WEB_UI") //nolint:errcheck
 
 	vi.SetDefault("auth.subs_creds_in_vars", false)
 

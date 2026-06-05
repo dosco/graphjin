@@ -88,34 +88,23 @@ func newSecuredTestHandler(t *testing.T) http.Handler {
 	return handler
 }
 
-func TestAdminAndOpenAPIRoutesRequireAuth(t *testing.T) {
+func TestOpenAPIRouteRequiresAuth(t *testing.T) {
 	handler := newSecuredTestHandler(t)
 
-	paths := []string{
-		"/api/v1/admin/tables",
-		"/api/v1/admin/queries",
-		"/api/v1/admin/config",
-		"/api/v1/openapi.json",
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without auth for openapi route, got %d", rec.Code)
 	}
 
-	for _, path := range paths {
-		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil)
+	req.Header.Set("X-Test-Auth", "secret")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
 
-			if rec.Code != http.StatusUnauthorized {
-				t.Fatalf("expected 401 without auth for %s, got %d", path, rec.Code)
-			}
-
-			req = httptest.NewRequest(http.MethodGet, path, nil)
-			req.Header.Set("X-Test-Auth", "secret")
-			rec = httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-
-			if rec.Code != http.StatusOK {
-				t.Fatalf("expected 200 with auth for %s, got %d: %s", path, rec.Code, rec.Body.String())
-			}
-		})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 with auth for openapi route, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

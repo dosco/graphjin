@@ -1,18 +1,19 @@
-import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import React, { Suspense, lazy } from "react";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import Layout from "./components/Layout/Layout";
 import ErrorBoundary from "./ErrorBoundary";
+import { LoadingState } from "./components/ui";
 
-import QueryEditor from "./pages/QueryEditor";
-import SavedQueries from "./pages/SavedQueries";
-import SchemaExplorer from "./pages/SchemaExplorer";
+import Dashboard from "./pages/Dashboard";
+import CatalogExplorer from "./pages/CatalogExplorer";
+import SecurityAudit from "./pages/SecurityAudit";
+import CodeInsight from "./pages/CodeInsight";
 import ConfigViewer from "./pages/ConfigViewer";
-import DatabasesInfo from "./pages/DatabasesInfo";
-import ApiDocs from "./pages/ApiDocs";
 
-import "./theme-scifi.css";
+const QueryEditor = lazy(() => import("./pages/QueryEditor"));
+const ApiDocs = lazy(() => import("./pages/ApiDocs"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,14 +30,20 @@ const App = () => {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter basename="/">
           <Layout>
-            <Routes>
-              <Route path="/" element={<QueryEditor />} />
-              <Route path="/queries" element={<SavedQueries />} />
-              <Route path="/schema" element={<SchemaExplorer />} />
-              <Route path="/config" element={<ConfigViewer />} />
-              <Route path="/databases" element={<DatabasesInfo />} />
-              <Route path="/api-docs" element={<ApiDocs />} />
-            </Routes>
+            <Suspense fallback={<LoadingState label="Loading view" />}>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/workbench" element={<QueryEditor />} />
+                <Route path="/catalog" element={<CatalogExplorer />} />
+                <Route path="/schema" element={<Navigate to="/catalog" replace />} />
+                <Route path="/queries" element={<Navigate to="/catalog" replace />} />
+                <Route path="/security" element={<SecurityAudit />} />
+                <Route path="/code" element={<CodeInsight />} />
+                <Route path="/config" element={<ConfigViewer />} />
+                <Route path="/databases" element={<Navigate to="/" replace />} />
+                <Route path="/api-docs" element={<ApiDocs />} />
+              </Routes>
+            </Suspense>
           </Layout>
         </BrowserRouter>
       </QueryClientProvider>

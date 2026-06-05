@@ -22,6 +22,7 @@ const (
 	runtimeRootTable = "gj_runtime"
 
 	runtimeKindStatus = "status"
+	runtimeKindSource = "source"
 	runtimeKindEvent  = "event"
 
 	runtimeStatusReady    = "ready"
@@ -175,7 +176,7 @@ func (s *graphjinService) initRuntimeObservability() error {
 				NextAction: "Query gj_runtime before workflow, config, or schema actions when system state matters.",
 				Details:    map[string]any{"store": "redis", "scope": opts.Scope},
 				SuggestedNext: []string{
-					`query { gj_runtime(where: { kind: { in: ["status", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind status severity summary next_action details_json } }`,
+					`query { gj_runtime(where: { kind: { in: ["status", "source", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind source source_kind status severity summary next_action details_json } }`,
 				},
 			})
 			return nil
@@ -269,7 +270,7 @@ func (s *graphjinService) runtimeCurrentStatus() runtimeStatus {
 		SourceKind:     sourcecap.KindGraphJin,
 		ActiveDatabase: activeDatabase,
 		SuggestedNext: []string{
-			`query { gj_runtime(where: { kind: { eq: "event" } }, order_by: { created_at: desc }, limit: 20) { created_at phase status severity summary next_action details_json } }`,
+			`query { gj_runtime(where: { kind: { in: ["source", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind source created_at phase status severity summary next_action details_json } }`,
 		},
 	}
 	if s == nil || s.conf == nil {
@@ -361,10 +362,281 @@ func (h runtimeQueryHandler) ExecuteManagedQuery(ctx context.Context, req core.M
 			continue
 		}
 		rows := h.service.runtimeEvents.Rows(ctx, current)
+		rows = append(rows, h.service.runtimeSourceRows(ctx, current)...)
 		rows = applyManagedQuery(rows, root)
 		out[root.FieldName] = filterRows(rows, root.Fields)
 	}
 	return json.Marshal(out)
+}
+
+func (s *graphjinService) runtimeSourceRows(ctx context.Context, current runtimeStatus) []map[string]any {
+	if s == nil || s.conf == nil {
+		return nil
+	}
+	now := time.Now()
+	store := ""
+	nodeID := ""
+	if s.runtimeEvents != nil {
+		store = s.runtimeEvents.Name()
+		nodeID = s.runtimeEvents.NodeID()
+	}
+	statsByName := make(map[string]core.DatabaseStats)
+	if s.gj != nil {
+		for _, stat := range s.gj.GetAllDatabaseStats() {
+			if strings.TrimSpace(stat.Name) != "" {
+				statsByName[stat.Name] = stat
+			}
+		}
+	}
+
+	seen := make(map[string]struct{})
+	rows := make([]map[string]any, 0, len(s.conf.Core.Sources)+len(statsByName)+len(s.managedDBs))
+	if s.conf.Core.IsSourcesUsed() {
+		for _, source := range s.conf.Core.Sources {
+			name := runtimeSourceName(source)
+			if name == "" {
+				continue
+			}
+			seen[name] = struct{}{}
+			rows = append(rows, s.runtimeSourceEvent(ctx, source, statsByName[name], current, now, nodeID, store).row())
+		}
+	} else {
+		for _, stat := range sortedRuntimeDatabaseStats(statsByName) {
+			source := core.SourceConfig{Name: stat.Name, Kind: sourcecap.KindDatabase, Type: stat.Type, ReadOnly: stat.ReadOnly}
+			seen[stat.Name] = struct{}{}
+			rows = append(rows, s.runtimeSourceEvent(ctx, source, stat, current, now, nodeID, store).row())
+		}
+	}
+	for name, managed := range s.managedDBs {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		source := core.SourceConfig{Name: name, Kind: sourcecap.KindCode, Type: dbTypeCodeSQL, ReadOnly: managed.readOnly}
+		rows = append(rows, s.runtimeSourceEvent(ctx, source, statsByName[name], current, now, nodeID, store).row())
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		return fmt.Sprint(rows[i]["source"]) < fmt.Sprint(rows[j]["source"])
+	})
+	return rows
+}
+
+func sortedRuntimeDatabaseStats(stats map[string]core.DatabaseStats) []core.DatabaseStats {
+	out := make([]core.DatabaseStats, 0, len(stats))
+	for _, stat := range stats {
+		out = append(out, stat)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+func (s *graphjinService) runtimeSourceEvent(ctx context.Context, source core.SourceConfig, stat core.DatabaseStats, current runtimeStatus, now time.Time, nodeID, store string) runtimeEvent {
+	kind := runtimeSourceKind(source)
+	name := runtimeSourceName(source)
+	event := runtimeEvent{
+		ID:              "source:" + cleanRuntimeKeyPart(nodeID) + ":" + cleanRuntimeKeyPart(name),
+		Kind:            runtimeKindSource,
+		CreatedAt:       now,
+		NodeID:          nodeID,
+		Mode:            current.Mode,
+		Store:           store,
+		Phase:           "source",
+		Status:          runtimeStatusReady,
+		Severity:        "info",
+		Source:          name,
+		SourceKind:      kind,
+		DatabaseName:    name,
+		ActiveDatabase:  current.ActiveDatabase,
+		SchemaReady:     current.SchemaReady,
+		TableCount:      stat.TableCount,
+		CatalogRevision: current.CatalogRevision,
+		Details: map[string]any{
+			"configured": true,
+			"default":    source.Default,
+			"read_only":  source.ReadOnly || stat.ReadOnly,
+		},
+	}
+	if event.Mode == "" && s != nil && s.conf != nil {
+		event.Mode = effectiveMode(s.conf)
+	}
+	if stat.Type != "" {
+		event.Details["database_type"] = stat.Type
+	}
+	if stat.Pool != nil {
+		event.Details["pool"] = stat.Pool
+	}
+	if caps := s.runtimeSourceCapabilityDetails(source, kind); len(caps) != 0 {
+		event.Details["capabilities"] = caps
+	}
+
+	switch kind {
+	case sourcecap.KindDatabase:
+		s.applyRuntimeDatabaseSourceHealth(ctx, &event, source, stat)
+	case sourcecap.KindCode:
+		s.applyRuntimeCodeSourceHealth(&event, source)
+	case sourcecap.KindGraphJin:
+		event.DatabaseName = s.metadataDB
+		event.Summary = fmt.Sprintf("GraphJin system source %q is configured.", name)
+		event.NextAction = "Use gj_catalog for discovery and query gj_runtime in a separate request before guarded runtime-sensitive actions."
+		event.Details["catalog_enabled"] = s.conf.catalogToolsEnabled()
+		event.Details["metadata_enabled"] = s.conf.Core.MetadataEnabled()
+		event.Details["control_plane_enabled"] = s.conf.graphjinControlPlaneEnabled()
+	case sourcecap.KindWorkflow:
+		event.Summary = fmt.Sprintf("Workflow source %q is configured.", name)
+		event.NextAction = "Use gj_catalog to inspect approved workflows, then execute through gj_workflow_execution when permitted."
+		event.Details["runtime"] = source.Runtime
+		event.Details["workflows_enabled"] = s.conf.workflowsSourceEnabled()
+	case sourcecap.KindFile:
+		event.Summary = fmt.Sprintf("File source %q is configured.", name)
+		event.NextAction = "Use gj_catalog and gj_security before file-source reads or mutations."
+		event.Details["backend"] = source.Backend
+		event.Details["prefix_configured"] = strings.TrimSpace(source.Prefix) != ""
+	case sourcecap.KindAPI:
+		event.Summary = fmt.Sprintf("API source %q is configured.", name)
+		event.NextAction = "Use gj_catalog and gj_security before API-source calls."
+		event.Details["specs_configured"] = len(source.Specs) != 0 || strings.TrimSpace(source.SpecsDir) != ""
+	default:
+		event.Status = runtimeStatusDegraded
+		event.Severity = "warn"
+		event.Summary = fmt.Sprintf("Source %q has an unsupported or missing kind.", name)
+		event.NextAction = "Fix sources[].kind so GraphJin can classify the source correctly."
+		event.ErrorCode = "source_kind_unknown"
+	}
+	if event.Summary == "" {
+		event.Summary = fmt.Sprintf("Source %q is ready.", name)
+	}
+	if event.NextAction == "" {
+		event.NextAction = "Continue with catalog-guided queries; check gj_security before writes."
+	}
+	return event
+}
+
+func (s *graphjinService) applyRuntimeDatabaseSourceHealth(ctx context.Context, event *runtimeEvent, source core.SourceConfig, stat core.DatabaseStats) {
+	if event == nil {
+		return
+	}
+	name := runtimeSourceName(source)
+	dbType := strings.TrimSpace(source.Type)
+	if stat.Type != "" {
+		dbType = stat.Type
+	}
+	event.Details["database_type"] = dbType
+	event.Summary = fmt.Sprintf("Database source %q is ready.", name)
+	event.NextAction = "Use gj_catalog for schema discovery before querying this source."
+	if s == nil || s.gj == nil {
+		event.Status = runtimeStatusDegraded
+		event.Severity = "warn"
+		event.Summary = fmt.Sprintf("Database source %q is configured but GraphJin core is not initialized.", name)
+		event.NextAction = "Inspect runtime events and database configuration before querying this source."
+		event.ErrorCode = "core_not_initialized"
+		return
+	}
+	db, liveType, err := s.gj.DBForDatabase(name)
+	if liveType != "" {
+		event.Details["database_type"] = liveType
+	}
+	if err != nil {
+		event.Status = runtimeStatusFailed
+		event.Severity = "error"
+		event.Summary = fmt.Sprintf("Database source %q is not reachable.", name)
+		event.NextAction = "Fix database connectivity or reload configuration before querying this source."
+		event.ErrorCode = "database_unavailable"
+		event.Details["error"] = err.Error()
+		return
+	}
+	timeout := source.PingTimeout
+	if timeout <= 0 || timeout > 250*time.Millisecond {
+		timeout = 250 * time.Millisecond
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	start := time.Now()
+	err = db.PingContext(pingCtx)
+	event.DurationMS = time.Since(start).Milliseconds()
+	if err != nil {
+		event.Status = runtimeStatusFailed
+		event.Severity = "error"
+		event.Summary = fmt.Sprintf("Database source %q ping failed.", name)
+		event.NextAction = "Check database credentials, network access, and pool health before querying this source."
+		event.ErrorCode = "database_ping_failed"
+		event.Details["error"] = err.Error()
+		return
+	}
+	event.Details["ping_ms"] = event.DurationMS
+}
+
+func (s *graphjinService) applyRuntimeCodeSourceHealth(event *runtimeEvent, source core.SourceConfig) {
+	if event == nil {
+		return
+	}
+	name := runtimeSourceName(source)
+	event.DatabaseName = name
+	event.Summary = fmt.Sprintf("Code source %q is indexed for read-only insight.", name)
+	event.NextAction = "Query gj_code for files, symbols, and context; source edits are intentionally not exposed by the Web UI."
+	managed, ok := s.managedDBs[name]
+	event.Details["managed"] = ok && managed.handle != nil
+	event.Details["watch"] = ok && managed.watch
+	event.Details["read_only"] = source.ReadOnly || managed.readOnly
+	event.Details["database_type"] = dbTypeCodeSQL
+	if !ok || managed.handle == nil {
+		event.Status = runtimeStatusDegraded
+		event.Severity = "warn"
+		event.Summary = fmt.Sprintf("Code source %q is configured but not indexed yet.", name)
+		event.NextAction = "Inspect CodeSQL initialization events before relying on gj_code results."
+		event.ErrorCode = "codesql_not_indexed"
+	}
+}
+
+func (s *graphjinService) runtimeSourceCapabilityDetails(source core.SourceConfig, kind string) map[string]any {
+	if s == nil || s.conf == nil || kind == "" {
+		return nil
+	}
+	keys := sourceCapabilityKeys(kind)
+	if len(keys) == 0 {
+		return nil
+	}
+	enabled := make([]string, 0, len(keys))
+	overrides := make(map[string]bool)
+	for _, key := range keys {
+		value, explicit := s.conf.sourceCapabilityForSource(source, key)
+		if value {
+			enabled = append(enabled, key)
+		}
+		if explicit {
+			overrides[key] = value
+		}
+	}
+	return map[string]any{
+		"enabled":   enabled,
+		"overrides": overrides,
+	}
+}
+
+func runtimeSourceKind(source core.SourceConfig) string {
+	if kind := source.CanonicalKind(); kind != "" {
+		return kind
+	}
+	if isCodeSQLType(source.Type) {
+		return sourcecap.KindCode
+	}
+	if strings.TrimSpace(source.Type) != "" || strings.TrimSpace(source.DBName) != "" || strings.TrimSpace(source.ConnString) != "" {
+		return sourcecap.KindDatabase
+	}
+	return ""
+}
+
+func runtimeSourceName(source core.SourceConfig) string {
+	if name := strings.TrimSpace(source.Name); name != "" {
+		return name
+	}
+	if source.Default {
+		return core.DefaultDBName
+	}
+	return strings.TrimSpace(source.Kind)
 }
 
 func (s *graphjinService) runtimeRootQueryAuthorized(ctx context.Context) bool {
