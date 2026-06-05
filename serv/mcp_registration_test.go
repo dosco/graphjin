@@ -88,6 +88,41 @@ func promptNamesFromServer(t *testing.T, srv *server.MCPServer) map[string]bool 
 	return names
 }
 
+func toolsFromServer(t *testing.T, srv *server.MCPServer, ctx context.Context) map[string]mcp.Tool {
+	t.Helper()
+
+	c, err := client.NewInProcessClient(srv)
+	if err != nil {
+		t.Fatalf("new in-process client: %v", err)
+	}
+	defer c.Close()
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("start in-process client: %v", err)
+	}
+
+	initReq := mcp.InitializeRequest{}
+	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+	initReq.Params.ClientInfo = mcp.Implementation{Name: "test-client", Version: "1.0.0"}
+	if _, err := c.Initialize(ctx, initReq); err != nil {
+		t.Fatalf("initialize in-process client: %v", err)
+	}
+
+	result, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+
+	tools := make(map[string]mcp.Tool, len(result.Tools))
+	for _, tool := range result.Tools {
+		tools[tool.Name] = tool
+	}
+	return tools
+}
+
 func TestRegisterConfigTools_GetCurrentConfigDevOnly(t *testing.T) {
 	t.Run("registered in development mode", func(t *testing.T) {
 		ms := mockMcpServerWithConfig(MCPConfig{})
@@ -425,6 +460,219 @@ func TestHandleQueryCatalog_SearchWhereOrderExplain(t *testing.T) {
 	}
 }
 
+func TestHandleQueryCatalog_ConfigRecipeNextGuidance(t *testing.T) {
+	ms := workflowCatalogTestServer(t, MCPConfig{}, nil)
+
+	res, err := ms.handleQueryCatalog(sourceModeUserTestContext(), newToolRequest(map[string]any{
+		"search":  "add role from jwt",
+		"limit":   5,
+		"explain": true,
+	}))
+	if err != nil {
+		t.Fatalf("handle query_catalog config recipe search: %v", err)
+	}
+	var out CatalogQueryResult
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
+		t.Fatalf("decode query_catalog response: %v", err)
+	}
+	if len(out.Cards) == 0 || out.Cards[0].ID != "recipe.config.add_role" || out.Cards[0].Kind != "config_recipe" {
+		t.Fatalf("expected add-role recipe first, got %+v", out.Cards)
+	}
+	if out.CapabilityProfile == nil {
+		t.Fatal("expected config recipe search to include caller capability_profile")
+	}
+	if !stringSliceContains(out.CapabilityProfile.AvailableTools, "query_catalog") {
+		t.Fatalf("expected query_catalog in available tools: %+v", out.CapabilityProfile.AvailableTools)
+	}
+	if !rootProfilesContain(out.CapabilityProfile.BlockedRoots, "gj_config") {
+		t.Fatalf("expected non-admin config recipe search to mark gj_config unavailable: %+v", out.CapabilityProfile.BlockedRoots)
+	}
+	if out.Next == nil || out.Next.RecommendedTool != "query_catalog" || len(out.Next.Options) == 0 {
+		t.Fatalf("expected query_catalog next guidance, got %+v", out.Next)
+	}
+	if got, _ := out.Next.Options[0].ArgsTemplate["id"].(string); got != "recipe.config.add_role" {
+		t.Fatalf("expected next guidance to inspect recipe id, got %+v", out.Next.Options[0].ArgsTemplate)
+	}
+	for _, opt := range out.Next.Options {
+		if opt.Tool == "validate_where_clause" {
+			t.Fatalf("config recipe search should not recommend validate_where_clause: %+v", out.Next.Options)
+		}
+	}
+
+	detailRes, err := ms.handleQueryCatalog(sourceModeUserTestContext(), newToolRequest(map[string]any{
+		"id": "recipe.config.add_role",
+	}))
+	if err != nil {
+		t.Fatalf("handle query_catalog config recipe detail: %v", err)
+	}
+	var detailOut CatalogQueryResult
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, detailRes)), &detailOut); err != nil {
+		t.Fatalf("decode recipe detail response: %v", err)
+	}
+	if detailOut.Next == nil || detailOut.Next.StateCode != "config_recipe_detail" {
+		t.Fatalf("expected recipe detail next guidance, got %+v", detailOut.Next)
+	}
+	for _, opt := range detailOut.Next.Options {
+		if opt.Tool == "validate_where_clause" {
+			t.Fatalf("config recipe detail should not recommend validate_where_clause: %+v", detailOut.Next.Options)
+		}
+	}
+}
+
+func TestMCPEffectiveContextMergesStoredAndPerCallIdentity(t *testing.T) {
+	stored := context.WithValue(context.Background(), core.UserIDKey, "stdio-user")
+	stored = context.WithValue(stored, core.UserRoleKey, "stdio-role")
+	stored = context.WithValue(stored, core.IdentityVarsKey, map[string]interface{}{"account_id": "stdio-account"})
+	ms := &mcpServer{ctx: stored}
+
+	merged := ms.effectiveContext(context.Background())
+	if got := merged.Value(core.UserIDKey); got != "stdio-user" {
+		t.Fatalf("expected stored user_id, got %v", got)
+	}
+	if got := merged.Value(core.UserRoleKey); got != "stdio-role" {
+		t.Fatalf("expected stored role, got %v", got)
+	}
+
+	perCall := context.WithValue(context.Background(), core.UserIDKey, "http-user")
+	perCall = context.WithValue(perCall, core.IdentityVarsKey, map[string]interface{}{"account_id": "http-account"})
+	merged = ms.effectiveContext(perCall)
+	if got := merged.Value(core.UserIDKey); got != "http-user" {
+		t.Fatalf("per-call user_id should win, got %v", got)
+	}
+	vars, _ := merged.Value(core.IdentityVarsKey).(map[string]interface{})
+	if got := vars["account_id"]; got != "http-account" {
+		t.Fatalf("per-call identity vars should win, got %v", vars)
+	}
+	if got := merged.Value(core.UserRoleKey); got != "stdio-role" {
+		t.Fatalf("missing per-call role should be filled from stored context, got %v", got)
+	}
+}
+
+func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true})
+
+	userProfile := ms.callerCapabilityProfile(sourceModeUserTestContext(), false)
+	if !userProfile.Authenticated || userProfile.RoleClass != "user" {
+		t.Fatalf("expected authenticated user profile, got %+v", userProfile)
+	}
+	if !stringSliceContains(userProfile.AvailableTools, "query_catalog") || !stringSliceContains(userProfile.AvailableTools, "execute_graphql") {
+		t.Fatalf("expected user-visible catalog/raw tools, got %+v", userProfile.AvailableTools)
+	}
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_workflow_execution"} {
+		if !rootProfilesContain(userProfile.AvailableRoots, root) {
+			t.Fatalf("expected %s available to user, got %+v", root, userProfile.AvailableRoots)
+		}
+	}
+	for _, root := range []string{"gj_security", "gj_runtime", "gj_config", "gj_workflow"} {
+		if !rootProfilesContain(userProfile.BlockedRoots, root) {
+			t.Fatalf("expected %s blocked for user, got %+v", root, userProfile.BlockedRoots)
+		}
+	}
+	data, err := json.Marshal(userProfile)
+	if err != nil {
+		t.Fatalf("marshal profile: %v", err)
+	}
+	for _, forbidden := range []string{"app-user", "app-account", "Bearer"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("capability profile leaked %q: %s", forbidden, data)
+		}
+	}
+
+	adminProfile := ms.callerCapabilityProfile(sourceModeAdminTestContext(), false)
+	for _, root := range []string{"gj_security", "gj_runtime", "gj_config", "gj_workflow"} {
+		if !rootProfilesContain(adminProfile.AvailableRoots, root) {
+			t.Fatalf("expected %s available to admin, got %+v", root, adminProfile.AvailableRoots)
+		}
+	}
+}
+
+func TestMCPToolFilterAndMetadataAreCallerAware(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true, AllowConfigUpdates: true})
+	queryCatalogTool := mcp.NewTool("query_catalog")
+	queryCatalogTool.Meta = mcp.NewMetaFromMap(map[string]any{"cached": true, "progressToken": "cached-token"})
+	tools := []mcp.Tool{
+		mcp.NewTool("graphql_help"),
+		queryCatalogTool,
+		mcp.NewTool("execute_saved_query"),
+		mcp.NewTool("update_current_config"),
+	}
+
+	anon := ms.applyCallerToolMetadata(context.Background(), tools)
+	if toolListContains(anon, "query_catalog") || toolListContains(anon, "graphql_help") {
+		t.Fatalf("anonymous caller should not see catalog tools when gj_catalog is authenticated-only: %+v", toolNamesFromToolList(anon))
+	}
+	if !toolListContains(anon, "execute_saved_query") {
+		t.Fatalf("anonymous caller should still see non-root execution tools: %+v", toolNamesFromToolList(anon))
+	}
+
+	user := ms.applyCallerToolMetadata(sourceModeUserTestContext(), tools)
+	queryTool, ok := findMCPTool(user, "query_catalog")
+	if !ok {
+		t.Fatalf("authenticated user should see query_catalog: %+v", toolNamesFromToolList(user))
+	}
+	if toolListContains(user, "update_current_config") {
+		t.Fatalf("non-admin user should not see gj_config update tool: %+v", toolNamesFromToolList(user))
+	}
+	graphjinMeta, ok := queryTool.Meta.AdditionalFields["graphjin"].(map[string]any)
+	if !ok || graphjinMeta["category"] != "discovery" {
+		t.Fatalf("query_catalog should include graphjin discovery meta, got %+v", queryTool.Meta)
+	}
+	if queryTool.Meta.AdditionalFields["cached"] != true || queryTool.Meta.ProgressToken != "cached-token" {
+		t.Fatalf("tool filter should preserve existing _meta fields, got %+v", queryTool.Meta)
+	}
+	if queryTool.Annotations.ReadOnlyHint == nil || !*queryTool.Annotations.ReadOnlyHint ||
+		queryTool.Annotations.DestructiveHint == nil || *queryTool.Annotations.DestructiveHint {
+		t.Fatalf("query_catalog should be annotated read-only/non-destructive, got %+v", queryTool.Annotations)
+	}
+
+	admin := ms.applyCallerToolMetadata(sourceModeAdminTestContext(), tools)
+	configTool, ok := findMCPTool(admin, "update_current_config")
+	if !ok {
+		t.Fatalf("admin should see update_current_config: %+v", toolNamesFromToolList(admin))
+	}
+	configMeta, ok := configTool.Meta.AdditionalFields["graphjin"].(map[string]any)
+	if !ok || configMeta["config_preview_required"] != true {
+		t.Fatalf("update_current_config should advertise preview requirement, got %+v", configTool.Meta)
+	}
+	if configTool.Annotations.DestructiveHint == nil || !*configTool.Annotations.DestructiveHint {
+		t.Fatalf("update_current_config should be annotated destructive, got %+v", configTool.Annotations)
+	}
+}
+
+func TestMCPToolsListUsesCallerFilterAndMetadata(t *testing.T) {
+	anonSvc := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true}).service
+	anonMS := anonSvc.newMCPServerWithContext(context.Background())
+	anonTools := toolsFromServer(t, anonMS.srv, context.Background())
+	if _, ok := anonTools["query_catalog"]; ok {
+		t.Fatalf("anonymous tools/list should hide query_catalog: %+v", toolNamesFromToolMap(anonTools))
+	}
+	if _, ok := anonTools["graphql_help"]; ok {
+		t.Fatalf("anonymous tools/list should hide graphql_help: %+v", toolNamesFromToolMap(anonTools))
+	}
+	if _, ok := anonTools["execute_saved_query"]; !ok {
+		t.Fatalf("anonymous tools/list should keep non-root execution tools: %+v", toolNamesFromToolMap(anonTools))
+	}
+
+	userCtx := sourceModeUserTestContext()
+	userSvc := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true}).service
+	userMS := userSvc.newMCPServerWithContext(userCtx)
+	userTools := toolsFromServer(t, userMS.srv, userCtx)
+	queryTool, ok := userTools["query_catalog"]
+	if !ok {
+		t.Fatalf("authenticated tools/list should include query_catalog: %+v", toolNamesFromToolMap(userTools))
+	}
+	if queryTool.Meta == nil {
+		t.Fatalf("query_catalog should include _meta.graphjin")
+	}
+	graphjinMeta, ok := queryTool.Meta.AdditionalFields["graphjin"].(map[string]any)
+	if !ok || graphjinMeta["category"] != "discovery" {
+		t.Fatalf("query_catalog should include graphjin discovery meta, got %+v", queryTool.Meta)
+	}
+	if queryTool.Annotations.ReadOnlyHint == nil || !*queryTool.Annotations.ReadOnlyHint {
+		t.Fatalf("query_catalog should be read-only in tools/list, got %+v", queryTool.Annotations)
+	}
+}
+
 // TestHandleQueryCatalog_TruncationAndOffset guards against silent truncation:
 // a full page must report truncated + echo limit/offset, and offset must page to
 // the next item so callers can reach every table rather than miss the tail.
@@ -524,7 +772,7 @@ func TestMCPServerInstructions_CatalogDefaultDoesNotRecommendLegacyTools(t *test
 	for _, required := range []string{
 		`graphql_help(for: "discovery")`,
 		`graphql_help(for: "mcp_tools")`,
-		`graphql_help -> query_catalog/query_catalog(id) -> validate_where_clause -> execute_saved_query`,
+		`query_catalog(search: "<user instruction>") -> query_catalog(id) -> validate_where_clause -> execute_saved_query`,
 		"Topic routing",
 		"graphql_query",
 		"query_catalog",
@@ -581,6 +829,7 @@ func TestSourcesUsedBootstrapToolDescriptions(t *testing.T) {
 		}
 	}
 	for _, required := range []string{
+		`query_catalog(search: "<user instruction>")`,
 		"Replaces legacy MCP discovery",
 		"get_query_syntax",
 		"get_catalog_card",
@@ -594,6 +843,9 @@ func TestSourcesUsedBootstrapToolDescriptions(t *testing.T) {
 
 	catalogDesc := tools["query_catalog"].Tool.Description
 	for _, required := range []string{
+		`query_catalog(search: "<user instruction>")`,
+		"config_recipe",
+		`query_catalog(search: "add role from jwt")`,
 		`query_catalog(id: "help:query")`,
 		`query_catalog(id: "help:schema")`,
 		`query_catalog(where: { kind: { eq: "table" } })`,
@@ -616,6 +868,7 @@ func TestMCPServerInstructions_SourcesUsedIgnoresLegacyDiscoveryPrompt(t *testin
 		Serv: Serv{MCP: MCPConfig{LegacyDiscovery: true}},
 	})
 	for _, required := range []string{
+		`query_catalog(search: "<user instruction>")`,
 		`graphql_help(for: "discovery")`,
 		"query_catalog(id)",
 	} {
@@ -707,4 +960,54 @@ func TestMCPToolListMatchesRegisteredTools(t *testing.T) {
 			}
 		})
 	}
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func rootProfilesContain(roots []MCPRootProfile, want string) bool {
+	for _, root := range roots {
+		if root.Root == want {
+			return true
+		}
+	}
+	return false
+}
+
+func toolListContains(tools []mcp.Tool, want string) bool {
+	_, ok := findMCPTool(tools, want)
+	return ok
+}
+
+func findMCPTool(tools []mcp.Tool, want string) (mcp.Tool, bool) {
+	for _, tool := range tools {
+		if tool.Name == want {
+			return tool, true
+		}
+	}
+	return mcp.Tool{}, false
+}
+
+func toolNamesFromToolList(tools []mcp.Tool) []string {
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func toolNamesFromToolMap(tools map[string]mcp.Tool) []string {
+	names := make([]string, 0, len(tools))
+	for name := range tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

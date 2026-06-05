@@ -229,32 +229,19 @@ func TestGraphQLConfigUpdatePatchesCatalogRowsForChangedSource(t *testing.T) {
 		t.Fatalf("seed catalog rows: %v", err)
 	}
 
-	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
-		gj_config(id: "current", update: {
-			sources: [{
-				name: "main",
-				kind: "database",
-				type: "sqlite",
-				path: %q,
-				default: true
-			}, {
-				name: "graphjin",
-				kind: "graphjin"
-			}, {
-				name: "workflows",
-				kind: "workflow"
-			}]
-		}) {
-			id
-			catalog_revision
-		}
-	}`, replacementPath), nil, &core.RequestConfig{})
-	if err != nil {
-		t.Fatalf("config update error: %v", err)
-	}
-	if len(res.Errors) != 0 {
-		t.Fatalf("config update returned errors: %+v", res.Errors)
-	}
+	_ = applyControlPlaneConfigUpdate(t, svc, fmt.Sprintf(`sources: [{
+		name: "main",
+		kind: "database",
+		type: "sqlite",
+		path: %q,
+		default: true
+	}, {
+		name: "graphjin",
+		kind: "graphjin"
+	}, {
+		name: "workflows",
+		kind: "workflow"
+	}]`, replacementPath), "id catalog_revision")
 
 	rows, ok := svc.systemNanoDB.Snapshot().Rows("main", "gj_catalog")
 	if !ok {
@@ -1375,6 +1362,49 @@ func TestGraphQLControlPlaneCatalogRuntimeGuidance(t *testing.T) {
 	}
 }
 
+func TestGraphQLControlPlaneCatalogConfigRecipeSearch(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "recipe-search.sqlite3", true))
+
+	tests := []struct {
+		search string
+		want   string
+	}{
+		{search: "add role from jwt", want: "recipe.config.add_role"},
+		{search: "make audit_logs admin only", want: "recipe.config.table_classifications"},
+		{search: "roles tables filters presets", want: "recipe.config.migrate_legacy_roles_tables"},
+	}
+	for _, tt := range tests {
+		res, err := svc.gj.GraphQL(sourceModeUserTestContext(), fmt.Sprintf(`query {
+			gj_catalog(search: %q, order_by: { search_rank: desc }, limit: 3) {
+				id
+				kind
+				summary
+				safety_json
+			}
+		}`, tt.search), nil, &core.RequestConfig{})
+		if err != nil {
+			t.Fatalf("catalog recipe search %q error: %v", tt.search, err)
+		}
+		var out struct {
+			Items []struct {
+				ID         string `json:"id"`
+				Kind       string `json:"kind"`
+				Summary    string `json:"summary"`
+				SafetyJSON string `json:"safety_json"`
+			} `json:"gj_catalog"`
+		}
+		if err := json.Unmarshal(res.Data, &out); err != nil {
+			t.Fatalf("decode catalog recipe search %q: %v\n%s", tt.search, err, string(res.Data))
+		}
+		if len(out.Items) == 0 || out.Items[0].ID != tt.want || out.Items[0].Kind != "config_recipe" {
+			t.Fatalf("search %q ranked %+v first, want %s", tt.search, out.Items, tt.want)
+		}
+		if !strings.Contains(out.Items[0].SafetyJSON, "preflight") || !strings.Contains(out.Items[0].SafetyJSON, "forbidden_patterns") {
+			t.Fatalf("recipe search result missing state machine safety: %+v", out.Items[0])
+		}
+	}
+}
+
 func TestSecurityNanoRowsModes(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
@@ -1685,33 +1715,74 @@ func TestGraphQLControlPlaneRemovesLegacyConfigRoots(t *testing.T) {
 func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "app.sqlite3", true))
 
-	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
+	revision := controlPlaneConfigRevision(t, svc)
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
 		gj_config(id: "current", update: {
+			mode: "preview",
+			expected_catalog_revision: %q,
 			mcp: { allow_raw_queries: true, allow_workflow_execution: true }
 		}) {
-			id
-			mcp
-			catalog_revision
+			valid
+			preview_id
+			expires_at
+			change_summary_json
+			errors_json
 		}
-	}`, nil, &core.RequestConfig{})
+	}`, revision), nil, &core.RequestConfig{})
 	if err != nil {
-		t.Fatalf("config update error: %v", err)
+		t.Fatalf("config preview error: %v", err)
 	}
 	if len(res.Errors) != 0 {
-		t.Fatalf("config update returned errors: %+v", res.Errors)
+		t.Fatalf("config preview returned errors: %+v", res.Errors)
+	}
+	var preview struct {
+		Config struct {
+			Valid     bool   `json:"valid"`
+			PreviewID string `json:"preview_id"`
+			ExpiresAt string `json:"expires_at"`
+		} `json:"gj_config"`
+	}
+	if err := json.Unmarshal(res.Data, &preview); err != nil {
+		t.Fatalf("decode config preview: %v\n%s", err, string(res.Data))
+	}
+	if !preview.Config.Valid || preview.Config.PreviewID == "" || preview.Config.ExpiresAt == "" {
+		t.Fatalf("unexpected config preview response: %+v", preview.Config)
+	}
+	if svc.conf.MCP.AllowRawQueries || svc.conf.MCP.AllowWorkflowExecution {
+		t.Fatal("expected preview to leave live mcp settings unchanged")
+	}
+
+	res, err = svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "apply",
+			preview_id: %q,
+			expected_catalog_revision: %q,
+			mcp: { allow_raw_queries: true, allow_workflow_execution: true }
+		}) {
+			applied
+			mcp
+			catalog_revision
+			errors_json
+		}
+	}`, preview.Config.PreviewID, revision), nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("config apply error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("config apply returned errors: %+v", res.Errors)
 	}
 	var patched struct {
 		Config struct {
-			ID              string         `json:"id"`
+			Applied         bool           `json:"applied"`
 			MCP             map[string]any `json:"mcp"`
 			CatalogRevision string         `json:"catalog_revision"`
 		} `json:"gj_config"`
 	}
 	if err := json.Unmarshal(res.Data, &patched); err != nil {
-		t.Fatalf("decode config update: %v\n%s", err, string(res.Data))
+		t.Fatalf("decode config apply: %v\n%s", err, string(res.Data))
 	}
-	if patched.Config.ID != "current" || patched.Config.CatalogRevision == "" {
-		t.Fatalf("unexpected config update response: %+v", patched.Config)
+	if !patched.Config.Applied || patched.Config.CatalogRevision == "" {
+		t.Fatalf("unexpected config apply response: %+v", patched.Config)
 	}
 	if got, _ := patched.Config.MCP["allow_raw_queries"].(bool); !got {
 		t.Fatalf("expected returned mcp.allow_raw_queries=true, got %+v", patched.Config.MCP)
@@ -1726,13 +1797,16 @@ func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 		t.Fatal("expected config update to update mcp.allow_workflow_execution")
 	}
 
-	_, err = svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
+	revision = controlPlaneConfigRevision(t, svc)
+	_, err = svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
 		gj_config(id: "current", update: {
+			mode: "preview",
+			expected_catalog_revision: %q,
 			mcp: { unsupported_flag: true }
 		}) {
 			id
 		}
-	}`, nil, &core.RequestConfig{})
+	}`, revision), nil, &core.RequestConfig{})
 	if err == nil || !strings.Contains(err.Error(), "unsupported mcp config key") {
 		t.Fatalf("expected unsupported mcp config key error, got %v", err)
 	}
@@ -1758,20 +1832,7 @@ func TestGraphQLConfigUpdateSourcesPatchPreservesSourcesAndRecordsCatalogEvent(t
 	oldGJ := svc.gj
 	oldMain := svc.dbs["main"]
 
-	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
-		gj_config(id: "current", update: {
-			update_sources: [{ name: "main", path: %q }]
-		}) {
-			id
-			catalog_revision
-		}
-	}`, replacementPath), nil, &core.RequestConfig{})
-	if err != nil {
-		t.Fatalf("source patch config update error: %v", err)
-	}
-	if len(res.Errors) != 0 {
-		t.Fatalf("source patch config update returned errors: %+v", res.Errors)
-	}
+	_ = applyControlPlaneConfigUpdate(t, svc, fmt.Sprintf(`update_sources: [{ name: "main", path: %q }]`, replacementPath), "id catalog_revision")
 
 	main, ok := svc.conf.Core.SourceByName("main")
 	if !ok {
@@ -1814,19 +1875,7 @@ func TestGraphQLConfigUpdateGlobalRecordsFullCatalogEvent(t *testing.T) {
 		allowAgenticGraphJinConfigWrite(conf)
 	})
 
-	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
-		gj_config(id: "current", update: {
-			blocklist: ["users.name"]
-		}) {
-			id
-		}
-	}`, nil, &core.RequestConfig{})
-	if err != nil {
-		t.Fatalf("global config update error: %v", err)
-	}
-	if len(res.Errors) != 0 {
-		t.Fatalf("global config update returned errors: %+v", res.Errors)
-	}
+	_ = applyControlPlaneConfigUpdate(t, svc, `blocklist: ["users.name"]`, "id")
 
 	details := latestRuntimeEventDetails(t, svc, "catalog", "refresh_mode", "full")
 	if details["reason"] != "config mutation" {
@@ -1842,19 +1891,7 @@ func TestGraphQLConfigRemoveSourcesPrunesOwnedCatalogRows(t *testing.T) {
 		t.Fatal("expected workflow-owned catalog rows before removing workflow source")
 	}
 
-	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
-		gj_config(id: "current", update: {
-			remove_sources: ["workflows"]
-		}) {
-			id
-		}
-	}`, nil, &core.RequestConfig{})
-	if err != nil {
-		t.Fatalf("remove source config update error: %v", err)
-	}
-	if len(res.Errors) != 0 {
-		t.Fatalf("remove source config update returned errors: %+v", res.Errors)
-	}
+	_ = applyControlPlaneConfigUpdate(t, svc, `remove_sources: ["workflows"]`, "id")
 	if _, ok := svc.conf.Core.SourceByName("workflows"); ok {
 		t.Fatal("expected workflows source to be removed")
 	}
@@ -1912,9 +1949,12 @@ func TestMCPReloadSchemaDatabaseUsesSourceScopedReload(t *testing.T) {
 
 func TestGraphQLControlPlaneConfigRejectsPlaintextSecretWithoutKeystoreKey(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "app.sqlite3", true))
+	revision := controlPlaneConfigRevision(t, svc)
 
-	_, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
+	_, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
 		gj_config(id: "current", update: {
+			mode: "preview",
+			expected_catalog_revision: %q,
 			sources: [{
 				name: "main",
 				kind: "database",
@@ -1924,10 +1964,440 @@ func TestGraphQLControlPlaneConfigRejectsPlaintextSecretWithoutKeystoreKey(t *te
 		}) {
 			id
 		}
-	}`, nil, &core.RequestConfig{})
+	}`, revision), nil, &core.RequestConfig{})
 	if err == nil || !strings.Contains(err.Error(), "secrets.keystore.key") {
 		t.Fatalf("expected missing keystore key error, got %v", err)
 	}
+}
+
+func TestGraphQLControlPlaneConfigSourcePatchPreviewApply(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "source-patch.sqlite3", true))
+
+	before, ok := findTestSource(svc, "main")
+	if !ok {
+		t.Fatal("expected main source")
+	}
+	revision := controlPlaneConfigRevision(t, svc)
+	patch := `source_patches: [{
+		name: "main",
+		access: {
+			read: "account",
+			write: "blocked",
+			delete: "blocked",
+			namespace_column: "account_id",
+			public_tables_add: ["countries"],
+			admin_tables_add: ["audit_logs"],
+			blocked_tables_add: ["internal_events"]
+		}
+	}]`
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "preview",
+			expected_catalog_revision: %q,
+			%s
+		}) {
+			valid
+			applied
+			preview_id
+			expires_at
+			change_summary_json
+			findings_json
+			errors_json
+		}
+	}`, revision, patch), nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("source patch preview error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("source patch preview returned errors: %+v", res.Errors)
+	}
+	var preview struct {
+		Config struct {
+			Valid     bool   `json:"valid"`
+			Applied   bool   `json:"applied"`
+			PreviewID string `json:"preview_id"`
+			ExpiresAt string `json:"expires_at"`
+		} `json:"gj_config"`
+	}
+	if err := json.Unmarshal(res.Data, &preview); err != nil {
+		t.Fatalf("decode source patch preview: %v\n%s", err, string(res.Data))
+	}
+	if !preview.Config.Valid || preview.Config.Applied || preview.Config.PreviewID == "" || preview.Config.ExpiresAt == "" {
+		t.Fatalf("unexpected source patch preview response: %+v", preview.Config)
+	}
+	if afterPreview, _ := findTestSource(svc, "main"); len(afterPreview.Access.PublicTables) != len(before.Access.PublicTables) {
+		t.Fatalf("preview mutated live source access: before=%+v after=%+v", before.Access, afterPreview.Access)
+	}
+
+	res, err = svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "apply",
+			preview_id: %q,
+			expected_catalog_revision: %q,
+			%s
+		}) {
+			applied
+			catalog_revision
+			sources
+			change_summary_json
+			errors_json
+		}
+	}`, preview.Config.PreviewID, revision, patch), nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("source patch apply error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("source patch apply returned errors: %+v", res.Errors)
+	}
+	var applied struct {
+		Config struct {
+			Applied         bool   `json:"applied"`
+			CatalogRevision string `json:"catalog_revision"`
+		} `json:"gj_config"`
+	}
+	if err := json.Unmarshal(res.Data, &applied); err != nil {
+		t.Fatalf("decode source patch apply: %v\n%s", err, string(res.Data))
+	}
+	if !applied.Config.Applied || applied.Config.CatalogRevision == "" {
+		t.Fatalf("unexpected source patch apply response: %+v", applied.Config)
+	}
+	main, ok := findTestSource(svc, "main")
+	if !ok {
+		t.Fatal("expected main source after apply")
+	}
+	if main.Path != before.Path || main.Kind != before.Kind || !main.Default {
+		t.Fatalf("source patch failed to preserve unrelated fields: before=%+v after=%+v", before, main)
+	}
+	if main.Access.Read != core.AccessModeAccount || main.Access.Write != core.AccessModeBlocked || main.Access.Delete != core.AccessModeBlocked || main.Access.NamespaceColumn != "account_id" {
+		t.Fatalf("unexpected source access after apply: %+v", main.Access)
+	}
+	if !testStringSliceContains(main.Access.PublicTables, "countries") || !testStringSliceContains(main.Access.AdminTables, "audit_logs") || !testStringSliceContains(main.Access.BlockedTables, "internal_events") {
+		t.Fatalf("expected table classifications after apply: %+v", main.Access)
+	}
+	if testStringSliceContains(main.Access.AdminTables, "countries") || testStringSliceContains(main.Access.BlockedTables, "countries") {
+		t.Fatalf("classification add should be exclusive across lists: %+v", main.Access)
+	}
+}
+
+func TestGraphQLControlPlaneConfigSourcePatchRejectsUnsafeInputs(t *testing.T) {
+	tests := []struct {
+		name    string
+		patch   string
+		wantErr string
+	}{
+		{
+			name: "public write",
+			patch: `source_patches: [{
+				name: "main",
+				access: { write: "public" }
+			}]`,
+			wantErr: "public write is not supported",
+		},
+		{
+			name: "invalid access mode",
+			patch: `source_patches: [{
+				name: "main",
+				access: { read: "tenantish" }
+			}]`,
+			wantErr: "unsupported access mode",
+		},
+		{
+			name: "duplicate source patch",
+			patch: `source_patches: [{
+				name: "main",
+				access: { read: "account" }
+			}, {
+				name: "main",
+				access: { write: "blocked" }
+			}]`,
+			wantErr: "duplicate source patch",
+		},
+		{
+			name: "roots on database",
+			patch: `source_patches: [{
+				name: "main",
+				access: { roots_set: { gj_security: "admin" } }
+			}]`,
+			wantErr: "kind: graphjin",
+		},
+		{
+			name: "missing source",
+			patch: `source_patches: [{
+				name: "missing",
+				access: { read: "account" }
+			}]`,
+			wantErr: "source \"missing\" is not configured",
+		},
+		{
+			name: "conflicting classification",
+			patch: `source_patches: [{
+				name: "main",
+				access: {
+					public_tables_add: ["audit_logs"],
+					admin_tables_add: ["audit_logs"]
+				}
+			}]`,
+			wantErr: "multiple classification add lists",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, tt.name+".sqlite3", true))
+			revision := controlPlaneConfigRevision(t, svc)
+			_, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+				gj_config(id: "current", update: {
+					mode: "preview",
+					expected_catalog_revision: %q,
+					%s
+				}) { valid preview_id errors_json }
+			}`, revision, tt.patch), nil, &core.RequestConfig{})
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected %q error, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestGraphQLControlPlaneConfigPreviewApplyGuards(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "preview-guards.sqlite3", true))
+	revision := controlPlaneConfigRevision(t, svc)
+
+	_, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "apply",
+			expected_catalog_revision: %q,
+			source_patches: [{ name: "main", access: { public_tables_add: ["countries"] } }]
+		}) { applied errors_json }
+	}`, revision), nil, &core.RequestConfig{})
+	if err == nil || !strings.Contains(err.Error(), "preview_id") {
+		t.Fatalf("expected apply without preview_id to fail, got %v", err)
+	}
+
+	_, err = svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
+		gj_config(id: "current", update: {
+			mode: "preview",
+			expected_catalog_revision: "stale",
+			source_patches: [{ name: "main", access: { public_tables_add: ["countries"] } }]
+		}) { valid preview_id errors_json }
+	}`, nil, &core.RequestConfig{})
+	if err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("expected stale revision to fail, got %v", err)
+	}
+
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "preview",
+			expected_catalog_revision: %q,
+			source_patches: [{ name: "main", access: { public_tables_add: ["countries"] } }]
+		}) { valid preview_id errors_json }
+	}`, revision), nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("preview error: %v", err)
+	}
+	var preview struct {
+		Config struct {
+			PreviewID string `json:"preview_id"`
+		} `json:"gj_config"`
+	}
+	if err := json.Unmarshal(res.Data, &preview); err != nil {
+		t.Fatalf("decode preview: %v\n%s", err, string(res.Data))
+	}
+	if preview.Config.PreviewID == "" {
+		t.Fatal("expected preview_id")
+	}
+
+	_, err = svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "apply",
+			preview_id: %q,
+			expected_catalog_revision: %q,
+			source_patches: [{ name: "main", access: { public_tables_add: ["currencies"] } }]
+		}) { applied errors_json }
+	}`, preview.Config.PreviewID, revision), nil, &core.RequestConfig{})
+	if err == nil || !strings.Contains(err.Error(), "payload hash mismatch") {
+		t.Fatalf("expected payload mismatch to fail, got %v", err)
+	}
+
+	_, err = svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "apply",
+			preview_id: "cfgprev_unknown",
+			expected_catalog_revision: %q,
+			source_patches: [{ name: "main", access: { public_tables_add: ["countries"] } }]
+		}) { applied errors_json }
+	}`, revision), nil, &core.RequestConfig{})
+	if err == nil || !strings.Contains(err.Error(), "unknown or expired") {
+		t.Fatalf("expected unknown preview to fail, got %v", err)
+	}
+}
+
+func TestGraphQLControlPlaneConfigRuntimeEventsAreRedacted(t *testing.T) {
+	svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "config-runtime-redacted.sqlite3", true), func(conf *Config) {
+		conf.Core.Mode = "agentic"
+		for i := range conf.Core.Sources {
+			if conf.Core.Sources[i].Kind == "graphjin" {
+				conf.Core.Sources[i].Capabilities = map[string]bool{sourcecap.KeyConfigWrite: true, sourcecap.KeyRuntimeRead: true}
+			}
+		}
+	})
+	revision := controlPlaneConfigRevision(t, svc)
+
+	_, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "preview",
+			expected_catalog_revision: %q,
+			source_patches: [{
+				name: "main",
+				access: {
+					public_tables_add: ["acct_plaintext_123"],
+					admin_tables_add: ["acct_plaintext_123"]
+				}
+			}]
+		}) { valid preview_id errors_json }
+	}`, revision), nil, &core.RequestConfig{})
+	if err == nil {
+		t.Fatal("expected invalid preview to fail")
+	}
+	rows := svc.runtimeEvents.Rows(context.Background(), svc.runtimeCurrentStatus())
+	var sawConfigPreviewFailure bool
+	for _, row := range rows {
+		if row["kind"] != runtimeKindEvent || row["phase"] != "config.preview" {
+			continue
+		}
+		sawConfigPreviewFailure = true
+		encoded := fmt.Sprint(row["details_json"])
+		for _, forbidden := range []string{"acct_plaintext_123", "source_patches", "public_tables_add", "admin_tables_add", "mutation", "preview_id"} {
+			if strings.Contains(encoded, forbidden) {
+				t.Fatalf("runtime config event leaked %q in details_json: %s", forbidden, encoded)
+			}
+		}
+		if !strings.Contains(encoded, "error_count") || !strings.Contains(encoded, "change_count") {
+			t.Fatalf("runtime config event should contain structured counts, got %s", encoded)
+		}
+	}
+	if !sawConfigPreviewFailure {
+		t.Fatalf("expected config.preview runtime failure event after err=%v, got %+v", err, rows)
+	}
+}
+
+func TestGraphQLControlPlaneConfigUpdateDisabledRecoveryHint(t *testing.T) {
+	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: false}, createSQLiteDBFile(t, "config-disabled.sqlite3", true))
+
+	_, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `mutation {
+			gj_config(id: "current", update: {
+				mcp: { allow_raw_queries: true }
+			}) {
+				id
+			}
+		}`, nil, &core.RequestConfig{})
+	if err == nil || !strings.Contains(err.Error(), `query_catalog(search: "enable config updates gj_config.update")`) {
+		t.Fatalf("expected config update recovery hint, got %v", err)
+	}
+}
+
+func controlPlaneConfigRevision(t *testing.T, svc *graphjinService) string {
+	t.Helper()
+	if svc != nil {
+		if snap, err := svc.catalogSnapshot(); err == nil && snap != nil && snap.Revision != "" {
+			return snap.Revision
+		}
+	}
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `query {
+		gj_config(id: "current") { catalog_revision }
+	}`, nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("config revision query error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("config revision query returned errors: %+v", res.Errors)
+	}
+	var out struct {
+		Config struct {
+			CatalogRevision string `json:"catalog_revision"`
+		} `json:"gj_config"`
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatalf("decode config revision: %v\n%s", err, string(res.Data))
+	}
+	if out.Config.CatalogRevision == "" {
+		t.Fatal("expected non-empty catalog revision")
+	}
+	return out.Config.CatalogRevision
+}
+
+func applyControlPlaneConfigUpdate(t *testing.T, svc *graphjinService, updateBody, selection string) *core.Result {
+	t.Helper()
+	if selection == "" {
+		selection = "id"
+	}
+	revision := controlPlaneConfigRevision(t, svc)
+	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "preview",
+			expected_catalog_revision: %q,
+			%s
+		}) {
+			valid
+			preview_id
+			errors_json
+		}
+	}`, revision, updateBody), nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("config preview error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("config preview returned errors: %+v", res.Errors)
+	}
+	var preview struct {
+		Config struct {
+			Valid     bool   `json:"valid"`
+			PreviewID string `json:"preview_id"`
+		} `json:"gj_config"`
+	}
+	if err := json.Unmarshal(res.Data, &preview); err != nil {
+		t.Fatalf("decode config preview: %v\n%s", err, string(res.Data))
+	}
+	if !preview.Config.Valid || preview.Config.PreviewID == "" {
+		t.Fatalf("unexpected config preview response: %+v", preview.Config)
+	}
+	res, err = svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "apply",
+			preview_id: %q,
+			expected_catalog_revision: %q,
+			%s
+		}) {
+			%s
+		}
+	}`, preview.Config.PreviewID, revision, updateBody, selection), nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("config apply error: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("config apply returned errors: %+v", res.Errors)
+	}
+	return res
+}
+
+func findTestSource(svc *graphjinService, name string) (core.SourceConfig, bool) {
+	if svc == nil || svc.conf == nil {
+		return core.SourceConfig{}, false
+	}
+	for _, source := range svc.conf.Core.Sources {
+		if source.Name == name {
+			return source, true
+		}
+	}
+	return core.SourceConfig{}, false
+}
+
+func testStringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if strings.EqualFold(value, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestGraphQLControlPlaneAllowsAppGJPrefixWithSystemSource(t *testing.T) {

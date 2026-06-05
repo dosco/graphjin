@@ -36,7 +36,7 @@ func TestApplySourceConfigPatchesMergePatchSemantics(t *testing.T) {
 		},
 	}}
 
-	updated, changes, err := applySourceConfigPatches(existing, []any{map[string]any{
+	updated, changes, err := applySourceConfigMergePatches(existing, []any{map[string]any{
 		"name":      "main",
 		"path":      "new.sqlite3",
 		"read_only": nil,
@@ -75,7 +75,7 @@ func TestApplySourceConfigPatchesMergePatchSemantics(t *testing.T) {
 		t.Fatalf("nested access merge failed: %+v", got.Access)
 	}
 
-	updated, changes, err = applySourceConfigPatches(updated, []any{map[string]any{
+	updated, changes, err = applySourceConfigMergePatches(updated, []any{map[string]any{
 		"name": "logs",
 		"kind": sourcecap.KindDatabase,
 		"type": "sqlite",
@@ -88,7 +88,7 @@ func TestApplySourceConfigPatchesMergePatchSemantics(t *testing.T) {
 		t.Fatalf("new source update = %+v changes=%v", updated, changes)
 	}
 
-	if _, _, err := applySourceConfigPatches(existing, []any{map[string]any{"name": "missing_kind"}}); err == nil ||
+	if _, _, err := applySourceConfigMergePatches(existing, []any{map[string]any{"name": "missing_kind"}}); err == nil ||
 		!strings.Contains(err.Error(), "requires kind") {
 		t.Fatalf("expected new source kind error, got %v", err)
 	}
@@ -569,7 +569,7 @@ func TestHandleUpdateCurrentConfig_RuntimeReadDisabledStopsRuntimeStore(t *testi
 		readOnlyDBs: map[string]bool{},
 	}
 
-	out := applyConfigUpdate(t, ms, map[string]any{
+	out := applySourceModeConfigUpdate(t, ms, map[string]any{
 		"sources": []any{
 			map[string]any{
 				"name": "main",
@@ -608,7 +608,7 @@ func TestHandleUpdateCurrentConfig_SourcePatchUsesSourceScopedReload(t *testing.
 	oldMain := ms.service.dbs["main"]
 	oldAnalytics := ms.service.dbs["analytics"]
 
-	out := applyConfigUpdate(t, ms, map[string]any{
+	out := applySourceModeConfigUpdate(t, ms, map[string]any{
 		"update_sources": []any{map[string]any{
 			"name": "main",
 			"path": replacementPath,
@@ -648,7 +648,7 @@ func TestHandleUpdateCurrentConfig_AddSourceUsesSourceScopedReload(t *testing.T)
 	oldGJ := ms.service.gj
 	oldMain := ms.service.dbs["main"]
 
-	out := applyConfigUpdate(t, ms, map[string]any{
+	out := applySourceModeConfigUpdate(t, ms, map[string]any{
 		"update_sources": []any{map[string]any{
 			"name": "logs",
 			"kind": sourcecap.KindDatabase,
@@ -683,7 +683,7 @@ func TestHandleUpdateCurrentConfig_RemoveSourceUsesSourceScopedReload(t *testing
 	oldMain := ms.service.dbs["main"]
 	oldAnalytics := ms.service.dbs["analytics"]
 
-	out := applyConfigUpdate(t, ms, map[string]any{
+	out := applySourceModeConfigUpdate(t, ms, map[string]any{
 		"remove_sources": []any{"analytics"},
 	})
 	assertSourceScopedConfigResult(t, out, "analytics")
@@ -718,7 +718,7 @@ func TestHandleUpdateCurrentConfig_MultiSourcePatchUsesSourceScopedReload(t *tes
 	oldMain := ms.service.dbs["main"]
 	oldAnalytics := ms.service.dbs["analytics"]
 
-	out := applyConfigUpdate(t, ms, map[string]any{
+	out := applySourceModeConfigUpdate(t, ms, map[string]any{
 		"update_sources": []any{
 			map[string]any{"name": "main", "path": mainReplacement},
 			map[string]any{"name": "analytics", "path": analyticsReplacement},
@@ -750,7 +750,7 @@ func TestHandleUpdateCurrentConfig_SourcePatchWithGlobalEditFallsBackToFullReloa
 
 	oldGJ := ms.service.gj
 
-	out := applyConfigUpdate(t, ms, map[string]any{
+	out := applySourceModeConfigUpdate(t, ms, map[string]any{
 		"update_sources": []any{map[string]any{
 			"name": "main",
 			"path": replacementPath,
@@ -769,7 +769,7 @@ func TestHandleUpdateCurrentConfig_SourcePatchWithGlobalEditFallsBackToFullReloa
 	if ms.service.gj == oldGJ {
 		t.Fatal("expected full fallback to replace the GraphJin wrapper")
 	}
-	details := latestRuntimeEventDetails(t, ms.service, "config", "reload_mode", "full")
+	details := latestRuntimeEventDetails(t, ms.service, "config.apply", "reload_mode", "full")
 	if details["reload_fallback"] != true {
 		t.Fatalf("expected config event reload_fallback=true, details=%+v", details)
 	}
@@ -1036,6 +1036,42 @@ func configUpdateChangesContain(changes []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func applySourceModeConfigUpdate(t *testing.T, ms *mcpServer, args map[string]any) ConfigUpdateResult {
+	t.Helper()
+
+	ctx := context.Background()
+	revision := ms.currentConfigCatalogRevision(ctx)
+	if revision == "" {
+		t.Fatal("expected source-mode catalog revision")
+	}
+	previewArgs := cloneConfigUpdateArgs(t, args)
+	previewArgs["mode"] = "preview"
+	previewArgs["expected_catalog_revision"] = revision
+	preview := applyConfigUpdate(t, ms, previewArgs)
+	if !preview.Success || !preview.Valid || preview.PreviewID == "" {
+		t.Fatalf("expected valid preview, got %+v", preview)
+	}
+	applyArgs := cloneConfigUpdateArgs(t, args)
+	applyArgs["mode"] = "apply"
+	applyArgs["preview_id"] = preview.PreviewID
+	applyArgs["expected_catalog_revision"] = revision
+	return applyConfigUpdate(t, ms, applyArgs)
+}
+
+func cloneConfigUpdateArgs(t *testing.T, args map[string]any) map[string]any {
+	t.Helper()
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("marshal config args: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatalf("unmarshal config args: %v", err)
+	}
+	return out
 }
 
 func assertMetadataCodeRefPaths(t *testing.T, s *graphjinService, want []string) {

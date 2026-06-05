@@ -405,6 +405,16 @@ func configNanoColumns() []core.NanoColumn {
 		{Name: "redacted_paths", Type: "json"},
 		{Name: "updated_at", Type: "text"},
 		{Name: "catalog_revision", Type: "text"},
+		{Name: "mode", Type: "text"},
+		{Name: "preview_id", Type: "text"},
+		{Name: "expected_catalog_revision", Type: "text"},
+		{Name: "source_patches", Type: "json"},
+		{Name: "valid", Type: "boolean"},
+		{Name: "applied", Type: "boolean"},
+		{Name: "expires_at", Type: "text"},
+		{Name: "change_summary_json", Type: "json"},
+		{Name: "findings_json", Type: "json"},
+		{Name: "errors_json", Type: "json"},
 	}
 }
 

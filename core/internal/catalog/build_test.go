@@ -435,6 +435,92 @@ func TestBuildIncludesHelpRows(t *testing.T) {
 	}
 }
 
+func TestBuildIncludesConfigRecipes(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{EnabledTools: []string{"query_catalog"}})
+
+	for _, id := range []string{
+		"recipe.config.identity_claims",
+		"recipe.config.add_role",
+		"recipe.config.source_access_defaults",
+		"recipe.config.table_classifications",
+		"recipe.config.graphjin_roots",
+		"recipe.config.enable_artifacts",
+		"recipe.config.migrate_legacy_roles_tables",
+	} {
+		card, ok := findCatalogCard(snap, id)
+		if !ok {
+			t.Fatalf("expected config recipe %s", id)
+		}
+		if card.Kind != "config_recipe" || card.SafetyJSON == "" || card.ExamplesJSON == "" || card.QueryJSON == "" {
+			t.Fatalf("config recipe missing machine guidance: %+v", card)
+		}
+		text := card.Summary + card.EvidenceJSON + card.ExamplesJSON + card.SafetyJSON
+		for _, want := range []string{"preflight", "verify", "stop_conditions", "forbidden_patterns", "no dry-run"} {
+			if !strings.Contains(strings.ToLower(text), strings.ToLower(want)) {
+				t.Fatalf("recipe %s missing %q in guidance: %s", id, want, text)
+			}
+		}
+		if !strings.Contains(text, "gj_security") || !strings.Contains(text, "gj_runtime") || !strings.Contains(text, "gj_config") {
+			t.Fatalf("recipe %s should mention security/runtime/config preflight: %s", id, text)
+		}
+		for _, forbidden := range []string{"connection_string", "private_key_pem", "password:"} {
+			if strings.Contains(text, forbidden) {
+				t.Fatalf("recipe %s leaked forbidden config term %q: %s", id, forbidden, text)
+			}
+		}
+		if len(detailsForCard(snap, id)) == 0 {
+			t.Fatalf("expected config recipe details for %s", id)
+		}
+	}
+	if !hasEntrypoint(snap, "discover_config_security") {
+		t.Fatal("expected discover_config_security entrypoint")
+	}
+	for _, id := range []string{"recipe.config.source_access_defaults", "recipe.config.table_classifications", "recipe.config.graphjin_roots"} {
+		card, ok := findCatalogCard(snap, id)
+		if !ok {
+			t.Fatalf("expected recipe %s", id)
+		}
+		text := card.SafetyJSON + card.ExamplesJSON + card.GraphQLMutation
+		for _, want := range []string{"source_patches", "preview", "apply", "preview_id"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("recipe %s should expose preview/apply source_patches with %q: %s", id, want, text)
+			}
+		}
+		if strings.Contains(text, "Direct source patch-by-name is not supported") || strings.Contains(text, "not supported yet") {
+			t.Fatalf("recipe %s should not mark source_patches as unsupported: %s", id, text)
+		}
+	}
+}
+
+func TestConfigRecipeSearchRanking(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{EnabledTools: []string{"query_catalog"}})
+
+	tests := []struct {
+		search string
+		want   string
+	}{
+		{search: "add role from jwt", want: "recipe.config.add_role"},
+		{search: "make audit_logs admin only", want: "recipe.config.table_classifications"},
+		{search: "account scoped artifacts", want: "recipe.config.enable_artifacts"},
+		{search: "roles tables filters presets", want: "recipe.config.migrate_legacy_roles_tables"},
+	}
+	for _, tt := range tests {
+		result, err := snap.Query(Query{Search: tt.search, Limit: 5, Explain: true})
+		if err != nil {
+			t.Fatalf("query catalog for %q: %v", tt.search, err)
+		}
+		if len(result.Cards) == 0 {
+			t.Fatalf("expected results for %q", tt.search)
+		}
+		if result.Cards[0].ID != tt.want {
+			t.Fatalf("search %q ranked %s first, want %s; results=%+v", tt.search, result.Cards[0].ID, tt.want, result.Cards)
+		}
+		if result.Matches[tt.want].Score <= 0 || !strings.Contains(result.Matches[tt.want].Why, "config recipe") {
+			t.Fatalf("expected config recipe intent boost for %q, got %+v", tt.search, result.Matches[tt.want])
+		}
+	}
+}
+
 func TestBuildWithOptionsSavedQueryCards(t *testing.T) {
 	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{
 		EnabledTools: []string{"query_catalog", "execute_saved_query"},

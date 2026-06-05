@@ -10,6 +10,26 @@ GraphJin rejects user-written `roles[].tables` access rules. That rejection is
 intentional: source mode generates the low-level role filters and presets from
 `sources[].access` so the same qcode/SQL compiler path still enforces access.
 
+For LLM-assisted migration, start from the user's goal rather than a memorized
+GraphQL shape:
+
+```graphql
+query_catalog(search: "<user instruction>")
+```
+
+Catalog search returns `config_recipe` rows for common operator tasks such as
+adding roles, mapping JWT claims, setting source access defaults, classifying
+public/admin/blocked tables, setting GraphJin system root access, enabling
+artifacts, and migrating legacy `roles[].tables` rules. Inspect the recipe with
+`query_catalog(id: "...")` before reading `gj_config` or applying a mutation.
+Use `graphql_help(for: "discovery")` only when the intent is unclear or search
+returns no useful rows.
+
+The MCP surface is caller-aware. `tools/list`, `graphql_help`, and
+`query_catalog` show which tools, `gj_*` roots, and config/security capabilities
+are visible to the current caller; do not apply recipes that require roots the
+caller cannot see.
+
 ## Before And After
 
 Legacy configs often repeated the same account filter and mutation preset on
@@ -230,6 +250,77 @@ policy evidence through `gj_security`.
    workflows.
 10. Keep config-folder fragments, saved queries, and workflows as read-only
     globals.
+
+Current `gj_config.update` support is not a full config editor. It supports
+existing update paths such as `source_patches`, `sources`, `roles`, selected
+`mcp` flags, tables, relationships, databases, blocklist, functions, and
+resolvers. In source mode every write must preview first:
+
+```graphql
+mutation {
+  gj_config(id: "current", update: {
+    mode: "preview"
+    expected_catalog_revision: "<catalog_revision>"
+    source_patches: [{
+      name: "app"
+      access: {
+        read: "account"
+        write: "blocked"
+        delete: "blocked"
+        namespace_column: "account_id"
+        public_tables_add: ["countries"]
+        admin_tables_add: ["audit_logs"]
+        blocked_tables_add: ["internal_events"]
+      }
+    }]
+  }) {
+    valid
+    preview_id
+    expires_at
+    change_summary_json
+    findings_json
+    errors_json
+  }
+}
+```
+
+Apply resends the exact same patch payload with `mode: "apply"` and
+`preview_id`:
+
+```graphql
+mutation {
+  gj_config(id: "current", update: {
+    mode: "apply"
+    preview_id: "<preview_id>"
+    expected_catalog_revision: "<catalog_revision>"
+    source_patches: [{
+      name: "app"
+      access: {
+        read: "account"
+        write: "blocked"
+        delete: "blocked"
+        namespace_column: "account_id"
+        public_tables_add: ["countries"]
+        admin_tables_add: ["audit_logs"]
+        blocked_tables_add: ["internal_events"]
+      }
+    }]
+  }) {
+    applied
+    catalog_revision
+    change_summary_json
+    errors_json
+  }
+}
+```
+
+`source_patches` match one existing source by exact name and
+preserve every unmentioned source field. Use them for source access defaults,
+table classifications, and `kind: graphjin` root policy (`roots_set` and
+`roots_remove`). Top-level `identity` and `artifacts` are public source-mode
+config sections, but direct GraphQL mutation support for them is not part of
+V1; recipe rows mark those changes as `unsupported_apply` until explicit update
+support is added.
 
 After migration, run the dialect integration scripts for the SQL databases you
 use. At minimum, shared source-access changes should pass PostgreSQL, MySQL,

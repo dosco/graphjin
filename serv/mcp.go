@@ -195,6 +195,8 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		}
 	})
 
+	var ms *mcpServer
+	startupProfile := s.mcpStartupCapabilityProfile(ctx)
 	mcpSrv := server.NewMCPServer(
 		"graphjin",
 		version,
@@ -202,7 +204,13 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		server.WithPromptCapabilities(true),
 		server.WithResourceCapabilities(true, false),
 		server.WithHooks(hooks),
-		server.WithInstructions(mcpServerInstructions(s.conf)),
+		server.WithToolFilter(func(callCtx context.Context, tools []mcp.Tool) []mcp.Tool {
+			if ms == nil {
+				return tools
+			}
+			return ms.applyCallerToolMetadata(callCtx, tools)
+		}),
+		server.WithInstructions(mcpServerInstructions(s.conf, startupProfile)),
 	)
 
 	// Snapshot which databases are read-only from the config file.
@@ -214,7 +222,7 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		}
 	}
 
-	ms := &mcpServer{
+	ms = &mcpServer{
 		srv:         mcpSrv,
 		service:     s,
 		ctx:         ctx,

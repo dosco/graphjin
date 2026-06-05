@@ -3,6 +3,7 @@ package tests_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -245,24 +246,52 @@ func TestCatalogGraphQLControlMutationHelpersIntegration(t *testing.T) {
 	gjs := newCatalogControlPlaneService(t, serv.MCPConfig{AllowConfigUpdates: true})
 	gj := gjs.GetGraphJin()
 
-	configData := runControlPlaneGraphQL(t, gj, `mutation {
+	revision := controlPlaneIntegrationConfigRevision(t, gj)
+	previewData := runControlPlaneGraphQL(t, gj, fmt.Sprintf(`mutation {
 		gj_config(id: "current", update: {
+			mode: "preview",
+			expected_catalog_revision: %q,
 			mcp: { allow_raw_queries: true }
 		}) {
-			id
+			valid
+			preview_id
+			expires_at
+			errors_json
+		}
+	}`, revision))
+	var preview struct {
+		Config struct {
+			Valid     bool   `json:"valid"`
+			PreviewID string `json:"preview_id"`
+			ExpiresAt string `json:"expires_at"`
+		} `json:"gj_config"`
+	}
+	decodeControlPlaneJSON(t, previewData, &preview)
+	if !preview.Config.Valid || preview.Config.PreviewID == "" || preview.Config.ExpiresAt == "" {
+		t.Fatalf("unexpected config preview response: %+v", preview.Config)
+	}
+
+	configData := runControlPlaneGraphQL(t, gj, fmt.Sprintf(`mutation {
+		gj_config(id: "current", update: {
+			mode: "apply",
+			preview_id: %q,
+			expected_catalog_revision: %q,
+			mcp: { allow_raw_queries: true }
+		}) {
+			applied
 			mcp
 			catalog_revision
 		}
-	}`)
+	}`, preview.Config.PreviewID, revision))
 	var patched struct {
 		Config struct {
-			ID              string         `json:"id"`
+			Applied         bool           `json:"applied"`
 			MCP             map[string]any `json:"mcp"`
 			CatalogRevision string         `json:"catalog_revision"`
 		} `json:"gj_config"`
 	}
 	decodeControlPlaneJSON(t, configData, &patched)
-	if patched.Config.ID != "current" || patched.Config.CatalogRevision == "" {
+	if !patched.Config.Applied || patched.Config.CatalogRevision == "" {
 		t.Fatalf("unexpected config update response: %+v", patched.Config)
 	}
 	if got, _ := patched.Config.MCP["allow_raw_queries"].(bool); !got {
@@ -279,6 +308,23 @@ func TestCatalogGraphQLControlMutationHelpersIntegration(t *testing.T) {
 			t.Fatalf("expected removed control-plane mutation root to be unavailable: %s", query)
 		}
 	}
+}
+
+func controlPlaneIntegrationConfigRevision(t *testing.T, gj *core.GraphJin) string {
+	t.Helper()
+	data := runControlPlaneGraphQL(t, gj, `query {
+		gj_config(id: "current") { catalog_revision }
+	}`)
+	var out struct {
+		Config struct {
+			CatalogRevision string `json:"catalog_revision"`
+		} `json:"gj_config"`
+	}
+	decodeControlPlaneJSON(t, data, &out)
+	if out.Config.CatalogRevision == "" {
+		t.Fatal("expected config catalog_revision")
+	}
+	return out.Config.CatalogRevision
 }
 
 func newCatalogControlPlaneService(t *testing.T, mcp serv.MCPConfig) *serv.HttpService {

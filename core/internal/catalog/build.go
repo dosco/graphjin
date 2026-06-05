@@ -24,6 +24,7 @@ func BuildWithOptions(snapshot *MetadataSnapshot, conf any, opts BuildOptions) *
 
 	addEntryPoints(out, opts)
 	addHelp(out, opts)
+	addConfigRecipes(out, opts)
 	addSources(out, opts)
 	sampleMode := catalogSampleMode(conf)
 	addCapabilities(out, sampleMode, opts)
@@ -141,7 +142,7 @@ var mcpLegacyDiscoveryTools = []string{
 }
 
 var helpTopics = []helpTopic{
-	{Key: "discovery", Title: "Discovery help", Summary: "Start here when you are unsure which catalog rows or GraphJin surface to inspect.", Guide: "Call graphql_help(for: \"discovery\") first, then use the returned topic routes. Use query_catalog(id: \"help:mcp_tools\") to see how removed legacy MCP discovery tools map into catalog rows.", Search: "catalog discovery schema workflow query security mcp tools legacy", Kinds: []string{"help", "entrypoint", "capability", "system_capability"}, Examples: []string{`graphql_help(for: "discovery")`, `query_catalog(id: "help:mcp_tools")`, `query_catalog(where: { kind: { eq: "table" } })`}, Next: []string{"query_catalog"}, Replaces: []string{"get_catalog_entrypoints", "get_workflow_guide", "get_discovery_schema"}},
+	{Key: "discovery", Title: "Discovery help", Summary: "Start here when you are unsure which catalog rows or GraphJin surface to inspect.", Guide: "For goal-driven work, first call query_catalog(search: \"<user instruction>\"). Use graphql_help(for: \"discovery\") when the user intent is unclear or catalog search returns no useful rows. Use query_catalog(id: \"help:mcp_tools\") to see how removed legacy MCP discovery tools map into catalog rows.", Search: "catalog discovery schema workflow query security config recipe mcp tools legacy", Kinds: []string{"help", "entrypoint", "config_recipe", "capability", "system_capability"}, Examples: []string{`query_catalog(search: "<user instruction>")`, `graphql_help(for: "discovery")`, `query_catalog(id: "help:mcp_tools")`, `query_catalog(where: { kind: { eq: "table" } })`}, Next: []string{"query_catalog"}, Replaces: []string{"get_catalog_entrypoints", "get_workflow_guide", "get_discovery_schema"}},
 	{Key: "mcp_tools", Title: "Sources-mode MCP tools help", Summary: "Learn the tiny sources-mode MCP surface and how old discovery tools moved into catalog/help rows.", Guide: "Sources-mode MCP keeps the prompt small: graphql_help routes the first call, query_catalog searches and fetches full detail by id, validate_where_clause checks filters, and execute_saved_query runs approved saved queries. When raw execution is explicitly enabled, execute_graphql is also available as an action tool. Removed discovery tools are represented by help, capability, saved_query, fragment, workflow, language, schema, and relationship catalog rows.", Search: "mcp tools legacy discovery get_query_syntax get_catalog_card get_js_runtime_api fix_query_error", Kinds: []string{"help", "capability", "system_capability", "entrypoint"}, Examples: []string{`graphql_help(for: "discovery")`, `query_catalog(id: "help:query")`, `query_catalog(where: { kind: { in: ["capability", "system_capability"] } })`}, Next: []string{"query_catalog"}, Replaces: mcpLegacyDiscoveryTools},
 	{Key: "catalog", Title: "Catalog help", Summary: "Use gj_catalog/query_catalog for evidence-backed discovery and query_catalog(id) for one detailed item.", Guide: "Use query_catalog(search, where, order_by, limit) for discovery. Use query_catalog(id: \"...\") as the get_catalog_card replacement; it returns details_json, evidence_json, examples_json, safety_json, and edges_json.", Search: "catalog detail evidence examples edges safety get_catalog_card get_catalog_capabilities", Kinds: []string{"help", "entrypoint", "capability", "system_capability"}, Examples: []string{`query_catalog(search: "join orders customers", where: { kind: { eq: "relationship" } })`, `query_catalog(id: "help:catalog")`, `query_catalog(where: { kind: { in: ["capability", "system_capability"] } })`}, Next: []string{"query_catalog"}, Replaces: []string{"get_catalog_card", "get_catalog_capabilities"}},
 	{Key: "schema", Title: "Schema help", Summary: "Discover tables, columns, relationships, functions, indexes, and row-shape hints from catalog rows.", Guide: "Use schema, table, column, relationship, and function catalog rows instead of broad schema-insight tools. Inspect details_json and evidence_json before choosing roots or joins.", Search: "schema table column relationship function index sample profile get_schema_insights get_discovery_schema", Kinds: []string{"help", "database", "table", "column", "relationship", "function"}, Examples: []string{`query_catalog(where: { kind: { in: ["table", "column", "relationship"] } })`, `query { gj_catalog(where: { kind: { eq: "table" } }) { id name summary details_json } }`}, Next: []string{"query_catalog", "validate_where_clause"}, Replaces: []string{"get_schema_insights", "get_discovery_schema"}},
@@ -155,8 +156,8 @@ var helpTopics = []helpTopic{
 	{Key: "fragments", Title: "Fragment help", Summary: "Discover reusable GraphQL fragments and import guidance before repeating field selections.", Guide: "Use fragment catalog rows instead of list/search/get fragment tools. Inspect examples_json and details_json for import guidance.", Search: "fragments graphql reusable field selection import list_fragments search_fragments get_fragment", Kinds: []string{"help", "fragment", "table"}, Examples: []string{`query_catalog(where: { kind: { eq: "fragment" } })`, `query_catalog(id: "help:fragments")`}, Next: []string{"query_catalog"}, Replaces: []string{"list_fragments", "search_fragments", "get_fragment"}},
 	{Key: "workflows", Title: "Workflow help", Summary: "Discover reusable workflows, variable schemas, execution policy, and workflow control-plane guidance.", Guide: "Use workflow catalog rows instead of get_workflow_guide/execute_workflow. In sources mode, execute through gj_workflow_execution(insert) when policy allows it.", Search: "workflow reusable variables execution gj_workflow_execution get_workflow_guide execute_workflow", Kinds: []string{"help", "workflow", "system_capability", "capability"}, Examples: []string{`query_catalog(where: { kind: { eq: "workflow" } })`, `mutation { gj_workflow_execution(insert: { workflow_name: "...", variables: {} }) { status result_json error duration_ms } }`}, Next: []string{"query_catalog", "execute_saved_query"}, Replaces: []string{"get_workflow_guide", "execute_workflow"}},
 	{Key: "workflow_runtime", Title: "Workflow runtime help", Summary: "Learn JavaScript workflow runtime concepts, callable tool guidance, and safety constraints.", Guide: "Use workflow runtime help rows instead of get_js_runtime_api. Runtime guidance is catalog-backed so it stays aligned with the active sources-mode tool surface.", Search: "javascript workflow runtime goja gj tools queryCatalog executeSavedQuery get_js_runtime_api", Kinds: []string{"help", "workflow", "capability", "system_capability"}, Examples: []string{`query_catalog(id: "help:workflow_runtime")`, `query_catalog(search: "workflow runtime goja tools")`}, Next: []string{"query_catalog"}, Replaces: []string{"get_js_runtime_api"}},
-	{Key: "config", Title: "Config help", Summary: "Discover redacted configuration documentation, roles, permissions, sources, and safe config update guidance.", Guide: "Use config catalog rows instead of get_config_docs. Read gj_config only when permitted and check gj_security before config writes.", Search: "config docs sources roles permissions redacted update gj_config get_config_docs", Kinds: []string{"help", "config", "system_capability", "capability"}, Examples: []string{`query_catalog(id: "help:config")`, `query_catalog(search: "config docs", where: { kind: { in: ["help", "config", "system_capability"] } })`}, Next: []string{"query_catalog"}, Replaces: []string{"get_config_docs"}},
-	{Key: "security", Title: "Security help", Summary: "Discover gj_security guidance, policy rows, findings, severity filters, and agentic safety expectations.", Guide: "Use security catalog rows to learn the gj_security query shapes, then query gj_security directly when the caller has permission. Normal agentic users may only see catalog-level safety guidance.", Search: "security findings policy posture gj_security agentic production", Kinds: []string{"help", "system_capability", "config"}, Examples: []string{`query_catalog(id: "help:security")`, `query_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } })`}, Next: []string{"query_catalog"}},
+	{Key: "config", Title: "Config help", Summary: "Discover redacted configuration documentation, roles, permissions, sources, and safe config update guidance.", Guide: "For a concrete operator request, start with query_catalog(search: \"<user instruction>\") so config_recipe rows can route the model to preflight, apply, and verify steps. Use config catalog rows instead of get_config_docs. Read gj_config only when permitted and check gj_security before config writes.", Search: "config docs sources roles permissions redacted update gj_config recipe add role access artifacts get_config_docs", Kinds: []string{"help", "config_recipe", "config", "system_capability", "capability"}, Examples: []string{`query_catalog(search: "add role from jwt")`, `query_catalog(search: "make audit_logs admin only")`, `query_catalog(id: "help:config")`}, Next: []string{"query_catalog"}, Replaces: []string{"get_config_docs"}},
+	{Key: "security", Title: "Security help", Summary: "Discover gj_security guidance, policy rows, findings, severity filters, and agentic safety expectations.", Guide: "For policy changes, start with query_catalog(search: \"<user instruction>\") so config_recipe rows explain preflight, stop conditions, and verification. Use security catalog rows to learn the gj_security query shapes, then query gj_security directly when the caller has permission. Normal agentic users may only see catalog-level safety guidance.", Search: "security findings policy posture gj_security agentic production recipe admin blocked access roots", Kinds: []string{"help", "config_recipe", "system_capability", "config"}, Examples: []string{`query_catalog(search: "block internal_events")`, `query_catalog(id: "help:security")`, `query_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } })`}, Next: []string{"query_catalog"}},
 	{Key: "runtime", Title: "Runtime help", Summary: "Use gj_runtime in agentic mode for compact current health, source health, recent structured events, and suggested next actions.", Guide: "Query gj_runtime before workflow, config, or schema actions, after GraphJin errors, and when results suggest stale schema, source health, disconnected databases, degraded Redis, reload, discovery, or catalog refresh problems. Treat gj_runtime as decision support, not audit history; when status is degraded, follow next_action before continuing.", Search: "runtime status source health logs events system degraded redis schema reload discovery gj_runtime", Kinds: []string{"help", "system_capability"}, Examples: []string{`query_catalog(id: "help:runtime")`, `query_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_runtime.query" } })`, `query { gj_runtime(where: { kind: { in: ["status", "source", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind source source_kind status severity summary next_action details_json } }`}, Next: []string{"query_catalog"}},
 	{Key: "code", Title: "Code help", Summary: "Discover code-source catalog rows and safe source-edit preview/apply guidance when code sources are configured.", Guide: "Use code/source catalog rows before source intelligence or edit flows. Check gj_security and use preview/apply semantics for writes.", Search: "code source file symbol preview apply lock", Kinds: []string{"help", "mutation_pattern", "system_capability", "table", "column"}, Examples: []string{`query_catalog(id: "help:code")`, `query_catalog(search: "code source preview apply source edit")`}, Next: []string{"query_catalog"}},
 	{Key: "errors", Title: "Error help", Summary: "Use errors[].extensions.graphjin_repair, then inspect relevant schema or language catalog rows before retrying.", Guide: "Use graphjin_repair in normal GraphJin errors instead of fix_query_error. Then inspect schema, relationship, operator, or query-pattern rows before retrying.", Search: "error repair graphjin_repair syntax table column relationship fix_query_error", Kinds: []string{"help", "deprecated_feature", "query_pattern", "operator_set", "system_capability"}, Examples: []string{`query_catalog(id: "help:errors")`, `query_catalog(search: "error repair syntax relationship")`}, Next: []string{"query_catalog", "validate_where_clause"}, Replaces: []string{"fix_query_error"}},
@@ -284,7 +285,285 @@ func addEntryPoints(out *Snapshot, opts BuildOptions) {
 			}),
 			SuggestedNext: suggestedNextJSON(opts, "query_catalog"),
 		},
+		EntryPoint{
+			ID:      "entrypoint.catalog.config_security",
+			Name:    "discover_config_security",
+			Summary: "Find source-mode config/security recipes for roles, JWT claims, account access, table classifications, artifacts, and GraphJin system roots.",
+			QueryJSON: mustJSON(map[string]any{
+				"search": "role access jwt account namespace admin public blocked artifacts gj_security gj_runtime gj_config migration",
+				"where":  map[string]any{"kind": map[string]any{"in": []string{"config_recipe", "system_capability", "help", "config"}}},
+				"limit":  50,
+			}),
+			SuggestedNext: suggestedNextJSON(opts, "query_catalog"),
+		},
 	)
+}
+
+type configRecipe struct {
+	ID                string
+	Title             string
+	Summary           string
+	IntentExamples    []string
+	Preflight         []string
+	Apply             string
+	UnsupportedApply  string
+	Verify            []string
+	StopConditions    []string
+	ForbiddenPatterns []string
+	Examples          []string
+}
+
+func addConfigRecipes(out *Snapshot, opts BuildOptions) {
+	for _, recipe := range configRecipes() {
+		state := map[string]any{
+			"intent_examples":     recipe.IntentExamples,
+			"preflight":           recipe.Preflight,
+			"verify":              recipe.Verify,
+			"stop_conditions":     recipe.StopConditions,
+			"forbidden_patterns":  recipe.ForbiddenPatterns,
+			"no_dry_run":          "There is no dry-run root separate from gj_config; use gj_config.update mode: \"preview\" for source-mode validation.",
+			"preview_required":    "Source-mode gj_config.update writes require mode: \"preview\" first, then mode: \"apply\" with preview_id and the exact same payload.",
+			"no_separate_dry_run": "There is no separate gj_config_validate or dry-run root; use gj_config.update mode: \"preview\".",
+			"required_roots":      []string{"gj_config", "gj_security", "gj_runtime"},
+			"required_capability": "gj_config.update when an apply mutation is present",
+		}
+		if strings.TrimSpace(recipe.Apply) != "" {
+			state["apply"] = recipe.Apply
+		}
+		if strings.TrimSpace(recipe.UnsupportedApply) != "" {
+			state["unsupported_apply"] = recipe.UnsupportedApply
+		}
+
+		card := Card{
+			ID:              recipe.ID,
+			Kind:            "config_recipe",
+			Title:           recipe.Title,
+			Summary:         recipe.Summary,
+			Source:          "core.catalog.config_recipe",
+			RiskLevel:       "high",
+			Confidence:      "high",
+			EvidenceJSON:    mustJSON(map[string]any{"intent_examples": recipe.IntentExamples, "state_machine": "preflight_apply_verify"}),
+			ExamplesJSON:    mustJSON(recipe.Examples),
+			SuggestedNext:   suggestedNextJSON(opts, "query_catalog"),
+			DetailRef:       recipe.ID,
+			QueryJSON:       mustJSON(map[string]any{"id": recipe.ID}),
+			SafetyJSON:      mustJSON(state),
+			GraphQLQuery:    configRecipePreflightQuery(),
+			GraphQLMutation: recipe.Apply,
+		}
+		out.Cards = append(out.Cards, card)
+		out.Details = append(out.Details, CardDetail{
+			ID:       recipe.ID + ":state_machine",
+			CardID:   recipe.ID,
+			Section:  "state_machine",
+			Content:  "Follow this recipe as preflight, apply when supported, then verify. Stop when any stop condition applies.",
+			DataJSON: mustJSON(state),
+		})
+		out.Nodes = append(out.Nodes, Node{ID: "node:" + recipe.ID, Kind: "config_recipe", Name: recipe.ID, Summary: recipe.Summary, CardID: recipe.ID})
+	}
+}
+
+func configRecipes() []configRecipe {
+	commonPreflight := []string{
+		`query { gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }) { kind severity source table_name root reason recommendation } }`,
+		`query { gj_runtime(where: { kind: { in: ["status", "event"] } }, order_by: { created_at: desc }, limit: 20) { phase status severity source table_name root reason next_action details_json } }`,
+		`query { gj_config(id: "current") { catalog_revision sources roles mcp redacted_paths config_json } }`,
+	}
+	commonVerify := []string{
+		`query { gj_config(id: "current") { catalog_revision sources roles mcp redacted_paths } }`,
+		`query { gj_security { kind severity source table_name root access_mode reason recommendation } }`,
+		`query { gj_runtime(where: { kind: { eq: "event" } }, order_by: { created_at: desc }, limit: 20) { phase status severity source table_name root reason next_action details_json } }`,
+	}
+	commonStops := []string{
+		"mcp.allow_config_updates is disabled or gj_config.update is not enabled",
+		"caller cannot read gj_security, gj_runtime, or gj_config",
+		"gj_security reports high or critical findings that affect this change",
+		"target GraphJin source/root is read-only",
+		"the recipe only has unsupported_apply for the requested change",
+	}
+	commonForbidden := []string{
+		"source-mode roles[].tables filters, presets, columns, or block rules",
+		"client-supplied identity variables such as $account_id or $user_id",
+		"public write or public delete access",
+		"raw JWTs, secrets, passwords, connection strings, private keys, or full query payloads",
+	}
+
+	return []configRecipe{
+		{
+			ID:      "recipe.config.identity_claims",
+			Title:   "Configure source-mode identity claims",
+			Summary: "Recipe for JWT user_id_claim, role_claims, namespace/account/tenant claims, admin roles, identity.query, and roles_query alias migration.",
+			IntentExamples: []string{
+				"set jwt sub as user id",
+				"read roles from JWT roles claim",
+				"use account_id as namespace claim",
+				"configure admin roles",
+			},
+			Preflight:        commonPreflight,
+			UnsupportedApply: "Current gj_config.update does not accept top-level identity. Update the config file or add explicit identity update support before applying this through GraphQL.",
+			Verify:           commonVerify,
+			StopConditions:   commonStops,
+			ForbiddenPatterns: append([]string{
+				"identity values supplied by client GraphQL variables",
+				"raw JWT storage or echoing claims into gj_runtime",
+			}, commonForbidden...),
+			Examples: []string{
+				`query_catalog(search: "jwt role claims account_id")`,
+				`identity: { user_id_claim: "sub", role_claims: ["role", "roles"], namespace_claim: "account_id", admin_roles: ["admin"] }`,
+			},
+		},
+		{
+			ID:      "recipe.config.add_role",
+			Title:   "Add a source-mode role",
+			Summary: "Recipe for adding admin/support/member roles from JWT role claims or role match predicates without legacy table rules.",
+			IntentExamples: []string{
+				"add role from jwt",
+				"add admin role",
+				"add support role match",
+				"create member role",
+			},
+			Preflight: commonPreflight,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", roles: [{ name: "support", comment: "Support staff", match: "role = 'support'" }] }) { valid preview_id expires_at change_summary_json errors_json } }`,
+			Verify:    commonVerify,
+			StopConditions: append([]string{
+				"requested role requires table filters or presets instead of source access",
+			}, commonStops...),
+			ForbiddenPatterns: commonForbidden,
+			Examples: []string{
+				`query_catalog(search: "add role from jwt")`,
+				`mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", roles: [{ name: "support", match: "role = 'support'" }] }) { valid preview_id errors_json } }`,
+				`mutation { gj_config(id: "current", update: { mode: "apply", preview_id: "<preview_id>", expected_catalog_revision: "<catalog_revision>", roles: [{ name: "support", match: "role = 'support'" }] }) { applied catalog_revision errors_json } }`,
+			},
+		},
+		{
+			ID:      "recipe.config.source_access_defaults",
+			Title:   "Set source access defaults",
+			Summary: "Recipe for account, owner, authenticated, admin, public, and blocked read/write/delete defaults on a database source.",
+			IntentExamples: []string{
+				"make database account scoped",
+				"set default write blocked",
+				"set delete blocked",
+				"configure tenant namespace column",
+			},
+			Preflight: commonPreflight,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "app", access: { read: "account", write: "blocked", delete: "blocked", namespace_column: "account_id", missing_namespace_column: "block" } }] }) { valid preview_id expires_at change_summary_json findings_json errors_json } }`,
+			Verify:    commonVerify,
+			StopConditions: append([]string{
+				"preview returns valid: false or high/critical findings that apply to this change",
+				"apply cannot resend the exact same payload or catalog_revision changed",
+			}, commonStops...),
+			ForbiddenPatterns: commonForbidden,
+			Examples: []string{
+				`query_catalog(search: "account scoped source access defaults")`,
+				`access: { read: "account", write: "blocked", delete: "blocked", namespace_column: "account_id" }`,
+				`query { gj_config(id: "current") { catalog_revision sources } }`,
+				`mutation { gj_config(id: "current", update: { mode: "apply", preview_id: "<preview_id>", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "app", access: { read: "account", write: "blocked", delete: "blocked", namespace_column: "account_id" } }] }) { applied catalog_revision errors_json } }`,
+			},
+		},
+		{
+			ID:      "recipe.config.table_classifications",
+			Title:   "Classify public, admin, and blocked tables",
+			Summary: "Recipe for public_tables, admin_tables, and blocked_tables such as countries, currencies, plans, audit_logs, and internal_events.",
+			IntentExamples: []string{
+				"make audit_logs admin only",
+				"block internal_events",
+				"make countries public",
+				"hide a table from users",
+			},
+			Preflight: commonPreflight,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "app", access: { public_tables_add: ["countries"], admin_tables_add: ["audit_logs"], blocked_tables_add: ["internal_events"] } }] }) { valid preview_id expires_at change_summary_json findings_json errors_json } }`,
+			Verify:    commonVerify,
+			StopConditions: append([]string{
+				"requested table does not exist or belongs to a different source",
+				"requested public table needs write or delete access",
+			}, commonStops...),
+			ForbiddenPatterns: commonForbidden,
+			Examples: []string{
+				`query_catalog(search: "make audit_logs admin only")`,
+				`query_catalog(search: "block internal_events")`,
+				`public_tables: ["countries", "currencies", "plans"]`,
+				`query { gj_config(id: "current") { catalog_revision sources } }`,
+				`mutation { gj_config(id: "current", update: { mode: "apply", preview_id: "<preview_id>", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "app", access: { public_tables_add: ["countries"], admin_tables_add: ["audit_logs"], blocked_tables_add: ["internal_events"] } }] }) { applied catalog_revision errors_json } }`,
+			},
+		},
+		{
+			ID:      "recipe.config.graphjin_roots",
+			Title:   "Set GraphJin system root access",
+			Summary: "Recipe for gj_catalog, gj_artifacts, gj_workflow, gj_workflow_execution, gj_runtime, gj_security, and gj_config root access modes.",
+			IntentExamples: []string{
+				"make gj_security admin only",
+				"allow authenticated gj_catalog",
+				"set gj_runtime admin",
+				"graphjin root access admin",
+			},
+			Preflight: commonPreflight,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "graphjin", access: { roots_set: { gj_catalog: "authenticated", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }] }) { valid preview_id expires_at change_summary_json findings_json errors_json } }`,
+			Verify:    commonVerify,
+			StopConditions: append([]string{
+				"requested root is not enabled by source capabilities",
+				"caller tries to expose gj_security, gj_runtime, or gj_config to anonymous users",
+			}, commonStops...),
+			ForbiddenPatterns: commonForbidden,
+			Examples: []string{
+				`query_catalog(search: "graphjin root access gj_security gj_config admin")`,
+				`roots: { gj_catalog: "authenticated", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" }`,
+				`query { gj_config(id: "current") { catalog_revision sources } }`,
+				`mutation { gj_config(id: "current", update: { mode: "apply", preview_id: "<preview_id>", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "graphjin", access: { roots_set: { gj_catalog: "authenticated", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }] }) { applied catalog_revision errors_json } }`,
+			},
+		},
+		{
+			ID:      "recipe.config.enable_artifacts",
+			Title:   "Enable account-scoped artifacts",
+			Summary: "Recipe for artifacts config, gj_artifacts root access, SQL artifact tables, config globals, and account-scoped mutable artifacts.",
+			IntentExamples: []string{
+				"enable artifacts",
+				"account scoped artifacts",
+				"gj_artifacts access",
+				"config folder globals",
+			},
+			Preflight:        commonPreflight,
+			UnsupportedApply: "Current gj_config.update does not accept top-level artifacts. Update the config file or add explicit artifacts update support before applying this through GraphQL.",
+			Verify:           commonVerify,
+			StopConditions: append([]string{
+				"artifact source is not a writable SQL database source",
+				"Mongo or non-SQL source is requested for DB-backed artifacts",
+			}, commonStops...),
+			ForbiddenPatterns: commonForbidden,
+			Examples: []string{
+				`query_catalog(search: "account scoped artifacts")`,
+				`artifacts: { enabled: true, source: "app", schema: "_graphjin", auto_init: true, globals_path: "./config" }`,
+				`gj_artifacts root access should usually be "account"`,
+			},
+		},
+		{
+			ID:      "recipe.config.migrate_legacy_roles_tables",
+			Title:   "Migrate legacy roles[].tables rules",
+			Summary: "Recipe for replacing legacy roles[].tables filters and mutation presets with source-level access defaults and table classifications.",
+			IntentExamples: []string{
+				"migrate roles tables filters",
+				"roles tables presets",
+				"replace legacy role table rules",
+				"move filters to sources access",
+			},
+			Preflight: commonPreflight,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", roles: [{ name: "user", comment: "Authenticated user" }], sources: [{ name: "app", kind: "database", access: { read: "account", write: "blocked", delete: "blocked", namespace_column: "account_id" } }] }) { valid preview_id expires_at change_summary_json findings_json errors_json } }`,
+			Verify:    commonVerify,
+			StopConditions: append([]string{
+				"legacy role table rule cannot be expressed by source access defaults or classifications",
+				"current config still contains non-generated roles[].tables after migration",
+			}, commonStops...),
+			ForbiddenPatterns: commonForbidden,
+			Examples: []string{
+				`query_catalog(search: "migrate legacy roles tables to source access")`,
+				`roles[].tables is rejected in source mode; use sources[].access and roles identity fields instead`,
+				`mutation { gj_config(id: "current", update: { mode: "apply", preview_id: "<preview_id>", expected_catalog_revision: "<catalog_revision>", roles: [{ name: "user", comment: "Authenticated user" }], sources: [{ name: "app", kind: "database", access: { read: "account", write: "blocked", delete: "blocked", namespace_column: "account_id" } }] }) { applied catalog_revision errors_json } }`,
+			},
+		},
+	}
+}
+
+func configRecipePreflightQuery() string {
+	return `query { gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }) { kind severity source table_name root reason recommendation } }`
 }
 
 func addCapabilities(out *Snapshot, sampleMode string, opts BuildOptions) {
@@ -382,7 +661,16 @@ func systemGraphQLCapabilities(enabled map[string]struct{}) []Capability {
 			InputSchemaJSON: mustJSON(map[string]any{
 				"graphql_mutation": `gj_config(id: "current", update: { ... })`,
 				"singleton_id":     "current",
+				"source_mode_flow": []string{
+					"query gj_config(id: \"current\") { catalog_revision }",
+					"mutation with update.mode = \"preview\" and expected_catalog_revision",
+					"mutation with update.mode = \"apply\", preview_id, expected_catalog_revision, and the exact same patch payload",
+				},
 				"update_fields": []string{
+					"mode",
+					"preview_id",
+					"expected_catalog_revision",
+					"source_patches",
 					"sources",
 					"update_sources",
 					"remove_sources",
@@ -406,13 +694,33 @@ func systemGraphQLCapabilities(enabled map[string]struct{}) []Capability {
 					"allow_raw_queries",
 					"legacy_discovery",
 				},
-				"errors": "Invalid updates return normal GraphQL errors; there is no dry_run, mode, patch, valid, or applied field.",
+				"source_patches": map[string]any{
+					"matches": "one existing source by exact name",
+					"access_scalars": []string{
+						"read",
+						"write",
+						"delete",
+						"namespace_column",
+						"owner_column",
+						"missing_namespace_column",
+					},
+					"classification_ops": []string{
+						"public_tables_add",
+						"public_tables_remove",
+						"admin_tables_add",
+						"admin_tables_remove",
+						"blocked_tables_add",
+						"blocked_tables_remove",
+					},
+					"graphjin_root_ops": []string{"roots_set", "roots_remove"},
+				},
+				"errors": "Invalid updates return normal GraphQL errors. Source mode rejects apply without preview_id, stale expected_catalog_revision, payload mismatch, public write/delete, non-GraphJin roots, and legacy roles[].tables. Config updates disabled returns query_catalog(search: \"enable config updates gj_config.update\").",
 			}),
 			OutputSchemaJSON: mustJSON(map[string]any{
 				"root":   "gj_config",
-				"fields": []string{"id", "sources_used", "config_path", "active_database", "sources", "databases", "relationships", "tables", "roles", "blocklist", "functions", "resolvers", "mcp", "config_json", "redacted_paths", "updated_at", "catalog_revision"},
+				"fields": []string{"id", "sources_used", "config_path", "active_database", "sources", "databases", "relationships", "tables", "roles", "blocklist", "functions", "resolvers", "mcp", "config_json", "redacted_paths", "updated_at", "catalog_revision", "valid", "applied", "preview_id", "expires_at", "change_summary_json", "findings_json", "errors_json"},
 			}),
-			SafetyJSON: mustJSON(map[string]any{"graphql_mutation": `gj_config(id: "current", update: ...)`, "requires_config": "mcp.allow_config_updates", "serialized_by": "service config mutex"}),
+			SafetyJSON: mustJSON(map[string]any{"graphql_mutation": `gj_config(id: "current", update: ...)`, "requires_config": "mcp.allow_config_updates", "serialized_by": "service config mutex", "source_mode": "preview/apply required", "preview_ttl_minutes": 10, "preview_store": "bounded memory, hash only"}),
 		})
 	}
 	return caps

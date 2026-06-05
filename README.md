@@ -476,22 +476,22 @@ federation:
 
 ## MCP Tools
 
-GraphJin exposes a catalog-first agent surface that guides AI models to discover before acting. Start with `query_catalog`, then inspect evidence with `get_catalog_card` before writing queries, choosing relationships, or using GraphJin-specific syntax. For actions, agents can use GraphJin control-plane GraphQL roots such as `gj_workflow_execution(insert)`, `gj_workflow(insert/update/delete)`, and `gj_config(id: "current", update: ...)`. Schema reloads, schema changes, where-clause validation, and query repair remain MCP action tools. The legacy discovery tools are migration shims and are disabled unless `mcp.legacy_discovery: true`.
+GraphJin exposes a catalog-first agent surface that guides AI models to discover before acting. The MCP surface is caller-aware: `tools/list`, `graphql_help`, and `query_catalog` reflect the caller's visible tools, `gj_*` roots, catalog capabilities, and blocked/admin-only actions. For goal-driven work, start with `query_catalog(search: "<user instruction>")` when it is listed, then inspect the best row with `query_catalog(id: "...")` before writing queries, choosing relationships, or using GraphJin-specific syntax. Config and security operator work returns `config_recipe` rows that spell out preflight, preview/apply, unsupported apply, verification, stop conditions, and forbidden patterns. For actions, agents can use GraphJin control-plane GraphQL roots such as `gj_workflow_execution(insert)`, `gj_workflow(insert/update/delete)`, and `gj_config(id: "current", update: ...)` when policy exposes them. In source mode, `gj_config` writes must run `mode: "preview"` with `expected_catalog_revision`, then resend the exact same payload with `mode: "apply"` and `preview_id`; source access and GraphJin root changes should use `source_patches` by exact source name instead of rewriting the full `sources` array. Schema reloads, schema changes, where-clause validation, and query repair remain MCP action tools. The legacy discovery tools are migration shims and are disabled unless `mcp.legacy_discovery: true`.
 
 For teams building MCP agents, internal copilots, workflow agents, or enterprise automation, see [AGENTIC.md](AGENTIC.md). It explains the catalog-first agent loop in detail: discover, inspect, validate, act, observe, and refine.
 
-Key discovery tools:
-- `get_catalog_entrypoints` to choose a discovery path when the task is broad
-- `query_catalog` to search schema, relationship, workflow, language, config, policy, capability, and query-pattern items. Use `search` for ranked text discovery and `where` for exact filters.
-- `get_catalog_card` to inspect evidence, examples, details, safety notes, and graph edges
+Key discovery tools, when listed for the caller:
+- `graphql_help` to choose a catalog-backed topic route when the task is broad or unclear
+- `query_catalog` to search schema, relationship, workflow, language, `config_recipe`, config, policy, capability, and query-pattern items. Use `search` for ranked text discovery and `where` for exact filters.
+- `query_catalog(id: "...")` to inspect evidence, examples, details, safety notes, and graph edges for one row
 - `validate_where_clause` to validate filters before execution
 
 For JS orchestration, use:
 - `query_catalog` with `where: { kind: { eq: "workflow" } }` to discover reusable workflows
-- `get_js_runtime_api` to discover exactly which globals/functions are available inside workflow scripts
+- `graphql_help(for: "workflow_runtime")` and workflow catalog rows to discover exactly which globals/functions are available inside workflow scripts
 - `gj_workflow_execution(insert: { workflow_name: "...", variables: {...} })` to run `./workflows/<name>.js` through GraphQL. This is mutation-only and returns an ephemeral result row; it does not store run history. Mark the workflows source or `gj_workflow_execution` table `read_only` to block it. The `execute_workflow` MCP compatibility tool is available only when `mcp.legacy_discovery: true` and `mcp.allow_workflow_execution: true`.
 
-Prompts like `write_query` and `fix_query_error` help models construct and debug queries.
+Legacy prompts such as `write_query` and `fix_query_error` are available only when the caller's MCP surface lists them; in source mode their guidance lives in `graphql_help`, `query_catalog`, and GraphJin repair hints.
 
 ## JS Workflows (GraphQL + REST)
 
@@ -570,7 +570,7 @@ Real conversations showing how an AI assistant uses GraphJin MCP tools to help y
 
 > **You:** Show me users with their orders.
 
-> **Claude:** *calls `query_catalog` with `search: "join users orders", where: {kind: {eq: "relationship"}}`, then `get_catalog_card`, then `execute_graphql`*
+> **Claude:** *calls `query_catalog` with `search: "join users orders", where: {kind: {eq: "relationship"}}`, then `query_catalog(id: "<relationship_id>")`, then `execute_graphql` if raw execution is listed*
 > ```graphql
 > { users { id name email orders { id total status } } }
 > ```
@@ -603,7 +603,7 @@ Real conversations showing how an AI assistant uses GraphJin MCP tools to help y
 >
 > Tables found: `customers`, `products`, `orders`, `order_items`, `categories`. Let me check how they relate.
 >
-> *calls `query_catalog` with `search: "join orders customers order_items products", where: {kind: {eq: "relationship"}}`, then `get_catalog_card` for the relevant relationship items*
+> *calls `query_catalog` with `search: "join orders customers order_items products", where: {kind: {eq: "relationship"}}`, then `query_catalog(id: "<relationship_id>")` for the relevant relationship items*
 >
 > `orders` connects to `customers` (via customer_id) and `order_items` (via order_id), and `order_items` links to `products`. Here's a nested query:
 >
@@ -634,7 +634,7 @@ Real conversations showing how an AI assistant uses GraphJin MCP tools to help y
 
 > **You:** Show me all tasks with their project name, sorted by due date.
 
-> **Claude:** *calls `query_catalog` with `search: "join tasks projects", where: {kind: {eq: "relationship"}}`, then `get_catalog_card`, then `execute_graphql`*
+> **Claude:** *calls `query_catalog` with `search: "join tasks projects", where: {kind: {eq: "relationship"}}`, then `query_catalog(id: "<relationship_id>")`, then `execute_graphql` if raw execution is listed*
 > ```graphql
 > { tasks(order_by: {due_date: asc}) { id title due_date completed project { name } } }
 > ```

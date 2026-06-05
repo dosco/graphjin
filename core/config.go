@@ -229,7 +229,7 @@ func (c *Config) validateIsSourcesUsed() error {
 	for _, role := range c.Roles {
 		for _, table := range role.Tables {
 			if !table.Generated {
-				return fmt.Errorf("roles[%q].tables is legacy table access config and is not supported when sources is configured; use sources[].access", role.Name)
+				return fmt.Errorf("roles[%q].tables is legacy table access config and is not supported when sources is configured; use sources[].access; next_action: query_catalog(search: \"migrate legacy roles tables to source access\")", role.Name)
 			}
 		}
 	}

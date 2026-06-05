@@ -86,6 +86,7 @@ type ErrorInfo struct {
 
 // handleExecuteGraphQL executes a GraphQL query or mutation
 func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	// Check if raw queries are allowed
 	if !ms.service.conf.MCP.AllowRawQueries {
 		return mcp.NewToolResultError("raw queries are not allowed. Use execute_saved_query instead or enable allow_raw_queries in config."), nil
@@ -148,6 +149,7 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 
 // handleExecuteSavedQuery executes a saved query by name
 func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	args := req.GetArguments()
 	name, _ := args["name"].(string)
 	namespace, _ := args["namespace"].(string)
@@ -181,6 +183,7 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	ctx = ms.service.applyIdentityContext(ctx)
 	res, err := ms.service.gj.GraphQLByName(ctx, name, varsJSON, &rc)
 
 	result := ExecuteResult{}
@@ -198,6 +201,7 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 
 // handleExecuteWorkflow executes a named JS workflow from ./workflows.
 func (ms *mcpServer) handleExecuteWorkflow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	if !ms.service.conf.MCP.AllowWorkflowExecution {
 		return mcp.NewToolResultError("workflow execution is not allowed. Enable allow_workflow_execution in MCP config."), nil
 	}
