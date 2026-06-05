@@ -3,20 +3,23 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@graphiql/plugin-explorer": "^3.2.2",
-    "@graphiql/toolkit": "^0.11.0",
-    "@tanstack/react-query": "^5.17.0",
-    "graphiql": "^3.7.1",
-    "graphql": "^16.9.0",
-    "graphql-ws": "^5.16.0",
+    "@graphiql/react": "^0.37.5",
+    "@graphiql/toolkit": "^0.12.0",
+    "@tanstack/react-query": "^5.101.0",
+    "graphiql": "^5.2.3",
+    "graphql": "^16.14.1",
+    "graphql-ws": "^6.0.8",
+    "lucide-react": "^1.17.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.22.0",
-    "swagger-ui-react": "^5.11.0"
+    "react-router-dom": "^7.16.0",
+    "swagger-ui-react": "^5.32.6"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.7"
+    "@tailwindcss/vite": "^4.3.0",
+    "@vitejs/plugin-react": "^6.0.2",
+    "tailwindcss": "^4.3.0",
+    "vite": "^8.0.16"
   },
   "scripts": {
     "start": "vite",

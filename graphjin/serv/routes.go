@@ -46,16 +46,6 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 
 		if s.conf.WebUI {
 			mux.Handle("/", s1.WebUI("/", routeGraphQL))
-
-			// Admin API routes for Web UI
-			mux.Handle("/api/v1/admin/tables", apiV1Handler(s1, ns, adminTablesHandler(s1), ah))
-			mux.Handle("/api/v1/admin/tables/", apiV1Handler(s1, ns, adminTableSchemaHandler(s1), ah))
-			mux.Handle("/api/v1/admin/queries", apiV1Handler(s1, ns, adminQueriesHandler(s1), ah))
-			mux.Handle("/api/v1/admin/queries/", apiV1Handler(s1, ns, adminQueryDetailHandler(s1), ah))
-			mux.Handle("/api/v1/admin/fragments", apiV1Handler(s1, ns, adminFragmentsHandler(s1), ah))
-			mux.Handle("/api/v1/admin/config", apiV1Handler(s1, ns, adminConfigHandler(s1), ah))
-			mux.Handle("/api/v1/admin/database", apiV1Handler(s1, ns, adminDatabaseHandler(s1), ah))
-			mux.Handle("/api/v1/admin/databases", apiV1Handler(s1, ns, adminDatabasesHandler(s1), ah))
 		}
 
 		// GraphQL / REST API

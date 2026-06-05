@@ -2,7 +2,9 @@ app_name: "{{- .AppName }} Agentic"
 mode: agentic
 production: true
 host_port: 0.0.0.0:8080
-web_ui: false
+# Defaults on in agentic mode so operators can inspect catalog, runtime,
+# security, code, and config system roots from the console.
+web_ui: true
 log_level: "warn"
 log_format: "json"
 http_compress: true

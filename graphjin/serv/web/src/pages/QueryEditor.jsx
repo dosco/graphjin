@@ -1,28 +1,29 @@
-import React, { useState, useMemo } from "react";
+import "../setupGraphiQLWorkers";
+import React, { useMemo } from "react";
 import { createGraphiQLFetcher } from "@graphiql/toolkit";
 import { GraphiQL } from "graphiql";
-import { explorerPlugin } from "@graphiql/plugin-explorer";
 
-import "graphiql/graphiql.css";
+import "graphiql/style.css";
 
 const defaultEndpoint = import.meta.env.VITE_DEFAULT_ENDPOINT || "/api/v1/graphql";
 
-const defaultQuery = `# Welcome to GraphJin
-# Use this editor to build and test your GraphQL queries
+const defaultQuery = `# GraphJin Workbench
+# Query application roots or GraphJin system roots through the normal GraphQL endpoint.
 
-query getUsers {
-  users(limit: 10) {
-    id
-    full_name
-    email
+query SourceHealth {
+  gj_runtime(where: { kind: { eq: "source" } }, order_by: { source: asc }) {
+    source
+    source_kind
+    status
+    severity
+    summary
+    next_action
   }
 }
 `;
 
 const QueryEditor = () => {
-  const [query, setQuery] = useState(defaultQuery);
-
-  const { fetcher, explorer } = useMemo(() => {
+  const fetcher = useMemo(() => {
     let apiPath = defaultEndpoint;
     const urlParams = new URLSearchParams(window.location.search);
     const ep = urlParams.get("endpoint");
@@ -39,19 +40,25 @@ const QueryEditor = () => {
       subscriptionUrl: `${wsProtocol}//${window.location.host}${apiPath}`,
     });
 
-    const explorer = explorerPlugin();
-
-    return { fetcher, explorer };
+    return fetcher;
   }, []);
 
   return (
-    <div className="gj-query-editor">
-      <GraphiQL
-        fetcher={fetcher}
-        query={query}
-        onEditQuery={setQuery}
-        plugins={[explorer]}
-      />
+    <div className="page-stack workbench-page">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">GraphQL</p>
+          <h1>Workbench</h1>
+          <p>Run GraphJin queries against the same endpoint used by applications and system-root views.</p>
+        </div>
+      </div>
+      <div className="gj-query-editor">
+        <GraphiQL
+          fetcher={fetcher}
+          forcedTheme="light"
+          initialQuery={defaultQuery}
+        />
+      </div>
     </div>
   );
 };

@@ -652,12 +652,12 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			"Prefer gj_catalog for discovery and enable legacy discovery only for compatible clients."),
 		newSecurityPolicy(mode, "serve.web_ui", "serve", "graphjin", "graphjin", "admin_ui", "read",
 			"Web UI",
-			"Controls the built-in web UI/admin-facing HTTP surface.",
-			defaultAllow(mode, true, false, false), conf != nil && conf.Serv.WebUI,
+			"Controls the built-in GraphJin Console HTTP surface.",
+			defaultAllow(mode, true, false, true), conf != nil && conf.Serv.WebUI,
 			"web_ui", fmt.Sprint(conf != nil && conf.Serv.WebUI),
 			configBoolExplicit(conf, "web_ui"), "medium",
-			"Admin-style UI surfaces should not be exposed in prod or agentic deployments by default.",
-			"Keep web_ui false outside local development unless protected by explicit authentication."),
+			"The console is expected in dev and governed agentic deployments; strict prod remains opt-in.",
+			"Keep web_ui false in prod unless the console is intentionally exposed behind authentication."),
 		newSecurityPolicy(mode, "serve.cors_wildcard", "serve", "graphjin", "graphjin", "cors", "allow",
 			"Wildcard CORS origins",
 			"Controls whether HTTP CORS allows every origin.",
@@ -1407,6 +1407,9 @@ func mcpBoolExplicit(conf *Config, key string, value bool) bool {
 }
 
 func configBoolExplicit(conf *Config, key string) bool {
+	if key == "web_ui" {
+		return conf != nil && conf.webUIExplicit
+	}
 	return conf != nil && conf.viper != nil && conf.viper.IsSet(key)
 }
 

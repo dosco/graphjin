@@ -1,7 +1,6 @@
 import React from "react";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
-import "./Layout.css";
 
 const Layout = ({ children }) => {
   return (
@@ -9,7 +8,9 @@ const Layout = ({ children }) => {
       <Header />
       <div className="gj-main">
         <Sidebar />
-        <main className="gj-content">{children}</main>
+        <main className="gj-content" id="main-content">
+          {children}
+        </main>
       </div>
     </div>
   );

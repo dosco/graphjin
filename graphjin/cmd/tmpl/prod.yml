@@ -5,6 +5,7 @@ inherits: dev
 app_name: "{{- .AppName }} Production"
 mode: prod
 host_port: 0.0.0.0:8080
+# Defaults off in prod. Set true only when the console is protected.
 web_ui: false
 
 # Log levels: debug, error, warn, info
