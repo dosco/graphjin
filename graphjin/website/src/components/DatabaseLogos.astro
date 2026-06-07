@@ -10,7 +10,9 @@ const databases = [
   { name: 'CockroachDB', logo: '/logos/cockroachdb.svg' },
   { name: 'YugabyteDB', logo: '/logos/yugabytedb.svg' },
   { name: 'Snowflake', logo: '/logos/snowflake.svg' },
+  { name: 'Redshift', logo: '/logos/redshift.svg' },
   { name: 'BigQuery', label: 'BQ' },
+  { name: 'Cassandra / Keyspaces', label: 'C*' },
   { name: 'AWS Aurora', logo: '/logos/aws-aurora.svg' },
   { name: 'Cloud SQL', logo: '/logos/google-cloud-sql.svg' },
   { name: 'HTTP APIs', label: 'API' },
@@ -37,9 +39,10 @@ const databases = [
         style="color: var(--color-muted)"
       >
         Point GraphJin at <strong style="color: var(--color-text)">as many systems as you need</strong>
-        — Postgres for users, MySQL for orders, Snowflake and BigQuery for analytics, MongoDB for events,
-        HTTP APIs for remote services, object storage for files, and CodeSQL for source
-        trees — and query them through a single GraphQL endpoint. Joins, remote joins,
+        - Postgres for users, MySQL for orders, Snowflake, Redshift, and BigQuery
+        for analytics, Cassandra or Keyspaces for CQL workloads, MongoDB for events, HTTP APIs for
+        remote services, object storage for files, and CodeSQL for source
+        trees - and query them through a single GraphQL endpoint. Joins, remote joins,
         subscriptions, search, and mutations compose
         <strong style="color: var(--color-text)">across systems in one request</strong>, so an AI
         assistant can reason across the data, APIs, files, and code without learning every backend.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add GraphJin Database"
+  short_description: "Add GraphJin DB support end to end."
+  default_prompt: "Use this skill to add a GraphJin database end to end, including simulator, dialect, discovery, tests, and docs."

@@ -30,7 +30,7 @@ enable_tracing: true
 # with the new configs when a change is detected
 reload_on_config_change: true
 
-# Enable db.graphql schema management
+# Enable GraphJin DDL schema management with db.ddl
 # Use 'graphjin db diff' to preview and 'graphjin db sync' to apply changes
 enable_schema: false
 

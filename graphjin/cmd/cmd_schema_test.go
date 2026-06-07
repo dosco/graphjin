@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,6 +27,83 @@ func TestOutputSQL_CreateTable(t *testing.T) {
 	}
 	if !strings.Contains(output, "CREATE TABLE users (id INT);") {
 		t.Errorf("expected CREATE TABLE SQL, got %q", output)
+	}
+}
+
+func TestReadProjectSchemaDDLPrefersCanonicalDDL(t *testing.T) {
+	oldCpath := cpath
+	defer func() { cpath = oldCpath }()
+	cpath = t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(cpath, core.LegacySchemaGraphQLFile), []byte("legacy"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cpath, core.SchemaDDLFile), []byte("canonical"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	data, path, err := readProjectSchemaDDL()
+	if err != nil {
+		t.Fatalf("readProjectSchemaDDL: %v", err)
+	}
+	if string(data) != "canonical" {
+		t.Fatalf("data = %q, want canonical", data)
+	}
+	if filepath.Base(path) != core.SchemaDDLFile {
+		t.Fatalf("path = %q, want %s", path, core.SchemaDDLFile)
+	}
+}
+
+func TestReadProjectSchemaDDLFallsBackToLegacyGraphQL(t *testing.T) {
+	oldCpath := cpath
+	defer func() { cpath = oldCpath }()
+	cpath = t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(cpath, core.LegacySchemaGraphQLFile), []byte("legacy"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	data, path, err := readProjectSchemaDDL()
+	if err != nil {
+		t.Fatalf("readProjectSchemaDDL: %v", err)
+	}
+	if string(data) != "legacy" {
+		t.Fatalf("data = %q, want legacy", data)
+	}
+	if filepath.Base(path) != core.LegacySchemaGraphQLFile {
+		t.Fatalf("path = %q, want %s", path, core.LegacySchemaGraphQLFile)
+	}
+}
+
+func TestSourceSchemaDDLFilesAndAmbiguity(t *testing.T) {
+	oldCpath := cpath
+	defer func() { cpath = oldCpath }()
+	cpath = t.TempDir()
+
+	dir := filepath.Join(cpath, core.SourceSchemaDDLDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ops.ddl"), []byte("type users { id: Bigint! @id }"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := sourceSchemaDDLFiles()
+	if err != nil {
+		t.Fatalf("sourceSchemaDDLFiles: %v", err)
+	}
+	if len(files) != 1 || files[0].Source != "ops" {
+		t.Fatalf("files = %#v, want one ops file", files)
+	}
+	if err := ensureNoSchemaDDLAmbiguity(files); err != nil {
+		t.Fatalf("ensureNoSchemaDDLAmbiguity without db.ddl: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(cpath, core.SchemaDDLFile), []byte("type products { id: Bigint! @id }"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureNoSchemaDDLAmbiguity(files); err == nil || !strings.Contains(err.Error(), "ambiguous schema DDL") {
+		t.Fatalf("expected ambiguity error, got %v", err)
 	}
 }
 

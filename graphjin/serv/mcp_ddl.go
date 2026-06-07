@@ -20,12 +20,12 @@ func (ms *mcpServer) registerDDLTools() {
 	ms.srv.AddTool(mcp.NewTool(
 		"preview_schema_changes",
 		mcp.WithDescription("Preview SQL changes needed to create or modify database tables. "+
-			"Takes a db.graphql schema definition and returns the SQL that would be executed, without applying it. "+
+			"Takes a GraphJin DDL schema definition and returns the SQL that would be executed, without applying it. "+
 			"Use this to verify changes before calling apply_schema_changes. "+
 			"Example schema: type products { id: BigInt! @id\\n name: Text!\\n price: Numeric }"),
 		mcp.WithString("schema",
 			mcp.Required(),
-			mcp.Description("db.graphql schema definition. Example:\n"+
+			mcp.Description("GraphJin DDL schema definition. Example:\n"+
 				"type products {\n  id: BigInt! @id\n  name: Text!\n  price: Numeric\n}"),
 		),
 		mcp.WithBoolean("destructive",
@@ -40,13 +40,13 @@ func (ms *mcpServer) registerDDLTools() {
 	// apply_schema_changes - Apply schema changes to the database
 	ms.srv.AddTool(mcp.NewTool(
 		"apply_schema_changes",
-		mcp.WithDescription("Apply database schema changes using db.graphql format. "+
+		mcp.WithDescription("Apply database schema changes using GraphJin DDL format. "+
 			"Creates or modifies tables by executing the necessary SQL. "+
 			"IMPORTANT: Call preview_schema_changes first to review the SQL before applying. "+
 			"After applying, the schema is automatically reloaded so new tables are immediately queryable."),
 		mcp.WithString("schema",
 			mcp.Required(),
-			mcp.Description("db.graphql schema definition. Example:\n"+
+			mcp.Description("GraphJin DDL schema definition. Example:\n"+
 				"type products {\n  id: BigInt! @id\n  name: Text!\n  price: Numeric\n}"),
 		),
 		mcp.WithBoolean("destructive",
@@ -268,7 +268,7 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 			Status:       runtimeStatusFailed,
 			Severity:     "warn",
 			Summary:      "MCP schema apply diff computation failed.",
-			NextAction:   "Review the db.graphql schema input and retry preview before applying changes.",
+			NextAction:   "Review the GraphJin DDL schema input and retry preview before applying changes.",
 			DatabaseName: database,
 			ErrorCode:    "schema_diff_failed",
 			Details:      map[string]any{"error": err.Error(), "destructive": destructive},

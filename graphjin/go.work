@@ -7,6 +7,7 @@ use (
 	./codesql
 	./conf
 	./core
+	./hostedemu
 	./mongodriver
 	./plugin/otel
 	./serv

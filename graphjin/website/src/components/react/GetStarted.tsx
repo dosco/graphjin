@@ -20,7 +20,7 @@ const paths: Record<Path, { steps: Step[] }> = {
   new: {
     steps: [
       { title: "Describe your project", description: "Tell Claude or any MCP client about the tables and relationships you need." },
-      { title: "Preview & apply schema", description: "GraphJin previews changes as db.graphql and applies them transactionally." },
+      { title: "Preview & apply schema", description: "GraphJin previews GraphJin DDL changes and applies them transactionally." },
       { title: "Start querying", description: "The schema auto-reloads; queries work immediately, no restart needed." },
     ],
   },

@@ -16,13 +16,6 @@ func skipBigQuerySubscriptionsUnsupported(t *testing.T) {
 	}
 }
 
-func skipBigQuerySchemaDiffUnsupported(t *testing.T) {
-	t.Helper()
-	if dbType == "bigquery" {
-		t.Skip("bigquery: schema-diff DDL/live migration support is outside the experimental BigQuery MVP")
-	}
-}
-
 func skipBigQueryJSONVirtualTablesUnsupported(t *testing.T) {
 	t.Helper()
 	if dbType == "bigquery" {

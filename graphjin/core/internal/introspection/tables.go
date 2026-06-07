@@ -115,6 +115,8 @@ func getDBInfoOnce(
 			row = db.QueryRowContext(qctx, snowflakeInfo)
 		case "bigquery":
 			row = db.QueryRowContext(qctx, bigqueryInfo)
+		case "redshift":
+			row = db.QueryRowContext(qctx, redshiftInfo)
 		case "mongodb":
 			// MongoDB returns info via the driver's introspection
 			row = db.QueryRowContext(qctx, mongodbInfo)
@@ -122,7 +124,7 @@ func getDBInfoOnce(
 			// Cassandra returns info via the driver's introspection
 			row = db.QueryRowContext(qctx, cassandraInfo)
 		default:
-			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb, cassandra", dbType)
+			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, redshift, mongodb, cassandra", dbType)
 		}
 
 		if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
@@ -345,6 +347,8 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 		return discoverSnowflakeColumns(ctx, db, blockList)
 	case "bigquery":
 		return discoverBigQueryColumns(ctx, db, blockList)
+	case "redshift":
+		return discoverRedshiftColumns(ctx, db, blockList)
 	case "mongodb":
 		// MongoDB uses JSON query DSL - the driver handles introspection
 		sqlStmt = mongodbColumnsStmt
@@ -352,7 +356,7 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 		// Cassandra uses JSON query DSL - the driver handles introspection
 		sqlStmt = cassandraColumnsStmt
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb, cassandra", dbtype)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, redshift, mongodb, cassandra", dbtype)
 	}
 
 	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
@@ -618,6 +622,14 @@ func discoverBigQueryColumns(ctx context.Context, db *sql.DB, blockList []string
 	return enrichAndCollectColumns(ctx, db, "bigquery", cmap), nil
 }
 
+func discoverRedshiftColumns(ctx context.Context, db *sql.DB, blockList []string) ([]DBColumn, error) {
+	cmap := make(map[string]DBColumn)
+	if err := queryAndScanDiscoveredColumns(ctx, db, "redshift", blockList, cmap, redshiftColumnsStmt); err != nil {
+		return nil, fmt.Errorf("error fetching redshift columns: %w", err)
+	}
+	return enrichAndCollectColumns(ctx, db, "redshift", cmap), nil
+}
+
 func snowflakeSkipClusteringDiscovery() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("GRAPHJIN_SNOWFLAKE_DISCOVERY_CLUSTERING"))) {
 	case "0", "false", "off", "skip", "disabled", "disable":
@@ -694,7 +706,7 @@ func scanDiscoveredColumnRows(rows *sql.Rows, dbtype string, blockList []string,
 		c.FKeyTable = strings.TrimSpace(c.FKeyTable)
 		c.FKeyCol = strings.TrimSpace(c.FKeyCol)
 
-		if dbtype == "mssql" || dbtype == "snowflake" || dbtype == "bigquery" {
+		if dbtype == "mssql" || dbtype == "snowflake" || dbtype == "bigquery" || dbtype == "redshift" {
 			c.OrigName = c.Name
 			c.OrigTable = c.Table
 			c.OrigSchema = c.Schema
@@ -703,7 +715,7 @@ func scanDiscoveredColumnRows(rows *sql.Rows, dbtype string, blockList []string,
 			c.OrigFKeyCol = c.FKeyCol
 		}
 
-		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake" || dbtype == "bigquery" {
+		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake" || dbtype == "bigquery" || dbtype == "redshift" {
 			c.Name = util.ToSnake(c.Name)
 			c.Table = strings.ToLower(c.Table)
 			c.Schema = strings.ToLower(c.Schema)
@@ -1407,6 +1419,9 @@ func DiscoverFunctions(ctx context.Context, db *sql.DB, dbtype string, blockList
 		// BigQuery routines need dataset-qualified INFORMATION_SCHEMA queries.
 		// Skip routine discovery until the BigQuery connector carries dataset scope.
 		return nil, nil
+	case "redshift":
+		// Redshift function discovery is outside the experimental query/discovery MVP.
+		return nil, nil
 	case "mongodb":
 		// MongoDB doesn't have user-defined functions in the SQL sense
 		return nil, nil
@@ -1414,7 +1429,7 @@ func DiscoverFunctions(ctx context.Context, db *sql.DB, dbtype string, blockList
 		// Cassandra has no queryable user-defined functions for GraphJin's purposes
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, mongodb, cassandra", dbtype)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, redshift, mongodb, cassandra", dbtype)
 	}
 
 	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)

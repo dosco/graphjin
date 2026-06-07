@@ -1,0 +1,105 @@
+app_name: Coffee Roastery Agentic Demo
+mode: agentic
+host_port: 0.0.0.0:8080
+web_ui: true
+log_level: "info"
+log_format: "plain"
+http_compress: true
+server_timing: true
+production: false
+auth_fail_block: false
+enable_tracing: true
+reload_on_config_change: false
+enable_schema: false
+secret_key: coffee-roastery-demo-secret
+cors_allowed_origins: ["*"]
+default_block: false
+default_limit: 50
+
+auth:
+  type: none
+
+mcp:
+  disable: false
+  allow_config_updates: false
+  allow_mutations: true
+  allow_raw_queries: true
+  allow_workflow_execution: true
+  allow_workflow_updates: false
+  allow_schema_reload: false
+  allow_schema_updates: false
+  allow_dev_tools: true
+  legacy_discovery: false
+
+sources:
+  - name: ops
+    kind: database
+    default: true
+    type: postgres
+    access:
+      read: public
+      write: authenticated
+      delete: blocked
+      missing_namespace_column: allow
+    capabilities:
+      data.read: true
+      data.write: true
+      schema.read: true
+      schema.write: false
+
+  - name: roast_warehouse
+    kind: database
+    type: bigquery
+    path: schema/roast_warehouse.sql
+    read_only: true
+    analytics_mode: true
+    access:
+      read: public
+      write: blocked
+      delete: blocked
+      missing_namespace_column: allow
+    capabilities:
+      data.read: true
+      data.write: false
+      schema.read: true
+      schema.write: false
+
+  - name: business_code
+    kind: code
+    path: app
+    read_only: true
+    infer_db_refs: true
+    capabilities:
+      code.search: true
+      code.read: true
+      code.write: false
+      code.watch: false
+      code.infer_db_refs: true
+
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+    catalog: true
+    control_plane: true
+    capabilities:
+      catalog.read: true
+      security.read: true
+      config.read: false
+      config.write: false
+      runtime.read: true
+      raw_graphql.query: true
+      raw_graphql.mutate: true
+      schema.reload: false
+      schema.write: false
+      dev_tools.read: true
+      legacy_discovery.read: false
+
+  - name: workflows
+    kind: workflow
+    path: workflows
+    runtime: javascript
+    read_only: true
+    capabilities:
+      workflow.execute: true
+      workflow.read: true
+      workflow.write: false

@@ -111,6 +111,16 @@ func NewCompiler(conf Config) *Compiler {
 				},
 			},
 		}
+	case "redshift":
+		d = &dialect.RedshiftDialect{
+			SnowflakeDialect: dialect.SnowflakeDialect{
+				PostgresDialect: dialect.PostgresDialect{
+					DBVersion:       conf.DBVersion,
+					EnableCamelcase: conf.EnableCamelcase,
+					SecPrefix:       conf.SecPrefix,
+				},
+			},
+		}
 	case "mongodb":
 		d = &dialect.MongoDBDialect{EnableCamelcase: conf.EnableCamelcase}
 	case "cassandra":
@@ -154,7 +164,7 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 
 	// Skip SQL comment for MongoDB (it generates JSON, not SQL) and hosted
 	// warehouse emulators that classify statements from the SQL prefix.
-	if co.dialect.Name() != "mongodb" && co.dialect.Name() != "snowflake" && co.dialect.Name() != "bigquery" {
+	if co.dialect.Name() != "mongodb" && co.dialect.Name() != "snowflake" && co.dialect.Name() != "bigquery" && co.dialect.Name() != "redshift" {
 		w.WriteString(`/* action='` + qc.Name + `',controller='graphql',framework='graphjin' */ `)
 	}
 
@@ -170,7 +180,7 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 		err = co.CompileQuery(w, qc, &md)
 
 	case qcode.QTMutation:
-		co.compileMutation(w, qc, &md)
+		err = co.compileMutation(w, qc, &md)
 
 	default:
 		err = fmt.Errorf("unknown operation type %d", qc.Type)
@@ -438,8 +448,8 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 	}
 
 	// SQLite, MariaDB and Snowflake cursor workaround: return json_object containing both json and cursor
-	if sel.Paging.Cursor && (c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake") {
-		if c.dialect.Name() == "snowflake" {
+	if sel.Paging.Cursor && (c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake" || c.dialect.Name() == "redshift") {
+		if c.dialect.Name() == "snowflake" || c.dialect.Name() == "redshift" {
 			c.w.WriteString(`SELECT OBJECT_CONSTRUCT('json', `)
 		} else {
 			c.w.WriteString(`SELECT json_object('json', `)
@@ -469,7 +479,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 				c.w.WriteString(` || ':' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_arrayagg(__cur_`)
 				int32String(c.w, int32(i))
 				c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
-			} else if c.dialect.Name() == "snowflake" || c.dialect.Name() == "bigquery" {
+			} else if c.dialect.Name() == "snowflake" || c.dialect.Name() == "bigquery" || c.dialect.Name() == "redshift" {
 				c.w.WriteString(` || ',' || COALESCE(TO_VARCHAR(GET(ARRAY_AGG(__cur_`)
 				int32String(c.w, int32(i))
 				c.w.WriteString(`), COUNT(*) - 1)), '')`)
@@ -486,7 +496,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		if sel.FieldFilter.Exp != nil {
 			c.w.WriteString(`(CASE WHEN `)
 			c.renderExpForSel(sel, sel.FieldFilter.Exp, false)
-			if c.dialect.Name() == "snowflake" {
+			if c.dialect.Name() == "snowflake" || c.dialect.Name() == "redshift" {
 				c.w.WriteString(` THEN `)
 			} else {
 				c.w.WriteString(` THEN (SELECT `)
@@ -496,7 +506,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		c.dialect.RenderJSONPlural(c, sel)
 
 		if sel.FieldFilter.Exp != nil {
-			if c.dialect.Name() == "snowflake" {
+			if c.dialect.Name() == "snowflake" || c.dialect.Name() == "redshift" {
 				c.w.WriteString(` ELSE null END)`)
 			} else {
 				c.w.WriteString(`) ELSE null END)`)
@@ -582,7 +592,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 				c.w.WriteString(`) OVER() AS "__CUR_`)
 				int32String(c.w, int32(i))
 				c.w.WriteString(`"`)
-			} else if c.dialect.Name() == "snowflake" {
+			} else if c.dialect.Name() == "snowflake" || c.dialect.Name() == "redshift" {
 				c.w.WriteString(`, `)
 				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
 				c.w.WriteString(` AS __cur_`)

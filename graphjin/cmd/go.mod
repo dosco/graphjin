@@ -6,6 +6,7 @@ require (
 	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
 	github.com/dosco/graphjin/core/v3 v3.18.34
+	github.com/dosco/graphjin/hostedemu v0.0.0
 	github.com/dosco/graphjin/serv/v3 v3.18.34
 	github.com/gosimple/slug v1.15.0
 	github.com/jackc/pgx/v5 v5.7.6
@@ -24,6 +25,7 @@ require (
 replace (
 	github.com/dosco/graphjin/auth/v3 => ../auth
 	github.com/dosco/graphjin/core/v3 => ../core
+	github.com/dosco/graphjin/hostedemu => ../hostedemu
 	github.com/dosco/graphjin/plugin/otel/v3 => ../plugin/otel
 	github.com/dosco/graphjin/serv/v3 => ../serv
 )

@@ -1,0 +1,10 @@
+{
+  "name": "coffee-roastery-demo-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "plan": "tsx src/roast_plan.ts",
+    "quality": "tsx src/quality_score.ts"
+  },
+  "dependencies": {}
+}

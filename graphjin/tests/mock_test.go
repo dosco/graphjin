@@ -18,18 +18,18 @@ func TestMockDB(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) //nolint:errcheck
 
-	// Copy test-db.graphql to db.graphql in temp dir
-	dbGraphql, err := os.ReadFile("test-db.graphql")
+	// Copy the schema fixture to canonical db.ddl in temp dir.
+	dbDDL, err := os.ReadFile("test-db.graphql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(dir+"/db.graphql", dbGraphql, 0644); err != nil {
+	if err := os.WriteFile(dir+"/db.ddl", dbDDL, 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	conf := core.Config{
 		MockDB:       true,
-		EnableSchema: true, 
+		EnableSchema: true,
 	}
 
 	fs := core.NewOsFS(dir)
@@ -57,18 +57,16 @@ func TestMockDB(t *testing.T) {
 		t.Fatal(err)
 	}
 
-
-
 	// Verify structure
 	var data struct {
 		Users []struct {
 			ID       int
 			FullName string `json:"full_name"`
 			Email    string
-            Products []struct {
-                Name string
-                Price float64
-            }
+			Products []struct {
+				Name  string
+				Price float64
+			}
 		} `json:"users"`
 	}
 
@@ -79,9 +77,9 @@ func TestMockDB(t *testing.T) {
 	assert.NotEmpty(t, data.Users)
 	assert.Greater(t, data.Users[0].ID, 0)
 	assert.NotEmpty(t, data.Users[0].FullName)
-    
-    // Check nested
-    if len(data.Users[0].Products) > 0 {
-        assert.NotEmpty(t, data.Users[0].Products[0].Name)
-    }
+
+	// Check nested
+	if len(data.Users[0].Products) > 0 {
+		assert.NotEmpty(t, data.Users[0].Products[0].Name)
+	}
 }

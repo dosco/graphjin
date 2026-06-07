@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// //go:embed test-db.graphql
+// //go:embed test-db.ddl
 // var testSchema []byte
 
 // func TestIntrospection1(t *testing.T) {

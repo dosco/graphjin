@@ -271,7 +271,7 @@ type users {
   id: Bigint! @id @unique
 }
 `)
-	if err := os.WriteFile(filepath.Join(cfgRoot, "db.graphql"), schema, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgRoot, "db.ddl"), schema, 0o644); err != nil {
 		t.Fatal(err)
 	}
 

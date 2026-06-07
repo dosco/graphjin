@@ -1,0 +1,17 @@
+inherits: dev
+mode: prod
+production: true
+log_level: "warn"
+log_format: "json"
+
+mcp:
+  disable: false
+  allow_config_updates: false
+  allow_mutations: false
+  allow_raw_queries: false
+  allow_workflow_execution: true
+  allow_workflow_updates: false
+  allow_schema_reload: false
+  allow_schema_updates: false
+  allow_dev_tools: false
+  legacy_discovery: false

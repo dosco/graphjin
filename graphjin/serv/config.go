@@ -331,7 +331,7 @@ type MCPConfig struct {
 	AllowSchemaReload bool `mapstructure:"allow_schema_reload" jsonschema:"title=Allow Schema Reload,default=false"`
 
 	// AllowSchemaUpdates enables MCP tools to preview and apply database schema changes (DDL)
-	// Uses db.graphql format. Auto-enabled in dev mode. Default: false
+	// Uses GraphJin DDL (db.ddl) format. Auto-enabled in dev mode. Default: false
 	AllowSchemaUpdates bool `mapstructure:"allow_schema_updates" jsonschema:"title=Allow Schema Updates,default=false"`
 
 	// AllowWorkflowUpdates enables workflow writes through gj_workflow and,

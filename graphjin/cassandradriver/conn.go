@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
+	"strings"
 
 	"github.com/gocql/gocql"
 )
@@ -50,6 +51,12 @@ func (c *Conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 
 // ExecContext runs a statement whose result is discarded.
 func (c *Conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if isRawCQLDDL(query) {
+		if _, err := c.resolver().Exec.Exec(ctx, Statement{CQL: query, Args: positionalArgs(args)}); err != nil {
+			return nil, err
+		}
+		return driver.RowsAffected(0), nil
+	}
 	q, err := c.prepare(query, args)
 	if err != nil {
 		return nil, err
@@ -58,6 +65,14 @@ func (c *Conn) ExecContext(ctx context.Context, query string, args []driver.Name
 		return nil, err
 	}
 	return driver.RowsAffected(0), nil
+}
+
+func isRawCQLDDL(query string) bool {
+	q := strings.ToUpper(strings.TrimSpace(query))
+	return strings.HasPrefix(q, "CREATE KEYSPACE ") ||
+		strings.HasPrefix(q, "CREATE TABLE ") ||
+		strings.HasPrefix(q, "ALTER TABLE ") ||
+		strings.HasPrefix(q, "DROP TABLE ")
 }
 
 func (c *Conn) resolver() *Resolver {

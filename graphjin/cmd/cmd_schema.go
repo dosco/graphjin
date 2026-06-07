@@ -15,13 +15,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// cmdDBGenerate generates db.graphql from the current database schema
+// cmdDBGenerate generates GraphJin DDL from the current database schema.
 func cmdDBGenerate(cmd *cobra.Command, args []string) {
 	setup(cpath)
 
 	outputPath, _ := cmd.Flags().GetString("output")
 	if outputPath == "" {
-		outputPath = filepath.Join(cpath, "db.graphql")
+		outputPath = projectSchemaDDLPath()
 	}
 
 	// Multi-DB mode
@@ -29,6 +29,10 @@ func cmdDBGenerate(cmd *cobra.Command, args []string) {
 		connections, err := openMultiDBConnections()
 		if err != nil {
 			log.Fatalf("Failed to connect to databases: %s", err)
+		}
+		if len(connections) == 0 {
+			log.Infof("No schema-DDL-supported databases configured")
+			return
 		}
 		defer func() {
 			for _, conn := range connections {
@@ -46,12 +50,17 @@ func cmdDBGenerate(cmd *cobra.Command, args []string) {
 
 			// Use database-specific output path if multiple databases
 			dbOutputPath := outputPath
-			if len(connections) > 1 {
+			if cmd.Flags().Changed("output") && len(connections) > 1 {
 				ext := filepath.Ext(outputPath)
 				base := strings.TrimSuffix(outputPath, ext)
 				dbOutputPath = fmt.Sprintf("%s_%s%s", base, dbName, ext)
+			} else if !cmd.Flags().Changed("output") {
+				dbOutputPath = filepath.Join(sourceSchemaDDLDir(), dbName+".ddl")
 			}
 
+			if err := os.MkdirAll(filepath.Dir(dbOutputPath), 0o755); err != nil {
+				log.Fatalf("Failed to create schema DDL directory for '%s': %s", dbName, err)
+			}
 			if err := os.WriteFile(dbOutputPath, schemaBytes, 0644); err != nil {
 				log.Fatalf("Failed to write schema file '%s': %s", dbOutputPath, err)
 			}
@@ -75,7 +84,7 @@ func cmdDBGenerate(cmd *cobra.Command, args []string) {
 	log.Infof("Generated schema: %s", outputPath)
 }
 
-// cmdDBDiff shows the SQL diff between db.graphql and the database
+// cmdDBDiff shows the SQL diff between GraphJin DDL and the database.
 func cmdDBDiff(cmd *cobra.Command, args []string) {
 	setup(cpath)
 
@@ -259,14 +268,13 @@ func cmdDBSync(cmd *cobra.Command, args []string) {
 	log.Infof("Schema changes applied successfully")
 }
 
-// computeSchemaDiff computes the diff between db.graphql and the database
+// computeSchemaDiff computes the diff between GraphJin DDL and the database.
 func computeSchemaDiff(destructive bool) ([]core.SchemaOperation, error) {
-	// Read db.graphql from config path
-	schemaPath := filepath.Join(cpath, "db.graphql")
-	schemaBytes, err := os.ReadFile(schemaPath)
+	schemaBytes, schemaPath, err := readProjectSchemaDDL()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read db.graphql: %w", err)
+		return nil, fmt.Errorf("failed to read GraphJin DDL: %w", err)
 	}
+	log.Debugf("Using schema DDL: %s", schemaPath)
 
 	// Compute diff using core package
 	opts := core.DiffOptions{
@@ -341,12 +349,26 @@ func outputJSON(ops []core.SchemaOperation) {
 	fmt.Println(string(output))
 }
 
-// applyChanges executes the SQL statements in a transaction
+// applyChanges executes the SQL statements using the configured database's DDL policy.
 func applyChanges(sqls []string) error {
-	ctx := context.Background()
+	return applySQLChanges(context.Background(), db, conf.DB.Type, "", sqls)
+}
 
-	tx, err := db.BeginTx(ctx, nil)
+func applySQLChanges(ctx context.Context, conn *sql.DB, dbType, dbName string, sqls []string) error {
+	if !schemaDDLUsesTransaction(dbType) {
+		for _, sql := range sqls {
+			if _, err := conn.ExecContext(ctx, sql); err != nil {
+				return fmt.Errorf("failed to execute SQL: %s\nError: %w", sql, err)
+			}
+		}
+		return nil
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
+		if dbName != "" {
+			return fmt.Errorf("failed to begin transaction for %s: %w", dbName, err)
+		}
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
@@ -366,6 +388,10 @@ func applyChanges(sqls []string) error {
 	return nil
 }
 
+func schemaDDLUsesTransaction(dbType string) bool {
+	return strings.ToLower(strings.TrimSpace(dbType)) != "cassandra"
+}
+
 // isMultiDBMode checks if multi-database mode is configured
 func isMultiDBMode() bool {
 	return len(conf.Databases) > 0
@@ -377,6 +403,11 @@ func openMultiDBConnections() (map[string]*sql.DB, error) {
 	fs := core.NewOsFS(cpath)
 
 	for name, dbConf := range conf.Databases {
+		if !core.SupportsSchemaDDL(dbConf.Type) {
+			log.Debugf("Skipping database %q for schema DDL: type %q is not supported", name, dbConf.Type)
+			continue
+		}
+
 		// Create a temporary config for this database
 		tempConf := &serv.Config{}
 		*tempConf = *conf
@@ -406,11 +437,12 @@ func openMultiDBConnections() (map[string]*sql.DB, error) {
 
 // computeSchemaDiffMulti computes schema diff for all databases in multi-DB mode
 func computeSchemaDiffMulti(destructive bool) (map[string][]core.SchemaOperation, error) {
-	// Read db.graphql from config path
-	schemaPath := filepath.Join(cpath, "db.graphql")
-	schemaBytes, err := os.ReadFile(schemaPath)
+	files, err := sourceSchemaDDLFiles()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read db.graphql: %w", err)
+		return nil, fmt.Errorf("failed to read source DDL files: %w", err)
+	}
+	if err := ensureNoSchemaDDLAmbiguity(files); err != nil {
+		return nil, err
 	}
 
 	// Open connections to all databases
@@ -435,6 +467,33 @@ func computeSchemaDiffMulti(destructive bool) (map[string][]core.SchemaOperation
 		Destructive: destructive,
 	}
 
+	if len(files) != 0 {
+		results := make(map[string][]core.SchemaOperation)
+		for _, file := range files {
+			dbType := dbTypes[file.Source]
+			if !core.SupportsSchemaDDL(dbType) {
+				return nil, fmt.Errorf("schema DDL is not supported for source %q with database type %q", file.Source, dbType)
+			}
+			conn, ok := connections[file.Source]
+			if !ok {
+				return nil, fmt.Errorf("%s has no configured database source %q", file.Path, file.Source)
+			}
+			ops, err := core.SchemaDiff(conn, dbType, file.Data, conf.Blocklist, opts)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", file.Path, err)
+			}
+			if len(ops) != 0 {
+				results[file.Source] = ops
+			}
+		}
+		return results, nil
+	}
+
+	schemaBytes, schemaPath, err := readProjectSchemaDDL()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read GraphJin DDL: %w", err)
+	}
+	log.Debugf("Using combined schema DDL: %s", schemaPath)
 	return core.SchemaDiffMultiDB(connections, dbTypes, schemaBytes, conf.Blocklist, opts)
 }
 
@@ -508,28 +567,12 @@ func applyChangesMulti(results map[string][]core.SchemaOperation) error {
 		sqls := core.GenerateDiffSQL(ops)
 		conn := connections[dbName]
 
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("failed to begin transaction for %s: %w", dbName, err)
+		dbType := conf.Databases[dbName].Type
+		if err := applySQLChanges(ctx, conn, dbType, dbName, sqls); err != nil {
+			return fmt.Errorf("failed to apply schema to %s: %w", dbName, err)
 		}
-
-		var failed bool
-		for _, sqlStmt := range sqls {
-			if _, err := tx.ExecContext(ctx, sqlStmt); err != nil {
-				if rbErr := tx.Rollback(); rbErr != nil {
-					log.Warnf("Rollback failed for %s: %s", dbName, rbErr)
-				}
-				return fmt.Errorf("failed to apply schema to %s: %w", dbName, err)
-			}
-		}
-
-		if !failed {
-			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("failed to commit changes to %s: %w", dbName, err)
-			}
-			log.Infof("[%s] Schema changes applied (%d changes)", dbName, len(ops))
-			totalChanges += len(ops)
-		}
+		log.Infof("[%s] Schema changes applied (%d changes)", dbName, len(ops))
+		totalChanges += len(ops)
 	}
 
 	log.Infof("Total schema changes applied: %d", totalChanges)

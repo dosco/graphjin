@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"path"
 	"regexp"
 	"strings"
 	"text/tabwriter"
@@ -15,6 +16,54 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/introspection"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
+
+const (
+	// SchemaDDLFile is the canonical project-level GraphJin DDL file.
+	SchemaDDLFile = "db.ddl"
+
+	// LegacySchemaGraphQLFile is the legacy name for SchemaDDLFile.
+	LegacySchemaGraphQLFile = "db.graphql"
+
+	// SourceSchemaDDLDir stores source-local desired schema DDL files.
+	SourceSchemaDDLDir = "schema-ddl"
+
+	// LocalStateDir stores generated runtime artifacts that should not be committed.
+	LocalStateDir = ".graphjin"
+)
+
+// SourceSchemaDDLPath returns the canonical source-local DDL path.
+func SourceSchemaDDLPath(source string) string {
+	return path.Join(SourceSchemaDDLDir, sanitizeSchemaDDLName(source)+".ddl")
+}
+
+// RuntimeSchemaDDLPath returns the generated runtime-cache DDL path.
+func RuntimeSchemaDDLPath(source string) string {
+	return path.Join(LocalStateDir, SourceSchemaDDLDir, sanitizeSchemaDDLName(source)+".ddl")
+}
+
+func sanitizeSchemaDDLName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "default"
+	}
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '_',
+			r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "default"
+	}
+	return b.String()
+}
 
 const schemaTemplate = `# dbinfo:{{if .Type}}{{ .Type }}{{else}}postgres{{end}},{{- .Version }},{{- .Schema }}
 
@@ -141,7 +190,7 @@ func parseDBType(name string) (res [2]string, err error) {
 	return
 }
 
-// GenerateSchema generates a db.graphql schema from database introspection
+// GenerateSchema generates GraphJin DDL from database introspection.
 func GenerateSchema(db *sql.DB, dbType string, blocklist []string) ([]byte, error) {
 	dbinfo, err := introspection.GetDBInfo(context.Background(), db, dbType, blocklist)
 	if err != nil {

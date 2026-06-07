@@ -21,7 +21,6 @@ var (
 	mcpUserRole  string
 	mcpServerURL string // populated from client.json when proxy mode is auto-detected
 	mcpDemoMode  bool
-	mcpPersist   bool
 	mcpDBFlags   []string
 )
 
@@ -44,9 +43,10 @@ Two modes, auto-selected:
                 using --path config + the local database.
 
 Demo mode (--demo, local mode only):
-  graphjin mcp --demo                    # Use database type from config, default to postgres
-  graphjin mcp --demo --db mysql         # Override database type
-  graphjin mcp --demo --persist          # Persist data using Docker volumes
+  graphjin mcp --demo --path examples/webshop
+  graphjin mcp --demo --path examples/coffee-roastery
+
+Demo state is stored under <path>/demo. Delete that folder to reset.
 
 Authentication for local mode:
   --user-id, --user-role flags (highest priority)
@@ -57,8 +57,7 @@ Authentication for local mode:
 
 	c.Flags().StringVar(&mcpUserID, "user-id", "", "User ID for MCP session (local mode)")
 	c.Flags().StringVar(&mcpUserRole, "user-role", "", "User role for MCP session (local mode)")
-	c.Flags().BoolVar(&mcpDemoMode, "demo", false, "Run with temporary database container(s) (local mode)")
-	c.Flags().BoolVar(&mcpPersist, "persist", false, "Persist data using Docker volumes (requires --demo)")
+	c.Flags().BoolVar(&mcpDemoMode, "demo", false, "Run a curated local demo with state under <path>/demo (local mode)")
 	c.Flags().StringArrayVar(&mcpDBFlags, "db", nil, "Database type override(s) (requires --demo)")
 
 	// Subcommands
@@ -83,8 +82,8 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 	}
 
 	// Local mode from here on.
-	if !mcpDemoMode && (mcpPersist || len(mcpDBFlags) > 0) {
-		log.Fatal("--persist and --db flags require --demo")
+	if !mcpDemoMode && len(mcpDBFlags) > 0 {
+		log.Fatal("--db flags require --demo")
 	}
 
 	setup(cpath)
@@ -92,12 +91,12 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var cleanups []func(context.Context) error
+	var demo *DemoRuntime
 
 	// Start demo containers if --demo is set
 	if mcpDemoMode {
 		var err error
-		cleanups, err = StartDemo(ctx, mcpPersist, mcpDBFlags)
+		demo, err = StartDemo(ctx, mcpDBFlags, os.Stderr)
 		if err != nil {
 			log.Fatalf("Failed to start demo: %s", err)
 		}
@@ -112,9 +111,19 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 	}
 
 	// Use stderr for logging in MCP stdio mode to keep stdout clean for JSON-RPC
-	gj, err := serv.NewGraphJinService(conf, serv.OptionSetLogOutput(os.Stderr))
+	opts := []serv.Option{serv.OptionSetLogOutput(os.Stderr)}
+	if demo != nil && len(demo.Databases) != 0 {
+		opts = append(opts,
+			serv.OptionSetDatabases(demo.Databases),
+			serv.OptionSetRuntimeSchemaDDLDir(demoRuntimeSchemaDDLDir()),
+		)
+	}
+	gj, err := serv.NewGraphJinService(conf, opts...)
 	if err != nil {
 		log.Fatalf("failed to initialize GraphJin: %s", err)
+	}
+	if demo != nil {
+		demo.Status.Emit("GraphJin", "ready", "service initialized")
 	}
 
 	// Graceful shutdown setup
@@ -126,10 +135,10 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 		cancel()
 
 		// Cleanup demo containers if any
-		if len(cleanups) > 0 {
+		if demo != nil && len(demo.Cleanups) > 0 {
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer shutdownCancel()
-			cleanupAll(shutdownCtx, cleanups)
+			cleanupAll(shutdownCtx, demo.Cleanups)
 			log.Info("Container(s) terminated")
 		}
 	}()

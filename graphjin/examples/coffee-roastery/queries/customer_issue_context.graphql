@@ -1,0 +1,27 @@
+query customer_issue_context {
+  customer_tickets(where: { status: { eq: "open" } }, order_by: { created_at: desc }, limit: 10) {
+    id
+    customer_id
+    production_order_id
+    subject
+    body
+    severity
+    created_at
+  }
+  production_orders(order_by: { requested_ship_date: asc }, limit: 10) {
+    id
+    customer_id
+    product_name
+    requested_ship_date
+    status
+    priority
+  }
+  customers(order_by: { id: asc }, limit: 10) {
+    id
+    name
+    email
+    segment
+    account_tier
+    preferred_origin
+  }
+}
