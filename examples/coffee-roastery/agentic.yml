@@ -1,0 +1,5 @@
+inherits: dev
+mode: agentic
+production: false
+log_level: "info"
+log_format: "plain"

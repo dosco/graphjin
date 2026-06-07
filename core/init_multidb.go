@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -47,19 +48,22 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 
 	isPrimary := (ctx.name == gj.defaultDB)
 
-	// For the primary DB: load schema from db.graphql when in MockDB mode
+	// For the primary DB: load schema from GraphJin DDL when in MockDB mode
 	// or when EnableSchema is on in production.
 	if isPrimary && ((gj.prod && gj.conf.EnableSchema) || gj.conf.MockDB) {
-		b, err := gj.fs.Get("db.graphql")
+		b, schemaPath, err := gj.loadSchemaDDL()
 		if err != nil {
 			if gj.conf.MockDB {
-				return fmt.Errorf("mock_db is enabled but db.graphql not found: %w", err)
+				return fmt.Errorf("mock_db is enabled but %s not found: %w", SchemaDDLFile, err)
 			}
 			// EnableSchema in prod but file not found — fall through to live discovery
 		} else {
+			if schemaPath == LegacySchemaGraphQLFile && gj.log != nil {
+				gj.log.Printf("%s is deprecated; rename it to %s", LegacySchemaGraphQLFile, SchemaDDLFile)
+			}
 			ds, err := qcode.ParseSchema(b)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to parse %s: %w", schemaPath, err)
 			}
 			ctx.dbinfo = sdata.NewDBInfo(ds.Type, ds.Version, ds.Schema, "",
 				ds.Columns, ds.Functions, gj.conf.Blocklist)
@@ -72,7 +76,7 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 	}
 
 	if gj.conf.MockDB {
-		return fmt.Errorf("mock_db is enabled but db.graphql not found")
+		return fmt.Errorf("mock_db is enabled but %s not found", SchemaDDLFile)
 	}
 
 	// No DB connection — nothing to discover
@@ -82,9 +86,19 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 
 	dbinfo, err := introspection.GetDBInfo(context.Background(), ctx.db, ctx.dbtype, gj.conf.Blocklist)
 	if err != nil {
+		cached, cacheErr := gj.loadRuntimeSchemaDDL(ctx)
+		if cacheErr == nil {
+			if gj.log != nil {
+				gj.log.Printf("database %s: live schema discovery failed, using cached %s: %v",
+					ctx.name, gj.runtimeSchemaDDLPath(ctx.name), err)
+			}
+			ctx.dbinfo = cached
+			return nil
+		}
 		return fmt.Errorf("database %s: schema discovery failed: %w", ctx.name, err)
 	}
 	ctx.dbinfo = dbinfo
+	gj.writeRuntimeSchemaDDL(ctx) //nolint:errcheck // Cache write is best-effort.
 
 	// In dev mode with EnableSchema, write the schema out for future use
 	if isPrimary && !gj.prod && gj.conf.EnableSchema {
@@ -92,12 +106,85 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 		if err := writeSchema(ctx.dbinfo, &buf); err != nil {
 			return err
 		}
-		if err := gj.fs.Put("db.graphql", buf.Bytes()); err != nil {
+		if err := gj.fs.Put(SchemaDDLFile, buf.Bytes()); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func (gj *graphjinEngine) loadRuntimeSchemaDDL(ctx *dbContext) (*sdata.DBInfo, error) {
+	if gj == nil || gj.fs == nil || ctx == nil {
+		return nil, fmt.Errorf("schema DDL cache is not available")
+	}
+	name := gj.runtimeSchemaDDLPath(ctx.name)
+	ok, err := gj.fs.Exists(name)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("%s not found", name)
+	}
+	b, err := gj.fs.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	ds, err := qcode.ParseSchema(b)
+	if err != nil {
+		return nil, err
+	}
+	dbType := strings.TrimSpace(ctx.dbtype)
+	if dbType == "" {
+		dbType = strings.TrimSpace(ds.Type)
+	}
+	if dbType == "" {
+		dbType = "postgres"
+	}
+	schema := ds.Schema
+	if schema == "" {
+		schema = defaultSchemaForDBType(dbType)
+	}
+	return sdata.NewDBInfo(dbType, ds.Version, schema, "", ds.Columns, ds.Functions, gj.conf.Blocklist), nil
+}
+
+func (gj *graphjinEngine) writeRuntimeSchemaDDL(ctx *dbContext) error {
+	if gj == nil || gj.fs == nil || ctx == nil || ctx.dbinfo == nil {
+		return nil
+	}
+	var buf bytes.Buffer
+	if err := writeSchema(ctx.dbinfo, &buf); err != nil {
+		return err
+	}
+	return gj.fs.Put(gj.runtimeSchemaDDLPath(ctx.name), buf.Bytes())
+}
+
+func (gj *graphjinEngine) runtimeSchemaDDLPath(source string) string {
+	if gj == nil || strings.TrimSpace(gj.runtimeSchemaDDLDir) == "" {
+		return RuntimeSchemaDDLPath(source)
+	}
+	return path.Join(gj.runtimeSchemaDDLDir, sanitizeSchemaDDLName(source)+".ddl")
+}
+
+func (gj *graphjinEngine) loadSchemaDDL() ([]byte, string, error) {
+	if gj.fs == nil {
+		return nil, "", fmt.Errorf("filesystem is not configured")
+	}
+	for _, name := range []string{SchemaDDLFile, LegacySchemaGraphQLFile} {
+		ok, err := gj.fs.Exists(name)
+		if err != nil {
+			return nil, name, err
+		}
+		if !ok {
+			continue
+		}
+		b, err := gj.fs.Get(name)
+		if err != nil {
+			return nil, name, err
+		}
+		return b, name, nil
+	}
+	return nil, SchemaDDLFile, fmt.Errorf("%s or legacy %s not found", SchemaDDLFile, LegacySchemaGraphQLFile)
 }
 
 // finalizeAllDatabases runs Phase 3: schema + compiler creation for all databases.

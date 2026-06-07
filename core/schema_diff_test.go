@@ -52,6 +52,160 @@ func TestComputeDiff_CreateTable(t *testing.T) {
 	}
 }
 
+func TestSupportsSchemaDDLBoundary(t *testing.T) {
+	for _, dbType := range []string{"postgres", "mysql", "mariadb", "sqlite", "mssql", "oracle", "snowflake", "bigquery", "redshift", "cassandra"} {
+		if !SupportsSchemaDDL(dbType) {
+			t.Fatalf("SupportsSchemaDDL(%q) = false, want true", dbType)
+		}
+	}
+	for _, dbType := range []string{"mongodb", "codesql", "graphjin", "workflow", "files"} {
+		if SupportsSchemaDDL(dbType) {
+			t.Fatalf("SupportsSchemaDDL(%q) = true, want false", dbType)
+		}
+	}
+}
+
+func TestComputeDiff_BigQueryDDL(t *testing.T) {
+	current := &sdata.DBInfo{Type: "bigquery"}
+	expected := sdata.NewDBInfo("bigquery", 0, "", "project", []sdata.DBColumn{
+		{Schema: "", Table: "users", Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true},
+		{Schema: "", Table: "users", Name: "email", Type: "text", NotNull: true},
+		{Schema: "", Table: "orders", Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true},
+		{Schema: "", Table: "orders", Name: "user_id", Type: "bigint", FKeyTable: "users", FKeyCol: "id"},
+		{Schema: "", Table: "orders", Name: "tags", Type: "text", Array: true},
+	}, nil, nil)
+
+	ops := computeDiff(current, expected, DiffOptions{})
+	var usersSQL, ordersSQL string
+	for _, op := range ops {
+		if op.Type == "create_table" && op.Table == "users" {
+			usersSQL = op.SQL
+		}
+		if op.Type == "create_table" && op.Table == "orders" {
+			ordersSQL = op.SQL
+		}
+	}
+	if !strings.Contains(usersSQL, "`id` INT64 NOT NULL PRIMARY KEY NOT ENFORCED") {
+		t.Fatalf("bigquery users DDL missing non-enforced primary key:\n%s", usersSQL)
+	}
+	if !strings.Contains(ordersSQL, "REFERENCES `users`(`id`) NOT ENFORCED") {
+		t.Fatalf("bigquery orders DDL missing non-enforced foreign key:\n%s", ordersSQL)
+	}
+	if !strings.Contains(ordersSQL, "`tags` ARRAY<STRING>") {
+		t.Fatalf("bigquery orders DDL missing array type:\n%s", ordersSQL)
+	}
+}
+
+func TestComputeDiff_BigQueryDDLWithDataset(t *testing.T) {
+	current := &sdata.DBInfo{Type: "bigquery"}
+	expected := sdata.NewDBInfo("bigquery", 0, "analytics", "project", []sdata.DBColumn{
+		{Schema: "analytics", Table: "users", Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true},
+		{Schema: "analytics", Table: "orders", Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true},
+		{Schema: "analytics", Table: "orders", Name: "user_id", Type: "bigint", FKeySchema: "analytics", FKeyTable: "users", FKeyCol: "id"},
+	}, nil, nil)
+
+	ops := computeDiff(current, expected, DiffOptions{})
+	var usersSQL, ordersSQL string
+	for _, op := range ops {
+		if op.Type == "create_table" && op.Table == "users" {
+			usersSQL = op.SQL
+		}
+		if op.Type == "create_table" && op.Table == "orders" {
+			ordersSQL = op.SQL
+		}
+	}
+	if !strings.Contains(usersSQL, "CREATE TABLE `analytics.users`") {
+		t.Fatalf("bigquery users DDL missing dataset-qualified table:\n%s", usersSQL)
+	}
+	if !strings.Contains(ordersSQL, "REFERENCES `analytics.users`(`id`) NOT ENFORCED") {
+		t.Fatalf("bigquery orders DDL missing dataset-qualified FK:\n%s", ordersSQL)
+	}
+}
+
+func TestComputeDiff_RedshiftDDL(t *testing.T) {
+	current := &sdata.DBInfo{Type: "redshift"}
+	expected := sdata.NewDBInfo("redshift", 0, "public", "dev", []sdata.DBColumn{
+		{Schema: "public", Table: "events", Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true},
+		{Schema: "public", Table: "events", Name: "payload", Type: "jsonb"},
+		{Schema: "public", Table: "events", Name: "email", Type: "varchar(255)", UniqueKey: true},
+		{Schema: "public", Table: "events", Name: "body", Type: "text", FullText: true},
+		{Schema: "public", Table: "events", Name: "created_at", Type: "timestamp"},
+	}, nil, nil)
+	expected.Tables[0].ClusteringKeys = []string{"created_at"}
+
+	ops := computeDiff(current, expected, DiffOptions{})
+	var createSQL string
+	for _, op := range ops {
+		if op.Type == "create_table" {
+			createSQL = op.SQL
+		}
+		if op.Type == "add_index" {
+			t.Fatalf("redshift v1 should not emit index operations: %+v", op)
+		}
+	}
+	if !strings.Contains(createSQL, `"id" BIGINT IDENTITY(1,1) PRIMARY KEY`) {
+		t.Fatalf("redshift DDL missing identity primary key:\n%s", createSQL)
+	}
+	if !strings.Contains(createSQL, `"payload" SUPER`) {
+		t.Fatalf("redshift DDL missing SUPER mapping:\n%s", createSQL)
+	}
+	if !strings.Contains(createSQL, `COMPOUND SORTKEY("created_at")`) {
+		t.Fatalf("redshift DDL missing sort key:\n%s", createSQL)
+	}
+}
+
+func TestComputeDiff_CassandraDDL(t *testing.T) {
+	current := &sdata.DBInfo{Type: "cassandra"}
+	expected := sdata.NewDBInfo("cassandra", 0, "app", "app", []sdata.DBColumn{
+		{Schema: "app", Table: "posts", Name: "user_id", Type: "text", PrimaryKey: true, NotNull: true},
+		{Schema: "app", Table: "posts", Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
+		{Schema: "app", Table: "posts", Name: "title", Type: "text", NotNull: true},
+	}, nil, nil)
+
+	ops := computeDiff(current, expected, DiffOptions{})
+	var createSQL string
+	for _, op := range ops {
+		if op.Type == "create_table" {
+			createSQL = op.SQL
+		}
+	}
+	if !strings.Contains(createSQL, `CREATE TABLE "app"."posts"`) {
+		t.Fatalf("cassandra DDL missing keyspace-qualified table:\n%s", createSQL)
+	}
+	if !strings.Contains(createSQL, `PRIMARY KEY (("user_id"), "id")`) {
+		t.Fatalf("cassandra DDL missing composite primary key:\n%s", createSQL)
+	}
+
+	current = expected
+	extended := sdata.NewDBInfo("cassandra", 0, "app", "app", []sdata.DBColumn{
+		{Schema: "app", Table: "posts", Name: "user_id", Type: "text", PrimaryKey: true, NotNull: true},
+		{Schema: "app", Table: "posts", Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
+		{Schema: "app", Table: "posts", Name: "title", Type: "text", NotNull: true},
+		{Schema: "app", Table: "posts", Name: "tags", Type: "text", Array: true},
+	}, nil, nil)
+	ops = computeDiff(current, extended, DiffOptions{})
+	var addSQL string
+	for _, op := range ops {
+		if op.Type == "add_column" && op.Column == "tags" {
+			addSQL = op.SQL
+		}
+	}
+	if !strings.Contains(addSQL, `ALTER TABLE "app"."posts" ADD "tags" list<text>;`) {
+		t.Fatalf("cassandra DDL missing add-column list type:\n%s", addSQL)
+	}
+
+	ops = computeDiff(extended, current, DiffOptions{Destructive: true})
+	var dropSQL string
+	for _, op := range ops {
+		if op.Type == "drop_column" && op.Column == "tags" {
+			dropSQL = op.SQL
+		}
+	}
+	if !strings.Contains(dropSQL, `ALTER TABLE "app"."posts" DROP "tags";`) {
+		t.Fatalf("cassandra DDL missing drop-column:\n%s", dropSQL)
+	}
+}
+
 func TestComputeDiff_AddColumn(t *testing.T) {
 	current := &sdata.DBInfo{
 		Type: "postgres",
@@ -724,6 +878,154 @@ func TestSnowflakeDialect_CreateTable(t *testing.T) {
 	}
 	if !strings.Contains(sql, "PRIMARY KEY") {
 		t.Error("expected PRIMARY KEY on id column")
+	}
+}
+
+func TestRedshiftDialect_CreateTable(t *testing.T) {
+	d := &redshiftDDLDialect{}
+
+	table := sdata.DBTable{
+		Name: "events",
+		Columns: []sdata.DBColumn{
+			{Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true},
+			{Name: "user_id", Type: "bigint", FKeyTable: "users", FKeyCol: "id"},
+			{Name: "metadata", Type: "json"},
+			{Name: "shape", Type: "geometry"},
+			{Name: "created_at", Type: "timestamptz", NotNull: true},
+		},
+		ClusteringKeys: []string{"created_at", "id"},
+	}
+
+	sql := d.CreateTable(table)
+
+	for _, want := range []string{
+		`CREATE TABLE "events"`,
+		`"id" BIGINT IDENTITY(1,1) PRIMARY KEY`,
+		`"metadata" SUPER`,
+		`"shape" GEOMETRY`,
+		`CONSTRAINT "fk_events_user_id" FOREIGN KEY ("user_id") REFERENCES "users"("id")`,
+		`DISTSTYLE AUTO ENCODE AUTO`,
+		`COMPOUND SORTKEY("created_at", "id")`,
+	} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("redshift DDL missing %q:\n%s", want, sql)
+		}
+	}
+}
+
+func TestRedshiftDialect_AddDropAndConstraints(t *testing.T) {
+	d := &redshiftDDLDialect{}
+
+	addCol := d.AddColumn("users", sdata.DBColumn{Name: "phone", Type: "varchar(32)"})
+	if addCol != `ALTER TABLE "users" ADD COLUMN "phone" VARCHAR(32);` {
+		t.Fatalf("unexpected add column SQL: %s", addCol)
+	}
+
+	dropCol := d.DropColumn("users", "phone")
+	if dropCol != `ALTER TABLE "users" DROP COLUMN "phone";` {
+		t.Fatalf("unexpected drop column SQL: %s", dropCol)
+	}
+
+	fk := d.AddForeignKey("events", sdata.DBColumn{Name: "user_id", FKeyTable: "users", FKeyCol: "id"})
+	if fk != `ALTER TABLE "events" ADD CONSTRAINT "fk_events_user_id" FOREIGN KEY ("user_id") REFERENCES "users"("id");` {
+		t.Fatalf("unexpected fk SQL: %s", fk)
+	}
+
+	unique := d.CreateUniqueIndex("users", sdata.DBColumn{Name: "email"})
+	if unique != "" {
+		t.Fatalf("unexpected unique SQL: %s", unique)
+	}
+}
+
+func TestRedshiftDialect_NoGeneratedIndexes(t *testing.T) {
+	d := &redshiftDDLDialect{}
+	col := sdata.DBColumn{Name: "email", Type: "text", FullText: true, Index: true}
+
+	if sql := d.CreateIndex("users", col); sql != "" {
+		t.Fatalf("expected no Redshift user-managed index SQL, got: %s", sql)
+	}
+	if sql := d.CreateSearchIndex("users", col); sql != "" {
+		t.Fatalf("expected no Redshift search-index SQL, got: %s", sql)
+	}
+}
+
+func TestBigQueryDialect_GeneratedDDL(t *testing.T) {
+	d := &bigqueryDDLDialect{}
+
+	table := sdata.DBTable{
+		Name: "orders",
+		Columns: []sdata.DBColumn{
+			{Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true},
+			{Name: "user_id", Type: "bigint", FKeyTable: "users", FKeyCol: "id"},
+			{Name: "tags", Type: "text", Array: true},
+		},
+	}
+
+	sql := d.CreateTable(table)
+	for _, want := range []string{
+		"CREATE TABLE `orders`",
+		"`id` INT64 NOT NULL PRIMARY KEY NOT ENFORCED",
+		"REFERENCES `users`(`id`) NOT ENFORCED",
+		"`tags` ARRAY<STRING>",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("BigQuery DDL missing %q:\n%s", want, sql)
+		}
+	}
+
+	if got, want := d.AddColumn("orders", sdata.DBColumn{Name: "notes", Type: "text"}), "ALTER TABLE `orders` ADD COLUMN `notes` STRING;"; got != want {
+		t.Fatalf("unexpected BigQuery ADD COLUMN:\ngot:  %s\nwant: %s", got, want)
+	}
+	if got, want := d.DropColumn("orders", "notes"), "ALTER TABLE `orders` DROP COLUMN `notes`;"; got != want {
+		t.Fatalf("unexpected BigQuery DROP COLUMN:\ngot:  %s\nwant: %s", got, want)
+	}
+	if sql := d.CreateIndex("orders", sdata.DBColumn{Name: "user_id", Index: true}); sql != "" {
+		t.Fatalf("expected no BigQuery index SQL, got: %s", sql)
+	}
+	if sql := d.CreateSearchIndex("orders", sdata.DBColumn{Name: "body", FullText: true}); sql != "" {
+		t.Fatalf("expected no BigQuery search-index SQL, got: %s", sql)
+	}
+	if sql := d.CreateUniqueIndex("orders", sdata.DBColumn{Name: "email", UniqueKey: true}); sql != "" {
+		t.Fatalf("expected no BigQuery unique-index SQL, got: %s", sql)
+	}
+}
+
+func TestCassandraDialect_GeneratedDDL(t *testing.T) {
+	d := &cassandraDDLDialect{}
+
+	table := sdata.DBTable{
+		Schema: "app",
+		Name:   "posts",
+		Columns: []sdata.DBColumn{
+			{Name: "user_id", Type: "uuid", PrimaryKey: true, NotNull: true},
+			{Name: "id", Type: "uuid", PrimaryKey: true, NotNull: true},
+			{Name: "tags", Type: "text", Array: true},
+		},
+	}
+
+	sql := d.CreateTable(table)
+	for _, want := range []string{
+		`CREATE TABLE "app"."posts"`,
+		`"user_id" uuid`,
+		`"tags" list<text>`,
+		`PRIMARY KEY (("user_id"), "id")`,
+	} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("Cassandra DDL missing %q:\n%s", want, sql)
+		}
+	}
+
+	if got, want := d.AddColumn("posts", sdata.DBColumn{Name: "title", Type: "text"}), `ALTER TABLE "posts" ADD "title" text;`; got != want {
+		t.Fatalf("unexpected Cassandra ADD COLUMN:\ngot:  %s\nwant: %s", got, want)
+	}
+	if got, want := d.DropColumn("posts", "title"), `ALTER TABLE "posts" DROP "title";`; got != want {
+		t.Fatalf("unexpected Cassandra DROP COLUMN:\ngot:  %s\nwant: %s", got, want)
+	}
+	if sql := d.AddForeignKey("posts", sdata.DBColumn{Name: "user_id", FKeyTable: "users", FKeyCol: "id"}); sql != "" {
+		t.Fatalf("expected no Cassandra FK SQL, got: %s", sql)
+	}
+	if sql := d.CreateIndex("posts", sdata.DBColumn{Name: "title", Index: true}); sql != "" {
+		t.Fatalf("expected no Cassandra index SQL, got: %s", sql)
 	}
 }
 
@@ -1731,6 +2033,17 @@ func TestSnowflakeAlterClusteringKey_Empty(t *testing.T) {
 	sql := d.AlterClusteringKey("events", nil)
 	if sql != "" {
 		t.Errorf("expected empty string for nil keys, got: %s", sql)
+	}
+}
+
+func TestRedshiftAlterClusteringKey(t *testing.T) {
+	d := &redshiftDDLDialect{}
+
+	sql := d.AlterClusteringKey("events", []string{"created_at", "user_id"})
+
+	expected := `ALTER TABLE "events" ALTER SORTKEY("created_at", "user_id");`
+	if sql != expected {
+		t.Errorf("got:\n%s\nwant:\n%s", sql, expected)
 	}
 }
 

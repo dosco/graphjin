@@ -18,7 +18,7 @@ func (co *Compiler) compileMutation(
 	w *bytes.Buffer,
 	qc *qcode.QCode,
 	md *Metadata,
-) {
+) error {
 	c := compilerContext{
 		md:       md,
 		w:        w,
@@ -27,17 +27,27 @@ func (co *Compiler) compileMutation(
 		Compiler: co,
 	}
 
+	if co.dialect.Name() == "redshift" {
+		if err := c.validateRedshiftMutation(); err != nil {
+			return err
+		}
+		if qc.SType == qcode.QTDelete {
+			c.compileRedshiftDeleteMutation()
+			return c.err
+		}
+	}
+
 	// Check if the dialect wants to handle the entire mutation compilation itself
 	// This is used by MongoDB which generates JSON mutation DSL, not SQL
 	if fmc, ok := co.dialect.(dialect.FullMutationCompiler); ok {
 		if fmc.CompileFullMutation(&c, qc) {
-			return
+			return c.err
 		}
 	}
 
 	if co.dialect.SupportsLinearExecution() {
 		c.compileLinearMutation()
-		return
+		return c.err
 	}
 
 	if qc.SType != qcode.QTDelete {
@@ -59,13 +69,176 @@ func (co *Compiler) compileMutation(
 	case qcode.QTDelete:
 		c.renderDelete()
 	default:
-		return
+		return c.err
 	}
 
 	co.dialect.RenderMutationPostamble(&c, qc)
 	c.w.WriteString(` `)
 	co.CompileQuery(w, qc, c.md)
+	return c.err
 
+}
+
+func (c *compilerContext) validateRedshiftMutation() error {
+	if c.qc.SType == qcode.QTUpsert {
+		return fmt.Errorf("redshift mutations do not support upsert in v1")
+	}
+
+	var mutations []qcode.Mutate
+	for _, m := range c.qc.Mutates {
+		if m.Type == qcode.MTNone || m.Type == qcode.MTKeyword {
+			continue
+		}
+		mutations = append(mutations, m)
+	}
+	if len(mutations) != 1 {
+		return fmt.Errorf("redshift mutations support one single-table root mutation in v1")
+	}
+
+	m := mutations[0]
+	if m.ParentID != -1 || len(m.DependsOn) != 0 || len(m.RCols) != 0 {
+		return fmt.Errorf("redshift mutations do not support nested relationship mutations in v1")
+	}
+	if m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect {
+		return fmt.Errorf("redshift mutations do not support connect/disconnect in v1")
+	}
+	if m.Type != qcode.MTInsert && m.Type != qcode.MTUpdate && m.Type != qcode.MTDelete {
+		return fmt.Errorf("redshift mutation type is not supported in v1")
+	}
+	if len(m.Ti.PrimaryCols) != 1 {
+		return fmt.Errorf("redshift mutations require a single-column primary key in v1")
+	}
+	if m.Array || m.Multi {
+		return fmt.Errorf("redshift mutations do not support bulk or multi-row mutation payloads in v1")
+	}
+	if m.Type == qcode.MTInsert && !redshiftMutationHasExplicitPK(m) {
+		return fmt.Errorf("redshift insert result selection requires a client-supplied primary key in v1")
+	}
+	if (m.Type == qcode.MTUpdate || m.Type == qcode.MTDelete) && !c.redshiftMutationHasPKFilter(m) {
+		return fmt.Errorf("redshift update/delete mutations require a primary-key filter in v1")
+	}
+	return nil
+}
+
+func redshiftMutationHasExplicitPK(m qcode.Mutate) bool {
+	for _, col := range m.Cols {
+		if m.Ti.IsPKCol(col.Col.Name) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *compilerContext) redshiftMutationHasPKFilter(m qcode.Mutate) bool {
+	if m.SelID < 0 || int(m.SelID) >= len(c.qc.Selects) || len(m.Ti.PrimaryCols) == 0 {
+		return false
+	}
+	return redshiftExpHasPKFilter(c.qc.Selects[m.SelID].Where.Exp, m.Ti.PrimaryCols[0].Name)
+}
+
+func redshiftExpHasPKFilter(ex *qcode.Exp, pk string) bool {
+	if ex == nil {
+		return false
+	}
+	if ex.Op == qcode.OpEquals && (redshiftOperandIsPK(ex.Left.Col, ex.Left.ColName, pk) ||
+		redshiftOperandIsPK(ex.Right.Col, ex.Right.ColName, pk)) {
+		return true
+	}
+	for _, child := range ex.Children {
+		if redshiftExpHasPKFilter(child, pk) {
+			return true
+		}
+	}
+	return false
+}
+
+func redshiftOperandIsPK(col sdata.DBColumn, colName, pk string) bool {
+	if col.Name != "" && strings.EqualFold(col.Name, pk) {
+		return true
+	}
+	return colName != "" && strings.EqualFold(colName, pk)
+}
+
+func (c *compilerContext) compileRedshiftDeleteMutation() {
+	m, ok := c.redshiftSingleMutation()
+	if !ok {
+		c.SetError(fmt.Errorf("redshift delete mutation missing root mutation"))
+		return
+	}
+	sel := c.qc.Selects[m.SelID]
+	pk := m.Ti.PrimaryCols[0]
+	snapshot := "_gj_redshift_deleted_" + m.Ti.Name + "_" + strconv.Itoa(int(m.ID))
+
+	c.w.WriteString(`CREATE TEMP TABLE `)
+	c.quoted(snapshot)
+	c.w.WriteString(` AS SELECT * FROM `)
+	c.renderRedshiftMutationTableRef(m.Ti.Schema, m.Ti.Name)
+	c.w.WriteString(` AS `)
+	c.quoted(m.Ti.Name)
+	c.w.WriteString(` WHERE `)
+	c.renderExp(sel.Ti, sel.Where.Exp, false)
+	c.w.WriteString(`; `)
+
+	c.w.WriteString(`DELETE FROM `)
+	c.renderRedshiftMutationTableRef(m.Ti.Schema, m.Ti.Name)
+	c.w.WriteString(` WHERE `)
+	c.quoted(pk.Name)
+	c.w.WriteString(` IN (SELECT `)
+	c.quoted(pk.Name)
+	c.w.WriteString(` FROM `)
+	c.quoted(snapshot)
+	c.w.WriteString(`); `)
+
+	qc := *c.qc
+	qc.Type = qcode.QTQuery
+	qc.SType = qcode.QTQuery
+	qc.Mutates = nil
+	qc.Selects = append([]qcode.Select(nil), c.qc.Selects...)
+	for i := range qc.Selects {
+		s := &qc.Selects[i]
+		if s.ID != sel.ID {
+			continue
+		}
+		s.Table = snapshot
+		s.Schema = ""
+		s.Ti.Name = snapshot
+		s.Ti.Schema = ""
+		s.Where.Exp = nil
+		for j := range s.Fields {
+			if s.Fields[j].Col.Table == m.Ti.Name {
+				s.Fields[j].Col.Table = snapshot
+			}
+		}
+		for j := range s.BCols {
+			if s.BCols[j].Col.Table == m.Ti.Name {
+				s.BCols[j].Col.Table = snapshot
+			}
+		}
+	}
+	c.dialect.RenderQueryPrefix(c, &qc)
+	if err := c.Compiler.CompileQuery(c.w, &qc, c.md); err != nil {
+		c.SetError(err)
+	}
+	c.w.WriteString(`; DROP TABLE IF EXISTS `)
+	c.quoted(snapshot)
+}
+
+func (c *compilerContext) renderRedshiftMutationTableRef(schema, table string) {
+	if schema != "" {
+		c.quoted(schema)
+		c.w.WriteString(`.`)
+	}
+	c.quoted(table)
+}
+
+func (c *compilerContext) redshiftSingleMutation() (qcode.Mutate, bool) {
+	for _, m := range c.qc.Mutates {
+		if m.Type == qcode.MTNone || m.Type == qcode.MTKeyword {
+			continue
+		}
+		return m, true
+	}
+	return qcode.Mutate{}, false
 }
 
 func (c *compilerContext) compileLinearMutation() {

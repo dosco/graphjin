@@ -119,6 +119,12 @@ var bigqueryColumnsStmt string
 //go:embed sql/bigquery_constraints_count.sql
 var bigqueryConstraintsCountStmt string
 
+//go:embed sql/redshift_info.sql
+var redshiftInfo string
+
+//go:embed sql/redshift_columns.sql
+var redshiftColumnsStmt string
+
 //go:embed sql/bigquery_primary_keys.sql
 var bigqueryPrimaryKeysStmt string
 

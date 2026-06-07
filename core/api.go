@@ -100,6 +100,7 @@ type graphjinEngine struct {
 	namespace             string
 	printFormat           []byte
 	opts                  []Option
+	runtimeSchemaDDLDir   string
 	done                  chan bool
 
 	// All databases (including the primary/default) live here.
@@ -450,6 +451,15 @@ func OptionSetNamespace(namespace string) Option {
 func OptionSetFS(fs FS) Option {
 	return func(s *graphjinEngine) error {
 		s.fs = fs
+		return nil
+	}
+}
+
+// OptionSetRuntimeSchemaDDLDir overrides where generated schema-DDL restart
+// snapshots are read from and written to, relative to the configured FS.
+func OptionSetRuntimeSchemaDDLDir(dir string) Option {
+	return func(s *graphjinEngine) error {
+		s.runtimeSchemaDDLDir = strings.Trim(strings.TrimSpace(dir), "/")
 		return nil
 	}
 }

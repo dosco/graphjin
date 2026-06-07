@@ -34,6 +34,15 @@ func SchemaDiff(db *sql.DB, dbType string, schemaBytes []byte, blocklist []strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse schema: %w", err)
 	}
+	if strings.TrimSpace(dbType) == "" {
+		dbType = ds.Type
+	}
+	if strings.TrimSpace(dbType) == "" {
+		dbType = "postgres"
+	}
+	if !SupportsSchemaDDL(dbType) {
+		return nil, fmt.Errorf("schema DDL is not supported for database type %q", dbType)
+	}
 
 	// Determine schema based on dbType when not specified via @schema directive
 	schema := ds.Schema
@@ -82,6 +91,12 @@ func defaultSchemaForDBType(dbType string) string {
 		return "TESTER"
 	case "snowflake":
 		return "main"
+	case "bigquery":
+		return ""
+	case "redshift":
+		return "public"
+	case "cassandra":
+		return ""
 	default:
 		return "public"
 	}
@@ -309,7 +324,11 @@ func computeDiff(current, expected *sdata.DBInfo, opts DiffOptions) []SchemaOper
 
 			for _, currCol := range currTable.Columns {
 				if !expectedCols[currCol.Name] {
-					sql := dialect.DropColumn(expTable.Name, currCol.Name)
+					tableName := expTable.Name
+					if schemaQualifiedDDLTable(dialect) && expTable.Schema != "" {
+						tableName = expTable.Schema + "." + expTable.Name
+					}
+					sql := dialect.DropColumn(tableName, currCol.Name)
 					ops = append(ops, SchemaOperation{
 						Type:   "drop_column",
 						Table:  expTable.Name,
@@ -342,9 +361,13 @@ func computeDiff(current, expected *sdata.DBInfo, opts DiffOptions) []SchemaOper
 
 	// Find tables to drop (destructive)
 	if opts.Destructive {
-		for tableName := range currentTables {
+		for tableName, currTable := range currentTables {
 			if _, exists := expectedTables[tableName]; !exists {
-				sql := dialect.DropTable(tableName)
+				dropTableName := tableName
+				if schemaQualifiedDDLTable(dialect) && currTable.Schema != "" {
+					dropTableName = currTable.Schema + "." + currTable.Name
+				}
+				sql := dialect.DropTable(dropTableName)
 				ops = append(ops, SchemaOperation{
 					Type:   "drop_table",
 					Table:  tableName,
@@ -356,6 +379,15 @@ func computeDiff(current, expected *sdata.DBInfo, opts DiffOptions) []SchemaOper
 	}
 
 	return ops
+}
+
+func schemaQualifiedDDLTable(dialect DDLDialect) bool {
+	switch dialect.(type) {
+	case *bigqueryDDLDialect, *cassandraDDLDialect:
+		return true
+	default:
+		return false
+	}
 }
 
 // GenerateDiffSQL converts operations to SQL strings
@@ -431,8 +463,8 @@ func SchemaDiffMultiDB(
 			continue
 		}
 
-		// Skip MongoDB (no DDL support)
-		if dbType == "mongodb" {
+		// Skip sources without live DDL support.
+		if !SupportsSchemaDDL(dbType) {
 			continue
 		}
 

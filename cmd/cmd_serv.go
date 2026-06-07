@@ -15,7 +15,6 @@ import (
 var (
 	// deployActive  bool
 	servDemoMode bool
-	servPersist  bool
 	servDBFlags  []string
 )
 
@@ -74,14 +73,14 @@ func servCmd() *cobra.Command {
 		Long: `Run the GraphJin HTTP service.
 
 Demo mode (--demo):
-  graphjin serve --demo                    # Use database type from config, default to postgres
-  graphjin serve --demo --db mysql         # Override database type
-  graphjin serve --demo --persist          # Persist data using Docker volumes`,
+  graphjin serve --demo --path examples/webshop
+  graphjin serve --demo --path examples/coffee-roastery
+
+Demo state is stored under <path>/demo. Delete that folder to reset.`,
 		Run: cmdServ,
 	}
 	// c.Flags().BoolVar(&deployActive, "deploy-active", false, "Deploy active config")
-	c.Flags().BoolVar(&servDemoMode, "demo", false, "Run with temporary database container(s)")
-	c.Flags().BoolVar(&servPersist, "persist", false, "Persist data using Docker volumes (requires --demo)")
+	c.Flags().BoolVar(&servDemoMode, "demo", false, "Run a curated local demo with state under <path>/demo")
 	c.Flags().StringArrayVar(&servDBFlags, "db", nil, "Database type override(s) (requires --demo)")
 
 	// Server-side lifecycle subcommands. These used to live at the top level
@@ -97,9 +96,9 @@ Demo mode (--demo):
 func cmdServ(cmd *cobra.Command, args []string) {
 	printBanner()
 
-	// Check that --persist and --db require --demo
-	if !servDemoMode && (servPersist || len(servDBFlags) > 0) {
-		log.Fatal("--persist and --db flags require --demo")
+	// Check that --db requires --demo
+	if !servDemoMode && len(servDBFlags) > 0 {
+		log.Fatal("--db flags require --demo")
 	}
 
 	setup(cpath)
@@ -107,18 +106,24 @@ func cmdServ(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var cleanups []func(context.Context) error
+	var demo *DemoRuntime
 
 	// Start demo containers if --demo is set
 	if servDemoMode {
 		var err error
-		cleanups, err = StartDemo(ctx, servPersist, servDBFlags)
+		demo, err = StartDemo(ctx, servDBFlags, os.Stdout)
 		if err != nil {
 			log.Fatalf("Failed to start demo: %s", err)
 		}
 	}
 
 	var opt []serv.Option
+	if demo != nil && len(demo.Databases) != 0 {
+		opt = append(opt,
+			serv.OptionSetDatabases(demo.Databases),
+			serv.OptionSetRuntimeSchemaDDLDir(demoRuntimeSchemaDDLDir()),
+		)
+	}
 	// if deployActive {
 	// 	opt = append(opt, serv.OptionDeployActive())
 	// }
@@ -127,9 +132,12 @@ func cmdServ(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
+	if demo != nil {
+		demo.Status.Emit("GraphJin", "ready", "service initialized")
+	}
 
 	// Setup graceful shutdown for demo mode
-	if len(cleanups) > 0 {
+	if demo != nil && len(demo.Cleanups) > 0 {
 		done := make(chan struct{})
 		go func() {
 			sigCh := make(chan os.Signal, 1)
@@ -142,7 +150,7 @@ func cmdServ(cmd *cobra.Command, args []string) {
 			// Cleanup all containers
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer shutdownCancel()
-			cleanupAll(shutdownCtx, cleanups)
+			cleanupAll(shutdownCtx, demo.Cleanups)
 			log.Info("Container(s) terminated")
 
 			close(done)

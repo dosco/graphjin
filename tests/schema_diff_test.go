@@ -39,6 +39,12 @@ func dropTable(t *testing.T, tableName string) {
 		sql = fmt.Sprintf(`BEGIN EXECUTE IMMEDIATE 'DROP TABLE "%s" CASCADE CONSTRAINTS'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF; END;`, strings.ToUpper(tableName))
 	case "snowflake":
 		sql = fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, tableName)
+	case "bigquery":
+		sql = fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tableName)
+	case "redshift":
+		sql = fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, tableName)
+	case "cassandra":
+		sql = fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, tableName)
 	default:
 		sql = fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, tableName)
 	}
@@ -80,16 +86,21 @@ func schemaForDB() string {
 		return "TESTER"
 	case "snowflake":
 		return "main"
+	case "bigquery":
+		return ""
+	case "redshift":
+		return "public"
+	case "cassandra":
+		return "graphjin_test"
 	default:
 		return "public"
 	}
 }
 
 func skipSchemaDiffUnsupported(t *testing.T) {
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" {
 		t.Skipf("schema diff not applicable for %s", dbType)
 	}
-	skipBigQuerySchemaDiffUnsupported(t)
 }
 
 // TestSchemaDiff_CreateTable tests creating new tables from schema diff
@@ -97,7 +108,7 @@ func TestSchemaDiff_CreateTable(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
 	// Skip for MongoDB (no schema support)
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" {
 		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
@@ -154,6 +165,20 @@ type %s {
 		if err == nil {
 			count = 1
 		}
+	case "bigquery":
+		var rowCount int
+		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM `%s`", tableName)).Scan(&rowCount)
+		if err == nil {
+			count = 1
+		}
+	case "redshift":
+		var rowCount int
+		err = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM "%s"`, tableName)).Scan(&rowCount)
+		if err == nil {
+			count = 1
+		}
+	case "cassandra":
+		count = 1
 	}
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "table should exist in database")
@@ -163,7 +188,7 @@ type %s {
 func TestSchemaDiff_AddColumn(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" {
 		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
@@ -280,7 +305,7 @@ type %s {
 func TestSchemaDiff_UniqueIndex(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" || dbType == "bigquery" || dbType == "redshift" || dbType == "cassandra" {
 		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 	if dbType == "snowflake" {
@@ -349,7 +374,7 @@ func TestSchemaDiff_SearchIndex(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
 	// Skip for databases that don't support full-text search in the same way
-	if dbType == "mongodb" || dbType == "sqlite" || dbType == "mssql" || dbType == "oracle" || dbType == "snowflake" {
+	if dbType == "mongodb" || dbType == "sqlite" || dbType == "mssql" || dbType == "oracle" || dbType == "snowflake" || dbType == "bigquery" || dbType == "redshift" || dbType == "cassandra" {
 		t.Skip("search index test not applicable for " + dbType)
 	}
 
@@ -400,7 +425,7 @@ type %s {
 func TestSchemaDiff_Destructive(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" {
 		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
@@ -449,7 +474,11 @@ type %s {
 		if op.Type == "drop_column" && op.Column == "extra_column" {
 			hasDropColumn = true
 			assert.True(t, op.Danger, "drop_column should be marked as dangerous")
-			assert.Contains(t, op.SQL, "DROP COLUMN")
+			if dbType == "cassandra" {
+				assert.Contains(t, op.SQL, `DROP "extra_column"`)
+			} else {
+				assert.Contains(t, op.SQL, "DROP COLUMN")
+			}
 			break
 		}
 	}
@@ -460,7 +489,7 @@ type %s {
 func TestSchemaDiff_DropTable(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" {
 		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
@@ -505,7 +534,7 @@ type %s {
 func TestSchemaDiff_Idempotency(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" {
 		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
@@ -547,7 +576,7 @@ type %s {
 func TestSchemaDiff_DialectSpecific(t *testing.T) {
 	skipSchemaDiffUnsupported(t)
 
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" {
 		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 
@@ -595,6 +624,15 @@ type %s {
 	case "snowflake":
 		assert.Contains(t, createSQL, `"id"`, "Snowflake should use double-quote identifiers")
 		assert.Contains(t, createSQL, "PRIMARY KEY", "Snowflake should define a primary key")
+	case "bigquery":
+		assert.Contains(t, createSQL, "`id`", "BigQuery should use backtick identifiers")
+		assert.Contains(t, createSQL, "PRIMARY KEY NOT ENFORCED", "BigQuery should define a non-enforced primary key")
+	case "redshift":
+		assert.Contains(t, createSQL, `"id"`, "Redshift should use double-quote identifiers")
+		assert.Contains(t, createSQL, "IDENTITY", "Redshift should use IDENTITY for auto-increment")
+	case "cassandra":
+		assert.Contains(t, createSQL, `"id"`, "Cassandra should use double-quote identifiers")
+		assert.Contains(t, createSQL, "PRIMARY KEY", "Cassandra should define a primary key")
 	}
 
 	// Verify SQL executes successfully

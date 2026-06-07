@@ -14,8 +14,8 @@ func dbCmd() *cobra.Command {
 	// Diff command - show schema differences
 	diffCmd := &cobra.Command{
 		Use:   "diff",
-		Short: "Show SQL diff between db.graphql and database",
-		Long: `Compare the desired schema (db.graphql) against the actual database schema
+		Short: "Show SQL diff between GraphJin DDL and database",
+		Long: `Compare the desired schema (db.ddl or schema-ddl/<source>.ddl) against the actual database schema
 and output the SQL statements needed to bring the database in sync.
 
 By default, only safe (additive) operations are shown:
@@ -31,14 +31,14 @@ Use --destructive to also show DROP operations.`,
 	diffCmd.Flags().String("format", "sql", "Output format: sql or json")
 	c.AddCommand(diffCmd)
 
-	// Generate command - generate db.graphql from database
+	// Generate command - generate GraphJin DDL from database
 	generateCmd := &cobra.Command{
 		Use:   "generate",
-		Short: "Generate db.graphql from current database schema",
-		Long: `Introspect the current database and generate a db.graphql schema file.
+		Short: "Generate GraphJin DDL from current database schema",
+		Long: `Introspect the current database and generate GraphJin DDL.
 
 This command connects to the configured database, discovers all tables and columns,
-and writes the schema to a GraphQL file that can be used for schema management.
+and writes schema DDL that can be used for schema management.
 
 The generated schema includes:
 - All tables as GraphQL types
@@ -47,14 +47,14 @@ The generated schema includes:
 - Database functions (if any)`,
 		Run: cmdDBGenerate,
 	}
-	generateCmd.Flags().StringP("output", "o", "", "Output file path (default: <config-path>/db.graphql)")
+	generateCmd.Flags().StringP("output", "o", "", "Output file path (default: <config-path>/db.ddl or schema-ddl/<source>.ddl in source mode)")
 	c.AddCommand(generateCmd)
 
 	// Sync command - apply schema changes
 	syncCmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Apply schema diff to database",
-		Long: `Apply the schema changes needed to bring the database in sync with db.graphql.
+		Long: `Apply the schema changes needed to bring the database in sync with GraphJin DDL.
 
 This command will:
 1. Show the SQL statements to be executed
@@ -81,7 +81,7 @@ Use --destructive to also apply DROP operations.`,
 	setupCmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Setup database (sync schema and seed)",
-		Long: `This command will sync the schema from db.graphql and run the seed script.
+		Long: `This command will sync the schema from GraphJin DDL and run the seed script.
 Use 'db diff' first to preview changes.`,
 		Run: cmdDBSetup,
 	}

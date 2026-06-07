@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -28,22 +29,67 @@ import (
 // cmdSeed is the cobra CLI for the seed subcommand
 func cmdDBSeed(cmd *cobra.Command, args []string) {
 	setup(cpath)
+	prepareSeedConfig()
+
+	if isMultiDBMode() {
+		connections, err := openMultiDBConnections()
+		if err != nil {
+			log.Fatalf("Failed to connect to databases: %s", err)
+		}
+		defer closeSeedConnections(connections)
+
+		if ran, err := runSourceSeedJSFiles(connections); err != nil {
+			log.Fatalf("Failed to execute source seed script: %s", err)
+		} else if ran {
+			log.Infof("Seed script completed")
+			return
+		}
+		if ran, err := runSourceSeedSQLFiles(connections); err != nil {
+			log.Fatalf("Failed to execute source seed SQL: %s", err)
+		} else if ran {
+			log.Infof("Seed SQL completed")
+			return
+		}
+
+		seed := filepath.Join(cpath, "seed.js")
+		if _, err := os.Stat(seed); os.IsNotExist(err) {
+			log.Fatalf("No seed.js or seed/<source>.js found")
+		}
+
+		log.Infof("Seed script started (please wait)")
+		if err := compileAndRunJSWithContext(seed, seedJSContext{
+			Databases:     connections,
+			ConfigPath:    cpath,
+			DefaultSource: seedDefaultSource(),
+		}); err != nil {
+			log.Fatalf("Failed to execute seed file %s: %s", seed, err)
+		}
+
+		log.Infof("Seed script completed")
+		return
+	}
+
 	initDB(true)
+
+	if ran, err := runSourceSeedJSFiles(nil); err != nil {
+		log.Fatalf("Failed to execute source seed script: %s", err)
+	} else if ran {
+		log.Infof("Seed script completed")
+		return
+	}
+	if ran, err := runSourceSeedSQLFiles(nil); err != nil {
+		log.Fatalf("Failed to execute source seed SQL: %s", err)
+	} else if ran {
+		log.Infof("Seed SQL completed")
+		return
+	}
 
 	if conf.DB.Type == "mysql" {
 		log.Fatalf("Seed scripts not support with MySQL")
 	}
 
-	conf.Serv.Production = false
-	conf.DefaultBlock = false
-	conf.DisableAllowList = true
-	conf.DBSchemaPollDuration = -1
-
-	conf.Blocklist = nil
 	seed := filepath.Join(cpath, "seed.js")
-
 	log.Infof("Seed script started (please wait)")
-
 	if err := compileAndRunJS(seed, db, cpath); err != nil {
 		log.Fatalf("Failed to execute seed file %s: %s", seed, err)
 	}
@@ -51,24 +97,228 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 	log.Infof("Seed script completed")
 }
 
+func closeSeedConnections(connections map[string]*sql.DB) {
+	for _, conn := range connections {
+		if conn != nil {
+			conn.Close() //nolint:errcheck
+		}
+	}
+}
+
+func runSourceSeedJSFiles(connections map[string]*sql.DB) (bool, error) {
+	files, err := sourceSeedFiles(".js")
+	if err != nil || len(files) == 0 {
+		return false, err
+	}
+
+	var ran bool
+	for _, file := range files {
+		conn, err := seedConnectionForSource(connections, file.Source, len(files) == 1)
+		if err != nil {
+			return ran, err
+		}
+		log.Infof("Running seed script from %s", file.Path)
+		if err := compileAndRunJSWithContext(file.Path, seedJSContext{
+			DB:            conn,
+			Databases:     connections,
+			ConfigPath:    cpath,
+			DefaultSource: file.Source,
+		}); err != nil {
+			return ran, err
+		}
+		ran = true
+	}
+	return ran, nil
+}
+
+func runSourceSeedSQLFiles(connections map[string]*sql.DB) (bool, error) {
+	files, err := sourceSeedFiles(".sql")
+	if err != nil || len(files) == 0 {
+		return false, err
+	}
+
+	var ran bool
+	for _, file := range files {
+		conn, err := seedConnectionForSource(connections, file.Source, len(files) == 1)
+		if err != nil {
+			return ran, err
+		}
+		log.Infof("Running seed SQL from %s", file.Path)
+		if err := execSeedSQLFile(conn, file.Path); err != nil {
+			return ran, err
+		}
+		ran = true
+	}
+	return ran, nil
+}
+
+type sourceSeedFile struct {
+	Source string
+	Path   string
+}
+
+func sourceSeedFiles(ext string) ([]sourceSeedFile, error) {
+	dir := filepath.Join(cpath, "seed")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var files []sourceSeedFile
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ext) {
+			continue
+		}
+		source := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		files = append(files, sourceSeedFile{
+			Source: source,
+			Path:   filepath.Join(dir, entry.Name()),
+		})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Source < files[j].Source })
+	return files, nil
+}
+
+func seedConnectionForSource(connections map[string]*sql.DB, source string, singleFile bool) (*sql.DB, error) {
+	source = strings.TrimSpace(source)
+	if len(connections) != 0 {
+		dbConf, ok := conf.Databases[source]
+		if !ok {
+			return nil, fmt.Errorf("seed source %q is not configured", source)
+		}
+		if dbConf.ReadOnly {
+			return nil, fmt.Errorf("seed source %q is read-only", source)
+		}
+		conn := connections[source]
+		if conn == nil {
+			return nil, fmt.Errorf("seed source %q has no open SQL connection", source)
+		}
+		return conn, nil
+	}
+	if db != nil && (singleFile || source == "" || source == core.DefaultDBName || source == "default" || source == "db") {
+		return db, nil
+	}
+	return nil, fmt.Errorf("seed source %q has no open SQL connection", source)
+}
+
+func execSeedSQLFile(conn *sql.DB, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return nil
+	}
+	_, err = conn.ExecContext(context.Background(), string(data))
+	return err
+}
+
 // compileAndRunJS compiles and runs the seed script
 func compileAndRunJS(seed string, db *sql.DB, configPath string) error {
+	return compileAndRunJSWithContext(seed, seedJSContext{
+		DB:         db,
+		ConfigPath: configPath,
+	})
+}
+
+type seedJSContext struct {
+	DB            *sql.DB
+	Databases     map[string]*sql.DB
+	ConfigPath    string
+	DefaultSource string
+}
+
+func (ctx seedJSContext) primaryDB() *sql.DB {
+	if ctx.DB != nil {
+		return ctx.DB
+	}
+	if len(ctx.Databases) == 0 {
+		return nil
+	}
+	if ctx.DefaultSource != "" {
+		if db, ok := ctx.Databases[ctx.DefaultSource]; ok {
+			return db
+		}
+	}
+	names := make([]string, 0, len(ctx.Databases))
+	for name := range ctx.Databases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if db := ctx.Databases[name]; db != nil {
+			return db
+		}
+	}
+	return nil
+}
+
+func (ctx seedJSContext) sourceDB(source string) *sql.DB {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = ctx.DefaultSource
+	}
+	if source != "" && len(ctx.Databases) != 0 {
+		return ctx.Databases[source]
+	}
+	return ctx.primaryDB()
+}
+
+func (ctx seedJSContext) validateSource(source string) error {
+	source = strings.TrimSpace(source)
+	if source == "" || len(ctx.Databases) == 0 {
+		return nil
+	}
+	if _, ok := ctx.Databases[source]; !ok {
+		return fmt.Errorf("seed source %q is not an open writable database", source)
+	}
+	return nil
+}
+
+func compileAndRunJSWithContext(seed string, seedCtx seedJSContext) error {
 	b, err := os.ReadFile(seed)
 	if err != nil {
 		return fmt.Errorf("failed to read seed file %s: %s", seed, err)
 	}
 
-	gj, err := core.NewGraphJinWithFS(&conf.Core, db, core.NewOsFS(configPath))
+	configPath := seedCtx.ConfigPath
+	if configPath == "" {
+		configPath = cpath
+	}
+	var opts []core.Option
+	if len(seedCtx.Databases) != 0 {
+		opts = append(opts, core.OptionSetDatabases(seedCtx.Databases))
+	}
+	primaryDB := seedCtx.primaryDB()
+	if len(seedCtx.Databases) != 0 {
+		primaryDB = nil
+	}
+	gj, err := core.NewGraphJinWithFS(&conf.Core, primaryDB, core.NewOsFS(configPath), opts...)
 	if err != nil {
 		return err
 	}
 
 	graphQLFn := func(query string, data interface{}, opt map[string]string) map[string]interface{} {
-		return graphQLFunc(gj, query, data, opt)
+		return graphQLFunc(gj, query, data, opt, seedCtx)
 	}
 
 	importCSVFn := func(table, filename string, sep string) int64 {
-		return importCSV(table, filename, sep, db)
+		importDB := seedCtx.sourceDB("")
+		if importDB == nil {
+			log.Fatalf("Error importing CSV: no database connection available")
+		}
+		return importCSV(table, filename, sep, importDB)
+	}
+
+	importCSVSourceFn := func(source, table, filename string, sep string) int64 {
+		importDB := seedCtx.sourceDB(source)
+		if importDB == nil {
+			log.Fatalf("Error importing CSV: no database connection available for source %q", source)
+		}
+		return importCSV(table, filename, sep, importDB)
 	}
 
 	vm := goja.New()
@@ -77,6 +327,9 @@ func compileAndRunJS(seed string, db *sql.DB, configPath string) error {
 	}
 
 	if err := vm.Set("import_csv", importCSVFn); err != nil {
+		return err
+	}
+	if err := vm.Set("import_csv_source", importCSVSourceFn); err != nil {
 		return err
 	}
 
@@ -167,25 +420,26 @@ func compileAndRunJS(seed string, db *sql.DB, configPath string) error {
 		return err
 	}
 
-	_, err = vm.RunScript("seed.js", es5Code.String())
+	_, err = vm.RunScript(filepath.Base(seed), es5Code.String())
 	return err
 }
 
 // graphQLFunc is a helper function to run a GraphQL query
-func graphQLFunc(gj *core.GraphJin, query string, data interface{}, opt map[string]string) map[string]interface{} {
+func graphQLFunc(gj *core.GraphJin, query string, data interface{}, opt map[string]string, seedCtx seedJSContext) map[string]interface{} {
 	ct := context.Background()
 
 	if v, ok := opt["user_id"]; ok && v != "" {
 		ct = context.WithValue(ct, core.UserIDKey, v)
 	}
 
-	// var role string
-
-	// if v, ok := opt["role"]; ok && len(v) != 0 {
-	// 	role = v
-	// } else {
-	// 	role = "user"
-	// }
+	if v, ok := opt["role"]; ok && v != "" {
+		ct = context.WithValue(ct, core.UserRoleKey, v)
+	}
+	if v, ok := opt["source"]; ok && v != "" {
+		if err := seedCtx.validateSource(v); err != nil {
+			log.Fatalf("Seed query failed: %s\nQuery: %s", err, query)
+		}
+	}
 
 	var vars []byte
 	var err error

@@ -87,6 +87,7 @@ type graphjinService struct {
 	disc         *DiscoveryManager
 	srv          *http.Server
 	fs           core.FS
+	coreOptions  []core.Option
 	// asec         [32]byte
 	closeFn func()
 	chash   string
@@ -136,6 +137,7 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 		core.OptionSetFS(s.fs),
 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
 	}
+	opts = append(opts, s.coreOptions...)
 	if s.conf != nil && (s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled()) {
 		targetDB := s.metadataDB
 		if targetDB == "" {
@@ -265,6 +267,24 @@ func OptionSetDB(db *sql.DB) Option {
 	}
 }
 
+// OptionSetDatabases sets named database clients for multi-database embeddings.
+func OptionSetDatabases(dbs map[string]*sql.DB) Option {
+	return func(s *graphjinService) error {
+		if len(dbs) == 0 {
+			return nil
+		}
+		if s.dbs == nil {
+			s.dbs = make(map[string]*sql.DB, len(dbs))
+		}
+		for name, db := range dbs {
+			if db != nil {
+				s.dbs[name] = db
+			}
+		}
+		return nil
+	}
+}
+
 // OptionSetHookFunc sets a function to be called on every request
 func OptionSetHookFunc(fn HookFn) Option {
 	return func(s *graphjinService) error {
@@ -285,6 +305,15 @@ func OptionSetNamespace(namespace string) Option {
 func OptionSetFS(fs core.FS) Option {
 	return func(s *graphjinService) error {
 		s.fs = fs
+		return nil
+	}
+}
+
+// OptionSetRuntimeSchemaDDLDir sets where the core stores generated
+// schema-DDL restart snapshots, relative to the service filesystem root.
+func OptionSetRuntimeSchemaDDLDir(dir string) Option {
+	return func(s *graphjinService) error {
+		s.coreOptions = append(s.coreOptions, core.OptionSetRuntimeSchemaDDLDir(dir))
 		return nil
 	}
 }

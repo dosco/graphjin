@@ -709,6 +709,11 @@ func TestMain(m *testing.M) {
 			dbFunc: startBigQueryDB,
 		},
 		{
+			name:   "redshift",
+			driver: "redshift",
+			dbFunc: startRedshiftDB,
+		},
+		{
 			name:   "mongodb",
 			driver: "mongodb", // Not used since we use dbFunc
 			dbFunc: func(ctx context.Context) (func(context.Context) error, *sql.DB, error) {

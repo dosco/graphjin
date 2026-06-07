@@ -1,0 +1,10 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Amazon Redshift">
+  <path fill="#8C4FFF" d="M20 36l44-20 44 20v56l-44 20-44-20V36z"/>
+  <path fill="#B896FF" d="M64 16l44 20-44 20-44-20 44-20z"/>
+  <path fill="#5F35B8" d="M64 56l44-20v56l-44 20V56z"/>
+  <path fill="#2D174F" opacity=".32" d="M20 36l44 20v56L20 92V36z"/>
+  <ellipse cx="64" cy="44" rx="23" ry="9" fill="#fff" opacity=".95"/>
+  <path fill="#fff" opacity=".95" d="M41 44h46v34c0 5-10 9-23 9s-23-4-23-9V44z"/>
+  <ellipse cx="64" cy="78" rx="23" ry="9" fill="#E5D8FF"/>
+  <path fill="#8C4FFF" d="M52 58h24v7H52zm0 13h24v7H52z"/>
+</svg>

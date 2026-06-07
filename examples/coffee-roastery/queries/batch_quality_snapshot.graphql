@@ -1,0 +1,30 @@
+query batch_quality_snapshot {
+  roast_batches(order_by: { started_at: desc }, limit: 5) {
+    id
+    batch_code
+    profile_id
+    green_lot_id
+    machine_id
+    started_at
+    final_temp_c
+    target_temp_c
+    development_seconds
+    yield_kg
+  }
+  qc_cupping_scores(order_by: { scored_at: desc }, limit: 5) {
+    id
+    batch_id
+    total_score
+    defects
+    notes
+  }
+  roast_sensor_samples(order_by: { recorded_at: desc }, limit: 12) {
+    id
+    batch_id
+    recorded_at
+    bean_temp_c
+    ror_c_per_min
+    gas_percent
+    airflow_percent
+  }
+}

@@ -22,6 +22,9 @@
 /tmp
 /tmp/runner-build
 /demo/tmp
+/demo/
+.graphjin/
+examples/*/demo/
 
 .idea
 *.iml

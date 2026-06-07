@@ -156,9 +156,6 @@ func (s *graphjinService) isDatabaseConfigured() bool {
 
 // initDB initializes database connections for all entries in conf.Core.Databases.
 func (s *graphjinService) initDB() error {
-	if len(s.dbs) > 0 {
-		return nil
-	}
 	runtimeCore := cloneCoreConfig(s.conf.Core)
 	if err := s.hydrateCoreConfigSecrets(&runtimeCore); err != nil {
 		return err
@@ -167,6 +164,10 @@ func (s *graphjinService) initDB() error {
 		return err
 	}
 	s.runtimeCore = &runtimeCore
+
+	if len(s.dbs) > 0 && !s.hasDatabaseConfigs() {
+		return nil
+	}
 
 	// In dev mode, allow starting without a database configured
 	if !s.conf.Serv.Production && !s.isDatabaseConfigured() {
@@ -216,6 +217,18 @@ func (s *graphjinService) initAllDBs() error {
 			if hydrated, ok := s.runtimeCore.Databases[name]; ok {
 				runtimeDBConf = hydrated
 			}
+		}
+		if _, ok := s.dbs[name]; ok {
+			s.recordRuntimeEvent(context.Background(), runtimeEvent{
+				Phase:        "database",
+				Status:       runtimeStatusReady,
+				Severity:     "info",
+				Summary:      "Database connection established.",
+				NextAction:   "Proceed with schema discovery and catalog-guided queries.",
+				DatabaseName: name,
+				Details:      map[string]any{"database": name, "database_type": dbConf.Type, "provided": true},
+			})
+			continue
 		}
 		db, err := s.newDBFromDatabaseConfigInto(name, runtimeDBConf, s.runtimeCore, s.managedDBs)
 		if err != nil {

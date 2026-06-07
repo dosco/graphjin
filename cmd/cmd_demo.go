@@ -2,15 +2,22 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/hostedemu"
+	hostedbigquery "github.com/dosco/graphjin/hostedemu/bigquery"
 	"github.com/mattn/go-sqlite3"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/mongodb"
@@ -20,25 +27,93 @@ import (
 )
 
 var (
-	demoPersist  bool               // --persist: Use Docker volumes for data persistence
-	demoDBFlags  []string           // --db: Can be used multiple times
 	multiDBConns map[string]*sql.DB // Store multi-DB connections for migrations
+	currentDemo  *demoState
 )
 
-// StartDemo starts demo containers, runs migrations and seeds.
-// Returns cleanup functions for graceful shutdown.
-func StartDemo(ctx context.Context, persist bool, dbFlags []string) ([]func(context.Context) error, error) {
+const demoManifestVersion = 1
+
+type DemoRuntime struct {
+	Cleanups  []func(context.Context) error
+	Databases map[string]*sql.DB
+	Status    demoStatus
+}
+
+type demoStatus struct {
+	out io.Writer
+}
+
+func (s demoStatus) Emit(source, status, msg string) {
+	if s.out == nil {
+		return
+	}
+	if strings.TrimSpace(source) == "" {
+		source = "demo"
+	}
+	msg = cleanDemoStatusMessage(msg)
+	fmt.Fprintf(s.out, "demo %-18s %-9s %s\n", source, status, msg)
+}
+
+func cleanDemoStatusMessage(msg string) string {
+	msg = strings.ReplaceAll(msg, "\r\n", "; ")
+	msg = strings.ReplaceAll(msg, "\n", "; ")
+	return msg
+}
+
+func demoRuntimeSchemaDDLDir() string {
+	return filepath.ToSlash(filepath.Join("demo", core.SourceSchemaDDLDir))
+}
+
+type demoState struct {
+	Dir      string
+	FirstRun bool
+	Manifest demoManifest
+	Status   demoStatus
+}
+
+type demoManifest struct {
+	Version    int                         `json:"version"`
+	ConfigHash string                      `json:"config_hash"`
+	CreatedAt  string                      `json:"created_at"`
+	UpdatedAt  string                      `json:"updated_at"`
+	Sources    map[string]demoManifestItem `json:"sources"`
+}
+
+type demoManifestItem struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+}
+
+// StartDemo starts demo backing services, syncs schema, and seeds first-run data.
+func StartDemo(ctx context.Context, dbFlags []string, statusOut io.Writer) (*DemoRuntime, error) {
+	status := demoStatus{out: statusOut}
+	if err := conf.Core.NormalizeSources(); err != nil {
+		return nil, err
+	}
+
+	state, err := initDemoState(status)
+	if err != nil {
+		return nil, err
+	}
+	currentDemo = state
+
 	primaryType, dbOverrides := parseDBFlags(dbFlags)
 
-	var cleanups []func(context.Context) error
+	runtime := &DemoRuntime{
+		Databases: make(map[string]*sql.DB),
+		Status:    status,
+	}
 
 	// Check if multi-database mode (conf.Core.Databases is populated)
 	if len(conf.Databases) > 0 {
 		// Multi-database mode
-		var err error
-		cleanups, err = startMultiDBDemo(ctx, primaryType, dbOverrides, persist)
+		cleanups, dbs, err := startMultiDBDemo(ctx, primaryType, dbOverrides, state)
 		if err != nil {
-			return nil, fmt.Errorf("failed to start containers: %w", err)
+			return nil, fmt.Errorf("failed to start demo sources: %w", err)
+		}
+		runtime.Cleanups = append(runtime.Cleanups, cleanups...)
+		for name, db := range dbs {
+			runtime.Databases[name] = db
 		}
 	} else {
 		// Single-database mode
@@ -50,29 +125,47 @@ func StartDemo(ctx context.Context, persist bool, dbFlags []string) ([]func(cont
 			dbType = "postgres" // Default
 		}
 
-		log.Infof("Starting %s container...", dbType)
-		cleanup, connInfo, err := startDemoContainer(ctx, dbType, persist)
+		status.Emit("database", "starting", fmt.Sprintf("starting %s", dbType))
+		cleanup, connInfo, err := startDemoContainer(ctx, core.DefaultDBName, core.DatabaseConfig{Type: dbType}, state)
 		if err != nil {
-			return nil, fmt.Errorf("failed to start container: %w", err)
+			return nil, fmt.Errorf("failed to start demo database: %w", err)
 		}
 
-		log.Infof("Container started successfully")
-		cleanups = append(cleanups, cleanup)
+		runtime.Cleanups = append(runtime.Cleanups, cleanup)
 
 		// Override config with container connection
 		applyContainerConfig(connInfo)
+
+		conn, err := openDemoConnection(connInfo)
+		if err != nil {
+			cleanupAll(ctx, runtime.Cleanups)
+			return nil, err
+		}
+		db = conn
+		dbOpened = true
+		runtime.Databases[core.DefaultDBName] = conn
 	}
 
-	// Initialize database connection
-	initDB(true)
-
-	// Run migrations if available
+	status.Emit("schema", "syncing", "syncing demo schema")
 	runDemoMigrations()
 
-	// Run seed script if available
+	status.Emit("seed", "seeding", "loading first-run data")
 	runDemoSeed()
 
-	return cleanups, nil
+	status.Emit("schema-cache", "writing", "writing discovered DDL cache")
+	writeDemoSchemaCache(runtime.Databases, state, status)
+
+	if err := state.writeManifest(runtime.Databases); err != nil {
+		return nil, err
+	}
+
+	status.Emit("workflows", "loading", "loading workflow scripts")
+	if err := verifyDemoWorkflows(status); err != nil {
+		return nil, err
+	}
+	status.Emit("GraphJin", "starting", "initializing service and managed indexes")
+
+	return runtime, nil
 }
 
 // DemoConnInfo holds database connection information
@@ -84,6 +177,190 @@ type DemoConnInfo struct {
 	DBName   string
 	ConnStr  string // Full connection string for databases that need it
 	Type     string // Database type
+	DB       *sql.DB
+}
+
+func initDemoState(status demoStatus) (*demoState, error) {
+	stateDir := filepath.Join(cpath, "demo")
+	if abs, err := filepath.Abs(stateDir); err == nil {
+		stateDir = abs
+	}
+	status.Emit("state", "locating", stateDir)
+
+	manifestPath := filepath.Join(stateDir, "manifest.json")
+	st, err := os.Stat(stateDir)
+	if os.IsNotExist(err) {
+		status.Emit("state", "created", "creating local demo state")
+		if err := os.MkdirAll(stateDir, 0o755); err != nil {
+			status.Emit("state", "failed", err.Error())
+			return nil, err
+		}
+		return &demoState{
+			Dir:      stateDir,
+			FirstRun: true,
+			Manifest: demoManifest{
+				Version:    demoManifestVersion,
+				ConfigHash: demoConfigHash(),
+				CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+				Sources:    make(map[string]demoManifestItem),
+			},
+			Status: status,
+		}, nil
+	}
+	if err != nil {
+		status.Emit("state", "failed", err.Error())
+		return nil, err
+	}
+	if !st.IsDir() {
+		err := fmt.Errorf("demo state path is not a directory; delete %s to recreate from scratch", stateDir)
+		status.Emit("state", "failed", err.Error())
+		return nil, err
+	}
+
+	var manifest demoManifest
+	data, err := os.ReadFile(manifestPath)
+	if os.IsNotExist(err) {
+		err := fmt.Errorf("demo state is invalid; delete %s to recreate from scratch", stateDir)
+		status.Emit("state", "failed", err.Error())
+		return nil, err
+	}
+	if err != nil {
+		status.Emit("state", "failed", err.Error())
+		return nil, err
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil || manifest.Version != demoManifestVersion {
+		if err == nil {
+			err = fmt.Errorf("unsupported manifest version %d", manifest.Version)
+		}
+		err = fmt.Errorf("demo state is invalid (%s); delete %s to recreate from scratch", err, stateDir)
+		status.Emit("state", "failed", err.Error())
+		return nil, err
+	}
+	if manifest.Sources == nil {
+		manifest.Sources = make(map[string]demoManifestItem)
+	}
+	status.Emit("state", "reused", "manifest verified")
+	return &demoState{Dir: stateDir, Manifest: manifest, Status: status}, nil
+}
+
+func demoConfigHash() string {
+	h := sha256.New()
+	for _, name := range []string{"agentic.yml", "dev.yml", "prod.yml"} {
+		if data, err := os.ReadFile(filepath.Join(cpath, name)); err == nil {
+			h.Write([]byte(name))
+			h.Write(data)
+		}
+	}
+	sum := h.Sum(nil)
+	return hex.EncodeToString(sum[:12])
+}
+
+func (s *demoState) writeManifest(dbs map[string]*sql.DB) error {
+	if s == nil {
+		return nil
+	}
+	if s.Manifest.Version == 0 {
+		s.Manifest.Version = demoManifestVersion
+	}
+	if s.Manifest.CreatedAt == "" {
+		s.Manifest.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	s.Manifest.ConfigHash = demoConfigHash()
+	s.Manifest.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if s.Manifest.Sources == nil {
+		s.Manifest.Sources = make(map[string]demoManifestItem)
+	}
+	for name, dbConf := range conf.Databases {
+		status := "verified"
+		if _, ok := dbs[name]; !ok {
+			status = "skipped"
+		}
+		s.Manifest.Sources[name] = demoManifestItem{Type: dbConf.Type, Status: status}
+	}
+	if len(conf.Databases) == 0 && conf.DB.Type != "" {
+		s.Manifest.Sources[core.DefaultDBName] = demoManifestItem{Type: conf.DB.Type, Status: "verified"}
+	}
+	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(s.Manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(s.Dir, "manifest.json"), append(data, '\n'), 0o644)
+}
+
+func verifyDemoWorkflows(status demoStatus) error {
+	source, ok := conf.Core.WorkflowsSource()
+	if !ok {
+		status.Emit("workflows", "skipped", "no workflow source configured")
+		return nil
+	}
+	workflowPath := strings.TrimSpace(source.Path)
+	if workflowPath == "" {
+		workflowPath = "workflows"
+	}
+	if !filepath.IsAbs(workflowPath) {
+		workflowPath = filepath.Join(cpath, workflowPath)
+	}
+	entries, err := os.ReadDir(workflowPath)
+	if err != nil {
+		status.Emit("workflows", "failed", err.Error())
+		return err
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.EqualFold(filepath.Ext(entry.Name()), ".js") {
+			count++
+		}
+	}
+	status.Emit("workflows", "verified", fmt.Sprintf("%d workflow scripts found", count))
+	return nil
+}
+
+func writeDemoSchemaCache(dbs map[string]*sql.DB, state *demoState, status demoStatus) {
+	if state == nil || len(dbs) == 0 {
+		status.Emit("schema-cache", "skipped", "no database schemas to cache")
+		return
+	}
+	dir := filepath.Join(state.Dir, core.SourceSchemaDDLDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		status.Emit("schema-cache", "failed", err.Error())
+		return
+	}
+	names := make([]string, 0, len(dbs))
+	for name := range dbs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	wrote := 0
+	for _, name := range names {
+		dbConf := conf.Databases[name]
+		dbType := dbConf.Type
+		if dbType == "" && len(conf.Databases) == 0 {
+			dbType = conf.DB.Type
+		}
+		if dbType == "" {
+			dbType = "postgres"
+		}
+		data, err := core.GenerateSchema(dbs[name], dbType, conf.Blocklist)
+		if err != nil {
+			status.Emit(name, "skipped", fmt.Sprintf("schema cache unavailable: %s", err))
+			continue
+		}
+		path := filepath.Join(dir, name+".ddl")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			status.Emit(name, "failed", err.Error())
+			continue
+		}
+		wrote++
+		status.Emit(name, "verified", "schema cache written")
+	}
+	if wrote == 0 {
+		status.Emit("schema-cache", "skipped", "no schema cache files written")
+		return
+	}
+	status.Emit("schema-cache", "verified", fmt.Sprintf("%d DDL cache files written", wrote))
 }
 
 // parseDBFlags parses --db flags into a map of database name -> type
@@ -101,28 +378,71 @@ func parseDBFlags(flags []string) (primaryType string, overrides map[string]stri
 	return
 }
 
-
-// startDemoContainer starts the appropriate database container based on type
-func startDemoContainer(ctx context.Context, dbType string, persist bool) (
+// startDemoContainer starts or opens the appropriate local demo database.
+func startDemoContainer(ctx context.Context, name string, dbConf core.DatabaseConfig, state *demoState) (
 	cleanup func(context.Context) error,
 	connInfo *DemoConnInfo,
 	err error,
 ) {
+	defer func() {
+		if r := recover(); r != nil {
+			msg := cleanDemoStatusMessage(fmt.Sprint(r))
+			err = fmt.Errorf("demo source %s failed: %s", name, msg)
+			if state != nil {
+				state.Status.Emit(name, "failed", msg)
+			}
+			cleanup = nil
+			connInfo = nil
+		}
+	}()
+
+	dbType := dbConf.Type
+	if dbType == "" {
+		dbType = "postgres"
+	}
+	dataDir := filepath.Join(state.Dir, "databases", name)
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return nil, nil, err
+	}
+	if state.FirstRun {
+		state.Status.Emit(name, "created", "state directory ready")
+	} else {
+		state.Status.Emit(name, "reused", "state directory verified")
+	}
+
 	switch strings.ToLower(dbType) {
 	case "postgres", "postgresql":
-		return startPostgresDemo(ctx, persist)
+		return startPostgresDemo(ctx, name, dataDir, state.Status)
 	case "mysql":
-		return startMySQLDemo(ctx, persist)
+		return startMySQLDemo(ctx, name, dataDir, state.Status)
 	case "mariadb":
-		return startMariaDBDemo(ctx, persist)
+		return startMariaDBDemo(ctx, name, dataDir, state.Status)
 	case "sqlite", "sqlite3":
-		return startSQLiteDemo(ctx, persist)
+		return startSQLiteDemo(ctx, name, dataDir, state.Status)
 	case "oracle":
-		return startOracleDemo(ctx, persist)
+		return startOracleDemo(ctx, name, dataDir, state.Status)
 	case "mssql", "sqlserver":
-		return startMSSQLDemo(ctx, persist)
+		return startMSSQLDemo(ctx, name, dataDir, state.Status)
 	case "mongodb", "mongo":
-		return startMongoDBDemo(ctx, persist)
+		return startMongoDBDemo(ctx, name, dataDir, state.Status)
+	case "bigquery":
+		return startBigQueryDemo(ctx, name, dbConf, dataDir, state.Status)
+	case "codesql":
+		codePath := strings.TrimSpace(dbConf.Path)
+		if codePath != "" && !filepath.IsAbs(codePath) {
+			codePath = filepath.Join(cpath, codePath)
+		}
+		if codePath == "" {
+			err := fmt.Errorf("CodeSQL source %q requires path", name)
+			state.Status.Emit(name, "failed", err.Error())
+			return nil, nil, err
+		}
+		if _, err := os.Stat(codePath); err != nil {
+			state.Status.Emit(name, "failed", err.Error())
+			return nil, nil, err
+		}
+		state.Status.Emit(name, "verified", "CodeSQL source path verified; indexing during GraphJin initialization")
+		return func(context.Context) error { return nil }, &DemoConnInfo{Type: "codesql"}, nil
 	default:
 		return nil, nil, fmt.Errorf("unsupported database type: %s", dbType)
 	}
@@ -137,24 +457,20 @@ func withVolumeMounts(mounts testcontainers.ContainerMounts) testcontainers.Cust
 }
 
 // startPostgresDemo starts a PostgreSQL container
-func startPostgresDemo(ctx context.Context, persist bool) (func(context.Context) error, *DemoConnInfo, error) {
+func startPostgresDemo(ctx context.Context, name, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
+	status.Emit(name, "starting", "starting Postgres container")
 	opts := []testcontainers.ContainerCustomizer{
 		postgres.WithUsername("graphjin"),
 		postgres.WithPassword("graphjin"),
 		postgres.WithDatabase("graphjin_demo"),
-	}
-
-	if persist {
-		opts = append(opts, withVolumeMounts(testcontainers.ContainerMounts{
-			{
-				Source: testcontainers.DockerVolumeMountSource{Name: "graphjin-demo-postgres"},
-				Target: "/var/lib/postgresql/data",
-			},
-		}))
+		withVolumeMounts(testcontainers.ContainerMounts{
+			testcontainers.BindMount(dataDir, testcontainers.ContainerMountTarget("/var/lib/postgresql/data")),
+		}),
 	}
 
 	container, err := postgres.Run(ctx, "postgres:15", opts...)
 	if err != nil {
+		status.Emit(name, "failed", err.Error())
 		return nil, nil, fmt.Errorf("failed to start postgres container: %w", err)
 	}
 
@@ -180,10 +496,11 @@ func startPostgresDemo(ctx context.Context, persist bool) (func(context.Context)
 
 	// Wait for database to be fully ready
 	for i := 0; i < 30; i++ {
-		testDB, err := sql.Open("postgres", connStr)
+		testDB, err := sql.Open("pgx", connStr)
 		if err == nil {
 			if err = testDB.Ping(); err == nil {
 				testDB.Close() //nolint:errcheck
+				status.Emit(name, "verified", "Postgres is accepting connections")
 				break
 			}
 			testDB.Close() //nolint:errcheck
@@ -203,24 +520,20 @@ func startPostgresDemo(ctx context.Context, persist bool) (func(context.Context)
 }
 
 // startMySQLDemo starts a MySQL container
-func startMySQLDemo(ctx context.Context, persist bool) (func(context.Context) error, *DemoConnInfo, error) {
+func startMySQLDemo(ctx context.Context, name, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
+	status.Emit(name, "starting", "starting MySQL container")
 	opts := []testcontainers.ContainerCustomizer{
 		mysql.WithUsername("graphjin"),
 		mysql.WithPassword("graphjin"),
 		mysql.WithDatabase("graphjin_demo"),
-	}
-
-	if persist {
-		opts = append(opts, withVolumeMounts(testcontainers.ContainerMounts{
-			{
-				Source: testcontainers.DockerVolumeMountSource{Name: "graphjin-demo-mysql"},
-				Target: "/var/lib/mysql",
-			},
-		}))
+		withVolumeMounts(testcontainers.ContainerMounts{
+			testcontainers.BindMount(dataDir, testcontainers.ContainerMountTarget("/var/lib/mysql")),
+		}),
 	}
 
 	container, err := mysql.Run(ctx, "mysql:8.0", opts...)
 	if err != nil {
+		status.Emit(name, "failed", err.Error())
 		return nil, nil, fmt.Errorf("failed to start mysql container: %w", err)
 	}
 
@@ -250,6 +563,7 @@ func startMySQLDemo(ctx context.Context, persist bool) (func(context.Context) er
 	}
 
 	log.Infof("MySQL running on %s:%s", host, port.Port())
+	status.Emit(name, "verified", "MySQL is accepting connections")
 
 	return container.Terminate, &DemoConnInfo{
 		Host:     host,
@@ -263,7 +577,8 @@ func startMySQLDemo(ctx context.Context, persist bool) (func(context.Context) er
 }
 
 // startMariaDBDemo starts a MariaDB container
-func startMariaDBDemo(ctx context.Context, persist bool) (func(context.Context) error, *DemoConnInfo, error) {
+func startMariaDBDemo(ctx context.Context, name, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
+	status.Emit(name, "starting", "starting MariaDB container")
 	// Use GenericContainer instead of mysql.Run because the MySQL helper
 	// has a wait strategy that doesn't recognize MariaDB's log format
 	req := testcontainers.GenericContainerRequest{
@@ -277,21 +592,16 @@ func startMariaDBDemo(ctx context.Context, persist bool) (func(context.Context) 
 				"MYSQL_PASSWORD":      "graphjin",
 			},
 			WaitingFor: wait.ForLog("ready for connections").WithStartupTimeout(120 * time.Second),
+			Mounts: testcontainers.ContainerMounts{
+				testcontainers.BindMount(dataDir, testcontainers.ContainerMountTarget("/var/lib/mysql")),
+			},
 		},
 		Started: true,
 	}
 
-	if persist {
-		req.Mounts = testcontainers.ContainerMounts{
-			{
-				Source: testcontainers.DockerVolumeMountSource{Name: "graphjin-demo-mariadb"},
-				Target: "/var/lib/mysql",
-			},
-		}
-	}
-
 	container, err := testcontainers.GenericContainer(ctx, req)
 	if err != nil {
+		status.Emit(name, "failed", err.Error())
 		return nil, nil, fmt.Errorf("failed to start mariadb container: %w", err)
 	}
 
@@ -324,6 +634,7 @@ func startMariaDBDemo(ctx context.Context, persist bool) (func(context.Context) 
 	}
 
 	log.Infof("MariaDB running on %s:%s", host, port.Port())
+	status.Emit(name, "verified", "MariaDB is accepting connections")
 
 	return container.Terminate, &DemoConnInfo{
 		Host:     host,
@@ -337,19 +648,11 @@ func startMariaDBDemo(ctx context.Context, persist bool) (func(context.Context) 
 }
 
 // startSQLiteDemo sets up an SQLite database (no container needed)
-func startSQLiteDemo(ctx context.Context, persist bool) (func(context.Context) error, *DemoConnInfo, error) {
-	var connStr string
-
-	if persist {
-		// Use file-based database for persistence
-		dbPath := filepath.Join(cpath, "graphjin_demo.db")
-		connStr = fmt.Sprintf("file:%s?cache=shared&_busy_timeout=5000", dbPath)
-		log.Infof("SQLite using file: %s", dbPath)
-	} else {
-		// Use shared in-memory database
-		connStr = "file:memdb1?mode=memory&cache=shared&_busy_timeout=5000"
-		log.Info("SQLite using in-memory database")
-	}
+func startSQLiteDemo(ctx context.Context, name, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
+	_ = ctx
+	dbPath := filepath.Join(dataDir, "graphjin_demo.db")
+	connStr := fmt.Sprintf("file:%s?cache=shared&_busy_timeout=5000", dbPath)
+	status.Emit(name, "starting", "opening SQLite database")
 
 	// Register the sqlite3_regexp driver if not already registered
 	registerSQLite3Regexp()
@@ -357,16 +660,20 @@ func startSQLiteDemo(ctx context.Context, persist bool) (func(context.Context) e
 	// Open database to verify it works
 	testDB, err := sql.Open("sqlite3_regexp", connStr)
 	if err != nil {
+		status.Emit(name, "failed", err.Error())
 		return nil, nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
+	status.Emit(name, "verified", "SQLite file opened")
 
 	cleanup := func(ctx context.Context) error {
+		_ = ctx
 		return testDB.Close()
 	}
 
 	return cleanup, &DemoConnInfo{
 		ConnStr: connStr,
 		Type:    "sqlite",
+		DB:      testDB,
 	}, nil
 }
 
@@ -399,7 +706,8 @@ func registerSQLite3Regexp() {
 }
 
 // startOracleDemo starts an Oracle container
-func startOracleDemo(ctx context.Context, persist bool) (func(context.Context) error, *DemoConnInfo, error) {
+func startOracleDemo(ctx context.Context, name, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
+	status.Emit(name, "starting", "starting Oracle container")
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "gvenzl/oracle-free:23-slim",
@@ -410,21 +718,16 @@ func startOracleDemo(ctx context.Context, persist bool) (func(context.Context) e
 				"APP_USER_PASSWORD": "graphjin_password",
 			},
 			WaitingFor: wait.ForLog("DATABASE IS READY TO USE!").WithStartupTimeout(300 * time.Second),
+			Mounts: testcontainers.ContainerMounts{
+				testcontainers.BindMount(dataDir, testcontainers.ContainerMountTarget("/opt/oracle/oradata")),
+			},
 		},
 		Started: true,
 	}
 
-	if persist {
-		req.Mounts = testcontainers.ContainerMounts{
-			{
-				Source: testcontainers.DockerVolumeMountSource{Name: "graphjin-demo-oracle"},
-				Target: "/opt/oracle/oradata",
-			},
-		}
-	}
-
 	container, err := testcontainers.GenericContainer(ctx, req)
 	if err != nil {
+		status.Emit(name, "failed", err.Error())
 		return nil, nil, fmt.Errorf("failed to start oracle container: %w", err)
 	}
 
@@ -444,6 +747,7 @@ func startOracleDemo(ctx context.Context, persist bool) (func(context.Context) e
 	connStr := fmt.Sprintf("oracle://graphjin:graphjin_password@%s:%s/FREEPDB1", host, port.Port())
 
 	log.Infof("Oracle running on %s:%s", host, port.Port())
+	status.Emit(name, "verified", "Oracle container is ready")
 
 	return container.Terminate, &DemoConnInfo{
 		Host:     host,
@@ -457,7 +761,8 @@ func startOracleDemo(ctx context.Context, persist bool) (func(context.Context) e
 }
 
 // startMSSQLDemo starts a Microsoft SQL Server container
-func startMSSQLDemo(ctx context.Context, persist bool) (func(context.Context) error, *DemoConnInfo, error) {
+func startMSSQLDemo(ctx context.Context, name, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
+	status.Emit(name, "starting", "starting SQL Server container")
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "mcr.microsoft.com/mssql/server:2022-latest",
@@ -467,21 +772,16 @@ func startMSSQLDemo(ctx context.Context, persist bool) (func(context.Context) er
 				"MSSQL_SA_PASSWORD": "GraphJin!Passw0rd",
 			},
 			WaitingFor: wait.ForLog("SQL Server is now ready for client connections").WithStartupTimeout(120 * time.Second),
+			Mounts: testcontainers.ContainerMounts{
+				testcontainers.BindMount(dataDir, testcontainers.ContainerMountTarget("/var/opt/mssql")),
+			},
 		},
 		Started: true,
 	}
 
-	if persist {
-		req.Mounts = testcontainers.ContainerMounts{
-			{
-				Source: testcontainers.DockerVolumeMountSource{Name: "graphjin-demo-mssql"},
-				Target: "/var/opt/mssql",
-			},
-		}
-	}
-
 	container, err := testcontainers.GenericContainer(ctx, req)
 	if err != nil {
+		status.Emit(name, "failed", err.Error())
 		return nil, nil, fmt.Errorf("failed to start mssql container: %w", err)
 	}
 
@@ -520,7 +820,7 @@ func startMSSQLDemo(ctx context.Context, persist bool) (func(context.Context) er
 	// Create the demo database
 	_, err = initDB.Exec("IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'graphjin_demo') CREATE DATABASE graphjin_demo")
 	if err != nil {
-		initDB.Close() //nolint:errcheck
+		initDB.Close()           //nolint:errcheck
 		container.Terminate(ctx) //nolint:errcheck
 		return nil, nil, fmt.Errorf("failed to create mssql database: %w", err)
 	}
@@ -530,6 +830,7 @@ func startMSSQLDemo(ctx context.Context, persist bool) (func(context.Context) er
 	connStr := fmt.Sprintf("sqlserver://sa:GraphJin!Passw0rd@%s:%s?database=graphjin_demo", host, port.Port())
 
 	log.Infof("SQL Server running on %s:%s", host, port.Port())
+	status.Emit(name, "verified", "SQL Server is accepting connections")
 
 	return container.Terminate, &DemoConnInfo{
 		Host:     host,
@@ -543,20 +844,17 @@ func startMSSQLDemo(ctx context.Context, persist bool) (func(context.Context) er
 }
 
 // startMongoDBDemo starts a MongoDB container
-func startMongoDBDemo(ctx context.Context, persist bool) (func(context.Context) error, *DemoConnInfo, error) {
-	opts := []testcontainers.ContainerCustomizer{}
-
-	if persist {
-		opts = append(opts, withVolumeMounts(testcontainers.ContainerMounts{
-			{
-				Source: testcontainers.DockerVolumeMountSource{Name: "graphjin-demo-mongodb"},
-				Target: "/data/db",
-			},
-		}))
+func startMongoDBDemo(ctx context.Context, name, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
+	status.Emit(name, "starting", "starting MongoDB container")
+	opts := []testcontainers.ContainerCustomizer{
+		withVolumeMounts(testcontainers.ContainerMounts{
+			testcontainers.BindMount(dataDir, testcontainers.ContainerMountTarget("/data/db")),
+		}),
 	}
 
 	container, err := mongodb.Run(ctx, "mongo:7", opts...)
 	if err != nil {
+		status.Emit(name, "failed", err.Error())
 		return nil, nil, fmt.Errorf("failed to start mongodb container: %w", err)
 	}
 
@@ -579,6 +877,7 @@ func startMongoDBDemo(ctx context.Context, persist bool) (func(context.Context) 
 	}
 
 	log.Infof("MongoDB running on %s:%s", host, port.Port())
+	status.Emit(name, "verified", "MongoDB is accepting connections")
 
 	return container.Terminate, &DemoConnInfo{
 		Host:    host,
@@ -586,6 +885,44 @@ func startMongoDBDemo(ctx context.Context, persist bool) (func(context.Context) 
 		DBName:  "graphjin_demo",
 		ConnStr: connStr,
 		Type:    "mongodb",
+	}, nil
+}
+
+func startBigQueryDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
+	status.Emit(name, "opening", "opening BigQuery simulator")
+	seedPath := strings.TrimSpace(dbConf.Path)
+	if seedPath == "" {
+		seedPath = filepath.Join("schema", name+".sql")
+	}
+	if !filepath.IsAbs(seedPath) {
+		seedPath = filepath.Join(cpath, seedPath)
+	}
+
+	dbPath := filepath.Join(dataDir, "warehouse.duckdb")
+	connector := hostedemu.NewConnector(hostedemu.Config{
+		SeedPath: seedPath,
+		DBPath:   dbPath,
+		Backend:  hostedemu.BackendDuckDB,
+		Fallback: hostedemu.FallbackStrict,
+		TestName: name,
+	}, hostedbigquery.NewAdapter())
+
+	demoDB := sql.OpenDB(connector)
+	if err := demoDB.PingContext(ctx); err != nil {
+		demoDB.Close() //nolint:errcheck
+		status.Emit(name, "failed", err.Error())
+		return nil, nil, fmt.Errorf("failed to open BigQuery simulator: %w", err)
+	}
+	status.Emit(name, "verified", "BigQuery simulator ready")
+
+	cleanup := func(ctx context.Context) error {
+		_ = ctx
+		return demoDB.Close()
+	}
+	return cleanup, &DemoConnInfo{
+		ConnStr: dbPath,
+		Type:    "bigquery",
+		DB:      demoDB,
 	}, nil
 }
 
@@ -600,15 +937,31 @@ func applyContainerConfig(connInfo *DemoConnInfo) {
 	conf.DB.ConnString = connInfo.ConnStr
 }
 
-// startMultiDBDemo starts containers for all databases in the config
-func startMultiDBDemo(ctx context.Context, primaryType string, overrides map[string]string, persist bool) (
-	cleanups []func(context.Context) error, err error,
+// startMultiDBDemo starts or opens all databases in the config.
+func startMultiDBDemo(ctx context.Context, primaryType string, overrides map[string]string, state *demoState) (
+	cleanups []func(context.Context) error,
+	dbs map[string]*sql.DB,
+	err error,
 ) {
 	// Initialize connections map
 	multiDBConns = make(map[string]*sql.DB)
+	dbs = make(map[string]*sql.DB)
 
-	// Iterate over conf.Core.Databases
-	for name, dbConf := range conf.Databases {
+	names := make([]string, 0, len(conf.Databases))
+	for name := range conf.Databases {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		pi := demoSourcePriority(conf.Databases[names[i]].Type)
+		pj := demoSourcePriority(conf.Databases[names[j]].Type)
+		if pi != pj {
+			return pi < pj
+		}
+		return names[i] < names[j]
+	})
+
+	for _, name := range names {
+		dbConf := conf.Databases[name]
 		dbType := dbConf.Type
 
 		// Check for override
@@ -619,14 +972,13 @@ func startMultiDBDemo(ctx context.Context, primaryType string, overrides map[str
 		if dbType == "" {
 			dbType = "postgres" // Default
 		}
+		dbConf.Type = dbType
 
-		log.Infof("Starting %s container for database '%s'...", dbType, name)
-
-		cleanup, connInfo, err := startDemoContainer(ctx, dbType, persist)
+		cleanup, connInfo, err := startDemoContainer(ctx, name, dbConf, state)
 		if err != nil {
 			// Cleanup already started containers
 			cleanupAll(ctx, cleanups)
-			return nil, fmt.Errorf("failed to start %s: %w", name, err)
+			return nil, nil, fmt.Errorf("failed to start %s: %w", name, err)
 		}
 		cleanups = append(cleanups, cleanup)
 
@@ -636,22 +988,39 @@ func startMultiDBDemo(ctx context.Context, primaryType string, overrides map[str
 		// Open database connection for migrations
 		conn, err := openDemoConnection(connInfo)
 		if err != nil {
-			log.Warnf("Failed to open connection for '%s': %s", name, err)
+			if strings.EqualFold(connInfo.Type, "codesql") {
+				continue
+			}
+			cleanupAll(ctx, cleanups)
+			return nil, nil, fmt.Errorf("failed to open connection for %s: %w", name, err)
 		} else {
 			multiDBConns[name] = conn
+			dbs[name] = conn
 		}
-
-		log.Infof("Container for '%s' started successfully", name)
 	}
-	return cleanups, nil
+	return cleanups, dbs, nil
+}
+
+func demoSourcePriority(dbType string) int {
+	switch strings.ToLower(strings.TrimSpace(dbType)) {
+	case "bigquery":
+		return 1
+	case "codesql":
+		return 2
+	default:
+		return 0
+	}
 }
 
 // openDemoConnection opens a database connection based on DemoConnInfo
 func openDemoConnection(connInfo *DemoConnInfo) (*sql.DB, error) {
+	if connInfo.DB != nil {
+		return connInfo.DB, nil
+	}
 	var driverName string
 	switch strings.ToLower(connInfo.Type) {
 	case "postgres", "postgresql":
-		driverName = "postgres"
+		driverName = "pgx"
 	case "mysql", "mariadb":
 		driverName = "mysql"
 	case "sqlite", "sqlite3":
@@ -660,6 +1029,10 @@ func openDemoConnection(connInfo *DemoConnInfo) (*sql.DB, error) {
 		driverName = "sqlserver"
 	case "oracle":
 		driverName = "oracle"
+	case "bigquery":
+		return nil, fmt.Errorf("bigquery demo requires a pre-opened simulator database")
+	case "codesql":
+		return nil, fmt.Errorf("codesql is initialized by the GraphJin service")
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", connInfo.Type)
 	}
@@ -703,31 +1076,209 @@ func cleanupAll(ctx context.Context, cleanups []func(context.Context) error) {
 	}
 }
 
-// runDemoMigrations syncs the database schema from db.graphql
+func runDemoSQLFiles(dirName, phase string) bool {
+	dir := filepath.Join(cpath, dirName)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return false
+	}
+	if err != nil {
+		log.Warnf("Error reading %s directory: %s", dirName, err)
+		if currentDemo != nil {
+			currentDemo.Status.Emit(phase, "failed", err.Error())
+		}
+		return false
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".sql") {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return false
+	}
+
+	var ran bool
+	for _, fileName := range names {
+		dbName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+		conn := demoConnectionForSQLFile(dbName, len(names) == 1)
+		if conn == nil {
+			if currentDemo != nil {
+				currentDemo.Status.Emit(dbName, "skipped", fmt.Sprintf("%s SQL has no writable database", phase))
+			}
+			continue
+		}
+		path := filepath.Join(dir, fileName)
+		if err := execDemoSQLFile(conn, path); err != nil {
+			log.Warnf("Error applying %s to %s: %s", path, dbName, err)
+			if currentDemo != nil {
+				currentDemo.Status.Emit(dbName, "failed", err.Error())
+			}
+			continue
+		}
+		ran = true
+		if currentDemo != nil {
+			currentDemo.Status.Emit(dbName, "verified", fmt.Sprintf("%s SQL applied", phase))
+		}
+	}
+	return ran
+}
+
+func demoConnectionForSQLFile(dbName string, singleFile bool) *sql.DB {
+	if len(multiDBConns) != 0 {
+		if !demoDBWritable(dbName) {
+			return nil
+		}
+		return multiDBConns[dbName]
+	}
+	if db == nil {
+		return nil
+	}
+	if singleFile || dbName == core.DefaultDBName || dbName == "default" || dbName == "db" || dbName == "graphjin_demo" {
+		if conf.DB.Type == "mongodb" || conf.DB.Type == "bigquery" {
+			return nil
+		}
+		return db
+	}
+	return nil
+}
+
+func demoDBWritable(dbName string) bool {
+	dbConf, ok := conf.Databases[dbName]
+	if !ok {
+		return true
+	}
+	dbType := strings.ToLower(dbConf.Type)
+	return !dbConf.ReadOnly && dbType != "codesql" && dbType != "mongodb"
+}
+
+func execDemoSQLFile(conn *sql.DB, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return nil
+	}
+	_, err = conn.ExecContext(context.Background(), string(data))
+	return err
+}
+
+func runDemoSourceSeedJS() bool {
+	dir := filepath.Join(cpath, "seed")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return false
+	}
+	if err != nil {
+		log.Warnf("Error reading seed directory: %s", err)
+		if currentDemo != nil {
+			currentDemo.Status.Emit("seed", "failed", err.Error())
+		}
+		return false
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".js") {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return false
+	}
+
+	var ran bool
+	for _, fileName := range names {
+		source := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+		conn := demoConnectionForSQLFile(source, len(names) == 1)
+		if conn == nil {
+			if currentDemo != nil {
+				currentDemo.Status.Emit(source, "skipped", "seed JS has no writable database")
+			}
+			continue
+		}
+		if len(conf.Databases) != 0 && !demoDBWritable(source) {
+			if currentDemo != nil {
+				currentDemo.Status.Emit(source, "skipped", "seed JS has no writable database")
+			}
+			continue
+		}
+
+		path := filepath.Join(dir, fileName)
+		log.Infof("Running seed script from %s", path)
+		prepareSeedConfig()
+		seedCtx := seedJSContext{
+			DB:            conn,
+			Databases:     multiDBConns,
+			ConfigPath:    cpath,
+			DefaultSource: source,
+		}
+		if len(seedCtx.Databases) == 0 {
+			seedCtx.Databases = nil
+		}
+		if err := compileAndRunJSWithContext(path, seedCtx); err != nil {
+			log.Warnf("Failed to execute seed file %s: %s", path, err)
+			if currentDemo != nil {
+				currentDemo.Status.Emit(source, "failed", err.Error())
+			}
+			continue
+		}
+		ran = true
+		if currentDemo != nil {
+			currentDemo.Status.Emit(source, "verified", "seed JS completed")
+		}
+	}
+	return ran
+}
+
+func prepareSeedConfig() {
+	conf.Serv.Production = false
+	conf.DefaultBlock = false
+	conf.DisableAllowList = true
+	conf.DBSchemaPollDuration = -1
+	conf.Blocklist = nil
+}
+
+// runDemoMigrations syncs the database schema from GraphJin DDL.
 func runDemoMigrations() {
-	// Multi-DB mode
 	if len(conf.Databases) > 0 && len(multiDBConns) > 0 {
-		runDemoMigrationsMultiDB()
+		if runDemoMigrationsMultiDB() {
+			return
+		}
+	} else if runDemoProjectDDL() {
+		return
+	}
+
+	if runDemoSQLFiles("schema", "schema") {
 		return
 	}
 
 	if conf.DB.Type == "mongodb" {
 		log.Info("Schema sync not applicable for MongoDB, skipping")
+		if currentDemo != nil {
+			currentDemo.Status.Emit("schema", "skipped", "schema sync not applicable for MongoDB")
+		}
 		return
 	}
 
-	// Check if db.graphql exists
-	schemaPath := filepath.Join(cpath, "db.graphql")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if os.IsNotExist(err) {
-		log.Info("No db.graphql found, skipping schema sync")
-		return
+	log.Info("No GraphJin DDL found, skipping schema sync")
+	if currentDemo != nil {
+		currentDemo.Status.Emit("schema", "skipped", "no db.ddl, schema-ddl/*.ddl, legacy db.graphql, or schema/*.sql found")
 	}
+}
+
+func runDemoProjectDDL() bool {
+	schemaBytes, schemaPath, err := readProjectSchemaDDL()
 	if err != nil {
-		log.Warnf("Error reading db.graphql: %s", err)
-		return
+		return false
 	}
-
 	log.Infof("Syncing schema from %s", schemaPath)
 
 	// Compute schema diff
@@ -735,55 +1286,53 @@ func runDemoMigrations() {
 	ops, err := core.SchemaDiff(db, conf.DB.Type, schemaBytes, conf.Blocklist, opts)
 	if err != nil {
 		log.Warnf("Error computing schema diff: %s", err)
-		return
+		if currentDemo != nil {
+			currentDemo.Status.Emit("schema", "failed", err.Error())
+		}
+		return true
 	}
 
 	if len(ops) == 0 {
 		log.Info("Schema is already in sync")
-		return
-	}
-
-	// Apply changes
-	sqls := core.GenerateDiffSQL(ops)
-	ctx := context.Background()
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		log.Warnf("Error starting transaction: %s", err)
-		return
-	}
-
-	for _, sqlStmt := range sqls {
-		if _, err := tx.ExecContext(ctx, sqlStmt); err != nil {
-			if rbErr := tx.Rollback(); rbErr != nil {
-				log.Warnf("Rollback failed: %s", rbErr)
-			}
-			log.Warnf("Error applying schema: %s", err)
-			return
+		if currentDemo != nil {
+			currentDemo.Status.Emit("schema", "verified", "DDL already in sync")
 		}
+		return true
 	}
 
-	if err := tx.Commit(); err != nil {
-		log.Warnf("Error committing schema changes: %s", err)
-		return
+	sqls := core.GenerateDiffSQL(ops)
+	if err := applySQLChanges(context.Background(), db, conf.DB.Type, "", sqls); err != nil {
+		log.Warnf("Error applying schema: %s", err)
+		if currentDemo != nil {
+			currentDemo.Status.Emit("schema", "failed", err.Error())
+		}
+		return true
 	}
 
 	log.Infof("Schema sync completed (%d changes applied)", len(ops))
+	if currentDemo != nil {
+		currentDemo.Status.Emit("schema", "verified", fmt.Sprintf("%d DDL changes applied", len(ops)))
+	}
+	return true
 }
 
 // runDemoMigrationsMultiDB syncs schemas for all databases in multi-DB mode
-func runDemoMigrationsMultiDB() {
-	schemaPath := filepath.Join(cpath, "db.graphql")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if os.IsNotExist(err) {
-		log.Info("No db.graphql found, skipping schema sync")
-		return
-	}
+func runDemoMigrationsMultiDB() bool {
+	files, err := sourceSchemaDDLFiles()
 	if err != nil {
-		log.Warnf("Error reading db.graphql: %s", err)
-		return
+		log.Warnf("Error reading source DDL files: %s", err)
+		if currentDemo != nil {
+			currentDemo.Status.Emit("schema", "failed", err.Error())
+		}
+		return true
 	}
-
-	log.Infof("Syncing schemas from %s (multi-database mode)", schemaPath)
+	if err := ensureNoSchemaDDLAmbiguity(files); err != nil {
+		log.Warnf("Error resolving schema DDL: %s", err)
+		if currentDemo != nil {
+			currentDemo.Status.Emit("schema", "failed", err.Error())
+		}
+		return true
+	}
 
 	// Build dbTypes map from config
 	dbTypes := make(map[string]string)
@@ -793,10 +1342,52 @@ func runDemoMigrationsMultiDB() {
 
 	// Compute schema diff for all databases
 	opts := core.DiffOptions{Destructive: false}
-	results, err := core.SchemaDiffMultiDB(multiDBConns, dbTypes, schemaBytes, conf.Blocklist, opts)
-	if err != nil {
-		log.Warnf("Error computing schema diff: %s", err)
-		return
+	results := make(map[string][]core.SchemaOperation)
+	if len(files) != 0 {
+		for _, file := range files {
+			conn, ok := multiDBConns[file.Source]
+			if !ok {
+				err := fmt.Errorf("%s has no writable database source %q", file.Path, file.Source)
+				log.Warn(err)
+				if currentDemo != nil {
+					currentDemo.Status.Emit(file.Source, "failed", err.Error())
+				}
+				return true
+			}
+			dbType := dbTypes[file.Source]
+			if !demoDBWritable(file.Source) || !core.SupportsSchemaDDL(dbType) {
+				if currentDemo != nil {
+					currentDemo.Status.Emit(file.Source, "skipped", "DDL has no supported writable database")
+				}
+				continue
+			}
+			ops, err := core.SchemaDiff(conn, dbType, file.Data, conf.Blocklist, opts)
+			if err != nil {
+				log.Warnf("Error computing schema diff for %s: %s", file.Source, err)
+				if currentDemo != nil {
+					currentDemo.Status.Emit(file.Source, "failed", err.Error())
+				}
+				return true
+			}
+			if len(ops) == 0 && currentDemo != nil {
+				currentDemo.Status.Emit(file.Source, "verified", "DDL already in sync")
+			}
+			results[file.Source] = ops
+		}
+	} else {
+		schemaBytes, schemaPath, err := readProjectSchemaDDL()
+		if err != nil {
+			return false
+		}
+		log.Infof("Syncing schemas from %s (multi-database mode)", schemaPath)
+		results, err = core.SchemaDiffMultiDB(multiDBConns, dbTypes, schemaBytes, conf.Blocklist, opts)
+		if err != nil {
+			log.Warnf("Error computing schema diff: %s", err)
+			if currentDemo != nil {
+				currentDemo.Status.Emit("schema", "failed", err.Error())
+			}
+			return true
+		}
 	}
 
 	// Apply changes per database
@@ -809,73 +1400,117 @@ func runDemoMigrationsMultiDB() {
 		sqls := core.GenerateDiffSQL(ops)
 		conn := multiDBConns[dbName]
 
-		ctx := context.Background()
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			log.Warnf("Error starting transaction for %s: %s", dbName, err)
+		if err := applySQLChanges(context.Background(), conn, dbTypes[dbName], dbName, sqls); err != nil {
+			log.Warnf("Error applying schema to %s: %s", dbName, err)
 			continue
 		}
-
-		var failed bool
-		for _, sqlStmt := range sqls {
-			if _, err := tx.ExecContext(ctx, sqlStmt); err != nil {
-				if rbErr := tx.Rollback(); rbErr != nil {
-					log.Warnf("Rollback failed for %s: %s", dbName, rbErr)
-				}
-				log.Warnf("Error applying schema to %s: %s", dbName, err)
-				failed = true
-				break
-			}
+		log.Infof("[%s] Schema sync completed (%d changes)", dbName, len(ops))
+		if currentDemo != nil {
+			currentDemo.Status.Emit(dbName, "verified", fmt.Sprintf("%d DDL changes applied", len(ops)))
 		}
-
-		if !failed {
-			if err := tx.Commit(); err != nil {
-				log.Warnf("Error committing schema changes to %s: %s", dbName, err)
-			} else {
-				log.Infof("[%s] Schema sync completed (%d changes)", dbName, len(ops))
-				totalChanges += len(ops)
-			}
-		}
+		totalChanges += len(ops)
 	}
 
 	if totalChanges == 0 {
 		log.Info("All schemas are already in sync")
+		if currentDemo != nil {
+			currentDemo.Status.Emit("schema", "verified", "all DDL already in sync")
+		}
 	} else {
 		log.Infof("Multi-DB schema sync completed (%d total changes)", totalChanges)
+		if currentDemo != nil {
+			currentDemo.Status.Emit("schema", "verified", fmt.Sprintf("%d total DDL changes applied", totalChanges))
+		}
 	}
+	return true
 }
 
 // runDemoSeed runs the seed script if available
 func runDemoSeed() {
+	if currentDemo != nil && !currentDemo.FirstRun {
+		currentDemo.Status.Emit("seed", "skipped", "existing demo state verified")
+		return
+	}
+	if runDemoSourceSeedJS() {
+		return
+	}
+	if runDemoSQLFiles("seed", "seed") {
+		return
+	}
+
 	if conf.DB.Type == "mysql" {
 		log.Warn("Seed scripts not supported with MySQL, skipping")
+		if currentDemo != nil {
+			currentDemo.Status.Emit("seed", "skipped", "seed.js is not supported with MySQL")
+		}
 		return
 	}
 
 	if conf.DB.Type == "mongodb" {
 		log.Info("Seed scripts not applicable for MongoDB, skipping")
+		if currentDemo != nil {
+			currentDemo.Status.Emit("seed", "skipped", "seed.js is not applicable for MongoDB")
+		}
 		return
 	}
 
 	seedPath := filepath.Join(cpath, "seed.js")
 	if _, err := os.Stat(seedPath); os.IsNotExist(err) {
 		log.Info("No seed.js found, skipping")
+		if currentDemo != nil {
+			currentDemo.Status.Emit("seed", "skipped", "no seed.js or seed/*.sql found")
+		}
 		return
 	}
 
 	log.Infof("Running seed script from %s", seedPath)
 
-	// Disable production mode and blocklist for seeding
-	conf.Serv.Production = false
-	conf.DefaultBlock = false
-	conf.DisableAllowList = true
-	conf.DBSchemaPollDuration = -1
-	conf.Blocklist = nil
+	prepareSeedConfig()
 
-	if err := compileAndRunJS(seedPath, db, cpath); err != nil {
+	seedCtx := seedJSContext{
+		DB:            db,
+		Databases:     multiDBConns,
+		ConfigPath:    cpath,
+		DefaultSource: seedDefaultSource(),
+	}
+	if len(seedCtx.Databases) == 0 {
+		seedCtx.Databases = nil
+	}
+	if err := compileAndRunJSWithContext(seedPath, seedCtx); err != nil {
 		log.Warnf("Failed to execute seed file: %s", err)
+		if currentDemo != nil {
+			currentDemo.Status.Emit("seed", "failed", err.Error())
+		}
 		return
 	}
 
 	log.Info("Seed script completed")
+	if currentDemo != nil {
+		currentDemo.Status.Emit("seed", "verified", "seed script completed")
+	}
+}
+
+func seedDefaultSource() string {
+	for _, source := range conf.Core.Sources {
+		if !source.Default {
+			continue
+		}
+		kind := strings.ToLower(strings.TrimSpace(source.Kind))
+		if kind == "database" || kind == "code" {
+			return source.Name
+		}
+	}
+	if len(multiDBConns) != 0 {
+		names := make([]string, 0, len(multiDBConns))
+		for name := range multiDBConns {
+			if demoDBWritable(name) {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+		if len(names) != 0 {
+			return names[0]
+		}
+	}
+	return core.DefaultDBName
 }

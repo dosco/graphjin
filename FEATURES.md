@@ -1112,6 +1112,8 @@ for msg := range m.Result {
 }
 ```
 
+Most SQL dialects use GraphJin's batched polling path. Dialects without the batched path are listed as unsupported for subscriptions until that wrapper is verified.
+
 **Cursor-based subscriptions** (for feeds/chat):
 
 ```graphql
@@ -1671,21 +1673,24 @@ query {
 
 ## Multi-Database Support
 
-GraphJin supports 8 databases with the same GraphQL syntax:
+GraphJin supports operational databases, warehouses, and CQL/NoSQL systems through the same GraphQL compiler surface. Dialect-specific limits remain explicit:
 
-| Database | Queries | Mutations | Subscriptions | Arrays | Full-Text |
-|----------|---------|-----------|---------------|--------|-----------|
-| PostgreSQL | Yes | Yes | Yes | Yes | Yes |
-| MySQL | Yes | Yes | Polling | No | Yes |
-| MariaDB | Yes | Yes | Polling | No | Yes |
-| MSSQL | Yes | Yes | No | No | No |
-| Oracle | Yes | Yes | No | No | No |
-| SQLite | Yes | Yes | No | No | FTS5 |
-| MongoDB | Yes | Yes | Yes | Yes | Yes |
-| Snowflake | Yes | Yes | No | No | No |
-| CockroachDB | Yes | Yes | Yes | Yes | Yes |
+| Database | Queries | Mutations | Subscriptions | Arrays / collections | Full-Text | GIS | Schema DDL |
+|----------|---------|-----------|---------------|----------------------|-----------|-----|------------|
+| PostgreSQL | Yes | Yes | Yes | Yes | Yes | PostGIS | Yes |
+| MySQL | Yes | Yes | Yes | No | Yes | 8.0+ | Yes |
+| MariaDB | Yes | Yes | Yes | No | Yes | Yes | Yes |
+| MSSQL | Yes | Yes | Yes | No | No | Yes | Yes |
+| Oracle | Yes | Yes | Yes | No | No | Yes | Yes |
+| SQLite | Yes | Yes | Yes | No | FTS5 | SpatiaLite | Yes |
+| MongoDB | Yes | Yes | Yes | Yes | Yes | Yes | No |
+| Cassandra / Keyspaces | CQL-native | Single-table PK | Partition-bound polling | Limited CQL | No | No | No |
+| Snowflake | Yes | Yes | No | No | No | No | Yes |
+| Redshift | Experimental queries | Experimental PK writes | Experimental batched polling | No | Limited search | Limited | Experimental basic DDL |
+| BigQuery | Experimental queries | No | No | Limited | No | No | No |
+| CockroachDB | Yes | Yes | Yes | Yes | Yes | No | No |
 
-Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**. Snowflake supports key pair (JWT) authentication.
+Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**. Snowflake supports key pair (JWT) authentication and SHOW-based catalog discovery/paging. Redshift support is experimental: queries/discovery, single-table primary-key writes, batched polling subscriptions, limited `ILIKE` search over configured `full_text` columns, limited spatial filters, and basic generated DDL. Redshift subscriptions are polling-based warehouse queries, not native change streams. BigQuery support is experimental and query-focused. Cassandra / Keyspaces support CQL-native queries, partition-bound polling subscriptions, and single-table primary-key writes; aggregates, full scans, OR-style cross-partition filters, full-text, and GIS remain outside the generic surface.
 
 ### Cross-Database Joins
 

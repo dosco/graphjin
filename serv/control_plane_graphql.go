@@ -434,8 +434,8 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 		},
 		{"name": "gj_config.update", "kind": "mutation", "enabled": configWriteEnabled, "summary": "Update GraphJin configuration.", "graphql_mutation": `gj_config(id: "current", update: ...)`},
 		{"name": "reload_schema", "kind": "mutation", "enabled": conf.AllowSchemaReload, "summary": "Reload database schema metadata through the MCP tool surface."},
-		{"name": "preview_schema_changes", "kind": "mutation", "enabled": conf.AllowSchemaUpdates, "summary": "Preview db.graphql schema changes through the MCP tool surface."},
-		{"name": "apply_schema_changes", "kind": "mutation", "enabled": conf.AllowSchemaUpdates, "summary": "Apply db.graphql schema changes through the MCP tool surface."},
+		{"name": "preview_schema_changes", "kind": "mutation", "enabled": conf.AllowSchemaUpdates, "summary": "Preview GraphJin DDL schema changes through the MCP tool surface."},
+		{"name": "apply_schema_changes", "kind": "mutation", "enabled": conf.AllowSchemaUpdates, "summary": "Apply GraphJin DDL schema changes through the MCP tool surface."},
 		{"name": "validate_where_clause", "kind": "validation", "enabled": true, "summary": "Validate where clauses with schema/operator guidance and compile-only GraphJin verification through the MCP tool surface."},
 		{
 			"name": "graphjin_error_repair", "kind": "repair", "enabled": true,

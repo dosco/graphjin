@@ -124,12 +124,12 @@ By default, GraphJin inspects the database at startup (`sdata.GetDBInfo`) to bui
 
 ### 2. Schema Bootstrapping (`EnableSchema`)
 To improve startup time and remove the DB dependency during initialization (e.g., for serverless or testing):
--   **Generation (Dev)**: In development (`Production: false`), if `EnableSchema` is set, GraphJin discovers the schema and saves it to a `db.graphql` file.
--   **Bootstrapping (Prod)**: In production, it reads `db.graphql` (parsed by `qcode`) to hydrate the `DBInfo` struct, bypassing the expensive DB inspection.
+-   **Generation (Dev)**: In development (`Production: false`), if `EnableSchema` is set, GraphJin discovers the schema and saves it to a `db.ddl` file.
+-   **Bootstrapping (Prod)**: In production, it reads `db.ddl` (parsed by `qcode`) to hydrate the `DBInfo` struct, bypassing the expensive DB inspection. Legacy `db.graphql` remains a fallback when `db.ddl` is absent.
 
 ### 3. Auto-Migration
 The `core/internal/migrate` package provides capabilities to:
--   Compare the "current" schema (from DB) against an "expected" schema (from `db.graphql` or code).
+-   Compare the "current" schema (from DB) against an "expected" schema (from `db.ddl`, `schema-ddl/<source>.ddl`, or code).
 -   Generate SQL operations (`CREATE TABLE`, `ALTER TABLE`, etc.) to align the database with the expected state.
 -   This enables a "code-first" or "schema-first" workflow where changes in the GraphJin schema definition can propagate to the database.
 
@@ -166,7 +166,7 @@ A new boolean flag `MockDB` is added to the `Config` struct.
 - **Enabled (`true`)**: Signals GraphJin to skip database discovery and connection establishment effectively running in an "air-gapped" mode regarding data storage.
 
 ### 2. Initialization
-- **Schema Loading**: Instead of introspecting a live database, GraphJin expects a `db.graphql` file (the same format used by `EnableSchema` for bootstrapping). It parses this file to build the internal `sdata.DBInfo` and `sdata.DBSchema` structures.
+- **Schema Loading**: Instead of introspecting a live database, GraphJin expects a `db.ddl` file (the same GraphJin DDL format used by `EnableSchema` for bootstrapping). It parses this file to build the internal `sdata.DBInfo` and `sdata.DBSchema` structures.
 - **Connection Bypass**: The validation logic permits the `sql.DB` handle to be `nil` when `MockDB` is set.
 
 ### 3. Execution Interception

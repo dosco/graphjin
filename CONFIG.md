@@ -583,6 +583,34 @@ database:
    ALTER USER my_user SET RSA_PUBLIC_KEY='MIIBIjANBg...';
    ```
 
+#### Redshift
+
+```yaml
+database:
+  type: redshift
+  # Redshift uses the PostgreSQL wire protocol. Use the standard connection
+  # string form accepted by the configured SQL driver.
+  connection_string: postgres://user:password@cluster.example.us-east-1.redshift.amazonaws.com:5439/dev?sslmode=require
+```
+
+Redshift support is experimental and Redshift-owned, not plain PostgreSQL compatibility. GraphJin uses Redshift-native catalog discovery, preferring `SHOW TABLES` and `SHOW COLUMNS` compatible metadata.
+
+Supported Redshift v1 surfaces:
+- Queries and schema discovery.
+- Experimental single-table primary-key writes: insert, update, and delete.
+- Experimental batched polling subscriptions.
+- Experimental basic schema-diff DDL: create/drop table, add/drop column, informational PK/FK/unique constraints, `DISTSTYLE AUTO`, `ENCODE AUTO`, and sort keys.
+- Limited search over configured `full_text` columns using `ILIKE` predicates.
+- Limited GIS filters: `st_dwithin`, `st_within`, `st_contains`, and `st_intersects`.
+
+Redshift limits:
+- Subscriptions use GraphJin batched polling. They are not native Redshift change streams and can be expensive for large warehouse queries.
+- Insert result selection requires a client-supplied primary key in v1; identity-only inserts are rejected.
+- Upsert, nested mutations, connect/disconnect, writable CTEs, generated identity return, user-managed indexes, and search indexes are not supported.
+- Redshift PK/FK/unique constraints are informational planner hints except for enforced `NOT NULL`.
+- Limited search is not indexed full-text ranking/headline support.
+- Limited GIS does not claim full PostGIS or complete Redshift spatial coverage.
+
 #### TLS Connection Example
 
 ```yaml

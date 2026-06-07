@@ -88,7 +88,7 @@ func (Adapter) TranslateRuntime(sql string, args []driver.NamedValue, c any) (st
 }
 
 func (Adapter) TranslateDirect(sql string, args []driver.NamedValue, c any) (string, []driver.NamedValue, error) {
-	return lowerBigQuery(sql), args, nil
+	return lowerBigQueryDirect(sql), args, nil
 }
 
 func (Adapter) NormalizeIdentifier(identifier string) string {
@@ -749,6 +749,38 @@ func lowerBigQuery(sql string) string {
 	out = translateTypeNames(out)
 	out = lowerQuotedIdentifiers(out)
 	return out
+}
+
+func lowerBigQueryDirect(sql string) string {
+	out := lowerBigQuery(sql)
+	upper := strings.ToUpper(hostedNormalize(out))
+	if strings.HasPrefix(upper, "CREATE TABLE ") ||
+		strings.HasPrefix(upper, "CREATE OR REPLACE TABLE ") ||
+		strings.HasPrefix(upper, "ALTER TABLE ") ||
+		strings.HasPrefix(upper, "DROP TABLE ") {
+		return lowerBigQueryDDL(out)
+	}
+	return out
+}
+
+func lowerBigQueryDDL(sql string) string {
+	out := replaceFoldAll(sql, " NOT ENFORCED", "")
+	out = replaceBigQueryDDLType(out, "INT64", "BIGINT")
+	out = replaceBigQueryDDLType(out, "FLOAT64", "DOUBLE")
+	out = replaceBigQueryDDLType(out, "NUMERIC", "DECIMAL")
+	out = replaceBigQueryDDLType(out, "BIGNUMERIC", "DECIMAL")
+	out = replaceBigQueryDDLType(out, "STRING", "VARCHAR")
+	out = replaceBigQueryDDLType(out, "BOOL", "BOOLEAN")
+	out = replaceBigQueryDDLType(out, "BYTES", "BLOB")
+	out = replaceBigQueryDDLType(out, "GEOGRAPHY", "VARCHAR")
+	out = regexp.MustCompile(`(?is)\bARRAY\s*<[^>]+>`).ReplaceAllString(out, "JSON")
+	out = regexp.MustCompile(`(?is)\s+CLUSTER\s+BY\s+[^;]+`).ReplaceAllString(out, "")
+	return out
+}
+
+func replaceBigQueryDDLType(sql, from, to string) string {
+	re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(from) + `\b`)
+	return re.ReplaceAllString(sql, to)
 }
 
 func translateSafeCast(arg string) string {

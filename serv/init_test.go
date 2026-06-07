@@ -2,6 +2,8 @@ package serv
 
 import (
 	"database/sql"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -125,6 +127,44 @@ func TestInitDB_ExistingDBNotReplaced(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestInitDB_ProvidedDBsStillInitializeMissingManagedSources(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	codeRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(codeRoot, "main.go"), []byte(`package main
+
+func Handler() {}
+`), 0o644))
+
+	appDB, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+
+	s := &graphjinService{
+		conf: &Config{
+			Core: core.Config{Databases: map[string]core.DatabaseConfig{
+				"app":  {Type: "sqlite", Path: ":memory:"},
+				"code": {Type: "codesql", Path: codeRoot},
+			}},
+			Serv: Serv{
+				ConfigPath: t.TempDir(),
+				Production: false,
+				MCP:        MCPConfig{Disable: true},
+			},
+		},
+		log:        logger.Sugar(),
+		zlog:       logger,
+		dbs:        map[string]*sql.DB{"app": appDB},
+		managedDBs: make(map[string]managedDB),
+	}
+	defer closeTestService(s)
+
+	err = s.initDB()
+	require.NoError(t, err)
+	assert.Same(t, appDB, s.dbs["app"])
+	require.NotNil(t, s.dbs["code"])
+	assert.Equal(t, "sqlite", s.runtimeCore.Databases["code"].Type)
+	assert.Equal(t, "codesql", s.conf.Core.Databases["code"].Type)
+}
+
 // newTestLogger creates a no-op logger for testing
 func newTestLogger() *zap.SugaredLogger {
 	logger, _ := zap.NewDevelopment()
@@ -148,7 +188,7 @@ func TestSyncDBFromDatabases_MSSQL(t *testing.T) {
 					Schema:                 "dbo",
 					Encrypt:                &boolFalse,
 					TrustServerCertificate: &boolTrue,
-					},
+				},
 			},
 		},
 	}

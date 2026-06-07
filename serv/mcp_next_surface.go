@@ -680,7 +680,7 @@ func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, p
 		return ms.newNextGuidance("schema_preview_ready", []NextOption{
 			optionWithTemplate(
 				nextOption("apply_schema_changes", 1, "Apply the reviewed schema diff when the preview looks correct.", "Use the same schema payload to execute the change.", []string{"schema", "database"}, []string{"destructive"}),
-				carryArgs(map[string]any{"schema": "<db.graphql schema>"}, args, "schema", "database", "destructive"),
+				carryArgs(map[string]any{"schema": "<GraphJin DDL schema>"}, args, "schema", "database", "destructive"),
 			),
 			nextOption("query_catalog", 2, "Compare the current catalog surface before applying changes.", "Inspect live tables before the DDL run.", nil, []string{"search", "where"}),
 		})

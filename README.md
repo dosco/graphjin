@@ -1,4 +1,4 @@
-# GraphJin - A Compiler to Connect AI to Your Databases
+# GraphJin - The Governed Data Plane for AI Agents
 
 [![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
 [![NPM Package](https://img.shields.io/npm/v/graphjin?style=for-the-badge)](https://www.npmjs.com/package/graphjin)
@@ -7,9 +7,18 @@
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=go)](https://pkg.go.dev/github.com/dosco/graphjin/core/v3)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin/core/v3)
 
-Point GraphJin at any database or source tree and AI assistants can query it instantly. Auto-discovers your schema, understands relationships, indexes code with tree-sitter, and compiles to optimized SQL. No configuration required.
+GraphJin is a compiler and runtime that lets AI agents connect to the systems a real company already has: databases, warehouses, files, source code, workflows, metadata, and security policy. Instead of handing an agent raw credentials and hoping it guesses correctly, GraphJin gives it one governed GraphQL + MCP surface where it can discover before acting, validate queries, run approved work, and observe runtime status.
 
-Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, BigQuery, S3/GCS/files, CodeSQL source indexes - and models from Claude/GPT-4 to local 7B models.
+It is not only for agents. GraphJin is still a high-performance GraphQL-to-database compiler, Go library, standalone API service, REST/OpenAPI gateway, and real-time subscription server. The agent use case is where everything comes together: the same compiler that serves your apps can also give AI a smart, auditable way to work across data, code, and operations.
+
+Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, Redshift, BigQuery, Apache Cassandra / Amazon Keyspaces, S3/GCS/local files, CodeSQL source indexes - and models from Claude/GPT-4 to local 7B models.
+
+## Why GraphJin For Agents
+
+- **One governed surface for many systems** - Query operational databases, warehouses, MongoDB, object stores, local files, CodeSQL source indexes, workflows, and GraphJin system roots through GraphQL and MCP.
+- **Smart discovery before action** - Agents start with `query_catalog(search: "<user instruction>")`, `graphql_help`, relationship evidence, examples, config recipes, and safety notes before writing or running queries.
+- **Guarded action, not raw access** - Source-mode access, query allow-lists, read-only boundaries, policy-aware MCP tools, local encrypted secrets, and `gj_config` preview/apply keep changes auditable.
+- **Operational awareness** - `gj_security`, `gj_runtime`, and the built-in console expose policy and bounded runtime status so agents can check what is safe before they act.
 
 ## Installation
 
@@ -40,8 +49,9 @@ docker pull dosco/graphjin
 
 ## Try It Now
 
-This is a quick way to try out GraphJin we'll use the `--demo` command which automatically
-starts a database using docker and loads it with demo data.
+This is a quick way to try out GraphJin. The `--demo` flag runs a curated local
+demo, creates local state under the example's `demo/` folder, and reuses that
+state on later starts. Delete `demo/` to reset from scratch.
 
 Download the source which contains the `webshop` demo
 ```
@@ -52,6 +62,14 @@ cd graphjin
 Now launch the Graphjin service that you installed using the install options above
 ```bash
 graphjin serve --demo --path examples/webshop
+```
+
+For a larger agent-driven example with Postgres operations data, a BigQuery
+simulator for roast telemetry, CodeSQL over internal business code, and
+executable workflows:
+
+```bash
+graphjin serve --demo --path examples/coffee-roastery
 ```
 
 You'll see output like this:
@@ -324,7 +342,7 @@ mutation {
 
 ## Real-time Subscriptions
 
-Get live updates when your data changes. GraphJin handles thousands of concurrent subscribers with a single database query - not one per subscriber.
+Get live updates when your data changes. For databases with batching support, GraphJin handles thousands of concurrent subscribers with a single database query - not one per subscriber.
 
 ```graphql
 subscription {
@@ -340,6 +358,8 @@ subscription {
 - GraphJin: 1,000 subscribers = 1 optimized batch query
 - Automatic change detection - updates only sent when data actually changes
 - Built-in cursor pagination for feeds and infinite scroll
+
+Dialects that do not implement GraphJin's batched polling path are listed as unsupported in the database support matrix.
 
 Subscribe over **WebSockets** (`graphql-ws` / `graphql-transport-ws` subprotocols) or **Server-Sent Events** — set `Accept: text/event-stream` on a `POST /api/v1/graphql` request and GraphJin streams `event: next` frames for each result, terminated by `event: complete`. Works from Node.js, Go, or any browser `EventSource` / WebSocket client.
 
@@ -476,7 +496,17 @@ federation:
 
 ## MCP Tools
 
-GraphJin exposes a catalog-first agent surface that guides AI models to discover before acting. The MCP surface is caller-aware: `tools/list`, `graphql_help`, and `query_catalog` reflect the caller's visible tools, `gj_*` roots, catalog capabilities, and blocked/admin-only actions. For goal-driven work, start with `query_catalog(search: "<user instruction>")` when it is listed, then inspect the best row with `query_catalog(id: "...")` before writing queries, choosing relationships, or using GraphJin-specific syntax. Config and security operator work returns `config_recipe` rows that spell out preflight, preview/apply, unsupported apply, verification, stop conditions, and forbidden patterns. For actions, agents can use GraphJin control-plane GraphQL roots such as `gj_workflow_execution(insert)`, `gj_workflow(insert/update/delete)`, and `gj_config(id: "current", update: ...)` when policy exposes them. In source mode, `gj_config` writes must run `mode: "preview"` with `expected_catalog_revision`, then resend the exact same payload with `mode: "apply"` and `preview_id`; source access and GraphJin root changes should use `source_patches` by exact source name instead of rewriting the full `sources` array. Schema reloads, schema changes, where-clause validation, and query repair remain MCP action tools. The legacy discovery tools are migration shims and are disabled unless `mcp.legacy_discovery: true`.
+GraphJin exposes a catalog-first MCP surface that guides AI models to discover before acting. The surface is caller-aware: `tools/list`, `graphql_help`, and `query_catalog` reflect the caller's visible tools, `gj_*` roots, catalog capabilities, and blocked/admin-only actions.
+
+- Start goal-driven work with `query_catalog(search: "<user instruction>")` when it is listed.
+- Inspect the best row with `query_catalog(id: "...")` before writing queries, choosing relationships, or using GraphJin-specific syntax.
+- Use `config_recipe` rows for operator work; they spell out preflight, preview/apply, unsupported apply, verification, stop conditions, and forbidden patterns.
+- Act through governed GraphQL roots such as `gj_workflow_execution(insert)`, `gj_workflow(insert/update/delete)`, and `gj_config(id: "current", update: ...)` only when policy exposes them.
+- In source mode, `gj_config` writes must run `mode: "preview"` with `expected_catalog_revision`, then resend the exact same payload with `mode: "apply"` and `preview_id`.
+- Source access and GraphJin root changes should use `source_patches` by exact source name instead of rewriting the full `sources` array.
+- Legacy discovery tools are migration shims and are disabled unless `mcp.legacy_discovery: true`.
+
+Schema reloads, schema changes, where-clause validation, and query repair remain MCP action tools.
 
 For teams building MCP agents, internal copilots, workflow agents, or enterprise automation, see [AGENTIC.md](AGENTIC.md). It explains the catalog-first agent loop in detail: discover, inspect, validate, act, observe, and refine.
 
@@ -642,20 +672,22 @@ Real conversations showing how an AI assistant uses GraphJin MCP tools to help y
 
 ## Database Support
 
-| Database | Queries | Mutations | Subscriptions | Full-Text | GIS |
-|----------|---------|-----------|---------------|-----------|-----|
-| PostgreSQL | Yes | Yes | Yes | Yes | PostGIS |
-| MySQL | Yes | Yes | Yes | Yes | 8.0+ |
-| MariaDB | Yes | Yes | Yes | Yes | Yes |
-| MSSQL | Yes | Yes | Yes | No | Yes |
-| Oracle | Yes | Yes | Yes | No | Yes |
-| SQLite | Yes | Yes | Yes | FTS5 | SpatiaLite |
-| MongoDB | Yes | Yes | Yes | Yes | Yes |
-| Snowflake | Yes | Yes | No | No | No |
-| BigQuery | Yes (experimental) | No | No | No | No |
-| CockroachDB | Yes | Yes | Yes | Yes | No |
+| Database | Queries | Mutations | Subscriptions | Full-Text | GIS | Schema DDL |
+|----------|---------|-----------|---------------|-----------|-----|------------|
+| PostgreSQL | Yes | Yes | Yes | Yes | PostGIS | Yes |
+| MySQL | Yes | Yes | Yes | Yes | 8.0+ | Yes |
+| MariaDB | Yes | Yes | Yes | Yes | Yes | Yes |
+| MSSQL | Yes | Yes | Yes | No | Yes | Yes |
+| Oracle | Yes | Yes | Yes | No | Yes | Yes |
+| SQLite | Yes | Yes | Yes | FTS5 | SpatiaLite | Yes |
+| MongoDB | Yes | Yes | Yes | Yes | Yes | No |
+| Cassandra / Keyspaces | CQL-native | Single-table PK | Partition-bound polling | No | No | No |
+| Snowflake | Yes | Yes | No | No | No | Yes |
+| Redshift | Experimental queries | Experimental PK writes | Experimental batched polling | Limited search | Limited | Experimental basic DDL |
+| BigQuery | Yes (experimental) | No | No | No | No | No |
+| CockroachDB | Yes | Yes | Yes | Yes | No | No |
 
-Also works with AWS Aurora/RDS, Google Cloud SQL, and YugabyteDB. Snowflake supports key pair (JWT) authentication. BigQuery support is experimental and query-focused.
+Also works with AWS Aurora/RDS, Google Cloud SQL, and YugabyteDB. Snowflake supports key pair (JWT) authentication and SHOW-based catalog discovery/paging. Redshift support is experimental: queries/discovery, single-table primary-key writes, batched polling subscriptions, limited `ILIKE` search over configured `full_text` columns, limited spatial filters, and basic generated DDL. Redshift subscriptions are polling-based warehouse queries, not native change streams. BigQuery support is experimental and query-focused. Cassandra / Keyspaces support CQL-native queries, partition-bound polling subscriptions, and single-table primary-key writes; aggregates, full scans, OR-style cross-partition filters, full-text, and GIS remain outside the generic surface.
 
 ## Production Security
 
@@ -716,10 +748,8 @@ Built-in web UI at `http://localhost:8080` for query development.
 
 ## Documentation
 
-
-
 - [Configuration Reference](CONFIG.md)
-- [Feature Reference](docs/FEATURES.md)
+- [Feature Reference](FEATURES.md)
 - [Go Examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples)
 
 ## Get in Touch

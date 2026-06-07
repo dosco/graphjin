@@ -19,10 +19,10 @@ import (
 const DefaultDBName = "default"
 
 // SupportedDBTypes lists the database types supported for single-database mode
-var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql", "mongodb", "snowflake", "bigquery", "nanodb", "cassandra"}
+var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql", "mongodb", "snowflake", "bigquery", "redshift", "nanodb", "cassandra"}
 
 // SupportedMultiDBTypes lists the database types supported for multi-database mode
-var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql", "snowflake", "bigquery", "nanodb", "cassandra"}
+var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql", "snowflake", "bigquery", "redshift", "nanodb", "cassandra"}
 
 // CanonicalMode normalizes the public top-level mode value.
 func CanonicalMode(mode string) (string, error) {
