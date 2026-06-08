@@ -5,10 +5,10 @@ go 1.25.0
 require (
 	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/dosco/graphjin/cassandradriver v0.0.0
-	github.com/dosco/graphjin/conf/v3 v3.18.34
-	github.com/dosco/graphjin/core/v3 v3.18.34
+	github.com/dosco/graphjin/conf/v3 v3.18.35
+	github.com/dosco/graphjin/core/v3 v3.18.35
 	github.com/dosco/graphjin/mongodriver v0.0.0
-	github.com/dosco/graphjin/serv/v3 v3.18.34
+	github.com/dosco/graphjin/serv/v3 v3.18.35
 	github.com/duckdb/duckdb-go/v2 v2.10502.0
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/gocql/gocql v1.7.0
@@ -101,8 +101,8 @@ require (
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59 // indirect
-	github.com/dosco/graphjin/auth/v3 v3.18.34 // indirect
-	github.com/dosco/graphjin/plugin/otel/v3 v3.18.34 // indirect
+	github.com/dosco/graphjin/auth/v3 v3.18.35 // indirect
+	github.com/dosco/graphjin/plugin/otel/v3 v3.18.35 // indirect
 	github.com/duckdb/duckdb-go-bindings v0.10502.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10502.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.10502.0 // indirect
