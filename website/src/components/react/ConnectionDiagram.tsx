@@ -17,9 +17,9 @@ export default function ConnectionDiagram() {
       <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
         <defs>
           <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="rgba(168, 85, 247, 0.3)" />
-            <stop offset="50%" stopColor="rgba(245, 158, 11, 0.6)" />
-            <stop offset="100%" stopColor="rgba(16, 185, 129, 0.3)" />
+            <stop offset="0%" stopColor="var(--color-muted)" stopOpacity="0.28" />
+            <stop offset="50%" stopColor="var(--color-accent)" stopOpacity="0.7" />
+            <stop offset="100%" stopColor="var(--color-muted)" stopOpacity="0.28" />
           </linearGradient>
         </defs>
         <line x1="15%" y1="50%" x2="85%" y2="50%" stroke="url(#lineGradient)" strokeWidth="2" strokeDasharray="8 4" />
@@ -34,7 +34,15 @@ export default function ConnectionDiagram() {
           transition={{ duration: 0.6 }}
           className="flex flex-col items-center gap-3"
         >
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500/10 to-purple-600/5 border border-purple-500/20 flex items-center justify-center">
+          <div
+            className="w-20 h-20 rounded-2xl border flex items-center justify-center"
+            style={{
+              background:
+                "color-mix(in srgb, var(--color-accent) 8%, transparent)",
+              borderColor:
+                "color-mix(in srgb, var(--color-accent) 24%, var(--color-border))",
+            }}
+          >
             <span className="text-4xl">🤖</span>
           </div>
           <div className="text-center">
@@ -53,7 +61,7 @@ export default function ConnectionDiagram() {
           <div className="relative">
             {/* Glow effect */}
             <div className="absolute inset-0 w-28 h-28 bg-gj-gold/20 rounded-full blur-xl" />
-            <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-gj-gold/20 to-gj-gold/5 border-2 border-gj-gold/50 flex flex-col items-center justify-center shadow-[0_0_40px_rgba(245,158,11,0.15)]">
+            <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-gj-gold/20 to-gj-gold/5 border-2 border-gj-gold/50 flex flex-col items-center justify-center shadow-[0_0_40px_rgba(182,252,52,0.15)]">
               <span className="text-3xl">⚡</span>
               <span className="text-xs font-display font-bold text-gj-gold mt-1">GraphJin</span>
             </div>
@@ -70,7 +78,13 @@ export default function ConnectionDiagram() {
           transition={{ duration: 0.6 }}
           className="flex flex-col items-center gap-3"
         >
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 flex items-center justify-center">
+          <div
+            className="w-20 h-20 rounded-2xl border flex items-center justify-center"
+            style={{
+              background: "color-mix(in srgb, var(--color-bg) 82%, transparent)",
+              borderColor: "var(--color-border)",
+            }}
+          >
             <span className="text-4xl">🗄️</span>
           </div>
           <div className="text-center">

@@ -6,10 +6,10 @@ const clients = [
 ];
 
 const targets = [
-  { label: "Databases", detail: "Postgres · MySQL · Mongo · Oracle", tone: "cyan" },
+  { label: "Databases", detail: "Postgres · MySQL · Mongo · Oracle", tone: "accent" },
   { label: "Files", detail: "Local · S3 · GCS · R2", tone: "gold" },
-  { label: "Code", detail: "Symbols · refs · docs · FTS", tone: "cyan" },
-  { label: "Remote APIs", detail: "OpenAPI joins", tone: "blue" },
+  { label: "Code", detail: "Symbols · refs · docs · FTS", tone: "accent" },
+  { label: "Remote APIs", detail: "OpenAPI joins", tone: "accent" },
   { label: "Workflows", detail: "Queries + JS steps", tone: "gold" },
 ];
 
@@ -96,7 +96,7 @@ const proof = [
 
   :root[data-theme="dark"] .compiler-map {
     background:
-      linear-gradient(180deg, rgba(34, 211, 238, 0.055), transparent 52%),
+      linear-gradient(180deg, rgba(182, 252, 52, 0.055), transparent 52%),
       var(--color-surface);
     box-shadow: 0 18px 52px rgba(0, 0, 0, 0.22);
   }
@@ -128,7 +128,7 @@ const proof = [
   }
 
   .compiler-kicker {
-    color: var(--color-accent);
+    color: var(--color-accent-readable);
     font-family: var(--font-mono);
     font-size: 0.72rem;
     letter-spacing: 0.16em;
@@ -167,9 +167,8 @@ const proof = [
     line-height: 1.35;
   }
 
-  .compiler-target-cyan,
-  .compiler-target-gold,
-  .compiler-target-blue {
+  .compiler-target-accent,
+  .compiler-target-gold {
     border-left-color: color-mix(in srgb, var(--color-accent) 70%, var(--color-border));
   }
 
@@ -224,7 +223,7 @@ const proof = [
 
   :root[data-theme="dark"] .compiler-core-inner {
     background:
-      linear-gradient(180deg, rgba(34, 211, 238, 0.08), rgba(2, 6, 23, 0.88));
+      linear-gradient(180deg, rgba(182, 252, 52, 0.08), rgba(2, 6, 23, 0.88));
     box-shadow: 0 16px 44px rgba(0, 0, 0, 0.24);
   }
 

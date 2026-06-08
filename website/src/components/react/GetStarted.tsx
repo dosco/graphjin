@@ -59,7 +59,7 @@ export default function GetStarted() {
               background:
                 path === "existing" ? "var(--color-accent-soft)" : "transparent",
               color:
-                path === "existing" ? "var(--color-accent)" : "var(--color-muted)",
+                path === "existing" ? "var(--color-accent-readable)" : "var(--color-muted)",
             }}
           >
             <Database className="w-4 h-4" />
@@ -74,7 +74,7 @@ export default function GetStarted() {
               background:
                 path === "new" ? "var(--color-accent-soft)" : "transparent",
               color:
-                path === "new" ? "var(--color-accent)" : "var(--color-muted)",
+                path === "new" ? "var(--color-accent-readable)" : "var(--color-muted)",
             }}
           >
             <DatabaseZap className="w-4 h-4" />
@@ -104,7 +104,7 @@ export default function GetStarted() {
                   className="w-8 h-8 rounded-lg flex items-center justify-center font-mono text-sm font-bold"
                   style={{
                     background: "var(--color-accent-soft)",
-                    color: "var(--color-accent)",
+                    color: "var(--color-accent-readable)",
                   }}
                 >
                   {i + 1}
