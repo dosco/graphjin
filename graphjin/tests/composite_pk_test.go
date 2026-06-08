@@ -13,7 +13,7 @@ import (
 // TestCompositePKLookup tests that the id: argument works with composite
 // primary keys using object syntax: id: {product_id: 1, variant_id: 2}
 func TestCompositePKLookup(t *testing.T) {
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" || dbType == "cassandra" || dbType == "clickhouse" {
 		t.Skipf("skipping composite PK test for %s", dbType)
 	}
 
@@ -59,7 +59,7 @@ func TestCompositePKLookup(t *testing.T) {
 // TestCompositePKOrderBy verifies that queries on composite PK tables
 // correctly order by all PK columns.
 func TestCompositePKOrderBy(t *testing.T) {
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" || dbType == "cassandra" || dbType == "clickhouse" {
 		t.Skipf("skipping composite PK test for %s", dbType)
 	}
 
@@ -99,7 +99,7 @@ func TestCompositePKOrderBy(t *testing.T) {
 // TestCompositePKFilterWhere tests filtering on composite PK tables
 // using the where argument with both PK columns.
 func TestCompositePKFilterWhere(t *testing.T) {
-	if dbType == "mongodb" || dbType == "cassandra" {
+	if dbType == "mongodb" || dbType == "cassandra" || dbType == "clickhouse" {
 		t.Skipf("skipping composite PK test for %s", dbType)
 	}
 

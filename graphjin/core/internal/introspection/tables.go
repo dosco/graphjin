@@ -123,8 +123,11 @@ func getDBInfoOnce(
 		case "cassandra":
 			// Cassandra returns info via the driver's introspection
 			row = db.QueryRowContext(qctx, cassandraInfo)
+		case "clickhouse":
+			// ClickHouse returns info via the driver's introspection
+			row = db.QueryRowContext(qctx, clickhouseInfo)
 		default:
-			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, redshift, mongodb, cassandra", dbType)
+			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, redshift, mongodb, cassandra, clickhouse", dbType)
 		}
 
 		if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
@@ -355,8 +358,11 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 	case "cassandra":
 		// Cassandra uses JSON query DSL - the driver handles introspection
 		sqlStmt = cassandraColumnsStmt
+	case "clickhouse":
+		// ClickHouse uses JSON query DSL - the driver handles introspection
+		sqlStmt = clickhouseColumnsStmt
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, redshift, mongodb, cassandra", dbtype)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, redshift, mongodb, cassandra, clickhouse", dbtype)
 	}
 
 	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
@@ -1428,8 +1434,11 @@ func DiscoverFunctions(ctx context.Context, db *sql.DB, dbtype string, blockList
 	case "cassandra":
 		// Cassandra has no queryable user-defined functions for GraphJin's purposes
 		return nil, nil
+	case "clickhouse":
+		// ClickHouse function discovery is not wired for GraphJin's purposes
+		return nil, nil
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, redshift, mongodb, cassandra", dbtype)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, bigquery, redshift, mongodb, cassandra, clickhouse", dbtype)
 	}
 
 	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)

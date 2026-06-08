@@ -406,6 +406,7 @@ cache_control: "public, max-age=300, s-maxage=600"
 | `mssql` | No | Yes | Microsoft SQL Server |
 | `mongodb` | No | Yes | MongoDB (multi-db only) |
 | `snowflake` | Yes | Yes | Requires `connection_string` |
+| `clickhouse` | Yes | Yes | Columnar OLAP, reads-first. No foreign keys (declare relationships in config), async/best-effort mutations, single-table writes only |
 
 CodeSQL is not a `database.type`; configure repository/code indexes as `sources[].kind: code`.
 
@@ -610,6 +611,37 @@ Redshift limits:
 - Redshift PK/FK/unique constraints are informational planner hints except for enforced `NOT NULL`.
 - Limited search is not indexed full-text ranking/headline support.
 - Limited GIS does not claim full PostGIS or complete Redshift spatial coverage.
+
+#### ClickHouse
+
+ClickHouse is a columnar OLAP engine. GraphJin treats it as a reads-first source: it
+compiles GraphQL to a batched read plan executed over the native protocol (port 9000),
+assembling nested JSON in Go (it does not use SQL `JOIN`/`LATERAL`).
+
+```yaml
+database:
+  type: clickhouse
+  host: localhost
+  port: 9000
+  dbname: mydb
+  user: default
+  password: secret
+
+  # Or use a DSN
+  # connection_string: clickhouse://user:password@localhost:9000/mydb
+```
+
+ClickHouse specifics to be aware of:
+
+- **No foreign keys.** Relationships must be declared in config (a column's `foreign_key`),
+  e.g. `tables[].columns[]: { name: owner_id, foreign_key: users.id }` — GraphJin cannot
+  infer them as it does for SQL databases.
+- **Reads.** Filters (incl. `or`/`not`/`like`), ordering, `limit`/`offset`, keyset cursor
+  pagination, and analytics (aggregates, `distinct:` group-by) are supported.
+- **Mutations are best-effort and single-table.** `insert` is first-class (pass the row as a
+  JSON variable: `insert: $data`); `update`/`delete` run as synchronous `ALTER … UPDATE` /
+  lightweight `DELETE` and require a `where`. No upsert, no nested/related writes, no
+  `RETURNING`-style read-after-write guarantees for async paths.
 
 #### TLS Connection Example
 

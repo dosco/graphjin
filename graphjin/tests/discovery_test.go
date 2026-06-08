@@ -91,7 +91,7 @@ func TestDiscovery(t *testing.T) {
 	})
 
 	t.Run("RowCountsForSeededTables", func(t *testing.T) {
-		if dbType == "mongodb" || dbType == "cassandra" {
+		if dbType == "mongodb" || dbType == "cassandra" || dbType == "clickhouse" {
 			t.Skip("mongodb row counts are not supported via the SQL path")
 		}
 		ensureCatalogStats(t)
@@ -133,7 +133,7 @@ func TestDiscovery(t *testing.T) {
 			totalTables += n.TableCount
 		}
 		assert.Greaterf(t, totalTables, 0, "expected non-zero table count across namespaces (dialect=%s)", dbType)
-		if dbType == "mongodb" || dbType == "cassandra" {
+		if dbType == "mongodb" || dbType == "cassandra" || dbType == "clickhouse" {
 			for _, n := range rollup {
 				assert.Falsef(t, n.RowCountAvailable, "mongodb rollup should report row counts unavailable (got %+v)", n)
 			}
@@ -141,7 +141,7 @@ func TestDiscovery(t *testing.T) {
 	})
 
 	t.Run("TableIndexHasRowCounts", func(t *testing.T) {
-		if dbType == "mongodb" || dbType == "cassandra" {
+		if dbType == "mongodb" || dbType == "cassandra" || dbType == "clickhouse" {
 			t.Skip("mongodb row counts are not supported via the SQL path")
 		}
 		ensureCatalogStats(t)
@@ -174,7 +174,7 @@ func TestDiscovery(t *testing.T) {
 	})
 
 	t.Run("EnrichmentForSeededTable", func(t *testing.T) {
-		if dbType == "mongodb" || dbType == "cassandra" {
+		if dbType == "mongodb" || dbType == "cassandra" || dbType == "clickhouse" {
 			t.Skip("mongodb enrichment GraphQL is unverified on this driver")
 		}
 		dbName := gj.DefaultDatabase()

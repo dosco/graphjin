@@ -19,10 +19,10 @@ import (
 const DefaultDBName = "default"
 
 // SupportedDBTypes lists the database types supported for single-database mode
-var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql", "mongodb", "snowflake", "bigquery", "redshift", "nanodb", "cassandra"}
+var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql", "mongodb", "snowflake", "bigquery", "redshift", "nanodb", "cassandra", "clickhouse"}
 
 // SupportedMultiDBTypes lists the database types supported for multi-database mode
-var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql", "snowflake", "bigquery", "redshift", "nanodb", "cassandra"}
+var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql", "snowflake", "bigquery", "redshift", "nanodb", "cassandra", "clickhouse"}
 
 // CanonicalMode normalizes the public top-level mode value.
 func CanonicalMode(mode string) (string, error) {
@@ -427,7 +427,7 @@ func (c *Config) validateArtifactsConfig() error {
 		return fmt.Errorf("artifacts.source %q must be a writable SQL database source", sourceName)
 	}
 	switch strings.ToLower(strings.TrimSpace(source.Type)) {
-	case "mongodb", "nanodb", "cassandra":
+	case "mongodb", "nanodb", "cassandra", "clickhouse":
 		return fmt.Errorf("artifacts.source %q must be a writable SQL database source", sourceName)
 	}
 	if source.ReadOnly {

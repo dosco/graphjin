@@ -77,6 +77,9 @@ func detectDBType(conf *Config) {
 		if strings.HasPrefix(cs, "cassandra://") {
 			conf.DBType = "cassandra"
 		}
+		if strings.HasPrefix(cs, "clickhouse://") {
+			conf.DBType = "clickhouse"
+		}
 	}
 }
 
@@ -109,8 +112,10 @@ func initDBDriver(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		dc, err = initSnowflake(conf, openDB, useTelemetry, fs)
 	case "cassandra":
 		dc, err = initCassandra(conf, openDB, useTelemetry, fs)
+	case "clickhouse":
+		dc, err = initClickhouse(conf, openDB, useTelemetry, fs)
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, mssql, sqlite, oracle, mongodb, snowflake, cassandra", conf.DBType)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, mssql, sqlite, oracle, mongodb, snowflake, cassandra, clickhouse", conf.DBType)
 	}
 
 	if err != nil {
