@@ -14,8 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 const (
@@ -669,6 +667,10 @@ func NormalizeDiscovery(discovery string) string {
 }
 
 func openDuckDB(seedSQL string, catalog any, adapter Adapter, dbPath string) (*sql.DB, error) {
+	if err := ensureDuckDBDriver(); err != nil {
+		return nil, err
+	}
+
 	initialized := false
 	if dbPath != "" {
 		if st, err := os.Stat(dbPath); err == nil && st.Size() > 0 {
