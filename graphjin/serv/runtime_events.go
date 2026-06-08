@@ -156,6 +156,15 @@ func (s *graphjinService) runtimeObservabilityEnabled() bool {
 }
 
 func (s *graphjinService) initRuntimeObservability() error {
+	if s == nil {
+		return nil
+	}
+	s.runtimeEventsMu.Lock()
+	defer s.runtimeEventsMu.Unlock()
+	return s.initRuntimeObservabilityLocked()
+}
+
+func (s *graphjinService) initRuntimeObservabilityLocked() error {
 	if !s.runtimeObservabilityEnabled() {
 		s.runtimeEvents = nil
 		return nil
@@ -168,7 +177,7 @@ func (s *graphjinService) initRuntimeObservability() error {
 		store, err := newRedisRuntimeEventStore(s.conf.Redis.URL, opts)
 		if err == nil {
 			s.runtimeEvents = store
-			s.recordRuntimeEvent(context.Background(), runtimeEvent{
+			s.recordRuntimeEventLocked(context.Background(), runtimeEvent{
 				Phase:      "runtime_store",
 				Status:     runtimeStatusReady,
 				Severity:   "info",
@@ -184,7 +193,7 @@ func (s *graphjinService) initRuntimeObservability() error {
 		memStore := newMemoryRuntimeEventStore(opts)
 		memStore.setDegraded("Redis runtime store is unavailable; using process-local memory events.", "Continue with gj_runtime, but treat event rows as local to this GraphJin node.")
 		s.runtimeEvents = memStore
-		s.recordRuntimeEvent(context.Background(), runtimeEvent{
+		s.recordRuntimeEventLocked(context.Background(), runtimeEvent{
 			Phase:      "runtime_store",
 			Status:     runtimeStatusDegraded,
 			Severity:   "warn",
@@ -200,7 +209,7 @@ func (s *graphjinService) initRuntimeObservability() error {
 		return nil
 	}
 	s.runtimeEvents = newMemoryRuntimeEventStore(opts)
-	s.recordRuntimeEvent(context.Background(), runtimeEvent{
+	s.recordRuntimeEventLocked(context.Background(), runtimeEvent{
 		Phase:      "runtime_store",
 		Status:     runtimeStatusReady,
 		Severity:   "info",
@@ -215,18 +224,43 @@ func (s *graphjinService) reinitRuntimeObservability() {
 	if s == nil {
 		return
 	}
-	if s.runtimeEvents != nil {
-		if err := s.runtimeEvents.Close(); err != nil && s.log != nil {
-			s.log.Warnf("runtime observability close error: %s", err)
-		}
-		s.runtimeEvents = nil
-	}
-	if err := s.initRuntimeObservability(); err != nil && s.log != nil {
+	s.runtimeEventsMu.Lock()
+	defer s.runtimeEventsMu.Unlock()
+	s.closeRuntimeEventsLocked()
+	if err := s.initRuntimeObservabilityLocked(); err != nil && s.log != nil {
 		s.log.Warnf("runtime observability init error: %s", err)
 	}
 }
 
+func (s *graphjinService) closeRuntimeEvents() {
+	if s == nil {
+		return
+	}
+	s.runtimeEventsMu.Lock()
+	defer s.runtimeEventsMu.Unlock()
+	s.closeRuntimeEventsLocked()
+}
+
+func (s *graphjinService) closeRuntimeEventsLocked() {
+	if s.runtimeEvents == nil {
+		return
+	}
+	if err := s.runtimeEvents.Close(); err != nil && s.log != nil {
+		s.log.Warnf("runtime observability close error: %s", err)
+	}
+	s.runtimeEvents = nil
+}
+
 func (s *graphjinService) recordRuntimeEvent(ctx context.Context, event runtimeEvent) {
+	if s == nil {
+		return
+	}
+	s.runtimeEventsMu.RLock()
+	defer s.runtimeEventsMu.RUnlock()
+	s.recordRuntimeEventLocked(ctx, event)
+}
+
+func (s *graphjinService) recordRuntimeEventLocked(ctx context.Context, event runtimeEvent) {
 	if s == nil || s.runtimeEvents == nil {
 		return
 	}
@@ -255,6 +289,15 @@ func (s *graphjinService) recordRuntimeEvent(ctx context.Context, event runtimeE
 }
 
 func (s *graphjinService) runtimeCurrentStatus() runtimeStatus {
+	if s == nil {
+		return (*graphjinService)(nil).runtimeCurrentStatusLocked()
+	}
+	s.runtimeEventsMu.RLock()
+	defer s.runtimeEventsMu.RUnlock()
+	return s.runtimeCurrentStatusLocked()
+}
+
+func (s *graphjinService) runtimeCurrentStatusLocked() runtimeStatus {
 	activeDatabase := ""
 	if s != nil {
 		activeDatabase = s.activeRuntimeDatabase()
@@ -308,7 +351,13 @@ func (s *graphjinService) runtimeCurrentStatus() runtimeStatus {
 }
 
 func (s *graphjinService) registerRuntimeSchemaCallbacks() {
-	if s == nil || s.gj == nil || s.runtimeEvents == nil {
+	if s == nil || s.gj == nil {
+		return
+	}
+	s.runtimeEventsMu.RLock()
+	enabled := s.runtimeEvents != nil
+	s.runtimeEventsMu.RUnlock()
+	if !enabled {
 		return
 	}
 	s.gj.OnSchemaChange(func(dbName string, hash string) {
@@ -348,7 +397,6 @@ func (h runtimeQueryHandler) ExecuteManagedQuery(ctx context.Context, req core.M
 		return json.Marshal(out)
 	}
 	authorized := h.service.runtimeRootQueryAuthorized(ctx)
-	current := h.service.runtimeCurrentStatus()
 	for _, root := range req.Roots {
 		if !strings.EqualFold(root.Table, runtimeRootTable) {
 			return nil, fmt.Errorf("unsupported GraphJin runtime query root: %s", root.Table)
@@ -357,19 +405,42 @@ func (h runtimeQueryHandler) ExecuteManagedQuery(ctx context.Context, req core.M
 			out[root.FieldName] = nil
 			continue
 		}
-		if h.service.runtimeEvents == nil {
+		rows := h.service.runtimeRows(ctx)
+		if rows == nil {
 			out[root.FieldName] = nil
 			continue
 		}
-		rows := h.service.runtimeEvents.Rows(ctx, current)
-		rows = append(rows, h.service.runtimeSourceRows(ctx, current)...)
 		rows = applyManagedQuery(rows, root)
 		out[root.FieldName] = filterRows(rows, root.Fields)
 	}
 	return json.Marshal(out)
 }
 
+func (s *graphjinService) runtimeRows(ctx context.Context) []map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.runtimeEventsMu.RLock()
+	defer s.runtimeEventsMu.RUnlock()
+	if s.runtimeEvents == nil {
+		return nil
+	}
+	current := s.runtimeCurrentStatusLocked()
+	rows := s.runtimeEvents.Rows(ctx, current)
+	rows = append(rows, s.runtimeSourceRowsLocked(ctx, current)...)
+	return rows
+}
+
 func (s *graphjinService) runtimeSourceRows(ctx context.Context, current runtimeStatus) []map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.runtimeEventsMu.RLock()
+	defer s.runtimeEventsMu.RUnlock()
+	return s.runtimeSourceRowsLocked(ctx, current)
+}
+
+func (s *graphjinService) runtimeSourceRowsLocked(ctx context.Context, current runtimeStatus) []map[string]any {
 	if s == nil || s.conf == nil {
 		return nil
 	}
@@ -640,6 +711,15 @@ func runtimeSourceName(source core.SourceConfig) string {
 }
 
 func (s *graphjinService) runtimeRootQueryAuthorized(ctx context.Context) bool {
+	if s == nil {
+		return false
+	}
+	s.runtimeEventsMu.RLock()
+	defer s.runtimeEventsMu.RUnlock()
+	return s.runtimeRootQueryAuthorizedLocked(ctx)
+}
+
+func (s *graphjinService) runtimeRootQueryAuthorizedLocked(ctx context.Context) bool {
 	if s == nil || !s.runtimeObservabilityEnabled() {
 		return false
 	}
