@@ -15,6 +15,7 @@ WORKDIR /app
 COPY go.work go.work.sum ./
 COPY auth/go.mod auth/go.sum auth/
 COPY cassandradriver/go.mod cassandradriver/go.sum cassandradriver/
+COPY clickhousedriver/go.mod clickhousedriver/
 COPY cmd/go.mod cmd/go.sum cmd/
 COPY codesql/go.mod codesql/go.sum codesql/
 COPY conf/go.mod conf/go.sum conf/

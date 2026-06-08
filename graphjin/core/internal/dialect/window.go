@@ -68,6 +68,10 @@ func (d *MongoDBDialect) ValidateWindowFunction(f qcode.Field) error {
 	return fmt.Errorf("analytics directive on field %q is not supported by MongoDB", f.FieldName)
 }
 
+func (d *ClickHouseDialect) ValidateWindowFunction(f qcode.Field) error {
+	return validateStandardWindowFunction(d.Name(), f, true)
+}
+
 func sqliteVersionLess(v, compactMin, libMin int) bool {
 	if v == 0 {
 		return false
