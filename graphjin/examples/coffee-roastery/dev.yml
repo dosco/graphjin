@@ -50,7 +50,6 @@ sources:
   - name: roast_warehouse
     kind: database
     type: bigquery
-    path: schema/roast_warehouse.sql
     read_only: true
     analytics_mode: true
     access:

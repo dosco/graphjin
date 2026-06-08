@@ -53,15 +53,34 @@ func TestComputeDiff_CreateTable(t *testing.T) {
 }
 
 func TestSupportsSchemaDDLBoundary(t *testing.T) {
-	for _, dbType := range []string{"postgres", "mysql", "mariadb", "sqlite", "mssql", "oracle", "snowflake", "bigquery", "redshift", "cassandra"} {
+	for _, dbType := range []string{"postgres", "mysql", "mariadb", "sqlite", "mssql", "oracle", "snowflake"} {
 		if !SupportsSchemaDDL(dbType) {
 			t.Fatalf("SupportsSchemaDDL(%q) = false, want true", dbType)
 		}
 	}
-	for _, dbType := range []string{"mongodb", "codesql", "graphjin", "workflow", "files"} {
+	for _, dbType := range []string{"bigquery", "redshift", "cassandra", "mongodb", "codesql", "graphjin", "workflow", "files"} {
 		if SupportsSchemaDDL(dbType) {
 			t.Fatalf("SupportsSchemaDDL(%q) = true, want false", dbType)
 		}
+	}
+}
+
+func TestGenerateSchemaSQL_BigQueryRendererAvailableForSimulator(t *testing.T) {
+	sqls, err := GenerateSchemaSQL("bigquery", []byte(`
+type users {
+  id: Bigint! @id
+  email: Text!
+}
+`), nil)
+	if err != nil {
+		t.Fatalf("GenerateSchemaSQL: %v", err)
+	}
+	joined := strings.Join(sqls, "\n")
+	if !strings.Contains(joined, "CREATE TABLE `users`") {
+		t.Fatalf("BigQuery renderer did not create table SQL:\n%s", joined)
+	}
+	if !strings.Contains(joined, "`id` INT64 NOT NULL PRIMARY KEY NOT ENFORCED") {
+		t.Fatalf("BigQuery renderer did not preserve BigQuery PK DDL:\n%s", joined)
 	}
 }
 

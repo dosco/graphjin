@@ -890,17 +890,16 @@ func startMongoDBDemo(ctx context.Context, name, dataDir string, status demoStat
 
 func startBigQueryDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
 	status.Emit(name, "opening", "opening BigQuery simulator")
-	seedPath := strings.TrimSpace(dbConf.Path)
-	if seedPath == "" {
-		seedPath = filepath.Join("schema", name+".sql")
-	}
-	if !filepath.IsAbs(seedPath) {
-		seedPath = filepath.Join(cpath, seedPath)
+	setupSQL, setupSource, setupIsDDL, err := bigQuerySimulatorSetupSQL(name, dbConf)
+	if err != nil {
+		status.Emit(name, "failed", err.Error())
+		return nil, nil, err
 	}
 
 	dbPath := filepath.Join(dataDir, "warehouse.duckdb")
+	initialized := bigQuerySimulatorInitialized(dbPath)
 	connector := hostedemu.NewConnector(hostedemu.Config{
-		SeedPath: seedPath,
+		SeedSQL:  setupSQL,
 		DBPath:   dbPath,
 		Backend:  hostedemu.BackendDuckDB,
 		Fallback: hostedemu.FallbackStrict,
@@ -913,6 +912,13 @@ func startBigQueryDemo(ctx context.Context, name string, dbConf core.DatabaseCon
 		status.Emit(name, "failed", err.Error())
 		return nil, nil, fmt.Errorf("failed to open BigQuery simulator: %w", err)
 	}
+	if initialized {
+		status.Emit(name, "verified", "BigQuery simulator state reused")
+	} else if setupIsDDL {
+		status.Emit(name, "applied", fmt.Sprintf("%s applied via simulator", filepath.Base(setupSource)))
+	} else {
+		status.Emit(name, "applied", fmt.Sprintf("%s applied via legacy simulator SQL", filepath.Base(setupSource)))
+	}
 	status.Emit(name, "verified", "BigQuery simulator ready")
 
 	cleanup := func(ctx context.Context) error {
@@ -924,6 +930,37 @@ func startBigQueryDemo(ctx context.Context, name string, dbConf core.DatabaseCon
 		Type:    "bigquery",
 		DB:      demoDB,
 	}, nil
+}
+
+func bigQuerySimulatorSetupSQL(name string, dbConf core.DatabaseConfig) (setupSQL, sourcePath string, ddl bool, err error) {
+	ddlPath := filepath.Join(cpath, filepath.FromSlash(core.SourceSchemaDDLPath(name)))
+	if data, readErr := os.ReadFile(ddlPath); readErr == nil {
+		sqls, genErr := core.GenerateSchemaSQL("bigquery", data, conf.Blocklist)
+		if genErr != nil {
+			return "", ddlPath, true, genErr
+		}
+		return strings.Join(sqls, "\n\n"), ddlPath, true, nil
+	} else if !os.IsNotExist(readErr) {
+		return "", ddlPath, true, readErr
+	}
+
+	seedPath := strings.TrimSpace(dbConf.Path)
+	if seedPath == "" {
+		seedPath = filepath.Join("schema", name+".sql")
+	}
+	if !filepath.IsAbs(seedPath) {
+		seedPath = filepath.Join(cpath, seedPath)
+	}
+	data, err := os.ReadFile(seedPath)
+	if err != nil {
+		return "", seedPath, false, err
+	}
+	return string(data), seedPath, false, nil
+}
+
+func bigQuerySimulatorInitialized(dbPath string) bool {
+	st, err := os.Stat(dbPath)
+	return err == nil && st.Size() > 0
 }
 
 // applyContainerConfig updates the configuration with container connection info
@@ -1197,14 +1234,14 @@ func runDemoSourceSeedJS() bool {
 	var ran bool
 	for _, fileName := range names {
 		source := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-		conn := demoConnectionForSQLFile(source, len(names) == 1)
+		conn, simulatorSeed := demoConnectionForSeedJS(source, len(names) == 1)
 		if conn == nil {
 			if currentDemo != nil {
 				currentDemo.Status.Emit(source, "skipped", "seed JS has no writable database")
 			}
 			continue
 		}
-		if len(conf.Databases) != 0 && !demoDBWritable(source) {
+		if len(conf.Databases) != 0 && !demoDBWritable(source) && !simulatorSeed {
 			if currentDemo != nil {
 				currentDemo.Status.Emit(source, "skipped", "seed JS has no writable database")
 			}
@@ -1232,10 +1269,35 @@ func runDemoSourceSeedJS() bool {
 		}
 		ran = true
 		if currentDemo != nil {
-			currentDemo.Status.Emit(source, "verified", "seed JS completed")
+			if simulatorSeed {
+				currentDemo.Status.Emit(source, "verified", fmt.Sprintf("%s seeded via simulator", fileName))
+			} else {
+				currentDemo.Status.Emit(source, "verified", "seed JS completed")
+			}
 		}
 	}
 	return ran
+}
+
+func demoConnectionForSeedJS(source string, singleFile bool) (*sql.DB, bool) {
+	if len(multiDBConns) != 0 {
+		if demoDBWritable(source) {
+			return multiDBConns[source], false
+		}
+		if demoDBSimulatorSeed(source) {
+			return multiDBConns[source], true
+		}
+		return nil, false
+	}
+	return demoConnectionForSQLFile(source, singleFile), false
+}
+
+func demoDBSimulatorSeed(source string) bool {
+	dbConf, ok := conf.Databases[source]
+	if !ok || !dbConf.ReadOnly || multiDBConns[source] == nil {
+		return false
+	}
+	return strings.EqualFold(dbConf.Type, "bigquery")
 }
 
 func prepareSeedConfig() {
@@ -1248,6 +1310,10 @@ func prepareSeedConfig() {
 
 // runDemoMigrations syncs the database schema from GraphJin DDL.
 func runDemoMigrations() {
+	if currentDemo != nil && !currentDemo.FirstRun {
+		currentDemo.Status.Emit("schema", "skipped", "existing demo state verified")
+		return
+	}
 	if len(conf.Databases) > 0 && len(multiDBConns) > 0 {
 		if runDemoMigrationsMultiDB() {
 			return
@@ -1270,7 +1336,7 @@ func runDemoMigrations() {
 
 	log.Info("No GraphJin DDL found, skipping schema sync")
 	if currentDemo != nil {
-		currentDemo.Status.Emit("schema", "skipped", "no db.ddl, schema-ddl/*.ddl, legacy db.graphql, or schema/*.sql found")
+		currentDemo.Status.Emit("schema", "skipped", "no db.ddl, schema-ddl/*.ddl, legacy db.graphql, or legacy schema/*.sql found")
 	}
 }
 
@@ -1355,6 +1421,12 @@ func runDemoMigrationsMultiDB() bool {
 				return true
 			}
 			dbType := dbTypes[file.Source]
+			if demoDBSimulatorDDL(file.Source, dbType) {
+				if currentDemo != nil {
+					currentDemo.Status.Emit(file.Source, "skipped", "DDL handled by simulator startup")
+				}
+				continue
+			}
 			if !demoDBWritable(file.Source) || !core.SupportsSchemaDDL(dbType) {
 				if currentDemo != nil {
 					currentDemo.Status.Emit(file.Source, "skipped", "DDL has no supported writable database")
@@ -1425,6 +1497,14 @@ func runDemoMigrationsMultiDB() bool {
 	return true
 }
 
+func demoDBSimulatorDDL(source, dbType string) bool {
+	if !strings.EqualFold(dbType, "bigquery") {
+		return false
+	}
+	dbConf, ok := conf.Databases[source]
+	return ok && dbConf.ReadOnly && multiDBConns[source] != nil
+}
+
 // runDemoSeed runs the seed script if available
 func runDemoSeed() {
 	if currentDemo != nil && !currentDemo.FirstRun {
@@ -1458,7 +1538,7 @@ func runDemoSeed() {
 	if _, err := os.Stat(seedPath); os.IsNotExist(err) {
 		log.Info("No seed.js found, skipping")
 		if currentDemo != nil {
-			currentDemo.Status.Emit("seed", "skipped", "no seed.js or seed/*.sql found")
+			currentDemo.Status.Emit("seed", "skipped", "no seed.js, seed/*.js, or seed/*.sql found")
 		}
 		return
 	}

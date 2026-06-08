@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/hostedemu"
+	hostedbigquery "github.com/dosco/graphjin/hostedemu/bigquery"
 	"github.com/dosco/graphjin/serv/v3"
 	"github.com/spf13/cobra"
 )
@@ -224,6 +227,9 @@ func TestCoffeeRoasteryDemoConfigNormalizes(t *testing.T) {
 	if !cfg.Databases["roast_warehouse"].ReadOnly {
 		t.Fatal("roast_warehouse should be read-only")
 	}
+	if got := cfg.Databases["roast_warehouse"].Path; got != "" {
+		t.Fatalf("roast_warehouse path = %q, want empty canonical DDL discovery", got)
+	}
 }
 
 func TestCoffeeRoasteryOpsDDLBootsMockDB(t *testing.T) {
@@ -249,5 +255,110 @@ func TestCoffeeRoasteryOpsDDLBootsMockDB(t *testing.T) {
 
 	if _, err := gj.GraphQL(context.Background(), `query { customers { id name } }`, nil, nil); err != nil {
 		t.Fatalf("mock query against ops DDL: %v", err)
+	}
+}
+
+func TestComputeSchemaDiffMultiBigQueryUnsupportedLiveDDL(t *testing.T) {
+	oldCpath, oldConf := cpath, conf
+	defer func() {
+		cpath = oldCpath
+		conf = oldConf
+	}()
+
+	cpath = t.TempDir()
+	conf = &serv.Config{Core: core.Config{Databases: map[string]core.DatabaseConfig{
+		"roast_warehouse": {Type: "bigquery"},
+	}}}
+	if err := os.MkdirAll(filepath.Join(cpath, core.SourceSchemaDDLDir), 0o755); err != nil {
+		t.Fatalf("mkdir schema-ddl: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cpath, core.SourceSchemaDDLDir, "roast_warehouse.ddl"), []byte(`
+type roast_batches {
+  id: Bigint! @id
+}
+`), 0o644); err != nil {
+		t.Fatalf("write DDL: %v", err)
+	}
+
+	_, err := computeSchemaDiffMulti(false)
+	if err == nil {
+		t.Fatal("expected BigQuery live DDL to be unsupported")
+	}
+	if !strings.Contains(err.Error(), "not supported") || !strings.Contains(err.Error(), "bigquery") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCoffeeRoasteryBigQueryDDLAndSeedScript(t *testing.T) {
+	schemaData, err := os.ReadFile("../examples/coffee-roastery/schema-ddl/roast_warehouse.ddl")
+	if err != nil {
+		t.Fatalf("read roast warehouse DDL: %v", err)
+	}
+	sqls, err := core.GenerateSchemaSQL("bigquery", schemaData, nil)
+	if err != nil {
+		t.Fatalf("GenerateSchemaSQL: %v", err)
+	}
+
+	db := sql.OpenDB(hostedemu.NewConnector(hostedemu.Config{
+		SeedSQL:  strings.Join(sqls, "\n\n"),
+		DBPath:   filepath.Join(t.TempDir(), "warehouse.duckdb"),
+		Backend:  hostedemu.BackendDuckDB,
+		Fallback: hostedemu.FallbackStrict,
+		TestName: "coffee-roastery-roast-warehouse",
+	}, hostedbigquery.NewAdapter()))
+	defer db.Close() //nolint:errcheck
+	if err := db.Ping(); err != nil {
+		t.Fatalf("ping simulator: %v", err)
+	}
+
+	oldCpath, oldConf := cpath, conf
+	defer func() {
+		cpath = oldCpath
+		conf = oldConf
+	}()
+	cpath = filepath.Clean("../examples/coffee-roastery")
+	conf = &serv.Config{Core: core.Config{DisableAllowList: true}}
+
+	seedPath := filepath.Join(cpath, "seed", "roast_warehouse.js")
+	if err := compileAndRunJSWithContext(seedPath, seedJSContext{
+		DB:            db,
+		ConfigPath:    cpath,
+		DefaultSource: "roast_warehouse",
+	}); err != nil {
+		t.Fatalf("run roast warehouse seed: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM roast_batches").Scan(&count); err != nil {
+		t.Fatalf("query seeded batches: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("roast_batches count = %d, want 3", count)
+	}
+}
+
+func TestExamplesUseCanonicalDemoSchemaFiles(t *testing.T) {
+	var bad []string
+	root := "../examples"
+	if err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == "demo" {
+			return filepath.SkipDir
+		}
+		if d.IsDir() || !strings.EqualFold(filepath.Ext(path), ".sql") {
+			return nil
+		}
+		clean := filepath.ToSlash(path)
+		if strings.Contains(clean, "/schema/") || strings.Contains(clean, "/seed/") {
+			bad = append(bad, clean)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("walk examples: %v", err)
+	}
+	if len(bad) != 0 {
+		t.Fatalf("curated examples should use schema-ddl/*.ddl plus JS seeds, found SQL fixtures: %s", strings.Join(bad, ", "))
 	}
 }

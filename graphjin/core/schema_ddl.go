@@ -24,9 +24,20 @@ type DDLDialect interface {
 	AlterClusteringKey(tableName string, keys []string) string
 }
 
-// SupportsSchemaDDL reports whether GraphJin can generate executable DDL for dbType.
+// SupportsSchemaDDL reports whether GraphJin supports live schema DDL sync for dbType.
 func SupportsSchemaDDL(dbType string) bool {
-	return getDDLDialect(dbType) != nil
+	switch strings.ToLower(strings.TrimSpace(dbType)) {
+	case "postgresql", "postgres",
+		"mysql",
+		"mariadb",
+		"sqlite",
+		"mssql",
+		"oracle",
+		"snowflake":
+		return true
+	default:
+		return false
+	}
 }
 
 func getDDLDialect(dbType string) DDLDialect {

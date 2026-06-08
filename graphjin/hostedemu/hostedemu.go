@@ -31,6 +31,7 @@ const (
 
 type Config struct {
 	SeedPath   string
+	SeedSQL    string
 	DBPath     string
 	CaptureDir string
 	TestName   string
@@ -125,7 +126,7 @@ func newState(conf Config, adapter Adapter) (*state, error) {
 	if adapter == nil {
 		return nil, fmt.Errorf("hostedemu: nil adapter")
 	}
-	if conf.SeedPath == "" {
+	if conf.SeedPath == "" && conf.SeedSQL == "" {
 		conf.SeedPath = adapter.DefaultSeedPath()
 	}
 	if conf.TestName == "" {
@@ -138,11 +139,15 @@ func newState(conf Config, adapter Adapter) (*state, error) {
 	conf.Fallback = NormalizeFallback(conf.Fallback)
 	conf.Discovery = NormalizeDiscovery(conf.Discovery)
 
-	seedSQL, err := os.ReadFile(conf.SeedPath)
-	if err != nil {
-		return nil, err
+	seedSQL := conf.SeedSQL
+	if seedSQL == "" {
+		data, err := os.ReadFile(conf.SeedPath)
+		if err != nil {
+			return nil, err
+		}
+		seedSQL = string(data)
 	}
-	catalog, err := adapter.ParseSeed(string(seedSQL))
+	catalog, err := adapter.ParseSeed(seedSQL)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +174,7 @@ func newState(conf Config, adapter Adapter) (*state, error) {
 		st.file = f
 	}
 	if conf.Backend == BackendDuckDB {
-		st.duck, st.duckErr = openDuckDB(string(seedSQL), catalog, adapter, conf.DBPath)
+		st.duck, st.duckErr = openDuckDB(seedSQL, catalog, adapter, conf.DBPath)
 		if st.duckErr != nil && conf.Fallback == FallbackStrict {
 			_ = st.close()
 			return nil, st.duckErr

@@ -11,8 +11,22 @@ import (
 )
 
 func TestBigQuerySimulatorFileBackedPersistence(t *testing.T) {
-	seedPath := filepath.Join("..", "..", "examples", "coffee-roastery", "schema", "roast_warehouse.sql")
-	dbPath := filepath.Join(t.TempDir(), "warehouse.duckdb")
+	dir := t.TempDir()
+	seedPath := filepath.Join(dir, "seed.sql")
+	if err := os.WriteFile(seedPath, []byte(`
+CREATE TABLE roast_batches (
+  id INT64 NOT NULL PRIMARY KEY NOT ENFORCED,
+  batch_code STRING NOT NULL
+);
+
+INSERT INTO roast_batches (id, batch_code) VALUES
+  (1001, 'RB-2026-0605-001'),
+  (1002, 'RB-2026-0605-002'),
+  (1003, 'RB-2026-0605-003');
+`), 0o644); err != nil {
+		t.Fatalf("write seed: %v", err)
+	}
+	dbPath := filepath.Join(dir, "warehouse.duckdb")
 
 	open := func() *sql.DB {
 		t.Helper()

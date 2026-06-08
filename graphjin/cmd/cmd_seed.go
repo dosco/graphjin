@@ -288,21 +288,39 @@ func compileAndRunJSWithContext(seed string, seedCtx seedJSContext) error {
 	if configPath == "" {
 		configPath = cpath
 	}
-	var opts []core.Option
-	if len(seedCtx.Databases) != 0 {
-		opts = append(opts, core.OptionSetDatabases(seedCtx.Databases))
+	var gj *core.GraphJin
+	var gjErr error
+	getGraphJin := func() (*core.GraphJin, error) {
+		if gj != nil || gjErr != nil {
+			return gj, gjErr
+		}
+		var opts []core.Option
+		if len(seedCtx.Databases) != 0 {
+			opts = append(opts, core.OptionSetDatabases(seedCtx.Databases))
+		}
+		primaryDB := seedCtx.primaryDB()
+		if len(seedCtx.Databases) != 0 {
+			primaryDB = nil
+		}
+		gj, gjErr = core.NewGraphJinWithFS(&conf.Core, primaryDB, core.NewOsFS(configPath), opts...)
+		return gj, gjErr
 	}
-	primaryDB := seedCtx.primaryDB()
-	if len(seedCtx.Databases) != 0 {
-		primaryDB = nil
-	}
-	gj, err := core.NewGraphJinWithFS(&conf.Core, primaryDB, core.NewOsFS(configPath), opts...)
-	if err != nil {
-		return err
-	}
+	defer func() {
+		if gj != nil {
+			gj.Close()
+		}
+	}()
 
 	graphQLFn := func(query string, data interface{}, opt map[string]string) map[string]interface{} {
+		gj, err := getGraphJin()
+		if err != nil {
+			log.Fatalf("Failed to initialize GraphJin for seed script: %s", err)
+		}
 		return graphQLFunc(gj, query, data, opt, seedCtx)
+	}
+
+	seedInsertFn := func(table string, rows interface{}, opt map[string]string) int64 {
+		return seedInsertRows(seedCtx, table, rows, opt)
 	}
 
 	importCSVFn := func(table, filename string, sep string) int64 {
@@ -348,6 +366,12 @@ func compileAndRunJSWithContext(seed string, seedCtx seedJSContext) error {
 	util := vm.NewObject()
 	setUtilFuncs(util)
 	if err := vm.Set("util", util); err != nil {
+		return err
+	}
+
+	seedObj := vm.NewObject()
+	seedObj.Set("insert", seedInsertFn) //nolint:errcheck
+	if err := vm.Set("seed", seedObj); err != nil {
 		return err
 	}
 
@@ -422,6 +446,99 @@ func compileAndRunJSWithContext(seed string, seedCtx seedJSContext) error {
 
 	_, err = vm.RunScript(filepath.Base(seed), es5Code.String())
 	return err
+}
+
+func seedInsertRows(seedCtx seedJSContext, table string, rows interface{}, opt map[string]string) int64 {
+	source := ""
+	if opt != nil {
+		source = opt["source"]
+	}
+	insertDB := seedCtx.sourceDB(source)
+	if insertDB == nil {
+		log.Fatalf("Seed insert failed: no database connection available for source %q", source)
+	}
+
+	normalized, err := normalizeSeedRows(rows)
+	if err != nil {
+		log.Fatalf("Seed insert failed: %s", err)
+	}
+	if len(normalized) == 0 {
+		return 0
+	}
+
+	cols := seedInsertColumns(normalized)
+	if len(cols) == 0 {
+		return 0
+	}
+
+	quotedCols := make([]string, len(cols))
+	placeholders := make([]string, len(cols))
+	for i, col := range cols {
+		quotedCols[i] = seedQuoteIdent(col)
+		placeholders[i] = "?"
+	}
+	stmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		seedQuoteIdent(table),
+		strings.Join(quotedCols, ", "),
+		strings.Join(placeholders, ", "))
+
+	var total int64
+	for _, row := range normalized {
+		args := make([]interface{}, len(cols))
+		for i, col := range cols {
+			args[i] = row[col]
+		}
+		res, err := insertDB.ExecContext(context.Background(), stmt, args...)
+		if err != nil {
+			log.Fatalf("Seed insert failed: %s\nSQL: %s", err, stmt)
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			total += n
+		}
+	}
+	return total
+}
+
+func normalizeSeedRows(rows interface{}) ([]map[string]interface{}, error) {
+	data, err := json.Marshal(rows)
+	if err != nil {
+		return nil, err
+	}
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		return nil, nil
+	}
+	if data[0] == '[' {
+		var out []map[string]interface{}
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	var row map[string]interface{}
+	if err := json.Unmarshal(data, &row); err != nil {
+		return nil, err
+	}
+	return []map[string]interface{}{row}, nil
+}
+
+func seedInsertColumns(rows []map[string]interface{}) []string {
+	seen := make(map[string]bool)
+	for _, row := range rows {
+		for col := range row {
+			seen[col] = true
+		}
+	}
+	cols := make([]string, 0, len(seen))
+	for col := range seen {
+		cols = append(cols, col)
+	}
+	sort.Strings(cols)
+	return cols
+}
+
+func seedQuoteIdent(ident string) string {
+	return "`" + strings.ReplaceAll(strings.TrimSpace(ident), "`", "``") + "`"
 }
 
 // graphQLFunc is a helper function to run a GraphQL query
