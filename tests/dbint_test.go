@@ -163,7 +163,7 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 		mu.Lock()
 		multiDBs["postgres"] = pgDB
 		multiDBTypes["postgres"] = "postgres"
-		cleanups = append(cleanups, container.Terminate)
+		cleanups = append(cleanups, terminateFn(container))
 		mu.Unlock()
 	}()
 
@@ -370,7 +370,7 @@ func TestMain(m *testing.M) {
 					time.Sleep(500 * time.Millisecond)
 				}
 
-				return container.Terminate, connStr, err
+				return terminateFn(container), connStr, err
 			},
 		},
 		{
@@ -417,7 +417,7 @@ func TestMain(m *testing.M) {
 					time.Sleep(500 * time.Millisecond)
 				}
 
-				return container.Terminate, connStr, err
+				return terminateFn(container), connStr, err
 			},
 		},
 		{
@@ -476,7 +476,7 @@ func TestMain(m *testing.M) {
 					return nil, "", fmt.Errorf("failed to init mariadb: %w", err)
 				}
 
-				return container.Terminate, connStr, nil
+				return terminateFn(container), connStr, nil
 			},
 		},
 		{
@@ -614,7 +614,7 @@ func TestMain(m *testing.M) {
 					}
 				}
 
-				return container.Terminate, connStr, nil
+				return terminateFn(container), connStr, nil
 			},
 		},
 		{
@@ -694,7 +694,7 @@ func TestMain(m *testing.M) {
 					}
 				}
 
-				return container.Terminate, connStr, nil
+				return terminateFn(container), connStr, nil
 			},
 		},
 		{
@@ -968,6 +968,12 @@ func TestMain(m *testing.M) {
 			dbFunc:  startCassandraDB,
 		},
 		{
+			name:    "clickhouse",
+			driver:  "clickhouse-gj",
+			disable: true, // only runs when explicitly selected via -db=clickhouse
+			dbFunc:  startClickHouseDB,
+		},
+		{
 			name:    "adventureworks",
 			driver:  "postgres",
 			disable: true,
@@ -1031,6 +1037,12 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(0)
+}
+
+// terminateFn adapts Container.Terminate (variadic since testcontainers v0.40)
+// back to the cleanup signature the harness uses.
+func terminateFn(c testcontainers.Container) func(context.Context) error {
+	return func(ctx context.Context) error { return c.Terminate(ctx) }
 }
 
 func newConfig(c *core.Config) *core.Config {
@@ -1138,6 +1150,26 @@ func newConfig(c *core.Config) *core.Config {
 		)
 	}
 
+	// ClickHouse has no foreign keys either — declare the webshop relationships in
+	// config (like MongoDB / Cassandra). No servability config needed; ClickHouse
+	// serves arbitrary reads.
+	if c.DBType == "clickhouse" {
+		c.Tables = append(c.Tables,
+			core.Table{Name: "products", Columns: []core.Column{
+				{Name: "owner_id", ForeignKey: "users.id"},
+			}},
+			core.Table{Name: "purchases", Columns: []core.Column{
+				{Name: "customer_id", ForeignKey: "users.id"},
+				{Name: "product_id", ForeignKey: "products.id"},
+			}},
+			core.Table{Name: "comments", Columns: []core.Column{
+				{Name: "product_id", ForeignKey: "products.id"},
+				{Name: "commenter_id", ForeignKey: "users.id"},
+				{Name: "reply_to_id", ForeignKey: "comments.id"},
+			}},
+		)
+	}
+
 	return c
 }
 
@@ -1174,5 +1206,15 @@ func skipCassandra(t *testing.T, reason string) {
 	t.Helper()
 	if dbType == "cassandra" {
 		t.Skipf("cassandra: %s", reason)
+	}
+}
+
+// skipClickHouse skips shapes ClickHouse can't serve (no FKs, no serial PKs,
+// single-table writes, features not in the shared fixture). ClickHouse runs the
+// shared webshop suite like Cassandra; the servable subset passes for real.
+func skipClickHouse(t *testing.T, reason string) {
+	t.Helper()
+	if dbType == "clickhouse" {
+		t.Skipf("clickhouse: %s", reason)
 	}
 }

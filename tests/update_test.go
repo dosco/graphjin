@@ -294,6 +294,7 @@ func Example_setArrayColumnToEmpty() {
 func TestMultiAliasUpdate(t *testing.T) {
 	skipBigQueryMutationsUnsupported(t)
 	skipCassandra(t, "multi-root/related mutations aren't supported (single-table by PK only)")
+	skipClickHouse(t, "multi-root/related mutations aren't supported (single-table only)")
 
 	gql := `mutation {
 		p1: products(id: 87, update: $data1) {
@@ -358,6 +359,7 @@ func TestMultiAliasUpdate(t *testing.T) {
 func TestMultiAliasUpdateThreeRoots(t *testing.T) {
 	skipBigQueryMutationsUnsupported(t)
 	skipCassandra(t, "multi-root/related mutations aren't supported (single-table by PK only)")
+	skipClickHouse(t, "multi-root/related mutations aren't supported (single-table only)")
 
 	gql := `mutation {
 		a1: products(id: 81, update: $d1) { id name }
@@ -420,6 +422,7 @@ func TestMultiAliasUpdateThreeRoots(t *testing.T) {
 func TestMultiAliasDelete(t *testing.T) {
 	skipBigQueryMutationsUnsupported(t)
 	skipCassandra(t, "multi-root/related mutations aren't supported (single-table by PK only)")
+	skipClickHouse(t, "multi-root/related mutations aren't supported (single-table only)")
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)

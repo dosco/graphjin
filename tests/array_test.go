@@ -13,6 +13,7 @@ import (
 
 func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 	skipCassandra(t, "array/collection columns are not seeded in the cassandra fixture")
+	skipClickHouse(t, "array/collection columns are not seeded in the fixture")
 	if dbType == "mssql" {
 		t.Skip("skipping test for mssql (array column joins not yet supported)")
 	}
@@ -68,6 +69,7 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 
 func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 	skipCassandra(t, "array/collection columns are not seeded in the cassandra fixture")
+	skipClickHouse(t, "array/collection columns are not seeded in the fixture")
 	if dbType == "sqlite" || dbType == "mssql" || dbType == "snowflake" || dbType == "bigquery" {
 		t.Skip("skipping test for sqlite/mssql/snowflake/bigquery (array-column connect mutations are not fully implemented)")
 	}
@@ -120,6 +122,7 @@ func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 // TODO: Fix: Does not work in MYSQL
 func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
 	skipCassandra(t, "array/collection columns are not seeded in the cassandra fixture")
+	skipClickHouse(t, "array/collection columns are not seeded in the fixture")
 	if dbType == "mssql" {
 		t.Skip("skipping test for mssql (JSON virtual tables and deep nesting not yet supported)")
 	}

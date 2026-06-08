@@ -16,6 +16,7 @@ GraphJin's integration tests run against real database containers via [Testconta
 | MSSQL 2022 | `mcr.microsoft.com/mssql/server:2022-latest` | `mssql` | `make test-mssql` |
 | Snowflake | (emulator) | `snowflake` | — |
 | MongoDB | `mongo:7` | `mongodb` | `make test-mongodb` |
+| ClickHouse | `clickhouse/clickhouse-server:24.8` | `clickhouse-gj` | `make test-clickhouse` |
 | AdventureWorks | `postgres:15` (70 tables, 121K+ rows) | `postgres` | `make test-adventureworks` |
 
 ## Running Tests
@@ -192,6 +193,19 @@ All schema files include the shared test tables (`users`, `products`, `categorie
 ### Snowflake
 - Composite FK/PK tests skipped (emulator limitations)
 - FK introspection relies on custom `_gj_fk_metadata` table
+
+### ClickHouse
+- Runs the shared `Test*` suite via `make test-clickhouse` (`-run Test`), like Cassandra.
+  Relationships are declared in config (no FKs); the `clickhouse-gj` driver wraps
+  `clickhouse-go` and assembles nested reads via batched N+1.
+- Skipped (genuinely unsupported on the OLAP/DSL path, via `skipClickHouse`):
+  composite FK/PK joins (no FKs, multi-column N+1 not supported), schema-diff (no
+  ClickHouse DDL generation), array-column relationship joins, multi-alias/multi-root
+  mutations (single-table writes only), cross-schema joins (single database),
+  JSON-virtual-table relationships, catalog/control-plane (needs SQL-path counts/DDL),
+  and discovery row counts (not exposed via the DSL path).
+- Inline per-column inserts (`insert: { c: $v }`) are not supported — pass the row as a
+  single JSON variable (`insert: $data`).
 
 ## Contributing Tests
 

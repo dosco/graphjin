@@ -731,6 +731,8 @@ func getDialectForType(ct string) dialect.Dialect {
 		return &dialect.MongoDBDialect{}
 	case "cassandra":
 		return &dialect.CassandraDialect{}
+	case "clickhouse":
+		return &dialect.ClickHouseDialect{}
 	default:
 		return &dialect.PostgresDialect{}
 	}

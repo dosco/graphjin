@@ -390,6 +390,7 @@ func Example_queryWithVariableLimit() {
 
 func TestMutiSchema(t *testing.T) {
 	skipCassandra(t, "single keyspace; cross-schema joins aren't a CQL concept")
+	skipClickHouse(t, "single database; cross-schema joins aren't supported")
 	if dbType == "sqlite" {
 		t.Skip("skipping test for sqlite")
 	}

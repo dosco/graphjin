@@ -456,6 +456,11 @@ func withVolumeMounts(mounts testcontainers.ContainerMounts) testcontainers.Cust
 	}
 }
 
+// terminateFn adapts Terminate to the cleanup signature (testcontainers v0.40 made it variadic).
+func terminateFn(c testcontainers.Container) func(context.Context) error {
+	return func(ctx context.Context) error { return c.Terminate(ctx) }
+}
+
 // startPostgresDemo starts a PostgreSQL container
 func startPostgresDemo(ctx context.Context, name, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
 	status.Emit(name, "starting", "starting Postgres container")
@@ -508,7 +513,7 @@ func startPostgresDemo(ctx context.Context, name, dataDir string, status demoSta
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	return container.Terminate, &DemoConnInfo{
+	return terminateFn(container), &DemoConnInfo{
 		Host:     host,
 		Port:     uint16(port.Int()),
 		User:     "graphjin",
@@ -565,7 +570,7 @@ func startMySQLDemo(ctx context.Context, name, dataDir string, status demoStatus
 	log.Infof("MySQL running on %s:%s", host, port.Port())
 	status.Emit(name, "verified", "MySQL is accepting connections")
 
-	return container.Terminate, &DemoConnInfo{
+	return terminateFn(container), &DemoConnInfo{
 		Host:     host,
 		Port:     uint16(port.Int()),
 		User:     "graphjin",
@@ -636,7 +641,7 @@ func startMariaDBDemo(ctx context.Context, name, dataDir string, status demoStat
 	log.Infof("MariaDB running on %s:%s", host, port.Port())
 	status.Emit(name, "verified", "MariaDB is accepting connections")
 
-	return container.Terminate, &DemoConnInfo{
+	return terminateFn(container), &DemoConnInfo{
 		Host:     host,
 		Port:     uint16(port.Int()),
 		User:     "graphjin",
@@ -749,7 +754,7 @@ func startOracleDemo(ctx context.Context, name, dataDir string, status demoStatu
 	log.Infof("Oracle running on %s:%s", host, port.Port())
 	status.Emit(name, "verified", "Oracle container is ready")
 
-	return container.Terminate, &DemoConnInfo{
+	return terminateFn(container), &DemoConnInfo{
 		Host:     host,
 		Port:     uint16(port.Int()),
 		User:     "graphjin",
@@ -832,7 +837,7 @@ func startMSSQLDemo(ctx context.Context, name, dataDir string, status demoStatus
 	log.Infof("SQL Server running on %s:%s", host, port.Port())
 	status.Emit(name, "verified", "SQL Server is accepting connections")
 
-	return container.Terminate, &DemoConnInfo{
+	return terminateFn(container), &DemoConnInfo{
 		Host:     host,
 		Port:     uint16(port.Int()),
 		User:     "sa",
@@ -879,7 +884,7 @@ func startMongoDBDemo(ctx context.Context, name, dataDir string, status demoStat
 	log.Infof("MongoDB running on %s:%s", host, port.Port())
 	status.Emit(name, "verified", "MongoDB is accepting connections")
 
-	return container.Terminate, &DemoConnInfo{
+	return terminateFn(container), &DemoConnInfo{
 		Host:    host,
 		Port:    uint16(port.Int()),
 		DBName:  "graphjin_demo",
