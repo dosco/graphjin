@@ -15,7 +15,7 @@ const EASE = [0.25, 0.46, 0.45, 0.94] as const;
 
 const stats = [
   { value: "1", label: "Auditable config for agent access across the AI surface." },
-  { value: "8+", label: "Databases supported through the same GraphQL surface." },
+  { value: "12", label: "Database and warehouse engines through one GraphQL surface." },
   { value: "0", label: "Lines of resolver code. The compiler does the work." },
 ];
 
@@ -145,7 +145,7 @@ export default function FeatureGrid() {
                 className="w-9 h-9 rounded-lg flex items-center justify-center mb-3"
                 style={{
                   background: "var(--color-accent-soft)",
-                  color: "var(--color-accent)",
+                  color: "var(--color-accent-readable)",
                 }}
               >
                 <f.icon className="w-4 h-4" />

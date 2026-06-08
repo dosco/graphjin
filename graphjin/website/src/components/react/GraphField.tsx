@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 
-// Theme-aware animated graph: floating nodes connected by edges with cyan
+// Theme-aware animated graph: floating nodes connected by edges with accent
 // signals walking the connections. Colors are resolved from CSS custom
 // properties so the field looks correct in both light and dark themes.
 
@@ -77,13 +77,13 @@ function readThemeColors(): { node: RGB; edge: RGB; accent: RGB } {
     return {
       node: { r: 100, g: 116, b: 139 },
       edge: { r: 100, g: 116, b: 139 },
-      accent: { r: 8, g: 145, b: 178 },
+      accent: { r: 182, g: 252, b: 52 },
     };
   }
   const root = document.documentElement;
   const cs = getComputedStyle(root);
   const text = parseColor(cs.getPropertyValue("--color-text") || "#0b1220");
-  const accent = parseColor(cs.getPropertyValue("--color-accent") || "#0891b2");
+  const accent = parseColor(cs.getPropertyValue("--color-accent") || "#B6FC34");
   return { node: text, edge: text, accent };
 }
 

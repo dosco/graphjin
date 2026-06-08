@@ -55,16 +55,16 @@ export default function ClaudeShowcase() {
           </p>
         </header>
 
-        {/* Claude Desktop window — kept indigo on purpose since it represents
-            the actual Claude UI; reads well against both light and dark pages. */}
+        {/* Claude Desktop-style window */}
         <div className="max-w-4xl mx-auto">
           <div
             className="rounded-2xl overflow-hidden border"
             style={{
-              background: "#312e81", // indigo-900
+              background:
+                "linear-gradient(135deg, var(--color-code-bg), #161713)",
               borderColor: "rgba(255, 255, 255, 0.08)",
               boxShadow:
-                "0 30px 80px -20px rgba(49, 46, 129, 0.45), 0 12px 32px -12px rgba(0,0,0,0.35)",
+                "0 30px 80px -20px rgba(0,0,0,0.45), 0 12px 32px -12px rgba(182,252,52,0.16)",
             }}
           >
             {/* window chrome */}
@@ -105,7 +105,10 @@ export default function ClaudeShowcase() {
                       <span className="font-medium">execute_graphql</span>
                     </div>
                     <div className="px-4 pb-3">
-                      <pre className="text-xs text-purple-300 font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">
+                      <pre
+                        className="text-xs font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap"
+                        style={{ color: "var(--color-accent)" }}
+                      >
                         {graphqlQuery}
                       </pre>
                     </div>

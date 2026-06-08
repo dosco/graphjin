@@ -90,7 +90,7 @@ export default function HeroSection() {
               >
                 <div
                   className="font-mono text-[11px] uppercase tracking-[0.16em]"
-                  style={{ color: "var(--color-accent)" }}
+                  style={{ color: "var(--color-accent-readable)" }}
                 >
                   {String(index + 1).padStart(2, "0")}
                 </div>

@@ -2,6 +2,7 @@
 import ThemeToggle from "./react/ThemeToggle";
 
 const navItems = [
+  { name: 'Databases', href: '#databases' },
   { name: 'How it works', href: '#how' },
   { name: 'Agentic', href: '#agentic' },
   { name: 'MCP', href: '#mcp' },
@@ -23,7 +24,7 @@ const navItems = [
       style="color: var(--color-text)"
     >
       <span
-        class="inline-block w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
+        class="brand-dot inline-block w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
         style="background: var(--color-accent); box-shadow: 0 0 12px var(--color-accent)"
       ></span>
       GraphJin
@@ -74,5 +75,29 @@ const navItems = [
 <style>
   .nav-link:hover {
     color: var(--color-text) !important;
+  }
+
+  .brand-dot {
+    transform-origin: center;
+    animation: brand-dot-pulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes brand-dot-pulse {
+    0%,
+    100% {
+      transform: scale(0.78);
+      opacity: 0.82;
+    }
+    50% {
+      transform: scale(1.28);
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .brand-dot {
+      animation: none;
+      transform: scale(1);
+    }
   }
 </style>

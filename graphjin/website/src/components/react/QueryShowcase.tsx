@@ -195,7 +195,10 @@ export default function QueryShowcase() {
                 <div className="flex items-center gap-2 text-xs text-white/40 mb-4 font-mono">
                   <Terminal className="w-3 h-3" /> query.graphql
                 </div>
-                <pre className="text-sm text-purple-300 leading-relaxed overflow-x-auto">
+                <pre
+                  className="text-sm leading-relaxed overflow-x-auto"
+                  style={{ color: "var(--color-accent)" }}
+                >
                   {activeExample.graphql}
                 </pre>
               </div>

@@ -8,9 +8,11 @@
   --color-text: #0b1220;
   --color-muted: #5b6478;
   --color-border: #e3e6ec;
-  --color-accent: #0891b2;
-  --color-accent-strong: #0e7490;
-  --color-accent-soft: #cffafe;
+  --color-accent: #B6FC34;
+  --color-accent-strong: #435600;
+  --color-accent-readable: #435600;
+  --color-accent-hover: #9ee62b;
+  --color-accent-soft: #efffd0;
   --color-code-bg: #0f172a;
   --color-code-text: #e2e8f0;
   --color-warn: #b45309;
@@ -24,7 +26,7 @@
   --color-gj-border: var(--color-border);
   --color-gj-dark: var(--color-surface-2);
   --color-gj-accent: var(--color-accent);
-  --color-gj-gold: #f59e0b;
+  --color-gj-gold: var(--color-accent);
 
   /* Typography */
   --font-display: 'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -40,9 +42,11 @@
   --color-text: #fafafa;
   --color-muted: #9ca3af;
   --color-border: rgba(255, 255, 255, 0.10);
-  --color-accent: #22d3ee;
-  --color-accent-strong: #06b6d4;
-  --color-accent-soft: rgba(34, 211, 238, 0.15);
+  --color-accent: #B6FC34;
+  --color-accent-strong: #d9ff8a;
+  --color-accent-readable: #d9ff8a;
+  --color-accent-hover: #cbff65;
+  --color-accent-soft: rgba(182, 252, 52, 0.15);
   --color-code-bg: #000000;
   --color-code-text: #e2e8f0;
 
@@ -100,11 +104,11 @@
 
   .btn-primary {
     background: var(--color-accent);
-    color: #ffffff;
+    color: #10110f;
     @apply font-semibold px-5 py-2.5 rounded-lg inline-flex items-center gap-2 transition-all duration-150;
   }
   .btn-primary:hover {
-    background: var(--color-accent-strong);
+    background: var(--color-accent-hover);
     transform: translateY(-1px);
   }
 
@@ -127,7 +131,7 @@
 
   .eyebrow {
     @apply inline-flex items-center gap-2 text-xs font-mono uppercase tracking-[0.18em];
-    color: var(--color-accent);
+    color: var(--color-accent-readable);
   }
   .eyebrow::before {
     content: "";
@@ -188,7 +192,7 @@
   stroke-width: 1.5;
 }
 
-/* Accent node: tinted cyan background, accent border. */
+/* Accent node: tinted background, accent border. */
 .diag-node.diag-accent rect {
   fill: var(--color-accent-soft);
   stroke: var(--color-accent);
@@ -246,10 +250,10 @@
 /* Dark-mode tweaks: slightly brighter accent fill so the highlighted
    GraphJin box reads as the focal point on a dark page. */
 :root[data-theme="dark"] .diag-node.diag-accent rect {
-  fill: rgba(34, 211, 238, 0.10);
+  fill: rgba(182, 252, 52, 0.10);
 }
 :root[data-theme="dark"] .diag-node.diag-accent .diag-label {
-  fill: var(--color-accent);
+  fill: var(--color-accent-readable);
 }
 :root[data-theme="dark"] .diag-node.diag-accent .diag-sub {
   fill: rgba(255, 255, 255, 0.78);
@@ -271,7 +275,7 @@
 
 :root[data-theme="dark"] .codesql-showcase {
   background:
-    radial-gradient(circle at 14% 12%, rgba(34, 211, 238, 0.08), transparent 34%),
+    radial-gradient(circle at 14% 12%, rgba(182, 252, 52, 0.08), transparent 34%),
     linear-gradient(135deg, var(--color-surface), var(--color-bg));
 }
 
@@ -306,7 +310,7 @@
 .codesql-ask span,
 .codesql-results header,
 .codesql-lens span {
-  color: var(--color-accent);
+  color: var(--color-accent-readable);
   font-family: var(--font-mono);
   font-size: 0.72rem;
   letter-spacing: 0.14em;
@@ -414,7 +418,7 @@
 }
 
 .codesql-source-card header em {
-  color: var(--color-accent);
+  color: var(--color-accent-readable);
   font-style: normal;
 }
 

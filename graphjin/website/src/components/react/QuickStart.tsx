@@ -83,11 +83,11 @@ export default function QuickStart() {
                     style={{
                       color:
                         activeTab === tab.id
-                          ? "var(--color-accent)"
+                          ? "var(--color-accent-readable)"
                           : "rgba(255,255,255,0.5)",
                       background:
                         activeTab === tab.id
-                          ? "rgba(34,211,238,0.12)"
+                          ? "var(--color-accent-soft)"
                           : "transparent",
                     }}
                   >
@@ -166,7 +166,7 @@ export default function QuickStart() {
                     aria-label={`Copy command for ${client.name}`}
                   >
                     {copiedMCP === client.id ? (
-                      <Check className="w-4 h-4" style={{ color: "var(--color-accent)" }} />
+                      <Check className="w-4 h-4" style={{ color: "var(--color-accent-readable)" }} />
                     ) : (
                       <Copy className="w-4 h-4" />
                     )}
