@@ -145,3 +145,9 @@ var cassandraColumnsStmt string
 
 //go:embed sql/cassandra_keys.json
 var cassandraKeysStmt string
+
+//go:embed sql/clickhouse_info.json
+var clickhouseInfo string
+
+//go:embed sql/clickhouse_columns.json
+var clickhouseColumnsStmt string

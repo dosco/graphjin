@@ -15,7 +15,7 @@ endif
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}" -X "github.com/dosco/graphjin/serv/v3.version=${BUILD_VERSION}"'
 
-.PHONY: all download-tools build wasm-build gen clean tidy test test-parallel-dbs test-sequential test-norace run run-github-actions lint changlog release version help test-mongodb test-cassandra $(PLATFORMS)
+.PHONY: all download-tools build wasm-build gen clean tidy test test-parallel-dbs test-sequential test-norace run run-github-actions lint changlog release version help test-mongodb test-cassandra test-clickhouse $(PLATFORMS)
 
 tidy:
 	@find . -name "go.mod" -execdir go mod tidy \;
@@ -26,7 +26,7 @@ test: test-parallel-dbs
 test-parallel-dbs:
 	@bash scripts/test-parallel.sh
 
-test-sequential: test-postgres test-mysql test-mariadb test-sqlite test-oracle test-mssql test-mongodb test-cassandra
+test-sequential: test-postgres test-mysql test-mariadb test-sqlite test-oracle test-mssql test-mongodb test-cassandra test-clickhouse
 	@go test -v -race $(PACKAGES)
 
 test-postgres:
@@ -60,6 +60,10 @@ test-mongodb:
 test-cassandra:
 	@echo "Running Cassandra tests..."
 	@cd tests; go test -v -timeout 30m -race -db=cassandra -run Test .
+
+test-clickhouse:
+	@echo "Running ClickHouse tests..."
+	@cd tests; go test -v -timeout 30m -race -db=clickhouse -run Test .
 
 test-large:
 	@echo "Running large-scale tests..."

@@ -330,6 +330,7 @@ func controlPlaneIntegrationConfigRevision(t *testing.T, gj *core.GraphJin) stri
 func newCatalogControlPlaneService(t *testing.T, mcp serv.MCPConfig) *serv.HttpService {
 	t.Helper()
 	skipCassandra(t, "catalog/control-plane discovery needs SQL-path features (counts, DDL) CQL lacks")
+	skipClickHouse(t, "catalog/control-plane discovery needs SQL-path features (counts, DDL) the DSL driver lacks")
 	if db == nil {
 		t.Skip("catalog control-plane integration tests require -db")
 	}

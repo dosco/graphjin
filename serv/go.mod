@@ -4,10 +4,12 @@ go 1.25.0
 
 require (
 	cloud.google.com/go/storage v1.62.1
+	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
 	github.com/coder/websocket v1.8.14
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
 	github.com/dosco/graphjin/auth/v3 v3.18.35
 	github.com/dosco/graphjin/cassandradriver v0.0.0
+	github.com/dosco/graphjin/clickhousedriver v0.0.0
 	github.com/dosco/graphjin/codesql v0.0.0
 	github.com/dosco/graphjin/core/v3 v3.18.35
 	github.com/dosco/graphjin/mongodriver v0.0.0
@@ -39,7 +41,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.27.1
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
 	google.golang.org/api v0.278.0
@@ -49,6 +51,7 @@ require (
 replace (
 	github.com/dosco/graphjin/auth/v3 => ../auth
 	github.com/dosco/graphjin/cassandradriver => ../cassandradriver
+	github.com/dosco/graphjin/clickhousedriver => ../clickhousedriver
 	github.com/dosco/graphjin/codesql => ../codesql
 	github.com/dosco/graphjin/core/v3 => ../core
 	github.com/dosco/graphjin/mongodriver => ../mongodriver
@@ -153,6 +156,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.7.0 // indirect
 	cloud.google.com/go/monitoring v1.24.3 // indirect
+	github.com/ClickHouse/ch-go v0.71.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0 // indirect
@@ -162,6 +166,8 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.0 // indirect
 	github.com/getkin/kin-openapi v0.131.0 // indirect
+	github.com/go-faster/city v1.0.1 // indirect
+	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -186,10 +192,12 @@ require (
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
 	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
+	github.com/paulmach/orb v0.12.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect

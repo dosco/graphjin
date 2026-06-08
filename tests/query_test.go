@@ -1608,6 +1608,7 @@ func Example_queryWithCursorPagination2() {
 
 func TestQueryWithJsonColumn(t *testing.T) {
 	skipCassandra(t, "no JSONB/virtual-table support in CQL")
+	skipClickHouse(t, "JSON virtual-table relationships are not supported")
 	if dbType == "snowflake" {
 		t.Skip("snowflake: VARIANT JSON-virtual-table relationship resolution needs shared-code compiler support")
 	}

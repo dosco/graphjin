@@ -12,7 +12,7 @@
 set -u
 
 # All supported database suites
-ALL_DBS="postgres mysql mariadb sqlite oracle mssql mongodb cassandra snowflake bigquery redshift"
+ALL_DBS="postgres mysql mariadb sqlite oracle mssql mongodb cassandra clickhouse snowflake bigquery redshift"
 
 # Allow caller to select a subset via env var
 DBS="${PARALLEL_DBS:-$ALL_DBS}"
@@ -66,6 +66,7 @@ db_test_cmd() {
     local run=""
     case "$db" in
         cassandra) run="-run Test" ;;
+        clickhouse) run="-run Test" ;;
     esac
     echo "cd tests && go test -v -timeout 30m -race -db=$db $tags $run ."
 }

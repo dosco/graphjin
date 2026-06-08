@@ -137,6 +137,7 @@ func TestReadOnlyDB_WithRolesAndTables(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestReadOnlyDB_NoRolesNoTables(t *testing.T) {
+	skipClickHouse(t, "clickhouse rejects inline per-column mutations at compile time, before the runtime read-only gate; the block surfaces as a dialect error")
 	conf := newConfig(&core.Config{
 		DBType:           dbType,
 		DisableAllowList: true,
@@ -165,6 +166,7 @@ func TestReadOnlyDB_NoRolesNoTables(t *testing.T) {
 
 func TestReadOnlyDB_RolesButNoTableConfig(t *testing.T) {
 	skipCassandra(t, "fixture relies on serial-PK inserts CQL lacks")
+	skipClickHouse(t, "clickhouse rejects inline per-column mutations at compile time, before the runtime read-only gate; the block surfaces as a dialect error")
 	conf := newConfig(&core.Config{
 		DBType:           dbType,
 		DisableAllowList: true,
@@ -197,6 +199,7 @@ func TestReadOnlyDB_RolesButNoTableConfig(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestReadOnlyDB_AnonRole(t *testing.T) {
+	skipClickHouse(t, "clickhouse rejects inline per-column mutations at compile time, before the runtime read-only gate; the block surfaces as a dialect error")
 	conf := newConfig(&core.Config{
 		DBType:           dbType,
 		DisableAllowList: true,
@@ -225,6 +228,7 @@ func TestReadOnlyDB_AnonRole(t *testing.T) {
 func TestWritableDB_MutationsAllowed(t *testing.T) {
 	skipBigQueryMutationsUnsupported(t)
 	skipCassandra(t, "fixture relies on serial-PK inserts CQL lacks")
+	skipClickHouse(t, "insert fixture uses the category_counts JSON virtual column not in the clickhouse fixture")
 
 	conf := newConfig(&core.Config{
 		DBType:           dbType,
