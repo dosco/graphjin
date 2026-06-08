@@ -98,7 +98,7 @@ func schemaForDB() string {
 }
 
 func skipSchemaDiffUnsupported(t *testing.T) {
-	if dbType == "mongodb" {
+	if !core.SupportsSchemaDDL(dbType) {
 		t.Skipf("schema diff not applicable for %s", dbType)
 	}
 }

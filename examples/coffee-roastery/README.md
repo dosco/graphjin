@@ -14,7 +14,8 @@ Schema and seed layout:
 
 - `schema-ddl/ops.ddl` initializes the writable Postgres `ops` source.
 - `seed/ops.js` loads first-run data through `graphql(..., { source: "ops" })`.
-- `schema/roast_warehouse.sql` initializes the read-only BigQuery simulator. Live BigQuery DDL migration is not part of this demo.
+- `schema-ddl/roast_warehouse.ddl` initializes the read-only BigQuery simulator.
+- `seed/roast_warehouse.js` loads simulator fixture data through `seed.insert(..., { source: "roast_warehouse" })`. Live BigQuery DDL migration is not part of this demo.
 
 Sources:
 

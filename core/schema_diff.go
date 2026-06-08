@@ -76,6 +76,43 @@ func SchemaDiff(db *sql.DB, dbType string, schemaBytes []byte, blocklist []strin
 	return ops, nil
 }
 
+// GenerateSchemaSQL renders executable DDL from GraphJin DDL without discovering
+// a live database. It is intended for local simulators and generated fixtures;
+// live migration support is still gated by SupportsSchemaDDL.
+func GenerateSchemaSQL(dbType string, schemaBytes []byte, blocklist []string) ([]string, error) {
+	ds, err := qcode.ParseSchema(schemaBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse schema: %w", err)
+	}
+	if strings.TrimSpace(dbType) == "" {
+		dbType = ds.Type
+	}
+	if strings.TrimSpace(dbType) == "" {
+		dbType = "postgres"
+	}
+	if getDDLDialect(dbType) == nil {
+		return nil, fmt.Errorf("schema DDL rendering is not available for database type %q", dbType)
+	}
+
+	schema := ds.Schema
+	if schema == "" {
+		schema = defaultSchemaForDBType(dbType)
+	}
+	expected := sdata.NewDBInfo(
+		dbType,
+		ds.Version,
+		schema,
+		"",
+		ds.Columns,
+		ds.Functions,
+		blocklist,
+	)
+	attachClusteringKeys(expected, ds.ClusteringKeys, schema, dbType)
+
+	current := &sdata.DBInfo{Type: dbType}
+	return GenerateDiffSQL(computeDiff(current, expected, DiffOptions{})), nil
+}
+
 // defaultSchemaForDBType returns the default schema name for a database type
 func defaultSchemaForDBType(dbType string) string {
 	switch dbType {
