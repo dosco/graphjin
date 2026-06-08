@@ -3238,6 +3238,7 @@ func (ms *mcpServer) commitSourceScopedRuntime(stagedCore core.Config, stage *st
 		return err
 	}
 
+	ms.service.runtimeEventsMu.Lock()
 	ms.service.conf.Core = stagedCore
 	switch {
 	case len(stagedCore.Databases) > 0:
@@ -3254,8 +3255,11 @@ func (ms *mcpServer) commitSourceScopedRuntime(stagedCore core.Config, stage *st
 	ms.service.managedDBs = stage.managedDBs
 	ms.service.runtimeCore = stage.runtimeCore
 	ms.service.metadataDB = stage.metadataDB
-	ms.service.reinitRuntimeObservability()
-	ms.service.recordRuntimeEvent(context.Background(), runtimeEvent{
+	ms.service.closeRuntimeEventsLocked()
+	if err := ms.service.initRuntimeObservabilityLocked(); err != nil && ms.service.log != nil {
+		ms.service.log.Warnf("runtime observability init error: %s", err)
+	}
+	ms.service.recordRuntimeEventLocked(context.Background(), runtimeEvent{
 		Phase:      "config",
 		Status:     runtimeStatusReady,
 		Severity:   "info",
@@ -3269,6 +3273,7 @@ func (ms *mcpServer) commitSourceScopedRuntime(stagedCore core.Config, stage *st
 			"reload_fallback": plan.fallback,
 		},
 	})
+	ms.service.runtimeEventsMu.Unlock()
 	ms.service.registerRuntimeSchemaCallbacks()
 	ms.closeSupersededConnections(oldDBs, oldManagedDBs, stage.dbs)
 	return nil
@@ -3313,6 +3318,7 @@ func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRu
 	prevLegacyDB := ms.service.conf.DB
 	prevDBType := ms.service.conf.DBType
 
+	ms.service.runtimeEventsMu.Lock()
 	ms.service.conf.Core = stagedCore
 	switch {
 	case len(stagedCore.Databases) > 0:
@@ -3330,8 +3336,11 @@ func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRu
 	ms.service.runtimeCore = stage.runtimeCore
 	ms.service.metadataDB = stage.metadataDB
 	ms.service.gj = stage.gj
-	ms.service.reinitRuntimeObservability()
-	ms.service.recordRuntimeEvent(context.Background(), runtimeEvent{
+	ms.service.closeRuntimeEventsLocked()
+	if err := ms.service.initRuntimeObservabilityLocked(); err != nil && ms.service.log != nil {
+		ms.service.log.Warnf("runtime observability init error: %s", err)
+	}
+	ms.service.recordRuntimeEventLocked(context.Background(), runtimeEvent{
 		Phase:      "config",
 		Status:     runtimeStatusReady,
 		Severity:   "info",
@@ -3343,6 +3352,7 @@ func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRu
 			"reload_mode":    "full",
 		},
 	})
+	ms.service.runtimeEventsMu.Unlock()
 	ms.service.registerRuntimeSchemaCallbacks()
 	if oldGJ != nil && oldGJ != stage.gj {
 		oldGJ.Close()

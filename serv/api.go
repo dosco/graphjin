@@ -101,6 +101,7 @@ type graphjinService struct {
 	cache                ResponseCache // Response cache (Redis or in-memory)
 	cursorCache          CursorCache   // MCP cursor cache for short numeric IDs
 	runtimeEvents        runtimeEventStore
+	runtimeEventsMu      sync.RWMutex
 	configPreviews       *configPreviewStore
 	configMu             sync.Mutex
 	workflowMu           sync.Mutex
@@ -240,9 +241,7 @@ func (s *HttpService) Close() error {
 	if gs.cache != nil {
 		gs.cache.Close() //nolint:errcheck
 	}
-	if gs.runtimeEvents != nil {
-		gs.runtimeEvents.Close() //nolint:errcheck
-	}
+	gs.closeRuntimeEvents()
 	closedManaged := gs.closeManagedDBs(nil)
 	for name, db := range gs.dbs {
 		if _, ok := closedManaged[name]; ok {
