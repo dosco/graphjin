@@ -13,10 +13,15 @@ auth:
   cookie: "gj_session"
 
 auth_login:
-  enabled: true                # OIDC device-code login for CLI / MCP
+  enabled: true                # OIDC device-code login for CLI / legacy MCP fallback
   provider: "https://login.example.com"
   client_id: "graphjin-cli"
   scopes: ["openid", "email", "offline_access"]
+
+mcp:
+  oauth:
+    enabled: true
+    mode: builtin              # reuse auth_login identity for hosted MCP OAuth
 `;
 
 const rbac = `# config/roles.yml
@@ -38,7 +43,7 @@ roles:
   id="auth"
   eyebrow="SECURITY"
   title="OAuth, JWT, OIDC — and row-level rules."
-  lede="JWT from Auth0, Firebase, Okta, or any JWKS endpoint. Header- or cookie-based sessions for legacy stacks. OIDC device-code login for the CLI and MCP. Whatever the source, every request lands in the same context, so one AI surface can be governed with RBAC, row-level filters, and audited policy."
+  lede="JWT from Auth0, Firebase, Okta, or any JWKS endpoint. Header- or cookie-based sessions for legacy stacks. OIDC device-code login for the CLI, plus MCP OAuth for hosted AI clients. Whatever the source, every request lands in the same context, so one AI surface can be governed with RBAC, row-level filters, and audited policy."
 >
   <Fragment slot="body">
     <p>
@@ -48,9 +53,9 @@ roles:
       workflow cannot read or write outside its lane.
     </p>
     <p>
-      The CLI and MCP authenticate via OIDC device-code: open a URL, approve,
-      done. Tokens refresh automatically, and the resulting permissions are the
-      same ones reflected back through catalog and security posture rows.
+      MCP OAuth uses the same verified identity, RBAC, row filters, source
+      access, and tool gates as the rest of GraphJin. The CLI can still use
+      OIDC device-code: open a URL, approve, done.
     </p>
   </Fragment>
 

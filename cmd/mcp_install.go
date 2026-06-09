@@ -3,22 +3,25 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 )
 
 const (
-	defaultMCPServerURL = "http://localhost:8080/"
+	defaultMCPServerURL = "http://localhost:8080"
 	graphjinMCPName     = "graphjin"
 	claudeMCPServerName = "GraphJin"
 )
@@ -27,14 +30,22 @@ var (
 	lookPathFn                = exec.LookPath
 	commandContextFn          = exec.CommandContext
 	resolveGraphJinPathForMCP = resolveGraphJinBinaryPath
+	mcpProbeHTTPClient        = &http.Client{Timeout: 5 * time.Second}
+	startDeviceFlowFn         = startDeviceFlow
+	pollDeviceTokenFn         = pollDeviceToken
+	saveClientConfigFn        = SaveClientConfig
 )
 
 type mcpInstallOptions struct {
-	Client     string
-	Scope      string
-	Server     string
-	Yes        bool
-	ConfigPath string
+	Client      string
+	Scope       string
+	Server      string
+	BaseServer  string
+	Mode        string
+	Yes         bool
+	NoBrowser   bool
+	ConfigPath  string
+	DeviceStart *deviceStartResp
 }
 
 type mcpInstallResolveInput struct {
@@ -44,7 +55,9 @@ type mcpInstallResolveInput struct {
 	ScopeSet    bool
 	Server      string
 	ServerSet   bool
+	Global      bool
 	Yes         bool
+	NoBrowser   bool
 	Interactive bool
 	ForceClient string
 	PromptFn    func(kind, prompt string, options []string, defaultValue string) (string, error)
@@ -63,55 +76,111 @@ type codexServerConfig struct {
 	URL     string   `toml:"url,omitempty"`
 }
 
+const (
+	mcpInstallModeDirect = "direct"
+	mcpInstallModeProxy  = "proxy"
+)
+
+type mcpProbeKind string
+
+const (
+	mcpProbeNoAuth      mcpProbeKind = "no_auth"
+	mcpProbeOAuth       mcpProbeKind = "oauth"
+	mcpProbeAuthLogin   mcpProbeKind = "auth_login"
+	mcpProbeUnsupported mcpProbeKind = "unsupported_auth"
+)
+
+type mcpProbeResult struct {
+	Kind        mcpProbeKind
+	DeviceStart *deviceStartResp
+	Reason      string
+}
+
 type mcpInstallCommandConfig struct {
-	Use         string
-	Short       string
-	Long        string
+	Use        string
+	Short      string
+	Long       string
+	Deprecated string
+
 	ForceClient string
 	HideClient  bool
 }
 
-func mcpInstallCmd() *cobra.Command {
+func mcpAddCmd() *cobra.Command {
 	return newMCPInstallCommand(mcpInstallCommandConfig{
-		Use:   "install",
-		Short: "Guided MCP setup for Claude Code and OpenAI Codex",
-		Long: `Install GraphJin MCP integration for Claude Code, OpenAI Codex, or both.
-
-Prerequisite: run ` + "`graphjin mcp setup <server-url>`" + ` first. The server URL is
-read from ~/.config/graphjin/client.json — the MCP-client config this command
-writes is credential-free, so rotating tokens needs no edits to Claude / Codex.
+		Use:   "add [client] [server-url]",
+		Short: "Add GraphJin to Claude Code or OpenAI Codex",
+		Long: `Add GraphJin to an MCP-capable AI client.
 
 Defaults:
   client: codex
+  server: http://localhost:8080
   scope:  project
 
-When run in an interactive terminal, this command asks guided questions unless --yes is used.`,
+Examples:
+  graphjin mcp add
+  graphjin mcp add claude
+  graphjin mcp add all https://graphjin.example.com
+  graphjin mcp add codex http://localhost:8080 --global
+
+The server URL is normalized to /api/v1/mcp. If the server exposes standards
+OAuth, the native MCP client handles login. If the server uses GraphJin's
+legacy auth_login flow, this command signs in once and installs a credential-free
+local proxy config.`,
+	})
+}
+
+func mcpInstallCmd() *cobra.Command {
+	return newMCPInstallCommand(mcpInstallCommandConfig{
+		Use:        "install [client] [server-url]",
+		Short:      "Alias for `graphjin mcp add`",
+		Deprecated: "use `graphjin mcp add` instead",
+		Long: `Backward-compatible alias for adding GraphJin to Claude Code, OpenAI Codex, or all supported clients.
+
+Equivalent to:
+  graphjin mcp add [client] [server-url]`,
 	})
 }
 
 func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 	var client string
 	var scope string
+	var server string
+	var global bool
 	var yes bool
+	var noBrowser bool
 
 	c := &cobra.Command{
-		Use:   cfg.Use,
-		Short: cfg.Short,
-		Long:  cfg.Long,
+		Use:        cfg.Use,
+		Short:      cfg.Short,
+		Long:       cfg.Long,
+		Deprecated: cfg.Deprecated,
+		Args:       cobra.MaximumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			absConfigPath, err := filepath.Abs(cpath)
 			if err != nil {
 				log.Fatalf("failed to get absolute config path: %s", err)
 			}
 
-			// The server URL is read from client.json, written by `graphjin
-			// mcp setup`. Refusing to install without it forces the user
-			// through the auth flow first — the MCP client config we write
-			// is credential-free, so the server must already be reachable.
-			cc, _ := LoadClientConfig()
-			if cc == nil || cc.Server == "" {
-				log.Fatal("no GraphJin server configured — run `graphjin mcp setup <server-url>` first")
+			posClient := ""
+			posServer := ""
+			if len(args) > 0 {
+				if looksLikeURLish(args[0]) {
+					posServer = args[0]
+				} else {
+					posClient = args[0]
+				}
 			}
+			if len(args) > 1 {
+				posServer = args[1]
+			}
+			if posClient != "" && !cmd.Flags().Changed("client") {
+				client = posClient
+			}
+			if posServer != "" && !cmd.Flags().Changed("server") {
+				server = posServer
+			}
+			serverSet := cmd.Flags().Changed("server") || posServer != ""
 
 			interactive := isInteractiveTTY() && !yes
 			promptFn := promptChoiceFn(nil)
@@ -124,9 +193,11 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 				ClientSet:   cmd.Flags().Changed("client"),
 				Scope:       scope,
 				ScopeSet:    cmd.Flags().Changed("scope"),
-				Server:      cc.Server,
-				ServerSet:   true,
+				Server:      server,
+				ServerSet:   serverSet,
+				Global:      global,
 				Yes:         yes,
+				NoBrowser:   noBrowser,
 				Interactive: interactive,
 				ForceClient: cfg.ForceClient,
 				PromptFn:    promptFn,
@@ -136,6 +207,15 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 			}
 
 			opts.ConfigPath = absConfigPath
+
+			ctx := cmd.Context()
+			probe, err := probeMCPServer(ctx, opts.Server, opts.BaseServer)
+			if err != nil {
+				log.Fatalf("%s", err)
+			}
+			if err := applyMCPProbeResult(ctx, cmd, &opts, probe); err != nil {
+				log.Fatalf("%s", err)
+			}
 
 			if err := validateInstallPrereqs(opts); err != nil {
 				log.Fatalf("%s", err)
@@ -152,7 +232,7 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 			if interactive {
 				printInstallPreview(cmd.OutOrStdout(), opts)
 				ok, err := promptConfirm(newPromptIO(cmd.InOrStdin(), cmd.OutOrStdout()),
-					"Proceed with MCP install?", false)
+					"Proceed with MCP add?", false)
 				if err != nil {
 					log.Fatalf("failed to read confirmation: %s", err)
 				}
@@ -178,9 +258,12 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 		},
 	}
 
-	c.Flags().StringVar(&client, "client", "", "Target client: claude, codex, or both")
+	c.Flags().StringVar(&client, "client", "", "Target client: claude, codex, or all")
 	c.Flags().StringVar(&scope, "scope", "", "Install scope: project, global, or local")
+	c.Flags().StringVar(&server, "server", "", "GraphJin server URL (default http://localhost:8080)")
+	c.Flags().BoolVar(&global, "global", false, "Install globally (shortcut for --scope global)")
 	c.Flags().BoolVar(&yes, "yes", false, "Skip interactive prompts and confirmation")
+	c.Flags().BoolVar(&noBrowser, "no-browser", false, "Do not attempt to open the verification URL during legacy auth_login")
 
 	if cfg.HideClient {
 		c.Flags().MarkHidden("client") //nolint:errcheck
@@ -192,6 +275,7 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 func resolveInstallOptions(in mcpInstallResolveInput) (mcpInstallOptions, error) {
 	var opts mcpInstallOptions
 	opts.Yes = in.Yes
+	opts.NoBrowser = in.NoBrowser
 
 	clientValue := in.Client
 	if in.ForceClient != "" {
@@ -201,7 +285,7 @@ func resolveInstallOptions(in mcpInstallResolveInput) (mcpInstallOptions, error)
 			v, err := in.PromptFn(
 				"client",
 				"Select MCP target client",
-				[]string{"codex", "claude", "both"},
+				[]string{"codex", "claude", "all"},
 				"codex",
 			)
 			if err != nil {
@@ -214,6 +298,10 @@ func resolveInstallOptions(in mcpInstallResolveInput) (mcpInstallOptions, error)
 	}
 
 	scopeValue := in.Scope
+	if in.Global {
+		scopeValue = "global"
+		in.ScopeSet = true
+	}
 	if !in.ScopeSet {
 		if in.Interactive && in.PromptFn != nil {
 			v, err := in.PromptFn(
@@ -249,24 +337,240 @@ func resolveInstallOptions(in mcpInstallResolveInput) (mcpInstallOptions, error)
 		return opts, err
 	}
 
-	if _, err := url.ParseRequestURI(serverValue); err != nil {
-		return opts, fmt.Errorf("invalid --server %q: %w", serverValue, err)
+	mcpURL, err := normalizeMCPAddURL(serverValue)
+	if err != nil {
+		return opts, fmt.Errorf("invalid server URL %q: %w", serverValue, err)
+	}
+	baseURL, err := baseServerURLForMCP(mcpURL)
+	if err != nil {
+		return opts, err
 	}
 
 	opts.Client = client
 	opts.Scope = scope
-	opts.Server = serverValue
+	opts.Server = mcpURL
+	opts.BaseServer = baseURL
+	opts.Mode = mcpInstallModeDirect
 
 	return opts, nil
+}
+
+func looksLikeURLish(v string) bool {
+	v = strings.TrimSpace(v)
+	return strings.Contains(v, "://") ||
+		strings.HasPrefix(v, "localhost") ||
+		strings.HasPrefix(v, "127.") ||
+		strings.HasPrefix(v, "[::1]") ||
+		strings.HasPrefix(v, "::1") ||
+		strings.Contains(v, ".")
+}
+
+func normalizeMCPAddURL(input string) (string, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		input = defaultMCPServerURL
+	}
+	if !strings.Contains(input, "://") {
+		input = "http://" + input
+	}
+	u, err := url.Parse(input)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported scheme %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return "", errors.New("missing host")
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	path := strings.TrimRight(u.EscapedPath(), "/")
+	switch {
+	case path == "":
+		u.Path = routeMCPPath
+	case path == "/api/v1":
+		u.Path = routeMCPPath
+	case path == routeMCPMessagePath:
+		u.Path = routeMCPPath
+	case path == routeMCPPath:
+		u.Path = routeMCPPath
+	default:
+		u.Path = path
+	}
+	return u.String(), nil
+}
+
+const (
+	routeMCPPath        = "/api/v1/mcp"
+	routeMCPMessagePath = "/api/v1/mcp/message"
+)
+
+func baseServerURLForMCP(mcpURL string) (string, error) {
+	u, err := url.Parse(mcpURL)
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimRight(u.EscapedPath(), "/")
+	switch path {
+	case routeMCPPath:
+		u.Path = strings.TrimSuffix(path, routeMCPPath)
+	case routeMCPMessagePath:
+		u.Path = strings.TrimSuffix(path, routeMCPMessagePath)
+	default:
+		u.Path = ""
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return strings.TrimRight(u.String(), "/"), nil
+}
+
+func probeMCPServer(ctx context.Context, mcpURL, baseServer string) (mcpProbeResult, error) {
+	reqBody := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"graphjin-cli","version":"0.0.0"}}}`)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, mcpURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return mcpProbeResult{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	resp, err := mcpProbeHTTPClient.Do(req)
+	if err != nil {
+		return mcpProbeResult{}, fmt.Errorf("could not reach %s: %w\nstart GraphJin and re-run `graphjin mcp add`, or pass the hosted server URL", mcpURL, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		if hasStandardsOAuthChallenge(resp.Header.Get("WWW-Authenticate")) {
+			return mcpProbeResult{Kind: mcpProbeOAuth}, nil
+		}
+		ds, hasAuth, err := startDeviceFlowFn(ctx, baseServer)
+		if err != nil {
+			return mcpProbeResult{}, fmt.Errorf("MCP endpoint requires auth, but GraphJin auth_login probe failed: %w", err)
+		}
+		if hasAuth {
+			return mcpProbeResult{Kind: mcpProbeAuthLogin, DeviceStart: ds}, nil
+		}
+		return mcpProbeResult{
+			Kind:   mcpProbeUnsupported,
+			Reason: strings.TrimSpace(string(body)),
+		}, nil
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return mcpProbeResult{}, fmt.Errorf("MCP endpoint not found at %s; GraphJin expects /api/v1/mcp", mcpURL)
+	}
+	if resp.StatusCode >= 500 {
+		return mcpProbeResult{}, fmt.Errorf("MCP endpoint returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return mcpProbeResult{Kind: mcpProbeNoAuth}, nil
+}
+
+func hasStandardsOAuthChallenge(v string) bool {
+	v = strings.ToLower(v)
+	return strings.Contains(v, "resource_metadata=") || strings.Contains(v, "resource_metadata=\"")
+}
+
+func applyMCPProbeResult(ctx context.Context, cmd *cobra.Command, opts *mcpInstallOptions, probe mcpProbeResult) error {
+	opts.DeviceStart = probe.DeviceStart
+	switch probe.Kind {
+	case mcpProbeNoAuth, mcpProbeOAuth:
+		opts.Mode = mcpInstallModeDirect
+		return nil
+	case mcpProbeAuthLogin:
+		opts.Mode = mcpInstallModeProxy
+		return completeMCPDeviceLogin(ctx, cmd, opts)
+	case mcpProbeUnsupported:
+		msg := "MCP endpoint requires authentication, but it did not advertise OAuth and GraphJin auth_login is not enabled."
+		if probe.Reason != "" {
+			msg += " Server said: " + probe.Reason
+		}
+		return errors.New(msg + "\nEnable mcp.oauth for hosted OAuth, enable auth_login for the GraphJin helper, or configure the AI client manually with the required headers.")
+	default:
+		return fmt.Errorf("unknown MCP probe result %q", probe.Kind)
+	}
+}
+
+func completeMCPDeviceLogin(ctx context.Context, cmd *cobra.Command, opts *mcpInstallOptions) error {
+	ds := opts.DeviceStart
+	if ds == nil {
+		var hasAuth bool
+		var err error
+		ds, hasAuth, err = startDeviceFlowFn(ctx, opts.BaseServer)
+		if err != nil {
+			return fmt.Errorf("start device login: %w", err)
+		}
+		if !hasAuth {
+			return errors.New("auth_login disappeared while starting device login")
+		}
+	}
+
+	completeURL := ds.VerificationURIComplete
+	if completeURL == "" {
+		completeURL = ds.VerificationURI
+	}
+	out := cmd.OutOrStdout()
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "GraphJin requires sign-in for this MCP endpoint.")
+	fmt.Fprintln(out, "Open this URL in your browser and confirm the code below:")
+	fmt.Fprintf(out, "  URL:  %s\n", completeURL)
+	fmt.Fprintf(out, "  Code: %s\n", ds.UserCode)
+	fmt.Fprintln(out)
+
+	if !opts.NoBrowser {
+		_ = tryOpenBrowser(completeURL)
+	}
+
+	interval := time.Duration(ds.Interval) * time.Second
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	expiresAt := time.Now().Add(time.Duration(ds.ExpiresIn) * time.Second)
+	if ds.ExpiresIn <= 0 {
+		expiresAt = time.Now().Add(10 * time.Minute)
+	}
+
+	for {
+		if time.Now().After(expiresAt) {
+			return errors.New("device code expired; re-run `graphjin mcp add`")
+		}
+		time.Sleep(interval)
+		tr, done, err := pollDeviceTokenFn(ctx, opts.BaseServer, ds.DeviceCode)
+		if err != nil {
+			return err
+		}
+		if !done {
+			continue
+		}
+
+		cc := &ClientConfig{
+			Server:    opts.BaseServer,
+			Token:     tr.Token,
+			ExpiresAt: time.Unix(tr.ExpiresAt, 0),
+			Issuer:    tr.Issuer,
+			Email:     tr.Email,
+		}
+		if err := saveClientConfigFn(cc); err != nil {
+			return fmt.Errorf("save client config: %w", err)
+		}
+		if tr.Email != "" {
+			fmt.Fprintf(out, "Signed in as %s\n", tr.Email)
+		}
+		fmt.Fprintf(out, "Saved %s for token refresh.\n", mustPath())
+		return nil
+	}
 }
 
 func normalizeInstallClient(v string) (string, error) {
 	v = strings.ToLower(strings.TrimSpace(v))
 	switch v {
-	case "claude", "codex", "both":
+	case "claude", "codex":
 		return v, nil
+	case "all", "both":
+		return "all", nil
 	default:
-		return "", fmt.Errorf("invalid --client %q (valid: claude, codex, both)", v)
+		return "", fmt.Errorf("invalid --client %q (valid: claude, codex, all)", v)
 	}
 }
 
@@ -286,12 +590,6 @@ func validateInstallPrereqs(opts mcpInstallOptions) error {
 	if usesClaude(opts.Client) {
 		if _, err := lookPathFn("claude"); err != nil {
 			return errors.New("Claude CLI not found in PATH. Install Claude Code CLI or use --client codex")
-		}
-	}
-
-	if usesCodex(opts.Client) {
-		if _, err := lookPathFn("codex"); err != nil {
-			return errors.New("Codex CLI not found in PATH. Install OpenAI Codex CLI or use --client claude")
 		}
 	}
 
@@ -349,7 +647,11 @@ func buildCodexAddArgs(opts mcpInstallOptions, includeScope bool) []string {
 		args = append(args, "--scope", codexScopeValue(opts.Scope))
 	}
 
-	args = append(args, "--url", opts.Server)
+	if opts.Mode == mcpInstallModeProxy {
+		args = append(args, "--", graphjinCommandForMCP(), "mcp")
+	} else {
+		args = append(args, "--url", opts.Server)
+	}
 	return args
 }
 
@@ -386,10 +688,19 @@ func codexConfigTargetPath(scope, wd string) (string, error) {
 }
 
 func runClaudeInstall(cmd *cobra.Command, opts mcpInstallOptions) error {
-	return runClaudeMCPAddInstall(cmd, opts)
+	if opts.Mode == mcpInstallModeDirect {
+		return runClaudeMCPAddURLInstall(cmd, opts)
+	}
+	return runClaudeMCPAddProxyInstall(cmd, opts)
 }
 
-func runClaudeMCPAddInstall(cmd *cobra.Command, opts mcpInstallOptions) error {
+func runClaudeMCPAddURLInstall(cmd *cobra.Command, opts mcpInstallOptions) error {
+	claudeScope := normalizeClaudeScope(opts.Scope)
+	_ = runExternalCommand(cmd, "claude", "mcp", "remove", "--scope", claudeScope, claudeMCPServerName)
+	return runExternalCommand(cmd, "claude", "mcp", "add", "--transport", "http", "--scope", claudeScope, claudeMCPServerName, opts.Server)
+}
+
+func runClaudeMCPAddProxyInstall(cmd *cobra.Command, opts mcpInstallOptions) error {
 	graphjinPath, err := resolveGraphJinPathForMCP()
 	if err != nil {
 		return err
@@ -447,6 +758,9 @@ func runCodexInstall(cmd *cobra.Command, opts mcpInstallOptions, plan codexInsta
 }
 
 func codexServerConfigFromOptions(opts mcpInstallOptions) codexServerConfig {
+	if opts.Mode == mcpInstallModeProxy {
+		return codexServerConfig{Command: graphjinCommandForMCP(), Args: []string{"mcp"}}
+	}
 	return codexServerConfig{URL: opts.Server}
 }
 
@@ -517,29 +831,32 @@ func toStringAnyMap(v any) map[string]any {
 }
 
 func usesClaude(client string) bool {
-	return client == "claude" || client == "both"
+	return client == "claude" || client == "all"
 }
 
 func usesCodex(client string) bool {
-	return client == "codex" || client == "both"
+	return client == "codex" || client == "all"
 }
 
 func printInstallPreview(w io.Writer, opts mcpInstallOptions) {
 	fmt.Fprintf(w, "Install target: %s\n", opts.Client)
 	fmt.Fprintf(w, "Scope: %s\n", opts.Scope)
 	fmt.Fprintf(w, "Server: %s\n\n", opts.Server)
+	if opts.Mode == mcpInstallModeProxy {
+		fmt.Fprintf(w, "Mode: local GraphJin proxy (legacy auth_login token)\n\n")
+	} else {
+		fmt.Fprintf(w, "Mode: native MCP URL\n\n")
+	}
 }
 
 func printPostInstallGuide(w io.Writer, opts mcpInstallOptions, codexPlan codexInstallPlan) {
-	fmt.Fprintf(w, "GraphJin MCP setup complete.\n")
+	fmt.Fprintf(w, "GraphJin MCP connection added.\n")
 	fmt.Fprintf(w, "Server: %s\n", opts.Server)
 
 	if usesClaude(opts.Client) {
 		fmt.Fprintf(w, "\nClaude Desktop / Claude Code\n")
 		fmt.Fprintf(w, "  1) Restart Claude Desktop.\n")
 		fmt.Fprintf(w, "  2) Verify with: claude mcp list\n")
-		fmt.Fprintf(w, "  3) In Chat tab: Customizer -> Plugins -> search \"GraphJin\" -> Install.\n")
-		fmt.Fprintf(w, "  4) If not listed, add it as a custom plugin in Customizer.\n")
 	}
 
 	if usesCodex(opts.Client) {

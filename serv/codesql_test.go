@@ -61,6 +61,45 @@ func Handler() {}
 	}
 }
 
+func TestCodeSQLRelativePathResolvesFromConfigPath(t *testing.T) {
+	configRoot := t.TempDir()
+	source := filepath.Join(configRoot, "app")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(source, "main.go"), `package main
+
+func Handler() {}
+`)
+
+	conf := &Config{
+		Core: Core{
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "code", Path: "app"},
+			},
+		},
+		Serv: Serv{
+			ConfigPath: configRoot,
+			MCP:        MCPConfig{Disable: true},
+		},
+	}
+
+	s, err := newGraphJinService(conf, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestService(s)
+
+	var root string
+	err = s.managedDBs["code"].handle.DB.QueryRow(`SELECT root FROM code_index_status LIMIT 1`).Scan(&root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != source {
+		t.Fatalf("codesql root = %q, want %q", root, source)
+	}
+}
+
 func TestCodeSQLProductionDisablesLiveWatcherByDefault(t *testing.T) {
 	source := t.TempDir()
 	writeTestFile(t, filepath.Join(source, "main.go"), `package main

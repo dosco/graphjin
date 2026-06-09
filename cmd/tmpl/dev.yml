@@ -172,6 +172,16 @@ mcp:
   # Disable MCP endpoints entirely
   disable: false
 
+  # Standards-compatible OAuth for hosted MCP clients.
+  # Local development can keep this disabled and use:
+  #   graphjin mcp add codex http://localhost:8080
+  oauth:
+    enabled: false
+    mode: builtin # builtin reuses auth_login; external advertises auth servers
+    scopes: ["mcp"]
+    dynamic_client_registration: true
+    client_id_metadata_documents: true
+
   # Allow configuration updates via MCP (databases, tables, roles, blocklist, functions)
   # This enables dynamic database configuration without editing config files
   allow_config_updates: true

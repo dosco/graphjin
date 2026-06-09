@@ -9,18 +9,33 @@ const tabs = [
   { id: "curl", label: "curl", command: "curl -fsSL https://graphjin.com/install.sh | bash" },
 ];
 
-const mcpClients = [
+const mcpHelperCommands = [
   {
-    id: "claude-code",
-    name: "Claude Code",
-    logo: "/logos/claude-code.svg",
-    command: "graphjin mcp install --client claude --scope global --yes",
-  },
-  {
-    id: "openai-codex",
+    id: "helper-codex",
     name: "OpenAI Codex",
     logo: "/logos/openai-codex.svg",
-    command: "graphjin mcp install --client codex --scope global --yes",
+    command: "graphjin mcp add codex",
+  },
+  {
+    id: "helper-claude",
+    name: "Claude Code",
+    logo: "/logos/claude-code.svg",
+    command: "graphjin mcp add claude",
+  },
+];
+
+const mcpNativeCommands = [
+  {
+    id: "native-codex",
+    name: "Codex URL",
+    logo: "/logos/openai-codex.svg",
+    command: "codex mcp add graphjin --url http://localhost:8080/api/v1/mcp",
+  },
+  {
+    id: "native-claude",
+    name: "Claude HTTP",
+    logo: "/logos/claude-code.svg",
+    command: "claude mcp add --transport http graphjin http://localhost:8080/api/v1/mcp",
   },
 ];
 
@@ -141,55 +156,98 @@ export default function QuickStart() {
             </span>
           </div>
 
-          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-3">
-            {mcpClients.map((client) => (
-              <div
-                key={client.id}
-                className="rounded-xl border p-4"
-                style={{
-                  background: "var(--color-bg)",
-                  borderColor: "var(--color-border)",
-                }}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <img
-                    src={client.logo}
-                    alt={`${client.name} logo`}
-                    className="h-7 md:h-8 object-contain object-left"
-                    loading="lazy"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(client.command, setCopiedMCP, client.id)}
-                    className="p-1.5 rounded-md transition-colors"
-                    style={{ color: "var(--color-muted)" }}
-                    aria-label={`Copy command for ${client.name}`}
-                  >
-                    {copiedMCP === client.id ? (
-                      <Check className="w-4 h-4" style={{ color: "var(--color-accent-readable)" }} />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-                <code
-                  className="mt-3 block text-sm font-mono break-all leading-relaxed"
-                  style={{ color: "var(--color-text)" }}
-                >
-                  {client.command}
-                </code>
-              </div>
-            ))}
+          <div className="mt-5">
+            <p className="text-xs font-mono uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>
+              Recommended helper
+            </p>
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+              {mcpHelperCommands.map((client) => (
+                <MCPCommandCard
+                  key={client.id}
+                  client={client}
+                  copiedMCP={copiedMCP}
+                  handleCopy={handleCopy}
+                  setCopiedMCP={setCopiedMCP}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <p className="text-xs font-mono uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>
+              Direct client URL
+            </p>
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+              {mcpNativeCommands.map((client) => (
+                <MCPCommandCard
+                  key={client.id}
+                  client={client}
+                  copiedMCP={copiedMCP}
+                  handleCopy={handleCopy}
+                  setCopiedMCP={setCopiedMCP}
+                />
+              ))}
+            </div>
           </div>
 
           <p className="mt-4 text-xs" style={{ color: "var(--color-muted)" }}>
-            Prefer interactive setup?{" "}
+            Hosted with OAuth?{" "}
             <code className="font-mono" style={{ color: "var(--color-text)" }}>
-              graphjin mcp install
+              codex mcp add graphjin --url https://graphjin.example.com/api/v1/mcp
             </code>
           </p>
         </div>
       </div>
     </section>
+  );
+}
+
+function MCPCommandCard({
+  client,
+  copiedMCP,
+  handleCopy,
+  setCopiedMCP,
+}: {
+  client: { id: string; name: string; logo: string; command: string };
+  copiedMCP: string | null;
+  handleCopy: (text: string, setter: (v: any) => void, value: any) => void;
+  setCopiedMCP: (value: string | null) => void;
+}) {
+  return (
+    <div
+      className="rounded-xl border p-4"
+      style={{
+        background: "var(--color-bg)",
+        borderColor: "var(--color-border)",
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <img
+          src={client.logo}
+          alt={`${client.name} logo`}
+          className="h-7 md:h-8 object-contain object-left"
+          loading="lazy"
+        />
+        <button
+          type="button"
+          onClick={() => handleCopy(client.command, setCopiedMCP, client.id)}
+          className="p-1.5 rounded-md transition-colors"
+          style={{ color: "var(--color-muted)" }}
+          aria-label={`Copy command for ${client.name}`}
+        >
+          {copiedMCP === client.id ? (
+            <Check className="w-4 h-4" style={{ color: "var(--color-accent-readable)" }} />
+          ) : (
+            <Copy className="w-4 h-4" />
+          )}
+        </button>
+      </div>
+      <code
+        className="mt-3 block text-sm font-mono break-all leading-relaxed"
+        style={{ color: "var(--color-text)" }}
+      >
+        {client.command}
+      </code>
+    </div>
   );
 }

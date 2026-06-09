@@ -179,6 +179,62 @@ database:
   dbname: myapp_production
 ```
 
+### MCP Client Connection Quick Reference
+
+For local development, the GraphJin helper is the easiest way to add GraphJin to
+Codex or Claude. It normalizes the URL to `/api/v1/mcp`, probes the server, and
+uses the right native URL or local proxy config:
+
+```bash
+graphjin mcp add codex
+graphjin mcp add claude
+```
+
+Native MCP clients can also connect directly to GraphJin's Streamable HTTP
+endpoint:
+
+```bash
+codex mcp add graphjin --url http://localhost:8080/api/v1/mcp
+claude mcp add --transport http graphjin http://localhost:8080/api/v1/mcp
+```
+
+Hosted GraphJin should use HTTPS and can advertise MCP OAuth metadata when
+`mcp.oauth.enabled: true`:
+
+```bash
+codex mcp add graphjin --url https://graphjin.example.com/api/v1/mcp
+claude mcp add --transport http graphjin https://graphjin.example.com/api/v1/mcp
+```
+
+```yaml
+auth:
+  type: jwt
+  jwt:
+    secret: ${GRAPHJIN_JWT_SECRET}
+
+auth_login:
+  enabled: true
+  oidc:
+    issuer_url: https://accounts.google.com
+    client_id: ${GRAPHJIN_OIDC_CLIENT_ID}
+    client_secret: ${GRAPHJIN_OIDC_CLIENT_SECRET}
+
+mcp:
+  oauth:
+    enabled: true
+    mode: builtin
+    scopes: ["mcp"]
+```
+
+Claude's SSE transport is for legacy/custom MCP servers, not GraphJin's
+`/api/v1/mcp` endpoint:
+
+```bash
+claude mcp add --transport sse <name> <url>
+claude mcp add --transport sse private-api https://api.company.com/sse \
+  --header "X-API-Key: your-key-here"
+```
+
 ---
 
 ## Sources Mode
@@ -967,6 +1023,14 @@ Model Context Protocol (MCP) enables AI assistants to interact with GraphJin.
 | `mcp.allow_config_updates` | boolean | `false` | Allow LLMs to modify config (dangerous) |
 | `mcp.allow_schema_reload` | boolean | `false` | Allow schema reload via MCP (auto-enabled in dev mode) |
 | `mcp.allow_workflow_execution` | boolean | `false` | Allow legacy `execute_workflow` MCP tool; GraphQL `gj_workflow_execution` is controlled by `read_only` table/source config |
+| `mcp.oauth.enabled` | boolean | `false` | Enable OAuth metadata and challenges for hosted MCP clients |
+| `mcp.oauth.mode` | string | `external` | `builtin` reuses `auth_login`; `external` advertises configured authorization servers |
+| `mcp.oauth.resource` | string | request URL | Expected MCP resource/audience; defaults to the public `/api/v1/mcp` URL |
+| `mcp.oauth.issuer` | string | request origin | Authorization server issuer in builtin mode |
+| `mcp.oauth.authorization_servers` | []string | issuer | Authorization servers advertised in protected-resource metadata |
+| `mcp.oauth.scopes` | []string | `["mcp"]` | OAuth scopes advertised and accepted for MCP |
+| `mcp.oauth.dynamic_client_registration` | boolean | `true` | Enable dynamic client registration in builtin mode |
+| `mcp.oauth.client_id_metadata_documents` | boolean | `true` | Enable CIMD client metadata discovery in builtin mode |
 
 ### Example
 
@@ -982,6 +1046,10 @@ mcp:
   allow_config_updates: false  # Keep disabled for security
   allow_schema_reload: true  # Enabled by default in dev mode
   allow_workflow_execution: false
+  oauth:
+    enabled: false
+    mode: external
+    scopes: ["mcp"]
 ```
 
 ---

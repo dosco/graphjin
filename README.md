@@ -81,31 +81,95 @@ GraphJin started
   REST API:    http://localhost:8080/api/v1/rest/
   Workflows:   http://localhost:8080/api/v1/workflows/<name>
   MCP:         http://localhost:8080/api/v1/mcp
-
-Claude Desktop Configuration
-────────────────────────────
-Add to claude_desktop_config.json:
-
-  {
-    "mcpServers": {
-      "Webshop Development": {
-        "command": "/path/to/graphjin",
-        "args": ["mcp", "--server", "http://localhost:8080"]
-      }
-    }
-  }
 ```
 
-Copy the JSON config shown and add it to your Claude Desktop config file (see below for file location). You can also click `File > Settings > Developer` to get to it in Claude Desktop. You will also need to **Restart Claude Desktop**
+## Add GraphJin To Your AI Client
 
-| OS | Possible config file locations |
-|----|---------------------|
-| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+### Local / Dev
 
-## Authenticate the CLI / MCP
+Use GraphJin's helper when you want one command that normalizes the URL, probes
+auth, and installs the right Codex or Claude config:
 
-Before `graphjin cli` or `graphjin mcp` can talk to a server, point them at one. There are no `--server` or `--token` flags — both come from a single saved config file (`~/.config/graphjin/client.json`, mode `0600`):
+```bash
+graphjin mcp add codex
+graphjin mcp add claude
+graphjin mcp add all http://localhost:8080
+```
+
+Defaults are `client=codex`, `server=http://localhost:8080`, and project scope.
+The command normalizes the server to `http://localhost:8080/api/v1/mcp`. Local
+non-TLS HTTP is correct for loopback development; hosted servers should use
+HTTPS.
+
+If you prefer native client commands, add GraphJin's Streamable HTTP endpoint
+directly:
+
+```bash
+codex mcp add graphjin --url http://localhost:8080/api/v1/mcp
+claude mcp add --transport http graphjin http://localhost:8080/api/v1/mcp
+```
+
+GraphJin's `/api/v1/mcp` endpoint is Streamable HTTP, so Claude should use
+`--transport http` for GraphJin. SSE is only for older/custom MCP servers.
+
+Use `--global` when you want the MCP connection available outside the current project:
+
+```bash
+graphjin mcp add codex --global
+```
+
+Codex can also add non-URL stdio MCP servers with the generic command shape:
+
+```bash
+codex mcp add <server-name> -- <command> [args...]
+```
+
+### Hosted GraphJin With OAuth
+
+When `mcp.oauth.enabled: true` is configured on a hosted GraphJin server, modern
+MCP clients can add it by URL and handle OAuth login themselves:
+
+```bash
+codex mcp add graphjin --url https://graphjin.example.com/api/v1/mcp
+claude mcp add --transport http graphjin https://graphjin.example.com/api/v1/mcp
+```
+
+This is the native remote-MCP path. GraphJin serves OAuth protected-resource
+metadata, authorization-server metadata, DCR/CIMD discovery, and MCP 401
+challenges so the client can discover login automatically. See the official
+[OpenAI Docs MCP quickstart](https://platform.openai.com/docs/docs-mcp) for the
+Codex `mcp add --url` flow and the
+[Claude Code MCP docs](https://docs.claude.com/en/docs/claude-code/mcp) for
+Claude's HTTP transport and authentication flow.
+
+For legacy/custom SSE servers, use Claude's SSE transport explicitly:
+
+```bash
+claude mcp add --transport sse <name> <url>
+claude mcp add --transport sse private-api https://api.company.com/sse \
+  --header "X-API-Key: your-key-here"
+```
+
+### Legacy / Current `auth_login` Fallback
+
+If a server still uses GraphJin's current `auth_login` device-code flow instead of standards OAuth, `graphjin mcp add` detects that automatically:
+
+```bash
+graphjin mcp add codex https://graphjin.example.com
+```
+
+The command opens the device-code login, saves `~/.config/graphjin/client.json`, and installs a credential-free local proxy config for the AI client. Re-run `graphjin mcp setup https://graphjin.example.com` later only when you want to refresh or rotate that saved CLI/proxy token.
+
+The deprecated aliases still work for scripts:
+
+```bash
+graphjin mcp install codex https://graphjin.example.com
+graphjin mcp plugin install https://graphjin.example.com   # deprecated Claude alias
+```
+
+## Authenticate The CLI
+
+Before `graphjin cli` can talk to a server, point it at one. There are no `--server` or `--token` flags — both come from a single saved config file (`~/.config/graphjin/client.json`, mode `0600`):
 
 ```bash
 graphjin cli setup http://localhost:8080            # local dev, no auth needed
@@ -132,6 +196,7 @@ To enable built-in login, set this on the server:
 
 ```yaml
 auth:
+  type: jwt
   jwt:
     secret: "long-random-shared-secret"   # used to sign and verify local JWTs
 
@@ -143,42 +208,15 @@ auth_login:
     client_id: "..."
     client_secret: "..."                  # or $GJ_AUTH_LOGIN_OIDC_CLIENT_SECRET
     allowed_domains: ["example.com"]      # optional allow-list
+
+mcp:
+  oauth:
+    enabled: true
+    mode: builtin                         # reuses auth_login identity
+    scopes: ["mcp"]
 ```
 
 Successful authentication is recorded in structured logs with the verified `email` and `name` claims (when present), giving you a clean audit trail of who called every endpoint.
-
-### MCP install for OpenAI Codex + Claude Code
-
-GraphJin includes a guided installer that configures MCP for OpenAI Codex, Claude Code, or both. Run `graphjin mcp setup <server-url>` first — `mcp install` reads the server URL from `client.json`, and the MCP-client config it writes is credential-free, so rotating tokens (re-running `mcp setup`) needs no edits to Claude / Codex.
-
-```bash
-graphjin mcp setup https://graphjin.example.com
-graphjin mcp install                                # guided: target client + scope
-```
-
-#### OpenAI Codex
-
-<img src="website/public/logos/openai-codex.svg" alt="OpenAI Codex logo" width="280">
-
-```bash
-graphjin mcp install --client codex --scope global --yes
-```
-
-#### Claude Code
-
-<img src="website/public/logos/claude-code.svg" alt="Claude Code logo" width="280">
-
-```bash
-graphjin mcp install --client claude --scope global --yes
-```
-
-#### Troubleshooting
-
-- `mcp install` requires a saved server URL — run `graphjin mcp setup <server-url>` first if you see "no GraphJin server configured".
-- The generated MCP-client config is `args: ["mcp"]`. `graphjin mcp` reads server + token from `client.json` on its own, in proxy mode when a server is saved or local mode when it's not.
-- If Codex CLI does not support `codex mcp add --scope` (older versions), GraphJin automatically falls back to updating:
-  - global scope: `~/.codex/config.toml`
-  - local scope: `.codex/config.toml`
 
 ## Getting started
 
@@ -194,13 +232,13 @@ graphjin new my-app
 graphjin serve --path ./my-app
 ```
 
-**Step 3: Add to Claude Desktop config file**
+**Step 3: Add GraphJin to an AI client**
 
-Copy paste the Claude Desktop Config provided by `graphjin serve` into the Claude Desktop MCP config file. How to do this has been defined clearly above in the `Try it Now` section.
+```bash
+graphjin mcp add claude http://localhost:8080
+```
 
-**Step 4: Restart Claude Desktop**
-
-**Step 5: Ask Claude questions like:**
+**Step 4: Ask Claude questions like:**
 - "What tables are in the database?"
 - "Show me all products under $50"
 - "List customers and their purchases"
@@ -478,7 +516,12 @@ federation:
 | `/api/v1/workflows/<name>` | `GET`, `POST` | Legacy workflow execution endpoint. In source mode it is registered only when `mcp.legacy_discovery: true`; use `gj_workflow_execution(insert)` through GraphQL otherwise. |
 | `/api/v1/openapi.json` | `GET` | OpenAPI 3 spec generated from your saved REST queries. |
 | `/api/v1/mcp` | `POST` | MCP (Model Context Protocol) HTTP transport — Streamable HTTP, stateless. |
-| `/api/v1/mcp/message` | `POST` | MCP HTTP transport for stateless message integrations. |
+| `/api/v1/mcp/message` | `POST` | Legacy MCP message route for older local proxy/client integrations. New clients should use `/api/v1/mcp`. |
+| `/.well-known/oauth-protected-resource[/api/v1/mcp]` | `GET` | MCP OAuth protected-resource metadata (only when `mcp.oauth.enabled`). |
+| `/.well-known/oauth-authorization-server` | `GET` | Built-in MCP OAuth authorization-server metadata (only when `mcp.oauth.enabled`). |
+| `/api/v1/oauth/register` | `POST` | Built-in MCP OAuth dynamic client registration (only in builtin mode). |
+| `/api/v1/oauth/authorize` | `GET` | Built-in MCP OAuth authorization-code + PKCE start (only in builtin mode). |
+| `/api/v1/oauth/token` | `POST` | Built-in MCP OAuth token exchange/refresh (only in builtin mode). |
 | `/api/v1/discovery` | `GET` | Legacy discovery document. In source mode it is registered only when `mcp.legacy_discovery: true`; use catalog GraphQL roots otherwise. |
 | `/api/v1/discovery/<section>` | `GET` | Legacy discovery drill-down (e.g. `tables`, `insights`), gated the same way as `/api/v1/discovery`. |
 | `/api/v1/auth/device` | `POST` | OIDC device-flow start (only if `auth_login.enabled`). |

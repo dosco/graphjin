@@ -63,6 +63,7 @@ Authentication for local mode:
 	// Subcommands
 	c.AddCommand(setupCmd())
 	c.AddCommand(mcpInfoCmd())
+	c.AddCommand(mcpAddCmd())
 	c.AddCommand(mcpInstallCmd())
 	c.AddCommand(mcpPluginCmd())
 
