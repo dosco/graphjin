@@ -302,7 +302,8 @@ func compileAndRunJSWithContext(seed string, seedCtx seedJSContext) error {
 		if len(seedCtx.Databases) != 0 {
 			primaryDB = nil
 		}
-		gj, gjErr = core.NewGraphJinWithFS(&conf.Core, primaryDB, core.NewOsFS(configPath), opts...)
+		coreConf := seedCoreConfig(seedCtx)
+		gj, gjErr = core.NewGraphJinWithFS(&coreConf, primaryDB, core.NewOsFS(configPath), opts...)
 		return gj, gjErr
 	}
 	defer func() {
@@ -582,6 +583,27 @@ func graphQLFunc(gj *core.GraphJin, query string, data interface{}, opt map[stri
 type csvSource struct {
 	rows [][]string
 	i    int
+}
+
+func seedCoreConfig(seedCtx seedJSContext) core.Config {
+	coreConf := conf.Core
+	if len(seedCtx.Databases) == 0 || len(coreConf.Databases) == 0 {
+		return coreConf
+	}
+
+	filtered := make(map[string]core.DatabaseConfig)
+	for name, conn := range seedCtx.Databases {
+		if conn == nil {
+			continue
+		}
+		dbConf, ok := coreConf.Databases[name]
+		if !ok || strings.EqualFold(dbConf.Type, "codesql") {
+			continue
+		}
+		filtered[name] = dbConf
+	}
+	coreConf.Databases = filtered
+	return coreConf
 }
 
 // NewCSVSource creates a new CSV source

@@ -34,6 +34,7 @@ GraphJin is a high-performance GraphQL to SQL compiler that automatically genera
 - [CodeSQL Source Indexes](#codesql-source-indexes)
 - [Metadata Graph](#metadata-graph)
 - [Apollo Federation v2](#apollo-federation-v2)
+- [MCP Connections for AI Clients](#mcp-connections-for-ai-clients)
 - [Security Features](#security-features)
   - [Role-Based Access Control](#role-based-access-control)
   - [Row-Level Security](#row-level-security)
@@ -1475,6 +1476,67 @@ extend type Query {
 **`_entities` resolution is on the roadmap** — the engine returns a clear "not yet implemented" error today rather than silent failures, so cross-subgraph entity references will surface the gap to gateway operators instead of producing confusing partial responses.
 
 **Detection is fast** — token-bounded substring scan over the raw query, so JSON traffic costs one extra MIME parse only when federation is enabled.
+
+---
+
+## MCP Connections for AI Clients
+
+GraphJin exposes a governed Model Context Protocol surface for AI clients. The
+MCP tools use the same compiler, roles, row filters, source access, allow-lists,
+workflow policy, and audit/runtime context as GraphQL and REST.
+
+For local development, use GraphJin's helper:
+
+```bash
+graphjin mcp add codex
+graphjin mcp add claude
+```
+
+The helper normalizes the server to `http://localhost:8080/api/v1/mcp`, probes
+authentication, and installs either a native URL connection or the local proxy
+needed for older `auth_login` deployments.
+
+Native MCP clients can also connect directly:
+
+```bash
+codex mcp add graphjin --url http://localhost:8080/api/v1/mcp
+claude mcp add --transport http graphjin http://localhost:8080/api/v1/mcp
+```
+
+GraphJin's `/api/v1/mcp` endpoint is Streamable HTTP. Use Claude's
+`--transport http` for GraphJin; reserve SSE for legacy/custom servers:
+
+```bash
+claude mcp add --transport sse <name> <url>
+claude mcp add --transport sse private-api https://api.company.com/sse \
+  --header "X-API-Key: your-key-here"
+```
+
+Hosted GraphJin can advertise standards-compatible MCP OAuth so clients handle
+login through protected-resource metadata, authorization-server metadata,
+DCR/CIMD discovery, and MCP 401 challenges:
+
+```bash
+codex mcp add graphjin --url https://graphjin.example.com/api/v1/mcp
+claude mcp add --transport http graphjin https://graphjin.example.com/api/v1/mcp
+```
+
+```yaml
+auth:
+  type: jwt
+
+mcp:
+  oauth:
+    enabled: true
+    mode: builtin # or external
+    scopes: ["mcp"]
+```
+
+Codex can also add non-URL stdio MCP servers with:
+
+```bash
+codex mcp add <server-name> -- <command> [args...]
+```
 
 ---
 

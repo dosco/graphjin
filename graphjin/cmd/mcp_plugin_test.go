@@ -17,7 +17,10 @@ func TestPluginAliasForcesClaudeClient(t *testing.T) {
 	if opts.Scope != "project" {
 		t.Fatalf("expected default scope project, got %q", opts.Scope)
 	}
-	if opts.Server != defaultMCPServerURL {
-		t.Fatalf("expected default server %q, got %q", defaultMCPServerURL, opts.Server)
+	if opts.Server != "http://localhost:8080/api/v1/mcp" {
+		t.Fatalf("expected default MCP endpoint, got %q", opts.Server)
+	}
+	if opts.BaseServer != defaultMCPServerURL {
+		t.Fatalf("expected base server %q, got %q", defaultMCPServerURL, opts.BaseServer)
 	}
 }

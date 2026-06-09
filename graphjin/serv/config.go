@@ -288,6 +288,9 @@ type MCPConfig struct {
 
 	disableExplicit bool
 
+	// OAuth exposes standards-compatible authorization discovery for remote MCP clients.
+	OAuth MCPOAuthConfig `mapstructure:"oauth" jsonschema:"title=MCP OAuth Configuration"`
+
 	// Allow mutation operations via raw MCP GraphQL execution.
 	// Auto-enabled in dev mode. Default: false
 	AllowMutations bool `mapstructure:"allow_mutations" jsonschema:"title=Allow Mutations,default=false"`
@@ -360,6 +363,45 @@ type MCPConfig struct {
 	// WorkflowTimeout in seconds for JavaScript workflow execution.
 	// Workflows that exceed this duration are interrupted. Default: 5
 	WorkflowTimeout int `mapstructure:"workflow_timeout" jsonschema:"title=Workflow Timeout (seconds),default=5"`
+}
+
+// MCPOAuthConfig configures standards-compatible OAuth discovery and token
+// handling for hosted MCP HTTP clients.
+type MCPOAuthConfig struct {
+	// Enable OAuth metadata/challenge support for the MCP HTTP endpoint.
+	Enabled bool `mapstructure:"enabled" jsonschema:"title=Enable MCP OAuth,default=false"`
+
+	// Mode selects the authorization-server strategy: builtin uses auth_login
+	// to run an authorization-code + PKCE flow; external advertises the
+	// configured AuthorizationServers and validates bearer tokens via auth.jwt.
+	Mode string `mapstructure:"mode" jsonschema:"title=MCP OAuth Mode,enum=builtin,enum=external"`
+
+	// Resource is the expected OAuth audience/resource value. Defaults to the
+	// public /api/v1/mcp URL for the incoming request.
+	Resource string `mapstructure:"resource" jsonschema:"title=MCP OAuth Resource"`
+
+	// Issuer is the authorization server issuer. In builtin mode it defaults to
+	// the public origin of the incoming request.
+	Issuer string `mapstructure:"issuer" jsonschema:"title=MCP OAuth Issuer"`
+
+	// AuthorizationServers are advertised by protected-resource metadata in
+	// external mode. Defaults to Issuer when empty.
+	AuthorizationServers []string `mapstructure:"authorization_servers" jsonschema:"title=MCP OAuth Authorization Servers"`
+
+	// Scopes advertised and accepted by the MCP authorization server.
+	Scopes []string `mapstructure:"scopes" jsonschema:"title=MCP OAuth Scopes"`
+
+	// DynamicClientRegistration exposes RFC 7591 registration in builtin mode.
+	DynamicClientRegistration bool `mapstructure:"dynamic_client_registration" jsonschema:"title=Enable MCP OAuth Dynamic Client Registration,default=true"`
+
+	// ClientIDMetadataDocuments lets clients use CIMD URLs instead of DCR.
+	ClientIDMetadataDocuments bool `mapstructure:"client_id_metadata_documents" jsonschema:"title=Enable MCP OAuth Client ID Metadata Documents,default=true"`
+
+	// AccessTokenTTL controls builtin-mode access token lifetime.
+	AccessTokenTTL time.Duration `mapstructure:"access_token_ttl" jsonschema:"title=MCP OAuth Access Token TTL"`
+
+	// RefreshTokenTTL controls builtin-mode refresh token lifetime.
+	RefreshTokenTTL time.Duration `mapstructure:"refresh_token_ttl" jsonschema:"title=MCP OAuth Refresh Token TTL"`
 }
 
 // RedisConfig configures Redis connection
@@ -759,6 +801,13 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.only", false)
 	vi.SetDefault("mcp.cursor_cache_ttl", 1800)   // 30 minutes
 	vi.SetDefault("mcp.cursor_cache_size", 10000) // max in-memory entries
+	vi.SetDefault("mcp.oauth.enabled", false)
+	vi.SetDefault("mcp.oauth.mode", "external")
+	vi.SetDefault("mcp.oauth.scopes", []string{"mcp"})
+	vi.SetDefault("mcp.oauth.dynamic_client_registration", true)
+	vi.SetDefault("mcp.oauth.client_id_metadata_documents", true)
+	vi.SetDefault("mcp.oauth.access_token_ttl", time.Hour)
+	vi.SetDefault("mcp.oauth.refresh_token_ttl", 720*time.Hour)
 
 	// Local encrypted keystore defaults.
 	vi.SetDefault("secrets.keystore.key", "")

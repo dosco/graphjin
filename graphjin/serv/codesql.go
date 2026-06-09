@@ -49,6 +49,9 @@ func (s *graphjinService) openCodeSQLDatabase(name string, dbConf core.DatabaseC
 	if err != nil {
 		return nil, core.DatabaseConfig{}, nil, nil, err
 	}
+	if !filepath.IsAbs(root) {
+		root = filepath.Join(base, root)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()

@@ -72,6 +72,9 @@ func (s *graphjinService) initConfig() error {
 	if err := validateServiceIsSourcesUsedConfig(c); err != nil {
 		return err
 	}
+	if err := validateMCPOAuthConfig(c); err != nil {
+		return err
+	}
 	applySourceCapabilitySourceDefaults(c)
 	if err := normalizeServiceSources(c); err != nil {
 		return err

@@ -100,6 +100,20 @@ mcp:
   # Disable MCP endpoints entirely
   disable: false
 
+  # Standards-compatible OAuth for hosted MCP clients.
+  # Enable when adding GraphJin by URL, for example:
+  #   codex mcp add graphjin --url https://graphjin.example.com/api/v1/mcp
+  oauth:
+    enabled: false
+    mode: external # builtin reuses auth_login; external advertises auth servers
+    # resource: https://graphjin.example.com/api/v1/mcp
+    # issuer: https://graphjin.example.com
+    # authorization_servers:
+    #   - https://graphjin.example.com
+    scopes: ["mcp"]
+    dynamic_client_registration: true
+    client_id_metadata_documents: true
+
   # SECURITY: Config updates disabled in production
   # Databases, tables, roles must be configured in this file or via hot deploy
   allow_config_updates: false

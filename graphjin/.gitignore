@@ -25,6 +25,7 @@
 /demo/
 .graphjin/
 examples/*/demo/
+examples/*/codesql/
 
 .idea
 *.iml

@@ -100,11 +100,11 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 	// Transport is implicit: HTTP service uses SSE/HTTP, CLI uses stdio via RunMCPStdio()
 	// Auth: Uses same auth middleware as GraphQL/REST endpoints
 	if !s.conf.mcpDisabled() {
-		mcpAuth, err := auth.NewAuthHandlerFunc(s.conf.Auth)
+		s.registerMCPOAuthMetadataRoutes(mux)
+		mcpAuth, err := s.newMCPAuthHandler()
 		if err != nil {
 			s.log.Fatalf("api: error initializing MCP auth handler: %s", err)
 		}
-		mcpAuth = s.observeAuthHandler(mcpAuth)
 		// SSE transport for web-based integrations (with auth)
 		mux.Handle(routeMCP, s1.MCPHandlerWithAuth(mcpAuth))
 		// HTTP transport for stateless API integrations (with auth)

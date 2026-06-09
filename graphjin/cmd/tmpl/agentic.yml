@@ -17,6 +17,15 @@ hot_deploy: true
 # should use catalog/control-plane GraphQL roots instead.
 mcp:
   disable: false
+  oauth:
+    enabled: false
+    mode: external
+    # resource: https://graphjin.example.com/api/v1/mcp
+    # authorization_servers:
+    #   - https://graphjin.example.com
+    scopes: ["mcp"]
+    dynamic_client_registration: true
+    client_id_metadata_documents: true
   allow_config_updates: false
   allow_mutations: true
   allow_raw_queries: false

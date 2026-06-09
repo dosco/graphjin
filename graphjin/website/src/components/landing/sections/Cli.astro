@@ -14,6 +14,9 @@ graphjin db seed`;
 const cli = `# authenticate via OIDC device-code flow
 graphjin cli setup https://api.example.com
 
+# add local GraphJin to an AI client
+graphjin mcp add codex http://localhost:8080
+
 # run a saved query against prod
 graphjin cli query top_customers --limit 5
 
@@ -28,13 +31,15 @@ graphjin cli audit --since 1h`;
   id="cli"
   eyebrow="TOOLING"
   title="A CLI that fits the developer loop."
-  lede="One binary covers everything: a dev server with auto schema discovery, a database toolchain (setup, diff, migrate, seed), a remote client that authenticates over OIDC device-code, and an MCP server. No tokens to copy, no frameworks to learn."
+  lede="One binary covers everything: a dev server with auto schema discovery, a database toolchain (setup, diff, migrate, seed), a remote client that authenticates over OIDC device-code, and MCP connection helpers. No tokens to copy, no frameworks to learn."
 >
   <Fragment slot="body">
     <p>
       <code>graphjin serve --demo</code> starts a working example in seconds.
       <code>graphjin cli setup</code> opens the device-code login URL in your
       browser and persists a refreshable JWT for every subsequent command.
+      <code>graphjin mcp add</code> probes the server and chooses native URL
+      config or the local proxy when a legacy token is needed.
       Workflows can be <strong>invoked by name</strong> from CLI, MCP, REST,
       or another workflow.
     </p>

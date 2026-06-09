@@ -18,6 +18,7 @@ default_limit: 50
 
 auth:
   type: none
+  development: true
 
 mcp:
   disable: false
@@ -97,7 +98,7 @@ sources:
     kind: workflow
     path: workflows
     runtime: javascript
-    read_only: true
+    read_only: false
     capabilities:
       workflow.execute: true
       workflow.read: true

@@ -15,13 +15,14 @@ func mcpPluginCmd() *cobra.Command {
 func mcpPluginInstallCmd() *cobra.Command {
 	c := newMCPInstallCommand(mcpInstallCommandConfig{
 		Use:         "install",
-		Short:       "Alias for `graphjin mcp install --client claude`",
+		Short:       "Deprecated alias for `graphjin mcp add claude`",
+		Deprecated:  "use `graphjin mcp add claude` instead",
 		ForceClient: "claude",
 		HideClient:  true,
 		Long: `Backward-compatible alias for Claude plugin installation.
 
 Equivalent to:
-  graphjin mcp install --client claude`,
+  graphjin mcp add claude`,
 	})
 	return c
 }

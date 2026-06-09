@@ -59,6 +59,7 @@ type deviceSession struct {
 // authLoginService is built once at startup when AuthLogin.Enabled is true.
 type authLoginService struct {
 	cfg      AuthLogin
+	mcpOAuth MCPOAuthConfig
 	provider *oidc.Provider
 	issuer   *issuer.Issuer
 
@@ -66,6 +67,11 @@ type authLoginService struct {
 	byDevice map[string]*deviceSession // keyed by device_code
 	byUser   map[string]string         // user_code -> device_code
 	byState  map[string]string         // oidc state -> device_code
+
+	oauthClients       map[string]*mcpOAuthClient
+	oauthStates        map[string]*mcpOAuthAuthRequest
+	oauthCodes         map[string]*mcpOAuthCode
+	oauthRefreshTokens map[string]*mcpOAuthRefreshToken
 }
 
 // newAuthLoginService validates config, builds the OIDC provider and JWT
@@ -130,12 +136,17 @@ func newAuthLoginService(ctx context.Context, conf *Config) (*authLoginService, 
 	}
 
 	as := &authLoginService{
-		cfg:      a,
-		provider: prov,
-		issuer:   iss,
-		byDevice: map[string]*deviceSession{},
-		byUser:   map[string]string{},
-		byState:  map[string]string{},
+		cfg:                a,
+		mcpOAuth:           conf.MCP.OAuth,
+		provider:           prov,
+		issuer:             iss,
+		byDevice:           map[string]*deviceSession{},
+		byUser:             map[string]string{},
+		byState:            map[string]string{},
+		oauthClients:       map[string]*mcpOAuthClient{},
+		oauthStates:        map[string]*mcpOAuthAuthRequest{},
+		oauthCodes:         map[string]*mcpOAuthCode{},
+		oauthRefreshTokens: map[string]*mcpOAuthRefreshToken{},
 	}
 	go as.gc(ctx)
 	return as, nil
@@ -169,6 +180,21 @@ func (a *authLoginService) gc(ctx context.Context) {
 					}
 				}
 			}
+			for state, s := range a.oauthStates {
+				if now.After(s.ExpiresAt) {
+					delete(a.oauthStates, state)
+				}
+			}
+			for code, s := range a.oauthCodes {
+				if now.After(s.ExpiresAt) {
+					delete(a.oauthCodes, code)
+				}
+			}
+			for tok, s := range a.oauthRefreshTokens {
+				if now.After(s.ExpiresAt) {
+					delete(a.oauthRefreshTokens, tok)
+				}
+			}
 			a.mu.Unlock()
 		}
 	}
@@ -181,6 +207,13 @@ func (a *authLoginService) routes(mux Mux) {
 	mux.Handle(routeAuthDeviceToken, http.HandlerFunc(a.handleDeviceToken))
 	mux.Handle(routeAuthLogin, http.HandlerFunc(a.handleLogin))
 	mux.Handle(routeAuthCallback, http.HandlerFunc(a.handleCallback))
+	if a.mcpOAuthEnabledBuiltin() {
+		mux.Handle(routeMCPOAuthAuthorize, http.HandlerFunc(a.handleMCPOAuthAuthorize))
+		mux.Handle(routeMCPOAuthToken, http.HandlerFunc(a.handleMCPOAuthToken))
+		if a.mcpOAuth.DynamicClientRegistration {
+			mux.Handle(routeMCPOAuthRegister, http.HandlerFunc(a.handleMCPOAuthRegister))
+		}
+	}
 }
 
 // handleDevice serves both the CLI-facing POST (start a device session) and
@@ -312,6 +345,9 @@ func (a *authLoginService) handleCallback(w http.ResponseWriter, r *http.Request
 	code := r.URL.Query().Get("code")
 	if state == "" || code == "" {
 		http.Error(w, "missing state or code", http.StatusBadRequest)
+		return
+	}
+	if a.handleMCPOAuthCallback(w, r, state, code) {
 		return
 	}
 	a.mu.Lock()

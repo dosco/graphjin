@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -15,7 +18,8 @@ func TestNormalizeInstallClient(t *testing.T) {
 	}{
 		{in: "claude", want: "claude"},
 		{in: "codex", want: "codex"},
-		{in: "both", want: "both"},
+		{in: "all", want: "all"},
+		{in: "both", want: "all"},
 		{in: "invalid", wantErr: true},
 	}
 
@@ -80,8 +84,11 @@ func TestResolveInstallOptions_DefaultsNonInteractive(t *testing.T) {
 	if opts.Scope != "project" {
 		t.Fatalf("scope = %q, want project", opts.Scope)
 	}
-	if opts.Server != defaultMCPServerURL {
-		t.Fatalf("server = %q, want default %q", opts.Server, defaultMCPServerURL)
+	if opts.Server != "http://localhost:8080/api/v1/mcp" {
+		t.Fatalf("server = %q, want normalized local MCP endpoint", opts.Server)
+	}
+	if opts.BaseServer != defaultMCPServerURL {
+		t.Fatalf("base server = %q, want %q", opts.BaseServer, defaultMCPServerURL)
 	}
 }
 
@@ -107,10 +114,10 @@ func TestResolveInstallOptions_ExplicitFlagsOverridePrompts(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("expected no prompt calls when explicit flags are set, got %d", calls)
 	}
-	if opts.Client != "both" || opts.Scope != "global" {
+	if opts.Client != "all" || opts.Scope != "global" {
 		t.Fatalf("unexpected resolved values: %+v", opts)
 	}
-	if opts.Server != "http://localhost:9090/" {
+	if opts.Server != "http://localhost:9090/api/v1/mcp" {
 		t.Fatalf("server = %q, want explicit URL", opts.Server)
 	}
 }
@@ -121,7 +128,7 @@ func TestResolveInstallOptions_InteractivePrompts(t *testing.T) {
 		PromptFn: func(kind, prompt string, options []string, defaultValue string) (string, error) {
 			switch kind {
 			case "client":
-				return "both", nil
+				return "all", nil
 			case "scope":
 				return "local", nil
 			default:
@@ -133,24 +140,85 @@ func TestResolveInstallOptions_InteractivePrompts(t *testing.T) {
 		t.Fatalf("unexpected error: %s", err)
 	}
 
-	if opts.Client != "both" || opts.Scope != "local" {
+	if opts.Client != "all" || opts.Scope != "local" {
 		t.Fatalf("unexpected resolved values: %+v", opts)
 	}
-	if opts.Server != defaultMCPServerURL {
-		t.Fatalf("server = %q, want default %q", opts.Server, defaultMCPServerURL)
+	if opts.Server != "http://localhost:8080/api/v1/mcp" {
+		t.Fatalf("server = %q, want normalized local MCP endpoint", opts.Server)
 	}
 }
 
 func TestResolveInstallOptions_InvalidServer(t *testing.T) {
 	_, err := resolveInstallOptions(mcpInstallResolveInput{
-		Server:    "not-a-url",
+		Server:    "ftp://example.com",
 		ServerSet: true,
 	})
 	if err == nil {
 		t.Fatal("expected invalid --server error")
 	}
-	if !strings.Contains(err.Error(), "invalid --server") {
+	if !strings.Contains(err.Error(), "invalid server URL") {
 		t.Fatalf("unexpected error: %s", err)
+	}
+}
+
+func TestNormalizeMCPAddURL(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "localhost:8080", want: "http://localhost:8080/api/v1/mcp"},
+		{in: "http://localhost:8080", want: "http://localhost:8080/api/v1/mcp"},
+		{in: "http://localhost:8080/api/v1", want: "http://localhost:8080/api/v1/mcp"},
+		{in: "http://localhost:8080/api/v1/mcp/message", want: "http://localhost:8080/api/v1/mcp"},
+	}
+	for _, tt := range tests {
+		got, err := normalizeMCPAddURL(tt.in)
+		if err != nil {
+			t.Fatalf("normalizeMCPAddURL(%q): %s", tt.in, err)
+		}
+		if got != tt.want {
+			t.Fatalf("normalizeMCPAddURL(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestProbeMCPServerNoAuth(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+	}))
+	defer ts.Close()
+
+	origClient := mcpProbeHTTPClient
+	mcpProbeHTTPClient = ts.Client()
+	defer func() { mcpProbeHTTPClient = origClient }()
+
+	probe, err := probeMCPServer(context.Background(), ts.URL, ts.URL)
+	if err != nil {
+		t.Fatalf("probeMCPServer: %s", err)
+	}
+	if probe.Kind != mcpProbeNoAuth {
+		t.Fatalf("probe kind = %s, want %s", probe.Kind, mcpProbeNoAuth)
+	}
+}
+
+func TestProbeMCPServerOAuthChallenge(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="https://example.com/.well-known/oauth-protected-resource/api/v1/mcp"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer ts.Close()
+
+	origClient := mcpProbeHTTPClient
+	mcpProbeHTTPClient = ts.Client()
+	defer func() { mcpProbeHTTPClient = origClient }()
+
+	probe, err := probeMCPServer(context.Background(), ts.URL, ts.URL)
+	if err != nil {
+		t.Fatalf("probeMCPServer: %s", err)
+	}
+	if probe.Kind != mcpProbeOAuth {
+		t.Fatalf("probe kind = %s, want %s", probe.Kind, mcpProbeOAuth)
 	}
 }
 
@@ -292,13 +360,13 @@ func TestBuildClaudeMCPServerArgs(t *testing.T) {
 func TestPrintInstallPreview(t *testing.T) {
 	var b bytes.Buffer
 	printInstallPreview(&b, mcpInstallOptions{
-		Client: "both",
+		Client: "all",
 		Scope:  "global",
 		Server: "http://localhost:8080/",
 	})
 
 	out := b.String()
-	if !strings.Contains(out, "Install target: both") {
+	if !strings.Contains(out, "Install target: all") {
 		t.Fatalf("expected install target in output, got:\n%s", out)
 	}
 	if !strings.Contains(out, "Scope: global") {
@@ -312,7 +380,7 @@ func TestPrintInstallPreview(t *testing.T) {
 func TestPrintPostInstallGuide(t *testing.T) {
 	var b bytes.Buffer
 	printPostInstallGuide(&b, mcpInstallOptions{
-		Client: "both",
+		Client: "all",
 		Server: "http://localhost:8080/",
 	}, codexInstallPlan{
 		UseCLI:     false,
@@ -320,14 +388,11 @@ func TestPrintPostInstallGuide(t *testing.T) {
 	})
 
 	out := b.String()
-	if !strings.Contains(out, "GraphJin MCP setup complete.") {
+	if !strings.Contains(out, "GraphJin MCP connection added.") {
 		t.Fatalf("expected completion message, got:\n%s", out)
 	}
 	if !strings.Contains(out, "Claude Desktop / Claude Code") {
 		t.Fatalf("expected claude quick guide, got:\n%s", out)
-	}
-	if !strings.Contains(out, "Customizer -> Plugins -> search \"GraphJin\" -> Install.") {
-		t.Fatalf("expected claude chat note, got:\n%s", out)
 	}
 	if !strings.Contains(out, "OpenAI Codex") {
 		t.Fatalf("expected codex quick guide, got:\n%s", out)
