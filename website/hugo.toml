@@ -1,7 +1,6 @@
 baseURL = "https://graphjin.com/"
 locale = "en-us"
 title = "GraphJin"
-cacheDir = "/private/tmp/graphjin-hugo-cache"
 disableKinds = ["taxonomy", "term"]
 enableGitInfo = false
 relativeURLs = false

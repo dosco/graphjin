@@ -37,23 +37,17 @@ const requiredRoutes = [
 ];
 
 const requiredAnchors = [
+  'problem',
+  'what',
+  'ai-queries',
   'databases',
   'how',
   'agentic',
-  'why',
-  'mcp',
   'security-model',
-  'ai-queries',
+  'mcp',
   'codesql',
-  'fstable',
-  'openapi',
-  'cli',
-  'auth',
-  'subscriptions',
-  'features',
+  'capabilities',
   'quickstart',
-  'get-started',
-  'federation',
 ];
 
 const requiredContent = [
@@ -165,7 +159,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   if (/(?:>|&gt;)\s*(All|Section)\s*(?:<|&lt;)/.test(header)) {
     failures.push('Header still exposes the old All/Section search labels');
   }
-  for (const required of ['Vision', 'Agentic GraphJin', 'geo filters', 'Expression aggregates']) {
+  for (const required of ['Vision', 'The agent loop', 'geo filters', 'Expression aggregates']) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing required enriched copy: ${required}`);
     }
