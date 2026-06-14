@@ -1,11 +1,22 @@
-<svg viewBox="0 0 860 300" role="img" aria-label="MCP discovery to governed action flow" xmlns="http://www.w3.org/2000/svg">
-  <rect class="diag-bg" width="860" height="300" rx="16"/>
-  <defs><marker id="mcp-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10Z" fill="var(--accent-readable)"/></marker></defs>
-  <rect class="diag-node" x="32" y="84" width="150" height="70" rx="10"/><text class="diag-text" x="107" y="116" text-anchor="middle">AI client</text><text class="diag-sub" x="107" y="138" text-anchor="middle">Codex · Claude</text>
-  <rect class="diag-node-accent" x="232" y="48" width="190" height="142" rx="12"/><text class="diag-text" x="327" y="86" text-anchor="middle">GraphJin MCP</text><text class="diag-sub" x="327" y="110" text-anchor="middle">query_catalog</text><text class="diag-sub" x="327" y="130" text-anchor="middle">get_query_syntax</text><text class="diag-sub" x="327" y="150" text-anchor="middle">gj_security</text>
-  <rect class="diag-node" x="476" y="44" width="150" height="64" rx="10"/><text class="diag-text" x="551" y="80" text-anchor="middle">Validate</text>
-  <rect class="diag-node" x="476" y="132" width="150" height="64" rx="10"/><text class="diag-text" x="551" y="168" text-anchor="middle">Execute</text>
-  <rect class="diag-node" x="684" y="84" width="144" height="70" rx="10"/><text class="diag-text" x="756" y="116" text-anchor="middle">Governed graph</text><text class="diag-sub" x="756" y="138" text-anchor="middle">RBAC · audit</text>
-  <path class="diag-line" marker-end="url(#mcp-arrow)" d="M182 119H232"/><path class="diag-line" marker-end="url(#mcp-arrow)" d="M422 96H476"/><path class="diag-line" marker-end="url(#mcp-arrow)" d="M422 142H476"/><path class="diag-line" marker-end="url(#mcp-arrow)" d="M626 76C656 76 656 119 684 119"/><path class="diag-line" marker-end="url(#mcp-arrow)" d="M626 164C656 164 656 119 684 119"/>
-  <rect class="diag-node" x="126" y="226" width="610" height="44" rx="10"/><text class="diag-sub" x="431" y="253" text-anchor="middle">Agents discover evidence, inspect policy, validate syntax, then act through the same compiler as humans.</text>
+<svg viewBox="0 0 900 360" role="img" aria-label="MCP discovery to governed action loop" xmlns="http://www.w3.org/2000/svg">
+  <rect class="diag-bg" x="0" y="0" width="900" height="360" rx="16"/>
+  <text class="diag-text" x="450" y="58" text-anchor="middle">GraphJin MCP</text>
+  <text class="diag-sub" x="450" y="80" text-anchor="middle">discovery to governed action</text>
+  <rect class="diag-node-accent" x="64" y="132" width="176" height="92" rx="12"/>
+  <text class="diag-text" x="152" y="174" text-anchor="middle">Discover</text>
+  <text class="diag-sub" x="152" y="196" text-anchor="middle">gj_catalog</text>
+  <rect class="diag-node" x="290" y="132" width="150" height="92" rx="12"/>
+  <text class="diag-text" x="365" y="174" text-anchor="middle">Validate</text>
+  <text class="diag-sub" x="365" y="196" text-anchor="middle">where-clause</text>
+  <rect class="diag-node" x="490" y="132" width="150" height="92" rx="12"/>
+  <text class="diag-text" x="565" y="174" text-anchor="middle">Check</text>
+  <text class="diag-sub" x="565" y="196" text-anchor="middle">gj_security</text>
+  <rect class="diag-node" x="686" y="132" width="176" height="92" rx="12"/>
+  <text class="diag-text" x="774" y="174" text-anchor="middle">Act</text>
+  <text class="diag-sub" x="774" y="196" text-anchor="middle">governed graph</text>
+  <path class="diag-line" d="M240 178 L 290 178"/>
+  <path class="diag-line" d="M440 178 L 490 178"/>
+  <path class="diag-line" d="M640 178 L 686 178"/>
+  <path class="diag-rel" d="M774 224 C 774 322, 152 322, 152 224"/>
+  <text class="diag-sub" x="463" y="312" text-anchor="middle">observe &amp; refresh</text>
 </svg>

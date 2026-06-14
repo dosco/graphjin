@@ -1,9 +1,14 @@
 {{ $filename := .Get "filename" | default (.Get 0) | default "code" }}
 {{ $language := .Get "language" | default "" }}
+{{ $code := trim .Inner "\n" }}
 <figure class="home-code" data-code-block>
   <figcaption>
     <span>{{ $filename }}</span>
     <button class="copy-code-button" type="button" data-copy-code>Copy</button>
   </figcaption>
-  <pre><code{{ with $language }} class="language-{{ . }}"{{ end }}>{{ .Inner | strings.TrimSpace | htmlEscape }}</code></pre>
+  {{- if $language -}}
+    {{ transform.Highlight $code $language }}
+  {{- else -}}
+    <pre><code>{{ $code | htmlEscape }}</code></pre>
+  {{- end -}}
 </figure>

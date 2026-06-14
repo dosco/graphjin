@@ -1,0 +1,19 @@
+<svg viewBox="0 0 900 360" role="img" aria-label="One governed graph across data, files, APIs, and code" xmlns="http://www.w3.org/2000/svg">
+  <rect class="diag-bg" x="0" y="0" width="900" height="360" rx="16"/>
+  <rect class="diag-ring" x="28" y="28" width="844" height="304" rx="20"/>
+  <text class="diag-sub" x="450" y="52" text-anchor="middle">policy boundary · one config · within bounds</text>
+  <path class="diag-line" d="M390 158 L 236 124"/>
+  <path class="diag-line" d="M510 158 L 664 124"/>
+  <path class="diag-line" d="M390 216 L 236 240"/>
+  <path class="diag-line" d="M510 216 L 664 240"/>
+  <path class="diag-rel" d="M154 144 L 154 216"/>
+  <path class="diag-rel" d="M746 144 L 746 216"/>
+  <rect class="diag-node" x="74" y="84" width="160" height="60" rx="10"/><text class="diag-text" x="154" y="119" text-anchor="middle">Database</text>
+  <rect class="diag-node" x="666" y="84" width="160" height="60" rx="10"/><text class="diag-text" x="746" y="119" text-anchor="middle">Remote APIs</text>
+  <rect class="diag-node" x="74" y="216" width="160" height="60" rx="10"/><text class="diag-text" x="154" y="251" text-anchor="middle">Files</text>
+  <rect class="diag-node" x="666" y="216" width="160" height="60" rx="10"/><text class="diag-text" x="746" y="251" text-anchor="middle">Source code</text>
+  <rect class="diag-node-accent" x="360" y="146" width="180" height="84" rx="14"/>
+  <text class="diag-text" x="450" y="182" text-anchor="middle">GraphJin</text>
+  <text class="diag-sub" x="450" y="206" text-anchor="middle">one graph · GraphQL · MCP</text>
+  <text class="diag-sub" x="450" y="312" text-anchor="middle">data · files · APIs · code — and the relationships across them</text>
+</svg>

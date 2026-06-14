@@ -1,0 +1,19 @@
+<svg viewBox="0 0 900 360" role="img" aria-label="An AI agent guessing at disconnected systems" xmlns="http://www.w3.org/2000/svg">
+  <rect class="diag-bg" x="0" y="0" width="900" height="360" rx="16"/>
+  <rect class="diag-node-accent" x="46" y="130" width="190" height="100" rx="12"/>
+  <text class="diag-text" x="141" y="170" text-anchor="middle">AI agent</text>
+  <text class="diag-sub" x="141" y="194" text-anchor="middle">works from memory</text>
+  <text class="diag-sub" x="141" y="252" text-anchor="middle">no map · no guardrails</text>
+  <path class="diag-broken" d="M236 156 C 360 110, 440 84, 556 74"/>
+  <path class="diag-broken" d="M236 172 C 380 168, 470 150, 686 138"/>
+  <path class="diag-broken" d="M236 188 C 360 214, 440 240, 556 244"/>
+  <path class="diag-broken" d="M236 204 C 400 262, 540 300, 686 306"/>
+  <text class="diag-warn" x="372" y="106" text-anchor="middle">?</text>
+  <text class="diag-warn" x="452" y="150" text-anchor="middle">?</text>
+  <text class="diag-warn" x="392" y="246" text-anchor="middle">?</text>
+  <text class="diag-warn" x="474" y="298" text-anchor="middle">?</text>
+  <rect class="diag-node" x="556" y="46" width="150" height="58" rx="10"/><text class="diag-text" x="631" y="80" text-anchor="middle">Database</text>
+  <rect class="diag-node" x="686" y="110" width="160" height="58" rx="10"/><text class="diag-text" x="766" y="144" text-anchor="middle">Remote APIs</text>
+  <rect class="diag-node" x="556" y="216" width="150" height="58" rx="10"/><text class="diag-text" x="631" y="250" text-anchor="middle">Files</text>
+  <rect class="diag-node" x="686" y="278" width="160" height="58" rx="10"/><text class="diag-text" x="766" y="312" text-anchor="middle">Source code</text>
+</svg>
