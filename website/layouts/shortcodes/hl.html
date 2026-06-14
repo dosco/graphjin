@@ -1,0 +1,2 @@
+{{- $lang := .Get 0 | default "graphql" -}}
+{{- transform.Highlight (trim .Inner "\n") $lang -}}
