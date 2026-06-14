@@ -1,0 +1,8 @@
+{{ $by := .Get "by" }}
+{{ $file := .Get "file" }}
+{{ $line := .Get "line" }}
+<div class="verified-by">
+  <span>Verified by</span>
+  <code>{{ $by }}</code>
+  {{ with $file }}<small>{{ . }}{{ with $line }}:{{ . }}{{ end }}</small>{{ end }}
+</div>

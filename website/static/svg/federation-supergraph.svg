@@ -1,0 +1,9 @@
+<svg viewBox="0 0 860 300" role="img" aria-label="Apollo Federation v2 supergraph integration" xmlns="http://www.w3.org/2000/svg">
+  <rect class="diag-bg" width="860" height="300" rx="16"/>
+  <rect class="diag-node" x="42" y="74" width="158" height="76" rx="10"/><text class="diag-text" x="121" y="108" text-anchor="middle">Database schema</text><text class="diag-sub" x="121" y="130" text-anchor="middle">PKs · relations</text>
+  <rect class="diag-node-accent" x="278" y="58" width="196" height="108" rx="12"/><text class="diag-text" x="376" y="98" text-anchor="middle">GraphJin SDL</text><text class="diag-sub" x="376" y="122" text-anchor="middle">@key · @shareable</text><text class="diag-sub" x="376" y="142" text-anchor="middle">_service { sdl }</text>
+  <rect class="diag-node" x="552" y="74" width="132" height="76" rx="10"/><text class="diag-text" x="618" y="108" text-anchor="middle">Router</text><text class="diag-sub" x="618" y="130" text-anchor="middle">supergraph</text>
+  <rect class="diag-node" x="732" y="74" width="88" height="76" rx="10"/><text class="diag-text" x="776" y="108" text-anchor="middle">Apps</text>
+  <path class="diag-line" d="M200 112H278"/><path class="diag-line" d="M474 112H552"/><path class="diag-line" d="M684 112H732"/>
+  <rect class="diag-node" x="166" y="214" width="528" height="44" rx="10"/><text class="diag-sub" x="430" y="241" text-anchor="middle">Use GraphJin as the database-backed subgraph without hand-writing resolver glue.</text>
+</svg>

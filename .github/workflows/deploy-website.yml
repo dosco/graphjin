@@ -32,6 +32,12 @@ jobs:
           cache: npm
           cache-dependency-path: website/package-lock.json
 
+      - name: Setup Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: "0.162.1"
+          extended: true
+
       - name: Setup Pages
         uses: actions/configure-pages@v6
 
@@ -39,14 +45,18 @@ jobs:
         working-directory: website
         run: npm ci
 
-      - name: Build website
+      - name: Build website and search index
         working-directory: website
         run: npm run build
+
+      - name: Check generated site
+        working-directory: website
+        run: npm run check
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: website/dist
+          path: website/public
 
   deploy:
     name: Deploy to GitHub Pages

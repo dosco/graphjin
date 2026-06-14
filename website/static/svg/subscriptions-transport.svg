@@ -1,0 +1,9 @@
+<svg viewBox="0 0 860 300" role="img" aria-label="Subscription transports" xmlns="http://www.w3.org/2000/svg">
+  <rect class="diag-bg" width="860" height="300" rx="16"/>
+  <rect class="diag-node" x="42" y="72" width="160" height="72" rx="10"/><text class="diag-text" x="122" y="106" text-anchor="middle">Client</text><text class="diag-sub" x="122" y="128" text-anchor="middle">WebSocket or SSE</text>
+  <rect class="diag-node-accent" x="278" y="54" width="210" height="108" rx="12"/><text class="diag-text" x="383" y="94" text-anchor="middle">Subscription query</text><text class="diag-sub" x="383" y="118" text-anchor="middle">same GraphQL compiler</text><text class="diag-sub" x="383" y="138" text-anchor="middle">encrypted cursors</text>
+  <rect class="diag-node" x="566" y="72" width="110" height="72" rx="10"/><text class="diag-text" x="621" y="106" text-anchor="middle">Poll</text><text class="diag-sub" x="621" y="128" text-anchor="middle">delta loop</text>
+  <rect class="diag-node" x="728" y="72" width="92" height="72" rx="10"/><text class="diag-text" x="774" y="106" text-anchor="middle">DB</text>
+  <path class="diag-line" d="M202 108H278"/><path class="diag-line" d="M488 108H566"/><path class="diag-line" d="M676 108H728"/>
+  <rect class="diag-node" x="160" y="214" width="540" height="44" rx="10"/><text class="diag-sub" x="430" y="241" text-anchor="middle">Production auth, roles, saved query rules, and cursor encryption apply to subscriptions too.</text>
+</svg>

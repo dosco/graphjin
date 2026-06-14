@@ -1,26 +1,17 @@
 {
-  "name": "site",
+  "name": "graphjin-site",
+  "version": "1.0.0",
+  "private": true,
   "type": "module",
-  "version": "0.0.1",
   "scripts": {
     "sync:install-script": "node ./scripts/sync-install-script.mjs",
-    "dev": "npm run sync:install-script && astro dev",
-    "build": "npm run sync:install-script && astro build",
-    "preview": "astro preview",
-    "astro": "astro"
+    "dev": "npm run sync:install-script && hugo server --bind 127.0.0.1 --port 1313 --disableFastRender",
+    "hugo": "hugo --gc --minify --printPathWarnings",
+    "index": "pagefind --site public --output-path public/pagefind --include-characters '@/._-+#'",
+    "build": "npm run sync:install-script && npm run hugo && npm run index",
+    "check": "node ./scripts/check-site.mjs"
   },
-  "dependencies": {
-    "@astrojs/react": "^5.0.2",
-    "@tailwindcss/vite": "^4.1.18",
-    "@types/react": "^19.2.10",
-    "@types/react-dom": "^19.2.3",
-    "astro": "^6.1.1",
-    "clsx": "^2.1.1",
-    "framer-motion": "^12.29.2",
-    "lucide-react": "^0.563.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "tailwind-merge": "^3.4.0",
-    "tailwindcss": "^4.1.18"
+  "devDependencies": {
+    "pagefind": "^1.5.2"
   }
 }

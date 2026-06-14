@@ -1,0 +1,18 @@
+{{ define "main" }}
+  <article class="doc-article">
+    <header class="doc-header">
+      <p class="doc-kicker">{{ .Params.nav_group | default .Section | humanize }}</p>
+      <h1>{{ .Title }}</h1>
+      {{ with .Description }}<p>{{ . }}</p>{{ end }}
+    </header>
+    {{ .Content }}
+    <div class="doc-card-grid">
+      {{ range .Pages.ByWeight }}
+        <a class="doc-card" href="{{ .RelPermalink }}">
+          <strong>{{ .Title }}</strong>
+          {{ with .Description }}<span>{{ . }}</span>{{ end }}
+        </a>
+      {{ end }}
+    </div>
+  </article>
+{{ end }}

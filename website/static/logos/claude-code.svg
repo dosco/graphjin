@@ -1,0 +1,8 @@
+<svg width="260" height="56" viewBox="0 0 260 56" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title>Claude Code</title>
+  <rect x="0.5" y="0.5" width="259" height="55" rx="10" fill="white" stroke="#111111"/>
+  <rect x="10" y="10" width="36" height="36" rx="7" fill="#111111"/>
+  <path d="M34 19.9C32.8 18.6 30.9 17.6 28.7 17.6C24.2 17.6 20.8 20.9 20.8 25.7V30.3C20.8 35.1 24.2 38.4 28.7 38.4C30.9 38.4 32.8 37.4 34 36.1" stroke="white" stroke-width="2.6" stroke-linecap="round"/>
+  <text x="56" y="25" fill="#111111" font-size="13" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-weight="700">CLAUDE</text>
+  <text x="56" y="40" fill="#111111" font-size="15" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-weight="800">CODE</text>
+</svg>
