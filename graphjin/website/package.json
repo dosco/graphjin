@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "sync:install-script": "node ./scripts/sync-install-script.mjs",
-    "dev": "npm run sync:install-script && hugo server --bind 127.0.0.1 --port 1313 --disableFastRender",
-    "hugo": "hugo --gc --minify --printPathWarnings",
+    "dev": "npm run sync:install-script && HUGO_CACHEDIR=$PWD/resources/_gen hugo server --bind 127.0.0.1 --port 1313 --disableFastRender",
+    "hugo": "HUGO_CACHEDIR=$PWD/resources/_gen hugo --gc --minify --printPathWarnings",
     "index": "pagefind --site public --output-path public/pagefind --include-characters '@/._-+#'",
     "build": "npm run sync:install-script && npm run hugo && npm run index",
     "check": "node ./scripts/check-site.mjs"
