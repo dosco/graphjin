@@ -1,0 +1,25 @@
+{{ $lang := .Type | default "text" }}
+{{ $labels := dict
+  "bash" "Shell"
+  "sh" "Shell"
+  "shell" "Shell"
+  "console" "Console"
+  "graphql" "GraphQL"
+  "sql" "SQL"
+  "json" "JSON"
+  "yaml" "YAML"
+  "yml" "YAML"
+  "go" "Go"
+  "javascript" "JavaScript"
+  "js" "JavaScript"
+  "toml" "TOML"
+}}
+{{ $label := or (index $labels $lang) $lang }}
+{{ $highlighted := transform.HighlightCodeBlock . }}
+<figure class="code-block" data-code-block>
+  <figcaption class="code-block-header">
+    <span class="code-block-lang">{{ $label }}</span>
+    <button class="copy-code-button" type="button" aria-label="Copy code block" data-copy-code data-pagefind-ignore>Copy</button>
+  </figcaption>
+  <div class="code-block-body">{{ $highlighted.Wrapped }}</div>
+</figure>

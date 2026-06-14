@@ -1,0 +1,6 @@
+{{ with .Params.summary_label }}<p class="doc-kicker">{{ . }}</p>{{ end }}
+<header class="doc-header">
+  <h1>{{ .Title }}</h1>
+  {{ with .Description }}<p>{{ . }}</p>{{ end }}
+</header>
+{{ .Content }}

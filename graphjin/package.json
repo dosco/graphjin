@@ -9,7 +9,10 @@
     "./bin"
   ],
   "scripts": {
-    "postinstall": "node ./bin/install.js"
+    "postinstall": "node ./bin/install.js",
+    "website:dev": "npm --prefix website run dev",
+    "website:build": "npm --prefix website run build",
+    "website:index": "npm --prefix website run index"
   },
   "repository": {
     "type": "git",

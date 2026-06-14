@@ -1,0 +1,12 @@
+<svg width="260" height="56" viewBox="0 0 260 56" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title>OpenAI Codex</title>
+  <rect x="0.5" y="0.5" width="259" height="55" rx="10" fill="white" stroke="#111111"/>
+  <g transform="translate(10 10)">
+    <rect x="0" y="0" width="36" height="36" rx="7" fill="#111111"/>
+    <path d="M7 12L18 6.8L29 12V24L18 29.2L7 24V12Z" stroke="white" stroke-width="2.4"/>
+    <path d="M18 6.8V17.6L29 24" stroke="white" stroke-width="2.4"/>
+    <path d="M18 17.6L7 24" stroke="white" stroke-width="2.4"/>
+  </g>
+  <text x="56" y="25" fill="#111111" font-size="13" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-weight="700">OPENAI</text>
+  <text x="56" y="40" fill="#111111" font-size="15" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-weight="800">CODEX</text>
+</svg>

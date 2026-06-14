@@ -1,0 +1,62 @@
+---
+title: "Workflows"
+description: "Run named, policy-controlled workflow steps that can call GraphJin tools and GraphQL."
+nav_group: "agentic"
+doc_kind: "guide"
+weight: 50
+---
+
+## Named workflows
+
+Workflows let GraphJin expose reviewed operational procedures instead of letting agents improvise multi-step actions.
+
+```yaml
+sources:
+  - name: workflows
+    kind: workflow
+    path: ./workflows
+    runtime: javascript
+    capabilities:
+      workflow.execute: true
+      workflow.read: false
+      workflow.write: false
+```
+
+```bash
+graphjin workflow run nightly-report --vars report-vars.json
+```
+
+Workflows can call GraphJin tools and GraphQL when allowed by configuration. They respect declared variables, timeouts, context cancellation, and workflow execution policy.
+
+{{< verified by="TestRunNamedWorkflow_CanCallGJTools" file="serv/workflows_test.go" line="109" >}}
+{{< verified by="TestRunNamedWorkflow_CanExecuteGraphQLWhenAllowed" file="serv/workflows_test.go" line="142" >}}
+
+## GraphQL control-plane shape
+
+```graphql
+mutation RunWorkflow($vars: JSON!) {
+  gj_workflow_execution(insert: {
+    name: "nightly-report"
+    variables: $vars
+  }) {
+    id
+    status
+    output_json
+    error
+  }
+}
+```
+
+Workflow rows also appear in `gj_catalog`, so a model can inspect names, variable contracts, lifecycle metadata, and safety notes before execution.
+
+{{< verified by="TestQueryCatalogReturnsWorkflowCards" file="serv/mcp_catalog_workflow_test.go" line="15" >}}
+{{< verified by="TestGraphQLControlPlaneWorkflowLifecycle" file="serv/control_plane_graphql_test.go" line="307" >}}
+
+## Safety
+
+Use workflows for bounded operations that need a name, review trail, inputs, and clear failure behavior.
+
+Workflows should declare variables and timeouts. The runtime respects context cancellation and blocks workflow-management tools unless the caller/config explicitly allows them.
+
+{{< verified by="TestHandleExecuteWorkflow_RequiresDeclaredVariables" file="serv/workflows_test.go" line="216" >}}
+{{< verified by="TestRunNamedWorkflow_BlocksWorkflowMutationTools" file="serv/workflows_test.go" line="383" >}}

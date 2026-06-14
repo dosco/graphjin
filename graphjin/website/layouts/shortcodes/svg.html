@@ -1,0 +1,6 @@
+{{ $name := .Get 0 }}
+{{ $title := .Get 1 | default $name }}
+{{ $path := printf "static/svg/%s.svg" $name }}
+<figure class="diagram-wrap" aria-label="{{ $title }}">
+  {{ readFile $path | safeHTML }}
+</figure>

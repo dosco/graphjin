@@ -1,0 +1,36 @@
+- name: PostgreSQL
+  logo: postgresql.svg
+- name: MySQL
+  logo: mysql.svg
+- name: MariaDB
+  logo: mariadb.svg
+- name: MongoDB
+  logo: mongodb.svg
+- name: SQLite
+  logo: sqlite.svg
+- name: SQL Server
+  logo: mssql.svg
+- name: Oracle
+  logo: oracle.svg
+- name: CockroachDB
+  logo: cockroachdb.svg
+- name: YugabyteDB
+  logo: yugabytedb.svg
+- name: Snowflake
+  logo: snowflake.svg
+- name: Redshift
+  logo: redshift.svg
+- name: BigQuery
+  label: BQ
+- name: Cassandra / Keyspaces
+  label: C*
+- name: AWS Aurora
+  logo: aws-aurora.svg
+- name: Cloud SQL
+  logo: google-cloud-sql.svg
+- name: HTTP APIs
+  label: API
+- name: S3 / GCS / Files
+  label: OBJ
+- name: Code
+  label: "{ }"

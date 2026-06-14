@@ -1,0 +1,21 @@
+{{ $current := .RelPermalink }}
+{{ $groups := slice
+  (dict "id" "start" "title" "Start")
+  (dict "id" "story" "title" "Story")
+  (dict "id" "core" "title" "Core")
+  (dict "id" "integrations" "title" "Integrations")
+  (dict "id" "agentic" "title" "Agentic")
+  (dict "id" "configure" "title" "Configure")
+  (dict "id" "reference" "title" "Reference")
+}}
+{{ range $groups }}
+  {{ $pages := sort (where $.Site.RegularPages "Params.nav_group" .id) "Weight" }}
+  {{ if $pages }}
+    <div class="side-section">
+      <div class="side-title">{{ .title }}</div>
+      {{ range $pages }}
+        <a href="{{ .RelPermalink }}"{{ if eq .RelPermalink $current }} class="active" aria-current="page"{{ end }}>{{ .Title }}</a>
+      {{ end }}
+    </div>
+  {{ end }}
+{{ end }}

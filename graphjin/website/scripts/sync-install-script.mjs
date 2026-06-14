@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..');
 const source = resolve(repoRoot, 'install.sh');
-const destination = resolve(repoRoot, 'website', 'public', 'install.sh');
+const destination = resolve(repoRoot, 'website', 'static', 'install.sh');
 
 copyFileSync(source, destination);
 chmodSync(destination, 0o755);

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} | {{ .Site.Title }}{{ end }}</title>
+    {{ $description := .Description | default .Site.Params.description }}
+    <meta name="description" content="{{ $description }}">
+    <script>
+      (() => {
+        try {
+          const mode = localStorage.getItem("graphjin-theme") || "auto";
+          if (mode !== "auto") document.documentElement.dataset.theme = mode;
+        } catch {}
+      })();
+    </script>
+    {{ $assetVersion := partialCached "asset-version.html" . | strings.TrimSpace }}
+    <link rel="stylesheet" href="{{ "css/site.css" | relURL }}?v={{ $assetVersion }}">
+    <script src="{{ "js/site.js" | relURL }}?v={{ $assetVersion }}" defer></script>
+  </head>
+  {{ $bodyClass := "site-body" }}
+  {{ if .IsHome }}{{ $bodyClass = printf "%s is-home" $bodyClass }}{{ end }}
+  <body class="{{ $bodyClass }}">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    {{ $section := .Params.nav_group | default .Section | default "home" }}
+    {{ $kind := .Params.doc_kind | default $section }}
+    {{ $slug := strings.TrimPrefix "/" (strings.TrimSuffix "/" .RelPermalink) }}
+    {{ if not $slug }}{{ $slug = "home" }}{{ end }}
+    {{ $source := "" }}
+    {{ with .File }}{{ $source = .Path }}{{ end }}
+    {{ if not $source }}{{ $source = .RelPermalink }}{{ end }}
+    <div class="search-index-metadata" data-pagefind-ignore>
+      <span data-pagefind-meta="title">{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }}{{ end }}</span>
+      <span data-pagefind-meta="description">{{ $description }}</span>
+      <span data-pagefind-meta="section" data-pagefind-filter="section">{{ $section }}</span>
+      <span data-pagefind-meta="kind" data-pagefind-filter="kind">{{ $kind }}</span>
+      <span data-pagefind-meta="slug" data-pagefind-filter="slug">{{ $slug }}</span>
+      <span data-pagefind-meta="source" data-pagefind-filter="source">{{ $source }}</span>
+    </div>
+
+    {{ $sectionLinks := slice
+      (dict "label" "Start" "href" "/start/install/" "active" (eq $section "start"))
+      (dict "label" "Core" "href" "/core/compiler/" "active" (eq $section "core"))
+      (dict "label" "Integrations" "href" "/integrations/multi-database/" "active" (eq $section "integrations"))
+      (dict "label" "Agentic" "href" "/agentic/mcp/" "active" (eq $section "agentic"))
+      (dict "label" "Configure" "href" "/configure/sources-mode/" "active" (eq $section "configure"))
+      (dict "label" "Reference" "href" "/reference/database-support/" "active" (eq $section "reference"))
+    }}
+
+    <header class="site-header" data-pagefind-ignore>
+      <div class="header-main">
+        <a class="brand" href="{{ "/" | relURL }}" aria-label="GraphJin home">
+          <span class="brand-name">GraphJin</span>
+        </a>
+
+        <div class="site-search" data-site-search>
+          <label class="sr-only" for="site-search-input">Search documentation</label>
+          <div class="search-field">
+            <input id="site-search-input" class="search-input" type="search" placeholder="Search docs" autocomplete="off" aria-autocomplete="list" aria-controls="site-search-results" aria-expanded="false" aria-activedescendant="" data-search-input>
+            <span class="search-shortcut" aria-hidden="true">/</span>
+          </div>
+          <div id="site-search-results" class="search-results" role="listbox" aria-label="Search results" data-search-results hidden></div>
+        </div>
+
+        <div class="top-controls">
+          {{ partial "github-link.html" . }}
+          {{ partial "theme-toggle.html" . }}
+        </div>
+
+        <details class="site-menu" data-site-menu>
+          <summary class="menu-toggle" aria-label="Menu">
+            <span class="menu-toggle-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+          </summary>
+          <div class="site-menu-panel">
+            <nav class="site-menu-links" aria-label="Documentation sections">
+              {{ range $sectionLinks }}
+                <a href="{{ .href | relURL }}"{{ if .active }} class="active" aria-current="page"{{ end }}>{{ .label }}</a>
+              {{ end }}
+            </nav>
+            <div class="site-menu-footer">
+              {{ partial "github-link.html" . }}
+              {{ partial "theme-toggle.html" . }}
+            </div>
+          </div>
+        </details>
+      </div>
+      <nav class="section-nav{{ if .IsHome }} section-nav-home{{ end }}" aria-label="Documentation sections">
+        {{ range $sectionLinks }}
+          <a href="{{ .href | relURL }}"{{ if .active }} class="active" aria-current="page"{{ end }}>{{ .label }}</a>
+        {{ end }}
+      </nav>
+    </header>
+
+    {{ if .IsHome }}
+      <main id="main-content" class="content content-home" data-pagefind-body>
+        {{ block "main" . }}{{ end }}
+      </main>
+    {{ else }}
+      {{ $tocEnabled := ne .Params.toc false }}
+      {{ $h2Count := len (findRE `<h2\b` .Content) }}
+      {{ $showToc := and $tocEnabled (ge $h2Count 2) (in .TableOfContents "<ul>") }}
+      <div class="page-shell{{ if $showToc }} has-toc{{ end }}">
+        <main id="main-content" class="content" data-pagefind-body>
+          {{ block "main" . }}{{ end }}
+        </main>
+        <details class="mobile-docs-nav" data-mobile-docs data-pagefind-ignore>
+          <summary>Docs</summary>
+          <div class="mobile-docs-panel">{{ partial "side-nav.html" . }}</div>
+        </details>
+        <aside class="side-nav" aria-label="Documentation navigation" data-pagefind-ignore>
+          {{ partial "side-nav.html" . }}
+        </aside>
+        {{ if $showToc }}
+          <aside class="toc-nav" aria-label="On this page" data-pagefind-ignore>
+            {{ partial "page-toc.html" . }}
+          </aside>
+        {{ end }}
+      </div>
+    {{ end }}
+  </body>
+</html>
