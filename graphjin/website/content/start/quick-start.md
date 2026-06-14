@@ -26,6 +26,22 @@ Then start the service:
 graphjin serve
 ```
 
+## Open the Web UI
+
+Open [http://localhost:8080/](http://localhost:8080/) after the service starts. The Runtime view is a quick visual check that GraphJin discovered the configured sources and is serving the built-in system roots.
+
+<figure class="doc-screenshot">
+  <img src="/assets/webui-runtime-overview.webp" alt="GraphJin Web UI Runtime view showing ready sources, table count, catalog readiness, and security posture." loading="lazy">
+  <figcaption>The Web UI is served by GraphJin itself and reads from the same runtime, catalog, and security GraphQL roots.</figcaption>
+</figure>
+
+Use the Workbench at [http://localhost:8080/workbench](http://localhost:8080/workbench) to try queries interactively. It sends requests to the same `/api/v1/graphql` endpoint that applications and command-line smoke tests use.
+
+<figure class="doc-screenshot">
+  <img src="/assets/webui-workbench-query.webp" alt="GraphJin Web UI Workbench running a products query and showing JSON results." loading="lazy">
+  <figcaption>Workbench is useful for exploring the schema and result shape before you copy the same query into an API call.</figcaption>
+</figure>
+
 ## First query
 
 GraphJin discovers tables and relationships, then compiles GraphQL into database work.
@@ -48,6 +64,8 @@ The response shape follows the GraphQL selection. There are no user-written reso
 {{< verified by="Example_query" file="tests/query_test.go" line="18" >}}
 
 ## Call the endpoint
+
+Keep a raw endpoint call in your smoke test even if you used the Workbench. This verifies the HTTP API path your application or integration will call.
 
 ```bash
 curl http://localhost:8080/api/v1/graphql \
