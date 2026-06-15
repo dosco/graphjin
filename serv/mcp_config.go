@@ -3621,6 +3621,26 @@ func (ms *mcpServer) saveConfigToDisk() error {
 	// Sync current config state to viper
 	ms.syncConfigToViper(v)
 
+	// In sources mode the viper tree still carries defaulted legacy keys
+	// (database/metadata/catalog/filesystems/openapi) that were never on
+	// disk. WriteConfig would serialize them and the next reload rejects
+	// them via validateIsSourcesUsed. Write a sanitized copy instead.
+	if ms.service.conf.Core.IsSourcesUsed() {
+		settings := v.AllSettings()
+		for _, k := range []string{"database", "databases", "metadata", "catalog", "filesystems", "openapi", "openapi_specs_dir"} {
+			delete(settings, k)
+		}
+		nv := viper.New()
+		nv.SetConfigFile(v.ConfigFileUsed())
+		if err := nv.MergeConfigMap(settings); err != nil {
+			return fmt.Errorf("failed to stage sanitized config: %w", err)
+		}
+		if err := nv.WriteConfig(); err != nil {
+			return fmt.Errorf("failed to write config: %w", err)
+		}
+		return nil
+	}
+
 	// Write the config file
 	if err := v.WriteConfig(); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
