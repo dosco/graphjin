@@ -723,10 +723,10 @@ func scanDiscoveredColumnRows(rows *sql.Rows, dbtype string, blockList []string,
 
 		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake" || dbtype == "bigquery" || dbtype == "redshift" {
 			c.Name = util.ToSnake(c.Name)
-			c.Table = strings.ToLower(c.Table)
+			c.Table = util.ToSnake(c.Table)
 			c.Schema = strings.ToLower(c.Schema)
 			c.Type = strings.ToLower(c.Type)
-			c.FKeyTable = strings.ToLower(c.FKeyTable)
+			c.FKeyTable = util.ToSnake(c.FKeyTable)
 			c.FKeySchema = strings.ToLower(c.FKeySchema)
 			c.FKeyCol = util.ToSnake(c.FKeyCol)
 		}
@@ -1354,9 +1354,9 @@ func discoverCompositeFKsCSV(ctx context.Context, db *sql.DB, dbtype, query stri
 
 		if normalize {
 			info.Schema = strings.ToLower(info.Schema)
-			info.Table = strings.ToLower(info.Table)
+			info.Table = util.ToSnake(info.Table)
 			info.FKeySchema = strings.ToLower(info.FKeySchema)
-			info.FKeyTable = strings.ToLower(info.FKeyTable)
+			info.FKeyTable = util.ToSnake(info.FKeyTable)
 			for i := range info.LocalCols {
 				info.LocalCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.LocalCols[i])))
 			}
@@ -1563,9 +1563,9 @@ func discoverSnowflakeCompositeFKsViaShow(ctx context.Context, db *sql.DB) ([]Co
 		info.LocalCols = strings.Split(localCSV, ",")
 		info.FKeyCols = strings.Split(fkeyCSV, ",")
 		info.Schema = strings.ToLower(info.Schema)
-		info.Table = strings.ToLower(info.Table)
+		info.Table = util.ToSnake(info.Table)
 		info.FKeySchema = strings.ToLower(info.FKeySchema)
-		info.FKeyTable = strings.ToLower(info.FKeyTable)
+		info.FKeyTable = util.ToSnake(info.FKeyTable)
 		for i := range info.LocalCols {
 			info.LocalCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.LocalCols[i])))
 		}
