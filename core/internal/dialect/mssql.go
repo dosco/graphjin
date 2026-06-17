@@ -32,13 +32,15 @@ import (
 //   - Transaction support
 //   - Inline bulk inserts
 //
+// # Requirements
+//
+// Targets SQL Server 2017+ and database COMPATIBILITY_LEVEL >= 130. The
+// OPENJSON-based paths (variable inserts, variable IN filters, JSON array
+// columns) fail with a parser error on lower compatibility levels.
+//
 // # Known Limitations
 //
 // The following features are not yet fully implemented for MSSQL:
-//
-// ## Nested/Related Table Mutations
-// Mutations involving related tables fail with "t.id could not be bound".
-// The table alias reference pattern used for nested inserts needs MSSQL-specific handling.
 //
 // ## Functions
 // Table-returning functions and field functions are not discovered from schema.
@@ -47,10 +49,6 @@ import (
 // ## Array Columns
 // MSSQL does not have native array column support like PostgreSQL.
 // WHERE IN with array columns fails.
-//
-// ## Cursor Pagination
-// Cursor pagination fails with "Invalid object name '__cur'".
-// The cursor CTE implementation needs MSSQL-specific syntax.
 //
 // ## Subscriptions
 // Real-time subscriptions are not yet implemented for MSSQL.
@@ -68,9 +66,6 @@ import (
 //
 // ## Polymorphic Relationships (Unions)
 // Union type queries are not yet fully working.
-//
-// ## Variable LIMIT
-// Dynamic LIMIT from variables may not apply correctly.
 //
 // ## Skip/Include Directives
 // Some skip/include directive patterns fail.
@@ -1044,6 +1039,12 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 				}
 			}
 
+			// Apply child paging (OFFSET/FETCH); RenderLimit adds the
+			// ORDER BY (SELECT NULL) fallback MSSQL requires when none is set.
+			if sel.Paging.Limit != 0 || sel.Paging.LimitVar != "" {
+				r.RenderLimit(sel)
+			}
+
 			ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')`)
 		}
 	} else {
@@ -1083,7 +1084,7 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 				}
 				// Render ORDER BY and OFFSET/FETCH inside the subquery
 				d.renderOrderBy(ctx, r, sel, "")
-				if sel.Paging.Limit != 0 {
+				if sel.Paging.Limit != 0 || sel.Paging.LimitVar != "" {
 					r.RenderLimit(sel)
 				}
 				ctx.WriteString(`) AS __rows)`)
@@ -1125,7 +1126,7 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 				}
 				d.renderGroupBy(ctx, r, sel)
 				d.renderOrderBy(ctx, r, sel, "")
-				if sel.Paging.Limit != 0 {
+				if sel.Paging.Limit != 0 || sel.Paging.LimitVar != "" {
 					r.RenderLimit(sel)
 				}
 				ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')) AS [json], `)
@@ -1218,7 +1219,7 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 				d.renderOrderBy(ctx, r, sel, "")
 
 				// Render OFFSET/FETCH
-				if sel.Paging.Limit != 0 {
+				if sel.Paging.Limit != 0 || sel.Paging.LimitVar != "" {
 					r.RenderLimit(sel)
 				}
 
