@@ -16,6 +16,7 @@ This document provides a comprehensive reference for all GraphJin configuration 
 - [Security & Admin Configuration](#security--admin-configuration)
 - [Rate Limiting](#rate-limiting)
 - [MCP Configuration](#mcp-configuration)
+- [Agent Configuration](#agent-configuration)
 - [Redis Configuration](#redis-configuration)
 - [Caching Configuration](#caching-configuration)
 - [Uploads Configuration](#uploads-configuration)
@@ -1050,6 +1051,37 @@ mcp:
     enabled: false
     mode: external
     scopes: ["mcp"]
+```
+
+---
+
+## Agent Configuration
+
+The optional server-side GraphJin agent uses Ax Go to do catalog-first discovery,
+safe saved-query execution, and typed answer synthesis. When enabled, it is
+available at `POST /api/v1/agent` and as the MCP tool `ask_graphjin_agent`.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `agent.enabled` | boolean | `false` | Enable the REST endpoint and MCP tool |
+| `agent.provider` | string | `openai` | Ax provider profile passed to `NewAI` |
+| `agent.model` | string | - | Optional model override |
+| `agent.api_key_env` | string | `OPENAI_API_KEY` | Environment variable containing the provider API key |
+| `agent.base_url` | string | - | Optional OpenAI-compatible provider base URL |
+| `agent.max_steps` | integer | `8` | Maximum Ax actor steps per request |
+| `agent.timeout_seconds` | integer | `30` | Request timeout for agent runs |
+| `agent.allow_raw_graphql` | boolean | `false` | Expose raw GraphQL to the agent only when `mcp.allow_raw_queries` is also true |
+| `agent.return_trace` | boolean | `false` | Include Ax action and trace data in responses |
+
+```yaml
+agent:
+  enabled: true
+  provider: openai
+  api_key_env: OPENAI_API_KEY
+  model: gpt-4.1-mini
+  max_steps: 8
+  timeout_seconds: 30
+  allow_raw_graphql: false
 ```
 
 ---

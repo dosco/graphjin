@@ -8,6 +8,7 @@ import (
 
 const (
 	routeGraphQL   = "/api/v1/graphql"
+	routeAgent     = "/api/v1/agent"
 	routeREST      = "/api/v1/rest/"
 	routeWorkflows = "/api/v1/workflows/"
 	routeOpenAPI   = "/api/v1/openapi.json"
@@ -51,6 +52,9 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		// GraphQL / REST API
 		if ns == nil {
 			mux.Handle(routeGraphQL, s1.GraphQL(ah))
+			if s.conf.agentEnabled() {
+				mux.Handle(routeAgent, s1.Agent(ah))
+			}
 			mux.Handle(routeREST, s1.REST(ah))
 			if s.conf.legacyDiscoveryEnabled() {
 				mux.Handle(routeWorkflows, s1.Workflows(ah))
@@ -58,6 +62,9 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			mux.Handle(routeOpenAPI, apiV1Handler(s1, nil, s1.OpenAPI(), ah))
 		} else {
 			mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
+			if s.conf.agentEnabled() {
+				mux.Handle(routeAgent, s1.AgentWithNS(ah, *ns))
+			}
 			mux.Handle(routeREST, s1.RESTWithNS(ah, *ns))
 			if s.conf.legacyDiscoveryEnabled() {
 				mux.Handle(routeWorkflows, s1.WorkflowsWithNS(ah, *ns))

@@ -541,6 +541,7 @@ func TestIsMutation(t *testing.T) {
 		{"# comment\nmutation { createUser { id } }", true},
 		{"# line1\n# line2\nmutation { createUser { id } }", true},
 		{"# comment\n  mutation { createUser { id } }", true},
+		{"fragment userBits on users { id }\nmutation CreateUser { users(insert: { id: 1 }) { id } }", true},
 		{"# comment\nquery { users { id } }", false},
 
 		// Case-insensitive
@@ -551,6 +552,11 @@ func TestIsMutation(t *testing.T) {
 		{"{ users { id } }", false},
 		{"query { users { id } }", false},
 		{"query GetUsers { users { id } }", false},
+		{"query GetUsers($input: MutationInput) { users { id } }", false},
+		{"query mutation { users { id } }", false},
+		{`query { logs(where: { message: { eq: "mutation { unsafe }" } }) { id } }`, false},
+		{"query { logs(where: { message: { eq: \"\"\"mutation { unsafe }\"\"\" } }) { id } }", false},
+		{"fragment userBits on Mutation { id }\nquery { users { id } }", false},
 		{"{ mutation_field { id } }", false}, // field named mutation_field is a query
 		{"", false},
 		{"  ", false},

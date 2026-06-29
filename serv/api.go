@@ -778,6 +778,9 @@ func (s *HttpService) Reload() error {
 
 // spanStart starts the tracer
 func (s *graphjinService) spanStart(c context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	if s.tracer == nil {
+		return otel.Tracer("graphjin").Start(c, name, opts...)
+	}
 	return s.tracer.Start(c, name, opts...)
 }
 

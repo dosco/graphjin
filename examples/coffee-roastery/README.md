@@ -84,6 +84,44 @@ curl -sS http://localhost:8080/api/v1/graphql \
   --data '{"query":"mutation { gj_workflow_execution(insert: { workflow_name: \"daily_roast_plan\", variables: { orders: [], schedule: [], subscriptions: [] } }) { workflow_name status result_json error duration_ms } }"}'
 ```
 
+## Command-Line Smoke Suite
+
+Run the packaged smoke suite from a second terminal while the demo server is running:
+
+```bash
+examples/coffee-roastery/scripts/smoke.sh
+```
+
+The script checks the connected demo surface end-to-end:
+
+- Direct GraphQL across `ops`, `roast_warehouse`, `business_code`, and `graphjin`.
+- Saved-query REST endpoints for `daily_roast_context`, `batch_quality_snapshot`, and `customer_issue_context`.
+- Workflow execution for `daily_roast_plan`, `batch_quality_review`, and `customer_issue_triage`.
+- MCP discovery through `query_catalog` for saved queries, workflows, and CodeSQL context.
+
+The live Ax agent checks are optional. Start the demo with the agent enabled and an exported provider key:
+
+```bash
+export GOOGLE_APIKEY=...
+GO_ENV=agentic GJ_AGENT_ENABLED=true graphjin serve --demo --path examples/coffee-roastery
+```
+
+Then run:
+
+```bash
+examples/coffee-roastery/scripts/smoke.sh --agent
+```
+
+For stricter open-ended protocol checks, run:
+
+```bash
+examples/coffee-roastery/scripts/smoke.sh --agent-eval
+```
+
+The eval mode checks that the agent discovers catalog evidence, inspects saved-query details before execution, avoids raw GraphQL in safe mode, and blocks with evidence when the narrow safe surface cannot perform the requested action.
+
+The smoke script defaults to `http://localhost:8080`. Use `--url` or `GRAPHJIN_URL` when running on another port.
+
 ## Repository Tests
 
 Focused demo checks:

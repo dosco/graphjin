@@ -34,4 +34,7 @@ func TestAgenticConfigDocsTemplate(t *testing.T) {
 	if !strings.Contains(agenticConfigTemplate, "runtime.read: true") {
 		t.Fatalf("agentic docs template should allow runtime observability:\n%s", agenticConfigTemplate)
 	}
+	if !strings.Contains(agenticConfigTemplate, "\nagent:\n") || !strings.Contains(agenticConfigTemplate, "ask_graphjin_agent") {
+		t.Fatalf("agentic docs template should document the server-side agent:\n%s", agenticConfigTemplate)
+	}
 }
