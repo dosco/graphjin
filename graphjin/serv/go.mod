@@ -5,8 +5,9 @@ go 1.25.0
 require (
 	cloud.google.com/go/storage v1.62.1
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
-	github.com/coder/websocket v1.8.14
+	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
+	github.com/dosco/graphjin/agent/v3 v3.18.41
 	github.com/dosco/graphjin/auth/v3 v3.18.41
 	github.com/dosco/graphjin/cassandradriver v0.0.0
 	github.com/dosco/graphjin/clickhousedriver v0.0.0
@@ -45,10 +46,12 @@ require (
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
 	google.golang.org/api v0.278.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.44.3
 )
 
 replace (
+	github.com/dosco/graphjin/agent/v3 => ../agent
 	github.com/dosco/graphjin/auth/v3 => ../auth
 	github.com/dosco/graphjin/cassandradriver => ../cassandradriver
 	github.com/dosco/graphjin/clickhousedriver => ../clickhousedriver
@@ -160,6 +163,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0 // indirect
+	github.com/ax-llm/ax/packages/go v0.0.0-20260626082509-ec940f80b792 // indirect
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
@@ -222,5 +226,4 @@ require (
 	google.golang.org/grpc v1.80.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

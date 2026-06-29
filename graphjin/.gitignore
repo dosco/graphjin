@@ -71,3 +71,5 @@ cmd/cmd
 # Local WIP status files (never commit)
 snowflake-wip.md
 docs/DESIGN-OPENAPI-TOPLEVEL.md
+
+.env

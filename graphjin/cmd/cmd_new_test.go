@@ -40,6 +40,9 @@ func TestCmdNewWritesAgenticAndSourcesTemplates(t *testing.T) {
 	if !strings.Contains(string(agentic), "mode: agentic") {
 		t.Fatalf("agentic.yml missing mode: agentic:\n%s", string(agentic))
 	}
+	if !strings.Contains(string(agentic), "\nagent:\n") {
+		t.Fatalf("agentic.yml missing agent config block:\n%s", string(agentic))
+	}
 }
 
 func TestTemplatesDecodeAsConfig(t *testing.T) {

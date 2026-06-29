@@ -6,6 +6,14 @@ Use these prompts after starting the demo with:
 graphjin serve --demo --path examples/coffee-roastery
 ```
 
+To verify the same surfaces from the command line, run:
+
+```bash
+examples/coffee-roastery/scripts/smoke.sh
+```
+
+Run `examples/coffee-roastery/scripts/smoke.sh --agent` when the server-side agent is enabled. Use `--agent-eval` for stricter open-ended checks that assert catalog discovery, saved-query detail inspection, safe-mode raw GraphQL blocking, and evidence-shaped responses.
+
 ## Daily Roast Planner
 
 Find today's queued production orders, active subscriptions, available green coffee lots, and planned roast schedule. Decide whether the roast plan covers committed shipments and explain the next operational action.

@@ -52,6 +52,7 @@ var mcpGraphJinRoots = []string{
 var mcpToolRequiredRoots = map[string][]string{
 	"graphql_help":             {"gj_catalog"},
 	"query_catalog":            {"gj_catalog"},
+	"ask_graphjin_agent":       {"gj_catalog"},
 	"get_catalog_card":         {"gj_catalog"},
 	"get_catalog_entrypoints":  {"gj_catalog"},
 	"get_catalog_capabilities": {"gj_catalog"},

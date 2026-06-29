@@ -91,6 +91,44 @@ mode: agentic
 	}
 }
 
+func TestAgentConfigDefaultsAndOverrides(t *testing.T) {
+	conf, err := NewConfig(`
+agent:
+  enabled: true
+  provider: openai-compatible
+  model: local-model
+  api_key_env: GRAPHJIN_AGENT_KEY
+  base_url: http://127.0.0.1:11434/v1
+  max_steps: 3
+  timeout_seconds: 11
+  allow_raw_graphql: true
+  return_trace: true
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if !conf.Agent.Enabled || conf.Agent.Provider != "openai-compatible" || conf.Agent.Model != "local-model" {
+		t.Fatalf("agent provider config drift: %+v", conf.Agent)
+	}
+	if conf.Agent.APIKeyEnv != "GRAPHJIN_AGENT_KEY" || conf.Agent.BaseURL != "http://127.0.0.1:11434/v1" {
+		t.Fatalf("agent connection config drift: %+v", conf.Agent)
+	}
+	if conf.Agent.MaxSteps != 3 || conf.Agent.TimeoutSeconds != 11 || !conf.Agent.AllowRawGraphQL || !conf.Agent.ReturnTrace {
+		t.Fatalf("agent runtime config drift: %+v", conf.Agent)
+	}
+
+	defaults, err := NewConfig(``, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig defaults: %v", err)
+	}
+	if defaults.Agent.Enabled || defaults.Agent.Provider != "openai" || defaults.Agent.APIKeyEnv != "OPENAI_API_KEY" {
+		t.Fatalf("unexpected agent defaults: %+v", defaults.Agent)
+	}
+	if defaults.Agent.MaxSteps != 8 || defaults.Agent.TimeoutSeconds != 30 || defaults.Agent.AllowRawGraphQL || defaults.Agent.ReturnTrace {
+		t.Fatalf("unexpected agent runtime defaults: %+v", defaults.Agent)
+	}
+}
+
 func TestModeProdDisablesLegacyMCPByDefault(t *testing.T) {
 	conf, err := NewConfig(`
 mode: prod

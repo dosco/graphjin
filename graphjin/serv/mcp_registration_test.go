@@ -3,6 +3,8 @@ package serv
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"reflect"
 	"sort"
 	"strings"
@@ -22,6 +24,24 @@ func toolNamesFromServer(tools map[string]*server.ServerTool) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func TestMCPRequestCallsToolRestoresBodyAndStripsPrefix(t *testing.T) {
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"GraphJin:ask_graphjin_agent","arguments":{"instruction":"x"}}}`
+	req := &http.Request{
+		Method: http.MethodPost,
+		Body:   io.NopCloser(strings.NewReader(body)),
+	}
+	if !mcpRequestCallsTool(req, mcpToolAskGraphJinAgent) {
+		t.Fatal("expected request to call ask_graphjin_agent")
+	}
+	restored, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("read restored body: %v", err)
+	}
+	if string(restored) != body {
+		t.Fatalf("body was not restored: %s", restored)
+	}
 }
 
 func resourceURIsFromServer(t *testing.T, srv *server.MCPServer) map[string]bool {
@@ -288,6 +308,44 @@ func TestRegisterTools_CatalogDefaultHidesLegacyDiscovery(t *testing.T) {
 			t.Fatalf("%s should be hidden in sources-used default MCP registration", name)
 		}
 	}
+}
+
+func TestRegisterTools_AgentToolOptIn(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.Provider = "openai"
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerTools()
+
+	tools := ms.srv.ListTools()
+	if _, exists := tools[mcpToolAskGraphJinAgent]; !exists {
+		t.Fatalf("%s should be registered when agent.enabled=true", mcpToolAskGraphJinAgent)
+	}
+	if listed := mcpToolList(ms.service.conf); strings.Join(listed, ",") != "graphql_help,query_catalog,execute_saved_query,validate_where_clause,ask_graphjin_agent" {
+		t.Fatalf("unexpected mcpToolList with agent enabled: %v", listed)
+	}
+}
+
+func TestAgentConfigFromServiceRawGraphQLRequiresBothGates(t *testing.T) {
+	conf := &Config{Serv: Serv{Agent: AgentConfig{Enabled: true, AllowRawGraphQL: true}}}
+	if got := agentConfigFromService(conf); got.AllowRawGraphQL {
+		t.Fatal("agent raw GraphQL should stay disabled when mcp.allow_raw_queries=false")
+	}
+	conf.MCP.AllowRawQueries = true
+	if got := agentConfigFromService(conf); !got.AllowRawGraphQL {
+		t.Fatal("agent raw GraphQL should be enabled when both agent and MCP gates are true")
+	}
+}
+
+func TestHandleAskGraphJinAgentRequiresInstruction(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Agent.Enabled = true
+	ms.service.gj = &core.GraphJin{}
+	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{}))
+	if err != nil {
+		t.Fatalf("handleAskGraphJinAgent: %v", err)
+	}
+	assertToolError(t, res, "agent instruction is required")
 }
 
 func TestRegisterTools_SourcesUsedIgnoresLegacyDiscoveryFlag(t *testing.T) {

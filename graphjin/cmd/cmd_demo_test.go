@@ -232,6 +232,70 @@ func TestCoffeeRoasteryDemoConfigNormalizes(t *testing.T) {
 	}
 }
 
+func TestCoffeeRoasteryAgenticConfigDocumentsAgentSmokeDefaults(t *testing.T) {
+	cfg, err := serv.ReadInConfig("../examples/coffee-roastery/agentic")
+	if err != nil {
+		t.Fatalf("read coffee demo agentic config: %v", err)
+	}
+	if err := cfg.Core.NormalizeSources(); err != nil {
+		t.Fatalf("normalize coffee demo sources: %v", err)
+	}
+
+	if cfg.Agent.Enabled {
+		t.Fatal("demo agent should be disabled by default")
+	}
+	if got := cfg.Agent.Provider; got != "google-gemini" {
+		t.Fatalf("agent provider = %q, want google-gemini", got)
+	}
+	if got := cfg.Agent.APIKeyEnv; got != "GOOGLE_APIKEY" {
+		t.Fatalf("agent api key env = %q, want GOOGLE_APIKEY", got)
+	}
+	if got := cfg.Agent.Model; got != "gemini-3.1-flash-lite" {
+		t.Fatalf("agent model = %q, want gemini-3.1-flash-lite", got)
+	}
+	if got := cfg.Agent.MaxSteps; got != 10 {
+		t.Fatalf("agent max steps = %d, want 10", got)
+	}
+}
+
+func TestCoffeeRoasterySmokeScriptCoversConnectedAgenticSurfaces(t *testing.T) {
+	path := "../examples/coffee-roastery/scripts/smoke.sh"
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat smoke script: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Fatalf("smoke script should be executable, mode=%s", info.Mode())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read smoke script: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"customers",
+		"roast_batches",
+		"gj_code",
+		"business_code",
+		"gj_catalog",
+		"daily_roast_context",
+		"batch_quality_snapshot",
+		"customer_issue_context",
+		"gj_workflow_execution",
+		"daily_roast_plan",
+		"batch_quality_review",
+		"customer_issue_triage",
+		"query_catalog",
+		"ask_graphjin_agent",
+		"/api/v1/agent",
+		"--agent-eval",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("smoke script should cover %q", want)
+		}
+	}
+}
+
 func TestCoffeeRoasteryOpsDDLBootsMockDB(t *testing.T) {
 	data, err := os.ReadFile("../examples/coffee-roastery/schema-ddl/ops.ddl")
 	if err != nil {

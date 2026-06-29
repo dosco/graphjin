@@ -3,6 +3,7 @@ package serv
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -17,6 +18,7 @@ func newLegacySurfaceRouteHandler(t *testing.T, conf *Config) http.Handler {
 		conf: conf,
 		log:  logger.Sugar(),
 		zlog: logger,
+		gj:   &core.GraphJin{},
 	}
 	hs := &HttpService{}
 	hs.Store(svc)
@@ -89,6 +91,52 @@ func TestIsSourcesUsedMCPOnlyHidesLegacyRESTSurfaces(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for disabled MCP-only workflow REST surface, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAgentRouteRegistration(t *testing.T) {
+	handler := newLegacySurfaceRouteHandler(t, &Config{
+		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Serv: Serv{MCP: MCPConfig{Disable: true}, Agent: AgentConfig{Enabled: true}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{"instruction":"find customers"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code == http.StatusNotFound {
+		t.Fatalf("expected agent route to be registered when agent.enabled=true")
+	}
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing agent key to return 503, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{}`))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected empty instruction to return 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	disabled := newLegacySurfaceRouteHandler(t, &Config{
+		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Serv: Serv{MCP: MCPConfig{Disable: true}},
+	})
+	req = httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{"instruction":"find customers"}`))
+	rec = httptest.NewRecorder()
+	disabled.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected disabled agent route to be 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	mcpOnly := newLegacySurfaceRouteHandler(t, &Config{
+		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Serv: Serv{MCP: MCPConfig{Only: true, Disable: true}, Agent: AgentConfig{Enabled: true}},
+	})
+	req = httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{"instruction":"find customers"}`))
+	rec = httptest.NewRecorder()
+	mcpOnly.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected mcp.only to hide agent REST route, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

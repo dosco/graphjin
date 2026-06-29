@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
+	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -247,31 +247,7 @@ func (ms *mcpServer) handleExecuteWorkflow(ctx context.Context, req mcp.CallTool
 	return ms.toolResultJSON("execute_workflow", args, map[string]any{"data": out})
 }
 
-// isMutation checks if a query is a mutation (simple heuristic)
+// isMutation checks if a GraphQL document contains a mutation operation.
 func isMutation(query string) bool {
-	// Quick check - look for mutation keyword at the start, skipping whitespace and comments
-	i := 0
-	for i < len(query) {
-		c := query[i]
-		// Skip whitespace
-		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
-			i++
-			continue
-		}
-		// Skip # comment lines
-		if c == '#' {
-			for i < len(query) && query[i] != '\n' {
-				i++
-			}
-			continue
-		}
-		// Check if starts with "mutation" (case-insensitive)
-		if len(query) >= i+8 {
-			word := query[i : i+8]
-			return strings.EqualFold(word, "mutation")
-		}
-		// If it starts with anything else (or too short), it's a query
-		return false
-	}
-	return false
+	return gjagent.ContainsMutationOperation(query)
 }

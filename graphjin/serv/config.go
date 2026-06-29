@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/serv/v3/internal/util"
@@ -120,6 +121,9 @@ type Serv struct {
 
 	// MCP (Model Context Protocol) server configuration
 	MCP MCPConfig `mapstructure:"mcp" jsonschema:"title=MCP Configuration"`
+
+	// Server-side GraphJin discovery/answer agent configuration
+	Agent AgentConfig `mapstructure:"agent" jsonschema:"title=GraphJin Agent Configuration"`
 
 	// Local encrypted secrets configuration
 	Secrets SecretsConfig `mapstructure:"secrets" jsonschema:"title=Secrets"`
@@ -364,6 +368,8 @@ type MCPConfig struct {
 	// Workflows that exceed this duration are interrupted. Default: 5
 	WorkflowTimeout int `mapstructure:"workflow_timeout" jsonschema:"title=Workflow Timeout (seconds),default=5"`
 }
+
+type AgentConfig = gjagent.Config
 
 // MCPOAuthConfig configures standards-compatible OAuth discovery and token
 // handling for hosted MCP HTTP clients.
@@ -808,6 +814,15 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.oauth.client_id_metadata_documents", true)
 	vi.SetDefault("mcp.oauth.access_token_ttl", time.Hour)
 	vi.SetDefault("mcp.oauth.refresh_token_ttl", 720*time.Hour)
+
+	// Server-side agent defaults. The endpoint and MCP tool are opt-in.
+	vi.SetDefault("agent.enabled", false)
+	vi.SetDefault("agent.provider", "openai")
+	vi.SetDefault("agent.api_key_env", "OPENAI_API_KEY")
+	vi.SetDefault("agent.max_steps", 8)
+	vi.SetDefault("agent.timeout_seconds", 30)
+	vi.SetDefault("agent.allow_raw_graphql", false)
+	vi.SetDefault("agent.return_trace", false)
 
 	// Local encrypted keystore defaults.
 	vi.SetDefault("secrets.keystore.key", "")

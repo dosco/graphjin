@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -95,6 +96,9 @@ func mcpToolList(conf *Config) []string {
 		if conf.MCP.AllowRawQueries {
 			tools = append(tools, "execute_graphql")
 		}
+		if conf.agentEnabled() {
+			tools = append(tools, "ask_graphjin_agent")
+		}
 		return tools
 	}
 
@@ -169,6 +173,9 @@ func mcpToolList(conf *Config) []string {
 	}
 	if conf.MCP.AllowDevTools && conf.MCP.AllowConfigUpdates {
 		tools = append(tools, "apply_database_setup")
+	}
+	if conf.agentEnabled() {
+		tools = append(tools, "ask_graphjin_agent")
 	}
 
 	return tools
@@ -253,6 +260,7 @@ func (ms *mcpServer) registerTools() {
 		}
 		ms.registerExecutionTools()
 		ms.registerSchemaTools()
+		ms.registerAgentTools()
 		return
 	}
 
@@ -304,6 +312,7 @@ func (ms *mcpServer) registerTools() {
 	ms.registerDiscoverTools()
 	ms.registerHealthTools()
 	ms.registerOnboardingTools()
+	ms.registerAgentTools()
 }
 
 // isDBReadOnly checks the startup snapshot to determine if a database is read-only.
@@ -362,11 +371,7 @@ func (s *HttpService) MCPHandler() http.Handler {
 			return
 		}
 
-		// MCP tool calls (notably execute_workflow) can run JS for up to
-		// MCP.WorkflowTimeout seconds. The global http.Server WriteTimeout
-		// is 10s, so without this lift the connection would be killed long
-		// before any non-trivial workflow could send its response.
-		extendDeadlineForWorkflow(w, s1.conf)
+		extendDeadlineForMCPRequest(w, r, s1.conf)
 
 		// Use request context (may contain auth info from middleware)
 		mcpSrv := s1.newMCPServerWithContext(r.Context())
@@ -394,7 +399,7 @@ func (s *HttpService) MCPMessageHandler() http.Handler {
 		}
 
 		// See MCPHandler — same WriteTimeout extension applies here.
-		extendDeadlineForWorkflow(w, s1.conf)
+		extendDeadlineForMCPRequest(w, r, s1.conf)
 
 		// Use request context (may contain auth info from middleware)
 		mcpSrv := s1.newMCPServerWithContext(r.Context())
@@ -408,4 +413,40 @@ func (s *HttpService) MCPMessageHandler() http.Handler {
 // MCPMessageHandlerWithAuth returns an HTTP handler for MCP HTTP transport with authentication
 func (s *HttpService) MCPMessageHandlerWithAuth(ah auth.HandlerFunc) http.Handler {
 	return apiV1Handler(s, nil, s.MCPMessageHandler(), ah)
+}
+
+// extendDeadlineForMCPRequest lifts per-request deadlines for long-running MCP
+// tool calls. Workflow calls use mcp.workflow_timeout; ask_graphjin_agent can
+// run up to agent.timeout_seconds while waiting on an LLM provider.
+func extendDeadlineForMCPRequest(w http.ResponseWriter, r *http.Request, conf *Config) {
+	extendDeadlineForWorkflow(w, conf)
+	if conf != nil && conf.agentEnabled() && mcpRequestCallsTool(r, mcpToolAskGraphJinAgent) {
+		extendDeadlineForAgent(w, conf)
+	}
+}
+
+func mcpRequestCallsTool(r *http.Request, tool string) bool {
+	if r == nil || r.Body == nil || r.Method != http.MethodPost || strings.TrimSpace(tool) == "" {
+		return false
+	}
+	body, err := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+
+	var req struct {
+		Method string `json:"method"`
+		Params struct {
+			Name string `json:"name"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil || req.Method != "tools/call" {
+		return false
+	}
+	name := strings.TrimSpace(req.Params.Name)
+	if idx := strings.LastIndex(name, ":"); idx != -1 {
+		name = name[idx+1:]
+	}
+	return name == tool
 }
