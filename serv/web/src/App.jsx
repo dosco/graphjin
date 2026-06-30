@@ -14,6 +14,7 @@ import ConfigViewer from "./pages/ConfigViewer";
 
 const QueryEditor = lazy(() => import("./pages/QueryEditor"));
 const ApiDocs = lazy(() => import("./pages/ApiDocs"));
+const AgentChat = lazy(() => import("./pages/AgentChat"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,6 +35,7 @@ const App = () => {
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/workbench" element={<QueryEditor />} />
+                <Route path="/agent" element={<AgentChat />} />
                 <Route path="/catalog" element={<CatalogExplorer />} />
                 <Route path="/schema" element={<Navigate to="/catalog" replace />} />
                 <Route path="/queries" element={<Navigate to="/catalog" replace />} />

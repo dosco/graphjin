@@ -1,0 +1,5 @@
+query ConfigViewer {
+  current: gj_config(id: "current") {
+    id sources_used config_path active_database sources databases relationships tables roles blocklist functions resolvers mcp config_json redacted_paths updated_at catalog_revision
+  }
+}

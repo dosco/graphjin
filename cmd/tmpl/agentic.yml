@@ -45,7 +45,7 @@ agent:
   # model: gpt-4.1-mini
   # base_url: https://api.openai.com/v1
   max_steps: 8
-  timeout_seconds: 30
+  timeout_seconds: 50
   allow_raw_graphql: false
   return_trace: false
 

@@ -388,6 +388,7 @@ func workflowCatalogTestServer(t *testing.T, cfg MCPConfig, files map[string]str
 		tracer: otel.Tracer("graphjin-workflow-catalog-test"),
 		conf: &Config{
 			Core: core.Config{
+				Mode: "agentic",
 				Sources: []core.SourceConfig{
 					{Name: "graphjin", Kind: "graphjin"},
 					{Name: "workflows", Kind: "workflow"},

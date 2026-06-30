@@ -83,7 +83,7 @@ sources:
     kind: graphjin
     access:
       roots:
-        gj_catalog: authenticated
+        gj_catalog: public
         gj_artifacts: account
         gj_workflow: admin
         gj_workflow_execution: account
@@ -221,7 +221,7 @@ sources:
     kind: graphjin
     access:
       roots:
-        gj_catalog: authenticated
+        gj_catalog: public
         gj_artifacts: account
         gj_workflow: admin
         gj_workflow_execution: account
@@ -229,6 +229,11 @@ sources:
         gj_security: admin
         gj_config: admin
 ```
+
+In dev mode, all GraphJin system roots default to `public` so the local console
+and MCP tools can inspect the system without extra auth setup. In prod and
+agentic modes, keep the higher-risk roots on `admin` or `account` unless you are
+deliberately exposing them.
 
 Capabilities decide whether a root exists. Access decides who can use it.
 Unauthorized users should not see blocked/admin-only roots in introspection,

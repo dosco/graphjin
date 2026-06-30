@@ -977,7 +977,7 @@ func TestApplySystemRoleQueryDefaultsDatabaseScoped(t *testing.T) {
 }
 
 func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
-	t.Run("dev anon cannot bypass admin root", func(t *testing.T) {
+	t.Run("dev anon can inspect graphjin roots by default", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "source-mode-dev-anon.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "dev"
 			conf.Core.DefaultBlock = false
@@ -987,11 +987,7 @@ func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
 			security: gj_security(id: "summary") { id }
 		}`, nil, &core.RequestConfig{})
 		if err != nil {
-			if !strings.Contains(strings.ToLower(err.Error()), "blocked") &&
-				!strings.Contains(strings.ToLower(err.Error()), "unauthorized") {
-				t.Fatalf("unexpected source-mode anon security error: %v", err)
-			}
-			return
+			t.Fatalf("source-mode dev anon security query error: %v", err)
 		}
 		var out struct {
 			Security *struct {
@@ -1001,8 +997,8 @@ func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
 		if err := json.Unmarshal(res.Data, &out); err != nil {
 			t.Fatalf("decode anon source-mode response: %v\n%s", err, string(res.Data))
 		}
-		if out.Security != nil {
-			t.Fatalf("expected source-mode anon to be blocked from gj_security, got %s", string(res.Data))
+		if out.Security == nil || out.Security.ID != "summary" {
+			t.Fatalf("expected source-mode dev anon to read gj_security, got %s", string(res.Data))
 		}
 	})
 
@@ -1115,28 +1111,23 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 		}
 	})
 
-	t.Run("prod blocks catalog by default", func(t *testing.T) {
+	t.Run("prod keeps catalog public by default", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "prod-perms.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "prod"
-			conf.Serv.Production = true
-			conf.Core.Production = true
 		})
 
 		res, err := svc.gj.GraphQL(userCtx, `query {
 			catalog: gj_catalog(limit: 1) { id }
 		}`, nil, &core.RequestConfig{})
 		if err != nil {
-			if !strings.Contains(err.Error(), "blocked") && !strings.Contains(err.Error(), "invalid query") {
-				t.Fatalf("prod catalog query returned unexpected error: %v", err)
-			}
-			return
+			t.Fatalf("prod catalog query returned error: %v", err)
 		}
 		var out map[string]json.RawMessage
 		if err := json.Unmarshal(res.Data, &out); err != nil {
 			t.Fatalf("decode prod catalog response: %v\n%s", err, string(res.Data))
 		}
-		if string(out["catalog"]) != "null" {
-			t.Fatalf("expected prod catalog to be blocked by default, got %s", string(res.Data))
+		if string(out["catalog"]) == "null" || len(out["catalog"]) == 0 {
+			t.Fatalf("expected prod catalog to be public by default, got %s", string(res.Data))
 		}
 	})
 }
@@ -1155,18 +1146,34 @@ func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 		}
 	}`
 
-	t.Run("unavailable outside agentic mode", func(t *testing.T) {
-		for _, mode := range []string{"dev", "prod"} {
-			mode := mode
-			t.Run(mode, func(t *testing.T) {
-				svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-"+mode+".sqlite3", true), func(conf *Config) {
-					conf.Core.Mode = mode
-				})
-				_, err := svc.gj.GraphQL(userCtx, query, nil, &core.RequestConfig{})
-				if err == nil {
-					t.Fatalf("expected gj_runtime to be unavailable in %s mode", mode)
-				}
-			})
+	t.Run("dev can read runtime root by default", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-dev.sqlite3", true), func(conf *Config) {
+			conf.Core.Mode = "dev"
+		})
+		res, err := svc.gj.GraphQL(context.Background(), query, nil, &core.RequestConfig{})
+		if err != nil {
+			t.Fatalf("dev runtime query error: %v", err)
+		}
+		var out struct {
+			Runtime []struct {
+				Kind string `json:"kind"`
+			} `json:"gj_runtime"`
+		}
+		if err := json.Unmarshal(res.Data, &out); err != nil {
+			t.Fatalf("decode dev runtime response: %v\n%s", err, string(res.Data))
+		}
+		if len(out.Runtime) == 0 {
+			t.Fatalf("expected dev runtime rows, got %s", string(res.Data))
+		}
+	})
+
+	t.Run("unavailable in prod mode", func(t *testing.T) {
+		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-prod.sqlite3", true), func(conf *Config) {
+			conf.Core.Mode = "prod"
+		})
+		_, err := svc.gj.GraphQL(userCtx, query, nil, &core.RequestConfig{})
+		if err == nil {
+			t.Fatal("expected gj_runtime to be unavailable in prod mode")
 		}
 	})
 

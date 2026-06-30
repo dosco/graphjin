@@ -7,14 +7,15 @@ import (
 )
 
 const (
-	routeGraphQL   = "/api/v1/graphql"
-	routeAgent     = "/api/v1/agent"
-	routeREST      = "/api/v1/rest/"
-	routeWorkflows = "/api/v1/workflows/"
-	routeOpenAPI   = "/api/v1/openapi.json"
-	routeMCP       = "/api/v1/mcp"
-	routeMCPMsg    = "/api/v1/mcp/message"
-	healthRoute    = "/health"
+	routeGraphQL     = "/api/v1/graphql"
+	routeAgent       = "/api/v1/agent"
+	routeAgentStatus = "/api/v1/agent/status"
+	routeREST        = "/api/v1/rest/"
+	routeWorkflows   = "/api/v1/workflows/"
+	routeOpenAPI     = "/api/v1/openapi.json"
+	routeMCP         = "/api/v1/mcp"
+	routeMCPMsg      = "/api/v1/mcp/message"
+	healthRoute      = "/health"
 )
 
 type Mux interface {
@@ -52,6 +53,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		// GraphQL / REST API
 		if ns == nil {
 			mux.Handle(routeGraphQL, s1.GraphQL(ah))
+			mux.Handle(routeAgentStatus, s1.AgentStatus(ah))
 			if s.conf.agentEnabled() {
 				mux.Handle(routeAgent, s1.Agent(ah))
 			}
@@ -62,6 +64,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			mux.Handle(routeOpenAPI, apiV1Handler(s1, nil, s1.OpenAPI(), ah))
 		} else {
 			mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
+			mux.Handle(routeAgentStatus, s1.AgentStatusWithNS(ah, *ns))
 			if s.conf.agentEnabled() {
 				mux.Handle(routeAgent, s1.AgentWithNS(ah, *ns))
 			}

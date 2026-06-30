@@ -235,6 +235,40 @@ Models should treat MCP responses as guidance and the graph as evidence. A tool
 may recommend a next step, but the agent still grounds table names, column
 names, policy posture, workflow inputs, and code paths in GraphQL-visible rows.
 
+### Server-Side Agent
+
+The loop above assumes an external model drives MCP directly, one tool call at a
+time. GraphJin can also run that exact loop *server-side* and expose it as one
+tool, `ask_graphjin_agent`, and one endpoint, `POST /api/v1/agent`. The caller
+sends a single instruction; GraphJin discovers, validates, executes approved
+operations, and returns a typed, evidence-backed answer.
+
+| | External MCP loop | Server-side agent |
+| :--- | :--- | :--- |
+| Drives discovery | the caller's model, call by call | GraphJin, internally |
+| Surface | many MCP tools | one tool / one endpoint |
+| Identity | caller | caller (the agent runs as the caller) |
+| Guardrails | client-side | Go protocol guards, server-side |
+
+It is the same catalog-first contract, enforced the same way: discover before
+acting, inspect a `saved_query` row before running it, check `gj_security` and
+`gj_runtime` before control-plane changes. The guards are authoritative — an
+`answered` result is downgraded to `blocked` with evidence when a required step
+was skipped, and model-claimed actions never count, only real tool results.
+
+Internally it is an RLM (reasoning-with-code) loop: the model writes JavaScript
+that calls the same catalog tools as runtime globals (`query_catalog`,
+`graphql_help`, `validate_where_clause`, `execute_saved_query`, `final`), and the
+typed result is parsed from `key: value` output. There is no dependency on
+provider tool-calling or structured-output modes — the model only needs to
+generate competent code — so any OpenAI-compatible endpoint works.
+
+Modes scope what it may do: `safe` (discovery plus approved saved
+queries/mutations), `discovery_only` (read-only), and `raw_allowed` (adds
+composed GraphQL when policy permits). The caller's role only selects which
+guidance skill the agent follows; access stays enforced by core roles and
+row-level security.
+
 ### Caller-Aware MCP Guidance
 
 GraphJin builds MCP servers from the current request or configured stdio

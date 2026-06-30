@@ -230,6 +230,15 @@ func TestCoffeeRoasteryDemoConfigNormalizes(t *testing.T) {
 	if got := cfg.Databases["roast_warehouse"].Path; got != "" {
 		t.Fatalf("roast_warehouse path = %q, want empty canonical DDL discovery", got)
 	}
+	graphjin, ok := cfg.Core.SourceByName("graphjin")
+	if !ok {
+		t.Fatal("coffee demo should include graphjin source")
+	}
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
+		if got := graphjin.Access.Roots[root]; got != core.AccessModePublic {
+			t.Fatalf("graphjin %s root access = %q, want public in dev demo", root, got)
+		}
+	}
 }
 
 func TestCoffeeRoasteryAgenticConfigDocumentsAgentSmokeDefaults(t *testing.T) {
@@ -241,20 +250,23 @@ func TestCoffeeRoasteryAgenticConfigDocumentsAgentSmokeDefaults(t *testing.T) {
 		t.Fatalf("normalize coffee demo sources: %v", err)
 	}
 
-	if cfg.Agent.Enabled {
-		t.Fatal("demo agent should be disabled by default")
+	if !cfg.Agent.Enabled {
+		t.Fatal("demo agentic config should enable the agent")
 	}
-	if got := cfg.Agent.Provider; got != "google-gemini" {
-		t.Fatalf("agent provider = %q, want google-gemini", got)
+	if got := cfg.Agent.Provider; got != "openai" {
+		t.Fatalf("agent provider = %q, want openai", got)
 	}
-	if got := cfg.Agent.APIKeyEnv; got != "GOOGLE_APIKEY" {
-		t.Fatalf("agent api key env = %q, want GOOGLE_APIKEY", got)
+	if got := cfg.Agent.APIKeyEnv; got != "OPENAI_API_KEY" {
+		t.Fatalf("agent api key env = %q, want OPENAI_API_KEY", got)
 	}
-	if got := cfg.Agent.Model; got != "gemini-3.1-flash-lite" {
-		t.Fatalf("agent model = %q, want gemini-3.1-flash-lite", got)
+	if got := cfg.Agent.Model; got != "" {
+		t.Fatalf("agent model = %q, want provider default", got)
 	}
 	if got := cfg.Agent.MaxSteps; got != 10 {
 		t.Fatalf("agent max steps = %d, want 10", got)
+	}
+	if got := cfg.Agent.TimeoutSeconds; got != 150 {
+		t.Fatalf("agent timeout = %d, want 150", got)
 	}
 }
 

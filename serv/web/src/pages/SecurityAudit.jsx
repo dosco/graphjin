@@ -1,8 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ShieldAlert, ShieldCheck } from "lucide-react";
+
 import { graphqlRequest, parseJSON } from "../services/graphql";
-import { DataErrorState, EmptyState, LoadingState, Metric, PageHeader, Panel, StatusPill, cx } from "../components/ui";
+import { DataErrorState, EmptyState, LoadingState, Metric, PageHeader, Panel, StatusPill } from "../components/ui";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const securityQuery = `query SecurityAudit {
   summary: gj_security(id: "summary") {
@@ -37,7 +40,7 @@ const SecurityAudit = () => {
   const weakenedCount = policies.filter((policy) => policy.weakens_default).length;
 
   return (
-    <div className="page-stack">
+    <div className="mx-auto grid max-w-7xl gap-6">
       <PageHeader
         eyebrow="Audit"
         title="Security"
@@ -54,7 +57,7 @@ const SecurityAudit = () => {
         />
       ) : (
         <>
-          <div className="metric-grid">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric label="Mode" value={summary?.mode || "unknown"} detail={summary?.status || "status unknown"} />
             <Metric label="Findings" value={findings.length} detail={`${highCount} high or critical`} tone={highCount ? "warn" : "good"} />
             <Metric label="Policies" value={policies.length} detail={`${weakenedCount} weaken defaults`} tone={weakenedCount ? "warn" : "good"} />
@@ -62,11 +65,13 @@ const SecurityAudit = () => {
           </div>
 
           <Panel title={summary?.title || "Security Summary"} description={summaryText(summary, summaryJSON)}>
-            <div className="security-summary large">
-              <ShieldCheck size={22} aria-hidden="true" />
+            <div className="flex gap-3 rounded-md border bg-muted/30 p-4">
+              <ShieldCheck className="mt-0.5 size-5 text-emerald-700" aria-hidden="true" />
               <div>
-                <strong>{summaryJSON?.recommendation || summary?.summary || "Review visible findings before writes."}</strong>
-                <p>{summaryJSON?.scope || "Use gj_catalog for ordinary discovery; detailed audit roots may be restricted by role."}</p>
+                <strong className="text-sm font-medium">{summaryJSON?.recommendation || summary?.summary || "Review visible findings before writes."}</strong>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  {summaryJSON?.scope || "Use gj_catalog for ordinary discovery; detailed audit roots may be restricted by role."}
+                </p>
               </div>
             </div>
           </Panel>
@@ -75,28 +80,32 @@ const SecurityAudit = () => {
             title="Findings"
             description={`${visibleFindings.length} visible findings`}
             action={
-              <div className="segment-control compact" role="tablist" aria-label="Severity filter">
-                {filters.map((filter) => (
-                  <button key={filter} className={cx(severity === filter && "active")} onClick={() => setSeverity(filter)} type="button">
-                    {filter}
-                  </button>
-                ))}
-              </div>
+              <Tabs value={severity} onValueChange={setSeverity}>
+                <TabsList>
+                  {filters.map((filter) => (
+                    <TabsTrigger key={filter} value={filter} className="capitalize">
+                      {filter}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
             }
           >
             {visibleFindings.length ? (
-              <div className="finding-list">
+              <div className="grid gap-3">
                 {visibleFindings.map((finding) => (
-                  <article className="finding-card" key={finding.id}>
-                    <div>
-                      <div className="finding-title">
+                  <article className="grid gap-3 rounded-md border bg-background p-4 md:grid-cols-[minmax(0,1fr)_auto]" key={finding.id}>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <StatusPill status={finding.severity} />
-                        <h3>{finding.title}</h3>
+                        <h3 className="min-w-0 truncate text-sm font-semibold">{finding.title}</h3>
                       </div>
-                      <p>{finding.summary || finding.recommendation}</p>
-                      <span className="muted-line">{[finding.mode, finding.surface, finding.source || finding.database_name, finding.capability].filter(Boolean).join(" · ")}</span>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{finding.summary || finding.recommendation}</p>
+                      <span className="mt-2 block text-xs text-muted-foreground">
+                        {[finding.mode, finding.surface, finding.source || finding.database_name, finding.capability].filter(Boolean).join(" · ")}
+                      </span>
                     </div>
-                    <ShieldAlert size={18} aria-hidden="true" />
+                    <ShieldAlert className="size-5 text-muted-foreground" aria-hidden="true" />
                   </article>
                 ))}
               </div>
@@ -107,30 +116,28 @@ const SecurityAudit = () => {
 
           <Panel title="Effective Policy" description="Policy rows that are visible to the current role.">
             {policies.length ? (
-              <div className="data-table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Source</th>
-                      <th>Role</th>
-                      <th>Capability</th>
-                      <th>Effective</th>
-                      <th>Override</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {policies.slice(0, 40).map((policy) => (
-                      <tr key={policy.id}>
-                        <td>{policy.source || policy.surface || "-"}</td>
-                        <td>{policy.role || "-"}</td>
-                        <td>{policy.capability || policy.action || "-"}</td>
-                        <td><StatusPill status={policy.effective || "unset"} /></td>
-                        <td>{policy.override_explicit ? policy.override_key || "explicit" : "default"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Capability</TableHead>
+                    <TableHead>Effective</TableHead>
+                    <TableHead>Override</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {policies.slice(0, 40).map((policy) => (
+                    <TableRow key={policy.id}>
+                      <TableCell>{policy.source || policy.surface || "-"}</TableCell>
+                      <TableCell>{policy.role || "-"}</TableCell>
+                      <TableCell>{policy.capability || policy.action || "-"}</TableCell>
+                      <TableCell><StatusPill status={policy.effective || "unset"} /></TableCell>
+                      <TableCell>{policy.override_explicit ? policy.override_key || "explicit" : "default"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             ) : (
               <EmptyState title="No policy rows" message="No policy rows are visible for this role." />
             )}

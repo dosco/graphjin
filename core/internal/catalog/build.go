@@ -492,12 +492,12 @@ func configRecipes() []configRecipe {
 			Summary: "Recipe for gj_catalog, gj_artifacts, gj_workflow, gj_workflow_execution, gj_runtime, gj_security, and gj_config root access modes.",
 			IntentExamples: []string{
 				"make gj_security admin only",
-				"allow authenticated gj_catalog",
+				"keep gj_catalog public",
 				"set gj_runtime admin",
 				"graphjin root access admin",
 			},
 			Preflight: commonPreflight,
-			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "graphjin", access: { roots_set: { gj_catalog: "authenticated", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }] }) { valid preview_id expires_at change_summary_json findings_json errors_json } }`,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "graphjin", access: { roots_set: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }] }) { valid preview_id expires_at change_summary_json findings_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
 				"requested root is not enabled by source capabilities",
@@ -506,9 +506,9 @@ func configRecipes() []configRecipe {
 			ForbiddenPatterns: commonForbidden,
 			Examples: []string{
 				`query_catalog(search: "graphjin root access gj_security gj_config admin")`,
-				`roots: { gj_catalog: "authenticated", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" }`,
+				`roots: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" }`,
 				`query { gj_config(id: "current") { catalog_revision sources } }`,
-				`mutation { gj_config(id: "current", update: { mode: "apply", preview_id: "<preview_id>", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "graphjin", access: { roots_set: { gj_catalog: "authenticated", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }] }) { applied catalog_revision errors_json } }`,
+				`mutation { gj_config(id: "current", update: { mode: "apply", preview_id: "<preview_id>", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "graphjin", access: { roots_set: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }] }) { applied catalog_revision errors_json } }`,
 			},
 		},
 		{

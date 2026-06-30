@@ -493,7 +493,7 @@ func (c *Config) normalizeSourceAccessDefaults() {
 		case sourcecap.KindDatabase:
 			c.Sources[i].Access = effectiveDatabaseAccess(c.Sources[i].Access)
 		case sourcecap.KindGraphJin:
-			c.Sources[i].Access = effectiveGraphJinAccess(c.Sources[i].Access)
+			c.Sources[i].Access = effectiveGraphJinAccess(c.Sources[i].Access, c.modeForSourceDefaults())
 		}
 	}
 }
@@ -528,19 +528,38 @@ func effectiveDatabaseAccess(access SourceAccessConfig) SourceAccessConfig {
 	return access
 }
 
-func effectiveGraphJinAccess(access SourceAccessConfig) SourceAccessConfig {
+func (c *Config) modeForSourceDefaults() string {
+	if c == nil {
+		return sourcecap.ModeDev
+	}
+	mode, err := CanonicalMode(c.Mode)
+	if err == nil && mode != "" {
+		return mode
+	}
+	if c.Production {
+		return sourcecap.ModeProd
+	}
+	return sourcecap.ModeDev
+}
+
+func effectiveGraphJinAccess(access SourceAccessConfig, mode string) SourceAccessConfig {
 	access = effectiveDatabaseAccess(access)
 	if access.Roots == nil {
 		access.Roots = make(map[string]string)
 	}
 	defaults := map[string]string{
-		"gj_catalog":            AccessModeAuthenticated,
+		"gj_catalog":            AccessModePublic,
 		"gj_artifacts":          AccessModeAccount,
 		"gj_workflow":           AccessModeAdmin,
 		"gj_workflow_execution": AccessModeAccount,
 		"gj_runtime":            AccessModeAdmin,
 		"gj_security":           AccessModeAdmin,
 		"gj_config":             AccessModeAdmin,
+	}
+	if strings.EqualFold(strings.TrimSpace(mode), sourcecap.ModeDev) {
+		for root := range defaults {
+			defaults[root] = AccessModePublic
+		}
 	}
 	for root, mode := range defaults {
 		if strings.TrimSpace(access.Roots[root]) == "" {
@@ -628,7 +647,7 @@ func (c *Config) EffectiveArtifactsConfig() ArtifactsConfig {
 func (c *Config) EffectiveSourceAccess(source SourceConfig) SourceAccessConfig {
 	switch source.CanonicalKind() {
 	case sourcecap.KindGraphJin:
-		return effectiveGraphJinAccess(source.Access.clone())
+		return effectiveGraphJinAccess(source.Access.clone(), c.modeForSourceDefaults())
 	case sourcecap.KindDatabase:
 		return effectiveDatabaseAccess(source.Access.clone())
 	default:

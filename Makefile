@@ -7,6 +7,7 @@ GOPATH  ?= $(shell go env GOPATH)
 GOROOT ?= $(shell go env GOROOT)
 
 PACKAGES ?= ./core ./plugin/otel ./serv ./auth ./cmd ./conf
+DEMO_PATH ?= examples/coffee-roastery
 
 ifndef GOPATH
 override GOPATH = $(HOME)/go
@@ -15,7 +16,7 @@ endif
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}" -X "github.com/dosco/graphjin/serv/v3.version=${BUILD_VERSION}"'
 
-.PHONY: all download-tools build wasm-build gen clean tidy test test-parallel-dbs test-sequential test-norace run run-github-actions lint changlog release version help test-mongodb test-cassandra test-clickhouse $(PLATFORMS)
+.PHONY: all download-tools build wasm-build gen clean tidy test test-parallel-dbs test-sequential test-norace run demo demo-agent demo-smoke demo-agent-smoke run-github-actions lint changlog release version help test-mongodb test-cassandra test-clickhouse $(PLATFORMS)
 
 tidy:
 	@find . -name "go.mod" -execdir go mod tidy \;
@@ -119,7 +120,7 @@ gen: download-tools
 	@cd wasm && go generate ./...
 
 $(BINARY):
-	@CGO_ENABLED=0 GOTOOLCHAIN=auto go build $(BUILD_FLAGS) -o $(BINARY) cmd/*.go
+	@CGO_ENABLED=0 GOTOOLCHAIN=auto go build $(BUILD_FLAGS) -o $(BINARY) ./cmd
 $(WASM):
 	@if [ -f "$(GOROOT)/lib/wasm/wasm_exec.js" ]; then \
 		cp "$(GOROOT)/lib/wasm/wasm_exec.js" ./wasm/js/; \
@@ -135,7 +136,19 @@ clean:
 	@rm -f $(WASM)
 
 run: clean
-	@GOTOOLCHAIN=auto go run $(BUILD_FLAGS) cmd/*.go $(ARGS)
+	@GOTOOLCHAIN=auto go run $(BUILD_FLAGS) ./cmd $(ARGS)
+
+demo:
+	@GOTOOLCHAIN=auto go run $(BUILD_FLAGS) ./cmd serve --demo --path $(DEMO_PATH)
+
+demo-agent:
+	@GO_ENV=agentic GOTOOLCHAIN=auto go run $(BUILD_FLAGS) ./cmd serve --demo --path $(DEMO_PATH)
+
+demo-smoke:
+	@examples/coffee-roastery/scripts/smoke.sh
+
+demo-agent-smoke:
+	@examples/coffee-roastery/scripts/smoke.sh --agent
 
 run-github-actions:
 	@act push --job linter
@@ -165,6 +178,10 @@ help:
 	@echo " make [platform]    		- Build for platform [linux|darwin|windows]"
 	@echo " make release       		- Build all platforms"
 	@echo " make run           		- Run graphjin (eg. make run ARGS=\"help\")"
+	@echo " make demo          		- Run the demo app (DEMO_PATH defaults to examples/coffee-roastery)"
+	@echo " make demo-agent    		- Run the demo app with GO_ENV=agentic"
+	@echo " make demo-smoke    		- Run the coffee roastery smoke suite"
+	@echo " make demo-agent-smoke		- Run the coffee roastery agent smoke suite"
 	@echo " make test          		- Run all tests (DB suites in parallel)"
 	@echo " make test-sequential		- Run all tests (DB suites sequentially)"
 	@echo " make run-github-actions	- Run Github Actions locally (brew install act)"

@@ -820,7 +820,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("agent.provider", "openai")
 	vi.SetDefault("agent.api_key_env", "OPENAI_API_KEY")
 	vi.SetDefault("agent.max_steps", 8)
-	vi.SetDefault("agent.timeout_seconds", 30)
+	vi.SetDefault("agent.timeout_seconds", 50)
 	vi.SetDefault("agent.allow_raw_graphql", false)
 	vi.SetDefault("agent.return_trace", false)
 

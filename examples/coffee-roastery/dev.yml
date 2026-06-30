@@ -1,5 +1,5 @@
 app_name: Coffee Roastery Agentic Demo
-mode: agentic
+mode: dev
 host_port: 0.0.0.0:8080
 web_ui: true
 log_level: "info"

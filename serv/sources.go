@@ -70,7 +70,12 @@ func (c *Config) runtimeRootSourceEnabled() bool {
 }
 
 func (c *Config) runtimeRootRegistered() bool {
-	if c == nil || effectiveMode(c) != modeAgentic || !c.Core.IsSourcesUsed() {
+	if c == nil || !c.Core.IsSourcesUsed() {
+		return false
+	}
+	switch effectiveMode(c) {
+	case modeDev, modeAgentic:
+	default:
 		return false
 	}
 	_, ok := c.sourceByCanonicalKind(sourcecap.KindGraphJin)

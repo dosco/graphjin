@@ -54,8 +54,8 @@ func TestRuntimeReadCapabilityDefaults(t *testing.T) {
 	if !ok {
 		t.Fatal("runtime.read capability not registered")
 	}
-	if def.Default(ModeDev) {
-		t.Fatal("runtime.read should default false in dev")
+	if !def.Default(ModeDev) {
+		t.Fatal("runtime.read should default true in dev")
 	}
 	if def.Default(ModeProd) {
 		t.Fatal("runtime.read should default false in prod")

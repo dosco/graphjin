@@ -1,0 +1,5 @@
+query CatalogExplorer {
+  items: gj_catalog(where: { kind: { in: ["database", "table", "column", "relationship", "function", "query", "fragment", "capability", "system_capability", "workflow", "help"] } }, order_by: { kind: asc }, limit: 240) {
+    id kind name title summary database_name schema_name table_name column_name source source_kind risk_level confidence sensitive sensitivity enabled capability_kind details_json evidence_json examples_json safety_json edges_json graphql_query graphql_mutation updated_at
+  }
+}

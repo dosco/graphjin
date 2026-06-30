@@ -3,6 +3,8 @@ import React, { useMemo } from "react";
 import { createGraphiQLFetcher } from "@graphiql/toolkit";
 import { GraphiQL } from "graphiql";
 
+import { PageHeader } from "../components/ui";
+import { Card, CardContent } from "@/components/ui/card";
 import "graphiql/style.css";
 
 const defaultEndpoint = import.meta.env.VITE_DEFAULT_ENDPOINT || "/api/v1/graphql";
@@ -44,21 +46,23 @@ const QueryEditor = () => {
   }, []);
 
   return (
-    <div className="page-stack workbench-page">
-      <div className="page-header">
-        <div>
-          <p className="eyebrow">GraphQL</p>
-          <h1>Workbench</h1>
-          <p>Run GraphJin queries against the same endpoint used by applications and system-root views.</p>
-        </div>
-      </div>
-      <div className="gj-query-editor">
-        <GraphiQL
-          fetcher={fetcher}
-          forcedTheme="light"
-          initialQuery={defaultQuery}
-        />
-      </div>
+    <div className="mx-auto grid max-w-7xl gap-6">
+      <PageHeader
+        eyebrow="GraphQL"
+        title="Workbench"
+        description="Run GraphJin queries against the same endpoint used by applications and system-root views."
+      />
+      <Card className="overflow-hidden">
+        <CardContent className="p-0">
+          <div className="graphiql-shell">
+            <GraphiQL
+              fetcher={fetcher}
+              forcedTheme="light"
+              initialQuery={defaultQuery}
+            />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

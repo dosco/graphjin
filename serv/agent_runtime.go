@@ -25,7 +25,7 @@ func agentConfigFromService(conf *Config) gjagent.Config {
 		APIKeyEnv:       conf.Agent.APIKeyEnv,
 		BaseURL:         conf.Agent.BaseURL,
 		MaxSteps:        conf.Agent.MaxSteps,
-		TimeoutSeconds:  conf.Agent.TimeoutSeconds,
+		TimeoutSeconds:  gjagent.EffectiveTimeoutSeconds(conf.Agent.TimeoutSeconds),
 		AllowRawGraphQL: conf.Agent.AllowRawGraphQL && conf.MCP.AllowRawQueries,
 		AllowMutations:  conf.MCP.AllowMutations,
 		ReturnTrace:     conf.Agent.ReturnTrace,

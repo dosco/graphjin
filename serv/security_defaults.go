@@ -148,18 +148,6 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 			appendRuntimeRoleTable(runtimeCore, role, rt)
 		}
 	}
-	if mode == modeAgentic && !systemRoleTableConfigured(&conf.Core, "anon", "gj_catalog", database) {
-		appendRuntimeRoleTable(runtimeCore, "anon", core.RoleTable{
-			Name:      "gj_catalog",
-			Database:  database,
-			Generated: true,
-			Query:     &core.Query{Block: true},
-			Insert:    &core.Insert{Block: true},
-			Update:    &core.Update{Block: true},
-			Upsert:    &core.Upsert{Block: true},
-			Delete:    &core.Delete{Block: true},
-		})
-	}
 }
 
 func sourceModeSystemRoleNames(conf *Config) []string {
