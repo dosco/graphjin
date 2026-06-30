@@ -1057,30 +1057,46 @@ mcp:
 
 ## Agent Configuration
 
-The optional server-side GraphJin agent uses Ax Go to do catalog-first discovery,
-safe saved-query execution, and typed answer synthesis. When enabled, it is
-available at `POST /api/v1/agent` and as the MCP tool `ask_graphjin_agent`.
+The optional server-side GraphJin agent runs the catalog-first discovery loop
+inside GraphJin and returns a typed, evidence-backed answer. When enabled it is
+available at `POST /api/v1/agent` and as the MCP tool `ask_graphjin_agent`. The
+`agent` block lives in `agentic.yml`, so enable it by running with
+`GO_ENV=agentic`. See [AGENTIC.md](AGENTIC.md#server-side-agent) for behavior.
+
+It is an RLM (reasoning-with-code) loop built on Ax: the model writes JavaScript
+that calls the catalog tools and the typed result is parsed from `key: value`
+output. The model only needs to be good at **code generation** — it does not
+need provider tool-calling or structured-output modes — so any OpenAI-compatible
+endpoint works via `agent.base_url`.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `agent.enabled` | boolean | `false` | Enable the REST endpoint and MCP tool |
-| `agent.provider` | string | `openai` | Ax provider profile passed to `NewAI` |
-| `agent.model` | string | - | Optional model override |
-| `agent.api_key_env` | string | `OPENAI_API_KEY` | Environment variable containing the provider API key |
-| `agent.base_url` | string | - | Optional OpenAI-compatible provider base URL |
-| `agent.max_steps` | integer | `8` | Maximum Ax actor steps per request |
-| `agent.timeout_seconds` | integer | `30` | Request timeout for agent runs |
-| `agent.allow_raw_graphql` | boolean | `false` | Expose raw GraphQL to the agent only when `mcp.allow_raw_queries` is also true |
-| `agent.return_trace` | boolean | `false` | Include Ax action and trace data in responses |
+| `agent.provider` | string | `openai` | Ax provider profile passed to `NewAI` (e.g. `openai`, `openai-compatible`, `google-gemini`) |
+| `agent.model` | string | - | Model name for the provider |
+| `agent.api_key_env` | string | `OPENAI_API_KEY` | Env var holding the provider API key; must be non-empty (use a dummy value for keyless local endpoints) |
+| `agent.base_url` | string | - | OpenAI-compatible provider base URL (e.g. a local or self-hosted endpoint) |
+| `agent.max_steps` | integer | `8` | Maximum agent actor steps per request |
+| `agent.timeout_seconds` | integer | `50` | Request timeout for agent runs; values below 50 are raised to the 50-second minimum |
+| `agent.allow_raw_graphql` | boolean | `false` | Allow the agent's `execute_graphql` — effective only when `mcp.allow_raw_queries` is also true, and only in `raw_allowed` mode |
+| `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
+
+The per-request `mode` scopes execution: `safe` (discovery plus approved saved
+queries/mutations), `discovery_only` (read-only), and `raw_allowed` (adds raw
+GraphQL when the flags above permit). Mutations the agent runs through raw
+GraphQL additionally require `mcp.allow_mutations`. The agent always runs as the
+caller, so core roles and row-level security enforce access regardless of mode.
 
 ```yaml
+# agentic.yml — load with GO_ENV=agentic
 agent:
   enabled: true
   provider: openai
-  api_key_env: OPENAI_API_KEY
   model: gpt-4.1-mini
+  api_key_env: OPENAI_API_KEY
+  # base_url: https://your-openai-compatible-endpoint/v1
   max_steps: 8
-  timeout_seconds: 30
+  timeout_seconds: 50
   allow_raw_graphql: false
 ```
 

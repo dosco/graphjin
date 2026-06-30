@@ -1,6 +1,9 @@
 import React from "react";
-import { NavLink } from "react-router-dom";
-import { Code, FileText, LayoutDashboard, Library, Shield, SlidersHorizontal, SquareTerminal } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { Bot, Code, FileText, LayoutDashboard, Library, Shield, SlidersHorizontal, SquareTerminal } from "lucide-react";
+
+import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const navItems = [
   {
@@ -12,6 +15,11 @@ const navItems = [
     path: "/workbench",
     label: "Workbench",
     icon: SquareTerminal,
+  },
+  {
+    path: "/agent",
+    label: "Agent",
+    icon: Bot,
   },
   {
     path: "/catalog",
@@ -40,28 +48,36 @@ const navItems = [
   },
 ];
 
-const Sidebar = () => {
+const Sidebar = ({ className }) => {
+  const location = useLocation();
   return (
-    <nav className="gj-sidebar">
-      <ul className="gj-sidebar-nav">
-        {navItems.map((item) => (
-          <li key={item.path}>
-            <NavLink
-              to={item.path}
-              className={({ isActive }) =>
-                `gj-sidebar-link ${isActive ? "active" : ""}`
-              }
-              end={item.path === "/"}
-              title={item.label}
-            >
-              <span className="gj-sidebar-icon">
-                <item.icon size={17} strokeWidth={1.75} aria-hidden="true" />
-              </span>
-              <span className="gj-sidebar-label">{item.label}</span>
-            </NavLink>
-          </li>
-        ))}
-      </ul>
+    <nav className={cn("border-r bg-muted/30 p-3", className)} aria-label="Primary">
+      <TooltipProvider delayDuration={250}>
+        <ul className="grid gap-1">
+          {navItems.map((item) => {
+            const isActive = item.path === "/" ? location.pathname === "/" : location.pathname.startsWith(item.path);
+            return (
+              <li key={item.path}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link
+                      to={item.path}
+                      className={cn(
+                        "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+                        isActive && "bg-background text-foreground shadow-xs ring-1 ring-border"
+                      )}
+                    >
+                      <item.icon size={17} strokeWidth={1.75} aria-hidden="true" />
+                      <span className="truncate">{item.label}</span>
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{item.label}</TooltipContent>
+                </Tooltip>
+              </li>
+            );
+          })}
+        </ul>
+      </TooltipProvider>
     </nav>
   );
 };

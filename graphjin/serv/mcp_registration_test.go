@@ -609,6 +609,16 @@ func TestMCPEffectiveContextMergesStoredAndPerCallIdentity(t *testing.T) {
 func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true})
 
+	anonProfile := ms.callerCapabilityProfile(context.Background(), false)
+	if !rootProfilesContain(anonProfile.AvailableRoots, "gj_catalog") {
+		t.Fatalf("expected anonymous catalog discovery by default, got %+v", anonProfile.AvailableRoots)
+	}
+	for _, root := range []string{"gj_security", "gj_runtime", "gj_config", "gj_workflow"} {
+		if !rootProfilesContain(anonProfile.BlockedRoots, root) {
+			t.Fatalf("expected %s blocked for anonymous caller, got %+v", root, anonProfile.BlockedRoots)
+		}
+	}
+
 	userProfile := ms.callerCapabilityProfile(sourceModeUserTestContext(), false)
 	if !userProfile.Authenticated || userProfile.RoleClass != "user" {
 		t.Fatalf("expected authenticated user profile, got %+v", userProfile)
@@ -656,8 +666,8 @@ func TestMCPToolFilterAndMetadataAreCallerAware(t *testing.T) {
 	}
 
 	anon := ms.applyCallerToolMetadata(context.Background(), tools)
-	if toolListContains(anon, "query_catalog") || toolListContains(anon, "graphql_help") {
-		t.Fatalf("anonymous caller should not see catalog tools when gj_catalog is authenticated-only: %+v", toolNamesFromToolList(anon))
+	if !toolListContains(anon, "query_catalog") || !toolListContains(anon, "graphql_help") {
+		t.Fatalf("anonymous caller should see public catalog tools: %+v", toolNamesFromToolList(anon))
 	}
 	if !toolListContains(anon, "execute_saved_query") {
 		t.Fatalf("anonymous caller should still see non-root execution tools: %+v", toolNamesFromToolList(anon))
@@ -701,11 +711,11 @@ func TestMCPToolsListUsesCallerFilterAndMetadata(t *testing.T) {
 	anonSvc := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true}).service
 	anonMS := anonSvc.newMCPServerWithContext(context.Background())
 	anonTools := toolsFromServer(t, anonMS.srv, context.Background())
-	if _, ok := anonTools["query_catalog"]; ok {
-		t.Fatalf("anonymous tools/list should hide query_catalog: %+v", toolNamesFromToolMap(anonTools))
+	if _, ok := anonTools["query_catalog"]; !ok {
+		t.Fatalf("anonymous tools/list should include query_catalog: %+v", toolNamesFromToolMap(anonTools))
 	}
-	if _, ok := anonTools["graphql_help"]; ok {
-		t.Fatalf("anonymous tools/list should hide graphql_help: %+v", toolNamesFromToolMap(anonTools))
+	if _, ok := anonTools["graphql_help"]; !ok {
+		t.Fatalf("anonymous tools/list should include graphql_help: %+v", toolNamesFromToolMap(anonTools))
 	}
 	if _, ok := anonTools["execute_saved_query"]; !ok {
 		t.Fatalf("anonymous tools/list should keep non-root execution tools: %+v", toolNamesFromToolMap(anonTools))

@@ -124,7 +124,7 @@ agent:
 	if defaults.Agent.Enabled || defaults.Agent.Provider != "openai" || defaults.Agent.APIKeyEnv != "OPENAI_API_KEY" {
 		t.Fatalf("unexpected agent defaults: %+v", defaults.Agent)
 	}
-	if defaults.Agent.MaxSteps != 8 || defaults.Agent.TimeoutSeconds != 30 || defaults.Agent.AllowRawGraphQL || defaults.Agent.ReturnTrace {
+	if defaults.Agent.MaxSteps != 8 || defaults.Agent.TimeoutSeconds != 50 || defaults.Agent.AllowRawGraphQL || defaults.Agent.ReturnTrace {
 		t.Fatalf("unexpected agent runtime defaults: %+v", defaults.Agent)
 	}
 }

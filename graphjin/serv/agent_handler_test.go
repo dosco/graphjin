@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
+	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
@@ -19,6 +20,7 @@ type scriptedAgentRunner struct {
 	err  error
 	ctx  context.Context
 	req  gjagent.Request
+	conf gjagent.Config
 }
 
 func (r *scriptedAgentRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Response, error) {
@@ -30,12 +32,134 @@ func (r *scriptedAgentRunner) Run(ctx context.Context, req gjagent.Request) (gja
 func withScriptedAgentRunner(t *testing.T, runner *scriptedAgentRunner) {
 	t.Helper()
 	prev := newGraphJinAgentRunner
-	newGraphJinAgentRunner = func(*graphjinService, gjagent.Config) (graphjinAgentRunner, error) {
+	newGraphJinAgentRunner = func(_ *graphjinService, conf gjagent.Config) (graphjinAgentRunner, error) {
+		runner.conf = conf
 		return runner, nil
 	}
 	t.Cleanup(func() {
 		newGraphJinAgentRunner = prev
 	})
+}
+
+func newAgentHTTPTestService(conf *Config) *HttpService {
+	logger := zap.NewNop()
+	if conf == nil {
+		conf = &Config{}
+	}
+	svc := &graphjinService{
+		conf: conf,
+		log:  logger.Sugar(),
+		zlog: logger,
+		gj:   &core.GraphJin{},
+	}
+	hs := &HttpService{}
+	hs.Store(svc)
+	return hs
+}
+
+func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
+	t.Setenv("GRAPHJIN_DISABLED_AGENT_KEY", "")
+	disabled := newAgentHTTPTestService(&Config{
+		Serv: Serv{Agent: AgentConfig{
+			APIKeyEnv: "GRAPHJIN_DISABLED_AGENT_KEY",
+		}},
+	})
+	req := httptest.NewRequest(http.MethodGet, routeAgentStatus, nil)
+	rec := httptest.NewRecorder()
+	disabled.AgentStatus(nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected disabled status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var disabledStatus agentStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &disabledStatus); err != nil {
+		t.Fatalf("decode disabled status: %v", err)
+	}
+	if disabledStatus.Enabled || disabledStatus.Ready || disabledStatus.Status != "disabled" {
+		t.Fatalf("unexpected disabled status: %+v", disabledStatus)
+	}
+	if disabledStatus.Endpoint != routeAgent || disabledStatus.MCPTool != mcpToolAskGraphJinAgent {
+		t.Fatalf("unexpected endpoints in disabled status: %+v", disabledStatus)
+	}
+	if !strings.Contains(disabledStatus.Message, "agent.enabled") {
+		t.Fatalf("disabled status should guide configuration, got %q", disabledStatus.Message)
+	}
+
+	t.Setenv("GRAPHJIN_MISSING_AGENT_KEY", "")
+	missingKey := newAgentHTTPTestService(&Config{
+		Serv: Serv{Agent: AgentConfig{
+			Enabled:   true,
+			APIKeyEnv: "GRAPHJIN_MISSING_AGENT_KEY",
+		}},
+	})
+	req = httptest.NewRequest(http.MethodGet, routeAgentStatus, nil)
+	rec = httptest.NewRecorder()
+	missingKey.AgentStatus(nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected missing-key status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var missingStatus agentStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &missingStatus); err != nil {
+		t.Fatalf("decode missing-key status: %v", err)
+	}
+	if !missingStatus.Enabled || missingStatus.Ready || missingStatus.Status != "missing_key" || missingStatus.APIKeyConfigured {
+		t.Fatalf("unexpected missing-key status: %+v", missingStatus)
+	}
+	if !strings.Contains(missingStatus.Message, "GRAPHJIN_MISSING_AGENT_KEY") {
+		t.Fatalf("missing-key status should name env var, got %q", missingStatus.Message)
+	}
+
+	t.Setenv("GRAPHJIN_READY_AGENT_KEY", "test-secret")
+	ready := newAgentHTTPTestService(&Config{
+		Serv: Serv{
+			Auth: Auth{Development: true},
+			MCP:  MCPConfig{AllowRawQueries: true, AllowMutations: true},
+			Agent: AgentConfig{
+				Enabled:         true,
+				Provider:        "anthropic",
+				Model:           "test-model",
+				APIKeyEnv:       "GRAPHJIN_READY_AGENT_KEY",
+				MaxSteps:        3,
+				TimeoutSeconds:  12,
+				AllowRawGraphQL: true,
+				ReturnTrace:     true,
+			},
+		},
+	})
+	req = httptest.NewRequest(http.MethodGet, routeAgentStatus, nil)
+	rec = httptest.NewRecorder()
+	ready.AgentStatus(nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ready status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var readyStatus agentStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &readyStatus); err != nil {
+		t.Fatalf("decode ready status: %v", err)
+	}
+	if !readyStatus.Enabled || !readyStatus.Ready || readyStatus.Status != "ready" || !readyStatus.APIKeyConfigured {
+		t.Fatalf("unexpected ready status: %+v", readyStatus)
+	}
+	if readyStatus.Provider != "anthropic" || readyStatus.Model != "test-model" || readyStatus.MaxSteps != 3 || readyStatus.TimeoutSeconds != 50 {
+		t.Fatalf("configured values not reflected in status: %+v", readyStatus)
+	}
+	if !readyStatus.AllowRawGraphQL || !readyStatus.AllowMutations || !readyStatus.ReturnTrace {
+		t.Fatalf("agent mode flags not reflected in status: %+v", readyStatus)
+	}
+	if !stringSliceContains(readyStatus.Modes, gjagent.ModeSafe) || !stringSliceContains(readyStatus.Modes, gjagent.ModeDiscoveryOnly) || !stringSliceContains(readyStatus.Modes, gjagent.ModeRawAllowed) {
+		t.Fatalf("expected all modes in status: %+v", readyStatus.Modes)
+	}
+}
+
+func TestAgentStatusMethodNotAllowed(t *testing.T) {
+	hs := newAgentHTTPTestService(&Config{})
+	req := httptest.NewRequest(http.MethodPost, routeAgentStatus, nil)
+	rec := httptest.NewRecorder()
+	hs.AgentStatus(nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for non-GET status, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("Allow header = %q, want GET", got)
+	}
 }
 
 func TestAgentRESTScriptedResponseAndAuthContext(t *testing.T) {
@@ -95,6 +219,92 @@ func TestAgentRESTScriptedResponseAndAuthContext(t *testing.T) {
 	}
 }
 
+func TestAgentRESTNoAuthRunsAsAnon(t *testing.T) {
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "ok"}}
+	withScriptedAgentRunner(t, runner)
+
+	conf := &Config{
+		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Serv: Serv{
+			Auth:  Auth{Type: "none"},
+			Agent: AgentConfig{Enabled: true},
+		},
+	}
+	ah, err := auth.NewAuthHandlerFunc(conf.Auth)
+	if err != nil {
+		t.Fatalf("new auth handler: %v", err)
+	}
+	hs := newAgentHTTPTestService(conf)
+
+	req := httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{"instruction":"ping"}`))
+	rec := httptest.NewRecorder()
+	hs.Agent(ah).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected no-auth agent request to reach handler, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := runner.ctx.Value(core.UserIDKey); got != nil {
+		t.Fatalf("no-auth request should not invent user_id, got %v", got)
+	}
+	if runner.req.Capabilities == nil {
+		t.Fatal("capability profile was not injected")
+	}
+	if got := runner.req.Capabilities.RoleClass; got != "anon" {
+		t.Fatalf("RoleClass = %q, want anon", got)
+	}
+	if runner.req.Capabilities.Authenticated {
+		t.Fatal("no-auth request should not be marked authenticated")
+	}
+}
+
+func TestAgentRESTDevelopmentAuthHeadersMatchGraphQLContext(t *testing.T) {
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "ok"}}
+	withScriptedAgentRunner(t, runner)
+
+	conf := &Config{
+		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Serv: Serv{
+			Auth:  Auth{Development: true},
+			Agent: AgentConfig{Enabled: true},
+		},
+	}
+	ah, err := auth.NewAuthHandlerFunc(conf.Auth)
+	if err != nil {
+		t.Fatalf("new auth handler: %v", err)
+	}
+	hs := newAgentHTTPTestService(conf)
+
+	req := httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{"instruction":"inspect catalog"}`))
+	req.Header.Set("X-User-ID", "demo-user")
+	req.Header.Set("X-User-Role", "user")
+	req.Header.Set("X-Account-ID", "1")
+	rec := httptest.NewRecorder()
+	hs.Agent(ah).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected development-auth agent request to reach handler, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := runner.ctx.Value(core.UserIDKey); got != "demo-user" {
+		t.Fatalf("auth context user_id = %v, want demo-user", got)
+	}
+	vars, _ := runner.ctx.Value(core.IdentityVarsKey).(map[string]interface{})
+	if got := vars["account_id"]; got != "1" {
+		t.Fatalf("identity account_id = %v, want 1", got)
+	}
+	if runner.req.Capabilities == nil {
+		t.Fatal("capability profile was not injected")
+	}
+	if got := runner.req.Capabilities.RoleClass; got != "user" {
+		t.Fatalf("RoleClass = %q, want user", got)
+	}
+	if !runner.req.Capabilities.Authenticated {
+		t.Fatal("development-auth user should be marked authenticated")
+	}
+	if !stringSliceContains(runner.req.Capabilities.AvailableSystemRoots, "gj_catalog") {
+		t.Fatalf("authenticated user should see gj_catalog, got %+v", runner.req.Capabilities.AvailableSystemRoots)
+	}
+}
+
 func TestAskGraphJinAgentMCPStructuredResponse(t *testing.T) {
 	runner := &scriptedAgentRunner{resp: gjagent.Response{
 		Status: gjagent.StatusAnswered,
@@ -110,6 +320,7 @@ func TestAskGraphJinAgentMCPStructuredResponse(t *testing.T) {
 
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.TimeoutSeconds = 12
 	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{
 		"instruction": "run approved query",
 		"mode":        gjagent.ModeSafe,
@@ -133,6 +344,9 @@ func TestAskGraphJinAgentMCPStructuredResponse(t *testing.T) {
 	}
 	if runner.req.Instruction != "run approved query" || runner.req.MaxSteps != 2 {
 		t.Fatalf("unexpected agent request: %+v", runner.req)
+	}
+	if runner.conf.TimeoutSeconds != 50 {
+		t.Fatalf("MCP agent timeout = %d, want 50", runner.conf.TimeoutSeconds)
 	}
 }
 

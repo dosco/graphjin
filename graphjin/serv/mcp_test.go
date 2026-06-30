@@ -18,7 +18,7 @@ func mockMcpServerWithConfig(cfg MCPConfig) *mcpServer {
 	svc := &graphjinService{
 		cursorCache: NewMemoryCursorCache(100, time.Hour),
 		conf: &Config{
-			Core: core.Config{Sources: []core.SourceConfig{
+			Core: core.Config{Mode: "agentic", Sources: []core.SourceConfig{
 				{Name: "graphjin", Kind: "graphjin"},
 				{Name: "workflows", Kind: "workflow"},
 			}},

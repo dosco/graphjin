@@ -1,0 +1,8 @@
+query DashboardSecurity {
+  summary: gj_security(id: "summary") {
+    id kind mode severity status title summary summary_json safety_json
+  }
+  findings: gj_security(where: { kind: { eq: "finding" } }, order_by: { severity_rank: desc }, limit: 6) {
+    id severity severity_rank status title recommendation surface source source_kind updated_at
+  }
+}

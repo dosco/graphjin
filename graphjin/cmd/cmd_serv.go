@@ -101,6 +101,12 @@ func cmdServ(cmd *cobra.Command, args []string) {
 		log.Fatal("--db flags require --demo")
 	}
 
+	if servDemoMode {
+		if err := loadDemoEnv(cpath, os.Stdout); err != nil {
+			log.Fatalf("Failed to load demo .env: %s", err)
+		}
+	}
+
 	setup(cpath)
 
 	ctx, cancel := context.WithCancel(context.Background())

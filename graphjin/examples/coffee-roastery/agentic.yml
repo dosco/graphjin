@@ -6,9 +6,6 @@ log_format: "plain"
 
 agent:
   enabled: true
-  provider: google-gemini
-  api_key_env: GOOGLE_APIKEY
-  model: gemini-3.1-flash-lite
   max_steps: 10
   timeout_seconds: 150
   return_trace: false

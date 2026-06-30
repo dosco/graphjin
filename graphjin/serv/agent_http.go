@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
@@ -14,6 +16,33 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
+
+const (
+	defaultAgentProvider       = "openai"
+	defaultAgentAPIKeyEnv      = "OPENAI_API_KEY"
+	defaultAgentMaxSteps       = 8
+	defaultAgentTimeoutSeconds = 50
+)
+
+type agentStatusResponse struct {
+	Status           string   `json:"status"`
+	Enabled          bool     `json:"enabled"`
+	Ready            bool     `json:"ready"`
+	Endpoint         string   `json:"endpoint"`
+	MCPTool          string   `json:"mcp_tool"`
+	Provider         string   `json:"provider"`
+	Model            string   `json:"model,omitempty"`
+	APIKeyEnv        string   `json:"api_key_env"`
+	APIKeyConfigured bool     `json:"api_key_configured"`
+	MaxSteps         int      `json:"max_steps"`
+	TimeoutSeconds   int      `json:"timeout_seconds"`
+	Modes            []string `json:"modes"`
+	AllowRawGraphQL  bool     `json:"allow_raw_graphql"`
+	AllowMutations   bool     `json:"allow_mutations"`
+	ReturnTrace      bool     `json:"return_trace"`
+	Namespace        string   `json:"namespace,omitempty"`
+	Message          string   `json:"message"`
+}
 
 // Agent is the HTTP handler for the server-side GraphJin agent endpoint.
 func (s *HttpService) Agent(ah auth.HandlerFunc) http.Handler {
@@ -25,6 +54,34 @@ func (s *HttpService) Agent(ah auth.HandlerFunc) http.Handler {
 func (s *HttpService) AgentWithNS(ah auth.HandlerFunc, ns string) http.Handler {
 	h := s.apiV1Agent(&ns)
 	return apiV1Handler(s, &ns, h, ah)
+}
+
+// AgentStatus is the HTTP handler for the server-side GraphJin agent readiness endpoint.
+func (s *HttpService) AgentStatus(ah auth.HandlerFunc) http.Handler {
+	h := s.apiV1AgentStatus(nil)
+	return apiV1Handler(s, nil, h, ah)
+}
+
+// AgentStatusWithNS is the namespaced HTTP handler for the server-side GraphJin agent readiness endpoint.
+func (s *HttpService) AgentStatusWithNS(ah auth.HandlerFunc, ns string) http.Handler {
+	h := s.apiV1AgentStatus(&ns)
+	return apiV1Handler(s, &ns, h, ah)
+}
+
+func (s1 *HttpService) apiV1AgentStatus(ns *string) http.Handler {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		s := s1.Load().(*graphjinService)
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			writeAgentError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(agentStatusFromConfig(agentConfigFromService(s.conf), ns))
+	}
+	return http.HandlerFunc(h)
 }
 
 func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
@@ -107,14 +164,66 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 	return http.HandlerFunc(h)
 }
 
+func agentStatusFromConfig(conf gjagent.Config, ns *string) agentStatusResponse {
+	provider := strings.TrimSpace(conf.Provider)
+	if provider == "" {
+		provider = defaultAgentProvider
+	}
+	apiKeyEnv := strings.TrimSpace(conf.APIKeyEnv)
+	if apiKeyEnv == "" {
+		apiKeyEnv = defaultAgentAPIKeyEnv
+	}
+	maxSteps := conf.MaxSteps
+	if maxSteps <= 0 {
+		maxSteps = defaultAgentMaxSteps
+	}
+	timeoutSeconds := gjagent.EffectiveTimeoutSeconds(conf.TimeoutSeconds)
+
+	apiKeyConfigured := strings.TrimSpace(os.Getenv(apiKeyEnv)) != ""
+	status := "ready"
+	message := "GraphJin agent is ready."
+	ready := conf.Enabled && apiKeyConfigured
+	switch {
+	case !conf.Enabled:
+		status = "disabled"
+		message = "Enable agent.enabled and configure " + apiKeyEnv + " to chat with GraphJin."
+	case !apiKeyConfigured:
+		status = "missing_key"
+		message = "GraphJin agent is enabled but " + apiKeyEnv + " is not set."
+	}
+
+	resp := agentStatusResponse{
+		Status:           status,
+		Enabled:          conf.Enabled,
+		Ready:            ready,
+		Endpoint:         routeAgent,
+		MCPTool:          mcpToolAskGraphJinAgent,
+		Provider:         provider,
+		Model:            strings.TrimSpace(conf.Model),
+		APIKeyEnv:        apiKeyEnv,
+		APIKeyConfigured: apiKeyConfigured,
+		MaxSteps:         maxSteps,
+		TimeoutSeconds:   timeoutSeconds,
+		Modes:            []string{gjagent.ModeSafe, gjagent.ModeDiscoveryOnly, gjagent.ModeRawAllowed},
+		AllowRawGraphQL:  conf.AllowRawGraphQL,
+		AllowMutations:   conf.AllowMutations,
+		ReturnTrace:      conf.ReturnTrace,
+		Message:          message,
+	}
+	if ns != nil {
+		resp.Namespace = *ns
+	}
+	return resp
+}
+
 // extendDeadlineForAgent lifts the per-request read/write deadlines so the
 // server-owned Ax agent can run up to its configured timeout without the global
 // http.Server WriteTimeout closing the connection before a JSON response is
 // written.
 func extendDeadlineForAgent(w http.ResponseWriter, conf *Config) {
-	timeoutSecs := 30
-	if conf != nil && conf.Agent.TimeoutSeconds > 0 {
-		timeoutSecs = conf.Agent.TimeoutSeconds
+	timeoutSecs := defaultAgentTimeoutSeconds
+	if conf != nil {
+		timeoutSecs = gjagent.EffectiveTimeoutSeconds(conf.Agent.TimeoutSeconds)
 	}
 	deadline := time.Now().Add(time.Duration(timeoutSecs+30) * time.Second)
 	rc := http.NewResponseController(w)

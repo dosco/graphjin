@@ -99,11 +99,34 @@ The script checks the connected demo surface end-to-end:
 - Workflow execution for `daily_roast_plan`, `batch_quality_review`, and `customer_issue_triage`.
 - MCP discovery through `query_catalog` for saved queries, workflows, and CodeSQL context.
 
-The live Ax agent checks are optional. Start the demo with the agent enabled and an exported provider key:
+The live Ax agent checks are optional. Demo mode automatically loads `.env`
+from the current working directory, then `examples/coffee-roastery/.env`, without
+overriding existing environment variables. To enable the agent, copy the example
+env file and add your provider key:
 
 ```bash
-export GOOGLE_APIKEY=...
-GO_ENV=agentic GJ_AGENT_ENABLED=true graphjin serve --demo --path examples/coffee-roastery
+cp examples/coffee-roastery/.env.example examples/coffee-roastery/.env
+# edit examples/coffee-roastery/.env and set a provider key
+graphjin serve --demo --path examples/coffee-roastery
+# or, from this checkout:
+make demo
+```
+
+The checked-in `.env.example` sets `GO_ENV=agentic`, so the demo uses
+`agentic.yml` after you copy it. A top-level `.env` works too when you run
+`make demo` from this checkout. If demo mode finds `OPENAI_API_KEY`,
+`GOOGLE_APIKEY`, or `ANTHROPIC_API_KEY`, it enables the GraphJin agent, selects
+the matching provider key, and defaults the demo to agentic mode with
+`GJ_AGENT_MAX_STEPS=10` and `GJ_AGENT_TIMEOUT_SECONDS=150`. Set `GO_ENV`,
+`GJ_AGENT_ENABLED`, `GJ_AGENT_API_KEY_ENV`, `GJ_AGENT_PROVIDER`,
+`GJ_AGENT_MODEL`, `GJ_AGENT_MAX_STEPS`, or `GJ_AGENT_TIMEOUT_SECONDS` yourself
+to override those defaults. Shell environment variables still win over values
+in `.env`. The local coffee demo keeps `auth.type: none`; dev mode makes
+GraphJin system roots public by default for local inspection. You can also run
+the agentic config directly:
+
+```bash
+GO_ENV=agentic graphjin serve --demo --path examples/coffee-roastery
 ```
 
 Then run:

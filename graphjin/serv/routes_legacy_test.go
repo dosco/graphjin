@@ -110,6 +110,13 @@ func TestAgentRouteRegistration(t *testing.T) {
 		t.Fatalf("expected missing agent key to return 503, got %d: %s", rec.Code, rec.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodGet, routeAgentStatus, nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected agent status route to be registered when agent.enabled=true, got %d: %s", rec.Code, rec.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{}`))
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -128,6 +135,13 @@ func TestAgentRouteRegistration(t *testing.T) {
 		t.Fatalf("expected disabled agent route to be 404, got %d: %s", rec.Code, rec.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodGet, routeAgentStatus, nil)
+	rec = httptest.NewRecorder()
+	disabled.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status route to stay available when agent.enabled=false, got %d: %s", rec.Code, rec.Body.String())
+	}
+
 	mcpOnly := newLegacySurfaceRouteHandler(t, &Config{
 		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
 		Serv: Serv{MCP: MCPConfig{Only: true, Disable: true}, Agent: AgentConfig{Enabled: true}},
@@ -137,6 +151,13 @@ func TestAgentRouteRegistration(t *testing.T) {
 	mcpOnly.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected mcp.only to hide agent REST route, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, routeAgentStatus, nil)
+	rec = httptest.NewRecorder()
+	mcpOnly.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected mcp.only to hide agent status route, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

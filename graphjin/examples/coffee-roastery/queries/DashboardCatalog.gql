@@ -1,0 +1,11 @@
+query DashboardCatalog {
+  capabilities: gj_catalog(where: { kind: { eq: "system_capability" } }, order_by: { name: asc }, limit: 80) {
+    id name kind summary enabled source source_kind details_json safety_json
+  }
+  tables: gj_catalog(where: { kind: { eq: "table" } }, limit: 1) {
+    id
+  }
+  relationships: gj_catalog(where: { kind: { eq: "relationship" } }, limit: 1) {
+    id
+  }
+}

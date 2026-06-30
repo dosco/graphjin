@@ -1,0 +1,11 @@
+query RuntimeDashboard {
+  status: gj_runtime(where: { kind: { eq: "status" } }, limit: 1) {
+    id kind created_at node_id mode store phase status severity summary next_action active_database schema_ready table_count catalog_revision details_json suggested_next_json
+  }
+  sources: gj_runtime(where: { kind: { eq: "source" } }, order_by: { source: asc }, limit: 80) {
+    id kind created_at source source_kind database_name status severity schema_ready table_count duration_ms summary next_action details_json
+  }
+  events: gj_runtime(where: { kind: { eq: "event" } }, order_by: { created_at: desc }, limit: 8) {
+    id kind created_at phase status severity source database_name summary next_action details_json
+  }
+}

@@ -328,9 +328,30 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 		t.Fatalf("database access defaults not applied: %+v", app.Access)
 	}
 	gj, _ := conf.SourceByName("graphjin")
-	if gj.Access.Roots["gj_security"] != AccessModeAdmin || gj.Access.Roots["gj_runtime"] != AccessModeAdmin ||
-		gj.Access.Roots["gj_artifacts"] != AccessModeAccount {
-		t.Fatalf("graphjin root access defaults not applied: %+v", gj.Access.Roots)
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
+		if got := gj.Access.Roots[root]; got != AccessModePublic {
+			t.Fatalf("dev graphjin %s root access = %q, want public: %+v", root, got, gj.Access.Roots)
+		}
+	}
+
+	agentic := &Config{
+		Mode: "agentic",
+		Sources: []SourceConfig{
+			{Name: "app", Kind: "database", Type: "postgres", Default: true},
+			{Name: "graphjin", Kind: "graphjin"},
+		},
+		Artifacts: ArtifactsConfig{Enabled: true},
+	}
+	if err := agentic.NormalizeSources(); err != nil {
+		t.Fatalf("NormalizeSources agentic: %v", err)
+	}
+	agenticGJ, _ := agentic.SourceByName("graphjin")
+	if agenticGJ.Access.Roots["gj_catalog"] != AccessModePublic ||
+		agenticGJ.Access.Roots["gj_security"] != AccessModeAdmin || agenticGJ.Access.Roots["gj_runtime"] != AccessModeAdmin ||
+		agenticGJ.Access.Roots["gj_config"] != AccessModeAdmin ||
+		agenticGJ.Access.Roots["gj_artifacts"] != AccessModeAccount ||
+		agenticGJ.Access.Roots["gj_workflow_execution"] != AccessModeAccount {
+		t.Fatalf("agentic graphjin root access defaults not applied: %+v", agenticGJ.Access.Roots)
 	}
 }
 

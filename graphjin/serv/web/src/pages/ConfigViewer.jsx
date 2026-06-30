@@ -1,7 +1,9 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
+
 import { graphqlRequest, parseJSON } from "../services/graphql";
 import { DataErrorState, EmptyState, LoadingState, Metric, PageHeader, Panel } from "../components/ui";
+import { Badge } from "@/components/ui/badge";
 
 const configQuery = `query ConfigViewer {
   current: gj_config(id: "current") {
@@ -30,7 +32,7 @@ const ConfigViewer = () => {
   const redactedPaths = parseJSON(row?.redacted_paths, []);
 
   return (
-    <div className="page-stack">
+    <div className="mx-auto grid max-w-7xl gap-6">
       <PageHeader
         eyebrow="Configuration"
         title="Config"
@@ -47,7 +49,7 @@ const ConfigViewer = () => {
         />
       ) : row ? (
         <>
-          <div className="metric-grid">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric label="Sources Mode" value={row.sources_used ? "On" : "Off"} />
             <Metric label="Active DB" value={row.active_database || "none"} />
             <Metric label="Catalog" value={row.catalog_revision ? "Ready" : "Pending"} detail={row.catalog_revision || "no revision"} />
@@ -55,20 +57,20 @@ const ConfigViewer = () => {
           </div>
 
           <Panel title="Config Location" description={row.config_path || "No config path reported"}>
-            <div className="config-meta">
-              <span>Updated {row.updated_at || "unknown"}</span>
-              <span>{row.id}</span>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">Updated {row.updated_at || "unknown"}</Badge>
+              <Badge variant="secondary">{row.id}</Badge>
             </div>
           </Panel>
 
-          <div className="config-grid">
+          <div className="grid gap-4 xl:grid-cols-2">
             {sections.map(([title, key]) => (
               <ConfigSection key={key} title={title} value={row[key]} />
             ))}
           </div>
 
           <Panel title="Redacted Config JSON" description="Raw effective config shape for inspection.">
-            <pre className="json-block"><code>{JSON.stringify(parseJSON(row.config_json, {}), null, 2)}</code></pre>
+            <JSONBlock value={parseJSON(row.config_json, {})} />
           </Panel>
         </>
       ) : (
@@ -84,12 +86,20 @@ const ConfigSection = ({ title, value }) => {
   return (
     <Panel title={title} description={`${count} entries`}>
       {count ? (
-        <pre className="json-block compact"><code>{JSON.stringify(parsed, null, 2)}</code></pre>
+        <JSONBlock value={parsed} compact />
       ) : (
         <EmptyState title={`No ${title.toLowerCase()}`} message="No entries are visible in this section." />
       )}
     </Panel>
   );
 };
+
+function JSONBlock({ value, compact = false }) {
+  return (
+    <pre className={`max-h-[520px] overflow-auto rounded-md bg-muted p-4 text-xs leading-5 ${compact ? "max-h-80" : ""}`}>
+      <code>{JSON.stringify(value, null, 2)}</code>
+    </pre>
+  );
+}
 
 export default ConfigViewer;

@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataErrorState, LoadingState, PageHeader } from "../components/ui";
+import { Card, CardContent } from "@/components/ui/card";
 import { fetchJSON } from "../services/graphql";
 import "swagger-ui-react/swagger-ui.css";
 
@@ -14,7 +15,7 @@ const ApiDocs = () => {
   });
 
   return (
-    <div className="page-stack gj-api-docs">
+    <div className="mx-auto grid max-w-7xl gap-6">
       <PageHeader
         eyebrow="OpenAPI"
         title="API Docs"
@@ -29,11 +30,15 @@ const ApiDocs = () => {
           unavailableMessage="The OpenAPI spec could not be loaded from /api/v1/openapi.json."
         />
       ) : (
-        <div className="swagger-container">
+        <Card className="overflow-hidden">
+          <CardContent className="p-4 md:p-6">
+            <div className="swagger-shell">
           <Suspense fallback={<LoadingState label="Rendering API documentation" />}>
             <SwaggerUI spec={data} />
           </Suspense>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

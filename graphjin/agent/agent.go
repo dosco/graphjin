@@ -28,7 +28,8 @@ const (
 	defaultProvider       = "openai"
 	defaultAPIKeyEnv      = "OPENAI_API_KEY"
 	defaultMaxSteps       = 8
-	defaultTimeoutSeconds = 30
+	minTimeoutSeconds     = 50
+	defaultTimeoutSeconds = minTimeoutSeconds
 )
 
 var (
@@ -45,7 +46,7 @@ type Config struct {
 	APIKeyEnv       string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
 	BaseURL         string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
 	MaxSteps        int    `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
-	TimeoutSeconds  int    `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=30"`
+	TimeoutSeconds  int    `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
 	AllowRawGraphQL bool   `mapstructure:"allow_raw_graphql" jsonschema:"title=Allow Agent Raw GraphQL,default=false"`
 	AllowMutations  bool   `mapstructure:"allow_mutations" jsonschema:"title=Allow Agent Mutations,default=false"`
 	ReturnTrace     bool   `mapstructure:"return_trace" jsonschema:"title=Return Agent Trace,default=false"`
@@ -344,10 +345,15 @@ func (c Config) withDefaults() Config {
 	if c.MaxSteps <= 0 {
 		c.MaxSteps = defaultMaxSteps
 	}
-	if c.TimeoutSeconds <= 0 {
-		c.TimeoutSeconds = defaultTimeoutSeconds
-	}
+	c.TimeoutSeconds = EffectiveTimeoutSeconds(c.TimeoutSeconds)
 	return c
+}
+
+func EffectiveTimeoutSeconds(timeoutSeconds int) int {
+	if timeoutSeconds < minTimeoutSeconds {
+		return minTimeoutSeconds
+	}
+	return timeoutSeconds
 }
 
 func effectiveMaxSteps(configMax, requestMax int) int {
@@ -566,7 +572,7 @@ func responseFromError(err error, traceID string, program Program, returnTrace b
 	var axErr ax.AxError
 	if errors.As(err, &axErr) && axErr.Category == "clarification" {
 		resp.Status = StatusNeedsClarification
-		resp.Answer = stringify(normalizeValue(axErr.Payload))
+		resp.Answer = clarificationAnswer(axErr.Payload)
 		resp.Errors = nil
 	}
 	if program != nil {
@@ -577,6 +583,38 @@ func responseFromError(err error, traceID string, program Program, returnTrace b
 
 func isNoRuntimeCodeError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "did not return runtime code field")
+}
+
+func clarificationAnswer(payload any) string {
+	value := normalizeValue(payload)
+	if question := clarificationQuestion(value); question != "" {
+		return question
+	}
+	if text := stringify(value); strings.TrimSpace(text) != "" {
+		return text
+	}
+	return "I need a little more detail before I can answer safely."
+}
+
+func clarificationQuestion(value any) string {
+	switch v := value.(type) {
+	case map[string]any:
+		if question := strings.TrimSpace(stringValue(v["question"])); question != "" {
+			return question
+		}
+		if args, ok := v["args"]; ok {
+			if question := clarificationQuestion(args); question != "" {
+				return question
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if question := clarificationQuestion(item); question != "" {
+				return question
+			}
+		}
+	}
+	return ""
 }
 
 func attachProgramMetadata(resp Response, program Program, returnTrace bool) Response {

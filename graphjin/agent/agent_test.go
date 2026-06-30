@@ -279,6 +279,45 @@ func TestRunValidationAndClientConfigErrors(t *testing.T) {
 	}
 }
 
+func TestEffectiveTimeoutSecondsFloorsAgentRuns(t *testing.T) {
+	if got := EffectiveTimeoutSeconds(0); got != 50 {
+		t.Fatalf("EffectiveTimeoutSeconds(0) = %d, want 50", got)
+	}
+	if got := EffectiveTimeoutSeconds(12); got != 50 {
+		t.Fatalf("EffectiveTimeoutSeconds(12) = %d, want 50", got)
+	}
+	if got := EffectiveTimeoutSeconds(150); got != 150 {
+		t.Fatalf("EffectiveTimeoutSeconds(150) = %d, want 150", got)
+	}
+}
+
+func TestClarificationErrorUsesQuestionAsAnswer(t *testing.T) {
+	resp := responseFromError(ax.AxError{
+		Category: "clarification",
+		Payload: map[string]any{
+			"type": "__generated__askClarification",
+			"args": []any{
+				map[string]any{
+					"question": "Which saved query should I run?",
+				},
+			},
+		},
+	}, "agent-test", nil, false)
+
+	if resp.Status != StatusNeedsClarification {
+		t.Fatalf("status = %s, want %s", resp.Status, StatusNeedsClarification)
+	}
+	if resp.Answer != "Which saved query should I run?" {
+		t.Fatalf("answer = %q", resp.Answer)
+	}
+	if strings.Contains(resp.Answer, "askClarification") || strings.Contains(resp.Answer, "__order") {
+		t.Fatalf("answer leaked clarification payload: %q", resp.Answer)
+	}
+	if len(resp.Errors) != 0 {
+		t.Fatalf("errors = %+v, want none", resp.Errors)
+	}
+}
+
 func TestAgentSignatureIsAcceptedByAx(t *testing.T) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
