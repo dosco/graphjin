@@ -1,10 +1,14 @@
 # Redis Response Cache Design
 
-> **Status: design only — not implemented.** `core/cache.go` defines the
-> `ResponseCacheProvider` interface (injected via
-> `core.OptionSetResponseCache`); no Redis or other provider ships in this
-> repo. The in-memory nanoDB projection that serves the `gj_*` system roots is
-> a separate, implemented mechanism — see AGENTIC.md "The nanoDB Projection".
+> **Status: implemented.** This design shipped as `serv/cache_redis.go` (Redis
+> provider: SWR worker pool, compression, row-level + table-level invalidation,
+> OTel metrics) and `serv/cache.go` (shared `ResponseCache` interface with an
+> in-memory fallback), wired into core through `core.OptionSetResponseCache`
+> (`serv/api.go`). Response caching is enabled by default (in-memory); set
+> `redis.url` for distributed Redis caching. Config lives in the `cache:`
+> block (`disable`, `ttl`, `fresh_ttl`, `exclude_tables`). The in-memory
+> nanoDB projection that serves the `gj_*` system roots is a separate,
+> complementary mechanism — see AGENTIC.md "The nanoDB Projection".
 
 ## Overview
 
