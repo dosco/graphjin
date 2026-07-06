@@ -23,7 +23,7 @@ func (s *gstate) executeNanoDB(ctx context.Context, dbCtx *dbContext) error {
 		return err
 	}
 	s.setDefaultVars()
-	raw, err := s.renderNanoDBQuery(dbCtx, s.cs.st.qc)
+	raw, err := s.renderNanoDBQuery(ctx, dbCtx, s.cs.st.qc)
 	if err != nil {
 		return err
 	}
@@ -32,14 +32,14 @@ func (s *gstate) executeNanoDB(ctx context.Context, dbCtx *dbContext) error {
 	return err
 }
 
-func (s *gstate) renderNanoDBQuery(dbCtx *dbContext, qc *qcode.QCode) ([]byte, error) {
+func (s *gstate) renderNanoDBQuery(ctx context.Context, dbCtx *dbContext, qc *qcode.QCode) ([]byte, error) {
 	if qc == nil {
 		return []byte(`{}`), nil
 	}
 	out := make(map[string]any, len(qc.Roots))
 	for _, id := range qc.Roots {
 		sel := &qc.Selects[id]
-		value, err := s.renderNanoSelect(dbCtx, qc, sel, nil)
+		value, err := s.renderNanoSelect(ctx, dbCtx, qc, sel, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -49,6 +49,7 @@ func (s *gstate) renderNanoDBQuery(dbCtx *dbContext, qc *qcode.QCode) ([]byte, e
 }
 
 func (s *gstate) renderNanoSelect(
+	ctx context.Context,
 	dbCtx *dbContext,
 	qc *qcode.QCode,
 	sel *qcode.Select,
@@ -80,7 +81,7 @@ func (s *gstate) renderNanoSelect(
 		if !nanoAliasMatch(sel, row) {
 			continue
 		}
-		if !s.nanoEval(sel.Where.Exp, row, parentRows) {
+		if !s.nanoEval(ctx, sel.Where.Exp, row, parentRows) {
 			continue
 		}
 		if search != "" && snap.SearchRank(sel.Ti.Schema, sel.Ti.Name, row, search) <= 0 {
@@ -109,7 +110,7 @@ func (s *gstate) renderNanoSelect(
 
 	items := make([]any, 0, len(filtered))
 	for _, row := range filtered {
-		item, err := s.nanoRenderRow(dbCtx, qc, sel, row, parentRows, search)
+		item, err := s.nanoRenderRow(ctx, dbCtx, qc, sel, row, parentRows, search)
 		if err != nil {
 			return nil, err
 		}
@@ -125,6 +126,7 @@ func (s *gstate) renderNanoSelect(
 }
 
 func (s *gstate) nanoRenderRow(
+	ctx context.Context,
 	dbCtx *dbContext,
 	qc *qcode.QCode,
 	sel *qcode.Select,
@@ -172,7 +174,7 @@ func (s *gstate) nanoRenderRow(
 		if child.SkipRender == qcode.SkipTypeRemote {
 			continue
 		}
-		value, err := s.renderNanoSelect(dbCtx, qc, child, nextParent)
+		value, err := s.renderNanoSelect(ctx, dbCtx, qc, child, nextParent)
 		if err != nil {
 			return nil, err
 		}
@@ -216,7 +218,10 @@ func nanoSearchTermFromExp(ex *qcode.Exp, vars map[string]json.RawMessage) strin
 		return ""
 	}
 	if ex.Op == qcode.OpTsQuery {
-		return nanoRightValue(ex, nil, vars)
+		if ex.Right.ValType == qcode.ValVar {
+			return rawJSONScalar(vars[ex.Right.Val])
+		}
+		return ex.Right.Val
 	}
 	for _, child := range ex.Children {
 		if v := nanoSearchTermFromExp(child, vars); v != "" {
@@ -249,21 +254,21 @@ func (s *gstate) nanoLess(snap *nanodb.Snapshot, sel *qcode.Select, a, b nanodb.
 	return false
 }
 
-func (s *gstate) nanoEval(ex *qcode.Exp, row nanodb.Row, parent map[int32]nanodb.Row) bool {
+func (s *gstate) nanoEval(ctx context.Context, ex *qcode.Exp, row nanodb.Row, parent map[int32]nanodb.Row) bool {
 	if ex == nil {
 		return true
 	}
 	switch ex.Op {
 	case qcode.OpAnd:
 		for _, child := range ex.Children {
-			if !s.nanoEval(child, row, parent) {
+			if !s.nanoEval(ctx, child, row, parent) {
 				return false
 			}
 		}
 		return true
 	case qcode.OpOr:
 		for _, child := range ex.Children {
-			if s.nanoEval(child, row, parent) {
+			if s.nanoEval(ctx, child, row, parent) {
 				return true
 			}
 		}
@@ -272,7 +277,7 @@ func (s *gstate) nanoEval(ex *qcode.Exp, row nanodb.Row, parent map[int32]nanodb
 		if len(ex.Children) == 0 {
 			return true
 		}
-		return !s.nanoEval(ex.Children[0], row, parent)
+		return !s.nanoEval(ctx, ex.Children[0], row, parent)
 	case qcode.OpTsQuery:
 		return true
 	case qcode.OpFalse:
@@ -280,21 +285,21 @@ func (s *gstate) nanoEval(ex *qcode.Exp, row nanodb.Row, parent map[int32]nanodb
 	}
 
 	left := row[ex.Left.Col.Name]
-	right := s.nanoRight(ex, parent)
+	right := s.nanoRight(ctx, ex, parent)
 	switch ex.Op {
 	case qcode.OpEquals, qcode.OpNotDistinct:
 		return equalValues(left, right)
 	case qcode.OpNotEquals, qcode.OpDistinct:
 		return !equalValues(left, right)
 	case qcode.OpIn:
-		for _, v := range nanoRightList(ex, s.vmap) {
+		for _, v := range s.nanoRightList(ctx, ex) {
 			if equalValues(left, v) {
 				return true
 			}
 		}
 		return false
 	case qcode.OpNotIn:
-		for _, v := range nanoRightList(ex, s.vmap) {
+		for _, v := range s.nanoRightList(ctx, ex) {
 			if equalValues(left, v) {
 				return false
 			}
@@ -325,7 +330,7 @@ func (s *gstate) nanoEval(ex *qcode.Exp, row nanodb.Row, parent map[int32]nanodb
 	}
 }
 
-func (s *gstate) nanoRight(ex *qcode.Exp, parent map[int32]nanodb.Row) any {
+func (s *gstate) nanoRight(ctx context.Context, ex *qcode.Exp, parent map[int32]nanodb.Row) any {
 	if ex == nil {
 		return nil
 	}
@@ -334,29 +339,35 @@ func (s *gstate) nanoRight(ex *qcode.Exp, parent map[int32]nanodb.Row) any {
 			return row[ex.Right.Col.Name]
 		}
 	}
-	return nanoRightValue(ex, parent, s.vmap)
+	return s.nanoRightValue(ctx, ex, parent)
 }
 
-func nanoRightValue(ex *qcode.Exp, _ map[int32]nanodb.Row, vars map[string]json.RawMessage) string {
+func (s *gstate) nanoRightValue(ctx context.Context, ex *qcode.Exp, _ map[int32]nanodb.Row) string {
 	if ex == nil {
 		return ""
 	}
 	switch ex.Right.ValType {
 	case qcode.ValVar:
-		return rawJSONScalar(vars[ex.Right.Val])
+		return s.nanoVarValue(ctx, ex.Right.Val)
 	default:
 		return ex.Right.Val
 	}
 }
 
-func nanoRightList(ex *qcode.Exp, vars map[string]json.RawMessage) []any {
+func (s *gstate) nanoRightList(ctx context.Context, ex *qcode.Exp) []any {
 	if ex == nil {
 		return nil
 	}
 	if ex.Right.ValType == qcode.ValVar {
+		if v, trusted := s.nanoTrustedVarValue(ctx, ex.Right.Val); trusted {
+			return []any{v}
+		}
 		var out []any
-		if err := json.Unmarshal(vars[ex.Right.Val], &out); err == nil {
+		if err := json.Unmarshal(s.vmap[ex.Right.Val], &out); err == nil {
 			return out
+		}
+		if v := s.nanoVarValue(ctx, ex.Right.Val); v != "" {
+			return []any{v}
 		}
 	}
 	out := make([]any, len(ex.Right.ListVal))
@@ -364,6 +375,63 @@ func nanoRightList(ex *qcode.Exp, vars map[string]json.RawMessage) []any {
 		out[i] = v
 	}
 	return out
+}
+
+const nanoMissingIdentityValue = "\x00graphjin:nanodb:missing-identity\x00"
+
+func (s *gstate) nanoVarValue(ctx context.Context, name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if v, trusted := s.nanoTrustedVarValue(ctx, name); trusted {
+		return v
+	}
+	return rawJSONScalar(s.vmap[name])
+}
+
+func (s *gstate) nanoTrustedVarValue(ctx context.Context, name string) (string, bool) {
+	canonical, trusted := s.nanoTrustedVarName(name)
+	if !trusted {
+		return "", false
+	}
+	if ctx == nil {
+		return nanoMissingIdentityValue, true
+	}
+	switch name {
+	case "user_id", "userID", "userId":
+		if v := ctx.Value(UserIDKey); identityValuePresent(v) {
+			return fmt.Sprint(v), true
+		}
+	case "user_role", "userRole":
+		if v := ctx.Value(UserRoleKey); identityValuePresent(v) {
+			return fmt.Sprint(v), true
+		}
+	default:
+		if v, ok := identityContextVar(ctx, canonical); ok && identityValuePresent(v) {
+			return fmt.Sprint(v), true
+		}
+	}
+	return nanoMissingIdentityValue, true
+}
+
+func (s *gstate) nanoTrustedVarName(name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	switch name {
+	case "user_id", "userID", "userId":
+		return "user_id", true
+	case "user_role", "userRole":
+		return "user_role", true
+	case "user_ref", "userRef":
+		return "user_ref", true
+	case "account_ref", "accountRef":
+		return "account_ref", true
+	default:
+		if s != nil && s.gj != nil && s.gj.sourceModeTrustedIdentityParam(name) {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 func rawJSONScalar(raw json.RawMessage) string {

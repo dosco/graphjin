@@ -177,13 +177,9 @@ func (s *graphjinService) runNamedWorkflow(ctx context.Context, name string, inp
 		return nil, err
 	}
 
-	wf, ok := s.workflowByName(normName, s.workflowTimeoutSeconds())
-	if !ok {
-		return nil, fmt.Errorf("workflow not found: %s", normName)
-	}
-	src, err := s.fs.Get(wf.Path)
+	wf, src, _, err := s.resolveWorkflowForContext(ctx, normName)
 	if err != nil {
-		return nil, fmt.Errorf("workflow not found: %s", normName)
+		return nil, err
 	}
 	meta := WorkflowMeta{Variables: workflowVariablesFromCatalog(wf.Variables)}
 	if err := validateWorkflowInput(meta, input); err != nil {
@@ -191,7 +187,7 @@ func (s *graphjinService) runNamedWorkflow(ctx context.Context, name string, inp
 	}
 
 	ms := s.newMCPServerWithContext(ctx)
-	return ms.runWorkflowScript(ctx, normName, string(src), input, ns)
+	return ms.runWorkflowScript(ctx, normName, src, input, ns)
 }
 
 func normalizeWorkflowName(name string) (string, error) {

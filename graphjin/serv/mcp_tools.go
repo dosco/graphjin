@@ -12,7 +12,6 @@ import (
 
 // registerExecutionTools registers the query execution tools
 func (ms *mcpServer) registerExecutionTools() {
-	sourcesUsed := ms.service.conf.Core.IsSourcesUsed()
 	// execute_graphql - Only registered when AllowRawQueries is true
 	if ms.service.conf.MCP.AllowRawQueries {
 		ms.srv.AddTool(mcp.NewTool(
@@ -49,27 +48,6 @@ func (ms *mcpServer) registerExecutionTools() {
 			mcp.Description("Optional namespace for multi-tenant deployments"),
 		),
 	), ms.handleExecuteSavedQuery)
-
-	if !sourcesUsed && ms.service.conf.legacyMCPToolsEnabled() && ms.service.conf.MCP.AllowWorkflowExecution {
-		// execute_workflow - Execute a named JS workflow from ./workflows
-		ms.srv.AddTool(mcp.NewTool(
-			"execute_workflow",
-			mcp.WithDescription("Compatibility tool for the GraphQL control-plane mutation gj_workflow_execution(insert). Execute a named JavaScript workflow from ./workflows/<name>.js. "+
-				"Discover reusable workflows first with query_catalog(where: {kind: {eq: 'workflow'}}). "+
-				"Use catalog workflow/runtime rows to inspect runtime globals and callable gj.tools.* functions. "+
-				"If the workflow declares variables in metadata, provide them here."),
-			mcp.WithString("name",
-				mcp.Required(),
-				mcp.Description("Workflow name, with or without .js extension"),
-			),
-			mcp.WithObject("variables",
-				mcp.Description("Workflow input payload passed to global `input` and `main(input)`"),
-			),
-			mcp.WithString("namespace",
-				mcp.Description("Optional namespace for multi-tenant deployments"),
-			),
-		), ms.handleExecuteWorkflow)
-	}
 }
 
 // ExecuteResult represents the result of a query execution
@@ -184,7 +162,7 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 	}
 
 	ctx = ms.service.applyIdentityContext(ctx)
-	res, err := ms.service.gj.GraphQLByName(ctx, name, varsJSON, &rc)
+	res, err := ms.service.executeSavedQueryByName(ctx, name, varsJSON, &rc)
 
 	result := ExecuteResult{}
 	if err != nil {

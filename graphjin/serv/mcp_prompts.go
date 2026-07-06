@@ -120,98 +120,12 @@ func getValidOperators(dbType string, isArray bool) []string {
 	return operatorTypeMapping["text"] // Default to text operators
 }
 
-// registerPrompts registers all MCP prompts with the server
+// registerPrompts is retained as an inert compatibility hook. Prompt guidance
+// now lives in catalog/help rows instead of MCP prompt registrations.
 func (ms *mcpServer) registerPrompts() {
 	if ms.service.conf.mcpDisabled() {
 		return
 	}
-
-	if ms.service.conf.Core.IsSourcesUsed() {
-		return
-	}
-
-	queryPromptDesc := "Generate a complete GraphJin query with proper syntax. Uses catalog-first schema/language guidance plus relationship, aggregation, and analytics patterns."
-	if ms.service.conf.legacyMCPToolsEnabled() {
-		queryPromptDesc = "Generate a complete GraphJin query with proper syntax. Returns table schema, relationship info, aggregation examples, and analytics directive patterns."
-	}
-	// write_where_clause - Help LLMs construct valid where clauses
-	ms.srv.AddPrompt(mcp.NewPrompt(
-		"write_where_clause",
-		mcp.WithPromptDescription("Generate a valid GraphJin where clause for filtering data. Uses catalog/operator context and returns valid operators for each column."),
-		mcp.WithArgument("table",
-			mcp.ArgumentDescription("Table name to filter"),
-			mcp.RequiredArgument(),
-		),
-		mcp.WithArgument("intent",
-			mcp.ArgumentDescription("What you want to filter (e.g., 'products over $50', 'users created this week')"),
-			mcp.RequiredArgument(),
-		),
-		mcp.WithArgument("database",
-			mcp.ArgumentDescription("Optional database name for multi-database deployments"),
-		),
-	), ms.handleWriteWhereClause)
-
-	// write_query - Help LLMs construct complete GraphJin queries
-	ms.srv.AddPrompt(mcp.NewPrompt(
-		"write_query",
-		mcp.WithPromptDescription(queryPromptDesc),
-		mcp.WithArgument("table",
-			mcp.ArgumentDescription("Primary table to query"),
-			mcp.RequiredArgument(),
-		),
-		mcp.WithArgument("fields",
-			mcp.ArgumentDescription("Fields to select (e.g., 'id, name, price' or 'all')"),
-		),
-		mcp.WithArgument("relationships",
-			mcp.ArgumentDescription("Related tables to include (e.g., 'owner, categories')"),
-		),
-		mcp.WithArgument("filter_intent",
-			mcp.ArgumentDescription("What to filter (e.g., 'active products over $50')"),
-		),
-		mcp.WithArgument("pagination",
-			mcp.ArgumentDescription("Pagination style: 'limit' for limit/offset, 'cursor' for cursor-based"),
-		),
-		mcp.WithArgument("database",
-			mcp.ArgumentDescription("Optional database name for multi-database deployments"),
-		),
-	), ms.handleWriteQuery)
-
-	// write_mutation - Help LLMs construct GraphJin mutations
-	ms.srv.AddPrompt(mcp.NewPrompt(
-		"write_mutation",
-		mcp.WithPromptDescription("Generate a GraphJin mutation with proper syntax for insert, update, upsert, delete, or CodeSQL preview/apply edit operations."),
-		mcp.WithArgument("operation",
-			mcp.ArgumentDescription("Mutation type: insert, update, upsert, delete, or CodeSQL preview/apply/acquire/release"),
-			mcp.RequiredArgument(),
-		),
-		mcp.WithArgument("table",
-			mcp.ArgumentDescription("Table to modify"),
-			mcp.RequiredArgument(),
-		),
-		mcp.WithArgument("data_intent",
-			mcp.ArgumentDescription("What data to modify (e.g., 'create user with email and name')"),
-		),
-		mcp.WithArgument("nested",
-			mcp.ArgumentDescription("Related records to create/connect (e.g., 'create order with products')"),
-		),
-		mcp.WithArgument("database",
-			mcp.ArgumentDescription("Optional database name for multi-database deployments"),
-		),
-	), ms.handleWriteMutation)
-
-	// fix_query_error - Help LLMs fix query errors
-	ms.srv.AddPrompt(mcp.NewPrompt(
-		"fix_query_error",
-		mcp.WithPromptDescription("Analyze a GraphJin query error and provide guidance on how to fix it."),
-		mcp.WithArgument("query",
-			mcp.ArgumentDescription("The query that produced the error"),
-			mcp.RequiredArgument(),
-		),
-		mcp.WithArgument("error",
-			mcp.ArgumentDescription("The error message received"),
-			mcp.RequiredArgument(),
-		),
-	), ms.handleFixQueryError)
 }
 
 func (ms *mcpServer) requirePromptDB() error {
@@ -586,11 +500,7 @@ func (ms *mcpServer) handleWriteQuery(ctx context.Context, req mcp.GetPromptRequ
 		sb.WriteString("  }\n")
 		sb.WriteString("}\n")
 		sb.WriteString("```\n")
-		if ms.service.conf.legacyMCPToolsEnabled() {
-			sb.WriteString("\nCall `get_query_syntax` for the full expression grammar ")
-		} else {
-			sb.WriteString("\nCall `query_catalog` with `search: \"expression aggregate\"` and `where: { kind: { eq: \"query_pattern\" } }` for the full expression grammar ")
-		}
+		sb.WriteString("\nCall `query_catalog` with `search: \"expression aggregate\"` and `where: { kind: { eq: \"query_pattern\" } }` for the full expression grammar ")
 		sb.WriteString("(add/sub/div, case, cast, coalesce, dot-notation for joined columns).\n")
 	}
 

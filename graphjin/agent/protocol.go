@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 const protocolContextKey = "_graphjin_discovery"
@@ -13,6 +14,7 @@ type protocolRuntime struct {
 	base      GraphRuntime
 	state     *discoveryState
 	namespace string
+	seedLimit int
 }
 
 type discoveryState struct {
@@ -27,15 +29,31 @@ type discoveryState struct {
 	savedQueriesDiscovered  map[string]bool
 	savedQueriesDetailed    map[string]bool
 	securityRuntimeEvidence bool
-	actions                 []protocolAction
-	helpTopics              []string
-	catalogSearches         []map[string]any
-	catalogDetails          []string
-	suggestedNext           []any
-	validations             []map[string]any
-	executions              []map[string]any
-	rawGraphQL              []map[string]any
-	violations              []protocolViolation
+	// Per-target mutation evidence, populated only by id-detail lookups and
+	// validations in THIS run (search hits never count, mirroring the
+	// saved-query detail rule).
+	detailKinds       map[string]bool
+	tablesDetailed    map[string]bool
+	tablesValidated   map[string]bool
+	workflowsDetailed map[string]bool
+	// Write executions actually performed through execute_graphql; the per-call
+	// gate should make uncovered ones impossible, these back the finalize-time
+	// skill predicates as defense in depth.
+	hasUncoveredMutation bool
+	workflowExecuted     bool
+	codeWriteExecuted    bool
+	watchWriteExecuted   bool
+	actions              []protocolAction
+	helpTopics           []string
+	catalogSearches      []map[string]any
+	catalogDetails       []string
+	suggestedNext        []any
+	validations          []map[string]any
+	executions           []map[string]any
+	rawGraphQL           []map[string]any
+	violations           []protocolViolation
+	capabilities         *CapabilityProfile
+	observe              func(ActionEvent)
 }
 
 type protocolAction struct {
@@ -46,6 +64,8 @@ type protocolAction struct {
 	Status  string         `json:"status"`
 	Summary map[string]any `json:"summary,omitempty"`
 	Error   string         `json:"error,omitempty"`
+
+	startedAt time.Time
 }
 
 type protocolViolation struct {
@@ -56,11 +76,18 @@ type protocolViolation struct {
 	Details  map[string]any `json:"details,omitempty"`
 }
 
-func newProtocolRuntime(base GraphRuntime, instruction, namespace string) *protocolRuntime {
+func newProtocolRuntime(base GraphRuntime, instruction, namespace string, seedLimit int, profile *CapabilityProfile, observe func(ActionEvent)) *protocolRuntime {
+	if seedLimit <= 0 {
+		seedLimit = defaultSeedLimit
+	}
+	state := newDiscoveryState(instruction)
+	state.capabilities = profile
+	state.observe = observe
 	return &protocolRuntime{
 		base:      base,
 		namespace: namespace,
-		state:     newDiscoveryState(instruction),
+		seedLimit: seedLimit,
+		state:     state,
 	}
 }
 
@@ -71,6 +98,10 @@ func newDiscoveryState(instruction string) *discoveryState {
 		catalogKinds:           map[string]bool{},
 		savedQueriesDiscovered: map[string]bool{},
 		savedQueriesDetailed:   map[string]bool{},
+		detailKinds:            map[string]bool{},
+		tablesDetailed:         map[string]bool{},
+		tablesValidated:        map[string]bool{},
+		workflowsDetailed:      map[string]bool{},
 	}
 }
 
@@ -85,7 +116,7 @@ func (r *protocolRuntime) Seed(ctx context.Context) (any, error) {
 	args := map[string]any{
 		"search":  r.state.instruction,
 		"explain": true,
-		"limit":   10,
+		"limit":   r.seedLimit,
 	}
 	r.addNamespace(args)
 	action := r.state.startAction("seed", "query_catalog", args)
@@ -181,6 +212,17 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		r.state.finishAction(action, "execute_graphql", args, nil, err)
 		return nil, err
 	}
+	if ContainsMutationOperation(query) {
+		roots := MutationRootFields(query)
+		if missing := r.state.missingMutationEvidence(roots); len(missing) != 0 {
+			err := fmt.Errorf("protocol violation: gather mutation-shape evidence for %s before executing a mutation: inspect the target table's catalog detail with query_catalog({id:\"table:...\"}), validate_where_clause the target, inspect a mutation_pattern detail row, or use an approved saved mutation", strings.Join(missing, ", "))
+			r.state.addViolation("mutation_evidence_required", err.Error(), "execute_graphql", true, map[string]any{"tables": missing})
+			action := r.state.startAction("model", "execute_graphql", args)
+			r.state.finishAction(action, "execute_graphql", args, nil, err)
+			return nil, err
+		}
+		r.state.recordMutationExecution(roots)
+	}
 	action := r.state.startAction("model", "execute_graphql", args)
 	out, err := r.base.ExecuteGraphQL(ctx, args)
 	r.state.finishAction(action, "execute_graphql", args, out, err)
@@ -205,11 +247,12 @@ func (r *protocolRuntime) addNamespace(args map[string]any) {
 
 func (s *discoveryState) startAction(source, tool string, args map[string]any) int {
 	action := protocolAction{
-		Step:   len(s.actions) + 1,
-		Source: source,
-		Tool:   tool,
-		Args:   redactArgs(args),
-		Status: "started",
+		Step:      len(s.actions) + 1,
+		Source:    source,
+		Tool:      tool,
+		Args:      redactArgs(args),
+		Status:    "started",
+		startedAt: time.Now(),
 	}
 	s.actions = append(s.actions, action)
 	return len(s.actions) - 1
@@ -225,6 +268,29 @@ func (s *discoveryState) finishAction(index int, tool string, args map[string]an
 		s.actions[index].Error = err.Error()
 	}
 	s.actions[index].Summary = resultSummary(tool, args, out)
+	s.emitAction(s.actions[index])
+}
+
+// emitAction forwards a completed action to the request observer (progress
+// streaming). Observer failures never affect the run.
+func (s *discoveryState) emitAction(action protocolAction) {
+	if s.observe == nil {
+		return
+	}
+	event := ActionEvent{
+		Index:     action.Step,
+		Source:    action.Source,
+		Tool:      action.Tool,
+		Args:      action.Args,
+		Status:    action.Status,
+		Summary:   action.Summary,
+		Error:     action.Error,
+		ElapsedMS: time.Since(action.startedAt).Milliseconds(),
+	}
+	func() {
+		defer func() { _ = recover() }()
+		s.observe(event)
+	}()
 }
 
 func (s *discoveryState) recordCatalog(args map[string]any, out any, seed bool) {
@@ -237,8 +303,8 @@ func (s *discoveryState) recordCatalog(args map[string]any, out any, seed bool) 
 			"seed":   seed,
 		})
 	}
-	id := stringArg(args, "id")
-	if id != "" {
+	ids := detailIDsFromArgs(args)
+	for _, id := range ids {
 		s.catalogDetails = appendUniqueString(s.catalogDetails, id)
 		s.catalogIDs[id] = true
 		if isSecurityRuntimeID(id) {
@@ -246,15 +312,84 @@ func (s *discoveryState) recordCatalog(args map[string]any, out any, seed bool) 
 		}
 	}
 	s.recordCatalogRows(out)
-	if id != "" && s.catalogKindSeen("saved_query") {
-		for _, name := range savedQueryNamesFromResult(out) {
-			s.markSavedQueryDetailed(name)
-		}
-		if name := savedQueryNameFromID(id); name != "" {
-			s.markSavedQueryDetailed(name)
+	if len(ids) != 0 {
+		s.recordDetailEvidence(ids, out)
+		if s.catalogKindSeen("saved_query") {
+			for _, name := range savedQueryNamesFromResult(out) {
+				s.markSavedQueryDetailed(name)
+			}
+			for _, id := range ids {
+				if name := savedQueryNameFromID(id); name != "" {
+					s.markSavedQueryDetailed(name)
+				}
+			}
 		}
 	}
 	s.recordNext(out)
+}
+
+// detailIDsFromArgs collects the requested detail ids from the single `id`
+// argument and the batched `ids` argument.
+func detailIDsFromArgs(args map[string]any) []string {
+	var out []string
+	if id := stringArg(args, "id"); id != "" {
+		out = appendUniqueString(out, id)
+	}
+	for _, id := range stringSliceArg(args, "ids") {
+		out = appendUniqueString(out, id)
+	}
+	return out
+}
+
+// recordDetailEvidence marks per-target evidence established by an id-detail
+// lookup: catalog kinds seen in detail, table cards (by table name and by the
+// table:<...> id suffix), and workflow cards. Search results never reach here.
+func (s *discoveryState) recordDetailEvidence(ids []string, out any) {
+	for _, card := range catalogCards(out) {
+		kind := strings.ToLower(stringFromMap(card, "kind"))
+		if kind == "" {
+			continue
+		}
+		s.detailKinds[kind] = true
+		switch kind {
+		case "table":
+			if table := strings.ToLower(stringFromMap(card, "table_name")); table != "" {
+				s.tablesDetailed[table] = true
+			}
+		case "workflow":
+			name := stringFromMap(card, "name")
+			if name == "" {
+				name = strings.TrimPrefix(stringFromMap(card, "id"), "workflow:")
+			}
+			if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
+				s.workflowsDetailed[name] = true
+			}
+		}
+	}
+	for _, id := range ids {
+		if table := tableNameFromCatalogID(id); table != "" {
+			s.tablesDetailed[table] = true
+		}
+		if strings.HasPrefix(strings.ToLower(id), "workflow:") {
+			if name := strings.ToLower(strings.TrimSpace(id[len("workflow:"):])); name != "" {
+				s.workflowsDetailed[name] = true
+			}
+		}
+	}
+}
+
+// tableNameFromCatalogID extracts the bare table name from a table:<...> catalog
+// id such as table:db:public.products (returns "products").
+func tableNameFromCatalogID(id string) string {
+	id = strings.ToLower(strings.TrimSpace(id))
+	if !strings.HasPrefix(id, "table:") {
+		return ""
+	}
+	name := id[len("table:"):]
+	if idx := strings.LastIndexAny(name, ".:"); idx >= 0 && idx+1 < len(name) {
+		name = name[idx+1:]
+	}
+	return strings.TrimSpace(name)
 }
 
 func (s *discoveryState) recordCatalogRows(out any) {
@@ -301,6 +436,11 @@ func (s *discoveryState) recordNext(out any) {
 
 func (s *discoveryState) recordValidation(args map[string]any, out any) {
 	m := mapValue(out)
+	if table := strings.ToLower(stringArg(args, "table")); table != "" {
+		// The validation attempt itself is mutation-shape evidence: the model
+		// learned the table's columns and operators even when valid=false.
+		s.tablesValidated[table] = true
+	}
 	item := map[string]any{
 		"table":    stringArg(args, "table"),
 		"database": stringArg(args, "database"),
@@ -328,6 +468,69 @@ func (s *discoveryState) recordExecution(tool string, args map[string]any, out a
 
 func (s *discoveryState) hasCatalogEvidence() bool {
 	return s.seedOK || len(s.catalogIDs) != 0 || len(s.catalogSearches) != 0
+}
+
+// missingMutationEvidence returns the mutation root fields that lack
+// mutation-shape evidence in this run. A target table is covered when its table
+// card detail was inspected by id, it was passed through validate_where_clause,
+// or a mutation_pattern detail was inspected AND the table surfaced in any
+// catalog result. gj_* system roots are excluded — they are governed by the
+// security/runtime gate. An unparseable mutation (no roots) demands generic
+// shape evidence.
+func (s *discoveryState) missingMutationEvidence(roots []string) []string {
+	if len(roots) == 0 {
+		if s.detailKinds["mutation_pattern"] || len(s.tablesDetailed) != 0 || len(s.tablesValidated) != 0 {
+			return nil
+		}
+		return []string{"mutation target"}
+	}
+	var missing []string
+	for _, root := range roots {
+		root = strings.ToLower(strings.TrimSpace(root))
+		if root == "" || strings.HasPrefix(root, "gj_") {
+			continue
+		}
+		if s.tablesDetailed[root] || s.tablesValidated[root] {
+			continue
+		}
+		if s.detailKinds["mutation_pattern"] && s.tableSeenInCatalog(root) {
+			continue
+		}
+		missing = appendUniqueString(missing, root)
+	}
+	return missing
+}
+
+// tableSeenInCatalog reports whether any catalog result in this run surfaced a
+// table:<...> card whose id suffix matches the table name.
+func (s *discoveryState) tableSeenInCatalog(table string) bool {
+	for id := range s.catalogIDs {
+		if tableNameFromCatalogID(id) == table {
+			return true
+		}
+	}
+	return false
+}
+
+// recordMutationExecution tracks that a raw mutation passed the evidence gate
+// and is about to execute; the domain flags back the write skills' finalize
+// predicates.
+func (s *discoveryState) recordMutationExecution(roots []string) {
+	if len(s.missingMutationEvidence(roots)) != 0 {
+		s.hasUncoveredMutation = true
+	}
+	for _, root := range roots {
+		root = strings.ToLower(strings.TrimSpace(root))
+		if strings.HasPrefix(root, "gj_workflow") {
+			s.workflowExecuted = true
+		}
+		if strings.HasPrefix(root, "gj_code") {
+			s.codeWriteExecuted = true
+		}
+		if strings.HasPrefix(root, "gj_watch") {
+			s.watchWriteExecuted = true
+		}
+	}
 }
 
 func (s *discoveryState) catalogKindSeen(kind string) bool {
@@ -363,6 +566,7 @@ func (s *discoveryState) finalize(resp Response) Response {
 			resp = blockResponse(resp)
 		}
 	}
+	resp.Skill = s.skillName
 	resp.Actions = s.actionValues()
 	resp.Evidence = s.mergeEvidence(resp.Evidence)
 	if resp.Next == nil {
@@ -374,6 +578,11 @@ func (s *discoveryState) finalize(resp Response) Response {
 				resp.Errors = appendProtocolError(resp.Errors, violation)
 			}
 		}
+		if resp.Refusal == nil {
+			resp.Refusal = s.buildRefusal(resp)
+		}
+	} else {
+		resp.Refusal = nil
 	}
 	return resp
 }
@@ -418,6 +627,9 @@ func (s *discoveryState) mergeEvidence(model any) any {
 		"catalog_kinds":            sortedBoolKeys(s.catalogKinds),
 		"saved_queries_discovered": sortedBoolKeys(s.savedQueriesDiscovered),
 		"saved_queries_detailed":   sortedBoolKeys(s.savedQueriesDetailed),
+		"tables_detailed":          sortedBoolKeys(s.tablesDetailed),
+		"tables_validated":         sortedBoolKeys(s.tablesValidated),
+		"workflows_detailed":       sortedBoolKeys(s.workflowsDetailed),
 		"validations":              s.validations,
 		"executions":               s.executions,
 		"raw_graphql":              s.rawGraphQL,
@@ -666,7 +878,8 @@ func writeLikeGraphQL(query string) bool {
 	return ContainsMutationOperation(query) ||
 		strings.Contains(lower, "gj_config") ||
 		strings.Contains(lower, "gj_workflow") ||
-		strings.Contains(lower, "gj_code")
+		strings.Contains(lower, "gj_code") ||
+		strings.Contains(lower, "gj_watch")
 }
 
 func graphQLOperationKind(query string) string {

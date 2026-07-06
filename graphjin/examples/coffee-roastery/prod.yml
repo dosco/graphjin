@@ -4,6 +4,9 @@ production: true
 log_level: "warn"
 log_format: "json"
 
+watches:
+  runner: "off"
+
 mcp:
   disable: false
   allow_config_updates: false

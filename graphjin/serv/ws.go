@@ -254,7 +254,7 @@ func (s *graphjinService) subSwitch(wc *wsConn, req wsReq) (err error) {
 			if x.UserIDProvider != "" {
 				c = context.WithValue(c, core.UserIDProviderKey, x.UserIDProvider)
 			}
-			if x.UserRole != "" {
+			if x.UserRole != "" && !core.IsReservedRoleName(x.UserRole) {
 				c = context.WithValue(c, core.UserRoleKey, x.UserRole)
 			}
 			if x.UserID != nil {

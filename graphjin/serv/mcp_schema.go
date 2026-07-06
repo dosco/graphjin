@@ -24,111 +24,8 @@ func (ms *mcpServer) requireDB() *mcp.CallToolResult {
 	return nil
 }
 
-// registerSchemaTools registers the schema discovery tools
+// registerSchemaTools registers the catalog-first schema action tools.
 func (ms *mcpServer) registerSchemaTools() {
-	sourcesUsed := ms.service.conf.Core.IsSourcesUsed()
-	if !sourcesUsed && ms.service.conf.legacyMCPToolsEnabled() {
-		// list_namespaces - One-query rollup of (database, schema) namespaces
-		ms.srv.AddTool(mcp.NewTool(
-			"list_namespaces",
-			mcp.WithDescription("Legacy discovery tool. Prefer query_catalog. List namespaces (databases/schemas) with table counts and approximate row totals."),
-			mcp.WithString("database",
-				mcp.Description("Optional database name. Omit to roll up across all configured databases."),
-			),
-			mcp.WithOutputSchema[ListNamespacesResult](),
-		), ms.handleListNamespaces)
-
-		// list_tables - List all database tables
-		ms.srv.AddTool(mcp.NewTool(
-			"list_tables",
-			mcp.WithDescription("Legacy discovery tool. Prefer query_catalog(where: {kind: {eq: 'table'}}). List all database tables."),
-			mcp.WithString("namespace",
-				mcp.Description("Optional namespace for multi-tenant deployments"),
-			),
-			mcp.WithString("database",
-				mcp.Description("Optional database name to filter tables. Omit to see tables from ALL databases."),
-			),
-			mcp.WithString("schema",
-				mcp.Description("Optional database schema name to filter tables."),
-			),
-			mcp.WithString("search",
-				mcp.Description("Optional case-insensitive search across table, schema, database, and comment."),
-			),
-			mcp.WithNumber("limit",
-				mcp.Description("Maximum tables to return. Defaults to 100, max 500."),
-				mcp.Min(1),
-				mcp.Max(500),
-			),
-			mcp.WithString("cursor",
-				mcp.Description("Pagination cursor from a previous list_tables response."),
-			),
-			mcp.WithOutputSchema[ListTablesResult](),
-		), ms.handleListTables)
-
-		// describe_table - Get detailed table schema with relationships
-		ms.srv.AddTool(mcp.NewTool(
-			"describe_table",
-			mcp.WithDescription("Legacy discovery tool. Prefer query_catalog(id: ...) on a table item. Get detailed schema for a table."),
-			mcp.WithString("table",
-				mcp.Required(),
-				mcp.Description("Name of the table to describe"),
-			),
-			mcp.WithString("namespace",
-				mcp.Description("Optional namespace for multi-tenant deployments"),
-			),
-			mcp.WithString("database",
-				mcp.Description("Optional database name. Omit to search all databases."),
-			),
-			mcp.WithString("schema",
-				mcp.Description("Optional database schema name. Use with database to disambiguate duplicate table names across schemas."),
-			),
-			mcp.WithOutputSchema[TableSchemaWithAggregations](),
-		), ms.handleDescribeTable)
-
-		// find_path - Find relationship path between tables
-		ms.srv.AddTool(mcp.NewTool(
-			"find_path",
-			mcp.WithDescription("Legacy discovery tool. Prefer relationship items in query_catalog. Find relationship path between two tables."),
-			mcp.WithString("from_table",
-				mcp.Required(),
-				mcp.Description("Starting table name"),
-			),
-			mcp.WithString("to_table",
-				mcp.Required(),
-				mcp.Description("Target table name"),
-			),
-			mcp.WithString("database",
-				mcp.Description("Optional database name. Omit to search all databases."),
-			),
-			mcp.WithOutputSchema[struct {
-				Path                          []core.PathStep      `json:"path"`
-				ExampleQuery                  string               `json:"example_query"`
-				ExampleQueryCompiles          bool                 `json:"example_query_compiles"`
-				ExampleQueryWarning           *FixQueryErrorResult `json:"example_query_warning,omitempty"`
-				CollapsedExampleQuery         string               `json:"collapsed_example_query,omitempty"`
-				CollapsedExampleQueryCompiles bool                 `json:"collapsed_example_query_compiles,omitempty"`
-				CollapsedExampleQueryWarning  *FixQueryErrorResult `json:"collapsed_example_query_warning,omitempty"`
-				CollapsedNote                 string               `json:"collapsed_note,omitempty"`
-			}](),
-		), ms.handleFindPath)
-
-		ms.srv.AddTool(mcp.NewTool(
-			"get_table_sample",
-			mcp.WithDescription("Legacy discovery tool. Prefer catalog item details. Get live-data statistics and sample rows for one table."),
-			mcp.WithString("table",
-				mcp.Required(),
-				mcp.Description("Table name to sample"),
-			),
-			mcp.WithString("database",
-				mcp.Description("Database name. Required when the table name is ambiguous across configured databases."),
-			),
-			mcp.WithString("schema",
-				mcp.Description("Optional database schema name."),
-			),
-			mcp.WithOutputSchema[TableSampleResult](),
-		), ms.handleGetTableSample)
-	}
-
 	// validate_where_clause - Validate where clause syntax and type compatibility
 	ms.srv.AddTool(mcp.NewTool(
 		"validate_where_clause",
@@ -148,36 +45,6 @@ func (ms *mcpServer) registerSchemaTools() {
 			mcp.Description("Optional database name. Omit to search all databases."),
 		),
 	), ms.handleValidateWhereClause)
-
-	if !sourcesUsed && ms.service.conf.legacyMCPToolsEnabled() {
-		// get_workflow_guide - Returns recommended workflow for using MCP tools
-		ms.srv.AddTool(mcp.NewTool(
-			"get_workflow_guide",
-			mcp.WithDescription("Legacy planning tool. Prefer get_catalog_entrypoints. Get the recommended workflow for using GraphJin MCP tools effectively."),
-		), ms.handleGetWorkflowGuide)
-
-		// get_discovery_schema - JSON schemas for every discovery tool's response.
-		ms.srv.AddTool(mcp.NewTool(
-			"get_discovery_schema",
-			mcp.WithDescription("Legacy discovery schema tool. Prefer query_catalog and query_catalog(id: ...) output schemas."),
-		), ms.handleGetDiscoverySchema)
-	}
-
-	// reload_schema - Only registered when allow_schema_reload is true
-	if !sourcesUsed && ms.service.conf.MCP.AllowSchemaReload {
-		ms.srv.AddTool(mcp.NewTool(
-			"reload_schema",
-			mcp.WithDescription("Reload the database schema to discover new or modified tables. "+
-				"Use this tool when: (1) the user says a table exists but query_catalog(where: {kind: {eq: 'table'}}) doesn't show it, "+
-				"(2) the user has just created new tables or modified the database structure, "+
-				"(3) the user explicitly asks to reload, refresh, or recheck the database schema. "+
-				"This triggers immediate discovery without waiting for the automatic polling interval. "+
-				"Pass database for a source-scoped reload of one configured database source; omit it for a full reload."),
-			mcp.WithString("database",
-				mcp.Description("Optional configured database/source name for source-scoped schema reload. Omit for full reload."),
-			),
-		), ms.handleReloadSchema)
-	}
 }
 
 func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -387,8 +254,8 @@ func generateAggregations(schema *core.TableSchema) AggregationInfo {
 			"Single column: { %s { count_id sum_<numeric_col> avg_<numeric_col> } }. "+
 				"Arithmetic across columns (revenue, margin, ratios): "+
 				"{ %s { revenue: sum(expr: { mul: [col_a, col_b] }) } }. "+
-				"For metric-by-dimension shape (revenue by category, etc.) root at the dimension table — see get_query_syntax.patterns. "+
-				"On compile error, pass query+error to fix_query_error for a structured repair.",
+				"For metric-by-dimension shape (revenue by category, etc.) root at the dimension table; inspect query_pattern catalog rows for examples. "+
+				"On compile error, inspect errors[].extensions.graphjin_repair and the relevant catalog rows before retrying.",
 			schema.Name, schema.Name),
 		Limitations: aggregationLimitations(),
 	}
@@ -403,7 +270,7 @@ func aggregationLimitations() []string {
 	return []string{
 		"order_by does not work on aggregate aliases (sum_*, count_*, custom names from sum(expr:)). Sort aggregated results in workflow JavaScript.",
 		"Aggregates at non-root nested levels work but the GROUP BY happens at the root selection only. distinct: dedupes rows; it does not bucket.",
-		"Nesting a join through a column that is not in distinct: of an aggregating select is rejected at compile time — root at the dimension table instead. See get_query_syntax.patterns.metric_by_dimension.",
+		"Nesting a join through a column that is not in distinct: of an aggregating select is rejected at compile time — root at the dimension table instead and inspect metric_by_dimension query_pattern catalog rows.",
 		"Recursive (find:) selections cannot contain aggregate fields at the same level — fold via parent if needed.",
 		"MongoDB does not support expression aggregates (sum(expr:)) in the v1 driver — fall back to per-column aggregates.",
 	}
@@ -505,7 +372,7 @@ func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest
 		if collapsedCompiles {
 			collapsedNote = "GraphJin auto-traverses the multi-hop FK path; you can nest `" +
 				fromTable + "` and `" + toTable + "` directly. Use this collapsed form for " +
-				"per-dimension aggregations (see get_query_syntax.patterns.metric_by_dimension)."
+				"per-dimension aggregations; inspect metric-by-dimension query_pattern catalog rows for examples."
 		} else {
 			collapsedNote = "Auto-traversal between `" + fromTable + "` and `" + path[len(path)-1].To +
 				"` did not compile on this schema (see collapsed_example_query_warning); " +
@@ -537,9 +404,8 @@ func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest
 
 // validateExampleQuery runs the generated example through ExplainQuery
 // (compile-only, no execution) and returns either (true, nil) or
-// (false, structured-warning) depending on whether it compiles. Reuses
-// the fix_query_error machinery so the warning carries the same Kind /
-// Diagnosis / RepairedQuery shape the agent already knows how to read.
+// (false, structured-warning) depending on whether it compiles. The warning
+// uses the same repair shape exposed through GraphJin error extensions.
 //
 // ExplainQuery returns (explanation, nil) for COMPILE errors — it stuffs
 // the message into explanation.Errors rather than the Go error return —
@@ -643,54 +509,33 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	}
 
 	guide.QueryWorkflow = append(guide.QueryWorkflow,
-		"1. Call get_query_syntax to learn GraphJin DSL (it differs from standard GraphQL)",
+		"1. Call query_catalog(search: \"<user instruction>\") to discover relevant schema, saved queries, workflows, and language rules",
+		"2. Call query_catalog(id: \"<best_result_id>\") to inspect details, evidence, examples, safety notes, and edges before acting",
+		"3. Use validate_where_clause before filters that depend on column types, operators, or real values",
 	)
-	if has("plan_database_setup") && has("test_database_connection") && has("apply_database_setup") {
-		guide.QueryWorkflow = append(guide.QueryWorkflow,
-			"1.5 If no database is configured, use plan_database_setup → test_database_connection → apply_database_setup",
-		)
-	}
-	guide.QueryWorkflow = append(guide.QueryWorkflow,
-		"2. Call list_tables to see available data",
-		"3. Call describe_table for schema details + available aggregation functions",
-		"4. Check list_saved_queries - a saved query may already exist for your need",
-	)
-	if has("write_query") {
-		guide.QueryWorkflow = append(guide.QueryWorkflow,
-			"4.5 Call write_query when you want a guided starter query with schema-aware examples",
-		)
-	}
 	if has("execute_graphql") {
 		guide.QueryWorkflow = append(guide.QueryWorkflow,
-			"5. Prefer execute_saved_query when a matching saved query exists, otherwise call execute_graphql",
+			"4. Prefer execute_saved_query when a matching saved query exists, otherwise call execute_graphql when raw execution is enabled",
 		)
 	} else {
 		guide.QueryWorkflow = append(guide.QueryWorkflow,
-			"5. Raw queries are disabled, so inspect saved queries first and execute them with execute_saved_query",
+			"4. Raw queries are disabled, so inspect saved_query catalog rows and execute them with execute_saved_query",
 		)
 	}
 	guide.QueryWorkflow = append(guide.QueryWorkflow,
-		"6. For pagination, save cursor IDs from response for next page requests",
+		"5. For pagination, save cursor IDs from response for next page requests",
 	)
-	if has("get_js_runtime_api") && has("execute_workflow") {
-		guide.QueryWorkflow = append(guide.QueryWorkflow,
-			"7. For reusable orchestration, use gj_catalog/query_catalog where kind = workflow, then execute_workflow",
-		)
-	}
 
 	guide.MutationWorkflow = append(guide.MutationWorkflow,
-		"1. Call get_mutation_syntax to learn insert/update/upsert/delete syntax",
-		"2. Call describe_table to understand required columns and types",
-		"3. Check list_saved_queries for existing mutation queries",
+		"1. Call query_catalog(search: \"<mutation intent>\") or query_catalog(where: {kind: {eq: \"mutation_pattern\"}}) to learn the mutation shape",
+		"2. Inspect the best catalog row by id before drafting insert/update/upsert/delete syntax",
+		"3. Check saved_query catalog rows for existing approved mutation queries",
 	)
 	if len(ms.service.selectedCodeSQLDatabases()) != 0 {
 		guide.MutationWorkflow = append(guide.MutationWorkflow,
 			"3.25 For CodeSQL replace/delete/rename edits, query gj_code code/code_context plus path/hash before drafting a mutation",
 			"3.75 Preview CodeSQL replace/create/delete/rename edits with gj_code(kind: \"change_set\", action: \"preview\") before apply",
 		)
-	}
-	if has("write_mutation") {
-		guide.MutationWorkflow = append(guide.MutationWorkflow, "3.5 Call write_mutation for a guided mutation skeleton")
 	}
 	if has("execute_graphql") {
 		guide.MutationWorkflow = append(guide.MutationWorkflow, "4. Call execute_graphql with the mutation")
@@ -702,10 +547,7 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	if analyticsMode {
 		guide.AnalyticsModeRules = analyticsModeRules()
 	} else {
-		guide.Tips = append(guide.Tips,
-			"ALWAYS use execute_workflow for data questions — NEVER execute_graphql directly. Tables can have hundreds of thousands of rows and you cannot predict sizes.",
-			"Every query level has a silent default row limit. Always set explicit limits on every level, especially nested children.",
-		)
+		guide.Tips = append(guide.Tips, "Every query level has a silent default row limit. Always set explicit limits on every level, especially nested children.")
 	}
 
 	// Three universal query shapes. Surfaced unconditionally — patterns
@@ -713,64 +555,22 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	guide.QueryPatterns = canonicalQueryPatterns()
 
 	guide.Tips = append(guide.Tips,
-		"ALWAYS discover workflow items with query_catalog(where: {kind: {eq: 'workflow'}}) first — reuse an existing workflow if one fits the question.",
-		"Queries inside workflows must be TOP-DOWN: start from the grouping/parent table, nest into children. NEVER filter bottom-up from leaf tables.",
+		"Discover workflow items with query_catalog(where: {kind: {eq: 'workflow'}}) first — reuse an existing workflow through gj_workflow_execution when one fits the question.",
+		"Queries should be TOP-DOWN: start from the grouping/parent table, nest into children. NEVER filter bottom-up from leaf tables.",
 		"order_by can target aggregation aliases when distinct is present and expression aggregate aliases; sort in workflow JavaScript only for metrics computed after query execution.",
 		"Use distinct: [columns] for GROUP BY — group_by does not exist.",
 		"Use analytics directives for reporting rows: @running, @moving, @previous, @next, @first, @last, @rank, @denseRank, and @rowNumber while keeping each input row visible.",
-		"Use find_path or explore_relationships to discover join paths — NEVER guess at FK relationships.",
-		"Aggregations like count_id, sum_price are available on all tables (see describe_table)",
-		"Use the write_where_clause prompt or validate_where_clause tool for help building complex filters",
+		"Use relationship catalog rows, details_json, and edges_json to discover join paths — NEVER guess at FK relationships.",
+		"Aggregation patterns like count_id and sum_price are documented in query_pattern catalog rows.",
+		"Use validate_where_clause for help checking complex filters",
 		"Use @object directive when you expect a single result: { user @object { id } }",
-		"For multi-database deployments, use the `database` parameter in list_tables and describe_table to filter by database.",
+		"For multi-database deployments, use query_catalog where.database_name filters to narrow discovery.",
 	)
-	if has("list_workflows") {
-		guide.Tips = append(guide.Tips, "Legacy mode only: list_workflows is available as a migration shim, but query_catalog workflow items are the preferred discovery surface.")
-	}
 	if len(ms.service.selectedCodeSQLDatabases()) != 0 {
 		guide.Tips = append(guide.Tips,
 			"For CodeSQL source edits, read gj_code code/code_context first, then preview replace/create/delete/rename operations with gj_code kind change_set before apply.",
 			"CodeSQL applies are guarded by expected_hash for replace/delete/rename, exact old_text for replacements, target-exists checks for creates, and lock overlap checks; stale previews must be requeried and regenerated.",
 		)
-	}
-	if has("write_query") {
-		guide.Tips = append(guide.Tips, "Use write_query to generate schema-aware starter queries when prompts/resources are not available in the client")
-	}
-	if has("write_mutation") {
-		guide.Tips = append(guide.Tips, "Use write_mutation to generate insert/update/upsert/delete skeletons before execution")
-	}
-	if has("fix_query_error") {
-		guide.Tips = append(guide.Tips, "Use fix_query_error with the exact query and error text after failed execute_graphql calls")
-	}
-	if has("update_current_config") {
-		guide.Tips = append(guide.Tips, "Use resolvers to join DB tables with remote APIs - configure via update_current_config with resolvers parameter")
-	}
-	if has("update_current_config") || has("apply_database_setup") {
-		guide.Tips = append(guide.Tips, "Prefer the `next` field returned by onboarding/config tools for machine-readable follow-up actions")
-	}
-	if has("plan_database_setup") {
-		guide.Tips = append(guide.Tips, "Use plan_database_setup for ranked discover results and explicit candidate selection")
-	}
-	if has("test_database_connection") && has("apply_database_setup") {
-		guide.Tips = append(guide.Tips, "Use test_database_connection before apply_database_setup when credentials are uncertain")
-	}
-	if has("explain_query") {
-		guide.Tips = append(guide.Tips, "Use explain_query to see the exact compiled query that will run before executing — great for debugging and optimization")
-	}
-	if has("explore_relationships") {
-		guide.Tips = append(guide.Tips, "Use explore_relationships to map out the data model neighborhood around any table")
-	}
-	if has("audit_role_permissions") {
-		guide.Tips = append(guide.Tips, "Use audit_role_permissions to understand what each role can access")
-	}
-	if has("save_workflow") {
-		guide.Tips = append(guide.Tips, "Use save_workflow to persist new workflows so future queries can reuse them")
-	}
-	if has("get_js_runtime_api") && has("save_workflow") {
-		guide.Tips = append(guide.Tips, "Use get_js_runtime_api before authoring JS workflows so function names and argument schemas are exact")
-	}
-	if has("execute_workflow") {
-		guide.Tips = append(guide.Tips, "Use execute_workflow to run ./workflows/<name>.js with variables passed as `input`")
 	}
 
 	addSequence := func(name string, required []string, sequence string) {
@@ -782,60 +582,29 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		guide.ToolSequences[name] = sequence
 	}
 
-	if has("plan_database_setup") && has("test_database_connection") && has("apply_database_setup") {
-		addSequence("db_onboarding_guided",
-			[]string{"discover_databases", "plan_database_setup", "test_database_connection", "apply_database_setup", "query_catalog"},
-			"discover_databases → plan_database_setup → test_database_connection → apply_database_setup → query_catalog(where: {kind: {eq: 'table'}})",
-		)
-	}
-	if has("execute_workflow") {
-		addSequence("data_question",
-			[]string{"query_catalog", "execute_workflow"},
-			"query_catalog(where: {kind: {eq: 'workflow'}}) → query_catalog(id: '<workflow_id>') → execute_workflow (ALWAYS use workflows for data questions)",
-		)
-	}
 	if has("execute_graphql") {
 		addSequence("mutation",
 			[]string{"query_catalog", "execute_graphql"},
 			"query_catalog(where: {kind: {eq: 'mutation_pattern'}}) → query_catalog(id: '<mutation_pattern_id>') → execute_graphql",
 		)
 		if len(ms.service.selectedCodeSQLDatabases()) != 0 {
-			guide.ToolSequences["codesql_mutation"] = "query_catalog(search: 'CodeSQL') → execute_graphql(query code/code_context first) → write_mutation → execute_graphql(preview) → execute_graphql(apply)"
+			guide.ToolSequences["codesql_mutation"] = "query_catalog(search: 'CodeSQL') → execute_graphql(query code/code_context first) → execute_graphql(preview) → execute_graphql(apply)"
 		}
 		addSequence("multi_database_exploration",
 			[]string{"query_catalog", "execute_graphql"},
 			"query_catalog(where: {kind: {eq: 'table'}, database_name: {eq: 'db_name'}}) → query_catalog(id: '<table_id>') → execute_graphql",
 		)
-	} else {
-		if has("list_saved_queries") && has("get_saved_query") && has("execute_saved_query") {
-			addSequence("saved_query_only",
-				[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
-				"list_saved_queries → get_saved_query → execute_saved_query",
-			)
-			addSequence("mutation",
-				[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
-				"list_saved_queries → get_saved_query → execute_saved_query",
-			)
-		} else if has("query_catalog") && has("execute_saved_query") {
-			addSequence("saved_query_only",
-				[]string{"query_catalog", "execute_saved_query"},
-				"query_catalog(where: {kind: {eq: 'saved_query'}}) → query_catalog(id: '<saved_query_id>') → execute_saved_query",
-			)
-			addSequence("mutation",
-				[]string{"query_catalog", "execute_saved_query"},
-				"query_catalog(where: {kind: {eq: 'saved_query'}}) → query_catalog(id: '<saved_query_id>') → execute_saved_query",
-			)
-		} else if has("execute_saved_query") {
-			guide.ToolSequences["saved_query_only"] = "execute_saved_query"
-			guide.ToolSequences["mutation"] = "execute_saved_query"
-		}
-	}
-	if has("list_saved_queries") && has("get_saved_query") && has("execute_saved_query") {
-		addSequence("use_saved_query",
-			[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
-			"list_saved_queries → get_saved_query → execute_saved_query",
-		)
 	} else if has("query_catalog") && has("execute_saved_query") {
+		addSequence("saved_query_only",
+			[]string{"query_catalog", "execute_saved_query"},
+			"query_catalog(where: {kind: {eq: 'saved_query'}}) → query_catalog(id: '<saved_query_id>') → execute_saved_query",
+		)
+		addSequence("mutation",
+			[]string{"query_catalog", "execute_saved_query"},
+			"query_catalog(where: {kind: {eq: 'saved_query'}}) → query_catalog(id: '<saved_query_id>') → execute_saved_query",
+		)
+	}
+	if has("query_catalog") && has("execute_saved_query") {
 		addSequence("use_saved_query",
 			[]string{"query_catalog", "execute_saved_query"},
 			"query_catalog(where: {kind: {eq: 'saved_query'}}) → query_catalog(id: '<saved_query_id>') → execute_saved_query",
@@ -847,68 +616,8 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	)
 	addSequence("build_where_clause",
 		[]string{"query_catalog", "validate_where_clause"},
-		"query_catalog(where: {kind: {eq: 'column'}}) → use write_where_clause prompt → validate_where_clause",
+		"query_catalog(where: {kind: {eq: 'column'}}) → query_catalog(id: '<column_id>') → validate_where_clause",
 	)
-	if has("write_query") && has("validate_where_clause") && has("execute_graphql") {
-		addSequence("query_authoring",
-			[]string{"query_catalog", "write_query", "validate_where_clause"},
-			"query_catalog → query_catalog(id: '<catalog_item_id>') → write_query → validate_where_clause → execute_graphql",
-		)
-	}
-	if has("write_mutation") && has("execute_graphql") {
-		addSequence("mutation_authoring",
-			[]string{"query_catalog", "write_mutation"},
-			"query_catalog(where: {kind: {eq: 'mutation_pattern'}}) → query_catalog(id: '<mutation_pattern_id>') → write_mutation → execute_graphql",
-		)
-	}
-	if has("fix_query_error") && has("execute_graphql") {
-		addSequence("query_repair",
-			[]string{"fix_query_error", "query_catalog"},
-			"fix_query_error → query_catalog → execute_graphql",
-		)
-	}
-	if has("get_current_config") && has("update_current_config") && has("reload_schema") && has("execute_graphql") {
-		addSequence("configure_resolver",
-			[]string{"get_current_config", "update_current_config", "reload_schema", "execute_graphql"},
-			"dev mode: get_current_config(section: resolvers) → update_current_config(resolvers: [...]) → reload_schema → execute_graphql",
-		)
-	}
-	if has("explain_query") && has("execute_graphql") {
-		addSequence("debug_query",
-			[]string{"explain_query", "execute_graphql"},
-			"explain_query → (fix issues) → execute_graphql",
-		)
-	}
-	if has("explore_relationships") {
-		addSequence("explore_data_model",
-			[]string{"list_tables", "explore_relationships", "describe_table"},
-			"list_tables → explore_relationships(depth: 2) → describe_table",
-		)
-	}
-	if has("audit_role_permissions") && has("update_current_config") {
-		addSequence("security_audit",
-			[]string{"audit_role_permissions", "update_current_config"},
-			"audit_role_permissions(role: 'all') → update_current_config(roles: [...]) → audit_role_permissions (verify)",
-		)
-	}
-	if has("execute_workflow") {
-		addSequence("js_workflow_reuse",
-			[]string{"query_catalog", "execute_workflow"},
-			"query_catalog(where: {kind: {eq: 'workflow'}}) → query_catalog(id: '<workflow_id>') → execute_workflow",
-		)
-	}
-	if has("save_workflow") {
-		addSequence("js_workflow_authoring",
-			[]string{"get_js_runtime_api", "query_catalog", "save_workflow", "execute_workflow"},
-			"query_catalog(where: {kind: {eq: 'workflow'}}) → get_js_runtime_api → query_catalog(id: '<workflow_id>') → save_workflow → execute_workflow",
-		)
-	}
-	if has("list_workflows") {
-		addSequence("legacy_js_workflow_discovery",
-			[]string{"list_workflows", "execute_workflow"},
-			"legacy only: list_workflows → execute_workflow",
-		)
-	}
 	return ms.toolResultJSON("get_workflow_guide", req.GetArguments(), guide)
 }
 
@@ -1174,7 +883,7 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 			Path:       "",
 			Error:      "compiler_error",
 			Message:    compilerErr,
-			Suggestion: "Use fix_query_error with the example_query and compiler error, or inspect query_catalog for valid columns and relationships.",
+			Suggestion: "Inspect query_catalog for valid columns and relationships, then use errors[].extensions.graphjin_repair before retrying.",
 		})
 	}
 

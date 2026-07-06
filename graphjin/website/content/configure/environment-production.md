@@ -26,8 +26,6 @@ mode: agentic
 sources:
   - name: graphjin
     kind: graphjin
-    catalog: true
-    metadata: true
     access:
       roots:
         gj_catalog: authenticated

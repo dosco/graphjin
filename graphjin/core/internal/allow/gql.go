@@ -14,8 +14,8 @@ var incRe = regexp.MustCompile(`(?m)#import \"(.+)\"`)
 
 var ErrInvalidImportPath = fmt.Errorf("%w: invalid import path", ErrUnknownGraphQLQuery)
 
-// readGQL reads a graphql file and resolves all imports
-func readGQL(fs FS, fname string) (gql []byte, err error) {
+// ReadGQL reads a graphql file and resolves all imports.
+func ReadGQL(fs FS, fname string) (gql []byte, err error) {
 	var b bytes.Buffer
 
 	ok, err := fs.Exists(fname)
@@ -31,6 +31,11 @@ func readGQL(fs FS, fname string) (gql []byte, err error) {
 	}
 	gql = b.Bytes()
 	return
+}
+
+// readGQL reads a graphql file and resolves all imports.
+func readGQL(fs FS, fname string) (gql []byte, err error) {
+	return ReadGQL(fs, fname)
 }
 
 // parseGQL parses a graphql file and resolves all imports

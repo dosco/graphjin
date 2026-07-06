@@ -26,6 +26,8 @@ func LookupUser() {
 
 	conf := &Config{
 		Core: Core{
+			// Catalog mirror + code db-reference linking are agentic-surface features.
+			Mode:             "agentic",
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
 				{Name: "app", Kind: "database", Type: "sqlite", Path: appPath, Default: true},
@@ -238,11 +240,15 @@ func TestMetadataCatalogMirrorRefreshesWorkflowRowsAfterMutation(t *testing.T) {
 	appPath := createMetadataAppDB(t)
 	conf := &Config{
 		Core: Core{
+			// Workflows + catalog mirror are agentic-surface features.
+			Mode:             "agentic",
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
 				{Name: "app", Kind: "database", Type: "sqlite", Path: appPath, Default: true},
 				{Name: defaultMetadataDBName, Kind: "graphjin"},
-				{Name: "workflows", Kind: "workflow"},
+				// Agentic defaults workflow.write off; grant it explicitly so the
+				// mutation path exercises catalog-mirror refresh.
+				{Name: "workflows", Kind: "workflow", Capabilities: map[string]bool{"workflow.write": true}},
 			},
 		},
 		Serv: Serv{

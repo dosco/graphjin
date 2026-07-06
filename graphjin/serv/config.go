@@ -303,10 +303,22 @@ type MCPConfig struct {
 	// Auto-enabled in dev mode. Default: false
 	AllowRawQueries bool `mapstructure:"allow_raw_queries" jsonschema:"title=Allow Raw Queries,default=false"`
 
-	// LegacyDiscovery registers the older MCP discovery/syntax tools and legacy
-	// HTTP helper endpoints such as /api/v1/discovery and /api/v1/workflows.
-	// Disabled by default in sources used because catalog/control-plane GraphQL
-	// is now the primary AI discovery and action surface.
+	// IncludeToolsWithAgent keeps the low-level MCP tools (query_catalog,
+	// graphql_help, execute_saved_query, execute_graphql, validate_where_clause,
+	// schema tools) registered even when the ask_graphjin_agent tool is enabled.
+	// By default the agent is the single front-door tool and orchestrates those
+	// primitives internally, so they are hidden to keep the MCP surface minimal.
+	// Set true only if a client needs to drive the primitives directly. Default: false
+	IncludeToolsWithAgent bool `mapstructure:"include_tools_with_agent" jsonschema:"title=Include MCP Tools With Agent,default=false"`
+
+	// HTTPStateful enables persistent Streamable HTTP MCP sessions. This is
+	// required for server-initiated client sampling over HTTP and should be used
+	// behind sticky sessions in multi-node deployments. Default: false
+	HTTPStateful bool `mapstructure:"http_stateful" jsonschema:"title=Stateful MCP HTTP Transport,default=false"`
+
+	// LegacyDiscovery keeps legacy HTTP helper endpoints such as
+	// /api/v1/discovery and /api/v1/workflows available for compatibility.
+	// It no longer expands the MCP tool surface; MCP is catalog-first.
 	LegacyDiscovery bool `mapstructure:"legacy_discovery" jsonschema:"title=Enable Legacy Discovery Tools,default=false"`
 
 	// Default user ID for stdio transport (CLI). Can be overridden by GRAPHJIN_USER_ID env var.
@@ -341,17 +353,16 @@ type MCPConfig struct {
 	// Uses GraphJin DDL (db.ddl) format. Auto-enabled in dev mode. Default: false
 	AllowSchemaUpdates bool `mapstructure:"allow_schema_updates" jsonschema:"title=Allow Schema Updates,default=false"`
 
-	// AllowWorkflowUpdates enables workflow writes through gj_workflow and,
-	// when legacy MCP discovery is enabled, the save_workflow compatibility tool.
+	// AllowWorkflowUpdates enables workflow writes through gj_workflow.
 	// Saved workflows are discoverable via workflow catalog items. Execution
 	// through gj_workflow_execution is controlled by normal read_only table/source
 	// configuration because it is an insert-shaped managed mutation.
 	// Auto-enabled in dev mode. Default: false
 	AllowWorkflowUpdates bool `mapstructure:"allow_workflow_updates" jsonschema:"title=Allow Workflow Updates,default=false"`
 
-	// AllowWorkflowExecution enables the execute_workflow compatibility tool
-	// when legacy MCP discovery is enabled. GraphQL execution through
-	// gj_workflow_execution is controlled by normal read_only table/source config.
+	// AllowWorkflowExecution keeps the legacy HTTP workflow execution surface
+	// available when legacy discovery is enabled. MCP workflow execution uses
+	// catalog discovery plus gj_workflow_execution.
 	// Auto-enabled in dev mode. Default: false
 	AllowWorkflowExecution bool `mapstructure:"allow_workflow_execution" jsonschema:"title=Allow Workflow Execution,default=false"`
 
@@ -805,6 +816,8 @@ func newViperWithDefaults() *viper.Viper {
 	// tell whether production legacy configs explicitly enabled MCP.
 	vi.SetDefault("mcp.legacy_discovery", false)
 	vi.SetDefault("mcp.only", false)
+	vi.SetDefault("mcp.include_tools_with_agent", false)
+	vi.SetDefault("mcp.http_stateful", false)
 	vi.SetDefault("mcp.cursor_cache_ttl", 1800)   // 30 minutes
 	vi.SetDefault("mcp.cursor_cache_size", 10000) // max in-memory entries
 	vi.SetDefault("mcp.oauth.enabled", false)
@@ -819,10 +832,13 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("agent.enabled", false)
 	vi.SetDefault("agent.provider", "openai")
 	vi.SetDefault("agent.api_key_env", "OPENAI_API_KEY")
+	vi.SetDefault("agent.sampling", "off")
 	vi.SetDefault("agent.max_steps", 8)
 	vi.SetDefault("agent.timeout_seconds", 50)
-	vi.SetDefault("agent.allow_raw_graphql", false)
+	vi.SetDefault("agent.read_only", false)
 	vi.SetDefault("agent.return_trace", false)
+	vi.SetDefault("agent.seed_limit", 10)
+	vi.SetDefault("agent.catalog_default_limit", 20)
 
 	// Local encrypted keystore defaults.
 	vi.SetDefault("secrets.keystore.key", "")
@@ -832,6 +848,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("artifacts.auto_init", true)
 	vi.SetDefault("artifacts.schema", "_graphjin")
 	vi.SetDefault("artifacts.globals_path", "./config")
+	vi.SetDefault("artifacts.poll_seconds", 15)
 
 	// Caching defaults
 	vi.SetDefault("caching.enable", false)

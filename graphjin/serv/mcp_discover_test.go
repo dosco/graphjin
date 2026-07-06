@@ -19,55 +19,17 @@ import (
 // Registration Gating Tests
 // =============================================================================
 
-func TestRegisterDiscoverTools_Gating(t *testing.T) {
-	t.Run("not registered when AllowDevTools is false", func(t *testing.T) {
-		ms := mockMcpServerWithConfig(MCPConfig{
-			AllowDevTools: false,
-		})
-		ms.srv = server.NewMCPServer("test", "0.0.0")
-		ms.registerDiscoverTools()
-
-		tools := ms.srv.ListTools()
-		if _, exists := tools["discover_databases"]; exists {
-			t.Error("discover_databases should not be registered when AllowDevTools is false")
-		}
-	})
-
-	t.Run("registered when AllowDevTools is true", func(t *testing.T) {
-		ms := mockMcpServerWithConfig(MCPConfig{
-			AllowDevTools: true,
-		})
-		ms.srv = server.NewMCPServer("test", "0.0.0")
-		ms.registerDiscoverTools()
-
-		tools := ms.srv.ListTools()
-		if _, exists := tools["discover_databases"]; !exists {
-			t.Error("discover_databases should be registered when AllowDevTools is true")
-		}
-	})
-}
-
-func TestRegisterDiscoverTools_SchemaIncludesScanUnixSockets(t *testing.T) {
+func TestRegisterDiscoverTools_DoesNotExposeDevTools(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{
 		AllowDevTools: true,
 	})
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 	ms.registerDiscoverTools()
 
-	tool, ok := ms.srv.ListTools()["discover_databases"]
-	if !ok {
-		t.Fatal("discover_databases should be registered")
-	}
-	if _, ok := tool.Tool.InputSchema.Properties["scan_unix_sockets"]; !ok {
-		t.Fatal("discover_databases schema should include scan_unix_sockets")
-	}
-	if targets, ok := tool.Tool.InputSchema.Properties["targets"].(map[string]any); ok {
-		if items, ok := targets["items"].(map[string]any); ok {
-			if props, ok := items["properties"].(map[string]any); ok {
-				if _, ok := props["connection_string"]; !ok {
-					t.Fatal("discover_databases targets schema should include connection_string")
-				}
-			}
+	tools := ms.srv.ListTools()
+	for _, name := range []string{"discover_databases", "list_databases"} {
+		if _, exists := tools[name]; exists {
+			t.Fatalf("%s should not be registered by MCP", name)
 		}
 	}
 }

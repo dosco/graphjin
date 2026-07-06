@@ -307,7 +307,7 @@ func (s1 *HttpService) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 			return
 		}
 
-		res, err := s.gj.GraphQLByName(ctx, queryName, vars, &rc)
+		res, err := s.executeSavedQueryByName(ctx, queryName, vars, &rc)
 		s.responseHandler(
 			ctx,
 			w,

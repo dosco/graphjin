@@ -41,7 +41,7 @@ import (
 	"net/http"
 	"os"
 	// "path/filepath"
-	// "strings"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -106,6 +106,8 @@ type graphjinService struct {
 	configMu             sync.Mutex
 	workflowMu           sync.Mutex
 	workflowCache        *workflowRegistrySnapshot
+	mcpHTTPMu            sync.Mutex
+	mcpHTTP              *mcpHTTPTransportCache
 	catalogMu            sync.Mutex
 	catalogCache         *catalogCacheEntry
 	onboardingMu         sync.RWMutex
@@ -134,9 +136,12 @@ func (s *graphjinService) buildCoreOptionsWithDBs(dbs map[string]*sql.DB) []core
 func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs map[string]managedDB) []core.Option {
 	controlPlane := newControlPlaneGraphQL(s)
 	artifacts := newArtifactControlPlane(s)
+	watches := newWatchControlPlane(s)
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
+		core.OptionSetSavedQuerySaveHook(s.saveSavedQueryArtifactOrFallback),
+		core.OptionSetReservedRoleAuthorizer(s.authorizeReservedRole),
 	}
 	opts = append(opts, s.coreOptions...)
 	if s.conf != nil && (s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled()) {
@@ -144,7 +149,14 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 		if targetDB == "" {
 			targetDB = core.DefaultDBName
 		}
-		opts = append(opts, core.OptionSetManagedMutationHandler(targetDB, controlPlane))
+		for _, dbName := range s.managedSystemRootDatabases(targetDB) {
+			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, controlPlane))
+		}
+		if s.conf.Core.Artifacts.Enabled {
+			for _, dbName := range s.managedSystemRootDatabases(targetDB) {
+				opts = append(opts, core.OptionSetManagedQueryHandler(dbName, controlPlane))
+			}
+		}
 	}
 	if s.conf != nil && s.conf.runtimeRootRegistered() {
 		targetDB := s.metadataDB
@@ -164,9 +176,27 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 		if targetDB == "" {
 			targetDB = core.DefaultDBName
 		}
-		opts = append(opts,
-			core.OptionSetManagedQueryHandler(targetDB, artifacts),
-			core.OptionSetManagedMutationHandler(targetDB, artifacts))
+		for _, dbName := range s.managedSystemRootDatabases(targetDB) {
+			if s.systemNanoDB == nil {
+				opts = append(opts, core.OptionSetManagedQueryHandler(dbName, artifacts))
+			}
+			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, artifacts))
+		}
+	}
+	if s.conf != nil && s.watchesEnabled() {
+		targetDB := s.metadataDB
+		if targetDB == "" {
+			targetDB = s.conf.Core.CatalogDatabaseName()
+		}
+		if targetDB == "" {
+			targetDB = core.DefaultDBName
+		}
+		for _, dbName := range s.managedSystemRootDatabases(targetDB) {
+			if s.systemNanoDB == nil {
+				opts = append(opts, core.OptionSetManagedQueryHandler(dbName, watches))
+			}
+			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, watches))
+		}
 	}
 	if s.namespace != nil {
 		opts = append(opts, core.OptionSetNamespace(*s.namespace))
@@ -193,6 +223,27 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	// core itself and is always available.
 	opts = append(opts, filesystemBackendOptions()...)
 	return opts
+}
+
+func (s *graphjinService) managedSystemRootDatabases(primary string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	add(primary)
+	if len(out) == 0 {
+		out = append(out, core.DefaultDBName)
+	}
+	return out
 }
 
 type Option func(*graphjinService) error
@@ -232,11 +283,12 @@ func (s *HttpService) Close() error {
 	if !ok || gs == nil {
 		return nil
 	}
-	if gs.gj != nil {
-		gs.gj.Close()
-	}
+	gs.closeMCPHTTPTransport()
 	if gs.closeFn != nil {
 		gs.closeFn()
+	}
+	if gs.gj != nil {
+		gs.gj.Close()
 	}
 	if gs.cache != nil {
 		gs.cache.Close() //nolint:errcheck
@@ -449,7 +501,9 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	}
 
 	initLogLevel(s)
-	validateConf(s)
+	if err := validateConf(s); err != nil {
+		return nil, err
+	}
 
 	if err := s.initRuntimeObservability(); err != nil {
 		s.log.Warnf("runtime observability init error: %s", err)
@@ -530,6 +584,8 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		if werr := s.startLocalFilesystemCacheWatchers(); werr != nil {
 			s.log.Warnf("filesystem cache watcher init error: %s", werr)
 		}
+		s.startProjectionPoller(context.Background())
+		s.startWatchRunner(context.Background())
 	}
 
 	s.state = servStarted
@@ -563,6 +619,7 @@ func (s *graphjinService) normalStart() error {
 	if s.runtimeCore != nil {
 		coreConf = s.runtimeCore
 	}
+	s.injectInternalStoreRole()
 
 	var err error
 	s.gj, err = core.NewGraphJin(coreConf, s.anyDB(), opts...)
@@ -638,6 +695,7 @@ func (s *HttpService) Deploy(conf *Config, options ...Option) error {
 	}
 	s1.srv = os.srv
 	s1.namespace = os.namespace
+	os.closeMCPHTTPTransport()
 	if os.closeFn != nil {
 		os.closeFn()
 	}

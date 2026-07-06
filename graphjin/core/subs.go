@@ -241,7 +241,7 @@ func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 	}
 
 	if !gj.prod {
-		err = gj.saveToAllowList(sub.s.cs.st.qc, sub.s.r.namespace)
+		err = gj.saveToAllowList(c, sub.s.cs.st.qc, sub.s.r.namespace)
 		if err != nil {
 			return
 		}
@@ -972,7 +972,10 @@ func (s *sub) findByID(id uint64) (int, bool) {
 // Unsubscribe function is called on the member struct to unsubscribe.
 func (m *Member) Unsubscribe() {
 	if m != nil && !m.done {
-		m.sub.del <- m
+		select {
+		case m.sub.del <- m:
+		case <-m.sub.done:
+		}
 		m.done = true
 	}
 }

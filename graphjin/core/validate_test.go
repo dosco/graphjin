@@ -289,6 +289,24 @@ func TestConfigValidate(t *testing.T) {
 			wantErr: true,
 			errMsg:  "writable SQL database source",
 		},
+		{
+			name: "sources used rejects blank locked artifact kind",
+			config: Config{
+				Sources:   []SourceConfig{{Name: "app", Kind: "database", Type: "postgres"}},
+				Artifacts: ArtifactsConfig{Enabled: true, Source: "app", Locked: []string{"saved_query", " "}},
+			},
+			wantErr: true,
+			errMsg:  "artifacts.locked",
+		},
+		{
+			name: "sources used rejects negative artifact poll interval",
+			config: Config{
+				Sources:   []SourceConfig{{Name: "app", Kind: "database", Type: "postgres"}},
+				Artifacts: ArtifactsConfig{Enabled: true, Source: "app", PollSeconds: -1},
+			},
+			wantErr: true,
+			errMsg:  "artifacts.poll_seconds",
+		},
 	}
 
 	for _, tt := range tests {
@@ -319,7 +337,7 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 	if conf.Identity.UserIDClaim != "sub" || conf.Identity.NamespaceClaim != "account_id" || conf.Identity.Query != conf.RolesQuery {
 		t.Fatalf("identity defaults not applied: %+v", conf.Identity)
 	}
-	if conf.Artifacts.Source != "app" || conf.Artifacts.Schema != "_graphjin" || conf.Artifacts.GlobalsPath != "./config" || !conf.Artifacts.AutoInitEnabled() {
+	if conf.Artifacts.Source != "app" || conf.Artifacts.Schema != "_graphjin" || conf.Artifacts.GlobalsPath != "./config" || !conf.Artifacts.AutoInitEnabled() || conf.Artifacts.PollSeconds != 15 {
 		t.Fatalf("artifact defaults not applied: %+v", conf.Artifacts)
 	}
 	app, _ := conf.SourceByName("app")
@@ -328,7 +346,7 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 		t.Fatalf("database access defaults not applied: %+v", app.Access)
 	}
 	gj, _ := conf.SourceByName("graphjin")
-	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
 		if got := gj.Access.Roots[root]; got != AccessModePublic {
 			t.Fatalf("dev graphjin %s root access = %q, want public: %+v", root, got, gj.Access.Roots)
 		}
@@ -349,9 +367,64 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 	if agenticGJ.Access.Roots["gj_catalog"] != AccessModePublic ||
 		agenticGJ.Access.Roots["gj_security"] != AccessModeAdmin || agenticGJ.Access.Roots["gj_runtime"] != AccessModeAdmin ||
 		agenticGJ.Access.Roots["gj_config"] != AccessModeAdmin ||
-		agenticGJ.Access.Roots["gj_artifacts"] != AccessModeAccount ||
-		agenticGJ.Access.Roots["gj_workflow_execution"] != AccessModeAccount {
+		agenticGJ.Access.Roots["gj_artifacts"] != AccessModeOwner ||
+		agenticGJ.Access.Roots["gj_watch"] != AccessModeOwner ||
+		agenticGJ.Access.Roots["gj_watch_event"] != AccessModeOwner ||
+		agenticGJ.Access.Roots["gj_workflow"] != AccessModeOwner ||
+		agenticGJ.Access.Roots["gj_workflow_execution"] != AccessModeOwner {
 		t.Fatalf("agentic graphjin root access defaults not applied: %+v", agenticGJ.Access.Roots)
+	}
+
+	// prod is the only pre-agentic compatibility mode: the agentic surface is
+	// gated off at the serv layer, and the gj_* root defaults are admin as
+	// defense-in-depth (never public).
+	prod := &Config{
+		Mode: "prod",
+		Sources: []SourceConfig{
+			{Name: "app", Kind: "database", Type: "postgres", Default: true},
+			{Name: "graphjin", Kind: "graphjin"},
+		},
+	}
+	if err := prod.NormalizeSources(); err != nil {
+		t.Fatalf("NormalizeSources prod: %v", err)
+	}
+	prodGJ, _ := prod.SourceByName("graphjin")
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
+		if got := prodGJ.Access.Roots[root]; got != AccessModeAdmin {
+			t.Fatalf("prod graphjin %s root access = %q, want admin: %+v", root, got, prodGJ.Access.Roots)
+		}
+	}
+}
+
+// TestNormalizeModeFailsClosedInSourceMode locks in audit finding F1: a source-mode
+// config with no explicit mode must resolve to prod (fail closed), never dev, so an
+// unspecified mode can never silently expose the gj_* roots publicly. Legacy
+// (non-source) configs keep the long-standing dev default.
+func TestNormalizeModeFailsClosedInSourceMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		conf *Config
+		want string
+	}{
+		{name: "source mode, no mode, not production -> prod (fail closed)",
+			conf: &Config{Sources: []SourceConfig{{Name: "app", Kind: "database", Type: "postgres", Default: true}}}, want: "prod"},
+		{name: "legacy mode, no mode, not production -> dev (unchanged)",
+			conf: &Config{}, want: "dev"},
+		{name: "explicit dev is preserved in source mode",
+			conf: &Config{Mode: "dev", Sources: []SourceConfig{{Name: "app", Kind: "database", Type: "postgres", Default: true}}}, want: "dev"},
+		{name: "explicit agentic is preserved in source mode",
+			conf: &Config{Mode: "agentic", Sources: []SourceConfig{{Name: "app", Kind: "database", Type: "postgres", Default: true}}}, want: "agentic"},
+		{name: "production flag still implies prod",
+			conf: &Config{Production: true}, want: "prod"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.conf.NormalizeMode(); err != nil {
+				t.Fatalf("NormalizeMode: %v", err)
+			}
+			if tc.conf.Mode != tc.want {
+				t.Fatalf("mode = %q, want %q", tc.conf.Mode, tc.want)
+			}
+		})
 	}
 }
 

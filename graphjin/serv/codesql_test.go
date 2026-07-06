@@ -22,6 +22,9 @@ func Handler() {}
 
 	conf := &Config{
 		Core: Core{
+			// Live watcher (write-back) defaults on only in dev; the test asserts
+			// the development watcher behavior explicitly.
+			Mode: "dev",
 			Sources: []core.SourceConfig{
 				{Name: "code", Kind: "code", Path: source},
 			},
@@ -276,6 +279,8 @@ func LoadUser(id int64) int64 {
 
 	conf := &Config{
 		Core: Core{
+			// Code write-back (change_set apply, file edits) defaults on only in dev.
+			Mode:             "dev",
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
 				{Name: "code", Kind: "code", Path: source},
@@ -699,6 +704,8 @@ func WatchMe() int {
 
 	conf := &Config{
 		Core: Core{
+			// The live file watcher (reindex + cache invalidation) defaults on only in dev.
+			Mode:             "dev",
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
 				{Name: "code", Kind: "code", Path: source},

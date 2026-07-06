@@ -66,6 +66,7 @@ type DeleteConfig struct {
 
 type trval struct {
 	role string
+	set  bool
 
 	query struct {
 		limit   int32
@@ -114,7 +115,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 		return err
 	}
 
-	trv := trval{role: role}
+	trv := trval{role: role, set: true}
 
 	// query config
 	trv.query.fil, trv.query.filNU, err = compileFilter(co.s, ti, trc.Query.Filters, false)
@@ -251,6 +252,10 @@ func (trv *trval) isBlocked(qt QType) bool {
 		return trv.delete.block
 	}
 	return false
+}
+
+func (trv *trval) allowsBlockedTable(qt QType) bool {
+	return trv.set && trv.role == "__graphjin_internal_store" && !trv.isBlocked(qt)
 }
 
 func (trv *trval) isFuncsBlocked() bool {

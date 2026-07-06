@@ -63,7 +63,7 @@ func graphjinControlPlaneTables() []core.ManagedTable {
 			cpCol("query_json", "json", false), cpCol("input_schema_json", "json", false), cpCol("output_schema_json", "json", false),
 			cpCol("safety_json", "json", false), cpCol("enabled", "boolean", false), cpCol("capability_kind", "text", false),
 			cpCol("graphql_query", "text", false), cpCol("graphql_mutation", "text", false),
-			cpCol("created_at", "text", false), cpCol("updated_at", "text", false), cpCol("score", "float", false), cpFullTextCol("search_vector"),
+			cpCol("created_at", "text", false), cpCol("updated_at", "text", false), cpCol("score", "float", false), cpCol("search_rank", "float", false), cpFullTextCol("search_vector"),
 		}),
 		managedTable("gj_config", []core.ManagedColumn{
 			cpCol("id", "text", true), cpCol("sources_used", "boolean", false), cpCol("config_path", "text", false), cpCol("active_database", "text", false),
@@ -117,9 +117,9 @@ func (h controlPlaneGraphQL) ExecuteManagedQuery(ctx context.Context, req core.M
 func (h controlPlaneGraphQL) queryRows(ctx context.Context, root core.ManagedQueryRoot) ([]map[string]any, error) {
 	switch root.Table {
 	case "gj_catalog":
-		return h.queryCatalog(root)
+		return h.queryCatalog(ctx, root)
 	case "gj_workflow":
-		return applyManagedQuery(h.workflowRows(true), root), nil
+		return h.workflowRows(ctx, true, root)
 	case "gj_workflow_execution":
 		return nil, fmt.Errorf("gj_workflow_execution is mutation-only and does not store run history")
 	case "gj_config":
@@ -129,14 +129,18 @@ func (h controlPlaneGraphQL) queryRows(ctx context.Context, root core.ManagedQue
 	}
 }
 
-func (h controlPlaneGraphQL) queryCatalog(root core.ManagedQueryRoot) ([]map[string]any, error) {
-	snap, err := h.service.catalogSnapshot()
+func (h controlPlaneGraphQL) queryCatalog(ctx context.Context, root core.ManagedQueryRoot) ([]map[string]any, error) {
+	snap, err := h.service.catalogSnapshotForContext(ctx)
 	if err != nil {
 		return nil, err
 	}
+	return h.queryCatalogRowsFromSnapshot(snap, root), nil
+}
+
+func (h controlPlaneGraphQL) queryCatalogRowsFromSnapshot(snap *core.CatalogSnapshot, root core.ManagedQueryRoot) []map[string]any {
 	search, where := splitSearchWhere(root.Where)
 	if search == "" {
-		return applyManagedQuery(h.allCatalogRows(snap, core.CatalogQueryOutput{Cards: snap.Cards}), root), nil
+		return applyManagedQuery(h.allCatalogRows(snap, core.CatalogQueryOutput{Cards: snap.Cards}), root)
 	}
 	orderBy := make(map[string]string, len(root.OrderBy))
 	for _, ob := range root.OrderBy {
@@ -150,7 +154,7 @@ func (h controlPlaneGraphQL) queryCatalog(root core.ManagedQueryRoot) ([]map[str
 		Explain: true,
 	})
 	if err != nil {
-		return applyManagedQuery(h.allCatalogRows(snap, core.CatalogQueryOutput{Cards: snap.Cards}), root), nil
+		return applyManagedQuery(h.allCatalogRows(snap, core.CatalogQueryOutput{Cards: snap.Cards}), root)
 	}
 	rows := h.catalogRowsFromCards(snap, result)
 	rows = append(rows, applyManagedQuery(h.catalogEntrypointRows(snap), root)...)
@@ -164,7 +168,7 @@ func (h controlPlaneGraphQL) queryCatalog(root core.ManagedQueryRoot) ([]map[str
 	if root.Limit > 0 && root.Limit < len(rows) {
 		rows = rows[:root.Limit]
 	}
-	return rows, nil
+	return rows
 }
 
 func (h controlPlaneGraphQL) allCatalogRows(snap *core.CatalogSnapshot, result core.CatalogQueryOutput) []map[string]any {
@@ -192,6 +196,7 @@ func (h controlPlaneGraphQL) catalogRowsFromCards(snap *core.CatalogSnapshot, re
 		row["edges_json"] = mustMarshalString(snap.CardEdges(id))
 		if match, ok := result.Matches[id]; ok {
 			row["score"] = match.Score
+			row["search_rank"] = match.Score
 		}
 		rows = append(rows, row)
 	}
@@ -204,6 +209,7 @@ func (h controlPlaneGraphQL) catalogEntrypointRows(snap *core.CatalogSnapshot) [
 		row["kind"] = "entrypoint"
 		row["title"] = row["name"]
 		row["score"] = 0
+		row["search_rank"] = 0
 	}
 	return rows
 }
@@ -215,6 +221,7 @@ func (h controlPlaneGraphQL) catalogCapabilityRows(snap *core.CatalogSnapshot) [
 		row["kind"] = "capability"
 		row["title"] = row["name"]
 		row["score"] = 0
+		row["search_rank"] = 0
 	}
 	return rows
 }
@@ -226,6 +233,7 @@ func (h controlPlaneGraphQL) catalogSystemCapabilityRows() []map[string]any {
 		row["kind"] = "system_capability"
 		row["title"] = row["name"]
 		row["score"] = 0
+		row["search_rank"] = 0
 	}
 	return rows
 }
@@ -243,11 +251,14 @@ func catalogItemName(row map[string]any) string {
 	return ""
 }
 
-func (h controlPlaneGraphQL) workflowRows(includeSource bool) []map[string]any {
-	workflowSnap := h.service.workflowSnapshot(h.service.workflowTimeoutSeconds())
+func (h controlPlaneGraphQL) workflowRows(ctx context.Context, includeSource bool, root core.ManagedQueryRoot) ([]map[string]any, error) {
+	workflowSnap, err := h.service.workflowSnapshotForContext(ctx, h.service.workflowTimeoutSeconds())
+	if err != nil {
+		return nil, err
+	}
 	rows := make([]map[string]any, 0, len(workflowSnap.workflows))
 	revision := ""
-	if snap, err := h.service.catalogSnapshot(); err == nil {
+	if snap, err := h.service.catalogSnapshotForContext(ctx); err == nil {
 		revision = snap.Revision
 	}
 	for _, wf := range workflowSnap.workflows {
@@ -269,13 +280,17 @@ func (h controlPlaneGraphQL) workflowRows(includeSource bool) []map[string]any {
 			"catalog_revision":  revision,
 		}
 		if includeSource {
-			if src, err := h.service.fs.Get(wf.Path); err == nil {
+			if strings.HasPrefix(wf.Path, "artifact:") {
+				if _, src, _, err := h.service.resolveWorkflowForContext(ctx, wf.Name); err == nil {
+					row["code"] = workflowCodeWithoutMeta(src)
+				}
+			} else if src, err := h.service.fs.Get(wf.Path); err == nil {
 				row["code"] = workflowCodeWithoutMeta(string(src))
 			}
 		}
 		rows = append(rows, row)
 	}
-	return rows
+	return applyManagedQuery(rows, root), nil
 }
 
 func workflowCodeWithoutMeta(src string) string {
@@ -411,6 +426,8 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 	workflowWriteEnabled := conf.AllowWorkflowUpdates && !h.controlPlaneRootReadOnly("gj_workflow")
 	workflowExecutionEnabled := !h.controlPlaneRootReadOnly("gj_workflow_execution")
 	configWriteEnabled := conf.AllowConfigUpdates && !h.controlPlaneRootReadOnly("gj_config")
+	watchEnabled := h.service != nil && h.service.watchesEnabled() && !h.controlPlaneRootReadOnly("gj_watch")
+	watchEventEnabled := h.service != nil && h.service.watchesEnabled() && !h.controlPlaneRootReadOnly("gj_watch_event")
 	caps := []map[string]any{
 		{
 			"name": "gj_workflow.insert_update_delete", "kind": "mutation", "enabled": workflowWriteEnabled,
@@ -431,6 +448,38 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 				"return_fields": []string{"id", "workflow_name", "namespace", "status", "result_json", "error", "duration_ms"},
 			}),
 			"safety_json": mustMarshalString(map[string]any{"preferred_for_data_questions": true, "mutation_only": true, "ephemeral": true, "blocked_by": "read_only"}),
+		},
+		{
+			"name": "gj_watch.insert_update_delete", "kind": "watch", "enabled": watchEnabled,
+			"summary":          "Create, update, pause, and delete user-owned standing subscription watches.",
+			"graphql_mutation": `gj_watch(insert: { name: "...", query: "subscription { ... }", delivery_json: {...} })`,
+			"details_json": mustMarshalString(map[string]any{
+				"root":            "gj_watch",
+				"event_root":      "gj_watch_event",
+				"required_fields": []string{"name", "query or saved_query_name"},
+				"owner_scoped":    true,
+				"query_type":      "subscription",
+				"input_shape":     `gj_watch(insert: { name: "...", query: "subscription { ... }", variables_json: {...}, delivery_json: {...} })`,
+				"return_fields":   []string{"id", "name", "status", "approval", "enabled", "evidence_json", "created_at", "updated_at"},
+			}),
+			"examples_json": mustMarshalString([]map[string]string{
+				{"name": "create subscription watch", "query": `mutation { gj_watch(insert: { name: "important_orders", query: "subscription { orders { id status updated_at } }" }) { id name status enabled evidence_json } }`},
+				{"name": "list my watch inbox", "query": `query { gj_watch_event(order_by: { created_at: desc }, limit: 20) { id watch_id delivery_status seen created_at data_json } }`},
+			}),
+			"safety_json": mustMarshalString(map[string]any{"owner_scoped": true, "requires_user_identity": true, "direct_queries_must_be_subscriptions": true, "blocked_by": "read_only"}),
+		},
+		{
+			"name": "gj_watch_event.update", "kind": "watch", "enabled": watchEventEnabled,
+			"summary":          "Mark user-owned watch inbox events seen or unseen.",
+			"graphql_mutation": `gj_watch_event(where: { id: { eq: "..." } }, update: { seen: true })`,
+			"details_json": mustMarshalString(map[string]any{
+				"root":          "gj_watch_event",
+				"owner_scoped":  true,
+				"mutation_only": false,
+				"input_shape":   `gj_watch_event(where: { id: { eq: "..." } }, update: { seen: true })`,
+				"return_fields": []string{"id", "seen", "seen_at", "updated_at"},
+			}),
+			"safety_json": mustMarshalString(map[string]any{"owner_scoped": true, "requires_user_identity": true, "allowed_updates": []string{"seen"}, "blocked_by": "read_only"}),
 		},
 		{"name": "gj_config.update", "kind": "mutation", "enabled": configWriteEnabled, "summary": "Update GraphJin configuration.", "graphql_mutation": `gj_config(id: "current", update: ...)`},
 		{"name": "reload_schema", "kind": "mutation", "enabled": conf.AllowSchemaReload, "summary": "Reload database schema metadata through the MCP tool surface."},
@@ -557,7 +606,7 @@ func (h controlPlaneGraphQL) mutateRow(ctx context.Context, root core.ManagedMut
 
 	switch root.Table {
 	case "gj_workflow":
-		return h.mutateWorkflow(root)
+		return h.mutateWorkflow(ctx, root)
 	case "gj_workflow_execution":
 		if root.Operation != "insert" {
 			return nil, fmt.Errorf("workflow execution only supports insert mutations")
@@ -577,7 +626,7 @@ func (h controlPlaneGraphQL) controlPlaneRootReadOnly(table string) bool {
 	return controlPlaneTableReadOnly(h.service.conf, h.service.metadataDB, table)
 }
 
-func (h controlPlaneGraphQL) mutateWorkflow(root core.ManagedMutationRoot) (map[string]any, error) {
+func (h controlPlaneGraphQL) mutateWorkflow(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
 	if !h.service.conf.MCP.AllowWorkflowUpdates {
 		return nil, fmt.Errorf("workflow updates are not allowed; enable mcp.allow_workflow_updates")
 	}
@@ -613,21 +662,54 @@ func (h controlPlaneGraphQL) mutateWorkflow(root core.ManagedMutationRoot) (map[
 		if err != nil {
 			return nil, err
 		}
-		path := filepath.Join(h.service.workflowBasePath(), name+workflowExt)
 		now := time.Now().UTC()
 		existingMeta := WorkflowMeta{}
-		if src, err := h.service.fs.Get(path); err == nil {
-			existingMeta, _ = parseWorkflowMeta(string(src))
-			existingMeta = catalogWorkflowMeta(existingMeta)
+		if h.service.artifactStoreForUser(ctx) {
+			if row, ok, err := h.service.userArtifactRow(ctx, artifactKindWorkflow, name); err != nil {
+				return nil, err
+			} else if ok {
+				existingMeta = workflowMetaFromArtifact(row)
+			}
+		} else {
+			path := filepath.Join(h.service.workflowBasePath(), name+workflowExt)
+			if src, err := h.service.fs.Get(path); err == nil {
+				existingMeta, _ = parseWorkflowMeta(string(src))
+				existingMeta = catalogWorkflowMeta(existingMeta)
+			}
 		}
-		createdAt, _ := h.service.workflowTimestamps(path, existingMeta, now)
-		metaJSON, err := json.Marshal(WorkflowMeta{
+		createdAt := existingMeta.CreatedAt
+		if createdAt == "" {
+			createdAt = formatWorkflowTime(now)
+		}
+		meta := WorkflowMeta{
 			Description: description,
 			Tags:        tags,
 			Variables:   vars,
 			CreatedAt:   createdAt,
 			UpdatedAt:   formatWorkflowTime(now),
-		})
+		}
+		if h.service.artifactStoreForUser(ctx) {
+			if _, err := h.service.saveUserArtifact(ctx, artifactKindWorkflow, name, code, workflowMetaMap(meta)); err != nil {
+				return nil, err
+			}
+			h.service.markWorkflowChanged("workflow artifact mutation")
+			h.service.recordRuntimeEvent(ctx, runtimeEvent{
+				Phase:      "workflow",
+				Status:     runtimeStatusReady,
+				Severity:   "info",
+				Summary:    "User workflow artifact was saved through a guarded mutation.",
+				NextAction: "Query gj_catalog or gj_workflow before executing the updated workflow.",
+				Details:    map[string]any{"workflow_name": name, "operation": root.Operation, "source": "database"},
+			})
+			return h.workflowMutationRow(ctx, name, false), nil
+		}
+		if h.service.prod {
+			return nil, fmt.Errorf("workflow file writes are only allowed in dev fallback mode")
+		}
+		path := filepath.Join(h.service.workflowBasePath(), name+workflowExt)
+		createdAt, _ = h.service.workflowTimestamps(path, existingMeta, now)
+		meta.CreatedAt = createdAt
+		metaJSON, err := json.Marshal(meta)
 		if err != nil {
 			return nil, err
 		}
@@ -644,7 +726,7 @@ func (h controlPlaneGraphQL) mutateWorkflow(root core.ManagedMutationRoot) (map[
 			NextAction: "Query gj_catalog or gj_workflow before executing the updated workflow.",
 			Details:    map[string]any{"workflow_name": name, "operation": root.Operation},
 		})
-		return h.workflowMutationRow(name, false), nil
+		return h.workflowMutationRow(ctx, name, false), nil
 	case "delete":
 		name := stringFromWhere(root.Where, "name")
 		if name == "" {
@@ -655,6 +737,24 @@ func (h controlPlaneGraphQL) mutateWorkflow(root core.ManagedMutationRoot) (map[
 		}
 		if !workflowNameRe.MatchString(name) {
 			return nil, fmt.Errorf("invalid workflow name: %s", name)
+		}
+		if h.service.artifactStoreForUser(ctx) {
+			if err := h.service.deleteUserArtifact(ctx, artifactKindWorkflow, name); err != nil {
+				return nil, err
+			}
+			h.service.markWorkflowChanged("workflow artifact mutation")
+			h.service.recordRuntimeEvent(ctx, runtimeEvent{
+				Phase:      "workflow",
+				Status:     runtimeStatusReady,
+				Severity:   "info",
+				Summary:    "User workflow artifact was deleted through a guarded mutation.",
+				NextAction: "Refresh catalog-guided planning before referencing the deleted workflow.",
+				Details:    map[string]any{"workflow_name": name, "operation": root.Operation, "source": "database"},
+			})
+			return h.workflowMutationRow(ctx, name, true), nil
+		}
+		if h.service.prod {
+			return nil, fmt.Errorf("workflow file deletes are only allowed in dev fallback mode")
 		}
 		fs, ok := h.service.fs.(deleteFS)
 		if !ok {
@@ -672,18 +772,18 @@ func (h controlPlaneGraphQL) mutateWorkflow(root core.ManagedMutationRoot) (map[
 			NextAction: "Refresh catalog-guided planning before referencing the deleted workflow.",
 			Details:    map[string]any{"workflow_name": name, "operation": root.Operation},
 		})
-		return h.workflowMutationRow(name, true), nil
+		return h.workflowMutationRow(ctx, name, true), nil
 	default:
 		return nil, fmt.Errorf("unsupported gj_workflow operation: %s", root.Operation)
 	}
 }
 
-func (h controlPlaneGraphQL) workflowMutationRow(name string, deleted bool) map[string]any {
+func (h controlPlaneGraphQL) workflowMutationRow(ctx context.Context, name string, deleted bool) map[string]any {
 	revision := ""
-	if snap, err := h.service.catalogSnapshot(); err == nil {
+	if snap, err := h.service.catalogSnapshotForContext(ctx); err == nil {
 		revision = snap.Revision
 	}
-	workflowSnap := h.service.workflowSnapshot(h.service.workflowTimeoutSeconds())
+	workflowSnap, _ := h.service.workflowSnapshotForContext(ctx, h.service.workflowTimeoutSeconds())
 	row := map[string]any{
 		"name":              name,
 		"catalog_item_id":   "workflow:" + name,

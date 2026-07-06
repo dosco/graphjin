@@ -51,6 +51,14 @@ sources:
 
 The generated filters use trusted identity values from the request context. Client variables named `account_id` or `user_id` are not trusted for generated source-mode checks.
 
+## Artifact identity
+
+The artifact overlay uses trusted `user_id` as the primary namespace for saved-query, fragment, and workflow edits. `account_id` can still be stored on the artifact row as tenant metadata, but it is not the primary lookup key.
+
+When the artifact store is present and the request has `user_id`, writes go to `gj_artifacts`. Without `user_id`, GraphJin keeps the development fallback behavior and writes global config files only in dev mode.
+
+{{< verified by="TestSavedQueryAutoSaveUsesUserArtifactWhenConfigured" file="serv/artifact_overlay_test.go" line="71" >}}
+
 ## Agentic environment
 
 `GO_ENV=agentic` requires `agentic.yml`. Agentic configs can inherit production settings and then enable model-facing discovery surfaces deliberately.

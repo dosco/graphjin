@@ -84,7 +84,7 @@ sources:
     access:
       roots:
         gj_catalog: public
-        gj_artifacts: account
+        gj_artifacts: authenticated
         gj_workflow: admin
         gj_workflow_execution: account
         gj_runtime: admin
@@ -200,12 +200,11 @@ the physical SQL tables:
 
 ```text
 _graphjin.artifacts
-_graphjin.artifact_revisions
 ```
 
 Files in the config folder remain global, read-only artifacts. They are exposed
 as `source=config`, `visibility=global`, and `read_only=true`; they are not
-copied into the database. Account-scoped DB artifacts can override same-name
+copied into the database. User-scoped DB artifacts can override same-name
 globals without changing config files.
 
 MongoDB can still be a database source for normal queries, but V1 must not be
@@ -222,7 +221,7 @@ sources:
     access:
       roots:
         gj_catalog: public
-        gj_artifacts: account
+        gj_artifacts: authenticated
         gj_workflow: admin
         gj_workflow_execution: account
         gj_runtime: admin
@@ -232,7 +231,7 @@ sources:
 
 In dev mode, all GraphJin system roots default to `public` so the local console
 and MCP tools can inspect the system without extra auth setup. In prod and
-agentic modes, keep the higher-risk roots on `admin` or `account` unless you are
+agentic modes, keep the higher-risk roots on `admin` or `authenticated` unless you are
 deliberately exposing them.
 
 Capabilities decide whether a root exists. Access decides who can use it.
@@ -251,7 +250,7 @@ policy evidence through `gj_security`.
 6. Move shared lookup tables to `public_tables`.
 7. Move audit tables to `admin_tables`.
 8. Move internal-only tables to `blocked_tables`.
-9. Enable `artifacts` for account-scoped mutable fragments, saved queries, and
+9. Enable `artifacts` for user-scoped mutable fragments, saved queries, and
    workflows.
 10. Keep config-folder fragments, saved queries, and workflows as read-only
     globals.

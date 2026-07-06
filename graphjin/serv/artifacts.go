@@ -18,6 +18,10 @@ import (
 
 const artifactsRootTable = "gj_artifacts"
 
+const artifactStoreFields = `id name kind path source visibility read_only account_id owner_id content content_json metadata_json content_hash status revision created_at updated_at`
+
+const revisionStoreFields = `domain revision updated_at`
+
 type artifactControlPlane struct {
 	service *graphjinService
 }
@@ -54,7 +58,11 @@ func artifactColumns() []core.ManagedColumn {
 		cpCol("content", "text", false),
 		cpCol("content_json", "json", false),
 		cpCol("metadata_json", "json", false),
+		cpCol("content_hash", "text", false),
+		cpCol("status", "text", false),
 		cpCol("revision", "integer", false),
+		cpCol("account_ref", "text", false),
+		cpCol("owner_ref", "text", false),
 		cpCol("created_at", "text", false),
 		cpCol("updated_at", "text", false),
 	}
@@ -120,7 +128,8 @@ func (h artifactControlPlane) artifactRows(ctx context.Context) ([]map[string]an
 	seen := make(map[string]struct{}, len(dbRows))
 	for _, row := range dbRows {
 		if name, _ := row["name"].(string); name != "" {
-			seen[strings.ToLower(name)] = struct{}{}
+			kind, _ := row["kind"].(string)
+			seen[artifactOverlayKey(kind, name)] = struct{}{}
 		}
 	}
 	globalRows, err := h.globalArtifactRows()
@@ -129,7 +138,8 @@ func (h artifactControlPlane) artifactRows(ctx context.Context) ([]map[string]an
 	}
 	for _, row := range globalRows {
 		name, _ := row["name"].(string)
-		if _, ok := seen[strings.ToLower(name)]; ok {
+		kind, _ := row["kind"].(string)
+		if _, ok := seen[artifactOverlayKey(kind, name)]; ok {
 			continue
 		}
 		rows = append(rows, row)
@@ -139,49 +149,62 @@ func (h artifactControlPlane) artifactRows(ctx context.Context) ([]map[string]an
 
 func (h artifactControlPlane) dbArtifactRows(ctx context.Context) ([]map[string]any, error) {
 	s := h.service
-	db, dbType, table, ok := s.artifactDB()
-	if !ok {
+	if _, _, _, ok := s.artifactDB(); !ok {
 		return nil, nil
 	}
-	q := fmt.Sprintf("SELECT id, name, kind, path, source, visibility, read_only, account_id, owner_id, content, content_json, metadata_json, revision, created_at, updated_at FROM %s", table)
-	r, err := db.QueryContext(ctx, q)
+	userID, hasUser := artifactUserID(ctx)
+	if !hasUser {
+		return nil, nil
+	}
+	rows, err := s.internalStoreRows(ctx, "artifacts", `where: { owner_id: { eq: $owner_id } }`, artifactStoreFields, map[string]any{"owner_id": userID})
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
-
-	accountID, _ := identityVarString(ctx, "account_id")
 	admin := s.identityRoleIsAdmin(ctx)
 	var out []map[string]any
-	for r.Next() {
-		var id, name, kind, path, source, visibility, accountIDRow, ownerID, content, contentJSON, metadataJSON, createdAt, updatedAt sql.NullString
-		var readOnly sql.NullBool
-		var revision sql.NullInt64
-		if err := r.Scan(&id, &name, &kind, &path, &source, &visibility, &readOnly, &accountIDRow, &ownerID, &content, &contentJSON, &metadataJSON, &revision, &createdAt, &updatedAt); err != nil {
-			return nil, err
-		}
-		if !admin && visibility.String == "account" && accountIDRow.String != accountID {
+	for _, row := range rows {
+		visibility := stringMapValue(row, "visibility")
+		if visibility != "user" && visibility != "account" {
 			continue
 		}
-		out = append(out, map[string]any{
-			"id":            id.String,
-			"name":          name.String,
-			"kind":          kind.String,
-			"path":          path.String,
-			"source":        source.String,
-			"visibility":    visibility.String,
-			"read_only":     readOnly.Bool,
-			"account_id":    safeArtifactIdentity(accountIDRow.String, admin),
-			"owner_id":      safeArtifactIdentity(ownerID.String, admin),
-			"content":       content.String,
-			"content_json":  jsonValue(contentJSON.String, dbType),
-			"metadata_json": jsonValue(metadataJSON.String, dbType),
-			"revision":      revision.Int64,
-			"created_at":    createdAt.String,
-			"updated_at":    updatedAt.String,
-		})
+		ownerID := stringMapValue(row, "owner_id")
+		if ownerID != userID {
+			continue
+		}
+		out = append(out, artifactProjectionRow(row, admin))
 	}
-	return out, r.Err()
+	return out, nil
+}
+
+func (h artifactControlPlane) allArtifactRowsForProjection(ctx context.Context) ([]map[string]any, error) {
+	dbRows, err := h.dbArtifactRowsForProjection(ctx)
+	if err != nil {
+		return nil, err
+	}
+	globalRows, err := h.globalArtifactRows()
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]map[string]any, 0, len(dbRows)+len(globalRows))
+	rows = append(rows, dbRows...)
+	rows = append(rows, globalRows...)
+	return rows, nil
+}
+
+func (h artifactControlPlane) dbArtifactRowsForProjection(ctx context.Context) ([]map[string]any, error) {
+	s := h.service
+	if _, _, _, ok := s.artifactDB(); !ok {
+		return nil, nil
+	}
+	rows, err := s.internalStoreRows(ctx, "artifacts", "", artifactStoreFields, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, artifactProjectionRow(row, true))
+	}
+	return out, nil
 }
 
 func (h artifactControlPlane) globalArtifactRows() ([]map[string]any, error) {
@@ -194,6 +217,56 @@ func (h artifactControlPlane) globalArtifactRows() ([]map[string]any, error) {
 	if root == "" {
 		return nil, nil
 	}
+	var out []map[string]any
+	appendRow := func(rel string, b []byte) {
+		rel = filepath.ToSlash(strings.TrimPrefix(rel, "/"))
+		kind := artifactKindFromPath(rel)
+		content := string(b)
+		now := time.Now().UTC().Format(time.RFC3339)
+		out = append(out, map[string]any{
+			"id":            "config:" + rel,
+			"name":          strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)),
+			"kind":          kind,
+			"path":          rel,
+			"source":        "config",
+			"visibility":    "global",
+			"read_only":     true,
+			"account_id":    "",
+			"owner_id":      "",
+			"content":       content,
+			"content_json":  nil,
+			"metadata_json": map[string]any{"path": rel},
+			"content_hash":  hashString(content),
+			"status":        "approved",
+			"revision":      int64(1),
+			"account_ref":   "",
+			"owner_ref":     "",
+			"created_at":    now,
+			"updated_at":    now,
+		})
+	}
+	if s.fs != nil {
+		for _, dir := range artifactGlobalFSSearchDirs(root) {
+			names, err := s.fs.List(dir)
+			if err != nil {
+				continue
+			}
+			for _, name := range names {
+				path := artifactFSJoin(dir, name)
+				if !artifactGlobalFile(path) {
+					continue
+				}
+				b, err := s.fs.Get(path)
+				if err != nil {
+					return nil, err
+				}
+				appendRow(artifactFSRel(root, path), b)
+			}
+		}
+		if len(out) != 0 {
+			return out, nil
+		}
+	}
 	if !filepath.IsAbs(root) {
 		base, err := s.basePath()
 		if err != nil {
@@ -201,7 +274,6 @@ func (h artifactControlPlane) globalArtifactRows() ([]map[string]any, error) {
 		}
 		root = filepath.Join(base, root)
 	}
-	var out []map[string]any
 	if _, err := os.Stat(root); err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -217,62 +289,85 @@ func (h artifactControlPlane) globalArtifactRows() ([]map[string]any, error) {
 			return err
 		}
 		rel, _ := filepath.Rel(root, path)
-		rel = filepath.ToSlash(rel)
-		kind := artifactKindFromPath(rel)
-		now := time.Now().UTC().Format(time.RFC3339)
-		out = append(out, map[string]any{
-			"id":            "config:" + rel,
-			"name":          strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)),
-			"kind":          kind,
-			"path":          rel,
-			"source":        "config",
-			"visibility":    "global",
-			"read_only":     true,
-			"account_id":    "",
-			"owner_id":      "",
-			"content":       string(b),
-			"content_json":  nil,
-			"metadata_json": map[string]any{"path": rel},
-			"revision":      int64(1),
-			"created_at":    now,
-			"updated_at":    now,
-		})
+		appendRow(rel, b)
 		return nil
 	})
 	return out, err
 }
 
+func artifactGlobalFSSearchDirs(root string) []string {
+	root = filepath.ToSlash(strings.TrimSpace(root))
+	root = strings.TrimSuffix(root, "/")
+	if root == "" || root == "." {
+		root = "."
+	}
+	return []string{
+		root,
+		artifactFSJoin(root, "queries"),
+		artifactFSJoin(root, "queries/fragments"),
+		artifactFSJoin(root, "workflows"),
+	}
+}
+
+func artifactFSJoin(base, elem string) string {
+	base = filepath.ToSlash(strings.TrimSpace(base))
+	elem = filepath.ToSlash(strings.TrimSpace(elem))
+	switch {
+	case base == "" || base == ".":
+		return elem
+	case base == "/":
+		return "/" + strings.TrimPrefix(elem, "/")
+	default:
+		return strings.TrimSuffix(base, "/") + "/" + strings.TrimPrefix(elem, "/")
+	}
+}
+
+func artifactFSRel(root, path string) string {
+	root = filepath.ToSlash(strings.TrimSpace(root))
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	if root == "" || root == "." || root == "/" {
+		return strings.TrimPrefix(path, "/")
+	}
+	rel, err := filepath.Rel(filepath.FromSlash(root), filepath.FromSlash(path))
+	if err != nil {
+		return strings.TrimPrefix(path, "/")
+	}
+	return filepath.ToSlash(rel)
+}
+
 func (h artifactControlPlane) upsertArtifact(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
 	s := h.service
-	db, dbType, table, ok := s.artifactDB()
-	if !ok {
+	if _, _, _, ok := s.artifactDB(); !ok {
 		return nil, fmt.Errorf("artifact store database is not configured")
 	}
-	accountID, ok := identityVarString(ctx, "account_id")
-	if !ok && !s.identityRoleIsAdmin(ctx) {
+	ownerID, ok := artifactUserID(ctx)
+	if !ok {
 		s.recordRuntimeEvent(ctx, runtimeEvent{
 			Phase:      "access",
 			Status:     runtimeStatusFailed,
 			Severity:   "warn",
-			Summary:    "Artifact write denied because account identity is missing.",
-			NextAction: "Add account_id to the verified identity context before writing gj_artifacts.",
-			ErrorCode:  "artifact_account_missing",
+			Summary:    "Artifact write denied because user identity is missing.",
+			NextAction: "Add user_id to the verified identity context before writing gj_artifacts.",
+			ErrorCode:  "artifact_user_missing",
 			Details:    map[string]any{"root": artifactsRootTable},
 		})
-		return nil, fmt.Errorf("gj_artifacts write requires account identity")
+		return nil, fmt.Errorf("gj_artifacts write requires user identity")
 	}
-	visibility := stringInput(root.Input, "visibility", "account")
+	visibility := stringInput(root.Input, "visibility", "user")
 	if visibility == "global" {
 		s.recordRuntimeEvent(ctx, runtimeEvent{
 			Phase:      "access",
 			Status:     runtimeStatusFailed,
 			Severity:   "warn",
 			Summary:    "Global artifact write denied.",
-			NextAction: "Edit config-folder artifacts through configuration review; db-backed gj_artifacts are account-scoped.",
+			NextAction: "Edit config-folder artifacts through configuration review; db-backed gj_artifacts are user-scoped.",
 			ErrorCode:  "artifact_global_write_denied",
 			Details:    map[string]any{"root": artifactsRootTable},
 		})
 		return nil, fmt.Errorf("global gj_artifacts are read-only")
+	}
+	if visibility != "user" && visibility != "account" {
+		visibility = "user"
 	}
 	name := stringInput(root.Input, "name", "")
 	if name == "" {
@@ -280,36 +375,81 @@ func (h artifactControlPlane) upsertArtifact(ctx context.Context, root core.Mana
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	admin := s.identityRoleIsAdmin(ctx)
-	id := artifactID(accountID, name)
+	kind := normalizeArtifactKind(stringInput(root.Input, "kind", "artifact"))
+	if err := s.checkArtifactKindWritable(kind); err != nil {
+		s.recordRuntimeEvent(ctx, runtimeEvent{
+			Phase:      "access",
+			Status:     runtimeStatusFailed,
+			Severity:   "warn",
+			Summary:    "Artifact write denied because the artifact kind is locked.",
+			NextAction: "Remove the kind from core.artifacts.locked or choose a writable artifact kind.",
+			ErrorCode:  "artifact_kind_locked",
+			Details:    map[string]any{"root": artifactsRootTable, "kind": kind},
+		})
+		return nil, err
+	}
+	id := artifactID(ownerID, kind, name)
 	if admin {
 		id = stringInput(root.Input, "id", id)
 	}
-	kind := stringInput(root.Input, "kind", "artifact")
 	content := stringInput(root.Input, "content", "")
 	contentJSON := jsonStringInput(root.Input, "content_json")
 	metadataJSON := jsonStringInput(root.Input, "metadata_json")
-	ownerID, _ := identityVarString(ctx, "user_id")
-	args := []any{id, name, kind, "", "database", "account", false, accountID, ownerID, content, contentJSON, metadataJSON, now, now}
-	q := artifactUpsertSQL(dbType, table)
-	if _, err := db.ExecContext(ctx, q, args...); err != nil {
+	contentHash := artifactContentHash(content, contentJSON)
+	status := "approved"
+	accountID, _ := identityVarString(ctx, "account_id")
+	existing, err := s.internalArtifactStoreRow(ctx, id)
+	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"id": id, "name": name, "kind": kind, "path": "", "source": "database", "visibility": "account",
-		"read_only": false, "account_id": safeArtifactIdentity(accountID, admin), "owner_id": safeArtifactIdentity(ownerID, admin),
-		"content": content, "content_json": jsonValue(contentJSON, dbType), "metadata_json": jsonValue(metadataJSON, dbType), "revision": int64(1), "created_at": now, "updated_at": now,
-	}, nil
+	if existing != nil && !admin && stringMapValue(existing, "owner_id") != ownerID {
+		return nil, fmt.Errorf("gj_artifacts write denied")
+	}
+	revision := int64(1)
+	createdAt := now
+	if existing != nil {
+		revision = int64MapValue(existing, "revision") + 1
+		createdAt = stringMapValue(existing, "created_at")
+		if createdAt == "" {
+			createdAt = now
+		}
+	}
+	input := map[string]any{
+		"id": id, "name": name, "kind": kind, "path": "", "source": "database", "visibility": "user", "read_only": false,
+		"account_id": accountID, "owner_id": ownerID, "content": content, "content_json": nullableJSONString(contentJSON),
+		"metadata_json": nullableJSONString(metadataJSON), "content_hash": contentHash, "status": status,
+		"revision": revision, "created_at": createdAt, "updated_at": now,
+	}
+	var rows []map[string]any
+	if existing == nil {
+		rows, err = s.internalStoreMutationRows(ctx, "artifacts", `insert: $input`, artifactStoreFields, map[string]any{"input": input})
+	} else {
+		update := cloneMap(input)
+		delete(update, "id")
+		delete(update, "created_at")
+		rows, err = s.internalStoreMutationRows(ctx, "artifacts", `where: { id: { eq: $id } }, update: $input`, artifactStoreFields, map[string]any{"id": id, "input": update})
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := s.bumpArtifactRevision(ctx, "artifacts"); err != nil {
+		return nil, err
+	}
+	s.markArtifactChanged("artifact mutation")
+	if len(rows) != 0 {
+		return artifactProjectionRow(rows[0], admin), nil
+	}
+	return artifactProjectionRow(input, admin), nil
 }
 
 func (h artifactControlPlane) deleteArtifact(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
 	s := h.service
-	db, dbType, table, ok := s.artifactDB()
-	if !ok {
+	if _, _, _, ok := s.artifactDB(); !ok {
 		return nil, fmt.Errorf("artifact store database is not configured")
 	}
-	accountID, ok := identityVarString(ctx, "account_id")
-	if !ok && !s.identityRoleIsAdmin(ctx) {
-		return nil, fmt.Errorf("gj_artifacts delete requires account identity")
+	ownerID, ok := artifactUserID(ctx)
+	if !ok {
+		return nil, fmt.Errorf("gj_artifacts delete requires user identity")
 	}
 	id := stringInput(root.Input, "id", "")
 	if id == "" {
@@ -318,11 +458,46 @@ func (h artifactControlPlane) deleteArtifact(ctx context.Context, root core.Mana
 	if id == "" {
 		return nil, fmt.Errorf("gj_artifacts delete requires id")
 	}
-	q, args := artifactDeleteSQL(dbType, table, id, accountID, s.identityRoleIsAdmin(ctx))
-	if _, err := db.ExecContext(ctx, q, args...); err != nil {
+	admin := s.identityRoleIsAdmin(ctx)
+	existing, err := s.internalArtifactStoreRow(ctx, id)
+	if err != nil {
 		return nil, err
 	}
+	if existing == nil || (!admin && stringMapValue(existing, "owner_id") != ownerID) {
+		return map[string]any{"id": id, "deleted": true}, nil
+	}
+	kind := normalizeArtifactKind(stringInput(root.Input, "kind", stringWhere(root.Where, "kind")))
+	if kind == "artifact" {
+		kind = normalizeArtifactKind(stringMapValue(existing, "kind"))
+	}
+	if err := s.checkArtifactKindWritable(kind); err != nil {
+		s.recordRuntimeEvent(ctx, runtimeEvent{
+			Phase:      "access",
+			Status:     runtimeStatusFailed,
+			Severity:   "warn",
+			Summary:    "Artifact delete denied because the artifact kind is locked.",
+			NextAction: "Remove the kind from core.artifacts.locked before deleting artifacts of this kind.",
+			ErrorCode:  "artifact_kind_locked",
+			Details:    map[string]any{"root": artifactsRootTable, "kind": kind},
+		})
+		return nil, err
+	}
+	if _, err := s.internalStoreMutationRows(ctx, "artifacts", `where: { id: { eq: $id } }, delete: true`, `id`, map[string]any{"id": id}); err != nil {
+		return nil, err
+	}
+	if err := s.bumpArtifactRevision(ctx, "artifacts"); err != nil {
+		return nil, err
+	}
+	s.markArtifactChanged("artifact delete")
 	return map[string]any{"id": id, "deleted": true}, nil
+}
+
+func (s *graphjinService) internalArtifactStoreRow(ctx context.Context, id string) (map[string]any, error) {
+	rows, err := s.internalStoreRows(ctx, "artifacts", `where: { id: { eq: $id } }`, artifactStoreFields, map[string]any{"id": id})
+	if err != nil || len(rows) == 0 {
+		return nil, err
+	}
+	return rows[0], nil
 }
 
 func (s *graphjinService) initArtifactsBeforeCore() error {
@@ -338,7 +513,17 @@ func (s *graphjinService) initArtifactsBeforeCore() error {
 			return err
 		}
 	}
-	return nil
+	if s.watchesEnabled() {
+		for _, stmt := range watchDDL(dbType, s.conf.Core.EffectiveArtifactsConfig().Schema) {
+			if _, err := db.ExecContext(context.Background(), stmt); err != nil {
+				return err
+			}
+		}
+		if err := s.migrateWatchSchema(context.Background(), db, dbType, s.conf.Core.EffectiveArtifactsConfig().Schema); err != nil {
+			return err
+		}
+	}
+	return s.migrateArtifactSchema(context.Background(), db, dbType, s.conf.Core.EffectiveArtifactsConfig().Schema)
 }
 
 func (s *graphjinService) artifactDB() (*sql.DB, string, string, bool) {
@@ -360,7 +545,7 @@ func (s *graphjinService) artifactDB() (*sql.DB, string, string, bool) {
 
 func artifactDDL(dbType, schema string) []string {
 	table := artifactTableName(dbType, schema, "artifacts")
-	revisions := artifactTableName(dbType, schema, "artifact_revisions")
+	revisions := artifactTableName(dbType, schema, "revisions")
 	switch dbType {
 	case "postgres", "":
 		return []string{
@@ -371,25 +556,23 @@ name TEXT NOT NULL,
 kind TEXT NOT NULL,
 path TEXT NOT NULL DEFAULT '',
 source TEXT NOT NULL DEFAULT 'database',
-visibility TEXT NOT NULL DEFAULT 'account',
+visibility TEXT NOT NULL DEFAULT 'user',
 read_only BOOLEAN NOT NULL DEFAULT FALSE,
 account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
 content TEXT NOT NULL DEFAULT '',
 content_json JSONB,
 metadata_json JSONB,
+content_hash TEXT NOT NULL DEFAULT '',
+status TEXT NOT NULL DEFAULT 'approved',
 revision BIGINT NOT NULL DEFAULT 1,
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`, table),
 			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-id TEXT PRIMARY KEY,
-artifact_id TEXT NOT NULL,
-revision BIGINT NOT NULL,
-content TEXT NOT NULL DEFAULT '',
-content_json JSONB,
-metadata_json JSONB,
-created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+domain TEXT PRIMARY KEY,
+revision BIGINT NOT NULL DEFAULT 0,
+updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`, revisions),
 		}
 	default:
@@ -400,28 +583,95 @@ name TEXT NOT NULL,
 kind TEXT NOT NULL,
 path TEXT NOT NULL DEFAULT '',
 source TEXT NOT NULL DEFAULT 'database',
-visibility TEXT NOT NULL DEFAULT 'account',
+visibility TEXT NOT NULL DEFAULT 'user',
 read_only BOOLEAN NOT NULL DEFAULT 0,
 account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
 content TEXT NOT NULL DEFAULT '',
 content_json TEXT,
 metadata_json TEXT,
+content_hash TEXT NOT NULL DEFAULT '',
+status TEXT NOT NULL DEFAULT 'approved',
 revision INTEGER NOT NULL DEFAULT 1,
 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`, table),
 			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-id TEXT PRIMARY KEY,
-artifact_id TEXT NOT NULL,
-revision INTEGER NOT NULL,
-content TEXT NOT NULL DEFAULT '',
-content_json TEXT,
-metadata_json TEXT,
-created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+domain TEXT PRIMARY KEY,
+revision INTEGER NOT NULL DEFAULT 0,
+updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`, revisions),
 		}
 	}
+}
+
+func artifactMigrationDDL(dbType, schema string) []string {
+	if dbType != "postgres" && dbType != "" {
+		return nil
+	}
+	table := artifactTableName(dbType, schema, "artifacts")
+	return []string{
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS content_hash TEXT NOT NULL DEFAULT ''`, table),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved'`, table),
+	}
+}
+
+func (s *graphjinService) migrateArtifactSchema(ctx context.Context, db *sql.DB, dbType, schema string) error {
+	for _, stmt := range artifactMigrationDDL(dbType, schema) {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	if dbType == "postgres" || dbType == "" {
+		return nil
+	}
+	table := artifactTableName(dbType, schema, "artifacts")
+	if err := ensureSQLColumn(ctx, db, dbType, table, "content_hash", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	return ensureSQLColumn(ctx, db, dbType, table, "status", "TEXT NOT NULL DEFAULT 'approved'")
+}
+
+func ensureSQLColumn(ctx context.Context, db *sql.DB, dbType, table, column, definition string) error {
+	if dbType == "sqlite" {
+		exists, err := sqliteColumnExists(ctx, db, table, column)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
+	} else {
+		q := fmt.Sprintf("SELECT %s FROM %s WHERE 1 = 0", quoteSQLIdent(column), table)
+		rows, err := db.QueryContext(ctx, q)
+		if err == nil {
+			rows.Close() // nolint:errcheck
+			return nil
+		}
+	}
+	_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, quoteSQLIdent(column), definition))
+	return err
+}
+
+func sqliteColumnExists(ctx context.Context, db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return false, err
+		}
+		if strings.EqualFold(name, column) {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func artifactTableName(dbType, schema, table string) string {
@@ -439,28 +689,81 @@ func quoteSQLIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-func artifactUpsertSQL(dbType, table string) string {
-	if dbType == "postgres" || dbType == "" {
-		return fmt.Sprintf(`INSERT INTO %s (id, name, kind, path, source, visibility, read_only, account_id, owner_id, content, content_json, metadata_json, created_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, kind=EXCLUDED.kind, content=EXCLUDED.content, content_json=EXCLUDED.content_json, metadata_json=EXCLUDED.metadata_json, revision=%s.revision+1, updated_at=EXCLUDED.updated_at`, table, quotePGIdent("artifacts"))
+func (s *graphjinService) checkArtifactKindWritable(kind string) error {
+	if strings.TrimSpace(kind) == "" {
+		return nil
 	}
-	return fmt.Sprintf(`INSERT INTO %s (id, name, kind, path, source, visibility, read_only, account_id, owner_id, content, content_json, metadata_json, created_at, updated_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind, content=excluded.content, content_json=excluded.content_json, metadata_json=excluded.metadata_json, revision=revision+1, updated_at=excluded.updated_at`, table)
+	kind = normalizeArtifactKind(kind)
+	if s == nil || s.conf == nil {
+		return nil
+	}
+	cfg := s.conf.Core.EffectiveArtifactsConfig()
+	for _, locked := range cfg.Locked {
+		if normalizeArtifactKind(locked) == kind {
+			return artifactPolicyError{
+				Code:        "artifact_kind_locked",
+				Kind:        kind,
+				PolicyFinal: true,
+			}
+		}
+	}
+	return nil
 }
 
-func artifactDeleteSQL(dbType, table, id, accountID string, admin bool) (string, []any) {
-	if dbType == "postgres" || dbType == "" {
-		if admin {
-			return fmt.Sprintf("DELETE FROM %s WHERE id = $1", table), []any{id}
-		}
-		return fmt.Sprintf("DELETE FROM %s WHERE id = $1 AND account_id = $2", table), []any{id, accountID}
+type artifactPolicyError struct {
+	Code        string
+	Kind        string
+	PolicyFinal bool
+}
+
+func (e artifactPolicyError) Error() string {
+	if e.Code == "" {
+		e.Code = "artifact_policy_error"
 	}
-	if admin {
-		return fmt.Sprintf("DELETE FROM %s WHERE id = ?", table), []any{id}
+	if e.Kind == "" {
+		return e.Code
 	}
-	return fmt.Sprintf("DELETE FROM %s WHERE id = ? AND account_id = ?", table), []any{id, accountID}
+	return fmt.Sprintf("%s: artifact kind %q is locked by policy", e.Code, e.Kind)
+}
+
+func artifactContentHash(content, contentJSON string) string {
+	if strings.TrimSpace(content) != "" || strings.TrimSpace(contentJSON) == "" {
+		return hashString(content)
+	}
+	return hashString(contentJSON)
+}
+
+func artifactStatus(status string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		return "approved"
+	}
+	return status
+}
+
+func (s *graphjinService) bumpArtifactRevision(ctx context.Context, domain string) error {
+	if s == nil {
+		return nil
+	}
+	if _, _, _, ok := s.artifactDB(); !ok {
+		return nil
+	}
+	domain = strings.TrimSpace(domain)
+	if domain == "" {
+		domain = "artifacts"
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	current, err := s.artifactRevision(ctx, domain)
+	if err != nil {
+		return err
+	}
+	input := map[string]any{"domain": domain, "revision": current + 1, "updated_at": now}
+	if current == 0 {
+		_, err = s.internalStoreMutationRows(ctx, "revisions", `insert: $input`, revisionStoreFields, map[string]any{"input": input})
+		return err
+	}
+	_, err = s.internalStoreMutationRows(ctx, "revisions", `where: { domain: { eq: $domain } }, update: $input`, revisionStoreFields, map[string]any{"domain": domain, "input": map[string]any{"revision": current + 1, "updated_at": now}})
+	return err
 }
 
 func identityVarString(ctx context.Context, name string) (string, bool) {
@@ -509,8 +812,8 @@ func safeArtifactIdentity(value string, admin bool) string {
 	return "sha256:" + hex.EncodeToString(sum[:8])
 }
 
-func artifactID(accountID, name string) string {
-	sum := sha256.Sum256([]byte(accountID + ":" + name))
+func artifactID(ownerID, kind, name string) string {
+	sum := sha256.Sum256([]byte(ownerID + ":" + normalizeArtifactKind(kind) + ":" + name))
 	return "artifact:" + hex.EncodeToString(sum[:16])
 }
 
@@ -530,8 +833,8 @@ func artifactKindFromPath(path string) string {
 		return "fragment"
 	case strings.Contains(p, "workflow"):
 		return "workflow"
-	case strings.Contains(p, "query"):
-		return "query"
+	case strings.Contains(p, "query"), strings.Contains(p, "queries/"):
+		return "saved_query"
 	default:
 		return "artifact"
 	}
@@ -590,6 +893,122 @@ func jsonValue(s string, _ string) any {
 	var out any
 	if err := json.Unmarshal([]byte(s), &out); err != nil {
 		return s
+	}
+	return out
+}
+
+func artifactProjectionRow(row map[string]any, rawIDs bool) map[string]any {
+	accountID := stringMapValue(row, "account_id")
+	ownerID := stringMapValue(row, "owner_id")
+	return map[string]any{
+		"id":            stringMapValue(row, "id"),
+		"name":          stringMapValue(row, "name"),
+		"kind":          stringMapValue(row, "kind"),
+		"path":          stringMapValue(row, "path"),
+		"source":        stringMapValue(row, "source"),
+		"visibility":    stringMapValue(row, "visibility"),
+		"read_only":     boolMapValue(row, "read_only"),
+		"account_id":    safeArtifactIdentity(accountID, rawIDs),
+		"owner_id":      safeArtifactIdentity(ownerID, rawIDs),
+		"content":       stringMapValue(row, "content"),
+		"content_json":  row["content_json"],
+		"metadata_json": row["metadata_json"],
+		"content_hash":  stringMapValue(row, "content_hash"),
+		"status":        artifactStatus(stringMapValue(row, "status")),
+		"revision":      int64MapValue(row, "revision"),
+		"account_ref":   safeArtifactIdentity(accountID, false),
+		"owner_ref":     safeArtifactIdentity(ownerID, false),
+		"created_at":    stringMapValue(row, "created_at"),
+		"updated_at":    stringMapValue(row, "updated_at"),
+	}
+}
+
+func stringMapValue(row map[string]any, key string) string {
+	if row == nil {
+		return ""
+	}
+	v := row[key]
+	if v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return t
+	case json.Number:
+		return t.String()
+	default:
+		return fmt.Sprint(t)
+	}
+}
+
+func boolMapValue(row map[string]any, key string) bool {
+	if row == nil {
+		return false
+	}
+	switch t := row[key].(type) {
+	case bool:
+		return t
+	case string:
+		return strings.EqualFold(t, "true") || t == "1"
+	case float64:
+		return t != 0
+	case int:
+		return t != 0
+	case int64:
+		return t != 0
+	default:
+		return false
+	}
+}
+
+func int64MapValue(row map[string]any, key string) int64 {
+	if row == nil {
+		return 0
+	}
+	switch t := row[key].(type) {
+	case int64:
+		return t
+	case int:
+		return int64(t)
+	case float64:
+		return int64(t)
+	case json.Number:
+		v, _ := t.Int64()
+		return v
+	case string:
+		var n int64
+		_, _ = fmt.Sscan(t, &n)
+		return n
+	default:
+		return 0
+	}
+}
+
+func jsonMapString(row map[string]any, key string) string {
+	if row == nil || row[key] == nil {
+		return ""
+	}
+	switch v := row[key].(type) {
+	case string:
+		return v
+	case json.RawMessage:
+		return string(v)
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return ""
+		}
+		return string(b)
+	}
+}
+
+func cloneMap(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
 	}
 	return out
 }

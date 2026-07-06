@@ -51,9 +51,9 @@ const navItems = [
 const Sidebar = ({ className }) => {
   const location = useLocation();
   return (
-    <nav className={cn("border-r bg-muted/30 p-3", className)} aria-label="Primary">
+    <nav className={cn("border-r bg-background p-3", className)} aria-label="Primary">
       <TooltipProvider delayDuration={250}>
-        <ul className="grid gap-1">
+        <ul className="grid gap-1.5">
           {navItems.map((item) => {
             const isActive = item.path === "/" ? location.pathname === "/" : location.pathname.startsWith(item.path);
             return (
@@ -63,11 +63,13 @@ const Sidebar = ({ className }) => {
                     <Link
                       to={item.path}
                       className={cn(
-                        "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
-                        isActive && "bg-background text-foreground shadow-xs ring-1 ring-border"
+                        "flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                        isActive && "border bg-card text-foreground shadow-[0_1px_2px_rgba(28,35,48,0.06)]"
                       )}
                     >
-                      <item.icon size={17} strokeWidth={1.75} aria-hidden="true" />
+                      <span className={cn("flex size-6 items-center justify-center rounded-md", isActive ? "bg-muted text-foreground" : "text-muted-foreground")}>
+                        <item.icon size={16} strokeWidth={1.8} aria-hidden="true" />
+                      </span>
                       <span className="truncate">{item.label}</span>
                     </Link>
                   </TooltipTrigger>

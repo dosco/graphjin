@@ -36,8 +36,10 @@ type JSRuntimeFunction struct {
 	Required    []string       `json:"required,omitempty"`
 }
 
-// registerJSRuntimeTools registers tooling for JS runtime API discoverability.
+// registerJSRuntimeTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerJSRuntimeTools() {
+	return
+
 	ms.srv.AddTool(mcp.NewTool(
 		"get_js_runtime_api",
 		mcp.WithDescription("Get the machine-readable API for GraphJin's JS workflow runtime. "+
@@ -46,8 +48,10 @@ func (ms *mcpServer) registerJSRuntimeTools() {
 	), ms.handleGetJSRuntimeAPI)
 }
 
-// registerJSRuntimeResources registers static resources for JS workflow runtime docs.
+// registerJSRuntimeResources is retained as an inert compatibility hook.
 func (ms *mcpServer) registerJSRuntimeResources() {
+	return
+
 	ms.srv.AddResource(
 		mcp.NewResource(
 			JSRuntimeResourceURI,

@@ -1,0 +1,6 @@
+{{- $path := .Get 0 -}}
+{{- with resources.Get $path -}}
+{{ .Content | safeHTML }}
+{{- else -}}
+{{- errorf "root-doc shortcode: missing resource %q" $path -}}
+{{- end -}}

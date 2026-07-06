@@ -51,9 +51,20 @@ func (c *Config) NormalizeMode() error {
 		return err
 	}
 	if mode == "" {
-		if c.Production {
+		switch {
+		case c.Production:
 			mode = sourcecap.ModeProd
-		} else {
+		case c.IsSourcesUsed():
+			// Fail closed (security, audit F1): in source mode an unspecified
+			// deployment mode must NOT silently fall back to dev. Dev makes every
+			// gj_* system root public and mounts the agentic surface; defaulting
+			// to it on a missing `mode` is fail-open. Require an explicit
+			// dev/agentic selection (GO_ENV, dev.yml/agentic.yml, or `mode:`);
+			// anything ambiguous resolves to the locked-down prod posture.
+			mode = sourcecap.ModeProd
+		default:
+			// Legacy (non-source) configs keep the long-standing dev default so
+			// existing local development without `sources:` is unaffected.
 			mode = sourcecap.ModeDev
 		}
 	}
@@ -236,6 +247,9 @@ func (c *Config) validateIsSourcesUsed() error {
 	if err := c.validateArtifactsConfig(); err != nil {
 		return err
 	}
+	if err := c.validateWatchesConfig(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -314,6 +328,7 @@ func (c *Config) clone() *Config {
 
 	out.Identity = c.Identity.clone()
 	out.Artifacts = c.Artifacts.clone()
+	out.Watches = c.Watches.clone()
 
 	return &out
 }
@@ -407,6 +422,14 @@ func (c *Config) validateArtifactsConfig() error {
 	if c == nil || !c.Artifacts.Enabled {
 		return nil
 	}
+	for _, kind := range c.Artifacts.Locked {
+		if strings.TrimSpace(kind) == "" {
+			return fmt.Errorf("artifacts.locked: kind is required")
+		}
+	}
+	if c.Artifacts.PollSeconds < 0 {
+		return fmt.Errorf("artifacts.poll_seconds must be greater than or equal to 0")
+	}
 	sourceName := strings.TrimSpace(c.Artifacts.Source)
 	if sourceName == "" {
 		for _, source := range c.Sources {
@@ -434,6 +457,39 @@ func (c *Config) validateArtifactsConfig() error {
 		return fmt.Errorf("artifacts.source %q is read-only", sourceName)
 	}
 	return nil
+}
+
+func (c *Config) validateWatchesConfig() error {
+	if c == nil || !c.Watches.Enabled {
+		return nil
+	}
+	if !c.Artifacts.Enabled {
+		return fmt.Errorf("watches require artifacts.enabled")
+	}
+	if c.Watches.MaxPerOwner < 0 {
+		return fmt.Errorf("watches.max_per_owner must be greater than or equal to 0")
+	}
+	if c.Watches.EventRetentionHours < 0 {
+		return fmt.Errorf("watches.event_retention_hours must be greater than or equal to 0")
+	}
+	if c.Watches.MaxEventsPerWatch < 0 {
+		return fmt.Errorf("watches.max_events_per_watch must be greater than or equal to 0")
+	}
+	if c.Watches.SnapshotMaxBytes < 0 {
+		return fmt.Errorf("watches.snapshot_max_bytes must be greater than or equal to 0")
+	}
+	if c.Watches.EnrichmentDailyCap < 0 {
+		return fmt.Errorf("watches.enrichment_daily_cap must be greater than or equal to 0")
+	}
+	if c.Watches.EnrichmentWorkers < 0 {
+		return fmt.Errorf("watches.enrichment_workers must be greater than or equal to 0")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Watches.Runner)) {
+	case "", "all", "off":
+		return nil
+	default:
+		return fmt.Errorf("watches.runner must be all or off")
+	}
 }
 
 func (c *Config) normalizeIdentityDefaults() {
@@ -480,6 +536,41 @@ func (c *Config) normalizeArtifactsDefaults() {
 	}
 	if c.Artifacts.AutoInit == nil {
 		c.Artifacts.AutoInit = boolPtr(true)
+	}
+	if c.Artifacts.PollSeconds == 0 {
+		c.Artifacts.PollSeconds = 15
+	}
+	if c.Artifacts.ProjectionContentMaxBytes <= 0 {
+		c.Artifacts.ProjectionContentMaxBytes = 32 * 1024
+	}
+}
+
+func (c *Config) normalizeWatchesDefaults() {
+	if c == nil || !c.Watches.Enabled {
+		return
+	}
+	if c.Watches.MaxPerOwner == 0 {
+		c.Watches.MaxPerOwner = 20
+	}
+	if c.Watches.EventRetentionHours == 0 {
+		c.Watches.EventRetentionHours = 168
+	}
+	if c.Watches.MaxEventsPerWatch == 0 {
+		c.Watches.MaxEventsPerWatch = 500
+	}
+	if c.Watches.SnapshotMaxBytes == 0 {
+		c.Watches.SnapshotMaxBytes = 32768
+	}
+	if c.Watches.EnrichmentDailyCap == 0 {
+		c.Watches.EnrichmentDailyCap = 10
+	}
+	if c.Watches.EnrichmentWorkers == 0 {
+		c.Watches.EnrichmentWorkers = 1
+	}
+	if strings.TrimSpace(c.Watches.Runner) == "" {
+		c.Watches.Runner = "off"
+	} else {
+		c.Watches.Runner = strings.ToLower(strings.TrimSpace(c.Watches.Runner))
 	}
 }
 
@@ -542,33 +633,74 @@ func (c *Config) modeForSourceDefaults() string {
 	return sourcecap.ModeDev
 }
 
+// effectiveGraphJinAccess sets the per-mode default access for the gj_* system
+// roots. Modes set safe defaults; explicit access.roots entries always win.
+//
+// Row-level owner scoping for the artifact-backed roots (gj_artifacts, gj_watch,
+// gj_watch_event, gj_workflow, gj_workflow_execution) is enforced by the artifact
+// control-plane handler
+// (owner_id = user_id, with the raw artifact tables blocked from generic GraphQL),
+// so the "owner" mode here is the visibility gate that pairs with that handler
+// scoping — it does not by itself add SQL row filters.
 func effectiveGraphJinAccess(access SourceAccessConfig, mode string) SourceAccessConfig {
 	access = effectiveDatabaseAccess(access)
 	if access.Roots == nil {
 		access.Roots = make(map[string]string)
 	}
-	defaults := map[string]string{
-		"gj_catalog":            AccessModePublic,
-		"gj_artifacts":          AccessModeAccount,
-		"gj_workflow":           AccessModeAdmin,
-		"gj_workflow_execution": AccessModeAccount,
-		"gj_runtime":            AccessModeAdmin,
-		"gj_security":           AccessModeAdmin,
-		"gj_config":             AccessModeAdmin,
-	}
-	if strings.EqualFold(strings.TrimSpace(mode), sourcecap.ModeDev) {
-		for root := range defaults {
-			defaults[root] = AccessModePublic
+	var defaults map[string]string
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case sourcecap.ModeDev:
+		// Local development of the new stack: the whole surface is open.
+		defaults = map[string]string{
+			"gj_catalog":            AccessModePublic,
+			"gj_artifacts":          AccessModePublic,
+			"gj_watch":              AccessModePublic,
+			"gj_watch_event":        AccessModePublic,
+			"gj_workflow":           AccessModePublic,
+			"gj_workflow_execution": AccessModePublic,
+			"gj_runtime":            AccessModePublic,
+			"gj_security":           AccessModePublic,
+			"gj_config":             AccessModePublic,
+		}
+	case sourcecap.ModeAgentic:
+		// Trusted-agent matrix: discovery open (read-only), personal
+		// artifacts/workflows owner-scoped, control plane admin-only.
+		defaults = map[string]string{
+			"gj_catalog":            AccessModePublic,
+			"gj_artifacts":          AccessModeOwner,
+			"gj_watch":              AccessModeOwner,
+			"gj_watch_event":        AccessModeOwner,
+			"gj_workflow":           AccessModeOwner,
+			"gj_workflow_execution": AccessModeOwner,
+			"gj_runtime":            AccessModeAdmin,
+			"gj_security":           AccessModeAdmin,
+			"gj_config":             AccessModeAdmin,
+		}
+	default:
+		// prod is the only pre-agentic compatibility mode: the agentic surface is
+		// hard-gated off entirely (see serv agenticSurfaceEnabled). These admin
+		// defaults are defense-in-depth for any root that would otherwise be
+		// reachable.
+		defaults = map[string]string{
+			"gj_catalog":            AccessModeAdmin,
+			"gj_artifacts":          AccessModeAdmin,
+			"gj_watch":              AccessModeAdmin,
+			"gj_watch_event":        AccessModeAdmin,
+			"gj_workflow":           AccessModeAdmin,
+			"gj_workflow_execution": AccessModeAdmin,
+			"gj_runtime":            AccessModeAdmin,
+			"gj_security":           AccessModeAdmin,
+			"gj_config":             AccessModeAdmin,
 		}
 	}
-	for root, mode := range defaults {
+	for root, m := range defaults {
 		if strings.TrimSpace(access.Roots[root]) == "" {
-			access.Roots[root] = mode
+			access.Roots[root] = m
 		}
 	}
-	for root, mode := range access.Roots {
+	for root, m := range access.Roots {
 		delete(access.Roots, root)
-		access.Roots[strings.ToLower(strings.TrimSpace(root))] = normalizeAccessMode(mode)
+		access.Roots[strings.ToLower(strings.TrimSpace(root))] = normalizeAccessMode(m)
 	}
 	return access
 }
@@ -589,6 +721,17 @@ func (c ArtifactsConfig) clone() ArtifactsConfig {
 	if c.AutoInit != nil {
 		v := *c.AutoInit
 		out.AutoInit = &v
+	}
+	if c.Locked != nil {
+		out.Locked = append([]string(nil), c.Locked...)
+	}
+	return out
+}
+
+func (c WatchesConfig) clone() WatchesConfig {
+	out := c
+	if c.WebhookAllow != nil {
+		out.WebhookAllow = append([]string(nil), c.WebhookAllow...)
 	}
 	return out
 }
@@ -635,12 +778,23 @@ func (c *Config) EffectiveIdentityConfig() IdentityConfig {
 // EffectiveArtifactsConfig returns artifact config with source-mode defaults.
 func (c *Config) EffectiveArtifactsConfig() ArtifactsConfig {
 	if c == nil {
-		return ArtifactsConfig{Schema: "_graphjin", GlobalsPath: "./config"}
+		return ArtifactsConfig{Schema: "_graphjin", GlobalsPath: "./config", PollSeconds: 15, ProjectionContentMaxBytes: 32 * 1024}
 	}
 	out := c.Artifacts.clone()
 	tmp := &Config{Artifacts: out, Sources: c.Sources}
 	tmp.normalizeArtifactsDefaults()
 	return tmp.Artifacts
+}
+
+// EffectiveWatchesConfig returns watch config with source-mode defaults.
+func (c *Config) EffectiveWatchesConfig() WatchesConfig {
+	if c == nil {
+		return WatchesConfig{MaxPerOwner: 20, EventRetentionHours: 168, MaxEventsPerWatch: 500, SnapshotMaxBytes: 32768, Runner: "off", EnrichmentDailyCap: 10, EnrichmentWorkers: 1}
+	}
+	out := c.Watches.clone()
+	tmp := &Config{Watches: out}
+	tmp.normalizeWatchesDefaults()
+	return tmp.Watches
 }
 
 // EffectiveSourceAccess returns a source's access config with source-kind defaults.
@@ -666,6 +820,7 @@ func (c *Config) NormalizeSources() error {
 	}
 	c.normalizeIdentityDefaults()
 	c.normalizeArtifactsDefaults()
+	c.normalizeWatchesDefaults()
 	c.normalizeSourceAccessDefaults()
 
 	sqlSources := make([]string, 0, len(c.Sources))
@@ -1075,6 +1230,10 @@ type Config struct {
 	// the gj_artifacts system root.
 	Artifacts ArtifactsConfig `mapstructure:"artifacts" json:"artifacts" yaml:"artifacts" jsonschema:"title=Artifacts"`
 
+	// Watches configures GraphJin-managed standing questions and durable inbox
+	// events exposed as gj_watch and gj_watch_event system roots.
+	Watches WatchesConfig `mapstructure:"watches" json:"watches" yaml:"watches" jsonschema:"title=Watches"`
+
 	// OpenAPISpecsDir is the directory that GraphJin scans at startup for
 	// OpenAPI 3 specification files (*.yaml / *.yml). Each spec dropped in
 	// is parsed, classified, and exposed as remote-joinable fields and/or
@@ -1214,11 +1373,27 @@ type IdentityConfig struct {
 
 // ArtifactsConfig declares the GraphJin-managed SQL artifact store.
 type ArtifactsConfig struct {
-	Enabled     bool   `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Artifacts"`
-	Source      string `mapstructure:"source" json:"source" yaml:"source" jsonschema:"title=Artifact Source"`
-	Schema      string `mapstructure:"schema" json:"schema" yaml:"schema" jsonschema:"title=Artifact Schema,default=_graphjin"`
-	AutoInit    *bool  `mapstructure:"auto_init" json:"auto_init" yaml:"auto_init" jsonschema:"title=Auto Initialize Artifact Tables,default=true"`
-	GlobalsPath string `mapstructure:"globals_path" json:"globals_path" yaml:"globals_path" jsonschema:"title=Global Config Artifact Path,default=./config"`
+	Enabled                   bool     `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Artifacts,description=Enable the GraphJin-managed SQL artifact store for saved queries/fragments/workflows"`
+	Source                    string   `mapstructure:"source" json:"source" yaml:"source" jsonschema:"title=Artifact Source,description=Database source name that hosts the artifact store; defaults to the first database source"`
+	Schema                    string   `mapstructure:"schema" json:"schema" yaml:"schema" jsonschema:"title=Artifact Schema,default=_graphjin,description=Schema for the artifact store tables"`
+	AutoInit                  *bool    `mapstructure:"auto_init" json:"auto_init" yaml:"auto_init" jsonschema:"title=Auto Initialize Artifact Tables,default=true,description=Create artifact store tables automatically at startup"`
+	GlobalsPath               string   `mapstructure:"globals_path" json:"globals_path" yaml:"globals_path" jsonschema:"title=Global Config Artifact Path,default=./config,description=Directory of read-only global artifacts loaded from config files"`
+	Locked                    []string `mapstructure:"locked" json:"locked" yaml:"locked" jsonschema:"title=Locked Artifact Kinds,description=Artifact kinds that refuse writes through gj_artifacts"`
+	PollSeconds               int      `mapstructure:"poll_seconds" json:"poll_seconds" yaml:"poll_seconds" jsonschema:"title=Artifact Poll Seconds,default=15,description=Interval for the revision poller that refreshes the in-memory projection after external writes"`
+	ProjectionContentMaxBytes int      `mapstructure:"projection_content_max_bytes" json:"projection_content_max_bytes" yaml:"projection_content_max_bytes" jsonschema:"title=Projection Content Max Bytes,default=32768,description=Per-field byte cap for content and JSON fields in the in-memory gj_artifacts search projection; oversized values are dropped from the projection but stay fully readable through the artifact store"`
+}
+
+// WatchesConfig declares the GraphJin-managed watch store and runner settings.
+type WatchesConfig struct {
+	Enabled             bool     `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Watches,description=Enable durable owner-scoped watches; requires artifacts.enabled since watches persist through the artifact store"`
+	MaxPerOwner         int      `mapstructure:"max_per_owner" json:"max_per_owner" yaml:"max_per_owner" jsonschema:"title=Max Watches Per Owner,default=20,description=Maximum active watches per owner"`
+	EventRetentionHours int      `mapstructure:"event_retention_hours" json:"event_retention_hours" yaml:"event_retention_hours" jsonschema:"title=Watch Event Retention Hours,default=168,description=Hours to keep fired watch events before pruning"`
+	MaxEventsPerWatch   int      `mapstructure:"max_events_per_watch" json:"max_events_per_watch" yaml:"max_events_per_watch" jsonschema:"title=Max Events Per Watch,default=500,description=Maximum stored events per watch; oldest are pruned first"`
+	SnapshotMaxBytes    int      `mapstructure:"snapshot_max_bytes" json:"snapshot_max_bytes" yaml:"snapshot_max_bytes" jsonschema:"title=Watch Snapshot Max Bytes,default=32768,description=Byte cap for stored event snapshots and user-supplied watch-definition JSON fields"`
+	Runner              string   `mapstructure:"runner" json:"runner" yaml:"runner" jsonschema:"title=Watch Runner,enum=all,enum=off,default=off,description=Which replicas evaluate watches; off disables evaluation while definitions stay stored"`
+	WebhookAllow        []string `mapstructure:"webhook_allow" json:"webhook_allow" yaml:"webhook_allow" jsonschema:"title=Watch Webhook Allowlist,description=Allowlist of webhook URL prefixes watch deliveries may call; empty denies all webhooks"`
+	EnrichmentDailyCap  int      `mapstructure:"enrichment_daily_cap" json:"enrichment_daily_cap" yaml:"enrichment_daily_cap" jsonschema:"title=Watch Enrichment Daily Cap,default=10,description=Maximum read-only agent enrichments per watch per day"`
+	EnrichmentWorkers   int      `mapstructure:"enrichment_workers" json:"enrichment_workers" yaml:"enrichment_workers" jsonschema:"title=Watch Enrichment Workers,default=1,description=Concurrent watch enrichment workers"`
 }
 
 // SourceAccessConfig declares source-level access defaults plus table/root

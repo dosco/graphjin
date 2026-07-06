@@ -390,7 +390,7 @@ func TestKnownEmptyToolManifestDoesNotInventToolCapabilities(t *testing.T) {
 func TestBuildIncludesHelpRows(t *testing.T) {
 	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{EnabledTools: []string{"query_catalog", "validate_where_clause", "execute_saved_query"}})
 
-	for _, id := range []string{"help:discovery", "help:mcp_tools", "help:query", "help:mutations", "help:saved_queries", "help:workflow_runtime", "help:security", "help:errors"} {
+	for _, id := range []string{"help:discovery", "help:mcp_tools", "help:query", "help:mutations", "help:saved_queries", "help:workflow_runtime", "help:security", "help:errors", "help:artifacts", "help:watches", "help:refusals", "help:sampling"} {
 		card, ok := findCatalogCard(snap, id)
 		if !ok {
 			t.Fatalf("expected help card %s", id)
@@ -445,6 +445,7 @@ func TestBuildIncludesConfigRecipes(t *testing.T) {
 		"recipe.config.table_classifications",
 		"recipe.config.graphjin_roots",
 		"recipe.config.enable_artifacts",
+		"recipe.config.enable_watches",
 		"recipe.config.migrate_legacy_roles_tables",
 	} {
 		card, ok := findCatalogCard(snap, id)
@@ -501,7 +502,8 @@ func TestConfigRecipeSearchRanking(t *testing.T) {
 	}{
 		{search: "add role from jwt", want: "recipe.config.add_role"},
 		{search: "make audit_logs admin only", want: "recipe.config.table_classifications"},
-		{search: "account scoped artifacts", want: "recipe.config.enable_artifacts"},
+		{search: "user scoped artifacts", want: "recipe.config.enable_artifacts"},
+		{search: "enable watches", want: "recipe.config.enable_watches"},
 		{search: "roles tables filters presets", want: "recipe.config.migrate_legacy_roles_tables"},
 	}
 	for _, tt := range tests {

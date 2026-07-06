@@ -72,6 +72,12 @@ func (s *graphjinService) applyIdentityContext(ctx context.Context) context.Cont
 			Details:    map[string]any{"claim": id.NamespaceClaim},
 		})
 	}
+	if userID := ctx.Value(core.UserIDKey); userID != nil {
+		vars["user_ref"] = safeArtifactIdentity(fmt.Sprint(userID), false)
+	}
+	if accountID, ok := vars["account_id"]; ok && accountID != nil {
+		vars["account_ref"] = safeArtifactIdentity(fmt.Sprint(accountID), false)
+	}
 
 	roles := extractClaimRoles(claims, id.RoleClaims)
 	if len(roles) != 0 {
@@ -164,7 +170,7 @@ func extractClaimRoles(claims map[string]interface{}, names []string) []string {
 	var out []string
 	add := func(role string) {
 		role = strings.TrimSpace(role)
-		if role == "" {
+		if role == "" || core.IsReservedRoleName(role) {
 			return
 		}
 		key := strings.ToLower(role)
@@ -306,7 +312,7 @@ func (s *graphjinService) sourceModeRootAccessAllowed(root, role string) bool {
 
 func sourceModeRootsInQuery(query string) []string {
 	lower := strings.ToLower(query)
-	roots := []string{"gj_security", "gj_runtime", "gj_config", "gj_artifacts", "gj_workflow", "gj_workflow_execution", "gj_catalog"}
+	roots := []string{"gj_security", "gj_runtime", "gj_config", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution", "gj_catalog"}
 	out := make([]string, 0, len(roots))
 	for _, root := range roots {
 		if strings.Contains(lower, root) {

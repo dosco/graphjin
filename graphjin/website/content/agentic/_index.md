@@ -1,6 +1,6 @@
 ---
 title: "Agentic"
-description: "MCP, catalog discovery, security posture, source mode, workflows, and OAuth."
+description: "MCP, catalog discovery, security posture, source mode, workflows, watches, and OAuth."
 nav_group: "agentic"
 weight: 4
 ---
@@ -14,6 +14,8 @@ Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data 
 | [Catalog Graph](/agentic/catalog-graph/) | `gj_catalog` rows for sources, tables, relationships, syntax, examples, workflows, and evidence. |
 | [Security Graph](/agentic/security-graph/) | `gj_security` rows for effective policy, capabilities, read-only state, and findings. |
 | [Source Mode](/agentic/source-mode/) | Source-local ownership, capability defaults, reloads, and `agentic.yml` inheritance. |
+| [Artifacts Overlay](/agentic/artifacts/) | Global config files plus caller-scoped `gj_artifacts` overrides for queries, fragments, and workflows. |
+| [Watches](/agentic/watches/) | `gj_watch` standing questions evaluated with the owner's permissions; durable `gj_watch_event` inbox with webhook and workflow delivery. |
 | [Workflows](/agentic/workflows/) | Named, reviewed operational procedures that can call GraphJin tools and GraphQL. |
 | [MCP OAuth](/agentic/oauth/) | Hosted MCP identity with protected-resource metadata, authorization metadata, and audience checks. |
 

@@ -19,6 +19,7 @@ const requiredRoutes = [
   'start/quick-start/index.html',
   'story/index.html',
   'story/vision/index.html',
+  'story/security/index.html',
   'story/agentic/index.html',
   'core/query-language/index.html',
   'core/mutations/index.html',
@@ -56,6 +57,7 @@ const requiredContent = [
   'start/first-query.md',
   'start/saved-queries.md',
   'story/vision.md',
+  'story/security.md',
   'story/agentic.md',
   'core/compiler.md',
   'core/query-language.md',
@@ -92,6 +94,11 @@ const requiredContent = [
 ];
 
 const failures = [];
+const requiredRenderedContent = [
+  ['story/vision/index.html', 'GraphJin Vision'],
+  ['story/security/index.html', 'GraphJin Security'],
+  ['story/agentic/index.html', 'Agentic GraphJin'],
+];
 
 async function exists(file) {
   try {
@@ -124,7 +131,17 @@ for (const route of requiredRoutes) {
 
 for (const file of requiredContent) {
   if (!(await exists(path.join(contentRoot, file)))) {
-    failures.push(`Missing curated content page: ${file}`);
+    failures.push(`Missing content page: ${file}`);
+  }
+}
+
+for (const [route, expected] of requiredRenderedContent) {
+  const file = path.join(publicRoot, route);
+  if (await exists(file)) {
+    const html = await readFile(file, 'utf8');
+    if (!html.includes(expected)) {
+      failures.push(`${route} missing rendered root document text: ${expected}`);
+    }
   }
 }
 
@@ -247,4 +264,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`Checked ${htmlFiles.length} HTML files, required routes, anchors, assets, and curated pages.`);
+console.log(`Checked ${htmlFiles.length} HTML files, required routes, anchors, assets, and content pages.`);

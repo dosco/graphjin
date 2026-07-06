@@ -10,8 +10,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// registerQueryDiscoveryTools registers the saved query discovery tools
+// registerQueryDiscoveryTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerQueryDiscoveryTools() {
+	return
+
 	// list_saved_queries - List all saved queries from the allow-list
 	ms.srv.AddTool(mcp.NewTool(
 		"list_saved_queries",
@@ -54,6 +56,7 @@ func (ms *mcpServer) registerQueryDiscoveryTools() {
 
 // handleListSavedQueries returns all saved queries
 func (ms *mcpServer) handleListSavedQueries(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	if err := ms.requireDB(); err != nil {
 		return err, nil
 	}
@@ -61,7 +64,7 @@ func (ms *mcpServer) handleListSavedQueries(ctx context.Context, req mcp.CallToo
 	args := req.GetArguments()
 	namespace, _ := args["namespace"].(string)
 
-	queries, err := ms.service.gj.ListSavedQueries()
+	queries, err := ms.service.listSavedQueriesForContext(ctx)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to list queries: %v", err)), nil
 	}
@@ -91,6 +94,7 @@ func (ms *mcpServer) handleListSavedQueries(ctx context.Context, req mcp.CallToo
 
 // handleSearchSavedQueries searches queries by name
 func (ms *mcpServer) handleSearchSavedQueries(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	if err := ms.requireDB(); err != nil {
 		return err, nil
 	}
@@ -108,7 +112,7 @@ func (ms *mcpServer) handleSearchSavedQueries(ctx context.Context, req mcp.CallT
 		limit = 10
 	}
 
-	queries, err := ms.service.gj.ListSavedQueries()
+	queries, err := ms.service.listSavedQueriesForContext(ctx)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to list queries: %v", err)), nil
 	}
@@ -159,6 +163,7 @@ func (ms *mcpServer) handleSearchSavedQueries(ctx context.Context, req mcp.CallT
 
 // handleGetSavedQuery returns details of a specific saved query
 func (ms *mcpServer) handleGetSavedQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	if err := ms.requireDB(); err != nil {
 		return err, nil
 	}
@@ -171,7 +176,7 @@ func (ms *mcpServer) handleGetSavedQuery(ctx context.Context, req mcp.CallToolRe
 		return mcp.NewToolResultError("query name is required"), nil
 	}
 
-	details, err := ms.service.gj.GetSavedQuery(qualifyAllowListName(namespace, name))
+	details, _, err := ms.service.getSavedQueryForContext(ctx, qualifyAllowListName(namespace, name))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to get query: %v", err)), nil
 	}

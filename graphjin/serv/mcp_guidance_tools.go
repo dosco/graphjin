@@ -13,8 +13,10 @@ type guidanceToolResult struct {
 	GuideMarkdown string `json:"guide_markdown"`
 }
 
-// registerGuidanceTools registers tool twins for the highest-value prompt templates.
+// registerGuidanceTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerGuidanceTools() {
+	return
+
 	ms.srv.AddTool(mcp.NewTool(
 		"write_query",
 		mcp.WithDescription("Generate a complete GraphJin query guide as a tool result. "+

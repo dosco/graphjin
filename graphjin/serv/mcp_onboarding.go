@@ -17,7 +17,10 @@ type cachedDiscoveredCandidate struct {
 	CreatedAt time.Time
 }
 
+// registerOnboardingTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerOnboardingTools() {
+	return
+
 	if !ms.service.conf.MCP.AllowDevTools {
 		return
 	}

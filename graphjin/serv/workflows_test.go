@@ -113,7 +113,7 @@ func TestRunNamedWorkflow_CanCallGJTools(t *testing.T) {
 	}
 	if err := afero.WriteFile(mem, "/workflows/syntax.js", []byte(`
 function main() {
-  return gj.tools.getQuerySyntax({});
+  return gj.tools.queryCatalog({ where: { kind: { eq: "help" } }, limit: 1 });
 }
 `), 0o644); err != nil {
 		t.Fatalf("write workflow: %v", err)
@@ -134,8 +134,9 @@ function main() {
 		t.Fatalf("expected map result, got %T", out)
 	}
 
-	if _, ok := res["filter_operators"]; !ok {
-		t.Fatalf("expected get_query_syntax output, got keys: %#v", res)
+	cards, ok := res["cards"].([]any)
+	if !ok || len(cards) == 0 {
+		t.Fatalf("expected query_catalog cards output, got keys: %#v", res)
 	}
 }
 

@@ -3,6 +3,7 @@ package serv
 import (
 	"bytes"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -464,6 +465,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 	workflowExecutionReadOnly := controlPlaneTableReadOnly(conf, "", "gj_workflow_execution")
 	corsWildcard := securityHasWildcard(confAllowedOrigins(conf))
 	uploadEnabled := conf != nil && conf.Serv.Uploads.Enabled
+	watchWebhookPolicy := securityWatchWebhookPolicy(conf, mode)
 
 	rows := []securityPolicyEval{
 		newSecurityPolicy(mode, "core.app_data", "core", "app", "database", "app_data", "query",
@@ -595,13 +597,13 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			"Approved agentic workflow execution is for authenticated company users; anonymous execution can run code without accountability.",
 			"Keep anon gj_workflow_execution insert blocked and authenticate agentic users."),
 		newSecurityPolicy(mode, "serve.legacy_execute_workflow_tool", "serve", "graphjin", "graphjin", "legacy_workflow_execution", "execute",
-			"Legacy MCP workflow execution tool",
-			"Controls the execute_workflow MCP compatibility tool. GraphQL gj_workflow_execution is controlled by read_only table/source policy.",
-			defaultAllow(mode, true, false, false), mcpEnabled && conf != nil && conf.legacyMCPToolsEnabled() && conf.MCP.AllowWorkflowExecution,
+			"Legacy workflow execution config",
+			"mcp.allow_workflow_execution is retained for compatibility; MCP no longer registers execute_workflow. GraphQL gj_workflow_execution is controlled by read_only table/source policy.",
+			defaultAllow(mode, true, false, false), false,
 			"mcp.allow_workflow_execution", fmt.Sprint(conf != nil && conf.MCP.AllowWorkflowExecution),
 			mcpBoolExplicit(conf, "mcp.allow_workflow_execution", conf != nil && conf.MCP.AllowWorkflowExecution), "medium",
-			"Legacy MCP execution is a compatibility surface; prefer catalog-discovered GraphQL control-plane mutations.",
-			"Keep mcp.legacy_discovery or mcp.allow_workflow_execution disabled unless a legacy MCP client requires execute_workflow."),
+			"Legacy MCP execution has been removed; use catalog-discovered GraphQL control-plane mutations.",
+			"Use gj_workflow_execution with authenticated users and read_only policy controls."),
 		newSecurityPolicy(mode, "serve.schema_reload", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "schema", "reload",
 			"Schema reload",
 			"Controls MCP schema reload operations.",
@@ -690,6 +692,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			configBoolExplicit(conf, "uploads.enabled"), "medium",
 			"Uploads add file parsing, storage, and size-limit risk to the GraphQL endpoint.",
 			"Enable uploads only with explicit max_size, allowed_mime, and a reviewed storage backend."),
+		watchWebhookPolicy,
 	}
 
 	rows = append(rows, securitySourcePolicyEvaluations(conf, mode)...)
@@ -718,6 +721,55 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 		}
 	}
 	return rows
+}
+
+func securityWatchWebhookPolicy(conf *Config, mode string) securityPolicyEval {
+	watchesEnabled := conf != nil && conf.Core.Watches.Enabled
+	cfg := core.WatchesConfig{}
+	if conf != nil {
+		cfg = conf.Core.EffectiveWatchesConfig()
+	}
+	invalid := securityInvalidWatchWebhookAllowEntries(cfg.WebhookAllow)
+	empty := len(cfg.WebhookAllow) == 0
+	safe := !watchesEnabled || (!empty && len(invalid) == 0)
+	row := newSecurityPolicy(mode, "serve.watch_webhook_egress", "serve", "graphjin", "graphjin", "watch_webhook", "egress",
+		"Watch webhook egress",
+		"Controls outbound HTTP delivery for watch events.",
+		true, safe,
+		"watches.webhook_allow", strings.Join(cfg.WebhookAllow, ","),
+		watchesEnabled, "high",
+		"Watch webhooks send event payloads to external HTTP destinations and must stay constrained to exact allowlisted origins.",
+		"Set watches.webhook_allow to exact http(s) origins, including port when non-default; leave it empty only when webhook delivery is not used.")
+	row.Transport = "http"
+	row.Surface = "egress"
+	row.Details = map[string]any{
+		"watches_enabled": watchesEnabled,
+		"allowlist":       cfg.WebhookAllow,
+		"empty_allowlist": empty,
+		"invalid_entries": invalid,
+		"required_shape":  "http(s)://host[:port][/optional/path-prefix]",
+	}
+	if watchesEnabled && (empty || len(invalid) != 0) {
+		row.Status = securityStatusFinding
+	}
+	return row
+}
+
+func securityInvalidWatchWebhookAllowEntries(allow []string) []string {
+	var invalid []string
+	for _, entry := range allow {
+		raw := strings.TrimSpace(entry)
+		if raw == "" {
+			invalid = append(invalid, entry)
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || strings.TrimSpace(u.Host) == "" || u.User != nil ||
+			strings.ContainsAny(u.Hostname(), "* ") {
+			invalid = append(invalid, entry)
+		}
+	}
+	return invalid
 }
 
 func securitySourcePolicyEvaluations(conf *Config, mode string) []securityPolicyEval {
@@ -1055,9 +1107,8 @@ func sourceAccessMetadataIsArtifactPhysicalTable(conf *Config, source core.Sourc
 	schema := strings.ToLower(strings.TrimSpace(cfg.Schema))
 	tableName := strings.ToLower(strings.TrimSpace(table.TableName))
 	schemaName := strings.ToLower(strings.TrimSpace(table.SchemaName))
-	return (schemaName == schema && (tableName == "artifacts" || tableName == "artifact_revisions")) ||
-		tableName == schema+"_artifacts" ||
-		tableName == schema+"_artifact_revisions"
+	return (schemaName == schema && tableName == "artifacts") ||
+		tableName == schema+"_artifacts"
 }
 
 func sourceAccessDetails(access core.SourceAccessConfig) map[string]any {
@@ -1105,8 +1156,8 @@ func graphjinRootAccessSafe(root, accessMode string) bool {
 	switch root {
 	case "gj_security", "gj_runtime", "gj_config":
 		return accessMode == core.AccessModeAdmin || accessMode == core.AccessModeBlocked
-	case "gj_artifacts", "gj_workflow", "gj_workflow_execution":
-		return accessMode == core.AccessModeAccount || accessMode == core.AccessModeAdmin || accessMode == core.AccessModeBlocked
+	case "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution":
+		return accessMode == core.AccessModeOwner || accessMode == core.AccessModeAccount || accessMode == core.AccessModeAdmin || accessMode == core.AccessModeBlocked
 	case "gj_catalog":
 		return accessMode == core.AccessModeAuthenticated || accessMode == core.AccessModeAccount || accessMode == core.AccessModeAdmin || accessMode == core.AccessModePublic
 	default:
@@ -1118,7 +1169,7 @@ func graphjinRootRisk(root string) string {
 	switch strings.ToLower(strings.TrimSpace(root)) {
 	case "gj_security", "gj_config":
 		return "critical"
-	case "gj_runtime", "gj_workflow":
+	case "gj_runtime", "gj_workflow", "gj_watch", "gj_watch_event":
 		return "high"
 	default:
 		return "medium"

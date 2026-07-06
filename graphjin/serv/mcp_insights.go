@@ -6,7 +6,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// registerInsightsTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerInsightsTools() {
+	return
+
 	ms.srv.AddTool(mcp.NewTool(
 		"get_schema_insights",
 		mcp.WithDescription("Get database insights for schema understanding: hub tables (ranked by FK count), relationship paths between hubs, auto-generated query templates (time-series / breakdown / join), duplicate-table warnings, and data-quality flags. Use after list_tables to orient on the data model before writing queries."),

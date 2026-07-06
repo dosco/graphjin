@@ -6,6 +6,11 @@ doc_kind: "concept"
 weight: 30
 ---
 
+The authoritative source for the operating-modes (`dev`/`prod`/`agentic`),
+system-roots, and auth security model is `SECURITY.md` in the repository root.
+This page covers the `gj_security` graph; see `SECURITY.md` for the canonical
+mode and root policy.
+
 ## Policy before action
 
 ```graphql
@@ -29,8 +34,11 @@ query {
 
 Security rows are also source-aware. In source mode, the graph can report capabilities from the central registry, access policy classifications, root permissions, config scan findings, and runtime denial events.
 
+For artifacts, treat config files as read-only globals and `gj_artifacts` as the user-scoped mutable overlay. The effective policy should allow `gj_artifacts` only for authenticated callers that provide trusted `user_id`; another user must not discover or execute someone else's saved queries, fragments, or workflows through catalog or MCP.
+
 {{< verified by="TestGraphQLControlPlaneSecurityReportsSourceAccessPolicy" file="serv/control_plane_graphql_test.go" line="736" >}}
 {{< verified by="TestSecurityNanoRowsCoverSourceCapabilityRegistry" file="serv/control_plane_graphql_test.go" line="1540" >}}
+{{< verified by="TestCatalogSnapshotMergesCallerScopedArtifacts" file="serv/artifact_overlay_test.go" line="173" >}}
 
 ## Typical use
 
@@ -64,3 +72,5 @@ query {
 ```
 
 Use this before a model requests `gj_config`, `gj_workflow_execution`, CodeSQL writes, filesystem writes, schema changes, or raw mutation execution.
+
+Artifact updates increment the live `_graphjin.artifacts.revision` value in place. Do not present rollback or historical restore as an available security control.

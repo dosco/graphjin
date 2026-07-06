@@ -69,6 +69,60 @@ safety notes. If `gj_catalog`, `gj_security`, `gj_runtime`, or `gj_config` is
 not visible to the caller, the operator or model must request the required
 authenticated/admin access instead of guessing schema or policy.
 
+## Operating Modes
+
+GraphJin runs in one of three operating modes. The mode sets safe defaults and
+decides whether the agentic surface exists at all. The agentic surface is the
+catalog, artifacts persistence, workflows, code source, the
+`gj_config`/`gj_security`/`gj_runtime` control-plane roots, the MCP server, and
+the agent.
+
+| Mode | Purpose | Agentic surface | Auth posture |
+| ---- | ------- | --------------- | ------------ |
+| `dev` | Local development of the new stack. Not a compatibility mode. | On, wide-open (`public`). | None. No auth. |
+| `prod` | The only pre-agentic backward-compatibility mode. | Off — hard-gated, never mounts, startup warning if explicitly enabled. | Classic public REST/GraphQL over compiled/allow-listed queries with roles/RLS on app data. |
+| `agentic` | The new mode for trusted agents (MCP + REST). | On, role-gated. | Verified roles plus `user_id`/`account_id` row filters. |
+
+**dev** is for local development of the new stack, not a backward-compatibility
+mode. The full agentic surface is on and every `gj_*` root is `public` with no
+auth.
+
+**prod** is the only pre-agentic backward-compatibility mode. It serves the
+classic public REST/GraphQL API over compiled/allow-listed queries governed by
+roles and row-level security. In prod the entire agentic surface is hard-gated
+off and never mounts — the catalog, artifacts persistence, workflows, code
+source, the `gj_config`/`gj_security`/`gj_runtime` roots, the MCP server, and
+the agent are all disabled even if they are explicitly enabled in
+configuration. When a prod config explicitly enables one of these subsystems,
+GraphJin logs a startup warning rather than silently honoring it. Artifacts
+persistence is force-disabled in prod: no saved queries, fragments, or
+workflows are written to a database.
+
+**agentic** is the new mode for trusted agents over MCP and REST. The full
+agentic surface is available and gated by the caller's role plus per-row
+`user_id`/`account_id` filters.
+
+Mode selection and safe defaults:
+
+- The mode is selected by `GO_ENV`, by the config filename (`dev.yml`,
+  `prod.yml`, `agentic.yml`), or by an explicit `mode:` key in configuration.
+- In source mode, a missing or ambiguous mode fails **closed to `prod`**, never
+  to `dev`. The agentic surface mounts only on an explicit `agentic` mode. This
+  is the fail-safe for audit finding F1.
+- In agentic mode, `auth.development: true` (header-trust auth, e.g.
+  `X-User-Role: admin`) is refused at startup with a fatal config error.
+  Agentic mode requires verified authentication (JWT), or `none` behind a
+  trusted proxy or network boundary. This is audit finding F2.
+- The agent has no auth mode of its own. The per-request `safe`,
+  `discovery_only`, and `raw_allowed` modes and the `allow_raw_graphql` /
+  `allow_mutations` flags are removed. The agent's capability is derived
+  entirely from the caller's role: raw GraphQL is always available to the agent,
+  and every query still passes through role table access plus
+  `user_id`/`account_id` filters at the compiler. Writes are gated solely by the
+  role's insert/update/delete access. A single global operator kill-switch,
+  `agent.read_only` (default false), forces the agent to read/discovery-only
+  regardless of role for incident response.
+
 ## Source Mode And Legacy Mode
 
 `sources:` changes GraphJin into source mode. In that mode, old top-level
@@ -253,7 +307,10 @@ a delete preset because deletes do not create or rewrite row values.
 
 ## GraphJin System Roots
 
-GraphJin system roots are controlled by a GraphJin source:
+GraphJin system roots are controlled by a GraphJin source. They exist only when
+the agentic surface is on — that is, in `dev` and `agentic` mode. In `prod` the
+entire set is gated off and none of these roots mount, regardless of
+configuration (see [Operating Modes](#operating-modes)).
 
 ```yaml
 sources:
@@ -261,31 +318,61 @@ sources:
     kind: graphjin
     access:
       roots:
-        gj_catalog: authenticated
-        gj_artifacts: account
-        gj_workflow: admin
-        gj_workflow_execution: account
-        gj_runtime: admin
-        gj_security: admin
+        gj_catalog: public
+        gj_code: authenticated
+        gj_artifacts: owner
+        gj_watch: owner
+        gj_watch_event: owner
+        gj_workflow: owner
+        gj_workflow_execution: owner
         gj_config: admin
+        gj_security: admin
+        gj_runtime: admin
 ```
 
-Default root access in source mode:
+Default root access depends on the operating mode:
 
-| Root | Default Access | Purpose |
-| ---- | -------------- | ------- |
-| `gj_catalog` | `authenticated` | Queryable discovery for schema, config, language, policy, and agent guidance. |
-| `gj_artifacts` | `account` | Account-scoped mutable fragments, saved queries, and related artifacts. |
-| `gj_workflow` | `admin` | Workflow definition management and workflow source inspection. |
-| `gj_workflow_execution` | `account` | Account-scoped workflow execution. |
-| `gj_runtime` | `admin` | Recent bounded, redacted runtime status/events. |
-| `gj_security` | `admin` | Effective policy and security findings. |
-| `gj_config` | `admin` | Runtime configuration view and guarded config mutation. |
+- In **prod** all system roots are gated off entirely. They do not mount and are
+  not reachable over GraphQL.
+- In **dev** all system roots are `public` with no auth.
+- In **agentic** the defaults are the role-gated matrix below.
+
+Agentic-mode defaults (this table is the canonical access matrix; for how the
+roots fit together architecturally, see the canonical diagram in
+[`AGENTIC.md`](AGENTIC.md#graph-surfaces-and-boundaries)):
+
+| Root | Agentic access | Notes |
+| ---- | -------------- | ----- |
+| `gj_catalog` | `public` | Read-only. |
+| `gj_code` | read: `authenticated`; write: role-gated (default `admin`) | Code writes are global source-file edits, not per-row scopable, so write is gated by role rather than filtered. Connecting a code source is an explicit operator choice — see the supply-chain note below. |
+| `gj_artifacts` | `owner` (`user_id`) | Read/write, owner-private. |
+| `gj_watch` / `gj_watch_event` | `owner` (`user_id`) | Read/write, owner-private standing queries and durable inbox events. Watches must reference subscriptions. |
+| `gj_workflow` / `gj_workflow_execution` | `owner` (`user_id`) | Read/write, owner-private. Workflows execute under the caller's identity. DB-backed workflows are owner/account-private saved artifacts. Filesystem/global workflows are operator-vetted, read-only, and runnable by all callers (each as themselves). "Global" status is filesystem-only and never user-settable. |
+| `gj_config` | `admin` | Read/write. |
+| `gj_security` | `admin` | Read-only. |
+| `gj_runtime` | `admin` | Read-only. |
+
+Account and owner roots now apply **real per-row** `user_id`/`account_id`
+filters, using the same filter/preset machinery as database tables. Previously,
+`account`/`owner` on a system root only meant authenticated visibility, not true
+per-row scoping.
+
+The state behind these roots (artifacts, watches, watch events, revisions) is
+itself read and written through GraphJin's own engine under the reserved
+`__graphjin_internal_store` role. That role is not assumable by callers: it
+activates only via a non-forgeable in-process marker, and role resolution
+rejects it from requests, JWTs, and headers.
 
 Source capabilities decide whether sensitive roots exist. Root access decides
 who can use roots that exist. For example, disabling a runtime capability can
 make `gj_runtime` unavailable; setting `gj_runtime: admin` controls access when
 it is available.
+
+`gj_code` write is a supply-chain consideration. Code writes rewrite source
+files globally — they are not scoped to a user or account — so write is
+role-gated (default `admin`, operator-configurable to a dedicated code-writer
+role). Connecting a code source at all is an explicit operator decision, because
+it exposes global source-file edits to whichever role is granted code write.
 
 Sensitive roots should stay admin-only unless there is a deliberate operational
 reason to expose them more broadly.
@@ -302,6 +389,9 @@ artifacts:
   schema: _graphjin
   auto_init: true
   globals_path: ./config
+watches:
+  enabled: true
+  runner: off
 ```
 
 V1 artifacts require a writable SQL database source. Object stores and file
@@ -310,7 +400,8 @@ backends are not artifact stores.
 Logical artifact tables are:
 
 - `_graphjin.artifacts`
-- `_graphjin.artifact_revisions`
+- `_graphjin.watches`
+- `_graphjin.watch_events`
 
 SQL dialects without schemas may use equivalent prefixed physical table names,
 but operators should treat them as GraphJin-managed tables under the configured
@@ -324,12 +415,17 @@ Artifact behavior:
   `visibility=global`, and `read_only=true`.
 - Config-folder globals are not copied into the database and cannot be mutated
   through `gj_artifacts`.
-- Database-backed artifacts are account-scoped by default.
-- A database artifact can override a same-name global for that account without
+- Database-backed artifacts are user-scoped by `owner_id = user_id`.
+- A database artifact can override a same-name global for that user without
   changing config files.
 - Non-admin responses redact or hash identity fields such as account/user ids.
 - Global writes are denied. Cross-account writes are denied by scoping IDs and
   filters to trusted identity.
+- Watches are exposed as `gj_watch` and `gj_watch_event` and use the same
+  artifact database, identity scoping, and non-admin identity redaction.
+- Watch creation stores `owner_id`, `account_id`, and `owner_role` from trusted
+  request context, never from mutation input, so the runner can reconstruct the
+  same caller envelope that was validated at creation time.
 
 ## Visibility And Discovery
 
@@ -363,8 +459,10 @@ blocked, admin-only, or unsafe.
 
 Examples of findings include account-mode tables missing the namespace column,
 public write/delete attempts, delete enabled outside development, sensitive
-`gj_*` capability enabled without admin-only access, anonymous access to
-non-public roots, and artifact stores pointing at read-only or non-SQL sources.
+`gj_*` control-plane roots (`gj_config`/`gj_security`/`gj_runtime`) not kept
+admin-only in agentic mode, `gj_code` write granted to a non-admin role,
+anonymous access to non-public roots, writable system roots missing an ownership
+preset, and artifact stores pointing at read-only or non-SQL sources.
 
 `gj_runtime` is bounded, redacted decision support. It can report recent
 auth/access outcomes such as:
@@ -384,7 +482,13 @@ identifiers. Prefer hashes, counts, classes, and short reason codes.
 
 ## Secure Source-Mode Example
 
+This is an `agentic`-mode configuration, where the full agentic surface is on
+and role-gated. In `prod` the GraphJin source and its roots would not mount at
+all; in `dev` every root is `public`.
+
 ```yaml
+mode: agentic
+
 identity:
   user_id_claim: sub
   role_claims: [role, roles]
@@ -418,18 +522,25 @@ sources:
     kind: graphjin
     access:
       roots:
-        gj_catalog: authenticated
-        gj_artifacts: account
-        gj_workflow: admin
-        gj_workflow_execution: account
-        gj_runtime: admin
-        gj_security: admin
+        gj_catalog: public
+        gj_code: authenticated
+        gj_artifacts: owner
+        gj_watch: owner
+        gj_watch_event: owner
+        gj_workflow: owner
+        gj_workflow_execution: owner
         gj_config: admin
+        gj_security: admin
+        gj_runtime: admin
 ```
 
 This example starts with account-scoped reads, blocks writes/deletes by default,
-keeps reference tables public, hides internal tables, keeps audit/system roots
-admin-only, and stores mutable artifacts in GraphJin-managed SQL tables.
+keeps reference tables public, hides internal tables, keeps the
+`gj_config`/`gj_security`/`gj_runtime` control-plane roots admin-only, scopes
+`gj_artifacts` and `gj_workflow` per-owner, gates `gj_code` write to admin by
+default, and stores mutable artifacts in GraphJin-managed SQL tables. Because it
+runs in `agentic` mode, verified JWT auth is required — `auth.development: true`
+would be refused at startup.
 
 ## Migration Guidance
 
@@ -468,7 +579,7 @@ When migrating:
 6. Classify shared lookup tables as `public_tables`.
 7. Classify audit/control tables as `admin_tables`.
 8. Classify internal-only tables as `blocked_tables`.
-9. Move user/account mutable fragments, saved queries, and workflows to
+9. Move user-scoped mutable fragments, saved queries, and workflows to
    `gj_artifacts`.
 10. Keep config-folder fragments, saved queries, and workflows as read-only
     globals.

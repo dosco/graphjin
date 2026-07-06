@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/auth/v3"
+	"github.com/dosco/graphjin/core/v3"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 )
@@ -41,6 +42,21 @@ func TestJWTTokenInAuthorizationHeader(t *testing.T) {
 	// up; UserEmail should report empty.
 	assert.Equal(t, "John Doe", auth.UserName(c))
 	assert.Equal(t, "", auth.UserEmail(c))
+}
+
+func TestSimpleHandlerStripsReservedRoleHeader(t *testing.T) {
+	ah, err := auth.SimpleHandler(auth.Auth{})
+	assert.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, "https://test.com", nil)
+	assert.NoError(t, err)
+	req.Header.Set("X-User-ID", "user_1")
+	req.Header.Set("X-User-Role", "__graphjin_internal_store")
+
+	ctx, err := ah(nil, req)
+	assert.NoError(t, err)
+	assert.Nil(t, ctx.Value(core.UserRoleKey))
+	assert.Nil(t, ctx.Value(core.IdentityRolesKey))
 }
 
 // TestJWTAttachesEmailAndName verifies that when the JWT contains email and

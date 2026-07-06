@@ -32,6 +32,7 @@ Examples:
 	c.AddCommand(mcpQueryCmd())
 	c.AddCommand(mcpFragmentCmd())
 	c.AddCommand(mcpWorkflowCmd())
+	c.AddCommand(mcpArtifactsCmd())
 	c.AddCommand(mcpSchemaCmd())
 	c.AddCommand(mcpExplainCmd())
 	c.AddCommand(mcpAuditCmd())

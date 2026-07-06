@@ -42,6 +42,8 @@ type MCPCatalogCapability struct {
 var mcpGraphJinRoots = []string{
 	"gj_catalog",
 	"gj_artifacts",
+	"gj_watch",
+	"gj_watch_event",
 	"gj_workflow",
 	"gj_workflow_execution",
 	"gj_runtime",
@@ -99,7 +101,7 @@ func (ms *mcpServer) callerCapabilityProfile(ctx context.Context, includeVisible
 			"Do not use client-supplied variables as identity fields.",
 		},
 	}
-	if snap, err := ms.catalogSnapshot(); err == nil && snap != nil {
+	if snap, err := ms.catalogSnapshot(ctx); err == nil && snap != nil {
 		profile.CatalogRevision = snap.Revision
 	}
 	for _, tool := range mcpToolList(conf) {
@@ -162,6 +164,9 @@ func (ms *mcpServer) graphJinRootProfiles(ctx context.Context) ([]MCPRootProfile
 			available = append(available, item)
 		} else {
 			item.Reason = "blocked by source-mode root access"
+			if (root == "gj_watch" || root == "gj_watch_event") && !ms.service.watchesEnabled() {
+				item.Reason = "disabled by configuration"
+			}
 			blocked = append(blocked, item)
 		}
 	}
@@ -169,6 +174,14 @@ func (ms *mcpServer) graphJinRootProfiles(ctx context.Context) ([]MCPRootProfile
 }
 
 func (ms *mcpServer) rootVisibleForContext(ctx context.Context, root string) bool {
+	switch strings.ToLower(strings.TrimSpace(root)) {
+	case "gj_watch", "gj_watch_event":
+		// Watches are config-gated; a disabled deployment never registers the
+		// roots as tables, so it must not advertise them either.
+		if ms == nil || ms.service == nil || !ms.service.watchesEnabled() {
+			return false
+		}
+	}
 	conf := ms.config()
 	if conf == nil || !conf.Core.IsSourcesUsed() {
 		return true

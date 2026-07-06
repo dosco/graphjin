@@ -4,14 +4,14 @@ import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const alertVariants = cva(
-  "relative grid w-full gap-1 rounded-lg border px-4 py-3 text-sm [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg~*]:pl-7",
+  "relative grid w-full gap-1 rounded-lg border px-4 py-3 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.62)] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg~*]:pl-7",
   {
     variants: {
       variant: {
         default: "bg-card text-card-foreground",
-        destructive: "border-destructive/30 bg-destructive/5 text-destructive",
-        warning: "border-amber-200 bg-amber-50 text-amber-900",
-        success: "border-emerald-200 bg-emerald-50 text-emerald-900",
+        destructive: "border-destructive/30 bg-card text-destructive",
+        warning: "border-amber-300 bg-card text-amber-900",
+        success: "border-emerald-300 bg-card text-emerald-900",
       },
     },
     defaultVariants: {

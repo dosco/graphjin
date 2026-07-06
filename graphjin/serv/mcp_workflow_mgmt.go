@@ -49,8 +49,10 @@ type WorkflowInfo struct {
 var workflowNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 var workflowVariableNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// registerWorkflowMgmtTools registers save_workflow and list_workflows.
+// registerWorkflowMgmtTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerWorkflowMgmtTools() {
+	return
+
 	if !ms.service.conf.legacyMCPToolsEnabled() {
 		return
 	}
@@ -123,8 +125,12 @@ func (ms *mcpServer) registerWorkflowMgmtTools() {
 
 // handleListWorkflows returns all workflows with their metadata.
 func (ms *mcpServer) handleListWorkflows(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	args := req.GetArguments()
-	snap := ms.service.workflowSnapshot(ms.service.workflowTimeoutSeconds())
+	snap, err := ms.service.workflowSnapshotForContext(ctx, ms.service.workflowTimeoutSeconds())
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 	workflows := make([]WorkflowInfo, 0, len(snap.workflows))
 	for _, wf := range snap.workflows {
 		info := WorkflowInfo{
@@ -148,12 +154,13 @@ func (ms *mcpServer) handleListWorkflows(ctx context.Context, req mcp.CallToolRe
 
 // handleSaveWorkflow saves LLM-authored JS code as a workflow file.
 func (ms *mcpServer) handleSaveWorkflow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	if !ms.service.conf.MCP.AllowWorkflowUpdates {
 		return mcp.NewToolResultError("workflow updates are not allowed. Enable allow_workflow_updates in MCP config."), nil
 	}
 
 	args := req.GetArguments()
-	row, err := newControlPlaneGraphQL(ms.service).mutateWorkflow(core.ManagedMutationRoot{
+	row, err := newControlPlaneGraphQL(ms.service).mutateWorkflow(ctx, core.ManagedMutationRoot{
 		Operation: "insert",
 		Input:     args,
 	})
