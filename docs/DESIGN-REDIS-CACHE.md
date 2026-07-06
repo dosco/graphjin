@@ -1,5 +1,11 @@
 # Redis Response Cache Design
 
+> **Status: design only — not implemented.** `core/cache.go` defines the
+> `ResponseCacheProvider` interface (injected via
+> `core.OptionSetResponseCache`); no Redis or other provider ships in this
+> repo. The in-memory nanoDB projection that serves the `gj_*` system roots is
+> a separate, implemented mechanism — see AGENTIC.md "The nanoDB Projection".
+
 ## Overview
 
 This document describes the design for optional Redis-based response caching in GraphJin. The cache stores query responses and automatically invalidates them when mutations modify related tables.

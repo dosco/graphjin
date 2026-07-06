@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
@@ -87,92 +88,19 @@ func mcpToolList(conf *Config) []string {
 		return nil
 	}
 
-	if conf.Core.IsSourcesUsed() {
-		tools := []string{}
-		if conf.catalogToolsEnabled() {
-			tools = append(tools, "graphql_help", "query_catalog")
-		}
-		tools = append(tools, "execute_saved_query", "validate_where_clause")
+	tools := []string{}
+	// When the agent tool is the front door it orchestrates the primitives
+	// internally, so they are hidden unless the operator opts in.
+	if !conf.agentOnlyMCP() {
+		tools = append(tools,
+			"graphql_help",
+			"query_catalog",
+			"execute_saved_query",
+			"validate_where_clause",
+		)
 		if conf.MCP.AllowRawQueries {
 			tools = append(tools, "execute_graphql")
 		}
-		if conf.agentEnabled() {
-			tools = append(tools, "ask_graphjin_agent")
-		}
-		return tools
-	}
-
-	legacyTools := conf.legacyMCPToolsEnabled()
-	catalogTools := conf.catalogToolsEnabled()
-
-	// Always-on GraphQL/action tools
-	tools := []string{
-		"get_js_runtime_api",
-		"write_query",
-		"write_mutation",
-		"fix_query_error",
-		"validate_where_clause",
-		"execute_saved_query",
-		"get_config_docs",
-	}
-	if catalogTools {
-		tools = append(tools,
-			"query_catalog",
-			"get_catalog_card",
-			"get_catalog_entrypoints",
-			"get_catalog_capabilities",
-		)
-	}
-	if legacyTools {
-		tools = append(tools,
-			"get_query_syntax",
-			"get_mutation_syntax",
-			"list_namespaces",
-			"list_tables",
-			"describe_table",
-			"get_discovery_schema",
-			"find_path",
-			"get_table_sample",
-			"get_workflow_guide",
-			"get_schema_insights",
-			"explore_relationships",
-			"list_workflows",
-		)
-	}
-
-	// Conditionally registered
-	if legacyTools && conf.MCP.AllowWorkflowExecution {
-		tools = append(tools, "execute_workflow")
-	}
-	if legacyTools && conf.MCP.AllowWorkflowUpdates {
-		tools = append(tools, "save_workflow")
-	}
-	if !conf.Serv.Production {
-		tools = append(tools, "get_current_config")
-	}
-	if conf.MCP.AllowRawQueries {
-		tools = append(tools, "execute_graphql")
-	}
-	tools = append(tools,
-		"list_saved_queries", "search_saved_queries", "get_saved_query",
-		"list_fragments", "get_fragment", "search_fragments",
-	)
-	if conf.MCP.AllowConfigUpdates {
-		tools = append(tools, "update_current_config")
-	}
-	if conf.MCP.AllowSchemaReload {
-		tools = append(tools, "reload_schema")
-	}
-	if conf.MCP.AllowSchemaUpdates {
-		tools = append(tools, "preview_schema_changes", "apply_schema_changes")
-	}
-	if conf.MCP.AllowDevTools {
-		tools = append(tools, "explain_query", "audit_role_permissions", "discover_databases",
-			"list_databases", "check_health", "plan_database_setup",
-			"test_database_connection", "get_onboarding_status")
-	}
-	if conf.MCP.AllowDevTools && conf.MCP.AllowConfigUpdates {
-		tools = append(tools, "apply_database_setup")
 	}
 	if conf.agentEnabled() {
 		tools = append(tools, "ask_graphjin_agent")
@@ -219,6 +147,9 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		}),
 		server.WithInstructions(mcpServerInstructions(s.conf, startupProfile)),
 	)
+	if samplingEnabledForConfig(s.conf) {
+		mcpSrv.EnableSampling()
+	}
 
 	// Snapshot which databases are read-only from the config file.
 	// This snapshot is immutable — MCP config updates cannot change it.
@@ -248,70 +179,58 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 	return ms
 }
 
+type mcpHTTPTransportCache struct {
+	handler *server.StreamableHTTPServer
+}
+
+func (s *graphjinService) closeMCPHTTPTransport() {
+	if s == nil {
+		return
+	}
+	s.mcpHTTPMu.Lock()
+	cached := s.mcpHTTP
+	s.mcpHTTP = nil
+	s.mcpHTTPMu.Unlock()
+
+	if cached == nil || cached.handler == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = cached.handler.Shutdown(ctx)
+}
+
+func (s *graphjinService) mcpHTTPTransport(ctx context.Context) *server.StreamableHTTPServer {
+	if s == nil || s.conf == nil || !s.conf.MCP.HTTPStateful {
+		mcpSrv := s.newMCPServerWithContext(ctx)
+		return server.NewStreamableHTTPServer(mcpSrv.srv, server.WithStateLess(true))
+	}
+
+	s.mcpHTTPMu.Lock()
+	defer s.mcpHTTPMu.Unlock()
+
+	if s.mcpHTTP == nil || s.mcpHTTP.handler == nil {
+		mcpSrv := s.newMCPServerWithContext(context.Background())
+		s.mcpHTTP = &mcpHTTPTransportCache{
+			handler: server.NewStreamableHTTPServer(mcpSrv.srv, server.WithStateful(true)),
+		}
+	}
+	return s.mcpHTTP.handler
+}
+
 // registerTools registers all MCP tools with the server
 func (ms *mcpServer) registerTools() {
 	if ms.service.conf.mcpDisabled() {
 		return
 	}
 
-	if ms.service.conf.Core.IsSourcesUsed() {
-		if ms.service.conf.catalogToolsEnabled() {
-			ms.registerCatalogTools()
-		}
+	// When the agent tool is the front door, the primitives it orchestrates are
+	// hidden by default; mcp.include_tools_with_agent opts them back in.
+	if !ms.service.conf.agentOnlyMCP() {
+		ms.registerCatalogTools()
 		ms.registerExecutionTools()
 		ms.registerSchemaTools()
-		ms.registerAgentTools()
-		return
 	}
-
-	// Catalog Tools (primary discovery surface)
-	if ms.service.conf.catalogToolsEnabled() {
-		ms.registerCatalogTools()
-	}
-
-	// Syntax and discovery compatibility tools.
-	legacyTools := ms.service.conf.legacyMCPToolsEnabled()
-	if legacyTools {
-		ms.registerSyntaxTools()
-	}
-	ms.registerJSRuntimeTools()
-	ms.registerGuidanceTools()
-
-	// Schema tools. Legacy discovery endpoints are registered only when
-	// explicitly enabled, while validation/reload action tools remain available.
-	ms.registerSchemaTools()
-	if legacyTools {
-		ms.registerInsightsTools()
-		ms.registerExploreTools()
-	}
-
-	// Query Execution Tools
-	ms.registerExecutionTools()
-
-	// Saved Query Discovery Tools
-	ms.registerQueryDiscoveryTools()
-
-	// Fragment Discovery Tools
-	ms.registerFragmentTools()
-
-	// Workflow Management Tools
-	ms.registerWorkflowMgmtTools()
-
-	// Configuration Documentation Tool (always available)
-	ms.registerConfigDocsTool()
-
-	// Configuration Update Tools (conditionally registered)
-	ms.registerConfigTools()
-
-	// DDL Tools - schema modifications (conditionally registered)
-	ms.registerDDLTools()
-
-	// Dev Tools - advanced introspection (conditionally registered)
-	ms.registerExplainTools()
-	ms.registerAuditTools()
-	ms.registerDiscoverTools()
-	ms.registerHealthTools()
-	ms.registerOnboardingTools()
 	ms.registerAgentTools()
 }
 
@@ -352,7 +271,7 @@ func (s *HttpService) RunMCPStdio(ctx context.Context) error {
 	if userID != "" {
 		authCtx = context.WithValue(authCtx, core.UserIDKey, userID)
 	}
-	if userRole != "" {
+	if userRole != "" && !core.IsReservedRoleName(userRole) {
 		authCtx = context.WithValue(authCtx, core.UserRoleKey, userRole)
 	}
 
@@ -360,7 +279,7 @@ func (s *HttpService) RunMCPStdio(ctx context.Context) error {
 	return server.ServeStdio(mcpSrv.srv)
 }
 
-// MCPHandler returns an HTTP handler for MCP HTTP transport (stateless)
+// MCPHandler returns an HTTP handler for MCP HTTP transport
 // This uses StreamableHTTPServer which handles POST requests directly
 func (s *HttpService) MCPHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -373,11 +292,7 @@ func (s *HttpService) MCPHandler() http.Handler {
 
 		extendDeadlineForMCPRequest(w, r, s1.conf)
 
-		// Use request context (may contain auth info from middleware)
-		mcpSrv := s1.newMCPServerWithContext(r.Context())
-		// Use StreamableHTTPServer with stateless mode
-		httpServer := server.NewStreamableHTTPServer(mcpSrv.srv, server.WithStateLess(true))
-		httpServer.ServeHTTP(w, r)
+		s1.mcpHTTPTransport(r.Context()).ServeHTTP(w, r)
 	})
 }
 
@@ -387,7 +302,7 @@ func (s *HttpService) MCPHandlerWithAuth(ah auth.HandlerFunc) http.Handler {
 	return apiV1Handler(s, nil, s.MCPHandler(), ah)
 }
 
-// MCPMessageHandler returns an HTTP handler for MCP HTTP transport (stateless)
+// MCPMessageHandler returns an HTTP handler for MCP HTTP transport
 // This uses StreamableHTTPServer which handles POST requests directly without SSE
 func (s *HttpService) MCPMessageHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -401,12 +316,7 @@ func (s *HttpService) MCPMessageHandler() http.Handler {
 		// See MCPHandler — same WriteTimeout extension applies here.
 		extendDeadlineForMCPRequest(w, r, s1.conf)
 
-		// Use request context (may contain auth info from middleware)
-		mcpSrv := s1.newMCPServerWithContext(r.Context())
-		// Use StreamableHTTPServer with stateless mode for the HTTP transport
-		// This handles POST requests directly without requiring an SSE session
-		httpServer := server.NewStreamableHTTPServer(mcpSrv.srv, server.WithStateLess(true))
-		httpServer.ServeHTTP(w, r)
+		s1.mcpHTTPTransport(r.Context()).ServeHTTP(w, r)
 	})
 }
 

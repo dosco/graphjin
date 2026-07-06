@@ -6,8 +6,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// registerExploreTools registers the explore_relationships tool
+// registerExploreTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerExploreTools() {
+	return
+
 	ms.srv.AddTool(mcp.NewTool(
 		"explore_relationships",
 		mcp.WithDescription("Map out the data model neighborhood around a table. "+

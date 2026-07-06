@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/allow"
 	"github.com/dosco/graphjin/core/v3/internal/jsn"
@@ -57,7 +58,7 @@ func (gj *graphjinEngine) executeRoleQuery(c context.Context,
 	conn *sql.Conn,
 	vmap map[string]json.RawMessage,
 	rc *RequestConfig,
-) (role string, err error) {
+) (role string, trustedReservedRole bool, err error) {
 	if c.Value(UserIDKey) == nil {
 		role = "anon"
 		return
@@ -98,6 +99,7 @@ func (gj *graphjinEngine) executeRoleQuery(c context.Context,
 			span.Error(err)
 			return
 		}
+		role, trustedReservedRole = gj.requestRoleOrDefault(c, role, "user")
 		span.SetAttributesString(StringAttr{"role", role})
 		return
 	}
@@ -133,6 +135,7 @@ func (gj *graphjinEngine) executeRoleQuery(c context.Context,
 		return
 	}
 
+	role, trustedReservedRole = gj.requestRoleOrDefault(c, role, "user")
 	span.SetAttributesString(StringAttr{"role", role})
 	return
 }
@@ -205,7 +208,7 @@ func (s *gstate) debugLogStmt() {
 }
 
 // Saved the query qcode to the allow list
-func (gj *graphjinEngine) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
+func (gj *graphjinEngine) saveToAllowList(ctx context.Context, qc *qcode.QCode, ns string) (err error) {
 	if qc == nil || gj.conf.DisableAllowList {
 		return nil
 	}
@@ -229,6 +232,27 @@ func (gj *graphjinEngine) saveToAllowList(qc *qcode.QCode, ns string) (err error
 
 	for i, f := range qc.Fragments {
 		item.Fragments[i] = allow.Fragment{Name: f.Name, Value: f.Value}
+	}
+
+	if gj.savedQuerySaveHook != nil {
+		req := SavedQuerySaveRequest{
+			Namespace:  item.Namespace,
+			Name:       item.Name,
+			Operation:  strings.ToLower(qc.Type.String()),
+			Query:      append([]byte(nil), item.Query...),
+			Fragments:  make([]SavedQueryFragment, len(item.Fragments)),
+			ActionJSON: item.ActionJSON,
+		}
+		for i, f := range item.Fragments {
+			req.Fragments[i] = SavedQueryFragment{Name: f.Name, Value: append([]byte(nil), f.Value...)}
+		}
+		handled, err := gj.savedQuerySaveHook(ctx, req)
+		if err != nil {
+			return err
+		}
+		if handled {
+			return nil
+		}
 	}
 
 	return gj.allowList.Set(item)

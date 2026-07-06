@@ -21,8 +21,8 @@ hot_deploy: true
 #     key: ${GJ_SECRETS_KEYSTORE_KEY}
 #     path: secrets.enc.yml
 
-# Agentic deployments keep legacy MCP compatibility tools disabled. Agents
-# should use catalog/control-plane GraphQL roots instead.
+# Agentic deployments keep legacy HTTP compatibility surfaces disabled. MCP is
+# catalog-first and should use catalog/control-plane GraphQL roots.
 mcp:
   disable: false
   oauth:

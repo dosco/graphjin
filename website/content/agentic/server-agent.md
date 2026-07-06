@@ -47,7 +47,7 @@ Every answer is grounded in observed evidence. Go-side protocol guards enforce t
 
 ## Role-aware guidance
 
-The agent is caller-aware. From the request's identity it derives a capability profile (limited to the fixed `gj_*` system roots — never application tables) and picks a focused **guidance skill** for the task: per domain (data, code, workflow, admin) and per operation (read vs write, chosen from the instruction). An admin asking to change config is guided toward the `gj_config` recipe flow; a normal user is guided through plain data discovery.
+The agent is caller-aware. From the request's identity it derives a capability profile (limited to the fixed `gj_*` system roots — never application tables) and picks a focused **guidance skill** for the task: per domain (data, code, workflow, watch, admin) and per operation (read vs write, chosen from the instruction). An admin asking to change config is guided toward the `gj_config` recipe flow; a normal user is guided through plain data discovery.
 
 Skills only shape the guidance the model sees. **They never grant access.** What any caller can actually read or write is enforced by GraphJin core (roles + row-level security), exactly as for a direct GraphQL request — the agent always runs as the caller.
 
@@ -58,7 +58,7 @@ Skills only shape the guidance the model sees. **They never grant access.** What
 
 Request fields: `instruction` (required), and optional `context`, `namespace`, `mode`, `max_steps`, `return_trace`.
 
-Response fields: `status` (`answered` | `needs_clarification` | `blocked` | `error`), `answer`, and optional `data`, `evidence`, `actions`, `next`, `errors`, `usage`, `trace`, `trace_id`.
+Response fields: `status` (`answered` | `needs_clarification` | `blocked` | `error`), `answer`, and optional `data`, `evidence`, `actions`, `next`, `refusal`, `notices`, `errors`, `usage`, `trace`, `trace_id`.
 
 ### REST
 
@@ -81,6 +81,23 @@ curl -sS http://localhost:8080/api/v1/agent \
 ```
 
 {{< verified by="TestAskGraphJinAgentMCPSchema" file="serv/agent_handler_test.go" line="347" >}}
+
+## Structured refusals
+
+A `blocked` response is machine-actionable, not prose. It carries a `refusal` object: a stable `code` (`access_unauthorized`, `capability_disabled`, `mutation_evidence_required`, ...), the `blocked_action`, evidence-backed `because` reasons, ordered `unblock` steps (each names a tool and args, filtered to the caller's visible capabilities so nothing hidden leaks), a `lawful_alternative` for when unblocking is impossible, and the `policy_final` / `retryable` pair. A calling agent should execute the unblock steps and retry only when `retryable` is true; `policy_final` means stop and escalate to an operator. The contract is discoverable at runtime with `query_catalog(id: "help:refusals")`.
+
+## Watch notices
+
+When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen` and a count — the cue to query `gj_watch_event` and mark reviewed events seen.
+
+## Borrow the client's model (MCP sampling)
+
+```yaml
+agent:
+  sampling: auto # off (default) | auto | require
+```
+
+With `auto`, `ask_graphjin_agent` runs on the calling MCP client's model via `sampling/createMessage` whenever the client advertises the sampling capability, and falls back to the server-configured model otherwise; `require` fails closed instead of falling back. This removes the need for a server-side model key — the caller's client provides and pays for the reasoning. Only the model changes: caller identity, roles, row-level security, evidence gates, and refusals apply exactly as without sampling, and because the guards live in Go, a hostile sampling response cannot talk the agent past them. Works over stdio and, with `mcp.http_stateful: true`, over stateful HTTP sessions.
 
 ## OpenAI-compatible endpoints
 

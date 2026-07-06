@@ -83,6 +83,7 @@ func startHTTP(s1 *HttpService) {
 			s.srv.Close() //nolint:errcheck
 		}
 
+		s.closeMCPHTTPTransport()
 		if s.closeFn != nil {
 			s.closeFn()
 		}

@@ -199,8 +199,8 @@ mcp:
   # Allow raw GraphQL queries (not just saved queries)
   allow_raw_queries: true
 
-  # Allow the legacy execute_workflow MCP compatibility tool in legacy mode.
-  # In sources mode, use gj_workflow_execution(insert) through GraphQL instead.
+  # Keep the legacy HTTP workflow execution surface available in legacy mode.
+  # MCP workflow execution uses catalog discovery plus gj_workflow_execution.
   allow_workflow_execution: true
 
 # ============================================================================

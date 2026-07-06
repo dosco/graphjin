@@ -26,8 +26,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-// registerDiscoverTools registers the discover_databases tool
+// registerDiscoverTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerDiscoverTools() {
+	return
+
 	if !ms.service.conf.MCP.AllowDevTools {
 		return
 	}
@@ -562,7 +564,7 @@ func (ms *mcpServer) runDiscovery(args map[string]any) (DiscoverResult, error) {
 
 // checkTCPPort attempts a TCP connection to host:port with the given timeout
 func checkTCPPort(host string, port int, timeout time.Duration) bool {
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
 		return false

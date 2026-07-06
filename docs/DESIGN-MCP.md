@@ -171,15 +171,14 @@ that the token `aud` contains the MCP resource URL.
 The current tool surface is catalog-first:
 
 - `query_catalog`
-- `get_catalog_card`
 - `graphql_help`
 - `validate_where_clause`
 - execution tools for saved queries/raw GraphQL when enabled
-- workflow, config, schema, security, runtime, and source-mode tools gated by
-  `mcp.*` config and source capabilities
+- `ask_graphjin_agent` when the server-side agent is enabled
 
-Legacy discovery/syntax tools can still be enabled with `mcp.legacy_discovery`,
-but new clients should start with catalog/search guidance.
+Legacy discovery/syntax MCP tools have been removed. `mcp.legacy_discovery`
+remains a compatibility config key for non-MCP legacy helper surfaces, but it
+does not expand the MCP tool list.
 
 ## Key Files
 

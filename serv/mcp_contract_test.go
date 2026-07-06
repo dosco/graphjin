@@ -33,13 +33,8 @@ func TestMCPToolSchemasMatchHandlerContracts(t *testing.T) {
 		t.Fatalf("expected validate_where_clause.where type=object, got %v", whereSchema["type"])
 	}
 
-	saveWorkflow := ms.srv.ListTools()["save_workflow"].Tool
-	tagsSchema, ok := saveWorkflow.InputSchema.Properties["tags"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected save_workflow.tags schema to be an object map, got %T", saveWorkflow.InputSchema.Properties["tags"])
-	}
-	if tagsSchema["type"] != "array" {
-		t.Fatalf("expected save_workflow.tags type=array, got %v", tagsSchema["type"])
+	if _, exists := ms.srv.ListTools()["save_workflow"]; exists {
+		t.Fatal("save_workflow should not be registered by MCP")
 	}
 }
 
@@ -70,8 +65,8 @@ func TestJSONToolResultsIncludeStructuredContent(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected next guidance in structured response, got %T", structured["next"])
 	}
-	if next["recommended_tool"] != "get_saved_query" {
-		t.Fatalf("expected recommended_tool=get_saved_query, got %#v", next["recommended_tool"])
+	if next["recommended_tool"] != "execute_saved_query" {
+		t.Fatalf("expected recommended_tool=execute_saved_query, got %#v", next["recommended_tool"])
 	}
 	options, ok := next["options"].([]any)
 	if !ok || len(options) == 0 {
@@ -585,7 +580,7 @@ func TestHandleGetWorkflowGuide_UsesRegisteredToolSurface(t *testing.T) {
 		}
 	})
 
-	t.Run("full surface includes authoring flows", func(t *testing.T) {
+	t.Run("expanded flags still omit removed authoring flows", func(t *testing.T) {
 		ms := mockLegacyMcpServerWithConfig(MCPConfig{
 			AllowRawQueries:        true,
 			AllowConfigUpdates:     true,
@@ -608,11 +603,16 @@ func TestHandleGetWorkflowGuide_UsesRegisteredToolSurface(t *testing.T) {
 		if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
 			t.Fatalf("decode response: %v", err)
 		}
-		if _, ok := out.ToolSequences["configure_resolver"]; !ok {
-			t.Fatal("expected configure_resolver when config updates and reloads are enabled")
+		if !containsAny(out.QueryWorkflow, "execute_graphql") {
+			t.Fatalf("expected execute_graphql in query workflow when raw queries are enabled: %+v", out.QueryWorkflow)
 		}
-		if !containsAny(out.Tips, "save_workflow") {
-			t.Fatalf("expected save_workflow guidance in tips, got %+v", out.Tips)
+		for _, key := range []string{"configure_resolver", "js_workflow_authoring"} {
+			if _, ok := out.ToolSequences[key]; ok {
+				t.Fatalf("did not expect %s after MCP surface collapse: %+v", key, out.ToolSequences[key])
+			}
+		}
+		if containsAny(mapValues(out.ToolSequences), "save_workflow", "execute_workflow") || containsAny(out.Tips, "save_workflow", "execute_workflow") {
+			t.Fatalf("removed workflow MCP tools should not appear in guidance: sequences=%+v tips=%+v", out.ToolSequences, out.Tips)
 		}
 	})
 }
@@ -1127,11 +1127,11 @@ func TestGenerateAggregations_UsageReferencesPatterns(t *testing.T) {
 	}
 	agg := generateAggregations(schema)
 
-	if !strings.Contains(agg.Usage, "patterns") {
-		t.Errorf("Usage should reference get_query_syntax.patterns; got: %q", agg.Usage)
+	if !strings.Contains(agg.Usage, "query_pattern") {
+		t.Errorf("Usage should reference query_pattern catalog rows; got: %q", agg.Usage)
 	}
-	if !strings.Contains(agg.Usage, "fix_query_error") {
-		t.Errorf("Usage should reference fix_query_error; got: %q", agg.Usage)
+	if !strings.Contains(agg.Usage, "graphjin_repair") {
+		t.Errorf("Usage should reference graphjin_repair; got: %q", agg.Usage)
 	}
 	if len(agg.Limitations) == 0 {
 		t.Errorf("Limitations should be populated alongside Usage")

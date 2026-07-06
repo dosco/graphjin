@@ -43,8 +43,16 @@ func (gj *graphjinEngine) initManagedQueryTablesForDatabase(dbName string, handl
 		if !strings.HasPrefix(table.Name, "gj_") {
 			return fmt.Errorf("managed query table %q must use reserved gj_ prefix", table.Name)
 		}
-		if _, err := dbctx.dbinfo.GetTable(schema, table.Name); err == nil {
-			return fmt.Errorf("reserved GraphJin system table %q conflicts with an existing table", table.Name)
+		if existing, err := dbctx.dbinfo.GetTable(schema, table.Name); err == nil {
+			if dbctx.nano != nil {
+				continue
+			}
+			switch existing.Type {
+			case "managed", "nanodb":
+				continue
+			default:
+				return fmt.Errorf("reserved GraphJin system table %q conflicts with an existing table", table.Name)
+			}
 		}
 		dbctx.dbinfo.AddTable(managedDBTable(schema, table))
 	}

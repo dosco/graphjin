@@ -20,13 +20,12 @@ weight: 20
 sources:
   - name: graphjin
     kind: graphjin
-    catalog: true
-    metadata: true
     access:
       roots:
         gj_catalog: authenticated
         gj_security: admin
         gj_runtime: admin
+        gj_artifacts: authenticated
 ```
 
 ## Why it matters
@@ -48,8 +47,11 @@ query {
 
 Catalog rows include JSON fields designed for model use: `details_json`, `evidence_json`, `examples_json`, `safety_json`, and `edges_json`. For goal-driven setup, search for `config_recipe` rows and inspect the exact recipe before applying config changes.
 
+Saved queries, fragments, and workflows in `gj_catalog` use the artifact overlay. A caller sees global config files plus their own `gj_artifacts` rows; another caller does not see those user artifacts.
+
 {{< verified by="TestCatalogSearchRanksRelationshipsAboveTablesForJoinIntent" file="core/catalog_test.go" line="179" >}}
 {{< verified by="TestGraphQLControlPlaneCatalogConfigRecipeSearch" file="serv/control_plane_graphql_test.go" line="1365" >}}
+{{< verified by="TestCatalogSnapshotMergesCallerScopedArtifacts" file="serv/artifact_overlay_test.go" line="173" >}}
 
 ## Narrower discovery
 

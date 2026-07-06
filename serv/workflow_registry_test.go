@@ -1,9 +1,12 @@
 package serv
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dosco/graphjin/core/v3"
 )
 
 func TestWorkflowRegistryReusesSnapshotWhenFilesAreUnchanged(t *testing.T) {
@@ -91,7 +94,10 @@ function main(input) { return {}; }
 		t.Fatalf("expected registry timeout_seconds=120, got %+v", snap.workflows)
 	}
 
-	rows := newControlPlaneGraphQL(s).workflowRows(false)
+	rows, err := newControlPlaneGraphQL(s).workflowRows(context.Background(), false, core.ManagedQueryRoot{})
+	if err != nil {
+		t.Fatalf("workflowRows: %v", err)
+	}
 	if len(rows) != 1 || rows[0]["timeout_seconds"] != 120 || rows[0]["workflow_revision"] != snap.revision {
 		t.Fatalf("expected control-plane workflow row to share registry timeout/revision, got rows=%+v snap=%+v", rows, snap)
 	}

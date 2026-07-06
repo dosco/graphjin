@@ -10,8 +10,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// registerDDLTools registers the DDL (schema modification) tools
+// registerDDLTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerDDLTools() {
+	return
+
 	if !ms.service.conf.MCP.AllowSchemaUpdates {
 		return
 	}

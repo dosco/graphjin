@@ -19,8 +19,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-// registerConfigTools registers the configuration management tools
+// registerConfigTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerConfigTools() {
+	return
+
 	// get_current_config - Dev mode only (read-only)
 	if !ms.service.conf.Serv.Production {
 		ms.srv.AddTool(mcp.NewTool(

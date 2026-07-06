@@ -6,9 +6,9 @@ const Layout = ({ children }) => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Header />
-      <div className="grid min-h-[calc(100vh-4rem)] lg:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="grid min-h-[calc(100vh-4rem)] lg:grid-cols-[248px_minmax(0,1fr)]">
         <Sidebar className="hidden lg:block" />
-        <main className="min-w-0 p-4 md:p-6 lg:p-8" id="main-content">
+        <main className="min-w-0 p-4 md:p-6 lg:p-8 xl:p-9" id="main-content">
           {children}
         </main>
       </div>

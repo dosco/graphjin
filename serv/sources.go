@@ -9,6 +9,16 @@ import (
 	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
 
+// agenticSurfaceEnabled reports whether the agentic surface — catalog, artifacts
+// persistence, workflows, code, the gj_* control-plane roots, the MCP server, and
+// the agent — may mount. prod is the only pre-agentic compatibility mode and never
+// mounts the agentic surface, regardless of individual enabled flags. This is the
+// fail-closed feature gate from the security model (see SECURITY.md); prod stays a
+// classic public REST/GraphQL API over compiled queries + roles/RLS.
+func (c *Config) agenticSurfaceEnabled() bool {
+	return c != nil && effectiveMode(c) != modeProd
+}
+
 func (c *Config) legacyMCPToolsEnabled() bool {
 	return c.legacyDiscoveryEnabled()
 }
@@ -27,18 +37,27 @@ func (c *Config) catalogToolsEnabled() bool {
 	if c == nil {
 		return false
 	}
-	return c.Core.CatalogEnabled()
+	return c.Core.CatalogEnabled() && c.agenticSurfaceEnabled()
 }
 
 func (c *Config) mcpDisabled() bool {
 	if c == nil || c.MCP.Disable {
 		return true
 	}
-	if c.MCP.disableExplicit {
-		return false
+	if effectiveMode(c) == modeProd {
+		// Source mode: prod hard-gates the agentic surface (security model); the
+		// MCP server never mounts there, even if explicitly enabled.
+		if c.Core.IsSourcesUsed() {
+			return true
+		}
+		// Legacy (non-sources) prod keeps the long-standing escape hatch: MCP is
+		// off by default but an explicit mcp.disable=false re-enables it.
+		if c.MCP.disableExplicit {
+			return false
+		}
+		return true
 	}
-	mode := effectiveMode(c)
-	return !c.Core.IsSourcesUsed() && mode == modeProd
+	return false
 }
 
 func (c *Config) graphjinControlPlaneEnabled() bool {
@@ -46,7 +65,7 @@ func (c *Config) graphjinControlPlaneEnabled() bool {
 		return false
 	}
 	source, ok := c.Core.GraphJinSource()
-	return ok && sourceBool(source.ControlPlane, true)
+	return ok && sourceBool(source.ControlPlane, true) && c.agenticSurfaceEnabled()
 }
 
 func (c *Config) workflowsSourceEnabled() bool {
@@ -54,7 +73,7 @@ func (c *Config) workflowsSourceEnabled() bool {
 		return false
 	}
 	_, ok := c.Core.WorkflowsSource()
-	return ok
+	return ok && c.agenticSurfaceEnabled()
 }
 
 func (c *Config) runtimeRootSourceEnabled() bool {

@@ -38,6 +38,14 @@ Useful saved query: `customer_issue_context`
 
 Useful workflow: `customer_issue_triage`
 
+## Standing Watches
+
+Create a watch that tells me when new production orders appear, then show my unseen watch events and mark them reviewed.
+
+Useful roots: `gj_watch`, `gj_watch_event`
+
+Useful help: `query_catalog(id: "help:watches")`
+
 ## Code-Aware Investigation
 
 Search the `business_code` source for roast planning, subscription pressure, customer promise, and quality score logic. Use the code context before proposing workflow changes.

@@ -36,5 +36,17 @@ canonifyURLs = false
   target = "static"
 
 [[module.mounts]]
+  source = "../VISION.md"
+  target = "assets/root-docs/vision.md"
+
+[[module.mounts]]
+  source = "../SECURITY.md"
+  target = "assets/root-docs/security.md"
+
+[[module.mounts]]
+  source = "../AGENTIC.md"
+  target = "assets/root-docs/agentic.md"
+
+[[module.mounts]]
   source = "assets"
   target = "assets"

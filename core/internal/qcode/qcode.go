@@ -652,7 +652,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			continue
 		}
 
-		if err := co.addRelInfo(name, op, qc, sel, field); err != nil {
+		if err := co.addRelInfo(name, op, qc, sel, field, role); err != nil {
 			return err
 		}
 
@@ -804,6 +804,7 @@ func (co *Compiler) addRelInfo(
 	qc *QCode,
 	sel *Select,
 	field graph.Field,
+	role string,
 ) error {
 	var psel *Select
 	var childF, parentF graph.Field
@@ -906,7 +907,10 @@ func (co *Compiler) addRelInfo(
 	}
 
 	if sel.Ti.Blocked {
-		return fmt.Errorf("table: '%t' (%s) blocked", sel.Ti.Blocked, name)
+		tr := co.getRole(role, sel.Ti.Schema, sel.Ti.Name, name)
+		if !tr.allowsBlockedTable(qc.SType) {
+			return fmt.Errorf("table: '%t' (%s) blocked", sel.Ti.Blocked, name)
+		}
 	}
 
 	sel.Table = sel.Ti.Name

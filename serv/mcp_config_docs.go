@@ -31,7 +31,10 @@ var agenticConfigTemplate string
 // in production because it never reveals anything about the running server's
 // configuration (no secrets, no DB names, no schemas — just example YAML
 // with explanatory comments).
+// registerConfigDocsTool is retained as an inert compatibility hook.
 func (ms *mcpServer) registerConfigDocsTool() {
+	return
+
 	ms.srv.AddTool(mcp.NewTool(
 		"get_config_docs",
 		mcp.WithDescription(

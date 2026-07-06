@@ -16,6 +16,15 @@ cors_allowed_origins: ["*"]
 default_block: false
 default_limit: 50
 
+artifacts:
+  enabled: true
+  source: ops
+  auto_init: true
+
+watches:
+  enabled: true
+  runner: "all"
+
 auth:
   type: none
   development: true

@@ -7,8 +7,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// registerExplainTools registers the explain_query tool
+// registerExplainTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerExplainTools() {
+	return
+
 	if !ms.service.conf.MCP.AllowDevTools {
 		return
 	}

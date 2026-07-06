@@ -31,8 +31,11 @@ GraphJin's MCP surface starts with discovery:
 - Inspect `gj_security` before writes, workflows, config changes, file access, or code changes.
 - Execute through saved queries or validated GraphQL.
 
+`query_catalog` and `execute_saved_query` use the same artifact overlay as HTTP GraphQL. With a configured artifact store and `user_id`, the caller sees global config files plus their own `gj_artifacts` rows.
+
 {{< verified by="TestMCPCLIParity" file="cmd/mcp_parity_test.go" line="18" >}}
 {{< verified by="TestProcessCursorsForMCP" file="serv/mcp_cursor_test.go" line="20" >}}
+{{< verified by="TestUserArtifactSavedQueryOverridesGlobalOnlyForOwner" file="serv/artifact_overlay_test.go" line="94" >}}
 
 ## Cursor IDs
 
@@ -58,7 +61,9 @@ HTTP MCP endpoints can be protected by OAuth or the same JWT/OIDC context as the
 
 ## Capability-aware tools
 
-In sources mode, the MCP tool list reflects the caller's source capabilities. Catalog tools are advertised only when a `kind: graphjin` source enables catalog access, raw GraphQL execution follows the raw GraphQL capability/config gate, and workflow tools follow workflow capabilities.
+The MCP tool list is catalog-first in both sources and non-sources configs. `graphql_help`, `query_catalog`, `execute_saved_query`, and `validate_where_clause` form the stable bootstrap surface; raw GraphQL and the server-side agent appear only when their MCP/agent gates enable them.
+
+For local development, named query auto-save and workflow saves fall back to config files only when there is no `user_id` or no artifact store.
 
 {{< verified by="TestRegisterTools_SourcesUsedRawGraphQLCapabilityControlsTool" file="serv/mcp_registration_test.go" line="316" >}}
 {{< verified by="TestMCPCallerCapabilityProfileReflectsSourceRootAccess" file="serv/mcp_registration_test.go" line="551" >}}

@@ -79,6 +79,7 @@ type graphjinEngine struct {
 	fs                    FS
 	trace                 Tracer
 	allowList             *allow.List
+	savedQuerySaveHook    SavedQuerySaveHook
 	encryptionKey         [32]byte
 	encryptionKeySet      bool
 	cache                 Cache
@@ -134,6 +135,10 @@ type graphjinEngine struct {
 	// Managed query handlers expose service-owned, synthetic read roots through
 	// GraphJin's normal GraphQL query surface without hitting user tables.
 	managedQueryHandlers map[string]ManagedQueryHandler
+
+	// reservedRoleAuthorizer can allow package-internal service contexts to use
+	// reserved roles. Request-derived roles are denied by default.
+	reservedRoleAuthorizer ReservedRoleAuthorizer
 }
 
 // primaryDB returns the default database context.
@@ -166,6 +171,32 @@ type GraphJin struct {
 }
 
 type Option func(*graphjinEngine) error
+
+// ReservedRoleAuthorizer authorizes a reserved role name, such as a GraphJin
+// internal role, for a specific request context.
+type ReservedRoleAuthorizer func(context.Context, string) bool
+
+// SavedQueryFragment is a fragment captured while saving a named query.
+type SavedQueryFragment struct {
+	Name  string
+	Value []byte
+}
+
+// SavedQuerySaveRequest is passed to SavedQuerySaveHook before dev-mode named
+// query auto-save writes to the configured filesystem allow-list.
+type SavedQuerySaveRequest struct {
+	Namespace  string
+	Name       string
+	Operation  string
+	Query      []byte
+	Fragments  []SavedQueryFragment
+	ActionJSON map[string]json.RawMessage
+}
+
+// SavedQuerySaveHook lets an embedding service redirect dev-mode named-query
+// saves. Returning handled=false preserves the default filesystem allow-list
+// behavior.
+type SavedQuerySaveHook func(context.Context, SavedQuerySaveRequest) (handled bool, err error)
 
 // OnSchemaChange registers a callback that fires when the database schema changes.
 // The callback receives the database name and a hex-encoded hash of the schema.
@@ -451,6 +482,26 @@ func OptionSetNamespace(namespace string) Option {
 func OptionSetFS(fs FS) Option {
 	return func(s *graphjinEngine) error {
 		s.fs = fs
+		return nil
+	}
+}
+
+// OptionSetSavedQuerySaveHook installs a service hook for dev-mode named-query
+// auto-save. If the hook returns handled=false, GraphJin writes to the
+// configured filesystem allow-list as before.
+func OptionSetSavedQuerySaveHook(h SavedQuerySaveHook) Option {
+	return func(s *graphjinEngine) error {
+		s.savedQuerySaveHook = h
+		return nil
+	}
+}
+
+// OptionSetReservedRoleAuthorizer installs an internal authorization hook for
+// reserved role names. Reserved roles are never accepted from request context
+// unless this hook explicitly allows the role for that context.
+func OptionSetReservedRoleAuthorizer(h ReservedRoleAuthorizer) Option {
+	return func(s *graphjinEngine) error {
+		s.reservedRoleAuthorizer = h
 		return nil
 	}
 }
@@ -760,7 +811,7 @@ func (g *GraphJin) GraphQL(c context.Context,
 
 	// if not production then save named queries to allow list
 	if !gj.prod && r.name != "" && r.name != "IntrospectionQuery" {
-		if err = gj.saveToAllowList(resp.qc, resp.res.namespace); err != nil {
+		if err = gj.saveToAllowList(c, resp.qc, resp.res.namespace); err != nil {
 			return
 		}
 	}
@@ -805,6 +856,54 @@ func (g *GraphJin) GraphQLByName(c context.Context,
 	}
 
 	r := gj.newGraphqlReq(rc, "", name, nil, vars)
+	r.Set(item)
+
+	res, err = gj.queryWithResult(c1, r)
+	return
+}
+
+// GraphQLBySavedQuery executes a saved query definition supplied by the
+// embedding service. It is intended for trusted stores that have already
+// resolved the saved query and its imports.
+func (g *GraphJin) GraphQLBySavedQuery(c context.Context,
+	details *SavedQueryDetails,
+	vars json.RawMessage,
+	rc *RequestConfig,
+) (res *Result, err error) {
+	if details == nil {
+		return nil, errors.New("saved query details are required")
+	}
+	if strings.TrimSpace(details.Name) == "" {
+		return nil, errors.New("saved query name is required")
+	}
+	if strings.TrimSpace(details.Query) == "" {
+		return nil, errors.New("saved query query is required")
+	}
+	gj, err := g.getEngine()
+	if err != nil {
+		return
+	}
+
+	c1, span := gj.spanStart(c, "GraphJin Query")
+	defer span.End()
+
+	operation := strings.TrimSpace(details.Operation)
+	if operation == "" {
+		h, parseErr := graph.FastParseBytes([]byte(details.Query))
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		operation = h.Operation
+	}
+
+	item := allow.Item{
+		Namespace:  details.Namespace,
+		Name:       details.Name,
+		Operation:  operation,
+		Query:      []byte(details.Query),
+		ActionJSON: savedQueryVariablesToRaw(details.Variables),
+	}
+	r := gj.newGraphqlReq(rc, "", details.Name, nil, vars)
 	r.Set(item)
 
 	res, err = gj.queryWithResult(c1, r)
@@ -2763,6 +2862,30 @@ type SavedQueryDetails struct {
 	Operation string                 `json:"operation"`
 	Query     string                 `json:"query"`
 	Variables map[string]interface{} `json:"variables,omitempty"`
+}
+
+func savedQueryVariablesToRaw(vars map[string]interface{}) map[string]json.RawMessage {
+	if len(vars) == 0 {
+		return nil
+	}
+	out := make(map[string]json.RawMessage, len(vars))
+	for k, v := range vars {
+		b, err := json.Marshal(v)
+		if err != nil {
+			continue
+		}
+		out[k] = json.RawMessage(b)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// ResolveGraphQLFile reads a GraphQL file from fs and expands #import
+// directives using the same allow-list path validation as saved queries.
+func ResolveGraphQLFile(fs FS, fname string) ([]byte, error) {
+	return allow.ReadGQL(fs, fname)
 }
 
 // ListSavedQueries returns all saved queries from the allow list

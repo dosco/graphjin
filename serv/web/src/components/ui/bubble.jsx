@@ -7,7 +7,7 @@ const Bubble = React.forwardRef(({ className, role = "assistant", ...props }, re
     ref={ref}
     data-role={role}
     className={cn(
-      "rounded-lg border px-4 py-3 text-sm leading-6 shadow-xs data-[role=assistant]:bg-card data-[role=assistant]:text-card-foreground data-[role=system]:bg-muted data-[role=user]:border-primary data-[role=user]:bg-primary data-[role=user]:text-primary-foreground",
+      "rounded-lg border px-4 py-3 text-sm leading-6 shadow-[0_6px_20px_rgba(28,35,48,0.06)] data-[role=assistant]:bg-card data-[role=assistant]:text-card-foreground data-[role=system]:bg-card data-[role=user]:border-primary/35 data-[role=user]:bg-primary data-[role=user]:text-primary-foreground",
       className
     )}
     {...props}

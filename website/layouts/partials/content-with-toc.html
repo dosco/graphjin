@@ -1,6 +1,8 @@
-{{ with .Params.summary_label }}<p class="doc-kicker">{{ . }}</p>{{ end }}
-<header class="doc-header">
-  <h1>{{ .Title }}</h1>
-  {{ with .Description }}<p>{{ . }}</p>{{ end }}
-</header>
+{{ if not .Params.hide_doc_header }}
+  {{ with .Params.summary_label }}<p class="doc-kicker">{{ . }}</p>{{ end }}
+  <header class="doc-header">
+    <h1>{{ .Title }}</h1>
+    {{ with .Description }}<p>{{ . }}</p>{{ end }}
+  </header>
+{{ end }}
 {{ .Content }}

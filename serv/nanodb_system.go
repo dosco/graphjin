@@ -17,7 +17,7 @@ func (s *graphjinService) initSystemNanoDBBeforeCore() error {
 	if s == nil || s.conf == nil {
 		return nil
 	}
-	if !(s.conf.catalogToolsEnabled() || s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled() || s.conf.runtimeRootRegistered() || s.conf.Core.Artifacts.Enabled) {
+	if !(s.conf.catalogToolsEnabled() || s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled() || s.conf.runtimeRootRegistered() || s.conf.Core.Artifacts.Enabled || s.watchesEnabled()) {
 		s.metadataDB = ""
 		return nil
 	}
@@ -44,6 +44,12 @@ func (s *graphjinService) initSystemNanoDBBeforeCore() error {
 	s.runtimeCore.Databases[name] = core.DatabaseConfig{Type: "nanodb", ReadOnly: true}
 	s.injectSystemNanoTables(name)
 	applySystemRoleQueryDefaults(s.conf, s.runtimeCore, name)
+	if err := assertArtifactNanoRoleDefaults(s.conf, s.runtimeCore, name); err != nil {
+		return err
+	}
+	if err := assertWatchNanoRoleDefaults(s.conf, s.runtimeCore, name); err != nil {
+		return err
+	}
 	codeDB := ""
 	if s.conf.Core.MetadataAutoCodeRelationsEnabled() {
 		codeDBs := s.selectedCodeSQLDatabasesFor(&s.conf.Core, s.managedDBs)
@@ -220,6 +226,9 @@ func systemNanoSnapshot(_ string, codeDB string, rows map[string][]core.NanoRow)
 	tables := []core.NanoTable{
 		{Name: "gj_catalog", Columns: catalogNanoColumns(codeDB), Rows: rowsFor(rows, "gj_catalog")},
 		{Name: "gj_security", Columns: securityNanoColumns(), Rows: rowsFor(rows, "gj_security")},
+		{Name: "gj_artifacts", Columns: artifactNanoColumns(), Rows: rowsFor(rows, "gj_artifacts")},
+		{Name: "gj_watch", Columns: watchNanoColumns(), Rows: rowsFor(rows, "gj_watch")},
+		{Name: "gj_watch_event", Columns: watchEventNanoColumns(), Rows: rowsFor(rows, "gj_watch_event")},
 		{Name: "gj_workflow", Columns: workflowNanoColumns(), Rows: rowsFor(rows, "gj_workflow")},
 		{Name: "gj_workflow_execution", Columns: workflowExecutionNanoColumns(), Rows: rowsFor(rows, "gj_workflow_execution")},
 		{Name: "gj_config", Columns: configNanoColumns(), Rows: rowsFor(rows, "gj_config")},
@@ -418,6 +427,89 @@ func configNanoColumns() []core.NanoColumn {
 	}
 }
 
+const artifactProjectionContentMaxBytes = 32 * 1024
+
+func artifactNanoColumns() []core.NanoColumn {
+	return []core.NanoColumn{
+		{Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
+		{Name: "name", Type: "text", Index: true},
+		{Name: "kind", Type: "text", Index: true},
+		{Name: "path", Type: "text"},
+		{Name: "source", Type: "text", Index: true},
+		{Name: "visibility", Type: "text", Index: true},
+		{Name: "read_only", Type: "boolean", Index: true},
+		{Name: "account_id", Type: "text", Index: true},
+		{Name: "owner_id", Type: "text", Index: true},
+		{Name: "account_ref", Type: "text", Index: true},
+		{Name: "owner_ref", Type: "text", Index: true},
+		{Name: "content", Type: "text"},
+		{Name: "content_truncated", Type: "boolean"},
+		{Name: "content_json", Type: "json"},
+		{Name: "metadata_json", Type: "json"},
+		{Name: "content_hash", Type: "text", Index: true},
+		{Name: "status", Type: "text", Index: true},
+		{Name: "revision", Type: "integer"},
+		{Name: "created_at", Type: "text"},
+		{Name: "updated_at", Type: "text"},
+		{Name: "search_vector", Type: "text", FullText: true},
+	}
+}
+
+func watchNanoColumns() []core.NanoColumn {
+	return []core.NanoColumn{
+		{Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
+		{Name: "name", Type: "text", Index: true},
+		{Name: "description", Type: "text"},
+		{Name: "query", Type: "text"},
+		{Name: "saved_query_name", Type: "text", Index: true},
+		{Name: "variables_json", Type: "json"},
+		{Name: "condition_js", Type: "text"},
+		{Name: "delivery_json", Type: "json"},
+		{Name: "enrich_json", Type: "json"},
+		{Name: "evidence_json", Type: "json"},
+		{Name: "status", Type: "text", Index: true},
+		{Name: "approval", Type: "text", Index: true},
+		{Name: "enabled", Type: "boolean", Index: true},
+		{Name: "account_id", Type: "text", Index: true},
+		{Name: "owner_id", Type: "text", Index: true},
+		{Name: "owner_role", Type: "text", Index: true},
+		{Name: "account_ref", Type: "text", Index: true},
+		{Name: "owner_ref", Type: "text", Index: true},
+		{Name: "last_data_hash", Type: "text", Index: true},
+		{Name: "last_fired_at", Type: "text"},
+		{Name: "last_error", Type: "text"},
+		{Name: "failure_count", Type: "integer"},
+		{Name: "created_at", Type: "text"},
+		{Name: "updated_at", Type: "text"},
+		{Name: "search_vector", Type: "text", FullText: true},
+	}
+}
+
+func watchEventNanoColumns() []core.NanoColumn {
+	return []core.NanoColumn{
+		{Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
+		{Name: "watch_id", Type: "text", Index: true, FKeyTable: "gj_watch", FKeyColumn: "id", FKeyUnique: true},
+		{Name: "data_hash", Type: "text", Index: true},
+		{Name: "data_json", Type: "json"},
+		{Name: "data_truncated", Type: "boolean"},
+		{Name: "evidence_json", Type: "json"},
+		{Name: "delivery_status", Type: "text", Index: true},
+		{Name: "delivery_attempts", Type: "integer"},
+		{Name: "delivery_json", Type: "json"},
+		{Name: "receipt_json", Type: "json"},
+		{Name: "enrichment_json", Type: "json"},
+		{Name: "seen", Type: "boolean", Index: true},
+		{Name: "seen_at", Type: "text"},
+		{Name: "account_id", Type: "text", Index: true},
+		{Name: "owner_id", Type: "text", Index: true},
+		{Name: "account_ref", Type: "text", Index: true},
+		{Name: "owner_ref", Type: "text", Index: true},
+		{Name: "created_at", Type: "text", Index: true},
+		{Name: "updated_at", Type: "text"},
+		{Name: "search_vector", Type: "text", FullText: true},
+	}
+}
+
 func systemNanoRows(s *graphjinService, catalogSnapshot *core.CatalogSnapshot, conf *core.Config) map[string][]core.NanoRow {
 	rows := map[string][]core.NanoRow{}
 	cp := newControlPlaneGraphQL(s)
@@ -427,13 +519,30 @@ func systemNanoRows(s *graphjinService, catalogSnapshot *core.CatalogSnapshot, c
 		}
 	}
 	rows["gj_security"] = append(rows["gj_security"], securityNanoRows(s)...)
-	for _, row := range cp.workflowRows(true) {
-		rows["gj_workflow"] = append(rows["gj_workflow"], normalizeWorkflowNanoRow(row))
+	if workflowRows, err := cp.workflowRows(context.Background(), true, core.ManagedQueryRoot{}); err == nil {
+		for _, row := range workflowRows {
+			rows["gj_workflow"] = append(rows["gj_workflow"], normalizeWorkflowNanoRow(row))
+		}
+	}
+	artifactMaxBytes := conf.EffectiveArtifactsConfig().ProjectionContentMaxBytes
+	if artifactRows, err := newArtifactControlPlane(s).allArtifactRowsForProjection(context.Background()); err == nil {
+		for _, row := range artifactRows {
+			rows["gj_artifacts"] = append(rows["gj_artifacts"], normalizeArtifactNanoRow(row, artifactMaxBytes))
+		}
+	}
+	if watchRows, err := newWatchControlPlane(s).allWatchRowsForProjection(context.Background()); err == nil {
+		for _, row := range watchRows {
+			rows["gj_watch"] = append(rows["gj_watch"], normalizeWatchNanoRow(row))
+		}
+	}
+	if watchEventRows, err := newWatchControlPlane(s).allWatchEventRowsForProjection(context.Background()); err == nil {
+		for _, row := range watchEventRows {
+			rows["gj_watch_event"] = append(rows["gj_watch_event"], normalizeWatchEventNanoRow(row))
+		}
 	}
 	if s != nil && s.conf != nil && s.conf.graphjinControlPlaneEnabled() {
 		rows["gj_config"] = []core.NanoRow{copyNanoRow(cp.configRow())}
 	}
-	_ = conf
 	return rows
 }
 
@@ -477,6 +586,102 @@ func normalizeWorkflowNanoRow(in map[string]any) core.NanoRow {
 	name := fmt.Sprint(row["name"])
 	row["catalog_item_id"] = "workflow:" + name
 	row["search_vector"] = strings.Join([]string{name, fmt.Sprint(row["description"]), fmt.Sprint(row["tags_json"])}, " ")
+	return row
+}
+
+func normalizeArtifactNanoRow(in map[string]any, maxBytes int) core.NanoRow {
+	if maxBytes <= 0 {
+		maxBytes = artifactProjectionContentMaxBytes
+	}
+	row := copyNanoRow(in)
+	content := fmt.Sprint(row["content"])
+	truncated := false
+	if len(content) > maxBytes {
+		content = content[:maxBytes]
+		truncated = true
+	}
+	row["content"] = content
+	// Oversized JSON cannot be truncated in place without becoming invalid, so
+	// the projection drops it; the store row keeps the full value and the
+	// gj_artifacts read-through path returns it.
+	metadataText := artifactProjectionText(row["metadata_json"], maxBytes)
+	for _, key := range []string{"content_json", "metadata_json"} {
+		if artifactProjectionJSONLen(row[key]) > maxBytes {
+			row[key] = nil
+			truncated = true
+		}
+	}
+	row["content_truncated"] = truncated
+	row["search_vector"] = strings.Join([]string{
+		fmt.Sprint(row["kind"]),
+		fmt.Sprint(row["name"]),
+		fmt.Sprint(row["path"]),
+		fmt.Sprint(row["source"]),
+		fmt.Sprint(row["visibility"]),
+		content,
+		metadataText,
+	}, " ")
+	return row
+}
+
+// artifactProjectionJSONLen approximates the serialized size of a projected
+// JSON value so oversized payloads stay out of the in-memory table.
+func artifactProjectionJSONLen(v any) int {
+	switch t := v.(type) {
+	case nil:
+		return 0
+	case string:
+		return len(t)
+	case []byte:
+		return len(t)
+	case json.RawMessage:
+		return len(t)
+	default:
+		if b, err := json.Marshal(v); err == nil {
+			return len(b)
+		}
+		return len(fmt.Sprint(v))
+	}
+}
+
+// artifactProjectionText renders a value for the full-text search vector,
+// byte-capped so oversized metadata stays findable by its leading tokens
+// without unbounding the index.
+func artifactProjectionText(v any, maxBytes int) string {
+	if v == nil {
+		return ""
+	}
+	text := fmt.Sprint(v)
+	if maxBytes > 0 && len(text) > maxBytes {
+		text = text[:maxBytes]
+	}
+	return text
+}
+
+func normalizeWatchNanoRow(in map[string]any) core.NanoRow {
+	row := copyNanoRow(in)
+	row["search_vector"] = strings.Join([]string{
+		fmt.Sprint(row["name"]),
+		fmt.Sprint(row["description"]),
+		fmt.Sprint(row["query"]),
+		fmt.Sprint(row["saved_query_name"]),
+		fmt.Sprint(row["status"]),
+		fmt.Sprint(row["approval"]),
+		fmt.Sprint(row["evidence_json"]),
+	}, " ")
+	return row
+}
+
+func normalizeWatchEventNanoRow(in map[string]any) core.NanoRow {
+	row := copyNanoRow(in)
+	row["search_vector"] = strings.Join([]string{
+		fmt.Sprint(row["watch_id"]),
+		fmt.Sprint(row["data_hash"]),
+		fmt.Sprint(row["data_json"]),
+		fmt.Sprint(row["evidence_json"]),
+		fmt.Sprint(row["delivery_status"]),
+		fmt.Sprint(row["enrichment_json"]),
+	}, " ")
 	return row
 }
 
@@ -552,9 +757,105 @@ func injectSystemNanoTablesInto(conf *Config, runtimeCore *core.Config, database
 	}
 	addTableConfig("gj_catalog", "parent", "children", "columns", "relationships")
 	addTableConfig("gj_security")
+	if conf != nil && conf.Core.Artifacts.Enabled {
+		addTableConfig("gj_artifacts")
+	}
+	if configWatchesEnabled(conf) {
+		addTableConfig("gj_watch")
+		addTableConfig("gj_watch_event")
+	}
 	addTableConfig("gj_workflow")
 	addTableConfig("gj_workflow_execution")
 	addTableConfig("gj_config")
+}
+
+func (s *graphjinService) refreshWatchProjection() error {
+	if s == nil || s.systemNanoDB == nil || s.metadataDB == "" || !s.watchesEnabled() {
+		return nil
+	}
+	cp := newWatchControlPlane(s)
+	watchRows, err := cp.allWatchRowsForProjection(context.Background())
+	if err != nil {
+		return err
+	}
+	eventRows, err := cp.allWatchEventRowsForProjection(context.Background())
+	if err != nil {
+		return err
+	}
+	nanoWatchRows := make([]core.NanoRow, 0, len(watchRows))
+	for _, row := range watchRows {
+		nanoWatchRows = append(nanoWatchRows, normalizeWatchNanoRow(row))
+	}
+	nanoEventRows := make([]core.NanoRow, 0, len(eventRows))
+	for _, row := range eventRows {
+		nanoEventRows = append(nanoEventRows, normalizeWatchEventNanoRow(row))
+	}
+	return core.UpdateNanoDB(s.systemNanoDB, func(tx *core.NanoUpdate) error {
+		if err := tx.ReplaceTable("main", "gj_watch", nanoWatchRows); err != nil {
+			return err
+		}
+		return tx.ReplaceRows("main", "gj_watch_event", func(row core.NanoRow) bool {
+			return true
+		}, nanoEventRows)
+	})
+}
+
+func (s *graphjinService) markWatchChanged(reason string) {
+	if s == nil {
+		return
+	}
+	s.invalidateCatalogCache()
+	if s.systemNanoDB == nil {
+		s.markCatalogChanged(reason)
+		return
+	}
+	if err := s.refreshWatchProjection(); err != nil && s.log != nil {
+		s.log.Warnf("watch projection refresh failed: %s", err)
+	}
+}
+
+func (s *graphjinService) refreshArtifactProjection() error {
+	if s == nil || s.systemNanoDB == nil || s.metadataDB == "" || s.conf == nil || !s.conf.Core.Artifacts.Enabled {
+		return nil
+	}
+	rows, err := newArtifactControlPlane(s).allArtifactRowsForProjection(context.Background())
+	if err != nil {
+		return err
+	}
+	maxBytes := s.conf.Core.EffectiveArtifactsConfig().ProjectionContentMaxBytes
+	nanoRows := make([]core.NanoRow, 0, len(rows))
+	for _, row := range rows {
+		nanoRows = append(nanoRows, normalizeArtifactNanoRow(row, maxBytes))
+	}
+	return core.UpdateNanoDB(s.systemNanoDB, func(tx *core.NanoUpdate) error {
+		return tx.ReplaceTable("main", "gj_artifacts", nanoRows)
+	})
+}
+
+func (s *graphjinService) markArtifactChanged(reason string) {
+	if s == nil {
+		return
+	}
+	s.invalidateCatalogCache()
+	if s.systemNanoDB == nil {
+		s.markCatalogChanged(reason)
+		return
+	}
+	if err := s.refreshArtifactProjection(); err != nil && s.log != nil {
+		if strings.TrimSpace(reason) == "" {
+			reason = "artifact change"
+		}
+		s.log.Warnf("artifact projection refresh after %s failed: %v", reason, err)
+		s.recordRuntimeEvent(context.Background(), runtimeEvent{
+			Phase:      "catalog",
+			Status:     runtimeStatusDegraded,
+			Severity:   "warn",
+			Summary:    "Artifact NanoDB projection refresh failed after a runtime change.",
+			NextAction: "Check artifact storage connectivity, then retry gj_artifacts or reload schema.",
+			ErrorCode:  "artifact_projection_refresh_failed",
+			Details:    map[string]any{"reason": reason, "error": err.Error()},
+		})
+	}
 }
 
 func (s *graphjinService) markSystemNanoChanged(reason string) {

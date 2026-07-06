@@ -6,8 +6,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// registerAuditTools registers the audit_role_permissions tool
+// registerAuditTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerAuditTools() {
+	return
+
 	if !ms.service.conf.MCP.AllowDevTools {
 		return
 	}

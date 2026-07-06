@@ -28,7 +28,10 @@ type gstate struct {
 	data  []byte
 	dhash [sha256.Size]byte
 	role  string
-	verrs []qcode.ValidErr
+	// trustedReservedRole is true only when a service-installed authorizer
+	// allowed a reserved role for this exact request context.
+	trustedReservedRole bool
+	verrs               []qcode.ValidErr
 	// database is the target database name for multi-database support.
 	// Empty string means default database (backward compatible single-DB mode).
 	database string
@@ -66,7 +69,7 @@ func newGState(c context.Context, gj *graphjinEngine, r GraphqlReq) (s gstate, e
 	s.gj = gj
 	s.r = r
 
-	s.role = gj.initialRequestRole(c)
+	s.role, s.trustedReservedRole = gj.initialRequestRole(c)
 
 	// convert variable json to a go map also decrypted encrypted values
 	if len(r.vars) != 0 {
@@ -84,26 +87,28 @@ func newGState(c context.Context, gj *graphjinEngine, r GraphqlReq) (s gstate, e
 	return
 }
 
-func (gj *graphjinEngine) initialRequestRole(ctx context.Context) string {
+func (gj *graphjinEngine) initialRequestRole(ctx context.Context) (string, bool) {
 	if ctx == nil {
-		return "anon"
+		return "anon", false
 	}
 	if gj != nil && gj.conf != nil {
 		candidates := contextIdentityRoles(ctx)
 		if len(candidates) != 0 {
-			if role := gj.firstConfiguredRole(candidates); role != "" {
-				return role
+			if role, trusted := gj.firstConfiguredRole(ctx, candidates); role != "" {
+				return role, trusted
 			}
 		}
 	}
 	if v, ok := ctx.Value(UserRoleKey).(string); ok && strings.TrimSpace(v) != "" {
-		return v
+		if role, trusted := gj.requestRole(ctx, v); role != "" {
+			return role, trusted
+		}
 	}
 	switch ctx.Value(UserIDKey).(type) {
 	case string, int:
-		return "user"
+		return "user", false
 	default:
-		return "anon"
+		return "anon", false
 	}
 }
 
@@ -132,39 +137,78 @@ func contextIdentityRoles(ctx context.Context) []string {
 	}
 }
 
-func (gj *graphjinEngine) firstConfiguredRole(candidates []string) string {
+func (gj *graphjinEngine) firstConfiguredRole(ctx context.Context, candidates []string) (string, bool) {
 	if gj == nil || gj.conf == nil || len(candidates) == 0 {
-		return ""
+		return "", false
 	}
+	trusted := make(map[string]bool, len(candidates))
 	cset := make(map[string]struct{}, len(candidates))
 	for _, role := range candidates {
-		role = strings.ToLower(strings.TrimSpace(role))
+		role, ok := gj.requestRole(ctx, role)
 		if role != "" {
-			cset[role] = struct{}{}
+			key := strings.ToLower(role)
+			cset[key] = struct{}{}
+			trusted[key] = ok
 		}
 	}
 	for _, role := range gj.conf.Roles {
 		name := strings.ToLower(strings.TrimSpace(role.Name))
 		if _, ok := cset[name]; ok {
-			return role.Name
+			return role.Name, trusted[name]
 		}
 	}
 	for _, name := range []string{"user", "anon"} {
 		if _, ok := cset[name]; ok {
-			return name
+			return name, false
 		}
 	}
-	return ""
+	return "", false
+}
+
+// IsReservedRoleName reports whether a role name is reserved for GraphJin
+// internals and must not be accepted from request-controlled identity data.
+func IsReservedRoleName(role string) bool {
+	return isReservedRoleName(role)
+}
+
+func isReservedRoleName(role string) bool {
+	return strings.HasPrefix(strings.TrimSpace(role), "__")
+}
+
+func (gj *graphjinEngine) requestRole(ctx context.Context, role string) (string, bool) {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return "", false
+	}
+	if !isReservedRoleName(role) {
+		return role, false
+	}
+	if gj != nil && gj.reservedRoleAuthorizer != nil && gj.reservedRoleAuthorizer(ctx, role) {
+		return role, true
+	}
+	return "", false
+}
+
+func (gj *graphjinEngine) requestRoleOrDefault(ctx context.Context, role, fallback string) (string, bool) {
+	if role, trusted := gj.requestRole(ctx, role); role != "" {
+		return role, trusted
+	}
+	fallback = strings.TrimSpace(fallback)
+	if fallback == "" || isReservedRoleName(fallback) {
+		fallback = "user"
+	}
+	return fallback, false
 }
 
 func (s *gstate) cloneForDatabaseRoot(dbName string) gstate {
 	return gstate{
-		gj:        s.gj,
-		r:         cloneGraphqlReq(s.r),
-		vmap:      cloneRawMessageMap(s.vmap),
-		role:      s.role,
-		database:  dbName,
-		skipCache: s.skipCache,
+		gj:                  s.gj,
+		r:                   cloneGraphqlReq(s.r),
+		vmap:                cloneRawMessageMap(s.vmap),
+		role:                s.role,
+		trustedReservedRole: s.trustedReservedRole,
+		database:            dbName,
+		skipCache:           s.skipCache,
 	}
 }
 
@@ -242,6 +286,10 @@ func (s *gstate) compileQueryForRoleOnce() (err error) {
 }
 
 func (s *gstate) compileQueryForRole() (err error) {
+	if isReservedRoleName(s.role) && !s.trustedReservedRole {
+		return fmt.Errorf(`role '%s' is reserved`, s.role)
+	}
+
 	st := stmt{role: s.role}
 
 	var ok bool
@@ -777,7 +825,9 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 							if k > 0 {
 								ib.WriteString(", ")
 							}
-							ib.WriteString(fmt.Sprintf("('%s', %s)", gjIdsKey, id))
+							ib.WriteString(fmt.Sprintf("('%s', '%s')",
+								strings.ReplaceAll(gjIdsKey, "'", "''"),
+								strings.ReplaceAll(id, "'", "''")))
 						}
 						insertSQL := ib.String()
 
@@ -935,7 +985,7 @@ func wrapSnowflakeScriptError(stmtIdx int, stmt string, usesQueryPath bool, err 
 }
 
 func (s *gstate) executeRoleQuery(c context.Context, conn *sql.Conn) (err error) {
-	s.role, err = s.gj.executeRoleQuery(c, conn, s.vmap, s.r.requestconfig)
+	s.role, s.trustedReservedRole, err = s.gj.executeRoleQuery(c, conn, s.vmap, s.r.requestconfig)
 	return
 }
 
@@ -1132,6 +1182,7 @@ func (s *gstate) submitSWRRefresh(c context.Context) {
 	gj := s.gj
 	req := s.r
 	role := s.role
+	trustedReservedRole := s.trustedReservedRole
 	cacheKey := s.cacheKey
 	// Keep the auth values from the request context but drop the deadline,
 	// so the refresh isn't cancelled when the original response is sent.
@@ -1141,7 +1192,7 @@ func (s *gstate) submitSWRRefresh(c context.Context) {
 		ctx, cancel := context.WithTimeout(parentCtx, swrRefreshTimeout)
 		defer cancel()
 
-		fresh := gstate{gj: gj, r: req, role: role}
+		fresh := gstate{gj: gj, r: req, role: role, trustedReservedRole: trustedReservedRole}
 		if len(req.vars) != 0 {
 			var rawVars json.RawMessage
 			rawVars, err = decryptValues(req.vars, decPrefix, gj.encryptionKey)

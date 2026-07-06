@@ -86,10 +86,19 @@ func (gj *graphjinEngine) isArtifactPhysicalTable(database string, table *sdata.
 		return false
 	}
 	schema := strings.ToLower(strings.TrimSpace(cfg.Schema))
-	return (strings.ToLower(table.Schema) == schema &&
-		(strings.EqualFold(table.Name, "artifacts") || strings.EqualFold(table.Name, "artifact_revisions"))) ||
-		strings.EqualFold(table.Name, schema+"_artifacts") ||
-		strings.EqualFold(table.Name, schema+"_artifact_revisions")
+	name := strings.ToLower(table.Name)
+	if strings.ToLower(table.Schema) == schema {
+		switch name {
+		case "artifacts", "revisions", "watches", "watch_events":
+			return true
+		}
+	}
+	switch name {
+	case schema + "_artifacts", schema + "_revisions", schema + "_watches", schema + "_watch_events":
+		return true
+	default:
+		return false
+	}
 }
 
 type tableAccessClass struct {

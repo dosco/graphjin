@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -53,7 +55,15 @@ func (p *fakeProgram) GetActionLog() ax.Value {
 }
 
 func (p *fakeProgram) GetUsage() ax.Value {
-	return map[string]ax.Value{"total_tokens": 12}
+	return map[string]ax.Value{"chat_log_entries": 2}
+}
+
+func (p *fakeProgram) GetChatLog() ax.Value {
+	return []ax.Value{
+		map[string]ax.Value{"item1": map[string]ax.Value{"usage": map[string]ax.Value{
+			"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12,
+		}}},
+	}
 }
 
 func (p *fakeProgram) ExportTrace() ax.Value {
@@ -102,22 +112,36 @@ func (r *fakeRuntime) record(name string, args map[string]any) any {
 }
 
 func fakeCatalogResult(args map[string]any) any {
-	id := stringArg(args, "id")
-	if id != "" {
-		kind := "help"
-		if strings.HasPrefix(id, "saved_query:") {
-			kind = "saved_query"
-		}
-		return map[string]any{
-			"count": 1,
-			"cards": []any{map[string]any{
+	if detailIDs := detailIDsFromArgs(args); len(detailIDs) != 0 {
+		cards := make([]any, 0, len(detailIDs))
+		details := make([]any, 0, len(detailIDs))
+		for _, id := range detailIDs {
+			kind := "help"
+			card := map[string]any{
 				"id":      id,
 				"kind":    kind,
 				"name":    strings.TrimPrefix(id, "saved_query:"),
 				"title":   id,
 				"summary": "detail row",
-			}},
-			"details": []any{map[string]any{"card_id": id, "section": "details", "content": "detail"}},
+			}
+			if strings.HasPrefix(id, "saved_query:") {
+				card["kind"] = "saved_query"
+			}
+			if strings.HasPrefix(id, "table:") {
+				card["kind"] = "table"
+				card["table_name"] = tableNameFromCatalogID(id)
+			}
+			if strings.HasPrefix(id, "workflow:") {
+				card["kind"] = "workflow"
+				card["name"] = strings.TrimPrefix(id, "workflow:")
+			}
+			cards = append(cards, card)
+			details = append(details, map[string]any{"card_id": id, "section": "details", "content": "detail"})
+		}
+		return map[string]any{
+			"count":   len(cards),
+			"cards":   cards,
+			"details": details,
 			"next":    map[string]any{"recommended_tool": "query_catalog"},
 		}
 	}
@@ -158,7 +182,7 @@ func TestRunSafeModeCapsStepsAndExposesSafeTools(t *testing.T) {
 		"answer": "found it",
 	}}
 	var programOptions map[string]ax.Value
-	runner := newAgent(Config{MaxSteps: 5, TimeoutSeconds: 5, AllowRawGraphQL: true}, rt,
+	runner := newAgent(Config{MaxSteps: 5, TimeoutSeconds: 5}, rt,
 		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
 		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
 			programOptions = options
@@ -191,12 +215,12 @@ func TestRunSafeModeCapsStepsAndExposesSafeTools(t *testing.T) {
 	}
 
 	tools := toolsByName(t, programOptions)
-	want := []string{"execute_saved_query", "graphql_help", "query_catalog", "validate_where_clause"}
+	want := []string{"execute_graphql", "execute_saved_query", "graphql_help", "query_catalog", "validate_where_clause"}
 	if got := sortedKeys(tools); !reflect.DeepEqual(got, want) {
-		t.Fatalf("safe tools = %v, want %v", got, want)
+		t.Fatalf("tools = %v, want %v", got, want)
 	}
-	if _, ok := tools["execute_graphql"]; ok {
-		t.Fatal("safe mode must not expose raw GraphQL")
+	if _, ok := tools["execute_graphql"]; !ok {
+		t.Fatal("execute_graphql must always be registered")
 	}
 	if _, err := tools["query_catalog"].Handler(map[string]ax.Value{"search": "customers"}); err != nil {
 		t.Fatalf("query_catalog handler: %v", err)
@@ -206,7 +230,14 @@ func TestRunSafeModeCapsStepsAndExposesSafeTools(t *testing.T) {
 	}
 }
 
-func TestRunDiscoveryOnlyAndRawToolGates(t *testing.T) {
+func TestRunAlwaysRegistersFullToolSurface(t *testing.T) {
+	// The agent's tool surface is fixed: discovery + validation + both execute
+	// tools are always registered regardless of config. Authorization is enforced
+	// by core (role + RLS), not by hiding tools. read_only rejects mutations at
+	// execution time (see coreRuntime), not by removing tools.
+	fullTools := []string{
+		"execute_graphql", "execute_saved_query", "graphql_help", "query_catalog", "validate_where_clause",
+	}
 	for _, tc := range []struct {
 		name      string
 		cfg       Config
@@ -214,28 +245,16 @@ func TestRunDiscoveryOnlyAndRawToolGates(t *testing.T) {
 		wantTools []string
 	}{
 		{
-			name: "discovery only hides execution",
-			cfg:  Config{MaxSteps: 4, TimeoutSeconds: 5, AllowRawGraphQL: true},
-			req:  Request{Instruction: "inspect catalog", Mode: ModeDiscoveryOnly},
-			wantTools: []string{
-				"graphql_help", "query_catalog", "validate_where_clause",
-			},
+			name:      "default config",
+			cfg:       Config{MaxSteps: 4, TimeoutSeconds: 5},
+			req:       Request{Instruction: "inspect catalog"},
+			wantTools: fullTools,
 		},
 		{
-			name: "raw allowed still needs config gate",
-			cfg:  Config{MaxSteps: 4, TimeoutSeconds: 5, AllowRawGraphQL: false},
-			req:  Request{Instruction: "run raw", Mode: ModeRawAllowed},
-			wantTools: []string{
-				"execute_saved_query", "graphql_help", "query_catalog", "validate_where_clause",
-			},
-		},
-		{
-			name: "raw allowed exposes raw when config permits",
-			cfg:  Config{MaxSteps: 4, TimeoutSeconds: 5, AllowRawGraphQL: true},
-			req:  Request{Instruction: "run raw", Mode: ModeRawAllowed},
-			wantTools: []string{
-				"execute_graphql", "execute_saved_query", "graphql_help", "query_catalog", "validate_where_clause",
-			},
+			name:      "read_only config",
+			cfg:       Config{MaxSteps: 4, TimeoutSeconds: 5, ReadOnly: true},
+			req:       Request{Instruction: "run raw"},
+			wantTools: fullTools,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -268,9 +287,6 @@ func TestRunValidationAndClientConfigErrors(t *testing.T) {
 	)
 	if _, err := runner.Run(context.Background(), Request{}); !errors.Is(err, ErrMissingInstruction) {
 		t.Fatalf("empty instruction err = %v, want ErrMissingInstruction", err)
-	}
-	if _, err := runner.Run(context.Background(), Request{Instruction: "x", Mode: "unsafe"}); !errors.Is(err, ErrInvalidMode) {
-		t.Fatalf("invalid mode err = %v, want ErrInvalidMode", err)
 	}
 
 	t.Setenv("GRAPHJIN_TEST_AGENT_KEY", "")
@@ -324,7 +340,11 @@ func TestAgentSignatureIsAcceptedByAx(t *testing.T) {
 			t.Fatalf("Ax rejected agent signature: %v", recovered)
 		}
 	}()
-	_ = ax.NewAgent(agentSignature, map[string]ax.Value{})
+	// contextFields must name signature input fields; ax fails construction on
+	// drift ("context field not found"), so this guards the history pairing.
+	_ = ax.NewAgent(agentSignature, map[string]ax.Value{
+		"contextFields": []ax.Value{"history"},
+	})
 }
 
 func TestRunBlocksAnsweredResponseWithoutModelDiscovery(t *testing.T) {
@@ -346,6 +366,9 @@ func TestRunBlocksAnsweredResponseWithoutModelDiscovery(t *testing.T) {
 	}
 	if !responseHasProtocolError(resp, "model_discovery_required") {
 		t.Fatalf("missing model_discovery_required error: %+v", resp.Errors)
+	}
+	if resp.Refusal == nil || resp.Refusal.Code != "model_discovery_required" {
+		t.Fatalf("refusal = %+v, want model_discovery_required", resp.Refusal)
 	}
 }
 
@@ -371,6 +394,18 @@ func TestRunRejectsSavedQueryExecutionBeforeDetailLookup(t *testing.T) {
 	}
 	if !responseHasProtocolError(resp, "saved_query_detail_required") {
 		t.Fatalf("missing saved_query_detail_required error: %+v", resp.Errors)
+	}
+	if resp.Refusal == nil {
+		t.Fatal("missing structured refusal")
+	}
+	if resp.Refusal.Code != "saved_query_detail_required" || resp.Refusal.BlockedAction != toolExecuteSavedQuery || !resp.Refusal.Retryable || resp.Refusal.PolicyFinal {
+		t.Fatalf("unexpected refusal: %+v", resp.Refusal)
+	}
+	if len(resp.Refusal.Unblock) != 1 || resp.Refusal.Unblock[0].Tool != toolQueryCatalog {
+		t.Fatalf("unexpected unblock steps: %+v", resp.Refusal.Unblock)
+	}
+	if got := resp.Refusal.Unblock[0].Args["id"]; got != "saved_query:daily_roast_context" {
+		t.Fatalf("unblock id = %v, want saved_query detail", got)
 	}
 }
 
@@ -404,6 +439,9 @@ func TestRunAllowsSavedQueryExecutionAfterDetailLookup(t *testing.T) {
 	}
 	if len(resp.Errors) != 0 {
 		t.Fatalf("unexpected errors: %+v", resp.Errors)
+	}
+	if resp.Refusal != nil {
+		t.Fatalf("answered response should not carry refusal: %+v", resp.Refusal)
 	}
 }
 
@@ -461,7 +499,7 @@ func TestRunBlocksNoRuntimeCodeExecutorErrorWithoutFinal(t *testing.T) {
 		WithNow(func() time.Time { return time.Unix(12, 0) }),
 	)
 
-	resp, err := runner.Run(context.Background(), Request{Instruction: "inventory only", Mode: ModeDiscoveryOnly})
+	resp, err := runner.Run(context.Background(), Request{Instruction: "inventory only"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -505,10 +543,12 @@ func TestAsMapAcceptsRuntimeJSONObjects(t *testing.T) {
 	}
 }
 
-func TestCoreRuntimeRawMutationGate(t *testing.T) {
-	rt := newCoreRuntime(&core.GraphJin{}, Config{AllowRawGraphQL: true})
-	if _, err := rt.ExecuteGraphQL(context.Background(), map[string]any{"query": "mutation { x }"}); err == nil || !strings.Contains(err.Error(), "mutations are not allowed") {
-		t.Fatalf("mutation gate err = %v", err)
+func TestCoreRuntimeReadOnlyMutationGate(t *testing.T) {
+	// With read_only off, mutations are allowed through to core (role + RLS decide).
+	// With read_only on, the agent rejects mutations before execution.
+	rt := newCoreRuntime(&core.GraphJin{}, Config{ReadOnly: true})
+	if _, err := rt.ExecuteGraphQL(context.Background(), map[string]any{"query": "mutation { x }"}); err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("read-only mutation gate err = %v", err)
 	}
 }
 
@@ -618,4 +658,438 @@ func sortedKeys(values map[string]ax.Tool) []string {
 		}
 	}
 	return keys
+}
+
+func TestRunBlocksUnverifiedMutation(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	rt := &fakeRuntime{}
+	runner := newAgent(Config{TimeoutSeconds: 5}, rt,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				// Security evidence satisfies the control-plane gate but not the
+				// per-target mutation-shape gate.
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
+				_, _ = callProgramToolError(p, "execute_graphql", map[string]ax.Value{
+					"query": `mutation { products(insert: {name: "x"}) { id } }`,
+				})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{Instruction: "add a product"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusBlocked {
+		t.Fatalf("status = %s, want blocked: %+v", resp.Status, resp)
+	}
+	if !responseHasProtocolError(resp, "mutation_evidence_required") {
+		t.Fatalf("missing mutation_evidence_required error: %+v", resp.Errors)
+	}
+	if resp.Refusal == nil || resp.Refusal.Code != "mutation_evidence_required" || resp.Refusal.BlockedAction != toolExecuteGraphQL {
+		t.Fatalf("unexpected refusal: %+v", resp.Refusal)
+	}
+	if len(resp.Refusal.Unblock) == 0 || resp.Refusal.Unblock[0].Tool != toolQueryCatalog {
+		t.Fatalf("missing mutation unblock step: %+v", resp.Refusal.Unblock)
+	}
+	if search := resp.Refusal.Unblock[0].Args["search"]; !strings.Contains(fmt.Sprint(search), "products") {
+		t.Fatalf("mutation unblock search = %v, want products", search)
+	}
+	for _, call := range rt.calls {
+		if call == "execute_graphql" {
+			t.Fatal("unverified mutation must not reach the runtime")
+		}
+	}
+}
+
+func TestRunAllowsMutationAfterTableDetail(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "table:db:public.products"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{
+					"query": `mutation { products(insert: {name: "x"}) { id } }`,
+				})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{Instruction: "add a product"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusAnswered {
+		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
+	}
+	if resp.Skill != "data_write" {
+		t.Fatalf("skill = %q, want data_write", resp.Skill)
+	}
+	evidence, ok := resp.Evidence.(map[string]any)
+	if !ok {
+		t.Fatalf("evidence type = %T", resp.Evidence)
+	}
+	if !stringSliceEvidenceContains(evidence["tables_detailed"], "products") {
+		t.Fatalf("tables_detailed missing products: %+v", evidence["tables_detailed"])
+	}
+	if resp.Refusal != nil {
+		t.Fatalf("answered response should not carry refusal: %+v", resp.Refusal)
+	}
+}
+
+func TestRunFiltersRefusalUnblockStepsByCapabilityProfile(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:discovery"})
+				_, _ = callProgramToolError(p, "execute_graphql", map[string]ax.Value{
+					"query": `mutation { products(insert: {name: "x"}) { id } }`,
+				})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction: "add a product",
+		Capabilities: &CapabilityProfile{
+			AvailableTools:       []string{toolQueryCatalog, toolExecuteGraphQL},
+			AvailableSystemRoots: []string{systemRootCatalog},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Refusal == nil || resp.Refusal.Code != "security_runtime_discovery_required" {
+		t.Fatalf("refusal = %+v, want security_runtime_discovery_required", resp.Refusal)
+	}
+	if len(resp.Refusal.Unblock) != 0 {
+		t.Fatalf("security/runtime unblock steps must be hidden without those roots: %+v", resp.Refusal.Unblock)
+	}
+	if !strings.Contains(resp.Refusal.LawfulAlternative, "authorized operator") {
+		t.Fatalf("lawful alternative = %q, want operator handoff", resp.Refusal.LawfulAlternative)
+	}
+}
+
+func TestPolicyFinalRefusal(t *testing.T) {
+	state := newDiscoveryState("save locked artifact")
+	state.addViolation("artifact_kind_locked", "artifact kind is locked by policy", toolExecuteGraphQL, true, map[string]any{"kind": "workflow"})
+
+	resp := state.finalize(Response{Status: StatusBlocked})
+	if resp.Refusal == nil {
+		t.Fatal("missing structured refusal")
+	}
+	if resp.Refusal.Code != "artifact_kind_locked" || !resp.Refusal.PolicyFinal || resp.Refusal.Retryable {
+		t.Fatalf("unexpected policy refusal: %+v", resp.Refusal)
+	}
+	if len(resp.Refusal.Unblock) != 0 {
+		t.Fatalf("policy-final refusal should not include unblock steps: %+v", resp.Refusal.Unblock)
+	}
+}
+
+func TestAccessErrorRefusalsArePolicyFinal(t *testing.T) {
+	for _, code := range []string{"access_unauthorized", "access_blocked", "authenticated_required", "identity_variable_missing"} {
+		t.Run(code, func(t *testing.T) {
+			state := newDiscoveryState("blocked access")
+			resp := state.finalize(Response{
+				Status: StatusBlocked,
+				Errors: []ErrorInfo{{
+					Message: "GraphJin access policy denied this request",
+					Extensions: map[string]any{
+						"code": code,
+						"tool": toolExecuteGraphQL,
+					},
+				}},
+			})
+			if resp.Refusal == nil {
+				t.Fatal("missing structured refusal")
+			}
+			if resp.Refusal.Code != code || !resp.Refusal.PolicyFinal || resp.Refusal.Retryable {
+				t.Fatalf("unexpected access refusal: %+v", resp.Refusal)
+			}
+			if len(resp.Refusal.Unblock) != 0 {
+				t.Fatalf("access refusal should not include unblock steps: %+v", resp.Refusal.Unblock)
+			}
+			if (code == "authenticated_required" || code == "identity_variable_missing") && !strings.Contains(resp.Refusal.LawfulAlternative, "Authenticate") {
+				t.Fatalf("identity refusal lawful alternative = %q", resp.Refusal.LawfulAlternative)
+			}
+		})
+	}
+}
+
+func TestNilCapabilityProfileHidesRootScopedUnblockSteps(t *testing.T) {
+	state := newDiscoveryState("write data")
+	state.addViolation("security_runtime_discovery_required", "inspect security/runtime catalog guidance before write-capable GraphQL", toolExecuteGraphQL, true, nil)
+
+	resp := state.finalize(Response{Status: StatusBlocked})
+	if resp.Refusal == nil || resp.Refusal.Code != "security_runtime_discovery_required" {
+		t.Fatalf("unexpected refusal: %+v", resp.Refusal)
+	}
+	if len(resp.Refusal.Unblock) != 0 {
+		t.Fatalf("nil capability profile must hide root-scoped unblock steps: %+v", resp.Refusal.Unblock)
+	}
+	data, err := json.Marshal(resp.Refusal)
+	if err != nil {
+		t.Fatalf("marshal refusal: %v", err)
+	}
+	if strings.Contains(string(data), "gj_security") || strings.Contains(string(data), "gj_runtime") {
+		t.Fatalf("refusal leaked hidden roots: %s", data)
+	}
+}
+
+func TestRunAllowsMutationAfterWhereValidation(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
+				callProgramTool(t, p, "validate_where_clause", map[string]ax.Value{
+					"table": "Products", "where": map[string]ax.Value{"id": map[string]ax.Value{"eq": 1}},
+				})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{
+					"query": `mutation { products(update: {name: "y"}, where: {id: {eq: 1}}) { id } }`,
+				})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{Instruction: "update the product name"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusAnswered {
+		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
+	}
+}
+
+func TestMutationRootFields(t *testing.T) {
+	cases := []struct {
+		query string
+		want  []string
+	}{
+		{`mutation { products(insert: {name: "x"}) { id } }`, []string{"products"}},
+		{`mutation AddStuff { products(insert: $p) { id } orders(insert: $o) { id } }`, []string{"products", "orders"}},
+		{`mutation { p: products(update: {name: "y"}, where: {id: {eq: 1}}) { id } }`, []string{"products"}},
+		{`query { products { id } }`, nil},
+		{`query { products { id } } mutation { orders(delete: true, where: {id: {eq: 1}}) { id } }`, []string{"orders"}},
+		{`mutation M($x: json) { items(insert: $x) @include(if: true) { id } }`, []string{"items"}},
+		{`# mutation comment
+query { products { id } }`, nil},
+		{`mutation { gj_workflow_execution(insert: {workflow: "w"}) { id } }`, []string{"gj_workflow_execution"}},
+	}
+	for _, tc := range cases {
+		got := MutationRootFields(tc.query)
+		if len(got) != len(tc.want) {
+			t.Fatalf("MutationRootFields(%q) = %v, want %v", tc.query, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Fatalf("MutationRootFields(%q) = %v, want %v", tc.query, got, tc.want)
+			}
+		}
+	}
+}
+
+func TestRunEmitsActionEventsToObserver(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{
+					"id": "help:discovery", "variables": map[string]ax.Value{"secret": "x"},
+				})
+			}
+			return program
+		}),
+	)
+
+	var events []ActionEvent
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction: "list things",
+		Observer: func(ev ActionEvent) {
+			events = append(events, ev)
+			panic("observer panic must not fail the run")
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusAnswered {
+		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
+	}
+	if len(events) != 2 {
+		t.Fatalf("events = %d, want 2 (seed + model)", len(events))
+	}
+	if events[0].Source != "seed" || events[0].Tool != "query_catalog" || events[0].Index != 1 {
+		t.Fatalf("first event = %+v, want seed query_catalog index 1", events[0])
+	}
+	if events[1].Source != "model" || events[1].Status != "ok" || events[1].Index != 2 {
+		t.Fatalf("second event = %+v, want model ok index 2", events[1])
+	}
+	if events[1].Args["variables"] != "[redacted]" {
+		t.Fatalf("observer args must be redacted: %+v", events[1].Args)
+	}
+}
+
+func TestNormalizeHistoryBounds(t *testing.T) {
+	turns := make([]Turn, 0, 15)
+	for i := 0; i < 15; i++ {
+		turns = append(turns, Turn{Role: "user", Content: strings.Repeat("q", 10)})
+	}
+	turns = append(turns, Turn{Role: "system", Content: "ignored"})
+	turns = append(turns, Turn{Role: "assistant", Content: strings.Repeat("a", maxHistoryTurnBytes+100)})
+	out := normalizeHistory(turns)
+	if len(out) != maxHistoryTurns {
+		t.Fatalf("turns = %d, want %d", len(out), maxHistoryTurns)
+	}
+	last := out[len(out)-1]
+	if last.Role != "assistant" || len(last.Content) > maxHistoryTurnBytes {
+		t.Fatalf("last turn = role %q len %d, want assistant <= %d", last.Role, len(last.Content), maxHistoryTurnBytes)
+	}
+	for _, turn := range out {
+		if turn.Role == "system" {
+			t.Fatal("system turns must be dropped")
+		}
+	}
+}
+
+func TestRunPassesHistoryAsContextField(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:discovery"})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction: "what did we find last time",
+		History: []Turn{
+			{Role: "user", Content: "show products"},
+			{Role: "assistant", Content: "found 3 products", Status: StatusAnswered, CatalogIDs: []string{"table:db:public.products"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusAnswered {
+		t.Fatalf("status = %s: %+v", resp.Status, resp)
+	}
+	fields, ok := normalizeValue(program.options["contextFields"]).([]any)
+	if !ok || len(fields) != 1 || fields[0] != "history" {
+		t.Fatalf("contextFields = %+v, want [history]", program.options["contextFields"])
+	}
+	turns, ok := normalizeValue(program.forwardValues["history"]).([]any)
+	if !ok || len(turns) != 2 {
+		t.Fatalf("forward history = %+v, want 2 turns", program.forwardValues["history"])
+	}
+	turn, _ := turns[1].(map[string]any)
+	if turn["role"] != "assistant" || turn["status"] != StatusAnswered {
+		t.Fatalf("assistant turn malformed: %+v", turn)
+	}
+}
+
+func TestRunAllowsSavedQueryExecutionAfterBatchedDetailLookup(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{
+					"ids": []ax.Value{"saved_query:daily_roast_context", "table:db:public.orders"},
+				})
+				callProgramTool(t, p, "execute_saved_query", map[string]ax.Value{"name": "daily_roast_context"})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{Instruction: "run daily roast context"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusAnswered {
+		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
+	}
+	evidence, ok := resp.Evidence.(map[string]any)
+	if !ok {
+		t.Fatalf("evidence type = %T", resp.Evidence)
+	}
+	if !stringSliceEvidenceContains(evidence["saved_queries_detailed"], "daily_roast_context") {
+		t.Fatalf("batched detail should mark saved query: %+v", evidence)
+	}
+	if !stringSliceEvidenceContains(evidence["tables_detailed"], "orders") {
+		t.Fatalf("batched detail should mark table: %+v", evidence)
+	}
+}
+
+func TestUsageSummaryTokens(t *testing.T) {
+	usage, ok := usageSummary(&fakeProgram{}).(map[string]any)
+	if !ok {
+		t.Fatalf("usageSummary type: %T", usageSummary(&fakeProgram{}))
+	}
+	if usage["llm_calls"] != 1 {
+		t.Fatalf("llm_calls = %v, want 1", usage["llm_calls"])
+	}
+	if usage["total_tokens"] != int64(12) || usage["prompt_tokens"] != int64(8) {
+		t.Fatalf("token totals = %+v", usage)
+	}
+}
+
+func TestRunHonorsConfiguredSeedLimit(t *testing.T) {
+	rt := &fakeRuntime{}
+	var seedArgs map[string]any
+	rt.catalogOverride = func(args map[string]any) any {
+		if seedArgs == nil {
+			seedArgs = args
+		}
+		return fakeCatalogResult(args)
+	}
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	runner := newAgent(Config{TimeoutSeconds: 5, SeedLimit: 4}, rt,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:discovery"})
+			}
+			return program
+		}),
+	)
+	if _, err := runner.Run(context.Background(), Request{Instruction: "list things"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if intArg(seedArgs, "limit") != 4 {
+		t.Fatalf("seed limit = %v, want 4", seedArgs["limit"])
+	}
+}
+
+func TestRunRejectsOverlongInstruction(t *testing.T) {
+	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+	)
+	_, err := runner.Run(context.Background(), Request{Instruction: strings.Repeat("x", maxInstructionBytes+1)})
+	if !errors.Is(err, ErrInstructionTooLong) {
+		t.Fatalf("err = %v, want ErrInstructionTooLong", err)
+	}
 }

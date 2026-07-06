@@ -107,7 +107,7 @@ func TestHandleGetJSRuntimeAPI_RespectsToolGates(t *testing.T) {
 	}
 }
 
-func TestHandleGetJSRuntimeAPI_LegacyDiscoveryExposesLegacyListTables(t *testing.T) {
+func TestHandleGetJSRuntimeAPI_LegacyDiscoveryDoesNotExposeLegacyListTables(t *testing.T) {
 	ms := mockLegacyMcpServerWithConfig(MCPConfig{LegacyDiscovery: true})
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 	ms.registerTools()
@@ -122,8 +122,8 @@ func TestHandleGetJSRuntimeAPI_LegacyDiscoveryExposesLegacyListTables(t *testing
 	if err := json.Unmarshal([]byte(text), &api); err != nil {
 		t.Fatalf("failed to decode API response: %v", err)
 	}
-	if !hasJSFunction(api.Functions, "gj.tools.listTables") {
-		t.Fatal("expected legacy list_tables to be exposed when legacy_discovery is enabled")
+	if hasJSFunction(api.Functions, "gj.tools.listTables") {
+		t.Fatal("legacy list_tables should not be exposed when legacy_discovery is enabled")
 	}
 	if hasJSFunction(api.Functions, "gj.tools.listWorkflows") {
 		t.Fatal("list_workflows should remain blocked inside workflow runtime")

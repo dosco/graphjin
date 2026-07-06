@@ -9,6 +9,10 @@ It is GraphJin running in sources mode for company end users who work through
 agents. GraphJin gives those agents a governed graph over live data, source
 code, security posture, workflows, config, and source-backed external systems.
 
+> The authoritative source for the operating-modes (`dev`/`prod`/`agentic`),
+> system-roots, and auth security model is [`SECURITY.md`](SECURITY.md). Where
+> this document describes roots and access, treat `SECURITY.md` as canonical.
+
 The model-facing rule is simple:
 
 ```text
@@ -35,15 +39,56 @@ In agentic mode, sources mode is assumed. GraphJin composes several kinds of
 truth into one GraphQL/MCP operating loop. The boundaries matter because they
 tell an agent where facts come from and where actions are allowed.
 
-| Surface | Owner | Role |
-| :--- | :--- | :--- |
-| Application roots | Existing databases, MongoDB collections, OpenAPI/remote API sources, filesystem/object sources | Business data and external system state. These are source-owned facts. |
-| `gj_catalog` | GraphJin catalog | Discovery spine for schema, relationships, language features, workflows, config facts, capabilities, entrypoints, examples, and evidence. |
-| `gj_security` | GraphJin security report | Read-only security posture, effective policy, and findings. Agents check this before write-capable or control-plane actions. |
-| `gj_code` | CodeSQL | Source intelligence over files, symbols, references, imports, docs, database references, parse state, change sets, and locks. |
-| `gj_workflow` | GraphJin workflow source | Reusable JavaScript workflow definitions and metadata. |
-| `gj_workflow_execution` | GraphJin workflow runtime | Mutation-only workflow execution. Returns an ephemeral result row and does not store run history. |
-| `gj_config` | GraphJin config | Redacted current configuration and guarded config updates when policy allows them. |
+<!-- canonical-architecture-diagram: this Mermaid diagram is THE canonical
+     architecture view. Other docs (README, SECURITY.md, website pages) link
+     here instead of redrawing it. The roots + access-mode table in SECURITY.md
+     remains the canonical ACCESS matrix. -->
+
+```mermaid
+flowchart LR
+  subgraph SRC["Sources of truth"]
+    DBS[("Databases")]
+    EXT["APIs · files · objects"]
+    REPO["Code repos"]
+  end
+
+  ENG["GraphJin engine<br/>GraphQL compiler · roles + RLS<br/>enforced on every request"]
+
+  subgraph ROOTS["Governed graph (definition root → action root)"]
+    APP["Application roots<br/>business data — never copied"]
+    CAT["gj_catalog<br/>discovery spine"]
+    ART["gj_artifacts<br/>saved queries · fragments · workflows<br/>owner-scoped"]
+    WCH["gj_watch → gj_watch_event<br/>standing questions → fired-event inbox"]
+    WFL["gj_workflow → gj_workflow_execution<br/>definitions → ephemeral runs"]
+    GCODE["gj_code<br/>source intelligence"]
+    CFG["gj_config<br/>redacted config · guarded updates"]
+    SEC["gj_security<br/>posture · findings"]
+    RUN["gj_runtime<br/>health · recent events"]
+  end
+
+  subgraph CP["Control-plane store — GraphJin uses GraphJin"]
+    STORE[("Artifact store DB<br/>artifacts · watches · events · revisions")]
+    NANO["nanoDB projection<br/>bounded in-memory search index"]
+  end
+
+  AG["Agent surfaces<br/>MCP tools · ask_graphjin_agent · GraphQL/REST"]
+
+  DBS --> ENG
+  EXT --> ENG
+  REPO --> ENG
+  ENG --> ROOTS
+  ROOTS --> AG
+  ART -. "writes run back through the engine under the<br/>non-forgeable __graphjin_internal_store role" .-> STORE
+  WCH -.-> STORE
+  WFL -.-> STORE
+  STORE -- "revision-gated refresh" --> NANO
+  NANO -- "serves list/search reads —<br/>full content reads pass through to the store" --> ART
+```
+
+One picture, three boundaries: source-owned business truth, the GraphJin-owned
+`gj_*` system roots, and the caller-facing agent surfaces. Who reaches which
+root is governed by the access-mode matrix in [`SECURITY.md`](SECURITY.md) —
+that table is canonical for access; this diagram is canonical for architecture.
 
 Application roots remain the source of business truth. A Postgres table, MongoDB
 collection, OpenAPI operation, remote API resolver, local filesystem table, S3
@@ -51,12 +96,45 @@ bucket projection, or GCS object table is not copied into a fake agent store.
 GraphJin exposes it as a graph surface and keeps the operational boundary
 visible.
 
+### The nanoDB Projection
+
 GraphJin-owned system surfaces are compact and queryable. `gj_catalog`,
-`gj_security`, `gj_workflow`, `gj_workflow_execution`, and `gj_config` are backed
-by nanoDB through the GraphJin system source. nanoDB gives these surfaces
-typed columns, indexes, full-text search, relationships, filtering, ordering,
-limits, and atomic snapshot refreshes. It is for compact system truth, not for
-replacing user databases or CodeSQL.
+`gj_artifacts`, `gj_security`, `gj_watch`, `gj_watch_event`, `gj_workflow`,
+`gj_workflow_execution`, `gj_runtime`, and `gj_config` are served by nanoDB —
+an in-memory system database that gives these surfaces typed columns, indexes,
+full-text search, relationships, filtering, ordering, limits, and atomic
+snapshot refreshes. It is for compact system truth, not for replacing user
+databases or CodeSQL.
+
+For store-backed rows (artifacts, watches, watch events) the nanoDB table is a
+**bounded search projection**, not the source of record:
+
+- Per artifact, `content` is capped in the projection (default 32KB, tunable
+  via `artifacts.projection_content_max_bytes`) with `content_truncated: true`
+  marking the cut; oversized `content_json`/`metadata_json` are dropped from
+  the projection (`null`) rather than truncated into invalid JSON.
+- The store row always keeps the full value: loading a saved query, fragment,
+  or workflow for execution reads through to the artifact store, never the
+  projection. When `content_truncated` is true, read the full row through
+  `gj_artifacts`.
+- Refresh is revision-gated: a poller (`artifacts.poll_seconds`, default 15s)
+  compares a revision counter and rebuilds the projection only when a write
+  actually changed it — an idle system does no projection work. Mutations made
+  through GraphJin refresh it immediately.
+- Every replica holds its own projection of all rows; owner scoping is applied
+  per request at query time, which is what keeps one shared projection
+  compatible with per-user privacy.
+
+### The Internal Store Role
+
+Control-plane state (artifacts, watches, watch events, revisions) is persisted
+in a real SQL database, but GraphJin never talks to it with hand-written SQL:
+reads and writes run back through GraphJin's own query engine — "GraphJin uses
+GraphJin" — under the reserved `__graphjin_internal_store` role. That role
+cannot be assumed by any request: it activates only through a non-forgeable
+in-process marker, and the role-resolution path rejects it everywhere else.
+The payoff is one code path across every database dialect, with the same
+compiled, validated query machinery for system state as for user data.
 
 Code truth lives in CodeSQL. A repository can produce millions of files, syntax
 nodes, symbols, references, docs, text chunks, and database references. That
@@ -263,11 +341,71 @@ typed result is parsed from `key: value` output. There is no dependency on
 provider tool-calling or structured-output modes — the model only needs to
 generate competent code — so any OpenAI-compatible endpoint works.
 
-Modes scope what it may do: `safe` (discovery plus approved saved
-queries/mutations), `discovery_only` (read-only), and `raw_allowed` (adds
-composed GraphQL when policy permits). The caller's role only selects which
-guidance skill the agent follows; access stays enforced by core roles and
-row-level security.
+There are no per-request modes. A single operator kill-switch,
+`agent.read_only: true`, forces the agent read-only: mutations are rejected at
+execution — including saved mutations — regardless of the caller's role.
+Otherwise the caller's role and the request only select which guidance skill
+the agent follows (`data`/`code`/`workflow`/`admin` × read/write); access stays
+enforced by core roles and row-level security, and the Go protocol guards add
+per-call gates — a raw mutation is rejected until this run gathered
+mutation-shape evidence for each target table (its table detail row, a
+`validate_where_clause` on it, or a `mutation_pattern` detail row), on top of
+the existing security/runtime-evidence and saved-query-detail requirements.
+
+Requests may also carry `history` — prior conversation turns `{role, content,
+status?, catalog_ids?}` — to resolve follow-ups. History is untrusted model
+context (an RLM context field, readable by runtime code as `inputs.history`):
+it never satisfies a protocol guard, so every run still re-discovers its own
+evidence, using the prior turns' `catalog_ids` only as warm-start hints for
+batched detail lookups (`query_catalog({ids: [...]})`). Progress is observable
+per action: MCP callers that send a `_meta.progressToken` receive
+`notifications/progress` events, and the REST endpoint streams `action`/
+`result` SSE frames when called with `Accept: text/event-stream`. Seed and
+default catalog page sizes are tunable via `agent.seed_limit` (default 10) and
+`agent.catalog_default_limit` (default 20).
+
+### Structured Refusals
+
+When the agent blocks an action it does not return prose — the response carries
+a machine-actionable `refusal` object next to `status: "blocked"`:
+
+| Field | Meaning |
+| :--- | :--- |
+| `code` | Stable identifier (`access_unauthorized`, `capability_disabled`, `mutation_evidence_required`, `artifact_kind_locked`, ...). |
+| `blocked_action` | The tool call or answer that was stopped. |
+| `because` | Evidence-backed reasons, safe to show the caller. |
+| `unblock` | Ordered steps — each names a tool and args — that gather the missing evidence or capability. Steps are filtered to the caller's visible capabilities, so they never leak roots the caller cannot see. |
+| `lawful_alternative` | What the caller can do instead when unblocking is impossible. |
+| `policy_final` | `true` means policy forbids this action for this caller — do not retry; escalate to an operator. |
+| `retryable` | `true` means running the unblock steps and retrying can succeed. |
+
+A calling agent should treat this as protocol, not prose: execute the
+`unblock` steps, retry only when `retryable` is true, and stop on
+`policy_final`. The contract is discoverable at runtime with
+`query_catalog(id: "help:refusals")`.
+
+### MCP Sampling: Borrowing The Caller's Model
+
+The server agent normally runs on the model configured under `agent.*`. With
+MCP sampling it can instead run on the calling MCP client's model:
+
+```yaml
+agent:
+  sampling: auto # off (default) | auto | require
+```
+
+- `off` — always use the server-configured model.
+- `auto` — use the client's model via `sampling/createMessage` when the client
+  advertises the sampling capability; fall back to the server model otherwise.
+- `require` — fail closed with an error when the client cannot sample; never
+  fall back silently.
+
+Sampling changes only which model drives the reasoning loop. Caller identity,
+role, row-level security, evidence gates, and refusals are unchanged — a
+hostile sampling response cannot talk the agent past its guards, because the
+guards are enforced in Go, not by the model. Sampling works over stdio and,
+with `mcp.http_stateful: true`, over stateful HTTP sessions (per-request auth
+still applies; the session carries protocol capabilities, not identity).
 
 ### Caller-Aware MCP Guidance
 
@@ -308,7 +446,7 @@ Typical caller profiles:
 
 | Caller | Expected MCP shape |
 | :--- | :--- |
-| Normal authenticated user | `query_catalog`, `graphql_help`, `validate_where_clause`, and approved execution tools; `gj_catalog`, `gj_artifacts`, and `gj_workflow_execution` may be available; `gj_security`, `gj_runtime`, `gj_config`, and `gj_workflow` are usually unavailable. |
+| Normal authenticated user | `query_catalog`, `graphql_help`, `validate_where_clause`, and approved execution tools; `gj_catalog`, `gj_artifacts`, `gj_watch`, `gj_watch_event`, and `gj_workflow_execution` may be available; `gj_security`, `gj_runtime`, `gj_config`, and `gj_workflow` are usually unavailable. |
 | Workflow operator | Catalog plus workflow execution, and possibly workflow management if policy grants `gj_workflow`; config/security roots remain unavailable unless the role is explicitly admin/operator. |
 | Admin/operator | Catalog plus admin roots such as `gj_security`, `gj_runtime`, and `gj_config`; config recipes may lead to `gj_config` preview/apply with `source_patches`. |
 
@@ -838,6 +976,96 @@ query {
 }
 ```
 
+## The Artifact Store And Watches
+
+### `gj_artifacts`: One Owner-Scoped Store
+
+Saved queries, fragments, workflows, and notes live in one GraphJin-managed SQL
+store exposed through `gj_artifacts`. Two layers compose it:
+
+- **Config globals** (`artifacts.globals_path`, default `./config`): read-only
+  artifacts shipped with the deployment.
+- **Database rows**: mutable and owner-scoped — a user's row overrides a
+  same-name global for that user only.
+
+```graphql
+mutation {
+  gj_artifacts(
+    insert: {
+      name: "my_report"
+      kind: "query"
+      content: "query my_report { users { id } }"
+    }
+  ) {
+    id
+    name
+    kind
+  }
+}
+```
+
+Kinds listed in `artifacts.locked` refuse writes with the policy-final
+`artifact_kind_locked` refusal. Discovery and search reads are served from the
+bounded nanoDB projection (see
+[The nanoDB Projection](#the-nanodb-projection)); execution reads come from the
+store. The runtime contract is discoverable with
+`query_catalog(id: "help:artifacts")`.
+
+### Watches: Standing Questions With A Durable Inbox
+
+A watch is a standing question — "tell me when a roast batch fails QC twice in
+a week" — stored under `gj_watch` and evaluated as a governed subscription with
+the **owner's** stored identity and role, never elevated ones. Fired events
+land in the `gj_watch_event` inbox.
+
+```graphql
+mutation {
+  gj_watch(
+    insert: {
+      name: "new_orders"
+      query: "subscription new_orders { orders { id status } }"
+    }
+  ) {
+    id
+    status
+  }
+}
+```
+
+Durability semantics:
+
+- **Definitions, events, and the fire cursor are store rows.** Watches survive
+  restarts: on boot the runner reloads every `enabled + active + approved`
+  watch and resumes evaluation.
+- **Downtime does not lose state changes.** The last-result hash
+  (`last_data_hash`) is persisted, so a change that happened while the server
+  was down still fires on the first re-evaluation after boot. Only a transient
+  change that also reverted during the outage is missed; there is no
+  historical replay.
+- **Evaluation is opt-in per deployment**: `watches.runner: "all" | "off"`
+  (default `"off"`). Definitions persist regardless of the runner setting.
+- **Retention is enforced**: events are kept `event_retention_hours` (default
+  168), at most `max_events_per_watch` (default 500) per watch, event
+  snapshots and user-supplied definition JSON are capped at
+  `snapshot_max_bytes` (default 32KB), and read-only agent enrichment is
+  capped at `enrichment_daily_cap` per watch per day (default 10).
+- **Failures are visible, not fatal**: a broken watch flips to
+  `status: "error"` with `last_error` and a growing `failure_count`; it is
+  never auto-deleted and never auto-disabled — pause it via `status`/`enabled`.
+- **Multi-replica delivery is deduplicated**: every replica evaluates, but
+  event IDs are deterministic (`watch_id + data_hash`) so duplicate inserts
+  collapse, and webhook/workflow delivery is claimed atomically — exactly one
+  replica delivers. Webhooks get 3 attempts, a 10s timeout, an HMAC signature,
+  and an `Idempotency-Key` header; targets must match the `webhook_allow`
+  allowlist.
+
+The agent inbox loop: query `gj_watch_event` (`seen: { eq: false }`, newest
+first), act on the events, then mark them reviewed with
+`gj_watch_event(update: { seen: true })`. Agent responses carry a
+`watch_events_unseen` notice when the caller has unreviewed events. The runtime
+contract is `query_catalog(id: "help:watches")`; enabling watches is a config
+change (`recipe.config.enable_watches`).
+
 ## Config And Security Change Playbook
 
 Config changes are privileged actions. An agent must never invent a YAML shape
@@ -957,7 +1185,7 @@ identity and matching. They do not carry per-table filters or mutation presets.
 | Admin-only data | `admin_tables` or root access `admin` | Hidden ad hoc table filters |
 | Fully blocked data | `blocked_tables` | Returning empty rows as a fake block |
 | System root access | `sources[].kind: graphjin.access.roots` | Source-specific JWT interpretation |
-| Mutable account artifacts | `artifacts` config and `gj_artifacts` root | alternate artifact-store keys or config-folder mutation |
+| Mutable user artifacts | `artifacts` config and `gj_artifacts` root | alternate artifact-store keys or config-folder mutation |
 
 Typical source-mode security shape:
 
@@ -986,7 +1214,9 @@ sources:
     access:
       roots:
         gj_catalog: authenticated
-        gj_artifacts: account
+        gj_artifacts: authenticated
+        gj_watch: owner
+        gj_watch_event: owner
         gj_workflow: admin
         gj_workflow_execution: account
         gj_runtime: admin
@@ -1021,7 +1251,7 @@ roles:
             - "{ account_id: { eq: $account_id } }"
 ```
 
-Mutable user or account artifacts use `artifacts` and the `gj_artifacts` root:
+Mutable user artifacts use `artifacts` and the `gj_artifacts` root:
 
 ```yaml
 artifacts:
@@ -1030,11 +1260,18 @@ artifacts:
   schema: _graphjin
   auto_init: true
   globals_path: ./config
+watches:
+  enabled: true
+  runner: "off"
 ```
 
 Config-folder fragments, saved queries, and workflows remain global,
-read-only artifacts. Database-backed artifacts are account-scoped by default and
-can override same-name globals without changing config files.
+read-only artifacts. Database-backed artifacts are scoped by `owner_id = user_id`
+and can override same-name globals without changing config files.
+User watches use the same artifact database and are exposed through `gj_watch`
+and `gj_watch_event`. See
+[The Artifact Store And Watches](#the-artifact-store-and-watches) for the full
+contract, durability semantics, and retention limits.
 
 ### 5. Apply And Verify
 

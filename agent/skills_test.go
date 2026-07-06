@@ -32,6 +32,10 @@ func workflowProfile() *CapabilityProfile {
 	return profileWithRoots(systemRootWorkflow, systemRootWorkflowExec)
 }
 
+func watchProfile() *CapabilityProfile {
+	return profileWithRoots(systemRootWatch, systemRootWatchEvent)
+}
+
 // controlPlaneSeedRuntime returns a control-plane (config) seed so selectSkill picks an
 // admin skill, and reflects id lookups back so help:security sets the security/runtime
 // evidence flag in the protocol guard.
@@ -78,6 +82,9 @@ func TestHasWriteIntent(t *testing.T) {
 		{"run the daily roast plan workflow", true},
 		{"update the subscription quantity", true},
 		{"delete the stale ticket", true},
+		{"pause the failed orders watch", true},
+		{"resume my inventory watch", true},
+		{"mark the watch events as seen", true},
 	} {
 		if got := hasWriteIntent(tc.instruction); got != tc.want {
 			t.Fatalf("hasWriteIntent(%q) = %v, want %v", tc.instruction, got, tc.want)
@@ -90,53 +97,75 @@ func TestSelectSkill(t *testing.T) {
 		name        string
 		instruction string
 		seed        any
-		mode        string
+		readOnly    bool
 		profile     *CapabilityProfile
 		want        string
 	}{
 		{
 			name: "data read is the default", instruction: "show me recent orders",
-			seed: seedWithKinds("table"), mode: ModeSafe, profile: nil, want: skillDataDiscovery,
+			seed: seedWithKinds("table"), readOnly: false, profile: nil, want: skillDataDiscovery,
 		},
 		{
 			name: "data write on write intent", instruction: "create a new order",
-			seed: seedWithKinds("table"), mode: ModeSafe, profile: nil, want: skillDataWrite,
+			seed: seedWithKinds("table"), readOnly: false, profile: nil, want: skillDataWrite,
 		},
 		{
-			name: "discovery_only suppresses data write", instruction: "create a new order",
-			seed: seedWithKinds("table"), mode: ModeDiscoveryOnly, profile: nil, want: skillDataDiscovery,
+			name: "read_only suppresses data write", instruction: "create a new order",
+			seed: seedWithKinds("table"), readOnly: true, profile: nil, want: skillDataDiscovery,
 		},
 		{
 			name: "admin read on read intent", instruction: "review the security posture",
-			seed: seedWithKinds("system_capability"), mode: ModeSafe, profile: adminProfile(), want: skillAdminRead,
+			seed: seedWithKinds("system_capability"), readOnly: false, profile: adminProfile(), want: skillAdminRead,
 		},
 		{
 			name: "admin write on write intent", instruction: "add a new admin role to the config",
-			seed: seedWithKinds("config", "config_recipe"), mode: ModeSafe, profile: adminProfile(), want: skillAdminWrite,
+			seed: seedWithKinds("config", "config_recipe"), readOnly: false, profile: adminProfile(), want: skillAdminWrite,
 		},
 		{
-			name: "discovery_only forces admin read despite write verb", instruction: "add a new admin role",
-			seed: seedWithKinds("config"), mode: ModeDiscoveryOnly, profile: adminProfile(), want: skillAdminRead,
+			name: "read_only forces admin read despite write verb", instruction: "add a new admin role",
+			seed: seedWithKinds("config"), readOnly: true, profile: adminProfile(), want: skillAdminRead,
 		},
 		{
 			name: "admin roots but data-only seed stays data read", instruction: "list products",
-			seed: seedWithKinds("table", "column"), mode: ModeSafe, profile: adminProfile(), want: skillDataDiscovery,
+			seed: seedWithKinds("table", "column"), readOnly: false, profile: adminProfile(), want: skillDataDiscovery,
 		},
 		{
 			name: "workflow read on read intent", instruction: "what workflow reviews production risk",
-			seed: seedWithKinds("workflow"), mode: ModeSafe, profile: workflowProfile(), want: skillWorkflowRead,
+			seed: seedWithKinds("workflow"), readOnly: false, profile: workflowProfile(), want: skillWorkflowRead,
 		},
 		{
 			name: "workflow write on run intent", instruction: "run the daily roast plan workflow",
-			seed: seedWithKinds("workflow"), mode: ModeSafe, profile: workflowProfile(), want: skillWorkflowWrite,
+			seed: seedWithKinds("workflow"), readOnly: false, profile: workflowProfile(), want: skillWorkflowWrite,
 		},
 		{
 			name: "code read on read intent", instruction: "find the function that reserves green coffee",
-			seed: seedWithCodeSource(), mode: ModeSafe, profile: nil, want: skillCodeRead,
+			seed: seedWithCodeSource(), readOnly: false, profile: nil, want: skillCodeRead,
 		},
 		{
 			name: "code write on write intent", instruction: "fix the bug in the roast plan function",
-			seed: seedWithCodeSource(), mode: ModeSafe, profile: nil, want: skillCodeWrite,
+			seed: seedWithCodeSource(), readOnly: false, profile: nil, want: skillCodeWrite,
+		},
+		{
+			name: "watch read on read intent", instruction: "what fired on my watches this week",
+			seed: seedWithKinds("table"), readOnly: false, profile: watchProfile(), want: skillWatchRead,
+		},
+		{
+			name: "watch write on write intent", instruction: "create a watch on failed orders",
+			seed: seedWithKinds("table"), readOnly: false, profile: watchProfile(), want: skillWatchWrite,
+		},
+		{
+			name: "read_only forces watch read despite write verb", instruction: "pause the failed orders watch",
+			seed: seedWithKinds("table"), readOnly: true, profile: watchProfile(), want: skillWatchRead,
+		},
+		{
+			name: "watch intent without watch roots stays data", instruction: "create a watch on failed orders",
+			seed: seedWithKinds("table"), readOnly: false, profile: profileWithRoots(systemRootCatalog), want: skillDataWrite,
+		},
+		{
+			name: "admin config seed outranks watch intent", instruction: "enable watches in the config",
+			seed: seedWithKinds("config", "config_recipe"), readOnly: false,
+			profile: profileWithRoots(systemRootConfig, systemRootSecurity, systemRootRuntime, systemRootWatch),
+			want:    skillAdminWrite,
 		},
 		{
 			name: "admin write outranks a code card", instruction: "update gj_config roles",
@@ -144,11 +173,11 @@ func TestSelectSkill(t *testing.T) {
 				map[string]any{"kind": "config"},
 				map[string]any{"kind": "table", "source_kind": "code"},
 			}},
-			mode: ModeSafe, profile: adminProfile(), want: skillAdminWrite,
+			readOnly: false, profile: adminProfile(), want: skillAdminWrite,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := selectSkill(tc.instruction, tc.seed, tc.mode, tc.profile).name; got != tc.want {
+			if got := selectSkill(tc.instruction, tc.seed, tc.readOnly, tc.profile).name; got != tc.want {
 				t.Fatalf("selectSkill = %q, want %q", got, tc.want)
 			}
 		})
@@ -198,14 +227,82 @@ func TestSkillRequiredEvidence(t *testing.T) {
 	if !admin.requiredEvidence(&discoveryState{securityRuntimeEvidence: true}) {
 		t.Fatal("admin_write requiredEvidence should be true with security/runtime evidence")
 	}
-	// All other skills impose no answer-level evidence gate (core + protocol guard enforce safety).
+	// Read skills impose no answer-level evidence gate (core + protocol guard enforce safety).
 	for _, name := range []string{
-		skillDataDiscovery, skillDataWrite, skillCodeRead, skillCodeWrite,
-		skillWorkflowRead, skillWorkflowWrite, skillAdminRead,
+		skillDataDiscovery, skillCodeRead, skillWorkflowRead, skillAdminRead, skillWatchRead,
 	} {
 		if builtinSkills[name].requiredEvidence != nil {
-			t.Fatalf("skill %q should have no required evidence", name)
+			t.Fatalf("read skill %q should have no required evidence", name)
 		}
+	}
+	// Every write skill declares an answer-level evidence backstop.
+	for _, name := range []string{skillDataWrite, skillCodeWrite, skillWorkflowWrite, skillWatchWrite} {
+		if builtinSkills[name].requiredEvidence == nil {
+			t.Fatalf("write skill %q must declare required evidence", name)
+		}
+	}
+
+	if !dataWriteEvidence(newDiscoveryState("x")) {
+		t.Fatal("data_write evidence should hold when no uncovered mutation executed")
+	}
+	uncovered := newDiscoveryState("x")
+	uncovered.hasUncoveredMutation = true
+	if dataWriteEvidence(uncovered) {
+		t.Fatal("data_write evidence should fail after an uncovered mutation")
+	}
+
+	codeState := newDiscoveryState("x")
+	codeState.codeWriteExecuted = true
+	if codeWriteEvidence(codeState) {
+		t.Fatal("code_write evidence should fail when a gj_code write executed without security evidence")
+	}
+	codeState.securityRuntimeEvidence = true
+	if !codeWriteEvidence(codeState) {
+		t.Fatal("code_write evidence should hold with security evidence")
+	}
+
+	wfState := newDiscoveryState("x")
+	wfState.workflowExecuted = true
+	if workflowWriteEvidence(wfState) {
+		t.Fatal("workflow_write evidence should fail when a workflow executed without a detail inspection")
+	}
+	wfState.workflowsDetailed["daily_roast_plan"] = true
+	if !workflowWriteEvidence(wfState) {
+		t.Fatal("workflow_write evidence should hold after a workflow detail inspection")
+	}
+	if !workflowWriteEvidence(newDiscoveryState("x")) {
+		t.Fatal("workflow_write evidence should hold when nothing executed")
+	}
+
+	watchState := newDiscoveryState("x")
+	watchState.watchWriteExecuted = true
+	if watchWriteEvidence(watchState) {
+		t.Fatal("watch_write evidence should fail when a gj_watch write executed without security evidence")
+	}
+	watchState.securityRuntimeEvidence = true
+	if !watchWriteEvidence(watchState) {
+		t.Fatal("watch_write evidence should hold with security evidence")
+	}
+	if !watchWriteEvidence(newDiscoveryState("x")) {
+		t.Fatal("watch_write evidence should hold when nothing executed")
+	}
+}
+
+func TestWriteLikeGraphQLCoversSystemWriteRoots(t *testing.T) {
+	for _, query := range []string{
+		`mutation { products(insert: {name: "x"}) { id } }`,
+		`query { gj_config { id } }`,
+		`query { gj_workflow { id } }`,
+		`query { gj_code { id } }`,
+		`query { gj_watch { id } }`,
+		`query { gj_watch_event { id } }`,
+	} {
+		if !writeLikeGraphQL(query) {
+			t.Fatalf("writeLikeGraphQL(%q) = false, want true", query)
+		}
+	}
+	if writeLikeGraphQL(`query { products { id } }`) {
+		t.Fatal("ordinary read query should not be write-like")
 	}
 }
 

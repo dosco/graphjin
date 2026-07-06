@@ -895,17 +895,22 @@ mcp:
 	if out.Summary.SummaryJSON["config_inherits"] != "dev.yml" {
 		t.Fatalf("expected prod config inheritance evidence, got %+v", out.Summary.SummaryJSON)
 	}
+	// New security model: prod hard-gates the agentic surface, so the MCP server
+	// never mounts in source mode. mcp.allow_raw_queries: true is therefore inert
+	// in prod and must NOT produce a raw-query finding (flagging an unreachable
+	// surface would be a false positive). The scan still runs and still surfaces
+	// real prod findings (e.g. anonymous_access), just not MCP raw-query risk.
 	var sawRawQueryFinding bool
 	for _, finding := range out.Findings {
 		if finding.ConfigID != "prod" || finding.ConfigFile != "prod.yml" || finding.Mode != "prod" || finding.Status != "finding" {
 			t.Fatalf("unexpected config finding: %+v", finding)
 		}
-		if finding.OverrideKey == "mcp.allow_raw_queries" && (finding.Severity == "high" || finding.Severity == "medium") {
+		if finding.OverrideKey == "mcp.allow_raw_queries" {
 			sawRawQueryFinding = true
 		}
 	}
-	if !sawRawQueryFinding {
-		t.Fatalf("expected prod mcp.allow_raw_queries finding, got %s", string(res.Data))
+	if sawRawQueryFinding {
+		t.Fatalf("prod hard-gates MCP; mcp.allow_raw_queries must not be flagged as a finding, got %s", string(res.Data))
 	}
 }
 
@@ -976,6 +981,39 @@ func TestApplySystemRoleQueryDefaultsDatabaseScoped(t *testing.T) {
 	}
 }
 
+func TestAssertArtifactNanoRoleDefaultsFailsClosed(t *testing.T) {
+	conf := &Config{Core: core.Config{
+		Mode:      "agentic",
+		Artifacts: core.ArtifactsConfig{Enabled: true},
+	}}
+	filters := []string{`{ or: { owner_ref: { eq: $user_ref }, visibility: { eq: "global" } } }`}
+	runtimeCore := func(columns []string, filters []string) *core.Config {
+		return &core.Config{Roles: []core.Role{{
+			Name: "user",
+			Tables: []core.RoleTable{{
+				Database: "graphjin",
+				Name:     "gj_artifacts",
+				Query:    &core.Query{Filters: filters, Columns: columns},
+			}},
+		}}}
+	}
+
+	if err := assertArtifactNanoRoleDefaults(conf, runtimeCore(artifactPublicProjectionColumns(), filters), "graphjin"); err != nil {
+		t.Fatalf("valid artifact projection defaults rejected: %v", err)
+	}
+	if err := assertArtifactNanoRoleDefaults(conf, runtimeCore(artifactPublicProjectionColumns(), nil), "graphjin"); err == nil {
+		t.Fatal("missing owner/global filter should fail closed")
+	}
+	leakyCols := append(append([]string{}, artifactPublicProjectionColumns()...), "owner_ref")
+	if err := assertArtifactNanoRoleDefaults(conf, runtimeCore(leakyCols, filters), "graphjin"); err == nil {
+		t.Fatal("hashed owner/account refs should not be selectable for non-admin artifact projection")
+	}
+	rawIDCols := append(append([]string{}, artifactPublicProjectionColumns()...), "owner_id")
+	if err := assertArtifactNanoRoleDefaults(conf, runtimeCore(rawIDCols, filters), "graphjin"); err == nil {
+		t.Fatal("raw owner/account ids should not be selectable for non-admin artifact projection")
+	}
+}
+
 func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
 	t.Run("dev anon can inspect graphjin roots by default", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "source-mode-dev-anon.sqlite3", true), func(conf *Config) {
@@ -1041,7 +1079,7 @@ func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
 func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 	userCtx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
 
-	t.Run("normal user gets catalog but not detailed audit config or workflow code", func(t *testing.T) {
+	t.Run("normal user gets catalog and owner workflow but not detailed audit or config", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-perms.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "agentic"
 		})
@@ -1068,7 +1106,13 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 		if string(out["catalog"]) == "null" || len(out["catalog"]) == 0 {
 			t.Fatalf("expected agentic user catalog access, got %s", string(res.Data))
 		}
-		for _, key := range []string{"security", "config", "workflow"} {
+		// New agentic matrix: gj_workflow defaults to owner access, so an
+		// authenticated (non-anon) user may read workflow definitions.
+		if string(out["workflow"]) == "null" || len(out["workflow"]) == 0 {
+			t.Fatalf("expected agentic user owner access to gj_workflow, got %s", string(res.Data))
+		}
+		// gj_security and gj_config stay admin-only.
+		for _, key := range []string{"security", "config"} {
 			if string(out[key]) != "null" {
 				t.Fatalf("expected %s to be blocked for normal agentic user, got %s", key, string(res.Data))
 			}
@@ -1111,23 +1155,19 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 		}
 	})
 
-	t.Run("prod keeps catalog public by default", func(t *testing.T) {
+	t.Run("prod has no catalog surface", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "prod-perms.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "prod"
 		})
 
-		res, err := svc.gj.GraphQL(userCtx, `query {
+		// New security model: prod hard-gates the agentic surface, so the system
+		// nanodb host is never mounted and gj_catalog does not exist. The catalog
+		// is NOT a public prod surface anymore.
+		_, err := svc.gj.GraphQL(userCtx, `query {
 			catalog: gj_catalog(limit: 1) { id }
 		}`, nil, &core.RequestConfig{})
-		if err != nil {
-			t.Fatalf("prod catalog query returned error: %v", err)
-		}
-		var out map[string]json.RawMessage
-		if err := json.Unmarshal(res.Data, &out); err != nil {
-			t.Fatalf("decode prod catalog response: %v\n%s", err, string(res.Data))
-		}
-		if string(out["catalog"]) == "null" || len(out["catalog"]) == 0 {
-			t.Fatalf("expected prod catalog to be public by default, got %s", string(res.Data))
+		if err == nil {
+			t.Fatal("expected gj_catalog to be unavailable in prod mode")
 		}
 	})
 }
@@ -1589,17 +1629,21 @@ func TestSecurityNanoRowsCoverSourceCapabilityRegistry(t *testing.T) {
 }
 
 func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
-	t.Run("prod mode blocks execution by table default", func(t *testing.T) {
+	t.Run("prod mode blocks execution because the surface is absent", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "prod.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "prod"
 		})
 
 		ctx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
+		// New security model: prod hard-gates the agentic surface, so the workflows
+		// source and gj_workflow_execution root are never mounted. Execution is
+		// blocked because the table does not exist at all (a stronger guarantee than
+		// the previous read-only table default).
 		_, err := svc.gj.GraphQL(ctx, `mutation {
 			gj_workflow_execution(insert: { workflow_name: "daily_report" }) { status error }
 		}`, nil, &core.RequestConfig{})
-		if err == nil || !strings.Contains(err.Error(), "read-only") {
-			t.Fatalf("expected prod-mode read-only workflow execution block, got %v", err)
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("expected prod-mode workflow execution to be unavailable, got %v", err)
 		}
 	})
 

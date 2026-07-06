@@ -69,6 +69,20 @@ func (gj *graphjinEngine) argList(c context.Context,
 				return ar, argErr(p)
 			}
 
+		case "user_ref", "userRef":
+			if v, ok := identityContextVar(c, "user_ref"); ok && identityValuePresent(v) {
+				vl[i] = v
+			} else {
+				return ar, argErr(p)
+			}
+
+		case "account_ref", "accountRef":
+			if v, ok := identityContextVar(c, "account_ref"); ok && identityValuePresent(v) {
+				vl[i] = v
+			} else {
+				return ar, argErr(p)
+			}
+
 		case "cursor":
 			if v, ok := fields["cursor"]; ok && v[0] == '"' {
 				vl[i] = string(v[1 : len(v)-1])
@@ -168,7 +182,9 @@ func (gj *graphjinEngine) sourceModeTrustedIdentityParam(name string) bool {
 	id := gj.conf.EffectiveIdentityConfig()
 	trusted := []string{
 		"account_id",
+		"account_ref",
 		"user_id",
+		"user_ref",
 		strings.ToLower(strings.TrimSpace(id.NamespaceClaim)),
 		strings.ToLower(strings.TrimSpace(id.UserIDClaim)),
 	}

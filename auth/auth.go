@@ -270,7 +270,7 @@ func SimpleHandler(ac Auth) (HandlerFunc, error) {
 		}
 
 		userRole := r.Header.Get("X-User-Role")
-		if userRole != "" {
+		if userRole != "" && !core.IsReservedRoleName(userRole) {
 			c = context.WithValue(c, core.UserRoleKey, userRole)
 			c = context.WithValue(c, core.IdentityRolesKey, []string{userRole})
 		}

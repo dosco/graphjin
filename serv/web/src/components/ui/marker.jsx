@@ -14,13 +14,13 @@ const icons = {
 };
 
 const variants = {
-  answered: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  ready: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  blocked: "border-red-200 bg-red-50 text-red-700",
-  error: "border-red-200 bg-red-50 text-red-700",
-  loading: "border-sky-200 bg-sky-50 text-sky-700",
-  needs_clarification: "border-amber-200 bg-amber-50 text-amber-700",
-  pending: "border-border bg-muted text-muted-foreground",
+  answered: "border-emerald-300 bg-card text-emerald-700",
+  ready: "border-emerald-300 bg-card text-emerald-700",
+  blocked: "border-red-300 bg-card text-red-700",
+  error: "border-red-300 bg-card text-red-700",
+  loading: "border-border bg-card text-muted-foreground",
+  needs_clarification: "border-amber-300 bg-card text-amber-700",
+  pending: "border-border bg-card text-muted-foreground",
 };
 
 function Marker({ status = "pending", label, className }) {

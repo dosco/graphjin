@@ -9,8 +9,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// registerHealthTools registers the check_health tool
+// registerHealthTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerHealthTools() {
+	return
+
 	if !ms.service.conf.MCP.AllowDevTools {
 		return
 	}

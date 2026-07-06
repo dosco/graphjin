@@ -2,6 +2,7 @@ package serv
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,7 +12,17 @@ import (
 )
 
 func (c *Config) agentEnabled() bool {
-	return c != nil && c.Agent.Enabled
+	return c != nil && c.Agent.Enabled && c.agenticSurfaceEnabled()
+}
+
+// agentOnlyMCP reports whether the MCP surface should expose only the
+// ask_graphjin_agent tool. When the agent is enabled it is the single front door
+// that orchestrates the low-level tools (catalog, execution, schema) internally,
+// so those primitives are hidden to keep the surface minimal — unless
+// mcp.include_tools_with_agent opts them back in for a client that must drive them
+// directly.
+func (c *Config) agentOnlyMCP() bool {
+	return c != nil && c.agentEnabled() && !c.MCP.IncludeToolsWithAgent
 }
 
 func agentConfigFromService(conf *Config) gjagent.Config {
@@ -19,16 +30,18 @@ func agentConfigFromService(conf *Config) gjagent.Config {
 		return gjagent.Config{}
 	}
 	return gjagent.Config{
-		Enabled:         conf.Agent.Enabled,
-		Provider:        conf.Agent.Provider,
-		Model:           conf.Agent.Model,
-		APIKeyEnv:       conf.Agent.APIKeyEnv,
-		BaseURL:         conf.Agent.BaseURL,
-		MaxSteps:        conf.Agent.MaxSteps,
-		TimeoutSeconds:  gjagent.EffectiveTimeoutSeconds(conf.Agent.TimeoutSeconds),
-		AllowRawGraphQL: conf.Agent.AllowRawGraphQL && conf.MCP.AllowRawQueries,
-		AllowMutations:  conf.MCP.AllowMutations,
-		ReturnTrace:     conf.Agent.ReturnTrace,
+		Enabled:             conf.Agent.Enabled,
+		Provider:            conf.Agent.Provider,
+		Model:               conf.Agent.Model,
+		APIKeyEnv:           conf.Agent.APIKeyEnv,
+		BaseURL:             conf.Agent.BaseURL,
+		Sampling:            conf.Agent.Sampling,
+		MaxSteps:            conf.Agent.MaxSteps,
+		TimeoutSeconds:      gjagent.EffectiveTimeoutSeconds(conf.Agent.TimeoutSeconds),
+		ReadOnly:            conf.Agent.ReadOnly,
+		ReturnTrace:         conf.Agent.ReturnTrace,
+		SeedLimit:           conf.Agent.SeedLimit,
+		CatalogDefaultLimit: conf.Agent.CatalogDefaultLimit,
 	}
 }
 
@@ -36,7 +49,7 @@ type graphjinAgentRunner interface {
 	Run(context.Context, gjagent.Request) (gjagent.Response, error)
 }
 
-var newGraphJinAgentRunner = func(s *graphjinService, conf gjagent.Config) (graphjinAgentRunner, error) {
+var newGraphJinAgentRunner = func(s *graphjinService, conf gjagent.Config, opts ...gjagent.Option) (graphjinAgentRunner, error) {
 	if s == nil {
 		return nil, gjagent.ErrMissingGraphJin
 	}
@@ -44,12 +57,15 @@ var newGraphJinAgentRunner = func(s *graphjinService, conf gjagent.Config) (grap
 	if err != nil {
 		return nil, err
 	}
-	return gjagent.New(s.gj, conf, gjagent.WithRuntime(rt))
+	agentOpts := []gjagent.Option{gjagent.WithRuntime(rt)}
+	agentOpts = append(agentOpts, opts...)
+	return gjagent.New(s.gj, conf, agentOpts...)
 }
 
 type serviceAgentRuntime struct {
 	service *graphjinService
 	base    gjagent.GraphRuntime
+	conf    gjagent.Config
 }
 
 type agentCatalogResult struct {
@@ -73,7 +89,7 @@ func newServiceAgentRuntime(s *graphjinService, conf gjagent.Config) (gjagent.Gr
 	if err != nil {
 		return nil, err
 	}
-	return &serviceAgentRuntime{service: s, base: base}, nil
+	return &serviceAgentRuntime{service: s, base: base, conf: conf}, nil
 }
 
 func (r *serviceAgentRuntime) GraphQLHelp(ctx context.Context, args map[string]any) (any, error) {
@@ -84,7 +100,7 @@ func (r *serviceAgentRuntime) GraphQLHelp(ctx context.Context, args map[string]a
 	if topic == "" {
 		topic = "discovery"
 	}
-	snap, err := r.service.catalogSnapshot()
+	snap, err := r.service.catalogSnapshotForContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +127,7 @@ func (r *serviceAgentRuntime) GraphQLHelp(ctx context.Context, args map[string]a
 		Count:       len(result.Cards),
 		Limit:       q.Limit,
 		Truncated:   len(result.Cards) >= q.Limit,
-		Cards:       result.Cards,
+		Cards:       gjagent.SummarizeCatalogCards(result.Cards),
 		Matches:     result.Matches,
 		Next:        agentCatalogNext("query_catalog", "Inspect a returned help row by id, or continue with filtered catalog discovery."),
 	}, nil
@@ -121,27 +137,12 @@ func (r *serviceAgentRuntime) QueryCatalog(ctx context.Context, args map[string]
 	if err := r.requireCatalogAccess(ctx); err != nil {
 		return nil, err
 	}
-	snap, err := r.service.catalogSnapshot()
+	snap, err := r.service.catalogSnapshotForContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if id := stringArg(args, "id"); id != "" {
-		card, ok := snap.Card(id)
-		if !ok {
-			return agentCatalogResult{
-				GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-				Revision:    snap.Revision,
-			}, nil
-		}
-		return agentCatalogResult{
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Revision:    snap.Revision,
-			Count:       1,
-			Cards:       []core.CatalogCard{card},
-			Details:     snap.CardDetails(id),
-			Edges:       snap.CardEdges(id),
-			Next:        agentCatalogNext("query_catalog", "Use this detail row's evidence, examples, safety notes, and edges before selecting an action."),
-		}, nil
+	if ids := agentDetailIDs(args); len(ids) != 0 {
+		return agentCatalogDetailResult(snap, ids), nil
 	}
 	where, err := catalogObjectArg(args, "where")
 	if err != nil {
@@ -164,6 +165,9 @@ func (r *serviceAgentRuntime) QueryCatalog(ctx context.Context, args map[string]
 		Limit:    catalogIntArg(args, "limit"),
 	}
 	if q.Limit <= 0 {
+		q.Limit = r.conf.CatalogDefaultLimit
+	}
+	if q.Limit <= 0 {
 		q.Limit = 20
 	}
 	result, err := snap.QueryResult(q)
@@ -176,10 +180,69 @@ func (r *serviceAgentRuntime) QueryCatalog(ctx context.Context, args map[string]
 		Count:       len(result.Cards),
 		Limit:       q.Limit,
 		Truncated:   len(result.Cards) >= q.Limit,
-		Cards:       result.Cards,
+		Cards:       gjagent.SummarizeCatalogCards(result.Cards),
 		Matches:     result.Matches,
 		Next:        agentCatalogNextForQuery(q, result.Cards),
 	}, nil
+}
+
+// agentDetailIDs merges the single `id` and batched `ids` detail arguments.
+func agentDetailIDs(args map[string]any) []string {
+	var out []string
+	appendID := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return
+		}
+		for _, existing := range out {
+			if existing == id {
+				return
+			}
+		}
+		out = append(out, id)
+	}
+	appendID(stringArg(args, "id"))
+	switch v := args["ids"].(type) {
+	case []string:
+		for _, id := range v {
+			appendID(id)
+		}
+	case []any:
+		for _, item := range v {
+			if id, ok := item.(string); ok {
+				appendID(id)
+			}
+		}
+	}
+	return out
+}
+
+// agentCatalogDetailResult resolves one or more catalog ids to full detail rows
+// (caller-scoped snapshot) in a single round-trip.
+func agentCatalogDetailResult(snap *core.CatalogSnapshot, ids []string) agentCatalogResult {
+	if len(ids) > gjagent.MaxCatalogBatchIDs {
+		ids = ids[:gjagent.MaxCatalogBatchIDs]
+	}
+	out := agentCatalogResult{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Revision:    snap.Revision,
+	}
+	for _, id := range ids {
+		card, ok := snap.Card(id)
+		if !ok {
+			continue
+		}
+		out.Cards = append(out.Cards, card)
+		out.Details = append(out.Details, snap.CardDetails(id)...)
+		out.Edges = append(out.Edges, snap.CardEdges(id)...)
+	}
+	out.Count = len(out.Cards)
+	if out.Count == 1 {
+		out.Next = agentCatalogNext("query_catalog", "Use this detail row's evidence, examples, safety notes, and edges before selecting an action.")
+	} else if out.Count > 1 {
+		out.Next = agentCatalogNext("query_catalog", "Use these detail rows' evidence, examples, safety notes, and edges before selecting an action.")
+	}
+	return out
 }
 
 func (r *serviceAgentRuntime) ValidateWhereClause(ctx context.Context, args map[string]any) (any, error) {
@@ -193,11 +256,67 @@ func (r *serviceAgentRuntime) ValidateWhereClause(ctx context.Context, args map[
 // core/source_access.go). execute_graphql is intentionally available to all callers; there
 // is no extra role gate at this layer.
 func (r *serviceAgentRuntime) ExecuteSavedQuery(ctx context.Context, args map[string]any) (any, error) {
-	return r.base.ExecuteSavedQuery(ctx, args)
+	if r == nil || r.service == nil {
+		return r.base.ExecuteSavedQuery(ctx, args)
+	}
+	name := stringArg(args, "name")
+	if name == "" {
+		return nil, fmt.Errorf("query name is required")
+	}
+	varsJSON, err := agentVariablesJSON(args["variables"])
+	if err != nil {
+		return nil, err
+	}
+	var rc core.RequestConfig
+	if namespace := stringArg(args, "namespace"); namespace != "" {
+		rc.SetNamespace(namespace)
+	}
+	res, err := r.service.executeSavedQueryByName(ctx, name, varsJSON, &rc)
+	return executeAgentResultFromCore(res, err), nil
 }
 
 func (r *serviceAgentRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
 	return r.base.ExecuteGraphQL(ctx, args)
+}
+
+func agentVariablesJSON(value any) (json.RawMessage, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if raw, ok := value.(json.RawMessage); ok {
+		return raw, nil
+	}
+	if text, ok := value.(string); ok {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil, nil
+		}
+		if !json.Valid([]byte(text)) {
+			return nil, fmt.Errorf("variables must be valid JSON")
+		}
+		return json.RawMessage(text), nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid variables: %w", err)
+	}
+	return data, nil
+}
+
+func executeAgentResultFromCore(res *core.Result, err error) ExecuteResult {
+	result := ExecuteResult{}
+	if err != nil {
+		result.Errors = []ErrorInfo{{Message: err.Error()}}
+		return result
+	}
+	if res == nil {
+		return result
+	}
+	result.Data = res.Data
+	for _, e := range res.Errors {
+		result.Errors = append(result.Errors, ErrorInfo{Message: e.Message, Extensions: e.Extensions})
+	}
+	return result
 }
 
 func (r *serviceAgentRuntime) requireCatalogAccess(ctx context.Context) error {

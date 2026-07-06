@@ -16,10 +16,6 @@ import (
 )
 
 const (
-	ModeSafe          = "safe"
-	ModeDiscoveryOnly = "discovery_only"
-	ModeRawAllowed    = "raw_allowed"
-
 	StatusAnswered           = "answered"
 	StatusNeedsClarification = "needs_clarification"
 	StatusBlocked            = "blocked"
@@ -30,41 +26,94 @@ const (
 	defaultMaxSteps       = 8
 	minTimeoutSeconds     = 50
 	defaultTimeoutSeconds = minTimeoutSeconds
+	defaultSeedLimit      = 10
+	defaultCatalogLimit   = 20
+	SamplingOff           = "off"
+	SamplingAuto          = "auto"
+	SamplingRequire       = "require"
+
+	// maxInstructionBytes bounds the user instruction (token/cost guard).
+	maxInstructionBytes = 16 * 1024
+	// MaxCatalogBatchIDs caps one batched query_catalog({ids: [...]}) call.
+	MaxCatalogBatchIDs = 20
+
+	// History bounds: most-recent turns win, contents are truncated before
+	// whole turns are dropped.
+	maxHistoryTurns       = 12
+	maxHistoryTurnBytes   = 4 * 1024
+	maxHistoryBytes       = 48 * 1024
+	maxHistoryCatalogRefs = 16
 )
 
 var (
 	ErrMissingInstruction = errors.New("agent instruction is required")
-	ErrInvalidMode        = errors.New("agent mode must be safe, discovery_only, or raw_allowed")
+	ErrInstructionTooLong = errors.New("agent instruction exceeds the maximum length")
 	ErrMissingAPIKey      = errors.New("agent provider API key is not configured")
 	ErrMissingGraphJin    = errors.New("graphjin core instance is required")
 )
 
 type Config struct {
-	Enabled         bool   `mapstructure:"enabled" jsonschema:"title=Enable GraphJin Agent,default=false"`
-	Provider        string `mapstructure:"provider" jsonschema:"title=Agent Provider,default=openai"`
-	Model           string `mapstructure:"model" jsonschema:"title=Agent Model"`
-	APIKeyEnv       string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
-	BaseURL         string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
-	MaxSteps        int    `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
-	TimeoutSeconds  int    `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
-	AllowRawGraphQL bool   `mapstructure:"allow_raw_graphql" jsonschema:"title=Allow Agent Raw GraphQL,default=false"`
-	AllowMutations  bool   `mapstructure:"allow_mutations" jsonschema:"title=Allow Agent Mutations,default=false"`
-	ReturnTrace     bool   `mapstructure:"return_trace" jsonschema:"title=Return Agent Trace,default=false"`
+	Enabled        bool   `mapstructure:"enabled" jsonschema:"title=Enable GraphJin Agent,default=false"`
+	Provider       string `mapstructure:"provider" jsonschema:"title=Agent Provider,default=openai"`
+	Model          string `mapstructure:"model" jsonschema:"title=Agent Model"`
+	APIKeyEnv      string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
+	BaseURL        string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
+	Sampling       string `mapstructure:"sampling" jsonschema:"title=MCP Client Sampling,enum=off,enum=auto,enum=require,default=off"`
+	MaxSteps       int    `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
+	TimeoutSeconds int    `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
+	ReadOnly       bool   `mapstructure:"read_only" jsonschema:"title=Force Agent Read-Only,default=false"`
+	ReturnTrace    bool   `mapstructure:"return_trace" jsonschema:"title=Return Agent Trace,default=false"`
+	// SeedLimit caps the initial query_catalog(search: instruction) seed rows.
+	SeedLimit int `mapstructure:"seed_limit" jsonschema:"title=Agent Seed Catalog Limit,default=10"`
+	// CatalogDefaultLimit is the default row limit for model-issued catalog queries.
+	CatalogDefaultLimit int `mapstructure:"catalog_default_limit" jsonschema:"title=Agent Catalog Default Limit,default=20"`
 }
 
 type Request struct {
 	Instruction string         `json:"instruction"`
 	Context     map[string]any `json:"context,omitempty"`
 	Namespace   string         `json:"namespace,omitempty"`
-	Mode        string         `json:"mode,omitempty"`
 	MaxSteps    int            `json:"max_steps,omitempty"`
 	ReturnTrace *bool          `json:"return_trace,omitempty"`
+
+	// History carries prior conversation turns for follow-up resolution. It is
+	// untrusted model context: it reaches the model only as an ax context field
+	// (available to runtime code as inputs.history) and never satisfies a
+	// protocol guard — every run must re-establish its own tool evidence.
+	History []Turn `json:"history,omitempty"`
 
 	// Capabilities is the caller's role/visibility profile. It is intentionally
 	// json:"-" so it can never be supplied or spoofed from the REST body or MCP
 	// arguments; the service populates it after unmarshalling the wire request.
 	// It is read-only policy input and is not forwarded into the LLM prompt.
 	Capabilities *CapabilityProfile `json:"-"`
+
+	// Observer receives one ActionEvent per executed tool action (progress
+	// streaming). Server-populated only; never part of the wire request.
+	Observer func(ActionEvent) `json:"-"`
+}
+
+// Turn is one prior conversation exchange, most recent last.
+type Turn struct {
+	Role    string `json:"role"`             // "user" or "assistant"
+	Content string `json:"content"`          // user instruction or assistant answer
+	Status  string `json:"status,omitempty"` // assistant turns: answered/blocked/needs_clarification
+	// CatalogIDs are detail ids the prior run inspected — advisory warm-start
+	// hints for this run's own discovery, never evidence.
+	CatalogIDs []string `json:"catalog_ids,omitempty"`
+}
+
+// ActionEvent describes one completed (or rejected) tool call inside a run.
+// Args and Summary reuse the protocol redaction, so events are safe to stream.
+type ActionEvent struct {
+	Index     int            `json:"index"` // 1-based action counter
+	Source    string         `json:"source"`
+	Tool      string         `json:"tool"`
+	Args      map[string]any `json:"args,omitempty"`
+	Status    string         `json:"status"`
+	Summary   map[string]any `json:"summary,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	ElapsedMS int64          `json:"elapsed_ms"`
 }
 
 // CapabilityProfile is an opaque, caller-derived snapshot of what this request is
@@ -89,16 +138,42 @@ type CapabilityProfile struct {
 }
 
 type Response struct {
-	Status   string      `json:"status"`
-	Answer   string      `json:"answer,omitempty"`
-	Data     any         `json:"data,omitempty"`
-	Evidence any         `json:"evidence,omitempty"`
-	Actions  any         `json:"actions,omitempty"`
-	Next     any         `json:"next,omitempty"`
-	Errors   []ErrorInfo `json:"errors,omitempty"`
-	Usage    any         `json:"usage,omitempty"`
-	Trace    any         `json:"trace,omitempty"`
-	TraceID  string      `json:"trace_id,omitempty"`
+	Status   string           `json:"status"`
+	Answer   string           `json:"answer,omitempty"`
+	Skill    string           `json:"skill,omitempty"`
+	Data     any              `json:"data,omitempty"`
+	Evidence any              `json:"evidence,omitempty"`
+	Actions  any              `json:"actions,omitempty"`
+	Next     any              `json:"next,omitempty"`
+	Refusal  *Refusal         `json:"refusal,omitempty"`
+	Notices  []ResponseNotice `json:"notices,omitempty"`
+	Errors   []ErrorInfo      `json:"errors,omitempty"`
+	Usage    any              `json:"usage,omitempty"`
+	Trace    any              `json:"trace,omitempty"`
+	TraceID  string           `json:"trace_id,omitempty"`
+}
+
+type Refusal struct {
+	Code              string        `json:"code"`
+	BlockedAction     string        `json:"blocked_action,omitempty"`
+	Because           []string      `json:"because,omitempty"`
+	Unblock           []UnblockStep `json:"unblock,omitempty"`
+	LawfulAlternative string        `json:"lawful_alternative,omitempty"`
+	PolicyFinal       bool          `json:"policy_final,omitempty"`
+	Retryable         bool          `json:"retryable,omitempty"`
+}
+
+type UnblockStep struct {
+	Tool   string         `json:"tool"`
+	Args   map[string]any `json:"args,omitempty"`
+	Reason string         `json:"reason,omitempty"`
+}
+
+type ResponseNotice struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+	Count   int    `json:"count,omitempty"`
+	Since   string `json:"since,omitempty"`
 }
 
 type ErrorInfo struct {
@@ -110,6 +185,7 @@ type Program interface {
 	Forward(context.Context, ax.AIClient, map[string]ax.Value, map[string]ax.Value) (ax.Value, error)
 	GetActionLog() ax.Value
 	GetUsage() ax.Value
+	GetChatLog() ax.Value
 	ExportTrace() ax.Value
 }
 
@@ -127,12 +203,11 @@ type GraphRuntime interface {
 }
 
 type Agent struct {
-	config       Config
-	runtime      GraphRuntime
-	newClient    ClientFactory
-	newProgram   ProgramFactory
-	now          func() time.Time
-	agentMessage string
+	config     Config
+	runtime    GraphRuntime
+	newClient  ClientFactory
+	newProgram ProgramFactory
+	now        func() time.Time
 }
 
 func New(gj *core.GraphJin, config Config, options ...Option) (*Agent, error) {
@@ -151,12 +226,11 @@ func NewCoreRuntime(gj *core.GraphJin, config Config) (GraphRuntime, error) {
 
 func newAgent(config Config, rt GraphRuntime, options ...Option) *Agent {
 	a := &Agent{
-		config:       config.withDefaults(),
-		runtime:      rt,
-		newClient:    DefaultClientFactory,
-		newProgram:   func(signature string, options map[string]ax.Value) Program { return ax.NewAgent(signature, options) },
-		now:          time.Now,
-		agentMessage: defaultAgentMessage,
+		config:     config.withDefaults(),
+		runtime:    rt,
+		newClient:  DefaultClientFactory,
+		newProgram: func(signature string, options map[string]ax.Value) Program { return ax.NewAgent(signature, options) },
+		now:        time.Now,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -206,11 +280,14 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if strings.TrimSpace(req.Instruction) == "" {
 		return Response{}, ErrMissingInstruction
 	}
-	mode, err := normalizeMode(req.Mode)
-	if err != nil {
-		return Response{}, err
+	if len(req.Instruction) > maxInstructionBytes {
+		return Response{}, ErrInstructionTooLong
 	}
 	cfg := a.config.withDefaults()
+	// read_only is the single operator kill-switch (D3) that forces the agent to
+	// read/discovery-only regardless of the caller's role. It replaces the removed
+	// per-request safe/discovery_only/raw_allowed modes.
+	readOnly := cfg.ReadOnly
 	maxSteps := effectiveMaxSteps(cfg.MaxSteps, req.MaxSteps)
 	returnTrace := cfg.ReturnTrace
 	if req.ReturnTrace != nil {
@@ -248,7 +325,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		}
 	}()
 
-	protocol = newProtocolRuntime(a.runtime, strings.TrimSpace(req.Instruction), req.Namespace)
+	protocol = newProtocolRuntime(a.runtime, strings.TrimSpace(req.Instruction), req.Namespace, cfg.SeedLimit, req.Capabilities, req.Observer)
 	seed, err := protocol.Seed(ctx)
 	if err != nil {
 		resp := Response{
@@ -266,13 +343,13 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		return protocol.state.finalize(resp), nil
 	}
 
-	selected := selectSkill(strings.TrimSpace(req.Instruction), seed, mode, req.Capabilities)
+	selected := selectSkill(strings.TrimSpace(req.Instruction), seed, readOnly, req.Capabilities)
 	protocol.state.setSkill(selected)
 
 	runReq := req
 	runReq.Context = cloneContext(req.Context)
 	runReq.Context[protocolContextKey] = seed
-	tools := a.tools(ctx, runReq, mode, cfg, protocol, selected)
+	tools := a.tools(ctx, runReq, protocol, selected)
 	runtime := axgoja.NewRuntime()
 	for _, tool := range tools {
 		t := tool
@@ -282,13 +359,19 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	}
 
 	options := map[string]ax.Value{
-		"instruction":       composeInstruction(a.agentMessage, selected),
 		"functions":         toolArray(tools),
 		"functionDiscovery": false,
-		"contextFields":     []ax.Value{},
+		// history is a context field: the distiller/executor see only a size
+		// meta-note while the full value is available to runtime code as
+		// inputs.history — prior turns never bloat the staged prompts.
+		"contextFields": []ax.Value{"history"},
 		"runtime": map[string]ax.Value{
-			"language":          "JavaScript",
-			"usageInstructions": runtimeUsageInstructions,
+			"language": "JavaScript",
+			// runtime.usageInstructions is the ax channel that actually reaches the model
+			// (the distiller + executor stages). options["instruction"] is NOT rendered by
+			// ax.NewAgent, so the base guidance AND the progressive skill fragment must be
+			// carried here to influence behavior.
+			"usageInstructions": composeInstruction(runtimeUsageInstructions, selected),
 		},
 		"max_actor_steps": maxSteps,
 	}
@@ -297,7 +380,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		"instruction": strings.TrimSpace(req.Instruction),
 		"context":     runReq.Context,
 		"namespace":   req.Namespace,
-		"mode":        mode,
+		"history":     historyValue(req.History),
 	}, map[string]ax.Value{
 		"runtime":         runtime,
 		"max_actor_steps": maxSteps,
@@ -345,6 +428,20 @@ func (c Config) withDefaults() Config {
 	if c.MaxSteps <= 0 {
 		c.MaxSteps = defaultMaxSteps
 	}
+	if c.SeedLimit <= 0 {
+		c.SeedLimit = defaultSeedLimit
+	}
+	if c.CatalogDefaultLimit <= 0 {
+		c.CatalogDefaultLimit = defaultCatalogLimit
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Sampling)) {
+	case SamplingAuto:
+		c.Sampling = SamplingAuto
+	case SamplingRequire:
+		c.Sampling = SamplingRequire
+	default:
+		c.Sampling = SamplingOff
+	}
 	c.TimeoutSeconds = EffectiveTimeoutSeconds(c.TimeoutSeconds)
 	return c
 }
@@ -366,20 +463,7 @@ func effectiveMaxSteps(configMax, requestMax int) int {
 	return requestMax
 }
 
-func normalizeMode(mode string) (string, error) {
-	switch strings.TrimSpace(mode) {
-	case "", ModeSafe:
-		return ModeSafe, nil
-	case ModeDiscoveryOnly:
-		return ModeDiscoveryOnly, nil
-	case ModeRawAllowed:
-		return ModeRawAllowed, nil
-	default:
-		return "", ErrInvalidMode
-	}
-}
-
-func (a *Agent) tools(ctx context.Context, req Request, mode string, cfg Config, rt GraphRuntime, selected skill) []ax.Tool {
+func (a *Agent) tools(ctx context.Context, req Request, rt GraphRuntime, selected skill) []ax.Tool {
 	tools := []ax.Tool{
 		a.tool("graphql_help", "Get GraphJin discovery, query, config, and safety guidance from the catalog-backed help surface.",
 			[]ax.Field{field("for", "string", "Help topic such as discovery, query, mutation, config, security, workflows, or runtime.", false)},
@@ -389,6 +473,7 @@ func (a *Agent) tools(ctx context.Context, req Request, mode string, cfg Config,
 		a.tool("query_catalog", "Search or fetch GraphJin catalog rows for tables, relationships, saved queries, workflows, syntax, security, and runtime evidence.",
 			[]ax.Field{
 				field("id", "string", "Optional catalog item id for a detailed row.", true),
+				field("ids", "json", "Optional list of catalog item ids for batched detail rows in one call.", true),
 				field("search", "string", "Optional full-text search based on the user's goal.", true),
 				field("where", "json", "Optional GraphJin-style filter object.", true),
 				field("order_by", "json", "Optional sort object.", true),
@@ -413,28 +498,24 @@ func (a *Agent) tools(ctx context.Context, req Request, mode string, cfg Config,
 				return a.call(ctx, req.Namespace, args, rt.ValidateWhereClause)
 			}),
 	}
-	if mode != ModeDiscoveryOnly {
-		tools = append(tools, a.tool("execute_saved_query", "Execute a pre-approved saved query by name. This is rejected unless this run already called query_catalog({id:\"saved_query:<same name>\"}); the initial seed and saved-query lists do not satisfy this detail requirement. Prefer this over raw GraphQL. The result shape is { data, errors }; read rows from result.data.",
-			[]ax.Field{
-				field("name", "string", "Saved query name.", false),
-				field("variables", "json", "Optional variables object.", true),
-				field("namespace", "string", "Optional namespace override.", true),
-			},
-			func(args map[string]ax.Value) (ax.Value, error) {
-				return a.call(ctx, req.Namespace, args, rt.ExecuteSavedQuery)
-			}))
-	}
-	if mode == ModeRawAllowed && cfg.AllowRawGraphQL {
-		tools = append(tools, a.tool("execute_graphql", "Execute raw GraphJin GraphQL only after catalog discovery and validation.",
-			[]ax.Field{
-				field("query", "string", "GraphJin GraphQL query or mutation.", false),
-				field("variables", "json", "Optional variables object.", true),
-				field("namespace", "string", "Optional namespace override.", true),
-			},
-			func(args map[string]ax.Value) (ax.Value, error) {
-				return a.call(ctx, req.Namespace, args, rt.ExecuteGraphQL)
-			}))
-	}
+	tools = append(tools, a.tool("execute_saved_query", "Execute a pre-approved saved query by name. This is rejected unless this run already called query_catalog({id:\"saved_query:<same name>\"}); the initial seed and saved-query lists do not satisfy this detail requirement. Prefer this over raw GraphQL. The result shape is { data, errors }; read rows from result.data.",
+		[]ax.Field{
+			field("name", "string", "Saved query name.", false),
+			field("variables", "json", "Optional variables object.", true),
+			field("namespace", "string", "Optional namespace override.", true),
+		},
+		func(args map[string]ax.Value) (ax.Value, error) {
+			return a.call(ctx, req.Namespace, args, rt.ExecuteSavedQuery)
+		}))
+	tools = append(tools, a.tool("execute_graphql", "Execute raw GraphJin GraphQL after catalog discovery and validation. Every query runs under the caller's role and row-level security; mutations are rejected when the agent is in read-only mode.",
+		[]ax.Field{
+			field("query", "string", "GraphJin GraphQL query or mutation.", false),
+			field("variables", "json", "Optional variables object.", true),
+			field("namespace", "string", "Optional namespace override.", true),
+		},
+		func(args map[string]ax.Value) (ax.Value, error) {
+			return a.call(ctx, req.Namespace, args, rt.ExecuteGraphQL)
+		}))
 	return filterToolsBySkill(tools, selected)
 }
 
@@ -453,8 +534,10 @@ func filterToolsBySkill(tools []ax.Tool, selected skill) []ax.Tool {
 	return out
 }
 
-// composeInstruction appends the selected skill's focused fragment to the base agent
-// message. Fragments are fixed-size and schema-independent (no app-root enumeration).
+// composeInstruction layers the selected skill's focused fragment onto a base instruction.
+// It is applied to runtime.usageInstructions — the ax channel that actually reaches the
+// model — so the progressive skill guidance influences behavior (options["instruction"] is
+// not rendered by ax.NewAgent). Fragments are fixed-size and schema-independent.
 func composeInstruction(base string, selected skill) string {
 	if strings.TrimSpace(selected.instruction) == "" {
 		return base
@@ -528,6 +611,135 @@ func cloneContext(ctx map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+// normalizeHistory sanitizes and bounds prior conversation turns: only
+// user/assistant roles, per-turn content truncation, most-recent turns kept,
+// and a total-size backstop that drops oldest turns first.
+func normalizeHistory(turns []Turn) []Turn {
+	out := make([]Turn, 0, len(turns))
+	for _, turn := range turns {
+		role := strings.ToLower(strings.TrimSpace(turn.Role))
+		if role != "user" && role != "assistant" {
+			continue
+		}
+		content := truncateString(turn.Content, maxHistoryTurnBytes)
+		if content == "" {
+			continue
+		}
+		ids := make([]string, 0, len(turn.CatalogIDs))
+		for _, id := range turn.CatalogIDs {
+			if id = strings.TrimSpace(id); id != "" {
+				ids = append(ids, id)
+			}
+			if len(ids) == maxHistoryCatalogRefs {
+				break
+			}
+		}
+		if len(ids) == 0 {
+			ids = nil
+		}
+		out = append(out, Turn{
+			Role:       role,
+			Content:    content,
+			Status:     strings.TrimSpace(turn.Status),
+			CatalogIDs: ids,
+		})
+	}
+	if len(out) > maxHistoryTurns {
+		out = out[len(out)-maxHistoryTurns:]
+	}
+	for len(out) > 1 {
+		data, err := json.Marshal(out)
+		if err != nil || len(data) <= maxHistoryBytes {
+			break
+		}
+		out = out[1:]
+	}
+	return out
+}
+
+// historyValue is the Forward value for the history context field. An empty
+// slice (never nil) keeps the runtime global present and iterable.
+func historyValue(turns []Turn) ax.Value {
+	normalized := normalizeHistory(turns)
+	value, ok := normalizeValue(normalized).([]any)
+	if !ok || value == nil {
+		return []any{}
+	}
+	return value
+}
+
+// usageSummary flattens ax usage into a stable map: chat_log_entries plus
+// best-effort token totals summed from the merged stage chat logs.
+func usageSummary(program Program) any {
+	summary := map[string]any{}
+	if base, ok := normalizeValue(program.GetUsage()).(map[string]any); ok {
+		for key, value := range base {
+			summary[key] = value
+		}
+	}
+	var llmCalls int
+	var prompt, completion, total float64
+	entries, _ := normalizeValue(program.GetChatLog()).([]any)
+	for _, entry := range entries {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		item, ok := m["item1"].(map[string]any)
+		if !ok {
+			continue
+		}
+		usage, ok := item["usage"].(map[string]any)
+		if !ok {
+			if modelUsage, ok := item["model_usage"].(map[string]any); ok {
+				usage, _ = modelUsage["tokens"].(map[string]any)
+			}
+		}
+		if usage == nil {
+			continue
+		}
+		llmCalls++
+		prompt += floatFromAny(usage["prompt_tokens"])
+		completion += floatFromAny(usage["completion_tokens"])
+		total += floatFromAny(usage["total_tokens"])
+	}
+	if llmCalls != 0 {
+		summary["llm_calls"] = llmCalls
+		if total == 0 {
+			total = prompt + completion
+		}
+		if prompt != 0 {
+			summary["prompt_tokens"] = int64(prompt)
+		}
+		if completion != 0 {
+			summary["completion_tokens"] = int64(completion)
+		}
+		if total != 0 {
+			summary["total_tokens"] = int64(total)
+		}
+	}
+	if len(summary) == 0 {
+		return nil
+	}
+	return summary
+}
+
+func floatFromAny(value any) float64 {
+	switch v := value.(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case json.Number:
+		f, _ := v.Float64()
+		return f
+	default:
+		return 0
+	}
 }
 
 func responseFromValue(value ax.Value, traceID string) Response {
@@ -628,7 +840,7 @@ func attachProgramMetadata(resp Response, program Program, returnTrace bool) Res
 		resp.Trace = normalizeValue(program.ExportTrace())
 	}
 	if resp.Usage == nil {
-		resp.Usage = normalizeValue(program.GetUsage())
+		resp.Usage = usageSummary(program)
 	}
 	return resp
 }
@@ -843,7 +1055,7 @@ func (r *coreRuntime) GraphQLHelp(ctx context.Context, args map[string]any) (any
 		Count:       len(result.Cards),
 		Limit:       q.Limit,
 		Truncated:   len(result.Cards) >= q.Limit,
-		Cards:       result.Cards,
+		Cards:       SummarizeCatalogCards(result.Cards),
 		Matches:     result.Matches,
 		Next:        catalogNext("query_catalog", "Inspect a returned help row by id, or continue with filtered catalog discovery."),
 	}, nil
@@ -854,23 +1066,14 @@ func (r *coreRuntime) QueryCatalog(ctx context.Context, args map[string]any) (an
 	if err != nil {
 		return nil, err
 	}
-	if id := stringArg(args, "id"); id != "" {
-		card, ok := snap.Card(id)
-		if !ok {
-			return catalogResult{
-				GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-				Revision:    snap.Revision,
-			}, nil
+	if ids := stringSliceArg(args, "ids"); len(ids) != 0 {
+		if id := stringArg(args, "id"); id != "" {
+			ids = append(ids, id)
 		}
-		return catalogResult{
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Revision:    snap.Revision,
-			Count:       1,
-			Cards:       []core.CatalogCard{card},
-			Details:     snap.CardDetails(id),
-			Edges:       snap.CardEdges(id),
-			Next:        catalogNext("query_catalog", "Use this detail row's evidence, examples, safety notes, and edges before selecting an action."),
-		}, nil
+		return catalogDetailResult(snap, ids), nil
+	}
+	if id := stringArg(args, "id"); id != "" {
+		return catalogDetailResult(snap, []string{id}), nil
 	}
 	q := core.CatalogQuery{
 		Search:   stringArg(args, "search"),
@@ -885,7 +1088,7 @@ func (r *coreRuntime) QueryCatalog(ctx context.Context, args map[string]any) (an
 		Limit:    intArg(args, "limit"),
 	}
 	if q.Limit <= 0 {
-		q.Limit = 20
+		q.Limit = r.config.CatalogDefaultLimit
 	}
 	result, err := snap.QueryResult(q)
 	if err != nil {
@@ -897,10 +1100,66 @@ func (r *coreRuntime) QueryCatalog(ctx context.Context, args map[string]any) (an
 		Count:       len(result.Cards),
 		Limit:       q.Limit,
 		Truncated:   len(result.Cards) >= q.Limit,
-		Cards:       result.Cards,
+		Cards:       SummarizeCatalogCards(result.Cards),
 		Matches:     result.Matches,
 		Next:        catalogNextForQuery(q, result.Cards),
 	}, nil
+}
+
+// catalogDetailResult resolves one or more catalog ids to full detail rows in a
+// single round-trip. Detail rows keep every field — only search results are
+// summarized.
+func catalogDetailResult(snap *core.CatalogSnapshot, ids []string) catalogResult {
+	if len(ids) > MaxCatalogBatchIDs {
+		ids = ids[:MaxCatalogBatchIDs]
+	}
+	out := catalogResult{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Revision:    snap.Revision,
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		card, ok := snap.Card(id)
+		if !ok {
+			continue
+		}
+		out.Cards = append(out.Cards, card)
+		out.Details = append(out.Details, snap.CardDetails(id)...)
+		out.Edges = append(out.Edges, snap.CardEdges(id)...)
+	}
+	out.Count = len(out.Cards)
+	if out.Count == 1 {
+		out.Next = catalogNext("query_catalog", "Use this detail row's evidence, examples, safety notes, and edges before selecting an action.")
+	} else if out.Count > 1 {
+		out.Next = catalogNext("query_catalog", "Use these detail rows' evidence, examples, safety notes, and edges before selecting an action.")
+	}
+	return out
+}
+
+// SummarizeCatalogCards strips heavy detail blobs from search-mode results so
+// broad discovery stays cheap; id/ids detail lookups keep full cards. Fields
+// that drive routing and follow-up (id, kind, names, source_kind, risk,
+// suggested_next, detail_ref) are preserved.
+func SummarizeCatalogCards(cards []core.CatalogCard) []core.CatalogCard {
+	out := make([]core.CatalogCard, len(cards))
+	for i, card := range cards {
+		card.OwnerSourcesJSON = ""
+		card.EvidenceJSON = ""
+		card.ExamplesJSON = ""
+		card.QueryJSON = ""
+		card.InputSchemaJSON = ""
+		card.OutputSchemaJSON = ""
+		card.SafetyJSON = ""
+		card.GraphQLQuery = ""
+		card.GraphQLMutation = ""
+		out[i] = card
+	}
+	return out
 }
 
 func catalogNext(tool, reason string) map[string]any {
@@ -1053,6 +1312,15 @@ func (r *coreRuntime) ExecuteSavedQuery(ctx context.Context, args map[string]any
 	if name == "" {
 		return nil, fmt.Errorf("query name is required")
 	}
+	// read_only also blocks saved-query mutations (D3). Saved queries are resolved
+	// by name in core, so check the operation type before executing.
+	if r.config.ReadOnly {
+		if details, derr := r.gj.GetSavedQuery(name); derr == nil && details != nil {
+			if h, oerr := core.Operation(details.Query); oerr == nil && h.Type == core.OpMutation {
+				return nil, fmt.Errorf("agent is in read-only mode: saved query %q is a mutation", name)
+			}
+		}
+	}
 	varsJSON, err := variablesJSON(args["variables"])
 	if err != nil {
 		return nil, err
@@ -1070,11 +1338,11 @@ func (r *coreRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (
 	if query == "" {
 		return nil, fmt.Errorf("query is required")
 	}
-	if !r.config.AllowRawGraphQL {
-		return nil, fmt.Errorf("raw GraphQL is not allowed")
-	}
-	if ContainsMutationOperation(query) && !r.config.AllowMutations {
-		return nil, fmt.Errorf("mutations are not allowed")
+	// Raw GraphQL is always available to the agent; authorization is enforced by
+	// core (role + RLS) on execution. read_only is the only agent-level gate: it
+	// rejects mutations regardless of the caller's role.
+	if r.config.ReadOnly && ContainsMutationOperation(query) {
+		return nil, fmt.Errorf("agent is in read-only mode: mutations are not allowed")
 	}
 	varsJSON, err := variablesJSON(args["variables"])
 	if err != nil {
@@ -1178,6 +1446,38 @@ func mapArg(args map[string]any, name string) map[string]any {
 	}
 	value, _ := args[name].(map[string]any)
 	return value
+}
+
+// stringSliceArg reads a string-list argument, tolerating []string, []any of
+// strings, and a bare string.
+func stringSliceArg(args map[string]any, name string) []string {
+	if args == nil {
+		return nil
+	}
+	var out []string
+	switch v := args[name].(type) {
+	case []string:
+		for _, item := range v {
+			out = appendUniqueString(out, item)
+		}
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = appendUniqueString(out, s)
+			}
+		}
+	case string:
+		out = appendUniqueString(out, v)
+	default:
+		if items, ok := normalizeValue(args[name]).([]any); ok {
+			for _, item := range items {
+				if s, ok := item.(string); ok {
+					out = appendUniqueString(out, s)
+				}
+			}
+		}
+	}
+	return out
 }
 
 func stringMapArg(args map[string]any, name string) map[string]string {
@@ -1451,6 +1751,108 @@ func ContainsMutationOperation(query string) bool {
 	return false
 }
 
+// MutationRootFields returns the top-level field names of mutation operations
+// in query, using the same string/comment-safe scan as ContainsMutationOperation.
+// It is intentionally conservative: over-collecting a name only makes the
+// mutation-evidence guard demand more evidence, never less.
+func MutationRootFields(query string) []string {
+	var fields []string
+	i := 0
+	braceDepth := 0
+	parenDepth := 0
+	inMutation := false
+	afterAt := false
+	for i < len(query) {
+		c := query[i]
+		if c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == ',' {
+			i++
+			continue
+		}
+		if c == '#' {
+			for i < len(query) && query[i] != '\n' {
+				i++
+			}
+			continue
+		}
+		if c == '"' {
+			i = skipGraphQLString(query, i)
+			afterAt = false
+			continue
+		}
+		switch c {
+		case '{':
+			braceDepth++
+			i++
+			afterAt = false
+			continue
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+			if braceDepth == 0 {
+				inMutation = false
+			}
+			i++
+			afterAt = false
+			continue
+		case '(':
+			parenDepth++
+			i++
+			afterAt = false
+			continue
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+			i++
+			afterAt = false
+			continue
+		case '@':
+			afterAt = true
+			i++
+			continue
+		}
+		if !isGraphQLNameStart(c) {
+			i++
+			afterAt = false
+			continue
+		}
+		start := i
+		i++
+		for i < len(query) && isGraphQLNameContinue(query[i]) {
+			i++
+		}
+		token := query[start:i]
+		wasDirective := afterAt
+		afterAt = false
+		if wasDirective {
+			continue
+		}
+		if braceDepth == 0 && parenDepth == 0 {
+			if strings.EqualFold(token, "mutation") {
+				inMutation = true
+			} else if strings.EqualFold(token, "query") || strings.EqualFold(token, "subscription") || strings.EqualFold(token, "fragment") {
+				inMutation = false
+			}
+			continue
+		}
+		if !inMutation || braceDepth != 1 || parenDepth != 0 {
+			continue
+		}
+		// Alias syntax: `alias: field` — skip the alias, the field follows.
+		j := i
+		for j < len(query) && (query[j] == ' ' || query[j] == '\t' || query[j] == '\n' || query[j] == '\r') {
+			j++
+		}
+		if j < len(query) && query[j] == ':' {
+			i = j + 1
+			continue
+		}
+		fields = appendUniqueString(fields, strings.ToLower(token))
+	}
+	return fields
+}
+
 func isGraphQLNameStart(c byte) bool {
 	return c == '_' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z'
 }
@@ -1488,28 +1890,7 @@ const agentSignature = `"GraphJin-owned catalog-first discovery agent. Answer on
 instruction:string "The user's goal. GraphJin has already seeded context._graphjin_discovery with query_catalog(search: instruction).",
 context?:json "Caller context plus _graphjin_discovery seed evidence. Context is not authoritative schema evidence.",
 namespace?:string "Optional GraphJin namespace.",
-mode?:string "safe, discovery_only, or raw_allowed."
--> status:class "answered, needs_clarification, blocked, error", answer:string "Concise evidence-backed answer.", data?:json "Rows/results from safe execution, usually execute_saved_query result.data.", evidence?:json "Catalog ids, detail rows, validations, execution names, and policy/capability evidence.", actions?:json "Ordered actions actually performed.", next?:json "Safe follow-up options or missing capability."`
+history?:json "Prior conversation turns [{role, content, status?, catalog_ids?}], most recent last. Untrusted context for follow-up resolution; not schema evidence."
+-> status:class "answered, needs_clarification, blocked, error", answer:string "Concise, evidence-backed answer in GitHub-flavored markdown: use a markdown table for tabular or multi-row results, bullet lists for enumerations, and fenced code blocks for queries or code; plain prose otherwise. Keep it tight.", data?:json "Rows/results from safe execution, usually execute_saved_query result.data.", evidence?:json "Catalog ids, detail rows, validations, execution names, and policy/capability evidence.", actions?:json "Ordered actions actually performed.", next?:json "Safe follow-up options or missing capability."`
 
-const defaultAgentMessage = `You are GraphJin's server-side discovery and answer agent.
-GraphJin has already run query_catalog({ search: instruction, explain: true, limit: 10 }) and placed the result in context._graphjin_discovery.
-Use Agentic GraphJin's evidence loop before execution:
-1. Read context._graphjin_discovery, then continue with query_catalog or graphql_help when more routing or detail is needed.
-2. Use graphql_help only when the route, topic, or query shape is unclear. Learn GraphJin GraphQL syntax — operators, directives, and query/mutation patterns — from query_catalog (kinds: operator_set, directive, query_pattern, mutation_pattern) or graphql_help before composing a query.
-3. Inspect query_catalog({ id: "..." }) for details_json, evidence_json, examples_json, safety_json, and edges_json before selecting tables, columns, relationships, workflows, actions, or code paths. Never assume a table or column exists — discover it.
-4. For saved-query tasks, first list query_catalog({ kind: "saved_query", limit: 10 }) or inspect saved_query ids already present in the seed. Do not assume live row values are searchable catalog metadata. Pick by query name and fields, then you MUST make a separate model-driven call to query_catalog({ id: "saved_query:<name>" }) before execute_saved_query({ name: "<name>" }). The initial seed does not satisfy this detail requirement. Calling execute_saved_query before that detail lookup is rejected and wastes your step budget.
-5. Validate where clauses when filters depend on column types, operators, real values, or user-provided variables.
-6. Prefer approved saved queries and workflow/catalog evidence. Use execute_graphql only when raw_allowed exposes it; if direct GraphQL/workflow/code/security/runtime access is required but unavailable, return status "blocked" with the catalog evidence and missing capability.
-7. execute_saved_query returns { data, errors }; always read saved-query rows from result.data, not from the top-level result object.
-8. If a catalog search returns count: 0, broaden once immediately; do not repeat the same search. Observe results and errors, then return to query_catalog/graphql_help when the next step needs new facts.
-9. When a tool result includes next.args.id, call query_catalog with that id immediately unless you are blocking. If next.args.id starts with "saved_query:", do that before any execute_saved_query call.
-Call tools from JavaScript as runtime globals; do not describe a tool call instead of executing it. Examples:
-- const seed = inputs.context && inputs.context._graphjin_discovery;
-- const savedQueries = await query_catalog({ kind: "saved_query", limit: 10 });
-- const detail = await query_catalog({ id: "saved_query:daily_roast_context" });
-- const rows = await execute_saved_query({ name: "daily_roast_context" });
-- const data = rows.data;
-- await final({ status: "answered", answer: "concise answer", data, evidence: { seed, saved_query: detail.cards } });
-Return a compact typed response with status, answer, optional data, evidence, actions, and next. If the available catalog or tools are insufficient, return status "needs_clarification" or "blocked" rather than guessing.`
-
-const runtimeUsageInstructions = `JavaScript goja runtime profile. GraphJin callables are installed as runtime globals. Use query_catalog({...}), graphql_help({...}), validate_where_clause({...}), execute_saved_query({...}), and execute_graphql({...}) when present. The callable inventory may show qualified names such as tools.execute_saved_query, but executable JavaScript must call the bare global name execute_saved_query({...}). Never describe a callable instead of executing it when the request requires data. Start from inputs.context._graphjin_discovery, then inspect catalog detail rows with query_catalog({id:"..."}) before selecting nouns or actions. For saved-query discovery, call query_catalog({kind:"saved_query", limit:10}) first, choose by name and query fields, then inspect query_catalog({id:"saved_query:<name>"}) before execute_saved_query. execute_saved_query is rejected until the matching saved_query detail lookup has happened in this run; the initial seed does not count as that detail lookup. Live row values are not catalog metadata; if search returns count:0, broaden once instead of repeating the same search. If a result includes next.args.id, call query_catalog({id: next.args.id}) next. execute_saved_query returns { data, errors }; read rows from result.data. If direct GraphQL, workflow, code, security, or runtime access is required but unavailable, call final({status:"blocked", answer, evidence, next}) instead of guessing. Call final({ status: "answered", answer, data, evidence, actions, next }) only after required GraphJin callables have returned. Use askClarification(...) only when the missing information cannot be obtained from the available callables. Filesystem, network, process, module loading, and native host objects are not exposed by default.`
+const runtimeUsageInstructions = `JavaScript goja runtime profile. GraphJin callables are installed as runtime globals. Use query_catalog({...}), graphql_help({...}), validate_where_clause({...}), execute_saved_query({...}), and execute_graphql({...}). The callable inventory may show qualified names such as tools.execute_saved_query, but executable JavaScript must call the bare global name execute_saved_query({...}). Never describe a callable instead of executing it when the request requires data. Tool calls run one at a time (single-threaded; Promise.all does not parallelize), so breadth comes from one broad multi-root query, not many calls. Start from inputs.context._graphjin_discovery, then inspect catalog detail rows with query_catalog({id:"..."}) — or several at once with query_catalog({ids:["...", "..."]}) — before selecting nouns or actions. inputs.history holds prior conversation turns as [{role, content, status, catalog_ids}]; read it with code to resolve follow-ups and reuse previously discovered catalog ids as starting points for this run's own discovery (protocol guards still require this run's tool calls). Before authoring a mutation with execute_graphql, establish this run's mutation-shape evidence for each target table: inspect its table detail row, validate_where_clause it, or inspect a mutation_pattern detail; unverified mutations are rejected. For saved-query discovery, call query_catalog({kind:"saved_query", limit:10}) first, choose by name and query fields, then inspect query_catalog({id:"saved_query:<name>"}) before execute_saved_query. execute_saved_query is rejected until the matching saved_query detail lookup has happened in this run; the initial seed does not count as that detail lookup. Live row values are not catalog metadata; if search returns count:0, broaden once instead of repeating the same search. If a result includes next.args.id, call query_catalog({id: next.args.id}) next. execute_saved_query returns { data, errors }; read rows from result.data. If direct GraphQL, workflow, code, security, or runtime access is required but unavailable, call final({status:"blocked", answer, evidence, next}) instead of guessing. Call final({ status: "answered", answer, data, evidence, actions, next }) only after required GraphJin callables have returned. Use askClarification(...) only when the missing information cannot be obtained from the available callables. Filesystem, network, process, module loading, and native host objects are not exposed by default.`

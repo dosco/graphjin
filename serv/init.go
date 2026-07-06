@@ -32,7 +32,7 @@ func initLogLevel(s *graphjinService) {
 }
 
 // validateConf validates the configuration
-func validateConf(s *graphjinService) {
+func validateConf(s *graphjinService) error {
 	var anonFound bool
 
 	for _, r := range s.conf.Roles {
@@ -45,6 +45,34 @@ func validateConf(s *graphjinService) {
 		s.log.Warn("unauthenticated requests will be blocked. no role 'anon' defined")
 		s.conf.AuthFailBlock = false
 	}
+
+	// Fail closed (security, audit F2): in agentic mode the MCP/agent surface is
+	// exposed to agents and authorization rests entirely on the caller's role.
+	// auth.development=true swaps in the header-trust SimpleHandler, which lets
+	// any client set X-User-Role / X-User-ID / X-Account-ID unverified — trivial
+	// role and account spoofing. Refuse to start rather than only warn.
+	if s.conf.Auth.Development && effectiveMode(s.conf) == modeAgentic {
+		return fmt.Errorf("security: auth.development=true is not allowed in agentic mode (it trusts X-User-Role/X-User-ID headers without verification); use auth.type: jwt, or auth.type: none behind a trusted proxy or network boundary")
+	}
+
+	// prod hard-gate (security model): prod is the only pre-agentic compatibility
+	// mode and never mounts the agentic surface. The serv predicates
+	// (agenticSurfaceEnabled) already gate the catalog/MCP/agent/workflow/
+	// control-plane surfaces off in prod; here we force-disable the core-owned
+	// artifacts flag (so nothing is persisted to the database even if it was set)
+	// and warn loudly for each agentic subsystem a prod config tried to enable, so
+	// the override is visible rather than silent.
+	if effectiveMode(s.conf) == modeProd {
+		if s.conf.Core.Artifacts.Enabled {
+			s.log.Warn("prod mode: artifacts persistence is disabled (agentic-only); saved queries, fragments, and workflows are not written to the database. Use agentic mode to enable it.")
+			s.conf.Core.Artifacts.Enabled = false
+		}
+		if s.conf.Agent.Enabled {
+			s.log.Warn("prod mode: the GraphJin agent and MCP server are disabled (agentic-only). Use agentic mode to expose the agent endpoint and MCP tools.")
+		}
+	}
+
+	return nil
 }
 
 // initFS initializes the file system

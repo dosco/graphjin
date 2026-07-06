@@ -10,8 +10,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// registerFragmentTools registers the fragment discovery tools
+// registerFragmentTools is retained as an inert compatibility hook.
 func (ms *mcpServer) registerFragmentTools() {
+	return
+
 	// list_fragments - List all available fragments
 	ms.srv.AddTool(mcp.NewTool(
 		"list_fragments",
@@ -53,6 +55,7 @@ func (ms *mcpServer) registerFragmentTools() {
 
 // handleListFragments returns all available fragments
 func (ms *mcpServer) handleListFragments(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	if err := ms.requireDB(); err != nil {
 		return err, nil
 	}
@@ -60,7 +63,7 @@ func (ms *mcpServer) handleListFragments(ctx context.Context, req mcp.CallToolRe
 	args := req.GetArguments()
 	namespace, _ := args["namespace"].(string)
 
-	fragments, err := ms.service.gj.ListFragments()
+	fragments, err := ms.service.listFragmentsForContext(ctx)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to list fragments: %v", err)), nil
 	}
@@ -92,6 +95,7 @@ func (ms *mcpServer) handleListFragments(ctx context.Context, req mcp.CallToolRe
 
 // handleGetFragment returns details of a specific fragment
 func (ms *mcpServer) handleGetFragment(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	if err := ms.requireDB(); err != nil {
 		return err, nil
 	}
@@ -105,7 +109,7 @@ func (ms *mcpServer) handleGetFragment(ctx context.Context, req mcp.CallToolRequ
 	}
 
 	qualifiedName := qualifyAllowListName(namespace, name)
-	details, err := ms.service.gj.GetFragment(qualifiedName)
+	details, _, err := ms.service.getFragmentForContext(ctx, qualifiedName)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to get fragment: %v", err)), nil
 	}
@@ -133,6 +137,7 @@ func (ms *mcpServer) handleGetFragment(ctx context.Context, req mcp.CallToolRequ
 
 // handleSearchFragments searches fragments by name
 func (ms *mcpServer) handleSearchFragments(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = ms.effectiveContext(ctx)
 	if err := ms.requireDB(); err != nil {
 		return err, nil
 	}
@@ -150,7 +155,7 @@ func (ms *mcpServer) handleSearchFragments(ctx context.Context, req mcp.CallTool
 		limit = 10
 	}
 
-	fragments, err := ms.service.gj.ListFragments()
+	fragments, err := ms.service.listFragmentsForContext(ctx)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to list fragments: %v", err)), nil
 	}
@@ -198,4 +203,3 @@ func (ms *mcpServer) handleSearchFragments(ctx context.Context, req mcp.CallTool
 	}
 	return ms.toolResultJSON("search_fragments", args, result)
 }
-

@@ -18,14 +18,14 @@ Message.displayName = "Message";
 const MessageAvatar = React.forwardRef(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("mt-1 flex size-8 shrink-0 items-center justify-center rounded-md border bg-muted text-xs font-semibold text-muted-foreground", className)}
+    className={cn("mt-1 flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-xs font-semibold text-muted-foreground shadow-[0_1px_2px_rgba(28,35,48,0.05)]", className)}
     {...props}
   />
 ));
 MessageAvatar.displayName = "MessageAvatar";
 
 const MessageContent = React.forwardRef(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("grid max-w-[min(820px,85%)] gap-2", className)} {...props} />
+  <div ref={ref} className={cn("grid max-w-[min(820px,86%)] gap-2", className)} {...props} />
 ));
 MessageContent.displayName = "MessageContent";
 

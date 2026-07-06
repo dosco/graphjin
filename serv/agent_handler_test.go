@@ -3,14 +3,17 @@ package serv
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
 )
@@ -21,19 +24,27 @@ type scriptedAgentRunner struct {
 	ctx  context.Context
 	req  gjagent.Request
 	conf gjagent.Config
+	opts int
+	emit []gjagent.ActionEvent
 }
 
 func (r *scriptedAgentRunner) Run(ctx context.Context, req gjagent.Request) (gjagent.Response, error) {
 	r.ctx = ctx
 	r.req = req
+	if req.Observer != nil {
+		for _, event := range r.emit {
+			req.Observer(event)
+		}
+	}
 	return r.resp, r.err
 }
 
 func withScriptedAgentRunner(t *testing.T, runner *scriptedAgentRunner) {
 	t.Helper()
 	prev := newGraphJinAgentRunner
-	newGraphJinAgentRunner = func(_ *graphjinService, conf gjagent.Config) (graphjinAgentRunner, error) {
+	newGraphJinAgentRunner = func(_ *graphjinService, conf gjagent.Config, opts ...gjagent.Option) (graphjinAgentRunner, error) {
 		runner.conf = conf
+		runner.opts = len(opts)
 		return runner, nil
 	}
 	t.Cleanup(func() {
@@ -55,6 +66,35 @@ func newAgentHTTPTestService(conf *Config) *HttpService {
 	hs := &HttpService{}
 	hs.Store(svc)
 	return hs
+}
+
+// TestValidateConfRefusesDevAuthInAgenticMode locks in audit finding F2: agentic
+// mode must refuse to boot with auth.development=true, because the header-trust
+// SimpleHandler lets any caller spoof X-User-Role/X-User-ID and role is the only
+// authorization control in agentic mode.
+func TestValidateConfRefusesDevAuthInAgenticMode(t *testing.T) {
+	logger := zap.NewNop()
+	newSvc := func(mode string, devAuth bool) *graphjinService {
+		return &graphjinService{
+			conf: &Config{
+				Core: core.Config{Mode: mode},
+				Serv: Serv{Auth: Auth{Development: devAuth}},
+			},
+			log:  logger.Sugar(),
+			zlog: logger,
+		}
+	}
+
+	if err := validateConf(newSvc("agentic", true)); err == nil || !strings.Contains(err.Error(), "auth.development") {
+		t.Fatalf("agentic + auth.development must be refused at startup, got %v", err)
+	}
+	// Not agentic, or verified auth: allowed.
+	if err := validateConf(newSvc("agentic", false)); err != nil {
+		t.Fatalf("agentic with verified auth should boot, got %v", err)
+	}
+	if err := validateConf(newSvc("dev", true)); err != nil {
+		t.Fatalf("dev mode may use auth.development, got %v", err)
+	}
 }
 
 func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
@@ -114,14 +154,14 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 			Auth: Auth{Development: true},
 			MCP:  MCPConfig{AllowRawQueries: true, AllowMutations: true},
 			Agent: AgentConfig{
-				Enabled:         true,
-				Provider:        "anthropic",
-				Model:           "test-model",
-				APIKeyEnv:       "GRAPHJIN_READY_AGENT_KEY",
-				MaxSteps:        3,
-				TimeoutSeconds:  12,
-				AllowRawGraphQL: true,
-				ReturnTrace:     true,
+				Enabled:        true,
+				Provider:       "anthropic",
+				Model:          "test-model",
+				APIKeyEnv:      "GRAPHJIN_READY_AGENT_KEY",
+				MaxSteps:       3,
+				TimeoutSeconds: 12,
+				ReadOnly:       true,
+				ReturnTrace:    true,
 			},
 		},
 	})
@@ -141,11 +181,8 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if readyStatus.Provider != "anthropic" || readyStatus.Model != "test-model" || readyStatus.MaxSteps != 3 || readyStatus.TimeoutSeconds != 50 {
 		t.Fatalf("configured values not reflected in status: %+v", readyStatus)
 	}
-	if !readyStatus.AllowRawGraphQL || !readyStatus.AllowMutations || !readyStatus.ReturnTrace {
-		t.Fatalf("agent mode flags not reflected in status: %+v", readyStatus)
-	}
-	if !stringSliceContains(readyStatus.Modes, gjagent.ModeSafe) || !stringSliceContains(readyStatus.Modes, gjagent.ModeDiscoveryOnly) || !stringSliceContains(readyStatus.Modes, gjagent.ModeRawAllowed) {
-		t.Fatalf("expected all modes in status: %+v", readyStatus.Modes)
+	if !readyStatus.ReadOnly || !readyStatus.ReturnTrace {
+		t.Fatalf("agent flags not reflected in status: %+v", readyStatus)
 	}
 }
 
@@ -205,7 +242,7 @@ func TestAgentRESTScriptedResponseAndAuthContext(t *testing.T) {
 	if resp.Actions == nil || resp.Evidence == nil {
 		t.Fatalf("protocol metadata was not preserved: %+v", resp)
 	}
-	if runner.req.Instruction != "find customers" || runner.req.Mode != gjagent.ModeSafe {
+	if runner.req.Instruction != "find customers" {
 		t.Fatalf("unexpected agent request: %+v", runner.req)
 	}
 	if got := runner.req.Context["tier"]; got != "gold" {
@@ -323,7 +360,6 @@ func TestAskGraphJinAgentMCPStructuredResponse(t *testing.T) {
 	ms.service.conf.Agent.TimeoutSeconds = 12
 	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{
 		"instruction": "run approved query",
-		"mode":        gjagent.ModeSafe,
 		"max_steps":   float64(2),
 	}))
 	if err != nil {
@@ -350,6 +386,57 @@ func TestAskGraphJinAgentMCPStructuredResponse(t *testing.T) {
 	}
 }
 
+func TestAskGraphJinAgentMCPRefusalAndNotices(t *testing.T) {
+	runner := &scriptedAgentRunner{resp: gjagent.Response{
+		Status: gjagent.StatusBlocked,
+		Answer: "saved query detail is required first",
+		Refusal: &gjagent.Refusal{
+			Code:          "saved_query_detail_required",
+			BlockedAction: "execute_saved_query",
+			Because:       []string{"inspect query_catalog before execute_saved_query"},
+			Unblock: []gjagent.UnblockStep{{
+				Tool:   "query_catalog",
+				Args:   map[string]any{"id": "saved_query:daily_roast_context"},
+				Reason: "Inspect the saved query detail before executing it.",
+			}},
+			Retryable: true,
+		},
+		Notices: []gjagent.ResponseNotice{{
+			Kind:    "watch",
+			Message: "1 unseen artifact update",
+			Count:   1,
+		}},
+	}}
+	withScriptedAgentRunner(t, runner)
+
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Agent.Enabled = true
+	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{
+		"instruction": "run approved query",
+	}))
+	if err != nil {
+		t.Fatalf("handleAskGraphJinAgent: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected structured blocked response, got tool error: %+v", res.Content)
+	}
+	structured, ok := res.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content has type %T", res.StructuredContent)
+	}
+	refusal, ok := structured["refusal"].(map[string]any)
+	if !ok {
+		t.Fatalf("structured refusal missing: %+v", structured)
+	}
+	if refusal["code"] != "saved_query_detail_required" || refusal["blocked_action"] != "execute_saved_query" {
+		t.Fatalf("unexpected refusal: %+v", refusal)
+	}
+	notices := anySlice(structured["notices"])
+	if len(notices) != 1 {
+		t.Fatalf("notices = %+v, want one", structured["notices"])
+	}
+}
+
 func TestAskGraphJinAgentMCPSchema(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.service.conf.Agent.Enabled = true
@@ -370,7 +457,7 @@ func TestAskGraphJinAgentMCPSchema(t *testing.T) {
 	}
 	input := payload["inputSchema"].(map[string]any)
 	props := input["properties"].(map[string]any)
-	for _, name := range []string{"instruction", "context", "namespace", "mode", "max_steps", "return_trace"} {
+	for _, name := range []string{"instruction", "context", "namespace", "max_steps", "return_trace"} {
 		if _, ok := props[name]; !ok {
 			t.Fatalf("input schema missing %s: %+v", name, props)
 		}
@@ -457,4 +544,204 @@ func anyStringSlice(value any) []string {
 		}
 	}
 	return out
+}
+
+func TestAgentRESTNamespaceRouteWins(t *testing.T) {
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "ok"}}
+	withScriptedAgentRunner(t, runner)
+
+	logger := zap.NewNop()
+	svc := &graphjinService{
+		conf: &Config{
+			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+			Serv: Serv{Agent: AgentConfig{Enabled: true}},
+		},
+		log:  logger.Sugar(),
+		zlog: logger,
+	}
+	hs := &HttpService{}
+	hs.Store(svc)
+
+	// The body tries to redirect the request to another namespace; the route
+	// namespace must win, matching the GraphQL endpoint semantics.
+	body := `{"instruction":"find customers","namespace":"tenant_b"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ns/tenant_a/agent", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	hs.AgentWithNS(nil, "tenant_a").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if runner.req.Namespace != "tenant_a" {
+		t.Fatalf("namespace = %q, want route namespace tenant_a", runner.req.Namespace)
+	}
+}
+
+func TestAgentRESTSSEStreamsActionsAndResult(t *testing.T) {
+	runner := &scriptedAgentRunner{
+		resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "streamed", Skill: "data_discovery"},
+		emit: []gjagent.ActionEvent{
+			{Index: 1, Source: "seed", Tool: "query_catalog", Status: "ok"},
+			{Index: 2, Source: "model", Tool: "execute_saved_query", Status: "ok"},
+		},
+	}
+	withScriptedAgentRunner(t, runner)
+
+	logger := zap.NewNop()
+	svc := &graphjinService{
+		conf: &Config{
+			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+			Serv: Serv{Agent: AgentConfig{Enabled: true}},
+		},
+		log:  logger.Sugar(),
+		zlog: logger,
+	}
+	hs := &HttpService{}
+	hs.Store(svc)
+
+	req := httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{"instruction":"stream this"}`))
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+	hs.Agent(nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("content type = %q, want text/event-stream", got)
+	}
+	body := rec.Body.String()
+	if strings.Count(body, "event: action") != 2 {
+		t.Fatalf("expected 2 action events, body:\n%s", body)
+	}
+	if !strings.Contains(body, "event: result") || !strings.Contains(body, `"answer":"streamed"`) {
+		t.Fatalf("missing result event, body:\n%s", body)
+	}
+	if !strings.Contains(body, "event: complete") {
+		t.Fatalf("missing complete event, body:\n%s", body)
+	}
+	if !strings.Contains(body, `"tool":"execute_saved_query"`) {
+		t.Fatalf("action payload missing, body:\n%s", body)
+	}
+}
+
+func TestAgentAuditHelpers(t *testing.T) {
+	actions := make([]any, 0, 30)
+	for i := 0; i < 30; i++ {
+		actions = append(actions, map[string]any{
+			"step": float64(i + 1), "source": "model", "tool": "query_catalog", "status": "ok",
+		})
+	}
+	if got := agentActionCount(actions); got != 30 {
+		t.Fatalf("agentActionCount = %d, want 30", got)
+	}
+	audited, ok := agentAuditActions(actions).([]any)
+	if !ok {
+		t.Fatalf("agentAuditActions type %T", agentAuditActions(actions))
+	}
+	if len(audited) != maxAuditActions {
+		t.Fatalf("audit actions = %d, want %d (most recent kept)", len(audited), maxAuditActions)
+	}
+	first, _ := audited[0].(map[string]any)
+	if first["step"] != float64(30-maxAuditActions+1) {
+		t.Fatalf("audit should keep most recent actions, first step = %v", first["step"])
+	}
+
+	resp := gjagent.Response{Evidence: map[string]any{
+		"protocol": map[string]any{
+			"violations": []any{
+				map[string]any{"code": "mutation_evidence_required", "blocking": true},
+			},
+		},
+	}}
+	codes := agentViolationCodes(resp)
+	if len(codes) != 1 || codes[0] != "mutation_evidence_required" {
+		t.Fatalf("violation codes = %v", codes)
+	}
+
+	store := newMemoryRuntimeEventStore(runtimeEventOptions{
+		MaxEvents: 4,
+		Now:       func() time.Time { return time.Unix(10, 0) },
+	})
+	svc := &graphjinService{conf: &Config{}, runtimeEvents: store}
+	recordAgentRuntimeEvent(svc, context.Background(), gjagent.Request{Instruction: "run saved query"}, gjagent.Response{
+		Status:  gjagent.StatusBlocked,
+		Refusal: &gjagent.Refusal{Code: "saved_query_detail_required"},
+	}, time.Millisecond, nil)
+	rows := store.Rows(context.Background(), runtimeStatus{})
+	if len(rows) < 2 {
+		t.Fatalf("runtime rows = %d, want status + event", len(rows))
+	}
+	var details map[string]any
+	if err := json.Unmarshal([]byte(fmt.Sprint(rows[1]["details_json"])), &details); err != nil {
+		t.Fatalf("decode details_json: %v", err)
+	}
+	if details["refusal_code"] != "saved_query_detail_required" {
+		t.Fatalf("refusal_code missing from runtime event details: %+v", details)
+	}
+}
+
+func TestAskGraphJinAgentMCPHistoryArg(t *testing.T) {
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "ok"}}
+	withScriptedAgentRunner(t, runner)
+
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Agent.Enabled = true
+	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{
+		"instruction": "and how many were sold?",
+		"history": []any{
+			map[string]any{"role": "user", "content": "show products"},
+			map[string]any{"role": "assistant", "content": "3 products", "status": "answered", "catalog_ids": []any{"table:db:public.products"}},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("handleAskGraphJinAgent: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %+v", res.Content)
+	}
+	if len(runner.req.History) != 2 {
+		t.Fatalf("history turns = %d, want 2", len(runner.req.History))
+	}
+	if runner.req.History[1].Role != "assistant" || len(runner.req.History[1].CatalogIDs) != 1 {
+		t.Fatalf("assistant turn malformed: %+v", runner.req.History[1])
+	}
+	if runner.req.Observer != nil {
+		t.Fatal("observer must not be set without a progress token")
+	}
+}
+
+func TestAskGraphJinAgentMCPProgressTokenSetsObserver(t *testing.T) {
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "ok"}}
+	withScriptedAgentRunner(t, runner)
+
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Agent.Enabled = true
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+
+	req := newToolRequest(map[string]any{"instruction": "with progress"})
+	req.Params.Meta = &mcp.Meta{ProgressToken: "tok-1"}
+	res, err := ms.handleAskGraphJinAgent(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handleAskGraphJinAgent: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %+v", res.Content)
+	}
+	if runner.req.Observer == nil {
+		t.Fatal("observer must be set when a progress token is present")
+	}
+	// Emitting without a client session must be a safe no-op.
+	runner.req.Observer(gjagent.ActionEvent{Index: 1, Tool: "query_catalog", Status: "ok"})
+}
+
+func TestAgentProgressMessage(t *testing.T) {
+	msg := agentProgressMessage(gjagent.ActionEvent{
+		Index: 2, Tool: "query_catalog", Status: "ok",
+		Args:    map[string]any{"id": "table:db:public.products"},
+		Summary: map[string]any{"card_count": 1},
+	})
+	if msg != "query_catalog(id=table:db:public.products) ok — 1 cards" {
+		t.Fatalf("progress message = %q", msg)
+	}
 }

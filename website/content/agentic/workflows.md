@@ -28,26 +28,32 @@ graphjin workflow run nightly-report --vars report-vars.json
 
 Workflows can call GraphJin tools and GraphQL when allowed by configuration. They respect declared variables, timeouts, context cancellation, and workflow execution policy.
 
+Files under `workflows/` are global workflow definitions. When `artifacts.enabled` is configured and a request has `user_id`, `gj_artifacts` provides a caller-scoped workflow overlay. Execution resolves a user workflow artifact first, then falls back to the global file.
+
 {{< verified by="TestRunNamedWorkflow_CanCallGJTools" file="serv/workflows_test.go" line="109" >}}
 {{< verified by="TestRunNamedWorkflow_CanExecuteGraphQLWhenAllowed" file="serv/workflows_test.go" line="142" >}}
+{{< verified by="TestUserArtifactWorkflowOverridesGlobalOnlyForOwner" file="serv/artifact_overlay_test.go" line="148" >}}
 
 ## GraphQL control-plane shape
 
 ```graphql
 mutation RunWorkflow($vars: JSON!) {
   gj_workflow_execution(insert: {
-    name: "nightly-report"
+    workflow_name: "nightly-report"
     variables: $vars
   }) {
     id
+    workflow_name
     status
-    output_json
+    result_json
     error
   }
 }
 ```
 
 Workflow rows also appear in `gj_catalog`, so a model can inspect names, variable contracts, lifecycle metadata, and safety notes before execution.
+
+`gj_workflow` and `save_workflow` use the same write policy as saved queries: user artifact when `user_id` and the artifact store are present, global `workflows/*.js` only in dev fallback mode.
 
 {{< verified by="TestQueryCatalogReturnsWorkflowCards" file="serv/mcp_catalog_workflow_test.go" line="15" >}}
 {{< verified by="TestGraphQLControlPlaneWorkflowLifecycle" file="serv/control_plane_graphql_test.go" line="307" >}}

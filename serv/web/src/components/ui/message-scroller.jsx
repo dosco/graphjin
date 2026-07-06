@@ -21,15 +21,17 @@ function useMessageScroller() {
   return React.useContext(MessageScrollerContext);
 }
 
-const MessageScroller = React.forwardRef(({ className, children, ...props }, ref) => {
+const MessageScroller = React.forwardRef(({ className, children, autoScroll = true, ...props }, ref) => {
   const context = useMessageScroller();
   React.useEffect(() => {
-    context?.scrollToBottom();
-  }, [children, context]);
+    if (autoScroll) {
+      context?.scrollToBottom();
+    }
+  }, [autoScroll, children, context]);
 
   return (
     <ScrollArea ref={context?.viewportRef || ref} className={cn("h-full", className)} {...props}>
-      <div className="grid gap-4 p-4">{children}</div>
+      <div className="grid gap-4 p-4 md:p-5">{children}</div>
     </ScrollArea>
   );
 });

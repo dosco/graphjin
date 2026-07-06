@@ -19,6 +19,7 @@ Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, Redshif
 - **Smart discovery before action** - Agents start with `query_catalog(search: "<user instruction>")`, `graphql_help`, relationship evidence, examples, config recipes, and safety notes before writing or running queries.
 - **Guarded action, not raw access** - Source-mode access, query allow-lists, read-only boundaries, policy-aware MCP tools, local encrypted secrets, and `gj_config` preview/apply keep changes auditable.
 - **Operational awareness** - `gj_security`, `gj_runtime`, and the built-in console expose policy and bounded runtime status so agents can check what is safe before they act.
+- **Durable memory and standing questions** - Saved queries, fragments, and workflows live in the owner-scoped `gj_artifacts` store; watches (`gj_watch`) run standing questions under the owner's permissions and deliver fired events to a durable inbox (`gj_watch_event`), webhooks, or workflows — surviving restarts.
 
 ## Installation
 
@@ -575,6 +576,8 @@ Optional: instead of your client chaining `query_catalog` → `validate_where_cl
 - **Modes:** `safe` (discovery + approved saved queries/mutations), `discovery_only` (read-only), `raw_allowed` (adds raw GraphQL when `agent.allow_raw_graphql` and `mcp.allow_raw_queries` are set).
 - **Caller-scoped:** the agent runs as the caller, so core roles + row-level security enforce access. The caller's role only changes which *guidance* the agent follows, never what it can read or write.
 - **Grounded:** Go protocol guards keep every answer backed by real catalog/validation/execution evidence and downgrade to `blocked` (with evidence) when a step is skipped.
+- **Machine-actionable refusals:** blocked responses carry a structured `refusal` (code, reasons, unblock steps, `policy_final`/`retryable`) so a calling agent can course-correct in one step instead of guessing.
+- **Model sampling:** with `agent.sampling: auto` (or `require`), the agent borrows the calling MCP client's model via MCP sampling — no server-side model key needed; caller identity and permissions are unchanged.
 
 It is an RLM loop — the model writes JavaScript that calls the discovery tools, and the typed result is parsed from `key: value` output. So it needs a model that is good at **code generation**, not provider tool-calling or structured-output modes; any OpenAI-compatible endpoint works via `agent.base_url`. See [AGENTIC.md](AGENTIC.md#server-side-agent) and [CONFIG.md](CONFIG.md#agent-configuration).
 

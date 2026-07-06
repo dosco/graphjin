@@ -21,7 +21,10 @@ func mockMcpServerWithConfig(cfg MCPConfig) *mcpServer {
 			Core: core.Config{Mode: "agentic", Sources: []core.SourceConfig{
 				{Name: "graphjin", Kind: "graphjin"},
 				{Name: "workflows", Kind: "workflow"},
-			}},
+			},
+				Artifacts: core.ArtifactsConfig{Enabled: true},
+				Watches:   core.WatchesConfig{Enabled: true},
+			},
 			Serv: Serv{MCP: cfg},
 		},
 	}

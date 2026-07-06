@@ -9,58 +9,18 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
-func TestRegisterOnboardingTools_Gating(t *testing.T) {
-	t.Run("not registered when AllowDevTools is false", func(t *testing.T) {
-		ms := mockLegacyMcpServerWithConfig(MCPConfig{
-			AllowDevTools:      false,
-			AllowConfigUpdates: true,
-		})
-		ms.srv = server.NewMCPServer("test", "0.0.0")
-		ms.registerOnboardingTools()
-		tools := ms.srv.ListTools()
-		if _, exists := tools["plan_database_setup"]; exists {
-			t.Fatal("plan_database_setup should not be registered")
-		}
-	})
-
-	t.Run("apply tool requires config updates permission", func(t *testing.T) {
-		ms := mockLegacyMcpServerWithConfig(MCPConfig{
-			AllowDevTools:      true,
-			AllowConfigUpdates: false,
-		})
-		ms.srv = server.NewMCPServer("test", "0.0.0")
-		ms.registerOnboardingTools()
-		tools := ms.srv.ListTools()
-		if _, exists := tools["plan_database_setup"]; !exists {
-			t.Fatal("plan_database_setup should be registered")
-		}
-		if _, exists := tools["apply_database_setup"]; exists {
-			t.Fatal("apply_database_setup should not be registered")
-		}
-	})
-}
-
-func TestRegisterOnboardingTools_SchemaIncludesScanUnixSockets(t *testing.T) {
+func TestRegisterOnboardingTools_DoesNotExposeDevTools(t *testing.T) {
 	ms := mockLegacyMcpServerWithConfig(MCPConfig{
-		AllowDevTools: true,
+		AllowDevTools:      true,
+		AllowConfigUpdates: true,
 	})
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 	ms.registerOnboardingTools()
 
-	tool, ok := ms.srv.ListTools()["plan_database_setup"]
-	if !ok {
-		t.Fatal("plan_database_setup should be registered")
-	}
-	if _, ok := tool.Tool.InputSchema.Properties["scan_unix_sockets"]; !ok {
-		t.Fatal("plan_database_setup schema should include scan_unix_sockets")
-	}
-	if targets, ok := tool.Tool.InputSchema.Properties["targets"].(map[string]any); ok {
-		if items, ok := targets["items"].(map[string]any); ok {
-			if props, ok := items["properties"].(map[string]any); ok {
-				if _, ok := props["connection_string"]; !ok {
-					t.Fatal("plan_database_setup targets schema should include connection_string")
-				}
-			}
+	tools := ms.srv.ListTools()
+	for _, name := range []string{"plan_database_setup", "test_database_connection", "get_onboarding_status", "apply_database_setup"} {
+		if _, exists := tools[name]; exists {
+			t.Fatalf("%s should not be registered by MCP", name)
 		}
 	}
 }
@@ -207,8 +167,8 @@ func TestHandleApplyDatabaseSetup_BlocksUnverifiedByDefault(t *testing.T) {
 	if out.Next == nil {
 		t.Fatal("expected next guidance")
 	}
-	if out.Next.RecommendedTool != "test_database_connection" {
-		t.Fatalf("expected recommended tool test_database_connection, got %s", out.Next.RecommendedTool)
+	if out.Next.RecommendedTool != "" {
+		t.Fatalf("expected no recommended tool for removed test_database_connection tool, got %s", out.Next.RecommendedTool)
 	}
 	if len(ms.service.conf.Core.Databases) != 0 {
 		t.Fatal("expected no config mutation when candidate is unverified")

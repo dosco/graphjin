@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode"
 
+	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -120,24 +121,26 @@ type CatalogOverviewResource struct {
 }
 
 func (ms *mcpServer) registerCatalogTools() {
-	if ms.service != nil && ms.service.conf != nil && ms.service.conf.Core.IsSourcesUsed() {
-		ms.srv.AddTool(mcp.NewTool(
-			"graphql_help",
-			mcp.WithDescription(graphQLHelpToolDescription()),
-			mcp.WithString("for",
-				mcp.Required(),
-				mcp.Description("Help topic. Start with discovery when unsure."),
-				mcp.Enum(graphQLHelpTopics()...),
-			),
-			mcp.WithOutputSchema[GraphQLHelpResult](),
-		), ms.handleGraphQLHelp)
-	}
+	ms.srv.AddTool(mcp.NewTool(
+		"graphql_help",
+		mcp.WithDescription(graphQLHelpToolDescription()),
+		mcp.WithString("for",
+			mcp.Required(),
+			mcp.Description("Help topic. Start with discovery when unsure."),
+			mcp.Enum(graphQLHelpTopics()...),
+		),
+		mcp.WithOutputSchema[GraphQLHelpResult](),
+	), ms.handleGraphQLHelp)
 
 	ms.srv.AddTool(mcp.NewTool(
 		"query_catalog",
 		mcp.WithDescription(queryCatalogToolDescription()),
 		mcp.WithString("id",
 			mcp.Description("Optional catalog item id. When set, returns one detailed row with details_json, evidence_json, examples_json, safety_json, and edges_json."),
+		),
+		mcp.WithArray("ids",
+			mcp.Description("Optional list of catalog item ids for batched detail rows in one call (max 20). Prefer this over repeated single-id calls."),
+			mcp.Items(map[string]any{"type": "string"}),
 		),
 		mcp.WithString("search",
 			mcp.Description("Optional full-text search over catalog identifiers, @directives, relationship intent, analytics intent, summaries, and evidence."),
@@ -180,36 +183,10 @@ func (ms *mcpServer) registerCatalogTools() {
 		),
 		mcp.WithOutputSchema[CatalogQueryResult](),
 	), ms.handleQueryCatalog)
-
-	if ms.service != nil && ms.service.conf != nil && ms.service.conf.Core.IsSourcesUsed() {
-		return
-	}
-
-	ms.srv.AddTool(mcp.NewTool(
-		"get_catalog_card",
-		mcp.WithDescription("Fetch one catalog item with details and nearby graph edges. Use after query_catalog returns an interesting item id."),
-		mcp.WithString("id",
-			mcp.Required(),
-			mcp.Description("Catalog item id, for example language:directive.running or table:<database:schema:table>."),
-		),
-		mcp.WithOutputSchema[CatalogCardResult](),
-	), ms.handleGetCatalogCard)
-
-	ms.srv.AddTool(mcp.NewTool(
-		"get_catalog_entrypoints",
-		mcp.WithDescription("List recommended catalog entrypoints for discovering schema, language features, config, and capabilities."),
-		mcp.WithOutputSchema[CatalogEntrypointsResult](),
-	), ms.handleGetCatalogEntrypoints)
-
-	ms.srv.AddTool(mcp.NewTool(
-		"get_catalog_capabilities",
-		mcp.WithDescription("List catalog-described GraphJin capabilities and safety notes."),
-		mcp.WithOutputSchema[CatalogCapabilitiesResult](),
-	), ms.handleGetCatalogCapabilities)
 }
 
 func graphQLHelpToolDescription() string {
-	return "Read-only bootstrap helper for sources-mode GraphJin. For goal-driven work, first call query_catalog(search: \"<user instruction>\"); use graphql_help(for: \"discovery\") when the user intent is unclear or catalog search is not useful. Valid for values: " +
+	return "Read-only bootstrap helper for GraphJin MCP. For goal-driven work, first call query_catalog(search: \"<user instruction>\"); use graphql_help(for: \"discovery\") when the user intent is unclear or catalog search is not useful. Valid for values: " +
 		strings.Join(graphQLHelpTopics(), ", ") +
 		". Replaces legacy MCP discovery prompts/tools such as get_query_syntax, get_mutation_syntax, get_catalog_card, get_config_docs, get_js_runtime_api, fix_query_error, saved-query discovery, fragment discovery, table/schema discovery, and relationship exploration by querying gj_catalog help rows. Returns bootstrap steps, topic_routes, replaces_tools, catalog rows, examples, safety notes, next guidance, and the exact internal gj_catalog GraphQL query."
 }
@@ -218,7 +195,10 @@ func queryCatalogToolDescription() string {
 	return "Search GraphJin's AI-first catalog for schema, relationships, workflows, saved queries, fragments, language features, directives, operators, config_recipe, config, security, and capabilities. For goal-driven work, start with query_catalog(search: \"<user instruction>\"); use graphql_help(for: \"discovery\") only when the user intent is unclear or search returns no useful rows. Use query_catalog(id: \"...\") for one full-detail row with details_json, evidence_json, examples_json, safety_json, and edges_json. Examples: query_catalog(search: \"add role from jwt\"), query_catalog(id: \"help:query\"), query_catalog(id: \"help:schema\"), query_catalog(where: { kind: { eq: \"table\" } }), query_catalog(where: { kind: { eq: \"saved_query\" } }). Use validate_where_clause for filters, execute_saved_query for approved saved queries, and execute_graphql only when raw execution is enabled."
 }
 
+// registerCatalogResources is retained as an inert compatibility hook.
 func (ms *mcpServer) registerCatalogResources() {
+	return
+
 	ms.srv.AddResource(
 		mcp.NewResource(
 			CatalogOverviewResourceURI,
@@ -227,7 +207,7 @@ func (ms *mcpServer) registerCatalogResources() {
 			mcp.WithMIMEType("application/json"),
 		),
 		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-			snapshot, err := ms.catalogSnapshot()
+			snapshot, err := ms.catalogSnapshot(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -265,7 +245,7 @@ func (ms *mcpServer) registerCatalogResources() {
 			mcp.WithMIMEType("application/json"),
 		),
 		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-			snapshot, err := ms.catalogSnapshot()
+			snapshot, err := ms.catalogSnapshot(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -287,7 +267,7 @@ func (ms *mcpServer) registerCatalogResources() {
 			mcp.WithMIMEType("application/json"),
 		),
 		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-			snapshot, err := ms.catalogSnapshot()
+			snapshot, err := ms.catalogSnapshot(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -302,11 +282,11 @@ func (ms *mcpServer) registerCatalogResources() {
 	)
 }
 
-func (ms *mcpServer) catalogSnapshot() (*core.CatalogSnapshot, error) {
+func (ms *mcpServer) catalogSnapshot(ctx context.Context) (*core.CatalogSnapshot, error) {
 	if ms.service == nil {
 		return core.BuildCatalogSnapshot(&core.MetadataSnapshot{}, nil), nil
 	}
-	return ms.service.catalogSnapshot()
+	return ms.service.catalogSnapshotForContext(ms.service.applyIdentityContext(ms.effectiveContext(ctx)))
 }
 
 func (ms *mcpServer) handleQueryCatalog(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -335,7 +315,16 @@ func (ms *mcpServer) handleQueryCatalog(ctx context.Context, req mcp.CallToolReq
 		Limit:    catalogIntArg(args, "limit"),
 		Offset:   catalogIntArg(args, "offset"),
 	}
-	rows, err := ms.queryCatalogGraphQL(ctx, q)
+	// Batched detail lookups: fold a single id into ids so the two shorthands
+	// never conflict in the combined where clause.
+	if ids := agentDetailIDs(args); len(ids) > 1 || (len(ids) == 1 && q.ID == "") {
+		if len(ids) > gjagent.MaxCatalogBatchIDs {
+			ids = ids[:gjagent.MaxCatalogBatchIDs]
+		}
+		q.IDs = ids
+		q.ID = ""
+	}
+	rows, err := ms.queryCatalogRows(ctx, q)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -343,7 +332,7 @@ func (ms *mcpServer) handleQueryCatalog(ctx context.Context, req mcp.CallToolReq
 	// limit. Surface that explicitly (with a paging option) so callers don't
 	// silently miss tables. ID lookups return at most one row and never page.
 	eff := catalogEffectiveLimit(q)
-	truncated := q.ID == "" && len(rows) >= eff
+	truncated := q.ID == "" && len(q.IDs) == 0 && len(rows) >= eff
 	nextOptions := ms.catalogNextOptions(ctx, q, rows)
 	if truncated {
 		pageOption := nextOption("query_catalog", 0,
@@ -451,7 +440,7 @@ func (ms *mcpServer) handleGraphQLHelp(ctx context.Context, req mcp.CallToolRequ
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	rows, err := ms.queryCatalogGraphQL(ctx, q)
+	rows, err := ms.queryCatalogRows(ctx, q)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -499,7 +488,7 @@ func graphQLHelpTopicRoutes() []HelpRoute {
 	return []HelpRoute{
 		{Need: "goal-driven user request, config/security/operator change, schema/query/workflow task", For: "catalog", FirstCall: `query_catalog(search: "<user instruction>")`, DetailQuery: `query_catalog(id: "<best_result_id>")`},
 		{Need: "unknown starting point, old MCP tool mapping, available discovery surfaces", For: "discovery", FirstCall: `graphql_help(for: "discovery")`, DetailQuery: `query_catalog(id: "help:discovery")`},
-		{Need: "tiny sources-mode MCP tool surface and removed legacy tool replacements", For: "mcp_tools", FirstCall: `graphql_help(for: "mcp_tools")`, DetailQuery: `query_catalog(id: "help:mcp_tools")`},
+		{Need: "tiny MCP tool surface and removed legacy tool replacements", For: "mcp_tools", FirstCall: `graphql_help(for: "mcp_tools")`, DetailQuery: `query_catalog(id: "help:mcp_tools")`},
 		{Need: "catalog row shape, details, evidence, examples, safety, edges, capabilities", For: "catalog", FirstCall: `graphql_help(for: "catalog")`, DetailQuery: `query_catalog(id: "help:catalog")`},
 		{Need: "databases, tables, columns, relationships, functions, indexes", For: "schema", FirstCall: `graphql_help(for: "schema")`, DetailQuery: `query_catalog(id: "help:schema")`},
 		{Need: "table names, primary keys, row shape, sample/profile guidance", For: "tables", FirstCall: `graphql_help(for: "tables")`, DetailQuery: `query_catalog(id: "help:tables")`},
@@ -634,6 +623,10 @@ var graphQLHelpTopicOrder = []string{
 	"config",
 	"security",
 	"runtime",
+	"artifacts",
+	"watches",
+	"refusals",
+	"sampling",
 	"code",
 	"errors",
 }
@@ -645,7 +638,7 @@ func graphQLHelpTopics() []string {
 func graphQLHelpSpecFor(topic string) (graphQLHelpSpec, bool) {
 	specs := map[string]graphQLHelpSpec{
 		"discovery":        helpSpec("discovery", "Start here when search intent is unclear. Goal-driven work should start with query_catalog(search: \"<user instruction>\").", "catalog discovery schema workflow query security config recipe mcp tools legacy", []string{"help", "entrypoint", "config_recipe", "capability", "system_capability"}, `query_catalog(search: "<user instruction>")`, []string{`graphql_help(for: "discovery")`, `query_catalog(id: "help:mcp_tools")`, `query_catalog(where: { kind: { eq: "table" } })`}),
-		"mcp_tools":        helpSpec("mcp_tools", "Learn the tiny sources-mode MCP surface and how removed legacy discovery tools map into catalog/help rows.", "mcp tools legacy discovery get_query_syntax get_catalog_card get_js_runtime_api fix_query_error", []string{"help", "capability", "system_capability", "entrypoint"}, `query_catalog(id: "help:mcp_tools")`, []string{`graphql_help(for: "query")`, `query_catalog(id: "help:query")`, `query_catalog(where: { kind: { in: ["capability", "system_capability"] } })`}),
+		"mcp_tools":        helpSpec("mcp_tools", "Learn the tiny MCP surface and how removed legacy discovery tools map into catalog/help rows.", "mcp tools legacy discovery get_query_syntax get_catalog_card get_js_runtime_api fix_query_error", []string{"help", "capability", "system_capability", "entrypoint"}, `query_catalog(id: "help:mcp_tools")`, []string{`graphql_help(for: "query")`, `query_catalog(id: "help:query")`, `query_catalog(where: { kind: { in: ["capability", "system_capability"] } })`}),
 		"catalog":          helpSpec("catalog", "Use gj_catalog/query_catalog for discovery and query_catalog(id) for full item evidence.", "catalog detail evidence examples edges safety", []string{"help", "entrypoint", "capability", "system_capability"}, `query_catalog(id: "help:catalog")`, []string{`query_catalog(search: "join orders customers", where: { kind: { eq: "relationship" } })`}),
 		"schema":           helpSpec("schema", "Discover databases, tables, columns, relationships, functions, indexes, and row-shape hints.", "schema table column relationship function index sample profile", []string{"help", "database", "table", "column", "relationship", "function"}, `query_catalog(id: "help:schema")`, []string{`query_catalog(where: { kind: { in: ["table", "column", "relationship"] } })`}),
 		"tables":           helpSpec("tables", "Find table names, primary keys, row-shape hints, sample/profile availability, and graph edges.", "tables primary key sample profile row count", []string{"help", "table", "relationship", "column"}, `query_catalog(where: { kind: { eq: "table" } })`, []string{`query_catalog(id: "table:<database.schema.table>")`}),
@@ -661,6 +654,10 @@ func graphQLHelpSpecFor(topic string) (graphQLHelpSpec, bool) {
 		"config":           helpSpec("config", "Discover config_recipe rows, redacted configuration documentation, roles, permissions, sources, and safe config update guidance.", "config recipe docs sources roles permissions redacted update gj_config add role access artifacts", []string{"help", "config_recipe", "config", "system_capability", "capability"}, `query_catalog(search: "<user instruction>")`, []string{`query_catalog(search: "add role from jwt")`, `query_catalog(search: "make audit_logs admin only")`, `query_catalog(id: "help:config")`}),
 		"security":         helpSpec("security", "Discover config_recipe rows, gj_security guidance, policy rows, findings, severity filters, and agentic safety expectations.", "security recipe findings policy posture gj_security agentic production admin blocked roots", []string{"help", "config_recipe", "system_capability", "config"}, `query_catalog(search: "<user instruction>")`, []string{`query_catalog(search: "block internal_events")`, `query_catalog(id: "help:security")`, `query_catalog(where: { kind: { eq: "system_capability" }, name: { eq: "gj_security.query" } })`}),
 		"runtime":          helpSpec("runtime", "Use gj_runtime in agentic mode for compact current health, source health, recent structured events, and suggested next actions.", "runtime status source health events system degraded redis schema reload discovery gj_runtime", []string{"help", "system_capability"}, `query_catalog(id: "help:runtime")`, []string{`query { gj_runtime(where: { kind: { in: ["status", "source", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind source source_kind status severity summary next_action details_json } }`}),
+		"artifacts":        helpSpec("artifacts", "Use gj_artifacts, the owner-scoped store for saved queries, fragments, and workflows, backed by a bounded search projection.", "artifacts saved query fragment workflow store owner scoped gj_artifacts projection truncated", []string{"help", "saved_query", "fragment", "workflow", "system_capability", "config_recipe"}, `query_catalog(id: "help:artifacts")`, []string{`query { gj_artifacts(order_by: { updated_at: desc }, limit: 20) { id name kind content_truncated } }`}),
+		"watches":          helpSpec("watches", "Use gj_watch for durable standing questions and gj_watch_event for their fired-event inbox; mark reviewed events seen.", "watch watches standing question subscription inbox event notify alert gj_watch gj_watch_event seen", []string{"help", "system_capability", "config_recipe"}, `query_catalog(id: "help:watches")`, []string{`query { gj_watch_event(where: { seen: { eq: false } }, order_by: { created_at: desc }, limit: 20) { id watch_id data_json created_at } }`}),
+		"refusals":         helpSpec("refusals", "Interpret the machine-actionable refusal object on blocked agent responses: run unblock steps, retry only when retryable, stop on policy_final.", "refusal blocked policy unblock retryable policy_final lawful alternative code", []string{"help", "system_capability"}, `query_catalog(id: "help:refusals")`, []string{`query_catalog(id: "help:security")`}),
+		"sampling":         helpSpec("sampling", "agent.sampling off/auto/require lets the server agent borrow the calling MCP client's model; identity and permissions are unchanged.", "sampling model client borrow createMessage agent off auto require stateful", []string{"help", "config"}, `query_catalog(id: "help:sampling")`, []string{`agent: { sampling: "auto" }`}),
 		"code":             helpSpec("code", "Discover code-source catalog rows and safe source-edit preview/apply guidance when code sources are configured.", "code source file symbol preview apply lock", []string{"help", "mutation_pattern", "system_capability", "table", "column"}, `query_catalog(id: "help:code")`, []string{`query_catalog(search: "code source preview apply source edit")`}),
 		"errors":           helpSpec("errors", "Use errors[].extensions.graphjin_repair, then inspect relevant schema or language rows before retrying.", "error repair graphjin_repair syntax table column relationship", []string{"help", "deprecated_feature", "query_pattern", "operator_set", "system_capability"}, `query_catalog(id: "help:errors")`, []string{`query_catalog(search: "error repair syntax relationship")`}),
 	}
@@ -688,7 +685,7 @@ func (ms *mcpServer) handleGetCatalogCard(ctx context.Context, req mcp.CallToolR
 		return mcp.NewToolResultError("id is required"), nil
 	}
 
-	rows, err := ms.queryCatalogGraphQL(ctx, catalogGraphQLQuery{
+	rows, err := ms.queryCatalogRows(ctx, catalogGraphQLQuery{
 		Where: map[string]any{"id": map[string]any{"eq": id}},
 		Limit: 1,
 	})
@@ -721,7 +718,7 @@ func (ms *mcpServer) handleGetCatalogCard(ctx context.Context, req mcp.CallToolR
 }
 
 func (ms *mcpServer) handleGetCatalogEntrypoints(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	rows, err := ms.queryCatalogGraphQL(ctx, catalogGraphQLQuery{
+	rows, err := ms.queryCatalogRows(ctx, catalogGraphQLQuery{
 		Where:   map[string]any{"kind": map[string]any{"eq": "entrypoint"}},
 		OrderBy: map[string]string{"name": "asc"},
 		Limit:   100,
@@ -733,7 +730,7 @@ func (ms *mcpServer) handleGetCatalogEntrypoints(ctx context.Context, req mcp.Ca
 }
 
 func (ms *mcpServer) handleGetCatalogCapabilities(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	rows, err := ms.queryCatalogGraphQL(ctx, catalogGraphQLQuery{
+	rows, err := ms.queryCatalogRows(ctx, catalogGraphQLQuery{
 		Where:   map[string]any{"kind": map[string]any{"eq": "capability"}},
 		OrderBy: map[string]string{"name": "asc"},
 		Limit:   200,
@@ -746,6 +743,7 @@ func (ms *mcpServer) handleGetCatalogCapabilities(ctx context.Context, req mcp.C
 
 type catalogGraphQLQuery struct {
 	ID      string
+	IDs     []string
 	Search  string
 	Where   map[string]any
 	OrderBy map[string]string
@@ -789,9 +787,126 @@ func (ms *mcpServer) queryCatalogGraphQL(ctx context.Context, q catalogGraphQLQu
 	return out.Items, nil
 }
 
+func (ms *mcpServer) queryCatalogRows(ctx context.Context, q catalogGraphQLQuery) ([]CatalogItem, error) {
+	if ms.catalogGraphQLAvailable() {
+		return ms.queryCatalogGraphQL(ctx, q)
+	}
+	return ms.queryCatalogSnapshot(ctx, q)
+}
+
+func (ms *mcpServer) catalogGraphQLAvailable() bool {
+	return ms != nil &&
+		ms.service != nil &&
+		ms.service.gj != nil &&
+		ms.service.conf != nil &&
+		(ms.service.conf.catalogToolsEnabled() || ms.service.conf.graphjinControlPlaneEnabled())
+}
+
+func (ms *mcpServer) queryCatalogSnapshot(ctx context.Context, q catalogGraphQLQuery) ([]CatalogItem, error) {
+	if ms == nil || ms.service == nil {
+		snap := core.BuildCatalogSnapshot(&core.MetadataSnapshot{}, nil)
+		if ms != nil {
+			var err error
+			snap, err = ms.mcpCatalogSnapshot(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+		result, err := snap.QueryResult(core.CatalogQuery{
+			Search:  q.Search,
+			Where:   catalogNormalizeWhere(catalogCombinedWhere(q)),
+			OrderBy: q.OrderBy,
+			Limit:   catalogEffectiveLimit(q),
+			Explain: q.Explain,
+		})
+		if err != nil {
+			return nil, err
+		}
+		rows := structRows(result.Cards)
+		return catalogItemsFromRows(rows)
+	}
+
+	snap, err := ms.mcpCatalogSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	root := core.ManagedQueryRoot{
+		Table:   "gj_catalog",
+		Where:   catalogManagedWhere(q),
+		OrderBy: catalogManagedOrderBy(q.OrderBy),
+		Limit:   catalogEffectiveLimit(q),
+		Offset:  q.Offset,
+	}
+	rows := newControlPlaneGraphQL(ms.service).queryCatalogRowsFromSnapshot(snap, root)
+	return catalogItemsFromRows(rows)
+}
+
+func (ms *mcpServer) mcpCatalogSnapshot(ctx context.Context) (*core.CatalogSnapshot, error) {
+	if ms == nil || ms.service == nil {
+		return core.BuildCatalogSnapshot(&core.MetadataSnapshot{}, nil), nil
+	}
+	s := ms.service
+	ctx = s.applyIdentityContext(ms.effectiveContext(ctx))
+	var md *core.MetadataSnapshot
+	var err error
+	if s.gj != nil {
+		md, err = s.gj.MetadataSnapshot(s.metadataSnapshotExcludes()...)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		md = &core.MetadataSnapshot{}
+	}
+	var conf *core.Config
+	if s.conf != nil {
+		conf = &s.conf.Core
+	}
+	return core.BuildCatalogSnapshotWithOptions(md, conf, s.catalogBuildOptionsForContext(ctx)), nil
+}
+
+func catalogManagedWhere(q catalogGraphQLQuery) map[string]interface{} {
+	where := catalogNormalizeWhere(catalogCombinedWhere(q))
+	if q.Search == "" {
+		return where
+	}
+	search := map[string]interface{}{"search": q.Search}
+	if len(where) == 0 {
+		return search
+	}
+	return map[string]interface{}{"and": []any{search, where}}
+}
+
+func catalogManagedOrderBy(orderBy map[string]string) []core.ManagedOrderBy {
+	if len(orderBy) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(orderBy))
+	for key := range orderBy {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([]core.ManagedOrderBy, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, core.ManagedOrderBy{Column: key, Order: orderBy[key]})
+	}
+	return out
+}
+
+func catalogItemsFromRows(rows []map[string]any) ([]CatalogItem, error) {
+	data, err := json.Marshal(rows)
+	if err != nil {
+		return nil, err
+	}
+	var out []CatalogItem
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (ms *mcpServer) catalogRevisionGraphQL(ctx context.Context) string {
 	if ms != nil {
-		if snap, err := ms.catalogSnapshot(); err == nil && snap != nil && snap.Revision != "" {
+		if snap, err := ms.mcpCatalogSnapshot(ctx); err == nil && snap != nil && snap.Revision != "" {
 			return snap.Revision
 		}
 	}
@@ -874,6 +989,13 @@ func catalogCombinedWhere(q catalogGraphQLQuery) map[string]any {
 	}
 	shorthand := make(map[string]any)
 	addCatalogShorthand(shorthand, "id", q.ID)
+	if len(q.IDs) != 0 {
+		ids := make([]any, 0, len(q.IDs))
+		for _, id := range q.IDs {
+			ids = append(ids, id)
+		}
+		shorthand["id"] = map[string]any{"in": ids}
+	}
 	addCatalogShorthand(shorthand, "kind", q.Kind)
 	addCatalogShorthand(shorthand, "database_name", q.Database)
 	addCatalogShorthand(shorthand, "schema_name", q.Schema)
@@ -896,6 +1018,9 @@ func catalogCombinedWhere(q catalogGraphQLQuery) map[string]any {
 func catalogEffectiveLimit(q catalogGraphQLQuery) int {
 	if q.ID != "" && q.Limit <= 0 {
 		return 1
+	}
+	if len(q.IDs) != 0 && q.Limit <= 0 {
+		return len(q.IDs)
 	}
 	return catalogGraphQLLimit(q.Limit)
 }
