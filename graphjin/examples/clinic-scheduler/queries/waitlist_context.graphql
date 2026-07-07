@@ -1,0 +1,25 @@
+query waitlist_context {
+  waitlist_entries(
+    where: { status: { eq: "waiting" } }
+    order_by: { created_at: asc }
+    limit: 20
+  ) {
+    id
+    patient_id
+    provider_id
+    requested_specialty
+    priority
+    status
+    created_at
+  }
+  patients(order_by: { id: asc }, limit: 20) {
+    id
+    name
+    phone
+  }
+  providers(order_by: { id: asc }, limit: 10) {
+    id
+    name
+    specialty
+  }
+}

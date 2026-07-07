@@ -73,6 +73,12 @@ executable workflows:
 graphjin serve --demo --path examples/coffee-roastery
 ```
 
+More demo verticals — a MySQL corrugated-box plant with JWT roles, a PCB fab
+spanning Postgres + Snowflake-emu + MongoDB + a file source + an OpenAPI
+supplier API, and a zero-Docker SQLite clinic scheduler — live in
+[examples/](examples/README.md), each with an end-to-end smoke suite
+(`make smoke-all` runs them all).
+
 You'll see output like this:
 ```
 GraphJin started

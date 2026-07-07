@@ -1,0 +1,16 @@
+inherits: dev
+mode: agentic
+production: false
+log_level: "info"
+log_format: "plain"
+
+agent:
+  enabled: true
+  max_steps: 10
+  timeout_seconds: 300
+  return_trace: false
+  sampling: auto
+
+mcp:
+  http_stateful: true
+  include_tools_with_agent: true

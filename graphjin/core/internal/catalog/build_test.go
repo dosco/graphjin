@@ -108,6 +108,93 @@ func TestSourceCardsUseCapabilityRegistry(t *testing.T) {
 	}
 }
 
+func TestCodeSourceCatalogFallbackCards(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{
+		EnabledTools: []string{"query_catalog", "execute_graphql"},
+		Sources: []Source{{
+			Name:     "business_code",
+			Kind:     sourcecap.KindCode,
+			ReadOnly: true,
+			Capabilities: map[string]bool{
+				sourcecap.KeyCodeSearch:      true,
+				sourcecap.KeyCodeRead:        true,
+				sourcecap.KeyCodeInferDBRefs: true,
+			},
+		}},
+	})
+
+	table, ok := findCatalogCard(snap, "table:business_code:main.gj_code")
+	if !ok {
+		t.Fatalf("expected gj_code table card for code source")
+	}
+	if table.Kind != "table" || table.DatabaseName != "business_code" || table.TableName != "gj_code" || table.SourceKind != sourcecap.KindCode {
+		t.Fatalf("unexpected code table card: %+v", table)
+	}
+	if table.OwnerSource != "business_code" || table.OwnerSourcesJSON != `["business_code"]` {
+		t.Fatalf("unexpected code table ownership: %+v", table)
+	}
+
+	if _, ok := findCatalogCard(snap, "column:business_code:main.gj_code.code_context"); !ok {
+		t.Fatalf("expected code_context column card")
+	}
+	entry, ok := findCatalogCard(snap, "entrypoint.code:business_code.symbols")
+	if !ok {
+		t.Fatalf("expected code source entrypoint card")
+	}
+	if entry.Kind != "entrypoint" || !strings.Contains(entry.QueryJSON, "business_code") {
+		t.Fatalf("unexpected code entrypoint card: %+v", entry)
+	}
+
+	result, err := snap.Query(Query{Where: map[string]any{"database_name": map[string]any{"eq": "business_code"}}, Limit: 5})
+	if err != nil {
+		t.Fatalf("query code source catalog rows: %v", err)
+	}
+	if len(result.Cards) == 0 {
+		t.Fatal("expected database_name filter to find code source catalog cards")
+	}
+
+	result, err = snap.Query(Query{Search: "business_code code symbols", Limit: 10})
+	if err != nil {
+		t.Fatalf("search code source catalog rows: %v", err)
+	}
+	if len(result.Cards) == 0 {
+		t.Fatal("expected code-source search to find catalog cards")
+	}
+}
+
+func TestCodeSourceCatalogFallbackDoesNotDuplicateCachedDDL(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{
+		Tables: []MetadataTable{{
+			ID:           "business_code:main.gj_code",
+			DatabaseName: "business_code",
+			SchemaName:   "main",
+			TableName:    "gj_code",
+			ColumnCount:  1,
+		}},
+		Columns: []MetadataColumn{{
+			ID:           "business_code:main.gj_code.kind",
+			TableID:      "business_code:main.gj_code",
+			DatabaseName: "business_code",
+			SchemaName:   "main",
+			TableName:    "gj_code",
+			ColumnName:   "kind",
+			Type:         "text",
+		}},
+	}, nil, BuildOptions{
+		Sources: []Source{{Name: "business_code", Kind: sourcecap.KindCode}},
+	})
+
+	if countCatalogCards(snap, "table:business_code:main.gj_code") != 1 {
+		t.Fatalf("expected cached DDL table card not to be duplicated")
+	}
+	if countCatalogCards(snap, "column:business_code:main.gj_code.kind") != 1 {
+		t.Fatalf("expected cached DDL column card not to be duplicated")
+	}
+	if countCatalogCards(snap, "entrypoint.code:business_code.symbols") != 1 {
+		t.Fatalf("expected one code entrypoint card")
+	}
+}
+
 func TestSchemaCardsIncludeSourceOwnership(t *testing.T) {
 	snap := BuildWithOptions(&MetadataSnapshot{
 		Databases: []MetadataDatabase{{Name: "app", Type: "postgres"}, {Name: "billing", Type: "postgres"}},
@@ -605,6 +692,16 @@ func findCatalogCard(snap *Snapshot, id string) (Card, bool) {
 		}
 	}
 	return Card{}, false
+}
+
+func countCatalogCards(snap *Snapshot, id string) int {
+	count := 0
+	for _, card := range snap.Cards {
+		if card.ID == id {
+			count++
+		}
+	}
+	return count
 }
 
 func hasCapability(snap *Snapshot, id string) bool {

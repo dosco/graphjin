@@ -20,10 +20,15 @@ artifacts:
   enabled: true
   source: ops
   auto_init: true
+  locked: ["runbook"]
 
 watches:
   enabled: true
   runner: "all"
+
+identity:
+  role_claims: ["roles"]
+  admin_roles: ["admin"]
 
 auth:
   type: none
@@ -90,10 +95,13 @@ sources:
     metadata: true
     catalog: true
     control_plane: true
+    access:
+      roots:
+        gj_config: admin
     capabilities:
       catalog.read: true
       security.read: true
-      config.read: false
+      config.read: true
       config.write: false
       runtime.read: true
       raw_graphql.query: true

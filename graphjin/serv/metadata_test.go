@@ -75,8 +75,17 @@ func LookupUser() {
 			id
 			title
 		}
-		internal: gj_catalog(where: { database_name: { in: ["code", "graphjin"] } }) {
+		codeCatalog: gj_catalog(where: { database_name: { eq: "code" }, table_name: { eq: "gj_code" } }, limit: 20) {
 			id
+			kind
+			database_name
+			table_name
+			column_name
+		}
+		internal: gj_catalog(where: { database_name: { in: ["code", "graphjin"] }, table_name: { in: ["code_files", "code_symbols", "code_refs", "code_db_refs", "gj_catalog_cards"] } }, limit: 20) {
+			id
+			database_name
+			table_name
 		}
 	}`, nil, nil)
 	if err != nil {
@@ -100,8 +109,17 @@ func LookupUser() {
 			ID    string `json:"id"`
 			Title string `json:"title"`
 		} `json:"directives"`
+		CodeCatalog []struct {
+			ID           string `json:"id"`
+			Kind         string `json:"kind"`
+			DatabaseName string `json:"database_name"`
+			TableName    string `json:"table_name"`
+			ColumnName   string `json:"column_name"`
+		} `json:"codeCatalog"`
 		Internal []struct {
-			ID string `json:"id"`
+			ID           string `json:"id"`
+			DatabaseName string `json:"database_name"`
+			TableName    string `json:"table_name"`
 		} `json:"internal"`
 	}
 	if err := json.Unmarshal(res.Data, &out); err != nil {
@@ -115,6 +133,21 @@ func LookupUser() {
 	}
 	if len(out.Directives) != 1 || out.Directives[0].Title != "@running" {
 		t.Fatalf("directive catalog row = %+v data=%s", out.Directives, res.Data)
+	}
+	var sawCodeTable, sawCodeContext bool
+	for _, card := range out.CodeCatalog {
+		if card.DatabaseName != "code" || card.TableName != "gj_code" {
+			t.Fatalf("unexpected code catalog row = %+v data=%s", card, res.Data)
+		}
+		if card.ID == "table:code:main.gj_code" && card.Kind == "table" {
+			sawCodeTable = true
+		}
+		if card.ID == "column:code:main.gj_code.code_context" && card.Kind == "column" {
+			sawCodeContext = true
+		}
+	}
+	if !sawCodeTable || !sawCodeContext {
+		t.Fatalf("code source catalog facade rows missing: %+v data=%s", out.CodeCatalog, res.Data)
 	}
 	if len(out.Internal) != 0 {
 		t.Fatalf("internal metadata leaked into gj_catalog: %+v", out.Internal)

@@ -1051,7 +1051,6 @@ func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
 
 		res, err := svc.gj.GraphQL(ctx, `query {
 			catalog: gj_catalog(limit: 1) { id }
-			security: gj_security(id: "summary") { id }
 		}`, nil, &core.RequestConfig{})
 		if err != nil {
 			t.Fatalf("source-mode custom role query error: %v", err)
@@ -1060,9 +1059,6 @@ func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
 			Catalog []struct {
 				ID string `json:"id"`
 			} `json:"catalog"`
-			Security *struct {
-				ID string `json:"id"`
-			} `json:"security"`
 		}
 		if err := json.Unmarshal(res.Data, &out); err != nil {
 			t.Fatalf("decode custom role source-mode response: %v\n%s", err, string(res.Data))
@@ -1070,8 +1066,16 @@ func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
 		if len(out.Catalog) == 0 {
 			t.Fatalf("expected source-mode custom role to read gj_catalog, got %s", string(res.Data))
 		}
-		if out.Security != nil {
-			t.Fatalf("expected source-mode custom role to be blocked from gj_security, got %s", string(res.Data))
+
+		// Denied system roots fail loudly instead of rendering null.
+		res, err = svc.gj.GraphQL(ctx, `query {
+			security: gj_security(id: "summary") { id }
+		}`, nil, &core.RequestConfig{})
+		if err == nil {
+			t.Fatalf("expected source-mode custom role to be denied gj_security, got %s", string(res.Data))
+		}
+		if !strings.Contains(err.Error(), "blocked") {
+			t.Fatalf("expected gj_security deny to surface a blocked error, got: %v", err)
 		}
 	})
 }
@@ -1092,8 +1096,6 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 
 		res, err := svc.gj.GraphQL(userCtx, `query {
 			catalog: gj_catalog(limit: 1) { id }
-			security: gj_security(id: "summary") { id }
-			config: gj_config(id: "current") { id }
 			workflow: gj_workflow(id: "daily_report") { name code }
 		}`, nil, &core.RequestConfig{})
 		if err != nil {
@@ -1111,10 +1113,18 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 		if string(out["workflow"]) == "null" || len(out["workflow"]) == 0 {
 			t.Fatalf("expected agentic user owner access to gj_workflow, got %s", string(res.Data))
 		}
-		// gj_security and gj_config stay admin-only.
-		for _, key := range []string{"security", "config"} {
-			if string(out[key]) != "null" {
-				t.Fatalf("expected %s to be blocked for normal agentic user, got %s", key, string(res.Data))
+		// gj_security and gj_config stay admin-only and deny with an error
+		// rather than rendering null.
+		for root, query := range map[string]string{
+			"gj_security": `query { security: gj_security(id: "summary") { id } }`,
+			"gj_config":   `query { config: gj_config(id: "current") { id } }`,
+		} {
+			res, err := svc.gj.GraphQL(userCtx, query, nil, &core.RequestConfig{})
+			if err == nil {
+				t.Fatalf("expected %s to be denied for normal agentic user, got %s", root, string(res.Data))
+			}
+			if !strings.Contains(err.Error(), "blocked") {
+				t.Fatalf("expected %s deny to surface a blocked error, got: %v", root, err)
 			}
 		}
 	})
@@ -1131,7 +1141,6 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 
 		res, err := svc.gj.GraphQL(userCtx, `query {
 			security: gj_security(id: "summary") { id scope mode }
-			config: gj_config(id: "current") { id }
 		}`, nil, &core.RequestConfig{})
 		if err != nil {
 			t.Fatalf("agentic explicit grant query error: %v", err)
@@ -1140,9 +1149,6 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 			Security *struct {
 				ID string `json:"id"`
 			} `json:"security"`
-			Config *struct {
-				ID string `json:"id"`
-			} `json:"config"`
 		}
 		if err := json.Unmarshal(res.Data, &out); err != nil {
 			t.Fatalf("decode explicit grant response: %v\n%s", err, string(res.Data))
@@ -1150,8 +1156,15 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 		if out.Security == nil || out.Security.ID != "summary" {
 			t.Fatalf("expected gj_security grant to return summary, got %s", string(res.Data))
 		}
-		if out.Config != nil {
-			t.Fatalf("expected gj_config to remain blocked, got %s", string(res.Data))
+
+		res, err = svc.gj.GraphQL(userCtx, `query {
+			config: gj_config(id: "current") { id }
+		}`, nil, &core.RequestConfig{})
+		if err == nil {
+			t.Fatalf("expected gj_config to remain denied, got %s", string(res.Data))
+		}
+		if !strings.Contains(err.Error(), "blocked") {
+			t.Fatalf("expected gj_config deny to surface a blocked error, got: %v", err)
 		}
 	})
 
@@ -1267,38 +1280,19 @@ func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-agentic-blocks.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "agentic"
 		})
-		res, err := svc.gj.GraphQL(context.Background(), query, nil, &core.RequestConfig{})
-		if err != nil {
-			t.Fatalf("anon runtime query should be blocked by role, not fail compile: %v", err)
-		}
-		var anonOut map[string]json.RawMessage
-		if err := json.Unmarshal(res.Data, &anonOut); err != nil {
-			t.Fatalf("decode anon response: %v\n%s", err, string(res.Data))
-		}
-		if string(anonOut["gj_runtime"]) != "null" {
-			t.Fatalf("expected anon gj_runtime to be blocked, got %s", string(res.Data))
-		}
-		res, err = svc.gj.GraphQL(context.WithValue(context.Background(), core.UserRoleKey, "user"), query, nil, &core.RequestConfig{})
-		if err != nil {
-			t.Fatalf("explicit user role runtime query should be blocked by role, not fail compile: %v", err)
-		}
-		var roleOut map[string]json.RawMessage
-		if err := json.Unmarshal(res.Data, &roleOut); err != nil {
-			t.Fatalf("decode user role response: %v\n%s", err, string(res.Data))
-		}
-		if string(roleOut["gj_runtime"]) != "null" {
-			t.Fatalf("expected explicit user role to block gj_runtime, got %s", string(res.Data))
-		}
-		res, err = svc.gj.GraphQL(context.WithValue(userCtx, core.UserRoleKey, "anon"), query, nil, &core.RequestConfig{})
-		if err != nil {
-			t.Fatalf("explicit anon role runtime query should be blocked by role, not fail compile: %v", err)
-		}
-		var forcedAnonOut map[string]json.RawMessage
-		if err := json.Unmarshal(res.Data, &forcedAnonOut); err != nil {
-			t.Fatalf("decode forced anon response: %v\n%s", err, string(res.Data))
-		}
-		if string(forcedAnonOut["gj_runtime"]) != "null" {
-			t.Fatalf("expected explicit anon role to block gj_runtime, got %s", string(res.Data))
+		// Role-blocked system roots deny with an error instead of a null root.
+		for name, ctx := range map[string]context.Context{
+			"anon":               context.Background(),
+			"explicit user role": context.WithValue(context.Background(), core.UserRoleKey, "user"),
+			"explicit anon role": context.WithValue(userCtx, core.UserRoleKey, "anon"),
+		} {
+			res, err := svc.gj.GraphQL(ctx, query, nil, &core.RequestConfig{})
+			if err == nil {
+				t.Fatalf("expected %s gj_runtime query to be denied, got %s", name, string(res.Data))
+			}
+			if !strings.Contains(err.Error(), "blocked") {
+				t.Fatalf("expected %s gj_runtime deny to surface a blocked error, got: %v", name, err)
+			}
 		}
 
 		disabled := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-agentic-disabled.sqlite3", true), func(conf *Config) {
@@ -1309,7 +1303,7 @@ func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 				}
 			}
 		})
-		res, err = disabled.gj.GraphQL(adminCtx, query, nil, &core.RequestConfig{})
+		res, err := disabled.gj.GraphQL(adminCtx, query, nil, &core.RequestConfig{})
 		if err != nil {
 			t.Fatalf("runtime.read false query should be blocked by role, not fail compile: %v", err)
 		}

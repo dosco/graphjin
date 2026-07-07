@@ -407,6 +407,13 @@ guards are enforced in Go, not by the model. Sampling works over stdio and,
 with `mcp.http_stateful: true`, over stateful HTTP sessions (per-request auth
 still applies; the session carries protocol capabilities, not identity).
 
+A reference sampling-capable client lives at `tools/mcp-sampling-client`: it
+connects over streamable HTTP, advertises the sampling capability, and answers
+`sampling/createMessage` by forwarding to any OpenAI-compatible endpoint (the
+ax reasoning protocol requires strict JSON output, which the client enforces
+via structured outputs). The demo smoke suites use it for the end-to-end
+borrow-the-caller's-model checks.
+
 ### Caller-Aware MCP Guidance
 
 GraphJin builds MCP servers from the current request or configured stdio
@@ -1408,6 +1415,12 @@ The stable model instructions are:
    facts needed for the next step change.
 
 ## End-To-End Agent Loops
+
+Every loop below is exercised for real by the runnable demo verticals in
+`examples/` (coffee-roastery, corrugated-plant, pcb-fab, clinic-scheduler) —
+each ships an end-to-end smoke suite covering data, workflows, watches,
+artifacts, structured refusals, role gating, and MCP sampling
+(`make smoke-all`; see `examples/README.md`).
 
 ### Answer A Data Question
 

@@ -1,0 +1,7 @@
+inherits: agentic
+mode: prod
+production: true
+web_ui: false
+log_level: "warn"
+server_timing: false
+enable_tracing: false

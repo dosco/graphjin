@@ -1,0 +1,191 @@
+app_name: PCB Fab Agentic Demo
+mode: dev
+host_port: 0.0.0.0:8082
+web_ui: true
+log_level: "info"
+log_format: "plain"
+http_compress: true
+server_timing: true
+production: false
+auth_fail_block: false
+enable_tracing: true
+reload_on_config_change: false
+enable_schema: false
+secret_key: pcb-fab-demo-secret
+cors_allowed_origins: ["*"]
+default_block: false
+default_limit: 50
+
+artifacts:
+  enabled: true
+  source: mes
+  auto_init: true
+  locked: ["runbook"]
+
+watches:
+  enabled: true
+  runner: "all"
+
+identity:
+  user_id_claim: sub
+  role_claims: ["roles"]
+  namespace_claim: account_id
+  admin_roles: ["admin"]
+
+roles:
+  - name: fab_planner
+  - name: quality_engineer
+  - name: admin
+
+auth:
+  type: none
+  development: true
+
+mcp:
+  disable: false
+  allow_config_updates: false
+  allow_mutations: true
+  allow_raw_queries: true
+  allow_workflow_execution: true
+  allow_workflow_updates: false
+  allow_schema_reload: false
+  allow_schema_updates: false
+  allow_dev_tools: true
+  legacy_discovery: false
+
+sources:
+  - name: mes
+    kind: database
+    default: true
+    type: postgres
+    access:
+      read: public
+      write: authenticated
+      delete: blocked
+      missing_namespace_column: allow
+    capabilities:
+      data.read: true
+      data.write: true
+      schema.read: true
+      schema.write: false
+
+  - name: yield_warehouse
+    kind: database
+    type: snowflake
+    read_only: true
+    analytics_mode: true
+    access:
+      read: public
+      write: blocked
+      delete: blocked
+      missing_namespace_column: allow
+    capabilities:
+      data.read: true
+      data.write: false
+      schema.read: true
+      schema.write: false
+
+  - name: test_measurements
+    kind: database
+    type: mongodb
+    access:
+      read: public
+      write: blocked
+      delete: blocked
+      missing_namespace_column: allow
+    capabilities:
+      data.read: true
+      data.write: false
+      schema.read: true
+      schema.write: false
+
+  - name: design_files
+    kind: file
+    backend: local
+    root: examples/pcb-fab/files
+    read_only: true
+    max_list_page_size: 25
+    capabilities:
+      files.list: true
+      files.read: true
+      files.write: false
+      files.delete: false
+      files.watch: false
+
+  - name: supplier_api
+    kind: api
+    specs_dir: examples/pcb-fab/specs
+    specs:
+      parts:
+        base_url: http://localhost:8093
+        joins:
+          getPartBySku:
+            parent_table: mes:public.bom_items
+            parent_column: sku
+            param: sku
+            expose_as: supplier_part
+        concurrency:
+          max_concurrent: 4
+          rate_limit_per_second: 10
+    capabilities:
+      api.read: true
+      api.write: false
+
+  - name: dfm_code
+    kind: code
+    path: app
+    read_only: true
+    infer_db_refs: true
+    capabilities:
+      code.search: true
+      code.read: true
+      code.write: false
+      code.watch: false
+      code.infer_db_refs: true
+
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+    catalog: true
+    control_plane: true
+    access:
+      roots:
+        gj_config: admin
+    capabilities:
+      catalog.read: true
+      security.read: true
+      config.read: true
+      config.write: false
+      runtime.read: true
+      raw_graphql.query: true
+      raw_graphql.mutate: true
+      schema.reload: false
+      schema.write: false
+      dev_tools.read: true
+      legacy_discovery.read: false
+
+  - name: workflows
+    kind: workflow
+    path: workflows
+    runtime: javascript
+    read_only: false
+    capabilities:
+      workflow.execute: true
+      workflow.read: true
+      workflow.write: false
+
+tables:
+  - name: test_runs
+    source: test_measurements
+  - name: test_measurements
+    source: test_measurements
+  - name: probe_calibrations
+    source: test_measurements
+
+relationships:
+  - from: test_measurements:test_runs.order_id
+    to: mes:public.fab_orders.id
+  - from: test_measurements:test_measurements.run_id
+    to: test_measurements:test_runs.id
+  - from: test_measurements:probe_calibrations.station
+    to: test_measurements:test_runs.station

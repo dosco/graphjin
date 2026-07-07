@@ -234,10 +234,15 @@ func TestCoffeeRoasteryDemoConfigNormalizes(t *testing.T) {
 	if !ok {
 		t.Fatal("coffee demo should include graphjin source")
 	}
-	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security"} {
 		if got := graphjin.Access.Roots[root]; got != core.AccessModePublic {
 			t.Fatalf("graphjin %s root access = %q, want public in dev demo", root, got)
 		}
+	}
+	// gj_config is deliberately admin-gated in the demo so the smoke suite can
+	// assert role-based control-plane access end to end.
+	if got := graphjin.Access.Roots["gj_config"]; got != core.AccessModeAdmin {
+		t.Fatalf("graphjin gj_config root access = %q, want admin", got)
 	}
 }
 
@@ -265,8 +270,8 @@ func TestCoffeeRoasteryAgenticConfigDocumentsAgentSmokeDefaults(t *testing.T) {
 	if got := cfg.Agent.MaxSteps; got != 10 {
 		t.Fatalf("agent max steps = %d, want 10", got)
 	}
-	if got := cfg.Agent.TimeoutSeconds; got != 150 {
-		t.Fatalf("agent timeout = %d, want 150", got)
+	if got := cfg.Agent.TimeoutSeconds; got != 300 {
+		t.Fatalf("agent timeout = %d, want 300", got)
 	}
 }
 

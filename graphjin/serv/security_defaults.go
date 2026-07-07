@@ -116,7 +116,7 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 		for _, table := range systemTables {
 			allowed := systemReadAllowedBySource(conf, mode, role, table)
 			if conf.Core.IsSourcesUsed() {
-				if systemRoleTableConfigured(runtimeCore, role, table, database) {
+				if systemRoleTableConfigured(&conf.Core, role, table, database) {
 					continue
 				}
 				block := !allowed
@@ -558,23 +558,21 @@ func appendRuntimeRoleTable(conf *core.Config, role string, table core.RoleTable
 	table.Generated = true
 	for i := range conf.Roles {
 		if strings.EqualFold(conf.Roles[i].Name, role) {
-			if !runtimeRoleTableExists(conf.Roles[i], table.Name, table.Database) {
-				conf.Roles[i].Tables = append(conf.Roles[i].Tables, table)
+			for j, rt := range conf.Roles[i].Tables {
+				if rt.Database != "" && table.Database != "" && !strings.EqualFold(rt.Database, table.Database) {
+					continue
+				}
+				if !strings.EqualFold(rt.Name, table.Name) {
+					continue
+				}
+				if rt.Generated {
+					conf.Roles[i].Tables[j] = table
+				}
+				return
 			}
+			conf.Roles[i].Tables = append(conf.Roles[i].Tables, table)
 			return
 		}
 	}
 	conf.Roles = append(conf.Roles, core.Role{Name: role, Tables: []core.RoleTable{table}})
-}
-
-func runtimeRoleTableExists(role core.Role, table, database string) bool {
-	for _, rt := range role.Tables {
-		if rt.Database != "" && database != "" && !strings.EqualFold(rt.Database, database) {
-			continue
-		}
-		if strings.EqualFold(rt.Name, table) {
-			return true
-		}
-	}
-	return false
 }

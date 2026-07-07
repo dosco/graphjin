@@ -1176,9 +1176,22 @@ func (co *Compiler) setSelectorRoleConfig(role, fieldName string, qc *QCode, sel
 		if qc.SType != QTQuery {
 			return tr, fmt.Errorf("%s blocked: %s (role: %s)", qc.SType, fieldName, role)
 		}
+		// Reserved gj_* system roots deny loudly instead of rendering null:
+		// they are control-plane surface where a silent null reads as "no
+		// data" rather than "no access", and managed-query handlers would
+		// otherwise serve a root the role rules blocked.
+		if sel.ParentID == -1 && isReservedSystemTable(sel.Ti.Name) {
+			return tr, fmt.Errorf("%s blocked: %s (role: %s)", qc.SType, fieldName, role)
+		}
 		sel.SkipRender = SkipTypeBlocked
 	}
 	return tr, nil
+}
+
+// isReservedSystemTable reports whether the table sits in the reserved gj_
+// namespace used by GraphJin system roots (catalog, security, config, ...).
+func isReservedSystemTable(name string) bool {
+	return len(name) >= 3 && strings.EqualFold(name[:3], "gj_")
 }
 
 func (co *Compiler) setLimit(tr trval, qc *QCode, sel *Select) {

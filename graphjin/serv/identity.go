@@ -239,19 +239,25 @@ func (s *graphjinService) recordGraphQLAccessFailure(ctx context.Context, err er
 		"reason": reason,
 		"role":   runtimeRoleClass(ctx),
 	}
+	nextAction := "Check gj_security for the effective source/root policy and retry with the required identity or role."
 	if key, value, ok := graphQLAccessFailureTarget(err); ok {
 		details[key] = value
+		if key == "root" {
+			nextAction = sourceModeRootAccessNextAction
+		}
 	}
 	s.recordRuntimeEvent(ctx, runtimeEvent{
 		Phase:      "access",
 		Status:     runtimeStatusFailed,
 		Severity:   "warn",
 		Summary:    "GraphQL request denied by source-mode access policy.",
-		NextAction: "Check gj_security for the effective source/root policy and retry with the required identity or role.",
+		NextAction: nextAction,
 		ErrorCode:  reason,
 		Details:    details,
 	})
 }
+
+const sourceModeRootAccessNextAction = `Check gj_security for the effective source/root policy and retry with the required role; if unsure, run query_catalog(search: "graphjin root access gj_security gj_config admin").`
 
 func (s *graphjinService) recordGraphQLAccessFailures(ctx context.Context, query string, res *core.Result, err error) {
 	if err != nil {
@@ -283,7 +289,7 @@ func (s *graphjinService) recordDeniedSourceModeRootAccess(ctx context.Context, 
 			Status:     runtimeStatusFailed,
 			Severity:   "warn",
 			Summary:    "GraphQL request denied by source-mode root access policy.",
-			NextAction: `Check gj_security for the effective source/root policy and retry with the required role; if unsure, run query_catalog(search: "graphjin root access gj_security gj_config admin").`,
+			NextAction: sourceModeRootAccessNextAction,
 			ErrorCode:  "access_unauthorized",
 			Details: map[string]any{
 				"reason": "access_unauthorized",

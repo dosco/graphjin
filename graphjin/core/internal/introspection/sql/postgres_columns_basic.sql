@@ -28,7 +28,7 @@ FROM pg_attribute f
 	JOIN pg_class c ON c.oid = f.attrelid
 	JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r', 'v', 'm', 'f', 'p')
-	AND n.nspname NOT IN ('_graphjin', 'information_schema', 'pg_catalog')
+	AND n.nspname NOT IN ('information_schema', 'pg_catalog')
 	AND n.nspname NOT LIKE 'pg_toast%'
 	AND n.nspname NOT LIKE 'pg_temp_%'
 	AND n.nspname NOT LIKE 'pg_toast_temp_%'

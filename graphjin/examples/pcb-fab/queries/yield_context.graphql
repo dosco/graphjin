@@ -1,0 +1,33 @@
+query yield_context {
+  yield_by_layer_count(order_by: { week_start: desc }, limit: 6) {
+    id
+    week_start
+    layer_count
+    started_panels
+    passed_panels
+    yield_pct
+  }
+  defect_pareto(order_by: { defect_count: desc }, limit: 5) {
+    id
+    week_start
+    defect_code
+    station
+    defect_count
+    escaped_count
+  }
+  process_capability(order_by: { cpk: asc }, limit: 5) {
+    id
+    process_step
+    metric
+    cpk
+    sample_count
+    status
+  }
+  wip_aging(order_by: { age_hours: desc }, limit: 5) {
+    id
+    order_code
+    current_step
+    age_hours
+    blocker
+  }
+}

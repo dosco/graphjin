@@ -159,6 +159,27 @@ func newTestEngineWithTables(t *testing.T, conf *Config, primarySchema string, n
 	return gj, &logBuf
 }
 
+func TestResolverDBInfoParsesSourceQualifiedTable(t *testing.T) {
+	fallback := &sdata.DBInfo{Schema: "main"}
+	mesInfo := &sdata.DBInfo{Schema: "public"}
+	gj := &graphjinEngine{
+		databases: map[string]*dbContext{
+			"mes": {name: "mes", dbinfo: mesInfo},
+		},
+	}
+	rc := ResolverConfig{Schema: "main", Table: "mes:public.bom_items"}
+	got, err := gj.resolverDBInfo(&rc, fallback)
+	if err != nil {
+		t.Fatalf("resolverDBInfo: %v", err)
+	}
+	if got != mesInfo {
+		t.Fatalf("expected mes DBInfo, got %#v", got)
+	}
+	if rc.Schema != "public" || rc.Table != "bom_items" {
+		t.Fatalf("unexpected parsed resolver table: schema=%q table=%q", rc.Schema, rc.Table)
+	}
+}
+
 func TestCollisionWithRealTableErrors(t *testing.T) {
 	gj, _ := newTestEngineWithTables(t, &Config{}, "public", "users", "orders")
 	synth := []ResolverConfig{
@@ -193,8 +214,8 @@ func TestCollisionAcrossSpecsErrors(t *testing.T) {
 			Props: ResolverProps{"spec_key": "is", "operation_id": "getAudit"},
 		},
 		{
-			Name: "audit", // same expose_as as above
-			Type: "openapi",
+			Name:  "audit", // same expose_as as above
+			Type:  "openapi",
 			Table: "orders", Column: "id",
 			Props: ResolverProps{"spec_key": "stripe", "operation_id": "getAuditEvent"},
 		},
@@ -217,8 +238,8 @@ func TestCollisionWithAliasWarnsButPasses(t *testing.T) {
 	gj, logBuf := newTestEngineWithTables(t, conf, "public", "users")
 	synth := []ResolverConfig{
 		{
-			Name: "customers", // collides with the alias, not a real table
-			Type: "openapi",
+			Name:  "customers", // collides with the alias, not a real table
+			Type:  "openapi",
 			Table: "users", Column: "id",
 			Props: ResolverProps{"spec_key": "crm", "operation_id": "getCustomer"},
 		},
@@ -243,8 +264,8 @@ func TestCollisionWithExistingResolverWarns(t *testing.T) {
 	gj, logBuf := newTestEngineWithTables(t, conf, "public", "accounts")
 	synth := []ResolverConfig{
 		{
-			Name: "ledger", // matches existing resolver name
-			Type: "openapi",
+			Name:  "ledger", // matches existing resolver name
+			Type:  "openapi",
 			Table: "accounts", Column: "id",
 			Props: ResolverProps{"spec_key": "fin", "operation_id": "getLedger"},
 		},

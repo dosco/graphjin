@@ -103,6 +103,12 @@ func (s *gstate) executeManagedQuery(c context.Context) (bool, error) {
 	for _, rootID := range qc.Roots {
 		sel := qc.Selects[rootID]
 		if _, ok := managedTables[strings.ToLower(sel.Ti.Name)]; ok {
+			// Role rules blocked this root; the handler answers from service
+			// state, not the role-filtered SQL/nano path, so serving it here
+			// would bypass the block.
+			if sel.SkipRender == qcode.SkipTypeBlocked {
+				return true, fmt.Errorf("query blocked: %s (role: %s)", sel.FieldName, s.role)
+			}
 			managedRoots++
 		} else {
 			normalRoots++

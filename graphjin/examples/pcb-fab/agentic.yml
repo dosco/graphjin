@@ -1,0 +1,18 @@
+inherits: dev
+mode: agentic
+auth_fail_block: true
+auth:
+  type: jwt
+  development: false
+  jwt:
+    secret: pcb-fab-demo-jwt-secret
+
+mcp:
+  http_stateful: true
+  include_tools_with_agent: true
+
+agent:
+  enabled: true
+  max_steps: 10
+  timeout_seconds: 60
+  sampling: auto

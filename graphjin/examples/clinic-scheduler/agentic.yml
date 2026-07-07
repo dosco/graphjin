@@ -1,0 +1,24 @@
+inherits: dev
+mode: agentic
+production: false
+log_level: "info"
+log_format: "plain"
+
+# Agentic mode refuses header-trust dev identity; demo callers authenticate
+# with HS256 JWTs minted from this demo secret (see scripts/smoke.sh).
+auth:
+  type: jwt
+  development: false
+  jwt:
+    secret: clinic-scheduler-demo-jwt-secret
+
+agent:
+  enabled: true
+  max_steps: 10
+  timeout_seconds: 150
+  return_trace: false
+  sampling: auto
+
+mcp:
+  http_stateful: true
+  include_tools_with_agent: true

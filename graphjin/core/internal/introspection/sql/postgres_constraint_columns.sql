@@ -27,7 +27,7 @@ FROM pg_constraint co
 		AND fa.attnum = fk.attnum
 		AND NOT fa.attisdropped
 WHERE co.contype IN ('p', 'u', 'f')
-	AND n.nspname NOT IN ('_graphjin', 'information_schema', 'pg_catalog')
+	AND n.nspname NOT IN ('information_schema', 'pg_catalog')
 	AND n.nspname NOT LIKE 'pg_toast%'
 	AND n.nspname NOT LIKE 'pg_temp_%'
 	AND n.nspname NOT LIKE 'pg_toast_temp_%'

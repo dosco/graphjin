@@ -70,6 +70,15 @@ func (s *graphjinService) injectInternalStoreRole() {
 	if dbName == "" {
 		dbName = core.DefaultDBName
 	}
+	// Raw store tables are reachable ONLY through the internal role. They are
+	// discovered like any table (schema _graphjin on postgres, _graphjin_*
+	// prefix elsewhere), so every other role gets an explicit fail-closed
+	// block — otherwise a public/authenticated source access mode would let
+	// callers read the raw rows and bypass owner scoping.
+	blockRoles := []string{"anon", "user"}
+	if s.conf.Core.IsSourcesUsed() {
+		blockRoles = sourceModeSystemRoleNames(s.conf)
+	}
 	add := func(table, schema string) {
 		rt := core.RoleTable{
 			Name:     table,
@@ -82,6 +91,21 @@ func (s *graphjinService) injectInternalStoreRole() {
 			Delete:   &core.Delete{Block: false},
 		}
 		appendRuntimeRoleTable(coreConf, graphjinInternalStoreRole, rt)
+		for _, role := range blockRoles {
+			if role == graphjinInternalStoreRole {
+				continue
+			}
+			appendRuntimeRoleTable(coreConf, role, core.RoleTable{
+				Name:     table,
+				Schema:   schema,
+				Database: dbName,
+				Query:    &core.Query{Block: true},
+				Insert:   &core.Insert{Block: true},
+				Update:   &core.Update{Block: true},
+				Upsert:   &core.Upsert{Block: true},
+				Delete:   &core.Delete{Block: true},
+			})
+		}
 	}
 	if dbType == "postgres" || dbType == "" {
 		add("artifacts", cfg.Schema)

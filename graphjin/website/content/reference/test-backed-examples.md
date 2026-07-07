@@ -8,6 +8,8 @@ weight: 50
 
 Source note: this page is curated from `tests/*_test.go`, `core/**/*_test.go`, `serv/**/*_test.go`, `mongodriver/**/*_test.go`, and the MCP syntax tests.
 
+Beyond unit-level examples, the repo ships four runnable demo verticals (coffee-roastery, corrugated-plant, pcb-fab, clinic-scheduler) with end-to-end smoke suites covering data, workflows, watches, artifacts, structured refusals, roles, and MCP sampling — see `examples/README.md` (`make smoke-all`).
+
 ## Query examples
 
 | Feature | Test |

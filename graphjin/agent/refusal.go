@@ -218,15 +218,26 @@ func (s *discoveryState) filteredUnblockSteps(specs []unblockStepSpec) []Unblock
 	if s != nil {
 		profile = s.capabilities
 	}
-	out := make([]UnblockStep, 0, len(specs))
-	for _, spec := range specs {
-		if !profileAllowsTool(profile, spec.step.Tool) {
-			continue
+	filter := func(in []unblockStepSpec) []UnblockStep {
+		out := make([]UnblockStep, 0, len(in))
+		for _, spec := range in {
+			if !profileAllowsTool(profile, spec.step.Tool) {
+				continue
+			}
+			if !profileAllowsRoots(profile, spec.roots) {
+				continue
+			}
+			out = append(out, spec.step)
 		}
-		if !profileAllowsRoots(profile, spec.roots) {
-			continue
-		}
-		out = append(out, spec.step)
+		return out
+	}
+	out := filter(specs)
+	if len(out) == 0 {
+		// Every suggested step was capability-filtered (e.g. a user whose
+		// refusal names admin-only surfaces). A retryable refusal must still
+		// carry actionable steps, so fall back to generic catalog discovery —
+		// gated only on the caller's own visible surface.
+		out = filter(catalogDiscoverySteps(s))
 	}
 	return out
 }

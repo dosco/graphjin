@@ -304,6 +304,6 @@ const watchReadInstruction = `Skill: watch_read (gj_watch / gj_watch_event). Rev
 	`A watch's status, last_error, and failure_count explain why it is not firing. If gj_watch / gj_watch_event is not visible to this caller, return blocked with the evidence and the missing capability.`
 
 const watchWriteInstruction = `Skill: watch_write (gj_watch). Create, update, pause, or delete standing watches through the governed root. ` +
-	`Before any gj_watch mutation, read gj_security / gj_runtime guidance (control-plane write gate) and the gj_watch system_capability detail row. ` +
+	`Before any gj_watch mutation, inspect the help:security or help:runtime catalog row with query_catalog({id: "help:security"}) — the control-plane write gate — plus the gj_watch system_capability detail row. ` +
 	`Create or update with gj_watch(insert/update) — name plus either a subscription query or a saved_query_name, optionally variables_json, condition_js, delivery_json, enrich_json; pause or resume via status/enabled; remove with gj_watch(delete). Watches run durably under the owner's stored identity; per-owner limits and event retention are enforced by config. ` +
 	`Enabling watches is an admin config change (config_recipe), not a watch mutation. If the watch capability is not visible to this caller, return blocked with the evidence and the missing capability.`
