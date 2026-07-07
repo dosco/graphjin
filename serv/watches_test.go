@@ -337,6 +337,103 @@ func TestWatchRunnerPersistsEventsIdempotentlyAndNotices(t *testing.T) {
 	}
 }
 
+func TestDeleteWatchCascadesEvents(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	cp := newWatchControlPlane(svc)
+	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
+	row, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "insert",
+		Input: map[string]interface{}{
+			"name":  "delete_me",
+			"query": `subscription delete_me { orders { id status } }`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("insert watch: %v", err)
+	}
+	watchID := row["id"].(string)
+	insertWatchEventFixture(t, svc, ctx, "evt_delete_me", watchID, time.Now().UTC().Format(time.RFC3339))
+
+	if _, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "delete",
+		Where:     map[string]interface{}{"id": map[string]interface{}{"eq": watchID}},
+	}); err != nil {
+		t.Fatalf("delete watch: %v", err)
+	}
+	if got := watchEventIDs(t, db); len(got) != 0 {
+		t.Fatalf("watch events after delete = %+v, want none", got)
+	}
+	if got := sqliteRevision(t, db, "watches"); got != 2 {
+		t.Fatalf("watch revision after delete = %d, want 2", got)
+	}
+	if got := sqliteRevision(t, db, "watch_events"); got != 1 {
+		t.Fatalf("watch event revision after delete = %d, want 1", got)
+	}
+}
+
+func TestSweepWatchEventsPrunesExpiredAndOrphanedRows(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	svc.conf.Core.Watches.EventRetentionHours = 1
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	ctx := artifactUserCtx("user_1")
+	if _, err := db.Exec(`INSERT INTO "_graphjin_watches" (id, name, query, account_id, owner_id, owner_role) VALUES (?, ?, ?, ?, ?, ?)`,
+		"watch_live", "live", `subscription live { orders { id } }`, "acct_1", "user_1", "analyst"); err != nil {
+		t.Fatalf("insert watch fixture: %v", err)
+	}
+	now := time.Now().UTC()
+	insertWatchEventFixture(t, svc, ctx, "evt_keep", "watch_live", now.Format(time.RFC3339))
+	insertWatchEventFixture(t, svc, ctx, "evt_old", "watch_live", now.Add(-2*time.Hour).Format(time.RFC3339))
+	insertWatchEventFixture(t, svc, ctx, "evt_orphan", "watch_deleted", now.Format(time.RFC3339))
+
+	deleted, err := svc.sweepWatchEvents(ctx)
+	if err != nil {
+		t.Fatalf("sweepWatchEvents: %v", err)
+	}
+	if deleted != 2 {
+		t.Fatalf("sweep deleted %d rows, want 2", deleted)
+	}
+	if got := watchEventIDs(t, db); len(got) != 1 || got[0] != "evt_keep" {
+		t.Fatalf("watch events after sweep = %+v, want [evt_keep]", got)
+	}
+	if got := sqliteRevision(t, db, "watch_events"); got != 1 {
+		t.Fatalf("watch event revision after sweep = %d, want 1", got)
+	}
+}
+
+func TestWatchRunnerSkipsPersistForDeletedWatch(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	dataHash, inserted, err := svc.persistWatchResult(artifactUserCtx("user_1"), &watchRuntimeDefinition{
+		ID:        "watch_deleted",
+		Name:      "deleted",
+		Query:     `subscription deleted { orders { id } }`,
+		AccountID: "acct_1",
+		OwnerID:   "user_1",
+		OwnerRole: "analyst",
+	}, &core.Result{Data: json.RawMessage(`{"data":{"orders":[{"id":1}]}}`)})
+	if err != nil {
+		t.Fatalf("persist deleted watch result: %v", err)
+	}
+	if dataHash == "" || inserted {
+		t.Fatalf("deleted watch persist hash=%q inserted=%v, want hash and no insert", dataHash, inserted)
+	}
+	if got := watchEventIDs(t, db); len(got) != 0 {
+		t.Fatalf("deleted watch should not insert events, got %+v", got)
+	}
+}
+
 func TestWatchRunnerCapsStoredSnapshotButHashesFullData(t *testing.T) {
 	db, svc := newSQLiteWatchService(t, 20)
 	svc.conf.Core.Watches.SnapshotMaxBytes = 96
@@ -936,6 +1033,51 @@ func startSQLiteWatchCore(t *testing.T, svc *graphjinService, db *sql.DB) {
 	svc.gj = gj
 }
 
+func insertWatchEventFixture(t *testing.T, svc *graphjinService, ctx context.Context, id, watchID, createdAt string) {
+	t.Helper()
+	if _, err := svc.internalStoreMutationRows(ctx, "watch_events", `insert: $input`, watchEventStoreFields, map[string]any{"input": map[string]any{
+		"id":                id,
+		"watch_id":          watchID,
+		"data_hash":         id + "_hash",
+		"data_json":         nullableJSONString(`{"fixture":true}`),
+		"data_truncated":    false,
+		"evidence_json":     nullableJSONString(`{}`),
+		"delivery_status":   "pending",
+		"delivery_attempts": 0,
+		"delivery_json":     nullableJSONString(`{"kind":"inbox"}`),
+		"receipt_json":      nil,
+		"enrichment_json":   nil,
+		"seen":              false,
+		"account_id":        "acct_1",
+		"owner_id":          "user_1",
+		"created_at":        createdAt,
+		"updated_at":        createdAt,
+	}}); err != nil {
+		t.Fatalf("insert watch event fixture %s: %v", id, err)
+	}
+}
+
+func watchEventIDs(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	rows, err := db.Query(`SELECT id FROM "_graphjin_watch_events" ORDER BY id`)
+	if err != nil {
+		t.Fatalf("query watch event ids: %v", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scan watch event id: %v", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate watch event ids: %v", err)
+	}
+	return ids
+}
+
 func contextWithUserRole(ctx context.Context, role string) context.Context {
 	ctx = context.WithValue(ctx, core.UserRoleKey, role)
 	return context.WithValue(ctx, core.IdentityRolesKey, []string{role})
@@ -950,4 +1092,17 @@ func watchWebhookSecurityPolicyForTest(t *testing.T, conf *Config) securityPolic
 	}
 	t.Fatal("missing watch webhook security policy")
 	return securityPolicyEval{}
+}
+
+func TestStringWhereUnwrapsOperatorMap(t *testing.T) {
+	where := map[string]interface{}{"id": map[string]interface{}{"eq": "we:abc"}}
+	if got := stringWhere(where, "id"); got != "we:abc" {
+		t.Fatalf("stringWhere eq-map = %q, want we:abc", got)
+	}
+	if got := stringWhere(map[string]interface{}{"id": "plain"}, "id"); got != "plain" {
+		t.Fatalf("stringWhere scalar = %q, want plain", got)
+	}
+	if got := stringWhere(map[string]interface{}{"id": map[string]interface{}{"in": []string{"a"}}}, "id"); got != "" {
+		t.Fatalf("stringWhere non-eq operator = %q, want empty", got)
+	}
 }

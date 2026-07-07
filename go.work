@@ -9,10 +9,12 @@ use (
 	./codesql
 	./conf
 	./core
+	./examples/pcb-fab/mockapi
 	./hostedemu
 	./mongodriver
 	./plugin/otel
 	./serv
 	./tests
+	./tools/mcp-sampling-client
 	./wasm
 )

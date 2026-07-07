@@ -29,6 +29,7 @@ const (
 	watchDeliveryMaxAttempts     = 3
 	watchDeliveryHTTPTimeout     = 10 * time.Second
 	watchDeliveryMaxResponseBody = 4 * 1024
+	watchEventSweepInterval      = time.Hour
 )
 
 type watchDeliveryConfig struct {
@@ -71,7 +72,15 @@ func (s *graphjinService) watchDeliveryLoop(ctx context.Context) {
 	if interval < watchRunnerMinInterval {
 		interval = watchRunnerMinInterval
 	}
+	var lastSweep time.Time
 	process := func() {
+		now := time.Now()
+		if lastSweep.IsZero() || now.Sub(lastSweep) >= watchEventSweepInterval {
+			lastSweep = now
+			if _, err := s.sweepWatchEvents(ctx); err != nil {
+				s.recordWatchRunnerError("sweep watch events", err, nil)
+			}
+		}
 		if err := s.processPendingWatchDeliveries(ctx); err != nil {
 			s.recordWatchRunnerError("deliver watch events", err, nil)
 		}
@@ -115,6 +124,65 @@ func (s *graphjinService) processPendingWatchDeliveries(ctx context.Context) err
 		}
 	}
 	return firstErr
+}
+
+func (s *graphjinService) sweepWatchEvents(ctx context.Context) (int, error) {
+	if _, _, _, _, ok := s.watchDB(); !ok {
+		return 0, nil
+	}
+	cfg := s.conf.Core.EffectiveWatchesConfig()
+	eventRows, err := s.internalStoreRows(ctx, "watch_events", "", `id watch_id created_at`, nil)
+	if err != nil {
+		return 0, err
+	}
+	if len(eventRows) == 0 {
+		return 0, nil
+	}
+	watchRows, err := s.internalStoreRows(ctx, "watches", "", `id`, nil)
+	if err != nil {
+		return 0, err
+	}
+	watchIDs := make(map[string]struct{}, len(watchRows))
+	for _, row := range watchRows {
+		if id := stringMapValue(row, "id"); id != "" {
+			watchIDs[id] = struct{}{}
+		}
+	}
+	var cutoff time.Time
+	if cfg.EventRetentionHours > 0 {
+		cutoff = time.Now().UTC().Add(-time.Duration(cfg.EventRetentionHours) * time.Hour)
+	}
+	deleted := 0
+	for _, row := range eventRows {
+		id := stringMapValue(row, "id")
+		if id == "" {
+			continue
+		}
+		watchID := stringMapValue(row, "watch_id")
+		_, watchExists := watchIDs[watchID]
+		expired := false
+		if !cutoff.IsZero() {
+			if ts, ok := parseWatchTime(stringMapValue(row, "created_at")); ok && ts.Before(cutoff) {
+				expired = true
+			}
+		}
+		if !expired && watchExists {
+			continue
+		}
+		n, err := s.deleteWatchEventByID(ctx, id)
+		if err != nil {
+			return deleted, err
+		}
+		deleted += n
+	}
+	if deleted == 0 {
+		return 0, nil
+	}
+	if err := s.bumpArtifactRevision(ctx, "watch_events"); err != nil {
+		return deleted, err
+	}
+	s.markWatchChanged("watch event sweep")
+	return deleted, nil
 }
 
 func (s *graphjinService) processWatchDeliveryRow(ctx context.Context, row map[string]any) error {

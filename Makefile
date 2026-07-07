@@ -145,10 +145,13 @@ demo-agent:
 	@GO_ENV=agentic GOTOOLCHAIN=auto go run $(BUILD_FLAGS) ./cmd serve --demo --path $(DEMO_PATH)
 
 demo-smoke:
-	@examples/coffee-roastery/scripts/smoke.sh
+	@$(DEMO_PATH)/scripts/smoke.sh
 
 demo-agent-smoke:
-	@examples/coffee-roastery/scripts/smoke.sh --agent
+	@$(DEMO_PATH)/scripts/smoke.sh --agent
+
+smoke-all:
+	@scripts/demo-smoke-all.sh $(SMOKE_ALL_ARGS)
 
 run-github-actions:
 	@act push --job linter

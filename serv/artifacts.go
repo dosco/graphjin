@@ -500,6 +500,19 @@ func (s *graphjinService) internalArtifactStoreRow(ctx context.Context, id strin
 	return rows[0], nil
 }
 
+// EnsureArtifactStore creates the artifact (and watch) store tables for the
+// configured artifact source. Demo tooling calls this after seeding and before
+// generating its schema-DDL cache, so the cached schema, which core loads in
+// place of live discovery in demo mode — includes the store tables that
+// gj_artifacts/gj_watch role rules and internal-store queries compile against.
+func EnsureArtifactStore(conf *Config, dbs map[string]*sql.DB) error {
+	if conf == nil || !conf.Core.Artifacts.Enabled {
+		return nil
+	}
+	s := &graphjinService{conf: conf, dbs: dbs}
+	return s.initArtifactsBeforeCore()
+}
+
 func (s *graphjinService) initArtifactsBeforeCore() error {
 	if s == nil || s.conf == nil || !s.conf.Core.Artifacts.Enabled || !s.conf.Core.Artifacts.AutoInitEnabled() {
 		return nil
@@ -575,6 +588,33 @@ revision BIGINT NOT NULL DEFAULT 0,
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`, revisions),
 		}
+	case "mysql", "mariadb":
+		return []string{
+			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+id VARCHAR(191) PRIMARY KEY,
+name VARCHAR(255) NOT NULL,
+kind VARCHAR(64) NOT NULL,
+path VARCHAR(1024) NOT NULL DEFAULT '',
+source VARCHAR(64) NOT NULL DEFAULT 'database',
+visibility VARCHAR(32) NOT NULL DEFAULT 'user',
+read_only BOOLEAN NOT NULL DEFAULT FALSE,
+account_id VARCHAR(191) NOT NULL DEFAULT '',
+owner_id VARCHAR(191) NOT NULL DEFAULT '',
+content LONGTEXT NOT NULL,
+content_json LONGTEXT,
+metadata_json LONGTEXT,
+content_hash VARCHAR(128) NOT NULL DEFAULT '',
+status VARCHAR(32) NOT NULL DEFAULT 'approved',
+revision BIGINT NOT NULL DEFAULT 1,
+created_at VARCHAR(64) NOT NULL DEFAULT '',
+updated_at VARCHAR(64) NOT NULL DEFAULT ''
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`, table),
+			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+domain VARCHAR(64) PRIMARY KEY,
+revision BIGINT NOT NULL DEFAULT 0,
+updated_at VARCHAR(64) NOT NULL DEFAULT ''
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`, revisions),
+		}
 	default:
 		return []string{
 			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -626,10 +666,16 @@ func (s *graphjinService) migrateArtifactSchema(ctx context.Context, db *sql.DB,
 		return nil
 	}
 	table := artifactTableName(dbType, schema, "artifacts")
-	if err := ensureSQLColumn(ctx, db, dbType, table, "content_hash", "TEXT NOT NULL DEFAULT ''"); err != nil {
+	contentHashDef := "TEXT NOT NULL DEFAULT ''"
+	statusDef := "TEXT NOT NULL DEFAULT 'approved'"
+	if dbType == "mysql" || dbType == "mariadb" {
+		contentHashDef = "VARCHAR(128) NOT NULL DEFAULT ''"
+		statusDef = "VARCHAR(32) NOT NULL DEFAULT 'approved'"
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, table, "content_hash", contentHashDef); err != nil {
 		return err
 	}
-	return ensureSQLColumn(ctx, db, dbType, table, "status", "TEXT NOT NULL DEFAULT 'approved'")
+	return ensureSQLColumn(ctx, db, dbType, table, "status", statusDef)
 }
 
 func ensureSQLColumn(ctx context.Context, db *sql.DB, dbType, table, column, definition string) error {
@@ -642,14 +688,14 @@ func ensureSQLColumn(ctx context.Context, db *sql.DB, dbType, table, column, def
 			return nil
 		}
 	} else {
-		q := fmt.Sprintf("SELECT %s FROM %s WHERE 1 = 0", quoteSQLIdent(column), table)
+		q := fmt.Sprintf("SELECT %s FROM %s WHERE 1 = 0", quoteStoreIdent(dbType, column), table)
 		rows, err := db.QueryContext(ctx, q)
 		if err == nil {
 			rows.Close() // nolint:errcheck
 			return nil
 		}
 	}
-	_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, quoteSQLIdent(column), definition))
+	_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, quoteStoreIdent(dbType, column), definition))
 	return err
 }
 
@@ -678,7 +724,7 @@ func artifactTableName(dbType, schema, table string) string {
 	if dbType == "postgres" || dbType == "" {
 		return quotePGIdent(schema) + "." + quotePGIdent(table)
 	}
-	return quoteSQLIdent(schema + "_" + table)
+	return quoteStoreIdent(dbType, schema+"_"+table)
 }
 
 func quotePGIdent(s string) string {
@@ -687,6 +733,15 @@ func quotePGIdent(s string) string {
 
 func quoteSQLIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
+func quoteStoreIdent(dbType, s string) string {
+	switch dbType {
+	case "mysql", "mariadb":
+		return "`" + strings.ReplaceAll(s, "`", "``") + "`"
+	default:
+		return quoteSQLIdent(s)
+	}
 }
 
 func (s *graphjinService) checkArtifactKindWritable(kind string) error {
@@ -881,6 +936,14 @@ func stringWhere(where map[string]interface{}, key string) string {
 	}
 	v, ok := where[key]
 	if !ok || v == nil {
+		return ""
+	}
+	// GraphQL where clauses arrive as operator maps ({ id: { eq: "..." } });
+	// only equality can identify a single row here.
+	if m, ok := v.(map[string]interface{}); ok {
+		if ev, ok := m["eq"]; ok && ev != nil {
+			return fmt.Sprint(ev)
+		}
 		return ""
 	}
 	return fmt.Sprint(v)

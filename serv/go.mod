@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	cloud.google.com/go/storage v1.62.1
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
+	github.com/ax-llm/ax/packages/go v0.0.0-20260705034710-eb5835e54ba0
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
 	github.com/dosco/graphjin/agent/v3 v3.18.41
@@ -163,7 +164,6 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0 // indirect
-	github.com/ax-llm/ax/packages/go v0.0.0-20260630215846-2bf8c7b9a46b // indirect
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect

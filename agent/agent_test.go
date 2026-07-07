@@ -773,8 +773,22 @@ func TestRunFiltersRefusalUnblockStepsByCapabilityProfile(t *testing.T) {
 	if resp.Refusal == nil || resp.Refusal.Code != "security_runtime_discovery_required" {
 		t.Fatalf("refusal = %+v, want security_runtime_discovery_required", resp.Refusal)
 	}
-	if len(resp.Refusal.Unblock) != 0 {
-		t.Fatalf("security/runtime unblock steps must be hidden without those roots: %+v", resp.Refusal.Unblock)
+	// Root-scoped steps are hidden without those roots, but a retryable refusal
+	// still carries generic catalog-discovery steps limited to visible tools.
+	if len(resp.Refusal.Unblock) == 0 {
+		t.Fatalf("retryable refusal should fall back to generic unblock steps: %+v", resp.Refusal)
+	}
+	for _, step := range resp.Refusal.Unblock {
+		if step.Tool != toolQueryCatalog {
+			t.Fatalf("fallback step used non-visible tool %q: %+v", step.Tool, resp.Refusal.Unblock)
+		}
+	}
+	leak, err := json.Marshal(resp.Refusal)
+	if err != nil {
+		t.Fatalf("marshal refusal: %v", err)
+	}
+	if strings.Contains(string(leak), "gj_security") || strings.Contains(string(leak), "gj_runtime") {
+		t.Fatalf("refusal leaked hidden roots: %s", leak)
 	}
 	if !strings.Contains(resp.Refusal.LawfulAlternative, "authorized operator") {
 		t.Fatalf("lawful alternative = %q, want operator handoff", resp.Refusal.LawfulAlternative)
@@ -835,8 +849,9 @@ func TestNilCapabilityProfileHidesRootScopedUnblockSteps(t *testing.T) {
 	if resp.Refusal == nil || resp.Refusal.Code != "security_runtime_discovery_required" {
 		t.Fatalf("unexpected refusal: %+v", resp.Refusal)
 	}
-	if len(resp.Refusal.Unblock) != 0 {
-		t.Fatalf("nil capability profile must hide root-scoped unblock steps: %+v", resp.Refusal.Unblock)
+	// Root-scoped steps are hidden, replaced by generic discovery fallback.
+	if len(resp.Refusal.Unblock) == 0 {
+		t.Fatalf("retryable refusal should carry generic fallback steps: %+v", resp.Refusal)
 	}
 	data, err := json.Marshal(resp.Refusal)
 	if err != nil {

@@ -135,8 +135,8 @@ func TestLoadDemoEnvInfersAgentFromOpenAIKey(t *testing.T) {
 	if got := os.Getenv("GJ_AGENT_MAX_STEPS"); got != "10" {
 		t.Fatalf("GJ_AGENT_MAX_STEPS = %q, want 10", got)
 	}
-	if got := os.Getenv("GJ_AGENT_TIMEOUT_SECONDS"); got != "150" {
-		t.Fatalf("GJ_AGENT_TIMEOUT_SECONDS = %q, want 150", got)
+	if got := os.Getenv("GJ_AGENT_TIMEOUT_SECONDS"); got != "300" {
+		t.Fatalf("GJ_AGENT_TIMEOUT_SECONDS = %q, want 300", got)
 	}
 	if !strings.Contains(out.String(), "enabled agentic mode with OPENAI_API_KEY") {
 		t.Fatalf("expected agent inference message, got %q", out.String())

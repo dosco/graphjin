@@ -73,16 +73,29 @@ Expected shape:
 {"data":{"customers":[{"id":1,"name":"Northstar Grocers"}],"roast_batches":[{"id":1001,"batch_code":"RB-2026-0605-001"}]}}
 ```
 
-Run an agent workflow with local development identity headers:
+Run an agent workflow as an authenticated caller. In plain dev mode the
+`X-User-*` development headers below are trusted; in **agentic mode** GraphJin
+refuses header-trust identity and verifies HS256 JWTs instead
+(`auth.jwt.secret: coffee-roastery-demo-jwt-secret` in `agentic.yml`) — the
+smoke suite mints those tokens automatically, and you can mint one yourself:
 
 ```bash
+# agentic mode: mint a demo JWT (requires jq + openssl)
+b64() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+H=$(printf '{"alg":"HS256","typ":"JWT"}' | b64)
+P=$(jq -nc '{sub:"101", roles:["user"], account_id:"1", exp:(now|floor)+3600}' | b64)
+S=$(printf '%s.%s' "$H" "$P" | openssl dgst -sha256 -hmac coffee-roastery-demo-jwt-secret -binary | b64)
+TOKEN="$H.$P.$S"
+
 curl -sS http://localhost:8080/api/v1/graphql \
   -H 'content-type: application/json' \
-  -H 'X-User-ID: 101' \
-  -H 'X-User-Role: user' \
-  -H 'X-Account-ID: 1' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'X-User-ID: 101' -H 'X-User-Role: user' -H 'X-Account-ID: 1' \
   --data '{"query":"mutation { gj_workflow_execution(insert: { workflow_name: \"daily_roast_plan\", variables: { orders: [], schedule: [], subscriptions: [] } }) { workflow_name status result_json error duration_ms } }"}'
 ```
+
+(Sending both the bearer token and the dev headers makes the same request work
+against either mode.)
 
 ## Command-Line Smoke Suite
 
@@ -117,13 +130,15 @@ The checked-in `.env.example` sets `GO_ENV=agentic`, so the demo uses
 `make demo` from this checkout. If demo mode finds `OPENAI_API_KEY`,
 `GOOGLE_APIKEY`, or `ANTHROPIC_API_KEY`, it enables the GraphJin agent, selects
 the matching provider key, and defaults the demo to agentic mode with
-`GJ_AGENT_MAX_STEPS=10` and `GJ_AGENT_TIMEOUT_SECONDS=150`. Set `GO_ENV`,
+`GJ_AGENT_MAX_STEPS=10` and `GJ_AGENT_TIMEOUT_SECONDS=300`. Set `GO_ENV`,
 `GJ_AGENT_ENABLED`, `GJ_AGENT_API_KEY_ENV`, `GJ_AGENT_PROVIDER`,
 `GJ_AGENT_MODEL`, `GJ_AGENT_MAX_STEPS`, or `GJ_AGENT_TIMEOUT_SECONDS` yourself
 to override those defaults. Shell environment variables still win over values
-in `.env`. The local coffee demo keeps `auth.type: none`; dev mode makes
-GraphJin system roots public by default for local inspection. You can also run
-the agentic config directly:
+in `.env`. Plain dev mode keeps `auth.type: none` with trusted dev headers and
+public system roots for local inspection; `agentic.yml` switches to JWT
+identity (see above), gates `gj_config` to admins, locks the `runbook`
+artifact kind, and enables MCP sampling (`agent.sampling: auto` +
+`mcp.http_stateful`). You can also run the agentic config directly:
 
 ```bash
 GO_ENV=agentic graphjin serve --demo --path examples/coffee-roastery
@@ -141,7 +156,16 @@ For stricter open-ended protocol checks, run:
 examples/coffee-roastery/scripts/smoke.sh --agent-eval
 ```
 
-The eval mode checks that the agent discovers catalog evidence, inspects saved-query details before execution, avoids raw GraphQL in safe mode, and blocks with evidence when the narrow safe surface cannot perform the requested action.
+The eval mode checks that the agent discovers catalog evidence, inspects saved-query details before execution, never answers from evidence-less raw GraphQL, returns machine-actionable refusals when blocked, creates watches through the watch_write skill, surfaces `watch_events_unseen` notices, and enforces role-gated control-plane access.
+
+To exercise MCP sampling end to end (the agent borrowing the calling client's model), run the reference sampling client against the running demo:
+
+```bash
+go run ./tools/mcp-sampling-client \
+  --url http://localhost:8080/api/v1/mcp \
+  --jwt-secret coffee-roastery-demo-jwt-secret \
+  --instruction "List the approved saved queries. Discovery only."
+```
 
 The smoke script defaults to `http://localhost:8080`. Use `--url` or `GRAPHJIN_URL` when running on another port.
 

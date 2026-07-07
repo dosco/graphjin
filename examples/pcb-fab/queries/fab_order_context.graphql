@@ -1,0 +1,42 @@
+query fab_order_context {
+  fab_orders(order_by: { priority: asc }, limit: 10) {
+    id
+    order_code
+    status
+    priority
+    due_date
+    panel_qty
+    customers {
+      name
+      priority_tier
+    }
+    pcb_designs {
+      design_code
+      product_name
+      layer_count
+      material
+      target_impedance_ohms
+    }
+    design_revisions {
+      revision
+      status
+      gerber_path
+      stackup_note
+    }
+  }
+  panels(order_by: { id: asc }, limit: 10) {
+    id
+    order_id
+    panel_code
+    current_step
+    status
+    scrap_flag
+  }
+  shipments(order_by: { ship_date: asc }, limit: 10) {
+    id
+    order_id
+    ship_date
+    carrier
+    status
+  }
+}

@@ -92,6 +92,11 @@ func (gj *graphjinEngine) initRemote(
 	// remote reques
 	var col sdata.DBColumn
 
+	dbinfo, err := gj.resolverDBInfo(&rc, dbinfo)
+	if err != nil {
+		return err
+	}
+
 	ti, err := dbinfo.GetTable(rc.Schema, rc.Table)
 	if err != nil {
 		return err
@@ -162,6 +167,37 @@ func (gj *graphjinEngine) initRemote(
 	gj.rmap[string(rf.IDField)] = rf
 
 	return nil
+}
+
+func (gj *graphjinEngine) resolverDBInfo(rc *ResolverConfig, fallback *sdata.DBInfo) (*sdata.DBInfo, error) {
+	dbinfo := fallback
+	table := strings.TrimSpace(rc.Table)
+	if table == "" {
+		return dbinfo, nil
+	}
+
+	sourceQualified := false
+	if idx := strings.IndexByte(table, ':'); idx != -1 {
+		source := strings.TrimSpace(table[:idx])
+		table = strings.TrimSpace(table[idx+1:])
+		sourceQualified = true
+		ctx, ok := gj.databases[source]
+		if !ok || ctx == nil || ctx.dbinfo == nil {
+			return nil, fmt.Errorf("resolver table %q: database source %q not found", rc.Table, source)
+		}
+		dbinfo = ctx.dbinfo
+	}
+
+	if idx := strings.LastIndexByte(table, '.'); idx != -1 {
+		rc.Schema = strings.TrimSpace(table[:idx])
+		rc.Table = strings.TrimSpace(table[idx+1:])
+	} else {
+		rc.Table = table
+		if sourceQualified || rc.Schema == "" {
+			rc.Schema = dbinfo.Schema
+		}
+	}
+	return dbinfo, nil
 }
 
 // initToplevelRemote registers a parent-less remote resolver. The synthetic

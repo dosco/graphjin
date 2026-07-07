@@ -467,6 +467,11 @@ func seedInsertRows(seedCtx seedJSContext, table string, rows interface{}, opt m
 		return 0
 	}
 
+	if seedDBType(seedCtx, source) == "mongodb" {
+		return seedInsertMongoRows(insertDB, table, normalized)
+	}
+	dbType := seedDBType(seedCtx, source)
+
 	cols := seedInsertColumns(normalized)
 	if len(cols) == 0 {
 		return 0
@@ -475,11 +480,11 @@ func seedInsertRows(seedCtx seedJSContext, table string, rows interface{}, opt m
 	quotedCols := make([]string, len(cols))
 	placeholders := make([]string, len(cols))
 	for i, col := range cols {
-		quotedCols[i] = seedQuoteIdent(col)
+		quotedCols[i] = seedQuoteIdent(dbType, col)
 		placeholders[i] = "?"
 	}
 	stmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-		seedQuoteIdent(table),
+		seedQuoteIdent(dbType, table),
 		strings.Join(quotedCols, ", "),
 		strings.Join(placeholders, ", "))
 
@@ -498,6 +503,41 @@ func seedInsertRows(seedCtx seedJSContext, table string, rows interface{}, opt m
 		}
 	}
 	return total
+}
+
+func seedDBType(seedCtx seedJSContext, source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = seedCtx.DefaultSource
+	}
+	if source == "" {
+		return strings.ToLower(strings.TrimSpace(conf.DB.Type))
+	}
+	if dbConf, ok := conf.Databases[source]; ok {
+		return strings.ToLower(strings.TrimSpace(dbConf.Type))
+	}
+	return strings.ToLower(strings.TrimSpace(conf.DB.Type))
+}
+
+func seedInsertMongoRows(db *sql.DB, collection string, rows []map[string]interface{}) int64 {
+	payload := map[string]interface{}{
+		"operation":  "insertMany",
+		"collection": collection,
+		"documents":  rows,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Fatalf("Seed insert failed: %s", err)
+	}
+	res, err := db.ExecContext(context.Background(), string(data))
+	if err != nil {
+		log.Fatalf("Seed insert failed: %s\nMongoDB DSL: %s", err, string(data))
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return int64(len(rows))
+	}
+	return n
 }
 
 func normalizeSeedRows(rows interface{}) ([]map[string]interface{}, error) {
@@ -538,8 +578,14 @@ func seedInsertColumns(rows []map[string]interface{}) []string {
 	return cols
 }
 
-func seedQuoteIdent(ident string) string {
-	return "`" + strings.ReplaceAll(strings.TrimSpace(ident), "`", "``") + "`"
+func seedQuoteIdent(dbType, ident string) string {
+	ident = strings.TrimSpace(ident)
+	switch strings.ToLower(strings.TrimSpace(dbType)) {
+	case "mysql", "mariadb", "bigquery":
+		return "`" + strings.ReplaceAll(ident, "`", "``") + "`"
+	default:
+		return `"` + strings.ReplaceAll(ident, `"`, `""`) + `"`
+	}
 }
 
 // graphQLFunc is a helper function to run a GraphQL query

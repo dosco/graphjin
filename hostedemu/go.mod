@@ -2,7 +2,10 @@ module github.com/dosco/graphjin/hostedemu
 
 go 1.25.0
 
-require github.com/duckdb/duckdb-go/v2 v2.10502.0
+require (
+	github.com/antlr4-go/antlr/v4 v4.13.1
+	github.com/duckdb/duckdb-go/v2 v2.10502.0
+)
 
 require (
 	github.com/apache/arrow-go/v18 v18.5.1 // indirect

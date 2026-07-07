@@ -18,12 +18,17 @@ import (
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/hostedemu"
 	hostedbigquery "github.com/dosco/graphjin/hostedemu/bigquery"
+	hostedsnowflake "github.com/dosco/graphjin/hostedemu/snowflake"
+	"github.com/dosco/graphjin/mongodriver"
+	"github.com/dosco/graphjin/serv/v3"
 	"github.com/mattn/go-sqlite3"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/mongodb"
 	"github.com/testcontainers/testcontainers-go/modules/mysql"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 var (
@@ -151,6 +156,18 @@ func StartDemo(ctx context.Context, dbFlags []string, statusOut io.Writer) (*Dem
 
 	status.Emit("seed", "seeding", "loading first-run data")
 	runDemoSeed()
+
+	// The artifact/watch store tables must exist before the schema cache is
+	// generated: in demo mode core loads schema from that cache instead of
+	// live discovery, and the gj_artifacts/gj_watch roles compile against the
+	// store tables.
+	if conf.Core.Artifacts.Enabled {
+		status.Emit("artifacts", "creating", "ensuring artifact store tables")
+		if err := serv.EnsureArtifactStore(conf, runtime.Databases); err != nil {
+			return nil, fmt.Errorf("failed to initialize artifact store: %w", err)
+		}
+		status.Emit("artifacts", "verified", "artifact store tables ready")
+	}
 
 	status.Emit("schema-cache", "writing", "writing discovered DDL cache")
 	writeDemoSchemaCache(runtime.Databases, state, status)
@@ -427,6 +444,8 @@ func startDemoContainer(ctx context.Context, name string, dbConf core.DatabaseCo
 		return startMongoDBDemo(ctx, name, dataDir, state.Status)
 	case "bigquery":
 		return startBigQueryDemo(ctx, name, dbConf, dataDir, state.Status)
+	case "snowflake":
+		return startSnowflakeDemo(ctx, name, dbConf, dataDir, state.Status)
 	case "codesql":
 		codePath := strings.TrimSpace(dbConf.Path)
 		if codePath != "" && !filepath.IsAbs(codePath) {
@@ -884,47 +903,76 @@ func startMongoDBDemo(ctx context.Context, name, dataDir string, status demoStat
 	log.Infof("MongoDB running on %s:%s", host, port.Port())
 	status.Emit(name, "verified", "MongoDB is accepting connections")
 
-	return terminateFn(container), &DemoConnInfo{
+	client, err := mongo.Connect(options.Client().ApplyURI(connStr))
+	if err != nil {
+		container.Terminate(ctx) //nolint:errcheck
+		return nil, nil, fmt.Errorf("failed to connect to mongodb: %w", err)
+	}
+	if err := client.Ping(ctx, nil); err != nil {
+		client.Disconnect(ctx)   //nolint:errcheck
+		container.Terminate(ctx) //nolint:errcheck
+		return nil, nil, fmt.Errorf("failed to ping mongodb: %w", err)
+	}
+	sqlDB := sql.OpenDB(mongodriver.NewConnector(client, "graphjin_demo"))
+
+	cleanup := func(ctx context.Context) error {
+		sqlDB.Close()          //nolint:errcheck
+		client.Disconnect(ctx) //nolint:errcheck
+		return container.Terminate(ctx)
+	}
+	return cleanup, &DemoConnInfo{
 		Host:    host,
 		Port:    uint16(port.Int()),
 		DBName:  "graphjin_demo",
 		ConnStr: connStr,
 		Type:    "mongodb",
+		DB:      sqlDB,
 	}, nil
 }
 
 func startBigQueryDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
-	status.Emit(name, "opening", "opening BigQuery simulator")
-	setupSQL, setupSource, setupIsDDL, err := bigQuerySimulatorSetupSQL(name, dbConf)
+	return startWarehouseSimDemo(ctx, name, dbConf, dataDir, status, "bigquery", "BigQuery", hostedbigquery.NewAdapter())
+}
+
+func startSnowflakeDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
+	return startWarehouseSimDemo(ctx, name, dbConf, dataDir, status, "snowflake", "Snowflake", hostedsnowflake.NewAdapter())
+}
+
+// startWarehouseSimDemo starts a cloud-warehouse source on the hostedemu
+// DuckDB simulator; dialect selects the GraphJin SQL dialect and the adapter
+// translates warehouse SQL/discovery onto DuckDB.
+func startWarehouseSimDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, status demoStatus, dialect, label string, adapter hostedemu.Adapter) (func(context.Context) error, *DemoConnInfo, error) {
+	status.Emit(name, "opening", fmt.Sprintf("opening %s simulator", label))
+	setupSQL, setupSource, setupIsDDL, err := warehouseSimulatorSetupSQL(name, dbConf, dialect)
 	if err != nil {
 		status.Emit(name, "failed", err.Error())
 		return nil, nil, err
 	}
 
 	dbPath := filepath.Join(dataDir, "warehouse.duckdb")
-	initialized := bigQuerySimulatorInitialized(dbPath)
+	initialized := warehouseSimulatorInitialized(dbPath)
 	connector := hostedemu.NewConnector(hostedemu.Config{
 		SeedSQL:  setupSQL,
 		DBPath:   dbPath,
 		Backend:  hostedemu.BackendDuckDB,
 		Fallback: hostedemu.FallbackStrict,
 		TestName: name,
-	}, hostedbigquery.NewAdapter())
+	}, adapter)
 
 	demoDB := sql.OpenDB(connector)
 	if err := demoDB.PingContext(ctx); err != nil {
 		demoDB.Close() //nolint:errcheck
 		status.Emit(name, "failed", err.Error())
-		return nil, nil, fmt.Errorf("failed to open BigQuery simulator: %w", err)
+		return nil, nil, fmt.Errorf("failed to open %s simulator: %w", label, err)
 	}
 	if initialized {
-		status.Emit(name, "verified", "BigQuery simulator state reused")
+		status.Emit(name, "verified", fmt.Sprintf("%s simulator state reused", label))
 	} else if setupIsDDL {
 		status.Emit(name, "applied", fmt.Sprintf("%s applied via simulator", filepath.Base(setupSource)))
 	} else {
 		status.Emit(name, "applied", fmt.Sprintf("%s applied via legacy simulator SQL", filepath.Base(setupSource)))
 	}
-	status.Emit(name, "verified", "BigQuery simulator ready")
+	status.Emit(name, "verified", fmt.Sprintf("%s simulator ready", label))
 
 	cleanup := func(ctx context.Context) error {
 		_ = ctx
@@ -932,15 +980,15 @@ func startBigQueryDemo(ctx context.Context, name string, dbConf core.DatabaseCon
 	}
 	return cleanup, &DemoConnInfo{
 		ConnStr: dbPath,
-		Type:    "bigquery",
+		Type:    dialect,
 		DB:      demoDB,
 	}, nil
 }
 
-func bigQuerySimulatorSetupSQL(name string, dbConf core.DatabaseConfig) (setupSQL, sourcePath string, ddl bool, err error) {
+func warehouseSimulatorSetupSQL(name string, dbConf core.DatabaseConfig, dialect string) (setupSQL, sourcePath string, ddl bool, err error) {
 	ddlPath := filepath.Join(cpath, filepath.FromSlash(core.SourceSchemaDDLPath(name)))
 	if data, readErr := os.ReadFile(ddlPath); readErr == nil {
-		sqls, genErr := core.GenerateSchemaSQL("bigquery", data, conf.Blocklist)
+		sqls, genErr := core.GenerateSchemaSQL(dialect, data, conf.Blocklist)
 		if genErr != nil {
 			return "", ddlPath, true, genErr
 		}
@@ -963,7 +1011,7 @@ func bigQuerySimulatorSetupSQL(name string, dbConf core.DatabaseConfig) (setupSQ
 	return string(data), seedPath, false, nil
 }
 
-func bigQuerySimulatorInitialized(dbPath string) bool {
+func warehouseSimulatorInitialized(dbPath string) bool {
 	st, err := os.Stat(dbPath)
 	return err == nil && st.Size() > 0
 }
@@ -1045,12 +1093,23 @@ func startMultiDBDemo(ctx context.Context, primaryType string, overrides map[str
 
 func demoSourcePriority(dbType string) int {
 	switch strings.ToLower(strings.TrimSpace(dbType)) {
-	case "bigquery":
+	case "bigquery", "snowflake":
 		return 1
 	case "codesql":
 		return 2
 	default:
 		return 0
+	}
+}
+
+// demoWarehouseSimType reports whether the type is a cloud-warehouse source
+// served by the hostedemu DuckDB simulator in demo mode.
+func demoWarehouseSimType(dbType string) bool {
+	switch strings.ToLower(strings.TrimSpace(dbType)) {
+	case "bigquery", "snowflake":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -1071,8 +1130,8 @@ func openDemoConnection(connInfo *DemoConnInfo) (*sql.DB, error) {
 		driverName = "sqlserver"
 	case "oracle":
 		driverName = "oracle"
-	case "bigquery":
-		return nil, fmt.Errorf("bigquery demo requires a pre-opened simulator database")
+	case "bigquery", "snowflake":
+		return nil, fmt.Errorf("%s demo requires a pre-opened simulator database", strings.ToLower(connInfo.Type))
 	case "codesql":
 		return nil, fmt.Errorf("codesql is initialized by the GraphJin service")
 	default:
@@ -1181,7 +1240,7 @@ func demoConnectionForSQLFile(dbName string, singleFile bool) *sql.DB {
 		return nil
 	}
 	if singleFile || dbName == core.DefaultDBName || dbName == "default" || dbName == "db" || dbName == "graphjin_demo" {
-		if conf.DB.Type == "mongodb" || conf.DB.Type == "bigquery" {
+		if conf.DB.Type == "mongodb" || demoWarehouseSimType(conf.DB.Type) {
 			return nil
 		}
 		return db
@@ -1239,14 +1298,14 @@ func runDemoSourceSeedJS() bool {
 	var ran bool
 	for _, fileName := range names {
 		source := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-		conn, simulatorSeed := demoConnectionForSeedJS(source, len(names) == 1)
+		conn, directSeed := demoConnectionForSeedJS(source, len(names) == 1)
 		if conn == nil {
 			if currentDemo != nil {
 				currentDemo.Status.Emit(source, "skipped", "seed JS has no writable database")
 			}
 			continue
 		}
-		if len(conf.Databases) != 0 && !demoDBWritable(source) && !simulatorSeed {
+		if len(conf.Databases) != 0 && !demoDBWritable(source) && !directSeed {
 			if currentDemo != nil {
 				currentDemo.Status.Emit(source, "skipped", "seed JS has no writable database")
 			}
@@ -1274,8 +1333,8 @@ func runDemoSourceSeedJS() bool {
 		}
 		ran = true
 		if currentDemo != nil {
-			if simulatorSeed {
-				currentDemo.Status.Emit(source, "verified", fmt.Sprintf("%s seeded via simulator", fileName))
+			if directSeed {
+				currentDemo.Status.Emit(source, "verified", fmt.Sprintf("%s seeded directly", fileName))
 			} else {
 				currentDemo.Status.Emit(source, "verified", "seed JS completed")
 			}
@@ -1289,7 +1348,7 @@ func demoConnectionForSeedJS(source string, singleFile bool) (*sql.DB, bool) {
 		if demoDBWritable(source) {
 			return multiDBConns[source], false
 		}
-		if demoDBSimulatorSeed(source) {
+		if demoDBDirectSeed(source) {
 			return multiDBConns[source], true
 		}
 		return nil, false
@@ -1297,12 +1356,16 @@ func demoConnectionForSeedJS(source string, singleFile bool) (*sql.DB, bool) {
 	return demoConnectionForSQLFile(source, singleFile), false
 }
 
-func demoDBSimulatorSeed(source string) bool {
+func demoDBDirectSeed(source string) bool {
 	dbConf, ok := conf.Databases[source]
-	if !ok || !dbConf.ReadOnly || multiDBConns[source] == nil {
+	if !ok || multiDBConns[source] == nil {
 		return false
 	}
-	return strings.EqualFold(dbConf.Type, "bigquery")
+	dbType := strings.ToLower(dbConf.Type)
+	if dbType == "mongodb" {
+		return true
+	}
+	return dbConf.ReadOnly && demoWarehouseSimType(dbConf.Type)
 }
 
 func prepareSeedConfig() {
@@ -1503,7 +1566,7 @@ func runDemoMigrationsMultiDB() bool {
 }
 
 func demoDBSimulatorDDL(source, dbType string) bool {
-	if !strings.EqualFold(dbType, "bigquery") {
+	if !demoWarehouseSimType(dbType) {
 		return false
 	}
 	dbConf, ok := conf.Databases[source]

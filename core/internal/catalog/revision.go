@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const catalogModelRevision = "catalog-v2"
+const catalogModelRevision = "catalog-v3"
 
 func SourceRevisions(snapshot *MetadataSnapshot, conf any, opts BuildOptions) map[string]string {
 	if snapshot == nil {

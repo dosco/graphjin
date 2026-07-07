@@ -266,6 +266,13 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 	if _, _, _, _, ok := s.watchDB(); !ok {
 		return "", false, fmt.Errorf("watch store database is not configured")
 	}
+	watchRow, err := s.internalWatchStoreRow(ctx, def.ID)
+	if err != nil {
+		return "", false, err
+	}
+	if watchRow == nil {
+		return dataHash, false, nil
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	eventID := watchEventID(def.ID, dataHash)
 	evidenceJSON := mustMarshalString(map[string]any{
@@ -302,11 +309,25 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 			}
 		}
 	}
-	if _, err := s.internalStoreMutationRows(ctx, "watches", `where: { id: { eq: $id } }, update: $input`, watchStoreFields, map[string]any{
+	watchRows, err := s.internalStoreMutationRows(ctx, "watches", `where: { id: { eq: $id } }, update: $input`, watchStoreFields, map[string]any{
 		"id":    def.ID,
 		"input": map[string]any{"last_data_hash": dataHash, "last_fired_at": now, "last_error": "", "failure_count": 0, "updated_at": now},
-	}); err != nil {
+	})
+	if err != nil {
 		return "", inserted, err
+	}
+	if len(watchRows) == 0 {
+		deletedEvents, err := s.deleteWatchEvents(ctx, def.ID)
+		if err != nil {
+			return "", inserted, err
+		}
+		if deletedEvents != 0 {
+			if err := s.bumpArtifactRevision(ctx, "watch_events"); err != nil {
+				return "", inserted, err
+			}
+			s.markWatchChanged("watch event cleanup")
+		}
+		return dataHash, false, nil
 	}
 	if err := s.pruneWatchEvents(ctx, def.ID); err != nil {
 		return "", inserted, err
@@ -441,7 +462,7 @@ func (s *graphjinService) pruneWatchEvents(ctx context.Context, watchID string) 
 		if id == "" {
 			continue
 		}
-		if _, err := s.internalStoreMutationRows(ctx, "watch_events", `where: { id: { eq: $id } }, delete: true`, `id`, map[string]any{"id": id}); err != nil {
+		if _, err := s.deleteWatchEventByID(ctx, id); err != nil {
 			return err
 		}
 	}

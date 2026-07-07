@@ -29,6 +29,7 @@ func BuildWithOptions(snapshot *MetadataSnapshot, conf any, opts BuildOptions) *
 	sampleMode := catalogSampleMode(conf)
 	addCapabilities(out, sampleMode, opts)
 	addSchema(out, snapshot, sampleMode, opts)
+	addCodeSources(out, snapshot, opts)
 	addLanguage(out, opts)
 	addConfig(out, conf)
 	addWorkflows(out, opts)
@@ -926,6 +927,269 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 			EvidenceJSON:     mustJSON(fn),
 		})
 	}
+}
+
+func addCodeSources(out *Snapshot, snapshot *MetadataSnapshot, opts BuildOptions) {
+	for _, source := range opts.Sources {
+		name := strings.TrimSpace(source.Name)
+		if name == "" || canonicalSourceKind(source.Kind) != sourcecap.KindCode {
+			continue
+		}
+		addCodeSourceEntrypoint(out, source, opts)
+		addCodeSourceTable(out, snapshot, source, opts)
+		addCodeSourceColumns(out, snapshot, source, opts)
+	}
+}
+
+func addCodeSourceEntrypoint(out *Snapshot, source Source, opts BuildOptions) {
+	name := strings.TrimSpace(source.Name)
+	cardID := "entrypoint.code:" + name + ".symbols"
+	summary := "Discover files, symbols, references, database references, and source snippets for the " + name + " code source."
+	query := codeSourceQueryJSON(name)
+	out.Cards = append(out.Cards, Card{
+		ID:               cardID,
+		Kind:             "entrypoint",
+		Title:            name + " code symbols",
+		Summary:          summary,
+		DatabaseName:     name,
+		SchemaName:       "main",
+		TableName:        "gj_code",
+		Source:           "core.catalog.code_source",
+		SourceKind:       sourcecap.KindCode,
+		OwnerSource:      name,
+		OwnerSourcesJSON: ownerSourcesJSON(name),
+		RiskLevel:        riskForReadOnly(source.ReadOnly),
+		Confidence:       "high",
+		EvidenceJSON: mustJSON(map[string]any{
+			"source":       name,
+			"source_kind":  sourcecap.KindCode,
+			"table":        "gj_code",
+			"capabilities": source.Capabilities,
+		}),
+		ExamplesJSON: mustJSON([]string{
+			`query_catalog(search: "` + name + ` code symbols", where: { database_name: { eq: "` + name + `" } })`,
+			`query { gj_code(where: { kind: { eq: "symbol" } }, limit: 20) { name path language symbol_kind code_context } }`,
+		}),
+		SuggestedNext: suggestedNextJSON(opts, "query_catalog", "execute_graphql"),
+		DetailRef:     cardID,
+		QueryJSON:     query,
+		GraphQLQuery:  `query { gj_code(where: { kind: { in: ["file", "symbol", "reference", "db_reference"] } }, limit: 25) { kind name path language symbol_kind summary code_context } }`,
+		SafetyJSON: mustJSON(map[string]any{
+			"read_only":             source.ReadOnly,
+			"source_mutations":      "Use gj_code change_set preview/apply only when code.write is enabled.",
+			"raw_code_context_root": "gj_code",
+		}),
+	})
+	out.Details = append(out.Details, CardDetail{
+		ID:      cardID + ":guide",
+		CardID:  cardID,
+		Section: "code_discovery",
+		Content: "Use this entrypoint when a task needs implementation context from an indexed source tree. Search catalog first, then query gj_code for concrete files, symbols, references, and source snippets.",
+		DataJSON: mustJSON(map[string]any{
+			"source":                 name,
+			"catalog_query":          query,
+			"graphql_root":           "gj_code",
+			"recommended_kinds":      []string{"file", "symbol", "reference", "db_reference"},
+			"recommended_fields":     []string{"kind", "name", "path", "language", "symbol_kind", "summary", "code_context"},
+			"database_name_filter":   name,
+			"table_name_filter":      "gj_code",
+			"capabilities":           source.Capabilities,
+			"source_mutation_policy": "Preview/apply source mutations only when code.write is enabled.",
+		}),
+	})
+	out.Nodes = append(out.Nodes, Node{ID: "node:" + cardID, Kind: "entrypoint", Name: name + " code symbols", Summary: summary, CardID: cardID})
+	out.Edges = append(out.Edges, Edge{ID: "edge:source-code-entrypoint:" + name, FromID: "node:source:" + name, ToID: "node:" + cardID, Kind: "has_entrypoint", Summary: "Code source has a symbol-discovery entrypoint"})
+}
+
+func addCodeSourceTable(out *Snapshot, snapshot *MetadataSnapshot, source Source, opts BuildOptions) {
+	name := strings.TrimSpace(source.Name)
+	if metadataHasTable(snapshot, name, "gj_code") {
+		return
+	}
+	tableID := codeSourceTableID(name)
+	cardID := "table:" + tableID
+	summary := "Public CodeSQL facade for files, symbols, references, database references, source snippets, and guarded source change previews."
+	out.Cards = append(out.Cards, Card{
+		ID:               cardID,
+		Kind:             "table",
+		Title:            qualifiedName(name, "main", "gj_code"),
+		Summary:          summary,
+		DatabaseName:     name,
+		SchemaName:       "main",
+		TableName:        "gj_code",
+		Source:           "core.catalog.code_source",
+		SourceKind:       sourcecap.KindCode,
+		OwnerSource:      name,
+		OwnerSourcesJSON: ownerSourcesJSON(name),
+		RiskLevel:        riskForReadOnly(source.ReadOnly),
+		Confidence:       "high",
+		EvidenceJSON: mustJSON(map[string]any{
+			"source":          name,
+			"source_kind":     sourcecap.KindCode,
+			"table":           "gj_code",
+			"facade":          true,
+			"cache_dependent": false,
+			"read_only":       source.ReadOnly,
+		}),
+		ExamplesJSON:  mustJSON([]string{`query { gj_code(where: { kind: { eq: "symbol" } }, limit: 20) { name path code_context } }`}),
+		SuggestedNext: suggestedNextJSON(opts, "query_catalog", "execute_graphql"),
+		DetailRef:     cardID,
+	})
+	out.Details = append(out.Details, CardDetail{
+		ID:       cardID + ":columns",
+		CardID:   cardID,
+		Section:  "code_columns",
+		Content:  "Core gj_code columns for code discovery. A live CodeSQL schema cache may add more columns, but these fields are stable enough for agent planning.",
+		DataJSON: mustJSON(codeSourceColumns(name)),
+	})
+	out.Nodes = append(out.Nodes, Node{ID: "node:" + cardID, Kind: "table", Name: "gj_code", Summary: summary, CardID: cardID})
+	out.Edges = append(out.Edges, Edge{ID: "edge:source-code-table:" + name, FromID: "node:source:" + name, ToID: "node:" + cardID, Kind: "contains", Summary: "Code source exposes the gj_code facade"})
+}
+
+func addCodeSourceColumns(out *Snapshot, snapshot *MetadataSnapshot, source Source, opts BuildOptions) {
+	name := strings.TrimSpace(source.Name)
+	tableID := codeSourceTableID(name)
+	for _, column := range codeSourceColumns(name) {
+		if metadataHasColumn(snapshot, name, "gj_code", column.ColumnName) {
+			continue
+		}
+		cardID := "column:" + column.ID
+		sensitive, sensitivity := columnSensitivity(column)
+		out.Cards = append(out.Cards, Card{
+			ID:               cardID,
+			Kind:             "column",
+			Title:            qualifiedName(name, "main", "gj_code") + "." + column.ColumnName,
+			Summary:          codeSourceColumnSummary(column),
+			DatabaseName:     name,
+			SchemaName:       "main",
+			TableName:        "gj_code",
+			ColumnName:       column.ColumnName,
+			Source:           "core.catalog.code_source",
+			SourceKind:       sourcecap.KindCode,
+			OwnerSource:      name,
+			OwnerSourcesJSON: ownerSourcesJSON(name),
+			RiskLevel:        riskForSensitive(sensitive),
+			Confidence:       "high",
+			Sensitive:        sensitive,
+			Sensitivity:      sensitivity,
+			EvidenceJSON:     mustJSON(column),
+			ExamplesJSON:     codeSourceColumnExamples(column),
+			SuggestedNext:    suggestedNextJSON(opts, columnSuggestedNext(column)...),
+			DetailRef:        cardID,
+		})
+		out.Nodes = append(out.Nodes, Node{ID: "node:" + cardID, Kind: "column", Name: column.ColumnName, Summary: codeSourceColumnSummary(column), CardID: cardID})
+		out.Edges = append(out.Edges, Edge{ID: "edge:table-column:" + column.ID, FromID: "node:table:" + tableID, ToID: "node:" + cardID, Kind: "has_column", Summary: "Code facade table has column"})
+	}
+}
+
+func canonicalSourceKind(kind string) string {
+	kind = strings.TrimSpace(kind)
+	canonicalKind, err := sourcecap.CanonicalKind(kind)
+	if err == nil {
+		return canonicalKind
+	}
+	return kind
+}
+
+func codeSourceTableID(source string) string {
+	return strings.TrimSpace(source) + ":main.gj_code"
+}
+
+func codeSourceQueryJSON(source string) string {
+	return mustJSON(map[string]any{
+		"search": source + " code symbols files references",
+		"where": map[string]any{
+			"database_name": map[string]any{"eq": source},
+			"kind":          map[string]any{"in": []string{"entrypoint", "table", "column"}},
+		},
+		"limit": 25,
+	})
+}
+
+func metadataHasTable(snapshot *MetadataSnapshot, database, table string) bool {
+	if snapshot == nil {
+		return false
+	}
+	for _, item := range snapshot.Tables {
+		if item.DatabaseName == database && item.TableName == table {
+			return true
+		}
+	}
+	return false
+}
+
+func metadataHasColumn(snapshot *MetadataSnapshot, database, table, column string) bool {
+	if snapshot == nil {
+		return false
+	}
+	for _, item := range snapshot.Columns {
+		if item.DatabaseName == database && item.TableName == table && item.ColumnName == column {
+			return true
+		}
+	}
+	return false
+}
+
+func codeSourceColumns(source string) []MetadataColumn {
+	tableID := codeSourceTableID(source)
+	column := func(name, typ, comment string, ordinal int) MetadataColumn {
+		return MetadataColumn{
+			ID:           tableID + "." + name,
+			TableID:      tableID,
+			DatabaseName: source,
+			SchemaName:   "main",
+			TableName:    "gj_code",
+			ColumnName:   name,
+			Type:         typ,
+			NotNull:      true,
+			Ordinal:      ordinal,
+			TableKey:     "main.gj_code",
+			ColumnKey:    "main.gj_code." + name,
+			Comment:      comment,
+		}
+	}
+	return []MetadataColumn{
+		column("kind", "text", "Code row kind: file, symbol, reference, db_reference, doc, change_set, or lock.", 1),
+		column("name", "text", "Symbol, file, reference, or change-set name.", 2),
+		column("path", "text", "Source path relative to the configured code source root.", 3),
+		column("language", "text", "Detected source language.", 4),
+		column("symbol_kind", "text", "Tree-sitter symbol kind for symbol rows.", 5),
+		column("summary", "text", "Short model-facing summary for the code row.", 6),
+		column("qualified_name", "text", "Qualified symbol name when available.", 7),
+		column("signature", "text", "Function, method, class, or type signature when available.", 8),
+		column("code_context", "text", "Source snippet with surrounding context, loaded on demand.", 9),
+		column("database_name", "text", "Referenced database name for db_reference rows.", 10),
+		column("table_name", "text", "Referenced table name for db_reference rows.", 11),
+		column("column_name", "text", "Referenced column name for db_reference rows.", 12),
+		column("db_object_id", "text", "Stable database object identifier for db_reference rows.", 13),
+	}
+}
+
+func codeSourceColumnSummary(c MetadataColumn) string {
+	summary := columnSummary(c, false, "")
+	if c.Comment != "" {
+		return summary + ". " + c.Comment
+	}
+	return summary
+}
+
+func codeSourceColumnExamples(c MetadataColumn) string {
+	var example string
+	switch c.ColumnName {
+	case "kind":
+		example = `query { gj_code(where: { kind: { eq: "symbol" } }, limit: 20) { name path symbol_kind } }`
+	case "name":
+		example = `query { gj_code(where: { name: { ilike: "%reserve%" } }, limit: 20) { kind name path code_context } }`
+	case "path":
+		example = `query { gj_code(where: { path: { ilike: "%.ts" } }, limit: 20) { kind name path } }`
+	case "code_context":
+		example = `query { gj_code(where: { kind: { eq: "symbol" } }, limit: 5) { name path code_context } }`
+	case "database_name", "table_name", "column_name", "db_object_id":
+		example = `query { gj_code(where: { kind: { eq: "db_reference" } }, limit: 20) { path database_name table_name column_name code_context } }`
+	default:
+		example = fmt.Sprintf(`query { gj_code(limit: 20) { kind name path %s } }`, c.ColumnName)
+	}
+	return mustJSON([]string{example})
 }
 
 func addLanguage(out *Snapshot, opts BuildOptions) {

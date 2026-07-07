@@ -28,4 +28,4 @@ JOIN pg_constraint co ON co.conrelid = bc.oid
     AND ba.attnum = ANY(co.conkey)
     AND co.contype = 'p'
 WHERE vc.relkind IN ('v', 'm')
-  AND vn.nspname NOT IN ('pg_catalog', 'information_schema', '_graphjin')
+  AND vn.nspname NOT IN ('pg_catalog', 'information_schema')

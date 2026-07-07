@@ -82,7 +82,9 @@ func applyDemoAgentEnvDefaults(out io.Writer) {
 		changed = true
 	}
 	if _, ok := os.LookupEnv("GJ_AGENT_TIMEOUT_SECONDS"); !ok {
-		_ = os.Setenv("GJ_AGENT_TIMEOUT_SECONDS", "150")
+		// Generous cap: client-sampled runs (agent.sampling) add an MCP round
+		// trip per model call, and reasoning models spend longer per call.
+		_ = os.Setenv("GJ_AGENT_TIMEOUT_SECONDS", "300")
 		changed = true
 	}
 	if changed && out != nil {

@@ -804,15 +804,16 @@ func (d *MySQLDialect) RenderCast(ctx Context, val func(), typ string) {
 	ctx.WriteString(` AS `)
 
 	// MySQL CAST supports: BINARY, CHAR, DATE, DATETIME, DECIMAL, JSON, NCHAR, SIGNED, TIME, UNSIGNED
-	switch typ {
-	case "varchar", "character varying", "text", "string":
+	castType := strings.ToLower(strings.TrimSpace(typ))
+	switch castType {
+	case "char", "varchar", "character varying", "text", "tinytext", "mediumtext", "longtext", "string":
 		ctx.WriteString("CHAR")
-	case "int", "integer", "int4", "int8", "bigint", "smallint":
+	case "int", "integer", "int4", "int8", "bigint", "smallint", "mediumint":
 		ctx.WriteString("SIGNED")
-	case "boolean", "bool":
+	case "boolean", "bool", "tinyint", "tinyint(1)":
 		// MySQL boolean is tinyint(1), so SIGNED or UNSIGNED works
 		ctx.WriteString("UNSIGNED")
-	case "float", "double", "numeric", "real":
+	case "float", "double", "numeric", "decimal", "real":
 		ctx.WriteString("DECIMAL(65,30)")
 	case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
 		ctx.WriteString("DATETIME")

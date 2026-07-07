@@ -1,0 +1,131 @@
+app_name: Corrugated Plant Agentic Demo
+mode: dev
+host_port: 0.0.0.0:8081
+web_ui: true
+log_level: "info"
+log_format: "plain"
+http_compress: true
+server_timing: true
+production: false
+auth_fail_block: true
+enable_tracing: true
+reload_on_config_change: false
+enable_schema: false
+secret_key: corrugated-plant-demo-secret
+cors_allowed_origins: ["*"]
+default_block: false
+default_limit: 50
+
+artifacts:
+  enabled: true
+  source: erp
+  auto_init: true
+  locked: ["runbook"]
+
+watches:
+  enabled: true
+  runner: "all"
+
+identity:
+  user_id_claim: sub
+  role_claims: ["roles"]
+  namespace_claim: account_id
+  admin_roles: ["admin"]
+
+roles:
+  - name: warehouse_manager
+  - name: sales
+  - name: admin
+
+auth:
+  type: jwt
+  development: false
+  jwt:
+    secret: corrugated-demo-jwt-secret
+
+mcp:
+  disable: false
+  allow_config_updates: false
+  allow_mutations: true
+  allow_raw_queries: true
+  allow_workflow_execution: true
+  allow_workflow_updates: false
+  allow_schema_reload: false
+  allow_schema_updates: false
+  allow_dev_tools: true
+  legacy_discovery: false
+
+sources:
+  - name: erp
+    kind: database
+    default: true
+    type: mysql
+    access:
+      read: public
+      write: authenticated
+      delete: blocked
+      missing_namespace_column: allow
+    capabilities:
+      data.read: true
+      data.write: true
+      schema.read: true
+      schema.write: false
+
+  - name: demand_warehouse
+    kind: database
+    type: bigquery
+    read_only: true
+    analytics_mode: true
+    access:
+      read: public
+      write: blocked
+      delete: blocked
+      missing_namespace_column: allow
+    capabilities:
+      data.read: true
+      data.write: false
+      schema.read: true
+      schema.write: false
+
+  - name: plant_code
+    kind: code
+    path: app
+    read_only: true
+    infer_db_refs: true
+    capabilities:
+      code.search: true
+      code.read: true
+      code.write: false
+      code.watch: false
+      code.infer_db_refs: true
+
+  - name: graphjin
+    kind: graphjin
+    metadata: true
+    catalog: true
+    control_plane: true
+    access:
+      roots:
+        gj_config: admin
+    capabilities:
+      catalog.read: true
+      security.read: true
+      config.read: true
+      config.write: false
+      runtime.read: true
+      raw_graphql.query: true
+      raw_graphql.mutate: true
+      schema.reload: false
+      schema.write: false
+      dev_tools.read: true
+      legacy_discovery.read: false
+
+  - name: workflows
+    kind: workflow
+    path: workflows
+    runtime: javascript
+    read_only: false
+    capabilities:
+      workflow.execute: true
+      workflow.read: true
+      workflow.write: false

@@ -460,7 +460,6 @@ func (d *MariaDBDialect) RenderChildValue(ctx Context, sel *qcode.Select, render
 	}
 }
 
-
 // renderInlineJSONFields renders field list for json_object() using table name columns
 func (d *MariaDBDialect) renderInlineJSONFields(ctx Context, r InlineChildRenderer, sel *qcode.Select) {
 	i := 0
@@ -913,8 +912,9 @@ func (d *MariaDBDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table 
 func (d *MariaDBDialect) RenderCast(ctx Context, val func(), typ string) {
 	// MariaDB CAST supports: BINARY, CHAR, DATE, DATETIME, DECIMAL, NCHAR, SIGNED, TIME, UNSIGNED
 	// Note: JSON and LONGTEXT are NOT supported as CAST targets in MariaDB
-	switch typ {
-	case "json", "longtext", "varchar", "character varying", "text", "string":
+	castType := strings.ToLower(strings.TrimSpace(typ))
+	switch castType {
+	case "json", "char", "varchar", "character varying", "text", "tinytext", "mediumtext", "longtext", "string":
 		// MariaDB treats JSON as LONGTEXT (string). No need to cast.
 		val()
 		return
@@ -924,12 +924,12 @@ func (d *MariaDBDialect) RenderCast(ctx Context, val func(), typ string) {
 		ctx.WriteString(` AS `)
 	}
 
-	switch typ {
-	case "int", "integer", "int4", "int8", "bigint", "smallint":
+	switch castType {
+	case "int", "integer", "int4", "int8", "bigint", "smallint", "mediumint":
 		ctx.WriteString("SIGNED")
-	case "boolean", "bool":
+	case "boolean", "bool", "tinyint", "tinyint(1)":
 		ctx.WriteString("UNSIGNED")
-	case "float", "double", "numeric", "real":
+	case "float", "double", "numeric", "decimal", "real":
 		ctx.WriteString("DECIMAL(65,30)")
 	case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
 		ctx.WriteString("DATETIME")
@@ -1191,9 +1191,6 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 	if ex == nil {
 		return
 	}
-
-
-
 
 	switch ex.Op {
 	case qcode.OpAnd:
@@ -2678,4 +2675,3 @@ func (d *MariaDBDialect) writeOuterColRefMariaDB(ctx Context, r InlineChildRende
 	}
 	r.ColWithTable(t, col.Name)
 }
-

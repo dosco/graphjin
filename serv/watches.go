@@ -386,6 +386,15 @@ func (h watchControlPlane) deleteWatch(ctx context.Context, root core.ManagedMut
 	if err := s.bumpArtifactRevision(ctx, "watches"); err != nil {
 		return nil, err
 	}
+	deletedEvents, err := s.deleteWatchEvents(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if deletedEvents != 0 {
+		if err := s.bumpArtifactRevision(ctx, "watch_events"); err != nil {
+			return nil, err
+		}
+	}
 	s.markWatchChanged("watch delete")
 	return map[string]any{"id": id, "deleted": true}, nil
 }
@@ -513,6 +522,46 @@ func (s *graphjinService) internalWatchEventStoreRow(ctx context.Context, id str
 	return rows[0], nil
 }
 
+func (s *graphjinService) deleteWatchEvents(ctx context.Context, watchID string) (int, error) {
+	if strings.TrimSpace(watchID) == "" {
+		return 0, nil
+	}
+	rows, err := s.internalStoreRows(ctx, "watch_events",
+		`where: { watch_id: { eq: $watch_id } }`,
+		`id`,
+		map[string]any{"watch_id": watchID})
+	if err != nil || len(rows) == 0 {
+		return 0, err
+	}
+	if _, err := s.internalStoreMutationRows(ctx, "watch_events",
+		`where: { watch_id: { eq: $watch_id } }, delete: true`,
+		`id`,
+		map[string]any{"watch_id": watchID}); err != nil {
+		return 0, err
+	}
+	return len(rows), nil
+}
+
+func (s *graphjinService) deleteWatchEventByID(ctx context.Context, id string) (int, error) {
+	if strings.TrimSpace(id) == "" {
+		return 0, nil
+	}
+	rows, err := s.internalStoreRows(ctx, "watch_events",
+		`where: { id: { eq: $id } }`,
+		`id`,
+		map[string]any{"id": id})
+	if err != nil || len(rows) == 0 {
+		return 0, err
+	}
+	if _, err := s.internalStoreMutationRows(ctx, "watch_events",
+		`where: { id: { eq: $id } }, delete: true`,
+		`id`,
+		map[string]any{"id": id}); err != nil {
+		return 0, err
+	}
+	return len(rows), nil
+}
+
 func (h watchControlPlane) enforceWatchLimit(ctx context.Context, ownerID, id string) error {
 	if h.service == nil || h.service.conf == nil {
 		return nil
@@ -615,6 +664,52 @@ updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 			fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (owner_id, seen, created_at)`, quotePGIdent("idx_graphjin_watch_events_owner_seen"), events),
 			fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (delivery_status, created_at)`, quotePGIdent("idx_graphjin_watch_events_delivery"), events),
 		}
+	case "mysql", "mariadb":
+		return []string{
+			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+id VARCHAR(191) PRIMARY KEY,
+name VARCHAR(255) NOT NULL,
+description LONGTEXT NOT NULL,
+query LONGTEXT NOT NULL,
+saved_query_name VARCHAR(255) NOT NULL DEFAULT '',
+variables_json LONGTEXT,
+condition_js LONGTEXT NOT NULL,
+delivery_json LONGTEXT,
+enrich_json LONGTEXT,
+evidence_json LONGTEXT,
+status VARCHAR(32) NOT NULL DEFAULT 'active',
+approval VARCHAR(32) NOT NULL DEFAULT 'approved',
+enabled BOOLEAN NOT NULL DEFAULT TRUE,
+account_id VARCHAR(191) NOT NULL DEFAULT '',
+owner_id VARCHAR(191) NOT NULL DEFAULT '',
+owner_role VARCHAR(64) NOT NULL DEFAULT 'user',
+last_data_hash VARCHAR(128) NOT NULL DEFAULT '',
+last_fired_at VARCHAR(64),
+last_error LONGTEXT NOT NULL,
+failure_count BIGINT NOT NULL DEFAULT 0,
+created_at VARCHAR(64) NOT NULL DEFAULT '',
+updated_at VARCHAR(64) NOT NULL DEFAULT ''
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`, watches),
+			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+id VARCHAR(191) PRIMARY KEY,
+watch_id VARCHAR(191) NOT NULL,
+data_hash VARCHAR(128) NOT NULL DEFAULT '',
+data_json LONGTEXT,
+data_truncated BOOLEAN NOT NULL DEFAULT FALSE,
+evidence_json LONGTEXT,
+delivery_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+delivery_attempts BIGINT NOT NULL DEFAULT 0,
+delivery_json LONGTEXT,
+receipt_json LONGTEXT,
+enrichment_json LONGTEXT,
+seen BOOLEAN NOT NULL DEFAULT FALSE,
+seen_at VARCHAR(64),
+account_id VARCHAR(191) NOT NULL DEFAULT '',
+owner_id VARCHAR(191) NOT NULL DEFAULT '',
+created_at VARCHAR(64) NOT NULL DEFAULT '',
+updated_at VARCHAR(64) NOT NULL DEFAULT ''
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`, events),
+		}
 	default:
 		return []string{
 			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -691,11 +786,19 @@ func (s *graphjinService) migrateWatchSchema(ctx context.Context, db *sql.DB, db
 		return nil
 	}
 	watches := artifactTableName(dbType, schema, "watches")
-	if err := ensureSQLColumn(ctx, db, dbType, watches, "owner_role", "TEXT NOT NULL DEFAULT 'user'"); err != nil {
+	ownerRoleDef := "TEXT NOT NULL DEFAULT 'user'"
+	if dbType == "mysql" || dbType == "mariadb" {
+		ownerRoleDef = "VARCHAR(64) NOT NULL DEFAULT 'user'"
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "owner_role", ownerRoleDef); err != nil {
 		return err
 	}
 	events := artifactTableName(dbType, schema, "watch_events")
-	return ensureSQLColumn(ctx, db, dbType, events, "data_truncated", "INTEGER NOT NULL DEFAULT 0")
+	dataTruncatedDef := "INTEGER NOT NULL DEFAULT 0"
+	if dbType == "mysql" || dbType == "mariadb" {
+		dataTruncatedDef = "BOOLEAN NOT NULL DEFAULT FALSE"
+	}
+	return ensureSQLColumn(ctx, db, dbType, events, "data_truncated", dataTruncatedDef)
 }
 
 func watchID(ownerID, name string) string {
