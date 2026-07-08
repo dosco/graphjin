@@ -13,15 +13,27 @@ import (
 )
 
 func (idx *indexer) Watch(ctx context.Context) error {
-	w, err := fsnotify.NewWatcher()
+	w, err := idx.newWatcher()
 	if err != nil {
 		return err
 	}
 	defer w.Close() //nolint:errcheck
-	if err := idx.addWatchDirs(w); err != nil {
-		return err
-	}
+	return idx.watch(ctx, w)
+}
 
+func (idx *indexer) newWatcher() (*fsnotify.Watcher, error) {
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
+	}
+	if err := idx.addWatchDirs(w); err != nil {
+		w.Close() //nolint:errcheck
+		return nil, err
+	}
+	return w, nil
+}
+
+func (idx *indexer) watch(ctx context.Context, w *fsnotify.Watcher) error {
 	pending := make(map[string]struct{})
 	timer := time.NewTimer(time.Hour)
 	if !timer.Stop() {

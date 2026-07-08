@@ -144,7 +144,6 @@ func TestWatcherIndexesNewFiles(t *testing.T) {
 	}
 	defer managed.Close()
 
-	time.Sleep(100 * time.Millisecond)
 	writeFile(t, filepath.Join(root, "watch.go"), `package main
 
 func Watched() {}
