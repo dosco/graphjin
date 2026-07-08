@@ -337,8 +337,10 @@ func newCatalogControlPlaneService(t *testing.T, mcp serv.MCPConfig) *serv.HttpS
 
 	dir := t.TempDir()
 	coreConf := newConfig(&core.Config{
+		Mode:             "dev",
 		DBType:           dbType,
 		DisableAllowList: true,
+		Roles:            []core.Role{{Name: "admin"}},
 		Sources: []core.SourceConfig{
 			{Name: core.DefaultDBName, Kind: "database", Type: dbType, Default: true, Access: core.SourceAccessConfig{
 				Read:  core.AccessModeAuthenticated,

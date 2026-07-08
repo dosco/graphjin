@@ -47,6 +47,7 @@ func WatchMe() int {
 
 	gjs, err := serv.NewGraphJinService(&serv.Config{
 		Core: core.Config{
+			Mode:                 "dev",
 			DisableAllowList:     true,
 			DBSchemaPollDuration: -1,
 			DefaultLimit:         10,
