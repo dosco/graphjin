@@ -19,7 +19,7 @@ Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, Redshif
 - **Smart discovery before action** - Agents start with `query_catalog(search: "<user instruction>")`, `graphql_help`, relationship evidence, examples, config recipes, and safety notes before writing or running queries.
 - **Guarded action, not raw access** - Source-mode access, query allow-lists, read-only boundaries, policy-aware MCP tools, local encrypted secrets, and `gj_config` preview/apply keep changes auditable.
 - **Operational awareness** - `gj_security`, `gj_runtime`, and the built-in console expose policy and bounded runtime status so agents can check what is safe before they act.
-- **Durable memory and standing questions** - Saved queries, fragments, and workflows live in the owner-scoped `gj_artifacts` store; watches (`gj_watch`) run standing questions under the owner's permissions and deliver fired events to a durable inbox (`gj_watch_event`), webhooks, or workflows — surviving restarts.
+- **Durable memory and standing questions** - Saved queries, fragments, and workflows live in the owner-scoped `gj_artifacts` store; cursor-backed watches (`gj_watch`) run standing questions under the owner's permissions, resume from persisted subscription cursors, and deliver fired events to a durable inbox (`gj_watch_event`), webhooks, or workflows. Normal watches are durable by default; explicit ephemeral watches use TTL leases.
 
 ## Installation
 
@@ -555,6 +555,8 @@ GraphJin exposes a catalog-first MCP surface that guides AI models to discover b
 - Act through governed GraphQL roots such as `gj_workflow_execution(insert)`, `gj_workflow(insert/update/delete)`, and `gj_config(id: "current", update: ...)` only when policy exposes them.
 - In source mode, `gj_config` writes must run `mode: "preview"` with `expected_catalog_revision`, then resend the exact same payload with `mode: "apply"` and `preview_id`.
 - Source access and GraphJin root changes should use `source_patches` by exact source name instead of rewriting the full `sources` array.
+- Watches are managed through `gj_watch` / `gj_watch_event` and REST wrappers (`/api/v1/watches`, `/api/v1/watch-events/unseen`). MCP clients can subscribe to `graphjin://watch-events/unseen` for caller-scoped unseen-event notifications; unsubscribing does not pause or delete durable watches.
+- Use `/api/v1/watches/cleanup-preview` before `/api/v1/watches/cleanup-apply`. Expired ephemeral watches can be expired automatically, but durable watch deletion is always explicit.
 - Legacy discovery tools are migration shims and are disabled unless `mcp.legacy_discovery: true`.
 
 Schema reloads, schema changes, where-clause validation, and query repair remain MCP action tools.

@@ -99,7 +99,7 @@ func (s *graphjinService) watchDeliveryLoop(ctx context.Context) {
 }
 
 func (s *graphjinService) processPendingWatchDeliveries(ctx context.Context) error {
-	rows, err := s.internalStoreRows(ctx, "watch_events", "", watchEventStoreFields, nil)
+	rows, err := s.internalStoreRows(ctx, "watch_events", `where: { delivery_status: { eq: "pending" } }`, watchEventStoreFields, nil)
 	if err != nil {
 		return err
 	}
@@ -109,9 +109,6 @@ func (s *graphjinService) processPendingWatchDeliveries(ctx context.Context) err
 	var firstErr error
 	processed := 0
 	for _, row := range rows {
-		if watchDeliveryStatus(stringMapValue(row, "delivery_status")) != "pending" {
-			continue
-		}
 		if processed >= watchDeliveryBatchSize {
 			break
 		}
@@ -212,6 +209,9 @@ func (s *graphjinService) processWatchDeliveryRow(ctx context.Context, row map[s
 		VariablesJSON:  jsonMapString(watchRow, "variables_json"),
 		DeliveryJSON:   event.DeliveryJSON,
 		EnrichJSON:     jsonMapString(watchRow, "enrich_json"),
+		Lifecycle:      watchLifecycle(stringMapValue(watchRow, "lifecycle")),
+		LeaseExpiresAt: stringMapValue(watchRow, "lease_expires_at"),
+		LeaseOwnerID:   stringMapValue(watchRow, "lease_owner_id"),
 		AccountID:      stringMapValue(watchRow, "account_id"),
 		OwnerID:        stringMapValue(watchRow, "owner_id"),
 		OwnerRole:      s.trustedWatchRunnerRole(stringMapValue(watchRow, "owner_role")),
@@ -322,6 +322,7 @@ func (s *graphjinService) completeWatchDelivery(ctx context.Context, event watch
 		return err
 	}
 	s.markWatchChanged("watch delivery")
+	s.notifyWatchEventsResource(event.OwnerID, event.AccountID)
 	return nil
 }
 
@@ -420,6 +421,7 @@ func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntim
 			})
 		_ = s.bumpArtifactRevision(ctx, "watch_events")
 		s.markWatchChanged("watch enrichment")
+		s.notifyWatchEventsResource(def.OwnerID, def.AccountID)
 	}()
 	if cfg.MaxSteps <= 0 || cfg.MaxSteps > 4 {
 		cfg.MaxSteps = 4
@@ -740,6 +742,8 @@ func watchDeliveryPayload(def watchRuntimeDefinition, event watchDeliveryEvent) 
 			"name":             def.Name,
 			"query":            def.Query,
 			"saved_query_name": def.SavedQueryName,
+			"lifecycle":        def.Lifecycle,
+			"lease_expires_at": def.LeaseExpiresAt,
 		},
 		"event": map[string]any{
 			"id":            event.ID,

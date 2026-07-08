@@ -9,13 +9,13 @@ Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data 
 
 | Page | Agent-facing surface |
 | --- | --- |
-| [MCP](/agentic/mcp/) | Discovery, syntax guidance, validation, cursor IDs, saved-query execution, and GraphQL tools. |
+| [MCP](/agentic/mcp/) | Discovery, syntax guidance, validation, cursor IDs, saved-query execution, GraphQL tools, and watch-event resource notifications. |
 | [Server-Side Agent](/agentic/server-agent/) | GraphJin runs the catalog-first discovery loop for you and returns a typed answer via `ask_graphjin_agent` and `POST /api/v1/agent`. |
 | [Catalog Graph](/agentic/catalog-graph/) | `gj_catalog` rows for sources, tables, relationships, syntax, examples, workflows, and evidence. |
 | [Security Graph](/agentic/security-graph/) | `gj_security` rows for effective policy, capabilities, read-only state, and findings. |
 | [Source Mode](/agentic/source-mode/) | Source-local ownership, capability defaults, reloads, and `agentic.yml` inheritance. |
 | [Artifacts Overlay](/agentic/artifacts/) | Global config files plus caller-scoped `gj_artifacts` overrides for queries, fragments, and workflows. |
-| [Watches](/agentic/watches/) | `gj_watch` standing questions evaluated with the owner's permissions; durable `gj_watch_event` inbox with webhook and workflow delivery. |
+| [Watches](/agentic/watches/) | Cursor-backed `gj_watch` standing questions evaluated with the owner's permissions; durable `gj_watch_event` inbox, explicit ephemeral leases, REST cleanup, and webhook/workflow/MCP delivery. |
 | [Workflows](/agentic/workflows/) | Named, reviewed operational procedures that can call GraphJin tools and GraphQL. |
 | [MCP OAuth](/agentic/oauth/) | Hosted MCP identity with protected-resource metadata, authorization metadata, and audience checks. |
 

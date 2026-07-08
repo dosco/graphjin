@@ -19,7 +19,7 @@ const (
 	watchValidationProbeTimeout = 10 * time.Second
 )
 
-const watchStoreFields = `id name description query saved_query_name variables_json condition_js delivery_json enrich_json evidence_json status approval enabled account_id owner_id owner_role last_data_hash last_fired_at last_error failure_count created_at updated_at`
+const watchStoreFields = `id name description query saved_query_name variables_json condition_js delivery_json enrich_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
 
 const watchEventStoreFields = `id watch_id data_hash data_json data_truncated evidence_json delivery_status delivery_attempts delivery_json receipt_json enrichment_json seen seen_at account_id owner_id created_at updated_at`
 
@@ -60,6 +60,9 @@ func watchColumns() []core.ManagedColumn {
 		cpCol("delivery_json", "json", false),
 		cpCol("enrich_json", "json", false),
 		cpCol("evidence_json", "json", false),
+		cpCol("lifecycle", "text", false),
+		cpCol("lease_expires_at", "text", false),
+		cpCol("lease_owner_id", "text", false),
 		cpCol("status", "text", false),
 		cpCol("approval", "text", false),
 		cpCol("enabled", "boolean", false),
@@ -289,6 +292,23 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	conditionJS := stringInput(root.Input, "condition_js", "")
 	deliveryJSON := jsonStringInput(root.Input, "delivery_json")
 	enrichJSON := jsonStringInput(root.Input, "enrich_json")
+	lifecycle := watchLifecycle(stringInput(root.Input, "lifecycle", "durable"))
+	leaseExpiresAt := strings.TrimSpace(stringInput(root.Input, "lease_expires_at", ""))
+	leaseOwnerID := ""
+	if lifecycle == "ephemeral" {
+		if leaseExpiresAt == "" {
+			return nil, fmt.Errorf("gj_watch lease_expires_at is required for ephemeral watches")
+		}
+		expiresAt, ok := parseWatchTime(leaseExpiresAt)
+		if !ok {
+			return nil, fmt.Errorf("gj_watch lease_expires_at must be an RFC3339 timestamp")
+		}
+		if !expiresAt.After(time.Now().UTC()) {
+			return nil, fmt.Errorf("gj_watch lease_expires_at must be in the future")
+		}
+		leaseExpiresAt = expiresAt.UTC().Format(time.RFC3339)
+		leaseOwnerID = ownerID
+	}
 	if maxBytes := s.conf.Core.EffectiveWatchesConfig().SnapshotMaxBytes; maxBytes > 0 {
 		for _, f := range []struct{ name, value string }{
 			{"variables_json", variablesJSON},
@@ -306,25 +326,39 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	enabled := boolInput(root.Input, "enabled", true)
 	createdAt := now
 	lastDataHash := ""
+	lastCursorJSON := ""
 	lastFiredAt := ""
 	lastError := ""
 	failureCount := int64(0)
+	definitionChanged := existing == nil
 	if existing != nil {
 		createdAt = stringMapValue(existing, "created_at")
 		if createdAt == "" {
 			createdAt = now
 		}
+		definitionChanged = query != stringMapValue(existing, "query") ||
+			savedQuery != stringMapValue(existing, "saved_query_name") ||
+			variablesJSON != jsonMapString(existing, "variables_json")
 		lastDataHash = stringMapValue(existing, "last_data_hash")
+		lastCursorJSON = jsonMapString(existing, "last_cursor_json")
 		lastFiredAt = stringMapValue(existing, "last_fired_at")
 		lastError = stringMapValue(existing, "last_error")
 		failureCount = int64MapValue(existing, "failure_count")
+		if definitionChanged {
+			lastDataHash = ""
+			lastCursorJSON = ""
+			lastFiredAt = ""
+			lastError = ""
+			failureCount = 0
+		}
 	}
 	input := map[string]any{
 		"id": id, "name": name, "description": description, "query": query, "saved_query_name": savedQuery,
 		"variables_json": nullableJSONString(variablesJSON), "condition_js": conditionJS,
 		"delivery_json": nullableJSONString(deliveryJSON), "enrich_json": nullableJSONString(enrichJSON), "evidence_json": nullableJSONString(evidenceJSON),
+		"lifecycle": lifecycle, "lease_expires_at": nullableJSONString(leaseExpiresAt), "lease_owner_id": leaseOwnerID,
 		"status": status, "approval": approval, "enabled": enabled, "account_id": accountID, "owner_id": ownerID, "owner_role": ownerRole,
-		"last_data_hash": lastDataHash, "last_fired_at": nullableJSONString(lastFiredAt), "last_error": lastError, "failure_count": failureCount,
+		"last_data_hash": lastDataHash, "last_cursor_json": nullableJSONString(lastCursorJSON), "last_fired_at": nullableJSONString(lastFiredAt), "last_error": lastError, "failure_count": failureCount,
 		"created_at": createdAt, "updated_at": now,
 	}
 	var rows []map[string]any
@@ -336,10 +370,13 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		delete(update, "account_id")
 		delete(update, "owner_id")
 		delete(update, "owner_role")
-		delete(update, "last_data_hash")
-		delete(update, "last_fired_at")
-		delete(update, "last_error")
-		delete(update, "failure_count")
+		if !definitionChanged {
+			delete(update, "last_data_hash")
+			delete(update, "last_cursor_json")
+			delete(update, "last_fired_at")
+			delete(update, "last_error")
+			delete(update, "failure_count")
+		}
 		delete(update, "created_at")
 		rows, err = s.internalStoreMutationRows(ctx, "watches", `where: { id: { eq: $id } }, update: $input`, watchStoreFields, map[string]any{"id": id, "input": update})
 	}
@@ -350,6 +387,7 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		return nil, err
 	}
 	s.markWatchChanged("watch mutation")
+	s.publishWatchRunnerChanged(ctx)
 	if len(rows) != 0 {
 		return watchStoreRow(rows[0], admin), nil
 	}
@@ -396,6 +434,7 @@ func (h watchControlPlane) deleteWatch(ctx context.Context, root core.ManagedMut
 		}
 	}
 	s.markWatchChanged("watch delete")
+	s.publishWatchRunnerChanged(ctx)
 	return map[string]any{"id": id, "deleted": true}, nil
 }
 
@@ -433,6 +472,7 @@ func (h watchControlPlane) updateWatchEvent(ctx context.Context, root core.Manag
 		return nil, err
 	}
 	s.markWatchChanged("watch event update")
+	s.notifyWatchEventsResource(stringMapValue(existing, "owner_id"), stringMapValue(existing, "account_id"))
 	return map[string]any{"id": id, "seen": seen, "seen_at": nullableSeenAt(seen, now), "updated_at": now}, nil
 }
 
@@ -442,12 +482,12 @@ func (h watchControlPlane) validateWatchDefinition(ctx context.Context, query, s
 	if query == "" && savedQuery == "" {
 		return nil, fmt.Errorf("gj_watch requires query or saved_query_name")
 	}
-	var vars json.RawMessage
-	if strings.TrimSpace(variablesJSON) != "" {
-		if !json.Valid([]byte(variablesJSON)) {
-			return nil, fmt.Errorf("gj_watch variables_json must be valid JSON")
+	vars, err := watchVariablesWithCursor(variablesJSON, "")
+	if err != nil {
+		if strings.Contains(err.Error(), "variables_json") {
+			return nil, fmt.Errorf("gj_watch %w", err)
 		}
-		vars = json.RawMessage(variablesJSON)
+		return nil, err
 	}
 	evidence := map[string]any{
 		"validated_at": time.Now().UTC().Format(time.RFC3339),
@@ -465,6 +505,7 @@ func (h watchControlPlane) validateWatchDefinition(ctx context.Context, query, s
 		if h.service != nil && h.service.gj != nil {
 			probeCtx, cancel := context.WithTimeout(ctx, watchValidationProbeTimeout)
 			member, err := h.service.gj.Subscribe(probeCtx, query, vars, nil)
+			cursorVars := memberCursorVariableNames(member)
 			if member != nil {
 				member.Unsubscribe()
 			}
@@ -472,7 +513,11 @@ func (h watchControlPlane) validateWatchDefinition(ctx context.Context, query, s
 			if err != nil {
 				return nil, fmt.Errorf("gj_watch subscription probe failed: %w", err)
 			}
+			if len(cursorVars) == 0 {
+				return nil, fmt.Errorf("gj_watch subscription must use cursor pagination")
+			}
 			evidence["probe"] = "ok"
+			evidence["cursor_variables"] = cursorVars
 		}
 		return evidence, nil
 	}
@@ -492,6 +537,7 @@ func (h watchControlPlane) validateWatchDefinition(ctx context.Context, query, s
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, watchValidationProbeTimeout)
 	member, err := h.service.gj.SubscribeByName(probeCtx, savedQuery, vars, nil)
+	cursorVars := memberCursorVariableNames(member)
 	if member != nil {
 		member.Unsubscribe()
 	}
@@ -499,11 +545,22 @@ func (h watchControlPlane) validateWatchDefinition(ctx context.Context, query, s
 	if err != nil {
 		return nil, fmt.Errorf("gj_watch saved-query subscription probe failed: %w", err)
 	}
+	if len(cursorVars) == 0 {
+		return nil, fmt.Errorf("gj_watch saved_query_name subscription must use cursor pagination")
+	}
 	evidence["operation"] = "subscription"
 	evidence["operation_name"] = header.Name
 	evidence["saved_query_name"] = savedQuery
 	evidence["probe"] = "ok"
+	evidence["cursor_variables"] = cursorVars
 	return evidence, nil
+}
+
+func memberCursorVariableNames(member *core.Member) []string {
+	if member == nil {
+		return nil
+	}
+	return member.CursorVariableNames()
 }
 
 func (s *graphjinService) internalWatchStoreRow(ctx context.Context, id string) (map[string]any, error) {
@@ -528,17 +585,19 @@ func (s *graphjinService) deleteWatchEvents(ctx context.Context, watchID string)
 	}
 	rows, err := s.internalStoreRows(ctx, "watch_events",
 		`where: { watch_id: { eq: $watch_id } }`,
-		`id`,
+		`id owner_id account_id`,
 		map[string]any{"watch_id": watchID})
 	if err != nil || len(rows) == 0 {
 		return 0, err
 	}
+	scopes := watchEventScopesFromRows(rows)
 	if _, err := s.internalStoreMutationRows(ctx, "watch_events",
 		`where: { watch_id: { eq: $watch_id } }, delete: true`,
 		`id`,
 		map[string]any{"watch_id": watchID}); err != nil {
 		return 0, err
 	}
+	s.notifyWatchEventScopes(scopes)
 	return len(rows), nil
 }
 
@@ -548,17 +607,19 @@ func (s *graphjinService) deleteWatchEventByID(ctx context.Context, id string) (
 	}
 	rows, err := s.internalStoreRows(ctx, "watch_events",
 		`where: { id: { eq: $id } }`,
-		`id`,
+		`id owner_id account_id`,
 		map[string]any{"id": id})
 	if err != nil || len(rows) == 0 {
 		return 0, err
 	}
+	scopes := watchEventScopesFromRows(rows)
 	if _, err := s.internalStoreMutationRows(ctx, "watch_events",
 		`where: { id: { eq: $id } }, delete: true`,
 		`id`,
 		map[string]any{"id": id}); err != nil {
 		return 0, err
 	}
+	s.notifyWatchEventScopes(scopes)
 	return len(rows), nil
 }
 
@@ -626,6 +687,9 @@ condition_js TEXT NOT NULL DEFAULT '',
 delivery_json JSONB,
 enrich_json JSONB,
 evidence_json JSONB,
+lifecycle TEXT NOT NULL DEFAULT 'durable',
+lease_expires_at TIMESTAMPTZ,
+lease_owner_id TEXT NOT NULL DEFAULT '',
 status TEXT NOT NULL DEFAULT 'active',
 approval TEXT NOT NULL DEFAULT 'approved',
 enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -633,6 +697,7 @@ account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
 owner_role TEXT NOT NULL DEFAULT 'user',
 last_data_hash TEXT NOT NULL DEFAULT '',
+last_cursor_json JSONB,
 last_fired_at TIMESTAMPTZ,
 last_error TEXT NOT NULL DEFAULT '',
 failure_count BIGINT NOT NULL DEFAULT 0,
@@ -677,6 +742,9 @@ condition_js LONGTEXT NOT NULL,
 delivery_json LONGTEXT,
 enrich_json LONGTEXT,
 evidence_json LONGTEXT,
+lifecycle VARCHAR(32) NOT NULL DEFAULT 'durable',
+lease_expires_at VARCHAR(64),
+lease_owner_id VARCHAR(191) NOT NULL DEFAULT '',
 status VARCHAR(32) NOT NULL DEFAULT 'active',
 approval VARCHAR(32) NOT NULL DEFAULT 'approved',
 enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -684,6 +752,7 @@ account_id VARCHAR(191) NOT NULL DEFAULT '',
 owner_id VARCHAR(191) NOT NULL DEFAULT '',
 owner_role VARCHAR(64) NOT NULL DEFAULT 'user',
 last_data_hash VARCHAR(128) NOT NULL DEFAULT '',
+last_cursor_json LONGTEXT,
 last_fired_at VARCHAR(64),
 last_error LONGTEXT NOT NULL,
 failure_count BIGINT NOT NULL DEFAULT 0,
@@ -723,6 +792,9 @@ condition_js TEXT NOT NULL DEFAULT '',
 delivery_json TEXT,
 enrich_json TEXT,
 evidence_json TEXT,
+lifecycle TEXT NOT NULL DEFAULT 'durable',
+lease_expires_at TEXT,
+lease_owner_id TEXT NOT NULL DEFAULT '',
 status TEXT NOT NULL DEFAULT 'active',
 approval TEXT NOT NULL DEFAULT 'approved',
 enabled INTEGER NOT NULL DEFAULT 1,
@@ -730,6 +802,7 @@ account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
 owner_role TEXT NOT NULL DEFAULT 'user',
 last_data_hash TEXT NOT NULL DEFAULT '',
+last_cursor_json TEXT,
 last_fired_at TEXT,
 last_error TEXT NOT NULL DEFAULT '',
 failure_count INTEGER NOT NULL DEFAULT 0,
@@ -772,6 +845,10 @@ func watchMigrationDDL(dbType, schema string) []string {
 	events := artifactTableName(dbType, schema, "watch_events")
 	return []string{
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS owner_role TEXT NOT NULL DEFAULT 'user'`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS last_cursor_json JSONB`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lifecycle TEXT NOT NULL DEFAULT 'durable'`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lease_owner_id TEXT NOT NULL DEFAULT ''`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS data_truncated BOOLEAN NOT NULL DEFAULT FALSE`, events),
 	}
 }
@@ -791,6 +868,30 @@ func (s *graphjinService) migrateWatchSchema(ctx context.Context, db *sql.DB, db
 		ownerRoleDef = "VARCHAR(64) NOT NULL DEFAULT 'user'"
 	}
 	if err := ensureSQLColumn(ctx, db, dbType, watches, "owner_role", ownerRoleDef); err != nil {
+		return err
+	}
+	lastCursorDef := "TEXT"
+	if dbType == "mysql" || dbType == "mariadb" {
+		lastCursorDef = "LONGTEXT"
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "last_cursor_json", lastCursorDef); err != nil {
+		return err
+	}
+	lifecycleDef := "TEXT NOT NULL DEFAULT 'durable'"
+	leaseExpiresDef := "TEXT"
+	leaseOwnerDef := "TEXT NOT NULL DEFAULT ''"
+	if dbType == "mysql" || dbType == "mariadb" {
+		lifecycleDef = "VARCHAR(32) NOT NULL DEFAULT 'durable'"
+		leaseExpiresDef = "VARCHAR(64)"
+		leaseOwnerDef = "VARCHAR(191) NOT NULL DEFAULT ''"
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "lifecycle", lifecycleDef); err != nil {
+		return err
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "lease_expires_at", leaseExpiresDef); err != nil {
+		return err
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "lease_owner_id", leaseOwnerDef); err != nil {
 		return err
 	}
 	events := artifactTableName(dbType, schema, "watch_events")
@@ -814,13 +915,25 @@ func watchEventID(watchID, dataHash string) string {
 func watchStatus(status string) string {
 	status = strings.ToLower(strings.TrimSpace(status))
 	switch status {
-	case "", "active", "paused", "error":
+	case "", "active", "paused", "error", "expired":
 		if status == "" {
 			return "active"
 		}
 		return status
 	default:
 		return "active"
+	}
+}
+
+func watchLifecycle(lifecycle string) string {
+	lifecycle = strings.ToLower(strings.TrimSpace(lifecycle))
+	switch lifecycle {
+	case "", "durable":
+		return "durable"
+	case "ephemeral":
+		return "ephemeral"
+	default:
+		return "durable"
 	}
 }
 
@@ -854,6 +967,9 @@ func watchStoreRow(row map[string]any, rawIDs bool) map[string]any {
 		"delivery_json":    row["delivery_json"],
 		"enrich_json":      row["enrich_json"],
 		"evidence_json":    row["evidence_json"],
+		"lifecycle":        watchLifecycle(stringMapValue(row, "lifecycle")),
+		"lease_expires_at": stringMapValue(row, "lease_expires_at"),
+		"lease_owner_id":   safeArtifactIdentity(stringMapValue(row, "lease_owner_id"), rawIDs),
 		"status":           watchStatus(stringMapValue(row, "status")),
 		"approval":         watchApproval(stringMapValue(row, "approval")),
 		"enabled":          boolMapValue(row, "enabled"),

@@ -12,6 +12,8 @@ const (
 	routeAgentStatus = "/api/v1/agent/status"
 	routeREST        = "/api/v1/rest/"
 	routeWorkflows   = "/api/v1/workflows/"
+	routeWatches     = "/api/v1/watches"
+	routeWatchEvents = "/api/v1/watch-events"
 	routeOpenAPI     = "/api/v1/openapi.json"
 	routeMCP         = "/api/v1/mcp"
 	routeMCPMsg      = "/api/v1/mcp/message"
@@ -57,6 +59,12 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			if s.conf.agentEnabled() {
 				mux.Handle(routeAgent, s1.Agent(ah))
 			}
+			if s.watchesEnabled() {
+				mux.Handle(routeWatches, s1.Watches(ah))
+				mux.Handle(routeWatches+"/", s1.Watches(ah))
+				mux.Handle(routeWatchEvents, s1.Watches(ah))
+				mux.Handle(routeWatchEvents+"/", s1.Watches(ah))
+			}
 			mux.Handle(routeREST, s1.REST(ah))
 			if s.conf.legacyDiscoveryEnabled() {
 				mux.Handle(routeWorkflows, s1.Workflows(ah))
@@ -67,6 +75,12 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			mux.Handle(routeAgentStatus, s1.AgentStatusWithNS(ah, *ns))
 			if s.conf.agentEnabled() {
 				mux.Handle(routeAgent, s1.AgentWithNS(ah, *ns))
+			}
+			if s.watchesEnabled() {
+				mux.Handle(routeWatches, s1.WatchesWithNS(ah, *ns))
+				mux.Handle(routeWatches+"/", s1.WatchesWithNS(ah, *ns))
+				mux.Handle(routeWatchEvents, s1.WatchesWithNS(ah, *ns))
+				mux.Handle(routeWatchEvents+"/", s1.WatchesWithNS(ah, *ns))
 			}
 			mux.Handle(routeREST, s1.RESTWithNS(ah, *ns))
 			if s.conf.legacyDiscoveryEnabled() {

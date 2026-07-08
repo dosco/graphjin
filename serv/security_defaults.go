@@ -256,6 +256,8 @@ func watchPublicProjectionColumns() []string {
 		"delivery_json",
 		"enrich_json",
 		"evidence_json",
+		"lifecycle",
+		"lease_expires_at",
 		"status",
 		"approval",
 		"enabled",

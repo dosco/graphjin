@@ -77,12 +77,11 @@ run_agent_eval_suite() {
   ' "agent eval: discovery-only inventory avoided execution"
 
   # Generic capability suites (shared lib).
-  run_watch_fire_suite "subscription smoke_fire { appointments { id status } }"
   run_refusal_suite appointments
   run_watch_agent_suite \
-    "Use the JavaScript runtime globals to run this exact watch creation flow: await query_catalog({id:\"help:security\"}); await query_catalog({id:\"help:runtime\"}); await query_catalog({id:\"help:watches\"}); const created = await execute_graphql({query:\"mutation { gj_watch(insert: { name: \\\"smoke_agent_watch\\\", query: \\\"subscription smoke_watch { appointments { id status } }\\\" }) { id name status enabled } }\"}); await final({status:\"answered\", answer:\"created smoke_agent_watch\", data:created, evidence:{catalog_ids:[\"help:security\",\"help:runtime\",\"help:watches\"]}});" \
+    "Use the JavaScript runtime globals to run this exact watch creation flow: await query_catalog({id:\"help:security\"}); await query_catalog({id:\"help:runtime\"}); await query_catalog({id:\"help:watches\"}); const created = await execute_graphql({query:\"mutation { gj_watch(insert: { name: \\\"smoke_agent_watch\\\", query: \\\"subscription smoke_watch { appointments(first: 25, after: \\\$cursor) { id status } appointments_cursor }\\\" }) { id name status enabled } }\"}); await final({status:\"answered\", answer:\"created smoke_agent_watch\", data:created, evidence:{catalog_ids:[\"help:security\",\"help:runtime\",\"help:watches\"]}});" \
     smoke_agent_watch \
-    "subscription smoke_notice { appointments { id status } }"
+    "subscription smoke_notice { appointments(first: 25, after: \$cursor) { id status } appointments_cursor }"
   run_admin_root_suite
 }
 
@@ -143,7 +142,8 @@ promotion_out="$(graphql workflow-promotion 'mutation {
 }')"
 assert_jq "$promotion_out" '.data.gj_workflow_execution.status == "ok" and (.data.gj_workflow_execution.result_json | contains("promote"))' "waitlist_promotion workflow recommends promotion"
 
-run_watch_lifecycle_suite "subscription smoke_watch { appointments { id status } }"
+run_watch_lifecycle_suite "subscription smoke_watch { appointments(first: 25, after: \$cursor) { id status } appointments_cursor }"
+run_watch_fire_suite "subscription smoke_fire { appointments(first: 25, after: \$cursor) { id status } appointments_cursor }"
 run_artifact_suite
 
 log "checking MCP discovery surfaces"

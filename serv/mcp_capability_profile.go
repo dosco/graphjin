@@ -82,6 +82,22 @@ func (ms *mcpServer) effectiveContext(ctx context.Context) context.Context {
 	return ctx
 }
 
+func (ms *mcpServer) effectiveIdentityContext(ctx context.Context) context.Context {
+	ctx = ms.effectiveContext(ctx)
+	if _, ok := artifactUserID(ctx); ok {
+		return ctx
+	}
+	if ms == nil || ms.ctx == nil {
+		return ctx
+	}
+	for _, key := range []any{core.UserIDKey, core.UserRoleKey, core.IdentityVarsKey, core.IdentityRolesKey} {
+		if value := ms.ctx.Value(key); value != nil {
+			ctx = context.WithValue(ctx, key, value)
+		}
+	}
+	return ctx
+}
+
 func (s *graphjinService) mcpStartupCapabilityProfile(ctx context.Context) *MCPCapabilityProfile {
 	ms := &mcpServer{service: s, ctx: ctx}
 	return ms.callerCapabilityProfile(ctx, false)

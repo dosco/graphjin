@@ -243,7 +243,7 @@ func TestLegacyAgenticMCPEnabledByDefault(t *testing.T) {
 	}
 }
 
-func TestSourcesUsedRegistersNoDefaultPromptsOrResources(t *testing.T) {
+func TestSourcesUsedRegistersNoDefaultPromptsAndOnlyWatchResource(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.srv = server.NewMCPServer("test", "0.0.0", server.WithPromptCapabilities(true), server.WithResourceCapabilities(true, false))
 	ms.registerPrompts()
@@ -252,8 +252,9 @@ func TestSourcesUsedRegistersNoDefaultPromptsOrResources(t *testing.T) {
 	if prompts := promptNamesFromServer(t, ms.srv); len(prompts) != 0 {
 		t.Fatalf("expected no prompts in sources-used mode, got %v", prompts)
 	}
-	if resources := resourceURIsFromServer(t, ms.srv); len(resources) != 0 {
-		t.Fatalf("expected no resources in sources-used mode, got %v", resources)
+	resources := resourceURIsFromServer(t, ms.srv)
+	if len(resources) != 1 || !resources[WatchEventsUnseenResourceURI] {
+		t.Fatalf("expected only the watch-events resource in sources-used mode, got %v", resources)
 	}
 }
 

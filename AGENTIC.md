@@ -1030,10 +1030,11 @@ mutation {
   gj_watch(
     insert: {
       name: "new_orders"
-      query: "subscription new_orders { orders { id status } }"
+      query: "subscription new_orders { orders(first: 25, after: $cursor, order_by: { id: asc }) { id status } orders_cursor }"
     }
   ) {
     id
+    lifecycle
     status
   }
 }
@@ -1041,14 +1042,21 @@ mutation {
 
 Durability semantics:
 
-- **Definitions, events, and the fire cursor are store rows.** Watches survive
-  restarts: on boot the runner reloads every `enabled + active + approved`
-  watch and resumes evaluation.
-- **Downtime does not lose state changes.** The last-result hash
-  (`last_data_hash`) is persisted, so a change that happened while the server
-  was down still fires on the first re-evaluation after boot. Only a transient
-  change that also reverted during the outage is missed; there is no
-  historical replay.
+- **Definitions, events, and subscription cursors are store rows.** Watches
+  survive restarts: on boot the runner reloads every `enabled + active +
+  approved` watch, merges `last_cursor_json` into the subscription variables,
+  and resumes from the persisted cursor.
+- **Downtime resumes from the cursor.** Durable watches require cursor-capable
+  subscriptions such as `subscription($cursor: Cursor) { orders(first: 25,
+  after: $cursor, order_by: { id: asc }) { id status } orders_cursor }`.
+  The subscription cursor defines what is new after restart; `last_data_hash`
+  remains only as a defensive idempotency guard so repeated payloads do not
+  create duplicate inbox events.
+- **Normal watches are durable by default.** Use
+  `lifecycle: "ephemeral"` plus a future `lease_expires_at` only when the user
+  explicitly asks for a TTL, such as "watch this for 30 minutes." Expired
+  ephemeral watches become `status: "expired"` and `enabled: false`; their
+  events remain until retention cleanup.
 - **Evaluation is opt-in per deployment**: `watches.runner: "all" | "off"`
   (default `"off"`). Definitions persist regardless of the runner setting.
 - **Retention is enforced**: events are kept `event_retention_hours` (default
@@ -1069,9 +1077,21 @@ Durability semantics:
 The agent inbox loop: query `gj_watch_event` (`seen: { eq: false }`, newest
 first), act on the events, then mark them reviewed with
 `gj_watch_event(update: { seen: true })`. Agent responses carry a
-`watch_events_unseen` notice when the caller has unreviewed events. The runtime
-contract is `query_catalog(id: "help:watches")`; enabling watches is a config
-change (`recipe.config.enable_watches`).
+`watch_events_unseen` notice when the caller has unreviewed events. MCP clients
+can also subscribe to `graphjin://watch-events/unseen`, which sends
+`notifications/resources/updated` for the caller's own unseen events; reading
+the resource returns compact event IDs, watch IDs, timestamps, hashes, and
+delivery status, not full event payloads. MCP unsubscribe only drops the
+in-memory resource subscription; it does not pause, delete, expire, or clean up
+watch rows.
+
+Cleanup has two paths. The runner automatically expires elapsed ephemeral
+leases and regular retention deletes expired/orphaned events. Operators can
+inspect candidates with `POST /api/v1/watches/cleanup-preview` and then apply
+selected IDs or allowed reason filters with
+`POST /api/v1/watches/cleanup-apply`; durable watch deletion is always
+explicit. The runtime contract is `query_catalog(id: "help:watches")`;
+enabling watches is a config change (`recipe.config.enable_watches`).
 
 ## Config And Security Change Playbook
 
@@ -1276,9 +1296,11 @@ Config-folder fragments, saved queries, and workflows remain global,
 read-only artifacts. Database-backed artifacts are scoped by `owner_id = user_id`
 and can override same-name globals without changing config files.
 User watches use the same artifact database and are exposed through `gj_watch`
-and `gj_watch_event`. See
+and `gj_watch_event`, with REST wrappers for operators at `/api/v1/watches`,
+`/api/v1/watch-events/unseen`, `/api/v1/watches/cleanup-preview`, and
+`/api/v1/watches/cleanup-apply`. See
 [The Artifact Store And Watches](#the-artifact-store-and-watches) for the full
-contract, durability semantics, and retention limits.
+contract, durability semantics, leases, cleanup rules, and retention limits.
 
 ### 5. Apply And Verify
 

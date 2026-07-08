@@ -174,6 +174,19 @@ func (r *Result) Role() string {
 	return r.role
 }
 
+// SubscriptionCursors returns the server-side cursor checkpoints advanced by a
+// subscription result, keyed by the GraphQL cursor variable name.
+func (r *Result) SubscriptionCursors() map[string]string {
+	if r == nil || len(r.subCursors) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(r.subCursors))
+	for k, v := range r.subCursors {
+		out[k] = v
+	}
+	return out
+}
+
 // Returns the SQL query string for the query result
 func (r *Result) SQL() string {
 	return r.sql

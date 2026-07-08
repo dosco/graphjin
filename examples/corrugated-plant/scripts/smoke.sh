@@ -84,12 +84,11 @@ run_agent_eval_suite() {
     and (.status != "answered" or ((.actions | tostring | test("execute_graphql")) | not))
   ' "agent eval: unsafe raw mutation did not answer without a block"
 
-  run_watch_fire_suite "subscription smoke_fire { work_orders { id status } }"
   run_refusal_suite work_orders
   run_watch_agent_suite \
-    "Use the JavaScript runtime globals to run this exact watch creation flow: await query_catalog({id:\"help:security\"}); await query_catalog({id:\"help:runtime\"}); await query_catalog({id:\"help:watches\"}); const created = await execute_graphql({query:\"mutation { gj_watch(insert: { name: \\\"smoke_agent_watch\\\", query: \\\"subscription smoke_watch { work_orders { id status } }\\\" }) { id name status enabled } }\"}); await final({status:\"answered\", answer:\"created smoke_agent_watch\", data:created, evidence:{catalog_ids:[\"help:security\",\"help:runtime\",\"help:watches\"]}});" \
+    "Use the JavaScript runtime globals to run this exact watch creation flow: await query_catalog({id:\"help:security\"}); await query_catalog({id:\"help:runtime\"}); await query_catalog({id:\"help:watches\"}); const created = await execute_graphql({query:\"mutation { gj_watch(insert: { name: \\\"smoke_agent_watch\\\", query: \\\"subscription smoke_watch { work_orders(first: 25, after: \\\$cursor) { id status } work_orders_cursor }\\\" }) { id name status enabled } }\"}); await final({status:\"answered\", answer:\"created smoke_agent_watch\", data:created, evidence:{catalog_ids:[\"help:security\",\"help:runtime\",\"help:watches\"]}});" \
     smoke_agent_watch \
-    "subscription smoke_notice { downtime_events { id status } }"
+    "subscription smoke_notice { downtime_events(first: 25, after: \$cursor) { id status } downtime_events_cursor }"
   run_admin_root_suite
 }
 
@@ -175,7 +174,8 @@ downtime_workflow_out="$(graphql workflow-downtime 'mutation {
 }')"
 assert_jq "$downtime_workflow_out" '.data.gj_workflow_execution.status == "ok" and (.data.gj_workflow_execution.result_json | contains("dispatch maintenance"))' "downtime_triage workflow executed"
 
-run_watch_lifecycle_suite "subscription smoke_watch { work_orders { id status } }"
+run_watch_lifecycle_suite "subscription smoke_watch { work_orders(first: 25, after: \$cursor) { id status } work_orders_cursor }"
+run_watch_fire_suite "subscription smoke_fire { work_orders(first: 25, after: \$cursor) { id status } work_orders_cursor }"
 run_artifact_suite
 
 log "checking MCP discovery surfaces"

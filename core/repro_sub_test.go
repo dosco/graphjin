@@ -65,11 +65,18 @@ func TestReproSubHang(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Unsubscribe()
+	cursorVars := m.CursorVariableNames()
+	if len(cursorVars) != 1 || cursorVars[0] != "cursor" {
+		t.Fatalf("cursor variable names = %v, want [cursor]", cursorVars)
+	}
 
 	for i := 0; i < 4; i++ {
 		select {
-		case <-m.Result:
-			// Message received successfully
+		case res := <-m.Result:
+			cursors := res.SubscriptionCursors()
+			if cursors["cursor"] == "" {
+				t.Fatalf("result subscription cursors = %v, want cursor checkpoint", cursors)
+			}
 		case <-ctx.Done():
 			t.Fatalf("Timed out waiting for message %d", i+1)
 		}
