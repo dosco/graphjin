@@ -216,11 +216,43 @@ post_json_as_role() {
   fi
 }
 
+get_json() {
+  local url="$1"
+  local out="$2"
+  local http_code
+
+  http_code="$(
+    curl -sS --max-time "$TIMEOUT" \
+      -o "$out" \
+      -w '%{http_code}' \
+      -X GET "$url" \
+      "${AUTH_HEADERS[@]}"
+  )"
+  if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+    echo "HTTP $http_code from $url" >&2
+    sed -n '1,160p' "$out" >&2
+    return 1
+  fi
+}
+
 assert_jq() {
   local file="$1"
   local expr="$2"
   local label="$3"
   if jq -e "$expr" "$file" >/dev/null; then
+    pass "$label"
+    return 0
+  fi
+  echo "assertion failed: $label" >&2
+  jq . "$file" >&2 || cat "$file" >&2
+  return 1
+}
+
+assert_jq_args() {
+  local file="$1"
+  local label="$2"
+  shift 2
+  if jq -e "$@" "$file" >/dev/null; then
     pass "$label"
     return 0
   fi
@@ -298,6 +330,31 @@ mcp_tool() {
     --data "$payload" >/dev/null
   mcp_body_json "$raw" > "$out"
   assert_jq "$out" '(.error? | not) and (.result? != null)' "MCP ${name} returned a result" >/dev/null
+  printf '%s\n' "$out"
+}
+
+mcp_resource_read() {
+  local uri="$1"
+  # Stateful MCP servers (mcp.http_stateful) require an initialized session;
+  # stateless ones tolerate the same flow, so initialize lazily either way.
+  if [ -z "${MCP_INITIALIZED:-}" ]; then
+    mcp_initialize || true
+    MCP_INITIALIZED=1
+  fi
+  local raw="$TMP_DIR/mcp-resource-$(date +%s%N).raw"
+  local out="${raw%.raw}.json"
+  local payload
+  payload="$(jq -n --arg uri "$uri" \
+    '{jsonrpc:"2.0", id:3, method:"resources/read", params:{uri:$uri}}')"
+  curl -sS --max-time "$TIMEOUT" \
+    -o "$raw" \
+    -X POST "${BASE_URL%/}/api/v1/mcp" \
+    "${AUTH_HEADERS[@]}" \
+    ${MCP_SESSION_ID:+-H "Mcp-Session-Id: ${MCP_SESSION_ID}"} \
+    -H "Accept: application/json, text/event-stream" \
+    --data "$payload" >/dev/null
+  mcp_body_json "$raw" > "$out"
+  assert_jq "$out" '(.error? | not) and (.result.contents | length) >= 1' "MCP resource ${uri} returned contents" >/dev/null
   printf '%s\n' "$out"
 }
 
@@ -461,6 +518,12 @@ retry_agent_assert() {
   return 1
 }
 
+smoke_future_rfc3339() {
+  local seconds="${1:-10}"
+  date -u -v+"${seconds}"S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+    || date -u -d "+${seconds} seconds" '+%Y-%m-%dT%H:%M:%SZ'
+}
+
 # --- generic capability suites -----------------------------------------------
 
 # Artifact store e2e: insert + read-back, projection truncation, and (when
@@ -521,7 +584,8 @@ run_refusal_suite() {
   return 1
 }
 
-# Watch control plane: create / owner-visibility / delete.
+# Watch control plane: durable defaults, explicit ephemeral leases, REST list,
+# cleanup preview/apply, owner visibility, and delete.
 run_watch_lifecycle_suite() {
   local sub_query="$1"
   local watch_probe="$TMP_DIR/watch-probe.json"
@@ -529,11 +593,45 @@ run_watch_lifecycle_suite() {
     && jq -e '((.errors // []) | length) == 0' "$watch_probe" >/dev/null 2>&1; then
     log "checking watch control plane (gj_watch / gj_watch_event)"
     local create_out list_out delete_out watch_id
-    create_out="$(graphql watch-create "mutation { gj_watch(insert: { name: \"smoke_watch\", query: \"${sub_query}\" }) { id name status enabled } }")"
-    assert_jq "$create_out" '([.data.gj_watch] | flatten | .[0]) as $w | $w.name == "smoke_watch" and $w.status == "active"' "watch created through gj_watch"
+    create_out="$(graphql watch-create "mutation { gj_watch(insert: { name: \"smoke_watch\", query: \"${sub_query}\" }) { id name lifecycle lease_expires_at status enabled } }")"
+    assert_jq "$create_out" '([.data.gj_watch] | flatten | .[0]) as $w | $w.name == "smoke_watch" and $w.lifecycle == "durable" and ($w.lease_expires_at == null or $w.lease_expires_at == "") and $w.status == "active" and $w.enabled == true' "durable watch defaults through gj_watch"
     watch_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$create_out")"
-    list_out="$(graphql watch-list 'query { gj_watch(where: { name: { eq: "smoke_watch" } }) { id name status } }')"
-    assert_jq "$list_out" '(.data.gj_watch | length) == 1' "watch visible to its owner"
+    list_out="$(graphql watch-list 'query { gj_watch(where: { name: { eq: "smoke_watch" } }) { id name lifecycle status enabled lease_expires_at } }')"
+    assert_jq "$list_out" '(.data.gj_watch | length) == 1 and .data.gj_watch[0].lifecycle == "durable"' "watch visible to its owner"
+
+    local lease create_eph_out eph_id rest_list_out
+    lease="$(smoke_future_rfc3339 15)"
+    create_eph_out="$(graphql watch-ephemeral-create "mutation { gj_watch(insert: { name: \"smoke_ephemeral_watch\", lifecycle: \"ephemeral\", lease_expires_at: \"${lease}\", query: \"${sub_query}\" }) { id name lifecycle lease_expires_at status enabled } }")"
+    assert_jq "$create_eph_out" '([.data.gj_watch] | flatten | .[0]) as $w | $w.name == "smoke_ephemeral_watch" and $w.lifecycle == "ephemeral" and ($w.lease_expires_at | length) > 0 and $w.status == "active" and $w.enabled == true' "ephemeral watch requires and stores a lease"
+    eph_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$create_eph_out")"
+
+    rest_list_out="$TMP_DIR/watch-rest-list.json"
+    get_json "${BASE_URL%/}/api/v1/watches?lifecycle=ephemeral" "$rest_list_out"
+    assert_jq "$rest_list_out" '.data[] | select(.name == "smoke_ephemeral_watch" and .lifecycle == "ephemeral")' "REST watch list exposes ephemeral watch"
+
+    local expire_lease expire_out expired_id preview_out token apply_payload apply_out expired_out
+    expire_lease="$(smoke_future_rfc3339 2)"
+    expire_out="$(graphql watch-expiring-create "mutation { gj_watch(insert: { name: \"smoke_expired_ephemeral\", lifecycle: \"ephemeral\", lease_expires_at: \"${expire_lease}\", enabled: false, query: \"${sub_query}\" }) { id name lifecycle lease_expires_at status enabled } }")"
+    expired_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$expire_out")"
+    sleep 3
+    preview_out="$TMP_DIR/watch-cleanup-preview.json"
+    post_json "${BASE_URL%/}/api/v1/watches/cleanup-preview" '{"stale_hours":1}' "$preview_out"
+    assert_jq_args "$preview_out" "cleanup preview identifies expired ephemeral watch" --arg id "$expired_id" '([.candidates.expired_ephemeral[]? | select(.id == $id and .action == "expire_watch")] | length) == 1'
+    token="$(jq -r '.token' "$preview_out")"
+    apply_payload="$(jq -n --arg token "$token" --arg id "$expired_id" '{token:$token, stale_hours:1, watch_ids:[$id]}')"
+    apply_out="$TMP_DIR/watch-cleanup-apply.json"
+    post_json "${BASE_URL%/}/api/v1/watches/cleanup-apply" "$apply_payload" "$apply_out"
+    if jq -e --arg id "$expired_id" '(.data.expired_watch_ids // [] | index($id)) != null' "$apply_out" >/dev/null; then
+      pass "cleanup apply expires only the selected watch"
+    else
+      expired_out="$(graphql watch-expired-race-read "query { gj_watch(where: { id: { eq: \"${expired_id}\" } }) { id status enabled lifecycle } }")"
+      assert_jq "$expired_out" '.data.gj_watch[0].status == "expired" and .data.gj_watch[0].enabled == false and .data.gj_watch[0].lifecycle == "ephemeral"' "expired ephemeral watch was already disabled by runner cleanup"
+    fi
+    expired_out="$(graphql watch-expired-read "query { gj_watch(where: { id: { eq: \"${expired_id}\" } }) { id status enabled lifecycle } }")"
+    assert_jq "$expired_out" '.data.gj_watch[0].status == "expired" and .data.gj_watch[0].enabled == false and .data.gj_watch[0].lifecycle == "ephemeral"' "expired ephemeral watch is disabled, not deleted"
+
+    graphql watch-expired-delete "mutation { gj_watch(delete: true, where: { id: { eq: \"${expired_id}\" } }) { id } }" >/dev/null || true
+    graphql watch-ephemeral-delete "mutation { gj_watch(delete: true, where: { id: { eq: \"${eph_id}\" } }) { id } }" >/dev/null || true
     delete_out="$(graphql watch-delete "mutation { gj_watch(delete: true, where: { id: { eq: \"${watch_id}\" } }) { id } }")"
     assert_jq "$delete_out" '([.data.gj_watch] | flatten | .[0].id) != null' "watch delete accepted through gj_watch"
     local gone_out
@@ -544,8 +642,8 @@ run_watch_lifecycle_suite() {
   fi
 }
 
-# Watch runner e2e: a new watch's first evaluation fires an inbox event (its
-# persisted last_data_hash starts empty). Poll for it, mark seen, clean up.
+# Watch runner e2e: a new cursor-backed watch's first evaluation fires an inbox
+# event and persists its cursor checkpoint. Poll for it, mark seen, clean up.
 # Leaves LAST_FIRED_WATCH_ID set (still existing, one unseen event consumed).
 run_watch_fire_suite() {
   local sub_query="$1"
@@ -555,7 +653,7 @@ run_watch_fire_suite() {
   fire_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$fire_out")"
   fired=""
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
-    ev_out="$(graphql watch-fire-poll "query { gj_watch_event(where: { watch_id: { eq: \"${fire_id}\" } }, limit: 5) { id seen } }")"
+    ev_out="$(graphql watch-fire-poll "query { gj_watch_event(where: { watch_id: { eq: \"${fire_id}\" } }, limit: 5) { id seen data_hash data_truncated delivery_status } }")"
     if jq -e '(.data.gj_watch_event | length) > 0' "$ev_out" >/dev/null; then
       fired=1
       break
@@ -568,8 +666,24 @@ run_watch_fire_suite() {
   fi
   pass "watch fired an event into gj_watch_event"
   ev_id="$(jq -r '.data.gj_watch_event[0].id' "$ev_out")"
-  seen_out="$(graphql watch-fire-seen "mutation { gj_watch_event(update: { seen: true }, where: { id: { eq: \"${ev_id}\" } }) { id seen } }")"
-  assert_jq "$seen_out" '([.data.gj_watch_event] | flatten | .[0].seen) == true' "watch event marked seen"
+  assert_jq "$ev_out" '(.data.gj_watch_event[0].data_hash | length) > 0 and .data.gj_watch_event[0].seen == false' "watch event carries hash metadata and starts unseen"
+
+  local rest_unseen_out mcp_unseen_out
+  rest_unseen_out="$TMP_DIR/watch-events-unseen-rest.json"
+  get_json "${BASE_URL%/}/api/v1/watch-events/unseen" "$rest_unseen_out"
+  assert_jq_args "$rest_unseen_out" "REST unseen events return compact metadata for this watch" --arg id "$ev_id" '
+    (.event_ids | index($id)) != null
+    and ([.events[] | select(.id == $id and (.data_hash | length) > 0 and (has("data_json") | not))] | length) == 1
+  '
+
+  mcp_unseen_out="$(mcp_resource_read "graphjin://watch-events/unseen")"
+  assert_jq_args "$mcp_unseen_out" "MCP unseen watch resource includes this event" --arg id "$ev_id" '
+    ((.result.contents[0].text // "") | fromjson | .event_ids | index($id)) != null
+  '
+
+  seen_out="$TMP_DIR/watch-fire-seen-rest.json"
+  post_json "${BASE_URL%/}/api/v1/watch-events/${ev_id}/seen" '{}' "$seen_out"
+  assert_jq "$seen_out" '.data.seen == true' "watch event marked seen through REST"
   graphql watch-fire-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${fire_id}\" } }) { id } }" >/dev/null
 }
 

@@ -180,6 +180,27 @@ Legacy discovery/syntax MCP tools have been removed. `mcp.legacy_discovery`
 remains a compatibility config key for non-MCP legacy helper surfaces, but it
 does not expand the MCP tool list.
 
+## Resource Surface
+
+MCP resources stay intentionally small. When watches are enabled, GraphJin
+registers:
+
+```text
+graphjin://watch-events/unseen
+```
+
+The resource is caller-scoped. A subscribed MCP client receives
+`notifications/resources/updated` only for unseen watch events owned by that
+caller; resource reads return compact metadata (event IDs, watch IDs,
+timestamps, data hashes, truncation flags, and delivery status), not the full
+`gj_watch_event.data_json` payload.
+
+Unsubscribe is transport-local only: it removes the in-memory resource
+subscription and does not delete, pause, expire, or clean up durable watches.
+Watch inspection and cleanup remain GraphQL/REST responsibilities through
+`gj_watch`, `gj_watch_event`, `/api/v1/watches`, and the cleanup
+preview/apply endpoints. There is no dedicated MCP cleanup tool in v1.
+
 ## Key Files
 
 | File | Responsibility |
@@ -187,6 +208,7 @@ does not expand the MCP tool list.
 | `cmd/mcp_install.go` | `mcp add`, compatibility aliases, probing, client config writes |
 | `cmd/mcp_proxy.go` | local stdio-to-HTTP proxy for saved `auth_login` tokens |
 | `serv/mcp.go` | MCP server creation and stdio/HTTP handlers |
+| `serv/mcp_watch_resources.go` | caller-scoped watch-events resource subscriptions and notifications |
 | `serv/mcp_oauth.go` | OAuth metadata, DCR, CIMD, PKCE token flow, MCP audience checks |
 | `serv/auth_login.go` | OIDC device-code flow reused by builtin MCP OAuth |
 | `serv/mcp_catalog.go` | catalog-first discovery tools |

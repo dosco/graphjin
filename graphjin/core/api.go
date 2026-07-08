@@ -709,6 +709,7 @@ type Result struct {
 	role         string
 	cacheControl string
 	cacheHit     bool
+	subCursors   map[string]string
 	Vars         json.RawMessage   `json:"-"`
 	Data         json.RawMessage   `json:"data,omitempty"`
 	Hash         [sha256.Size]byte `json:"-"`

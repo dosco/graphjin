@@ -42,7 +42,7 @@ func TestSamplingAIClientMapsAxChatToMCPSampling(t *testing.T) {
 	handler := &captureSamplingHandler{}
 	session := server.NewInProcessSession("session-1", handler)
 	session.Initialize()
-	session.SetClientCapabilities(mcp.ClientCapabilities{Sampling: &struct{}{}})
+	session.SetClientCapabilities(mcp.ClientCapabilities{Sampling: &mcp.SamplingCapability{}})
 	ctx := mcpSrv.WithContext(context.Background(), session)
 
 	client := samplingAIClient{srv: mcpSrv}
@@ -161,7 +161,7 @@ func TestMCPSamplingAvailableRequiresAdvertisedCapability(t *testing.T) {
 	if mcpSamplingAvailable(ctx) {
 		t.Fatal("sampling should be unavailable until the client advertises the capability")
 	}
-	session.SetClientCapabilities(mcp.ClientCapabilities{Sampling: &struct{}{}})
+	session.SetClientCapabilities(mcp.ClientCapabilities{Sampling: &mcp.SamplingCapability{}})
 	if !mcpSamplingAvailable(ctx) {
 		t.Fatal("sampling should be available with a sampling-capable session and advertised capability")
 	}
@@ -188,7 +188,7 @@ func TestAgentSamplingOptionsMatrix(t *testing.T) {
 	}
 
 	session := server.NewInProcessSession("session-1", &captureSamplingHandler{})
-	session.SetClientCapabilities(mcp.ClientCapabilities{Sampling: &struct{}{}})
+	session.SetClientCapabilities(mcp.ClientCapabilities{Sampling: &mcp.SamplingCapability{}})
 	ctx := mcpSrv.WithContext(context.Background(), session)
 	path, opts, err = ms.agentSamplingOptions(ctx, gjagent.Config{Sampling: gjagent.SamplingAuto})
 	if err != nil {
@@ -306,7 +306,7 @@ func TestAskGraphJinAgentMCPUsesClientSamplingSession(t *testing.T) {
 	handler := &captureSamplingHandler{response: "sampled answer"}
 	session := server.NewInProcessSession("session-1", handler)
 	session.Initialize()
-	session.SetClientCapabilities(mcp.ClientCapabilities{Sampling: &struct{}{}})
+	session.SetClientCapabilities(mcp.ClientCapabilities{Sampling: &mcp.SamplingCapability{}})
 	ctx := mcpSrv.WithContext(context.Background(), session)
 
 	ms := mockMcpServerWithConfig(MCPConfig{})

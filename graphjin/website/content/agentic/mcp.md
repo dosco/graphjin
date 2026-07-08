@@ -67,3 +67,17 @@ For local development, named query auto-save and workflow saves fall back to con
 
 {{< verified by="TestRegisterTools_SourcesUsedRawGraphQLCapabilityControlsTool" file="serv/mcp_registration_test.go" line="316" >}}
 {{< verified by="TestMCPCallerCapabilityProfileReflectsSourceRootAccess" file="serv/mcp_registration_test.go" line="551" >}}
+
+## Watch event resource
+
+When watches are enabled, MCP exposes one caller-scoped resource:
+
+```text
+graphjin://watch-events/unseen
+```
+
+Clients may subscribe to it and receive `notifications/resources/updated` when their own unseen watch events appear. A resource read returns compact metadata only: event IDs, watch IDs, timestamps, data hashes, truncation flags, and delivery status. Full event payloads remain behind `gj_watch_event` or the REST/GraphQL watch APIs.
+
+Unsubscribing from this MCP resource only removes the in-memory resource subscription. It never pauses, expires, deletes, or cleans up watch definitions.
+
+{{< verified by="TestWatchMCPUnseenResourceAndSubscriptionNotification" file="serv/watches_test.go" line="1337" >}}

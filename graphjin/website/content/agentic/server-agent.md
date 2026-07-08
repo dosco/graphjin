@@ -88,7 +88,7 @@ A `blocked` response is machine-actionable, not prose. It carries a `refusal` ob
 
 ## Watch notices
 
-When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen` and a count — the cue to query `gj_watch_event` and mark reviewed events seen.
+When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen` and a count - the cue to query `gj_watch_event` and mark reviewed events seen. MCP clients that want push-style notice delivery can also subscribe to `graphjin://watch-events/unseen`; that resource returns compact caller-scoped event metadata, not full payloads.
 
 ## Borrow the client's model (MCP sampling)
 

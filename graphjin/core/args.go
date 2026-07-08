@@ -17,6 +17,17 @@ type args struct {
 	json   []byte
 	values []interface{}
 	cindxs []int // indices of cursor arg
+	cnames []string
+}
+
+func (ar *args) addCursorArg(idx int, name string) {
+	ar.cindxs = append(ar.cindxs, idx)
+	for _, existing := range ar.cnames {
+		if existing == name {
+			return
+		}
+	}
+	ar.cnames = append(ar.cnames, name)
 }
 
 func (gj *graphjinEngine) argList(c context.Context,
@@ -89,7 +100,7 @@ func (gj *graphjinEngine) argList(c context.Context,
 			} else {
 				vl[i] = nil
 			}
-			ar.cindxs = append(ar.cindxs, i)
+			ar.addCursorArg(i, p.Name)
 
 		default:
 			if gj.sourceModeTrustedIdentityParam(p.Name) {
@@ -106,7 +117,7 @@ func (gj *graphjinEngine) argList(c context.Context,
 				} else {
 					vl[i] = nil
 				}
-				ar.cindxs = append(ar.cindxs, i)
+				ar.addCursorArg(i, p.Name)
 			} else if v, ok := fields[p.Name]; ok {
 				varIsNull := bytes.Equal(v, []byte("null"))
 

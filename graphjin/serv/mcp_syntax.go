@@ -411,6 +411,7 @@ func (ms *mcpServer) registerResources() {
 	if ms.service != nil && ms.service.conf != nil && ms.service.conf.mcpDisabled() {
 		return
 	}
+	ms.registerWatchResources()
 }
 
 // registerSyntaxTools is retained as an inert compatibility hook. Syntax

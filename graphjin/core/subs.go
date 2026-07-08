@@ -64,6 +64,7 @@ type minfo struct {
 	values []interface{}
 	// indices of cursor value in the arguments array
 	cindxs []int
+	cnames []string
 }
 
 type mmsg struct {
@@ -83,6 +84,17 @@ type Member struct {
 	mm     mmsg
 	// indices of cursor value in the arguments array
 	cindxs []int
+	cnames []string
+}
+
+// CursorVariableNames returns the GraphQL variable names used by this
+// subscription for cursor pagination.
+func (m *Member) CursorVariableNames() []string {
+	if m == nil || len(m.cnames) == 0 {
+		return nil
+	}
+	names := append([]string(nil), m.cnames...)
+	return names
 }
 
 // Subscribe function is called on the GraphJin struct to subscribe to query.
@@ -208,6 +220,7 @@ func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 		if err1 != nil {
 			return nil, err1
 		}
+		sub.fillCursorArgInfo(&args)
 
 		m = &Member{
 			ns:     r.namespace,
@@ -217,6 +230,7 @@ func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 			vl:     args.values,
 			params: args.json,
 			cindxs: args.cindxs,
+			cnames: args.cnames,
 		}
 
 		m.mm, err = gj.subFirstQuery(sub, m)
@@ -232,6 +246,46 @@ func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 			continue
 		}
 	}
+}
+
+func (s *sub) fillCursorArgInfo(args *args) {
+	if s == nil || args == nil {
+		return
+	}
+	if len(args.cnames) == 0 {
+		args.cnames = s.cursorVariableNamesFromQCode()
+	}
+	if len(args.cindxs) != 0 || len(args.cnames) == 0 {
+		return
+	}
+	params := s.s.cs.st.md.Params()
+	for _, name := range args.cnames {
+		for idx, param := range params {
+			if param.Name == name {
+				args.cindxs = append(args.cindxs, idx)
+				break
+			}
+		}
+	}
+}
+
+func (s *sub) cursorVariableNamesFromQCode() []string {
+	if s == nil || s.s.cs.st.qc == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var names []string
+	for _, sel := range s.s.cs.st.qc.Selects {
+		if !sel.Paging.Cursor || sel.Paging.CursorVar == "" {
+			continue
+		}
+		if _, ok := seen[sel.Paging.CursorVar]; ok {
+			continue
+		}
+		seen[sel.Paging.CursorVar] = struct{}{}
+		names = append(names, sel.Paging.CursorVar)
+	}
+	return names
 }
 
 // initSub function is called on the graphjin struct to initialize a subscription.
@@ -299,7 +353,7 @@ func (gj *graphjinEngine) subController(sub *sub) {
 
 // addMember function is called on the sub struct to add a member.
 func (s *sub) addMember(m *Member) error {
-	mi := minfo{cindxs: m.cindxs}
+	mi := minfo{cindxs: m.cindxs, cnames: m.cnames}
 	if len(mi.cindxs) != 0 {
 		mi.values = m.vl
 	}
@@ -393,6 +447,9 @@ func (s *sub) snapshotMembers() mval {
 		if len(mi.cindxs) != 0 {
 			mv.mi[i].cindxs = make([]int, len(mi.cindxs))
 			copy(mv.mi[i].cindxs, mi.cindxs)
+		}
+		if len(mi.cnames) != 0 {
+			mv.mi[i].cnames = append([]string(nil), mi.cnames...)
 		}
 	}
 
@@ -620,6 +677,7 @@ func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 	mm, err = gj.subNotifyMemberEx(sub,
 		[32]byte{},
 		m.cindxs,
+		m.cnames,
 		m.id,
 		m.Result, js, false)
 
@@ -631,6 +689,7 @@ func (gj *graphjinEngine) subNotifyMember(s *sub, mv mval, j int, js json.RawMes
 	_, err := gj.subNotifyMemberEx(s,
 		mv.mi[j].dh,
 		mv.mi[j].cindxs,
+		mv.mi[j].cnames,
 		mv.ids[j],
 		mv.res[j], js, true)
 	if err != nil {
@@ -640,7 +699,7 @@ func (gj *graphjinEngine) subNotifyMember(s *sub, mv mval, j int, js json.RawMes
 
 // subNotifyMemberEx function is called on the graphjin struct to notify a member.
 func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
-	dh [32]byte, cindxs []int, id uint64, rc chan *Result, js json.RawMessage, update bool,
+	dh [32]byte, cindxs []int, cnames []string, id uint64, rc chan *Result, js json.RawMessage, update bool,
 ) (mm mmsg, err error) {
 	mm = mmsg{id: id}
 
@@ -664,6 +723,7 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 		}
 		mm.cursor = cursor
 	}
+	cursorValues := subscriptionCursorValues(cnames, mm.cursor)
 
 	ejs, err := encryptValues(js,
 		gj.printFormat,
@@ -689,11 +749,13 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 	}
 
 	res := &Result{
-		operation: qcode.QTQuery,
-		name:      sub.s.r.name,
-		sql:       sub.s.cs.st.sql,
-		role:      sub.s.cs.st.role,
-		Data:      ejs,
+		operation:  qcode.QTQuery,
+		name:       sub.s.r.name,
+		sql:        sub.s.cs.st.sql,
+		role:       sub.s.cs.st.role,
+		Data:       ejs,
+		Hash:       mm.dh,
+		subCursors: cursorValues,
 	}
 
 	// If this is an update notification, avoid blocking indefinitely by using a timeout.
@@ -708,6 +770,23 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 	}
 
 	return mm, nil
+}
+
+func subscriptionCursorValues(cnames []string, cursor string) map[string]string {
+	if cursor == "" || len(cnames) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(cnames))
+	for _, name := range cnames {
+		if name == "" {
+			continue
+		}
+		out[name] = cursor
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // getDialectForType returns a dialect instance for the given database type.

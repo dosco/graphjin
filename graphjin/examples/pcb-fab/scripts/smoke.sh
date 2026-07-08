@@ -110,12 +110,11 @@ run_agent_eval_suite() {
     and (.answer | test("8|IC-AFE|allocation|plating"; "i"))
   ' "agent eval: yield and supplier risk discovered through approved surfaces"
 
-  run_watch_fire_suite "subscription smoke_fire { ncr_reports { id status } }"
   run_refusal_suite fab_orders
   run_watch_agent_suite \
-    "Use the JavaScript runtime globals to run this exact watch creation flow: await query_catalog({id:\"help:security\"}); await query_catalog({id:\"help:runtime\"}); await query_catalog({id:\"help:watches\"}); const created = await execute_graphql({query:\"mutation { gj_watch(insert: { name: \\\"smoke_agent_watch\\\", query: \\\"subscription smoke_watch { fab_orders { id status } }\\\" }) { id name status enabled } }\"}); await final({status:\"answered\", answer:\"created smoke_agent_watch\", data:created, evidence:{catalog_ids:[\"help:security\",\"help:runtime\",\"help:watches\"]}});" \
+    "Use the JavaScript runtime globals to run this exact watch creation flow: await query_catalog({id:\"help:security\"}); await query_catalog({id:\"help:runtime\"}); await query_catalog({id:\"help:watches\"}); const created = await execute_graphql({query:\"mutation { gj_watch(insert: { name: \\\"smoke_agent_watch\\\", query: \\\"subscription smoke_watch { fab_orders(first: 25, after: \\\$cursor) { id status } fab_orders_cursor }\\\" }) { id name status enabled } }\"}); await final({status:\"answered\", answer:\"created smoke_agent_watch\", data:created, evidence:{catalog_ids:[\"help:security\",\"help:runtime\",\"help:watches\"]}});" \
     smoke_agent_watch \
-    "subscription smoke_notice { ncr_reports { id status } }"
+    "subscription smoke_notice { ncr_reports(first: 25, after: \$cursor) { id status } ncr_reports_cursor }"
   run_admin_root_suite
 }
 
@@ -217,7 +216,8 @@ release_workflow_out="$(graphql workflow-release 'mutation {
 }')"
 assert_jq "$release_workflow_out" '.data.gj_workflow_execution.status == "ok" and (.data.gj_workflow_execution.result_json | contains("FO-260702-BETA"))' "order_release_check workflow executed"
 
-run_watch_lifecycle_suite "subscription smoke_watch { fab_orders { id status } }"
+run_watch_lifecycle_suite "subscription smoke_watch { fab_orders(first: 25, after: \$cursor) { id status } fab_orders_cursor }"
+run_watch_fire_suite "subscription smoke_fire { ncr_reports(first: 25, after: \$cursor) { id status } ncr_reports_cursor }"
 run_artifact_suite
 
 log "checking MCP discovery surfaces"

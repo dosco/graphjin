@@ -121,6 +121,7 @@ type mcpServer struct {
 func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServer {
 	// Create hooks to handle prefixed tool names from Claude Desktop
 	// Claude Desktop may prefix tool names with "server_name:" when calling tools
+	var ms *mcpServer
 	hooks := &server.Hooks{}
 	hooks.AddBeforeCallTool(func(ctx context.Context, id any, req *mcp.CallToolRequest) {
 		// Strip any "server_name:" prefix from tool name
@@ -129,8 +130,20 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 			req.Params.Name = req.Params.Name[idx+1:]
 		}
 	})
+	hooks.AddAfterSubscribe(func(ctx context.Context, id any, req *mcp.SubscribeRequest, result *mcp.EmptyResult) {
+		if ms != nil {
+			s.mcpWatchSubs.subscribe(ms.effectiveIdentityContext(ctx), ms.srv, s, req.Params.URI)
+		}
+	})
+	hooks.AddAfterUnsubscribe(func(ctx context.Context, id any, req *mcp.UnsubscribeRequest, result *mcp.EmptyResult) {
+		if ms != nil {
+			s.mcpWatchSubs.unsubscribe(ms.effectiveIdentityContext(ctx), req.Params.URI)
+		}
+	})
+	hooks.AddOnUnregisterSession(func(ctx context.Context, session server.ClientSession) {
+		s.mcpWatchSubs.remove(session.SessionID())
+	})
 
-	var ms *mcpServer
 	startupProfile := s.mcpStartupCapabilityProfile(ctx)
 	mcpSrv := server.NewMCPServer(
 		"graphjin",

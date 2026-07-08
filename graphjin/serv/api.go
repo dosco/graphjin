@@ -108,6 +108,9 @@ type graphjinService struct {
 	workflowCache        *workflowRegistrySnapshot
 	mcpHTTPMu            sync.Mutex
 	mcpHTTP              *mcpHTTPTransportCache
+	mcpWatchSubs         watchMCPSubscriptionRegistry
+	watchCoordMu         sync.Mutex
+	watchCoord           watchCoordinator
 	catalogMu            sync.Mutex
 	catalogCache         *catalogCacheEntry
 	onboardingMu         sync.RWMutex
@@ -585,6 +588,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 			s.log.Warnf("filesystem cache watcher init error: %s", werr)
 		}
 		s.startProjectionPoller(context.Background())
+		s.startWatchCoordinator(context.Background())
 		s.startWatchRunner(context.Background())
 	}
 
