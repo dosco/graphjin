@@ -31,6 +31,7 @@ func Handler() {
 
 	gjs, err := serv.NewGraphJinService(&serv.Config{
 		Core: core.Config{
+			Mode:             "dev",
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
 				{Name: "code", Kind: "code", Path: sourceRoot},
@@ -79,6 +80,7 @@ func LookupUser() {
 
 	gjs, err := serv.NewGraphJinService(&serv.Config{
 		Core: core.Config{
+			Mode:             "dev",
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
 				{Name: "app", Kind: "database", Type: "sqlite", Path: appPath, Default: true, Access: core.SourceAccessConfig{
