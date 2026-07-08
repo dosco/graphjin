@@ -82,12 +82,23 @@ func OpenManaged(ctx context.Context, opts Options) (*Managed, *Stats, error) {
 		return nil, nil, err
 	}
 	if opts.Watch {
+		w, err := idx.newWatcher()
+		if err != nil {
+			db.Close() //nolint:errcheck
+			return nil, nil, err
+		}
+		if _, err := idx.Reconcile(ctx); err != nil {
+			w.Close()  //nolint:errcheck
+			db.Close() //nolint:errcheck
+			return nil, nil, err
+		}
 		wctx, cancel := context.WithCancel(context.Background())
 		m.cancel = cancel
 		m.done = make(chan struct{})
 		go func() {
 			defer close(m.done)
-			_ = idx.Watch(wctx)
+			defer w.Close() //nolint:errcheck
+			_ = idx.watch(wctx, w)
 		}()
 	}
 	return m, stats, nil
