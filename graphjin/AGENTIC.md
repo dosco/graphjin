@@ -336,8 +336,9 @@ was skipped, and model-claimed actions never count, only real tool results.
 
 Internally it is an RLM (reasoning-with-code) loop: the model writes JavaScript
 that calls the same catalog tools as runtime globals (`query_catalog`,
-`graphql_help`, `validate_where_clause`, `execute_saved_query`, `final`), and the
-typed result is parsed from `key: value` output. There is no dependency on
+`graphql_help`, `validate_where_clause`, `execute_saved_query`,
+`execute_graphql`, `final`), and the typed result is parsed from `key: value`
+output. There is no dependency on
 provider tool-calling or structured-output modes — the model only needs to
 generate competent code — so any OpenAI-compatible endpoint works.
 

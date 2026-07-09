@@ -31,19 +31,19 @@ See the [Config Reference](/reference/config-reference/) for all options.
 
 ## How it works
 
-The agent is an RLM (reasoning-with-code) loop, not a tool-calling loop. The model **writes JavaScript** that calls the discovery and execution tools as runtime globals inside a sandbox — `query_catalog({...})`, `graphql_help({...})`, `validate_where_clause({...})`, `execute_saved_query({...})`, and `final({...})`. GraphJin runs that code, feeds results back, and the typed result is parsed from the model's `key: value` output.
+The agent is an RLM (reasoning-with-code) loop, not a tool-calling loop. The model **writes JavaScript** that calls the discovery and execution tools as runtime globals inside a sandbox — `query_catalog({...})`, `graphql_help({...})`, `validate_where_clause({...})`, `execute_saved_query({...})`, `execute_graphql({...})`, and `final({...})`. GraphJin runs that code, feeds results back, and the typed result is parsed from the model's `key: value` output.
 
 This means the only model requirement is that it is **good at code generation** and follows the `key: value` output format. It does **not** need provider function-calling or structured-output/JSON modes, so any OpenAI-compatible chat-completions endpoint works (see [OpenAI-compatible endpoints](#openai-compatible-endpoints)).
 
 Every answer is grounded in observed evidence. Go-side protocol guards enforce the catalog-first contract — for example a saved query may only run after its `saved_query` catalog row has been inspected — and downgrade an `answered` result to `blocked` (with evidence) when a required step was skipped. Models cannot talk their way past the guards; only real tool results count.
 
-## Modes
+## Access Controls
 
-| Mode | What the agent may do |
-| :--- | :--- |
-| `safe` (default) | Discover, validate, and run **approved saved queries/mutations**. No raw GraphQL. |
-| `discovery_only` | Read-only: catalog/help/validation only. No execution. |
-| `raw_allowed` | Adds `execute_graphql` for composed queries — only when `agent.allow_raw_graphql` and `mcp.allow_raw_queries` are both set. |
+There are no per-request agent modes. The server-side agent always receives the same internal runtime tools, including `execute_graphql`, and Go protocol guards enforce the catalog-first contract before execution. Core roles and row-level security still decide what the caller can actually read or write.
+
+Use `agent.read_only: true` as the operator kill-switch when the agent should never write. In read-only mode, the agent rejects mutations before execution, including saved-query mutations. With `agent.read_only: false`, mutations may still be blocked by the caller's role, source/table `read_only` policy, row-level security, or missing protocol evidence.
+
+The public MCP `execute_graphql` tool is separate from the server-side agent's internal runtime global. It appears in `tools/list` only when `mcp.allow_raw_queries: true`; `ask_graphjin_agent` can remain the single MCP front door while it orchestrates its own guarded internal calls.
 
 ## Role-aware guidance
 
@@ -56,7 +56,7 @@ Skills only shape the guidance the model sees. **They never grant access.** What
 
 ## Request and response
 
-Request fields: `instruction` (required), and optional `context`, `namespace`, `mode`, `max_steps`, `return_trace`.
+Request fields: `instruction` (required), and optional `context`, `namespace`, `max_steps`, `return_trace`.
 
 Response fields: `status` (`answered` | `needs_clarification` | `blocked` | `error`), `answer`, and optional `data`, `evidence`, `actions`, `next`, `refusal`, `notices`, `errors`, `usage`, `trace`, `trace_id`.
 
@@ -65,7 +65,7 @@ Response fields: `status` (`answered` | `needs_clarification` | `blocked` | `err
 ```bash
 curl -sS http://localhost:8080/api/v1/agent \
   -H 'content-type: application/json' \
-  --data '{"instruction":"What production work should we prioritize next?","mode":"safe"}'
+  --data '{"instruction":"What production work should we prioritize next?"}'
 ```
 
 ### MCP
@@ -74,8 +74,7 @@ curl -sS http://localhost:8080/api/v1/agent \
 {
   "name": "ask_graphjin_agent",
   "arguments": {
-    "instruction": "What production work should we prioritize next?",
-    "mode": "safe"
+    "instruction": "What production work should we prioritize next?"
   }
 }
 ```
