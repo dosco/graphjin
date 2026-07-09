@@ -1076,16 +1076,22 @@ endpoint works via `agent.base_url`.
 | `agent.model` | string | - | Model name for the provider |
 | `agent.api_key_env` | string | `OPENAI_API_KEY` | Env var holding the provider API key; must be non-empty (use a dummy value for keyless local endpoints) |
 | `agent.base_url` | string | - | OpenAI-compatible provider base URL (e.g. a local or self-hosted endpoint) |
+| `agent.sampling` | string | `off` | MCP client sampling mode: `off`, `auto`, or `require` |
 | `agent.max_steps` | integer | `8` | Maximum agent actor steps per request |
 | `agent.timeout_seconds` | integer | `50` | Request timeout for agent runs; values below 50 are raised to the 50-second minimum |
-| `agent.allow_raw_graphql` | boolean | `false` | Allow the agent's `execute_graphql` — effective only when `mcp.allow_raw_queries` is also true, and only in `raw_allowed` mode |
+| `agent.read_only` | boolean | `false` | Force the server-side agent to reject mutations, including saved-query mutations |
 | `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
+| `agent.seed_limit` | integer | `10` | Initial `query_catalog(search: instruction)` seed row cap |
+| `agent.catalog_default_limit` | integer | `20` | Default row limit for model-issued catalog queries |
 
-The per-request `mode` scopes execution: `safe` (discovery plus approved saved
-queries/mutations), `discovery_only` (read-only), and `raw_allowed` (adds raw
-GraphQL when the flags above permit). Mutations the agent runs through raw
-GraphQL additionally require `mcp.allow_mutations`. The agent always runs as the
-caller, so core roles and row-level security enforce access regardless of mode.
+There are no per-request agent modes. The server-side agent's internal runtime
+always includes discovery, validation, saved-query execution, and guarded raw
+GraphQL execution. `agent.read_only: true` is the operator kill-switch that
+rejects mutations before execution, including saved-query mutations. Otherwise
+the agent always runs as the caller, so core roles, row-level security,
+source/table `read_only`, and protocol evidence gates decide what can run. The
+public MCP `execute_graphql` tool is separate and is listed only when
+`mcp.allow_raw_queries: true`.
 
 ```yaml
 # agentic.yml — load with GO_ENV=agentic
@@ -1095,9 +1101,10 @@ agent:
   model: gpt-4.1-mini
   api_key_env: OPENAI_API_KEY
   # base_url: https://your-openai-compatible-endpoint/v1
+  sampling: off
   max_steps: 8
   timeout_seconds: 50
-  allow_raw_graphql: false
+  read_only: false
 ```
 
 ---

@@ -581,7 +581,7 @@ Legacy prompts such as `write_query` and `fix_query_error` are available only wh
 Optional: instead of your client chaining `query_catalog` → `validate_where_clause` → `execute_saved_query`, let GraphJin run the catalog-first discovery loop for you. When enabled, GraphJin exposes one MCP tool `ask_graphjin_agent` and one REST endpoint `POST /api/v1/agent` that take a single instruction and return a typed, evidence-backed answer (`status`, `answer`, `data`, `evidence`, `actions`, `next`).
 
 - **Enable** by loading `agentic.yml` (`GO_ENV=agentic`) with `agent.enabled: true` plus a provider, model, and `api_key_env`.
-- **Modes:** `safe` (discovery + approved saved queries/mutations), `discovery_only` (read-only), `raw_allowed` (adds raw GraphQL when `agent.allow_raw_graphql` and `mcp.allow_raw_queries` are set).
+- **Execution control:** there are no per-request agent modes. `agent.read_only: true` forces the server-side agent to reject mutations, including saved-query mutations; otherwise core roles, row-level security, source/table `read_only`, and Go protocol guards decide what can run.
 - **Caller-scoped:** the agent runs as the caller, so core roles + row-level security enforce access. The caller's role only changes which *guidance* the agent follows, never what it can read or write.
 - **Grounded:** Go protocol guards keep every answer backed by real catalog/validation/execution evidence and downgrade to `blocked` (with evidence) when a step is skipped.
 - **Machine-actionable refusals:** blocked responses carry a structured `refusal` (code, reasons, unblock steps, `policy_final`/`retryable`) so a calling agent can course-correct in one step instead of guessing.
