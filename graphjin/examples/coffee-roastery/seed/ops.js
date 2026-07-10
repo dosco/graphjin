@@ -4,6 +4,21 @@ function insert(query, variables) {
   return graphql(query, variables, seedOptions);
 }
 
+// All dates are computed relative to the seed run (UTC) so demo questions
+// like "what should we roast today?" keep returning data as the state ages.
+// Day 0 is the demo day: yesterday's batches were roasted, today's roasts
+// are planned, and shipments are due over the next few days.
+const DAY_MS = 86400000;
+const seedNowMs = Date.now();
+
+function demoDay(offsetDays) {
+  return new Date(seedNowMs + offsetDays * DAY_MS).toISOString().slice(0, 10);
+}
+
+function demoTime(offsetDays, hhmm) {
+  return demoDay(offsetDays) + "T" + hhmm + ":00Z";
+}
+
 insert(
   `mutation {
     customers(insert: $customers) { id }
@@ -17,7 +32,7 @@ insert(
         segment: "grocery",
         account_tier: "enterprise",
         preferred_origin: "Guatemala",
-        created_at: "2026-05-01T09:00:00Z",
+        created_at: demoTime(-36, "09:00"),
       },
       {
         id: 2,
@@ -26,7 +41,7 @@ insert(
         segment: "cafe",
         account_tier: "growth",
         preferred_origin: "Ethiopia",
-        created_at: "2026-05-04T10:30:00Z",
+        created_at: demoTime(-33, "10:30"),
       },
       {
         id: 3,
@@ -35,7 +50,7 @@ insert(
         segment: "subscription",
         account_tier: "standard",
         preferred_origin: "Colombia",
-        created_at: "2026-05-10T08:15:00Z",
+        created_at: demoTime(-27, "08:15"),
       },
     ],
   }
@@ -49,33 +64,33 @@ insert(
     green_lots: [
       {
         id: 1,
-        lot_code: "GUA-HUE-2026-04",
+        lot_code: "GUA-HUE-LOT-04",
         origin: "Guatemala Huehuetenango",
         producer: "Finca Los Pinos",
         process: "washed",
-        arrival_date: "2026-04-12",
+        arrival_date: demoDay(-55),
         remaining_kg: 1180.0,
         target_cost_per_kg: 6.4,
         cupping_score: 86.5,
       },
       {
         id: 2,
-        lot_code: "ETH-YIR-2026-03",
+        lot_code: "ETH-YIR-LOT-03",
         origin: "Ethiopia Yirgacheffe",
         producer: "Konga Cooperative",
         process: "natural",
-        arrival_date: "2026-03-30",
+        arrival_date: demoDay(-68),
         remaining_kg: 720.0,
         target_cost_per_kg: 7.9,
         cupping_score: 88.25,
       },
       {
         id: 3,
-        lot_code: "COL-HUI-2026-05",
+        lot_code: "COL-HUI-LOT-05",
         origin: "Colombia Huila",
         producer: "Familia Ramos",
         process: "washed",
-        arrival_date: "2026-05-15",
+        arrival_date: demoDay(-22),
         remaining_kg: 940.0,
         target_cost_per_kg: 6.85,
         cupping_score: 87.1,
@@ -130,7 +145,7 @@ insert(
       {
         id: 1,
         profile_id: 1,
-        scheduled_for: "2026-06-06T15:00:00Z",
+        scheduled_for: demoTime(0, "15:00"),
         machine_id: "loring-s35",
         target_output_kg: 180.0,
         status: "planned",
@@ -139,7 +154,7 @@ insert(
       {
         id: 2,
         profile_id: 2,
-        scheduled_for: "2026-06-06T18:00:00Z",
+        scheduled_for: demoTime(0, "18:00"),
         machine_id: "probats-p25",
         target_output_kg: 96.0,
         status: "planned",
@@ -148,7 +163,7 @@ insert(
       {
         id: 3,
         profile_id: 3,
-        scheduled_for: "2026-06-07T16:00:00Z",
+        scheduled_for: demoTime(1, "16:00"),
         machine_id: "loring-s35",
         target_output_kg: 120.0,
         status: "planned",
@@ -171,7 +186,7 @@ insert(
         product_name: "Northstar House Blend 340g",
         quantity_bags: 420,
         bag_size_g: 340,
-        requested_ship_date: "2026-06-08",
+        requested_ship_date: demoDay(2),
         status: "queued",
         priority: 1,
       },
@@ -182,7 +197,7 @@ insert(
         product_name: "Harbor Espresso 1kg",
         quantity_bags: 80,
         bag_size_g: 1000,
-        requested_ship_date: "2026-06-09",
+        requested_ship_date: demoDay(3),
         status: "queued",
         priority: 2,
       },
@@ -193,7 +208,7 @@ insert(
         product_name: "Dawn Patrol Single Origin 250g",
         quantity_bags: 160,
         bag_size_g: 250,
-        requested_ship_date: "2026-06-10",
+        requested_ship_date: demoDay(4),
         status: "queued",
         priority: 3,
       },
@@ -212,7 +227,7 @@ insert(
         customer_id: 3,
         product_name: "Dawn Patrol Single Origin 250g",
         cadence_days: 14,
-        next_ship_date: "2026-06-10",
+        next_ship_date: demoDay(4),
         bags_per_shipment: 2,
         active: true,
       },
@@ -221,7 +236,7 @@ insert(
         customer_id: 1,
         product_name: "Northstar House Blend 340g",
         cadence_days: 7,
-        next_ship_date: "2026-06-08",
+        next_ship_date: demoDay(2),
         bags_per_shipment: 120,
         active: true,
       },
@@ -243,7 +258,7 @@ insert(
         body: "Last batch extracted in 21 seconds on the same grinder setting. Please check whether the next roast should develop longer.",
         severity: "high",
         status: "open",
-        created_at: "2026-06-05T17:20:00Z",
+        created_at: demoTime(-1, "17:20"),
       },
       {
         id: 2,
@@ -253,7 +268,7 @@ insert(
         body: "Customer asked for a brighter cup if the Colombia roast allows it.",
         severity: "normal",
         status: "open",
-        created_at: "2026-06-05T18:05:00Z",
+        created_at: demoTime(-1, "18:05"),
       },
     ],
   }
@@ -270,7 +285,7 @@ insert(
         green_lot_id: 2,
         adjustment_kg: -12.0,
         reason: "sample roasting and QC calibration",
-        created_at: "2026-06-04T12:00:00Z",
+        created_at: demoTime(-2, "12:00"),
       },
     ],
   }

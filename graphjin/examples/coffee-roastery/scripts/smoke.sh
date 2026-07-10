@@ -58,7 +58,7 @@ run_agent_mcp_once() {
 northstar_agent_expr='
   (.status // .result.structuredContent.status) == "answered"
   and ((.answer // .result.structuredContent.answer // "") | test("Northstar"; "i"))
-  and ((.answer // .result.structuredContent.answer // "") | test("House Blend|420|2026-06-08"; "i"))
+  and ((.answer // .result.structuredContent.answer // "") | test("House Blend|420"; "i"))
   and ((.actions // .result.structuredContent.actions // []) | tostring | test("query_catalog"))
   and ((.evidence // .result.structuredContent.evidence // {}) | tostring | test("saved_query:daily_roast_context|daily_roast_context"))
 '
@@ -189,7 +189,7 @@ multi_source_query='query {
 }'
 multi_out="$(graphql multi-source "$multi_source_query")"
 assert_jq "$multi_out" '.data.customers[0].name == "Northstar Grocers"' "ops source is queryable"
-assert_jq "$multi_out" '.data.roast_batches[0].batch_code == "RB-2026-0605-001"' "roast_warehouse source is queryable"
+assert_jq "$multi_out" '.data.roast_batches[0].batch_code | test("^RB-[0-9]{4}-[0-9]{4}-001$")' "roast_warehouse source is queryable"
 assert_jq "$multi_out" '.data.gj_code[0].name == "reserveGreenCoffee" and (.data.gj_code[0].path | contains("roast_plan.ts"))' "business_code source is queryable"
 assert_jq "$multi_out" '[.data.gj_catalog[].name] | index("daily_roast_context") != null' "graphjin catalog source is queryable"
 
