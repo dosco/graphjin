@@ -61,7 +61,7 @@ HTTP MCP endpoints can be protected by OAuth or the same JWT/OIDC context as the
 
 ## Capability-aware tools
 
-The MCP tool list is catalog-first in both sources and non-sources configs. `graphql_help`, `query_catalog`, `execute_saved_query`, and `validate_where_clause` form the stable bootstrap surface; raw GraphQL and the server-side agent appear only when their MCP/agent gates enable them.
+The MCP tool list is catalog-first in both sources and non-sources configs. `graphql_help`, `query_catalog`, `execute_saved_query`, and `validate_where_clause` form the stable bootstrap surface; raw GraphQL and the [server-side agent](/agentic/server-agent/) appear only when their MCP/agent gates enable them.
 
 For local development, named query auto-save and workflow saves fall back to config files only when there is no `user_id` or no artifact store.
 

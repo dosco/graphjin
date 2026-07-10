@@ -4,9 +4,11 @@
 {{- $content = replaceRE `\(AGENTIC\.md#([^)]+)\)` `(/story/agentic/#$1)` $content -}}
 {{- $content = replaceRE `\(SECURITY\.md#([^)]+)\)` `(/story/security/#$1)` $content -}}
 {{- $content = replaceRE `\(VISION\.md#([^)]+)\)` `(/story/vision/#$1)` $content -}}
+{{- $content = replaceRE `\(CONFIG\.md#([^)]+)\)` `(/reference/config-reference/)` $content -}}
 {{- $content = replace $content "(AGENTIC.md)" "(/story/agentic/)" -}}
 {{- $content = replace $content "(SECURITY.md)" "(/story/security/)" -}}
 {{- $content = replace $content "(VISION.md)" "(/story/vision/)" -}}
+{{- $content = replace $content "(CONFIG.md)" "(/reference/config-reference/)" -}}
 {{ $content | safeHTML }}
 {{- else -}}
 {{- errorf "root-doc shortcode: missing resource %q" $path -}}

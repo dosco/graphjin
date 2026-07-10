@@ -3,12 +3,32 @@ title: "Server-Side Agent"
 description: "Let GraphJin run the catalog-first discovery loop for you and return a typed answer through one MCP tool and one REST endpoint."
 nav_group: "agentic"
 doc_kind: "guide"
-weight: 15
+weight: 5
 ---
 
-The server-side agent runs GraphJin's catalog-first discovery loop **inside GraphJin** and exposes it as a single MCP tool, `ask_graphjin_agent`, and a single REST endpoint, `POST /api/v1/agent`. Instead of your client chaining `query_catalog` → `query_catalog(id)` → `validate_where_clause` → `execute_saved_query` itself, you send one instruction and GraphJin discovers, validates, executes, and returns a typed, evidence-backed answer.
+GraphJin's built-in agent - the server-side agent - runs the catalog-first discovery loop **inside GraphJin** and exposes it as a single MCP tool, `ask_graphjin_agent`, and a single REST endpoint, `POST /api/v1/agent`. Instead of your client chaining `query_catalog` → `query_catalog(id)` → `validate_where_clause` → `execute_saved_query` itself, you send one instruction and GraphJin discovers, validates, executes, and returns a typed, evidence-backed answer.
 
 It is optional and off by default. Use it when you want GraphJin to orchestrate discovery in one governed, caller-scoped, auditable call; use the [MCP tools](/agentic/mcp/) directly when you want to drive the loop step by step yourself.
+
+## Try it in five minutes
+
+The coffee-roastery demo ships with data, workflows, source code, and the agent wired up:
+
+```bash
+# with OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_APIKEY in ./.env the demo
+# switches into agentic mode and enables the built-in agent automatically
+graphjin serve --demo --path examples/coffee-roastery
+```
+
+Then hand it a question:
+
+```bash
+curl -sS localhost:8080/api/v1/agent \
+  -H 'content-type: application/json' \
+  -d '{"instruction": "What production work should we prioritize next?"}'
+```
+
+The answer comes back as typed JSON - `status`, `answer`, `data`, `evidence`, `actions`, `next` - grounded in the discovery the agent actually performed on this run. The same conversation is available as a chat page in the built-in web console at `localhost:8080`.
 
 ## Enable it
 
@@ -31,7 +51,7 @@ See the [Config Reference](/reference/config-reference/) for all options.
 
 ## How it works
 
-The agent is an RLM (reasoning-with-code) loop, not a tool-calling loop. The model **writes JavaScript** that calls the discovery and execution tools as runtime globals inside a sandbox — `query_catalog({...})`, `graphql_help({...})`, `validate_where_clause({...})`, `execute_saved_query({...})`, `execute_graphql({...})`, and `final({...})`. GraphJin runs that code, feeds results back, and the typed result is parsed from the model's `key: value` output.
+The agent is an RLM (reasoning-with-code) loop, not a tool-calling loop. The model **writes JavaScript** that calls the discovery and execution tools as runtime globals inside a sandbox — `query_catalog({...})`, `graphql_help({...})`, `validate_where_clause({...})`, `execute_saved_query({...})`, `execute_graphql({...})`, and `final({...})`. GraphJin runs that code, feeds results back, and the typed result is parsed from the model's `key: value` output. The sandbox is goja, a JavaScript interpreter embedded in the GraphJin process - no external runtime is involved.
 
 This means the only model requirement is that it is **good at code generation** and follows the `key: value` output format. It does **not** need provider function-calling or structured-output/JSON modes, so any OpenAI-compatible chat-completions endpoint works (see [OpenAI-compatible endpoints](#openai-compatible-endpoints)).
 
@@ -80,6 +100,10 @@ curl -sS http://localhost:8080/api/v1/agent \
 ```
 
 {{< verified by="TestAskGraphJinAgentMCPSchema" file="serv/agent_handler_test.go" line="347" >}}
+
+### Streaming and status
+
+The REST endpoint streams progress when called with `Accept: text/event-stream`: `action` frames as the agent works, `result` frames as evidence lands, then a final `complete` frame carrying the full response. MCP callers that pass `_meta.progressToken` receive `notifications/progress` events per action. `GET /api/v1/agent/status` reports whether the agent is enabled and ready (a missing API key shows up here) - the built-in web console uses it to decide whether to offer the chat page.
 
 ## Structured refusals
 

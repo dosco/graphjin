@@ -18,6 +18,7 @@ weight: 20
 | OpenAPI | [OpenAPI Config](/configure/openapi-config/) |
 | Environment and production | [Environment And Production](/configure/environment-production/) |
 | MCP | [MCP](/agentic/mcp/) and [MCP OAuth](/agentic/oauth/) |
+| Built-in agent | [Server-Side Agent](/agentic/server-agent/) |
 | Federation | [Apollo Federation](/integrations/federation/) |
 
 ## Canonical source

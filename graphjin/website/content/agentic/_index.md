@@ -5,12 +5,12 @@ nav_group: "agentic"
 weight: 4
 ---
 
-Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data access and controlled operations.
+Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data access and controlled operations. Send one instruction to the [built-in agent](/agentic/server-agent/) and get a typed, evidence-backed answer back - or drive the discovery loop yourself over [MCP](/agentic/mcp/).
 
 | Page | Agent-facing surface |
 | --- | --- |
-| [MCP](/agentic/mcp/) | Discovery, syntax guidance, validation, cursor IDs, saved-query execution, GraphQL tools, and watch-event resource notifications. |
 | [Server-Side Agent](/agentic/server-agent/) | GraphJin runs the catalog-first discovery loop for you and returns a typed answer via `ask_graphjin_agent` and `POST /api/v1/agent`. |
+| [MCP](/agentic/mcp/) | Discovery, syntax guidance, validation, cursor IDs, saved-query execution, GraphQL tools, and watch-event resource notifications. |
 | [Catalog Graph](/agentic/catalog-graph/) | `gj_catalog` rows for sources, tables, relationships, syntax, examples, workflows, and evidence. |
 | [Security Graph](/agentic/security-graph/) | `gj_security` rows for effective policy, capabilities, read-only state, and findings. |
 | [Source Mode](/agentic/source-mode/) | Source-local ownership, capability defaults, reloads, and `agentic.yml` inheritance. |

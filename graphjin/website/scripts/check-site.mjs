@@ -30,6 +30,7 @@ const requiredRoutes = [
   'integrations/openapi/index.html',
   'integrations/multi-database/index.html',
   'agentic/mcp/index.html',
+  'agentic/server-agent/index.html',
   'configure/sources-mode/index.html',
   'reference/config-reference/index.html',
   'reference/test-backed-examples/index.html',
@@ -41,6 +42,7 @@ const requiredAnchors = [
   'problem',
   'what',
   'ai-queries',
+  'agent',
   'databases',
   'how',
   'agentic',
@@ -74,6 +76,7 @@ const requiredContent = [
   'integrations/codesql.md',
   'integrations/federation.md',
   'agentic/mcp.md',
+  'agentic/server-agent.md',
   'agentic/catalog-graph.md',
   'agentic/security-graph.md',
   'agentic/source-mode.md',
@@ -176,7 +179,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   if (/(?:>|&gt;)\s*(All|Section)\s*(?:<|&lt;)/.test(header)) {
     failures.push('Header still exposes the old All/Section search labels');
   }
-  for (const required of ['Vision', 'The agent loop', 'geo filters', 'Expression aggregates']) {
+  for (const required of ['Vision', 'The agent loop', 'One instruction in', 'geo filters', 'Expression aggregates']) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing required enriched copy: ${required}`);
     }

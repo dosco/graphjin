@@ -1,19 +1,85 @@
 # Agentic GraphJin
 
-`VISION.md` explains why GraphJin should become the shared operating surface for
-an organization. This document explains how that surface works in an agentic
-deployment.
+GraphJin can act as the data plane AI agents work through: one governed graph
+over live data, source code, security posture, workflows, config, and
+source-backed external systems. This document is the deep reference for that
+deployment. It is written for two audiences: operators putting GraphJin in
+front of agents, and authors of the models and clients that talk to it. For
+the why, read [`VISION.md`](VISION.md) first — it is shorter and human-paced.
 
 Agentic GraphJin is not a resolver framework and not a pile of tool wrappers.
 It is GraphJin running in sources mode for company end users who work through
-agents. GraphJin gives those agents a governed graph over live data, source
-code, security posture, workflows, config, and source-backed external systems.
+agents.
 
 > The authoritative source for the operating-modes (`dev`/`prod`/`agentic`),
 > system-roots, and auth security model is [`SECURITY.md`](SECURITY.md). Where
 > this document describes roots and access, treat `SECURITY.md` as canonical.
 
-The model-facing rule is simple:
+## Two Ways To Use It
+
+There are two ways to put an agent on GraphJin, and they share one foundation:
+
+1. **Your agent drives the loop.** Claude, Codex, or any MCP client calls the
+   discovery tools itself, call by call: search the catalog, inspect evidence,
+   validate, then act. Described in
+   [MCP Discovery And Usage](#mcp-discovery-and-usage).
+2. **GraphJin's built-in agent (the server-side agent) drives the loop for
+   you.** One instruction goes to `POST /api/v1/agent` or the
+   `ask_graphjin_agent` MCP tool; GraphJin discovers, validates, executes, and
+   returns a typed, evidence-backed answer. Described next, in
+   [Server-Side Agent](#server-side-agent).
+
+Both paths run as the caller, under the same roles and row-level security,
+against the same governed graph. The rest of this document describes that
+graph once, for both.
+
+## Five Minutes To A Governed Answer
+
+The fastest way to see the story end to end is a demo vertical:
+
+```bash
+# with OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_APIKEY in ./.env the demo
+# switches into agentic mode and enables the built-in agent automatically
+graphjin serve --demo --path examples/coffee-roastery
+```
+
+Then hand the built-in agent a question:
+
+```bash
+curl -sS localhost:8080/api/v1/agent \
+  -H 'content-type: application/json' \
+  -d '{"instruction": "What production work should we prioritize next?"}'
+```
+
+The response is typed JSON — `status`, `answer`, `data`, `evidence`,
+`actions`, `next` — and every claim in it is backed by catalog, validation, or
+execution evidence the agent actually gathered on this run. The same
+conversation is available in the built-in web console at `localhost:8080`, and
+external MCP clients can drive the discovery tools directly against the same
+demo.
+
+## Words This Document Uses
+
+- **Sources mode** — the config style where every database, filesystem, code
+  tree, and remote API is a named entry under `sources:`. Agentic deployments
+  assume it.
+- **Catalog-first** — the contract that discovery comes before action: search
+  `gj_catalog`, inspect evidence, then act. Enforced by Go-side protocol
+  guards, not by prompting.
+- **`gj_*` system roots** — GraphJin-owned queryable surfaces (`gj_catalog`,
+  `gj_security`, `gj_code`, `gj_config`, and friends) served alongside your
+  application data.
+- **RLM (reasoning-with-code)** — the built-in agent's loop style: the model
+  writes JavaScript in a sandbox that calls discovery tools, instead of
+  relying on provider tool-calling or JSON modes.
+- **RLS (row-level security)** — per-role row filters enforced by the core
+  compiler on every request, agent or not.
+- **nanoDB** — the bounded in-memory system database that serves the `gj_*`
+  roots.
+- **CodeSQL** — the source-code index that makes repositories queryable
+  through `gj_code`.
+
+## The Loop, In One Picture
 
 ```text
 start with the user's instruction
@@ -32,6 +98,122 @@ not need to know root names like `gj_config` or `gj_security` before it begins.
 Its first reliable move is an intent search such as
 `query_catalog(search: "<user instruction>")`; catalog rows then teach the exact
 roots, capabilities, safety checks, and next actions.
+
+## Server-Side Agent
+
+The loop above can be driven by an external model over MCP, one tool call at
+a time — see [MCP Discovery And Usage](#mcp-discovery-and-usage). GraphJin
+can also run that exact loop *server-side* and expose it as one
+tool, `ask_graphjin_agent`, and one endpoint, `POST /api/v1/agent`. The caller
+sends a single instruction; GraphJin discovers, validates, executes approved
+operations, and returns a typed, evidence-backed answer.
+
+| | External MCP loop | Server-side agent |
+| :--- | :--- | :--- |
+| Drives discovery | the caller's model, call by call | GraphJin, internally |
+| Surface | many MCP tools | one tool / one endpoint |
+| Identity | caller | caller (the agent runs as the caller) |
+| Guardrails | client-side | Go protocol guards, server-side |
+
+It is off by default. Enable it in `agentic.yml` (loaded when
+`GO_ENV=agentic`):
+
+```yaml
+agent:
+  enabled: true
+  provider: openai
+  model: gpt-4.1-mini
+  api_key_env: OPENAI_API_KEY
+```
+
+See [`CONFIG.md`](CONFIG.md#agent-configuration) for every knob.
+
+It is the same catalog-first contract, enforced the same way: discover before
+acting, inspect a `saved_query` row before running it, check `gj_security` and
+`gj_runtime` before control-plane changes. The guards are authoritative — an
+`answered` result is downgraded to `blocked` with evidence when a required step
+was skipped, and model-claimed actions never count, only real tool results.
+
+Internally it is an RLM (reasoning-with-code) loop: the model writes JavaScript
+that calls the same catalog tools as runtime globals (`query_catalog`,
+`graphql_help`, `validate_where_clause`, `execute_saved_query`,
+`execute_graphql`, `final`), and the typed result is parsed from `key: value`
+output. There is no dependency on
+provider tool-calling or structured-output modes — the model only needs to
+generate competent code — so any OpenAI-compatible endpoint works.
+
+There are no per-request modes. A single operator kill-switch,
+`agent.read_only: true`, forces the agent read-only: mutations are rejected at
+execution — including saved mutations — regardless of the caller's role.
+Otherwise the caller's role and the request only select which guidance skill
+the agent follows (`data`/`code`/`workflow`/`admin` × read/write); access stays
+enforced by core roles and row-level security, and the Go protocol guards add
+per-call gates — a raw mutation is rejected until this run gathered
+mutation-shape evidence for each target table (its table detail row, a
+`validate_where_clause` on it, or a `mutation_pattern` detail row), on top of
+the existing security/runtime-evidence and saved-query-detail requirements.
+
+Requests may also carry `history` — prior conversation turns `{role, content,
+status?, catalog_ids?}` — to resolve follow-ups. History is untrusted model
+context (an RLM context field, readable by runtime code as `inputs.history`):
+it never satisfies a protocol guard, so every run still re-discovers its own
+evidence, using the prior turns' `catalog_ids` only as warm-start hints for
+batched detail lookups (`query_catalog({ids: [...]})`). Progress is observable
+per action: MCP callers that send a `_meta.progressToken` receive
+`notifications/progress` events, and the REST endpoint streams `action`/
+`result` SSE frames when called with `Accept: text/event-stream`. Seed and
+default catalog page sizes are tunable via `agent.seed_limit` (default 10) and
+`agent.catalog_default_limit` (default 20).
+
+### Structured Refusals
+
+When the agent blocks an action it does not return prose — the response carries
+a machine-actionable `refusal` object next to `status: "blocked"`:
+
+| Field | Meaning |
+| :--- | :--- |
+| `code` | Stable identifier (`access_unauthorized`, `capability_disabled`, `mutation_evidence_required`, `artifact_kind_locked`, ...). |
+| `blocked_action` | The tool call or answer that was stopped. |
+| `because` | Evidence-backed reasons, safe to show the caller. |
+| `unblock` | Ordered steps — each names a tool and args — that gather the missing evidence or capability. Steps are filtered to the caller's visible capabilities, so they never leak roots the caller cannot see. |
+| `lawful_alternative` | What the caller can do instead when unblocking is impossible. |
+| `policy_final` | `true` means policy forbids this action for this caller — do not retry; escalate to an operator. |
+| `retryable` | `true` means running the unblock steps and retrying can succeed. |
+
+A calling agent should treat this as protocol, not prose: execute the
+`unblock` steps, retry only when `retryable` is true, and stop on
+`policy_final`. The contract is discoverable at runtime with
+`query_catalog(id: "help:refusals")`.
+
+### MCP Sampling: Borrowing The Caller's Model
+
+The server agent normally runs on the model configured under `agent.*`. With
+MCP sampling it can instead run on the calling MCP client's model:
+
+```yaml
+agent:
+  sampling: auto # off (default) | auto | require
+```
+
+- `off` — always use the server-configured model.
+- `auto` — use the client's model via `sampling/createMessage` when the client
+  advertises the sampling capability; fall back to the server model otherwise.
+- `require` — fail closed with an error when the client cannot sample; never
+  fall back silently.
+
+Sampling changes only which model drives the reasoning loop. Caller identity,
+role, row-level security, evidence gates, and refusals are unchanged — a
+hostile sampling response cannot talk the agent past its guards, because the
+guards are enforced in Go, not by the model. Sampling works over stdio and,
+with `mcp.http_stateful: true`, over stateful HTTP sessions (per-request auth
+still applies; the session carries protocol capabilities, not identity).
+
+A reference sampling-capable client lives at `tools/mcp-sampling-client`: it
+connects over streamable HTTP, advertises the sampling capability, and answers
+`sampling/createMessage` by forwarding to any OpenAI-compatible endpoint (the
+agent's reasoning wire protocol — ax — requires strict JSON output, which the
+client enforces via structured outputs). The demo smoke suites use it for the end-to-end
+borrow-the-caller's-model checks.
 
 ## Graph Surfaces And Boundaries
 
@@ -313,107 +495,8 @@ Models should treat MCP responses as guidance and the graph as evidence. A tool
 may recommend a next step, but the agent still grounds table names, column
 names, policy posture, workflow inputs, and code paths in GraphQL-visible rows.
 
-### Server-Side Agent
-
-The loop above assumes an external model drives MCP directly, one tool call at a
-time. GraphJin can also run that exact loop *server-side* and expose it as one
-tool, `ask_graphjin_agent`, and one endpoint, `POST /api/v1/agent`. The caller
-sends a single instruction; GraphJin discovers, validates, executes approved
-operations, and returns a typed, evidence-backed answer.
-
-| | External MCP loop | Server-side agent |
-| :--- | :--- | :--- |
-| Drives discovery | the caller's model, call by call | GraphJin, internally |
-| Surface | many MCP tools | one tool / one endpoint |
-| Identity | caller | caller (the agent runs as the caller) |
-| Guardrails | client-side | Go protocol guards, server-side |
-
-It is the same catalog-first contract, enforced the same way: discover before
-acting, inspect a `saved_query` row before running it, check `gj_security` and
-`gj_runtime` before control-plane changes. The guards are authoritative — an
-`answered` result is downgraded to `blocked` with evidence when a required step
-was skipped, and model-claimed actions never count, only real tool results.
-
-Internally it is an RLM (reasoning-with-code) loop: the model writes JavaScript
-that calls the same catalog tools as runtime globals (`query_catalog`,
-`graphql_help`, `validate_where_clause`, `execute_saved_query`,
-`execute_graphql`, `final`), and the typed result is parsed from `key: value`
-output. There is no dependency on
-provider tool-calling or structured-output modes — the model only needs to
-generate competent code — so any OpenAI-compatible endpoint works.
-
-There are no per-request modes. A single operator kill-switch,
-`agent.read_only: true`, forces the agent read-only: mutations are rejected at
-execution — including saved mutations — regardless of the caller's role.
-Otherwise the caller's role and the request only select which guidance skill
-the agent follows (`data`/`code`/`workflow`/`admin` × read/write); access stays
-enforced by core roles and row-level security, and the Go protocol guards add
-per-call gates — a raw mutation is rejected until this run gathered
-mutation-shape evidence for each target table (its table detail row, a
-`validate_where_clause` on it, or a `mutation_pattern` detail row), on top of
-the existing security/runtime-evidence and saved-query-detail requirements.
-
-Requests may also carry `history` — prior conversation turns `{role, content,
-status?, catalog_ids?}` — to resolve follow-ups. History is untrusted model
-context (an RLM context field, readable by runtime code as `inputs.history`):
-it never satisfies a protocol guard, so every run still re-discovers its own
-evidence, using the prior turns' `catalog_ids` only as warm-start hints for
-batched detail lookups (`query_catalog({ids: [...]})`). Progress is observable
-per action: MCP callers that send a `_meta.progressToken` receive
-`notifications/progress` events, and the REST endpoint streams `action`/
-`result` SSE frames when called with `Accept: text/event-stream`. Seed and
-default catalog page sizes are tunable via `agent.seed_limit` (default 10) and
-`agent.catalog_default_limit` (default 20).
-
-### Structured Refusals
-
-When the agent blocks an action it does not return prose — the response carries
-a machine-actionable `refusal` object next to `status: "blocked"`:
-
-| Field | Meaning |
-| :--- | :--- |
-| `code` | Stable identifier (`access_unauthorized`, `capability_disabled`, `mutation_evidence_required`, `artifact_kind_locked`, ...). |
-| `blocked_action` | The tool call or answer that was stopped. |
-| `because` | Evidence-backed reasons, safe to show the caller. |
-| `unblock` | Ordered steps — each names a tool and args — that gather the missing evidence or capability. Steps are filtered to the caller's visible capabilities, so they never leak roots the caller cannot see. |
-| `lawful_alternative` | What the caller can do instead when unblocking is impossible. |
-| `policy_final` | `true` means policy forbids this action for this caller — do not retry; escalate to an operator. |
-| `retryable` | `true` means running the unblock steps and retrying can succeed. |
-
-A calling agent should treat this as protocol, not prose: execute the
-`unblock` steps, retry only when `retryable` is true, and stop on
-`policy_final`. The contract is discoverable at runtime with
-`query_catalog(id: "help:refusals")`.
-
-### MCP Sampling: Borrowing The Caller's Model
-
-The server agent normally runs on the model configured under `agent.*`. With
-MCP sampling it can instead run on the calling MCP client's model:
-
-```yaml
-agent:
-  sampling: auto # off (default) | auto | require
-```
-
-- `off` — always use the server-configured model.
-- `auto` — use the client's model via `sampling/createMessage` when the client
-  advertises the sampling capability; fall back to the server model otherwise.
-- `require` — fail closed with an error when the client cannot sample; never
-  fall back silently.
-
-Sampling changes only which model drives the reasoning loop. Caller identity,
-role, row-level security, evidence gates, and refusals are unchanged — a
-hostile sampling response cannot talk the agent past its guards, because the
-guards are enforced in Go, not by the model. Sampling works over stdio and,
-with `mcp.http_stateful: true`, over stateful HTTP sessions (per-request auth
-still applies; the session carries protocol capabilities, not identity).
-
-A reference sampling-capable client lives at `tools/mcp-sampling-client`: it
-connects over streamable HTTP, advertises the sampling capability, and answers
-`sampling/createMessage` by forwarding to any OpenAI-compatible endpoint (the
-ax reasoning protocol requires strict JSON output, which the client enforces
-via structured outputs). The demo smoke suites use it for the end-to-end
-borrow-the-caller's-model checks.
+GraphJin can also run this whole loop for you — one instruction in, a typed,
+evidence-backed answer out. See [Server-Side Agent](#server-side-agent).
 
 ### Caller-Aware MCP Guidance
 
@@ -1835,26 +1918,7 @@ Catalog snapshots, security rows, workflow registries, CodeSQL indexes, and
 source schemas can change. Agents should treat `catalog_revision`, source
 hashes, workflow revisions, and observed errors as signals to re-read the graph.
 
-## What Success Looks Like
-
-An agent using GraphJin should be able to answer these questions through one
-composable surface:
-
-- What data, APIs, files, code, workflows, config, and capabilities exist?
-- Which source owns this fact?
-- Which fields are safe and useful?
-- How do these entities relate?
-- Which security findings or policy rows matter before action?
-- Which code paths touch this table or column?
-- Which workflow already does this?
-- What GraphJin syntax should I use here?
-- What is the smallest safe action I can take next?
-
-That is the point of Agentic GraphJin: the model does not merely receive a
-prompt. It enters a governed graph, discovers evidence, acts through explicit
-boundaries, and keeps humans and agents on the same map.
-
-## Old MCP Discovery Surface In The Catalog World
+## Appendix: Old MCP Discovery Surface In The Catalog World
 
 The old MCP surface taught models by putting many discovery tool descriptions
 directly into the prompt. Sources mode keeps the prompt small and moves that
@@ -1884,3 +1948,22 @@ rows.
 The principle is simple: old MCP tools carried knowledge in tool descriptions;
 sources mode carries that knowledge in catalog rows, help rows, examples,
 evidence, safety metadata, and the bootstrap prompt.
+
+## What Success Looks Like
+
+An agent using GraphJin should be able to answer these questions through one
+composable surface:
+
+- What data, APIs, files, code, workflows, config, and capabilities exist?
+- Which source owns this fact?
+- Which fields are safe and useful?
+- How do these entities relate?
+- Which security findings or policy rows matter before action?
+- Which code paths touch this table or column?
+- Which workflow already does this?
+- What GraphJin syntax should I use here?
+- What is the smallest safe action I can take next?
+
+That is the point of Agentic GraphJin: the model does not merely receive a
+prompt. It enters a governed graph, discovers evidence, acts through explicit
+boundaries, and keeps humans and agents on the same map.
