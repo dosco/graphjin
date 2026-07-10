@@ -4,6 +4,21 @@ function insert(query, variables) {
   return graphql(query, variables, seedOptions);
 }
 
+// Dates are computed relative to the seed run (UTC) so demo questions like
+// "what is on the line today?" keep returning data as the state ages.
+// Day 0 is the demo day: fab runs start today and tomorrow, orders come
+// due over the next two weeks, and recent NCRs are still open.
+const DAY_MS = 86400000;
+const seedNowMs = Date.now();
+
+function demoDay(offsetDays) {
+  return new Date(seedNowMs + offsetDays * DAY_MS).toISOString().slice(0, 10);
+}
+
+function demoStamp(offsetDays, hhmmss) {
+  return demoDay(offsetDays) + " " + hhmmss;
+}
+
 insert(
   `mutation {
     customers(insert: $customers) { id }
@@ -36,9 +51,9 @@ insert(
   }`,
   {
     design_revisions: [
-      { id: 1, design_id: 1, revision: "B", status: "dfm_review", gerber_path: "rev_b/", stackup_note: "8L controlled impedance, HDI microvias on L1-L2/L7-L8", created_at: "2026-07-03 09:15:00" },
-      { id: 2, design_id: 2, revision: "A", status: "released", gerber_path: "vr_a/", stackup_note: "6L standard stackup", created_at: "2026-07-02 13:20:00" },
-      { id: 3, design_id: 3, revision: "C", status: "released", gerber_path: "hiot_c/", stackup_note: "4L radio keepout revision", created_at: "2026-07-01 10:45:00" },
+      { id: 1, design_id: 1, revision: "B", status: "dfm_review", gerber_path: "rev_b/", stackup_note: "8L controlled impedance, HDI microvias on L1-L2/L7-L8", created_at: demoStamp(-4, "09:15:00") },
+      { id: 2, design_id: 2, revision: "A", status: "released", gerber_path: "vr_a/", stackup_note: "6L standard stackup", created_at: demoStamp(-5, "13:20:00") },
+      { id: 3, design_id: 3, revision: "C", status: "released", gerber_path: "hiot_c/", stackup_note: "4L radio keepout revision", created_at: demoStamp(-6, "10:45:00") },
     ],
   }
 );
@@ -49,9 +64,9 @@ insert(
   }`,
   {
     fab_orders: [
-      { id: 1, account_id: 1, customer_id: 1, design_id: 1, revision_id: 1, order_code: "FO-260701-ALPHA", due_date: "2026-07-11", panel_qty: 180, status: "engineering_hold", priority: 1 },
-      { id: 2, account_id: 1, customer_id: 2, design_id: 2, revision_id: 2, order_code: "FO-260702-BETA", due_date: "2026-07-13", panel_qty: 240, status: "released", priority: 2 },
-      { id: 3, account_id: 1, customer_id: 3, design_id: 3, revision_id: 3, order_code: "FO-260703-GAMMA", due_date: "2026-07-18", panel_qty: 320, status: "queued", priority: 4 },
+      { id: 1, account_id: 1, customer_id: 1, design_id: 1, revision_id: 1, order_code: "FO-260701-ALPHA", due_date: demoDay(4), panel_qty: 180, status: "engineering_hold", priority: 1 },
+      { id: 2, account_id: 1, customer_id: 2, design_id: 2, revision_id: 2, order_code: "FO-260702-BETA", due_date: demoDay(6), panel_qty: 240, status: "released", priority: 2 },
+      { id: 3, account_id: 1, customer_id: 3, design_id: 3, revision_id: 3, order_code: "FO-260703-GAMMA", due_date: demoDay(11), panel_qty: 320, status: "queued", priority: 4 },
     ],
   }
 );
@@ -77,9 +92,9 @@ insert(
   }`,
   {
     fab_runs: [
-      { id: 1, order_id: 1, line: "CAM-1", scheduled_start: "2026-07-07 08:00:00", planned_minutes: 90, status: "planned", engineer: "Mira Chen" },
-      { id: 2, order_id: 2, line: "FAB-2", scheduled_start: "2026-07-07 13:30:00", planned_minutes: 210, status: "started", engineer: "Owen Price" },
-      { id: 3, order_id: 3, line: "KIT-1", scheduled_start: "2026-07-08 09:30:00", planned_minutes: 70, status: "planned", engineer: "Nadia Singh" },
+      { id: 1, order_id: 1, line: "CAM-1", scheduled_start: demoStamp(0, "08:00:00"), planned_minutes: 90, status: "planned", engineer: "Mira Chen" },
+      { id: 2, order_id: 2, line: "FAB-2", scheduled_start: demoStamp(0, "13:30:00"), planned_minutes: 210, status: "started", engineer: "Owen Price" },
+      { id: 3, order_id: 3, line: "KIT-1", scheduled_start: demoStamp(1, "09:30:00"), planned_minutes: 70, status: "planned", engineer: "Nadia Singh" },
     ],
   }
 );
@@ -105,9 +120,9 @@ insert(
   }`,
   {
     shipments: [
-      { id: 1, account_id: 1, order_id: 1, ship_date: "2026-07-11", carrier: "MedSecure Freight", status: "pending" },
-      { id: 2, account_id: 1, order_id: 2, ship_date: "2026-07-13", carrier: "NW Freight", status: "pending" },
-      { id: 3, account_id: 1, order_id: 3, ship_date: "2026-07-19", carrier: "Parcel Air", status: "planned" },
+      { id: 1, account_id: 1, order_id: 1, ship_date: demoDay(4), carrier: "MedSecure Freight", status: "pending" },
+      { id: 2, account_id: 1, order_id: 2, ship_date: demoDay(6), carrier: "NW Freight", status: "pending" },
+      { id: 3, account_id: 1, order_id: 3, ship_date: demoDay(12), carrier: "Parcel Air", status: "planned" },
     ],
   }
 );
@@ -118,8 +133,8 @@ insert(
   }`,
   {
     ncr_reports: [
-      { id: 1, account_id: 1, order_id: 2, opened_at: "2026-07-06 16:40:00", defect_code: "PLATING-VOID", severity: "high", status: "open" },
-      { id: 2, account_id: 1, order_id: 1, opened_at: "2026-07-05 14:05:00", defect_code: "DRILL-WANDER", severity: "medium", status: "contained" },
+      { id: 1, account_id: 1, order_id: 2, opened_at: demoStamp(-1, "16:40:00"), defect_code: "PLATING-VOID", severity: "high", status: "open" },
+      { id: 2, account_id: 1, order_id: 1, opened_at: demoStamp(-2, "14:05:00"), defect_code: "DRILL-WANDER", severity: "medium", status: "contained" },
     ],
   }
 );

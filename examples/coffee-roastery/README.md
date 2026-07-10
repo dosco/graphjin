@@ -67,10 +67,10 @@ curl -sS http://localhost:8080/api/v1/graphql \
   --data '{"query":"query { customers(limit: 1) { id name } roast_batches(limit: 1) { id batch_code } }"}'
 ```
 
-Expected shape:
+Expected shape (batch codes embed the seed date, so the digits vary):
 
 ```json
-{"data":{"customers":[{"id":1,"name":"Northstar Grocers"}],"roast_batches":[{"id":1001,"batch_code":"RB-2026-0605-001"}]}}
+{"data":{"customers":[{"id":1,"name":"Northstar Grocers"}],"roast_batches":[{"id":1001,"batch_code":"RB-2026-0709-001"}]}}
 ```
 
 Run an agent workflow as an authenticated caller. In plain dev mode the

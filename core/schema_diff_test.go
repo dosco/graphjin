@@ -2156,3 +2156,46 @@ func TestComputeDiff_ClusteringKeyUnchanged(t *testing.T) {
 		}
 	}
 }
+
+func TestSchemaDDLTemporalColumns(t *testing.T) {
+	ddl := []byte(`
+type orders {
+  id: Bigint! @id
+  due_date: Date!
+  created_at: TimestampWithTimeZone! @default(value: "now()")
+  updated_at: Timestamp
+  open_time: Time
+  name: Text!
+  quantity: Integer
+}
+
+type notes {
+  id: Bigint! @id
+  body: Text!
+}
+`)
+	tables, err := SchemaDDLTemporalColumns(ddl)
+	if err != nil {
+		t.Fatalf("SchemaDDLTemporalColumns: %v", err)
+	}
+	cols := tables["orders"]
+	if len(cols) != 3 {
+		t.Fatalf("orders temporal columns = %+v, want due_date, created_at, updated_at", cols)
+	}
+	byName := map[string]TemporalColumn{}
+	for _, c := range cols {
+		byName[c.Name] = c
+	}
+	if c, ok := byName["due_date"]; !ok || !c.DateOnly {
+		t.Errorf("due_date = %+v, want DateOnly", c)
+	}
+	if c, ok := byName["created_at"]; !ok || c.DateOnly {
+		t.Errorf("created_at = %+v, want timestamp", c)
+	}
+	if _, ok := byName["open_time"]; ok {
+		t.Error("time-of-day column open_time must be excluded")
+	}
+	if len(tables["notes"]) != 0 {
+		t.Errorf("notes has no temporal columns, got %+v", tables["notes"])
+	}
+}

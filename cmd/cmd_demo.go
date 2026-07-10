@@ -74,6 +74,9 @@ type demoState struct {
 	FirstRun bool
 	Manifest demoManifest
 	Status   demoStatus
+	// ShiftDays is how many whole days the reused demo data lags behind
+	// today; date columns are shifted forward by this much on startup.
+	ShiftDays int
 }
 
 type demoManifest struct {
@@ -81,6 +84,7 @@ type demoManifest struct {
 	ConfigHash string                      `json:"config_hash"`
 	CreatedAt  string                      `json:"created_at"`
 	UpdatedAt  string                      `json:"updated_at"`
+	DataAnchor string                      `json:"data_anchor,omitempty"`
 	Sources    map[string]demoManifestItem `json:"sources"`
 }
 
@@ -156,6 +160,11 @@ func StartDemo(ctx context.Context, dbFlags []string, statusOut io.Writer) (*Dem
 
 	status.Emit("seed", "seeding", "loading first-run data")
 	runDemoSeed()
+
+	if state.ShiftDays > 0 {
+		status.Emit("refresh", "shifting", fmt.Sprintf("moving demo dates forward %d day(s)", state.ShiftDays))
+		shiftDemoDates(ctx, runtime.Databases, state)
+	}
 
 	// The artifact/watch store tables must exist before the schema cache is
 	// generated: in demo mode core loads schema from that cache instead of
@@ -257,7 +266,12 @@ func initDemoState(status demoStatus) (*demoState, error) {
 		manifest.Sources = make(map[string]demoManifestItem)
 	}
 	status.Emit("state", "reused", "manifest verified")
-	return &demoState{Dir: stateDir, Manifest: manifest, Status: status}, nil
+	state := &demoState{Dir: stateDir, Manifest: manifest, Status: status}
+	state.ShiftDays = demoDataShiftDays(manifest, time.Now())
+	if state.ShiftDays > 0 {
+		status.Emit("state", "refreshing", fmt.Sprintf("demo data is %d day(s) old; shifting dates to today", state.ShiftDays))
+	}
+	return state, nil
 }
 
 func demoConfigHash() string {
@@ -284,6 +298,9 @@ func (s *demoState) writeManifest(dbs map[string]*sql.DB) error {
 	}
 	s.Manifest.ConfigHash = demoConfigHash()
 	s.Manifest.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	// Seeds ran (first run) or dates were shifted (reuse) during this
+	// startup, so the data now pretends today is day zero.
+	s.Manifest.DataAnchor = time.Now().UTC().Format(demoDataAnchorLayout)
 	if s.Manifest.Sources == nil {
 		s.Manifest.Sources = make(map[string]demoManifestItem)
 	}
@@ -443,9 +460,9 @@ func startDemoContainer(ctx context.Context, name string, dbConf core.DatabaseCo
 	case "mongodb", "mongo":
 		return startMongoDBDemo(ctx, name, dataDir, state.Status)
 	case "bigquery":
-		return startBigQueryDemo(ctx, name, dbConf, dataDir, state.Status)
+		return startBigQueryDemo(ctx, name, dbConf, dataDir, state)
 	case "snowflake":
-		return startSnowflakeDemo(ctx, name, dbConf, dataDir, state.Status)
+		return startSnowflakeDemo(ctx, name, dbConf, dataDir, state)
 	case "codesql":
 		codePath := strings.TrimSpace(dbConf.Path)
 		if codePath != "" && !filepath.IsAbs(codePath) {
@@ -930,18 +947,19 @@ func startMongoDBDemo(ctx context.Context, name, dataDir string, status demoStat
 	}, nil
 }
 
-func startBigQueryDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
-	return startWarehouseSimDemo(ctx, name, dbConf, dataDir, status, "bigquery", "BigQuery", hostedbigquery.NewAdapter())
+func startBigQueryDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, state *demoState) (func(context.Context) error, *DemoConnInfo, error) {
+	return startWarehouseSimDemo(ctx, name, dbConf, dataDir, state, "bigquery", "BigQuery", hostedbigquery.NewAdapter())
 }
 
-func startSnowflakeDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
-	return startWarehouseSimDemo(ctx, name, dbConf, dataDir, status, "snowflake", "Snowflake", hostedsnowflake.NewAdapter())
+func startSnowflakeDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, state *demoState) (func(context.Context) error, *DemoConnInfo, error) {
+	return startWarehouseSimDemo(ctx, name, dbConf, dataDir, state, "snowflake", "Snowflake", hostedsnowflake.NewAdapter())
 }
 
 // startWarehouseSimDemo starts a cloud-warehouse source on the hostedemu
 // DuckDB simulator; dialect selects the GraphJin SQL dialect and the adapter
 // translates warehouse SQL/discovery onto DuckDB.
-func startWarehouseSimDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, status demoStatus, dialect, label string, adapter hostedemu.Adapter) (func(context.Context) error, *DemoConnInfo, error) {
+func startWarehouseSimDemo(ctx context.Context, name string, dbConf core.DatabaseConfig, dataDir string, state *demoState, dialect, label string, adapter hostedemu.Adapter) (func(context.Context) error, *DemoConnInfo, error) {
+	status := state.Status
 	status.Emit(name, "opening", fmt.Sprintf("opening %s simulator", label))
 	setupSQL, setupSource, setupIsDDL, err := warehouseSimulatorSetupSQL(name, dbConf, dialect)
 	if err != nil {
@@ -951,6 +969,17 @@ func startWarehouseSimDemo(ctx context.Context, name string, dbConf core.Databas
 
 	dbPath := filepath.Join(dataDir, "warehouse.duckdb")
 	initialized := warehouseSimulatorInitialized(dbPath)
+	if initialized && state.ShiftDays > 0 {
+		// Reused simulator state: shift its dates in the file now, while it
+		// is still closed — DuckDB allows a single read-write handle.
+		if tables, err := demoTemporalColumns(name); err != nil {
+			status.Emit(name, "skipped", fmt.Sprintf("date refresh needs schema DDL: %s", err))
+		} else if n, err := shiftDuckDBFileDates(ctx, dbPath, tables, state.ShiftDays); err != nil {
+			status.Emit(name, "failed", fmt.Sprintf("date refresh failed (%s); delete %s to reseed", err, state.Dir))
+		} else if n > 0 {
+			status.Emit(name, "refreshed", fmt.Sprintf("%d date column(s) moved forward %d day(s)", n, state.ShiftDays))
+		}
+	}
 	connector := hostedemu.NewConnector(hostedemu.Config{
 		SeedSQL:  setupSQL,
 		DBPath:   dbPath,

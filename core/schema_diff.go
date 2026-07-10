@@ -76,6 +76,42 @@ func SchemaDiff(db *sql.DB, dbType string, schemaBytes []byte, blocklist []strin
 	return ops, nil
 }
 
+// TemporalColumn describes a date or timestamp column parsed from GraphJin
+// schema DDL. DateOnly marks calendar-date columns with no time component.
+type TemporalColumn struct {
+	Name     string
+	DateOnly bool
+}
+
+// SchemaDDLTemporalColumns parses GraphJin schema DDL and returns the date and
+// timestamp columns of each table, keyed by table name. Time-of-day and
+// interval columns are excluded. It lets tooling such as the demo data
+// refresher find date-bearing columns without live schema discovery, which
+// stays accurate on engines like SQLite that store temporal values as TEXT.
+func SchemaDDLTemporalColumns(schemaBytes []byte) (map[string][]TemporalColumn, error) {
+	ds, err := qcode.ParseSchema(schemaBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse schema: %w", err)
+	}
+	tables := make(map[string][]TemporalColumn)
+	for _, col := range ds.Columns {
+		var dateOnly bool
+		switch strings.ToLower(strings.TrimSpace(col.Type)) {
+		case "date":
+			dateOnly = true
+		case "timestamp", "timestamp with time zone", "timestamptz",
+			"timestamp without time zone", "datetime":
+		default:
+			continue
+		}
+		tables[col.Table] = append(tables[col.Table], TemporalColumn{
+			Name:     col.Name,
+			DateOnly: dateOnly,
+		})
+	}
+	return tables, nil
+}
+
 // GenerateSchemaSQL renders executable DDL from GraphJin DDL without discovering
 // a live database. It is intended for local simulators and generated fixtures;
 // live migration support is still gated by SupportsSchemaDDL.

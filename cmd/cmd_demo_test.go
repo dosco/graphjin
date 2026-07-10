@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/hostedemu"
 	hostedbigquery "github.com/dosco/graphjin/hostedemu/bigquery"
+	hostedsnowflake "github.com/dosco/graphjin/hostedemu/snowflake"
 	"github.com/dosco/graphjin/serv/v3"
 	"github.com/spf13/cobra"
 )
@@ -442,4 +444,100 @@ func TestExamplesUseCanonicalDemoSchemaFiles(t *testing.T) {
 	if len(bad) != 0 {
 		t.Fatalf("curated examples should use schema-ddl/*.ddl plus JS seeds, found SQL fixtures: %s", strings.Join(bad, ", "))
 	}
+}
+
+// runWarehouseSeedScript boots a warehouse simulator from an example's DDL and
+// runs its JS seed against it, returning the opened database for assertions.
+func runWarehouseSeedScript(t *testing.T, examplePath, source, dialect string, adapter hostedemu.Adapter) *sql.DB {
+	t.Helper()
+	schemaData, err := os.ReadFile(filepath.Join("..", examplePath, "schema-ddl", source+".ddl"))
+	if err != nil {
+		t.Fatalf("read %s DDL: %v", source, err)
+	}
+	sqls, err := core.GenerateSchemaSQL(dialect, schemaData, nil)
+	if err != nil {
+		t.Fatalf("GenerateSchemaSQL: %v", err)
+	}
+
+	db := sql.OpenDB(hostedemu.NewConnector(hostedemu.Config{
+		SeedSQL:  strings.Join(sqls, "\n\n"),
+		DBPath:   filepath.Join(t.TempDir(), "warehouse.duckdb"),
+		Backend:  hostedemu.BackendDuckDB,
+		Fallback: hostedemu.FallbackStrict,
+		TestName: source,
+	}, adapter))
+	t.Cleanup(func() { db.Close() }) //nolint:errcheck
+	if err := db.Ping(); err != nil {
+		t.Fatalf("ping simulator: %v", err)
+	}
+
+	oldCpath, oldConf := cpath, conf
+	t.Cleanup(func() {
+		cpath = oldCpath
+		conf = oldConf
+	})
+	cpath = filepath.Clean(filepath.Join("..", examplePath))
+	conf = &serv.Config{Core: core.Config{DisableAllowList: true}}
+
+	seedPath := filepath.Join(cpath, "seed", source+".js")
+	if err := compileAndRunJSWithContext(seedPath, seedJSContext{
+		DB:            db,
+		ConfigPath:    cpath,
+		DefaultSource: source,
+	}); err != nil {
+		t.Fatalf("run %s seed: %v", source, err)
+	}
+	return db
+}
+
+// assertRecentMondays checks every value in the column is a Monday in the
+// recent past — the shape demoWeekStart seeds must produce regardless of when
+// the seed runs.
+func assertRecentMondays(t *testing.T, db *sql.DB, table, column string, wantRows int) {
+	t.Helper()
+	rows, err := db.Query("SELECT CAST(" + column + " AS VARCHAR) FROM " + table)
+	if err != nil {
+		t.Fatalf("query %s: %v", table, err)
+	}
+	defer rows.Close() //nolint:errcheck
+	count := 0
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			t.Fatalf("scan %s.%s: %v", table, column, err)
+		}
+		day, err := time.Parse("2006-01-02", strings.TrimSpace(raw))
+		if err != nil {
+			t.Fatalf("%s.%s = %q is not a date: %v", table, column, raw, err)
+		}
+		if day.Weekday() != time.Monday {
+			t.Errorf("%s.%s = %s falls on %s, want Monday", table, column, raw, day.Weekday())
+		}
+		if day.After(today) {
+			t.Errorf("%s.%s = %s is in the future", table, column, raw)
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	if count != wantRows {
+		t.Fatalf("%s rows = %d, want %d", table, count, wantRows)
+	}
+}
+
+// The corrugated and pcb-fab warehouse seeds compute week_start rows with the
+// demoWeekStart helper; these tests run the real seeds through goja against
+// the simulators and check the rows land on Mondays in the recent past.
+func TestCorrugatedPlantBigQuerySeedWeekStarts(t *testing.T) {
+	db := runWarehouseSeedScript(t, "examples/corrugated-plant", "demand_warehouse", "bigquery", hostedbigquery.NewAdapter())
+	assertRecentMondays(t, db, "demand_history", "week_start", 8)
+	assertRecentMondays(t, db, "material_price_index", "week_start", 5)
+}
+
+func TestPCBFabSnowflakeSeedWeekStarts(t *testing.T) {
+	db := runWarehouseSeedScript(t, "examples/pcb-fab", "yield_warehouse", "snowflake", hostedsnowflake.NewAdapter())
+	assertRecentMondays(t, db, "yield_by_layer_count", "week_start", 6)
+	assertRecentMondays(t, db, "defect_pareto", "week_start", 3)
 }

@@ -1,16 +1,35 @@
 const source = { source: "roast_warehouse" };
 
+// Warehouse telemetry is anchored to the seed run (UTC): yesterday's batches
+// were roasted and this morning's cupping scored them, so "latest batches"
+// and "this week" questions keep working as the demo state ages.
+const DAY_MS = 86400000;
+const seedNowMs = Date.now();
+
+function demoDay(offsetDays) {
+  return new Date(seedNowMs + offsetDays * DAY_MS).toISOString().slice(0, 10);
+}
+
+function demoStamp(offsetDays, hhmmss) {
+  return demoDay(offsetDays) + " " + hhmmss;
+}
+
+function batchCode(offsetDays, seq) {
+  const day = demoDay(offsetDays);
+  return "RB-" + day.slice(0, 4) + "-" + day.slice(5, 7) + day.slice(8, 10) + "-" + seq;
+}
+
 seed.insert(
   "roast_batches",
   [
     {
       id: 1001,
-      batch_code: "RB-2026-0605-001",
+      batch_code: batchCode(-1, "001"),
       profile_id: 1,
       green_lot_id: 1,
       machine_id: "loring-s35",
-      started_at: "2026-06-05 14:00:00",
-      ended_at: "2026-06-05 14:13:30",
+      started_at: demoStamp(-1, "14:00:00"),
+      ended_at: demoStamp(-1, "14:13:30"),
       target_temp_c: 214.5,
       final_temp_c: 214.7,
       development_seconds: 108,
@@ -19,12 +38,12 @@ seed.insert(
     },
     {
       id: 1002,
-      batch_code: "RB-2026-0605-002",
+      batch_code: batchCode(-1, "002"),
       profile_id: 2,
       green_lot_id: 2,
       machine_id: "probats-p25",
-      started_at: "2026-06-05 16:00:00",
-      ended_at: "2026-06-05 16:11:40",
+      started_at: demoStamp(-1, "16:00:00"),
+      ended_at: demoStamp(-1, "16:11:40"),
       target_temp_c: 211.0,
       final_temp_c: 210.6,
       development_seconds: 88,
@@ -33,12 +52,12 @@ seed.insert(
     },
     {
       id: 1003,
-      batch_code: "RB-2026-0605-003",
+      batch_code: batchCode(-1, "003"),
       profile_id: 3,
       green_lot_id: 3,
       machine_id: "loring-s35",
-      started_at: "2026-06-05 18:00:00",
-      ended_at: "2026-06-05 18:12:10",
+      started_at: demoStamp(-1, "18:00:00"),
+      ended_at: demoStamp(-1, "18:12:10"),
       target_temp_c: 212.25,
       final_temp_c: 212.1,
       development_seconds: 96,
@@ -55,7 +74,7 @@ seed.insert(
     {
       id: 1,
       batch_id: 1001,
-      recorded_at: "2026-06-05 14:03:00",
+      recorded_at: demoStamp(-1, "14:03:00"),
       bean_temp_c: 151.2,
       env_temp_c: 218.0,
       ror_c_per_min: 12.4,
@@ -66,7 +85,7 @@ seed.insert(
     {
       id: 2,
       batch_id: 1001,
-      recorded_at: "2026-06-05 14:07:00",
+      recorded_at: demoStamp(-1, "14:07:00"),
       bean_temp_c: 188.6,
       env_temp_c: 226.3,
       ror_c_per_min: 8.2,
@@ -77,7 +96,7 @@ seed.insert(
     {
       id: 3,
       batch_id: 1001,
-      recorded_at: "2026-06-05 14:11:00",
+      recorded_at: demoStamp(-1, "14:11:00"),
       bean_temp_c: 207.8,
       env_temp_c: 220.1,
       ror_c_per_min: 4.1,
@@ -88,7 +107,7 @@ seed.insert(
     {
       id: 4,
       batch_id: 1002,
-      recorded_at: "2026-06-05 16:03:00",
+      recorded_at: demoStamp(-1, "16:03:00"),
       bean_temp_c: 148.9,
       env_temp_c: 214.8,
       ror_c_per_min: 13.1,
@@ -99,7 +118,7 @@ seed.insert(
     {
       id: 5,
       batch_id: 1002,
-      recorded_at: "2026-06-05 16:07:00",
+      recorded_at: demoStamp(-1, "16:07:00"),
       bean_temp_c: 190.1,
       env_temp_c: 224.6,
       ror_c_per_min: 9.8,
@@ -110,7 +129,7 @@ seed.insert(
     {
       id: 6,
       batch_id: 1002,
-      recorded_at: "2026-06-05 16:10:30",
+      recorded_at: demoStamp(-1, "16:10:30"),
       bean_temp_c: 207.2,
       env_temp_c: 221.0,
       ror_c_per_min: 5.9,
@@ -121,7 +140,7 @@ seed.insert(
     {
       id: 7,
       batch_id: 1003,
-      recorded_at: "2026-06-05 18:03:00",
+      recorded_at: demoStamp(-1, "18:03:00"),
       bean_temp_c: 150.7,
       env_temp_c: 217.1,
       ror_c_per_min: 12.8,
@@ -132,7 +151,7 @@ seed.insert(
     {
       id: 8,
       batch_id: 1003,
-      recorded_at: "2026-06-05 18:07:00",
+      recorded_at: demoStamp(-1, "18:07:00"),
       bean_temp_c: 187.4,
       env_temp_c: 223.4,
       ror_c_per_min: 8.4,
@@ -143,7 +162,7 @@ seed.insert(
     {
       id: 9,
       batch_id: 1003,
-      recorded_at: "2026-06-05 18:11:00",
+      recorded_at: demoStamp(-1, "18:11:00"),
       bean_temp_c: 207.9,
       env_temp_c: 220.2,
       ror_c_per_min: 4.6,
@@ -161,7 +180,7 @@ seed.insert(
     {
       id: 1,
       batch_id: 1001,
-      scored_at: "2026-06-06 09:00:00",
+      scored_at: demoStamp(0, "09:00:00"),
       fragrance: 8.0,
       flavor: 8.1,
       acidity: 7.8,
@@ -174,7 +193,7 @@ seed.insert(
     {
       id: 2,
       batch_id: 1002,
-      scored_at: "2026-06-06 09:20:00",
+      scored_at: demoStamp(0, "09:20:00"),
       fragrance: 8.4,
       flavor: 8.6,
       acidity: 8.2,
@@ -187,7 +206,7 @@ seed.insert(
     {
       id: 3,
       batch_id: 1003,
-      scored_at: "2026-06-06 09:40:00",
+      scored_at: demoStamp(0, "09:40:00"),
       fragrance: 8.2,
       flavor: 8.3,
       acidity: 8.1,
@@ -207,7 +226,7 @@ seed.insert(
     {
       id: 1,
       machine_id: "loring-s35",
-      recorded_at: "2026-06-05 14:05:00",
+      recorded_at: demoStamp(-1, "14:05:00"),
       vibration_mm_s: 1.2,
       exhaust_pa: 118.0,
       burner_duty_percent: 64.0,
@@ -215,7 +234,7 @@ seed.insert(
     {
       id: 2,
       machine_id: "loring-s35",
-      recorded_at: "2026-06-05 18:05:00",
+      recorded_at: demoStamp(-1, "18:05:00"),
       vibration_mm_s: 1.3,
       exhaust_pa: 121.0,
       burner_duty_percent: 62.0,
@@ -223,7 +242,7 @@ seed.insert(
     {
       id: 3,
       machine_id: "probats-p25",
-      recorded_at: "2026-06-05 16:05:00",
+      recorded_at: demoStamp(-1, "16:05:00"),
       vibration_mm_s: 2.8,
       exhaust_pa: 96.0,
       burner_duty_percent: 71.0,

@@ -4,6 +4,21 @@ function insert(query, variables) {
   return graphql(query, variables, seedOptions);
 }
 
+// Dates are computed relative to the seed run (UTC) so demo questions like
+// "who is on today's schedule?" keep returning data as the state ages.
+// Day 0 is the demo day: past visits completed or missed, today and the
+// coming days fully booked, and the waitlist waiting.
+const DAY_MS = 86400000;
+const seedNowMs = Date.now();
+
+function demoDay(offsetDays) {
+  return new Date(seedNowMs + offsetDays * DAY_MS).toISOString().slice(0, 10);
+}
+
+function demoTime(offsetDays, hhmm) {
+  return demoDay(offsetDays) + "T" + hhmm + ":00Z";
+}
+
 insert(
   `mutation {
     patients(insert: $patients) { id }
@@ -108,7 +123,7 @@ insert(
         patient_id: 1,
         provider_id: 1,
         room_id: 1,
-        scheduled_at: "2026-07-01T09:00:00Z",
+        scheduled_at: demoTime(-5, "09:00"),
         duration_minutes: 30,
         status: "completed",
       },
@@ -117,7 +132,7 @@ insert(
         patient_id: 2,
         provider_id: 2,
         room_id: 2,
-        scheduled_at: "2026-07-01T10:00:00Z",
+        scheduled_at: demoTime(-5, "10:00"),
         duration_minutes: 20,
         status: "completed",
       },
@@ -126,7 +141,7 @@ insert(
         patient_id: 3,
         provider_id: 3,
         room_id: 1,
-        scheduled_at: "2026-07-02T09:30:00Z",
+        scheduled_at: demoTime(-4, "09:30"),
         duration_minutes: 30,
         status: "completed",
       },
@@ -135,7 +150,7 @@ insert(
         patient_id: 4,
         provider_id: 4,
         room_id: 3,
-        scheduled_at: "2026-07-02T11:00:00Z",
+        scheduled_at: demoTime(-4, "11:00"),
         duration_minutes: 45,
         status: "completed",
       },
@@ -144,7 +159,7 @@ insert(
         patient_id: 5,
         provider_id: 1,
         room_id: 1,
-        scheduled_at: "2026-07-03T09:00:00Z",
+        scheduled_at: demoTime(-3, "09:00"),
         duration_minutes: 30,
         status: "no_show",
       },
@@ -153,7 +168,7 @@ insert(
         patient_id: 6,
         provider_id: 2,
         room_id: 2,
-        scheduled_at: "2026-07-03T10:30:00Z",
+        scheduled_at: demoTime(-3, "10:30"),
         duration_minutes: 20,
         status: "no_show",
       },
@@ -162,7 +177,7 @@ insert(
         patient_id: 7,
         provider_id: 3,
         room_id: 1,
-        scheduled_at: "2026-07-04T14:00:00Z",
+        scheduled_at: demoTime(-2, "14:00"),
         duration_minutes: 30,
         status: "no_show",
       },
@@ -171,7 +186,7 @@ insert(
         patient_id: 8,
         provider_id: 4,
         room_id: 3,
-        scheduled_at: "2026-07-05T15:00:00Z",
+        scheduled_at: demoTime(-1, "15:00"),
         duration_minutes: 45,
         status: "no_show",
       },
@@ -180,7 +195,7 @@ insert(
         patient_id: 1,
         provider_id: 2,
         room_id: 2,
-        scheduled_at: "2026-07-06T09:00:00Z",
+        scheduled_at: demoTime(0, "09:00"),
         duration_minutes: 20,
         status: "scheduled",
       },
@@ -189,7 +204,7 @@ insert(
         patient_id: 2,
         provider_id: 1,
         room_id: 1,
-        scheduled_at: "2026-07-06T10:00:00Z",
+        scheduled_at: demoTime(0, "10:00"),
         duration_minutes: 30,
         status: "scheduled",
       },
@@ -198,7 +213,7 @@ insert(
         patient_id: 3,
         provider_id: 1,
         room_id: 1,
-        scheduled_at: "2026-07-07T09:00:00Z",
+        scheduled_at: demoTime(1, "09:00"),
         duration_minutes: 30,
         status: "scheduled",
       },
@@ -207,7 +222,7 @@ insert(
         patient_id: 4,
         provider_id: 3,
         room_id: 2,
-        scheduled_at: "2026-07-07T11:30:00Z",
+        scheduled_at: demoTime(1, "11:30"),
         duration_minutes: 30,
         status: "scheduled",
       },
@@ -216,7 +231,7 @@ insert(
         patient_id: 5,
         provider_id: 4,
         room_id: 3,
-        scheduled_at: "2026-07-08T13:00:00Z",
+        scheduled_at: demoTime(2, "13:00"),
         duration_minutes: 60,
         status: "scheduled",
       },
@@ -225,7 +240,7 @@ insert(
         patient_id: 6,
         provider_id: 2,
         room_id: 2,
-        scheduled_at: "2026-07-09T10:00:00Z",
+        scheduled_at: demoTime(3, "10:00"),
         duration_minutes: 20,
         status: "scheduled",
       },
@@ -234,7 +249,7 @@ insert(
         patient_id: 7,
         provider_id: 1,
         room_id: 1,
-        scheduled_at: "2026-07-10T09:30:00Z",
+        scheduled_at: demoTime(4, "09:30"),
         duration_minutes: 30,
         status: "scheduled",
       },
@@ -255,7 +270,7 @@ insert(
         requested_specialty: "cardiology",
         priority: "high",
         status: "waiting",
-        created_at: "2026-07-02T12:00:00Z",
+        created_at: demoTime(-4, "12:00"),
       },
       {
         id: 2,
@@ -264,7 +279,7 @@ insert(
         requested_specialty: "orthopedics",
         priority: "high",
         status: "waiting",
-        created_at: "2026-07-03T16:00:00Z",
+        created_at: demoTime(-3, "16:00"),
       },
       {
         id: 3,
@@ -273,7 +288,7 @@ insert(
         requested_specialty: "dermatology",
         priority: "medium",
         status: "waiting",
-        created_at: "2026-07-04T09:15:00Z",
+        created_at: demoTime(-2, "09:15"),
       },
       {
         id: 4,
@@ -282,7 +297,7 @@ insert(
         requested_specialty: "pediatrics",
         priority: "low",
         status: "waiting",
-        created_at: "2026-07-04T13:45:00Z",
+        created_at: demoTime(-2, "13:45"),
       },
       {
         id: 5,
@@ -291,7 +306,7 @@ insert(
         requested_specialty: "orthopedics",
         priority: "medium",
         status: "promoted",
-        created_at: "2026-06-28T10:00:00Z",
+        created_at: demoTime(-8, "10:00"),
       },
       {
         id: 6,
@@ -300,7 +315,7 @@ insert(
         requested_specialty: "dermatology",
         priority: "low",
         status: "cancelled",
-        created_at: "2026-06-25T11:30:00Z",
+        created_at: demoTime(-11, "11:30"),
       },
     ],
   }
@@ -316,28 +331,28 @@ insert(
         id: 1,
         appointment_id: 5,
         patient_id: 5,
-        occurred_at: "2026-07-03T09:20:00Z",
+        occurred_at: demoTime(-3, "09:20"),
         reason: "no call, no show",
       },
       {
         id: 2,
         appointment_id: 6,
         patient_id: 6,
-        occurred_at: "2026-07-03T10:50:00Z",
+        occurred_at: demoTime(-3, "10:50"),
         reason: "transport fell through",
       },
       {
         id: 3,
         appointment_id: 7,
         patient_id: 7,
-        occurred_at: "2026-07-04T14:20:00Z",
+        occurred_at: demoTime(-2, "14:20"),
         reason: "forgot appointment",
       },
       {
         id: 4,
         appointment_id: 8,
         patient_id: 8,
-        occurred_at: "2026-07-05T15:20:00Z",
+        occurred_at: demoTime(-1, "15:20"),
         reason: "double-booked at work",
       },
     ],

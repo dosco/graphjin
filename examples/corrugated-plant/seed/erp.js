@@ -4,6 +4,21 @@ function insert(query, variables) {
   return graphql(query, variables, seedOptions);
 }
 
+// Dates are computed relative to the seed run (UTC) so demo questions like
+// "what runs today?" keep returning data as the state ages. Day 0 is the
+// demo day: corrugator runs are planned today and tomorrow, orders come
+// due over the next week, and recent downtime needs follow-up.
+const DAY_MS = 86400000;
+const seedNowMs = Date.now();
+
+function demoDay(offsetDays) {
+  return new Date(seedNowMs + offsetDays * DAY_MS).toISOString().slice(0, 10);
+}
+
+function demoStamp(offsetDays, hhmmss) {
+  return demoDay(offsetDays) + " " + hhmmss;
+}
+
 insert(
   `mutation {
     customers(insert: $customers) { id }
@@ -65,11 +80,11 @@ insert(
   }`,
   {
     work_orders: [
-      { id: 1, account_id: 1, customer_id: 1, board_grade_id: 1, order_code: "WO-260701-CEDAR", due_date: "2026-07-08", quantity_m2: 18500.0, status: "queued", priority: 1 },
-      { id: 2, account_id: 1, customer_id: 3, board_grade_id: 3, order_code: "WO-260702-RIVER", due_date: "2026-07-09", quantity_m2: 9200.0, status: "queued", priority: 2 },
-      { id: 3, account_id: 1, customer_id: 2, board_grade_id: 2, order_code: "WO-260703-NORTH", due_date: "2026-07-12", quantity_m2: 26400.0, status: "planned", priority: 3 },
-      { id: 4, account_id: 1, customer_id: 5, board_grade_id: 1, order_code: "WO-260704-SUMMIT", due_date: "2026-07-11", quantity_m2: 13250.0, status: "at_risk", priority: 2 },
-      { id: 5, account_id: 1, customer_id: 4, board_grade_id: 2, order_code: "WO-260705-METRO", due_date: "2026-07-15", quantity_m2: 21400.0, status: "queued", priority: 4 },
+      { id: 1, account_id: 1, customer_id: 1, board_grade_id: 1, order_code: "WO-260701-CEDAR", due_date: demoDay(1), quantity_m2: 18500.0, status: "queued", priority: 1 },
+      { id: 2, account_id: 1, customer_id: 3, board_grade_id: 3, order_code: "WO-260702-RIVER", due_date: demoDay(2), quantity_m2: 9200.0, status: "queued", priority: 2 },
+      { id: 3, account_id: 1, customer_id: 2, board_grade_id: 2, order_code: "WO-260703-NORTH", due_date: demoDay(5), quantity_m2: 26400.0, status: "planned", priority: 3 },
+      { id: 4, account_id: 1, customer_id: 5, board_grade_id: 1, order_code: "WO-260704-SUMMIT", due_date: demoDay(4), quantity_m2: 13250.0, status: "at_risk", priority: 2 },
+      { id: 5, account_id: 1, customer_id: 4, board_grade_id: 2, order_code: "WO-260705-METRO", due_date: demoDay(8), quantity_m2: 21400.0, status: "queued", priority: 4 },
     ],
   }
 );
@@ -80,10 +95,10 @@ insert(
   }`,
   {
     corrugator_runs: [
-      { id: 1, work_order_id: 1, machine_id: 1, scheduled_start: "2026-07-07 08:00:00", planned_minutes: 115, actual_minutes: null, status: "planned", operator: "Mina Patel" },
-      { id: 2, work_order_id: 2, machine_id: 2, scheduled_start: "2026-07-07 10:30:00", planned_minutes: 78, actual_minutes: null, status: "planned", operator: "Theo Ramirez" },
-      { id: 3, work_order_id: 3, machine_id: 1, scheduled_start: "2026-07-07 13:00:00", planned_minutes: 150, actual_minutes: null, status: "planned", operator: "Mina Patel" },
-      { id: 4, work_order_id: 4, machine_id: 1, scheduled_start: "2026-07-08 08:00:00", planned_minutes: 96, actual_minutes: null, status: "planned", operator: "Ari Kim" },
+      { id: 1, work_order_id: 1, machine_id: 1, scheduled_start: demoStamp(0, "08:00:00"), planned_minutes: 115, actual_minutes: null, status: "planned", operator: "Mina Patel" },
+      { id: 2, work_order_id: 2, machine_id: 2, scheduled_start: demoStamp(0, "10:30:00"), planned_minutes: 78, actual_minutes: null, status: "planned", operator: "Theo Ramirez" },
+      { id: 3, work_order_id: 3, machine_id: 1, scheduled_start: demoStamp(0, "13:00:00"), planned_minutes: 150, actual_minutes: null, status: "planned", operator: "Mina Patel" },
+      { id: 4, work_order_id: 4, machine_id: 1, scheduled_start: demoStamp(1, "08:00:00"), planned_minutes: 96, actual_minutes: null, status: "planned", operator: "Ari Kim" },
     ],
   }
 );
@@ -108,10 +123,10 @@ insert(
   }`,
   {
     shipments: [
-      { id: 1, account_id: 1, work_order_id: 1, ship_date: "2026-07-08", carrier: "NW Freight", status: "pending" },
-      { id: 2, account_id: 1, work_order_id: 2, ship_date: "2026-07-09", carrier: "Valley Express", status: "pending" },
-      { id: 3, account_id: 1, work_order_id: 3, ship_date: "2026-07-13", carrier: "NW Freight", status: "pending" },
-      { id: 4, account_id: 1, work_order_id: 4, ship_date: "2026-07-11", carrier: "ColdChain Local", status: "pending" },
+      { id: 1, account_id: 1, work_order_id: 1, ship_date: demoDay(1), carrier: "NW Freight", status: "pending" },
+      { id: 2, account_id: 1, work_order_id: 2, ship_date: demoDay(2), carrier: "Valley Express", status: "pending" },
+      { id: 3, account_id: 1, work_order_id: 3, ship_date: demoDay(6), carrier: "NW Freight", status: "pending" },
+      { id: 4, account_id: 1, work_order_id: 4, ship_date: demoDay(4), carrier: "ColdChain Local", status: "pending" },
     ],
   }
 );
@@ -122,9 +137,9 @@ insert(
   }`,
   {
     downtime_events: [
-      { id: 1, machine_id: 1, occurred_at: "2026-07-06 15:30:00", minutes_down: 42, reason: "splicer jam", severity: "high", status: "open" },
-      { id: 2, machine_id: 2, occurred_at: "2026-07-05 11:10:00", minutes_down: 18, reason: "heater reset", severity: "normal", status: "closed" },
-      { id: 3, machine_id: 1, occurred_at: "2026-07-04 09:45:00", minutes_down: 26, reason: "roll stand alignment", severity: "medium", status: "open" },
+      { id: 1, machine_id: 1, occurred_at: demoStamp(-1, "15:30:00"), minutes_down: 42, reason: "splicer jam", severity: "high", status: "open" },
+      { id: 2, machine_id: 2, occurred_at: demoStamp(-2, "11:10:00"), minutes_down: 18, reason: "heater reset", severity: "normal", status: "closed" },
+      { id: 3, machine_id: 1, occurred_at: demoStamp(-3, "09:45:00"), minutes_down: 26, reason: "roll stand alignment", severity: "medium", status: "open" },
     ],
   }
 );
@@ -135,8 +150,8 @@ insert(
   }`,
   {
     quality_holds: [
-      { id: 1, account_id: 1, work_order_id: 4, created_at: "2026-07-06 17:20:00", defect_type: "warp above spec", severity: "high", status: "open" },
-      { id: 2, account_id: 1, work_order_id: 3, created_at: "2026-07-05 13:15:00", defect_type: "print registration", severity: "medium", status: "released" },
+      { id: 1, account_id: 1, work_order_id: 4, created_at: demoStamp(-1, "17:20:00"), defect_type: "warp above spec", severity: "high", status: "open" },
+      { id: 2, account_id: 1, work_order_id: 3, created_at: demoStamp(-2, "13:15:00"), defect_type: "print registration", severity: "medium", status: "released" },
     ],
   }
 );
