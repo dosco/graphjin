@@ -15,6 +15,7 @@ Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, Redshif
 
 ## Why GraphJin For Agents
 
+- **A built-in agent, one call away** - POST one instruction to `/api/v1/agent` (or call the `ask_graphjin_agent` MCP tool) and GraphJin runs the discovery loop itself - as the caller, under the caller's permissions - and returns a typed, evidence-backed answer. See [Server-Side Agent](#server-side-agent).
 - **One governed surface for many systems** - Query operational databases, warehouses, MongoDB, object stores, local files, CodeSQL source indexes, workflows, and GraphJin system roots through GraphQL and MCP.
 - **Smart discovery before action** - Agents start with `query_catalog(search: "<user instruction>")`, `graphql_help`, relationship evidence, examples, config recipes, and safety notes before writing or running queries.
 - **Guarded action, not raw access** - Source-mode access, query allow-lists, read-only boundaries, policy-aware MCP tools, local encrypted secrets, and `gj_config` preview/apply keep changes auditable.
@@ -89,6 +90,18 @@ GraphJin started
   Workflows:   http://localhost:8080/api/v1/workflows/<name>
   MCP:         http://localhost:8080/api/v1/mcp
 ```
+
+**Ask the built-in agent**
+
+With a model API key in `./.env` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_APIKEY`), `--demo` also switches into agentic mode and enables GraphJin's built-in agent - one instruction in, a typed, evidence-backed answer out. Against the coffee-roastery demo:
+
+```bash
+curl -sS localhost:8080/api/v1/agent \
+  -H 'content-type: application/json' \
+  -d '{"instruction": "What production work should we prioritize next?"}'
+```
+
+Answers come back as `{status, answer, data, evidence, actions, next}`, grounded by server-side protocol guards. See [Server-Side Agent](#server-side-agent) below, [AGENTIC.md](AGENTIC.md#server-side-agent), and [graphjin.com/agentic/server-agent](https://graphjin.com/agentic/server-agent/).
 
 ## Add GraphJin To Your AI Client
 

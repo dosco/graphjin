@@ -1771,6 +1771,15 @@ pre code {
   padding: 0;
 }
 
+.agent-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 1rem;
+  align-items: start;
+  max-width: 78rem;
+  margin: 0 auto;
+}
+
 .ai-window {
   margin: 0 auto;
   overflow: hidden;
@@ -2330,6 +2339,7 @@ pre code {
   .home-hero,
   .home-resource-row,
   .feature-section-grid,
+  .agent-stage,
   .agentic-grid,
   .security-layout,
   .codesql-map {
