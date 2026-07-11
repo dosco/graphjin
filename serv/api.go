@@ -86,6 +86,7 @@ type graphjinService struct {
 	gj           *core.GraphJin
 	disc         *DiscoveryManager
 	srv          *http.Server
+	srvMu        sync.Mutex // guards srv: written by startHTTP, read by Shutdown
 	fs           core.FS
 	coreOptions  []core.Option
 	// asec         [32]byte
@@ -321,12 +322,18 @@ func (s *HttpService) Shutdown(ctx context.Context) error {
 		return nil
 	}
 	gs, ok := s.Load().(*graphjinService)
-	if !ok || gs == nil || gs.srv == nil {
+	if !ok || gs == nil {
 		return nil
 	}
-	if err := gs.srv.Shutdown(ctx); err != nil {
+	gs.srvMu.Lock()
+	srv := gs.srv
+	gs.srvMu.Unlock()
+	if srv == nil {
+		return nil
+	}
+	if err := srv.Shutdown(ctx); err != nil {
 		gs.log.Warnf("graceful shutdown timed out, forcing close: %s", err)
-		return gs.srv.Close()
+		return srv.Close()
 	}
 	return nil
 }

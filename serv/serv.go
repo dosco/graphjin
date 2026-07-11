@@ -58,7 +58,7 @@ func startHTTP(s1 *HttpService) {
 		s.log.Fatalf("error setting up routes: %s", err)
 	}
 
-	s.srv = &http.Server{
+	srv := &http.Server{
 		Addr:              s.conf.hostPort,
 		Handler:           routes,
 		ReadTimeout:       10 * time.Second,
@@ -66,6 +66,11 @@ func startHTTP(s1 *HttpService) {
 		MaxHeaderBytes:    1 << 20,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	// Publish srv under srvMu so a concurrent Shutdown (signal handler or an
+	// external caller, e.g. demo mode) observes it safely.
+	s.srvMu.Lock()
+	s.srv = srv
+	s.srvMu.Unlock()
 
 	// Standalone graceful shutdown: catch SIGINT/SIGTERM and stop the server
 	// so Serve (below) returns. Callers that manage their own lifecycle
@@ -121,7 +126,7 @@ func startHTTP(s1 *HttpService) {
 	// signal we are open for business.
 	s.state = servListening
 
-	if err := s.srv.Serve(l); err != http.ErrServerClosed {
+	if err := srv.Serve(l); err != http.ErrServerClosed {
 		s.log.Fatalf("failed to start: %s", err)
 	}
 
