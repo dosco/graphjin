@@ -74,11 +74,17 @@ executable workflows:
 graphjin serve --demo --path examples/coffee-roastery
 ```
 
-More demo verticals — a MySQL corrugated-box plant with JWT roles, a PCB fab
-spanning Postgres + Snowflake-emu + MongoDB + a file source + an OpenAPI
-supplier API, and a zero-Docker SQLite clinic scheduler — live in
-[examples/](examples/README.md), each with an end-to-end smoke suite
-(`make smoke-all` runs them all).
+No Docker? The clinic scheduler boots on SQLite in seconds:
+
+```bash
+graphjin serve --demo --path examples/clinic-scheduler
+```
+
+More demo verticals — a MySQL corrugated-box plant with JWT roles, and a PCB
+fab spanning Postgres + Snowflake-emu + MongoDB + a file source + an OpenAPI
+supplier API — live in [examples/](examples/README.md), each with an
+end-to-end smoke suite (`make smoke-all` runs them all). The full tour is at
+<https://graphjin.com/start/demos/>.
 
 You'll see output like this:
 ```
@@ -101,7 +107,7 @@ curl -sS localhost:8080/api/v1/agent \
   -d '{"instruction": "What production work should we prioritize next?"}'
 ```
 
-Answers come back as `{status, answer, data, evidence, actions, next}`, grounded by server-side protocol guards. See [Server-Side Agent](#server-side-agent) below, [AGENTIC.md](AGENTIC.md#server-side-agent), and [graphjin.com/agentic/server-agent](https://graphjin.com/agentic/server-agent/).
+Answers come back as `{status, answer, data, evidence, actions, next}`, grounded by server-side protocol guards. You can also chat with it in the built-in web console at `localhost:8080/agent` — it streams every tool call live as it works. See [Server-Side Agent](#server-side-agent) below, [AGENTIC.md](AGENTIC.md#server-side-agent), and [graphjin.com/agentic/server-agent](https://graphjin.com/agentic/server-agent/).
 
 ## Add GraphJin To Your AI Client
 

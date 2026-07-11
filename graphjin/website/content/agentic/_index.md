@@ -5,7 +5,7 @@ nav_group: "agentic"
 weight: 4
 ---
 
-Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data access and controlled operations. Send one instruction to the [built-in agent](/agentic/server-agent/) and get a typed, evidence-backed answer back - or drive the discovery loop yourself over [MCP](/agentic/mcp/).
+Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data access and controlled operations. Send one instruction to the [built-in agent](/agentic/server-agent/) and get a typed, evidence-backed answer back - or drive the discovery loop yourself over [MCP](/agentic/mcp/). The fastest way in is a [runnable demo](/start/demos/).
 
 | Page | Agent-facing surface |
 | --- | --- |

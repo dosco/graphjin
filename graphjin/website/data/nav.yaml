@@ -1,0 +1,17 @@
+# Docs nav groups in display/reading order. Consumed by side-nav.html (sidebar)
+# and nav-flat.html (flat next-page order) so the two can never drift.
+groups:
+  - id: start
+    title: Start
+  - id: story
+    title: Story
+  - id: core
+    title: Core
+  - id: integrations
+    title: Integrations
+  - id: agentic
+    title: Agentic
+  - id: configure
+    title: Configure
+  - id: reference
+    title: Reference

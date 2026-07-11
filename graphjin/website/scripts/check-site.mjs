@@ -17,6 +17,7 @@ const requiredRoutes = [
   'favicon.ico',
   'start/install/index.html',
   'start/quick-start/index.html',
+  'start/demos/index.html',
   'story/index.html',
   'story/vision/index.html',
   'story/security/index.html',
@@ -43,6 +44,8 @@ const requiredAnchors = [
   'what',
   'ai-queries',
   'agent',
+  'proof',
+  'demos',
   'databases',
   'how',
   'agentic',
@@ -56,6 +59,7 @@ const requiredAnchors = [
 const requiredContent = [
   'start/install.md',
   'start/quick-start.md',
+  'start/demos.md',
   'start/first-query.md',
   'start/saved-queries.md',
   'story/vision.md',
@@ -179,7 +183,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   if (/(?:>|&gt;)\s*(All|Section)\s*(?:<|&lt;)/.test(header)) {
     failures.push('Header still exposes the old All/Section search labels');
   }
-  for (const required of ['Vision', 'The agent loop', 'One instruction in', 'geo filters', 'Expression aggregates']) {
+  for (const required of ['Vision', 'The agent loop', 'One instruction in', 'The ledger caught it', 'Five demos. Real domains.', 'geo filters', 'Expression aggregates']) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing required enriched copy: ${required}`);
     }

@@ -1,0 +1,8 @@
+{{- /* Flat reading order of all doc pages: nav groups in data/nav.yaml order,
+     pages within a group by weight — exactly the sidebar's order. Hugo's
+     append concatenates slice arguments element-wise. */ -}}
+{{- $flat := slice -}}
+{{- range hugo.Data.nav.groups -}}
+  {{- $flat = $flat | append (sort (where site.RegularPages "Params.nav_group" .id) "Weight") -}}
+{{- end -}}
+{{- return $flat -}}

@@ -1,0 +1,12 @@
+{{- /* The page after the current one in the sidebar's flat reading order,
+     or "" when the current page is last / not in a nav group. */ -}}
+{{- $flat := partialCached "nav-flat.html" . "site" -}}
+{{- $idx := -1 -}}
+{{- range $i, $p := $flat -}}
+  {{- if eq $p.RelPermalink $.RelPermalink }}{{ $idx = $i }}{{ end -}}
+{{- end -}}
+{{- $next := "" -}}
+{{- if and (ge $idx 0) (lt (add $idx 1) (len $flat)) -}}
+  {{- $next = index $flat (add $idx 1) -}}
+{{- end -}}
+{{- return $next -}}

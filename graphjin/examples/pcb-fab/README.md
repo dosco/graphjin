@@ -16,7 +16,13 @@ GraphJin's agentic surfaces end to end:
 - `workflows`: JavaScript checks for DFM gates, yield triage, and order
   release.
 
-Run the demo:
+Run the demo from an installed binary:
+
+```bash
+graphjin serve --demo --path examples/pcb-fab
+```
+
+Or from this repository checkout:
 
 ```bash
 GO_ENV=agentic go run ./cmd serve --demo --path examples/pcb-fab

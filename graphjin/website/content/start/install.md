@@ -20,12 +20,12 @@ The website serves the script at `/install.sh`; the build syncs it from the repo
 Other common development paths:
 
 ```bash
-npx graphjin serve --demo
+graphjin serve --demo --path examples/clinic-scheduler
 brew install dosco/graphjin/graphjin
 go install github.com/dosco/graphjin/cmd/graphjin@latest
 ```
 
-`graphjin serve --demo` is the fastest smoke test because it starts with a known schema and sample queries.
+`graphjin serve --demo --path examples/<name>` is the fastest smoke test - it boots a full [demo vertical](/start/demos/) with schema, seeded data, saved queries, workflows, and (with a model key in `./.env`) the built-in agent. The clinic scheduler needs no Docker at all.
 
 ## Scaffold a project
 

@@ -54,9 +54,11 @@ curl -sS localhost:8080/api/v1/agent \
 The response is typed JSON — `status`, `answer`, `data`, `evidence`,
 `actions`, `next` — and every claim in it is backed by catalog, validation, or
 execution evidence the agent actually gathered on this run. The same
-conversation is available in the built-in web console at `localhost:8080`, and
-external MCP clients can drive the discovery tools directly against the same
-demo.
+conversation is available in the built-in web console at `localhost:8080/agent`,
+and external MCP clients can drive the discovery tools directly against the
+same demo. More demo verticals — a zero-Docker clinic scheduler, a
+corrugated-box plant, a PCB fab — are listed at
+<https://graphjin.com/start/demos/>.
 
 ## Words This Document Uses
 

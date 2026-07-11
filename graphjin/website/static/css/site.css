@@ -2590,3 +2590,160 @@ pre code {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Docs footer next-link + infinite-scroll furniture */
+.doc-next {
+  margin-top: 3rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.5rem;
+}
+
+.doc-next a {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 1rem 1.25rem;
+  color: var(--heading);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.doc-next a:hover {
+  border-color: var(--heading);
+}
+
+.doc-next span {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.doc-next.is-loading a {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.doc-next.is-loading span::after {
+  content: " · loading…";
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.doc-continued {
+  margin: 3rem 0 2rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.25rem;
+}
+
+.doc-continued span {
+  display: block;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.doc-continued a {
+  color: var(--heading);
+  font-size: 1.35rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* Homepage: guard-story beats (#proof) */
+.proof-beats {
+  display: grid;
+  align-content: start;
+  gap: 0.9rem;
+}
+
+.proof-beats article {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 1rem 1.1rem;
+}
+
+.proof-beats article > span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.proof-beats h3 {
+  margin: 0.35rem 0 0.4rem;
+}
+
+.proof-beats p {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* Homepage: demo verticals strip (#demos) */
+.demo-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.demo-card .demo-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.demo-port {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.demo-stack {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.demo-question {
+  color: var(--heading);
+  font-style: italic;
+}
+
+.demo-cmd {
+  display: block;
+  margin-top: 0.75rem;
+  overflow-x: auto;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.demo-classic {
+  margin-top: 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+  color: var(--muted);
+}
+
+@media (max-width: 1100px) {
+  .demo-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .demo-grid {
+    grid-template-columns: 1fr;
+  }
+}
