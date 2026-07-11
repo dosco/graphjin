@@ -44,9 +44,10 @@ agent:
   api_key_env: OPENAI_API_KEY
   # model: gpt-4.1-mini
   # base_url: https://api.openai.com/v1
+  sampling: off
   max_steps: 8
   timeout_seconds: 50
-  allow_raw_graphql: false
+  read_only: false
   return_trace: false
 
 # Agentic sources are explicit because GraphJin supports only one inheritance
@@ -77,6 +78,7 @@ sources:
       security.read: false
       config.read: false
       config.write: false
+      runtime.read: true
       raw_graphql.query: false
       raw_graphql.mutate: false
       schema.reload: false
