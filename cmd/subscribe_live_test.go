@@ -18,7 +18,7 @@ import (
 
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/serv/v3"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // newLiveCLIServer boots a real serv.HttpService against an in-memory SQLite
@@ -34,7 +34,7 @@ func newLiveCLIServer(t *testing.T) (string, *sql.DB, func()) {
 
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "live.sqlite3")
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

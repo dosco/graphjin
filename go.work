@@ -9,6 +9,7 @@ use (
 	./codesql
 	./conf
 	./core
+	./examples
 	./examples/pcb-fab/mockapi
 	./hostedemu
 	./mongodriver

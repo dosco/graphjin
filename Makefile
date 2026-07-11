@@ -6,7 +6,7 @@ BUILD_VERSION ?= $(shell git describe --always --tags)
 GOPATH  ?= $(shell go env GOPATH)
 GOROOT ?= $(shell go env GOROOT)
 
-PACKAGES ?= ./core ./plugin/otel ./serv ./auth ./cmd ./conf
+PACKAGES ?= ./core ./plugin/otel ./serv ./auth ./cmd ./conf ./examples
 DEMO_PATH ?= examples/coffee-roastery
 
 ifndef GOPATH
@@ -16,7 +16,7 @@ endif
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}" -X "github.com/dosco/graphjin/serv/v3.version=${BUILD_VERSION}"'
 
-.PHONY: all download-tools build wasm-build gen clean tidy test test-parallel-dbs test-sequential test-norace run demo demo-agent demo-smoke demo-agent-smoke run-github-actions lint changlog release version help test-mongodb test-cassandra test-clickhouse $(PLATFORMS)
+.PHONY: all download-tools build wasm-build gen clean tidy test test-parallel-dbs test-sequential test-norace run demo demo-agent demo-smoke demo-agent-smoke smoke-all smoke-default run-github-actions lint changlog release version help test-mongodb test-cassandra test-clickhouse $(PLATFORMS)
 
 tidy:
 	@find . -name "go.mod" -execdir go mod tidy \;
@@ -152,6 +152,10 @@ demo-agent-smoke:
 
 smoke-all:
 	@scripts/demo-smoke-all.sh $(SMOKE_ALL_ARGS)
+
+# Smoke the bare `graphjin serve --demo` flow (CGO-free binary, built-in demo)
+smoke-default:
+	@scripts/demo-smoke-all.sh --only default
 
 run-github-actions:
 	@act push --job linter

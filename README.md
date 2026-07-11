@@ -51,63 +51,58 @@ docker pull dosco/graphjin
 
 ## Try It Now
 
-This is a quick way to try out GraphJin. The `--demo` flag runs a curated local
-demo, creates local state under the example's `demo/` folder, and reuses that
-state on later starts. Delete `demo/` to reset from scratch.
-
-Download the source which contains the `webshop` demo
-```
-git clone https://github.com/dosco/graphjin
-cd graphjin
-```
-
-Now launch the Graphjin service that you installed using the install options above
-```bash
-graphjin serve --demo --path examples/webshop
-```
-
-For a larger agent-driven example with Postgres operations data, a BigQuery
-simulator for roast telemetry, CodeSQL over internal business code, and
-executable workflows:
+One command, no clone, no Docker. The binary ships with a built-in demo — a
+clinic scheduling app (patients, providers, appointments, waitlists) on
+SQLite with seeded data, saved queries, and workflows:
 
 ```bash
-graphjin serve --demo --path examples/coffee-roastery
+graphjin serve --demo
 ```
 
-No Docker? The clinic scheduler boots on SQLite in seconds:
+The demo project is extracted to `./graphjin-demo`, and its state lives under
+`./graphjin-demo/demo/`. Delete the `demo/` folder to reset the data, or
+delete `./graphjin-demo` entirely for a fresh copy. You'll see output like
+this:
 
-```bash
-graphjin serve --demo --path examples/clinic-scheduler
-```
-
-More demo verticals — a MySQL corrugated-box plant with JWT roles, and a PCB
-fab spanning Postgres + Snowflake-emu + MongoDB + a file source + an OpenAPI
-supplier API — live in [examples/](examples/README.md), each with an
-end-to-end smoke suite (`make smoke-all` runs them all). The full tour is at
-<https://graphjin.com/start/demos/>.
-
-You'll see output like this:
 ```
 GraphJin started
 ───────────────────────
-  Web UI:      http://localhost:8080/
-  GraphQL:     http://localhost:8080/api/v1/graphql
-  REST API:    http://localhost:8080/api/v1/rest/
-  Workflows:   http://localhost:8080/api/v1/workflows/<name>
-  MCP:         http://localhost:8080/api/v1/mcp
+  Web UI:      http://localhost:8083/
+  GraphQL:     http://localhost:8083/api/v1/graphql
+  REST API:    http://localhost:8083/api/v1/rest/
+  Workflows:   http://localhost:8083/api/v1/workflows/<name>
+  MCP:         http://localhost:8083/api/v1/mcp
 ```
 
 **Ask the built-in agent**
 
-With a model API key in `./.env` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_APIKEY`), `--demo` also switches into agentic mode and enables GraphJin's built-in agent - one instruction in, a typed, evidence-backed answer out. Against the coffee-roastery demo:
+With a model API key in `./.env` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_APIKEY`), the same command switches into agentic mode and enables GraphJin's built-in agent - one instruction in, a typed, evidence-backed answer out:
 
 ```bash
-curl -sS localhost:8080/api/v1/agent \
+curl -sS localhost:8083/api/v1/agent \
   -H 'content-type: application/json' \
-  -d '{"instruction": "What production work should we prioritize next?"}'
+  -d '{"instruction": "Who should get the next open cardiology slot?"}'
 ```
 
-Answers come back as `{status, answer, data, evidence, actions, next}`, grounded by server-side protocol guards. You can also chat with it in the built-in web console at `localhost:8080/agent` — it streams every tool call live as it works. See [Server-Side Agent](#server-side-agent) below, [AGENTIC.md](AGENTIC.md#server-side-agent), and [graphjin.com/agentic/server-agent](https://graphjin.com/agentic/server-agent/).
+Answers come back as `{status, answer, data, evidence, actions, next}`, grounded by server-side protocol guards. You can also chat with it in the built-in web console at `localhost:8083/agent` — it streams every tool call live as it works. See [Server-Side Agent](#server-side-agent) below, [AGENTIC.md](AGENTIC.md#server-side-agent), and [graphjin.com/agentic/server-agent](https://graphjin.com/agentic/server-agent/).
+
+**More demo verticals**
+
+The bigger demos live in the repo — clone it and pass `--path`:
+
+```bash
+git clone https://github.com/dosco/graphjin
+cd graphjin
+graphjin serve --demo --path examples/webshop          # classic GraphQL starter (Postgres)
+graphjin serve --demo --path examples/coffee-roastery  # flagship agentic demo (Postgres + BigQuery-emu + CodeSQL)
+```
+
+Each demo keeps its state under `<path>/demo/` and reuses it on later starts.
+A MySQL corrugated-box plant with JWT roles and a PCB fab spanning Postgres +
+Snowflake-emu + MongoDB + a file source + an OpenAPI supplier API live in
+[examples/](examples/README.md), each with an end-to-end smoke suite
+(`make smoke-all` runs them all). The full tour is at
+<https://graphjin.com/start/demos/>.
 
 ## Add GraphJin To Your AI Client
 

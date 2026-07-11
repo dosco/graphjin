@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -21,7 +22,6 @@ import (
 	hostedsnowflake "github.com/dosco/graphjin/hostedemu/snowflake"
 	"github.com/dosco/graphjin/mongodriver"
 	"github.com/dosco/graphjin/serv/v3"
-	"github.com/mattn/go-sqlite3"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/mongodb"
 	"github.com/testcontainers/testcontainers-go/modules/mysql"
@@ -29,6 +29,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	sqlite "modernc.org/sqlite"
 )
 
 var (
@@ -692,14 +693,13 @@ func startMariaDBDemo(ctx context.Context, name, dataDir string, status demoStat
 func startSQLiteDemo(ctx context.Context, name, dataDir string, status demoStatus) (func(context.Context) error, *DemoConnInfo, error) {
 	_ = ctx
 	dbPath := filepath.Join(dataDir, "graphjin_demo.db")
-	connStr := fmt.Sprintf("file:%s?cache=shared&_busy_timeout=5000", dbPath)
+	connStr := fmt.Sprintf("file:%s?cache=shared&_pragma=busy_timeout(5000)", dbPath)
 	status.Emit(name, "starting", "opening SQLite database")
 
-	// Register the sqlite3_regexp driver if not already registered
-	registerSQLite3Regexp()
+	registerSQLiteRegexp()
 
 	// Open database to verify it works
-	testDB, err := sql.Open("sqlite3_regexp", connStr)
+	testDB, err := sql.Open("sqlite", connStr)
 	if err != nil {
 		status.Emit(name, "failed", err.Error())
 		return nil, nil, fmt.Errorf("failed to open sqlite database: %w", err)
@@ -718,32 +718,54 @@ func startSQLiteDemo(ctx context.Context, name, dataDir string, status demoStatu
 	}, nil
 }
 
-// sqlite3RegexpRegistered tracks if we've registered the custom driver
-var sqlite3RegexpRegistered bool
+// sqliteRegexpRegistered tracks if we've registered the REGEXP function
+var sqliteRegexpRegistered bool
 
-// registerSQLite3Regexp registers the sqlite3_regexp driver with REGEXP support
-func registerSQLite3Regexp() {
-	if sqlite3RegexpRegistered {
+// registerSQLiteRegexp adds a global REGEXP function to the pure-Go
+// modernc.org/sqlite driver (shared with serv; works in the CGO-free
+// release binary), which has no built-in REGEXP.
+func registerSQLiteRegexp() {
+	if sqliteRegexpRegistered {
 		return
 	}
+	sqliteRegexpRegistered = true
 
-	sql.Register("sqlite3_regexp", &sqlite3.SQLiteDriver{
-		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
-			// Register REGEXP function
-			if err := conn.RegisterFunc("REGEXP", func(re, s string) (bool, error) {
-				return regexp.MatchString(re, s)
-			}, true); err != nil {
-				return err
+	// SQLite resolves function names case-insensitively, so registering
+	// "regexp" also serves the REGEXP operator. Registration can only fail
+	// if the name is already taken, which means REGEXP works anyway.
+	_ = sqlite.RegisterDeterministicScalarFunction("regexp", 2,
+		func(ctx *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+			re, err := sqliteFuncText(args[0])
+			if err != nil {
+				return nil, err
 			}
-			if err := conn.RegisterFunc("regexp", func(re, s string) (bool, error) {
-				return regexp.MatchString(re, s)
-			}, true); err != nil {
-				return err
+			s, err := sqliteFuncText(args[1])
+			if err != nil {
+				return nil, err
 			}
-			return nil
-		},
-	})
-	sqlite3RegexpRegistered = true
+			ok, err := regexp.MatchString(re, s)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				return int64(1), nil
+			}
+			return int64(0), nil
+		})
+}
+
+// sqliteFuncText coerces a SQLite function argument to a string.
+func sqliteFuncText(v driver.Value) (string, error) {
+	switch s := v.(type) {
+	case string:
+		return s, nil
+	case []byte:
+		return string(s), nil
+	case nil:
+		return "", nil
+	default:
+		return "", fmt.Errorf("regexp: unsupported argument type %T", v)
+	}
 }
 
 // startOracleDemo starts an Oracle container
@@ -1154,7 +1176,8 @@ func openDemoConnection(connInfo *DemoConnInfo) (*sql.DB, error) {
 	case "mysql", "mariadb":
 		driverName = "mysql"
 	case "sqlite", "sqlite3":
-		driverName = "sqlite3_regexp"
+		registerSQLiteRegexp()
+		driverName = "sqlite"
 	case "mssql", "sqlserver":
 		driverName = "sqlserver"
 	case "oracle":

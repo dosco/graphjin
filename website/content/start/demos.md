@@ -6,13 +6,20 @@ doc_kind: "guide"
 weight: 25
 ---
 
-Every demo is a self-contained vertical: one command boots its databases (Docker containers and in-process emulators), applies the schema, seeds realistic data, and starts the server.
+The fastest start needs nothing but the binary: `graphjin serve --demo` with no `--path` extracts the built-in clinic-scheduler demo to `./graphjin-demo` and boots it on SQLite - no clone, no Docker, ready in seconds.
 
 ```bash
+graphjin serve --demo
+```
+
+The other verticals live in the repo. Clone it and point `--demo` at one with `--path`:
+
+```bash
+git clone https://github.com/dosco/graphjin && cd graphjin
 graphjin serve --demo --path examples/<name>
 ```
 
-First boot creates state under `examples/<name>/demo/` - delete that folder to reset from scratch. Seed dates anchor to today and shift forward on reuse, so questions like "what's scheduled today?" keep working no matter when you run them.
+Each demo is a self-contained vertical: one command boots its databases (Docker containers and in-process emulators), applies the schema, seeds realistic data, and starts the server. First boot creates state under the project's `demo/` folder - `./graphjin-demo/demo/` for the built-in demo, `examples/<name>/demo/` for the rest. Delete that folder to reset from scratch. Seed dates anchor to today and shift forward on reuse, so questions like "what's scheduled today?" keep working no matter when you run them.
 
 Put a model API key in `./.env` (`GOOGLE_APIKEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` - checked in that order) and `--demo` automatically switches into agentic mode and enables the [built-in agent](/agentic/server-agent/). The web console is at `http://localhost:<port>/`, and the agent chat - which streams every tool call live as the agent works - is at `/agent`.
 
@@ -49,10 +56,11 @@ More prompts: [coffee-roastery/PROMPTS.md](https://github.com/dosco/graphjin/blo
 
 ## Clinic scheduler {#clinic-scheduler}
 
-The fastest start: a clinic scheduling app - patients, providers, rooms, appointments, waitlists - on SQLite, entirely in-process. No Docker, no containers, boots in seconds.
+The fastest start, and the demo built into the binary: a clinic scheduling app - patients, providers, rooms, appointments, waitlists - on SQLite, entirely in-process. No Docker, no containers, boots in seconds. Bare `graphjin serve --demo` (no `--path`) runs exactly this demo, extracted to `./graphjin-demo`; from a repo clone you can also run it explicitly:
 
 ```bash
-graphjin serve --demo --path examples/clinic-scheduler
+graphjin serve --demo                             # built-in, no clone needed
+graphjin serve --demo --path examples/clinic-scheduler   # from a repo clone
 ```
 
 - **Sources:** `app` (SQLite), workflows, control plane. Port 8083.

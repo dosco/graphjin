@@ -79,8 +79,8 @@ func TestShiftDateSQLDialects(t *testing.T) {
 }
 
 func TestShiftDemoConnDatesSQLitePreservesFormats(t *testing.T) {
-	registerSQLite3Regexp()
-	db, err := sql.Open("sqlite3_regexp", "file:shiftdemo?mode=memory&cache=shared")
+	registerSQLiteRegexp()
+	db, err := sql.Open("sqlite", "file:shiftdemo?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -137,8 +137,8 @@ func TestShiftDemoConnDatesSQLitePreservesFormats(t *testing.T) {
 }
 
 func TestShiftDemoConnDatesRollsBackOnFailure(t *testing.T) {
-	registerSQLite3Regexp()
-	db, err := sql.Open("sqlite3_regexp", "file:shiftrollback?mode=memory&cache=shared")
+	registerSQLiteRegexp()
+	db, err := sql.Open("sqlite", "file:shiftrollback?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

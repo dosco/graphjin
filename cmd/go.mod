@@ -7,13 +7,13 @@ require (
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
 	github.com/dosco/graphjin/auth/v3 v3.18.43
 	github.com/dosco/graphjin/core/v3 v3.18.43
+	github.com/dosco/graphjin/examples v0.0.0
 	github.com/dosco/graphjin/hostedemu v0.0.0
 	github.com/dosco/graphjin/mongodriver v0.0.0
 	github.com/dosco/graphjin/serv/v3 v3.18.43
 	github.com/gosimple/slug v1.15.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/jvatic/goja-babel v0.0.0-20250906111304-06c40d6b931b
-	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/afero v1.15.0
 	github.com/spf13/cobra v1.10.1
@@ -25,11 +25,13 @@ require (
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.50.0
 	golang.org/x/text v0.36.0
+	modernc.org/sqlite v1.44.3
 )
 
 replace (
 	github.com/dosco/graphjin/auth/v3 => ../auth
 	github.com/dosco/graphjin/core/v3 => ../core
+	github.com/dosco/graphjin/examples => ../examples
 	github.com/dosco/graphjin/hostedemu => ../hostedemu
 	github.com/dosco/graphjin/mongodriver => ../mongodriver
 	github.com/dosco/graphjin/plugin/otel/v3 => ../plugin/otel
@@ -261,5 +263,4 @@ require (
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.44.3 // indirect
 )
