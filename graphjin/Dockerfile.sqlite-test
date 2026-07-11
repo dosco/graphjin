@@ -27,6 +27,7 @@ COPY plugin/otel/go.mod plugin/otel/go.sum plugin/otel/
 COPY serv/go.mod serv/go.sum serv/
 COPY tests/go.mod tests/go.sum tests/
 COPY tools/mcp-sampling-client/go.mod tools/mcp-sampling-client/go.sum tools/mcp-sampling-client/
+COPY examples/go.mod examples/
 COPY examples/pcb-fab/mockapi/go.mod examples/pcb-fab/mockapi/
 
 # Remove wasm from go.work since it is not needed for integration tests.
