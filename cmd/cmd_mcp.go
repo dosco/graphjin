@@ -3,13 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/dosco/graphjin/serv/v3"
@@ -140,25 +139,24 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 		demo.Status.Emit("GraphJin", "ready", "service initialized")
 	}
 
-	// Graceful shutdown setup
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigChan
+	// RunMCPStdio installs its own SIGINT/SIGTERM handling and returns when a
+	// signal arrives or stdin is closed by the client. Run it, then always
+	// tear down the demo containers on the way out — covering both the signal
+	// and the EOF paths so the process never exits leaving containers running.
+	runErr := gj.RunMCPStdio(ctx)
+
+	if demo != nil && len(demo.Cleanups) > 0 {
 		log.Info("Shutting down...")
-		cancel()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		cleanupAll(shutdownCtx, demo.Cleanups)
+		shutdownCancel()
+		log.Info("Container(s) terminated")
+	}
 
-		// Cleanup demo containers if any
-		if demo != nil && len(demo.Cleanups) > 0 {
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer shutdownCancel()
-			cleanupAll(shutdownCtx, demo.Cleanups)
-			log.Info("Container(s) terminated")
-		}
-	}()
-
-	if err := gj.RunMCPStdio(ctx); err != nil && ctx.Err() == nil {
-		log.Fatalf("MCP server error: %s", err)
+	// A canceled context is the clean signal-triggered shutdown path, not an
+	// error worth a non-zero exit.
+	if runErr != nil && !errors.Is(runErr, context.Canceled) && ctx.Err() == nil {
+		log.Fatalf("MCP server error: %s", runErr)
 	}
 }
 

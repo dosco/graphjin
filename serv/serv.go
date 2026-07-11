@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"go.uber.org/zap"
@@ -66,43 +67,21 @@ func startHTTP(s1 *HttpService) {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	idleConnsClosed := make(chan struct{})
+	// Standalone graceful shutdown: catch SIGINT/SIGTERM and stop the server
+	// so Serve (below) returns. Callers that manage their own lifecycle
+	// (e.g. demo mode) drive this via HttpService.Shutdown instead; running
+	// both paths together is safe since Shutdown is idempotent.
 	go func() {
-		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt)
-		<-sigint
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
 		s.log.Info("shutdown signal received")
 
 		// Bounded shutdown: don't wait forever on lingering connections
 		// (e.g. MCP SSE streams or idle keep-alives).
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
-		if err := s.srv.Shutdown(shutdownCtx); err != nil {
-			s.log.Warnf("graceful shutdown timed out, forcing close: %s", err)
-			s.srv.Close() //nolint:errcheck
-		}
-
-		s.closeMCPHTTPTransport()
-		if s.closeFn != nil {
-			s.closeFn()
-		}
-		if s.cache != nil {
-			s.cache.Close() //nolint:errcheck
-		}
-		s.closeRuntimeEvents()
-		closedManaged := s.closeManagedDBs(nil)
-		for name, db := range s.dbs {
-			if _, ok := closedManaged[name]; ok {
-				continue
-			}
-			if db != nil {
-				db.Close() //nolint:errcheck
-				s.log.Infof("closed database connection: %s", name)
-			}
-		}
-		s.log.Info("shutdown complete")
-		close(idleConnsClosed)
+		s1.Shutdown(shutdownCtx) //nolint:errcheck
 	}()
 
 	ver := version
@@ -145,7 +124,11 @@ func startHTTP(s1 *HttpService) {
 	if err := s.srv.Serve(l); err != http.ErrServerClosed {
 		s.log.Fatalf("failed to start: %s", err)
 	}
-	<-idleConnsClosed
+
+	// Serve returned because Shutdown (signal handler above or an external
+	// HttpService.Shutdown) was requested. Release the service resources.
+	s.closeServResources()
+	s.log.Info("shutdown complete")
 }
 
 // Set the server header
