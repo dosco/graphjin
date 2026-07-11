@@ -43,6 +43,15 @@ func TestCmdNewWritesAgenticAndSourcesTemplates(t *testing.T) {
 	if !strings.Contains(string(agentic), "\nagent:\n") {
 		t.Fatalf("agentic.yml missing agent config block:\n%s", string(agentic))
 	}
+	if strings.Contains(string(agentic), "allow_raw_graphql") {
+		t.Fatalf("agentic.yml ships removed agent knob allow_raw_graphql:\n%s", string(agentic))
+	}
+	if !strings.Contains(string(agentic), "\n  read_only: false") {
+		t.Fatalf("agentic.yml missing agent read_only key:\n%s", string(agentic))
+	}
+	if !strings.Contains(string(agentic), "\n  sampling: off") {
+		t.Fatalf("agentic.yml missing agent sampling key:\n%s", string(agentic))
+	}
 }
 
 func TestTemplatesDecodeAsConfig(t *testing.T) {
