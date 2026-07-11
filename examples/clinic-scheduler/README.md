@@ -1,10 +1,14 @@
 # Clinic Scheduler Demo
 
-The fastest GraphJin demo: a clinic scheduling app on SQLite — no Docker, no
-containers, boots in seconds.
+The fastest GraphJin demo, and the one **built into the binary**: a clinic
+scheduling app on SQLite — no Docker, no containers, boots in seconds. Bare
+`graphjin serve --demo` (no `--path`) extracts this exact project to
+`./graphjin-demo` and runs it; from a repo clone you can also point at it
+explicitly:
 
 ```bash
-graphjin serve --demo --path examples/clinic-scheduler
+graphjin serve --demo                                    # built-in, no clone
+graphjin serve --demo --path examples/clinic-scheduler   # from a repo clone
 # Web UI:  http://localhost:8083/
 # GraphQL: http://localhost:8083/api/v1/graphql
 # MCP:     http://localhost:8083/api/v1/mcp
