@@ -163,9 +163,17 @@ func cmdServ(cmd *cobra.Command, args []string) {
 			log.Info("Shutting down...")
 			cancel()
 
-			// Cleanup all containers
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer shutdownCancel()
+
+			// Stop the HTTP server first so gj.Start() returns and the process
+			// can exit. Draining here also lets in-flight requests finish
+			// before the demo databases/containers are torn down.
+			if err := gj.Shutdown(shutdownCtx); err != nil {
+				log.Warnf("HTTP shutdown error: %s", err)
+			}
+
+			// Then tear down the demo containers.
 			cleanupAll(shutdownCtx, demo.Cleanups)
 			log.Info("Container(s) terminated")
 

@@ -309,6 +309,52 @@ func (s *HttpService) Close() error {
 	return nil
 }
 
+// Shutdown gracefully stops the running HTTP server so that a blocking Start
+// returns. In-flight requests are drained until the context deadline, after
+// which the server is force-closed. It is safe to call more than once and
+// before Start (a no-op when the server was never started). Callers that embed
+// the service and run their own signal handling use this to unblock Start;
+// the service resources (databases, cache, etc.) are then released as Start
+// returns, or explicitly via Close.
+func (s *HttpService) Shutdown(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	gs, ok := s.Load().(*graphjinService)
+	if !ok || gs == nil || gs.srv == nil {
+		return nil
+	}
+	if err := gs.srv.Shutdown(ctx); err != nil {
+		gs.log.Warnf("graceful shutdown timed out, forcing close: %s", err)
+		return gs.srv.Close()
+	}
+	return nil
+}
+
+// closeServResources releases the resources owned by a running service once
+// its HTTP listener has stopped: the MCP transport, the user close hook, the
+// response cache, runtime event streams and all database connections.
+func (s *graphjinService) closeServResources() {
+	s.closeMCPHTTPTransport()
+	if s.closeFn != nil {
+		s.closeFn()
+	}
+	if s.cache != nil {
+		s.cache.Close() //nolint:errcheck
+	}
+	s.closeRuntimeEvents()
+	closedManaged := s.closeManagedDBs(nil)
+	for name, db := range s.dbs {
+		if _, ok := closedManaged[name]; ok {
+			continue
+		}
+		if db != nil {
+			db.Close() //nolint:errcheck
+			s.log.Infof("closed database connection: %s", name)
+		}
+	}
+}
+
 // OptionSetDB sets a new db client. The connection is stored under the
 // DefaultDBName key in the dbs map for backward compatibility.
 func OptionSetDB(db *sql.DB) Option {

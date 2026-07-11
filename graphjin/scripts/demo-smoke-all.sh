@@ -137,15 +137,19 @@ kill_port_listeners() {
 
 kill_server() {
   if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
-    # go run forwards signals to the built binary, which tears down its
-    # testcontainers on SIGTERM.
+    # go run forwards SIGTERM to the built binary, which now drains its HTTP
+    # listener, tears down its testcontainers, and exits on its own (normally
+    # within a few seconds, bounded by its ~30s shutdown budget). The wait loop
+    # just bounds that; the SIGKILL below is a fallback for a wedged teardown,
+    # not the expected path — reaching it means clean shutdown regressed.
     kill -TERM "$SERVER_PID" 2>/dev/null || true
     local waited=0
-    while kill -0 "$SERVER_PID" 2>/dev/null && [ "$waited" -lt 60 ]; do
+    while kill -0 "$SERVER_PID" 2>/dev/null && [ "$waited" -lt 45 ]; do
       sleep 1
       waited=$((waited + 1))
     done
     if kill -0 "$SERVER_PID" 2>/dev/null; then
+      echo "warning: demo server did not exit ${waited}s after SIGTERM; forcing kill" >&2
       kill -KILL "$SERVER_PID" 2>/dev/null || true
     fi
   fi
