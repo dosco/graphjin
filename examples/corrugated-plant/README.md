@@ -14,7 +14,13 @@ Sources:
 - `graphjin`: catalog, security, runtime, config, artifacts, and watches.
 - `workflows`: JavaScript workflows for schedule, reorder, and downtime triage.
 
-Run it:
+Run it from an installed binary:
+
+```bash
+graphjin serve --demo --path examples/corrugated-plant
+```
+
+Or from this repository checkout:
 
 ```bash
 GO_ENV=agentic go run ./cmd serve --demo --path examples/corrugated-plant

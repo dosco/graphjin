@@ -101,7 +101,8 @@
       {{ $h2Count := len (findRE `<h2\b` .Content) }}
       {{ $showToc := and $tocEnabled (ge $h2Count 2) (in .TableOfContents "<ul>") }}
       <div class="page-shell{{ if $showToc }} has-toc{{ end }}">
-        <main id="main-content" class="content" data-pagefind-body>
+        {{ $next := partial "next-page.html" . }}
+        <main id="main-content" class="content" data-pagefind-body{{ with $next }} data-next-url="{{ .RelPermalink }}" data-next-title="{{ .Title }}"{{ end }}>
           {{ block "main" . }}{{ end }}
         </main>
         <details class="mobile-docs-nav" data-mobile-docs data-pagefind-ignore>
@@ -111,6 +112,25 @@
         <aside class="side-nav" aria-label="Documentation navigation" data-pagefind-ignore>
           {{ partial "side-nav.html" . }}
         </aside>
+        <script>
+          (() => {
+            try {
+              // Restore the sidebar's own scroll position before first paint so
+              // navigation never loses your place; runs here (not site.js) because
+              // it must execute during parse, right after the aside exists.
+              const aside = document.querySelector("aside.side-nav");
+              if (!aside || !aside.clientHeight) return; // absent or display:none (mobile)
+              const stored = sessionStorage.getItem("gj-sidenav-scroll");
+              if (stored !== null) aside.scrollTop = Number(stored) || 0;
+              const active = aside.querySelector("a.active");
+              if (active) {
+                const a = active.getBoundingClientRect();
+                const b = aside.getBoundingClientRect();
+                if (a.top < b.top || a.bottom > b.bottom) active.scrollIntoView({ block: "nearest" });
+              }
+            } catch {}
+          })();
+        </script>
         {{ if $showToc }}
           <aside class="toc-nav" aria-label="On this page" data-pagefind-ignore>
             {{ partial "page-toc.html" . }}

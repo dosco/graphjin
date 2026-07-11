@@ -114,27 +114,30 @@ function selectCodeText(code) {
   selection?.addRange(range);
 }
 
-for (const button of document.querySelectorAll('[data-copy-code]')) {
-  button.addEventListener('click', async () => {
-    const block = button.closest('[data-code-block]');
-    const code = block?.querySelector('pre code, pre');
-    if (!code) return;
-    const original = button.textContent || 'Copy';
-    try {
-      await writeClipboard(code.textContent || '');
-      button.textContent = 'Copied';
-      button.dataset.copied = 'true';
-    } catch {
-      selectCodeText(code);
-      button.textContent = 'Selected';
-      button.dataset.copied = 'selected';
-    }
-    window.setTimeout(() => {
-      button.textContent = original;
-      delete button.dataset.copied;
-    }, 1600);
-  });
-}
+// Delegated so copy buttons keep working inside content appended after load
+// (the docs infinite scroll injects whole articles).
+document.addEventListener('click', async (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const button = target?.closest('[data-copy-code]');
+  if (!button) return;
+  const block = button.closest('[data-code-block]');
+  const code = block?.querySelector('pre code, pre');
+  if (!code) return;
+  const original = button.textContent || 'Copy';
+  try {
+    await writeClipboard(code.textContent || '');
+    button.textContent = 'Copied';
+    button.dataset.copied = 'true';
+  } catch {
+    selectCodeText(code);
+    button.textContent = 'Selected';
+    button.dataset.copied = 'selected';
+  }
+  window.setTimeout(() => {
+    button.textContent = original;
+    delete button.dataset.copied;
+  }, 1600);
+});
 
 const searchRoot = document.querySelector('[data-site-search]');
 const searchInput = searchRoot?.querySelector('[data-search-input]');
@@ -878,3 +881,128 @@ document.addEventListener('keydown', (event) => {
   searchInput.focus();
   searchInput.select();
 });
+
+// Docs sidebar: persist its scroll position so navigation keeps your place.
+// The restore half is an inline script in baseof.html (right after the aside)
+// so the position is set during parse, before first paint.
+const sideNavPane = document.querySelector('aside.side-nav');
+if (sideNavPane) {
+  let sideNavRaf = 0;
+  sideNavPane.addEventListener(
+    'scroll',
+    () => {
+      if (sideNavRaf) return;
+      sideNavRaf = requestAnimationFrame(() => {
+        sideNavRaf = 0;
+        try {
+          sessionStorage.setItem('gj-sidenav-scroll', String(sideNavPane.scrollTop));
+        } catch {}
+      });
+    },
+    { passive: true }
+  );
+}
+
+// Docs infinite scroll: each doc page renders a static .doc-next link (the next
+// page in sidebar order). Nearing it fetches that page and swaps the link for a
+// "Continued" divider plus the fetched article — which carries its own
+// .doc-next, so reading continues page after page up to MAX_AUTO_APPEND; after
+// that, or on any fetch error, the plain link stays and navigates normally.
+// Accepted trade-offs: heading ids may repeat across appended articles
+// (in-page anchors resolve to the first occurrence) and the TOC column keeps
+// the first page's outline.
+const infiniteMain = document.getElementById('main-content');
+const firstDocArticle = infiniteMain?.querySelector('article.doc-article');
+if (infiniteMain && firstDocArticle && infiniteMain.dataset.nextUrl) {
+  const MAX_AUTO_APPEND = 8;
+  let appendedCount = 0;
+  let loadingNext = false;
+
+  firstDocArticle.dataset.docUrl = window.location.pathname;
+  firstDocArticle.dataset.docTitle = document.title;
+
+  const sentinelObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        sentinelObserver.unobserve(entry.target);
+        appendNextPage(entry.target);
+      }
+    },
+    { rootMargin: '0px 0px 900px 0px' }
+  );
+
+  const positionObserver = new IntersectionObserver(syncCurrentArticle, {
+    rootMargin: '-45% 0px -55% 0px',
+  });
+  positionObserver.observe(firstDocArticle);
+
+  function armNextSentinel() {
+    if (appendedCount >= MAX_AUTO_APPEND) return;
+    const navs = infiniteMain.querySelectorAll('.doc-next[data-next-link]');
+    const last = navs[navs.length - 1];
+    if (last) sentinelObserver.observe(last);
+  }
+
+  async function appendNextPage(nav) {
+    if (loadingNext) return;
+    const link = nav.querySelector('a');
+    if (!link) return;
+    loadingNext = true;
+    nav.classList.add('is-loading');
+    try {
+      const response = await fetch(link.href);
+      if (!response.ok) throw new Error(String(response.status));
+      const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const article = doc.querySelector('#main-content article.doc-article');
+      if (!article) throw new Error('no article');
+      const adopted = document.adoptNode(article);
+      adopted.dataset.docUrl = new URL(link.href).pathname;
+      adopted.dataset.docTitle = doc.title || document.title;
+      const divider = document.createElement('div');
+      divider.className = 'doc-continued';
+      const kicker = document.createElement('span');
+      kicker.textContent = 'Continued';
+      const dividerLink = document.createElement('a');
+      dividerLink.href = link.href;
+      dividerLink.textContent =
+        (link.textContent || '').replace(/^Next/, '').trim() || adopted.dataset.docTitle;
+      divider.append(kicker, dividerLink);
+      nav.replaceWith(divider, adopted);
+      positionObserver.observe(adopted);
+      appendedCount += 1;
+      armNextSentinel();
+    } catch {
+      nav.classList.remove('is-loading');
+      nav.classList.add('doc-next-fallback');
+    } finally {
+      loadingNext = false;
+    }
+  }
+
+  function syncCurrentArticle() {
+    const articles = infiniteMain.querySelectorAll('article.doc-article[data-doc-url]');
+    let current = articles[0];
+    for (const article of articles) {
+      if (article.getBoundingClientRect().top <= window.innerHeight * 0.45) current = article;
+    }
+    if (current) setCurrentPage(current.dataset.docUrl, current.dataset.docTitle);
+  }
+
+  function setCurrentPage(pathname, title) {
+    if (!pathname || window.location.pathname === pathname) return;
+    history.replaceState(null, '', pathname);
+    if (title) document.title = title;
+    for (const navRoot of document.querySelectorAll('aside.side-nav, .mobile-docs-panel')) {
+      for (const link of navRoot.querySelectorAll('a')) {
+        const isCurrent = new URL(link.href, window.location.origin).pathname === pathname;
+        link.classList.toggle('active', isCurrent);
+        if (isCurrent) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+      }
+    }
+    document.querySelector('aside.side-nav a.active')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  armNextSentinel();
+}

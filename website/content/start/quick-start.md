@@ -6,6 +6,8 @@ doc_kind: "guide"
 weight: 20
 ---
 
+Want seeded data and the built-in agent immediately? Boot a [demo vertical](/start/demos/) first - this page is for pointing GraphJin at your own database.
+
 ## Minimal config
 
 Point GraphJin at your database in `config/dev.yml`. New source-aware projects should use `sources:`:

@@ -1,5 +1,10 @@
 {{ define "main" }}
   <article class="doc-article">
     {{ partial "content-with-toc.html" . }}
+    {{ with partial "next-page.html" . }}
+      <nav class="doc-next" data-next-link aria-label="Next page">
+        <a href="{{ .RelPermalink }}"><span>Next</span>{{ .Title }}</a>
+      </nav>
+    {{ end }}
   </article>
 {{ end }}
