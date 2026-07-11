@@ -17,6 +17,7 @@ const (
 	routeOpenAPI     = "/api/v1/openapi.json"
 	routeMCP         = "/api/v1/mcp"
 	routeMCPMsg      = "/api/v1/mcp/message"
+	routeConfSchema  = "/api/v1/config/schema.json"
 	healthRoute      = "/health"
 )
 
@@ -31,6 +32,12 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 
 	// Healthcheck API
 	mux.Handle(healthRoute, healthCheckHandler(s1))
+
+	// Config JSON Schema (dev only) for editor autocomplete and tooling.
+	// Contains field structure and docs, never config values.
+	if !s.conf.Serv.Production {
+		mux.Handle(routeConfSchema, configSchemaHandler())
+	}
 
 	// Hot deploy API
 	// if s.conf.HotDeploy {

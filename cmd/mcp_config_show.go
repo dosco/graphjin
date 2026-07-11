@@ -1,6 +1,11 @@
 package main
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/dosco/graphjin/serv/v3"
+	"github.com/spf13/cobra"
+)
 
 // mcpConfigCmd wires `graphjin cli config show [section]` which calls the
 // get_current_config MCP tool. Server-gated: the server only exposes this
@@ -33,23 +38,24 @@ production mode (conf.Serv.Production).`,
 	})
 	c.AddCommand(&cobra.Command{
 		Use:   "docs [variant]",
-		Short: "Print annotated example config files (MCP: get_config_docs)",
+		Short: "Print annotated example config files",
 		Long: `Print the annotated example GraphJin config templates.
 
-Optional variant: dev (verbose), prod (production), agentic, or both/all.
+Optional variant: dev (default), prod, or agentic.
 
 These are the same templates that 'graphjin serve new' writes when scaffolding
 a new app — every config option is documented inline. Useful as a reference
-when authoring a config by hand or when prompting an LLM to generate one.`,
+when authoring a config by hand or when prompting an LLM to generate one.
+
+Served locally from the binary (no running server required); this is an alias
+for 'graphjin config docs'.`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			variant := ""
+			variant := "dev"
 			if len(args) == 1 {
 				variant = args[0]
 			}
-			runToolCmd(cmd, "get_config_docs", map[string]any{
-				"variant": variant,
-			})
+			fmt.Print(serv.ConfigDocsTemplate(variant))
 		},
 	})
 	return c

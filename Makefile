@@ -16,7 +16,7 @@ endif
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}" -X "github.com/dosco/graphjin/serv/v3.version=${BUILD_VERSION}"'
 
-.PHONY: all download-tools build wasm-build gen clean tidy test test-parallel-dbs test-sequential test-norace run demo demo-agent demo-smoke demo-agent-smoke smoke-all smoke-default run-github-actions lint changlog release version help test-mongodb test-cassandra test-clickhouse $(PLATFORMS)
+.PHONY: all download-tools build wasm-build gen config-schema clean tidy test test-parallel-dbs test-sequential test-norace run demo demo-agent demo-smoke demo-agent-smoke smoke-all smoke-default run-github-actions lint changlog release version help test-mongodb test-cassandra test-clickhouse $(PLATFORMS)
 
 tidy:
 	@find . -name "go.mod" -execdir go mod tidy \;
@@ -108,6 +108,10 @@ all: lint test $(BINARY)
 build: $(BINARY)
 
 wasm-build: $(WASM)
+
+config-schema:
+	@cd serv && go run ./internal/tools -o config.schema.json
+	@echo "wrote serv/config.schema.json"
 
 gen: download-tools
 	@cd core && go generate ./...

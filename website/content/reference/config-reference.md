@@ -6,10 +6,18 @@ doc_kind: "reference"
 weight: 20
 ---
 
+## Start here
+
+New to GraphJin configuration? [How Configuration Works](/configure/how-it-works/)
+explains the mental model (one file, engine vs server settings, layered overrides)
+and every interface for changing config — editor autocomplete, the `graphjin config`
+CLI, the agent, MCP tools, and the `gj_config` control plane.
+
 ## Major sections
 
 | Area | Guide |
 | --- | --- |
+| How configuration works | [How Configuration Works](/configure/how-it-works/) |
 | Sources mode | [Sources Mode](/configure/sources-mode/) |
 | Database config | [Database Config](/configure/database/) |
 | Auth and RBAC | [Auth And RBAC](/configure/auth-rbac/) |

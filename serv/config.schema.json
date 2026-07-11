@@ -1,0 +1,2187 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://graphjin.com/schema/config.json",
+	"$defs": {
+		"ArtifactsConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Artifacts",
+					"description": "Enable the GraphJin-managed SQL artifact store for saved queries/fragments/workflows"
+				},
+				"source": {
+					"type": "string",
+					"title": "Artifact Source",
+					"description": "Database source name that hosts the artifact store; defaults to the first database source"
+				},
+				"schema": {
+					"type": "string",
+					"title": "Artifact Schema",
+					"description": "Schema for the artifact store tables",
+					"default": "_graphjin"
+				},
+				"auto_init": {
+					"type": "boolean",
+					"title": "Auto Initialize Artifact Tables",
+					"description": "Create artifact store tables automatically at startup",
+					"default": true
+				},
+				"globals_path": {
+					"type": "string",
+					"title": "Global Config Artifact Path",
+					"description": "Directory of read-only global artifacts loaded from config files",
+					"default": "./config"
+				},
+				"locked": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Locked Artifact Kinds",
+					"description": "Artifact kinds that refuse writes through gj_artifacts"
+				},
+				"poll_seconds": {
+					"type": "integer",
+					"title": "Artifact Poll Seconds",
+					"description": "Interval for the revision poller that refreshes the in-memory projection after external writes",
+					"default": 15
+				},
+				"projection_content_max_bytes": {
+					"type": "integer",
+					"title": "Projection Content Max Bytes",
+					"description": "Per-field byte cap for content and JSON fields in the in-memory gj_artifacts search projection; oversized values are dropped from the projection but stay fully readable through the artifact store",
+					"default": 32768
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"Auth": {
+			"properties": {
+				"development": {
+					"type": "boolean",
+					"title": "Development Mode",
+					"default": false
+				},
+				"name": {
+					"type": "string"
+				},
+				"type": {
+					"type": "string",
+					"enum": [
+						"jwt",
+						"header"
+					],
+					"title": "Type"
+				},
+				"cookie": {
+					"type": "string",
+					"title": "Cookie Name"
+				},
+				"jwt": {
+					"$ref": "#/$defs/JWTConfig"
+				},
+				"header": {
+					"properties": {
+						"name": {
+							"type": "string"
+						},
+						"value": {
+							"type": "string"
+						},
+						"exists": {
+							"type": "boolean"
+						}
+					},
+					"additionalProperties": false,
+					"type": "object"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"AuthLogin": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Built-in Login",
+					"description": "Enable the built-in login flow",
+					"default": false
+				},
+				"token_ttl": {
+					"type": "integer",
+					"title": "Issued Token TTL",
+					"description": "TTL of issued local JWTs (default: 720h = 30 days)"
+				},
+				"issuer": {
+					"type": "string",
+					"title": "JWT Issuer Claim",
+					"description": "Issuer value stamped onto every locally-minted JWT. Must match\n`auth.jwt.issuer` if that is set."
+				},
+				"audience": {
+					"type": "string",
+					"title": "JWT Audience Claim",
+					"description": "Audience value stamped onto every locally-minted JWT. Must match\n`auth.jwt.audience` if that is set. Defaults to \"graphjin-cli\"."
+				},
+				"audience_graphjin": {
+					"type": "boolean",
+					"title": "Use GraphJin Default Audience (graphjin-cli)",
+					"description": "AudienceGraphjin is a convenience shortcut: when true, the issued JWT's\n`aud` claim is set to the canonical value \"graphjin-cli\". Saves having\nto remember / type the magic string. Mutually exclusive with Audience."
+				},
+				"oidc": {
+					"$ref": "#/$defs/AuthLoginOIDC",
+					"title": "OIDC Provider",
+					"description": "OIDC identity provider used to authenticate humans."
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "AuthLogin configures the built-in OIDC sign-in flow that issues local JWTs for `graphjin cli` / `graphjin mcp` clients."
+		},
+		"AuthLoginOIDC": {
+			"properties": {
+				"issuer_url": {
+					"type": "string",
+					"title": "OIDC Issuer URL",
+					"description": "OIDC issuer URL — discovery happens at\n\u003cissuer_url\u003e/.well-known/openid-configuration",
+					"examples": [
+						"https://accounts.google.com"
+					]
+				},
+				"client_id": {
+					"type": "string",
+					"title": "OAuth Client ID",
+					"description": "Registered OAuth client ID / secret for this GraphJin deployment."
+				},
+				"client_secret": {
+					"type": "string",
+					"title": "OAuth Client Secret"
+				},
+				"scopes": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Requested Scopes",
+					"description": "Scopes requested. Defaults to [\"openid\",\"email\",\"profile\"]."
+				},
+				"allowed_emails": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Allowed Email Addresses",
+					"description": "Optional post-authentication allow-lists. If both are empty, any verified\nidentity is accepted."
+				},
+				"allowed_domains": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Allowed Email Domains"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "AuthLoginOIDC configures a generic OIDC identity provider for AuthLogin."
+		},
+		"CachingConfig": {
+			"properties": {
+				"disable": {
+					"type": "boolean",
+					"title": "Disable Caching",
+					"description": "Disable response caching (caching is enabled by default)",
+					"default": false
+				},
+				"ttl": {
+					"type": "integer",
+					"title": "Cache TTL",
+					"description": "Default TTL for cached responses in seconds (hard TTL)",
+					"default": 3600
+				},
+				"fresh_ttl": {
+					"type": "integer",
+					"title": "Fresh TTL for SWR",
+					"description": "Soft TTL for stale-while-revalidate in seconds (0 = disabled)",
+					"default": 300
+				},
+				"exclude_tables": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Exclude Tables",
+					"description": "Tables to exclude from caching"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "CachingConfig configures response caching Caching is enabled by default using in-memory LRU cache Configure redis.url to use Redis for distributed caching Responses are cached with automatic invalidation when mutations modify related tables"
+		},
+		"CassandraConfig": {
+			"properties": {
+				"allow_filtering": {
+					"type": "boolean",
+					"title": "Allow Filtering"
+				},
+				"partition_keys": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Partition Keys"
+				},
+				"clustering_keys": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Clustering Keys"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"CatalogConfig": {
+			"properties": {
+				"enabled": {
+					"title": "Enable Catalog Graph"
+				},
+				"database": {
+					"type": "string",
+					"title": "Catalog Database",
+					"default": "graphjin"
+				},
+				"samples": {
+					"type": "string",
+					"enum": [
+						"on_demand",
+						"inline",
+						"off"
+					],
+					"title": "Catalog Sample Mode",
+					"default": "on_demand"
+				},
+				"auto_code_relations": {
+					"title": "Auto Code Relations"
+				},
+				"code_databases": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "CodeSQL Databases"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"Column": {
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"type": {
+					"type": "string",
+					"examples": [
+						"integer",
+						"text"
+					]
+				},
+				"primary": {
+					"type": "boolean"
+				},
+				"array": {
+					"type": "boolean"
+				},
+				"full_text": {
+					"type": "boolean",
+					"title": "Full Text Search"
+				},
+				"related_to": {
+					"type": "string",
+					"title": "Related To",
+					"examples": [
+						"other_table.id_column",
+						"users.id"
+					]
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"Database": {
+			"properties": {
+				"connection_string": {
+					"type": "string",
+					"title": "Connection String"
+				},
+				"type": {
+					"type": "string",
+					"enum": [
+						"postgres",
+						"mysql",
+						"mariadb",
+						"mssql",
+						"sqlite",
+						"oracle",
+						"mongodb",
+						"snowflake",
+						"cassandra",
+						"codesql"
+					],
+					"title": "Type"
+				},
+				"host": {
+					"type": "string",
+					"title": "Host"
+				},
+				"port": {
+					"type": "integer",
+					"title": "Port"
+				},
+				"dbname": {
+					"type": "string",
+					"title": "Database Name"
+				},
+				"user": {
+					"type": "string",
+					"title": "User"
+				},
+				"password": {
+					"type": "string",
+					"title": "Password"
+				},
+				"schema": {
+					"type": "string",
+					"title": "Postgres Schema"
+				},
+				"path": {
+					"type": "string",
+					"title": "File Path (SQLite)",
+					"description": "File path for SQLite databases"
+				},
+				"pool_size": {
+					"type": "integer",
+					"title": "Connection Pool Size",
+					"description": "Size of database connection pool"
+				},
+				"max_connections": {
+					"type": "integer",
+					"title": "Maximum Connections",
+					"description": "Max number of active database connections allowed"
+				},
+				"max_connection_idle_time": {
+					"type": "integer",
+					"title": "Connection Idel Time",
+					"description": "Max time after which idle database connections are closed"
+				},
+				"max_connection_life_time": {
+					"type": "integer",
+					"title": "Connection Life Time",
+					"description": "Max time after which database connections are not reused"
+				},
+				"ping_timeout": {
+					"type": "integer",
+					"title": "Healthcheck Ping Timeout",
+					"description": "Database ping timeout is used for db health checking"
+				},
+				"enable_tls": {
+					"type": "boolean",
+					"title": "Enable TLS",
+					"description": "Set up an secure TLS encrypted database connection"
+				},
+				"server_name": {
+					"type": "string",
+					"title": "TLS Server Name",
+					"description": "Required for TLS. For example with Google Cloud SQL it's\n\u003cgcp-project-id\u003e:\u003ccloud-sql-instance\u003e"
+				},
+				"server_cert": {
+					"type": "string",
+					"title": "Server Certificate",
+					"description": "Required for TLS. Can be a file path or the contents of the PEM file"
+				},
+				"client_cert": {
+					"type": "string",
+					"title": "Client Certificate",
+					"description": "Required for TLS. Can be a file path or the contents of the PEM file"
+				},
+				"client_key": {
+					"type": "string",
+					"title": "Client Key",
+					"description": "Required for TLS. Can be a file path or the contents of the pem file"
+				},
+				"encrypt": {
+					"type": "boolean",
+					"title": "MSSQL Encrypt",
+					"description": "MSSQL: disable TLS encryption (default: true in go-mssqldb)"
+				},
+				"trust_server_certificate": {
+					"type": "boolean",
+					"title": "MSSQL Trust Server Certificate",
+					"description": "MSSQL: trust server certificate without validation"
+				},
+				"private_key_path": {
+					"type": "string",
+					"title": "Private Key File Path (Snowflake)",
+					"description": "Snowflake key pair authentication (PKCS#8 PEM format).\nGenerate key: openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8"
+				},
+				"private_key_pem": {
+					"type": "string",
+					"title": "Private Key PEM (Snowflake)"
+				},
+				"key_passphrase": {
+					"type": "string",
+					"title": "Key Passphrase (Snowflake)"
+				},
+				"consistency": {
+					"type": "string",
+					"title": "Cassandra Consistency Level",
+					"description": "Cassandra / Amazon Keyspaces consistency level (default LOCAL_QUORUM)."
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "Database configuration"
+		},
+		"DatabaseConfig": {
+			"properties": {
+				"type": {
+					"type": "string",
+					"enum": [
+						"postgres",
+						"mysql",
+						"mariadb",
+						"sqlite",
+						"oracle",
+						"mongodb",
+						"snowflake",
+						"nanodb",
+						"codesql"
+					],
+					"title": "Database Type"
+				},
+				"connection_string": {
+					"type": "string",
+					"title": "Connection String",
+					"x-graphjin-sensitive": "connection"
+				},
+				"host": {
+					"type": "string",
+					"title": "Host"
+				},
+				"port": {
+					"type": "integer",
+					"title": "Port"
+				},
+				"dbname": {
+					"type": "string",
+					"title": "Database Name"
+				},
+				"user": {
+					"type": "string",
+					"title": "User"
+				},
+				"password": {
+					"type": "string",
+					"title": "Password",
+					"x-graphjin-sensitive": "secret"
+				},
+				"path": {
+					"type": "string",
+					"title": "File Path (SQLite)"
+				},
+				"max_open_conns": {
+					"type": "integer",
+					"title": "Max Open Connections"
+				},
+				"max_idle_conns": {
+					"type": "integer",
+					"title": "Max Idle Connections"
+				},
+				"schema": {
+					"type": "string",
+					"title": "Schema"
+				},
+				"pool_size": {
+					"type": "integer",
+					"title": "Connection Pool Size"
+				},
+				"max_connections": {
+					"type": "integer",
+					"title": "Maximum Connections"
+				},
+				"max_connection_idle_time": {
+					"type": "integer",
+					"title": "Connection Idle Time"
+				},
+				"max_connection_life_time": {
+					"type": "integer",
+					"title": "Connection Life Time"
+				},
+				"ping_timeout": {
+					"type": "integer",
+					"title": "Healthcheck Ping Timeout"
+				},
+				"enable_tls": {
+					"type": "boolean",
+					"title": "Enable TLS"
+				},
+				"server_name": {
+					"type": "string",
+					"title": "TLS Server Name"
+				},
+				"server_cert": {
+					"type": "string",
+					"title": "Server Certificate",
+					"x-graphjin-sensitive": "certificate"
+				},
+				"client_cert": {
+					"type": "string",
+					"title": "Client Certificate",
+					"x-graphjin-sensitive": "certificate"
+				},
+				"client_key": {
+					"type": "string",
+					"title": "Client Key",
+					"x-graphjin-sensitive": "key_material"
+				},
+				"encrypt": {
+					"type": "boolean",
+					"title": "MSSQL Encrypt"
+				},
+				"trust_server_certificate": {
+					"type": "boolean",
+					"title": "MSSQL Trust Server Certificate"
+				},
+				"private_key_path": {
+					"type": "string",
+					"title": "Private Key File Path (Snowflake)",
+					"x-graphjin-sensitive": "secret_ref"
+				},
+				"private_key_pem": {
+					"type": "string",
+					"title": "Private Key PEM (Snowflake)",
+					"x-graphjin-sensitive": "key_material"
+				},
+				"key_passphrase": {
+					"type": "string",
+					"title": "Key Passphrase (Snowflake)",
+					"x-graphjin-sensitive": "secret"
+				},
+				"read_only": {
+					"type": "boolean",
+					"title": "Read Only"
+				},
+				"analytics_mode": {
+					"type": "boolean",
+					"title": "Analytics Mode (per-DB override)"
+				},
+				"infer_db_refs": {
+					"type": "boolean",
+					"title": "Infer Database References"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"Delete": {
+			"properties": {
+				"filters": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"columns": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"block": {
+					"type": "boolean"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"FederationConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Apollo Federation v2",
+					"default": false
+				},
+				"version": {
+					"type": "string",
+					"title": "Federation Version",
+					"default": "v2.5"
+				},
+				"keys": {
+					"additionalProperties": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array"
+					},
+					"type": "object",
+					"title": "Federation Keys"
+				},
+				"shareable": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Shareable Fields"
+				},
+				"inaccessible": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Inaccessible Fields"
+				},
+				"tags": {
+					"additionalProperties": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array"
+					},
+					"type": "object",
+					"title": "@tag Annotations"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"FilesystemConfig": {
+			"properties": {
+				"name": {
+					"type": "string",
+					"title": "Table Name"
+				},
+				"backend": {
+					"type": "string",
+					"enum": [
+						"local",
+						"s3",
+						"gcs"
+					],
+					"title": "Backend"
+				},
+				"bucket": {
+					"type": "string",
+					"title": "Bucket"
+				},
+				"region": {
+					"type": "string",
+					"title": "Region"
+				},
+				"endpoint": {
+					"type": "string",
+					"title": "Endpoint Override"
+				},
+				"prefix": {
+					"type": "string",
+					"title": "Key Prefix"
+				},
+				"root": {
+					"type": "string",
+					"title": "Local Root Directory"
+				},
+				"presign_ttl": {
+					"type": "integer",
+					"title": "Presigned URL TTL"
+				},
+				"public_base_url": {
+					"type": "string",
+					"title": "Public Base URL"
+				},
+				"read_only": {
+					"type": "boolean",
+					"title": "Read Only"
+				},
+				"max_list_page_size": {
+					"type": "integer",
+					"title": "Max List Page Size",
+					"default": 1000
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"Function": {
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"schema": {
+					"type": "string"
+				},
+				"return_type": {
+					"type": "string",
+					"title": "Return Type",
+					"examples": [
+						"boolean",
+						"record"
+					]
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"IdentityConfig": {
+			"properties": {
+				"user_id_claim": {
+					"type": "string",
+					"title": "User ID Claim",
+					"default": "sub"
+				},
+				"role_claims": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Role Claims"
+				},
+				"namespace_claim": {
+					"type": "string",
+					"title": "Namespace Claim",
+					"default": "account_id"
+				},
+				"admin_roles": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Admin Roles"
+				},
+				"query": {
+					"type": "string",
+					"title": "Identity Enrichment Query"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"Insert": {
+			"properties": {
+				"filters": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"columns": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"presets": {
+					"additionalProperties": {
+						"type": "string"
+					},
+					"type": "object"
+				},
+				"block": {
+					"type": "boolean"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"JWTConfig": {
+			"properties": {
+				"provider": {
+					"type": "string",
+					"enum": [
+						"auth0",
+						"firebase",
+						"jwks",
+						"other"
+					],
+					"title": "JWT Provider"
+				},
+				"secret": {
+					"type": "string",
+					"title": "JWT Secret Key"
+				},
+				"public_key": {
+					"type": "string",
+					"title": "Public Key"
+				},
+				"public_key_type": {
+					"type": "string",
+					"enum": [
+						"ecdsa",
+						"rsa"
+					],
+					"title": "Public Key File Type"
+				},
+				"audience": {
+					"type": "string",
+					"title": "Match Audience Value"
+				},
+				"issuer": {
+					"type": "string",
+					"title": "Match Issuer Value",
+					"examples": [
+						"http://my-domain.auth0.com"
+					]
+				},
+				"jwks_url": {
+					"type": "string",
+					"title": "JWKS Endpoint URL",
+					"examples": [
+						"https://YOUR_DOMAIN/.well-known/jwks.json"
+					]
+				},
+				"jwks_refresh": {
+					"type": "integer",
+					"title": "JWKS Refresh Timeout (minutes)"
+				},
+				"jwks_min_refresh": {
+					"type": "integer",
+					"title": "JWKS Minimum Refresh Timeout (minutes)"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"KeystoreConfig": {
+			"properties": {
+				"key": {
+					"type": "string",
+					"title": "Keystore Key",
+					"x-graphjin-sensitive": "secret"
+				},
+				"path": {
+					"type": "string",
+					"title": "Keystore Path"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "KeystoreConfig configures the local encrypted keystore."
+		},
+		"MCPConfig": {
+			"properties": {
+				"disable": {
+					"type": "boolean",
+					"title": "Disable MCP Server",
+					"description": "Disable the MCP server. MCP is enabled by default except for legacy\ndatabase-only prod/agentic configs, where it must be explicitly enabled.",
+					"default": false
+				},
+				"oauth": {
+					"$ref": "#/$defs/MCPOAuthConfig",
+					"title": "MCP OAuth Configuration",
+					"description": "OAuth exposes standards-compatible authorization discovery for remote MCP clients."
+				},
+				"allow_mutations": {
+					"type": "boolean",
+					"title": "Allow Mutations",
+					"description": "Allow mutation operations via raw MCP GraphQL execution.\nAuto-enabled in dev mode. Default: false",
+					"default": false
+				},
+				"allow_raw_queries": {
+					"type": "boolean",
+					"title": "Allow Raw Queries",
+					"description": "Allow arbitrary GraphQL queries (vs only saved queries from allow-list)\nAuto-enabled in dev mode. Default: false",
+					"default": false
+				},
+				"include_tools_with_agent": {
+					"type": "boolean",
+					"title": "Include MCP Tools With Agent",
+					"description": "IncludeToolsWithAgent keeps the low-level MCP tools (query_catalog,\ngraphql_help, execute_saved_query, execute_graphql, validate_where_clause,\nschema tools) registered even when the ask_graphjin_agent tool is enabled.\nBy default the agent is the single front-door tool and orchestrates those\nprimitives internally, so they are hidden to keep the MCP surface minimal.\nSet true only if a client needs to drive the primitives directly. Default: false",
+					"default": false
+				},
+				"http_stateful": {
+					"type": "boolean",
+					"title": "Stateful MCP HTTP Transport",
+					"description": "HTTPStateful enables persistent Streamable HTTP MCP sessions. This is\nrequired for server-initiated client sampling over HTTP and should be used\nbehind sticky sessions in multi-node deployments. Default: false",
+					"default": false
+				},
+				"legacy_discovery": {
+					"type": "boolean",
+					"title": "Enable Legacy Discovery Tools",
+					"description": "LegacyDiscovery keeps legacy HTTP helper endpoints such as\n/api/v1/discovery and /api/v1/workflows available for compatibility.\nIt no longer expands the MCP tool surface; MCP is catalog-first.",
+					"default": false
+				},
+				"stdio_user_id": {
+					"type": "string",
+					"title": "Stdio User ID",
+					"description": "Default user ID for stdio transport (CLI). Can be overridden by GRAPHJIN_USER_ID env var."
+				},
+				"stdio_user_role": {
+					"type": "string",
+					"title": "Stdio User Role",
+					"description": "Default user role for stdio transport (CLI). Can be overridden by GRAPHJIN_USER_ROLE env var."
+				},
+				"only": {
+					"type": "boolean",
+					"title": "MCP Only Mode",
+					"description": "Run in MCP-only mode - disables GraphQL, REST saved-query API, WebUI, and OpenAPI endpoints.\nHealth check and MCP endpoints remain available. Legacy HTTP helper endpoints\nalso remain available only when legacy_discovery is enabled.",
+					"default": false
+				},
+				"cursor_cache_ttl": {
+					"type": "integer",
+					"title": "Cursor Cache TTL",
+					"description": "CursorCacheTTL in seconds for cursor ID cache (default: 1800 = 30 min)\nCursors are cached to allow short numeric IDs for LLM-friendly pagination",
+					"default": 1800
+				},
+				"cursor_cache_size": {
+					"type": "integer",
+					"title": "Cursor Cache Size",
+					"description": "CursorCacheSize max entries for in-memory cursor cache fallback (default: 10000)",
+					"default": 10000
+				},
+				"allow_config_updates": {
+					"type": "boolean",
+					"title": "Allow Config Updates",
+					"description": "AllowConfigUpdates enables MCP tools that can modify GraphJin configuration\nWARNING: Allows LLMs to change database connections, table configs, and roles\nOnly enable in trusted environments. Default: false",
+					"default": false
+				},
+				"allow_schema_reload": {
+					"type": "boolean",
+					"title": "Allow Schema Reload",
+					"description": "AllowSchemaReload enables the MCP reload_schema tool for manual schema refresh\nUseful when user adds tables and wants immediate discovery without waiting for poll\nDefault: false (auto-enabled in dev mode if not explicitly set)",
+					"default": false
+				},
+				"allow_schema_updates": {
+					"type": "boolean",
+					"title": "Allow Schema Updates",
+					"description": "AllowSchemaUpdates enables MCP tools to preview and apply database schema changes (DDL)\nUses GraphJin DDL (db.ddl) format. Auto-enabled in dev mode. Default: false",
+					"default": false
+				},
+				"allow_workflow_updates": {
+					"type": "boolean",
+					"title": "Allow Workflow Updates",
+					"description": "AllowWorkflowUpdates enables workflow writes through gj_workflow.\nSaved workflows are discoverable via workflow catalog items. Execution\nthrough gj_workflow_execution is controlled by normal read_only table/source\nconfiguration because it is an insert-shaped managed mutation.\nAuto-enabled in dev mode. Default: false",
+					"default": false
+				},
+				"allow_workflow_execution": {
+					"type": "boolean",
+					"title": "Allow Workflow Execution",
+					"description": "AllowWorkflowExecution keeps the legacy HTTP workflow execution surface\navailable when legacy discovery is enabled. MCP workflow execution uses\ncatalog discovery plus gj_workflow_execution.\nAuto-enabled in dev mode. Default: false",
+					"default": false
+				},
+				"allow_dev_tools": {
+					"type": "boolean",
+					"title": "Allow Dev Tools",
+					"description": "AllowDevTools enables advanced introspection MCP tools (explain_query, explore_relationships, audit_role_permissions).\nThese expose SQL, relationship graphs, and role permissions — useful for development/debugging.\nAuto-enabled in dev mode. Default: false",
+					"default": false
+				},
+				"default_db_allowed": {
+					"type": "boolean",
+					"title": "Allow Default Databases",
+					"description": "DefaultDBAllowed when true allows configuring and discovering system/default\ndatabases (e.g. postgres, mysql, master). Default: false",
+					"default": false
+				},
+				"workflow_timeout": {
+					"type": "integer",
+					"title": "Workflow Timeout (seconds)",
+					"description": "WorkflowTimeout in seconds for JavaScript workflow execution.\nWorkflows that exceed this duration are interrupted. Default: 5",
+					"default": 5
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "MCPConfig configures the Model Context Protocol (MCP) server MCP enables AI assistants to interact with GraphJin via function calling"
+		},
+		"MCPOAuthConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable MCP OAuth",
+					"description": "Enable OAuth metadata/challenge support for the MCP HTTP endpoint.",
+					"default": false
+				},
+				"mode": {
+					"type": "string",
+					"enum": [
+						"builtin",
+						"external"
+					],
+					"title": "MCP OAuth Mode",
+					"description": "Mode selects the authorization-server strategy: builtin uses auth_login\nto run an authorization-code + PKCE flow; external advertises the\nconfigured AuthorizationServers and validates bearer tokens via auth.jwt."
+				},
+				"resource": {
+					"type": "string",
+					"title": "MCP OAuth Resource",
+					"description": "Resource is the expected OAuth audience/resource value. Defaults to the\npublic /api/v1/mcp URL for the incoming request."
+				},
+				"issuer": {
+					"type": "string",
+					"title": "MCP OAuth Issuer",
+					"description": "Issuer is the authorization server issuer. In builtin mode it defaults to\nthe public origin of the incoming request."
+				},
+				"authorization_servers": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "MCP OAuth Authorization Servers",
+					"description": "AuthorizationServers are advertised by protected-resource metadata in\nexternal mode. Defaults to Issuer when empty."
+				},
+				"scopes": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "MCP OAuth Scopes",
+					"description": "Scopes advertised and accepted by the MCP authorization server."
+				},
+				"dynamic_client_registration": {
+					"type": "boolean",
+					"title": "Enable MCP OAuth Dynamic Client Registration",
+					"description": "DynamicClientRegistration exposes RFC 7591 registration in builtin mode.",
+					"default": true
+				},
+				"client_id_metadata_documents": {
+					"type": "boolean",
+					"title": "Enable MCP OAuth Client ID Metadata Documents",
+					"description": "ClientIDMetadataDocuments lets clients use CIMD URLs instead of DCR.",
+					"default": true
+				},
+				"access_token_ttl": {
+					"type": "integer",
+					"title": "MCP OAuth Access Token TTL",
+					"description": "AccessTokenTTL controls builtin-mode access token lifetime."
+				},
+				"refresh_token_ttl": {
+					"type": "integer",
+					"title": "MCP OAuth Refresh Token TTL",
+					"description": "RefreshTokenTTL controls builtin-mode refresh token lifetime."
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "MCPOAuthConfig configures standards-compatible OAuth discovery and token handling for hosted MCP HTTP clients."
+		},
+		"MetadataConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Metadata Graph"
+				},
+				"database": {
+					"type": "string",
+					"title": "Metadata Database",
+					"default": "graphjin"
+				},
+				"auto_code_relations": {
+					"type": "boolean",
+					"title": "Auto Code Relations"
+				},
+				"code_databases": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "CodeSQL Databases"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"PartitionConfig": {
+			"properties": {
+				"column": {
+					"type": "string",
+					"title": "Partition Column",
+					"examples": [
+						"created_at"
+					]
+				},
+				"default_range_days": {
+					"type": "integer",
+					"title": "Default Range Days",
+					"examples": [
+						30
+					]
+				},
+				"none": {
+					"type": "boolean",
+					"title": "Disable Partition Check"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"Query": {
+			"properties": {
+				"limit": {
+					"type": "integer"
+				},
+				"filters": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"columns": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"disable_functions": {
+					"type": "boolean"
+				},
+				"block": {
+					"type": "boolean"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"RateLimiter": {
+			"properties": {
+				"rate": {
+					"type": "number",
+					"title": "Connection Rate",
+					"description": "The number of events per second"
+				},
+				"bucket": {
+					"type": "integer",
+					"title": "Bucket Size",
+					"description": "Bucket a burst of at most 'bucket' number of events"
+				},
+				"ip_header": {
+					"type": "string",
+					"title": "IP From HTTP Header",
+					"description": "The header that contains the client ip",
+					"examples": [
+						"X-Forwarded-For"
+					]
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "RateLimiter sets the API rate limits"
+		},
+		"RedisConfig": {
+			"properties": {
+				"url": {
+					"type": "string",
+					"title": "Redis URL",
+					"description": "Redis connection URL (e.g., redis://localhost:6379/0)"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "RedisConfig configures Redis connection"
+		},
+		"RelationshipConfig": {
+			"properties": {
+				"from": {
+					"type": "string",
+					"title": "From"
+				},
+				"to": {
+					"type": "string",
+					"title": "To"
+				},
+				"as": {
+					"type": "string",
+					"title": "Alias"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"Role": {
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"comment": {
+					"type": "string"
+				},
+				"match": {
+					"type": "string",
+					"title": "Related To",
+					"examples": [
+						"other_table.id_column",
+						"users.id"
+					]
+				},
+				"tables": {
+					"items": {
+						"$ref": "#/$defs/RoleTable"
+					},
+					"type": "array",
+					"title": "Table Configuration for Role"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"RoleTable": {
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"schema": {
+					"type": "string"
+				},
+				"database": {
+					"type": "string",
+					"title": "Database"
+				},
+				"read_only": {
+					"type": "boolean",
+					"title": "Read Only"
+				},
+				"query": {
+					"$ref": "#/$defs/Query"
+				},
+				"insert": {
+					"$ref": "#/$defs/Insert"
+				},
+				"update": {
+					"$ref": "#/$defs/Update"
+				},
+				"upsert": {
+					"$ref": "#/$defs/Upsert"
+				},
+				"delete": {
+					"$ref": "#/$defs/Delete"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"RuntimeEventsConfig": {
+			"properties": {
+				"max_events": {
+					"type": "integer",
+					"title": "Runtime Event Limit",
+					"description": "MaxEvents is the maximum number of recent event rows retained.",
+					"default": 1000
+				},
+				"ttl_seconds": {
+					"type": "integer",
+					"title": "Runtime Event TTL Seconds",
+					"description": "TTLSeconds controls how long event rows are retained.",
+					"default": 86400
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "RuntimeEventsConfig configures bounded agentic runtime observability rows."
+		},
+		"SecretsConfig": {
+			"properties": {
+				"keystore": {
+					"$ref": "#/$defs/KeystoreConfig",
+					"title": "Encrypted Keystore"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "SecretsConfig configures secret storage for write-only config inputs."
+		},
+		"SourceAccessConfig": {
+			"properties": {
+				"read": {
+					"type": "string",
+					"title": "Read Access Mode"
+				},
+				"write": {
+					"type": "string",
+					"title": "Write Access Mode"
+				},
+				"delete": {
+					"type": "string",
+					"title": "Delete Access Mode"
+				},
+				"namespace_column": {
+					"type": "string",
+					"title": "Namespace Column",
+					"default": "account_id"
+				},
+				"owner_column": {
+					"type": "string",
+					"title": "Owner Column",
+					"default": "user_id"
+				},
+				"missing_namespace_column": {
+					"type": "string",
+					"enum": [
+						"block",
+						"allow"
+					],
+					"title": "Missing Namespace Column Behavior"
+				},
+				"public_tables": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Public Tables"
+				},
+				"admin_tables": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Admin Tables"
+				},
+				"blocked_tables": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Blocked Tables"
+				},
+				"roots": {
+					"additionalProperties": {
+						"type": "string"
+					},
+					"type": "object",
+					"title": "GraphJin System Root Access"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"SourceConfig": {
+			"properties": {
+				"name": {
+					"type": "string",
+					"title": "Name"
+				},
+				"kind": {
+					"type": "string",
+					"enum": [
+						"database",
+						"code",
+						"file",
+						"api",
+						"graphjin",
+						"workflow"
+					],
+					"title": "Kind"
+				},
+				"default": {
+					"type": "boolean",
+					"title": "Default Source"
+				},
+				"type": {
+					"type": "string",
+					"title": "Database Type"
+				},
+				"connection_string": {
+					"type": "string",
+					"title": "Connection String",
+					"x-graphjin-sensitive": "connection"
+				},
+				"host": {
+					"type": "string",
+					"title": "Host"
+				},
+				"port": {
+					"type": "integer",
+					"title": "Port"
+				},
+				"dbname": {
+					"type": "string",
+					"title": "Database Name"
+				},
+				"user": {
+					"type": "string",
+					"title": "User"
+				},
+				"password": {
+					"type": "string",
+					"title": "Password",
+					"x-graphjin-sensitive": "secret"
+				},
+				"path": {
+					"type": "string",
+					"title": "Path"
+				},
+				"max_open_conns": {
+					"type": "integer",
+					"title": "Max Open Connections"
+				},
+				"max_idle_conns": {
+					"type": "integer",
+					"title": "Max Idle Connections"
+				},
+				"schema": {
+					"type": "string",
+					"title": "Schema"
+				},
+				"pool_size": {
+					"type": "integer",
+					"title": "Connection Pool Size"
+				},
+				"max_connections": {
+					"type": "integer",
+					"title": "Maximum Connections"
+				},
+				"max_connection_idle_time": {
+					"type": "integer",
+					"title": "Connection Idle Time"
+				},
+				"max_connection_life_time": {
+					"type": "integer",
+					"title": "Connection Life Time"
+				},
+				"ping_timeout": {
+					"type": "integer",
+					"title": "Healthcheck Ping Timeout"
+				},
+				"enable_tls": {
+					"type": "boolean",
+					"title": "Enable TLS"
+				},
+				"server_name": {
+					"type": "string",
+					"title": "TLS Server Name"
+				},
+				"server_cert": {
+					"type": "string",
+					"title": "Server Certificate",
+					"x-graphjin-sensitive": "certificate"
+				},
+				"client_cert": {
+					"type": "string",
+					"title": "Client Certificate",
+					"x-graphjin-sensitive": "certificate"
+				},
+				"client_key": {
+					"type": "string",
+					"title": "Client Key",
+					"x-graphjin-sensitive": "key_material"
+				},
+				"encrypt": {
+					"type": "boolean",
+					"title": "MSSQL Encrypt"
+				},
+				"trust_server_certificate": {
+					"type": "boolean",
+					"title": "MSSQL Trust Server Certificate"
+				},
+				"private_key_path": {
+					"type": "string",
+					"title": "Private Key File Path (Snowflake)",
+					"x-graphjin-sensitive": "secret_ref"
+				},
+				"private_key_pem": {
+					"type": "string",
+					"title": "Private Key PEM (Snowflake)",
+					"x-graphjin-sensitive": "key_material"
+				},
+				"key_passphrase": {
+					"type": "string",
+					"title": "Key Passphrase (Snowflake)",
+					"x-graphjin-sensitive": "secret"
+				},
+				"read_only": {
+					"type": "boolean",
+					"title": "Read Only"
+				},
+				"analytics_mode": {
+					"type": "boolean",
+					"title": "Analytics Mode"
+				},
+				"infer_db_refs": {
+					"type": "boolean",
+					"title": "Infer Database References"
+				},
+				"backend": {
+					"type": "string",
+					"title": "Filesystem Backend"
+				},
+				"bucket": {
+					"type": "string",
+					"title": "Bucket"
+				},
+				"region": {
+					"type": "string",
+					"title": "Region"
+				},
+				"endpoint": {
+					"type": "string",
+					"title": "Endpoint"
+				},
+				"prefix": {
+					"type": "string",
+					"title": "Prefix"
+				},
+				"root": {
+					"type": "string",
+					"title": "Root"
+				},
+				"presign_ttl": {
+					"type": "integer",
+					"title": "Presigned URL TTL"
+				},
+				"public_base_url": {
+					"type": "string",
+					"title": "Public Base URL"
+				},
+				"max_list_page_size": {
+					"type": "integer",
+					"title": "Max List Page Size"
+				},
+				"specs_dir": {
+					"type": "string",
+					"title": "OpenAPI Specs Directory"
+				},
+				"catalog": {
+					"type": "boolean",
+					"title": "Catalog"
+				},
+				"metadata": {
+					"type": "boolean",
+					"title": "Metadata"
+				},
+				"control_plane": {
+					"type": "boolean",
+					"title": "Control Plane"
+				},
+				"runtime": {
+					"type": "string",
+					"title": "Workflow Runtime"
+				},
+				"capabilities": {
+					"additionalProperties": {
+						"type": "boolean"
+					},
+					"type": "object",
+					"title": "Capabilities"
+				},
+				"access": {
+					"$ref": "#/$defs/SourceAccessConfig",
+					"title": "Access"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"Table": {
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"schema": {
+					"type": "string"
+				},
+				"table": {
+					"type": "string"
+				},
+				"type": {
+					"type": "string"
+				},
+				"source": {
+					"type": "string",
+					"title": "Source"
+				},
+				"database": {
+					"type": "string",
+					"title": "Database"
+				},
+				"read_only": {
+					"type": "boolean",
+					"title": "Read Only"
+				},
+				"blocklist": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"columns": {
+					"items": {
+						"$ref": "#/$defs/Column"
+					},
+					"type": "array"
+				},
+				"order_by": {
+					"additionalProperties": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array"
+					},
+					"type": "object",
+					"title": "Order By Options"
+				},
+				"partition": {
+					"$ref": "#/$defs/PartitionConfig",
+					"title": "Partition Configuration"
+				},
+				"cassandra": {
+					"$ref": "#/$defs/CassandraConfig",
+					"title": "Cassandra Table Configuration"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"Update": {
+			"properties": {
+				"filters": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"columns": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"presets": {
+					"additionalProperties": {
+						"type": "string"
+					},
+					"type": "object"
+				},
+				"block": {
+					"type": "boolean"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"UploadsConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Uploads",
+					"description": "Enable multipart/form-data parsing on /api/v1/graphql",
+					"default": false
+				},
+				"max_size": {
+					"type": "integer",
+					"title": "Max Upload Size (bytes)",
+					"description": "MaxSize is the per-request multipart body limit in bytes.\nDefaults to 25 MB when zero.",
+					"default": 26214400
+				},
+				"allowed_mime": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Allowed MIME Types",
+					"description": "AllowedMIME, when non-empty, restricts the accepted content types.\nGlob patterns are supported: \"image/*\", \"application/pdf\"."
+				},
+				"storage": {
+					"type": "string",
+					"title": "Filesystem Table for Streaming",
+					"description": "Storage names a filesystems[].name to stream uploads into. When\nempty, the legacy inline-base64 mode is used. When set, files\nare written to the backend and the variable becomes the object\nmetadata instead of inlined data."
+				},
+				"storage_key_prefix": {
+					"type": "string",
+					"title": "Storage Key Prefix",
+					"description": "StorageKeyPrefix is prepended to the backend key for every\nuploaded file. Useful for namespacing by tenant or role.\nExample: \"avatars/{date}/\" — the {date} marker is substituted\nat request time with YYYY/MM/DD."
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "UploadsConfig configures the multipart-form upload endpoint following the graphql-multipart-request-spec (https://github.com/jaydenseric/graphql-multipart-request-spec)."
+		},
+		"Upsert": {
+			"properties": {
+				"filters": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"columns": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"presets": {
+					"additionalProperties": {
+						"type": "string"
+					},
+					"type": "object"
+				},
+				"block": {
+					"type": "boolean"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"WatchesConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Watches",
+					"description": "Enable durable owner-scoped watches; requires artifacts.enabled since watches persist through the artifact store"
+				},
+				"max_per_owner": {
+					"type": "integer",
+					"title": "Max Watches Per Owner",
+					"description": "Maximum active watches per owner",
+					"default": 20
+				},
+				"event_retention_hours": {
+					"type": "integer",
+					"title": "Watch Event Retention Hours",
+					"description": "Hours to keep fired watch events before pruning",
+					"default": 168
+				},
+				"max_events_per_watch": {
+					"type": "integer",
+					"title": "Max Events Per Watch",
+					"description": "Maximum stored events per watch; oldest are pruned first",
+					"default": 500
+				},
+				"snapshot_max_bytes": {
+					"type": "integer",
+					"title": "Watch Snapshot Max Bytes",
+					"description": "Byte cap for stored event snapshots and user-supplied watch-definition JSON fields",
+					"default": 32768
+				},
+				"runner": {
+					"type": "string",
+					"enum": [
+						"all",
+						"off"
+					],
+					"title": "Watch Runner",
+					"description": "Which replicas evaluate watches; off disables evaluation while definitions stay stored",
+					"default": "off"
+				},
+				"webhook_allow": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Watch Webhook Allowlist",
+					"description": "Allowlist of webhook URL prefixes watch deliveries may call; empty denies all webhooks"
+				},
+				"enrichment_daily_cap": {
+					"type": "integer",
+					"title": "Watch Enrichment Daily Cap",
+					"description": "Maximum read-only agent enrichments per watch per day",
+					"default": 10
+				},
+				"enrichment_workers": {
+					"type": "integer",
+					"title": "Watch Enrichment Workers",
+					"description": "Concurrent watch enrichment workers",
+					"default": 1
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		}
+	},
+	"properties": {
+		"secret_key": {
+			"type": "string",
+			"title": "Secret Key",
+			"x-graphjin-sensitive": "secret"
+		},
+		"disable_allow_list": {
+			"type": "boolean",
+			"title": "Disable Allow List",
+			"default": false
+		},
+		"enable_schema": {
+			"type": "boolean",
+			"title": "Enable Schema",
+			"default": false
+		},
+		"enable_introspection": {
+			"type": "boolean",
+			"title": "Generate introspection JSON",
+			"default": false
+		},
+		"set_user_id": {
+			"type": "boolean",
+			"title": "Set User ID",
+			"default": false
+		},
+		"default_block": {
+			"type": "boolean",
+			"title": "Block tables for anonymous users",
+			"default": true
+		},
+		"variables": {
+			"additionalProperties": {
+				"type": "string"
+			},
+			"type": "object",
+			"title": "Variables"
+		},
+		"header_variables": {
+			"additionalProperties": {
+				"type": "string"
+			},
+			"type": "object",
+			"title": "Header Variables"
+		},
+		"blocklist": {
+			"items": {
+				"type": "string"
+			},
+			"type": "array",
+			"title": "Block List"
+		},
+		"sources": {
+			"items": {
+				"$ref": "#/$defs/SourceConfig"
+			},
+			"type": "array",
+			"title": "Sources"
+		},
+		"identity": {
+			"$ref": "#/$defs/IdentityConfig",
+			"title": "Identity"
+		},
+		"artifacts": {
+			"$ref": "#/$defs/ArtifactsConfig",
+			"title": "Artifacts"
+		},
+		"watches": {
+			"$ref": "#/$defs/WatchesConfig",
+			"title": "Watches"
+		},
+		"openapi_specs_dir": {
+			"type": "string",
+			"title": "OpenAPI Specs Directory",
+			"default": "./config/specs"
+		},
+		"tables": {
+			"items": {
+				"$ref": "#/$defs/Table"
+			},
+			"type": "array",
+			"title": "Tables"
+		},
+		"relationships": {
+			"items": {
+				"$ref": "#/$defs/RelationshipConfig"
+			},
+			"type": "array",
+			"title": "Relationships"
+		},
+		"functions": {
+			"items": {
+				"$ref": "#/$defs/Function"
+			},
+			"type": "array",
+			"title": "Functions"
+		},
+		"roles_query": {
+			"type": "string",
+			"title": "Roles Query"
+		},
+		"roles": {
+			"items": {
+				"$ref": "#/$defs/Role"
+			},
+			"type": "array"
+		},
+		"db_type": {
+			"type": "string",
+			"enum": [
+				"postgres",
+				"mysql",
+				"mariadb",
+				"sqlite",
+				"oracle",
+				"mssql",
+				"snowflake",
+				"nanodb"
+			],
+			"title": "Database Type"
+		},
+		"debug": {
+			"type": "boolean",
+			"title": "Debug",
+			"default": false
+		},
+		"log_vars": {
+			"type": "boolean",
+			"title": "Log Variables",
+			"default": false
+		},
+		"subs_poll_duration": {
+			"type": "integer",
+			"title": "Subscription Polling Duration"
+		},
+		"subs_max_members_per_worker": {
+			"type": "integer",
+			"title": "Subscription Max Members Per Worker",
+			"default": 5000
+		},
+		"subs_min_members_per_worker": {
+			"type": "integer",
+			"title": "Subscription Min Members Per Worker",
+			"default": 50
+		},
+		"subs_target_query_latency": {
+			"type": "integer",
+			"title": "Subscription Target Query Latency",
+			"description": "When zero this is auto-derived as 25% of subs_poll_duration"
+		},
+		"default_limit": {
+			"type": "integer",
+			"title": "Default Row Limit",
+			"default": 20
+		},
+		"analytics_mode": {
+			"type": "boolean",
+			"title": "Analytics Mode",
+			"description": "Disable implicit row-limit defaults for OLAP deployments",
+			"default": false
+		},
+		"disable_agg_functions": {
+			"type": "boolean",
+			"title": "Disable Aggregations",
+			"default": false
+		},
+		"disable_functions": {
+			"type": "boolean",
+			"title": "Disable Functions",
+			"default": false
+		},
+		"mock_db": {
+			"type": "boolean",
+			"title": "Mock DB",
+			"default": false
+		},
+		"enable_camelcase": {
+			"type": "boolean",
+			"title": "Enable Camel Case",
+			"default": false
+		},
+		"production": {
+			"type": "boolean",
+			"title": "Production Mode",
+			"description": "Legacy production switch. Prefer top-level mode for new configs.",
+			"default": false
+		},
+		"mode": {
+			"type": "string",
+			"enum": [
+				"dev",
+				"prod",
+				"agentic"
+			],
+			"title": "Mode"
+		},
+		"db_schema_poll_duration": {
+			"type": "integer",
+			"title": "Schema Change Detection Polling Duration"
+		},
+		"disable_production_security": {
+			"type": "boolean",
+			"title": "Disable Production Security"
+		},
+		"databases": {
+			"additionalProperties": {
+				"$ref": "#/$defs/DatabaseConfig"
+			},
+			"type": "object",
+			"title": "Databases"
+		},
+		"federation": {
+			"$ref": "#/$defs/FederationConfig",
+			"title": "Apollo Federation v2"
+		},
+		"filesystems": {
+			"items": {
+				"$ref": "#/$defs/FilesystemConfig"
+			},
+			"type": "array",
+			"title": "Filesystem Tables"
+		},
+		"metadata": {
+			"$ref": "#/$defs/MetadataConfig",
+			"title": "Metadata Graph"
+		},
+		"catalog": {
+			"$ref": "#/$defs/CatalogConfig",
+			"title": "Catalog Graph"
+		},
+		"app_name": {
+			"type": "string",
+			"title": "Application Name",
+			"description": "Application name is used in log and debug messages"
+		},
+		"config_path": {
+			"type": "string",
+			"title": "Config Path",
+			"description": "The default path to find all configuration files and scripts"
+		},
+		"log_level": {
+			"type": "string",
+			"enum": [
+				"debug",
+				"error",
+				"warn",
+				"info"
+			],
+			"title": "Log Level",
+			"description": "Logging level must be one of debug, error, warn, info"
+		},
+		"log_format": {
+			"type": "string",
+			"enum": [
+				"auto",
+				"json",
+				"simple"
+			],
+			"title": "Logging Format",
+			"description": "Logging Format: \"auto\" (default, colored console in dev, JSON in production),\n\"json\" (always JSON), or \"simple\" (always colored console)"
+		},
+		"host_port": {
+			"type": "string",
+			"title": "Host and Port",
+			"description": "The host and port the service runs on. Example localhost:8080"
+		},
+		"host": {
+			"type": "string",
+			"title": "Host",
+			"description": "Host to run the service on"
+		},
+		"port": {
+			"type": "string",
+			"title": "Port",
+			"description": "Port to run the service on"
+		},
+		"http_compress": {
+			"type": "boolean",
+			"title": "Enable Compression",
+			"description": "Enables HTTP compression",
+			"default": true
+		},
+		"rate_limiter": {
+			"$ref": "#/$defs/RateLimiter",
+			"title": "Set API Rate Limiting",
+			"description": "Sets the API rate limits"
+		},
+		"server_timing": {
+			"type": "boolean",
+			"title": "Server Timing HTTP Header",
+			"description": "Enables the Server-Timing HTTP header",
+			"default": true
+		},
+		"web_ui": {
+			"type": "boolean",
+			"title": "Enable Web UI",
+			"description": "Enable the web UI. Defaults on in dev and agentic modes, off in prod.",
+			"default": false
+		},
+		"enable_tracing": {
+			"type": "boolean",
+			"title": "Enable Tracing",
+			"description": "Enable OpenTrace request tracing",
+			"default": true
+		},
+		"reload_on_config_change": {
+			"type": "boolean",
+			"title": "Reload Config",
+			"description": "Enables reloading the service on config changes. Disabled in production"
+		},
+		"auth_fail_block": {
+			"type": "boolean",
+			"title": "Block Request on Authorization Failure",
+			"description": "Enable blocking requests with a HTTP 401 on auth failure"
+		},
+		"cors_allowed_origins": {
+			"items": {
+				"type": "string"
+			},
+			"type": "array",
+			"title": "HTTP CORS Allowed Origins",
+			"description": "Sets the HTTP CORS Access-Control-Allow-Origin header"
+		},
+		"cors_allowed_headers": {
+			"items": {
+				"type": "string"
+			},
+			"type": "array",
+			"title": "HTTP CORS Allowed Headers",
+			"description": "Sets the HTTP CORS Access-Control-Allow-Headers header"
+		},
+		"cors_debug": {
+			"type": "boolean",
+			"title": "Log CORS",
+			"description": "Enables debug logs for CORS"
+		},
+		"cache_control": {
+			"type": "string",
+			"title": "Enable Cache-Control",
+			"description": "Sets the HTTP Cache-Control header"
+		},
+		"auth": {
+			"$ref": "#/$defs/Auth",
+			"title": "Authentication",
+			"description": "Sets the default authentication used by the service"
+		},
+		"database": {
+			"$ref": "#/$defs/Database",
+			"title": "Database",
+			"description": "Database configuration"
+		},
+		"mcp": {
+			"$ref": "#/$defs/MCPConfig",
+			"title": "MCP Configuration",
+			"description": "MCP (Model Context Protocol) server configuration"
+		},
+		"agent": {
+			"$ref": "#/$defs/Config",
+			"title": "GraphJin Agent Configuration",
+			"description": "Server-side GraphJin discovery/answer agent configuration"
+		},
+		"secrets": {
+			"$ref": "#/$defs/SecretsConfig",
+			"title": "Secrets",
+			"description": "Local encrypted secrets configuration"
+		},
+		"redis": {
+			"$ref": "#/$defs/RedisConfig",
+			"title": "Redis Configuration",
+			"description": "Redis configuration"
+		},
+		"runtime_events": {
+			"$ref": "#/$defs/RuntimeEventsConfig",
+			"title": "Runtime Events Configuration",
+			"description": "Runtime event configuration"
+		},
+		"caching": {
+			"$ref": "#/$defs/CachingConfig",
+			"title": "Caching Configuration",
+			"description": "Response caching configuration"
+		},
+		"uploads": {
+			"$ref": "#/$defs/UploadsConfig",
+			"title": "Multipart Uploads",
+			"description": "Multipart upload configuration (graphql-multipart-request-spec)"
+		},
+		"auth_login": {
+			"$ref": "#/$defs/AuthLogin",
+			"title": "Built-in Login (OIDC)",
+			"description": "Built-in OIDC login that mints local JWTs for the CLI / MCP client"
+		},
+		"inherits": {
+			"type": "string",
+			"title": "Inherit From Config File",
+			"description": "Name of another config file in the same directory to inherit and\noverride (one level only; the inherited file cannot itself inherit).\nExample: prod.yml sets `inherits: dev` to start from dev.yml values."
+		}
+	},
+	"additionalProperties": false,
+	"type": "object",
+	"title": "GraphJin Configuration",
+	"description": "Configuration for the GraphJin service and compiler core (dev.yml / prod.yml / agentic.yml)."
+}

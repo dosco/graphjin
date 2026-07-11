@@ -21,6 +21,8 @@ type (
 	JWTConfig = auth.JWTConfig
 )
 
+//go:generate go run ./internal/tools -o config.schema.json
+
 // Configuration for the GraphJin service
 type Config struct {
 	// Configuration for the GraphJin compiler core
@@ -28,6 +30,11 @@ type Config struct {
 
 	// Configuration for the GraphJin Service
 	Serv `mapstructure:",squash" jsonschema:"title=Service Configuration"`
+
+	// Name of another config file in the same directory to inherit and
+	// override (one level only; the inherited file cannot itself inherit).
+	// Example: prod.yml sets `inherits: dev` to start from dev.yml values.
+	Inherits string `mapstructure:"inherits" jsonschema:"title=Inherit From Config File"`
 
 	// Configuration for admin service
 	// Admin `mapstructure:",squash" jsonschema:"title=Admin Configuration"`
@@ -887,6 +894,17 @@ func (c *Config) AbsolutePath(p string) string {
 		return p
 	}
 	return filepath.Join(c.ConfigPath, p)
+}
+
+// EffectiveSettings returns all config settings after defaults, one-level
+// inheritance, and GJ_/SJ_ environment overrides have been applied. Keys are
+// viper's canonical lower-cased dotted keys. Intended for tooling such as
+// `graphjin config get` and `graphjin config explain`.
+func (c *Config) EffectiveSettings() map[string]any {
+	if c == nil || c.viper == nil {
+		return map[string]any{}
+	}
+	return c.viper.AllSettings()
 }
 
 // SetHash sets the hash value of the configuration

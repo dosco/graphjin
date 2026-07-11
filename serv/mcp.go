@@ -102,6 +102,13 @@ func mcpToolList(conf *Config) []string {
 			tools = append(tools, "execute_graphql")
 		}
 	}
+	// Mirror of registerConfigTools: dev-only, independent of agentOnlyMCP.
+	if effectiveMode(conf) == modeDev {
+		tools = append(tools, "get_current_config", "validate_config")
+		if conf.MCP.AllowConfigUpdates {
+			tools = append(tools, "update_current_config")
+		}
+	}
 	if conf.agentEnabled() {
 		tools = append(tools, "ask_graphjin_agent")
 	}
@@ -244,6 +251,10 @@ func (ms *mcpServer) registerTools() {
 		ms.registerExecutionTools()
 		ms.registerSchemaTools()
 	}
+	// Config tools are dev-only but register independently of agentOnlyMCP:
+	// external MCP clients keep config read/validate/update access alongside
+	// the agent front door (the agent's own tool surface is unchanged).
+	ms.registerConfigTools()
 	ms.registerAgentTools()
 }
 

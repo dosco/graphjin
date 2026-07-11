@@ -534,6 +534,12 @@ func TestBuildIncludesConfigRecipes(t *testing.T) {
 		"recipe.config.enable_artifacts",
 		"recipe.config.enable_watches",
 		"recipe.config.migrate_legacy_roles_tables",
+		"recipe.config.rate_limiting",
+		"recipe.config.agent_tuning",
+		"recipe.config.enable_jwt_auth",
+		"recipe.config.enable_redis_caching",
+		"recipe.config.enable_uploads",
+		"recipe.config.production_hardening",
 	} {
 		card, ok := findCatalogCard(snap, id)
 		if !ok {
@@ -682,6 +688,36 @@ func TestRevisionChangesWithConfigMapValue(t *testing.T) {
 	}, opts))
 	if rev1 == rev2 {
 		t.Fatalf("expected config map value change to change revision")
+	}
+}
+
+func TestConfigRecipesApplyVsUnsupported(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{EnabledTools: []string{"query_catalog"}})
+
+	// serv-writable settings carry a real gj_config apply payload (with a serv patch)
+	for _, id := range []string{"recipe.config.rate_limiting", "recipe.config.agent_tuning"} {
+		card, ok := findCatalogCard(snap, id)
+		if !ok {
+			t.Fatalf("missing recipe %s", id)
+		}
+		if card.GraphQLMutation == "" || !strings.Contains(card.GraphQLMutation, "serv:") {
+			t.Fatalf("recipe %s should carry a serv-patch apply payload, got %q", id, card.GraphQLMutation)
+		}
+	}
+
+	// secret-bearing / cross-cutting settings are unsupported via gj_config and
+	// route to config-file/CLI guidance instead of an apply payload
+	for _, id := range []string{"recipe.config.enable_jwt_auth", "recipe.config.enable_redis_caching", "recipe.config.enable_uploads", "recipe.config.production_hardening"} {
+		card, ok := findCatalogCard(snap, id)
+		if !ok {
+			t.Fatalf("missing recipe %s", id)
+		}
+		if card.GraphQLMutation != "" {
+			t.Fatalf("recipe %s should not carry an apply mutation (secret/cross-cutting), got %q", id, card.GraphQLMutation)
+		}
+		if !strings.Contains(card.SafetyJSON, "unsupported_apply") {
+			t.Fatalf("recipe %s should carry unsupported_apply guidance", id)
+		}
 	}
 }
 

@@ -96,4 +96,5 @@ query Products($maxPrice: Float!) {
 - Let GraphJin run the loop for you: the [built-in agent](/agentic/server-agent/) turns one instruction into a typed, evidence-backed answer.
 - Learn the [query language](/core/query-language/).
 - Add [filters](/core/filters/) and [cursor pagination](/core/ordering-cursors/).
+- Understand the config file and every way to change it in [How Configuration Works](/configure/how-it-works/).
 - Lock down production with [saved queries](/start/saved-queries/) and [RBAC](/configure/auth-rbac/).

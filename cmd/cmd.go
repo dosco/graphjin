@@ -55,6 +55,7 @@ func Cmd() {
 	rootCmd.AddCommand(servCmd())
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(cliCmd())
+	rootCmd.AddCommand(configCmd())
 	rootCmd.AddCommand(versionCmd())
 
 	// rootCmd.AddCommand(&cobra.Command{
@@ -119,6 +120,13 @@ func setup(cpath string) {
 			}
 			log.Infof("Created default config: %s", configFile)
 		}
+
+		// Schema referenced by the modeline in the generated config files.
+		schemaFile := filepath.Join(cp, configSchemaFile)
+		if err := os.WriteFile(schemaFile, serv.ConfigJSONSchema(), 0o600); err != nil {
+			log.Fatalf("Failed to write config schema: %s", err)
+		}
+		log.Infof("Created config schema: %s", schemaFile)
 	}
 
 	if conf, err = serv.ReadInConfig(path.Join(cp, cn)); err != nil {
