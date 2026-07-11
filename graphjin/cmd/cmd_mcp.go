@@ -43,10 +43,13 @@ Two modes, auto-selected:
                 using --path config + the local database.
 
 Demo mode (--demo, local mode only):
+  graphjin mcp --demo                            # built-in demo (SQLite, no containers)
   graphjin mcp --demo --path examples/webshop
   graphjin mcp --demo --path examples/coffee-roastery
 
-Demo state is stored under <path>/demo. Delete that folder to reset.
+Without --path the built-in clinic-scheduler demo is extracted to
+./graphjin-demo and served from there. Demo state is stored under
+<path>/demo. Delete that folder to reset.
 
 Authentication for local mode:
   --user-id, --user-role flags (highest priority)
@@ -57,7 +60,7 @@ Authentication for local mode:
 
 	c.Flags().StringVar(&mcpUserID, "user-id", "", "User ID for MCP session (local mode)")
 	c.Flags().StringVar(&mcpUserRole, "user-role", "", "User role for MCP session (local mode)")
-	c.Flags().BoolVar(&mcpDemoMode, "demo", false, "Run a curated local demo with state under <path>/demo (local mode)")
+	c.Flags().BoolVar(&mcpDemoMode, "demo", false, "Run a curated local demo (built-in example when --path is unset) with state under <path>/demo (local mode)")
 	c.Flags().StringArrayVar(&mcpDBFlags, "db", nil, "Database type override(s) (requires --demo)")
 
 	// Subcommands
@@ -85,6 +88,16 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 	// Local mode from here on.
 	if !mcpDemoMode && len(mcpDBFlags) > 0 {
 		log.Fatal("--db flags require --demo")
+	}
+
+	if mcpDemoMode {
+		pathSet := cmd.Flags().Changed("path") || cmd.Flags().Changed("config")
+		// Status goes to stderr: stdout carries the JSON-RPC stream.
+		dpath, err := resolveDemoPath(pathSet, os.Stderr)
+		if err != nil {
+			log.Fatalf("Failed to prepare demo: %s", err)
+		}
+		cpath = dpath
 	}
 
 	setup(cpath)

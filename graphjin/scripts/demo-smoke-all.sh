@@ -5,9 +5,14 @@
 # (agent.sampling: auto) and the require-mode fail-closed quartet against a
 # rebooted clinic-scheduler.
 #
-# Preconditions: Docker running; ./.env with a provider key (OPENAI_API_KEY /
-# ANTHROPIC_API_KEY / GOOGLE_APIKEY); curl, jq, openssl on PATH; ports
-# 8080-8083 and 8093 free.
+# The "default" entry covers the bare `graphjin serve --demo` flow: a
+# CGO_ENABLED=0 binary (like releases) run in an empty directory must
+# extract the built-in clinic-scheduler demo to ./graphjin-demo, pass the
+# clinic smoke suite, and reuse the extracted state on a second boot.
+#
+# Preconditions: Docker running (not needed for --only default); ./.env with
+# a provider key (OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_APIKEY); curl,
+# jq, openssl on PATH; ports 8080-8083 and 8093 free.
 #
 # Usage: scripts/demo-smoke-all.sh [--only <demo>] [--skip-sampling]
 set -euo pipefail
@@ -73,7 +78,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-DEMOS="coffee-roastery clinic-scheduler corrugated-plant pcb-fab"
+DEMOS="default coffee-roastery clinic-scheduler corrugated-plant pcb-fab"
 SAMPLING_DISCOVERY_INSTRUCTION='Say hello. Do not run any tools.'
 
 port_for_demo() {
@@ -154,10 +159,11 @@ kill_server() {
 }
 trap 'kill_server' EXIT
 
-boot_demo() {
+boot_server() {
   local demo="$1"
   local port="$2"
-  shift 2
+  local workdir="$3"
+  shift 3
   SERVER_PORT="$port"
   if [ -n "$(port_listeners "$port")" ]; then
     echo "port ${port} is already in use; refusing to boot ${demo}" >&2
@@ -165,7 +171,7 @@ boot_demo() {
   fi
   SERVER_LOG="$(mktemp "${TMPDIR:-/tmp}/gj-demo-${demo}.XXXXXX")"
   echo "==> booting ${demo} on :${port} (log: ${SERVER_LOG})"
-  env "$@" go run ./cmd serve --demo --path "examples/${demo}" >"$SERVER_LOG" 2>&1 &
+  (cd "$workdir" && exec "$@") >"$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
   SERVER_OWNED=1
   local waited=0
@@ -184,6 +190,13 @@ boot_demo() {
     fi
   done
   echo "==> ${demo} healthy after ~${waited}s"
+}
+
+boot_demo() {
+  local demo="$1"
+  local port="$2"
+  shift 2
+  boot_server "$demo" "$port" "." env "$@" go run ./cmd serve --demo --path "examples/${demo}"
 }
 
 record() {
@@ -278,12 +291,82 @@ run_demo() {
   fi
 }
 
+# run_default_demo smokes the bare `graphjin serve --demo` flow: build a
+# CGO_ENABLED=0 binary (matching release builds), run it in an empty
+# directory with only the provider key in the environment, and expect the
+# built-in clinic-scheduler demo extracted to ./graphjin-demo, the clinic
+# smoke suite green, and the extracted state reused on a second boot.
+run_default_demo() {
+  local port=8083
+  local started ok=1
+  started="$(date +%s)"
+  load_env_file "examples/clinic-scheduler/.env"
+
+  local bindir workdir
+  bindir="$(mktemp -d "${TMPDIR:-/tmp}/gj-default-bin.XXXXXX")"
+  workdir="$(mktemp -d "${TMPDIR:-/tmp}/gj-default-demo.XXXXXX")"
+  echo "==> building CGO_ENABLED=0 binary for the built-in demo"
+  if ! CGO_ENABLED=0 go build -o "${bindir}/graphjin" ./cmd; then
+    record "default | BUILD FAILED | - | $(($(date +%s) - started))s"
+    rm -rf "$bindir" "$workdir"
+    return 1
+  fi
+
+  if ! boot_server "default" "$port" "$workdir" "${bindir}/graphjin" serve --demo; then
+    record "default | BOOT FAILED | - | $(($(date +%s) - started))s"
+    kill_server
+    rm -rf "$bindir" "$workdir"
+    return 1
+  fi
+  if ! grep -q "demo project.*created" "$SERVER_LOG"; then
+    echo "default demo did not extract the built-in project" >&2
+    ok=""
+  fi
+  if [ ! -f "${workdir}/graphjin-demo/demo/manifest.json" ]; then
+    echo "default demo state manifest missing under ${workdir}/graphjin-demo/demo" >&2
+    ok=""
+  fi
+  if [ -n "$ok" ] && ! "examples/clinic-scheduler/scripts/smoke.sh" --url "http://localhost:${port}" --agent-eval; then
+    ok=""
+  fi
+  kill_server
+
+  # Second boot must reuse the extracted project and keep its data.
+  if [ -n "$ok" ]; then
+    if boot_server "default" "$port" "$workdir" "${bindir}/graphjin" serve --demo; then
+      if ! grep -q "demo project.*reused" "$SERVER_LOG"; then
+        echo "default demo did not reuse ./graphjin-demo on reboot" >&2
+        ok=""
+      fi
+      if [ -n "$ok" ] && ! "examples/clinic-scheduler/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent; then
+        ok=""
+      fi
+    else
+      ok=""
+    fi
+    kill_server
+  fi
+  rm -rf "$bindir" "$workdir"
+
+  local dur=$(($(date +%s) - started))
+  if [ -n "$ok" ]; then
+    record "default | PASS | - | ${dur}s"
+  else
+    record "default | FAIL | - | ${dur}s"
+    return 1
+  fi
+}
+
 FAILED=""
 for demo in $DEMOS; do
   if [ -n "$ONLY" ] && [ "$demo" != "$ONLY" ]; then
     continue
   fi
-  run_demo "$demo" || FAILED=1
+  if [ "$demo" = "default" ]; then
+    run_default_demo || FAILED=1
+  else
+    run_demo "$demo" || FAILED=1
+  fi
 done
 
 echo

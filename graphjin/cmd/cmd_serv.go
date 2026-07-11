@@ -73,14 +73,18 @@ func servCmd() *cobra.Command {
 		Long: `Run the GraphJin HTTP service.
 
 Demo mode (--demo):
+  graphjin serve --demo                            # built-in demo (SQLite, no containers)
   graphjin serve --demo --path examples/webshop
   graphjin serve --demo --path examples/coffee-roastery
 
-Demo state is stored under <path>/demo. Delete that folder to reset.`,
+Without --path the built-in clinic-scheduler demo is extracted to
+./graphjin-demo and served from there; delete that directory for a
+fresh copy. Demo state is stored under <path>/demo. Delete that
+folder to reset the data.`,
 		Run: cmdServ,
 	}
 	// c.Flags().BoolVar(&deployActive, "deploy-active", false, "Deploy active config")
-	c.Flags().BoolVar(&servDemoMode, "demo", false, "Run a curated local demo with state under <path>/demo")
+	c.Flags().BoolVar(&servDemoMode, "demo", false, "Run a curated local demo (built-in example when --path is unset) with state under <path>/demo")
 	c.Flags().StringArrayVar(&servDBFlags, "db", nil, "Database type override(s) (requires --demo)")
 
 	// Server-side lifecycle subcommands. These used to live at the top level
@@ -102,6 +106,12 @@ func cmdServ(cmd *cobra.Command, args []string) {
 	}
 
 	if servDemoMode {
+		pathSet := cmd.Flags().Changed("path") || cmd.Flags().Changed("config")
+		dpath, err := resolveDemoPath(pathSet, os.Stdout)
+		if err != nil {
+			log.Fatalf("Failed to prepare demo: %s", err)
+		}
+		cpath = dpath
 		if err := loadDemoEnv(cpath, os.Stdout); err != nil {
 			log.Fatalf("Failed to load demo .env: %s", err)
 		}
