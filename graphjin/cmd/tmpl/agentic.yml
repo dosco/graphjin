@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./config.schema.json
 app_name: "{{- .AppName }} Agentic"
 mode: agentic
 production: true
@@ -11,7 +12,6 @@ http_compress: true
 auth_fail_block: true
 enable_tracing: false
 reload_on_config_change: false
-hot_deploy: true
 
 # Agentic deployments keep legacy MCP compatibility tools disabled. Agents
 # should use catalog/control-plane GraphQL roots instead.

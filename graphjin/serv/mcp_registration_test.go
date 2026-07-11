@@ -276,7 +276,8 @@ func TestLegacyRegistrationHooksAreInert(t *testing.T) {
 		ms.registerAuditTools,
 		ms.registerCatalogResources,
 		ms.registerConfigDocsTool,
-		ms.registerConfigTools,
+		// registerConfigTools is no longer inert — it registers the dev-mode
+		// config read/validate/update tools (see TestRegisterConfigTools_DevOnly).
 		ms.registerDDLTools,
 		ms.registerDiscoverTools,
 		ms.registerExploreTools,
@@ -413,23 +414,27 @@ func TestHandleAskGraphJinAgentRequiresInstruction(t *testing.T) {
 
 func TestRegisterTools_LegacyDiscoveryDoesNotExpandMCPTools(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		ms   *mcpServer
+		name     string
+		ms       *mcpServer
+		wantList string
+		wantLen  int
 	}{
-		{name: "sources", ms: mockMcpServerWithConfig(MCPConfig{LegacyDiscovery: true, AllowRawQueries: true, AllowWorkflowExecution: true})},
-		{name: "non_sources", ms: mockLegacyMcpServerWithConfig(MCPConfig{LegacyDiscovery: true, AllowRawQueries: true, AllowWorkflowExecution: true})},
+		// Sources mock runs in agentic mode, so the dev-only config tools stay
+		// hidden; the legacy (non-sources) mock defaults to dev mode, where
+		// get_current_config/validate_config are exposed.
+		{name: "sources", ms: mockMcpServerWithConfig(MCPConfig{LegacyDiscovery: true, AllowRawQueries: true, AllowWorkflowExecution: true}), wantList: "graphql_help,query_catalog,execute_saved_query,validate_where_clause,execute_graphql", wantLen: 5},
+		{name: "non_sources", ms: mockLegacyMcpServerWithConfig(MCPConfig{LegacyDiscovery: true, AllowRawQueries: true, AllowWorkflowExecution: true}), wantList: "graphql_help,query_catalog,execute_saved_query,validate_where_clause,execute_graphql,get_current_config,validate_config", wantLen: 7},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ms := tc.ms
-			ms.service.conf.Serv.Production = false
 			ms.srv = server.NewMCPServer("test", "0.0.0")
 			ms.registerTools()
 
 			tools := ms.srv.ListTools()
-			if listed := mcpToolList(ms.service.conf); strings.Join(listed, ",") != "graphql_help,query_catalog,execute_saved_query,validate_where_clause,execute_graphql" {
+			if listed := mcpToolList(ms.service.conf); strings.Join(listed, ",") != tc.wantList {
 				t.Fatalf("unexpected mcpToolList with legacy discovery: %v", listed)
 			}
-			if len(tools) != 5 {
+			if len(tools) != tc.wantLen {
 				t.Fatalf("legacy discovery should not expand MCP tools, got %v", toolNamesFromServer(tools))
 			}
 			if _, exists := tools["execute_graphql"]; !exists {
@@ -532,10 +537,10 @@ func TestRegisterTools_NonSourcesUsesCatalogFirstSurface(t *testing.T) {
 	ms.registerTools()
 
 	tools := ms.srv.ListTools()
-	if listed := strings.Join(mcpToolList(ms.service.conf), ","); listed != "graphql_help,query_catalog,execute_saved_query,validate_where_clause" {
+	if listed := strings.Join(mcpToolList(ms.service.conf), ","); listed != "graphql_help,query_catalog,execute_saved_query,validate_where_clause,get_current_config,validate_config" {
 		t.Fatalf("unexpected non-sources tool list: %s", listed)
 	}
-	for _, name := range []string{"graphql_help", "query_catalog", "execute_saved_query", "validate_where_clause"} {
+	for _, name := range []string{"graphql_help", "query_catalog", "execute_saved_query", "validate_where_clause", "get_current_config", "validate_config"} {
 		if _, exists := tools[name]; !exists {
 			t.Fatalf("%s should be registered in non-sources MCP", name)
 		}

@@ -19,282 +19,332 @@ import (
 	"github.com/spf13/viper"
 )
 
-// registerConfigTools is retained as an inert compatibility hook.
+// registerConfigTools registers the config read/validate/update MCP tools.
+// Dev mode only: effectiveMode is the authoritative mode selector, so agentic
+// and prod deployments register nothing here (agentic canonicalizes to
+// production, and effectiveMode reports it as non-dev even before that
+// normalization runs). registerTools calls this outside the agentOnlyMCP gate
+// so external MCP clients keep first-class config access in dev even when the
+// built-in agent is the MCP front door.
 func (ms *mcpServer) registerConfigTools() {
-	return
-
-	// get_current_config - Dev mode only (read-only)
-	if !ms.service.conf.Serv.Production {
-		ms.srv.AddTool(mcp.NewTool(
-			"get_current_config",
-			mcp.WithDescription("Get current GraphJin configuration. Returns sources, databases, relationships, tables, roles, blocklist, functions, resolvers, and MCP settings. "+
-				"Use this to understand the current configuration before making changes."),
-			mcp.WithString("section",
-				mcp.Description("Optional section to retrieve: 'sources', 'databases', 'relationships', 'metadata', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', 'mcp', or 'all' (default)"),
-			),
-		), ms.handleGetCurrentConfig)
+	if effectiveMode(ms.service.conf) != modeDev {
+		return
 	}
 
-	// update_current_config - Only registered when allow_config_updates is true
-	if ms.service.conf.MCP.AllowConfigUpdates {
-		ms.srv.AddTool(mcp.NewTool(
-			"update_current_config",
-			mcp.WithDescription("Compatibility tool for the GraphQL control-plane mutation gj_config(id: \"current\", update: ...). Update GraphJin configuration and automatically reload. "+
-				"Legacy config changes are applied in-memory immediately. Source-mode config writes require mode: preview first, then mode: apply with the returned preview_id and the exact same payload. "+
-				"Supports sources, update_sources, remove_sources, source_patches, databases, relationships, MCP settings, metadata, tables, roles, blocklist, functions, and resolvers. "+
-				"System database names (postgres, mysql, information_schema, master, etc.) "+
-				"are rejected by default — use a user database name instead. "+
-				"Use create_if_not_exists: true to create a new database on the server before connecting (dev mode only). "+
-				"Response includes machine-readable next-step guidance in the `next` field. "+
-				"WARNING: Changes are lost on restart unless persisted separately. "+
-				"Use get_current_config first to understand the current state."),
-			mcp.WithString("mode",
-				mcp.Description("Source mode only. Use \"preview\" to validate and receive preview_id, then \"apply\" with the same payload plus preview_id. Legacy mode may omit this field."),
-			),
-			mcp.WithString("preview_id",
-				mcp.Description("Source mode apply only. Returned by a successful preview; expires after 10 minutes and requires the exact same patch payload."),
-			),
-			mcp.WithString("expected_catalog_revision",
-				mcp.Description("Source mode preview/apply guard. Read gj_config(id: \"current\") { catalog_revision } immediately before preview/apply and send that value."),
-			),
-			mcp.WithArray("sources",
-				mcp.Description("Replace-all source list. Use update_sources/remove_sources for focused edits that preserve omitted sources."),
-				mcp.Items(sourceConfigInputSchema([]string{"name", "kind"})),
-			),
-			mcp.WithArray("update_sources",
-				mcp.Description("Merge-patch sources by name. Existing source patches require name. New source patches require name and kind. Omitted fields are preserved, null clears fields, arrays replace, nested objects merge."),
-				mcp.Items(sourceConfigInputSchema([]string{"name"})),
-			),
-			mcp.WithArray("remove_sources",
-				mcp.Description("Array of source names to remove from configuration."),
-				mcp.WithStringItems(),
-			),
-			mcp.WithArray("source_patches",
-				mcp.Description("Source mode patch-by-name updates for existing sources. Preserves unmentioned source fields. Supports access read/write/delete, namespace_column, owner_column, missing_namespace_column, public/admin/blocked table add/remove, and GraphJin roots_set/roots_remove."),
-				mcp.Items(map[string]any{
-					"type":     "object",
-					"required": []string{"name"},
-					"properties": map[string]any{
-						"name": map[string]any{"type": "string", "description": "Exact existing source name"},
-						"access": map[string]any{
-							"type": "object",
+	// get_current_config (read-only)
+	ms.srv.AddTool(mcp.NewTool(
+		"get_current_config",
+		mcp.WithDescription("Get current GraphJin configuration. Returns sources, databases, relationships, tables, roles, blocklist, functions, resolvers, and MCP settings. "+
+			"Use this to understand the current configuration before making changes."),
+		mcp.WithString("section",
+			mcp.Description("Optional section to retrieve: 'sources', 'databases', 'relationships', 'metadata', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', 'mcp', or 'all' (default)"),
+		),
+	), ms.handleGetCurrentConfig)
+
+	// The update tool definition is always built: validate_config shares its
+	// payload schema even when config updates are disabled.
+	updateTool := mcp.NewTool(
+		"update_current_config",
+		mcp.WithDescription("Compatibility tool for the GraphQL control-plane mutation gj_config(id: \"current\", update: ...). Update GraphJin configuration and automatically reload. "+
+			"Legacy config changes are applied in-memory immediately. Source-mode config writes require mode: preview first, then mode: apply with the returned preview_id and the exact same payload. "+
+			"Supports sources, update_sources, remove_sources, source_patches, databases, relationships, MCP settings, metadata, tables, roles, blocklist, functions, and resolvers. "+
+			"System database names (postgres, mysql, information_schema, master, etc.) "+
+			"are rejected by default — use a user database name instead. "+
+			"Use create_if_not_exists: true to create a new database on the server before connecting (dev mode only). "+
+			"Response includes machine-readable next-step guidance in the `next` field. "+
+			"WARNING: Changes are lost on restart unless persisted separately. "+
+			"Use get_current_config first to understand the current state."),
+		mcp.WithString("mode",
+			mcp.Description("Source mode only. Use \"preview\" to validate and receive preview_id, then \"apply\" with the same payload plus preview_id. Legacy mode may omit this field."),
+		),
+		mcp.WithString("preview_id",
+			mcp.Description("Source mode apply only. Returned by a successful preview; expires after 10 minutes and requires the exact same patch payload."),
+		),
+		mcp.WithString("expected_catalog_revision",
+			mcp.Description("Source mode preview/apply guard. Read gj_config(id: \"current\") { catalog_revision } immediately before preview/apply and send that value."),
+		),
+		mcp.WithArray("sources",
+			mcp.Description("Replace-all source list. Use update_sources/remove_sources for focused edits that preserve omitted sources."),
+			mcp.Items(sourceConfigInputSchema([]string{"name", "kind"})),
+		),
+		mcp.WithArray("update_sources",
+			mcp.Description("Merge-patch sources by name. Existing source patches require name. New source patches require name and kind. Omitted fields are preserved, null clears fields, arrays replace, nested objects merge."),
+			mcp.Items(sourceConfigInputSchema([]string{"name"})),
+		),
+		mcp.WithArray("remove_sources",
+			mcp.Description("Array of source names to remove from configuration."),
+			mcp.WithStringItems(),
+		),
+		mcp.WithArray("source_patches",
+			mcp.Description("Source mode patch-by-name updates for existing sources. Preserves unmentioned source fields. Supports access read/write/delete, namespace_column, owner_column, missing_namespace_column, public/admin/blocked table add/remove, and GraphJin roots_set/roots_remove."),
+			mcp.Items(map[string]any{
+				"type":     "object",
+				"required": []string{"name"},
+				"properties": map[string]any{
+					"name": map[string]any{"type": "string", "description": "Exact existing source name"},
+					"access": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"read":                     map[string]any{"type": "string", "enum": []string{"blocked", "public", "authenticated", "account", "owner", "admin"}},
+							"write":                    map[string]any{"type": "string", "enum": []string{"blocked", "authenticated", "account", "owner", "admin"}},
+							"delete":                   map[string]any{"type": "string", "enum": []string{"blocked", "authenticated", "account", "owner", "admin"}},
+							"namespace_column":         map[string]any{"type": "string"},
+							"owner_column":             map[string]any{"type": "string"},
+							"missing_namespace_column": map[string]any{"type": "string", "enum": []string{"block", "allow"}},
+							"public_tables_add":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"public_tables_remove":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"admin_tables_add":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"admin_tables_remove":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"blocked_tables_add":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"blocked_tables_remove":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"roots_set":                map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+							"roots_remove":             map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						},
+					},
+				},
+			}),
+		),
+		mcp.WithObject("databases",
+			mcp.Description("Map of database configs to add/update. Key is database name, value is DatabaseConfig with type, host, port, dbname, user, password, read_only, infer_db_refs for CodeSQL, etc. NOTE: read_only cannot be changed from true to false at runtime if it was set in the config file."),
+		),
+		mcp.WithObject("metadata",
+			mcp.Description("Metadata graph config: enabled, database, auto_code_relations, and code_databases. Dev defaults on; production defaults off."),
+		),
+		mcp.WithArray("tables",
+			mcp.Description("Array of table configs to add/update. Each table has name, database (optional), blocklist (optional), columns (optional), order_by (optional)."),
+			mcp.Items(map[string]any{
+				"type":     "object",
+				"required": []string{"name"},
+				"properties": map[string]any{
+					"name":      map[string]any{"type": "string", "description": "Table name (required)"},
+					"database":  map[string]any{"type": "string", "description": "Database name"},
+					"schema":    map[string]any{"type": "string", "description": "Schema name"},
+					"type":      map[string]any{"type": "string", "description": "Table type"},
+					"blocklist": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Columns to block"},
+					"columns": map[string]any{
+						"type":        "array",
+						"description": "Column definitions",
+						"items": map[string]any{
+							"type":     "object",
+							"required": []string{"name"},
 							"properties": map[string]any{
-								"read":                     map[string]any{"type": "string", "enum": []string{"blocked", "public", "authenticated", "account", "owner", "admin"}},
-								"write":                    map[string]any{"type": "string", "enum": []string{"blocked", "authenticated", "account", "owner", "admin"}},
-								"delete":                   map[string]any{"type": "string", "enum": []string{"blocked", "authenticated", "account", "owner", "admin"}},
-								"namespace_column":         map[string]any{"type": "string"},
-								"owner_column":             map[string]any{"type": "string"},
-								"missing_namespace_column": map[string]any{"type": "string", "enum": []string{"block", "allow"}},
-								"public_tables_add":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-								"public_tables_remove":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-								"admin_tables_add":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-								"admin_tables_remove":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-								"blocked_tables_add":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-								"blocked_tables_remove":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-								"roots_set":                map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
-								"roots_remove":             map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+								"name":       map[string]any{"type": "string", "description": "Column name"},
+								"type":       map[string]any{"type": "string", "description": "Column type"},
+								"primary":    map[string]any{"type": "boolean", "description": "Is primary key"},
+								"array":      map[string]any{"type": "boolean", "description": "Is array type"},
+								"full_text":  map[string]any{"type": "boolean", "description": "Full-text search enabled"},
+								"related_to": map[string]any{"type": "string", "description": "Foreign key reference (e.g. 'users.id' or 'other_db:users.id' for cross-database)"},
 							},
 						},
 					},
-				}),
-			),
-			mcp.WithObject("databases",
-				mcp.Description("Map of database configs to add/update. Key is database name, value is DatabaseConfig with type, host, port, dbname, user, password, read_only, infer_db_refs for CodeSQL, etc. NOTE: read_only cannot be changed from true to false at runtime if it was set in the config file."),
-			),
-			mcp.WithObject("metadata",
-				mcp.Description("Metadata graph config: enabled, database, auto_code_relations, and code_databases. Dev defaults on; production defaults off."),
-			),
-			mcp.WithArray("tables",
-				mcp.Description("Array of table configs to add/update. Each table has name, database (optional), blocklist (optional), columns (optional), order_by (optional)."),
-				mcp.Items(map[string]any{
-					"type":     "object",
-					"required": []string{"name"},
-					"properties": map[string]any{
-						"name":      map[string]any{"type": "string", "description": "Table name (required)"},
-						"database":  map[string]any{"type": "string", "description": "Database name"},
-						"schema":    map[string]any{"type": "string", "description": "Schema name"},
-						"type":      map[string]any{"type": "string", "description": "Table type"},
-						"blocklist": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Columns to block"},
-						"columns": map[string]any{
-							"type":        "array",
-							"description": "Column definitions",
-							"items": map[string]any{
-								"type":     "object",
-								"required": []string{"name"},
-								"properties": map[string]any{
-									"name":       map[string]any{"type": "string", "description": "Column name"},
-									"type":       map[string]any{"type": "string", "description": "Column type"},
-									"primary":    map[string]any{"type": "boolean", "description": "Is primary key"},
-									"array":      map[string]any{"type": "boolean", "description": "Is array type"},
-									"full_text":  map[string]any{"type": "boolean", "description": "Full-text search enabled"},
-									"related_to": map[string]any{"type": "string", "description": "Foreign key reference (e.g. 'users.id' or 'other_db:users.id' for cross-database)"},
+					"order_by": map[string]any{
+						"type":        "object",
+						"description": "Order-by configuration (keys are names, values are arrays of column strings)",
+						"additionalProperties": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"type": "string"},
+						},
+					},
+				},
+			}),
+		),
+		mcp.WithArray("roles",
+			mcp.Description("Array of role configs to add/update. Each role has name, match (optional), and tables array with query/insert/update/delete permissions."),
+			mcp.Items(map[string]any{
+				"type":     "object",
+				"required": []string{"name"},
+				"properties": map[string]any{
+					"name":    map[string]any{"type": "string", "description": "Role name (required)"},
+					"comment": map[string]any{"type": "string", "description": "Role comment"},
+					"match":   map[string]any{"type": "string", "description": "Match expression for role"},
+					"tables": map[string]any{
+						"type":        "array",
+						"description": "Table permissions for this role",
+						"items": map[string]any{
+							"type":     "object",
+							"required": []string{"name"},
+							"properties": map[string]any{
+								"name":      map[string]any{"type": "string", "description": "Table name"},
+								"schema":    map[string]any{"type": "string", "description": "Schema name"},
+								"database":  map[string]any{"type": "string", "description": "Database/source name for multi-database or system NanoDB tables such as graphjin.gj_security"},
+								"read_only": map[string]any{"type": "boolean", "description": "Read-only access"},
+								"query": map[string]any{
+									"type":        "object",
+									"description": "Query permissions",
+									"properties": map[string]any{
+										"limit":             map[string]any{"type": "number", "description": "Row limit"},
+										"filters":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Query filters"},
+										"columns":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Allowed columns"},
+										"disable_functions": map[string]any{"type": "boolean", "description": "Disable functions"},
+										"block":             map[string]any{"type": "boolean", "description": "Block this operation"},
+									},
 								},
-							},
-						},
-						"order_by": map[string]any{
-							"type":        "object",
-							"description": "Order-by configuration (keys are names, values are arrays of column strings)",
-							"additionalProperties": map[string]any{
-								"type":  "array",
-								"items": map[string]any{"type": "string"},
-							},
-						},
-					},
-				}),
-			),
-			mcp.WithArray("roles",
-				mcp.Description("Array of role configs to add/update. Each role has name, match (optional), and tables array with query/insert/update/delete permissions."),
-				mcp.Items(map[string]any{
-					"type":     "object",
-					"required": []string{"name"},
-					"properties": map[string]any{
-						"name":    map[string]any{"type": "string", "description": "Role name (required)"},
-						"comment": map[string]any{"type": "string", "description": "Role comment"},
-						"match":   map[string]any{"type": "string", "description": "Match expression for role"},
-						"tables": map[string]any{
-							"type":        "array",
-							"description": "Table permissions for this role",
-							"items": map[string]any{
-								"type":     "object",
-								"required": []string{"name"},
-								"properties": map[string]any{
-									"name":      map[string]any{"type": "string", "description": "Table name"},
-									"schema":    map[string]any{"type": "string", "description": "Schema name"},
-									"database":  map[string]any{"type": "string", "description": "Database/source name for multi-database or system NanoDB tables such as graphjin.gj_security"},
-									"read_only": map[string]any{"type": "boolean", "description": "Read-only access"},
-									"query": map[string]any{
-										"type":        "object",
-										"description": "Query permissions",
-										"properties": map[string]any{
-											"limit":             map[string]any{"type": "number", "description": "Row limit"},
-											"filters":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Query filters"},
-											"columns":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Allowed columns"},
-											"disable_functions": map[string]any{"type": "boolean", "description": "Disable functions"},
-											"block":             map[string]any{"type": "boolean", "description": "Block this operation"},
-										},
+								"insert": map[string]any{
+									"type":        "object",
+									"description": "Insert permissions",
+									"properties": map[string]any{
+										"filters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Insert filters"},
+										"columns": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Allowed columns"},
+										"presets": map[string]any{"type": "object", "description": "Preset values", "additionalProperties": map[string]any{"type": "string"}},
+										"block":   map[string]any{"type": "boolean", "description": "Block this operation"},
 									},
-									"insert": map[string]any{
-										"type":        "object",
-										"description": "Insert permissions",
-										"properties": map[string]any{
-											"filters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Insert filters"},
-											"columns": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Allowed columns"},
-											"presets": map[string]any{"type": "object", "description": "Preset values", "additionalProperties": map[string]any{"type": "string"}},
-											"block":   map[string]any{"type": "boolean", "description": "Block this operation"},
-										},
+								},
+								"update": map[string]any{
+									"type":        "object",
+									"description": "Update permissions",
+									"properties": map[string]any{
+										"filters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Update filters"},
+										"columns": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Allowed columns"},
+										"presets": map[string]any{"type": "object", "description": "Preset values", "additionalProperties": map[string]any{"type": "string"}},
+										"block":   map[string]any{"type": "boolean", "description": "Block this operation"},
 									},
-									"update": map[string]any{
-										"type":        "object",
-										"description": "Update permissions",
-										"properties": map[string]any{
-											"filters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Update filters"},
-											"columns": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Allowed columns"},
-											"presets": map[string]any{"type": "object", "description": "Preset values", "additionalProperties": map[string]any{"type": "string"}},
-											"block":   map[string]any{"type": "boolean", "description": "Block this operation"},
-										},
+								},
+								"upsert": map[string]any{
+									"type":        "object",
+									"description": "Upsert permissions",
+									"properties": map[string]any{
+										"filters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Upsert filters"},
+										"columns": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Allowed columns"},
+										"presets": map[string]any{"type": "object", "description": "Preset values", "additionalProperties": map[string]any{"type": "string"}},
+										"block":   map[string]any{"type": "boolean", "description": "Block this operation"},
 									},
-									"upsert": map[string]any{
-										"type":        "object",
-										"description": "Upsert permissions",
-										"properties": map[string]any{
-											"filters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Upsert filters"},
-											"columns": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Allowed columns"},
-											"presets": map[string]any{"type": "object", "description": "Preset values", "additionalProperties": map[string]any{"type": "string"}},
-											"block":   map[string]any{"type": "boolean", "description": "Block this operation"},
-										},
-									},
-									"delete": map[string]any{
-										"type":        "object",
-										"description": "Delete permissions",
-										"properties": map[string]any{
-											"filters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Delete filters"},
-											"columns": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Allowed columns"},
-											"block":   map[string]any{"type": "boolean", "description": "Block this operation"},
-										},
+								},
+								"delete": map[string]any{
+									"type":        "object",
+									"description": "Delete permissions",
+									"properties": map[string]any{
+										"filters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Delete filters"},
+										"columns": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Allowed columns"},
+										"block":   map[string]any{"type": "boolean", "description": "Block this operation"},
 									},
 								},
 							},
 						},
 					},
-				}),
-			),
-			mcp.WithArray("blocklist",
-				mcp.Description("Array of tables/columns to block globally. Use 'table_name' to block entire table or 'table_name.column_name' to block specific column."),
-				mcp.WithStringItems(),
-			),
-			mcp.WithArray("functions",
-				mcp.Description("Array of database function configs. Each function has name and return_type."),
-				mcp.Items(map[string]any{
-					"type":     "object",
-					"required": []string{"name"},
-					"properties": map[string]any{
-						"name":        map[string]any{"type": "string", "description": "Function name (required)"},
-						"schema":      map[string]any{"type": "string", "description": "Schema name"},
-						"return_type": map[string]any{"type": "string", "description": "Return type of the function"},
-					},
-				}),
-			),
-			mcp.WithBoolean("create_if_not_exists",
-				mcp.Description("Dev mode only. When true, creates databases on the server if they don't exist before connecting. "+
-					"Works for PostgreSQL, MySQL/MariaDB, MSSQL, and Oracle. "+
-					"SQLite and MongoDB create databases automatically. Snowflake is not supported for create_if_not_exists."),
-			),
-			mcp.WithArray("remove_databases",
-				mcp.Description("Array of database names to remove from configuration."),
-				mcp.WithStringItems(),
-			),
-			mcp.WithArray("remove_tables",
-				mcp.Description("Array of table names to remove from configuration."),
-				mcp.WithStringItems(),
-			),
-			mcp.WithArray("remove_roles",
-				mcp.Description("Array of role names to remove from configuration."),
-				mcp.WithStringItems(),
-			),
-			mcp.WithArray("remove_blocklist_items",
-				mcp.Description("Array of blocklist entries to remove."),
-				mcp.WithStringItems(),
-			),
-			mcp.WithArray("remove_functions",
-				mcp.Description("Array of function names to remove from configuration."),
-				mcp.WithStringItems(),
-			),
-			mcp.WithArray("resolvers",
-				mcp.Description("Array of resolver configs to add/update. Resolvers join DB tables with remote APIs."),
-				mcp.Items(map[string]any{
-					"type":     "object",
-					"required": []string{"name", "type", "table"},
-					"properties": map[string]any{
-						"name":         map[string]any{"type": "string", "description": "Resolver name, used as the virtual table name in queries (required)"},
-						"type":         map[string]any{"type": "string", "description": "Resolver type: 'remote_api' (required)"},
-						"table":        map[string]any{"type": "string", "description": "DB table whose column provides the $id value (required)"},
-						"column":       map[string]any{"type": "string", "description": "DB column used as $id (defaults to primary key)"},
-						"schema":       map[string]any{"type": "string", "description": "DB schema name"},
-						"strip_path":   map[string]any{"type": "string", "description": "Dot-path to extract from API response (e.g., 'data')"},
-						"url":          map[string]any{"type": "string", "description": "Remote API URL with $id placeholder (e.g., 'http://api/payments/$id')"},
-						"debug":        map[string]any{"type": "boolean", "description": "Log HTTP request/response"},
-						"pass_headers": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Headers to forward from original request"},
-						"set_headers": map[string]any{
-							"type":        "array",
-							"description": "Headers to set on remote request",
-							"items": map[string]any{
-								"type":     "object",
-								"required": []string{"name", "value"},
-								"properties": map[string]any{
-									"name":  map[string]any{"type": "string", "description": "Header name"},
-									"value": map[string]any{"type": "string", "description": "Header value"},
-								},
+				},
+			}),
+		),
+		mcp.WithArray("blocklist",
+			mcp.Description("Array of tables/columns to block globally. Use 'table_name' to block entire table or 'table_name.column_name' to block specific column."),
+			mcp.WithStringItems(),
+		),
+		mcp.WithArray("functions",
+			mcp.Description("Array of database function configs. Each function has name and return_type."),
+			mcp.Items(map[string]any{
+				"type":     "object",
+				"required": []string{"name"},
+				"properties": map[string]any{
+					"name":        map[string]any{"type": "string", "description": "Function name (required)"},
+					"schema":      map[string]any{"type": "string", "description": "Schema name"},
+					"return_type": map[string]any{"type": "string", "description": "Return type of the function"},
+				},
+			}),
+		),
+		mcp.WithBoolean("create_if_not_exists",
+			mcp.Description("Dev mode only. When true, creates databases on the server if they don't exist before connecting. "+
+				"Works for PostgreSQL, MySQL/MariaDB, MSSQL, and Oracle. "+
+				"SQLite and MongoDB create databases automatically. Snowflake is not supported for create_if_not_exists."),
+		),
+		mcp.WithArray("remove_databases",
+			mcp.Description("Array of database names to remove from configuration."),
+			mcp.WithStringItems(),
+		),
+		mcp.WithArray("remove_tables",
+			mcp.Description("Array of table names to remove from configuration."),
+			mcp.WithStringItems(),
+		),
+		mcp.WithArray("remove_roles",
+			mcp.Description("Array of role names to remove from configuration."),
+			mcp.WithStringItems(),
+		),
+		mcp.WithArray("remove_blocklist_items",
+			mcp.Description("Array of blocklist entries to remove."),
+			mcp.WithStringItems(),
+		),
+		mcp.WithArray("remove_functions",
+			mcp.Description("Array of function names to remove from configuration."),
+			mcp.WithStringItems(),
+		),
+		mcp.WithArray("resolvers",
+			mcp.Description("Array of resolver configs to add/update. Resolvers join DB tables with remote APIs."),
+			mcp.Items(map[string]any{
+				"type":     "object",
+				"required": []string{"name", "type", "table"},
+				"properties": map[string]any{
+					"name":         map[string]any{"type": "string", "description": "Resolver name, used as the virtual table name in queries (required)"},
+					"type":         map[string]any{"type": "string", "description": "Resolver type: 'remote_api' (required)"},
+					"table":        map[string]any{"type": "string", "description": "DB table whose column provides the $id value (required)"},
+					"column":       map[string]any{"type": "string", "description": "DB column used as $id (defaults to primary key)"},
+					"schema":       map[string]any{"type": "string", "description": "DB schema name"},
+					"strip_path":   map[string]any{"type": "string", "description": "Dot-path to extract from API response (e.g., 'data')"},
+					"url":          map[string]any{"type": "string", "description": "Remote API URL with $id placeholder (e.g., 'http://api/payments/$id')"},
+					"debug":        map[string]any{"type": "boolean", "description": "Log HTTP request/response"},
+					"pass_headers": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Headers to forward from original request"},
+					"set_headers": map[string]any{
+						"type":        "array",
+						"description": "Headers to set on remote request",
+						"items": map[string]any{
+							"type":     "object",
+							"required": []string{"name", "value"},
+							"properties": map[string]any{
+								"name":  map[string]any{"type": "string", "description": "Header name"},
+								"value": map[string]any{"type": "string", "description": "Header value"},
 							},
 						},
 					},
-				}),
-			),
-			mcp.WithArray("remove_resolvers",
-				mcp.Description("Array of resolver names to remove from configuration."),
-				mcp.WithStringItems(),
-			),
-		), ms.handleUpdateCurrentConfig)
+				},
+			}),
+		),
+		mcp.WithArray("remove_resolvers",
+			mcp.Description("Array of resolver names to remove from configuration."),
+			mcp.WithStringItems(),
+		),
+		mcp.WithObject("serv",
+			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, max_steps, timeout_seconds, sampling, read_only, return_trace, seed_limit, catalog_default_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
+				"agent changes are read live; the rest are persisted and take effect on the next restart (automatic when reload_on_config_change is enabled). "+
+				"Secret-bearing sections (auth, redis, uploads) are read-only on gj_config and cannot be patched here. reload_mode in the response reports hot vs restart."),
+		),
+	)
+
+	// validate_config: dry-run through the exact update pipeline (validation,
+	// staged runtime build, reload-impact classification), then discard the
+	// staged runtime. Shares update_current_config's payload schema minus the
+	// preview-flow control args, and stays available even when config updates
+	// are disabled.
+	validateTool := updateTool
+	validateTool.Name = "validate_config"
+	validateTool.Description = "Dry-run a proposed configuration change without applying it. " +
+		"Runs the same pipeline as update_current_config — validation, staged runtime build (databases connected, schema discovered), and reload-impact classification — then discards the staged runtime. " +
+		"Returns valid, errors, a change summary, and reload_mode (full or source_scoped). The running config, catalog revision, and config file are never mutated and no preview is created. " +
+		"Accepts the same payload fields as update_current_config. expected_catalog_revision is optional and only checked when provided."
+	validateProps := make(map[string]any, len(updateTool.InputSchema.Properties))
+	for k, v := range updateTool.InputSchema.Properties {
+		if k == "mode" || k == "preview_id" {
+			continue
+		}
+		validateProps[k] = v
 	}
+	validateTool.InputSchema.Properties = validateProps
+	ms.srv.AddTool(validateTool, ms.handleValidateConfig)
+
+	// update_current_config - only when allow_config_updates is enabled
+	if ms.service.conf.MCP.AllowConfigUpdates {
+		ms.srv.AddTool(updateTool, ms.handleUpdateCurrentConfig)
+	}
+}
+
+// handleValidateConfig runs the update pipeline in validate mode: full
+// validation and reload classification with a staged runtime that is always
+// discarded. See handleUpdateCurrentConfig for the mode: "validate" path.
+func (ms *mcpServer) handleValidateConfig(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := req.GetArguments()
+	if args == nil {
+		args = map[string]interface{}{}
+	}
+	args["mode"] = "validate"
+	delete(args, "preview_id")
+	req.Params.Arguments = args
+	return ms.handleUpdateCurrentConfig(ctx, req)
 }
 
 // MCPConfigResponse represents a section of the configuration for MCP
@@ -638,6 +688,14 @@ func (ms *mcpServer) sourceModeConfigGate(ctx context.Context, args map[string]i
 	}
 	switch mode {
 	case "preview", "apply":
+	case "validate":
+		// Stateless dry-run: no preview record is created and the revision
+		// guard is optional; a provided expected_catalog_revision is still
+		// checked for staleness.
+		if expectedRev != "" && currentRev != "" && expectedRev != currentRev {
+			return mode, expectedRev, patchHash, previewID, failure("expected_catalog_revision is stale; read gj_config again before retrying", fmt.Sprintf("expected_catalog_revision %q does not match current catalog_revision %q", expectedRev, currentRev))
+		}
+		return mode, expectedRev, patchHash, previewID, nil
 	default:
 		return mode, expectedRev, patchHash, previewID, failure("source-mode gj_config updates require mode: \"preview\" first, then mode: \"apply\" with preview_id", "missing or unsupported mode for source-mode config update; next_action: query_catalog(search: \"safe gj_config preview apply source_patches\")")
 	}
@@ -739,6 +797,23 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		} else {
 			mcpPatch = rawMCP
 			changes = append(changes, "updated mcp config")
+		}
+	}
+
+	// Server-side settings (serv.Config) flow through the same machinery as the
+	// core sections: validated here, applied and persisted after the core stage
+	// commits. Restart-class changes are persisted and take effect on the next
+	// start (auto when reload_on_config_change is enabled).
+	var servPatch map[string]any
+	var servReload string
+	if rawServ, ok := args["serv"].(map[string]interface{}); ok && len(rawServ) > 0 {
+		servChanges, reload, err := validateServConfigPatch(rawServ)
+		if err != nil {
+			errors = append(errors, err.Error())
+		} else {
+			servPatch = rawServ
+			servReload = reload
+			changes = append(changes, servChanges...)
 		}
 	}
 
@@ -1154,6 +1229,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			Message: "No changes provided",
 			Mode:    mode,
 		}
+		if mode == "validate" {
+			result.Valid = true
+		}
 		if sourceMode {
 			result.Valid = true
 			result.Applied = false
@@ -1238,6 +1316,30 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		}
 
 		availableDBs = stage.availableDBs
+		if mode == "validate" {
+			var findingsJSON string
+			if sourceMode {
+				findingsJSON = ms.stagedConfigSecurityFindingsJSON(conf)
+			}
+			stage.close()
+			result := ConfigUpdateResult{
+				Success:           true,
+				Message:           "Config is valid; validate mode never applies changes",
+				Changes:           changes,
+				Databases:         availableDBs,
+				ReloadMode:        reloadPlan.mode,
+				ChangedSources:    reloadPlan.changedSources,
+				ReloadFallback:    reloadPlan.fallback,
+				Valid:             true,
+				Applied:           false,
+				Mode:              mode,
+				CatalogRevision:   ms.currentConfigCatalogRevision(ctx),
+				ChangeSummaryJSON: jsonStringValue(changes),
+				FindingsJSON:      findingsJSON,
+				ErrorsJSON:        "[]",
+			}
+			return ms.finishConfigUpdate(ctx, result)
+		}
 		if sourceMode && mode == "preview" {
 			findingsJSON := ms.stagedConfigSecurityFindingsJSON(conf)
 			stage.close()
@@ -1432,6 +1534,29 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		return ms.finishConfigUpdate(ctx, result)
 	}
 
+	// Validate mode with no core changes (e.g. an mcp-only patch or a no-op
+	// payload): report validity without touching the running config.
+	if mode == "validate" {
+		var findingsJSON string
+		if sourceMode {
+			findingsJSON = ms.stagedConfigSecurityFindingsJSON(conf)
+		}
+		result := ConfigUpdateResult{
+			Success:           true,
+			Message:           "Config is valid; validate mode never applies changes",
+			Changes:           changes,
+			Databases:         availableDBs,
+			Valid:             true,
+			Applied:           false,
+			Mode:              mode,
+			CatalogRevision:   ms.currentConfigCatalogRevision(ctx),
+			ChangeSummaryJSON: jsonStringValue(changes),
+			FindingsJSON:      findingsJSON,
+			ErrorsJSON:        "[]",
+		}
+		return ms.finishConfigUpdate(ctx, result)
+	}
+
 	if mcpPatch != nil && len(errors) == 0 {
 		mcpChanges, err := applyMCPConfigPatch(ms.service.conf, mcpPatch)
 		if err != nil {
@@ -1439,6 +1564,17 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		} else {
 			changes = append(changes, mcpChanges...)
 			ms.service.markCatalogChanged("config mutation")
+		}
+	}
+
+	if servPatch != nil && len(errors) == 0 {
+		applyServConfigPatch(ms.service.conf, servPatch)
+		// Stage only the patched serv keys into viper so saveConfigToDisk
+		// persists them without rewriting unrelated defaults.
+		setServPatchViper(ms.service.conf.viper, ms.service.conf, servPatch)
+		ms.service.markCatalogChanged("config mutation")
+		if servReload == servReloadRestart {
+			changes = append(changes, "restart required for serv changes to take effect (auto when reload_on_config_change is enabled)")
 		}
 	}
 
@@ -1484,6 +1620,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		result.ReloadMode = reloadPlan.mode
 		result.ChangedSources = reloadPlan.changedSources
 		result.ReloadFallback = reloadPlan.fallback
+	} else if servReload != "" && len(errors) == 0 {
+		// Serv-only change: report how it takes effect (hot vs restart).
+		result.ReloadMode = servReload
 	}
 	if snap, err := ms.service.catalogSnapshot(); err == nil && snap != nil {
 		result.CatalogRevision = snap.Revision
@@ -2101,6 +2240,189 @@ func applyMCPConfigPatch(conf *Config, patch map[string]interface{}) ([]string, 
 		}
 	}
 	return changes, nil
+}
+
+// Serv-config patching lets the runtime config machinery reach server-side
+// settings (serv.Config), not just the compiler core. The writable set is a
+// deliberately small v1 allowlist; secret-bearing sections (auth, redis,
+// uploads) stay read-only on gj_config until secret-ref handling lands.
+const (
+	servReloadHot     = "hot"     // read live, effective immediately
+	servReloadRestart = "restart" // persisted, effective after a restart
+)
+
+// servWritableReload maps each writable serv key to how a change takes effect.
+var servWritableReload = map[string]string{
+	"agent":         servReloadHot, // the agent runtime reads config per request
+	"log_level":     servReloadRestart,
+	"log_format":    servReloadRestart,
+	"web_ui":        servReloadRestart,
+	"http_compress": servReloadRestart,
+	"server_timing": servReloadRestart,
+	"rate_limiter":  servReloadRestart,
+}
+
+// agentWritableFields is the subset of agent settings safe to change at
+// runtime. Structural fields (enabled, provider, api_key_env, base_url) gate
+// startup wiring or name secrets and are excluded.
+var agentWritableFields = map[string]bool{
+	"model": true, "max_steps": true, "timeout_seconds": true,
+	"sampling": true, "read_only": true, "return_trace": true,
+	"seed_limit": true, "catalog_default_limit": true,
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func strInSet(s string, allowed ...string) bool {
+	for _, a := range allowed {
+		if s == a {
+			return true
+		}
+	}
+	return false
+}
+
+// validateServConfigPatch checks a serv patch against the v1 allowlist without
+// mutating anything. It returns the change descriptions and the overall reload
+// class ("restart" if any change needs a restart, otherwise "hot").
+func validateServConfigPatch(patch map[string]any) (changes []string, reload string, err error) {
+	reload = servReloadHot
+	for _, key := range sortedKeys(patch) {
+		cls, ok := servWritableReload[key]
+		if !ok {
+			return nil, "", fmt.Errorf("serv: %q is not a writable server setting; writable keys: %s", key, strings.Join(sortedKeys(servWritableReload), ", "))
+		}
+		switch key {
+		case "agent":
+			m, ok := patch[key].(map[string]any)
+			if !ok {
+				return nil, "", fmt.Errorf("serv.agent must be an object")
+			}
+			for f := range m {
+				if !agentWritableFields[f] {
+					return nil, "", fmt.Errorf("serv.agent.%s is not writable; writable agent fields: %s", f, strings.Join(sortedKeys(agentWritableFields), ", "))
+				}
+			}
+			if s, ok := m["sampling"].(string); ok && !strInSet(s, "off", "auto", "require") {
+				return nil, "", fmt.Errorf("serv.agent.sampling must be one of off, auto, require")
+			}
+			changes = append(changes, "updated serv.agent")
+		case "log_level":
+			if s, ok := patch[key].(string); !ok || !strInSet(s, "debug", "error", "warn", "info") {
+				return nil, "", fmt.Errorf("serv.log_level must be one of debug, error, warn, info")
+			}
+			changes = append(changes, "updated serv.log_level")
+		case "log_format":
+			if s, ok := patch[key].(string); !ok || !strInSet(s, "auto", "json", "simple") {
+				return nil, "", fmt.Errorf("serv.log_format must be one of auto, json, simple")
+			}
+			changes = append(changes, "updated serv.log_format")
+		case "web_ui", "http_compress", "server_timing":
+			if _, ok := patch[key].(bool); !ok {
+				return nil, "", fmt.Errorf("serv.%s must be a boolean", key)
+			}
+			changes = append(changes, "updated serv."+key)
+		case "rate_limiter":
+			m, ok := patch[key].(map[string]any)
+			if !ok {
+				return nil, "", fmt.Errorf("serv.rate_limiter must be an object")
+			}
+			for f := range m {
+				if !strInSet(f, "rate", "bucket", "ip_header") {
+					return nil, "", fmt.Errorf("serv.rate_limiter.%s is not writable; writable fields: bucket, ip_header, rate", f)
+				}
+			}
+			changes = append(changes, "updated serv.rate_limiter")
+		}
+		if cls == servReloadRestart {
+			reload = servReloadRestart
+		}
+	}
+	return changes, reload, nil
+}
+
+// applyServConfigPatch mutates conf.Serv in place. It assumes the patch already
+// passed validateServConfigPatch, so it coerces defensively but does not
+// re-report type errors.
+func applyServConfigPatch(conf *Config, patch map[string]any) {
+	for key, raw := range patch {
+		switch key {
+		case "agent":
+			applyAgentConfigPatch(&conf.Serv.Agent, raw.(map[string]any))
+		case "log_level":
+			conf.Serv.LogLevel, _ = raw.(string)
+		case "log_format":
+			conf.Serv.LogFormat, _ = raw.(string)
+		case "web_ui":
+			conf.Serv.WebUI, _ = raw.(bool)
+		case "http_compress":
+			conf.Serv.HTTPGZip, _ = raw.(bool)
+		case "server_timing":
+			conf.Serv.ServerTiming, _ = raw.(bool)
+		case "rate_limiter":
+			applyRateLimiterPatch(&conf.Serv.RateLimiter, raw.(map[string]any))
+		}
+	}
+}
+
+func applyAgentConfigPatch(a *AgentConfig, m map[string]any) {
+	if v, ok := m["model"].(string); ok {
+		a.Model = v
+	}
+	if v, ok := m["sampling"].(string); ok {
+		a.Sampling = v
+	}
+	if v, ok := configInt(m["max_steps"]); ok {
+		a.MaxSteps = v
+	}
+	if v, ok := configInt(m["timeout_seconds"]); ok {
+		a.TimeoutSeconds = v
+	}
+	if v, ok := configInt(m["seed_limit"]); ok {
+		a.SeedLimit = v
+	}
+	if v, ok := configInt(m["catalog_default_limit"]); ok {
+		a.CatalogDefaultLimit = v
+	}
+	if v, ok := m["read_only"].(bool); ok {
+		a.ReadOnly = v
+	}
+	if v, ok := m["return_trace"].(bool); ok {
+		a.ReturnTrace = v
+	}
+}
+
+func applyRateLimiterPatch(r *RateLimiter, m map[string]any) {
+	if v, ok := m["rate"].(float64); ok {
+		r.Rate = v
+	}
+	if v, ok := configInt(m["bucket"]); ok {
+		r.Bucket = v
+	}
+	if v, ok := m["ip_header"].(string); ok {
+		r.IPHeader = v
+	}
+}
+
+// configInt coerces a JSON number (float64) or int into an int.
+func configInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	default:
+		return 0, false
+	}
 }
 
 // parseDBConfig parses a database config from a map
@@ -3685,4 +4007,31 @@ func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 		v.Set("resolvers", conf.Resolvers)
 	}
 	v.Set("mcp", ms.service.conf.MCP)
+}
+
+// setServPatchViper stages only the serv keys named in a serv patch into viper,
+// reading their new values from conf. Keeping it patch-scoped avoids rewriting
+// unrelated serv defaults into the config file on save.
+func setServPatchViper(v *viper.Viper, conf *Config, patch map[string]any) {
+	if v == nil || conf == nil {
+		return
+	}
+	for key := range patch {
+		switch key {
+		case "agent":
+			v.Set("agent", conf.Serv.Agent)
+		case "log_level":
+			v.Set("log_level", conf.Serv.LogLevel)
+		case "log_format":
+			v.Set("log_format", conf.Serv.LogFormat)
+		case "web_ui":
+			v.Set("web_ui", conf.Serv.WebUI)
+		case "http_compress":
+			v.Set("http_compress", conf.Serv.HTTPGZip)
+		case "server_timing":
+			v.Set("server_timing", conf.Serv.ServerTiming)
+		case "rate_limiter":
+			v.Set("rate_limiter", conf.Serv.RateLimiter)
+		}
+	}
 }

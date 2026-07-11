@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./config.schema.json
 # Inherit config from this other config file
 # so I only need to overwrite some values
 inherits: dev
@@ -33,7 +34,6 @@ enable_tracing: false
 # with the new configs when a change is detected
 reload_on_config_change: false
 
-
 # File that points to the database seeding script
 # seed_file: seed.js
 
@@ -66,15 +66,6 @@ reload_on_config_change: false
 # Subscriptions poll the database to query for updates
 # this sets the duration between requests.
 # subs_poll_duration: 2s
-
-# Hot deploy allows you to deploy config changes
-# instantly without needing to build a new image
-hot_deploy: true
-
-# Admin secret key is the secret used to authorize access
-# to the admin api used by hot deploy and other features
-# GJ_ADMIN_SECRET_KEY
-# admin_secret_key: blahblah
 
 # Auth related environment Variables
 # GJ_AUTH_JWT_PUBLIC_KEY_FILE

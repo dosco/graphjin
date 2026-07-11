@@ -2,6 +2,20 @@
 
 This document provides a comprehensive reference for all GraphJin configuration options. GraphJin uses YAML or JSON configuration files that can be customized for different environments.
 
+## How configuration works
+
+This file is the exhaustive field reference. If you want the mental model first — what the config file is, how values are resolved across layers, and every way to change it without memorizing keys — read [How Configuration Works](https://graphjin.com/configure/how-it-works/). In short:
+
+- **One file, two halves.** The file configures both the query **engine** (`sources`, `tables`, `roles`, …) and the **server** around it (`auth`, `rate_limiter`, `redis`, `caching`, `agent`, …). Engine changes reload in place; most server changes need a restart.
+- **Layered overrides** (later wins): built-in defaults → inherited parent (`inherits:`) → your file → `GJ_*`/`SJ_*` environment variables → dev-mode auto-enables.
+- **Many ways to change it**, not just editing YAML:
+  - Editor autocomplete via a `# yaml-language-server: $schema=./config.schema.json` modeline (scaffolded automatically).
+  - The `graphjin config` CLI — `get`, `set`, `unset`, `explain`, `validate`, `schema`, `docs` — offline and comment-preserving.
+  - The built-in agent (natural-language config recipes) and, in dev, the `get_current_config` / `validate_config` / `update_current_config` MCP tools.
+  - The `gj_config` GraphQL control plane (reflects both halves, secrets redacted).
+
+Run `graphjin config docs` (or `graphjin serve new`) for the annotated example templates that document every option inline.
+
 ## Table of Contents
 
 - [Introduction](#introduction)

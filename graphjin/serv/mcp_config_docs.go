@@ -26,6 +26,21 @@ var prodConfigTemplate string
 //go:embed config_docs/agentic.yml
 var agenticConfigTemplate string
 
+// ConfigDocsTemplate returns the annotated example config template for the
+// given variant ("dev", "prod", or "agentic"); any other value returns dev.
+// These are the same inline-documented templates `graphjin serve new`
+// scaffolds, exposed for `graphjin config docs` (offline, no server).
+func ConfigDocsTemplate(variant string) string {
+	switch strings.ToLower(strings.TrimSpace(variant)) {
+	case "prod", "production":
+		return prodConfigTemplate
+	case "agentic", "agent":
+		return agenticConfigTemplate
+	default:
+		return devConfigTemplate
+	}
+}
+
 // registerConfigDocsTool registers the `get_config_docs` MCP tool. Unlike
 // `get_current_config`, this is *static documentation* — it's safe to expose
 // in production because it never reveals anything about the running server's

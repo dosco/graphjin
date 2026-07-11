@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/dosco/graphjin/serv/v3"
 	"github.com/spf13/cobra"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -120,8 +121,18 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		}
 	})
 
+	// The config JSON Schema referenced by the yaml-language-server modeline
+	// at the top of each config file; gives editors autocomplete and docs.
+	ifNotExists(path.Join(appPath, configSchemaFile), func(p string) error {
+		return os.WriteFile(p, serv.ConfigJSONSchema(), 0o600)
+	})
+
 	log.Infof("App initialized: %s", name)
 }
+
+// configSchemaFile is the schema filename the config templates reference in
+// their yaml-language-server modeline.
+const configSchemaFile = "config.schema.json"
 
 //go:embed tmpl
 var tmpl embed.FS

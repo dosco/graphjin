@@ -70,9 +70,9 @@ func graphjinControlPlaneTables() []core.ManagedTable {
 			cpCol("sources", "json", false), cpCol("update_sources", "json", false), cpCol("remove_sources", "json", false),
 			cpCol("databases", "json", false), cpCol("relationships", "json", false), cpCol("tables", "json", false),
 			cpCol("roles", "json", false), cpCol("blocklist", "json", false), cpCol("functions", "json", false), cpCol("resolvers", "json", false),
-			cpCol("mcp", "json", false), cpCol("config_json", "json", false), cpCol("redacted_paths", "json", false), cpCol("updated_at", "text", false), cpCol("catalog_revision", "text", false),
+			cpCol("mcp", "json", false), cpCol("serv", "json", false), cpCol("config_json", "json", false), cpCol("redacted_paths", "json", false), cpCol("updated_at", "text", false), cpCol("catalog_revision", "text", false),
 			cpCol("mode", "text", false), cpCol("preview_id", "text", false), cpCol("expected_catalog_revision", "text", false), cpCol("source_patches", "json", false),
-			cpCol("valid", "boolean", false), cpCol("applied", "boolean", false), cpCol("expires_at", "text", false), cpCol("change_summary_json", "json", false), cpCol("findings_json", "json", false), cpCol("errors_json", "json", false),
+			cpCol("valid", "boolean", false), cpCol("applied", "boolean", false), cpCol("expires_at", "text", false), cpCol("change_summary_json", "json", false), cpCol("findings_json", "json", false), cpCol("errors_json", "json", false), cpCol("reload_mode", "text", false),
 		}),
 	}
 }
@@ -323,6 +323,7 @@ func (h controlPlaneGraphQL) configRow() map[string]any {
 		"functions":       redactedConfigValue(coreConf.Functions),
 		"resolvers":       redactedConfigValue(coreConf.Resolvers),
 		"mcp":             mcpConfig,
+		"serv":            servConfigMap(conf),
 		"redacted_paths":  []string{},
 		"updated_at":      time.Now().UTC().Format(time.RFC3339Nano),
 	}
@@ -337,11 +338,49 @@ func (h controlPlaneGraphQL) configRow() map[string]any {
 		"functions":       row["functions"],
 		"resolvers":       row["resolvers"],
 		"mcp":             row["mcp"],
+		"serv":            row["serv"],
 	}
 	if snap, err := h.service.catalogSnapshot(); err == nil {
 		row["catalog_revision"] = snap.Revision
 	}
 	return row
+}
+
+// servConfigMap is the redacted view of the server-side (serv.Config) settings
+// surfaced on the gj_config row. It mirrors mcpConfigMap: an explicit,
+// snake_case projection so the agent and MCP clients can see server settings
+// (auth, rate_limiter, redis, caching, uploads, agent, ...) alongside the core
+// sections. Nested structs pass through redactedConfigValue so secrets never
+// leave the process; the writable subset is a smaller allowlist enforced in
+// applyServConfigPatch.
+func servConfigMap(conf *Config) map[string]any {
+	if conf == nil {
+		return map[string]any{}
+	}
+	s := &conf.Serv
+	return map[string]any{
+		"app_name":                s.AppName,
+		"host_port":               s.HostPort,
+		"host":                    s.Host,
+		"port":                    s.Port,
+		"production":              s.Production,
+		"log_level":               s.LogLevel,
+		"log_format":              s.LogFormat,
+		"http_compress":           s.HTTPGZip,
+		"server_timing":           s.ServerTiming,
+		"web_ui":                  s.WebUI,
+		"reload_on_config_change": s.WatchAndReload,
+		"cors_allowed_origins":    s.AllowedOrigins,
+		"cors_allowed_headers":    s.AllowedHeaders,
+		"cors_debug":              s.DebugCORS,
+		"rate_limiter":            redactedConfigValue(s.RateLimiter),
+		"auth":                    redactedConfigValue(s.Auth),
+		"agent":                   redactedConfigValue(s.Agent),
+		"redis":                   redactedConfigValue(s.Redis),
+		"caching":                 redactedConfigValue(s.Caching),
+		"uploads":                 redactedConfigValue(s.Uploads),
+		"runtime_events":          redactedConfigValue(s.RuntimeEvents),
+	}
 }
 
 func mcpConfigMap(conf *Config) map[string]any {
@@ -888,7 +927,7 @@ func (h controlPlaneGraphQL) mutateConfig(ctx context.Context, root core.Managed
 	}
 	mode, _ := payload["mode"].(string)
 	row := h.configRow()
-	overlayKeys := []string{"valid", "applied", "mode", "preview_id", "expires_at", "change_summary_json", "findings_json", "errors_json"}
+	overlayKeys := []string{"valid", "applied", "mode", "preview_id", "expires_at", "change_summary_json", "findings_json", "errors_json", "reload_mode"}
 	if mode == "preview" {
 		overlayKeys = append(overlayKeys, "catalog_revision")
 	}
