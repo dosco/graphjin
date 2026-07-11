@@ -451,6 +451,9 @@ func artifactNanoColumns() []core.NanoColumn {
 		{Name: "revision", Type: "integer"},
 		{Name: "created_at", Type: "text"},
 		{Name: "updated_at", Type: "text"},
+		// Delete responses select `deleted` (the managed handler returns
+		// {id, deleted: true}); expose it like gj_workflow does.
+		{Name: "deleted", Type: "boolean"},
 		{Name: "search_vector", Type: "text", FullText: true},
 	}
 }
@@ -484,6 +487,9 @@ func watchNanoColumns() []core.NanoColumn {
 		{Name: "failure_count", Type: "integer"},
 		{Name: "created_at", Type: "text"},
 		{Name: "updated_at", Type: "text"},
+		// Delete responses select `deleted` (the managed handler returns
+		// {id, deleted: true}); expose it like gj_workflow does.
+		{Name: "deleted", Type: "boolean"},
 		{Name: "search_vector", Type: "text", FullText: true},
 	}
 }

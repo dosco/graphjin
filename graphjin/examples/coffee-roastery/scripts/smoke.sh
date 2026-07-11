@@ -274,6 +274,11 @@ assert_jq "$workflow_catalog_out" '[.result.structuredContent.cards[].name] | in
 code_catalog_out="$(mcp_tool query_catalog '{"where":{"database_name":{"eq":"business_code"}},"limit":10}')"
 assert_jq "$code_catalog_out" '(.result.structuredContent.cards | tostring | test("business_code")) and (.result.structuredContent.cards | tostring | test("gj_code")) and (.result.structuredContent.cards | tostring | test("code_context|symbols"))' "MCP catalog exposes business_code code discovery"
 
+# Search path (MCP orders results by search_rank internally): guard against
+# ranked search silently dropping matches that the where-filter path returns.
+code_search_out="$(mcp_tool query_catalog '{"search":"business_code code symbols","limit":10}')"
+assert_jq "$code_search_out" '[.result.structuredContent.cards[]? | select(.database_name == "business_code")] | length >= 1' "MCP catalog ranked search discovers code context"
+
 case "$RUN_AGENT" in
   never)
     log "skipping agent checks (--no-agent)"

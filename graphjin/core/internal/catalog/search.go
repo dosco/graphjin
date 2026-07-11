@@ -316,6 +316,13 @@ func catalogFieldValue(card Card, field string) (any, bool) {
 func normalizeCatalogField(field string) string {
 	field = strings.TrimSpace(strings.ToLower(field))
 	switch field {
+	case "search_rank":
+		// search_rank is the canonical relevance column exposed by the nanoDB
+		// projection and used by MCP query_catalog's order_by; it is a synonym
+		// for the search index's score. Without this alias, ordering gj_catalog
+		// by search_rank makes QueryResult reject the field, and the control
+		// plane silently falls back to a raw where-filter that drops matches.
+		return "score"
 	case "database":
 		return "database_name"
 	case "schema":
