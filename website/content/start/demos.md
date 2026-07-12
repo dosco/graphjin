@@ -6,7 +6,7 @@ doc_kind: "guide"
 weight: 25
 ---
 
-The fastest start needs nothing but the binary: `graphjin serve --demo` with no `--path` extracts the built-in clinic-scheduler demo to `./graphjin-demo` and boots it on SQLite - no clone, no Docker, ready in seconds.
+The fastest start needs nothing but the binary: `graphjin serve --demo` with no `--path` extracts the built-in SaaS ops demo to `./graphjin-demo` and boots it on SQLite - no clone, no Docker, ready in seconds.
 
 ```bash
 graphjin serve --demo
@@ -28,12 +28,12 @@ Put a model API key in `./.env` (`GOOGLE_APIKEY`, `OPENAI_API_KEY`, or `ANTHROPI
 | Demo | Domain | Sources | Port | Docker | First boot |
 | --- | --- | --- | --- | --- | --- |
 | [Coffee roastery](#coffee-roastery) | Specialty coffee ops | Postgres · BigQuery-emu · TS CodeSQL | 8080 | Yes | ~1-2 min |
-| [Clinic scheduler](#clinic-scheduler) | Clinic scheduling | SQLite | 8083 | **No** | Seconds |
+| [SaaS ops](#saas-ops) | SaaS company ops | SQLite | 8083 | **No** | Seconds |
 | [Corrugated plant](#corrugated-plant) | Box manufacturing | MySQL · BigQuery-emu · Python CodeSQL | 8081 | Yes | ~2-4 min |
 | [PCB fab](#pcb-fab) | PCB design + fabrication | 8 sources incl. MongoDB, files, OpenAPI | 8082 | Yes | ~3-5 min |
 | [Webshop](#webshop) | E-commerce starter | Postgres | 8080 | Yes | ~1 min |
 
-No Docker on your machine? Start with the clinic scheduler - it runs entirely in-process on SQLite.
+No Docker on your machine? Start with the SaaS ops demo - it runs entirely in-process on SQLite.
 
 ## Coffee roastery {#coffee-roastery}
 
@@ -54,25 +54,25 @@ graphjin serve --demo --path examples/coffee-roastery
 
 More prompts: [coffee-roastery/PROMPTS.md](https://github.com/dosco/graphjin/blob/master/examples/coffee-roastery/PROMPTS.md)
 
-## Clinic scheduler {#clinic-scheduler}
+## SaaS ops {#saas-ops}
 
-The fastest start, and the demo built into the binary: a clinic scheduling app - patients, providers, rooms, appointments, waitlists - on SQLite, entirely in-process. No Docker, no containers, boots in seconds. Bare `graphjin serve --demo` (no `--path`) runs exactly this demo, extracted to `./graphjin-demo`; from a repo clone you can also run it explicitly:
+The fastest start, and the demo built into the binary: a SaaS company ops app - accounts, users, subscriptions, invoices, support tickets, usage events - on SQLite, entirely in-process. No Docker, no containers, boots in seconds. Bare `graphjin serve --demo` (no `--path`) runs exactly this demo, extracted to `./graphjin-demo`; from a repo clone you can also run it explicitly:
 
 ```bash
 graphjin serve --demo                             # built-in, no clone needed
-graphjin serve --demo --path examples/clinic-scheduler   # from a repo clone
+graphjin serve --demo --path examples/saas-ops    # from a repo clone
 ```
 
 - **Sources:** `app` (SQLite), workflows, control plane. Port 8083.
-- **Shows off:** zero-dependency onboarding, saved queries (`daily_schedule_context`, `waitlist_context`, `utilization_context`), workflows (`overbook_check`, `waitlist_promotion`), and the fail-closed MCP sampling `require` mode.
+- **Shows off:** zero-dependency onboarding, saved queries (`churn_risk_context`, `mrr_summary_context`, `ticket_sla_context`), workflows (`sla_breach_check`, `dunning_retry_check`), and the fail-closed MCP sampling `require` mode.
 
 **Ask it:**
 
-- "Who should get the next open cardiology slot? Use the waitlist and explain the priority order."
-- "Summarize today's scheduled appointments by provider and room, and flag any room at risk of overbooking."
-- "Review recent no-show events and suggest which patients need outreach."
+- "Which accounts are most at risk of churning? Use failed payments, renewal dates, and recent usage, and explain the ranking."
+- "Summarize MRR by plan and flag any account with failed payments."
+- "Which open support tickets are past or nearest their SLA - and who owns them?"
 
-More prompts: [clinic-scheduler/PROMPTS.md](https://github.com/dosco/graphjin/blob/master/examples/clinic-scheduler/PROMPTS.md)
+More prompts: [saas-ops/PROMPTS.md](https://github.com/dosco/graphjin/blob/master/examples/saas-ops/PROMPTS.md)
 
 ## Corrugated plant {#corrugated-plant}
 

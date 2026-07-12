@@ -1006,3 +1006,56 @@ if (infiniteMain && firstDocArticle && infiniteMain.dataset.nextUrl) {
 
   armNextSentinel();
 }
+
+// Homepage hero: rotate the demo Q/A pairs (static markup is pair one).
+const heroRotateWindow = document.querySelector('.ai-window-hero');
+const heroRotateData = document.getElementById('hero-rotate-data');
+if (
+  heroRotateWindow &&
+  heroRotateData &&
+  window.matchMedia('(prefers-reduced-motion: no-preference)').matches
+) {
+  let heroPairs = [];
+  try {
+    heroPairs = JSON.parse(heroRotateData.textContent || '[]');
+  } catch {
+    heroPairs = [];
+  }
+  const heroUser = heroRotateWindow.querySelector('.chat-user');
+  const heroTools = heroRotateWindow.querySelectorAll('.tool-call');
+  const heroDone = heroRotateWindow.querySelector('.done-line .done-text');
+  const heroAnswer = heroRotateWindow.querySelector('.assistant-copy');
+  if (
+    Array.isArray(heroPairs) &&
+    heroPairs.length > 1 &&
+    heroUser &&
+    heroDone &&
+    heroAnswer &&
+    heroTools.length === 2
+  ) {
+    const heroAnimated = [
+      heroUser,
+      ...heroTools,
+      heroDone.parentElement,
+      heroAnswer,
+    ];
+    let heroIndex = 0;
+    window.setInterval(() => {
+      if (document.hidden) return;
+      heroIndex = (heroIndex + 1) % heroPairs.length;
+      const pair = heroPairs[heroIndex];
+      heroUser.textContent = pair.user;
+      pair.tools.forEach((tool, i) => {
+        heroTools[i].querySelector('.tool-call-header span:last-child').textContent = tool.name;
+        heroTools[i].querySelector('code').textContent = tool.line;
+      });
+      heroDone.textContent = ' ' + pair.done;
+      heroAnswer.textContent = pair.answer;
+      for (const el of heroAnimated) {
+        el.style.animation = 'none';
+        void el.offsetWidth; // commit the reset so the stagger replays
+        el.style.animation = '';
+      }
+    }, 7000);
+  }
+}
