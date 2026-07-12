@@ -15,6 +15,7 @@ const requiredRoutes = [
   'install.sh',
   'favicon.svg',
   'favicon.ico',
+  'og/graphjin-og.png',
   'start/install/index.html',
   'start/quick-start/index.html',
   'start/demos/index.html',
@@ -183,9 +184,15 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   if (/(?:>|&gt;)\s*(All|Section)\s*(?:<|&lt;)/.test(header)) {
     failures.push('Header still exposes the old All/Section search labels');
   }
-  for (const required of ['Vision', 'The agent loop', 'One instruction in', 'The ledger caught it', 'Five demos. Real domains.', 'geo filters', 'Expression aggregates']) {
+  for (const required of ['Vision', 'The agent loop', 'One instruction in', 'The ledger caught it', 'Five demos. Real domains.', 'geo filters', 'Expression aggregates', 'shows its work', 'one governed graph', 'Run the 2-minute demo']) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing required enriched copy: ${required}`);
+    }
+  }
+  for (const socialMeta of ['og:title', 'og:image', 'twitter:card']) {
+    const socialPattern = new RegExp(`<meta\\s[^>]*(?:property|name)=(["'])?${socialMeta}\\1(?=[\\s/>])`);
+    if (!socialPattern.test(home)) {
+      failures.push(`Homepage missing social meta ${socialMeta}`);
     }
   }
 }
