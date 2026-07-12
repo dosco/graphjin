@@ -3,9 +3,23 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} | {{ .Site.Title }}{{ end }}</title>
+    {{ $metaTitle := printf "%s | %s" .Title .Site.Title }}
+    {{ if .IsHome }}{{ $metaTitle = .Site.Params.home_seo_title | default .Site.Title }}{{ end }}
+    <title>{{ $metaTitle }}</title>
     {{ $description := .Description | default .Site.Params.description }}
     <meta name="description" content="{{ $description }}">
+    <meta property="og:site_name" content="{{ .Site.Title }}">
+    <meta property="og:type" content="{{ if .IsHome }}website{{ else }}article{{ end }}">
+    <meta property="og:url" content="{{ .Permalink }}">
+    <meta property="og:title" content="{{ $metaTitle }}">
+    <meta property="og:description" content="{{ $description }}">
+    <meta property="og:image" content="{{ "og/graphjin-og.png" | absURL }}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ $metaTitle }}">
+    <meta name="twitter:description" content="{{ $description }}">
+    <meta name="twitter:image" content="{{ "og/graphjin-og.png" | absURL }}">
     <script>
       (() => {
         try {

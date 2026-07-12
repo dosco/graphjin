@@ -19,7 +19,8 @@ canonifyURLs = false
     ordered = false
 
 [params]
-  description = "GraphJin compiles GraphQL into governed database, API, file, code, and agentic data access."
+  description = "GraphJin gives AI agents one governed graph — compiling GraphQL into optimized, policy-enforced access to databases, APIs, files, and code."
+  home_seo_title = "GraphJin — One Governed Graph for AI Agents: GraphQL + MCP over your databases, files, APIs, and code"
   github = "https://github.com/dosco/graphjin"
   install = "curl -fsSL https://graphjin.com/install.sh | bash"
 
