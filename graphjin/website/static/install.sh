@@ -24,7 +24,7 @@ print_banner() {
     echo '  \____|_|  \__,_| .__/|_| |_(_)_|_|_| |_|'
     echo '                 |_|                      '
     echo -e "${NC}"
-    echo "Build APIs in 5 minutes with GraphQL"
+    echo "One governed graph for your AI agents"
     echo ""
 }
 
