@@ -1280,6 +1280,7 @@ pre code {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  max-width: 100%;
   min-height: 2.75rem;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -1288,14 +1289,17 @@ pre code {
 }
 
 .hero-cmd pre {
+  min-width: 0;
   margin: 0;
   padding: 0;
+  overflow-x: auto;
   color: var(--heading);
   font-family: var(--font-mono);
   font-size: 0.82rem;
 }
 
 .hero-cmd .copy-code-button {
+  flex-shrink: 0;
   border-color: var(--line-strong);
   background: transparent;
   color: var(--muted);
@@ -2320,12 +2324,18 @@ pre code {
 .start-done {
   max-width: 44rem;
   margin: 1.3rem 0 0;
-  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--line));
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--heading);
+  background: var(--panel);
+  color: var(--muted);
   padding: 0.85rem 1rem;
   font-size: 0.98rem;
+}
+
+.start-done > span {
+  margin-right: 0.35rem;
+  color: var(--accent-readable);
+  font-weight: 700;
 }
 
 .start-done code {
