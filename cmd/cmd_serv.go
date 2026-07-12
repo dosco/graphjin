@@ -77,7 +77,7 @@ Demo mode (--demo):
   graphjin serve --demo --path examples/webshop
   graphjin serve --demo --path examples/coffee-roastery
 
-Without --path the built-in clinic-scheduler demo is extracted to
+Without --path the built-in saas-ops demo is extracted to
 ./graphjin-demo and served from there; delete that directory for a
 fresh copy. Demo state is stored under <path>/demo. Delete that
 folder to reset the data.`,

@@ -1,7 +1,7 @@
 # GraphJin Example Demos
 
 The fastest start needs no clone at all: `graphjin serve --demo` with no
-`--path` extracts the built-in **clinic-scheduler** demo (SQLite, zero Docker)
+`--path` extracts the built-in **saas-ops** demo (SQLite, zero Docker)
 to `./graphjin-demo` and boots it in seconds.
 
 ```bash
@@ -25,7 +25,7 @@ Put a model provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
 | Demo | Domain | Sources | Port | First boot |
 | :--- | :--- | :--- | :--- | :--- |
 | [coffee-roastery](coffee-roastery/) | Specialty coffee ops | Postgres + BigQuery-emu + TypeScript CodeSQL + workflows | 8080 | ~1-2 min (postgres pull) |
-| [clinic-scheduler](clinic-scheduler/) — **built-in** (`graphjin serve --demo`) | Clinic scheduling | SQLite (zero Docker) + workflows | 8083 | seconds |
+| [saas-ops](saas-ops/) — **built-in** (`graphjin serve --demo`) | SaaS company ops | SQLite (zero Docker) + workflows | 8083 | seconds |
 | [corrugated-plant](corrugated-plant/) | Corrugated-box manufacturing | MySQL + BigQuery-emu + Python CodeSQL + JWT roles + workflows | 8081 | ~2-4 min (mysql pull) |
 | [pcb-fab](pcb-fab/) | PCB design + fab | Postgres + Snowflake-emu + MongoDB + file source + OpenAPI supplier API + TypeScript CodeSQL | 8082 | ~3-5 min (postgres+mongo pull) |
 | [webshop](webshop/) | Minimal single-DB starter | Postgres | 8080 | ~1 min |

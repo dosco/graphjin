@@ -8,10 +8,10 @@ import "embed"
 
 // DefaultDemoRoot is the directory within DefaultDemoFS that holds the
 // default demo project.
-const DefaultDemoRoot = "clinic-scheduler"
+const DefaultDemoRoot = "saas-ops"
 
-// DefaultDemoFS holds the zero-container clinic-scheduler demo: SQLite
-// source, schema DDL, seed script, saved queries, workflows, and configs.
+// DefaultDemoFS holds the zero-container saas-ops demo: SQLite source,
+// schema DDL, seed script, saved queries, workflows, and configs.
 //
-//go:embed all:clinic-scheduler
+//go:embed all:saas-ops
 var DefaultDemoFS embed.FS

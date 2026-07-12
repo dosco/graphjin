@@ -46,7 +46,7 @@ Demo mode (--demo, local mode only):
   graphjin mcp --demo --path examples/webshop
   graphjin mcp --demo --path examples/coffee-roastery
 
-Without --path the built-in clinic-scheduler demo is extracted to
+Without --path the built-in saas-ops demo is extracted to
 ./graphjin-demo and served from there. Demo state is stored under
 <path>/demo. Delete that folder to reset.
 

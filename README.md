@@ -52,7 +52,7 @@ docker pull dosco/graphjin
 ## Try It Now
 
 One command, no clone, no Docker. The binary ships with a built-in demo — a
-clinic scheduling app (patients, providers, appointments, waitlists) on
+SaaS company ops app (accounts, subscriptions, invoices, support tickets) on
 SQLite with seeded data, saved queries, and workflows:
 
 ```bash
@@ -81,7 +81,7 @@ With a model API key in `./.env` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOO
 ```bash
 curl -sS localhost:8083/api/v1/agent \
   -H 'content-type: application/json' \
-  -d '{"instruction": "Who should get the next open cardiology slot?"}'
+  -d '{"instruction": "Which account is most at risk of churning?"}'
 ```
 
 Answers come back as `{status, answer, data, evidence, actions, next}`, grounded by server-side protocol guards. You can also chat with it in the built-in web console at `localhost:8083/agent` — it streams every tool call live as it works. See [Server-Side Agent](#server-side-agent) below, [AGENTIC.md](AGENTIC.md#server-side-agent), and [graphjin.com/agentic/server-agent](https://graphjin.com/agentic/server-agent/).

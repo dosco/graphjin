@@ -1,4 +1,4 @@
-app_name: Clinic Scheduler Demo
+app_name: SaaS Ops Demo
 mode: dev
 host_port: 0.0.0.0:8083
 web_ui: true
@@ -11,7 +11,7 @@ auth_fail_block: false
 enable_tracing: true
 reload_on_config_change: false
 enable_schema: false
-secret_key: clinic-scheduler-demo-secret
+secret_key: saas-ops-demo-secret
 cors_allowed_origins: ["*"]
 default_block: false
 default_limit: 50

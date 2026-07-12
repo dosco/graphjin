@@ -3,12 +3,12 @@
 # + agent-eval), tear it down, and print a summary table. Also runs the MCP
 # sampling checks: the full borrow-the-client's-model loop against coffee
 # (agent.sampling: auto) and the require-mode fail-closed quartet against a
-# rebooted clinic-scheduler.
+# rebooted saas-ops demo.
 #
 # The "default" entry covers the bare `graphjin serve --demo` flow: a
 # CGO_ENABLED=0 binary (like releases) run in an empty directory must
-# extract the built-in clinic-scheduler demo to ./graphjin-demo, pass the
-# clinic smoke suite, and reuse the extracted state on a second boot.
+# extract the built-in saas-ops demo to ./graphjin-demo, pass the
+# saas-ops smoke suite, and reuse the extracted state on a second boot.
 #
 # Preconditions: Docker running (not needed for --only default); ./.env with
 # a provider key (OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_APIKEY); curl,
@@ -78,7 +78,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-DEMOS="default coffee-roastery clinic-scheduler corrugated-plant pcb-fab"
+DEMOS="default coffee-roastery saas-ops corrugated-plant pcb-fab"
 SAMPLING_DISCOVERY_INSTRUCTION='Say hello. Do not run any tools.'
 
 port_for_demo() {
@@ -86,7 +86,7 @@ port_for_demo() {
     coffee-roastery) echo 8080 ;;
     corrugated-plant) echo 8081 ;;
     pcb-fab) echo 8082 ;;
-    clinic-scheduler) echo 8083 ;;
+    saas-ops) echo 8083 ;;
     *) echo "" ;;
   esac
 }
@@ -244,9 +244,9 @@ run_demo() {
 
   kill_server
 
-  # Sampling require-mode quartet: reboot the fast clinic demo with
+  # Sampling require-mode quartet: reboot the fast saas-ops demo with
   # GJ_AGENT_SAMPLING=require and assert fail-closed + client behavior.
-  if [ -z "$SKIP_SAMPLING" ] && [ "$demo" = "clinic-scheduler" ] && [ -n "$ok" ]; then
+  if [ -z "$SKIP_SAMPLING" ] && [ "$demo" = "saas-ops" ] && [ -n "$ok" ]; then
     echo "==> rebooting ${demo} in sampling require mode"
     if boot_demo "$demo" "$port" GO_ENV=agentic GJ_AGENT_SAMPLING=require GJ_MCP_HTTP_STATEFUL=true; then
       local req_ok=1
@@ -254,7 +254,7 @@ run_demo() {
       if [ -n "$req_ok" ]; then
         if go run ./tools/mcp-sampling-client \
             --url "http://localhost:${port}/api/v1/mcp" \
-            --jwt-secret "clinic-scheduler-demo-jwt-secret" \
+            --jwt-secret "saas-ops-demo-jwt-secret" \
             --instruction "$SAMPLING_DISCOVERY_INSTRUCTION" \
             | tee /dev/stderr | jq -e '.sampling_calls >= 1 and (.is_error | not)' >/dev/null; then
           :
@@ -265,7 +265,7 @@ run_demo() {
       if [ -n "$req_ok" ]; then
         if go run ./tools/mcp-sampling-client --no-sampling \
             --url "http://localhost:${port}/api/v1/mcp" \
-            --jwt-secret "clinic-scheduler-demo-jwt-secret" \
+            --jwt-secret "saas-ops-demo-jwt-secret" \
             --instruction "List one saved query." \
             | tee /dev/stderr | jq -e '.is_error == true' >/dev/null; then
           :
@@ -298,13 +298,13 @@ run_demo() {
 # run_default_demo smokes the bare `graphjin serve --demo` flow: build a
 # CGO_ENABLED=0 binary (matching release builds), run it in an empty
 # directory with only the provider key in the environment, and expect the
-# built-in clinic-scheduler demo extracted to ./graphjin-demo, the clinic
+# built-in saas-ops demo extracted to ./graphjin-demo, the saas-ops
 # smoke suite green, and the extracted state reused on a second boot.
 run_default_demo() {
   local port=8083
   local started ok=1
   started="$(date +%s)"
-  load_env_file "examples/clinic-scheduler/.env"
+  load_env_file "examples/saas-ops/.env"
 
   local bindir workdir
   bindir="$(mktemp -d "${TMPDIR:-/tmp}/gj-default-bin.XXXXXX")"
@@ -330,7 +330,7 @@ run_default_demo() {
     echo "default demo state manifest missing under ${workdir}/graphjin-demo/demo" >&2
     ok=""
   fi
-  if [ -n "$ok" ] && ! "examples/clinic-scheduler/scripts/smoke.sh" --url "http://localhost:${port}" --agent-eval; then
+  if [ -n "$ok" ] && ! "examples/saas-ops/scripts/smoke.sh" --url "http://localhost:${port}" --agent-eval; then
     ok=""
   fi
   kill_server
@@ -342,7 +342,7 @@ run_default_demo() {
         echo "default demo did not reuse ./graphjin-demo on reboot" >&2
         ok=""
       fi
-      if [ -n "$ok" ] && ! "examples/clinic-scheduler/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent; then
+      if [ -n "$ok" ] && ! "examples/saas-ops/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent; then
         ok=""
       fi
     else
