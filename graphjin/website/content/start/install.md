@@ -25,7 +25,7 @@ brew install dosco/graphjin/graphjin
 go install github.com/dosco/graphjin/cmd/graphjin@latest
 ```
 
-`graphjin serve --demo` is the fastest smoke test - with no `--path` it extracts the built-in clinic-scheduler demo (SQLite, no Docker) to `./graphjin-demo` and boots it: schema, seeded data, saved queries, workflows, and (with a model key in `./.env`) the built-in agent. The other [demo verticals](/start/demos/) run from a repo clone via `--path examples/<name>`.
+`graphjin serve --demo` is the fastest smoke test - with no `--path` it extracts the built-in SaaS ops demo (SQLite, no Docker) to `./graphjin-demo` and boots it: schema, seeded data, saved queries, workflows, and (with a model key in `./.env`) the built-in agent. The other [demo verticals](/start/demos/) run from a repo clone via `--path examples/<name>`.
 
 ## Scaffold a project
 
