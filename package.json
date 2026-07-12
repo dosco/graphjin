@@ -1,7 +1,7 @@
 {
   "name": "graphjin",
   "version": "3.18.44",
-  "description": "GraphJin CLI - Build APIs in 5 minutes with GraphQL",
+  "description": "GraphJin — one governed graph for AI agents: GraphQL + MCP over your databases, files, APIs, and code",
   "bin": {
     "graphjin": "bin/graphjin.js"
   },

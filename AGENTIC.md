@@ -1,6 +1,6 @@
 # Agentic GraphJin
 
-GraphJin can act as the data plane AI agents work through: one governed graph
+GraphJin gives AI agents one governed graph to work through: a single surface
 over live data, source code, security posture, workflows, config, and
 source-backed external systems. This document is the deep reference for that
 deployment. It is written for two audiences: operators putting GraphJin in
