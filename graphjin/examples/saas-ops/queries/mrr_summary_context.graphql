@@ -1,0 +1,27 @@
+query mrr_summary_context {
+  subscriptions(order_by: { mrr_cents: desc }, limit: 20) {
+    id
+    account_id
+    plan
+    seats
+    mrr_cents
+    status
+    started_at
+    renews_at
+  }
+  accounts(order_by: { mrr_cents: desc }, limit: 20) {
+    id
+    name
+    plan
+    status
+    mrr_cents
+  }
+  invoices(order_by: { due_at: desc }, limit: 20) {
+    id
+    account_id
+    amount_cents
+    status
+    attempts
+    due_at
+  }
+}

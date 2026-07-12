@@ -10,7 +10,7 @@ auth:
   type: jwt
   development: false
   jwt:
-    secret: clinic-scheduler-demo-jwt-secret
+    secret: saas-ops-demo-jwt-secret
 
 agent:
   enabled: true

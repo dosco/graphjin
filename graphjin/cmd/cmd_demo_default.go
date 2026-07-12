@@ -17,7 +17,7 @@ const demoDefaultPath = "./graphjin-demo"
 
 // resolveDemoPath picks the config directory for demo mode. With an explicit
 // --path (or --config) the given directory is used as-is. Without one, the
-// built-in clinic-scheduler demo is extracted to ./graphjin-demo (first run)
+// built-in saas-ops demo is extracted to ./graphjin-demo (first run)
 // or reused from there, so a bare `graphjin serve --demo` boots a real,
 // seeded example instead of an empty scaffold.
 func resolveDemoPath(pathSet bool, out io.Writer) (string, error) {

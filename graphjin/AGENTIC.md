@@ -56,7 +56,7 @@ The response is typed JSON — `status`, `answer`, `data`, `evidence`,
 execution evidence the agent actually gathered on this run. The same
 conversation is available in the built-in web console at `localhost:8080/agent`,
 and external MCP clients can drive the discovery tools directly against the
-same demo. More demo verticals — a zero-Docker clinic scheduler, a
+same demo. More demo verticals — a zero-Docker SaaS ops demo, a
 corrugated-box plant, a PCB fab — are listed at
 <https://graphjin.com/start/demos/>.
 
@@ -1525,7 +1525,7 @@ The stable model instructions are:
 ## End-To-End Agent Loops
 
 Every loop below is exercised for real by the runnable demo verticals in
-`examples/` (coffee-roastery, corrugated-plant, pcb-fab, clinic-scheduler) —
+`examples/` (coffee-roastery, corrugated-plant, pcb-fab, saas-ops) —
 each ships an end-to-end smoke suite covering data, workflows, watches,
 artifacts, structured refusals, role gating, and MCP sampling
 (`make smoke-all`; see `examples/README.md`).

@@ -1,0 +1,27 @@
+query ticket_sla_context {
+  support_tickets(
+    where: { status: { eq: "open" } }
+    order_by: { sla_due_at: asc }
+    limit: 20
+  ) {
+    id
+    account_id
+    user_id
+    subject
+    severity
+    status
+    opened_at
+    sla_due_at
+  }
+  accounts(order_by: { id: asc }, limit: 20) {
+    id
+    name
+    plan
+  }
+  users(order_by: { id: asc }, limit: 20) {
+    id
+    account_id
+    name
+    email
+  }
+}
