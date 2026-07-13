@@ -724,6 +724,10 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 
 	cs := s.cs
 	dbType := s.getTargetDBCtx().dbtype
+	if dbType == "sqlite" && cs.st.qc.InsertConflictFallback {
+		s.gj.sqliteConflictGetMu.Lock()
+		defer s.gj.sqliteConflictGetMu.Unlock()
+	}
 
 	// Use Dialect to check for multi-statement scripts (e.g., SQLite)
 	dialect := s.getTargetPsqlCompiler().GetDialect()
@@ -734,150 +738,169 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 		c1, span := s.gj.spanStart(c, "Execute Script")
 		defer span.End()
 
-		argIdx := 0
-		for i, stmt := range parts {
-			// Count parameters (?) in this statement to slice arguments
-			nParams := strings.Count(stmt, "?")
-			var stmtArgs []interface{}
-
-			if nParams > 0 {
-				if argIdx+nParams > len(args.values) {
-					span.Error(fmt.Errorf("script: not enough arguments for statement %d", i))
-					return fmt.Errorf("script: not enough arguments")
-				}
-				stmtArgs = args.values[argIdx : argIdx+nParams]
-				argIdx += nParams
-			}
-
-			stmt, stmtArgs, err = prepareQueryArgsForDB(s.getTargetDBCtx().dbtype, stmt, stmtArgs)
-			if err != nil {
-				span.Error(err)
-				return err
-			}
-
-			upperStmt := strings.ToUpper(strings.TrimSpace(stmt))
-
-			isReturning := strings.Contains(upperStmt, "RETURNING")
-			isSelect := (strings.HasPrefix(upperStmt, "SELECT") && !strings.Contains(upperStmt, " INTO ")) || strings.HasPrefix(upperStmt, "WITH")
-
-			// Check for @gj_ids hint
-			gjIdsHint := strings.Index(stmt, "-- @gj_ids=")
-			var gjIdsKey string
-			if gjIdsHint != -1 {
-				// Parse key: -- @gj_ids=users_0;
-				remainder := stmt[gjIdsHint+11:]
-				if idx := strings.Index(remainder, ";"); idx != -1 {
-					gjIdsKey = strings.TrimSpace(remainder[:idx])
-				} else {
-					gjIdsKey = strings.TrimSpace(remainder)
-				}
-			}
-
-			if gjIdsKey != "" {
-				// Bulk Capture Path for SQLite (handles RETURNING and SELECT)
-				var rows *sql.Rows
-				var err1 error
-				if tx := s.tx(); tx != nil {
-					rows, err1 = tx.QueryContext(c1, stmt, stmtArgs...)
-				} else {
-					err1 = retryOperationForDB(c1, dbType, func() (err2 error) {
-						rows, err2 = conn.QueryContext(c1, stmt, stmtArgs...)
-						return
-					})
-				}
-				if err1 != nil {
-					err = err1 // Propagate error
-				} else {
-					defer rows.Close() //nolint:errcheck
-
-					var ids []string
-
-					for rows.Next() {
-						var b []byte
-						if err = rows.Scan(&b); err != nil {
-							return err
-						}
-						// b is JSON object from RETURNING json_object(...)
-
-						// Parse ID from JSON
-						var rowMap map[string]interface{}
-						if err = json.Unmarshal(b, &rowMap); err != nil {
-							return err
-						}
-
-						if idVal, ok := rowMap["id"]; ok {
-							ids = append(ids, fmt.Sprintf("%v", idVal))
-						}
-					}
-
-					if err = rows.Err(); err != nil {
-						return err
-					}
-
-					// Note: We do NOT set s.data here - the final SELECT will set the response
-					// We only capture IDs into _gj_ids for the scoping CTE
-
-					// Insert captured IDs into _gj_ids
-					if len(ids) > 0 {
-						var ib strings.Builder
-						ib.WriteString(`INSERT OR IGNORE INTO _gj_ids (k, id) VALUES `)
-						for k, id := range ids {
-							if k > 0 {
-								ib.WriteString(", ")
-							}
-							ib.WriteString(fmt.Sprintf("('%s', '%s')",
-								strings.ReplaceAll(gjIdsKey, "'", "''"),
-								strings.ReplaceAll(id, "'", "''")))
-						}
-						insertSQL := ib.String()
-
-						if tx := s.tx(); tx != nil {
-							_, err = tx.ExecContext(c1, insertSQL)
-						} else {
-							_, err = conn.ExecContext(c1, insertSQL)
-						}
-					}
-				}
-			} else if isReturning || isSelect {
-				// Statement returns data (e.g. INSERT ... RETURNING or SELECT ...)
-				var row *sql.Row
-				if tx := s.tx(); tx != nil {
-					row = tx.QueryRowContext(c1, stmt, stmtArgs...)
-					err = row.Scan(&s.data)
-				} else {
-					err = retryOperationForDB(c1, dbType, func() (err1 error) {
-						row = conn.QueryRowContext(c1, stmt, stmtArgs...)
-						return row.Scan(&s.data)
-					})
-				}
-
-			} else {
-				// Intermediate statement: Use Exec
-				if tx := s.tx(); tx != nil {
-					_, err = tx.ExecContext(c1, stmt, stmtArgs...)
-				} else {
-					err = retryOperationForDB(c1, dbType, func() (err1 error) {
-						_, err1 = conn.ExecContext(c1, stmt, stmtArgs...)
-						return
-					})
-				}
-			}
-
-			if err != nil {
-				if dbType == "snowflake" {
-					err = wrapSnowflakeScriptError(i, stmt, isReturning || isSelect || gjIdsKey != "", err)
-				}
-				if err != sql.ErrNoRows {
-					span.Error(err)
-				}
-				return
-			}
+		attempts := 1
+		if cs.st.qc.InsertConflictFallback {
+			attempts = 2
 		}
+		for attempt := 0; attempt < attempts; attempt++ {
+			s.data = nil
+			argIdx := 0
+			for i, stmt := range parts {
+				// Count parameters (?) in this statement to slice arguments
+				nParams := strings.Count(stmt, "?")
+				var stmtArgs []interface{}
 
-		if err == nil {
-			s.dhash = sha256.Sum256(s.data)
-			s.data, err = encryptValues(s.data,
-				s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
+				if nParams > 0 {
+					if argIdx+nParams > len(args.values) {
+						span.Error(fmt.Errorf("script: not enough arguments for statement %d", i))
+						return fmt.Errorf("script: not enough arguments")
+					}
+					stmtArgs = args.values[argIdx : argIdx+nParams]
+					argIdx += nParams
+				}
+
+				stmt, stmtArgs, err = prepareQueryArgsForDB(s.getTargetDBCtx().dbtype, stmt, stmtArgs)
+				if err != nil {
+					span.Error(err)
+					return err
+				}
+
+				upperStmt := strings.ToUpper(strings.TrimSpace(stmt))
+
+				isReturning := strings.Contains(upperStmt, "RETURNING")
+				isSelect := (strings.HasPrefix(upperStmt, "SELECT") && !strings.Contains(upperStmt, " INTO ")) || strings.HasPrefix(upperStmt, "WITH")
+
+				// Check for @gj_ids hint
+				gjIdsHint := strings.Index(stmt, "-- @gj_ids=")
+				var gjIdsKey string
+				if gjIdsHint != -1 {
+					// Parse key: -- @gj_ids=users_0;
+					remainder := stmt[gjIdsHint+11:]
+					if idx := strings.Index(remainder, ";"); idx != -1 {
+						gjIdsKey = strings.TrimSpace(remainder[:idx])
+					} else {
+						gjIdsKey = strings.TrimSpace(remainder)
+					}
+				}
+
+				if gjIdsKey != "" {
+					// Bulk Capture Path for SQLite (handles RETURNING and SELECT)
+					var rows *sql.Rows
+					var err1 error
+					if tx := s.tx(); tx != nil {
+						rows, err1 = tx.QueryContext(c1, stmt, stmtArgs...)
+					} else {
+						err1 = retryOperationForDB(c1, dbType, func() (err2 error) {
+							rows, err2 = conn.QueryContext(c1, stmt, stmtArgs...)
+							return
+						})
+					}
+					if err1 != nil {
+						err = err1 // Propagate error
+					} else {
+						defer rows.Close() //nolint:errcheck
+
+						var ids []string
+
+						for rows.Next() {
+							var b []byte
+							if err = rows.Scan(&b); err != nil {
+								return err
+							}
+							// b is JSON object from RETURNING json_object(...)
+
+							// Parse ID from JSON
+							var rowMap map[string]interface{}
+							if err = json.Unmarshal(b, &rowMap); err != nil {
+								return err
+							}
+
+							if idVal, ok := rowMap["id"]; ok {
+								ids = append(ids, fmt.Sprintf("%v", idVal))
+							}
+						}
+
+						if err = rows.Err(); err != nil {
+							return err
+						}
+
+						// Note: We do NOT set s.data here - the final SELECT will set the response
+						// We only capture IDs into _gj_ids for the scoping CTE
+
+						// Insert captured IDs into _gj_ids
+						if len(ids) > 0 {
+							var ib strings.Builder
+							ib.WriteString(`INSERT OR IGNORE INTO _gj_ids (k, id) VALUES `)
+							for k, id := range ids {
+								if k > 0 {
+									ib.WriteString(", ")
+								}
+								ib.WriteString(fmt.Sprintf("('%s', '%s')",
+									strings.ReplaceAll(gjIdsKey, "'", "''"),
+									strings.ReplaceAll(id, "'", "''")))
+							}
+							insertSQL := ib.String()
+
+							if tx := s.tx(); tx != nil {
+								_, err = tx.ExecContext(c1, insertSQL)
+							} else {
+								_, err = conn.ExecContext(c1, insertSQL)
+							}
+						}
+					}
+				} else if isReturning || isSelect {
+					// Statement returns data (e.g. INSERT ... RETURNING or SELECT ...)
+					var row *sql.Row
+					if tx := s.tx(); tx != nil {
+						row = tx.QueryRowContext(c1, stmt, stmtArgs...)
+						err = row.Scan(&s.data)
+					} else {
+						err = retryOperationForDB(c1, dbType, func() (err1 error) {
+							row = conn.QueryRowContext(c1, stmt, stmtArgs...)
+							return row.Scan(&s.data)
+						})
+					}
+
+				} else {
+					// Intermediate statement: Use Exec
+					if tx := s.tx(); tx != nil {
+						_, err = tx.ExecContext(c1, stmt, stmtArgs...)
+					} else {
+						err = retryOperationForDB(c1, dbType, func() (err1 error) {
+							_, err1 = conn.ExecContext(c1, stmt, stmtArgs...)
+							return
+						})
+					}
+				}
+
+				if err != nil {
+					if cs.st.qc.InsertConflictFallback && dbType == "sqlite" && attempt+1 < attempts && isSQLiteLockError(err) {
+						err = nil
+						break
+					}
+					if dbType == "snowflake" {
+						err = wrapSnowflakeScriptError(i, stmt, isReturning || isSelect || gjIdsKey != "", err)
+					}
+					if err != sql.ErrNoRows {
+						span.Error(err)
+					}
+					return
+				}
+			}
+
+			if cs.st.qc.InsertConflictFallback && insertConflictGetResultEmpty(s.data, cs.st.qc) {
+				if attempt+1 < attempts {
+					continue
+				}
+				return insertConflictGetUnavailableError(cs.st.qc)
+			}
+
+			if err == nil {
+				s.dhash = sha256.Sum256(s.data)
+				s.data, err = encryptValues(s.data,
+					s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
+			}
+			return
 		}
 		return
 	}
@@ -902,6 +925,17 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 		}
 		if err != nil {
 			return nil, [sha256.Size]byte{}, err
+		}
+		if cs.st.qc.InsertConflictAction == qcode.ConflictGet && insertConflictGetResultEmpty(raw, cs.st.qc) {
+			if cs.st.qc.InsertConflictFallback {
+				raw, err = scanJSONRow(ctx, dbType, useConn, s.tx(), querySQL, queryArgs)
+				if err != nil {
+					return nil, [sha256.Size]byte{}, err
+				}
+			}
+			if insertConflictGetResultEmpty(raw, cs.st.qc) {
+				return nil, [sha256.Size]byte{}, insertConflictGetUnavailableError(cs.st.qc)
+			}
 		}
 		encrypted, dhash, err := encryptResultFragment(raw, s.gj.printFormat, s.gj.encryptionKey)
 		return encrypted, dhash, err
@@ -959,6 +993,41 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 	}
 
 	return
+}
+
+func insertConflictGetResultEmpty(data []byte, qc *qcode.QCode) bool {
+	if qc == nil || len(qc.Roots) != 1 {
+		return false
+	}
+	var root map[string]json.RawMessage
+	if len(data) == 0 || json.Unmarshal(data, &root) != nil {
+		return len(data) == 0
+	}
+	selID := qc.Roots[0]
+	if selID < 0 || int(selID) >= len(qc.Selects) {
+		return false
+	}
+	v, ok := root[qc.Selects[selID].FieldName]
+	if !ok {
+		return true
+	}
+	v = bytes.TrimSpace(v)
+	return bytes.Equal(v, []byte("null")) || bytes.Equal(v, []byte("[]")) || bytes.Equal(v, []byte("{}"))
+}
+
+func insertConflictGetUnavailableError(qc *qcode.QCode) error {
+	if qc != nil && qc.InsertConflictReadFiltered {
+		return errors.New("authorization error: on_conflict: get cannot return an existing row hidden by the active role policy")
+	}
+	return errors.New("retryable concurrency error: on_conflict: get could not return the row after one complete-statement retry")
+}
+
+func isSQLiteLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "database table is locked")
 }
 
 func wrapSnowflakeScriptError(stmtIdx int, stmt string, usesQueryPath bool, err error) error {

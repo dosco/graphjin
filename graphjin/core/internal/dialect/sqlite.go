@@ -201,13 +201,14 @@ func (d *SQLiteDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 
 func (d *SQLiteDialect) RenderSetup(ctx Context) {
 	ctx.WriteString(`CREATE TEMP TABLE IF NOT EXISTS _gj_ids (k TEXT, id TEXT, PRIMARY KEY (k, id)); `)
+	ctx.WriteString(`CREATE TEMP TABLE IF NOT EXISTS _gj_conflicts (k TEXT PRIMARY KEY, v TEXT NOT NULL); `)
 }
 
 func (d *SQLiteDialect) RenderBegin(ctx Context) {
 }
 
 func (d *SQLiteDialect) RenderTeardown(ctx Context) {
-	ctx.WriteString(`; DROP TABLE IF EXISTS _gj_ids; DROP TRIGGER IF EXISTS gj_capture; `)
+	ctx.WriteString(`; DROP TABLE IF EXISTS _gj_ids; DROP TABLE IF EXISTS _gj_conflicts; DROP TRIGGER IF EXISTS gj_capture; `)
 }
 
 func (d *SQLiteDialect) RenderVarDeclaration(ctx Context, name, typeName string) {}
@@ -770,6 +771,21 @@ func (d *SQLiteDialect) SupportsLinearExecution() bool {
 	return true
 }
 
+func (d *SQLiteDialect) InsertConflictGetMode() InsertConflictGetMode {
+	return InsertConflictGetLinear
+}
+
+func (d *SQLiteDialect) RenderInsertConflictGetClause(ctx Context, m *qcode.Mutate) {
+	ctx.WriteString(` ON CONFLICT (`)
+	for i, col := range m.ConflictCols {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(col.Col.Name)
+	}
+	ctx.WriteString(`) DO NOTHING`)
+}
+
 func (d *SQLiteDialect) RenderMutationInput(ctx Context, qc *qcode.QCode) {
 	ctx.WriteString(`WITH `)
 	ctx.Quote("_sg_input")
@@ -850,6 +866,14 @@ func (d *SQLiteDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qco
 	} else {
 		ctx.WriteString(")")
 	}
+	if m.ConflictAction == qcode.ConflictGet {
+		if m.IsJSON {
+			// Disambiguate SQLite's INSERT ... SELECT grammar before UPSERT.
+			ctx.WriteString(` WHERE true`)
+		}
+		d.RenderInsertConflictGetClause(ctx, m)
+		qc.InsertConflictFallback = true
+	}
 
 	// Render RETURNING clause - execution layer (gstate.go) captures IDs via @gj_ids hint
 	d.RenderReturning(ctx, m)
@@ -857,6 +881,45 @@ func (d *SQLiteDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qco
 	ctx.WriteString(" -- @gj_ids=")
 	ctx.WriteString(varName)
 	ctx.WriteString("\n; ")
+
+	if m.ConflictAction == qcode.ConflictGet {
+		d.renderConflictKeyCapture(ctx, m, qc, varName, renderColVal)
+	}
+}
+
+func (d *SQLiteDialect) renderConflictKeyCapture(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn)) {
+	ctx.WriteString(`INSERT OR REPLACE INTO _gj_conflicts (k, v) `)
+	if m.IsJSON {
+		ctx.WriteString(`SELECT '`)
+		ctx.WriteString(strings.ReplaceAll(varName, `'`, `''`))
+		ctx.WriteString(`', `)
+		d.renderConflictKeyJSON(ctx, m, renderColVal)
+		ctx.WriteString(` FROM `)
+		d.RenderLinearValues(ctx, m, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+	} else {
+		ctx.WriteString(`VALUES ('`)
+		ctx.WriteString(strings.ReplaceAll(varName, `'`, `''`))
+		ctx.WriteString(`', `)
+		d.renderConflictKeyJSON(ctx, m, renderColVal)
+		ctx.WriteString(`)`)
+	}
+	ctx.WriteString(`; `)
+}
+
+func (d *SQLiteDialect) renderConflictKeyJSON(ctx Context, m *qcode.Mutate, renderColVal func(qcode.MColumn)) {
+	ctx.WriteString(`json_object(`)
+	for i, col := range m.ConflictCols {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.WriteString(`'`)
+		ctx.WriteString(strings.ReplaceAll(col.Col.Name, `'`, `''`))
+		ctx.WriteString(`', `)
+		renderColVal(col)
+	}
+	ctx.WriteString(`)`)
 }
 
 func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
@@ -1132,6 +1195,9 @@ func (d *SQLiteDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 		if sel.ParentID != -1 {
 			continue
 		}
+		if qc.InsertConflictAction == qcode.ConflictGet {
+			continue
+		}
 
 		// If user already provided a WHERE clause, don't inject ours
 		// The CTE already scopes to mutated records, so user's filter works correctly
@@ -1310,8 +1376,27 @@ func (d *SQLiteDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {
 		}
 		ctx.Quote(table)
 		ctx.WriteString(` WHERE `)
-		renderPKWhereGjIds(ctx, m.Ti, table+"_%")
+		if m.ConflictAction == qcode.ConflictGet {
+			d.renderConflictGetWhere(ctx, m)
+		} else {
+			renderPKWhereGjIds(ctx, m.Ti, table+"_%")
+		}
 		ctx.WriteString(`) `)
+	}
+}
+
+func (d *SQLiteDialect) renderConflictGetWhere(ctx Context, m *qcode.Mutate) {
+	key := d.getVarName(*m)
+	for i, col := range m.ConflictCols {
+		if i != 0 {
+			ctx.WriteString(` AND `)
+		}
+		ctx.Quote(col.Col.Name)
+		ctx.WriteString(` IS json_extract((SELECT v FROM _gj_conflicts WHERE k = '`)
+		ctx.WriteString(strings.ReplaceAll(key, `'`, `''`))
+		ctx.WriteString(`'), '$.`)
+		ctx.WriteString(strings.ReplaceAll(col.Col.Name, `'`, `''`))
+		ctx.WriteString(`')`)
 	}
 }
 

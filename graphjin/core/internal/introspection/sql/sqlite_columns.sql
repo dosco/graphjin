@@ -5,7 +5,15 @@ SELECT
   COALESCE(NULLIF(LOWER(p.type), ''), 'text') as "type",
   (p."notnull" > 0) as not_null,
   (p.pk > 0) as primary_key,
-  0 as unique_key,
+  EXISTS (
+    SELECT 1
+    FROM pragma_index_list(m.name) il
+    JOIN pragma_index_info(il.name) ii ON ii.name = p.name
+    WHERE il."unique" = 1
+      AND il.partial = 0
+    GROUP BY il.name
+    HAVING COUNT(*) = 1
+  ) as unique_key,
   (LOWER(p.type) IN ('json', 'jsonb') OR p.name = 'tags' OR p.name LIKE '%_ids') as is_array,
   (
     -- Check if this is an FTS virtual table column

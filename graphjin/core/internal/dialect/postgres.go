@@ -375,28 +375,28 @@ func (d *PostgresDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table
 	if pid == -1 {
 		ctx.ColWithTable(table, ex.Right.Col.Name)
 	} else {
-	// ctx.ColWithTableID not available in Context interface directly? 
+		// ctx.ColWithTableID not available in Context interface directly?
 		// Context has ColWithTable(table, col).
 		// psql had colWithTableID.
 		// I should check Context interface.
 		// Context interface has only ColWithTable(table, col).
 		// But I can construct the table name with ID manually if needed or update Context interface.
 		// psql.colWithTableID logic: if id >= 0 { quoted(table + "_" + val) } else { quoted(table) }
-		
+
 		// Let's assume passed 'table' is already the table name or alias we want?
 		// No, psql passes 'table' (schema.table) and 'pid'.
 		// I should probably update Context interface or helper.
 		// But wait, psql/exp.go line 428 calls c.colWithTableID.
-		
+
 		// For now, let's just replicate the logic if possible or trust the table arg.
 		// The caller in exp.go `renderValArrayColumn` passes `table` and `pid`.
 		// It calls `c.colWithTableID(table, pid, col.Name)`.
-		
+
 		// I'll replicate simple string construction here or better, add ColWithTableID to Context?
 		// Modifying Context implies modifying psql/query.go impl of Context.
 		// Let's try to do it with existing methods if possible.
 		// `ColWithTable` takes table and col.
-		
+
 		t := table
 		if pid >= 0 {
 			t = fmt.Sprintf("%s_%d", table, pid)
@@ -698,7 +698,7 @@ func (d *PostgresDialect) RenderDelete(ctx Context, m *qcode.Mutate, where func(
 func (d *PostgresDialect) RenderUpsert(ctx Context, m *qcode.Mutate, insert func(), updateSet func()) {
 	insert()
 	ctx.WriteString(` ON CONFLICT (`)
-	
+
 	i := 0
 	for _, col := range m.Cols {
 		if !col.Col.UniqueKey && !col.Col.PrimaryKey {
@@ -727,6 +727,28 @@ func (d *PostgresDialect) RenderReturning(ctx Context, m *qcode.Mutate) {
 	ctx.WriteString(` RETURNING `)
 	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(`.*`)
+}
+
+func (d *PostgresDialect) InsertConflictGetMode() InsertConflictGetMode {
+	if d.DBVersion >= 190000 {
+		return InsertConflictGetNative
+	}
+	return InsertConflictGetWritableCTE
+}
+
+func (d *PostgresDialect) RenderInsertConflictGetClause(ctx Context, m *qcode.Mutate) {
+	ctx.WriteString(` ON CONFLICT (`)
+	for i, col := range m.ConflictCols {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(col.Col.Name)
+	}
+	if d.DBVersion >= 190000 {
+		ctx.WriteString(`) DO SELECT`)
+	} else {
+		ctx.WriteString(`) DO NOTHING`)
+	}
 }
 
 func (d *PostgresDialect) RenderAssign(ctx Context, col string, val string) {
@@ -814,7 +836,6 @@ func (d *PostgresDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, q
 	// Not supported in Postgres yet
 }
 
-
 func (d *PostgresDialect) RenderIDCapture(ctx Context, varName string) {
 }
 
@@ -822,9 +843,9 @@ func (d *PostgresDialect) RenderVar(ctx Context, name string) {
 	// Not used for Postgres
 }
 
-func (d *PostgresDialect) RenderSetup(ctx Context) {}
-func (d *PostgresDialect) RenderBegin(ctx Context) {}
-func (d *PostgresDialect) RenderTeardown(ctx Context) {}
+func (d *PostgresDialect) RenderSetup(ctx Context)                                 {}
+func (d *PostgresDialect) RenderBegin(ctx Context)                                 {}
+func (d *PostgresDialect) RenderTeardown(ctx Context)                              {}
 func (d *PostgresDialect) RenderVarDeclaration(ctx Context, name, typeName string) {}
 func (d *PostgresDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n int, renderRoot func()) {
 	if n != 0 {
@@ -842,11 +863,11 @@ func (d *PostgresDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, 
 	// joinPathPostgres expects `prefix`.
 	// Let's modify joinPathPostgres or how we call it?
 	// If `renderRoot` renders `i.j`, then we can't pass it as string prefix to joinPath.
-	
+
 	// Option A: RenderRoot into a buffer? No.
 	// Option B: Change joinPath to accept func?
 	// Option C: Let `renderRoot` handle the first part, joinPath handles the rest?
-	
+
 	// `joinPathPostgres` writes `prefix` then loops path.
 	// We can pass empty prefix to joinPathPostgres and call renderRoot first.
 	renderRoot()
@@ -866,7 +887,6 @@ func (d *PostgresDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, 
 	}
 	ctx.WriteString(`)`)
 }
-
 
 // RenderSetSessionVar renders the SQL to set a session variable in Postgres
 func (d *PostgresDialect) RenderSetSessionVar(ctx Context, name, value string) bool {
@@ -1017,4 +1037,3 @@ func (d *PostgresDialect) RequiresJSONQueryWrapper() bool {
 func (d *PostgresDialect) RequiresNullOnEmptySelect() bool {
 	return false // PostgreSQL doesn't need NULL when no columns rendered
 }
-

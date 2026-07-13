@@ -308,4 +308,14 @@ var languageFeatures = []Feature{
 			`mutation { users(id: $id, update: { name: "Ada" }) { id name } }`,
 		},
 	},
+	{
+		ID:      "mutation.insert_conflict_get",
+		Kind:    "mutation_pattern",
+		Name:    "insert or get existing row",
+		Scope:   "mutation",
+		Summary: "Use on_conflict: get on a single insert to return the unchanged existing row for exactly one inferred supplied unique key. This is not an upsert and never updates the row.",
+		Examples: []string{
+			`mutation { users(insert: { email: "a@example.com", name: "Submitted" }, on_conflict: get) { id email name } }`,
+		},
+	},
 }

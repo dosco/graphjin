@@ -19,6 +19,43 @@ mutation {
 
 {{< verified by="Example_insert" file="tests/insert_test.go" line="16" >}}
 
+## Insert or get the existing row
+
+For a single insert on PostgreSQL or SQLite, `on_conflict: get` makes the insert idempotent without turning it into an update:
+
+```graphql
+mutation {
+  users(
+    insert: {
+      email: "ada@example.com"
+      full_name: "Submitted Name"
+    }
+    on_conflict: get
+  ) {
+    id
+    email
+    full_name
+  }
+}
+```
+
+If no row conflicts, GraphJin inserts and returns the new row. If `email` already exists, it returns that stored row unchanged. For example, an existing `full_name: "Stored Name"` remains `"Stored Name"`; GraphJin does not run an update, fire update triggers, or change `updated_at`. `onConflict: get` is accepted as the camel-case spelling.
+
+GraphJin infers the conflict target from schema metadata after trusted insert presets are applied. The payload must supply exactly one complete candidate:
+
+- one unconditional single-column unique key, or
+- every column of the primary key, including a composite primary key.
+
+Generated or defaulted key values are not candidates unless input or a preset supplies them. Supplying no candidate is an error. Supplying both a primary key and another unique key is ambiguous and is also an error. Composite non-primary unique constraints are not inferred in this version.
+
+This policy applies only to a single, non-nested insert object. It is rejected for bulk lists, nested inserts, updates, upserts, and deletes. A conflict on a different constraint remains a database error. Omitting `on_conflict` keeps normal error-on-conflict behavior.
+
+The returned row is subject to the role's normal read filters and selected-column permissions. GraphJin does not reveal an existing conflicting row that the caller cannot read; an empty result caused by the role filter is reported as an authorization error. If a pre-19 PostgreSQL or SQLite fallback remains empty after its one complete-statement retry, GraphJin returns a stable retryable-concurrency error.
+
+Use `upsert` when conflict should update submitted fields. Use `on_conflict: get` when conflict must return the stored row without changing it.
+
+{{< verified by="TestInsertOnConflictGetReturnsStoredRowUnchanged" file="tests/insert_test.go" line="57" >}}
+
 ## Bulk and nested inserts
 
 GraphJin can insert multiple rows and insert across related tables. PostgreSQL uses atomic CTE chains; other dialects use the dialect-appropriate mutation strategy.
@@ -119,4 +156,6 @@ Mutations run through the same role, source, and production policy gates as quer
 
 ## Dialect mutation strategies
 
-The compiler lowers writes differently by dialect. PostgreSQL can use CTE-heavy nested mutation plans; MySQL, MariaDB, SQLite, SQL Server, Oracle, Snowflake, and other backends use dialect-specific linear or fallback strategies where needed. Shared mutation changes should be validated against relevant dialect scripts.
+The compiler lowers writes differently by dialect. PostgreSQL 19 uses native `ON CONFLICT (...) DO SELECT` for `on_conflict: get`; earlier PostgreSQL versions use an atomic insert-or-select CTE with one retry for the statement-snapshot race. SQLite uses targeted `ON CONFLICT (...) DO NOTHING` inside its transactional linear mutation path and selects by the inferred key, also with one empty-result retry. Other dialects reject this policy in v1 instead of approximating it with update or unrestricted ignore semantics.
+
+For other mutations, PostgreSQL can use CTE-heavy nested plans; MySQL, MariaDB, SQLite, SQL Server, Oracle, Snowflake, and other backends use dialect-specific linear or fallback strategies where needed. Shared mutation changes should be validated against relevant dialect scripts.
