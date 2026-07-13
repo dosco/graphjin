@@ -216,6 +216,10 @@ func (trv *trval) columnAllowed(qt *QCode, name string) bool {
 		_, ok := trv.query.cols[name]
 		return ok || len(trv.query.cols) == 0
 	case QTInsert:
+		if qt.InsertConflictAction == ConflictGet {
+			_, ok := trv.query.cols[name]
+			return ok || len(trv.query.cols) == 0
+		}
 		_, ok := trv.insert.cols[name]
 		return ok || len(trv.insert.cols) == 0
 	case QTUpdate:

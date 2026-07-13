@@ -134,13 +134,14 @@ type ReturningInfo struct {
 
 // MutationOperations shows mutation operation syntax
 type MutationOperations struct {
-	Insert      string `json:"insert"`
-	BulkInsert  string `json:"bulk_insert"`
-	Update      string `json:"update"`
-	BulkUpdate  string `json:"bulk_update"`
-	UpdateWhere string `json:"update_where"`
-	Upsert      string `json:"upsert"`
-	Delete      string `json:"delete"`
+	Insert            string `json:"insert"`
+	InsertConflictGet string `json:"insert_conflict_get"`
+	BulkInsert        string `json:"bulk_insert"`
+	Update            string `json:"update"`
+	BulkUpdate        string `json:"bulk_update"`
+	UpdateWhere       string `json:"update_where"`
+	Upsert            string `json:"upsert"`
+	Delete            string `json:"delete"`
 }
 
 // NestedMutationInfo describes nested mutations
@@ -343,13 +344,14 @@ var querySyntaxReference = QuerySyntaxReference{
 // mutationSyntaxReference is the static reference data for mutation syntax
 var mutationSyntaxReference = MutationSyntaxReference{
 	Operations: MutationOperations{
-		Insert:      "products(insert: { name: \"New\", price: 10 })",
-		BulkInsert:  "products(insert: $items) - where $items is an array of objects",
-		Update:      "products(id: $id, update: { name: \"Updated\" })",
-		BulkUpdate:  "products(update: $items) - where $items is array with id + fields to update",
-		UpdateWhere: "products(where: { price: { lt: 10 } }, update: { on_sale: true })",
-		Upsert:      "products(upsert: { id: $id, name: \"Name\" }) - insert or update based on id",
-		Delete:      "products(delete: true, where: { id: { eq: $id } })",
+		Insert:            "products(insert: { name: \"New\", price: 10 })",
+		InsertConflictGet: "users(insert: { email: $email, name: $name }, on_conflict: get) - insert or return the unchanged row matching the one inferred supplied unique key; PostgreSQL and SQLite only; single non-nested object only",
+		BulkInsert:        "products(insert: $items) - where $items is an array of objects",
+		Update:            "products(id: $id, update: { name: \"Updated\" })",
+		BulkUpdate:        "products(update: $items) - where $items is array with id + fields to update",
+		UpdateWhere:       "products(where: { price: { lt: 10 } }, update: { on_sale: true })",
+		Upsert:            "products(upsert: { id: $id, name: \"Name\" }) - insert or update based on id",
+		Delete:            "products(delete: true, where: { id: { eq: $id } })",
 	},
 	CodeSQL: CodeSQLMutationDSL{
 		ReadBeforeWrite: `Query gj_code(where: { kind: { eq: "symbol" } }) or gj_code(where: { kind: { eq: "file" } }) and request code/code_context plus path/hash before editing source.`,
@@ -392,9 +394,12 @@ var mutationSyntaxReference = MutationSyntaxReference{
 		{Wrong: `products(update: { name: "X" })`, Right: `products(id: $id, update: { name: "X" })`, Reason: "Update requires id or where clause to identify records"},
 		{Wrong: `products(delete: true)`, Right: `products(delete: true, where: { id: { eq: $id } })`, Reason: "Delete requires where clause to prevent accidental mass deletion"},
 		{Wrong: `owner: { id: 5 }`, Right: `owner: { connect: { id: 5 } }`, Reason: "Use connect to link to existing records, not direct assignment"},
+		{Wrong: `users(insert: { id: $id, email: $email }, on_conflict: get)`, Right: `users(insert: { email: $email }, on_conflict: get)`, Reason: "Supply exactly one inferable unique target; primary key plus another unique key is ambiguous"},
+		{Wrong: `users(update: { name: $name }, on_conflict: get)`, Right: `users(insert: { email: $email, name: $name }, on_conflict: get)`, Reason: "on_conflict: get is insert-only; use upsert for insert-or-update"},
 	},
 	Examples: []QueryExample{
 		{Description: "Simple insert", Query: "mutation { users(insert: { email: $email }) { id } }"},
+		{Description: "Insert or return the existing row unchanged", Query: "mutation { users(insert: { email: $email, name: $name }, on_conflict: get) { id email name } }"},
 		{Description: "Bulk insert", Query: "mutation { products(insert: $items) { id name } }", Variables: `{"items": [{"name": "A", "price": 10}, {"name": "B", "price": 20}]}`},
 		{Description: "Insert with nested create", Query: "mutation { purchases(insert: { quantity: 1, product: { name: $name, price: $price } }) { id } }"},
 		{Description: "Update by ID", Query: "mutation { products(id: $id, update: { price: $price }) { id price } }"},

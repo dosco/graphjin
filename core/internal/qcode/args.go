@@ -1,6 +1,7 @@
 package qcode
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -10,7 +11,7 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
-func (co *Compiler) compileSelectArgs(sel *Select, args []graph.Arg, role string) (err error) {
+func (co *Compiler) compileSelectArgs(qc *QCode, sel *Select, args []graph.Arg, role string) (err error) {
 	for _, a := range args {
 		switch a.Name {
 		case "id":
@@ -62,6 +63,11 @@ func (co *Compiler) compileSelectArgs(sel *Select, args []graph.Arg, role string
 		// 	err = co.compileArgSkipIncludeIf(true, sel, &sel.Field, a, role)
 
 		case "insert", "update", "upsert", "delete":
+
+		case "on_conflict", "onConflict":
+			if qc.SType != QTInsert || qc.InsertConflictAction != ConflictGet {
+				err = errors.New("on_conflict is only valid with insert")
+			}
 
 		default:
 			if sel.Ti.Type == "remote" {

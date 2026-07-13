@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +52,207 @@ func Example_insert() {
 	}
 	printJSON(res.Data)
 	// Output: {"users":[{"email":"user1001@test.com","id":1001}]}
+}
+
+func TestInsertOnConflictGetReturnsStoredRowUnchanged(t *testing.T) {
+	if dbType != "postgres" && dbType != "sqlite" {
+		t.Skipf("on_conflict: get v1 supports PostgreSQL and SQLite, not %s", dbType)
+	}
+	if dbType == "postgres" {
+		// postgres.sql seeds explicit IDs, so align the BIGSERIAL sequence before
+		// exercising a generated-key insert.
+		_, err := db.Exec(`SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM users`)
+		require.NoError(t, err)
+		_, err = db.Exec(`CREATE OR REPLACE FUNCTION gj_conflict_get_no_update_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'on_conflict get executed update trigger'; END $$`)
+		require.NoError(t, err)
+		_, err = db.Exec(`CREATE TRIGGER gj_conflict_get_no_update BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION gj_conflict_get_no_update_fn()`)
+		require.NoError(t, err)
+		defer func() {
+			_, _ = db.Exec(`DROP TRIGGER IF EXISTS gj_conflict_get_no_update ON users`)
+			_, _ = db.Exec(`DROP FUNCTION IF EXISTS gj_conflict_get_no_update_fn()`)
+		}()
+	} else {
+		_, err := db.Exec(`CREATE TRIGGER gj_conflict_get_no_update BEFORE UPDATE ON users BEGIN SELECT RAISE(ABORT, 'on_conflict get executed update trigger'); END`)
+		require.NoError(t, err)
+		defer func() { _, _ = db.Exec(`DROP TRIGGER IF EXISTS gj_conflict_get_no_update`) }()
+	}
+
+	email := fmt.Sprintf("conflict-get-%d@example.com", time.Now().UnixNano())
+	gql := `mutation {
+		users(insert: $data, on_conflict: get) {
+			id
+			email
+			full_name
+		}
+	}`
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	run := func(name string) map[string]any {
+		vars, err := json.Marshal(map[string]any{"data": map[string]any{"email": email, "full_name": name}})
+		require.NoError(t, err)
+		res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+		require.NoError(t, err, "SQL: %s", res.SQL())
+		var out map[string][]map[string]any
+		require.NoError(t, json.Unmarshal(res.Data, &out))
+		require.Len(t, out["users"], 1)
+		return out["users"][0]
+	}
+
+	inserted := run("Stored Name")
+	existing := run("Submitted But Not Stored")
+	assert.Equal(t, inserted["id"], existing["id"])
+	assert.Equal(t, "Stored Name", existing["full_name"])
+	assert.Equal(t, email, existing["email"])
+}
+
+func TestInsertOnConflictGetPreservesUnrelatedConstraintErrors(t *testing.T) {
+	if dbType != "postgres" && dbType != "sqlite" {
+		t.Skipf("on_conflict: get v1 supports PostgreSQL and SQLite, not %s", dbType)
+	}
+
+	id := 9000000 + time.Now().Nanosecond()
+	name := strings.Repeat("x", 101)
+	gql := `mutation {
+		categories(insert: { id: $id, name: $name }, on_conflict: get) { id name }
+	}`
+	vars, err := json.Marshal(map[string]any{"id": id, "name": name})
+	require.NoError(t, err)
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	_, err = gj.GraphQL(context.Background(), gql, vars, nil)
+	require.Error(t, err)
+}
+
+func TestInsertOnConflictGetRetriesPostgresStatementSnapshotRace(t *testing.T) {
+	if dbType != "postgres" {
+		t.Skip("the writable-CTE statement-snapshot race is PostgreSQL-specific")
+	}
+	var serverVersion int
+	require.NoError(t, db.QueryRow(`SHOW server_version_num`).Scan(&serverVersion))
+	if serverVersion >= 190000 {
+		t.Skip("PostgreSQL 19 uses native ON CONFLICT DO SELECT")
+	}
+	_, err := db.Exec(`SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE(MAX(id), 0) + 1, false) FROM users`)
+	require.NoError(t, err)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	email := fmt.Sprintf("conflict-get-race-%d@example.com", time.Now().UnixNano())
+	id := int64(9800000 + time.Now().Nanosecond())
+	tx, err := db.BeginTx(context.Background(), nil)
+	require.NoError(t, err)
+	_, err = tx.Exec(`INSERT INTO users (id, email, full_name) VALUES ($1, $2, 'Committed Winner')`, id, email)
+	require.NoError(t, err)
+
+	type graphqlResult struct {
+		data json.RawMessage
+		err  error
+	}
+	done := make(chan graphqlResult, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	go func() {
+		vars, marshalErr := json.Marshal(map[string]any{"email": email, "fullName": "Blocked Inserter"})
+		if marshalErr != nil {
+			done <- graphqlResult{err: marshalErr}
+			return
+		}
+		res, graphqlErr := gj.GraphQL(ctx, `mutation {
+			users(insert: { email: $email, full_name: $fullName }, on_conflict: get) { id email full_name }
+		}`, vars, nil)
+		if res == nil {
+			done <- graphqlResult{err: graphqlErr}
+			return
+		}
+		done <- graphqlResult{data: res.Data, err: graphqlErr}
+	}()
+
+	waiting := false
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var count int
+		err = db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND query LIKE '%_gj_inserted_0%' AND wait_event IS NOT NULL`).Scan(&count)
+		require.NoError(t, err)
+		if count != 0 {
+			waiting = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	require.NoError(t, tx.Commit())
+	require.True(t, waiting, "conflict-get statement never reached the unique-conflict wait")
+
+	result := <-done
+	require.NoError(t, result.err)
+	var out map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(result.data, &out))
+	require.Len(t, out["users"], 1)
+	assert.Equal(t, float64(id), out["users"][0]["id"])
+	assert.Equal(t, "Committed Winner", out["users"][0]["full_name"])
+}
+
+func TestInsertOnConflictGetHandlesConcurrentSQLiteWinner(t *testing.T) {
+	if dbType != "sqlite" {
+		t.Skip("SQLite-specific concurrent conflict test")
+	}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	email := fmt.Sprintf("conflict-get-sqlite-race-%d@example.com", time.Now().UnixNano())
+	type graphqlResult struct {
+		data json.RawMessage
+		err  error
+	}
+	const workers = 6
+	start := make(chan struct{})
+	done := make(chan graphqlResult, workers)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for i := 0; i < workers; i++ {
+		go func(i int) {
+			<-start
+			vars, marshalErr := json.Marshal(map[string]any{"data": map[string]any{"email": email, "full_name": fmt.Sprintf("Candidate %d", i)}})
+			if marshalErr != nil {
+				done <- graphqlResult{err: marshalErr}
+				return
+			}
+			res, graphqlErr := gj.GraphQL(ctx, `mutation {
+				users(insert: $data, on_conflict: get) { id email full_name }
+			}`, vars, nil)
+			if res == nil {
+				done <- graphqlResult{err: graphqlErr}
+				return
+			}
+			done <- graphqlResult{data: res.Data, err: graphqlErr}
+		}(i)
+	}
+	close(start)
+
+	var winnerID, winnerName any
+	for i := 0; i < workers; i++ {
+		result := <-done
+		require.NoError(t, result.err)
+		var out map[string][]map[string]any
+		require.NoError(t, json.Unmarshal(result.data, &out))
+		require.Len(t, out["users"], 1)
+		row := out["users"][0]
+		if winnerID == nil {
+			winnerID, winnerName = row["id"], row["full_name"]
+		}
+		assert.Equal(t, winnerID, row["id"])
+		assert.Equal(t, winnerName, row["full_name"])
+	}
 }
 
 func Example_insertWithTransaction() {

@@ -62,27 +62,38 @@ type ColKey struct {
 }
 
 type QCode struct {
-	Type       QType
-	SType      QType
-	Name       string
-	ActionVar  string
-	ActionVal  json.RawMessage
-	Vars       []Var
-	Selects    []Select
-	Consts     []Constraint
-	Roots      []int32
-	rootsA     [5]int32
-	Mutates    []Mutate
-	MUnions    map[string][]int32
-	Schema     *sdata.DBSchema
-	Remotes    int32
-	Cache      Cache
-	Typename   bool
-	Query      []byte
-	Fragments  []Fragment
-	Warnings   []string // Non-fatal warnings (e.g., missing partition filter)
-	actionArg  graph.Arg
-	actionArgs map[string]graph.Arg
+	Type      QType
+	SType     QType
+	Name      string
+	ActionVar string
+	ActionVal json.RawMessage
+	Vars      []Var
+	Selects   []Select
+	Consts    []Constraint
+	Roots     []int32
+	rootsA    [5]int32
+	Mutates   []Mutate
+	MUnions   map[string][]int32
+	Schema    *sdata.DBSchema
+	Remotes   int32
+	Cache     Cache
+	Typename  bool
+	Query     []byte
+	Fragments []Fragment
+	Warnings  []string // Non-fatal warnings (e.g., missing partition filter)
+	// InsertConflictAction is set for insert(..., on_conflict: get).
+	// It remains part of the insert operation rather than introducing a
+	// separate mutation type.
+	InsertConflictAction ConflictAction
+	// InsertConflictFallback is set by the SQL compiler when the selected
+	// backend needs the retryable select-after-insert fallback.
+	InsertConflictFallback bool
+	// InsertConflictReadFiltered records that the returned row is subject to a
+	// role query filter, so an empty result can be reported as authorization
+	// rather than as an unresolved concurrency race.
+	InsertConflictReadFiltered bool
+	actionArg                  graph.Arg
+	actionArgs                 map[string]graph.Arg
 }
 
 type Fragment struct {
@@ -663,7 +674,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 		co.setLimit(tr, qc, sel)
 
-		if err := co.compileSelectArgs(sel, field.Args, role); err != nil {
+		if err := co.compileSelectArgs(qc, sel, field.Args, role); err != nil {
 			return err
 		}
 
@@ -1321,7 +1332,15 @@ func (co *Compiler) validateSelect(sel *Select) error {
 }
 
 func addFilters(qc *QCode, where *Filter, trv trval) bool {
-	if fil, userNeeded := trv.filter(qc.SType); fil != nil {
+	var fil *Exp
+	var userNeeded bool
+	if qc.SType == QTInsert && qc.InsertConflictAction == ConflictGet {
+		fil, userNeeded = trv.query.fil, trv.query.filNU
+		qc.InsertConflictReadFiltered = fil != nil && fil.Op != OpNop
+	} else {
+		fil, userNeeded = trv.filter(qc.SType)
+	}
+	if fil != nil {
 		switch fil.Op {
 		case OpNop:
 		case OpFalse:
@@ -1499,6 +1518,7 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 	for ri, rf := range rootFields {
 		var fieldType QType
 		var actionArg graph.Arg
+		var conflictAction ConflictAction
 
 		for _, arg := range rf.Args {
 			switch arg.Name {
@@ -1519,6 +1539,16 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 				if ifNotArg(arg, graph.NodeBool) || ifNotArgVal(arg, "true") {
 					err = errors.New("value for 'delete' must be 'true'")
 				}
+			case "on_conflict", "onConflict":
+				if arg.Val == nil || (arg.Val.Type != graph.NodeLabel && arg.Val.Type != graph.NodeStr) {
+					err = errors.New("value for 'on_conflict' must be 'get'")
+					break
+				}
+				if arg.Val.Val != "get" {
+					err = fmt.Errorf("unsupported on_conflict action %q; valid action: get", arg.Val.Val)
+					break
+				}
+				conflictAction = ConflictGet
 			}
 
 			if err != nil {
@@ -1528,6 +1558,9 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 
 		if fieldType == QTUnknown {
 			return errors.New(`mutations must contains one of the following arguments (insert, update, upsert or delete)`)
+		}
+		if conflictAction != ConflictNone && fieldType != QTInsert {
+			return errors.New("on_conflict is only valid with insert")
 		}
 
 		if ri == 0 {
@@ -1539,6 +1572,12 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 		} else if fieldType != qc.SType {
 			return errors.New("all root mutations must be of the same type (insert, update, upsert or delete)")
 		}
+		if conflictAction != ConflictNone {
+			if qc.InsertConflictAction != ConflictNone {
+				return errors.New("on_conflict: get supports exactly one root insert")
+			}
+			qc.InsertConflictAction = conflictAction
+		}
 
 		// Key by alias if present, otherwise by field name
 		key := rf.Alias
@@ -1546,6 +1585,9 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 			key = rf.Name
 		}
 		qc.actionArgs[key] = actionArg
+	}
+	if qc.InsertConflictAction != ConflictNone && len(rootFields) != 1 {
+		return errors.New("on_conflict: get supports exactly one root insert")
 	}
 
 	return nil

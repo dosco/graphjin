@@ -6,7 +6,6 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
-
 type Param struct {
 	Name        string
 	Type        string
@@ -63,7 +62,7 @@ type Dialect interface {
 	Name() string
 
 	RenderLimit(ctx Context, sel *qcode.Select)
-	RenderJSONRoot(ctx Context, sel *qcode.Select) 
+	RenderJSONRoot(ctx Context, sel *qcode.Select)
 	RenderJSONSelect(ctx Context, sel *qcode.Select)
 	RenderJSONPlural(ctx Context, sel *qcode.Select)
 	RenderLateralJoin(ctx Context, sel *qcode.Select, multi bool)
@@ -71,7 +70,7 @@ type Dialect interface {
 	RenderCursorCTE(ctx Context, sel *qcode.Select)
 	RenderOrderBy(ctx Context, sel *qcode.Select)
 	RenderDistinctOn(ctx Context, sel *qcode.Select)
-    RenderFromEdge(ctx Context, sel *qcode.Select) // For embedded/JSONTable vs RecordSet
+	RenderFromEdge(ctx Context, sel *qcode.Select) // For embedded/JSONTable vs RecordSet
 
 	RenderJSONPath(ctx Context, table, col string, path []string)
 	RenderList(ctx Context, ex *qcode.Exp)
@@ -107,17 +106,16 @@ type Dialect interface {
 	BindVar(i int) string
 	UseNamedParams() bool
 	SupportsLateral() bool
-	
+
 	// Identifier quoting - each dialect uses different quote characters
 	QuoteIdentifier(s string) string
-	
+
 	// Inline child rendering for dialects without LATERAL support
 	// renderer provides callbacks to compiler methods
 	RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select)
 	RenderChildCursor(ctx Context, renderChild func())
 	RenderChildValue(ctx Context, sel *qcode.Select, renderChild func())
 
-	
 	// Mutation and Subscriptions
 	SupportsReturning() bool
 	SupportsWritableCTE() bool
@@ -136,7 +134,7 @@ type Dialect interface {
 	RenderAssign(ctx Context, col string, val string)
 	RenderCast(ctx Context, val func(), typ string)
 	RenderTryCast(ctx Context, val func(), typ string)
-	
+
 	RenderSubscriptionUnbox(ctx Context, params []Param, innerSQL string)
 
 	// Linear Execution (for MySQL/SQLite)
@@ -149,7 +147,7 @@ type Dialect interface {
 	RenderVarDeclaration(ctx Context, name, typeName string)
 	RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n int, renderRoot func())
 	RenderSetSessionVar(ctx Context, name, value string) bool
-	
+
 	RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn))
 	RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func())
 	RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func())
@@ -161,22 +159,22 @@ type Dialect interface {
 
 	// Role Statement rendering (moves db-specific code from core/rolestmt.go)
 	// These return strings since they're used outside the psql compiler context
-	RoleSelectPrefix() string             // "SELECT TOP 1 (CASE" vs "SELECT (CASE"
-	RoleLimitSuffix() string              // Close with/without LIMIT 1
-	RoleDummyTable() string               // Database-specific dummy table
-	TransformBooleanLiterals(match string) string   // "true"→"1" for MSSQL
+	RoleSelectPrefix() string                     // "SELECT TOP 1 (CASE" vs "SELECT (CASE"
+	RoleLimitSuffix() string                      // Close with/without LIMIT 1
+	RoleDummyTable() string                       // Database-specific dummy table
+	TransformBooleanLiterals(match string) string // "true"→"1" for MSSQL
 
 	// Driver Behavior (moves db-specific code from core/args.go and core/core.go)
-	RequiresJSONAsString() bool          // Oracle/MSSQL need JSON as string
-	RequiresLowercaseIdentifiers() bool  // Oracle needs lowercase schemas
-	RequiresBooleanAsInt() bool          // Oracle needs bool as 1/0 (PL/SQL BOOLEAN can't be used in SQL)
+	RequiresJSONAsString() bool         // Oracle/MSSQL need JSON as string
+	RequiresLowercaseIdentifiers() bool // Oracle needs lowercase schemas
+	RequiresBooleanAsInt() bool         // Oracle needs bool as 1/0 (PL/SQL BOOLEAN can't be used in SQL)
 
 	// Recursive CTE Syntax (moves db-specific code from psql/recur.go)
-	RequiresRecursiveKeyword() bool      // Oracle doesn't use RECURSIVE
+	RequiresRecursiveKeyword() bool       // Oracle doesn't use RECURSIVE
 	RequiresRecursiveCTEColumnList() bool // Oracle requires explicit column alias list
-	RenderRecursiveOffset(ctx Context)   // OFFSET 1 vs LIMIT -1 OFFSET 1 vs LIMIT 1, MAX
-	RenderRecursiveLimit1(ctx Context)   // LIMIT 1 vs FETCH FIRST 1 ROWS ONLY
-	WrapRecursiveSelect() bool           // SQLite needs extra SELECT * FROM (...)
+	RenderRecursiveOffset(ctx Context)    // OFFSET 1 vs LIMIT -1 OFFSET 1 vs LIMIT 1, MAX
+	RenderRecursiveLimit1(ctx Context)    // LIMIT 1 vs FETCH FIRST 1 ROWS ONLY
+	WrapRecursiveSelect() bool            // SQLite needs extra SELECT * FROM (...)
 	// RenderRecursiveAnchorWhere renders the WHERE clause for recursive CTE anchor
 	// Returns true if it handled the WHERE rendering, false to use default correlation
 	// For Oracle/MSSQL: inline parent's WHERE expression (no outer scope correlation)
@@ -189,14 +187,14 @@ type Dialect interface {
 	RenderJSONRootSuffix(ctx Context)                        // FOR JSON PATH for MSSQL, empty for others
 
 	// Array Operations (moves db-specific code from psql/mutate.go)
-	RenderArraySelectPrefix(ctx Context)                     // ARRAY(SELECT vs (SELECT JSON_ARRAYAGG(
-	RenderArraySelectSuffix(ctx Context)                     // ) vs ))
-	RenderArrayAggPrefix(ctx Context, distinct bool)         // ARRAY_AGG vs json_group_array vs JSON_ARRAYAGG
-	RenderArrayRemove(ctx Context, col string, val func())   // array_remove vs JSON_REMOVE
+	RenderArraySelectPrefix(ctx Context)                   // ARRAY(SELECT vs (SELECT JSON_ARRAYAGG(
+	RenderArraySelectSuffix(ctx Context)                   // ) vs ))
+	RenderArrayAggPrefix(ctx Context, distinct bool)       // ARRAY_AGG vs json_group_array vs JSON_ARRAYAGG
+	RenderArrayRemove(ctx Context, col string, val func()) // array_remove vs JSON_REMOVE
 
 	// Column rendering (moves db-specific code from psql/columns.go)
-	RequiresJSONQueryWrapper() bool     // MariaDB needs JSON_QUERY wrapper for inline children
-	RequiresNullOnEmptySelect() bool    // MySQL/SQLite/MariaDB need NULL when no columns rendered
+	RequiresJSONQueryWrapper() bool  // MariaDB needs JSON_QUERY wrapper for inline children
+	RequiresNullOnEmptySelect() bool // MySQL/SQLite/MariaDB need NULL when no columns rendered
 }
 
 // NameMapSetter is an optional interface that dialects can implement
@@ -224,6 +222,23 @@ type FullMutationCompiler interface {
 	CompileFullMutation(ctx Context, qc *qcode.QCode) bool
 }
 
+// InsertConflictGetMode describes how an optional dialect implementation
+// returns the row selected by an insert(..., on_conflict: get) operation.
+type InsertConflictGetMode uint8
+
+const (
+	InsertConflictGetNative InsertConflictGetMode = iota + 1
+	InsertConflictGetWritableCTE
+	InsertConflictGetLinear
+)
+
+// InsertConflictGetRenderer is deliberately optional: dialects that do not
+// implement the exact get-without-update semantics fail at compile time.
+type InsertConflictGetRenderer interface {
+	InsertConflictGetMode() InsertConflictGetMode
+	RenderInsertConflictGetClause(ctx Context, m *qcode.Mutate)
+}
+
 func GenericRenderMutationPostamble(ctx Context, qc *qcode.QCode) {
 	for k, cids := range qc.MUnions {
 		if len(cids) < 2 {
@@ -244,7 +259,7 @@ func GenericRenderMutationPostamble(ctx Context, qc *qcode.QCode) {
 				ctx.WriteString(` UNION ALL `)
 			}
 			ctx.WriteString(`SELECT * FROM `)
-			
+
 			if m.Multi {
 				ctx.WriteString(m.Ti.Name)
 				ctx.WriteString(`_`)
@@ -258,5 +273,3 @@ func GenericRenderMutationPostamble(ctx Context, qc *qcode.QCode) {
 		ctx.WriteString(`)`)
 	}
 }
-
-

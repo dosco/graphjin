@@ -26,6 +26,17 @@ func (co *Compiler) compileMutation(
 		isJSON:   qc.Mutates[0].IsJSON,
 		Compiler: co,
 	}
+	if qc.InsertConflictAction == qcode.ConflictGet {
+		renderer, ok := co.dialect.(dialect.InsertConflictGetRenderer)
+		if !ok {
+			return fmt.Errorf("on_conflict: get is not supported by the %s dialect", co.dialect.Name())
+		}
+		mode := renderer.InsertConflictGetMode()
+		if (co.dialect.SupportsLinearExecution() && mode != dialect.InsertConflictGetLinear) ||
+			(!co.dialect.SupportsLinearExecution() && mode == dialect.InsertConflictGetLinear) {
+			return fmt.Errorf("on_conflict: get is not supported by the %s mutation path", co.dialect.Name())
+		}
+	}
 
 	if co.dialect.Name() == "redshift" {
 		if err := c.validateRedshiftMutation(); err != nil {

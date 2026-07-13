@@ -390,6 +390,16 @@ mutation {
 }
 ```
 
+PostgreSQL and SQLite also support an update-free insert conflict policy for a single row. GraphJin infers one supplied unique key and returns the stored row unchanged on conflict:
+
+```graphql
+mutation {
+  users(insert: { email: "ada@example.com", full_name: "Ada" }, on_conflict: get) {
+    id email full_name
+  }
+}
+```
+
 **Spatial queries:**
 ```graphql
 {

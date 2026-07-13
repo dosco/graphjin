@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -23,6 +24,15 @@ const (
 	MTDisconnect
 	MTNone
 	MTKeyword
+)
+
+// ConflictAction controls the behavior of an insert when its inferred unique
+// target conflicts with an existing row.
+type ConflictAction uint8
+
+const (
+	ConflictNone ConflictAction = iota
+	ConflictGet
 )
 
 // const (
@@ -52,17 +62,19 @@ type Mutate struct {
 	DependsOn map[int32]struct{}
 	Type      MType
 	// CType     uint8
-	Key      string
-	Path     []string
-	Val      json.RawMessage
-	Cols     []MColumn
-	RCols    []MRColumn
-	Ti       sdata.DBTable
-	Rel      sdata.DBRel
-	Where    Filter
-	Multi    bool
-	children []int32
-	render   bool
+	Key            string
+	Path           []string
+	Val            json.RawMessage
+	Cols           []MColumn
+	RCols          []MRColumn
+	Ti             sdata.DBTable
+	Rel            sdata.DBRel
+	Where          Filter
+	ConflictAction ConflictAction
+	ConflictCols   []MColumn
+	Multi          bool
+	children       []int32
+	render         bool
 }
 
 type MColumn struct {
@@ -249,6 +261,78 @@ func (co *Compiler) compileMutation(qc *QCode,
 		}
 	}
 	qc.Mutates = mutates
+	return co.configureInsertConflict(qc)
+}
+
+func (co *Compiler) configureInsertConflict(qc *QCode) error {
+	if qc.InsertConflictAction == ConflictNone {
+		return nil
+	}
+	if qc.SType != QTInsert {
+		return errors.New("on_conflict is only valid with insert")
+	}
+	if qc.actionArg.Val != nil && qc.actionArg.Val.Type == graph.NodeList {
+		return errors.New("on_conflict: get does not support bulk or nested inserts")
+	}
+	if strings.HasPrefix(strings.TrimSpace(string(qc.ActionVal)), "[") {
+		return errors.New("on_conflict: get does not support bulk or nested inserts")
+	}
+	if len(qc.Roots) != 1 || len(qc.Mutates) != 1 {
+		return errors.New("on_conflict: get does not support bulk or nested inserts")
+	}
+
+	m := &qc.Mutates[0]
+	if m.Type != MTInsert || m.ParentID != -1 || m.Array || m.Data == nil || m.Data.Type != graph.NodeObj || len(m.children) != 0 || len(m.RCols) != 0 {
+		return errors.New("on_conflict: get does not support bulk or nested inserts")
+	}
+
+	byName := make(map[string]MColumn, len(m.Cols))
+	for _, col := range m.Cols {
+		byName[col.Col.Name] = col
+	}
+
+	var candidates [][]MColumn
+	if len(m.Ti.PrimaryCols) != 0 {
+		pk := make([]MColumn, 0, len(m.Ti.PrimaryCols))
+		for _, col := range m.Ti.PrimaryCols {
+			mc, ok := byName[col.Name]
+			if !ok {
+				pk = nil
+				break
+			}
+			pk = append(pk, mc)
+		}
+		if len(pk) != 0 {
+			candidates = append(candidates, pk)
+		}
+	}
+
+	for _, col := range m.Ti.Columns {
+		if col.PrimaryKey || !col.UniqueKey {
+			continue
+		}
+		if mc, ok := byName[col.Name]; ok {
+			candidates = append(candidates, []MColumn{mc})
+		}
+	}
+
+	if len(candidates) == 0 {
+		return fmt.Errorf("on_conflict: get on table %q requires a supplied primary or unique key", m.Ti.Name)
+	}
+	if len(candidates) > 1 {
+		names := make([]string, 0, len(candidates))
+		for _, candidate := range candidates {
+			parts := make([]string, len(candidate))
+			for i := range candidate {
+				parts[i] = candidate[i].Col.Name
+			}
+			names = append(names, strings.Join(parts, "+"))
+		}
+		return fmt.Errorf("on_conflict: get on table %q is ambiguous; supplied unique keys: %s", m.Ti.Name, strings.Join(names, ", "))
+	}
+
+	m.ConflictAction = ConflictGet
+	m.ConflictCols = candidates[0]
 	return nil
 }
 
