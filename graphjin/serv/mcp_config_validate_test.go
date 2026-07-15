@@ -42,6 +42,9 @@ func TestHandleValidateConfig_ValidChangeReportsImpactWithoutMutating(t *testing
 	if out.Mode != "validate" {
 		t.Fatalf("expected mode=validate, got %q", out.Mode)
 	}
+	if out.Scope != ConfigScopeCore || out.ReloadMode != servReloadHot || out.ReloadStrategy != "full" {
+		t.Fatalf("expected core/hot/full impact, got scope=%q mode=%q strategy=%q", out.Scope, out.ReloadMode, out.ReloadStrategy)
+	}
 	if len(out.Changes) == 0 {
 		t.Fatal("expected a change summary describing the proposed update")
 	}
@@ -96,6 +99,48 @@ func TestHandleValidateConfig_InvalidChangeReportsErrorsWithoutMutating(t *testi
 	}
 	if got := ms.service.conf.Core.Databases["main"].Path; got != oldPath {
 		t.Fatalf("validate must not change live config path on failure, got %q want %q", got, oldPath)
+	}
+}
+
+func TestHandleValidateConfig_NoChangesOmitsImpact(t *testing.T) {
+	ms := newTransactionalConfigMCPServerWithOptions(t, createSQLiteDBFile(t, "live.sqlite3", true), false, nil)
+
+	res, err := ms.handleValidateConfig(context.Background(), newToolRequest(map[string]any{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var out ConfigUpdateResult
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !out.Valid || out.Applied || out.Message != "No changes provided" {
+		t.Fatalf("expected a valid no-change result, got %+v", out)
+	}
+	if out.Scope != "" || out.ReloadMode != "" || out.ReloadStrategy != "" {
+		t.Fatalf("no-change result must omit impact classification, got scope=%q mode=%q strategy=%q", out.Scope, out.ReloadMode, out.ReloadStrategy)
+	}
+}
+
+func TestHandleValidateConfig_PreValidationFailureOmitsImpact(t *testing.T) {
+	ms := newTransactionalConfigMCPServerWithOptions(t, createSQLiteDBFile(t, "live.sqlite3", true), false, nil)
+
+	res, err := ms.handleValidateConfig(context.Background(), newToolRequest(map[string]any{
+		"serv": map[string]any{"unknown_setting": true},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var out ConfigUpdateResult
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if out.Success || out.Valid || len(out.Errors) == 0 {
+		t.Fatalf("expected pre-validation failure, got %+v", out)
+	}
+	if out.Scope != "" || out.ReloadMode != "" || out.ReloadStrategy != "" {
+		t.Fatalf("pre-validation failure must omit impact classification, got scope=%q mode=%q strategy=%q", out.Scope, out.ReloadMode, out.ReloadStrategy)
 	}
 }
 

@@ -1759,15 +1759,43 @@ func TestGraphQLControlPlaneRemovesLegacyConfigRoots(t *testing.T) {
 
 func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "app.sqlite3", true))
+	adminCtx := sourceModeAdminTestContext()
+
+	res, err := svc.gj.GraphQL(adminCtx, `query {
+		gj_config(id: "current") {
+			scope
+			reload_mode
+			reload_strategy
+		}
+	}`, nil, &core.RequestConfig{})
+	if err != nil {
+		t.Fatalf("current config query error: %v", err)
+	}
+	var current struct {
+		Config struct {
+			Scope          *string `json:"scope"`
+			ReloadMode     *string `json:"reload_mode"`
+			ReloadStrategy *string `json:"reload_strategy"`
+		} `json:"gj_config"`
+	}
+	if err := json.Unmarshal(res.Data, &current); err != nil {
+		t.Fatalf("decode current config: %v\n%s", err, string(res.Data))
+	}
+	if current.Config.Scope != nil || current.Config.ReloadMode != nil || current.Config.ReloadStrategy != nil {
+		t.Fatalf("ordinary current-config reads must leave impact fields null, got %s", string(res.Data))
+	}
 
 	revision := controlPlaneConfigRevision(t, svc)
-	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+	res, err = svc.gj.GraphQL(adminCtx, fmt.Sprintf(`mutation {
 		gj_config(id: "current", update: {
 			mode: "preview",
 			expected_catalog_revision: %q,
 			mcp: { allow_raw_queries: true, allow_workflow_execution: true }
 		}) {
 			valid
+			scope
+			reload_mode
+			reload_strategy
 			preview_id
 			expires_at
 			change_summary_json
@@ -1782,9 +1810,12 @@ func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 	}
 	var preview struct {
 		Config struct {
-			Valid     bool   `json:"valid"`
-			PreviewID string `json:"preview_id"`
-			ExpiresAt string `json:"expires_at"`
+			Valid          bool   `json:"valid"`
+			Scope          string `json:"scope"`
+			ReloadMode     string `json:"reload_mode"`
+			ReloadStrategy string `json:"reload_strategy"`
+			PreviewID      string `json:"preview_id"`
+			ExpiresAt      string `json:"expires_at"`
 		} `json:"gj_config"`
 	}
 	if err := json.Unmarshal(res.Data, &preview); err != nil {
@@ -1793,11 +1824,17 @@ func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 	if !preview.Config.Valid || preview.Config.PreviewID == "" || preview.Config.ExpiresAt == "" {
 		t.Fatalf("unexpected config preview response: %+v", preview.Config)
 	}
+	if preview.Config.Scope != ConfigScopeServ || preview.Config.ReloadMode != servReloadHot || preview.Config.ReloadStrategy != "" {
+		t.Fatalf("unexpected config preview impact: %+v", preview.Config)
+	}
 	if svc.conf.MCP.AllowRawQueries || svc.conf.MCP.AllowWorkflowExecution {
 		t.Fatal("expected preview to leave live mcp settings unchanged")
 	}
+	if got := controlPlaneConfigRevision(t, svc); got != revision {
+		t.Fatalf("preview changed catalog revision: got %q want %q", got, revision)
+	}
 
-	res, err = svc.gj.GraphQL(sourceModeAdminTestContext(), fmt.Sprintf(`mutation {
+	res, err = svc.gj.GraphQL(adminCtx, fmt.Sprintf(`mutation {
 		gj_config(id: "current", update: {
 			mode: "apply",
 			preview_id: %q,
@@ -1805,6 +1842,9 @@ func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 			mcp: { allow_raw_queries: true, allow_workflow_execution: true }
 		}) {
 			applied
+			scope
+			reload_mode
+			reload_strategy
 			mcp
 			catalog_revision
 			errors_json
@@ -1819,6 +1859,9 @@ func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 	var patched struct {
 		Config struct {
 			Applied         bool           `json:"applied"`
+			Scope           string         `json:"scope"`
+			ReloadMode      string         `json:"reload_mode"`
+			ReloadStrategy  string         `json:"reload_strategy"`
 			MCP             map[string]any `json:"mcp"`
 			CatalogRevision string         `json:"catalog_revision"`
 		} `json:"gj_config"`
@@ -1828,6 +1871,9 @@ func TestGraphQLControlPlaneConfigValidationAndRepair(t *testing.T) {
 	}
 	if !patched.Config.Applied || patched.Config.CatalogRevision == "" {
 		t.Fatalf("unexpected config apply response: %+v", patched.Config)
+	}
+	if patched.Config.Scope != preview.Config.Scope || patched.Config.ReloadMode != preview.Config.ReloadMode || patched.Config.ReloadStrategy != preview.Config.ReloadStrategy {
+		t.Fatalf("preview/apply impact mismatch: preview=%+v apply=%+v", preview.Config, patched.Config)
 	}
 	if got, _ := patched.Config.MCP["allow_raw_queries"].(bool); !got {
 		t.Fatalf("expected returned mcp.allow_raw_queries=true, got %+v", patched.Config.MCP)
@@ -2043,6 +2089,9 @@ func TestGraphQLControlPlaneConfigSourcePatchPreviewApply(t *testing.T) {
 		}) {
 			valid
 			applied
+			scope
+			reload_mode
+			reload_strategy
 			preview_id
 			expires_at
 			change_summary_json
@@ -2058,10 +2107,13 @@ func TestGraphQLControlPlaneConfigSourcePatchPreviewApply(t *testing.T) {
 	}
 	var preview struct {
 		Config struct {
-			Valid     bool   `json:"valid"`
-			Applied   bool   `json:"applied"`
-			PreviewID string `json:"preview_id"`
-			ExpiresAt string `json:"expires_at"`
+			Valid          bool   `json:"valid"`
+			Applied        bool   `json:"applied"`
+			Scope          string `json:"scope"`
+			ReloadMode     string `json:"reload_mode"`
+			ReloadStrategy string `json:"reload_strategy"`
+			PreviewID      string `json:"preview_id"`
+			ExpiresAt      string `json:"expires_at"`
 		} `json:"gj_config"`
 	}
 	if err := json.Unmarshal(res.Data, &preview); err != nil {
@@ -2069,6 +2121,9 @@ func TestGraphQLControlPlaneConfigSourcePatchPreviewApply(t *testing.T) {
 	}
 	if !preview.Config.Valid || preview.Config.Applied || preview.Config.PreviewID == "" || preview.Config.ExpiresAt == "" {
 		t.Fatalf("unexpected source patch preview response: %+v", preview.Config)
+	}
+	if preview.Config.Scope != ConfigScopeCore || preview.Config.ReloadMode != servReloadHot || preview.Config.ReloadStrategy != "source_scoped" {
+		t.Fatalf("unexpected source patch preview impact: %+v", preview.Config)
 	}
 	if afterPreview, _ := findTestSource(svc, "main"); len(afterPreview.Access.PublicTables) != len(before.Access.PublicTables) {
 		t.Fatalf("preview mutated live source access: before=%+v after=%+v", before.Access, afterPreview.Access)
@@ -2082,6 +2137,9 @@ func TestGraphQLControlPlaneConfigSourcePatchPreviewApply(t *testing.T) {
 			%s
 		}) {
 			applied
+			scope
+			reload_mode
+			reload_strategy
 			catalog_revision
 			sources
 			change_summary_json
@@ -2097,6 +2155,9 @@ func TestGraphQLControlPlaneConfigSourcePatchPreviewApply(t *testing.T) {
 	var applied struct {
 		Config struct {
 			Applied         bool   `json:"applied"`
+			Scope           string `json:"scope"`
+			ReloadMode      string `json:"reload_mode"`
+			ReloadStrategy  string `json:"reload_strategy"`
 			CatalogRevision string `json:"catalog_revision"`
 		} `json:"gj_config"`
 	}
@@ -2105,6 +2166,9 @@ func TestGraphQLControlPlaneConfigSourcePatchPreviewApply(t *testing.T) {
 	}
 	if !applied.Config.Applied || applied.Config.CatalogRevision == "" {
 		t.Fatalf("unexpected source patch apply response: %+v", applied.Config)
+	}
+	if applied.Config.Scope != preview.Config.Scope || applied.Config.ReloadMode != preview.Config.ReloadMode || applied.Config.ReloadStrategy != preview.Config.ReloadStrategy {
+		t.Fatalf("source patch preview/apply impact mismatch: preview=%+v apply=%+v", preview.Config, applied.Config)
 	}
 	main, ok := findTestSource(svc, "main")
 	if !ok {

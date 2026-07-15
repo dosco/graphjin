@@ -51,6 +51,7 @@ func (ms *mcpServer) registerConfigTools() {
 			"System database names (postgres, mysql, information_schema, master, etc.) "+
 			"are rejected by default — use a user database name instead. "+
 			"Use create_if_not_exists: true to create a new database on the server before connecting (dev mode only). "+
+			"Response classification uses scope (core, serv, or mixed), reload_mode (hot or restart), and reload_strategy (full or source_scoped for core changes). "+
 			"Response includes machine-readable next-step guidance in the `next` field. "+
 			"WARNING: Changes are lost on restart unless persisted separately. "+
 			"Use get_current_config first to understand the current state."),
@@ -302,7 +303,7 @@ func (ms *mcpServer) registerConfigTools() {
 		mcp.WithObject("serv",
 			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, max_steps, timeout_seconds, sampling, read_only, return_trace, seed_limit, catalog_default_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
 				"agent changes are read live; the rest are persisted and take effect on the next restart (automatic when reload_on_config_change is enabled). "+
-				"Secret-bearing sections (auth, redis, uploads) are read-only on gj_config and cannot be patched here. reload_mode in the response reports hot vs restart."),
+				"Secret-bearing sections (auth, redis, uploads) are read-only on gj_config and cannot be patched here. scope reports serv or mixed and reload_mode reports hot or restart."),
 		),
 	)
 
@@ -315,7 +316,7 @@ func (ms *mcpServer) registerConfigTools() {
 	validateTool.Name = "validate_config"
 	validateTool.Description = "Dry-run a proposed configuration change without applying it. " +
 		"Runs the same pipeline as update_current_config — validation, staged runtime build (databases connected, schema discovered), and reload-impact classification — then discards the staged runtime. " +
-		"Returns valid, errors, a change summary, and reload_mode (full or source_scoped). The running config, catalog revision, and config file are never mutated and no preview is created. " +
+		"Returns valid, errors, a change summary, scope (core, serv, or mixed), reload_mode (hot or restart), and reload_strategy (full or source_scoped for core changes). The running config, catalog revision, and config file are never mutated and no preview is created. " +
 		"Accepts the same payload fields as update_current_config. expected_catalog_revision is optional and only checked when provided."
 	validateProps := make(map[string]any, len(updateTool.InputSchema.Properties))
 	for k, v := range updateTool.InputSchema.Properties {
@@ -592,7 +593,9 @@ type ConfigUpdateResult struct {
 	Changes           []string      `json:"changes,omitempty"`
 	Errors            []string      `json:"errors,omitempty"`
 	Databases         []string      `json:"databases,omitempty"`
+	Scope             string        `json:"scope,omitempty"`
 	ReloadMode        string        `json:"reload_mode,omitempty"`
+	ReloadStrategy    string        `json:"reload_strategy,omitempty"`
 	ChangedSources    []string      `json:"changed_sources,omitempty"`
 	ReloadFallback    bool          `json:"reload_fallback,omitempty"`
 	Valid             bool          `json:"valid,omitempty"`
@@ -605,6 +608,51 @@ type ConfigUpdateResult struct {
 	FindingsJSON      string        `json:"findings_json,omitempty"`
 	ErrorsJSON        string        `json:"errors_json,omitempty"`
 	Next              *NextGuidance `json:"next,omitempty"`
+}
+
+type configUpdateImpact struct {
+	scope          string
+	reloadMode     string
+	reloadStrategy string
+	changedSources []string
+	reloadFallback bool
+}
+
+func classifyConfigUpdateImpact(coreChanged bool, plan configRuntimeReloadPlan, mcpChanged, servChanged bool, servReload string) configUpdateImpact {
+	servChanged = servChanged || mcpChanged
+	if !coreChanged && !servChanged {
+		return configUpdateImpact{}
+	}
+
+	impact := configUpdateImpact{reloadMode: servReloadHot}
+	switch {
+	case coreChanged && servChanged:
+		impact.scope = ConfigScopeMixed
+	case coreChanged:
+		impact.scope = ConfigScopeCore
+	default:
+		impact.scope = ConfigScopeServ
+	}
+	if servReload == servReloadRestart {
+		impact.reloadMode = servReloadRestart
+	}
+	if coreChanged {
+		impact.reloadStrategy = plan.mode
+		impact.changedSources = plan.changedSources
+		impact.reloadFallback = plan.fallback
+	}
+	return impact
+}
+
+func (impact configUpdateImpact) apply(result *ConfigUpdateResult) {
+	if result == nil || impact.scope == "" {
+		return
+	}
+	result.Scope = impact.scope
+	result.ReloadMode = impact.reloadMode
+	result.ReloadStrategy = impact.reloadStrategy
+	result.ChangedSources = impact.changedSources
+	result.ReloadFallback = impact.reloadFallback
 }
 
 func (ms *mcpServer) ensureConfigPreviewStore() *configPreviewStore {
@@ -1264,6 +1312,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	var sealedKeystore *localKeystore
 	var sealedSecretRefs map[string]struct{}
 	var reloadPlan configRuntimeReloadPlan
+	var impact configUpdateImpact
 	coreChanged := !reflect.DeepEqual(stagedCore, ms.service.conf.Core)
 	if coreChanged {
 		reloadPlan = classifyConfigRuntimeReload(oldCore, stagedCore)
@@ -1271,6 +1320,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			reloadPlan.mode = "full"
 			reloadPlan.fallback = true
 		}
+		impact = classifyConfigUpdateImpact(true, reloadPlan, mcpPatch != nil, servPatch != nil, servReload)
 		var stage *stagedRuntimeState
 		var err error
 		if reloadPlan.mode == "source_scoped" {
@@ -1300,11 +1350,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				Databases: availableDBs,
 				Mode:      mode,
 			}
-			if reloadPlan.mode != "" {
-				result.ReloadMode = reloadPlan.mode
-				result.ChangedSources = reloadPlan.changedSources
-				result.ReloadFallback = reloadPlan.fallback
-			}
+			impact.apply(&result)
 			if sourceMode {
 				result.Valid = false
 				result.Applied = false
@@ -1327,9 +1373,6 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				Message:           "Config is valid; validate mode never applies changes",
 				Changes:           changes,
 				Databases:         availableDBs,
-				ReloadMode:        reloadPlan.mode,
-				ChangedSources:    reloadPlan.changedSources,
-				ReloadFallback:    reloadPlan.fallback,
 				Valid:             true,
 				Applied:           false,
 				Mode:              mode,
@@ -1338,6 +1381,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				FindingsJSON:      findingsJSON,
 				ErrorsJSON:        "[]",
 			}
+			impact.apply(&result)
 			return ms.finishConfigUpdate(ctx, result)
 		}
 		if sourceMode && mode == "preview" {
@@ -1355,9 +1399,6 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				Message:           "Config preview is valid; resend the same payload with mode: \"apply\" and preview_id before expiry.",
 				Changes:           changes,
 				Databases:         availableDBs,
-				ReloadMode:        reloadPlan.mode,
-				ChangedSources:    reloadPlan.changedSources,
-				ReloadFallback:    reloadPlan.fallback,
 				Valid:             true,
 				Applied:           false,
 				Mode:              mode,
@@ -1368,6 +1409,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				FindingsJSON:      rec.FindingsJSON,
 				ErrorsJSON:        rec.ErrorsJSON,
 			}
+			impact.apply(&result)
 			return ms.finishConfigUpdate(ctx, result)
 		}
 
@@ -1384,9 +1426,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					Databases: availableDBs,
 					Mode:      mode,
 				}
-				result.ReloadMode = reloadPlan.mode
-				result.ChangedSources = reloadPlan.changedSources
-				result.ReloadFallback = reloadPlan.fallback
+				impact.apply(&result)
 				if sourceMode {
 					result.Valid = false
 					result.Applied = false
@@ -1406,9 +1446,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					Databases: availableDBs,
 					Mode:      mode,
 				}
-				result.ReloadMode = reloadPlan.mode
-				result.ChangedSources = reloadPlan.changedSources
-				result.ReloadFallback = reloadPlan.fallback
+				impact.apply(&result)
 				if sourceMode {
 					result.Valid = false
 					result.Applied = false
@@ -1430,9 +1468,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 						Databases: availableDBs,
 						Mode:      mode,
 					}
-					result.ReloadMode = reloadPlan.mode
-					result.ChangedSources = reloadPlan.changedSources
-					result.ReloadFallback = reloadPlan.fallback
+					impact.apply(&result)
 					if sourceMode {
 						result.Valid = false
 						result.Applied = false
@@ -1452,9 +1488,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 						Databases: availableDBs,
 						Mode:      mode,
 					}
-					result.ReloadMode = reloadPlan.mode
-					result.ChangedSources = reloadPlan.changedSources
-					result.ReloadFallback = reloadPlan.fallback
+					impact.apply(&result)
 					if sourceMode {
 						result.Valid = false
 						result.Applied = false
@@ -1473,16 +1507,14 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				stage.close()
 				errText := redactRuntimeError(err)
 				result := ConfigUpdateResult{
-					Success:        false,
-					Message:        fmt.Sprintf("Config reload failed, changes not persisted: %s", errText),
-					Changes:        changes,
-					Errors:         append(errors, fmt.Sprintf("reload error: %s", errText)),
-					Databases:      availableDBs,
-					ReloadMode:     reloadPlan.mode,
-					ChangedSources: reloadPlan.changedSources,
-					ReloadFallback: reloadPlan.fallback,
-					Mode:           mode,
+					Success:   false,
+					Message:   fmt.Sprintf("Config reload failed, changes not persisted: %s", errText),
+					Changes:   changes,
+					Errors:    append(errors, fmt.Sprintf("reload error: %s", errText)),
+					Databases: availableDBs,
+					Mode:      mode,
 				}
+				impact.apply(&result)
 				if sourceMode {
 					result.Valid = false
 					result.Applied = false
@@ -1509,6 +1541,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			}
 		}
 	}
+	if !coreChanged {
+		impact = classifyConfigUpdateImpact(false, reloadPlan, mcpPatch != nil, servPatch != nil, servReload)
+	}
 
 	if sourceMode && mode == "preview" {
 		findingsJSON := ms.stagedConfigSecurityFindingsJSON(conf)
@@ -1534,6 +1569,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			FindingsJSON:      rec.FindingsJSON,
 			ErrorsJSON:        rec.ErrorsJSON,
 		}
+		impact.apply(&result)
 		return ms.finishConfigUpdate(ctx, result)
 	}
 
@@ -1557,6 +1593,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			FindingsJSON:      findingsJSON,
 			ErrorsJSON:        "[]",
 		}
+		impact.apply(&result)
 		return ms.finishConfigUpdate(ctx, result)
 	}
 
@@ -1619,14 +1656,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			ms.ensureConfigPreviewStore().delete(previewID)
 		}
 	}
-	if reloadPlan.mode != "" {
-		result.ReloadMode = reloadPlan.mode
-		result.ChangedSources = reloadPlan.changedSources
-		result.ReloadFallback = reloadPlan.fallback
-	} else if servReload != "" && len(errors) == 0 {
-		// Serv-only change: report how it takes effect (hot vs restart).
-		result.ReloadMode = servReload
-	}
+	impact.apply(&result)
 	if snap, err := ms.service.catalogSnapshot(); err == nil && snap != nil {
 		result.CatalogRevision = snap.Revision
 	}
@@ -3530,8 +3560,14 @@ func (ms *mcpServer) recordConfigUpdateRuntimeEvent(ctx context.Context, result 
 		details["valid"] = result.Valid
 		details["applied"] = result.Applied
 	}
+	if result.Scope != "" {
+		details["scope"] = result.Scope
+	}
 	if result.ReloadMode != "" {
 		details["reload_mode"] = result.ReloadMode
+	}
+	if result.ReloadStrategy != "" {
+		details["reload_strategy"] = result.ReloadStrategy
 	}
 	if len(result.ChangedSources) != 0 {
 		details["changed_sources"] = result.ChangedSources

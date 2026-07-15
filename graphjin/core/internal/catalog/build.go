@@ -428,7 +428,7 @@ func configRecipes() []configRecipe {
 				"create member role",
 			},
 			Preflight: commonPreflight,
-			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", roles: [{ name: "support", comment: "Support staff", match: "role = 'support'" }] }) { valid preview_id expires_at change_summary_json errors_json } }`,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", roles: [{ name: "support", comment: "Support staff", match: "role = 'support'" }] }) { valid scope reload_mode reload_strategy preview_id expires_at change_summary_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
 				"requested role requires table filters or presets instead of source access",
@@ -451,7 +451,7 @@ func configRecipes() []configRecipe {
 				"configure tenant namespace column",
 			},
 			Preflight: commonPreflight,
-			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "app", access: { read: "account", write: "blocked", delete: "blocked", namespace_column: "account_id", missing_namespace_column: "block" } }] }) { valid preview_id expires_at change_summary_json findings_json errors_json } }`,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "app", access: { read: "account", write: "blocked", delete: "blocked", namespace_column: "account_id", missing_namespace_column: "block" } }] }) { valid scope reload_mode reload_strategy preview_id expires_at change_summary_json findings_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
 				"preview returns valid: false or high/critical findings that apply to this change",
@@ -476,7 +476,7 @@ func configRecipes() []configRecipe {
 				"hide a table from users",
 			},
 			Preflight: commonPreflight,
-			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "app", access: { public_tables_add: ["countries"], admin_tables_add: ["audit_logs"], blocked_tables_add: ["internal_events"] } }] }) { valid preview_id expires_at change_summary_json findings_json errors_json } }`,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "app", access: { public_tables_add: ["countries"], admin_tables_add: ["audit_logs"], blocked_tables_add: ["internal_events"] } }] }) { valid scope reload_mode reload_strategy preview_id expires_at change_summary_json findings_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
 				"requested table does not exist or belongs to a different source",
@@ -502,7 +502,7 @@ func configRecipes() []configRecipe {
 				"graphjin root access admin",
 			},
 			Preflight: commonPreflight,
-			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "graphjin", access: { roots_set: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }] }) { valid preview_id expires_at change_summary_json findings_json errors_json } }`,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "graphjin", access: { roots_set: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }] }) { valid scope reload_mode reload_strategy preview_id expires_at change_summary_json findings_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
 				"requested root is not enabled by source capabilities",
@@ -579,7 +579,7 @@ func configRecipes() []configRecipe {
 				"move filters to sources access",
 			},
 			Preflight: commonPreflight,
-			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", roles: [{ name: "user", comment: "Authenticated user" }], sources: [{ name: "app", kind: "database", access: { read: "account", write: "blocked", delete: "blocked", namespace_column: "account_id" } }] }) { valid preview_id expires_at change_summary_json findings_json errors_json } }`,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", roles: [{ name: "user", comment: "Authenticated user" }], sources: [{ name: "app", kind: "database", access: { read: "account", write: "blocked", delete: "blocked", namespace_column: "account_id" } }] }) { valid scope reload_mode reload_strategy preview_id expires_at change_summary_json findings_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
 				"legacy role table rule cannot be expressed by source access defaults or classifications",
@@ -603,7 +603,7 @@ func configRecipes() []configRecipe {
 				"throttle the api",
 			},
 			Preflight: commonPreflight,
-			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", serv: { rate_limiter: { rate: 100, bucket: 20, ip_header: "X-Forwarded-For" } } }) { valid reload_mode preview_id change_summary_json errors_json } }`,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", serv: { rate_limiter: { rate: 100, bucket: 20, ip_header: "X-Forwarded-For" } } }) { valid scope reload_mode reload_strategy preview_id change_summary_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
 				"rate_limiter is a server (serv) setting; changing it needs a restart to take effect",
@@ -627,7 +627,7 @@ func configRecipes() []configRecipe {
 				"make the agent read only",
 			},
 			Preflight: commonPreflight,
-			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", serv: { agent: { model: "gpt-4o", max_steps: 12, timeout_seconds: 60 } } }) { valid reload_mode preview_id change_summary_json errors_json } }`,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", serv: { agent: { model: "gpt-4o", max_steps: 12, timeout_seconds: 60 } } }) { valid scope reload_mode reload_strategy preview_id change_summary_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
 				"agent.enabled, provider, api_key_env, and base_url are structural and are not writable at runtime; edit the config file and restart",
@@ -896,7 +896,7 @@ func systemGraphQLCapabilities(enabled map[string]struct{}) []Capability {
 			}),
 			OutputSchemaJSON: mustJSON(map[string]any{
 				"root":   "gj_config",
-				"fields": []string{"id", "sources_used", "config_path", "active_database", "sources", "databases", "relationships", "tables", "roles", "blocklist", "functions", "resolvers", "mcp", "config_json", "redacted_paths", "updated_at", "catalog_revision", "valid", "applied", "preview_id", "expires_at", "change_summary_json", "findings_json", "errors_json"},
+				"fields": []string{"id", "sources_used", "config_path", "active_database", "sources", "databases", "relationships", "tables", "roles", "blocklist", "functions", "resolvers", "mcp", "serv", "config_json", "redacted_paths", "updated_at", "catalog_revision", "valid", "applied", "preview_id", "expires_at", "change_summary_json", "findings_json", "errors_json", "scope", "reload_mode", "reload_strategy"},
 			}),
 			SafetyJSON: mustJSON(map[string]any{"graphql_mutation": `gj_config(id: "current", update: ...)`, "requires_config": "mcp.allow_config_updates", "serialized_by": "service config mutex", "source_mode": "preview/apply required", "preview_ttl_minutes": 10, "preview_store": "bounded memory, hash only"}),
 		})

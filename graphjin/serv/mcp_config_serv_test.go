@@ -63,6 +63,42 @@ func TestValidateServConfigPatch_ClassifiesReloadAndRejectsUnknown(t *testing.T)
 	}
 }
 
+func TestClassifyConfigUpdateImpact(t *testing.T) {
+	tests := []struct {
+		name           string
+		coreChanged    bool
+		plan           configRuntimeReloadPlan
+		mcpChanged     bool
+		servChanged    bool
+		servReload     string
+		wantScope      string
+		wantMode       string
+		wantStrategy   string
+		wantFallback   bool
+		wantSourceName string
+	}{
+		{name: "no change"},
+		{name: "mcp only", mcpChanged: true, wantScope: ConfigScopeServ, wantMode: servReloadHot},
+		{name: "serv hot", servChanged: true, servReload: servReloadHot, wantScope: ConfigScopeServ, wantMode: servReloadHot},
+		{name: "serv restart", servChanged: true, servReload: servReloadRestart, wantScope: ConfigScopeServ, wantMode: servReloadRestart},
+		{name: "core full", coreChanged: true, plan: configRuntimeReloadPlan{mode: "full", fallback: true}, wantScope: ConfigScopeCore, wantMode: servReloadHot, wantStrategy: "full", wantFallback: true},
+		{name: "core source scoped", coreChanged: true, plan: configRuntimeReloadPlan{mode: "source_scoped", changedSources: []string{"main"}}, wantScope: ConfigScopeCore, wantMode: servReloadHot, wantStrategy: "source_scoped", wantSourceName: "main"},
+		{name: "mixed hot", coreChanged: true, plan: configRuntimeReloadPlan{mode: "source_scoped"}, servChanged: true, servReload: servReloadHot, wantScope: ConfigScopeMixed, wantMode: servReloadHot, wantStrategy: "source_scoped"},
+		{name: "mixed restart", coreChanged: true, plan: configRuntimeReloadPlan{mode: "full"}, servChanged: true, servReload: servReloadRestart, wantScope: ConfigScopeMixed, wantMode: servReloadRestart, wantStrategy: "full"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifyConfigUpdateImpact(tt.coreChanged, tt.plan, tt.mcpChanged, tt.servChanged, tt.servReload)
+			if got.scope != tt.wantScope || got.reloadMode != tt.wantMode || got.reloadStrategy != tt.wantStrategy || got.reloadFallback != tt.wantFallback {
+				t.Fatalf("impact = scope %q mode %q strategy %q fallback %v, want %q %q %q %v", got.scope, got.reloadMode, got.reloadStrategy, got.reloadFallback, tt.wantScope, tt.wantMode, tt.wantStrategy, tt.wantFallback)
+			}
+			if tt.wantSourceName != "" && (len(got.changedSources) != 1 || got.changedSources[0] != tt.wantSourceName) {
+				t.Fatalf("changed sources = %v, want [%s]", got.changedSources, tt.wantSourceName)
+			}
+		})
+	}
+}
+
 func TestHandleUpdateCurrentConfig_ServAgentPatchHotAppliesAndPersists(t *testing.T) {
 	dbPath := createSQLiteDBFile(t, "serv.sqlite3", true)
 	v := viper.New()
@@ -84,8 +120,8 @@ func TestHandleUpdateCurrentConfig_ServAgentPatchHotAppliesAndPersists(t *testin
 	if !out.Success {
 		t.Fatalf("expected success, got %+v", out)
 	}
-	if out.ReloadMode != servReloadHot {
-		t.Fatalf("expected reload_mode=hot, got %q", out.ReloadMode)
+	if out.Scope != ConfigScopeServ || out.ReloadMode != servReloadHot || out.ReloadStrategy != "" {
+		t.Fatalf("expected serv/hot with no core strategy, got scope=%q mode=%q strategy=%q", out.Scope, out.ReloadMode, out.ReloadStrategy)
 	}
 	// Applied live to conf.Serv.
 	if got := ms.service.conf.Serv.Agent.Model; got != "gpt-hot" {
@@ -121,11 +157,83 @@ func TestHandleUpdateCurrentConfig_ServRateLimiterPatchReportsRestart(t *testing
 	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if out.ReloadMode != servReloadRestart {
-		t.Fatalf("expected reload_mode=restart, got %q", out.ReloadMode)
+	if out.Scope != ConfigScopeServ || out.ReloadMode != servReloadRestart || out.ReloadStrategy != "" {
+		t.Fatalf("expected serv/restart with no core strategy, got scope=%q mode=%q strategy=%q", out.Scope, out.ReloadMode, out.ReloadStrategy)
 	}
 	if ms.service.conf.Serv.RateLimiter.Rate != 42 || ms.service.conf.Serv.RateLimiter.Bucket != 7 {
 		t.Fatalf("rate_limiter not applied: %+v", ms.service.conf.Serv.RateLimiter)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_ServPreviewReportsImpactWithoutMutating(t *testing.T) {
+	tests := []struct {
+		name       string
+		serv       map[string]any
+		wantMode   string
+		assertLive func(*testing.T, *mcpServer)
+	}{
+		{
+			name:     "hot",
+			serv:     map[string]any{"agent": map[string]any{"model": "preview-only"}},
+			wantMode: servReloadHot,
+			assertLive: func(t *testing.T, ms *mcpServer) {
+				if ms.service.conf.Serv.Agent.Model == "preview-only" {
+					t.Fatal("serv preview mutated the live agent model")
+				}
+			},
+		},
+		{
+			name:     "restart",
+			serv:     map[string]any{"rate_limiter": map[string]any{"rate": float64(73)}},
+			wantMode: servReloadRestart,
+			assertLive: func(t *testing.T, ms *mcpServer) {
+				if ms.service.conf.Serv.RateLimiter.Rate == 73 {
+					t.Fatal("serv preview mutated the live rate limiter")
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ms := newSourceModeConfigMCPServer(t, map[string]string{"main": createSQLiteDBFile(t, tt.name+".sqlite3", true)})
+			revision := ms.currentConfigCatalogRevision(context.Background())
+			out := applyConfigUpdate(t, ms, map[string]any{
+				"mode":                      "preview",
+				"expected_catalog_revision": revision,
+				"serv":                      tt.serv,
+			})
+			if !out.Success || !out.Valid || out.PreviewID == "" {
+				t.Fatalf("expected valid serv preview, got %+v", out)
+			}
+			if out.Scope != ConfigScopeServ || out.ReloadMode != tt.wantMode || out.ReloadStrategy != "" {
+				t.Fatalf("preview impact = scope %q mode %q strategy %q, want serv/%s/empty", out.Scope, out.ReloadMode, out.ReloadStrategy, tt.wantMode)
+			}
+			validated := applyConfigUpdate(t, ms, map[string]any{
+				"mode":                      "validate",
+				"expected_catalog_revision": revision,
+				"serv":                      tt.serv,
+			})
+			if !validated.Success || !validated.Valid || validated.Applied {
+				t.Fatalf("expected valid serv dry-run, got %+v", validated)
+			}
+			if validated.Scope != out.Scope || validated.ReloadMode != out.ReloadMode || validated.ReloadStrategy != out.ReloadStrategy {
+				t.Fatalf("preview/validate impact mismatch: preview=%+v validate=%+v", out, validated)
+			}
+			tt.assertLive(t, ms)
+
+			applied := applyConfigUpdate(t, ms, map[string]any{
+				"mode":                      "apply",
+				"preview_id":                out.PreviewID,
+				"expected_catalog_revision": revision,
+				"serv":                      tt.serv,
+			})
+			if !applied.Success || !applied.Applied {
+				t.Fatalf("expected successful serv apply, got %+v", applied)
+			}
+			if applied.Scope != out.Scope || applied.ReloadMode != out.ReloadMode || applied.ReloadStrategy != out.ReloadStrategy {
+				t.Fatalf("preview/apply impact mismatch: preview=%+v apply=%+v", out, applied)
+			}
+		})
 	}
 }
 
