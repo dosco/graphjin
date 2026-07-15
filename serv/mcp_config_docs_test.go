@@ -20,6 +20,19 @@ func TestConfigDocsTemplatesUseSources(t *testing.T) {
 			if strings.Contains(content, "\ndatabases:\n") || strings.Contains(content, "\ndatabase:\n") {
 				t.Fatalf("%s docs template contains active legacy database config:\n%s", name, content)
 			}
+			for _, required := range []string{
+				"\ndiscovery_cache:\n",
+				"  refresh_interval: 5m",
+				"  startup_wait: 2m",
+				"  retain_generations: 2",
+				"\ncatalog_search:\n",
+				"    embedding_model: text-embedding-3-small",
+				"    dimensions: tiny",
+			} {
+				if !strings.Contains(content, required) {
+					t.Fatalf("%s docs template missing discovery/semantic setting %q:\n%s", name, required, content)
+				}
+			}
 		})
 	}
 }

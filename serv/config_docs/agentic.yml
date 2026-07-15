@@ -57,6 +57,28 @@ agent:
   read_only: false
   return_trace: false
 
+# Discovery generations are immutable files. In a horizontal deployment this
+# path must be a shared read-after-write mount; Redis coordinates the one
+# replica that discovers and activates each generation. Redis is optional for
+# a single GraphJin process, which uses in-process coordination.
+discovery_cache:
+  enabled: true
+  path: .graphjin/discovery
+  refresh_interval: 5m
+  startup_wait: 2m
+  retain_generations: 2
+
+# Semantic catalog recall is optional. Vectors stay under discovery_cache.path;
+# Redis stores only coordination state. Named dimensions are strictly checked.
+catalog_search:
+  semantic:
+    enabled: false
+    provider: openai
+    embedding_model: text-embedding-3-small
+    api_key_env: OPENAI_API_KEY
+    base_url: ""
+    dimensions: tiny
+
 # Agentic sources are explicit because GraphJin supports only one inheritance
 # level, and prod.yml already inherits dev.yml.
 sources:

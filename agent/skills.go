@@ -210,10 +210,15 @@ func seedKinds(seed any) map[string]bool {
 	return kinds
 }
 
-// seedHasCodeSource reports whether the seed discovery surfaced a CodeSQL/code source
-// (source cards carry source_kind "code"), signalling a code investigation/change task.
+// seedHasCodeSource reports whether a CodeSQL/code source is among the seed's
+// leading results. Broad lexical/semantic seeds can include a low-ranked code
+// entrypoint for generic words such as "access" or "relationship"; that tail
+// candidate must not reroute an otherwise data-focused request to code_read.
 func seedHasCodeSource(seed any) bool {
-	for _, card := range catalogCards(seed) {
+	for rank, card := range catalogCards(seed) {
+		if rank >= 3 {
+			break
+		}
 		if strings.EqualFold(stringFromMap(card, "source_kind"), "code") {
 			return true
 		}

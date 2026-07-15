@@ -608,6 +608,7 @@ Optional: instead of your client chaining `query_catalog` → `validate_where_cl
 - **Execution control:** there are no per-request agent modes. `agent.read_only: true` forces the server-side agent to reject mutations, including saved-query mutations; otherwise core roles, row-level security, source/table `read_only`, and Go protocol guards decide what can run.
 - **Caller-scoped:** the agent runs as the caller, so core roles + row-level security enforce access. The caller's role only changes which *guidance* the agent follows, never what it can read or write.
 - **Grounded:** Go protocol guards keep every answer backed by real catalog/validation/execution evidence and downgrade to `blocked` (with evidence) when a step is skipped.
+- **Semantic-aware discovery:** when semantic catalog search is ready, the agent uses short business-intent phrases and may make one private two-or-three-phrase coverage batch; one Ax request embeds cache misses, and only real catalog relationship paths count as join evidence. Lexical-only prompts and public MCP stay unchanged.
 - **Machine-actionable refusals:** blocked responses carry a structured `refusal` (code, reasons, unblock steps, `policy_final`/`retryable`) so a calling agent can course-correct in one step instead of guessing.
 - **Model sampling:** with `agent.sampling: auto` (or `require`), the agent borrows the calling MCP client's model via MCP sampling — no server-side model key needed; caller identity and permissions are unchanged.
 

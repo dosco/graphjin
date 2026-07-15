@@ -96,6 +96,9 @@ func (s *graphjinService) initConfig() error {
 	if err := normalizeConfigMode(c); err != nil {
 		return err
 	}
+	if err := normalizeDiscoveryAndSemanticConfig(c); err != nil {
+		return err
+	}
 
 	if err := validateServiceIsSourcesUsedConfig(c); err != nil {
 		return err

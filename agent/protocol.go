@@ -6,15 +6,17 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const protocolContextKey = "_graphjin_discovery"
 
 type protocolRuntime struct {
-	base      GraphRuntime
-	state     *discoveryState
-	namespace string
-	seedLimit int
+	base          GraphRuntime
+	state         *discoveryState
+	namespace     string
+	seedLimit     int
+	catalogSearch CatalogSearchFeatures
 }
 
 type discoveryState struct {
@@ -54,6 +56,7 @@ type discoveryState struct {
 	violations           []protocolViolation
 	capabilities         *CapabilityProfile
 	observe              func(ActionEvent)
+	coverageSearchUsed   bool
 }
 
 type protocolAction struct {
@@ -76,7 +79,7 @@ type protocolViolation struct {
 	Details  map[string]any `json:"details,omitempty"`
 }
 
-func newProtocolRuntime(base GraphRuntime, instruction, namespace string, seedLimit int, profile *CapabilityProfile, observe func(ActionEvent)) *protocolRuntime {
+func newProtocolRuntime(base GraphRuntime, instruction, namespace string, seedLimit int, profile *CapabilityProfile, observe func(ActionEvent), catalogSearch CatalogSearchFeatures) *protocolRuntime {
 	if seedLimit <= 0 {
 		seedLimit = defaultSeedLimit
 	}
@@ -84,10 +87,11 @@ func newProtocolRuntime(base GraphRuntime, instruction, namespace string, seedLi
 	state.capabilities = profile
 	state.observe = observe
 	return &protocolRuntime{
-		base:      base,
-		namespace: namespace,
-		seedLimit: seedLimit,
-		state:     state,
+		base:          base,
+		namespace:     namespace,
+		seedLimit:     seedLimit,
+		state:         state,
+		catalogSearch: catalogSearch,
 	}
 }
 
@@ -151,6 +155,17 @@ func (r *protocolRuntime) GraphQLHelp(ctx context.Context, args map[string]any) 
 }
 
 func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any) (any, error) {
+	if _, hasCoverage := args["searches"]; hasCoverage {
+		searches, err := r.validateCoverageSearches(args)
+		if err != nil {
+			action := r.state.startAction("model", "query_catalog", args)
+			r.state.finishAction(action, "query_catalog", args, nil, err)
+			return nil, err
+		}
+		args["searches"] = searches
+		args["explain"] = true
+		r.state.coverageSearchUsed = true
+	}
 	r.addNamespace(args)
 	action := r.state.startAction("model", "query_catalog", args)
 	out, err := r.base.QueryCatalog(ctx, args)
@@ -160,6 +175,46 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 		r.state.recordCatalog(args, out, false)
 	}
 	return out, err
+}
+
+func (r *protocolRuntime) validateCoverageSearches(args map[string]any) ([]string, error) {
+	if !r.catalogSearch.enabled() {
+		return nil, fmt.Errorf("adaptive catalog coverage is unavailable; use query_catalog with one lexical search")
+	}
+	if r.state.coverageSearchUsed {
+		return nil, fmt.Errorf("adaptive catalog coverage was already used in this agent run; inspect returned card ids or use one focused detail lookup instead")
+	}
+	for _, name := range []string{"search", "id", "ids", "order_by"} {
+		if value, exists := args[name]; exists && value != nil {
+			return nil, fmt.Errorf("query_catalog searches is mutually exclusive with %s; remove %s and retry the single coverage batch", name, name)
+		}
+	}
+	raw := anySlice(normalizeValue(args["searches"]))
+	if len(raw) < 2 || len(raw) > MaxCatalogCoverageSearches {
+		return nil, fmt.Errorf("query_catalog searches requires two or three unique phrases")
+	}
+	searches := make([]string, 0, len(raw))
+	seen := make(map[string]bool, len(raw))
+	for _, value := range raw {
+		phrase, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("query_catalog searches phrases must be strings")
+		}
+		phrase = strings.Join(strings.Fields(phrase), " ")
+		if phrase == "" {
+			return nil, fmt.Errorf("query_catalog searches phrases cannot be empty")
+		}
+		if !utf8.ValidString(phrase) || len([]byte(phrase)) > MaxCatalogCoverageSearchBytes {
+			return nil, fmt.Errorf("query_catalog searches phrases must be valid UTF-8 and at most %d bytes", MaxCatalogCoverageSearchBytes)
+		}
+		key := strings.ToLower(phrase)
+		if seen[key] {
+			return nil, fmt.Errorf("query_catalog searches phrases must be unique")
+		}
+		seen[key] = true
+		searches = append(searches, phrase)
+	}
+	return searches, nil
 }
 
 func (r *protocolRuntime) ValidateWhereClause(ctx context.Context, args map[string]any) (any, error) {
@@ -301,6 +356,15 @@ func (s *discoveryState) recordCatalog(args map[string]any, out any, seed bool) 
 			"kind":   stringArg(args, "kind"),
 			"where":  normalizeValue(args["where"]),
 			"seed":   seed,
+		})
+	}
+	if searches := stringSliceArg(args, "searches"); len(searches) != 0 {
+		s.catalogSearches = append(s.catalogSearches, map[string]any{
+			"searches": searches,
+			"kind":     stringArg(args, "kind"),
+			"where":    normalizeValue(args["where"]),
+			"coverage": true,
+			"seed":     seed,
 		})
 	}
 	ids := detailIDsFromArgs(args)
@@ -707,6 +771,18 @@ func resultSummary(tool string, args map[string]any, out any) map[string]any {
 		}
 		if len(kinds) != 0 {
 			summary["catalog_kinds"] = sortedBoolKeys(kinds)
+		}
+		if result := mapValue(out); result != nil {
+			if retrieval := mapValue(result["retrieval"]); retrieval != nil {
+				for _, key := range []string{"mode", "exact_match", "semantic_candidate_count", "visible_table_endpoints", "relationship_path_count", "lexical_fallback"} {
+					if value, exists := retrieval[key]; exists {
+						summary[key] = value
+					}
+				}
+			}
+			if coverage := anySlice(result["coverage"]); len(coverage) != 0 {
+				summary["coverage_phrase_count"] = len(coverage)
+			}
 		}
 		return summary
 	}

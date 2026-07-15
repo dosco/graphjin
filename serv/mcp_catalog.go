@@ -47,6 +47,11 @@ type CatalogItem struct {
 	UpdatedAt        string  `json:"updated_at,omitempty"`
 	Score            float64 `json:"score,omitempty"`
 	SearchRank       float64 `json:"search_rank,omitempty"`
+
+	// Match is carried internally from the service-owned catalog search into
+	// the top-level explain map. It is deliberately omitted from each card so
+	// explanations have one stable, non-duplicated response shape.
+	Match core.CatalogMatch `json:"-"`
 }
 
 type CatalogQueryResult struct {
@@ -788,6 +793,13 @@ func (ms *mcpServer) queryCatalogGraphQL(ctx context.Context, q catalogGraphQLQu
 }
 
 func (ms *mcpServer) queryCatalogRows(ctx context.Context, q catalogGraphQLQuery) ([]CatalogItem, error) {
+	// The managed GraphQL projection intentionally exposes only scalar ranking
+	// columns. Explain queries use the same caller-filtered snapshot directly so
+	// lexical, semantic, and relationship-path reasons survive into the MCP
+	// response instead of being reduced to a score.
+	if q.Explain {
+		return ms.queryCatalogSnapshot(ctx, q)
+	}
 	if ms.catalogGraphQLAvailable() {
 		return ms.queryCatalogGraphQL(ctx, q)
 	}
@@ -817,6 +829,7 @@ func (ms *mcpServer) queryCatalogSnapshot(ctx context.Context, q catalogGraphQLQ
 			Where:   catalogNormalizeWhere(catalogCombinedWhere(q)),
 			OrderBy: q.OrderBy,
 			Limit:   catalogEffectiveLimit(q),
+			Offset:  q.Offset,
 			Explain: q.Explain,
 		})
 		if err != nil {
@@ -837,7 +850,7 @@ func (ms *mcpServer) queryCatalogSnapshot(ctx context.Context, q catalogGraphQLQ
 		Limit:   catalogEffectiveLimit(q),
 		Offset:  q.Offset,
 	}
-	rows := newControlPlaneGraphQL(ms.service).queryCatalogRowsFromSnapshot(snap, root)
+	rows := newControlPlaneGraphQL(ms.service).queryCatalogRowsFromSnapshotContext(ctx, snap, root)
 	return catalogItemsFromRows(rows)
 }
 
@@ -901,7 +914,46 @@ func catalogItemsFromRows(rows []map[string]any) ([]CatalogItem, error) {
 	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, err
 	}
+	for index := range out {
+		if index >= len(rows) {
+			break
+		}
+		out[index].Match = catalogMatchFromInternalRow(rows[index])
+	}
 	return out, nil
+}
+
+func catalogMatchFromInternalRow(row map[string]any) core.CatalogMatch {
+	match := core.CatalogMatch{}
+	if row == nil {
+		return match
+	}
+	if score, ok := numericRowScore(row["search_rank"]); ok {
+		match.Score = score
+	} else if score, ok := numericRowScore(row["score"]); ok {
+		match.Score = score
+	}
+	match.Why, _ = row["_match_why"].(string)
+	match.MatchedFields = catalogInternalStringSlice(row["_matched_fields"])
+	match.MatchedTerms = catalogInternalStringSlice(row["_matched_terms"])
+	return match
+}
+
+func catalogInternalStringSlice(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		return append([]string(nil), values...)
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			if text, ok := value.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func (ms *mcpServer) catalogRevisionGraphQL(ctx context.Context) string {
@@ -1199,14 +1251,17 @@ func catalogGraphQLFields() string {
 func catalogMatchesFromRows(rows []CatalogItem) map[string]core.CatalogMatch {
 	matches := make(map[string]core.CatalogMatch)
 	for _, row := range rows {
-		score := row.SearchRank
-		if score == 0 {
-			score = row.Score
+		match := row.Match
+		if match.Score == 0 {
+			match.Score = row.SearchRank
 		}
-		if score <= 0 {
+		if match.Score == 0 {
+			match.Score = row.Score
+		}
+		if match.Score <= 0 {
 			continue
 		}
-		matches[row.ID] = core.CatalogMatch{Score: score}
+		matches[row.ID] = match
 	}
 	if len(matches) == 0 {
 		return nil

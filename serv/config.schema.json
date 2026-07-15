@@ -276,6 +276,17 @@
 			"additionalProperties": false,
 			"type": "object"
 		},
+		"CatalogSearchConfig": {
+			"properties": {
+				"semantic": {
+					"$ref": "#/$defs/SemanticCatalogSearchConfig",
+					"title": "Semantic Catalog Search"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "CatalogSearchConfig configures catalog retrieval extensions."
+		},
 		"Column": {
 			"properties": {
 				"name": {
@@ -605,6 +616,41 @@
 			},
 			"additionalProperties": false,
 			"type": "object"
+		},
+		"DiscoveryCacheConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Discovery Cache",
+					"description": "Enabled starts GraphJin Service from validated filesystem generations and\nmoves schema refreshes onto the coordinated generation path.",
+					"default": true
+				},
+				"path": {
+					"type": "string",
+					"title": "Discovery Cache Path",
+					"description": "Path stores immutable full schema snapshots, manifests, activation\nreceipts, and semantic indexes. Horizontal replicas must share this path.",
+					"default": ".graphjin/discovery"
+				},
+				"refresh_interval": {
+					"type": "integer",
+					"title": "Discovery Refresh Interval",
+					"description": "RefreshInterval controls background live-schema checks after startup."
+				},
+				"startup_wait": {
+					"type": "integer",
+					"title": "Discovery Startup Wait",
+					"description": "StartupWait bounds cold follower and explicit refresh activation waits."
+				},
+				"retain_generations": {
+					"type": "integer",
+					"title": "Retained Discovery Generations",
+					"description": "RetainGenerations is the number of activated generations kept when the\nconfigured filesystem supports deletion.",
+					"default": 2
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "DiscoveryCacheConfig configures service-owned schema discovery generations."
 		},
 		"FederationConfig": {
 			"properties": {
@@ -1284,6 +1330,53 @@
 			"additionalProperties": false,
 			"type": "object",
 			"description": "SecretsConfig configures secret storage for write-only config inputs."
+		},
+		"SemanticCatalogSearchConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Semantic Catalog Search",
+					"description": "Enabled adds Ax-backed semantic recall to the lexical catalog baseline.",
+					"default": false
+				},
+				"provider": {
+					"type": "string",
+					"title": "Embedding Provider",
+					"description": "Provider is the Ax embedding provider name.",
+					"default": "openai"
+				},
+				"embedding_model": {
+					"type": "string",
+					"title": "Embedding Model",
+					"description": "EmbeddingModel is required when semantic search is enabled and forms part\nof the persisted embedding-space fingerprint."
+				},
+				"api_key_env": {
+					"type": "string",
+					"title": "Embedding API Key Environment Variable",
+					"description": "APIKeyEnv names the environment variable containing the provider key.",
+					"default": "OPENAI_API_KEY"
+				},
+				"base_url": {
+					"type": "string",
+					"title": "Embedding Provider Base URL",
+					"description": "BaseURL optionally overrides the provider endpoint and forms part of the\npersisted embedding-space fingerprint."
+				},
+				"dimensions": {
+					"type": "string",
+					"enum": [
+						"tiny",
+						"small",
+						"medium",
+						"default"
+					],
+					"title": "Embedding Dimensions",
+					"description": "Dimensions selects tiny (128), small (256), medium (512), or the\nprovider-native default. Named sizes are validated strictly.",
+					"default": "tiny"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object",
+			"description": "SemanticCatalogSearchConfig configures the service-owned Ax embedding layer."
 		},
 		"SourceAccessConfig": {
 			"properties": {
@@ -2153,6 +2246,16 @@
 			"$ref": "#/$defs/RedisConfig",
 			"title": "Redis Configuration",
 			"description": "Redis configuration"
+		},
+		"discovery_cache": {
+			"$ref": "#/$defs/DiscoveryCacheConfig",
+			"title": "Discovery Cache Configuration",
+			"description": "Coordinated, filesystem-backed database discovery cache."
+		},
+		"catalog_search": {
+			"$ref": "#/$defs/CatalogSearchConfig",
+			"title": "Catalog Search Configuration",
+			"description": "Catalog retrieval configuration."
 		},
 		"runtime_events": {
 			"$ref": "#/$defs/RuntimeEventsConfig",

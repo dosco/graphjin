@@ -4,6 +4,7 @@ package sdata
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -183,6 +184,9 @@ func NewDBSchema(
 			Inputs:  []DBFuncParam{{ID: 0}},
 		})
 	}
+	sort.SliceStable(info.Functions, func(i, j int) bool {
+		return dbFunctionSortKey(info.Functions[i]) < dbFunctionSortKey(info.Functions[j])
+	})
 
 	// add functions into the schema
 	for k, f := range info.Functions {

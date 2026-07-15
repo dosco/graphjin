@@ -134,10 +134,14 @@ func (h controlPlaneGraphQL) queryCatalog(ctx context.Context, root core.Managed
 	if err != nil {
 		return nil, err
 	}
-	return h.queryCatalogRowsFromSnapshot(snap, root), nil
+	return h.queryCatalogRowsFromSnapshotContext(ctx, snap, root), nil
 }
 
 func (h controlPlaneGraphQL) queryCatalogRowsFromSnapshot(snap *core.CatalogSnapshot, root core.ManagedQueryRoot) []map[string]any {
+	return h.queryCatalogRowsFromSnapshotContext(context.Background(), snap, root)
+}
+
+func (h controlPlaneGraphQL) queryCatalogRowsFromSnapshotContext(ctx context.Context, snap *core.CatalogSnapshot, root core.ManagedQueryRoot) []map[string]any {
 	search, where := splitSearchWhere(root.Where)
 	if search == "" {
 		return applyManagedQuery(h.allCatalogRows(snap, core.CatalogQueryOutput{Cards: snap.Cards}), root)
@@ -146,11 +150,12 @@ func (h controlPlaneGraphQL) queryCatalogRowsFromSnapshot(snap *core.CatalogSnap
 	for _, ob := range root.OrderBy {
 		orderBy[ob.Column] = strings.ToLower(ob.Order)
 	}
-	result, err := snap.QueryResult(core.CatalogQuery{
+	result, err := h.service.queryCatalog(ctx, snap, core.CatalogQuery{
 		Search:  search,
 		Where:   where,
 		OrderBy: orderBy,
 		Limit:   root.Limit,
+		Offset:  root.Offset,
 		Explain: true,
 	})
 	if err != nil {
@@ -197,6 +202,9 @@ func (h controlPlaneGraphQL) catalogRowsFromCards(snap *core.CatalogSnapshot, re
 		if match, ok := result.Matches[id]; ok {
 			row["score"] = match.Score
 			row["search_rank"] = match.Score
+			row["_match_why"] = match.Why
+			row["_matched_fields"] = match.MatchedFields
+			row["_matched_terms"] = match.MatchedTerms
 		}
 		rows = append(rows, row)
 	}

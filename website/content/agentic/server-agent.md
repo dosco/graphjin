@@ -59,6 +59,33 @@ This means the only model requirement is that it is **good at code generation** 
 
 Every answer is grounded in observed evidence. Go-side protocol guards enforce the catalog-first contract — for example a saved query may only run after its `saved_query` catalog row has been inspected — and downgrade an `answered` result to `blocked` (with evidence) when a required step was skipped. Models cannot talk their way past the guards; only real tool results count.
 
+### Semantic-aware catalog exploration
+
+When [semantic catalog search](/configure/discovery-semantic-search/) initializes
+successfully, GraphJin adds private search guidance to the RLM prompt. The
+automatic first step stays exactly the same: the full user instruction is sent
+to `query_catalog` with explanations before the model runs. The added guidance
+tells the agent to formulate short business-intent phrases, treat similarity
+matches as candidates, inspect card IDs, and use only catalog-returned
+relationship paths as join evidence.
+
+If that seed is missing an endpoint, verified path, or required column detail,
+or is empty or materially ambiguous, the agent may use one private coverage
+batch containing two or three diversified phrases. GraphJin embeds all cache
+misses in one Ax request and ranks the phrases independently; it does not gain
+breadth from concurrent tool calls. Exact identifiers stay pinned, one result
+per phrase is reserved for coverage, and real caller-visible relationship paths
+are added after rank fusion. Retrieval metadata tells the model when the index
+is warming or the whole batch fell back to lexical search.
+
+This private `searches` argument is not part of the public MCP
+`query_catalog` schema. When semantic search is disabled or fails to initialize,
+the agent keeps its existing prompt and tool contract.
+
+{{< verified by="TestSemanticCatalogGuidanceAndToolSchemaAreConditional" file="agent/semantic_catalog_test.go" line="11" >}}
+{{< verified by="TestSemanticCoverageProtocolValidationAndOneBatchLimit" file="agent/semantic_catalog_test.go" line="82" >}}
+{{< verified by="TestSemanticAgentInspectsCoveragePathBeforeExecution" file="agent/semantic_catalog_test.go" line="167" >}}
+
 ## Access Controls
 
 There are no per-request agent modes. The server-side agent always receives the same internal runtime tools, including `execute_graphql`, and Go protocol guards enforce the catalog-first contract before execution. Core roles and row-level security still decide what the caller can actually read or write.

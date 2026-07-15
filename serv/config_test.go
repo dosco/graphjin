@@ -49,6 +49,48 @@ func TestGetConfigNameAgentic(t *testing.T) {
 	}
 }
 
+func TestDiscoveryAndSemanticNestedEnvironmentOverrides(t *testing.T) {
+	t.Setenv("GJ_DISCOVERY_CACHE_ENABLED", "true")
+	t.Setenv("GJ_DISCOVERY_CACHE_PATH", ".graphjin/semantic-smoke")
+	t.Setenv("GJ_DISCOVERY_CACHE_REFRESH_INTERVAL", "1h")
+	t.Setenv("GJ_CATALOG_SEARCH_SEMANTIC_ENABLED", "true")
+	t.Setenv("GJ_CATALOG_SEARCH_SEMANTIC_PROVIDER", "openai")
+	t.Setenv("GJ_CATALOG_SEARCH_SEMANTIC_EMBEDDING_MODEL", "coffee-semantic-smoke-v1")
+	t.Setenv("GJ_CATALOG_SEARCH_SEMANTIC_API_KEY_ENV", "COFFEE_EMBEDDING_KEY")
+	t.Setenv("GJ_CATALOG_SEARCH_SEMANTIC_BASE_URL", "http://127.0.0.1:18081/v1")
+	t.Setenv("GJ_CATALOG_SEARCH_SEMANTIC_DIMENSIONS", "tiny")
+
+	vi := newViperWithDefaults()
+	var conf Config
+	if err := vi.Unmarshal(&conf); err != nil {
+		t.Fatal(err)
+	}
+	if err := normalizeDiscoveryAndSemanticConfig(&conf); err != nil {
+		t.Fatal(err)
+	}
+	if !conf.DiscoveryCache.enabled() || conf.DiscoveryCache.Path != ".graphjin/semantic-smoke" || conf.DiscoveryCache.RefreshInterval.String() != "1h0m0s" {
+		t.Fatalf("discovery cache environment overrides were not applied: %+v", conf.DiscoveryCache)
+	}
+	semantic := conf.CatalogSearch.Semantic
+	if !semantic.Enabled || semantic.Provider != "openai" || semantic.EmbeddingModel != "coffee-semantic-smoke-v1" || semantic.APIKeyEnv != "COFFEE_EMBEDDING_KEY" || semantic.BaseURL != "http://127.0.0.1:18081/v1" || semantic.Dimensions != "tiny" {
+		t.Fatalf("semantic environment overrides were not applied: %+v", semantic)
+	}
+}
+
+func TestAgentModelAndBaseURLEnvironmentOverrides(t *testing.T) {
+	t.Setenv("GJ_AGENT_MODEL", "coffee-agent-smoke-v1")
+	t.Setenv("GJ_AGENT_BASE_URL", "http://127.0.0.1:18081/v1")
+
+	vi := newViperWithDefaults()
+	var conf Config
+	if err := vi.Unmarshal(&conf); err != nil {
+		t.Fatal(err)
+	}
+	if conf.Agent.Model != "coffee-agent-smoke-v1" || conf.Agent.BaseURL != "http://127.0.0.1:18081/v1" {
+		t.Fatalf("agent environment overrides were not applied: %+v", conf.Agent)
+	}
+}
+
 func TestLegacyProductionDisablesMCPByDefault(t *testing.T) {
 	conf, err := NewConfig(`
 production: true

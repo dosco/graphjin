@@ -22,6 +22,7 @@ CLI, the agent, MCP tools, and the `gj_config` control plane.
 | Database config | [Database Config](/configure/database/) |
 | Auth and RBAC | [Auth And RBAC](/configure/auth-rbac/) |
 | Caching and Redis | [Caching And Redis](/configure/caching-redis/) |
+| Discovery cache and semantic search | [Discovery Cache And Semantic Search](/configure/discovery-semantic-search/) |
 | Uploads and filesystems | [Uploads And Filesystems](/configure/uploads-filesystems/) |
 | OpenAPI | [OpenAPI Config](/configure/openapi-config/) |
 | Environment and production | [Environment And Production](/configure/environment-production/) |

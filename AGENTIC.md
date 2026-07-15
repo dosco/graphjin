@@ -167,6 +167,23 @@ per action: MCP callers that send a `_meta.progressToken` receive
 default catalog page sizes are tunable via `agent.seed_limit` (default 10) and
 `agent.catalog_default_limit` (default 20).
 
+When service semantic catalog search initializes successfully, the built-in
+agent also receives a private semantic-search profile. Its required seed stays
+`query_catalog(search: "<full user instruction>", explain: true)`. The profile
+teaches the model to use short phrases in the user's business language, treat
+similarity matches as candidates, inspect returned card IDs, and accept joins
+only from returned catalog relationship paths.
+
+If the seed lacks a required endpoint, verified path, or column evidence, or is
+empty or materially ambiguous, the agent may make one adaptive coverage call
+with two or three diversified phrases. All uncached phrases share one Ax
+embedding request; phrase scans stay sequential and keep independent
+provenance. Exact identifiers are pinned, one distinct anchor is reserved per
+phrase, and the remainder is rank-fused before deterministic relationship BFS.
+Provider errors, strict-dimension failures, warming indexes, and the query
+deadline return lexical groups. The private `searches` argument is absent from
+public MCP, configuration, direct core, and lexical-only agent prompts.
+
 ### Structured Refusals
 
 When the agent blocks an action it does not return prose — the response carries

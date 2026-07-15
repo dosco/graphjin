@@ -194,6 +194,27 @@ type ProgramFactory func(string, map[string]ax.Value) Program
 
 type Option func(*Agent)
 
+const (
+	// MaxCatalogCoverageSearches is the largest semantic coverage batch the
+	// service-owned agent may request in one run.
+	MaxCatalogCoverageSearches = 3
+	// MaxCatalogCoverageSearchBytes bounds each UTF-8 search phrase by its
+	// encoded size so the internal tool contract remains predictable.
+	MaxCatalogCoverageSearchBytes = 512
+)
+
+// CatalogSearchFeatures describes service-owned catalog retrieval features
+// that are safe to expose to the internal agent. It is intentionally separate
+// from Config: embedded-core and public MCP users retain their existing API.
+type CatalogSearchFeatures struct {
+	SemanticRecall bool
+	CoverageBatch  bool
+}
+
+func (f CatalogSearchFeatures) enabled() bool {
+	return f.SemanticRecall && f.CoverageBatch
+}
+
 type GraphRuntime interface {
 	GraphQLHelp(context.Context, map[string]any) (any, error)
 	QueryCatalog(context.Context, map[string]any) (any, error)
@@ -203,11 +224,12 @@ type GraphRuntime interface {
 }
 
 type Agent struct {
-	config     Config
-	runtime    GraphRuntime
-	newClient  ClientFactory
-	newProgram ProgramFactory
-	now        func() time.Time
+	config        Config
+	runtime       GraphRuntime
+	newClient     ClientFactory
+	newProgram    ProgramFactory
+	now           func() time.Time
+	catalogSearch CatalogSearchFeatures
 }
 
 func New(gj *core.GraphJin, config Config, options ...Option) (*Agent, error) {
@@ -253,6 +275,14 @@ func WithRuntime(rt GraphRuntime) Option {
 		if rt != nil {
 			a.runtime = rt
 		}
+	}
+}
+
+// WithCatalogSearchFeatures enables service-internal agent guidance and tool
+// fields only after the service has successfully constructed semantic search.
+func WithCatalogSearchFeatures(features CatalogSearchFeatures) Option {
+	return func(a *Agent) {
+		a.catalogSearch = features
 	}
 }
 
@@ -325,7 +355,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		}
 	}()
 
-	protocol = newProtocolRuntime(a.runtime, strings.TrimSpace(req.Instruction), req.Namespace, cfg.SeedLimit, req.Capabilities, req.Observer)
+	protocol = newProtocolRuntime(a.runtime, strings.TrimSpace(req.Instruction), req.Namespace, cfg.SeedLimit, req.Capabilities, req.Observer, a.catalogSearch)
 	seed, err := protocol.Seed(ctx)
 	if err != nil {
 		resp := Response{
@@ -371,7 +401,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 			// (the distiller + executor stages). options["instruction"] is NOT rendered by
 			// ax.NewAgent, so the base guidance AND the progressive skill fragment must be
 			// carried here to influence behavior.
-			"usageInstructions": composeInstruction(runtimeUsageInstructions, selected),
+			"usageInstructions": composeInstruction(catalogSearchInstruction(runtimeUsageInstructions, a.catalogSearch), selected),
 		},
 		"max_actor_steps": maxSteps,
 	}
@@ -464,27 +494,30 @@ func effectiveMaxSteps(configMax, requestMax int) int {
 }
 
 func (a *Agent) tools(ctx context.Context, req Request, rt GraphRuntime, selected skill) []ax.Tool {
+	catalogArgs := []ax.Field{
+		field("id", "string", "Optional catalog item id for a detailed row.", true),
+		field("ids", "json", "Optional list of catalog item ids for batched detail rows in one call.", true),
+		field("search", "string", "Optional full-text search based on the user's goal.", true),
+		field("where", "json", "Optional GraphJin-style filter object.", true),
+		field("order_by", "json", "Optional sort object.", true),
+		field("explain", "boolean", "Include match reasons when search is present.", true),
+		field("kind", "string", "Compatibility shorthand for where.kind.eq.", true),
+		field("database", "string", "Compatibility shorthand for where.database_name.eq.", true),
+		field("schema", "string", "Compatibility shorthand for where.schema_name.eq.", true),
+		field("table", "string", "Compatibility shorthand for where.table_name.eq.", true),
+		field("column", "string", "Compatibility shorthand for where.column_name.eq.", true),
+		field("limit", "number", "Maximum catalog rows to return.", true),
+	}
+	if a.catalogSearch.enabled() {
+		catalogArgs = append(catalogArgs, field("searches", "json", "Agent-only adaptive coverage batch: two or three unique short business-intent phrases. Use at most once, only when seed coverage or a verified relationship path is incomplete. The result supplies a visibility-filtered next.args.ids containing endpoint/path cards: in the same JavaScript step call query_catalog({ids: coverage.next.args.ids}) exactly, then final immediately; never issue searches or another catalog call again. Mutually exclusive with search, id, ids, and order_by; explanations are automatic.", true))
+	}
 	tools := []ax.Tool{
 		a.tool("graphql_help", "Get GraphJin discovery, query, config, and safety guidance from the catalog-backed help surface.",
 			[]ax.Field{field("for", "string", "Help topic such as discovery, query, mutation, config, security, workflows, or runtime.", false)},
 			func(args map[string]ax.Value) (ax.Value, error) {
 				return a.call(ctx, req.Namespace, args, rt.GraphQLHelp)
 			}),
-		a.tool("query_catalog", "Search or fetch GraphJin catalog rows for tables, relationships, saved queries, workflows, syntax, security, and runtime evidence.",
-			[]ax.Field{
-				field("id", "string", "Optional catalog item id for a detailed row.", true),
-				field("ids", "json", "Optional list of catalog item ids for batched detail rows in one call.", true),
-				field("search", "string", "Optional full-text search based on the user's goal.", true),
-				field("where", "json", "Optional GraphJin-style filter object.", true),
-				field("order_by", "json", "Optional sort object.", true),
-				field("explain", "boolean", "Include match reasons when search is present.", true),
-				field("kind", "string", "Compatibility shorthand for where.kind.eq.", true),
-				field("database", "string", "Compatibility shorthand for where.database_name.eq.", true),
-				field("schema", "string", "Compatibility shorthand for where.schema_name.eq.", true),
-				field("table", "string", "Compatibility shorthand for where.table_name.eq.", true),
-				field("column", "string", "Compatibility shorthand for where.column_name.eq.", true),
-				field("limit", "number", "Maximum catalog rows to return.", true),
-			},
+		a.tool("query_catalog", "Search or fetch GraphJin catalog rows for tables, relationships, saved queries, workflows, syntax, security, and runtime evidence.", catalogArgs,
 			func(args map[string]ax.Value) (ax.Value, error) {
 				return a.call(ctx, req.Namespace, args, rt.QueryCatalog)
 			}),
@@ -543,6 +576,13 @@ func composeInstruction(base string, selected skill) string {
 		return base
 	}
 	return base + "\n\n" + selected.instruction
+}
+
+func catalogSearchInstruction(base string, features CatalogSearchFeatures) string {
+	if !features.enabled() {
+		return base
+	}
+	return base + "\n\n" + semanticCatalogUsageInstructions
 }
 
 func (a *Agent) tool(name, description string, args []ax.Field, handler func(map[string]ax.Value) (ax.Value, error)) ax.Tool {
@@ -1894,3 +1934,5 @@ history?:json "Prior conversation turns [{role, content, status?, catalog_ids?}]
 -> status:class "answered, needs_clarification, blocked, error", answer:string "Concise, evidence-backed answer in GitHub-flavored markdown: use a markdown table for tabular or multi-row results, bullet lists for enumerations, and fenced code blocks for queries or code; plain prose otherwise. Keep it tight.", data?:json "Rows/results from safe execution, usually execute_saved_query result.data.", evidence?:json "Catalog ids, detail rows, validations, execution names, and policy/capability evidence.", actions?:json "Ordered actions actually performed.", next?:json "Safe follow-up options or missing capability."`
 
 const runtimeUsageInstructions = `JavaScript goja runtime profile. GraphJin callables are installed as runtime globals. Use query_catalog({...}), graphql_help({...}), validate_where_clause({...}), execute_saved_query({...}), and execute_graphql({...}). The callable inventory may show qualified names such as tools.execute_saved_query, but executable JavaScript must call the bare global name execute_saved_query({...}). Never describe a callable instead of executing it when the request requires data. Tool calls run one at a time (single-threaded; Promise.all does not parallelize), so breadth comes from one broad multi-root query, not many calls. Start from inputs.context._graphjin_discovery, then inspect catalog detail rows with query_catalog({id:"..."}) — or several at once with query_catalog({ids:["...", "..."]}) — before selecting nouns or actions. inputs.history holds prior conversation turns as [{role, content, status, catalog_ids}]; read it with code to resolve follow-ups and reuse previously discovered catalog ids as starting points for this run's own discovery (protocol guards still require this run's tool calls). Before authoring a mutation with execute_graphql, establish this run's mutation-shape evidence for each target table: inspect its table detail row, validate_where_clause it, or inspect a mutation_pattern detail; unverified mutations are rejected. For saved-query discovery, call query_catalog({kind:"saved_query", limit:10}) first, choose by name and query fields, then inspect query_catalog({id:"saved_query:<name>"}) before execute_saved_query. execute_saved_query is rejected until the matching saved_query detail lookup has happened in this run; the initial seed does not count as that detail lookup. Live row values are not catalog metadata; if search returns count:0, broaden once instead of repeating the same search. If a result includes next.args.id, call query_catalog({id: next.args.id}) next. execute_saved_query returns { data, errors }; read rows from result.data. If direct GraphQL, workflow, code, security, or runtime access is required but unavailable, call final({status:"blocked", answer, evidence, next}) instead of guessing. Call final({ status: "answered", answer, data, evidence, actions, next }) only after required GraphJin callables have returned. Use askClarification(...) only when the missing information cannot be obtained from the available callables. Filesystem, network, process, module loading, and native host objects are not exposed by default.`
+
+const semanticCatalogUsageInstructions = `Semantic catalog recall is available. Search with the user's business terminology as short noun-and-intent phrases; do not guess table names, SQL, GraphQL, provider terminology, or sample values. For multi-entity questions, begin with the combined relationship intent. Semantic matches are recall candidates, never schema proof: inspect returned card ids before querying, answering, or acting, and accept joins only from returned catalog relationship paths. Do not expand an exact or already well-covered seed. Only when the seed is incomplete — a required endpoint or verified path is missing, columns are needed but only tables were found, or results are empty or materially ambiguous — make at most one query_catalog({searches:[...]}) coverage call with two or three diversified phrases: the compact combined intent, the first missing concept, and optionally the second concept or relationship/action wording. The coverage call, detail inspection, and final answer are one atomic exploration step. The coverage result supplies a deterministic, visibility-filtered next.args.ids containing relevant endpoint tables and returned relationship-path cards. In the same JavaScript block, store the result as coverage; call query_catalog({ids: coverage.next.args.ids}) exactly (never derive or pass an empty ids array); then call final from those inspected details without another catalog call. Never defer inspection or final to another actor step. If any earlier step returned coverage or reports that adaptive coverage was already used, never call searches again; continue from its next.args.ids. Read retrieval metadata and lexical_fallback; do not repeat the batch.`
