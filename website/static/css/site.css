@@ -1099,16 +1099,23 @@ pre code {
 }
 
 .home-hero-copy h1 {
-  max-width: 20ch;
+  max-width: 21ch;
   margin: 0.35rem 0 0;
   color: var(--heading);
   font-size: clamp(2.2rem, 4vw, 3.4rem);
+  font-weight: 800;
   line-height: 1.06;
   letter-spacing: -0.045em;
 }
 
 .h1-accent {
+  display: block;
+  max-width: 22ch;
+  margin-top: 0.28em;
   color: var(--accent-readable);
+  font-size: 0.76em;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
 }
 
 .home-lede {
@@ -1362,6 +1369,306 @@ pre code {
 .home-section-heading p:not(.home-section-label) {
   color: var(--muted);
   font-size: 1.08rem;
+}
+
+.only-graphjin-section .home-section-heading {
+  max-width: 66rem;
+  margin-bottom: 1rem;
+}
+
+.only-graphjin-section .home-section-heading h2 {
+  max-width: 17ch;
+}
+
+.only-graphjin-section .home-section-heading p:not(.home-section-label) {
+  max-width: 60rem;
+  font-size: clamp(1.05rem, 1.7vw, 1.2rem);
+  line-height: 1.65;
+}
+
+.only-graphjin-thesis {
+  max-width: 64rem;
+  margin: 0;
+  border-left: 3px solid var(--accent);
+  background: linear-gradient(90deg, var(--accent-soft), transparent 78%);
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.65;
+  padding: 0.9rem 1rem;
+}
+
+.only-contrast-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 1.25rem;
+}
+
+.only-contrast-row span,
+.only-contrast-row strong {
+  display: grid;
+  place-items: center;
+  min-height: 4.1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  padding: 0.75rem;
+  text-align: center;
+}
+
+.only-contrast-row strong {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
+  background: var(--accent-soft);
+  color: var(--heading);
+}
+
+.company-system-map {
+  overflow: hidden;
+  min-width: 0;
+  margin: 1.5rem 0 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 48% 0%, color-mix(in srgb, var(--accent-soft) 70%, transparent), transparent 34rem),
+    var(--panel-soft);
+  padding: clamp(0.85rem, 2vw, 1.35rem);
+}
+
+.company-system-map figcaption {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.8rem 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.25rem 0.2rem 1rem;
+}
+
+.company-system-map figcaption span {
+  color: var(--accent-readable);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.company-system-map figcaption strong {
+  color: var(--heading);
+  font-size: clamp(1rem, 1.8vw, 1.22rem);
+  line-height: 1.4;
+}
+
+.company-system-layers {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) 3.8rem minmax(0, 1fr) 3.8rem minmax(0, 0.86fr);
+  gap: 0.7rem;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.company-system-layer {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  padding: 1rem;
+}
+
+.company-layer-heading > span {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.company-layer-heading h3 {
+  margin: 0.4rem 0 0;
+  color: var(--heading);
+  font-size: 1.08rem;
+  line-height: 1.3;
+}
+
+.company-scale-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-top: 0.9rem;
+}
+
+.company-scale-row div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  padding: 0.6rem;
+}
+
+.company-scale-row strong,
+.company-scale-row span {
+  display: block;
+}
+
+.company-scale-row strong {
+  color: var(--accent-readable);
+  font-family: var(--font-mono);
+  font-size: clamp(1.1rem, 2vw, 1.45rem);
+}
+
+.company-scale-row span {
+  overflow-wrap: anywhere;
+  color: var(--faint);
+  font-size: 0.72rem;
+}
+
+.company-source-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.company-source-grid article {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  padding: 0.58rem 0.65rem;
+}
+
+.company-source-grid strong,
+.company-source-grid span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.company-source-grid strong {
+  color: var(--heading);
+  font-size: 0.82rem;
+}
+
+.company-source-grid span {
+  margin-top: 0.18rem;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.graphjin-system-layer {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 78%, transparent), transparent 72%),
+    var(--panel);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.graphjin-system-layer .company-layer-heading > span,
+.graphjin-system-layer .company-layer-heading h3 {
+  color: var(--accent-readable);
+}
+
+.graphjin-system-steps,
+.company-outcome-list {
+  display: grid;
+  gap: 0.48rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.graphjin-system-steps {
+  counter-reset: graphjin-step;
+}
+
+.graphjin-system-steps li {
+  position: relative;
+  min-width: 0;
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--canvas) 52%, transparent);
+  padding: 0.48rem 0.55rem;
+}
+
+.graphjin-system-steps strong,
+.graphjin-system-steps span {
+  display: block;
+}
+
+.graphjin-system-steps strong {
+  color: var(--heading);
+  font-size: 0.78rem;
+}
+
+.graphjin-system-steps span {
+  margin-top: 0.12rem;
+  color: var(--faint);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.company-map-connector {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  min-width: 0;
+  color: var(--accent-readable);
+}
+
+.company-map-connector span {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.company-map-connector small {
+  margin-top: 0.25rem;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.outcome-layer {
+  display: flex;
+  flex-direction: column;
+}
+
+.company-outcome-list li {
+  position: relative;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  padding-left: 1.15rem;
+}
+
+.company-outcome-list li::before {
+  position: absolute;
+  top: 0.08rem;
+  left: 0;
+  color: var(--accent-readable);
+  content: "✓";
+  font-weight: 800;
+}
+
+.company-outcome-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: auto 0 0;
+  padding-top: 1rem;
+}
+
+.company-outcome-result span {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-readable);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  padding: 0.28rem 0.42rem;
 }
 
 .home-resource-row {
@@ -2468,7 +2775,8 @@ pre code {
   .agent-stage,
   .agentic-grid,
   .security-layout,
-  .codesql-map {
+  .codesql-map,
+  .company-system-layers {
     grid-template-columns: 1fr;
   }
 
@@ -2483,6 +2791,18 @@ pre code {
   .stats-grid,
   .quickstart-grid {
     grid-template-columns: 1fr;
+  }
+
+  .only-contrast-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .company-map-connector {
+    min-height: 3.5rem;
+  }
+
+  .company-map-connector span {
+    transform: rotate(90deg);
   }
 
   .security-query {
@@ -2532,6 +2852,10 @@ pre code {
     font-size: clamp(1.9rem, 9.5vw, 2.4rem);
   }
 
+  .home-hero .h1-accent {
+    font-size: 0.72em;
+  }
+
   .home-section-heading h2 {
     font-size: clamp(2rem, 11vw, 3rem);
   }
@@ -2579,6 +2903,32 @@ pre code {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 2.15rem 1rem;
     padding-top: 2.5rem;
+  }
+
+  .only-contrast-row,
+  .company-source-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .only-contrast-row span,
+  .only-contrast-row strong {
+    min-height: 3.25rem;
+  }
+
+  .company-system-map {
+    padding: 0.75rem;
+  }
+
+  .company-system-map figcaption {
+    grid-template-columns: 1fr;
+  }
+
+  .company-system-layer {
+    padding: 0.85rem;
+  }
+
+  .company-scale-row div {
+    padding: 0.5rem;
   }
 
   .database-section {
