@@ -72,9 +72,12 @@ func TestInsertOnConflictGetReturnsStoredRowUnchanged(t *testing.T) {
 			_, _ = db.Exec(`DROP FUNCTION IF EXISTS gj_conflict_get_no_update_fn()`)
 		}()
 	} else {
-		_, err := db.Exec(`CREATE TRIGGER gj_conflict_get_no_update BEFORE UPDATE ON users BEGIN SELECT RAISE(ABORT, 'on_conflict get executed update trigger'); END`)
-		require.NoError(t, err)
-		defer func() { _, _ = db.Exec(`DROP TRIGGER IF EXISTS gj_conflict_get_no_update`) }()
+		require.NoError(t, execSQLiteSchemaDDLWithRetry(
+			`CREATE TRIGGER gj_conflict_get_no_update BEFORE UPDATE ON users BEGIN SELECT RAISE(ABORT, 'on_conflict get executed update trigger'); END`,
+		))
+		t.Cleanup(func() {
+			require.NoError(t, execSQLiteSchemaDDLWithRetry(`DROP TRIGGER IF EXISTS gj_conflict_get_no_update`))
+		})
 	}
 
 	email := fmt.Sprintf("conflict-get-%d@example.com", time.Now().UnixNano())
@@ -106,6 +109,27 @@ func TestInsertOnConflictGetReturnsStoredRowUnchanged(t *testing.T) {
 	assert.Equal(t, inserted["id"], existing["id"])
 	assert.Equal(t, "Stored Name", existing["full_name"])
 	assert.Equal(t, email, existing["email"])
+}
+
+func execSQLiteSchemaDDLWithRetry(query string) error {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, err := db.Exec(query)
+		if err == nil || !isSQLiteSchemaLockError(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+func isSQLiteSchemaLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "database table is locked") ||
+		strings.Contains(msg, "database schema is locked")
 }
 
 func TestInsertOnConflictGetPreservesUnrelatedConstraintErrors(t *testing.T) {
