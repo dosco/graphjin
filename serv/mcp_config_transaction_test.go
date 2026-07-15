@@ -122,6 +122,9 @@ func TestHandleUpdateCurrentConfig_TransactionalFailureLeavesLiveStateUntouched(
 	if out.Success {
 		t.Fatalf("expected staged update to fail, got %+v", out)
 	}
+	if out.Scope != ConfigScopeCore || out.ReloadMode != servReloadHot || out.ReloadStrategy != "full" {
+		t.Fatalf("expected staged failure impact core/hot/full, got scope=%q mode=%q strategy=%q", out.Scope, out.ReloadMode, out.ReloadStrategy)
+	}
 	if ms.service.gj != oldGJ {
 		t.Fatal("expected live GraphJin instance to remain unchanged on staged failure")
 	}
@@ -760,8 +763,8 @@ func TestHandleUpdateCurrentConfig_SourcePatchWithGlobalEditFallsBackToFullReloa
 	if !out.Success {
 		t.Fatalf("expected mixed config update to succeed via full fallback, got %+v", out)
 	}
-	if out.ReloadMode != "full" || !out.ReloadFallback {
-		t.Fatalf("reload result = mode %q fallback %v, want full fallback", out.ReloadMode, out.ReloadFallback)
+	if out.Scope != ConfigScopeCore || out.ReloadMode != servReloadHot || out.ReloadStrategy != "full" || !out.ReloadFallback {
+		t.Fatalf("reload result = scope %q mode %q strategy %q fallback %v, want core/hot/full with fallback", out.Scope, out.ReloadMode, out.ReloadStrategy, out.ReloadFallback)
 	}
 	if len(out.ChangedSources) != 1 || out.ChangedSources[0] != "main" {
 		t.Fatalf("changed sources = %v, want [main]", out.ChangedSources)
@@ -769,9 +772,41 @@ func TestHandleUpdateCurrentConfig_SourcePatchWithGlobalEditFallsBackToFullReloa
 	if ms.service.gj == oldGJ {
 		t.Fatal("expected full fallback to replace the GraphJin wrapper")
 	}
-	details := latestRuntimeEventDetails(t, ms.service, "config.apply", "reload_mode", "full")
+	details := latestRuntimeEventDetails(t, ms.service, "config.apply", "reload_strategy", "full")
+	if details["scope"] != ConfigScopeCore || details["reload_mode"] != servReloadHot {
+		t.Fatalf("expected response event impact core/hot/full, details=%+v", details)
+	}
 	if details["reload_fallback"] != true {
 		t.Fatalf("expected config event reload_fallback=true, details=%+v", details)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_MixedCoreServImpact(t *testing.T) {
+	tests := []struct {
+		name     string
+		serv     map[string]any
+		wantMode string
+	}{
+		{name: "hot", serv: map[string]any{"agent": map[string]any{"model": "mixed-hot"}}, wantMode: servReloadHot},
+		{name: "restart", serv: map[string]any{"rate_limiter": map[string]any{"rate": float64(91)}}, wantMode: servReloadRestart},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mainPath := createSQLiteDBFile(t, tt.name+"-main.sqlite3", true)
+			replacementPath := createSQLiteDBFile(t, tt.name+"-replacement.sqlite3", true)
+			ms := newSourceModeConfigMCPServer(t, map[string]string{"main": mainPath})
+
+			out := applySourceModeConfigUpdate(t, ms, map[string]any{
+				"update_sources": []any{map[string]any{"name": "main", "path": replacementPath}},
+				"serv":           tt.serv,
+			})
+			if out.Scope != ConfigScopeMixed || out.ReloadMode != tt.wantMode || out.ReloadStrategy != "source_scoped" || out.ReloadFallback {
+				t.Fatalf("mixed impact = scope %q mode %q strategy %q fallback %v, want mixed/%s/source_scoped/false", out.Scope, out.ReloadMode, out.ReloadStrategy, out.ReloadFallback, tt.wantMode)
+			}
+			if len(out.ChangedSources) != 1 || out.ChangedSources[0] != "main" {
+				t.Fatalf("changed sources = %v, want [main]", out.ChangedSources)
+			}
+		})
 	}
 }
 
@@ -954,8 +989,8 @@ func assertSourceScopedConfigResult(t *testing.T, out ConfigUpdateResult, expect
 	if !out.Success {
 		t.Fatalf("expected source-scoped update to succeed, got %+v", out)
 	}
-	if out.ReloadMode != "source_scoped" || out.ReloadFallback {
-		t.Fatalf("reload result = mode %q fallback %v, want source_scoped without fallback", out.ReloadMode, out.ReloadFallback)
+	if out.Scope != ConfigScopeCore || out.ReloadMode != servReloadHot || out.ReloadStrategy != "source_scoped" || out.ReloadFallback {
+		t.Fatalf("reload result = scope %q mode %q strategy %q fallback %v, want core/hot/source_scoped without fallback", out.Scope, out.ReloadMode, out.ReloadStrategy, out.ReloadFallback)
 	}
 	if len(out.ChangedSources) != len(expectedSources) {
 		t.Fatalf("changed sources = %v, want %v", out.ChangedSources, expectedSources)
@@ -1053,11 +1088,25 @@ func applySourceModeConfigUpdate(t *testing.T, ms *mcpServer, args map[string]an
 	if !preview.Success || !preview.Valid || preview.PreviewID == "" {
 		t.Fatalf("expected valid preview, got %+v", preview)
 	}
+	validateArgs := cloneConfigUpdateArgs(t, args)
+	validateArgs["mode"] = "validate"
+	validateArgs["expected_catalog_revision"] = revision
+	validated := applyConfigUpdate(t, ms, validateArgs)
+	if !validated.Success || !validated.Valid || validated.Applied {
+		t.Fatalf("expected valid dry-run, got %+v", validated)
+	}
+	if preview.Scope != validated.Scope || preview.ReloadMode != validated.ReloadMode || preview.ReloadStrategy != validated.ReloadStrategy || preview.ReloadFallback != validated.ReloadFallback || strings.Join(preview.ChangedSources, "\x00") != strings.Join(validated.ChangedSources, "\x00") {
+		t.Fatalf("preview/validate impact mismatch: preview=%+v validate=%+v", preview, validated)
+	}
 	applyArgs := cloneConfigUpdateArgs(t, args)
 	applyArgs["mode"] = "apply"
 	applyArgs["preview_id"] = preview.PreviewID
 	applyArgs["expected_catalog_revision"] = revision
-	return applyConfigUpdate(t, ms, applyArgs)
+	applied := applyConfigUpdate(t, ms, applyArgs)
+	if preview.Scope != applied.Scope || preview.ReloadMode != applied.ReloadMode || preview.ReloadStrategy != applied.ReloadStrategy || preview.ReloadFallback != applied.ReloadFallback || strings.Join(preview.ChangedSources, "\x00") != strings.Join(applied.ChangedSources, "\x00") {
+		t.Fatalf("preview/apply impact mismatch: preview=%+v apply=%+v", preview, applied)
+	}
+	return applied
 }
 
 func cloneConfigUpdateArgs(t *testing.T, args map[string]any) map[string]any {

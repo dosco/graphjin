@@ -444,6 +444,11 @@ func TestActionCapabilitiesAreNotCatalogCards(t *testing.T) {
 			t.Fatalf("expected gj_config input schema to mention %q, got %s", want, configCap.InputSchemaJSON)
 		}
 	}
+	for _, want := range []string{`"serv"`, `"scope"`, `"reload_mode"`, `"reload_strategy"`} {
+		if !strings.Contains(configCap.OutputSchemaJSON, want) {
+			t.Fatalf("expected gj_config output schema to advertise %q, got %s", want, configCap.OutputSchemaJSON)
+		}
+	}
 }
 
 func TestKnownEmptyToolManifestDoesNotInventToolCapabilities(t *testing.T) {
@@ -564,6 +569,13 @@ func TestBuildIncludesConfigRecipes(t *testing.T) {
 		}
 		if len(detailsForCard(snap, id)) == 0 {
 			t.Fatalf("expected config recipe details for %s", id)
+		}
+		if card.GraphQLMutation != "" {
+			for _, field := range []string{"scope", "reload_mode", "reload_strategy"} {
+				if !strings.Contains(card.GraphQLMutation, field) {
+					t.Fatalf("config recipe %s mutation should select %s: %s", id, field, card.GraphQLMutation)
+				}
+			}
 		}
 	}
 	if !hasEntrypoint(snap, "discover_config_security") {

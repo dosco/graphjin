@@ -26,8 +26,9 @@ func ConfigJSONSchema() []byte {
 // Config scope constants classify a top-level config key by which half of the
 // config it belongs to.
 const (
-	ConfigScopeServ = "serv" // server settings (host, auth, rate limiting, agent, ...)
-	ConfigScopeCore = "core" // compiler-core settings (sources, tables, roles, ...)
+	ConfigScopeServ  = "serv"  // server settings (host, auth, rate limiting, agent, ...)
+	ConfigScopeCore  = "core"  // compiler-core settings (sources, tables, roles, ...)
+	ConfigScopeMixed = "mixed" // a proposed update spanning both config halves
 )
 
 // servTopLevelKeys is the set of top-level YAML keys owned by the Serv struct,

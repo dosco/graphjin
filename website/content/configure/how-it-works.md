@@ -42,9 +42,10 @@ The config file is a single flat namespace, but the keys belong to two worlds:
   built-in `agent`.
 
 This split matters when you change a value at runtime: **engine changes reload in
-place**, while most **server changes need a restart** to take effect. Every tool
-below tells you which kind you are making — look for `scope` (serv/core) and
-`reload` (hot/restart).
+place**, while most **server changes need a restart** to take effect. The
+change-oriented interfaces below classify the affected `scope` (core, serv, or
+mixed) and activation impact (`hot` or `restart`); core changes additionally
+report whether their reload strategy is full or source-scoped.
 
 ### How a value is resolved
 
@@ -146,11 +147,35 @@ Programmatic callers read and write config through the `gj_config` system root.
 It reflects the full config — both engine and server halves, secrets redacted:
 
 ```graphql
-query { gj_config(id: "current") { sources roles serv reload_mode catalog_revision } }
+query { gj_config(id: "current") { sources roles serv catalog_revision } }
 ```
 
-Writes use a preview → apply handshake guarded by `catalog_revision`. See
-[Source Mode](/agentic/source-mode/).
+Writes use a preview → apply handshake guarded by `catalog_revision`. Preview
+responses classify the affected half of the config separately from activation
+impact and the core reload strategy:
+
+```graphql
+mutation {
+  gj_config(id: "current", update: {
+    mode: "preview"
+    expected_catalog_revision: "<catalog_revision>"
+    serv: { rate_limiter: { rate: 100 } }
+  }) {
+    valid
+    scope             # core, serv, or mixed
+    reload_mode       # hot or restart
+    reload_strategy   # full or source_scoped for core changes; otherwise null
+    preview_id
+    expires_at
+    change_summary_json
+    findings_json
+    errors_json
+  }
+}
+```
+
+These impact fields describe a proposed or applied mutation; an ordinary
+`gj_config(id: "current")` read leaves them null. See [Source Mode](/agentic/source-mode/).
 
 ### Environment variables only (containers)
 

@@ -72,7 +72,8 @@ func graphjinControlPlaneTables() []core.ManagedTable {
 			cpCol("roles", "json", false), cpCol("blocklist", "json", false), cpCol("functions", "json", false), cpCol("resolvers", "json", false),
 			cpCol("mcp", "json", false), cpCol("serv", "json", false), cpCol("config_json", "json", false), cpCol("redacted_paths", "json", false), cpCol("updated_at", "text", false), cpCol("catalog_revision", "text", false),
 			cpCol("mode", "text", false), cpCol("preview_id", "text", false), cpCol("expected_catalog_revision", "text", false), cpCol("source_patches", "json", false),
-			cpCol("valid", "boolean", false), cpCol("applied", "boolean", false), cpCol("expires_at", "text", false), cpCol("change_summary_json", "json", false), cpCol("findings_json", "json", false), cpCol("errors_json", "json", false), cpCol("reload_mode", "text", false),
+			cpCol("valid", "boolean", false), cpCol("applied", "boolean", false), cpCol("expires_at", "text", false), cpCol("change_summary_json", "json", false), cpCol("findings_json", "json", false), cpCol("errors_json", "json", false),
+			cpCol("scope", "text", false), cpCol("reload_mode", "text", false), cpCol("reload_strategy", "text", false),
 		}),
 	}
 }
@@ -935,7 +936,7 @@ func (h controlPlaneGraphQL) mutateConfig(ctx context.Context, root core.Managed
 	}
 	mode, _ := payload["mode"].(string)
 	row := h.configRow()
-	overlayKeys := []string{"valid", "applied", "mode", "preview_id", "expires_at", "change_summary_json", "findings_json", "errors_json", "reload_mode"}
+	overlayKeys := []string{"valid", "applied", "mode", "preview_id", "expires_at", "change_summary_json", "findings_json", "errors_json", "scope", "reload_mode", "reload_strategy"}
 	if mode == "preview" {
 		overlayKeys = append(overlayKeys, "catalog_revision")
 	}
