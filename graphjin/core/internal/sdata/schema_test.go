@@ -43,6 +43,28 @@ func TestAddRemoteRelParentLessIsBenign(t *testing.T) {
 	}
 }
 
+func TestDBSchemaFunctionOverloadsAreOrderIndependent(t *testing.T) {
+	functions := []DBFunction{
+		{Schema: "public", Name: "populate", Type: "text", Inputs: []DBFuncParam{{ID: 1, Name: "input", Type: "text"}}},
+		{Schema: "public", Name: "populate", Type: "integer", Inputs: []DBFuncParam{{ID: 1, Name: "input", Type: "integer"}}},
+	}
+	first := NewDBInfo("postgres", 160000, "public", "shop", nil, functions, nil)
+	second := NewDBInfo("postgres", 160000, "public", "shop", nil, []DBFunction{functions[1], functions[0]}, nil)
+	firstSchema, err := NewDBSchema(first, nil)
+	if err != nil {
+		t.Fatalf("build first schema: %v", err)
+	}
+	secondSchema, err := NewDBSchema(second, nil)
+	if err != nil {
+		t.Fatalf("build second schema: %v", err)
+	}
+	firstFunction := firstSchema.GetFunctions()["populate"]
+	secondFunction := secondSchema.GetFunctions()["populate"]
+	if firstFunction.Type != secondFunction.Type || dbFunctionSortKey(firstFunction) != dbFunctionSortKey(secondFunction) {
+		t.Fatalf("overload selection changed with discovery order: first=%+v second=%+v", firstFunction, secondFunction)
+	}
+}
+
 func TestAddRemoteRelWithParentStillWorks(t *testing.T) {
 	cols := []DBColumn{
 		{ID: 0, Schema: "public", Table: "users", Name: "id", Type: "bigint", PrimaryKey: true},

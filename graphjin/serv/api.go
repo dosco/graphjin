@@ -73,22 +73,25 @@ const (
 type HookFn func(*core.Result)
 
 type graphjinService struct {
-	log          *zap.SugaredLogger // logger
-	zlog         *zap.Logger        // faster logger
-	logLevel     int                // log level
-	conf         *Config            // parsed config
-	dbs          map[string]*sql.DB // named database connections (all equal)
-	managedDBs   map[string]managedDB
-	runtimeCore  *core.Config
-	secretStore  *localKeystore
-	metadataDB   string
-	systemNanoDB *core.NanoDB
-	gj           *core.GraphJin
-	disc         *DiscoveryManager
-	srv          *http.Server
-	srvMu        sync.Mutex // guards srv: written by startHTTP, read by Shutdown
-	fs           core.FS
-	coreOptions  []core.Option
+	log              *zap.SugaredLogger // logger
+	zlog             *zap.Logger        // faster logger
+	logLevel         int                // log level
+	conf             *Config            // parsed config
+	dbs              map[string]*sql.DB // named database connections (all equal)
+	managedDBs       map[string]managedDB
+	runtimeCore      *core.Config
+	secretStore      *localKeystore
+	metadataDB       string
+	systemNanoDB     *core.NanoDB
+	gj               *core.GraphJin
+	disc             *DiscoveryManager
+	discovery        *discoveryGenerationManager
+	semantic         *semanticCatalogIndex
+	semanticEmbedder SemanticEmbeddingClient
+	srv              *http.Server
+	srvMu            sync.Mutex // guards srv: written by startHTTP, read by Shutdown
+	fs               core.FS
+	coreOptions      []core.Option
 	// asec         [32]byte
 	closeFn func()
 	chash   string
@@ -288,11 +291,17 @@ func (s *HttpService) Close() error {
 		return nil
 	}
 	gs.closeMCPHTTPTransport()
-	if gs.closeFn != nil {
-		gs.closeFn()
+	if gs.semantic != nil {
+		gs.semantic.Close()
+	}
+	if gs.discovery != nil {
+		gs.discovery.Close()
 	}
 	if gs.gj != nil {
 		gs.gj.Close()
+	}
+	if gs.closeFn != nil {
+		gs.closeFn()
 	}
 	if gs.cache != nil {
 		gs.cache.Close() //nolint:errcheck
@@ -343,6 +352,15 @@ func (s *HttpService) Shutdown(ctx context.Context) error {
 // response cache, runtime event streams and all database connections.
 func (s *graphjinService) closeServResources() {
 	s.closeMCPHTTPTransport()
+	if s.semantic != nil {
+		s.semantic.Close()
+	}
+	if s.discovery != nil {
+		s.discovery.Close()
+	}
+	if s.gj != nil {
+		s.gj.Close()
+	}
 	if s.closeFn != nil {
 		s.closeFn()
 	}
@@ -412,6 +430,15 @@ func OptionSetNamespace(namespace string) Option {
 func OptionSetFS(fs core.FS) Option {
 	return func(s *graphjinService) error {
 		s.fs = fs
+		return nil
+	}
+}
+
+// OptionSetSemanticEmbeddingClient replaces the Ax embedding adapter. It is
+// primarily intended for deterministic tests and private provider adapters.
+func OptionSetSemanticEmbeddingClient(client SemanticEmbeddingClient) Option {
+	return func(s *graphjinService) error {
+		s.semanticEmbedder = client
 		return nil
 	}
 }
@@ -671,12 +698,30 @@ func (s *graphjinService) normalStart() error {
 		return fmt.Errorf("no database source configured")
 	}
 
-	opts := s.buildCoreOptions()
 	coreConf := &s.conf.Core
 	if s.runtimeCore != nil {
 		coreConf = s.runtimeCore
 	}
 	s.injectInternalStoreRole()
+	opts := s.buildCoreOptions()
+	if s.conf.DiscoveryCache.enabled() {
+		manager, err := newDiscoveryGenerationManager(s)
+		if err != nil {
+			return err
+		}
+		dir, err := manager.InitialGeneration(context.Background(), coreConf, opts)
+		if err != nil {
+			manager.Close()
+			return err
+		}
+		s.discovery = manager
+		opts = append(opts,
+			core.OptionSetDBSchemaWatcherDisabled(true),
+			core.OptionSetRuntimeSchemaDDLDir(dir),
+			core.OptionSetRuntimeSchemaCacheFirst(true),
+			core.OptionSetRuntimeSchemaCacheRequired(true),
+		)
+	}
 
 	var err error
 	s.gj, err = core.NewGraphJin(coreConf, s.anyDB(), opts...)
@@ -687,6 +732,18 @@ func (s *graphjinService) normalStart() error {
 		return err
 	}
 	s.disc = NewDiscoveryManager(s.gj)
+	if s.conf.CatalogSearch.Semantic.Enabled {
+		semantic, err := newSemanticCatalogIndex(s)
+		if err != nil {
+			s.log.Warnf("semantic catalog initialization failed; using lexical search: %s", redactRuntimeError(err))
+		} else {
+			s.semantic = semantic
+			semantic.Start()
+		}
+	}
+	if s.discovery != nil {
+		s.discovery.Start()
+	}
 	return nil
 }
 
@@ -887,6 +944,9 @@ func (s *HttpService) Reload() error {
 	s1 := s.Load().(*graphjinService)
 	if s1.gj == nil {
 		return errors.New("graphjin: engine not initialized")
+	}
+	if s1.discovery != nil {
+		return s1.discovery.RefreshNow(context.Background())
 	}
 	return s1.gj.Reload()
 }

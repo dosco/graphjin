@@ -41,6 +41,13 @@ func RuntimeSchemaDDLPath(source string) string {
 	return path.Join(LocalStateDir, SourceSchemaDDLDir, sanitizeSchemaDDLName(source)+".ddl")
 }
 
+// RuntimeSchemaSnapshotPath returns the generated full-fidelity runtime schema
+// snapshot path. The JSON snapshot is the machine cache; DDL remains the
+// human-readable companion artifact.
+func RuntimeSchemaSnapshotPath(source string) string {
+	return path.Join(LocalStateDir, SourceSchemaDDLDir, sanitizeSchemaDDLName(source)+".schema.json")
+}
+
 func sanitizeSchemaDDLName(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {

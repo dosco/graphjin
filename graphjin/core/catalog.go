@@ -19,6 +19,7 @@ type CatalogFeatureArg = catalog.FeatureArg
 type CatalogQuery = catalog.Query
 type CatalogQueryOutput = catalog.QueryResult
 type CatalogMatch = catalog.Match
+type CatalogCandidateHint = catalog.CandidateHint
 type CatalogBuildOptions = catalog.BuildOptions
 type CatalogWorkflow = catalog.Workflow
 type CatalogWorkflowVariable = catalog.WorkflowVariable
@@ -47,12 +48,16 @@ func (g *GraphJin) CatalogSnapshot(exclude ...string) (*CatalogSnapshot, error) 
 		}
 	}
 	md := gj.metadataSnapshot(skip)
+	catalogConf := gj.catalogConf
+	if catalogConf == nil {
+		catalogConf = gj.conf
+	}
 	opts := CatalogBuildOptions{
 		Fragments:    g.catalogFragments(),
 		SavedQueries: g.catalogSavedQueries(),
 	}
-	opts = catalogBuildOptionsFromConfig(gj.conf, opts)
-	snap := catalog.BuildWithOptions(catalogMetadataSnapshot(md), gj.conf, opts)
+	opts = catalogBuildOptionsFromConfig(catalogConf, opts)
+	snap := catalog.BuildWithOptions(catalogMetadataSnapshot(md), catalogConf, opts)
 	out := CatalogSnapshot(*snap)
 	return &out, nil
 }
@@ -269,6 +274,16 @@ func (s *CatalogSnapshot) QueryResult(q CatalogQuery) (CatalogQueryOutput, error
 		return CatalogQueryOutput{}, nil
 	}
 	return (*catalog.Snapshot)(s).Query(q)
+}
+
+// QueryResultWithHints applies catalog filtering, deterministic ordering, and
+// reciprocal-rank fusion to lexical results plus service-provided candidates.
+// Existing QueryResult behavior is unchanged when no hints are supplied.
+func (s *CatalogSnapshot) QueryResultWithHints(q CatalogQuery, hints []CatalogCandidateHint) (CatalogQueryOutput, error) {
+	if s == nil {
+		return CatalogQueryOutput{}, nil
+	}
+	return (*catalog.Snapshot)(s).QueryWithHints(q, hints)
 }
 
 func (s *CatalogSnapshot) Card(id string) (CatalogCard, bool) {

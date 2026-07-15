@@ -24,7 +24,10 @@ type weightedText struct {
 }
 
 type searchIndex struct {
-	docs map[string]searchDoc
+	docs     map[string]searchDoc
+	cards    map[string]Card
+	postings map[string]map[string]struct{}
+	trigrams map[string]map[string]struct{}
 }
 
 type searchDoc struct {
@@ -37,6 +40,17 @@ type searchDoc struct {
 // search for ranked full text, where for precise filtering, order_by for
 // deterministic sorting, and limit for result size.
 func (s *Snapshot) Query(q Query) (QueryResult, error) {
+	return s.query(q, nil)
+}
+
+// QueryWithHints fuses lexical results with ranked candidates supplied by an
+// outer service. Hints only expand recall; the catalog still owns filtering,
+// exact-identifier precedence, sorting, limits, and explanations.
+func (s *Snapshot) QueryWithHints(q Query, hints []CandidateHint) (QueryResult, error) {
+	return s.query(q, hints)
+}
+
+func (s *Snapshot) query(q Query, hints []CandidateHint) (QueryResult, error) {
 	if s == nil {
 		return QueryResult{}, nil
 	}
@@ -53,8 +67,23 @@ func (s *Snapshot) Query(q Query) (QueryResult, error) {
 		idx = newSearchIndex(s)
 	}
 
-	items := make([]rankedCard, 0, min(limit, len(s.Cards)))
-	for _, card := range s.Cards {
+	if len(hints) != 0 && search != "" {
+		return s.queryWithHints(q, limit, where, search, idx, hints)
+	}
+
+	cards := s.Cards
+	if search != "" {
+		if ids, narrowed := idx.candidateIDs(search); narrowed {
+			cards = make([]Card, 0, len(ids))
+			for id := range ids {
+				if card, ok := idx.cards[id]; ok {
+					cards = append(cards, card)
+				}
+			}
+		}
+	}
+	items := make([]rankedCard, 0, min(limit, len(cards)))
+	for _, card := range cards {
 		ok, err := cardMatchesWhere(card, where)
 		if err != nil {
 			return QueryResult{}, err
@@ -77,6 +106,7 @@ func (s *Snapshot) Query(q Query) (QueryResult, error) {
 	if err := sortRankedCards(items, q.OrderBy, search != ""); err != nil {
 		return QueryResult{}, err
 	}
+	items = offsetRankedCards(items, q.Offset)
 	if len(items) > limit {
 		items = items[:limit]
 	}
@@ -95,9 +125,15 @@ func (s *Snapshot) Query(q Query) (QueryResult, error) {
 }
 
 func newSearchIndex(s *Snapshot) *searchIndex {
-	idx := &searchIndex{docs: make(map[string]searchDoc, len(s.Cards))}
+	idx := &searchIndex{
+		docs:     make(map[string]searchDoc, len(s.Cards)),
+		cards:    make(map[string]Card, len(s.Cards)),
+		postings: make(map[string]map[string]struct{}),
+		trigrams: make(map[string]map[string]struct{}),
+	}
 	details := detailsByCard(s.Details)
 	for _, card := range s.Cards {
+		idx.cards[card.ID] = card
 		fields := cardSearchFields(card, details[card.ID])
 		docTokens := make([]string, 0, 64)
 		docTokenSet := make(map[string]struct{})
@@ -112,8 +148,250 @@ func newSearchIndex(s *Snapshot) *searchIndex {
 			docTokens:   docTokens,
 			docTokenSet: docTokenSet,
 		}
+		for token := range docTokenSet {
+			addPosting(idx.postings, token, card.ID)
+			for _, gram := range catalogTrigrams(token) {
+				addPosting(idx.trigrams, gram, card.ID)
+			}
+		}
 	}
 	return idx
+}
+
+func addPosting(index map[string]map[string]struct{}, term, id string) {
+	if term == "" || id == "" {
+		return
+	}
+	set := index[term]
+	if set == nil {
+		set = make(map[string]struct{})
+		index[term] = set
+	}
+	set[id] = struct{}{}
+}
+
+func catalogTrigrams(value string) []string {
+	runes := []rune(strings.ToLower(strings.TrimSpace(value)))
+	if len(runes) < 3 {
+		return nil
+	}
+	out := make([]string, 0, len(runes)-2)
+	seen := make(map[string]struct{}, len(runes)-2)
+	for i := 0; i+3 <= len(runes); i++ {
+		gram := string(runes[i : i+3])
+		if _, ok := seen[gram]; ok {
+			continue
+		}
+		seen[gram] = struct{}{}
+		out = append(out, gram)
+	}
+	return out
+}
+
+func (idx *searchIndex) candidateIDs(search string) (map[string]struct{}, bool) {
+	terms := uniqueTokens(tokenizeCatalogText(search))
+	if len(terms) == 0 {
+		return nil, false
+	}
+	out := make(map[string]struct{})
+	usable := false
+	for _, term := range terms {
+		if ids := idx.postings[term]; len(ids) != 0 {
+			usable = true
+			for id := range ids {
+				out[id] = struct{}{}
+			}
+			continue
+		}
+		grams := catalogTrigrams(term)
+		if len(grams) == 0 {
+			continue
+		}
+		usable = true
+		overlap := make(map[string]int)
+		for _, gram := range grams {
+			for id := range idx.trigrams[gram] {
+				overlap[id]++
+			}
+		}
+		minimum := len(grams) / 2
+		if minimum < 1 {
+			minimum = 1
+		}
+		for id, count := range overlap {
+			if count >= minimum {
+				out[id] = struct{}{}
+			}
+		}
+	}
+	// A conservative full-scan fallback preserves the legacy behavior for very
+	// short terms and unusual tokenization while normal searches use postings.
+	if !usable || len(out) == 0 {
+		return nil, false
+	}
+	return out, true
+}
+
+func (s *Snapshot) queryWithHints(q Query, limit int, where map[string]any, search string, idx *searchIndex, hints []CandidateHint) (QueryResult, error) {
+	lexicalIDs, narrowed := idx.candidateIDs(search)
+	if !narrowed {
+		lexicalIDs = make(map[string]struct{}, len(s.Cards))
+		for _, card := range s.Cards {
+			lexicalIDs[card.ID] = struct{}{}
+		}
+	}
+	lexical := make([]rankedCard, 0, len(lexicalIDs))
+	for id := range lexicalIDs {
+		card, ok := idx.cards[id]
+		if !ok {
+			continue
+		}
+		matches, err := cardMatchesWhere(card, where)
+		if err != nil {
+			return QueryResult{}, err
+		}
+		if !matches {
+			continue
+		}
+		match, matched := idx.scoreCard(card, search)
+		if matched {
+			lexical = append(lexical, rankedCard{card: card, match: match})
+		}
+	}
+	if err := sortRankedCards(lexical, nil, true); err != nil {
+		return QueryResult{}, err
+	}
+
+	type fusedItem struct {
+		card  Card
+		match Match
+		score float64
+		exact bool
+		why   []string
+	}
+	fused := make(map[string]*fusedItem, len(lexical)+len(hints))
+	for i, item := range lexical {
+		entry := &fusedItem{
+			card:  item.card,
+			match: item.match,
+			score: 1 / float64(60+i+1),
+			exact: catalogExactIdentifier(item.card, search),
+		}
+		fused[item.card.ID] = entry
+	}
+	for i, hint := range hints {
+		card, ok := idx.cards[hint.CardID]
+		if !ok {
+			continue
+		}
+		matches, err := cardMatchesWhere(card, where)
+		if err != nil {
+			return QueryResult{}, err
+		}
+		if !matches {
+			continue
+		}
+		rank := hint.Rank
+		if rank <= 0 {
+			rank = i + 1
+		}
+		weight := hint.Weight
+		if weight <= 0 {
+			weight = 1
+		}
+		entry := fused[card.ID]
+		if entry == nil {
+			entry = &fusedItem{card: card}
+			fused[card.ID] = entry
+		}
+		entry.score += weight / float64(60+rank)
+		why := strings.TrimSpace(hint.Why)
+		if why == "" {
+			why = strings.TrimSpace(hint.Source)
+		}
+		if why != "" {
+			entry.why = append(entry.why, why)
+		}
+	}
+
+	items := make([]rankedCard, 0, len(fused))
+	for _, entry := range fused {
+		if entry.exact {
+			entry.score += 1_000_000
+		}
+		entry.match.Score = math.Round(entry.score*1_000_000) / 1_000_000
+		if len(entry.why) != 0 {
+			extra := strings.Join(uniqueStrings(entry.why), "; ")
+			if entry.match.Why == "" {
+				entry.match.Why = extra
+			} else {
+				entry.match.Why += "; " + extra
+			}
+		}
+		items = append(items, rankedCard{card: entry.card, match: entry.match})
+	}
+	if err := sortRankedCards(items, q.OrderBy, true); err != nil {
+		return QueryResult{}, err
+	}
+	items = offsetRankedCards(items, q.Offset)
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	result := QueryResult{Cards: make([]Card, 0, len(items))}
+	if q.Explain {
+		result.Matches = make(map[string]Match, len(items))
+	}
+	for _, item := range items {
+		result.Cards = append(result.Cards, item.card)
+		if result.Matches != nil {
+			result.Matches[item.card.ID] = item.match
+		}
+	}
+	return result, nil
+}
+
+func offsetRankedCards(items []rankedCard, offset int) []rankedCard {
+	if offset <= 0 {
+		return items
+	}
+	if offset >= len(items) {
+		return nil
+	}
+	return items[offset:]
+}
+
+func catalogExactIdentifier(card Card, search string) bool {
+	search = strings.ToLower(strings.TrimSpace(search))
+	if search == "" {
+		return false
+	}
+	values := []string{
+		card.ID,
+		card.Title,
+		card.TableName,
+		card.ColumnName,
+		strings.Trim(card.SchemaName+"."+card.TableName, "."),
+		strings.Trim(card.DatabaseName+":"+card.SchemaName+"."+card.TableName, ":."),
+	}
+	for _, value := range values {
+		if strings.ToLower(strings.TrimSpace(value)) == search {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func combineQueryWhere(q Query) map[string]any {

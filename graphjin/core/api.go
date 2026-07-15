@@ -74,36 +74,40 @@ type dbContext struct {
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
 type graphjinEngine struct {
-	conf                  *Config
-	log                   *_log.Logger
-	fs                    FS
-	trace                 Tracer
-	allowList             *allow.List
-	savedQuerySaveHook    SavedQuerySaveHook
-	encryptionKey         [32]byte
-	encryptionKeySet      bool
-	cache                 Cache
-	queries               sync.Map
-	sqliteConflictGetMu   sync.Mutex
-	roles                 map[string]*Role
-	roleStatement         string
-	roleStatementMetadata psql.Metadata
-	roleQueryMode         roleQueryMode
-	roleGraphQLStmt       stmt
-	roleGraphQLMatches    []compiledRoleMatch
-	tmap                  map[string]qcode.TConfig
-	rtmap                 map[string]ResolverFn
-	rmap                  map[string]resItem
-	openapiRuntime        *openapi.Runtime
-	abacEnabled           bool
-	subs                  sync.Map
-	prod                  bool
-	prodSec               bool
-	namespace             string
-	printFormat           []byte
-	opts                  []Option
-	runtimeSchemaDDLDir   string
-	done                  chan bool
+	conf                       *Config
+	catalogConf                *Config
+	log                        *_log.Logger
+	fs                         FS
+	trace                      Tracer
+	allowList                  *allow.List
+	savedQuerySaveHook         SavedQuerySaveHook
+	encryptionKey              [32]byte
+	encryptionKeySet           bool
+	cache                      Cache
+	queries                    sync.Map
+	sqliteConflictGetMu        sync.Mutex
+	roles                      map[string]*Role
+	roleStatement              string
+	roleStatementMetadata      psql.Metadata
+	roleQueryMode              roleQueryMode
+	roleGraphQLStmt            stmt
+	roleGraphQLMatches         []compiledRoleMatch
+	tmap                       map[string]qcode.TConfig
+	rtmap                      map[string]ResolverFn
+	rmap                       map[string]resItem
+	openapiRuntime             *openapi.Runtime
+	abacEnabled                bool
+	subs                       sync.Map
+	prod                       bool
+	prodSec                    bool
+	namespace                  string
+	printFormat                []byte
+	opts                       []Option
+	runtimeSchemaDDLDir        string
+	runtimeSchemaCacheFirst    bool
+	runtimeSchemaCacheRequired bool
+	disableDBSchemaWatcher     bool
+	done                       chan bool
 
 	// All databases (including the primary/default) live here.
 	databases map[string]*dbContext
@@ -426,6 +430,10 @@ func (g *GraphJin) newGraphJin(conf *Config,
 			return
 		}
 	}
+	// Catalog configuration revisions describe the normalized caller config,
+	// not derived table entries added during schema finalization. Keeping this
+	// snapshot stable also makes live- and cache-discovered engines comparable.
+	gj.catalogConf = gj.conf.clone()
 
 	// Phase 1: Discover all databases (get raw schema metadata)
 	if err = gj.discoverAllDatabases(); err != nil {
@@ -507,11 +515,40 @@ func OptionSetReservedRoleAuthorizer(h ReservedRoleAuthorizer) Option {
 	}
 }
 
-// OptionSetRuntimeSchemaDDLDir overrides where generated schema-DDL restart
-// snapshots are read from and written to, relative to the configured FS.
+// OptionSetRuntimeSchemaDDLDir overrides where generated schema restart
+// snapshots are read from and written to. Relative and absolute paths are
+// passed through to the configured filesystem implementation unchanged.
 func OptionSetRuntimeSchemaDDLDir(dir string) Option {
 	return func(s *graphjinEngine) error {
-		s.runtimeSchemaDDLDir = strings.Trim(strings.TrimSpace(dir), "/")
+		s.runtimeSchemaDDLDir = strings.TrimSpace(dir)
+		return nil
+	}
+}
+
+// OptionSetRuntimeSchemaCacheFirst makes runtime discovery snapshots the first
+// source consulted during initialization. Direct core users retain live-first
+// discovery unless they opt in.
+func OptionSetRuntimeSchemaCacheFirst(enabled bool) Option {
+	return func(s *graphjinEngine) error {
+		s.runtimeSchemaCacheFirst = enabled
+		return nil
+	}
+}
+
+// OptionSetRuntimeSchemaCacheRequired prevents a cache-initialized engine from
+// falling through to live discovery when an activated generation is incomplete.
+func OptionSetRuntimeSchemaCacheRequired(required bool) Option {
+	return func(s *graphjinEngine) error {
+		s.runtimeSchemaCacheRequired = required
+		return nil
+	}
+}
+
+// OptionSetDBSchemaWatcherDisabled lets a service-level coordinator own schema
+// polling so horizontally scaled replicas do not all introspect independently.
+func OptionSetDBSchemaWatcherDisabled(disabled bool) Option {
+	return func(s *graphjinEngine) error {
+		s.disableDBSchemaWatcher = disabled
 		return nil
 	}
 }
@@ -1165,6 +1202,41 @@ func (g *GraphJin) ReloadWithDB(db *sql.DB) error {
 	return g.newGraphJin(gj.conf, db, nil, gj.fs, gj.opts...)
 }
 
+// ReloadFromRuntimeSchemaCache atomically rebuilds the engine from a complete,
+// activated runtime schema generation. It never falls through to live database
+// discovery, which keeps horizontally scaled replicas on the same generation.
+func (g *GraphJin) ReloadFromRuntimeSchemaCache(dir string) error {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return fmt.Errorf("runtime schema cache directory is required")
+	}
+	g.reloadMu.Lock()
+	defer g.reloadMu.Unlock()
+	base, err := g.getEngine()
+	if err != nil {
+		return err
+	}
+	var db *sql.DB
+	if primary := base.primaryDB(); primary != nil {
+		db = primary.db
+	}
+	reloadConf := base.conf
+	if base.catalogConf != nil {
+		reloadConf = base.catalogConf
+	}
+	opts := append([]Option(nil), base.opts...)
+	opts = append(opts,
+		OptionSetRuntimeSchemaDDLDir(dir),
+		OptionSetRuntimeSchemaCacheFirst(true),
+		OptionSetRuntimeSchemaCacheRequired(true),
+	)
+	if err := g.newGraphJin(reloadConf, db, nil, base.fs, opts...); err != nil {
+		return err
+	}
+	g.fireAllSchemaCallbacks()
+	return nil
+}
+
 func (g *GraphJin) newGraphJinReloadingConfigDatabases(base *graphjinEngine, nextConf *Config, reloadSet map[string]struct{}, opts ...Option) error {
 	if base == nil {
 		return errors.New("graphjin engine is not initialized")
@@ -1229,6 +1301,7 @@ func (g *GraphJin) newGraphJinReloadingConfigDatabases(base *graphjinEngine, nex
 			return err
 		}
 	}
+	gj.catalogConf = gj.conf.clone()
 	if gj.databases == nil {
 		gj.databases = make(map[string]*dbContext)
 	}
@@ -1389,6 +1462,11 @@ func (g *GraphJin) newGraphJinReloadingDatabase(base *graphjinEngine, database s
 		if err := op(gj); err != nil {
 			return err
 		}
+	}
+	if base.catalogConf != nil {
+		gj.catalogConf = base.catalogConf.clone()
+	} else {
+		gj.catalogConf = gj.conf.clone()
 	}
 
 	gj.databases = make(map[string]*dbContext, len(base.databases))
@@ -2896,6 +2974,9 @@ func (g *GraphJin) ListSavedQueries() ([]SavedQueryInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	if gj.allowList == nil {
+		return []SavedQueryInfo{}, nil
+	}
 
 	items, err := gj.allowList.ListAll()
 	if err != nil {
@@ -2973,6 +3054,9 @@ func (g *GraphJin) ListFragments() ([]FragmentInfo, error) {
 	gj, err := g.getEngine()
 	if err != nil {
 		return nil, err
+	}
+	if gj.allowList == nil {
+		return []FragmentInfo{}, nil
 	}
 
 	fragments, err := gj.allowList.ListFragments()

@@ -32,6 +32,7 @@ Run `graphjin config docs` (or `graphjin serve new`) for the annotated example t
 - [MCP Configuration](#mcp-configuration)
 - [Agent Configuration](#agent-configuration)
 - [Redis Configuration](#redis-configuration)
+- [Discovery Cache and Semantic Catalog Search](#discovery-cache-and-semantic-catalog-search)
 - [Caching Configuration](#caching-configuration)
 - [Uploads Configuration](#uploads-configuration)
 - [Filesystems Configuration](#filesystems-configuration)
@@ -1125,6 +1126,12 @@ agent:
 
 ## Redis Configuration
 
+`redis.url` is optional for a single GraphJin process. In a horizontal
+deployment it provides shared response-cache state and coordinates discovery
+and semantic-index builders. Discovery snapshots and vectors remain on the
+filesystem; Redis stores only leases, fencing tokens, active generation IDs,
+builder status, dirty counters, and PubSub notifications for those builders.
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `redis.url` | string | - | Redis connection URL |
@@ -1135,6 +1142,126 @@ agent:
 redis:
   url: redis://localhost:6379/0
 ```
+
+---
+
+## Discovery Cache and Semantic Catalog Search
+
+GraphJin Service enables cache-first schema discovery by default. It writes
+full-fidelity database metadata to immutable filesystem generations, validates
+their checksums and catalog revisions, and starts from the newest compatible
+activated generation on the next warm start. Direct users of the `core` Go
+package keep the existing live-first behavior.
+
+Optional semantic search uses Ax embeddings as a recall layer over the catalog.
+It can find business concepts and likely table endpoints, but it never invents
+relationships: GraphJin follows only real, caller-visible metadata edges when
+adding a join path.
+
+```yaml
+discovery_cache:
+  enabled: true
+  path: .graphjin/discovery
+  refresh_interval: 5m
+  startup_wait: 2m
+  retain_generations: 2
+
+catalog_search:
+  semantic:
+    enabled: false
+    provider: openai
+    embedding_model: text-embedding-3-small
+    api_key_env: OPENAI_API_KEY
+    base_url: ""
+    dimensions: tiny
+```
+
+### Discovery cache options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `discovery_cache.enabled` | boolean | `true` | Enable service-owned cache-first discovery and coordinated refresh. Set `false` for the previous service live-first path. |
+| `discovery_cache.path` | string | `.graphjin/discovery` | Filesystem root for immutable schema and semantic generations. |
+| `discovery_cache.refresh_interval` | duration | `5m` | Interval between background live-schema checks. |
+| `discovery_cache.startup_wait` | duration | `2m` | Maximum cold-start or explicit-refresh wait for a coordinated activation. |
+| `discovery_cache.retain_generations` | integer | `2` | Number of valid activated generations retained when the filesystem supports deletion. |
+
+Each discovery generation contains per-source full schema snapshots, optional
+DDL, and a manifest with a secret-free config/source fingerprint, source and
+catalog revisions, file sizes, and SHA-256 checksums. Data files are written
+before the manifest, and an activation receipt is written only after successful
+activation. Partial, corrupt, or incompatible generations are ignored.
+
+On a warm start GraphJin serves the filesystem generation immediately while a
+background refresh checks the live sources. If source revisions are unchanged,
+no new generation is activated. Explicit schema reloads and schema-affecting
+configuration changes use the same generation path and wait for activation.
+The running `GraphJin` pointer remains stable while its engine is rebuilt from
+the new snapshots.
+
+For one GraphJin process, Redis is not required: discovery and semantic builds
+use in-process coordination. For multiple replicas, configure `redis.url` and
+mount `discovery_cache.path` as the same shared read-after-write filesystem on
+every replica. Redis coordinates one builder but never stores the schema or
+vectors.
+
+When Redis is configured but unavailable:
+
+- A valid filesystem generation starts stale/degraded and rebuilding is
+  suspended.
+- With no valid filesystem generation, startup fails after `startup_wait` so
+  every replica does not run discovery independently.
+- A replica that cannot read a Redis-activated shared generation keeps its
+  previous generation and logs degraded status.
+
+### Semantic catalog search options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `catalog_search.semantic.enabled` | boolean | `false` | Enable hybrid lexical and semantic catalog retrieval. |
+| `catalog_search.semantic.provider` | string | `openai` | Ax embedding provider name. |
+| `catalog_search.semantic.embedding_model` | string | - | Embedding model identifier. Required when semantic search is enabled. |
+| `catalog_search.semantic.api_key_env` | string | `OPENAI_API_KEY` | Environment variable containing the embedding provider key. |
+| `catalog_search.semantic.base_url` | string | - | Optional provider-compatible endpoint override. |
+| `catalog_search.semantic.dimensions` | string | `tiny` | `tiny` (128), `small` (256), `medium` (512), or `default` (provider-native). |
+
+Named dimensions are strict. A response with a different dimension is rejected
+and catalog queries fall back to lexical results. Provider, model, base URL,
+dimension preset, and semantic document format form the embedding-space
+fingerprint. Changing any of them causes a full rebuild; compatible catalog
+changes reuse vectors by canonical document hash and embed only added or
+changed documents.
+
+The index is deliberately bounded. Each table produces one identity document,
+column facets grouped by meaning and chunked at 64 columns, and one real
+relationship-neighborhood document. Safe shared catalog concepts can also be
+embedded. Caller-owned artifacts, query/workflow bodies, evidence payloads,
+configuration values, examples containing values, and secrets remain
+lexical-only.
+
+A 1,000-table catalog with 300 columns per table therefore produces roughly
+12,000 vectors instead of 300,000. At `tiny`, raw vectors occupy about 6 MB.
+Document embedding uses batches of 64 with two concurrent requests. Warm
+startup performs no document-embedding calls.
+
+Catalog queries remain lexical-first. Exact identifiers avoid a query
+embedding call and stay pinned above fused results. Other queries exact-scan
+the compact semantic index, discard low-confidence matches, map hits back to
+catalog cards, and optionally add at most two real relationship paths of three
+edges or fewer between up to four table endpoints. Original filters,
+visibility, ordering, limit, and offset are applied to the combined candidates.
+`explain: true` reports lexical, semantic table/facet, or deterministic
+relationship-path provenance. `search_rank` is the fused relevance rank;
+explicit non-relevance `order_by` sorts the hybrid union by the requested
+fields instead.
+
+Query embeddings are never persisted. Each serving replica keeps a 1,024-entry
+in-memory LRU for ten minutes. Embedding errors and the two-second query timeout
+return lexical results instead of failing `query_catalog`.
+
+See [Discovery Cache And Semantic Search](/configure/discovery-semantic-search/)
+for the complete startup matrix, storage layout, safety boundaries, and
+operational checklist.
 
 ---
 

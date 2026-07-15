@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 type MetadataSnapshot struct {
@@ -136,6 +138,19 @@ func (gj *graphjinEngine) metadataSnapshot(skip map[string]struct{}) *MetadataSn
 			if t.Blocked || t.Type == "managed" || strings.HasPrefix(strings.ToLower(t.Name), "gj_") {
 				continue
 			}
+			columns := append([]sdata.DBColumn(nil), t.Columns...)
+			sort.SliceStable(columns, func(i, j int) bool {
+				if columns[i].ID != columns[j].ID {
+					return columns[i].ID < columns[j].ID
+				}
+				return columns[i].Name < columns[j].Name
+			})
+			primaryKeys := make([]string, 0, len(t.PrimaryCols))
+			for _, column := range columns {
+				if column.PrimaryKey {
+					primaryKeys = append(primaryKeys, column.Name)
+				}
+			}
 			tableID := metadataTableID(dbName, t.Schema, t.Name)
 			tableKey := tableID
 			out.Tables = append(out.Tables, MetadataTable{
@@ -145,11 +160,11 @@ func (gj *graphjinEngine) metadataSnapshot(skip map[string]struct{}) *MetadataSn
 				TableName:    t.Name,
 				Type:         t.Type,
 				Comment:      t.Comment,
-				PrimaryKey:   strings.Join(t.PKColNames(), ","),
-				ColumnCount:  len(t.Columns),
+				PrimaryKey:   strings.Join(primaryKeys, ","),
+				ColumnCount:  len(columns),
 				TableKey:     tableKey,
 			})
-			for i, c := range t.Columns {
+			for i, c := range columns {
 				colID := metadataColumnID(dbName, c.Schema, c.Table, c.Name)
 				colKey := colID
 				out.Columns = append(out.Columns, MetadataColumn{

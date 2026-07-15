@@ -112,6 +112,67 @@ The script checks the connected demo surface end-to-end:
 - Workflow execution for `daily_roast_plan`, `batch_quality_review`, and `customer_issue_triage`.
 - MCP discovery through `query_catalog` for saved queries, workflows, and CodeSQL context.
 
+### Semantic discovery comparison
+
+Run the dedicated discovery smoke test from the repository root to compare the
+same coffee catalog and MCP queries with semantic search disabled and enabled:
+
+```bash
+examples/coffee-roastery/scripts/semantic-smoke.sh
+```
+
+Add `--agent` to run the deterministic end-to-end REST agent path as well. It
+uses the same local fixture for OpenAI-compatible chat responses, so no model
+key is required:
+
+```bash
+examples/coffee-roastery/scripts/semantic-smoke.sh --agent
+```
+
+This command manages its own demo processes on port `18080`, uses an isolated
+temporary discovery cache, and starts a deterministic OpenAI-compatible
+embedding fixture on port `18081`. It verifies that:
+
+- Business terms such as `clients`, `purchases`, `raw coffee inventory`, and
+  `quality failures from recent roasting` discover the physical tables
+  `customers`, `production_orders`, `green_lots`, and `qc_cupping_scores`
+  better than lexical search alone.
+- `clients and purchases` returns both endpoint tables plus a real foreign-key
+  relationship path. Embeddings never invent the join.
+- `employee payroll tax` does not inject low-confidence semantic candidates.
+- Exact `production_orders` lookup remains top-one and skips query embedding.
+- A cold semantic build uses bounded Ax batches and the next warm startup makes
+  zero embedding calls.
+- `explain: true` identifies semantic recall and deterministic relationship
+  path results.
+- The service-owned agent's private adaptive coverage path preserves
+  per-phrase provenance and returns only real catalog relationship paths.
+  `--agent` drives the actual REST agent and Ax/Goja runtime: it makes one
+  three-phrase coverage call, reuses cached query vectors, embeds all misses in
+  one Ax request, follows the returned `next.args.ids` endpoint/path handoff,
+  and inspects those card ids before answering.
+
+The deterministic fixture proves GraphJin's integration and ranking behavior;
+it is not a benchmark of a production embedding model. To measure the same
+acceptance cases with a real provider, run:
+
+```bash
+OPENAI_API_KEY=... \
+  GRAPHJIN_SEMANTIC_PROVIDER=openai \
+  GRAPHJIN_SEMANTIC_MODEL=text-embedding-3-small \
+  examples/coffee-roastery/scripts/semantic-smoke.sh --live
+```
+
+Use `GRAPHJIN_SEMANTIC_BASE_URL` for an OpenAI-compatible endpoint and
+`GRAPHJIN_SEMANTIC_API_KEY_ENV` when the provider key uses another environment
+variable name. Pass `--report path/to/report.json` to retain the rank comparison
+as JSON. The test builds the current checkout unless `--graphjin-bin` points to
+an existing binary.
+
+The scripted `--agent` run verifies GraphJin's orchestration and guards, not a
+model's judgment. Use the separately configured live agent suite below when you
+want to evaluate how a production model decides whether and how to expand.
+
 The live Ax agent checks are optional. Demo mode automatically loads `.env`
 from the current working directory, then `examples/coffee-roastery/.env`, without
 overriding existing environment variables. To enable the agent, copy the example

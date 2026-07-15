@@ -11,7 +11,7 @@ Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data 
 | --- | --- |
 | [Server-Side Agent](/agentic/server-agent/) | GraphJin runs the catalog-first discovery loop for you and returns a typed answer via `ask_graphjin_agent` and `POST /api/v1/agent`. |
 | [MCP](/agentic/mcp/) | Discovery, syntax guidance, validation, cursor IDs, saved-query execution, GraphQL tools, and watch-event resource notifications. |
-| [Catalog Graph](/agentic/catalog-graph/) | `gj_catalog` rows for sources, tables, relationships, syntax, examples, workflows, and evidence. |
+| [Catalog Graph](/agentic/catalog-graph/) | `gj_catalog` rows plus lexical and optional semantic discovery for sources, tables, relationships, syntax, examples, workflows, and evidence. |
 | [Security Graph](/agentic/security-graph/) | `gj_security` rows for effective policy, capabilities, read-only state, and findings. |
 | [Source Mode](/agentic/source-mode/) | Source-local ownership, capability defaults, reloads, and `agentic.yml` inheritance. |
 | [Artifacts Overlay](/agentic/artifacts/) | Global config files plus caller-scoped `gj_artifacts` overrides for queries, fragments, and workflows. |

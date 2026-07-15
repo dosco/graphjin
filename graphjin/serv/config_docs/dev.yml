@@ -155,6 +155,27 @@ auth:
   #   exists: true
   #   value: localhost:8080
 
+# Discovery generations speed warm startup by loading full schema metadata from
+# disk before a background refresh. Redis is optional for this single-process
+# development config.
+discovery_cache:
+  enabled: true
+  path: .graphjin/discovery
+  refresh_interval: 5m
+  startup_wait: 2m
+  retain_generations: 2
+
+# Optional Ax-backed semantic recall for catalog search. It remains lexical-only
+# while disabled and falls back to lexical results on provider errors.
+catalog_search:
+  semantic:
+    enabled: false
+    provider: openai
+    embedding_model: text-embedding-3-small
+    api_key_env: OPENAI_API_KEY
+    base_url: ""
+    dimensions: tiny
+
 # ============================================================================
 # MCP (Model Context Protocol) CONFIGURATION
 # ============================================================================

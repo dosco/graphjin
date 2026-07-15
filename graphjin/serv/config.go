@@ -138,6 +138,12 @@ type Serv struct {
 	// Redis configuration
 	Redis RedisConfig `mapstructure:"redis" jsonschema:"title=Redis Configuration"`
 
+	// Coordinated, filesystem-backed database discovery cache.
+	DiscoveryCache DiscoveryCacheConfig `mapstructure:"discovery_cache" jsonschema:"title=Discovery Cache Configuration"`
+
+	// Catalog retrieval configuration.
+	CatalogSearch CatalogSearchConfig `mapstructure:"catalog_search" jsonschema:"title=Catalog Search Configuration"`
+
 	// Runtime event configuration
 	RuntimeEvents RuntimeEventsConfig `mapstructure:"runtime_events" jsonschema:"title=Runtime Events Configuration"`
 
@@ -434,6 +440,114 @@ type RedisConfig struct {
 	URL string `mapstructure:"url" jsonschema:"title=Redis URL"`
 }
 
+// DiscoveryCacheConfig configures service-owned schema discovery generations.
+// Enabled is a pointer so an embedded Go configuration can distinguish an
+// omitted value (enabled) from an explicit false.
+type DiscoveryCacheConfig struct {
+	// Enabled starts GraphJin Service from validated filesystem generations and
+	// moves schema refreshes onto the coordinated generation path.
+	Enabled *bool `mapstructure:"enabled" jsonschema:"title=Enable Discovery Cache,default=true"`
+
+	// Path stores immutable full schema snapshots, manifests, activation
+	// receipts, and semantic indexes. Horizontal replicas must share this path.
+	Path string `mapstructure:"path" jsonschema:"title=Discovery Cache Path,default=.graphjin/discovery"`
+
+	// RefreshInterval controls background live-schema checks after startup.
+	RefreshInterval time.Duration `mapstructure:"refresh_interval" jsonschema:"title=Discovery Refresh Interval,default=5m"`
+
+	// StartupWait bounds cold follower and explicit refresh activation waits.
+	StartupWait time.Duration `mapstructure:"startup_wait" jsonschema:"title=Discovery Startup Wait,default=2m"`
+
+	// RetainGenerations is the number of activated generations kept when the
+	// configured filesystem supports deletion.
+	RetainGenerations int `mapstructure:"retain_generations" jsonschema:"title=Retained Discovery Generations,default=2"`
+}
+
+func (c DiscoveryCacheConfig) enabled() bool {
+	return c.Enabled == nil || *c.Enabled
+}
+
+// CatalogSearchConfig configures catalog retrieval extensions.
+type CatalogSearchConfig struct {
+	Semantic SemanticCatalogSearchConfig `mapstructure:"semantic" jsonschema:"title=Semantic Catalog Search"`
+}
+
+// SemanticCatalogSearchConfig configures the service-owned Ax embedding layer.
+type SemanticCatalogSearchConfig struct {
+	// Enabled adds Ax-backed semantic recall to the lexical catalog baseline.
+	Enabled bool `mapstructure:"enabled" jsonschema:"title=Enable Semantic Catalog Search,default=false"`
+
+	// Provider is the Ax embedding provider name.
+	Provider string `mapstructure:"provider" jsonschema:"title=Embedding Provider,default=openai"`
+
+	// EmbeddingModel is required when semantic search is enabled and forms part
+	// of the persisted embedding-space fingerprint.
+	EmbeddingModel string `mapstructure:"embedding_model" jsonschema:"title=Embedding Model"`
+
+	// APIKeyEnv names the environment variable containing the provider key.
+	APIKeyEnv string `mapstructure:"api_key_env" jsonschema:"title=Embedding API Key Environment Variable,default=OPENAI_API_KEY"`
+
+	// BaseURL optionally overrides the provider endpoint and forms part of the
+	// persisted embedding-space fingerprint.
+	BaseURL string `mapstructure:"base_url" jsonschema:"title=Embedding Provider Base URL"`
+
+	// Dimensions selects tiny (128), small (256), medium (512), or the
+	// provider-native default. Named sizes are validated strictly.
+	Dimensions string `mapstructure:"dimensions" jsonschema:"title=Embedding Dimensions,default=tiny,enum=tiny,enum=small,enum=medium,enum=default"`
+}
+
+func (c SemanticCatalogSearchConfig) dimensionCount() (int, bool, error) {
+	switch strings.ToLower(strings.TrimSpace(c.Dimensions)) {
+	case "", "tiny":
+		return 128, true, nil
+	case "small":
+		return 256, true, nil
+	case "medium":
+		return 512, true, nil
+	case "default":
+		return 0, false, nil
+	default:
+		return 0, false, fmt.Errorf("catalog_search.semantic.dimensions must be tiny, small, medium, or default")
+	}
+}
+
+func normalizeDiscoveryAndSemanticConfig(c *Config) error {
+	if c == nil {
+		return nil
+	}
+	d := &c.DiscoveryCache
+	if strings.TrimSpace(d.Path) == "" {
+		d.Path = ".graphjin/discovery"
+	}
+	if d.RefreshInterval <= 0 {
+		d.RefreshInterval = 5 * time.Minute
+	}
+	if d.StartupWait <= 0 {
+		d.StartupWait = 2 * time.Minute
+	}
+	if d.RetainGenerations <= 0 {
+		d.RetainGenerations = 2
+	}
+
+	sem := &c.CatalogSearch.Semantic
+	if strings.TrimSpace(sem.Provider) == "" {
+		sem.Provider = "openai"
+	}
+	if strings.TrimSpace(sem.APIKeyEnv) == "" {
+		sem.APIKeyEnv = "OPENAI_API_KEY"
+	}
+	if strings.TrimSpace(sem.Dimensions) == "" {
+		sem.Dimensions = "tiny"
+	}
+	if _, _, err := sem.dimensionCount(); err != nil {
+		return err
+	}
+	if sem.Enabled && strings.TrimSpace(sem.EmbeddingModel) == "" {
+		return fmt.Errorf("catalog_search.semantic.embedding_model is required when semantic search is enabled")
+	}
+	return nil
+}
+
 // RuntimeEventsConfig configures bounded agentic runtime observability rows.
 type RuntimeEventsConfig struct {
 	// MaxEvents is the maximum number of recent event rows retained.
@@ -622,6 +736,9 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	if err := normalizeConfigMode(config); err != nil {
 		return nil, err
 	}
+	if err := normalizeDiscoveryAndSemanticConfig(config); err != nil {
+		return nil, err
+	}
 	normalizeWebUIDefault(config, webUIExplicit)
 	config.MCP.disableExplicit = viper.IsSet("mcp.disable")
 	config.webUIExplicit = webUIExplicit
@@ -663,6 +780,9 @@ func NewConfig(config, format string) (*Config, error) {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 	if err := normalizeConfigMode(c); err != nil {
+		return nil, err
+	}
+	if err := normalizeDiscoveryAndSemanticConfig(c); err != nil {
 		return nil, err
 	}
 	normalizeWebUIDefault(c, webUIExplicit)
@@ -810,6 +930,35 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("database.schema", "public")
 	vi.SetDefault("database.pool_size", 10)
 
+	vi.SetDefault("discovery_cache.enabled", true)
+	vi.SetDefault("discovery_cache.path", ".graphjin/discovery")
+	vi.SetDefault("discovery_cache.refresh_interval", 5*time.Minute)
+	vi.SetDefault("discovery_cache.startup_wait", 2*time.Minute)
+	vi.SetDefault("discovery_cache.retain_generations", 2)
+
+	vi.SetDefault("catalog_search.semantic.enabled", false)
+	vi.SetDefault("catalog_search.semantic.provider", "openai")
+	vi.SetDefault("catalog_search.semantic.embedding_model", "")
+	vi.SetDefault("catalog_search.semantic.api_key_env", "OPENAI_API_KEY")
+	vi.SetDefault("catalog_search.semantic.base_url", "")
+	vi.SetDefault("catalog_search.semantic.dimensions", "tiny")
+
+	// These section names contain underscores, so the generic GJ_* underscore-
+	// to-dot compatibility mapper cannot identify their dotted boundary
+	// unambiguously. Bind every public setting explicitly so container and smoke
+	// deployments can override the YAML without generating a temporary config.
+	vi.BindEnv("discovery_cache.enabled", "GJ_DISCOVERY_CACHE_ENABLED", "SG_DISCOVERY_CACHE_ENABLED", "SJ_DISCOVERY_CACHE_ENABLED")                                                                 //nolint:errcheck
+	vi.BindEnv("discovery_cache.path", "GJ_DISCOVERY_CACHE_PATH", "SG_DISCOVERY_CACHE_PATH", "SJ_DISCOVERY_CACHE_PATH")                                                                             //nolint:errcheck
+	vi.BindEnv("discovery_cache.refresh_interval", "GJ_DISCOVERY_CACHE_REFRESH_INTERVAL", "SG_DISCOVERY_CACHE_REFRESH_INTERVAL", "SJ_DISCOVERY_CACHE_REFRESH_INTERVAL")                             //nolint:errcheck
+	vi.BindEnv("discovery_cache.startup_wait", "GJ_DISCOVERY_CACHE_STARTUP_WAIT", "SG_DISCOVERY_CACHE_STARTUP_WAIT", "SJ_DISCOVERY_CACHE_STARTUP_WAIT")                                             //nolint:errcheck
+	vi.BindEnv("discovery_cache.retain_generations", "GJ_DISCOVERY_CACHE_RETAIN_GENERATIONS", "SG_DISCOVERY_CACHE_RETAIN_GENERATIONS", "SJ_DISCOVERY_CACHE_RETAIN_GENERATIONS")                     //nolint:errcheck
+	vi.BindEnv("catalog_search.semantic.enabled", "GJ_CATALOG_SEARCH_SEMANTIC_ENABLED", "SG_CATALOG_SEARCH_SEMANTIC_ENABLED", "SJ_CATALOG_SEARCH_SEMANTIC_ENABLED")                                 //nolint:errcheck
+	vi.BindEnv("catalog_search.semantic.provider", "GJ_CATALOG_SEARCH_SEMANTIC_PROVIDER", "SG_CATALOG_SEARCH_SEMANTIC_PROVIDER", "SJ_CATALOG_SEARCH_SEMANTIC_PROVIDER")                             //nolint:errcheck
+	vi.BindEnv("catalog_search.semantic.embedding_model", "GJ_CATALOG_SEARCH_SEMANTIC_EMBEDDING_MODEL", "SG_CATALOG_SEARCH_SEMANTIC_EMBEDDING_MODEL", "SJ_CATALOG_SEARCH_SEMANTIC_EMBEDDING_MODEL") //nolint:errcheck
+	vi.BindEnv("catalog_search.semantic.api_key_env", "GJ_CATALOG_SEARCH_SEMANTIC_API_KEY_ENV", "SG_CATALOG_SEARCH_SEMANTIC_API_KEY_ENV", "SJ_CATALOG_SEARCH_SEMANTIC_API_KEY_ENV")                 //nolint:errcheck
+	vi.BindEnv("catalog_search.semantic.base_url", "GJ_CATALOG_SEARCH_SEMANTIC_BASE_URL", "SG_CATALOG_SEARCH_SEMANTIC_BASE_URL", "SJ_CATALOG_SEARCH_SEMANTIC_BASE_URL")                             //nolint:errcheck
+	vi.BindEnv("catalog_search.semantic.dimensions", "GJ_CATALOG_SEARCH_SEMANTIC_DIMENSIONS", "SG_CATALOG_SEARCH_SEMANTIC_DIMENSIONS", "SJ_CATALOG_SEARCH_SEMANTIC_DIMENSIONS")                     //nolint:errcheck
+
 	vi.SetDefault("env", "development")
 
 	vi.BindEnv("env", "GO_ENV")                                 //nolint:errcheck
@@ -838,7 +987,9 @@ func newViperWithDefaults() *viper.Viper {
 	// Server-side agent defaults. The endpoint and MCP tool are opt-in.
 	vi.SetDefault("agent.enabled", false)
 	vi.SetDefault("agent.provider", "openai")
+	vi.SetDefault("agent.model", "")
 	vi.SetDefault("agent.api_key_env", "OPENAI_API_KEY")
+	vi.SetDefault("agent.base_url", "")
 	vi.SetDefault("agent.sampling", "off")
 	vi.SetDefault("agent.max_steps", 8)
 	vi.SetDefault("agent.timeout_seconds", 50)
@@ -846,6 +997,12 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("agent.return_trace", false)
 	vi.SetDefault("agent.seed_limit", 10)
 	vi.SetDefault("agent.catalog_default_limit", 20)
+	// model and base_url both contain optional/underscored paths that are used
+	// heavily by local OpenAI-compatible smoke and Ollama deployments. Bind them
+	// explicitly so environment-only configurations do not silently fall back to
+	// the public provider endpoint.
+	vi.BindEnv("agent.model", "GJ_AGENT_MODEL", "SG_AGENT_MODEL", "SJ_AGENT_MODEL")             //nolint:errcheck
+	vi.BindEnv("agent.base_url", "GJ_AGENT_BASE_URL", "SG_AGENT_BASE_URL", "SJ_AGENT_BASE_URL") //nolint:errcheck
 
 	// Local encrypted keystore defaults.
 	vi.SetDefault("secrets.keystore.key", "")

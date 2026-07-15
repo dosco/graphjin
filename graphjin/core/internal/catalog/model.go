@@ -79,6 +79,7 @@ type Query struct {
 	Where   map[string]any    `json:"where,omitempty"`
 	OrderBy map[string]string `json:"order_by,omitempty"`
 	Limit   int               `json:"limit,omitempty"`
+	Offset  int               `json:"offset,omitempty"`
 	Explain bool              `json:"explain,omitempty"`
 
 	// Shorthand fields are kept for compatibility with the first catalog MCP
@@ -100,6 +101,17 @@ type Match struct {
 	MatchedFields []string `json:"matched_fields,omitempty"`
 	MatchedTerms  []string `json:"matched_terms,omitempty"`
 	Why           string   `json:"why,omitempty"`
+}
+
+// CandidateHint lets an outer service contribute ranked recall candidates
+// without coupling the catalog package to an embedding implementation.
+type CandidateHint struct {
+	CardID string  `json:"card_id"`
+	Rank   int     `json:"rank"`
+	Weight float64 `json:"weight,omitempty"`
+	Score  float64 `json:"score,omitempty"`
+	Source string  `json:"source,omitempty"`
+	Why    string  `json:"why,omitempty"`
 }
 
 type Card struct {

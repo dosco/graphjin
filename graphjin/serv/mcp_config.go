@@ -1495,6 +1495,9 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		} else {
 			ms.commitStagedRuntime(persistedCore, stage)
 		}
+		if err := ms.service.reconfigureDiscoveryAfterConfigChange(ctx); err != nil {
+			errors = append(errors, fmt.Sprintf("coordinated discovery refresh error: %s", redactRuntimeError(err)))
+		}
 		if err := ms.service.refreshCatalogAfterCoreConfigChange(oldCore, persistedCore, "config mutation"); err != nil {
 			errors = append(errors, fmt.Sprintf("catalog refresh error: %s", redactRuntimeError(err)))
 		}

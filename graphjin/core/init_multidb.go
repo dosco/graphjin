@@ -46,6 +46,21 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 		return nil
 	}
 
+	if gj.runtimeSchemaCacheFirst {
+		cached, err := gj.loadRuntimeSchemaSnapshot(ctx)
+		if err == nil {
+			ctx.dbinfo = cached
+			return nil
+		}
+		if legacy, legacyErr := gj.loadRuntimeSchemaDDL(ctx); legacyErr == nil {
+			ctx.dbinfo = legacy
+			return nil
+		}
+		if gj.runtimeSchemaCacheRequired {
+			return fmt.Errorf("database %s: required runtime schema cache is unavailable: %w", ctx.name, err)
+		}
+	}
+
 	isPrimary := (ctx.name == gj.defaultDB)
 
 	// For the primary DB: load schema from GraphJin DDL when in MockDB mode
@@ -86,7 +101,10 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 
 	dbinfo, err := introspection.GetDBInfo(context.Background(), ctx.db, ctx.dbtype, gj.conf.Blocklist)
 	if err != nil {
-		cached, cacheErr := gj.loadRuntimeSchemaDDL(ctx)
+		cached, cacheErr := gj.loadRuntimeSchemaSnapshot(ctx)
+		if cacheErr != nil {
+			cached, cacheErr = gj.loadRuntimeSchemaDDL(ctx)
+		}
 		if cacheErr == nil {
 			if gj.log != nil {
 				gj.log.Printf("database %s: live schema discovery failed, using cached %s: %v",
@@ -98,7 +116,8 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 		return fmt.Errorf("database %s: schema discovery failed: %w", ctx.name, err)
 	}
 	ctx.dbinfo = dbinfo
-	gj.writeRuntimeSchemaDDL(ctx) //nolint:errcheck // Cache write is best-effort.
+	gj.writeRuntimeSchemaSnapshot(ctx) //nolint:errcheck // Cache write is best-effort.
+	gj.writeRuntimeSchemaDDL(ctx)      //nolint:errcheck // Cache write is best-effort.
 
 	// In dev mode with EnableSchema, write the schema out for future use
 	if isPrimary && !gj.prod && gj.conf.EnableSchema {
@@ -112,6 +131,44 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 	}
 
 	return nil
+}
+
+func (gj *graphjinEngine) loadRuntimeSchemaSnapshot(ctx *dbContext) (*sdata.DBInfo, error) {
+	if gj == nil || gj.fs == nil || ctx == nil {
+		return nil, fmt.Errorf("schema snapshot cache is not available")
+	}
+	name := gj.runtimeSchemaSnapshotPath(ctx.name)
+	ok, err := gj.fs.Exists(name)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("%s not found", name)
+	}
+	b, err := gj.fs.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	return sdata.UnmarshalDBInfoSnapshot(b)
+}
+
+func (gj *graphjinEngine) writeRuntimeSchemaSnapshot(ctx *dbContext) error {
+	if gj == nil || gj.fs == nil || ctx == nil || ctx.dbinfo == nil {
+		return nil
+	}
+	b, err := sdata.MarshalDBInfoSnapshot(ctx.dbinfo)
+	if err != nil {
+		return err
+	}
+	return gj.fs.Put(gj.runtimeSchemaSnapshotPath(ctx.name), b)
+}
+
+func (gj *graphjinEngine) runtimeSchemaSnapshotPath(source string) string {
+	dir := strings.TrimSpace(gj.runtimeSchemaDDLDir)
+	if dir == "" {
+		return RuntimeSchemaSnapshotPath(source)
+	}
+	return path.Join(dir, path.Base(RuntimeSchemaSnapshotPath(source)))
 }
 
 func (gj *graphjinEngine) loadRuntimeSchemaDDL(ctx *dbContext) (*sdata.DBInfo, error) {
@@ -191,7 +248,8 @@ func (gj *graphjinEngine) loadSchemaDDL() ([]byte, string, error) {
 // This must be called after initResolvers() which may add remote tables to the
 // primary database's dbinfo.
 func (gj *graphjinEngine) finalizeAllDatabases() error {
-	for _, ctx := range gj.databases {
+	for _, name := range gj.sortedDatabaseNames() {
+		ctx := gj.databases[name]
 		if err := gj.finalizeDatabaseSchema(ctx); err != nil {
 			return err
 		}

@@ -31,6 +31,9 @@ func TestCmdNewWritesAgenticAndSourcesTemplates(t *testing.T) {
 		if strings.Contains(content, "\ndatabases:\n") || strings.Contains(content, "\ndatabase:\n") {
 			t.Fatalf("%s contains active legacy database config:\n%s", name, content)
 		}
+		if !strings.Contains(content, "\ndiscovery_cache:\n") || !strings.Contains(content, "\ncatalog_search:\n") {
+			t.Fatalf("%s missing discovery cache or semantic catalog config:\n%s", name, content)
+		}
 	}
 
 	agentic, err := os.ReadFile(filepath.Join("myapp", "agentic.yml"))

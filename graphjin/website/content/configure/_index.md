@@ -18,6 +18,7 @@ each area.
 | [Database Config](/configure/database/) | Single and multi-database connection settings, pools, TLS, table mapping, and relationships. |
 | [Auth And RBAC](/configure/auth-rbac/) | JWT/OIDC auth, identity claims, role queries, source access, table rules, and column controls. |
 | [Caching And Redis](/configure/caching-redis/) | Response cache keys, stale-while-revalidate, Redis sharing, and invalidation. |
+| [Discovery Cache And Semantic Search](/configure/discovery-semantic-search/) | Cache-first schema generations, single-node and horizontal coordination, Ax embeddings, dimensions, and hybrid catalog retrieval. |
 | [Uploads And Filesystems](/configure/uploads-filesystems/) | File sources, uploads, local/S3/GCS backends, presigned URLs, and read-only policy. |
 | [OpenAPI Config](/configure/openapi-config/) | API sources, spec discovery, auth, joins, result paths, and operation overrides. |
 | [Environment And Production](/configure/environment-production/) | `dev`, `prod`, and `agentic` modes, inheritance, environment variables, and production defaults. |

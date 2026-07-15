@@ -10,6 +10,9 @@ import (
 // initDBWatcher initializes the database schema watcher
 func (g *GraphJin) initDBWatcher() error {
 	gj := g.Load().(*graphjinEngine)
+	if gj.disableDBSchemaWatcher {
+		return nil
+	}
 
 	// no schema polling in production
 	if gj.prod {

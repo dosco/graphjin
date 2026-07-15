@@ -23,6 +23,30 @@ func (s *graphjinService) reloadSchema(ctx context.Context, database string) (sc
 	}
 
 	database = strings.TrimSpace(database)
+	if s.discovery != nil {
+		if database != "" {
+			if err := s.validateSourceScopedSchemaReload(database); err != nil {
+				return result, err
+			}
+		}
+		if err := s.discovery.RefreshNow(ctx); err != nil {
+			return result, err
+		}
+		if database != "" {
+			result.Mode = "source_scoped"
+		}
+		result.Database = database
+		if database == "" {
+			result.Tables = s.gj.GetTables()
+		} else {
+			result.Tables = s.gj.GetTablesForDatabase(database)
+		}
+		s.markCatalogChanged("coordinated schema reload")
+		if snap, err := s.catalogSnapshot(); err == nil {
+			result.CatalogRevision = snap.Revision
+		}
+		return result, nil
+	}
 	if database == "" {
 		if err := s.gj.Reload(); err != nil {
 			return result, err

@@ -42,6 +42,18 @@ examples/<name>/scripts/smoke.sh                # base checks
 examples/<name>/scripts/smoke.sh --agent-eval   # + agent protocol evals (needs a model key)
 ```
 
+The coffee-roastery demo also includes a lexical-versus-semantic catalog
+comparison. It starts both configurations, uses deterministic embeddings by
+default, and asserts synonym recall, real relationship paths, exact-match
+precedence, unrelated-query gating, and zero document embeddings on warm
+startup:
+
+```bash
+examples/coffee-roastery/scripts/semantic-smoke.sh
+examples/coffee-roastery/scripts/semantic-smoke.sh --agent # deterministic REST agent + Ax/Goja coverage batch
+examples/coffee-roastery/scripts/semantic-smoke.sh --live # real provider key required
+```
+
 Run everything in sequence with a summary table (Docker + `./.env` required):
 
 ```bash

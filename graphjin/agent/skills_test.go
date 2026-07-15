@@ -146,6 +146,16 @@ func TestSelectSkill(t *testing.T) {
 			seed: seedWithCodeSource(), readOnly: false, profile: nil, want: skillCodeWrite,
 		},
 		{
+			name: "low ranked code entrypoint does not hijack data discovery", instruction: "find clients and their purchases",
+			seed: map[string]any{"cards": []any{
+				map[string]any{"kind": "table", "table_name": "customers"},
+				map[string]any{"kind": "table", "table_name": "production_orders"},
+				map[string]any{"kind": "relationship"},
+				map[string]any{"kind": "entrypoint", "source_kind": "code"},
+			}},
+			readOnly: false, profile: nil, want: skillDataDiscovery,
+		},
+		{
 			name: "watch read on read intent", instruction: "what fired on my watches this week",
 			seed: seedWithKinds("table"), readOnly: false, profile: watchProfile(), want: skillWatchRead,
 		},

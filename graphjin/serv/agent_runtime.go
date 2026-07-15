@@ -58,6 +58,12 @@ var newGraphJinAgentRunner = func(s *graphjinService, conf gjagent.Config, opts 
 		return nil, err
 	}
 	agentOpts := []gjagent.Option{gjagent.WithRuntime(rt)}
+	if s.semantic != nil {
+		agentOpts = append(agentOpts, gjagent.WithCatalogSearchFeatures(gjagent.CatalogSearchFeatures{
+			SemanticRecall: true,
+			CoverageBatch:  true,
+		}))
+	}
 	agentOpts = append(agentOpts, opts...)
 	return gjagent.New(s.gj, conf, agentOpts...)
 }
@@ -78,6 +84,8 @@ type agentCatalogResult struct {
 	Details     []core.CatalogCardDetail     `json:"details,omitempty"`
 	Edges       []core.CatalogEdge           `json:"edges,omitempty"`
 	Matches     map[string]core.CatalogMatch `json:"matches,omitempty"`
+	Retrieval   *catalogRetrievalMetadata    `json:"retrieval,omitempty"`
+	Coverage    []agentCatalogCoverageGroup  `json:"coverage,omitempty"`
 	Next        any                          `json:"next,omitempty"`
 }
 
@@ -117,7 +125,7 @@ func (r *serviceAgentRuntime) GraphQLHelp(ctx context.Context, args map[string]a
 		}, nil
 	}
 	q := core.CatalogQuery{Search: topic, Kind: "help", Limit: 5, Explain: true}
-	result, err := snap.QueryResult(q)
+	result, err := r.service.queryCatalog(ctx, snap, q)
 	if err != nil {
 		return nil, err
 	}
@@ -141,8 +149,18 @@ func (r *serviceAgentRuntime) QueryCatalog(ctx context.Context, args map[string]
 	if err != nil {
 		return nil, err
 	}
+	return r.queryCatalogSnapshot(ctx, snap, args)
+}
+
+// queryCatalogSnapshot is the service-runtime catalog seam used after caller
+// authorization and visibility have produced a scoped snapshot. Keeping the
+// batch path here makes it testable without exposing `searches` through MCP.
+func (r *serviceAgentRuntime) queryCatalogSnapshot(ctx context.Context, snap *core.CatalogSnapshot, args map[string]any) (any, error) {
 	if ids := agentDetailIDs(args); len(ids) != 0 {
 		return agentCatalogDetailResult(snap, ids), nil
+	}
+	if _, exists := args["ids"]; exists {
+		return nil, fmt.Errorf("query_catalog ids requires at least one non-empty catalog id; use the prior result's next.args.ids exactly")
 	}
 	where, err := catalogObjectArg(args, "where")
 	if err != nil {
@@ -170,9 +188,31 @@ func (r *serviceAgentRuntime) QueryCatalog(ctx context.Context, args map[string]
 	if q.Limit <= 0 {
 		q.Limit = 20
 	}
-	result, err := snap.QueryResult(q)
+	if searches := agentCoverageSearches(args); len(searches) != 0 {
+		result, groups, retrieval, err := r.service.queryCatalogCoverage(ctx, snap, q, searches)
+		if err != nil {
+			return nil, err
+		}
+		return agentCatalogResult{
+			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+			Revision:    snap.Revision,
+			Count:       len(result.Cards),
+			Limit:       q.Limit,
+			Truncated:   len(result.Cards) >= q.Limit,
+			Cards:       gjagent.SummarizeCatalogCards(result.Cards),
+			Matches:     result.Matches,
+			Retrieval:   &retrieval,
+			Coverage:    groups,
+			Next:        agentCatalogCoverageNext(result),
+		}, nil
+	}
+	result, retrieval, err := r.service.queryCatalogDetailed(ctx, snap, q)
 	if err != nil {
 		return nil, err
+	}
+	var retrievalPtr *catalogRetrievalMetadata
+	if r.service.semantic != nil && strings.TrimSpace(q.Search) != "" {
+		retrievalPtr = &retrieval
 	}
 	return agentCatalogResult{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
@@ -182,8 +222,81 @@ func (r *serviceAgentRuntime) QueryCatalog(ctx context.Context, args map[string]
 		Truncated:   len(result.Cards) >= q.Limit,
 		Cards:       gjagent.SummarizeCatalogCards(result.Cards),
 		Matches:     result.Matches,
+		Retrieval:   retrievalPtr,
 		Next:        agentCatalogNextForQuery(q, result.Cards),
 	}, nil
+}
+
+// agentCatalogCoverageNext turns the visible, already-filtered coverage union
+// into a bounded deterministic detail handoff. Models should not have to parse
+// prose or reconstruct ids from several per-phrase groups. Endpoint tables are
+// preferred, followed by cards that core marked as real relationship paths.
+func agentCatalogCoverageNext(result core.CatalogQueryOutput) map[string]any {
+	next := agentCatalogNext("query_catalog", "Inspect next.args.ids exactly, then answer from those details; adaptive coverage is already complete and must not be repeated.")
+	ids := make([]string, 0, 8)
+	appendID := func(id string) {
+		if id == "" || len(ids) >= 8 {
+			return
+		}
+		for _, existing := range ids {
+			if existing == id {
+				return
+			}
+		}
+		ids = append(ids, id)
+	}
+	tableCount := 0
+	for _, card := range result.Cards {
+		if card.Kind == "table" && tableCount < 4 {
+			appendID(card.ID)
+			tableCount++
+		}
+	}
+	for _, card := range result.Cards {
+		if card.Kind == "relationship" && strings.Contains(strings.ToLower(result.Matches[card.ID].Why), "relationship path") {
+			appendID(card.ID)
+		}
+	}
+	if len(ids) == 0 {
+		for _, card := range result.Cards {
+			appendID(card.ID)
+		}
+	}
+	if len(ids) != 0 {
+		next["args"] = map[string]any{"ids": ids}
+	}
+	return next
+}
+
+func agentCoverageSearches(args map[string]any) []string {
+	if args == nil {
+		return nil
+	}
+	var values []any
+	switch typed := args["searches"].(type) {
+	case []any:
+		values = typed
+	case []string:
+		values = make([]any, len(typed))
+		for n := range typed {
+			values[n] = typed[n]
+		}
+	default:
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			return nil
+		}
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil
+		}
+		out = append(out, text)
+	}
+	return out
 }
 
 // agentDetailIDs merges the single `id` and batched `ids` detail arguments.
