@@ -440,7 +440,7 @@ func TestMain(m *testing.M) {
 					},
 					Started: true,
 				}
-				container, err := testcontainers.GenericContainer(ctx, req)
+				container, err := startGenericContainer(ctx, req)
 				if err != nil {
 					return nil, "", err
 				}
@@ -545,7 +545,7 @@ func TestMain(m *testing.M) {
 					},
 					Started: true,
 				}
-				container, err := testcontainers.GenericContainer(ctx, req)
+				container, err := startGenericContainer(ctx, req)
 				if err != nil {
 					return nil, "", err
 				}
@@ -633,7 +633,7 @@ func TestMain(m *testing.M) {
 					},
 					Started: true,
 				}
-				container, err := testcontainers.GenericContainer(ctx, req)
+				container, err := startGenericContainer(ctx, req)
 				if err != nil {
 					return nil, "", err
 				}
@@ -1037,6 +1037,36 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(0)
+}
+
+// startGenericContainer recovers from a Docker image disappearing between the
+// testcontainers image inspection and container creation. This can happen on
+// fresh CI runners when large images are pulled concurrently. Retry only that
+// exact daemon error, once, and force testcontainers to pull the image again.
+func startGenericContainer(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+	return startGenericContainerWith(ctx, req, testcontainers.GenericContainer)
+}
+
+func startGenericContainerWith(
+	ctx context.Context,
+	req testcontainers.GenericContainerRequest,
+	start func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error),
+) (testcontainers.Container, error) {
+	container, err := start(ctx, req)
+	if !isMissingContainerImageError(err) {
+		return container, err
+	}
+	if container != nil {
+		_ = container.Terminate(ctx)
+	}
+
+	log.Printf("container image %q was missing during create; forcing a pull and retrying once", req.Image)
+	req.AlwaysPullImage = true
+	return start(ctx, req)
+}
+
+func isMissingContainerImageError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "no such image")
 }
 
 // terminateFn adapts Container.Terminate (variadic since testcontainers v0.40)
