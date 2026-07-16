@@ -1192,12 +1192,28 @@ pre code {
   margin: 0 auto;
 }
 
+.ai-window-hero {
+  display: flex;
+  min-height: 32rem;
+  flex-direction: column;
+  outline: none;
+}
+
+.ai-window-hero:focus-visible {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 28px 80px rgba(30, 27, 75, 0.38);
+}
+
 .ai-window-hero .window-chrome {
   min-height: 2.6rem;
   padding: 0.55rem 0.8rem;
 }
 
 .ai-window-hero .ai-conversation {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   padding: 1.1rem 1.2rem 1.3rem;
 }
 
@@ -1219,6 +1235,7 @@ pre code {
 }
 
 .ai-window-hero .tool-call {
+  position: relative;
   padding: 0.55rem 0.8rem;
 }
 
@@ -1229,6 +1246,9 @@ pre code {
 .ai-window-hero .tool-call code {
   margin-top: 0.3rem;
   font-size: 0.78rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .ai-window-hero .done-line {
@@ -1237,50 +1257,148 @@ pre code {
 }
 
 .ai-window-hero .assistant-copy {
-  font-size: 0.98rem;
-}
-
-.home-hero-diffs {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.8rem;
-  margin-top: clamp(1.4rem, 3vw, 2.4rem);
-}
-
-.home-hero-diffs article {
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--panel) 82%, transparent);
-  padding: 0.95rem 1rem;
-}
-
-.home-hero-diffs h3 {
   margin: 0;
-  font-size: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.2);
+  font-size: 0.98rem;
+  line-height: 1.5;
+  padding: 0.75rem 0.85rem;
 }
 
-.home-hero-diffs h3 a {
+.hero-trace > .tool-call {
+  margin-left: 0.6rem;
+}
+
+.hero-trace > .tool-call::before {
+  position: absolute;
+  z-index: 1;
+  top: 0.82rem;
+  left: -0.86rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border: 2px solid #818cf8;
+  border-radius: 50%;
+  background: #312e81;
+  content: "";
+}
+
+.hero-trace > .tool-call:not(:last-of-type)::after {
+  position: absolute;
+  top: 1.2rem;
+  bottom: -0.85rem;
+  left: -0.66rem;
+  width: 1px;
+  background: rgba(199, 210, 254, 0.38);
+  content: "";
+}
+
+.hero-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.ai-window-hero .hero-source-list span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  letter-spacing: 0;
+  line-height: 1.25;
+  padding: 0.28rem 0.45rem;
+  text-transform: none;
+}
+
+.hero-source-list strong {
+  color: #fff;
+  font-weight: 700;
+}
+
+.deployment-proof {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 15% 25%, var(--accent-soft), transparent 28rem),
+    color-mix(in srgb, var(--panel) 78%, transparent);
+}
+
+.deployment-proof-inner {
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: clamp(3rem, 7vw, 5rem) 1.25rem;
+}
+
+.deployment-proof .home-section-label {
+  margin: 0 0 1.2rem;
+  font-size: 0.78rem;
+}
+
+.deployment-proof figure {
+  max-width: 64rem;
+  margin: 0;
+}
+
+.deployment-proof blockquote {
+  margin: 0;
+}
+
+.deployment-proof blockquote p {
+  margin: 0;
   color: var(--heading);
-  text-decoration: none;
+  font-size: clamp(1.65rem, 3.5vw, 3rem);
+  font-weight: 650;
+  line-height: 1.16;
+  letter-spacing: -0.035em;
 }
 
-.home-hero-diffs h3 a:hover {
+.deployment-proof blockquote strong {
   color: var(--accent-readable);
 }
 
-.home-hero-diffs p {
-  margin: 0.4rem 0 0;
+.deployment-proof figcaption {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-top: clamp(1.5rem, 3vw, 2.25rem);
+}
+
+.deployment-proof figcaption img {
+  width: 4rem;
+  height: 4rem;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--accent) 54%, var(--line));
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.deployment-proof figcaption div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.deployment-proof figcaption strong {
+  color: var(--heading);
+  font-size: 1rem;
+}
+
+.deployment-proof figcaption span {
   color: var(--muted);
   font-size: 0.9rem;
 }
 
-.home-trust {
-  margin: 1.15rem 0 0;
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
+.deployment-proof figcaption a {
+  color: var(--accent-readable);
+}
+
+.deployment-proof + .home-section {
+  border-top: 0;
 }
 
 .hero-cmd {
@@ -1369,6 +1487,28 @@ pre code {
 .home-section-heading p:not(.home-section-label) {
   color: var(--muted);
   font-size: 1.08rem;
+}
+
+.why-it-works-section .home-section-heading {
+  max-width: 62rem;
+  margin: 0 auto;
+}
+
+.why-it-works-section .home-section-heading h2 {
+  max-width: 18ch;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.why-it-works-section .home-section-heading p:not(.home-section-label) {
+  max-width: 58rem;
+  margin-right: auto;
+  margin-left: auto;
+  line-height: 1.7;
+}
+
+.why-it-works-section .home-section-heading p + p {
+  margin-top: 0.8rem;
 }
 
 .only-graphjin-section .home-section-heading {
@@ -2784,8 +2924,11 @@ pre code {
     max-width: none;
   }
 
+  .ai-window-hero {
+    min-height: 0;
+  }
+
   .home-proof-grid,
-  .home-hero-diffs,
   .security-controls,
   .agentic-steps,
   .stats-grid,
@@ -2854,6 +2997,33 @@ pre code {
 
   .home-hero .h1-accent {
     font-size: 0.72em;
+  }
+
+  .ai-window-hero .window-chrome strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hero-source-list {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .ai-window-hero .hero-source-list span {
+    width: 100%;
+  }
+
+  .deployment-proof-inner {
+    padding-right: 0.9rem;
+    padding-left: 0.9rem;
+  }
+
+  .deployment-proof figcaption {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .home-section-heading h2 {
@@ -3260,11 +3430,15 @@ pre code {
     animation-delay: 0.95s;
   }
 
-  .ai-window-hero .done-line {
+  .ai-window-hero .tool-call:nth-of-type(3) {
     animation-delay: 1.35s;
   }
 
+  .ai-window-hero .done-line {
+    animation-delay: 1.75s;
+  }
+
   .ai-window-hero .assistant-copy {
-    animation-delay: 1.6s;
+    animation-delay: 2s;
   }
 }
