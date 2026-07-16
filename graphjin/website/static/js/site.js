@@ -1022,33 +1022,72 @@ if (
     heroPairs = [];
   }
   const heroUser = heroRotateWindow.querySelector('.chat-user');
-  const heroTools = heroRotateWindow.querySelectorAll('.tool-call');
+  const heroTools = [...heroRotateWindow.querySelectorAll('.tool-call')].map((tool) => ({
+    name: tool.querySelector('.tool-call-header span:last-child'),
+    line: tool.querySelector('code'),
+    element: tool,
+  }));
+  const heroSourceList = heroRotateWindow.querySelector('.hero-source-list');
   const heroDone = heroRotateWindow.querySelector('.done-line .done-text');
   const heroAnswer = heroRotateWindow.querySelector('.assistant-copy');
   if (
     Array.isArray(heroPairs) &&
     heroPairs.length > 1 &&
+    heroPairs.every(
+      (pair) =>
+        Array.isArray(pair.tools) &&
+        pair.tools.length === heroTools.length &&
+        Array.isArray(pair.sources)
+    ) &&
     heroUser &&
+    heroSourceList &&
     heroDone &&
     heroAnswer &&
-    heroTools.length === 2
+    heroTools.length > 0 &&
+    heroTools.every((tool) => tool.name && tool.line)
   ) {
     const heroAnimated = [
       heroUser,
-      ...heroTools,
+      ...heroTools.map((tool) => tool.element),
       heroDone.parentElement,
       heroAnswer,
     ];
+    const renderHeroSources = (sources) => {
+      const fragment = document.createDocumentFragment();
+      for (const source of sources) {
+        const badge = document.createElement('span');
+        const name = document.createElement('strong');
+        name.textContent = source.name;
+        badge.append(name, document.createTextNode(' ' + source.detail));
+        fragment.append(badge);
+      }
+      heroSourceList.replaceChildren(fragment);
+    };
+    let heroPointerPaused = false;
+    let heroFocusPaused = false;
     let heroIndex = 0;
+    heroRotateWindow.addEventListener('pointerenter', () => {
+      heroPointerPaused = true;
+    });
+    heroRotateWindow.addEventListener('pointerleave', () => {
+      heroPointerPaused = false;
+    });
+    heroRotateWindow.addEventListener('focusin', () => {
+      heroFocusPaused = true;
+    });
+    heroRotateWindow.addEventListener('focusout', (event) => {
+      if (!heroRotateWindow.contains(event.relatedTarget)) heroFocusPaused = false;
+    });
     window.setInterval(() => {
-      if (document.hidden) return;
+      if (document.hidden || heroPointerPaused || heroFocusPaused) return;
       heroIndex = (heroIndex + 1) % heroPairs.length;
       const pair = heroPairs[heroIndex];
       heroUser.textContent = pair.user;
       pair.tools.forEach((tool, i) => {
-        heroTools[i].querySelector('.tool-call-header span:last-child').textContent = tool.name;
-        heroTools[i].querySelector('code').textContent = tool.line;
+        heroTools[i].name.textContent = tool.name;
+        heroTools[i].line.textContent = tool.line;
       });
+      renderHeroSources(pair.sources);
       heroDone.textContent = ' ' + pair.done;
       heroAnswer.textContent = pair.answer;
       for (const el of heroAnimated) {
@@ -1056,6 +1095,6 @@ if (
         void el.offsetWidth; // commit the reset so the stagger replays
         el.style.animation = '';
       }
-    }, 7000);
+    }, 9000);
   }
 }
