@@ -33,7 +33,6 @@ func TestArtifactControlPlaneInitializesAndScopesRowsByUser(t *testing.T) {
 	conf := &Config{Core: core.Config{
 		Sources: []core.SourceConfig{
 			{Name: "app", Kind: "database", Type: "sqlite", Path: dsn, Default: true},
-			{Name: "graphjin", Kind: "graphjin"},
 		},
 		Artifacts: core.ArtifactsConfig{Enabled: true, Source: "app", AutoInit: &autoInit, GlobalsPath: "."},
 	}}
@@ -270,7 +269,6 @@ func newSQLiteArtifactService(t *testing.T, db *sql.DB, dsn string, locked []str
 	conf := &Config{Core: core.Config{
 		Sources: []core.SourceConfig{
 			{Name: "app", Kind: "database", Type: "sqlite", Path: dsn, Default: true},
-			{Name: "graphjin", Kind: "graphjin"},
 		},
 		Artifacts: core.ArtifactsConfig{Enabled: true, Source: "app", AutoInit: &autoInit, GlobalsPath: ".", Locked: locked},
 	}}

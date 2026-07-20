@@ -12,6 +12,7 @@ import (
 
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/featurecap"
 	jwt "github.com/golang-jwt/jwt/v5"
 	_ "modernc.org/sqlite"
 )
@@ -202,6 +203,7 @@ func newSourceModeJWTHTTPTestHandler(t *testing.T) http.Handler {
 	dbPath := createSourceModeHTTPDB(t)
 	svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, dbPath, func(conf *Config) {
 		conf.Core.Mode = modeAgentic
+		conf.Core.System.Capabilities = map[string]bool{featurecap.KeySecurityRead: true}
 		conf.Core.Roles = append(conf.Core.Roles, core.Role{Name: "member"})
 		conf.Serv.Auth = Auth{
 			Type: "jwt",

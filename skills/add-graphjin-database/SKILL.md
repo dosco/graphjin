@@ -26,7 +26,7 @@ Use this skill to add a database end to end without leaving half-public support 
    - Add a DB-owned dialect. Inherit behavior only after target-specific tests prove it.
    - Add discovery using the docs-recommended catalog path first, with fallbacks only where needed.
    - Wire `tests/dbint_test.go`, focused skip helpers for unsupported features, and `scripts/test-<db>.sh`.
-   - Keep GraphJin's reserved `__graphjin_artifacts` managed SQLite database internal. It belongs in the compiler/runtime graph but must never become an application source, primary database candidate, catalog source, or security-report database.
+   - Keep GraphJin's collision-free managed artifact SQLite database runtime-only. Its identifier is allocated at startup and must never become an application source, primary database candidate, catalog source, or security-report database.
 
 4. Update public surfaces only after the runtime is wired.
    - Update README, CONFIG, FEATURES, website database logos/frontpage copy, website database matrix, and test-parallel scripts.

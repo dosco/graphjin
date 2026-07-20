@@ -33,7 +33,7 @@ func newLegacySurfaceRouteHandler(t *testing.T, conf *Config) http.Handler {
 
 func TestIsSourcesUsedHidesLegacyRESTDiscoveryAndWorkflows(t *testing.T) {
 	handler := newLegacySurfaceRouteHandler(t, &Config{
-		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Core: core.Config{Mode: "agentic", Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 		Serv: Serv{MCP: MCPConfig{Disable: true}},
 	})
 
@@ -58,7 +58,7 @@ func TestIsSourcesUsedHidesLegacyRESTDiscoveryAndWorkflows(t *testing.T) {
 
 func TestIsSourcesUsedLegacyDiscoveryEnablesLegacyRESTSurfaces(t *testing.T) {
 	handler := newLegacySurfaceRouteHandler(t, &Config{
-		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Core: core.Config{Mode: "agentic", Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}, System: core.SystemConfig{Capabilities: map[string]bool{"legacy_discovery.read": true}}},
 		Serv: Serv{MCP: MCPConfig{Disable: true, LegacyDiscovery: true}},
 	})
 
@@ -82,7 +82,7 @@ func TestIsSourcesUsedLegacyDiscoveryEnablesLegacyRESTSurfaces(t *testing.T) {
 
 func TestIsSourcesUsedMCPOnlyHidesLegacyRESTSurfaces(t *testing.T) {
 	handler := newLegacySurfaceRouteHandler(t, &Config{
-		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Core: core.Config{Mode: "agentic", Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 		Serv: Serv{MCP: MCPConfig{Only: true, Disable: true}},
 	})
 
@@ -96,7 +96,7 @@ func TestIsSourcesUsedMCPOnlyHidesLegacyRESTSurfaces(t *testing.T) {
 
 func TestAgentRouteRegistration(t *testing.T) {
 	handler := newLegacySurfaceRouteHandler(t, &Config{
-		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Core: core.Config{Mode: "agentic", Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 		Serv: Serv{MCP: MCPConfig{Disable: true}, Agent: AgentConfig{Enabled: true}},
 	})
 
@@ -125,7 +125,7 @@ func TestAgentRouteRegistration(t *testing.T) {
 	}
 
 	disabled := newLegacySurfaceRouteHandler(t, &Config{
-		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Core: core.Config{Mode: "agentic", Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 		Serv: Serv{MCP: MCPConfig{Disable: true}},
 	})
 	req = httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{"instruction":"find customers"}`))
@@ -143,7 +143,7 @@ func TestAgentRouteRegistration(t *testing.T) {
 	}
 
 	mcpOnly := newLegacySurfaceRouteHandler(t, &Config{
-		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Core: core.Config{Mode: "agentic", Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 		Serv: Serv{MCP: MCPConfig{Only: true, Disable: true}, Agent: AgentConfig{Enabled: true}},
 	})
 	req = httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{"instruction":"find customers"}`))

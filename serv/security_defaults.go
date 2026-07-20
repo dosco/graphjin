@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/dosco/graphjin/core/v3/sourcecap"
+	"github.com/dosco/graphjin/core/v3/featurecap"
 )
 
 func controlPlaneTableReadOnly(conf *Config, database, table string) bool {
@@ -49,14 +49,10 @@ func controlPlaneTableReadOnlyExplicit(conf *Config, database, table string) boo
 
 func controlPlaneSourceReadOnly(conf *Config, table string) bool {
 	switch strings.ToLower(strings.TrimSpace(table)) {
-	case "gj_workflow", "gj_workflow_execution":
-		return conf.workflowsSourceReadOnly()
 	case "gj_watch", "gj_watch_event":
 		return configWatchesEnabled(conf) && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case "gj_artifacts":
 		return conf.Core.Artifacts.Enabled && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
-	case "gj_config":
-		return conf.graphjinSourceReadOnly()
 	case "gj_catalog", "gj_security", "gj_runtime":
 		return true
 	default:
@@ -69,27 +65,16 @@ func defaultControlPlaneTableReadOnly(conf *Config, table string) bool {
 	case "gj_watch", "gj_watch_event":
 		return !configWatchesEnabled(conf)
 	case "gj_workflow":
-		return !sourceCapabilityAllowed(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowWrite)
+		return !conf.effectiveFeatureCapability(featurecap.KindWorkflows, featurecap.KeyWorkflowWrite)
 	case "gj_workflow_execution":
-		return !sourceCapabilityAllowed(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowExecute)
+		return !conf.effectiveFeatureCapability(featurecap.KindWorkflows, featurecap.KeyWorkflowExecute)
 	case "gj_config":
-		return !sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeyConfigWrite)
+		return !conf.effectiveFeatureCapability(featurecap.KindSystem, featurecap.KeyConfigWrite)
 	case "gj_catalog", "gj_security", "gj_runtime":
 		return true
 	default:
 		return false
 	}
-}
-
-func sourceCapabilityAllowed(conf *Config, kind, capability string) bool {
-	if conf == nil {
-		return false
-	}
-	if source, ok := conf.sourceByCanonicalKind(kind); ok {
-		value, _ := conf.sourceCapabilityForSource(source, capability)
-		return value
-	}
-	return sourceCapabilityDefault(effectiveMode(conf), kind, capability)
 }
 
 func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, database string) {
@@ -98,42 +83,33 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 	}
 	mode := effectiveMode(conf)
 
-	systemTables := []string{"gj_catalog", "gj_security", "gj_config", "gj_workflow", "gj_workflow_execution"}
-	if conf.runtimeRootRegistered() {
-		systemTables = append(systemTables, "gj_runtime")
-	}
-	if conf.Core.Artifacts.Enabled {
-		systemTables = append(systemTables, "gj_artifacts")
-	}
-	if configWatchesEnabled(conf) {
-		systemTables = append(systemTables, "gj_watch", "gj_watch_event")
-	}
+	systemTables := registeredSystemRoots(conf)
 	roles := []string{"user", "anon"}
 	if conf.Core.IsSourcesUsed() {
 		roles = sourceModeSystemRoleNames(conf)
 	}
 	for _, role := range roles {
 		for _, table := range systemTables {
-			allowed := systemReadAllowedBySource(conf, mode, role, table)
 			if conf.Core.IsSourcesUsed() {
 				if systemRoleTableConfigured(&conf.Core, role, table, database) {
 					continue
 				}
-				block := !allowed
+				queryBlock := !systemRootAllowed(conf, table, systemActionRead, role)
 				rt := core.RoleTable{
 					Name:     table,
 					Database: database,
-					Query:    &core.Query{Block: block},
-					Insert:   &core.Insert{Block: block},
-					Update:   &core.Update{Block: block},
-					Upsert:   &core.Upsert{Block: block},
-					Delete:   &core.Delete{Block: block},
+					Query:    &core.Query{Block: queryBlock},
+					Insert:   &core.Insert{Block: !systemRootAllowed(conf, table, systemActionInsert, role)},
+					Update:   &core.Update{Block: !systemRootAllowed(conf, table, systemActionUpdate, role)},
+					Upsert:   &core.Upsert{Block: !systemRootAllowed(conf, table, systemActionUpdate, role)},
+					Delete:   &core.Delete{Block: !systemRootAllowed(conf, table, systemActionDelete, role)},
 				}
-				applyArtifactRoleProjectionDefaults(conf, role, &rt, block)
-				applyWatchRoleProjectionDefaults(conf, role, &rt, block)
+				applyArtifactRoleProjectionDefaults(conf, role, &rt, queryBlock)
+				applyWatchRoleProjectionDefaults(conf, role, &rt, queryBlock)
 				appendRuntimeRoleTable(runtimeCore, role, rt)
 				continue
 			}
+			allowed := systemReadAllowedBySource(conf, mode, role, table)
 			if allowed {
 				if (strings.EqualFold(table, "gj_artifacts") || strings.EqualFold(table, "gj_watch") || strings.EqualFold(table, "gj_watch_event")) && !systemRoleTableConfigured(&conf.Core, role, table, database) {
 					rt := core.RoleTable{
@@ -158,7 +134,7 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 			if role == "anon" {
 				insertBlock := true
 				if strings.EqualFold(table, "gj_workflow_execution") {
-					insertBlock = !securityWorkflowExecutionInsertAllowed(conf, mode, role, conf.workflowsSourceEnabled(), controlPlaneTableReadOnly(conf, database, table))
+					insertBlock = !securityWorkflowExecutionInsertAllowed(conf, mode, role, conf.workflowsEnabled(), controlPlaneTableReadOnly(conf, database, table))
 				}
 				rt.Insert = &core.Insert{Block: insertBlock}
 				rt.Update = &core.Update{Block: true}
@@ -459,43 +435,7 @@ func sourceModeSystemRoleNames(conf *Config) []string {
 }
 
 func systemReadAllowedBySource(conf *Config, mode, role, table string) bool {
-	if !systemReadSourceEnabled(conf, table) {
-		return false
-	}
-	if conf != nil && conf.Core.IsSourcesUsed() {
-		if source, ok := conf.Core.GraphJinSource(); ok {
-			access := conf.Core.EffectiveSourceAccess(source)
-			if rootMode := access.Roots[strings.ToLower(strings.TrimSpace(table))]; rootMode != "" {
-				return systemRootAccessAllowed(rootMode, role, conf.Core.EffectiveIdentityConfig().AdminRoles, mode, conf.DefaultBlock)
-			}
-		}
-	}
-	if role == "anon" {
-		return mode == modeDev && conf != nil && !conf.DefaultBlock && defaultSystemReadAllowed(mode, "user", table)
-	}
-	if role != "user" {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(table)) {
-	case "gj_catalog":
-		return sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeyCatalogRead)
-	case "gj_security":
-		return sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeySecurityRead)
-	case "gj_config":
-		return sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeyConfigRead)
-	case "gj_runtime":
-		return sourceCapabilityAllowed(conf, sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead)
-	case "gj_artifacts":
-		return conf.Core.Artifacts.Enabled
-	case "gj_watch", "gj_watch_event":
-		return configWatchesEnabled(conf)
-	case "gj_workflow":
-		return sourceCapabilityAllowed(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowRead)
-	case "gj_workflow_execution":
-		return defaultSystemReadAllowed(mode, role, table)
-	default:
-		return false
-	}
+	return systemRootAllowed(conf, table, systemActionRead, role)
 }
 
 func systemRootAccessAllowed(accessMode, role string, adminRoles []string, mode string, defaultBlock bool) bool {
@@ -522,7 +462,7 @@ func systemReadSourceEnabled(conf *Config, table string) bool {
 	}
 	switch strings.ToLower(strings.TrimSpace(table)) {
 	case "gj_catalog", "gj_security", "gj_config":
-		return conf.catalogToolsEnabled() || conf.graphjinControlPlaneEnabled()
+		return conf.catalogToolsEnabled() || conf.systemControlPlaneEnabled()
 	case "gj_runtime":
 		return conf != nil && conf.runtimeRootRegistered()
 	case "gj_artifacts":
@@ -530,7 +470,7 @@ func systemReadSourceEnabled(conf *Config, table string) bool {
 	case "gj_watch", "gj_watch_event":
 		return configWatchesEnabled(conf)
 	case "gj_workflow", "gj_workflow_execution":
-		return conf.workflowsSourceEnabled()
+		return conf.workflowsEnabled()
 	default:
 		return false
 	}
@@ -549,7 +489,7 @@ func systemRoleTableConfigured(conf *core.Config, role, table, database string) 
 				continue
 			}
 			if strings.EqualFold(rt.Name, table) {
-				return true
+				return !rt.Generated
 			}
 		}
 	}

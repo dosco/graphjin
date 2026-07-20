@@ -34,10 +34,10 @@ func (ms *mcpServer) registerConfigTools() {
 	// get_current_config (read-only)
 	ms.srv.AddTool(mcp.NewTool(
 		"get_current_config",
-		mcp.WithDescription("Get current GraphJin configuration. Returns sources, databases, relationships, tables, roles, blocklist, functions, resolvers, and MCP settings. "+
+		mcp.WithDescription("Get current GraphJin configuration. Returns external sources, system/workflow feature overrides, databases, relationships, tables, roles, blocklist, functions, resolvers, and MCP settings. "+
 			"Use this to understand the current configuration before making changes."),
 		mcp.WithString("section",
-			mcp.Description("Optional section to retrieve: 'sources', 'databases', 'relationships', 'metadata', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', 'mcp', or 'all' (default)"),
+			mcp.Description("Optional section to retrieve: 'sources', 'system', 'workflows', 'databases', 'relationships', 'metadata', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', 'mcp', or 'all' (default)"),
 		),
 	), ms.handleGetCurrentConfig)
 
@@ -47,7 +47,7 @@ func (ms *mcpServer) registerConfigTools() {
 		"update_current_config",
 		mcp.WithDescription("Compatibility tool for the GraphQL control-plane mutation gj_config(id: \"current\", update: ...). Update GraphJin configuration and automatically reload. "+
 			"Legacy config changes are applied in-memory immediately. Source-mode config writes require mode: preview first, then mode: apply with the returned preview_id and the exact same payload. "+
-			"Supports sources, update_sources, remove_sources, source_patches, databases, relationships, MCP settings, metadata, tables, roles, blocklist, functions, and resolvers. "+
+			"Supports external sources, system/workflows feature settings, databases, relationships, MCP settings, metadata, tables, roles, blocklist, functions, and resolvers. "+
 			"System database names (postgres, mysql, information_schema, master, etc.) "+
 			"are rejected by default — use a user database name instead. "+
 			"Use create_if_not_exists: true to create a new database on the server before connecting (dev mode only). "+
@@ -77,7 +77,7 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithStringItems(),
 		),
 		mcp.WithArray("source_patches",
-			mcp.Description("Source mode patch-by-name updates for existing sources. Preserves unmentioned source fields. Supports access read/write/delete, namespace_column, owner_column, missing_namespace_column, public/admin/blocked table add/remove, and GraphJin roots_set/roots_remove."),
+			mcp.Description("Source mode patch-by-name updates for external sources. Preserves unmentioned source fields. Supports access read/write/delete, namespace_column, owner_column, missing_namespace_column, and public/admin/blocked table add/remove."),
 			mcp.Items(map[string]any{
 				"type":     "object",
 				"required": []string{"name"},
@@ -98,18 +98,19 @@ func (ms *mcpServer) registerConfigTools() {
 							"admin_tables_remove":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 							"blocked_tables_add":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 							"blocked_tables_remove":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-							"roots_set":                map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
-							"roots_remove":             map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						},
 					},
 				},
 			}),
 		),
+		mcp.WithObject("system",
+			mcp.Description("Merge-patch built-in system capabilities and root_access. Omitted values are preserved; null removes an override and restores the mode default."),
+		),
+		mcp.WithObject("workflows",
+			mcp.Description("Merge-patch built-in workflow path and execute/read/write capabilities. The JavaScript runtime is fixed to Goja."),
+		),
 		mcp.WithObject("databases",
 			mcp.Description("Map of database configs to add/update. Key is database name, value is DatabaseConfig with type, host, port, dbname, user, password, read_only, infer_db_refs for CodeSQL, etc. NOTE: read_only cannot be changed from true to false at runtime if it was set in the config file."),
-		),
-		mcp.WithObject("metadata",
-			mcp.Description("Metadata graph config: enabled, database, auto_code_relations, and code_databases. Dev defaults on; production defaults off."),
 		),
 		mcp.WithArray("tables",
 			mcp.Description("Array of table configs to add/update. Each table has name, database (optional), blocklist (optional), columns (optional), order_by (optional)."),
@@ -167,7 +168,7 @@ func (ms *mcpServer) registerConfigTools() {
 							"properties": map[string]any{
 								"name":      map[string]any{"type": "string", "description": "Table name"},
 								"schema":    map[string]any{"type": "string", "description": "Schema name"},
-								"database":  map[string]any{"type": "string", "description": "Database/source name for multi-database or system NanoDB tables such as graphjin.gj_security"},
+								"database":  map[string]any{"type": "string", "description": "External database/source name for multi-database tables; built-in system roots do not use a public database name"},
 								"read_only": map[string]any{"type": "boolean", "description": "Read-only access"},
 								"query": map[string]any{
 									"type":        "object",
@@ -350,17 +351,19 @@ func (ms *mcpServer) handleValidateConfig(ctx context.Context, req mcp.CallToolR
 
 // MCPConfigResponse represents a section of the configuration for MCP
 type MCPConfigResponse struct {
-	ActiveDatabase string              `json:"active_database,omitempty"`
-	Sources        any                 `json:"sources,omitempty"`
-	Databases      any                 `json:"databases,omitempty"`
-	Relationships  any                 `json:"relationships,omitempty"`
-	Metadata       core.MetadataConfig `json:"metadata,omitempty"`
-	Tables         any                 `json:"tables,omitempty"`
-	Roles          any                 `json:"roles,omitempty"`
-	Blocklist      []string            `json:"blocklist,omitempty"`
-	Functions      any                 `json:"functions,omitempty"`
-	Resolvers      any                 `json:"resolvers,omitempty"`
-	MCP            MCPConfig           `json:"mcp,omitempty"`
+	ActiveDatabase string               `json:"active_database,omitempty"`
+	Sources        any                  `json:"sources,omitempty"`
+	System         core.SystemConfig    `json:"system,omitempty"`
+	Workflows      core.WorkflowsConfig `json:"workflows,omitempty"`
+	Databases      any                  `json:"databases,omitempty"`
+	Relationships  any                  `json:"relationships,omitempty"`
+	Metadata       core.MetadataConfig  `json:"metadata,omitempty"`
+	Tables         any                  `json:"tables,omitempty"`
+	Roles          any                  `json:"roles,omitempty"`
+	Blocklist      []string             `json:"blocklist,omitempty"`
+	Functions      any                  `json:"functions,omitempty"`
+	Resolvers      any                  `json:"resolvers,omitempty"`
+	MCP            MCPConfig            `json:"mcp,omitempty"`
 }
 
 // RoleInfo provides role information safe for JSON serialization
@@ -389,6 +392,10 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 	switch strings.ToLower(section) {
 	case "sources":
 		result.Sources = redactedConfigValue(conf.Sources)
+	case "system":
+		result.System = conf.System
+	case "workflows":
+		result.Workflows = conf.Workflows
 	case "relationships":
 		result.Relationships = redactedConfigValue(conf.Relationships)
 	case "databases":
@@ -409,6 +416,8 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 		result.MCP = ms.service.conf.MCP
 	case "all":
 		result.Sources = redactedConfigValue(conf.Sources)
+		result.System = conf.System
+		result.Workflows = conf.Workflows
 		result.Databases = redactedConfigValue(conf.Databases)
 		result.Relationships = redactedConfigValue(conf.Relationships)
 		result.Metadata = conf.Metadata
@@ -419,7 +428,7 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 		result.Resolvers = redactedConfigValue(conf.Resolvers)
 		result.MCP = ms.service.conf.MCP
 	default:
-		return mcp.NewToolResultError(fmt.Sprintf("unknown section: %s. Valid sections: sources, databases, relationships, metadata, tables, roles, blocklist, functions, resolvers, mcp, all", section)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("unknown section: %s. Valid sections: sources, system, workflows, databases, relationships, metadata, tables, roles, blocklist, functions, resolvers, mcp, all", section)), nil
 	}
 	return ms.toolResultJSON("get_current_config", args, result)
 }
@@ -916,6 +925,28 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		}
 	}
 
+	if patch, ok := args["system"].(map[string]interface{}); ok {
+		var next core.SystemConfig
+		if err := mergeConfigSection(conf.System, patch, &next); err != nil {
+			errors = append(errors, fmt.Sprintf("system: %v", err))
+		} else {
+			conf.System = next
+			changes = append(changes, "updated system feature configuration")
+		}
+	}
+	if patch, ok := args["workflows"].(map[string]interface{}); ok {
+		var next core.WorkflowsConfig
+		if err := mergeConfigSection(conf.Workflows, patch, &next); err != nil {
+			errors = append(errors, fmt.Sprintf("workflows: %v", err))
+		} else {
+			conf.Workflows = next
+			changes = append(changes, "updated workflow feature configuration")
+		}
+	}
+	if _, legacy := args["metadata"]; legacy {
+		errors = append(errors, "metadata: removed; use system.capabilities.catalog.read")
+	}
+
 	if relationships, ok := args["relationships"].([]any); ok {
 		parsed, err := parseRelationshipConfigList(relationships)
 		if err != nil {
@@ -1035,12 +1066,6 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			conf.Databases[pdb.name] = pdb.config
 			changes = append(changes, fmt.Sprintf("added/updated database: %s", pdb.name))
 		}
-	}
-
-	// Process metadata graph config
-	if metadata, ok := args["metadata"].(map[string]any); ok && len(metadata) > 0 {
-		conf.Metadata = parseMetadataConfig(metadata, conf.Metadata)
-		changes = append(changes, "updated metadata graph config")
 	}
 
 	// Process tables
@@ -1679,10 +1704,27 @@ func parseSourceConfigList(items []any) ([]core.SourceConfig, error) {
 	return out, nil
 }
 
+func mergeConfigSection(current any, patch map[string]interface{}, out any) error {
+	data, err := json.Marshal(current)
+	if err != nil {
+		return err
+	}
+	base := make(map[string]any)
+	if err := json.Unmarshal(data, &base); err != nil {
+		return err
+	}
+	mergeJSONPatch(base, patch)
+	data, err = json.Marshal(base)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, out)
+}
+
 func sourceConfigInputSchema(required []string) map[string]any {
 	props := map[string]any{
 		"name":                     map[string]any{"type": "string", "description": "Source name"},
-		"kind":                     map[string]any{"type": "string", "enum": []string{"database", "code", "file", "api", "graphjin", "workflow"}, "description": "Source kind"},
+		"kind":                     map[string]any{"type": "string", "enum": []string{"database", "code", "file", "api"}, "description": "External source kind"},
 		"default":                  map[string]any{"type": "boolean", "description": "Default source"},
 		"type":                     map[string]any{"type": "string", "description": "Database type"},
 		"connection_string":        map[string]any{"type": "string", "description": "Database connection string"},
@@ -1703,10 +1745,6 @@ func sourceConfigInputSchema(required []string) map[string]any {
 		"prefix":                   map[string]any{"type": "string", "description": "Filesystem prefix"},
 		"root":                     map[string]any{"type": "string", "description": "Filesystem root"},
 		"specs_dir":                map[string]any{"type": "string", "description": "OpenAPI specs directory"},
-		"catalog":                  map[string]any{"type": "boolean", "description": "Expose catalog roots"},
-		"metadata":                 map[string]any{"type": "boolean", "description": "Expose metadata roots"},
-		"control_plane":            map[string]any{"type": "boolean", "description": "Expose control-plane roots"},
-		"runtime":                  map[string]any{"type": "string", "description": "Workflow runtime"},
 		"capabilities":             map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "boolean"}, "description": "Source capabilities"},
 		"access":                   map[string]any{"type": "object", "description": "Source access policy"},
 		"max_open_conns":           map[string]any{"type": "number", "description": "Maximum open connections"},
@@ -2064,32 +2102,7 @@ func applySourceAccessPatch(source *core.SourceConfig, patch sourceAccessConfigP
 	changes = append(changes, classChanges...)
 
 	if len(patch.RootsSet) != 0 || len(patch.RootsRemove) != 0 {
-		if source.CanonicalKind() != "graphjin" {
-			return changes, fmt.Errorf("roots_set and roots_remove apply only to sources with kind: graphjin")
-		}
-		if source.Access.Roots == nil {
-			source.Access.Roots = make(map[string]string)
-		}
-		for root, mode := range patch.RootsSet {
-			root = strings.ToLower(strings.TrimSpace(root))
-			mode = strings.ToLower(strings.TrimSpace(mode))
-			if root == "" {
-				return changes, fmt.Errorf("roots_set root name is required")
-			}
-			if mode == "" || !validSourcePatchReadMode(mode) {
-				return changes, fmt.Errorf("roots_set.%s: unsupported access mode %q", root, mode)
-			}
-			source.Access.Roots[root] = mode
-			changes = append(changes, fmt.Sprintf("updated source %s access.roots.%s", source.Name, root))
-		}
-		for _, root := range patch.RootsRemove {
-			root = strings.ToLower(strings.TrimSpace(root))
-			if root == "" {
-				return changes, fmt.Errorf("roots_remove root name is required")
-			}
-			delete(source.Access.Roots, root)
-			changes = append(changes, fmt.Sprintf("removed source %s access.roots.%s override", source.Name, root))
-		}
+		return changes, fmt.Errorf("roots_set and roots_remove were removed from source_patches; use system.root_access")
 	}
 	return changes, nil
 }
@@ -2937,14 +2950,95 @@ func parseResolverConfig(m map[string]any) (core.ResolverConfig, error) {
 }
 
 type stagedRuntimeState struct {
-	dbs            map[string]*sql.DB
-	managedDBs     map[string]managedDB
-	runtimeCore    *core.Config
-	metadataDB     string
-	gj             *core.GraphJin
-	availableDBs   []string
-	newConnections map[string]*sql.DB
-	schemaNotReady bool
+	dbs               map[string]*sql.DB
+	managedDBs        map[string]managedDB
+	runtimeCore       *core.Config
+	metadataDB        string
+	managedArtifactDB string
+	systemNanoDB      *core.NanoDB
+	gj                *core.GraphJin
+	availableDBs      []string
+	newConnections    map[string]*sql.DB
+	schemaNotReady    bool
+}
+
+func (ms *mcpServer) initStagedSystemNano(stagedCore *core.Config, stage *stagedRuntimeState) error {
+	if ms == nil || ms.service == nil || stagedCore == nil || stage == nil || stage.runtimeCore == nil {
+		return nil
+	}
+	scopedConf := *ms.service.conf
+	scopedConf.Core = *stagedCore
+	roots := registeredSystemRoots(&scopedConf)
+	if len(roots) == 0 {
+		stage.metadataDB = ""
+		stage.systemNanoDB = nil
+		return nil
+	}
+	metadataDB := allocateRuntimeDatabaseName(internalSystemDatabaseBase, stagedCore, stage.runtimeCore, stage.dbs)
+	rows := make(map[string][]core.NanoRow, len(roots))
+	if ms.service.systemNanoDB != nil {
+		if current := ms.service.systemNanoDB.Snapshot(); current != nil {
+			for _, root := range roots {
+				if currentRows, ok := current.Rows("", root); ok {
+					rows[root] = currentRows
+				}
+			}
+		}
+	}
+	nano, err := core.NewNanoDB(systemNanoSnapshotForRoots("", rows, roots))
+	if err != nil {
+		return err
+	}
+	stage.metadataDB = metadataDB
+	stage.systemNanoDB = nano
+	if stage.runtimeCore.Databases == nil {
+		stage.runtimeCore.Databases = make(map[string]core.DatabaseConfig)
+	}
+	stage.runtimeCore.Databases[metadataDB] = core.DatabaseConfig{Type: "nanodb", ReadOnly: true}
+	injectSystemNanoTablesInto(&scopedConf, stage.runtimeCore, metadataDB)
+	applySystemRoleQueryDefaults(&scopedConf, stage.runtimeCore, metadataDB)
+	if stagedCore.MetadataAutoCodeRelationsEnabled() {
+		codeDBs := ms.service.selectedCodeSQLDatabasesFor(stagedCore, stage.managedDBs)
+		if len(codeDBs) == 1 {
+			injectMetadataCodeRelationships(stage.runtimeCore, metadataDB, codeDBs[0])
+		} else if len(codeDBs) > 1 {
+			ms.service.log.Warnf("metadata auto_code_relations skipped: multiple CodeSQL databases selected: %s", strings.Join(codeDBs, ", "))
+		}
+	}
+	return nil
+}
+
+func (ms *mcpServer) attachStagedManagedArtifactStore(stagedCore *core.Config, stage *stagedRuntimeState) {
+	if ms == nil || ms.service == nil || stagedCore == nil || stage == nil || stage.runtimeCore == nil ||
+		!ms.service.conf.managedArtifactStore || !stagedCore.Artifacts.Enabled {
+		return
+	}
+	oldName := ms.service.managedArtifactDB
+	db := ms.service.dbs[oldName]
+	if oldName == "" || db == nil {
+		return
+	}
+	if stage.dbs[oldName] == db {
+		delete(stage.dbs, oldName)
+	}
+	delete(stage.runtimeCore.Databases, oldName)
+	name := allocateRuntimeDatabaseName(internalArtifactDatabaseBase, stagedCore, stage.runtimeCore, stage.dbs)
+	dbConf := core.DatabaseConfig{Type: "sqlite", MaxOpenConns: 1, MaxIdleConns: 1}
+	if ms.service.runtimeCore != nil {
+		if current, ok := ms.service.runtimeCore.Databases[oldName]; ok {
+			dbConf = current
+		}
+	}
+	stage.dbs[name] = db
+	stage.runtimeCore.Databases[name] = dbConf
+	stage.runtimeCore.Artifacts.Source = name
+	stage.managedArtifactDB = name
+}
+
+func (ms *mcpServer) stagedCoreOptions(stagedCore *core.Config, stage *stagedRuntimeState) []core.Option {
+	scopedConf := *ms.service.conf
+	scopedConf.Core = *stagedCore
+	return ms.service.buildCoreOptionsForState(stage.dbs, stage.managedDBs, &scopedConf, stage.metadataDB, stage.managedArtifactDB, stage.systemNanoDB)
 }
 
 func (st *stagedRuntimeState) close() {
@@ -2995,6 +3089,24 @@ func cloneCoreConfig(src core.Config) core.Config {
 					dst.Sources[i].Specs[name] = spec
 				}
 			}
+		}
+	}
+	if src.System.Capabilities != nil {
+		dst.System.Capabilities = make(map[string]bool, len(src.System.Capabilities))
+		for key, value := range src.System.Capabilities {
+			dst.System.Capabilities[key] = value
+		}
+	}
+	if src.System.RootAccess != nil {
+		dst.System.RootAccess = make(map[string]string, len(src.System.RootAccess))
+		for root, mode := range src.System.RootAccess {
+			dst.System.RootAccess[root] = mode
+		}
+	}
+	if src.Workflows.Capabilities != nil {
+		dst.Workflows.Capabilities = make(map[string]bool, len(src.Workflows.Capabilities))
+		for key, value := range src.Workflows.Capabilities {
+			dst.Workflows.Capabilities[key] = value
 		}
 	}
 	if src.Relationships != nil {
@@ -3103,10 +3215,10 @@ func cloneRoleTable(src core.RoleTable) core.RoleTable {
 	return dst
 }
 
-func anyDBFromMap(dbs map[string]*sql.DB) *sql.DB {
+func anyDBFromMap(conf *core.Config, dbs map[string]*sql.DB) *sql.DB {
 	names := make([]string, 0, len(dbs))
 	for name := range dbs {
-		if !isManagedArtifactDatabase(name) {
+		if !isInternalArtifactDatabase(conf, name) {
 			names = append(names, name)
 		}
 	}
@@ -3125,7 +3237,7 @@ func primaryDBTypeFromCore(conf *core.Config) string {
 	}
 	names := make([]string, 0, len(conf.Databases))
 	for name := range conf.Databases {
-		if !isManagedArtifactDatabase(name) {
+		if !isInternalArtifactDatabase(conf, name) {
 			names = append(names, name)
 		}
 	}
@@ -3158,9 +3270,6 @@ func classifyConfigRuntimeReload(oldCore, newCore core.Config) configRuntimeRelo
 		!coreConfigChangeScopedToSources(oldCore, newCore, changed) {
 		return plan
 	}
-	if sourceScopedTouchesSystemSource(oldCore, newCore, changed) {
-		return plan
-	}
 	if !databaseSourceRuntimePatchAllowed(oldCore, newCore, changed) {
 		return plan
 	}
@@ -3168,21 +3277,6 @@ func classifyConfigRuntimeReload(oldCore, newCore core.Config) configRuntimeRelo
 	plan.mode = "source_scoped"
 	plan.fallback = false
 	return plan
-}
-
-func sourceScopedTouchesSystemSource(oldCore, newCore core.Config, sources map[string]struct{}) bool {
-	systemNames := map[string]struct{}{
-		oldCore.CatalogDatabaseName():  {},
-		newCore.CatalogDatabaseName():  {},
-		oldCore.MetadataDatabaseName(): {},
-		newCore.MetadataDatabaseName(): {},
-	}
-	for name := range sources {
-		if _, ok := systemNames[name]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 func databaseSourceRuntimePatchAllowed(oldCore, newCore core.Config, sources map[string]struct{}) bool {
@@ -3337,27 +3431,23 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 		return stage, nil
 	}
 
+	ms.attachStagedManagedArtifactStore(stagedCore, stage)
 	if oldMetadataDB := ms.service.metadataDB; oldMetadataDB != "" {
 		if _, configured := stagedCore.Databases[oldMetadataDB]; !configured {
 			delete(stage.dbs, oldMetadataDB)
 		}
 	}
-	metadataDB, err := ms.service.initMetadataGraphForRuntime(stagedCore, stage.runtimeCore, stage.dbs, stage.managedDBs)
-	if err != nil {
+	if err := ms.initStagedSystemNano(stagedCore, stage); err != nil {
 		return stage, err
 	}
-	stage.metadataDB = metadataDB
-	if metadataDB != "" {
-		stage.newConnections[metadataDB] = stage.dbs[metadataDB]
-	}
 
-	gj, err := core.NewGraphJin(stage.runtimeCore, anyDBFromMap(stage.dbs), ms.service.buildCoreOptionsFor(stage.dbs, stage.managedDBs)...)
+	gj, err := core.NewGraphJin(stage.runtimeCore, anyDBFromMap(stage.runtimeCore, stage.dbs), ms.stagedCoreOptions(stagedCore, stage)...)
 	if err != nil {
 		return stage, err
 	}
 	stage.gj = gj
 
-	if db := anyDBFromMap(stage.dbs); db != nil {
+	if db := anyDBFromMap(stage.runtimeCore, stage.dbs); db != nil {
 		stage.availableDBs, _ = listDatabaseNames(db, primaryDBTypeFromCore(stage.runtimeCore))
 		if !ms.service.conf.MCP.DefaultDBAllowed {
 			stage.availableDBs = filterSystemDatabases(primaryDBTypeFromCore(stage.runtimeCore), stage.availableDBs)
@@ -3378,8 +3468,19 @@ func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotEx
 			return stage, fmt.Errorf("database connected but schema discovery found no tables")
 		}
 	}
-	if ms.service.systemNanoDB == nil {
-		if err := ms.service.refreshMetadataGraphForRuntime(stage.gj, stagedCore, stage.metadataDB, stage.dbs, stage.managedDBs); err != nil {
+	if stage.systemNanoDB != nil {
+		scoped := *ms.service
+		scopedConf := *ms.service.conf
+		scopedConf.Core = *stagedCore
+		scoped.conf = &scopedConf
+		scoped.gj = stage.gj
+		scoped.runtimeCore = stage.runtimeCore
+		scoped.metadataDB = stage.metadataDB
+		scoped.systemNanoDB = stage.systemNanoDB
+		scoped.dbs = stage.dbs
+		scoped.managedDBs = stage.managedDBs
+		scoped.managedArtifactDB = stage.managedArtifactDB
+		if err := scoped.refreshSystemNanoDB(); err != nil {
 			return stage, err
 		}
 	}
@@ -3469,45 +3570,17 @@ func (ms *mcpServer) prepareSourceScopedRuntime(stagedCore *core.Config, changed
 		return stage, fmt.Errorf("database connection failed: no connections established")
 	}
 
+	ms.attachStagedManagedArtifactStore(stagedCore, stage)
 	if oldMetadataDB := ms.service.metadataDB; oldMetadataDB != "" {
 		if _, configured := stagedCore.Databases[oldMetadataDB]; !configured {
 			delete(stage.dbs, oldMetadataDB)
 		}
 	}
-	if ms.service.systemNanoDB != nil && ms.service.metadataGraphEnabledForCore(stagedCore) {
-		metadataDB := stagedCore.MetadataDatabaseName()
-		if metadataDB == "" {
-			metadataDB = defaultMetadataDBName
-		}
-		stage.metadataDB = metadataDB
-		if stage.runtimeCore.Databases == nil {
-			stage.runtimeCore.Databases = make(map[string]core.DatabaseConfig)
-		}
-		stage.runtimeCore.Databases[metadataDB] = core.DatabaseConfig{Type: "nanodb", ReadOnly: true}
-		scopedConf := *ms.service.conf
-		scopedConf.Core = *stagedCore
-		injectSystemNanoTablesInto(&scopedConf, stage.runtimeCore, metadataDB)
-		applySystemRoleQueryDefaults(&scopedConf, stage.runtimeCore, metadataDB)
-		if stagedCore.MetadataAutoCodeRelationsEnabled() {
-			codeDBs := ms.service.selectedCodeSQLDatabasesFor(stagedCore, stage.managedDBs)
-			if len(codeDBs) == 1 {
-				injectMetadataCodeRelationships(stage.runtimeCore, metadataDB, codeDBs[0])
-			} else if len(codeDBs) > 1 {
-				ms.service.log.Warnf("metadata auto_code_relations skipped: multiple CodeSQL databases selected: %s", strings.Join(codeDBs, ", "))
-			}
-		}
-	} else {
-		metadataDB, err := ms.service.initMetadataGraphForRuntime(stagedCore, stage.runtimeCore, stage.dbs, stage.managedDBs)
-		if err != nil {
-			return stage, err
-		}
-		stage.metadataDB = metadataDB
-		if metadataDB != "" {
-			stage.newConnections[metadataDB] = stage.dbs[metadataDB]
-		}
+	if err := ms.initStagedSystemNano(stagedCore, stage); err != nil {
+		return stage, err
 	}
 
-	if db := anyDBFromMap(stage.dbs); db != nil {
+	if db := anyDBFromMap(stage.runtimeCore, stage.dbs); db != nil {
 		stage.availableDBs, _ = listDatabaseNames(db, primaryDBTypeFromCore(stage.runtimeCore))
 		if !ms.service.conf.MCP.DefaultDBAllowed {
 			stage.availableDBs = filterSystemDatabases(primaryDBTypeFromCore(stage.runtimeCore), stage.availableDBs)
@@ -3603,8 +3676,21 @@ func (ms *mcpServer) commitSourceScopedRuntime(stagedCore core.Config, stage *st
 	prevLegacyDB := ms.service.conf.DB
 	prevDBType := ms.service.conf.DBType
 
-	opts := ms.service.buildCoreOptionsFor(stage.dbs, stage.managedDBs)
+	opts := ms.stagedCoreOptions(&stagedCore, stage)
 	if err := ms.service.gj.ReloadConfigDatabases(stage.runtimeCore, plan.changedSources, opts...); err != nil {
+		return err
+	}
+	scoped := *ms.service
+	scopedConf := *ms.service.conf
+	scopedConf.Core = stagedCore
+	scoped.conf = &scopedConf
+	scoped.runtimeCore = stage.runtimeCore
+	scoped.metadataDB = stage.metadataDB
+	scoped.systemNanoDB = stage.systemNanoDB
+	scoped.dbs = stage.dbs
+	scoped.managedDBs = stage.managedDBs
+	scoped.managedArtifactDB = stage.managedArtifactDB
+	if err := scoped.refreshSystemNanoDBForSources(plan.changedSources); err != nil {
 		return err
 	}
 
@@ -3625,6 +3711,8 @@ func (ms *mcpServer) commitSourceScopedRuntime(stagedCore core.Config, stage *st
 	ms.service.managedDBs = stage.managedDBs
 	ms.service.runtimeCore = stage.runtimeCore
 	ms.service.metadataDB = stage.metadataDB
+	ms.service.managedArtifactDB = stage.managedArtifactDB
+	ms.service.systemNanoDB = stage.systemNanoDB
 	ms.service.closeRuntimeEventsLocked()
 	if err := ms.service.initRuntimeObservabilityLocked(); err != nil && ms.service.log != nil {
 		ms.service.log.Warnf("runtime observability init error: %s", err)
@@ -3705,6 +3793,8 @@ func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRu
 	ms.service.managedDBs = stage.managedDBs
 	ms.service.runtimeCore = stage.runtimeCore
 	ms.service.metadataDB = stage.metadataDB
+	ms.service.managedArtifactDB = stage.managedArtifactDB
+	ms.service.systemNanoDB = stage.systemNanoDB
 	ms.service.gj = stage.gj
 	ms.service.closeRuntimeEventsLocked()
 	if err := ms.service.initRuntimeObservabilityLocked(); err != nil && ms.service.log != nil {
@@ -3750,12 +3840,21 @@ func (ms *mcpServer) closeSupersededConnections(oldDBs map[string]*sql.DB, oldMa
 		if _, ok := closedManaged[name]; ok {
 			continue
 		}
-		if newDBs[name] == db {
+		if newDBs[name] == db || sqlDBMapContains(newDBs, db) {
 			continue
 		}
 		db.Close() //nolint:errcheck
 		ms.service.log.Infof("Closed replaced database connection: %s", name)
 	}
+}
+
+func sqlDBMapContains(databases map[string]*sql.DB, target *sql.DB) bool {
+	for _, db := range databases {
+		if db == target {
+			return true
+		}
+	}
+	return false
 }
 
 // syncDBFromDatabases copies the first entry from conf.Core.Databases
@@ -3768,7 +3867,7 @@ func syncDBFromDatabases(conf *Config) bool {
 	// Use the first entry (sorted for deterministic behavior)
 	names := make([]string, 0, len(conf.Core.Databases))
 	for name := range conf.Core.Databases {
-		if !isManagedArtifactDatabase(name) {
+		if !isInternalArtifactDatabase(&conf.Core, name) {
 			names = append(names, name)
 		}
 	}
@@ -4005,6 +4104,12 @@ func (ms *mcpServer) saveConfigToDisk() error {
 		for _, k := range []string{"database", "databases", "metadata", "catalog", "filesystems", "openapi", "openapi_specs_dir"} {
 			delete(settings, k)
 		}
+		if len(ms.service.conf.Core.System.Capabilities) == 0 && len(ms.service.conf.Core.System.RootAccess) == 0 {
+			delete(settings, "system")
+		}
+		if strings.TrimSpace(ms.service.conf.Core.Workflows.Path) == "" && len(ms.service.conf.Core.Workflows.Capabilities) == 0 {
+			delete(settings, "workflows")
+		}
 		nv := viper.New()
 		nv.SetConfigFile(v.ConfigFileUsed())
 		if err := nv.MergeConfigMap(settings); err != nil {
@@ -4036,6 +4141,8 @@ func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 		if conf.Relationships != nil {
 			v.Set("relationships", conf.Relationships)
 		}
+		v.Set("system", conf.System)
+		v.Set("workflows", conf.Workflows)
 	} else if conf.Databases != nil {
 		v.Set("databases", conf.Databases)
 	}

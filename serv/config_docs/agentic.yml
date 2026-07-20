@@ -93,29 +93,3 @@ sources:
     #connection_string: ${GJ_DATABASE_URL}
     ping_timeout: 5m
     enable_tls: false
-
-  - name: graphjin
-    kind: graphjin
-    metadata: true
-    catalog: true
-    control_plane: true
-    capabilities:
-      catalog.read: true
-      security.read: false
-      config.read: false
-      config.write: false
-      runtime.read: true
-      raw_graphql.query: false
-      raw_graphql.mutate: false
-      schema.reload: false
-      schema.write: false
-      dev_tools.read: false
-      legacy_discovery.read: false
-
-  - name: workflows
-    kind: workflow
-    runtime: javascript
-    capabilities:
-      workflow.execute: true
-      workflow.read: false
-      workflow.write: false

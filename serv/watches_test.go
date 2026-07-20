@@ -1860,7 +1860,6 @@ func newSQLiteWatchServiceWithDB(t *testing.T, db *sql.DB, dsn string, maxPerOwn
 	conf := &Config{Core: core.Config{
 		Sources: []core.SourceConfig{
 			{Name: "app", Kind: "database", Type: "sqlite", Path: dsn, Default: true, Access: core.SourceAccessConfig{Read: core.AccessModeAuthenticated}},
-			{Name: "graphjin", Kind: "graphjin"},
 		},
 		Artifacts: core.ArtifactsConfig{Enabled: true, Source: "app", AutoInit: &autoInit, GlobalsPath: "."},
 		Watches:   core.WatchesConfig{Enabled: true, MaxPerOwner: maxPerOwner},

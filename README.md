@@ -271,7 +271,7 @@ graphjin mcp add claude http://localhost:8080
 
 1. **Connects to database** - Reads your schema automatically
 2. **Discovers relationships** - Foreign keys become navigable joins
-3. **Exposes metadata** - `gj_*` tables make discovered databases, tables, columns, relationships, functions, and indexes queryable when the GraphJin source is enabled
+3. **Exposes metadata** - Built-in `gj_*` tables make discovered databases, tables, columns, relationships, functions, and indexes queryable when their feature capabilities are enabled
 4. **Indexes source code** - CodeSQL turns tree-sitter syntax trees and database references into a managed SQLite database
 5. **Exposes MCP tools** - Teach any LLM the query syntax
 6. **Runs JS workflows** - Chain multiple GraphJin MCP tools in one reusable workflow
@@ -286,19 +286,15 @@ CodeSQL is a managed source kind for source trees. Configure a source folder and
 ```yaml
 sources:
   - name: app
-    kind: sql
+    kind: database
     type: postgres
     connection_string: postgres://app:secret@db/app
     default: true
 
   - name: code
-    kind: codesql
+    kind: code
     path: /srv/app
     infer_db_refs: true
-
-  - name: graphjin
-    kind: graphjin
-    metadata: true
 
 tables:
   - name: users
@@ -324,7 +320,7 @@ query {
 }
 ```
 
-With a `kind: graphjin` source, GraphJin creates a read-only system graph named `graphjin` by default. Schema, catalog, entrypoint, capability, workflow, and system metadata are catalog items in `gj_catalog`; table and column metadata are selected by `kind`. When one CodeSQL source is active, GraphJin links catalog items to code references automatically:
+GraphJin's built-in catalog creates `gj_catalog` according to the deployment-mode defaults; no source entry is required. Schema, catalog, entrypoint, capability, workflow, and system metadata are catalog items; table and column metadata are selected by `kind`. When one CodeSQL source is active, GraphJin links catalog items to code references automatically:
 
 ```graphql
 query {

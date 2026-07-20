@@ -67,6 +67,9 @@ func (s *graphjinService) injectInternalStoreRole() {
 	}
 	cfg := s.conf.Core.EffectiveArtifactsConfig()
 	dbName := cfg.Source
+	if s.managedArtifactDB != "" {
+		dbName = s.managedArtifactDB
+	}
 	if dbName == "" {
 		dbName = core.DefaultDBName
 	}

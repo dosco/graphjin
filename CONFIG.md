@@ -137,26 +137,17 @@ sources:
     type: snowflake
     connection_string: ${ANALYTICS_DSN}
 
-  - name: graphjin
-    kind: graphjin
-    catalog: true
-    control_plane: true
-
 tables:
   - name: users
     source: app
 
   - name: events
     source: analytics
-
-  - name: gj_catalog
-    source: graphjin
-    read_only: true
 ```
 
-Canonical source kinds are `database`, `code`, `file`, `api`, `graphjin`, and `workflow`. Old implementation names such as `sql`, `codesql`, `filesystem`, `openapi`, and `workflows` are rejected with errors that name the replacement.
+Canonical source kinds are `database`, `code`, `file`, and `api`. System roots and workflows are built-in features, not sources. Old implementation names such as `sql`, `codesql`, `filesystem`, `openapi`, `graphjin`, `workflow`, and `workflows` are rejected with errors that name the replacement.
 
-Use `mode: agentic` or `GO_ENV=agentic` for deployments where authenticated company users interact with GraphJin through an approved agent. Agentic mode applies production-oriented source and control-plane defaults, enables safe discovery and approved workflow execution by default, and keeps detailed security/config/workflow-code surfaces blocked unless explicitly enabled with source capabilities. Existing `production: true` configs still work and imply `mode: prod` when `mode` is omitted.
+Use `mode: agentic` or `GO_ENV=agentic` for deployments where authenticated company users interact with GraphJin through an approved agent. Agentic mode applies production-oriented source and control-plane defaults, enables safe discovery and approved workflow execution by default, and keeps detailed security/config/workflow-code surfaces blocked unless explicitly enabled with feature capabilities. Existing `production: true` configs still work and imply `mode: prod` when `mode` is omitted.
 
 ---
 
@@ -255,20 +246,57 @@ claude mcp add --transport sse private-api https://api.company.com/sse \
 
 ## Sources Mode
 
-`sources:` is the canonical config for every non-legacy graph provider: databases, code indexes, file/object-store tables, OpenAPI-backed APIs, GraphJin system/catalog roots, and workflows.
+`sources:` is the canonical config for external providers only: databases, code indexes, file/object-store tables, and OpenAPI-backed APIs.
 
-If `sources:` is absent, GraphJin runs in legacy database-only mode. Existing `database`, `databases`, and `tables[].database` SQL configs continue to work there. Legacy mode rejects CodeSQL, top-level `filesystems`, top-level `openapi` / `openapi_specs_dir`, top-level `metadata`, and top-level `catalog`; move those to `sources`.
+If `sources:` is absent, GraphJin runs in legacy database-only mode. Existing `database`, `databases`, and `tables[].database` SQL configs continue to work there. Legacy mode rejects CodeSQL, top-level `filesystems`, and top-level `openapi` / `openapi_specs_dir`; move external providers to `sources`. Replace old metadata/catalog overrides with `system.capabilities.catalog.read`.
 
 If `sources:` is present, source mode is active. In source mode:
 
 - Configure databases and code indexes through `sources`; do not use legacy `database` or `databases`.
 - Every `tables[]` entry must set `source`, not `database`.
-- `kind: graphjin` is required for catalog, metadata, and control-plane `gj_*` roots.
-- `kind: workflow` is required for workflow catalog items and workflow GraphQL roots.
+- System roots and workflows use mode defaults and require no source entries.
+- Use optional top-level `system:` and `workflows:` sections only to override those defaults.
 - Use `sources[].capabilities` to enable or block source surfaces; valid capability keys depend on the source kind.
 - `tables[].read_only` blocks normal and managed mutations for that root.
 - `relationships: [{ from, to, as? }]` adds graph edges; cardinality and reverse traversal are inferred.
 - Legacy MCP discovery/action tools and legacy HTTP helper endpoints (`/api/v1/discovery*`, `/api/v1/workflows/*`) are disabled by default; set `mcp.legacy_discovery: true` as an escape hatch.
+
+Direct migration:
+
+```yaml
+# Old (rejected)
+sources:
+  - name: graphjin
+    kind: graphjin
+    capabilities:
+      catalog.read: true
+      config.write: false
+    access:
+      roots:
+        gj_catalog: public
+        gj_config: admin
+  - name: workflows
+    kind: workflow
+    path: ./workflows
+    runtime: javascript
+    capabilities:
+      workflow.execute: true
+
+# New
+system:
+  capabilities:
+    catalog.read: true
+    config.write: false
+  root_access:
+    gj_catalog: public
+    gj_config: admin
+workflows:
+  path: ./workflows
+  capabilities:
+    execute: true
+```
+
+Names are not reserved. An external application source may be named `graphjin`, `workflows`, or `__graphjin_artifacts` as long as its `kind` is one of the four external kinds.
 
 ```yaml
 sources:
@@ -297,18 +325,6 @@ sources:
         base_url: https://${IS_ACCOUNT}.example.com/api
         auth: {}
 
-  - name: graphjin
-    kind: graphjin
-    catalog: true
-    metadata: true
-    control_plane: true
-
-  - name: workflows
-    kind: workflow
-    path: ./workflows
-    runtime: goja
-    read_only: false
-
 tables:
   - name: users
     source: app
@@ -320,30 +336,30 @@ tables:
   - name: avatars
     source: avatars
 
-  - name: gj_catalog
-    source: graphjin
-    read_only: true
-
-  - name: gj_workflow
-    source: workflows
-    read_only: false
-
 relationships:
   - from: gj_catalog.code_refs_id
     to: code:gj_code.db_object_id
     as: gj_code
+
+system:
+  root_access:
+    gj_catalog: public
+    gj_config: admin
+
+workflows:
+  path: ./workflows
 ```
 
 ### Source Capabilities
 
-Each source can define a `capabilities` map. A value of `true` enables the capability for authenticated default users, `false` disables it, and an omitted key uses the secure default for the active mode. Anonymous access is never granted by source capabilities. `read_only: true` still hard-blocks writes, deletes, watches, and workflow execution where applicable.
+Each external source can define a `capabilities` map. A value of `true` enables the capability for authenticated default users, `false` disables it, and an omitted key uses the secure default for the active mode. Anonymous access is never granted by source capabilities. `read_only: true` still hard-blocks writes, deletes, and watches where applicable.
 
 Deployment modes:
 
 | Mode | Intended audience | Default posture |
 |------|-------------------|-----------------|
 | `dev` | Developers | Broad catalog, config, security, workflow-code, raw GraphQL, schema, and dev-tool access for local development |
-| `prod` | Production applications | Production protections, allow-list discipline, and blocked detailed system/control-plane surfaces unless explicitly enabled |
+| `prod` | Production applications | Production protections and allow-list discipline; the agentic system surface does not mount |
 | `agentic` | Authenticated company end users using an approved agent | Production protections plus `catalog.read` and approved `workflow.execute`; detailed `security.read`, `config.read`, `workflow.read`, writes, raw GraphQL, schema writes, dev tools, and legacy discovery stay blocked unless explicitly enabled |
 
 | Source kind | Capability keys |
@@ -352,27 +368,23 @@ Deployment modes:
 | `code` | `code.search`, `code.read`, `code.write`, `code.watch`, `code.infer_db_refs` |
 | `file` | `files.list`, `files.read`, `files.write`, `files.delete`, `files.watch` |
 | `api` | `api.read`, `api.write` |
-| `graphjin` | `catalog.read`, `security.read`, `config.read`, `config.write`, `raw_graphql.query`, `raw_graphql.mutate`, `schema.reload`, `schema.write`, `dev_tools.read`, `legacy_discovery.read` |
-| `workflow` | `workflow.execute`, `workflow.read`, `workflow.write` |
+System capabilities live under `system.capabilities`: `catalog.read`, `security.read`, `config.read`, `config.write`, `runtime.read`, `raw_graphql.query`, `raw_graphql.mutate`, `schema.reload`, `schema.write`, `dev_tools.read`, and `legacy_discovery.read`.
+
+Workflow capabilities live under `workflows.capabilities`: `execute`, `read`, and `write`.
 
 ```yaml
-sources:
-  - name: graphjin
-    kind: graphjin
-    catalog: true
-    control_plane: true
-    capabilities:
-      catalog.read: true
-      security.read: true
-      config.read: false
+system:
+  capabilities:
+    catalog.read: true
+    security.read: true
+    config.read: false
 
-  - name: workflows
-    kind: workflow
-    path: ./workflows
-    capabilities:
-      workflow.execute: true
-      workflow.read: false
-      workflow.write: false
+workflows:
+  path: ./workflows
+  capabilities:
+    execute: true
+    read: false
+    write: false
 ```
 
 ---
@@ -737,28 +749,22 @@ database:
 
 ## Catalog Graph Configuration
 
-The catalog graph exposes GraphJin's discovered schema, workflow read data, and system guidance as ordinary read-only GraphQL tables backed by nanoDB. In source mode it is enabled by adding a `kind: graphjin` source with `metadata: true`.
+The catalog graph exposes GraphJin's discovered schema, workflow read data, and system guidance as ordinary read-only GraphQL tables backed by an internal nanoDB. It follows the deployment-mode default for `system.capabilities.catalog.read`; no source entry is required.
 
 GraphJin-managed databases are intentionally excluded from catalog rows: the system graph itself and CodeSQL SQLite caches do not appear as application metadata, which prevents recursive self-description. CodeSQL can still be linked through `gj_catalog` to `gj_code` relationships.
 
 ```yaml
-sources:
-  - name: graphjin
-    kind: graphjin
-    metadata: true
-
-tables:
-  - name: gj_catalog
-    source: graphjin
-    read_only: true
+system:
+  capabilities:
+    catalog.read: true
+  root_access:
+    gj_catalog: public
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `sources[].kind: graphjin` | - | Enables GraphJin system roots |
-| `sources[].metadata` | `true` | Creates the managed read-only nanoDB system graph and exposes catalog metadata through `gj_catalog` |
-| `sources[].catalog` | `true` | Exposes the `gj_catalog` catalog item root |
-| `sources[].control_plane` | `true` | Exposes control-plane roots such as `gj_config` |
+| `system.capabilities.catalog.read` | mode default | Exposes catalog metadata through `gj_catalog` |
+| `system.root_access.gj_catalog` | mode default | Controls which caller class may query `gj_catalog` |
 
 Catalog item kinds include:
 

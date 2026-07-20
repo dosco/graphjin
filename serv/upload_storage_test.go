@@ -134,4 +134,3 @@ func TestGenerateUploadKey_DateMarker(t *testing.T) {
 		t.Errorf("expected 5 path components after {date} expansion, got %v", parts)
 	}
 }
-

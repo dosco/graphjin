@@ -222,9 +222,9 @@ mcp:
 # ============================================================================
 # SOURCES CONFIGURATION
 # ============================================================================
-# In development mode, application database sources are optional. This template
-# starts with GraphJin's system/control-plane sources enabled so MCP and catalog
-# tools can help you add database sources dynamically.
+# In development mode, application database sources are optional. GraphJin's
+# built-in system roots and workflows use development-mode defaults and do not
+# need source entries.
 #
 # Uncomment and modify one database source below for your database type.
 # You can use either individual fields OR a connection_string (not both).
@@ -236,17 +236,6 @@ mcp:
 # GJ_DATABASE_PORT
 # GJ_DATABASE_USER
 # GJ_DATABASE_PASSWORD
-
-sources:
-  - name: graphjin
-    kind: graphjin
-    metadata: true
-    catalog: true
-    control_plane: true
-
-  - name: workflows
-    kind: workflow
-    runtime: javascript
 
 # --- App database ---
 # sources:

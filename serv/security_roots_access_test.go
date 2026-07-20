@@ -8,7 +8,7 @@ import (
 	"github.com/dosco/graphjin/core/v3"
 )
 
-// access.roots overrides on the graphjin source must gate the direct GraphQL
+// system.root_access overrides must gate the direct GraphQL
 // path, not just MCP capability profiles: an admin-only root is denied with an
 // error for role "user" (deny, not a silently null root) and served for an
 // admin role. The artifacts-enabled variant covers the control-plane managed
@@ -19,12 +19,8 @@ func TestSourceRootsAccessEnforcedOnDirectGraphQL(t *testing.T) {
 		return func(conf *Config) {
 			conf.Core.Mode = "agentic"
 			conf.Core.Artifacts.Enabled = artifactsEnabled
-			for i := range conf.Core.Sources {
-				if conf.Core.Sources[i].Kind == "graphjin" {
-					conf.Core.Sources[i].Access.Roots = map[string]string{"gj_config": core.AccessModeAdmin}
-					conf.Core.Sources[i].Capabilities = map[string]bool{"config.read": true}
-				}
-			}
+			conf.Core.System.RootAccess = map[string]string{"gj_config": core.AccessModeAdmin}
+			conf.Core.System.Capabilities = map[string]bool{"config.read": true}
 		}
 	}
 
@@ -73,12 +69,8 @@ func TestSourceRootsAccessAuthenticatedOverrideAllowsUser(t *testing.T) {
 	svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{},
 		createSQLiteDBFile(t, "roots-access-authenticated.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "agentic"
-			for i := range conf.Core.Sources {
-				if conf.Core.Sources[i].Kind == "graphjin" {
-					conf.Core.Sources[i].Access.Roots = map[string]string{"gj_config": core.AccessModeAuthenticated}
-					conf.Core.Sources[i].Capabilities = map[string]bool{"config.read": true}
-				}
-			}
+			conf.Core.System.RootAccess = map[string]string{"gj_config": core.AccessModeAuthenticated}
+			conf.Core.System.Capabilities = map[string]bool{"config.read": true}
 		})
 
 	res, err := svc.gj.GraphQL(sourceModeUserTestContext(), `query { gj_config(id: "current") { id } }`, nil, &core.RequestConfig{})
@@ -101,15 +93,12 @@ func TestSourceRootsAccessAuthenticatedOverrideAllowsUser(t *testing.T) {
 func TestSourceRootsAccessReplacesGeneratedRuntimeDefaults(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
-			Mode: "agentic",
-			Sources: []core.SourceConfig{{
-				Name: "graphjin",
-				Kind: "graphjin",
-				Access: core.SourceAccessConfig{
-					Roots: map[string]string{"gj_config": core.AccessModeAdmin},
-				},
+			Mode:    "agentic",
+			Sources: []core.SourceConfig{{Name: "app", Kind: "database", Type: "sqlite"}},
+			System: core.SystemConfig{
+				RootAccess:   map[string]string{"gj_config": core.AccessModeAdmin},
 				Capabilities: map[string]bool{"config.read": true},
-			}},
+			},
 		},
 	}
 	runtimeCore := &core.Config{

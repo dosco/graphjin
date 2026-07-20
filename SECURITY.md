@@ -307,27 +307,23 @@ a delete preset because deletes do not create or rewrite row values.
 
 ## GraphJin System Roots
 
-GraphJin system roots are controlled by a GraphJin source. They exist only when
+GraphJin system roots are built-in features. They exist only when
 the agentic surface is on — that is, in `dev` and `agentic` mode. In `prod` the
 entire set is gated off and none of these roots mount, regardless of
 configuration (see [Operating Modes](#operating-modes)).
 
 ```yaml
-sources:
-  - name: graphjin
-    kind: graphjin
-    access:
-      roots:
-        gj_catalog: public
-        gj_code: authenticated
-        gj_artifacts: owner
-        gj_watch: owner
-        gj_watch_event: owner
-        gj_workflow: owner
-        gj_workflow_execution: owner
-        gj_config: admin
-        gj_security: admin
-        gj_runtime: admin
+system:
+  root_access:
+    gj_catalog: public
+    gj_artifacts: owner
+    gj_watch: owner
+    gj_watch_event: owner
+    gj_workflow: owner
+    gj_workflow_execution: owner
+    gj_config: admin
+    gj_security: admin
+    gj_runtime: admin
 ```
 
 Default root access depends on the operating mode:
@@ -363,7 +359,7 @@ itself read and written through GraphJin's own engine under the reserved
 activates only via a non-forgeable in-process marker, and role resolution
 rejects it from requests, JWTs, and headers.
 
-Source capabilities decide whether sensitive roots exist. Root access decides
+System and workflow feature capabilities decide whether sensitive roots exist. Root access decides
 who can use roots that exist. For example, disabling a runtime capability can
 make `gj_runtime` unavailable; setting `gj_runtime: admin` controls access when
 it is available.
@@ -483,8 +479,8 @@ identifiers. Prefer hashes, counts, classes, and short reason codes.
 ## Secure Source-Mode Example
 
 This is an `agentic`-mode configuration, where the full agentic surface is on
-and role-gated. In `prod` the GraphJin source and its roots would not mount at
-all; in `dev` every root is `public`.
+and role-gated. In `prod` the agentic surface and its built-in roots do not
+mount; in `dev` every enabled root is `public`.
 
 ```yaml
 mode: agentic
@@ -518,20 +514,17 @@ sources:
       admin_tables: [audit_logs]
       blocked_tables: [internal_events]
 
-  - name: graphjin
-    kind: graphjin
-    access:
-      roots:
-        gj_catalog: public
-        gj_code: authenticated
-        gj_artifacts: owner
-        gj_watch: owner
-        gj_watch_event: owner
-        gj_workflow: owner
-        gj_workflow_execution: owner
-        gj_config: admin
-        gj_security: admin
-        gj_runtime: admin
+system:
+  root_access:
+    gj_catalog: public
+    gj_artifacts: owner
+    gj_watch: owner
+    gj_watch_event: owner
+    gj_workflow: owner
+    gj_workflow_execution: owner
+    gj_config: admin
+    gj_security: admin
+    gj_runtime: admin
 ```
 
 This example starts with account-scoped reads, blocks writes/deletes by default,

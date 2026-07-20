@@ -54,10 +54,13 @@ database:
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("managed SQLite mode = %#o, want 0600", got)
 	}
-	if _, public := svc.conf.Core.Databases[managedArtifactDatabaseName]; public {
+	if svc.managedArtifactDB == "" {
+		t.Fatal("managed runtime database name was not allocated")
+	}
+	if _, public := svc.conf.Core.Databases[svc.managedArtifactDB]; public {
 		t.Fatal("managed store leaked into public database configuration")
 	}
-	if _, runtime := svc.runtimeCore.Databases[managedArtifactDatabaseName]; !runtime {
+	if _, runtime := svc.runtimeCore.Databases[svc.managedArtifactDB]; !runtime {
 		t.Fatal("managed store missing from runtime compiler graph")
 	}
 	managedDB, _, _, ok := svc.artifactDB()
@@ -93,7 +96,8 @@ database:
 		Input: map[string]interface{}{"name": "persistent", "kind": "query", "content": "query { orders { id status } }"},
 	})
 	if err != nil {
-		t.Fatalf("insert managed artifact: %v", err)
+		t.Fatalf("insert managed artifact: %v runtime_databases=%+v active_databases=%v metadata=%q artifact=%q",
+			err, svc.runtimeCore.Databases, svc.dbs, svc.metadataDB, svc.managedArtifactDB)
 	}
 	watch, err := newWatchControlPlane(svc).mutateRow(ctx, core.ManagedMutationRoot{
 		Table: watchesRootTable, Operation: "insert",

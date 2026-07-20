@@ -79,17 +79,15 @@ sources:
       admin_tables: [audit_logs]
       blocked_tables: [internal_events]
 
-  - name: graphjin
-    kind: graphjin
-    access:
-      roots:
-        gj_catalog: public
-        gj_artifacts: authenticated
-        gj_workflow: admin
-        gj_workflow_execution: account
-        gj_runtime: admin
-        gj_security: admin
-        gj_config: admin
+system:
+  root_access:
+    gj_catalog: public
+    gj_artifacts: authenticated
+    gj_workflow: admin
+    gj_workflow_execution: account
+    gj_runtime: admin
+    gj_security: admin
+    gj_config: admin
 ```
 
 GraphJin then generates the internal filters and presets. For account mode,
@@ -212,21 +210,18 @@ configured as the DB-backed artifact source.
 
 ## System Roots
 
-GraphJin system roots are controlled by the `graphjin` source:
+GraphJin system roots are built in and controlled by top-level `system` configuration:
 
 ```yaml
-sources:
-  - name: graphjin
-    kind: graphjin
-    access:
-      roots:
-        gj_catalog: public
-        gj_artifacts: authenticated
-        gj_workflow: admin
-        gj_workflow_execution: account
-        gj_runtime: admin
-        gj_security: admin
-        gj_config: admin
+system:
+  root_access:
+    gj_catalog: public
+    gj_artifacts: authenticated
+    gj_workflow: admin
+    gj_workflow_execution: account
+    gj_runtime: admin
+    gj_security: admin
+    gj_config: admin
 ```
 
 In dev mode, all GraphJin system roots default to `public` so the local console
@@ -318,10 +313,10 @@ mutation {
 }
 ```
 
-`source_patches` match one existing source by exact name and
+`source_patches` match one existing external source by exact name and
 preserve every unmentioned source field. Use them for source access defaults,
-table classifications, and `kind: graphjin` root policy (`roots_set` and
-`roots_remove`). Top-level `identity` and `artifacts` are public source-mode
+and table classifications. Use the merge-patchable top-level `system` and
+`workflows` fields for built-in feature policy. Top-level `identity` and `artifacts` are public source-mode
 config sections, but direct GraphQL mutation support for them is not part of
 V1; recipe rows mark those changes as `unsupported_apply` until explicit update
 support is added.

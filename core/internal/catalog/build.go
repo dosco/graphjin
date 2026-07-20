@@ -96,7 +96,7 @@ func addSources(out *Snapshot, opts BuildOptions) {
 			ID:       cardID + ":capabilities",
 			CardID:   cardID,
 			Section:  "source_capabilities",
-			Content:  "Source capabilities are the primary interface for enabling or blocking source, control-plane, and workflow surfaces.",
+			Content:  "Source capabilities enable or block this external source's surfaces. Built-in system and workflow surfaces use feature capabilities instead.",
 			DataJSON: mustJSON(details),
 		})
 		out.Nodes = append(out.Nodes, Node{ID: "node:" + cardID, Kind: "source", Name: name, Summary: summary, CardID: cardID})
@@ -383,7 +383,7 @@ func configRecipes() []configRecipe {
 		"mcp.allow_config_updates is disabled or gj_config.update is not enabled",
 		"caller cannot read gj_security, gj_runtime, or gj_config",
 		"gj_security reports high or critical findings that affect this change",
-		"target GraphJin source/root is read-only",
+		"target built-in GraphJin root is read-only",
 		"the recipe only has unsupported_apply for the requested change",
 	}
 	commonForbidden := []string{
@@ -502,19 +502,19 @@ func configRecipes() []configRecipe {
 				"graphjin root access admin",
 			},
 			Preflight: commonPreflight,
-			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "graphjin", access: { roots_set: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }] }) { valid scope reload_mode reload_strategy preview_id expires_at change_summary_json findings_json errors_json } }`,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", system: { root_access: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }) { valid scope reload_mode reload_strategy preview_id expires_at change_summary_json findings_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
-				"requested root is not enabled by source capabilities",
+				"requested root is not enabled by its system feature capability",
 				"caller tries to expose gj_security, gj_runtime, or gj_config to anonymous users",
 			}, commonStops...),
 			ForbiddenPatterns: commonForbidden,
 			Examples: []string{
 				`query_catalog(search: "graphjin root access gj_security gj_config admin")`,
 				`gj_catalog: discovery spine; gj_artifacts: owner-scoped saved queries/fragments/workflows; gj_watch + gj_watch_event: watch definitions and their fired-event inbox; gj_workflow + gj_workflow_execution: workflow definitions and execution; gj_config: redacted config and guarded updates; gj_security: security posture; gj_runtime: runtime health and events`,
-				`roots: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" }`,
+				`system: { root_access: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } }`,
 				`query { gj_config(id: "current") { catalog_revision sources } }`,
-				`mutation { gj_config(id: "current", update: { mode: "apply", preview_id: "<preview_id>", expected_catalog_revision: "<catalog_revision>", source_patches: [{ name: "graphjin", access: { roots_set: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }] }) { applied catalog_revision errors_json } }`,
+				`mutation { gj_config(id: "current", update: { mode: "apply", preview_id: "<preview_id>", expected_catalog_revision: "<catalog_revision>", system: { root_access: { gj_catalog: "public", gj_security: "admin", gj_runtime: "admin", gj_config: "admin" } } }) { applied catalog_revision errors_json } }`,
 			},
 		},
 		{
@@ -893,13 +893,16 @@ func systemGraphQLCapabilities(enabled map[string]struct{}) []Capability {
 						"blocked_tables_add",
 						"blocked_tables_remove",
 					},
-					"graphjin_root_ops": []string{"roots_set", "roots_remove"},
 				},
-				"errors": "Invalid updates return normal GraphQL errors. Source mode rejects apply without preview_id, stale expected_catalog_revision, payload mismatch, public write/delete, non-GraphJin roots, and legacy roles[].tables. Config updates disabled returns query_catalog(search: \"enable config updates gj_config.update\").",
+				"feature_patches": map[string]any{
+					"system":    "merge-patches capabilities and root_access; null removes an override",
+					"workflows": "merge-patches path and execute/read/write capabilities; null removes an override",
+				},
+				"errors": "Invalid updates return normal GraphQL errors. Source mode rejects apply without preview_id, stale expected_catalog_revision, payload mismatch, public write/delete, unknown system roots, and legacy roles[].tables. Config updates disabled returns query_catalog(search: \"enable config updates gj_config.update\").",
 			}),
 			OutputSchemaJSON: mustJSON(map[string]any{
 				"root":   "gj_config",
-				"fields": []string{"id", "sources_used", "config_path", "active_database", "sources", "databases", "relationships", "tables", "roles", "blocklist", "functions", "resolvers", "mcp", "serv", "config_json", "redacted_paths", "updated_at", "catalog_revision", "valid", "applied", "preview_id", "expires_at", "change_summary_json", "findings_json", "errors_json", "scope", "reload_mode", "reload_strategy"},
+				"fields": []string{"id", "sources_used", "config_path", "active_database", "sources", "system", "workflows", "databases", "relationships", "tables", "roles", "blocklist", "functions", "resolvers", "mcp", "serv", "config_json", "redacted_paths", "updated_at", "catalog_revision", "valid", "applied", "preview_id", "expires_at", "change_summary_json", "findings_json", "errors_json", "scope", "reload_mode", "reload_strategy"},
 			}),
 			SafetyJSON: mustJSON(map[string]any{"graphql_mutation": `gj_config(id: "current", update: ...)`, "requires_config": "mcp.allow_config_updates", "serialized_by": "service config mutex", "source_mode": "preview/apply required", "preview_ttl_minutes": 10, "preview_store": "bounded memory, hash only"}),
 		})

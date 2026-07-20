@@ -136,6 +136,9 @@ func (ms *mcpServer) registerCatalogTools() {
 		),
 		mcp.WithOutputSchema[GraphQLHelpResult](),
 	), ms.handleGraphQLHelp)
+	if !ms.rootVisibleForContext(ms.ctx, "gj_catalog") {
+		return
+	}
 
 	ms.srv.AddTool(mcp.NewTool(
 		"query_catalog",
@@ -441,13 +444,18 @@ func (ms *mcpServer) handleGraphQLHelp(ctx context.Context, req mcp.CallToolRequ
 		return mcp.NewToolResultError(fmt.Sprintf("unsupported graphql_help topic %q; valid values: %s", helpFor, strings.Join(graphQLHelpTopics(), ", "))), nil
 	}
 	q := spec.catalogQuery()
-	query, err := buildCatalogGraphQLQuery(q)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	rows, err := ms.queryCatalogRows(ctx, q)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+	query := ""
+	var rows []CatalogItem
+	if ms.rootVisibleForContext(ctx, "gj_catalog") {
+		var err error
+		query, err = buildCatalogGraphQLQuery(q)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		rows, err = ms.queryCatalogRows(ctx, q)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 	}
 	result := GraphQLHelpResult{
 		For:                   spec.For,
@@ -811,7 +819,7 @@ func (ms *mcpServer) catalogGraphQLAvailable() bool {
 		ms.service != nil &&
 		ms.service.gj != nil &&
 		ms.service.conf != nil &&
-		(ms.service.conf.catalogToolsEnabled() || ms.service.conf.graphjinControlPlaneEnabled())
+		(ms.service.conf.catalogToolsEnabled() || ms.service.conf.systemControlPlaneEnabled())
 }
 
 func (ms *mcpServer) queryCatalogSnapshot(ctx context.Context, q catalogGraphQLQuery) ([]CatalogItem, error) {
@@ -962,7 +970,7 @@ func (ms *mcpServer) catalogRevisionGraphQL(ctx context.Context) string {
 			return snap.Revision
 		}
 	}
-	if ms == nil || ms.service == nil || ms.service.gj == nil || !ms.service.conf.graphjinControlPlaneEnabled() {
+	if ms == nil || ms.service == nil || ms.service.gj == nil || !ms.service.conf.systemControlPlaneEnabled() {
 		return ""
 	}
 	ctx = ms.service.applyIdentityContext(ms.effectiveContext(ctx))

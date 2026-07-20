@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/dosco/graphjin/core/v3/sourcecap"
+	"github.com/dosco/graphjin/core/v3/featurecap"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -479,14 +479,7 @@ func TestRegisterTools_SourcesUsedRawGraphQLCapabilityControlsTool(t *testing.T)
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ms := mockMcpServerWithConfig(tc.mcp)
-			for i := range ms.service.conf.Core.Sources {
-				source := &ms.service.conf.Core.Sources[i]
-				if source.CanonicalKind() == sourcecap.KindGraphJin {
-					source.Capabilities = map[string]bool{
-						sourcecap.KeyRawGraphQLQuery: tc.capability,
-					}
-				}
-			}
+			ms.service.conf.Core.System.Capabilities[featurecap.KeyRawGraphQLQuery] = tc.capability
 			applySourceCapabilityMCPDefaults(ms.service.conf)
 			if ms.service.conf.MCP.AllowRawQueries != tc.wantFlag {
 				t.Fatalf("AllowRawQueries = %v, want %v", ms.service.conf.MCP.AllowRawQueries, tc.wantFlag)
@@ -507,7 +500,7 @@ func TestRegisterTools_SourcesUsedRawGraphQLCapabilityControlsTool(t *testing.T)
 	}
 }
 
-func TestRegisterTools_CatalogToolsDoNotRequireGraphJinSource(t *testing.T) {
+func TestRegisterTools_CatalogToolsAreBuiltIn(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.service.conf.Core.Sources = []core.SourceConfig{{Name: "app", Kind: "database"}}
 	ms.srv = server.NewMCPServer("test", "0.0.0")
@@ -515,17 +508,35 @@ func TestRegisterTools_CatalogToolsDoNotRequireGraphJinSource(t *testing.T) {
 
 	tools := ms.srv.ListTools()
 	if listed := strings.Join(mcpToolList(ms.service.conf), ","); listed != "graphql_help,query_catalog,execute_saved_query,validate_where_clause" {
-		t.Fatalf("unexpected tool list without graphjin source: %s", listed)
+		t.Fatalf("unexpected built-in catalog tool list: %s", listed)
 	}
 	if _, exists := tools["query_catalog"]; !exists {
-		t.Fatal("query_catalog should register without the graphjin catalog source")
+		t.Fatal("query_catalog should register without a fake catalog source")
 	}
 	if _, exists := tools["graphql_help"]; !exists {
-		t.Fatal("graphql_help should register without the graphjin catalog source")
+		t.Fatal("graphql_help should register without a fake catalog source")
 	}
 	for _, name := range []string{"execute_saved_query", "validate_where_clause"} {
 		if _, exists := tools[name]; !exists {
-			t.Fatalf("%s should still register without the graphjin catalog source", name)
+			t.Fatalf("%s should still register with the built-in catalog", name)
+		}
+	}
+}
+
+func TestRegisterTools_CatalogCapabilityDisabledKeepsBootstrapAndValidation(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Core.Mode = "dev"
+	ms.service.conf.Core.System.Capabilities[featurecap.KeyCatalogRead] = false
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerTools()
+
+	tools := ms.srv.ListTools()
+	if _, exists := tools["query_catalog"]; exists {
+		t.Fatalf("query_catalog must not register when catalog.read is disabled: %v", toolNamesFromServer(tools))
+	}
+	for _, name := range []string{"graphql_help", "get_current_config", "validate_config"} {
+		if _, exists := tools[name]; !exists {
+			t.Fatalf("%s must remain available when catalog.read is disabled: %v", name, toolNamesFromServer(tools))
 		}
 	}
 }
@@ -735,15 +746,14 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 	if !stringSliceContains(userProfile.AvailableTools, "query_catalog") || !stringSliceContains(userProfile.AvailableTools, "execute_graphql") {
 		t.Fatalf("expected user-visible catalog/raw tools, got %+v", userProfile.AvailableTools)
 	}
-	// Agentic matrix: mutable user roots default to owner access, so an
-	// authenticated (non-anon) user reaches all of them.
-	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution"} {
+	// Agentic mode exposes catalog, owner-scoped state, and execution by default.
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow_execution"} {
 		if !rootProfilesContain(userProfile.AvailableRoots, root) {
 			t.Fatalf("expected %s available to user, got %+v", root, userProfile.AvailableRoots)
 		}
 	}
-	// Control-plane roots (gj_security/gj_runtime/gj_config) stay admin-only.
-	for _, root := range []string{"gj_security", "gj_runtime", "gj_config"} {
+	// Detailed workflow/config/security features are disabled; runtime is admin-only.
+	for _, root := range []string{"gj_workflow", "gj_security", "gj_runtime", "gj_config"} {
 		if !rootProfilesContain(userProfile.BlockedRoots, root) {
 			t.Fatalf("expected %s blocked for user, got %+v", root, userProfile.BlockedRoots)
 		}
@@ -759,9 +769,14 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 	}
 
 	adminProfile := ms.callerCapabilityProfile(sourceModeAdminTestContext(), false)
-	for _, root := range []string{"gj_security", "gj_runtime", "gj_config", "gj_workflow"} {
+	for _, root := range []string{"gj_runtime"} {
 		if !rootProfilesContain(adminProfile.AvailableRoots, root) {
 			t.Fatalf("expected %s available to admin, got %+v", root, adminProfile.AvailableRoots)
+		}
+	}
+	for _, root := range []string{"gj_security", "gj_config", "gj_workflow"} {
+		if !rootProfilesContain(adminProfile.BlockedRoots, root) {
+			t.Fatalf("expected disabled %s to remain unavailable to admin, got %+v", root, adminProfile.BlockedRoots)
 		}
 	}
 
@@ -967,7 +982,7 @@ func TestRegisterResources_LegacyDiscoveryDoesNotExposeResources(t *testing.T) {
 }
 
 func TestMCPServerInstructions_CatalogDefaultDoesNotRecommendLegacyTools(t *testing.T) {
-	text := mcpServerInstructions(&Config{Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}, {Name: "workflows", Kind: "workflow"}}}})
+	text := mcpServerInstructions(&Config{Core: core.Config{Mode: "dev", Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}}})
 	for _, required := range []string{
 		`graphql_help(for: "discovery")`,
 		`graphql_help(for: "mcp_tools")`,
@@ -1065,7 +1080,7 @@ func TestSourcesUsedBootstrapToolDescriptions(t *testing.T) {
 
 func TestMCPServerInstructions_SourcesUsedIgnoresLegacyDiscoveryPrompt(t *testing.T) {
 	text := mcpServerInstructions(&Config{
-		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Core: core.Config{Mode: "dev", Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 		Serv: Serv{MCP: MCPConfig{LegacyDiscovery: true}},
 	})
 	for _, required := range []string{
@@ -1155,10 +1170,7 @@ func TestMCPToolListMatchesRegisteredTools(t *testing.T) {
 				mode = "prod"
 			}
 			conf := &Config{
-				Core: core.Config{Mode: mode, Sources: []core.SourceConfig{
-					{Name: "graphjin", Kind: "graphjin"},
-					{Name: "workflows", Kind: "workflow"},
-				}},
+				Core: core.Config{Mode: mode, Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 				Serv: Serv{Production: tc.production, MCP: tc.cfg},
 			}
 			expected := mcpToolList(conf)

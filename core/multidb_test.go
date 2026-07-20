@@ -1181,6 +1181,44 @@ func TestNormalizeDatabases(t *testing.T) {
 		}
 	})
 
+	t.Run("runtime database cannot displace application source", func(t *testing.T) {
+		conf := Config{
+			Sources: []SourceConfig{{Name: "app", Kind: "database", Type: "sqlite", Default: true}},
+			Databases: map[string]DatabaseConfig{
+				"app":                  {Type: "sqlite"},
+				"__gj_internal_system": {Type: "nanodb", ReadOnly: true},
+			},
+			Tables: []Table{{Name: "users"}},
+		}
+		conf.NormalizeDatabases()
+
+		if conf.DBType != "sqlite" {
+			t.Fatalf("DBType = %q, want application source type sqlite", conf.DBType)
+		}
+		if conf.Tables[0].Database != "app" {
+			t.Fatalf("users.Database = %q, want app", conf.Tables[0].Database)
+		}
+	})
+
+	t.Run("runtime database cannot displace legacy default database", func(t *testing.T) {
+		conf := Config{
+			DBType: "mongodb",
+			Databases: map[string]DatabaseConfig{
+				DefaultDBName:          {Type: "mongodb"},
+				"__gj_internal_system": {Type: "nanodb", ReadOnly: true},
+			},
+			Tables: []Table{{Name: "products"}},
+		}
+		conf.NormalizeDatabases()
+
+		if conf.DBType != "mongodb" {
+			t.Fatalf("DBType = %q, want legacy application type mongodb", conf.DBType)
+		}
+		if conf.Tables[0].Database != DefaultDBName {
+			t.Fatalf("products.Database = %q, want %q", conf.Tables[0].Database, DefaultDBName)
+		}
+	})
+
 	t.Run("explicit database on table preserved", func(t *testing.T) {
 		conf := Config{
 			DBType: "postgres",

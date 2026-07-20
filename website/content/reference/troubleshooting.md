@@ -27,7 +27,7 @@ For MCP, search or list saved queries first, inspect the variable contract, then
 
 ## An agent cannot find a field
 
-Use `gj_catalog(search: "...")` first. If the field exists but is hidden, inspect `gj_security` for policy, source capabilities, read-only state, and high-risk findings.
+Use `gj_catalog(search: "...")` first. If the field exists but is hidden, inspect `gj_security` for policy, source or feature capabilities, read-only state, and high-risk findings.
 
 ```graphql
 query {

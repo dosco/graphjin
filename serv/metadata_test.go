@@ -32,8 +32,8 @@ func LookupUser() {
 			Sources: []core.SourceConfig{
 				{Name: "app", Kind: "database", Type: "sqlite", Path: appPath, Default: true},
 				{Name: "code", Kind: "code", Path: source},
-				{Name: defaultMetadataDBName, Kind: "graphjin"},
 			},
+			Workflows: core.WorkflowsConfig{Capabilities: map[string]bool{"read": true}},
 		},
 		Serv: Serv{
 			ConfigPath: filepath.Join(t.TempDir(), "config"),
@@ -47,15 +47,15 @@ func LookupUser() {
 	}
 	defer closeTestService(s)
 
-	if s.metadataDB != defaultMetadataDBName {
-		t.Fatalf("metadata database = %q, want %q", s.metadataDB, defaultMetadataDBName)
+	if s.metadataDB == "" || s.metadataDB == "graphjin" {
+		t.Fatalf("metadata database = %q, want collision-free runtime-only name", s.metadataDB)
 	}
-	runtime := s.runtimeCore.Databases[defaultMetadataDBName]
+	runtime := s.runtimeCore.Databases[s.metadataDB]
 	if runtime.Type != "nanodb" || !runtime.ReadOnly {
 		t.Fatalf("metadata runtime = %+v, want read-only nanodb", runtime)
 	}
-	assertGraphJinTable(t, s, defaultMetadataDBName, "gj_catalog")
-	assertGraphJinTable(t, s, defaultMetadataDBName, "gj_workflow")
+	assertGraphJinTable(t, s, s.metadataDB, "gj_catalog")
+	assertGraphJinTable(t, s, s.metadataDB, "gj_workflow")
 	assertServiceCount(t, s, "code", `SELECT count(*) FROM gj_code WHERE kind = 'db_reference' AND db_object_id = 'app:main.users.email'`, 1)
 	res, err := s.gj.GraphQL(sourceModeUserTestContext(), `query {
 		gj_catalog(where: { kind: { eq: "column" }, database_name: { eq: "app" }, table_name: { eq: "users" }, column_name: { eq: "email" } }, limit: 1) {
@@ -154,7 +154,7 @@ func LookupUser() {
 	}
 	assertServiceCount(t, s, "code", `SELECT count(*) FROM code_db_refs WHERE column_key = 'app:main.users.email' AND resolved = 1`, 1)
 
-	if !hasRuntimeRelationship(s, defaultMetadataDBName, "gj_catalog", "code_refs_id", "code:gj_code.db_object_id") {
+	if !hasRuntimeRelationship(s, s.metadataDB, "gj_catalog", "code_refs_id", "code:gj_code.db_object_id") {
 		t.Fatalf("missing automatic gj_catalog -> gj_code relationship")
 	}
 }
@@ -278,11 +278,10 @@ func TestMetadataCatalogMirrorRefreshesWorkflowRowsAfterMutation(t *testing.T) {
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
 				{Name: "app", Kind: "database", Type: "sqlite", Path: appPath, Default: true},
-				{Name: defaultMetadataDBName, Kind: "graphjin"},
-				// Agentic defaults workflow.write off; grant it explicitly so the
-				// mutation path exercises catalog-mirror refresh.
-				{Name: "workflows", Kind: "workflow", Capabilities: map[string]bool{"workflow.write": true}},
 			},
+			// Agentic defaults workflow.write off; grant it explicitly so the
+			// mutation path exercises catalog-mirror refresh.
+			Workflows: core.WorkflowsConfig{Capabilities: map[string]bool{"read": true, "write": true}},
 		},
 		Serv: Serv{
 			ConfigPath: filepath.Join(t.TempDir(), "config"),
@@ -412,7 +411,7 @@ func TestLegacyMetadataConfigRejected(t *testing.T) {
 		closeTestService(s)
 		t.Fatal("expected legacy metadata config to be rejected")
 	}
-	if !strings.Contains(err.Error(), "kind: graphjin") {
+	if !strings.Contains(err.Error(), "system.capabilities.catalog.read") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -442,19 +441,19 @@ func TestMetadataGraphDisabledInProductionByDefault(t *testing.T) {
 	if s.metadataDB != "" {
 		t.Fatalf("metadata database = %q, want disabled", s.metadataDB)
 	}
-	if _, ok := s.runtimeCore.Databases[defaultMetadataDBName]; ok {
+	if _, ok := s.runtimeCore.Databases["graphjin"]; ok {
 		t.Fatalf("metadata runtime database should not be created in production by default")
 	}
 }
 
-func TestMetadataDatabaseNameCollisionFailsStartup(t *testing.T) {
+func TestApplicationGraphJinSourceNameDoesNotCollideWithSystemDatabase(t *testing.T) {
 	appPath := createMetadataAppDB(t)
 	conf := &Config{
 		Core: Core{
+			Mode:             "dev",
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
-				{Name: defaultMetadataDBName, Kind: "database", Type: "sqlite", Path: appPath, Default: true},
-				{Name: defaultMetadataDBName, Kind: "graphjin"},
+				{Name: "graphjin", Kind: "database", Type: "sqlite", Path: appPath, Default: true},
 			},
 		},
 		Serv: Serv{
@@ -463,9 +462,13 @@ func TestMetadataDatabaseNameCollisionFailsStartup(t *testing.T) {
 		},
 	}
 
-	_, err := newGraphJinService(conf, nil)
-	if err == nil || !strings.Contains(err.Error(), `duplicate source name "graphjin"`) {
-		t.Fatalf("startup error = %v, want duplicate source collision", err)
+	s, err := newGraphJinService(conf, nil)
+	if err != nil {
+		t.Fatalf("application source named graphjin should start: %v", err)
+	}
+	defer closeTestService(s)
+	if s.metadataDB == "" || strings.EqualFold(s.metadataDB, "graphjin") {
+		t.Fatalf("internal metadata database collided with application source: %q", s.metadataDB)
 	}
 }
 

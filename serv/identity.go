@@ -214,10 +214,10 @@ func sourceModeNeedsNamespace(conf *core.Config) bool {
 		if accessNeedsNamespace(access.Read) || accessNeedsNamespace(access.Write) || accessNeedsNamespace(access.Delete) {
 			return true
 		}
-		for _, mode := range access.Roots {
-			if accessNeedsNamespace(mode) {
-				return true
-			}
+	}
+	for _, mode := range conf.EffectiveSystemRootAccess() {
+		if accessNeedsNamespace(mode) {
+			return true
 		}
 	}
 	return false
@@ -304,16 +304,7 @@ func (s *graphjinService) sourceModeRootAccessAllowed(root, role string) bool {
 	if s == nil || s.conf == nil {
 		return true
 	}
-	source, ok := s.conf.Core.GraphJinSource()
-	if !ok {
-		return true
-	}
-	access := s.conf.Core.EffectiveSourceAccess(source)
-	mode := access.Roots[strings.ToLower(strings.TrimSpace(root))]
-	if strings.TrimSpace(mode) == "" {
-		return true
-	}
-	return systemRootAccessAllowed(mode, role, s.conf.Core.EffectiveIdentityConfig().AdminRoles, effectiveMode(s.conf), s.conf.DefaultBlock)
+	return systemRootAllowed(s.conf, root, systemActionRead, role)
 }
 
 func sourceModeRootsInQuery(query string) []string {

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/serv/v3/internal/util"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 )
@@ -54,8 +57,6 @@ type Config struct {
 	managedArtifactStore bool
 	explicitSettings     map[string]bool
 }
-
-const managedArtifactDatabaseName = "__graphjin_artifacts"
 
 // Configuration for admin service
 // type Admin struct {
@@ -741,7 +742,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	if err := normalizeCatalogAutoBools(viper); err != nil {
 		return nil, err
 	}
-	if err := viper.Unmarshal(&config); err != nil {
+	if err := viper.Unmarshal(&config, capabilityMapDecodeOption()); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 	if err := normalizeConfigMode(config); err != nil {
@@ -789,7 +790,7 @@ func NewConfig(config, format string) (*Config, error) {
 	if err := normalizeCatalogAutoBools(viper); err != nil {
 		return nil, err
 	}
-	if err := viper.Unmarshal(&c); err != nil {
+	if err := viper.Unmarshal(&c, capabilityMapDecodeOption()); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 	if err := normalizeConfigMode(c); err != nil {
@@ -804,6 +805,74 @@ func NewConfig(config, format string) (*Config, error) {
 	c.webUIExplicit = webUIExplicit
 
 	return c, nil
+}
+
+var boolMapType = reflect.TypeOf(map[string]bool{})
+
+// capabilityMapDecodeOption preserves dotted capability names such as
+// catalog.read. Viper treats dots as path separators in ordinary maps, so the
+// decoded value can arrive as {catalog: {read: true}} even though capability
+// keys are intentionally flat.
+func capabilityMapDecodeOption() viper.DecoderConfigOption {
+	return func(config *mapstructure.DecoderConfig) {
+		config.DecodeHook = mapstructure.ComposeDecodeHookFunc(
+			config.DecodeHook,
+			mapstructure.DecodeHookFuncType(flattenBoolMapDecodeHook),
+		)
+	}
+}
+
+func flattenBoolMapDecodeHook(from, to reflect.Type, data any) (any, error) {
+	if from == nil || to != boolMapType || from.Kind() != reflect.Map {
+		return data, nil
+	}
+	out := make(map[string]bool)
+	if err := flattenBoolMapValue("", reflect.ValueOf(data), out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func flattenBoolMapValue(prefix string, value reflect.Value, out map[string]bool) error {
+	for value.IsValid() && (value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer) {
+		if value.IsNil() {
+			return fmt.Errorf("capability %q must be true or false", prefix)
+		}
+		value = value.Elem()
+	}
+	if !value.IsValid() {
+		return fmt.Errorf("capability %q must be true or false", prefix)
+	}
+	switch value.Kind() {
+	case reflect.Map:
+		iter := value.MapRange()
+		for iter.Next() {
+			key := strings.TrimSpace(fmt.Sprint(iter.Key().Interface()))
+			if key == "" {
+				return fmt.Errorf("capability key cannot be empty")
+			}
+			path := key
+			if prefix != "" {
+				path = prefix + "." + key
+			}
+			if err := flattenBoolMapValue(path, iter.Value(), out); err != nil {
+				return err
+			}
+		}
+		return nil
+	case reflect.Bool:
+		out[prefix] = value.Bool()
+		return nil
+	case reflect.String:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value.String()))
+		if err != nil {
+			return fmt.Errorf("capability %q must be true or false", prefix)
+		}
+		out[prefix] = parsed
+		return nil
+	default:
+		return fmt.Errorf("capability %q must be true or false", prefix)
+	}
 }
 
 var runtimeDefaultKeys = []string{
@@ -863,7 +932,7 @@ func applyRuntimeModeDefaults(c *Config) {
 	if !artifactsEnabledExplicit {
 		c.Core.Artifacts.Enabled = true
 		if !artifactsSourceExplicit {
-			c.Core.Artifacts.Source = managedArtifactDatabaseName
+			c.Core.Artifacts.Source = ""
 			c.managedArtifactStore = true
 		}
 	}

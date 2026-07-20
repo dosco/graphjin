@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/featurecap"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
 	"github.com/dosco/graphjin/serv/v3/internal/util"
 	"github.com/spf13/viper"
@@ -278,7 +279,7 @@ func readSecurityConfigFile(file, configPath string, fs core.FS) (*Config, strin
 	if err := normalizeCatalogAutoBools(v); err != nil {
 		return conf, inherited, err
 	}
-	if err := v.Unmarshal(conf); err != nil {
+	if err := v.Unmarshal(conf, capabilityMapDecodeOption()); err != nil {
 		return conf, inherited, fmt.Errorf("failed to decode config, %v", err)
 	}
 	conf.ConfigPath = configPath
@@ -456,8 +457,8 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 	production := conf != nil && (conf.Serv.Production || conf.Core.Production)
 	prodSecurity := production && conf != nil && !conf.Core.DisableProdSecurity
 	mcpEnabled := conf != nil && !conf.mcpDisabled()
-	graphjinControlPlane := conf != nil && conf.graphjinControlPlaneEnabled()
-	workflowsEnabled := conf != nil && conf.workflowsSourceEnabled()
+	systemControlPlane := conf != nil && conf.systemControlPlaneEnabled()
+	workflowsEnabled := conf != nil && conf.workflowsEnabled()
 	catalogEnabled := conf != nil && conf.catalogToolsEnabled()
 	runtimeRegistered := conf != nil && conf.runtimeRootRegistered()
 	configReadOnly := controlPlaneTableReadOnly(conf, "", "gj_config")
@@ -476,7 +477,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			false, "medium",
 			"The app data plane is expected to stay available in all modes while production protections are enforced separately.",
 			"Use table role filters/blocklists/read_only settings for app data restrictions."),
-		newSecurityPolicy(mode, "core.dynamic_graphql", "core", "graphjin", "graphjin", "dynamic_graphql", "query",
+		newSecurityPolicy(mode, "core.dynamic_graphql", "core", "system", featurecap.KindSystem, "dynamic_graphql", "query",
 			"Dynamic GraphQL queries",
 			"Controls whether raw client GraphQL can compile outside the allow-list.",
 			defaultAllow(mode, true, false, false), !prodSecurity,
@@ -484,7 +485,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			configBoolExplicit(conf, "disable_production_security"), "critical",
 			"Production and agentic deployments should enforce the allow-list for app data.",
 			"Enable production mode and keep disable_production_security false."),
-		newSecurityPolicy(mode, "core.anonymous_access", "core", "graphjin", "graphjin", "anonymous_access", "query",
+		newSecurityPolicy(mode, "core.anonymous_access", "core", "system", featurecap.KindSystem, "anonymous_access", "query",
 			"Anonymous app access",
 			"Controls whether unauthenticated requests can use the anonymous role by default.",
 			defaultAllow(mode, true, false, false), conf != nil && !conf.DefaultBlock,
@@ -492,7 +493,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			configBoolExplicit(conf, "default_block"), "high",
 			"Prod and agentic deployments are intended for authenticated users; anonymous access broadens every exposed surface.",
 			"Configure authentication and keep default_block true unless anonymous access is a deliberate public API requirement."),
-		newSecurityPolicy(mode, "core.introspection", "core", "graphjin", "graphjin", "introspection", "read",
+		newSecurityPolicy(mode, "core.introspection", "core", "system", featurecap.KindSystem, "introspection", "read",
 			"GraphQL introspection export",
 			"Controls whether GraphJin writes an introspection JSON file at startup.",
 			defaultAllow(mode, true, false, false), conf != nil && !production && conf.Core.EnableIntrospection,
@@ -500,15 +501,15 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			configBoolExplicit(conf, "enable_introspection"), "medium",
 			"Introspection metadata can reveal schema shape and should stay off outside development.",
 			"Keep enable_introspection disabled in prod and agentic modes."),
-		newSecurityPolicy(mode, "serve.catalog_read", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "catalog", "read",
+		newSecurityPolicy(mode, "serve.catalog_read", "serve", featurecap.KindSystem, featurecap.KindSystem, "catalog", "read",
 			"Catalog read access",
 			"Controls whether normal authenticated users can read gj_catalog for schema and workflow discovery.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyCatalogRead), securitySystemReadAllowed(conf, "gj_catalog", mode, "user", catalogEnabled),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeyCatalogRead, "roles[user].tables.gj_catalog.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_catalog", sourcecap.KindGraphJin, sourcecap.KeyCatalogRead),
-			securitySystemReadExplicit(conf, "user", "gj_catalog", sourcecap.KindGraphJin, sourcecap.KeyCatalogRead), "medium",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyCatalogRead), securitySystemReadAllowed(conf, "gj_catalog", mode, "user", catalogEnabled),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeyCatalogRead, "roles[user].tables.gj_catalog.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_catalog", featurecap.KindSystem, featurecap.KeyCatalogRead),
+			securitySystemReadExplicit(conf, "user", "gj_catalog", featurecap.KindSystem, featurecap.KeyCatalogRead), "medium",
 			"Catalog discovery is the public, read-only GraphJin discovery surface by default.",
 			"Restrict gj_catalog only when schema and capability discovery must not be anonymous."),
-		newSecurityPolicy(mode, "serve.catalog_read_anon", "serve", "graphjin", "graphjin", "catalog", "read",
+		newSecurityPolicy(mode, "serve.catalog_read_anon", "serve", "system", featurecap.KindSystem, "catalog", "read",
 			"Anonymous catalog read access",
 			"Controls whether unauthenticated users can read gj_catalog.",
 			true, securitySystemReadAllowed(conf, "gj_catalog", mode, "anon", catalogEnabled),
@@ -516,31 +517,31 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			securityRoleTableExplicit(conf, "anon", "gj_catalog"), "high",
 			"Anonymous gj_catalog access exposes bounded schema, capability, and workflow-discovery metadata.",
 			"Leave gj_catalog public for agent discovery, or explicitly set the root to authenticated/admin if discovery metadata is sensitive."),
-		newSecurityPolicy(mode, "serve.security_read", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "security_audit", "read",
+		newSecurityPolicy(mode, "serve.security_read", "serve", featurecap.KindSystem, featurecap.KindSystem, "security_audit", "read",
 			"Security audit read access",
 			"Controls whether normal authenticated users can read detailed gj_security rows.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeySecurityRead), securitySystemReadAllowed(conf, "gj_security", mode, "user", catalogEnabled || graphjinControlPlane || workflowsEnabled),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeySecurityRead, "roles[user].tables.gj_security.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_security", sourcecap.KindGraphJin, sourcecap.KeySecurityRead),
-			securitySystemReadExplicit(conf, "user", "gj_security", sourcecap.KindGraphJin, sourcecap.KeySecurityRead), "high",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeySecurityRead), securitySystemReadAllowed(conf, "gj_security", mode, "user", catalogEnabled || systemControlPlane || workflowsEnabled),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeySecurityRead, "roles[user].tables.gj_security.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_security", featurecap.KindSystem, featurecap.KeySecurityRead),
+			securitySystemReadExplicit(conf, "user", "gj_security", featurecap.KindSystem, featurecap.KeySecurityRead), "high",
 			"Detailed findings expose audit evidence, config posture, and privileged recommendations.",
-			"Grant gj_security read only through an explicit authenticated role or source capability; normal agentic users should discover safe actions through gj_catalog."),
-		newSecurityPolicy(mode, "serve.config_read", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "config", "read",
+			"Grant gj_security read only through an explicit authenticated role or system feature capability; normal agentic users should discover safe actions through gj_catalog."),
+		newSecurityPolicy(mode, "serve.config_read", "serve", featurecap.KindSystem, featurecap.KindSystem, "config", "read",
 			"Config read access",
 			"Controls whether normal authenticated users can read gj_config.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyConfigRead), securitySystemReadAllowed(conf, "gj_config", mode, "user", graphjinControlPlane),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeyConfigRead, "roles[user].tables.gj_config.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_config", sourcecap.KindGraphJin, sourcecap.KeyConfigRead),
-			securitySystemReadExplicit(conf, "user", "gj_config", sourcecap.KindGraphJin, sourcecap.KeyConfigRead), "critical",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyConfigRead), securitySystemReadAllowed(conf, "gj_config", mode, "user", systemControlPlane),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeyConfigRead, "roles[user].tables.gj_config.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_config", featurecap.KindSystem, featurecap.KeyConfigRead),
+			securitySystemReadExplicit(conf, "user", "gj_config", featurecap.KindSystem, featurecap.KeyConfigRead), "critical",
 			"Configuration rows can reveal database names, role rules, enabled tools, and redacted secret locations.",
-			"Grant gj_config read only through an explicit authenticated role or source capability."),
-		newSecurityPolicy(mode, "serve.runtime_read", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "runtime", "read",
+			"Grant gj_config read only through an explicit authenticated role or system feature capability."),
+		newSecurityPolicy(mode, "serve.runtime_read", "serve", featurecap.KindSystem, featurecap.KindSystem, "runtime", "read",
 			"Runtime status read access",
 			"Controls whether normal authenticated users can read compact gj_runtime status and recent redacted events.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead), securitySystemReadAllowed(conf, "gj_runtime", mode, "user", runtimeRegistered),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead, "roles[user].tables.gj_runtime.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_runtime", sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead),
-			securitySystemReadExplicit(conf, "user", "gj_runtime", sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead), "medium",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyRuntimeRead), securitySystemReadAllowed(conf, "gj_runtime", mode, "user", runtimeRegistered),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeyRuntimeRead, "roles[user].tables.gj_runtime.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_runtime", featurecap.KindSystem, featurecap.KeyRuntimeRead),
+			securitySystemReadExplicit(conf, "user", "gj_runtime", featurecap.KindSystem, featurecap.KeyRuntimeRead), "medium",
 			"gj_runtime is decision support for agentic clients; it exposes bounded operational summaries, not audit history.",
 			"Keep gj_runtime open in dev for local inspection; restrict it to authenticated/admin callers outside development."),
-		newSecurityPolicy(mode, "serve.runtime_read_anon", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "runtime", "read",
+		newSecurityPolicy(mode, "serve.runtime_read_anon", "serve", featurecap.KindSystem, featurecap.KindSystem, "runtime", "read",
 			"Anonymous runtime status read access",
 			"Controls whether unauthenticated users can read gj_runtime.",
 			mode == modeDev, securitySystemReadAllowed(conf, "gj_runtime", mode, "anon", runtimeRegistered),
@@ -548,15 +549,15 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			securityRoleTableExplicit(conf, "anon", "gj_runtime"), "high",
 			"Runtime state can reveal degraded infrastructure components.",
 			"Anonymous gj_runtime is acceptable for local dev; keep it blocked in prod and agentic deployments."),
-		newSecurityPolicy(mode, "serve.workflow_read", "serve", sourcecap.KindWorkflow, sourcecap.KindWorkflow, "workflow", "read",
+		newSecurityPolicy(mode, "serve.workflow_read", "serve", featurecap.KindWorkflows, featurecap.KindWorkflows, "workflow", "read",
 			"Workflow definition read access",
 			"Controls whether normal authenticated users can read gj_workflow definitions, including workflow code.",
-			sourceCapabilityDefault(mode, sourcecap.KindWorkflow, sourcecap.KeyWorkflowRead), securitySystemReadAllowed(conf, "gj_workflow", mode, "user", workflowsEnabled),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowRead, "roles[user].tables.gj_workflow.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_workflow", sourcecap.KindWorkflow, sourcecap.KeyWorkflowRead),
-			securitySystemReadExplicit(conf, "user", "gj_workflow", sourcecap.KindWorkflow, sourcecap.KeyWorkflowRead), "high",
+			featureCapabilityDefault(mode, featurecap.KindWorkflows, featurecap.KeyWorkflowRead), securitySystemReadAllowed(conf, "gj_workflow", mode, "user", workflowsEnabled),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindWorkflows, featurecap.KeyWorkflowRead, "roles[user].tables.gj_workflow.query.block"), securitySystemReadOverrideValue(conf, "user", "gj_workflow", featurecap.KindWorkflows, featurecap.KeyWorkflowRead),
+			securitySystemReadExplicit(conf, "user", "gj_workflow", featurecap.KindWorkflows, featurecap.KeyWorkflowRead), "high",
 			"Workflow definitions include code and implementation details; agentic end users should execute approved workflows without reading code by default.",
 			"Grant gj_workflow read only to authenticated users who are allowed to inspect workflow code; expose workflow capabilities through gj_catalog."),
-		newSecurityPolicy(mode, "serve.workflow_execution_read", "serve", "workflow", "workflow", "workflow_execution", "read",
+		newSecurityPolicy(mode, "serve.workflow_execution_read", "serve", "workflows", featurecap.KindWorkflows, "workflow_execution", "read",
 			"Workflow execution read access",
 			"Controls whether normal authenticated users can query gj_workflow_execution as a read root.",
 			defaultAllow(mode, false, false, false), securitySystemReadAllowed(conf, "gj_workflow_execution", mode, "user", workflowsEnabled),
@@ -564,31 +565,31 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			securityRoleTableExplicit(conf, "user", "gj_workflow_execution"), "medium",
 			"Workflow execution is an insert-shaped action and does not store durable run history.",
 			"Keep gj_workflow_execution query blocked; use insert mutations for approved execution."),
-		newSecurityPolicy(mode, "serve.config_write", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "config", "write",
+		newSecurityPolicy(mode, "serve.config_write", "serve", featurecap.KindSystem, featurecap.KindSystem, "config", "write",
 			"Config writes",
 			"Controls gj_config mutations that update GraphJin configuration.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyConfigWrite), graphjinControlPlane && !configReadOnly && securitySourceCapabilityOrFallback(conf, sourcecap.KindGraphJin, sourcecap.KeyConfigWrite, conf != nil && conf.MCP.AllowConfigUpdates),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeyConfigWrite, "mcp.allow_config_updates"), securitySourceOrFallbackValue(conf, sourcecap.KindGraphJin, sourcecap.KeyConfigWrite, conf != nil && conf.MCP.AllowConfigUpdates),
-			securitySourceOrFallbackExplicit(conf, sourcecap.KindGraphJin, sourcecap.KeyConfigWrite, mcpBoolExplicit(conf, "mcp.allow_config_updates", conf != nil && conf.MCP.AllowConfigUpdates)), "high",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyConfigWrite), systemControlPlane && !configReadOnly && securitySourceCapabilityOrFallback(conf, featurecap.KindSystem, featurecap.KeyConfigWrite, conf != nil && conf.MCP.AllowConfigUpdates),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeyConfigWrite, "mcp.allow_config_updates"), securitySourceOrFallbackValue(conf, featurecap.KindSystem, featurecap.KeyConfigWrite, conf != nil && conf.MCP.AllowConfigUpdates),
+			securitySourceOrFallbackExplicit(conf, featurecap.KindSystem, featurecap.KeyConfigWrite, mcpBoolExplicit(conf, "mcp.allow_config_updates", conf != nil && conf.MCP.AllowConfigUpdates)), "high",
 			"Config writes can alter databases, roles, and control-plane permissions.",
-			"Only enable mcp.allow_config_updates in trusted sessions and keep the graphjin source read_only when writes are not intended."),
-		newSecurityPolicy(mode, "serve.workflow_write", "serve", sourcecap.KindWorkflow, sourcecap.KindWorkflow, "workflow", "write",
+			"Only enable config.write for trusted operators; leave it disabled when configuration mutation is not intended."),
+		newSecurityPolicy(mode, "serve.workflow_write", "serve", featurecap.KindWorkflows, featurecap.KindWorkflows, "workflow", "write",
 			"Workflow writes",
 			"Controls gj_workflow mutations that create, update, or delete saved workflows.",
-			sourceCapabilityDefault(mode, sourcecap.KindWorkflow, sourcecap.KeyWorkflowWrite), workflowsEnabled && !workflowReadOnly && securitySourceCapabilityOrFallback(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowWrite, conf != nil && conf.MCP.AllowWorkflowUpdates),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowWrite, "mcp.allow_workflow_updates"), securitySourceOrFallbackValue(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowWrite, conf != nil && conf.MCP.AllowWorkflowUpdates),
-			securitySourceOrFallbackExplicit(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowWrite, mcpBoolExplicit(conf, "mcp.allow_workflow_updates", conf != nil && conf.MCP.AllowWorkflowUpdates)), "high",
+			featureCapabilityDefault(mode, featurecap.KindWorkflows, featurecap.KeyWorkflowWrite), workflowsEnabled && !workflowReadOnly && securitySourceCapabilityOrFallback(conf, featurecap.KindWorkflows, featurecap.KeyWorkflowWrite, conf != nil && conf.MCP.AllowWorkflowUpdates),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindWorkflows, featurecap.KeyWorkflowWrite, "mcp.allow_workflow_updates"), securitySourceOrFallbackValue(conf, featurecap.KindWorkflows, featurecap.KeyWorkflowWrite, conf != nil && conf.MCP.AllowWorkflowUpdates),
+			securitySourceOrFallbackExplicit(conf, featurecap.KindWorkflows, featurecap.KeyWorkflowWrite, mcpBoolExplicit(conf, "mcp.allow_workflow_updates", conf != nil && conf.MCP.AllowWorkflowUpdates)), "high",
 			"Workflow writes can persist code that runs inside GraphJin.",
-			"Enable workflow writes only for trusted agents, review saved workflow code, or mark the workflow source or gj_workflow table read_only."),
-		newSecurityPolicy(mode, "serve.workflow_execute", "serve", sourcecap.KindWorkflow, sourcecap.KindWorkflow, "workflow", "execute",
+			"Enable workflows.write only for trusted agents and review saved workflow code."),
+		newSecurityPolicy(mode, "serve.workflow_execute", "serve", featurecap.KindWorkflows, featurecap.KindWorkflows, "workflow", "execute",
 			"Workflow execution",
 			"Controls authenticated-user gj_workflow_execution insert mutations that execute saved workflows.",
-			sourceCapabilityDefault(mode, sourcecap.KindWorkflow, sourcecap.KeyWorkflowExecute), securityWorkflowExecutionInsertAllowed(conf, mode, "user", workflowsEnabled, workflowExecutionReadOnly),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowExecute, "tables[].read_only"), securitySourceOrFallbackValue(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowExecute, !workflowExecutionReadOnly),
-			securitySourceCapabilityExplicit(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowExecute) || controlPlaneTableReadOnlyExplicit(conf, "", "gj_workflow_execution") || securityRoleTableExplicit(conf, "user", "gj_workflow_execution"), "high",
+			featureCapabilityDefault(mode, featurecap.KindWorkflows, featurecap.KeyWorkflowExecute), securityWorkflowExecutionInsertAllowed(conf, mode, "user", workflowsEnabled, workflowExecutionReadOnly),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindWorkflows, featurecap.KeyWorkflowExecute, "tables[].read_only"), securitySourceOrFallbackValue(conf, featurecap.KindWorkflows, featurecap.KeyWorkflowExecute, !workflowExecutionReadOnly),
+			securitySourceCapabilityExplicit(conf, featurecap.KindWorkflows, featurecap.KeyWorkflowExecute) || controlPlaneTableReadOnlyExplicit(conf, "", "gj_workflow_execution") || securityRoleTableExplicit(conf, "user", "gj_workflow_execution"), "high",
 			"Workflow execution can run code and access configured data sources.",
-			"Keep workflow execution limited to trusted deployments; mark the workflow source or gj_workflow_execution table read_only to block execution."),
-		newSecurityPolicy(mode, "serve.workflow_execute_anon", "serve", "workflow", "workflow", "workflow", "execute",
+			"Keep workflow execution limited to trusted deployments; disable workflows.execute to remove execution entirely."),
+		newSecurityPolicy(mode, "serve.workflow_execute_anon", "serve", "workflows", featurecap.KindWorkflows, "workflow", "execute",
 			"Anonymous workflow execution",
 			"Controls unauthenticated gj_workflow_execution insert mutations.",
 			defaultAllow(mode, true, false, false), securityWorkflowExecutionInsertAllowed(conf, mode, "anon", workflowsEnabled, workflowExecutionReadOnly),
@@ -596,63 +597,63 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			securityRoleTableExplicit(conf, "anon", "gj_workflow_execution"), "critical",
 			"Approved agentic workflow execution is for authenticated company users; anonymous execution can run code without accountability.",
 			"Keep anon gj_workflow_execution insert blocked and authenticate agentic users."),
-		newSecurityPolicy(mode, "serve.legacy_execute_workflow_tool", "serve", "graphjin", "graphjin", "legacy_workflow_execution", "execute",
+		newSecurityPolicy(mode, "serve.legacy_execute_workflow_tool", "serve", "system", featurecap.KindSystem, "legacy_workflow_execution", "execute",
 			"Legacy workflow execution config",
-			"mcp.allow_workflow_execution is retained for compatibility; MCP no longer registers execute_workflow. GraphQL gj_workflow_execution is controlled by read_only table/source policy.",
+			"mcp.allow_workflow_execution is retained for compatibility; MCP no longer registers execute_workflow. GraphQL gj_workflow_execution is controlled by the workflow feature capability and root access policy.",
 			defaultAllow(mode, true, false, false), false,
 			"mcp.allow_workflow_execution", fmt.Sprint(conf != nil && conf.MCP.AllowWorkflowExecution),
 			mcpBoolExplicit(conf, "mcp.allow_workflow_execution", conf != nil && conf.MCP.AllowWorkflowExecution), "medium",
 			"Legacy MCP execution has been removed; use catalog-discovered GraphQL control-plane mutations.",
 			"Use gj_workflow_execution with authenticated users and read_only policy controls."),
-		newSecurityPolicy(mode, "serve.schema_reload", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "schema", "reload",
+		newSecurityPolicy(mode, "serve.schema_reload", "serve", featurecap.KindSystem, featurecap.KindSystem, "schema", "reload",
 			"Schema reload",
 			"Controls MCP schema reload operations.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeySchemaReload), mcpEnabled && securitySourceCapabilityOrFallback(conf, sourcecap.KindGraphJin, sourcecap.KeySchemaReload, conf != nil && conf.MCP.AllowSchemaReload),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeySchemaReload, "mcp.allow_schema_reload"), securitySourceOrFallbackValue(conf, sourcecap.KindGraphJin, sourcecap.KeySchemaReload, conf != nil && conf.MCP.AllowSchemaReload),
-			securitySourceOrFallbackExplicit(conf, sourcecap.KindGraphJin, sourcecap.KeySchemaReload, mcpBoolExplicit(conf, "mcp.allow_schema_reload", conf != nil && conf.MCP.AllowSchemaReload)), "medium",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeySchemaReload), mcpEnabled && securitySourceCapabilityOrFallback(conf, featurecap.KindSystem, featurecap.KeySchemaReload, conf != nil && conf.MCP.AllowSchemaReload),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeySchemaReload, "mcp.allow_schema_reload"), securitySourceOrFallbackValue(conf, featurecap.KindSystem, featurecap.KeySchemaReload, conf != nil && conf.MCP.AllowSchemaReload),
+			securitySourceOrFallbackExplicit(conf, featurecap.KindSystem, featurecap.KeySchemaReload, mcpBoolExplicit(conf, "mcp.allow_schema_reload", conf != nil && conf.MCP.AllowSchemaReload)), "medium",
 			"Schema reload changes discovery state and should be explicit outside development.",
 			"Enable schema reload only when a trusted authenticated user or agent needs fresh metadata."),
-		newSecurityPolicy(mode, "serve.schema_write", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "schema", "write",
+		newSecurityPolicy(mode, "serve.schema_write", "serve", featurecap.KindSystem, featurecap.KindSystem, "schema", "write",
 			"Schema writes",
 			"Controls MCP schema update operations that can apply DDL.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeySchemaWrite), mcpEnabled && securitySourceCapabilityOrFallback(conf, sourcecap.KindGraphJin, sourcecap.KeySchemaWrite, conf != nil && conf.MCP.AllowSchemaUpdates),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeySchemaWrite, "mcp.allow_schema_updates"), securitySourceOrFallbackValue(conf, sourcecap.KindGraphJin, sourcecap.KeySchemaWrite, conf != nil && conf.MCP.AllowSchemaUpdates),
-			securitySourceOrFallbackExplicit(conf, sourcecap.KindGraphJin, sourcecap.KeySchemaWrite, mcpBoolExplicit(conf, "mcp.allow_schema_updates", conf != nil && conf.MCP.AllowSchemaUpdates)), "high",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeySchemaWrite), mcpEnabled && securitySourceCapabilityOrFallback(conf, featurecap.KindSystem, featurecap.KeySchemaWrite, conf != nil && conf.MCP.AllowSchemaUpdates),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeySchemaWrite, "mcp.allow_schema_updates"), securitySourceOrFallbackValue(conf, featurecap.KindSystem, featurecap.KeySchemaWrite, conf != nil && conf.MCP.AllowSchemaUpdates),
+			securitySourceOrFallbackExplicit(conf, featurecap.KindSystem, featurecap.KeySchemaWrite, mcpBoolExplicit(conf, "mcp.allow_schema_updates", conf != nil && conf.MCP.AllowSchemaUpdates)), "high",
 			"Schema writes can alter application databases.",
 			"Only enable mcp.allow_schema_updates for trusted migration sessions and prefer preview before apply."),
-		newSecurityPolicy(mode, "serve.dev_tools", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "dev_tools", "read",
+		newSecurityPolicy(mode, "serve.dev_tools", "serve", featurecap.KindSystem, featurecap.KindSystem, "dev_tools", "read",
 			"Development tools",
 			"Controls advanced MCP tools that expose SQL, relationship graphs, and role permissions.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyDevToolsRead), mcpEnabled && securitySourceCapabilityOrFallback(conf, sourcecap.KindGraphJin, sourcecap.KeyDevToolsRead, conf != nil && conf.MCP.AllowDevTools),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeyDevToolsRead, "mcp.allow_dev_tools"), securitySourceOrFallbackValue(conf, sourcecap.KindGraphJin, sourcecap.KeyDevToolsRead, conf != nil && conf.MCP.AllowDevTools),
-			securitySourceOrFallbackExplicit(conf, sourcecap.KindGraphJin, sourcecap.KeyDevToolsRead, mcpBoolExplicit(conf, "mcp.allow_dev_tools", conf != nil && conf.MCP.AllowDevTools)), "medium",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyDevToolsRead), mcpEnabled && securitySourceCapabilityOrFallback(conf, featurecap.KindSystem, featurecap.KeyDevToolsRead, conf != nil && conf.MCP.AllowDevTools),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeyDevToolsRead, "mcp.allow_dev_tools"), securitySourceOrFallbackValue(conf, featurecap.KindSystem, featurecap.KeyDevToolsRead, conf != nil && conf.MCP.AllowDevTools),
+			securitySourceOrFallbackExplicit(conf, featurecap.KindSystem, featurecap.KeyDevToolsRead, mcpBoolExplicit(conf, "mcp.allow_dev_tools", conf != nil && conf.MCP.AllowDevTools)), "medium",
 			"Development tools may reveal operational details useful for debugging and auditing.",
 			"Keep dev tools disabled in prod unless a trusted audit workflow needs them."),
-		newSecurityPolicy(mode, "serve.raw_queries", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "raw_graphql", "query",
+		newSecurityPolicy(mode, "serve.raw_queries", "serve", featurecap.KindSystem, featurecap.KindSystem, "raw_graphql", "query",
 			"MCP raw GraphQL queries",
 			"Controls compatibility MCP tools that submit arbitrary GraphQL text.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyRawGraphQLQuery), mcpEnabled && securitySourceCapabilityOrFallback(conf, sourcecap.KindGraphJin, sourcecap.KeyRawGraphQLQuery, conf != nil && conf.MCP.AllowRawQueries),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeyRawGraphQLQuery, "mcp.allow_raw_queries"), securitySourceOrFallbackValue(conf, sourcecap.KindGraphJin, sourcecap.KeyRawGraphQLQuery, conf != nil && conf.MCP.AllowRawQueries),
-			securitySourceOrFallbackExplicit(conf, sourcecap.KindGraphJin, sourcecap.KeyRawGraphQLQuery, mcpBoolExplicit(conf, "mcp.allow_raw_queries", conf != nil && conf.MCP.AllowRawQueries)), "medium",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyRawGraphQLQuery), mcpEnabled && securitySourceCapabilityOrFallback(conf, featurecap.KindSystem, featurecap.KeyRawGraphQLQuery, conf != nil && conf.MCP.AllowRawQueries),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeyRawGraphQLQuery, "mcp.allow_raw_queries"), securitySourceOrFallbackValue(conf, featurecap.KindSystem, featurecap.KeyRawGraphQLQuery, conf != nil && conf.MCP.AllowRawQueries),
+			securitySourceOrFallbackExplicit(conf, featurecap.KindSystem, featurecap.KeyRawGraphQLQuery, mcpBoolExplicit(conf, "mcp.allow_raw_queries", conf != nil && conf.MCP.AllowRawQueries)), "medium",
 			"Raw GraphQL should not bypass production allow-list expectations.",
 			"Prefer catalog-guided saved workflows or production allow-listed operations."),
-		newSecurityPolicy(mode, "serve.raw_mutations", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "raw_graphql", "mutate",
+		newSecurityPolicy(mode, "serve.raw_mutations", "serve", featurecap.KindSystem, featurecap.KindSystem, "raw_graphql", "mutate",
 			"MCP raw GraphQL mutations",
 			"Controls compatibility MCP tools that can submit arbitrary GraphQL mutations.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyRawGraphQLMutate), mcpEnabled && securitySourceCapabilityOrFallback(conf, sourcecap.KindGraphJin, sourcecap.KeyRawGraphQLMutate, conf != nil && conf.MCP.AllowMutations),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeyRawGraphQLMutate, "mcp.allow_mutations"), securitySourceOrFallbackValue(conf, sourcecap.KindGraphJin, sourcecap.KeyRawGraphQLMutate, conf != nil && conf.MCP.AllowMutations),
-			securitySourceOrFallbackExplicit(conf, sourcecap.KindGraphJin, sourcecap.KeyRawGraphQLMutate, mcpBoolExplicit(conf, "mcp.allow_mutations", conf != nil && conf.MCP.AllowMutations)), "high",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyRawGraphQLMutate), mcpEnabled && securitySourceCapabilityOrFallback(conf, featurecap.KindSystem, featurecap.KeyRawGraphQLMutate, conf != nil && conf.MCP.AllowMutations),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeyRawGraphQLMutate, "mcp.allow_mutations"), securitySourceOrFallbackValue(conf, featurecap.KindSystem, featurecap.KeyRawGraphQLMutate, conf != nil && conf.MCP.AllowMutations),
+			securitySourceOrFallbackExplicit(conf, featurecap.KindSystem, featurecap.KeyRawGraphQLMutate, mcpBoolExplicit(conf, "mcp.allow_mutations", conf != nil && conf.MCP.AllowMutations)), "high",
 			"Raw mutations can bypass the intended workflow/catalog action path.",
 			"Disable raw MCP mutations outside dev; expose approved mutations as saved operations or workflows."),
-		newSecurityPolicy(mode, "serve.legacy_discovery", "serve", sourcecap.KindGraphJin, sourcecap.KindGraphJin, "legacy_discovery", "read",
+		newSecurityPolicy(mode, "serve.legacy_discovery", "serve", featurecap.KindSystem, featurecap.KindSystem, "legacy_discovery", "read",
 			"Legacy MCP discovery",
 			"Controls older MCP discovery tools and legacy helper endpoints.",
-			sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyLegacyDiscoveryRead), mcpEnabled && conf != nil && conf.legacyMCPToolsEnabled(),
-			securitySourceCapabilityOverrideKey(conf, sourcecap.KindGraphJin, sourcecap.KeyLegacyDiscoveryRead, "mcp.legacy_discovery"), securitySourceOrFallbackValue(conf, sourcecap.KindGraphJin, sourcecap.KeyLegacyDiscoveryRead, conf != nil && conf.MCP.LegacyDiscovery),
-			securitySourceOrFallbackExplicit(conf, sourcecap.KindGraphJin, sourcecap.KeyLegacyDiscoveryRead, mcpBoolExplicit(conf, "mcp.legacy_discovery", conf != nil && conf.MCP.LegacyDiscovery)), "medium",
+			featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyLegacyDiscoveryRead), mcpEnabled && conf != nil && conf.legacyMCPToolsEnabled(),
+			securitySourceCapabilityOverrideKey(conf, featurecap.KindSystem, featurecap.KeyLegacyDiscoveryRead, "mcp.legacy_discovery"), securitySourceOrFallbackValue(conf, featurecap.KindSystem, featurecap.KeyLegacyDiscoveryRead, conf != nil && conf.MCP.LegacyDiscovery),
+			securitySourceOrFallbackExplicit(conf, featurecap.KindSystem, featurecap.KeyLegacyDiscoveryRead, mcpBoolExplicit(conf, "mcp.legacy_discovery", conf != nil && conf.MCP.LegacyDiscovery)), "medium",
 			"Legacy discovery can expose broader schema and helper surfaces than the catalog-first path.",
 			"Prefer gj_catalog for discovery and enable legacy discovery only for compatible clients."),
-		newSecurityPolicy(mode, "serve.web_ui", "serve", "graphjin", "graphjin", "admin_ui", "read",
+		newSecurityPolicy(mode, "serve.web_ui", "serve", "system", featurecap.KindSystem, "admin_ui", "read",
 			"Web UI",
 			"Controls the built-in GraphJin Console HTTP surface.",
 			defaultAllow(mode, true, false, true), conf != nil && conf.Serv.WebUI,
@@ -660,7 +661,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			configBoolExplicit(conf, "web_ui"), "medium",
 			"The console is expected in dev and governed agentic deployments; strict prod remains opt-in.",
 			"Keep web_ui false in prod unless the console is intentionally exposed behind authentication."),
-		newSecurityPolicy(mode, "serve.cors_wildcard", "serve", "graphjin", "graphjin", "cors", "allow",
+		newSecurityPolicy(mode, "serve.cors_wildcard", "serve", "system", featurecap.KindSystem, "cors", "allow",
 			"Wildcard CORS origins",
 			"Controls whether HTTP CORS allows every origin.",
 			defaultAllow(mode, true, false, false), corsWildcard,
@@ -668,7 +669,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			configBoolExplicit(conf, "cors_allowed_origins"), "medium",
 			"Wildcard CORS increases browser-origin exposure for authenticated APIs.",
 			"Set cors_allowed_origins to the exact application origins in prod and agentic deployments."),
-		newSecurityPolicy(mode, "core.log_vars", "core", "graphjin", "graphjin", "request_variables", "log",
+		newSecurityPolicy(mode, "core.log_vars", "core", "system", featurecap.KindSystem, "request_variables", "log",
 			"Variable logging",
 			"Controls whether GraphQL variables are logged.",
 			defaultAllow(mode, true, false, false), conf != nil && conf.Core.LogVars,
@@ -676,7 +677,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			configBoolExplicit(conf, "log_vars"), "high",
 			"Variables can contain user data, tokens, or secrets.",
 			"Keep log_vars false outside development and rely on structured redacted audit evidence."),
-		newSecurityPolicy(mode, "serve.tracing", "serve", "graphjin", "graphjin", "tracing", "emit",
+		newSecurityPolicy(mode, "serve.tracing", "serve", "system", featurecap.KindSystem, "tracing", "emit",
 			"Request tracing",
 			"Controls whether service request tracing is enabled.",
 			defaultAllow(mode, true, true, true), conf != nil && conf.Serv.EnableTracing,
@@ -684,7 +685,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			configBoolExplicit(conf, "enable_tracing"), "low",
 			"Tracing is acceptable when exporters and payloads are configured to avoid sensitive data.",
 			"Keep trace payloads minimal and avoid variable logging in production traces."),
-		newSecurityPolicy(mode, "serve.uploads", "serve", "graphjin", "graphjin", "uploads", "write",
+		newSecurityPolicy(mode, "serve.uploads", "serve", "system", featurecap.KindSystem, "uploads", "write",
 			"Multipart uploads",
 			"Controls multipart GraphQL upload support.",
 			defaultAllow(mode, true, false, false), uploadEnabled,
@@ -732,7 +733,7 @@ func securityWatchWebhookPolicy(conf *Config, mode string) securityPolicyEval {
 	invalid := securityInvalidWatchWebhookAllowEntries(cfg.WebhookAllow)
 	empty := len(cfg.WebhookAllow) == 0
 	safe := !watchesEnabled || (!empty && len(invalid) == 0)
-	row := newSecurityPolicy(mode, "serve.watch_webhook_egress", "serve", "graphjin", "graphjin", "watch_webhook", "egress",
+	row := newSecurityPolicy(mode, "serve.watch_webhook_egress", "serve", "system", featurecap.KindSystem, "watch_webhook", "egress",
 		"Watch webhook egress",
 		"Controls outbound HTTP delivery for watch events.",
 		true, safe,
@@ -821,6 +822,25 @@ func securitySourcePolicyEvaluations(conf *Config, mode string) []securityPolicy
 		}
 	}
 	if conf.Core.IsSourcesUsed() {
+		for _, kind := range featurecap.Kinds() {
+			for _, def := range featurecap.Definitions(kind) {
+				effective := conf.effectiveFeatureCapability(kind, def.Key)
+				value, explicit := conf.featureCapabilityConfigured(kind, def.Key)
+				if !explicit {
+					value = effective
+				}
+				policy := newSecurityPolicy(mode, "feature."+securityIDPart(kind)+"."+securityIDPart(def.Key), "core", kind, kind, def.Key, def.Action,
+					fmt.Sprintf("%s %s", kind, def.Key), def.Summary,
+					def.Default(mode), effective,
+					fmt.Sprintf("%s.capabilities.%s", kind, def.Key), fmt.Sprint(value),
+					explicit, def.Severity, def.Reason, def.Recommendation)
+				policy.Details = map[string]any{"provenance": "mode_default"}
+				if explicit {
+					policy.Details["provenance"] = "config_override"
+				}
+				rows = append(rows, policy)
+			}
+		}
 		return rows
 	}
 	for name, dbConf := range conf.Core.Databases {
@@ -846,8 +866,8 @@ func securitySourceAccessPolicyEvaluations(conf *Config, mode string) []security
 	}
 	identity := conf.Core.EffectiveIdentityConfig()
 	rows := []securityPolicyEval{
-		newSecurityPolicy(mode, "source_access.identity", "core", "graphjin", "graphjin", "identity", "read",
-			"Source-mode identity",
+		newSecurityPolicy(mode, "system_access.identity", "core", featurecap.KindSystem, featurecap.KindSystem, "identity", "read",
+			"Request identity",
 			"Shows request-wide identity claim names used for generated source access rules.",
 			true, true,
 			"identity", "configured",
@@ -879,22 +899,24 @@ func securitySourceAccessPolicyEvaluations(conf *Config, mode string) []security
 			rows[len(rows)-1].Details = sourceAccessDetails(access)
 			rows = append(rows, sourceAccessClassificationPolicies(mode, name, kind, access)...)
 		}
-		if kind == sourcecap.KindGraphJin {
-			for root, accessMode := range access.Roots {
-				safe := graphjinRootAccessSafe(root, accessMode)
-				row := newSecurityPolicy(mode, "source_access.root."+securityIDPart(root), "core", name, kind, root, "read",
-					fmt.Sprintf("%s root access", root),
-					"Shows source-mode access policy for a GraphJin system root.",
-					safe, normalizeSourceAccessAllowed(accessMode),
-					fmt.Sprintf("sources[%s].access.roots.%s", name, root), accessMode,
-					true, graphjinRootRisk(root),
-					"Sensitive gj_* roots should be admin-only; account-scoped roots must enforce account context in their handler.",
-					"Set sensitive roots such as gj_security, gj_runtime, and gj_config to admin.")
-				row.TableName = root
-				row.Details = map[string]any{"access_mode": accessMode, "admin_roles": identity.AdminRoles}
-				rows = append(rows, row)
-			}
+	}
+	for root, accessMode := range conf.Core.EffectiveSystemRootAccess() {
+		safe := systemRootAccessSafe(root, accessMode)
+		row := newSecurityPolicy(mode, "system_access.root."+securityIDPart(root), "core", featurecap.KindSystem, featurecap.KindSystem, root, "read",
+			fmt.Sprintf("%s root access", root),
+			"Shows caller access policy for a built-in GraphJin system root.",
+			safe, normalizeSourceAccessAllowed(accessMode),
+			fmt.Sprintf("system.root_access.%s", root), accessMode,
+			true, systemRootRisk(root),
+			"Sensitive gj_* roots should be admin-only; account-scoped roots must enforce account context in their handler.",
+			"Set sensitive roots such as gj_security, gj_runtime, and gj_config to admin.")
+		row.TableName = root
+		provenance := "mode_default"
+		if _, explicit := conf.Core.System.RootAccess[root]; explicit {
+			provenance = "config_override"
 		}
+		row.Details = map[string]any{"access_mode": accessMode, "admin_roles": identity.AdminRoles, "provenance": provenance}
+		rows = append(rows, row)
 	}
 	if conf.Core.Artifacts.Enabled {
 		cfg := conf.Core.EffectiveArtifactsConfig()
@@ -1150,7 +1172,7 @@ func sourceAccessRisk(action string) string {
 	}
 }
 
-func graphjinRootAccessSafe(root, accessMode string) bool {
+func systemRootAccessSafe(root, accessMode string) bool {
 	root = strings.ToLower(strings.TrimSpace(root))
 	accessMode = strings.ToLower(strings.TrimSpace(accessMode))
 	switch root {
@@ -1165,7 +1187,7 @@ func graphjinRootAccessSafe(root, accessMode string) bool {
 	}
 }
 
-func graphjinRootRisk(root string) string {
+func systemRootRisk(root string) string {
 	switch strings.ToLower(strings.TrimSpace(root)) {
 	case "gj_security", "gj_config":
 		return "critical"
@@ -1468,17 +1490,14 @@ func securitySourceCapabilityOverrideKey(conf *Config, kind, capability, fallbac
 	if conf == nil {
 		return fallback
 	}
-	if _, explicit := conf.sourceCapabilityConfigured(kind, capability); explicit {
-		if source, ok := conf.sourceByCanonicalKind(kind); ok && strings.TrimSpace(source.Name) != "" {
-			return fmt.Sprintf("sources[%s].capabilities.%s", strings.TrimSpace(source.Name), capability)
-		}
-		return fmt.Sprintf("sources[%s].capabilities.%s", kind, capability)
+	if _, explicit := conf.featureCapabilityConfigured(kind, capability); explicit {
+		return fmt.Sprintf("%s.capabilities.%s", kind, capability)
 	}
 	return fallback
 }
 
 func securitySourceCapabilityExplicit(conf *Config, kind, capability string) bool {
-	_, explicit := conf.sourceCapabilityConfigured(kind, capability)
+	_, explicit := conf.featureCapabilityConfigured(kind, capability)
 	return explicit
 }
 
@@ -1486,7 +1505,7 @@ func securitySystemReadOverrideValue(conf *Config, role, table, kind, capability
 	if securityRoleTableExplicit(conf, role, table) {
 		return securityRoleQueryValue(conf, role, table)
 	}
-	if value, explicit := conf.sourceCapabilityConfigured(kind, capability); explicit {
+	if value, explicit := conf.featureCapabilityConfigured(kind, capability); explicit {
 		return fmt.Sprint(value)
 	}
 	return "default"
@@ -1500,14 +1519,17 @@ func securitySourceCapabilityOrFallback(conf *Config, kind, capability string, f
 	if conf == nil {
 		return false
 	}
-	if value, explicit := conf.sourceCapabilityConfigured(kind, capability); explicit {
+	if value, explicit := conf.featureCapabilityConfigured(kind, capability); explicit {
 		return value
+	}
+	if conf.Core.IsSourcesUsed() {
+		return conf.effectiveFeatureCapability(kind, capability)
 	}
 	return fallback
 }
 
 func securitySourceOrFallbackValue(conf *Config, kind, capability string, fallback bool) string {
-	if value, explicit := conf.sourceCapabilityConfigured(kind, capability); explicit {
+	if value, explicit := conf.featureCapabilityConfigured(kind, capability); explicit {
 		return fmt.Sprint(value)
 	}
 	return fmt.Sprint(fallback)
@@ -1518,13 +1540,7 @@ func securitySourceOrFallbackExplicit(conf *Config, kind, capability string, fal
 }
 
 func securitySystemReadAllowed(conf *Config, table, mode, role string, sourceEnabled bool) bool {
-	if !sourceEnabled {
-		return false
-	}
-	if rt, ok := securityRoleTable(conf, role, table); ok {
-		return rt.Query == nil || !rt.Query.Block
-	}
-	return systemReadAllowedBySource(conf, mode, role, table)
+	return sourceEnabled && systemRootAllowed(conf, table, systemActionRead, role)
 }
 
 func defaultSystemReadAllowed(mode, role, table string) bool {
@@ -1533,37 +1549,25 @@ func defaultSystemReadAllowed(mode, role, table string) bool {
 	}
 	switch strings.ToLower(strings.TrimSpace(table)) {
 	case "gj_catalog":
-		return sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyCatalogRead)
+		return featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyCatalogRead)
 	case "gj_security":
-		return sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeySecurityRead)
+		return featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeySecurityRead)
 	case "gj_config":
-		return sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyConfigRead)
+		return featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyConfigRead)
 	case "gj_runtime":
-		return sourceCapabilityDefault(mode, sourcecap.KindGraphJin, sourcecap.KeyRuntimeRead)
+		return featureCapabilityDefault(mode, featurecap.KindSystem, featurecap.KeyRuntimeRead)
 	case "gj_workflow":
-		return sourceCapabilityDefault(mode, sourcecap.KindWorkflow, sourcecap.KeyWorkflowRead)
+		return featureCapabilityDefault(mode, featurecap.KindWorkflows, featurecap.KeyWorkflowRead)
 	default:
 		return false
 	}
 }
 
 func securityWorkflowExecutionInsertAllowed(conf *Config, mode, role string, workflowsEnabled, tableReadOnly bool) bool {
-	if !workflowsEnabled || tableReadOnly {
+	if !workflowsEnabled || tableReadOnly || conf == nil {
 		return false
 	}
-	if rt, ok := securityRoleTable(conf, role, "gj_workflow_execution"); ok {
-		return rt.Insert == nil || !rt.Insert.Block
-	}
-	if role == "anon" && (mode == modeProd || mode == modeAgentic) {
-		return false
-	}
-	if role == "anon" && conf != nil && conf.DefaultBlock {
-		return false
-	}
-	if role == "user" {
-		return sourceCapabilityAllowed(conf, sourcecap.KindWorkflow, sourcecap.KeyWorkflowExecute)
-	}
-	return defaultAllow(mode, true, false, true)
+	return systemRootAllowed(conf, "gj_workflow_execution", systemActionInsert, role)
 }
 
 func securityRoleTableExplicit(conf *Config, role, table string) bool {
@@ -1593,14 +1597,7 @@ func securityRoleTable(conf *Config, role, table string) (core.RoleTable, bool) 
 }
 
 func securitySystemDatabase(conf *Config) string {
-	if conf == nil {
-		return ""
-	}
-	name := conf.Core.CatalogDatabaseName()
-	if strings.TrimSpace(name) == "" {
-		return defaultMetadataDBName
-	}
-	return strings.TrimSpace(name)
+	return ""
 }
 
 func securityRoleQueryValue(conf *Config, role, table string) string {
@@ -1737,8 +1734,11 @@ func securityCapabilityEnforcement(row securityPolicyEval) string {
 	if def, ok := sourcecap.Lookup(row.SourceKind, row.Capability); ok {
 		return def.Enforcement
 	}
+	if def, ok := featurecap.Lookup(row.SourceKind, row.Capability); ok {
+		return def.Enforcement
+	}
 	switch row.SourceKind {
-	case "graphjin", "workflow":
+	case featurecap.KindSystem, featurecap.KindWorkflows:
 		return "runtime"
 	case "code", "file", "api":
 		return "config_audit"
@@ -1951,8 +1951,8 @@ func securitySummaryNanoRow(ctx securityReportContext, policyCount int, findings
 		"layer":           "system",
 		"surface":         "security_audit",
 		"transport":       "graphql",
-		"source":          "graphjin",
-		"source_kind":     "graphjin",
+		"source":          "system",
+		"source_kind":     featurecap.KindSystem,
 		"audience":        securityAudienceFor(mode, ""),
 		"capability":      "summary",
 		"action":          "read",
@@ -2023,7 +2023,7 @@ func securityConfigLoadErrorRow(ctx securityReportContext, now string) core.Nano
 		"surface":           "config",
 		"transport":         "filesystem",
 		"source":            "config",
-		"source_kind":       "graphjin",
+		"source_kind":       featurecap.KindSystem,
 		"capability":        "load",
 		"action":            "parse",
 		"title":             "Config could not be loaded",
@@ -2078,8 +2078,8 @@ func securityRuntimeInfoRows(ctx securityReportContext, now string) []core.NanoR
 			"layer":             "runtime",
 			"surface":           "evidence",
 			"transport":         "runtime",
-			"source":            "graphjin",
-			"source_kind":       "graphjin",
+			"source":            "system",
+			"source_kind":       featurecap.KindSystem,
 			"audience":          "authenticated_user",
 			"capability":        capability,
 			"action":            "observe",
@@ -2133,7 +2133,7 @@ func securityRuntimeInfoRows(ctx securityReportContext, now string) []core.NanoR
 		}
 	}
 
-	if s.conf != nil && s.conf.workflowsSourceEnabled() {
+	if s.conf != nil && s.conf.workflowsEnabled() {
 		snap := s.workflowSnapshot(s.workflowTimeoutSeconds())
 		hashes := make(map[string]string, len(snap.workflows))
 		runtimes := make(map[string]string, len(snap.workflows))
@@ -2185,7 +2185,7 @@ func securityRuntimeInfoRows(ctx securityReportContext, now string) []core.NanoR
 	if s.runtimeCore != nil {
 		dbs := make(map[string]any, len(s.runtimeCore.Databases))
 		for name, dbConf := range s.runtimeCore.Databases {
-			if isManagedArtifactDatabase(name) {
+			if name == s.managedArtifactDB {
 				continue
 			}
 			_, connected := s.dbs[name]
@@ -2198,7 +2198,7 @@ func securityRuntimeInfoRows(ctx securityReportContext, now string) []core.NanoR
 		}
 		tables := make(map[string]any, len(s.runtimeCore.Tables))
 		for _, table := range s.runtimeCore.Tables {
-			if isManagedArtifactDatabase(table.Database) || isManagedArtifactDatabase(table.Source) {
+			if table.Database == s.managedArtifactDB || table.Source == s.managedArtifactDB {
 				continue
 			}
 			key := table.Name

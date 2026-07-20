@@ -11,15 +11,12 @@ weight: 50
 Workflows let GraphJin expose reviewed operational procedures instead of letting agents improvise multi-step actions.
 
 ```yaml
-sources:
-  - name: workflows
-    kind: workflow
-    path: ./workflows
-    runtime: javascript
-    capabilities:
-      workflow.execute: true
-      workflow.read: false
-      workflow.write: false
+workflows:
+  path: ./workflows
+  capabilities:
+    execute: true
+    read: false
+    write: false
 ```
 
 ```bash

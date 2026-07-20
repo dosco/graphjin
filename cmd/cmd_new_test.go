@@ -25,8 +25,11 @@ func TestCmdNewWritesAgenticAndSourcesTemplates(t *testing.T) {
 			t.Fatalf("read %s: %v", p, err)
 		}
 		content := string(b)
-		if !strings.Contains(content, "\nsources:\n") {
+		if name != "dev.yml" && !strings.Contains(content, "\nsources:\n") {
 			t.Fatalf("%s does not use sources config:\n%s", name, content)
+		}
+		if strings.Contains(content, "kind: graphjin") || strings.Contains(content, "kind: workflow") {
+			t.Fatalf("%s contains a removed internal source kind:\n%s", name, content)
 		}
 		if strings.Contains(content, "\ndatabases:\n") || strings.Contains(content, "\ndatabase:\n") {
 			t.Fatalf("%s contains active legacy database config:\n%s", name, content)
@@ -254,8 +257,11 @@ func TestTemplatesRenderSourcesMode(t *testing.T) {
 			t.Fatalf("render %s: %v", name, err)
 		}
 		content := string(b)
-		if !strings.Contains(content, "\nsources:\n") {
+		if name != "dev.yml" && !strings.Contains(content, "\nsources:\n") {
 			t.Fatalf("%s missing sources:\n%s", name, content)
+		}
+		if strings.Contains(content, "kind: graphjin") || strings.Contains(content, "kind: workflow") {
+			t.Fatalf("%s contains a removed internal source kind:\n%s", name, content)
 		}
 		if strings.Contains(content, "\ndatabases:\n") || strings.Contains(content, "\ndatabase:\n") {
 			t.Fatalf("%s contains active legacy database config:\n%s", name, content)

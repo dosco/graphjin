@@ -232,19 +232,16 @@ func TestCoffeeRoasteryDemoConfigNormalizes(t *testing.T) {
 	if got := cfg.Databases["roast_warehouse"].Path; got != "" {
 		t.Fatalf("roast_warehouse path = %q, want empty canonical DDL discovery", got)
 	}
-	graphjin, ok := cfg.Core.SourceByName("graphjin")
-	if !ok {
-		t.Fatal("coffee demo should include graphjin source")
-	}
+	rootAccess := cfg.Core.EffectiveSystemRootAccess()
 	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security"} {
-		if got := graphjin.Access.Roots[root]; got != core.AccessModePublic {
-			t.Fatalf("graphjin %s root access = %q, want public in dev demo", root, got)
+		if got := rootAccess[root]; got != core.AccessModePublic {
+			t.Fatalf("system %s root access = %q, want public in dev demo", root, got)
 		}
 	}
 	// gj_config is deliberately admin-gated in the demo so the smoke suite can
 	// assert role-based control-plane access end to end.
-	if got := graphjin.Access.Roots["gj_config"]; got != core.AccessModeAdmin {
-		t.Fatalf("graphjin gj_config root access = %q, want admin", got)
+	if got := rootAccess["gj_config"]; got != core.AccessModeAdmin {
+		t.Fatalf("system gj_config root access = %q, want admin", got)
 	}
 }
 
@@ -278,7 +275,7 @@ func TestCoffeeRoasteryMinimalAgenticConfigResolvesRuntimeDefaults(t *testing.T)
 	if !cfg.MCP.HTTPStateful || !cfg.MCP.IncludeToolsWithAgent {
 		t.Fatalf("MCP runtime defaults missing: %+v", cfg.MCP)
 	}
-	if !cfg.Core.Artifacts.Enabled || cfg.Core.Artifacts.Source != "__graphjin_artifacts" || !cfg.Core.Watches.Enabled || cfg.Core.Watches.Runner != "all" {
+	if !cfg.Core.Artifacts.Enabled || cfg.Core.Artifacts.Source == "__graphjin_artifacts" || !cfg.Core.Watches.Enabled || cfg.Core.Watches.Runner != "all" {
 		t.Fatalf("artifact/watch runtime defaults missing: artifacts=%+v watches=%+v", cfg.Core.Artifacts, cfg.Core.Watches)
 	}
 	data, err := os.ReadFile("../examples/coffee-roastery/agentic.yml")

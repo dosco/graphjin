@@ -486,4 +486,3 @@ func isEnumCandidateCol(col core.ColumnInfo) bool {
 	}
 	return false
 }
-

@@ -149,11 +149,10 @@ func (s *graphjinService) workflowBasePath() string {
 	if s == nil || s.conf == nil {
 		return workflowsPath
 	}
-	source, ok := s.conf.Core.WorkflowsSource()
-	if !ok || strings.TrimSpace(source.Path) == "" {
+	if strings.TrimSpace(s.conf.Core.Workflows.Path) == "" {
 		return workflowsPath
 	}
-	path := filepath.Clean(strings.TrimSpace(source.Path))
+	path := filepath.Clean(strings.TrimSpace(s.conf.Core.Workflows.Path))
 	if path == "." {
 		return workflowsPath
 	}
@@ -161,14 +160,7 @@ func (s *graphjinService) workflowBasePath() string {
 }
 
 func (s *graphjinService) workflowRuntime() string {
-	if s == nil || s.conf == nil {
-		return "goja"
-	}
-	source, ok := s.conf.Core.WorkflowsSource()
-	if !ok || strings.TrimSpace(source.Runtime) == "" {
-		return "goja"
-	}
-	return strings.TrimSpace(source.Runtime)
+	return "goja"
 }
 
 func (s *graphjinService) runNamedWorkflow(ctx context.Context, name string, input any, ns *string) (any, error) {

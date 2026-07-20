@@ -27,7 +27,7 @@ echo "========================================"
 echo ""
 echo "Starting multi-database containers and running Example_ tests..."
 echo "(This may take a minute to start all containers)"
-go test -v -timeout 30m ./tests/... -db=multidb -run "Example_multiDB" "$@"
+go test -v -timeout 30m ./tests -db=multidb -run "Example_multiDB" "$@"
 
 echo ""
 echo "========================================"

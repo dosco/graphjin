@@ -18,10 +18,14 @@ func mockMcpServerWithConfig(cfg MCPConfig) *mcpServer {
 	svc := &graphjinService{
 		cursorCache: NewMemoryCursorCache(100, time.Hour),
 		conf: &Config{
-			Core: core.Config{Mode: "agentic", Sources: []core.SourceConfig{
-				{Name: "graphjin", Kind: "graphjin"},
-				{Name: "workflows", Kind: "workflow"},
-			},
+			Core: core.Config{Mode: "agentic", Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}},
+				System: core.SystemConfig{Capabilities: map[string]bool{
+					"raw_graphql.query": cfg.AllowRawQueries,
+					"config.write":      cfg.AllowConfigUpdates,
+					"schema.reload":     cfg.AllowSchemaReload,
+					"schema.write":      cfg.AllowSchemaUpdates,
+					"dev_tools.read":    cfg.AllowDevTools,
+				}},
 				Artifacts: core.ArtifactsConfig{Enabled: true},
 				Watches:   core.WatchesConfig{Enabled: true},
 			},
@@ -903,6 +907,37 @@ func TestSyncConfigToViper(t *testing.T) {
 	}
 	if v.Get("resolvers") == nil {
 		t.Error("Expected resolvers to be set in viper")
+	}
+}
+
+func TestSyncConfigToViper_SourceModePersistsOnlyExternalSourcesAndFeatures(t *testing.T) {
+	v := viper.New()
+	ms := &mcpServer{service: &graphjinService{conf: &Config{
+		Core: core.Config{
+			Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}},
+			System: core.SystemConfig{
+				Capabilities: map[string]bool{"catalog.read": false},
+				RootAccess:   map[string]string{"gj_runtime": "admin"},
+			},
+			Workflows: core.WorkflowsConfig{
+				Path:         "./flows",
+				Capabilities: map[string]bool{"execute": false},
+			},
+		},
+		viper: v,
+	}}}
+
+	ms.syncConfigToViper(v)
+
+	sources, ok := v.Get("sources").([]core.SourceConfig)
+	if !ok || len(sources) != 1 || sources[0].Name != "graphjin" || sources[0].Kind != "database" {
+		t.Fatalf("sources must contain only the configured external provider: %#v", v.Get("sources"))
+	}
+	if got := v.Get("system"); got == nil {
+		t.Fatal("system feature overrides were not persisted")
+	}
+	if got := v.Get("workflows"); got == nil {
+		t.Fatal("workflow feature overrides were not persisted")
 	}
 }
 

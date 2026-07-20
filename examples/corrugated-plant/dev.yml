@@ -86,33 +86,25 @@ sources:
       code.watch: false
       code.infer_db_refs: true
 
-  - name: graphjin
-    kind: graphjin
-    metadata: true
-    catalog: true
-    control_plane: true
-    access:
-      roots:
-        gj_config: admin
-    capabilities:
-      catalog.read: true
-      security.read: true
-      config.read: true
-      config.write: false
-      runtime.read: true
-      raw_graphql.query: true
-      raw_graphql.mutate: true
-      schema.reload: false
-      schema.write: false
-      dev_tools.read: true
-      legacy_discovery.read: false
+system:
+  root_access:
+    gj_config: admin
+  capabilities:
+    catalog.read: true
+    security.read: true
+    config.read: true
+    config.write: false
+    runtime.read: true
+    raw_graphql.query: true
+    raw_graphql.mutate: true
+    schema.reload: false
+    schema.write: false
+    dev_tools.read: true
+    legacy_discovery.read: false
 
-  - name: workflows
-    kind: workflow
-    path: workflows
-    runtime: javascript
-    read_only: false
-    capabilities:
-      workflow.execute: true
-      workflow.read: true
-      workflow.write: false
+workflows:
+  path: workflows
+  capabilities:
+    execute: true
+    read: true
+    write: false

@@ -64,7 +64,7 @@ type dbContext struct {
 	name          string          // Database name (key in Config.Databases)
 	db            *sql.DB         // Connection pool for this database
 	dbtype        string          // Database type (postgres, mysql, sqlite, etc.)
-	nano          *NanoDB         // Pure-Go compact system/catalog/workflow source
+	nano          *NanoDB         // Pure-Go compact built-in system/catalog/workflow tables
 	dbinfo        *sdata.DBInfo   // Raw schema metadata
 	schema        *sdata.DBSchema // Processed schema with relationships
 	qcodeCompiler *qcode.Compiler // GraphQL to QCode compiler (validates against this DB's schema)
@@ -397,16 +397,10 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		return
 	}
 
-	// Set defaultDB from the normalized config (first entry, sorted for determinism)
+	// Set defaultDB from the normalized config, preferring application sources
+	// over service-owned runtime databases.
 	if gj.defaultDB == "" {
-		names := make([]string, 0, len(gj.conf.Databases))
-		for name := range gj.conf.Databases {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		if len(names) > 0 {
-			gj.defaultDB = names[0]
-		}
+		gj.defaultDB = gj.conf.defaultDatabaseName()
 	}
 
 	// Determine dbtype for the primary database
@@ -1287,14 +1281,7 @@ func (g *GraphJin) newGraphJinReloadingConfigDatabases(base *graphjinEngine, nex
 	if err := gj.initConfig(); err != nil {
 		return err
 	}
-	names := make([]string, 0, len(gj.conf.Databases))
-	for name := range gj.conf.Databases {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	if len(names) != 0 {
-		gj.defaultDB = names[0]
-	}
+	gj.defaultDB = gj.conf.defaultDatabaseName()
 
 	for _, op := range opts {
 		if err := op(gj); err != nil {
@@ -1448,14 +1435,7 @@ func (g *GraphJin) newGraphJinReloadingDatabase(base *graphjinEngine, database s
 	}
 	gj.defaultDB = base.defaultDB
 	if gj.defaultDB == "" {
-		names := make([]string, 0, len(gj.conf.Databases))
-		for name := range gj.conf.Databases {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		if len(names) != 0 {
-			gj.defaultDB = names[0]
-		}
+		gj.defaultDB = gj.conf.defaultDatabaseName()
 	}
 
 	for _, op := range base.opts {

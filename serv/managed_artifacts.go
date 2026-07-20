@@ -17,12 +17,7 @@ func (s *graphjinService) initManagedArtifactStore() error {
 	if s == nil || s.conf == nil || !s.conf.managedArtifactStore || !s.conf.Core.Artifacts.Enabled {
 		return nil
 	}
-	if strings.TrimSpace(s.conf.Core.Artifacts.Source) != managedArtifactDatabaseName {
-		return fmt.Errorf("managed artifact store has unexpected source %q", s.conf.Core.Artifacts.Source)
-	}
-	if _, exists := s.dbs[managedArtifactDatabaseName]; exists {
-		return fmt.Errorf("database name %q is reserved for the managed artifact store", managedArtifactDatabaseName)
-	}
+	name := allocateRuntimeDatabaseName(internalArtifactDatabaseBase, &s.conf.Core, s.runtimeCore, s.dbs)
 
 	base, err := s.basePath()
 	if err != nil {
@@ -61,15 +56,25 @@ func (s *graphjinService) initManagedArtifactStore() error {
 	if s.runtimeCore.Databases == nil {
 		s.runtimeCore.Databases = make(map[string]core.DatabaseConfig)
 	}
-	s.runtimeCore.Databases[managedArtifactDatabaseName] = core.DatabaseConfig{
+	s.runtimeCore.Databases[name] = core.DatabaseConfig{
 		Type:         "sqlite",
 		Path:         path,
 		MaxOpenConns: 1,
 		MaxIdleConns: 1,
 	}
-	s.dbs[managedArtifactDatabaseName] = db
+	s.runtimeCore.Artifacts.Source = name
+	s.dbs[name] = db
+	s.managedArtifactDB = name
 	s.log.Infof("Managed artifact store ready: %s", path)
 	return nil
+}
+
+func isInternalArtifactDatabase(conf *core.Config, name string) bool {
+	if conf == nil || !conf.Artifacts.Enabled || !strings.EqualFold(strings.TrimSpace(conf.Artifacts.Source), strings.TrimSpace(name)) {
+		return false
+	}
+	_, public := conf.SourceByName(name)
+	return !public
 }
 
 func prepareManagedArtifactPath(path string) error {
@@ -115,8 +120,4 @@ func configureManagedArtifactSQLite(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	return nil
-}
-
-func isManagedArtifactDatabase(name string) bool {
-	return strings.TrimSpace(name) == managedArtifactDatabaseName
 }

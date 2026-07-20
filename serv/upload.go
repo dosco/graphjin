@@ -235,7 +235,6 @@ func randomHex(n int) string {
 	return hex.EncodeToString(buf)
 }
 
-
 // setAtPath writes value into root at a dotted path like
 // "variables.input.avatar" or "variables.files.0". Numeric path
 // components index into slices; string components into maps.

@@ -84,6 +84,7 @@ type graphjinService struct {
 	runtimeCore        *core.Config
 	secretStore        *localKeystore
 	metadataDB         string
+	managedArtifactDB  string
 	systemNanoDB       *core.NanoDB
 	gj                 *core.GraphJin
 	disc               *DiscoveryManager
@@ -130,7 +131,7 @@ type graphjinService struct {
 func (s *graphjinService) anyDB() *sql.DB {
 	names := make([]string, 0, len(s.dbs))
 	for name := range s.dbs {
-		if !isManagedArtifactDatabase(name) {
+		if name != s.managedArtifactDB {
 			names = append(names, name)
 		}
 	}
@@ -163,7 +164,7 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 		core.OptionSetReservedRoleAuthorizer(s.authorizeReservedRole),
 	}
 	opts = append(opts, s.coreOptions...)
-	if s.conf != nil && (s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled()) {
+	if s.conf != nil && (s.conf.systemControlPlaneEnabled() || s.conf.workflowsEnabled()) {
 		targetDB := s.metadataDB
 		if targetDB == "" {
 			targetDB = core.DefaultDBName
@@ -180,18 +181,12 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	if s.conf != nil && s.conf.runtimeRootRegistered() {
 		targetDB := s.metadataDB
 		if targetDB == "" {
-			targetDB = s.conf.Core.CatalogDatabaseName()
-		}
-		if targetDB == "" {
 			targetDB = core.DefaultDBName
 		}
 		opts = append(opts, core.OptionSetManagedQueryHandler(targetDB, runtimeQueryHandler{service: s}))
 	}
 	if s.conf != nil && s.conf.Core.Artifacts.Enabled {
 		targetDB := s.metadataDB
-		if targetDB == "" {
-			targetDB = s.conf.Core.CatalogDatabaseName()
-		}
 		if targetDB == "" {
 			targetDB = core.DefaultDBName
 		}
@@ -204,9 +199,6 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	}
 	if s.conf != nil && s.watchesEnabled() {
 		targetDB := s.metadataDB
-		if targetDB == "" {
-			targetDB = s.conf.Core.CatalogDatabaseName()
-		}
 		if targetDB == "" {
 			targetDB = core.DefaultDBName
 		}
@@ -242,6 +234,25 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	// core itself and is always available.
 	opts = append(opts, filesystemBackendOptions()...)
 	return opts
+}
+
+func (s *graphjinService) buildCoreOptionsForState(
+	dbs map[string]*sql.DB,
+	managedDBs map[string]managedDB,
+	conf *Config,
+	metadataDB string,
+	managedArtifactDB string,
+	systemNanoDB *core.NanoDB,
+) []core.Option {
+	if s == nil {
+		return nil
+	}
+	scoped := *s
+	scoped.conf = conf
+	scoped.metadataDB = metadataDB
+	scoped.managedArtifactDB = managedArtifactDB
+	scoped.systemNanoDB = systemNanoDB
+	return scoped.buildCoreOptionsFor(dbs, managedDBs)
 }
 
 func (s *graphjinService) managedSystemRootDatabases(primary string) []string {
@@ -715,7 +726,7 @@ func (s *graphjinService) normalStart() error {
 		}
 	}
 	// Skip GraphJin core initialization if no database is configured (dev mode only)
-	if len(s.dbs) == 0 && s.systemNanoDB == nil {
+	if len(s.dbs) == 0 && (s.systemNanoDB == nil || !s.conf.Core.IsSourcesUsed()) {
 		if !s.conf.Serv.Production {
 			s.log.Info("GraphJin core not initialized - waiting for database configuration via MCP")
 			return nil

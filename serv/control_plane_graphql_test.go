@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/featurecap"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
 	"github.com/spf13/afero"
 	"go.opentelemetry.io/otel"
@@ -157,7 +158,7 @@ func TestGraphQLControlPlaneCatalogIncludesSourceRows(t *testing.T) {
 		}
 		kinds[item.SourceKind] = true
 	}
-	for _, kind := range []string{"database", "graphjin", "workflow"} {
+	for _, kind := range []string{"database"} {
 		if !kinds[kind] {
 			t.Fatalf("missing source kind %q in rows %+v", kind, out.Items)
 		}
@@ -235,12 +236,6 @@ func TestGraphQLConfigUpdatePatchesCatalogRowsForChangedSource(t *testing.T) {
 		type: "sqlite",
 		path: %q,
 		default: true
-	}, {
-		name: "graphjin",
-		kind: "graphjin"
-	}, {
-		name: "workflows",
-		kind: "workflow"
 	}]`, replacementPath), "id catalog_revision")
 
 	rows, ok := svc.systemNanoDB.Snapshot().Rows("main", "gj_catalog")
@@ -268,7 +263,7 @@ func TestGraphQLConfigUpdatePatchesCatalogRowsForChangedSource(t *testing.T) {
 
 func TestCoreConfigSourceScopedCatalogChangeDetection(t *testing.T) {
 	oldCore := core.Config{
-		Sources: []core.SourceConfig{{Name: "app", Kind: "database", Type: "sqlite"}, {Name: "graphjin", Kind: "graphjin"}},
+		Sources: []core.SourceConfig{{Name: "app", Kind: "database", Type: "sqlite"}},
 		Databases: map[string]core.DatabaseConfig{
 			"app": {Type: "sqlite", Path: "old.sqlite3"},
 		},
@@ -290,11 +285,11 @@ func TestCoreConfigSourceScopedCatalogChangeDetection(t *testing.T) {
 		t.Fatal("database source change should allow source-scoped catalog patch")
 	}
 
-	graphjinChanged := cloneCoreConfig(oldCore)
-	graphjinChanged.Sources[1].ReadOnly = true
-	graphjinSources := changedCatalogSources(oldCore, graphjinChanged)
-	if sourceScopedCatalogPatchAllowed(oldCore, graphjinChanged, graphjinSources) {
-		t.Fatal("graphjin source changes should use full catalog refresh")
+	systemChanged := cloneCoreConfig(oldCore)
+	systemChanged.System.Capabilities = map[string]bool{featurecap.KeyCatalogRead: false}
+	systemSources := changedCatalogSources(oldCore, systemChanged)
+	if coreConfigChangeScopedToSources(oldCore, systemChanged, systemSources) {
+		t.Fatal("system feature changes should use full catalog refresh")
 	}
 
 	broad := cloneCoreConfig(newCore)
@@ -653,14 +648,15 @@ func TestSystemNanoSnapshotIncludesSecurity(t *testing.T) {
 }
 
 func TestGraphQLControlPlaneSecurityQuery(t *testing.T) {
-	svc := newControlPlaneGraphQLTestService(t, MCPConfig{
+	svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{
 		AllowConfigUpdates:   true,
 		AllowSchemaUpdates:   true,
 		AllowWorkflowUpdates: true,
 		AllowRawQueries:      true,
-	}, createSQLiteDBFile(t, "app.sqlite3", true))
-	svc.conf.Serv.Production = true
-	svc.conf.Core.Production = true
+	}, createSQLiteDBFile(t, "app.sqlite3", true), func(conf *Config) {
+		conf.Core.Mode = "agentic"
+		conf.Core.System.Capabilities = map[string]bool{featurecap.KeySecurityRead: true}
+	})
 	if err := svc.refreshSystemNanoDB(); err != nil {
 		t.Fatalf("refresh system nanodb: %v", err)
 	}
@@ -717,17 +713,17 @@ func TestGraphQLControlPlaneSecurityQuery(t *testing.T) {
 	if err := json.Unmarshal(res.Data, &out); err != nil {
 		t.Fatalf("decode security query: %v\n%s", err, string(res.Data))
 	}
-	if out.Summary.ID != "summary" || out.Summary.Kind != "summary" || out.Summary.Mode != "prod" {
+	if out.Summary.ID != "summary" || out.Summary.Kind != "summary" || out.Summary.Mode != "agentic" {
 		t.Fatalf("unexpected summary row: %+v", out.Summary)
 	}
-	if out.Summary.SummaryJSON["mode"] != "prod" {
-		t.Fatalf("expected prod summary_json mode, got %+v", out.Summary.SummaryJSON)
+	if out.Summary.SummaryJSON["mode"] != "agentic" {
+		t.Fatalf("expected agentic summary_json mode, got %+v", out.Summary.SummaryJSON)
 	}
 	if len(out.Findings) == 0 {
 		t.Fatalf("expected prod high/critical findings, got %s", string(res.Data))
 	}
 	for _, finding := range out.Findings {
-		if finding.Kind != "finding" || finding.SeverityRank < 3 || finding.Recommendation == "" || finding.EvidenceJSON["mode"] != "prod" {
+		if finding.Kind != "finding" || finding.SeverityRank < 3 || finding.Recommendation == "" || finding.EvidenceJSON["mode"] != "agentic" {
 			t.Fatalf("unexpected finding row: %+v", finding)
 		}
 	}
@@ -737,7 +733,7 @@ func TestGraphQLControlPlaneSecurityReportsSourceAccessPolicy(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{}, createSQLiteDBFile(t, "source-access-security.sqlite3", true))
 
 	res, err := svc.gj.GraphQL(sourceModeAdminTestContext(), `query {
-		identity: gj_security(id: "policy:source_access.identity") {
+		identity: gj_security(id: "policy:system_access.identity") {
 			id
 			kind
 			status
@@ -816,10 +812,6 @@ sources:
     type: sqlite
     path: %q
     default: true
-  - name: graphjin
-    kind: graphjin
-  - name: workflows
-    kind: workflow
 `, dbPath)
 	prodConfig := `
 inherits: dev.yml
@@ -945,6 +937,10 @@ func TestApplySystemRoleQueryDefaultsDatabaseScoped(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
 			Mode: "agentic",
+			Sources: []core.SourceConfig{{
+				Name: "app", Kind: "database", Type: "sqlite",
+			}},
+			System: core.SystemConfig{Capabilities: map[string]bool{featurecap.KeySecurityRead: true}},
 			Roles: []core.Role{{
 				Name: "user",
 				Tables: []core.RoleTable{{
@@ -984,6 +980,7 @@ func TestApplySystemRoleQueryDefaultsDatabaseScoped(t *testing.T) {
 func TestAssertArtifactNanoRoleDefaultsFailsClosed(t *testing.T) {
 	conf := &Config{Core: core.Config{
 		Mode:      "agentic",
+		Sources:   []core.SourceConfig{{Name: "app", Kind: "database", Type: "sqlite"}},
 		Artifacts: core.ArtifactsConfig{Enabled: true},
 	}}
 	filters := []string{`{ or: { owner_ref: { eq: $user_ref }, visibility: { eq: "global" } } }`}
@@ -1067,15 +1064,15 @@ func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
 			t.Fatalf("expected source-mode custom role to read gj_catalog, got %s", string(res.Data))
 		}
 
-		// Denied system roots fail loudly instead of rendering null.
+		// The capability is disabled by the agentic default, so the root is absent.
 		res, err = svc.gj.GraphQL(ctx, `query {
 			security: gj_security(id: "summary") { id }
 		}`, nil, &core.RequestConfig{})
 		if err == nil {
-			t.Fatalf("expected source-mode custom role to be denied gj_security, got %s", string(res.Data))
+			t.Fatalf("expected source-mode gj_security to be absent, got %s", string(res.Data))
 		}
-		if !strings.Contains(err.Error(), "blocked") {
-			t.Fatalf("expected gj_security deny to surface a blocked error, got: %v", err)
+		if !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("expected absent gj_security root, got: %v", err)
 		}
 	})
 }
@@ -1083,7 +1080,7 @@ func TestSourceModeSystemRootAccessCoversAnonAndCustomRoles(t *testing.T) {
 func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 	userCtx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
 
-	t.Run("normal user gets catalog and owner workflow but not detailed audit or config", func(t *testing.T) {
+	t.Run("normal user gets catalog but disabled read features remain absent", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-perms.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "agentic"
 		})
@@ -1094,10 +1091,7 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 			t.Fatalf("refresh system nanodb: %v", err)
 		}
 
-		res, err := svc.gj.GraphQL(userCtx, `query {
-			catalog: gj_catalog(limit: 1) { id }
-			workflow: gj_workflow(id: "daily_report") { name code }
-		}`, nil, &core.RequestConfig{})
+		res, err := svc.gj.GraphQL(userCtx, `query { catalog: gj_catalog(limit: 1) { id } }`, nil, &core.RequestConfig{})
 		if err != nil {
 			t.Fatalf("agentic permissions query error: %v", err)
 		}
@@ -1108,23 +1102,19 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 		if string(out["catalog"]) == "null" || len(out["catalog"]) == 0 {
 			t.Fatalf("expected agentic user catalog access, got %s", string(res.Data))
 		}
-		// New agentic matrix: gj_workflow defaults to owner access, so an
-		// authenticated (non-anon) user may read workflow definitions.
-		if string(out["workflow"]) == "null" || len(out["workflow"]) == 0 {
-			t.Fatalf("expected agentic user owner access to gj_workflow, got %s", string(res.Data))
-		}
-		// gj_security and gj_config stay admin-only and deny with an error
-		// rather than rendering null.
+		// Workflow-definition, security, and config capabilities default off in
+		// agentic mode, so access policy cannot resurrect these roots.
 		for root, query := range map[string]string{
+			"gj_workflow": `query { workflow: gj_workflow(id: "daily_report") { name } }`,
 			"gj_security": `query { security: gj_security(id: "summary") { id } }`,
 			"gj_config":   `query { config: gj_config(id: "current") { id } }`,
 		} {
 			res, err := svc.gj.GraphQL(userCtx, query, nil, &core.RequestConfig{})
 			if err == nil {
-				t.Fatalf("expected %s to be denied for normal agentic user, got %s", root, string(res.Data))
+				t.Fatalf("expected %s to be absent in default agentic mode, got %s", root, string(res.Data))
 			}
-			if !strings.Contains(err.Error(), "blocked") {
-				t.Fatalf("expected %s deny to surface a blocked error, got: %v", root, err)
+			if !strings.Contains(err.Error(), "not found") {
+				t.Fatalf("expected %s absence error, got: %v", root, err)
 			}
 		}
 	})
@@ -1132,11 +1122,8 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 	t.Run("explicit security grant unblocks only gj_security", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-security-grant.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "agentic"
-			for i := range conf.Core.Sources {
-				if conf.Core.Sources[i].Name == "graphjin" {
-					conf.Core.Sources[i].Access.Roots = map[string]string{"gj_security": core.AccessModeAuthenticated}
-				}
-			}
+			conf.Core.System.Capabilities = map[string]bool{featurecap.KeySecurityRead: true}
+			conf.Core.System.RootAccess = map[string]string{"gj_security": core.AccessModeAuthenticated}
 		})
 
 		res, err := svc.gj.GraphQL(userCtx, `query {
@@ -1163,8 +1150,8 @@ func TestGraphQLControlPlaneAgenticSystemPermissions(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected gj_config to remain denied, got %s", string(res.Data))
 		}
-		if !strings.Contains(err.Error(), "blocked") {
-			t.Fatalf("expected gj_config deny to surface a blocked error, got: %v", err)
+		if !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("expected disabled gj_config root to remain absent, got: %v", err)
 		}
 	})
 
@@ -1297,22 +1284,11 @@ func TestGraphQLRuntimeRootAvailabilityAndPermissions(t *testing.T) {
 
 		disabled := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "runtime-agentic-disabled.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "agentic"
-			for i := range conf.Core.Sources {
-				if conf.Core.Sources[i].Kind == "graphjin" {
-					conf.Core.Sources[i].Capabilities = map[string]bool{sourcecap.KeyRuntimeRead: false}
-				}
-			}
+			conf.Core.System.Capabilities = map[string]bool{featurecap.KeyRuntimeRead: false}
 		})
-		res, err := disabled.gj.GraphQL(adminCtx, query, nil, &core.RequestConfig{})
-		if err != nil {
-			t.Fatalf("runtime.read false query should be blocked by role, not fail compile: %v", err)
-		}
-		var disabledOut map[string]json.RawMessage
-		if err := json.Unmarshal(res.Data, &disabledOut); err != nil {
-			t.Fatalf("decode disabled response: %v\n%s", err, string(res.Data))
-		}
-		if string(disabledOut["gj_runtime"]) != "null" {
-			t.Fatalf("expected runtime.read false to block gj_runtime, got %s", string(res.Data))
+		_, err := disabled.gj.GraphQL(adminCtx, query, nil, &core.RequestConfig{})
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("runtime.read false must remove gj_runtime even for admin, got %v", err)
 		}
 	})
 }
@@ -1449,12 +1425,9 @@ func TestGraphQLControlPlaneCatalogConfigRecipeSearch(t *testing.T) {
 func TestSecurityNanoRowsModes(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
-			Mode: "agentic",
-			Sources: []core.SourceConfig{
-				{Name: "graphjin", Kind: "graphjin"},
-				{Name: "workflows", Kind: "workflow"},
-			},
-			Tables: []core.Table{{Name: "gj_workflow", ReadOnly: false}},
+			Mode:    "agentic",
+			Sources: []core.SourceConfig{{Name: "app", Kind: "database", Type: "sqlite"}},
+			Tables:  []core.Table{{Name: "gj_workflow", ReadOnly: false}},
 		},
 		Serv: Serv{
 			Production: true,
@@ -1467,7 +1440,7 @@ func TestSecurityNanoRowsModes(t *testing.T) {
 	conf.Core.Production = true
 	rows := securityNanoRows(&graphjinService{conf: conf})
 
-	var sawSummary, sawAgenticWorkflowPolicy, sawWorkflowFinding bool
+	var sawSummary, sawAgenticWorkflowPolicy bool
 	for _, row := range rows {
 		if row["id"] == "summary" && row["mode"] == "agentic" {
 			sawSummary = true
@@ -1475,24 +1448,20 @@ func TestSecurityNanoRowsModes(t *testing.T) {
 		if row["kind"] == "policy" && row["capability"] == "workflow" && row["action"] == "execute" && row["default_allowed"] == true {
 			sawAgenticWorkflowPolicy = true
 		}
-		if row["kind"] == "finding" && row["capability"] == "workflow" && row["action"] == "write" && row["severity"] == "high" {
-			sawWorkflowFinding = true
-		}
 	}
-	if !sawSummary || !sawAgenticWorkflowPolicy || !sawWorkflowFinding {
-		t.Fatalf("missing expected agentic security rows: summary=%v workflow_policy=%v workflow_finding=%v rows=%+v",
-			sawSummary, sawAgenticWorkflowPolicy, sawWorkflowFinding, rows)
+	if !sawSummary || !sawAgenticWorkflowPolicy {
+		t.Fatalf("missing expected agentic security rows: summary=%v workflow_policy=%v rows=%+v",
+			sawSummary, sawAgenticWorkflowPolicy, rows)
 	}
 }
 
-func TestSecurityNanoRowsSourceCapabilities(t *testing.T) {
+func TestSecurityNanoRowsFeatureCapabilities(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
-			Mode: "agentic",
-			Sources: []core.SourceConfig{
-				{Name: "graphjin", Kind: "graphjin", Capabilities: map[string]bool{"security.read": true}},
-				{Name: "workflows", Kind: "workflow", Capabilities: map[string]bool{"workflow.execute": false}},
-			},
+			Mode:      "agentic",
+			Sources:   []core.SourceConfig{{Name: "app", Kind: "database", Type: "sqlite"}},
+			System:    core.SystemConfig{Capabilities: map[string]bool{featurecap.KeySecurityRead: true}},
+			Workflows: core.WorkflowsConfig{Capabilities: map[string]bool{featurecap.KeyWorkflowExecute: false}},
 		},
 		Serv: Serv{Production: true},
 	}
@@ -1504,9 +1473,9 @@ func TestSecurityNanoRowsSourceCapabilities(t *testing.T) {
 		if row["kind"] != "policy" {
 			continue
 		}
-		if row["source_kind"] == "graphjin" && row["capability"] == "security.read" {
+		if row["source_kind"] == featurecap.KindSystem && row["capability"] == featurecap.KeySecurityRead {
 			sawSecurityRead = true
-			if row["override_key"] != "sources[graphjin].capabilities.security.read" ||
+			if row["override_key"] != "system.capabilities.security.read" ||
 				row["override_explicit"] != true ||
 				row["default_effective"] != "block" ||
 				row["effective"] != "allow" ||
@@ -1515,14 +1484,14 @@ func TestSecurityNanoRowsSourceCapabilities(t *testing.T) {
 				t.Fatalf("unexpected security.read policy: %+v", row)
 			}
 			evidence, ok := row["evidence_json"].(map[string]any)
-			def, _ := sourcecap.Lookup(sourcecap.KindGraphJin, sourcecap.KeySecurityRead)
+			def, _ := featurecap.Lookup(featurecap.KindSystem, featurecap.KeySecurityRead)
 			if !ok || evidence["enforcement"] != def.Enforcement {
 				t.Fatalf("expected runtime enforcement evidence, got %+v", row["evidence_json"])
 			}
 		}
-		if row["source_kind"] == "workflow" && row["capability"] == "workflow.execute" {
+		if row["source_kind"] == featurecap.KindWorkflows && row["capability"] == featurecap.KeyWorkflowExecute {
 			sawWorkflowExecute = true
-			if row["override_key"] != "sources[workflows].capabilities.workflow.execute" ||
+			if row["override_key"] != "workflows.capabilities.execute" ||
 				row["override_explicit"] != true ||
 				row["default_effective"] != "allow" ||
 				row["effective"] != "block" {
@@ -1531,7 +1500,7 @@ func TestSecurityNanoRowsSourceCapabilities(t *testing.T) {
 		}
 	}
 	if !sawSecurityRead || !sawWorkflowExecute {
-		t.Fatalf("missing source capability policies: security_read=%v workflow_execute=%v rows=%+v", sawSecurityRead, sawWorkflowExecute, rows)
+		t.Fatalf("missing feature capability policies: security_read=%v workflow_execute=%v rows=%+v", sawSecurityRead, sawWorkflowExecute, rows)
 	}
 }
 
@@ -1587,8 +1556,6 @@ func TestSecurityNanoRowsCoverSourceCapabilityRegistry(t *testing.T) {
 				{Name: "repo", Kind: sourcecap.KindCode},
 				{Name: "docs", Kind: sourcecap.KindFile},
 				{Name: "upstream", Kind: sourcecap.KindAPI},
-				{Name: "graphjin", Kind: sourcecap.KindGraphJin},
-				{Name: "workflows", Kind: sourcecap.KindWorkflow},
 			},
 		},
 		Serv: Serv{Production: true},
@@ -1617,6 +1584,17 @@ func TestSecurityNanoRowsCoverSourceCapabilityRegistry(t *testing.T) {
 			evidence, ok := row["evidence_json"].(map[string]any)
 			if !ok || evidence["enforcement"] != def.Enforcement {
 				t.Fatalf("policy row evidence drift for %s.%s: %+v", kind, def.Key, row["evidence_json"])
+			}
+		}
+	}
+	for _, kind := range featurecap.Kinds() {
+		for _, def := range featurecap.Definitions(kind) {
+			row, ok := seen[kind+"."+def.Key]
+			if !ok {
+				t.Fatalf("missing gj_security feature policy row for %s.%s", kind, def.Key)
+			}
+			if row["action"] != def.Action || row["severity"] != def.Severity {
+				t.Fatalf("feature policy row drift for %s.%s: %+v", kind, def.Key, row)
 			}
 		}
 	}
@@ -1658,18 +1636,18 @@ func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
 		}
 	})
 
-	t.Run("workflow source read-only blocks execution in agentic mode", func(t *testing.T) {
+	t.Run("workflow execute capability disables execution in agentic mode", func(t *testing.T) {
 		svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, createSQLiteDBFile(t, "agentic-readonly.sqlite3", true), func(conf *Config) {
 			conf.Core.Mode = "agentic"
-			conf.Core.Sources[2].ReadOnly = true
+			conf.Core.Workflows.Capabilities = map[string]bool{featurecap.KeyWorkflowExecute: false}
 		})
 
 		ctx := context.WithValue(context.Background(), core.UserIDKey, "company-user")
 		_, err := svc.gj.GraphQL(ctx, `mutation {
 			gj_workflow_execution(insert: { workflow_name: "daily_report" }) { status error }
 		}`, nil, &core.RequestConfig{})
-		if err == nil || !strings.Contains(err.Error(), "read-only") {
-			t.Fatalf("expected read-only workflows source to block execution, got %v", err)
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("expected disabled workflow execution root to be absent, got %v", err)
 		}
 	})
 
@@ -1695,7 +1673,7 @@ func TestGraphQLControlPlaneWorkflowExecutionReadOnlyMatrix(t *testing.T) {
 		_, err := svc.gj.GraphQL(ctx, `mutation {
 			gj_workflow_execution(where: { id: { eq: "run" } }, update: { status: "ok" }) { status error }
 		}`, nil, &core.RequestConfig{})
-		if err == nil || !strings.Contains(err.Error(), "only supports insert") {
+		if err == nil || !strings.Contains(err.Error(), "Update blocked") {
 			t.Fatalf("expected non-insert workflow execution mutation block, got %v", err)
 		}
 	})
@@ -1932,11 +1910,8 @@ func TestGraphQLConfigUpdateSourcesPatchPreservesSourcesAndRecordsCatalogEvent(t
 	if main.Path != replacementPath || main.Kind != sourcecap.KindDatabase || main.Type != "sqlite" || !main.Default {
 		t.Fatalf("source patch did not preserve/update expected fields: %+v", main)
 	}
-	if _, ok := svc.conf.Core.SourceByName("graphjin"); !ok {
-		t.Fatal("update_sources should preserve graphjin source")
-	}
-	if _, ok := svc.conf.Core.SourceByName("workflows"); !ok {
-		t.Fatal("update_sources should preserve workflows source")
+	if len(svc.conf.Core.Sources) != 1 {
+		t.Fatalf("update_sources should leave only external providers, got %+v", svc.conf.Core.Sources)
 	}
 	if got := svc.conf.Core.Databases["main"].Path; got != replacementPath {
 		t.Fatalf("renormalized database path = %q, want %q", got, replacementPath)
@@ -1974,21 +1949,16 @@ func TestGraphQLConfigUpdateGlobalRecordsFullCatalogEvent(t *testing.T) {
 	}
 }
 
-func TestGraphQLConfigRemoveSourcesPrunesOwnedCatalogRows(t *testing.T) {
+func TestGraphQLConfigHasNoInternalSourceRows(t *testing.T) {
 	svc := newControlPlaneGraphQLTestService(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "remove-source.sqlite3", true))
 
-	before := queryCatalogOwnerIDs(t, svc, "workflows")
-	if len(before) == 0 {
-		t.Fatal("expected workflow-owned catalog rows before removing workflow source")
-	}
-
-	_ = applyControlPlaneConfigUpdate(t, svc, `remove_sources: ["workflows"]`, "id")
-	if _, ok := svc.conf.Core.SourceByName("workflows"); ok {
-		t.Fatal("expected workflows source to be removed")
-	}
-	after := queryCatalogOwnerIDs(t, svc, "workflows")
-	if len(after) != 0 {
-		t.Fatalf("expected workflow-owned catalog rows to be pruned, got %v", after)
+	for _, internal := range []string{"graphjin", "workflows"} {
+		if _, ok := svc.conf.Core.SourceByName(internal); ok {
+			t.Fatalf("built-in feature %q leaked into configured sources", internal)
+		}
+		if rows := queryCatalogOwnerIDs(t, svc, internal); len(rows) != 0 {
+			t.Fatalf("built-in feature %q produced fake source-owned rows: %v", internal, rows)
+		}
 	}
 }
 
@@ -2033,7 +2003,7 @@ func TestMCPReloadSchemaDatabaseUsesSourceScopedReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unsupported reload schema tool returned Go error: %v", err)
 	}
-	if res == nil || !res.IsError || !strings.Contains(fmt.Sprint(res.Content), "source-scoped schema reload only supports database sources") {
+	if res == nil || !res.IsError || !strings.Contains(fmt.Sprint(res.Content), "not a configured source") || strings.Contains(fmt.Sprint(res.Content), internalSystemDatabaseBase) {
 		t.Fatalf("expected unsupported source-scoped reload error, got %+v", res)
 	}
 }
@@ -2227,7 +2197,7 @@ func TestGraphQLControlPlaneConfigSourcePatchRejectsUnsafeInputs(t *testing.T) {
 				name: "main",
 				access: { roots_set: { gj_security: "admin" } }
 			}]`,
-			wantErr: "kind: graphjin",
+			wantErr: "use system.root_access",
 		},
 		{
 			name: "missing source",
@@ -2343,11 +2313,7 @@ func TestGraphQLControlPlaneConfigPreviewApplyGuards(t *testing.T) {
 func TestGraphQLControlPlaneConfigRuntimeEventsAreRedacted(t *testing.T) {
 	svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{AllowConfigUpdates: true}, createSQLiteDBFile(t, "config-runtime-redacted.sqlite3", true), func(conf *Config) {
 		conf.Core.Mode = "agentic"
-		for i := range conf.Core.Sources {
-			if conf.Core.Sources[i].Kind == "graphjin" {
-				conf.Core.Sources[i].Capabilities = map[string]bool{sourcecap.KeyConfigWrite: true, sourcecap.KeyRuntimeRead: true}
-			}
-		}
+		conf.Core.System.Capabilities = map[string]bool{featurecap.KeyConfigWrite: true, featurecap.KeyRuntimeRead: true}
 	})
 	revision := controlPlaneConfigRevision(t, svc)
 
@@ -2509,7 +2475,7 @@ func testStringSliceContains(values []string, want string) bool {
 	return false
 }
 
-func TestGraphQLControlPlaneAllowsAppGJPrefixWithSystemSource(t *testing.T) {
+func TestGraphQLControlPlaneAllowsAppGJPrefixWithBuiltInSystemTables(t *testing.T) {
 	dbPath := createSQLiteDBFile(t, "reserved.sqlite3", true)
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -2523,17 +2489,17 @@ func TestGraphQLControlPlaneAllowsAppGJPrefixWithSystemSource(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
 			DBType:           "sqlite",
+			Mode:             "dev",
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
 				{Name: "main", Kind: "database", Type: "sqlite", Path: dbPath, Default: true},
-				{Name: "graphjin", Kind: "graphjin"},
 			},
 		},
 		Serv: Serv{ConfigPath: filepath.Join(t.TempDir(), "config")},
 	}
 	svc, err := newGraphJinService(conf, nil)
 	if err != nil {
-		t.Fatalf("app gj_ table should not collide with graphjin nanoDB source: %v", err)
+		t.Fatalf("app gj_ table should not collide with built-in system tables: %v", err)
 	}
 	if svc != nil {
 		closeTestService(svc)
@@ -2564,16 +2530,11 @@ func latestRuntimeEventDetails(t *testing.T, svc *graphjinService, phase, detail
 
 func allowAgenticGraphJinConfigWrite(conf *Config) {
 	conf.Core.Mode = "agentic"
-	for i := range conf.Core.Sources {
-		if conf.Core.Sources[i].CanonicalKind() != sourcecap.KindGraphJin {
-			continue
-		}
-		if conf.Core.Sources[i].Capabilities == nil {
-			conf.Core.Sources[i].Capabilities = make(map[string]bool)
-		}
-		conf.Core.Sources[i].Capabilities[sourcecap.KeyConfigWrite] = true
-		conf.Core.Sources[i].Capabilities[sourcecap.KeyRuntimeRead] = true
+	if conf.Core.System.Capabilities == nil {
+		conf.Core.System.Capabilities = make(map[string]bool)
 	}
+	conf.Core.System.Capabilities[featurecap.KeyConfigWrite] = true
+	conf.Core.System.Capabilities[featurecap.KeyRuntimeRead] = true
 }
 
 func queryCatalogOwnerIDs(t *testing.T, svc *graphjinService, owner string) []string {
@@ -2615,8 +2576,6 @@ func newControlPlaneGraphQLTestServiceWithConfig(t *testing.T, cfg MCPConfig, db
 			DisableAllowList: true,
 			Sources: []core.SourceConfig{
 				{Name: "main", Kind: "database", Type: "sqlite", Path: dbPath, Default: true},
-				{Name: "graphjin", Kind: "graphjin"},
-				{Name: "workflows", Kind: "workflow"},
 			},
 		},
 		Serv: Serv{Production: false, MCP: cfg},

@@ -23,14 +23,11 @@ GraphJin uses environment-specific files:
 inherits: prod
 mode: agentic
 
-sources:
-  - name: graphjin
-    kind: graphjin
-    access:
-      roots:
-        gj_catalog: authenticated
-        gj_security: admin
-        gj_runtime: admin
+system:
+  root_access:
+    gj_catalog: authenticated
+    gj_security: admin
+    gj_runtime: admin
 ```
 
 {{< verified by="TestReadInConfigAgenticCanInheritProd" file="serv/serv_test.go" line="56" >}}

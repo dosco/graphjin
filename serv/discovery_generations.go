@@ -555,10 +555,14 @@ func (m *discoveryGenerationManager) buildGeneration(ctx context.Context, coreCo
 		snapshotName := path.Base(core.RuntimeSchemaSnapshotPath(source))
 		snapshotPath := path.Join(dir, snapshotName)
 		if ok, _ := m.service.fs.Exists(snapshotPath); !ok {
-			// Logical GraphJin, workflow, code, and managed system sources can
-			// participate in the finalized engine without live DB introspection.
-			// Only database sources produce full schema snapshot files.
-			if configured, found := coreConf.SourceByName(source); found && configured.CanonicalKind() != "database" {
+			// Code providers and runtime-only internal databases can participate
+			// without live SQL introspection. Only external database sources
+			// produce full schema snapshot files.
+			configured, found := coreConf.SourceByName(source)
+			if found && configured.CanonicalKind() != "database" {
+				continue
+			}
+			if !found && (strings.EqualFold(source, m.service.metadataDB) || strings.EqualFold(source, m.service.managedArtifactDB)) {
 				continue
 			}
 			return discoveryGenerationManifest{}, fmt.Errorf("full schema snapshot for database source %q is missing", source)

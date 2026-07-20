@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/featurecap"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
 	"github.com/redis/go-redis/v9"
 )
@@ -152,7 +153,7 @@ func (s *graphjinService) runtimeObservabilityEnabled() bool {
 	if s == nil || s.conf == nil {
 		return false
 	}
-	return s.conf.runtimeRootSourceEnabled()
+	return s.conf.runtimeRootEnabled()
 }
 
 func (s *graphjinService) initRuntimeObservability() error {
@@ -274,7 +275,7 @@ func (s *graphjinService) recordRuntimeEventLocked(ctx context.Context, event ru
 		event.Source = "graphjin"
 	}
 	if event.SourceKind == "" {
-		event.SourceKind = sourcecap.KindGraphJin
+		event.SourceKind = featurecap.KindSystem
 	}
 	if event.ActiveDatabase == "" {
 		event.ActiveDatabase = s.activeRuntimeDatabase()
@@ -309,8 +310,8 @@ func (s *graphjinService) runtimeCurrentStatusLocked() runtimeStatus {
 		Severity:       "warn",
 		Summary:        "GraphJin runtime status is not initialized.",
 		NextAction:     "Use configuration or database setup tools before querying application data.",
-		Source:         "graphjin",
-		SourceKind:     sourcecap.KindGraphJin,
+		Source:         featurecap.KindSystem,
+		SourceKind:     featurecap.KindSystem,
 		ActiveDatabase: activeDatabase,
 		SuggestedNext: []string{
 			`query { gj_runtime(where: { kind: { in: ["source", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind source created_at phase status severity summary next_action details_json } }`,
@@ -324,6 +325,11 @@ func (s *graphjinService) runtimeCurrentStatusLocked() runtimeStatus {
 	status.Details = map[string]any{
 		"redis_configured": s.conf.Redis.URL != "",
 		"runtime_read":     s.runtimeObservabilityEnabled(),
+		"system_roots":     registeredSystemRoots(s.conf),
+		"features": map[string]any{
+			"system":    s.runtimeFeatureCapabilityDetails(featurecap.KindSystem),
+			"workflows": s.runtimeFeatureCapabilityDetails(featurecap.KindWorkflows),
+		},
 	}
 	if s.gj == nil {
 		status.Summary = "GraphJin core is not initialized."
@@ -546,18 +552,6 @@ func (s *graphjinService) runtimeSourceEvent(ctx context.Context, source core.So
 		s.applyRuntimeDatabaseSourceHealth(ctx, &event, source, stat)
 	case sourcecap.KindCode:
 		s.applyRuntimeCodeSourceHealth(&event, source)
-	case sourcecap.KindGraphJin:
-		event.DatabaseName = s.metadataDB
-		event.Summary = fmt.Sprintf("GraphJin system source %q is configured.", name)
-		event.NextAction = "Use gj_catalog for discovery and query gj_runtime in a separate request before guarded runtime-sensitive actions."
-		event.Details["catalog_enabled"] = s.conf.catalogToolsEnabled()
-		event.Details["metadata_enabled"] = s.conf.Core.MetadataEnabled()
-		event.Details["control_plane_enabled"] = s.conf.graphjinControlPlaneEnabled()
-	case sourcecap.KindWorkflow:
-		event.Summary = fmt.Sprintf("Workflow source %q is configured.", name)
-		event.NextAction = "Use gj_catalog to inspect approved workflows, then execute through gj_workflow_execution when permitted."
-		event.Details["runtime"] = source.Runtime
-		event.Details["workflows_enabled"] = s.conf.workflowsSourceEnabled()
 	case sourcecap.KindFile:
 		event.Summary = fmt.Sprintf("File source %q is configured.", name)
 		event.NextAction = "Use gj_catalog and gj_security before file-source reads or mutations."
@@ -687,6 +681,23 @@ func (s *graphjinService) runtimeSourceCapabilityDetails(source core.SourceConfi
 	}
 }
 
+func (s *graphjinService) runtimeFeatureCapabilityDetails(kind string) map[string]any {
+	if s == nil || s.conf == nil {
+		return nil
+	}
+	enabled := make([]string, 0, len(featureCapabilityKeys(kind)))
+	overrides := make(map[string]bool)
+	for _, key := range featureCapabilityKeys(kind) {
+		if s.conf.effectiveFeatureCapability(kind, key) {
+			enabled = append(enabled, key)
+		}
+		if value, explicit := s.conf.featureCapabilityConfigured(kind, key); explicit {
+			overrides[key] = value
+		}
+	}
+	return map[string]any{"enabled": enabled, "overrides": overrides}
+}
+
 func runtimeSourceKind(source core.SourceConfig) string {
 	if kind := source.CanonicalKind(); kind != "" {
 		return kind
@@ -809,11 +820,8 @@ func runtimeScope(conf *Config, metadataDB string, namespace *string) string {
 		ns = *namespace
 	}
 	db := metadataDB
-	if db == "" && conf != nil {
-		db = conf.Core.CatalogDatabaseName()
-	}
 	if db == "" {
-		db = defaultMetadataDBName
+		db = featurecap.KindSystem
 	}
 	return strings.Join([]string{cleanRuntimeKeyPart(app), cleanRuntimeKeyPart(ns), cleanRuntimeKeyPart(db)}, ":")
 }
@@ -1249,7 +1257,7 @@ func sanitizeRuntimeEvent(event runtimeEvent) runtimeEvent {
 		event.Source = "graphjin"
 	}
 	if event.SourceKind == "" {
-		event.SourceKind = sourcecap.KindGraphJin
+		event.SourceKind = featurecap.KindSystem
 	}
 	if event.Details != nil {
 		if redacted, ok := redactRuntimeValue(event.Details).(map[string]any); ok {

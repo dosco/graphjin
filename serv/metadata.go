@@ -13,8 +13,6 @@ import (
 	"github.com/dosco/graphjin/core/v3"
 )
 
-const defaultMetadataDBName = "graphjin"
-
 const metadataSchemaSQL = `
 PRAGMA foreign_keys=ON;
 PRAGMA busy_timeout=5000;
@@ -193,17 +191,15 @@ func (s *graphjinService) metadataGraphEnabledForCore(conf *core.Config) bool {
 	if conf == nil {
 		return false
 	}
-	if conf.MetadataEnabled() || conf.CatalogEnabled() || conf.Artifacts.Enabled {
-		return true
-	}
 	if s == nil || s.conf == nil {
-		return false
+		return conf.MetadataEnabled() || conf.CatalogEnabled() || conf.Artifacts.Enabled
 	}
 	scoped := *s.conf
 	scoped.Core = *conf
-	return scoped.graphjinControlPlaneEnabled() ||
-		scoped.workflowsSourceEnabled() ||
-		scoped.runtimeRootRegistered()
+	if conf.IsSourcesUsed() {
+		return len(registeredSystemRoots(&scoped)) != 0
+	}
+	return conf.MetadataEnabled() || conf.CatalogEnabled() || conf.Artifacts.Enabled
 }
 
 func (s *graphjinService) ensureSystemHostDBBeforeCore() error {
@@ -254,16 +250,7 @@ func (s *graphjinService) initMetadataGraphForRuntime(conf *core.Config, runtime
 	if runtimeCore == nil {
 		return "", fmt.Errorf("metadata runtime config is nil")
 	}
-	name := conf.MetadataDatabaseName()
-	if name == "" {
-		name = defaultMetadataDBName
-	}
-	if _, ok := conf.Databases[name]; ok {
-		return "", fmt.Errorf("metadata database %q collides with configured database", name)
-	}
-	if _, ok := dbs[name]; ok {
-		return "", fmt.Errorf("metadata database %q collides with active database", name)
-	}
+	name := allocateRuntimeDatabaseName(internalSystemDatabaseBase, conf, runtimeCore, dbs)
 
 	dsn := fmt.Sprintf("file:graphjin_metadata_%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := sql.Open("sqlite", dsn)
@@ -704,8 +691,8 @@ func (s *graphjinService) metadataSnapshotExcludesFor(metadataDB string, conf *c
 	for _, name := range s.allCodeSQLDatabasesFor(conf, managedDBs) {
 		seen[name] = struct{}{}
 	}
-	if conf != nil && isManagedArtifactDatabase(conf.Artifacts.Source) {
-		seen[managedArtifactDatabaseName] = struct{}{}
+	if s != nil && s.managedArtifactDB != "" {
+		seen[s.managedArtifactDB] = struct{}{}
 	}
 	out := make([]string, 0, len(seen))
 	for name := range seen {

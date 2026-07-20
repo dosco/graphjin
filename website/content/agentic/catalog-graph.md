@@ -17,15 +17,12 @@ weight: 20
 - Evidence for why something is available or blocked.
 
 ```yaml
-sources:
-  - name: graphjin
-    kind: graphjin
-    access:
-      roots:
-        gj_catalog: authenticated
-        gj_security: admin
-        gj_runtime: admin
-        gj_artifacts: authenticated
+system:
+  root_access:
+    gj_catalog: authenticated
+    gj_security: admin
+    gj_runtime: admin
+    gj_artifacts: authenticated
 ```
 
 ## Why it matters
