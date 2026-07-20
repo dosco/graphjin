@@ -550,7 +550,11 @@ func (s *graphjinService) artifactDB() (*sql.DB, string, string, bool) {
 		return nil, "", "", false
 	}
 	cfg := s.conf.Core.EffectiveArtifactsConfig()
-	db := s.dbs[cfg.Source]
+	source := cfg.Source
+	if s.conf.managedArtifactStore && s.managedArtifactDB != "" {
+		source = s.managedArtifactDB
+	}
+	db := s.dbs[source]
 	if db == nil {
 		return nil, "", "", false
 	}
@@ -558,7 +562,7 @@ func (s *graphjinService) artifactDB() (*sql.DB, string, string, bool) {
 	if s.runtimeCore != nil {
 		coreConf = s.runtimeCore
 	}
-	dbConf := coreConf.Databases[cfg.Source]
+	dbConf := coreConf.Databases[source]
 	dbType := strings.ToLower(dbConf.Type)
 	if dbType == "" {
 		dbType = "postgres"

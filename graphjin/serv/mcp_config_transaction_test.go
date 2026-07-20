@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/featurecap"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
@@ -553,8 +554,8 @@ func TestHandleUpdateCurrentConfig_RuntimeReadDisabledStopsRuntimeStore(t *testi
 			Mode: modeAgentic,
 			Sources: []core.SourceConfig{
 				{Name: "main", Kind: "database", Type: "sqlite", Path: livePath},
-				{Name: "graphjin", Kind: "graphjin"},
 			},
+			System: core.SystemConfig{Capabilities: map[string]bool{featurecap.KeyRuntimeRead: true}},
 		},
 		Serv: Serv{Production: false},
 	}
@@ -580,12 +581,8 @@ func TestHandleUpdateCurrentConfig_RuntimeReadDisabledStopsRuntimeStore(t *testi
 				"type": "sqlite",
 				"path": livePath,
 			},
-			map[string]any{
-				"name":         "graphjin",
-				"kind":         "graphjin",
-				"capabilities": map[string]any{"runtime.read": false},
-			},
 		},
+		"system": map[string]any{"capabilities": map[string]any{"runtime.read": false}},
 	})
 	if !out.Success {
 		t.Fatalf("expected runtime.read disable update to succeed, got %+v", out)
@@ -864,7 +861,7 @@ func TestHandleUpdateCurrentConfig_MetadataReloadTogglesAutoCodeRelations(t *tes
 	metadataEnabled := true
 	conf := &Config{Core: core.Config{Metadata: core.MetadataConfig{Enabled: &metadataEnabled}}}
 	_, err := newGraphJinService(conf, nil)
-	if err == nil || !strings.Contains(err.Error(), "kind: graphjin") {
+	if err == nil || !strings.Contains(err.Error(), "system.capabilities.catalog.read") {
 		t.Fatalf("legacy metadata config error = %v, want migration guidance", err)
 	}
 }
@@ -1010,7 +1007,7 @@ func newSourceModeConfigMCPServer(t *testing.T, dbPaths map[string]string) *mcpS
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	sources := make([]core.SourceConfig, 0, len(names)+1)
+	sources := make([]core.SourceConfig, 0, len(names))
 	for _, name := range names {
 		sources = append(sources, core.SourceConfig{
 			Name:    name,
@@ -1020,8 +1017,6 @@ func newSourceModeConfigMCPServer(t *testing.T, dbPaths map[string]string) *mcpS
 			Default: name == "main",
 		})
 	}
-	sources = append(sources, core.SourceConfig{Name: "graphjin", Kind: sourcecap.KindGraphJin})
-
 	conf := &Config{
 		Core: core.Config{
 			Mode:             modeAgentic,

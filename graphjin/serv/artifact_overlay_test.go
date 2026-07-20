@@ -45,7 +45,6 @@ func newArtifactOverlayTestServiceWithArtifacts(t *testing.T, files map[string]s
 		}
 	}
 	fs := newAferoFS(mem, "/")
-	sourceEnabled := true
 	conf := &Config{
 		Core: core.Config{
 			DBType:     "sqlite",
@@ -53,8 +52,6 @@ func newArtifactOverlayTestServiceWithArtifacts(t *testing.T, files map[string]s
 			Production: false,
 			Sources: []core.SourceConfig{
 				{Name: "main", Kind: "database", Type: "sqlite", Path: dbPath, Default: true, Access: core.SourceAccessConfig{Read: core.AccessModePublic}},
-				{Name: "graphjin", Kind: "graphjin", Catalog: &sourceEnabled, ControlPlane: &sourceEnabled},
-				{Name: "workflows", Kind: "workflow"},
 			},
 			Artifacts: artifacts,
 		},

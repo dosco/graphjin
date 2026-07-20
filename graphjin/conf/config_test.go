@@ -11,7 +11,8 @@ func TestNewConfigCatalogAuto(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "dev.yml"), []byte(`
 sources:
   - name: graphjin
-    kind: graphjin
+    kind: database
+    type: sqlite
 `), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -21,9 +22,9 @@ sources:
 		t.Fatalf("NewConfig: %v", err)
 	}
 	if !conf.CatalogEnabled() {
-		t.Fatal("graphjin source should enable catalog by default")
+		t.Fatal("dev mode should enable the built-in catalog by default")
 	}
 	if !conf.CatalogAutoCodeRelationsEnabled() {
-		t.Fatal("graphjin source should enable catalog code relations by default")
+		t.Fatal("dev mode should enable catalog code relations by default")
 	}
 }

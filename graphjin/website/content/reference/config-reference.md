@@ -55,13 +55,11 @@ sources:
       write: blocked
       delete: blocked
 
-  - name: graphjin
-    kind: graphjin
-    access:
-      roots:
-        gj_catalog: authenticated
-        gj_security: admin
-        gj_runtime: admin
+system:
+  root_access:
+    gj_catalog: authenticated
+    gj_security: admin
+    gj_runtime: admin
 ```
 
 {{< verified by="TestConfigDocsTemplatesUseSources" file="serv/mcp_config_docs_test.go" line="8" >}}
@@ -72,6 +70,7 @@ sources:
 | Change | Tests to look near |
 | --- | --- |
 | New source capability | `core/sourcecap`, catalog, security, MCP registration, and source access tests |
+| New built-in feature capability | `core/featurecap`, system policy, security, MCP registration, and direct GraphQL tests |
 | New config field | config decode/validation tests plus MCP config docs tests |
 | New API or file provider | source-mode normalization and runtime init tests |
 | New security default | `gj_security`, config scan, and caller capability profile tests |

@@ -21,7 +21,7 @@
 - Add schema DDL/diff support only if public docs will claim migrations or DDL generation.
 - Add test harness wiring in `tests/dbint_test.go`, a `scripts/test-<db>.sh` script, and `scripts/test-parallel.sh` inclusion.
 - Add focused skip helpers for unimplemented features. Skips must say what is unsupported and must not hide syntax bugs for claimed features.
-- Verify application-database selection ignores the reserved `__graphjin_artifacts` managed SQLite store while the internal compiler/runtime graph can still compile its control-plane tables.
+- Verify application-database selection ignores the runtime-only managed artifact SQLite store while the internal compiler/runtime graph can still compile its control-plane tables.
 - Verify `graphjin serve new <app> --db-url <url>` renders parseable production and agentic sources for the database, including separate host and port values and URL-decoded credentials.
 
 ## Public Surfaces

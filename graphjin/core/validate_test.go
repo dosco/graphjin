@@ -224,25 +224,49 @@ func TestConfigValidate(t *testing.T) {
 		{
 			name: "sources used accepts valid capabilities",
 			config: Config{
-				Sources: []SourceConfig{{
-					Name:         "graphjin",
-					Kind:         "graphjin",
-					Capabilities: map[string]bool{"security.read": true},
-				}},
+				Sources: []SourceConfig{{Name: "graphjin", Kind: "database", Type: "postgres"}},
+				System:  SystemConfig{Capabilities: map[string]bool{"security.read": true}},
 			},
 			wantErr: false,
 		},
 		{
 			name: "sources used rejects unknown capability",
 			config: Config{
-				Sources: []SourceConfig{{
-					Name:         "graphjin",
-					Kind:         "graphjin",
-					Capabilities: map[string]bool{"security.audit": true},
-				}},
+				Sources: []SourceConfig{{Name: "app", Kind: "database", Type: "postgres"}},
+				System:  SystemConfig{Capabilities: map[string]bool{"security.audit": true}},
 			},
 			wantErr: true,
 			errMsg:  "supported: catalog.read",
+		},
+		{
+			name:    "sources rejects removed graphjin kind with migration",
+			config:  Config{Sources: []SourceConfig{{Name: "anything", Kind: "graphjin"}}},
+			wantErr: true,
+			errMsg:  "GraphJin system features moved to top-level system configuration",
+		},
+		{
+			name:    "sources rejects removed workflow kind with migration",
+			config:  Config{Sources: []SourceConfig{{Name: "anything", Kind: "workflow"}}},
+			wantErr: true,
+			errMsg:  "workflows moved to top-level workflows configuration",
+		},
+		{
+			name: "former internal names are valid external source names",
+			config: Config{Sources: []SourceConfig{
+				{Name: "graphjin", Kind: "database", Type: "postgres"},
+				{Name: "workflows", Kind: "code", Path: "."},
+				{Name: "__graphjin_artifacts", Kind: "file", Path: "."},
+			}},
+			wantErr: false,
+		},
+		{
+			name: "source names are unique case insensitively",
+			config: Config{Sources: []SourceConfig{
+				{Name: "App", Kind: "database", Type: "postgres"},
+				{Name: "app", Kind: "database", Type: "postgres"},
+			}},
+			wantErr: true,
+			errMsg:  "duplicate source name",
 		},
 		{
 			name: "sources used rejects legacy role table access",
@@ -327,7 +351,6 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 		RolesQuery: `SELECT * FROM users WHERE id = $user_id`,
 		Sources: []SourceConfig{
 			{Name: "app", Kind: "database", Type: "postgres", Default: true},
-			{Name: "graphjin", Kind: "graphjin"},
 		},
 		Artifacts: ArtifactsConfig{Enabled: true},
 	}
@@ -345,10 +368,10 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 		app.Access.NamespaceColumn != "account_id" || app.Access.MissingNamespaceColumn != MissingNamespaceBlock {
 		t.Fatalf("database access defaults not applied: %+v", app.Access)
 	}
-	gj, _ := conf.SourceByName("graphjin")
+	rootAccess := conf.EffectiveSystemRootAccess()
 	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
-		if got := gj.Access.Roots[root]; got != AccessModePublic {
-			t.Fatalf("dev graphjin %s root access = %q, want public: %+v", root, got, gj.Access.Roots)
+		if got := rootAccess[root]; got != AccessModePublic {
+			t.Fatalf("dev system %s root access = %q, want public: %+v", root, got, rootAccess)
 		}
 	}
 
@@ -356,23 +379,22 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 		Mode: "agentic",
 		Sources: []SourceConfig{
 			{Name: "app", Kind: "database", Type: "postgres", Default: true},
-			{Name: "graphjin", Kind: "graphjin"},
 		},
 		Artifacts: ArtifactsConfig{Enabled: true},
 	}
 	if err := agentic.NormalizeSources(); err != nil {
 		t.Fatalf("NormalizeSources agentic: %v", err)
 	}
-	agenticGJ, _ := agentic.SourceByName("graphjin")
-	if agenticGJ.Access.Roots["gj_catalog"] != AccessModePublic ||
-		agenticGJ.Access.Roots["gj_security"] != AccessModeAdmin || agenticGJ.Access.Roots["gj_runtime"] != AccessModeAdmin ||
-		agenticGJ.Access.Roots["gj_config"] != AccessModeAdmin ||
-		agenticGJ.Access.Roots["gj_artifacts"] != AccessModeOwner ||
-		agenticGJ.Access.Roots["gj_watch"] != AccessModeOwner ||
-		agenticGJ.Access.Roots["gj_watch_event"] != AccessModeOwner ||
-		agenticGJ.Access.Roots["gj_workflow"] != AccessModeOwner ||
-		agenticGJ.Access.Roots["gj_workflow_execution"] != AccessModeOwner {
-		t.Fatalf("agentic graphjin root access defaults not applied: %+v", agenticGJ.Access.Roots)
+	agenticAccess := agentic.EffectiveSystemRootAccess()
+	if agenticAccess["gj_catalog"] != AccessModePublic ||
+		agenticAccess["gj_security"] != AccessModeAdmin || agenticAccess["gj_runtime"] != AccessModeAdmin ||
+		agenticAccess["gj_config"] != AccessModeAdmin ||
+		agenticAccess["gj_artifacts"] != AccessModeOwner ||
+		agenticAccess["gj_watch"] != AccessModeOwner ||
+		agenticAccess["gj_watch_event"] != AccessModeOwner ||
+		agenticAccess["gj_workflow"] != AccessModeOwner ||
+		agenticAccess["gj_workflow_execution"] != AccessModeOwner {
+		t.Fatalf("agentic system root access defaults not applied: %+v", agenticAccess)
 	}
 
 	// prod is the only pre-agentic compatibility mode: the agentic surface is
@@ -382,16 +404,15 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 		Mode: "prod",
 		Sources: []SourceConfig{
 			{Name: "app", Kind: "database", Type: "postgres", Default: true},
-			{Name: "graphjin", Kind: "graphjin"},
 		},
 	}
 	if err := prod.NormalizeSources(); err != nil {
 		t.Fatalf("NormalizeSources prod: %v", err)
 	}
-	prodGJ, _ := prod.SourceByName("graphjin")
+	prodAccess := prod.EffectiveSystemRootAccess()
 	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
-		if got := prodGJ.Access.Roots[root]; got != AccessModeAdmin {
-			t.Fatalf("prod graphjin %s root access = %q, want admin: %+v", root, got, prodGJ.Access.Roots)
+		if got := prodAccess[root]; got != AccessModeAdmin {
+			t.Fatalf("prod system %s root access = %q, want admin: %+v", root, got, prodAccess)
 		}
 	}
 }
@@ -466,8 +487,8 @@ func TestNormalizeSourcesMapsSourcesAndRelationships(t *testing.T) {
 			{Name: "app", Kind: "database", Type: "postgres", Default: true},
 			{Name: "code", Kind: "code", Path: "/src", ReadOnly: true},
 			{Name: "avatars", Kind: "file", Backend: "local", Root: "/tmp/avatars"},
-			{Name: "graphjin", Kind: "graphjin"},
-			{Name: "workflows", Kind: "workflow", ReadOnly: true},
+			{Name: "graphjin", Kind: "file", Backend: "local", Root: "/tmp/graphjin"},
+			{Name: "workflows", Kind: "code", Path: "/workflows", ReadOnly: true},
 		},
 		Tables: []Table{
 			{Name: "users", Source: "app"},
@@ -483,7 +504,7 @@ func TestNormalizeSourcesMapsSourcesAndRelationships(t *testing.T) {
 	if conf.Databases["app"].Type != "postgres" || conf.Databases["code"].Type != "codesql" {
 		t.Fatalf("unexpected database normalization: %+v", conf.Databases)
 	}
-	if len(conf.Filesystems) != 1 || conf.Filesystems[0].Name != "avatars" {
+	if len(conf.Filesystems) != 2 || conf.Filesystems[0].Name != "avatars" || conf.Filesystems[1].Name != "graphjin" {
 		t.Fatalf("unexpected filesystem normalization: %+v", conf.Filesystems)
 	}
 	if conf.Tables[0].Database != "app" || conf.Tables[1].Database != "code" || conf.Tables[2].Database != "app" {
@@ -501,7 +522,6 @@ func TestRenormalizeSourcesRebuildsGeneratedRuntimeFields(t *testing.T) {
 	conf := &Config{
 		Sources: []SourceConfig{
 			{Name: "app", Kind: "database", Type: "sqlite", Path: "old.sqlite3", Default: true},
-			{Name: "graphjin", Kind: "graphjin"},
 		},
 		Tables: []Table{{Name: "users", Source: "app"}},
 	}

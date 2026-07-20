@@ -83,7 +83,7 @@ func (ms *mcpServer) handleGetConfigDocs(ctx context.Context, req mcp.CallToolRe
 		Notes: "These are annotated counterparts to the configs that `graphjin serve new` writes when scaffolding a new app. " +
 			"The CLI renders app and database values; substitute any `${...}` documentation placeholders before loading these reference files. " +
 			"Parsed dev and agentic configs already enable managed artifacts, watches, the agent, stateful MCP HTTP, and primitive tools. " +
-			"`dev.yml` is the verbose annotated form; `prod.yml` is the production counterpart; `agentic.yml` is production-oriented with agentic source capability policy. " +
+			"`dev.yml` is the verbose annotated form; `prod.yml` is the production counterpart; `agentic.yml` is production-oriented with agentic source and feature capability policy. " +
 			"GraphJin reads YAML keys via mapstructure, so any documented field maps 1:1 to the underlying Config struct.",
 	}
 

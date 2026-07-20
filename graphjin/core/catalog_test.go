@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/dosco/graphjin/core/v3/featurecap"
 )
 
 func TestCatalogSnapshotIncludesSchemaAndLanguageCards(t *testing.T) {
@@ -125,27 +127,25 @@ func TestLanguageFeaturesIncludeCompilerDirectives(t *testing.T) {
 }
 
 func TestCatalogConfigAutoMode(t *testing.T) {
-	on := true
-	off := false
-	conf := &Config{Sources: []SourceConfig{{Name: "graphjin", Kind: "graphjin"}}}
+	conf := &Config{Mode: "dev", Sources: []SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}}
 	if !conf.CatalogEnabled() {
-		t.Fatal("graphjin source should enable catalog by default")
+		t.Fatal("dev source mode should enable catalog by default")
 	}
 
-	conf.Sources[0].Catalog = &off
+	conf.System.Capabilities = map[string]bool{featurecap.KeyCatalogRead: false}
 	if conf.CatalogEnabled() {
-		t.Fatal("catalog false should disable catalog")
+		t.Fatal("system catalog.read false should disable catalog")
 	}
 
-	conf.Sources[0].Catalog = &on
+	conf.System.Capabilities[featurecap.KeyCatalogRead] = true
 	if !conf.CatalogEnabled() {
-		t.Fatal("catalog true should enable catalog")
+		t.Fatal("system catalog.read true should enable catalog")
 	}
 	if !conf.CatalogAutoCodeRelationsEnabled() {
 		t.Fatal("auto code relations should follow catalog enabled")
 	}
 
-	conf.Sources[0].Catalog = &off
+	conf.System.Capabilities[featurecap.KeyCatalogRead] = false
 	if conf.CatalogAutoCodeRelationsEnabled() {
 		t.Fatal("auto code relations should follow disabled catalog")
 	}

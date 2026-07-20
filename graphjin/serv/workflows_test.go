@@ -77,7 +77,7 @@ func TestRunNamedWorkflow_LoadsFromWorkflowsDir(t *testing.T) {
 	}
 }
 
-func TestRunNamedWorkflow_UsesWorkflowSourcePath(t *testing.T) {
+func TestRunNamedWorkflow_UsesConfiguredWorkflowPath(t *testing.T) {
 	mem := afero.NewMemMapFs()
 	if err := mem.MkdirAll("/custom_flows", 0o755); err != nil {
 		t.Fatalf("mkdir workflows: %v", err)
@@ -87,10 +87,8 @@ func TestRunNamedWorkflow_UsesWorkflowSourcePath(t *testing.T) {
 	}
 
 	s := &graphjinService{
-		fs: newAferoFS(mem, "/"),
-		conf: &Config{Core: core.Config{Sources: []core.SourceConfig{
-			{Name: "flows", Kind: "workflow", Path: "custom_flows", Runtime: "goja"},
-		}}},
+		fs:   newAferoFS(mem, "/"),
+		conf: &Config{Core: core.Config{Workflows: core.WorkflowsConfig{Path: "custom_flows"}}},
 	}
 
 	out, err := s.runNamedWorkflow(context.Background(), "hello", map[string]any{}, nil)

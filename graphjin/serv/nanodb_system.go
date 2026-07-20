@@ -17,22 +17,19 @@ func (s *graphjinService) initSystemNanoDBBeforeCore() error {
 	if s == nil || s.conf == nil {
 		return nil
 	}
-	if !(s.conf.catalogToolsEnabled() || s.conf.graphjinControlPlaneEnabled() || s.conf.workflowsSourceEnabled() || s.conf.runtimeRootRegistered() || s.conf.Core.Artifacts.Enabled || s.watchesEnabled()) {
-		s.metadataDB = ""
-		return nil
-	}
 	if s.runtimeCore == nil {
 		runtimeCore := cloneCoreConfig(s.conf.Core)
 		s.runtimeCore = &runtimeCore
 	}
 	s.ensureRuntimeDatabaseEntries()
-	name := s.conf.Core.CatalogDatabaseName()
-	if name == "" {
-		name = defaultMetadataDBName
+	if len(registeredSystemRoots(s.conf)) == 0 {
+		s.metadataDB = ""
+		return nil
 	}
+	name := allocateRuntimeDatabaseName(internalSystemDatabaseBase, &s.conf.Core, s.runtimeCore, s.dbs)
 	s.metadataDB = name
 	if s.systemNanoDB == nil {
-		db, err := core.NewNanoDB(systemNanoSnapshot(name, "", nil))
+		db, err := core.NewNanoDB(systemNanoSnapshotForRoots("", nil, registeredSystemRoots(s.conf)))
 		if err != nil {
 			return err
 		}
@@ -61,7 +58,7 @@ func (s *graphjinService) initSystemNanoDBBeforeCore() error {
 		}
 	}
 	if codeDB != "" {
-		if err := s.systemNanoDB.Refresh(systemNanoSnapshot(name, codeDB, nil)); err != nil {
+		if err := s.systemNanoDB.Refresh(systemNanoSnapshotForRoots(codeDB, nil, registeredSystemRoots(s.conf))); err != nil {
 			return err
 		}
 	}
@@ -116,22 +113,29 @@ func (s *graphjinService) refreshSystemNanoDBForSources(sourceNames []string) er
 		}
 	}
 	var configRows []core.NanoRow
-	if s.conf.graphjinControlPlaneEnabled() {
+	if s.conf.systemControlPlaneEnabled() {
 		row := copyNanoRow(cp.configRow())
 		row["catalog_revision"] = fullCatalog.Revision
 		configRows = []core.NanoRow{row}
 	}
 
 	if err := core.UpdateNanoDB(s.systemNanoDB, func(tx *core.NanoUpdate) error {
-		if err := tx.ReplaceRows("main", "gj_catalog", func(row core.NanoRow) bool {
-			return catalogNanoRowOwnedBySources(row, sourceSet)
-		}, catalogRows); err != nil {
-			return err
+		if systemRootRegistered(s.conf, "gj_catalog") {
+			if err := tx.ReplaceRows("main", "gj_catalog", func(row core.NanoRow) bool {
+				return catalogNanoRowOwnedBySources(row, sourceSet)
+			}, catalogRows); err != nil {
+				return err
+			}
 		}
-		if err := tx.ReplaceTable("main", "gj_security", securityNanoRows(s)); err != nil {
-			return err
+		if systemRootRegistered(s.conf, "gj_security") {
+			if err := tx.ReplaceTable("main", "gj_security", securityNanoRows(s)); err != nil {
+				return err
+			}
 		}
-		return tx.ReplaceTable("main", "gj_config", configRows)
+		if systemRootRegistered(s.conf, "gj_config") {
+			return tx.ReplaceTable("main", "gj_config", configRows)
+		}
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -219,21 +223,71 @@ func (s *graphjinService) systemNanoSnapshotFromCatalog(catalogSnapshot *core.Ca
 	if s.conf != nil {
 		conf = &s.conf.Core
 	}
-	return systemNanoSnapshot(s.metadataDB, codeDB, systemNanoRows(s, catalogSnapshot, conf))
+	return systemNanoSnapshotForRoots(codeDB, systemNanoRows(s, catalogSnapshot, conf), registeredSystemRoots(s.conf))
 }
 
 func systemNanoSnapshot(_ string, codeDB string, rows map[string][]core.NanoRow) core.NanoSnapshot {
-	tables := []core.NanoTable{
-		{Name: "gj_catalog", Columns: catalogNanoColumns(codeDB), Rows: rowsFor(rows, "gj_catalog")},
-		{Name: "gj_security", Columns: securityNanoColumns(), Rows: rowsFor(rows, "gj_security")},
-		{Name: "gj_artifacts", Columns: artifactNanoColumns(), Rows: rowsFor(rows, "gj_artifacts")},
-		{Name: "gj_watch", Columns: watchNanoColumns(), Rows: rowsFor(rows, "gj_watch")},
-		{Name: "gj_watch_event", Columns: watchEventNanoColumns(), Rows: rowsFor(rows, "gj_watch_event")},
-		{Name: "gj_workflow", Columns: workflowNanoColumns(), Rows: rowsFor(rows, "gj_workflow")},
-		{Name: "gj_workflow_execution", Columns: workflowExecutionNanoColumns(), Rows: rowsFor(rows, "gj_workflow_execution")},
-		{Name: "gj_config", Columns: configNanoColumns(), Rows: rowsFor(rows, "gj_config")},
+	return systemNanoSnapshotForRoots(codeDB, rows, []string{
+		"gj_catalog", "gj_security", "gj_artifacts", "gj_watch", "gj_watch_event",
+		"gj_workflow", "gj_workflow_execution", "gj_config",
+	})
+}
+
+func systemNanoSnapshotForRoots(codeDB string, rows map[string][]core.NanoRow, roots []string) core.NanoSnapshot {
+	rootSet := make(map[string]bool, len(roots))
+	for _, root := range roots {
+		rootSet[root] = true
+	}
+	tables := make([]core.NanoTable, 0, len(roots))
+	for _, root := range roots {
+		var columns []core.NanoColumn
+		switch root {
+		case "gj_catalog":
+			columns = catalogNanoColumns(codeDB)
+		case "gj_security":
+			columns = securityNanoColumns()
+		case "gj_artifacts":
+			columns = artifactNanoColumns()
+		case "gj_watch":
+			columns = watchNanoColumns()
+		case "gj_watch_event":
+			columns = watchEventNanoColumns()
+		case "gj_workflow":
+			columns = workflowNanoColumns()
+		case "gj_workflow_execution":
+			columns = workflowExecutionNanoColumns()
+		case "gj_config":
+			columns = configNanoColumns()
+		case "gj_runtime":
+			columns = runtimeNanoColumns()
+		default:
+			continue
+		}
+		for i := range columns {
+			if columns[i].FKeyTable != "" && !rootSet[columns[i].FKeyTable] {
+				columns[i].FKeyTable = ""
+				columns[i].FKeyColumn = ""
+				columns[i].FKeyUnique = false
+			}
+		}
+		tables = append(tables, core.NanoTable{Name: root, Columns: columns, Rows: rowsFor(rows, root)})
 	}
 	return core.NanoSnapshot{Schema: "main", Tables: tables}
+}
+
+func runtimeNanoColumns() []core.NanoColumn {
+	managed := runtimeManagedTable()
+	columns := make([]core.NanoColumn, 0, len(managed.Columns))
+	for _, column := range managed.Columns {
+		columns = append(columns, core.NanoColumn{
+			Name:       column.Name,
+			Type:       column.Type,
+			PrimaryKey: column.PrimaryKey,
+			NotNull:    column.PrimaryKey,
+			FullText:   column.FullText,
+		})
+	}
+	return columns
 }
 
 func rowsFor(rows map[string][]core.NanoRow, table string) []core.NanoRow {
@@ -402,6 +456,8 @@ func configNanoColumns() []core.NanoColumn {
 		{Name: "sources", Type: "json"},
 		{Name: "update_sources", Type: "json"},
 		{Name: "remove_sources", Type: "json"},
+		{Name: "system", Type: "json"},
+		{Name: "workflows", Type: "json"},
 		{Name: "databases", Type: "json"},
 		{Name: "relationships", Type: "json"},
 		{Name: "tables", Type: "json"},
@@ -553,7 +609,7 @@ func systemNanoRows(s *graphjinService, catalogSnapshot *core.CatalogSnapshot, c
 			rows["gj_watch_event"] = append(rows["gj_watch_event"], normalizeWatchEventNanoRow(row))
 		}
 	}
-	if s != nil && s.conf != nil && s.conf.graphjinControlPlaneEnabled() {
+	if s != nil && s.conf != nil && s.conf.systemControlPlaneEnabled() {
 		rows["gj_config"] = []core.NanoRow{copyNanoRow(cp.configRow())}
 	}
 	return rows
@@ -765,23 +821,18 @@ func injectSystemNanoTablesInto(conf *Config, runtimeCore *core.Config, database
 			}
 		}
 		readOnly := controlPlaneTableReadOnly(conf, database, name)
-		runtimeCore.Tables = append(runtimeCore.Tables, core.Table{Database: database, Source: database, Schema: "main", Name: name, ReadOnly: readOnly})
+		runtimeCore.Tables = append(runtimeCore.Tables, core.Table{Database: database, Schema: "main", Name: name, ReadOnly: readOnly, Generated: true})
 		for _, alias := range aliases {
-			runtimeCore.Tables = append(runtimeCore.Tables, core.Table{Database: database, Source: database, Schema: "main", Name: alias, Table: name, ReadOnly: readOnly})
+			runtimeCore.Tables = append(runtimeCore.Tables, core.Table{Database: database, Schema: "main", Name: alias, Table: name, ReadOnly: readOnly, Generated: true})
 		}
 	}
-	addTableConfig("gj_catalog", "parent", "children", "columns", "relationships")
-	addTableConfig("gj_security")
-	if conf != nil && conf.Core.Artifacts.Enabled {
-		addTableConfig("gj_artifacts")
+	for _, root := range registeredSystemRoots(conf) {
+		if root == "gj_catalog" {
+			addTableConfig(root, "parent", "children", "columns", "relationships")
+			continue
+		}
+		addTableConfig(root)
 	}
-	if configWatchesEnabled(conf) {
-		addTableConfig("gj_watch")
-		addTableConfig("gj_watch_event")
-	}
-	addTableConfig("gj_workflow")
-	addTableConfig("gj_workflow_execution")
-	addTableConfig("gj_config")
 }
 
 func (s *graphjinService) refreshWatchProjection() error {

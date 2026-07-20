@@ -122,7 +122,7 @@ func (s *graphjinService) catalogBuildOptions() core.CatalogBuildOptions {
 		opts.EnabledTools = mcpToolList(s.conf)
 		opts.EnabledToolsKnown = true
 	}
-	if s.conf != nil && s.conf.workflowsSourceEnabled() {
+	if s.conf != nil && s.conf.workflowsEnabled() {
 		workflowSnap := s.workflowSnapshot(opts.WorkflowTimeoutSeconds)
 		opts.Workflows = workflowSnap.workflows
 	}

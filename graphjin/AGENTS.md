@@ -66,6 +66,8 @@ When adding new features to GraphJin (operators, syntax, capabilities), remember
 
 When adding a new `sources[].capabilities` key, add it first to the central registry in `core/sourcecap`. Do not introduce ad hoc capability strings in catalog, security, MCP, or source-default code.
 
+GraphJin-owned system and workflow capabilities are not source capabilities. Add those to `core/featurecap` and enforce them through the centralized system-root policy.
+
 -   **What the registry owns**: canonical source kinds, capability keys, mode defaults, action, severity, enforcement type, read-only behavior, summaries, recommendations, and examples.
 -   **What subsystems own**: actual runtime enforcement hooks for their surface (for example CodeSQL, filesystem read-only, control-plane tables, or MCP tools).
 -   **Tests**: registry, catalog, security, config validation, and permission tests must pass. If a capability is not runtime-enforced yet, mark it as `config_audit`.

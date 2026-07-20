@@ -200,28 +200,3 @@ sources:
 
     # Required for tls. Can be a file path or the contents of the pem file
     # client_key: ./client-key.pem
-
-  - name: graphjin
-    kind: graphjin
-    metadata: true
-    catalog: true
-    control_plane: true
-    capabilities:
-      catalog.read: true
-      security.read: false
-      config.read: false
-      config.write: false
-      raw_graphql.query: false
-      raw_graphql.mutate: false
-      schema.reload: false
-      schema.write: false
-      dev_tools.read: false
-      legacy_discovery.read: false
-
-  - name: workflows
-    kind: workflow
-    runtime: javascript
-    capabilities:
-      workflow.execute: false
-      workflow.read: false
-      workflow.write: false

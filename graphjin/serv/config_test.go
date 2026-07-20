@@ -8,9 +8,11 @@ import (
 
 func TestNewConfigCatalogEnabledAuto(t *testing.T) {
 	conf, err := NewConfig(`
+mode: dev
 sources:
   - name: graphjin
-    kind: graphjin
+    kind: database
+    type: sqlite
 `, "yaml")
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
@@ -23,13 +25,38 @@ sources:
 	}
 }
 
+func TestNewConfigPreservesDottedFeatureCapabilityKeys(t *testing.T) {
+	conf, err := NewConfig(`
+mode: agentic
+system:
+  capabilities:
+    catalog.read: false
+    runtime.read: true
+workflows:
+  capabilities:
+    execute: false
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if got, ok := conf.Core.System.Capabilities["catalog.read"]; !ok || got {
+		t.Fatalf("system capability catalog.read = %v, present=%v", got, ok)
+	}
+	if got, ok := conf.Core.System.Capabilities["runtime.read"]; !ok || !got {
+		t.Fatalf("system capability runtime.read = %v, present=%v", got, ok)
+	}
+	if got, ok := conf.Core.Workflows.Capabilities["execute"]; !ok || got {
+		t.Fatalf("workflow capability execute = %v, present=%v", got, ok)
+	}
+}
+
 func TestNewConfigCatalogEnabledAutoProduction(t *testing.T) {
 	conf, err := NewConfig(`
 production: true
 sources:
   - name: graphjin
-    kind: graphjin
-    catalog: false
+    kind: database
+    type: sqlite
 `, "yaml")
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
@@ -181,7 +208,7 @@ func TestParsedDevAndAgenticRuntimeDefaults(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewConfig: %v", err)
 			}
-			if !conf.Core.Artifacts.Enabled || conf.Core.Artifacts.Source != managedArtifactDatabaseName || !conf.managedArtifactStore {
+			if !conf.Core.Artifacts.Enabled || conf.Core.Artifacts.Source != "" || !conf.managedArtifactStore {
 				t.Fatalf("artifact defaults = %+v managed=%v", conf.Core.Artifacts, conf.managedArtifactStore)
 			}
 			if !conf.Core.Watches.Enabled || conf.Core.Watches.Runner != "all" {
@@ -321,7 +348,7 @@ artifacts:
 	}
 }
 
-func TestManagedArtifactSourceNameIsReserved(t *testing.T) {
+func TestFormerManagedArtifactSourceNameIsAllowed(t *testing.T) {
 	conf, err := NewConfig(`
 mode: agentic
 sources:
@@ -333,8 +360,8 @@ sources:
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
-	if err := validateServiceIsSourcesUsedConfig(conf); err == nil || !strings.Contains(err.Error(), "reserved") {
-		t.Fatalf("reserved source validation error = %v", err)
+	if err := validateServiceIsSourcesUsedConfig(conf); err != nil {
+		t.Fatalf("former internal alias should be a valid application source name: %v", err)
 	}
 }
 
@@ -360,7 +387,8 @@ production: true
 mode: dev
 sources:
   - name: graphjin
-    kind: graphjin
+    kind: database
+    type: sqlite
 `, "yaml")
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
@@ -469,7 +497,8 @@ func TestSourcesProductionDisablesMCPByDefault(t *testing.T) {
 production: true
 sources:
   - name: graphjin
-    kind: graphjin
+    kind: database
+    type: sqlite
 `, "yaml")
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)

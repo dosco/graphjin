@@ -17,8 +17,6 @@ const (
 	KindCode     = "code"
 	KindFile     = "file"
 	KindAPI      = "api"
-	KindGraphJin = "graphjin"
-	KindWorkflow = "workflow"
 )
 
 const (
@@ -42,46 +40,22 @@ const (
 )
 
 const (
-	MCPAllowConfigUpdates   = "allow_config_updates"
-	MCPAllowSchemaReload    = "allow_schema_reload"
-	MCPAllowSchemaUpdates   = "allow_schema_updates"
-	MCPAllowRawQueries      = "allow_raw_queries"
-	MCPAllowMutations       = "allow_mutations"
-	MCPAllowDevTools        = "allow_dev_tools"
-	MCPLegacyDiscovery      = "legacy_discovery"
-	MCPAllowWorkflowUpdates = "allow_workflow_updates"
-)
-
-const (
-	KeyDataRead            = "data.read"
-	KeyDataWrite           = "data.write"
-	KeySchemaRead          = "schema.read"
-	KeySchemaWrite         = "schema.write"
-	KeyCodeSearch          = "code.search"
-	KeyCodeRead            = "code.read"
-	KeyCodeWrite           = "code.write"
-	KeyCodeWatch           = "code.watch"
-	KeyCodeInferDBRefs     = "code.infer_db_refs"
-	KeyFilesList           = "files.list"
-	KeyFilesRead           = "files.read"
-	KeyFilesWrite          = "files.write"
-	KeyFilesDelete         = "files.delete"
-	KeyFilesWatch          = "files.watch"
-	KeyAPIRead             = "api.read"
-	KeyAPIWrite            = "api.write"
-	KeyCatalogRead         = "catalog.read"
-	KeySecurityRead        = "security.read"
-	KeyConfigRead          = "config.read"
-	KeyConfigWrite         = "config.write"
-	KeyRuntimeRead         = "runtime.read"
-	KeyRawGraphQLQuery     = "raw_graphql.query"
-	KeyRawGraphQLMutate    = "raw_graphql.mutate"
-	KeySchemaReload        = "schema.reload"
-	KeyDevToolsRead        = "dev_tools.read"
-	KeyLegacyDiscoveryRead = "legacy_discovery.read"
-	KeyWorkflowExecute     = "workflow.execute"
-	KeyWorkflowRead        = "workflow.read"
-	KeyWorkflowWrite       = "workflow.write"
+	KeyDataRead        = "data.read"
+	KeyDataWrite       = "data.write"
+	KeySchemaRead      = "schema.read"
+	KeySchemaWrite     = "schema.write"
+	KeyCodeSearch      = "code.search"
+	KeyCodeRead        = "code.read"
+	KeyCodeWrite       = "code.write"
+	KeyCodeWatch       = "code.watch"
+	KeyCodeInferDBRefs = "code.infer_db_refs"
+	KeyFilesList       = "files.list"
+	KeyFilesRead       = "files.read"
+	KeyFilesWrite      = "files.write"
+	KeyFilesDelete     = "files.delete"
+	KeyFilesWatch      = "files.watch"
+	KeyAPIRead         = "api.read"
+	KeyAPIWrite        = "api.write"
 )
 
 // Definition is the source of truth for a public sources[].capabilities key.
@@ -114,7 +88,7 @@ func (d Definition) Default(mode string) bool {
 	}
 }
 
-var kindOrder = []string{KindDatabase, KindCode, KindFile, KindAPI, KindGraphJin, KindWorkflow}
+var kindOrder = []string{KindDatabase, KindCode, KindFile, KindAPI}
 
 var definitions = []Definition{
 	def(KindDatabase, KeyDataRead, ActionRead, true, true, true, "medium", EnforcementExistingPolicy, false, "Read application database data.", kindReason(KindDatabase), readRecommendation),
@@ -136,22 +110,6 @@ var definitions = []Definition{
 
 	def(KindAPI, KeyAPIRead, ActionRead, true, true, true, "medium", EnforcementConfigAudit, false, "Call read operations on remote API sources.", kindReason(KindAPI), readRecommendation),
 	def(KindAPI, KeyAPIWrite, ActionWrite, true, false, false, "high", EnforcementConfigAudit, true, "Call mutating operations on remote API sources.", kindReason(KindAPI), mutateRecommendation),
-
-	def(KindGraphJin, KeyCatalogRead, ActionRead, true, true, true, "medium", EnforcementRuntime, false, "Read the GraphJin catalog.", kindReason(KindGraphJin), readRecommendation),
-	def(KindGraphJin, KeySecurityRead, ActionRead, true, false, false, "high", EnforcementRuntime, false, "Read detailed GraphJin security audit rows.", kindReason(KindGraphJin), readRecommendation),
-	def(KindGraphJin, KeyConfigRead, ActionRead, true, false, false, "high", EnforcementRuntime, false, "Read GraphJin configuration rows.", kindReason(KindGraphJin), readRecommendation),
-	def(KindGraphJin, KeyConfigWrite, ActionWrite, true, false, false, "critical", EnforcementRuntime, true, "Write GraphJin configuration.", kindReason(KindGraphJin), mutateRecommendation, mcp(MCPAllowConfigUpdates)),
-	def(KindGraphJin, KeyRuntimeRead, ActionRead, true, false, true, "medium", EnforcementRuntime, false, "Read compact GraphJin runtime status and recent redacted events.", kindReason(KindGraphJin), readRecommendation),
-	def(KindGraphJin, KeyRawGraphQLQuery, ActionQuery, true, false, false, "high", EnforcementRuntime, false, "Execute raw GraphQL queries through MCP.", kindReason(KindGraphJin), mutateRecommendation, mcp(MCPAllowRawQueries)),
-	def(KindGraphJin, KeyRawGraphQLMutate, ActionMutate, true, false, false, "critical", EnforcementRuntime, true, "Execute raw GraphQL mutations through MCP.", kindReason(KindGraphJin), mutateRecommendation, mcp(MCPAllowMutations)),
-	def(KindGraphJin, KeySchemaReload, ActionReload, true, false, false, "high", EnforcementRuntime, true, "Reload GraphJin schema metadata.", kindReason(KindGraphJin), mutateRecommendation, mcp(MCPAllowSchemaReload)),
-	def(KindGraphJin, KeySchemaWrite, ActionWrite, true, false, false, "critical", EnforcementRuntime, true, "Write schema changes through GraphJin tools.", kindReason(KindGraphJin), mutateRecommendation, mcp(MCPAllowSchemaUpdates)),
-	def(KindGraphJin, KeyDevToolsRead, ActionRead, true, false, false, "medium", EnforcementRuntime, false, "Read development and diagnostic tool output.", kindReason(KindGraphJin), readRecommendation, mcp(MCPAllowDevTools)),
-	def(KindGraphJin, KeyLegacyDiscoveryRead, ActionRead, true, false, false, "medium", EnforcementRuntime, false, "Read legacy discovery MCP surfaces.", kindReason(KindGraphJin), readRecommendation, mcp(MCPLegacyDiscovery)),
-
-	def(KindWorkflow, KeyWorkflowExecute, ActionExecute, true, false, true, "critical", EnforcementRuntime, true, "Execute approved workflows.", kindReason(KindWorkflow), mutateRecommendation),
-	def(KindWorkflow, KeyWorkflowRead, ActionRead, true, false, false, "high", EnforcementRuntime, false, "Read workflow definitions and code.", kindReason(KindWorkflow), readRecommendation),
-	def(KindWorkflow, KeyWorkflowWrite, ActionWrite, true, false, false, "high", EnforcementRuntime, true, "Write workflow definitions and code.", kindReason(KindWorkflow), mutateRecommendation, mcp(MCPAllowWorkflowUpdates)),
 }
 
 var byKind map[string][]Definition
@@ -185,18 +143,12 @@ func def(kind, key, action string, dev, prod, agentic bool, severity, enforcemen
 		opt(&d)
 	}
 	switch key {
-	case KeySecurityRead, KeyConfigRead, KeyRuntimeRead, KeyWorkflowExecute, KeyCodeRead, KeyFilesRead, KeyAPIRead, KeyDataRead, KeyDataWrite:
+	case KeyCodeRead, KeyFilesRead, KeyAPIRead, KeyDataRead, KeyDataWrite:
 		d.ExampleValue = "true"
-	case KeyWorkflowRead, KeyCodeWrite, KeyFilesWrite, KeyAPIWrite:
+	case KeyCodeWrite, KeyFilesWrite, KeyAPIWrite:
 		d.ExampleValue = "false"
 	}
 	return d
-}
-
-func mcp(flag string) func(*Definition) {
-	return func(d *Definition) {
-		d.MCPFlag = flag
-	}
 }
 
 const readRecommendation = "Set this capability to false unless authenticated users need this read surface."
@@ -204,10 +156,6 @@ const mutateRecommendation = "Set this capability to false or mark the source re
 
 func kindReason(kind string) string {
 	switch kind {
-	case KindGraphJin:
-		return "GraphJin system capabilities expose control-plane, audit, schema, or raw GraphQL behavior."
-	case KindWorkflow:
-		return "Workflow capabilities can expose workflow code or execute approved workflow code against configured sources."
 	case KindCode:
 		return "Code sources may expose repository contents or permit source mutation."
 	case KindFile:
@@ -228,7 +176,7 @@ func Kinds() []string {
 func CanonicalKind(kind string) (string, error) {
 	k := strings.ToLower(strings.TrimSpace(kind))
 	switch k {
-	case KindDatabase, KindCode, KindFile, KindAPI, KindGraphJin, KindWorkflow:
+	case KindDatabase, KindCode, KindFile, KindAPI:
 		return k, nil
 	case "sql":
 		return "", fmt.Errorf("unsupported kind %q; use kind: database", kind)
@@ -238,8 +186,10 @@ func CanonicalKind(kind string) (string, error) {
 		return "", fmt.Errorf("unsupported kind %q; use kind: file", kind)
 	case "openapi":
 		return "", fmt.Errorf("unsupported kind %q; use kind: api", kind)
-	case "workflows":
-		return "", fmt.Errorf("unsupported kind %q; use kind: workflow", kind)
+	case "graphjin":
+		return "", fmt.Errorf("unsupported kind %q; GraphJin system features moved to top-level system configuration", kind)
+	case "workflow", "workflows":
+		return "", fmt.Errorf("unsupported kind %q; workflows moved to top-level workflows configuration", kind)
 	case "":
 		return "", fmt.Errorf("kind is required (supported: %s)", strings.Join(kindOrder, ", "))
 	default:

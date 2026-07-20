@@ -81,6 +81,16 @@ func (s *graphjinService) validateSourceScopedSchemaReload(database string) erro
 	if s == nil || s.gj == nil {
 		return fmt.Errorf("GraphJin engine is not initialized")
 	}
+	if s.conf != nil && s.conf.Core.IsSourcesUsed() {
+		source, ok := s.conf.Core.SourceByName(database)
+		if !ok {
+			return fmt.Errorf("database %q is not a configured source; omit database for a full reload", database)
+		}
+		if source.CanonicalKind() != sourcecap.KindDatabase {
+			return fmt.Errorf("source %q has kind %q; source-scoped schema reload only supports database sources",
+				database, source.CanonicalKind())
+		}
+	}
 	found := false
 	for _, name := range s.gj.DatabaseNames() {
 		if name == database {
@@ -89,19 +99,10 @@ func (s *graphjinService) validateSourceScopedSchemaReload(database string) erro
 		}
 	}
 	if !found {
-		return fmt.Errorf("database %q is not configured; omit database for a full reload or use one of: %s",
-			database, strings.Join(s.gj.DatabaseNames(), ", "))
+		return fmt.Errorf("database %q is not configured; omit database for a full reload", database)
 	}
 	if s.conf == nil || !s.conf.Core.IsSourcesUsed() {
 		return nil
-	}
-	source, ok := s.conf.Core.SourceByName(database)
-	if !ok {
-		return fmt.Errorf("database %q is not a configured source; omit database for a full reload", database)
-	}
-	if source.CanonicalKind() != sourcecap.KindDatabase {
-		return fmt.Errorf("source %q has kind %q; source-scoped schema reload only supports database sources",
-			database, source.CanonicalKind())
 	}
 	return nil
 }

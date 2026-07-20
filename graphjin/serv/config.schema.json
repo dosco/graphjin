@@ -1428,13 +1428,6 @@
 					},
 					"type": "array",
 					"title": "Blocked Tables"
-				},
-				"roots": {
-					"additionalProperties": {
-						"type": "string"
-					},
-					"type": "object",
-					"title": "GraphJin System Root Access"
 				}
 			},
 			"additionalProperties": false,
@@ -1452,9 +1445,7 @@
 						"database",
 						"code",
 						"file",
-						"api",
-						"graphjin",
-						"workflow"
+						"api"
 					],
 					"title": "Kind"
 				},
@@ -1626,22 +1617,6 @@
 					"type": "string",
 					"title": "OpenAPI Specs Directory"
 				},
-				"catalog": {
-					"type": "boolean",
-					"title": "Catalog"
-				},
-				"metadata": {
-					"type": "boolean",
-					"title": "Metadata"
-				},
-				"control_plane": {
-					"type": "boolean",
-					"title": "Control Plane"
-				},
-				"runtime": {
-					"type": "string",
-					"title": "Workflow Runtime"
-				},
 				"capabilities": {
 					"additionalProperties": {
 						"type": "boolean"
@@ -1652,6 +1627,26 @@
 				"access": {
 					"$ref": "#/$defs/SourceAccessConfig",
 					"title": "Access"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"SystemConfig": {
+			"properties": {
+				"capabilities": {
+					"additionalProperties": {
+						"type": "boolean"
+					},
+					"type": "object",
+					"title": "System Capabilities"
+				},
+				"root_access": {
+					"additionalProperties": {
+						"type": "string"
+					},
+					"type": "object",
+					"title": "System Root Access"
 				}
 			},
 			"additionalProperties": false,
@@ -1871,6 +1866,24 @@
 			},
 			"additionalProperties": false,
 			"type": "object"
+		},
+		"WorkflowsConfig": {
+			"properties": {
+				"path": {
+					"type": "string",
+					"title": "Workflow Path",
+					"default": "./workflows"
+				},
+				"capabilities": {
+					"additionalProperties": {
+						"type": "boolean"
+					},
+					"type": "object",
+					"title": "Workflow Capabilities"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
 		}
 	},
 	"properties": {
@@ -1931,6 +1944,14 @@
 			},
 			"type": "array",
 			"title": "Sources"
+		},
+		"system": {
+			"$ref": "#/$defs/SystemConfig",
+			"title": "System Features"
+		},
+		"workflows": {
+			"$ref": "#/$defs/WorkflowsConfig",
+			"title": "Workflows"
 		},
 		"identity": {
 			"$ref": "#/$defs/IdentityConfig",

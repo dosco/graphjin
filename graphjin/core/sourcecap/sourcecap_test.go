@@ -40,7 +40,9 @@ func TestCanonicalKindRejectsOldNames(t *testing.T) {
 		"codesql":    "kind: code",
 		"filesystem": "kind: file",
 		"openapi":    "kind: api",
-		"workflows":  "kind: workflow",
+		"graphjin":   "top-level system",
+		"workflow":   "top-level workflows",
+		"workflows":  "top-level workflows",
 	}
 	for old, want := range tests {
 		if _, err := CanonicalKind(old); err == nil || !strings.Contains(err.Error(), want) {
@@ -49,21 +51,10 @@ func TestCanonicalKindRejectsOldNames(t *testing.T) {
 	}
 }
 
-func TestRuntimeReadCapabilityDefaults(t *testing.T) {
-	def, ok := Lookup(KindGraphJin, KeyRuntimeRead)
-	if !ok {
-		t.Fatal("runtime.read capability not registered")
-	}
-	if !def.Default(ModeDev) {
-		t.Fatal("runtime.read should default true in dev")
-	}
-	if def.Default(ModeProd) {
-		t.Fatal("runtime.read should default false in prod")
-	}
-	if !def.Default(ModeAgentic) {
-		t.Fatal("runtime.read should default true in agentic")
-	}
-	if def.Enforcement != EnforcementRuntime || def.Action != ActionRead || def.ReadOnlyBlocks {
-		t.Fatalf("unexpected runtime.read definition: %+v", def)
+func TestRegistryContainsOnlyExternalSources(t *testing.T) {
+	for _, removed := range []string{"graphjin", "workflow", "workflows"} {
+		if _, err := CanonicalKind(removed); err == nil {
+			t.Fatalf("internal feature kind %q should be rejected", removed)
+		}
 	}
 }

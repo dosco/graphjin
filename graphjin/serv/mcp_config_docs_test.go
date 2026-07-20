@@ -14,8 +14,11 @@ func TestConfigDocsTemplatesUseSources(t *testing.T) {
 
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
-			if !strings.Contains(content, "\nsources:\n") {
+			if name != "dev" && !strings.Contains(content, "\nsources:\n") {
 				t.Fatalf("%s docs template missing sources:\n%s", name, content)
+			}
+			if strings.Contains(content, "kind: graphjin") || strings.Contains(content, "kind: workflow") {
+				t.Fatalf("%s docs template contains a removed internal source kind:\n%s", name, content)
 			}
 			if strings.Contains(content, "\ndatabases:\n") || strings.Contains(content, "\ndatabase:\n") {
 				t.Fatalf("%s docs template contains active legacy database config:\n%s", name, content)
@@ -41,11 +44,8 @@ func TestAgenticConfigDocsTemplate(t *testing.T) {
 	if !strings.Contains(agenticConfigTemplate, "mode: agentic") {
 		t.Fatalf("agentic docs template missing mode: agentic:\n%s", agenticConfigTemplate)
 	}
-	if !strings.Contains(agenticConfigTemplate, "workflow.execute: true") {
-		t.Fatalf("agentic docs template should allow approved workflow execution:\n%s", agenticConfigTemplate)
-	}
-	if !strings.Contains(agenticConfigTemplate, "runtime.read: true") {
-		t.Fatalf("agentic docs template should allow runtime observability:\n%s", agenticConfigTemplate)
+	if !strings.Contains(agenticConfigTemplate, "No feature") && !strings.Contains(agenticConfigTemplate, "Add explicit settings only") {
+		t.Fatalf("agentic docs template should explain mode-based feature defaults:\n%s", agenticConfigTemplate)
 	}
 	for _, redundant := range []string{"\nagent:\n", "sampling:", "http_stateful:", "include_tools_with_agent:"} {
 		if strings.Contains(agenticConfigTemplate, redundant) {

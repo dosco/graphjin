@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/dosco/graphjin/core/v3/sourcecap"
+	"github.com/dosco/graphjin/core/v3/featurecap"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap/zaptest"
@@ -51,7 +51,7 @@ func TestMemoryRuntimeEventStoreTrimTTLRedactionOrderingAndStatus(t *testing.T) 
 		Summary:     "ready",
 		NextAction:  "continue",
 		Source:      "graphjin",
-		SourceKind:  sourcecap.KindGraphJin,
+		SourceKind:  featurecap.KindSystem,
 		SchemaReady: true,
 	})
 	if len(rows) != 3 {
@@ -160,7 +160,8 @@ func TestRuntimeRedisFallbackUsesMemoryAndDegradedStatus(t *testing.T) {
 			Mode: "agentic",
 			Sources: []core.SourceConfig{{
 				Name: "graphjin",
-				Kind: "graphjin",
+				Kind: "file",
+				Root: ".",
 			}},
 		},
 		Serv: Serv{
@@ -206,7 +207,8 @@ func TestObservedAuthHandlerRecordsJWTFailure(t *testing.T) {
 			Mode: "agentic",
 			Sources: []core.SourceConfig{{
 				Name: "graphjin",
-				Kind: "graphjin",
+				Kind: "file",
+				Root: ".",
 			}},
 		},
 		Serv: Serv{Auth: Auth{Type: "jwt"}},
@@ -274,7 +276,7 @@ func TestRedisRuntimeEventStoreWithFakeRedis(t *testing.T) {
 		Summary:     "ready",
 		NextAction:  "continue",
 		Source:      "graphjin",
-		SourceKind:  sourcecap.KindGraphJin,
+		SourceKind:  featurecap.KindSystem,
 		SchemaReady: true,
 	})
 	if len(rows) != 3 {

@@ -30,10 +30,10 @@ func newControlPlaneGraphQL(s *graphjinService) controlPlaneGraphQL {
 
 func (h controlPlaneGraphQL) ManagedQueryTables() []core.ManagedTable {
 	var out []core.ManagedTable
-	if h.service != nil && h.service.conf != nil && (h.service.conf.catalogToolsEnabled() || h.service.conf.graphjinControlPlaneEnabled()) {
+	if h.service != nil && h.service.conf != nil && (h.service.conf.catalogToolsEnabled() || h.service.conf.systemControlPlaneEnabled()) {
 		out = append(out, graphjinControlPlaneTables()...)
 	}
-	if h.service != nil && h.service.conf != nil && h.service.conf.workflowsSourceEnabled() {
+	if h.service != nil && h.service.conf != nil && h.service.conf.workflowsEnabled() {
 		out = append(out, workflowControlPlaneTables()...)
 	}
 	return out
@@ -41,10 +41,10 @@ func (h controlPlaneGraphQL) ManagedQueryTables() []core.ManagedTable {
 
 func (h controlPlaneGraphQL) ManagedMutationTables() []string {
 	var tables []string
-	if h.service != nil && h.service.conf != nil && h.service.conf.workflowsSourceEnabled() {
+	if h.service != nil && h.service.conf != nil && h.service.conf.workflowsEnabled() {
 		tables = append(tables, "gj_workflow", "gj_workflow_execution")
 	}
-	if h.service != nil && h.service.conf != nil && h.service.conf.graphjinControlPlaneEnabled() {
+	if h.service != nil && h.service.conf != nil && h.service.conf.systemControlPlaneEnabled() {
 		tables = append(tables, "gj_config")
 	}
 	return tables
@@ -324,6 +324,8 @@ func (h controlPlaneGraphQL) configRow() map[string]any {
 		"config_path":     conf.ConfigPath,
 		"active_database": (&mcpServer{service: h.service}).getActiveDatabase(),
 		"sources":         sources,
+		"system":          redactedConfigValue(coreConf.System),
+		"workflows":       redactedConfigValue(coreConf.Workflows),
 		"databases":       databases,
 		"relationships":   redactedConfigValue(coreConf.Relationships),
 		"tables":          redactedConfigValue(coreConf.Tables),
@@ -339,6 +341,8 @@ func (h controlPlaneGraphQL) configRow() map[string]any {
 	row["config_json"] = map[string]any{
 		"active_database": row["active_database"],
 		"sources":         row["sources"],
+		"system":          row["system"],
+		"workflows":       row["workflows"],
 		"databases":       row["databases"],
 		"relationships":   row["relationships"],
 		"tables":          row["tables"],
@@ -578,7 +582,7 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 				{"name": "high critical findings across all configs", "query": `query { gj_security(where: { kind: { eq: "finding" }, severity: { in: ["high", "critical"] } }, order_by: { severity_rank: desc }) { id scope config_id mode severity title recommendation evidence_json } }`},
 				{"name": "prod config findings", "query": `query { gj_security(where: { scope: { eq: "config" }, mode: { eq: "prod" }, kind: { eq: "finding" } }) { id config_id config_file severity title recommendation } }`},
 				{"name": "agentic effective policy", "query": `query { gj_security(where: { kind: { eq: "policy" }, mode: { eq: "agentic" } }) { id scope config_id surface role capability action default_effective effective weakens_default } }`},
-				{"name": "source capability policy", "query": `query { gj_security(where: { kind: { eq: "policy" }, source_kind: { eq: "graphjin" }, capability: { eq: "security.read" } }) { id source source_kind capability override_explicit default_effective effective evidence_json } }`},
+				{"name": "system capability policy", "query": `query { gj_security(where: { kind: { eq: "policy" }, source_kind: { eq: "system" }, capability: { eq: "security.read" } }) { id source source_kind capability override_explicit default_effective effective evidence_json } }`},
 				{"name": "explicit override review", "query": `query { gj_security(where: { override_explicit: { eq: true } }) { id scope config_id mode override_key override_source default_effective effective weakens_default } }`},
 			}),
 			"safety_json": mustMarshalString(map[string]any{
@@ -588,7 +592,7 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 			}),
 		},
 		{
-			"name": "gj_runtime.query", "kind": "runtime", "enabled": h.service != nil && h.service.conf != nil && h.service.conf.runtimeRootSourceEnabled(),
+			"name": "gj_runtime.query", "kind": "runtime", "enabled": h.service != nil && h.service.conf != nil && h.service.conf.runtimeRootEnabled(),
 			"summary":       "Read compact agentic GraphJin runtime health, source health, recent structured events, and suggested next actions from gj_runtime.",
 			"graphql_query": `gj_runtime(where: { kind: { in: ["status", "source", "event"] } }, order_by: { created_at: desc }, limit: 20) { kind source source_kind status severity summary next_action details_json }`,
 			"details_json": mustMarshalString(map[string]any{
@@ -648,14 +652,6 @@ func (h controlPlaneGraphQL) mutateRow(ctx context.Context, root core.ManagedMut
 	if h.controlPlaneRootReadOnly(root.Table) {
 		return nil, fmt.Errorf("mutations blocked: table %s is read-only", root.Table)
 	}
-	if root.Table == "gj_workflow" || root.Table == "gj_workflow_execution" {
-		if h.service != nil && h.service.conf != nil && h.service.conf.workflowsSourceReadOnly() {
-			return nil, fmt.Errorf("mutations blocked: workflow source is read-only")
-		}
-	} else if h.service != nil && h.service.conf != nil && h.service.conf.graphjinSourceReadOnly() {
-		return nil, fmt.Errorf("mutations blocked: graphjin source is read-only")
-	}
-
 	switch root.Table {
 	case "gj_workflow":
 		return h.mutateWorkflow(ctx, root)

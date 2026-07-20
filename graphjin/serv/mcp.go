@@ -92,12 +92,11 @@ func mcpToolList(conf *Config) []string {
 	// When the agent tool is the front door it orchestrates the primitives
 	// internally, so they are hidden unless the operator opts in.
 	if !conf.agentOnlyMCP() {
-		tools = append(tools,
-			"graphql_help",
-			"query_catalog",
-			"execute_saved_query",
-			"validate_where_clause",
-		)
+		tools = append(tools, "graphql_help")
+		if conf.catalogToolsEnabled() {
+			tools = append(tools, "query_catalog")
+		}
+		tools = append(tools, "execute_saved_query", "validate_where_clause")
 		if conf.MCP.AllowRawQueries {
 			tools = append(tools, "execute_graphql")
 		}

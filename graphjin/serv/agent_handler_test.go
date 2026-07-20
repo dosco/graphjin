@@ -213,7 +213,7 @@ func TestAgentRESTScriptedResponseAndAuthContext(t *testing.T) {
 	logger := zap.NewNop()
 	svc := &graphjinService{
 		conf: &Config{
-			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 			Serv: Serv{Agent: AgentConfig{Enabled: true}},
 		},
 		log:  logger.Sugar(),
@@ -261,7 +261,7 @@ func TestAgentRESTNoAuthRunsAsAnon(t *testing.T) {
 	withScriptedAgentRunner(t, runner)
 
 	conf := &Config{
-		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 		Serv: Serv{
 			Auth:  Auth{Type: "none"},
 			Agent: AgentConfig{Enabled: true},
@@ -299,7 +299,7 @@ func TestAgentRESTDevelopmentAuthHeadersMatchGraphQLContext(t *testing.T) {
 	withScriptedAgentRunner(t, runner)
 
 	conf := &Config{
-		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 		Serv: Serv{
 			Auth:  Auth{Development: true},
 			Agent: AgentConfig{Enabled: true},
@@ -480,7 +480,7 @@ func TestAgentRESTInjectsCapabilityProfileNotSpoofable(t *testing.T) {
 	logger := zap.NewNop()
 	svc := &graphjinService{
 		conf: &Config{
-			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 			Serv: Serv{Agent: AgentConfig{Enabled: true}},
 		},
 		log:  logger.Sugar(),
@@ -557,7 +557,7 @@ func TestAgentRESTNamespaceRouteWins(t *testing.T) {
 	logger := zap.NewNop()
 	svc := &graphjinService{
 		conf: &Config{
-			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 			Serv: Serv{Agent: AgentConfig{Enabled: true}},
 		},
 		log:  logger.Sugar(),
@@ -594,7 +594,7 @@ func TestAgentRESTSSEStreamsActionsAndResult(t *testing.T) {
 	logger := zap.NewNop()
 	svc := &graphjinService{
 		conf: &Config{
-			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "graphjin"}}},
+			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
 			Serv: Serv{Agent: AgentConfig{Enabled: true}},
 		},
 		log:  logger.Sugar(),

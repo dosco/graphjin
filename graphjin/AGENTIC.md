@@ -1320,7 +1320,7 @@ identity and matching. They do not carry per-table filters or mutation presets.
 | Shared read-only reference data | `public_tables` | `read: public` on the whole source unless intended |
 | Admin-only data | `admin_tables` or root access `admin` | Hidden ad hoc table filters |
 | Fully blocked data | `blocked_tables` | Returning empty rows as a fake block |
-| System root access | `sources[].kind: graphjin.access.roots` | Source-specific JWT interpretation |
+| System root access | `system.root_access` | Source-specific JWT interpretation |
 | Mutable user artifacts | `artifacts` config and `gj_artifacts` root | alternate artifact-store keys or config-folder mutation |
 
 Typical source-mode security shape:
@@ -1345,19 +1345,17 @@ sources:
       admin_tables: [audit_logs]
       blocked_tables: [internal_events]
 
-  - name: graphjin
-    kind: graphjin
-    access:
-      roots:
-        gj_catalog: authenticated
-        gj_artifacts: authenticated
-        gj_watch: owner
-        gj_watch_event: owner
-        gj_workflow: admin
-        gj_workflow_execution: account
-        gj_runtime: admin
-        gj_security: admin
-        gj_config: admin
+system:
+  root_access:
+    gj_catalog: authenticated
+    gj_artifacts: authenticated
+    gj_watch: owner
+    gj_watch_event: owner
+    gj_workflow: admin
+    gj_workflow_execution: account
+    gj_runtime: admin
+    gj_security: admin
+    gj_config: admin
 ```
 
 For V1, `identity.query` is the source-mode spelling for the existing

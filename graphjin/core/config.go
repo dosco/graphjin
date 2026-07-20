@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dosco/graphjin/core/v3/featurecap"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/openapi"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
@@ -153,10 +154,35 @@ func (c *Config) ValidateIsSourcesUsed() error {
 	if c == nil {
 		return nil
 	}
+	if err := c.validateFeatureConfig(); err != nil {
+		return err
+	}
 	if c.IsSourcesUsed() {
 		return c.validateIsSourcesUsed()
 	}
 	return c.validateLegacyMode()
+}
+
+func (c *Config) validateFeatureConfig() error {
+	for key := range c.System.Capabilities {
+		if _, ok := featurecap.Lookup(featurecap.KindSystem, key); !ok {
+			return fmt.Errorf("system.capabilities.%s: unsupported capability (supported: %s)", key, featurecap.ValidKeyList(featurecap.KindSystem))
+		}
+	}
+	for key := range c.Workflows.Capabilities {
+		if _, ok := featurecap.Lookup(featurecap.KindWorkflows, key); !ok {
+			return fmt.Errorf("workflows.capabilities.%s: unsupported capability (supported: %s)", key, featurecap.ValidKeyList(featurecap.KindWorkflows))
+		}
+	}
+	for root, mode := range c.System.RootAccess {
+		if !featurecap.ValidSystemRoot(root) {
+			return fmt.Errorf("system.root_access.%s: unsupported system root (supported: %s)", root, strings.Join(featurecap.SystemRoots(), ", "))
+		}
+		if !validReadAccessMode(mode) {
+			return fmt.Errorf("system.root_access.%s: unsupported access mode %q", root, mode)
+		}
+	}
+	return nil
 }
 
 func (c *Config) validateLegacyMode() error {
@@ -172,10 +198,10 @@ func (c *Config) validateLegacyMode() error {
 		return fmt.Errorf("top-level openapi/openapi_specs_dir is no longer supported; move API providers to sources with kind: api")
 	}
 	if c.metadataConfigured() {
-		return fmt.Errorf("top-level metadata is no longer supported; add a sources entry with kind: graphjin and metadata: true")
+		return fmt.Errorf("top-level metadata is no longer supported; use system.capabilities.catalog.read")
 	}
 	if c.catalogConfigured() {
-		return fmt.Errorf("top-level catalog is no longer supported; add a sources entry with kind: graphjin and catalog: true")
+		return fmt.Errorf("top-level catalog is no longer supported; use system.capabilities.catalog.read")
 	}
 	return nil
 }
@@ -203,15 +229,18 @@ func (c *Config) validateIsSourcesUsed() error {
 	}
 
 	seen := make(map[string]struct{}, len(c.Sources))
+	seenFolded := make(map[string]string, len(c.Sources))
 	for i, source := range c.Sources {
 		name := strings.TrimSpace(source.Name)
 		if name == "" {
 			return fmt.Errorf("sources[%d]: name is required", i)
 		}
-		if _, ok := seen[name]; ok {
-			return fmt.Errorf("sources: duplicate source name %q", name)
+		folded := strings.ToLower(name)
+		if existing, ok := seenFolded[folded]; ok {
+			return fmt.Errorf("sources: duplicate source names %q and %q differ only by case", existing, name)
 		}
 		seen[name] = struct{}{}
+		seenFolded[folded] = name
 		kind, err := sourcecap.CanonicalKind(source.Kind)
 		if err != nil {
 			return fmt.Errorf("sources[%q]: %w", name, err)
@@ -227,6 +256,9 @@ func (c *Config) validateIsSourcesUsed() error {
 		}
 	}
 	for _, table := range c.Tables {
+		if table.Generated {
+			continue
+		}
 		if strings.TrimSpace(table.Source) == "" {
 			return fmt.Errorf("tables[%q]: source is required when sources is configured", table.Name)
 		}
@@ -329,6 +361,8 @@ func (c *Config) clone() *Config {
 	out.Identity = c.Identity.clone()
 	out.Artifacts = c.Artifacts.clone()
 	out.Watches = c.Watches.clone()
+	out.System = c.System.clone()
+	out.Workflows = c.Workflows.clone()
 
 	return &out
 }
@@ -401,20 +435,6 @@ func validateSourceAccessConfig(source, kind string, access SourceAccessConfig) 
 	if !validMissingNamespaceMode(access.MissingNamespaceColumn) {
 		return fmt.Errorf("sources[%q].access.missing_namespace_column: unsupported behavior %q", source, access.MissingNamespaceColumn)
 	}
-	for root, mode := range access.Roots {
-		if strings.TrimSpace(root) == "" {
-			return fmt.Errorf("sources[%q].access.roots: root name is required", source)
-		}
-		if !validReadAccessMode(mode) {
-			return fmt.Errorf("sources[%q].access.roots.%s: unsupported access mode %q", source, root, mode)
-		}
-	}
-	if kind == sourcecap.KindGraphJin {
-		return nil
-	}
-	if len(access.Roots) != 0 {
-		return fmt.Errorf("sources[%q].access.roots applies only to sources with kind: graphjin", source)
-	}
 	return nil
 }
 
@@ -431,11 +451,6 @@ func (c *Config) validateArtifactsConfig() error {
 		return fmt.Errorf("artifacts.poll_seconds must be greater than or equal to 0")
 	}
 	sourceName := strings.TrimSpace(c.Artifacts.Source)
-	// The service runtime injects this private SQLite database after public
-	// sources are normalized. It deliberately does not appear in Sources.
-	if sourceName == "__graphjin_artifacts" {
-		return nil
-	}
 	if sourceName == "" {
 		for _, source := range c.Sources {
 			if source.CanonicalKind() == sourcecap.KindDatabase {
@@ -588,8 +603,6 @@ func (c *Config) normalizeSourceAccessDefaults() {
 		switch kind {
 		case sourcecap.KindDatabase:
 			c.Sources[i].Access = effectiveDatabaseAccess(c.Sources[i].Access)
-		case sourcecap.KindGraphJin:
-			c.Sources[i].Access = effectiveGraphJinAccess(c.Sources[i].Access, c.modeForSourceDefaults())
 		}
 	}
 }
@@ -638,8 +651,8 @@ func (c *Config) modeForSourceDefaults() string {
 	return sourcecap.ModeDev
 }
 
-// effectiveGraphJinAccess sets the per-mode default access for the gj_* system
-// roots. Modes set safe defaults; explicit access.roots entries always win.
+// EffectiveSystemRootAccess sets the per-mode default access for the gj_* system
+// roots. Modes set safe defaults; explicit system.root_access entries always win.
 //
 // Row-level owner scoping for the artifact-backed roots (gj_artifacts, gj_watch,
 // gj_watch_event, gj_workflow, gj_workflow_execution) is enforced by the artifact
@@ -647,13 +660,13 @@ func (c *Config) modeForSourceDefaults() string {
 // (owner_id = user_id, with the raw artifact tables blocked from generic GraphQL),
 // so the "owner" mode here is the visibility gate that pairs with that handler
 // scoping — it does not by itself add SQL row filters.
-func effectiveGraphJinAccess(access SourceAccessConfig, mode string) SourceAccessConfig {
-	access = effectiveDatabaseAccess(access)
-	if access.Roots == nil {
-		access.Roots = make(map[string]string)
+func (c *Config) EffectiveSystemRootAccess() map[string]string {
+	access := make(map[string]string, len(c.System.RootAccess)+9)
+	for root, mode := range c.System.RootAccess {
+		access[strings.ToLower(strings.TrimSpace(root))] = normalizeAccessMode(mode)
 	}
 	var defaults map[string]string
-	switch strings.ToLower(strings.TrimSpace(mode)) {
+	switch strings.ToLower(strings.TrimSpace(c.modeForSourceDefaults())) {
 	case sourcecap.ModeDev:
 		// Local development of the new stack: the whole surface is open.
 		defaults = map[string]string{
@@ -699,13 +712,9 @@ func effectiveGraphJinAccess(access SourceAccessConfig, mode string) SourceAcces
 		}
 	}
 	for root, m := range defaults {
-		if strings.TrimSpace(access.Roots[root]) == "" {
-			access.Roots[root] = m
+		if strings.TrimSpace(access[root]) == "" {
+			access[root] = m
 		}
-	}
-	for root, m := range access.Roots {
-		delete(access.Roots, root)
-		access.Roots[strings.ToLower(strings.TrimSpace(root))] = normalizeAccessMode(m)
 	}
 	return access
 }
@@ -760,13 +769,38 @@ func (c SourceAccessConfig) clone() SourceAccessConfig {
 	if c.BlockedTables != nil {
 		out.BlockedTables = append([]string(nil), c.BlockedTables...)
 	}
-	if c.Roots != nil {
-		out.Roots = make(map[string]string, len(c.Roots))
-		for k, v := range c.Roots {
-			out.Roots[k] = v
-		}
-	}
 	return out
+}
+
+// FeatureCapability returns a system/workflow capability after applying the
+// deployment-mode default. Explicit top-level feature configuration wins.
+func (c *Config) FeatureCapability(kind, key string) bool {
+	if c == nil {
+		return false
+	}
+	if value, explicit := c.FeatureCapabilityConfigured(kind, key); explicit {
+		return value
+	}
+	def, ok := featurecap.Lookup(kind, key)
+	return ok && def.Default(c.modeForSourceDefaults())
+}
+
+// FeatureCapabilityConfigured reports an explicit top-level feature override.
+func (c *Config) FeatureCapabilityConfigured(kind, key string) (bool, bool) {
+	if c == nil {
+		return false, false
+	}
+	var capabilities map[string]bool
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case featurecap.KindSystem:
+		capabilities = c.System.Capabilities
+	case featurecap.KindWorkflows:
+		capabilities = c.Workflows.Capabilities
+	default:
+		return false, false
+	}
+	value, ok := capabilities[key]
+	return value, ok
 }
 
 // EffectiveIdentityConfig returns identity config with source-mode defaults.
@@ -805,8 +839,6 @@ func (c *Config) EffectiveWatchesConfig() WatchesConfig {
 // EffectiveSourceAccess returns a source's access config with source-kind defaults.
 func (c *Config) EffectiveSourceAccess(source SourceConfig) SourceAccessConfig {
 	switch source.CanonicalKind() {
-	case sourcecap.KindGraphJin:
-		return effectiveGraphJinAccess(source.Access.clone(), c.modeForSourceDefaults())
 	case sourcecap.KindDatabase:
 		return effectiveDatabaseAccess(source.Access.clone())
 	default:
@@ -876,8 +908,6 @@ func (c *Config) NormalizeSources() error {
 					c.OpenAPI[key] = spec
 				}
 			}
-		case "graphjin", "workflow":
-			// Service-managed sources are exposed through managed handlers.
 		}
 	}
 
@@ -935,6 +965,48 @@ func (c *Config) defaultSQLSource(sqlSources []string) string {
 		return sqlSources[0]
 	}
 	return DefaultDBName
+}
+
+// defaultDatabaseName chooses an application source before any runtime-only
+// database injected by the service (for example the system NanoDB or managed
+// artifact store). Runtime identifiers deliberately do not appear in Sources.
+func (c *Config) defaultDatabaseName() string {
+	if c == nil {
+		return ""
+	}
+	var sourceNames []string
+	for _, source := range c.Sources {
+		kind := source.CanonicalKind()
+		if kind != sourcecap.KindDatabase && kind != sourcecap.KindCode {
+			continue
+		}
+		if _, ok := c.Databases[source.Name]; !ok {
+			continue
+		}
+		if source.Default {
+			return source.Name
+		}
+		sourceNames = append(sourceNames, source.Name)
+	}
+	if len(sourceNames) != 0 {
+		sort.Strings(sourceNames)
+		return sourceNames[0]
+	}
+	// Legacy database-only service configurations store the application
+	// connection under DefaultDBName. Prefer it over runtime-only databases
+	// injected by the service.
+	if _, ok := c.Databases[DefaultDBName]; ok {
+		return DefaultDBName
+	}
+	names := make([]string, 0, len(c.Databases))
+	for name := range c.Databases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) != 0 {
+		return names[0]
+	}
+	return ""
 }
 
 func (s SourceConfig) databaseConfig() DatabaseConfig {
@@ -1010,37 +1082,6 @@ func (s SourceConfig) Capability(key string) (bool, bool) {
 	}
 	value, ok := s.Capabilities[key]
 	return value, ok
-}
-
-func (c *Config) GraphJinSource() (SourceConfig, bool) {
-	if c == nil {
-		return SourceConfig{}, false
-	}
-	for _, source := range c.Sources {
-		if source.CanonicalKind() == sourcecap.KindGraphJin {
-			return source, true
-		}
-	}
-	return SourceConfig{}, false
-}
-
-func (c *Config) WorkflowsSource() (SourceConfig, bool) {
-	if c == nil {
-		return SourceConfig{}, false
-	}
-	for _, source := range c.Sources {
-		if source.CanonicalKind() == sourcecap.KindWorkflow {
-			return source, true
-		}
-	}
-	return SourceConfig{}, false
-}
-
-func sourceBool(v *bool, def bool) bool {
-	if v == nil {
-		return def
-	}
-	return *v
 }
 
 func (c *Config) applyRelationshipOverlays() error {
@@ -1131,14 +1172,10 @@ func (c *Config) NormalizeDatabases() {
 		}
 	}
 
-	// Pick the first entry (sorted) as the representative default
-	// Sorting ensures deterministic behavior across Go map iterations.
-	names := make([]string, 0, len(c.Databases))
-	for name := range c.Databases {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	defaultName := names[0]
+	// Prefer a configured application source. Service-owned runtime databases
+	// are absent from Sources and must never become the primary database merely
+	// because their collision-free identifier sorts first.
+	defaultName := c.defaultDatabaseName()
 
 	// Sync DBType with the default entry's Type
 	defConf := c.Databases[defaultName]
@@ -1222,10 +1259,16 @@ type Config struct {
 	// resolver would join json from a remote API into your query response
 	Resolvers []ResolverConfig `jsonschema:"-"`
 
-	// Sources is the canonical graph provider config. When present, all SQL,
-	// CodeSQL, filesystem, OpenAPI, GraphJin system, and workflow providers must
-	// be declared here instead of legacy top-level sections.
+	// Sources is the canonical external graph provider config. When present, all
+	// SQL, CodeSQL, filesystem, and OpenAPI providers must be declared here.
 	Sources []SourceConfig `mapstructure:"sources" json:"sources" yaml:"sources" jsonschema:"title=Sources"`
+
+	// System configures GraphJin-owned roots. It is separate from Sources because
+	// built-in functionality is not an external graph provider.
+	System SystemConfig `mapstructure:"system" json:"system" yaml:"system" jsonschema:"title=System Features"`
+
+	// Workflows configures the built-in Goja JavaScript workflow feature.
+	Workflows WorkflowsConfig `mapstructure:"workflows" json:"workflows" yaml:"workflows" jsonschema:"title=Workflows"`
 
 	// Identity declares the request-wide claims and optional enrichment query
 	// used by source-mode access generation.
@@ -1405,22 +1448,63 @@ type WatchesConfig struct {
 // classifications. It is intentionally small; it compiles down to legacy role
 // table rules before qcode runs.
 type SourceAccessConfig struct {
-	Read                   string            `mapstructure:"read" json:"read" yaml:"read" jsonschema:"title=Read Access Mode"`
-	Write                  string            `mapstructure:"write" json:"write" yaml:"write" jsonschema:"title=Write Access Mode"`
-	Delete                 string            `mapstructure:"delete" json:"delete" yaml:"delete" jsonschema:"title=Delete Access Mode"`
-	NamespaceColumn        string            `mapstructure:"namespace_column" json:"namespace_column" yaml:"namespace_column" jsonschema:"title=Namespace Column,default=account_id"`
-	OwnerColumn            string            `mapstructure:"owner_column" json:"owner_column" yaml:"owner_column" jsonschema:"title=Owner Column,default=user_id"`
-	MissingNamespaceColumn string            `mapstructure:"missing_namespace_column" json:"missing_namespace_column" yaml:"missing_namespace_column" jsonschema:"title=Missing Namespace Column Behavior,enum=block,enum=allow"`
-	PublicTables           []string          `mapstructure:"public_tables" json:"public_tables" yaml:"public_tables" jsonschema:"title=Public Tables"`
-	AdminTables            []string          `mapstructure:"admin_tables" json:"admin_tables" yaml:"admin_tables" jsonschema:"title=Admin Tables"`
-	BlockedTables          []string          `mapstructure:"blocked_tables" json:"blocked_tables" yaml:"blocked_tables" jsonschema:"title=Blocked Tables"`
-	Roots                  map[string]string `mapstructure:"roots" json:"roots" yaml:"roots" jsonschema:"title=GraphJin System Root Access"`
+	Read                   string   `mapstructure:"read" json:"read" yaml:"read" jsonschema:"title=Read Access Mode"`
+	Write                  string   `mapstructure:"write" json:"write" yaml:"write" jsonschema:"title=Write Access Mode"`
+	Delete                 string   `mapstructure:"delete" json:"delete" yaml:"delete" jsonschema:"title=Delete Access Mode"`
+	NamespaceColumn        string   `mapstructure:"namespace_column" json:"namespace_column" yaml:"namespace_column" jsonschema:"title=Namespace Column,default=account_id"`
+	OwnerColumn            string   `mapstructure:"owner_column" json:"owner_column" yaml:"owner_column" jsonschema:"title=Owner Column,default=user_id"`
+	MissingNamespaceColumn string   `mapstructure:"missing_namespace_column" json:"missing_namespace_column" yaml:"missing_namespace_column" jsonschema:"title=Missing Namespace Column Behavior,enum=block,enum=allow"`
+	PublicTables           []string `mapstructure:"public_tables" json:"public_tables" yaml:"public_tables" jsonschema:"title=Public Tables"`
+	AdminTables            []string `mapstructure:"admin_tables" json:"admin_tables" yaml:"admin_tables" jsonschema:"title=Admin Tables"`
+	BlockedTables          []string `mapstructure:"blocked_tables" json:"blocked_tables" yaml:"blocked_tables" jsonschema:"title=Blocked Tables"`
 }
 
-// SourceConfig declares one graph provider in sources used.
+// SystemConfig controls GraphJin-owned capabilities and caller access to
+// built-in gj_* roots. Omitted values use mode defaults.
+type SystemConfig struct {
+	Capabilities map[string]bool   `mapstructure:"capabilities" json:"capabilities,omitempty" yaml:"capabilities,omitempty" jsonschema:"title=System Capabilities"`
+	RootAccess   map[string]string `mapstructure:"root_access" json:"root_access,omitempty" yaml:"root_access,omitempty" jsonschema:"title=System Root Access"`
+}
+
+func (c SystemConfig) clone() SystemConfig {
+	out := c
+	if c.Capabilities != nil {
+		out.Capabilities = make(map[string]bool, len(c.Capabilities))
+		for key, value := range c.Capabilities {
+			out.Capabilities[key] = value
+		}
+	}
+	if c.RootAccess != nil {
+		out.RootAccess = make(map[string]string, len(c.RootAccess))
+		for root, mode := range c.RootAccess {
+			out.RootAccess[root] = mode
+		}
+	}
+	return out
+}
+
+// WorkflowsConfig controls workflow discovery and permissions. GraphJin ships
+// one JavaScript runtime (Goja), so runtime selection is intentionally absent.
+type WorkflowsConfig struct {
+	Path         string          `mapstructure:"path" json:"path,omitempty" yaml:"path,omitempty" jsonschema:"title=Workflow Path,default=./workflows"`
+	Capabilities map[string]bool `mapstructure:"capabilities" json:"capabilities,omitempty" yaml:"capabilities,omitempty" jsonschema:"title=Workflow Capabilities"`
+}
+
+func (c WorkflowsConfig) clone() WorkflowsConfig {
+	out := c
+	if c.Capabilities != nil {
+		out.Capabilities = make(map[string]bool, len(c.Capabilities))
+		for key, value := range c.Capabilities {
+			out.Capabilities[key] = value
+		}
+	}
+	return out
+}
+
+// SourceConfig declares one external provider in sources.
 type SourceConfig struct {
 	Name    string `mapstructure:"name" json:"name" yaml:"name" jsonschema:"title=Name"`
-	Kind    string `mapstructure:"kind" json:"kind" yaml:"kind" jsonschema:"title=Kind,enum=database,enum=code,enum=file,enum=api,enum=graphjin,enum=workflow"`
+	Kind    string `mapstructure:"kind" json:"kind" yaml:"kind" jsonschema:"title=Kind,enum=database,enum=code,enum=file,enum=api"`
 	Default bool   `mapstructure:"default" json:"default" yaml:"default" jsonschema:"title=Default Source"`
 
 	Type                   string                        `mapstructure:"type" json:"type" yaml:"type" jsonschema:"title=Database Type"`
@@ -1463,10 +1547,6 @@ type SourceConfig struct {
 	MaxListPageSize        int                           `mapstructure:"max_list_page_size" json:"max_list_page_size" yaml:"max_list_page_size" jsonschema:"title=Max List Page Size"`
 	SpecsDir               string                        `mapstructure:"specs_dir" json:"specs_dir" yaml:"specs_dir" jsonschema:"title=OpenAPI Specs Directory"`
 	Specs                  map[string]openapi.SpecConfig `mapstructure:"specs" json:"specs" yaml:"specs" jsonschema:"-"`
-	Catalog                *bool                         `mapstructure:"catalog" json:"catalog,omitempty" yaml:"catalog,omitempty" jsonschema:"title=Catalog"`
-	Metadata               *bool                         `mapstructure:"metadata" json:"metadata,omitempty" yaml:"metadata,omitempty" jsonschema:"title=Metadata"`
-	ControlPlane           *bool                         `mapstructure:"control_plane" json:"control_plane,omitempty" yaml:"control_plane,omitempty" jsonschema:"title=Control Plane"`
-	Runtime                string                        `mapstructure:"runtime" json:"runtime" yaml:"runtime" jsonschema:"title=Workflow Runtime"`
 	Capabilities           map[string]bool               `mapstructure:"capabilities" json:"capabilities,omitempty" yaml:"capabilities,omitempty" jsonschema:"title=Capabilities"`
 	Access                 SourceAccessConfig            `mapstructure:"access" json:"access" yaml:"access" jsonschema:"title=Access"`
 }
@@ -1521,16 +1601,21 @@ func (c *Config) CatalogEnabled() bool {
 	if c == nil {
 		return false
 	}
-	source, ok := c.GraphJinSource()
-	return ok && sourceBool(source.Catalog, true)
+	if c.modeForSourceDefaults() == sourcecap.ModeProd {
+		return false
+	}
+	return c.FeatureCapability(featurecap.KindSystem, featurecap.KeyCatalogRead)
 }
 
 func (c *Config) CatalogDatabaseName() string {
 	if c == nil {
 		return "graphjin"
 	}
-	if source, ok := c.GraphJinSource(); ok && strings.TrimSpace(source.Name) != "" {
-		return strings.TrimSpace(source.Name)
+	if strings.TrimSpace(c.Catalog.Database) != "" {
+		return strings.TrimSpace(c.Catalog.Database)
+	}
+	if strings.TrimSpace(c.Metadata.Database) != "" {
+		return strings.TrimSpace(c.Metadata.Database)
 	}
 	return "graphjin"
 }
@@ -1550,8 +1635,7 @@ func (c *Config) MetadataEnabled() bool {
 	if c == nil {
 		return false
 	}
-	source, ok := c.GraphJinSource()
-	return ok && sourceBool(source.Metadata, true)
+	return c.CatalogEnabled()
 }
 
 func (c *Config) MetadataDatabaseName() string {
@@ -1560,42 +1644,6 @@ func (c *Config) MetadataDatabaseName() string {
 
 func (c *Config) MetadataAutoCodeRelationsEnabled() bool {
 	return c.CatalogAutoCodeRelationsEnabled()
-}
-
-func optionalBool(v any) (bool, bool) {
-	switch x := v.(type) {
-	case nil:
-		return false, false
-	case bool:
-		return x, true
-	case *bool:
-		if x == nil {
-			return false, false
-		}
-		return *x, true
-	case string:
-		switch strings.ToLower(strings.TrimSpace(x)) {
-		case "", "auto":
-			return false, false
-		case "true", "1", "yes", "on":
-			return true, true
-		case "false", "0", "no", "off":
-			return false, true
-		default:
-			return false, false
-		}
-	default:
-		switch strings.ToLower(strings.TrimSpace(fmt.Sprint(x))) {
-		case "", "auto":
-			return false, false
-		case "true", "1", "yes", "on":
-			return true, true
-		case "false", "0", "no", "off":
-			return false, true
-		default:
-			return false, false
-		}
-	}
 }
 
 // FilesystemConfig declares one filesystem-backed virtual table.
@@ -1769,6 +1817,9 @@ type Table struct {
 	Schema string
 	Table  string // Inherits Table
 	Type   string
+	// Generated marks runtime-only table configuration injected by GraphJin.
+	// It cannot be set through public configuration.
+	Generated bool `mapstructure:"-" json:"-" yaml:"-" jsonschema:"-"`
 	// Source is required in sources used and points at one sources[].name.
 	Source string `mapstructure:"source" json:"source" yaml:"source" jsonschema:"title=Source"`
 	// Database name for multi-database support. References a key in Config.Databases.

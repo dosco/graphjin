@@ -326,12 +326,7 @@ func (s *demoState) writeManifest(dbs map[string]*sql.DB) error {
 }
 
 func verifyDemoWorkflows(status demoStatus) error {
-	source, ok := conf.Core.WorkflowsSource()
-	if !ok {
-		status.Emit("workflows", "skipped", "no workflow source configured")
-		return nil
-	}
-	workflowPath := strings.TrimSpace(source.Path)
+	workflowPath := strings.TrimSpace(conf.Core.Workflows.Path)
 	if workflowPath == "" {
 		workflowPath = "workflows"
 	}
@@ -340,6 +335,10 @@ func verifyDemoWorkflows(status demoStatus) error {
 	}
 	entries, err := os.ReadDir(workflowPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			status.Emit("workflows", "skipped", "no workflow directory")
+			return nil
+		}
 		status.Emit("workflows", "failed", err.Error())
 		return err
 	}

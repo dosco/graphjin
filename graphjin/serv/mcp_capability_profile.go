@@ -52,7 +52,6 @@ var mcpGraphJinRoots = []string{
 }
 
 var mcpToolRequiredRoots = map[string][]string{
-	"graphql_help":             {"gj_catalog"},
 	"query_catalog":            {"gj_catalog"},
 	"ask_graphjin_agent":       {"gj_catalog"},
 	"get_catalog_card":         {"gj_catalog"},
@@ -161,15 +160,11 @@ func (ms *mcpServer) graphJinRootProfiles(ctx context.Context) ([]MCPRootProfile
 	if conf == nil || !conf.Core.IsSourcesUsed() {
 		return nil, nil
 	}
-	source, ok := conf.Core.GraphJinSource()
-	if !ok {
-		return nil, nil
-	}
-	access := conf.Core.EffectiveSourceAccess(source)
+	access := conf.Core.EffectiveSystemRootAccess()
 	var available []MCPRootProfile
 	var blocked []MCPRootProfile
 	for _, root := range mcpGraphJinRoots {
-		mode := strings.TrimSpace(access.Roots[root])
+		mode := strings.TrimSpace(access[root])
 		item := MCPRootProfile{
 			Root:       root,
 			AccessMode: mode,
@@ -179,9 +174,10 @@ func (ms *mcpServer) graphJinRootProfiles(ctx context.Context) ([]MCPRootProfile
 			item.Reason = "allowed for caller role"
 			available = append(available, item)
 		} else {
-			item.Reason = "blocked by source-mode root access"
-			if (root == "gj_watch" || root == "gj_watch_event") && !ms.service.watchesEnabled() {
+			if (root == "gj_watch" || root == "gj_watch_event") && (ms == nil || ms.service == nil || !ms.service.watchesEnabled()) {
 				item.Reason = "disabled by configuration"
+			} else {
+				item.Reason = "disabled by feature capability or blocked by root access"
 			}
 			blocked = append(blocked, item)
 		}
@@ -205,11 +201,8 @@ func (ms *mcpServer) rootVisibleForContext(ctx context.Context, root string) boo
 	if strings.TrimSpace(root) == "" {
 		return true
 	}
-	if _, ok := conf.Core.GraphJinSource(); !ok {
-		return false
-	}
 	ctx = ms.effectiveContext(ctx)
-	return ms.service.sourceModeRootAccessAllowed(root, runtimeRoleClass(ctx))
+	return systemRootAllowed(conf, root, systemActionRead, runtimeRoleClass(ctx))
 }
 
 func (ms *mcpServer) toolVisibleForContext(ctx context.Context, tool string) bool {
@@ -218,11 +211,31 @@ func (ms *mcpServer) toolVisibleForContext(ctx context.Context, tool string) boo
 		return false
 	}
 	for _, root := range mcpToolRequiredRoots[tool] {
-		if !ms.rootVisibleForContext(ctx, root) {
+		if !ms.rootActionVisibleForContext(ctx, root, mcpToolRootAction(tool)) {
 			return false
 		}
 	}
 	return true
+}
+
+func mcpToolRootAction(tool string) string {
+	switch tool {
+	case "update_current_config", "save_workflow":
+		return systemActionUpdate
+	case "execute_workflow":
+		return systemActionInsert
+	default:
+		return systemActionRead
+	}
+}
+
+func (ms *mcpServer) rootActionVisibleForContext(ctx context.Context, root, action string) bool {
+	conf := ms.config()
+	if conf == nil || !conf.Core.IsSourcesUsed() {
+		return true
+	}
+	ctx = ms.effectiveContext(ctx)
+	return systemRootAllowed(conf, root, action, runtimeRoleClass(ctx))
 }
 
 func (ms *mcpServer) toolAvailableForContext(ctx context.Context, tool string) bool {

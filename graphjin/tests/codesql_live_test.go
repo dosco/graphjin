@@ -87,7 +87,6 @@ func LookupUser() {
 					Read: core.AccessModeAuthenticated,
 				}},
 				{Name: "code", Kind: "code", Path: sourceRoot},
-				{Name: "graphjin", Kind: "graphjin"},
 			},
 		},
 		Serv: serv.Serv{

@@ -162,7 +162,7 @@ func TestCatalogGraphQLWorkflowMutationIntegration(t *testing.T) {
 		discovered.Sources[0].Name != "catalog_integration_workflow" ||
 		!strings.Contains(discovered.Sources[0].Code, "function main") ||
 		discovered.Sources[0].SourceHash != created.Workflow.SourceHash {
-		t.Fatalf("expected workflow source through gated source root, got %+v", discovered.Sources)
+		t.Fatalf("expected workflow code through the gated workflow root, got %+v", discovered.Sources)
 	}
 
 	runData := runControlPlaneGraphQL(t, gj, `mutation {
@@ -346,9 +346,9 @@ func newCatalogControlPlaneService(t *testing.T, mcp serv.MCPConfig) *serv.HttpS
 				Read:  core.AccessModeAuthenticated,
 				Write: core.AccessModeAuthenticated,
 			}},
-			{Name: "graphjin", Kind: "graphjin"},
-			{Name: "workflows", Kind: "workflow"},
 		},
+		System:    core.SystemConfig{Capabilities: map[string]bool{"security.read": true, "config.read": true}},
+		Workflows: core.WorkflowsConfig{Capabilities: map[string]bool{"execute": true, "read": true}},
 	})
 	svcConf := &serv.Config{
 		Core: *coreConf,

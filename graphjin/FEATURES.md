@@ -1367,25 +1367,21 @@ mutation {
 
 ## Catalog Graph
 
-The catalog graph exposes GraphJin-owned catalog and workflow read data as queryable read-only nanoDB tables in a managed database named `graphjin` by default. Enable it with a `kind: graphjin` source; it is regenerated on startup.
+The catalog graph exposes GraphJin-owned catalog and workflow read data as queryable read-only nanoDB tables. It is a built-in feature governed by mode defaults and `system.capabilities.catalog.read`; it is regenerated on startup and has no public source or database name.
 
-The graph only describes application databases. GraphJin-managed databases, including the `graphjin` catalog database and CodeSQL SQLite caches, are omitted from catalog rows so the catalog graph never loops back into itself. CodeSQL remains reachable through explicit `gj_catalog` to `gj_code` relationships.
+The graph only describes application databases. Runtime-only system storage and CodeSQL SQLite caches are omitted from catalog rows so the catalog graph never loops back into itself. CodeSQL remains reachable through explicit `gj_catalog` to `gj_code` relationships.
 
 ```yaml
 sources:
   - name: app
-    kind: sql
+    kind: database
     type: postgres
     connection_string: postgres://app:secret@db/app
     default: true
 
   - name: code
-    kind: codesql
+    kind: code
     path: /srv/app
-
-  - name: graphjin
-    kind: graphjin
-    metadata: true
 
 tables:
   - name: users
@@ -1393,10 +1389,6 @@ tables:
 
   - name: gj_code
     source: code
-    read_only: true
-
-  - name: gj_catalog
-    source: graphjin
     read_only: true
 ```
 

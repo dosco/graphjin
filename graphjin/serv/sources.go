@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/featurecap"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
 
@@ -30,7 +30,7 @@ func (c *Config) legacyDiscoveryEnabled() bool {
 	if !c.Core.IsSourcesUsed() {
 		return true
 	}
-	return c.sourceCapability(sourcecap.KindGraphJin, sourcecap.KeyLegacyDiscoveryRead, c.MCP.LegacyDiscovery)
+	return c.effectiveFeatureCapability(featurecap.KindSystem, featurecap.KeyLegacyDiscoveryRead)
 }
 
 func (c *Config) catalogToolsEnabled() bool {
@@ -60,36 +60,27 @@ func (c *Config) mcpDisabled() bool {
 	return false
 }
 
-func (c *Config) graphjinControlPlaneEnabled() bool {
-	if c == nil {
-		return false
-	}
-	source, ok := c.Core.GraphJinSource()
-	return ok && sourceBool(source.ControlPlane, true) && c.agenticSurfaceEnabled()
+func (c *Config) systemControlPlaneEnabled() bool {
+	return c != nil && c.agenticSurfaceEnabled() && (c.effectiveFeatureCapability(featurecap.KindSystem, featurecap.KeySecurityRead) ||
+		c.effectiveFeatureCapability(featurecap.KindSystem, featurecap.KeyConfigRead) ||
+		c.effectiveFeatureCapability(featurecap.KindSystem, featurecap.KeyConfigWrite))
 }
 
-func (c *Config) workflowsSourceEnabled() bool {
-	if c == nil {
-		return false
-	}
-	_, ok := c.Core.WorkflowsSource()
-	return ok && c.agenticSurfaceEnabled()
+func (c *Config) workflowsEnabled() bool {
+	return c != nil && c.agenticSurfaceEnabled() && (c.effectiveFeatureCapability(featurecap.KindWorkflows, featurecap.KeyWorkflowExecute) ||
+		c.effectiveFeatureCapability(featurecap.KindWorkflows, featurecap.KeyWorkflowRead) ||
+		c.effectiveFeatureCapability(featurecap.KindWorkflows, featurecap.KeyWorkflowWrite))
 }
 
-func (c *Config) runtimeRootSourceEnabled() bool {
+func (c *Config) runtimeRootEnabled() bool {
 	if !c.runtimeRootRegistered() {
 		return false
 	}
-	source, ok := c.sourceByCanonicalKind(sourcecap.KindGraphJin)
-	if !ok {
-		return false
-	}
-	allowed, _ := c.sourceCapabilityForSource(source, sourcecap.KeyRuntimeRead)
-	return allowed
+	return c.effectiveFeatureCapability(featurecap.KindSystem, featurecap.KeyRuntimeRead)
 }
 
 func (c *Config) runtimeRootRegistered() bool {
-	if c == nil || !c.Core.IsSourcesUsed() {
+	if c == nil {
 		return false
 	}
 	switch effectiveMode(c) {
@@ -97,61 +88,7 @@ func (c *Config) runtimeRootRegistered() bool {
 	default:
 		return false
 	}
-	_, ok := c.sourceByCanonicalKind(sourcecap.KindGraphJin)
-	return ok
-}
-
-func (c *Config) sourceCapability(kind, key string, fallback bool) bool {
-	if c == nil {
-		return fallback
-	}
-	if source, ok := c.sourceByCanonicalKind(kind); ok {
-		if source.Capabilities != nil {
-			if value, ok := source.Capabilities[key]; ok {
-				return value
-			}
-		}
-	}
-	return fallback
-}
-
-func (c *Config) sourceCapabilityConfigured(kind, key string) (bool, bool) {
-	if c == nil {
-		return false, false
-	}
-	if source, ok := c.sourceByCanonicalKind(kind); ok && source.Capabilities != nil {
-		value, exists := source.Capabilities[key]
-		return value, exists
-	}
-	return false, false
-}
-
-func (c *Config) sourceByCanonicalKind(kind string) (core.SourceConfig, bool) {
-	if c == nil {
-		return core.SourceConfig{}, false
-	}
-	for _, source := range c.Core.Sources {
-		if source.CanonicalKind() == kind {
-			return source, true
-		}
-	}
-	return core.SourceConfig{}, false
-}
-
-func (c *Config) graphjinSourceReadOnly() bool {
-	if c == nil {
-		return false
-	}
-	source, ok := c.Core.GraphJinSource()
-	return ok && source.ReadOnly
-}
-
-func (c *Config) workflowsSourceReadOnly() bool {
-	if c == nil {
-		return false
-	}
-	source, ok := c.Core.WorkflowsSource()
-	return ok && source.ReadOnly
+	return c.effectiveFeatureCapability(featurecap.KindSystem, featurecap.KeyRuntimeRead)
 }
 
 func (c *Config) artifactSourceReadOnly() bool {
@@ -169,9 +106,12 @@ func (c *Config) needsSystemHostDB() bool {
 	if c.Core.Artifacts.Enabled {
 		return true
 	}
+	if c.catalogToolsEnabled() || c.systemControlPlaneEnabled() || c.runtimeRootRegistered() || c.workflowsEnabled() {
+		return true
+	}
 	for _, source := range c.Core.Sources {
 		switch source.CanonicalKind() {
-		case sourcecap.KindFile, sourcecap.KindAPI, sourcecap.KindGraphJin, sourcecap.KindWorkflow:
+		case sourcecap.KindFile, sourcecap.KindAPI:
 			return true
 		}
 	}
@@ -181,11 +121,6 @@ func (c *Config) needsSystemHostDB() bool {
 func validateServiceIsSourcesUsedConfig(conf *Config) error {
 	if conf == nil {
 		return nil
-	}
-	for _, source := range conf.Core.Sources {
-		if isManagedArtifactDatabase(source.Name) {
-			return fmt.Errorf("source name %q is reserved for GraphJin's managed artifact store", source.Name)
-		}
 	}
 	if conf.Core.Watches.Enabled && !conf.Core.Artifacts.Enabled {
 		return fmt.Errorf("watches require artifacts.enabled")
@@ -253,11 +188,4 @@ func normalizeServiceSources(conf *Config) error {
 	err := conf.Core.NormalizeSources()
 	conf.Core.Artifacts, conf.Core.Watches = artifacts, watches
 	return err
-}
-
-func sourceBool(v *bool, def bool) bool {
-	if v == nil {
-		return def
-	}
-	return *v
 }

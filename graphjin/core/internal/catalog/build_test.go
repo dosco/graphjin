@@ -84,26 +84,26 @@ func TestBuildWithOptionsWorkflowCards(t *testing.T) {
 func TestSourceCardsUseCapabilityRegistry(t *testing.T) {
 	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{
 		Sources: []Source{{
-			Name: "graphjin",
-			Kind: sourcecap.KindGraphJin,
+			Name: "business_code",
+			Kind: sourcecap.KindCode,
 			Capabilities: map[string]bool{
-				sourcecap.KeySecurityRead: true,
+				sourcecap.KeyCodeRead: true,
 			},
 		}},
 	})
-	card, ok := findCatalogCard(snap, "source:graphjin")
+	card, ok := findCatalogCard(snap, "source:business_code")
 	if !ok {
 		t.Fatalf("source card not found: %+v", snap.Cards)
 	}
 	if !strings.Contains(card.EvidenceJSON, "supported_capabilities") ||
-		!strings.Contains(card.EvidenceJSON, sourcecap.KeySecurityRead) ||
-		!strings.Contains(card.EvidenceJSON, sourcecap.EnforcementRuntime) {
+		!strings.Contains(card.EvidenceJSON, sourcecap.KeyCodeRead) ||
+		!strings.Contains(card.EvidenceJSON, sourcecap.EnforcementConfigAudit) {
 		t.Fatalf("source card should expose registry-derived capability guidance: %s", card.EvidenceJSON)
 	}
-	if !strings.Contains(card.ExamplesJSON, sourcecap.KeySecurityRead) {
+	if !strings.Contains(card.ExamplesJSON, sourcecap.KeyCodeRead) {
 		t.Fatalf("source examples should come from registry, got %s", card.ExamplesJSON)
 	}
-	if card.OwnerSource != "graphjin" || card.OwnerSourcesJSON != `["graphjin"]` {
+	if card.OwnerSource != "business_code" || card.OwnerSourcesJSON != `["business_code"]` {
 		t.Fatalf("source card owner fields = %q %s", card.OwnerSource, card.OwnerSourcesJSON)
 	}
 }
@@ -581,7 +581,7 @@ func TestBuildIncludesConfigRecipes(t *testing.T) {
 	if !hasEntrypoint(snap, "discover_config_security") {
 		t.Fatal("expected discover_config_security entrypoint")
 	}
-	for _, id := range []string{"recipe.config.source_access_defaults", "recipe.config.table_classifications", "recipe.config.graphjin_roots"} {
+	for _, id := range []string{"recipe.config.source_access_defaults", "recipe.config.table_classifications"} {
 		card, ok := findCatalogCard(snap, id)
 		if !ok {
 			t.Fatalf("expected recipe %s", id)
@@ -595,6 +595,19 @@ func TestBuildIncludesConfigRecipes(t *testing.T) {
 		if strings.Contains(text, "Direct source patch-by-name is not supported") || strings.Contains(text, "not supported yet") {
 			t.Fatalf("recipe %s should not mark source_patches as unsupported: %s", id, text)
 		}
+	}
+	rootRecipe, ok := findCatalogCard(snap, "recipe.config.graphjin_roots")
+	if !ok {
+		t.Fatal("expected system root recipe")
+	}
+	rootText := rootRecipe.SafetyJSON + rootRecipe.ExamplesJSON + rootRecipe.GraphQLMutation
+	for _, want := range []string{"system", "root_access", "preview", "apply", "preview_id"} {
+		if !strings.Contains(rootText, want) {
+			t.Fatalf("system root recipe should expose feature preview/apply with %q: %s", want, rootText)
+		}
+	}
+	if strings.Contains(rootText, "source_patches") || strings.Contains(rootText, "roots_set") {
+		t.Fatalf("system root recipe still models built-in roots as a source patch: %s", rootText)
 	}
 	for _, id := range []string{"recipe.config.enable_artifacts", "recipe.config.enable_watches"} {
 		card, ok := findCatalogCard(snap, id)
