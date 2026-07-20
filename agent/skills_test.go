@@ -205,6 +205,22 @@ func TestBuiltinSkillsAllowFullToolSurface(t *testing.T) {
 	}
 }
 
+func TestConfigAndWatchSkillsRespectRuntimeModeDefaults(t *testing.T) {
+	for name, instruction := range map[string]string{
+		skillAdminWrite: builtinSkills[skillAdminWrite].instruction,
+		skillWatchWrite: builtinSkills[skillWatchWrite].instruction,
+	} {
+		for _, want := range []string{"dev", "agentic"} {
+			if !strings.Contains(instruction, want) {
+				t.Fatalf("%s guidance missing %q mode default: %s", name, want, instruction)
+			}
+		}
+	}
+	if !strings.Contains(builtinSkills[skillWatchWrite].instruction, "no application subscription starts") || !strings.Contains(builtinSkills[skillWatchWrite].instruction, "runner all") {
+		t.Fatalf("watch_write guidance does not explain idle default runner: %s", builtinSkills[skillWatchWrite].instruction)
+	}
+}
+
 func TestAllowToolSetRestricts(t *testing.T) {
 	allow := allowToolSet(toolGraphQLHelp, toolQueryCatalog)
 	if !allow(toolQueryCatalog) {

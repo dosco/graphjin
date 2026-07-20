@@ -141,7 +141,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &missingStatus); err != nil {
 		t.Fatalf("decode missing-key status: %v", err)
 	}
-	if !missingStatus.Enabled || missingStatus.Ready || missingStatus.Status != "missing_key" || missingStatus.APIKeyConfigured {
+	if !missingStatus.Enabled || !missingStatus.Ready || missingStatus.RESTReady || missingStatus.Status != "client_sampling_required" || missingStatus.APIKeyConfigured || missingStatus.ServerModelReady || !missingStatus.ClientSamplingAllowed || missingStatus.ClientSamplingAvailable {
 		t.Fatalf("unexpected missing-key status: %+v", missingStatus)
 	}
 	if !strings.Contains(missingStatus.Message, "GRAPHJIN_MISSING_AGENT_KEY") {
@@ -175,7 +175,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &readyStatus); err != nil {
 		t.Fatalf("decode ready status: %v", err)
 	}
-	if !readyStatus.Enabled || !readyStatus.Ready || readyStatus.Status != "ready" || !readyStatus.APIKeyConfigured {
+	if !readyStatus.Enabled || !readyStatus.Ready || !readyStatus.RESTReady || readyStatus.Status != "ready" || !readyStatus.APIKeyConfigured || !readyStatus.ServerModelReady {
 		t.Fatalf("unexpected ready status: %+v", readyStatus)
 	}
 	if readyStatus.Provider != "anthropic" || readyStatus.Model != "test-model" || readyStatus.MaxSteps != 3 || readyStatus.TimeoutSeconds != 50 {
@@ -357,6 +357,7 @@ func TestAskGraphJinAgentMCPStructuredResponse(t *testing.T) {
 
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.Sampling = gjagent.SamplingOff
 	ms.service.conf.Agent.TimeoutSeconds = 12
 	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{
 		"instruction": "run approved query",
@@ -411,6 +412,7 @@ func TestAskGraphJinAgentMCPRefusalAndNotices(t *testing.T) {
 
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.Sampling = gjagent.SamplingOff
 	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{
 		"instruction": "run approved query",
 	}))
@@ -440,6 +442,7 @@ func TestAskGraphJinAgentMCPRefusalAndNotices(t *testing.T) {
 func TestAskGraphJinAgentMCPSchema(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.Sampling = gjagent.SamplingOff
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 	ms.registerTools()
 
@@ -516,6 +519,7 @@ func TestAskGraphJinAgentMCPInjectsCapabilityProfile(t *testing.T) {
 
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.Sampling = gjagent.SamplingOff
 
 	ctx := context.WithValue(context.Background(), core.UserRoleKey, "admin")
 	res, err := ms.handleAskGraphJinAgent(ctx, newToolRequest(map[string]any{
@@ -687,6 +691,7 @@ func TestAskGraphJinAgentMCPHistoryArg(t *testing.T) {
 
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.Sampling = gjagent.SamplingOff
 	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{
 		"instruction": "and how many were sold?",
 		"history": []any{
@@ -717,6 +722,7 @@ func TestAskGraphJinAgentMCPProgressTokenSetsObserver(t *testing.T) {
 
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.Sampling = gjagent.SamplingOff
 	ms.srv = server.NewMCPServer("test", "0.0.0")
 
 	req := newToolRequest(map[string]any{"instruction": "with progress"})

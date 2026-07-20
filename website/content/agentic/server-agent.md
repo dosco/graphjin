@@ -8,7 +8,7 @@ weight: 5
 
 GraphJin's built-in agent - the server-side agent - runs the catalog-first discovery loop **inside GraphJin** and exposes it as a single MCP tool, `ask_graphjin_agent`, and a single REST endpoint, `POST /api/v1/agent`. Instead of your client chaining `query_catalog` → `query_catalog(id)` → `validate_where_clause` → `execute_saved_query` itself, you send one instruction and GraphJin discovers, validates, executes, and returns a typed, evidence-backed answer.
 
-It is optional and off by default. Use it when you want GraphJin to orchestrate discovery in one governed, caller-scoped, auditable call; use the [MCP tools](/agentic/mcp/) directly when you want to drive the loop step by step yourself.
+It is enabled by default in `dev` and `agentic` modes. Use it when you want GraphJin to orchestrate discovery in one governed, caller-scoped, auditable call; use the [MCP tools](/agentic/mcp/) directly when you want to drive the loop step by step yourself. Production mode keeps its existing opt-in behavior.
 
 ## Try it in five minutes
 
@@ -32,18 +32,17 @@ The answer comes back as typed JSON - `status`, `answer`, `data`, `evidence`, `a
 
 More verticals - a zero-Docker SaaS ops demo, a corrugated-box plant with JWT roles, a PCB fab spanning eight sources - are on the [demos page](/start/demos/).
 
-## Enable it
+## Configure it
 
-The agent block lives in `agentic.yml`, which loads when the environment is agentic:
+`agentic.yml` loads when the environment is agentic. The agent itself needs no feature toggle:
 
 ```bash
 GO_ENV=agentic graphjin serve --path ./config
 ```
 
 ```yaml
-# agentic.yml
+# agentic.yml (provider overrides are optional)
 agent:
-  enabled: true
   provider: openai
   model: gpt-4.1-mini
   api_key_env: OPENAI_API_KEY
@@ -132,7 +131,7 @@ curl -sS http://localhost:8080/api/v1/agent \
 
 ### Streaming and status
 
-The REST endpoint streams progress when called with `Accept: text/event-stream`: `action` frames as the agent works, `result` frames as evidence lands, then a final `complete` frame carrying the full response. MCP callers that pass `_meta.progressToken` receive `notifications/progress` events per action. `GET /api/v1/agent/status` reports whether the agent is enabled and ready (a missing API key shows up here) - the built-in web console uses it to decide whether to offer the chat page.
+The REST endpoint streams progress when called with `Accept: text/event-stream`: `action` frames as the agent works, `result` frames as evidence lands, then a final `complete` frame carrying the full response. MCP callers that pass `_meta.progressToken` receive `notifications/progress` events per action. `GET /api/v1/agent/status` reports server-model readiness separately from client-sampling availability; the built-in web console uses the REST-ready result to decide whether to offer the chat page.
 
 ## Structured refusals
 
@@ -142,14 +141,15 @@ A `blocked` response is machine-actionable, not prose. It carries a `refusal` ob
 
 When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen` and a count - the cue to query `gj_watch_event` and mark reviewed events seen. MCP clients that want push-style notice delivery can also subscribe to `graphjin://watch-events/unseen`; that resource returns compact caller-scoped event metadata, not full payloads.
 
-## Borrow the client's model (MCP sampling)
+## Automatic model selection
 
-```yaml
-agent:
-  sampling: auto # off (default) | auto | require
-```
+GraphJin resolves the model source for every request:
 
-With `auto`, `ask_graphjin_agent` runs on the calling MCP client's model via `sampling/createMessage` whenever the client advertises the sampling capability, and falls back to the server-configured model otherwise; `require` fails closed instead of falling back. This removes the need for a server-side model key — the caller's client provides and pays for the reasoning. Only the model changes: caller identity, roles, row-level security, evidence gates, and refusals apply exactly as without sampling, and because the guards live in Go, a hostile sampling response cannot talk the agent past them. Works over stdio and, with `mcp.http_stateful: true`, over stateful HTTP sessions.
+1. When the configured provider key environment variable is populated, GraphJin always uses the server model. It does not ask the MCP client to sample, including when the provider request later fails.
+2. Without server credentials, MCP borrows the calling client's model through `sampling/createMessage` over stdio or stateful HTTP.
+3. Without either path, MCP returns `model_sampling_unavailable`. REST returns a missing-server-credentials error because REST has no MCP sampling session.
+
+This removes the need for a server-side model key when an MCP client supports sampling. Only the model changes: caller identity, roles, row-level security, evidence gates, and refusals apply exactly as with a server model. Stateful MCP HTTP is already the `dev`/`agentic` default. The legacy `agent.sampling` setting is deprecated; omit it for automatic server-first behavior and set it to `off` only to prohibit client sampling.
 
 ## OpenAI-compatible endpoints
 
@@ -157,7 +157,6 @@ Point the agent at any OpenAI-compatible chat-completions endpoint (vLLM, Ollama
 
 ```yaml
 agent:
-  enabled: true
   provider: openai            # or: openai-compatible
   model: <model-name>
   api_key_env: OPENAI_API_KEY # must hold a non-empty value (a dummy is fine for keyless local endpoints)

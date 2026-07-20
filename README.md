@@ -245,7 +245,7 @@ To use GraphJin with your own databases you have to first create a new GraphJin 
 
 **Step 1: Create New GraphJin App** 
 ```bash
-graphjin new my-app
+graphjin serve new my-app
 ```
 
 **Step 2: Start the GraphJin Service**
@@ -602,15 +602,15 @@ Legacy prompts such as `write_query` and `fix_query_error` are available only wh
 
 ## Server-Side Agent
 
-Optional: instead of your client chaining `query_catalog` → `validate_where_clause` → `execute_saved_query`, let GraphJin run the catalog-first discovery loop for you. When enabled, GraphJin exposes one MCP tool `ask_graphjin_agent` and one REST endpoint `POST /api/v1/agent` that take a single instruction and return a typed, evidence-backed answer (`status`, `answer`, `data`, `evidence`, `actions`, `next`).
+Instead of your client chaining `query_catalog` → `validate_where_clause` → `execute_saved_query`, let GraphJin run the catalog-first discovery loop for you. Dev and agentic modes enable the agent and expose `ask_graphjin_agent` alongside the primitive MCP tools by default. The REST endpoint `POST /api/v1/agent` takes the same instruction and returns a typed, evidence-backed answer (`status`, `answer`, `data`, `evidence`, `actions`, `next`).
 
-- **Enable** by loading `agentic.yml` (`GO_ENV=agentic`) with `agent.enabled: true` plus a provider, model, and `api_key_env`.
+- **Zero configuration:** dev and agentic modes also enable a private `.graphjin/artifacts.sqlite3` store, watches (`runner: all`), and stateful MCP HTTP. No application subscription starts until an active, approved watch exists. Production defaults are unchanged.
 - **Execution control:** there are no per-request agent modes. `agent.read_only: true` forces the server-side agent to reject mutations, including saved-query mutations; otherwise core roles, row-level security, source/table `read_only`, and Go protocol guards decide what can run.
 - **Caller-scoped:** the agent runs as the caller, so core roles + row-level security enforce access. The caller's role only changes which *guidance* the agent follows, never what it can read or write.
 - **Grounded:** Go protocol guards keep every answer backed by real catalog/validation/execution evidence and downgrade to `blocked` (with evidence) when a step is skipped.
 - **Semantic-aware discovery:** when semantic catalog search is ready, the agent uses short business-intent phrases and may make one private two-or-three-phrase coverage batch; one Ax request embeds cache misses, and only real catalog relationship paths count as join evidence. Lexical-only prompts and public MCP stay unchanged.
 - **Machine-actionable refusals:** blocked responses carry a structured `refusal` (code, reasons, unblock steps, `policy_final`/`retryable`) so a calling agent can course-correct in one step instead of guessing.
-- **Model sampling:** with `agent.sampling: auto` (or `require`), the agent borrows the calling MCP client's model via MCP sampling — no server-side model key needed; caller identity and permissions are unchanged.
+- **Automatic model selection:** a populated environment variable named by `agent.api_key_env` always selects the server provider. Without server credentials, MCP borrows the calling client's model via sampling; a non-sampling client gets `model_sampling_unavailable`, and REST fails because it has no MCP session. `agent.sampling: off` disables client fallback.
 
 It is an RLM loop — the model writes JavaScript that calls the discovery tools, and the typed result is parsed from `key: value` output. So it needs a model that is good at **code generation**, not provider tool-calling or structured-output modes; any OpenAI-compatible endpoint works via `agent.base_url`. See [AGENTIC.md](AGENTIC.md#server-side-agent) and [CONFIG.md](CONFIG.md#agent-configuration).
 
@@ -831,7 +831,7 @@ res, _ := gj.GraphQL(ctx, `{ users { id email } }`, nil, nil)
 ### Standalone Service
 ```bash
 brew install dosco/graphjin/graphjin  # Mac
-graphjin new myapp && cd myapp
+graphjin serve new myapp && cd myapp
 graphjin serve
 ```
 

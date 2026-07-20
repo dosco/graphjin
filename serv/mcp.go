@@ -245,7 +245,7 @@ func (ms *mcpServer) registerTools() {
 	}
 
 	// When the agent tool is the front door, the primitives it orchestrates are
-	// hidden by default; mcp.include_tools_with_agent opts them back in.
+	// Explicit mcp.include_tools_with_agent=false can hide primitives.
 	if !ms.service.conf.agentOnlyMCP() {
 		ms.registerCatalogTools()
 		ms.registerExecutionTools()

@@ -19,8 +19,9 @@ graphjin serve --demo --path examples/<name>
 ```
 
 Put a model provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
-`GOOGLE_APIKEY`) in `./.env` and `--demo` auto-enables the agentic surface
-(server-side agent, MCP, watches, artifacts).
+`GOOGLE_APIKEY`) in `./.env` and `--demo` switches to the authenticated
+agentic config. The dev and agentic configs both get the server-side agent,
+MCP, watches, and managed artifacts from their mode defaults.
 
 | Demo | Domain | Sources | Port | First boot |
 | :--- | :--- | :--- | :--- | :--- |
@@ -35,7 +36,8 @@ Put a model provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
 Every demo ships an end-to-end smoke suite that exercises data queries, saved
 queries, workflows, watches (create/fire/inbox), the artifact store (including
 projection caps and locked kinds), structured agent refusals, role-gated
-control-plane access, and — where enabled — MCP sampling:
+control-plane access, and automatic server-first model routing with MCP client
+fallback:
 
 ```bash
 examples/<name>/scripts/smoke.sh                # base checks
@@ -64,7 +66,8 @@ make smoke-all
 The suites share one harness, [`lib/smoke-common.sh`](lib/smoke-common.sh):
 transport/assert helpers, dev-header and JWT auth modes, stateful-MCP session
 helpers, and generic capability suites each demo composes with its own domain
-checks. The full borrow-the-caller's-model sampling loop is driven by
+checks. The automatic model-resolution checks are driven by
 [`tools/mcp-sampling-client`](../tools/mcp-sampling-client/) — an MCP client
-that advertises the sampling capability and forwards `sampling/createMessage`
-to an OpenAI-compatible endpoint.
+that proves configured server credentials produce zero sampling calls, then
+advertises sampling and forwards `sampling/createMessage` to an
+OpenAI-compatible endpoint when the server key is intentionally absent.

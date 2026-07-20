@@ -10,20 +10,18 @@ A watch is a standing question: "tell me when a roast batch fails QC twice in a 
 
 Watches never elevate access: a watch can only ever see what its owner could already query, and both roots are owner-scoped — callers see only their own watches and events.
 
-## Enable
+## Defaults and overrides
 
-Watches persist through the [artifact store](/agentic/artifacts/), so both blocks are required:
+Watches persist through the [artifact store](/agentic/artifacts/). In `dev` and `agentic` modes both are enabled automatically, and the watch runner defaults to `all`; no application subscription starts until an active, approved watch exists.
+
+Use configuration only to opt out or choose which replicas evaluate:
 
 ```yaml
-artifacts:
-  enabled: true
-  source: app
 watches:
-  enabled: true
-  runner: "all" # default "off": definitions persist, nothing evaluates
+  runner: "off" # definitions persist, nothing evaluates on this replica
 ```
 
-`runner` is per-replica: set `"all"` on the replicas that should evaluate. The `recipe.config.enable_watches` catalog recipe walks an agent through this change; when watches are disabled, the roots are not advertised to callers at all.
+`runner` is per-replica. Set `watches.enabled: false` to remove the watch roots entirely. If artifacts are explicitly disabled and watches are omitted, watches are disabled too; explicitly enabling watches without artifacts is a configuration error. The `recipe.config.enable_watches` catalog recipe walks an agent through these changes.
 
 ## Create, pause, delete
 

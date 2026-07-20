@@ -41,10 +41,12 @@ import (
 	"net/http"
 	"os"
 	// "path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 
+	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
 	otelPlugin "github.com/dosco/graphjin/plugin/otel/v3"
@@ -73,25 +75,26 @@ const (
 type HookFn func(*core.Result)
 
 type graphjinService struct {
-	log              *zap.SugaredLogger // logger
-	zlog             *zap.Logger        // faster logger
-	logLevel         int                // log level
-	conf             *Config            // parsed config
-	dbs              map[string]*sql.DB // named database connections (all equal)
-	managedDBs       map[string]managedDB
-	runtimeCore      *core.Config
-	secretStore      *localKeystore
-	metadataDB       string
-	systemNanoDB     *core.NanoDB
-	gj               *core.GraphJin
-	disc             *DiscoveryManager
-	discovery        *discoveryGenerationManager
-	semantic         *semanticCatalogIndex
-	semanticEmbedder SemanticEmbeddingClient
-	srv              *http.Server
-	srvMu            sync.Mutex // guards srv: written by startHTTP, read by Shutdown
-	fs               core.FS
-	coreOptions      []core.Option
+	log                *zap.SugaredLogger // logger
+	zlog               *zap.Logger        // faster logger
+	logLevel           int                // log level
+	conf               *Config            // parsed config
+	dbs                map[string]*sql.DB // named database connections (all equal)
+	managedDBs         map[string]managedDB
+	runtimeCore        *core.Config
+	secretStore        *localKeystore
+	metadataDB         string
+	systemNanoDB       *core.NanoDB
+	gj                 *core.GraphJin
+	disc               *DiscoveryManager
+	discovery          *discoveryGenerationManager
+	semantic           *semanticCatalogIndex
+	semanticEmbedder   SemanticEmbeddingClient
+	agentClientFactory gjagent.ClientFactory
+	srv                *http.Server
+	srvMu              sync.Mutex // guards srv: written by startHTTP, read by Shutdown
+	fs                 core.FS
+	coreOptions        []core.Option
 	// asec         [32]byte
 	closeFn func()
 	chash   string
@@ -125,8 +128,17 @@ type graphjinService struct {
 // anyDB returns any single connection from the dbs map (for callers
 // that just need a live connection, e.g. health checks, DDL, listing).
 func (s *graphjinService) anyDB() *sql.DB {
-	for _, db := range s.dbs {
-		return db
+	names := make([]string, 0, len(s.dbs))
+	for name := range s.dbs {
+		if !isManagedArtifactDatabase(name) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if db := s.dbs[name]; db != nil {
+			return db
+		}
 	}
 	return nil
 }
@@ -443,6 +455,16 @@ func OptionSetSemanticEmbeddingClient(client SemanticEmbeddingClient) Option {
 	}
 }
 
+// OptionSetAgentClientFactory injects a server-side agent model client. An
+// injected client is treated exactly like configured provider credentials:
+// MCP never falls back to client sampling while it is present.
+func OptionSetAgentClientFactory(factory gjagent.ClientFactory) Option {
+	return func(s *graphjinService) error {
+		s.agentClientFactory = factory
+		return nil
+	}
+}
+
 // OptionSetRuntimeSchemaDDLDir sets where the core stores generated
 // schema-DDL restart snapshots, relative to the service filesystem root.
 func OptionSetRuntimeSchemaDDLDir(dir string) Option {
@@ -602,6 +624,9 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 			ErrorCode:  "database_init_failed",
 			Details:    map[string]any{"error": err.Error()},
 		})
+		return nil, err
+	}
+	if err := s.initManagedArtifactStore(); err != nil {
 		return nil, err
 	}
 

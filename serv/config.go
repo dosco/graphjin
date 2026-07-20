@@ -46,7 +46,16 @@ type Config struct {
 	viper    *viper.Viper
 
 	webUIExplicit bool
+
+	// parsedConfig is true only for configurations created through ReadInConfig
+	// or NewConfig. Mode-aware defaults intentionally do not apply to callers
+	// that construct Config values directly in Go.
+	parsedConfig         bool
+	managedArtifactStore bool
+	explicitSettings     map[string]bool
 }
+
+const managedArtifactDatabaseName = "__graphjin_artifacts"
 
 // Configuration for admin service
 // type Admin struct {
@@ -319,15 +328,15 @@ type MCPConfig struct {
 	// IncludeToolsWithAgent keeps the low-level MCP tools (query_catalog,
 	// graphql_help, execute_saved_query, execute_graphql, validate_where_clause,
 	// schema tools) registered even when the ask_graphjin_agent tool is enabled.
-	// By default the agent is the single front-door tool and orchestrates those
-	// primitives internally, so they are hidden to keep the MCP surface minimal.
-	// Set true only if a client needs to drive the primitives directly. Default: false
-	IncludeToolsWithAgent bool `mapstructure:"include_tools_with_agent" jsonschema:"title=Include MCP Tools With Agent,default=false"`
+	// Dev and agentic configs expose both the agent and primitives by default.
+	// Set false to make the agent the only front-door tool.
+	IncludeToolsWithAgent bool `mapstructure:"include_tools_with_agent" jsonschema:"title=Include MCP Tools With Agent,description=Parsed dev and agentic configs default to true; prod and direct Go configs remain false"`
 
 	// HTTPStateful enables persistent Streamable HTTP MCP sessions. This is
 	// required for server-initiated client sampling over HTTP and should be used
-	// behind sticky sessions in multi-node deployments. Default: false
-	HTTPStateful bool `mapstructure:"http_stateful" jsonschema:"title=Stateful MCP HTTP Transport,default=false"`
+	// behind sticky sessions in multi-node deployments. It defaults on in dev
+	// and agentic modes and remains off by default in prod.
+	HTTPStateful bool `mapstructure:"http_stateful" jsonschema:"title=Stateful MCP HTTP Transport,description=Parsed dev and agentic configs default to true; prod and direct Go configs remain false"`
 
 	// LegacyDiscovery keeps legacy HTTP helper endpoints such as
 	// /api/v1/discovery and /api/v1/workflows available for compatibility.
@@ -725,6 +734,8 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 
 	config := &Config{viper: viper}
 	config.ConfigPath = cp
+	config.parsedConfig = true
+	config.explicitSettings = captureRuntimeDefaultExplicitSettings(viper)
 
 	webUIExplicit := webUISettingExplicit(viper)
 	if err := normalizeCatalogAutoBools(viper); err != nil {
@@ -736,6 +747,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	if err := normalizeConfigMode(config); err != nil {
 		return nil, err
 	}
+	applyRuntimeModeDefaults(config)
 	if err := normalizeDiscoveryAndSemanticConfig(config); err != nil {
 		return nil, err
 	}
@@ -770,7 +782,8 @@ func NewConfig(config, format string) (*Config, error) {
 		return nil, err
 	}
 
-	c := &Config{viper: viper}
+	c := &Config{viper: viper, parsedConfig: true}
+	c.explicitSettings = captureRuntimeDefaultExplicitSettings(viper)
 
 	webUIExplicit := webUISettingExplicit(viper)
 	if err := normalizeCatalogAutoBools(viper); err != nil {
@@ -782,6 +795,7 @@ func NewConfig(config, format string) (*Config, error) {
 	if err := normalizeConfigMode(c); err != nil {
 		return nil, err
 	}
+	applyRuntimeModeDefaults(c)
 	if err := normalizeDiscoveryAndSemanticConfig(c); err != nil {
 		return nil, err
 	}
@@ -790,6 +804,91 @@ func NewConfig(config, format string) (*Config, error) {
 	c.webUIExplicit = webUIExplicit
 
 	return c, nil
+}
+
+var runtimeDefaultKeys = []string{
+	"artifacts.enabled",
+	"artifacts.source",
+	"watches.enabled",
+	"watches.runner",
+	"agent.enabled",
+	"agent.sampling",
+	"mcp.http_stateful",
+	"mcp.include_tools_with_agent",
+}
+
+func captureRuntimeDefaultExplicitSettings(v *viper.Viper) map[string]bool {
+	explicit := make(map[string]bool, len(runtimeDefaultKeys))
+	for _, key := range runtimeDefaultKeys {
+		explicit[key] = configSettingExplicit(v, key)
+	}
+	return explicit
+}
+
+func configSettingExplicit(v *viper.Viper, key string) bool {
+	if v != nil && v.InConfig(key) {
+		return true
+	}
+	envKey := strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
+	for _, prefix := range []string{"GJ_", "SG_", "SJ_"} {
+		if value, ok := os.LookupEnv(prefix + envKey); ok && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Config) settingExplicit(key string) bool {
+	if c == nil {
+		return false
+	}
+	if c.explicitSettings != nil {
+		if explicit, ok := c.explicitSettings[key]; ok {
+			return explicit
+		}
+	}
+	return configSettingExplicit(c.viper, key)
+}
+
+// applyRuntimeModeDefaults makes parsed dev and agentic configurations
+// batteries-included while preserving every explicit YAML/environment value.
+// Production and directly-constructed Go configurations retain literal values.
+func applyRuntimeModeDefaults(c *Config) {
+	if c == nil || !c.parsedConfig || (c.Core.Mode != "dev" && c.Core.Mode != "agentic") {
+		return
+	}
+
+	artifactsEnabledExplicit := c.settingExplicit("artifacts.enabled")
+	artifactsSourceExplicit := c.settingExplicit("artifacts.source")
+	if !artifactsEnabledExplicit {
+		c.Core.Artifacts.Enabled = true
+		if !artifactsSourceExplicit {
+			c.Core.Artifacts.Source = managedArtifactDatabaseName
+			c.managedArtifactStore = true
+		}
+	}
+	// An explicit enable without a source is the legacy contract: core will
+	// select the first writable SQL source instead of moving existing data.
+	if artifactsEnabledExplicit || artifactsSourceExplicit {
+		c.managedArtifactStore = false
+	}
+
+	if !c.settingExplicit("watches.enabled") {
+		c.Core.Watches.Enabled = c.Core.Artifacts.Enabled
+	}
+	if c.Core.Watches.Enabled && !c.settingExplicit("watches.runner") {
+		c.Core.Watches.Runner = "all"
+	}
+
+	if !c.settingExplicit("agent.enabled") {
+		c.Agent.Enabled = true
+	}
+	if !c.settingExplicit("mcp.http_stateful") {
+		c.MCP.HTTPStateful = true
+	}
+	if !c.settingExplicit("mcp.include_tools_with_agent") {
+		c.MCP.IncludeToolsWithAgent = true
+	}
 }
 
 func normalizeWebUIDefault(c *Config, explicit bool) {
@@ -984,13 +1083,15 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.oauth.access_token_ttl", time.Hour)
 	vi.SetDefault("mcp.oauth.refresh_token_ttl", 720*time.Hour)
 
-	// Server-side agent defaults. The endpoint and MCP tool are opt-in.
+	// Server-side agent defaults. Parsed dev and agentic configs enable the
+	// endpoint and MCP tool through applyRuntimeModeDefaults.
 	vi.SetDefault("agent.enabled", false)
 	vi.SetDefault("agent.provider", "openai")
 	vi.SetDefault("agent.model", "")
 	vi.SetDefault("agent.api_key_env", "OPENAI_API_KEY")
 	vi.SetDefault("agent.base_url", "")
-	vi.SetDefault("agent.sampling", "off")
+	// Sampling is deprecated as a selection mode. Empty, auto, and require all
+	// mean automatic server-first resolution; only off remains an opt-out.
 	vi.SetDefault("agent.max_steps", 8)
 	vi.SetDefault("agent.timeout_seconds", 50)
 	vi.SetDefault("agent.read_only", false)
@@ -1001,8 +1102,13 @@ func newViperWithDefaults() *viper.Viper {
 	// heavily by local OpenAI-compatible smoke and Ollama deployments. Bind them
 	// explicitly so environment-only configurations do not silently fall back to
 	// the public provider endpoint.
-	vi.BindEnv("agent.model", "GJ_AGENT_MODEL", "SG_AGENT_MODEL", "SJ_AGENT_MODEL")             //nolint:errcheck
-	vi.BindEnv("agent.base_url", "GJ_AGENT_BASE_URL", "SG_AGENT_BASE_URL", "SJ_AGENT_BASE_URL") //nolint:errcheck
+	vi.BindEnv("agent.model", "GJ_AGENT_MODEL", "SG_AGENT_MODEL", "SJ_AGENT_MODEL")                                                                     //nolint:errcheck
+	vi.BindEnv("agent.base_url", "GJ_AGENT_BASE_URL", "SG_AGENT_BASE_URL", "SJ_AGENT_BASE_URL")                                                         //nolint:errcheck
+	vi.BindEnv("agent.enabled", "GJ_AGENT_ENABLED", "SG_AGENT_ENABLED", "SJ_AGENT_ENABLED")                                                             //nolint:errcheck
+	vi.BindEnv("agent.sampling", "GJ_AGENT_SAMPLING", "SG_AGENT_SAMPLING", "SJ_AGENT_SAMPLING")                                                         //nolint:errcheck
+	vi.BindEnv("agent.api_key_env", "GJ_AGENT_API_KEY_ENV", "SG_AGENT_API_KEY_ENV", "SJ_AGENT_API_KEY_ENV")                                             //nolint:errcheck
+	vi.BindEnv("mcp.http_stateful", "GJ_MCP_HTTP_STATEFUL", "SG_MCP_HTTP_STATEFUL", "SJ_MCP_HTTP_STATEFUL")                                             //nolint:errcheck
+	vi.BindEnv("mcp.include_tools_with_agent", "GJ_MCP_INCLUDE_TOOLS_WITH_AGENT", "SG_MCP_INCLUDE_TOOLS_WITH_AGENT", "SJ_MCP_INCLUDE_TOOLS_WITH_AGENT") //nolint:errcheck
 
 	// Local encrypted keystore defaults.
 	vi.SetDefault("secrets.keystore.key", "")
@@ -1013,6 +1119,10 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("artifacts.schema", "_graphjin")
 	vi.SetDefault("artifacts.globals_path", "./config")
 	vi.SetDefault("artifacts.poll_seconds", 15)
+	vi.BindEnv("artifacts.enabled", "GJ_ARTIFACTS_ENABLED", "SG_ARTIFACTS_ENABLED", "SJ_ARTIFACTS_ENABLED") //nolint:errcheck
+	vi.BindEnv("artifacts.source", "GJ_ARTIFACTS_SOURCE", "SG_ARTIFACTS_SOURCE", "SJ_ARTIFACTS_SOURCE")     //nolint:errcheck
+	vi.BindEnv("watches.enabled", "GJ_WATCHES_ENABLED", "SG_WATCHES_ENABLED", "SJ_WATCHES_ENABLED")         //nolint:errcheck
+	vi.BindEnv("watches.runner", "GJ_WATCHES_RUNNER", "SG_WATCHES_RUNNER", "SJ_WATCHES_RUNNER")             //nolint:errcheck
 
 	// Caching defaults
 	vi.SetDefault("caching.enable", false)
@@ -1061,7 +1171,31 @@ func (c *Config) EffectiveSettings() map[string]any {
 	if c == nil || c.viper == nil {
 		return map[string]any{}
 	}
-	return c.viper.AllSettings()
+	settings := c.viper.AllSettings()
+	// Mode-aware defaults are applied after unmarshalling so direct Go struct
+	// construction keeps literal semantics. Overlay those resolved values for
+	// config tooling without persisting the private managed-store identifier.
+	setEffectiveSetting(settings, "artifacts.enabled", c.Core.Artifacts.Enabled)
+	setEffectiveSetting(settings, "watches.enabled", c.Core.Watches.Enabled)
+	setEffectiveSetting(settings, "watches.runner", c.Core.Watches.Runner)
+	setEffectiveSetting(settings, "agent.enabled", c.Agent.Enabled)
+	setEffectiveSetting(settings, "mcp.http_stateful", c.MCP.HTTPStateful)
+	setEffectiveSetting(settings, "mcp.include_tools_with_agent", c.MCP.IncludeToolsWithAgent)
+	return settings
+}
+
+func setEffectiveSetting(settings map[string]any, dotted string, value any) {
+	parts := strings.Split(dotted, ".")
+	current := settings
+	for _, part := range parts[:len(parts)-1] {
+		next, ok := current[part].(map[string]any)
+		if !ok {
+			next = make(map[string]any)
+			current[part] = next
+		}
+		current = next
+	}
+	current[parts[len(parts)-1]] = value
 }
 
 // SetHash sets the hash value of the configuration

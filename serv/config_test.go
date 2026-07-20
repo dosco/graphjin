@@ -163,11 +163,178 @@ agent:
 	if err != nil {
 		t.Fatalf("NewConfig defaults: %v", err)
 	}
-	if defaults.Agent.Enabled || defaults.Agent.Provider != "openai" || defaults.Agent.APIKeyEnv != "OPENAI_API_KEY" {
+	if !defaults.Agent.Enabled || defaults.Agent.Provider != "openai" || defaults.Agent.APIKeyEnv != "OPENAI_API_KEY" {
 		t.Fatalf("unexpected agent defaults: %+v", defaults.Agent)
+	}
+	if defaults.Agent.Sampling != "" {
+		t.Fatalf("sampling default = %q, want automatic/omitted", defaults.Agent.Sampling)
 	}
 	if defaults.Agent.MaxSteps != 8 || defaults.Agent.TimeoutSeconds != 50 || defaults.Agent.ReadOnly || defaults.Agent.ReturnTrace {
 		t.Fatalf("unexpected agent runtime defaults: %+v", defaults.Agent)
+	}
+}
+
+func TestParsedDevAndAgenticRuntimeDefaults(t *testing.T) {
+	for _, mode := range []string{"dev", "agentic"} {
+		t.Run(mode, func(t *testing.T) {
+			conf, err := NewConfig("mode: "+mode+"\n", "yaml")
+			if err != nil {
+				t.Fatalf("NewConfig: %v", err)
+			}
+			if !conf.Core.Artifacts.Enabled || conf.Core.Artifacts.Source != managedArtifactDatabaseName || !conf.managedArtifactStore {
+				t.Fatalf("artifact defaults = %+v managed=%v", conf.Core.Artifacts, conf.managedArtifactStore)
+			}
+			if !conf.Core.Watches.Enabled || conf.Core.Watches.Runner != "all" {
+				t.Fatalf("watch defaults = %+v", conf.Core.Watches)
+			}
+			if !conf.Agent.Enabled || !conf.MCP.HTTPStateful || !conf.MCP.IncludeToolsWithAgent {
+				t.Fatalf("service defaults: agent=%+v mcp=%+v", conf.Agent, conf.MCP)
+			}
+			listed := strings.Join(mcpToolList(conf), ",")
+			for _, tool := range []string{"graphql_help", "query_catalog", "execute_saved_query", "validate_where_clause", "ask_graphjin_agent"} {
+				if !strings.Contains(","+listed+",", ","+tool+",") {
+					t.Fatalf("default MCP toolset %q is missing %q", listed, tool)
+				}
+			}
+			settings := conf.EffectiveSettings()
+			for key, want := range map[string]any{
+				"artifacts.enabled":            true,
+				"watches.enabled":              true,
+				"watches.runner":               "all",
+				"agent.enabled":                true,
+				"mcp.http_stateful":            true,
+				"mcp.include_tools_with_agent": true,
+			} {
+				if got := effectiveSettingValue(settings, key); got != want {
+					t.Fatalf("effective %s = %#v, want %#v", key, got, want)
+				}
+			}
+		})
+	}
+}
+
+func effectiveSettingValue(settings map[string]any, dotted string) any {
+	var current any = settings
+	for _, part := range strings.Split(dotted, ".") {
+		values, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = values[part]
+	}
+	return current
+}
+
+func TestParsedProdAndDirectConfigKeepLiteralDefaults(t *testing.T) {
+	prod, err := NewConfig("mode: prod\n", "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if prod.Core.Artifacts.Enabled || prod.Core.Watches.Enabled || prod.Agent.Enabled || prod.MCP.HTTPStateful || prod.MCP.IncludeToolsWithAgent {
+		t.Fatalf("prod defaults changed: artifacts=%+v watches=%+v agent=%+v mcp=%+v", prod.Core.Artifacts, prod.Core.Watches, prod.Agent, prod.MCP)
+	}
+
+	direct := &Config{Core: Core{Mode: "agentic"}}
+	if err := normalizeConfigMode(direct); err != nil {
+		t.Fatal(err)
+	}
+	applyRuntimeModeDefaults(direct)
+	if direct.Core.Artifacts.Enabled || direct.Core.Watches.Enabled || direct.Agent.Enabled || direct.MCP.HTTPStateful || direct.MCP.IncludeToolsWithAgent {
+		t.Fatalf("direct Go config received parsed defaults: %+v", direct)
+	}
+}
+
+func TestParsedRuntimeDefaultsRespectOptOutsAndDependencies(t *testing.T) {
+	conf, err := NewConfig(`
+mode: agentic
+artifacts:
+  enabled: false
+watches:
+  runner: all
+agent:
+  enabled: false
+mcp:
+  http_stateful: false
+  include_tools_with_agent: false
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled || conf.Agent.Enabled || conf.MCP.HTTPStateful || conf.MCP.IncludeToolsWithAgent {
+		t.Fatalf("explicit opt-outs not preserved: artifacts=%+v watches=%+v agent=%+v mcp=%+v", conf.Core.Artifacts, conf.Core.Watches, conf.Agent, conf.MCP)
+	}
+	if conf.Core.Watches.Runner != "all" {
+		t.Fatalf("explicit runner = %q, want all", conf.Core.Watches.Runner)
+	}
+
+	invalid, err := NewConfig(`
+mode: agentic
+artifacts:
+  enabled: false
+watches:
+  enabled: true
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig invalid dependency parse: %v", err)
+	}
+	if err := validateServiceIsSourcesUsedConfig(invalid); err == nil || !strings.Contains(err.Error(), "watches require artifacts.enabled") {
+		t.Fatalf("dependency validation error = %v", err)
+	}
+}
+
+func TestParsedRuntimeDefaultsRespectEnvironmentOverrides(t *testing.T) {
+	t.Setenv("GJ_ARTIFACTS_ENABLED", "false")
+	t.Setenv("GJ_AGENT_ENABLED", "false")
+	t.Setenv("GJ_MCP_HTTP_STATEFUL", "false")
+	t.Setenv("GJ_MCP_INCLUDE_TOOLS_WITH_AGENT", "false")
+	conf, err := NewConfig("mode: agentic\n", "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled || conf.Agent.Enabled || conf.MCP.HTTPStateful || conf.MCP.IncludeToolsWithAgent {
+		t.Fatalf("environment opt-outs not preserved: artifacts=%+v watches=%+v agent=%+v mcp=%+v", conf.Core.Artifacts, conf.Core.Watches, conf.Agent, conf.MCP)
+	}
+}
+
+func TestExplicitArtifactEnableKeepsLegacySourceSelection(t *testing.T) {
+	conf, err := NewConfig(`
+mode: agentic
+sources:
+  - name: app
+    kind: database
+    type: sqlite
+    path: app.sqlite3
+artifacts:
+  enabled: true
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if conf.managedArtifactStore || conf.Core.Artifacts.Source != "" {
+		t.Fatalf("explicit legacy artifact config moved stores: source=%q managed=%v", conf.Core.Artifacts.Source, conf.managedArtifactStore)
+	}
+	if err := normalizeServiceSources(conf); err != nil {
+		t.Fatalf("normalizeServiceSources: %v", err)
+	}
+	if conf.Core.Artifacts.Source != "app" {
+		t.Fatalf("legacy artifact source = %q, want app", conf.Core.Artifacts.Source)
+	}
+}
+
+func TestManagedArtifactSourceNameIsReserved(t *testing.T) {
+	conf, err := NewConfig(`
+mode: agentic
+sources:
+  - name: __graphjin_artifacts
+    kind: database
+    type: sqlite
+    path: user.sqlite3
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if err := validateServiceIsSourcesUsedConfig(conf); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("reserved source validation error = %v", err)
 	}
 }
 

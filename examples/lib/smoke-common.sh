@@ -21,7 +21,7 @@ BASE_URL="${GRAPHJIN_URL:-${BASE_URL:-http://localhost:8080}}"
 DEMO_NAME="${DEMO_NAME:-demo}"
 RUN_AGENT="${GRAPHJIN_AGENT_SMOKE:-auto}"
 RUN_AGENT_EVAL="${GRAPHJIN_AGENT_EVAL:-never}"
-RUN_SAMPLING="${GRAPHJIN_SAMPLING_SMOKE:-never}"
+RUN_MODEL_RESOLUTION="${GRAPHJIN_MODEL_RESOLUTION_SMOKE:-${GRAPHJIN_SAMPLING_SMOKE:-never}}"
 TIMEOUT="${GRAPHJIN_SMOKE_TIMEOUT:-180}"
 USER_ID="${GRAPHJIN_SMOKE_USER_ID:-demo-user}"
 USER_ROLE="${GRAPHJIN_SMOKE_USER_ROLE:-user}"
@@ -37,13 +37,13 @@ usage() {
 ${DEMO_NAME} GraphJin smoke suite.
 
 Usage:
-  smoke.sh [--url URL] [--agent|--no-agent|--agent-eval] [--sampling]
+  smoke.sh [--url URL] [--agent|--no-agent|--agent-eval] [--model-resolution]
 
 Options:
   --url URL     GraphJin base URL (default: ${BASE_URL}).
   --agent       Require REST and MCP agent checks.
   --agent-eval  Run stricter open-ended agent protocol evals.
-  --sampling    Run the MCP sampling checks (require-mode server expected).
+  --model-resolution  Check automatic MCP client-model fallback and REST failure.
   --no-agent    Skip REST and MCP agent checks.
 USAGE
 }
@@ -64,8 +64,8 @@ smoke_parse_args() {
         RUN_AGENT_EVAL="always"
         shift
         ;;
-      --sampling)
-        RUN_SAMPLING="always"
+      --model-resolution|--sampling)
+        RUN_MODEL_RESOLUTION="always"
         shift
         ;;
       --no-agent)
@@ -787,16 +787,20 @@ run_admin_root_suite() {
   assert_jq "$user_out" '((.errors // []) | length) > 0 and ((((.data // {}) | .gj_security) // []) | length) == 0' "normal user is denied gj_security with an error"
 }
 
-# Sampling require-mode fail-closed quartet part 1+2 (curl only). Parts 3+4
-# use the Go client (tools/mcp-sampling-client) and are driven by the runner.
-run_sampling_require_suite() {
-  log "checking agent.sampling=require fails closed over plain HTTP MCP"
+# Automatic model-resolution checks for a server intentionally booted without
+# provider credentials. The Go sampling/no-sampling clients are driven by the
+# outer runner.
+run_model_resolution_suite() {
+  log "checking automatic model fallback without server credentials"
   mcp_initialize || fail "MCP initialize failed (is mcp.http_stateful enabled?)"
   local out
   out="$(mcp_tool_session ask_graphjin_agent '{"instruction":"List one saved query."}')"
-  assert_jq "$out" '.result.isError == true and ((.result.content // []) | tostring | test("sampling is required but unavailable"))' "require-mode MCP agent call fails closed without client sampling"
+  assert_jq "$out" '.result.isError == true and ((.result.structuredContent.code // "") == "model_sampling_unavailable")' "non-sampling MCP client gets model_sampling_unavailable"
 
-  local rest_out
-  rest_out="$(run_agent_rest_prompt "Say hello. Do not run any tools.")"
-  assert_jq "$rest_out" '.status != null' "REST agent path unaffected by require-mode sampling"
+  local rest_out="$TMP_DIR/agent-no-server-model.json" rest_code
+  rest_code="$(curl -sS --max-time "$TIMEOUT" -o "$rest_out" -w '%{http_code}' \
+    -X POST "${BASE_URL%/}/api/v1/agent" "${AUTH_HEADERS[@]}" \
+    --data '{"instruction":"Say hello. Do not run any tools."}')"
+  [ "$rest_code" = "503" ] || fail "REST without server credentials returned HTTP ${rest_code}, want 503"
+  assert_jq "$rest_out" '(.errors[0].message // "") | test("provider API key is not configured")' "REST requires server credentials"
 }

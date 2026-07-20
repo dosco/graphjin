@@ -1454,14 +1454,14 @@ func defaultAllow(mode string, dev, prod, agentic bool) bool {
 }
 
 func mcpBoolExplicit(conf *Config, key string, value bool) bool {
-	return conf != nil && conf.viper != nil && conf.viper.IsSet(key)
+	return conf != nil && conf.settingExplicit(key)
 }
 
 func configBoolExplicit(conf *Config, key string) bool {
 	if key == "web_ui" {
 		return conf != nil && conf.webUIExplicit
 	}
-	return conf != nil && conf.viper != nil && conf.viper.IsSet(key)
+	return conf != nil && conf.settingExplicit(key)
 }
 
 func securitySourceCapabilityOverrideKey(conf *Config, kind, capability, fallback string) string {
@@ -2185,6 +2185,9 @@ func securityRuntimeInfoRows(ctx securityReportContext, now string) []core.NanoR
 	if s.runtimeCore != nil {
 		dbs := make(map[string]any, len(s.runtimeCore.Databases))
 		for name, dbConf := range s.runtimeCore.Databases {
+			if isManagedArtifactDatabase(name) {
+				continue
+			}
 			_, connected := s.dbs[name]
 			dbs[name] = map[string]any{
 				"type":         dbConf.Type,
@@ -2195,6 +2198,9 @@ func securityRuntimeInfoRows(ctx securityReportContext, now string) []core.NanoR
 		}
 		tables := make(map[string]any, len(s.runtimeCore.Tables))
 		for _, table := range s.runtimeCore.Tables {
+			if isManagedArtifactDatabase(table.Database) || isManagedArtifactDatabase(table.Source) {
+				continue
+			}
 			key := table.Name
 			if table.Database != "" {
 				key = table.Database + "." + key

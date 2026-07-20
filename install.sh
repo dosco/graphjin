@@ -238,7 +238,7 @@ main() {
 
     echo ""
     echo "Get started:"
-    echo "  graphjin new myapp    # Create a new project"
+    echo "  graphjin serve new myapp    # Create a new project"
     echo "  graphjin serve        # Start the server"
     echo ""
     echo "Documentation: https://graphjin.com"

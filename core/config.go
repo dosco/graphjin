@@ -431,6 +431,11 @@ func (c *Config) validateArtifactsConfig() error {
 		return fmt.Errorf("artifacts.poll_seconds must be greater than or equal to 0")
 	}
 	sourceName := strings.TrimSpace(c.Artifacts.Source)
+	// The service runtime injects this private SQLite database after public
+	// sources are normalized. It deliberately does not appear in Sources.
+	if sourceName == "__graphjin_artifacts" {
+		return nil
+	}
 	if sourceName == "" {
 		for _, source := range c.Sources {
 			if source.CanonicalKind() == sourcecap.KindDatabase {
@@ -1373,8 +1378,8 @@ type IdentityConfig struct {
 
 // ArtifactsConfig declares the GraphJin-managed SQL artifact store.
 type ArtifactsConfig struct {
-	Enabled                   bool     `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Artifacts,description=Enable the GraphJin-managed SQL artifact store for saved queries/fragments/workflows"`
-	Source                    string   `mapstructure:"source" json:"source" yaml:"source" jsonschema:"title=Artifact Source,description=Database source name that hosts the artifact store; defaults to the first database source"`
+	Enabled                   bool     `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Artifacts,description=Enable the GraphJin-managed SQL artifact store for saved queries/fragments/workflows; parsed dev and agentic configs default to enabled"`
+	Source                    string   `mapstructure:"source" json:"source" yaml:"source" jsonschema:"title=Artifact Source,description=Database source name that hosts the artifact store; omitted dev and agentic configs use private managed SQLite while legacy explicit enablement uses the first writable SQL source"`
 	Schema                    string   `mapstructure:"schema" json:"schema" yaml:"schema" jsonschema:"title=Artifact Schema,default=_graphjin,description=Schema for the artifact store tables"`
 	AutoInit                  *bool    `mapstructure:"auto_init" json:"auto_init" yaml:"auto_init" jsonschema:"title=Auto Initialize Artifact Tables,default=true,description=Create artifact store tables automatically at startup"`
 	GlobalsPath               string   `mapstructure:"globals_path" json:"globals_path" yaml:"globals_path" jsonschema:"title=Global Config Artifact Path,default=./config,description=Directory of read-only global artifacts loaded from config files"`
@@ -1385,12 +1390,12 @@ type ArtifactsConfig struct {
 
 // WatchesConfig declares the GraphJin-managed watch store and runner settings.
 type WatchesConfig struct {
-	Enabled             bool     `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Watches,description=Enable durable owner-scoped watches; requires artifacts.enabled since watches persist through the artifact store"`
+	Enabled             bool     `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Watches,description=Enable durable owner-scoped watches; parsed dev and agentic configs default to enabled when artifacts are enabled"`
 	MaxPerOwner         int      `mapstructure:"max_per_owner" json:"max_per_owner" yaml:"max_per_owner" jsonschema:"title=Max Watches Per Owner,default=20,description=Maximum active watches per owner"`
 	EventRetentionHours int      `mapstructure:"event_retention_hours" json:"event_retention_hours" yaml:"event_retention_hours" jsonschema:"title=Watch Event Retention Hours,default=168,description=Hours to keep fired watch events before pruning"`
 	MaxEventsPerWatch   int      `mapstructure:"max_events_per_watch" json:"max_events_per_watch" yaml:"max_events_per_watch" jsonschema:"title=Max Events Per Watch,default=500,description=Maximum stored events per watch; oldest are pruned first"`
 	SnapshotMaxBytes    int      `mapstructure:"snapshot_max_bytes" json:"snapshot_max_bytes" yaml:"snapshot_max_bytes" jsonschema:"title=Watch Snapshot Max Bytes,default=32768,description=Byte cap for stored event snapshots and user-supplied watch-definition JSON fields"`
-	Runner              string   `mapstructure:"runner" json:"runner" yaml:"runner" jsonschema:"title=Watch Runner,enum=all,enum=off,default=off,description=Which replicas evaluate watches; off disables evaluation while definitions stay stored"`
+	Runner              string   `mapstructure:"runner" json:"runner" yaml:"runner" jsonschema:"title=Watch Runner,enum=all,enum=off,description=Which replicas evaluate watches; parsed dev and agentic configs default to all while literal and prod configs remain off"`
 	WebhookAllow        []string `mapstructure:"webhook_allow" json:"webhook_allow" yaml:"webhook_allow" jsonschema:"title=Watch Webhook Allowlist,description=Allowlist of webhook URL prefixes watch deliveries may call; empty denies all webhooks"`
 	EnrichmentDailyCap  int      `mapstructure:"enrichment_daily_cap" json:"enrichment_daily_cap" yaml:"enrichment_daily_cap" jsonschema:"title=Watch Enrichment Daily Cap,default=10,description=Maximum read-only agent enrichments per watch per day"`
 	EnrichmentWorkers   int      `mapstructure:"enrichment_workers" json:"enrichment_workers" yaml:"enrichment_workers" jsonschema:"title=Watch Enrichment Workers,default=1,description=Concurrent watch enrichment workers"`

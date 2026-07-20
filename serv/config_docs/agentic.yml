@@ -1,5 +1,8 @@
 app_name: "{{- .AppName }} Agentic"
 mode: agentic
+# Agentic mode includes a private managed artifact store, approved-watch
+# runner, built-in agent, stateful MCP HTTP, and the primitive MCP tools.
+# Add explicit settings only to opt out or customize them.
 production: true
 host_port: 0.0.0.0:8080
 # Defaults on in agentic mode so operators can inspect catalog, runtime,
@@ -23,7 +26,6 @@ reload_on_config_change: false
 # Agentic deployments keep legacy HTTP compatibility surfaces disabled. MCP is
 # catalog-first and should use catalog/control-plane GraphQL roots.
 mcp:
-  disable: false
   oauth:
     enabled: false
     mode: external
@@ -43,19 +45,14 @@ mcp:
   allow_dev_tools: false
   legacy_discovery: false
 
-# Optional server-side Ax agent exposed at POST /api/v1/agent and MCP
-# ask_graphjin_agent. Set enabled: true after configuring the API key env.
-agent:
-  enabled: false
-  provider: openai
-  api_key_env: OPENAI_API_KEY
-  # model: gpt-4.1-mini
-  # base_url: https://api.openai.com/v1
-  sampling: off
-  max_steps: 8
-  timeout_seconds: 50
-  read_only: false
-  return_trace: false
+# The agent is enabled automatically. If the provider key selected by
+# agent.api_key_env is populated, REST and MCP use that server model. Otherwise
+# MCP borrows a sampling-capable client's model. REST has no sampling session.
+# Override only when needed:
+# agent:
+#   provider: openai
+#   api_key_env: OPENAI_API_KEY
+#   model: gpt-4.1-mini
 
 # Discovery generations are immutable files. In a horizontal deployment this
 # path must be a shared read-after-write mount; Redis coordinates the one

@@ -44,7 +44,7 @@ graphjin serve --demo --path examples/coffee-roastery
 ```
 
 - **Sources:** `ops` (writable Postgres - customers, green lots, roast schedule, production orders, subscriptions, tickets), `roast_warehouse` (read-only BigQuery simulator - roast batches, sensor samples, cupping scores), `business_code` (TypeScript CodeSQL index), workflows, and the GraphJin control plane.
-- **Shows off:** the widest agentic surface - durable watches, the owner-scoped artifact store, MCP sampling (`auto`), JWT identity in agentic mode, and CodeSQL over real business logic. Four workflows, including `daily_roast_plan` and `batch_quality_review`.
+- **Shows off:** the widest agentic surface - durable watches, the owner-scoped managed artifact store, automatic server-first model routing with MCP client fallback, JWT identity in agentic mode, and CodeSQL over real business logic. Four workflows, including `daily_roast_plan` and `batch_quality_review`.
 
 **Ask it:**
 
@@ -64,7 +64,7 @@ graphjin serve --demo --path examples/saas-ops    # from a repo clone
 ```
 
 - **Sources:** `app` (SQLite), workflows, control plane. Port 8083.
-- **Shows off:** zero-dependency onboarding, saved queries (`churn_risk_context`, `mrr_summary_context`, `ticket_sla_context`), workflows (`sla_breach_check`, `dunning_retry_check`), and the fail-closed MCP sampling `require` mode.
+- **Shows off:** zero-dependency onboarding, saved queries (`churn_risk_context`, `mrr_summary_context`, `ticket_sla_context`), workflows (`sla_breach_check`, `dunning_retry_check`), and the fail-closed automatic fallback from missing server credentials to MCP client sampling.
 
 **Ask it:**
 
@@ -125,7 +125,7 @@ graphjin serve --demo --path examples/webshop
 
 ## Smoke suites {#smoke-suites}
 
-Every demo ships an end-to-end smoke suite: `scripts/smoke.sh` exercises data queries, saved queries, workflows, watches, and the artifact store; `--agent-eval` adds strict agent-protocol evals; `--sampling` covers MCP sampling. The refusal suite jailbreak-tests the guards in every vertical - a model told to skip discovery and mutate anyway must come back `status: "blocked"` with a structured refusal. Run everything with `make smoke-all`.
+Every demo ships an end-to-end smoke suite: `scripts/smoke.sh` exercises data queries, saved queries, workflows, watches, and the artifact store; `--agent-eval` adds strict agent-protocol evals; `--model-resolution` covers automatic server-first routing and MCP client fallback. The refusal suite jailbreak-tests the guards in every vertical - a model told to skip discovery and mutate anyway must come back `status: "blocked"` with a structured refusal. Run everything with `make smoke-all`.
 
 ## Keep going {#keep-going}
 

@@ -992,6 +992,8 @@ func TestMCPServerInstructions_CatalogDefaultDoesNotRecommendLegacyTools(t *test
 		"gj_runtime",
 		"decision support, not audit history",
 		`query_catalog(search: "workflow", where: { kind: { eq: "workflow" } })`,
+		"Parsed dev/agentic configs use runner all automatically",
+		"no application subscription starts until an enabled, active, approved watch exists",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("catalog instructions should include %q:\n%s", required, text)

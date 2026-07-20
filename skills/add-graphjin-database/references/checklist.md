@@ -21,6 +21,8 @@
 - Add schema DDL/diff support only if public docs will claim migrations or DDL generation.
 - Add test harness wiring in `tests/dbint_test.go`, a `scripts/test-<db>.sh` script, and `scripts/test-parallel.sh` inclusion.
 - Add focused skip helpers for unimplemented features. Skips must say what is unsupported and must not hide syntax bugs for claimed features.
+- Verify application-database selection ignores the reserved `__graphjin_artifacts` managed SQLite store while the internal compiler/runtime graph can still compile its control-plane tables.
+- Verify `graphjin serve new <app> --db-url <url>` renders parseable production and agentic sources for the database, including separate host and port values and URL-decoded credentials.
 
 ## Public Surfaces
 
@@ -28,6 +30,7 @@
 - CONFIG: connection example, auth/env vars, feature limitations, and simulator/live test knobs if useful.
 - FEATURES: support table and any feature-specific limitations.
 - Website: `DatabaseLogos.astro`, `DatabaseMatrix.astro`, frontpage copy if it names database families, and a logo asset or existing label pattern.
+- Keep `dev` / `agentic` configuration examples minimal: managed artifacts, watches, agent, stateful MCP HTTP, and primitive tools come from mode defaults. Only clustered examples should select a shared artifact SQL source explicitly.
 
 ## Redshift Notes
 

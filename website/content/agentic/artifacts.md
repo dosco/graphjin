@@ -27,12 +27,16 @@ config/
     nightly-report.js
 ```
 
-When an artifact store is configured and the request has `user_id`, GraphJin stores user-owned edits in `gj_artifacts` with `visibility = "user"`, `owner_id = <user_id>`, optional `account_id`, `source = "database"`, and `read_only = false`. Config files appear as `visibility = "global"`, `source = "config"`, and `read_only = true`.
+In `dev` and `agentic` modes, GraphJin configures a private managed artifact store automatically. When the request has `user_id`, GraphJin stores user-owned edits in `gj_artifacts` with `visibility = "user"`, `owner_id = <user_id>`, optional `account_id`, `source = "database"`, and `read_only = false`. Config files appear as `visibility = "global"`, `source = "config"`, and `read_only = true`.
 
 {{< verified by="TestUserArtifactSavedQueryOverridesGlobalOnlyForOwner" file="serv/artifact_overlay_test.go" line="94" >}}
 {{< verified by="TestCatalogSnapshotMergesCallerScopedArtifacts" file="serv/artifact_overlay_test.go" line="173" >}}
 
 ## Configure the store
+
+No artifact configuration is required in `dev` or `agentic` mode. GraphJin creates `.graphjin/artifacts.sqlite3` with private permissions, WAL journaling, a busy timeout, and a single-process connection pool. This internal database is intentionally absent from public sources, catalog metadata, application database selection, and security reports.
+
+Configure an explicit SQL source for a shared or clustered deployment:
 
 ```yaml
 sources:
@@ -50,6 +54,8 @@ artifacts:
 
 With `auto_init: true`, GraphJin creates `_graphjin.artifacts` when the service starts. Current updates increment the live artifact row's `revision` value in place; GraphJin does not create or expose artifact history rows.
 
+For compatibility, an explicit legacy `artifacts.enabled: true` without `source` continues to select the first writable SQL source. Set `artifacts.enabled: false` to opt out. A managed-store open or initialization failure is fatal rather than silently falling back to nondurable storage.
+
 ## One store, one bounded projection
 
 `gj_artifacts` is backed by a real SQL table, but GraphJin never hand-writes SQL against it: control-plane reads and writes run back through GraphJin's own engine under the reserved, non-forgeable `__graphjin_internal_store` role — the same compiled, validated query machinery that serves your app, across every supported database. [Watches](/agentic/watches/) persist through the same store.
@@ -61,9 +67,9 @@ List and search reads are served from an in-memory nanoDB projection, so discove
 
 ## Writes in development
 
-Named query auto-save keeps the existing development behavior unless both conditions are true:
+Named query auto-save uses the artifact overlay when both conditions are true:
 
-- The artifact store is configured.
+- The artifact store is enabled (the `dev`/`agentic` default).
 - The request context has `user_id`.
 
 With both conditions, named queries and captured fragments save to `gj_artifacts`. Without either condition, dev-mode auto-save falls back to the global `queries/` and `queries/fragments/` files.

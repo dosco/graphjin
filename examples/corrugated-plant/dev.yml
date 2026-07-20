@@ -17,14 +17,7 @@ default_block: false
 default_limit: 50
 
 artifacts:
-  enabled: true
-  source: erp
-  auto_init: true
   locked: ["runbook"]
-
-watches:
-  enabled: true
-  runner: "all"
 
 identity:
   user_id_claim: sub
@@ -44,16 +37,10 @@ auth:
     secret: corrugated-demo-jwt-secret
 
 mcp:
-  disable: false
   allow_config_updates: false
-  allow_mutations: true
-  allow_raw_queries: true
-  allow_workflow_execution: true
   allow_workflow_updates: false
   allow_schema_reload: false
   allow_schema_updates: false
-  allow_dev_tools: true
-  legacy_discovery: false
 
 sources:
   - name: erp

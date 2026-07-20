@@ -10,12 +10,12 @@ import (
 )
 
 // devConfigTemplate / prodConfigTemplate / agenticConfigTemplate are the
-// heavily-commented example configs that `graphjin serve new` writes for new apps. They double as the
-// canonical reference for what a GraphJin config.yml looks like: every option
-// is documented inline with a comment explaining what it does and what the
-// reasonable defaults are. We expose them via the `get_config_docs` MCP tool
-// so an LLM (or a human) can read them without having to find the template
-// files inside the repo.
+// heavily-commented counterparts to the configs that `graphjin serve new`
+// writes for new apps. They are the canonical reference for what a GraphJin
+// config.yml looks like: every option is documented inline with a comment
+// explaining what it does and what the reasonable defaults are. We expose
+// them via the `get_config_docs` MCP tool so an LLM (or a human) can read them
+// without having to find the template files inside the repo.
 //
 //go:embed config_docs/dev.yml
 var devConfigTemplate string
@@ -28,7 +28,7 @@ var agenticConfigTemplate string
 
 // ConfigDocsTemplate returns the annotated example config template for the
 // given variant ("dev", "prod", or "agentic"); any other value returns dev.
-// These are the same inline-documented templates `graphjin serve new`
+// These are the annotated counterparts to the templates `graphjin serve new`
 // scaffolds, exposed for `graphjin config docs` (offline, no server).
 func ConfigDocsTemplate(variant string) string {
 	switch strings.ToLower(strings.TrimSpace(variant)) {
@@ -80,8 +80,9 @@ func (ms *mcpServer) handleGetConfigDocs(ctx context.Context, req mcp.CallToolRe
 	}
 	out := docs{
 		Variant: variant,
-		Notes: "These are the same templates that `graphjin serve new` writes when scaffolding a new app. " +
-			"Strings like `{{ .AppName }}` are Go template placeholders — substitute your real values when authoring a config. " +
+		Notes: "These are annotated counterparts to the configs that `graphjin serve new` writes when scaffolding a new app. " +
+			"The CLI renders app and database values; substitute any `${...}` documentation placeholders before loading these reference files. " +
+			"Parsed dev and agentic configs already enable managed artifacts, watches, the agent, stateful MCP HTTP, and primitive tools. " +
 			"`dev.yml` is the verbose annotated form; `prod.yml` is the production counterpart; `agentic.yml` is production-oriented with agentic source capability policy. " +
 			"GraphJin reads YAML keys via mapstructure, so any documented field maps 1:1 to the underlying Config struct.",
 	}

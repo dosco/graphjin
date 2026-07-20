@@ -21,9 +21,9 @@ That writes three config files and a schema:
 
 | File | Used when | Notes |
 | --- | --- | --- |
-| `dev.yml` | local development | verbose, every option documented inline |
+| `dev.yml` | local development | batteries-included runtime defaults |
 | `prod.yml` | production | `inherits: dev`, overrides only what differs |
-| `agentic.yml` | agent deployments | locked-down agentic defaults |
+| `agentic.yml` | agent deployments | batteries-included, with locked-down access policy |
 | `config.schema.json` | your editor | powers autocomplete (see below) |
 
 Which file loads is decided by **`GO_ENV`** (`dev`, `prod`, or `agentic`; `dev`
@@ -52,17 +52,20 @@ report whether their reload strategy is full or source-scoped.
 When two layers set the same key, the later one wins:
 
 ```
-built-in defaults
+built-in literal defaults
   → inherited parent file (inherits:)
     → your config file
       → GJ_* / SJ_* environment variables
-        → dev-mode auto-enables (dev only)
+        → parsed mode defaults (dev and agentic)
 ```
 
 `GJ_`-prefixed environment variables override any key (`GJ_LOG_LEVEL=warn`,
-`GJ_DATABASE_PASSWORD=…`). In **dev mode only**, GraphJin also auto-enables a set
-of convenience flags (raw queries, config updates, schema reload) that stay off in
-prod. When you are unsure why a key has the value it does, ask:
+`GJ_DATABASE_PASSWORD=…`). Parsed `dev` and `agentic` configs automatically
+enable managed artifacts, watches, the built-in agent, stateful MCP HTTP, and
+the primitive MCP tools while preserving explicit file/environment opt-outs.
+Development-only raw query, config-update, and schema-reload conveniences remain
+limited to dev; prod defaults stay off. When you are unsure why a key has the
+value it does, ask:
 
 ```bash
 graphjin config explain log_level

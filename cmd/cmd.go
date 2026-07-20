@@ -103,6 +103,12 @@ func setup(cpath string) {
 		tmpl := newTempl(map[string]interface{}{
 			"AppName":     appName,
 			"AppNameSlug": appNameSlug,
+			"DBType":      "postgres",
+			"DBHost":      "db",
+			"DBPort":      "5432",
+			"DBUser":      "postgres",
+			"DBPass":      "postgres",
+			"DBName":      "",
 		})
 
 		templateNames := []string{cn + ".yml"}

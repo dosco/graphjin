@@ -704,6 +704,9 @@ func (s *graphjinService) metadataSnapshotExcludesFor(metadataDB string, conf *c
 	for _, name := range s.allCodeSQLDatabasesFor(conf, managedDBs) {
 		seen[name] = struct{}{}
 	}
+	if conf != nil && isManagedArtifactDatabase(conf.Artifacts.Source) {
+		seen[managedArtifactDatabaseName] = struct{}{}
+	}
 	out := make([]string, 0, len(seen))
 	for name := range seen {
 		out = append(out, name)

@@ -24,7 +24,7 @@ The client calls the saved operation by name rather than sending a new query bod
 
 Saved operations can be namespaced when a deployment needs separate surfaces for web clients, internal jobs, and agents. The allow-list loader stores the compiled operation and invalidates cached compiled state when the operation changes.
 
-Config files under `queries/` are global saved queries. When `artifacts.enabled` is configured and a request has `user_id`, `gj_artifacts` becomes a user-scoped overlay: execution resolves the user's `kind = "saved_query"` artifact first, then falls back to the global file. Fragments use the same rule under `queries/fragments/`.
+Config files under `queries/` are global saved queries. When artifacts are enabled (the `dev`/`agentic` default) and a request has `user_id`, `gj_artifacts` becomes a user-scoped overlay: execution resolves the user's `kind = "saved_query"` artifact first, then falls back to the global file. Fragments use the same rule under `queries/fragments/`.
 
 {{< verified by="TestAllowList" file="tests/core_test.go" line="92" >}}
 {{< verified by="TestGetByNameAllowsNamespacedQueries" file="core/internal/allow/allow_test.go" line="68" >}}

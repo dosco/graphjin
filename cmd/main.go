@@ -15,13 +15,14 @@ Usage:
 
 Available Commands:
   completion  generate the autocompletion script for the specified shell
-  db          Create database
-  deploy      Deploy a new config
+  serve       Run the GraphJin service and manage server-side app lifecycle
+    new       Create a new application
+    db        Create or manage databases
+    test      Validate server configuration and connectivity
+  mcp         Manage MCP client integrations
+  cli         Call a running GraphJin server
+  config      Inspect and edit configuration
   help        Help about any command
-  init        Setup admin database
-  migrate     Migrate the database
-  new         Create a new application
-  serv        Run the GraphJin service
   version     Version information
 
 Flags:

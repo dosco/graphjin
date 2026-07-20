@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Boot every example demo in sequence, run its full smoke suite (base + agent
 # + agent-eval), tear it down, and print a summary table. Also runs the MCP
-# sampling checks: the full borrow-the-client's-model loop against coffee
-# (agent.sampling: auto) and the require-mode fail-closed quartet against a
-# rebooted saas-ops demo.
+# automatic model-resolution checks: a credentialed coffee boot must stay on
+# the server model with zero sampling calls, while a rebooted saas-ops demo
+# with an intentionally empty server key must borrow the MCP client's model.
 #
 # The "default" entry covers the bare `graphjin serve --demo` flow: a
 # CGO_ENABLED=0 binary (like releases) run in an empty directory must
@@ -14,7 +14,7 @@
 # a provider key (OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_APIKEY); curl,
 # jq, openssl on PATH; ports 8080-8083 and 8093 free.
 #
-# Usage: scripts/demo-smoke-all.sh [--only <demo>] [--skip-sampling]
+# Usage: scripts/demo-smoke-all.sh [--only <demo>] [--skip-model-routing] [--skip-agent]
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -55,16 +55,43 @@ load_env_file() {
 
 load_env_file ".env"
 
+smoke_b64url() {
+  openssl base64 -A | tr '+/' '-_' | tr -d '='
+}
+
+smoke_demo_jwt() {
+  local secret="$1" header payload sig
+  header="$(printf '%s' '{"alg":"HS256","typ":"JWT"}' | smoke_b64url)"
+  payload="$(jq -nc '{sub:"demo-user",account_id:"1",roles:["user"],iat:(now|floor),exp:((now|floor)+3600)}' | smoke_b64url)"
+  sig="$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -hmac "$secret" -binary | smoke_b64url)"
+  printf '%s.%s.%s' "$header" "$payload" "$sig"
+}
+
+default_demo_graphql() {
+  local port="$1" query="$2" token payload
+  token="$(smoke_demo_jwt saas-ops-demo-jwt-secret)"
+  payload="$(jq -nc --arg query "$query" '{query:$query}')"
+  curl -sS --fail-with-body --max-time 60 \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${token}" \
+    --data "$payload" "http://localhost:${port}/api/v1/graphql"
+}
+
 ONLY=""
-SKIP_SAMPLING=""
+SKIP_MODEL_ROUTING=""
+SKIP_AGENT=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --only)
       ONLY="${2:-}"
       shift 2
       ;;
-    --skip-sampling)
-      SKIP_SAMPLING=1
+    --skip-model-routing|--skip-sampling)
+      SKIP_MODEL_ROUTING=1
+      shift
+      ;;
+    --skip-agent)
+      SKIP_AGENT=1
       shift
       ;;
     -h|--help)
@@ -79,7 +106,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 DEMOS="default coffee-roastery saas-ops corrugated-plant pcb-fab"
-SAMPLING_DISCOVERY_INSTRUCTION='Say hello. Do not run any tools.'
+MODEL_ROUTING_INSTRUCTION='Say hello. Do not run any tools.'
 
 port_for_demo() {
   case "$1" in
@@ -208,11 +235,21 @@ record() {
   printf '%s\n' "$1"
 }
 
+run_demo_smoke() {
+  local demo="$1"
+  local port="$2"
+  if [ -n "$SKIP_AGENT" ]; then
+    "examples/${demo}/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent
+  else
+    "examples/${demo}/scripts/smoke.sh" --url "http://localhost:${port}" --agent-eval
+  fi
+}
+
 run_demo() {
   local demo="$1"
   local port
   port="$(port_for_demo "$demo")"
-  local started ok=1 sampling="-"
+  local started ok=1 model_routing="-"
   started="$(date +%s)"
   load_env_file "examples/${demo}/.env"
 
@@ -222,40 +259,45 @@ run_demo() {
     return 1
   fi
 
-  if ! "examples/${demo}/scripts/smoke.sh" --url "http://localhost:${port}" --agent-eval; then
+  if ! run_demo_smoke "$demo" "$port"; then
     ok=""
   fi
 
-  # Sampling auto-loop: coffee runs agent.sampling: auto, so a sampling-capable
-  # client must drive at least one sampling/createMessage round trip.
-  if [ -z "$SKIP_SAMPLING" ] && [ "$demo" = "coffee-roastery" ] && [ -n "$ok" ]; then
-    echo "==> running sampling auto-loop via mcp-sampling-client"
+  # Server-first routing: even a sampling-capable MCP client must receive the
+  # answer with zero sampling/createMessage calls while credentials exist.
+  if [ -z "$SKIP_MODEL_ROUTING" ] && [ "$demo" = "coffee-roastery" ] && [ -n "$ok" ]; then
+    echo "==> checking server-first MCP model routing"
     if go run ./tools/mcp-sampling-client \
         --url "http://localhost:${port}/api/v1/mcp" \
         --jwt-secret "coffee-roastery-demo-jwt-secret" \
-        --instruction "$SAMPLING_DISCOVERY_INSTRUCTION" \
-        | tee /dev/stderr | jq -e '.sampling_calls >= 1 and (.is_error | not)' >/dev/null; then
-      sampling="auto:ok"
+        --instruction "$MODEL_ROUTING_INSTRUCTION" \
+        | tee /dev/stderr | jq -e '.sampling_calls == 0 and (.is_error | not)' >/dev/null; then
+      model_routing="server:ok"
     else
-      sampling="auto:FAIL"
+      model_routing="server:FAIL"
       ok=""
     fi
   fi
 
   kill_server
 
-  # Sampling require-mode quartet: reboot the fast saas-ops demo with
-  # GJ_AGENT_SAMPLING=require and assert fail-closed + client behavior.
-  if [ -z "$SKIP_SAMPLING" ] && [ "$demo" = "saas-ops" ] && [ -n "$ok" ]; then
-    echo "==> rebooting ${demo} in sampling require mode"
-    if boot_demo "$demo" "$port" GO_ENV=agentic GJ_AGENT_SAMPLING=require GJ_MCP_HTTP_STATEFUL=true; then
+  # Client fallback: reboot SaaS Ops with an intentionally empty provider-key
+  # env, without setting sampling or stateful-HTTP configuration.
+  if [ -z "$SKIP_MODEL_ROUTING" ] && [ "$demo" = "saas-ops" ] && [ -n "$ok" ]; then
+    echo "==> rebooting ${demo} for MCP client-model fallback"
+    if boot_demo "$demo" "$port" \
+        -u GJ_AGENT_SAMPLING -u SG_AGENT_SAMPLING -u SJ_AGENT_SAMPLING \
+        -u GJ_MCP_HTTP_STATEFUL -u SG_MCP_HTTP_STATEFUL -u SJ_MCP_HTTP_STATEFUL \
+        GO_ENV=agentic \
+        GJ_AGENT_API_KEY_ENV=GRAPHJIN_SMOKE_EMPTY_AGENT_KEY \
+        GRAPHJIN_SMOKE_EMPTY_AGENT_KEY=; then
       local req_ok=1
-      "examples/${demo}/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent --sampling || req_ok=""
+      "examples/${demo}/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent --model-resolution || req_ok=""
       if [ -n "$req_ok" ]; then
         if go run ./tools/mcp-sampling-client \
             --url "http://localhost:${port}/api/v1/mcp" \
             --jwt-secret "saas-ops-demo-jwt-secret" \
-            --instruction "$SAMPLING_DISCOVERY_INSTRUCTION" \
+            --instruction "$MODEL_ROUTING_INSTRUCTION" \
             | tee /dev/stderr | jq -e '.sampling_calls >= 1 and (.is_error | not)' >/dev/null; then
           :
         else
@@ -274,23 +316,23 @@ run_demo() {
         fi
       fi
       if [ -n "$req_ok" ]; then
-        sampling="require:ok"
+        model_routing="fallback:ok"
       else
-        sampling="require:FAIL"
+        model_routing="fallback:FAIL"
         ok=""
       fi
       kill_server
     else
-      sampling="require:BOOT-FAIL"
+      model_routing="fallback:BOOT-FAIL"
       ok=""
     fi
   fi
 
   local dur=$(($(date +%s) - started))
   if [ -n "$ok" ]; then
-    record "${demo} | PASS | ${sampling} | ${dur}s"
+    record "${demo} | PASS | ${model_routing} | ${dur}s"
   else
-    record "${demo} | FAIL | ${sampling} | ${dur}s"
+    record "${demo} | FAIL | ${model_routing} | ${dur}s"
     return 1
   fi
 }
@@ -330,8 +372,28 @@ run_default_demo() {
     echo "default demo state manifest missing under ${workdir}/graphjin-demo/demo" >&2
     ok=""
   fi
-  if [ -n "$ok" ] && ! "examples/saas-ops/scripts/smoke.sh" --url "http://localhost:${port}" --agent-eval; then
+  if [ -n "$ok" ] && ! run_demo_smoke "saas-ops" "$port"; then
     ok=""
+  fi
+  local managed_store="${workdir}/graphjin-demo/.graphjin/artifacts.sqlite3"
+  if [ -n "$ok" ] && [ ! -f "$managed_store" ]; then
+    echo "default demo managed artifact store missing: ${managed_store}" >&2
+    ok=""
+  fi
+  if [ -n "$ok" ]; then
+    local store_mode
+    store_mode="$(stat -f '%Lp' "$managed_store" 2>/dev/null || stat -c '%a' "$managed_store" 2>/dev/null || true)"
+    if [ "$store_mode" != "600" ]; then
+      echo "default demo managed artifact store mode is ${store_mode}, want 600" >&2
+      ok=""
+    fi
+  fi
+  if [ -n "$ok" ]; then
+    if ! default_demo_graphql "$port" 'mutation { gj_artifacts(insert: { name: "smoke_restart_marker", kind: "query", content: "query { gj_catalog(limit: 1) { id } }" }) { id } }' \
+      | jq -e '((.errors // []) | length) == 0 and (([.data.gj_artifacts] | flatten | .[0].id) != null)' >/dev/null; then
+      echo "default demo failed to write managed-store restart marker" >&2
+      ok=""
+    fi
   fi
   kill_server
 
@@ -341,6 +403,15 @@ run_default_demo() {
       if ! grep -q "demo project.*reused" "$SERVER_LOG"; then
         echo "default demo did not reuse ./graphjin-demo on reboot" >&2
         ok=""
+      fi
+      if [ -n "$ok" ]; then
+        if ! default_demo_graphql "$port" 'query { gj_artifacts(where: { name: { eq: "smoke_restart_marker" } }) { id name } }' \
+          | jq -e '(.data.gj_artifacts | length) == 1 and .data.gj_artifacts[0].name == "smoke_restart_marker"' >/dev/null; then
+          echo "default demo managed-store marker did not persist across restart" >&2
+          ok=""
+        else
+          default_demo_graphql "$port" 'mutation { gj_artifacts(delete: true, where: { name: { eq: "smoke_restart_marker" } }) { id } }' >/dev/null || true
+        fi
       fi
       if [ -n "$ok" ] && ! "examples/saas-ops/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent; then
         ok=""
@@ -374,8 +445,8 @@ for demo in $DEMOS; do
 done
 
 echo
-echo "demo | result | sampling | duration"
-echo "---- | ------ | -------- | --------"
+echo "demo | result | model routing | duration"
+echo "---- | ------ | ------------- | --------"
 for row in "${RESULTS[@]}"; do
   printf '%s\n' "$row"
 done

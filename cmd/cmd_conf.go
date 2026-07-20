@@ -214,7 +214,7 @@ func configDocsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "docs [variant]",
 		Short: "Print an annotated example config (dev, prod, or agentic)",
-		Long:  "Print an inline-documented example config template — the same files `graphjin serve new` scaffolds. Variant is dev (default), prod, or agentic.",
+		Long:  "Print an inline-documented counterpart to the configs `graphjin serve new` scaffolds. Variant is dev (default), prod, or agentic.",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			variant := "dev"

@@ -30,15 +30,19 @@ go install github.com/dosco/graphjin/cmd/graphjin@latest
 ## Scaffold a project
 
 ```bash
-graphjin new my-api
+graphjin serve new my-api
 cd my-api
 graphjin serve
 ```
 
-The generated config gives you development defaults, a database connection section, saved-query directories, and templates for source-mode deployments.
+The generated `dev.yml` and `agentic.yml` deliberately omit feature toggles:
+their mode defaults provide managed artifacts, watches, the built-in agent,
+stateful MCP HTTP, and the primitive MCP tools. `prod.yml` remains opt-in.
+The scaffold also includes a database connection section, saved-query
+directories, and source-mode templates.
 
 {{< verified by="TestCmdNewWritesAgenticAndSourcesTemplates" file="cmd/cmd_new_test.go" line="14" >}}
-{{< verified by="TestTemplatesDecodeAsConfig" file="cmd/cmd_new_test.go" line="45" >}}
+{{< verified by="TestTemplatesDecodeAsConfig" file="cmd/cmd_new_test.go" line="83" >}}
 
 The scaffold includes environment-specific config files. Use `dev.yml` for local work, `prod.yml` for locked-down deployments, and `agentic.yml` when MCP/catalog/security surfaces are the main interface.
 

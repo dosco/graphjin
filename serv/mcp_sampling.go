@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	ax "github.com/ax-llm/ax/packages/go"
@@ -21,7 +22,7 @@ const (
 	defaultSamplingMaxTokens = 4096
 )
 
-var errMCPSamplingUnavailable = errors.New("MCP client sampling is required but unavailable")
+var errMCPSamplingUnavailable = errors.New("model_sampling_unavailable: MCP client sampling is required but unavailable")
 
 type agentSamplingPathContextKey struct{}
 
@@ -98,10 +99,10 @@ func (c samplingAIClient) createMessageRequest(values map[string]ax.Value) mcp.C
 
 func normalizeAgentSamplingMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case gjagent.SamplingAuto:
+	case "", gjagent.SamplingAuto, gjagent.SamplingRequire:
 		return gjagent.SamplingAuto
-	case gjagent.SamplingRequire:
-		return gjagent.SamplingRequire
+	case gjagent.SamplingOff:
+		return gjagent.SamplingOff
 	default:
 		return gjagent.SamplingOff
 	}
@@ -123,15 +124,15 @@ func agentSamplingPathFromContext(ctx context.Context) string {
 }
 
 func (ms *mcpServer) agentSamplingOptions(ctx context.Context, conf gjagent.Config) (string, []gjagent.Option, error) {
+	if serverAgentModelConfigured(ms.service, conf) {
+		return agentSamplingPathServer, nil, nil
+	}
 	mode := normalizeAgentSamplingMode(conf.Sampling)
 	if mode == gjagent.SamplingOff {
 		return agentSamplingPathServer, nil, nil
 	}
 	if !mcpSamplingAvailable(ctx) {
-		if mode == gjagent.SamplingRequire {
-			return agentSamplingPathUnavailable, nil, errMCPSamplingUnavailable
-		}
-		return agentSamplingPathServer, nil, nil
+		return agentSamplingPathUnavailable, nil, errMCPSamplingUnavailable
 	}
 	return agentSamplingPathClient, []gjagent.Option{
 		gjagent.WithClientFactory(func(gjagent.Config) (ax.AIClient, error) {
@@ -156,6 +157,17 @@ func mcpSamplingAvailable(ctx context.Context) bool {
 
 func samplingEnabledForConfig(conf *Config) bool {
 	return conf != nil && normalizeAgentSamplingMode(conf.Agent.Sampling) != gjagent.SamplingOff
+}
+
+func serverAgentModelConfigured(service *graphjinService, conf gjagent.Config) bool {
+	if service != nil && service.agentClientFactory != nil {
+		return true
+	}
+	apiKeyEnv := strings.TrimSpace(conf.APIKeyEnv)
+	if apiKeyEnv == "" {
+		apiKeyEnv = defaultAgentAPIKeyEnv
+	}
+	return strings.TrimSpace(os.Getenv(apiKeyEnv)) != ""
 }
 
 func samplingSlice(v any) []any {

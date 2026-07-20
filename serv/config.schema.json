@@ -7,12 +7,12 @@
 				"enabled": {
 					"type": "boolean",
 					"title": "Enable Artifacts",
-					"description": "Enable the GraphJin-managed SQL artifact store for saved queries/fragments/workflows"
+					"description": "Enable the GraphJin-managed SQL artifact store for saved queries/fragments/workflows; parsed dev and agentic configs default to enabled"
 				},
 				"source": {
 					"type": "string",
 					"title": "Artifact Source",
-					"description": "Database source name that hosts the artifact store; defaults to the first database source"
+					"description": "Database source name that hosts the artifact store; omitted dev and agentic configs use private managed SQLite while legacy explicit enablement uses the first writable SQL source"
 				},
 				"schema": {
 					"type": "string",
@@ -941,14 +941,12 @@
 				"include_tools_with_agent": {
 					"type": "boolean",
 					"title": "Include MCP Tools With Agent",
-					"description": "IncludeToolsWithAgent keeps the low-level MCP tools (query_catalog,\ngraphql_help, execute_saved_query, execute_graphql, validate_where_clause,\nschema tools) registered even when the ask_graphjin_agent tool is enabled.\nBy default the agent is the single front-door tool and orchestrates those\nprimitives internally, so they are hidden to keep the MCP surface minimal.\nSet true only if a client needs to drive the primitives directly. Default: false",
-					"default": false
+					"description": "Parsed dev and agentic configs default to true; prod and direct Go configs remain false"
 				},
 				"http_stateful": {
 					"type": "boolean",
 					"title": "Stateful MCP HTTP Transport",
-					"description": "HTTPStateful enables persistent Streamable HTTP MCP sessions. This is\nrequired for server-initiated client sampling over HTTP and should be used\nbehind sticky sessions in multi-node deployments. Default: false",
-					"default": false
+					"description": "Parsed dev and agentic configs default to true; prod and direct Go configs remain false"
 				},
 				"legacy_discovery": {
 					"type": "boolean",
@@ -1815,7 +1813,7 @@
 				"enabled": {
 					"type": "boolean",
 					"title": "Enable Watches",
-					"description": "Enable durable owner-scoped watches; requires artifacts.enabled since watches persist through the artifact store"
+					"description": "Enable durable owner-scoped watches; parsed dev and agentic configs default to enabled when artifacts are enabled"
 				},
 				"max_per_owner": {
 					"type": "integer",
@@ -1848,8 +1846,7 @@
 						"off"
 					],
 					"title": "Watch Runner",
-					"description": "Which replicas evaluate watches; off disables evaluation while definitions stay stored",
-					"default": "off"
+					"description": "Which replicas evaluate watches; parsed dev and agentic configs default to all while literal and prod configs remain off"
 				},
 				"webhook_allow": {
 					"items": {

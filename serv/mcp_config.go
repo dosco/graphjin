@@ -2344,7 +2344,7 @@ func validateServConfigPatch(patch map[string]any) (changes []string, reload str
 				}
 			}
 			if s, ok := m["sampling"].(string); ok && !strInSet(s, "off", "auto", "require") {
-				return nil, "", fmt.Errorf("serv.agent.sampling must be one of off, auto, require")
+				return nil, "", fmt.Errorf("serv.agent.sampling is deprecated; omit it for automatic model resolution or set it to off")
 			}
 			changes = append(changes, "updated serv.agent")
 		case "log_level":
@@ -3106,7 +3106,9 @@ func cloneRoleTable(src core.RoleTable) core.RoleTable {
 func anyDBFromMap(dbs map[string]*sql.DB) *sql.DB {
 	names := make([]string, 0, len(dbs))
 	for name := range dbs {
-		names = append(names, name)
+		if !isManagedArtifactDatabase(name) {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 	for _, name := range names {
@@ -3123,9 +3125,14 @@ func primaryDBTypeFromCore(conf *core.Config) string {
 	}
 	names := make([]string, 0, len(conf.Databases))
 	for name := range conf.Databases {
-		names = append(names, name)
+		if !isManagedArtifactDatabase(name) {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
+	if len(names) == 0 {
+		return conf.DBType
+	}
 	return conf.Databases[names[0]].Type
 }
 
@@ -3761,9 +3768,14 @@ func syncDBFromDatabases(conf *Config) bool {
 	// Use the first entry (sorted for deterministic behavior)
 	names := make([]string, 0, len(conf.Core.Databases))
 	for name := range conf.Core.Databases {
-		names = append(names, name)
+		if !isManagedArtifactDatabase(name) {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
+	if len(names) == 0 {
+		return false
+	}
 	dbConf := conf.Core.Databases[names[0]]
 
 	conf.DB.Type = dbConf.Type
