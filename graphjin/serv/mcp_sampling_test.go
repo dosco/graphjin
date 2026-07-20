@@ -3,6 +3,7 @@ package serv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"testing"
@@ -18,9 +19,11 @@ import (
 type captureSamplingHandler struct {
 	req      mcp.CreateMessageRequest
 	response string
+	calls    int
 }
 
 func (h *captureSamplingHandler) CreateMessage(_ context.Context, req mcp.CreateMessageRequest) (*mcp.CreateMessageResult, error) {
+	h.calls++
 	h.req = req
 	response := h.response
 	if response == "" {
@@ -170,32 +173,102 @@ func TestMCPSamplingAvailableRequiresAdvertisedCapability(t *testing.T) {
 func TestAgentSamplingOptionsMatrix(t *testing.T) {
 	mcpSrv := server.NewMCPServer("test", "0.0.0")
 	ms := &mcpServer{srv: mcpSrv}
+	t.Setenv("GRAPHJIN_SAMPLING_MATRIX_KEY", "")
+	conf := gjagent.Config{APIKeyEnv: "GRAPHJIN_SAMPLING_MATRIX_KEY"}
 
-	path, opts, err := ms.agentSamplingOptions(context.Background(), gjagent.Config{Sampling: gjagent.SamplingAuto})
-	if err != nil {
-		t.Fatalf("auto without session returned error: %v", err)
-	}
-	if path != agentSamplingPathServer || len(opts) != 0 {
-		t.Fatalf("auto without session path=%s opts=%d", path, len(opts))
-	}
-
-	path, opts, err = ms.agentSamplingOptions(context.Background(), gjagent.Config{Sampling: gjagent.SamplingRequire})
-	if err == nil {
-		t.Fatal("require without session should fail closed")
+	path, opts, err := ms.agentSamplingOptions(context.Background(), conf)
+	if !errors.Is(err, errMCPSamplingUnavailable) {
+		t.Fatalf("automatic mode without session error = %v", err)
 	}
 	if path != agentSamplingPathUnavailable || len(opts) != 0 {
-		t.Fatalf("require without session path=%s opts=%d", path, len(opts))
+		t.Fatalf("automatic mode without session path=%s opts=%d", path, len(opts))
 	}
 
+	conf.Sampling = gjagent.SamplingOff
+	path, opts, err = ms.agentSamplingOptions(context.Background(), conf)
+	if err != nil || path != agentSamplingPathServer || len(opts) != 0 {
+		t.Fatalf("sampling off path=%s opts=%d err=%v", path, len(opts), err)
+	}
 	session := server.NewInProcessSession("session-1", &captureSamplingHandler{})
 	session.SetClientCapabilities(mcp.ClientCapabilities{Sampling: &mcp.SamplingCapability{}})
 	ctx := mcpSrv.WithContext(context.Background(), session)
-	path, opts, err = ms.agentSamplingOptions(ctx, gjagent.Config{Sampling: gjagent.SamplingAuto})
+	conf.Sampling = ""
+	path, opts, err = ms.agentSamplingOptions(ctx, conf)
 	if err != nil {
-		t.Fatalf("auto with sampling session returned error: %v", err)
+		t.Fatalf("automatic mode with sampling session returned error: %v", err)
 	}
 	if path != agentSamplingPathClient || len(opts) != 1 {
-		t.Fatalf("auto with sampling session path=%s opts=%d", path, len(opts))
+		t.Fatalf("automatic mode with sampling session path=%s opts=%d", path, len(opts))
+	}
+
+	t.Setenv("GRAPHJIN_SAMPLING_MATRIX_KEY", "server-secret")
+	path, opts, err = ms.agentSamplingOptions(ctx, conf)
+	if err != nil || path != agentSamplingPathServer || len(opts) != 0 {
+		t.Fatalf("server credentials must win: path=%s opts=%d err=%v", path, len(opts), err)
+	}
+
+	t.Setenv("GRAPHJIN_SAMPLING_MATRIX_KEY", "")
+	ms.service = &graphjinService{agentClientFactory: func(gjagent.Config) (ax.AIClient, error) { return nil, nil }}
+	path, opts, err = ms.agentSamplingOptions(ctx, conf)
+	if err != nil || path != agentSamplingPathServer || len(opts) != 0 {
+		t.Fatalf("injected server client must win: path=%s opts=%d err=%v", path, len(opts), err)
+	}
+}
+
+func TestServerProviderFailureNeverFallsBackToSampling(t *testing.T) {
+	t.Setenv("GRAPHJIN_SERVER_FIRST_KEY", "server-secret")
+	mcpSrv := server.NewMCPServer("test", "0.0.0")
+	mcpSrv.EnableSampling()
+	handler := &captureSamplingHandler{}
+	session := server.NewInProcessSession("session-1", handler)
+	session.Initialize()
+	session.SetClientCapabilities(mcp.ClientCapabilities{Sampling: &mcp.SamplingCapability{}})
+	ctx := mcpSrv.WithContext(context.Background(), session)
+
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.srv = mcpSrv
+	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.APIKeyEnv = "GRAPHJIN_SERVER_FIRST_KEY"
+	ms.service.gj = &core.GraphJin{}
+
+	previous := newGraphJinAgentRunner
+	newGraphJinAgentRunner = func(_ *graphjinService, _ gjagent.Config, _ ...gjagent.Option) (graphjinAgentRunner, error) {
+		return nil, errors.New("server provider failed")
+	}
+	t.Cleanup(func() { newGraphJinAgentRunner = previous })
+
+	result, err := ms.handleAskGraphJinAgent(ctx, newToolRequest(map[string]any{"instruction": "server first"}))
+	if err != nil {
+		t.Fatalf("handleAskGraphJinAgent: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("provider failure result = %+v", result)
+	}
+	if handler.calls != 0 {
+		t.Fatalf("sampling calls = %d, want zero after server provider failure", handler.calls)
+	}
+}
+
+func TestMissingServerCredentialsAndSamplingReturnsStructuredError(t *testing.T) {
+	t.Setenv("GRAPHJIN_NO_MODEL_KEY", "")
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.APIKeyEnv = "GRAPHJIN_NO_MODEL_KEY"
+	ms.service.gj = &core.GraphJin{}
+
+	result, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{"instruction": "needs a model"}))
+	if err != nil {
+		t.Fatalf("handleAskGraphJinAgent: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("missing model result = %+v", result)
+	}
+	structured, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured error type = %T", result.StructuredContent)
+	}
+	if structured["code"] != "model_sampling_unavailable" {
+		t.Fatalf("structured error = %+v", structured)
 	}
 }
 
@@ -300,7 +373,7 @@ func (p *samplingProgram) ExportTrace() ax.Value {
 	return nil
 }
 
-func TestAskGraphJinAgentMCPUsesClientSamplingSession(t *testing.T) {
+func TestAskGraphJinAgentMCPAutomaticallyUsesClientSamplingSession(t *testing.T) {
 	mcpSrv := server.NewMCPServer("test", "0.0.0")
 	mcpSrv.EnableSampling()
 	handler := &captureSamplingHandler{response: "sampled answer"}
@@ -312,7 +385,7 @@ func TestAskGraphJinAgentMCPUsesClientSamplingSession(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{})
 	ms.srv = mcpSrv
 	ms.service.conf.Agent.Enabled = true
-	ms.service.conf.Agent.Sampling = gjagent.SamplingRequire
+	ms.service.conf.Agent.Sampling = ""
 	ms.service.gj = &core.GraphJin{}
 	ms.service.runtimeEvents = newMemoryRuntimeEventStore(runtimeEventOptions{
 		MaxEvents: 4,

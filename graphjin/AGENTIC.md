@@ -117,12 +117,13 @@ operations, and returns a typed, evidence-backed answer.
 | Identity | caller | caller (the agent runs as the caller) |
 | Guardrails | client-side | Go protocol guards, server-side |
 
-It is off by default. Enable it in `agentic.yml` (loaded when
-`GO_ENV=agentic`):
+It is enabled by default in parsed `dev` and `agentic` configs; production and
+directly constructed Go configs retain their literal off default. No feature
+block is needed in `agentic.yml` (loaded when `GO_ENV=agentic`). Configure only
+provider overrides when required:
 
 ```yaml
 agent:
-  enabled: true
   provider: openai
   model: gpt-4.1-mini
   api_key_env: OPENAI_API_KEY
@@ -204,28 +205,29 @@ A calling agent should treat this as protocol, not prose: execute the
 `policy_final`. The contract is discoverable at runtime with
 `query_catalog(id: "help:refusals")`.
 
-### MCP Sampling: Borrowing The Caller's Model
+### Automatic Model Resolution
 
-The server agent normally runs on the model configured under `agent.*`. With
-MCP sampling it can instead run on the calling MCP client's model:
+Model selection is automatic and server-first on every request:
 
-```yaml
-agent:
-  sampling: auto # off (default) | auto | require
-```
+1. If the environment variable named by `agent.api_key_env` is populated, use
+   the server provider. Client sampling is never attempted, even if the client
+   supports it or the provider call fails.
+2. Otherwise, MCP uses the calling client's model through
+   `sampling/createMessage`.
+3. Without server credentials or a sampling-capable MCP client, the tool
+   returns `model_sampling_unavailable`. REST requires server credentials
+   because it has no MCP sampling session.
 
-- `off` — always use the server-configured model.
-- `auto` — use the client's model via `sampling/createMessage` when the client
-  advertises the sampling capability; fall back to the server model otherwise.
-- `require` — fail closed with an error when the client cannot sample; never
-  fall back silently.
+`agent.sampling` is deprecated. Omit it for the automatic behavior above. Set
+it to `off` only to prohibit client-model fallback; existing legacy values
+continue to resolve automatically.
 
 Sampling changes only which model drives the reasoning loop. Caller identity,
 role, row-level security, evidence gates, and refusals are unchanged — a
 hostile sampling response cannot talk the agent past its guards, because the
-guards are enforced in Go, not by the model. Sampling works over stdio and,
-with `mcp.http_stateful: true`, over stateful HTTP sessions (per-request auth
-still applies; the session carries protocol capabilities, not identity).
+guards are enforced in Go, not by the model. Sampling works over stdio and
+stateful HTTP; stateful HTTP is enabled by default in dev and agentic modes
+(per-request auth still applies; the session carries capabilities, not identity).
 
 A reference sampling-capable client lives at `tools/mcp-sampling-client`: it
 connects over streamable HTTP, advertises the sampling capability, and answers
@@ -1160,8 +1162,11 @@ Durability semantics:
   explicitly asks for a TTL, such as "watch this for 30 minutes." Expired
   ephemeral watches become `status: "expired"` and `enabled: false`; their
   events remain until retention cleanup.
-- **Evaluation is opt-in per deployment**: `watches.runner: "all" | "off"`
-  (default `"off"`). Definitions persist regardless of the runner setting.
+- **Evaluation is ready by default in parsed dev/agentic configs**:
+  `watches.runner` resolves to `"all"`, but GraphJin starts no application
+  subscription until an enabled, active, approved watch exists. Set the runner
+  to `"off"` to retain definitions without evaluating them. Production and
+  direct Go configs retain the literal off default.
 - **Retention is enforced**: events are kept `event_retention_hours` (default
   168), at most `max_events_per_watch` (default 500) per watch, event
   snapshots and user-supplied definition JSON are capped at
@@ -1193,8 +1198,9 @@ leases and regular retention deletes expired/orphaned events. Operators can
 inspect candidates with `POST /api/v1/watches/cleanup-preview` and then apply
 selected IDs or allowed reason filters with
 `POST /api/v1/watches/cleanup-apply`; durable watch deletion is always
-explicit. The runtime contract is `query_catalog(id: "help:watches")`;
-enabling watches is a config change (`recipe.config.enable_watches`).
+explicit. The runtime contract is `query_catalog(id: "help:watches")`. Parsed
+dev and agentic configs need no enablement change; in prod or after an explicit
+opt-out, use the `recipe.config.enable_watches` config recipe.
 
 ## Config And Security Change Playbook
 
@@ -1381,18 +1387,14 @@ roles:
             - "{ account_id: { eq: $account_id } }"
 ```
 
-Mutable user artifacts use `artifacts` and the `gj_artifacts` root:
+Mutable user artifacts use `gj_artifacts`. In parsed `dev` and `agentic`
+configs, artifacts and watches require no feature toggles: GraphJin uses its
+private managed SQLite store and runs approved watches on the local replica.
+Only configure a source when the store must be shared across replicas:
 
 ```yaml
 artifacts:
-  enabled: true
   source: app
-  schema: _graphjin
-  auto_init: true
-  globals_path: ./config
-watches:
-  enabled: true
-  runner: "off"
 ```
 
 Config-folder fragments, saved queries, and workflows remain global,
@@ -1544,7 +1546,7 @@ The stable model instructions are:
 Every loop below is exercised for real by the runnable demo verticals in
 `examples/` (coffee-roastery, corrugated-plant, pcb-fab, saas-ops) —
 each ships an end-to-end smoke suite covering data, workflows, watches,
-artifacts, structured refusals, role gating, and MCP sampling
+artifacts, structured refusals, role gating, and automatic model routing
 (`make smoke-all`; see `examples/README.md`).
 
 ### Answer A Data Question

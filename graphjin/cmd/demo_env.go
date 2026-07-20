@@ -63,10 +63,6 @@ func applyDemoAgentEnvDefaults(out io.Writer) {
 		_ = os.Setenv("GO_ENV", "agentic")
 		changed = true
 	}
-	if _, ok := os.LookupEnv("GJ_AGENT_ENABLED"); !ok {
-		_ = os.Setenv("GJ_AGENT_ENABLED", "true")
-		changed = true
-	}
 	if _, ok := os.LookupEnv("GJ_AGENT_API_KEY_ENV"); !ok {
 		_ = os.Setenv("GJ_AGENT_API_KEY_ENV", keyEnv)
 		changed = true
@@ -82,8 +78,8 @@ func applyDemoAgentEnvDefaults(out io.Writer) {
 		changed = true
 	}
 	if _, ok := os.LookupEnv("GJ_AGENT_TIMEOUT_SECONDS"); !ok {
-		// Generous cap: client-sampled runs (agent.sampling) add an MCP round
-		// trip per model call, and reasoning models spend longer per call.
+		// Generous cap: client-sampled runs add an MCP round trip per model call,
+		// and reasoning models spend longer per call.
 		_ = os.Setenv("GJ_AGENT_TIMEOUT_SECONDS", "300")
 		changed = true
 	}

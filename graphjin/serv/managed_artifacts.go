@@ -1,0 +1,122 @@
+package serv
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/dosco/graphjin/core/v3"
+)
+
+const managedArtifactRelativePath = ".graphjin/artifacts.sqlite3"
+
+func (s *graphjinService) initManagedArtifactStore() error {
+	if s == nil || s.conf == nil || !s.conf.managedArtifactStore || !s.conf.Core.Artifacts.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(s.conf.Core.Artifacts.Source) != managedArtifactDatabaseName {
+		return fmt.Errorf("managed artifact store has unexpected source %q", s.conf.Core.Artifacts.Source)
+	}
+	if _, exists := s.dbs[managedArtifactDatabaseName]; exists {
+		return fmt.Errorf("database name %q is reserved for the managed artifact store", managedArtifactDatabaseName)
+	}
+
+	base, err := s.basePath()
+	if err != nil {
+		return fmt.Errorf("managed artifact store: resolve config path: %w", err)
+	}
+	path := filepath.Join(base, filepath.FromSlash(managedArtifactRelativePath))
+	if err := prepareManagedArtifactPath(path); err != nil {
+		return fmt.Errorf("managed artifact store %s: %w", path, err)
+	}
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return fmt.Errorf("managed artifact store %s: open: %w", path, err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		db.Close() //nolint:errcheck
+		return fmt.Errorf("managed artifact store %s: ping: %w", path, err)
+	}
+	if err := configureManagedArtifactSQLite(ctx, db); err != nil {
+		db.Close() //nolint:errcheck
+		return fmt.Errorf("managed artifact store %s: configure: %w", path, err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		db.Close() //nolint:errcheck
+		return fmt.Errorf("managed artifact store %s: set permissions: %w", path, err)
+	}
+
+	if s.runtimeCore == nil {
+		runtime := cloneCoreConfig(s.conf.Core)
+		s.runtimeCore = &runtime
+	}
+	if s.runtimeCore.Databases == nil {
+		s.runtimeCore.Databases = make(map[string]core.DatabaseConfig)
+	}
+	s.runtimeCore.Databases[managedArtifactDatabaseName] = core.DatabaseConfig{
+		Type:         "sqlite",
+		Path:         path,
+		MaxOpenConns: 1,
+		MaxIdleConns: 1,
+	}
+	s.dbs[managedArtifactDatabaseName] = db
+	s.log.Infof("Managed artifact store ready: %s", path)
+	return nil
+}
+
+func prepareManagedArtifactPath(path string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("refusing non-regular SQLite file")
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
+func configureManagedArtifactSQLite(ctx context.Context, db *sql.DB) error {
+	var journalMode string
+	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode=WAL").Scan(&journalMode); err != nil {
+		return err
+	}
+	if !strings.EqualFold(strings.TrimSpace(journalMode), "wal") {
+		return fmt.Errorf("journal_mode is %q, want WAL", journalMode)
+	}
+	for _, statement := range []string{
+		"PRAGMA synchronous=FULL",
+		"PRAGMA busy_timeout=5000",
+		"PRAGMA foreign_keys=ON",
+	} {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isManagedArtifactDatabase(name string) bool {
+	return strings.TrimSpace(name) == managedArtifactDatabaseName
+}

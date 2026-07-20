@@ -237,7 +237,7 @@ func main() {
 		model           = flag.String("model", "gpt-5-mini", "model used to answer sampling requests")
 		maxSteps        = flag.Int("max-steps", 10, "agent step cap")
 		timeoutSec      = flag.Int("timeout", 240, "overall timeout in seconds")
-		noSampling      = flag.Bool("no-sampling", false, "connect WITHOUT the sampling capability (for require-mode checks)")
+		noSampling      = flag.Bool("no-sampling", false, "connect WITHOUT the sampling capability (for automatic fallback checks)")
 		verbose         = flag.Bool("verbose", false, "dump sampling requests/replies to stderr")
 	)
 	flag.Parse()

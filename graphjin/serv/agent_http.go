@@ -25,21 +25,25 @@ const (
 )
 
 type agentStatusResponse struct {
-	Status           string `json:"status"`
-	Enabled          bool   `json:"enabled"`
-	Ready            bool   `json:"ready"`
-	Endpoint         string `json:"endpoint"`
-	MCPTool          string `json:"mcp_tool"`
-	Provider         string `json:"provider"`
-	Model            string `json:"model,omitempty"`
-	APIKeyEnv        string `json:"api_key_env"`
-	APIKeyConfigured bool   `json:"api_key_configured"`
-	MaxSteps         int    `json:"max_steps"`
-	TimeoutSeconds   int    `json:"timeout_seconds"`
-	ReadOnly         bool   `json:"read_only"`
-	ReturnTrace      bool   `json:"return_trace"`
-	Namespace        string `json:"namespace,omitempty"`
-	Message          string `json:"message"`
+	Status                  string `json:"status"`
+	Enabled                 bool   `json:"enabled"`
+	Ready                   bool   `json:"ready"`
+	RESTReady               bool   `json:"rest_ready"`
+	ServerModelReady        bool   `json:"server_model_ready"`
+	ClientSamplingAllowed   bool   `json:"client_sampling_allowed"`
+	ClientSamplingAvailable bool   `json:"client_sampling_available"`
+	Endpoint                string `json:"endpoint"`
+	MCPTool                 string `json:"mcp_tool"`
+	Provider                string `json:"provider"`
+	Model                   string `json:"model,omitempty"`
+	APIKeyEnv               string `json:"api_key_env"`
+	APIKeyConfigured        bool   `json:"api_key_configured"`
+	MaxSteps                int    `json:"max_steps"`
+	TimeoutSeconds          int    `json:"timeout_seconds"`
+	ReadOnly                bool   `json:"read_only"`
+	ReturnTrace             bool   `json:"return_trace"`
+	Namespace               string `json:"namespace,omitempty"`
+	Message                 string `json:"message"`
 }
 
 // Agent is the HTTP handler for the server-side GraphJin agent endpoint.
@@ -77,7 +81,7 @@ func (s1 *HttpService) apiV1AgentStatus(ns *string) http.Handler {
 			return
 		}
 
-		_ = json.NewEncoder(w).Encode(agentStatusFromConfig(agentConfigFromService(s.conf), ns))
+		_ = json.NewEncoder(w).Encode(agentStatusFromConfig(agentConfigFromService(s.conf), ns, s.agentClientFactory != nil))
 	}
 	return http.HandlerFunc(h)
 }
@@ -176,7 +180,7 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func agentStatusFromConfig(conf gjagent.Config, ns *string) agentStatusResponse {
+func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient ...bool) agentStatusResponse {
 	provider := strings.TrimSpace(conf.Provider)
 	if provider == "" {
 		provider = defaultAgentProvider
@@ -192,33 +196,42 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string) agentStatusResponse 
 	timeoutSeconds := gjagent.EffectiveTimeoutSeconds(conf.TimeoutSeconds)
 
 	apiKeyConfigured := strings.TrimSpace(os.Getenv(apiKeyEnv)) != ""
+	serverModelReady := apiKeyConfigured || (len(injectedServerClient) != 0 && injectedServerClient[0])
+	clientSamplingAllowed := normalizeAgentSamplingMode(conf.Sampling) != gjagent.SamplingOff
 	status := "ready"
 	message := "GraphJin agent is ready."
-	ready := conf.Enabled && apiKeyConfigured
+	ready := conf.Enabled && (serverModelReady || clientSamplingAllowed)
 	switch {
 	case !conf.Enabled:
 		status = "disabled"
-		message = "Enable agent.enabled and configure " + apiKeyEnv + " to chat with GraphJin."
-	case !apiKeyConfigured:
+		message = "Enable agent.enabled; REST also needs " + apiKeyEnv + ", while MCP may use a sampling-capable client."
+	case !serverModelReady && clientSamplingAllowed:
+		status = "client_sampling_required"
+		message = "REST requires " + apiKeyEnv + "; MCP can use a sampling-capable client."
+	case !serverModelReady:
 		status = "missing_key"
-		message = "GraphJin agent is enabled but " + apiKeyEnv + " is not set."
+		message = "GraphJin agent is enabled but " + apiKeyEnv + " is not set and client sampling is disabled."
 	}
 
 	resp := agentStatusResponse{
-		Status:           status,
-		Enabled:          conf.Enabled,
-		Ready:            ready,
-		Endpoint:         routeAgent,
-		MCPTool:          mcpToolAskGraphJinAgent,
-		Provider:         provider,
-		Model:            strings.TrimSpace(conf.Model),
-		APIKeyEnv:        apiKeyEnv,
-		APIKeyConfigured: apiKeyConfigured,
-		MaxSteps:         maxSteps,
-		TimeoutSeconds:   timeoutSeconds,
-		ReadOnly:         conf.ReadOnly,
-		ReturnTrace:      conf.ReturnTrace,
-		Message:          message,
+		Status:                  status,
+		Enabled:                 conf.Enabled,
+		Ready:                   ready,
+		RESTReady:               conf.Enabled && serverModelReady,
+		ServerModelReady:        serverModelReady,
+		ClientSamplingAllowed:   conf.Enabled && clientSamplingAllowed,
+		ClientSamplingAvailable: false, // REST status has no MCP client session.
+		Endpoint:                routeAgent,
+		MCPTool:                 mcpToolAskGraphJinAgent,
+		Provider:                provider,
+		Model:                   strings.TrimSpace(conf.Model),
+		APIKeyEnv:               apiKeyEnv,
+		APIKeyConfigured:        apiKeyConfigured,
+		MaxSteps:                maxSteps,
+		TimeoutSeconds:          timeoutSeconds,
+		ReadOnly:                conf.ReadOnly,
+		ReturnTrace:             conf.ReturnTrace,
+		Message:                 message,
 	}
 	if ns != nil {
 		resp.Namespace = *ns

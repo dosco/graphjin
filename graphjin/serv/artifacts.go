@@ -509,6 +509,12 @@ func EnsureArtifactStore(conf *Config, dbs map[string]*sql.DB) error {
 	if conf == nil || !conf.Core.Artifacts.Enabled {
 		return nil
 	}
+	// The managed store is created by graphjinService after application
+	// databases are initialized. Demo bootstrap only owns application sources;
+	// it must not mistake the private store for a missing application database.
+	if conf.managedArtifactStore {
+		return nil
+	}
 	s := &graphjinService{conf: conf, dbs: dbs}
 	return s.initArtifactsBeforeCore()
 }
@@ -548,7 +554,11 @@ func (s *graphjinService) artifactDB() (*sql.DB, string, string, bool) {
 	if db == nil {
 		return nil, "", "", false
 	}
-	dbConf := s.conf.Core.Databases[cfg.Source]
+	coreConf := &s.conf.Core
+	if s.runtimeCore != nil {
+		coreConf = s.runtimeCore
+	}
+	dbConf := coreConf.Databases[cfg.Source]
 	dbType := strings.ToLower(dbConf.Type)
 	if dbType == "" {
 		dbType = "postgres"

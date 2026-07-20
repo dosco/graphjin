@@ -28,7 +28,7 @@ graphjin workflow run nightly-report --vars report-vars.json
 
 Workflows can call GraphJin tools and GraphQL when allowed by configuration. They respect declared variables, timeouts, context cancellation, and workflow execution policy.
 
-Files under `workflows/` are global workflow definitions. When `artifacts.enabled` is configured and a request has `user_id`, `gj_artifacts` provides a caller-scoped workflow overlay. Execution resolves a user workflow artifact first, then falls back to the global file.
+Files under `workflows/` are global workflow definitions. When artifacts are enabled (the `dev`/`agentic` default) and a request has `user_id`, `gj_artifacts` provides a caller-scoped workflow overlay. Execution resolves a user workflow artifact first, then falls back to the global file.
 
 {{< verified by="TestRunNamedWorkflow_CanCallGJTools" file="serv/workflows_test.go" line="109" >}}
 {{< verified by="TestRunNamedWorkflow_CanExecuteGraphQLWhenAllowed" file="serv/workflows_test.go" line="142" >}}

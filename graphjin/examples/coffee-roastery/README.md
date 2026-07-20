@@ -189,17 +189,17 @@ make demo
 The checked-in `.env.example` sets `GO_ENV=agentic`, so the demo uses
 `agentic.yml` after you copy it. A top-level `.env` works too when you run
 `make demo` from this checkout. If demo mode finds `OPENAI_API_KEY`,
-`GOOGLE_APIKEY`, or `ANTHROPIC_API_KEY`, it enables the GraphJin agent, selects
-the matching provider key, and defaults the demo to agentic mode with
+`GOOGLE_APIKEY`, or `ANTHROPIC_API_KEY`, it selects the matching provider key
+and defaults the demo to agentic mode with
 `GJ_AGENT_MAX_STEPS=10` and `GJ_AGENT_TIMEOUT_SECONDS=300`. Set `GO_ENV`,
-`GJ_AGENT_ENABLED`, `GJ_AGENT_API_KEY_ENV`, `GJ_AGENT_PROVIDER`,
+`GJ_AGENT_API_KEY_ENV`, `GJ_AGENT_PROVIDER`,
 `GJ_AGENT_MODEL`, `GJ_AGENT_MAX_STEPS`, or `GJ_AGENT_TIMEOUT_SECONDS` yourself
 to override those defaults. Shell environment variables still win over values
 in `.env`. Plain dev mode keeps `auth.type: none` with trusted dev headers and
 public system roots for local inspection; `agentic.yml` switches to JWT
 identity (see above), gates `gj_config` to admins, locks the `runbook`
-artifact kind, and enables MCP sampling (`agent.sampling: auto` +
-`mcp.http_stateful`). You can also run the agentic config directly:
+artifact kind, and inherits the batteries-included agentic runtime defaults.
+You can also run the agentic config directly:
 
 ```bash
 GO_ENV=agentic graphjin serve --demo --path examples/coffee-roastery
@@ -219,7 +219,10 @@ examples/coffee-roastery/scripts/smoke.sh --agent-eval
 
 The eval mode checks that the agent discovers catalog evidence, inspects saved-query details before execution, never answers from evidence-less raw GraphQL, returns machine-actionable refusals when blocked, creates watches through the watch_write skill, surfaces `watch_events_unseen` notices, and enforces role-gated control-plane access.
 
-To exercise MCP sampling end to end (the agent borrowing the calling client's model), run the reference sampling client against the running demo:
+To verify automatic model routing, run the reference sampling-capable client
+against the running demo. With provider credentials it must use the server
+model and report zero sampling calls; without server credentials it borrows the
+calling client's model:
 
 ```bash
 go run ./tools/mcp-sampling-client \

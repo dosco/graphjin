@@ -88,7 +88,7 @@ folder to reset the data.`,
 	c.Flags().StringArrayVar(&servDBFlags, "db", nil, "Database type override(s) (requires --demo)")
 
 	// Server-side lifecycle subcommands. These used to live at the top level
-	// (`graphjin db`, `graphjin new`, `graphjin test`) but were moved under
+	// (the db, new, and test commands) but were moved under
 	// `serve` since they all operate on the same server-side config and DB.
 	c.AddCommand(newCmd())
 	c.AddCommand(dbCmd())

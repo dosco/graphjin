@@ -53,12 +53,12 @@ var (
 )
 
 type Config struct {
-	Enabled        bool   `mapstructure:"enabled" jsonschema:"title=Enable GraphJin Agent,default=false"`
+	Enabled        bool   `mapstructure:"enabled" jsonschema:"title=Enable GraphJin Agent,description=Parsed dev and agentic service configs default to enabled; prod and direct Go configs remain disabled"`
 	Provider       string `mapstructure:"provider" jsonschema:"title=Agent Provider,default=openai"`
 	Model          string `mapstructure:"model" jsonschema:"title=Agent Model"`
 	APIKeyEnv      string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
 	BaseURL        string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
-	Sampling       string `mapstructure:"sampling" jsonschema:"title=MCP Client Sampling,enum=off,enum=auto,enum=require,default=off"`
+	Sampling       string `mapstructure:"sampling" jsonschema:"title=MCP Client Sampling (Deprecated),description=Set to off only when MCP client sampling must be prohibited; omission and legacy values use automatic server-first resolution"`
 	MaxSteps       int    `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
 	TimeoutSeconds int    `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
 	ReadOnly       bool   `mapstructure:"read_only" jsonschema:"title=Force Agent Read-Only,default=false"`

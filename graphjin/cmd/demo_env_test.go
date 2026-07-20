@@ -120,8 +120,8 @@ func TestLoadDemoEnvInfersAgentFromOpenAIKey(t *testing.T) {
 	if err := loadDemoEnv(configDir, &out); err != nil {
 		t.Fatalf("load .env files: %v", err)
 	}
-	if got := os.Getenv("GJ_AGENT_ENABLED"); got != "true" {
-		t.Fatalf("GJ_AGENT_ENABLED = %q, want true", got)
+	if _, ok := os.LookupEnv("GJ_AGENT_ENABLED"); ok {
+		t.Fatalf("GJ_AGENT_ENABLED should be omitted; mode defaults enable the agent")
 	}
 	if got := os.Getenv("GJ_AGENT_API_KEY_ENV"); got != "OPENAI_API_KEY" {
 		t.Fatalf("GJ_AGENT_API_KEY_ENV = %q, want OPENAI_API_KEY", got)

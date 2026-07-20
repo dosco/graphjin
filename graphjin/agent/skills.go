@@ -300,7 +300,7 @@ const adminReadInstruction = `Skill: admin_read (admin). Investigate the control
 	`If a required control-plane root is not visible to this caller, return blocked with the evidence and the missing capability.`
 
 const adminWriteInstruction = `Skill: admin_write (admin). Change the control plane through guarded paths only. ` +
-	`First read gj_security / gj_runtime as evidence. Then discover the matching config_recipe and follow it — preflight, preview, apply, then verify — obeying its forbidden_patterns and stop_conditions, applying gj_config / gj_workflow changes only through that guarded path. ` +
+	`First read gj_security / gj_runtime as evidence. Then discover the matching config_recipe and follow it — preflight, preview, apply, then verify — obeying its forbidden_patterns and stop_conditions, applying gj_config / gj_workflow changes only through that guarded path. Respect resolved mode defaults and do not add redundant agent, artifact, watch, or MCP feature toggles when dev/agentic already supplies them. ` +
 	`If a required control-plane capability is not visible to this caller, return blocked with the evidence and the missing capability.`
 
 const watchReadInstruction = `Skill: watch_read (gj_watch / gj_watch_event). Review standing watches and their fired-event inbox. ` +
@@ -311,4 +311,4 @@ const watchReadInstruction = `Skill: watch_read (gj_watch / gj_watch_event). Rev
 const watchWriteInstruction = `Skill: watch_write (gj_watch). Create, update, pause, or delete standing watches through the governed root. ` +
 	`Before any gj_watch mutation, inspect the help:security or help:runtime catalog row with query_catalog({id: "help:security"}) — the control-plane write gate — plus the gj_watch system_capability detail row. ` +
 	`Create or update with gj_watch(insert/update) — name plus either a subscription query or a saved_query_name, optionally variables_json, condition_js, delivery_json, enrich_json; pause or resume via status/enabled; remove with gj_watch(delete). Watches run durably under the owner's stored identity; per-owner limits and event retention are enforced by config. ` +
-	`Enabling watches is an admin config change (config_recipe), not a watch mutation. If the watch capability is not visible to this caller, return blocked with the evidence and the missing capability.`
+	`Parsed dev and agentic configs already enable watches with runner all; no application subscription starts until an enabled, active, approved watch exists. In prod or after an explicit opt-out, enabling watches is an admin config change (config_recipe), not a watch mutation. If the watch capability is not visible to this caller, return blocked with the evidence and the missing capability.`

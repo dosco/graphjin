@@ -143,10 +143,9 @@ mcp:
 # ============================================================================
 # SOURCES CONFIGURATION
 # ============================================================================
-# Production mode REQUIRES a database to be configured.
-# Use environment variables for sensitive values:
-#   GJ_DATABASE_HOST, GJ_DATABASE_PORT, GJ_DATABASE_NAME,
-#   GJ_DATABASE_USER, GJ_DATABASE_PASSWORD
+# Production mode REQUIRES a database to be configured. These values come
+# from `graphjin serve new --db-url`; move secrets to your deployment's
+# configuration system before shipping.
 #
 # See dev.yml for database configuration examples for:
 # PostgreSQL, MySQL, MariaDB, SQLite, Oracle, MS SQL Server, MongoDB, Snowflake
@@ -157,17 +156,18 @@ sources:
   - name: default
     kind: database
     default: true
-    type: postgres
-    host: ${GJ_DATABASE_HOST}
-    port: ${GJ_DATABASE_PORT}
-    dbname: ${GJ_DATABASE_NAME}
-    user: ${GJ_DATABASE_USER}
-    password: ${GJ_DATABASE_PASSWORD}
+    type: {{ printf "%q" .DBType }}
+    host: {{ printf "%q" .DBHost }}
+    port: {{ .DBPort }}
+{{ if eq .DBName "" }}    dbname: "{{ .AppNameSlug }}_production"
+{{ else }}    dbname: {{ printf "%q" .DBName }}
+{{ end }}    user: {{ printf "%q" .DBUser }}
+    password: {{ printf "%q" .DBPass }}
     #schema: "public"
     #read_only: false  # Set to true to block all mutations and DDL (tamper-protected at runtime)
 
-    # alternatively you can use a connection string
-    #connection_string: ${GJ_DATABASE_URL}
+    # Alternatively, replace the fields above with a connection string.
+    # connection_string: "postgres://user:password@host:5432/database"
 
     # Size of database connection pool
     # pool_size: 15

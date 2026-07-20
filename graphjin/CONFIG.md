@@ -1028,6 +1028,8 @@ Model Context Protocol (MCP) enables AI assistants to interact with GraphJin.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `mcp.disable` | boolean | `false` | Disable the MCP server |
+| `mcp.http_stateful` | boolean | dev/agentic: `true`; prod: `false` | Keep Streamable HTTP sessions for server-initiated sampling |
+| `mcp.include_tools_with_agent` | boolean | dev/agentic: `true`; prod: `false` | Expose primitive tools alongside `ask_graphjin_agent`; set false for an agent-only surface |
 | `mcp.allow_mutations` | boolean | `true` | Allow mutation operations |
 | `mcp.allow_raw_queries` | boolean | `true` | Allow arbitrary GraphQL queries |
 | `mcp.legacy_discovery` | boolean | `false` | Re-enable legacy MCP discovery/action tools and legacy HTTP helper endpoints in source mode |
@@ -1072,11 +1074,11 @@ mcp:
 
 ## Agent Configuration
 
-The optional server-side GraphJin agent runs the catalog-first discovery loop
+The server-side GraphJin agent runs the catalog-first discovery loop
 inside GraphJin and returns a typed, evidence-backed answer. When enabled it is
 available at `POST /api/v1/agent` and as the MCP tool `ask_graphjin_agent`. The
-`agent` block lives in `agentic.yml`, so enable it by running with
-`GO_ENV=agentic`. See [AGENTIC.md](AGENTIC.md#server-side-agent) for behavior.
+Dev and agentic modes enable it automatically. See
+[AGENTIC.md](AGENTIC.md#server-side-agent) for behavior.
 
 It is an RLM (reasoning-with-code) loop built on Ax: the model writes JavaScript
 that calls the catalog tools and the typed result is parsed from `key: value`
@@ -1086,12 +1088,12 @@ endpoint works via `agent.base_url`.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `agent.enabled` | boolean | `false` | Enable the REST endpoint and MCP tool |
+| `agent.enabled` | boolean | dev/agentic: `true`; prod: `false` | Enable the REST endpoint and MCP tool |
 | `agent.provider` | string | `openai` | Ax provider profile passed to `NewAI` (e.g. `openai`, `openai-compatible`, `google-gemini`) |
 | `agent.model` | string | - | Model name for the provider |
 | `agent.api_key_env` | string | `OPENAI_API_KEY` | Env var holding the provider API key; must be non-empty (use a dummy value for keyless local endpoints) |
 | `agent.base_url` | string | - | OpenAI-compatible provider base URL (e.g. a local or self-hosted endpoint) |
-| `agent.sampling` | string | `off` | MCP client sampling mode: `off`, `auto`, or `require` |
+| `agent.sampling` | string | automatic | Deprecated: omit it for automatic server-first resolution; `off` disables MCP client fallback |
 | `agent.max_steps` | integer | `8` | Maximum agent actor steps per request |
 | `agent.timeout_seconds` | integer | `50` | Request timeout for agent runs; values below 50 are raised to the 50-second minimum |
 | `agent.read_only` | boolean | `false` | Force the server-side agent to reject mutations, including saved-query mutations |
@@ -1108,19 +1110,9 @@ source/table `read_only`, and protocol evidence gates decide what can run. The
 public MCP `execute_graphql` tool is separate and is listed only when
 `mcp.allow_raw_queries: true`.
 
-```yaml
-# agentic.yml — load with GO_ENV=agentic
-agent:
-  enabled: true
-  provider: openai
-  model: gpt-4.1-mini
-  api_key_env: OPENAI_API_KEY
-  # base_url: https://your-openai-compatible-endpoint/v1
-  sampling: off
-  max_steps: 8
-  timeout_seconds: 50
-  read_only: false
-```
+For each request, a populated `agent.api_key_env` selects the server provider
+and prevents sampling. Without server credentials, MCP borrows a
+sampling-capable client's model; REST returns a missing-provider-key error.
 
 ---
 

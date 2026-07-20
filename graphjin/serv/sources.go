@@ -182,16 +182,37 @@ func validateServiceIsSourcesUsedConfig(conf *Config) error {
 	if conf == nil {
 		return nil
 	}
+	for _, source := range conf.Core.Sources {
+		if isManagedArtifactDatabase(source.Name) {
+			return fmt.Errorf("source name %q is reserved for GraphJin's managed artifact store", source.Name)
+		}
+	}
+	if conf.Core.Watches.Enabled && !conf.Core.Artifacts.Enabled {
+		return fmt.Errorf("watches require artifacts.enabled")
+	}
 	if !conf.Core.IsSourcesUsed() {
 		if isCodeSQLType(conf.DB.Type) || isCodeSQLType(conf.DBType) {
 			return fmt.Errorf("database.type codesql is legacy config; move CodeSQL providers to sources with kind: code")
 		}
-		return conf.Core.ValidateIsSourcesUsed()
+		return validateCoreSourcesWithManagedArtifacts(conf)
 	}
 	if hasUserSuppliedLegacyDatabase(conf) {
 		return fmt.Errorf("database is legacy database-only config; move SQL providers to sources")
 	}
-	return conf.Core.ValidateIsSourcesUsed()
+	return validateCoreSourcesWithManagedArtifacts(conf)
+}
+
+func validateCoreSourcesWithManagedArtifacts(conf *Config) error {
+	if conf == nil || !conf.managedArtifactStore {
+		return conf.Core.ValidateIsSourcesUsed()
+	}
+	artifacts, watches := conf.Core.Artifacts, conf.Core.Watches
+	conf.Core.Artifacts.Enabled = false
+	conf.Core.Artifacts.Source = ""
+	conf.Core.Watches.Enabled = false
+	err := conf.Core.ValidateIsSourcesUsed()
+	conf.Core.Artifacts, conf.Core.Watches = artifacts, watches
+	return err
 }
 
 // hasUserSuppliedLegacyDatabase reports whether the user has explicitly
@@ -222,7 +243,16 @@ func normalizeServiceSources(conf *Config) error {
 	if conf == nil {
 		return nil
 	}
-	return conf.Core.NormalizeSources()
+	if !conf.managedArtifactStore {
+		return conf.Core.NormalizeSources()
+	}
+	artifacts, watches := conf.Core.Artifacts, conf.Core.Watches
+	conf.Core.Artifacts.Enabled = false
+	conf.Core.Artifacts.Source = ""
+	conf.Core.Watches.Enabled = false
+	err := conf.Core.NormalizeSources()
+	conf.Core.Artifacts, conf.Core.Watches = artifacts, watches
+	return err
 }
 
 func sourceBool(v *bool, def bool) bool {

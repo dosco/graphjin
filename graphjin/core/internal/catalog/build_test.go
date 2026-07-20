@@ -596,6 +596,25 @@ func TestBuildIncludesConfigRecipes(t *testing.T) {
 			t.Fatalf("recipe %s should not mark source_patches as unsupported: %s", id, text)
 		}
 	}
+	for _, id := range []string{"recipe.config.enable_artifacts", "recipe.config.enable_watches"} {
+		card, ok := findCatalogCard(snap, id)
+		if !ok {
+			t.Fatalf("expected config recipe %s", id)
+		}
+		text := card.Summary + card.ExamplesJSON + card.SafetyJSON
+		for _, want := range []string{"dev", "agentic"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("recipe %s missing %s zero-config guidance: %s", id, want, text)
+			}
+		}
+	}
+	agentRecipe, ok := findCatalogCard(snap, "recipe.config.agent_tuning")
+	if !ok {
+		t.Fatal("expected agent tuning recipe")
+	}
+	if strings.Contains(agentRecipe.ExamplesJSON, `sampling: \"auto\"`) || !strings.Contains(agentRecipe.ExamplesJSON, "automatic server-first") {
+		t.Fatalf("agent tuning recipe has stale sampling guidance: %s", agentRecipe.ExamplesJSON)
+	}
 }
 
 func TestConfigRecipeSearchRanking(t *testing.T) {

@@ -248,7 +248,7 @@ func TestCoffeeRoasteryDemoConfigNormalizes(t *testing.T) {
 	}
 }
 
-func TestCoffeeRoasteryAgenticConfigDocumentsAgentSmokeDefaults(t *testing.T) {
+func TestCoffeeRoasteryMinimalAgenticConfigResolvesRuntimeDefaults(t *testing.T) {
 	cfg, err := serv.ReadInConfig("../examples/coffee-roastery/agentic")
 	if err != nil {
 		t.Fatalf("read coffee demo agentic config: %v", err)
@@ -269,11 +269,61 @@ func TestCoffeeRoasteryAgenticConfigDocumentsAgentSmokeDefaults(t *testing.T) {
 	if got := cfg.Agent.Model; got != "" {
 		t.Fatalf("agent model = %q, want provider default", got)
 	}
-	if got := cfg.Agent.MaxSteps; got != 10 {
-		t.Fatalf("agent max steps = %d, want 10", got)
+	if got := cfg.Agent.MaxSteps; got != 8 {
+		t.Fatalf("agent max steps = %d, want default 8", got)
 	}
-	if got := cfg.Agent.TimeoutSeconds; got != 300 {
-		t.Fatalf("agent timeout = %d, want 300", got)
+	if got := cfg.Agent.TimeoutSeconds; got != 50 {
+		t.Fatalf("agent timeout = %d, want default 50", got)
+	}
+	if !cfg.MCP.HTTPStateful || !cfg.MCP.IncludeToolsWithAgent {
+		t.Fatalf("MCP runtime defaults missing: %+v", cfg.MCP)
+	}
+	if !cfg.Core.Artifacts.Enabled || cfg.Core.Artifacts.Source != "__graphjin_artifacts" || !cfg.Core.Watches.Enabled || cfg.Core.Watches.Runner != "all" {
+		t.Fatalf("artifact/watch runtime defaults missing: artifacts=%+v watches=%+v", cfg.Core.Artifacts, cfg.Core.Watches)
+	}
+	data, err := os.ReadFile("../examples/coffee-roastery/agentic.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, redundant := range []string{"agent:", "sampling:", "http_stateful:", "include_tools_with_agent:", "watches:"} {
+		if strings.Contains(string(data), redundant) {
+			t.Fatalf("minimal agentic config contains redundant %q:\n%s", redundant, data)
+		}
+	}
+}
+
+func TestDemoConfigsKeepZeroConfigurationDefaultsMinimal(t *testing.T) {
+	for _, demo := range []string{"coffee-roastery", "saas-ops", "corrugated-plant", "pcb-fab"} {
+		t.Run(demo, func(t *testing.T) {
+			agenticPath := filepath.Join("..", "examples", demo, "agentic.yml")
+			agentic, err := os.ReadFile(agenticPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, redundant := range []string{"\nagent:", "sampling:", "http_stateful:", "include_tools_with_agent:", "\nwatches:", "\nartifacts:"} {
+				if strings.Contains(string(agentic), redundant) {
+					t.Fatalf("agentic.yml contains redundant %q:\n%s", redundant, agentic)
+				}
+			}
+
+			dev, err := os.ReadFile(filepath.Join("..", "examples", demo, "dev.yml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, redundant := range []string{"artifacts:\n  enabled:", "artifacts:\n  source:", "\nwatches:"} {
+				if strings.Contains(string(dev), redundant) {
+					t.Fatalf("dev.yml contains redundant artifact/watch config %q:\n%s", redundant, dev)
+				}
+			}
+
+			cfg, err := serv.ReadInConfig(filepath.Join("..", "examples", demo, "agentic"))
+			if err != nil {
+				t.Fatalf("ReadInConfig: %v", err)
+			}
+			if !cfg.Agent.Enabled || !cfg.MCP.HTTPStateful || !cfg.MCP.IncludeToolsWithAgent || !cfg.Core.Artifacts.Enabled || !cfg.Core.Watches.Enabled || cfg.Core.Watches.Runner != "all" {
+				t.Fatalf("minimal config did not resolve complete runtime: agent=%+v mcp=%+v artifacts=%+v watches=%+v", cfg.Agent, cfg.MCP, cfg.Core.Artifacts, cfg.Core.Watches)
+			}
+		})
 	}
 }
 

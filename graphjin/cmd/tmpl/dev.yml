@@ -1,6 +1,9 @@
 # yaml-language-server: $schema=./config.schema.json
 app_name: "{{- .AppName }} Development"
 mode: dev
+# Dev mode includes a private managed artifact store, approved-watch runner,
+# built-in agent, stateful MCP HTTP, and the primitive MCP tools. No feature
+# toggles are needed; add explicit settings only to opt out or customize them.
 host_port: 0.0.0.0:8080
 # Defaults on in dev and agentic modes. Set false to disable the console.
 web_ui: true
@@ -418,16 +421,18 @@ blocklist:
 #       # - name: Authorization
 #       #   value: Bearer <stripe_api_key>
 
-tables:
-  - # You can create new fields that have a
-    # real db table backing them
-    name: me
-    table: users
-
-  - name: users
-    order_by:
-      new_users: [ "created_at desc", "id asc" ]
-      id: [ "id asc" ]
+# App tables and roles stay inactive until you add an application database
+# source above. Uncomment them together after selecting that source.
+# tables:
+#   - # You can create new fields that have a
+#     # real db table backing them
+#     name: me
+#     table: users
+#
+#   - name: users
+#     order_by:
+#       new_users: [ "created_at desc", "id asc" ]
+#       id: [ "id asc" ]
 
 # Variables used require a type suffix eg. $user_id:bigint
 #roles_query: "SELECT * FROM users WHERE id = $user_id:bigint"
@@ -441,44 +446,44 @@ tables:
 #    }
 #  }
 
-roles:
-  # if `auth.type` is set to a valid auth type then
-  # all tables are blocked for the anon role unless
-  # added to the role like below.
-  # - name: anon
-  #   tables:
-  #     - name: users
-  #       query:
-  #         limit: 10
+# roles:
+#   # if `auth.type` is set to a valid auth type then
+#   # all tables are blocked for the anon role unless
+#   # added to the role like below.
+#   # - name: anon
+#   #   tables:
+#   #     - name: users
+#   #       query:
+#   #         limit: 10
+#
+#   - name: user
+#     tables:
+#       - name: me
+#         query:
+#           filters: ["{ id: { _eq: $user_id } }"]
 
-  - name: user
-    tables:
-      - name: me
-        query:
-          filters: ["{ id: { _eq: $user_id } }"]
+#       # - name: products
+#       #   query:
+#       #     limit: 50
+#       #     filters: ["{ user_id: { eq: $user_id } }"]
+#       #     disable_functions: false
 
-      # - name: products
-      #   query:
-      #     limit: 50
-      #     filters: ["{ user_id: { eq: $user_id } }"]
-      #     disable_functions: false
-
-      #   insert:
-      #     filters: ["{ user_id: { eq: $user_id } }"]
-      #     presets:
-      #       - user_id: "$user_id"
-      #       - created_at: "now"
+#       #   insert:
+#       #     filters: ["{ user_id: { eq: $user_id } }"]
+#       #     presets:
+#       #       - user_id: "$user_id"
+#       #       - created_at: "now"
             
-      #   update:
-      #     filters: ["{ user_id: { eq: $user_id } }"]
-      #     presets:
-      #       - updated_at: "now"
+#       #   update:
+#       #     filters: ["{ user_id: { eq: $user_id } }"]
+#       #     presets:
+#       #       - updated_at: "now"
 
-      #   delete:
-      #     block: true
+#       #   delete:
+#       #     block: true
 
-  # - name: admin
-  #   match: id = 1000
-  #   tables:
-  #     - name: users
-  #       filters: []
+#   # - name: admin
+#   #   match: id = 1000
+#   #   tables:
+#   #     - name: users
+#   #       filters: []

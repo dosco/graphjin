@@ -23,8 +23,12 @@ func newCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "new <app-name>",
 		Short: "Create a new application",
-		Long:  "Generate all the required files to start on a new GraphJin app",
-		Run:   cmdNew,
+		Long: `Generate the files required to start a new GraphJin app.
+
+The generated dev and agentic configs rely on GraphJin's mode defaults:
+managed artifacts, watches, the built-in agent, stateful MCP HTTP, and the
+primitive MCP tools need no feature toggles. Production defaults are unchanged.`,
+		Run: cmdNew,
 	}
 
 	c.PersistentFlags().StringVar(&dbURL, "db-url", "", "URL of the database")
@@ -51,7 +55,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 			log.Fatal(err)
 		}
 		dbType = u.Scheme
-		dbHost = u.Host
+		dbHost = u.Hostname()
 
 		if v := u.Port(); v != "" {
 			dbPort = v
@@ -62,13 +66,13 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		if v := u.User.Username(); v != "" {
 			dbUser = v
 		} else if dbType == "mysql" {
-			dbPort = "root"
+			dbUser = "root"
 		}
 
 		if v, ok := u.User.Password(); ok {
 			dbPass = v
 		} else if dbType == "mysql" {
-			dbPort = ""
+			dbPass = ""
 		}
 
 		if v := u.Path; len(v) > 1 {

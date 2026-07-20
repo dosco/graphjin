@@ -47,7 +47,12 @@ func TestAgenticConfigDocsTemplate(t *testing.T) {
 	if !strings.Contains(agenticConfigTemplate, "runtime.read: true") {
 		t.Fatalf("agentic docs template should allow runtime observability:\n%s", agenticConfigTemplate)
 	}
-	if !strings.Contains(agenticConfigTemplate, "\nagent:\n") || !strings.Contains(agenticConfigTemplate, "ask_graphjin_agent") {
-		t.Fatalf("agentic docs template should document the server-side agent:\n%s", agenticConfigTemplate)
+	for _, redundant := range []string{"\nagent:\n", "sampling:", "http_stateful:", "include_tools_with_agent:"} {
+		if strings.Contains(agenticConfigTemplate, redundant) {
+			t.Fatalf("agentic docs template contains redundant runtime default %q:\n%s", redundant, agenticConfigTemplate)
+		}
+	}
+	if !strings.Contains(agenticConfigTemplate, "agent is enabled automatically") || !strings.Contains(agenticConfigTemplate, "sampling-capable client's model") {
+		t.Fatalf("agentic docs template should explain automatic model resolution:\n%s", agenticConfigTemplate)
 	}
 }

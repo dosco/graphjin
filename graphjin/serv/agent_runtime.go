@@ -58,6 +58,9 @@ var newGraphJinAgentRunner = func(s *graphjinService, conf gjagent.Config, opts 
 		return nil, err
 	}
 	agentOpts := []gjagent.Option{gjagent.WithRuntime(rt)}
+	if s.agentClientFactory != nil {
+		agentOpts = append(agentOpts, gjagent.WithClientFactory(s.agentClientFactory))
+	}
 	if s.semantic != nil {
 		agentOpts = append(agentOpts, gjagent.WithCatalogSearchFeatures(gjagent.CatalogSearchFeatures{
 			SemanticRecall: true,

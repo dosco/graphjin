@@ -61,7 +61,17 @@ HTTP MCP endpoints can be protected by OAuth or the same JWT/OIDC context as the
 
 ## Capability-aware tools
 
-The MCP tool list is catalog-first in both sources and non-sources configs. `graphql_help`, `query_catalog`, `execute_saved_query`, and `validate_where_clause` form the stable bootstrap surface; raw GraphQL and the [server-side agent](/agentic/server-agent/) appear only when their MCP/agent gates enable them.
+The MCP tool list is catalog-first in both sources and non-sources configs. In
+`dev` and `agentic`, `graphql_help`, `query_catalog`, `execute_saved_query`,
+`validate_where_clause`, and the [server-side agent](/agentic/server-agent/)
+are available without feature toggles, with the remaining policy-allowed
+primitive tools alongside them. Set `mcp.include_tools_with_agent: false` only
+when the agent should be the single front door. Raw GraphQL remains separately
+gated by `mcp.allow_raw_queries`.
+
+Streamable HTTP is stateful by default in these modes, so an MCP client can
+supply its model through sampling when no server provider key is configured.
+Production retains the previous stateless, agent-off defaults.
 
 In **dev mode**, the config tools `get_current_config`, `validate_config`, and `update_current_config` are also exposed — even when the agent is the front door — so a connected AI IDE keeps first-class configuration access. These are dev-only and never appear in agentic or production deployments. See [How Configuration Works](/configure/how-it-works/) for the full set of config interfaces.
 

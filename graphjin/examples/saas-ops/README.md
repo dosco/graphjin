@@ -45,9 +45,11 @@ examples/saas-ops/scripts/smoke.sh                # base checks
 examples/saas-ops/scripts/smoke.sh --agent-eval   # + agent protocol evals
 ```
 
-Because this demo boots in seconds it also hosts the MCP sampling
-require-mode checks: boot with
-`GJ_AGENT_SAMPLING=require GJ_MCP_HTTP_STATEFUL=true` and run
-`scripts/smoke.sh --no-agent --sampling`.
+Because this demo boots in seconds, the shared smoke harness also uses it for
+the client-model fallback checks. It boots the demo with an intentionally empty
+server key environment, verifies a sampling-capable MCP client succeeds with at
+least one `sampling/createMessage` call, verifies `--no-sampling` fails with
+`model_sampling_unavailable`, and verifies REST reports missing server
+credentials. Run that gate through `scripts/demo-smoke-all.sh`.
 
 See [PROMPTS.md](PROMPTS.md) for agent prompts to try interactively.

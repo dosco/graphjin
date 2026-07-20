@@ -3,7 +3,9 @@ package serv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
@@ -18,7 +20,7 @@ func (ms *mcpServer) registerAgentTools() {
 	}
 	ms.srv.AddTool(mcp.NewTool(
 		mcpToolAskGraphJinAgent,
-		mcp.WithDescription("Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action; pass prior turns in history to enable follow-up questions. Blocked responses include a structured refusal (code, because, unblock steps, policy_final/retryable): run the unblock steps and retry only when retryable. Responses may also carry notices — kind watch_events_unseen means query gj_watch_event and mark reviewed events seen. With agent.sampling auto/require the agent may run on this client's model via MCP sampling; caller identity and permissions are unchanged."),
+		mcp.WithDescription("Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action; pass prior turns in history to enable follow-up questions. Blocked responses include a structured refusal (code, because, unblock steps, policy_final/retryable): run the unblock steps and retry only when retryable. Responses may also carry notices — kind watch_events_unseen means query gj_watch_event and mark reviewed events seen. Model selection is server-first: configured server credentials always win; otherwise GraphJin borrows this client's model via MCP sampling. Caller identity and permissions are unchanged."),
 		mcp.WithString("instruction",
 			mcp.Required(),
 			mcp.Description("The user's goal or question for GraphJin."),
@@ -62,6 +64,9 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 	ctx = ms.service.applyIdentityContext(ctx)
 	args := req.GetArguments()
 	agentReq := agentRequestFromArgs(args)
+	if strings.TrimSpace(agentReq.Instruction) == "" {
+		return mcp.NewToolResultError(gjagent.ErrMissingInstruction.Error()), nil
+	}
 	// Capabilities is server-derived and json:"-"; it is never taken from tool args.
 	agentReq.Capabilities = ms.service.agentCapabilityProfile(ctx)
 
@@ -97,6 +102,18 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 	}
 	recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, time.Since(start), err)
 	if err != nil {
+		if errors.Is(err, errMCPSamplingUnavailable) {
+			payload := map[string]any{
+				"code":    "model_sampling_unavailable",
+				"message": "No server model credentials are configured and this MCP client does not support sampling.",
+			}
+			data, marshalErr := mcpMarshalJSON(payload, false)
+			if marshalErr == nil {
+				result := mcpToolResultJSONBytes(data)
+				result.IsError = true
+				return result, nil
+			}
+		}
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)

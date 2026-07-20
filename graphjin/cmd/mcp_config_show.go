@@ -43,9 +43,10 @@ production mode (conf.Serv.Production).`,
 
 Optional variant: dev (default), prod, or agentic.
 
-These are the same templates that 'graphjin serve new' writes when scaffolding
-a new app — every config option is documented inline. Useful as a reference
-when authoring a config by hand or when prompting an LLM to generate one.
+These are annotated counterparts to the configs that 'graphjin serve new'
+writes when scaffolding a new app. The scaffold command also renders app and
+database values. Useful as a reference when authoring a config by hand or
+when prompting an LLM to generate one.
 
 Served locally from the binary (no running server required); this is an alias
 for 'graphjin config docs'.`,
