@@ -419,6 +419,7 @@ func (co *Compiler) compileArgFirstLast(sel *Select, arg graph.Arg, order Order)
 	}
 
 	sel.order = order
+	sel.Paging.Backward = order == OrderDesc
 	return
 }
 

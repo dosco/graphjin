@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -140,5 +141,24 @@ func TestNanoDBCursorPaginationAndVariableLimit(t *testing.T) {
 	}
 	if page2.Rows[0].ID == page1.Rows[0].ID || page2.Rows[0].ID == page1.Rows[1].ID {
 		t.Fatalf("second page repeated first-page rows: first=%+v second=%+v", page1.Rows, page2.Rows)
+	}
+}
+
+func TestNanoDBCursorPaginationRejectsBackwardPaging(t *testing.T) {
+	gj := newNanoDBSearchTestGraphJin(t)
+	defer gj.Close()
+
+	for _, query := range []string{
+		`query { gj_catalog(last: 2, order_by: { id: asc }) { id } gj_catalog_cursor }`,
+		`query page($gj_catalog_cursor: Cursor) {
+			gj_catalog(last: 2, before: $gj_catalog_cursor, order_by: { id: asc }) { id }
+			gj_catalog_cursor
+		}`,
+	} {
+		_, err := gj.GraphQL(context.Background(), query,
+			json.RawMessage(`{"gj_catalog_cursor":null}`), nil)
+		if err == nil || !strings.Contains(err.Error(), "does not support last/before") {
+			t.Fatalf("backward paging error = %v, want explicit unsupported error", err)
+		}
 	}
 }

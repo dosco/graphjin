@@ -324,6 +324,7 @@ type Paging struct {
 	Offset    int32
 	Cursor    bool
 	CursorVar string // "cursor" or "<fieldname>_cursor" for named cursor pagination
+	Backward  bool   // true when the query uses last
 	NoLimit   bool
 }
 

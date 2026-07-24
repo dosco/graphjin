@@ -69,6 +69,9 @@ func (s *gstate) renderNanoSelect(
 	sel *qcode.Select,
 	parent map[int32]nanodb.Row,
 ) (any, any, error) {
+	if sel.Paging.Backward || sel.Paging.Type == qcode.PTBackward {
+		return nil, nil, fmt.Errorf("nanodb cursor pagination does not support last/before")
+	}
 	switch sel.SkipRender {
 	case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked, qcode.SkipTypeNulled:
 		if sel.Singular {
