@@ -21,9 +21,11 @@ func TestSubSnapshotMembersIsolatedFromLiveState(t *testing.T) {
 			},
 			mi: []minfo{
 				{
-					dh:     dh1,
-					values: []interface{}{"chat", "cursor-1"},
-					cindxs: []int{1},
+					dh:         dh1,
+					values:     []interface{}{"chat", "cursor-1"},
+					cindxs:     []int{1},
+					cnameByIdx: []string{"cursor"},
+					vmap:       map[string]json.RawMessage{"cursor": json.RawMessage(`"cursor-1"`)},
 				},
 				{
 					dh:     dh2,
@@ -42,6 +44,8 @@ func TestSubSnapshotMembersIsolatedFromLiveState(t *testing.T) {
 	s.mi[0].dh = sha256.Sum256([]byte(`{"chats":[{"id":99}]}`))
 	s.mi[0].values[1] = "cursor-99"
 	s.mi[0].cindxs[0] = 9
+	s.mi[0].cnameByIdx[0] = "changed"
+	s.mi[0].vmap["cursor"][1] = 'X'
 	s.params[0] = json.RawMessage(`["chat","cursor-99"]`)
 	s.ids[0] = 999
 	s.res[0] = make(chan *Result, 1)
@@ -57,6 +61,12 @@ func TestSubSnapshotMembersIsolatedFromLiveState(t *testing.T) {
 
 	if mv.mi[0].cindxs[0] != 1 {
 		t.Fatalf("snapshot cindxs changed: got %d want %d", mv.mi[0].cindxs[0], 1)
+	}
+	if mv.mi[0].cnameByIdx[0] != "cursor" {
+		t.Fatalf("snapshot cursor names changed: got %q want cursor", mv.mi[0].cnameByIdx[0])
+	}
+	if got := string(mv.mi[0].vmap["cursor"]); got != `"cursor-1"` {
+		t.Fatalf("snapshot vmap changed: got %s want %q", got, `"cursor-1"`)
 	}
 
 	if got, want := string(mv.params[0]), `["chat","cursor-1"]`; got != want {

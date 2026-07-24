@@ -14,14 +14,16 @@ import (
 // to a prepared statement.
 
 type args struct {
-	json   []byte
-	values []interface{}
-	cindxs []int // indices of cursor arg
-	cnames []string
+	json       []byte
+	values     []interface{}
+	cindxs     []int // indices of cursor arg
+	cnameByIdx []string
+	cnames     []string
 }
 
 func (ar *args) addCursorArg(idx int, name string) {
 	ar.cindxs = append(ar.cindxs, idx)
+	ar.cnameByIdx = append(ar.cnameByIdx, name)
 	for _, existing := range ar.cnames {
 		if existing == name {
 			return
