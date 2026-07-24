@@ -144,6 +144,31 @@ func TestNanoDBCursorPaginationAndVariableLimit(t *testing.T) {
 	}
 }
 
+func TestNanoDBVariableLimitAndOffset(t *testing.T) {
+	gj := newNanoDBSearchTestGraphJin(t)
+	defer gj.Close()
+
+	result, err := gj.GraphQL(context.Background(), `query page($limit: Int!, $offset: Int!) {
+		gj_catalog(limit: $limit, offset: $offset, order_by: { id: asc }) {
+			id
+		}
+	}`, json.RawMessage(`{"limit":2,"offset":1}`), nil)
+	if err != nil || len(result.Errors) != 0 {
+		t.Fatalf("variable limit/offset: err=%v errors=%+v", err, result.Errors)
+	}
+	var page struct {
+		Rows []struct {
+			ID string `json:"id"`
+		} `json:"gj_catalog"`
+	}
+	if err := json.Unmarshal(result.Data, &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Rows) != 2 || page.Rows[0].ID != "lo" || page.Rows[1].ID != "mid1" {
+		t.Fatalf("variable limit/offset page = %s", result.Data)
+	}
+}
+
 func TestNanoDBCursorPaginationRejectsBackwardPaging(t *testing.T) {
 	gj := newNanoDBSearchTestGraphJin(t)
 	defer gj.Close()
