@@ -83,3 +83,62 @@ func TestNanoDBSearchWithSearchRankOrderBy(t *testing.T) {
 		t.Fatalf("highest-rank row should sort first, got %v", ordered)
 	}
 }
+
+func TestNanoDBCursorPaginationAndVariableLimit(t *testing.T) {
+	gj := newNanoDBSearchTestGraphJin(t)
+	defer gj.Close()
+
+	query := `query page($first: Int!, $gj_catalog_cursor: Cursor) {
+		gj_catalog(first: $first, after: $gj_catalog_cursor, order_by: { id: asc }) {
+			id
+		}
+		gj_catalog_cursor
+	}`
+	first, err := gj.GraphQL(context.Background(), query,
+		json.RawMessage(`{"first":2,"gj_catalog_cursor":null}`), nil)
+	if err != nil || len(first.Errors) != 0 {
+		t.Fatalf("first page: err=%v errors=%+v", err, first.Errors)
+	}
+	var page1 struct {
+		Rows []struct {
+			ID string `json:"id"`
+		} `json:"gj_catalog"`
+		Cursor string `json:"gj_catalog_cursor"`
+	}
+	if err := json.Unmarshal(first.Data, &page1); err != nil {
+		t.Fatalf("decode first page: %v\n%s", err, first.Data)
+	}
+	if got, want := len(page1.Rows), 2; got != want {
+		t.Fatalf("first page row count = %d, want %d: %s", got, want, first.Data)
+	}
+	if page1.Cursor == "" {
+		t.Fatalf("first page cursor missing: %s", first.Data)
+	}
+
+	vars, err := json.Marshal(map[string]any{
+		"first":             2,
+		"gj_catalog_cursor": page1.Cursor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := gj.GraphQL(context.Background(), query, vars, nil)
+	if err != nil || len(second.Errors) != 0 {
+		t.Fatalf("second page: err=%v errors=%+v", err, second.Errors)
+	}
+	var page2 struct {
+		Rows []struct {
+			ID string `json:"id"`
+		} `json:"gj_catalog"`
+		Cursor string `json:"gj_catalog_cursor"`
+	}
+	if err := json.Unmarshal(second.Data, &page2); err != nil {
+		t.Fatalf("decode second page: %v\n%s", err, second.Data)
+	}
+	if got, want := len(page2.Rows), 2; got != want {
+		t.Fatalf("second page row count = %d, want %d: %s", got, want, second.Data)
+	}
+	if page2.Rows[0].ID == page1.Rows[0].ID || page2.Rows[0].ID == page1.Rows[1].ID {
+		t.Fatalf("second page repeated first-page rows: first=%+v second=%+v", page1.Rows, page2.Rows)
+	}
+}

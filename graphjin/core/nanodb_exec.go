@@ -16,20 +16,31 @@ import (
 )
 
 func (s *gstate) executeNanoDB(ctx context.Context, dbCtx *dbContext) error {
-	if dbCtx == nil || dbCtx.nano == nil {
-		return fmt.Errorf("nanodb database not configured")
-	}
-	if err := s.validateAndUpdateVars(ctx); err != nil {
-		return err
-	}
-	s.setDefaultVars()
-	raw, err := s.renderNanoDBQuery(ctx, dbCtx, s.cs.st.qc)
+	raw, err := s.executeNanoDBRaw(ctx, dbCtx, nil)
 	if err != nil {
 		return err
 	}
 	s.dhash = sha256.Sum256(raw)
 	s.data, err = encryptValues(raw, s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
 	return err
+}
+
+func (s *gstate) executeNanoDBRaw(
+	ctx context.Context,
+	dbCtx *dbContext,
+	overlay map[string]json.RawMessage,
+) ([]byte, error) {
+	if dbCtx == nil || dbCtx.nano == nil {
+		return nil, fmt.Errorf("nanodb database not configured")
+	}
+	if err := s.validateAndUpdateVars(ctx); err != nil {
+		return nil, err
+	}
+	s.setDefaultVars()
+	for name, value := range overlay {
+		s.vmap[name] = json.RawMessage(cloneBytes(value))
+	}
+	return s.renderNanoDBQuery(ctx, dbCtx, s.cs.st.qc)
 }
 
 func (s *gstate) renderNanoDBQuery(ctx context.Context, dbCtx *dbContext, qc *qcode.QCode) ([]byte, error) {
@@ -39,11 +50,14 @@ func (s *gstate) renderNanoDBQuery(ctx context.Context, dbCtx *dbContext, qc *qc
 	out := make(map[string]any, len(qc.Roots))
 	for _, id := range qc.Roots {
 		sel := &qc.Selects[id]
-		value, err := s.renderNanoSelect(ctx, dbCtx, qc, sel, nil)
+		value, cursor, err := s.renderNanoSelect(ctx, dbCtx, qc, sel, nil)
 		if err != nil {
 			return nil, err
 		}
 		out[sel.FieldName] = value
+		if sel.Paging.Cursor {
+			out[sel.FieldName+"_cursor"] = cursor
+		}
 	}
 	return json.Marshal(out)
 }
@@ -54,34 +68,35 @@ func (s *gstate) renderNanoSelect(
 	qc *qcode.QCode,
 	sel *qcode.Select,
 	parent map[int32]nanodb.Row,
-) (any, error) {
+) (any, any, error) {
 	switch sel.SkipRender {
 	case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked, qcode.SkipTypeNulled:
 		if sel.Singular {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return []any{}, nil
+		return []any{}, nil, nil
 	case qcode.SkipTypeDrop:
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	snap := dbCtx.nano.Snapshot()
 	if snap == nil {
-		return nil, fmt.Errorf("nanodb %s has no snapshot", dbCtx.name)
+		return nil, nil, fmt.Errorf("nanodb %s has no snapshot", dbCtx.name)
 	}
 	rows, ok := snap.Rows(sel.Ti.Schema, sel.Ti.Name)
 	if !ok {
-		return nil, fmt.Errorf("nanodb table not found: %s.%s", sel.Ti.Schema, sel.Ti.Name)
+		return nil, nil, fmt.Errorf("nanodb table not found: %s.%s", sel.Ti.Schema, sel.Ti.Name)
 	}
 
 	search := nanoSearchTerm(sel, s.vmap)
+	checkpoint := checkpointForSelect(sel, s.vmap)
 	parentRows := parent
 	filtered := make([]nanodb.Row, 0, len(rows))
 	for _, row := range rows {
 		if !nanoAliasMatch(sel, row) {
 			continue
 		}
-		if !s.nanoEval(ctx, sel.Where.Exp, row, parentRows) {
+		if !s.nanoEval(ctx, sel.Where.Exp, row, parentRows, checkpoint) {
 			continue
 		}
 		if search != "" && snap.SearchRank(sel.Ti.Schema, sel.Ti.Name, row, search) <= 0 {
@@ -94,11 +109,17 @@ func (s *gstate) renderNanoSelect(
 		return s.nanoLess(snap, sel, filtered[i], filtered[j], search)
 	})
 
-	start := int(sel.Paging.Offset)
+	start, err := pagingOffset(sel, s.vmap)
+	if err != nil {
+		return nil, nil, err
+	}
 	if start > len(filtered) {
 		start = len(filtered)
 	}
-	limit := int(sel.Paging.Limit)
+	limit, err := pagingLimit(sel, s.vmap)
+	if err != nil {
+		return nil, nil, err
+	}
 	if limit <= 0 || sel.Paging.NoLimit {
 		limit = len(filtered)
 	}
@@ -112,17 +133,21 @@ func (s *gstate) renderNanoSelect(
 	for _, row := range filtered {
 		item, err := s.nanoRenderRow(ctx, dbCtx, qc, sel, row, parentRows, search)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		items = append(items, item)
 	}
+	var cursor any
+	if sel.Paging.Cursor && len(filtered) != 0 {
+		cursor = string(s.gj.printFormat) + encodeSystemCursor(sel.ID, systemCursorValues(sel, filtered[len(filtered)-1]))
+	}
 	if sel.Singular {
 		if len(items) == 0 {
-			return nil, nil
+			return nil, cursor, nil
 		}
-		return items[0], nil
+		return items[0], cursor, nil
 	}
-	return items, nil
+	return items, cursor, nil
 }
 
 func (s *gstate) nanoRenderRow(
@@ -174,11 +199,14 @@ func (s *gstate) nanoRenderRow(
 		if child.SkipRender == qcode.SkipTypeRemote {
 			continue
 		}
-		value, err := s.renderNanoSelect(ctx, dbCtx, qc, child, nextParent)
+		value, cursor, err := s.renderNanoSelect(ctx, dbCtx, qc, child, nextParent)
 		if err != nil {
 			return nil, err
 		}
 		out[child.FieldName] = value
+		if child.Paging.Cursor {
+			out[child.FieldName+"_cursor"] = cursor
+		}
 	}
 	return out, nil
 }
@@ -254,21 +282,27 @@ func (s *gstate) nanoLess(snap *nanodb.Snapshot, sel *qcode.Select, a, b nanodb.
 	return false
 }
 
-func (s *gstate) nanoEval(ctx context.Context, ex *qcode.Exp, row nanodb.Row, parent map[int32]nanodb.Row) bool {
+func (s *gstate) nanoEval(
+	ctx context.Context,
+	ex *qcode.Exp,
+	row nanodb.Row,
+	parent map[int32]nanodb.Row,
+	checkpoint cursorCheckpoint,
+) bool {
 	if ex == nil {
 		return true
 	}
 	switch ex.Op {
 	case qcode.OpAnd:
 		for _, child := range ex.Children {
-			if !s.nanoEval(ctx, child, row, parent) {
+			if !s.nanoEval(ctx, child, row, parent, checkpoint) {
 				return false
 			}
 		}
 		return true
 	case qcode.OpOr:
 		for _, child := range ex.Children {
-			if s.nanoEval(ctx, child, row, parent) {
+			if s.nanoEval(ctx, child, row, parent, checkpoint) {
 				return true
 			}
 		}
@@ -277,7 +311,7 @@ func (s *gstate) nanoEval(ctx context.Context, ex *qcode.Exp, row nanodb.Row, pa
 		if len(ex.Children) == 0 {
 			return true
 		}
-		return !s.nanoEval(ctx, ex.Children[0], row, parent)
+		return !s.nanoEval(ctx, ex.Children[0], row, parent, checkpoint)
 	case qcode.OpTsQuery:
 		return true
 	case qcode.OpFalse:
@@ -285,7 +319,13 @@ func (s *gstate) nanoEval(ctx context.Context, ex *qcode.Exp, row nanodb.Row, pa
 	}
 
 	left := row[ex.Left.Col.Name]
-	right := s.nanoRight(ctx, ex, parent)
+	if ex.Left.Table == "__cur" {
+		left = checkpoint.values[systemCursorExpKey(ex.Left.Col.Name, ex.Left.ColName)]
+	}
+	right := s.nanoRight(ctx, ex, parent, checkpoint)
+	if ex.Right.Table == "__cur" && right == nil {
+		return false
+	}
 	switch ex.Op {
 	case qcode.OpEquals, qcode.OpNotDistinct:
 		return equalValues(left, right)
@@ -330,9 +370,17 @@ func (s *gstate) nanoEval(ctx context.Context, ex *qcode.Exp, row nanodb.Row, pa
 	}
 }
 
-func (s *gstate) nanoRight(ctx context.Context, ex *qcode.Exp, parent map[int32]nanodb.Row) any {
+func (s *gstate) nanoRight(
+	ctx context.Context,
+	ex *qcode.Exp,
+	parent map[int32]nanodb.Row,
+	checkpoint cursorCheckpoint,
+) any {
 	if ex == nil {
 		return nil
+	}
+	if ex.Right.Table == "__cur" {
+		return checkpoint.values[systemCursorExpKey(ex.Right.Col.Name, ex.Right.ColName)]
 	}
 	if ex.Right.ID >= 0 && ex.Right.Col.Name != "" {
 		if row, ok := parent[ex.Right.ID]; ok {
@@ -340,6 +388,13 @@ func (s *gstate) nanoRight(ctx context.Context, ex *qcode.Exp, parent map[int32]
 		}
 	}
 	return s.nanoRightValue(ctx, ex, parent)
+}
+
+func systemCursorExpKey(column, columnName string) string {
+	if columnName != "" {
+		return columnName
+	}
+	return column
 }
 
 func (s *gstate) nanoRightValue(ctx context.Context, ex *qcode.Exp, _ map[int32]nanodb.Row) string {
