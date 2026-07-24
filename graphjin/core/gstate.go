@@ -212,6 +212,19 @@ func (s *gstate) cloneForDatabaseRoot(dbName string) gstate {
 	}
 }
 
+func (s *gstate) pollGState(vmap map[string]json.RawMessage) gstate {
+	return gstate{
+		gj:                  s.gj,
+		r:                   cloneGraphqlReq(s.r),
+		cs:                  s.cs,
+		vmap:                cloneRawMessageMap(vmap),
+		role:                s.role,
+		trustedReservedRole: s.trustedReservedRole,
+		database:            s.database,
+		skipCache:           true,
+	}
+}
+
 func cloneGraphqlReq(r GraphqlReq) GraphqlReq {
 	out := r
 	out.query = cloneBytes(r.query)

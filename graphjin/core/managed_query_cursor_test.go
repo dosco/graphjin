@@ -64,6 +64,7 @@ func newManagedCursorTestGraphJin(t *testing.T, handler ManagedQueryHandler) *Gr
 	conf := &Config{
 		DBType:           "nanodb",
 		DisableAllowList: true,
+		SubsPollDuration: minPollDuration,
 		Databases:        map[string]DatabaseConfig{DefaultDBName: {Type: "nanodb"}},
 	}
 	gj, err := NewGraphJin(conf, nil,

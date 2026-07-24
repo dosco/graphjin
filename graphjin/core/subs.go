@@ -47,6 +47,7 @@ type sub struct {
 	done         chan struct{}
 
 	sizer *chunkSizer
+	kind  subscriptionKind
 
 	mval
 	sync.Once
@@ -60,17 +61,21 @@ type mval struct {
 }
 
 type minfo struct {
-	dh     [sha256.Size]byte
+	dh    [sha256.Size]byte
+	vmap  map[string]json.RawMessage
+	ident *subIdentity
+
 	values []interface{}
 	// indices of cursor value in the arguments array
-	cindxs []int
-	cnames []string
+	cindxs     []int
+	cnameByIdx []string
+	cnames     []string
 }
 
 type mmsg struct {
-	id     uint64
-	dh     [sha256.Size]byte
-	cursor string
+	id      uint64
+	dh      [sha256.Size]byte
+	cursors map[string]string
 }
 
 type Member struct {
@@ -82,9 +87,87 @@ type Member struct {
 	id     uint64
 	vl     []interface{}
 	mm     mmsg
+	vmap   map[string]json.RawMessage
+	ident  *subIdentity
 	// indices of cursor value in the arguments array
-	cindxs []int
-	cnames []string
+	cindxs     []int
+	cnameByIdx []string
+	cnames     []string
+}
+
+type subscriptionKind uint8
+
+const (
+	subscriptionSQL subscriptionKind = iota
+	subscriptionSystem
+)
+
+type subIdentity struct {
+	values []subIdentityValue
+}
+
+type subIdentityValue struct {
+	key   contextkey
+	value any
+}
+
+func newSubIdentity(ctx context.Context) *subIdentity {
+	if ctx == nil {
+		return &subIdentity{}
+	}
+	keys := [...]contextkey{
+		UserIDProviderKey,
+		UserIDRawKey,
+		UserIDKey,
+		UserRoleKey,
+		IdentityVarsKey,
+		IdentityRolesKey,
+	}
+	identity := &subIdentity{values: make([]subIdentityValue, 0, len(keys))}
+	for _, key := range keys {
+		if value := ctx.Value(key); value != nil {
+			identity.values = append(identity.values, subIdentityValue{key: key, value: cloneSubIdentityValue(value)})
+		}
+	}
+	return identity
+}
+
+func (identity *subIdentity) context() context.Context {
+	ctx := context.Background()
+	if identity == nil {
+		return ctx
+	}
+	for _, item := range identity.values {
+		ctx = context.WithValue(ctx, item.key, cloneSubIdentityValue(item.value))
+	}
+	return ctx
+}
+
+func cloneSubIdentityValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			out[key] = cloneSubIdentityValue(item)
+		}
+		return out
+	case map[string]string:
+		out := make(map[string]string, len(typed))
+		for key, item := range typed {
+			out[key] = item
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for index, item := range typed {
+			out[index] = cloneSubIdentityValue(item)
+		}
+		return out
+	case []string:
+		return append([]string(nil), typed...)
+	default:
+		return value
+	}
 }
 
 // CursorVariableNames returns the GraphQL variable names used by this
@@ -214,23 +297,31 @@ func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 			return
 		}
 
-		// don't use the vmap in the sub gstate use the new
-		// one that was created this current subscription
-		args, err1 := sub.s.argListForSub(c, s.vmap)
-		if err1 != nil {
-			return nil, err1
+		var memberArgs args
+		if sub.kind == subscriptionSQL {
+			// Don't use the vmap in the sub gstate; use the one created for
+			// this subscription member.
+			memberArgs, err = sub.s.argListForSub(c, s.vmap)
+			if err != nil {
+				return nil, err
+			}
+			sub.fillCursorArgInfo(&memberArgs)
+		} else {
+			memberArgs.cnames = sub.systemCursorVariableNamesFromQCode()
 		}
-		sub.fillCursorArgInfo(&args)
 
 		m = &Member{
-			ns:     r.namespace,
-			id:     atomic.AddUint64(&sub.idgen, 1),
-			Result: make(chan *Result, 10),
-			sub:    sub,
-			vl:     args.values,
-			params: args.json,
-			cindxs: args.cindxs,
-			cnames: args.cnames,
+			ns:         r.namespace,
+			id:         atomic.AddUint64(&sub.idgen, 1),
+			Result:     make(chan *Result, 10),
+			sub:        sub,
+			vl:         memberArgs.values,
+			params:     memberArgs.json,
+			cindxs:     memberArgs.cindxs,
+			cnameByIdx: memberArgs.cnameByIdx,
+			cnames:     memberArgs.cnames,
+			vmap:       cloneRawMessageMap(s.vmap),
+			ident:      newSubIdentity(c),
 		}
 
 		m.mm, err = gj.subFirstQuery(sub, m)
@@ -263,6 +354,7 @@ func (s *sub) fillCursorArgInfo(args *args) {
 		for idx, param := range params {
 			if param.Name == name {
 				args.cindxs = append(args.cindxs, idx)
+				args.cnameByIdx = append(args.cnameByIdx, name)
 				break
 			}
 		}
@@ -288,11 +380,33 @@ func (s *sub) cursorVariableNamesFromQCode() []string {
 	return names
 }
 
+func (s *sub) systemCursorVariableNamesFromQCode() []string {
+	if s == nil || s.s.cs.st.qc == nil {
+		return nil
+	}
+	qc := s.s.cs.st.qc
+	seen := make(map[string]struct{})
+	names := make([]string, 0, len(qc.Roots))
+	for _, rootID := range qc.Roots {
+		sel := qc.Selects[rootID]
+		if !sel.Paging.Cursor || sel.Paging.CursorVar == "" {
+			continue
+		}
+		if _, exists := seen[sel.Paging.CursorVar]; exists {
+			continue
+		}
+		seen[sel.Paging.CursorVar] = struct{}{}
+		names = append(names, sel.Paging.CursorVar)
+	}
+	return names
+}
+
 // initSub function is called on the graphjin struct to initialize a subscription.
 func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 	if err = sub.s.compile(); err != nil {
 		return
 	}
+	sub.kind = gj.subscriptionKind(&sub.s)
 
 	if !gj.prod {
 		err = gj.saveToAllowList(c, sub.s.cs.st.qc, sub.s.r.namespace)
@@ -301,7 +415,12 @@ func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 		}
 	}
 
-	// Only wrap subscriptions for batching if the dialect supports it
+	if sub.kind == subscriptionSystem {
+		go gj.subController(sub)
+		return nil
+	}
+
+	// Only wrap SQL subscriptions for batching if the dialect supports it.
 	targetCtx := sub.s.getTargetDBCtx()
 	if len(sub.s.cs.st.md.Params()) != 0 && dialectSupportsSubscriptionBatching(targetCtx.schema.DBType()) {
 		sub.s.cs.st.sql = renderSubWrap(sub.s.cs.st, targetCtx.schema.DBType())
@@ -309,6 +428,33 @@ func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 
 	go gj.subController(sub)
 	return
+}
+
+func (gj *graphjinEngine) subscriptionKind(state *gstate) subscriptionKind {
+	if state == nil || state.cs == nil || state.cs.st.qc == nil {
+		return subscriptionSQL
+	}
+	if dbctx := state.getTargetDBCtx(); dbctx != nil && dbctx.nano != nil {
+		return subscriptionSystem
+	}
+	dbName := state.database
+	if dbName == "" {
+		dbName = gj.defaultDB
+	}
+	handler := gj.managedQueryHandlers[dbName]
+	if handler == nil {
+		return subscriptionSQL
+	}
+	tables := make(map[string]struct{})
+	for _, table := range handler.ManagedQueryTables() {
+		tables[strings.ToLower(table.Name)] = struct{}{}
+	}
+	for _, rootID := range state.cs.st.qc.Roots {
+		if _, ok := tables[strings.ToLower(state.cs.st.qc.Selects[rootID].Ti.Name)]; ok {
+			return subscriptionSystem
+		}
+	}
+	return subscriptionSQL
 }
 
 // subController function is called on the graphjin struct to control the subscription.
@@ -353,7 +499,13 @@ func (gj *graphjinEngine) subController(sub *sub) {
 
 // addMember function is called on the sub struct to add a member.
 func (s *sub) addMember(m *Member) error {
-	mi := minfo{cindxs: m.cindxs, cnames: m.cnames}
+	mi := minfo{
+		cindxs:     m.cindxs,
+		cnameByIdx: m.cnameByIdx,
+		cnames:     m.cnames,
+		vmap:       cloneRawMessageMap(m.vmap),
+		ident:      m.ident,
+	}
 	if len(mi.cindxs) != 0 {
 		mi.values = m.vl
 	}
@@ -362,9 +514,11 @@ func (s *sub) addMember(m *Member) error {
 	// if cindices is not empty then this query contains
 	// a cursor that must be updated with the new
 	// cursor value so subscriptions can paginate.
-	if len(mi.cindxs) != 0 && m.mm.cursor != "" {
-		for _, idx := range mi.cindxs {
-			mi.values[idx] = m.mm.cursor
+	if len(mi.cindxs) != 0 && len(m.mm.cursors) != 0 {
+		for index, argIndex := range mi.cindxs {
+			if cursor := m.mm.cursors[mi.cnameByIdx[index]]; cursor != "" {
+				mi.values[argIndex] = cursor
+			}
 		}
 
 		// values is a pre-generated json value that
@@ -374,6 +528,16 @@ func (s *sub) addMember(m *Member) error {
 		} else {
 			m.params = v
 		}
+	}
+	for name, cursor := range m.mm.cursors {
+		data, err := json.Marshal(cursor)
+		if err != nil {
+			return err
+		}
+		if mi.vmap == nil {
+			mi.vmap = make(map[string]json.RawMessage)
+		}
+		mi.vmap[name] = data
 	}
 
 	s.params = append(s.params, m.params)
@@ -411,15 +575,27 @@ func (s *sub) updateMember(msg mmsg) error {
 		return nil
 	}
 
-	if len(s.mi[i].cindxs) != 0 && msg.cursor != "" {
-		for _, idx := range s.mi[i].cindxs {
-			s.mi[i].values[idx] = msg.cursor
+	if len(s.mi[i].cindxs) != 0 && len(msg.cursors) != 0 {
+		for index, argIndex := range s.mi[i].cindxs {
+			if cursor := msg.cursors[s.mi[i].cnameByIdx[index]]; cursor != "" {
+				s.mi[i].values[argIndex] = cursor
+			}
 		}
 		v, err := json.Marshal(s.mi[i].values)
 		if err != nil {
 			return err
 		}
 		s.params[i] = v
+	}
+	for name, cursor := range msg.cursors {
+		data, err := json.Marshal(cursor)
+		if err != nil {
+			return err
+		}
+		if s.mi[i].vmap == nil {
+			s.mi[i].vmap = make(map[string]json.RawMessage)
+		}
+		s.mi[i].vmap[name] = data
 	}
 	s.mi[i].dh = msg.dh
 	return nil
@@ -448,9 +624,13 @@ func (s *sub) snapshotMembers() mval {
 			mv.mi[i].cindxs = make([]int, len(mi.cindxs))
 			copy(mv.mi[i].cindxs, mi.cindxs)
 		}
+		if len(mi.cnameByIdx) != 0 {
+			mv.mi[i].cnameByIdx = append([]string(nil), mi.cnameByIdx...)
+		}
 		if len(mi.cnames) != 0 {
 			mv.mi[i].cnames = append([]string(nil), mi.cnames...)
 		}
+		mv.mi[i].vmap = cloneRawMessageMap(mi.vmap)
 	}
 
 	return mv
@@ -505,6 +685,10 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start, chunk int) {
 	end := start + chunk
 	if len(mv.ids) < end {
 		end = start + (len(mv.ids) - start)
+	}
+	if sub.kind == subscriptionSystem {
+		gj.subCheckUpdatesSystem(sub, mv, start, end)
+		return
 	}
 
 	hasParams := len(sub.s.cs.st.md.Params()) != 0
@@ -619,8 +803,57 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start, chunk int) {
 	}
 }
 
+func (gj *graphjinEngine) subCheckUpdatesSystem(sub *sub, mv mval, start, end int) {
+	started := time.Now()
+	failed := false
+	for index := start; index < end; index++ {
+		raw, err := gj.executeSystemSubscription(sub, mv.mi[index])
+		if err != nil {
+			failed = true
+			gj.log.Printf(errSubs, "system-query", err)
+			continue
+		}
+		gj.subNotifyMember(sub, mv, index, raw)
+	}
+	if failed {
+		sub.sizer.observeError()
+		return
+	}
+	sub.sizer.observe(time.Since(started))
+}
+
+func (gj *graphjinEngine) executeSystemSubscription(sub *sub, member minfo) (json.RawMessage, error) {
+	state := sub.s.pollGState(member.vmap)
+	ctx := member.ident.context()
+	if handled, raw, err := state.executeManagedQueryRaw(ctx, true); handled {
+		return raw, err
+	}
+	dbctx := state.getTargetDBCtx()
+	if dbctx == nil || dbctx.nano == nil {
+		return nil, errors.New("system subscription has no managed or NanoDB executor")
+	}
+	return state.executeNanoDBRaw(ctx, dbctx, member.vmap)
+}
+
 // subFirstQuery function is called on the graphjin struct to get the first query.
 func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
+	if sub.kind == subscriptionSystem {
+		raw, err := gj.executeSystemSubscription(sub, minfo{
+			vmap:  cloneRawMessageMap(m.vmap),
+			ident: m.ident,
+		})
+		if err != nil {
+			return mmsg{}, fmt.Errorf(errSubs, "system-query", err)
+		}
+		return gj.subNotifyMemberEx(sub,
+			[32]byte{},
+			m.cindxs,
+			m.cnames,
+			m.id,
+			m.Result,
+			raw,
+			false)
+	}
 	c := context.Background()
 
 	// when params are not available we use a more optimized
@@ -710,7 +943,9 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 
 	nonce := mm.dh
 
-	if cv := firstCursorValue(js, gj.printFormat); len(cv) != 0 {
+	if sub.kind == subscriptionSystem {
+		mm.cursors = extractNamedCursors(js, sub.s.cs.st.qc, gj.printFormat)
+	} else if cv := firstCursorValue(js, gj.printFormat); len(cv) != 0 {
 		cursor := string(cv)
 		// Strip the gj-xxx: prefix from cursor for internal subscription use
 		// The cursor format is: gj-hexTimestamp:selID:val1:val2
@@ -721,9 +956,8 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 				cursor = cursor[idx+1:]
 			}
 		}
-		mm.cursor = cursor
+		mm.cursors = subscriptionCursorValues(cnames, cursor)
 	}
-	cursorValues := subscriptionCursorValues(cnames, mm.cursor)
 
 	ejs, err := encryptValues(js,
 		gj.printFormat,
@@ -737,7 +971,7 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 	// we're expecting a cursor but the cursor was null
 	// so we skip this one but still send the hash update
 	// to prevent reprocessing the same result.
-	if len(cindxs) != 0 && mm.cursor == "" {
+	if len(cnames) != 0 && len(mm.cursors) == 0 {
 		if update {
 			sub.updt <- mm
 		}
@@ -755,7 +989,7 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 		role:       sub.s.cs.st.role,
 		Data:       ejs,
 		Hash:       mm.dh,
-		subCursors: cursorValues,
+		subCursors: cloneStringMap(mm.cursors),
 	}
 
 	// If this is an update notification, avoid blocking indefinitely by using a timeout.
@@ -770,6 +1004,52 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 	}
 
 	return mm, nil
+}
+
+func extractNamedCursors(data json.RawMessage, qc *qcode.QCode, prefix []byte) map[string]string {
+	if qc == nil {
+		return nil
+	}
+	var object map[string]json.RawMessage
+	if json.Unmarshal(data, &object) != nil {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, rootID := range qc.Roots {
+		sel := qc.Selects[rootID]
+		if !sel.Paging.Cursor || sel.Paging.CursorVar == "" {
+			continue
+		}
+		var cursor string
+		if json.Unmarshal(object[sel.FieldName+"_cursor"], &cursor) != nil || cursor == "" {
+			continue
+		}
+		if strings.HasPrefix(cursor, string(prefix)) {
+			cursor = strings.TrimPrefix(cursor, string(prefix))
+		} else if strings.HasPrefix(cursor, "gj-") {
+			if index := strings.IndexByte(cursor, ':'); index != -1 {
+				cursor = cursor[index+1:]
+			}
+		}
+		if cursor != "" {
+			out[sel.Paging.CursorVar] = cursor
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func subscriptionCursorValues(cnames []string, cursor string) map[string]string {
