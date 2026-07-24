@@ -406,6 +406,78 @@ run_semantic_agent_smoke() {
   pass "REST agent used one three-phrase semantic batch, embedded two cache misses together, inspected returned ids, and kept joins catalog-grounded"
 }
 
+flow_graphql() {
+  local label="$1"
+  local query="$2"
+  local output="$TMP_DIR/flow-$label.json"
+  local payload http_code
+  payload="$(jq -nc --arg query "$query" '{query:$query}')"
+  http_code="$(curl -sS --max-time "$TIMEOUT" \
+    -o "$output" \
+    -w '%{http_code}' \
+    -X POST "$BASE_URL/api/v1/graphql" \
+    -H 'Content-Type: application/json' \
+    -H 'X-User-ID: semantic-flow-smoke' \
+    -H 'X-User-Role: user' \
+    --data "$payload")"
+  if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ] || ! jq -e '(.errors? // []) | length == 0' "$output" >/dev/null; then
+    jq . "$output" >&2 2>/dev/null || cat "$output" >&2
+    fail "watch flow GraphQL failed: $label"
+  fi
+  printf '%s\n' "$output"
+}
+
+run_watch_flow_smoke() {
+  log "checking inline AxFlow watch triage, preview approval, and final dispositions"
+  local suffix verdict name query create watch_id preview event_query event_file event_found
+  suffix="$(date +%s)_$$"
+  local watch_ids=()
+
+  for verdict in notify digest discard; do
+    name="smoke_flow_${verdict}_fixture_${suffix}"
+    query="mutation { gj_watch(insert: { name: \"${name}\", query: \"subscription ${name} { roast_schedule(first: 25, after: \$cursor) { id status } roast_schedule_cursor }\", enrich_json: { enabled: true, kind: \"flow\", flow: \"default_watch_triage\" } }) { id status approval enabled enrich_json } }"
+    create="$(flow_graphql "create-$verdict" "$query")"
+    watch_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$create")"
+    jq -e '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and $w.status == "paused" and $w.approval == "pending" and $w.enabled == false' "$create" >/dev/null \
+      || fail "new $verdict flow watch did not pause for preview"
+    watch_ids+=("$watch_id")
+
+    query="mutation { gj_watch_flow_preview(insert: { watch_id: \"${watch_id}\", samples_json: [{ fixture: \"${verdict}_fixture\", temperature: 421 }], approve: true }) { watch_id flow_hash sample_count notify_count digest_count discard_count status approved } }"
+    preview="$(flow_graphql "preview-$verdict" "$query")"
+    jq -e --arg verdict "$verdict" '
+      ([.data.gj_watch_flow_preview] | flatten | .[0]) as $p
+      | $p.status == "ok" and $p.approved == true and $p.sample_count == 1
+        and (if $verdict == "notify" then $p.notify_count == 1
+             elif $verdict == "digest" then $p.digest_count == 1
+             else $p.discard_count == 1 end)
+    ' "$preview" >/dev/null || fail "$verdict flow preview returned the wrong disposition"
+
+    event_query="query { gj_watch_event(where: { watch_id: { eq: \"${watch_id}\" } }, order_by: { created_at: desc }, limit: 1) { id watch_id delivery_status seen enrichment_json } }"
+    event_found=""
+    for _ in $(seq 1 80); do
+      event_file="$(flow_graphql "event-${verdict}" "$event_query")"
+      if jq -e --arg verdict "$verdict" '
+        ([.data.gj_watch_event] | flatten | .[0]) as $e
+        | ($e.enrichment_json | if type == "string" then fromjson else . end) as $enrichment
+        | $e != null and $enrichment.verdict == $verdict
+          and (if $verdict == "notify" then (["pending", "delivered"] | index($e.delivery_status)) != null and $e.seen == false
+               elif $verdict == "digest" then $e.delivery_status == "digest_queued" and $e.seen == true
+               else $e.delivery_status == "suppressed" and $e.seen == true end)
+      ' "$event_file" >/dev/null; then
+        event_found=1
+        break
+      fi
+      sleep 0.5
+    done
+    [ -n "$event_found" ] || fail "$verdict flow event did not reach its final disposition"
+  done
+
+  for watch_id in "${watch_ids[@]}"; do
+    flow_graphql "cleanup-$(printf '%s' "$watch_id" | tr ':/' '__')" "mutation { gj_watch(delete: true, where: { id: { eq: \"${watch_id}\" } }) { id } }" >/dev/null
+  done
+  pass "inline watch flows previewed once and routed notify, digest, and discard correctly"
+}
+
 log "capturing lexical-only discovery baseline"
 start_graphjin false lexical
 capture_suite baseline
@@ -490,6 +562,8 @@ if [ "$MODE" = "fixture" ]; then
   log "checking the agent-only service-runtime coverage batch"
   (cd "$ROOT_DIR" && GOCACHE="${GOCACHE:-/tmp/go-build}" go test ./serv -run '^TestCoffeeRoasteryServiceRuntimeCoverageBatch$' -count=1) || fail "agent-only service-runtime coverage batch failed"
   pass "agent coverage embedded three phrases in one request and returned the real path"
+
+  run_watch_flow_smoke
 fi
 
 stop_graphjin

@@ -82,14 +82,15 @@ For local development, named query auto-save and workflow saves fall back to con
 
 ## Watch event resource
 
-When watches are enabled, MCP exposes one caller-scoped resource:
+When watches are enabled, MCP exposes an aggregate caller-scoped resource and a per-watch template:
 
 ```text
 graphjin://watch-events/unseen
+graphjin://watch-events/unseen/{watch_id}
 ```
 
-Clients may subscribe to it and receive `notifications/resources/updated` when their own unseen watch events appear. A resource read returns compact metadata only: event IDs, watch IDs, timestamps, data hashes, truncation flags, and delivery status. Full event payloads remain behind `gj_watch_event` or the REST/GraphQL watch APIs.
+Clients should retain the ID returned by `gj_watch`, RFC 6570-expand the template so reserved characters in the ID are percent-encoded, and subscribe to that concrete per-watch URI. Exact subscriptions receive `notifications/resources/updated` only for that watch; the URI identifies which watch changed, and a read returns compact metadata only. The aggregate resource retains owner/account-wide compatibility for hosts without per-URI subscription support; those hosts must filter to the conversation's watch IDs before reading full events or marking them seen. Full event payloads remain behind `gj_watch_event` or the REST/GraphQL watch APIs.
 
 Unsubscribing from this MCP resource only removes the in-memory resource subscription. It never pauses, expires, deletes, or cleans up watch definitions.
 
-{{< verified by="TestWatchMCPUnseenResourceAndSubscriptionNotification" file="serv/watches_test.go" line="1337" >}}
+{{< verified by="TestWatchMCPPerWatchRoutingSameOwnerSessions" file="serv/watches_test.go" line="1571" >}}

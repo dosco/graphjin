@@ -352,6 +352,14 @@ func (s *HttpService) MCPMessageHandlerWithAuth(ah auth.HandlerFunc) http.Handle
 // tool calls. Workflow calls use mcp.workflow_timeout; ask_graphjin_agent can
 // run up to agent.timeout_seconds while waiting on an LLM provider.
 func extendDeadlineForMCPRequest(w http.ResponseWriter, r *http.Request, conf *Config) {
+	// The Streamable HTTP GET channel remains open for server notifications.
+	// It must not inherit the global 10-second server deadline while waiting
+	// for a watch event or another asynchronous notification.
+	if r != nil && r.Method == http.MethodGet && isSSERequest(r) {
+		clearStreamDeadline(w)
+		return
+	}
+
 	extendDeadlineForWorkflow(w, conf)
 	if conf != nil && conf.agentEnabled() && mcpRequestCallsTool(r, mcpToolAskGraphJinAgent) {
 		extendDeadlineForAgent(w, conf)

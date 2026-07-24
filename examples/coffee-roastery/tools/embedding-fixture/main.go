@@ -143,6 +143,22 @@ func (s *fixtureServer) chatCompletions(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf("invalid chat request: %v", err), http.StatusBadRequest)
 		return
 	}
+	requestJSON, _ := json.Marshal(request)
+	requestText := strings.ToLower(string(requestJSON))
+	if strings.Contains(requestText, "verdict") && strings.Contains(requestText, "severity") && strings.Contains(requestText, "summary") {
+		verdict := "notify"
+		severity := "critical"
+		summary := "Roast temperature crossed the safe limit."
+		switch {
+		case strings.Contains(requestText, "digest_fixture"):
+			verdict, severity, summary = "digest", "warn", "Roast drift is worth including in the next digest."
+		case strings.Contains(requestText, "discard_fixture"):
+			verdict, severity, summary = "discard", "info", "Routine roast telemetry does not need attention."
+		}
+		content, _ := json.Marshal(map[string]any{"verdict": verdict, "severity": severity, "summary": summary})
+		s.writeChatResponse(w, request, string(content))
+		return
+	}
 
 	// The code deliberately uses business terminology, performs one diversified
 	// coverage batch, derives detail ids from returned cards, and inspects those
@@ -177,11 +193,14 @@ final({
 		return
 	}
 
+	s.writeChatResponse(w, request, string(content))
+}
+
+func (s *fixtureServer) writeChatResponse(w http.ResponseWriter, request map[string]any, content string) {
 	s.mu.Lock()
 	s.stats.ChatRequests++
 	chatIndex := s.stats.ChatRequests
 	s.mu.Unlock()
-
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":      fmt.Sprintf("chatcmpl-coffee-fixture-%d", chatIndex),
 		"object":  "chat.completion",
@@ -191,7 +210,7 @@ final({
 			"index": 0,
 			"message": map[string]any{
 				"role":    "assistant",
-				"content": string(content),
+				"content": content,
 			},
 			"finish_reason": "stop",
 		}},

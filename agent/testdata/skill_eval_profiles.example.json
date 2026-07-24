@@ -1,0 +1,100 @@
+{
+  "profiles": [
+    {
+      "name": "user-core",
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": false,
+        "available_system_roots": []
+      },
+      "url": "http://127.0.0.1:8080/api/v1/agent",
+      "headers": {
+        "Authorization": "Bearer REPLACE_USER_TOKEN"
+      }
+    },
+    {
+      "name": "user-workflows",
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": false,
+        "available_system_roots": ["gj_workflow", "gj_workflow_execution"]
+      },
+      "url": "http://127.0.0.1:8081/api/v1/agent",
+      "headers": {
+        "Authorization": "Bearer REPLACE_USER_TOKEN"
+      }
+    },
+    {
+      "name": "user-watches",
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": false,
+        "available_system_roots": ["gj_watch", "gj_watch_event", "gj_watch_flow_preview"]
+      },
+      "url": "http://127.0.0.1:8082/api/v1/agent",
+      "headers": {
+        "Authorization": "Bearer REPLACE_USER_TOKEN"
+      }
+    },
+    {
+      "name": "admin-control-plane",
+      "capability_profile": {
+        "role_class": "admin",
+        "read_only": false,
+        "available_system_roots": ["gj_security", "gj_runtime", "gj_config"]
+      },
+      "url": "http://127.0.0.1:8083/api/v1/agent",
+      "headers": {
+        "Authorization": "Bearer REPLACE_ADMIN_TOKEN"
+      }
+    },
+    {
+      "name": "user-watch-lifecycle",
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": false,
+        "available_system_roots": ["gj_watch", "gj_watch_event"]
+      },
+      "url": "http://127.0.0.1:8084/api/v1/agent",
+      "headers": {
+        "Authorization": "Bearer REPLACE_USER_TOKEN"
+      }
+    },
+    {
+      "name": "user-workflow-watch",
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": false,
+        "available_system_roots": ["gj_workflow_execution", "gj_watch", "gj_watch_event"]
+      },
+      "url": "http://127.0.0.1:8085/api/v1/agent",
+      "headers": {
+        "Authorization": "Bearer REPLACE_USER_TOKEN"
+      }
+    },
+    {
+      "name": "user-read-only",
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": true,
+        "available_system_roots": []
+      },
+      "url": "http://127.0.0.1:8086/api/v1/agent",
+      "headers": {
+        "Authorization": "Bearer REPLACE_USER_TOKEN"
+      }
+    },
+    {
+      "name": "non-admin-control-plane-roots",
+      "capability_profile": {
+        "role_class": "user",
+        "read_only": false,
+        "available_system_roots": ["gj_config", "gj_security", "gj_runtime"]
+      },
+      "url": "http://127.0.0.1:8087/api/v1/agent",
+      "headers": {
+        "Authorization": "Bearer REPLACE_USER_TOKEN"
+      }
+    }
+  ]
+}

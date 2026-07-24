@@ -463,17 +463,31 @@ func (c *Config) validateArtifactsConfig() error {
 		return fmt.Errorf("artifacts.source is required when no database source is configured")
 	}
 	source, ok := c.SourceByName(sourceName)
-	if !ok {
-		return fmt.Errorf("artifacts.source %q is not configured", sourceName)
+	var sourceType string
+	var readOnly bool
+	if ok {
+		if source.CanonicalKind() != sourcecap.KindDatabase {
+			return fmt.Errorf("artifacts.source %q must be a writable SQL database source", sourceName)
+		}
+		sourceType = source.Type
+		readOnly = source.ReadOnly
+	} else {
+		// Source normalization may be followed by service-owned runtime database
+		// injection. Those private databases deliberately do not appear in the
+		// public sources list, but remain valid artifact stores when present in
+		// the normalized runtime database map.
+		db, runtime := c.Databases[sourceName]
+		if !c.sourcesNormalized || !runtime {
+			return fmt.Errorf("artifacts.source %q is not configured", sourceName)
+		}
+		sourceType = db.Type
+		readOnly = db.ReadOnly
 	}
-	if source.CanonicalKind() != sourcecap.KindDatabase {
-		return fmt.Errorf("artifacts.source %q must be a writable SQL database source", sourceName)
-	}
-	switch strings.ToLower(strings.TrimSpace(source.Type)) {
+	switch strings.ToLower(strings.TrimSpace(sourceType)) {
 	case "mongodb", "nanodb", "cassandra", "clickhouse":
 		return fmt.Errorf("artifacts.source %q must be a writable SQL database source", sourceName)
 	}
-	if source.ReadOnly {
+	if readOnly {
 		return fmt.Errorf("artifacts.source %q is read-only", sourceName)
 	}
 	return nil
@@ -655,13 +669,13 @@ func (c *Config) modeForSourceDefaults() string {
 // roots. Modes set safe defaults; explicit system.root_access entries always win.
 //
 // Row-level owner scoping for the artifact-backed roots (gj_artifacts, gj_watch,
-// gj_watch_event, gj_workflow, gj_workflow_execution) is enforced by the artifact
+// gj_watch_event, gj_watch_flow_preview, gj_workflow, gj_workflow_execution) is enforced by the artifact
 // control-plane handler
 // (owner_id = user_id, with the raw artifact tables blocked from generic GraphQL),
 // so the "owner" mode here is the visibility gate that pairs with that handler
 // scoping — it does not by itself add SQL row filters.
 func (c *Config) EffectiveSystemRootAccess() map[string]string {
-	access := make(map[string]string, len(c.System.RootAccess)+9)
+	access := make(map[string]string, len(c.System.RootAccess)+10)
 	for root, mode := range c.System.RootAccess {
 		access[strings.ToLower(strings.TrimSpace(root))] = normalizeAccessMode(mode)
 	}
@@ -674,6 +688,7 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_artifacts":          AccessModePublic,
 			"gj_watch":              AccessModePublic,
 			"gj_watch_event":        AccessModePublic,
+			"gj_watch_flow_preview": AccessModePublic,
 			"gj_workflow":           AccessModePublic,
 			"gj_workflow_execution": AccessModePublic,
 			"gj_runtime":            AccessModePublic,
@@ -688,6 +703,7 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_artifacts":          AccessModeOwner,
 			"gj_watch":              AccessModeOwner,
 			"gj_watch_event":        AccessModeOwner,
+			"gj_watch_flow_preview": AccessModeOwner,
 			"gj_workflow":           AccessModeOwner,
 			"gj_workflow_execution": AccessModeOwner,
 			"gj_runtime":            AccessModeAdmin,
@@ -704,6 +720,7 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_artifacts":          AccessModeAdmin,
 			"gj_watch":              AccessModeAdmin,
 			"gj_watch_event":        AccessModeAdmin,
+			"gj_watch_flow_preview": AccessModeAdmin,
 			"gj_workflow":           AccessModeAdmin,
 			"gj_workflow_execution": AccessModeAdmin,
 			"gj_runtime":            AccessModeAdmin,

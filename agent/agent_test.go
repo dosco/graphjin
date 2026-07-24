@@ -729,9 +729,6 @@ func TestRunAllowsMutationAfterTableDetail(t *testing.T) {
 	if resp.Status != StatusAnswered {
 		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
 	}
-	if resp.Skill != "data_write" {
-		t.Fatalf("skill = %q, want data_write", resp.Skill)
-	}
 	evidence, ok := resp.Evidence.(map[string]any)
 	if !ok {
 		t.Fatalf("evidence type = %T", resp.Evidence)

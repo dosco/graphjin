@@ -187,19 +187,34 @@ registers:
 
 ```text
 graphjin://watch-events/unseen
+graphjin://watch-events/unseen/{watch_id}
 ```
 
-The resource is caller-scoped. A subscribed MCP client receives
-`notifications/resources/updated` only for unseen watch events owned by that
-caller; resource reads return compact metadata (event IDs, watch IDs,
-timestamps, data hashes, truncation flags, and delivery status), not the full
-`gj_watch_event.data_json` payload.
+Both resources are caller-scoped. The aggregate resource preserves the
+owner/account-wide inbox for compatibility. A concrete per-watch subscription
+routes `notifications/resources/updated` only for that watch, and its resource
+read filters by caller plus watch ID. Clients construct the concrete URI by
+RFC 6570-expanding the template, which percent-encodes reserved characters in
+the watch ID. Notifications identify the changed
+resource; reads return compact metadata (event IDs, watch IDs, timestamps, data
+hashes, truncation flags, delivery status, and any flow verdict/severity/summary), not the full
+`gj_watch_event.data_json` payload. When a session subscribes to both forms,
+exact subscriptions take precedence for modern events that carry a watch ID.
 
 Unsubscribe is transport-local only: it removes the in-memory resource
 subscription and does not delete, pause, expire, or clean up durable watches.
 Watch inspection and cleanup remain GraphQL/REST responsibilities through
 `gj_watch`, `gj_watch_event`, `/api/v1/watches`, and the cleanup
 preview/apply endpoints. There is no dedicated MCP cleanup tool in v1.
+
+Watch-owned AxFlow triage is stored inline in `gj_watch.enrich_json`; GraphJin
+does not discover `flows/*.mmd` files or create a reusable flow artifact. A new
+or changed flow pauses its watch until mutation-only
+`gj_watch_flow_preview(insert)` records evidence for the canonical flow hash.
+Runtime flows use only the server model client and receive no tools, bindings,
+workflow callables, or MCP sampling. Their fixed result contract is `verdict`
+(`notify|digest|discard`), `severity` (`info|warn|critical`), and a
+280-character summary. Any flow failure fails open to the raw unseen event.
 
 ## Key Files
 
@@ -209,6 +224,7 @@ preview/apply endpoints. There is no dedicated MCP cleanup tool in v1.
 | `cmd/mcp_proxy.go` | local stdio-to-HTTP proxy for saved `auth_login` tokens |
 | `serv/mcp.go` | MCP server creation and stdio/HTTP handlers |
 | `serv/mcp_watch_resources.go` | caller-scoped watch-events resource subscriptions and notifications |
+| `serv/watch_flow.go` | inline AxFlow validation, preview approval, bounded execution, and dispositions |
 | `serv/mcp_oauth.go` | OAuth metadata, DCR, CIMD, PKCE token flow, MCP audience checks |
 | `serv/auth_login.go` | OIDC device-code flow reused by builtin MCP OAuth |
 | `serv/mcp_catalog.go` | catalog-first discovery tools |

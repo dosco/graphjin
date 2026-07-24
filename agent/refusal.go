@@ -79,14 +79,12 @@ func refusalPriority(code string) int {
 		return 90
 	case "security_runtime_discovery_required":
 		return 80
-	case "mutation_evidence_required":
+	case "workflow_detail_required", "mutation_evidence_required":
 		return 70
 	case "saved_query_detail_required":
 		return 60
 	case "raw_graphql_catalog_required", "model_discovery_required":
 		return 50
-	case "skill_evidence_required":
-		return 40
 	default:
 		return 10
 	}
@@ -147,8 +145,14 @@ func unblockStepsForViolation(s *discoveryState, v protocolViolation) []unblockS
 			{step: UnblockStep{Tool: toolQueryCatalog, Args: map[string]any{"id": "help:security"}, Reason: "Inspect security guidance before write-capable GraphQL."}, roots: []string{systemRootSecurity}},
 			{step: UnblockStep{Tool: toolQueryCatalog, Args: map[string]any{"id": "help:runtime"}, Reason: "Inspect runtime guidance before write-capable GraphQL."}, roots: []string{systemRootRuntime}},
 		}
-	case "skill_evidence_required":
-		return skillEvidenceSteps(s, stringFromDetails(v.Details, "skill"))
+	case "workflow_detail_required":
+		return []unblockStepSpec{{
+			step: UnblockStep{
+				Tool:   toolQueryCatalog,
+				Args:   map[string]any{"where": map[string]any{"kind": map[string]any{"eq": "workflow"}}, "limit": 10},
+				Reason: "Choose a workflow and inspect its detail row by id before executing it.",
+			},
+		}}
 	case "catalog_seed_failed", "catalog_seed_required", "model_discovery_required", "raw_graphql_catalog_required":
 		return catalogDiscoverySteps(s)
 	default:
@@ -185,29 +189,6 @@ func catalogSearchStep(search, reason string) unblockStepSpec {
 		Args:   map[string]any{"search": search, "limit": 10},
 		Reason: reason,
 	}}
-}
-
-func skillEvidenceSteps(s *discoveryState, skill string) []unblockStepSpec {
-	switch skill {
-	case skillAdminWrite, skillAdminRead:
-		return []unblockStepSpec{
-			{step: UnblockStep{Tool: toolQueryCatalog, Args: map[string]any{"id": "help:security"}, Reason: "Read security posture before control-plane work."}, roots: []string{systemRootSecurity}},
-			{step: UnblockStep{Tool: toolQueryCatalog, Args: map[string]any{"id": "help:runtime"}, Reason: "Read runtime status before control-plane work."}, roots: []string{systemRootRuntime}},
-		}
-	case skillWorkflowWrite, skillWorkflowRead:
-		return []unblockStepSpec{{step: UnblockStep{Tool: toolQueryCatalog, Args: map[string]any{"where": map[string]any{"kind": map[string]any{"eq": "workflow"}}, "limit": 10}, Reason: "Inspect workflow rows and detail before executing or changing workflows."}, roots: []string{systemRootWorkflow}}}
-	case skillWatchWrite, skillWatchRead:
-		return []unblockStepSpec{
-			{step: UnblockStep{Tool: toolQueryCatalog, Args: map[string]any{"search": "gj_watch watch capability", "limit": 10}, Reason: "Inspect the watch capability rows before reviewing or changing watches."}, roots: []string{systemRootWatch}},
-			{step: UnblockStep{Tool: toolQueryCatalog, Args: map[string]any{"id": "help:security"}, Reason: "Read security posture before watch mutations (control-plane write gate)."}, roots: []string{systemRootSecurity}},
-		}
-	case skillCodeWrite, skillCodeRead:
-		return []unblockStepSpec{catalogSearchStep("code source help gj_code", "Inspect code-source catalog guidance before answering or changing code.")}
-	case skillDataWrite:
-		return []unblockStepSpec{catalogSearchStep("mutation pattern target table", "Inspect mutation patterns and target table details before writing data.")}
-	default:
-		return catalogDiscoverySteps(s)
-	}
 }
 
 func (s *discoveryState) filteredUnblockSteps(specs []unblockStepSpec) []UnblockStep {
@@ -288,10 +269,10 @@ func lawfulAlternativeForViolation(v protocolViolation) string {
 		return "Use catalog detail and validation evidence, or an approved saved mutation, before executing the write."
 	case "security_runtime_discovery_required":
 		return "Read visible security/runtime guidance first; if those roots are not visible, ask an authorized operator to perform the write."
+	case "workflow_detail_required":
+		return "Inspect the selected workflow detail by id, then execute it through the governed workflow-execution root."
 	case "catalog_seed_failed", "catalog_seed_required", "model_discovery_required", "raw_graphql_catalog_required":
 		return "Perform catalog-first discovery, then answer or run the GraphQL action from that evidence."
-	case "skill_evidence_required":
-		return "Gather the evidence required by the selected GraphJin skill before answering."
 	default:
 		if policyFinalViolation(v.Code) {
 			return "Choose an allowed GraphJin action or ask an administrator to change the policy; retrying the same blocked action will not succeed."

@@ -21,8 +21,6 @@ type protocolRuntime struct {
 
 type discoveryState struct {
 	instruction             string
-	skillName               string
-	skillRequiredEvidence   func(*discoveryState) bool
 	seedOK                  bool
 	seedResult              any
 	modelDiscoveryAction    bool
@@ -34,29 +32,22 @@ type discoveryState struct {
 	// Per-target mutation evidence, populated only by id-detail lookups and
 	// validations in THIS run (search hits never count, mirroring the
 	// saved-query detail rule).
-	detailKinds       map[string]bool
-	tablesDetailed    map[string]bool
-	tablesValidated   map[string]bool
-	workflowsDetailed map[string]bool
-	// Write executions actually performed through execute_graphql; the per-call
-	// gate should make uncovered ones impossible, these back the finalize-time
-	// skill predicates as defense in depth.
-	hasUncoveredMutation bool
-	workflowExecuted     bool
-	codeWriteExecuted    bool
-	watchWriteExecuted   bool
-	actions              []protocolAction
-	helpTopics           []string
-	catalogSearches      []map[string]any
-	catalogDetails       []string
-	suggestedNext        []any
-	validations          []map[string]any
-	executions           []map[string]any
-	rawGraphQL           []map[string]any
-	violations           []protocolViolation
-	capabilities         *CapabilityProfile
-	observe              func(ActionEvent)
-	coverageSearchUsed   bool
+	detailKinds        map[string]bool
+	tablesDetailed     map[string]bool
+	tablesValidated    map[string]bool
+	workflowsDetailed  map[string]bool
+	actions            []protocolAction
+	helpTopics         []string
+	catalogSearches    []map[string]any
+	catalogDetails     []string
+	suggestedNext      []any
+	validations        []map[string]any
+	executions         []map[string]any
+	rawGraphQL         []map[string]any
+	violations         []protocolViolation
+	capabilities       *CapabilityProfile
+	observe            func(ActionEvent)
+	coverageSearchUsed bool
 }
 
 type protocolAction struct {
@@ -107,13 +98,6 @@ func newDiscoveryState(instruction string) *discoveryState {
 		tablesValidated:        map[string]bool{},
 		workflowsDetailed:      map[string]bool{},
 	}
-}
-
-// setSkill records the deterministically selected skill and its required-evidence
-// predicate so finalize can enforce it and surface it in evidence.
-func (s *discoveryState) setSkill(sk skill) {
-	s.skillName = sk.name
-	s.skillRequiredEvidence = sk.requiredEvidence
 }
 
 func (r *protocolRuntime) Seed(ctx context.Context) (any, error) {
@@ -276,7 +260,13 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			r.state.finishAction(action, "execute_graphql", args, nil, err)
 			return nil, err
 		}
-		r.state.recordMutationExecution(roots)
+		if requiresWorkflowDetail(roots) && !r.state.hasWorkflowDetailEvidence() {
+			err := fmt.Errorf("protocol violation: inspect the workflow detail by id before executing it through %s", systemRootWorkflowExec)
+			r.state.addViolation("workflow_detail_required", err.Error(), "execute_graphql", true, map[string]any{"root": systemRootWorkflowExec})
+			action := r.state.startAction("model", "execute_graphql", args)
+			r.state.finishAction(action, "execute_graphql", args, nil, err)
+			return nil, err
+		}
 	}
 	action := r.state.startAction("model", "execute_graphql", args)
 	out, err := r.base.ExecuteGraphQL(ctx, args)
@@ -576,25 +566,17 @@ func (s *discoveryState) tableSeenInCatalog(table string) bool {
 	return false
 }
 
-// recordMutationExecution tracks that a raw mutation passed the evidence gate
-// and is about to execute; the domain flags back the write skills' finalize
-// predicates.
-func (s *discoveryState) recordMutationExecution(roots []string) {
-	if len(s.missingMutationEvidence(roots)) != 0 {
-		s.hasUncoveredMutation = true
-	}
+func requiresWorkflowDetail(roots []string) bool {
 	for _, root := range roots {
-		root = strings.ToLower(strings.TrimSpace(root))
-		if strings.HasPrefix(root, "gj_workflow") {
-			s.workflowExecuted = true
-		}
-		if strings.HasPrefix(root, "gj_code") {
-			s.codeWriteExecuted = true
-		}
-		if strings.HasPrefix(root, "gj_watch") {
-			s.watchWriteExecuted = true
+		if strings.EqualFold(strings.TrimSpace(root), systemRootWorkflowExec) {
+			return true
 		}
 	}
+	return false
+}
+
+func (s *discoveryState) hasWorkflowDetailEvidence() bool {
+	return s != nil && (len(s.workflowsDetailed) != 0 || len(s.savedQueriesDetailed) != 0)
 }
 
 func (s *discoveryState) catalogKindSeen(kind string) bool {
@@ -623,14 +605,10 @@ func (s *discoveryState) finalize(resp Response) Response {
 		case !s.modelDiscoveryAction:
 			s.addViolation("model_discovery_required", "agent answered without a model-driven catalog/help/detail discovery action", "", true, nil)
 			resp = blockResponse(resp)
-		case s.skillRequiredEvidence != nil && !s.skillRequiredEvidence(s):
-			s.addViolation("skill_evidence_required", fmt.Sprintf("agent answered without the evidence required by the %q skill", s.skillName), "", true, map[string]any{"skill": s.skillName})
-			resp = blockResponse(resp)
 		case s.hasBlockingViolation():
 			resp = blockResponse(resp)
 		}
 	}
-	resp.Skill = s.skillName
 	resp.Actions = s.actionValues()
 	resp.Evidence = s.mergeEvidence(resp.Evidence)
 	if resp.Next == nil {
@@ -678,7 +656,6 @@ func (s *discoveryState) actionValues() any {
 
 func (s *discoveryState) mergeEvidence(model any) any {
 	protocol := map[string]any{
-		"selected_skill": s.skillName,
 		"seed": map[string]any{
 			"ok":          s.seedOK,
 			"instruction": s.instruction,

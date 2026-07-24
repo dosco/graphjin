@@ -2,315 +2,415 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
 	ax "github.com/ax-llm/ax/packages/go"
 )
 
-func seedWithKinds(kinds ...string) any {
-	cards := make([]any, 0, len(kinds))
-	for _, k := range kinds {
-		cards = append(cards, map[string]any{"kind": k})
+func profileWithRoleAndRoots(role string, roots ...string) *CapabilityProfile {
+	return &CapabilityProfile{RoleClass: role, AvailableSystemRoots: roots}
+}
+
+func skillIDs(definitions []skillDefinition) []string {
+	ids := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		ids = append(ids, definition.id)
 	}
-	return map[string]any{"cards": cards}
+	return ids
 }
 
-func profileWithRoots(roots ...string) *CapabilityProfile {
-	return &CapabilityProfile{AvailableSystemRoots: roots}
-}
-
-func seedWithCodeSource() any {
-	return map[string]any{"cards": []any{map[string]any{"kind": "table", "source_kind": "code", "name": "gj_code"}}}
-}
-
-func adminProfile() *CapabilityProfile {
-	return profileWithRoots(systemRootConfig, systemRootSecurity, systemRootRuntime)
-}
-
-func workflowProfile() *CapabilityProfile {
-	return profileWithRoots(systemRootWorkflow, systemRootWorkflowExec)
-}
-
-func watchProfile() *CapabilityProfile {
-	return profileWithRoots(systemRootWatch, systemRootWatchEvent)
-}
-
-// controlPlaneSeedRuntime returns a control-plane (config) seed so selectSkill picks an
-// admin skill, and reflects id lookups back so help:security sets the security/runtime
-// evidence flag in the protocol guard.
-func controlPlaneSeedRuntime() *fakeRuntime {
-	return &fakeRuntime{
-		catalogOverride: func(args map[string]any) any {
-			if id := stringArg(args, "id"); id != "" {
-				return map[string]any{
-					"count": 1,
-					"cards": []any{map[string]any{"id": id, "kind": "help", "name": strings.TrimPrefix(id, "help:")}},
-				}
-			}
-			return map[string]any{
-				"count": 1,
-				"cards": []any{map[string]any{"id": "system:gj_config", "kind": "config", "name": "gj_config"}},
-			}
-		},
-	}
-}
-
-func evidenceSelectedSkill(t *testing.T, resp Response) string {
+func optionSkillIDs(t *testing.T, value ax.Value) []string {
 	t.Helper()
-	ev, ok := resp.Evidence.(map[string]any)
-	if !ok {
-		t.Fatalf("evidence type = %T", resp.Evidence)
-	}
-	name, _ := ev["selected_skill"].(string)
-	return name
-}
-
-func TestHasWriteIntent(t *testing.T) {
-	for _, tc := range []struct {
-		instruction string
-		want        bool
-	}{
-		{"show me recent orders", false},
-		{"review the security posture", false},
-		{"list the workflows that exist", false},
-		{"find the function that reserves green coffee", false},
-		{"what does the daily roast workflow do", false},
-		{"create a new order for the customer", true},
-		{"add a new admin role to the config", true},
-		{"fix the bug in the roast plan function", true},
-		{"run the daily roast plan workflow", true},
-		{"update the subscription quantity", true},
-		{"delete the stale ticket", true},
-		{"pause the failed orders watch", true},
-		{"resume my inventory watch", true},
-		{"mark the watch events as seen", true},
-	} {
-		if got := hasWriteIntent(tc.instruction); got != tc.want {
-			t.Fatalf("hasWriteIntent(%q) = %v, want %v", tc.instruction, got, tc.want)
+	items := anySlice(normalizeValue(value))
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		card, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("skill value type = %T, want object", item)
 		}
+		id, _ := card["id"].(string)
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func TestBuiltinSkillsAreTheOrderedTwelveFocusedGuides(t *testing.T) {
+	want := []string{
+		skillDataDiscovery,
+		skillDataWrite,
+		skillCodeRead,
+		skillCodeWrite,
+		skillWorkflowRead,
+		skillWorkflowExec,
+		skillWorkflowWrite,
+		skillWatchRead,
+		skillWatchWrite,
+		skillWatchFlow,
+		skillAdminRead,
+		skillAdminWrite,
+	}
+	if got := skillIDs(builtinSkills); !reflect.DeepEqual(got, want) {
+		t.Fatalf("skill order = %v, want %v", got, want)
+	}
+
+	seen := map[string]bool{}
+	for _, definition := range builtinSkills {
+		if strings.TrimSpace(definition.id) == "" ||
+			strings.TrimSpace(definition.name) == "" ||
+			strings.TrimSpace(definition.content) == "" {
+			t.Fatalf("incomplete skill definition: %+v", definition)
+		}
+		if seen[definition.id] {
+			t.Fatalf("duplicate skill id %q", definition.id)
+		}
+		seen[definition.id] = true
 	}
 }
 
-func TestSelectSkill(t *testing.T) {
+func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
+	allRoots := []string{
+		systemRootCatalog,
+		systemRootSecurity,
+		systemRootRuntime,
+		systemRootConfig,
+		systemRootWorkflow,
+		systemRootWorkflowExec,
+		systemRootWatch,
+		systemRootWatchEvent,
+		systemRootWatchFlowPreview,
+	}
+	baseRead := []string{skillDataDiscovery, skillCodeRead}
+	baseWrite := []string{skillDataDiscovery, skillDataWrite, skillCodeRead, skillCodeWrite}
+
 	for _, tc := range []struct {
-		name        string
-		instruction string
-		seed        any
-		readOnly    bool
-		profile     *CapabilityProfile
-		want        string
+		name     string
+		readOnly bool
+		profile  *CapabilityProfile
+		want     []string
 	}{
+		{name: "anonymous", want: baseWrite},
+		{name: "anonymous read only", readOnly: true, want: baseRead},
 		{
-			name: "data read is the default", instruction: "show me recent orders",
-			seed: seedWithKinds("table"), readOnly: false, profile: nil, want: skillDataDiscovery,
+			name:    "workflow execution only",
+			profile: profileWithRoleAndRoots("user", systemRootWorkflowExec),
+			want:    append(append([]string{}, baseWrite...), skillWorkflowRead, skillWorkflowExec),
 		},
 		{
-			name: "data write on write intent", instruction: "create a new order",
-			seed: seedWithKinds("table"), readOnly: false, profile: nil, want: skillDataWrite,
+			name:    "workflow authoring only",
+			profile: profileWithRoleAndRoots("user", systemRootWorkflow),
+			want:    append(append([]string{}, baseWrite...), skillWorkflowRead, skillWorkflowWrite),
 		},
 		{
-			name: "read_only suppresses data write", instruction: "create a new order",
-			seed: seedWithKinds("table"), readOnly: true, profile: nil, want: skillDataDiscovery,
+			name:    "watch event read only root",
+			profile: profileWithRoleAndRoots("user", systemRootWatchEvent),
+			want:    append(append([]string{}, baseWrite...), skillWatchRead),
 		},
 		{
-			name: "admin read on read intent", instruction: "review the security posture",
-			seed: seedWithKinds("system_capability"), readOnly: false, profile: adminProfile(), want: skillAdminRead,
+			name:    "watch lifecycle",
+			profile: profileWithRoleAndRoots("user", systemRootWatch),
+			want:    append(append([]string{}, baseWrite...), skillWatchRead, skillWatchWrite),
 		},
 		{
-			name: "admin write on write intent", instruction: "add a new admin role to the config",
-			seed: seedWithKinds("config", "config_recipe"), readOnly: false, profile: adminProfile(), want: skillAdminWrite,
+			name:    "watch flow needs both roots",
+			profile: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchFlowPreview),
+			want:    append(append([]string{}, baseWrite...), skillWatchRead, skillWatchWrite, skillWatchFlow),
 		},
 		{
-			name: "read_only forces admin read despite write verb", instruction: "add a new admin role",
-			seed: seedWithKinds("config"), readOnly: true, profile: adminProfile(), want: skillAdminRead,
+			name:    "preview alone is read guidance only",
+			profile: profileWithRoleAndRoots("user", systemRootWatchFlowPreview),
+			want:    append(append([]string{}, baseWrite...), skillWatchRead),
 		},
 		{
-			name: "admin roots but data-only seed stays data read", instruction: "list products",
-			seed: seedWithKinds("table", "column"), readOnly: false, profile: adminProfile(), want: skillDataDiscovery,
+			name:    "admin roots do not make a non admin",
+			profile: profileWithRoleAndRoots("support", systemRootSecurity, systemRootRuntime, systemRootConfig),
+			want:    baseWrite,
 		},
 		{
-			name: "workflow read on read intent", instruction: "what workflow reviews production risk",
-			seed: seedWithKinds("workflow"), readOnly: false, profile: workflowProfile(), want: skillWorkflowRead,
+			name:    "admin config",
+			profile: profileWithRoleAndRoots("admin", systemRootConfig),
+			want:    append(append([]string{}, baseWrite...), skillAdminRead, skillAdminWrite),
 		},
 		{
-			name: "workflow write on run intent", instruction: "run the daily roast plan workflow",
-			seed: seedWithKinds("workflow"), readOnly: false, profile: workflowProfile(), want: skillWorkflowWrite,
+			name:     "full admin read only",
+			readOnly: true,
+			profile:  profileWithRoleAndRoots("admin", allRoots...),
+			want: []string{
+				skillDataDiscovery,
+				skillCodeRead,
+				skillWorkflowRead,
+				skillWatchRead,
+				skillAdminRead,
+			},
 		},
 		{
-			name: "code read on read intent", instruction: "find the function that reserves green coffee",
-			seed: seedWithCodeSource(), readOnly: false, profile: nil, want: skillCodeRead,
-		},
-		{
-			name: "code write on write intent", instruction: "fix the bug in the roast plan function",
-			seed: seedWithCodeSource(), readOnly: false, profile: nil, want: skillCodeWrite,
-		},
-		{
-			name: "low ranked code entrypoint does not hijack data discovery", instruction: "find clients and their purchases",
-			seed: map[string]any{"cards": []any{
-				map[string]any{"kind": "table", "table_name": "customers"},
-				map[string]any{"kind": "table", "table_name": "production_orders"},
-				map[string]any{"kind": "relationship"},
-				map[string]any{"kind": "entrypoint", "source_kind": "code"},
-			}},
-			readOnly: false, profile: nil, want: skillDataDiscovery,
-		},
-		{
-			name: "watch read on read intent", instruction: "what fired on my watches this week",
-			seed: seedWithKinds("table"), readOnly: false, profile: watchProfile(), want: skillWatchRead,
-		},
-		{
-			name: "watch write on write intent", instruction: "create a watch on failed orders",
-			seed: seedWithKinds("table"), readOnly: false, profile: watchProfile(), want: skillWatchWrite,
-		},
-		{
-			name: "read_only forces watch read despite write verb", instruction: "pause the failed orders watch",
-			seed: seedWithKinds("table"), readOnly: true, profile: watchProfile(), want: skillWatchRead,
-		},
-		{
-			name: "watch intent without watch roots stays data", instruction: "create a watch on failed orders",
-			seed: seedWithKinds("table"), readOnly: false, profile: profileWithRoots(systemRootCatalog), want: skillDataWrite,
-		},
-		{
-			name: "admin config seed outranks watch intent", instruction: "enable watches in the config",
-			seed: seedWithKinds("config", "config_recipe"), readOnly: false,
-			profile: profileWithRoots(systemRootConfig, systemRootSecurity, systemRootRuntime, systemRootWatch),
-			want:    skillAdminWrite,
-		},
-		{
-			name: "admin write outranks a code card", instruction: "update gj_config roles",
-			seed: map[string]any{"cards": []any{
-				map[string]any{"kind": "config"},
-				map[string]any{"kind": "table", "source_kind": "code"},
-			}},
-			readOnly: false, profile: adminProfile(), want: skillAdminWrite,
+			name:    "full admin",
+			profile: profileWithRoleAndRoots("admin", allRoots...),
+			want:    skillIDs(builtinSkills),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := selectSkill(tc.instruction, tc.seed, tc.readOnly, tc.profile).name; got != tc.want {
-				t.Fatalf("selectSkill = %q, want %q", got, tc.want)
+			if got := skillIDs(allowedSkills(tc.readOnly, tc.profile)); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("allowed skills = %v, want %v", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestBuiltinSkillsAllowFullToolSurface(t *testing.T) {
-	allTools := []string{toolGraphQLHelp, toolQueryCatalog, toolValidateWhere, toolExecuteSavedQuery, toolExecuteGraphQL}
-	for name, sk := range builtinSkills {
-		for _, tool := range allTools {
-			if !sk.allowTool(tool) {
-				t.Fatalf("built-in skill %q should allow %s", name, tool)
-			}
-		}
+func TestSkillPayloadBudgets(t *testing.T) {
+	allRoots := []string{
+		systemRootSecurity,
+		systemRootRuntime,
+		systemRootConfig,
+		systemRootWorkflow,
+		systemRootWorkflowExec,
+		systemRootWatch,
+		systemRootWatchEvent,
+		systemRootWatchFlowPreview,
 	}
-}
-
-func TestConfigAndWatchSkillsRespectRuntimeModeDefaults(t *testing.T) {
-	for name, instruction := range map[string]string{
-		skillAdminWrite: builtinSkills[skillAdminWrite].instruction,
-		skillWatchWrite: builtinSkills[skillWatchWrite].instruction,
+	for _, tc := range []struct {
+		name    string
+		profile *CapabilityProfile
+		max     int
+	}{
+		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3 * 1024},
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 8 * 1024},
 	} {
-		for _, want := range []string{"dev", "agentic"} {
-			if !strings.Contains(instruction, want) {
-				t.Fatalf("%s guidance missing %q mode default: %s", name, want, instruction)
+		t.Run(tc.name, func(t *testing.T) {
+			payload, err := json.Marshal(skillValues(allowedSkills(false, tc.profile)))
+			if err != nil {
+				t.Fatalf("marshal skills: %v", err)
 			}
-		}
-	}
-	if !strings.Contains(builtinSkills[skillWatchWrite].instruction, "no application subscription starts") || !strings.Contains(builtinSkills[skillWatchWrite].instruction, "runner all") {
-		t.Fatalf("watch_write guidance does not explain idle default runner: %s", builtinSkills[skillWatchWrite].instruction)
-	}
-}
-
-func TestAllowToolSetRestricts(t *testing.T) {
-	allow := allowToolSet(toolGraphQLHelp, toolQueryCatalog)
-	if !allow(toolQueryCatalog) {
-		t.Fatal("allowToolSet should allow a listed tool")
-	}
-	if allow(toolExecuteGraphQL) {
-		t.Fatal("allowToolSet should remove an unlisted tool")
+			if len(payload) > tc.max {
+				t.Fatalf("skill payload = %d bytes, max %d", len(payload), tc.max)
+			}
+			t.Logf("skill payload: %d bytes", len(payload))
+		})
 	}
 }
 
-func TestFilterToolsBySkill(t *testing.T) {
-	tools := []ax.Tool{{Name: toolQueryCatalog}, {Name: toolExecuteGraphQL}}
-	got := filterToolsBySkill(tools, skill{allowTool: allowToolSet(toolQueryCatalog)})
-	if len(got) != 1 || got[0].Name != toolQueryCatalog {
-		t.Fatalf("filterToolsBySkill = %+v, want only query_catalog", got)
+func TestRunPassesOnlyCapabilityFilteredConstructorSkills(t *testing.T) {
+	allRoots := []string{
+		systemRootSecurity,
+		systemRootRuntime,
+		systemRootConfig,
+		systemRootWorkflow,
+		systemRootWorkflowExec,
+		systemRootWatch,
+		systemRootWatchEvent,
+		systemRootWatchFlowPreview,
 	}
-	if all := filterToolsBySkill(tools, skill{}); len(all) != 2 {
-		t.Fatalf("nil allowTool should pass through, got %d tools", len(all))
-	}
-}
-
-func TestSkillRequiredEvidence(t *testing.T) {
-	admin := builtinSkills[skillAdminWrite]
-	if admin.requiredEvidence == nil {
-		t.Fatal("admin_write must declare required evidence")
-	}
-	if admin.requiredEvidence(&discoveryState{securityRuntimeEvidence: false}) {
-		t.Fatal("admin_write requiredEvidence should be false without security/runtime evidence")
-	}
-	if !admin.requiredEvidence(&discoveryState{securityRuntimeEvidence: true}) {
-		t.Fatal("admin_write requiredEvidence should be true with security/runtime evidence")
-	}
-	// Read skills impose no answer-level evidence gate (core + protocol guard enforce safety).
-	for _, name := range []string{
-		skillDataDiscovery, skillCodeRead, skillWorkflowRead, skillAdminRead, skillWatchRead,
+	for _, tc := range []struct {
+		name        string
+		instruction string
+		readOnly    bool
+		profile     *CapabilityProfile
+	}{
+		{name: "anonymous", instruction: "show recent orders"},
+		{name: "user", instruction: "show recent orders", profile: profileWithRoleAndRoots("user")},
+		{name: "read only", instruction: "change an order", readOnly: true, profile: profileWithRoleAndRoots("user")},
+		{name: "watch enabled", instruction: "let me know if a PO slips", profile: profileWithRoleAndRoots("user", systemRootWatch)},
+		{name: "workflow enabled", instruction: "run the daily roast plan", profile: profileWithRoleAndRoots("user", systemRootWorkflowExec)},
+		{name: "admin", instruction: "review configuration", profile: profileWithRoleAndRoots("admin", allRoots...)},
 	} {
-		if builtinSkills[name].requiredEvidence != nil {
-			t.Fatalf("read skill %q should have no required evidence", name)
+		t.Run(tc.name, func(t *testing.T) {
+			program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "ok"}}
+			var captured map[string]ax.Value
+			runner := newAgent(Config{ReadOnly: tc.readOnly, TimeoutSeconds: 5}, &fakeRuntime{},
+				WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+				WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+					captured = options
+					program.options = options
+					program.onForward = func(p *fakeProgram) {
+						callProgramTool(t, p, toolQueryCatalog, map[string]ax.Value{"id": "help:discovery"})
+					}
+					return program
+				}),
+			)
+			resp, err := runner.Run(context.Background(), Request{Instruction: tc.instruction, Capabilities: tc.profile})
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if resp.Status != StatusAnswered {
+				t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
+			}
+			want := skillIDs(allowedSkills(tc.readOnly, tc.profile))
+			if got := optionSkillIDs(t, captured["skills"]); !reflect.DeepEqual(got, want) {
+				t.Fatalf("constructor skills = %v, want %v", got, want)
+			}
+			for _, forbidden := range []string{"skillsCatalog", "skills_catalog", "onSkillsSearch", "on_skills_search", "skillsMode", "skills_mode"} {
+				if _, ok := captured[forbidden]; ok {
+					t.Fatalf("unexpected skill discovery option %q", forbidden)
+				}
+			}
+			if _, ok := captured["onUsedSkills"].(ax.AxAgentObserverFn); !ok {
+				t.Fatalf("onUsedSkills type = %T, want ax.AxAgentObserverFn", captured["onUsedSkills"])
+			}
+		})
+	}
+}
+
+func TestWatchParaphrasesReceiveWatchWriteWithoutRouting(t *testing.T) {
+	profile := profileWithRoleAndRoots("user", systemRootWatch)
+	for _, instruction := range []string{
+		"watch the roast telemetry",
+		"let me know if a PO slips",
+		"keep an eye on late production orders",
+	} {
+		t.Run(instruction, func(t *testing.T) {
+			program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "ok"}}
+			var captured map[string]ax.Value
+			runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+				WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+				WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+					captured = options
+					program.options = options
+					program.onForward = func(p *fakeProgram) {
+						callProgramTool(t, p, toolQueryCatalog, map[string]ax.Value{"id": "help:discovery"})
+					}
+					return program
+				}),
+			)
+			if _, err := runner.Run(context.Background(), Request{Instruction: instruction, Capabilities: profile}); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			ids := optionSkillIDs(t, captured["skills"])
+			if !containsString(ids, skillWatchWrite) {
+				t.Fatalf("watch_write not loaded for %q: %v", instruction, ids)
+			}
+			if _, ok := captured["skillsCatalog"]; ok {
+				t.Fatal("watch skill should be preloaded, not discovered through a catalog")
+			}
+		})
+	}
+}
+
+func TestUsedSkillObserverProducesPluralTelemetryAndAlias(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, toolQueryCatalog, map[string]ax.Value{"id": "help:discovery"})
+				observer := p.options["onUsedSkills"].(ax.AxAgentObserverFn)
+				observer([]ax.Value{
+					ax.Object("id", skillWatchRead, "name", "Watch inbox", "reason", "Reviewed events", "stage", "distiller"),
+					ax.Object("id", skillWatchWrite, "name", "Watch lifecycle", "reason", "Created the watch", "stage", "executor"),
+				})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction:  "review my alerts then create another watch",
+		Capabilities: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := []SkillUsage{
+		{ID: skillWatchRead, Name: "Watch inbox", Reason: "Reviewed events", Stage: "distiller"},
+		{ID: skillWatchWrite, Name: "Watch lifecycle", Reason: "Created the watch", Stage: "executor"},
+	}
+	if !reflect.DeepEqual(resp.Skills, want) {
+		t.Fatalf("skills = %+v, want %+v", resp.Skills, want)
+	}
+	if resp.Skill != skillWatchRead {
+		t.Fatalf("deprecated skill alias = %q, want first used id %q", resp.Skill, skillWatchRead)
+	}
+}
+
+func TestNoUsedSkillsLeavesTelemetryEmpty(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{
+		"status": StatusAnswered,
+		"answer": "done",
+		"skill":  "model_supplied_value_must_not_count",
+	}}
+	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, toolQueryCatalog, map[string]ax.Value{"id": "help:discovery"})
+			}
+			return program
+		}),
+	)
+	resp, err := runner.Run(context.Background(), Request{Instruction: "list things"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(resp.Skills) != 0 || resp.Skill != "" {
+		t.Fatalf("unused skills leaked into response: %+v / %q", resp.Skills, resp.Skill)
+	}
+}
+
+func TestExecuteGraphQLRequiresWorkflowDetailBeforeWorkflowExecution(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	rt := &fakeRuntime{}
+	runner := newAgent(Config{TimeoutSeconds: 5}, rt,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, toolQueryCatalog, map[string]ax.Value{"id": "help:security"})
+				_, _ = callProgramToolError(p, toolExecuteGraphQL, map[string]ax.Value{
+					"query": `mutation { gj_workflow_execution(insert: {name: "daily_roast"}) { id } }`,
+				})
+			}
+			return program
+		}),
+	)
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction:  "run daily roast",
+		Capabilities: profileWithRoleAndRoots("user", systemRootWorkflowExec),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusBlocked || !responseHasProtocolError(resp, "workflow_detail_required") {
+		t.Fatalf("response = %+v, want workflow_detail_required", resp)
+	}
+	for _, call := range rt.calls {
+		if call == toolExecuteGraphQL {
+			t.Fatal("workflow execution reached the runtime without detail evidence")
 		}
 	}
-	// Every write skill declares an answer-level evidence backstop.
-	for _, name := range []string{skillDataWrite, skillCodeWrite, skillWorkflowWrite, skillWatchWrite} {
-		if builtinSkills[name].requiredEvidence == nil {
-			t.Fatalf("write skill %q must declare required evidence", name)
-		}
-	}
+}
 
-	if !dataWriteEvidence(newDiscoveryState("x")) {
-		t.Fatal("data_write evidence should hold when no uncovered mutation executed")
+func TestExecuteGraphQLAllowsWorkflowExecutionAfterDetail(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	rt := &fakeRuntime{}
+	runner := newAgent(Config{TimeoutSeconds: 5}, rt,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, toolQueryCatalog, map[string]ax.Value{"id": "help:security"})
+				callProgramTool(t, p, toolQueryCatalog, map[string]ax.Value{"id": "workflow:daily_roast"})
+				callProgramTool(t, p, toolExecuteGraphQL, map[string]ax.Value{
+					"query": `mutation { gj_workflow_execution(insert: {name: "daily_roast"}) { id } }`,
+				})
+			}
+			return program
+		}),
+	)
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction:  "run daily roast",
+		Capabilities: profileWithRoleAndRoots("user", systemRootWorkflowExec),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
 	}
-	uncovered := newDiscoveryState("x")
-	uncovered.hasUncoveredMutation = true
-	if dataWriteEvidence(uncovered) {
-		t.Fatal("data_write evidence should fail after an uncovered mutation")
+	if resp.Status != StatusAnswered {
+		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
 	}
-
-	codeState := newDiscoveryState("x")
-	codeState.codeWriteExecuted = true
-	if codeWriteEvidence(codeState) {
-		t.Fatal("code_write evidence should fail when a gj_code write executed without security evidence")
-	}
-	codeState.securityRuntimeEvidence = true
-	if !codeWriteEvidence(codeState) {
-		t.Fatal("code_write evidence should hold with security evidence")
-	}
-
-	wfState := newDiscoveryState("x")
-	wfState.workflowExecuted = true
-	if workflowWriteEvidence(wfState) {
-		t.Fatal("workflow_write evidence should fail when a workflow executed without a detail inspection")
-	}
-	wfState.workflowsDetailed["daily_roast_plan"] = true
-	if !workflowWriteEvidence(wfState) {
-		t.Fatal("workflow_write evidence should hold after a workflow detail inspection")
-	}
-	if !workflowWriteEvidence(newDiscoveryState("x")) {
-		t.Fatal("workflow_write evidence should hold when nothing executed")
-	}
-
-	watchState := newDiscoveryState("x")
-	watchState.watchWriteExecuted = true
-	if watchWriteEvidence(watchState) {
-		t.Fatal("watch_write evidence should fail when a gj_watch write executed without security evidence")
-	}
-	watchState.securityRuntimeEvidence = true
-	if !watchWriteEvidence(watchState) {
-		t.Fatal("watch_write evidence should hold with security evidence")
-	}
-	if !watchWriteEvidence(newDiscoveryState("x")) {
-		t.Fatal("watch_write evidence should hold when nothing executed")
+	if !containsString(rt.calls, toolExecuteGraphQL) {
+		t.Fatalf("calls = %v, want execute_graphql", rt.calls)
 	}
 }
 
@@ -322,6 +422,7 @@ func TestWriteLikeGraphQLCoversSystemWriteRoots(t *testing.T) {
 		`query { gj_code { id } }`,
 		`query { gj_watch { id } }`,
 		`query { gj_watch_event { id } }`,
+		`query { gj_watch_flow_preview { id } }`,
 	} {
 		if !writeLikeGraphQL(query) {
 			t.Fatalf("writeLikeGraphQL(%q) = false, want true", query)
@@ -332,88 +433,49 @@ func TestWriteLikeGraphQLCoversSystemWriteRoots(t *testing.T) {
 	}
 }
 
-func TestRunRecordsSelectedSkillInEvidence(t *testing.T) {
-	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "ok"}}
-	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
-		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
-		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
-			program.options = options
-			program.onForward = func(p *fakeProgram) {
-				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:discovery"})
-			}
-			return program
-		}),
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func BenchmarkAllowedSkills(b *testing.B) {
+	profile := profileWithRoleAndRoots("admin",
+		systemRootSecurity,
+		systemRootRuntime,
+		systemRootConfig,
+		systemRootWorkflow,
+		systemRootWorkflowExec,
+		systemRootWatch,
+		systemRootWatchEvent,
+		systemRootWatchFlowPreview,
 	)
-	// A read instruction with no capability profile resolves to the base data_discovery mode.
-	resp, err := runner.Run(context.Background(), Request{Instruction: "list things"})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if resp.Status != StatusAnswered {
-		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
-	}
-	if got := evidenceSelectedSkill(t, resp); got != skillDataDiscovery {
-		t.Fatalf("selected_skill = %q, want %q", got, skillDataDiscovery)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = allowedSkills(false, profile)
 	}
 }
 
-func TestRunAdminWriteBlocksWithoutSecurityEvidence(t *testing.T) {
-	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "changed config"}}
-	runner := newAgent(Config{TimeoutSeconds: 5}, controlPlaneSeedRuntime(),
-		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
-		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
-			program.options = options
-			program.onForward = func(p *fakeProgram) {
-				// Discovery happened, but not security/runtime guidance.
-				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:discovery"})
-			}
-			return program
-		}),
+func BenchmarkSkillPromptConstruction(b *testing.B) {
+	profile := profileWithRoleAndRoots("admin",
+		systemRootSecurity,
+		systemRootRuntime,
+		systemRootConfig,
+		systemRootWorkflow,
+		systemRootWorkflowExec,
+		systemRootWatch,
+		systemRootWatchEvent,
+		systemRootWatchFlowPreview,
 	)
-	resp, err := runner.Run(context.Background(), Request{
-		Instruction:  "update the config to add an admin role",
-		Capabilities: adminProfile(),
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if got := evidenceSelectedSkill(t, resp); got != skillAdminWrite {
-		t.Fatalf("selected_skill = %q, want %q", got, skillAdminWrite)
-	}
-	if resp.Status != StatusBlocked {
-		t.Fatalf("status = %s, want blocked: %+v", resp.Status, resp)
-	}
-	if !responseHasProtocolError(resp, "skill_evidence_required") {
-		t.Fatalf("missing skill_evidence_required error: %+v", resp.Errors)
-	}
-}
-
-func TestRunAdminWriteAnswersWithSecurityEvidence(t *testing.T) {
-	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "previewed config change"}}
-	runner := newAgent(Config{TimeoutSeconds: 5}, controlPlaneSeedRuntime(),
-		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
-		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
-			program.options = options
-			program.onForward = func(p *fakeProgram) {
-				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
-			}
-			return program
-		}),
-	)
-	resp, err := runner.Run(context.Background(), Request{
-		Instruction:  "update the config to add an admin role",
-		Capabilities: adminProfile(),
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if got := evidenceSelectedSkill(t, resp); got != skillAdminWrite {
-		t.Fatalf("selected_skill = %q, want %q", got, skillAdminWrite)
-	}
-	if resp.Status != StatusAnswered {
-		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
-	}
-	if len(resp.Errors) != 0 {
-		t.Fatalf("unexpected errors: %+v", resp.Errors)
+	definitions := allowedSkills(false, profile)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = ax.NewAgent(agentSignature, map[string]ax.Value{
+			"contextFields": []ax.Value{"history"},
+			"skills":        skillValues(definitions),
+		})
 	}
 }

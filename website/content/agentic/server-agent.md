@@ -95,18 +95,20 @@ The public MCP `execute_graphql` tool is separate from the server-side agent's i
 
 ## Role-aware guidance
 
-The agent is caller-aware. From the request's identity it derives a capability profile (limited to the fixed `gj_*` system roots — never application tables) and picks a focused **guidance skill** for the task: per domain (data, code, workflow, watch, admin) and per operation (read vs write, chosen from the instruction). An admin asking to change config is guided toward the `gj_config` recipe flow; a normal user is guided through plain data discovery.
+The agent is caller-aware. From the request's identity it derives a capability profile limited to fixed `gj_*` system roots—never application tables—and preloads every permitted Ax skill. The 12 flat guides cover data discovery/write, code read/write, workflow discovery/execution/authoring, watch inbox/lifecycle/flow enrichment, and admin inspection/configuration.
 
-Skills only shape the guidance the model sees. **They never grant access.** What any caller can actually read or write is enforced by GraphJin core (roles + row-level security), exactly as for a direct GraphQL request — the agent always runs as the caller.
+There is no lexical router, embedding search, skill catalog, search callback, or skill-discovery turn. Global read-only posture removes every write guide. Workflow, watch, and admin guides are included only when their governed roots are visible; admin guides also require the admin role. Multi-domain requests can use more than one preloaded guide.
 
-{{< verified by="TestSelectSkill" file="agent/skills_test.go" line="88" >}}
-{{< verified by="TestHasWriteIntent" file="agent/skills_test.go" line="65" >}}
+Skills only shape the guidance the model sees. **They never grant access.** GraphJin core roles and row-level security remain authoritative, and protocol preflight enforces mutation shape, saved-query detail, security/runtime evidence, and workflow detail before execution. Ax's `used(...)` primitive supplies self-reported usage telemetry; it cannot change authorization.
+
+{{< verified by="TestAllowedSkillsCapabilityMatrix" file="agent/skills_test.go" line="73" >}}
+{{< verified by="TestRunPassesOnlyCapabilityFilteredConstructorSkills" file="agent/skills_test.go" line="194" >}}
 
 ## Request and response
 
 Request fields: `instruction` (required), and optional `context`, `namespace`, `max_steps`, `return_trace`.
 
-Response fields: `status` (`answered` | `needs_clarification` | `blocked` | `error`), `answer`, and optional `data`, `evidence`, `actions`, `next`, `refusal`, `notices`, `errors`, `usage`, `trace`, `trace_id`.
+Response fields: `status` (`answered` | `needs_clarification` | `blocked` | `error`), `answer`, and optional `skills`, `skill`, `data`, `evidence`, `actions`, `next`, `refusal`, `notices`, `errors`, `usage`, `trace`, `trace_id`. `skills` contains the guides Ax reported through `used(...)`; deprecated `skill` is the first used ID through v3.
 
 ### REST
 
@@ -139,7 +141,7 @@ A `blocked` response is machine-actionable, not prose. It carries a `refusal` ob
 
 ## Watch notices
 
-When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen` and a count - the cue to query `gj_watch_event` and mark reviewed events seen. MCP clients that want push-style notice delivery can also subscribe to `graphjin://watch-events/unseen`; that resource returns compact caller-scoped event metadata, not full payloads.
+When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen`, a count, and `watch_ids`. For MCP sessions with concrete per-watch subscriptions, the notice is limited to those watches; query and acknowledge only the listed IDs. MCP clients can subscribe to `graphjin://watch-events/unseen/{watch_id}` for watch-specific push signals, while the aggregate `graphjin://watch-events/unseen` resource remains the owner/account-wide compatibility path. Resource notifications identify a changed resource but do not contain the full event payload.
 
 ## Automatic model selection
 

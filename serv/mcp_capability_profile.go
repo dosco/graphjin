@@ -44,6 +44,7 @@ var mcpGraphJinRoots = []string{
 	"gj_artifacts",
 	"gj_watch",
 	"gj_watch_event",
+	"gj_watch_flow_preview",
 	"gj_workflow",
 	"gj_workflow_execution",
 	"gj_runtime",
@@ -83,6 +84,12 @@ func (ms *mcpServer) effectiveContext(ctx context.Context) context.Context {
 
 func (ms *mcpServer) effectiveIdentityContext(ctx context.Context) context.Context {
 	ctx = ms.effectiveContext(ctx)
+	if ms != nil && ms.service != nil {
+		// MCP resources and subscription hooks do not pass through the regular
+		// GraphQL/tool identity setup. Normalize verified JWT claims here so
+		// account-scoped subscriptions use the same identity as watch creation.
+		ctx = ms.service.applyIdentityContext(ctx)
+	}
 	if _, ok := artifactUserID(ctx); ok {
 		return ctx
 	}
@@ -93,6 +100,9 @@ func (ms *mcpServer) effectiveIdentityContext(ctx context.Context) context.Conte
 		if value := ms.ctx.Value(key); value != nil {
 			ctx = context.WithValue(ctx, key, value)
 		}
+	}
+	if ms.service != nil {
+		ctx = ms.service.applyIdentityContext(ctx)
 	}
 	return ctx
 }
@@ -174,7 +184,7 @@ func (ms *mcpServer) graphJinRootProfiles(ctx context.Context) ([]MCPRootProfile
 			item.Reason = "allowed for caller role"
 			available = append(available, item)
 		} else {
-			if (root == "gj_watch" || root == "gj_watch_event") && (ms == nil || ms.service == nil || !ms.service.watchesEnabled()) {
+			if (root == "gj_watch" || root == "gj_watch_event" || root == "gj_watch_flow_preview") && (ms == nil || ms.service == nil || !ms.service.watchesEnabled()) {
 				item.Reason = "disabled by configuration"
 			} else {
 				item.Reason = "disabled by feature capability or blocked by root access"
@@ -187,7 +197,7 @@ func (ms *mcpServer) graphJinRootProfiles(ctx context.Context) ([]MCPRootProfile
 
 func (ms *mcpServer) rootVisibleForContext(ctx context.Context, root string) bool {
 	switch strings.ToLower(strings.TrimSpace(root)) {
-	case "gj_watch", "gj_watch_event":
+	case "gj_watch", "gj_watch_event", "gj_watch_flow_preview":
 		// Watches are config-gated; a disabled deployment never registers the
 		// roots as tables, so it must not advertise them either.
 		if ms == nil || ms.service == nil || !ms.service.watchesEnabled() {
@@ -202,7 +212,11 @@ func (ms *mcpServer) rootVisibleForContext(ctx context.Context, root string) boo
 		return true
 	}
 	ctx = ms.effectiveContext(ctx)
-	return systemRootAllowed(conf, root, systemActionRead, runtimeRoleClass(ctx))
+	action := systemActionRead
+	if strings.EqualFold(root, "gj_watch_flow_preview") {
+		action = systemActionInsert
+	}
+	return systemRootAllowed(conf, root, action, runtimeRoleClass(ctx))
 }
 
 func (ms *mcpServer) toolVisibleForContext(ctx context.Context, tool string) bool {

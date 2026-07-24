@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/core/v3/featurecap"
@@ -16,6 +17,36 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
+
+type deadlineCaptureWriter struct {
+	header             http.Header
+	readDeadlineCalls  int
+	writeDeadlineCalls int
+	readDeadline       time.Time
+	writeDeadline      time.Time
+}
+
+func (w *deadlineCaptureWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (*deadlineCaptureWriter) Write(p []byte) (int, error) { return len(p), nil }
+func (*deadlineCaptureWriter) WriteHeader(int)             {}
+
+func (w *deadlineCaptureWriter) SetReadDeadline(deadline time.Time) error {
+	w.readDeadlineCalls++
+	w.readDeadline = deadline
+	return nil
+}
+
+func (w *deadlineCaptureWriter) SetWriteDeadline(deadline time.Time) error {
+	w.writeDeadlineCalls++
+	w.writeDeadline = deadline
+	return nil
+}
 
 func toolNamesFromServer(tools map[string]*server.ServerTool) []string {
 	names := make([]string, 0, len(tools))
@@ -41,6 +72,23 @@ func TestMCPRequestCallsToolRestoresBodyAndStripsPrefix(t *testing.T) {
 	}
 	if string(restored) != body {
 		t.Fatalf("body was not restored: %s", restored)
+	}
+}
+
+func TestExtendDeadlineForMCPRequestClearsNotificationStreamDeadline(t *testing.T) {
+	w := &deadlineCaptureWriter{}
+	req := &http.Request{
+		Method: http.MethodGet,
+		Header: http.Header{"Accept": []string{"text/event-stream"}},
+	}
+
+	extendDeadlineForMCPRequest(w, req, &Config{})
+
+	if w.readDeadlineCalls != 1 || !w.readDeadline.IsZero() {
+		t.Fatalf("read deadline calls=%d deadline=%v, want one cleared deadline", w.readDeadlineCalls, w.readDeadline)
+	}
+	if w.writeDeadlineCalls != 1 || !w.writeDeadline.IsZero() {
+		t.Fatalf("write deadline calls=%d deadline=%v, want one cleared deadline", w.writeDeadlineCalls, w.writeDeadline)
 	}
 }
 
@@ -726,6 +774,39 @@ func TestMCPEffectiveContextMergesStoredAndPerCallIdentity(t *testing.T) {
 	}
 }
 
+func TestMCPEffectiveIdentityContextAppliesJWTAccountClaim(t *testing.T) {
+	svc := &graphjinService{conf: &Config{
+		Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
+		Serv: Serv{Auth: Auth{
+			Type: "jwt",
+			JWT:  JWTConfig{Secret: sourceModeHTTPJWTSecret},
+		}},
+	}}
+	authHandler, err := svc.newMCPAuthHandler()
+	if err != nil {
+		t.Fatalf("new MCP auth handler: %v", err)
+	}
+	token := signSourceModeJWT(t, map[string]any{
+		"sub":        "mcp-user",
+		"account_id": "mcp-account",
+	})
+	req, err := http.NewRequest(http.MethodPost, routeMCP, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	ctx, err := authHandler(&deadlineCaptureWriter{}, req)
+	if err != nil {
+		t.Fatalf("authenticate MCP request: %v", err)
+	}
+
+	ms := &mcpServer{service: svc}
+	ctx = ms.effectiveIdentityContext(ctx)
+	if got, ok := identityVarString(ctx, "account_id"); !ok || got != "mcp-account" {
+		t.Fatalf("effective MCP account identity = %q, %v; want mcp-account", got, ok)
+	}
+}
+
 func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true})
 
@@ -747,7 +828,7 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 		t.Fatalf("expected user-visible catalog/raw tools, got %+v", userProfile.AvailableTools)
 	}
 	// Agentic mode exposes catalog, owner-scoped state, and execution by default.
-	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow_execution"} {
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_watch_flow_preview", "gj_workflow_execution"} {
 		if !rootProfilesContain(userProfile.AvailableRoots, root) {
 			t.Fatalf("expected %s available to user, got %+v", root, userProfile.AvailableRoots)
 		}
@@ -785,7 +866,7 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 	disabled := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true})
 	disabled.service.conf.Core.Watches.Enabled = false
 	disabledProfile := disabled.callerCapabilityProfile(sourceModeUserTestContext(), false)
-	for _, root := range []string{"gj_watch", "gj_watch_event"} {
+	for _, root := range []string{"gj_watch", "gj_watch_event", "gj_watch_flow_preview"} {
 		if rootProfilesContain(disabledProfile.AvailableRoots, root) {
 			t.Fatalf("expected %s hidden when watches are disabled, got %+v", root, disabledProfile.AvailableRoots)
 		}
@@ -794,7 +875,7 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 		}
 	}
 	for _, rp := range disabledProfile.BlockedRoots {
-		if (rp.Root == "gj_watch" || rp.Root == "gj_watch_event") && rp.Reason != "disabled by configuration" {
+		if (rp.Root == "gj_watch" || rp.Root == "gj_watch_event" || rp.Root == "gj_watch_flow_preview") && rp.Reason != "disabled by configuration" {
 			t.Fatalf("expected config-disabled reason for %s, got %+v", rp.Root, rp)
 		}
 	}

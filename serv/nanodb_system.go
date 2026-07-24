@@ -228,7 +228,7 @@ func (s *graphjinService) systemNanoSnapshotFromCatalog(catalogSnapshot *core.Ca
 
 func systemNanoSnapshot(_ string, codeDB string, rows map[string][]core.NanoRow) core.NanoSnapshot {
 	return systemNanoSnapshotForRoots(codeDB, rows, []string{
-		"gj_catalog", "gj_security", "gj_artifacts", "gj_watch", "gj_watch_event",
+		"gj_catalog", "gj_security", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_watch_flow_preview",
 		"gj_workflow", "gj_workflow_execution", "gj_config",
 	})
 }
@@ -252,6 +252,8 @@ func systemNanoSnapshotForRoots(codeDB string, rows map[string][]core.NanoRow, r
 			columns = watchNanoColumns()
 		case "gj_watch_event":
 			columns = watchEventNanoColumns()
+		case "gj_watch_flow_preview":
+			columns = watchFlowPreviewNanoColumns()
 		case "gj_workflow":
 			columns = workflowNanoColumns()
 		case "gj_workflow_execution":
