@@ -34,3 +34,24 @@ func TestInitialRequestRoleAllowsTrustedReservedRole(t *testing.T) {
 		t.Fatalf("initialRequestRole() = %q, %v; want reserved role, true", role, trusted)
 	}
 }
+
+func TestTrustedReservedSubscriptionBypassesProductionAllowList(t *testing.T) {
+	type trustedKey struct{}
+	gj := &graphjinEngine{
+		conf:    &Config{Roles: []Role{{Name: "__reserved_internal"}}},
+		prodSec: true,
+		reservedRoleAuthorizer: func(ctx context.Context, role string) bool {
+			return role == "__reserved_internal" && ctx.Value(trustedKey{}) == true
+		},
+	}
+	trusted := context.WithValue(context.Background(), trustedKey{}, true)
+	trusted = context.WithValue(trusted, UserRoleKey, "__reserved_internal")
+	if gj.subscriptionRequiresAllowList(trusted) {
+		t.Fatal("trusted reserved subscription should bypass the production allow list")
+	}
+
+	forged := context.WithValue(context.Background(), UserRoleKey, "__reserved_internal")
+	if !gj.subscriptionRequiresAllowList(forged) {
+		t.Fatal("untrusted reserved subscription should require the production allow list")
+	}
+}

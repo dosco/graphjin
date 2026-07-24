@@ -822,6 +822,11 @@ func assertGraphJinTable(t *testing.T, s *graphjinService, dbName, tableName str
 }
 
 func closeTestService(s *graphjinService) {
+	if s.closeFn != nil {
+		s.closeFn()
+	}
+	s.revisionConsumerWG.Wait()
+	s.revisionSignalWG.Wait()
 	if s.gj != nil {
 		s.gj.Close()
 	}

@@ -21,6 +21,15 @@ func newArtifactOverlayTestService(t *testing.T, files map[string]string) *graph
 }
 
 func newArtifactOverlayTestServiceWithArtifacts(t *testing.T, files map[string]string, artifacts core.ArtifactsConfig) *graphjinService {
+	return newArtifactOverlayTestServiceWithOptions(t, files, artifacts, nil)
+}
+
+func newArtifactOverlayTestServiceWithOptions(
+	t *testing.T,
+	files map[string]string,
+	artifacts core.ArtifactsConfig,
+	configure func(*Config),
+) *graphjinService {
 	t.Helper()
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "app.sqlite3")
@@ -60,6 +69,9 @@ func newArtifactOverlayTestServiceWithArtifacts(t *testing.T, files map[string]s
 			ConfigPath: tmp,
 			MCP:        MCPConfig{AllowWorkflowUpdates: true, AllowWorkflowExecution: true},
 		},
+	}
+	if configure != nil {
+		configure(conf)
 	}
 	svc, err := newGraphJinService(conf, nil, OptionSetFS(fs))
 	if err != nil {
@@ -422,13 +434,18 @@ func TestArtifactProjectionHonorsConfiguredCap(t *testing.T) {
 	}
 }
 
-func TestArtifactProjectionPollerCatchesExternalRevision(t *testing.T) {
-	svc := newArtifactOverlayTestService(t, nil)
+func TestArtifactProjectionSubscriptionCatchesExternalRevision(t *testing.T) {
+	autoInit := true
+	svc := newArtifactOverlayTestServiceWithOptions(t, nil, core.ArtifactsConfig{
+		Enabled:     true,
+		Source:      "main",
+		AutoInit:    &autoInit,
+		GlobalsPath: ".",
+		PollSeconds: 1,
+	}, func(conf *Config) {
+		conf.SubsPollDuration = 100 * time.Millisecond
+	})
 	ctx := artifactUserCtx("user_1")
-	lastRevision, err := svc.artifactRevision(context.Background(), "artifacts")
-	if err != nil {
-		t.Fatalf("initial artifact revision: %v", err)
-	}
 
 	query := `query {
 		gj_artifacts(where: { name: { eq: "external_projection" } }) {
@@ -454,7 +471,7 @@ ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind, content=ex
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, kind=EXCLUDED.kind, content=EXCLUDED.content, content_json=EXCLUDED.content_json, metadata_json=EXCLUDED.metadata_json, content_hash=EXCLUDED.content_hash, status=EXCLUDED.status, revision=%s.revision+1, updated_at=EXCLUDED.updated_at`, table, quotePGIdent("artifacts"))
 	}
-	if _, err := db.ExecContext(context.Background(), externalWriteSQL,
+	if err := execArtifactTestWrite(db, externalWriteSQL,
 		artifactID("user_1", artifactKindSavedQuery, "external_projection"),
 		"external_projection",
 		artifactKindSavedQuery,
@@ -477,20 +494,32 @@ ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, kind=EXCLUDED.kind, content=E
 	if err := svc.bumpArtifactRevision(context.Background(), "artifacts"); err != nil {
 		t.Fatalf("external revision bump: %v", err)
 	}
-	if rows := queryArtifactProjection(t, svc, ctx, query); len(rows) != 0 {
-		t.Fatalf("projection should stay stale until poller refresh, got %+v", rows)
-	}
 
-	changed, err := svc.pollArtifactProjectionRevision(context.Background(), &lastRevision)
-	if err != nil {
-		t.Fatalf("poll artifact projection: %v", err)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		rows := queryArtifactProjection(t, svc, ctx, query)
+		if len(rows) == 1 && rows[0]["name"] == "external_projection" &&
+			rows[0]["content_hash"] == artifactContentHash(content, "") {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
-	if !changed {
-		t.Fatal("poller should detect external artifact revision")
-	}
-	rows := queryArtifactProjection(t, svc, ctx, query)
-	if len(rows) != 1 || rows[0]["name"] != "external_projection" || rows[0]["content_hash"] != artifactContentHash(content, "") {
-		t.Fatalf("poller should refresh external artifact projection, got %+v", rows)
+	t.Fatal("revision subscription did not refresh the external artifact projection")
+}
+
+func execArtifactTestWrite(db *sql.DB, query string, args ...any) error {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, err := db.ExecContext(context.Background(), query, args...)
+		if err == nil {
+			return nil
+		}
+		message := strings.ToLower(err.Error())
+		if (!strings.Contains(message, "locked") && !strings.Contains(message, "busy")) ||
+			time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 

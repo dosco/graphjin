@@ -24,48 +24,74 @@ func (s *graphjinService) startProjectionPoller(parent context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	s.addCloseFn(cancel)
 
-	go s.projectionPollLoop(ctx, time.Duration(intervalSeconds)*time.Second)
+	s.revisionConsumerWG.Add(1)
+	go func() {
+		defer s.revisionConsumerWG.Done()
+		s.projectionPollLoop(ctx, time.Duration(intervalSeconds)*time.Second)
+	}()
 }
 
 func (s *graphjinService) projectionPollLoop(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		return
 	}
-	lastRevision, err := s.artifactRevision(ctx, "artifacts")
-	if err != nil {
-		s.recordArtifactProjectionPollError("read initial artifact revision", err)
+	lastRevision := int64(-1)
+	signals := s.revisionSignals(ctx, "artifacts", true, interval)
+	pendingRevision := lastRevision
+	var retryTimer *time.Timer
+	var retry <-chan time.Time
+	refresh := func() {
+		if pendingRevision == lastRevision {
+			return
+		}
+		if err := s.refreshArtifactProjection(); err != nil {
+			s.recordArtifactProjectionPollError("refresh artifact projection", err)
+			if retryTimer == nil {
+				retryTimer = time.NewTimer(interval)
+			} else {
+				if !retryTimer.Stop() {
+					select {
+					case <-retryTimer.C:
+					default:
+					}
+				}
+				retryTimer.Reset(interval)
+			}
+			retry = retryTimer.C
+			return
+		}
+		lastRevision = pendingRevision
+		s.invalidateCatalogCache()
+		if retryTimer != nil {
+			if !retryTimer.Stop() {
+				select {
+				case <-retryTimer.C:
+				default:
+				}
+			}
+		}
+		retry = nil
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	defer func() {
+		if retryTimer != nil {
+			retryTimer.Stop()
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			if _, err := s.pollArtifactProjectionRevision(ctx, &lastRevision); err != nil {
-				s.recordArtifactProjectionPollError("poll artifact revision", err)
+		case signal, ok := <-signals:
+			if !ok {
+				return
 			}
+			pendingRevision = signal.Revision
+			refresh()
+		case <-retry:
+			retry = nil
+			refresh()
 		}
 	}
-}
-
-func (s *graphjinService) pollArtifactProjectionRevision(ctx context.Context, lastRevision *int64) (bool, error) {
-	if s == nil || lastRevision == nil || s.systemNanoDB == nil || s.conf == nil || !s.conf.Core.Artifacts.Enabled {
-		return false, nil
-	}
-	current, err := s.artifactRevision(ctx, "artifacts")
-	if err != nil {
-		return false, err
-	}
-	if current == *lastRevision {
-		return false, nil
-	}
-	if err := s.refreshArtifactProjection(); err != nil {
-		return false, err
-	}
-	*lastRevision = current
-	s.invalidateCatalogCache()
-	return true, nil
 }
 
 func (s *graphjinService) artifactRevision(ctx context.Context, domain string) (int64, error) {

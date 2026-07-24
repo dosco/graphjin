@@ -63,8 +63,15 @@ func (s *graphjinService) startWatchRunner(parent context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	s.addCloseFn(cancel)
 	s.ensureWatchCoordinator(ctx)
-	go s.watchRunnerLoop(ctx)
-	go s.watchDeliveryLoop(ctx)
+	s.revisionConsumerWG.Add(2)
+	go func() {
+		defer s.revisionConsumerWG.Done()
+		s.watchRunnerLoop(ctx)
+	}()
+	go func() {
+		defer s.revisionConsumerWG.Done()
+		s.watchDeliveryLoop(ctx)
+	}()
 }
 
 func (s *graphjinService) watchRunnerLoop(ctx context.Context) {
@@ -83,13 +90,7 @@ func (s *graphjinService) watchRunnerLoop(ctx context.Context) {
 			s.recordWatchRunnerError("reconcile watches", err, nil)
 		}
 	}
-	reconcile()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	var lastRevision int64
-	if rev, err := s.artifactRevision(ctx, "watches"); err == nil {
-		lastRevision = rev
-	}
+	revisionChanges := s.revisionSignals(ctx, "watches", true, interval)
 	var runnerChanges <-chan struct{}
 	if coord := s.currentWatchCoordinator(); coord != nil {
 		runnerChanges = coord.SubscribeRunnerChanges(ctx)
@@ -104,16 +105,10 @@ func (s *graphjinService) watchRunnerLoop(ctx context.Context) {
 				continue
 			}
 			reconcile()
-		case <-ticker.C:
-			rev, err := s.artifactRevision(ctx, "watches")
-			if err != nil {
-				s.recordWatchRunnerError("read watch revision", err, nil)
-				continue
+		case _, ok := <-revisionChanges:
+			if !ok {
+				return
 			}
-			if rev == lastRevision {
-				continue
-			}
-			lastRevision = rev
 			reconcile()
 		}
 	}

@@ -119,6 +119,8 @@ type graphjinService struct {
 	mcpWatchSubs         watchMCPSubscriptionRegistry
 	watchCoordMu         sync.Mutex
 	watchCoord           watchCoordinator
+	revisionSignalWG     sync.WaitGroup
+	revisionConsumerWG   sync.WaitGroup
 	catalogMu            sync.Mutex
 	catalogCache         *catalogCacheEntry
 	onboardingMu         sync.RWMutex
@@ -157,6 +159,7 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	controlPlane := newControlPlaneGraphQL(s)
 	artifacts := newArtifactControlPlane(s)
 	watches := newWatchControlPlane(s)
+	revisions := revisionSignalHandler{service: s}
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
@@ -190,6 +193,7 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 		if targetDB == "" {
 			targetDB = core.DefaultDBName
 		}
+		opts = append(opts, core.OptionSetManagedQueryHandler(targetDB, revisions))
 		for _, dbName := range s.managedSystemRootDatabases(targetDB) {
 			if s.systemNanoDB == nil {
 				opts = append(opts, core.OptionSetManagedQueryHandler(dbName, artifacts))
@@ -381,11 +385,13 @@ func (s *graphjinService) closeServResources() {
 	if s.discovery != nil {
 		s.discovery.Close()
 	}
-	if s.gj != nil {
-		s.gj.Close()
-	}
 	if s.closeFn != nil {
 		s.closeFn()
+	}
+	s.revisionConsumerWG.Wait()
+	s.revisionSignalWG.Wait()
+	if s.gj != nil {
+		s.gj.Close()
 	}
 	if s.cache != nil {
 		s.cache.Close() //nolint:errcheck
