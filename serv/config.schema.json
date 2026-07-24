@@ -43,7 +43,7 @@
 				"poll_seconds": {
 					"type": "integer",
 					"title": "Artifact Poll Seconds",
-					"description": "Interval for the revision poller that refreshes the in-memory projection after external writes",
+					"description": "Fallback and reconnect interval for internal artifact and watch revision subscriptions",
 					"default": 15
 				},
 				"projection_content_max_bytes": {

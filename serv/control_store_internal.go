@@ -82,6 +82,11 @@ func (s *graphjinService) injectInternalStoreRole() {
 	if s.conf.Core.IsSourcesUsed() {
 		blockRoles = sourceModeSystemRoleNames(s.conf)
 	}
+	for _, role := range coreConf.Roles {
+		blockRoles = append(blockRoles, role.Name)
+	}
+	blockRoles = append(blockRoles, s.conf.Core.EffectiveIdentityConfig().AdminRoles...)
+	blockRoles = uniqueInternalStoreRoles(blockRoles)
 	add := func(table, schema string) {
 		rt := core.RoleTable{
 			Name:     table,
@@ -110,6 +115,29 @@ func (s *graphjinService) injectInternalStoreRole() {
 			})
 		}
 	}
+	addRevisionSignal := func() {
+		database := s.metadataDB
+		if database == "" {
+			database = core.DefaultDBName
+		}
+		rt := core.RoleTable{
+			Name:     revisionSignalRootTable,
+			Database: database,
+			Query:    &core.Query{Block: false},
+		}
+		setPrivateRuntimeRoleTable(coreConf, graphjinInternalStoreRole, rt)
+		for _, role := range blockRoles {
+			if role == graphjinInternalStoreRole {
+				continue
+			}
+			setPrivateRuntimeRoleTable(coreConf, role, core.RoleTable{
+				Name:     revisionSignalRootTable,
+				Database: database,
+				Query:    &core.Query{Block: true},
+			})
+		}
+	}
+	addRevisionSignal()
 	if dbType == "postgres" || dbType == "" {
 		add("artifacts", cfg.Schema)
 		add("revisions", cfg.Schema)
@@ -129,6 +157,49 @@ func (s *graphjinService) injectInternalStoreRole() {
 		add(prefix+"_watches", "")
 		add(prefix+"_watch_events", "")
 	}
+}
+
+func uniqueInternalStoreRoles(roles []string) []string {
+	seen := make(map[string]struct{}, len(roles))
+	out := make([]string, 0, len(roles))
+	for _, role := range roles {
+		role = strings.TrimSpace(role)
+		if role == "" {
+			continue
+		}
+		key := strings.ToLower(role)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, role)
+	}
+	return out
+}
+
+func setPrivateRuntimeRoleTable(conf *core.Config, role string, table core.RoleTable) {
+	if conf == nil || strings.TrimSpace(role) == "" {
+		return
+	}
+	table.Generated = true
+	for index := range conf.Roles {
+		if !strings.EqualFold(conf.Roles[index].Name, role) {
+			continue
+		}
+		for tableIndex, existing := range conf.Roles[index].Tables {
+			if existing.Database != "" && table.Database != "" &&
+				!strings.EqualFold(existing.Database, table.Database) {
+				continue
+			}
+			if strings.EqualFold(existing.Name, table.Name) {
+				conf.Roles[index].Tables[tableIndex] = table
+				return
+			}
+		}
+		conf.Roles[index].Tables = append(conf.Roles[index].Tables, table)
+		return
+	}
+	conf.Roles = append(conf.Roles, core.Role{Name: role, Tables: []core.RoleTable{table}})
 }
 
 func (s *graphjinService) internalStoreContext(parent context.Context) context.Context {

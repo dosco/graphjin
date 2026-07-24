@@ -289,11 +289,13 @@ func startSQLiteArtifactCore(t *testing.T, svc *graphjinService, db *sql.DB) {
 	svc.conf.Core.FS = svc.fs
 	svc.injectInternalStoreRole()
 	artifacts := newArtifactControlPlane(svc)
+	revisions := revisionSignalHandler{service: svc}
 	opts := []core.Option{
 		core.OptionSetFS(svc.fs),
 		core.OptionSetDatabases(svc.dbs),
 		core.OptionSetSavedQuerySaveHook(svc.saveSavedQueryArtifactOrFallback),
 		core.OptionSetReservedRoleAuthorizer(svc.authorizeReservedRole),
+		core.OptionSetManagedQueryHandler("app", revisions),
 		core.OptionSetManagedQueryHandler("app", artifacts),
 		core.OptionSetManagedMutationHandler("app", artifacts),
 	}

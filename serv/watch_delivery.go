@@ -74,32 +74,50 @@ type watchDeliveryEvent struct {
 }
 
 func (s *graphjinService) watchDeliveryLoop(ctx context.Context) {
+	s.watchDeliveryLoopWithSweepInterval(ctx, watchEventSweepInterval)
+}
+
+func (s *graphjinService) watchDeliveryLoopWithSweepInterval(
+	ctx context.Context,
+	sweepInterval time.Duration,
+) {
 	interval := time.Duration(s.conf.Core.EffectiveArtifactsConfig().PollSeconds) * time.Second
 	if interval < watchRunnerMinInterval {
 		interval = watchRunnerMinInterval
 	}
-	var lastSweep time.Time
-	process := func() {
-		now := time.Now()
-		if lastSweep.IsZero() || now.Sub(lastSweep) >= watchEventSweepInterval {
-			lastSweep = now
-			if _, err := s.sweepWatchEvents(ctx); err != nil {
-				s.recordWatchRunnerError("sweep watch events", err, nil)
-			}
-		}
+	if sweepInterval <= 0 {
+		sweepInterval = watchEventSweepInterval
+	}
+	processPending := func() {
 		if err := s.processPendingWatchDeliveries(ctx); err != nil {
 			s.recordWatchRunnerError("deliver watch events", err, nil)
 		}
 	}
-	process()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	sweepAndRecover := func() {
+		if _, err := s.sweepWatchEvents(ctx); err != nil {
+			s.recordWatchRunnerError("sweep watch events", err, nil)
+		}
+		if err := s.processPendingWatchDeliveries(ctx); err != nil {
+			s.recordWatchRunnerError("recover pending watch deliveries", err, nil)
+		}
+	}
+	if _, err := s.sweepWatchEvents(ctx); err != nil {
+		s.recordWatchRunnerError("sweep watch events", err, nil)
+	}
+	revisionChanges := s.revisionSignals(ctx, "watch_events", true, interval)
+	sweepTicker := time.NewTicker(sweepInterval)
+	defer sweepTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			process()
+		case _, ok := <-revisionChanges:
+			if !ok {
+				return
+			}
+			processPending()
+		case <-sweepTicker.C:
+			sweepAndRecover()
 		}
 	}
 }

@@ -1441,7 +1441,7 @@ type ArtifactsConfig struct {
 	AutoInit                  *bool    `mapstructure:"auto_init" json:"auto_init" yaml:"auto_init" jsonschema:"title=Auto Initialize Artifact Tables,default=true,description=Create artifact store tables automatically at startup"`
 	GlobalsPath               string   `mapstructure:"globals_path" json:"globals_path" yaml:"globals_path" jsonschema:"title=Global Config Artifact Path,default=./config,description=Directory of read-only global artifacts loaded from config files"`
 	Locked                    []string `mapstructure:"locked" json:"locked" yaml:"locked" jsonschema:"title=Locked Artifact Kinds,description=Artifact kinds that refuse writes through gj_artifacts"`
-	PollSeconds               int      `mapstructure:"poll_seconds" json:"poll_seconds" yaml:"poll_seconds" jsonschema:"title=Artifact Poll Seconds,default=15,description=Interval for the revision poller that refreshes the in-memory projection after external writes"`
+	PollSeconds               int      `mapstructure:"poll_seconds" json:"poll_seconds" yaml:"poll_seconds" jsonschema:"title=Artifact Poll Seconds,default=15,description=Fallback and reconnect interval for internal artifact and watch revision subscriptions"`
 	ProjectionContentMaxBytes int      `mapstructure:"projection_content_max_bytes" json:"projection_content_max_bytes" yaml:"projection_content_max_bytes" jsonschema:"title=Projection Content Max Bytes,default=32768,description=Per-field byte cap for content and JSON fields in the in-memory gj_artifacts search projection; oversized values are dropped from the projection but stay fully readable through the artifact store"`
 }
 

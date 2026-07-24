@@ -220,9 +220,12 @@ func (g *GraphJin) Subscribe(
 	// create the request object
 	r := gj.newGraphqlReq(rc, "subscription", h.Name, nil, vars)
 
+	// Trusted service-internal roles may create private runtime subscriptions.
+	// They are authorized by the embedding service and must neither depend on
+	// nor write to the user-visible allow list.
 	// if production security enabled then get query and metadata
 	// from allow list
-	if gj.prodSec {
+	if gj.subscriptionRequiresAllowList(c) {
 		var item allow.Item
 		item, err = gj.allowList.GetByName(h.Name, true)
 		if err != nil {
@@ -235,6 +238,14 @@ func (g *GraphJin) Subscribe(
 
 	m, err = gj.subscribe(c, r)
 	return
+}
+
+func (gj *graphjinEngine) subscriptionRequiresAllowList(ctx context.Context) bool {
+	if gj == nil || !gj.prodSec {
+		return false
+	}
+	_, trustedReservedRole := gj.initialRequestRole(ctx)
+	return !trustedReservedRole
 }
 
 // SubscribeByName is similar to the Subscribe function except that queries saved
@@ -478,7 +489,7 @@ func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 	}
 	sub.kind = gj.subscriptionKind(&sub.s)
 
-	if !gj.prod {
+	if !gj.prod && !sub.s.trustedReservedRole {
 		err = gj.saveToAllowList(c, sub.s.cs.st.qc, sub.s.r.namespace)
 		if err != nil {
 			return
