@@ -478,7 +478,7 @@ func TestWatchRunnerPersistsCursorCheckpointAndResumeVars(t *testing.T) {
 
 func TestDirectWatchEventSystemSubscriptionPages(t *testing.T) {
 	db, svc := newSQLiteWatchService(t, 20)
-	svc.conf.Core.SubsPollDuration = 200 * time.Millisecond
+	svc.conf.SubsPollDuration = 200 * time.Millisecond
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
 	}
@@ -2520,7 +2520,7 @@ func TestValidateWatchCycleUsesPersistedGlobalEvidence(t *testing.T) {
 
 func TestWatchRunnerPausesUnsafeSavedDefinitionDrift(t *testing.T) {
 	db, svc := newSQLiteWatchService(t, 20)
-	svc.conf.Core.SubsPollDuration = 200 * time.Millisecond
+	svc.conf.SubsPollDuration = 200 * time.Millisecond
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
 	}

@@ -209,12 +209,12 @@ const workflowWriteInstruction = `Skill: workflow_write. Author or update workfl
 
 const watchReadInstruction = `Skill: watch_read (gj_watch / gj_watch_event). Review standing watches and their fired-event inbox. ` +
 	`Discover exact query shapes from watch system-capability rows; watches and events are owner-scoped. For a watch_events_unseen notice, query gj_watch_event only for its listed watch_ids, then mark only those reviewed events seen; never acknowledge an event from a watch ID not associated with this conversation. ` +
-	`A watch's status, last_error, and failure_count explain why it is not firing.`
+	`Watch-event watches require cursor paging and a conjunctive non-self watch_id eq/in filter. A watch's status, last_error, and failure_count explain why it is not firing.`
 
 const watchWriteInstruction = `Skill: watch_write (gj_watch). Create, update, pause, resume, or delete standing watches through the governed root. ` +
 	`Before a mutation, inspect security guidance and the gj_watch capability detail. Create a unique per-conversation name and retain the returned ID. Use a subscription query or saved_query_name plus optional variables_json and delivery_json; pause or resume through status/enabled and remove through gj_watch(delete). ` +
 	`Choose from two independent questions. If the trigger is deterministic, express it in the GraphQL subscription filter; condition_js is not executed. If the trigger is semantic, needs judgment, or the stream is noisy, attach a flow. If the user only asks to be told, use inbox notification and do not attach a workflow or webhook. If the user explicitly asks GraphJin to act after the trigger, propose workflow or webhook delivery and follow the separate action-review process. ` +
-	`Per-watch MCP clients should subscribe to graphjin://watch-events/unseen/{watch_id}; aggregate clients must filter and acknowledge only retained watch IDs. Watches run durably under the owner's stored identity. Parsed dev and agentic configs already use runner all, but no subscription starts until an enabled active watch exists. Enabling watches after an explicit opt-out is an admin config change, not a watch mutation.`
+	`For gj_watch_event, require a conjunctive non-self watch_id eq/in filter; cycles are rejected. Per-watch MCP clients subscribe to graphjin://watch-events/unseen/{watch_id}; aggregate clients acknowledge only retained IDs. Watches run under stored identity and start only when enabled and active.`
 
 const watchFlowInstruction = `Skill: watch_flow. Add, preview, and approve AxFlow enrichment for an existing watch. ` +
 	`Use a flow only when the trigger needs semantic judgment or a noisy stream needs triage; do not hand-write one when a deterministic GraphQL filter or default_watch_triage suffices. Put either default_watch_triage or inline AxFlow Mermaid in enrich_json with enabled:true and kind:"flow"; do not create a flow artifact or flows/ file. ` +

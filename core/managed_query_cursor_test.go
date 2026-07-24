@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -144,5 +145,26 @@ func TestManagedQueryCursorRequiresHiddenOrderColumns(t *testing.T) {
 	}`, nil, nil)
 	if err == nil {
 		t.Fatal("expected missing hidden cursor order column error")
+	}
+}
+
+func TestManagedQueryCursorRejectsBackwardPaging(t *testing.T) {
+	gj := newManagedCursorTestGraphJin(t, managedCursorTestHandler{
+		rows: []map[string]any{{"id": "a", "rank": 1, "title": "one"}},
+	})
+	defer gj.Close()
+
+	for _, query := range []string{
+		`query { gj_managed_item(last: 1, order_by: { rank: asc }) { id } gj_managed_item_cursor }`,
+		`query page($gj_managed_item_cursor: Cursor) {
+			gj_managed_item(last: 1, before: $gj_managed_item_cursor, order_by: { rank: asc }) { id }
+			gj_managed_item_cursor
+		}`,
+	} {
+		_, err := gj.GraphQL(context.Background(), query,
+			json.RawMessage(`{"gj_managed_item_cursor":null}`), nil)
+		if err == nil || !strings.Contains(err.Error(), "does not support last/before") {
+			t.Fatalf("backward paging error = %v, want explicit unsupported error", err)
+		}
 	}
 }

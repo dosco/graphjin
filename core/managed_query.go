@@ -148,6 +148,9 @@ func (s *gstate) executeManagedQueryRaw(c context.Context, forSubscription bool)
 	}
 	for _, rootID := range qc.Roots {
 		sel := qc.Selects[rootID]
+		if sel.Paging.Backward || sel.Paging.Type == qcode.PTBackward {
+			return true, nil, fmt.Errorf("managed cursor pagination does not support last/before")
+		}
 		root := ManagedQueryRoot{
 			FieldName: sel.FieldName,
 			Table:     sel.Ti.Name,
