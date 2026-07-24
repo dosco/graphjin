@@ -349,9 +349,36 @@ func (s *graphjinService) runWatchSubscription(ctx context.Context, def watchRun
 		s.updateWatchRunnerErrorForWatch(ctx, def, fmt.Errorf("watch subscription must use cursor pagination"))
 		return
 	}
-	if _, err := watchedWatchIDsForMember(member, def.ID); err != nil {
-		s.updateWatchRunnerErrorForWatch(ctx, def, err)
-		row, loadErr := s.internalWatchStoreRow(ctx, def.ID)
+	watchedIDs, safetyErr := watchedWatchIDsForMember(member, def.ID)
+	row, loadErr := s.internalWatchStoreRow(ctx, def.ID)
+	if loadErr != nil {
+		s.recordWatchRunnerError("reload watch safety evidence", loadErr, map[string]any{"watch_id": def.ID})
+		return
+	}
+	if safetyErr == nil && strings.TrimSpace(def.SavedQueryName) != "" {
+		evidence := mapFromAny(parseJSONValue(jsonMapString(row, "evidence_json")))
+		expectedIDs := watchedWatchIDsFromEvidence(evidence)
+		if !sameWatchIDSet(expectedIDs, watchedIDs) {
+			safetyErr = fmt.Errorf(
+				"saved query watch dependencies drifted from %v to %v; review required",
+				expectedIDs,
+				watchedIDs,
+			)
+		}
+	}
+	if safetyErr == nil {
+		safetyErr = newWatchControlPlane(s).validateWatchCycle(
+			ctx,
+			def.ID,
+			def.Lifecycle,
+			"active",
+			true,
+			watchedIDs,
+		)
+	}
+	if safetyErr != nil {
+		s.updateWatchRunnerErrorForWatch(ctx, def, safetyErr)
+		row, loadErr = s.internalWatchStoreRow(ctx, def.ID)
 		if loadErr != nil {
 			s.recordWatchRunnerError("reload unsafe watch", loadErr, map[string]any{"watch_id": def.ID})
 			return

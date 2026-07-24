@@ -796,6 +796,23 @@ func watchedWatchIDsFromEvidence(evidence map[string]any) []string {
 	return ids
 }
 
+func sameWatchIDSet(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	counts := make(map[string]int, len(left))
+	for _, id := range left {
+		counts[id]++
+	}
+	for _, id := range right {
+		if counts[id] == 0 {
+			return false
+		}
+		counts[id]--
+	}
+	return true
+}
+
 func (h watchControlPlane) validateWatchCycle(
 	ctx context.Context,
 	candidateID, lifecycle, status string,
@@ -821,10 +838,50 @@ func (h watchControlPlane) validateWatchCycle(
 	if enabled && watchLifecycle(lifecycle) == "durable" && watchStatus(status) == "active" {
 		graph[candidateID] = append([]string(nil), candidateEdges...)
 	}
-	if watchGraphReaches(graph, candidateID, candidateID, make(map[string]bool), true) {
-		return fmt.Errorf("gj_watch would create a watch dependency cycle involving %q", candidateID)
+	if cycleID, cyclic := watchGraphCycle(graph); cyclic {
+		return fmt.Errorf("gj_watch dependency cycle detected involving %q", cycleID)
 	}
 	return nil
+}
+
+func watchGraphCycle(graph map[string][]string) (string, bool) {
+	nodes := make(map[string]struct{}, len(graph))
+	for node, edges := range graph {
+		nodes[node] = struct{}{}
+		for _, edge := range edges {
+			nodes[edge] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(nodes))
+	for node := range nodes {
+		ordered = append(ordered, node)
+	}
+	sort.Strings(ordered)
+
+	state := make(map[string]uint8, len(nodes))
+	var visit func(string) (string, bool)
+	visit = func(node string) (string, bool) {
+		switch state[node] {
+		case 1:
+			return node, true
+		case 2:
+			return "", false
+		}
+		state[node] = 1
+		for _, next := range graph[node] {
+			if cycleID, cyclic := visit(next); cyclic {
+				return cycleID, true
+			}
+		}
+		state[node] = 2
+		return "", false
+	}
+	for _, node := range ordered {
+		if cycleID, cyclic := visit(node); cyclic {
+			return cycleID, true
+		}
+	}
+	return "", false
 }
 
 func watchGraphReaches(

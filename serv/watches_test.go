@@ -2387,6 +2387,14 @@ func TestWatchGraphCycleDetection(t *testing.T) {
 	if !watchGraphReaches(cyclic, "watch:a", "watch:a", make(map[string]bool), true) {
 		t.Fatal("mutual dependency was not reported as a cycle")
 	}
+	disconnected := map[string][]string{
+		"watch:a": {"watch:b"},
+		"watch:b": {"watch:a"},
+		"watch:c": nil,
+	}
+	if cycleID, ok := watchGraphCycle(disconnected); !ok || cycleID == "" {
+		t.Fatalf("global cycle = (%q, %v), want detected", cycleID, ok)
+	}
 }
 
 func watchEventWatchQuery(where string) string {
@@ -2513,8 +2521,32 @@ func TestValidateWatchCycleUsesPersistedGlobalEvidence(t *testing.T) {
 		!strings.Contains(err.Error(), "dependency cycle") {
 		t.Fatalf("cycle error = %v, want dependency cycle", err)
 	}
-	if err := cp.validateWatchCycle(ctx, "watch:c", "durable", "active", true, []string{watchA}); err != nil {
-		t.Fatalf("acyclic candidate rejected: %v", err)
+	if _, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "insert",
+		Input: map[string]any{
+			"name":    "watch_b",
+			"query":   watchEventWatchQuery(`{ watch_id: { eq: $watch_id } }`),
+			"status":  "paused",
+			"enabled": false,
+			"variables_json": map[string]any{
+				"watch_id":              watchA,
+				"watch_ids":             []string{watchA},
+				"gj_watch_event_cursor": nil,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("insert paused watch B: %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE "_graphjin_watches" SET enabled = 1, status = 'active', approval = 'approved' WHERE id = ?`,
+		watchB,
+	); err != nil {
+		t.Fatalf("activate watch B fixture: %v", err)
+	}
+	if err := cp.validateWatchCycle(ctx, "watch:c", "durable", "active", true, nil); err == nil ||
+		!strings.Contains(err.Error(), "dependency cycle") {
+		t.Fatalf("global cycle error = %v, want persisted dependency cycle", err)
 	}
 }
 
@@ -2577,5 +2609,79 @@ func TestWatchRunnerPausesUnsafeSavedDefinitionDrift(t *testing.T) {
 	}
 	if status != "paused" || enabled {
 		t.Fatalf("drifted watch status=%q enabled=%v, want paused false", status, enabled)
+	}
+}
+
+func TestWatchRunnerPausesSavedQueryDependencyDrift(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	svc.conf.SubsPollDuration = 200 * time.Millisecond
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	const savedName = "saved_dependency_watch"
+	targetA, targetB := "watch:target-a", "watch:target-b"
+	safeQuery := strings.Replace(
+		watchEventWatchQuery(`{ watch_id: { eq: $watch_id } }`),
+		"watch_watch",
+		savedName,
+		1,
+	)
+	if err := svc.fs.Put("/queries/"+savedName+".gql", []byte(safeQuery)); err != nil {
+		t.Fatalf("save initial query: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	cp := newWatchControlPlane(svc)
+	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
+
+	variables := mustMarshalString(map[string]any{
+		"watch_id":              targetA,
+		"watch_ids":             []string{targetB},
+		"gj_watch_event_cursor": nil,
+	})
+	row, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "insert",
+		Input: map[string]any{
+			"name":             "saved_dependency_runner",
+			"saved_query_name": savedName,
+			"variables_json":   variables,
+		},
+	})
+	if err != nil {
+		t.Fatalf("insert saved-query watch: %v", err)
+	}
+	id := stringFromAny(row["id"])
+
+	driftedQuery := strings.Replace(
+		watchEventWatchQuery(`{ watch_id: { in: $watch_ids } }`),
+		"watch_watch",
+		savedName,
+		1,
+	)
+	if err := svc.fs.Put("/queries/"+savedName+".gql", []byte(driftedQuery)); err != nil {
+		t.Fatalf("save drifted query: %v", err)
+	}
+
+	svc.runWatchSubscription(ctx, watchRuntimeDefinition{
+		ID:             id,
+		Name:           "saved_dependency_runner",
+		SavedQueryName: savedName,
+		VariablesJSON:  variables,
+		AccountID:      "acct_1",
+		OwnerID:        "user_1",
+		OwnerRole:      "analyst",
+		Lifecycle:      "durable",
+	})
+
+	var status, lastError string
+	var enabled bool
+	if err := db.QueryRow(
+		`SELECT status, enabled, last_error FROM "_graphjin_watches" WHERE id = ?`,
+		id,
+	).Scan(&status, &enabled, &lastError); err != nil {
+		t.Fatalf("read paused saved-query watch: %v", err)
+	}
+	if status != "paused" || enabled || !strings.Contains(lastError, "dependencies drifted") {
+		t.Fatalf("saved-query drift status=%q enabled=%v last_error=%q", status, enabled, lastError)
 	}
 }

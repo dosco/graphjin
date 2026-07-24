@@ -132,6 +132,53 @@ func TestManagedQueryCursorPaginationIsCoreAuthoritative(t *testing.T) {
 	}
 }
 
+func TestManagedQueryCursorAppliesFilterAndVariableOffsetInCore(t *testing.T) {
+	handler := managedCursorTestHandler{rows: []map[string]any{
+		{"id": "d", "rank": 4, "title": "four"},
+		{"id": "b", "rank": 2, "title": "two"},
+		{"id": "a", "rank": 1, "title": "one"},
+		{"id": "c", "rank": 3, "title": "three"},
+	}}
+	gj := newManagedCursorTestGraphJin(t, handler)
+	defer gj.Close()
+
+	result, err := gj.GraphQL(context.Background(), `query page(
+		$minimum: Int!
+		$first: Int!
+		$offset: Int!
+		$gj_managed_item_cursor: Cursor
+	) {
+		gj_managed_item(
+			first: $first
+			after: $gj_managed_item_cursor
+			offset: $offset
+			where: { rank: { gt: $minimum } }
+			order_by: { id: asc }
+		) {
+			id
+		}
+		gj_managed_item_cursor
+	}`, json.RawMessage(`{
+		"minimum": 2,
+		"first": 1,
+		"offset": 1,
+		"gj_managed_item_cursor": null
+	}`), nil)
+	if err != nil || len(result.Errors) != 0 {
+		t.Fatalf("managed filtered page: err=%v errors=%+v", err, result.Errors)
+	}
+	var page struct {
+		Rows []map[string]any `json:"gj_managed_item"`
+		Cur  string           `json:"gj_managed_item_cursor"`
+	}
+	if err := json.Unmarshal(result.Data, &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Rows) != 1 || page.Rows[0]["id"] != "d" || page.Cur == "" {
+		t.Fatalf("managed core-authoritative filter/offset page = %s", result.Data)
+	}
+}
+
 func TestManagedQueryCursorRequiresHiddenOrderColumns(t *testing.T) {
 	gj := newManagedCursorTestGraphJin(t, managedCursorTestHandler{
 		rows:       []map[string]any{{"id": "a", "rank": 1, "title": "one"}},

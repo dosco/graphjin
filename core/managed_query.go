@@ -103,7 +103,6 @@ func (s *gstate) executeManagedQueryRaw(c context.Context, forSubscription bool)
 	if !forSubscription && s.r.operation != qcode.QTQuery {
 		return false, nil, nil
 	}
-
 	dbName := s.database
 	if dbName == "" {
 		dbName = s.gj.defaultDB
@@ -178,19 +177,39 @@ func (s *gstate) executeManagedQueryRaw(c context.Context, forSubscription bool)
 
 func appendManagedCursorFields(fields []ManagedMutationField, sel *qcode.Select) []ManagedMutationField {
 	used := make(map[string]struct{}, len(fields))
+	availableColumns := make(map[string]struct{}, len(fields)+len(sel.OrderBy))
 	for _, field := range fields {
 		used[field.Name] = struct{}{}
+		availableColumns[field.Column] = struct{}{}
 	}
 	for _, order := range sel.OrderBy {
 		name := managedCursorFieldName(order.Col.Name, used)
 		used[name] = struct{}{}
 		fields = append(fields, ManagedMutationField{Name: name, Column: order.Col.Name})
+		availableColumns[order.Col.Name] = struct{}{}
+	}
+	for _, column := range managedFilterColumns(sel.Where.Exp) {
+		if _, available := availableColumns[column]; available {
+			continue
+		}
+		name := managedFilterFieldName(column, used)
+		used[name] = struct{}{}
+		fields = append(fields, ManagedMutationField{Name: name, Column: column})
+		availableColumns[column] = struct{}{}
 	}
 	return fields
 }
 
 func managedCursorFieldName(column string, used map[string]struct{}) string {
-	base := "__gj_cursor_" + column
+	return managedHiddenFieldName("__gj_cursor_", column, used)
+}
+
+func managedFilterFieldName(column string, used map[string]struct{}) string {
+	return managedHiddenFieldName("__gj_filter_", column, used)
+}
+
+func managedHiddenFieldName(prefix, column string, used map[string]struct{}) string {
+	base := prefix + column
 	name := base
 	for index := 2; ; index++ {
 		if _, exists := used[name]; !exists {
@@ -234,17 +253,23 @@ func (s *gstate) pageManagedQueryResult(
 			return nil, err
 		}
 		checkpoint := checkpointForSelect(sel, s.vmap)
-		seek := findSeekExp(sel.Where.Exp)
+		filterFields, err := managedCursorFilterFields(sel, rows)
+		if err != nil {
+			return nil, err
+		}
 		filtered := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
-			evalRow := make(nanodb.Row, len(row)+len(orderFields))
-			for key, value := range row {
-				evalRow[key] = value
+			evalRow := make(nanodb.Row, len(sel.Fields)+len(orderFields)+len(filterFields))
+			for _, field := range managedSelectedFields(sel.Fields) {
+				evalRow[field.Column] = row[field.Name]
 			}
 			for index, order := range sel.OrderBy {
 				evalRow[order.Col.Name] = row[orderFields[index]]
 			}
-			if seek != nil && !s.nanoEval(ctx, seek, evalRow, nil, checkpoint) {
+			for column, field := range filterFields {
+				evalRow[column] = row[field]
+			}
+			if !s.nanoEval(ctx, sel.Where.Exp, evalRow, nil, checkpoint) {
 				continue
 			}
 			filtered = append(filtered, row)
@@ -276,6 +301,9 @@ func (s *gstate) pageManagedQueryResult(
 		}
 		for _, row := range filtered {
 			for _, field := range orderFields {
+				delete(row, field)
+			}
+			for _, field := range filterFields {
 				delete(row, field)
 			}
 		}
@@ -314,6 +342,58 @@ func managedCursorOrderFields(sel *qcode.Select, rows []map[string]any) ([]strin
 		}
 	}
 	return names, nil
+}
+
+func managedCursorFilterFields(sel *qcode.Select, rows []map[string]any) (map[string]string, error) {
+	used := make(map[string]struct{})
+	availableColumns := make(map[string]struct{}, len(sel.Fields)+len(sel.OrderBy))
+	for _, field := range managedSelectedFields(sel.Fields) {
+		used[field.Name] = struct{}{}
+		availableColumns[field.Column] = struct{}{}
+	}
+	for _, order := range sel.OrderBy {
+		name := managedCursorFieldName(order.Col.Name, used)
+		used[name] = struct{}{}
+		availableColumns[order.Col.Name] = struct{}{}
+	}
+	fields := make(map[string]string)
+	for _, column := range managedFilterColumns(sel.Where.Exp) {
+		if _, available := availableColumns[column]; available {
+			continue
+		}
+		name := managedFilterFieldName(column, used)
+		used[name] = struct{}{}
+		availableColumns[column] = struct{}{}
+		fields[column] = name
+		for _, row := range rows {
+			if _, exists := row[name]; !exists {
+				return nil, fmt.Errorf("managed query handler must return filter column %q as %q", column, name)
+			}
+		}
+	}
+	return fields, nil
+}
+
+func managedFilterColumns(ex *qcode.Exp) []string {
+	seen := make(map[string]struct{})
+	var columns []string
+	var visit func(*qcode.Exp)
+	visit = func(node *qcode.Exp) {
+		if node == nil || isSeekExp(node) {
+			return
+		}
+		if node.Left.Table != "__cur" && node.Left.Col.Name != "" {
+			if _, exists := seen[node.Left.Col.Name]; !exists {
+				seen[node.Left.Col.Name] = struct{}{}
+				columns = append(columns, node.Left.Col.Name)
+			}
+		}
+		for _, child := range node.Children {
+			visit(child)
+		}
+	}
+	visit(ex)
+	return columns
 }
 
 func managedOrderRow(sel *qcode.Select, row map[string]any, fields []string) map[string]any {
