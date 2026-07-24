@@ -349,6 +349,18 @@ func (s *graphjinService) runWatchSubscription(ctx context.Context, def watchRun
 		s.updateWatchRunnerErrorForWatch(ctx, def, fmt.Errorf("watch subscription must use cursor pagination"))
 		return
 	}
+	if _, err := watchedWatchIDsForMember(member, def.ID); err != nil {
+		s.updateWatchRunnerErrorForWatch(ctx, def, err)
+		row, loadErr := s.internalWatchStoreRow(ctx, def.ID)
+		if loadErr != nil {
+			s.recordWatchRunnerError("reload unsafe watch", loadErr, map[string]any{"watch_id": def.ID})
+			return
+		}
+		if pauseErr := s.pauseWatchForReview(ctx, row, watchReviewPending); pauseErr != nil {
+			s.recordWatchRunnerError("pause unsafe watch", pauseErr, map[string]any{"watch_id": def.ID})
+		}
+		return
+	}
 	current := def
 	for {
 		select {

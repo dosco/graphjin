@@ -89,6 +89,7 @@ type Member struct {
 	mm     mmsg
 	vmap   map[string]json.RawMessage
 	ident  *subIdentity
+	roots  []SubscriptionRootInfo
 	// indices of cursor value in the arguments array
 	cindxs     []int
 	cnameByIdx []string
@@ -178,6 +179,20 @@ func (m *Member) CursorVariableNames() []string {
 	}
 	names := append([]string(nil), m.cnames...)
 	return names
+}
+
+// SubscriptionRoots returns immutable inspection metadata for this member's
+// root selections.
+func (m *Member) SubscriptionRoots() []SubscriptionRootInfo {
+	if m == nil || len(m.roots) == 0 {
+		return nil
+	}
+	roots := make([]SubscriptionRootInfo, len(m.roots))
+	for index, root := range m.roots {
+		roots[index] = root
+		roots[index].Filter = cloneSubscriptionFilter(root.Filter)
+	}
+	return roots
 }
 
 // Subscribe function is called on the GraphJin struct to subscribe to query.
@@ -322,6 +337,7 @@ func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 			cnames:     memberArgs.cnames,
 			vmap:       cloneRawMessageMap(s.vmap),
 			ident:      newSubIdentity(c),
+			roots:      subscriptionRootInfo(&sub.s, s.vmap),
 		}
 
 		m.mm, err = gj.subFirstQuery(sub, m)
@@ -336,6 +352,60 @@ func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 			gj.subs.Delete(k)
 			continue
 		}
+	}
+}
+
+func subscriptionRootInfo(state *gstate, vars map[string]json.RawMessage) []SubscriptionRootInfo {
+	if state == nil || state.cs == nil || state.cs.st.qc == nil {
+		return nil
+	}
+	qc := state.cs.st.qc
+	roots := make([]SubscriptionRootInfo, 0, len(qc.Roots))
+	for _, rootID := range qc.Roots {
+		sel := qc.Selects[rootID]
+		database := sel.Database
+		if database == "" {
+			database = state.database
+		}
+		if database == "" && state.gj != nil {
+			database = state.gj.defaultDB
+		}
+		roots = append(roots, SubscriptionRootInfo{
+			FieldName: sel.FieldName,
+			Table:     sel.Ti.Name,
+			Database:  database,
+			CursorVar: sel.Paging.CursorVar,
+			Filter:    cloneSubscriptionFilter(managedFilterToValueWithoutSeek(sel.Where.Exp, vars)),
+		})
+	}
+	return roots
+}
+
+func cloneSubscriptionFilter(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = cloneSubscriptionFilterValue(value)
+	}
+	return out
+}
+
+func cloneSubscriptionFilterValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneSubscriptionFilter(typed)
+	case []any:
+		out := make([]any, len(typed))
+		for index, item := range typed {
+			out[index] = cloneSubscriptionFilterValue(item)
+		}
+		return out
+	case []string:
+		return append([]string(nil), typed...)
+	default:
+		return value
 	}
 }
 

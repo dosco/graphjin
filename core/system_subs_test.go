@@ -280,7 +280,7 @@ func TestNanoDBSystemSubscriptionExtractsNamedRootCursors(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	member, err := gj.Subscribe(ctx, `subscription roots($gj_alpha_cursor: Cursor, $gj_beta_cursor: Cursor) {
-		gj_alpha(first: 1, after: $gj_alpha_cursor, order_by: { id: asc }) { id }
+		gj_alpha(first: 1, after: $gj_alpha_cursor, where: { id: { gt: 0 } }, order_by: { id: asc }) { id }
 		gj_alpha_cursor
 		gj_beta(first: 1, after: $gj_beta_cursor, order_by: { id: asc }) { id }
 		gj_beta_cursor
@@ -296,6 +296,29 @@ func TestNanoDBSystemSubscriptionExtractsNamedRootCursors(t *testing.T) {
 	}
 	if cursors["gj_alpha_cursor"] == cursors["gj_beta_cursor"] {
 		t.Fatalf("named root cursors should be independent: %v", cursors)
+	}
+	roots := member.SubscriptionRoots()
+	if len(roots) != 2 {
+		t.Fatalf("subscription roots = %+v", roots)
+	}
+	var alpha *SubscriptionRootInfo
+	for index := range roots {
+		if roots[index].Table == "gj_alpha" {
+			alpha = &roots[index]
+			break
+		}
+	}
+	if alpha == nil || alpha.CursorVar != "gj_alpha_cursor" {
+		t.Fatalf("gj_alpha subscription root missing: %+v", roots)
+	}
+	if _, hasSyntheticSeek := alpha.Filter["or"]; hasSyntheticSeek {
+		t.Fatalf("subscription filter retained synthetic cursor seek: %+v", alpha.Filter)
+	}
+	alpha.Filter["mutated"] = true
+	for _, root := range member.SubscriptionRoots() {
+		if _, changed := root.Filter["mutated"]; changed {
+			t.Fatal("SubscriptionRoots returned mutable internal filter state")
+		}
 	}
 }
 
