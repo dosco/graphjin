@@ -33,6 +33,8 @@ const requiredRoutes = [
   'integrations/multi-database/index.html',
   'agentic/mcp/index.html',
   'agentic/server-agent/index.html',
+  'agentic/watches/index.html',
+  'agentic/watch-automation/index.html',
   'configure/sources-mode/index.html',
   'configure/discovery-semantic-search/index.html',
   'reference/config-reference/index.html',
@@ -46,6 +48,7 @@ const requiredAnchors = [
   'what',
   'ai-queries',
   'agent',
+  'watch-automation',
   'proof',
   'demos',
   'databases',
@@ -83,6 +86,8 @@ const requiredContent = [
   'integrations/federation.md',
   'agentic/mcp.md',
   'agentic/server-agent.md',
+  'agentic/watches.md',
+  'agentic/watch-automation.md',
   'agentic/catalog-graph.md',
   'agentic/security-graph.md',
   'agentic/source-mode.md',
@@ -108,6 +113,11 @@ const requiredRenderedContent = [
   ['story/vision/index.html', 'GraphJin Vision'],
   ['story/security/index.html', 'GraphJin Security'],
   ['story/agentic/index.html', 'Agentic GraphJin'],
+  ['agentic/watch-automation/index.html', 'Approval is per exact version, not per event.'],
+  ['agentic/watch-automation/index.html', 'The 60-second story'],
+  ['agentic/watch-automation/index.html', 'Alerts fail open.'],
+  ['agentic/watch-automation/index.html', 'Actions fail closed.'],
+  ['agentic/watch-automation/index.html', 'graphjin://watch-events/unseen/watch%3Acoffee_roast_'],
 ];
 
 async function exists(file) {
@@ -191,11 +201,71 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
       failures.push(`Homepage missing required enriched copy: ${required}`);
     }
   }
+  for (const required of [
+    'Don’t just ask. Leave GraphJin watching.',
+    'coffee watch only',
+    'purchase-order watch only',
+    'Alerts fail open.',
+    'Actions fail closed.',
+  ]) {
+    if (!home.includes(required)) {
+      failures.push(`Homepage missing watch automation copy: ${required}`);
+    }
+  }
+  for (const href of ['/agentic/watch-automation/', '/start/demos/#coffee-roastery']) {
+    const escaped = href.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const hrefPattern = new RegExp(`href=(?:"${escaped}"|'${escaped}'|${escaped})(?=\\s|>)`);
+    if (!hrefPattern.test(home)) {
+      failures.push(`Homepage missing watch automation link: ${href}`);
+    }
+  }
+  if (home.includes('data-watch-motion=')) {
+    failures.push('Homepage renders the watch story hidden before JavaScript runs');
+  }
   for (const socialMeta of ['og:title', 'og:image', 'twitter:card']) {
     const socialPattern = new RegExp(`<meta\\s[^>]*(?:property|name)=(["'])?${socialMeta}\\1(?=[\\s/>])`);
     if (!socialPattern.test(home)) {
       failures.push(`Homepage missing social meta ${socialMeta}`);
     }
+  }
+}
+
+if (await exists(path.join(publicRoot, 'agentic', 'watch-automation', 'index.html'))) {
+  const watchGuide = await readFile(
+    path.join(publicRoot, 'agentic', 'watch-automation', 'index.html'),
+    'utf8'
+  );
+  if (!watchGuide.includes('<h1>Choosing Watches, Flows, and Workflows</h1>')) {
+    failures.push('Watch automation guide lost its full page heading');
+  }
+  if (!watchGuide.includes('>Watch Automation</a>')) {
+    failures.push('Watch automation guide is missing the shortened sidebar label');
+  }
+  if (!/\sclass=(?:"mermaid"|'mermaid'|mermaid)(?=\s|>)/.test(watchGuide)) {
+    failures.push('Watch automation guide is missing its lifecycle or decision diagram');
+  }
+}
+
+if (await exists(path.join(siteRoot, 'static', 'js', 'site.js'))) {
+  const siteJS = await readFile(path.join(siteRoot, 'static', 'js', 'site.js'), 'utf8');
+  for (const required of [
+    "document.querySelector('[data-watch-story]')",
+    "'IntersectionObserver' in window",
+    'prefers-reduced-motion: no-preference',
+  ]) {
+    if (!siteJS.includes(required)) {
+      failures.push(`Watch story motion is missing progressive enhancement guard: ${required}`);
+    }
+  }
+}
+
+if (await exists(path.join(siteRoot, 'static', 'css', 'site.css'))) {
+  const siteCSS = await readFile(path.join(siteRoot, 'static', 'css', 'site.css'), 'utf8');
+  if (!siteCSS.includes('[data-watch-story][data-watch-motion="ready"]')) {
+    failures.push('Watch story CSS can no longer distinguish JavaScript-enhanced rendering');
+  }
+  if (!siteCSS.includes('@media (prefers-reduced-motion: no-preference)')) {
+    failures.push('Watch story CSS lost its reduced-motion boundary');
   }
 }
 
