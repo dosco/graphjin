@@ -32,16 +32,30 @@ func (s *graphjinService) startProjectionPoller(parent context.Context) {
 }
 
 func (s *graphjinService) projectionPollLoop(ctx context.Context, interval time.Duration) {
+	s.projectionPollLoopWithRecovery(ctx, interval, internalRecoveryInterval)
+}
+
+func (s *graphjinService) projectionPollLoopWithRecovery(
+	ctx context.Context,
+	interval time.Duration,
+	recoveryInterval time.Duration,
+) {
 	if interval <= 0 {
 		return
 	}
+	if recoveryInterval <= 0 {
+		recoveryInterval = internalRecoveryInterval
+	}
+	// The initial subscription result intentionally forces one refresh. It
+	// closes the race between building the startup projection and subscribing
+	// to its revision; do not replace this sentinel with the current revision.
 	lastRevision := int64(-1)
 	signals := s.revisionSignals(ctx, "artifacts", true, interval)
 	pendingRevision := lastRevision
 	var retryTimer *time.Timer
 	var retry <-chan time.Time
-	refresh := func() {
-		if pendingRevision == lastRevision {
+	refresh := func(force bool) {
+		if !force && pendingRevision == lastRevision {
 			return
 		}
 		if err := s.refreshArtifactProjection(); err != nil {
@@ -72,6 +86,8 @@ func (s *graphjinService) projectionPollLoop(ctx context.Context, interval time.
 		}
 		retry = nil
 	}
+	recoveryTicker := time.NewTicker(recoveryInterval)
+	defer recoveryTicker.Stop()
 	defer func() {
 		if retryTimer != nil {
 			retryTimer.Stop()
@@ -86,10 +102,12 @@ func (s *graphjinService) projectionPollLoop(ctx context.Context, interval time.
 				return
 			}
 			pendingRevision = signal.Revision
-			refresh()
+			refresh(false)
 		case <-retry:
 			retry = nil
-			refresh()
+			refresh(false)
+		case <-recoveryTicker.C:
+			refresh(true)
 		}
 	}
 }

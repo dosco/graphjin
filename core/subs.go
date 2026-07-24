@@ -28,6 +28,12 @@ const (
 
 var minPollDuration = (200 * time.Millisecond)
 
+var closedMemberDone = func() <-chan struct{} {
+	done := make(chan struct{})
+	close(done)
+	return done
+}()
+
 const (
 	defaultSubsInitialChunk = 2000
 	defaultSubsMinChunk     = 50
@@ -193,6 +199,16 @@ func (m *Member) SubscriptionRoots() []SubscriptionRootInfo {
 		roots[index].Filter = cloneSubscriptionFilter(root.Filter)
 	}
 	return roots
+}
+
+// Done fires when the shared subscription controller exits because the engine
+// shuts down, all members unsubscribe, or an internal error stops it. The
+// member receives no further results after Done fires.
+func (m *Member) Done() <-chan struct{} {
+	if m == nil || m.sub == nil {
+		return closedMemberDone
+	}
+	return m.sub.done
 }
 
 // Subscribe function is called on the GraphJin struct to subscribe to query.

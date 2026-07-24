@@ -10,7 +10,10 @@ import (
 	"github.com/dosco/graphjin/core/v3"
 )
 
-const revisionSignalRootTable = "gj_internal_revision"
+const (
+	revisionSignalRootTable  = "gj_internal_revision"
+	internalRecoveryInterval = time.Hour
+)
 
 type revisionSignalHandler struct {
 	service *graphjinService
@@ -161,7 +164,11 @@ func (s *graphjinService) runRevisionSignals(
 			case <-ctx.Done():
 				member.Unsubscribe()
 				return
+			case <-member.Done():
+				closed = true
 			case result, ok := <-member.Result:
+				// Result is not closed today, but retain this guard so a future
+				// core change cannot turn a closed result channel into a hot loop.
 				if !ok {
 					closed = true
 					continue
