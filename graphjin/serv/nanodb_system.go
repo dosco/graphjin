@@ -891,6 +891,7 @@ func (s *graphjinService) refreshArtifactProjection() error {
 	if s == nil || s.systemNanoDB == nil || s.metadataDB == "" || s.conf == nil || !s.conf.Core.Artifacts.Enabled {
 		return nil
 	}
+	s.artifactProjectionRefreshes.Add(1)
 	rows, err := newArtifactControlPlane(s).allArtifactRowsForProjection(context.Background())
 	if err != nil {
 		return err

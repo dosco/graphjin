@@ -178,3 +178,49 @@ func TestSubscriptionWhereVariableRejected(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestSubscriptionMemberDone(t *testing.T) {
+	var nilMember *core.Member
+	select {
+	case <-nilMember.Done():
+	default:
+		t.Fatal("nil member Done channel must be immediately ready")
+	}
+
+	db, err := sql.Open("sqlite3", t.TempDir()+"/member-done.sqlite3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close() //nolint:errcheck
+	if _, err := db.Exec(`
+		CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);
+		INSERT INTO users (id, email) VALUES (1, 'user@test.com');
+	`); err != nil {
+		t.Fatal(err)
+	}
+	gj, err := core.NewGraphJin(&core.Config{
+		DBType:           "sqlite",
+		DisableAllowList: true,
+		SubsPollDuration: 200 * time.Millisecond,
+	}, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	member, err := gj.Subscribe(context.Background(), `subscription member_done {
+		users(where: { id: { eq: 1 } }) {
+			id
+			email
+		}
+	}`, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member.Unsubscribe()
+	select {
+	case <-member.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("member Done did not fire after the last member unsubscribed")
+	}
+}

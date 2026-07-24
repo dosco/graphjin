@@ -75,6 +75,8 @@ const (
 type HookFn func(*core.Result)
 
 type graphjinService struct {
+	artifactProjectionRefreshes atomic.Int64
+
 	log                *zap.SugaredLogger // logger
 	zlog               *zap.Logger        // faster logger
 	logLevel           int                // log level

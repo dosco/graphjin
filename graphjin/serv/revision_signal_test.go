@@ -148,6 +148,157 @@ func TestRevisionSignalsInitialPolicyAndChangeDelivery(t *testing.T) {
 	}
 }
 
+func TestArtifactProjectionInitialSignalForcesExactlyOneRefresh(t *testing.T) {
+	autoInit := true
+	svc := newArtifactOverlayTestServiceWithOptions(t, nil, core.ArtifactsConfig{
+		Enabled:     true,
+		Source:      "main",
+		AutoInit:    &autoInit,
+		GlobalsPath: ".",
+		PollSeconds: 1,
+	}, func(conf *Config) {
+		conf.SubsPollDuration = 100 * time.Millisecond
+	})
+
+	waitForArtifactProjectionRefreshes(t, svc, 1)
+	time.Sleep(500 * time.Millisecond)
+	if got := svc.artifactProjectionRefreshes.Load(); got != 1 {
+		t.Fatalf("unchanged revision caused %d projection refreshes, want 1", got)
+	}
+	if err := svc.bumpArtifactRevision(context.Background(), "artifacts"); err != nil {
+		t.Fatalf("bump artifact revision: %v", err)
+	}
+	waitForArtifactProjectionRefreshes(t, svc, 2)
+	time.Sleep(500 * time.Millisecond)
+	if got := svc.artifactProjectionRefreshes.Load(); got != 2 {
+		t.Fatalf("external bump caused %d projection refreshes, want 2", got)
+	}
+}
+
+func TestArtifactProjectionRecoveryRefreshesWithoutRevisionBump(t *testing.T) {
+	autoInit := true
+	svc := newArtifactOverlayTestServiceWithOptions(t, nil, core.ArtifactsConfig{
+		Enabled:     true,
+		Source:      "main",
+		AutoInit:    &autoInit,
+		GlobalsPath: ".",
+		PollSeconds: 1,
+	}, func(conf *Config) {
+		conf.SubsPollDuration = 100 * time.Millisecond
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	waitForArtifactProjectionRefreshes(t, svc, 1)
+	go svc.projectionPollLoopWithRecovery(ctx, time.Second, 150*time.Millisecond)
+	waitForArtifactProjectionRefreshes(t, svc, 2)
+
+	query := `query {
+		gj_artifacts(where: { name: { eq: "orphan_projection" } }) {
+			name
+			content_hash
+		}
+	}`
+	if rows := queryArtifactProjection(t, svc, artifactUserCtx("user_1"), query); len(rows) != 0 {
+		t.Fatalf("orphan artifact exists before store write: %+v", rows)
+	}
+	content := `query orphan_projection { orders { id } }`
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := svc.internalStoreMutationRows(
+		svc.internalStoreContext(ctx),
+		"artifacts",
+		`insert: $input`,
+		artifactStoreFields,
+		map[string]any{"input": map[string]any{
+			"id":            artifactID("user_1", artifactKindSavedQuery, "orphan_projection"),
+			"name":          "orphan_projection",
+			"kind":          artifactKindSavedQuery,
+			"path":          "",
+			"source":        "database",
+			"visibility":    "user",
+			"read_only":     false,
+			"account_id":    "acct_1",
+			"owner_id":      "user_1",
+			"content":       content,
+			"content_json":  nil,
+			"metadata_json": nil,
+			"content_hash":  artifactContentHash(content, ""),
+			"status":        "approved",
+			"revision":      1,
+			"created_at":    now,
+			"updated_at":    now,
+		}},
+	); err != nil {
+		t.Fatalf("insert orphan artifact without revision bump: %v", err)
+	}
+	if revision, err := svc.artifactRevision(ctx, "artifacts"); err != nil || revision != 0 {
+		t.Fatalf("artifact revision after orphan write = %d, err=%v; want 0", revision, err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		rows := queryArtifactProjection(t, svc, artifactUserCtx("user_1"), query)
+		if len(rows) == 1 && rows[0]["name"] == "orphan_projection" {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("projection recovery did not refresh an artifact written without a revision bump")
+}
+
+func TestWatchRunnerRecoveryReconcilesWithoutRevisionBump(t *testing.T) {
+	svc := newRevisionSignalTestService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go svc.watchRunnerLoopWithRecovery(ctx, 150*time.Millisecond)
+
+	// Let the initial subscription-driven reconciliation finish so only the
+	// forced recovery pass can discover the row inserted below.
+	time.Sleep(500 * time.Millisecond)
+	now := time.Now().UTC()
+	id := "watch:orphan-recovery"
+	if _, err := svc.dbs["app"].Exec(`INSERT INTO "_graphjin_watches"
+		(id, name, query, lifecycle, lease_expires_at, status, approval, enabled,
+		 owner_id, owner_role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id,
+		"orphan_recovery",
+		cursorOrdersWatchQuery("orphan_recovery"),
+		"ephemeral",
+		now.Add(-time.Minute).Format(time.RFC3339),
+		"active",
+		"approved",
+		true,
+		"user_1",
+		"analyst",
+		now.Format(time.RFC3339),
+		now.Format(time.RFC3339),
+	); err != nil {
+		t.Fatalf("insert orphan watch without revision bump: %v", err)
+	}
+	if revision, err := svc.artifactRevision(ctx, "watches"); err != nil || revision != 0 {
+		t.Fatalf("watch revision after orphan write = %d, err=%v; want 0", revision, err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var status string
+		var enabled bool
+		err := svc.dbs["app"].QueryRow(
+			`SELECT status, enabled FROM "_graphjin_watches" WHERE id = ?`,
+			id,
+		).Scan(&status, &enabled)
+		if err == nil && status == "expired" && !enabled {
+			return
+		}
+		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "locked") &&
+			!strings.Contains(strings.ToLower(err.Error()), "busy") {
+			t.Fatalf("read orphan watch: %v", err)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("watch runner recovery did not reconcile a watch written without a revision bump")
+}
+
 func TestWatchDeliverySweepRecoversEventWithoutRevisionBump(t *testing.T) {
 	svc := newRevisionSignalTestService(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -196,6 +347,22 @@ func TestWatchDeliverySweepRecoversEventWithoutRevisionBump(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatal("hourly recovery path did not process pending event without a revision bump")
+}
+
+func waitForArtifactProjectionRefreshes(t *testing.T, svc *graphjinService, want int64) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := svc.artifactProjectionRefreshes.Load(); got >= want {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf(
+		"artifact projection refreshes = %d, want at least %d",
+		svc.artifactProjectionRefreshes.Load(),
+		want,
+	)
 }
 
 func newRevisionSignalTestService(t *testing.T) *graphjinService {

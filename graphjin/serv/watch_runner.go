@@ -75,9 +75,19 @@ func (s *graphjinService) startWatchRunner(parent context.Context) {
 }
 
 func (s *graphjinService) watchRunnerLoop(ctx context.Context) {
+	s.watchRunnerLoopWithRecovery(ctx, internalRecoveryInterval)
+}
+
+func (s *graphjinService) watchRunnerLoopWithRecovery(
+	ctx context.Context,
+	recoveryInterval time.Duration,
+) {
 	interval := time.Duration(s.conf.Core.EffectiveArtifactsConfig().PollSeconds) * time.Second
 	if interval < watchRunnerMinInterval {
 		interval = watchRunnerMinInterval
+	}
+	if recoveryInterval <= 0 {
+		recoveryInterval = internalRecoveryInterval
 	}
 	active := make(map[string]activeWatchRuntime)
 	defer func() {
@@ -95,6 +105,8 @@ func (s *graphjinService) watchRunnerLoop(ctx context.Context) {
 	if coord := s.currentWatchCoordinator(); coord != nil {
 		runnerChanges = coord.SubscribeRunnerChanges(ctx)
 	}
+	recoveryTicker := time.NewTicker(recoveryInterval)
+	defer recoveryTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -109,6 +121,8 @@ func (s *graphjinService) watchRunnerLoop(ctx context.Context) {
 			if !ok {
 				return
 			}
+			reconcile()
+		case <-recoveryTicker.C:
 			reconcile()
 		}
 	}
