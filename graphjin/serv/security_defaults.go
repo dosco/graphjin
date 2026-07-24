@@ -49,7 +49,7 @@ func controlPlaneTableReadOnlyExplicit(conf *Config, database, table string) boo
 
 func controlPlaneSourceReadOnly(conf *Config, table string) bool {
 	switch strings.ToLower(strings.TrimSpace(table)) {
-	case "gj_watch", "gj_watch_event":
+	case "gj_watch", "gj_watch_event", "gj_watch_flow_preview":
 		return configWatchesEnabled(conf) && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case "gj_artifacts":
 		return conf.Core.Artifacts.Enabled && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
@@ -63,6 +63,8 @@ func controlPlaneSourceReadOnly(conf *Config, table string) bool {
 func defaultControlPlaneTableReadOnly(conf *Config, table string) bool {
 	switch strings.ToLower(strings.TrimSpace(table)) {
 	case "gj_watch", "gj_watch_event":
+		return !configWatchesEnabled(conf)
+	case "gj_watch_flow_preview":
 		return !configWatchesEnabled(conf)
 	case "gj_workflow":
 		return !conf.effectiveFeatureCapability(featurecap.KindWorkflows, featurecap.KeyWorkflowWrite)
@@ -467,7 +469,7 @@ func systemReadSourceEnabled(conf *Config, table string) bool {
 		return conf != nil && conf.runtimeRootRegistered()
 	case "gj_artifacts":
 		return conf != nil && conf.Core.Artifacts.Enabled
-	case "gj_watch", "gj_watch_event":
+	case "gj_watch", "gj_watch_event", "gj_watch_flow_preview":
 		return configWatchesEnabled(conf)
 	case "gj_workflow", "gj_workflow_execution":
 		return conf.workflowsEnabled()

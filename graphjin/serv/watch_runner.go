@@ -433,7 +433,12 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 		return dataHash, false, nil
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	eventID := watchEventID(def.ID, dataHash)
+	enrichCfg, enrichEnabled := parseWatchEnrichmentConfig(def.EnrichJSON)
+	eventCacheHash := dataHash
+	if enrichCfg.Kind == "flow" && enrichCfg.FlowHash != "" {
+		eventCacheHash = hashString(dataHash + ":" + enrichCfg.FlowHash)
+	}
+	eventID := watchEventID(def.ID, eventCacheHash)
 	evidenceJSON := mustMarshalString(map[string]any{
 		"watch_id":    def.ID,
 		"watch_name":  def.Name,
@@ -457,7 +462,7 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 			inserted = existing == nil
 		}
 	}
-	enrichCfg, enrichEnabled := parseWatchEnrichmentConfig(def.EnrichJSON)
+	notifyEvent := inserted
 	deliveryStatus := "pending"
 	if enrichEnabled {
 		deliveryStatus = "enriching"
@@ -484,8 +489,10 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 			inserted = false
 		}
 		if inserted && enrichEnabled {
-			if err := s.enrichWatchEvent(ctx, def, eventID, dataJSON, evidenceJSON, enrichCfg); err != nil {
-				s.recordWatchRunnerError("enrich watch event", err, map[string]any{"watch_id": def.ID, "event_id": eventID})
+			var enrichErr error
+			notifyEvent, enrichErr = s.enrichWatchEvent(ctx, def, eventID, dataJSON, evidenceJSON, enrichCfg)
+			if enrichErr != nil {
+				s.recordWatchRunnerError("enrich watch event", enrichErr, map[string]any{"watch_id": def.ID, "event_id": eventID})
 			}
 		}
 	}
@@ -524,7 +531,9 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 		if err := s.bumpArtifactRevision(ctx, "watch_events"); err != nil {
 			return "", inserted, err
 		}
-		s.notifyWatchEventsResourceScope(watchEventScope{OwnerID: def.OwnerID, AccountID: def.AccountID}, true)
+	}
+	if inserted && notifyEvent {
+		s.notifyWatchEventsResourceScope(watchEventScope{OwnerID: def.OwnerID, AccountID: def.AccountID, WatchID: def.ID}, true)
 	}
 	if err := s.bumpArtifactRevision(ctx, "watches"); err != nil {
 		return "", inserted, err
@@ -831,25 +840,34 @@ func (s *graphjinService) appendWatchNotices(ctx context.Context, resp *gjagent.
 	if resp == nil || s == nil || !s.watchesEnabled() {
 		return
 	}
-	count, since, err := s.unseenWatchEventSummary(ctx)
+	watchIDs, exactScope := s.watchIDsForMCPContext(ctx)
+	if !exactScope {
+		watchIDs = nil
+	}
+	count, since, unseenWatchIDs, err := s.unseenWatchEventSummary(ctx, watchIDs)
 	if err != nil || count == 0 {
 		return
 	}
+	message := "You have unseen watch events. Query gj_watch_event and mark reviewed events seen with gj_watch_event(update)."
+	if exactScope {
+		message = "You have unseen events for this MCP session's subscribed watches. Query gj_watch_event for only the listed watch_ids and mark reviewed events seen with gj_watch_event(update)."
+	}
 	resp.Notices = append(resp.Notices, gjagent.ResponseNotice{
-		Kind:    "watch_events_unseen",
-		Message: "You have unseen watch events. Query gj_watch_event and mark reviewed events seen with gj_watch_event(update).",
-		Count:   count,
-		Since:   since,
+		Kind:     "watch_events_unseen",
+		Message:  message,
+		Count:    count,
+		Since:    since,
+		WatchIDs: unseenWatchIDs,
 	})
 }
 
-func (s *graphjinService) unseenWatchEventSummary(ctx context.Context) (int, string, error) {
+func (s *graphjinService) unseenWatchEventSummary(ctx context.Context, watchIDs []string) (int, string, []string, error) {
 	if _, _, _, _, ok := s.watchDB(); !ok {
-		return 0, "", nil
+		return 0, "", nil, nil
 	}
 	ownerID, ok := artifactUserID(ctx)
 	if !ok {
-		return 0, "", nil
+		return 0, "", nil, nil
 	}
 	where := `where: { owner_id: { eq: $owner_id } }`
 	vars := map[string]any{"owner_id": ownerID}
@@ -857,23 +875,44 @@ func (s *graphjinService) unseenWatchEventSummary(ctx context.Context) (int, str
 		where = `where: { owner_id: { eq: $owner_id }, account_id: { eq: $account_id } }`
 		vars["account_id"] = accountID
 	}
-	rows, err := s.internalStoreRows(ctx, "watch_events", where, `id seen created_at owner_id account_id`, vars)
+	rows, err := s.internalStoreRows(ctx, "watch_events", where, `id watch_id seen created_at owner_id account_id`, vars)
 	if err != nil {
-		return 0, "", err
+		return 0, "", nil, err
+	}
+	watchFilter := make(map[string]struct{}, len(watchIDs))
+	for _, watchID := range watchIDs {
+		if watchID = strings.TrimSpace(watchID); watchID != "" {
+			watchFilter[watchID] = struct{}{}
+		}
 	}
 	count := 0
 	since := ""
+	unseenWatchSet := map[string]struct{}{}
 	for _, row := range rows {
 		if boolMapValue(row, "seen") {
 			continue
 		}
+		watchID := stringMapValue(row, "watch_id")
+		if len(watchFilter) != 0 {
+			if _, ok := watchFilter[watchID]; !ok {
+				continue
+			}
+		}
 		count++
+		if watchID != "" {
+			unseenWatchSet[watchID] = struct{}{}
+		}
 		createdAt := stringMapValue(row, "created_at")
 		if since == "" || (createdAt != "" && createdAt < since) {
 			since = createdAt
 		}
 	}
-	return count, since, nil
+	unseenWatchIDs := make([]string, 0, len(unseenWatchSet))
+	for watchID := range unseenWatchSet {
+		unseenWatchIDs = append(unseenWatchIDs, watchID)
+	}
+	sort.Strings(unseenWatchIDs)
+	return count, since, unseenWatchIDs, nil
 }
 
 func trimWatchEventProjectionRows(rows []map[string]any, cfg core.WatchesConfig) []map[string]any {

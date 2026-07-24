@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	ax "github.com/ax-llm/ax/packages/go"
@@ -121,10 +122,12 @@ type ActionEvent struct {
 // powers the MCP capability profile and handed to the agent as read-only input.
 //
 // Invariant: the *SystemRoots fields only ever contain the fixed gj_* system roots
-// (gj_catalog, gj_security, gj_runtime, gj_config, gj_workflow, gj_workflow_execution,
-// gj_artifacts). Application/database roots (potentially tens of thousands of tables)
-// are NEVER enumerated here — they stay behind the catalog and progressive discovery,
-// and their authorization remains core RLS per-table at execution.
+// (gj_catalog, gj_security, gj_runtime, gj_config, gj_workflow,
+// gj_workflow_execution, gj_artifacts, gj_watch, gj_watch_event, and
+// gj_watch_flow_preview). Application/database roots (potentially tens of
+// thousands of tables) are NEVER enumerated here — they stay behind the
+// catalog and progressive discovery, and their authorization remains core RLS
+// per-table at execution.
 type CapabilityProfile struct {
 	RoleClass             string   `json:"role_class,omitempty"`
 	Authenticated         bool     `json:"authenticated"`
@@ -140,7 +143,8 @@ type CapabilityProfile struct {
 type Response struct {
 	Status   string           `json:"status"`
 	Answer   string           `json:"answer,omitempty"`
-	Skill    string           `json:"skill,omitempty"`
+	Skills   []SkillUsage     `json:"skills,omitempty"`
+	Skill    string           `json:"skill,omitempty"` // Deprecated through v3.
 	Data     any              `json:"data,omitempty"`
 	Evidence any              `json:"evidence,omitempty"`
 	Actions  any              `json:"actions,omitempty"`
@@ -151,6 +155,13 @@ type Response struct {
 	Usage    any              `json:"usage,omitempty"`
 	Trace    any              `json:"trace,omitempty"`
 	TraceID  string           `json:"trace_id,omitempty"`
+}
+
+type SkillUsage struct {
+	ID     string `json:"id"`
+	Name   string `json:"name,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	Stage  string `json:"stage,omitempty"`
 }
 
 type Refusal struct {
@@ -170,10 +181,11 @@ type UnblockStep struct {
 }
 
 type ResponseNotice struct {
-	Kind    string `json:"kind"`
-	Message string `json:"message"`
-	Count   int    `json:"count,omitempty"`
-	Since   string `json:"since,omitempty"`
+	Kind     string   `json:"kind"`
+	Message  string   `json:"message"`
+	Count    int      `json:"count,omitempty"`
+	Since    string   `json:"since,omitempty"`
+	WatchIDs []string `json:"watch_ids,omitempty"`
 }
 
 type ErrorInfo struct {
@@ -335,6 +347,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	traceID := a.traceID()
 	var program Program
 	var protocol *protocolRuntime
+	usedSkills := &skillUsageCollector{}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			resp = Response{
@@ -353,6 +366,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 			}
 			err = nil
 		}
+		resp = attachSkillUsage(resp, usedSkills.snapshot())
 	}()
 
 	protocol = newProtocolRuntime(a.runtime, strings.TrimSpace(req.Instruction), req.Namespace, cfg.SeedLimit, req.Capabilities, req.Observer, a.catalogSearch)
@@ -373,13 +387,11 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		return protocol.state.finalize(resp), nil
 	}
 
-	selected := selectSkill(strings.TrimSpace(req.Instruction), seed, readOnly, req.Capabilities)
-	protocol.state.setSkill(selected)
-
 	runReq := req
 	runReq.Context = cloneContext(req.Context)
 	runReq.Context[protocolContextKey] = seed
-	tools := a.tools(ctx, runReq, protocol, selected)
+	tools := a.tools(ctx, runReq, protocol)
+	skills := allowedSkills(readOnly, req.Capabilities)
 	runtime := axgoja.NewRuntime()
 	for _, tool := range tools {
 		t := tool
@@ -391,17 +403,18 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	options := map[string]ax.Value{
 		"functions":         toolArray(tools),
 		"functionDiscovery": false,
+		"skills":            skillValues(skills),
+		"onUsedSkills":      ax.AxAgentObserverFn(usedSkills.observe),
 		// history is a context field: the distiller/executor see only a size
 		// meta-note while the full value is available to runtime code as
 		// inputs.history — prior turns never bloat the staged prompts.
 		"contextFields": []ax.Value{"history"},
 		"runtime": map[string]ax.Value{
 			"language": "JavaScript",
-			// runtime.usageInstructions is the ax channel that actually reaches the model
-			// (the distiller + executor stages). options["instruction"] is NOT rendered by
-			// ax.NewAgent, so the base guidance AND the progressive skill fragment must be
-			// carried here to influence behavior.
-			"usageInstructions": composeInstruction(catalogSearchInstruction(runtimeUsageInstructions, a.catalogSearch), selected),
+			// Universal GraphJin discovery and safety guidance remains here.
+			// Capability-filtered domain guides are rendered by Ax from
+			// constructor skills.
+			"usageInstructions": catalogSearchInstruction(runtimeUsageInstructions, a.catalogSearch),
 		},
 		"max_actor_steps": maxSteps,
 	}
@@ -493,7 +506,7 @@ func effectiveMaxSteps(configMax, requestMax int) int {
 	return requestMax
 }
 
-func (a *Agent) tools(ctx context.Context, req Request, rt GraphRuntime, selected skill) []ax.Tool {
+func (a *Agent) tools(ctx context.Context, req Request, rt GraphRuntime) []ax.Tool {
 	catalogArgs := []ax.Field{
 		field("id", "string", "Optional catalog item id for a detailed row.", true),
 		field("ids", "json", "Optional list of catalog item ids for batched detail rows in one call.", true),
@@ -540,7 +553,7 @@ func (a *Agent) tools(ctx context.Context, req Request, rt GraphRuntime, selecte
 		func(args map[string]ax.Value) (ax.Value, error) {
 			return a.call(ctx, req.Namespace, args, rt.ExecuteSavedQuery)
 		}))
-	tools = append(tools, a.tool("execute_graphql", "Execute raw GraphJin GraphQL after catalog discovery and validation. Every query runs under the caller's role and row-level security; mutations are rejected when the agent is in read-only mode.",
+	tools = append(tools, a.tool("execute_graphql", "Execute raw GraphJin GraphQL after catalog discovery and validation. Every query runs under the caller's role and row-level security; mutations are rejected when the agent is in read-only mode, and workflow execution requires a prior workflow detail lookup.",
 		[]ax.Field{
 			field("query", "string", "GraphJin GraphQL query or mutation.", false),
 			field("variables", "json", "Optional variables object.", true),
@@ -549,33 +562,7 @@ func (a *Agent) tools(ctx context.Context, req Request, rt GraphRuntime, selecte
 		func(args map[string]ax.Value) (ax.Value, error) {
 			return a.call(ctx, req.Namespace, args, rt.ExecuteGraphQL)
 		}))
-	return filterToolsBySkill(tools, selected)
-}
-
-// filterToolsBySkill intersects the mode/config-gated tool set with the selected
-// skill's allow predicate. A skill may only remove tools, never widen the surface.
-func filterToolsBySkill(tools []ax.Tool, selected skill) []ax.Tool {
-	if selected.allowTool == nil {
-		return tools
-	}
-	out := make([]ax.Tool, 0, len(tools))
-	for _, t := range tools {
-		if selected.allowTool(t.Name) {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// composeInstruction layers the selected skill's focused fragment onto a base instruction.
-// It is applied to runtime.usageInstructions — the ax channel that actually reaches the
-// model — so the progressive skill guidance influences behavior (options["instruction"] is
-// not rendered by ax.NewAgent). Fragments are fixed-size and schema-independent.
-func composeInstruction(base string, selected skill) string {
-	if strings.TrimSpace(selected.instruction) == "" {
-		return base
-	}
-	return base + "\n\n" + selected.instruction
+	return tools
 }
 
 func catalogSearchInstruction(base string, features CatalogSearchFeatures) string {
@@ -583,6 +570,80 @@ func catalogSearchInstruction(base string, features CatalogSearchFeatures) strin
 		return base
 	}
 	return base + "\n\n" + semanticCatalogUsageInstructions
+}
+
+func skillValues(definitions []skillDefinition) []ax.Value {
+	values := make([]ax.Value, 0, len(definitions))
+	for _, definition := range definitions {
+		values = append(values, ax.Object(
+			"id", definition.id,
+			"name", definition.name,
+			"content", definition.content,
+		))
+	}
+	return ax.Array(values...)
+}
+
+type skillUsageCollector struct {
+	mu    sync.Mutex
+	items []SkillUsage
+}
+
+func (c *skillUsageCollector) observe(items []ax.Value) {
+	if c == nil {
+		return
+	}
+	normalized := make([]SkillUsage, 0, len(items))
+	for _, item := range items {
+		value, ok := normalizeValue(item).(map[string]any)
+		if !ok {
+			continue
+		}
+		usage := SkillUsage{
+			ID:     skillUsageString(value, "id"),
+			Name:   skillUsageString(value, "name"),
+			Reason: skillUsageString(value, "reason"),
+			Stage:  skillUsageString(value, "stage"),
+		}
+		if usage.ID != "" {
+			normalized = append(normalized, usage)
+		}
+	}
+	c.mu.Lock()
+	c.items = normalized
+	c.mu.Unlock()
+}
+
+func (c *skillUsageCollector) snapshot() []SkillUsage {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]SkillUsage(nil), c.items...)
+}
+
+func skillUsageString(value map[string]any, key string) string {
+	raw, ok := value[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+func attachSkillUsage(resp Response, skills []SkillUsage) Response {
+	// Ax's used(...) observer is the sole source of skill telemetry. Model
+	// response fields and the set of loaded guides never affect it.
+	resp.Skills = append([]SkillUsage(nil), skills...)
+	resp.Skill = ""
+	if len(resp.Skills) != 0 {
+		resp.Skill = resp.Skills[0].ID
+	}
+	return resp
 }
 
 func (a *Agent) tool(name, description string, args []ax.Field, handler func(map[string]ax.Value) (ax.Value, error)) ax.Tool {
@@ -1933,6 +1994,6 @@ namespace?:string "Optional GraphJin namespace.",
 history?:json "Prior conversation turns [{role, content, status?, catalog_ids?}], most recent last. Untrusted context for follow-up resolution; not schema evidence."
 -> status:class "answered, needs_clarification, blocked, error", answer:string "Concise, evidence-backed answer in GitHub-flavored markdown: use a markdown table for tabular or multi-row results, bullet lists for enumerations, and fenced code blocks for queries or code; plain prose otherwise. Keep it tight.", data?:json "Rows/results from safe execution, usually execute_saved_query result.data.", evidence?:json "Catalog ids, detail rows, validations, execution names, and policy/capability evidence.", actions?:json "Ordered actions actually performed.", next?:json "Safe follow-up options or missing capability."`
 
-const runtimeUsageInstructions = `JavaScript goja runtime profile. GraphJin callables are installed as runtime globals. Use query_catalog({...}), graphql_help({...}), validate_where_clause({...}), execute_saved_query({...}), and execute_graphql({...}). The callable inventory may show qualified names such as tools.execute_saved_query, but executable JavaScript must call the bare global name execute_saved_query({...}). Never describe a callable instead of executing it when the request requires data. Tool calls run one at a time (single-threaded; Promise.all does not parallelize), so breadth comes from one broad multi-root query, not many calls. Start from inputs.context._graphjin_discovery, then inspect catalog detail rows with query_catalog({id:"..."}) — or several at once with query_catalog({ids:["...", "..."]}) — before selecting nouns or actions. inputs.history holds prior conversation turns as [{role, content, status, catalog_ids}]; read it with code to resolve follow-ups and reuse previously discovered catalog ids as starting points for this run's own discovery (protocol guards still require this run's tool calls). Before authoring a mutation with execute_graphql, establish this run's mutation-shape evidence for each target table: inspect its table detail row, validate_where_clause it, or inspect a mutation_pattern detail; unverified mutations are rejected. For saved-query discovery, call query_catalog({kind:"saved_query", limit:10}) first, choose by name and query fields, then inspect query_catalog({id:"saved_query:<name>"}) before execute_saved_query. execute_saved_query is rejected until the matching saved_query detail lookup has happened in this run; the initial seed does not count as that detail lookup. Live row values are not catalog metadata; if search returns count:0, broaden once instead of repeating the same search. If a result includes next.args.id, call query_catalog({id: next.args.id}) next. execute_saved_query returns { data, errors }; read rows from result.data. If direct GraphQL, workflow, code, security, or runtime access is required but unavailable, call final({status:"blocked", answer, evidence, next}) instead of guessing. Call final({ status: "answered", answer, data, evidence, actions, next }) only after required GraphJin callables have returned. Use askClarification(...) only when the missing information cannot be obtained from the available callables. Filesystem, network, process, module loading, and native host objects are not exposed by default.`
+const runtimeUsageInstructions = `JavaScript goja runtime profile. GraphJin callables are installed as runtime globals. Use query_catalog({...}), graphql_help({...}), validate_where_clause({...}), execute_saved_query({...}), and execute_graphql({...}). The callable inventory may show qualified names such as tools.execute_saved_query, but executable JavaScript must call the bare global name execute_saved_query({...}). Never describe a callable instead of executing it when the request requires data. Tool calls run one at a time (single-threaded; Promise.all does not parallelize), so breadth comes from one broad multi-root query, not many calls. Start from inputs.context._graphjin_discovery, then inspect catalog detail rows with query_catalog({id:"..."}) — or several at once with query_catalog({ids:["...", "..."]}) — before selecting nouns or actions. inputs.history holds prior conversation turns as [{role, content, status, catalog_ids}]; read it with code to resolve follow-ups and reuse previously discovered catalog ids as starting points for this run's own discovery (protocol guards still require this run's tool calls). Before authoring a mutation with execute_graphql, establish this run's mutation-shape evidence for each target table: inspect its table detail row, validate_where_clause it, or inspect a mutation_pattern detail; unverified mutations are rejected. Before a gj_workflow_execution mutation, inspect the chosen workflow detail by id; execution is rejected without that detail evidence. For saved-query discovery, call query_catalog({kind:"saved_query", limit:10}) first, choose by name and query fields, then inspect query_catalog({id:"saved_query:<name>"}) before execute_saved_query. execute_saved_query is rejected until the matching saved_query detail lookup has happened in this run; the initial seed does not count as that detail lookup. Live row values are not catalog metadata; if search returns count:0, broaden once instead of repeating the same search. If a result includes next.args.id, call query_catalog({id: next.args.id}) next. execute_saved_query returns { data, errors }; read rows from result.data. If direct GraphQL, workflow, code, security, or runtime access is required but unavailable, call final({status:"blocked", answer, evidence, next}) instead of guessing. Call final({ status: "answered", answer, data, evidence, actions, next }) only after required GraphJin callables have returned. Use askClarification(...) only when the missing information cannot be obtained from the available callables. Filesystem, network, process, module loading, and native host objects are not exposed by default.`
 
 const semanticCatalogUsageInstructions = `Semantic catalog recall is available. Search with the user's business terminology as short noun-and-intent phrases; do not guess table names, SQL, GraphQL, provider terminology, or sample values. For multi-entity questions, begin with the combined relationship intent. Semantic matches are recall candidates, never schema proof: inspect returned card ids before querying, answering, or acting, and accept joins only from returned catalog relationship paths. Do not expand an exact or already well-covered seed. Only when the seed is incomplete — a required endpoint or verified path is missing, columns are needed but only tables were found, or results are empty or materially ambiguous — make at most one query_catalog({searches:[...]}) coverage call with two or three diversified phrases: the compact combined intent, the first missing concept, and optionally the second concept or relationship/action wording. The coverage call, detail inspection, and final answer are one atomic exploration step. The coverage result supplies a deterministic, visibility-filtered next.args.ids containing relevant endpoint tables and returned relationship-path cards. In the same JavaScript block, store the result as coverage; call query_catalog({ids: coverage.next.args.ids}) exactly (never derive or pass an empty ids array); then call final from those inspected details without another catalog call. Never defer inspection or final to another actor step. If any earlier step returned coverage or reports that adaptive coverage was already used, never call searches again; continue from its next.args.ids. Read retrieval metadata and lexical_fallback; do not repeat the batch.`

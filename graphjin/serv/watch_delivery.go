@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	ax "github.com/ax-llm/ax/packages/go"
 	gjagent "github.com/dosco/graphjin/agent/v3"
 )
 
@@ -49,9 +50,13 @@ type watchWorkflowConfig struct {
 }
 
 type watchEnrichmentConfig struct {
-	Enabled     bool
-	Instruction string
-	MaxSteps    int
+	Enabled       bool
+	Kind          string
+	Flow          string
+	CanonicalFlow string
+	FlowHash      string
+	Instruction   string
+	MaxSteps      int
 }
 
 type watchDeliveryEvent struct {
@@ -60,6 +65,7 @@ type watchDeliveryEvent struct {
 	DataHash         string
 	DataJSON         string
 	EvidenceJSON     string
+	EnrichmentJSON   string
 	DeliveryJSON     string
 	DeliveryAttempts int64
 	AccountID        string
@@ -322,7 +328,7 @@ func (s *graphjinService) completeWatchDelivery(ctx context.Context, event watch
 		return err
 	}
 	s.markWatchChanged("watch delivery")
-	s.notifyWatchEventsResource(event.OwnerID, event.AccountID)
+	s.notifyWatchEventsResource(event.OwnerID, event.AccountID, event.WatchID)
 	return nil
 }
 
@@ -401,28 +407,15 @@ func (s *graphjinService) deliverWatchWorkflow(ctx context.Context, def watchRun
 	return receipt, nil
 }
 
-func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntimeDefinition, eventID, dataJSON, evidenceJSON string, cfg watchEnrichmentConfig) error {
+func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntimeDefinition, eventID, dataJSON, evidenceJSON string, cfg watchEnrichmentConfig) (bool, error) {
 	if def == nil {
-		return nil
+		return true, nil
+	}
+	if cfg.Kind == "flow" {
+		return s.triageWatchEvent(ctx, def, eventID, dataJSON, evidenceJSON, cfg)
 	}
 	status := "pending"
 	enrichment := map[string]any{}
-	defer func() {
-		_, _ = s.internalStoreMutationRows(ctx, "watch_events",
-			`where: { id: { eq: $id } }, update: $input`,
-			watchEventStoreFields,
-			map[string]any{
-				"id": eventID,
-				"input": map[string]any{
-					"delivery_status": status,
-					"enrichment_json": nullableJSONString(mustMarshalString(enrichment)),
-					"updated_at":      time.Now().UTC().Format(time.RFC3339),
-				},
-			})
-		_ = s.bumpArtifactRevision(ctx, "watch_events")
-		s.markWatchChanged("watch enrichment")
-		s.notifyWatchEventsResource(def.OwnerID, def.AccountID)
-	}()
 	if cfg.MaxSteps <= 0 || cfg.MaxSteps > 4 {
 		cfg.MaxSteps = 4
 	}
@@ -431,7 +424,7 @@ func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntim
 	}
 	if s.watchEnrichmentDailyCapReached(ctx, def.ID) {
 		enrichment = map[string]any{"status": "skipped", "reason": "daily_cap"}
-		return nil
+		return true, s.storeWatchEnrichment(ctx, eventID, status, false, enrichment)
 	}
 	ownerCtx := s.watchOwnerContext(ctx, *def)
 	agentConf := agentConfigFromService(s.conf)
@@ -441,7 +434,10 @@ func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntim
 	runner, err := newGraphJinAgentRunner(s, agentConf)
 	if err != nil {
 		enrichment = map[string]any{"status": "error", "error": err.Error()}
-		return err
+		if storeErr := s.storeWatchEnrichment(ctx, eventID, status, false, enrichment); storeErr != nil {
+			return true, storeErr
+		}
+		return true, err
 	}
 	req := gjagent.Request{
 		Instruction: cfg.Instruction,
@@ -460,13 +456,85 @@ func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntim
 	resp, err := runner.Run(ownerCtx, req)
 	if err != nil {
 		enrichment = map[string]any{"status": "error", "error": err.Error()}
-		return err
+		if storeErr := s.storeWatchEnrichment(ctx, eventID, status, false, enrichment); storeErr != nil {
+			return true, storeErr
+		}
+		return true, err
 	}
 	enrichment = map[string]any{
 		"status":       "ok",
 		"generated_at": time.Now().UTC().Format(time.RFC3339),
 		"response":     resp,
 	}
+	return true, s.storeWatchEnrichment(ctx, eventID, status, false, enrichment)
+}
+
+func (s *graphjinService) triageWatchEvent(ctx context.Context, def *watchRuntimeDefinition, eventID, dataJSON, evidenceJSON string, cfg watchEnrichmentConfig) (bool, error) {
+	started := time.Now()
+	failOpen := func(reason string, runErr error) (bool, error) {
+		enrichment := map[string]any{
+			"status": "error", "kind": "flow", "flow_hash": cfg.FlowHash,
+			"fail_open": true, "error": reason,
+		}
+		if err := s.storeWatchEnrichment(ctx, eventID, "pending", false, enrichment); err != nil {
+			return true, err
+		}
+		s.recordWatchFlowRuntimeEvent(ctx, def.ID, cfg.FlowHash, "runtime", "failed", reason, time.Since(started), map[string]any{"event_id": eventID, "fail_open": true})
+		return true, runErr
+	}
+	if s.watchEnrichmentDailyCapReached(ctx, def.ID) {
+		return failOpen("daily_cap", nil)
+	}
+	run, err := s.runWatchFlow(s.watchOwnerContext(ctx, *def), cfg, map[string]ax.Value{
+		"event":    parseJSONValue(dataJSON),
+		"watch":    map[string]any{"id": def.ID, "name": def.Name},
+		"evidence": parseJSONValue(evidenceJSON),
+	})
+	if err != nil {
+		return failOpen(err.Error(), err)
+	}
+	status := "pending"
+	seen := false
+	notify := true
+	switch run.Verdict {
+	case "digest":
+		status, seen, notify = "digest_queued", true, false
+	case "discard":
+		status, seen, notify = "suppressed", true, false
+	}
+	enrichment := map[string]any{
+		"status": "ok", "kind": "flow", "flow_hash": run.FlowHash,
+		"verdict": run.Verdict, "severity": run.Severity, "summary": run.Summary,
+		"usage": run.Usage, "model_calls": run.ModelCalls,
+		"duration_ms": run.Duration.Milliseconds(), "generated_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := s.storeWatchEnrichment(ctx, eventID, status, seen, enrichment); err != nil {
+		return true, err
+	}
+	s.recordWatchFlowRuntimeEvent(ctx, def.ID, run.FlowHash, "runtime", "ok", "", time.Since(started), map[string]any{
+		"event_id": eventID, "verdict": run.Verdict, "severity": run.Severity, "model_calls": run.ModelCalls,
+	})
+	return notify, nil
+}
+
+func (s *graphjinService) storeWatchEnrichment(ctx context.Context, eventID, deliveryStatus string, seen bool, enrichment map[string]any) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	input := map[string]any{
+		"delivery_status": deliveryStatus,
+		"enrichment_json": nullableJSONString(mustMarshalString(enrichment)),
+		"seen":            seen,
+		"seen_at":         nullableSeenAt(seen, now),
+		"updated_at":      now,
+	}
+	if _, err := s.internalStoreMutationRows(ctx, "watch_events",
+		`where: { id: { eq: $id } }, update: $input`, watchEventStoreFields,
+		map[string]any{"id": eventID, "input": input}); err != nil {
+		return err
+	}
+	if err := s.bumpArtifactRevision(ctx, "watch_events"); err != nil {
+		return err
+	}
+	s.markWatchChanged("watch enrichment")
 	return nil
 }
 
@@ -556,21 +624,11 @@ func parseWatchWorkflowConfig(raw any) watchWorkflowConfig {
 }
 
 func parseWatchEnrichmentConfig(raw string) (watchEnrichmentConfig, bool) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || raw == "null" || raw == "{}" {
+	_, cfg, enabled, err := normalizeWatchEnrichmentJSON(raw)
+	if err != nil {
 		return watchEnrichmentConfig{}, false
 	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		return watchEnrichmentConfig{}, false
-	}
-	enabled, _ := m["enabled"].(bool)
-	cfg := watchEnrichmentConfig{
-		Enabled:     enabled,
-		Instruction: stringFromAny(m["instruction"]),
-		MaxSteps:    intFromAny(m["max_steps"]),
-	}
-	return cfg, cfg.Enabled
+	return cfg, enabled
 }
 
 func (s *graphjinService) validateWatchWebhookURL(ctx context.Context, raw string) (*url.URL, error) {
@@ -727,6 +785,7 @@ func watchDeliveryEventFromRow(row map[string]any) watchDeliveryEvent {
 		DataHash:         stringMapValue(row, "data_hash"),
 		DataJSON:         jsonMapString(row, "data_json"),
 		EvidenceJSON:     jsonMapString(row, "evidence_json"),
+		EnrichmentJSON:   jsonMapString(row, "enrichment_json"),
 		DeliveryJSON:     jsonMapString(row, "delivery_json"),
 		DeliveryAttempts: int64MapValue(row, "delivery_attempts"),
 		AccountID:        stringMapValue(row, "account_id"),
@@ -736,6 +795,21 @@ func watchDeliveryEventFromRow(row map[string]any) watchDeliveryEvent {
 }
 
 func watchDeliveryPayload(def watchRuntimeDefinition, event watchDeliveryEvent) map[string]any {
+	enrichment := mapFromAny(parseJSONValue(event.EnrichmentJSON))
+	eventPayload := map[string]any{
+		"id":              event.ID,
+		"watch_id":        event.WatchID,
+		"data_hash":       event.DataHash,
+		"data_json":       parseJSONValue(event.DataJSON),
+		"evidence_json":   parseJSONValue(event.EvidenceJSON),
+		"enrichment_json": parseJSONValue(event.EnrichmentJSON),
+		"created_at":      event.CreatedAt,
+	}
+	for _, key := range []string{"verdict", "severity", "summary"} {
+		if value := strings.TrimSpace(stringFromAny(enrichment[key])); value != "" {
+			eventPayload[key] = value
+		}
+	}
 	return map[string]any{
 		"watch": map[string]any{
 			"id":               def.ID,
@@ -745,14 +819,7 @@ func watchDeliveryPayload(def watchRuntimeDefinition, event watchDeliveryEvent) 
 			"lifecycle":        def.Lifecycle,
 			"lease_expires_at": def.LeaseExpiresAt,
 		},
-		"event": map[string]any{
-			"id":            event.ID,
-			"watch_id":      event.WatchID,
-			"data_hash":     event.DataHash,
-			"data_json":     parseJSONValue(event.DataJSON),
-			"evidence_json": parseJSONValue(event.EvidenceJSON),
-			"created_at":    event.CreatedAt,
-		},
+		"event": eventPayload,
 	}
 }
 

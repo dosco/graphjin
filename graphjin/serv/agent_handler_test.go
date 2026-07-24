@@ -671,6 +671,11 @@ func TestAgentAuditHelpers(t *testing.T) {
 	recordAgentRuntimeEvent(svc, context.Background(), gjagent.Request{Instruction: "run saved query"}, gjagent.Response{
 		Status:  gjagent.StatusBlocked,
 		Refusal: &gjagent.Refusal{Code: "saved_query_detail_required"},
+		Skills: []gjagent.SkillUsage{
+			{ID: "workflow_read", Name: "Workflow discovery", Reason: "Inspected the workflow", Stage: "distiller"},
+			{ID: "workflow_execute", Name: "Workflow execution", Reason: "Attempted the governed run", Stage: "executor"},
+		},
+		Skill: "workflow_read",
 	}, time.Millisecond, nil)
 	rows := store.Rows(context.Background(), runtimeStatus{})
 	if len(rows) < 2 {
@@ -682,6 +687,10 @@ func TestAgentAuditHelpers(t *testing.T) {
 	}
 	if details["refusal_code"] != "saved_query_detail_required" {
 		t.Fatalf("refusal_code missing from runtime event details: %+v", details)
+	}
+	skills, _ := details["skills"].([]any)
+	if len(skills) != 2 || details["skill"] != "workflow_read" {
+		t.Fatalf("skill telemetry missing from runtime event details: %+v", details)
 	}
 }
 

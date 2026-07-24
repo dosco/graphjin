@@ -1178,7 +1178,7 @@ func systemRootAccessSafe(root, accessMode string) bool {
 	switch root {
 	case "gj_security", "gj_runtime", "gj_config":
 		return accessMode == core.AccessModeAdmin || accessMode == core.AccessModeBlocked
-	case "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution":
+	case "gj_artifacts", "gj_watch", "gj_watch_event", "gj_watch_flow_preview", "gj_workflow", "gj_workflow_execution":
 		return accessMode == core.AccessModeOwner || accessMode == core.AccessModeAccount || accessMode == core.AccessModeAdmin || accessMode == core.AccessModeBlocked
 	case "gj_catalog":
 		return accessMode == core.AccessModeAuthenticated || accessMode == core.AccessModeAccount || accessMode == core.AccessModeAdmin || accessMode == core.AccessModePublic
@@ -1191,7 +1191,7 @@ func systemRootRisk(root string) string {
 	switch strings.ToLower(strings.TrimSpace(root)) {
 	case "gj_security", "gj_config":
 		return "critical"
-	case "gj_runtime", "gj_workflow", "gj_watch", "gj_watch_event":
+	case "gj_runtime", "gj_workflow", "gj_watch", "gj_watch_event", "gj_watch_flow_preview":
 		return "high"
 	default:
 		return "medium"

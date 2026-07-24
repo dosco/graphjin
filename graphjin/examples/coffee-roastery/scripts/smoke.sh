@@ -33,6 +33,21 @@ Environment:
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/smoke-common.sh"
 smoke_parse_args "$@"
 
+COFFEE_ROUTE_WATCH_IDS=()
+COFFEE_ROUTE_SESSION_IDS=()
+
+smoke_extra_cleanup() {
+  local session_id watch_id
+  for session_id in "${COFFEE_ROUTE_SESSION_IDS[@]-}"; do
+    [ -n "$session_id" ] || continue
+    mcp_terminate_session "$session_id"
+  done
+  for watch_id in "${COFFEE_ROUTE_WATCH_IDS[@]-}"; do
+    [ -n "$watch_id" ] || continue
+    graphql watch-route-trap-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${watch_id}\" } }) { id } }" >/dev/null 2>&1 || true
+  done
+}
+
 # --- domain agent runners (scripted Northstar discovery flow) -----------------
 
 run_agent_rest_once() {
@@ -62,6 +77,125 @@ northstar_agent_expr='
   and ((.actions // .result.structuredContent.actions // []) | tostring | test("query_catalog"))
   and ((.evidence // .result.structuredContent.evidence // {}) | tostring | test("saved_query:daily_roast_context|daily_roast_context"))
 '
+
+# Two same-owner MCP sessions must wake only for the watch URI they subscribed
+# to, and exact inbox reads/acks must remain isolated as well.
+run_coffee_watch_session_routing_suite() {
+  log "checking per-watch MCP routing across coffee and purchase-order sessions"
+
+  local suffix coffee_name order_name coffee_query order_query
+  local coffee_create order_create coffee_id order_id coffee_uri order_uri
+  suffix="$(date +%s)_$$"
+  coffee_name="smoke_route_coffee_${suffix}"
+  order_name="smoke_route_order_${suffix}"
+  coffee_query="subscription ${coffee_name} { roast_schedule(first: 25, after: \$cursor) { id status } roast_schedule_cursor }"
+  order_query="subscription ${order_name} { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
+
+  coffee_create="$(graphql watch-route-coffee-create "mutation { gj_watch(insert: { name: \"${coffee_name}\", query: \"${coffee_query}\" }) { id enabled } }")"
+  order_create="$(graphql watch-route-order-create "mutation { gj_watch(insert: { name: \"${order_name}\", query: \"${order_query}\" }) { id enabled } }")"
+  coffee_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$coffee_create")"
+  order_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$order_create")"
+  assert_jq "$coffee_create" '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and $w.enabled == true' "coffee routing watch created"
+  assert_jq "$order_create" '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and $w.enabled == true' "purchase-order routing watch created"
+  COFFEE_ROUTE_WATCH_IDS=("$coffee_id" "$order_id")
+
+  coffee_uri="graphjin://watch-events/unseen/$(jq -rn --arg id "$coffee_id" '$id | @uri')"
+  order_uri="graphjin://watch-events/unseen/$(jq -rn --arg id "$order_id" '$id | @uri')"
+
+  local coffee_session order_session coffee_stream order_stream coffee_stream_pid order_stream_pid
+  coffee_session="$(mcp_initialize_isolated_session coffee-route)"
+  order_session="$(mcp_initialize_isolated_session order-route)"
+  COFFEE_ROUTE_SESSION_IDS=("$coffee_session" "$order_session")
+  mcp_start_session_stream "$coffee_session" coffee-route
+  coffee_stream="$MCP_LAST_STREAM_FILE"
+  coffee_stream_pid="$MCP_LAST_STREAM_PID"
+  mcp_start_session_stream "$order_session" order-route
+  order_stream="$MCP_LAST_STREAM_FILE"
+  order_stream_pid="$MCP_LAST_STREAM_PID"
+
+  local subscribe_out subscribe_payload
+  subscribe_payload="$(jq -nc --arg uri "$coffee_uri" '{jsonrpc:"2.0",id:2,method:"resources/subscribe",params:{uri:$uri}}')"
+  subscribe_out="$(mcp_session_request "$coffee_session" coffee-route-subscribe "$subscribe_payload")"
+  assert_jq "$subscribe_out" '(.error? | not) and (.result? != null)' "coffee session subscribed to its exact watch URI"
+  subscribe_payload="$(jq -nc --arg uri "$order_uri" '{jsonrpc:"2.0",id:2,method:"resources/subscribe",params:{uri:$uri}}')"
+  subscribe_out="$(mcp_session_request "$order_session" order-route-subscribe "$subscribe_payload")"
+  assert_jq "$subscribe_out" '(.error? | not) and (.result? != null)' "purchase-order session subscribed to its exact watch URI"
+
+  local routed=""
+  for _ in $(seq 1 120); do
+    if grep -Fq "$coffee_uri" "$coffee_stream" 2>/dev/null \
+      && grep -Fq "$order_uri" "$order_stream" 2>/dev/null; then
+      routed=1
+      break
+    fi
+    sleep 0.5
+  done
+  if [ -z "$routed" ]; then
+    local coffee_debug order_debug debug_payload
+    debug_payload="$(jq -nc --arg uri "$coffee_uri" '{jsonrpc:"2.0",id:99,method:"resources/read",params:{uri:$uri}}')"
+    coffee_debug="$(mcp_session_request "$coffee_session" coffee-route-debug-read "$debug_payload")"
+    debug_payload="$(jq -nc --arg uri "$order_uri" '{jsonrpc:"2.0",id:99,method:"resources/read",params:{uri:$uri}}')"
+    order_debug="$(mcp_session_request "$order_session" order-route-debug-read "$debug_payload")"
+    echo "coffee session stream:" >&2
+    sed -n '1,80p' "$coffee_stream" >&2 || true
+    echo "coffee exact resource:" >&2
+    jq . "$coffee_debug" >&2 || true
+    echo "purchase-order session stream:" >&2
+    sed -n '1,80p' "$order_stream" >&2 || true
+    echo "purchase-order exact resource:" >&2
+    jq . "$order_debug" >&2 || true
+    fail "per-watch notifications did not arrive within 60s"
+  fi
+  if grep -Fq "$order_uri" "$coffee_stream" || grep -Fq "$coffee_uri" "$order_stream"; then
+    echo "coffee session stream:" >&2
+    sed -n '1,80p' "$coffee_stream" >&2 || true
+    echo "purchase-order session stream:" >&2
+    sed -n '1,80p' "$order_stream" >&2 || true
+    fail "an MCP session received the other conversation's watch URI"
+  fi
+  pass "coffee and purchase-order sessions received only their own watch wakeups"
+
+  local read_payload coffee_read order_read coffee_event_id seen_out coffee_after order_after
+  read_payload="$(jq -nc --arg uri "$coffee_uri" '{jsonrpc:"2.0",id:3,method:"resources/read",params:{uri:$uri}}')"
+  coffee_read="$(mcp_session_request "$coffee_session" coffee-route-read "$read_payload")"
+  assert_jq_args "$coffee_read" "coffee exact resource contains only coffee-watch events" --arg id "$coffee_id" '
+    (.result.contents[0].text | fromjson) as $p
+    | $p.count >= 1 and (($p.events | length) >= 1)
+      and ([$p.events[] | select(.watch_id != $id)] | length) == 0
+  '
+  read_payload="$(jq -nc --arg uri "$order_uri" '{jsonrpc:"2.0",id:3,method:"resources/read",params:{uri:$uri}}')"
+  order_read="$(mcp_session_request "$order_session" order-route-read "$read_payload")"
+  assert_jq_args "$order_read" "purchase-order exact resource contains only purchase-order events" --arg id "$order_id" '
+    (.result.contents[0].text | fromjson) as $p
+    | $p.count >= 1 and (($p.events | length) >= 1)
+      and ([$p.events[] | select(.watch_id != $id)] | length) == 0
+  '
+
+  coffee_event_id="$(jq -r '.result.contents[0].text | fromjson | .events[0].id' "$coffee_read")"
+  seen_out="$TMP_DIR/watch-route-coffee-seen.json"
+  post_json "${BASE_URL%/}/api/v1/watch-events/${coffee_event_id}/seen" '{}' "$seen_out"
+  assert_jq "$seen_out" '.data.seen == true' "coffee session acknowledged its own event"
+
+  read_payload="$(jq -nc --arg uri "$coffee_uri" '{jsonrpc:"2.0",id:4,method:"resources/read",params:{uri:$uri}}')"
+  coffee_after="$(mcp_session_request "$coffee_session" coffee-route-read-after-seen "$read_payload")"
+  assert_jq "$coffee_after" '(.result.contents[0].text | fromjson | .count) == 0' "coffee exact inbox is empty after its acknowledgement"
+  read_payload="$(jq -nc --arg uri "$order_uri" '{jsonrpc:"2.0",id:4,method:"resources/read",params:{uri:$uri}}')"
+  order_after="$(mcp_session_request "$order_session" order-route-read-after-coffee-seen "$read_payload")"
+  assert_jq_args "$order_after" "coffee acknowledgement leaves purchase-order event unseen" --arg id "$order_id" '
+    (.result.contents[0].text | fromjson) as $p
+    | $p.count >= 1 and ([$p.events[] | select(.watch_id == $id)] | length) >= 1
+  '
+
+  mcp_stop_session_stream "$coffee_stream_pid"
+  mcp_stop_session_stream "$order_stream_pid"
+  MCP_STREAM_PIDS=()
+  mcp_terminate_session "$coffee_session"
+  mcp_terminate_session "$order_session"
+  COFFEE_ROUTE_SESSION_IDS=()
+  graphql watch-route-coffee-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${coffee_id}\" } }) { id } }" >/dev/null
+  graphql watch-route-order-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${order_id}\" } }) { id } }" >/dev/null
+  COFFEE_ROUTE_WATCH_IDS=()
+}
 
 # --- domain agent eval suite ---------------------------------------------------
 
@@ -262,6 +396,7 @@ assert_jq "$customer_workflow_out" '.data.gj_workflow_execution.status == "ok" a
 
 run_watch_lifecycle_suite "subscription smoke_watch { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
 run_watch_fire_suite "subscription smoke_fire { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
+run_coffee_watch_session_routing_suite
 run_artifact_suite
 
 log "checking MCP discovery surfaces"

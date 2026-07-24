@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	cloud.google.com/go/storage v1.62.1
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
-	github.com/ax-llm/ax/packages/go v0.0.0-20260705034710-eb5835e54ba0
+	github.com/ax-llm/ax/packages/go v0.0.0-20260723201140-3ac75e381dce
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
 	github.com/dosco/graphjin/agent/v3 v3.19.1
@@ -104,7 +104,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.7 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
-	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect

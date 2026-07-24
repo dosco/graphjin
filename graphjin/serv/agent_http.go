@@ -345,7 +345,11 @@ func recordAgentRuntimeEvent(s *graphjinService, ctx context.Context, req gjagen
 		event.Details["sampling_path"] = samplingPath
 	}
 	// Audit trail: what the agent actually did, independent of return_trace.
+	if len(resp.Skills) != 0 {
+		event.Details["skills"] = resp.Skills
+	}
 	if resp.Skill != "" {
+		// Deprecated v3 alias retained for existing audit consumers.
 		event.Details["skill"] = resp.Skill
 	}
 	if resp.Refusal != nil && strings.TrimSpace(resp.Refusal.Code) != "" {

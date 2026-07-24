@@ -93,7 +93,7 @@ var kindOrder = []string{KindSystem, KindWorkflows}
 
 var systemRoots = []string{
 	"gj_catalog", "gj_security", "gj_runtime", "gj_config", "gj_artifacts",
-	"gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution",
+	"gj_watch", "gj_watch_event", "gj_watch_flow_preview", "gj_workflow", "gj_workflow_execution",
 }
 
 var definitions = []Definition{

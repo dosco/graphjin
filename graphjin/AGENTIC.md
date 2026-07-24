@@ -148,13 +148,23 @@ generate competent code — so any OpenAI-compatible endpoint works.
 There are no per-request modes. A single operator kill-switch,
 `agent.read_only: true`, forces the agent read-only: mutations are rejected at
 execution — including saved mutations — regardless of the caller's role.
-Otherwise the caller's role and the request only select which guidance skill
-the agent follows (`data`/`code`/`workflow`/`admin` × read/write); access stays
-enforced by core roles and row-level security, and the Go protocol guards add
-per-call gates — a raw mutation is rejected until this run gathered
-mutation-shape evidence for each target table (its table detail row, a
-`validate_where_clause` on it, or a `mutation_pattern` detail row), on top of
-the existing security/runtime-evidence and saved-query-detail requirements.
+GraphJin derives a capability profile from the caller and preloads every
+permitted Ax skill. The fixed set is `data_discovery`, `data_write`,
+`code_read`, `code_write`, `workflow_read`, `workflow_execute`,
+`workflow_write`, `watch_read`, `watch_write`, `watch_flow`, `admin_read`, and
+`admin_write`. There is no lexical router, embedding search, skill catalog, or
+skill-loading turn. Read-only posture removes all write guides; workflow,
+watch, and admin guides require their governed roots, and admin guides also
+require the admin role.
+
+Skills guide the model but never authorize it. Access stays enforced by core
+roles and row-level security, while Go protocol guards add per-call gates. A
+raw application mutation is rejected until this run gathered mutation-shape
+evidence for every target table; workflow execution is rejected until the
+chosen workflow detail was inspected; security/runtime and saved-query detail
+requirements remain in force. Ax `used(...)` reports the guides that actually
+influenced a run through the plural `skills` response field. The deprecated
+singular `skill` field is the first used skill for v3 compatibility.
 
 Requests may also carry `history` — prior conversation turns `{role, content,
 status?, catalog_ids?}` — to resolve follow-ups. History is untrusted model

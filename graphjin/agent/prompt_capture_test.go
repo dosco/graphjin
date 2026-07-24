@@ -61,9 +61,8 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 		// Intentionally NO WithProgramFactory: we want ax's real prompt assembly.
 	)
 
-	// Ignore Run's outcome; we only need the captured Chat requests. Use a WRITE
-	// instruction so a non-empty skill fragment (data_write) is selected — this lets us
-	// confirm the progressive skill now reaches the model via runtime.usageInstructions.
+	// Ignore Run's outcome; we only need the captured Chat requests. A normal
+	// writable profile preloads data_write alongside the other core guides.
 	_, _ = runner.Run(context.Background(), Request{Instruction: "create a new order for a customer and update product inventory"})
 
 	if len(rec.calls) == 0 {
@@ -113,11 +112,9 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 		}
 	}
 
-	// Regression guards. ax.NewAgent does NOT render options["instruction"]; the only channel
-	// that reaches the model is runtime.usageInstructions. Both the base runtime guidance and
-	// the selected progressive skill fragment must arrive there. If either fails, the live
-	// prompt channel or the skill wiring has regressed (e.g. someone moved guidance back to
-	// options["instruction"]).
+	// Regression guards. Universal GraphJin guidance arrives through
+	// runtime.usageInstructions; capability-filtered guides arrive through Ax's
+	// constructor skills. Both channels must reach the rendered prompts.
 	if !runtimeReached {
 		t.Error("runtime usage instructions reached no stage — the live prompt channel is broken")
 	}
@@ -126,6 +123,63 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 	}
 	if !markdownReached {
 		t.Error("markdown answer-formatting guidance reached no stage — the responder answer-field guidance regressed")
+	}
+}
+
+func TestCaptureRenderedSkillsPerCapabilityProfile(t *testing.T) {
+	allRoots := []string{
+		systemRootSecurity,
+		systemRootRuntime,
+		systemRootConfig,
+		systemRootWorkflow,
+		systemRootWorkflowExec,
+		systemRootWatch,
+		systemRootWatchEvent,
+		systemRootWatchFlowPreview,
+	}
+	for _, tc := range []struct {
+		name     string
+		readOnly bool
+		profile  *CapabilityProfile
+	}{
+		{name: "anonymous"},
+		{name: "user", profile: profileWithRoleAndRoots("user")},
+		{name: "read-only", readOnly: true, profile: profileWithRoleAndRoots("user")},
+		{name: "watch-enabled", profile: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent, systemRootWatchFlowPreview)},
+		{name: "workflow-enabled", profile: profileWithRoleAndRoots("user", systemRootWorkflow, systemRootWorkflowExec)},
+		{name: "admin", profile: profileWithRoleAndRoots("admin", allRoots...)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &recordingClient{}
+			runner := newAgent(
+				Config{Provider: "openai", APIKeyEnv: "GRAPHJIN_UNUSED", ReadOnly: tc.readOnly, TimeoutSeconds: 50, MaxSteps: 4},
+				&fakeRuntime{},
+				WithClientFactory(func(Config) (ax.AIClient, error) { return rec, nil }),
+			)
+			_, _ = runner.Run(context.Background(), Request{
+				Instruction:  "inspect the available GraphJin capabilities",
+				Capabilities: tc.profile,
+			})
+			if len(rec.calls) == 0 {
+				t.Fatal("no rendered Ax prompt captured")
+			}
+			var prompt strings.Builder
+			for _, call := range rec.calls {
+				prompt.WriteString(dumpAXValue(call.values))
+				prompt.WriteString(dumpAXValue(call.options))
+			}
+			rendered := prompt.String()
+			allowed := skillIDs(allowedSkills(tc.readOnly, tc.profile))
+			for _, definition := range builtinSkills {
+				marker := "Skill: " + definition.id
+				if containsString(allowed, definition.id) && !strings.Contains(rendered, marker) {
+					t.Errorf("allowed skill %q did not reach an Ax prompt", definition.id)
+				}
+				if !containsString(allowed, definition.id) && strings.Contains(rendered, marker) {
+					t.Errorf("forbidden skill %q leaked into an Ax prompt", definition.id)
+				}
+			}
+		})
 	}
 }
 

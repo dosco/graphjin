@@ -1336,6 +1336,10 @@ func (s *watchTestSession) NotificationChannel() chan<- mcp.JSONRPCNotification 
 func (s *watchTestSession) SessionID() string { return s.id }
 
 func assertWatchResourceNotification(t *testing.T, ch <-chan mcp.JSONRPCNotification) {
+	assertWatchResourceNotificationURI(t, ch, WatchEventsUnseenResourceURI)
+}
+
+func assertWatchResourceNotificationURI(t *testing.T, ch <-chan mcp.JSONRPCNotification, wantURI string) {
 	t.Helper()
 	select {
 	case n := <-ch:
@@ -1343,11 +1347,20 @@ func assertWatchResourceNotification(t *testing.T, ch <-chan mcp.JSONRPCNotifica
 			t.Fatalf("notification method = %s", n.Method)
 		}
 		fields := n.Params.AdditionalFields
-		if len(fields) != 1 || fields["uri"] != WatchEventsUnseenResourceURI {
-			t.Fatalf("notification params = %+v, want uri-only watch resource", fields)
+		if len(fields) != 1 || fields["uri"] != wantURI {
+			t.Fatalf("notification params = %+v, want uri %q", fields, wantURI)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for resource update notification")
+	}
+}
+
+func assertNoWatchResourceNotification(t *testing.T, ch <-chan mcp.JSONRPCNotification) {
+	t.Helper()
+	select {
+	case n := <-ch:
+		t.Fatalf("unexpected watch resource notification: %+v", n)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
@@ -1521,7 +1534,7 @@ func TestWatchMCPUnseenResourceAndSubscriptionNotification(t *testing.T) {
 	if got := len(svc.mcpWatchSubs.matching("user_2")); got != 1 {
 		t.Fatalf("other matching subscriptions = %d, want 1", got)
 	}
-	svc.notifyWatchEventsResource("user_1")
+	svc.notifyWatchEventsResource("user_1", "", watchID)
 	assertWatchResourceNotification(t, session.notify)
 	select {
 	case n := <-otherSession.notify:
@@ -1544,6 +1557,181 @@ func TestWatchMCPUnseenResourceAndSubscriptionNotification(t *testing.T) {
 	}
 }
 
+func TestWatchMCPPerWatchRoutingSameOwnerSessions(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	ctx := artifactUserCtx("user_1")
+	coffeeWatchID := watchID("user_1", "coffee_roast_session_a")
+	orderWatchID := watchID("user_1", "purchase_order_session_b")
+	coffeeURI := watchEventsUnseenResourceURI(coffeeWatchID)
+	orderURI := watchEventsUnseenResourceURI(orderWatchID)
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, event := range []struct {
+		id      string
+		watchID string
+		hash    string
+	}{
+		{id: "evt_coffee", watchID: coffeeWatchID, hash: "hash_coffee"},
+		{id: "evt_order", watchID: orderWatchID, hash: "hash_order"},
+	} {
+		if _, err := db.Exec(`INSERT INTO "_graphjin_watch_events" (id, watch_id, data_hash, account_id, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			event.id, event.watchID, event.hash, "acct_1", "user_1", now, now); err != nil {
+			t.Fatalf("insert %s: %v", event.id, err)
+		}
+	}
+
+	ms := svc.newMCPServerWithContext(ctx)
+	templateResp := ms.srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"resources/templates/list"}`))
+	templateSuccess, ok := templateResp.(mcp.JSONRPCResponse)
+	if !ok {
+		t.Fatalf("resource templates response = %#v", templateResp)
+	}
+	templateResult, ok := templateSuccess.Result.(mcp.ListResourceTemplatesResult)
+	if !ok {
+		t.Fatalf("resource templates result = %T %#v", templateSuccess.Result, templateSuccess.Result)
+	}
+	var foundTemplate bool
+	for _, template := range templateResult.ResourceTemplates {
+		if template.URITemplate != nil && template.URITemplate.Raw() == WatchEventsUnseenResourceTemplateURI {
+			foundTemplate = true
+			break
+		}
+	}
+	if !foundTemplate {
+		t.Fatalf("resource templates = %+v, missing %q", templateResult.ResourceTemplates, WatchEventsUnseenResourceTemplateURI)
+	}
+
+	coffeeSession := &watchTestSession{id: "coffee-session", notify: make(chan mcp.JSONRPCNotification, 8)}
+	orderSession := &watchTestSession{id: "order-session", notify: make(chan mcp.JSONRPCNotification, 8)}
+	coffeeSession.Initialize()
+	orderSession.Initialize()
+	if err := ms.srv.RegisterSession(ctx, coffeeSession); err != nil {
+		t.Fatalf("register coffee session: %v", err)
+	}
+	if err := ms.srv.RegisterSession(ctx, orderSession); err != nil {
+		t.Fatalf("register order session: %v", err)
+	}
+	coffeeCtx := ms.srv.WithContext(ctx, coffeeSession)
+	orderCtx := ms.srv.WithContext(ctx, orderSession)
+	subscribe := func(subCtx context.Context, id int, uri string) {
+		t.Helper()
+		resp := ms.srv.HandleMessage(subCtx, []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"resources/subscribe","params":{"uri":%q}}`, id, uri)))
+		if _, ok := resp.(mcp.JSONRPCResponse); !ok {
+			t.Fatalf("subscribe %q response = %#v", uri, resp)
+		}
+	}
+	subscribe(coffeeCtx, 2, coffeeURI)
+	assertWatchResourceNotificationURI(t, coffeeSession.notify, coffeeURI)
+	subscribe(coffeeCtx, 3, WatchEventsUnseenResourceURI)
+	assertWatchResourceNotification(t, coffeeSession.notify)
+	subscribe(orderCtx, 4, orderURI)
+	assertWatchResourceNotificationURI(t, orderSession.notify, orderURI)
+
+	readResp := ms.srv.HandleMessage(coffeeCtx, []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":5,"method":"resources/read","params":{"uri":%q}}`, coffeeURI)))
+	readSuccess, ok := readResp.(mcp.JSONRPCResponse)
+	if !ok {
+		t.Fatalf("per-watch read response = %#v", readResp)
+	}
+	readResult, ok := readSuccess.Result.(mcp.ReadResourceResult)
+	if !ok {
+		t.Fatalf("per-watch read result = %T %#v", readSuccess.Result, readSuccess.Result)
+	}
+	payload, err := watchEventsResourceText(readResult.Contents)
+	if err != nil {
+		t.Fatalf("decode per-watch resource: %v", err)
+	}
+	if payload.Count != 1 || len(payload.Events) != 1 || payload.Events[0].ID != "evt_coffee" || payload.Events[0].WatchID != coffeeWatchID {
+		t.Fatalf("coffee resource payload = %+v", payload)
+	}
+	foreignRead := ms.srv.HandleMessage(ms.effectiveIdentityContext(artifactUserCtx("user_2")), []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":6,"method":"resources/read","params":{"uri":%q}}`, coffeeURI)))
+	foreignSuccess, ok := foreignRead.(mcp.JSONRPCResponse)
+	if !ok {
+		t.Fatalf("foreign read response = %#v", foreignRead)
+	}
+	foreignResult, ok := foreignSuccess.Result.(mcp.ReadResourceResult)
+	if !ok {
+		t.Fatalf("foreign read result = %T %#v", foreignSuccess.Result, foreignSuccess.Result)
+	}
+	foreignPayload, err := watchEventsResourceText(foreignResult.Contents)
+	if err != nil || foreignPayload.Count != 0 {
+		t.Fatalf("foreign resource payload = %+v err=%v", foreignPayload, err)
+	}
+	otherAccountCtx := context.WithValue(artifactUserCtx("user_1"), core.IdentityVarsKey, map[string]interface{}{
+		"user_id":     "user_1",
+		"user_ref":    safeArtifactIdentity("user_1", false),
+		"account_id":  "acct_2",
+		"account_ref": safeArtifactIdentity("acct_2", false),
+	})
+	otherAccountRead := ms.srv.HandleMessage(ms.effectiveIdentityContext(otherAccountCtx), []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":7,"method":"resources/read","params":{"uri":%q}}`, coffeeURI)))
+	otherAccountSuccess, ok := otherAccountRead.(mcp.JSONRPCResponse)
+	if !ok {
+		t.Fatalf("other-account read response = %#v", otherAccountRead)
+	}
+	otherAccountResult, ok := otherAccountSuccess.Result.(mcp.ReadResourceResult)
+	if !ok {
+		t.Fatalf("other-account read result = %T %#v", otherAccountSuccess.Result, otherAccountSuccess.Result)
+	}
+	otherAccountPayload, err := watchEventsResourceText(otherAccountResult.Contents)
+	if err != nil || otherAccountPayload.Count != 0 {
+		t.Fatalf("other-account resource payload = %+v err=%v", otherAccountPayload, err)
+	}
+
+	svc.notifyWatchEventsResource("user_1", "acct_1", orderWatchID)
+	assertWatchResourceNotificationURI(t, orderSession.notify, orderURI)
+	assertNoWatchResourceNotification(t, coffeeSession.notify)
+	svc.notifyWatchEventsResource("user_1", "acct_1", coffeeWatchID)
+	assertWatchResourceNotificationURI(t, coffeeSession.notify, coffeeURI)
+	assertNoWatchResourceNotification(t, orderSession.notify)
+
+	var coffeeNotice gjagent.Response
+	svc.appendWatchNotices(coffeeCtx, &coffeeNotice)
+	if len(coffeeNotice.Notices) != 1 || coffeeNotice.Notices[0].Count != 1 ||
+		len(coffeeNotice.Notices[0].WatchIDs) != 1 || coffeeNotice.Notices[0].WatchIDs[0] != coffeeWatchID {
+		t.Fatalf("coffee session notices = %+v", coffeeNotice.Notices)
+	}
+	var aggregateNotice gjagent.Response
+	svc.appendWatchNotices(ctx, &aggregateNotice)
+	if len(aggregateNotice.Notices) != 1 || aggregateNotice.Notices[0].Count != 2 || len(aggregateNotice.Notices[0].WatchIDs) != 2 {
+		t.Fatalf("aggregate notices = %+v", aggregateNotice.Notices)
+	}
+
+	unsubscribeResp := ms.srv.HandleMessage(coffeeCtx, []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":8,"method":"resources/unsubscribe","params":{"uri":%q}}`, coffeeURI)))
+	if _, ok := unsubscribeResp.(mcp.JSONRPCResponse); !ok {
+		t.Fatalf("unsubscribe coffee response = %#v", unsubscribeResp)
+	}
+	if got := len(svc.mcpWatchSubs.matching("user_1", "acct_1")); got != 2 {
+		t.Fatalf("subscriptions after exact unsubscribe = %d, want aggregate coffee plus exact order", got)
+	}
+	svc.notifyWatchEventsResource("user_1", "acct_1", orderWatchID)
+	assertWatchResourceNotification(t, coffeeSession.notify)
+	assertWatchResourceNotificationURI(t, orderSession.notify, orderURI)
+}
+
+func TestWatchEventsUnseenResourceURIRoundTrip(t *testing.T) {
+	for _, tc := range []struct {
+		watchID string
+		suffix  string
+	}{
+		{watchID: "watch:0123456789abcdef", suffix: "watch%3A0123456789abcdef"},
+		{watchID: "custom/watch id", suffix: "custom%2Fwatch%20id"},
+	} {
+		uri := watchEventsUnseenResourceURI(tc.watchID)
+		if !strings.HasSuffix(uri, "/"+tc.suffix) {
+			t.Fatalf("watch URI %q does not have encoded suffix %q", uri, tc.suffix)
+		}
+		got, ok := watchIDFromUnseenResourceURI(uri)
+		if !ok || got != tc.watchID {
+			t.Fatalf("watch URI round trip %q -> %q ok=%v", uri, got, ok)
+		}
+	}
+	if _, ok := watchIDFromUnseenResourceURI("graphjin://watch-events/other"); ok {
+		t.Fatal("unrelated resource URI should not parse as a watch-events resource")
+	}
+}
+
 func TestWatchMCPRedisFanoutWakesMatchingLocalSession(t *testing.T) {
 	db, svc := newSQLiteWatchService(t, 20)
 	if err := svc.initArtifactsBeforeCore(); err != nil {
@@ -1563,11 +1751,21 @@ func TestWatchMCPRedisFanoutWakesMatchingLocalSession(t *testing.T) {
 		t.Fatalf("register session: %v", err)
 	}
 	subCtx := ms.srv.WithContext(artifactUserCtx("user_1"), session)
+	watchURI := watchEventsUnseenResourceURI("watch_remote")
 	resp := ms.srv.HandleMessage(subCtx, []byte(`{"jsonrpc":"2.0","id":1,"method":"resources/subscribe","params":{"uri":"`+WatchEventsUnseenResourceURI+`"}}`))
 	if _, ok := resp.(mcp.JSONRPCResponse); !ok {
 		t.Fatalf("subscribe response = %#v", resp)
 	}
+	resp = ms.srv.HandleMessage(subCtx, []byte(`{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":"`+watchURI+`"}}`))
+	if _, ok := resp.(mcp.JSONRPCResponse); !ok {
+		t.Fatalf("exact subscribe response = %#v", resp)
+	}
 
+	fakeCoord.unseenCh <- watchEventScope{OwnerID: "user_1", AccountID: "acct_1", WatchID: "watch_remote", SourceNodeID: "node-b"}
+	assertWatchResourceNotificationURI(t, session.notify, watchURI)
+
+	// A legacy publisher has no watch_id, so rolling upgrades retain the
+	// aggregate wakeup instead of guessing an exact watch resource.
 	fakeCoord.unseenCh <- watchEventScope{OwnerID: "user_1", AccountID: "acct_1", SourceNodeID: "node-b"}
 	assertWatchResourceNotification(t, session.notify)
 
@@ -1598,30 +1796,44 @@ func TestWatchMCPSubscriptionRegistryScopesSessionByIdentity(t *testing.T) {
 	if _, ok := resp.(mcp.JSONRPCResponse); !ok {
 		t.Fatalf("user1 subscribe response = %#v", resp)
 	}
-	resp = ms.srv.HandleMessage(ms.srv.WithContext(user2, session), []byte(`{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":"`+WatchEventsUnseenResourceURI+`"}}`))
+	resp = ms.srv.HandleMessage(ms.srv.WithContext(user1, session), []byte(`{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":"`+WatchEventsUnseenResourceURI+`/watch:unencoded"}}`))
+	if _, ok := resp.(mcp.JSONRPCResponse); !ok {
+		t.Fatalf("non-canonical subscribe response = %#v", resp)
+	}
+	if got := len(svc.mcpWatchSubs.matching("user_1")); got != 1 {
+		t.Fatalf("user1 subscriptions after non-canonical URI = %d, want aggregate only", got)
+	}
+	resp = ms.srv.HandleMessage(ms.srv.WithContext(user2, session), []byte(`{"jsonrpc":"2.0","id":3,"method":"resources/subscribe","params":{"uri":"`+WatchEventsUnseenResourceURI+`"}}`))
 	if _, ok := resp.(mcp.JSONRPCResponse); !ok {
 		t.Fatalf("user2 subscribe response = %#v", resp)
+	}
+	for id, watchID := range []string{"watch:session-a", "watch:session-b"} {
+		uri := watchEventsUnseenResourceURI(watchID)
+		resp = ms.srv.HandleMessage(ms.srv.WithContext(user2, session), []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"resources/subscribe","params":{"uri":%q}}`, id+4, uri)))
+		if _, ok := resp.(mcp.JSONRPCResponse); !ok {
+			t.Fatalf("user2 exact subscribe %q response = %#v", uri, resp)
+		}
 	}
 	if got := len(svc.mcpWatchSubs.matching("user_1")); got != 1 {
 		t.Fatalf("user1 subscriptions = %d, want 1", got)
 	}
-	if got := len(svc.mcpWatchSubs.matching("user_2")); got != 1 {
-		t.Fatalf("user2 subscriptions = %d, want 1", got)
+	if got := len(svc.mcpWatchSubs.matching("user_2")); got != 3 {
+		t.Fatalf("user2 subscriptions = %d, want aggregate plus two exact subscriptions", got)
 	}
 
-	resp = ms.srv.HandleMessage(ms.srv.WithContext(user1, session), []byte(`{"jsonrpc":"2.0","id":3,"method":"resources/unsubscribe","params":{"uri":"`+WatchEventsUnseenResourceURI+`"}}`))
+	resp = ms.srv.HandleMessage(ms.srv.WithContext(user1, session), []byte(`{"jsonrpc":"2.0","id":6,"method":"resources/unsubscribe","params":{"uri":"`+WatchEventsUnseenResourceURI+`"}}`))
 	if _, ok := resp.(mcp.JSONRPCResponse); !ok {
 		t.Fatalf("user1 unsubscribe response = %#v", resp)
 	}
 	if got := len(svc.mcpWatchSubs.matching("user_1")); got != 0 {
 		t.Fatalf("user1 subscriptions after unsubscribe = %d, want 0", got)
 	}
-	if got := len(svc.mcpWatchSubs.matching("user_2")); got != 1 {
-		t.Fatalf("user2 subscriptions after user1 unsubscribe = %d, want 1", got)
+	if got := len(svc.mcpWatchSubs.matching("user_2")); got != 3 {
+		t.Fatalf("user2 subscriptions after user1 unsubscribe = %d, want 3", got)
 	}
-	svc.mcpWatchSubs.remove(session.SessionID())
+	ms.srv.UnregisterSession(user2, session.SessionID())
 	if got := len(svc.mcpWatchSubs.matching("user_2")); got != 0 {
-		t.Fatalf("user2 subscriptions after session removal = %d, want 0", got)
+		t.Fatalf("user2 subscriptions after session unregister = %d, want 0", got)
 	}
 }
 
@@ -1720,14 +1932,14 @@ func TestWatchNotifyPublishesRedisFanoutScope(t *testing.T) {
 	_, svc := newSQLiteWatchService(t, 20)
 	fakeCoord := newFakeWatchCoordinator()
 	svc.watchCoord = fakeCoord
-	svc.notifyWatchEventsResource("user_1", "acct_1")
+	svc.notifyWatchEventsResource("user_1", "acct_1", "watch_1")
 	fakeCoord.mu.Lock()
 	defer fakeCoord.mu.Unlock()
 	if len(fakeCoord.publishedUnseen) != 1 {
 		t.Fatalf("published unseen = %+v, want one scope", fakeCoord.publishedUnseen)
 	}
 	scope := fakeCoord.publishedUnseen[0]
-	if scope.OwnerID != "user_1" || scope.AccountID != "acct_1" || scope.SourceNodeID != "" {
+	if scope.OwnerID != "user_1" || scope.AccountID != "acct_1" || scope.WatchID != "watch_1" || scope.SourceNodeID != "" {
 		t.Fatalf("published scope = %+v", scope)
 	}
 }

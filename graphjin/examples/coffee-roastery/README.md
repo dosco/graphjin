@@ -111,6 +111,8 @@ The script checks the connected demo surface end-to-end:
 - Saved-query REST endpoints for `daily_roast_context`, `batch_quality_snapshot`, and `customer_issue_context`.
 - Workflow execution for `daily_roast_plan`, `batch_quality_review`, and `customer_issue_triage`.
 - MCP discovery through `query_catalog` for saved queries, workflows, and CodeSQL context.
+- Per-watch MCP routing across two same-owner sessions: coffee-roast and purchase-order wakeups, exact inbox reads, and acknowledgement isolation.
+- Deterministic inline AxFlow watch triage: preview/approval plus notify, digest, and discard event dispositions using the local fixture (no provider traffic).
 
 ### Semantic discovery comparison
 
@@ -217,7 +219,41 @@ For stricter open-ended protocol checks, run:
 examples/coffee-roastery/scripts/smoke.sh --agent-eval
 ```
 
-The eval mode checks that the agent discovers catalog evidence, inspects saved-query details before execution, never answers from evidence-less raw GraphQL, returns machine-actionable refusals when blocked, creates watches through the watch_write skill, surfaces `watch_events_unseen` notices, and enforces role-gated control-plane access.
+The eval mode checks that the agent discovers catalog evidence, inspects saved-query and workflow details before execution, never answers from evidence-less raw GraphQL, returns machine-actionable refusals when blocked, actually creates watches, surfaces `watch_events_unseen` notices, and enforces role-gated control-plane access. Skill telemetry is diagnostic and is not used as a smoke-test authorization oracle.
+
+The provider-free 60-case skill corpus runs in normal Go tests:
+
+```bash
+cd agent
+go test -run 'TestSkillEvaluationCorpus|TestAllowedSkillsCapabilityMatrix' ./...
+```
+
+Provider comparison is explicitly opt-in. Configure exact server-derived
+capability profiles using `agent/testdata/skill_eval_profiles.example.json`,
+run the 24 representative cases three times against the old server for a
+baseline, then against the candidate using the same model:
+
+```bash
+cd agent
+go run ./cmd/skill-eval -live -phase baseline \
+  -profiles testdata/skill_eval_profiles.json \
+  -model "$MODEL" -ax-version "$BASELINE_AX_VERSION" \
+  -graphjin-commit "$BASELINE_COMMIT" \
+  -prompt-registry "$BASELINE_CHECKOUT/agent/skills.go" \
+  -report baseline-skills.json
+
+go run ./cmd/skill-eval -live -phase candidate \
+  -profiles testdata/skill_eval_profiles.json \
+  -model "$MODEL" -graphjin-commit "$CANDIDATE_COMMIT" \
+  -baseline baseline-skills.json \
+  -report candidate-skills.json
+```
+
+The report includes tokens, GraphJin tool calls, actor turns, used skills,
+outcomes, p50/p95 latency, Ax version, commit, and the prompt-registry hash.
+Ax provider clients default to temperature zero. Candidate hard gates cover
+behavioral recall, used-skill recall/precision, safety, prompt-token growth,
+actor turns, and absence of skill discovery; latency regressions are warnings.
 
 To verify automatic model routing, run the reference sampling-capable client
 against the running demo. With provider credentials it must use the server

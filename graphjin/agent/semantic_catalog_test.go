@@ -22,7 +22,7 @@ func TestSemanticCatalogGuidanceAndToolSchemaAreConditional(t *testing.T) {
 
 	queryCatalog := func(agent *Agent) map[string]struct{} {
 		fields := map[string]struct{}{}
-		for _, tool := range agent.tools(context.Background(), Request{}, agent.runtime, skill{}) {
+		for _, tool := range agent.tools(context.Background(), Request{}, agent.runtime) {
 			if tool.Name != "query_catalog" {
 				continue
 			}

@@ -1,12 +1,12 @@
 ---
 title: "Watches"
-description: "Cursor-backed standing questions stored in gj_watch, evaluated with the owner's permissions, delivering fired events to a durable gj_watch_event inbox, webhooks, workflows, or MCP resource notices."
+description: "Cursor-backed standing questions with optional inline, tool-free AxFlow triage before durable inbox, webhook, workflow, or MCP delivery."
 nav_group: "agentic"
 doc_kind: "guide"
 weight: 47
 ---
 
-A watch is a standing question: "tell me when a roast batch fails QC twice in a week." GraphJin stores the definition under `gj_watch`, evaluates it as a governed cursor-backed subscription **with the owner's stored identity and role**, and writes fired events to the owner's `gj_watch_event` inbox. Optional delivery fans out to webhooks or workflows, and a read-only agent enrichment can attach a short summary of what happened.
+A watch is a standing question: "tell me when a roast batch fails QC twice in a week." GraphJin stores the definition under `gj_watch`, evaluates it as a governed cursor-backed subscription **with the owner's stored identity and role**, and writes fired events to the owner's `gj_watch_event` inbox. Optional delivery fans out to webhooks or workflows. An inline, tool-free AxFlow can triage an event before anything wakes.
 
 Watches never elevate access: a watch can only ever see what its owner could already query, and both roots are owner-scoped — callers see only their own watches and events.
 
@@ -42,7 +42,41 @@ mutation {
 }
 ```
 
-Pause and resume via `status` / `enabled` updates; remove with `gj_watch(delete)`. Optional fields: `variables_json`, `condition_js` (a predicate over the result), `delivery_json` (webhook/workflow targets), and `enrich_json` (read-only agent summary). User-supplied JSON fields are size-capped at `snapshot_max_bytes`.
+Pause and resume via `status` / `enabled` updates; remove with `gj_watch(delete)`. Optional fields: `variables_json`, `delivery_json` (webhook/workflow targets), and `enrich_json` (inline AxFlow triage or legacy read-only agent enrichment). `condition_js` remains stored for compatibility but is not executed by the current watch runner. User-supplied JSON fields are size-capped at `snapshot_max_bytes`.
+
+## Inline AxFlow triage
+
+Flows are watch-owned runtime configuration, not reusable artifacts. Use the explicit built-in or store Mermaid directly in `enrich_json`:
+
+```graphql
+mutation {
+  gj_watch(
+    insert: {
+      name: "coffee_roast_triage"
+      query: "subscription coffee_roast_triage { roast_batches(first: 25, after: $cursor) { id phase temperature } roast_batches_cursor }"
+      enrich_json: { enabled: true, kind: "flow", flow: "default_watch_triage" }
+    }
+  ) { id status approval enabled enrich_json }
+}
+```
+
+Inline Mermaid must compile through AxFlow and return exactly `verdict` (`notify`, `digest`, or `discard`), `severity` (`info`, `warn`, or `critical`), and `summary` (at most 280 characters). Flows use GraphJin's server-side `agent` provider/model/credential settings with MCP sampling forced off; they run without tools, GraphJin bindings, or workflow callables. A new or changed flow is stored paused with approval pending. Preview it against explicit samples or retained events, then optionally approve and resume in the same mutation:
+
+```graphql
+mutation {
+  gj_watch_flow_preview(
+    insert: {
+      watch_id: "watch:..."
+      samples_json: [{ batch_id: "batch-7", temperature: 421 }]
+      approve: true
+    }
+  ) { flow_hash sample_count notify_count digest_count discard_count status approved }
+}
+```
+
+`notify` leaves the event pending and unseen, so its per-watch MCP resource wakes. `digest` records `digest_queued` and marks the event processed without waking. `discard` records `suppressed` and marks it processed without waking. Invalid output, timeout, missing server credentials, the daily enrichment cap, or any model error fails open: GraphJin records the error and delivers the raw pending event. Omitting a flow makes no model call. The event's `enrichment_json`, compact MCP entry, and webhook/workflow payload include the triage verdict, severity, and summary.
+
+{{< verified by="TestWatchFlowPreviewApprovesCurrentInlineFlow" file="serv/watch_flow_test.go" line="104" >}}
 
 Normal watches are durable by default. Use an explicit lease only when the user asks for a TTL:
 
@@ -87,17 +121,17 @@ query {
 }
 ```
 
-Mark reviewed events seen with `gj_watch_event(update: { seen: true }, where: ...)`. [Server-side agent](/agentic/server-agent/) responses carry a `watch_events_unseen` notice whenever the caller has unreviewed events - the cue to run exactly this loop. At runtime, `query_catalog(id: "help:watches")` returns the full contract.
+Mark reviewed events seen with `gj_watch_event(update: { seen: true }, where: ...)`. In a multi-conversation MCP client, give each watch a unique name, retain the returned watch ID, filter this query to that ID, and never acknowledge another conversation's event. [Server-side agent](/agentic/server-agent/) responses carry a `watch_events_unseen` notice with the relevant `watch_ids`. At runtime, `query_catalog(id: "help:watches")` returns the full contract.
 
-MCP clients can also subscribe to `graphjin://watch-events/unseen`. GraphJin sends `notifications/resources/updated` when that caller has matching unseen events, and a resource read returns compact metadata only: event IDs, watch IDs, timestamps, hashes, truncation flags, and delivery status. Full event payloads still come from `gj_watch_event`.
+MCP clients can RFC 6570-expand `graphjin://watch-events/unseen/{watch_id}` for each retained watch, percent-encoding reserved characters in the ID, and subscribe to that concrete resource. GraphJin then sends `notifications/resources/updated` only to sessions subscribed to that watch; the notification URI identifies the watch, while a resource read returns its compact event metadata. The aggregate `graphjin://watch-events/unseen` resource remains available for clients without per-URI subscription support, but those clients must filter entries to their conversation's retained watch IDs before reading or acknowledging events. Full event payloads still come from `gj_watch_event`.
 
-{{< verified by="TestWatchMCPUnseenResourceAndSubscriptionNotification" file="serv/watches_test.go" line="1337" >}}
+{{< verified by="TestWatchMCPPerWatchRoutingSameOwnerSessions" file="serv/watches_test.go" line="1571" >}}
 
 ## Durability
 
 - **Restart-safe**: definitions, events, and subscription cursor checkpoints (`last_cursor_json`) are store rows; on boot the runner reloads every `enabled + active + approved` watch and resumes evaluation from the persisted cursor.
 - **Downtime**: durable watches require cursor-capable subscriptions. The subscription cursor defines what is new after restart; `last_data_hash` remains only as a defensive idempotency guard so repeated payloads do not create duplicate inbox events.
-- **Retention**: events are kept `event_retention_hours` (default 168) and capped at `max_events_per_watch` (default 500); event snapshots are capped at `snapshot_max_bytes` (default 32KB); agent enrichment is capped at `enrichment_daily_cap` per watch per day (default 10).
+- **Retention**: events are kept `event_retention_hours` (default 168) and capped at `max_events_per_watch` (default 500); event snapshots are capped at `snapshot_max_bytes` (default 32KB); flow and legacy agent enrichment share `enrichment_daily_cap` per watch per day (default 10).
 - **Failure**: a broken watch flips to `status: "error"` with `last_error` and a growing `failure_count`; it is never auto-deleted. Existing non-cursor watches move to error until updated to a cursor-backed subscription.
 
 {{< verified by="TestWatchRunnerPersistsEventsIdempotentlyAndNotices" file="serv/watches_test.go" line="251" >}}
@@ -124,6 +158,6 @@ Cleanup preview groups candidates by `expired_ephemeral`, `disabled_stale`, `err
 
 ## Delivery
 
-Multiple replicas may evaluate the same watch, but fires and deliveries are deduplicated: event IDs are deterministic (`watch_id + data_hash`) so duplicate inserts collapse on the primary key, and webhook/workflow delivery is claimed atomically so exactly one replica performs it. Webhooks get 3 attempts with a 10s timeout, an HMAC-SHA256 signature header, and an `Idempotency-Key`; targets must match the `watches.webhook_allow` allowlist (empty means all webhooks are denied).
+Multiple replicas may evaluate the same watch, but fires and deliveries are deduplicated: event IDs are deterministic from `watch_id + data_hash`, plus the canonical flow hash when a flow is configured, so identical data reuses a verdict while a deliberate flow revision is evaluated again. Webhook/workflow delivery is claimed atomically so exactly one replica performs it. Webhooks get 3 attempts with a 10s timeout, an HMAC-SHA256 signature header, and an `Idempotency-Key`; targets must match the `watches.webhook_allow` allowlist (empty means all webhooks are denied).
 
 {{< verified by="TestWatchDeliveryWebhookAllowlistSignatureAndStatus" file="serv/watches_test.go" line="396" >}}

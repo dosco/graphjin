@@ -480,6 +480,7 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 	configWriteEnabled := conf.AllowConfigUpdates && !h.controlPlaneRootReadOnly("gj_config")
 	watchEnabled := h.service != nil && h.service.watchesEnabled() && !h.controlPlaneRootReadOnly("gj_watch")
 	watchEventEnabled := h.service != nil && h.service.watchesEnabled() && !h.controlPlaneRootReadOnly("gj_watch_event")
+	watchFlowPreviewEnabled := h.service != nil && h.service.watchesEnabled() && !h.controlPlaneRootReadOnly("gj_watch_flow_preview")
 	caps := []map[string]any{
 		{
 			"name": "gj_workflow.insert_update_delete", "kind": "mutation", "enabled": workflowWriteEnabled,
@@ -523,6 +524,17 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 				{"name": "list my watch inbox", "query": `query { gj_watch_event(order_by: { created_at: desc }, limit: 20) { id watch_id delivery_status seen created_at data_json } }`},
 			}),
 			"safety_json": mustMarshalString(map[string]any{"owner_scoped": true, "requires_user_identity": true, "direct_queries_must_be_subscriptions": true, "cleanup_preview_required": true, "do_not_broad_delete_durable_watches": true, "blocked_by": "read_only"}),
+		},
+		{
+			"name": "gj_watch_flow_preview.insert", "kind": "watch", "enabled": watchFlowPreviewEnabled,
+			"summary":          "Preview a watch-owned inline AxFlow against explicit samples or retained events, then optionally approve and resume that exact flow hash.",
+			"graphql_mutation": `gj_watch_flow_preview(insert: { watch_id: "...", samples_json: [{...}], approve: true })`,
+			"details_json": mustMarshalString(map[string]any{
+				"root": "gj_watch_flow_preview", "mutation_only": true, "owner_scoped": true,
+				"input_shape":   `gj_watch_flow_preview(insert: { watch_id: "...", samples_json: [{...}], event_limit: 20, approve: true })`,
+				"return_fields": []string{"watch_id", "flow_hash", "sample_count", "notify_count", "digest_count", "discard_count", "status", "result_json", "usage_json", "error", "duration_ms", "approved"},
+			}),
+			"safety_json": mustMarshalString(map[string]any{"no_tools": true, "server_provider_only": true, "flow_hash_pinned": true, "failed_preview_cannot_approve": true, "blocked_by": "read_only"}),
 		},
 		{
 			"name": "gj_watch_event.update", "kind": "watch", "enabled": watchEventEnabled,
