@@ -52,6 +52,23 @@ graphjin serve --demo --path examples/coffee-roastery
 - "Compare the latest roast batches, cupping scores, and sensor samples. Identify any batch that should be held for review before release."
 - "Create a watch that tells me when new production orders appear, then show my unseen watch events and mark them reviewed."
 
+### Watch automation walkthrough
+
+The coffee demo exercises the complete watch story without requiring a live model:
+
+1. Create a roast-telemetry watch with inline AxFlow triage. It starts paused and returns a `flow_hash`.
+2. Preview representative events through `gj_watch(update: { flow_review_json: ... })`, then approve that same version. The fixture proves `notify`, `digest`, and `discard` dispositions.
+3. Subscribe one MCP session to the roast watch and another same-owner session to a purchase-order watch. Each session receives only its own resource notification, reads only its own events, and cannot acknowledge the other watch by accident.
+4. Attach a workflow action and inspect the returned `action_hash`. The action stays paused until a later, explicit confirmation approves that exact version.
+
+Run the deterministic coverage with:
+
+```bash
+GRAPHJIN_SEMANTIC_AGENT_SMOKE=false examples/coffee-roastery/scripts/semantic-smoke.sh
+```
+
+This verifies flow review, final event dispositions, autonomous-action approval, and per-watch routing without sending demo data to an external model. See [Choosing Watches, Flows, and Workflows](/agentic/watch-automation/) for the plain-language model and GraphQL examples.
+
 More prompts: [coffee-roastery/PROMPTS.md](https://github.com/dosco/graphjin/blob/master/examples/coffee-roastery/PROMPTS.md)
 
 ## SaaS ops {#saas-ops}

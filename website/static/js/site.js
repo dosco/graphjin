@@ -1007,6 +1007,27 @@ if (infiniteMain && firstDocArticle && infiniteMain.dataset.nextUrl) {
   armNextSentinel();
 }
 
+// Homepage watch story: reveal the static, fully readable stages as they enter view.
+const watchStory = document.querySelector('[data-watch-story]');
+if (
+  watchStory &&
+  'IntersectionObserver' in window &&
+  window.matchMedia('(prefers-reduced-motion: no-preference)').matches
+) {
+  watchStory.dataset.watchMotion = 'ready';
+  const watchStoryObserver = new IntersectionObserver(
+    (entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      watchStory.classList.add('is-visible');
+      watchStoryObserver.disconnect();
+    },
+    { threshold: 0.18 }
+  );
+  watchStoryObserver.observe(watchStory);
+} else {
+  watchStory?.classList.add('is-visible');
+}
+
 // Homepage hero: rotate the demo Q/A pairs (static markup is pair one).
 const heroRotateWindow = document.querySelector('.ai-window-hero');
 const heroRotateData = document.getElementById('hero-rotate-data');

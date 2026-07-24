@@ -5,7 +5,7 @@
     <div class="side-section">
       <div class="side-title">{{ .title }}</div>
       {{ range $pages }}
-        <a href="{{ .RelPermalink }}"{{ if eq .RelPermalink $current }} class="active" aria-current="page"{{ end }}>{{ .Title }}</a>
+        <a href="{{ .RelPermalink }}"{{ if eq .RelPermalink $current }} class="active" aria-current="page"{{ end }}>{{ .Params.nav_title | default .Title }}</a>
       {{ end }}
     </div>
   {{ end }}

@@ -5,19 +5,36 @@ nav_group: "agentic"
 weight: 4
 ---
 
-Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data access and controlled operations. Send one instruction to the [built-in agent](/agentic/server-agent/) and get a typed, evidence-backed answer back - or drive the discovery loop yourself over [MCP](/agentic/mcp/). The fastest way in is a [runnable demo](/start/demos/).
+Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data access and controlled operations. Use the [built-in agent](/agentic/server-agent/) or connect an AI client over [MCP](/agentic/mcp/), then choose the smallest governed path that matches the request.
 
-| Page | Agent-facing surface |
-| --- | --- |
-| [Server-Side Agent](/agentic/server-agent/) | GraphJin runs the catalog-first discovery loop for you and returns a typed answer via `ask_graphjin_agent` and `POST /api/v1/agent`. |
-| [MCP](/agentic/mcp/) | Discovery, syntax guidance, validation, cursor IDs, saved-query execution, GraphQL tools, and watch-event resource notifications. |
-| [Catalog Graph](/agentic/catalog-graph/) | `gj_catalog` rows plus lexical and optional semantic discovery for sources, tables, relationships, syntax, examples, workflows, and evidence. |
-| [Security Graph](/agentic/security-graph/) | `gj_security` rows for effective policy, capabilities, read-only state, and findings. |
-| [Source Mode](/agentic/source-mode/) | Source-local ownership, capability defaults, reloads, and `agentic.yml` inheritance. |
-| [Artifacts Overlay](/agentic/artifacts/) | Global config files plus caller-scoped `gj_artifacts` overrides for queries, fragments, and workflows. |
-| [Watches](/agentic/watches/) | Cursor-backed `gj_watch` standing questions evaluated with the owner's permissions; durable `gj_watch_event` inbox, explicit ephemeral leases, REST cleanup, and webhook/workflow/MCP delivery. |
-| [Choosing Watches, Flows, and Workflows](/agentic/watch-automation/) | Decide between a plain notification, tool-free AI triage, and a reviewed autonomous action; preview and approve everything through `gj_watch`. |
-| [Workflows](/agentic/workflows/) | Named, reviewed operational procedures that can call GraphJin tools and GraphQL. |
-| [MCP OAuth](/agentic/oauth/) | Hosted MCP identity with protected-resource metadata, authorization metadata, and audience checks. |
+<div class="agentic-path-grid">
+  <article>
+    <span>01 · Ask</span>
+    <h2>Get a governed answer now.</h2>
+    <p>GraphJin discovers the relevant graph, checks policy, validates the request, runs it, and returns the evidence behind the answer.</p>
+    <a href="/agentic/server-agent/">Use the server-side agent</a>
+  </article>
+  <article>
+    <span>02 · Watch</span>
+    <h2>Keep a standing question running.</h2>
+    <p>A cursor-backed watch records changes. An optional tool-free AI flow can summarize, score, or suppress noise before the right conversation wakes.</p>
+    <a href="/agentic/watch-automation/">Choose a watch and flow</a>
+  </article>
+  <article>
+    <span>03 · Act</span>
+    <h2>Run only the action that was approved.</h2>
+    <p>Workflows can use governed GraphJin tools, but autonomous watch delivery remains paused until the exact current action hash is confirmed.</p>
+    <a href="/agentic/workflows/">Understand workflows</a>
+  </article>
+</div>
 
-The intended loop is catalog first, security second, validation or preview third, and then a governed action. That sequence is what keeps agents useful without handing them raw database credentials or arbitrary shell access.
+<aside class="agentic-watch-feature">
+  <div>
+    <span>Featured capability</span>
+    <h2>From every change to only what matters.</h2>
+    <p>Watch roast telemetry without flooding the agent. Turn raw readings into <code>discard</code>, <code>digest</code>, or <code>notify</code>. Wake only the conversation that owns the watch, and keep actions behind a separate approval gate.</p>
+  </div>
+  <a class="button-primary" href="/agentic/watch-automation/">Explore Watch Automation</a>
+</aside>
+
+The intended loop is catalog first, security second, validation or preview third, and then a governed answer or action. That sequence keeps agents useful without handing them raw database credentials or arbitrary shell access. The fastest way to see the full surface is the [coffee-roastery demo](/start/demos/#coffee-roastery).
