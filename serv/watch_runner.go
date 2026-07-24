@@ -15,23 +15,27 @@ import (
 const watchRunnerMinInterval = time.Second
 
 type watchRuntimeDefinition struct {
-	ID             string
-	Name           string
-	Query          string
-	SavedQueryName string
-	VariablesJSON  string
-	DeliveryJSON   string
-	EnrichJSON     string
-	Lifecycle      string
-	LeaseExpiresAt string
-	LeaseOwnerID   string
-	AccountID      string
-	OwnerID        string
-	OwnerRole      string
-	LastDataHash   string
-	LastCursorJSON string
-	lease          watchLease
-	key            string
+	ID                 string
+	Name               string
+	Query              string
+	SavedQueryName     string
+	VariablesJSON      string
+	DeliveryJSON       string
+	EnrichJSON         string
+	Lifecycle          string
+	LeaseExpiresAt     string
+	LeaseOwnerID       string
+	AccountID          string
+	OwnerID            string
+	OwnerRole          string
+	LastDataHash       string
+	LastCursorJSON     string
+	ActionHash         string
+	ActionRequired     bool
+	ActionApproved     bool
+	WorkflowSourceHash string
+	lease              watchLease
+	key                string
 }
 
 type activeWatchRuntime struct {
@@ -206,6 +210,40 @@ func (s *graphjinService) loadRunnableWatches(ctx context.Context) ([]watchRunti
 			LastCursorJSON: jsonMapString(row, "last_cursor_json"),
 		}
 		def.OwnerRole = s.trustedWatchRunnerRole(def.OwnerRole)
+		evidence := mapFromAny(parseJSONValue(jsonMapString(row, "evidence_json")))
+		if evidence == nil {
+			evidence = map[string]any{}
+		}
+		_, enrichCfg, enrichEnabled, enrichErr := normalizeWatchEnrichmentJSON(def.EnrichJSON)
+		if enrichErr != nil {
+			if err := s.pauseWatchForReview(ctx, row, watchReviewPending); err != nil {
+				s.recordWatchRunnerError("pause invalid watch enrichment", err, map[string]any{"watch_id": def.ID})
+			}
+			continue
+		}
+		proposal, proposalErr := s.watchActionProposal(
+			s.watchOwnerContext(ctx, def),
+			def.Query, def.SavedQueryName, def.VariablesJSON, def.EnrichJSON, def.DeliveryJSON,
+		)
+		if proposalErr != nil {
+			if err := s.pauseWatchForReview(ctx, row, watchReviewPending); err != nil {
+				s.recordWatchRunnerError("pause unresolved watch action", err, map[string]any{"watch_id": def.ID})
+			}
+			continue
+		}
+		flowApproval := watchFlowApproval(evidence, enrichCfg, enrichEnabled && enrichCfg.Kind == "flow")
+		actionApproval := watchActionApproval(evidence, proposal)
+		currentApproval := combinedWatchApproval(flowApproval, actionApproval)
+		if currentApproval != watchReviewApproved {
+			if err := s.pauseWatchForReview(ctx, row, currentApproval); err != nil {
+				s.recordWatchRunnerError("pause unapproved watch", err, map[string]any{"watch_id": def.ID})
+			}
+			continue
+		}
+		def.ActionHash = proposal.Hash
+		def.ActionRequired = proposal.Required
+		def.ActionApproved = actionApproval == watchReviewApproved
+		def.WorkflowSourceHash = proposal.WorkflowSourceHash
 		def.key = def.runtimeKey()
 		defs = append(defs, def)
 	}
@@ -272,6 +310,7 @@ func (d watchRuntimeDefinition) runtimeKey() string {
 		d.AccountID,
 		d.OwnerID,
 		d.OwnerRole,
+		d.ActionHash,
 	}, "\x00"))
 }
 
@@ -432,6 +471,25 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 	if watchRow == nil {
 		return dataHash, false, nil
 	}
+	watchEvidence := mapFromAny(parseJSONValue(jsonMapString(watchRow, "evidence_json")))
+	if watchEvidence == nil {
+		watchEvidence = map[string]any{}
+	}
+	actionProposal, err := s.watchActionProposal(
+		s.watchOwnerContext(ctx, *def),
+		stringMapValue(watchRow, "query"),
+		stringMapValue(watchRow, "saved_query_name"),
+		jsonMapString(watchRow, "variables_json"),
+		jsonMapString(watchRow, "enrich_json"),
+		jsonMapString(watchRow, "delivery_json"),
+	)
+	if err != nil {
+		return "", false, err
+	}
+	def.ActionHash = actionProposal.Hash
+	def.ActionRequired = actionProposal.Required
+	def.ActionApproved = watchActionApproval(watchEvidence, actionProposal) == watchReviewApproved
+	def.WorkflowSourceHash = actionProposal.WorkflowSourceHash
 	now := time.Now().UTC().Format(time.RFC3339)
 	enrichCfg, enrichEnabled := parseWatchEnrichmentConfig(def.EnrichJSON)
 	eventCacheHash := dataHash
@@ -439,13 +497,21 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 		eventCacheHash = hashString(dataHash + ":" + enrichCfg.FlowHash)
 	}
 	eventID := watchEventID(def.ID, eventCacheHash)
-	evidenceJSON := mustMarshalString(map[string]any{
+	eventEvidence := map[string]any{
 		"watch_id":    def.ID,
 		"watch_name":  def.Name,
 		"query_name":  res.QueryName(),
 		"role":        res.Role(),
 		"observed_at": now,
-	})
+	}
+	if actionProposal.Required {
+		eventEvidence["action_hash"] = actionProposal.Hash
+		eventEvidence["delivery_kind"] = actionProposal.Kind
+		if actionProposal.WorkflowSourceHash != "" {
+			eventEvidence["workflow_source_hash"] = actionProposal.WorkflowSourceHash
+		}
+	}
+	evidenceJSON := mustMarshalString(eventEvidence)
 	existing, err := s.internalWatchEventStoreRow(ctx, eventID)
 	if err != nil {
 		return "", false, err
@@ -464,6 +530,9 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 	}
 	notifyEvent := inserted
 	deliveryStatus := "pending"
+	if def.ActionRequired && !def.ActionApproved {
+		deliveryStatus = "approval_required"
+	}
 	if enrichEnabled {
 		deliveryStatus = "enriching"
 	}

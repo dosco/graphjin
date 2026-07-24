@@ -111,7 +111,7 @@ func TestWatchDeliveryPayloadIncludesTriageFields(t *testing.T) {
 	}
 }
 
-func TestWatchFlowPreviewApprovesCurrentInlineFlow(t *testing.T) {
+func TestWatchFlowReviewApprovesCurrentInlineFlow(t *testing.T) {
 	db, svc := newSQLiteWatchService(t, 2)
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
@@ -138,21 +138,25 @@ func TestWatchFlowPreviewApprovesCurrentInlineFlow(t *testing.T) {
 		t.Fatalf("new flow watch must await preview: %+v", watch)
 	}
 	watchID := stringFromAny(watch["id"])
-	preview, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
-		Table: watchFlowPreviewRootTable, Operation: "insert",
+	reviewed, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table: watchesRootTable, Operation: "update",
+		Where: map[string]interface{}{"id": map[string]interface{}{"eq": watchID}},
 		Input: map[string]interface{}{
-			"watch_id": watchID,
-			"samples_json": `[{
-			  "batch_id":"batch-7","temperature":421,"phase":"development"
-			}]`,
-			"approve": true,
+			"flow_review_json": map[string]any{
+				"decision":           "approve",
+				"expected_flow_hash": stringFromAny(watch["flow_hash"]),
+				"samples_json": []any{map[string]any{
+					"batch_id": "batch-7", "temperature": 421, "phase": "development",
+				}},
+			},
 		},
 	})
 	if err != nil {
-		t.Fatalf("preview flow: %v", err)
+		t.Fatalf("review flow: %v", err)
 	}
-	if preview["status"] != "ok" || preview["approved"] != true || intFromAny(preview["notify_count"]) != 1 {
-		t.Fatalf("unexpected preview: %+v", preview)
+	preview := mapFromAny(reviewed["flow_preview_json"])
+	if reviewed["flow_approval"] != "approved" || preview["status"] != "ok" || intFromAny(preview["notify_count"]) != 1 {
+		t.Fatalf("unexpected review: %+v", reviewed)
 	}
 	stored, err := svc.internalWatchStoreRow(ctx, watchID)
 	if err != nil {
@@ -162,8 +166,9 @@ func TestWatchFlowPreviewApprovesCurrentInlineFlow(t *testing.T) {
 		t.Fatalf("preview did not activate watch: %+v", stored)
 	}
 	evidence := mapFromAny(parseJSONValue(jsonMapString(stored, "evidence_json")))
-	flowPreview := mapFromAny(evidence["flow_preview"])
+	flowReview := mapFromAny(evidence[watchFlowReviewKey])
+	flowPreview := mapFromAny(flowReview["preview"])
 	if flowPreview["status"] != "ok" || stringFromAny(flowPreview["flow_hash"]) == "" {
-		t.Fatalf("missing preview evidence: %+v", evidence)
+		t.Fatalf("missing review evidence: %+v", evidence)
 	}
 }

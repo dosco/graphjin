@@ -10,6 +10,8 @@ weight: 50
 
 Workflows let GraphJin expose reviewed operational procedures instead of letting agents improvise multi-step actions.
 
+When a workflow is attached to a standing watch, it becomes an autonomous action and requires a separate hash-pinned review through `gj_watch`. See [Choosing Watches, Flows, and Workflows](/agentic/watch-automation/) for the notification-versus-action decision and approval lifecycle.
+
 ```yaml
 workflows:
   path: ./workflows

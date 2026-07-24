@@ -209,12 +209,16 @@ preview/apply endpoints. There is no dedicated MCP cleanup tool in v1.
 
 Watch-owned AxFlow triage is stored inline in `gj_watch.enrich_json`; GraphJin
 does not discover `flows/*.mmd` files or create a reusable flow artifact. A new
-or changed flow pauses its watch until mutation-only
-`gj_watch_flow_preview(insert)` records evidence for the canonical flow hash.
+or changed flow pauses its watch until `gj_watch(update)` receives
+`flow_review_json` for the canonical `flow_hash`. The same root projects the
+stored preview and approval state. Workflow or webhook delivery is independently
+pinned by `action_hash` and approved through `action_review_json` only after
+explicit user confirmation.
 Runtime flows use only the server model client and receive no tools, bindings,
 workflow callables, or MCP sampling. Their fixed result contract is `verdict`
 (`notify|digest|discard`), `severity` (`info|warn|critical`), and a
-280-character summary. Any flow failure fails open to the raw unseen event.
+280-character summary. Any flow failure sends the raw unseen notification but
+never executes a workflow or webhook.
 
 ## Key Files
 

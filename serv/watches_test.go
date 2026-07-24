@@ -73,6 +73,10 @@ func TestWatchControlPlaneInitializesScopesAndUpdatesEvents(t *testing.T) {
 	if watchID == "" {
 		t.Fatalf("watch insert returned no id: %+v", row)
 	}
+	if row["status"] != "active" || row["enabled"] != true || row["approval"] != watchReviewApproved ||
+		row["flow_approval"] != watchReviewNotRequired || row["action_approval"] != watchReviewNotRequired {
+		t.Fatalf("plain notification watch should be immediately active: %+v", row)
+	}
 	if row["owner_id"] == "user_1" || !strings.HasPrefix(row["owner_ref"].(string), "sha256:") {
 		t.Fatalf("watch row leaked owner identity: %+v", row)
 	}
@@ -725,6 +729,7 @@ func TestWatchDeliveryWebhookAllowlistSignatureAndStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert watch: %v", err)
 	}
+	row = approveWatchActionForTest(t, cp, ctx, row)
 	def := watchRuntimeDefinition{
 		ID:           row["id"].(string),
 		Name:         "webhook_orders",
@@ -842,6 +847,7 @@ func TestWatchDeliveryWorkflowRunsUnderOwnerContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert watch: %v", err)
 	}
+	row = approveWatchActionForTest(t, cp, ctx, row)
 	def := watchRuntimeDefinition{
 		ID:           row["id"].(string),
 		Name:         "workflow_orders",
@@ -2110,6 +2116,38 @@ func startSQLiteWatchCore(t *testing.T, svc *graphjinService, db *sql.DB) {
 		t.Fatalf("start GraphJin core: %v", err)
 	}
 	svc.gj = gj
+}
+
+func approveWatchActionForTest(
+	t *testing.T,
+	cp watchControlPlane,
+	ctx context.Context,
+	watch map[string]any,
+) map[string]any {
+	t.Helper()
+	watchID := stringFromAny(watch["id"])
+	actionHash := stringFromAny(watch["action_hash"])
+	if watchID == "" || actionHash == "" || watch["action_approval"] != watchReviewPending {
+		t.Fatalf("watch is missing a pending action proposal: %+v", watch)
+	}
+	reviewed, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "update",
+		Where:     map[string]interface{}{"id": map[string]interface{}{"eq": watchID}},
+		Input: map[string]interface{}{
+			"action_review_json": map[string]any{
+				"decision":             "approve",
+				"expected_action_hash": actionHash,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("approve watch action: %v", err)
+	}
+	if reviewed["action_approval"] != watchReviewApproved || reviewed["approval"] != watchReviewApproved {
+		t.Fatalf("watch action was not approved: %+v", reviewed)
+	}
+	return reviewed
 }
 
 func insertWatchEventFixture(t *testing.T, svc *graphjinService, ctx context.Context, id, watchID, createdAt string) {

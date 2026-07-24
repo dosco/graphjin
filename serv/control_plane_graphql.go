@@ -480,7 +480,6 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 	configWriteEnabled := conf.AllowConfigUpdates && !h.controlPlaneRootReadOnly("gj_config")
 	watchEnabled := h.service != nil && h.service.watchesEnabled() && !h.controlPlaneRootReadOnly("gj_watch")
 	watchEventEnabled := h.service != nil && h.service.watchesEnabled() && !h.controlPlaneRootReadOnly("gj_watch_event")
-	watchFlowPreviewEnabled := h.service != nil && h.service.watchesEnabled() && !h.controlPlaneRootReadOnly("gj_watch_flow_preview")
 	caps := []map[string]any{
 		{
 			"name": "gj_workflow.insert_update_delete", "kind": "mutation", "enabled": workflowWriteEnabled,
@@ -504,7 +503,7 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 		},
 		{
 			"name": "gj_watch.insert_update_delete", "kind": "watch", "enabled": watchEnabled,
-			"summary":          "Create, update, pause, and delete user-owned cursor-backed standing subscription watches. Watches are durable by default; ephemeral watches require an explicit lease_expires_at.",
+			"summary":          "Create, update, review, pause, and delete user-owned cursor-backed standing subscription watches. Watches are durable by default; ephemeral watches require an explicit lease_expires_at.",
 			"graphql_mutation": `gj_watch(insert: { name: "...", lifecycle: "durable", query: "subscription { orders(first: 25, after: $cursor) { id status } orders_cursor }", delivery_json: {...} })`,
 			"details_json": mustMarshalString(map[string]any{
 				"root":            "gj_watch",
@@ -513,28 +512,24 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 				"owner_scoped":    true,
 				"query_type":      "subscription",
 				"lifecycle":       map[string]string{"durable": "default; never deleted because an MCP client unsubscribes", "ephemeral": "requires future lease_expires_at and expires to status expired/enabled false"},
-				"input_shape":     `gj_watch(insert: { name: "...", lifecycle: "ephemeral", lease_expires_at: "<future RFC3339 timestamp>", query: "subscription { <root>(first: 25, after: $cursor) { ... } <root>_cursor }", variables_json: {...}, delivery_json: {...} })`,
-				"return_fields":   []string{"id", "name", "lifecycle", "lease_expires_at", "status", "approval", "enabled", "evidence_json", "created_at", "updated_at"},
+				"input_shape":     `gj_watch(insert: { name: "...", query: "subscription { <root>(first: 25, after: $cursor) { ... } <root>_cursor }", variables_json: {...}, enrich_json: {...}, delivery_json: {...} }); gj_watch(where: { id: { eq: "..." } }, update: { flow_review_json: {...} | action_review_json: {...} })`,
+				"return_fields":   []string{"id", "name", "lifecycle", "lease_expires_at", "status", "approval", "enabled", "flow_hash", "flow_approval", "flow_preview_json", "action_hash", "action_approval", "evidence_json", "created_at", "updated_at"},
 				"rest":            []string{"GET /api/v1/watches", "POST /api/v1/watches", "PATCH /api/v1/watches/{id}", "DELETE /api/v1/watches/{id}", "POST /api/v1/watches/cleanup-preview", "POST /api/v1/watches/cleanup-apply"},
 				"mcp_resource":    WatchEventsUnseenResourceURI,
 			}),
 			"examples_json": mustMarshalString([]map[string]string{
 				{"name": "create durable cursor-backed subscription watch", "query": `mutation { gj_watch(insert: { name: "important_orders", query: "subscription { orders(first: 25, after: $cursor) { id status updated_at } orders_cursor }" }) { id name lifecycle status enabled evidence_json } }`},
 				{"name": "create explicit ephemeral watch", "query": `mutation { gj_watch(insert: { name: "next_30m_orders", lifecycle: "ephemeral", lease_expires_at: "<future RFC3339 timestamp>", query: "subscription { orders(first: 25, after: $cursor) { id status updated_at } orders_cursor }" }) { id lifecycle lease_expires_at status } }`},
+				{"name": "preview and approve an inline flow", "query": `mutation { gj_watch(where: { id: { eq: "watch:..." } }, update: { flow_review_json: { decision: "approve", expected_flow_hash: "...", samples_json: [{ status: "late" }] } }) { id flow_hash flow_approval flow_preview_json status enabled } }`},
+				{"name": "approve an exact workflow or webhook action", "query": `mutation { gj_watch(where: { id: { eq: "watch:..." } }, update: { action_review_json: { decision: "approve", expected_action_hash: "..." } }) { id action_hash action_approval status enabled } }`},
 				{"name": "list my watch inbox", "query": `query { gj_watch_event(order_by: { created_at: desc }, limit: 20) { id watch_id delivery_status seen created_at data_json } }`},
 			}),
-			"safety_json": mustMarshalString(map[string]any{"owner_scoped": true, "requires_user_identity": true, "direct_queries_must_be_subscriptions": true, "cleanup_preview_required": true, "do_not_broad_delete_durable_watches": true, "blocked_by": "read_only"}),
-		},
-		{
-			"name": "gj_watch_flow_preview.insert", "kind": "watch", "enabled": watchFlowPreviewEnabled,
-			"summary":          "Preview a watch-owned inline AxFlow against explicit samples or retained events, then optionally approve and resume that exact flow hash.",
-			"graphql_mutation": `gj_watch_flow_preview(insert: { watch_id: "...", samples_json: [{...}], approve: true })`,
-			"details_json": mustMarshalString(map[string]any{
-				"root": "gj_watch_flow_preview", "mutation_only": true, "owner_scoped": true,
-				"input_shape":   `gj_watch_flow_preview(insert: { watch_id: "...", samples_json: [{...}], event_limit: 20, approve: true })`,
-				"return_fields": []string{"watch_id", "flow_hash", "sample_count", "notify_count", "digest_count", "discard_count", "status", "result_json", "usage_json", "error", "duration_ms", "approved"},
+			"safety_json": mustMarshalString(map[string]any{
+				"owner_scoped": true, "requires_user_identity": true, "direct_queries_must_be_subscriptions": true,
+				"review_controls_separate_from_definition_changes": true, "flow_hash_pinned": true, "action_hash_pinned": true,
+				"autonomous_actions_require_confirmation": true, "cleanup_preview_required": true,
+				"do_not_broad_delete_durable_watches": true, "blocked_by": "read_only",
 			}),
-			"safety_json": mustMarshalString(map[string]any{"no_tools": true, "server_provider_only": true, "flow_hash_pinned": true, "failed_preview_cannot_approve": true, "blocked_by": "read_only"}),
 		},
 		{
 			"name": "gj_watch_event.update", "kind": "watch", "enabled": watchEventEnabled,

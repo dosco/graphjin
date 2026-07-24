@@ -369,7 +369,7 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 		t.Fatalf("database access defaults not applied: %+v", app.Access)
 	}
 	rootAccess := conf.EffectiveSystemRootAccess()
-	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_watch_flow_preview", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
 		if got := rootAccess[root]; got != AccessModePublic {
 			t.Fatalf("dev system %s root access = %q, want public: %+v", root, got, rootAccess)
 		}
@@ -392,7 +392,6 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 		agenticAccess["gj_artifacts"] != AccessModeOwner ||
 		agenticAccess["gj_watch"] != AccessModeOwner ||
 		agenticAccess["gj_watch_event"] != AccessModeOwner ||
-		agenticAccess["gj_watch_flow_preview"] != AccessModeOwner ||
 		agenticAccess["gj_workflow"] != AccessModeOwner ||
 		agenticAccess["gj_workflow_execution"] != AccessModeOwner {
 		t.Fatalf("agentic system root access defaults not applied: %+v", agenticAccess)
@@ -411,7 +410,7 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 		t.Fatalf("NormalizeSources prod: %v", err)
 	}
 	prodAccess := prod.EffectiveSystemRootAccess()
-	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_watch_flow_preview", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config"} {
 		if got := prodAccess[root]; got != AccessModeAdmin {
 			t.Fatalf("prod system %s root access = %q, want admin: %+v", root, got, prodAccess)
 		}

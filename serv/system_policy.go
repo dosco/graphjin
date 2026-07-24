@@ -65,8 +65,6 @@ func systemRootActionEnabled(conf *Config, root, action string) bool {
 			return false
 		}
 		return action == systemActionRead || !conf.artifactSourceReadOnly()
-	case "gj_watch_flow_preview":
-		return configWatchesEnabled(conf) && action == systemActionInsert && !conf.artifactSourceReadOnly()
 	default:
 		return false
 	}

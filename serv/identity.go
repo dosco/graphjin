@@ -309,7 +309,7 @@ func (s *graphjinService) sourceModeRootAccessAllowed(root, role string) bool {
 
 func sourceModeRootsInQuery(query string) []string {
 	lower := strings.ToLower(query)
-	roots := []string{"gj_security", "gj_runtime", "gj_config", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_watch_flow_preview", "gj_workflow", "gj_workflow_execution", "gj_catalog"}
+	roots := []string{"gj_security", "gj_runtime", "gj_config", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution", "gj_catalog"}
 	out := make([]string, 0, len(roots))
 	for _, root := range roots {
 		if strings.Contains(lower, root) {

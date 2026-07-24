@@ -741,6 +741,44 @@ func TestRunAllowsMutationAfterTableDetail(t *testing.T) {
 	}
 }
 
+func TestRunRequiresLaterUserConfirmationForWatchActionApproval(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	rt := &fakeRuntime{}
+	runner := newAgent(Config{TimeoutSeconds: 5}, rt,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{
+					"query": `mutation { gj_watch(insert: { name: "reorder", query: "subscription { inventory { id } }", delivery_json: { kind: "workflow", name: "draft_po" } }) { id action_hash action_approval } }`,
+				})
+				_, _ = callProgramToolError(p, "execute_graphql", map[string]ax.Value{
+					"query": `mutation { gj_watch(where: { id: { eq: "watch:reorder" } }, update: { action_review_json: { decision: "approve", expected_action_hash: "abc" } }) { id action_approval } }`,
+				})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction:  "When inventory is low, draft a purchase order",
+		Capabilities: profileWithRoleAndRoots("user", systemRootWatch),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusBlocked {
+		t.Fatalf("status = %s, want blocked: %+v", resp.Status, resp)
+	}
+	if !responseHasProtocolError(resp, "watch_action_confirmation_required") {
+		t.Fatalf("missing watch_action_confirmation_required: %+v", resp.Errors)
+	}
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|execute_graphql" {
+		t.Fatalf("runtime calls = %s, approval must not reach runtime", got)
+	}
+}
+
 func TestRunFiltersRefusalUnblockStepsByCapabilityProfile(t *testing.T) {
 	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
 	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},

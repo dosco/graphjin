@@ -135,7 +135,6 @@ func TestCaptureRenderedSkillsPerCapabilityProfile(t *testing.T) {
 		systemRootWorkflowExec,
 		systemRootWatch,
 		systemRootWatchEvent,
-		systemRootWatchFlowPreview,
 	}
 	for _, tc := range []struct {
 		name     string
@@ -145,7 +144,7 @@ func TestCaptureRenderedSkillsPerCapabilityProfile(t *testing.T) {
 		{name: "anonymous"},
 		{name: "user", profile: profileWithRoleAndRoots("user")},
 		{name: "read-only", readOnly: true, profile: profileWithRoleAndRoots("user")},
-		{name: "watch-enabled", profile: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent, systemRootWatchFlowPreview)},
+		{name: "watch-enabled", profile: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent)},
 		{name: "workflow-enabled", profile: profileWithRoleAndRoots("user", systemRootWorkflow, systemRootWorkflowExec)},
 		{name: "admin", profile: profileWithRoleAndRoots("admin", allRoots...)},
 	} {

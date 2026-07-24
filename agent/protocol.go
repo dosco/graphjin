@@ -29,6 +29,7 @@ type discoveryState struct {
 	savedQueriesDiscovered  map[string]bool
 	savedQueriesDetailed    map[string]bool
 	securityRuntimeEvidence bool
+	watchDefinitionMutated  bool
 	// Per-target mutation evidence, populated only by id-detail lookups and
 	// validations in THIS run (search hits never count, mirroring the
 	// saved-query detail rule).
@@ -252,6 +253,13 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		return nil, err
 	}
 	if ContainsMutationOperation(query) {
+		if isWatchActionReviewMutation(query) && r.state.watchDefinitionMutated {
+			err := fmt.Errorf("protocol violation: an autonomous watch action cannot be created or changed and approved in the same agent run; explain the proposed action and wait for user confirmation")
+			r.state.addViolation("watch_action_confirmation_required", err.Error(), "execute_graphql", true, map[string]any{"root": systemRootWatch})
+			action := r.state.startAction("model", "execute_graphql", args)
+			r.state.finishAction(action, "execute_graphql", args, nil, err)
+			return nil, err
+		}
 		roots := MutationRootFields(query)
 		if missing := r.state.missingMutationEvidence(roots); len(missing) != 0 {
 			err := fmt.Errorf("protocol violation: gather mutation-shape evidence for %s before executing a mutation: inspect the target table's catalog detail with query_catalog({id:\"table:...\"}), validate_where_clause the target, inspect a mutation_pattern detail row, or use an approved saved mutation", strings.Join(missing, ", "))
@@ -273,6 +281,9 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	r.state.finishAction(action, "execute_graphql", args, out, err)
 	if err == nil {
 		r.state.recordExecution("execute_graphql", args, out)
+		if isWatchDefinitionMutation(query) {
+			r.state.watchDefinitionMutated = true
+		}
 	}
 	r.state.rawGraphQL = append(r.state.rawGraphQL, map[string]any{
 		"operation":  graphQLOperationKind(query),
@@ -933,6 +944,21 @@ func writeLikeGraphQL(query string) bool {
 		strings.Contains(lower, "gj_workflow") ||
 		strings.Contains(lower, "gj_code") ||
 		strings.Contains(lower, "gj_watch")
+}
+
+func isWatchActionReviewMutation(query string) bool {
+	lower := strings.ToLower(query)
+	return ContainsMutationOperation(query) &&
+		strings.Contains(lower, "gj_watch") &&
+		strings.Contains(lower, "action_review_json")
+}
+
+func isWatchDefinitionMutation(query string) bool {
+	lower := strings.ToLower(query)
+	return ContainsMutationOperation(query) &&
+		strings.Contains(lower, "gj_watch") &&
+		!strings.Contains(lower, "flow_review_json") &&
+		!strings.Contains(lower, "action_review_json")
 }
 
 func graphQLOperationKind(query string) string {

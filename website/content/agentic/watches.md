@@ -10,6 +10,8 @@ A watch is a standing question: "tell me when a roast batch fails QC twice in a 
 
 Watches never elevate access: a watch can only ever see what its owner could already query, and both roots are owner-scoped — callers see only their own watches and events.
 
+Start with [Choosing Watches, Flows, and Workflows](/agentic/watch-automation/) when deciding whether a request needs a plain watch, AI triage, an autonomous action, or both.
+
 ## Defaults and overrides
 
 Watches persist through the [artifact store](/agentic/artifacts/). In `dev` and `agentic` modes both are enabled automatically, and the watch runner defaults to `all`; no application subscription starts until an active, approved watch exists.
@@ -56,7 +58,7 @@ mutation {
       query: "subscription coffee_roast_triage { roast_batches(first: 25, after: $cursor) { id phase temperature } roast_batches_cursor }"
       enrich_json: { enabled: true, kind: "flow", flow: "default_watch_triage" }
     }
-  ) { id status approval enabled enrich_json }
+  ) { id flow_hash flow_approval status enabled enrich_json }
 }
 ```
 
@@ -64,19 +66,29 @@ Inline Mermaid must compile through AxFlow and return exactly `verdict` (`notify
 
 ```graphql
 mutation {
-  gj_watch_flow_preview(
-    insert: {
-      watch_id: "watch:..."
-      samples_json: [{ batch_id: "batch-7", temperature: 421 }]
-      approve: true
+  gj_watch(
+    where: { id: { eq: "watch:..." } }
+    update: {
+      flow_review_json: {
+        decision: "approve"
+        expected_flow_hash: "..."
+        samples_json: [{ batch_id: "batch-7", temperature: 421 }]
+      }
     }
-  ) { flow_hash sample_count notify_count digest_count discard_count status approved }
+  ) {
+    id
+    flow_hash
+    flow_approval
+    flow_preview_json
+    status
+    enabled
+  }
 }
 ```
 
-`notify` leaves the event pending and unseen, so its per-watch MCP resource wakes. `digest` records `digest_queued` and marks the event processed without waking. `discard` records `suppressed` and marks it processed without waking. Invalid output, timeout, missing server credentials, the daily enrichment cap, or any model error fails open: GraphJin records the error and delivers the raw pending event. Omitting a flow makes no model call. The event's `enrichment_json`, compact MCP entry, and webhook/workflow payload include the triage verdict, severity, and summary.
+Use `decision: "preview"` to store evidence without approving, `approve` only after inspecting a successful preview for the current hash, and `reject` to keep the watch paused. `notify` leaves the event pending and unseen, so its per-watch MCP resource wakes. `digest` records `digest_queued` and marks the event processed without waking. `discard` records `suppressed` and marks it processed without waking. Invalid output, timeout, missing server credentials, the daily enrichment cap, or any model error sends the raw pending notification but never executes a workflow or webhook. Omitting a flow makes no model call. The event's `enrichment_json` and compact MCP entry include the triage verdict, severity, and summary.
 
-{{< verified by="TestWatchFlowPreviewApprovesCurrentInlineFlow" file="serv/watch_flow_test.go" line="104" >}}
+{{< verified by="TestWatchFlowReviewApprovesCurrentInlineFlow" file="serv/watch_flow_test.go" line="104" >}}
 
 Normal watches are durable by default. Use an explicit lease only when the user asks for a TTL:
 
@@ -159,5 +171,29 @@ Cleanup preview groups candidates by `expired_ephemeral`, `disabled_stale`, `err
 ## Delivery
 
 Multiple replicas may evaluate the same watch, but fires and deliveries are deduplicated: event IDs are deterministic from `watch_id + data_hash`, plus the canonical flow hash when a flow is configured, so identical data reuses a verdict while a deliberate flow revision is evaluated again. Webhook/workflow delivery is claimed atomically so exactly one replica performs it. Webhooks get 3 attempts with a 10s timeout, an HMAC-SHA256 signature header, and an `Idempotency-Key`; targets must match the `watches.webhook_allow` allowlist (empty means all webhooks are denied).
+
+Workflow and webhook delivery are autonomous actions. Creating or changing one pauses the watch with `action_approval: "pending"` and returns an `action_hash` that pins the query, variables, flow, delivery, and resolved workflow source. After the user confirms that exact proposal, approve it through the same root:
+
+```graphql
+mutation {
+  gj_watch(
+    where: { id: { eq: "watch:..." } }
+    update: {
+      action_review_json: {
+        decision: "approve"
+        expected_action_hash: "..."
+      }
+    }
+  ) {
+    id
+    action_hash
+    action_approval
+    status
+    enabled
+  }
+}
+```
+
+An agent must stop for confirmation after proposing the action; it cannot create or change the delivery and approve it in the same run. A relevant definition or workflow-source change invalidates approval and pauses the watch again.
 
 {{< verified by="TestWatchDeliveryWebhookAllowlistSignatureAndStatus" file="serv/watches_test.go" line="396" >}}

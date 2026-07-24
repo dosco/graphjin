@@ -228,7 +228,7 @@ func (s *graphjinService) systemNanoSnapshotFromCatalog(catalogSnapshot *core.Ca
 
 func systemNanoSnapshot(_ string, codeDB string, rows map[string][]core.NanoRow) core.NanoSnapshot {
 	return systemNanoSnapshotForRoots(codeDB, rows, []string{
-		"gj_catalog", "gj_security", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_watch_flow_preview",
+		"gj_catalog", "gj_security", "gj_artifacts", "gj_watch", "gj_watch_event",
 		"gj_workflow", "gj_workflow_execution", "gj_config",
 	})
 }
@@ -252,8 +252,6 @@ func systemNanoSnapshotForRoots(codeDB string, rows map[string][]core.NanoRow, r
 			columns = watchNanoColumns()
 		case "gj_watch_event":
 			columns = watchEventNanoColumns()
-		case "gj_watch_flow_preview":
-			columns = watchFlowPreviewNanoColumns()
 		case "gj_workflow":
 			columns = workflowNanoColumns()
 		case "gj_workflow_execution":
@@ -531,6 +529,13 @@ func watchNanoColumns() []core.NanoColumn {
 		{Name: "condition_js", Type: "text"},
 		{Name: "delivery_json", Type: "json"},
 		{Name: "enrich_json", Type: "json"},
+		{Name: "flow_review_json", Type: "json"},
+		{Name: "action_review_json", Type: "json"},
+		{Name: "flow_hash", Type: "text", Index: true},
+		{Name: "flow_approval", Type: "text", Index: true},
+		{Name: "flow_preview_json", Type: "json"},
+		{Name: "action_hash", Type: "text", Index: true},
+		{Name: "action_approval", Type: "text", Index: true},
 		{Name: "evidence_json", Type: "json"},
 		{Name: "lifecycle", Type: "text", Index: true},
 		{Name: "lease_expires_at", Type: "text", Index: true},

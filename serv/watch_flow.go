@@ -13,12 +13,10 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	gjagent "github.com/dosco/graphjin/agent/v3"
-	"github.com/dosco/graphjin/core/v3"
 )
 
 const (
-	watchFlowPreviewRootTable = "gj_watch_flow_preview"
-	defaultWatchTriageFlow    = `flowchart TD
+	defaultWatchTriageFlow = `flowchart TD
   %%ax triage: event:json, watch:json, evidence:json -> verdict:class "notify, digest, discard", severity:class "info, warn, critical", summary:string(max 280)
   triage`
 	defaultWatchFlowMaxCalls = 4
@@ -37,50 +35,6 @@ type watchFlowRun struct {
 	Usage      any
 	Duration   time.Duration
 	ModelCalls int
-}
-
-func watchFlowPreviewColumns() []core.ManagedColumn {
-	return []core.ManagedColumn{
-		cpCol("id", "text", true),
-		cpCol("watch_id", "text", false),
-		cpCol("samples_json", "json", false),
-		cpCol("event_limit", "integer", false),
-		cpCol("approve", "boolean", false),
-		cpCol("flow_hash", "text", false),
-		cpCol("sample_count", "integer", false),
-		cpCol("notify_count", "integer", false),
-		cpCol("digest_count", "integer", false),
-		cpCol("discard_count", "integer", false),
-		cpCol("status", "text", false),
-		cpCol("result_json", "json", false),
-		cpCol("usage_json", "json", false),
-		cpCol("error", "text", false),
-		cpCol("duration_ms", "integer", false),
-		cpCol("approved", "boolean", false),
-		cpCol("created_at", "text", false),
-	}
-}
-
-func watchFlowPreviewNanoColumns() []core.NanoColumn {
-	return []core.NanoColumn{
-		{Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
-		{Name: "watch_id", Type: "text", Index: true, FKeyTable: "gj_watch", FKeyColumn: "id", FKeyUnique: true},
-		{Name: "samples_json", Type: "json"},
-		{Name: "event_limit", Type: "integer"},
-		{Name: "approve", Type: "boolean"},
-		{Name: "flow_hash", Type: "text", Index: true},
-		{Name: "sample_count", Type: "integer"},
-		{Name: "notify_count", Type: "integer"},
-		{Name: "digest_count", Type: "integer"},
-		{Name: "discard_count", Type: "integer"},
-		{Name: "status", Type: "text", Index: true},
-		{Name: "result_json", Type: "json"},
-		{Name: "usage_json", Type: "json"},
-		{Name: "error", Type: "text"},
-		{Name: "duration_ms", Type: "integer"},
-		{Name: "approved", Type: "boolean"},
-		{Name: "created_at", Type: "text"},
-	}
 }
 
 // canonicalWatchFlow compiles Mermaid through AxFlow and returns Ax's stable
@@ -120,12 +74,6 @@ func watchFlowHasTriageContract(canonical string) bool {
 		strings.Contains(compact, `summary:string(max 280)`)
 }
 
-func watchFlowPreviewEvidenceMatches(evidence map[string]any, flowHash string) bool {
-	preview := mapFromAny(evidence["flow_preview"])
-	return strings.EqualFold(strings.TrimSpace(stringFromAny(preview["status"])), "ok") &&
-		strings.TrimSpace(stringFromAny(preview["flow_hash"])) == strings.TrimSpace(flowHash)
-}
-
 // normalizeWatchEnrichmentJSON validates flow-backed enrichment and stores the
 // canonical Mermaid inline with the watch. Legacy agent enrichment is retained
 // unchanged apart from stable JSON encoding.
@@ -140,7 +88,8 @@ func normalizeWatchEnrichmentJSON(raw string) (string, watchEnrichmentConfig, bo
 	}
 	enabled, _ := value["enabled"].(bool)
 	kind := strings.ToLower(strings.TrimSpace(stringFromAny(value["kind"])))
-	if kind == "flow" {
+	switch kind {
+	case "flow":
 		flowRef := strings.TrimSpace(stringFromAny(value["flow"]))
 		canonical, flowHash, err := canonicalWatchFlow(flowRef)
 		if err != nil {
@@ -161,6 +110,10 @@ func normalizeWatchEnrichmentJSON(raw string) (string, watchEnrichmentConfig, bo
 			Enabled: enabled, Kind: "flow", Flow: storedFlow,
 			CanonicalFlow: canonical, FlowHash: flowHash,
 		}, enabled, nil
+	case "", "agent":
+		// Blank is the legacy agent-enrichment spelling.
+	default:
+		return "", watchEnrichmentConfig{}, false, fmt.Errorf("unsupported enrich_json kind %q", kind)
 	}
 	out, err := json.Marshal(value)
 	if err != nil {
@@ -340,103 +293,7 @@ func (c *watchFlowAIClient) usageValue() any {
 	return map[string]any{"model_calls": c.calls, "responses": append([]any(nil), c.usage...)}
 }
 
-func (h watchControlPlane) previewWatchFlow(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
-	s := h.service
-	if s == nil {
-		return nil, fmt.Errorf("watch flow preview service is unavailable")
-	}
-	ownerID, ok := artifactUserID(ctx)
-	if !ok {
-		return nil, fmt.Errorf("gj_watch_flow_preview requires user identity")
-	}
-	watchID := strings.TrimSpace(stringInput(root.Input, "watch_id", ""))
-	if watchID == "" {
-		watchID = strings.TrimSpace(stringWhere(root.Where, "watch_id"))
-	}
-	if watchID == "" {
-		return nil, fmt.Errorf("gj_watch_flow_preview requires watch_id")
-	}
-	watchRow, err := s.internalWatchStoreRow(ctx, watchID)
-	if err != nil {
-		return nil, err
-	}
-	admin := s.identityRoleIsAdmin(ctx)
-	if watchRow == nil || (!admin && stringMapValue(watchRow, "owner_id") != ownerID) {
-		return nil, fmt.Errorf("gj_watch_flow_preview denied")
-	}
-	_, cfg, enabled, err := normalizeWatchEnrichmentJSON(jsonMapString(watchRow, "enrich_json"))
-	if err != nil {
-		return nil, err
-	}
-	if !enabled || cfg.Kind != "flow" {
-		return nil, fmt.Errorf("watch does not have an enabled flow")
-	}
-	samples, err := h.watchFlowPreviewSamples(ctx, root.Input, watchID)
-	if err != nil {
-		return nil, err
-	}
-	if len(samples) == 0 {
-		return nil, fmt.Errorf("gj_watch_flow_preview requires samples_json or prior watch events")
-	}
-	started := time.Now()
-	results := make([]map[string]any, 0, len(samples))
-	usages := make([]any, 0, len(samples))
-	counts := map[string]int{"notify": 0, "digest": 0, "discard": 0}
-	for index, sample := range samples {
-		run, runErr := s.runWatchFlow(ctx, cfg, map[string]ax.Value{
-			"event":    sample,
-			"watch":    map[string]any{"id": watchID, "name": stringMapValue(watchRow, "name")},
-			"evidence": parseJSONValue(jsonMapString(watchRow, "evidence_json")),
-		})
-		if runErr != nil {
-			return h.watchFlowPreviewError(ctx, watchRow, cfg, len(samples), results, usages, started, index, runErr)
-		}
-		counts[run.Verdict]++
-		results = append(results, map[string]any{
-			"index": index, "verdict": run.Verdict, "severity": run.Severity,
-			"summary": run.Summary, "duration_ms": run.Duration.Milliseconds(),
-		})
-		usages = append(usages, run.Usage)
-	}
-	approve := boolInput(root.Input, "approve", false)
-	createdAt := time.Now().UTC().Format(time.RFC3339)
-	preview := map[string]any{
-		"flow_hash": cfg.FlowHash, "previewed_at": createdAt, "sample_count": len(samples),
-		"notify_count": counts["notify"], "digest_count": counts["digest"], "discard_count": counts["discard"],
-		"status": "ok", "results": results,
-	}
-	evidence := mapFromAny(parseJSONValue(jsonMapString(watchRow, "evidence_json")))
-	if evidence == nil {
-		evidence = map[string]any{}
-	}
-	evidence["flow_preview"] = preview
-	update := map[string]any{
-		"evidence_json": nullableJSONString(mustMarshalString(evidence)),
-		"updated_at":    createdAt,
-	}
-	if approve {
-		update["approval"] = "approved"
-		update["status"] = "active"
-		update["enabled"] = true
-	}
-	if _, err := s.internalStoreMutationRows(ctx, "watches", `where: { id: { eq: $id } }, update: $input`, watchStoreFields, map[string]any{"id": watchID, "input": update}); err != nil {
-		return nil, err
-	}
-	if err := s.bumpArtifactRevision(ctx, "watches"); err != nil {
-		return nil, err
-	}
-	s.markWatchChanged("watch flow preview")
-	s.publishWatchRunnerChanged(ctx)
-	s.recordWatchFlowRuntimeEvent(ctx, watchID, cfg.FlowHash, "preview", "ok", "", time.Since(started), preview)
-	return map[string]any{
-		"id": "preview:" + cfg.FlowHash[:16], "watch_id": watchID, "flow_hash": cfg.FlowHash,
-		"sample_count": len(samples), "notify_count": counts["notify"], "digest_count": counts["digest"], "discard_count": counts["discard"],
-		"status": "ok", "result_json": results, "usage_json": usages, "error": "",
-		"duration_ms": time.Since(started).Milliseconds(), "approved": approve, "created_at": createdAt,
-	}, nil
-}
-
-func (h watchControlPlane) watchFlowPreviewSamples(ctx context.Context, input map[string]interface{}, watchID string) ([]any, error) {
+func (h watchControlPlane) watchFlowReviewSamples(ctx context.Context, input map[string]any, watchID string) ([]any, error) {
 	raw := jsonStringInput(input, "samples_json")
 	if strings.TrimSpace(raw) != "" {
 		var samples []any
@@ -467,17 +324,6 @@ func (h watchControlPlane) watchFlowPreviewSamples(ctx context.Context, input ma
 		samples = append(samples, parseJSONValue(jsonMapString(row, "data_json")))
 	}
 	return samples, nil
-}
-
-func (h watchControlPlane) watchFlowPreviewError(ctx context.Context, watchRow map[string]any, cfg watchEnrichmentConfig, sampleCount int, results []map[string]any, usages []any, started time.Time, index int, runErr error) (map[string]any, error) {
-	watchID := stringMapValue(watchRow, "id")
-	h.service.recordWatchFlowRuntimeEvent(ctx, watchID, cfg.FlowHash, "preview", "failed", runErr.Error(), time.Since(started), map[string]any{"failed_sample": index})
-	return map[string]any{
-		"id": "preview:" + cfg.FlowHash[:16], "watch_id": watchID, "flow_hash": cfg.FlowHash,
-		"sample_count": sampleCount, "status": "failed", "result_json": results, "usage_json": usages,
-		"error": runErr.Error(), "duration_ms": time.Since(started).Milliseconds(), "approved": false,
-		"created_at": time.Now().UTC().Format(time.RFC3339),
-	}, nil
 }
 
 func (s *graphjinService) recordWatchFlowRuntimeEvent(ctx context.Context, watchID, flowHash, phase, status, errText string, duration time.Duration, details map[string]any) {

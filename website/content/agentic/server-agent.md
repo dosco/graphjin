@@ -95,11 +95,13 @@ The public MCP `execute_graphql` tool is separate from the server-side agent's i
 
 ## Role-aware guidance
 
-The agent is caller-aware. From the request's identity it derives a capability profile limited to fixed `gj_*` system roots—never application tables—and preloads every permitted Ax skill. The 12 flat guides cover data discovery/write, code read/write, workflow discovery/execution/authoring, watch inbox/lifecycle/flow enrichment, and admin inspection/configuration.
+The agent is caller-aware. From the request's identity it derives a capability profile limited to fixed `gj_*` system roots—never application tables—and preloads every permitted Ax skill. The 13 flat guides cover data discovery/write, code read/write, workflow discovery/execution/authoring, watch inbox/lifecycle/flow enrichment/action delivery, and admin inspection/configuration.
 
 There is no lexical router, embedding search, skill catalog, search callback, or skill-discovery turn. Global read-only posture removes every write guide. Workflow, watch, and admin guides are included only when their governed roots are visible; admin guides also require the admin role. Multi-domain requests can use more than one preloaded guide.
 
 Skills only shape the guidance the model sees. **They never grant access.** GraphJin core roles and row-level security remain authoritative, and protocol preflight enforces mutation shape, saved-query detail, security/runtime evidence, and workflow detail before execution. Ax's `used(...)` primitive supplies self-reported usage telemetry; it cannot change authorization.
+
+For standing requests, the watch skills apply the two-axis decision in [Choosing Watches, Flows, and Workflows](/agentic/watch-automation/): deterministic versus semantic/noisy, and notification versus an explicitly requested action. The agent may propose an action watch, but a protocol guard prevents it from creating/changing and approving that autonomous action in the same run.
 
 {{< verified by="TestAllowedSkillsCapabilityMatrix" file="agent/skills_test.go" line="73" >}}
 {{< verified by="TestRunPassesOnlyCapabilityFilteredConstructorSkills" file="agent/skills_test.go" line="194" >}}
