@@ -764,6 +764,17 @@ type RequestConfig struct {
 	Tx *sql.Tx
 }
 
+// SubscriptionRootInfo describes a root selected by a subscription member.
+// Filter contains the resolved user filter and excludes GraphJin's synthetic
+// cursor seek predicate.
+type SubscriptionRootInfo struct {
+	FieldName string
+	Table     string
+	Database  string
+	CursorVar string
+	Filter    map[string]any
+}
+
 // SetNamespace is used to set namespace requests within a single instance of GraphJin. For example queries with the same name
 func (rc *RequestConfig) SetNamespace(ns string) {
 	rc.ns = &ns

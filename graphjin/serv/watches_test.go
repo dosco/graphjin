@@ -476,6 +476,87 @@ func TestWatchRunnerPersistsCursorCheckpointAndResumeVars(t *testing.T) {
 	}
 }
 
+func TestDirectWatchEventSystemSubscriptionPages(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	svc.conf.Core.SubsPollDuration = 200 * time.Millisecond
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+
+	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
+	watchedID := "watch:target"
+	insertWatchEventFixture(t, svc, ctx, "event-1", watchedID, "2026-01-01T00:00:00Z")
+
+	query := `subscription watch_events($watch_id: String!, $gj_watch_event_cursor: Cursor) {
+		gj_watch_event(
+			first: 1
+			after: $gj_watch_event_cursor
+			where: { watch_id: { eq: $watch_id } }
+			order_by: { created_at: asc }
+		) {
+			id
+			watch_id
+			created_at
+		}
+		gj_watch_event_cursor
+	}`
+	vars := json.RawMessage(`{"watch_id":"watch:target","gj_watch_event_cursor":null}`)
+	subCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	member, err := svc.gj.Subscribe(subCtx, query, vars, nil)
+	if err != nil {
+		t.Fatalf("subscribe gj_watch_event: %v", err)
+	}
+	defer member.Unsubscribe()
+
+	first := receiveWatchEventSubscriptionResult(t, subCtx, member)
+	if got := watchEventSubscriptionIDs(t, first); len(got) != 1 || got[0] != "event-1" {
+		t.Fatalf("first event ids = %v, want [event-1]", got)
+	}
+	if first.SubscriptionCursors()["gj_watch_event_cursor"] == "" {
+		t.Fatalf("first cursor missing: %v", first.SubscriptionCursors())
+	}
+
+	insertWatchEventFixture(t, svc, ctx, "event-2", watchedID, "2026-01-01T00:01:00Z")
+	second := receiveWatchEventSubscriptionResult(t, subCtx, member)
+	if got := watchEventSubscriptionIDs(t, second); len(got) != 1 || got[0] != "event-2" {
+		t.Fatalf("second event ids = %v, want [event-2]", got)
+	}
+}
+
+func receiveWatchEventSubscriptionResult(
+	t *testing.T,
+	ctx context.Context,
+	member *core.Member,
+) *core.Result {
+	t.Helper()
+	select {
+	case result := <-member.Result:
+		return result
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for watch event subscription result")
+		return nil
+	}
+}
+
+func watchEventSubscriptionIDs(t *testing.T, result *core.Result) []string {
+	t.Helper()
+	var out struct {
+		Rows []struct {
+			ID string `json:"id"`
+		} `json:"gj_watch_event"`
+	}
+	if err := json.Unmarshal(result.Data, &out); err != nil {
+		t.Fatalf("decode watch event result: %v\n%s", err, result.Data)
+	}
+	ids := make([]string, len(out.Rows))
+	for index := range out.Rows {
+		ids[index] = out.Rows[index].ID
+	}
+	return ids
+}
+
 func TestWatchRunnerEmptyInitialResultDoesNotRefireAfterRestart(t *testing.T) {
 	_, svc := newSQLiteWatchService(t, 20)
 	if err := svc.initArtifactsBeforeCore(); err != nil {
@@ -2221,5 +2302,280 @@ func TestStringWhereUnwrapsOperatorMap(t *testing.T) {
 	}
 	if got := stringWhere(map[string]interface{}{"id": map[string]interface{}{"in": []string{"a"}}}, "id"); got != "" {
 		t.Fatalf("stringWhere non-eq operator = %q, want empty", got)
+	}
+}
+
+func TestWatchedWatchIDsForRootsRequiresSafeConjunctiveFilter(t *testing.T) {
+	tests := []struct {
+		name    string
+		filter  map[string]any
+		self    string
+		want    []string
+		wantErr string
+	}{
+		{
+			name:   "eq",
+			filter: map[string]any{"watch_id": map[string]any{"eq": "watch:b"}},
+			self:   "watch:a",
+			want:   []string{"watch:b"},
+		},
+		{
+			name: "and in",
+			filter: map[string]any{"and": []any{
+				map[string]any{"seen": map[string]any{"eq": false}},
+				map[string]any{"watch_id": map[string]any{"in": []any{"watch:c", "watch:b"}}},
+			}},
+			self: "watch:a",
+			want: []string{"watch:b", "watch:c"},
+		},
+		{
+			name:    "missing",
+			filter:  map[string]any{"seen": map[string]any{"eq": false}},
+			self:    "watch:a",
+			wantErr: "requires a non-empty conjunctive",
+		},
+		{
+			name: "under or",
+			filter: map[string]any{"or": []any{
+				map[string]any{"watch_id": map[string]any{"eq": "watch:b"}},
+				map[string]any{"seen": map[string]any{"eq": false}},
+			}},
+			self:    "watch:a",
+			wantErr: "cannot appear under or/not",
+		},
+		{
+			name:    "self",
+			filter:  map[string]any{"watch_id": map[string]any{"in": []any{"watch:a", "watch:b"}}},
+			self:    "watch:a",
+			wantErr: "cannot include its own",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := watchedWatchIDsForRoots([]core.SubscriptionRootInfo{{
+				Table:  watchEventsRootTable,
+				Filter: tt.filter,
+			}}, tt.self)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Fatalf("ids = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWatchGraphCycleDetection(t *testing.T) {
+	acyclic := map[string][]string{
+		"watch:a": {"watch:b"},
+		"watch:b": {"watch:c"},
+	}
+	if watchGraphReaches(acyclic, "watch:a", "watch:a", make(map[string]bool), true) {
+		t.Fatal("acyclic graph reported a cycle")
+	}
+	cyclic := map[string][]string{
+		"watch:a": {"watch:b"},
+		"watch:b": {"watch:a"},
+	}
+	if !watchGraphReaches(cyclic, "watch:a", "watch:a", make(map[string]bool), true) {
+		t.Fatal("mutual dependency was not reported as a cycle")
+	}
+}
+
+func watchEventWatchQuery(where string) string {
+	return `subscription watch_watch($watch_id: String!, $watch_ids: [String!], $gj_watch_event_cursor: Cursor) {
+		gj_watch_event(
+			first: 10
+			after: $gj_watch_event_cursor
+			where: ` + where + `
+			order_by: { created_at: asc }
+		) { id watch_id created_at }
+		gj_watch_event_cursor
+	}`
+}
+
+func TestValidateWatchDefinitionEnforcesWatchEventLoopFilter(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	cp := newWatchControlPlane(svc)
+	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
+
+	tests := []struct {
+		name    string
+		where   string
+		target  string
+		wantErr string
+	}{
+		{
+			name:    "missing",
+			where:   `{ seen: { eq: false } }`,
+			target:  "watch:other",
+			wantErr: "requires a non-empty conjunctive",
+		},
+		{
+			name:    "under or",
+			where:   `{ or: [{ watch_id: { eq: $watch_id } }, { seen: { eq: false } }] }`,
+			target:  "watch:other",
+			wantErr: "cannot appear under or/not",
+		},
+		{
+			name:    "self",
+			where:   `{ watch_id: { eq: $watch_id } }`,
+			target:  watchID("user_1", "self"),
+			wantErr: "cannot include its own",
+		},
+		{
+			name:   "cross watch",
+			where:  `{ watch_id: { in: $watch_ids } }`,
+			target: "watch:other",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			effectiveID := watchID("user_1", tt.name)
+			if tt.name == "self" {
+				effectiveID = watchID("user_1", "self")
+			}
+			evidence, err := cp.validateWatchDefinition(
+				ctx,
+				effectiveID,
+				watchEventWatchQuery(tt.where),
+				"",
+				mustMarshalString(map[string]any{
+					"watch_id":              tt.target,
+					"watch_ids":             []string{tt.target},
+					"gj_watch_event_cursor": nil,
+				}),
+			)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := watchedWatchIDsFromEvidence(evidence); len(got) != 1 || got[0] != tt.target {
+				t.Fatalf("watched ids = %v, want [%s]", got, tt.target)
+			}
+		})
+	}
+}
+
+func TestValidateWatchCycleUsesPersistedGlobalEvidence(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	cp := newWatchControlPlane(svc)
+	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
+
+	watchA := watchID("user_1", "watch_a")
+	watchB := watchID("user_1", "watch_b")
+	row, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "insert",
+		Input: map[string]any{
+			"name":  "watch_a",
+			"query": watchEventWatchQuery(`{ watch_id: { eq: $watch_id } }`),
+			"variables_json": map[string]any{
+				"watch_id":              watchB,
+				"watch_ids":             []string{watchB},
+				"gj_watch_event_cursor": nil,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("insert watch A: %v", err)
+	}
+	if row["id"] != watchA {
+		t.Fatalf("watch A id = %v, want %s", row["id"], watchA)
+	}
+	if _, err := db.Exec(
+		`UPDATE "_graphjin_watches" SET enabled = 1, status = 'active', approval = 'approved' WHERE id = ?`,
+		watchA,
+	); err != nil {
+		t.Fatalf("activate watch A fixture: %v", err)
+	}
+	if err := cp.validateWatchCycle(ctx, watchB, "durable", "active", true, []string{watchA}); err == nil ||
+		!strings.Contains(err.Error(), "dependency cycle") {
+		t.Fatalf("cycle error = %v, want dependency cycle", err)
+	}
+	if err := cp.validateWatchCycle(ctx, "watch:c", "durable", "active", true, []string{watchA}); err != nil {
+		t.Fatalf("acyclic candidate rejected: %v", err)
+	}
+}
+
+func TestWatchRunnerPausesUnsafeSavedDefinitionDrift(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	svc.conf.Core.SubsPollDuration = 200 * time.Millisecond
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	cp := newWatchControlPlane(svc)
+	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
+
+	targetID := "watch:other"
+	variables := mustMarshalString(map[string]any{
+		"watch_id":              targetID,
+		"watch_ids":             []string{targetID},
+		"gj_watch_event_cursor": nil,
+	})
+	row, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "insert",
+		Input: map[string]any{
+			"name":           "drift_watch",
+			"query":          watchEventWatchQuery(`{ watch_id: { eq: $watch_id } }`),
+			"variables_json": variables,
+		},
+	})
+	if err != nil {
+		t.Fatalf("insert safe watch: %v", err)
+	}
+	id := stringFromAny(row["id"])
+	unsafeQuery := watchEventWatchQuery(`{ or: [{ watch_id: { eq: $watch_id } }, { seen: { eq: false } }] }`)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := db.Exec(
+		`UPDATE "_graphjin_watches" SET query = ?, enabled = 1, status = 'active', approval = 'approved', updated_at = ? WHERE id = ?`,
+		unsafeQuery, now, id,
+	); err != nil {
+		t.Fatalf("drift watch definition: %v", err)
+	}
+
+	svc.runWatchSubscription(ctx, watchRuntimeDefinition{
+		ID:            id,
+		Name:          "drift_watch",
+		Query:         unsafeQuery,
+		VariablesJSON: variables,
+		AccountID:     "acct_1",
+		OwnerID:       "user_1",
+		OwnerRole:     "analyst",
+		Lifecycle:     "durable",
+	})
+
+	var status string
+	var enabled bool
+	if err := db.QueryRow(
+		`SELECT status, enabled FROM "_graphjin_watches" WHERE id = ?`,
+		id,
+	).Scan(&status, &enabled); err != nil {
+		t.Fatalf("read paused watch: %v", err)
+	}
+	if status != "paused" || enabled {
+		t.Fatalf("drifted watch status=%q enabled=%v, want paused false", status, enabled)
 	}
 }

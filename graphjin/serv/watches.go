@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -289,20 +290,23 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	if name == "" {
 		return nil, fmt.Errorf("gj_watch mutation requires name")
 	}
+	admin := s.identityRoleIsAdmin(ctx)
+	id := watchID(ownerID, name)
+	if admin {
+		id = strings.TrimSpace(stringInput(root.Input, "id", id))
+		if id == "" {
+			return nil, fmt.Errorf("gj_watch id cannot be empty")
+		}
+	}
 	query := strings.TrimSpace(stringInput(root.Input, "query", ""))
 	savedQuery := strings.TrimSpace(stringInput(root.Input, "saved_query_name", ""))
 	variablesJSON := jsonStringInput(root.Input, "variables_json")
-	evidence, err := h.validateWatchDefinition(ctx, query, savedQuery, variablesJSON)
+	evidence, err := h.validateWatchDefinition(ctx, id, query, savedQuery, variablesJSON)
 	if err != nil {
 		return nil, err
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	admin := s.identityRoleIsAdmin(ctx)
-	id := watchID(ownerID, name)
-	if admin {
-		id = stringInput(root.Input, "id", id)
-	}
 	if err := h.enforceWatchLimit(ctx, ownerID, id); err != nil {
 		return nil, err
 	}
@@ -447,6 +451,10 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		}
 		delete(evidenceMap, watchReviewResumeKey)
 	}
+	if err := h.validateWatchCycle(ctx, id, lifecycle, status, enabled,
+		watchedWatchIDsFromEvidence(evidenceMap)); err != nil {
+		return nil, err
+	}
 	evidenceJSON := mustMarshalString(evidenceMap)
 	input := map[string]any{
 		"id": id, "name": name, "description": description, "query": query, "saved_query_name": savedQuery,
@@ -576,7 +584,10 @@ func (h watchControlPlane) updateWatchEvent(ctx context.Context, root core.Manag
 	return map[string]any{"id": id, "seen": seen, "seen_at": nullableSeenAt(seen, now), "updated_at": now}, nil
 }
 
-func (h watchControlPlane) validateWatchDefinition(ctx context.Context, query, savedQuery, variablesJSON string) (map[string]any, error) {
+func (h watchControlPlane) validateWatchDefinition(
+	ctx context.Context,
+	effectiveWatchID, query, savedQuery, variablesJSON string,
+) (map[string]any, error) {
 	query = strings.TrimSpace(query)
 	savedQuery = strings.TrimSpace(savedQuery)
 	if query == "" && savedQuery == "" {
@@ -616,8 +627,13 @@ func (h watchControlPlane) validateWatchDefinition(ctx context.Context, query, s
 			if len(cursorVars) == 0 {
 				return nil, fmt.Errorf("gj_watch subscription must use cursor pagination")
 			}
+			watchedIDs, err := watchedWatchIDsForMember(member, effectiveWatchID)
+			if err != nil {
+				return nil, err
+			}
 			evidence["probe"] = "ok"
 			evidence["cursor_variables"] = cursorVars
+			evidence["watched_watch_ids"] = watchedIDs
 		}
 		return evidence, nil
 	}
@@ -648,12 +664,189 @@ func (h watchControlPlane) validateWatchDefinition(ctx context.Context, query, s
 	if len(cursorVars) == 0 {
 		return nil, fmt.Errorf("gj_watch saved_query_name subscription must use cursor pagination")
 	}
+	watchedIDs, err := watchedWatchIDsForMember(member, effectiveWatchID)
+	if err != nil {
+		return nil, err
+	}
 	evidence["operation"] = "subscription"
 	evidence["operation_name"] = header.Name
 	evidence["saved_query_name"] = savedQuery
 	evidence["probe"] = "ok"
 	evidence["cursor_variables"] = cursorVars
+	evidence["watched_watch_ids"] = watchedIDs
 	return evidence, nil
+}
+
+func watchedWatchIDsForMember(member *core.Member, effectiveWatchID string) ([]string, error) {
+	if member == nil {
+		return nil, nil
+	}
+	return watchedWatchIDsForRoots(member.SubscriptionRoots(), effectiveWatchID)
+}
+
+func watchedWatchIDsForRoots(roots []core.SubscriptionRootInfo, effectiveWatchID string) ([]string, error) {
+	ids := make(map[string]struct{})
+	for _, root := range roots {
+		if !strings.EqualFold(strings.TrimSpace(root.Table), watchEventsRootTable) {
+			continue
+		}
+		rootIDs, unsafe, found := conjunctiveWatchIDs(root.Filter)
+		if unsafe {
+			return nil, fmt.Errorf("gj_watch gj_watch_event watch_id filter must be conjunctive and cannot appear under or/not")
+		}
+		if !found || len(rootIDs) == 0 {
+			return nil, fmt.Errorf("gj_watch gj_watch_event subscription requires a non-empty conjunctive watch_id eq/in filter")
+		}
+		for _, id := range rootIDs {
+			if id == effectiveWatchID {
+				return nil, fmt.Errorf("gj_watch gj_watch_event subscription cannot include its own watch_id %q", effectiveWatchID)
+			}
+			ids[id] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(ids))
+	for id := range ids {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func conjunctiveWatchIDs(filter map[string]any) (ids []string, unsafe, found bool) {
+	for key, value := range filter {
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "and":
+			for _, item := range watchAnySlice(value) {
+				child, _ := item.(map[string]any)
+				childIDs, childUnsafe, childFound := conjunctiveWatchIDs(child)
+				ids = append(ids, childIDs...)
+				unsafe = unsafe || childUnsafe
+				found = found || childFound
+			}
+		case "or", "not":
+			if filterContainsWatchID(value) {
+				unsafe = true
+			}
+		case "watch_id":
+			found = true
+			condition, ok := value.(map[string]any)
+			if !ok {
+				continue
+			}
+			for operator, operand := range condition {
+				switch strings.ToLower(strings.TrimSpace(operator)) {
+				case "eq":
+					if id := strings.TrimSpace(stringFromAny(operand)); id != "" {
+						ids = append(ids, id)
+					}
+				case "in":
+					for _, item := range watchAnySlice(operand) {
+						if id := strings.TrimSpace(stringFromAny(item)); id != "" {
+							ids = append(ids, id)
+						}
+					}
+				}
+			}
+		}
+	}
+	return ids, unsafe, found
+}
+
+func filterContainsWatchID(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, item := range typed {
+			if strings.EqualFold(strings.TrimSpace(key), "watch_id") || filterContainsWatchID(item) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if filterContainsWatchID(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func watchAnySlice(value any) []any {
+	switch typed := value.(type) {
+	case []any:
+		return typed
+	case []string:
+		out := make([]any, len(typed))
+		for index := range typed {
+			out[index] = typed[index]
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func watchedWatchIDsFromEvidence(evidence map[string]any) []string {
+	var ids []string
+	for _, value := range watchAnySlice(evidence["watched_watch_ids"]) {
+		if id := strings.TrimSpace(stringFromAny(value)); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func (h watchControlPlane) validateWatchCycle(
+	ctx context.Context,
+	candidateID, lifecycle, status string,
+	enabled bool,
+	candidateEdges []string,
+) error {
+	rows, err := h.service.internalStoreRows(ctx, "watches", "", watchStoreFields, nil)
+	if err != nil {
+		return err
+	}
+	graph := make(map[string][]string, len(rows)+1)
+	for _, row := range rows {
+		id := stringMapValue(row, "id")
+		if id == candidateID ||
+			!boolMapValue(row, "enabled") ||
+			watchLifecycle(stringMapValue(row, "lifecycle")) != "durable" ||
+			watchStatus(stringMapValue(row, "status")) != "active" {
+			continue
+		}
+		evidence := mapFromAny(parseJSONValue(jsonMapString(row, "evidence_json")))
+		graph[id] = watchedWatchIDsFromEvidence(evidence)
+	}
+	if enabled && watchLifecycle(lifecycle) == "durable" && watchStatus(status) == "active" {
+		graph[candidateID] = append([]string(nil), candidateEdges...)
+	}
+	if watchGraphReaches(graph, candidateID, candidateID, make(map[string]bool), true) {
+		return fmt.Errorf("gj_watch would create a watch dependency cycle involving %q", candidateID)
+	}
+	return nil
+}
+
+func watchGraphReaches(
+	graph map[string][]string,
+	current, target string,
+	visiting map[string]bool,
+	skipInitial bool,
+) bool {
+	if !skipInitial && current == target {
+		return true
+	}
+	if visiting[current] {
+		return false
+	}
+	visiting[current] = true
+	defer delete(visiting, current)
+	for _, next := range graph[current] {
+		if watchGraphReaches(graph, next, target, visiting, false) {
+			return true
+		}
+	}
+	return false
 }
 
 func memberCursorVariableNames(member *core.Member) []string {
