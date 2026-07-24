@@ -123,8 +123,8 @@ type ActionEvent struct {
 //
 // Invariant: the *SystemRoots fields only ever contain the fixed gj_* system roots
 // (gj_catalog, gj_security, gj_runtime, gj_config, gj_workflow,
-// gj_workflow_execution, gj_artifacts, gj_watch, gj_watch_event, and
-// gj_watch_flow_preview). Application/database roots (potentially tens of
+// gj_workflow_execution, gj_artifacts, gj_watch, and gj_watch_event).
+// Application/database roots (potentially tens of
 // thousands of tables) are NEVER enumerated here — they stay behind the
 // catalog and progressive discovery, and their authorization remains core RLS
 // per-table at execution.

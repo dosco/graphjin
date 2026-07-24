@@ -16,6 +16,7 @@ const (
 	skillWatchRead     = "watch_read"
 	skillWatchWrite    = "watch_write"
 	skillWatchFlow     = "watch_flow"
+	skillWatchDelivery = "watch_delivery"
 	skillAdminRead     = "admin_read"
 	skillAdminWrite    = "admin_write"
 )
@@ -32,16 +33,15 @@ const (
 // Fixed gj_* system roots. Application/database roots are never named here; see
 // the invariant on CapabilityProfile.
 const (
-	systemRootCatalog          = "gj_catalog"
-	systemRootSecurity         = "gj_security"
-	systemRootRuntime          = "gj_runtime"
-	systemRootConfig           = "gj_config"
-	systemRootWorkflow         = "gj_workflow"
-	systemRootWorkflowExec     = "gj_workflow_execution"
-	systemRootArtifacts        = "gj_artifacts"
-	systemRootWatch            = "gj_watch"
-	systemRootWatchEvent       = "gj_watch_event"
-	systemRootWatchFlowPreview = "gj_watch_flow_preview"
+	systemRootCatalog      = "gj_catalog"
+	systemRootSecurity     = "gj_security"
+	systemRootRuntime      = "gj_runtime"
+	systemRootConfig       = "gj_config"
+	systemRootWorkflow     = "gj_workflow"
+	systemRootWorkflowExec = "gj_workflow_execution"
+	systemRootArtifacts    = "gj_artifacts"
+	systemRootWatch        = "gj_watch"
+	systemRootWatchEvent   = "gj_watch_event"
 )
 
 // skillDefinition is GraphJin-owned prompt content plus server-side filtering
@@ -88,7 +88,7 @@ var builtinSkills = []skillDefinition{
 		id:               skillWatchRead,
 		name:             "Watch inbox",
 		content:          watchReadInstruction,
-		requiresAnyRoots: []string{systemRootWatch, systemRootWatchEvent, systemRootWatchFlowPreview},
+		requiresAnyRoots: []string{systemRootWatch, systemRootWatchEvent},
 	},
 	{
 		id:               skillWatchWrite,
@@ -102,7 +102,14 @@ var builtinSkills = []skillDefinition{
 		name:             "Watch flow enrichment",
 		content:          watchFlowInstruction,
 		write:            true,
-		requiresAllRoots: []string{systemRootWatch, systemRootWatchFlowPreview},
+		requiresAllRoots: []string{systemRootWatch},
+	},
+	{
+		id:               skillWatchDelivery,
+		name:             "Watch actions",
+		content:          watchDeliveryInstruction,
+		write:            true,
+		requiresAllRoots: []string{systemRootWatch},
 	},
 	{
 		id:               skillAdminRead,
@@ -206,11 +213,17 @@ const watchReadInstruction = `Skill: watch_read (gj_watch / gj_watch_event). Rev
 
 const watchWriteInstruction = `Skill: watch_write (gj_watch). Create, update, pause, resume, or delete standing watches through the governed root. ` +
 	`Before a mutation, inspect security guidance and the gj_watch capability detail. Create a unique per-conversation name and retain the returned ID. Use a subscription query or saved_query_name plus optional variables_json and delivery_json; pause or resume through status/enabled and remove through gj_watch(delete). ` +
+	`Choose from two independent questions. If the trigger is deterministic, express it in the GraphQL subscription filter; condition_js is not executed. If the trigger is semantic, needs judgment, or the stream is noisy, attach a flow. If the user only asks to be told, use inbox notification and do not attach a workflow or webhook. If the user explicitly asks GraphJin to act after the trigger, propose workflow or webhook delivery and follow the separate action-review process. ` +
 	`Per-watch MCP clients should subscribe to graphjin://watch-events/unseen/{watch_id}; aggregate clients must filter and acknowledge only retained watch IDs. Watches run durably under the owner's stored identity. Parsed dev and agentic configs already use runner all, but no subscription starts until an enabled active watch exists. Enabling watches after an explicit opt-out is an admin config change, not a watch mutation.`
 
 const watchFlowInstruction = `Skill: watch_flow. Add, preview, and approve AxFlow enrichment for an existing watch. ` +
-	`Put either default_watch_triage or inline AxFlow Mermaid in enrich_json with enabled:true and kind:"flow"; do not create a flow artifact or flows/ file. A new or changed flow pauses with approval pending. Call mutation-only gj_watch_flow_preview(insert) with samples_json or prior events, and set approve:true only after a successful preview. ` +
-	`Flows have no tools, fail open to the raw event, and must return notify/digest/discard, info/warn/critical, and a summary no longer than 280 characters.`
+	`Use a flow only when the trigger needs semantic judgment or a noisy stream needs triage; do not hand-write one when a deterministic GraphQL filter or default_watch_triage suffices. Put either default_watch_triage or inline AxFlow Mermaid in enrich_json with enabled:true and kind:"flow"; do not create a flow artifact or flows/ file. ` +
+	`A new or changed flow pauses with flow_approval pending. Preview or approve it through gj_watch(where:{id:{eq:"..."}}, update:{flow_review_json:{decision:"preview|approve|reject", expected_flow_hash:"...", samples_json:[...]}}). Approval must match a successful preview of the current flow_hash. ` +
+	`Flows have no tools and must return notify/digest/discard, info/warn/critical, and a summary no longer than 280 characters. Flow failure sends a raw inbox notification but never executes a workflow or webhook.`
+
+const watchDeliveryInstruction = `Skill: watch_delivery. Attach workflow or webhook delivery only when the user explicitly asks GraphJin to perform an action after a watch fires. ` +
+	`A notification request such as "tell me" or "let me know" is not permission to act. Deterministic action triggers use a GraphQL-filtered watch plus delivery; semantic or noisy action triggers add an inline watch flow before delivery. Inspect a named workflow before proposing it. ` +
+	`Creating or changing autonomous delivery pauses the watch and returns action_hash with action_approval pending. Explain the exact proposed effect and hash, then stop for user confirmation. In a later run, approve or reject only that hash through gj_watch(where:{id:{eq:"..."}}, update:{action_review_json:{decision:"approve|reject", expected_action_hash:"..."}}). Never create and approve an action in the same run.`
 
 const adminReadInstruction = `Skill: admin_read. Investigate the visible control plane read-only. ` +
 	`Use gj_security for posture, findings, effective policy, and config audits; use gj_runtime for health, source health, and recent activity; inspect gj_config only through visible governed reads. Discover exact shapes from system-capability or help rows and answer from that evidence.`

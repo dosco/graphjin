@@ -182,6 +182,26 @@ func (s *graphjinService) runNamedWorkflow(ctx context.Context, name string, inp
 	return ms.runWorkflowScript(ctx, normName, src, input, ns)
 }
 
+func (s *graphjinService) runNamedWorkflowPinned(ctx context.Context, name, expectedSourceHash string, input any, ns *string) (any, error) {
+	normName, err := normalizeWorkflowName(name)
+	if err != nil {
+		return nil, err
+	}
+	wf, src, _, err := s.resolveWorkflowForContext(ctx, normName)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(expectedSourceHash) == "" || wf.SourceHash != strings.TrimSpace(expectedSourceHash) {
+		return nil, fmt.Errorf("workflow source changed; watch action approval is required")
+	}
+	meta := WorkflowMeta{Variables: workflowVariablesFromCatalog(wf.Variables)}
+	if err := validateWorkflowInput(meta, input); err != nil {
+		return nil, err
+	}
+	ms := s.newMCPServerWithContext(ctx)
+	return ms.runWorkflowScript(ctx, normName, src, input, ns)
+}
+
 func normalizeWorkflowName(name string) (string, error) {
 	name = strings.TrimSpace(strings.TrimPrefix(name, "/"))
 	if name == "" {

@@ -223,6 +223,48 @@ func (s *graphjinService) processWatchDeliveryRow(ctx context.Context, row map[s
 		OwnerRole:      s.trustedWatchRunnerRole(stringMapValue(watchRow, "owner_role")),
 		LastDataHash:   stringMapValue(watchRow, "last_data_hash"),
 	}
+	eventDelivery, eventAction, deliveryErr := parseWatchDeliveryConfig(event.DeliveryJSON)
+	if deliveryErr != nil {
+		return s.completeWatchDelivery(ctx, event, "failed", 0, map[string]any{
+			"status": "failed",
+			"error":  deliveryErr.Error(),
+		})
+	}
+	if eventAction && (eventDelivery.Kind == "workflow" || eventDelivery.Kind == "webhook") {
+		ownerCtx := s.watchOwnerContext(ctx, def)
+		proposal, proposalErr := s.watchActionProposal(
+			ownerCtx,
+			def.Query,
+			def.SavedQueryName,
+			def.VariablesJSON,
+			def.EnrichJSON,
+			jsonMapString(watchRow, "delivery_json"),
+		)
+		watchEvidence := mapFromAny(parseJSONValue(jsonMapString(watchRow, "evidence_json")))
+		eventEvidence := mapFromAny(parseJSONValue(event.EvidenceJSON))
+		eventActionHash := strings.TrimSpace(stringFromAny(eventEvidence["action_hash"]))
+		actionApproved := proposalErr == nil &&
+			proposal.Required &&
+			watchActionApproval(watchEvidence, proposal) == watchReviewApproved &&
+			eventActionHash != "" &&
+			eventActionHash == proposal.Hash
+		if !actionApproved {
+			reason := "watch action approval is missing or no longer matches this event"
+			if proposalErr != nil {
+				reason = proposalErr.Error()
+			}
+			return s.completeWatchDelivery(ctx, event, "approval_required", 0, map[string]any{
+				"status":              "approval_required",
+				"error":               reason,
+				"event_action_hash":   eventActionHash,
+				"current_action_hash": proposal.Hash,
+			})
+		}
+		def.ActionHash = proposal.Hash
+		def.ActionRequired = true
+		def.ActionApproved = true
+		def.WorkflowSourceHash = proposal.WorkflowSourceHash
+	}
 	receipt, attempts, err := s.deliverWatchEvent(ctx, def, event)
 	if err != nil {
 		if receipt == nil {
@@ -394,7 +436,7 @@ func (s *graphjinService) deliverWatchWorkflow(ctx context.Context, def watchRun
 		return nil, errors.New("workflow delivery requires name")
 	}
 	ownerCtx := s.watchOwnerContext(ctx, def)
-	out, err := s.runNamedWorkflow(ownerCtx, cfg.Name, watchDeliveryPayload(def, event), nil)
+	out, err := s.runNamedWorkflowPinned(ownerCtx, cfg.Name, def.WorkflowSourceHash, watchDeliveryPayload(def, event), nil)
 	receipt := map[string]any{
 		"status": "delivered",
 		"kind":   "workflow",
@@ -472,14 +514,22 @@ func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntim
 func (s *graphjinService) triageWatchEvent(ctx context.Context, def *watchRuntimeDefinition, eventID, dataJSON, evidenceJSON string, cfg watchEnrichmentConfig) (bool, error) {
 	started := time.Now()
 	failOpen := func(reason string, runErr error) (bool, error) {
+		deliveryStatus := "pending"
+		failOpenNotification := true
+		if def.ActionRequired {
+			deliveryStatus = "flow_failed"
+			failOpenNotification = false
+		}
 		enrichment := map[string]any{
 			"status": "error", "kind": "flow", "flow_hash": cfg.FlowHash,
-			"fail_open": true, "error": reason,
+			"fail_open_notification": true, "fail_open_action": failOpenNotification, "error": reason,
 		}
-		if err := s.storeWatchEnrichment(ctx, eventID, "pending", false, enrichment); err != nil {
+		if err := s.storeWatchEnrichment(ctx, eventID, deliveryStatus, false, enrichment); err != nil {
 			return true, err
 		}
-		s.recordWatchFlowRuntimeEvent(ctx, def.ID, cfg.FlowHash, "runtime", "failed", reason, time.Since(started), map[string]any{"event_id": eventID, "fail_open": true})
+		s.recordWatchFlowRuntimeEvent(ctx, def.ID, cfg.FlowHash, "runtime", "failed", reason, time.Since(started), map[string]any{
+			"event_id": eventID, "fail_open_notification": true, "fail_open_action": failOpenNotification,
+		})
 		return true, runErr
 	}
 	if s.watchEnrichmentDailyCapReached(ctx, def.ID) {
@@ -501,6 +551,10 @@ func (s *graphjinService) triageWatchEvent(ctx context.Context, def *watchRuntim
 		status, seen, notify = "digest_queued", true, false
 	case "discard":
 		status, seen, notify = "suppressed", true, false
+	default:
+		if def.ActionRequired && !def.ActionApproved {
+			status = "approval_required"
+		}
 	}
 	enrichment := map[string]any{
 		"status": "ok", "kind": "flow", "flow_hash": run.FlowHash,

@@ -29,7 +29,7 @@
       "capability_profile": {
         "role_class": "user",
         "read_only": false,
-        "available_system_roots": ["gj_watch", "gj_watch_event", "gj_watch_flow_preview"]
+        "available_system_roots": ["gj_watch", "gj_watch_event"]
       },
       "url": "http://127.0.0.1:8082/api/v1/agent",
       "headers": {

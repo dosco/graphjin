@@ -38,7 +38,6 @@ func (h watchControlPlane) ManagedQueryTables() []core.ManagedTable {
 	return []core.ManagedTable{
 		managedTable(watchesRootTable, watchColumns()),
 		managedTable(watchEventsRootTable, watchEventColumns()),
-		managedTable(watchFlowPreviewRootTable, watchFlowPreviewColumns()),
 	}
 }
 
@@ -46,7 +45,7 @@ func (h watchControlPlane) ManagedMutationTables() []string {
 	if h.service == nil || !h.service.watchesEnabled() {
 		return nil
 	}
-	return []string{watchesRootTable, watchEventsRootTable, watchFlowPreviewRootTable}
+	return []string{watchesRootTable, watchEventsRootTable}
 }
 
 func watchColumns() []core.ManagedColumn {
@@ -60,6 +59,13 @@ func watchColumns() []core.ManagedColumn {
 		cpCol("condition_js", "text", false),
 		cpCol("delivery_json", "json", false),
 		cpCol("enrich_json", "json", false),
+		cpCol("flow_review_json", "json", false),
+		cpCol("action_review_json", "json", false),
+		cpCol("flow_hash", "text", false),
+		cpCol("flow_approval", "text", false),
+		cpCol("flow_preview_json", "json", false),
+		cpCol("action_hash", "text", false),
+		cpCol("action_approval", "text", false),
 		cpCol("evidence_json", "json", false),
 		cpCol("lifecycle", "text", false),
 		cpCol("lease_expires_at", "text", false),
@@ -125,8 +131,6 @@ func (h watchControlPlane) queryRows(ctx context.Context, root core.ManagedQuery
 		rows, err = h.watchRows(ctx)
 	case watchEventsRootTable:
 		rows, err = h.watchEventRows(ctx)
-	case watchFlowPreviewRootTable:
-		return nil, fmt.Errorf("gj_watch_flow_preview is mutation-only")
 	default:
 		return nil, fmt.Errorf("unsupported GraphJin watch root: %s", root.Table)
 	}
@@ -137,6 +141,11 @@ func (h watchControlPlane) queryRows(ctx context.Context, root core.ManagedQuery
 }
 
 func (h watchControlPlane) ExecuteManagedMutation(ctx context.Context, req core.ManagedMutationRequest) (json.RawMessage, error) {
+	for _, root := range req.Roots {
+		if root.Table == watchesRootTable && hasWatchActionReviewInput(root.Input) && len(req.Roots) != 1 {
+			return nil, fmt.Errorf("gj_watch action review must be submitted as a separate mutation")
+		}
+	}
 	out := make(map[string]any, len(req.Roots))
 	for _, root := range req.Roots {
 		row, err := h.mutateRow(ctx, root)
@@ -153,6 +162,9 @@ func (h watchControlPlane) mutateRow(ctx context.Context, root core.ManagedMutat
 	case watchesRootTable:
 		switch root.Operation {
 		case "insert", "upsert", "update":
+			if hasWatchReviewInput(root.Input) {
+				return h.reviewWatch(ctx, root)
+			}
 			return h.upsertWatch(ctx, root)
 		case "delete":
 			return h.deleteWatch(ctx, root)
@@ -164,11 +176,6 @@ func (h watchControlPlane) mutateRow(ctx context.Context, root core.ManagedMutat
 			return nil, fmt.Errorf("gj_watch_event supports update mutations")
 		}
 		return h.updateWatchEvent(ctx, root)
-	case watchFlowPreviewRootTable:
-		if root.Operation != "insert" {
-			return nil, fmt.Errorf("gj_watch_flow_preview supports insert mutations")
-		}
-		return h.previewWatchFlow(ctx, root)
 	default:
 		return nil, fmt.Errorf("unsupported GraphJin watch mutation root: %s", root.Table)
 	}
@@ -207,7 +214,7 @@ func (h watchControlPlane) watchRowsWithScope(ctx context.Context, allOwners boo
 		if !allOwners && !admin && stringMapValue(row, "owner_id") != ownerID {
 			continue
 		}
-		out = append(out, watchStoreRow(row, admin || allOwners))
+		out = append(out, h.projectWatchRow(ctx, row, admin || allOwners))
 	}
 	return out, nil
 }
@@ -266,6 +273,18 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	if !ok {
 		return nil, fmt.Errorf("gj_watch write requires user identity")
 	}
+	for _, field := range []string{
+		"approval",
+		"flow_hash",
+		"flow_approval",
+		"flow_preview_json",
+		"action_hash",
+		"action_approval",
+	} {
+		if _, exists := root.Input[field]; exists {
+			return nil, fmt.Errorf("gj_watch %s is server-managed; use flow_review_json or action_review_json", field)
+		}
+	}
 	name := strings.TrimSpace(stringInput(root.Input, "name", ""))
 	if name == "" {
 		return nil, fmt.Errorf("gj_watch mutation requires name")
@@ -278,7 +297,7 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		return nil, err
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 	admin := s.identityRoleIsAdmin(ctx)
 	id := watchID(ownerID, name)
 	if admin {
@@ -300,8 +319,28 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	conditionJS := stringInput(root.Input, "condition_js", "")
 	deliveryJSON := jsonStringInput(root.Input, "delivery_json")
 	enrichJSON := jsonStringInput(root.Input, "enrich_json")
+	if maxBytes := s.conf.Core.EffectiveWatchesConfig().SnapshotMaxBytes; maxBytes > 0 {
+		for _, field := range []struct{ name, value string }{
+			{"variables_json", variablesJSON},
+			{"delivery_json", deliveryJSON},
+			{"enrich_json", enrichJSON},
+		} {
+			if len(field.value) > maxBytes {
+				return nil, fmt.Errorf("gj_watch %s exceeds watches.snapshot_max_bytes (%d)", field.name, maxBytes)
+			}
+		}
+	}
+	deliveryJSON, _, _, err = normalizeWatchDeliveryJSON(deliveryJSON)
+	if err != nil {
+		return nil, fmt.Errorf("gj_watch %w", err)
+	}
 	var enrichCfg watchEnrichmentConfig
-	enrichJSON, enrichCfg, _, err = normalizeWatchEnrichmentJSON(enrichJSON)
+	var enrichEnabled bool
+	enrichJSON, enrichCfg, enrichEnabled, err = normalizeWatchEnrichmentJSON(enrichJSON)
+	if err != nil {
+		return nil, fmt.Errorf("gj_watch %w", err)
+	}
+	actionProposal, err := s.watchActionProposal(ctx, query, savedQuery, variablesJSON, enrichJSON, deliveryJSON)
 	if err != nil {
 		return nil, fmt.Errorf("gj_watch %w", err)
 	}
@@ -343,15 +382,21 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	for key, value := range evidence {
 		evidenceMap[key] = value
 	}
-	statusDefault, approvalDefault, enabledDefault := "active", "approved", true
+	statusDefault, enabledDefault := "active", true
 	if existing != nil {
 		statusDefault = stringMapValue(existing, "status")
-		approvalDefault = stringMapValue(existing, "approval")
 		enabledDefault = boolMapValue(existing, "enabled")
 	}
 	status := watchStatus(stringInput(root.Input, "status", statusDefault))
-	approval := watchApproval(stringInput(root.Input, "approval", approvalDefault))
 	enabled := boolInput(root.Input, "enabled", enabledDefault)
+	resumeIntent := status == "active" && enabled
+	_, statusSpecified := root.Input["status"]
+	_, enabledSpecified := root.Input["enabled"]
+	if existing != nil && !statusSpecified && !enabledSpecified {
+		if storedResume, ok := evidenceMap[watchReviewResumeKey]; ok {
+			resumeIntent = boolValue(storedResume)
+		}
+	}
 	createdAt := now
 	lastDataHash := ""
 	lastCursorJSON := ""
@@ -359,7 +404,8 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	lastError := ""
 	failureCount := int64(0)
 	definitionChanged := existing == nil
-	flowChanged := enrichCfg.Kind == "flow" && existing == nil
+	flowRequired := enrichEnabled && enrichCfg.Kind == "flow"
+	flowChanged := flowRequired && existing == nil
 	if existing != nil {
 		createdAt = stringMapValue(existing, "created_at")
 		if createdAt == "" {
@@ -368,9 +414,10 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		definitionChanged = query != stringMapValue(existing, "query") ||
 			savedQuery != stringMapValue(existing, "saved_query_name") ||
 			variablesJSON != jsonMapString(existing, "variables_json")
-		_, existingEnrichCfg, _, existingEnrichErr := normalizeWatchEnrichmentJSON(jsonMapString(existing, "enrich_json"))
-		flowChanged = (enrichCfg.Kind == "flow") != (existingEnrichCfg.Kind == "flow") ||
-			(enrichCfg.Kind == "flow" && (existingEnrichErr != nil || enrichCfg.FlowHash != existingEnrichCfg.FlowHash))
+		_, existingEnrichCfg, existingEnrichEnabled, existingEnrichErr := normalizeWatchEnrichmentJSON(jsonMapString(existing, "enrich_json"))
+		existingFlowRequired := existingEnrichErr == nil && existingEnrichEnabled && existingEnrichCfg.Kind == "flow"
+		flowChanged = flowRequired != existingFlowRequired ||
+			(flowRequired && (existingEnrichErr != nil || enrichCfg.FlowHash != existingEnrichCfg.FlowHash))
 		definitionChanged = definitionChanged || flowChanged
 		lastDataHash = stringMapValue(existing, "last_data_hash")
 		lastCursorJSON = jsonMapString(existing, "last_cursor_json")
@@ -385,14 +432,20 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 			failureCount = 0
 		}
 	}
-	if flowChanged {
-		delete(evidenceMap, "flow_preview")
-		approval = "pending"
+	ensureWatchReviewEvidence(evidenceMap, enrichCfg, flowRequired, actionProposal, now)
+	flowApproval := watchFlowApproval(evidenceMap, enrichCfg, flowRequired)
+	actionApproval := watchActionApproval(evidenceMap, actionProposal)
+	approval := combinedWatchApproval(flowApproval, actionApproval)
+	if approval != watchReviewApproved {
+		evidenceMap[watchReviewResumeKey] = resumeIntent
 		status = "paused"
 		enabled = false
-	}
-	if enrichCfg.Kind == "flow" && approval == "approved" && !watchFlowPreviewEvidenceMatches(evidenceMap, enrichCfg.FlowHash) {
-		return nil, fmt.Errorf("gj_watch flow approval requires a successful preview for flow_hash %s", enrichCfg.FlowHash)
+	} else {
+		if _, hadReviewResume := evidenceMap[watchReviewResumeKey]; hadReviewResume && resumeIntent {
+			status = "active"
+			enabled = true
+		}
+		delete(evidenceMap, watchReviewResumeKey)
 	}
 	evidenceJSON := mustMarshalString(evidenceMap)
 	input := map[string]any{
@@ -432,9 +485,9 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	s.markWatchChanged("watch mutation")
 	s.publishWatchRunnerChanged(ctx)
 	if len(rows) != 0 {
-		return watchStoreRow(rows[0], admin), nil
+		return h.projectWatchRow(ctx, rows[0], admin), nil
 	}
-	return watchStoreRow(input, admin), nil
+	return h.projectWatchRow(ctx, input, admin), nil
 }
 
 func (h watchControlPlane) deleteWatch(ctx context.Context, root core.ManagedMutationRoot) (map[string]any, error) {
@@ -1003,7 +1056,7 @@ func watchDeliveryStatus(status string) string {
 func watchStoreRow(row map[string]any, rawIDs bool) map[string]any {
 	accountID := stringMapValue(row, "account_id")
 	ownerID := stringMapValue(row, "owner_id")
-	return map[string]any{
+	out := map[string]any{
 		"id":               stringMapValue(row, "id"),
 		"name":             stringMapValue(row, "name"),
 		"description":      stringMapValue(row, "description"),
@@ -1032,6 +1085,23 @@ func watchStoreRow(row map[string]any, rawIDs bool) map[string]any {
 		"created_at":       stringMapValue(row, "created_at"),
 		"updated_at":       stringMapValue(row, "updated_at"),
 	}
+	evidence := mapFromAny(parseJSONValue(jsonMapString(row, "evidence_json")))
+	if evidence == nil {
+		evidence = map[string]any{}
+	}
+	_, enrichCfg, enrichEnabled, _ := normalizeWatchEnrichmentJSON(jsonMapString(row, "enrich_json"))
+	flowRequired := enrichEnabled && enrichCfg.Kind == "flow"
+	flowReview := mapFromAny(evidence[watchFlowReviewKey])
+	actionReview := mapFromAny(evidence[watchActionReviewKey])
+	out["flow_hash"] = enrichCfg.FlowHash
+	out["flow_approval"] = watchFlowApproval(evidence, enrichCfg, flowRequired)
+	out["flow_preview_json"] = flowReview["preview"]
+	out["action_hash"] = stringFromAny(actionReview["action_hash"])
+	out["action_approval"] = normalizedWatchReviewDecision(stringFromAny(actionReview["approval"]))
+	if strings.TrimSpace(stringFromAny(actionReview["action_hash"])) == "" {
+		out["action_approval"] = watchReviewNotRequired
+	}
+	return out
 }
 
 func watchEventStoreRow(row map[string]any, rawIDs bool) map[string]any {

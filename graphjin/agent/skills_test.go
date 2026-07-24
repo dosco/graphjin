@@ -37,7 +37,7 @@ func optionSkillIDs(t *testing.T, value ax.Value) []string {
 	return ids
 }
 
-func TestBuiltinSkillsAreTheOrderedTwelveFocusedGuides(t *testing.T) {
+func TestBuiltinSkillsAreTheOrderedThirteenFocusedGuides(t *testing.T) {
 	want := []string{
 		skillDataDiscovery,
 		skillDataWrite,
@@ -49,6 +49,7 @@ func TestBuiltinSkillsAreTheOrderedTwelveFocusedGuides(t *testing.T) {
 		skillWatchRead,
 		skillWatchWrite,
 		skillWatchFlow,
+		skillWatchDelivery,
 		skillAdminRead,
 		skillAdminWrite,
 	}
@@ -80,7 +81,6 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 		systemRootWorkflowExec,
 		systemRootWatch,
 		systemRootWatchEvent,
-		systemRootWatchFlowPreview,
 	}
 	baseRead := []string{skillDataDiscovery, skillCodeRead}
 	baseWrite := []string{skillDataDiscovery, skillDataWrite, skillCodeRead, skillCodeWrite}
@@ -111,17 +111,7 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 		{
 			name:    "watch lifecycle",
 			profile: profileWithRoleAndRoots("user", systemRootWatch),
-			want:    append(append([]string{}, baseWrite...), skillWatchRead, skillWatchWrite),
-		},
-		{
-			name:    "watch flow needs both roots",
-			profile: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchFlowPreview),
-			want:    append(append([]string{}, baseWrite...), skillWatchRead, skillWatchWrite, skillWatchFlow),
-		},
-		{
-			name:    "preview alone is read guidance only",
-			profile: profileWithRoleAndRoots("user", systemRootWatchFlowPreview),
-			want:    append(append([]string{}, baseWrite...), skillWatchRead),
+			want:    append(append([]string{}, baseWrite...), skillWatchRead, skillWatchWrite, skillWatchFlow, skillWatchDelivery),
 		},
 		{
 			name:    "admin roots do not make a non admin",
@@ -168,7 +158,6 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		systemRootWorkflowExec,
 		systemRootWatch,
 		systemRootWatchEvent,
-		systemRootWatchFlowPreview,
 	}
 	for _, tc := range []struct {
 		name    string
@@ -191,6 +180,30 @@ func TestSkillPayloadBudgets(t *testing.T) {
 	}
 }
 
+func TestWatchSkillsTeachAllFourDecisionBranches(t *testing.T) {
+	for _, fragment := range []string{
+		"deterministic",
+		"semantic",
+		"noisy",
+		"only asks to be told",
+		"explicitly asks GraphJin to act",
+	} {
+		if !strings.Contains(watchWriteInstruction, fragment) {
+			t.Fatalf("watch lifecycle guidance missing %q", fragment)
+		}
+	}
+	for _, fragment := range []string{
+		"notification request",
+		"is not permission to act",
+		"Deterministic action triggers",
+		"semantic or noisy action triggers",
+	} {
+		if !strings.Contains(watchDeliveryInstruction, fragment) {
+			t.Fatalf("watch action guidance missing %q", fragment)
+		}
+	}
+}
+
 func TestRunPassesOnlyCapabilityFilteredConstructorSkills(t *testing.T) {
 	allRoots := []string{
 		systemRootSecurity,
@@ -200,7 +213,6 @@ func TestRunPassesOnlyCapabilityFilteredConstructorSkills(t *testing.T) {
 		systemRootWorkflowExec,
 		systemRootWatch,
 		systemRootWatchEvent,
-		systemRootWatchFlowPreview,
 	}
 	for _, tc := range []struct {
 		name        string
@@ -422,7 +434,6 @@ func TestWriteLikeGraphQLCoversSystemWriteRoots(t *testing.T) {
 		`query { gj_code { id } }`,
 		`query { gj_watch { id } }`,
 		`query { gj_watch_event { id } }`,
-		`query { gj_watch_flow_preview { id } }`,
 	} {
 		if !writeLikeGraphQL(query) {
 			t.Fatalf("writeLikeGraphQL(%q) = false, want true", query)
@@ -451,7 +462,6 @@ func BenchmarkAllowedSkills(b *testing.B) {
 		systemRootWorkflowExec,
 		systemRootWatch,
 		systemRootWatchEvent,
-		systemRootWatchFlowPreview,
 	)
 	b.ReportAllocs()
 	for b.Loop() {
@@ -468,7 +478,6 @@ func BenchmarkSkillPromptConstruction(b *testing.B) {
 		systemRootWorkflowExec,
 		systemRootWatch,
 		systemRootWatchEvent,
-		systemRootWatchFlowPreview,
 	)
 	definitions := allowedSkills(false, profile)
 	b.ReportAllocs()

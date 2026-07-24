@@ -428,25 +428,29 @@ flow_graphql() {
 }
 
 run_watch_flow_smoke() {
-  log "checking inline AxFlow watch triage, preview approval, and final dispositions"
-  local suffix verdict name query create watch_id preview event_query event_file event_found
+  log "checking unified gj_watch flow review, final dispositions, and autonomous-action approval"
+  local suffix verdict name query create watch_id flow_hash preview event_query event_file event_found
+  local action_create action_watch_id action_hash action_review
   suffix="$(date +%s)_$$"
   local watch_ids=()
 
   for verdict in notify digest discard; do
     name="smoke_flow_${verdict}_fixture_${suffix}"
-    query="mutation { gj_watch(insert: { name: \"${name}\", query: \"subscription ${name} { roast_schedule(first: 25, after: \$cursor) { id status } roast_schedule_cursor }\", enrich_json: { enabled: true, kind: \"flow\", flow: \"default_watch_triage\" } }) { id status approval enabled enrich_json } }"
+    query="mutation { gj_watch(insert: { name: \"${name}\", query: \"subscription ${name} { roast_schedule(first: 25, after: \$cursor) { id status } roast_schedule_cursor }\", enrich_json: { enabled: true, kind: \"flow\", flow: \"default_watch_triage\" } }) { id flow_hash flow_approval status approval enabled enrich_json } }"
     create="$(flow_graphql "create-$verdict" "$query")"
     watch_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$create")"
-    jq -e '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and $w.status == "paused" and $w.approval == "pending" and $w.enabled == false' "$create" >/dev/null \
+    flow_hash="$(jq -r '[.data.gj_watch] | flatten | .[0].flow_hash' "$create")"
+    jq -e '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and ($w.flow_hash | length) > 0 and $w.flow_approval == "pending" and $w.status == "paused" and $w.approval == "pending" and $w.enabled == false' "$create" >/dev/null \
       || fail "new $verdict flow watch did not pause for preview"
     watch_ids+=("$watch_id")
 
-    query="mutation { gj_watch_flow_preview(insert: { watch_id: \"${watch_id}\", samples_json: [{ fixture: \"${verdict}_fixture\", temperature: 421 }], approve: true }) { watch_id flow_hash sample_count notify_count digest_count discard_count status approved } }"
+    query="mutation { gj_watch(where: { id: { eq: \"${watch_id}\" } }, update: { flow_review_json: { decision: \"approve\", expected_flow_hash: \"${flow_hash}\", samples_json: [{ fixture: \"${verdict}_fixture\", temperature: 421 }] } }) { id flow_hash flow_approval flow_preview_json status approval enabled } }"
     preview="$(flow_graphql "preview-$verdict" "$query")"
     jq -e --arg verdict "$verdict" '
-      ([.data.gj_watch_flow_preview] | flatten | .[0]) as $p
-      | $p.status == "ok" and $p.approved == true and $p.sample_count == 1
+      ([.data.gj_watch] | flatten | .[0]) as $w
+      | ($w.flow_preview_json | if type == "string" then fromjson else . end) as $p
+      | $w.flow_approval == "approved" and $w.status == "active" and $w.enabled == true
+        and $p.status == "ok" and $p.sample_count == 1
         and (if $verdict == "notify" then $p.notify_count == 1
              elif $verdict == "digest" then $p.digest_count == 1
              else $p.discard_count == 1 end)
@@ -472,10 +476,27 @@ run_watch_flow_smoke() {
     [ -n "$event_found" ] || fail "$verdict flow event did not reach its final disposition"
   done
 
+  name="smoke_action_review_${suffix}"
+  query="mutation { gj_watch(insert: { name: \"${name}\", query: \"subscription ${name} { roast_schedule(first: 25, after: \$cursor) { id status } roast_schedule_cursor }\", delivery_json: { kind: \"workflow\", name: \"customer_issue_triage\" } }) { id action_hash action_approval status approval enabled } }"
+  action_create="$(flow_graphql "create-action" "$query")"
+  action_watch_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$action_create")"
+  action_hash="$(jq -r '[.data.gj_watch] | flatten | .[0].action_hash' "$action_create")"
+  jq -e '([.data.gj_watch] | flatten | .[0]) as $w | ($w.action_hash | length) > 0 and $w.action_approval == "pending" and $w.status == "paused" and $w.enabled == false' "$action_create" >/dev/null \
+    || fail "workflow delivery watch did not pause for action review"
+  watch_ids+=("$action_watch_id")
+
+  query="mutation { gj_watch(where: { id: { eq: \"${action_watch_id}\" } }, update: { action_review_json: { decision: \"approve\", expected_action_hash: \"${action_hash}\" } }) { id action_hash action_approval status approval enabled } }"
+  action_review="$(flow_graphql "approve-action" "$query")"
+  jq -e --arg hash "$action_hash" '
+    ([.data.gj_watch] | flatten | .[0]) as $w
+    | $w.action_hash == $hash and $w.action_approval == "approved"
+      and $w.approval == "approved" and $w.status == "active" and $w.enabled == true
+  ' "$action_review" >/dev/null || fail "confirmed action hash did not activate workflow delivery"
+
   for watch_id in "${watch_ids[@]}"; do
     flow_graphql "cleanup-$(printf '%s' "$watch_id" | tr ':/' '__')" "mutation { gj_watch(delete: true, where: { id: { eq: \"${watch_id}\" } }) { id } }" >/dev/null
   done
-  pass "inline watch flows previewed once and routed notify, digest, and discard correctly"
+  pass "gj_watch reviewed flows and action delivery, then routed notify, digest, and discard correctly"
 }
 
 log "capturing lexical-only discovery baseline"

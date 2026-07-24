@@ -828,7 +828,7 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 		t.Fatalf("expected user-visible catalog/raw tools, got %+v", userProfile.AvailableTools)
 	}
 	// Agentic mode exposes catalog, owner-scoped state, and execution by default.
-	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_watch_flow_preview", "gj_workflow_execution"} {
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow_execution"} {
 		if !rootProfilesContain(userProfile.AvailableRoots, root) {
 			t.Fatalf("expected %s available to user, got %+v", root, userProfile.AvailableRoots)
 		}
@@ -866,7 +866,7 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 	disabled := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true})
 	disabled.service.conf.Core.Watches.Enabled = false
 	disabledProfile := disabled.callerCapabilityProfile(sourceModeUserTestContext(), false)
-	for _, root := range []string{"gj_watch", "gj_watch_event", "gj_watch_flow_preview"} {
+	for _, root := range []string{"gj_watch", "gj_watch_event"} {
 		if rootProfilesContain(disabledProfile.AvailableRoots, root) {
 			t.Fatalf("expected %s hidden when watches are disabled, got %+v", root, disabledProfile.AvailableRoots)
 		}
@@ -875,7 +875,7 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 		}
 	}
 	for _, rp := range disabledProfile.BlockedRoots {
-		if (rp.Root == "gj_watch" || rp.Root == "gj_watch_event" || rp.Root == "gj_watch_flow_preview") && rp.Reason != "disabled by configuration" {
+		if (rp.Root == "gj_watch" || rp.Root == "gj_watch_event") && rp.Reason != "disabled by configuration" {
 			t.Fatalf("expected config-disabled reason for %s, got %+v", rp.Root, rp)
 		}
 	}

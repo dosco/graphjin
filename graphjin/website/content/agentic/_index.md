@@ -16,6 +16,7 @@ Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data 
 | [Source Mode](/agentic/source-mode/) | Source-local ownership, capability defaults, reloads, and `agentic.yml` inheritance. |
 | [Artifacts Overlay](/agentic/artifacts/) | Global config files plus caller-scoped `gj_artifacts` overrides for queries, fragments, and workflows. |
 | [Watches](/agentic/watches/) | Cursor-backed `gj_watch` standing questions evaluated with the owner's permissions; durable `gj_watch_event` inbox, explicit ephemeral leases, REST cleanup, and webhook/workflow/MCP delivery. |
+| [Choosing Watches, Flows, and Workflows](/agentic/watch-automation/) | Decide between a plain notification, tool-free AI triage, and a reviewed autonomous action; preview and approve everything through `gj_watch`. |
 | [Workflows](/agentic/workflows/) | Named, reviewed operational procedures that can call GraphJin tools and GraphQL. |
 | [MCP OAuth](/agentic/oauth/) | Hosted MCP identity with protected-resource metadata, authorization metadata, and audience checks. |
 

@@ -669,7 +669,7 @@ func (c *Config) modeForSourceDefaults() string {
 // roots. Modes set safe defaults; explicit system.root_access entries always win.
 //
 // Row-level owner scoping for the artifact-backed roots (gj_artifacts, gj_watch,
-// gj_watch_event, gj_watch_flow_preview, gj_workflow, gj_workflow_execution) is enforced by the artifact
+// gj_watch_event, gj_workflow, gj_workflow_execution) is enforced by the artifact
 // control-plane handler
 // (owner_id = user_id, with the raw artifact tables blocked from generic GraphQL),
 // so the "owner" mode here is the visibility gate that pairs with that handler
@@ -688,7 +688,6 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_artifacts":          AccessModePublic,
 			"gj_watch":              AccessModePublic,
 			"gj_watch_event":        AccessModePublic,
-			"gj_watch_flow_preview": AccessModePublic,
 			"gj_workflow":           AccessModePublic,
 			"gj_workflow_execution": AccessModePublic,
 			"gj_runtime":            AccessModePublic,
@@ -703,7 +702,6 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_artifacts":          AccessModeOwner,
 			"gj_watch":              AccessModeOwner,
 			"gj_watch_event":        AccessModeOwner,
-			"gj_watch_flow_preview": AccessModeOwner,
 			"gj_workflow":           AccessModeOwner,
 			"gj_workflow_execution": AccessModeOwner,
 			"gj_runtime":            AccessModeAdmin,
@@ -720,7 +718,6 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_artifacts":          AccessModeAdmin,
 			"gj_watch":              AccessModeAdmin,
 			"gj_watch_event":        AccessModeAdmin,
-			"gj_watch_flow_preview": AccessModeAdmin,
 			"gj_workflow":           AccessModeAdmin,
 			"gj_workflow_execution": AccessModeAdmin,
 			"gj_runtime":            AccessModeAdmin,
