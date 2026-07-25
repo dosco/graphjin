@@ -266,81 +266,114 @@ func TestWatchProjectionLoadsPastGraphQLDefaultLimit(t *testing.T) {
 	}
 }
 
-func TestLoadRunnableWatchesReturnsAllPages(t *testing.T) {
-	db, svc := newSQLiteWatchService(t, 10)
-	svc.conf.Core.DefaultLimit = 2
+func TestInternalStoreAllRowsReturnsEveryPage(t *testing.T) {
+	oldPageSize := internalStorePageSize
+	internalStorePageSize = 3
+	t.Cleanup(func() { internalStorePageSize = oldPageSize })
+
+	db, svc := newPaginationWatchTestService(t)
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
 	}
 	startSQLiteWatchCore(t, svc, db)
+	wantIDs := insertSortableWatchFixtures(t, svc, 8)
 
-	const count = 5
-	for i := 0; i < count; i++ {
-		id := fmt.Sprintf("watch:runnable:%02d", i)
-		name := fmt.Sprintf("runnable_%02d", i)
-		if _, err := db.Exec(
-			`INSERT INTO "_graphjin_watches" (id, name, query, owner_id, owner_role) VALUES (?, ?, ?, ?, ?)`,
-			id, name, cursorOrdersWatchQuery(name), "user_1", "analyst",
-		); err != nil {
-			t.Fatalf("insert runnable watch %s: %v", id, err)
-		}
+	allRows, err := svc.internalStoreAllRows(context.Background(), "watches", "", `id`, nil)
+	if err != nil {
+		t.Fatalf("internalStoreAllRows: %v", err)
 	}
+	allIDs := make([]string, 0, len(allRows))
+	for _, row := range allRows {
+		allIDs = append(allIDs, stringMapValue(row, "id"))
+	}
+	if fmt.Sprint(allIDs) != fmt.Sprint(wantIDs) {
+		t.Fatalf("all-row ids = %v, want %v across three pages", allIDs, wantIDs)
+	}
+
+	firstPage, err := svc.internalStoreRows(context.Background(), "watches", "", `id`, nil)
+	if err != nil {
+		t.Fatalf("internalStoreRows: %v", err)
+	}
+	if len(firstPage) != 5 {
+		t.Fatalf("single-page rows = %d, want default_limit 5", len(firstPage))
+	}
+}
+
+func TestLoadRunnableWatchesReturnsWatchesBeyondFirstPage(t *testing.T) {
+	db, svc := newPaginationWatchTestService(t)
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	wantIDs := insertSortableWatchFixtures(t, svc, 8)
 
 	defs, err := svc.loadRunnableWatches(context.Background())
 	if err != nil {
 		t.Fatalf("loadRunnableWatches: %v", err)
 	}
-	if len(defs) != count {
-		t.Fatalf("runnable watches = %d, want %d past default_limit: %+v", len(defs), count, defs)
+	gotIDs := make([]string, 0, len(defs))
+	for _, def := range defs {
+		gotIDs = append(gotIDs, def.ID)
 	}
-	for i, def := range defs {
-		want := fmt.Sprintf("watch:runnable:%02d", i)
-		if def.ID != want {
-			t.Fatalf("runnable watch %d id = %q, want %q", i, def.ID, want)
-		}
+	if fmt.Sprint(gotIDs) != fmt.Sprint(wantIDs) {
+		t.Fatalf("runnable watch ids = %v, want %v past default_limit", gotIDs, wantIDs)
 	}
 }
 
-func TestValidateWatchCycleFindsDependencyPastDefaultLimit(t *testing.T) {
-	db, svc := newSQLiteWatchService(t, 10)
-	svc.conf.Core.DefaultLimit = 2
+func TestValidateWatchCycleDetectsCycleBeyondFirstPage(t *testing.T) {
+	db, svc := newPaginationWatchTestService(t)
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
 	}
 	startSQLiteWatchCore(t, svc, db)
-
-	for i := 0; i < 2; i++ {
-		id := fmt.Sprintf("watch:padding:%02d", i)
-		if _, err := db.Exec(
-			`INSERT INTO "_graphjin_watches" (id, name, query, owner_id) VALUES (?, ?, ?, ?)`,
-			id, id, cursorOrdersWatchQuery(id), "user_1",
-		); err != nil {
-			t.Fatalf("insert padding watch %s: %v", id, err)
-		}
-	}
-	const (
-		persistedID = "watch:zz_persisted"
-		candidateID = "watch:zz_candidate"
-	)
-	evidence := `{"watched_watch_ids":["` + candidateID + `"]}`
-	if _, err := db.Exec(
-		`INSERT INTO "_graphjin_watches" (id, name, query, evidence_json, owner_id) VALUES (?, ?, ?, ?, ?)`,
-		persistedID, "persisted_cycle_edge", cursorOrdersWatchQuery("persisted_cycle_edge"), evidence, "user_1",
-	); err != nil {
-		t.Fatalf("insert persisted cycle edge: %v", err)
-	}
+	insertSortableWatchFixtures(t, svc, 7)
 
 	cp := newWatchControlPlane(svc)
-	err := cp.validateWatchCycle(context.Background(), candidateID, "durable", "active", true, []string{persistedID})
+	ctx := paginationWatchAdminContext()
+	const (
+		partnerID   = "w_08"
+		candidateID = "w_09"
+	)
+	if _, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "insert",
+		Input: map[string]any{
+			"id":    partnerID,
+			"name":  "paged_cycle_partner",
+			"query": watchEventWatchQuery(`{ watch_id: { eq: $watch_id } }`),
+			"variables_json": map[string]any{
+				"watch_id":              candidateID,
+				"watch_ids":             []string{candidateID},
+				"gj_watch_event_cursor": nil,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("insert cycle partner: %v", err)
+	}
+	_, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "insert",
+		Input: map[string]any{
+			"id":    candidateID,
+			"name":  "paged_cycle_candidate",
+			"query": watchEventWatchQuery(`{ watch_id: { eq: $watch_id } }`),
+			"variables_json": map[string]any{
+				"watch_id":              partnerID,
+				"watch_ids":             []string{partnerID},
+				"gj_watch_event_cursor": nil,
+			},
+		},
+	})
 	if err == nil || !strings.Contains(err.Error(), "dependency cycle") {
 		t.Fatalf("cycle error = %v, want dependency cycle from row past default_limit", err)
 	}
 }
 
-func TestPruneWatchEventsEnforcesCapPastDefaultLimit(t *testing.T) {
-	db, svc := newSQLiteWatchService(t, 10)
-	svc.conf.Core.DefaultLimit = 2
-	svc.conf.Core.Watches.MaxEventsPerWatch = 2
+func TestPruneWatchEventsEnforcesCapBeyondFirstPage(t *testing.T) {
+	db, svc := newSQLiteWatchServiceWithOptions(t, 20, func(conf *Config) {
+		conf.Core.DefaultLimit = 5
+		conf.Core.Watches.MaxEventsPerWatch = 3
+	})
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
 	}
@@ -349,7 +382,7 @@ func TestPruneWatchEventsEnforcesCapPastDefaultLimit(t *testing.T) {
 	ctx := artifactUserCtx("user_1")
 	const watchID = "watch:prune_pages"
 	base := time.Now().UTC().Add(-time.Hour)
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 10; i++ {
 		insertWatchEventFixture(
 			t,
 			svc,
@@ -363,9 +396,98 @@ func TestPruneWatchEventsEnforcesCapPastDefaultLimit(t *testing.T) {
 		t.Fatalf("pruneWatchEvents: %v", err)
 	}
 	got := watchEventIDs(t, db)
-	want := []string{"evt_prune_03", "evt_prune_04"}
+	want := []string{"evt_prune_07", "evt_prune_08", "evt_prune_09"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("watch events after cap prune = %v, want %v", got, want)
+	}
+}
+
+func TestUnseenWatchEventSummaryCountsBeyondFirstPage(t *testing.T) {
+	db, svc := newPaginationWatchTestService(t)
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+
+	ctx := artifactUserCtx("user_1")
+	base := time.Now().UTC().Add(-time.Hour)
+	for i := 0; i < 8; i++ {
+		insertWatchEventFixture(
+			t,
+			svc,
+			ctx,
+			fmt.Sprintf("evt_unseen_%02d", i),
+			"watch:unseen_pages",
+			base.Add(time.Duration(i)*time.Minute).Format(time.RFC3339Nano),
+		)
+	}
+	count, _, watchIDs, err := svc.unseenWatchEventSummary(ctx, nil)
+	if err != nil {
+		t.Fatalf("unseenWatchEventSummary: %v", err)
+	}
+	if count != 8 || len(watchIDs) != 1 || watchIDs[0] != "watch:unseen_pages" {
+		t.Fatalf("unseen summary count/watch ids = %d/%v, want 8/[watch:unseen_pages]", count, watchIDs)
+	}
+}
+
+func TestSweepWatchDigestsDrainsMembersBeyondFirstPage(t *testing.T) {
+	db, svc := newPaginationWatchTestService(t)
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	insertSortableWatchFixtures(t, svc, 1)
+	if _, err := db.Exec(
+		`UPDATE "_graphjin_watches" SET delivery_json = ? WHERE id = ?`,
+		`{"kind":"inbox","digest":{"window":"1m"}}`,
+		"w_01",
+	); err != nil {
+		t.Fatalf("configure digest watch: %v", err)
+	}
+
+	ctx := artifactUserCtx("user_1")
+	now := time.Now().UTC()
+	base := now.Add(-2 * time.Minute)
+	for i := 0; i < 8; i++ {
+		id := fmt.Sprintf("evt_digest_page_%02d", i)
+		insertWatchEventFixture(
+			t,
+			svc,
+			ctx,
+			id,
+			"w_01",
+			base.Add(time.Duration(i)*time.Second).Format(time.RFC3339Nano),
+		)
+		if _, err := db.Exec(
+			`UPDATE "_graphjin_watch_events" SET delivery_status = 'digest_queued' WHERE id = ?`,
+			id,
+		); err != nil {
+			t.Fatalf("queue digest member %s: %v", id, err)
+		}
+	}
+
+	flushed, err := svc.sweepWatchDigests(ctx, now)
+	if err != nil {
+		t.Fatalf("sweepWatchDigests: %v", err)
+	}
+	if flushed != 1 {
+		t.Fatalf("flushed digest groups = %d, want 1", flushed)
+	}
+	var queued, digested int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM "_graphjin_watch_events" WHERE watch_id = ? AND delivery_status = 'digest_queued'`,
+		"w_01",
+	).Scan(&queued); err != nil {
+		t.Fatalf("count queued digest members: %v", err)
+	}
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM "_graphjin_watch_events" WHERE watch_id = ? AND delivery_status = 'digested'`,
+		"w_01",
+	).Scan(&digested); err != nil {
+		t.Fatalf("count digested members: %v", err)
+	}
+	if queued != 0 || digested != 8 {
+		t.Fatalf("digest member status queued/digested = %d/%d, want 0/8", queued, digested)
 	}
 }
 
@@ -854,26 +976,18 @@ func TestSweepWatchEventsPrunesExpiredAndOrphanedRows(t *testing.T) {
 	}
 }
 
-func TestSweepWatchEventsKeepsEventForWatchPastDefaultLimit(t *testing.T) {
-	db, svc := newSQLiteWatchService(t, 10)
-	svc.conf.Core.DefaultLimit = 2
-	svc.conf.Core.Watches.EventRetentionHours = 1
+func TestSweepWatchEventsKeepsEventsOfWatchesBeyondFirstPage(t *testing.T) {
+	db, svc := newSQLiteWatchServiceWithOptions(t, 20, func(conf *Config) {
+		conf.Core.DefaultLimit = 5
+		conf.Core.Watches.EventRetentionHours = 1
+	})
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
 	}
 	startSQLiteWatchCore(t, svc, db)
-
-	for i := 0; i < 3; i++ {
-		id := fmt.Sprintf("watch:sweep:%02d", i)
-		if _, err := db.Exec(
-			`INSERT INTO "_graphjin_watches" (id, name, query, owner_id) VALUES (?, ?, ?, ?)`,
-			id, id, cursorOrdersWatchQuery(id), "user_1",
-		); err != nil {
-			t.Fatalf("insert sweep watch %s: %v", id, err)
-		}
-	}
+	insertSortableWatchFixtures(t, svc, 8)
 	ctx := artifactUserCtx("user_1")
-	insertWatchEventFixture(t, svc, ctx, "evt_past_first_page", "watch:sweep:02", time.Now().UTC().Format(time.RFC3339Nano))
+	insertWatchEventFixture(t, svc, ctx, "evt_past_first_page", "w_08", time.Now().UTC().Format(time.RFC3339Nano))
 
 	deleted, err := svc.sweepWatchEvents(ctx)
 	if err != nil {
@@ -887,26 +1001,29 @@ func TestSweepWatchEventsKeepsEventForWatchPastDefaultLimit(t *testing.T) {
 	}
 }
 
-func TestSweepWatchEventsFailsSafeWhenWatchScanIsEmpty(t *testing.T) {
-	db, svc := newSQLiteWatchService(t, 10)
-	svc.conf.Core.DefaultLimit = 2
-	svc.conf.Core.Watches.EventRetentionHours = 1
+func TestSweepWatchEventsSkipsOrphanCleanupWhenWatchScanEmpty(t *testing.T) {
+	db, svc := newSQLiteWatchServiceWithOptions(t, 20, func(conf *Config) {
+		conf.Core.DefaultLimit = 5
+		conf.Core.Watches.EventRetentionHours = 1
+	})
 	if err := svc.initArtifactsBeforeCore(); err != nil {
 		t.Fatalf("initArtifactsBeforeCore: %v", err)
 	}
 	startSQLiteWatchCore(t, svc, db)
 
 	ctx := artifactUserCtx("user_1")
-	insertWatchEventFixture(t, svc, ctx, "evt_without_watch_snapshot", "watch:not_visible", time.Now().UTC().Format(time.RFC3339Nano))
+	now := time.Now().UTC()
+	insertWatchEventFixture(t, svc, ctx, "evt_recent_orphan", "watch:not_visible", now.Format(time.RFC3339Nano))
+	insertWatchEventFixture(t, svc, ctx, "evt_expired_orphan", "watch:not_visible", now.Add(-2*time.Hour).Format(time.RFC3339Nano))
 	deleted, err := svc.sweepWatchEvents(ctx)
 	if err != nil {
 		t.Fatalf("sweepWatchEvents: %v", err)
 	}
-	if deleted != 0 {
-		t.Fatalf("sweep deleted %d rows with an empty watch snapshot, want 0", deleted)
+	if deleted != 1 {
+		t.Fatalf("sweep deleted %d rows with an empty watch snapshot, want only the expired row", deleted)
 	}
-	if got := watchEventIDs(t, db); len(got) != 1 || got[0] != "evt_without_watch_snapshot" {
-		t.Fatalf("watch events after fail-safe sweep = %v, want event retained", got)
+	if got := watchEventIDs(t, db); len(got) != 1 || got[0] != "evt_recent_orphan" {
+		t.Fatalf("watch events after fail-safe sweep = %v, want only recent orphan retained", got)
 	}
 }
 
@@ -2371,7 +2488,58 @@ func TestUpsertWatchRejectsOversizedDefinitionJSON(t *testing.T) {
 	}
 }
 
+func newPaginationWatchTestService(t *testing.T) (*sql.DB, *graphjinService) {
+	t.Helper()
+	return newSQLiteWatchServiceWithOptions(t, 20, func(conf *Config) {
+		conf.Core.DefaultLimit = 5
+	})
+}
+
+func paginationWatchAdminContext() context.Context {
+	return contextWithUserRole(artifactUserCtx("user_1"), "admin")
+}
+
+func insertSortableWatchFixtures(t *testing.T, svc *graphjinService, count int) []string {
+	t.Helper()
+	cp := newWatchControlPlane(svc)
+	ctx := paginationWatchAdminContext()
+	ids := make([]string, 0, count)
+	for i := 1; i <= count; i++ {
+		id := fmt.Sprintf("w_%02d", i)
+		row, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+			Table:     watchesRootTable,
+			Operation: "insert",
+			Input: map[string]any{
+				"id":    id,
+				"name":  "paged_" + id,
+				"query": cursorOrdersWatchQuery("paged_" + id),
+			},
+		})
+		if err != nil {
+			t.Fatalf("insert sortable watch %s: %v", id, err)
+		}
+		if got := stringFromAny(row["id"]); got != id {
+			t.Fatalf("sortable watch id = %q, want %q", got, id)
+		}
+		if !boolMapValue(row, "enabled") ||
+			watchStatus(stringFromAny(row["status"])) != "active" ||
+			watchApproval(stringFromAny(row["approval"])) != "approved" {
+			t.Fatalf("sortable watch %s is not runnable: %+v", id, row)
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func newSQLiteWatchService(t *testing.T, maxPerOwner int) (*sql.DB, *graphjinService) {
+	return newSQLiteWatchServiceWithOptions(t, maxPerOwner, nil)
+}
+
+func newSQLiteWatchServiceWithOptions(
+	t *testing.T,
+	maxPerOwner int,
+	configure func(*Config),
+) (*sql.DB, *graphjinService) {
 	t.Helper()
 	dsn := "file:" + t.TempDir() + "/watches.db"
 	db, err := sql.Open("sqlite", dsn)
@@ -2379,10 +2547,20 @@ func newSQLiteWatchService(t *testing.T, maxPerOwner int) (*sql.DB, *graphjinSer
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return newSQLiteWatchServiceWithDB(t, db, dsn, maxPerOwner)
+	return newSQLiteWatchServiceWithDBAndOptions(t, db, dsn, maxPerOwner, configure)
 }
 
 func newSQLiteWatchServiceWithDB(t *testing.T, db *sql.DB, dsn string, maxPerOwner int) (*sql.DB, *graphjinService) {
+	return newSQLiteWatchServiceWithDBAndOptions(t, db, dsn, maxPerOwner, nil)
+}
+
+func newSQLiteWatchServiceWithDBAndOptions(
+	t *testing.T,
+	db *sql.DB,
+	dsn string,
+	maxPerOwner int,
+	configure func(*Config),
+) (*sql.DB, *graphjinService) {
 	t.Helper()
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY, status TEXT, updated_at TEXT)`); err != nil {
 		t.Fatalf("create orders table: %v", err)
@@ -2397,6 +2575,9 @@ func newSQLiteWatchServiceWithDB(t *testing.T, db *sql.DB, dsn string, maxPerOwn
 		Roles:     []core.Role{{Name: "analyst"}},
 	}}
 	conf.ConfigPath = t.TempDir()
+	if configure != nil {
+		configure(conf)
+	}
 	if err := conf.Core.NormalizeSources(); err != nil {
 		t.Fatalf("NormalizeSources: %v", err)
 	}
