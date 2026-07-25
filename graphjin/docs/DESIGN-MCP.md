@@ -197,7 +197,8 @@ read filters by caller plus watch ID. Clients construct the concrete URI by
 RFC 6570-expanding the template, which percent-encodes reserved characters in
 the watch ID. Notifications identify the changed
 resource; reads return compact metadata (event IDs, watch IDs, timestamps, data
-hashes, truncation flags, delivery status, and any flow verdict/severity/summary), not the full
+hashes, truncation flags, delivery status, snooze timestamp, and any flow
+verdict/severity/summary), not the full
 `gj_watch_event.data_json` payload. When a session subscribes to both forms,
 exact subscriptions take precedence for modern events that carry a watch ID.
 
@@ -219,6 +220,19 @@ workflow callables, or MCP sampling. Their fixed result contract is `verdict`
 (`notify|digest|discard`), `severity` (`info|warn|critical`), and a
 280-character summary. Any flow failure sends the raw unseen notification but
 never executes a workflow or webhook.
+
+An absence watch stores `{enabled, window, repeat}` in `gj_watch.absence_json`
+and emits a synthetic `data_json.kind="absence"` event after source silence.
+Flow `digest` dispositions are drained on the existing delivery loop into one
+unseen `kind="digest"` event after `delivery_json.digest.window`; no second
+model call is made. `gj_watch_event.snoozed_until` suppresses future-snoozed
+rows from aggregate and per-watch unseen resources without changing `seen`.
+
+A **rollup watch** is an ordinary durable watch over `gj_watch_event` with a
+conjunctive non-self `watch_id eq/in` filter. `or`/`not` filters and self
+references are rejected, the dependency DAG rejects cycles, and saved-query
+dependency drift pauses the watch for review. Digest is same-watch noise
+control; rollup watches correlate events across watch IDs.
 
 ## Key Files
 

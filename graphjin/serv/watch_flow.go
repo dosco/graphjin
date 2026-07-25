@@ -309,7 +309,11 @@ func (h watchControlPlane) watchFlowReviewSamples(ctx context.Context, input map
 	if limit <= 0 || limit > defaultWatchFlowSamples {
 		limit = defaultWatchFlowSamples
 	}
-	rows, err := h.service.internalStoreRows(ctx, "watch_events", `where: { watch_id: { eq: $watch_id } }`, `id data_json created_at`, map[string]any{"watch_id": watchID})
+	args := fmt.Sprintf(
+		`where: { watch_id: { eq: $watch_id } }, order_by: { created_at: desc }, limit: %d`,
+		limit,
+	)
+	rows, err := h.service.internalStoreRows(ctx, "watch_events", args, `id data_json created_at`, map[string]any{"watch_id": watchID})
 	if err != nil {
 		return nil, err
 	}

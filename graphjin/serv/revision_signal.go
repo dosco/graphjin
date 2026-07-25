@@ -51,7 +51,7 @@ func (h revisionSignalHandler) ExecuteManagedQuery(
 		if root.Table != revisionSignalRootTable {
 			return nil, fmt.Errorf("unsupported GraphJin revision signal root: %s", root.Table)
 		}
-		rows, err := h.service.internalStoreRows(ctx, "revisions", "", revisionStoreFields, nil)
+		rows, err := h.service.internalStoreAllRowsOrdered(ctx, "revisions", "", revisionStoreFields, "domain", nil)
 		if err != nil {
 			return nil, err
 		}

@@ -429,14 +429,19 @@ flow_graphql() {
 
 run_watch_flow_smoke() {
   log "checking unified gj_watch flow review, final dispositions, and autonomous-action approval"
-  local suffix verdict name query create watch_id flow_hash preview event_query event_file event_found
+  local suffix verdict name query create watch_id flow_hash preview event_query event_file event_found delivery_clause
   local action_create action_watch_id action_hash action_review
+  local digest_watch_id="" digest_member_id="" digest_events digest_drained=""
   suffix="$(date +%s)_$$"
   local watch_ids=()
 
   for verdict in notify digest discard; do
     name="smoke_flow_${verdict}_fixture_${suffix}"
-    query="mutation { gj_watch(insert: { name: \"${name}\", query: \"subscription ${name} { roast_schedule(first: 25, after: \$cursor) { id status } roast_schedule_cursor }\", enrich_json: { enabled: true, kind: \"flow\", flow: \"default_watch_triage\" } }) { id flow_hash flow_approval status approval enabled enrich_json } }"
+    delivery_clause=""
+    if [ "$verdict" = "digest" ]; then
+      delivery_clause=', delivery_json: { kind: "inbox", digest: { window: "1m" } }'
+    fi
+    query="mutation { gj_watch(insert: { name: \"${name}\", query: \"subscription ${name} { roast_schedule(first: 25, after: \$cursor) { id status } roast_schedule_cursor }\"${delivery_clause}, enrich_json: { enabled: true, kind: \"flow\", flow: \"default_watch_triage\" } }) { id flow_hash flow_approval status approval enabled enrich_json delivery_json } }"
     create="$(flow_graphql "create-$verdict" "$query")"
     watch_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$create")"
     flow_hash="$(jq -r '[.data.gj_watch] | flatten | .[0].flow_hash' "$create")"
@@ -474,7 +479,44 @@ run_watch_flow_smoke() {
       sleep 0.5
     done
     [ -n "$event_found" ] || fail "$verdict flow event did not reach its final disposition"
+    if [ "$verdict" = "digest" ]; then
+      digest_watch_id="$watch_id"
+      digest_member_id="$(jq -r '[.data.gj_watch_event] | flatten | .[0].id' "$event_file")"
+    fi
   done
+
+  event_query="query { gj_watch_event(where: { watch_id: { eq: \"${digest_watch_id}\" } }, order_by: { created_at: asc }, limit: 10) { id delivery_status seen data_json receipt_json enrichment_json } }"
+  for _ in $(seq 1 200); do
+    digest_events="$(flow_graphql "digest-drain" "$event_query")"
+    if jq -e --arg member "$digest_member_id" '
+      (.data.gj_watch_event // []) as $events
+      | ([
+          $events[]?
+          | select(
+              (.data_json | if type == "string" then fromjson else . end | .kind) == "digest"
+            )
+        ] | .[0]) as $digest
+      | ([$events[]? | select(.id == $member)] | .[0]) as $member_event
+      | $digest != null and $member_event != null
+        and $digest.seen == false
+        and (["pending", "delivered"] | index($digest.delivery_status)) != null
+        and (
+          ($digest.data_json | if type == "string" then fromjson else . end) as $data
+          | $data.count >= 1 and ($data.event_ids | index($member)) != null
+        )
+        and $member_event.delivery_status == "digested"
+        and (
+          ($member_event.receipt_json | if type == "string" then fromjson else . end).digest_event_id
+          == $digest.id
+        )
+    ' "$digest_events" >/dev/null; then
+      digest_drained=1
+      break
+    fi
+    sleep 0.5
+  done
+  [ -n "$digest_drained" ] || fail "digest queue did not drain into a synthetic unseen digest within 100s"
+  pass "digest queue drained into one synthetic unseen digest and linked its member receipt"
 
   name="smoke_action_review_${suffix}"
   query="mutation { gj_watch(insert: { name: \"${name}\", query: \"subscription ${name} { roast_schedule(first: 25, after: \$cursor) { id status } roast_schedule_cursor }\", delivery_json: { kind: \"workflow\", name: \"customer_issue_triage\" } }) { id action_hash action_approval status approval enabled } }"
@@ -496,7 +538,7 @@ run_watch_flow_smoke() {
   for watch_id in "${watch_ids[@]}"; do
     flow_graphql "cleanup-$(printf '%s' "$watch_id" | tr ':/' '__')" "mutation { gj_watch(delete: true, where: { id: { eq: \"${watch_id}\" } }) { id } }" >/dev/null
   done
-  pass "gj_watch reviewed flows and action delivery, then routed notify, digest, and discard correctly"
+  pass "gj_watch reviewed flows and action delivery, routed notify/digest/discard, and drained the digest queue"
 }
 
 log "capturing lexical-only discovery baseline"
@@ -580,9 +622,10 @@ if [ "$MODE" = "fixture" ]; then
   jq -e '.inputs > 4 and .max_batch_size > 1 and .max_batch_size <= 64' "$TMP_DIR/stats-cold.json" >/dev/null || fail "cold semantic build did not use bounded Ax batches"
   pass "cold semantic build used bounded batches"
 
-  log "checking the agent-only service-runtime coverage batch"
-  (cd "$ROOT_DIR" && GOCACHE="${GOCACHE:-/tmp/go-build}" go test ./serv -run '^TestCoffeeRoasteryServiceRuntimeCoverageBatch$' -count=1) || fail "agent-only service-runtime coverage batch failed"
-  pass "agent coverage embedded three phrases in one request and returned the real path"
+  log "checking the coffee watch first-wave service coverage batch"
+  first_wave_tests='^(TestCoffeeRoasteryServiceRuntimeCoverageBatch|TestWatchRetryBackoffSchedule|TestWatchRetryMaxFailuresDefault|TestWatchRunnerTransientErrorKeepsStatusActiveThenTerminates|TestWatchSubscriptionSessionExitsOnMemberDone|TestWatchRunnerResubscribesAfterMemberDone|TestNormalizeWatchAbsenceJSON|TestWatchAbsenceFiresOnceRearmsAndHonorsDowntimeGrace|TestWatchAbsenceChangesActionHashOnlyWhenConfigured|TestNormalizeWatchDeliveryPreservesDigest|TestWatchDigestFlushCoalescesAndIsIdempotent|TestWatchEventSnoozeSetClearAndDoesNotMarkSeen|TestWatchFirstWaveCapabilityRows|TestWatchedWatchIDsForRootsRequiresSafeConjunctiveFilter|TestValidateWatchDefinitionEnforcesWatchEventLoopFilter)$'
+  (cd "$ROOT_DIR" && GOCACHE="${GOCACHE:-/tmp/go-build}" go test ./serv -run "$first_wave_tests" -count=1) || fail "coffee watch first-wave service coverage batch failed"
+  pass "coffee smoke covered reconnect/retry, absence, digest drain, snooze, and safe rollup validation"
 
   run_watch_flow_smoke
 fi

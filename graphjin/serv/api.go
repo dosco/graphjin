@@ -36,6 +36,7 @@ package serv
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -45,6 +46,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/auth/v3"
@@ -77,27 +79,28 @@ type HookFn func(*core.Result)
 type graphjinService struct {
 	artifactProjectionRefreshes atomic.Int64
 
-	log                *zap.SugaredLogger // logger
-	zlog               *zap.Logger        // faster logger
-	logLevel           int                // log level
-	conf               *Config            // parsed config
-	dbs                map[string]*sql.DB // named database connections (all equal)
-	managedDBs         map[string]managedDB
-	runtimeCore        *core.Config
-	secretStore        *localKeystore
-	metadataDB         string
-	managedArtifactDB  string
-	systemNanoDB       *core.NanoDB
-	gj                 *core.GraphJin
-	disc               *DiscoveryManager
-	discovery          *discoveryGenerationManager
-	semantic           *semanticCatalogIndex
-	semanticEmbedder   SemanticEmbeddingClient
-	agentClientFactory gjagent.ClientFactory
-	srv                *http.Server
-	srvMu              sync.Mutex // guards srv: written by startHTTP, read by Shutdown
-	fs                 core.FS
-	coreOptions        []core.Option
+	log                   *zap.SugaredLogger // logger
+	zlog                  *zap.Logger        // faster logger
+	logLevel              int                // log level
+	conf                  *Config            // parsed config
+	dbs                   map[string]*sql.DB // named database connections (all equal)
+	managedDBs            map[string]managedDB
+	runtimeCore           *core.Config
+	secretStore           *localKeystore
+	metadataDB            string
+	managedArtifactDB     string
+	systemNanoDB          *core.NanoDB
+	gj                    *core.GraphJin
+	disc                  *DiscoveryManager
+	discovery             *discoveryGenerationManager
+	semantic              *semanticCatalogIndex
+	semanticEmbedder      SemanticEmbeddingClient
+	agentClientFactory    gjagent.ClientFactory
+	watchSubscribeForTest func(context.Context, watchRuntimeDefinition, json.RawMessage) (*core.Member, error)
+	srv                   *http.Server
+	srvMu                 sync.Mutex // guards srv: written by startHTTP, read by Shutdown
+	fs                    core.FS
+	coreOptions           []core.Option
 	// asec         [32]byte
 	closeFn func()
 	chash   string
@@ -121,6 +124,8 @@ type graphjinService struct {
 	mcpWatchSubs         watchMCPSubscriptionRegistry
 	watchCoordMu         sync.Mutex
 	watchCoord           watchCoordinator
+	watchSnoozeMu        sync.Mutex
+	watchSnoozeLastSweep time.Time
 	revisionSignalWG     sync.WaitGroup
 	revisionConsumerWG   sync.WaitGroup
 	catalogMu            sync.Mutex

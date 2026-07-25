@@ -35,13 +35,20 @@ func normalizeWatchDeliveryJSON(raw string) (string, watchDeliveryConfig, bool, 
 	if err != nil {
 		return "", watchDeliveryConfig{}, false, err
 	}
+	value := map[string]any{"kind": cfg.Kind}
+	if cfg.Digest.Enabled {
+		value["digest"] = map[string]any{"window": cfg.Digest.WindowText}
+	}
 	if !enabled {
-		if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "null" || strings.TrimSpace(raw) == "{}" {
+		if !cfg.Digest.Enabled && (strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "null" || strings.TrimSpace(raw) == "{}") {
 			return "", cfg, false, nil
 		}
-		return `{"kind":"inbox"}`, cfg, false, nil
+		out, err := json.Marshal(value)
+		if err != nil {
+			return "", watchDeliveryConfig{}, false, err
+		}
+		return string(out), cfg, false, nil
 	}
-	value := map[string]any{"kind": cfg.Kind}
 	switch cfg.Kind {
 	case "webhook":
 		value["url"] = cfg.Webhook.URL
@@ -63,7 +70,7 @@ func normalizeWatchDeliveryJSON(raw string) (string, watchDeliveryConfig, bool, 
 
 func (s *graphjinService) watchActionProposal(
 	ctx context.Context,
-	query, savedQuery, variablesJSON, enrichJSON, deliveryJSON string,
+	query, savedQuery, variablesJSON, enrichJSON, deliveryJSON, absenceJSON string,
 ) (watchActionProposal, error) {
 	normalizedDelivery, deliveryCfg, enabled, err := normalizeWatchDeliveryJSON(deliveryJSON)
 	if err != nil {
@@ -124,6 +131,13 @@ func (s *graphjinService) watchActionProposal(
 		"variables": variables,
 		"flow":      flow,
 		"delivery":  parseJSONValue(normalizedDelivery),
+	}
+	normalizedAbsence, _, absenceEnabled, err := normalizeWatchAbsenceJSON(absenceJSON)
+	if err != nil {
+		return watchActionProposal{}, err
+	}
+	if absenceEnabled {
+		action["absence"] = parseJSONValue(normalizedAbsence)
 	}
 	if deliveryCfg.Kind == "workflow" {
 		proposal.WorkflowName = strings.TrimSpace(deliveryCfg.Workflow.Name)
@@ -345,6 +359,7 @@ func (h watchControlPlane) reviewWatch(ctx context.Context, root core.ManagedMut
 		jsonMapString(watchRow, "variables_json"),
 		jsonMapString(watchRow, "enrich_json"),
 		jsonMapString(watchRow, "delivery_json"),
+		jsonMapString(watchRow, "absence_json"),
 	)
 	if err != nil {
 		return nil, err
@@ -426,6 +441,7 @@ func (h watchControlPlane) applyWatchActionReview(
 		jsonMapString(watchRow, "variables_json"),
 		jsonMapString(watchRow, "enrich_json"),
 		jsonMapString(watchRow, "delivery_json"),
+		jsonMapString(watchRow, "absence_json"),
 	)
 	if err != nil {
 		return err
@@ -577,6 +593,7 @@ func (h watchControlPlane) projectWatchRow(ctx context.Context, row map[string]a
 		jsonMapString(row, "variables_json"),
 		jsonMapString(row, "enrich_json"),
 		jsonMapString(row, "delivery_json"),
+		jsonMapString(row, "absence_json"),
 	)
 	if err != nil {
 		if strings.TrimSpace(stringFromAny(out["action_hash"])) != "" {

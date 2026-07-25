@@ -89,7 +89,7 @@ func (s *graphjinService) previewWatchCleanup(ctx context.Context, opts watchCle
 		retentionCutoff = time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
 	}
 
-	watchRows, err := s.internalStoreRows(ctx, "watches", "", watchStoreFields, nil)
+	watchRows, err := s.internalStoreAllRows(ctx, "watches", "", watchStoreFields, nil)
 	if err != nil {
 		return out, err
 	}
@@ -107,7 +107,7 @@ func (s *graphjinService) previewWatchCleanup(ctx context.Context, opts watchCle
 		}
 	}
 
-	eventRows, err := s.internalStoreRows(ctx, "watch_events", "", watchEventStoreFields, nil)
+	eventRows, err := s.internalStoreAllRows(ctx, "watch_events", "", watchEventStoreFields, nil)
 	if err != nil {
 		return out, err
 	}

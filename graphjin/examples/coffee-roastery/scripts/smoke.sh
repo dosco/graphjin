@@ -83,13 +83,15 @@ northstar_agent_expr='
 run_coffee_watch_session_routing_suite() {
   log "checking per-watch MCP routing across coffee and purchase-order sessions"
 
-  local suffix coffee_name order_name coffee_query order_query
-  local coffee_create order_create coffee_id order_id coffee_uri order_uri
+  local suffix coffee_name order_name rollup_name coffee_query order_query rollup_query
+  local coffee_create order_create rollup_create coffee_id order_id rollup_id coffee_uri order_uri
   suffix="$(date +%s)_$$"
   coffee_name="smoke_route_coffee_${suffix}"
   order_name="smoke_route_order_${suffix}"
+  rollup_name="smoke_route_rollup_${suffix}"
   coffee_query="subscription ${coffee_name} { roast_schedule(first: 25, after: \$cursor) { id status } roast_schedule_cursor }"
   order_query="subscription ${order_name} { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
+  rollup_query="subscription ${rollup_name}(\$watch_ids: [String!], \$gj_watch_event_cursor: Cursor) { gj_watch_event(first: 25, after: \$gj_watch_event_cursor, where: { watch_id: { in: \$watch_ids } }, order_by: { created_at: asc }) { id watch_id created_at } gj_watch_event_cursor }"
 
   coffee_create="$(graphql watch-route-coffee-create "mutation { gj_watch(insert: { name: \"${coffee_name}\", query: \"${coffee_query}\" }) { id enabled } }")"
   order_create="$(graphql watch-route-order-create "mutation { gj_watch(insert: { name: \"${order_name}\", query: \"${order_query}\" }) { id enabled } }")"
@@ -98,6 +100,17 @@ run_coffee_watch_session_routing_suite() {
   assert_jq "$coffee_create" '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and $w.enabled == true' "coffee routing watch created"
   assert_jq "$order_create" '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and $w.enabled == true' "purchase-order routing watch created"
   COFFEE_ROUTE_WATCH_IDS=("$coffee_id" "$order_id")
+
+  rollup_create="$(graphql watch-route-rollup-create "mutation { gj_watch(insert: { name: \"${rollup_name}\", query: \"${rollup_query}\", variables_json: { watch_ids: [\"${coffee_id}\", \"${order_id}\"] } }) { id enabled variables_json } }")"
+  rollup_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$rollup_create")"
+  assert_jq_args "$rollup_create" "rollup watch created over the two source watch ids" --arg coffee "$coffee_id" --arg order "$order_id" '
+    ([.data.gj_watch] | flatten | .[0]) as $w
+    | ($w.variables_json | if type == "string" then fromjson else . end) as $vars
+    | ($w.id | length) > 0 and $w.enabled == true
+      and ($vars.watch_ids | index($coffee)) != null
+      and ($vars.watch_ids | index($order)) != null
+  '
+  COFFEE_ROUTE_WATCH_IDS+=("$rollup_id")
 
   coffee_uri="graphjin://watch-events/unseen/$(jq -rn --arg id "$coffee_id" '$id | @uri')"
   order_uri="graphjin://watch-events/unseen/$(jq -rn --arg id "$order_id" '$id | @uri')"
@@ -186,6 +199,26 @@ run_coffee_watch_session_routing_suite() {
     | $p.count >= 1 and ([$p.events[] | select(.watch_id == $id)] | length) >= 1
   '
 
+  local rollup_events rollup_found=""
+  for _ in $(seq 1 120); do
+    rollup_events="$(graphql watch-route-rollup-events "query { gj_watch_event(where: { watch_id: { eq: \"${rollup_id}\" } }, order_by: { created_at: asc }, limit: 10) { id data_json } }")"
+    if jq -e --arg coffee "$coffee_id" --arg order "$order_id" '
+      [
+        .data.gj_watch_event[]?
+        | (.data_json | if type == "string" then fromjson else . end)
+        | .gj_watch_event[]?
+        | .watch_id
+      ] as $source_ids
+      | ($source_ids | index($coffee)) != null and ($source_ids | index($order)) != null
+    ' "$rollup_events" >/dev/null; then
+      rollup_found=1
+      break
+    fi
+    sleep 0.5
+  done
+  [ -n "$rollup_found" ] || fail "rollup watch did not aggregate events from both source watch ids within 60s"
+  pass "rollup watch aggregated coffee and purchase-order source watch events"
+
   mcp_stop_session_stream "$coffee_stream_pid"
   mcp_stop_session_stream "$order_stream_pid"
   MCP_STREAM_PIDS=()
@@ -194,6 +227,7 @@ run_coffee_watch_session_routing_suite() {
   COFFEE_ROUTE_SESSION_IDS=()
   graphql watch-route-coffee-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${coffee_id}\" } }) { id } }" >/dev/null
   graphql watch-route-order-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${order_id}\" } }) { id } }" >/dev/null
+  graphql watch-route-rollup-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${rollup_id}\" } }) { id } }" >/dev/null
   COFFEE_ROUTE_WATCH_IDS=()
 }
 

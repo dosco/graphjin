@@ -11,6 +11,8 @@ import (
 
 const graphjinInternalStoreRole = "__graphjin_internal_store"
 
+const internalStorePageSize = 500
+
 type internalStoreContextKey struct{}
 
 func (s *graphjinService) internalStoreRoot(table string) (string, string, bool) {
@@ -245,6 +247,10 @@ func (s *graphjinService) internalStoreGraphQL(ctx context.Context, query string
 	return out, nil
 }
 
+// internalStoreRows returns a single GraphJin result page and therefore
+// inherits core default_limit when args do not specify a smaller limit. Use it
+// only for exact or intentionally bounded reads; completeness-dependent reads
+// must use internalStoreAllRows.
 func (s *graphjinService) internalStoreRows(ctx context.Context, table, args, fields string, vars any) ([]map[string]any, error) {
 	root, schema, ok := s.internalStoreRoot(table)
 	if !ok {
@@ -257,6 +263,43 @@ func (s *graphjinService) internalStoreRows(ctx context.Context, table, args, fi
 		return nil, err
 	}
 	return decodeInternalStoreRows(out[root])
+}
+
+// internalStoreAllRows reads every matching physical store row in deterministic
+// pages. args may contain filters, but must not contain order_by, limit, or
+// offset because this helper owns pagination.
+func (s *graphjinService) internalStoreAllRows(ctx context.Context, table, args, fields string, vars any) ([]map[string]any, error) {
+	return s.internalStoreAllRowsOrdered(ctx, table, args, fields, "id", vars)
+}
+
+// internalStoreAllRowsOrdered supports the internal tables whose stable key is
+// not id. orderField must be a trusted schema field supplied by GraphJin.
+func (s *graphjinService) internalStoreAllRowsOrdered(ctx context.Context, table, args, fields, orderField string, vars any) ([]map[string]any, error) {
+	args = strings.TrimSpace(args)
+	orderField = strings.TrimSpace(orderField)
+	if orderField == "" || strings.ContainsAny(orderField, " \t\r\n,{}()") {
+		return nil, fmt.Errorf("invalid internal store order field %q", orderField)
+	}
+	var out []map[string]any
+	for offset := 0; ; offset += internalStorePageSize {
+		pageArgs := fmt.Sprintf(
+			"order_by: { %s: asc }, limit: %d, offset: %d",
+			orderField,
+			internalStorePageSize,
+			offset,
+		)
+		if args != "" {
+			pageArgs = args + ", " + pageArgs
+		}
+		rows, err := s.internalStoreRows(ctx, table, pageArgs, fields, vars)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+		if len(rows) < internalStorePageSize {
+			return out, nil
+		}
+	}
 }
 
 func (s *graphjinService) internalStoreMutationRows(ctx context.Context, table, opArgs, fields string, vars any) ([]map[string]any, error) {

@@ -58,6 +58,37 @@ func TestRevisionSignalIsPrivate(t *testing.T) {
 	}
 }
 
+func TestRevisionSignalReadsPastGraphQLDefaultLimit(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	svc.conf.Core.DefaultLimit = 2
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initialize revision signal store: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	t.Cleanup(func() { svc.gj.Close() })
+
+	ctx := context.Background()
+	for _, domain := range []string{"artifacts", "watches", "watch_events"} {
+		if err := svc.bumpArtifactRevision(ctx, domain); err != nil {
+			t.Fatalf("bump %s revision: %v", domain, err)
+		}
+	}
+	query := `query {
+		gj_internal_revision(where: { domain: { eq: "watch_events" } }) {
+			domain
+			revision
+		}
+	}`
+	res, err := svc.gj.GraphQL(svc.internalStoreContext(ctx), query, nil, nil)
+	if err != nil || len(res.Errors) != 0 {
+		t.Fatalf("internal revision query failed: err=%v errors=%+v", err, res.Errors)
+	}
+	if !strings.Contains(string(res.Data), `"domain":"watch_events"`) ||
+		!strings.Contains(string(res.Data), `"revision":1`) {
+		t.Fatalf("watch_events revision missing past default_limit: %s", res.Data)
+	}
+}
+
 func TestRevisionSignalSubscriptionMembersAreIsolated(t *testing.T) {
 	svc := newRevisionSignalTestService(t)
 	ctx, cancel := context.WithCancel(context.Background())

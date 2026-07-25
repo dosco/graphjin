@@ -111,8 +111,10 @@ The script checks the connected demo surface end-to-end:
 - Saved-query REST endpoints for `daily_roast_context`, `batch_quality_snapshot`, and `customer_issue_context`.
 - Workflow execution for `daily_roast_plan`, `batch_quality_review`, and `customer_issue_triage`.
 - MCP discovery through `query_catalog` for saved queries, workflows, and CodeSQL context.
-- Per-watch MCP routing across two same-owner sessions: coffee-roast and purchase-order wakeups, exact inbox reads, and acknowledgement isolation.
-- Deterministic inline AxFlow watch triage: preview/approval plus notify, digest, and discard event dispositions using the local fixture (no provider traffic).
+- Watch firing and inbox control: REST/MCP unseen reads, snooze hide/restore without marking seen, and acknowledgement.
+- Per-watch MCP routing across two same-owner sessions plus a safe rollup over both source watch IDs.
+- Deterministic inline AxFlow watch triage: preview/approval, notify/digest/discard dispositions, and a real one-minute digest drain using the local fixture (no provider traffic).
+- A focused service batch for reconnect/backoff thresholds, absence fire/re-arm/downtime grace, digest coalescing/idempotence, snooze semantics, and rollup loop safety.
 
 ### Semantic discovery comparison
 
