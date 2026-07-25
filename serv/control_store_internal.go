@@ -11,7 +11,9 @@ import (
 
 const graphjinInternalStoreRole = "__graphjin_internal_store"
 
-const internalStorePageSize = 500
+// internalStorePageSize is mutable so tests can exercise multi-page reads
+// without creating hundreds of physical store rows.
+var internalStorePageSize = 500
 
 type internalStoreContextKey struct{}
 
