@@ -1,6 +1,6 @@
 ---
 title: "GraphJin"
-description: "One AI agent across your databases, APIs, files, and code. Ask questions in plain English and get answers backed by execution evidence."
+description: "One highly reactive AI agent across your databases, APIs, files, and code. Ask questions—or leave governed questions running to notice changes, silence, and risk."
 ---
 
 <section class="home-hero"><div class="home-hero-copy"><p class="home-section-label">v3 · Apache 2.0</p><h1>One AI agent. All your databases and code. <span class="h1-accent">Ask anything. Instant answers. No hallucinations.</span></h1><p class="home-lede">Ask questions across your whole company. GraphJin finds the right data, runs the query, and shows the evidence.</p><div class="home-actions"><a class="button-primary" href="#quickstart">Run the 2-minute demo</a></div></div><div class="home-hero-demo"><div class="ai-window ai-window-hero" tabindex="0" aria-label="GraphJin agent example. Focus to pause rotation."><div class="window-chrome"><span></span><span></span><span></span><i aria-hidden="true">✣</i><strong>GraphJin Agent · localhost:8083/agent</strong></div><div class="ai-conversation"><div class="chat-user">Which account is most at risk of churn—and why?</div><div class="assistant-row"><div class="assistant-avatar" aria-hidden="true">✣</div><div class="chat-assistant hero-trace"><div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>query_catalog</span></div><code>3 relevant sources discovered</code><div class="hero-source-list" aria-label="Sources discovered"><span><strong>Postgres</strong> accounts + invoices</span><span><strong>Snowflake</strong> product usage</span><span><strong>CRM API</strong> opportunities</span></div></div><div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>validate_where_clause</span></div><code>relationships + churn filters valid</code></div><div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>execute_graphql</span></div><code>3 optimized, policy-checked operations</code></div><p class="done-line"><span aria-hidden="true">✓</span><span class="done-text"> Evidence checked · 3 systems · 3 operations</span></p><p class="assistant-copy">Meridian Robotics — renewal in 9 days, usage down 38%, two failed payments, and an unresolved escalation.</p></div></div></div></div><script type="application/json" id="hero-rotate-data">[{"user":"Which account is most at risk of churn—and why?","sources":[{"name":"Postgres","detail":"accounts + invoices"},{"name":"Snowflake","detail":"product usage"},{"name":"CRM API","detail":"opportunities"}],"tools":[{"name":"query_catalog","line":"3 relevant sources discovered"},{"name":"validate_where_clause","line":"relationships + churn filters valid"},{"name":"execute_graphql","line":"3 optimized, policy-checked operations"}],"done":"Evidence checked · 3 systems · 3 operations","answer":"Meridian Robotics — renewal in 9 days, usage down 38%, two failed payments, and an unresolved escalation."},{"user":"Which support issues are about to breach SLA?","sources":[{"name":"Postgres","detail":"accounts + owners"},{"name":"Ticket API","detail":"open escalations"},{"name":"Filesystem","detail":"SLA policy"}],"tools":[{"name":"query_catalog","line":"3 relevant sources discovered"},{"name":"validate_where_clause","line":"priority + deadline filters valid"},{"name":"execute_graphql","line":"3 optimized, policy-checked operations"}],"done":"Evidence checked · 3 systems · 3 operations","answer":"Meridian Robotics has one urgent escalation past SLA and another due by 17:00 today."},{"user":"Where is revenue concentrated—and what is at risk?","sources":[{"name":"Postgres","detail":"subscriptions"},{"name":"MySQL","detail":"invoices + renewals"},{"name":"Snowflake","detail":"product usage"}],"tools":[{"name":"query_catalog","line":"3 relevant sources discovered"},{"name":"validate_where_clause","line":"revenue + renewal filters valid"},{"name":"execute_graphql","line":"3 optimized, policy-checked operations"}],"done":"Evidence checked · 3 systems · 3 operations","answer":"81% of MRR is enterprise, with $5,200 exposed across two past-due accounts whose usage is declining."}]</script></div></section>
@@ -51,7 +51,75 @@ curl -sS localhost:8080/api/v1/agent \
 {{< /code-card >}}
 </div><div class="home-actions"><a class="button-primary" href="/agentic/server-agent/">Run the built-in agent</a></div></section>
 
-<section id="watch-automation" class="home-section watch-automation-section" data-watch-story><div class="home-section-heading"><p class="home-section-label">Proactive agents</p><h2>Don’t just ask. Leave GraphJin watching.</h2><p>A watch keeps the question running. A tool-free AI flow turns noisy changes into meaning. The right conversation wakes, and a workflow acts only after you approve its exact version.</p></div><div class="watch-showcase" aria-label="Roast telemetry and purchase-order changes routed through separate watches"><section class="watch-showcase-column watch-input-column" data-watch-stage="1" aria-labelledby="watch-input-title"><div class="watch-stage-label"><span>01</span><strong id="watch-input-title">Keep the question running</strong></div><article class="watch-signal-card"><div class="watch-signal-heading"><span class="watch-signal-dot watch-signal-dot-roast" aria-hidden="true"></span><strong>Roast telemetry</strong><span>frequent</span></div><code>batch-7 · first_crack · 421°F</code><p>Sensor changes enter the roast watch without waking every conversation.</p></article><article class="watch-signal-card"><div class="watch-signal-heading"><span class="watch-signal-dot watch-signal-dot-po" aria-hidden="true"></span><strong>Purchase orders</strong><span>event</span></div><code>PO-1842 · status: late</code><p>A separate watch follows the purchasing question.</p></article></section><div class="watch-showcase-arrow" aria-hidden="true">→</div><section class="watch-showcase-column watch-control-column" data-watch-stage="2" aria-labelledby="watch-control-title"><div class="watch-stage-label"><span>02</span><strong id="watch-control-title">Distill and route</strong></div><ol class="watch-control-stack"><li><span>Watch</span><strong>Detect the relevant change</strong></li><li><span>Flow</span><strong>discard · digest · notify</strong></li><li><span>Route</span><strong>Match the exact watch ID</strong></li></ol><div class="watch-verdict"><div><span>notify</span><span>warning</span></div><strong>Batch 7 is drifting after first crack.</strong><p>One compact verdict replaces a stream of raw readings.</p></div></section><div class="watch-showcase-arrow" aria-hidden="true">→</div><section class="watch-showcase-column watch-outcome-column" data-watch-stage="3" aria-labelledby="watch-outcome-title"><div class="watch-stage-label"><span>03</span><strong id="watch-outcome-title">Wake or act safely</strong></div><article class="watch-conversation-card"><span>coffee watch only</span><strong>Roasting conversation</strong><p>Batch 7 is drifting after first crack.</p></article><article class="watch-conversation-card"><span>purchase-order watch only</span><strong>Purchasing conversation</strong><p>PO-1842 changed to late.</p></article><aside class="watch-action-gate"><div><strong>Draft replacement PO</strong><span>approval pending</span></div><code>action_hash · exact version</code><p>No workflow runs until this action is explicitly approved.</p></aside></section></div><p class="watch-showcase-note"><strong>Alerts fail open.</strong> If AI triage is unavailable, GraphJin can still send the raw notification. <strong>Actions fail closed.</strong> A workflow never runs without the required approval.</p><div class="home-actions"><a class="button-primary" href="/agentic/watch-automation/">See how watches choose, filter, and act</a><a class="button-secondary" href="/start/demos/#coffee-roastery">Run the coffee demo</a></div></section>
+<section id="watch-automation" class="home-section watch-automation-section" data-watch-story>
+  <div class="home-section-heading">
+    <p class="home-section-label">Highly reactive agents</p>
+    <h2>The agent that notices changes—and silence.</h2>
+    <p>GraphJin keeps governed questions running across your live systems. It detects what changed, notices what failed to happen, distills noise, correlates signals, and wakes the right conversation—or proposes an approved action.</p>
+  </div>
+
+  <div class="watch-capability-grid" aria-label="GraphJin reactive agent capabilities">
+    <article><span>Change</span><strong>React to live data</strong><p>Cursor-backed questions keep running across your systems.</p></article>
+    <article><span>Absence</span><strong>Notice what did not happen</strong><p>“No shipment scan in four hours” becomes a first-class event.</p></article>
+    <article><span>Digest</span><strong>Turn noise into one signal</strong><p>Routine events drain into one useful, unseen summary.</p></article>
+    <article><span>Rollup</span><strong>Correlate independent watches</strong><p>Combine exact watch IDs without unsafe loops.</p></article>
+    <article><span>Snooze</span><strong>Defer without losing the event</strong><p>Hide an unseen event until later without acknowledging it.</p></article>
+    <article><span>Recover</span><strong>Reconnect, resume, retry</strong><p>Persist cursors and back off transient failures automatically.</p></article>
+  </div>
+
+  <div class="watch-showcase" aria-label="Shipment silence and low inventory correlated by GraphJin">
+    <section class="watch-showcase-column watch-input-column" data-watch-stage="1" aria-labelledby="watch-input-title">
+      <div class="watch-stage-label"><span>01</span><strong id="watch-input-title">Watch change and silence</strong></div>
+      <article class="watch-signal-card">
+        <div class="watch-signal-heading"><span class="watch-signal-dot watch-signal-dot-roast" aria-hidden="true"></span><strong>Green-bean inventory</strong><span>change</span></div>
+        <code>green_lots · below safety buffer</code>
+        <p>A cursor-backed watch records the live inventory change.</p>
+      </article>
+      <article class="watch-signal-card">
+        <div class="watch-signal-heading"><span class="watch-signal-dot watch-signal-dot-absence" aria-hidden="true"></span><strong>Shipment scans</strong><span>silent</span></div>
+        <code>no scan · 4h absence window</code>
+        <p>Silence becomes evidence instead of disappearing between polls.</p>
+      </article>
+    </section>
+
+    <div class="watch-showcase-arrow" aria-hidden="true">→</div>
+
+    <section class="watch-showcase-column watch-control-column" data-watch-stage="2" aria-labelledby="watch-control-title">
+      <div class="watch-stage-label"><span>02</span><strong id="watch-control-title">Distill and correlate</strong></div>
+      <ol class="watch-control-stack">
+        <li><span>Watch</span><strong>Detect change + absence</strong></li>
+        <li><span>Flow</span><strong>discard · digest · notify</strong></li>
+        <li><span>Rollup</span><strong>Correlate exact watch IDs</strong></li>
+        <li><span>Route</span><strong>Wake the exact resource</strong></li>
+      </ol>
+      <div class="watch-verdict">
+        <div><span>rollup</span><span>absence</span><span>critical</span></div>
+        <strong>Shipment activity is silent while inventory is below buffer.</strong>
+        <p>Two independent streams become one governed operational signal.</p>
+      </div>
+    </section>
+
+    <div class="watch-showcase-arrow" aria-hidden="true">→</div>
+
+    <section class="watch-showcase-column watch-outcome-column" data-watch-stage="3" aria-labelledby="watch-outcome-title">
+      <div class="watch-stage-label"><span>03</span><strong id="watch-outcome-title">Wake or act safely</strong></div>
+      <article class="watch-conversation-card"><span>shipping watch only</span><strong>Shipping conversation</strong><p>No shipment scan has arrived in four hours.</p></article>
+      <article class="watch-conversation-card"><span>operations rollup only</span><strong>Operations conversation</strong><p>Shipment silence now threatens the inventory buffer.</p></article>
+      <aside class="watch-action-gate">
+        <div><strong>Draft supplier escalation</strong><span>approval pending</span></div>
+        <code>action_hash · exact version</code>
+        <p>No workflow runs until this exact action is approved.</p>
+      </aside>
+    </section>
+  </div>
+
+  <div class="watch-reactive-proof">
+    <p><strong>It remembers.</strong> Durable watches persist cursor checkpoints, reconnect after drops, and exponentially back off transient failures.</p>
+    <p><strong>It respects attention.</strong> Digest noisy events, route by exact watch ID, or snooze one without marking it seen.</p>
+  </div>
+  <p class="watch-showcase-note"><strong>Alerts fail open.</strong> If AI triage is unavailable, GraphJin still sends the raw notification. <strong>Actions fail closed.</strong> A workflow never runs without the required approval.</p>
+  <div class="home-actions"><a class="button-primary" href="/agentic/watch-automation/">Explore the reactive agent</a><a class="button-secondary" href="/start/demos/#coffee-roastery">Run the coffee demo</a></div>
+</section>
 
 <section id="proof" class="home-section"><div class="home-section-heading"><p class="home-section-label">Answers backed by evidence</p><h2>The model made up an answer. The ledger caught it.</h2><p>If no query ran, GraphJin will not let the model pretend that one did.</p></div><div class="agent-stage"><div class="proof-beats"><article><span>01 — The claim</span><h3>The model answers anyway</h3><p>It names roast batches to hold.</p></article><article><span>02 — The evidence</span><h3>No query ran</h3><p>The execution ledger has no rows behind the claim.</p></article><article><span>03 — The result</span><h3>GraphJin blocks it</h3><p>The invented answer never reaches the caller.</p></article></div><div class="code-stack">
 {{< code-card filename="response.json" language="json" >}}

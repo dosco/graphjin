@@ -3,6 +3,7 @@ package serv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,6 +15,56 @@ import (
 
 const watchRunnerMinInterval = time.Second
 
+const (
+	watchRetryBaseBackoff     = time.Second
+	watchRetryMaxBackoff      = 5 * time.Minute
+	watchAbsenceCheckInterval = 30 * time.Second
+	watchAbsenceMinWindow     = time.Minute
+	watchAbsenceMaxWindow     = 30 * 24 * time.Hour
+)
+
+type watchAbsenceConfig struct {
+	Enabled    bool
+	Window     time.Duration
+	WindowText string
+	Repeat     bool
+}
+
+type watchSessionExit uint8
+
+const (
+	watchSessionCanceled watchSessionExit = iota
+	watchSessionReconnect
+	watchSessionTransientError
+)
+
+type watchSubscribeErrorKind uint8
+
+const (
+	watchSubscribeTransient watchSubscribeErrorKind = iota
+	watchSubscribeInvalid
+	watchSubscribeSafety
+)
+
+type watchSubscribeError struct {
+	kind watchSubscribeErrorKind
+	err  error
+}
+
+func (e *watchSubscribeError) Error() string {
+	if e == nil || e.err == nil {
+		return "watch subscription failed"
+	}
+	return e.err.Error()
+}
+
+func (e *watchSubscribeError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
 type watchRuntimeDefinition struct {
 	ID                 string
 	Name               string
@@ -22,6 +73,7 @@ type watchRuntimeDefinition struct {
 	VariablesJSON      string
 	DeliveryJSON       string
 	EnrichJSON         string
+	AbsenceJSON        string
 	Lifecycle          string
 	LeaseExpiresAt     string
 	LeaseOwnerID       string
@@ -39,10 +91,11 @@ type watchRuntimeDefinition struct {
 }
 
 type activeWatchRuntime struct {
-	def    watchRuntimeDefinition
-	cancel context.CancelFunc
-	done   <-chan struct{}
-	lease  watchLease
+	def       watchRuntimeDefinition
+	cancel    context.CancelFunc
+	done      <-chan struct{}
+	lease     watchLease
+	startedAt time.Time
 }
 
 func (s *graphjinService) startWatchRunner(parent context.Context) {
@@ -82,12 +135,23 @@ func (s *graphjinService) watchRunnerLoopWithRecovery(
 	ctx context.Context,
 	recoveryInterval time.Duration,
 ) {
+	s.watchRunnerLoopWithIntervals(ctx, recoveryInterval, watchAbsenceCheckInterval)
+}
+
+func (s *graphjinService) watchRunnerLoopWithIntervals(
+	ctx context.Context,
+	recoveryInterval time.Duration,
+	absenceInterval time.Duration,
+) {
 	interval := time.Duration(s.conf.Core.EffectiveArtifactsConfig().PollSeconds) * time.Second
 	if interval < watchRunnerMinInterval {
 		interval = watchRunnerMinInterval
 	}
 	if recoveryInterval <= 0 {
 		recoveryInterval = internalRecoveryInterval
+	}
+	if absenceInterval <= 0 {
+		absenceInterval = watchAbsenceCheckInterval
 	}
 	active := make(map[string]activeWatchRuntime)
 	defer func() {
@@ -107,6 +171,8 @@ func (s *graphjinService) watchRunnerLoopWithRecovery(
 	}
 	recoveryTicker := time.NewTicker(recoveryInterval)
 	defer recoveryTicker.Stop()
+	absenceTicker := time.NewTicker(absenceInterval)
+	defer absenceTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -124,6 +190,8 @@ func (s *graphjinService) watchRunnerLoopWithRecovery(
 			reconcile()
 		case <-recoveryTicker.C:
 			reconcile()
+		case now := <-absenceTicker.C:
+			s.sweepActiveWatchAbsences(ctx, active, now.UTC())
 		}
 	}
 }
@@ -173,7 +241,9 @@ func (s *graphjinService) reconcileWatchRunner(ctx context.Context, active map[s
 		}
 		desired[def.ID] = def
 		watchCtx, cancel := context.WithCancel(ctx)
-		active[def.ID] = activeWatchRuntime{def: def, cancel: cancel, done: watchCtx.Done(), lease: lease}
+		active[def.ID] = activeWatchRuntime{
+			def: def, cancel: cancel, done: watchCtx.Done(), lease: lease, startedAt: time.Now().UTC(),
+		}
 		go s.runWatchSubscription(watchCtx, def)
 	}
 	for id, current := range active {
@@ -192,7 +262,7 @@ func (s *graphjinService) loadRunnableWatches(ctx context.Context) ([]watchRunti
 	if _, _, _, _, ok := s.watchDB(); !ok {
 		return nil, nil
 	}
-	rows, err := s.internalStoreRows(ctx, "watches", "", watchStoreFields, nil)
+	rows, err := s.internalStoreAllRows(ctx, "watches", "", watchStoreFields, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -209,6 +279,7 @@ func (s *graphjinService) loadRunnableWatches(ctx context.Context) ([]watchRunti
 			VariablesJSON:  jsonMapString(row, "variables_json"),
 			DeliveryJSON:   jsonMapString(row, "delivery_json"),
 			EnrichJSON:     jsonMapString(row, "enrich_json"),
+			AbsenceJSON:    jsonMapString(row, "absence_json"),
 			Lifecycle:      watchLifecycle(stringMapValue(row, "lifecycle")),
 			LeaseExpiresAt: stringMapValue(row, "lease_expires_at"),
 			LeaseOwnerID:   stringMapValue(row, "lease_owner_id"),
@@ -230,9 +301,17 @@ func (s *graphjinService) loadRunnableWatches(ctx context.Context) ([]watchRunti
 			}
 			continue
 		}
+		normalizedAbsence, _, _, absenceErr := normalizeWatchAbsenceJSON(def.AbsenceJSON)
+		if absenceErr != nil {
+			if err := s.pauseWatchForReview(ctx, row, watchReviewPending); err != nil {
+				s.recordWatchRunnerError("pause invalid watch absence", err, map[string]any{"watch_id": def.ID})
+			}
+			continue
+		}
+		def.AbsenceJSON = normalizedAbsence
 		proposal, proposalErr := s.watchActionProposal(
 			s.watchOwnerContext(ctx, def),
-			def.Query, def.SavedQueryName, def.VariablesJSON, def.EnrichJSON, def.DeliveryJSON,
+			def.Query, def.SavedQueryName, def.VariablesJSON, def.EnrichJSON, def.DeliveryJSON, def.AbsenceJSON,
 		)
 		if proposalErr != nil {
 			if err := s.pauseWatchForReview(ctx, row, watchReviewPending); err != nil {
@@ -263,7 +342,7 @@ func (s *graphjinService) expireEphemeralWatches(ctx context.Context) error {
 	if _, _, _, _, ok := s.watchDB(); !ok {
 		return nil
 	}
-	rows, err := s.internalStoreRows(ctx, "watches", "", watchStoreFields, nil)
+	rows, err := s.internalStoreAllRows(ctx, "watches", "", watchStoreFields, nil)
 	if err != nil {
 		return err
 	}
@@ -314,6 +393,7 @@ func (d watchRuntimeDefinition) runtimeKey() string {
 		d.VariablesJSON,
 		d.DeliveryJSON,
 		d.EnrichJSON,
+		d.AbsenceJSON,
 		d.Lifecycle,
 		d.LeaseExpiresAt,
 		d.AccountID,
@@ -321,6 +401,262 @@ func (d watchRuntimeDefinition) runtimeKey() string {
 		d.OwnerRole,
 		d.ActionHash,
 	}, "\x00"))
+}
+
+func normalizeWatchAbsenceJSON(raw string) (string, watchAbsenceConfig, bool, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" || raw == "{}" {
+		return "", watchAbsenceConfig{}, false, nil
+	}
+	var value map[string]any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return "", watchAbsenceConfig{}, false, fmt.Errorf("absence_json is invalid: %w", err)
+	}
+	enabled := boolValue(value["enabled"])
+	if !enabled {
+		return "", watchAbsenceConfig{}, false, nil
+	}
+	windowText := strings.TrimSpace(stringFromAny(value["window"]))
+	if windowText == "" {
+		return "", watchAbsenceConfig{}, false, fmt.Errorf("absence_json window is required when enabled")
+	}
+	window, err := time.ParseDuration(windowText)
+	if err != nil {
+		return "", watchAbsenceConfig{}, false, fmt.Errorf("absence_json window is invalid: %w", err)
+	}
+	if window < watchAbsenceMinWindow {
+		window = watchAbsenceMinWindow
+	}
+	if window > watchAbsenceMaxWindow {
+		window = watchAbsenceMaxWindow
+	}
+	cfg := watchAbsenceConfig{
+		Enabled:    true,
+		Window:     window,
+		WindowText: window.String(),
+		Repeat:     boolValue(value["repeat"]),
+	}
+	out, err := json.Marshal(map[string]any{
+		"enabled": true,
+		"window":  cfg.WindowText,
+		"repeat":  cfg.Repeat,
+	})
+	if err != nil {
+		return "", watchAbsenceConfig{}, false, err
+	}
+	return string(out), cfg, true, nil
+}
+
+func (s *graphjinService) sweepActiveWatchAbsences(
+	ctx context.Context,
+	active map[string]activeWatchRuntime,
+	now time.Time,
+) {
+	for _, runtime := range active {
+		if _, _, enabled, err := normalizeWatchAbsenceJSON(runtime.def.AbsenceJSON); err != nil || !enabled {
+			continue
+		}
+		if _, err := s.sweepWatchAbsence(ctx, &runtime.def, runtime.startedAt, now); err != nil {
+			s.recordWatchRunnerError("sweep watch absence", err, map[string]any{"watch_id": runtime.def.ID})
+		}
+	}
+}
+
+func (s *graphjinService) sweepWatchAbsence(
+	ctx context.Context,
+	def *watchRuntimeDefinition,
+	startedAt time.Time,
+	now time.Time,
+) (bool, error) {
+	if def == nil || !s.watchLeaseCurrent(ctx, def) {
+		return false, nil
+	}
+	normalized, cfg, enabled, err := normalizeWatchAbsenceJSON(def.AbsenceJSON)
+	if err != nil || !enabled {
+		return false, err
+	}
+	def.AbsenceJSON = normalized
+	row, err := s.internalWatchStoreRow(ctx, def.ID)
+	if err != nil || row == nil {
+		return false, err
+	}
+	if watchStatus(stringMapValue(row, "status")) != "active" || !boolMapValue(row, "enabled") {
+		return false, nil
+	}
+	lastFiredAt, _ := parseWatchTime(stringMapValue(row, "last_fired_at"))
+	silenceStart := startedAt.UTC()
+	if silenceStart.IsZero() {
+		silenceStart = now.UTC()
+	}
+	if lastFiredAt.After(silenceStart) {
+		silenceStart = lastFiredAt
+	}
+	evidence := mapFromAny(parseJSONValue(jsonMapString(row, "evidence_json")))
+	if evidence == nil {
+		evidence = map[string]any{}
+	}
+	absenceState := mapFromAny(evidence["absence"])
+	previousFiredAt, _ := parseWatchTime(stringFromAny(absenceState["fired_at"]))
+	episodeAnchor := silenceStart
+	if cfg.Repeat && previousFiredAt.After(episodeAnchor) {
+		episodeAnchor = previousFiredAt
+	}
+	if now.UTC().Sub(episodeAnchor) < cfg.Window {
+		return false, nil
+	}
+	if !cfg.Repeat && previousFiredAt.After(lastFiredAt) {
+		return false, nil
+	}
+	fireCount := int64(intFromAny(absenceState["count"])) + 1
+	actionProposal, err := s.watchActionProposal(
+		s.watchOwnerContext(ctx, *def),
+		stringMapValue(row, "query"),
+		stringMapValue(row, "saved_query_name"),
+		jsonMapString(row, "variables_json"),
+		jsonMapString(row, "enrich_json"),
+		jsonMapString(row, "delivery_json"),
+		jsonMapString(row, "absence_json"),
+	)
+	if err != nil {
+		return false, err
+	}
+	watchEvidence := mapFromAny(parseJSONValue(jsonMapString(row, "evidence_json")))
+	actionApproved := watchActionApproval(watchEvidence, actionProposal) == watchReviewApproved
+	detectedAt := now.UTC().Format(time.RFC3339Nano)
+	anchorText := episodeAnchor.UTC().Format(time.RFC3339Nano)
+	cacheHash := hashString("absence:" + anchorText + ":" + cfg.WindowText)
+	eventID := watchEventID(def.ID, cacheHash)
+	payload := map[string]any{
+		"kind":         "absence",
+		"watch_id":     def.ID,
+		"watch_name":   def.Name,
+		"window":       cfg.WindowText,
+		"repeat":       cfg.Repeat,
+		"silent_since": silenceStart.UTC().Format(time.RFC3339Nano),
+		"detected_at":  detectedAt,
+		"fire_count":   fireCount,
+	}
+	dataBytes, err := json.Marshal(payload)
+	if err != nil {
+		return false, err
+	}
+	dataJSON, dataTruncated := s.watchSnapshotJSON(string(dataBytes))
+	eventEvidence := map[string]any{
+		"watch_id":    def.ID,
+		"watch_name":  def.Name,
+		"observed_at": detectedAt,
+		"absence": map[string]any{
+			"anchor_at": anchorText,
+			"window":    cfg.WindowText,
+			"repeat":    cfg.Repeat,
+		},
+	}
+	if actionProposal.Required {
+		eventEvidence["action_hash"] = actionProposal.Hash
+		eventEvidence["delivery_kind"] = actionProposal.Kind
+		if actionProposal.WorkflowSourceHash != "" {
+			eventEvidence["workflow_source_hash"] = actionProposal.WorkflowSourceHash
+		}
+	}
+	deliveryStatus := "pending"
+	if actionProposal.Required && !actionApproved {
+		deliveryStatus = "approval_required"
+	}
+	inserted, err := s.insertSyntheticWatchEvent(ctx, def, map[string]any{
+		"id": eventID, "watch_id": def.ID, "data_hash": cacheHash,
+		"data_json": nullableJSONString(dataJSON), "data_truncated": dataTruncated,
+		"evidence_json":   nullableJSONString(mustMarshalString(eventEvidence)),
+		"delivery_status": deliveryStatus, "delivery_attempts": 0,
+		"delivery_json": nullableJSONString(def.DeliveryJSON), "receipt_json": nil,
+		"enrichment_json": nil, "seen": false, "snoozed_until": nil,
+		"account_id": def.AccountID, "owner_id": def.OwnerID,
+		"created_at": detectedAt, "updated_at": detectedAt,
+	})
+	if err != nil {
+		return false, err
+	}
+	if inserted {
+		if err := s.pruneWatchEvents(ctx, def); err != nil {
+			return inserted, err
+		}
+		if err := s.bumpArtifactRevision(ctx, "watch_events"); err != nil {
+			return inserted, err
+		}
+		s.markWatchChanged("watch absence event")
+		s.notifyWatchEventsResourceScope(watchEventScope{
+			OwnerID: def.OwnerID, AccountID: def.AccountID, WatchID: def.ID,
+		}, true)
+	}
+	absenceState = map[string]any{
+		"fired_at":  detectedAt,
+		"anchor_at": anchorText,
+		"count":     fireCount,
+	}
+	evidence["absence"] = absenceState
+	rows, err := s.internalStoreMutationRows(ctx, "watches",
+		`where: { id: { eq: $id }, updated_at: { eq: $expected_updated_at } }, update: $input`,
+		watchStoreFields,
+		map[string]any{
+			"id":                  def.ID,
+			"expected_updated_at": stringMapValue(row, "updated_at"),
+			"input": map[string]any{
+				"evidence_json": nullableJSONString(mustMarshalString(evidence)),
+				"updated_at":    detectedAt,
+			},
+		})
+	if err != nil {
+		return inserted, err
+	}
+	if len(rows) == 0 {
+		return inserted, nil
+	}
+	if err := s.bumpArtifactRevision(ctx, "watches"); err != nil {
+		return inserted, err
+	}
+	return inserted, nil
+}
+
+func (s *graphjinService) insertSyntheticWatchEvent(
+	ctx context.Context,
+	def *watchRuntimeDefinition,
+	input map[string]any,
+) (bool, error) {
+	if def == nil || !s.watchLeaseCurrent(ctx, def) {
+		return false, nil
+	}
+	eventID := stringFromAny(input["id"])
+	if eventID == "" {
+		return false, fmt.Errorf("synthetic watch event id is required")
+	}
+	existing, err := s.internalWatchEventStoreRow(ctx, eventID)
+	if err != nil {
+		return false, err
+	}
+	if existing != nil {
+		return false, nil
+	}
+	if ok, err := s.claimWatchEvent(ctx, eventID); err != nil {
+		s.recordWatchRunnerError("claim synthetic watch event", err, map[string]any{"watch_id": def.ID, "event_id": eventID})
+	} else if !ok {
+		existing, err = s.internalWatchEventStoreRow(ctx, eventID)
+		if err != nil || existing != nil {
+			return false, err
+		}
+	}
+	if !s.watchLeaseCurrent(ctx, def) {
+		return false, nil
+	}
+	if _, err := s.internalStoreMutationRows(ctx, "watch_events", `insert: $input`, watchEventStoreFields, map[string]any{"input": input}); err != nil {
+		existing, loadErr := s.internalWatchEventStoreRow(ctx, eventID)
+		if loadErr != nil {
+			return false, loadErr
+		}
+		if existing == nil {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func (s *graphjinService) runWatchSubscription(ctx context.Context, def watchRuntimeDefinition) {
@@ -333,36 +669,77 @@ func (s *graphjinService) runWatchSubscription(ctx context.Context, def watchRun
 		go s.renewWatchLease(runCtx, cancel, coord, def.lease)
 		ctx = runCtx
 	}
+	current := def
+	for {
+		member, err := s.subscribeWatchMember(ctx, current)
+		if err != nil {
+			var subscribeErr *watchSubscribeError
+			if errors.As(err, &subscribeErr) {
+				switch subscribeErr.kind {
+				case watchSubscribeInvalid:
+					s.updateWatchRunnerErrorForWatch(ctx, current, err)
+					return
+				case watchSubscribeSafety:
+					s.pauseUnsafeWatch(ctx, current, err)
+					return
+				}
+			}
+			backoff, terminal := s.updateWatchRunnerTransientError(ctx, current, err)
+			if terminal || !waitWatchRetry(ctx, backoff) {
+				return
+			}
+			continue
+		}
+		exit, sessionErr := s.watchSubscriptionSession(ctx, &current, member)
+		member.Unsubscribe()
+		switch exit {
+		case watchSessionCanceled:
+			return
+		case watchSessionReconnect:
+			if !waitWatchRetry(ctx, watchRetryBaseBackoff) {
+				return
+			}
+		case watchSessionTransientError:
+			backoff, terminal := s.updateWatchRunnerTransientError(ctx, current, sessionErr)
+			if terminal || !waitWatchRetry(ctx, backoff) {
+				return
+			}
+		}
+	}
+}
+
+func (s *graphjinService) subscribeWatchMember(ctx context.Context, def watchRuntimeDefinition) (*core.Member, error) {
 	if strings.TrimSpace(def.OwnerID) == "" {
-		s.recordWatchRunnerError("subscribe watch", fmt.Errorf("watch owner_id is missing"), map[string]any{"watch_id": def.ID})
-		return
+		return nil, &watchSubscribeError{kind: watchSubscribeInvalid, err: fmt.Errorf("watch owner_id is missing")}
 	}
 	ownerCtx := s.watchOwnerContext(ctx, def)
 	vars, err := watchVariablesWithCursor(def.VariablesJSON, def.LastCursorJSON)
 	if err != nil {
-		s.updateWatchRunnerErrorForWatch(ctx, def, err)
-		return
+		return nil, &watchSubscribeError{kind: watchSubscribeInvalid, err: err}
 	}
 	var member *core.Member
-	if strings.TrimSpace(def.SavedQueryName) != "" {
+	if s.watchSubscribeForTest != nil {
+		member, err = s.watchSubscribeForTest(ownerCtx, def, vars)
+	} else if strings.TrimSpace(def.SavedQueryName) != "" {
 		member, err = s.gj.SubscribeByName(ownerCtx, def.SavedQueryName, vars, nil)
 	} else {
 		member, err = s.gj.Subscribe(ownerCtx, def.Query, vars, nil)
 	}
 	if err != nil {
-		s.updateWatchRunnerErrorForWatch(ctx, def, err)
-		return
+		return nil, &watchSubscribeError{kind: watchSubscribeTransient, err: err}
 	}
-	defer member.Unsubscribe()
+	if member == nil {
+		return nil, &watchSubscribeError{kind: watchSubscribeTransient, err: fmt.Errorf("watch subscription returned no member")}
+	}
 	if len(member.CursorVariableNames()) == 0 {
-		s.updateWatchRunnerErrorForWatch(ctx, def, fmt.Errorf("watch subscription must use cursor pagination"))
-		return
+		member.Unsubscribe()
+		return nil, &watchSubscribeError{kind: watchSubscribeInvalid, err: fmt.Errorf("watch subscription must use cursor pagination")}
 	}
 	watchedIDs, safetyErr := watchedWatchIDsForMember(member, def.ID)
 	row, loadErr := s.internalWatchStoreRow(ctx, def.ID)
 	if loadErr != nil {
-		s.recordWatchRunnerError("reload watch safety evidence", loadErr, map[string]any{"watch_id": def.ID})
-		return
+		member.Unsubscribe()
+		return nil, &watchSubscribeError{kind: watchSubscribeTransient, err: fmt.Errorf("reload watch safety evidence: %w", loadErr)}
 	}
 	if safetyErr == nil && strings.TrimSpace(def.SavedQueryName) != "" {
 		evidence := mapFromAny(parseJSONValue(jsonMapString(row, "evidence_json")))
@@ -386,33 +763,36 @@ func (s *graphjinService) runWatchSubscription(ctx context.Context, def watchRun
 		)
 	}
 	if safetyErr != nil {
-		s.updateWatchRunnerErrorForWatch(ctx, def, safetyErr)
-		row, loadErr = s.internalWatchStoreRow(ctx, def.ID)
-		if loadErr != nil {
-			s.recordWatchRunnerError("reload unsafe watch", loadErr, map[string]any{"watch_id": def.ID})
-			return
-		}
-		if pauseErr := s.pauseWatchForReview(ctx, row, watchReviewPending); pauseErr != nil {
-			s.recordWatchRunnerError("pause unsafe watch", pauseErr, map[string]any{"watch_id": def.ID})
-		}
-		return
+		member.Unsubscribe()
+		return nil, &watchSubscribeError{kind: watchSubscribeSafety, err: safetyErr}
 	}
-	current := def
+	return member, nil
+}
+
+func (s *graphjinService) watchSubscriptionSession(
+	ctx context.Context,
+	current *watchRuntimeDefinition,
+	member *core.Member,
+) (watchSessionExit, error) {
+	if member == nil {
+		return watchSessionTransientError, fmt.Errorf("watch subscription member is nil")
+	}
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return watchSessionCanceled, nil
+		case <-member.Done():
+			return watchSessionReconnect, nil
 		case res, ok := <-member.Result:
 			if !ok {
-				return
+				return watchSessionReconnect, nil
 			}
 			if res == nil {
 				continue
 			}
-			dataHash, inserted, err := s.persistWatchResult(ctx, &current, res)
+			dataHash, inserted, err := s.persistWatchResult(ctx, current, res)
 			if err != nil {
-				s.updateWatchRunnerErrorForWatch(ctx, current, err)
-				continue
+				return watchSessionTransientError, err
 			}
 			if dataHash != "" {
 				current.LastDataHash = dataHash
@@ -433,6 +813,56 @@ func (s *graphjinService) runWatchSubscription(ctx context.Context, def watchRun
 			}
 		}
 	}
+}
+
+func (s *graphjinService) pauseUnsafeWatch(ctx context.Context, def watchRuntimeDefinition, safetyErr error) {
+	if !s.watchLeaseCurrent(ctx, &def) {
+		return
+	}
+	s.updateWatchRunnerErrorForWatch(ctx, def, safetyErr)
+	row, err := s.internalWatchStoreRow(ctx, def.ID)
+	if err != nil {
+		s.recordWatchRunnerError("reload unsafe watch", err, map[string]any{"watch_id": def.ID})
+		return
+	}
+	if err := s.pauseWatchForReview(ctx, row, watchReviewPending); err != nil {
+		s.recordWatchRunnerError("pause unsafe watch", err, map[string]any{"watch_id": def.ID})
+	}
+	s.recordWatchRunnerError("subscribe unsafe watch", safetyErr, map[string]any{"watch_id": def.ID})
+}
+
+func waitWatchRetry(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		delay = watchRetryBaseBackoff
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func watchRetryBackoff(base time.Duration, failureCount int64) time.Duration {
+	if base <= 0 {
+		base = watchRetryBaseBackoff
+	}
+	if failureCount < 1 {
+		failureCount = 1
+	}
+	delay := base
+	for n := int64(1); n < failureCount && delay < watchRetryMaxBackoff; n++ {
+		if delay > watchRetryMaxBackoff/2 {
+			return watchRetryMaxBackoff
+		}
+		delay *= 2
+	}
+	if delay > watchRetryMaxBackoff {
+		return watchRetryMaxBackoff
+	}
+	return delay
 }
 
 func (s *graphjinService) renewWatchLease(ctx context.Context, cancel context.CancelFunc, coord watchCoordinator, lease watchLease) {
@@ -530,6 +960,7 @@ func (s *graphjinService) persistWatchResult(ctx context.Context, def *watchRunt
 		jsonMapString(watchRow, "variables_json"),
 		jsonMapString(watchRow, "enrich_json"),
 		jsonMapString(watchRow, "delivery_json"),
+		jsonMapString(watchRow, "absence_json"),
 	)
 	if err != nil {
 		return "", false, err
@@ -752,6 +1183,80 @@ func (s *graphjinService) updateWatchRunnerErrorForWatch(ctx context.Context, de
 	s.updateWatchRunnerError(ctx, def.ID, err)
 }
 
+func (s *graphjinService) updateWatchRunnerTransientError(
+	ctx context.Context,
+	def watchRuntimeDefinition,
+	runErr error,
+) (time.Duration, bool) {
+	if runErr == nil || !s.watchLeaseCurrent(ctx, &def) {
+		return watchRetryBaseBackoff, false
+	}
+	if _, _, _, _, ok := s.watchDB(); !ok {
+		return watchRetryBaseBackoff, false
+	}
+	row, err := s.internalWatchStoreRow(ctx, def.ID)
+	if err != nil {
+		s.recordWatchRunnerError("update watch retry", err, map[string]any{"watch_id": def.ID, "source_error": runErr.Error()})
+		return watchRetryBaseBackoff, false
+	}
+	if row == nil {
+		return watchRetryBaseBackoff, false
+	}
+	failureCount := int64MapValue(row, "failure_count") + 1
+	maxFailures := s.conf.Core.EffectiveWatchesConfig().RetryMaxFailures
+	if maxFailures <= 0 {
+		maxFailures = 5
+	}
+	if failureCount >= int64(maxFailures) {
+		s.updateWatchRunnerErrorForWatch(ctx, def, runErr)
+		return watchRetryBackoff(watchRetryBaseBackoff, failureCount), true
+	}
+	backoff := watchRetryBackoff(watchRetryBaseBackoff, failureCount)
+	nowTime := time.Now().UTC()
+	now := nowTime.Format(time.RFC3339Nano)
+	evidence := mapFromAny(parseJSONValue(jsonMapString(row, "evidence_json")))
+	if evidence == nil {
+		evidence = map[string]any{}
+	}
+	evidence["retry"] = map[string]any{
+		"count":         failureCount,
+		"last_error_at": now,
+		"next_retry_at": nowTime.Add(backoff).Format(time.RFC3339Nano),
+		"backoff_ms":    backoff.Milliseconds(),
+	}
+	rows, err := s.internalStoreMutationRows(ctx, "watches",
+		`where: { id: { eq: $id }, updated_at: { eq: $expected_updated_at } }, update: $input`,
+		watchStoreFields,
+		map[string]any{
+			"id":                  def.ID,
+			"expected_updated_at": stringMapValue(row, "updated_at"),
+			"input": map[string]any{
+				"status":        "active",
+				"last_error":    runErr.Error(),
+				"failure_count": failureCount,
+				"evidence_json": nullableJSONString(mustMarshalString(evidence)),
+				"updated_at":    now,
+			},
+		})
+	if err != nil {
+		s.recordWatchRunnerError("update watch retry", err, map[string]any{"watch_id": def.ID, "source_error": runErr.Error()})
+		return backoff, false
+	}
+	if len(rows) == 0 {
+		return backoff, false
+	}
+	if err := s.bumpArtifactRevision(ctx, "watches"); err != nil {
+		s.recordWatchRunnerError("bump watch retry revision", err, map[string]any{"watch_id": def.ID})
+	}
+	s.markWatchChanged("watch runner retry")
+	s.recordWatchRunnerError("retry watch", runErr, map[string]any{
+		"watch_id": def.ID,
+		"retry":    failureCount,
+		"backoff":  backoff.String(),
+	})
+	return backoff, false
+}
+
 func (s *graphjinService) watchLeaseCurrent(ctx context.Context, def *watchRuntimeDefinition) bool {
 	if def == nil || !def.lease.valid() {
 		return true
@@ -781,7 +1286,7 @@ func (s *graphjinService) pruneWatchEvents(ctx context.Context, def *watchRuntim
 		return nil
 	}
 	cfg := s.conf.Core.EffectiveWatchesConfig()
-	rows, err := s.internalStoreRows(ctx, "watch_events", `where: { watch_id: { eq: $watch_id } }`, `id watch_id created_at`, map[string]any{"watch_id": def.ID})
+	rows, err := s.internalStoreAllRows(ctx, "watch_events", `where: { watch_id: { eq: $watch_id } }`, `id watch_id created_at`, map[string]any{"watch_id": def.ID})
 	if err != nil {
 		return err
 	}
@@ -992,7 +1497,7 @@ func (s *graphjinService) unseenWatchEventSummary(ctx context.Context, watchIDs 
 		where = `where: { owner_id: { eq: $owner_id }, account_id: { eq: $account_id } }`
 		vars["account_id"] = accountID
 	}
-	rows, err := s.internalStoreRows(ctx, "watch_events", where, `id watch_id seen created_at owner_id account_id`, vars)
+	rows, err := s.internalStoreAllRows(ctx, "watch_events", where, `id watch_id seen snoozed_until created_at owner_id account_id`, vars)
 	if err != nil {
 		return 0, "", nil, err
 	}
@@ -1007,6 +1512,9 @@ func (s *graphjinService) unseenWatchEventSummary(ctx context.Context, watchIDs 
 	unseenWatchSet := map[string]struct{}{}
 	for _, row := range rows {
 		if boolMapValue(row, "seen") {
+			continue
+		}
+		if snoozedUntil, ok := parseWatchTime(stringMapValue(row, "snoozed_until")); ok && snoozedUntil.After(time.Now().UTC()) {
 			continue
 		}
 		watchID := stringMapValue(row, "watch_id")

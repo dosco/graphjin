@@ -497,7 +497,7 @@ func TestWatchActionHashCoversBehaviorAndWorkflowDrift(t *testing.T) {
 	startSQLiteWatchCore(t, svc, db)
 	ctx := artifactUserCtx("hash_owner")
 	query := cursorOrdersWatchQuery("hash_watch")
-	base, err := svc.watchActionProposal(ctx, query, "", `{"region":"west"}`, "", `{"kind":"workflow","name":"notify"}`)
+	base, err := svc.watchActionProposal(ctx, query, "", `{"region":"west"}`, "", `{"kind":"workflow","name":"notify"}`, "")
 	if err != nil {
 		t.Fatalf("base proposal: %v", err)
 	}
@@ -519,7 +519,7 @@ func TestWatchActionHashCoversBehaviorAndWorkflowDrift(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			proposal, err := svc.watchActionProposal(ctx, tc.query, "", tc.variables, tc.enrich, tc.delivery)
+			proposal, err := svc.watchActionProposal(ctx, tc.query, "", tc.variables, tc.enrich, tc.delivery, "")
 			if err != nil {
 				t.Fatalf("proposal: %v", err)
 			}

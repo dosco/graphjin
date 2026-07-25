@@ -37,6 +37,7 @@ type watchEventsUnseenEntry struct {
 	Verdict        string `json:"verdict,omitempty"`
 	Severity       string `json:"severity,omitempty"`
 	Summary        string `json:"summary,omitempty"`
+	SnoozedUntil   string `json:"snoozed_until,omitempty"`
 }
 
 type watchEventScope struct {
@@ -319,7 +320,7 @@ func (s *graphjinService) unseenWatchEventsPayload(ctx context.Context, watchIDs
 		where = `where: { owner_id: { eq: $owner_id }, watch_id: { eq: $watch_id } }`
 		vars["watch_id"] = watchID
 	}
-	rows, err := s.internalStoreRows(ctx, "watch_events", where, watchEventStoreFields, vars)
+	rows, err := s.internalStoreAllRows(ctx, "watch_events", where, watchEventStoreFields, vars)
 	if err != nil {
 		return payload, err
 	}
@@ -330,6 +331,9 @@ func (s *graphjinService) unseenWatchEventsPayload(ctx context.Context, watchIDs
 		if boolMapValue(row, "seen") {
 			continue
 		}
+		if snoozedUntil, ok := parseWatchTime(stringMapValue(row, "snoozed_until")); ok && snoozedUntil.After(time.Now().UTC()) {
+			continue
+		}
 		entry := watchEventsUnseenEntry{
 			ID:             stringMapValue(row, "id"),
 			WatchID:        stringMapValue(row, "watch_id"),
@@ -337,6 +341,7 @@ func (s *graphjinService) unseenWatchEventsPayload(ctx context.Context, watchIDs
 			DataHash:       stringMapValue(row, "data_hash"),
 			DataTruncated:  boolMapValue(row, "data_truncated"),
 			DeliveryStatus: watchDeliveryStatus(stringMapValue(row, "delivery_status")),
+			SnoozedUntil:   stringMapValue(row, "snoozed_until"),
 		}
 		enrichment := mapFromAny(parseJSONValue(jsonMapString(row, "enrichment_json")))
 		entry.Verdict = stringFromAny(enrichment["verdict"])

@@ -156,7 +156,7 @@ func (h artifactControlPlane) dbArtifactRows(ctx context.Context) ([]map[string]
 	if !hasUser {
 		return nil, nil
 	}
-	rows, err := s.internalStoreRows(ctx, "artifacts", `where: { owner_id: { eq: $owner_id } }`, artifactStoreFields, map[string]any{"owner_id": userID})
+	rows, err := s.internalStoreAllRows(ctx, "artifacts", `where: { owner_id: { eq: $owner_id } }`, artifactStoreFields, map[string]any{"owner_id": userID})
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ func (h artifactControlPlane) dbArtifactRowsForProjection(ctx context.Context) (
 	if _, _, _, ok := s.artifactDB(); !ok {
 		return nil, nil
 	}
-	rows, err := s.internalStoreRows(ctx, "artifacts", "", artifactStoreFields, nil)
+	rows, err := s.internalStoreAllRows(ctx, "artifacts", "", artifactStoreFields, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -31,12 +31,23 @@ const (
 	watchDeliveryHTTPTimeout     = 10 * time.Second
 	watchDeliveryMaxResponseBody = 4 * 1024
 	watchEventSweepInterval      = time.Hour
+	watchDigestCheckInterval     = 30 * time.Second
+	watchDigestDefaultWindow     = time.Hour
+	watchDigestMinWindow         = time.Minute
+	watchDigestMaxWindow         = 7 * 24 * time.Hour
 )
 
 type watchDeliveryConfig struct {
 	Kind     string
 	Webhook  watchWebhookConfig
 	Workflow watchWorkflowConfig
+	Digest   watchDigestConfig
+}
+
+type watchDigestConfig struct {
+	Enabled    bool
+	Window     time.Duration
+	WindowText string
 }
 
 type watchWebhookConfig struct {
@@ -81,12 +92,23 @@ func (s *graphjinService) watchDeliveryLoopWithSweepInterval(
 	ctx context.Context,
 	sweepInterval time.Duration,
 ) {
+	s.watchDeliveryLoopWithIntervals(ctx, sweepInterval, watchDigestCheckInterval)
+}
+
+func (s *graphjinService) watchDeliveryLoopWithIntervals(
+	ctx context.Context,
+	sweepInterval time.Duration,
+	digestInterval time.Duration,
+) {
 	interval := time.Duration(s.conf.Core.EffectiveArtifactsConfig().PollSeconds) * time.Second
 	if interval < watchRunnerMinInterval {
 		interval = watchRunnerMinInterval
 	}
 	if sweepInterval <= 0 {
 		sweepInterval = watchEventSweepInterval
+	}
+	if digestInterval <= 0 {
+		digestInterval = watchDigestCheckInterval
 	}
 	processPending := func() {
 		if err := s.processPendingWatchDeliveries(ctx); err != nil {
@@ -107,6 +129,8 @@ func (s *graphjinService) watchDeliveryLoopWithSweepInterval(
 	revisionChanges := s.revisionSignals(ctx, "watch_events", true, interval)
 	sweepTicker := time.NewTicker(sweepInterval)
 	defer sweepTicker.Stop()
+	digestTicker := time.NewTicker(digestInterval)
+	defer digestTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -118,12 +142,21 @@ func (s *graphjinService) watchDeliveryLoopWithSweepInterval(
 			processPending()
 		case <-sweepTicker.C:
 			sweepAndRecover()
+		case now := <-digestTicker.C:
+			if _, err := s.sweepWatchDigests(ctx, now.UTC()); err != nil {
+				s.recordWatchRunnerError("drain watch digests", err, nil)
+			}
+			s.notifyLapsedWatchSnoozes(ctx, now.UTC())
 		}
 	}
 }
 
 func (s *graphjinService) processPendingWatchDeliveries(ctx context.Context) error {
-	rows, err := s.internalStoreRows(ctx, "watch_events", `where: { delivery_status: { eq: "pending" } }`, watchEventStoreFields, nil)
+	args := fmt.Sprintf(
+		`where: { delivery_status: { eq: "pending" } }, order_by: { created_at: asc }, limit: %d`,
+		watchDeliveryBatchSize,
+	)
+	rows, err := s.internalStoreRows(ctx, "watch_events", args, watchEventStoreFields, nil)
 	if err != nil {
 		return err
 	}
@@ -147,19 +180,322 @@ func (s *graphjinService) processPendingWatchDeliveries(ctx context.Context) err
 	return firstErr
 }
 
+func (s *graphjinService) sweepWatchDigests(ctx context.Context, now time.Time) (int, error) {
+	if _, _, _, _, ok := s.watchDB(); !ok {
+		return 0, nil
+	}
+	rows, err := s.internalStoreAllRows(
+		ctx,
+		"watch_events",
+		`where: { delivery_status: { eq: "digest_queued" } }`,
+		watchEventStoreFields,
+		nil,
+	)
+	if err != nil {
+		return 0, err
+	}
+	groups := map[string][]map[string]any{}
+	for _, row := range rows {
+		watchID := stringMapValue(row, "watch_id")
+		if watchID != "" {
+			groups[watchID] = append(groups[watchID], row)
+		}
+	}
+	watchIDs := make([]string, 0, len(groups))
+	for watchID := range groups {
+		watchIDs = append(watchIDs, watchID)
+	}
+	sort.Strings(watchIDs)
+	flushed := 0
+	for _, watchID := range watchIDs {
+		group := groups[watchID]
+		sort.SliceStable(group, func(i, j int) bool {
+			return stringMapValue(group[i], "created_at") < stringMapValue(group[j], "created_at")
+		})
+		watchRow, err := s.internalWatchStoreRow(ctx, watchID)
+		if err != nil {
+			return flushed, err
+		}
+		if watchRow == nil {
+			continue
+		}
+		deliveryJSON := jsonMapString(watchRow, "delivery_json")
+		deliveryCfg, _, err := parseWatchDeliveryConfig(deliveryJSON)
+		if err != nil {
+			return flushed, err
+		}
+		window := watchDigestDefaultWindow
+		windowText := window.String()
+		if deliveryCfg.Digest.Enabled {
+			window = deliveryCfg.Digest.Window
+			windowText = deliveryCfg.Digest.WindowText
+		}
+		oldest, ok := parseWatchTime(stringMapValue(group[0], "created_at"))
+		if !ok || oldest.Add(window).After(now.UTC()) {
+			continue
+		}
+		if err := s.flushWatchDigest(ctx, watchRow, group, windowText, now.UTC()); err != nil {
+			return flushed, err
+		}
+		flushed++
+	}
+	return flushed, nil
+}
+
+func (s *graphjinService) flushWatchDigest(
+	ctx context.Context,
+	watchRow map[string]any,
+	members []map[string]any,
+	windowText string,
+	now time.Time,
+) error {
+	if len(members) == 0 || watchRow == nil {
+		return nil
+	}
+	def := watchRuntimeDefinition{
+		ID:             stringMapValue(watchRow, "id"),
+		Name:           stringMapValue(watchRow, "name"),
+		Query:          stringMapValue(watchRow, "query"),
+		SavedQueryName: stringMapValue(watchRow, "saved_query_name"),
+		VariablesJSON:  jsonMapString(watchRow, "variables_json"),
+		DeliveryJSON:   jsonMapString(watchRow, "delivery_json"),
+		EnrichJSON:     jsonMapString(watchRow, "enrich_json"),
+		AbsenceJSON:    jsonMapString(watchRow, "absence_json"),
+		Lifecycle:      watchLifecycle(stringMapValue(watchRow, "lifecycle")),
+		AccountID:      stringMapValue(watchRow, "account_id"),
+		OwnerID:        stringMapValue(watchRow, "owner_id"),
+		OwnerRole:      s.trustedWatchRunnerRole(stringMapValue(watchRow, "owner_role")),
+	}
+	if def.ID == "" {
+		return nil
+	}
+	type digestEntry struct {
+		ID        string `json:"id"`
+		CreatedAt string `json:"created_at"`
+		Severity  string `json:"severity"`
+		Summary   string `json:"summary"`
+	}
+	eventIDs := make([]string, 0, len(members))
+	entries := make([]digestEntry, 0, min(len(members), 50))
+	maxSeverity := "info"
+	from, to := "", ""
+	for _, member := range members {
+		id := stringMapValue(member, "id")
+		if id == "" {
+			continue
+		}
+		eventIDs = append(eventIDs, id)
+		createdAt := stringMapValue(member, "created_at")
+		if from == "" || (createdAt != "" && createdAt < from) {
+			from = createdAt
+		}
+		if to == "" || createdAt > to {
+			to = createdAt
+		}
+		enrichment := mapFromAny(parseJSONValue(jsonMapString(member, "enrichment_json")))
+		severity := normalizeWatchDigestSeverity(stringFromAny(enrichment["severity"]))
+		if watchDigestSeverityRank(severity) > watchDigestSeverityRank(maxSeverity) {
+			maxSeverity = severity
+		}
+		if len(entries) < 50 {
+			entries = append(entries, digestEntry{
+				ID: id, CreatedAt: createdAt, Severity: severity,
+				Summary: strings.TrimSpace(stringFromAny(enrichment["summary"])),
+			})
+		}
+	}
+	if len(eventIDs) == 0 {
+		return nil
+	}
+	sort.Strings(eventIDs)
+	data := map[string]any{
+		"kind":         "digest",
+		"window":       windowText,
+		"count":        len(eventIDs),
+		"max_severity": maxSeverity,
+		"from":         from,
+		"to":           to,
+		"events":       entries,
+		"event_ids":    eventIDs,
+	}
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	dataJSON, dataTruncated := s.watchSnapshotJSON(string(dataBytes))
+	cacheHash := hashString("digest:" + strings.Join(eventIDs, ","))
+	eventID := watchEventID(def.ID, cacheHash)
+	nowText := now.Format(time.RFC3339Nano)
+	proposal, err := s.watchActionProposal(
+		s.watchOwnerContext(ctx, def),
+		def.Query,
+		def.SavedQueryName,
+		def.VariablesJSON,
+		def.EnrichJSON,
+		def.DeliveryJSON,
+		def.AbsenceJSON,
+	)
+	if err != nil {
+		return err
+	}
+	watchEvidence := mapFromAny(parseJSONValue(jsonMapString(watchRow, "evidence_json")))
+	actionApproved := watchActionApproval(watchEvidence, proposal) == watchReviewApproved
+	eventEvidence := map[string]any{
+		"watch_id": def.ID, "watch_name": def.Name, "observed_at": nowText,
+		"digest": map[string]any{"window": windowText, "event_ids": eventIDs},
+	}
+	if proposal.Required {
+		eventEvidence["action_hash"] = proposal.Hash
+		eventEvidence["delivery_kind"] = proposal.Kind
+		if proposal.WorkflowSourceHash != "" {
+			eventEvidence["workflow_source_hash"] = proposal.WorkflowSourceHash
+		}
+	}
+	status := "pending"
+	if proposal.Required && !actionApproved {
+		status = "approval_required"
+	}
+	enrichment := map[string]any{
+		"kind": "digest", "verdict": "notify", "severity": maxSeverity,
+		"summary":      fmt.Sprintf("%d events digested over %s.", len(eventIDs), windowText),
+		"generated_at": nowText,
+	}
+	inserted, err := s.insertSyntheticWatchEvent(ctx, &def, map[string]any{
+		"id": eventID, "watch_id": def.ID, "data_hash": cacheHash,
+		"data_json": nullableJSONString(dataJSON), "data_truncated": dataTruncated,
+		"evidence_json":   nullableJSONString(mustMarshalString(eventEvidence)),
+		"delivery_status": status, "delivery_attempts": 0,
+		"delivery_json": nullableJSONString(def.DeliveryJSON),
+		"receipt_json":  nil, "enrichment_json": nullableJSONString(mustMarshalString(enrichment)),
+		"seen": false, "snoozed_until": nil, "account_id": def.AccountID, "owner_id": def.OwnerID,
+		"created_at": nowText, "updated_at": nowText,
+	})
+	if err != nil {
+		return err
+	}
+	updatedMembers := 0
+	for _, member := range members {
+		id := stringMapValue(member, "id")
+		if id == "" {
+			continue
+		}
+		rows, err := s.internalStoreMutationRows(ctx, "watch_events",
+			`where: { id: { eq: $id }, delivery_status: { eq: "digest_queued" } }, update: $input`,
+			watchEventStoreFields,
+			map[string]any{
+				"id": id,
+				"input": map[string]any{
+					"delivery_status": "digested",
+					"receipt_json": nullableJSONString(mustMarshalString(map[string]any{
+						"digest_event_id": eventID,
+					})),
+					"updated_at": nowText,
+				},
+			})
+		if err != nil {
+			return err
+		}
+		updatedMembers += len(rows)
+	}
+	if !inserted && updatedMembers == 0 {
+		return nil
+	}
+	if inserted {
+		if err := s.pruneWatchEvents(ctx, &def); err != nil {
+			return err
+		}
+	}
+	if err := s.bumpArtifactRevision(ctx, "watch_events"); err != nil {
+		return err
+	}
+	s.markWatchChanged("watch digest")
+	s.notifyWatchEventsResourceScope(watchEventScope{
+		OwnerID: def.OwnerID, AccountID: def.AccountID, WatchID: def.ID,
+	}, true)
+	return nil
+}
+
+func normalizeWatchDigestSeverity(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "critical":
+		return "critical"
+	case "warn", "warning":
+		return "warn"
+	default:
+		return "info"
+	}
+}
+
+func watchDigestSeverityRank(value string) int {
+	switch normalizeWatchDigestSeverity(value) {
+	case "critical":
+		return 3
+	case "warn":
+		return 2
+	default:
+		return 1
+	}
+}
+
+func (s *graphjinService) notifyLapsedWatchSnoozes(ctx context.Context, now time.Time) {
+	if s == nil {
+		return
+	}
+	s.watchSnoozeMu.Lock()
+	since := s.watchSnoozeLastSweep
+	if since.IsZero() || since.After(now) {
+		since = now.Add(-watchDigestCheckInterval)
+	}
+	s.watchSnoozeLastSweep = now
+	s.watchSnoozeMu.Unlock()
+
+	rows, err := s.internalStoreAllRows(
+		ctx,
+		"watch_events",
+		"",
+		`id watch_id seen snoozed_until owner_id account_id`,
+		nil,
+	)
+	if err != nil {
+		s.recordWatchRunnerError("scan lapsed watch snoozes", err, nil)
+		return
+	}
+	scopes := map[string]watchEventScope{}
+	for _, row := range rows {
+		if boolMapValue(row, "seen") {
+			continue
+		}
+		snoozedUntil, ok := parseWatchTime(stringMapValue(row, "snoozed_until"))
+		if !ok || snoozedUntil.After(now) || !snoozedUntil.After(since) {
+			continue
+		}
+		scope := watchEventScope{
+			OwnerID: stringMapValue(row, "owner_id"), AccountID: stringMapValue(row, "account_id"),
+			WatchID: stringMapValue(row, "watch_id"),
+		}
+		if scope.OwnerID == "" {
+			continue
+		}
+		scopes[scope.OwnerID+"\x00"+scope.AccountID+"\x00"+scope.WatchID] = scope
+	}
+	for _, scope := range scopes {
+		s.notifyWatchEventsResourceScope(scope, false)
+	}
+}
+
 func (s *graphjinService) sweepWatchEvents(ctx context.Context) (int, error) {
 	if _, _, _, _, ok := s.watchDB(); !ok {
 		return 0, nil
 	}
 	cfg := s.conf.Core.EffectiveWatchesConfig()
-	eventRows, err := s.internalStoreRows(ctx, "watch_events", "", `id watch_id created_at`, nil)
+	eventRows, err := s.internalStoreAllRows(ctx, "watch_events", "", `id watch_id created_at`, nil)
 	if err != nil {
 		return 0, err
 	}
 	if len(eventRows) == 0 {
 		return 0, nil
 	}
-	watchRows, err := s.internalStoreRows(ctx, "watches", "", `id`, nil)
+	watchRows, err := s.internalStoreAllRows(ctx, "watches", "", `id`, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -169,6 +505,10 @@ func (s *graphjinService) sweepWatchEvents(ctx context.Context) (int, error) {
 			watchIDs[id] = struct{}{}
 		}
 	}
+	// An empty watch scan is not sufficient evidence that every event is
+	// orphaned. Keep non-expired events in that case so a paging or projection
+	// regression cannot turn the maintenance sweep into a mass deletion.
+	orphanCleanupSafe := len(watchRows) != 0
 	var cutoff time.Time
 	if cfg.EventRetentionHours > 0 {
 		cutoff = time.Now().UTC().Add(-time.Duration(cfg.EventRetentionHours) * time.Hour)
@@ -189,6 +529,21 @@ func (s *graphjinService) sweepWatchEvents(ctx context.Context) (int, error) {
 		}
 		if !expired && watchExists {
 			continue
+		}
+		if !expired {
+			if !orphanCleanupSafe {
+				continue
+			}
+			// Confirm absence with an exact lookup before destructive orphan
+			// cleanup. This remains safe even if a future caller accidentally
+			// replaces the complete watch scan with a bounded page.
+			watchRow, err := s.internalWatchStoreRow(ctx, watchID)
+			if err != nil {
+				return deleted, err
+			}
+			if watchRow != nil {
+				continue
+			}
 		}
 		n, err := s.deleteWatchEventByID(ctx, id)
 		if err != nil {
@@ -257,6 +612,7 @@ func (s *graphjinService) processWatchDeliveryRow(ctx context.Context, row map[s
 			def.VariablesJSON,
 			def.EnrichJSON,
 			jsonMapString(watchRow, "delivery_json"),
+			jsonMapString(watchRow, "absence_json"),
 		)
 		watchEvidence := mapFromAny(parseJSONValue(jsonMapString(watchRow, "evidence_json")))
 		eventEvidence := mapFromAny(parseJSONValue(event.EvidenceJSON))
@@ -618,7 +974,7 @@ func (s *graphjinService) watchEnrichmentDailyCapReached(ctx context.Context, wa
 	if cap <= 0 {
 		return false
 	}
-	rows, err := s.internalStoreRows(ctx, "watch_events", `where: { watch_id: { eq: $watch_id } }`, `id created_at enrichment_json`, map[string]any{"watch_id": watchID})
+	rows, err := s.internalStoreAllRows(ctx, "watch_events", `where: { watch_id: { eq: $watch_id } }`, `id created_at enrichment_json`, map[string]any{"watch_id": watchID})
 	if err != nil {
 		return false
 	}
@@ -653,6 +1009,26 @@ func parseWatchDeliveryConfig(raw string) (watchDeliveryConfig, bool, error) {
 	if workflow, ok := m["workflow"]; ok {
 		cfg.Kind = "workflow"
 		cfg.Workflow = parseWatchWorkflowConfig(workflow)
+	}
+	if digest, ok := m["digest"]; ok && digest != nil {
+		digestMap := mapFromAny(digest)
+		windowText := strings.TrimSpace(stringFromAny(digestMap["window"]))
+		if windowText == "" {
+			return cfg, cfg.Kind != "inbox", errors.New("digest delivery requires window")
+		}
+		window, err := time.ParseDuration(windowText)
+		if err != nil {
+			return cfg, cfg.Kind != "inbox", fmt.Errorf("digest window is invalid: %w", err)
+		}
+		if window < watchDigestMinWindow {
+			window = watchDigestMinWindow
+		}
+		if window > watchDigestMaxWindow {
+			window = watchDigestMaxWindow
+		}
+		cfg.Digest = watchDigestConfig{
+			Enabled: true, Window: window, WindowText: window.String(),
+		}
 	}
 	switch cfg.Kind {
 	case "", "inbox":

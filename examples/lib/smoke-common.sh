@@ -809,6 +809,34 @@ run_watch_fire_suite() {
     ((.result.contents[0].text // "") | fromjson | .event_ids | index($id)) != null
   '
 
+  local snooze_until snooze_out clear_out
+  snooze_until="$(smoke_future_rfc3339 120)"
+  snooze_out="$(graphql watch-fire-snooze "mutation { gj_watch_event(where: { id: { eq: \"${ev_id}\" } }, update: { snoozed_until: \"${snooze_until}\" }) { id seen snoozed_until } }")"
+  assert_jq_args "$snooze_out" "snooze-only update keeps the watch event unseen" --arg id "$ev_id" '
+    ([.data.gj_watch_event] | flatten | .[0]) as $e
+    | $e.id == $id and $e.seen == false and ($e.snoozed_until | length) > 0
+  '
+
+  get_json "${BASE_URL%/}/api/v1/watch-events/unseen" "$rest_unseen_out"
+  assert_jq_args "$rest_unseen_out" "REST unseen inbox hides the snoozed event" --arg id "$ev_id" '
+    (.event_ids | index($id)) == null
+  '
+  mcp_unseen_out="$(mcp_resource_read "graphjin://watch-events/unseen")"
+  assert_jq_args "$mcp_unseen_out" "MCP unseen inbox hides the snoozed event" --arg id "$ev_id" '
+    ((.result.contents[0].text // "") | fromjson | .event_ids | index($id)) == null
+  '
+
+  clear_out="$(graphql watch-fire-unsnooze "mutation { gj_watch_event(where: { id: { eq: \"${ev_id}\" } }, update: { snoozed_until: null }) { id seen snoozed_until } }")"
+  assert_jq_args "$clear_out" "clearing snooze keeps the watch event unseen" --arg id "$ev_id" '
+    ([.data.gj_watch_event] | flatten | .[0]) as $e
+    | $e.id == $id and $e.seen == false
+      and ($e.snoozed_until == null or $e.snoozed_until == "")
+  '
+  get_json "${BASE_URL%/}/api/v1/watch-events/unseen" "$rest_unseen_out"
+  assert_jq_args "$rest_unseen_out" "cleared snooze returns the event to the unseen inbox" --arg id "$ev_id" '
+    (.event_ids | index($id)) != null
+  '
+
   seen_out="$TMP_DIR/watch-fire-seen-rest.json"
   post_json "${BASE_URL%/}/api/v1/watch-events/${ev_id}/seen" '{}' "$seen_out"
   assert_jq "$seen_out" '.data.seen == true' "watch event marked seen through REST"

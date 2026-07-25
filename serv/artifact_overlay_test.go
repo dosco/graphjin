@@ -325,6 +325,50 @@ func TestArtifactNanoProjectionRefreshesAfterMutation(t *testing.T) {
 	}
 }
 
+func TestArtifactProjectionLoadsPastGraphQLDefaultLimit(t *testing.T) {
+	autoInit := true
+	svc := newArtifactOverlayTestServiceWithOptions(t, nil, core.ArtifactsConfig{
+		Enabled: true, Source: "main", AutoInit: &autoInit, GlobalsPath: ".",
+	}, func(conf *Config) {
+		conf.Core.DefaultLimit = 2
+	})
+	ctx := artifactUserCtx("user_1")
+	cp := newArtifactControlPlane(svc)
+
+	const count = 5
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("paged_projection_%02d", i)
+		if _, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+			Table:     artifactsRootTable,
+			Operation: "insert",
+			Input: map[string]interface{}{
+				"name":    name,
+				"kind":    artifactKindSavedQuery,
+				"content": fmt.Sprintf("query %s { users { id } }", name),
+			},
+		}); err != nil {
+			t.Fatalf("insert artifact %s: %v", name, err)
+		}
+	}
+
+	rows, err := cp.allArtifactRowsForProjection(context.Background())
+	if err != nil {
+		t.Fatalf("load artifact projection rows: %v", err)
+	}
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("paged_projection_%02d", i)
+		if !artifactRowsContain(rows, name) {
+			t.Fatalf("projection loader omitted %s past default_limit: %+v", name, rows)
+		}
+		projected := queryArtifactProjection(t, svc, ctx, fmt.Sprintf(`query {
+			gj_artifacts(where: { name: { eq: %q } }) { name }
+		}`, name))
+		if len(projected) != 1 || projected[0]["name"] != name {
+			t.Fatalf("NanoDB projection omitted %s: %+v", name, projected)
+		}
+	}
+}
+
 func TestNormalizeArtifactNanoRowCapsJSONFields(t *testing.T) {
 	row := normalizeArtifactNanoRow(map[string]any{
 		"name":          "unit",

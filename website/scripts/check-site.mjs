@@ -114,6 +114,10 @@ const requiredRenderedContent = [
   ['story/security/index.html', 'GraphJin Security'],
   ['story/agentic/index.html', 'Agentic GraphJin'],
   ['agentic/watch-automation/index.html', 'Approval is per exact version, not per event.'],
+  ['agentic/watch-automation/index.html', 'What makes GraphJin highly reactive'],
+  ['agentic/watch-automation/index.html', 'Absence watch'],
+  ['agentic/watch-automation/index.html', 'Digest drain'],
+  ['agentic/watch-automation/index.html', 'Durable recovery'],
   ['agentic/watch-automation/index.html', 'The 60-second story'],
   ['agentic/watch-automation/index.html', 'Alerts fail open.'],
   ['agentic/watch-automation/index.html', 'Actions fail closed.'],
@@ -202,9 +206,10 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     }
   }
   for (const required of [
-    'Don’t just ask. Leave GraphJin watching.',
-    'coffee watch only',
-    'purchase-order watch only',
+    'The agent that notices changes—and silence.',
+    'No shipment scan in four hours',
+    'operations rollup only',
+    'Reconnect, resume, retry',
     'Alerts fail open.',
     'Actions fail closed.',
   ]) {

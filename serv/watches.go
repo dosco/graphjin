@@ -20,9 +20,9 @@ const (
 	watchValidationProbeTimeout = 10 * time.Second
 )
 
-const watchStoreFields = `id name description query saved_query_name variables_json condition_js delivery_json enrich_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
+const watchStoreFields = `id name description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
 
-const watchEventStoreFields = `id watch_id data_hash data_json data_truncated evidence_json delivery_status delivery_attempts delivery_json receipt_json enrichment_json seen seen_at account_id owner_id created_at updated_at`
+const watchEventStoreFields = `id watch_id data_hash data_json data_truncated evidence_json delivery_status delivery_attempts delivery_json receipt_json enrichment_json seen seen_at snoozed_until account_id owner_id created_at updated_at`
 
 type watchControlPlane struct {
 	service *graphjinService
@@ -60,6 +60,7 @@ func watchColumns() []core.ManagedColumn {
 		cpCol("condition_js", "text", false),
 		cpCol("delivery_json", "json", false),
 		cpCol("enrich_json", "json", false),
+		cpCol("absence_json", "json", false),
 		cpCol("flow_review_json", "json", false),
 		cpCol("action_review_json", "json", false),
 		cpCol("flow_hash", "text", false),
@@ -103,6 +104,7 @@ func watchEventColumns() []core.ManagedColumn {
 		cpCol("enrichment_json", "json", false),
 		cpCol("seen", "boolean", false),
 		cpCol("seen_at", "text", false),
+		cpCol("snoozed_until", "text", false),
 		cpCol("account_id", "text", false),
 		cpCol("owner_id", "text", false),
 		cpCol("account_ref", "text", false),
@@ -206,7 +208,9 @@ func (h watchControlPlane) watchRowsWithScope(ctx context.Context, allOwners boo
 		args = `where: { owner_id: { eq: $owner_id } }`
 		vars = map[string]any{"owner_id": ownerID}
 	}
-	rows, err := s.internalStoreRows(ctx, "watches", args, watchStoreFields, vars)
+	var rows []map[string]any
+	var err error
+	rows, err = s.internalStoreAllRows(ctx, "watches", args, watchStoreFields, vars)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +255,9 @@ func (h watchControlPlane) watchEventRowsWithScope(ctx context.Context, allOwner
 		args = `where: { owner_id: { eq: $owner_id } }`
 		vars = map[string]any{"owner_id": ownerID}
 	}
-	rows, err := s.internalStoreRows(ctx, "watch_events", args, watchEventStoreFields, vars)
+	var rows []map[string]any
+	var err error
+	rows, err = s.internalStoreAllRows(ctx, "watch_events", args, watchEventStoreFields, vars)
 	if err != nil {
 		return nil, err
 	}
@@ -323,11 +329,13 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	conditionJS := stringInput(root.Input, "condition_js", "")
 	deliveryJSON := jsonStringInput(root.Input, "delivery_json")
 	enrichJSON := jsonStringInput(root.Input, "enrich_json")
+	absenceJSON := jsonStringInput(root.Input, "absence_json")
 	if maxBytes := s.conf.Core.EffectiveWatchesConfig().SnapshotMaxBytes; maxBytes > 0 {
 		for _, field := range []struct{ name, value string }{
 			{"variables_json", variablesJSON},
 			{"delivery_json", deliveryJSON},
 			{"enrich_json", enrichJSON},
+			{"absence_json", absenceJSON},
 		} {
 			if len(field.value) > maxBytes {
 				return nil, fmt.Errorf("gj_watch %s exceeds watches.snapshot_max_bytes (%d)", field.name, maxBytes)
@@ -338,13 +346,17 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	if err != nil {
 		return nil, fmt.Errorf("gj_watch %w", err)
 	}
+	absenceJSON, _, _, err = normalizeWatchAbsenceJSON(absenceJSON)
+	if err != nil {
+		return nil, fmt.Errorf("gj_watch %w", err)
+	}
 	var enrichCfg watchEnrichmentConfig
 	var enrichEnabled bool
 	enrichJSON, enrichCfg, enrichEnabled, err = normalizeWatchEnrichmentJSON(enrichJSON)
 	if err != nil {
 		return nil, fmt.Errorf("gj_watch %w", err)
 	}
-	actionProposal, err := s.watchActionProposal(ctx, query, savedQuery, variablesJSON, enrichJSON, deliveryJSON)
+	actionProposal, err := s.watchActionProposal(ctx, query, savedQuery, variablesJSON, enrichJSON, deliveryJSON, absenceJSON)
 	if err != nil {
 		return nil, fmt.Errorf("gj_watch %w", err)
 	}
@@ -370,6 +382,7 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 			{"variables_json", variablesJSON},
 			{"delivery_json", deliveryJSON},
 			{"enrich_json", enrichJSON},
+			{"absence_json", absenceJSON},
 		} {
 			if len(f.value) > maxBytes {
 				return nil, fmt.Errorf("gj_watch %s exceeds watches.snapshot_max_bytes (%d)", f.name, maxBytes)
@@ -417,7 +430,8 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		}
 		definitionChanged = query != stringMapValue(existing, "query") ||
 			savedQuery != stringMapValue(existing, "saved_query_name") ||
-			variablesJSON != jsonMapString(existing, "variables_json")
+			variablesJSON != jsonMapString(existing, "variables_json") ||
+			absenceJSON != jsonMapString(existing, "absence_json")
 		_, existingEnrichCfg, existingEnrichEnabled, existingEnrichErr := normalizeWatchEnrichmentJSON(jsonMapString(existing, "enrich_json"))
 		existingFlowRequired := existingEnrichErr == nil && existingEnrichEnabled && existingEnrichCfg.Kind == "flow"
 		flowChanged = flowRequired != existingFlowRequired ||
@@ -459,7 +473,7 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	input := map[string]any{
 		"id": id, "name": name, "description": description, "query": query, "saved_query_name": savedQuery,
 		"variables_json": nullableJSONString(variablesJSON), "condition_js": conditionJS,
-		"delivery_json": nullableJSONString(deliveryJSON), "enrich_json": nullableJSONString(enrichJSON), "evidence_json": nullableJSONString(evidenceJSON),
+		"delivery_json": nullableJSONString(deliveryJSON), "enrich_json": nullableJSONString(enrichJSON), "absence_json": nullableJSONString(absenceJSON), "evidence_json": nullableJSONString(evidenceJSON),
 		"lifecycle": lifecycle, "lease_expires_at": nullableJSONString(leaseExpiresAt), "lease_owner_id": leaseOwnerID,
 		"status": status, "approval": approval, "enabled": enabled, "account_id": accountID, "owner_id": ownerID, "owner_role": ownerRole,
 		"last_data_hash": lastDataHash, "last_cursor_json": nullableJSONString(lastCursorJSON), "last_fired_at": nullableJSONString(lastFiredAt), "last_error": lastError, "failure_count": failureCount,
@@ -558,8 +572,11 @@ func (h watchControlPlane) updateWatchEvent(ctx context.Context, root core.Manag
 	if id == "" {
 		return nil, fmt.Errorf("gj_watch_event update requires id")
 	}
+	_, seenSpecified := root.Input["seen"]
+	_, snoozeSpecified := root.Input["snoozed_until"]
 	seen := boolInput(root.Input, "seen", true)
-	now := time.Now().UTC().Format(time.RFC3339)
+	nowTime := time.Now().UTC()
+	now := nowTime.Format(time.RFC3339Nano)
 	admin := s.identityRoleIsAdmin(ctx)
 	existing, err := s.internalWatchEventStoreRow(ctx, id)
 	if err != nil {
@@ -568,7 +585,33 @@ func (h watchControlPlane) updateWatchEvent(ctx context.Context, root core.Manag
 	if existing == nil || (!admin && stringMapValue(existing, "owner_id") != ownerID) {
 		return nil, fmt.Errorf("gj_watch_event update denied")
 	}
-	update := map[string]any{"seen": seen, "seen_at": nullableSeenAt(seen, now), "updated_at": now}
+	update := map[string]any{"updated_at": now}
+	if seenSpecified || !snoozeSpecified {
+		update["seen"] = seen
+		update["seen_at"] = nullableSeenAt(seen, now)
+	}
+	snoozedUntil := stringMapValue(existing, "snoozed_until")
+	if snoozeSpecified {
+		raw := root.Input["snoozed_until"]
+		snoozedUntil = ""
+		if raw != nil && !strings.EqualFold(strings.TrimSpace(fmt.Sprint(raw)), "null") {
+			requested, ok := parseWatchTime(fmt.Sprint(raw))
+			if !ok {
+				return nil, fmt.Errorf("gj_watch_event snoozed_until must be an RFC3339 timestamp or null")
+			}
+			if !requested.After(nowTime) {
+				return nil, fmt.Errorf("gj_watch_event snoozed_until must be in the future")
+			}
+			if retention := s.conf.Core.EffectiveWatchesConfig().EventRetentionHours; retention > 0 {
+				maxSnooze := nowTime.Add(time.Duration(retention) * time.Hour)
+				if requested.After(maxSnooze) {
+					requested = maxSnooze
+				}
+			}
+			snoozedUntil = requested.UTC().Format(time.RFC3339Nano)
+		}
+		update["snoozed_until"] = nullableJSONString(snoozedUntil)
+	}
 	if _, err := s.internalStoreMutationRows(ctx, "watch_events", `where: { id: { eq: $id } }, update: $input`, watchEventStoreFields, map[string]any{"id": id, "input": update}); err != nil {
 		return nil, err
 	}
@@ -581,7 +624,15 @@ func (h watchControlPlane) updateWatchEvent(ctx context.Context, root core.Manag
 		stringMapValue(existing, "account_id"),
 		stringMapValue(existing, "watch_id"),
 	)
-	return map[string]any{"id": id, "seen": seen, "seen_at": nullableSeenAt(seen, now), "updated_at": now}, nil
+	result := map[string]any{
+		"id": id, "seen": boolMapValue(existing, "seen"), "seen_at": stringMapValue(existing, "seen_at"),
+		"snoozed_until": snoozedUntil, "updated_at": now,
+	}
+	if _, ok := update["seen"]; ok {
+		result["seen"] = seen
+		result["seen_at"] = nullableSeenAt(seen, now)
+	}
+	return result, nil
 }
 
 func (h watchControlPlane) validateWatchDefinition(
@@ -819,7 +870,7 @@ func (h watchControlPlane) validateWatchCycle(
 	enabled bool,
 	candidateEdges []string,
 ) error {
-	rows, err := h.service.internalStoreRows(ctx, "watches", "", watchStoreFields, nil)
+	rows, err := h.service.internalStoreAllRows(ctx, "watches", "", watchStoreFields, nil)
 	if err != nil {
 		return err
 	}
@@ -933,7 +984,7 @@ func (s *graphjinService) deleteWatchEvents(ctx context.Context, watchID string)
 	if strings.TrimSpace(watchID) == "" {
 		return 0, nil
 	}
-	rows, err := s.internalStoreRows(ctx, "watch_events",
+	rows, err := s.internalStoreAllRows(ctx, "watch_events",
 		`where: { watch_id: { eq: $watch_id } }`,
 		`id watch_id owner_id account_id`,
 		map[string]any{"watch_id": watchID})
@@ -981,7 +1032,7 @@ func (h watchControlPlane) enforceWatchLimit(ctx context.Context, ownerID, id st
 	if max <= 0 {
 		return nil
 	}
-	rows, err := h.service.internalStoreRows(ctx, "watches", `where: { owner_id: { eq: $owner_id } }`, `id`, map[string]any{"owner_id": ownerID})
+	rows, err := h.service.internalStoreAllRows(ctx, "watches", `where: { owner_id: { eq: $owner_id } }`, `id`, map[string]any{"owner_id": ownerID})
 	if err != nil {
 		return err
 	}
@@ -1036,6 +1087,7 @@ variables_json JSONB,
 condition_js TEXT NOT NULL DEFAULT '',
 delivery_json JSONB,
 enrich_json JSONB,
+absence_json JSONB,
 evidence_json JSONB,
 lifecycle TEXT NOT NULL DEFAULT 'durable',
 lease_expires_at TIMESTAMPTZ,
@@ -1070,6 +1122,7 @@ receipt_json JSONB,
 enrichment_json JSONB,
 seen BOOLEAN NOT NULL DEFAULT FALSE,
 seen_at TIMESTAMPTZ,
+snoozed_until TIMESTAMPTZ,
 account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1091,6 +1144,7 @@ variables_json LONGTEXT,
 condition_js LONGTEXT NOT NULL,
 delivery_json LONGTEXT,
 enrich_json LONGTEXT,
+absence_json LONGTEXT,
 evidence_json LONGTEXT,
 lifecycle VARCHAR(32) NOT NULL DEFAULT 'durable',
 lease_expires_at VARCHAR(64),
@@ -1123,6 +1177,7 @@ receipt_json LONGTEXT,
 enrichment_json LONGTEXT,
 seen BOOLEAN NOT NULL DEFAULT FALSE,
 seen_at VARCHAR(64),
+snoozed_until VARCHAR(64),
 account_id VARCHAR(191) NOT NULL DEFAULT '',
 owner_id VARCHAR(191) NOT NULL DEFAULT '',
 created_at VARCHAR(64) NOT NULL DEFAULT '',
@@ -1141,6 +1196,7 @@ variables_json TEXT,
 condition_js TEXT NOT NULL DEFAULT '',
 delivery_json TEXT,
 enrich_json TEXT,
+absence_json TEXT,
 evidence_json TEXT,
 lifecycle TEXT NOT NULL DEFAULT 'durable',
 lease_expires_at TEXT,
@@ -1175,6 +1231,7 @@ receipt_json TEXT,
 enrichment_json TEXT,
 seen INTEGER NOT NULL DEFAULT 0,
 seen_at TEXT,
+snoozed_until TEXT,
 account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1199,7 +1256,9 @@ func watchMigrationDDL(dbType, schema string) []string {
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lifecycle TEXT NOT NULL DEFAULT 'durable'`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lease_owner_id TEXT NOT NULL DEFAULT ''`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS absence_json JSONB`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS data_truncated BOOLEAN NOT NULL DEFAULT FALSE`, events),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMPTZ`, events),
 	}
 }
 
@@ -1244,12 +1303,26 @@ func (s *graphjinService) migrateWatchSchema(ctx context.Context, db *sql.DB, db
 	if err := ensureSQLColumn(ctx, db, dbType, watches, "lease_owner_id", leaseOwnerDef); err != nil {
 		return err
 	}
+	absenceDef := "TEXT"
+	if dbType == "mysql" || dbType == "mariadb" {
+		absenceDef = "LONGTEXT"
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "absence_json", absenceDef); err != nil {
+		return err
+	}
 	events := artifactTableName(dbType, schema, "watch_events")
 	dataTruncatedDef := "INTEGER NOT NULL DEFAULT 0"
 	if dbType == "mysql" || dbType == "mariadb" {
 		dataTruncatedDef = "BOOLEAN NOT NULL DEFAULT FALSE"
 	}
-	return ensureSQLColumn(ctx, db, dbType, events, "data_truncated", dataTruncatedDef)
+	if err := ensureSQLColumn(ctx, db, dbType, events, "data_truncated", dataTruncatedDef); err != nil {
+		return err
+	}
+	snoozedUntilDef := "TEXT"
+	if dbType == "mysql" || dbType == "mariadb" {
+		snoozedUntilDef = "VARCHAR(64)"
+	}
+	return ensureSQLColumn(ctx, db, dbType, events, "snoozed_until", snoozedUntilDef)
 }
 
 func watchID(ownerID, name string) string {
@@ -1316,6 +1389,7 @@ func watchStoreRow(row map[string]any, rawIDs bool) map[string]any {
 		"condition_js":     stringMapValue(row, "condition_js"),
 		"delivery_json":    row["delivery_json"],
 		"enrich_json":      row["enrich_json"],
+		"absence_json":     row["absence_json"],
 		"evidence_json":    row["evidence_json"],
 		"lifecycle":        watchLifecycle(stringMapValue(row, "lifecycle")),
 		"lease_expires_at": stringMapValue(row, "lease_expires_at"),
@@ -1371,6 +1445,7 @@ func watchEventStoreRow(row map[string]any, rawIDs bool) map[string]any {
 		"enrichment_json":   row["enrichment_json"],
 		"seen":              boolMapValue(row, "seen"),
 		"seen_at":           stringMapValue(row, "seen_at"),
+		"snoozed_until":     stringMapValue(row, "snoozed_until"),
 		"account_id":        safeArtifactIdentity(accountID, rawIDs),
 		"owner_id":          safeArtifactIdentity(ownerID, rawIDs),
 		"account_ref":       safeArtifactIdentity(accountID, false),

@@ -601,6 +601,9 @@ func (c *Config) normalizeWatchesDefaults() {
 	if c.Watches.EnrichmentWorkers == 0 {
 		c.Watches.EnrichmentWorkers = 1
 	}
+	if c.Watches.RetryMaxFailures == 0 {
+		c.Watches.RetryMaxFailures = 5
+	}
 	if strings.TrimSpace(c.Watches.Runner) == "" {
 		c.Watches.Runner = "off"
 	} else {
@@ -842,7 +845,7 @@ func (c *Config) EffectiveArtifactsConfig() ArtifactsConfig {
 // EffectiveWatchesConfig returns watch config with source-mode defaults.
 func (c *Config) EffectiveWatchesConfig() WatchesConfig {
 	if c == nil {
-		return WatchesConfig{MaxPerOwner: 20, EventRetentionHours: 168, MaxEventsPerWatch: 500, SnapshotMaxBytes: 32768, Runner: "off", EnrichmentDailyCap: 10, EnrichmentWorkers: 1}
+		return WatchesConfig{MaxPerOwner: 20, EventRetentionHours: 168, MaxEventsPerWatch: 500, SnapshotMaxBytes: 32768, Runner: "off", EnrichmentDailyCap: 10, EnrichmentWorkers: 1, RetryMaxFailures: 5}
 	}
 	out := c.Watches.clone()
 	tmp := &Config{Watches: out}
@@ -1456,6 +1459,7 @@ type WatchesConfig struct {
 	WebhookAllow        []string `mapstructure:"webhook_allow" json:"webhook_allow" yaml:"webhook_allow" jsonschema:"title=Watch Webhook Allowlist,description=Allowlist of webhook URL prefixes watch deliveries may call; empty denies all webhooks"`
 	EnrichmentDailyCap  int      `mapstructure:"enrichment_daily_cap" json:"enrichment_daily_cap" yaml:"enrichment_daily_cap" jsonschema:"title=Watch Enrichment Daily Cap,default=10,description=Maximum read-only agent enrichments per watch per day"`
 	EnrichmentWorkers   int      `mapstructure:"enrichment_workers" json:"enrichment_workers" yaml:"enrichment_workers" jsonschema:"title=Watch Enrichment Workers,default=1,description=Concurrent watch enrichment workers"`
+	RetryMaxFailures    int      `mapstructure:"retry_max_failures" json:"retry_max_failures" yaml:"retry_max_failures" jsonschema:"title=Watch Retry Max Failures,default=5,description=Consecutive transient runner failures before a watch enters terminal error status"`
 }
 
 // SourceAccessConfig declares source-level access defaults plus table/root

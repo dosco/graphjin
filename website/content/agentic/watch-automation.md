@@ -15,13 +15,30 @@ Those are separate jobs:
 - A **flow** is a small, tool-free AI filter. It can summarize, score, or suppress noise, but it cannot query more data or change anything.
 - A **workflow** is an action with hands. It can call approved GraphJin tools and GraphQL, so GraphJin never infers permission to attach one from phrases such as "tell me" or "let me know."
 
+## What makes GraphJin highly reactive
+
+GraphJin does not wait for the next prompt. It keeps governed questions running, carries their state across reconnects, and treats both activity and silence as evidence.
+
+| Reactive primitive | What it adds |
+| --- | --- |
+| Change watch | React to new cursor-backed query results without polling from an agent conversation. |
+| Absence watch | Emit a first-class event when expected data does not arrive within a window. |
+| Flow triage | Turn each event into `notify`, `digest`, or `discard` without giving the model tools. |
+| Digest drain | Coalesce routine events into one unseen summary without another model call. |
+| Rollup watch | Gather events from exact watch IDs for safe cross-watch correlation. |
+| Per-watch inbox + snooze | Wake only the right conversation, or defer an event without acknowledging it. |
+| Durable recovery | Resume from stored cursors, reconnect after drops, and exponentially back off transient failures. |
+| Approved action | Run a workflow or webhook only after its exact action hash is reviewed. |
+
 ## The 60-second story
 
-One conversation asks, "Watch the roast telemetry and tell me if something looks wrong." GraphJin creates a roast watch with a tool-free flow. The watch is stored but paused while the flow is previewed against representative readings. The preview shows which samples would be discarded, added to a digest, or sent as notifications.
+One conversation asks, "Watch the roast telemetry and tell me if something looks wrong." GraphJin creates a cursor-backed roast watch with a tool-free flow. The watch is stored but paused while the flow is previewed against representative readings. The preview shows which samples would be discarded, added to a digest, or sent as notifications.
 
-After the user approves that exact `flow_hash`, the watch runs continuously. When Batch 7 begins drifting after first crack, the flow produces one compact warning and GraphJin wakes only the roasting conversation subscribed to that watch.
+After the user approves that exact `flow_hash`, the watch runs continuously. Routine phase changes collect into a digest. When Batch 7 begins drifting after first crack, the flow produces one compact warning and GraphJin wakes only the roasting conversation subscribed to that watch.
 
-A different conversation asks to watch late purchase orders. It retains a different watch ID, so its events wake only the purchasing conversation. If that user later asks GraphJin to draft a replacement purchase order, GraphJin proposes a workflow action and pauses again. The workflow can run only after the user separately confirms the exact `action_hash`.
+A second watch asks for an event when no inbound shipment scan arrives for four hours. GraphJin treats that silence as an `absence` event. An operations rollup watches the exact shipment and inventory watch IDs; when shipment silence coincides with inventory below its buffer, its flow creates one correlated warning for the operations conversation. An operator can snooze that warning without marking it seen.
+
+If the user then asks GraphJin to draft a supplier escalation, GraphJin proposes a workflow action and pauses again. The workflow can run only after the user separately confirms the exact `action_hash`. If the subscription drops meanwhile, GraphJin resumes from its stored cursor and retries transient failures with bounded exponential backoff.
 
 {{< callout type="note" title="Approval is per exact version, not per event." >}}
 Once the current flow or action hash is approved, the watch keeps running without asking again for every event. Changing the query, variables, flow, delivery configuration, or resolved workflow source creates a new version and requires the affected approval again.
@@ -71,6 +88,8 @@ Examples:
 - "If supplier activity looks likely to cause a shortage, draft a purchase order" uses a flow to make the semantic decision and a workflow to take the approved action.
 
 Put exact conditions in the subscription's GraphQL `where` filter. A flow is appropriate when a useful predicate cannot be written exactly, or when frequent raw events need distillation.
+
+Silence is an explicit trigger: add `absence_json: { enabled: true, window: "4h", repeat: false }` for "no event in four hours." Same-watch flow noise can drain through `delivery_json.digest.window`; cross-watch correlation uses a rollup watch over `gj_watch_event` with a conjunctive non-self `watch_id eq/in` filter. Changing these governed fields can change the action hash and require re-approval.
 
 ## One interface: `gj_watch`
 

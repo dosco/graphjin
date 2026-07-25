@@ -1182,9 +1182,11 @@ Durability semantics:
   snapshots and user-supplied definition JSON are capped at
   `snapshot_max_bytes` (default 32KB), and read-only agent enrichment is
   capped at `enrichment_daily_cap` per watch per day (default 10).
-- **Failures are visible, not fatal**: a broken watch flips to
-  `status: "error"` with `last_error` and a growing `failure_count`; it is
-  never auto-deleted and never auto-disabled — pause it via `status`/`enabled`.
+- **Transient failures retry**: the runner keeps the watch active, records
+  `evidence_json.retry`, and exponentially backs off to five minutes. After
+  `watches.retry_max_failures` consecutive failures (default 5), it flips to
+  terminal `status: "error"` with `last_error` and `failure_count`; it is never
+  auto-deleted.
 - **Multi-replica delivery is deduplicated**: every replica evaluates, but
   event IDs are deterministic (`watch_id + data_hash`) so duplicate inserts
   collapse, and webhook/workflow delivery is claimed atomically — exactly one
@@ -1192,9 +1194,30 @@ Durability semantics:
   and an `Idempotency-Key` header; targets must match the `webhook_allow`
   allowlist.
 
+Absence watches add `absence_json: { enabled: true, window: "4h", repeat:
+false }`. They create a synthetic `data_json.kind: "absence"` event when the
+cursor-backed source stays silent for the window. A fresh runtime anchors the
+window at startup, so downtime or failover cannot mass-fire old silence. Real
+data re-arms a non-repeating absence episode; `repeat: true` intentionally
+creates a standing pager.
+
+A flow verdict of `digest` queues the member instead of waking immediately.
+`delivery_json.digest.window` controls when GraphJin drains same-watch noise
+into one unseen `data_json.kind: "digest"` event without another model call;
+the default is one hour when the block is absent.
+
+For cross-watch correlation, create a **rollup watch** whose subscription root
+is `gj_watch_event` and whose filter is a conjunctive, non-self `watch_id`
+`eq`/`in`. `or`/`not`, self references, and dependency cycles are rejected;
+saved-query dependency drift pauses for review. Use digest for same-watch noise
+and a rollup watch for correlation across watch IDs.
+
 The agent inbox loop: query `gj_watch_event` (`seen: { eq: false }`, newest
 first), act on the events, then mark them reviewed with
-`gj_watch_event(update: { seen: true })`. Agent responses carry a
+`gj_watch_event(update: { seen: true })`. To defer an item without
+acknowledging it, set `snoozed_until` to a future RFC3339 timestamp; `null`
+clears it. Snoozed items leave unseen summaries/resources until the timestamp
+lapses. Agent responses carry a
 `watch_events_unseen` notice when the caller has unreviewed events. MCP clients
 can also subscribe to `graphjin://watch-events/unseen`, which sends
 `notifications/resources/updated` for the caller's own unseen events; reading

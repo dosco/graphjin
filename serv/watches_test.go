@@ -203,6 +203,172 @@ func TestWatchControlPlaneInitializesScopesAndUpdatesEvents(t *testing.T) {
 	}
 }
 
+func TestWatchProjectionLoadsPastGraphQLDefaultLimit(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 10)
+	svc.conf.Core.DefaultLimit = 2
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+
+	cp := newWatchControlPlane(svc)
+	ctx := artifactUserCtx("user_1")
+	const count = 5
+	watchIDs := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("paged_watch_%02d", i)
+		row, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+			Table:     watchesRootTable,
+			Operation: "insert",
+			Input: map[string]interface{}{
+				"name":  name,
+				"query": cursorOrdersWatchQuery(name),
+			},
+		})
+		if err != nil {
+			t.Fatalf("insert watch %s: %v", name, err)
+		}
+		watchIDs = append(watchIDs, fmt.Sprint(row["id"]))
+	}
+
+	watchRows, err := cp.allWatchRowsForProjection(context.Background())
+	if err != nil {
+		t.Fatalf("load watch projection rows: %v", err)
+	}
+	if len(watchRows) != count {
+		t.Fatalf("watch projection rows = %d, want %d past default_limit: %+v", len(watchRows), count, watchRows)
+	}
+
+	_, _, _, eventTable, ok := svc.watchDB()
+	if !ok {
+		t.Fatal("watch DB not configured")
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i := 0; i < count; i++ {
+		if _, err := db.Exec(
+			`INSERT INTO `+eventTable+` (id, watch_id, owner_id, account_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			fmt.Sprintf("paged_event_%02d", i),
+			watchIDs[0],
+			"user_1",
+			"acct_1",
+			now,
+			now,
+		); err != nil {
+			t.Fatalf("insert watch event %d: %v", i, err)
+		}
+	}
+	eventRows, err := cp.allWatchEventRowsForProjection(context.Background())
+	if err != nil {
+		t.Fatalf("load watch event projection rows: %v", err)
+	}
+	if len(eventRows) != count {
+		t.Fatalf("watch event projection rows = %d, want %d past default_limit: %+v", len(eventRows), count, eventRows)
+	}
+}
+
+func TestLoadRunnableWatchesReturnsAllPages(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 10)
+	svc.conf.Core.DefaultLimit = 2
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+
+	const count = 5
+	for i := 0; i < count; i++ {
+		id := fmt.Sprintf("watch:runnable:%02d", i)
+		name := fmt.Sprintf("runnable_%02d", i)
+		if _, err := db.Exec(
+			`INSERT INTO "_graphjin_watches" (id, name, query, owner_id, owner_role) VALUES (?, ?, ?, ?, ?)`,
+			id, name, cursorOrdersWatchQuery(name), "user_1", "analyst",
+		); err != nil {
+			t.Fatalf("insert runnable watch %s: %v", id, err)
+		}
+	}
+
+	defs, err := svc.loadRunnableWatches(context.Background())
+	if err != nil {
+		t.Fatalf("loadRunnableWatches: %v", err)
+	}
+	if len(defs) != count {
+		t.Fatalf("runnable watches = %d, want %d past default_limit: %+v", len(defs), count, defs)
+	}
+	for i, def := range defs {
+		want := fmt.Sprintf("watch:runnable:%02d", i)
+		if def.ID != want {
+			t.Fatalf("runnable watch %d id = %q, want %q", i, def.ID, want)
+		}
+	}
+}
+
+func TestValidateWatchCycleFindsDependencyPastDefaultLimit(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 10)
+	svc.conf.Core.DefaultLimit = 2
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+
+	for i := 0; i < 2; i++ {
+		id := fmt.Sprintf("watch:padding:%02d", i)
+		if _, err := db.Exec(
+			`INSERT INTO "_graphjin_watches" (id, name, query, owner_id) VALUES (?, ?, ?, ?)`,
+			id, id, cursorOrdersWatchQuery(id), "user_1",
+		); err != nil {
+			t.Fatalf("insert padding watch %s: %v", id, err)
+		}
+	}
+	const (
+		persistedID = "watch:zz_persisted"
+		candidateID = "watch:zz_candidate"
+	)
+	evidence := `{"watched_watch_ids":["` + candidateID + `"]}`
+	if _, err := db.Exec(
+		`INSERT INTO "_graphjin_watches" (id, name, query, evidence_json, owner_id) VALUES (?, ?, ?, ?, ?)`,
+		persistedID, "persisted_cycle_edge", cursorOrdersWatchQuery("persisted_cycle_edge"), evidence, "user_1",
+	); err != nil {
+		t.Fatalf("insert persisted cycle edge: %v", err)
+	}
+
+	cp := newWatchControlPlane(svc)
+	err := cp.validateWatchCycle(context.Background(), candidateID, "durable", "active", true, []string{persistedID})
+	if err == nil || !strings.Contains(err.Error(), "dependency cycle") {
+		t.Fatalf("cycle error = %v, want dependency cycle from row past default_limit", err)
+	}
+}
+
+func TestPruneWatchEventsEnforcesCapPastDefaultLimit(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 10)
+	svc.conf.Core.DefaultLimit = 2
+	svc.conf.Core.Watches.MaxEventsPerWatch = 2
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+
+	ctx := artifactUserCtx("user_1")
+	const watchID = "watch:prune_pages"
+	base := time.Now().UTC().Add(-time.Hour)
+	for i := 0; i < 5; i++ {
+		insertWatchEventFixture(
+			t,
+			svc,
+			ctx,
+			fmt.Sprintf("evt_prune_%02d", i),
+			watchID,
+			base.Add(time.Duration(i)*time.Minute).Format(time.RFC3339Nano),
+		)
+	}
+	if err := svc.pruneWatchEvents(ctx, &watchRuntimeDefinition{ID: watchID}); err != nil {
+		t.Fatalf("pruneWatchEvents: %v", err)
+	}
+	got := watchEventIDs(t, db)
+	want := []string{"evt_prune_03", "evt_prune_04"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("watch events after cap prune = %v, want %v", got, want)
+	}
+}
+
 func TestAssertWatchNanoRoleDefaultsFailsClosed(t *testing.T) {
 	conf := &Config{Core: core.Config{
 		Mode:      "agentic",
@@ -685,6 +851,62 @@ func TestSweepWatchEventsPrunesExpiredAndOrphanedRows(t *testing.T) {
 	}
 	if got := sqliteRevision(t, db, "watch_events"); got != 1 {
 		t.Fatalf("watch event revision after sweep = %d, want 1", got)
+	}
+}
+
+func TestSweepWatchEventsKeepsEventForWatchPastDefaultLimit(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 10)
+	svc.conf.Core.DefaultLimit = 2
+	svc.conf.Core.Watches.EventRetentionHours = 1
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+
+	for i := 0; i < 3; i++ {
+		id := fmt.Sprintf("watch:sweep:%02d", i)
+		if _, err := db.Exec(
+			`INSERT INTO "_graphjin_watches" (id, name, query, owner_id) VALUES (?, ?, ?, ?)`,
+			id, id, cursorOrdersWatchQuery(id), "user_1",
+		); err != nil {
+			t.Fatalf("insert sweep watch %s: %v", id, err)
+		}
+	}
+	ctx := artifactUserCtx("user_1")
+	insertWatchEventFixture(t, svc, ctx, "evt_past_first_page", "watch:sweep:02", time.Now().UTC().Format(time.RFC3339Nano))
+
+	deleted, err := svc.sweepWatchEvents(ctx)
+	if err != nil {
+		t.Fatalf("sweepWatchEvents: %v", err)
+	}
+	if deleted != 0 {
+		t.Fatalf("sweep deleted %d rows, want 0", deleted)
+	}
+	if got := watchEventIDs(t, db); len(got) != 1 || got[0] != "evt_past_first_page" {
+		t.Fatalf("watch events after sweep = %v, want existing watch event retained", got)
+	}
+}
+
+func TestSweepWatchEventsFailsSafeWhenWatchScanIsEmpty(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 10)
+	svc.conf.Core.DefaultLimit = 2
+	svc.conf.Core.Watches.EventRetentionHours = 1
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+
+	ctx := artifactUserCtx("user_1")
+	insertWatchEventFixture(t, svc, ctx, "evt_without_watch_snapshot", "watch:not_visible", time.Now().UTC().Format(time.RFC3339Nano))
+	deleted, err := svc.sweepWatchEvents(ctx)
+	if err != nil {
+		t.Fatalf("sweepWatchEvents: %v", err)
+	}
+	if deleted != 0 {
+		t.Fatalf("sweep deleted %d rows with an empty watch snapshot, want 0", deleted)
+	}
+	if got := watchEventIDs(t, db); len(got) != 1 || got[0] != "evt_without_watch_snapshot" {
+		t.Fatalf("watch events after fail-safe sweep = %v, want event retained", got)
 	}
 }
 
@@ -2101,6 +2323,16 @@ updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 		t.Fatalf("check migrated last_cursor_json column: %v", err)
 	} else if !ok {
 		t.Fatal("expected last_cursor_json column to be added")
+	}
+	if ok, err := sqliteColumnExists(artifactUserCtx("user_1"), db, quoteSQLIdent("_graphjin_watches"), "absence_json"); err != nil {
+		t.Fatalf("check migrated absence_json column: %v", err)
+	} else if !ok {
+		t.Fatal("expected absence_json column to be added")
+	}
+	if ok, err := sqliteColumnExists(artifactUserCtx("user_1"), db, quoteSQLIdent("_graphjin_watch_events"), "snoozed_until"); err != nil {
+		t.Fatalf("check migrated snoozed_until column: %v", err)
+	} else if !ok {
+		t.Fatal("expected snoozed_until column to be added")
 	}
 }
 

@@ -1782,6 +1782,53 @@ pre code {
   max-width: 15ch;
 }
 
+.watch-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-top: 1.5rem;
+}
+
+.watch-capability-grid article {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-top: 3px solid color-mix(in srgb, var(--accent) 72%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  padding: 0.85rem;
+}
+
+.watch-capability-grid article:nth-child(2) {
+  border-top-color: var(--amber);
+}
+
+.watch-capability-grid article:nth-child(4) {
+  border-top-color: var(--violet);
+}
+
+.watch-capability-grid article > span {
+  color: var(--accent-readable);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.watch-capability-grid article > strong {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--heading);
+  font-size: 0.9rem;
+}
+
+.watch-capability-grid article > p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.48;
+}
+
 .watch-showcase {
   display: grid;
   grid-template-columns:
@@ -1878,6 +1925,11 @@ pre code {
 
 .watch-signal-dot-po {
   background: var(--violet);
+}
+
+.watch-signal-dot-absence {
+  background: var(--amber);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber) 16%, transparent);
 }
 
 .watch-signal-card code,
@@ -2019,6 +2071,31 @@ pre code {
 }
 
 .watch-showcase-note strong {
+  color: var(--heading);
+}
+
+.watch-reactive-proof {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.watch-reactive-proof p {
+  margin: 0;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  padding: 0.8rem 0.9rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.watch-reactive-proof p:last-child {
+  border-left-color: var(--violet);
+}
+
+.watch-reactive-proof strong {
   color: var(--heading);
 }
 
@@ -3556,6 +3633,10 @@ pre code {
     grid-template-columns: 1fr;
   }
 
+  .watch-capability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .watch-showcase {
     grid-template-columns: 1fr;
   }
@@ -3570,6 +3651,16 @@ pre code {
   }
 
   .agentic-watch-feature {
+    grid-template-columns: 1fr;
+  }
+
+  .watch-reactive-proof {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .watch-capability-grid {
     grid-template-columns: 1fr;
   }
 }

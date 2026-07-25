@@ -1862,6 +1862,12 @@
 					"title": "Watch Enrichment Workers",
 					"description": "Concurrent watch enrichment workers",
 					"default": 1
+				},
+				"retry_max_failures": {
+					"type": "integer",
+					"title": "Watch Retry Max Failures",
+					"description": "Consecutive transient runner failures before a watch enters terminal error status",
+					"default": 5
 				}
 			},
 			"additionalProperties": false,
