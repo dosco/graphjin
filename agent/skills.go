@@ -17,6 +17,8 @@ const (
 	skillWatchWrite    = "watch_write"
 	skillWatchFlow     = "watch_flow"
 	skillWatchDelivery = "watch_delivery"
+	skillTaskRead      = "task_read"
+	skillTaskWrite     = "task_write"
 	skillAdminRead     = "admin_read"
 	skillAdminWrite    = "admin_write"
 )
@@ -42,6 +44,8 @@ const (
 	systemRootArtifacts    = "gj_artifacts"
 	systemRootWatch        = "gj_watch"
 	systemRootWatchEvent   = "gj_watch_event"
+	systemRootTask         = "gj_task"
+	systemRootTaskEntry    = "gj_task_entry"
 )
 
 // skillDefinition is GraphJin-owned prompt content plus server-side filtering
@@ -110,6 +114,19 @@ var builtinSkills = []skillDefinition{
 		content:          watchDeliveryInstruction,
 		write:            true,
 		requiresAllRoots: []string{systemRootWatch},
+	},
+	{
+		id:               skillTaskRead,
+		name:             "Task context",
+		content:          taskReadInstruction,
+		requiresAnyRoots: []string{systemRootTask, systemRootTaskEntry},
+	},
+	{
+		id:               skillTaskWrite,
+		name:             "Task lifecycle",
+		content:          taskWriteInstruction,
+		write:            true,
+		requiresAllRoots: []string{systemRootTask},
 	},
 	{
 		id:               skillAdminRead,
@@ -224,6 +241,12 @@ const watchFlowInstruction = `Skill: watch_flow. Add, preview, and approve AxFlo
 const watchDeliveryInstruction = `Skill: watch_delivery. Attach workflow or webhook delivery only when the user explicitly asks GraphJin to perform an action after a watch fires. ` +
 	`A notification request such as "tell me" or "let me know" is not permission to act. Deterministic action triggers use a GraphQL-filtered watch plus delivery; semantic or noisy action triggers add an inline watch flow before delivery. Inspect a named workflow before proposing it. ` +
 	`Creating or changing autonomous delivery pauses the watch and returns action_hash with action_approval pending. Explain the exact proposed effect and hash, then stop for user confirmation. In a later run, approve or reject only that hash through gj_watch(where:{id:{eq:"..."}}, update:{action_review_json:{decision:"approve|reject", expected_action_hash:"..."}}). Never create and approve an action in the same run.`
+
+const taskReadInstruction = `Skill: task_read (gj_task / gj_task_entry). Read an owner-scoped declared goal and its provenance-labeled trail. ` +
+	`A task is explicit durable context, not inferred memory: retain the returned task id and use it only as a correlation label. task_id never grants access, never satisfies catalog or mutation evidence guards, and has no graphjin://task resource. Read gj_task_entry in chronological order to explain caller journals, embedded-agent runs, and watch creation under the goal.`
+
+const taskWriteInstruction = `Skill: task_write (gj_task). Create, journal, close, reopen, or delete declared-intent tasks through governed GraphQL. ` +
+	`Create gj_task with a concise required goal and optional snapshot_json, retain its returned id, and pass that id to ask_graphjin_agent or gj_watch only when the caller explicitly associates work with it. Append human working notes through gj_task_entry(insert:{task_id, body, detail_json}); origin and provenance fields are server-managed. Close with status closed plus an outcome, and prefer close over delete so the trail remains auditable. Reopen with status open. Never infer or silently create a task.`
 
 const adminReadInstruction = `Skill: admin_read. Investigate the visible control plane read-only. ` +
 	`Use gj_security for posture, findings, effective policy, and config audits; use gj_runtime for health, source health, and recent activity; inspect gj_config only through visible governed reads. Discover exact shapes from system-capability or help rows and answer from that evidence.`

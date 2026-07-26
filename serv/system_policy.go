@@ -65,6 +65,11 @@ func systemRootActionEnabled(conf *Config, root, action string) bool {
 			return false
 		}
 		return action == systemActionRead || !conf.artifactSourceReadOnly()
+	case "gj_task", "gj_task_entry":
+		if !configTasksEnabled(conf) {
+			return false
+		}
+		return action == systemActionRead || !conf.artifactSourceReadOnly()
 	default:
 		return false
 	}

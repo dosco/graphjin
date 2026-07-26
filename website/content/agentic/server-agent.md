@@ -95,7 +95,7 @@ The public MCP `execute_graphql` tool is separate from the server-side agent's i
 
 ## Role-aware guidance
 
-The agent is caller-aware. From the request's identity it derives a capability profile limited to fixed `gj_*` system roots—never application tables—and preloads every permitted Ax skill. The 13 flat guides cover data discovery/write, code read/write, workflow discovery/execution/authoring, watch inbox/lifecycle/flow enrichment/action delivery, and admin inspection/configuration.
+The agent is caller-aware. From the request's identity it derives a capability profile limited to fixed `gj_*` system roots—never application tables—and preloads every permitted Ax skill. The 15 flat guides cover data discovery/write, code read/write, workflow discovery/execution/authoring, watch inbox/lifecycle/flow enrichment/action delivery, declared-task read/write, and admin inspection/configuration.
 
 There is no lexical router, embedding search, skill catalog, search callback, or skill-discovery turn. Global read-only posture removes every write guide. Workflow, watch, and admin guides are included only when their governed roots are visible; admin guides also require the admin role. Multi-domain requests can use more than one preloaded guide.
 
@@ -108,7 +108,7 @@ For standing requests, the watch skills apply the two-axis decision in [Choosing
 
 ## Request and response
 
-Request fields: `instruction` (required), and optional `context`, `namespace`, `max_steps`, `return_trace`.
+Request fields: `instruction` (required), and optional `context`, `namespace`, `task_id`, `max_steps`, `return_trace`. A retained open [declared task](/agentic/tasks/) warm-starts the request and journals its result; it never grants access or satisfies evidence guards.
 
 Response fields: `status` (`answered` | `needs_clarification` | `blocked` | `error`), `answer`, and optional `skills`, `skill`, `data`, `evidence`, `actions`, `next`, `refusal`, `notices`, `errors`, `usage`, `trace`, `trace_id`. `skills` contains the guides Ax reported through `used(...)`; deprecated `skill` is the first used ID through v3.
 

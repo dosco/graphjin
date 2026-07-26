@@ -37,7 +37,7 @@ func optionSkillIDs(t *testing.T, value ax.Value) []string {
 	return ids
 }
 
-func TestBuiltinSkillsAreTheOrderedThirteenFocusedGuides(t *testing.T) {
+func TestBuiltinSkillsAreTheOrderedFifteenFocusedGuides(t *testing.T) {
 	want := []string{
 		skillDataDiscovery,
 		skillDataWrite,
@@ -50,6 +50,8 @@ func TestBuiltinSkillsAreTheOrderedThirteenFocusedGuides(t *testing.T) {
 		skillWatchWrite,
 		skillWatchFlow,
 		skillWatchDelivery,
+		skillTaskRead,
+		skillTaskWrite,
 		skillAdminRead,
 		skillAdminWrite,
 	}
@@ -81,6 +83,8 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 		systemRootWorkflowExec,
 		systemRootWatch,
 		systemRootWatchEvent,
+		systemRootTask,
+		systemRootTaskEntry,
 	}
 	baseRead := []string{skillDataDiscovery, skillCodeRead}
 	baseWrite := []string{skillDataDiscovery, skillDataWrite, skillCodeRead, skillCodeWrite}
@@ -114,6 +118,16 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 			want:    append(append([]string{}, baseWrite...), skillWatchRead, skillWatchWrite, skillWatchFlow, skillWatchDelivery),
 		},
 		{
+			name:    "task entries read only root",
+			profile: profileWithRoleAndRoots("user", systemRootTaskEntry),
+			want:    append(append([]string{}, baseWrite...), skillTaskRead),
+		},
+		{
+			name:    "task lifecycle",
+			profile: profileWithRoleAndRoots("user", systemRootTask),
+			want:    append(append([]string{}, baseWrite...), skillTaskRead, skillTaskWrite),
+		},
+		{
 			name:    "admin roots do not make a non admin",
 			profile: profileWithRoleAndRoots("support", systemRootSecurity, systemRootRuntime, systemRootConfig),
 			want:    baseWrite,
@@ -132,6 +146,7 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 				skillCodeRead,
 				skillWorkflowRead,
 				skillWatchRead,
+				skillTaskRead,
 				skillAdminRead,
 			},
 		},
@@ -158,6 +173,8 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		systemRootWorkflowExec,
 		systemRootWatch,
 		systemRootWatchEvent,
+		systemRootTask,
+		systemRootTaskEntry,
 	}
 	for _, tc := range []struct {
 		name    string
@@ -165,7 +182,7 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		max     int
 	}{
 		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3 * 1024},
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 8 * 1024},
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 10 * 1024},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload, err := json.Marshal(skillValues(allowedSkills(false, tc.profile)))
@@ -213,6 +230,8 @@ func TestRunPassesOnlyCapabilityFilteredConstructorSkills(t *testing.T) {
 		systemRootWorkflowExec,
 		systemRootWatch,
 		systemRootWatchEvent,
+		systemRootTask,
+		systemRootTaskEntry,
 	}
 	for _, tc := range []struct {
 		name        string

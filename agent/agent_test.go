@@ -385,7 +385,14 @@ func TestRunRejectsSavedQueryExecutionBeforeDetailLookup(t *testing.T) {
 		}),
 	)
 
-	resp, err := runner.Run(context.Background(), Request{Instruction: "run saved query"})
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction: "run saved query",
+		TaskID:      "task:correlation-only",
+		History: []Turn{{
+			Role: "assistant", Content: "The saved query was inspected in a prior run.",
+			CatalogIDs: []string{"saved_query:daily_roast_context"},
+		}},
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

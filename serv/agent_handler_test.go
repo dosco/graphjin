@@ -460,7 +460,7 @@ func TestAskGraphJinAgentMCPSchema(t *testing.T) {
 	}
 	input := payload["inputSchema"].(map[string]any)
 	props := input["properties"].(map[string]any)
-	for _, name := range []string{"instruction", "context", "namespace", "max_steps", "return_trace"} {
+	for _, name := range []string{"instruction", "context", "namespace", "task_id", "max_steps", "return_trace"} {
 		if _, ok := props[name]; !ok {
 			t.Fatalf("input schema missing %s: %+v", name, props)
 		}
@@ -468,8 +468,13 @@ func TestAskGraphJinAgentMCPSchema(t *testing.T) {
 	if !stringSliceContains(anyStringSlice(input["required"]), "instruction") {
 		t.Fatalf("instruction should be required in input schema: %+v", input["required"])
 	}
-	if _, ok := payload["outputSchema"].(map[string]any); !ok {
+	output, ok := payload["outputSchema"].(map[string]any)
+	if !ok {
 		t.Fatalf("output schema missing from tool: %+v", payload)
+	}
+	outputJSON, err := json.Marshal(output)
+	if err != nil || !strings.Contains(string(outputJSON), `"task_ids"`) {
+		t.Fatalf("output schema missing notice task_ids: err=%v schema=%s", err, outputJSON)
 	}
 }
 
@@ -668,7 +673,7 @@ func TestAgentAuditHelpers(t *testing.T) {
 		Now:       func() time.Time { return time.Unix(10, 0) },
 	})
 	svc := &graphjinService{conf: &Config{}, runtimeEvents: store}
-	recordAgentRuntimeEvent(svc, context.Background(), gjagent.Request{Instruction: "run saved query"}, gjagent.Response{
+	recordAgentRuntimeEvent(svc, context.Background(), gjagent.Request{Instruction: "run saved query", TaskID: "task:audit"}, gjagent.Response{
 		Status:  gjagent.StatusBlocked,
 		Refusal: &gjagent.Refusal{Code: "saved_query_detail_required"},
 		Skills: []gjagent.SkillUsage{
@@ -676,7 +681,7 @@ func TestAgentAuditHelpers(t *testing.T) {
 			{ID: "workflow_execute", Name: "Workflow execution", Reason: "Attempted the governed run", Stage: "executor"},
 		},
 		Skill: "workflow_read",
-	}, time.Millisecond, nil)
+	}, taskWarmStart{TaskID: "task:audit", EntriesLoaded: 3}, time.Millisecond, nil)
 	rows := store.Rows(context.Background(), runtimeStatus{})
 	if len(rows) < 2 {
 		t.Fatalf("runtime rows = %d, want status + event", len(rows))
@@ -687,6 +692,9 @@ func TestAgentAuditHelpers(t *testing.T) {
 	}
 	if details["refusal_code"] != "saved_query_detail_required" {
 		t.Fatalf("refusal_code missing from runtime event details: %+v", details)
+	}
+	if details["task_id"] != "task:audit" || details["task_entries_loaded"] != float64(3) {
+		t.Fatalf("task warm-start telemetry missing from runtime event details: %+v", details)
 	}
 	skills, _ := details["skills"].([]any)
 	if len(skills) != 2 || details["skill"] != "workflow_read" {

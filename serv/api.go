@@ -166,6 +166,7 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 	controlPlane := newControlPlaneGraphQL(s)
 	artifacts := newArtifactControlPlane(s)
 	watches := newWatchControlPlane(s)
+	tasks := newTaskControlPlane(s)
 	revisions := revisionSignalHandler{service: s}
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
@@ -218,6 +219,18 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 				opts = append(opts, core.OptionSetManagedQueryHandler(dbName, watches))
 			}
 			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, watches))
+		}
+	}
+	if s.conf != nil && s.tasksEnabled() {
+		targetDB := s.metadataDB
+		if targetDB == "" {
+			targetDB = core.DefaultDBName
+		}
+		for _, dbName := range s.managedSystemRootDatabases(targetDB) {
+			if s.systemNanoDB == nil {
+				opts = append(opts, core.OptionSetManagedQueryHandler(dbName, tasks))
+			}
+			opts = append(opts, core.OptionSetManagedMutationHandler(dbName, tasks))
 		}
 	}
 	if s.namespace != nil {

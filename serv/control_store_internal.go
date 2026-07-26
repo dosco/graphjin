@@ -149,6 +149,10 @@ func (s *graphjinService) injectInternalStoreRole() {
 			add("watches", cfg.Schema)
 			add("watch_events", cfg.Schema)
 		}
+		if s.tasksEnabled() {
+			add("tasks", cfg.Schema)
+			add("task_entries", cfg.Schema)
+		}
 		return
 	}
 	prefix := strings.TrimSpace(cfg.Schema)
@@ -160,6 +164,10 @@ func (s *graphjinService) injectInternalStoreRole() {
 	if s.watchesEnabled() {
 		add(prefix+"_watches", "")
 		add(prefix+"_watch_events", "")
+	}
+	if s.tasksEnabled() {
+		add(prefix+"_tasks", "")
+		add(prefix+"_task_entries", "")
 	}
 }
 

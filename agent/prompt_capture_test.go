@@ -135,6 +135,8 @@ func TestCaptureRenderedSkillsPerCapabilityProfile(t *testing.T) {
 		systemRootWorkflowExec,
 		systemRootWatch,
 		systemRootWatchEvent,
+		systemRootTask,
+		systemRootTaskEntry,
 	}
 	for _, tc := range []struct {
 		name     string

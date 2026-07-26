@@ -51,6 +51,8 @@ func controlPlaneSourceReadOnly(conf *Config, table string) bool {
 	switch strings.ToLower(strings.TrimSpace(table)) {
 	case "gj_watch", "gj_watch_event":
 		return configWatchesEnabled(conf) && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
+	case "gj_task", "gj_task_entry":
+		return configTasksEnabled(conf) && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case "gj_artifacts":
 		return conf.Core.Artifacts.Enabled && conf.Core.Artifacts.Source != "" && conf.artifactSourceReadOnly()
 	case "gj_catalog", "gj_security", "gj_runtime":
@@ -64,6 +66,8 @@ func defaultControlPlaneTableReadOnly(conf *Config, table string) bool {
 	switch strings.ToLower(strings.TrimSpace(table)) {
 	case "gj_watch", "gj_watch_event":
 		return !configWatchesEnabled(conf)
+	case "gj_task", "gj_task_entry":
+		return !configTasksEnabled(conf)
 	case "gj_workflow":
 		return !conf.effectiveFeatureCapability(featurecap.KindWorkflows, featurecap.KeyWorkflowWrite)
 	case "gj_workflow_execution":
@@ -106,12 +110,13 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 				}
 				applyArtifactRoleProjectionDefaults(conf, role, &rt, queryBlock)
 				applyWatchRoleProjectionDefaults(conf, role, &rt, queryBlock)
+				applyTaskRoleProjectionDefaults(conf, role, &rt, queryBlock)
 				appendRuntimeRoleTable(runtimeCore, role, rt)
 				continue
 			}
 			allowed := systemReadAllowedBySource(conf, mode, role, table)
 			if allowed {
-				if (strings.EqualFold(table, "gj_artifacts") || strings.EqualFold(table, "gj_watch") || strings.EqualFold(table, "gj_watch_event")) && !systemRoleTableConfigured(&conf.Core, role, table, database) {
+				if (strings.EqualFold(table, "gj_artifacts") || strings.EqualFold(table, "gj_watch") || strings.EqualFold(table, "gj_watch_event") || strings.EqualFold(table, "gj_task") || strings.EqualFold(table, "gj_task_entry")) && !systemRoleTableConfigured(&conf.Core, role, table, database) {
 					rt := core.RoleTable{
 						Name:     table,
 						Database: database,
@@ -123,6 +128,7 @@ func applySystemRoleQueryDefaults(conf *Config, runtimeCore *core.Config, databa
 					}
 					applyArtifactRoleProjectionDefaults(conf, role, &rt, false)
 					applyWatchRoleProjectionDefaults(conf, role, &rt, false)
+					applyTaskRoleProjectionDefaults(conf, role, &rt, false)
 					appendRuntimeRoleTable(runtimeCore, role, rt)
 				}
 				continue
@@ -224,6 +230,7 @@ func watchPublicProjectionColumns() []string {
 	return []string{
 		"id",
 		"name",
+		"task_id",
 		"description",
 		"query",
 		"saved_query_name",
@@ -266,6 +273,40 @@ func watchEventPublicProjectionColumns() []string {
 	}
 }
 
+func applyTaskRoleProjectionDefaults(conf *Config, role string, rt *core.RoleTable, block bool) {
+	if rt == nil || block || artifactRoleIsAdmin(conf, role) {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(rt.Name)) {
+	case "gj_task":
+		rt.Query = watchOwnerQuery(rt.Query, taskPublicProjectionColumns())
+	case "gj_task_entry":
+		rt.Query = watchOwnerQuery(rt.Query, taskEntryPublicProjectionColumns())
+	default:
+		return
+	}
+	if strings.EqualFold(role, "anon") {
+		rt.Insert = &core.Insert{Block: true}
+		rt.Update = &core.Update{Block: true}
+		rt.Upsert = &core.Upsert{Block: true}
+		rt.Delete = &core.Delete{Block: true}
+	}
+}
+
+func taskPublicProjectionColumns() []string {
+	return []string{
+		"id", "goal", "status", "outcome", "snapshot_json", "last_entry_at",
+		"created_at", "updated_at", "closed_at",
+	}
+}
+
+func taskEntryPublicProjectionColumns() []string {
+	return []string{
+		"id", "task_id", "origin", "body", "detail_json", "status", "trace_id",
+		"watch_id", "created_at", "updated_at",
+	}
+}
+
 func artifactRoleIsAdmin(conf *Config, role string) bool {
 	if conf == nil {
 		return false
@@ -291,6 +332,34 @@ func assertWatchNanoRoleDefaults(conf *Config, runtimeCore *core.Config, databas
 			continue
 		}
 		for _, table := range []string{"gj_watch", "gj_watch_event"} {
+			if !systemReadAllowedBySource(conf, effectiveMode(conf), role, table) {
+				continue
+			}
+			rt := runtimeRoleTable(runtimeCore, role, table, database)
+			if rt == nil || rt.Query == nil {
+				return fmt.Errorf("%s projection requires role filters for %q", table, role)
+			}
+			if !watchRoleQueryHasPrivacy(rt.Query) {
+				return fmt.Errorf("%s projection role %q is missing owner filters or raw-id column restrictions", table, role)
+			}
+		}
+	}
+	return nil
+}
+
+func assertTaskNanoRoleDefaults(conf *Config, runtimeCore *core.Config, database string) error {
+	if conf == nil || runtimeCore == nil || !configTasksEnabled(conf) {
+		return nil
+	}
+	roles := []string{"user", "anon"}
+	if conf.Core.IsSourcesUsed() {
+		roles = sourceModeSystemRoleNames(conf)
+	}
+	for _, role := range roles {
+		if artifactRoleIsAdmin(conf, role) {
+			continue
+		}
+		for _, table := range []string{"gj_task", "gj_task_entry"} {
 			if !systemReadAllowedBySource(conf, effectiveMode(conf), role, table) {
 				continue
 			}
@@ -469,6 +538,8 @@ func systemReadSourceEnabled(conf *Config, table string) bool {
 		return conf != nil && conf.Core.Artifacts.Enabled
 	case "gj_watch", "gj_watch_event":
 		return configWatchesEnabled(conf)
+	case "gj_task", "gj_task_entry":
+		return configTasksEnabled(conf)
 	case "gj_workflow", "gj_workflow_execution":
 		return conf.workflowsEnabled()
 	default:

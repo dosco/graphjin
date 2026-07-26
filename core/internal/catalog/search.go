@@ -1146,7 +1146,7 @@ func generatedSearchTags(card Card) []string {
 			"role", "roles", "jwt", "claim", "claims", "identity", "tenant", "account", "namespace",
 			"org", "workspace", "admin", "public", "blocked", "block", "deny", "hide", "readonly",
 			"read", "write", "delete", "access", "source", "sources", "root", "roots", "gj_catalog",
-			"gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config",
+			"gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry", "gj_workflow", "gj_workflow_execution", "gj_runtime", "gj_security", "gj_config",
 			"artifact", "artifacts", "audit", "migration", "migrate", "legacy", "roles_tables")
 	case "capability":
 		tags = append(tags, "capability", "tool", "mcp", "action", "workflow", "validate", "execute", "repair")

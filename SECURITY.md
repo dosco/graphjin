@@ -319,6 +319,8 @@ system:
     gj_artifacts: owner
     gj_watch: owner
     gj_watch_event: owner
+    gj_task: owner
+    gj_task_entry: owner
     gj_workflow: owner
     gj_workflow_execution: owner
     gj_config: admin
@@ -343,6 +345,7 @@ roots fit together architecturally, see the canonical diagram in
 | `gj_code` | read: `authenticated`; write: role-gated (default `admin`) | Code writes are global source-file edits, not per-row scopable, so write is gated by role rather than filtered. Connecting a code source is an explicit operator choice — see the supply-chain note below. |
 | `gj_artifacts` | `owner` (`user_id`) | Read/write, owner-private. |
 | `gj_watch` / `gj_watch_event` | `owner` (`user_id`) | Read/write, owner-private standing queries and durable inbox events. Watches must reference subscriptions. |
+| `gj_task` / `gj_task_entry` | `owner` (`user_id`) | Read/write, owner-private declared goals and immutable provenance trail. A task ID is correlation only and never grants access. |
 | `gj_workflow` / `gj_workflow_execution` | `owner` (`user_id`) | Read/write, owner-private. Workflows execute under the caller's identity. DB-backed workflows are owner/account-private saved artifacts. Filesystem/global workflows are operator-vetted, read-only, and runnable by all callers (each as themselves). "Global" status is filesystem-only and never user-settable. |
 | `gj_config` | `admin` | Read/write. |
 | `gj_security` | `admin` | Read-only. |
@@ -353,7 +356,7 @@ filters, using the same filter/preset machinery as database tables. Previously,
 `account`/`owner` on a system root only meant authenticated visibility, not true
 per-row scoping.
 
-The state behind these roots (artifacts, watches, watch events, revisions) is
+The state behind these roots (artifacts, tasks, task entries, watches, watch events, revisions) is
 itself read and written through GraphJin's own engine under the reserved
 `__graphjin_internal_store` role. That role is not assumable by callers: it
 activates only via a non-forgeable in-process marker, and role resolution
@@ -388,6 +391,8 @@ artifacts:
 watches:
   enabled: true
   runner: off
+tasks:
+  enabled: true
 ```
 
 V1 artifacts require a writable SQL database source. Object stores and file
@@ -398,6 +403,8 @@ Logical artifact tables are:
 - `_graphjin.artifacts`
 - `_graphjin.watches`
 - `_graphjin.watch_events`
+- `_graphjin.tasks`
+- `_graphjin.task_entries`
 
 SQL dialects without schemas may use equivalent prefixed physical table names,
 but operators should treat them as GraphJin-managed tables under the configured
@@ -419,6 +426,9 @@ Artifact behavior:
   filters to trusted identity.
 - Watches are exposed as `gj_watch` and `gj_watch_event` and use the same
   artifact database, identity scoping, and non-admin identity redaction.
+- Tasks are exposed as `gj_task` and `gj_task_entry` and use the same artifact
+  database. Creation is explicit; entry provenance and identity are
+  server-managed, and `task_id` never authorizes a caller.
 - Watch creation stores `owner_id`, `account_id`, and `owner_role` from trusted
   request context, never from mutation input, so the runner can reconstruct the
   same caller envelope that was validated at creation time.
@@ -520,6 +530,8 @@ system:
     gj_artifacts: owner
     gj_watch: owner
     gj_watch_event: owner
+    gj_task: owner
+    gj_task_entry: owner
     gj_workflow: owner
     gj_workflow_execution: owner
     gj_config: admin
@@ -530,7 +542,7 @@ system:
 This example starts with account-scoped reads, blocks writes/deletes by default,
 keeps reference tables public, hides internal tables, keeps the
 `gj_config`/`gj_security`/`gj_runtime` control-plane roots admin-only, scopes
-`gj_artifacts` and `gj_workflow` per-owner, gates `gj_code` write to admin by
+`gj_artifacts`, `gj_task`, and `gj_workflow` per-owner, gates `gj_code` write to admin by
 default, and stores mutable artifacts in GraphJin-managed SQL tables. Because it
 runs in `agentic` mode, verified JWT auth is required — `auth.development: true`
 would be refused at startup.

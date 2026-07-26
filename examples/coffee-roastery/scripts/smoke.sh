@@ -35,9 +35,10 @@ smoke_parse_args "$@"
 
 COFFEE_ROUTE_WATCH_IDS=()
 COFFEE_ROUTE_SESSION_IDS=()
+COFFEE_TASK_IDS=()
 
 smoke_extra_cleanup() {
-  local session_id watch_id
+  local session_id watch_id task_id
   for session_id in "${COFFEE_ROUTE_SESSION_IDS[@]-}"; do
     [ -n "$session_id" ] || continue
     mcp_terminate_session "$session_id"
@@ -45,6 +46,10 @@ smoke_extra_cleanup() {
   for watch_id in "${COFFEE_ROUTE_WATCH_IDS[@]-}"; do
     [ -n "$watch_id" ] || continue
     graphql watch-route-trap-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${watch_id}\" } }) { id } }" >/dev/null 2>&1 || true
+  done
+  for task_id in "${COFFEE_TASK_IDS[@]-}"; do
+    [ -n "$task_id" ] || continue
+    graphql task-trap-cleanup "mutation { gj_task(delete: true, where: { id: { eq: \"${task_id}\" } }) { id } }" >/dev/null 2>&1 || true
   done
 }
 
@@ -68,6 +73,17 @@ run_agent_mcp_once() {
     "max_steps":10,
     "return_trace":false
   }'
+}
+
+run_agent_rest_task() {
+  local task_id="$1"
+  local instruction="$2"
+  local out="$TMP_DIR/agent-task-$(date +%s%N).json"
+  local payload
+  payload="$(jq -n --arg task_id "$task_id" --arg instruction "$instruction" \
+    '{instruction:$instruction, task_id:$task_id, max_steps:10, return_trace:false}')"
+  post_json "${BASE_URL%/}/api/v1/agent" "$payload" "$out"
+  printf '%s\n' "$out"
 }
 
 northstar_agent_expr='
@@ -233,6 +249,59 @@ run_coffee_watch_session_routing_suite() {
 
 # --- domain agent eval suite ---------------------------------------------------
 
+run_task_agent_eval_suite() {
+  log "checking durable task warm-start and provenance trail"
+
+  local suffix goal marker create_out task_id note_out unlinked_out first_out second_out entries_out
+  suffix="$(date +%s)_$$"
+  marker="FIRST-TRAIL-${suffix}"
+  goal="Coffee warm-start ${suffix}: keep Northstar production planning grounded in approved saved-query evidence."
+  create_out="$(graphql task-create "mutation { gj_task(insert: { goal: \"${goal}\", snapshot_json: { product: \"Northstar House Blend 340g\" } }) { id goal status } }")"
+  task_id="$(jq -r '[.data.gj_task] | flatten | .[0].id' "$create_out")"
+  assert_jq_args "$create_out" "declared task created explicitly" --arg goal "$goal" '
+    ([.data.gj_task] | flatten | .[0]) as $task
+    | ($task.id | startswith("task:")) and $task.goal == $goal and $task.status == "open"
+  '
+  COFFEE_TASK_IDS+=("$task_id")
+
+  note_out="$(graphql task-note "mutation { gj_task_entry(insert: { task_id: \"${task_id}\", body: \"Prioritize approved saved-query evidence.\" }) { id origin body } }")"
+  assert_jq "$note_out" '([.data.gj_task_entry] | flatten | .[0]) as $entry | ($entry.id | startswith("te:")) and $entry.origin == "caller"' "caller task journal appended"
+
+  unlinked_out="$(run_agent_rest_prompt "Inventory the approved saved queries for a separate smoke check. Do discovery only and answer briefly.")"
+  assert_jq_args "$unlinked_out" "unlinked agent run advertises the caller's open task" --arg task_id "$task_id" '
+    .status == "answered"
+    and any(.notices[]?; .kind == "task_open_unlinked" and (.task_ids | index($task_id)) != null)
+  '
+
+  first_out="$(run_agent_rest_task "$task_id" "Inspect the declared task context, discover the saved query daily_roast_context and its detail, then answer with exactly this marker after the evidence check: ${marker}")"
+  assert_jq_args "$first_out" "first task agent run used declared context" --arg marker "$marker" --arg task_id "$task_id" '
+    .status == "answered"
+    and (.answer | contains($marker))
+    and (.actions | tostring | test("query_catalog"))
+    and any(.notices[]?; .kind == "task_context_loaded" and .count >= 1 and (.task_ids | index($task_id)) != null and (.message | test("catalog hints")))
+  '
+
+  second_out="$(run_agent_rest_task "$task_id" "Continue the open declared task. From its recent trail, repeat the exact FIRST-TRAIL marker produced by the prior agent run. Re-establish catalog evidence on this run before answering; the marker is not present in this instruction.")"
+  assert_jq_args "$second_out" "second task agent run warm-started from the prior trail" --arg marker "$marker" --arg task_id "$task_id" '
+    .status == "answered"
+    and (.answer | contains($marker))
+    and (.actions | tostring | test("query_catalog"))
+    and any(.notices[]?; .kind == "task_context_loaded" and .count >= 2 and (.task_ids | index($task_id)) != null and (.message | test("catalog hints")))
+  '
+
+  entries_out="$(graphql task-entries "query { gj_task_entry(where: { task_id: { eq: \"${task_id}\" } }, order_by: { created_at: asc }, limit: 20) { id origin body status trace_id detail_json } }")"
+  assert_jq_args "$entries_out" "task trail records caller and embedded-agent provenance" --arg marker "$marker" '
+    [.data.gj_task_entry[] | select(.origin == "caller")] | length == 1
+    and ([.data.gj_task_entry[] | select(.origin == "agent_run")] | length) >= 2
+    and ([.data.gj_task_entry[] | select(.origin == "agent_run" and (.body | contains($marker)))] | length) >= 1
+    and ([.data.gj_task_entry[] | select(.origin == "agent_run" and (.trace_id | length) > 0)] | length) >= 2
+  '
+
+  graphql task-close "mutation { gj_task(where: { id: { eq: \"${task_id}\" } }, update: { status: \"closed\", outcome: \"Warm-start smoke verified.\" }) { id status outcome } }" >/dev/null
+  graphql task-cleanup "mutation { gj_task(delete: true, where: { id: { eq: \"${task_id}\" } }) { id } }" >/dev/null
+  COFFEE_TASK_IDS=()
+}
+
 run_agent_eval_suite() {
   local out
 
@@ -335,6 +404,7 @@ run_agent_eval_suite() {
     "Actually perform these steps now with the runtime tools; do not just describe them. 1) await query_catalog({id: \"help:security\"}). 2) await execute_graphql({query: 'mutation { gj_watch(insert: { name: \"smoke_agent_watch\", query: \"subscription smoke_agent_watch { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }\" }) { id status } }'}). 3) Answer with the created watch id." \
     smoke_agent_watch \
     "subscription smoke_notice { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
+  run_task_agent_eval_suite
   run_admin_root_suite
 }
 

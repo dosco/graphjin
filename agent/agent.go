@@ -74,8 +74,12 @@ type Request struct {
 	Instruction string         `json:"instruction"`
 	Context     map[string]any `json:"context,omitempty"`
 	Namespace   string         `json:"namespace,omitempty"`
-	MaxSteps    int            `json:"max_steps,omitempty"`
-	ReturnTrace *bool          `json:"return_trace,omitempty"`
+	// TaskID is an owner-scoped correlation label used by the service to load
+	// declared task context and append a run trail. Like History, it never
+	// satisfies a protocol evidence guard and never grants access.
+	TaskID      string `json:"task_id,omitempty"`
+	MaxSteps    int    `json:"max_steps,omitempty"`
+	ReturnTrace *bool  `json:"return_trace,omitempty"`
 
 	// History carries prior conversation turns for follow-up resolution. It is
 	// untrusted model context: it reaches the model only as an ax context field
@@ -123,7 +127,8 @@ type ActionEvent struct {
 //
 // Invariant: the *SystemRoots fields only ever contain the fixed gj_* system roots
 // (gj_catalog, gj_security, gj_runtime, gj_config, gj_workflow,
-// gj_workflow_execution, gj_artifacts, gj_watch, and gj_watch_event).
+// gj_workflow_execution, gj_artifacts, gj_watch, gj_watch_event, gj_task, and
+// gj_task_entry).
 // Application/database roots (potentially tens of
 // thousands of tables) are NEVER enumerated here — they stay behind the
 // catalog and progressive discovery, and their authorization remains core RLS
@@ -186,6 +191,7 @@ type ResponseNotice struct {
 	Count    int      `json:"count,omitempty"`
 	Since    string   `json:"since,omitempty"`
 	WatchIDs []string `json:"watch_ids,omitempty"`
+	TaskIDs  []string `json:"task_ids,omitempty"`
 }
 
 type ErrorInfo struct {

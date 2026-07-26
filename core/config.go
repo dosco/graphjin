@@ -282,6 +282,9 @@ func (c *Config) validateIsSourcesUsed() error {
 	if err := c.validateWatchesConfig(); err != nil {
 		return err
 	}
+	if err := c.validateTasksConfig(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -361,6 +364,7 @@ func (c *Config) clone() *Config {
 	out.Identity = c.Identity.clone()
 	out.Artifacts = c.Artifacts.clone()
 	out.Watches = c.Watches.clone()
+	out.Tasks = c.Tasks.clone()
 	out.System = c.System.clone()
 	out.Workflows = c.Workflows.clone()
 
@@ -526,6 +530,28 @@ func (c *Config) validateWatchesConfig() error {
 	}
 }
 
+func (c *Config) validateTasksConfig() error {
+	if c == nil || !c.Tasks.Enabled {
+		return nil
+	}
+	if !c.Artifacts.Enabled {
+		return fmt.Errorf("tasks require artifacts.enabled")
+	}
+	if c.Tasks.MaxPerOwner < 0 {
+		return fmt.Errorf("tasks.max_per_owner must be greater than or equal to 0")
+	}
+	if c.Tasks.MaxEntriesPerTask < 0 {
+		return fmt.Errorf("tasks.max_entries_per_task must be greater than or equal to 0")
+	}
+	if c.Tasks.EntryRetentionHours < 0 {
+		return fmt.Errorf("tasks.entry_retention_hours must be greater than or equal to 0")
+	}
+	if c.Tasks.SnapshotMaxBytes < 0 {
+		return fmt.Errorf("tasks.snapshot_max_bytes must be greater than or equal to 0")
+	}
+	return nil
+}
+
 func (c *Config) normalizeIdentityDefaults() {
 	if c == nil || !c.IsSourcesUsed() {
 		return
@@ -611,6 +637,24 @@ func (c *Config) normalizeWatchesDefaults() {
 	}
 }
 
+func (c *Config) normalizeTasksDefaults() {
+	if c == nil || !c.Tasks.Enabled {
+		return
+	}
+	if c.Tasks.MaxPerOwner == 0 {
+		c.Tasks.MaxPerOwner = 20
+	}
+	if c.Tasks.MaxEntriesPerTask == 0 {
+		c.Tasks.MaxEntriesPerTask = 500
+	}
+	if c.Tasks.EntryRetentionHours == 0 {
+		c.Tasks.EntryRetentionHours = 168
+	}
+	if c.Tasks.SnapshotMaxBytes == 0 {
+		c.Tasks.SnapshotMaxBytes = 32768
+	}
+}
+
 func (c *Config) normalizeSourceAccessDefaults() {
 	if c == nil || !c.IsSourcesUsed() {
 		return
@@ -672,13 +716,13 @@ func (c *Config) modeForSourceDefaults() string {
 // roots. Modes set safe defaults; explicit system.root_access entries always win.
 //
 // Row-level owner scoping for the artifact-backed roots (gj_artifacts, gj_watch,
-// gj_watch_event, gj_workflow, gj_workflow_execution) is enforced by the artifact
+// gj_watch_event, gj_task, gj_task_entry, gj_workflow, gj_workflow_execution) is enforced by the artifact
 // control-plane handler
 // (owner_id = user_id, with the raw artifact tables blocked from generic GraphQL),
 // so the "owner" mode here is the visibility gate that pairs with that handler
 // scoping — it does not by itself add SQL row filters.
 func (c *Config) EffectiveSystemRootAccess() map[string]string {
-	access := make(map[string]string, len(c.System.RootAccess)+10)
+	access := make(map[string]string, len(c.System.RootAccess)+12)
 	for root, mode := range c.System.RootAccess {
 		access[strings.ToLower(strings.TrimSpace(root))] = normalizeAccessMode(mode)
 	}
@@ -691,6 +735,8 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_artifacts":          AccessModePublic,
 			"gj_watch":              AccessModePublic,
 			"gj_watch_event":        AccessModePublic,
+			"gj_task":               AccessModePublic,
+			"gj_task_entry":         AccessModePublic,
 			"gj_workflow":           AccessModePublic,
 			"gj_workflow_execution": AccessModePublic,
 			"gj_runtime":            AccessModePublic,
@@ -705,6 +751,8 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_artifacts":          AccessModeOwner,
 			"gj_watch":              AccessModeOwner,
 			"gj_watch_event":        AccessModeOwner,
+			"gj_task":               AccessModeOwner,
+			"gj_task_entry":         AccessModeOwner,
 			"gj_workflow":           AccessModeOwner,
 			"gj_workflow_execution": AccessModeOwner,
 			"gj_runtime":            AccessModeAdmin,
@@ -721,6 +769,8 @@ func (c *Config) EffectiveSystemRootAccess() map[string]string {
 			"gj_artifacts":          AccessModeAdmin,
 			"gj_watch":              AccessModeAdmin,
 			"gj_watch_event":        AccessModeAdmin,
+			"gj_task":               AccessModeAdmin,
+			"gj_task_entry":         AccessModeAdmin,
 			"gj_workflow":           AccessModeAdmin,
 			"gj_workflow_execution": AccessModeAdmin,
 			"gj_runtime":            AccessModeAdmin,
@@ -766,6 +816,8 @@ func (c WatchesConfig) clone() WatchesConfig {
 	}
 	return out
 }
+
+func (c TasksConfig) clone() TasksConfig { return c }
 
 func (c ArtifactsConfig) AutoInitEnabled() bool {
 	return c.AutoInit == nil || *c.AutoInit
@@ -853,6 +905,17 @@ func (c *Config) EffectiveWatchesConfig() WatchesConfig {
 	return tmp.Watches
 }
 
+// EffectiveTasksConfig returns task config with source-mode defaults.
+func (c *Config) EffectiveTasksConfig() TasksConfig {
+	if c == nil {
+		return TasksConfig{MaxPerOwner: 20, MaxEntriesPerTask: 500, EntryRetentionHours: 168, SnapshotMaxBytes: 32768}
+	}
+	out := c.Tasks.clone()
+	tmp := &Config{Tasks: out}
+	tmp.normalizeTasksDefaults()
+	return tmp.Tasks
+}
+
 // EffectiveSourceAccess returns a source's access config with source-kind defaults.
 func (c *Config) EffectiveSourceAccess(source SourceConfig) SourceAccessConfig {
 	switch source.CanonicalKind() {
@@ -875,6 +938,7 @@ func (c *Config) NormalizeSources() error {
 	c.normalizeIdentityDefaults()
 	c.normalizeArtifactsDefaults()
 	c.normalizeWatchesDefaults()
+	c.normalizeTasksDefaults()
 	c.normalizeSourceAccessDefaults()
 
 	sqlSources := make([]string, 0, len(c.Sources))
@@ -1299,6 +1363,9 @@ type Config struct {
 	// events exposed as gj_watch and gj_watch_event system roots.
 	Watches WatchesConfig `mapstructure:"watches" json:"watches" yaml:"watches" jsonschema:"title=Watches"`
 
+	// Tasks configures owner-scoped declared goals and their immutable trail.
+	Tasks TasksConfig `mapstructure:"tasks" json:"tasks" yaml:"tasks" jsonschema:"title=Tasks"`
+
 	// OpenAPISpecsDir is the directory that GraphJin scans at startup for
 	// OpenAPI 3 specification files (*.yaml / *.yml). Each spec dropped in
 	// is parsed, classified, and exposed as remote-joinable fields and/or
@@ -1460,6 +1527,15 @@ type WatchesConfig struct {
 	EnrichmentDailyCap  int      `mapstructure:"enrichment_daily_cap" json:"enrichment_daily_cap" yaml:"enrichment_daily_cap" jsonschema:"title=Watch Enrichment Daily Cap,default=10,description=Maximum read-only agent enrichments per watch per day"`
 	EnrichmentWorkers   int      `mapstructure:"enrichment_workers" json:"enrichment_workers" yaml:"enrichment_workers" jsonschema:"title=Watch Enrichment Workers,default=1,description=Concurrent watch enrichment workers"`
 	RetryMaxFailures    int      `mapstructure:"retry_max_failures" json:"retry_max_failures" yaml:"retry_max_failures" jsonschema:"title=Watch Retry Max Failures,default=5,description=Consecutive transient runner failures before a watch enters terminal error status"`
+}
+
+// TasksConfig declares the GraphJin-managed durable declared-intent task store.
+type TasksConfig struct {
+	Enabled             bool `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Tasks,description=Enable durable owner-scoped declared-intent tasks; parsed dev and agentic configs default to enabled when artifacts are enabled"`
+	MaxPerOwner         int  `mapstructure:"max_per_owner" json:"max_per_owner" yaml:"max_per_owner" jsonschema:"title=Max Tasks Per Owner,default=20,description=Maximum open tasks per owner"`
+	MaxEntriesPerTask   int  `mapstructure:"max_entries_per_task" json:"max_entries_per_task" yaml:"max_entries_per_task" jsonschema:"title=Max Entries Per Task,default=500,description=Maximum stored trail entries per task; oldest are pruned first"`
+	EntryRetentionHours int  `mapstructure:"entry_retention_hours" json:"entry_retention_hours" yaml:"entry_retention_hours" jsonschema:"title=Task Entry Retention Hours,default=168,description=Hours to keep task trail entries before prune-on-write and projection trimming"`
+	SnapshotMaxBytes    int  `mapstructure:"snapshot_max_bytes" json:"snapshot_max_bytes" yaml:"snapshot_max_bytes" jsonschema:"title=Task Snapshot Max Bytes,default=32768,description=Byte cap for task snapshot_json and task-entry detail_json"`
 }
 
 // SourceAccessConfig declares source-level access defaults plus table/root

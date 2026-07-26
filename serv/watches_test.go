@@ -2431,6 +2431,11 @@ updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 	} else if !ok {
 		t.Fatal("expected owner_role column to be added")
 	}
+	if ok, err := sqliteColumnExists(artifactUserCtx("user_1"), db, quoteSQLIdent("_graphjin_watches"), "task_id"); err != nil {
+		t.Fatalf("check migrated task_id column: %v", err)
+	} else if !ok {
+		t.Fatal("expected task_id column to be added")
+	}
 	if ok, err := sqliteColumnExists(artifactUserCtx("user_1"), db, quoteSQLIdent("_graphjin_watch_events"), "data_truncated"); err != nil {
 		t.Fatalf("check migrated data_truncated column: %v", err)
 	} else if !ok {
@@ -2595,6 +2600,7 @@ func startSQLiteWatchCore(t *testing.T, svc *graphjinService, db *sql.DB) {
 	svc.injectInternalStoreRole()
 	artifacts := newArtifactControlPlane(svc)
 	watches := newWatchControlPlane(svc)
+	tasks := newTaskControlPlane(svc)
 	revisions := revisionSignalHandler{service: svc}
 	opts := []core.Option{
 		core.OptionSetFS(svc.fs),
@@ -2606,6 +2612,12 @@ func startSQLiteWatchCore(t *testing.T, svc *graphjinService, db *sql.DB) {
 		core.OptionSetManagedMutationHandler("app", artifacts),
 		core.OptionSetManagedQueryHandler("app", watches),
 		core.OptionSetManagedMutationHandler("app", watches),
+	}
+	if svc.tasksEnabled() {
+		opts = append(opts,
+			core.OptionSetManagedQueryHandler("app", tasks),
+			core.OptionSetManagedMutationHandler("app", tasks),
+		)
 	}
 	gj, err := core.NewGraphJin(&svc.conf.Core, db, opts...)
 	if err != nil {

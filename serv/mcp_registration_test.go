@@ -809,6 +809,7 @@ func TestMCPEffectiveIdentityContextAppliesJWTAccountClaim(t *testing.T) {
 
 func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true})
+	ms.service.conf.Core.Tasks.Enabled = true
 
 	anonProfile := ms.callerCapabilityProfile(context.Background(), false)
 	if !rootProfilesContain(anonProfile.AvailableRoots, "gj_catalog") {
@@ -828,7 +829,7 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 		t.Fatalf("expected user-visible catalog/raw tools, got %+v", userProfile.AvailableTools)
 	}
 	// Agentic mode exposes catalog, owner-scoped state, and execution by default.
-	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_workflow_execution"} {
+	for _, root := range []string{"gj_catalog", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry", "gj_workflow_execution"} {
 		if !rootProfilesContain(userProfile.AvailableRoots, root) {
 			t.Fatalf("expected %s available to user, got %+v", root, userProfile.AvailableRoots)
 		}
@@ -865,8 +866,9 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 	// blocked reason must say so (not a source-mode access denial).
 	disabled := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true})
 	disabled.service.conf.Core.Watches.Enabled = false
+	disabled.service.conf.Core.Tasks.Enabled = false
 	disabledProfile := disabled.callerCapabilityProfile(sourceModeUserTestContext(), false)
-	for _, root := range []string{"gj_watch", "gj_watch_event"} {
+	for _, root := range []string{"gj_watch", "gj_watch_event", "gj_task", "gj_task_entry"} {
 		if rootProfilesContain(disabledProfile.AvailableRoots, root) {
 			t.Fatalf("expected %s hidden when watches are disabled, got %+v", root, disabledProfile.AvailableRoots)
 		}
@@ -875,7 +877,7 @@ func TestMCPCallerCapabilityProfileReflectsSourceRootAccess(t *testing.T) {
 		}
 	}
 	for _, rp := range disabledProfile.BlockedRoots {
-		if (rp.Root == "gj_watch" || rp.Root == "gj_watch_event") && rp.Reason != "disabled by configuration" {
+		if (rp.Root == "gj_watch" || rp.Root == "gj_watch_event" || rp.Root == "gj_task" || rp.Root == "gj_task_entry") && rp.Reason != "disabled by configuration" {
 			t.Fatalf("expected config-disabled reason for %s, got %+v", rp.Root, rp)
 		}
 	}
