@@ -2,7 +2,6 @@ package serv
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -61,7 +60,7 @@ func TestExtractClaimRolesStripsReservedRoles(t *testing.T) {
 func TestSQLiteInternalStoreMutationSupportsTextPrimaryKeys(t *testing.T) {
 	svc := newArtifactOverlayTestService(t, nil)
 	ctx := svc.internalStoreContext(artifactUserCtx("user_1"))
-	vars, _ := json.Marshal(map[string]any{"input": map[string]any{
+	vars := map[string]any{"input": map[string]any{
 		"id":           "artifact:text-key",
 		"name":         "text_key",
 		"kind":         "artifact",
@@ -74,21 +73,19 @@ func TestSQLiteInternalStoreMutationSupportsTextPrimaryKeys(t *testing.T) {
 		"content":      "hello",
 		"content_hash": "hash",
 		"status":       "approved",
-	}})
-	res, err := svc.gj.GraphQL(ctx, `mutation { _graphjin_artifacts(insert: $input) { id name owner_id } }`, vars, nil)
-	if err != nil || len(res.Errors) != 0 {
-		t.Fatalf("insert text-key artifact: err=%v errors=%+v", err, res.Errors)
+	}}
+	res, err := svc.internalStoreGraphQL(ctx, `mutation { _graphjin_artifacts(insert: $input) { id name owner_id } }`, vars)
+	if err != nil {
+		t.Fatalf("insert text-key artifact: %v", err)
 	}
-	if !strings.Contains(string(res.Data), "artifact:text-key") {
-		t.Fatalf("insert response missing text key: %s", res.Data)
+	if !strings.Contains(string(res["_graphjin_artifacts"]), "artifact:text-key") {
+		t.Fatalf("insert response missing text key: %s", res["_graphjin_artifacts"])
 	}
-	res, err = svc.gj.GraphQL(ctx, `mutation { _graphjin_artifacts(where: { id: { eq: "artifact:text-key" } }, update: { content: "updated" }) { id content } }`, nil, nil)
-	if err != nil || len(res.Errors) != 0 {
-		t.Fatalf("update text-key artifact: err=%v errors=%+v", err, res.Errors)
+	if _, err := svc.internalStoreGraphQL(ctx, `mutation { _graphjin_artifacts(where: { id: { eq: "artifact:text-key" } }, update: { content: "updated" }) { id content } }`, nil); err != nil {
+		t.Fatalf("update text-key artifact: %v", err)
 	}
-	res, err = svc.gj.GraphQL(ctx, `mutation { _graphjin_artifacts(where: { id: { eq: "artifact:text-key" } }, delete: true) { id } }`, nil, nil)
-	if err != nil || len(res.Errors) != 0 {
-		t.Fatalf("delete text-key artifact: err=%v errors=%+v", err, res.Errors)
+	if _, err := svc.internalStoreGraphQL(ctx, `mutation { _graphjin_artifacts(where: { id: { eq: "artifact:text-key" } }, delete: true) { id } }`, nil); err != nil {
+		t.Fatalf("delete text-key artifact: %v", err)
 	}
 }
 
