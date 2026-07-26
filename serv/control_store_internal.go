@@ -5,11 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 )
 
 const graphjinInternalStoreRole = "__graphjin_internal_store"
+
+const (
+	internalStoreSQLiteBusyMaxAttempts = 8
+	internalStoreSQLiteBusyBaseDelay   = 5 * time.Millisecond
+	internalStoreSQLiteBusyMaxDelay    = 100 * time.Millisecond
+)
 
 // internalStorePageSize is mutable so tests can exercise multi-page reads
 // without creating hundreds of physical store rows.
@@ -241,6 +248,27 @@ func (s *graphjinService) internalStoreGraphQL(ctx context.Context, query string
 		}
 		raw = data
 	}
+	attempts := 1
+	if _, dbType, _, ok := s.artifactDB(); ok && dbType == "sqlite" {
+		// Projection and revision consumers can briefly contend with task or
+		// artifact writes when the control store shares an application SQLite
+		// database. Retry only SQLite's explicit busy errors; each store mutation
+		// carries its server-generated key in raw, so replay preserves identity.
+		attempts = internalStoreSQLiteBusyMaxAttempts
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
+		out, err := s.internalStoreGraphQLOnce(ctx, query, raw)
+		if err == nil || !isInternalStoreSQLiteBusyError(err) || attempt == attempts-1 {
+			return out, err
+		}
+		if err := waitInternalStoreSQLiteRetry(ctx, internalStoreSQLiteBusyDelay(attempt)); err != nil {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("internal store SQLite retry exhausted")
+}
+
+func (s *graphjinService) internalStoreGraphQLOnce(ctx context.Context, query string, raw json.RawMessage) (map[string]json.RawMessage, error) {
 	res, err := s.gj.GraphQL(s.internalStoreContext(ctx), query, raw, nil)
 	if err != nil {
 		return nil, err
@@ -255,6 +283,39 @@ func (s *graphjinService) internalStoreGraphQL(ctx context.Context, query string
 		}
 	}
 	return out, nil
+}
+
+func isInternalStoreSQLiteBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "database table is locked")
+}
+
+func internalStoreSQLiteBusyDelay(attempt int) time.Duration {
+	if attempt < 0 {
+		attempt = 0
+	}
+	delay := internalStoreSQLiteBusyBaseDelay << attempt
+	if delay > internalStoreSQLiteBusyMaxDelay {
+		return internalStoreSQLiteBusyMaxDelay
+	}
+	return delay
+}
+
+func waitInternalStoreSQLiteRetry(ctx context.Context, delay time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // internalStoreRows returns a single GraphJin result page and therefore
