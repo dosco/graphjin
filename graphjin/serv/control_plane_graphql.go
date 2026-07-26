@@ -505,28 +505,30 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 		},
 		{
 			"name": "gj_task.insert_update_delete", "kind": "task", "enabled": taskEnabled,
-			"summary":          "Create, update, close, reopen, and delete owner-scoped declared-intent tasks.",
+			"summary":          "Create, update, verify, close, reopen, and delete owner-scoped declared-intent tasks.",
 			"graphql_mutation": `gj_task(insert: { goal: "...", snapshot_json: {...} })`,
 			"details_json": mustMarshalString(map[string]any{
 				"root": "gj_task", "entry_root": "gj_task_entry", "owner_scoped": true,
-				"statuses": []string{"open", "closed"}, "close_preferred_over_delete": true,
-				"input_shape":   `gj_task(insert: { goal: "...", snapshot_json: {...} }); gj_task(where: { id: { eq: "..." } }, update: { status: "closed", outcome: "..." })`,
-				"return_fields": []string{"id", "goal", "status", "outcome", "snapshot_json", "last_entry_at", "created_at", "updated_at", "closed_at"},
+				"statuses": []string{"open", "verifying", "closed"}, "close_preferred_over_delete": true,
+				"input_shape":   `gj_task(insert: { goal: "...", snapshot_json: {...} }); gj_task(where: { id: { eq: "..." } }, update: { status: "closed", outcome: "...", verify_json: { saved_query_name: "...", variables: {...}, expect: { path: "orders", op: "empty" }, recheck: "2h" } })`,
+				"return_fields": []string{"id", "goal", "status", "outcome", "snapshot_json", "verify_json", "verify_status", "verify_after", "verify_attempts", "last_entry_at", "created_at", "updated_at", "closed_at"},
 			}),
 			"examples_json": mustMarshalString([]map[string]string{
 				{"name": "create a declared task", "query": `mutation { gj_task(insert: { goal: "Investigate delayed production orders" }) { id goal status } }`},
 				{"name": "close with an outcome", "query": `mutation { gj_task(where: { id: { eq: "task:..." } }, update: { status: "closed", outcome: "Resolved by correcting carrier mappings." }) { id status outcome closed_at } }`},
+				{"name": "close only after a saved-query check", "query": `mutation { gj_task(where: { id: { eq: "task:..." } }, update: { status: "closed", outcome: "No delayed orders remain.", verify_json: { saved_query_name: "late_orders", expect: { path: "orders", op: "empty" } } }) { id status verify_status closed_at } }`},
 			}),
 			"safety_json": mustMarshalString(map[string]any{
 				"owner_scoped": true, "requires_user_identity": true, "explicit_creation_only": true,
 				"task_id_is_correlation_only": true, "task_id_never_grants_access": true,
 				"task_id_never_satisfies_protocol_guards": true, "no_mcp_resource": true,
-				"close_preferred_over_delete": true, "blocked_by": "read_only",
+				"close_preferred_over_delete": true, "verification_is_server_run": true,
+				"caller_declares_never_executes_verification": true, "saved_queries_only": true, "blocked_by": "read_only",
 			}),
 		},
 		{
 			"name": "gj_task_entry.insert", "kind": "task", "enabled": taskEntryEnabled,
-			"summary":          "Append a caller journal entry to an open owner-scoped task; provenance fields are server-managed.",
+			"summary":          "Append a caller journal entry to an open or verifying owner-scoped task; provenance fields are server-managed.",
 			"graphql_mutation": `gj_task_entry(insert: { task_id: "task:...", body: "...", detail_json: {...} })`,
 			"details_json": mustMarshalString(map[string]any{
 				"root": "gj_task_entry", "owner_scoped": true, "immutable": true,

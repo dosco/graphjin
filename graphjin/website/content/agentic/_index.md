@@ -1,6 +1,6 @@
 ---
 title: "Agentic"
-description: "MCP, catalog discovery, security posture, declared tasks, source mode, workflows, watches, and OAuth."
+description: "MCP, catalog discovery, security posture, durable verified tasks, source mode, workflows, watches, and OAuth."
 nav_group: "agentic"
 weight: 4
 ---
@@ -15,13 +15,19 @@ Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data 
     <a href="/agentic/server-agent/">Use the server-side agent</a>
   </article>
   <article>
-    <span>02 · Watch</span>
+    <span>02 · Continue</span>
+    <h2>Carry declared intent across runs.</h2>
+    <p>Owner-scoped tasks warm-start later agent runs, journal their provenance, stay visible through notices, and can require a saved query to prove the declared outcome before close.</p>
+    <a href="/agentic/tasks/">Use durable verified tasks</a>
+  </article>
+  <article>
+    <span>03 · Watch</span>
     <h2>Keep a standing question running.</h2>
     <p>A cursor-backed watch records changes. An optional tool-free AI flow can summarize, score, or suppress noise before the right conversation wakes.</p>
     <a href="/agentic/watch-automation/">Choose a watch and flow</a>
   </article>
   <article>
-    <span>03 · Act</span>
+    <span>04 · Act</span>
     <h2>Run only the action that was approved.</h2>
     <p>Workflows can use governed GraphJin tools, but autonomous watch delivery remains paused until the exact current action hash is confirmed.</p>
     <a href="/agentic/workflows/">Understand workflows</a>

@@ -108,7 +108,7 @@ For standing requests, the watch skills apply the two-axis decision in [Choosing
 
 ## Request and response
 
-Request fields: `instruction` (required), and optional `context`, `namespace`, `task_id`, `max_steps`, `return_trace`. A retained open [declared task](/agentic/tasks/) warm-starts the request and journals its result; it never grants access or satisfies evidence guards.
+Request fields: `instruction` (required), and optional `context`, `namespace`, `task_id`, `max_steps`, `return_trace`. A retained open or verifying [declared task](/agentic/tasks/) warm-starts the request and journals its result; it never grants access or satisfies evidence guards.
 
 Response fields: `status` (`answered` | `needs_clarification` | `blocked` | `error`), `answer`, and optional `skills`, `skill`, `data`, `evidence`, `actions`, `next`, `refusal`, `notices`, `errors`, `usage`, `trace`, `trace_id`. `skills` contains the guides Ax reported through `used(...)`; deprecated `skill` is the first used ID through v3.
 
@@ -141,7 +141,15 @@ The REST endpoint streams progress when called with `Accept: text/event-stream`:
 
 A `blocked` response is machine-actionable, not prose. It carries a `refusal` object: a stable `code` (`access_unauthorized`, `capability_disabled`, `mutation_evidence_required`, ...), the `blocked_action`, evidence-backed `because` reasons, ordered `unblock` steps (each names a tool and args, filtered to the caller's visible capabilities so nothing hidden leaks), a `lawful_alternative` for when unblocking is impossible, and the `policy_final` / `retryable` pair. A calling agent should execute the unblock steps and retry only when `retryable` is true; `policy_final` means stop and escalate to an operator. The contract is discoverable at runtime with `query_catalog(id: "help:refusals")`.
 
-## Watch notices
+## Task and watch notices
+
+Declared tasks keep themselves visible through owner-scoped response notices.
+`task_open_unlinked` lists active tasks when a run is not task-bound,
+`task_context_loaded` confirms warm-started context, and `task_verify_failed`
+reports a declared saved-query check that left its task open. Notice IDs are
+correlation hints only; callers must still use the governed task roots, and a
+task ID never grants access. See [Declared Tasks](/agentic/tasks/) for the full
+lifecycle.
 
 When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen`, a count, and `watch_ids`. For MCP sessions with concrete per-watch subscriptions, the notice is limited to those watches; query and acknowledge only the listed IDs. MCP clients can subscribe to `graphjin://watch-events/unseen/{watch_id}` for watch-specific push signals, while the aggregate `graphjin://watch-events/unseen` resource remains the owner/account-wide compatibility path. Resource notifications identify a changed resource but do not contain the full event payload.
 

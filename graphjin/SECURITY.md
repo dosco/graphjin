@@ -428,7 +428,10 @@ Artifact behavior:
   artifact database, identity scoping, and non-admin identity redaction.
 - Tasks are exposed as `gj_task` and `gj_task_entry` and use the same artifact
   database. Creation is explicit; entry provenance and identity are
-  server-managed, and `task_id` never authorizes a caller.
+  server-managed, and `task_id` never authorizes a caller. Saved-query outcome
+  verification runs under the stored task-owner identity after revalidating the
+  stored role; `verifying` remains an active owner-scoped state, and only a
+  passing declared check sets a verified close timestamp.
 - Watch creation stores `owner_id`, `account_id`, and `owner_role` from trusted
   request context, never from mutation input, so the runner can reconstruct the
   same caller envelope that was validated at creation time.

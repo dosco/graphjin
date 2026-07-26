@@ -732,6 +732,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		s.startProjectionPoller(context.Background())
 		s.startWatchCoordinator(context.Background())
 		s.startWatchRunner(context.Background())
+		s.startTaskVerifier(context.Background())
 	}
 
 	s.state = servStarted

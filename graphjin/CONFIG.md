@@ -1121,7 +1121,8 @@ For each request, a populated `agent.api_key_env` selects the server provider
 and prevents sampling. Without server credentials, MCP borrows a
 sampling-capable client's model; REST returns a missing-provider-key error.
 
-Requests may include `task_id`, the retained ID of an open `gj_task`. GraphJin
+Requests may include `task_id`, the retained ID of an active (`open` or
+`verifying`) `gj_task`. GraphJin
 loads that owner's declared goal and recent trail into the untrusted `history`
 channel, then appends one `agent_run` entry after the run. The ID is only a
 correlation label: it never grants access and never satisfies a discovery or
@@ -1149,16 +1150,24 @@ tasks:
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `tasks.enabled` | boolean | dev/agentic: artifact setting; prod: `false` | Enable `gj_task`, `gj_task_entry`, agent warm-start/journaling, and optional watch linkage |
-| `tasks.max_per_owner` | integer | `20` | Maximum open tasks per owner; closed tasks do not count |
+| `tasks.max_per_owner` | integer | `20` | Maximum active (`open` or `verifying`) tasks per owner; closed tasks do not count |
 | `tasks.max_entries_per_task` | integer | `500` | Maximum retained trail entries per task; oldest entries are pruned on append |
 | `tasks.entry_retention_hours` | integer | `168` | Trail retention window in hours, enforced on append and in the nanoDB projection |
-| `tasks.snapshot_max_bytes` | integer | `32768` | Byte cap applied before and after JSON normalization to task `snapshot_json` and entry `detail_json` |
+| `tasks.snapshot_max_bytes` | integer | `32768` | Byte cap applied before and after JSON normalization to task `snapshot_json`, task `verify_json`, and entry `detail_json` |
 
 Create tasks explicitly; GraphJin never infers a task from a session or tool
 call. Caller journal entries accept only `task_id`, `body`, and optional
 `detail_json`; provenance fields are server-managed. Closing preserves the
 trail and is preferred to deleting it. Deleting a task removes its entries and
 clears `task_id` from linked watches.
+
+For a verified close, `verify_json` names a saved query plus a typed expectation
+and may include one bounded, delayed `recheck`. Verification runs under the
+stored owner identity and has no configuration knobs in v1: the window clamps
+to 1 minute through 30 days and the durable sweep runs every 30 seconds. A
+passing check closes the task; a failing check leaves it open and records a
+server-managed `verification` trail entry. Inline GraphQL and JavaScript
+conditions are not accepted.
 
 ---
 

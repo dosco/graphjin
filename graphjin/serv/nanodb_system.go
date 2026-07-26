@@ -603,6 +603,10 @@ func taskNanoColumns() []core.NanoColumn {
 		{Name: "status", Type: "text", Index: true},
 		{Name: "outcome", Type: "text"},
 		{Name: "snapshot_json", Type: "json"},
+		{Name: "verify_json", Type: "json"},
+		{Name: "verify_status", Type: "text", Index: true},
+		{Name: "verify_after", Type: "text", Index: true},
+		{Name: "verify_attempts", Type: "integer"},
 		{Name: "account_id", Type: "text", Index: true},
 		{Name: "owner_id", Type: "text", Index: true},
 		{Name: "owner_role", Type: "text", Index: true},
@@ -832,6 +836,8 @@ func normalizeTaskNanoRow(in map[string]any) core.NanoRow {
 		fmt.Sprint(row["status"]),
 		fmt.Sprint(row["outcome"]),
 		fmt.Sprint(row["snapshot_json"]),
+		fmt.Sprint(row["verify_json"]),
+		fmt.Sprint(row["verify_status"]),
 	}, " ")
 	return row
 }

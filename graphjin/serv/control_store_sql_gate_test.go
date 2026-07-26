@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestControlStoreRuntimeDoesNotUseDirectSQL(t *testing.T) {
+func TestControlStoreDirectSQLIsNarrowlyGated(t *testing.T) {
 	allowed := map[string]map[string]bool{
 		"artifacts.go": {
 			"initArtifactsBeforeCore": true,
@@ -22,8 +22,14 @@ func TestControlStoreRuntimeDoesNotUseDirectSQL(t *testing.T) {
 		"tasks.go": {
 			"migrateTaskSchema": true,
 		},
+		"tasks_verify.go": {
+			// Verification fencing needs atomic affected-row counts, which the
+			// internal GraphQL mutation result cannot currently expose.
+			"claimTaskVerification":    true,
+			"completeTaskVerification": true,
+		},
 	}
-	for _, name := range []string{"artifacts.go", "watches.go", "tasks.go", "tasks_agent.go", "watch_runner.go", "watch_delivery.go", "projection_poll.go"} {
+	for _, name := range []string{"artifacts.go", "watches.go", "tasks.go", "tasks_verify.go", "tasks_agent.go", "watch_runner.go", "watch_delivery.go", "projection_poll.go"} {
 		path := filepath.Join(".", name)
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, path, nil, 0)
@@ -46,7 +52,7 @@ func TestControlStoreRuntimeDoesNotUseDirectSQL(t *testing.T) {
 						return true
 					}
 					pos := fset.Position(sel.Pos())
-					t.Fatalf("runtime control-store code must use internal GraphQL, found %s in %s:%d (%s)", sel.Sel.Name, name, pos.Line, fn.Name.Name)
+					t.Fatalf("control-store code must use internal GraphQL unless explicitly fenced, found %s in %s:%d (%s)", sel.Sel.Name, name, pos.Line, fn.Name.Name)
 				}
 				return true
 			})

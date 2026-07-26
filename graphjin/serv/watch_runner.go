@@ -420,15 +420,9 @@ func normalizeWatchAbsenceJSON(raw string) (string, watchAbsenceConfig, bool, er
 	if windowText == "" {
 		return "", watchAbsenceConfig{}, false, fmt.Errorf("absence_json window is required when enabled")
 	}
-	window, err := time.ParseDuration(windowText)
+	window, err := parseClampedWindow(windowText, watchAbsenceMinWindow, watchAbsenceMaxWindow)
 	if err != nil {
 		return "", watchAbsenceConfig{}, false, fmt.Errorf("absence_json window is invalid: %w", err)
-	}
-	if window < watchAbsenceMinWindow {
-		window = watchAbsenceMinWindow
-	}
-	if window > watchAbsenceMaxWindow {
-		window = watchAbsenceMaxWindow
 	}
 	cfg := watchAbsenceConfig{
 		Enabled:    true,
@@ -897,21 +891,25 @@ func (s *graphjinService) renewWatchLease(ctx context.Context, cancel context.Ca
 }
 
 func (s *graphjinService) watchOwnerContext(parent context.Context, def watchRuntimeDefinition) context.Context {
+	return s.ownerContext(parent, def.OwnerID, def.OwnerRole, def.AccountID)
+}
+
+func (s *graphjinService) ownerContext(parent context.Context, ownerID, ownerRole, accountID string) context.Context {
 	ctx := parent
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	role := s.trustedWatchRunnerRole(def.OwnerRole)
-	ctx = context.WithValue(ctx, core.UserIDKey, def.OwnerID)
+	role := s.trustedWatchRunnerRole(ownerRole)
+	ctx = context.WithValue(ctx, core.UserIDKey, ownerID)
 	ctx = context.WithValue(ctx, core.UserRoleKey, role)
 	ctx = context.WithValue(ctx, core.IdentityRolesKey, []string{role})
 	vars := map[string]interface{}{
-		"user_id":  def.OwnerID,
-		"user_ref": safeArtifactIdentity(def.OwnerID, false),
+		"user_id":  ownerID,
+		"user_ref": safeArtifactIdentity(ownerID, false),
 	}
-	if strings.TrimSpace(def.AccountID) != "" {
-		vars["account_id"] = def.AccountID
-		vars["account_ref"] = safeArtifactIdentity(def.AccountID, false)
+	if strings.TrimSpace(accountID) != "" {
+		vars["account_id"] = accountID
+		vars["account_ref"] = safeArtifactIdentity(accountID, false)
 	}
 	return context.WithValue(ctx, core.IdentityVarsKey, vars)
 }

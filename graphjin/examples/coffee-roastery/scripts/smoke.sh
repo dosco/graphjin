@@ -252,7 +252,7 @@ run_coffee_watch_session_routing_suite() {
 run_task_agent_eval_suite() {
   log "checking durable task warm-start and provenance trail"
 
-  local suffix goal marker create_out task_id note_out unlinked_out first_out second_out entries_out
+  local suffix goal marker create_out task_id note_out unlinked_out first_out second_out entries_out close_out verify_entries_out
   suffix="$(date +%s)_$$"
   marker="FIRST-TRAIL-${suffix}"
   goal="Coffee warm-start ${suffix}: keep Northstar production planning grounded in approved saved-query evidence."
@@ -297,7 +297,11 @@ run_task_agent_eval_suite() {
     and ([.data.gj_task_entry[] | select(.origin == "agent_run" and (.trace_id | length) > 0)] | length) >= 2
   '
 
-  graphql task-close "mutation { gj_task(where: { id: { eq: \"${task_id}\" } }, update: { status: \"closed\", outcome: \"Warm-start smoke verified.\" }) { id status outcome } }" >/dev/null
+  close_out="$(graphql task-close "mutation { gj_task(where: { id: { eq: \"${task_id}\" } }, update: { status: \"closed\", outcome: \"Warm-start smoke verified against the current roast context.\", verify_json: { saved_query_name: \"daily_roast_context\", expect: { path: \"production_orders\", op: \"count_ge\", value: 1 } } }) { id status outcome verify_status verify_attempts closed_at } }")"
+  assert_jq "$close_out" '([.data.gj_task] | flatten | .[0]) as $task | $task.status == "closed" and $task.verify_status == "verified" and $task.verify_attempts == 1 and ($task.closed_at | length) > 0' "task closed only after saved-query verification passed"
+
+  verify_entries_out="$(graphql task-verification-entry "query { gj_task_entry(where: { task_id: { eq: \"${task_id}\" }, origin: { eq: \"verification\" } }) { id origin status detail_json } }")"
+  assert_jq "$verify_entries_out" '[.data.gj_task_entry[] | select(.origin == "verification" and .status == "passed" and (.detail_json.spec_hash | length) == 64)] | length == 1' "verified close recorded one hashed verification trail entry"
   graphql task-cleanup "mutation { gj_task(delete: true, where: { id: { eq: \"${task_id}\" } }) { id } }" >/dev/null
   COFFEE_TASK_IDS=()
 }

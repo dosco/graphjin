@@ -1958,7 +1958,7 @@ pre code {
 
 .agentic-path-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
   margin: 1.6rem 0;
 }

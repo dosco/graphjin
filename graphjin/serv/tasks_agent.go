@@ -37,7 +37,7 @@ func (s *graphjinService) resolveAgentTaskContext(ctx context.Context, req *gjag
 		return taskWarmStart{}, err
 	}
 	admin := s.identityRoleIsAdmin(ctx)
-	if task == nil || taskStatus(stringMapValue(task, "status")) != "open" || (!admin && stringMapValue(task, "owner_id") != ownerID) {
+	if task == nil || !taskStatusActive(stringMapValue(task, "status")) || (!admin && stringMapValue(task, "owner_id") != ownerID) {
 		return taskWarmStart{}, errTaskNotFoundOrClosed
 	}
 	rows, err := s.internalStoreAllRows(ctx, "task_entries", `where: { task_id: { eq: $task_id } }`, taskEntryStoreFields, map[string]any{"task_id": req.TaskID})
@@ -83,43 +83,72 @@ func (s *graphjinService) resolveAgentTaskContext(ctx context.Context, req *gjag
 }
 
 // appendTaskNotices is deliberately best-effort. It adds one bounded,
-// owner-scoped read only for successful agent runs that did not retain a task.
+// owner-scoped read for successful agent runs when task state may need action.
 func (s *graphjinService) appendTaskNotices(ctx context.Context, req gjagent.Request, resp *gjagent.Response) {
-	if s == nil || resp == nil || !s.tasksEnabled() || strings.TrimSpace(req.TaskID) != "" {
+	if s == nil || resp == nil || !s.tasksEnabled() {
 		return
 	}
 	ownerID, ok := artifactUserID(ctx)
 	if !ok {
 		return
 	}
-	rows, err := s.internalStoreAllRows(ctx, "tasks", `where: { owner_id: { eq: $owner_id }, status: { eq: "open" } }`, taskStoreFields, map[string]any{"owner_id": ownerID})
+	rows, err := s.internalStoreAllRows(ctx, "tasks", `where: { owner_id: { eq: $owner_id }, status: { in: ["open", "verifying"] } }`, taskStoreFields, map[string]any{"owner_id": ownerID})
 	if err != nil || len(rows) == 0 {
 		return
 	}
-	// Keep defense-in-depth owner/status checks even though the store query is
+	// Keep defense-in-depth owner/state checks even though the store query is
 	// already scoped. A future internal-store implementation must not leak ids.
-	open := rows[:0]
+	active := make([]map[string]any, 0, len(rows))
+	failed := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
-		if stringMapValue(row, "owner_id") == ownerID && taskStatus(stringMapValue(row, "status")) == "open" {
-			open = append(open, row)
+		if stringMapValue(row, "owner_id") != ownerID {
+			continue
+		}
+		if taskStatusActive(stringMapValue(row, "status")) {
+			active = append(active, row)
+		}
+		if stringMapValue(row, "verify_status") == "failed" {
+			failed = append(failed, row)
 		}
 	}
-	if len(open) == 0 {
+	if len(failed) != 0 {
+		sortTaskNoticeRows(failed)
+		resp.Notices = append(resp.Notices, gjagent.ResponseNotice{
+			Kind:    "task_verify_failed",
+			Message: "A declared task verification failed, so the task remains open. Inspect its verification trail, correct the work or verification spec, and close it again when ready.",
+			Count:   len(failed),
+			TaskIDs: taskNoticeIDs(failed),
+		})
+	}
+	if strings.TrimSpace(req.TaskID) != "" || len(active) == 0 {
 		return
 	}
-	sort.SliceStable(open, func(i, j int) bool {
-		iTime, iOK := taskNoticeTime(open[i])
-		jTime, jOK := taskNoticeTime(open[j])
+	sortTaskNoticeRows(active)
+	resp.Notices = append(resp.Notices, gjagent.ResponseNotice{
+		Kind:    "task_open_unlinked",
+		Message: "You have open or verifying declared tasks not linked to this run. Pass task_id to continue one of the listed tasks, or omit it deliberately for unrelated work.",
+		Count:   len(active),
+		TaskIDs: taskNoticeIDs(active),
+	})
+}
+
+func sortTaskNoticeRows(rows []map[string]any) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		iTime, iOK := taskNoticeTime(rows[i])
+		jTime, jOK := taskNoticeTime(rows[j])
 		if iOK && jOK && !iTime.Equal(jTime) {
 			return iTime.After(jTime)
 		}
 		if iOK != jOK {
 			return iOK
 		}
-		return stringMapValue(open[i], "id") < stringMapValue(open[j], "id")
+		return stringMapValue(rows[i], "id") < stringMapValue(rows[j], "id")
 	})
-	taskIDs := make([]string, 0, min(5, len(open)))
-	for _, row := range open {
+}
+
+func taskNoticeIDs(rows []map[string]any) []string {
+	taskIDs := make([]string, 0, min(5, len(rows)))
+	for _, row := range rows {
 		if id := strings.TrimSpace(stringMapValue(row, "id")); id != "" {
 			taskIDs = append(taskIDs, id)
 			if len(taskIDs) == 5 {
@@ -127,12 +156,7 @@ func (s *graphjinService) appendTaskNotices(ctx context.Context, req gjagent.Req
 			}
 		}
 	}
-	resp.Notices = append(resp.Notices, gjagent.ResponseNotice{
-		Kind:    "task_open_unlinked",
-		Message: "You have open declared tasks not linked to this run. Pass task_id to continue one of the listed tasks, or omit it deliberately for unrelated work.",
-		Count:   len(open),
-		TaskIDs: taskIDs,
-	})
+	return taskIDs
 }
 
 func taskNoticeTime(row map[string]any) (time.Time, bool) {

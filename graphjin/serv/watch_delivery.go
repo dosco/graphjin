@@ -1016,15 +1016,9 @@ func parseWatchDeliveryConfig(raw string) (watchDeliveryConfig, bool, error) {
 		if windowText == "" {
 			return cfg, cfg.Kind != "inbox", errors.New("digest delivery requires window")
 		}
-		window, err := time.ParseDuration(windowText)
+		window, err := parseClampedWindow(windowText, watchDigestMinWindow, watchDigestMaxWindow)
 		if err != nil {
 			return cfg, cfg.Kind != "inbox", fmt.Errorf("digest window is invalid: %w", err)
-		}
-		if window < watchDigestMinWindow {
-			window = watchDigestMinWindow
-		}
-		if window > watchDigestMaxWindow {
-			window = watchDigestMaxWindow
 		}
 		cfg.Digest = watchDigestConfig{
 			Enabled: true, Window: window, WindowText: window.String(),

@@ -27,7 +27,7 @@ const (
 
 var errTaskNotFoundOrClosed = errors.New("task_not_found_or_closed")
 
-const taskStoreFields = `id goal status outcome snapshot_json account_id owner_id owner_role last_entry_at created_at updated_at closed_at`
+const taskStoreFields = `id goal status outcome snapshot_json verify_json verify_status verify_after verify_attempts account_id owner_id owner_role last_entry_at created_at updated_at closed_at`
 const taskEntryStoreFields = `id task_id origin body detail_json status trace_id watch_id account_id owner_id created_at updated_at`
 
 type taskControlPlane struct {
@@ -35,13 +35,15 @@ type taskControlPlane struct {
 }
 
 type taskEntrySpec struct {
-	TaskID     string
-	Origin     string
-	Body       string
-	DetailJSON string
-	Status     string
-	TraceID    string
-	WatchID    string
+	TaskID              string
+	Origin              string
+	Body                string
+	DetailJSON          string
+	Status              string
+	TraceID             string
+	WatchID             string
+	VerificationHash    string
+	VerificationAttempt int64
 }
 
 func newTaskControlPlane(s *graphjinService) taskControlPlane {
@@ -72,6 +74,10 @@ func taskColumns() []core.ManagedColumn {
 		cpCol("status", "text", false),
 		cpCol("outcome", "text", false),
 		cpCol("snapshot_json", "json", false),
+		cpCol("verify_json", "json", false),
+		cpCol("verify_status", "text", false),
+		cpCol("verify_after", "text", false),
+		cpCol("verify_attempts", "integer", false),
 		cpCol("account_id", "text", false),
 		cpCol("owner_id", "text", false),
 		cpCol("owner_role", "text", false),
@@ -252,7 +258,7 @@ func (h taskControlPlane) upsertTask(ctx context.Context, root core.ManagedMutat
 		return nil, fmt.Errorf("gj_task write requires user identity")
 	}
 	admin := s.identityRoleIsAdmin(ctx)
-	for _, field := range []string{"id", "account_id", "owner_id", "owner_role", "account_ref", "owner_ref", "last_entry_at", "created_at", "updated_at", "closed_at"} {
+	for _, field := range []string{"id", "verify_status", "verify_after", "verify_attempts", "account_id", "owner_id", "owner_role", "account_ref", "owner_ref", "last_entry_at", "created_at", "updated_at", "closed_at"} {
 		if _, exists := root.Input[field]; exists {
 			return nil, fmt.Errorf("gj_task %s is server-managed", field)
 		}
@@ -298,9 +304,13 @@ func (h taskControlPlane) upsertTask(ctx context.Context, root core.ManagedMutat
 	if existing != nil {
 		statusDefault = stringMapValue(existing, "status")
 	}
+	_, statusSupplied := root.Input["status"]
 	status, err := normalizeTaskStatus(stringInput(root.Input, "status", statusDefault))
 	if err != nil {
 		return nil, err
+	}
+	if statusSupplied && status == "verifying" {
+		return nil, fmt.Errorf("gj_task verifying status is server-managed")
 	}
 	if existing == nil && status != "open" {
 		return nil, fmt.Errorf("gj_task must be created open")
@@ -325,17 +335,42 @@ func (h taskControlPlane) upsertTask(ctx context.Context, root core.ManagedMutat
 	} else if existing != nil {
 		snapshotJSON = jsonMapString(existing, "snapshot_json")
 	}
+	verifyJSON := ""
+	verifySpec := taskVerifySpec{}
+	_, verifySupplied := root.Input["verify_json"]
+	if verifySupplied {
+		verifyJSON, verifySpec, err = s.normalizeTaskVerifyJSON(ctx, jsonStringInput(root.Input, "verify_json"), s.conf.Core.EffectiveTasksConfig().SnapshotMaxBytes)
+		if err != nil {
+			return nil, err
+		}
+	} else if existing != nil {
+		verifyJSON = jsonMapString(existing, "verify_json")
+		if strings.TrimSpace(verifyJSON) != "" {
+			verifySpec, err = parseTaskVerifySpec(verifyJSON)
+			if err != nil {
+				return nil, fmt.Errorf("gj_task stored verify_json is invalid: %w", err)
+			}
+		}
+	}
 
-	if existing == nil || (taskStatus(stringMapValue(existing, "status")) == "closed" && status == "open") {
+	previousStatus := ""
+	if existing != nil {
+		previousStatus = taskStatus(stringMapValue(existing, "status"))
+	}
+	if existing == nil || (!taskStatusActive(previousStatus) && taskStatusActive(status)) {
 		if err := h.enforceTaskLimit(ctx, ownerID, id); err != nil {
 			return nil, err
 		}
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	nowTime := time.Now().UTC()
+	now := nowTime.Format(time.RFC3339Nano)
 	accountID, _ := identityVarString(ctx, "account_id")
 	createdAt := now
 	lastEntryAt := ""
 	closedAt := ""
+	verifyStatus := ""
+	verifyAfter := ""
+	verifyAttempts := int64(0)
 	if existing != nil {
 		createdAt = stringMapValue(existing, "created_at")
 		if createdAt == "" {
@@ -344,31 +379,98 @@ func (h taskControlPlane) upsertTask(ctx context.Context, root core.ManagedMutat
 		lastEntryAt = stringMapValue(existing, "last_entry_at")
 		closedAt = stringMapValue(existing, "closed_at")
 		accountID = stringMapValue(existing, "account_id")
+		verifyStatus = stringMapValue(existing, "verify_status")
+		verifyAfter = stringMapValue(existing, "verify_after")
+		verifyAttempts = int64MapValue(existing, "verify_attempts")
 	}
-	if status == "closed" && (existing == nil || taskStatus(stringMapValue(existing, "status")) != "closed") {
+	verifyChanged := verifySupplied && verifyJSON != jsonMapString(existing, "verify_json")
+	if verifyChanged {
+		verifyStatus = ""
+		verifyAfter = ""
+		if previousStatus == "verifying" && !(statusSupplied && status == "closed") {
+			status = "open"
+			outcome = ""
+			closedAt = ""
+		}
+	}
+	if statusSupplied && status == "open" && previousStatus == "verifying" {
+		verifyStatus = "cancelled"
+		verifyAfter = ""
+	}
+	closingWithVerification := existing != nil && statusSupplied && status == "closed" && strings.TrimSpace(verifyJSON) != "" &&
+		(previousStatus != "closed" || verifyChanged || verifyStatus != "verified")
+	var immediateResult *taskVerificationResult
+	if closingWithVerification {
+		verifyAttempts++
+		closedAt = ""
+		if verifySpec.RecheckWindow > 0 {
+			status = "verifying"
+			verifyStatus = "pending"
+			verifyAfter = nowTime.Add(verifySpec.RecheckWindow).Format(time.RFC3339Nano)
+		} else {
+			ownerCtx := s.ownerContext(ctx, stringMapValue(existing, "owner_id"), stringMapValue(existing, "owner_role"), stringMapValue(existing, "account_id"))
+			result, runErr := s.runTaskVerification(ownerCtx, verifySpec)
+			if runErr != nil {
+				return nil, fmt.Errorf("gj_task verification: %w", runErr)
+			}
+			immediateResult = &result
+			verifyAfter = ""
+			if result.Passed {
+				status = "closed"
+				verifyStatus = "verified"
+				closedAt = now
+			} else {
+				status = "open"
+				verifyStatus = "failed"
+				outcome = ""
+				closedAt = ""
+			}
+		}
+	} else if statusSupplied && status == "closed" && strings.TrimSpace(verifyJSON) == "" {
+		verifyStatus = ""
+		verifyAfter = ""
+	}
+	if status == "closed" && !closingWithVerification && (existing == nil || previousStatus != "closed") {
 		closedAt = now
 	}
 	if status == "open" {
+		outcome = ""
 		closedAt = ""
 	}
 	input := map[string]any{
 		"id": id, "goal": goal, "status": status, "outcome": outcome,
 		"snapshot_json": nullableJSONString(snapshotJSON), "account_id": accountID,
+		"verify_json": nullableJSONString(verifyJSON), "verify_status": verifyStatus,
+		"verify_after": nullableJSONString(verifyAfter), "verify_attempts": verifyAttempts,
 		"owner_id": ownerID, "owner_role": runtimeRoleClass(ctx), "last_entry_at": nullableJSONString(lastEntryAt),
 		"created_at": createdAt, "updated_at": now, "closed_at": nullableJSONString(closedAt),
+	}
+	if immediateResult != nil {
+		if _, err := h.insertTaskVerificationEntry(ctx, existing, verifySpec, *immediateResult, verifyAttempts, now); err != nil {
+			return nil, err
+		}
+		input["last_entry_at"] = now
 	}
 	var rows []map[string]any
 	if existing == nil {
 		rows, err = s.internalStoreMutationRows(ctx, "tasks", `insert: $input`, taskStoreFields, map[string]any{"input": input})
 	} else {
 		update := cloneMap(input)
-		for _, field := range []string{"id", "account_id", "owner_id", "owner_role", "created_at", "last_entry_at"} {
+		for _, field := range []string{"id", "account_id", "owner_id", "owner_role", "created_at"} {
 			delete(update, field)
+		}
+		if immediateResult == nil {
+			delete(update, "last_entry_at")
 		}
 		rows, err = s.internalStoreMutationRows(ctx, "tasks", `where: { id: { eq: $id } }, update: $input`, taskStoreFields, map[string]any{"id": id, "input": update})
 	}
 	if err != nil {
 		return nil, err
+	}
+	if immediateResult != nil {
+		if err := h.pruneTaskEntries(ctx, id); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.bumpArtifactRevision(ctx, "tasks"); err != nil {
 		return nil, err
@@ -463,12 +565,12 @@ func (h taskControlPlane) appendTaskEntry(ctx context.Context, spec taskEntrySpe
 	if err != nil {
 		return nil, false, err
 	}
-	if task == nil || taskStatus(stringMapValue(task, "status")) != "open" || (!admin && stringMapValue(task, "owner_id") != ownerID) {
+	if task == nil || !taskStatusActive(stringMapValue(task, "status")) || (!admin && stringMapValue(task, "owner_id") != ownerID) {
 		return nil, false, errTaskNotFoundOrClosed
 	}
 	spec.Origin = strings.ToLower(strings.TrimSpace(spec.Origin))
 	switch spec.Origin {
-	case "caller", "agent_run", "watch_created":
+	case "caller", "agent_run", "watch_created", "verification":
 	default:
 		return nil, false, fmt.Errorf("gj_task_entry origin is invalid")
 	}
@@ -482,7 +584,7 @@ func (h taskControlPlane) appendTaskEntry(ctx context.Context, spec taskEntrySpe
 	if err != nil {
 		return nil, false, err
 	}
-	id := taskEntryID(spec.TaskID, spec.Origin, spec.TraceID, spec.WatchID)
+	id := taskEntryID(spec.TaskID, spec.Origin, spec.TraceID, spec.WatchID, spec.VerificationHash, spec.VerificationAttempt)
 	if existing, err := s.internalTaskEntryStoreRow(ctx, id); err != nil {
 		return nil, false, err
 	} else if existing != nil {
@@ -564,7 +666,7 @@ func (h taskControlPlane) enforceTaskLimit(ctx context.Context, ownerID, id stri
 	}
 	// This deliberately mirrors the watch cap's read-then-write behavior. A
 	// shared store can briefly exceed the cap under a cross-replica race.
-	rows, err := h.service.internalStoreAllRows(ctx, "tasks", `where: { owner_id: { eq: $owner_id }, status: { eq: "open" } }`, `id`, map[string]any{"owner_id": ownerID})
+	rows, err := h.service.internalStoreAllRows(ctx, "tasks", `where: { owner_id: { eq: $owner_id }, status: { in: ["open", "verifying"] } }`, `id status`, map[string]any{"owner_id": ownerID})
 	if err != nil {
 		return err
 	}
@@ -603,7 +705,9 @@ func taskStoreRow(row map[string]any, rawIDs bool) map[string]any {
 		"id": stringMapValue(row, "id"), "goal": stringMapValue(row, "goal"),
 		"status": taskStatus(stringMapValue(row, "status")), "outcome": stringMapValue(row, "outcome"),
 		"snapshot_json": parseJSONValue(jsonMapString(row, "snapshot_json")),
-		"owner_role":    trustedWatchOwnerRole(stringMapValue(row, "owner_role"), rawIDs), "last_entry_at": stringMapValue(row, "last_entry_at"),
+		"verify_json":   parseJSONValue(jsonMapString(row, "verify_json")), "verify_status": stringMapValue(row, "verify_status"),
+		"verify_after": stringMapValue(row, "verify_after"), "verify_attempts": int64MapValue(row, "verify_attempts"),
+		"owner_role": trustedWatchOwnerRole(stringMapValue(row, "owner_role"), rawIDs), "last_entry_at": stringMapValue(row, "last_entry_at"),
 		"created_at": stringMapValue(row, "created_at"), "updated_at": stringMapValue(row, "updated_at"),
 		"closed_at":   stringMapValue(row, "closed_at"),
 		"account_ref": safeArtifactIdentity(accountID, false), "owner_ref": safeArtifactIdentity(ownerID, false),
@@ -660,10 +764,15 @@ func normalizeTaskStatus(status string) (string, error) {
 	if status == "" {
 		return "open", nil
 	}
-	if status != "open" && status != "closed" {
-		return "", fmt.Errorf("gj_task status must be open or closed")
+	if status != "open" && status != "verifying" && status != "closed" {
+		return "", fmt.Errorf("gj_task status must be open, verifying, or closed")
 	}
 	return status, nil
+}
+
+func taskStatusActive(status string) bool {
+	status = taskStatus(status)
+	return status == "open" || status == "verifying"
 }
 
 func taskStatus(status string) string {
@@ -680,7 +789,7 @@ func taskID(ownerID, goal string) string {
 	return "task:" + hex.EncodeToString(sum[:16])
 }
 
-func taskEntryID(taskID, origin, traceID, watchID string) string {
+func taskEntryID(taskID, origin, traceID, watchID, verificationHash string, verificationAttempt int64) string {
 	var key string
 	switch origin {
 	case "agent_run":
@@ -690,6 +799,10 @@ func taskEntryID(taskID, origin, traceID, watchID string) string {
 	case "watch_created":
 		if strings.TrimSpace(watchID) != "" {
 			key = taskID + ":watch_created:" + strings.TrimSpace(watchID)
+		}
+	case "verification":
+		if strings.TrimSpace(verificationHash) != "" && verificationAttempt > 0 {
+			key = fmt.Sprintf("%s:verification:%s:%d", taskID, strings.TrimSpace(verificationHash), verificationAttempt)
 		}
 	}
 	if key == "" {
@@ -771,6 +884,10 @@ goal TEXT NOT NULL,
 status TEXT NOT NULL DEFAULT 'open',
 outcome TEXT NOT NULL DEFAULT '',
 snapshot_json JSONB,
+verify_json JSONB,
+verify_status TEXT NOT NULL DEFAULT '',
+verify_after TIMESTAMPTZ,
+verify_attempts BIGINT NOT NULL DEFAULT 0,
 account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
 owner_role TEXT NOT NULL DEFAULT 'user',
@@ -807,6 +924,10 @@ goal LONGTEXT NOT NULL,
 status VARCHAR(32) NOT NULL DEFAULT 'open',
 outcome LONGTEXT NOT NULL,
 snapshot_json LONGTEXT,
+verify_json LONGTEXT,
+verify_status VARCHAR(191) NOT NULL DEFAULT '',
+verify_after VARCHAR(64),
+verify_attempts BIGINT NOT NULL DEFAULT 0,
 account_id VARCHAR(191) NOT NULL DEFAULT '',
 owner_id VARCHAR(191) NOT NULL DEFAULT '',
 owner_role VARCHAR(64) NOT NULL DEFAULT 'user',
@@ -843,6 +964,10 @@ goal TEXT NOT NULL,
 status TEXT NOT NULL DEFAULT 'open',
 outcome TEXT NOT NULL DEFAULT '',
 snapshot_json TEXT,
+verify_json TEXT,
+verify_status TEXT NOT NULL DEFAULT '',
+verify_after TEXT,
+verify_attempts INTEGER NOT NULL DEFAULT 0,
 account_id TEXT NOT NULL DEFAULT '',
 owner_id TEXT NOT NULL DEFAULT '',
 owner_role TEXT NOT NULL DEFAULT 'user',
@@ -882,6 +1007,10 @@ func (s *graphjinService) migrateTaskSchema(ctx context.Context, db *sql.DB, dbT
 		{"owner_role", "TEXT NOT NULL DEFAULT 'user'"},
 		{"last_entry_at", "TEXT"},
 		{"closed_at", "TEXT"},
+		{"verify_json", "TEXT"},
+		{"verify_status", "TEXT NOT NULL DEFAULT ''"},
+		{"verify_after", "TEXT"},
+		{"verify_attempts", "INTEGER NOT NULL DEFAULT 0"},
 	}
 	entryColumns := []struct{ name, definition string }{
 		{"detail_json", "TEXT"},
@@ -893,12 +1022,19 @@ func (s *graphjinService) migrateTaskSchema(ctx context.Context, db *sql.DB, dbT
 	case "postgres", "":
 		taskColumns[2].definition = "TIMESTAMPTZ"
 		taskColumns[3].definition = "TIMESTAMPTZ"
+		taskColumns[4].definition = "JSONB"
+		taskColumns[6].definition = "TIMESTAMPTZ"
+		taskColumns[7].definition = "BIGINT NOT NULL DEFAULT 0"
 		entryColumns[0].definition = "JSONB"
 	case "mysql", "mariadb":
 		taskColumns[0].definition = "LONGTEXT NOT NULL"
 		taskColumns[1].definition = "VARCHAR(64) NOT NULL DEFAULT 'user'"
 		taskColumns[2].definition = "VARCHAR(64)"
 		taskColumns[3].definition = "VARCHAR(64)"
+		taskColumns[4].definition = "LONGTEXT"
+		taskColumns[5].definition = "VARCHAR(191) NOT NULL DEFAULT ''"
+		taskColumns[6].definition = "VARCHAR(64)"
+		taskColumns[7].definition = "BIGINT NOT NULL DEFAULT 0"
 		entryColumns[0].definition = "LONGTEXT"
 		entryColumns[1].definition = "VARCHAR(32) NOT NULL DEFAULT ''"
 		entryColumns[2].definition = "VARCHAR(191) NOT NULL DEFAULT ''"
@@ -914,5 +1050,19 @@ func (s *graphjinService) migrateTaskSchema(ctx context.Context, db *sql.DB, dbT
 			return err
 		}
 	}
-	return nil
+	indexName := "idx_graphjin_tasks_verify_due"
+	if dbType == "mysql" || dbType == "mariadb" {
+		rows, err := db.QueryContext(ctx, fmt.Sprintf("SHOW INDEX FROM %s WHERE Key_name = '%s'", tasks, indexName))
+		if err == nil {
+			exists := rows.Next()
+			_ = rows.Close()
+			if exists {
+				return nil
+			}
+		}
+		_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE INDEX %s ON %s (verify_status, verify_after)", quoteStoreIdent(dbType, indexName), tasks))
+		return err
+	}
+	_, err := db.ExecContext(ctx, fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (verify_status, verify_after)", quoteStoreIdent(dbType, indexName), tasks))
+	return err
 }
