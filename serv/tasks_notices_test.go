@@ -20,6 +20,11 @@ func TestTaskOpenUnlinkedNoticeIsBoundedAndOwnerScoped(t *testing.T) {
 		ids = append(ids, fmt.Sprint(row["id"]))
 	}
 	foreign := insertTaskForTest(t, cp, other, "Foreign open task")
+	if _, err := svc.internalStoreMutationRows(ctx, "tasks", `where: { id: { eq: $id } }, update: $input`, taskStoreFields, map[string]any{
+		"id": ids[6], "input": map[string]any{"status": "verifying", "verify_status": "pending", "verify_after": "2099-01-01T00:00:00Z"},
+	}); err != nil {
+		t.Fatalf("mark task verifying: %v", err)
+	}
 	if _, _, err := cp.appendTaskEntry(ctx, taskEntrySpec{
 		TaskID: ids[0], Origin: "caller", Body: "Most recently active task.",
 	}); err != nil {
@@ -34,6 +39,9 @@ func TestTaskOpenUnlinkedNoticeIsBoundedAndOwnerScoped(t *testing.T) {
 	notice := resp.Notices[0]
 	if notice.Kind != "task_open_unlinked" || notice.Count != 7 || len(notice.TaskIDs) != 5 {
 		t.Fatalf("open-task notice = %+v", notice)
+	}
+	if !strings.Contains(notice.Message, "verifying") {
+		t.Fatalf("active-task notice does not describe verifying tasks: %+v", notice)
 	}
 	if notice.TaskIDs[0] != ids[0] {
 		t.Fatalf("most recently active task = %q, want %q; notice=%+v", notice.TaskIDs[0], ids[0], notice)
@@ -122,7 +130,7 @@ func TestTaskCreationNextGuidance(t *testing.T) {
 		) { id goal status }
 	}`
 	next := ms.nextForToolCall("execute_graphql", map[string]any{"query": taskQuery}, ExecuteResult{})
-	if next == nil || next.StateCode != "task_created" || next.RecommendedTool != "ask_graphjin_agent" || len(next.Options) != 2 {
+	if next == nil || next.StateCode != "task_created" || next.RecommendedTool != "ask_graphjin_agent" || len(next.Options) != 3 {
 		t.Fatalf("task creation next guidance = %+v", next)
 	}
 	if got := fmt.Sprint(next.Options[0].ArgsTemplate["task_id"]); got != "<retained_task_id>" {
@@ -130,6 +138,9 @@ func TestTaskCreationNextGuidance(t *testing.T) {
 	}
 	if query := fmt.Sprint(next.Options[1].ArgsTemplate["query"]); !strings.Contains(query, "gj_task_entry(insert") {
 		t.Fatalf("task journal template = %+v", next.Options[1].ArgsTemplate)
+	}
+	if query := fmt.Sprint(next.Options[2].ArgsTemplate["query"]); !strings.Contains(query, "verify_json") || !strings.Contains(query, "saved_query_name") {
+		t.Fatalf("task verification template = %+v", next.Options[2].ArgsTemplate)
 	}
 
 	ordinary := ms.nextForToolCall("execute_graphql", map[string]any{

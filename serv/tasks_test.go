@@ -281,7 +281,7 @@ func TestTaskSchemaMigrationAddsTrailColumns(t *testing.T) {
 		t.Fatalf("migrate task schema: %v", err)
 	}
 	for table, columns := range map[string][]string{
-		"_graphjin_tasks":        {"outcome", "owner_role", "last_entry_at", "closed_at"},
+		"_graphjin_tasks":        {"outcome", "owner_role", "last_entry_at", "closed_at", "verify_json", "verify_status", "verify_after", "verify_attempts"},
 		"_graphjin_task_entries": {"detail_json", "status", "trace_id", "watch_id"},
 	} {
 		for _, column := range columns {
@@ -294,6 +294,13 @@ func TestTaskSchemaMigrationAddsTrailColumns(t *testing.T) {
 			}
 		}
 	}
+	var verifyIndexCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_graphjin_tasks_verify_due'`).Scan(&verifyIndexCount); err != nil {
+		t.Fatalf("inspect verification index: %v", err)
+	}
+	if verifyIndexCount != 1 {
+		t.Fatalf("verification due index count = %d, want 1", verifyIndexCount)
+	}
 }
 
 func TestTaskRejectsServerManagedInputs(t *testing.T) {
@@ -302,6 +309,9 @@ func TestTaskRejectsServerManagedInputs(t *testing.T) {
 	for _, input := range []map[string]any{
 		{"id": "task:caller-selected", "goal": "Caller-selected id"},
 		{"goal": "Spoof owner ref", "owner_ref": "sha256:spoofed"},
+		{"goal": "Spoof verify state", "verify_status": "verified"},
+		{"goal": "Spoof verify schedule", "verify_after": time.Now().UTC().Format(time.RFC3339)},
+		{"goal": "Spoof verify attempt", "verify_attempts": 9},
 	} {
 		if _, err := cp.mutateRow(ctx, core.ManagedMutationRoot{Table: tasksRootTable, Operation: "insert", Input: input}); err == nil || !strings.Contains(err.Error(), "server-managed") {
 			t.Fatalf("task server-managed input %+v error = %v", input, err)

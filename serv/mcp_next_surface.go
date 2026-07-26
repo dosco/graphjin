@@ -409,6 +409,10 @@ func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload a
 				nextOption("execute_graphql", 2, "Journal durable progress, evidence, and decisions on the task trail.", "Append gj_task_entry(insert) after meaningful work and before handoff.", []string{"query"}, []string{"variables", "namespace"}),
 				carryArgs(map[string]any{"query": "mutation {\n  gj_task_entry(insert: {\n    task_id: \"<retained_task_id>\"\n    body: \"<progress, evidence, or decision>\"\n  }) {\n    id\n    task_id\n    origin\n  }\n}"}, args, "namespace"),
 			),
+			optionWithTemplate(
+				nextOption("execute_graphql", 3, "Declare a saved-query verification when closing the task.", "GraphJin runs the check as the task owner and records a verification trail entry; add recheck only for a delayed one-shot check.", []string{"query"}, []string{"variables", "namespace"}),
+				carryArgs(map[string]any{"query": "mutation {\n  gj_task(where: { id: { eq: \"<retained_task_id>\" } }, update: {\n    status: \"closed\"\n    outcome: \"<claimed outcome>\"\n    verify_json: {\n      saved_query_name: \"<saved_query_name>\"\n      variables: {}\n      expect: { path: \"<result.path>\", op: \"empty\" }\n    }\n  }) {\n    id\n    status\n    verify_status\n    verify_after\n    closed_at\n  }\n}"}, args, "namespace"),
+			),
 		})
 
 	default:

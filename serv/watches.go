@@ -334,7 +334,7 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 		if taskErr != nil {
 			return nil, taskErr
 		}
-		if task == nil || taskStatus(stringMapValue(task, "status")) != "open" || (!admin && stringMapValue(task, "owner_id") != ownerID) {
+		if task == nil || !taskStatusActive(stringMapValue(task, "status")) || (!admin && stringMapValue(task, "owner_id") != ownerID) {
 			return nil, errTaskNotFoundOrClosed
 		}
 	}

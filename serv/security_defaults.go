@@ -295,7 +295,8 @@ func applyTaskRoleProjectionDefaults(conf *Config, role string, rt *core.RoleTab
 
 func taskPublicProjectionColumns() []string {
 	return []string{
-		"id", "goal", "status", "outcome", "snapshot_json", "last_entry_at",
+		"id", "goal", "status", "outcome", "snapshot_json", "verify_json", "verify_status",
+		"verify_after", "verify_attempts", "last_entry_at",
 		"created_at", "updated_at", "closed_at",
 	}
 }

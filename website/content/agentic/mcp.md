@@ -36,8 +36,11 @@ GraphJin's MCP surface starts with discovery:
 Declared-task lifecycle and journal writes stay on GraphQL roots `gj_task` and
 `gj_task_entry`; GraphJin adds no task-specific MCP tools or resources. The one
 MCP addition is optional `task_id` on `ask_graphjin_agent`, which loads the
-same-owner open task as untrusted warm-start context and journals the run. See
-[Declared Tasks](/agentic/tasks/).
+same-owner open or verifying task as untrusted warm-start context and journals
+the run. Task closes can declare a saved-query check in `verify_json`; GraphJin
+runs it as the stored owner and returns `verified`, `failed`, or `pending`
+state through the same GraphQL row. Agent responses also surface active and
+failed task notices. See [Declared Tasks](/agentic/tasks/).
 
 {{< verified by="TestMCPCLIParity" file="cmd/mcp_parity_test.go" line="18" >}}
 {{< verified by="TestProcessCursorsForMCP" file="serv/mcp_cursor_test.go" line="20" >}}

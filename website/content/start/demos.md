@@ -44,13 +44,19 @@ graphjin serve --demo --path examples/coffee-roastery
 ```
 
 - **Sources:** `ops` (writable Postgres - customers, green lots, roast schedule, production orders, subscriptions, tickets), `roast_warehouse` (read-only BigQuery simulator - roast batches, sensor samples, cupping scores), `business_code` (TypeScript CodeSQL index), workflows, and the GraphJin control plane.
-- **Shows off:** the widest agentic surface - durable watches, the owner-scoped managed artifact store, automatic server-first model routing with MCP client fallback, JWT identity in agentic mode, and CodeSQL over real business logic. Four workflows, including `daily_roast_plan` and `batch_quality_review`.
+- **Shows off:** the widest agentic surface - durable verified tasks, durable watches, the owner-scoped managed artifact store, automatic server-first model routing with MCP client fallback, JWT identity in agentic mode, and CodeSQL over real business logic. Four workflows, including `daily_roast_plan` and `batch_quality_review`.
 
 **Ask it:**
 
 - "Find today's queued production orders, active subscriptions, available green coffee lots, and planned roast schedule. Does the roast plan cover committed shipments?"
 - "Compare the latest roast batches, cupping scores, and sensor samples. Identify any batch that should be held for review before release."
+- "Create a task for today's roast plan, continue it in a later run, then close it only if the saved daily roast query proves production work is present."
 - "Create a watch that tells me when new production orders appear, then show my unseen watch events and mark them reviewed."
+
+The deterministic smoke path creates a declared task, journals the agent run,
+links its standing watch, and closes the task only after `daily_roast_context`
+passes a `count_ge` expectation. It asserts `verify_status: "verified"`, one
+attempt, `closed_at`, and exactly one hashed `verification` trail entry.
 
 ### Watch automation walkthrough
 

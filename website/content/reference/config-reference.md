@@ -28,6 +28,7 @@ CLI, the agent, MCP tools, and the `gj_config` control plane.
 | Environment and production | [Environment And Production](/configure/environment-production/) |
 | MCP | [MCP](/agentic/mcp/) and [MCP OAuth](/agentic/oauth/) |
 | Built-in agent | [Server-Side Agent](/agentic/server-agent/) |
+| Declared tasks | [Durable Verified Tasks](/agentic/tasks/) |
 | Federation | [Apollo Federation](/integrations/federation/) |
 
 ## Canonical source

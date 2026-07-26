@@ -1476,7 +1476,7 @@ extend type Query {
 
 GraphJin can persist an explicitly declared, owner-scoped goal in `gj_task` and
 record what happened under it in immutable `gj_task_entry` rows. Caller journal
-notes, embedded-agent runs, and linked-watch creation receive distinct,
+notes, embedded-agent runs, linked-watch creation, and outcome verification receive distinct,
 server-managed provenance labels.
 
 ```graphql
@@ -1503,7 +1503,34 @@ and automatic `agent_run` journaling, or set `gj_watch.task_id` to preserve why
 a standing watch exists. A task ID is correlation only: it never grants access
 or satisfies catalog, query, or mutation evidence guards. Tasks are not inferred
 and there is no task MCP resource. Close completed tasks with an outcome to keep
-the trail; deletion cascades entries and unlinks watches.
+the trail; deletion cascades entries and unlinks watches. A close may also carry
+`verify_json`, which names an owner-resolvable saved query and a small typed
+expectation. GraphJin runs the check under the stored task-owner identity and
+records a `verification` entry. An immediate pass closes the task; failure
+leaves it open. With a bounded `recheck` window, the task enters `verifying`
+until the durable one-shot sweep records the result. Inline GraphQL and
+JavaScript conditions are not accepted.
+
+```graphql
+mutation {
+  gj_task(where: { id: { eq: "task:..." } }, update: {
+    status: "closed"
+    outcome: "No delayed orders remain."
+    verify_json: {
+      saved_query_name: "late_orders"
+      variables: { region: "west" }
+      expect: { path: "orders", op: "empty" }
+      recheck: "2h"
+    }
+  }) {
+    id
+    status
+    verify_status
+    verify_after
+    closed_at
+  }
+}
+```
 
 ## MCP Connections for AI Clients
 

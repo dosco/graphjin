@@ -1163,14 +1163,22 @@ mutation {
 
 Caller notes use `gj_task_entry(insert: { task_id, body, detail_json })`.
 GraphJin writes `agent_run` entries for embedded-agent calls and
-`watch_created` entries when a linked watch is created; origins, trace IDs,
+`watch_created` entries when a linked watch is created, and `verification`
+entries when a declared outcome check runs; origins, trace IDs,
 watch IDs, status, owner, and timestamps are server-managed. An open task can
 warm-start `ask_graphjin_agent` through its `task_id` argument. The goal and up
 to five recent entries become untrusted history hints, so the run must still
 perform its own catalog discovery and satisfy every mutation guard.
 
-Close a completed task with `status: "closed"` and an `outcome`; reopening is
-allowed. Appends and warm-start require an open same-owner task. Deleting is
+Close a completed task with `status: "closed"` and an `outcome`. To require
+proof, add `verify_json` with an owner-resolvable `saved_query_name`, optional
+variables, an `expect` predicate (`empty`, `not_empty`, `count_le`, `count_ge`,
+`eq`, `neq`, `le`, or `ge`), and an optional one-shot `recheck` duration.
+GraphJin executes the saved query as the stored task owner; a pass closes the
+task, while a failure leaves it open and adds a `task_verify_failed` notice.
+Delayed checks use `verifying` until the durable sweep records the result.
+Inline GraphQL and `condition_js` are not accepted. Reopening is allowed.
+Appends and warm-start require an active (`open` or `verifying`) same-owner task. Deleting is
 owner-scoped and benign when the task is missing or foreign; a real delete
 cascades entries and clears `task_id` on linked watches. Prefer closing so the
 trail remains auditable. No `graphjin://task` MCP resource exists. The runtime
