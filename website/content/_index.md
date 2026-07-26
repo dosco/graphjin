@@ -53,12 +53,36 @@ curl -sS localhost:8080/api/v1/agent \
 
 <section id="watch-automation" class="home-section watch-automation-section" data-watch-story>
   <div class="home-section-heading">
-    <p class="home-section-label">Highly reactive agents</p>
-    <h2>The agent that notices changes—and silence.</h2>
-    <p>GraphJin keeps governed questions running across your live systems. It detects what changed, notices what failed to happen, distills noise, correlates signals, and wakes the right conversation—or proposes an approved action.</p>
+    <p class="home-section-label">Standing questions</p>
+    <h2>Nothing happened. That was the problem.</h2>
+    <p>Everywhere else on this page, you ask. Here you don’t. Leave a governed question running and GraphJin keeps answering it against live data—then speaks up when the answer changes, when something expected never arrives, or when it needs your permission to act.</p>
   </div>
-
-  <div class="watch-capability-grid" aria-label="GraphJin reactive agent capabilities">
+  <div class="watch-scene" data-watch-stage="1">
+    <div class="ai-window watch-window">
+      <div class="window-chrome"><span></span><span></span><span></span><i aria-hidden="true">✣</i><strong>GraphJin Watch · #ops-shipping · 06:14</strong></div>
+      <div class="ai-conversation">
+        <p class="watch-unprompted">no prompt · nobody asked</p>
+        <div class="assistant-row">
+          <div class="assistant-avatar" aria-hidden="true">✣</div>
+          <div class="chat-assistant">
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>watch · shipment_scans</span></div><code>0 rows in 4h · absence window elapsed</code></div>
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>watch · green_lots</span></div><code>18 kg on hand · below safety buffer</code></div>
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>rollup</span></div><code>2 watches correlated → 1 signal</code></div>
+            <p class="done-line"><span aria-hidden="true">✓</span><span class="done-text"> 1 conversation woken · 0 duplicates · action held</span></p>
+            <p class="assistant-copy">No shipment scan in four hours, and green-bean inventory is already under the safety buffer. Neither one is an alert on its own. Together, Tuesday’s roast stops by 14:00.</p>
+            <div class="watch-gate"><div><strong>Draft supplier escalation</strong><span>approval pending</span></div><p>Written, attached, and not sent. The workflow stays paused until you approve this exact version.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="watch-answer-grid" data-watch-stage="2">
+    <article><span>How did it know nothing happened?</span><strong>Absence is a first-class event</strong><p>You declare the window. A watch that sees zero rows in four hours fires exactly like one that sees a thousand, so silence stops vanishing between polls.</p></article>
+    <article><span>Why did it send only one message?</span><strong>Noise drains before you see it</strong><p>Routine events discard or roll into an unseen digest, and related watches correlate by exact ID into one signal. One conversation woke up, not four channels.</p></article>
+    <article><span>What if the model gets it wrong?</span><strong>It can wake you. It cannot act.</strong><p><strong>Alerts fail open.</strong> If AI triage is unavailable, GraphJin still sends the raw notification. <strong>Actions fail closed.</strong> A workflow never runs without the required approval.</p></article>
+  </div>
+  <p class="watch-grid-label">Everything a standing question can do</p>
+  <div class="watch-capability-grid" data-watch-stage="3" aria-label="GraphJin reactive agent capabilities">
     <article><span>Change</span><strong>React to live data</strong><p>Cursor-backed questions keep running across your systems.</p></article>
     <article><span>Absence</span><strong>Notice what did not happen</strong><p>“No shipment scan in four hours” becomes a first-class event.</p></article>
     <article><span>Digest</span><strong>Turn noise into one signal</strong><p>Routine events drain into one useful, unseen summary.</p></article>
@@ -66,58 +90,6 @@ curl -sS localhost:8080/api/v1/agent \
     <article><span>Snooze</span><strong>Defer without losing the event</strong><p>Hide an unseen event until later without acknowledging it.</p></article>
     <article><span>Recover</span><strong>Reconnect, resume, retry</strong><p>Persist cursors and back off transient failures automatically.</p></article>
   </div>
-
-  <div class="watch-showcase" aria-label="Shipment silence and low inventory correlated by GraphJin">
-    <section class="watch-showcase-column watch-input-column" data-watch-stage="1" aria-labelledby="watch-input-title">
-      <div class="watch-stage-label"><span>01</span><strong id="watch-input-title">Watch change and silence</strong></div>
-      <article class="watch-signal-card">
-        <div class="watch-signal-heading"><span class="watch-signal-dot watch-signal-dot-roast" aria-hidden="true"></span><strong>Green-bean inventory</strong><span>change</span></div>
-        <code>green_lots · below safety buffer</code>
-        <p>A cursor-backed watch records the live inventory change.</p>
-      </article>
-      <article class="watch-signal-card">
-        <div class="watch-signal-heading"><span class="watch-signal-dot watch-signal-dot-absence" aria-hidden="true"></span><strong>Shipment scans</strong><span>silent</span></div>
-        <code>no scan · 4h absence window</code>
-        <p>Silence becomes evidence instead of disappearing between polls.</p>
-      </article>
-    </section>
-
-    <div class="watch-showcase-arrow" aria-hidden="true">→</div>
-
-    <section class="watch-showcase-column watch-control-column" data-watch-stage="2" aria-labelledby="watch-control-title">
-      <div class="watch-stage-label"><span>02</span><strong id="watch-control-title">Distill and correlate</strong></div>
-      <ol class="watch-control-stack">
-        <li><span>Watch</span><strong>Detect change + absence</strong></li>
-        <li><span>Flow</span><strong>discard · digest · notify</strong></li>
-        <li><span>Rollup</span><strong>Correlate exact watch IDs</strong></li>
-        <li><span>Route</span><strong>Wake the exact resource</strong></li>
-      </ol>
-      <div class="watch-verdict">
-        <div><span>rollup</span><span>absence</span><span>critical</span></div>
-        <strong>Shipment activity is silent while inventory is below buffer.</strong>
-        <p>Two independent streams become one governed operational signal.</p>
-      </div>
-    </section>
-
-    <div class="watch-showcase-arrow" aria-hidden="true">→</div>
-
-    <section class="watch-showcase-column watch-outcome-column" data-watch-stage="3" aria-labelledby="watch-outcome-title">
-      <div class="watch-stage-label"><span>03</span><strong id="watch-outcome-title">Wake or act safely</strong></div>
-      <article class="watch-conversation-card"><span>shipping watch only</span><strong>Shipping conversation</strong><p>No shipment scan has arrived in four hours.</p></article>
-      <article class="watch-conversation-card"><span>operations rollup only</span><strong>Operations conversation</strong><p>Shipment silence now threatens the inventory buffer.</p></article>
-      <aside class="watch-action-gate">
-        <div><strong>Draft supplier escalation</strong><span>approval pending</span></div>
-        <code>action_hash · exact version</code>
-        <p>No workflow runs until this exact action is approved.</p>
-      </aside>
-    </section>
-  </div>
-
-  <div class="watch-reactive-proof">
-    <p><strong>It remembers.</strong> Durable watches persist cursor checkpoints, reconnect after drops, and exponentially back off transient failures.</p>
-    <p><strong>It respects attention.</strong> Digest noisy events, route by exact watch ID, or snooze one without marking it seen.</p>
-  </div>
-  <p class="watch-showcase-note"><strong>Alerts fail open.</strong> If AI triage is unavailable, GraphJin still sends the raw notification. <strong>Actions fail closed.</strong> A workflow never runs without the required approval.</p>
   <div class="home-actions"><a class="button-primary" href="/agentic/watch-automation/">Explore the reactive agent</a><a class="button-secondary" href="/start/demos/#coffee-roastery">Run the coffee demo</a></div>
 </section>
 

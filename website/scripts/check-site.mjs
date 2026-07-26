@@ -206,9 +206,11 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     }
   }
   for (const required of [
-    'The agent that notices changes—and silence.',
+    'Nothing happened. That was the problem.',
     'No shipment scan in four hours',
-    'operations rollup only',
+    'absence window elapsed',
+    '2 watches correlated',
+    'approval pending',
     'Reconnect, resume, retry',
     'Alerts fail open.',
     'Actions fail closed.',
