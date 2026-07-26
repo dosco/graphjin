@@ -1,6 +1,6 @@
 ---
 title: "Agentic"
-description: "MCP, catalog discovery, security posture, source mode, workflows, watches, and OAuth."
+description: "MCP, catalog discovery, security posture, declared tasks, source mode, workflows, watches, and OAuth."
 nav_group: "agentic"
 weight: 4
 ---

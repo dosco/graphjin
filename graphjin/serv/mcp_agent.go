@@ -20,7 +20,7 @@ func (ms *mcpServer) registerAgentTools() {
 	}
 	ms.srv.AddTool(mcp.NewTool(
 		mcpToolAskGraphJinAgent,
-		mcp.WithDescription("Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action; pass prior turns in history to enable follow-up questions. Blocked responses include a structured refusal (code, because, unblock steps, policy_final/retryable): run the unblock steps and retry only when retryable. Responses may also carry notices — kind watch_events_unseen includes the watch_ids this MCP session should query and acknowledge. Model selection is server-first: configured server credentials always win; otherwise GraphJin borrows this client's model via MCP sampling. Caller identity and permissions are unchanged."),
+		mcp.WithDescription("Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action; pass prior turns in history to enable follow-up questions. Blocked responses include a structured refusal (code, because, unblock steps, policy_final/retryable): run the unblock steps and retry only when retryable. Responses may also carry notices: watch_events_unseen lists watch_ids to review, task_open_unlinked lists open task_ids that were not attached to the run, and task_context_loaded confirms retained task context. Model selection is server-first: configured server credentials always win; otherwise GraphJin borrows this client's model via MCP sampling. Caller identity and permissions are unchanged."),
 		mcp.WithString("instruction",
 			mcp.Required(),
 			mcp.Description("The user's goal or question for GraphJin."),
@@ -30,6 +30,9 @@ func (ms *mcpServer) registerAgentTools() {
 		),
 		mcp.WithString("namespace",
 			mcp.Description("Optional namespace for multi-tenant deployments."),
+		),
+		mcp.WithString("task_id",
+			mcp.Description("Optional retained gj_task id. It loads owner-scoped declared context and journals this run; it never grants access or satisfies discovery guards."),
 		),
 		mcp.WithNumber("max_steps",
 			mcp.Description("Optional agent step cap for this request. Capped by agent.max_steps."),
@@ -69,6 +72,10 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 	}
 	// Capabilities is server-derived and json:"-"; it is never taken from tool args.
 	agentReq.Capabilities = ms.service.agentCapabilityProfile(ctx)
+	taskWarm, err := ms.service.resolveAgentTaskContext(ctx, &agentReq)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 
 	// Clients that send a progress token get one notifications/progress event per
 	// executed agent action (best-effort; a dropped notification never fails the run).
@@ -92,15 +99,19 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 		var runner graphjinAgentRunner
 		runner, err = newGraphJinAgentRunner(ms.service, agentConf, agentOpts...)
 		if err != nil {
-			recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, time.Since(start), err)
+			recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, taskWarm, time.Since(start), err)
+			ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), err)
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		resp, err = runner.Run(ctx, agentReq)
 		if err == nil {
 			ms.service.appendWatchNotices(ctx, &resp)
+			ms.service.appendTaskNotices(ctx, agentReq, &resp)
+			appendTaskContextNotice(taskWarm, &resp)
 		}
 	}
-	recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, time.Since(start), err)
+	recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, taskWarm, time.Since(start), err)
+	ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), err)
 	if err != nil {
 		if errors.Is(err, errMCPSamplingUnavailable) {
 			payload := map[string]any{
@@ -123,6 +134,7 @@ func agentRequestFromArgs(args map[string]any) gjagent.Request {
 	req := gjagent.Request{
 		Instruction: stringArg(args, "instruction"),
 		Namespace:   stringArg(args, "namespace"),
+		TaskID:      stringArg(args, "task_id"),
 		MaxSteps:    catalogIntArg(args, "max_steps"),
 	}
 	if ctx, ok := args["context"].(map[string]any); ok {

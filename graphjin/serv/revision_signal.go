@@ -66,6 +66,9 @@ func (h revisionSignalHandler) revisionRows(stored []map[string]any) []map[strin
 	if h.service != nil && h.service.watchesEnabled() {
 		domains = append(domains, "watches", "watch_events")
 	}
+	if h.service != nil && h.service.tasksEnabled() {
+		domains = append(domains, "tasks")
+	}
 	byDomain := make(map[string]map[string]any, len(stored))
 	for _, row := range stored {
 		domain := strings.TrimSpace(stringMapValue(row, "domain"))

@@ -880,6 +880,7 @@ var runtimeDefaultKeys = []string{
 	"artifacts.source",
 	"watches.enabled",
 	"watches.runner",
+	"tasks.enabled",
 	"agent.enabled",
 	"agent.sampling",
 	"mcp.http_stateful",
@@ -947,6 +948,9 @@ func applyRuntimeModeDefaults(c *Config) {
 	}
 	if c.Core.Watches.Enabled && !c.settingExplicit("watches.runner") {
 		c.Core.Watches.Runner = "all"
+	}
+	if !c.settingExplicit("tasks.enabled") {
+		c.Core.Tasks.Enabled = c.Core.Artifacts.Enabled
 	}
 
 	if !c.settingExplicit("agent.enabled") {
@@ -1192,6 +1196,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("artifacts.source", "GJ_ARTIFACTS_SOURCE", "SG_ARTIFACTS_SOURCE", "SJ_ARTIFACTS_SOURCE")     //nolint:errcheck
 	vi.BindEnv("watches.enabled", "GJ_WATCHES_ENABLED", "SG_WATCHES_ENABLED", "SJ_WATCHES_ENABLED")         //nolint:errcheck
 	vi.BindEnv("watches.runner", "GJ_WATCHES_RUNNER", "SG_WATCHES_RUNNER", "SJ_WATCHES_RUNNER")             //nolint:errcheck
+	vi.BindEnv("tasks.enabled", "GJ_TASKS_ENABLED", "SG_TASKS_ENABLED", "SJ_TASKS_ENABLED")                 //nolint:errcheck
 
 	// Caching defaults
 	vi.SetDefault("caching.enable", false)
@@ -1247,6 +1252,7 @@ func (c *Config) EffectiveSettings() map[string]any {
 	setEffectiveSetting(settings, "artifacts.enabled", c.Core.Artifacts.Enabled)
 	setEffectiveSetting(settings, "watches.enabled", c.Core.Watches.Enabled)
 	setEffectiveSetting(settings, "watches.runner", c.Core.Watches.Runner)
+	setEffectiveSetting(settings, "tasks.enabled", c.Core.Tasks.Enabled)
 	setEffectiveSetting(settings, "agent.enabled", c.Agent.Enabled)
 	setEffectiveSetting(settings, "mcp.http_stateful", c.MCP.HTTPStateful)
 	setEffectiveSetting(settings, "mcp.include_tools_with_agent", c.MCP.IncludeToolsWithAgent)

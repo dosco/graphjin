@@ -395,9 +395,168 @@ func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload a
 			),
 		})
 
+	case "execute_graphql":
+		result, ok := payload.(ExecuteResult)
+		if !ok || len(result.Errors) != 0 || !hasTaskInsertArgument(stringArg(args, "query")) {
+			return ms.nextForExistingToolCall(tool, args, payload)
+		}
+		return ms.newNextGuidance("task_created", []NextOption{
+			optionWithTemplate(
+				nextOption("ask_graphjin_agent", 1, "Continue the declared task with its retained context.", "Pass the id returned by gj_task(insert) on every related agent run.", []string{"instruction"}, []string{"task_id", "namespace"}),
+				carryArgs(map[string]any{"task_id": "<retained_task_id>"}, args, "namespace"),
+			),
+			optionWithTemplate(
+				nextOption("execute_graphql", 2, "Journal durable progress, evidence, and decisions on the task trail.", "Append gj_task_entry(insert) after meaningful work and before handoff.", []string{"query"}, []string{"variables", "namespace"}),
+				carryArgs(map[string]any{"query": "mutation {\n  gj_task_entry(insert: {\n    task_id: \"<retained_task_id>\"\n    body: \"<progress, evidence, or decision>\"\n  }) {\n    id\n    task_id\n    origin\n  }\n}"}, args, "namespace"),
+			),
+		})
+
 	default:
 		return ms.nextForExistingToolCall(tool, args, payload)
 	}
+}
+
+// hasTaskInsertArgument recognizes the root argument rather than matching text
+// inside a goal or snapshot string. It is intentionally a small GraphQL lexical
+// check, not a second parser on the execute_graphql hot path.
+func hasTaskInsertArgument(query string) bool {
+	for i := 0; i < len(query); {
+		i = skipGraphQLTrivia(query, i)
+		if i >= len(query) {
+			return false
+		}
+		if query[i] == '"' {
+			i = skipGraphQLString(query, i)
+			continue
+		}
+		if !isGraphQLNameStart(query[i]) {
+			i++
+			continue
+		}
+		start := i
+		for i < len(query) && isGraphQLNameContinue(query[i]) {
+			i++
+		}
+		if !strings.EqualFold(query[start:i], "gj_task") {
+			continue
+		}
+		open := skipGraphQLTrivia(query, i)
+		if open < len(query) && query[open] == '(' && taskRootHasInsertArgument(query, open+1) {
+			return true
+		}
+	}
+	return false
+}
+
+func taskRootHasInsertArgument(query string, i int) bool {
+	parenDepth := 1
+	braceDepth := 0
+	bracketDepth := 0
+	for i < len(query) {
+		i = skipGraphQLTrivia(query, i)
+		if i >= len(query) {
+			break
+		}
+		switch query[i] {
+		case '"':
+			i = skipGraphQLString(query, i)
+			continue
+		case '(':
+			parenDepth++
+			i++
+			continue
+		case ')':
+			parenDepth--
+			if parenDepth == 0 {
+				return false
+			}
+			i++
+			continue
+		case '{':
+			braceDepth++
+			i++
+			continue
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+			i++
+			continue
+		case '[':
+			bracketDepth++
+			i++
+			continue
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+			i++
+			continue
+		}
+		if parenDepth != 1 || braceDepth != 0 || bracketDepth != 0 || !isGraphQLNameStart(query[i]) {
+			i++
+			continue
+		}
+		start := i
+		for i < len(query) && isGraphQLNameContinue(query[i]) {
+			i++
+		}
+		if !strings.EqualFold(query[start:i], "insert") {
+			continue
+		}
+		i = skipGraphQLTrivia(query, i)
+		if i < len(query) && query[i] == ':' {
+			return true
+		}
+	}
+	return false
+}
+
+func skipGraphQLTrivia(query string, i int) int {
+	for i < len(query) {
+		switch query[i] {
+		case ' ', '\t', '\r', '\n', ',':
+			i++
+		case '#':
+			for i < len(query) && query[i] != '\n' && query[i] != '\r' {
+				i++
+			}
+		default:
+			return i
+		}
+	}
+	return i
+}
+
+func skipGraphQLString(query string, i int) int {
+	if i+2 < len(query) && query[i:i+3] == `"""` {
+		i += 3
+		for i+2 < len(query) {
+			if query[i:i+3] == `"""` {
+				return i + 3
+			}
+			i++
+		}
+		return len(query)
+	}
+	for i++; i < len(query); i++ {
+		if query[i] == '\\' {
+			i++
+			continue
+		}
+		if query[i] == '"' {
+			return i + 1
+		}
+	}
+	return len(query)
+}
+
+func isGraphQLNameStart(value byte) bool {
+	return value == '_' || value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z'
+}
+
+func isGraphQLNameContinue(value byte) bool {
+	return isGraphQLNameStart(value) || value >= '0' && value <= '9'
 }
 
 func (ms *mcpServer) nextForExistingToolCall(tool string, args map[string]any, payload any) *NextGuidance {

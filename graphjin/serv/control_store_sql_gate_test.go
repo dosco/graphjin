@@ -19,8 +19,11 @@ func TestControlStoreRuntimeDoesNotUseDirectSQL(t *testing.T) {
 		"watches.go": {
 			"migrateWatchSchema": true,
 		},
+		"tasks.go": {
+			"migrateTaskSchema": true,
+		},
 	}
-	for _, name := range []string{"artifacts.go", "watches.go", "watch_runner.go", "watch_delivery.go", "projection_poll.go"} {
+	for _, name := range []string{"artifacts.go", "watches.go", "tasks.go", "tasks_agent.go", "watch_runner.go", "watch_delivery.go", "projection_poll.go"} {
 		path := filepath.Join(".", name)
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, path, nil, 0)

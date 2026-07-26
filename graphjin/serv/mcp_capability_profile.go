@@ -44,6 +44,8 @@ var mcpGraphJinRoots = []string{
 	"gj_artifacts",
 	"gj_watch",
 	"gj_watch_event",
+	"gj_task",
+	"gj_task_entry",
 	"gj_workflow",
 	"gj_workflow_execution",
 	"gj_runtime",
@@ -185,6 +187,8 @@ func (ms *mcpServer) graphJinRootProfiles(ctx context.Context) ([]MCPRootProfile
 		} else {
 			if (root == "gj_watch" || root == "gj_watch_event") && (ms == nil || ms.service == nil || !ms.service.watchesEnabled()) {
 				item.Reason = "disabled by configuration"
+			} else if (root == "gj_task" || root == "gj_task_entry") && (ms == nil || ms.service == nil || !ms.service.tasksEnabled()) {
+				item.Reason = "disabled by configuration"
 			} else {
 				item.Reason = "disabled by feature capability or blocked by root access"
 			}
@@ -200,6 +204,10 @@ func (ms *mcpServer) rootVisibleForContext(ctx context.Context, root string) boo
 		// Watches are config-gated; a disabled deployment never registers the
 		// roots as tables, so it must not advertise them either.
 		if ms == nil || ms.service == nil || !ms.service.watchesEnabled() {
+			return false
+		}
+	case "gj_task", "gj_task_entry":
+		if ms == nil || ms.service == nil || !ms.service.tasksEnabled() {
 			return false
 		}
 	}

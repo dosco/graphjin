@@ -214,6 +214,9 @@ func TestParsedDevAndAgenticRuntimeDefaults(t *testing.T) {
 			if !conf.Core.Watches.Enabled || conf.Core.Watches.Runner != "all" {
 				t.Fatalf("watch defaults = %+v", conf.Core.Watches)
 			}
+			if !conf.Core.Tasks.Enabled {
+				t.Fatalf("task defaults = %+v", conf.Core.Tasks)
+			}
 			if !conf.Agent.Enabled || !conf.MCP.HTTPStateful || !conf.MCP.IncludeToolsWithAgent {
 				t.Fatalf("service defaults: agent=%+v mcp=%+v", conf.Agent, conf.MCP)
 			}
@@ -228,6 +231,7 @@ func TestParsedDevAndAgenticRuntimeDefaults(t *testing.T) {
 				"artifacts.enabled":            true,
 				"watches.enabled":              true,
 				"watches.runner":               "all",
+				"tasks.enabled":                true,
 				"agent.enabled":                true,
 				"mcp.http_stateful":            true,
 				"mcp.include_tools_with_agent": true,
@@ -257,8 +261,8 @@ func TestParsedProdAndDirectConfigKeepLiteralDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
-	if prod.Core.Artifacts.Enabled || prod.Core.Watches.Enabled || prod.Agent.Enabled || prod.MCP.HTTPStateful || prod.MCP.IncludeToolsWithAgent {
-		t.Fatalf("prod defaults changed: artifacts=%+v watches=%+v agent=%+v mcp=%+v", prod.Core.Artifacts, prod.Core.Watches, prod.Agent, prod.MCP)
+	if prod.Core.Artifacts.Enabled || prod.Core.Watches.Enabled || prod.Core.Tasks.Enabled || prod.Agent.Enabled || prod.MCP.HTTPStateful || prod.MCP.IncludeToolsWithAgent {
+		t.Fatalf("prod defaults changed: artifacts=%+v watches=%+v tasks=%+v agent=%+v mcp=%+v", prod.Core.Artifacts, prod.Core.Watches, prod.Core.Tasks, prod.Agent, prod.MCP)
 	}
 
 	direct := &Config{Core: Core{Mode: "agentic"}}
@@ -266,7 +270,7 @@ func TestParsedProdAndDirectConfigKeepLiteralDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	applyRuntimeModeDefaults(direct)
-	if direct.Core.Artifacts.Enabled || direct.Core.Watches.Enabled || direct.Agent.Enabled || direct.MCP.HTTPStateful || direct.MCP.IncludeToolsWithAgent {
+	if direct.Core.Artifacts.Enabled || direct.Core.Watches.Enabled || direct.Core.Tasks.Enabled || direct.Agent.Enabled || direct.MCP.HTTPStateful || direct.MCP.IncludeToolsWithAgent {
 		t.Fatalf("direct Go config received parsed defaults: %+v", direct)
 	}
 }
@@ -287,8 +291,8 @@ mcp:
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
-	if conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled || conf.Agent.Enabled || conf.MCP.HTTPStateful || conf.MCP.IncludeToolsWithAgent {
-		t.Fatalf("explicit opt-outs not preserved: artifacts=%+v watches=%+v agent=%+v mcp=%+v", conf.Core.Artifacts, conf.Core.Watches, conf.Agent, conf.MCP)
+	if conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled || conf.Core.Tasks.Enabled || conf.Agent.Enabled || conf.MCP.HTTPStateful || conf.MCP.IncludeToolsWithAgent {
+		t.Fatalf("explicit opt-outs not preserved: artifacts=%+v watches=%+v tasks=%+v agent=%+v mcp=%+v", conf.Core.Artifacts, conf.Core.Watches, conf.Core.Tasks, conf.Agent, conf.MCP)
 	}
 	if conf.Core.Watches.Runner != "all" {
 		t.Fatalf("explicit runner = %q, want all", conf.Core.Watches.Runner)
@@ -309,6 +313,40 @@ watches:
 	}
 }
 
+func TestParsedRuntimeDefaultsRespectTaskOptOut(t *testing.T) {
+	conf, err := NewConfig(`
+mode: agentic
+tasks:
+  enabled: false
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if !conf.Core.Artifacts.Enabled || !conf.Core.Watches.Enabled || conf.Core.Tasks.Enabled {
+		t.Fatalf("task opt-out changed related defaults: artifacts=%+v watches=%+v tasks=%+v", conf.Core.Artifacts, conf.Core.Watches, conf.Core.Tasks)
+	}
+	if got := effectiveSettingValue(conf.EffectiveSettings(), "tasks.enabled"); got != false {
+		t.Fatalf("effective tasks.enabled = %#v, want false", got)
+	}
+}
+
+func TestManagedArtifactStoreStillValidatesTaskLimits(t *testing.T) {
+	conf, err := NewConfig(`
+mode: agentic
+tasks:
+  max_entries_per_task: -1
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if !conf.managedArtifactStore || !conf.Core.Tasks.Enabled {
+		t.Fatalf("expected managed-store task defaults, got managed=%v tasks=%+v", conf.managedArtifactStore, conf.Core.Tasks)
+	}
+	if err := validateServiceIsSourcesUsedConfig(conf); err == nil || !strings.Contains(err.Error(), "tasks.max_entries_per_task") {
+		t.Fatalf("managed-store task validation error = %v", err)
+	}
+}
+
 func TestParsedRuntimeDefaultsRespectEnvironmentOverrides(t *testing.T) {
 	t.Setenv("GJ_ARTIFACTS_ENABLED", "false")
 	t.Setenv("GJ_AGENT_ENABLED", "false")
@@ -318,8 +356,8 @@ func TestParsedRuntimeDefaultsRespectEnvironmentOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
-	if conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled || conf.Agent.Enabled || conf.MCP.HTTPStateful || conf.MCP.IncludeToolsWithAgent {
-		t.Fatalf("environment opt-outs not preserved: artifacts=%+v watches=%+v agent=%+v mcp=%+v", conf.Core.Artifacts, conf.Core.Watches, conf.Agent, conf.MCP)
+	if conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled || conf.Core.Tasks.Enabled || conf.Agent.Enabled || conf.MCP.HTTPStateful || conf.MCP.IncludeToolsWithAgent {
+		t.Fatalf("environment opt-outs not preserved: artifacts=%+v watches=%+v tasks=%+v agent=%+v mcp=%+v", conf.Core.Artifacts, conf.Core.Watches, conf.Core.Tasks, conf.Agent, conf.MCP)
 	}
 }
 

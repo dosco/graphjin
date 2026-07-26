@@ -1712,6 +1712,41 @@
 			"additionalProperties": false,
 			"type": "object"
 		},
+		"TasksConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable Tasks",
+					"description": "Enable durable owner-scoped declared-intent tasks; parsed dev and agentic configs default to enabled when artifacts are enabled"
+				},
+				"max_per_owner": {
+					"type": "integer",
+					"title": "Max Tasks Per Owner",
+					"description": "Maximum open tasks per owner",
+					"default": 20
+				},
+				"max_entries_per_task": {
+					"type": "integer",
+					"title": "Max Entries Per Task",
+					"description": "Maximum stored trail entries per task; oldest are pruned first",
+					"default": 500
+				},
+				"entry_retention_hours": {
+					"type": "integer",
+					"title": "Task Entry Retention Hours",
+					"description": "Hours to keep task trail entries before prune-on-write and projection trimming",
+					"default": 168
+				},
+				"snapshot_max_bytes": {
+					"type": "integer",
+					"title": "Task Snapshot Max Bytes",
+					"description": "Byte cap for task snapshot_json and task-entry detail_json",
+					"default": 32768
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
 		"Update": {
 			"properties": {
 				"filters": {
@@ -1970,6 +2005,10 @@
 		"watches": {
 			"$ref": "#/$defs/WatchesConfig",
 			"title": "Watches"
+		},
+		"tasks": {
+			"$ref": "#/$defs/TasksConfig",
+			"title": "Tasks"
 		},
 		"openapi_specs_dir": {
 			"type": "string",

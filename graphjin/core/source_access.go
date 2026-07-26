@@ -89,12 +89,12 @@ func (gj *graphjinEngine) isArtifactPhysicalTable(database string, table *sdata.
 	name := strings.ToLower(table.Name)
 	if strings.ToLower(table.Schema) == schema {
 		switch name {
-		case "artifacts", "revisions", "watches", "watch_events":
+		case "artifacts", "revisions", "watches", "watch_events", "tasks", "task_entries":
 			return true
 		}
 	}
 	switch name {
-	case schema + "_artifacts", schema + "_revisions", schema + "_watches", schema + "_watch_events":
+	case schema + "_artifacts", schema + "_revisions", schema + "_watches", schema + "_watch_events", schema + "_tasks", schema + "_task_entries":
 		return true
 	default:
 		return false

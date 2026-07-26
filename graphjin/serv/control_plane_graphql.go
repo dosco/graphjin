@@ -480,6 +480,8 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 	configWriteEnabled := conf.AllowConfigUpdates && !h.controlPlaneRootReadOnly("gj_config")
 	watchEnabled := h.service != nil && h.service.watchesEnabled() && !h.controlPlaneRootReadOnly("gj_watch")
 	watchEventEnabled := h.service != nil && h.service.watchesEnabled() && !h.controlPlaneRootReadOnly("gj_watch_event")
+	taskEnabled := h.service != nil && h.service.tasksEnabled() && !h.controlPlaneRootReadOnly("gj_task")
+	taskEntryEnabled := h.service != nil && h.service.tasksEnabled() && !h.controlPlaneRootReadOnly("gj_task_entry")
 	caps := []map[string]any{
 		{
 			"name": "gj_workflow.insert_update_delete", "kind": "mutation", "enabled": workflowWriteEnabled,
@@ -500,6 +502,45 @@ func (h controlPlaneGraphQL) systemCapabilityRows() []map[string]any {
 				"return_fields": []string{"id", "workflow_name", "namespace", "status", "result_json", "error", "duration_ms"},
 			}),
 			"safety_json": mustMarshalString(map[string]any{"preferred_for_data_questions": true, "mutation_only": true, "ephemeral": true, "blocked_by": "read_only"}),
+		},
+		{
+			"name": "gj_task.insert_update_delete", "kind": "task", "enabled": taskEnabled,
+			"summary":          "Create, update, close, reopen, and delete owner-scoped declared-intent tasks.",
+			"graphql_mutation": `gj_task(insert: { goal: "...", snapshot_json: {...} })`,
+			"details_json": mustMarshalString(map[string]any{
+				"root": "gj_task", "entry_root": "gj_task_entry", "owner_scoped": true,
+				"statuses": []string{"open", "closed"}, "close_preferred_over_delete": true,
+				"input_shape":   `gj_task(insert: { goal: "...", snapshot_json: {...} }); gj_task(where: { id: { eq: "..." } }, update: { status: "closed", outcome: "..." })`,
+				"return_fields": []string{"id", "goal", "status", "outcome", "snapshot_json", "last_entry_at", "created_at", "updated_at", "closed_at"},
+			}),
+			"examples_json": mustMarshalString([]map[string]string{
+				{"name": "create a declared task", "query": `mutation { gj_task(insert: { goal: "Investigate delayed production orders" }) { id goal status } }`},
+				{"name": "close with an outcome", "query": `mutation { gj_task(where: { id: { eq: "task:..." } }, update: { status: "closed", outcome: "Resolved by correcting carrier mappings." }) { id status outcome closed_at } }`},
+			}),
+			"safety_json": mustMarshalString(map[string]any{
+				"owner_scoped": true, "requires_user_identity": true, "explicit_creation_only": true,
+				"task_id_is_correlation_only": true, "task_id_never_grants_access": true,
+				"task_id_never_satisfies_protocol_guards": true, "no_mcp_resource": true,
+				"close_preferred_over_delete": true, "blocked_by": "read_only",
+			}),
+		},
+		{
+			"name": "gj_task_entry.insert", "kind": "task", "enabled": taskEntryEnabled,
+			"summary":          "Append a caller journal entry to an open owner-scoped task; provenance fields are server-managed.",
+			"graphql_mutation": `gj_task_entry(insert: { task_id: "task:...", body: "...", detail_json: {...} })`,
+			"details_json": mustMarshalString(map[string]any{
+				"root": "gj_task_entry", "owner_scoped": true, "immutable": true,
+				"caller_input":   []string{"task_id", "body", "detail_json"},
+				"server_managed": []string{"id", "origin", "status", "trace_id", "watch_id", "account_id", "owner_id", "created_at", "updated_at"},
+			}),
+			"examples_json": mustMarshalString([]map[string]string{
+				{"name": "journal a caller decision", "query": `mutation { gj_task_entry(insert: { task_id: "task:...", body: "Use the carrier SLA as the threshold." }) { id task_id origin body created_at } }`},
+			}),
+			"safety_json": mustMarshalString(map[string]any{
+				"owner_scoped": true, "requires_open_task": true, "immutable": true,
+				"task_id_is_correlation_only": true, "provenance_is_server_managed": true,
+				"blocked_by": "read_only",
+			}),
 		},
 		{
 			"name": "gj_watch.insert_update_delete", "kind": "watch", "enabled": watchEnabled,

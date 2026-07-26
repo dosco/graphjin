@@ -151,8 +151,8 @@ execution — including saved mutations — regardless of the caller's role.
 GraphJin derives a capability profile from the caller and preloads every
 permitted Ax skill. The fixed set is `data_discovery`, `data_write`,
 `code_read`, `code_write`, `workflow_read`, `workflow_execute`,
-`workflow_write`, `watch_read`, `watch_write`, `watch_flow`, `admin_read`, and
-`admin_write`. There is no lexical router, embedding search, skill catalog, or
+`workflow_write`, `watch_read`, `watch_write`, `watch_flow`, `watch_delivery`,
+`task_read`, `task_write`, `admin_read`, and `admin_write`. There is no lexical router, embedding search, skill catalog, or
 skill-loading turn. Read-only posture removes all write guides; workflow,
 watch, and admin guides require their governed roots, and admin guides also
 require the admin role.
@@ -177,6 +177,12 @@ per action: MCP callers that send a `_meta.progressToken` receive
 `result` SSE frames when called with `Accept: text/event-stream`. Seed and
 default catalog page sizes are tunable via `agent.seed_limit` (default 10) and
 `agent.catalog_default_limit` (default 20).
+
+Requests may carry a retained `task_id` for an explicitly created open
+`gj_task`. GraphJin prepends the owner-scoped declared goal and up to five recent
+trail entries to `history`, then appends one server-written `agent_run` entry.
+This provides cross-session warm-start and auditability without changing the
+guard contract: `task_id` is only correlation, never authorization or evidence.
 
 When service semantic catalog search initializes successfully, the built-in
 agent also receives a private semantic-search profile. Its required seed stays
@@ -271,6 +277,7 @@ flowchart LR
     APP["Application roots<br/>business data — never copied"]
     CAT["gj_catalog<br/>discovery spine"]
     ART["gj_artifacts<br/>saved queries · fragments · workflows<br/>owner-scoped"]
+    TSK["gj_task → gj_task_entry<br/>declared goal → provenance trail"]
     WCH["gj_watch → gj_watch_event<br/>standing questions → fired-event inbox"]
     WFL["gj_workflow → gj_workflow_execution<br/>definitions → ephemeral runs"]
     GCODE["gj_code<br/>source intelligence"]
@@ -280,7 +287,7 @@ flowchart LR
   end
 
   subgraph CP["Control-plane store — GraphJin uses GraphJin"]
-    STORE[("Artifact store DB<br/>artifacts · watches · events · revisions")]
+    STORE[("Artifact store DB<br/>artifacts · tasks · entries · watches · events · revisions")]
     NANO["nanoDB projection<br/>bounded in-memory search index"]
   end
 
@@ -292,6 +299,7 @@ flowchart LR
   ENG --> ROOTS
   ROOTS --> AG
   ART -. "writes run back through the engine under the<br/>non-forgeable __graphjin_internal_store role" .-> STORE
+  TSK -.-> STORE
   WCH -.-> STORE
   WFL -.-> STORE
   STORE -- "revision-gated refresh" --> NANO
@@ -312,14 +320,14 @@ visible.
 ### The nanoDB Projection
 
 GraphJin-owned system surfaces are compact and queryable. `gj_catalog`,
-`gj_artifacts`, `gj_security`, `gj_watch`, `gj_watch_event`, `gj_workflow`,
+`gj_artifacts`, `gj_security`, `gj_watch`, `gj_watch_event`, `gj_task`, `gj_task_entry`, `gj_workflow`,
 `gj_workflow_execution`, `gj_runtime`, and `gj_config` are served by nanoDB —
 an in-memory system database that gives these surfaces typed columns, indexes,
 full-text search, relationships, filtering, ordering, limits, and atomic
 snapshot refreshes. It is for compact system truth, not for replacing user
 databases or CodeSQL.
 
-For store-backed rows (artifacts, watches, watch events) the nanoDB table is a
+For store-backed rows (artifacts, tasks, task entries, watches, watch events) the nanoDB table is a
 **bounded search projection**, not the source of record:
 
 - Per artifact, `content` is capped in the projection (default 32KB, tunable
@@ -340,7 +348,7 @@ For store-backed rows (artifacts, watches, watch events) the nanoDB table is a
 
 ### The Internal Store Role
 
-Control-plane state (artifacts, watches, watch events, revisions) is persisted
+Control-plane state (artifacts, tasks, task entries, watches, watch events, revisions) is persisted
 in a real SQL database, but GraphJin never talks to it with hand-written SQL:
 reads and writes run back through GraphJin's own query engine — "GraphJin uses
 GraphJin" — under the reserved `__graphjin_internal_store` role. That role
@@ -568,7 +576,7 @@ Typical caller profiles:
 
 | Caller | Expected MCP shape |
 | :--- | :--- |
-| Normal authenticated user | `query_catalog`, `graphql_help`, `validate_where_clause`, and approved execution tools; `gj_catalog`, `gj_artifacts`, `gj_watch`, `gj_watch_event`, and `gj_workflow_execution` may be available; `gj_security`, `gj_runtime`, `gj_config`, and `gj_workflow` are usually unavailable. |
+| Normal authenticated user | `query_catalog`, `graphql_help`, `validate_where_clause`, and approved execution tools; `gj_catalog`, `gj_artifacts`, `gj_task`, `gj_task_entry`, `gj_watch`, `gj_watch_event`, and `gj_workflow_execution` may be available; `gj_security`, `gj_runtime`, `gj_config`, and `gj_workflow` are usually unavailable. |
 | Workflow operator | Catalog plus workflow execution, and possibly workflow management if policy grants `gj_workflow`; config/security roots remain unavailable unless the role is explicitly admin/operator. |
 | Admin/operator | Catalog plus admin roots such as `gj_security`, `gj_runtime`, and `gj_config`; config recipes may lead to `gj_config` preview/apply with `source_patches`. |
 
@@ -1098,7 +1106,7 @@ query {
 }
 ```
 
-## The Artifact Store And Watches
+## The Artifact Store, Tasks, And Watches
 
 ### `gj_artifacts`: One Owner-Scoped Store
 
@@ -1132,6 +1140,41 @@ bounded nanoDB projection (see
 [The nanoDB Projection](#the-nanodb-projection)); execution reads come from the
 store. The runtime contract is discoverable with
 `query_catalog(id: "help:artifacts")`.
+
+### Tasks: Explicit Durable Intent With A Trail
+
+`gj_task` stores a caller-declared goal and optional working snapshot;
+`gj_task_entry` stores its immutable, provenance-labeled trail. Tasks are never
+inferred from sessions or tool calls. Create one explicitly, retain its ID, and
+associate only the agent runs and watches the caller places under that goal:
+
+```graphql
+mutation {
+  gj_task(insert: {
+    goal: "Investigate delayed production orders"
+    snapshot_json: { region: "west" }
+  }) {
+    id
+    goal
+    status
+  }
+}
+```
+
+Caller notes use `gj_task_entry(insert: { task_id, body, detail_json })`.
+GraphJin writes `agent_run` entries for embedded-agent calls and
+`watch_created` entries when a linked watch is created; origins, trace IDs,
+watch IDs, status, owner, and timestamps are server-managed. An open task can
+warm-start `ask_graphjin_agent` through its `task_id` argument. The goal and up
+to five recent entries become untrusted history hints, so the run must still
+perform its own catalog discovery and satisfy every mutation guard.
+
+Close a completed task with `status: "closed"` and an `outcome`; reopening is
+allowed. Appends and warm-start require an open same-owner task. Deleting is
+owner-scoped and benign when the task is missing or foreign; a real delete
+cascades entries and clears `task_id` on linked watches. Prefer closing so the
+trail remains auditable. No `graphjin://task` MCP resource exists. The runtime
+contract is `query_catalog(id: "help:tasks")`.
 
 ### Watches: Standing Questions With A Durable Inbox
 
@@ -1384,6 +1427,8 @@ system:
     gj_artifacts: authenticated
     gj_watch: owner
     gj_watch_event: owner
+    gj_task: owner
+    gj_task_entry: owner
     gj_workflow: admin
     gj_workflow_execution: account
     gj_runtime: admin
@@ -1419,7 +1464,7 @@ roles:
 ```
 
 Mutable user artifacts use `gj_artifacts`. In parsed `dev` and `agentic`
-configs, artifacts and watches require no feature toggles: GraphJin uses its
+configs, artifacts, tasks, and watches require no feature toggles: GraphJin uses its
 private managed SQLite store and runs approved watches on the local replica.
 Only configure a source when the store must be shared across replicas:
 
@@ -1431,11 +1476,14 @@ artifacts:
 Config-folder fragments, saved queries, and workflows remain global,
 read-only artifacts. Database-backed artifacts are scoped by `owner_id = user_id`
 and can override same-name globals without changing config files.
+Declared tasks use `gj_task` and `gj_task_entry` in that same database. They
+are owner-scoped, created only by an explicit mutation, and can correlate an
+embedded-agent run or a watch without granting any additional permission.
 User watches use the same artifact database and are exposed through `gj_watch`
 and `gj_watch_event`, with REST wrappers for operators at `/api/v1/watches`,
 `/api/v1/watch-events/unseen`, `/api/v1/watches/cleanup-preview`, and
 `/api/v1/watches/cleanup-apply`. See
-[The Artifact Store And Watches](#the-artifact-store-and-watches) for the full
+[The Artifact Store, Tasks, And Watches](#the-artifact-store-tasks-and-watches) for the full
 contract, durability semantics, leases, cleanup rules, and retention limits.
 
 ### 5. Apply And Verify

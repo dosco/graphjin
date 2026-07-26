@@ -34,6 +34,7 @@ GraphJin is a high-performance GraphQL to SQL compiler that automatically genera
 - [CodeSQL Source Indexes](#codesql-source-indexes)
 - [Metadata Graph](#metadata-graph)
 - [Apollo Federation v2](#apollo-federation-v2)
+- [Durable Declared-Intent Tasks](#durable-declared-intent-tasks)
 - [MCP Connections for AI Clients](#mcp-connections-for-ai-clients)
 - [Security Features](#security-features)
   - [Role-Based Access Control](#role-based-access-control)
@@ -1470,6 +1471,39 @@ extend type Query {
 **Detection is fast** — token-bounded substring scan over the raw query, so JSON traffic costs one extra MIME parse only when federation is enabled.
 
 ---
+
+## Durable Declared-Intent Tasks
+
+GraphJin can persist an explicitly declared, owner-scoped goal in `gj_task` and
+record what happened under it in immutable `gj_task_entry` rows. Caller journal
+notes, embedded-agent runs, and linked-watch creation receive distinct,
+server-managed provenance labels.
+
+```graphql
+mutation {
+  gj_task(insert: { goal: "Investigate delayed orders" }) {
+    id
+    status
+  }
+}
+
+mutation {
+  gj_task_entry(insert: {
+    task_id: "task:..."
+    body: "Use the carrier SLA as the threshold."
+  }) {
+    id
+    origin
+  }
+}
+```
+
+Pass the retained `task_id` to `ask_graphjin_agent` for cross-session warm-start
+and automatic `agent_run` journaling, or set `gj_watch.task_id` to preserve why
+a standing watch exists. A task ID is correlation only: it never grants access
+or satisfies catalog, query, or mutation evidence guards. Tasks are not inferred
+and there is no task MCP resource. Close completed tasks with an outcome to keep
+the trail; deletion cascades entries and unlinks watches.
 
 ## MCP Connections for AI Clients
 

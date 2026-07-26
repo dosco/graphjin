@@ -138,9 +138,15 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 		// Capabilities is server-derived and json:"-", so it is never taken from the
 		// request body; set it from the caller's identity context.
 		req.Capabilities = s.agentCapabilityProfile(ctx)
-		runner, err := newGraphJinAgentRunner(s, agentConfigFromService(s.conf))
+		taskWarm, resolveErr := s.resolveAgentTaskContext(ctx, &req)
+		err = resolveErr
+		taskResolved := err == nil
+		var runner graphjinAgentRunner
+		if err == nil {
+			runner, err = newGraphJinAgentRunner(s, agentConfigFromService(s.conf))
+		}
 		if err == nil && isSSERequest(r) {
-			s.agentSSE(ctx, w, req, runner, start)
+			s.agentSSE(ctx, w, req, taskWarm, runner, start)
 			if span.IsRecording() {
 				span.SetAttributes(
 					attribute.String("http.path", r.RequestURI),
@@ -154,6 +160,8 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 			resp, err = runner.Run(ctx, req)
 			if err == nil {
 				s.appendWatchNotices(ctx, &resp)
+				s.appendTaskNotices(ctx, req, &resp)
+				appendTaskContextNotice(taskWarm, &resp)
 			}
 		}
 		status := agentHTTPStatus(err)
@@ -166,7 +174,10 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 				}},
 			}
 		}
-		recordAgentRuntimeEvent(s, ctx, req, resp, time.Since(start), err)
+		if taskResolved {
+			s.appendTaskTrailEntry(ctx, req, resp, time.Since(start), err)
+		}
+		recordAgentRuntimeEvent(s, ctx, req, resp, taskWarm, time.Since(start), err)
 
 		if span.IsRecording() {
 			span.SetAttributes(
@@ -243,7 +254,7 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 // per executed tool call, then a single `result` event carrying the final
 // agent Response, then `complete`. Requested via Accept: text/event-stream;
 // the default JSON contract is unchanged.
-func (s *graphjinService) agentSSE(ctx context.Context, w http.ResponseWriter, req gjagent.Request, runner graphjinAgentRunner, start time.Time) {
+func (s *graphjinService) agentSSE(ctx context.Context, w http.ResponseWriter, req gjagent.Request, taskWarm taskWarmStart, runner graphjinAgentRunner, start time.Time) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeAgentError(w, http.StatusInternalServerError, "streaming unsupported")
@@ -275,8 +286,11 @@ func (s *graphjinService) agentSSE(ctx context.Context, w http.ResponseWriter, r
 		}
 	} else {
 		s.appendWatchNotices(ctx, &resp)
+		s.appendTaskNotices(ctx, req, &resp)
+		appendTaskContextNotice(taskWarm, &resp)
 	}
-	recordAgentRuntimeEvent(s, ctx, req, resp, time.Since(start), err)
+	s.appendTaskTrailEntry(ctx, req, resp, time.Since(start), err)
+	recordAgentRuntimeEvent(s, ctx, req, resp, taskWarm, time.Since(start), err)
 	writeEvent("result", resp)
 	writeEvent("complete", map[string]any{"status": resp.Status})
 }
@@ -313,7 +327,8 @@ func agentHTTPStatus(err error) int {
 	case err == nil:
 		return http.StatusOK
 	case errors.Is(err, gjagent.ErrMissingInstruction),
-		errors.Is(err, gjagent.ErrInstructionTooLong):
+		errors.Is(err, gjagent.ErrInstructionTooLong),
+		errors.Is(err, errTaskNotFoundOrClosed):
 		return http.StatusBadRequest
 	case errors.Is(err, gjagent.ErrMissingAPIKey):
 		return http.StatusServiceUnavailable
@@ -322,7 +337,7 @@ func agentHTTPStatus(err error) int {
 	}
 }
 
-func recordAgentRuntimeEvent(s *graphjinService, ctx context.Context, req gjagent.Request, resp gjagent.Response, duration time.Duration, err error) {
+func recordAgentRuntimeEvent(s *graphjinService, ctx context.Context, req gjagent.Request, resp gjagent.Response, taskWarm taskWarmStart, duration time.Duration, err error) {
 	if s == nil {
 		return
 	}
@@ -334,11 +349,13 @@ func recordAgentRuntimeEvent(s *graphjinService, ctx context.Context, req gjagen
 		Summary:    "GraphJin agent request completed",
 		DurationMS: duration.Milliseconds(),
 		Details: map[string]any{
-			"agent_status":  resp.Status,
-			"namespace":     req.Namespace,
-			"has_context":   len(req.Context) != 0,
-			"history_turns": len(req.History),
-			"return_trace":  req.ReturnTrace != nil && *req.ReturnTrace,
+			"agent_status":        resp.Status,
+			"task_id":             req.TaskID,
+			"task_entries_loaded": taskWarm.EntriesLoaded,
+			"namespace":           req.Namespace,
+			"has_context":         len(req.Context) != 0,
+			"history_turns":       len(req.History),
+			"return_trace":        req.ReturnTrace != nil && *req.ReturnTrace,
 		},
 	}
 	if samplingPath := agentSamplingPathFromContext(ctx); samplingPath != "" {
@@ -459,27 +476,5 @@ func agentActionSlice(actions any) []any {
 // agentViolationCodes extracts protocol violation codes from the response
 // evidence for the audit event.
 func agentViolationCodes(resp gjagent.Response) []string {
-	data, err := json.Marshal(resp.Evidence)
-	if err != nil {
-		return nil
-	}
-	var evidence map[string]any
-	if err := json.Unmarshal(data, &evidence); err != nil {
-		return nil
-	}
-	if protocol, ok := evidence["protocol"].(map[string]any); ok {
-		evidence = protocol
-	}
-	violations, _ := evidence["violations"].([]any)
-	var codes []string
-	for _, item := range violations {
-		violation, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if code, ok := violation["code"].(string); ok && code != "" {
-			codes = append(codes, code)
-		}
-	}
-	return codes
+	return gjagent.ProtocolViolationCodes(resp)
 }

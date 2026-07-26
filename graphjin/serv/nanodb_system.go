@@ -47,6 +47,9 @@ func (s *graphjinService) initSystemNanoDBBeforeCore() error {
 	if err := assertWatchNanoRoleDefaults(s.conf, s.runtimeCore, name); err != nil {
 		return err
 	}
+	if err := assertTaskNanoRoleDefaults(s.conf, s.runtimeCore, name); err != nil {
+		return err
+	}
 	codeDB := ""
 	if s.conf.Core.MetadataAutoCodeRelationsEnabled() {
 		codeDBs := s.selectedCodeSQLDatabasesFor(&s.conf.Core, s.managedDBs)
@@ -228,7 +231,7 @@ func (s *graphjinService) systemNanoSnapshotFromCatalog(catalogSnapshot *core.Ca
 
 func systemNanoSnapshot(_ string, codeDB string, rows map[string][]core.NanoRow) core.NanoSnapshot {
 	return systemNanoSnapshotForRoots(codeDB, rows, []string{
-		"gj_catalog", "gj_security", "gj_artifacts", "gj_watch", "gj_watch_event",
+		"gj_catalog", "gj_security", "gj_artifacts", "gj_watch", "gj_watch_event", "gj_task", "gj_task_entry",
 		"gj_workflow", "gj_workflow_execution", "gj_config",
 	})
 }
@@ -252,6 +255,10 @@ func systemNanoSnapshotForRoots(codeDB string, rows map[string][]core.NanoRow, r
 			columns = watchNanoColumns()
 		case "gj_watch_event":
 			columns = watchEventNanoColumns()
+		case "gj_task":
+			columns = taskNanoColumns()
+		case "gj_task_entry":
+			columns = taskEntryNanoColumns()
 		case "gj_workflow":
 			columns = workflowNanoColumns()
 		case "gj_workflow_execution":
@@ -522,6 +529,7 @@ func watchNanoColumns() []core.NanoColumn {
 	return []core.NanoColumn{
 		{Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
 		{Name: "name", Type: "text", Index: true},
+		{Name: "task_id", Type: "text", Index: true, FKeyTable: "gj_task", FKeyColumn: "id", FKeyUnique: true},
 		{Name: "description", Type: "text"},
 		{Name: "query", Type: "text"},
 		{Name: "saved_query_name", Type: "text", Index: true},
@@ -588,6 +596,48 @@ func watchEventNanoColumns() []core.NanoColumn {
 	}
 }
 
+func taskNanoColumns() []core.NanoColumn {
+	return []core.NanoColumn{
+		{Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
+		{Name: "goal", Type: "text"},
+		{Name: "status", Type: "text", Index: true},
+		{Name: "outcome", Type: "text"},
+		{Name: "snapshot_json", Type: "json"},
+		{Name: "account_id", Type: "text", Index: true},
+		{Name: "owner_id", Type: "text", Index: true},
+		{Name: "owner_role", Type: "text", Index: true},
+		{Name: "account_ref", Type: "text", Index: true},
+		{Name: "owner_ref", Type: "text", Index: true},
+		{Name: "last_entry_at", Type: "text", Index: true},
+		{Name: "created_at", Type: "text"},
+		{Name: "updated_at", Type: "text", Index: true},
+		{Name: "closed_at", Type: "text"},
+		{Name: "deleted", Type: "boolean"},
+		{Name: "search_vector", Type: "text", FullText: true},
+	}
+}
+
+func taskEntryNanoColumns() []core.NanoColumn {
+	return []core.NanoColumn{
+		{Name: "id", Type: "text", PrimaryKey: true, NotNull: true},
+		{Name: "task_id", Type: "text", Index: true, FKeyTable: "gj_task", FKeyColumn: "id", FKeyUnique: true},
+		{Name: "origin", Type: "text", Index: true},
+		{Name: "body", Type: "text"},
+		{Name: "detail_json", Type: "json"},
+		{Name: "status", Type: "text", Index: true},
+		{Name: "trace_id", Type: "text", Index: true},
+		{Name: "watch_id", Type: "text", Index: true},
+		{Name: "account_id", Type: "text", Index: true},
+		{Name: "owner_id", Type: "text", Index: true},
+		{Name: "account_ref", Type: "text", Index: true},
+		{Name: "owner_ref", Type: "text", Index: true},
+		{Name: "created_at", Type: "text", Index: true},
+		{Name: "updated_at", Type: "text"},
+		{Name: "deleted", Type: "boolean"},
+		{Name: "search_vector", Type: "text", FullText: true},
+	}
+}
+
 func systemNanoRows(s *graphjinService, catalogSnapshot *core.CatalogSnapshot, conf *core.Config) map[string][]core.NanoRow {
 	rows := map[string][]core.NanoRow{}
 	cp := newControlPlaneGraphQL(s)
@@ -616,6 +666,16 @@ func systemNanoRows(s *graphjinService, catalogSnapshot *core.CatalogSnapshot, c
 	if watchEventRows, err := newWatchControlPlane(s).allWatchEventRowsForProjection(context.Background()); err == nil {
 		for _, row := range watchEventRows {
 			rows["gj_watch_event"] = append(rows["gj_watch_event"], normalizeWatchEventNanoRow(row))
+		}
+	}
+	if taskRows, err := newTaskControlPlane(s).allTaskRowsForProjection(context.Background()); err == nil {
+		for _, row := range taskRows {
+			rows["gj_task"] = append(rows["gj_task"], normalizeTaskNanoRow(row))
+		}
+	}
+	if taskEntryRows, err := newTaskControlPlane(s).allTaskEntryRowsForProjection(context.Background()); err == nil {
+		for _, row := range taskEntryRows {
+			rows["gj_task_entry"] = append(rows["gj_task_entry"], normalizeTaskEntryNanoRow(row))
 		}
 	}
 	if s != nil && s.conf != nil && s.conf.systemControlPlaneEnabled() {
@@ -765,6 +825,29 @@ func normalizeWatchEventNanoRow(in map[string]any) core.NanoRow {
 	return row
 }
 
+func normalizeTaskNanoRow(in map[string]any) core.NanoRow {
+	row := copyNanoRow(in)
+	row["search_vector"] = strings.Join([]string{
+		fmt.Sprint(row["goal"]),
+		fmt.Sprint(row["status"]),
+		fmt.Sprint(row["outcome"]),
+		fmt.Sprint(row["snapshot_json"]),
+	}, " ")
+	return row
+}
+
+func normalizeTaskEntryNanoRow(in map[string]any) core.NanoRow {
+	row := copyNanoRow(in)
+	row["search_vector"] = strings.Join([]string{
+		fmt.Sprint(row["task_id"]),
+		fmt.Sprint(row["origin"]),
+		fmt.Sprint(row["body"]),
+		fmt.Sprint(row["detail_json"]),
+		fmt.Sprint(row["status"]),
+	}, " ")
+	return row
+}
+
 func copyNanoRow(in map[string]any) core.NanoRow {
 	out := make(core.NanoRow, len(in)+4)
 	for k, v := range in {
@@ -886,6 +969,49 @@ func (s *graphjinService) markWatchChanged(reason string) {
 	}
 	if err := s.refreshWatchProjection(); err != nil && s.log != nil {
 		s.log.Warnf("watch projection refresh failed: %s", err)
+	}
+}
+
+func (s *graphjinService) refreshTaskProjection() error {
+	if s == nil || s.systemNanoDB == nil || s.metadataDB == "" || !s.tasksEnabled() {
+		return nil
+	}
+	cp := newTaskControlPlane(s)
+	taskRows, err := cp.allTaskRowsForProjection(context.Background())
+	if err != nil {
+		return err
+	}
+	entryRows, err := cp.allTaskEntryRowsForProjection(context.Background())
+	if err != nil {
+		return err
+	}
+	nanoTasks := make([]core.NanoRow, 0, len(taskRows))
+	for _, row := range taskRows {
+		nanoTasks = append(nanoTasks, normalizeTaskNanoRow(row))
+	}
+	nanoEntries := make([]core.NanoRow, 0, len(entryRows))
+	for _, row := range entryRows {
+		nanoEntries = append(nanoEntries, normalizeTaskEntryNanoRow(row))
+	}
+	return core.UpdateNanoDB(s.systemNanoDB, func(tx *core.NanoUpdate) error {
+		if err := tx.ReplaceTable("main", "gj_task", nanoTasks); err != nil {
+			return err
+		}
+		return tx.ReplaceTable("main", "gj_task_entry", nanoEntries)
+	})
+}
+
+func (s *graphjinService) markTaskChanged(reason string) {
+	if s == nil {
+		return
+	}
+	s.invalidateCatalogCache()
+	if s.systemNanoDB == nil {
+		s.markCatalogChanged(reason)
+		return
+	}
+	if err := s.refreshTaskProjection(); err != nil && s.log != nil {
+		s.log.Warnf("task projection refresh failed: %s", err)
 	}
 }
 

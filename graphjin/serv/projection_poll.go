@@ -24,15 +24,25 @@ func (s *graphjinService) startProjectionPoller(parent context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	s.addCloseFn(cancel)
 
-	s.revisionConsumerWG.Add(1)
-	go func() {
-		defer s.revisionConsumerWG.Done()
-		s.projectionPollLoop(ctx, time.Duration(intervalSeconds)*time.Second)
-	}()
+	start := func(domain string, refresh func() error) {
+		s.revisionConsumerWG.Add(1)
+		go func() {
+			defer s.revisionConsumerWG.Done()
+			s.projectionPollLoopForDomain(ctx, time.Duration(intervalSeconds)*time.Second, domain, refresh)
+		}()
+	}
+	start("artifacts", s.refreshArtifactProjection)
+	if s.tasksEnabled() {
+		start("tasks", s.refreshTaskProjection)
+	}
 }
 
 func (s *graphjinService) projectionPollLoop(ctx context.Context, interval time.Duration) {
 	s.projectionPollLoopWithRecovery(ctx, interval, internalRecoveryInterval)
+}
+
+func (s *graphjinService) projectionPollLoopForDomain(ctx context.Context, interval time.Duration, domain string, refresh func() error) {
+	s.projectionPollLoopWithRecoveryForDomain(ctx, interval, internalRecoveryInterval, domain, refresh)
 }
 
 func (s *graphjinService) projectionPollLoopWithRecovery(
@@ -40,7 +50,21 @@ func (s *graphjinService) projectionPollLoopWithRecovery(
 	interval time.Duration,
 	recoveryInterval time.Duration,
 ) {
+	s.projectionPollLoopWithRecoveryForDomain(ctx, interval, recoveryInterval, "artifacts", s.refreshArtifactProjection)
+}
+
+func (s *graphjinService) projectionPollLoopWithRecoveryForDomain(
+	ctx context.Context,
+	interval time.Duration,
+	recoveryInterval time.Duration,
+	domain string,
+	refreshProjection func() error,
+) {
 	if interval <= 0 {
+		return
+	}
+	domain = strings.TrimSpace(domain)
+	if domain == "" || refreshProjection == nil {
 		return
 	}
 	if recoveryInterval <= 0 {
@@ -50,7 +74,7 @@ func (s *graphjinService) projectionPollLoopWithRecovery(
 	// closes the race between building the startup projection and subscribing
 	// to its revision; do not replace this sentinel with the current revision.
 	lastRevision := int64(-1)
-	signals := s.revisionSignals(ctx, "artifacts", true, interval)
+	signals := s.revisionSignals(ctx, domain, true, interval)
 	pendingRevision := lastRevision
 	var retryTimer *time.Timer
 	var retry <-chan time.Time
@@ -58,8 +82,8 @@ func (s *graphjinService) projectionPollLoopWithRecovery(
 		if !force && pendingRevision == lastRevision {
 			return
 		}
-		if err := s.refreshArtifactProjection(); err != nil {
-			s.recordArtifactProjectionPollError("refresh artifact projection", err)
+		if err := refreshProjection(); err != nil {
+			s.recordArtifactProjectionPollError("refresh "+domain+" projection", err)
 			if retryTimer == nil {
 				retryTimer = time.NewTimer(interval)
 			} else {

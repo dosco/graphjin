@@ -20,7 +20,7 @@ const (
 	watchValidationProbeTimeout = 10 * time.Second
 )
 
-const watchStoreFields = `id name description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
+const watchStoreFields = `id name task_id description query saved_query_name variables_json condition_js delivery_json enrich_json absence_json evidence_json lifecycle lease_expires_at lease_owner_id status approval enabled account_id owner_id owner_role last_data_hash last_cursor_json last_fired_at last_error failure_count created_at updated_at`
 
 const watchEventStoreFields = `id watch_id data_hash data_json data_truncated evidence_json delivery_status delivery_attempts delivery_json receipt_json enrichment_json seen seen_at snoozed_until account_id owner_id created_at updated_at`
 
@@ -53,6 +53,7 @@ func watchColumns() []core.ManagedColumn {
 	return []core.ManagedColumn{
 		cpCol("id", "text", true),
 		cpCol("name", "text", false),
+		cpCol("task_id", "text", false),
 		cpCol("description", "text", false),
 		cpCol("query", "text", false),
 		cpCol("saved_query_name", "text", false),
@@ -323,6 +324,20 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	if existing != nil && !admin && stringMapValue(existing, "owner_id") != ownerID {
 		return nil, fmt.Errorf("gj_watch write denied")
 	}
+	taskID := strings.TrimSpace(stringInput(root.Input, "task_id", ""))
+	_, taskIDSupplied := root.Input["task_id"]
+	if !taskIDSupplied && existing != nil {
+		taskID = stringMapValue(existing, "task_id")
+	}
+	if taskIDSupplied && taskID != "" {
+		task, taskErr := s.internalTaskStoreRow(ctx, taskID)
+		if taskErr != nil {
+			return nil, taskErr
+		}
+		if task == nil || taskStatus(stringMapValue(task, "status")) != "open" || (!admin && stringMapValue(task, "owner_id") != ownerID) {
+			return nil, errTaskNotFoundOrClosed
+		}
+	}
 	accountID, _ := identityVarString(ctx, "account_id")
 	ownerRole := runtimeRoleClass(ctx)
 	description := stringInput(root.Input, "description", "")
@@ -471,7 +486,7 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	}
 	evidenceJSON := mustMarshalString(evidenceMap)
 	input := map[string]any{
-		"id": id, "name": name, "description": description, "query": query, "saved_query_name": savedQuery,
+		"id": id, "name": name, "task_id": taskID, "description": description, "query": query, "saved_query_name": savedQuery,
 		"variables_json": nullableJSONString(variablesJSON), "condition_js": conditionJS,
 		"delivery_json": nullableJSONString(deliveryJSON), "enrich_json": nullableJSONString(enrichJSON), "absence_json": nullableJSONString(absenceJSON), "evidence_json": nullableJSONString(evidenceJSON),
 		"lifecycle": lifecycle, "lease_expires_at": nullableJSONString(leaseExpiresAt), "lease_owner_id": leaseOwnerID,
@@ -506,6 +521,15 @@ func (h watchControlPlane) upsertWatch(ctx context.Context, root core.ManagedMut
 	}
 	s.markWatchChanged("watch mutation")
 	s.publishWatchRunnerChanged(ctx)
+	if taskIDSupplied && taskID != "" {
+		if _, _, err := newTaskControlPlane(s).appendTaskEntry(ctx, taskEntrySpec{
+			TaskID: taskID, Origin: "watch_created", WatchID: id,
+			Body:       fmt.Sprintf("Created watch %s (%s) under this task.", name, id),
+			DetailJSON: mustMarshalString(map[string]any{"watch_id": id, "watch_name": name}),
+		}); err != nil {
+			return nil, err
+		}
+	}
 	if len(rows) != 0 {
 		return h.projectWatchRow(ctx, rows[0], admin), nil
 	}
@@ -738,6 +762,9 @@ func watchedWatchIDsForMember(member *core.Member, effectiveWatchID string) ([]s
 func watchedWatchIDsForRoots(roots []core.SubscriptionRootInfo, effectiveWatchID string) ([]string, error) {
 	ids := make(map[string]struct{})
 	for _, root := range roots {
+		if strings.EqualFold(strings.TrimSpace(root.Table), tasksRootTable) || strings.EqualFold(strings.TrimSpace(root.Table), taskEntriesRootTable) {
+			return nil, fmt.Errorf("gj_watch subscriptions over gj_task or gj_task_entry are not supported")
+		}
 		if !strings.EqualFold(strings.TrimSpace(root.Table), watchEventsRootTable) {
 			continue
 		}
@@ -1080,6 +1107,7 @@ func watchDDL(dbType, schema string) []string {
 			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 id TEXT PRIMARY KEY,
 name TEXT NOT NULL,
+task_id TEXT NOT NULL DEFAULT '',
 description TEXT NOT NULL DEFAULT '',
 query TEXT NOT NULL DEFAULT '',
 saved_query_name TEXT NOT NULL DEFAULT '',
@@ -1137,6 +1165,7 @@ updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 id VARCHAR(191) PRIMARY KEY,
 name VARCHAR(255) NOT NULL,
+task_id VARCHAR(191) NOT NULL DEFAULT '',
 description LONGTEXT NOT NULL,
 query LONGTEXT NOT NULL,
 saved_query_name VARCHAR(255) NOT NULL DEFAULT '',
@@ -1189,6 +1218,7 @@ updated_at VARCHAR(64) NOT NULL DEFAULT ''
 			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 id TEXT PRIMARY KEY,
 name TEXT NOT NULL,
+task_id TEXT NOT NULL DEFAULT '',
 description TEXT NOT NULL DEFAULT '',
 query TEXT NOT NULL DEFAULT '',
 saved_query_name TEXT NOT NULL DEFAULT '',
@@ -1252,6 +1282,7 @@ func watchMigrationDDL(dbType, schema string) []string {
 	events := artifactTableName(dbType, schema, "watch_events")
 	return []string{
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS owner_role TEXT NOT NULL DEFAULT 'user'`, watches),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS task_id TEXT NOT NULL DEFAULT ''`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS last_cursor_json JSONB`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lifecycle TEXT NOT NULL DEFAULT 'durable'`, watches),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ`, watches),
@@ -1277,6 +1308,13 @@ func (s *graphjinService) migrateWatchSchema(ctx context.Context, db *sql.DB, db
 		ownerRoleDef = "VARCHAR(64) NOT NULL DEFAULT 'user'"
 	}
 	if err := ensureSQLColumn(ctx, db, dbType, watches, "owner_role", ownerRoleDef); err != nil {
+		return err
+	}
+	taskIDDef := "TEXT NOT NULL DEFAULT ''"
+	if dbType == "mysql" || dbType == "mariadb" {
+		taskIDDef = "VARCHAR(191) NOT NULL DEFAULT ''"
+	}
+	if err := ensureSQLColumn(ctx, db, dbType, watches, "task_id", taskIDDef); err != nil {
 		return err
 	}
 	lastCursorDef := "TEXT"
@@ -1382,6 +1420,7 @@ func watchStoreRow(row map[string]any, rawIDs bool) map[string]any {
 	out := map[string]any{
 		"id":               stringMapValue(row, "id"),
 		"name":             stringMapValue(row, "name"),
+		"task_id":          stringMapValue(row, "task_id"),
 		"description":      stringMapValue(row, "description"),
 		"query":            stringMapValue(row, "query"),
 		"saved_query_name": stringMapValue(row, "saved_query_name"),

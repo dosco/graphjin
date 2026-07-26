@@ -31,6 +31,7 @@ Run `graphjin config docs` (or `graphjin serve new`) for the annotated example t
 - [Rate Limiting](#rate-limiting)
 - [MCP Configuration](#mcp-configuration)
 - [Agent Configuration](#agent-configuration)
+- [Task Configuration](#task-configuration)
 - [Redis Configuration](#redis-configuration)
 - [Discovery Cache and Semantic Catalog Search](#discovery-cache-and-semantic-catalog-search)
 - [Caching Configuration](#caching-configuration)
@@ -1119,6 +1120,45 @@ public MCP `execute_graphql` tool is separate and is listed only when
 For each request, a populated `agent.api_key_env` selects the server provider
 and prevents sampling. Without server credentials, MCP borrows a
 sampling-capable client's model; REST returns a missing-provider-key error.
+
+Requests may include `task_id`, the retained ID of an open `gj_task`. GraphJin
+loads that owner's declared goal and recent trail into the untrusted `history`
+channel, then appends one `agent_run` entry after the run. The ID is only a
+correlation label: it never grants access and never satisfies a discovery or
+mutation evidence guard.
+
+---
+
+## Task Configuration
+
+Tasks are explicit, owner-scoped declared goals with a provenance-labeled trail.
+They use the artifact SQL store and are exposed as `gj_task` and
+`gj_task_entry`. Parsed `dev` and `agentic` configs enable tasks whenever
+artifacts are enabled; `prod` and directly constructed Go configs retain the
+literal disabled default.
+
+```yaml
+tasks:
+  enabled: true
+  max_per_owner: 20
+  max_entries_per_task: 500
+  entry_retention_hours: 168
+  snapshot_max_bytes: 32768
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `tasks.enabled` | boolean | dev/agentic: artifact setting; prod: `false` | Enable `gj_task`, `gj_task_entry`, agent warm-start/journaling, and optional watch linkage |
+| `tasks.max_per_owner` | integer | `20` | Maximum open tasks per owner; closed tasks do not count |
+| `tasks.max_entries_per_task` | integer | `500` | Maximum retained trail entries per task; oldest entries are pruned on append |
+| `tasks.entry_retention_hours` | integer | `168` | Trail retention window in hours, enforced on append and in the nanoDB projection |
+| `tasks.snapshot_max_bytes` | integer | `32768` | Byte cap applied before and after JSON normalization to task `snapshot_json` and entry `detail_json` |
+
+Create tasks explicitly; GraphJin never infers a task from a session or tool
+call. Caller journal entries accept only `task_id`, `body`, and optional
+`detail_json`; provenance fields are server-managed. Closing preserves the
+trail and is preferred to deleting it. Deleting a task removes its entries and
+clears `task_id` from linked watches.
 
 ---
 
