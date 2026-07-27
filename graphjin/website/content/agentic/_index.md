@@ -39,6 +39,11 @@ context to exact catalog detail and semantic recall without changing source
 metadata. They remain untrusted data, carry author and approval attribution,
 and become stale historical notes when their addressed catalog entity vanishes.
 
+[Mission Control](/agentic/mission-control/) is the human view over the same
+state: task trails, unseen watch events, and observed annotation drafts live in
+one caller-scoped console page, while Agent chat turns response notices into
+links and task-pin actions.
+
 <aside class="agentic-watch-feature">
   <div>
     <span>Featured capability</span>

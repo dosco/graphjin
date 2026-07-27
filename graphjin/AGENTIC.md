@@ -60,6 +60,19 @@ same demo. More demo verticals — a zero-Docker SaaS ops demo, a
 corrugated-box plant, a PCB fab — are listed at
 <https://graphjin.com/start/demos/>.
 
+The console's `/mission` route is the human view over durable agentic state.
+It shows declared tasks and their provenance trails, the unseen watch-event
+inbox, and observed annotation drafts awaiting review. Agent chat renders all
+response notices as actions into those views and can pin a `task_id` above the
+composer so later turns warm-start and journal against the declared goal.
+
+Owner-scoped roots require an identity. In development auth, the header's
+operator-identity control persists a user, role, and account in the browser and
+sends `X-User-ID`, `X-User-Role`, and `X-Account-ID`. With no development
+identity, Mission Control reports that state explicitly rather than mistaking an
+empty owner scope for an empty workload. Real authentication continues through
+the existing same-origin session cookie.
+
 ## Words This Document Uses
 
 - **Sources mode** — the config style where every database, filesystem, code

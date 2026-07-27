@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Bot, Code, FileText, LayoutDashboard, Library, Shield, SlidersHorizontal, SquareTerminal } from "lucide-react";
+import { Bot, Code, FileText, LayoutDashboard, Library, Radar, Shield, SlidersHorizontal, SquareTerminal } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -20,6 +20,11 @@ const navItems = [
     path: "/agent",
     label: "Agent",
     icon: Bot,
+  },
+  {
+    path: "/mission",
+    label: "Mission Control",
+    icon: Radar,
   },
   {
     path: "/catalog",

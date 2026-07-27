@@ -30,6 +30,11 @@ curl -sS localhost:8080/api/v1/agent \
 
 The answer comes back as typed JSON - `status`, `answer`, `data`, `evidence`, `actions`, `next` - grounded in the discovery the agent actually performed on this run. The same conversation is available as a chat page in the built-in web console at `localhost:8080/agent`, streaming one action event per tool call as the agent works.
 
+Agent chat also renders response notices as actions. Open tasks can be pinned
+above the composer, which sends their `task_id` on later turns; watch, failed
+verification, and annotation-draft notices link directly into
+[Mission Control](/agentic/mission-control/).
+
 More verticals - a zero-Docker SaaS ops demo, a corrugated-box plant with JWT roles, a PCB fab spanning eight sources - are on the [demos page](/start/demos/).
 
 ## Configure it
@@ -152,6 +157,8 @@ task ID never grants access. See [Declared Tasks](/agentic/tasks/) for the full
 lifecycle. `annotations_unshared` similarly lists bounded owner-only catalog
 annotation drafts. The agent can draft one, but it cannot approve a new or
 edited note in the same run; see [Catalog Annotations](/agentic/annotations/).
+The built-in console renders these notices defensively, including unknown future
+kinds; see [Mission Control](/agentic/mission-control/).
 
 When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen`, a count, and `watch_ids`. For MCP sessions with concrete per-watch subscriptions, the notice is limited to those watches; query and acknowledge only the listed IDs. MCP clients can subscribe to `graphjin://watch-events/unseen/{watch_id}` for watch-specific push signals, while the aggregate `graphjin://watch-events/unseen` resource remains the owner/account-wide compatibility path. Resource notifications identify a changed resource but do not contain the full event payload.
 
