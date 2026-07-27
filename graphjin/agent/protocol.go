@@ -58,12 +58,6 @@ type discoveryState struct {
 	// on the agent's behalf when discovery did not surface the approved path.
 	savedQuerySupplementDone  bool
 	savedQuerySupplementCards []map[string]any
-	// savedQueryFields maps each approved saved query to the root fields it
-	// returns, used to detect that a raw query duplicates a governed one.
-	savedQueryFields map[string][]string
-	// savedQueryRedirected bounds the preference redirect to one per run so a
-	// model that insists on raw GraphQL still makes progress.
-	savedQueryRedirected bool
 }
 
 type protocolAction struct {
@@ -175,7 +169,7 @@ func (r *protocolRuntime) appendSavedQuerySupplement(ctx context.Context, seed a
 	merged["count"] = len(existing) + len(supplement)
 	merged["approved_saved_queries"] = map[string]any{
 		"names": sortedBoolKeys(r.state.savedQueriesDiscovered),
-		"usage": "These are the governed, pre-approved queries for this data. Prefer one that covers the request: query_catalog({id:\"saved_query:<name>\"}), then execute_saved_query({name:\"<name>\"}), then answer from result.data. Re-authoring the same root fields as raw GraphQL is rejected.",
+		"usage": "Governed, pre-approved queries for this data — a shortcut when one matches the request: query_catalog({id:\"saved_query:<name>\"}), then execute_saved_query({name:\"<name>\"}), then answer from result.data. For anything they do not cover, author GraphQL dynamically from inspected catalog detail: real column names only, then validate_where_clause before filtering.",
 	}
 	return merged
 }
@@ -217,47 +211,6 @@ func (r *protocolRuntime) lookupSavedQueryCards(ctx context.Context) []map[strin
 		}
 	}
 	return nil
-}
-
-// ensureSavedQueryDefinitions reads the approved saved queries' definitions so
-// a raw query that duplicates one can be redirected. It runs at most once, and
-// only when the model actually authors a raw read, so runs that stay on the
-// governed path pay nothing. It deliberately records rows only: the model must
-// still inspect a saved query itself before executing it.
-func (r *protocolRuntime) ensureSavedQueryDefinitions(ctx context.Context) {
-	if r.state.savedQueryFields != nil {
-		return
-	}
-	r.state.savedQueryFields = map[string][]string{}
-	cards := r.state.savedQuerySupplementCards
-	if len(cards) == 0 {
-		return
-	}
-	ids := make([]string, 0, len(cards))
-	for _, card := range cards {
-		if id := stringFromMap(card, "id"); id != "" {
-			ids = appendUniqueString(ids, id)
-		}
-	}
-	if len(ids) == 0 {
-		return
-	}
-	args := map[string]any{"ids": ids}
-	r.addNamespace(args)
-	action := r.state.startAction("recovery", "query_catalog", args)
-	out, err := r.base.QueryCatalog(ctx, args)
-	r.state.finishAction(action, "query_catalog", args, out, err)
-	if err != nil {
-		return
-	}
-	r.state.recordCatalogRows(out)
-	result := mapValue(out)
-	if result == nil {
-		return
-	}
-	for name, fields := range savedQueryDefinitions(catalogCards(out), anySlice(result["details"])) {
-		r.state.savedQueryFields[name] = fields
-	}
 }
 
 func (r *protocolRuntime) GraphQLHelp(ctx context.Context, args map[string]any) (any, error) {
@@ -397,22 +350,6 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		action := r.state.startAction("model", "execute_graphql", args)
 		r.state.finishAction(action, "execute_graphql", args, nil, err)
 		return nil, err
-	}
-	// An approved saved query that already returns every root field the model
-	// is about to hand-author is the governed path for this request. Redirect
-	// once — a hand-rolled equivalent adds filters nobody approved and, as
-	// observed, silently returns a different picture of the same business
-	// question. If the model insists afterwards, it proceeds under the guards.
-	if !ContainsMutationOperation(query) && !r.state.savedQueryRedirected {
-		r.ensureSavedQueryDefinitions(ctx)
-		if name := coveringSavedQuery(query, r.state.savedQueryFields); name != "" {
-			r.state.savedQueryRedirected = true
-			err := fmt.Errorf("protocol violation: the approved saved query %q already returns these root fields; inspect query_catalog({id:\"saved_query:%s\"}) and run execute_saved_query({name:%q}) instead of re-authoring it as raw GraphQL", name, name, name)
-			r.state.addViolation("saved_query_preferred", err.Error(), "execute_graphql", false, map[string]any{"name": name})
-			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, nil, err)
-			return nil, err
-		}
 	}
 	if writeLikeGraphQL(query) && !r.state.securityRuntimeEvidence {
 		err := fmt.Errorf("protocol violation: inspect security/runtime catalog guidance before write-capable or control-plane GraphQL")

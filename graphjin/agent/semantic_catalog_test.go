@@ -221,10 +221,10 @@ func TestSemanticAgentInspectsCoveragePathBeforeExecution(t *testing.T) {
 	if response.Status != StatusAnswered {
 		t.Fatalf("response = %+v", response)
 	}
-	// Seed, approved saved-query supplement, model coverage batch, detail, and
-	// the saved-query definitions lookup that precedes the raw execution.
-	if len(runtime.catalogArgs) != 5 {
-		t.Fatalf("catalog calls = %+v, want seed, supplement, coverage, detail, definitions", runtime.catalogArgs)
+	// Seed, approved saved-query supplement, model coverage batch, and detail;
+	// the raw execution then proceeds directly on that discovery evidence.
+	if len(runtime.catalogArgs) != 4 {
+		t.Fatalf("catalog calls = %+v, want seed, supplement, coverage, detail", runtime.catalogArgs)
 	}
 	if stringArg(runtime.catalogArgs[1], "kind") != "saved_query" {
 		t.Fatalf("second catalog call was not the saved-query supplement: %+v", runtime.catalogArgs[1])
@@ -237,7 +237,7 @@ func TestSemanticAgentInspectsCoveragePathBeforeExecution(t *testing.T) {
 	if strings.Join(gotDetails, "|") != strings.Join(wantDetails, "|") {
 		t.Fatalf("detail inspection = %v, want returned endpoints and real path %v", gotDetails, wantDetails)
 	}
-	wantCalls := "query_catalog|query_catalog|query_catalog|query_catalog|query_catalog|execute_graphql"
+	wantCalls := "query_catalog|query_catalog|query_catalog|query_catalog|execute_graphql"
 	if got := strings.Join(base.calls, "|"); got != wantCalls {
 		t.Fatalf("tool order = %s, want %s", got, wantCalls)
 	}
