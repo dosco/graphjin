@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"encoding/json"
 	"regexp"
 	"sort"
 	"strings"
@@ -191,86 +190,9 @@ func joinRecoveryMessage(message, directive string) string {
 
 const recoveryDirectivePrefix = "GraphJin recovery:"
 
-// savedQueryDefinitions extracts each approved saved query's name and root
-// fields from its catalog detail rows, so a raw query can be checked against
-// what the governed path already returns.
-func savedQueryDefinitions(cards []map[string]any, details []any) map[string][]string {
-	out := map[string][]string{}
-	byCard := map[string]string{}
-	for _, card := range cards {
-		name := stringFromMap(card, "name")
-		if name == "" {
-			name = savedQueryNameFromID(stringFromMap(card, "id"))
-		}
-		if name != "" {
-			byCard[stringFromMap(card, "id")] = name
-		}
-	}
-	for _, item := range details {
-		detail := mapValue(item)
-		if detail == nil {
-			continue
-		}
-		name := byCard[stringFromMap(detail, "card_id")]
-		if name == "" {
-			continue
-		}
-		data := mapValue(detail["data_json"])
-		if data == nil {
-			// data_json is commonly a JSON string.
-			var parsed any
-			if err := json.Unmarshal([]byte(stringFromMap(detail, "data_json")), &parsed); err == nil {
-				data = mapValue(parsed)
-			}
-		}
-		if data == nil {
-			continue
-		}
-		query := stringFromMap(data, "query")
-		if query == "" {
-			continue
-		}
-		if fields := QueryRootFields(query); len(fields) != 0 {
-			out[name] = fields
-		}
-	}
-	return out
-}
-
-// coveringSavedQuery returns the approved saved query whose root fields are a
-// superset of the raw query's, i.e. one that already returns everything the
-// model was about to hand-author. Ties resolve to the narrowest match, then
-// alphabetically, so the choice is deterministic.
-func coveringSavedQuery(rawQuery string, definitions map[string][]string) string {
-	wanted := QueryRootFields(rawQuery)
-	if len(wanted) == 0 || len(definitions) == 0 {
-		return ""
-	}
-	best, bestWidth := "", 0
-	for name, covered := range definitions {
-		set := make(map[string]bool, len(covered))
-		for _, field := range covered {
-			set[strings.ToLower(field)] = true
-		}
-		complete := true
-		for _, field := range wanted {
-			if !set[strings.ToLower(field)] {
-				complete = false
-				break
-			}
-		}
-		if !complete {
-			continue
-		}
-		if best == "" || len(covered) < bestWidth || (len(covered) == bestWidth && name < best) {
-			best, bestWidth = name, len(covered)
-		}
-	}
-	return best
-}
-
-// approvedSavedQuerySuffix names the governed alternatives discovered for this
-// run, for appending to a protocol rejection message.
+// approvedSavedQuerySuffix names the governed shortcuts discovered for this
+// run, for appending to a protocol rejection message. Dynamic authoring stays
+// the primary path; the names are an option, not a required route.
 func approvedSavedQuerySuffix(s *discoveryState) string {
 	names := sortedBoolKeys(s.savedQueriesDiscovered)
 	if len(names) > maxRecoverySavedQueries {
@@ -279,28 +201,29 @@ func approvedSavedQuerySuffix(s *discoveryState) string {
 	if len(names) == 0 {
 		return ""
 	}
-	return " Approved saved queries already cover this data (" + strings.Join(names, ", ") +
-		"): prefer query_catalog({id:\"saved_query:<name>\"}) then execute_saved_query({name:\"<name>\"}) over re-authoring raw GraphQL."
+	return " Author the query from the returned column names, or use an approved saved query as a governed shortcut when one matches (" +
+		strings.Join(names, ", ") + "): query_catalog({id:\"saved_query:<name>\"}) then execute_saved_query({name:\"<name>\"})."
 }
 
 // recoveryDirective renders the imperative one-liner appended to failed
-// execution errors.
+// execution errors. Re-authoring dynamically from real column names is the
+// primary recovery; a matching approved saved query is a shortcut.
 func recoveryDirective(recovery map[string]any) string {
 	directive := recoveryDirectivePrefix + " this is a query-authoring mistake, not a data or schema problem." +
 		" The live schema is authoritative — do not report it as broken, do not propose schema changes, and do not stop at blocked." +
-		" Re-discover the real field names with query_catalog and retry in this run."
+		" Re-discover the real field names with query_catalog, re-author the query from the returned columns, and retry in this run."
 	names, _ := recovery["approved_saved_queries"].([]string)
 	if len(names) == 0 {
 		return directive
 	}
 	return directive +
-		" Approved saved queries are available for this request (" + strings.Join(names, ", ") + ")." +
-		" Prefer one: query_catalog({id:\"saved_query:<name>\"}), then execute_saved_query({name:\"<name>\"}), then answer from its data."
+		" A matching approved saved query is a governed shortcut (" + strings.Join(names, ", ") + "):" +
+		" query_catalog({id:\"saved_query:<name>\"}), then execute_saved_query({name:\"<name>\"})."
 }
 
 func executionRecovery(s *discoveryState) map[string]any {
 	recovery := map[string]any{
-		"instruction": "This query did not match the live schema. The schema is authoritative: never advise schema or data changes and do not stop at blocked. Recover in this run — follow errors[].extensions.graphjin_repair, re-discover the real table and field names with query_catalog, and retry. Prefer an approved saved query that covers the request over re-authoring raw GraphQL.",
+		"instruction": "This query did not match the live schema. The schema is authoritative: never advise schema or data changes and do not stop at blocked. Recover in this run — follow errors[].extensions.graphjin_repair, re-discover the real table and field names with query_catalog, re-author the query from the returned columns, and retry.",
 		"next":        []string{toolQueryCatalog},
 	}
 	names := sortedBoolKeys(s.savedQueriesDiscovered)
@@ -311,7 +234,7 @@ func executionRecovery(s *discoveryState) map[string]any {
 		recovery["approved_saved_queries"] = names
 		recovery["saved_query_usage"] = `query_catalog({id:"saved_query:<name>"}) then execute_saved_query({name:"<name>"})`
 		recovery["instruction"] = recovery["instruction"].(string) +
-			" Approved saved queries covering this data already exist (approved_saved_queries): inspect one with query_catalog({id:\"saved_query:<name>\"}), execute it, and answer from its data instead of re-authoring raw GraphQL."
+			" A saved query in approved_saved_queries that matches the request is a governed shortcut: inspect it with query_catalog({id:\"saved_query:<name>\"}), then execute_saved_query."
 	}
 	return recovery
 }

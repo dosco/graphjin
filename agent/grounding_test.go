@@ -80,9 +80,9 @@ func TestFailedExecutionDiscoversApprovedSavedQueriesNotSeeded(t *testing.T) {
 			recoveryActions++
 		}
 	}
-	// One saved-query list at seed, one definitions lookup on the raw attempt.
-	if recoveryActions != 2 {
-		t.Fatalf("recovery-sourced catalog actions = %d, want 2 (list + definitions)", recoveryActions)
+	// One saved-query list, performed at seed time and reused after the failure.
+	if recoveryActions != 1 {
+		t.Fatalf("recovery-sourced catalog actions = %d, want 1 (seed-time list)", recoveryActions)
 	}
 	if runtime.state.savedQueryDetailed(names[0]) {
 		t.Fatalf("saved-query lookup must not satisfy the detail guard for %q", names[0])
@@ -136,11 +136,12 @@ func TestSeedSurfacesApprovedSavedQueriesWhenSearchRanksThemOut(t *testing.T) {
 	}
 }
 
-// A hand-rolled equivalent of an approved saved query adds filters nobody
-// approved: observed live, it silently returned an empty result set and the
-// model concluded there was no work to do. Redirect it to the governed query.
-func TestRawGraphQLRedirectedToCoveringSavedQuery(t *testing.T) {
-	base := &savedQueryDefinitionRuntime{fakeRuntime: &fakeRuntime{}}
+// Dynamic authoring is the agent's primary path: a raw query whose root fields
+// happen to overlap an approved saved query must still execute — the dynamic
+// version can carry filters (today's orders, queued status) the fixed saved
+// query cannot express. Saved queries are shortcuts, never gates.
+func TestRawGraphQLCoveredBySavedQueryStillExecutes(t *testing.T) {
+	base := &fakeRuntime{}
 	runtime := newProtocolRuntime(base, "does the roast plan cover committed shipments", "", 20, nil, nil, CatalogSearchFeatures{})
 	if _, err := runtime.Seed(context.Background()); err != nil {
 		t.Fatal(err)
@@ -148,66 +149,24 @@ func TestRawGraphQLRedirectedToCoveringSavedQuery(t *testing.T) {
 	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:ops:public.production_orders"}); err != nil {
 		t.Fatal(err)
 	}
-	raw := "query { production_orders(where: { requested_ship_date: { eq: \"2026-07-27\" } }) { id } roast_schedule { id } }"
-	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": raw})
-	if err == nil {
-		t.Fatal("a raw query covered by an approved saved query must be redirected")
+	raw := "query { production_orders(where: { status: { eq: \"queued\" } }) { id } roast_schedule { id } }"
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": raw}); err != nil {
+		t.Fatalf("dynamic query overlapping a saved query must execute: %v", err)
 	}
-	if !strings.Contains(err.Error(), "daily_roast_context") {
-		t.Fatalf("error = %q, want the covering saved query named", err)
-	}
+	executed := false
 	for _, call := range base.calls {
 		if call == "execute_graphql" {
-			t.Fatal("redirected query must not reach the runtime")
+			executed = true
 		}
 	}
-	// The redirect is advisory, not a dead end: a model that insists proceeds.
-	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": raw}); err != nil {
-		t.Fatalf("second attempt must proceed under the remaining guards: %v", err)
+	if !executed {
+		t.Fatal("dynamic query must reach the runtime")
 	}
-}
-
-// A raw query reaching beyond what any approved saved query returns is the
-// legitimate use of raw GraphQL and must not be redirected.
-func TestRawGraphQLNotRedirectedWhenNotCovered(t *testing.T) {
-	base := &savedQueryDefinitionRuntime{fakeRuntime: &fakeRuntime{}}
-	runtime := newProtocolRuntime(base, "sensor drift", "", 20, nil, nil, CatalogSearchFeatures{})
-	if _, err := runtime.Seed(context.Background()); err != nil {
-		t.Fatal(err)
+	for _, code := range ProtocolViolationCodes(runtime.state.finalize(Response{Status: StatusAnswered, Answer: "queued orders listed"})) {
+		if code == "saved_query_preferred" {
+			t.Fatal("overlap with a saved query must not record a violation")
+		}
 	}
-	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:ops:public.sensor_samples"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
-		"query": "query { sensor_samples { id reading } }",
-	}); err != nil {
-		t.Fatalf("uncovered raw query must be allowed: %v", err)
-	}
-}
-
-// savedQueryDefinitionRuntime serves a saved-query definition detail row, the
-// shape the live catalog returns for saved_query ids.
-type savedQueryDefinitionRuntime struct {
-	*fakeRuntime
-}
-
-func (r *savedQueryDefinitionRuntime) QueryCatalog(ctx context.Context, args map[string]any) (any, error) {
-	ids := detailIDsFromArgs(args)
-	if len(ids) == 1 && strings.HasPrefix(ids[0], "saved_query:") {
-		r.record("query_catalog", args)
-		return map[string]any{
-			"count": 1,
-			"cards": []any{map[string]any{
-				"id": ids[0], "kind": "saved_query", "name": savedQueryNameFromID(ids[0]),
-			}},
-			"details": []any{map[string]any{
-				"card_id":   ids[0],
-				"section":   "saved_query_definition",
-				"data_json": `{"name":"daily_roast_context","operation":"query","query":"query daily_roast_context {\n  production_orders { id }\n  roast_schedule { id }\n  green_lots { id }\n  subscriptions { id }\n}"}`,
-			}},
-		}, nil
-	}
-	return r.fakeRuntime.QueryCatalog(ctx, args)
 }
 
 // A seed that already surfaced saved queries needs no supplement.
