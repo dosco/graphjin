@@ -2379,7 +2379,6 @@ pre code {
 
 .agentic-loop,
 .agentic-panel,
-.mcp-command-panel,
 .stats-grid article,
 .ai-window,
 .codesql-showcase,
@@ -2395,8 +2394,7 @@ pre code {
 
 .agentic-loop,
 .agentic-panel,
-.codesql-showcase,
-.mcp-command-panel {
+.codesql-showcase {
   padding: 1.15rem;
 }
 
@@ -2428,7 +2426,6 @@ pre code {
 
 .agentic-steps h3,
 .agentic-panel h3,
-.mcp-command-panel h3,
 .codesql-ask strong,
 .codesql-lens strong,
 .codesql-results strong {
@@ -2436,8 +2433,7 @@ pre code {
 }
 
 .agentic-steps h3,
-.agentic-panel h3,
-.mcp-command-panel h3 {
+.agentic-panel h3 {
   margin: 0.45rem 0 0;
 }
 
@@ -2980,14 +2976,6 @@ pre code {
   width: auto;
   min-width: 2rem;
   padding: 0 0.4rem;
-}
-
-.mcp-command-panel {
-  margin-top: 1rem;
-}
-
-.mcp-command-panel h3 {
-  margin-top: 0;
 }
 
 .federation-list {
