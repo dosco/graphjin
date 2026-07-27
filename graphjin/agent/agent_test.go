@@ -781,7 +781,7 @@ func TestRunRequiresLaterUserConfirmationForWatchActionApproval(t *testing.T) {
 	if !responseHasProtocolError(resp, "watch_action_confirmation_required") {
 		t.Fatalf("missing watch_action_confirmation_required: %+v", resp.Errors)
 	}
-	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|execute_graphql" {
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|query_catalog|execute_graphql" {
 		t.Fatalf("runtime calls = %s, approval must not reach runtime", got)
 	}
 }
@@ -819,7 +819,7 @@ func TestRunRequiresLaterUserConfirmationForAnnotationApproval(t *testing.T) {
 	if !responseHasProtocolError(resp, "annotation_tier_confirmation_required") {
 		t.Fatalf("missing annotation_tier_confirmation_required: %+v", resp.Errors)
 	}
-	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|execute_graphql" {
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|query_catalog|execute_graphql" {
 		t.Fatalf("runtime calls = %s, approval must not reach runtime", got)
 	}
 }
@@ -851,7 +851,7 @@ func TestRunRejectsCombinedAnnotationEditAndApproval(t *testing.T) {
 	if resp.Status != StatusBlocked || !responseHasProtocolError(resp, "annotation_tier_confirmation_required") {
 		t.Fatalf("combined edit-and-approve response = %+v", resp)
 	}
-	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog" {
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|query_catalog" {
 		t.Fatalf("runtime calls = %s, combined edit and approval must not reach runtime", got)
 	}
 }
@@ -883,7 +883,7 @@ func TestRunAllowsConfirmedAnnotationApprovalInLaterRun(t *testing.T) {
 	if responseHasProtocolError(resp, "annotation_tier_confirmation_required") {
 		t.Fatalf("later approval was incorrectly blocked: %+v", resp.Errors)
 	}
-	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|execute_graphql" {
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|query_catalog|execute_graphql" {
 		t.Fatalf("runtime calls = %s, confirmed approval should reach runtime", got)
 	}
 }
@@ -916,7 +916,7 @@ func TestRunRejectsVariableBackedAnnotationEditAndApproval(t *testing.T) {
 	if resp.Status != StatusBlocked || !responseHasProtocolError(resp, "annotation_tier_confirmation_required") {
 		t.Fatalf("variable edit-and-approve response = %+v", resp)
 	}
-	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog" {
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|query_catalog" {
 		t.Fatalf("runtime calls = %s, variable edit and approval must not reach runtime", got)
 	}
 }
@@ -1148,17 +1148,22 @@ func TestRunEmitsActionEventsToObserver(t *testing.T) {
 	if resp.Status != StatusAnswered {
 		t.Fatalf("status = %s, want answered: %+v", resp.Status, resp)
 	}
-	if len(events) != 2 {
-		t.Fatalf("events = %d, want 2 (seed + model)", len(events))
+	// Seed, the server-side approved saved-query supplement, then the model's
+	// own action. The supplement is attributed, not disguised as a model step.
+	if len(events) != 3 {
+		t.Fatalf("events = %d, want 3 (seed + saved-query supplement + model)", len(events))
 	}
 	if events[0].Source != "seed" || events[0].Tool != "query_catalog" || events[0].Index != 1 {
 		t.Fatalf("first event = %+v, want seed query_catalog index 1", events[0])
 	}
-	if events[1].Source != "model" || events[1].Status != "ok" || events[1].Index != 2 {
-		t.Fatalf("second event = %+v, want model ok index 2", events[1])
+	if events[1].Source != "recovery" || events[1].Tool != "query_catalog" || events[1].Index != 2 {
+		t.Fatalf("second event = %+v, want recovery query_catalog index 2", events[1])
 	}
-	if events[1].Args["variables"] != "[redacted]" {
-		t.Fatalf("observer args must be redacted: %+v", events[1].Args)
+	if events[2].Source != "model" || events[2].Status != "ok" || events[2].Index != 3 {
+		t.Fatalf("third event = %+v, want model ok index 3", events[2])
+	}
+	if events[2].Args["variables"] != "[redacted]" {
+		t.Fatalf("observer args must be redacted: %+v", events[2].Args)
 	}
 }
 

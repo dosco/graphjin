@@ -85,6 +85,8 @@ func refusalPriority(code string) int {
 		return 60
 	case "raw_graphql_catalog_required", "model_discovery_required":
 		return 50
+	case "ungrounded_answer_fields":
+		return 40
 	default:
 		return 10
 	}
@@ -271,6 +273,8 @@ func lawfulAlternativeForViolation(v protocolViolation) string {
 		return "Read visible security/runtime guidance first; if those roots are not visible, ask an authorized operator to perform the write."
 	case "workflow_detail_required":
 		return "Inspect the selected workflow detail by id, then execute it through the governed workflow-execution root."
+	case "ungrounded_answer_fields":
+		return "Re-run the governed query or workflow that actually returns the cited fields, or restate the conclusion using only fields and values observed in this run's results."
 	case "catalog_seed_failed", "catalog_seed_required", "model_discovery_required", "raw_graphql_catalog_required":
 		return "Perform catalog-first discovery, then answer or run the GraphQL action from that evidence."
 	default:

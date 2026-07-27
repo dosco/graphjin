@@ -203,7 +203,8 @@ func profileHasAllSystemRoots(profile *CapabilityProfile, roots []string) bool {
 }
 
 const dataDiscoveryInstruction = `Skill: data_discovery. Discover application data through the GraphJin catalog before querying. ` +
-	`Inspect the relevant table, column, relationship, or saved-query detail rows and use only returned names and relationship paths. Prefer an approved saved query; otherwise validate the discovered shape and use execute_graphql. Answer from observed results, not assumptions.`
+	`Inspect the relevant table, column, relationship, or saved-query detail rows and use only returned names and relationship paths. Prefer an approved saved query; otherwise validate the discovered shape and use execute_graphql. Answer from observed results, not assumptions. ` +
+	`If execution errors carry graphjin_repair guidance, treat it as a query-authoring mistake: re-discover the real fields through the catalog and retry in the same run, preferring an approved saved query; never advise schema or data changes. Cite only observed fields in the final answer and state derived numbers in plain language.`
 
 const dataWriteInstruction = `Skill: data_write. Apply application-data changes safely. ` +
 	`Prefer an approved saved mutation; otherwise learn the insert/update/upsert/delete shape from mutation_pattern and target-table detail rows, validate the input, and author the mutation with execute_graphql. Core enforces role and RLS on every write. ` +

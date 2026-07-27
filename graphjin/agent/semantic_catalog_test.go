@@ -93,8 +93,18 @@ func TestSemanticCoverageProtocolValidationAndOneBatchLimit(t *testing.T) {
 	if _, err := seedRuntime.Seed(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(seedBase.calls) != 1 || stringArg(seedBase.args, "search") != "find customers" || seedBase.args["searches"] != nil {
-		t.Fatalf("semantic seed changed or expanded automatically: calls=%v args=%+v", seedBase.calls, seedBase.args)
+	// The seed's own search must stay one unexpanded lexical/semantic call;
+	// coverage batching remains the model's explicit one-shot choice. The
+	// approved saved-query supplement is a separate lookup, never a `searches`
+	// expansion of the seed.
+	seedArgs := seedRuntime.state.actions[0].Args
+	if stringArg(seedArgs, "search") != "find customers" || seedArgs["searches"] != nil {
+		t.Fatalf("semantic seed changed or expanded automatically: args=%+v", seedArgs)
+	}
+	for _, args := range []map[string]any{seedBase.args} {
+		if args["searches"] != nil {
+			t.Fatalf("no automatic call may use coverage batching: %+v", args)
+		}
 	}
 
 	for _, test := range []struct {
@@ -211,18 +221,23 @@ func TestSemanticAgentInspectsCoveragePathBeforeExecution(t *testing.T) {
 	if response.Status != StatusAnswered {
 		t.Fatalf("response = %+v", response)
 	}
-	if len(runtime.catalogArgs) != 3 {
-		t.Fatalf("catalog calls = %+v, want seed, coverage, detail", runtime.catalogArgs)
+	// Seed, approved saved-query supplement, model coverage batch, detail, and
+	// the saved-query definitions lookup that precedes the raw execution.
+	if len(runtime.catalogArgs) != 5 {
+		t.Fatalf("catalog calls = %+v, want seed, supplement, coverage, detail, definitions", runtime.catalogArgs)
 	}
-	if len(stringSliceArg(runtime.catalogArgs[1], "searches")) != 3 {
-		t.Fatalf("second catalog call was not coverage: %+v", runtime.catalogArgs[1])
+	if stringArg(runtime.catalogArgs[1], "kind") != "saved_query" {
+		t.Fatalf("second catalog call was not the saved-query supplement: %+v", runtime.catalogArgs[1])
+	}
+	if len(stringSliceArg(runtime.catalogArgs[2], "searches")) != 3 {
+		t.Fatalf("third catalog call was not coverage: %+v", runtime.catalogArgs[2])
 	}
 	wantDetails := []string{"table:customers", "relationship:orders_products", "table:products"}
-	gotDetails := detailIDsFromArgs(runtime.catalogArgs[2])
+	gotDetails := detailIDsFromArgs(runtime.catalogArgs[3])
 	if strings.Join(gotDetails, "|") != strings.Join(wantDetails, "|") {
 		t.Fatalf("detail inspection = %v, want returned endpoints and real path %v", gotDetails, wantDetails)
 	}
-	wantCalls := "query_catalog|query_catalog|query_catalog|execute_graphql"
+	wantCalls := "query_catalog|query_catalog|query_catalog|query_catalog|query_catalog|execute_graphql"
 	if got := strings.Join(base.calls, "|"); got != wantCalls {
 		t.Fatalf("tool order = %s, want %s", got, wantCalls)
 	}
