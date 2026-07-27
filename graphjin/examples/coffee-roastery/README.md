@@ -111,10 +111,50 @@ The script checks the connected demo surface end-to-end:
 - Saved-query REST endpoints for `daily_roast_context`, `batch_quality_snapshot`, and `customer_issue_context`.
 - Workflow execution for `daily_roast_plan`, `batch_quality_review`, and `customer_issue_triage`.
 - MCP discovery through `query_catalog` for saved queries, workflows, and CodeSQL context.
+- Declared-task creation, ownership, journals, linked watches, next guidance,
+  immediate verification success/failure, and delayed-verification cancellation.
+- Catalog annotation draft, task provenance, account isolation, explicit
+  approval, exact-detail framing, stale targets, moderation, and cleanup.
 - Watch firing and inbox control: REST/MCP unseen reads, snooze hide/restore without marking seen, and acknowledgement.
 - Per-watch MCP routing across two same-owner sessions plus a safe rollup over both source watch IDs.
 - Deterministic inline AxFlow watch triage: preview/approval, notify/digest/discard dispositions, and a real one-minute digest drain using the local fixture (no provider traffic).
 - A focused service batch for reconnect/backoff thresholds, absence fire/re-arm/downtime grace, digest coalescing/idempotence, snooze semantics, and rollup loop safety.
+
+Use `--deep` to add the real one-minute task verification window and background
+30-second sweep. The full demo launcher forwards it only to coffee-roastery:
+
+```bash
+make smoke-all SMOKE_ALL_ARGS=--deep
+```
+
+The smoke output uses stable capability IDs so a failed assertion names the
+product contract it protects. The comments immediately above each suite state
+the contract and its deeper Go coverage.
+
+| Capability | Smoke function and mode | Main Go coverage | Runtime surfaces |
+| --- | --- | --- | --- |
+| `TASK-DECLARED` | `run_task_control_plane_suite`, default | `TestTaskControlPlaneLifecycleScopeAndTrail`; `TestTaskWatchLinkJournalsAndDeleteUnlinks` | GraphQL, MCP, watch store |
+| `TASK-CONTINUITY` | `run_task_agent_eval_suite`, `--agent-eval` | `TestTaskAgentHTTPFlowWarmStartsAndJournals` | REST agent, task trail |
+| `TASK-NEXT` | `run_task_control_plane_suite`, default | `TestTaskCreationNextGuidance` | MCP `execute_graphql` |
+| `TASK-VERIFY-NOW` | task control suite; deterministic `--agent` notices | `TestTaskImmediateVerificationPassAndFail` | GraphQL, saved query, REST agent |
+| `TASK-VERIFY-LATER` | task control suite; verifier suite with `--deep` | `TestTaskDelayedVerificationSweepAndReopenCancellation`; `TestTaskVerificationClaimIsSingleWinnerAcrossReplicas` | GraphQL, background worker |
+| `ANNOTATION-DRAFT` | `run_annotation_suite`, default | `TestAnnotationTaskMustHaveSameOwner` | GraphQL, MCP, artifact store |
+| `ANNOTATION-SCOPE` | `run_annotation_suite`, default | `TestAnnotationLifecycleScopeCatalogMergeAndDemotion` | JWT/dev identity, GraphQL, MCP |
+| `ANNOTATION-DETAIL` | `run_annotation_suite`, default | `TestAnnotationStaleDetailDeploymentScopeAndServerFields` | raw catalog, MCP detail |
+| `ANNOTATION-MODERATE` | `run_annotation_suite`, default | `TestAnnotationLifecycleScopeCatalogMergeAndDemotion` | admin identity, runtime events |
+| `ANNOTATION-SEMANTIC` | `run_annotation_semantic_smoke`, semantic fixture | `TestApprovedAnnotationsAreSeparateAccountFilteredSemanticDocuments`; `TestAnnotationApprovalEmbedsOnlyTheNewDocument` | embeddings, generation rebuild, MCP |
+| `ANNOTATION-NOTICE` | `run_agent_state_notice_smoke`, semantic `--agent` | `TestAnnotationLifecycleScopeCatalogMergeAndDemotion` | REST agent notices |
+| `ANNOTATION-GUARD` | `run_annotation_agent_guard_smoke`, semantic `--agent` | `TestRunRequiresLaterUserConfirmationForAnnotationApproval` | fixture model, agent protocol, GraphQL |
+
+Check the comments, labels, and matrix together without starting the demo:
+
+```bash
+examples/coffee-roastery/scripts/check-capability-smokes.sh
+```
+
+Caps, migration permutations, malformed inputs, multi-replica claim races, and
+stuck-claim recovery intentionally remain integration-only: their deterministic
+Go tests provide stronger proof than duplicating those internals in Bash.
 
 ### Semantic discovery comparison
 
@@ -147,6 +187,8 @@ embedding fixture on port `18081`. It verifies that:
 - Exact `production_orders` lookup remains top-one and skips query embedding.
 - A cold semantic build uses bounded Ax batches and the next warm startup makes
   zero embedding calls.
+- Approved annotation vocabulary lifts only its account-visible target, embeds
+  one new document, and disappears without re-embedding after demotion.
 - `explain: true` identifies semantic recall and deterministic relationship
   path results.
 - The service-owned agent's private adaptive coverage path preserves
@@ -155,6 +197,8 @@ embedding fixture on port `18081`. It verifies that:
   three-phrase coverage call, reuses cached query vectors, embeds all misses in
   one Ax request, follows the returned `next.args.ids` endpoint/path handoff,
   and inspects those card ids before answering.
+- The deterministic agent also surfaces failed-task and unshared-annotation
+  notices and refuses annotation creation plus approval in the same run.
 
 The deterministic fixture proves GraphJin's integration and ranking behavior;
 it is not a benchmark of a production embedding model. To measure the same

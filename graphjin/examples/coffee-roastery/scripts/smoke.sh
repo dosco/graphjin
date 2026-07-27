@@ -11,7 +11,7 @@ Run after starting the demo server:
   graphjin serve --demo --path examples/coffee-roastery
 
 Usage:
-  examples/coffee-roastery/scripts/smoke.sh [--url URL] [--agent|--no-agent|--agent-eval] [--model-resolution]
+  examples/coffee-roastery/scripts/smoke.sh [--url URL] [--agent|--no-agent|--agent-eval] [--model-resolution] [--deep]
 
 Options:
   --url URL     GraphJin base URL. Defaults to GRAPHJIN_URL or http://localhost:8080.
@@ -19,6 +19,7 @@ Options:
   --agent-eval  Run stricter open-ended agent protocol evals against REST.
   --model-resolution  Check automatic MCP client-model fallback and REST failure.
   --no-agent    Skip REST and MCP agent checks.
+  --deep        Wait for real one-minute task verification sweeps.
 
 Environment:
   GRAPHJIN_URL              Base URL for a running GraphJin server.
@@ -36,9 +37,10 @@ smoke_parse_args "$@"
 COFFEE_ROUTE_WATCH_IDS=()
 COFFEE_ROUTE_SESSION_IDS=()
 COFFEE_TASK_IDS=()
+COFFEE_ANNOTATION_IDS=()
 
 smoke_extra_cleanup() {
-  local session_id watch_id task_id
+  local session_id watch_id task_id annotation_id
   for session_id in "${COFFEE_ROUTE_SESSION_IDS[@]-}"; do
     [ -n "$session_id" ] || continue
     mcp_terminate_session "$session_id"
@@ -50,6 +52,10 @@ smoke_extra_cleanup() {
   for task_id in "${COFFEE_TASK_IDS[@]-}"; do
     [ -n "$task_id" ] || continue
     graphql task-trap-cleanup "mutation { gj_task(delete: true, where: { id: { eq: \"${task_id}\" } }) { id } }" >/dev/null 2>&1 || true
+  done
+  for annotation_id in "${COFFEE_ANNOTATION_IDS[@]-}"; do
+    [ -n "$annotation_id" ] || continue
+    graphql annotation-trap-cleanup "mutation { gj_artifacts(delete: true, where: { id: { eq: \"${annotation_id}\" } }) { id } }" >/dev/null 2>&1 || true
   done
 }
 
@@ -249,6 +255,133 @@ run_coffee_watch_session_routing_suite() {
 
 # --- domain agent eval suite ---------------------------------------------------
 
+# Capability: TASK-DECLARED, TASK-NEXT, TASK-VERIFY-NOW, TASK-VERIFY-LATER
+# Contract: Declared tasks remain owner-scoped durable intent, journal linked
+# work, close only after their saved-query proof passes, and expose actionable
+# next guidance without requiring a model provider.
+# Deeper coverage: TestTaskControlPlaneLifecycleScopeAndTrail,
+# TestTaskWatchLinkJournalsAndDeleteUnlinks, TestTaskCreationNextGuidance,
+# TestTaskImmediateVerificationPassAndFail.
+run_task_control_plane_suite() {
+  log "checking provider-free declared task contracts"
+
+  local suffix goal create_query create_out task_id note_out watch_name watch_query watch_out watch_id entries_out
+  local foreign_out close_query close_out verify_entries_out failed_create failed_id failed_close failed_entries
+  local cancel_create cancel_id cancel_schedule cancel_out
+  suffix="$(date +%s)_$$"
+  goal="Provider-free task smoke ${suffix}"
+  create_query="mutation { gj_task(insert: { goal: \"${goal}\", snapshot_json: { capability: \"TASK-DECLARED\" } }) { id goal status } }"
+  create_out="$(mcp_tool execute_graphql "$(jq -nc --arg query "$create_query" '{query:$query}')" TASK-DECLARED)"
+  task_id="$(jq -r '[.result.structuredContent.data.gj_task] | flatten | .[0].id // empty' "$create_out")"
+  assert_jq_args "$create_out" "[TASK-DECLARED] MCP created an explicit open task" --arg goal "$goal" '
+    ([.result.structuredContent.data.gj_task] | flatten | .[0]) as $task
+    | ($task.id | startswith("task:")) and $task.goal == $goal and $task.status == "open"
+  '
+  assert_jq "$create_out" '.result.structuredContent.next.state_code == "task_created" and any(.result.structuredContent.next.options[]?; .tool == "execute_graphql" and (.args_template.query | contains("gj_task_entry(insert")))' "[TASK-NEXT] task creation advertises journaling"
+  COFFEE_TASK_IDS+=("$task_id")
+
+  note_out="$(graphql task-declared-note "mutation { gj_task_entry(insert: { task_id: \"${task_id}\", body: \"Provider-free task journal evidence.\" }) { id task_id origin body } }" TASK-DECLARED)"
+  assert_jq_args "$note_out" "[TASK-DECLARED] caller journal entry is durable" --arg task_id "$task_id" '([.data.gj_task_entry] | flatten | .[0]) as $entry | ($entry.id | startswith("te:")) and $entry.task_id == $task_id and $entry.origin == "caller"'
+
+  watch_name="task_smoke_${suffix}"
+  watch_query="subscription ${watch_name} { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
+  watch_out="$(graphql task-declared-watch "mutation { gj_watch(insert: { name: \"${watch_name}\", task_id: \"${task_id}\", query: \"${watch_query}\" }) { id task_id enabled } }" TASK-DECLARED)"
+  watch_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id // empty' "$watch_out")"
+  COFFEE_ROUTE_WATCH_IDS+=("$watch_id")
+  assert_jq_args "$watch_out" "[TASK-DECLARED] linked watch retains task correlation" --arg task_id "$task_id" '([.data.gj_watch] | flatten | .[0]) as $watch | ($watch.id | length) > 0 and $watch.task_id == $task_id and $watch.enabled == true'
+  entries_out="$(graphql task-declared-watch-trail "query { gj_task_entry(where: { task_id: { eq: \"${task_id}\" } }, limit: 20) { origin watch_id detail_json } }" TASK-DECLARED)"
+  assert_jq_args "$entries_out" "[TASK-DECLARED] watch creation is journaled on the task" --arg watch_id "$watch_id" 'any(.data.gj_task_entry[]?; .origin == "watch_created" and .watch_id == $watch_id)'
+
+  foreign_out="$(graphql_as_identity smoke-foreign user 2 task-foreign-read "query { gj_task(where: { id: { eq: \"${task_id}\" } }) { id } }" TASK-DECLARED)"
+  assert_jq "$foreign_out" '(.data.gj_task | length) == 0' "[TASK-DECLARED] foreign owner cannot read the task"
+  graphql_expect_error_as_identity smoke-foreign user 2 task-foreign-entry "mutation { gj_task_entry(insert: { task_id: \"${task_id}\", body: \"foreign write\" }) { id } }" TASK-DECLARED >/dev/null
+  pass "[TASK-DECLARED] foreign owner cannot append to the task"
+
+  close_query="mutation { gj_task(where: { id: { eq: \"${task_id}\" } }, update: { status: \"closed\", outcome: \"Provider-free verification passed.\", verify_json: { saved_query_name: \"daily_roast_context\", expect: { path: \"production_orders\", op: \"count_ge\", value: 1 } } }) { id status outcome verify_status verify_attempts closed_at } }"
+  close_out="$(mcp_tool execute_graphql "$(jq -nc --arg query "$close_query" '{query:$query}')" TASK-VERIFY-NOW)"
+  assert_jq "$close_out" '([.result.structuredContent.data.gj_task] | flatten | .[0]) as $task | $task.status == "closed" and $task.verify_status == "verified" and $task.verify_attempts == 1 and ($task.closed_at | length) > 0' "[TASK-VERIFY-NOW] passing proof closes the task"
+  assert_jq "$close_out" '.result.structuredContent.next.state_code == "task_closed" and any(.result.structuredContent.next.options[]?; (.args_template.query // "") | contains("kind: \"annotation\""))' "[TASK-NEXT] verified close offers annotation distillation"
+  verify_entries_out="$(graphql task-verified-entry "query { gj_task_entry(where: { task_id: { eq: \"${task_id}\" } }) { id origin status detail_json } }" TASK-VERIFY-NOW)"
+  assert_jq "$verify_entries_out" '[.data.gj_task_entry[] | select(.origin == "verification" and .status == "passed" and (.detail_json.spec_hash | length) == 64)] | length == 1' "[TASK-VERIFY-NOW] passing proof records one hashed trail entry"
+
+  failed_create="$(graphql task-failed-create "mutation { gj_task(insert: { goal: \"Failed proof ${suffix}\" }) { id status } }" TASK-VERIFY-NOW)"
+  failed_id="$(jq -r '[.data.gj_task] | flatten | .[0].id' "$failed_create")"
+  COFFEE_TASK_IDS+=("$failed_id")
+  failed_close="$(graphql task-failed-close "mutation { gj_task(where: { id: { eq: \"${failed_id}\" } }, update: { status: \"closed\", outcome: \"This claim must not stick.\", verify_json: { saved_query_name: \"daily_roast_context\", expect: { path: \"production_orders\", op: \"count_le\", value: 0 } } }) { id status outcome verify_status verify_attempts closed_at } }" TASK-VERIFY-NOW)"
+  assert_jq "$failed_close" '([.data.gj_task] | flatten | .[0]) as $task | $task.status == "open" and $task.verify_status == "failed" and $task.verify_attempts == 1 and $task.outcome == "" and $task.closed_at == ""' "[TASK-VERIFY-NOW] failed proof reopens and clears the claim"
+  failed_entries="$(graphql task-failed-entry "query { gj_task_entry(where: { task_id: { eq: \"${failed_id}\" } }) { id origin status detail_json } }" TASK-VERIFY-NOW)"
+  assert_jq "$failed_entries" '[.data.gj_task_entry[] | select(.origin == "verification" and .status == "failed" and (.detail_json.spec_hash | length) == 64)] | length == 1' "[TASK-VERIFY-NOW] failed proof records one hashed trail entry"
+
+  cancel_create="$(graphql task-cancel-create "mutation { gj_task(insert: { goal: \"Cancelled delayed proof ${suffix}\" }) { id } }" TASK-VERIFY-LATER)"
+  cancel_id="$(jq -r '[.data.gj_task] | flatten | .[0].id' "$cancel_create")"
+  COFFEE_TASK_IDS+=("$cancel_id")
+  cancel_schedule="$(graphql task-cancel-schedule "mutation { gj_task(where: { id: { eq: \"${cancel_id}\" } }, update: { status: \"closed\", outcome: \"Wait for proof.\", verify_json: { saved_query_name: \"daily_roast_context\", expect: { path: \"production_orders\", op: \"count_ge\", value: 1 }, recheck: \"2h\" } }) { id status verify_status verify_after closed_at } }" TASK-VERIFY-LATER)"
+  assert_jq "$cancel_schedule" '([.data.gj_task] | flatten | .[0]) as $task | $task.status == "verifying" and $task.verify_status == "pending" and ($task.verify_after | length) > 0 and $task.closed_at == ""' "[TASK-VERIFY-LATER] delayed proof enters pending verification"
+  cancel_out="$(graphql task-cancel-reopen "mutation { gj_task(where: { id: { eq: \"${cancel_id}\" } }, update: { status: \"open\" }) { id status verify_status verify_after } }" TASK-VERIFY-LATER)"
+  assert_jq "$cancel_out" '([.data.gj_task] | flatten | .[0]) as $task | $task.status == "open" and $task.verify_status == "cancelled" and $task.verify_after == ""' "[TASK-VERIFY-LATER] reopening cancels pending verification"
+
+  graphql task-declared-watch-cleanup "mutation { gj_watch(delete: true, where: { id: { eq: \"${watch_id}\" } }) { id } }" TASK-DECLARED >/dev/null
+  COFFEE_ROUTE_WATCH_IDS=()
+  for task_id in "$task_id" "$failed_id" "$cancel_id"; do
+    graphql task-declared-cleanup "mutation { gj_task(delete: true, where: { id: { eq: \"${task_id}\" } }) { id } }" TASK-DECLARED >/dev/null
+  done
+  COFFEE_TASK_IDS=()
+}
+
+# Capability: TASK-VERIFY-LATER
+# Contract: The production one-minute window and 30-second verifier sweep close
+# passing tasks and reopen failed claims without a test-only timing override.
+# Deeper coverage: TestTaskDelayedVerificationSweepAndReopenCancellation,
+# TestTaskVerificationClaimIsSingleWinnerAcrossReplicas.
+run_task_verifier_deep_suite() {
+  log "checking real-time background task verification"
+
+  local suffix pass_create fail_create pass_id fail_id pass_schedule fail_schedule payload state_out deadline entries_out
+  suffix="$(date +%s)_$$"
+  pass_create="$(graphql deep-task-pass-create "mutation { gj_task(insert: { goal: \"Deep passing proof ${suffix}\" }) { id } }" TASK-VERIFY-LATER)"
+  fail_create="$(graphql deep-task-fail-create "mutation { gj_task(insert: { goal: \"Deep failing proof ${suffix}\" }) { id } }" TASK-VERIFY-LATER)"
+  pass_id="$(jq -r '[.data.gj_task] | flatten | .[0].id' "$pass_create")"
+  fail_id="$(jq -r '[.data.gj_task] | flatten | .[0].id' "$fail_create")"
+  COFFEE_TASK_IDS+=("$pass_id" "$fail_id")
+
+  pass_schedule="$(graphql deep-task-pass-schedule "mutation { gj_task(where: { id: { eq: \"${pass_id}\" } }, update: { status: \"closed\", outcome: \"Background proof passes.\", verify_json: { saved_query_name: \"daily_roast_context\", expect: { path: \"production_orders\", op: \"count_ge\", value: 1 }, recheck: \"1m\" } }) { id status verify_status verify_after } }" TASK-VERIFY-LATER)"
+  fail_schedule="$(graphql deep-task-fail-schedule "mutation { gj_task(where: { id: { eq: \"${fail_id}\" } }, update: { status: \"closed\", outcome: \"Background proof must fail.\", verify_json: { saved_query_name: \"daily_roast_context\", expect: { path: \"production_orders\", op: \"count_le\", value: 0 }, recheck: \"1m\" } }) { id status verify_status verify_after } }" TASK-VERIFY-LATER)"
+  assert_jq "$pass_schedule" '([.data.gj_task] | flatten | .[0]) | .status == "verifying" and .verify_status == "pending" and (.verify_after | length) > 0' "[TASK-VERIFY-LATER] passing deep task starts pending"
+  assert_jq "$fail_schedule" '([.data.gj_task] | flatten | .[0]) | .status == "verifying" and .verify_status == "pending" and (.verify_after | length) > 0' "[TASK-VERIFY-LATER] failing deep task starts pending"
+
+  state_out="$TMP_DIR/deep-task-states.json"
+  payload="$(jq -nc --arg pass "$pass_id" --arg fail "$fail_id" '{query:("query { gj_task(where: { id: { in: [\"" + $pass + "\", \"" + $fail + "\"] } }) { id status outcome verify_status verify_attempts closed_at } }")}')"
+  deadline=$((SECONDS + TIMEOUT))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    post_json "${BASE_URL%/}/api/v1/graphql" "$payload" "$state_out"
+    if jq -e --arg pass "$pass_id" --arg fail "$fail_id" '
+      any(.data.gj_task[]?; .id == $pass and .status == "closed" and .verify_status == "verified")
+      and any(.data.gj_task[]?; .id == $fail and .status == "open" and .verify_status == "failed")
+    ' "$state_out" >/dev/null; then
+      break
+    fi
+    sleep 2
+  done
+  assert_jq_args "$state_out" "[TASK-VERIFY-LATER] background sweep resolves passing and failing tasks" --arg pass "$pass_id" --arg fail "$fail_id" '
+    any(.data.gj_task[]?; .id == $pass and .status == "closed" and .verify_status == "verified" and .verify_attempts == 1 and (.closed_at | length) > 0)
+    and any(.data.gj_task[]?; .id == $fail and .status == "open" and .verify_status == "failed" and .verify_attempts == 1 and .outcome == "" and .closed_at == "")
+  '
+  entries_out="$(graphql deep-task-entries "query { gj_task_entry(where: { task_id: { in: [\"${pass_id}\", \"${fail_id}\"] } }) { task_id origin status detail_json } }" TASK-VERIFY-LATER)"
+  assert_jq_args "$entries_out" "[TASK-VERIFY-LATER] background sweep records one hashed verdict per task" --arg pass "$pass_id" --arg fail "$fail_id" '
+    ([.data.gj_task_entry[] | select(.task_id == $pass and .origin == "verification" and .status == "passed" and (.detail_json.spec_hash | length) == 64)] | length) == 1
+    and ([.data.gj_task_entry[] | select(.task_id == $fail and .origin == "verification" and .status == "failed" and (.detail_json.spec_hash | length) == 64)] | length) == 1
+  '
+
+  for task_id in "$pass_id" "$fail_id"; do
+    graphql deep-task-cleanup "mutation { gj_task(delete: true, where: { id: { eq: \"${task_id}\" } }) { id } }" TASK-VERIFY-LATER >/dev/null
+  done
+  COFFEE_TASK_IDS=()
+}
+
+# Capability: TASK-CONTINUITY
+# Contract: An agent run advertises unlinked work, loads the retained trail on
+# linked runs, and records enough provenance for the next run to continue.
+# Deeper coverage: TestTaskAgentHTTPFlowWarmStartsAndJournals.
 run_task_agent_eval_suite() {
   log "checking durable task warm-start and provenance trail"
 
@@ -258,23 +391,23 @@ run_task_agent_eval_suite() {
   goal="Coffee warm-start ${suffix}: keep Northstar production planning grounded in approved saved-query evidence."
   create_out="$(graphql task-create "mutation { gj_task(insert: { goal: \"${goal}\", snapshot_json: { product: \"Northstar House Blend 340g\" } }) { id goal status } }")"
   task_id="$(jq -r '[.data.gj_task] | flatten | .[0].id' "$create_out")"
-  assert_jq_args "$create_out" "declared task created explicitly" --arg goal "$goal" '
+  assert_jq_args "$create_out" "[TASK-CONTINUITY] declared task created explicitly" --arg goal "$goal" '
     ([.data.gj_task] | flatten | .[0]) as $task
     | ($task.id | startswith("task:")) and $task.goal == $goal and $task.status == "open"
   '
   COFFEE_TASK_IDS+=("$task_id")
 
   note_out="$(graphql task-note "mutation { gj_task_entry(insert: { task_id: \"${task_id}\", body: \"Prioritize approved saved-query evidence.\" }) { id origin body } }")"
-  assert_jq "$note_out" '([.data.gj_task_entry] | flatten | .[0]) as $entry | ($entry.id | startswith("te:")) and $entry.origin == "caller"' "caller task journal appended"
+  assert_jq "$note_out" '([.data.gj_task_entry] | flatten | .[0]) as $entry | ($entry.id | startswith("te:")) and $entry.origin == "caller"' "[TASK-CONTINUITY] caller task journal appended"
 
   unlinked_out="$(run_agent_rest_prompt "Inventory the approved saved queries for a separate smoke check. Do discovery only and answer briefly.")"
-  assert_jq_args "$unlinked_out" "unlinked agent run advertises the caller's open task" --arg task_id "$task_id" '
+  assert_jq_args "$unlinked_out" "[TASK-CONTINUITY] unlinked agent run advertises the caller's open task" --arg task_id "$task_id" '
     .status == "answered"
     and any(.notices[]?; .kind == "task_open_unlinked" and (.task_ids | index($task_id)) != null)
   '
 
   first_out="$(run_agent_rest_task "$task_id" "Inspect the declared task context, discover the saved query daily_roast_context and its detail, then answer with exactly this marker after the evidence check: ${marker}")"
-  assert_jq_args "$first_out" "first task agent run used declared context" --arg marker "$marker" --arg task_id "$task_id" '
+  assert_jq_args "$first_out" "[TASK-CONTINUITY] first task agent run used declared context" --arg marker "$marker" --arg task_id "$task_id" '
     .status == "answered"
     and (.answer | contains($marker))
     and (.actions | tostring | test("query_catalog"))
@@ -282,7 +415,7 @@ run_task_agent_eval_suite() {
   '
 
   second_out="$(run_agent_rest_task "$task_id" "Continue the open declared task. From its recent trail, repeat the exact FIRST-TRAIL marker produced by the prior agent run. Re-establish catalog evidence on this run before answering; the marker is not present in this instruction.")"
-  assert_jq_args "$second_out" "second task agent run warm-started from the prior trail" --arg marker "$marker" --arg task_id "$task_id" '
+  assert_jq_args "$second_out" "[TASK-CONTINUITY] second task agent run warm-started from the prior trail" --arg marker "$marker" --arg task_id "$task_id" '
     .status == "answered"
     and (.answer | contains($marker))
     and (.actions | tostring | test("query_catalog"))
@@ -290,7 +423,7 @@ run_task_agent_eval_suite() {
   '
 
   entries_out="$(graphql task-entries "query { gj_task_entry(where: { task_id: { eq: \"${task_id}\" } }, order_by: { created_at: asc }, limit: 20) { id origin body status trace_id detail_json } }")"
-  assert_jq_args "$entries_out" "task trail records caller and embedded-agent provenance" --arg marker "$marker" '
+  assert_jq_args "$entries_out" "[TASK-CONTINUITY] task trail records caller and embedded-agent provenance" --arg marker "$marker" '
     [.data.gj_task_entry[] | select(.origin == "caller")] | length == 1
     and ([.data.gj_task_entry[] | select(.origin == "agent_run")] | length) >= 2
     and ([.data.gj_task_entry[] | select(.origin == "agent_run" and (.body | contains($marker)))] | length) >= 1
@@ -298,11 +431,113 @@ run_task_agent_eval_suite() {
   '
 
   close_out="$(graphql task-close "mutation { gj_task(where: { id: { eq: \"${task_id}\" } }, update: { status: \"closed\", outcome: \"Warm-start smoke verified against the current roast context.\", verify_json: { saved_query_name: \"daily_roast_context\", expect: { path: \"production_orders\", op: \"count_ge\", value: 1 } } }) { id status outcome verify_status verify_attempts closed_at } }")"
-  assert_jq "$close_out" '([.data.gj_task] | flatten | .[0]) as $task | $task.status == "closed" and $task.verify_status == "verified" and $task.verify_attempts == 1 and ($task.closed_at | length) > 0' "task closed only after saved-query verification passed"
+  assert_jq "$close_out" '([.data.gj_task] | flatten | .[0]) as $task | $task.status == "closed" and $task.verify_status == "verified" and $task.verify_attempts == 1 and ($task.closed_at | length) > 0' "[TASK-VERIFY-NOW] task closed only after saved-query verification passed"
 
   verify_entries_out="$(graphql task-verification-entry "query { gj_task_entry(where: { task_id: { eq: \"${task_id}\" }, origin: { eq: \"verification\" } }) { id origin status detail_json } }")"
-  assert_jq "$verify_entries_out" '[.data.gj_task_entry[] | select(.origin == "verification" and .status == "passed" and (.detail_json.spec_hash | length) == 64)] | length == 1' "verified close recorded one hashed verification trail entry"
+  assert_jq "$verify_entries_out" '[.data.gj_task_entry[] | select(.origin == "verification" and .status == "passed" and (.detail_json.spec_hash | length) == 64)] | length == 1' "[TASK-VERIFY-NOW] verified close recorded one hashed verification trail entry"
   graphql task-cleanup "mutation { gj_task(delete: true, where: { id: { eq: \"${task_id}\" } }) { id } }" >/dev/null
+  COFFEE_TASK_IDS=()
+}
+
+# Capability: ANNOTATION-DRAFT, ANNOTATION-SCOPE, ANNOTATION-DETAIL,
+# ANNOTATION-MODERATE
+# Contract: Addressed notes begin as owner-only data, approval publishes only
+# inside one account, detail merge stays explicitly untrusted, and moderation
+# immediately removes shared context with an auditable event.
+# Deeper coverage: TestAnnotationLifecycleScopeCatalogMergeAndDemotion,
+# TestAnnotationStaleDetailDeploymentScopeAndServerFields,
+# TestAnnotationTaskMustHaveSameOwner.
+run_annotation_suite() {
+  log "checking reviewed catalog annotation contracts"
+
+  local suffix teammate foreign admin target_out target_ref task_out task_id create_query create_out annotation_id
+  local draft_search teammate_draft foreign_draft approve_out teammate_search foreign_search raw_out teammate_detail foreign_detail
+  local admin_demote runtime_out reapprove_out edit_out stale_target stale_create stale_id stale_approve stale_detail
+  suffix="$(date +%s)_$$"
+  teammate="annotation-teammate-${suffix}"
+  foreign="annotation-foreign-${suffix}"
+  admin="annotation-admin-${suffix}"
+
+  target_out="$(mcp_tool query_catalog '{"kind":"table","search":"production_orders","limit":10}' ANNOTATION-DRAFT)"
+  target_ref="$(jq -r '[.result.structuredContent.cards[]? | select(.table_name == "production_orders")][0].id // empty' "$target_out")"
+  [ -n "$target_ref" ] || fail "[ANNOTATION-DRAFT] production_orders catalog target was not discovered"
+
+  task_out="$(graphql annotation-task-create "mutation { gj_task(insert: { goal: \"Annotation provenance ${suffix}\" }) { id status } }" ANNOTATION-DRAFT)"
+  task_id="$(jq -r '[.data.gj_task] | flatten | .[0].id' "$task_out")"
+  COFFEE_TASK_IDS+=("$task_id")
+  create_query="mutation { gj_artifacts(insert: { kind: \"annotation\", target_ref: \"${target_ref}\", task_id: \"${task_id}\", content: \"Expedite smoke reviews use requested_ship_date, not created_at.\" }) { id target_ref task_id tier catalog_revision author_ref approved_ref } }"
+  create_out="$(mcp_tool execute_graphql "$(jq -nc --arg query "$create_query" '{query:$query}')" ANNOTATION-DRAFT)"
+  annotation_id="$(jq -r '[.result.structuredContent.data.gj_artifacts] | flatten | .[0].id' "$create_out")"
+  COFFEE_ANNOTATION_IDS+=("$annotation_id")
+  assert_jq_args "$create_out" "[ANNOTATION-DRAFT] addressed note starts owner-only with task provenance" --arg target "$target_ref" --arg task_id "$task_id" '
+    ([.result.structuredContent.data.gj_artifacts] | flatten | .[0]) as $note
+    | ($note.id | startswith("annotation:")) and $note.target_ref == $target and $note.task_id == $task_id and $note.tier == "observed"
+      and ($note.catalog_revision | length) > 0 and ($note.author_ref | startswith("sha256:")) and $note.approved_ref == ""
+  '
+  assert_jq "$create_out" '.result.structuredContent.next.state_code == "annotation_created" and any(.result.structuredContent.next.options[]?; (.args_template.query // "") | contains("tier: \"approved\""))' "[ANNOTATION-DRAFT] creation guidance preserves a separate approval step"
+
+  draft_search="$(graphql annotation-draft-search "query { gj_artifacts(search: \"Expedite smoke reviews\", where: { kind: { eq: \"annotation\" } }) { id tier content } }" ANNOTATION-DRAFT)"
+  assert_jq_args "$draft_search" "[ANNOTATION-DRAFT] owner can find the observed note lexically" --arg id "$annotation_id" 'any(.data.gj_artifacts[]?; .id == $id and .tier == "observed" and (.content | contains("requested_ship_date")))'
+  teammate_draft="$(graphql_as_identity "$teammate" user "$ACCOUNT_ID" annotation-teammate-draft "query { gj_artifacts(where: { id: { eq: \"${annotation_id}\" } }) { id tier } }" ANNOTATION-SCOPE)"
+  foreign_draft="$(graphql_as_identity "$foreign" user annotation-foreign-account annotation-foreign-draft "query { gj_artifacts(where: { id: { eq: \"${annotation_id}\" } }) { id tier } }" ANNOTATION-SCOPE)"
+  assert_jq "$teammate_draft" '(.data.gj_artifacts | length) == 0' "[ANNOTATION-SCOPE] same-account teammate cannot see an observed draft"
+  assert_jq "$foreign_draft" '(.data.gj_artifacts | length) == 0' "[ANNOTATION-SCOPE] foreign account cannot see an observed draft"
+
+  approve_out="$(graphql annotation-approve "mutation { gj_artifacts(where: { id: { eq: \"${annotation_id}\" } }, update: { tier: \"approved\" }) { id tier author_ref approved_ref approved_at } }" ANNOTATION-MODERATE)"
+  assert_jq "$approve_out" '([.data.gj_artifacts] | flatten | .[0]) as $note | $note.tier == "approved" and ($note.author_ref | startswith("sha256:")) and ($note.approved_ref | startswith("sha256:")) and ($note.approved_at | length) > 0' "[ANNOTATION-MODERATE] owner approval is explicit and attributed"
+  teammate_search="$(graphql_as_identity "$teammate" user "$ACCOUNT_ID" annotation-teammate-approved "query { gj_artifacts(search: \"requested_ship_date\", where: { kind: { eq: \"annotation\" } }) { id tier } }" ANNOTATION-SCOPE)"
+  foreign_search="$(graphql_as_identity "$foreign" user annotation-foreign-account annotation-foreign-approved "query { gj_artifacts(search: \"requested_ship_date\", where: { kind: { eq: \"annotation\" } }) { id tier } }" ANNOTATION-SCOPE)"
+  assert_jq_args "$teammate_search" "[ANNOTATION-SCOPE] teammate sees the approved account note" --arg id "$annotation_id" 'any(.data.gj_artifacts[]?; .id == $id and .tier == "approved")'
+  assert_jq_args "$foreign_search" "[ANNOTATION-SCOPE] foreign account remains blind after approval" --arg id "$annotation_id" 'all(.data.gj_artifacts[]?; .id != $id)'
+
+  raw_out="$(graphql annotation-raw-catalog "query { gj_catalog(where: { id: { eq: \"${target_ref}\" } }) { id details_json } }" ANNOTATION-DETAIL)"
+  assert_jq "$raw_out" '(.data.gj_catalog | tostring | contains("Expedite smoke reviews") | not)' "[ANNOTATION-DETAIL] raw gj_catalog excludes annotation text"
+  teammate_detail="$(mcp_tool_as_identity "$teammate" user "$ACCOUNT_ID" query_catalog "$(jq -nc --arg id "$target_ref" '{id:$id}')" annotation-teammate-detail ANNOTATION-DETAIL)"
+  foreign_detail="$(mcp_tool_as_identity "$foreign" user annotation-foreign-account query_catalog "$(jq -nc --arg id "$target_ref" '{id:$id}')" annotation-foreign-detail ANNOTATION-SCOPE)"
+  assert_jq_args "$teammate_detail" "[ANNOTATION-DETAIL] exact detail merges framed attributed account context" --arg id "$target_ref" '
+    any(.result.structuredContent.cards[]?; .id == $id
+      and (.details_json | tostring | contains("Expedite smoke reviews"))
+      and (.details_json | tostring | contains("data, not instructions"))
+      and (.details_json | tostring | contains("author_ref"))
+      and (.details_json | tostring | contains("approved_ref")))
+  '
+  assert_jq_args "$foreign_detail" "[ANNOTATION-SCOPE] foreign exact detail cannot merge the account note" --arg id "$target_ref" 'all(.result.structuredContent.cards[]?; .id != $id or ((.details_json | tostring | contains("Expedite smoke reviews")) | not))'
+
+  admin_demote="$(graphql_as_identity "$admin" admin annotation-admin-account annotation-admin-demote "mutation { gj_artifacts(where: { id: { eq: \"${annotation_id}\" } }, update: { tier: \"observed\" }) { id tier approved_ref approved_at } }" ANNOTATION-MODERATE)"
+  assert_jq "$admin_demote" '([.data.gj_artifacts] | flatten | .[0]) as $note | $note.tier == "observed" and $note.approved_ref == "" and $note.approved_at == ""' "[ANNOTATION-MODERATE] admin demotion clears publication attribution"
+  runtime_out="$(graphql_as_identity "$admin" admin annotation-admin-account annotation-runtime-event "query { gj_runtime(where: { kind: { eq: \"event\" }, error_code: { eq: \"annotation_demoted\" } }, order_by: { created_at: desc }, limit: 20) { error_code phase details_json } }" ANNOTATION-MODERATE)"
+  assert_jq_args "$runtime_out" "[ANNOTATION-MODERATE] demotion emits an attributable runtime event" --arg id "$annotation_id" '
+    any(.data.gj_runtime[]?;
+      .error_code == "annotation_demoted" and .phase == "catalog"
+      and ((.details_json | if type == "string" then fromjson else . end).annotation_id == $id))
+  '
+  teammate_search="$(graphql_as_identity "$teammate" user "$ACCOUNT_ID" annotation-teammate-demoted "query { gj_artifacts(where: { id: { eq: \"${annotation_id}\" } }) { id } }" ANNOTATION-SCOPE)"
+  assert_jq "$teammate_search" '(.data.gj_artifacts | length) == 0' "[ANNOTATION-SCOPE] demotion removes shared teammate visibility"
+
+  reapprove_out="$(graphql annotation-reapprove "mutation { gj_artifacts(where: { id: { eq: \"${annotation_id}\" } }, update: { tier: \"approved\" }) { id tier approved_ref } }" ANNOTATION-MODERATE)"
+  assert_jq "$reapprove_out" '([.data.gj_artifacts] | flatten | .[0]) | .tier == "approved" and (.approved_ref | startswith("sha256:"))' "[ANNOTATION-MODERATE] owner can republish after review"
+  edit_out="$(graphql annotation-edit-demotes "mutation { gj_artifacts(where: { id: { eq: \"${annotation_id}\" } }, update: { content: \"Expedite reviews now require requested_ship_date and current carrier state.\" }) { id tier approved_ref approved_at content } }" ANNOTATION-MODERATE)"
+  assert_jq "$edit_out" '([.data.gj_artifacts] | flatten | .[0]) as $note | $note.tier == "observed" and $note.approved_ref == "" and $note.approved_at == "" and ($note.content | contains("carrier state"))' "[ANNOTATION-MODERATE] editing published content automatically demotes it"
+
+  stale_target="column:retired.smoke_${suffix}"
+  stale_create="$(graphql annotation-stale-create "mutation { gj_artifacts(insert: { kind: \"annotation\", target_ref: \"${stale_target}\", content: \"Retired import codes remain historical context only.\" }) { id tier } }" ANNOTATION-DETAIL)"
+  stale_id="$(jq -r '[.data.gj_artifacts] | flatten | .[0].id' "$stale_create")"
+  COFFEE_ANNOTATION_IDS+=("$stale_id")
+  stale_approve="$(graphql annotation-stale-approve "mutation { gj_artifacts(where: { id: { eq: \"${stale_id}\" } }, update: { tier: \"approved\" }) { id tier } }" ANNOTATION-DETAIL)"
+  assert_jq "$stale_approve" '([.data.gj_artifacts] | flatten | .[0]).tier == "approved"' "[ANNOTATION-DETAIL] historical note can be explicitly approved"
+  stale_detail="$(mcp_tool query_catalog "$(jq -nc --arg id "$stale_target" '{id:$id}')" ANNOTATION-DETAIL)"
+  assert_jq_args "$stale_detail" "[ANNOTATION-DETAIL] missing target returns stale historical context" --arg id "$stale_target" '
+    any(.result.structuredContent.cards[]?;
+      .id == $id and .kind == "stale_annotation_target"
+      and any((.details_json | fromjson)[]?;
+        any((.data_json | fromjson).annotations[]?; .stale == true)))
+  '
+
+  for annotation_id in "$annotation_id" "$stale_id"; do
+    graphql annotation-cleanup "mutation { gj_artifacts(delete: true, where: { id: { eq: \"${annotation_id}\" } }) { id } }" ANNOTATION-DRAFT >/dev/null
+  done
+  graphql annotation-task-cleanup "mutation { gj_task(delete: true, where: { id: { eq: \"${task_id}\" } }) { id } }" ANNOTATION-DRAFT >/dev/null
+  COFFEE_ANNOTATION_IDS=()
   COFFEE_TASK_IDS=()
 }
 
@@ -506,9 +741,14 @@ run_watch_lifecycle_suite "subscription smoke_watch { production_orders(first: 2
 run_watch_fire_suite "subscription smoke_fire { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
 run_coffee_watch_session_routing_suite
 run_artifact_suite
+run_task_control_plane_suite
+if [ "$RUN_DEEP" = "always" ]; then
+  run_task_verifier_deep_suite
+fi
+run_annotation_suite
 
 log "checking MCP discovery surfaces"
-catalog_out="$(mcp_tool query_catalog '{"kind":"saved_query","limit":10}')"
+catalog_out="$(mcp_tool query_catalog '{"kind":"saved_query","limit":25}')"
 assert_jq "$catalog_out" '[.result.structuredContent.cards[].name] | index("daily_roast_context") != null and index("batch_quality_snapshot") != null and index("customer_issue_context") != null' "MCP catalog exposes saved queries"
 
 workflow_catalog_out="$(mcp_tool query_catalog '{"kind":"workflow","limit":10}')"

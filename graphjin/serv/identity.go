@@ -77,6 +77,11 @@ func (s *graphjinService) applyIdentityContext(ctx context.Context) context.Cont
 	}
 	if accountID, ok := vars["account_id"]; ok && accountID != nil {
 		vars["account_ref"] = safeArtifactIdentity(fmt.Sprint(accountID), false)
+	} else if ctx.Value(core.UserIDKey) != nil {
+		// Account-less deployments still compile the shared artifact role filter.
+		// Give its account branch an explicit empty value so deployment-wide
+		// approved annotations can be read without inventing an account identity.
+		vars["account_ref"] = ""
 	}
 
 	roles := extractClaimRoles(claims, id.RoleClaims)

@@ -161,6 +161,7 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 			if err == nil {
 				s.appendWatchNotices(ctx, &resp)
 				s.appendTaskNotices(ctx, req, &resp)
+				s.appendAnnotationNotices(ctx, &resp)
 				appendTaskContextNotice(taskWarm, &resp)
 			}
 		}
@@ -287,6 +288,7 @@ func (s *graphjinService) agentSSE(ctx context.Context, w http.ResponseWriter, r
 	} else {
 		s.appendWatchNotices(ctx, &resp)
 		s.appendTaskNotices(ctx, req, &resp)
+		s.appendAnnotationNotices(ctx, &resp)
 		appendTaskContextNotice(taskWarm, &resp)
 	}
 	s.appendTaskTrailEntry(ctx, req, resp, time.Since(start), err)

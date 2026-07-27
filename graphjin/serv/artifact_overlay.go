@@ -19,6 +19,7 @@ const (
 	artifactKindSavedQuery = "saved_query"
 	artifactKindFragment   = "fragment"
 	artifactKindWorkflow   = "workflow"
+	artifactKindAnnotation = "annotation"
 )
 
 func normalizeArtifactKind(kind string) string {
@@ -29,6 +30,8 @@ func normalizeArtifactKind(kind string) string {
 		return artifactKindFragment
 	case "workflow", "workflows":
 		return artifactKindWorkflow
+	case "annotation", "annotations":
+		return artifactKindAnnotation
 	default:
 		if strings.TrimSpace(kind) == "" {
 			return "artifact"

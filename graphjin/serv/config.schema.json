@@ -7,7 +7,7 @@
 				"enabled": {
 					"type": "boolean",
 					"title": "Enable Artifacts",
-					"description": "Enable the GraphJin-managed SQL artifact store for saved queries/fragments/workflows; parsed dev and agentic configs default to enabled"
+					"description": "Enable the GraphJin-managed SQL artifact store for saved queries/fragments/workflows and catalog annotations; parsed dev and agentic configs default to enabled"
 				},
 				"source": {
 					"type": "string",

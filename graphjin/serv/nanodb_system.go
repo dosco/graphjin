@@ -515,6 +515,14 @@ func artifactNanoColumns() []core.NanoColumn {
 		{Name: "metadata_json", Type: "json"},
 		{Name: "content_hash", Type: "text", Index: true},
 		{Name: "status", Type: "text", Index: true},
+		{Name: "target_ref", Type: "text", Index: true},
+		{Name: "tier", Type: "text", Index: true},
+		{Name: "catalog_revision", Type: "text"},
+		{Name: "task_id", Type: "text", Index: true},
+		{Name: "approved_by", Type: "text", Index: true},
+		{Name: "author_ref", Type: "text", Index: true},
+		{Name: "approved_ref", Type: "text", Index: true},
+		{Name: "approved_at", Type: "text"},
 		{Name: "revision", Type: "integer"},
 		{Name: "created_at", Type: "text"},
 		{Name: "updated_at", Type: "text"},
@@ -760,6 +768,8 @@ func normalizeArtifactNanoRow(in map[string]any, maxBytes int) core.NanoRow {
 		fmt.Sprint(row["path"]),
 		fmt.Sprint(row["source"]),
 		fmt.Sprint(row["visibility"]),
+		fmt.Sprint(row["target_ref"]),
+		fmt.Sprint(row["tier"]),
 		content,
 		metadataText,
 	}, " ")
@@ -1063,6 +1073,9 @@ func (s *graphjinService) markArtifactChanged(reason string) {
 			ErrorCode:  "artifact_projection_refresh_failed",
 			Details:    map[string]any{"reason": reason, "error": err.Error()},
 		})
+	}
+	if s.semantic != nil {
+		s.semantic.CatalogChanged()
 	}
 }
 

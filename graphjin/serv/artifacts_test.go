@@ -58,7 +58,7 @@ func TestArtifactControlPlaneInitializesAndScopesRowsByUser(t *testing.T) {
 		t.Fatal("expected shared revisions table to be created")
 	}
 	startSQLiteArtifactCore(t, svc, db)
-	for _, column := range []string{"content_hash", "status"} {
+	for _, column := range []string{"content_hash", "status", "target_ref", "tier", "catalog_revision", "task_id", "approved_by", "approved_at"} {
 		ok, err := sqliteColumnExists(context.Background(), db, quoteSQLIdent("_graphjin_artifacts"), column)
 		if err != nil {
 			t.Fatalf("check artifact column %s: %v", column, err)

@@ -33,6 +33,11 @@ GraphJin's MCP surface starts with discovery:
 
 `query_catalog` and `execute_saved_query` use the same artifact overlay as HTTP GraphQL. With a configured artifact store and `user_id`, the caller sees global config files plus their own `gj_artifacts` rows.
 
+Exact `query_catalog(id: ...)` and `query_catalog(ids: ...)` lookups also merge
+visible approved [catalog annotations](/agentic/annotations/) as explicitly
+untrusted organizational context. Raw `gj_catalog` and broad catalog searches
+do not contain annotation text.
+
 Declared-task lifecycle and journal writes stay on GraphQL roots `gj_task` and
 `gj_task_entry`; GraphJin adds no task-specific MCP tools or resources. The one
 MCP addition is optional `task_id` on `ask_graphjin_agent`, which loads the

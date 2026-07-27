@@ -786,6 +786,165 @@ func TestRunRequiresLaterUserConfirmationForWatchActionApproval(t *testing.T) {
 	}
 }
 
+func TestRunRequiresLaterUserConfirmationForAnnotationApproval(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	rt := &fakeRuntime{}
+	runner := newAgent(Config{TimeoutSeconds: 5}, rt,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{
+					"query": `mutation { gj_artifacts(insert: { kind: "annotation", target_ref: "table:db:public.products", content: "Use the net amount." }) { id tier } }`,
+				})
+				_, _ = callProgramToolError(p, "execute_graphql", map[string]ax.Value{
+					"query": `mutation { gj_artifacts(where: { id: { eq: "annotation:1" } }, update: { tier: "approved" }) { id tier } }`,
+				})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction:  "Record and share the product accounting note",
+		Capabilities: profileWithRoleAndRoots("user", systemRootArtifacts),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusBlocked {
+		t.Fatalf("status = %s, want blocked: %+v", resp.Status, resp)
+	}
+	if !responseHasProtocolError(resp, "annotation_tier_confirmation_required") {
+		t.Fatalf("missing annotation_tier_confirmation_required: %+v", resp.Errors)
+	}
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|execute_graphql" {
+		t.Fatalf("runtime calls = %s, approval must not reach runtime", got)
+	}
+}
+
+func TestRunRejectsCombinedAnnotationEditAndApproval(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	rt := &fakeRuntime{}
+	runner := newAgent(Config{TimeoutSeconds: 5}, rt,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
+				_, _ = callProgramToolError(p, "execute_graphql", map[string]ax.Value{
+					"query": `mutation { gj_artifacts(where: { id: { eq: "annotation:1" } }, update: { content: "Use the net amount.", tier: "approved" }) { id tier } }`,
+				})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction:  "Edit and share the accounting note",
+		Capabilities: profileWithRoleAndRoots("user", systemRootArtifacts),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusBlocked || !responseHasProtocolError(resp, "annotation_tier_confirmation_required") {
+		t.Fatalf("combined edit-and-approve response = %+v", resp)
+	}
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog" {
+		t.Fatalf("runtime calls = %s, combined edit and approval must not reach runtime", got)
+	}
+}
+
+func TestRunAllowsConfirmedAnnotationApprovalInLaterRun(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "shared"}}
+	rt := &fakeRuntime{}
+	runner := newAgent(Config{TimeoutSeconds: 5}, rt,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{
+					"query": `mutation { gj_artifacts(where: { id: { eq: "annotation:confirmed" } }, update: { tier: "approved" }) { id target_ref content tier approved_ref } }`,
+				})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction:  "I confirm the exact annotation draft; share it",
+		Capabilities: profileWithRoleAndRoots("user", systemRootArtifacts),
+	})
+	if err != nil || resp.Status != StatusAnswered {
+		t.Fatalf("later approval response = %+v err=%v", resp, err)
+	}
+	if responseHasProtocolError(resp, "annotation_tier_confirmation_required") {
+		t.Fatalf("later approval was incorrectly blocked: %+v", resp.Errors)
+	}
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|execute_graphql" {
+		t.Fatalf("runtime calls = %s, confirmed approval should reach runtime", got)
+	}
+}
+
+func TestRunRejectsVariableBackedAnnotationEditAndApproval(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
+	rt := &fakeRuntime{}
+	runner := newAgent(Config{TimeoutSeconds: 5}, rt,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
+				_, _ = callProgramToolError(p, "execute_graphql", map[string]ax.Value{
+					"query":     `mutation($input: JSON!) { gj_artifacts(where: { id: { eq: "annotation:1" } }, update: $input) { id tier } }`,
+					"variables": map[string]any{"input": map[string]any{"content": "changed", "tier": "approved"}},
+				})
+			}
+			return program
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{
+		Instruction:  "Edit and share the accounting note",
+		Capabilities: profileWithRoleAndRoots("user", systemRootArtifacts),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusBlocked || !responseHasProtocolError(resp, "annotation_tier_confirmation_required") {
+		t.Fatalf("variable edit-and-approve response = %+v", resp)
+	}
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog" {
+		t.Fatalf("runtime calls = %s, variable edit and approval must not reach runtime", got)
+	}
+}
+
+func TestAnnotationMutationInputFieldsDistinguishVariableEditFromApproval(t *testing.T) {
+	editQuery := `mutation($id: String!, $input: JSON!) {
+		gj_artifacts(where: { id: { eq: $id } }, update: $input) { id content tier }
+	}`
+	editArgs := map[string]any{"variables": map[string]any{
+		"id": "annotation:variable", "input": map[string]any{"content": "changed"},
+	}}
+	editFields := annotationMutationInputFields(editQuery, editArgs)
+	if !editFields["content"] || !editFields["_annotation_id"] || !isAnnotationDefinitionMutation(editQuery, editFields) {
+		t.Fatalf("variable annotation edit fields = %+v", editFields)
+	}
+
+	approvalQuery := `mutation($id: String!, $input: JSON!) {
+		gj_artifacts(where: { id: { eq: $id } }, update: $input) { id target_ref content tier }
+	}`
+	approvalArgs := map[string]any{"variables": map[string]any{
+		"id": "annotation:variable", "input": map[string]any{"tier": "approved"},
+	}}
+	approvalFields := annotationMutationInputFields(approvalQuery, approvalArgs)
+	if !approvalFields["tier"] || isAnnotationDefinitionMutation(approvalQuery, approvalFields) {
+		t.Fatalf("variable annotation approval fields = %+v", approvalFields)
+	}
+}
+
 func TestRunFiltersRefusalUnblockStepsByCapabilityProfile(t *testing.T) {
 	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
 	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},

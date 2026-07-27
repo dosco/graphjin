@@ -55,6 +55,11 @@ The generated filters use trusted identity values from the request context. Clie
 
 The artifact overlay uses trusted `user_id` as the primary namespace for saved-query, fragment, and workflow edits. `account_id` can still be stored on the artifact row as tenant metadata, but it is not the primary lookup key.
 
+Annotations use both identities intentionally: `user_id` owns an observed draft;
+approval publishes it to the trusted `account_id`. With no account identity,
+approved annotation visibility degrades to deployment-wide. Exact catalog
+detail applies that scope at query time.
+
 When the artifact store is present and the request has `user_id`, writes go to `gj_artifacts`. Without `user_id`, GraphJin keeps the development fallback behavior and writes global config files only in dev mode.
 
 {{< verified by="TestSavedQueryAutoSaveUsesUserArtifactWhenConfigured" file="serv/artifact_overlay_test.go" line="71" >}}

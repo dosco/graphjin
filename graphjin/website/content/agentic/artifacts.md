@@ -1,6 +1,6 @@
 ---
 title: "Artifacts Overlay"
-description: "Use config files as globals and gj_artifacts as the caller-scoped overlay for saved queries, fragments, and workflows."
+description: "Use gj_artifacts for caller-scoped saved queries, fragments, workflows, and addressed catalog annotations."
 nav_group: "agentic"
 doc_kind: "guide"
 weight: 45
@@ -14,6 +14,11 @@ GraphJin has one resolution model for saved queries, fragments, and workflows:
 2. Fall back to the global config file under the configured config path.
 
 Kinds do not mask each other. A saved query named `daily_report` does not hide a workflow named `daily_report`.
+
+The same store also holds [catalog annotations](/agentic/annotations/): bounded
+freeform notes addressed to catalog card IDs. Unlike executable artifacts,
+annotations never override config or source metadata. Observed notes are
+owner-only drafts; explicitly approved notes become account-visible context.
 
 Global files are the baseline:
 
@@ -58,7 +63,7 @@ For compatibility, an explicit legacy `artifacts.enabled: true` without `source`
 
 ## One store, one bounded projection
 
-`gj_artifacts` is backed by a real SQL table, but GraphJin never hand-writes SQL against it: control-plane reads and writes run back through GraphJin's own engine under the reserved, non-forgeable `__graphjin_internal_store` role — the same compiled, validated query machinery that serves your app, across every supported database. [Declared tasks](/agentic/tasks/) and [watches](/agentic/watches/) persist through the same store.
+`gj_artifacts` is backed by a real SQL table, but GraphJin never hand-writes SQL against it: control-plane reads and writes run back through GraphJin's own engine under the reserved, non-forgeable `__graphjin_internal_store` role — the same compiled, validated query machinery that serves your app, across every supported database. [Catalog annotations](/agentic/annotations/), [declared tasks](/agentic/tasks/), and [watches](/agentic/watches/) persist through the same store.
 
 List and search reads are served from an in-memory nanoDB projection, so discovery costs no database round-trips. The projection is a **bounded search index**, not a copy of the store: per artifact, `content` is capped (default 32KB, tunable via `artifacts.projection_content_max_bytes`) and marked with `content_truncated: true`; oversized `content_json`/`metadata_json` are dropped from the projection rather than truncated into invalid JSON. Execution reads — running a saved query, loading a workflow — always read through to the store, so nothing functional is ever truncated. The projection refreshes immediately on GraphJin-made mutations and through a private revision subscription for external writes. `artifacts.poll_seconds` controls reconnect and fallback checks when that subscription is unavailable; an idle system does no projection work.
 

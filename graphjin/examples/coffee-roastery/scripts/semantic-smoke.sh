@@ -114,6 +114,8 @@ FIXTURE_PID=""
 MCP_SESSION_ID=""
 MCP_INITIALIZED=false
 CALL_SEQUENCE=0
+SEMANTIC_USER_ID="semantic-smoke"
+SEMANTIC_ACCOUNT_ID="semantic-account-one"
 
 log() {
   printf '==> %s\n' "$*" >&2
@@ -265,8 +267,9 @@ mcp_initialize() {
     -X POST "$BASE_URL/api/v1/mcp" \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
-    -H 'X-User-ID: semantic-smoke' \
+    -H "X-User-ID: $SEMANTIC_USER_ID" \
     -H 'X-User-Role: user' \
+    -H "X-Account-ID: $SEMANTIC_ACCOUNT_ID" \
     --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"semantic-smoke","version":"1.0"}}}'
   mcp_body_json "$raw" "$body"
   jq -e '(.error? | not) and (.result? != null)' "$body" >/dev/null || fail "MCP initialize failed"
@@ -275,8 +278,9 @@ mcp_initialize() {
     -X POST "$BASE_URL/api/v1/mcp" \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
-    -H 'X-User-ID: semantic-smoke' \
+    -H "X-User-ID: $SEMANTIC_USER_ID" \
     -H 'X-User-Role: user' \
+    -H "X-Account-ID: $SEMANTIC_ACCOUNT_ID" \
     ${MCP_SESSION_ID:+-H "Mcp-Session-Id: $MCP_SESSION_ID"} \
     --data '{"jsonrpc":"2.0","method":"notifications/initialized"}' || true
   MCP_INITIALIZED=true
@@ -285,6 +289,7 @@ mcp_initialize() {
 mcp_query_catalog() {
   local args="$1"
   local output="$2"
+  local capability="${3:-}"
   if [ "$MCP_INITIALIZED" != true ]; then
     mcp_initialize
   fi
@@ -296,12 +301,74 @@ mcp_query_catalog() {
     -X POST "$BASE_URL/api/v1/mcp" \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
-    -H 'X-User-ID: semantic-smoke' \
+    -H "X-User-ID: $SEMANTIC_USER_ID" \
     -H 'X-User-Role: user' \
+    -H "X-Account-ID: $SEMANTIC_ACCOUNT_ID" \
     ${MCP_SESSION_ID:+-H "Mcp-Session-Id: $MCP_SESSION_ID"} \
     --data "$payload"
   mcp_body_json "$raw" "$output"
-  jq -e '(.error? | not) and (.result.structuredContent.cards? != null)' "$output" >/dev/null || fail "query_catalog failed"
+  jq -e '(.error? | not) and (.result.structuredContent.cards? != null)' "$output" >/dev/null || fail "${capability:+[${capability}] }query_catalog failed"
+}
+
+semantic_graphql_as_identity() {
+  local user="$1"
+  local account="$2"
+  local label="$3"
+  local query="$4"
+  local capability="${5:-}"
+  local output="$TMP_DIR/graphql-$label.json"
+  local payload http_code
+  payload="$(jq -nc --arg query "$query" '{query:$query}')"
+  http_code="$(curl -sS --max-time "$TIMEOUT" -o "$output" -w '%{http_code}' \
+    -X POST "$BASE_URL/api/v1/graphql" \
+    -H 'Content-Type: application/json' \
+    -H "X-User-ID: $user" -H 'X-User-Role: user' -H "X-Account-ID: $account" \
+    --data "$payload")"
+  if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ] || ! jq -e '((.errors // []) | length) == 0' "$output" >/dev/null; then
+    jq . "$output" >&2 2>/dev/null || cat "$output" >&2
+    fail "${capability:+[${capability}] }GraphQL failed for $label"
+  fi
+  printf '%s\n' "$output"
+}
+
+# An alternate account gets an isolated stateful MCP session so the semantic
+# scope assertion cannot inherit identity or cached transport state.
+mcp_query_catalog_as_identity() {
+  local user="$1"
+  local account="$2"
+  local args="$3"
+  local output="$4"
+  local label="$5"
+  local capability="${6:-}"
+  local init_raw="$TMP_DIR/mcp-$label-init.raw"
+  local init_headers="$TMP_DIR/mcp-$label-init.headers"
+  local raw="$TMP_DIR/mcp-$label-call.raw"
+  local session_id payload
+  curl -fsS --max-time "$TIMEOUT" -D "$init_headers" -o "$init_raw" \
+    -X POST "$BASE_URL/api/v1/mcp" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+    -H "X-User-ID: $user" -H 'X-User-Role: user' -H "X-Account-ID: $account" \
+    --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"semantic-identity-smoke","version":"1.0"}}}'
+  session_id="$(grep -i '^mcp-session-id:' "$init_headers" | tr -d '\r' | awk '{print $2}' | head -1 || true)"
+  curl -fsS --max-time "$TIMEOUT" -o /dev/null \
+    -X POST "$BASE_URL/api/v1/mcp" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+    -H "X-User-ID: $user" -H 'X-User-Role: user' -H "X-Account-ID: $account" \
+    ${session_id:+-H "Mcp-Session-Id: $session_id"} \
+    --data '{"jsonrpc":"2.0","method":"notifications/initialized"}' || true
+  payload="$(jq -nc --argjson args "$args" '{jsonrpc:"2.0",id:2,method:"tools/call",params:{name:"query_catalog",arguments:$args}}')"
+  curl -fsS --max-time "$TIMEOUT" -o "$raw" \
+    -X POST "$BASE_URL/api/v1/mcp" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+    -H "X-User-ID: $user" -H 'X-User-Role: user' -H "X-Account-ID: $account" \
+    ${session_id:+-H "Mcp-Session-Id: $session_id"} --data "$payload"
+  mcp_body_json "$raw" "$output"
+  if [ -n "$session_id" ]; then
+    curl -fsS --max-time "$TIMEOUT" -o /dev/null -X DELETE "$BASE_URL/api/v1/mcp" \
+      -H "X-User-ID: $user" -H 'X-User-Role: user' -H "X-Account-ID: $account" \
+      -H "Mcp-Session-Id: $session_id" || true
+  fi
+  jq -e '(.error? | not) and (.result.structuredContent.cards? != null)' "$output" >/dev/null || fail "${capability:+[${capability}] }query_catalog failed for $label"
 }
 
 catalog_args() {
@@ -346,6 +413,167 @@ wait_for_semantic_index() {
   fail "semantic generation did not activate within ${TIMEOUT}s"
 }
 
+# Capability: ANNOTATION-SEMANTIC
+# Contract: Approved account context becomes a separate semantic document that
+# lifts its addressed entity only for that account, then disappears from the
+# next generation after demotion without re-embedding catalog documents.
+# Deeper coverage: TestApprovedAnnotationsAreSeparateAccountFilteredSemanticDocuments,
+# TestAnnotationApprovalEmbedsOnlyTheNewDocument.
+run_annotation_semantic_smoke() {
+  log "checking account-filtered semantic annotation recall"
+
+  local target_ref create_out annotation_id stats_before stats_after args result deadline foreign_result
+  local stats_before_demote stats_after_demote demote_out
+  target_ref="$(jq -r '[.result.structuredContent.cards[]? | select(.table_name == "production_orders")][0].id // empty' "$TMP_DIR/semantic-purchases.json")"
+  [ -n "$target_ref" ] || fail "[ANNOTATION-SEMANTIC] production_orders target was not discovered"
+  stats_before="$TMP_DIR/annotation-semantic-stats-before.json"
+  stats_after="$TMP_DIR/annotation-semantic-stats-after.json"
+  curl -fsS "http://127.0.0.1:$EMBEDDING_PORT/stats" >"$stats_before"
+
+  create_out="$(semantic_graphql_as_identity "$SEMANTIC_USER_ID" "$SEMANTIC_ACCOUNT_ID" annotation-semantic-create "mutation { gj_artifacts(insert: { kind: \"annotation\", target_ref: \"${target_ref}\", content: \"Chargeback escrow lineage identifies the operations record used during dispute review.\" }) { id tier } }" ANNOTATION-SEMANTIC)"
+  annotation_id="$(jq -r '[.data.gj_artifacts] | flatten | .[0].id' "$create_out")"
+  semantic_graphql_as_identity "$SEMANTIC_USER_ID" "$SEMANTIC_ACCOUNT_ID" annotation-semantic-approve "mutation { gj_artifacts(where: { id: { eq: \"${annotation_id}\" } }, update: { tier: \"approved\" }) { id tier } }" ANNOTATION-SEMANTIC >/dev/null
+
+  args="$(catalog_args 'chargeback escrow lineage')"
+  result="$TMP_DIR/annotation-semantic-visible.json"
+  deadline=$((SECONDS + TIMEOUT))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    mcp_query_catalog "$args" "$result" ANNOTATION-SEMANTIC
+    if jq -e --arg id "$target_ref" '
+      any(.result.structuredContent.cards[]?; .id == $id)
+      and ((.result.structuredContent.matches[$id].why // "") | contains("approved organizational annotation recall"))
+    ' "$result" >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if ! jq -e --arg id "$target_ref" '
+    any(.result.structuredContent.cards[]?; .id == $id)
+    and ((.result.structuredContent.matches[$id].why // "") | contains("approved organizational annotation recall"))
+  ' "$result" >/dev/null; then
+    fail "[ANNOTATION-SEMANTIC] approved annotation did not lift its target"
+  fi
+  pass "[ANNOTATION-SEMANTIC] approved note lifts its target with an annotation explanation"
+
+  curl -fsS "http://127.0.0.1:$EMBEDDING_PORT/stats" >"$stats_after"
+  if ! jq -e --slurpfile before "$stats_before" '.inputs == ($before[0].inputs + 2)' "$stats_after" >/dev/null; then
+    fail "[ANNOTATION-SEMANTIC] approval should embed one document and one query"
+  fi
+  pass "[ANNOTATION-SEMANTIC] approval embeds exactly one new document"
+
+  foreign_result="$TMP_DIR/annotation-semantic-foreign.json"
+  mcp_query_catalog_as_identity semantic-foreign semantic-account-two "$args" "$foreign_result" annotation-semantic-foreign ANNOTATION-SEMANTIC
+  if jq -e --arg id "$target_ref" 'any(.result.structuredContent.cards[]?; .id == $id and ((.result.structuredContent.matches[$id].why // "") | contains("annotation")))' "$foreign_result" >/dev/null; then
+    fail "[ANNOTATION-SEMANTIC] foreign account received annotation recall"
+  fi
+  pass "[ANNOTATION-SEMANTIC] foreign account cannot receive the lifted target"
+
+  stats_before_demote="$TMP_DIR/annotation-semantic-stats-before-demote.json"
+  stats_after_demote="$TMP_DIR/annotation-semantic-stats-after-demote.json"
+  curl -fsS "http://127.0.0.1:$EMBEDDING_PORT/stats" >"$stats_before_demote"
+  demote_out="$(semantic_graphql_as_identity "$SEMANTIC_USER_ID" "$SEMANTIC_ACCOUNT_ID" annotation-semantic-demote "mutation { gj_artifacts(where: { id: { eq: \"${annotation_id}\" } }, update: { tier: \"observed\" }) { id tier } }" ANNOTATION-SEMANTIC)"
+  jq -e '([.data.gj_artifacts] | flatten | .[0]).tier == "observed"' "$demote_out" >/dev/null || fail "[ANNOTATION-SEMANTIC] demotion did not return observed tier"
+  deadline=$((SECONDS + TIMEOUT))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    mcp_query_catalog "$args" "$result" ANNOTATION-SEMANTIC
+    if ! jq -e --arg id "$target_ref" 'any(.result.structuredContent.cards[]?; .id == $id and ((.result.structuredContent.matches[$id].why // "") | contains("annotation")))' "$result" >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if jq -e --arg id "$target_ref" 'any(.result.structuredContent.cards[]?; .id == $id and ((.result.structuredContent.matches[$id].why // "") | contains("annotation")))' "$result" >/dev/null; then
+    fail "[ANNOTATION-SEMANTIC] demoted annotation remained in semantic recall"
+  fi
+  pass "[ANNOTATION-SEMANTIC] demotion removes target lifting in the next generation"
+  curl -fsS "http://127.0.0.1:$EMBEDDING_PORT/stats" >"$stats_after_demote"
+  if ! jq -e --slurpfile before "$stats_before_demote" '.inputs == $before[0].inputs' "$stats_after_demote" >/dev/null; then
+    fail "[ANNOTATION-SEMANTIC] demotion unexpectedly embedded documents"
+  fi
+  pass "[ANNOTATION-SEMANTIC] demotion reuses existing vectors without embedding"
+
+  semantic_graphql_as_identity "$SEMANTIC_USER_ID" "$SEMANTIC_ACCOUNT_ID" annotation-semantic-cleanup "mutation { gj_artifacts(delete: true, where: { id: { eq: \"${annotation_id}\" } }) { id } }" ANNOTATION-SEMANTIC >/dev/null
+}
+
+semantic_agent_request() {
+  local user="$1"
+  local account="$2"
+  local instruction="$3"
+  local output="$4"
+  local capability="${5:-}"
+  local payload http_code
+  payload="$(jq -nc --arg instruction "$instruction" '{instruction:$instruction,max_steps:10,return_trace:false}')"
+  http_code="$(curl -sS --max-time "$TIMEOUT" -o "$output" -w '%{http_code}' \
+    -X POST "$BASE_URL/api/v1/agent" \
+    -H 'Content-Type: application/json' -H "X-User-ID: $user" -H 'X-User-Role: user' -H "X-Account-ID: $account" \
+    --data "$payload")"
+  if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+    jq . "$output" >&2 2>/dev/null || cat "$output" >&2
+    fail "${capability:+[${capability}] }agent request failed for $user"
+  fi
+}
+
+# Capability: ANNOTATION-NOTICE, TASK-VERIFY-NOW
+# Contract: Deferred drafts and failed declared checks stay visible on the next
+# agent response instead of becoming silent server-side state.
+# Deeper coverage: TestAnnotationLifecycleScopeCatalogMergeAndDemotion,
+# TestTaskImmediateVerificationPassAndFail.
+run_agent_state_notice_smoke() {
+  log "checking deterministic agent state notices"
+  local user="semantic-agent-smoke" account="$SEMANTIC_ACCOUNT_ID" target_ref task_out task_id note_out annotation_id fail_out output
+  target_ref="$(jq -r '[.result.structuredContent.cards[]? | select(.table_name == "production_orders")][0].id // empty' "$TMP_DIR/semantic-purchases.json")"
+  task_out="$(semantic_graphql_as_identity "$user" "$account" agent-notice-task "mutation { gj_task(insert: { goal: \"Failed verification notice fixture\" }) { id } }" TASK-VERIFY-NOW)"
+  task_id="$(jq -r '[.data.gj_task] | flatten | .[0].id' "$task_out")"
+  fail_out="$(semantic_graphql_as_identity "$user" "$account" agent-notice-task-fail "mutation { gj_task(where: { id: { eq: \"${task_id}\" } }, update: { status: \"closed\", outcome: \"Must not stick.\", verify_json: { saved_query_name: \"daily_roast_context\", expect: { path: \"production_orders\", op: \"count_le\", value: 0 } } }) { id status verify_status } }" TASK-VERIFY-NOW)"
+  jq -e '([.data.gj_task] | flatten | .[0]) | .status == "open" and .verify_status == "failed"' "$fail_out" >/dev/null || fail "[TASK-VERIFY-NOW] notice fixture did not fail verification"
+  note_out="$(semantic_graphql_as_identity "$user" "$account" agent-notice-annotation "mutation { gj_artifacts(insert: { kind: \"annotation\", target_ref: \"${target_ref}\", content: \"ANNOTATION-NOTICE deferred draft fixture.\" }) { id tier } }" ANNOTATION-NOTICE)"
+  annotation_id="$(jq -r '[.data.gj_artifacts] | flatten | .[0].id' "$note_out")"
+  output="$TMP_DIR/agent-state-notices.json"
+  semantic_agent_request "$user" "$account" "Run the deterministic semantic discovery fixture and report the result." "$output" ANNOTATION-NOTICE
+  if ! jq -e --arg task "$task_id" --arg note "$annotation_id" '
+    .status == "answered"
+    and any(.notices[]?; .kind == "task_verify_failed" and (.task_ids | index($task)) != null)
+    and any(.notices[]?; .kind == "annotations_unshared" and (.annotation_ids | index($note)) != null)
+  ' "$output" >/dev/null; then
+    jq . "$output" >&2
+    fail "[ANNOTATION-NOTICE] deterministic agent response omitted durable-state notices"
+  fi
+  pass "[TASK-VERIFY-NOW] failed verification is surfaced on the next agent response"
+  pass "[ANNOTATION-NOTICE] observed draft is surfaced on the next agent response"
+  semantic_graphql_as_identity "$user" "$account" agent-notice-annotation-cleanup "mutation { gj_artifacts(delete: true, where: { id: { eq: \"${annotation_id}\" } }) { id } }" ANNOTATION-NOTICE >/dev/null
+  semantic_graphql_as_identity "$user" "$account" agent-notice-task-cleanup "mutation { gj_task(delete: true, where: { id: { eq: \"${task_id}\" } }) { id } }" TASK-VERIFY-NOW >/dev/null
+}
+
+# Capability: ANNOTATION-GUARD
+# Contract: Even a scripted agent cannot publish an annotation in the same run
+# that created it; the draft remains owner-only for later human confirmation.
+# Deeper coverage: TestRunRequiresLaterUserConfirmationForAnnotationApproval.
+run_annotation_agent_guard_smoke() {
+  log "checking deterministic same-run annotation approval refusal"
+  local user="semantic-annotation-guard" account="$SEMANTIC_ACCOUNT_ID" output drafts annotation_id existing_id
+  # A failed prior smoke may have persisted its owner-scoped draft. Remove only
+  # this sentinel's rows so the exactly-one assertion describes the current run.
+  drafts="$(semantic_graphql_as_identity "$user" "$account" annotation-guard-preclean-read "query { gj_artifacts(search: \"ANNOTATION-GUARD-fixture-draft\", where: { kind: { eq: \"annotation\" } }) { id } }" ANNOTATION-GUARD)"
+  while IFS= read -r existing_id; do
+    [ -n "$existing_id" ] || continue
+    semantic_graphql_as_identity "$user" "$account" annotation-guard-preclean "mutation { gj_artifacts(delete: true, where: { id: { eq: \"${existing_id}\" } }) { id } }" ANNOTATION-GUARD >/dev/null
+  done < <(jq -r '.data.gj_artifacts[]?.id' "$drafts")
+  output="$TMP_DIR/annotation-agent-guard.json"
+  semantic_agent_request "$user" "$account" "ANNOTATION_GUARD_FIXTURE: create and approve the note now." "$output" ANNOTATION-GUARD
+  if ! jq -e '.status == "blocked" and any(.errors[]?; .extensions.code == "annotation_tier_confirmation_required")' "$output" >/dev/null; then
+    jq . "$output" >&2
+    fail "[ANNOTATION-GUARD] same-run approval was not blocked by the agent protocol"
+  fi
+  pass "[ANNOTATION-GUARD] same-run annotation approval is refused"
+  drafts="$(semantic_graphql_as_identity "$user" "$account" annotation-guard-draft "query { gj_artifacts(search: \"ANNOTATION-GUARD-fixture-draft\", where: { kind: { eq: \"annotation\" } }) { id tier content } }" ANNOTATION-GUARD)"
+  if ! jq -e '(.data.gj_artifacts | length) == 1 and .data.gj_artifacts[0].tier == "observed"' "$drafts" >/dev/null; then
+    jq . "$drafts" >&2
+    fail "[ANNOTATION-GUARD] blocked run did not leave exactly one observed draft"
+  fi
+  pass "[ANNOTATION-GUARD] blocked run leaves the draft owner-only"
+  annotation_id="$(jq -r '.data.gj_artifacts[0].id' "$drafts")"
+  semantic_graphql_as_identity "$user" "$account" annotation-guard-cleanup "mutation { gj_artifacts(delete: true, where: { id: { eq: \"${annotation_id}\" } }) { id } }" ANNOTATION-GUARD >/dev/null
+}
+
 run_semantic_agent_smoke() {
   local before="$TMP_DIR/agent-stats-before.json"
   local after="$TMP_DIR/agent-stats-after.json"
@@ -365,6 +593,7 @@ run_semantic_agent_smoke() {
     -H 'Content-Type: application/json' \
     -H 'X-User-ID: semantic-agent-smoke' \
     -H 'X-User-Role: user' \
+    -H "X-Account-ID: $SEMANTIC_ACCOUNT_ID" \
     --data "$payload")"
   if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
     jq . "$output" >&2 2>/dev/null || cat "$output" >&2
@@ -605,9 +834,15 @@ if ! jq -e '
 fi
 pass "relationship intent returned both endpoints and the real foreign-key path"
 
+if [ "$MODE" = "fixture" ]; then
+  run_annotation_semantic_smoke
+fi
+
 if [ "$RUN_AGENT" = true ]; then
   log "checking the semantic-aware REST agent"
   run_semantic_agent_smoke
+  run_agent_state_notice_smoke
+  run_annotation_agent_guard_smoke
 fi
 
 baseline_ids="$(jq -c '[.result.structuredContent.cards[]?.id]' "$TMP_DIR/baseline-unrelated.json")"

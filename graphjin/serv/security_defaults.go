@@ -173,7 +173,7 @@ func applyArtifactRoleProjectionDefaults(conf *Config, role string, rt *core.Rol
 		rt.Delete = &core.Delete{Block: true}
 		return
 	}
-	rt.Query.Filters = []string{`{ or: { owner_ref: { eq: $user_ref }, visibility: { eq: "global" } } }`}
+	rt.Query.Filters = []string{`{ or: [{ owner_ref: { eq: $user_ref } }, { visibility: { eq: "global" } }, { and: [{ visibility: { eq: "account" } }, { account_ref: { eq: $account_ref } }] }, { and: [{ visibility: { eq: "account" } }, { account_ref: { eq: "" } }] }] }`}
 }
 
 func artifactPublicProjectionColumns() []string {
@@ -191,6 +191,13 @@ func artifactPublicProjectionColumns() []string {
 		"metadata_json",
 		"content_hash",
 		"status",
+		"target_ref",
+		"tier",
+		"catalog_revision",
+		"task_id",
+		"author_ref",
+		"approved_ref",
+		"approved_at",
 		"revision",
 		"created_at",
 		"updated_at",
@@ -468,7 +475,7 @@ func artifactRoleQueryHasPrivacy(query *core.Query, role string) bool {
 	}
 	for _, col := range query.Columns {
 		switch strings.ToLower(strings.TrimSpace(col)) {
-		case "owner_id", "account_id", "owner_ref", "account_ref":
+		case "owner_id", "account_id", "owner_ref", "account_ref", "approved_by":
 			return false
 		}
 	}

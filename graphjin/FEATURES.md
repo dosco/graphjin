@@ -35,6 +35,7 @@ GraphJin is a high-performance GraphQL to SQL compiler that automatically genera
 - [Metadata Graph](#metadata-graph)
 - [Apollo Federation v2](#apollo-federation-v2)
 - [Durable Declared-Intent Tasks](#durable-declared-intent-tasks)
+- [Reviewed Catalog Annotations](#reviewed-catalog-annotations)
 - [MCP Connections for AI Clients](#mcp-connections-for-ai-clients)
 - [Security Features](#security-features)
   - [Role-Based Access Control](#role-based-access-control)
@@ -1531,6 +1532,40 @@ mutation {
   }
 }
 ```
+
+## Reviewed Catalog Annotations
+
+GraphJin stores addressed organizational notes as
+`gj_artifacts(kind: "annotation")`. New notes are owner-only `observed` drafts.
+A separate `tier: "approved"` update publishes the note to the account and
+stamps the real approving caller; edits demote an approved note and clear that
+attribution. Admins can moderate, but annotation text remains untrusted data and
+never grants access or satisfies catalog and mutation guards.
+
+```graphql
+mutation {
+  gj_artifacts(insert: {
+    kind: "annotation"
+    target_ref: "table:ops.public.production_orders"
+    content: "Expedite checks use requested_ship_date."
+  }) { id target_ref tier catalog_revision }
+}
+
+mutation {
+  gj_artifacts(
+    where: { id: { eq: "annotation:..." } }
+    update: { tier: "approved" }
+  ) { id tier approved_ref approved_at }
+}
+```
+
+Exact `query_catalog` detail merges visible approved notes with explicit
+data-not-instructions framing. Raw `gj_catalog` never includes them. Dropped
+targets return stale historical context only. Lexical search uses the artifact
+projection; semantic search embeds each approved note as a separate
+account-filtered document that lifts the target card without rewriting its
+catalog document. The built-in agent cannot draft or edit a note and approve it
+in the same run.
 
 ## MCP Connections for AI Clients
 

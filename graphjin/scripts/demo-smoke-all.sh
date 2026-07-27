@@ -14,7 +14,7 @@
 # a provider key (OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_APIKEY); curl,
 # jq, openssl on PATH; ports 8080-8083 and 8093 free.
 #
-# Usage: scripts/demo-smoke-all.sh [--only <demo>] [--skip-model-routing] [--skip-agent]
+# Usage: scripts/demo-smoke-all.sh [--only <demo>] [--skip-model-routing] [--skip-agent] [--deep]
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -80,6 +80,7 @@ default_demo_graphql() {
 ONLY=""
 SKIP_MODEL_ROUTING=""
 SKIP_AGENT=""
+RUN_DEEP=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --only)
@@ -92,6 +93,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --skip-agent)
       SKIP_AGENT=1
+      shift
+      ;;
+    --deep)
+      RUN_DEEP=1
       shift
       ;;
     -h|--help)
@@ -238,6 +243,16 @@ record() {
 run_demo_smoke() {
   local demo="$1"
   local port="$2"
+  # The real-time verifier contract belongs to the coffee task demo; other
+  # demos keep their existing runtime even when the full stack is deep-smoked.
+  if [ "$demo" = "coffee-roastery" ] && [ -n "$RUN_DEEP" ]; then
+    if [ -n "$SKIP_AGENT" ]; then
+      "examples/${demo}/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent --deep
+    else
+      "examples/${demo}/scripts/smoke.sh" --url "http://localhost:${port}" --agent-eval --deep
+    fi
+    return
+  fi
   if [ -n "$SKIP_AGENT" ]; then
     "examples/${demo}/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent
   else

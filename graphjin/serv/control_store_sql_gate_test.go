@@ -11,10 +11,11 @@ import (
 func TestControlStoreDirectSQLIsNarrowlyGated(t *testing.T) {
 	allowed := map[string]map[string]bool{
 		"artifacts.go": {
-			"initArtifactsBeforeCore": true,
-			"migrateArtifactSchema":   true,
-			"ensureSQLColumn":         true,
-			"sqliteColumnExists":      true,
+			"initArtifactsBeforeCore":         true,
+			"migrateArtifactSchema":           true,
+			"ensureArtifactAnnotationIndexes": true,
+			"ensureSQLColumn":                 true,
+			"sqliteColumnExists":              true,
 		},
 		"watches.go": {
 			"migrateWatchSchema": true,
