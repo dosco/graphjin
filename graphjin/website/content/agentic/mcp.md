@@ -6,11 +6,33 @@ doc_kind: "guide"
 weight: 10
 ---
 
-## Install locally
+## Try it with no setup at all
+
+Nothing to start, no Docker, no config file, no model key:
+
+```bash
+claude mcp add graphjin -- graphjin mcp --demo
+codex mcp add graphjin -- graphjin mcp --demo
+```
+
+`graphjin mcp --demo` extracts the built-in SaaS ops demo to `./graphjin-demo` — SQLite, in-process, no containers — and serves MCP over stdio. Your IDE's own model does the reasoning, so no provider key is needed. Delete `./graphjin-demo` to reset. Point at another [demo vertical](/start/demos/) from a repo clone with `--path examples/<name>`.
+
+The demo deliberately keeps its own configuration out of reach. It sets `mcp.allow_config_updates: false` and puts the `gj_config` root behind `admin`, so a stdio caller gets `validate_config` — enough to dry-run a change — but neither `get_current_config` nor `update_current_config`. To configure GraphJin from your IDE, scaffold your own project with `graphjin serve new my-api`; the generated `dev.yml` enables all three.
+
+## Connect to a running server
 
 ```bash
 graphjin mcp add codex
 graphjin mcp add claude
+```
+
+Defaults are client `codex`, server `http://localhost:8080`, and project scope; the URL is normalized to `/api/v1/mcp`. Use `--global` to make the connection available outside the current project.
+
+This path is HTTP-only and **requires GraphJin to already be running** — the command sends a real MCP `initialize` probe and stops if nothing answers. Start the server first:
+
+```bash
+graphjin serve --demo     # terminal 1
+graphjin mcp add codex    # terminal 2
 ```
 
 For hosted GraphJin:
@@ -87,12 +109,58 @@ Streamable HTTP is stateful by default in these modes, so an MCP client can
 supply its model through sampling when no server provider key is configured.
 Production retains the previous stateless, agent-off defaults.
 
-In **dev mode**, the config tools `get_current_config`, `validate_config`, and `update_current_config` are also exposed — even when the agent is the front door — so a connected AI IDE keeps first-class configuration access. These are dev-only and never appear in agentic or production deployments. See [How Configuration Works](/configure/how-it-works/) for the full set of config interfaces.
-
 For local development, named query auto-save and workflow saves fall back to config files only when there is no `user_id` or no artifact store.
 
 {{< verified by="TestRegisterTools_SourcesUsedRawGraphQLCapabilityControlsTool" file="serv/mcp_registration_test.go" line="316" >}}
 {{< verified by="TestMCPCallerCapabilityProfileReflectsSourceRootAccess" file="serv/mcp_registration_test.go" line="551" >}}
+
+## Configure GraphJin from your AI IDE
+
+While you are building, you can stop editing config files by hand. Ask your IDE for a database connection or a role that only sees its own rows; GraphJin checks the change against your real databases, then applies it and writes it back to `dev.yml`.
+
+Three **dev-mode** tools do this. They are registered even when the built-in agent is the MCP front door, so an AI IDE keeps first-class config access:
+
+| Tool | What it does |
+| --- | --- |
+| `get_current_config` | Reads the running config with secrets redacted. Optional `section`: `sources`, `system`, `workflows`, `databases`, `relationships`, `tables`, `roles`, `blocklist`, `functions`, `resolvers`, `mcp`, or `all`. |
+| `validate_config` | A real dry run, not a lint. Runs the entire update pipeline — databases actually connected, schema actually discovered, reload impact classified — then discards the staged runtime. Returns `valid`, errors, a change summary, `scope`, `reload_mode`, and `reload_strategy`. Nothing is written, not even a preview. |
+| `update_current_config` | Applies the change and reloads. Additionally requires `mcp.allow_config_updates`. |
+
+### What an agent can change
+
+Databases, roles and RBAC in full (per-role, per-table `query`/`insert`/`update`/`upsert`/`delete` with `limit`, `filters`, `columns`, `presets`, and `block`), source access policy, tables, blocklist, functions, resolvers, relationships, workflows, and an allowlisted slice of `serv` — the agent's `model`, `max_steps`, `timeout_seconds`, `sampling`, `read_only`, `return_trace`, plus `log_level`, `log_format`, `web_ui`, `http_compress`, `server_timing`, and `rate_limiter`.
+
+Database changes are all-or-nothing: every new or changed connection is tested live, and if any one fails, no database change is applied.
+
+### What it can never change
+
+| Off-limits | Why |
+| --- | --- |
+| `auth`, `redis`, `uploads` | Secret-bearing server settings. Read-only on `gj_config` by design — edit the file and restart. |
+| `agent.enabled`, `provider`, `api_key_env`, `base_url` | Gate startup wiring or name secrets. Only agent tuning fields are writable. |
+| `read_only: true` databases | Snapshotted at startup. A runtime patch flipping one to `false` is forced back to `true` and logged. |
+| System database names | `postgres`, `mysql`, `information_schema`, `master` and friends are rejected unless explicitly allowed. |
+| Plaintext secrets | Rejected unless a local keystore key is configured. |
+
+Beyond dev, the doors close. In **agentic** mode these tools are not registered at all; config writes move to the `gj_config` GraphQL root, which is admin-only and still needs `mcp.allow_config_updates` — the shipped `agentic.yml` sets it to `false`. In **production** the surface is off and fails closed.
+
+Note that the source-mode `preview` → `apply` handshake is a consistency guard, not a human approval step: `apply` must carry the `preview_id` and the exact same payload, matched by catalog revision and payload hash.
+
+### Recipes an agent can follow
+
+The catalog ships 15 `config_recipe` rows, each with preflight checks, the apply mutation, verification, and stop conditions. An agent finds them through `query_catalog` — adding a role, setting source access defaults, classifying tables, enabling artifacts, tasks or watches, rate limiting, agent tuning, JWT auth, Redis caching, uploads, and production hardening.
+
+See [How Configuration Works](/configure/how-it-works/) for every config interface, including the `graphjin config` CLI and `GJ_*` environment variables.
+
+## Tool inventory
+
+GraphJin deliberately exposes a small MCP surface. A scaffolded dev project has nine tools:
+
+`graphql_help`, `query_catalog`, `validate_where_clause`, `execute_saved_query`, `execute_graphql`, `get_current_config`, `validate_config`, `update_current_config`, and `ask_graphjin_agent`.
+
+The shipped demos have seven: they set `mcp.allow_config_updates: false`, which drops `update_current_config`, and they put the `gj_config` root behind `admin`, which hides `get_current_config` from a non-admin caller. Agentic and production deployments drop the config tools entirely, and `execute_graphql` stays gated behind `mcp.allow_raw_queries`.
+
+The tool list is filtered per caller, so what you see depends on your role as well as the mode. Tools that need a GraphJin system root — `query_catalog` and `ask_graphjin_agent` need `gj_catalog`, the config tools need `gj_config` — disappear for callers who cannot reach that root.
 
 ## Watch event resource
 

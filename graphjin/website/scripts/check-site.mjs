@@ -37,6 +37,7 @@ const requiredRoutes = [
   'agentic/watches/index.html',
   'agentic/watch-automation/index.html',
   'configure/sources-mode/index.html',
+  'configure/how-it-works/index.html',
   'configure/discovery-semantic-search/index.html',
   'reference/config-reference/index.html',
   'reference/test-backed-examples/index.html',
@@ -96,6 +97,7 @@ const requiredContent = [
   'agentic/workflows.md',
   'agentic/oauth.md',
   'configure/sources-mode.md',
+  'configure/how-it-works.md',
   'configure/database.md',
   'configure/auth-rbac.md',
   'configure/caching-redis.md',
@@ -121,6 +123,9 @@ const requiredRenderedContent = [
   ['agentic/tasks/index.html', 'TestTaskVerificationClaimIsSingleWinnerAcrossReplicas'],
   ['agentic/server-agent/index.html', 'Task and watch notices'],
   ['agentic/index.html', 'Use durable verified tasks'],
+  ['agentic/mcp/index.html', 'Configure GraphJin from your AI IDE'],
+  ['agentic/mcp/index.html', 'graphjin mcp --demo'],
+  ['start/install/index.html', 'graphjin mcp --demo'],
   ['agentic/watch-automation/index.html', 'Approval is per exact version, not per event.'],
   ['agentic/watch-automation/index.html', 'What makes GraphJin highly reactive'],
   ['agentic/watch-automation/index.html', 'Absence watch'],
@@ -227,11 +232,29 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
       failures.push(`Homepage missing watch automation copy: ${required}`);
     }
   }
-  for (const href of ['/agentic/watch-automation/', '/start/demos/#coffee-roastery']) {
+  for (const required of [
+    'Set it up by talking to it.',
+    'graphjin mcp --demo',
+    'no Docker, no config file',
+    'It tries the change before making it',
+    'It cannot touch your secrets',
+    'Only while you are building',
+    'tried it first',
+  ]) {
+    if (!home.includes(required)) {
+      failures.push(`Homepage missing MCP setup copy: ${required}`);
+    }
+  }
+  for (const href of [
+    '/agentic/watch-automation/',
+    '/start/demos/#coffee-roastery',
+    '/agentic/mcp/',
+    '/configure/how-it-works/',
+  ]) {
     const escaped = href.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const hrefPattern = new RegExp(`href=(?:"${escaped}"|'${escaped}'|${escaped})(?=\\s|>)`);
     if (!hrefPattern.test(home)) {
-      failures.push(`Homepage missing watch automation link: ${href}`);
+      failures.push(`Homepage missing required link: ${href}`);
     }
   }
   if (home.includes('data-watch-motion=')) {
