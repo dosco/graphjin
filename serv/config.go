@@ -1175,6 +1175,7 @@ func newViperWithDefaults() *viper.Viper {
 	// heavily by local OpenAI-compatible smoke and Ollama deployments. Bind them
 	// explicitly so environment-only configurations do not silently fall back to
 	// the public provider endpoint.
+	vi.BindEnv("agent.provider", "GJ_AGENT_PROVIDER", "SG_AGENT_PROVIDER", "SJ_AGENT_PROVIDER")                                                         //nolint:errcheck
 	vi.BindEnv("agent.model", "GJ_AGENT_MODEL", "SG_AGENT_MODEL", "SJ_AGENT_MODEL")                                                                     //nolint:errcheck
 	vi.BindEnv("agent.base_url", "GJ_AGENT_BASE_URL", "SG_AGENT_BASE_URL", "SJ_AGENT_BASE_URL")                                                         //nolint:errcheck
 	vi.BindEnv("agent.enabled", "GJ_AGENT_ENABLED", "SG_AGENT_ENABLED", "SJ_AGENT_ENABLED")                                                             //nolint:errcheck

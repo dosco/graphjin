@@ -89,13 +89,17 @@ func applyDemoAgentEnvDefaults(out io.Writer) {
 }
 
 func demoAgentKeyEnv() (string, string) {
+	// OpenAI stays first so multi-key environments keep their historical
+	// default; the Google entries previously never matched because the
+	// candidate was misspelled GOOGLE_APIKEY.
 	for _, candidate := range []struct {
 		key      string
 		provider string
 	}{
-		{key: "GOOGLE_APIKEY", provider: "google-gemini"},
 		{key: "OPENAI_API_KEY", provider: "openai"},
 		{key: "ANTHROPIC_API_KEY", provider: "anthropic"},
+		{key: "GOOGLE_API_KEY", provider: "google-gemini"},
+		{key: "GEMINI_API_KEY", provider: "google-gemini"},
 	} {
 		if os.Getenv(candidate.key) != "" {
 			return candidate.key, candidate.provider

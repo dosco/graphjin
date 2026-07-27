@@ -169,6 +169,48 @@ func TestRawGraphQLCoveredBySavedQueryStillExecutes(t *testing.T) {
 	}
 }
 
+// Watch-registered subscription entries share the saved_query kind but cannot
+// be run through execute_saved_query; recommending them wastes the model's
+// steps (observed live: 108 smoke-test subscriptions drowned the 3 real
+// queries). The supplement must carry executable read queries only.
+func TestSavedQuerySupplementSkipsSubscriptionsAndMutations(t *testing.T) {
+	base := &fakeRuntime{}
+	base.catalogOverride = func(args map[string]any) any {
+		if stringArg(args, "kind") == "saved_query" {
+			return map[string]any{
+				"count": 3,
+				"cards": []any{
+					map[string]any{
+						"id": "saved_query:smoke_route_coffee_1", "kind": "saved_query", "name": "smoke_route_coffee_1",
+						"safety_json": map[string]any{"operation": "subscription"},
+					},
+					map[string]any{
+						"id": "saved_query:reset_lots", "kind": "saved_query", "name": "reset_lots",
+						"safety_json": `{"operation":"mutation"}`,
+					},
+					map[string]any{
+						"id": "saved_query:daily_roast_context", "kind": "saved_query", "name": "daily_roast_context",
+						"safety_json": map[string]any{"operation": "query"},
+					},
+				},
+			}
+		}
+		return fakeCatalogResult(args)
+	}
+	runtime := newProtocolRuntime(base, "roast plan coverage", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cards := runtime.state.savedQuerySupplementCards
+	if len(cards) != 1 || stringFromMap(cards[0], "name") != "daily_roast_context" {
+		names := make([]string, 0, len(cards))
+		for _, card := range cards {
+			names = append(names, stringFromMap(card, "name"))
+		}
+		t.Fatalf("supplement cards = %v, want only daily_roast_context", names)
+	}
+}
+
 // A seed that already surfaced saved queries needs no supplement.
 func TestSeedSkipsSupplementWhenSavedQueriesAlreadyPresent(t *testing.T) {
 	base := &fakeRuntime{}

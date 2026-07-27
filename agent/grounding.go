@@ -190,11 +190,34 @@ func joinRecoveryMessage(message, directive string) string {
 
 const recoveryDirectivePrefix = "GraphJin recovery:"
 
+// recommendedSavedQueryNames returns the saved queries worth naming in
+// guidance: the operation-filtered supplement set when present, else every
+// saved query discovered this run.
+func recommendedSavedQueryNames(s *discoveryState) []string {
+	if len(s.savedQuerySupplementCards) != 0 {
+		var names []string
+		for _, card := range s.savedQuerySupplementCards {
+			name := stringFromMap(card, "name")
+			if name == "" {
+				name = savedQueryNameFromID(stringFromMap(card, "id"))
+			}
+			if name = canonicalSavedQueryName(name); name != "" {
+				names = appendUniqueString(names, name)
+			}
+		}
+		if len(names) != 0 {
+			sort.Strings(names)
+			return names
+		}
+	}
+	return sortedBoolKeys(s.savedQueriesDiscovered)
+}
+
 // approvedSavedQuerySuffix names the governed shortcuts discovered for this
 // run, for appending to a protocol rejection message. Dynamic authoring stays
 // the primary path; the names are an option, not a required route.
 func approvedSavedQuerySuffix(s *discoveryState) string {
-	names := sortedBoolKeys(s.savedQueriesDiscovered)
+	names := recommendedSavedQueryNames(s)
 	if len(names) > maxRecoverySavedQueries {
 		names = names[:maxRecoverySavedQueries]
 	}
@@ -226,7 +249,7 @@ func executionRecovery(s *discoveryState) map[string]any {
 		"instruction": "This query did not match the live schema. The schema is authoritative: never advise schema or data changes and do not stop at blocked. Recover in this run — follow errors[].extensions.graphjin_repair, re-discover the real table and field names with query_catalog, re-author the query from the returned columns, and retry.",
 		"next":        []string{toolQueryCatalog},
 	}
-	names := sortedBoolKeys(s.savedQueriesDiscovered)
+	names := recommendedSavedQueryNames(s)
 	if len(names) > maxRecoverySavedQueries {
 		names = names[:maxRecoverySavedQueries]
 	}

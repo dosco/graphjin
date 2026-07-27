@@ -11,7 +11,7 @@ import (
 func TestLoadDemoEnvMissingFileIsNoop(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
-	unsetEnv(t, "GO_ENV", "GOOGLE_APIKEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_PROVIDER", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS")
+	unsetEnv(t, "GO_ENV", "GOOGLE_APIKEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_PROVIDER", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS")
 	configDir := filepath.Join(dir, "demo")
 	var out bytes.Buffer
 	if err := loadDemoEnv(configDir, &out); err != nil {
@@ -71,10 +71,10 @@ func TestLoadDemoEnvLoadsRootBeforeDemoEnv(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("GO_ENV=agentic\nROOT_ONLY=root\nSHARED_VALUE=root\n"), 0o600); err != nil {
 		t.Fatalf("write root .env: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte("GOOGLE_APIKEY=from-demo\nDEMO_ONLY=demo\nSHARED_VALUE=demo\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte("GOOGLE_API_KEY=from-demo\nDEMO_ONLY=demo\nSHARED_VALUE=demo\n"), 0o600); err != nil {
 		t.Fatalf("write demo .env: %v", err)
 	}
-	for _, key := range []string{"GO_ENV", "ROOT_ONLY", "SHARED_VALUE", "GOOGLE_APIKEY", "DEMO_ONLY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_PROVIDER", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS"} {
+	for _, key := range []string{"GO_ENV", "ROOT_ONLY", "SHARED_VALUE", "GOOGLE_APIKEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "DEMO_ONLY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_PROVIDER", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS"} {
 		if err := os.Unsetenv(key); err != nil {
 			t.Fatalf("unset %s: %v", key, err)
 		}
@@ -90,8 +90,8 @@ func TestLoadDemoEnvLoadsRootBeforeDemoEnv(t *testing.T) {
 	if got := os.Getenv("ROOT_ONLY"); got != "root" {
 		t.Fatalf("ROOT_ONLY = %q, want root", got)
 	}
-	if got := os.Getenv("GOOGLE_APIKEY"); got != "from-demo" {
-		t.Fatalf("GOOGLE_APIKEY = %q, want from-demo", got)
+	if got := os.Getenv("GOOGLE_API_KEY"); got != "from-demo" {
+		t.Fatalf("GOOGLE_API_KEY = %q, want from-demo", got)
 	}
 	if got := os.Getenv("DEMO_ONLY"); got != "demo" {
 		t.Fatalf("DEMO_ONLY = %q, want demo", got)
@@ -114,7 +114,7 @@ func TestLoadDemoEnvInfersAgentFromOpenAIKey(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("OPENAI_API_KEY=from-openai\n"), 0o600); err != nil {
 		t.Fatalf("write root .env: %v", err)
 	}
-	unsetEnv(t, "GO_ENV", "GOOGLE_APIKEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_PROVIDER", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS")
+	unsetEnv(t, "GO_ENV", "GOOGLE_APIKEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_PROVIDER", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS")
 
 	var out bytes.Buffer
 	if err := loadDemoEnv(configDir, &out); err != nil {
@@ -153,7 +153,7 @@ func TestLoadDemoEnvDoesNotOverrideExplicitAgentEnv(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("GO_ENV=dev\nOPENAI_API_KEY=from-openai\nGJ_AGENT_ENABLED=false\nGJ_AGENT_API_KEY_ENV=CUSTOM_AGENT_KEY\nGJ_AGENT_PROVIDER=custom\nGJ_AGENT_MAX_STEPS=4\nGJ_AGENT_TIMEOUT_SECONDS=45\n"), 0o600); err != nil {
 		t.Fatalf("write root .env: %v", err)
 	}
-	unsetEnv(t, "GO_ENV", "GOOGLE_APIKEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_PROVIDER", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS")
+	unsetEnv(t, "GO_ENV", "GOOGLE_APIKEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_PROVIDER", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS")
 
 	if err := loadDemoEnv(configDir, nil); err != nil {
 		t.Fatalf("load .env files: %v", err)
