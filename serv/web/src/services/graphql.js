@@ -1,3 +1,5 @@
+import { operatorIdentityHeaders } from "./identity";
+
 const defaultEndpoint = import.meta.env.VITE_DEFAULT_ENDPOINT || "/api/v1/graphql";
 
 export class RequestError extends Error {
@@ -48,6 +50,7 @@ export async function fetchJSON(url, options = {}) {
       ...options,
       headers: {
         Accept: "application/json",
+        ...operatorIdentityHeaders(),
         ...(options.headers || {}),
       },
     });

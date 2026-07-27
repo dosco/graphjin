@@ -23,6 +23,9 @@ Each demo is a self-contained vertical: one command boots its databases (Docker 
 
 Put a model API key in `./.env` (`GOOGLE_APIKEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` - checked in that order) and `--demo` automatically switches into agentic mode and enables the [built-in agent](/agentic/server-agent/). The web console is at `http://localhost:<port>/`, and the agent chat - which streams every tool call live as the agent works - is at `/agent`.
 
+[Mission Control](/agentic/mission-control/) is available at `/mission` for
+task trails, the watch-event inbox, and annotation review.
+
 ## Pick a demo {#pick-a-demo}
 
 | Demo | Domain | Sources | Port | Docker | First boot |

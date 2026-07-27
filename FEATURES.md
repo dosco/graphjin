@@ -1567,6 +1567,35 @@ account-filtered document that lifts the target card without rewriting its
 catalog document. The built-in agent cannot draft or edit a note and approve it
 in the same run.
 
+## Mission Control
+
+The built-in console exposes the agentic ladder to people at `/mission`.
+Mission Control polls the same governed GraphQL roots used by agents and keeps
+each feature independent, so disabling tasks, watches, or artifacts degrades
+only that panel.
+
+- **Tasks** shows open and verifying goals, verified or failed outcome state,
+  and the newest-first `gj_task_entry` trail. Verification entries compare the
+  declared expectation with the observed saved-query result.
+- **Watch inbox** joins unseen `gj_watch_event` rows to their watch names,
+  exposes bounded payload and delivery evidence, and lets the owner mark an
+  event seen.
+- **Annotations** is the human review queue. It quotes an observed draft before
+  approval publishes it to the account, displays author/approver attribution,
+  and lets admins demote approved notes.
+
+In development mode, use the operator-identity control in the console header to
+set the `X-User-ID`, `X-User-Role`, and `X-Account-ID` request context. The
+browser stores that development identity locally. Without one, Mission Control
+shows an explicit no-identity state instead of silently presenting empty
+owner-scoped lists. Authenticated deployments continue to send their
+same-origin session cookies.
+
+Agent chat renders every response notice and links it to the corresponding
+Mission Control view. An open task can be pinned above the composer; subsequent
+requests send its `task_id`, warm-start from the declared goal, and journal the
+run under that task.
+
 ## MCP Connections for AI Clients
 
 GraphJin exposes a governed Model Context Protocol surface for AI clients. The

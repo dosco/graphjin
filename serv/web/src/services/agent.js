@@ -1,10 +1,11 @@
 import { fetchJSON, RequestError } from "./graphql";
+import { operatorIdentityHeaders } from "./identity";
 
 export function agentStatus() {
   return fetchJSON("/api/v1/agent/status");
 }
 
-export function askAgent({ instruction, max_steps, return_trace, history }) {
+export function askAgent({ instruction, max_steps, return_trace, history, task_id }) {
   return fetchJSON("/api/v1/agent", {
     method: "POST",
     headers: {
@@ -15,6 +16,7 @@ export function askAgent({ instruction, max_steps, return_trace, history }) {
       max_steps,
       return_trace,
       history,
+      task_id,
     }),
   });
 }
@@ -23,7 +25,7 @@ export function askAgent({ instruction, max_steps, return_trace, history }) {
 // parses the SSE frames the agent endpoint emits: one `action` event per
 // executed tool call, then a final `result` event with the agent response.
 // Falls back to the blocking JSON contract when the server answers with JSON.
-export async function askAgentStream({ instruction, max_steps, return_trace, history }, { onAction } = {}) {
+export async function askAgentStream({ instruction, max_steps, return_trace, history, task_id }, { onAction } = {}) {
   let response;
   try {
     response = await fetch("/api/v1/agent", {
@@ -32,8 +34,9 @@ export async function askAgentStream({ instruction, max_steps, return_trace, his
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
+        ...operatorIdentityHeaders(),
       },
-      body: JSON.stringify({ instruction, max_steps, return_trace, history }),
+      body: JSON.stringify({ instruction, max_steps, return_trace, history, task_id }),
     });
   } catch (error) {
     throw new RequestError(`Service unavailable: ${error.message}`, { kind: "unavailable" });

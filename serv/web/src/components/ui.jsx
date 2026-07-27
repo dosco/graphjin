@@ -23,7 +23,7 @@ export function PageHeader({ eyebrow, title, description, actions }) {
 
 export function Panel({ title, description, children, action, className }) {
   return (
-    <Card className={className}>
+    <Card className={cx("min-w-0", className)}>
       {(title || action) && (
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -57,9 +57,12 @@ export function Metric({ label, value, detail, tone = "neutral" }) {
 export function StatusPill({ status, severity }) {
   const normalized = (status || severity || "unknown").toLowerCase();
   const tone =
-    normalized === "ready" || normalized === "ok" || normalized === "info"
+    normalized === "ready" || normalized === "ok" || normalized === "info" ||
+    normalized === "verified" || normalized === "passed" || normalized === "approved" ||
+    normalized === "closed" || normalized === "active"
       ? "good"
-      : normalized === "degraded" || normalized === "warn" || normalized === "warning"
+      : normalized === "degraded" || normalized === "warn" || normalized === "warning" ||
+        normalized === "verifying" || normalized === "pending"
         ? "warn"
       : normalized === "failed" || normalized === "error" || normalized === "critical" || normalized === "high"
         ? "bad"

@@ -1,9 +1,30 @@
 import React from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Bot, ChevronDown, CircleHelp, Gauge, KeyRound, Send, Settings2, Sparkles, Timer, User } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import {
+  AlertTriangle,
+  BellRing,
+  BookOpenCheck,
+  Bot,
+  CheckCircle2,
+  ChevronDown,
+  CircleHelp,
+  Gauge,
+  KeyRound,
+  ListTodo,
+  Pin,
+  Send,
+  Settings2,
+  Sparkles,
+  Timer,
+  User,
+  X,
+} from "lucide-react";
 
 import { DataErrorState, LoadingState, PageHeader, StatusPill } from "../components/ui";
 import { agentStatus, askAgentStream } from "../services/agent";
+import { fetchMissionTask } from "../services/mission";
+import { operatorIdentityKey, useOperatorIdentity } from "../services/identity";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Bubble } from "@/components/ui/bubble";
@@ -37,8 +58,12 @@ const promptStarters = [
 ];
 
 const AgentChat = () => {
+  const identity = useOperatorIdentity();
+  const identityKey = operatorIdentityKey(identity);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedTaskID = searchParams.get("task_id") || "";
   const statusQuery = useQuery({
-    queryKey: ["agent-status"],
+    queryKey: ["agent-status", identityKey],
     queryFn: agentStatus,
     refetchInterval: 30000,
   });
@@ -49,7 +74,13 @@ const AgentChat = () => {
   const [maxSteps, setMaxSteps] = React.useState(8);
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [pendingActions, setPendingActions] = React.useState([]);
+  const [pinnedTaskID, setPinnedTaskID] = React.useState(linkedTaskID);
   const statusDefaultsApplied = React.useRef(false);
+  const pinnedTaskQuery = useQuery({
+    queryKey: ["mission", "task", identityKey, pinnedTaskID],
+    queryFn: () => fetchMissionTask(pinnedTaskID),
+    enabled: Boolean(pinnedTaskID),
+  });
 
   React.useEffect(() => {
     if (status && !statusDefaultsApplied.current) {
@@ -60,6 +91,10 @@ const AgentChat = () => {
       setReturnTrace(status.return_trace === true);
     }
   }, [status]);
+
+  React.useEffect(() => {
+    setPinnedTaskID(linkedTaskID);
+  }, [linkedTaskID]);
 
   const mutation = useMutation({
     mutationFn: (vars) =>
@@ -98,6 +133,7 @@ const AgentChat = () => {
         max_steps: Number(maxSteps) || undefined,
         return_trace: returnTrace,
         history: history.length ? history : undefined,
+        task_id: pinnedTaskID || undefined,
       });
       setMessages((current) => [
         ...current,
@@ -139,6 +175,23 @@ const AgentChat = () => {
       event.preventDefault();
       void submitInstruction();
     }
+  }
+
+  function pinTask(taskID) {
+    if (!taskID) {
+      return;
+    }
+    setPinnedTaskID(taskID);
+    const next = new URLSearchParams(searchParams);
+    next.set("task_id", taskID);
+    setSearchParams(next, { replace: true });
+  }
+
+  function clearPinnedTask() {
+    setPinnedTaskID("");
+    const next = new URLSearchParams(searchParams);
+    next.delete("task_id");
+    setSearchParams(next, { replace: true });
   }
 
   const providerLabel = [status?.provider, status?.model].filter(Boolean).join(" / ") || "provider pending";
@@ -205,7 +258,7 @@ const AgentChat = () => {
                   <EmptyAgentState ready={ready} onSelectPrompt={setInstruction} />
                 ) : (
                   messages.map((message) => (
-                    <ChatMessage key={message.id} message={message} />
+                    <ChatMessage key={message.id} message={message} onPinTask={pinTask} />
                   ))
                 )}
                 {mutation.isPending && <ThinkingMessage actions={pendingActions} />}
@@ -214,6 +267,14 @@ const AgentChat = () => {
 
             <form className="grid gap-3 border-t bg-card p-4" onSubmit={handleSubmit}>
               {!ready && <AgentDisabledAlert status={status} />}
+              {pinnedTaskID && (
+                <PinnedTask
+                  taskID={pinnedTaskID}
+                  task={pinnedTaskQuery.data}
+                  isLoading={pinnedTaskQuery.isLoading}
+                  onClear={clearPinnedTask}
+                />
+              )}
               <div className="overflow-hidden rounded-lg border bg-card shadow-[0_6px_24px_rgba(28,35,48,0.06)] transition focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
                 <Textarea
                   value={instruction}
@@ -458,7 +519,7 @@ function AgentDisabledAlert({ status }) {
   );
 }
 
-function ChatMessage({ message }) {
+function ChatMessage({ message, onPinTask }) {
   const isUser = message.role === "user";
   const response = message.response;
   return (
@@ -481,6 +542,7 @@ function ChatMessage({ message }) {
             <MarkdownContent value={message.content} />
           )}
         </Bubble>
+        {response && <NoticeList notices={response.notices} onPinTask={onPinTask} />}
         {response && <ResponseAttachments response={response} showDebug={message.showDebug} />}
       </MessageContent>
       {isUser && <MessageAvatar className="border-primary/35 bg-primary text-primary-foreground shadow-[0_6px_18px_rgba(28,35,48,0.12)]"><User className="size-4" /></MessageAvatar>}
@@ -490,11 +552,13 @@ function ChatMessage({ message }) {
 
 function ResponseSummaryBadges({ response }) {
   const actionCount = Array.isArray(response.actions) ? response.actions.length : 0;
+  const noticeCount = Array.isArray(response.notices) ? response.notices.length : 0;
   return (
     <>
       {hasValue(response.data) && <Badge variant="outline">data</Badge>}
       {hasValue(response.evidence) && <Badge variant="outline">evidence</Badge>}
       {actionCount > 0 && <Badge variant="outline">{actionCount} {actionCount === 1 ? "action" : "actions"}</Badge>}
+      {noticeCount > 0 && <Badge variant="warning">{noticeCount} {noticeCount === 1 ? "notice" : "notices"}</Badge>}
       {response.trace_id && (
         <Badge variant="outline" className="max-w-48 truncate" title={response.trace_id}>
           trace {response.trace_id}
@@ -502,6 +566,132 @@ function ResponseSummaryBadges({ response }) {
       )}
     </>
   );
+}
+
+function PinnedTask({ taskID, task, isLoading, onClear }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50/30 px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <Pin className="size-4 shrink-0 text-amber-800" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase text-amber-900">Pinned task</p>
+          <p className="truncate text-sm text-foreground">
+            {isLoading ? "Loading declared goal…" : task?.goal || taskID}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <Button asChild type="button" variant="ghost" size="sm">
+          <Link to={`/mission?tab=tasks&task_id=${encodeURIComponent(taskID)}`}>Open trail</Link>
+        </Button>
+        <Button type="button" variant="ghost" size="icon" className="size-8" onClick={onClear} aria-label="Unpin task">
+          <X aria-hidden="true" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function NoticeList({ notices, onPinTask }) {
+  if (!Array.isArray(notices) || notices.length === 0) {
+    return null;
+  }
+  return (
+    <div className="grid w-full gap-2" aria-label={`${notices.length} agent notices`}>
+      {notices.map((notice, index) => (
+        <AgentNotice key={`${notice?.kind || "notice"}-${index}`} notice={notice || {}} onPinTask={onPinTask} />
+      ))}
+    </div>
+  );
+}
+
+function AgentNotice({ notice, onPinTask }) {
+  const taskIDs = Array.isArray(notice.task_ids) ? notice.task_ids.filter(Boolean) : [];
+  const kind = notice.kind || "notice";
+
+  if (kind === "watch_events_unseen") {
+    return (
+      <NoticeFrame icon={BellRing} title={`${notice.count || "New"} unseen watch ${notice.count === 1 ? "event" : "events"}`} message={notice.message}>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/mission?tab=watches">Open watch inbox</Link>
+        </Button>
+      </NoticeFrame>
+    );
+  }
+  if (kind === "task_open_unlinked") {
+    return (
+      <NoticeFrame icon={ListTodo} title="Open tasks are not linked to this run" message={notice.message}>
+        <div className="flex flex-wrap gap-2">
+          {taskIDs.map((taskID) => (
+            <Button key={taskID} type="button" variant="outline" size="sm" onClick={() => onPinTask(taskID)}>
+              <Pin aria-hidden="true" />
+              Continue {shortID(taskID)}
+            </Button>
+          ))}
+        </div>
+      </NoticeFrame>
+    );
+  }
+  if (kind === "task_context_loaded") {
+    return (
+      <NoticeFrame icon={CheckCircle2} title="Declared task context loaded" message={notice.message} variant="success">
+        {taskIDs[0] && (
+          <Button asChild variant="ghost" size="sm">
+            <Link to={`/mission?tab=tasks&task_id=${encodeURIComponent(taskIDs[0])}`}>View trail</Link>
+          </Button>
+        )}
+      </NoticeFrame>
+    );
+  }
+  if (kind === "task_verify_failed") {
+    return (
+      <NoticeFrame icon={AlertTriangle} title="Task verification failed" message={notice.message} variant="destructive">
+        <div className="flex flex-wrap gap-2">
+          {taskIDs.map((taskID) => (
+            <Button key={taskID} asChild variant="outline" size="sm">
+              <Link to={`/mission?tab=tasks&task_id=${encodeURIComponent(taskID)}`}>Inspect {shortID(taskID)}</Link>
+            </Button>
+          ))}
+        </div>
+      </NoticeFrame>
+    );
+  }
+  if (kind === "annotations_unshared") {
+    return (
+      <NoticeFrame icon={BookOpenCheck} title={`${notice.count || "Annotation"} ${notice.count === 1 ? "draft" : "drafts"} awaiting review`} message={notice.message}>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/mission?tab=annotations">Open review queue</Link>
+        </Button>
+      </NoticeFrame>
+    );
+  }
+  return <NoticeFrame icon={CircleHelp} title={kind.replaceAll("_", " ")} message={notice.message || "GraphJin returned an agent notice."} />;
+}
+
+function NoticeFrame({ icon: Icon, title, message, children, variant = "default" }) {
+  return (
+    <div className={cn(
+      "grid gap-3 rounded-lg border bg-card p-3 text-sm",
+      variant === "destructive" && "border-red-300",
+      variant === "success" && "border-emerald-300"
+    )}>
+      <div className="flex items-start gap-2">
+        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="font-semibold capitalize text-foreground">{title}</p>
+          {message && <p className="mt-1 text-xs leading-5 text-muted-foreground">{message}</p>}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function shortID(value) {
+  if (typeof value !== "string" || value.length <= 18) {
+    return value;
+  }
+  return `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
 
 function ResponseAttachments({ response, showDebug }) {
