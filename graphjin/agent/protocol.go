@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -201,9 +202,16 @@ func (r *protocolRuntime) lookupSavedQueryCards(ctx context.Context) []map[strin
 		cards := catalogCards(out)
 		saved := make([]map[string]any, 0, len(cards))
 		for _, card := range cards {
-			if strings.EqualFold(stringFromMap(card, "kind"), "saved_query") {
-				saved = append(saved, card)
+			if !strings.EqualFold(stringFromMap(card, "kind"), "saved_query") {
+				continue
 			}
+			// Only executable read queries belong in the recommended set:
+			// execute_saved_query cannot run subscriptions (watch-registered
+			// entries), and unprompted mutations are never a recommendation.
+			if op := savedQueryCardOperation(card); op != "" && op != "query" {
+				continue
+			}
+			saved = append(saved, card)
 		}
 		if len(saved) != 0 {
 			r.state.savedQuerySupplementCards = saved
@@ -211,6 +219,23 @@ func (r *protocolRuntime) lookupSavedQueryCards(ctx context.Context) []map[strin
 		}
 	}
 	return nil
+}
+
+// savedQueryCardOperation extracts the saved query's operation kind from its
+// catalog card safety metadata, tolerating both object and JSON-string shapes.
+// An empty result means the card did not declare an operation.
+func savedQueryCardOperation(card map[string]any) string {
+	safety := mapValue(card["safety_json"])
+	if safety == nil {
+		var parsed any
+		if err := json.Unmarshal([]byte(stringFromMap(card, "safety_json")), &parsed); err == nil {
+			safety = mapValue(parsed)
+		}
+	}
+	if safety == nil {
+		return ""
+	}
+	return strings.ToLower(stringFromMap(safety, "operation"))
 }
 
 func (r *protocolRuntime) GraphQLHelp(ctx context.Context, args map[string]any) (any, error) {
