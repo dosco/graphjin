@@ -50,6 +50,20 @@ type discoveryState struct {
 	capabilities       *CapabilityProfile
 	observe            func(ActionEvent)
 	coverageSearchUsed bool
+	// groundingCorpus accumulates this run's observed evidence (instruction,
+	// history, tool arguments, tool results) for the answer-grounding check.
+	groundingCorpus   strings.Builder
+	groundingOverflow bool
+	// savedQuerySupplement* cache the one approved-saved-query lookup performed
+	// on the agent's behalf when discovery did not surface the approved path.
+	savedQuerySupplementDone  bool
+	savedQuerySupplementCards []map[string]any
+	// savedQueryFields maps each approved saved query to the root fields it
+	// returns, used to detect that a raw query duplicates a governed one.
+	savedQueryFields map[string][]string
+	// savedQueryRedirected bounds the preference redirect to one per run so a
+	// model that insists on raw GraphQL still makes progress.
+	savedQueryRedirected bool
 }
 
 type protocolAction struct {
@@ -89,7 +103,7 @@ func newProtocolRuntime(base GraphRuntime, instruction, namespace string, seedLi
 }
 
 func newDiscoveryState(instruction string) *discoveryState {
-	return &discoveryState{
+	state := &discoveryState{
 		instruction:            strings.TrimSpace(instruction),
 		catalogIDs:             map[string]bool{},
 		catalogKinds:           map[string]bool{},
@@ -100,6 +114,8 @@ func newDiscoveryState(instruction string) *discoveryState {
 		tablesValidated:        map[string]bool{},
 		workflowsDetailed:      map[string]bool{},
 	}
+	state.addGrounding(state.instruction)
+	return state
 }
 
 func (r *protocolRuntime) Seed(ctx context.Context) (any, error) {
@@ -117,9 +133,131 @@ func (r *protocolRuntime) Seed(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	r.state.seedOK = true
-	r.state.seedResult = normalizeValue(out)
 	r.state.recordCatalog(args, out, true)
+	// A business-language instruction ranks tables, columns, and relationships
+	// above saved queries, so the approved path is often absent from the seed
+	// entirely. An agent cannot prefer a saved query it was never shown: it
+	// authors raw GraphQL, guesses field names, and reports the schema as
+	// broken. Surface the approved inventory before the model's first step.
+	// The seed's own search is untouched — this is a separate, lexical
+	// saved-query lookup, never a coverage expansion — and detail inspection
+	// is still required before any saved query can execute.
+	out = r.appendSavedQuerySupplement(ctx, out)
+	r.state.seedResult = normalizeValue(out)
 	return r.state.seedResult, nil
+}
+
+// appendSavedQuerySupplement merges visible approved saved-query cards into a
+// seed result that surfaced none. Failures are non-fatal: the seed stands on
+// its own and the model can still discover saved queries itself.
+func (r *protocolRuntime) appendSavedQuerySupplement(ctx context.Context, seed any) any {
+	if r.state.catalogKindSeen("saved_query") {
+		return seed
+	}
+	cards := r.lookupSavedQueryCards(ctx)
+	if len(cards) == 0 {
+		return seed
+	}
+	result := mapValue(seed)
+	if result == nil {
+		return seed
+	}
+	merged := make(map[string]any, len(result)+1)
+	for key, value := range result {
+		merged[key] = value
+	}
+	existing := anySlice(merged["cards"])
+	supplement := make([]any, 0, len(cards))
+	for _, card := range cards {
+		supplement = append(supplement, card)
+	}
+	merged["cards"] = append(append([]any{}, existing...), supplement...)
+	merged["count"] = len(existing) + len(supplement)
+	merged["approved_saved_queries"] = map[string]any{
+		"names": sortedBoolKeys(r.state.savedQueriesDiscovered),
+		"usage": "These are the governed, pre-approved queries for this data. Prefer one that covers the request: query_catalog({id:\"saved_query:<name>\"}), then execute_saved_query({name:\"<name>\"}), then answer from result.data. Re-authoring the same root fields as raw GraphQL is rejected.",
+	}
+	return merged
+}
+
+// lookupSavedQueryCards asks the catalog for approved saved queries relevant to
+// the instruction, falling back to the visible inventory when the ranked search
+// returns nothing. It runs at most once per run, only after a failed execution,
+// so the single-seed contract and the semantic coverage budget are untouched.
+// Results are recorded as evidence but never count as the model's own discovery
+// action or as saved-query detail evidence.
+func (r *protocolRuntime) lookupSavedQueryCards(ctx context.Context) []map[string]any {
+	if r.state.savedQuerySupplementDone {
+		return r.state.savedQuerySupplementCards
+	}
+	r.state.savedQuerySupplementDone = true
+	attempts := []map[string]any{
+		{"kind": "saved_query", "search": r.state.instruction, "limit": maxRecoverySavedQueries},
+		{"kind": "saved_query", "limit": maxRecoverySavedQueries},
+	}
+	for _, args := range attempts {
+		r.addNamespace(args)
+		action := r.state.startAction("recovery", "query_catalog", args)
+		out, err := r.base.QueryCatalog(ctx, args)
+		r.state.finishAction(action, "query_catalog", args, out, err)
+		if err != nil {
+			continue
+		}
+		r.state.recordCatalog(args, out, false)
+		cards := catalogCards(out)
+		saved := make([]map[string]any, 0, len(cards))
+		for _, card := range cards {
+			if strings.EqualFold(stringFromMap(card, "kind"), "saved_query") {
+				saved = append(saved, card)
+			}
+		}
+		if len(saved) != 0 {
+			r.state.savedQuerySupplementCards = saved
+			return saved
+		}
+	}
+	return nil
+}
+
+// ensureSavedQueryDefinitions reads the approved saved queries' definitions so
+// a raw query that duplicates one can be redirected. It runs at most once, and
+// only when the model actually authors a raw read, so runs that stay on the
+// governed path pay nothing. It deliberately records rows only: the model must
+// still inspect a saved query itself before executing it.
+func (r *protocolRuntime) ensureSavedQueryDefinitions(ctx context.Context) {
+	if r.state.savedQueryFields != nil {
+		return
+	}
+	r.state.savedQueryFields = map[string][]string{}
+	cards := r.state.savedQuerySupplementCards
+	if len(cards) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(cards))
+	for _, card := range cards {
+		if id := stringFromMap(card, "id"); id != "" {
+			ids = appendUniqueString(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	args := map[string]any{"ids": ids}
+	r.addNamespace(args)
+	action := r.state.startAction("recovery", "query_catalog", args)
+	out, err := r.base.QueryCatalog(ctx, args)
+	r.state.finishAction(action, "query_catalog", args, out, err)
+	if err != nil {
+		return
+	}
+	r.state.recordCatalogRows(out)
+	result := mapValue(out)
+	if result == nil {
+		return
+	}
+	for name, fields := range savedQueryDefinitions(catalogCards(out), anySlice(result["details"])) {
+		r.state.savedQueryFields[name] = fields
+	}
 }
 
 func (r *protocolRuntime) GraphQLHelp(ctx context.Context, args map[string]any) (any, error) {
@@ -246,6 +384,36 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		r.state.finishAction(action, "execute_graphql", args, nil, err)
 		return nil, err
 	}
+	// The seed is a ranked hint list, not discovery. A model that authors raw
+	// GraphQL straight off the seed guesses field names and misses the approved
+	// saved query entirely — and finalize would reject that answer anyway. Fail
+	// here instead, while the run can still recover, and name the governed path.
+	if !r.state.modelDiscoveryAction {
+		r.lookupSavedQueryCards(ctx)
+		err := fmt.Errorf("protocol violation: the seed is a ranked hint list, not discovery; inspect catalog detail with query_catalog({id:\"...\"}) before authoring raw GraphQL.%s", approvedSavedQuerySuffix(r.state))
+		r.state.addViolation("raw_graphql_discovery_required", err.Error(), "execute_graphql", true, map[string]any{
+			"approved_saved_queries": sortedBoolKeys(r.state.savedQueriesDiscovered),
+		})
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, nil, err)
+		return nil, err
+	}
+	// An approved saved query that already returns every root field the model
+	// is about to hand-author is the governed path for this request. Redirect
+	// once — a hand-rolled equivalent adds filters nobody approved and, as
+	// observed, silently returns a different picture of the same business
+	// question. If the model insists afterwards, it proceeds under the guards.
+	if !ContainsMutationOperation(query) && !r.state.savedQueryRedirected {
+		r.ensureSavedQueryDefinitions(ctx)
+		if name := coveringSavedQuery(query, r.state.savedQueryFields); name != "" {
+			r.state.savedQueryRedirected = true
+			err := fmt.Errorf("protocol violation: the approved saved query %q already returns these root fields; inspect query_catalog({id:\"saved_query:%s\"}) and run execute_saved_query({name:%q}) instead of re-authoring it as raw GraphQL", name, name, name)
+			r.state.addViolation("saved_query_preferred", err.Error(), "execute_graphql", false, map[string]any{"name": name})
+			action := r.state.startAction("model", "execute_graphql", args)
+			r.state.finishAction(action, "execute_graphql", args, nil, err)
+			return nil, err
+		}
+	}
 	if writeLikeGraphQL(query) && !r.state.securityRuntimeEvidence {
 		err := fmt.Errorf("protocol violation: inspect security/runtime catalog guidance before write-capable or control-plane GraphQL")
 		r.state.addViolation("security_runtime_discovery_required", err.Error(), "execute_graphql", true, map[string]any{"required": []any{"help:security", "help:runtime"}})
@@ -288,6 +456,13 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	}
 	action := r.state.startAction("model", "execute_graphql", args)
 	out, err := r.base.ExecuteGraphQL(ctx, args)
+	if err == nil && executionFailed(out) {
+		// The model authored a query the live schema rejected. Perform the
+		// approved-path discovery it skipped so recovery guidance names real
+		// saved queries instead of merely asking it to look again.
+		r.lookupSavedQueryCards(ctx)
+		out = attachExecutionRecovery(out, r.state)
+	}
 	r.state.finishAction(action, "execute_graphql", args, out, err)
 	if err == nil {
 		r.state.recordExecution("execute_graphql", args, out)
@@ -335,7 +510,9 @@ func (s *discoveryState) finishAction(index int, tool string, args map[string]an
 	if err != nil {
 		s.actions[index].Status = "error"
 		s.actions[index].Error = err.Error()
+		s.addGrounding(err.Error())
 	}
+	s.addGrounding(args, out)
 	s.actions[index].Summary = resultSummary(tool, args, out)
 	s.emitAction(s.actions[index])
 }
@@ -629,8 +806,15 @@ func (s *discoveryState) finalize(resp Response) Response {
 		case !s.modelDiscoveryAction:
 			s.addViolation("model_discovery_required", "agent answered without a model-driven catalog/help/detail discovery action", "", true, nil)
 			resp = blockResponse(resp)
-		case s.hasBlockingViolation():
-			resp = blockResponse(resp)
+		default:
+			if tokens := s.ungroundedAnswerTokens(resp.Answer); len(tokens) != 0 {
+				s.addViolation("ungrounded_answer_fields",
+					fmt.Sprintf("answer cites field-like identifiers absent from this run's tool evidence: %s; answer only from fields observed in execution results and state derived values in plain language", strings.Join(tokens, ", ")),
+					"", true, map[string]any{"tokens": tokens})
+			}
+			if s.hasBlockingViolation() {
+				resp = blockResponse(resp)
+			}
 		}
 	}
 	resp.Actions = s.actionValues()

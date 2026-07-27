@@ -14,6 +14,20 @@ examples/coffee-roastery/scripts/smoke.sh
 
 Run `examples/coffee-roastery/scripts/smoke.sh --agent` when the server-side agent is enabled. Use `--agent-eval` for stricter open-ended checks that assert catalog discovery, saved-query detail inspection, safe-mode raw GraphQL blocking, and evidence-shaped responses.
 
+The prompts below are plain business questions on purpose: discovering the
+approved saved query and staying on the governed path is the agent's job, not
+the reader's. That does require a capable model. Set one explicitly:
+
+```bash
+GJ_AGENT_MODEL=gpt-4.1 graphjin serve --demo --path examples/coffee-roastery
+```
+
+With no `agent.model` configured the provider default applies, which for OpenAI
+is `gpt-5-mini`. That model does not reliably complete these multi-step runs: it
+tends to stall or return blocked rather than execute the saved query. GraphJin's
+protocol guards keep a weak model from publishing an ungrounded answer, but they
+cannot make it finish the work.
+
 ## Daily Roast Planner
 
 Find today's queued production orders, active subscriptions, available green coffee lots, and planned roast schedule. Decide whether the roast plan covers committed shipments and explain the next operational action.
