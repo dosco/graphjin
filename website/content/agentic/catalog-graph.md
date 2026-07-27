@@ -46,6 +46,11 @@ Catalog rows include JSON fields designed for model use: `details_json`, `eviden
 
 Saved queries, fragments, and workflows in `gj_catalog` use the artifact overlay. A caller sees global config files plus their own `gj_artifacts` rows; another caller does not see those user artifacts.
 
+Approved [catalog annotations](/agentic/annotations/) are deliberately different:
+raw `gj_catalog` rows stay unchanged, while exact `query_catalog` detail merges
+only the approved notes visible to the caller's account. A missing target is
+returned as stale historical context, never as a recreated catalog entity.
+
 {{< verified by="TestCatalogSearchRanksRelationshipsAboveTablesForJoinIntent" file="core/catalog_test.go" line="179" >}}
 {{< verified by="TestGraphQLControlPlaneCatalogConfigRecipeSearch" file="serv/control_plane_graphql_test.go" line="1365" >}}
 {{< verified by="TestCatalogSnapshotMergesCallerScopedArtifacts" file="serv/artifact_overlay_test.go" line="173" >}}

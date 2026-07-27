@@ -1505,7 +1505,7 @@ type IdentityConfig struct {
 
 // ArtifactsConfig declares the GraphJin-managed SQL artifact store.
 type ArtifactsConfig struct {
-	Enabled                   bool     `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Artifacts,description=Enable the GraphJin-managed SQL artifact store for saved queries/fragments/workflows; parsed dev and agentic configs default to enabled"`
+	Enabled                   bool     `mapstructure:"enabled" json:"enabled" yaml:"enabled" jsonschema:"title=Enable Artifacts,description=Enable the GraphJin-managed SQL artifact store for saved queries/fragments/workflows and catalog annotations; parsed dev and agentic configs default to enabled"`
 	Source                    string   `mapstructure:"source" json:"source" yaml:"source" jsonschema:"title=Artifact Source,description=Database source name that hosts the artifact store; omitted dev and agentic configs use private managed SQLite while legacy explicit enablement uses the first writable SQL source"`
 	Schema                    string   `mapstructure:"schema" json:"schema" yaml:"schema" jsonschema:"title=Artifact Schema,default=_graphjin,description=Schema for the artifact store tables"`
 	AutoInit                  *bool    `mapstructure:"auto_init" json:"auto_init" yaml:"auto_init" jsonschema:"title=Auto Initialize Artifact Tables,default=true,description=Create artifact store tables automatically at startup"`

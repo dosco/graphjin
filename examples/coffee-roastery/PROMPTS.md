@@ -49,3 +49,14 @@ Useful help: `query_catalog(id: "help:watches")`
 ## Code-Aware Investigation
 
 Search the `business_code` source for roast planning, subscription pressure, customer promise, and quality score logic. Use the code context before proposing workflow changes.
+
+## Reviewed Catalog Memory
+
+Find the `production_orders` table card, draft an annotation that expedite
+reviews use `requested_ship_date`, and show the draft to me. Do not approve it
+in the same run. After I confirm it in a later run, approve it and retrieve the
+table detail again to show the reviewed organizational context.
+
+Useful roots: `gj_artifacts`, `gj_catalog`
+
+Useful help: `query_catalog(id: "help:artifacts")`

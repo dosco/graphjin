@@ -101,10 +101,10 @@ func (i *semanticCatalogIndex) hintsDetailed(ctx context.Context, snapshot *core
 		return result, fmt.Errorf("query embedding dimension %d does not match semantic index dimension %d", len(vector), index.manifest.ActualDimension)
 	}
 	normalizeSemanticVector(vector)
-	return i.hintsForVector(snapshot, query, index, vector), nil
+	return i.hintsForVector(ctx, snapshot, query, index, vector), nil
 }
 
-func (i *semanticCatalogIndex) hintsForVector(snapshot *core.CatalogSnapshot, query core.CatalogQuery, index *semanticPersistedIndex, vector []float32) semanticHintSet {
+func (i *semanticCatalogIndex) hintsForVector(ctx context.Context, snapshot *core.CatalogSnapshot, query core.CatalogQuery, index *semanticPersistedIndex, vector []float32) semanticHintSet {
 	result := semanticHintSet{indexReady: index != nil}
 	if snapshot == nil || index == nil || len(vector) != index.manifest.ActualDimension {
 		return result
@@ -112,6 +112,9 @@ func (i *semanticCatalogIndex) hintsForVector(snapshot *core.CatalogSnapshot, qu
 
 	scored := make([]semanticScoredDocument, 0, len(index.docs))
 	for _, document := range index.docs {
+		if document.Kind == artifactKindAnnotation && !semanticAnnotationVisible(ctx, document.AccountRef) {
+			continue
+		}
 		start := document.VectorOffset
 		end := start + index.manifest.ActualDimension
 		if start < 0 || end > len(index.vectors) {
@@ -178,6 +181,8 @@ func (i *semanticCatalogIndex) hintsForVector(snapshot *core.CatalogSnapshot, qu
 			}
 		} else if item.doc.Kind == "concept" {
 			source = "semantic concept recall"
+		} else if item.doc.Kind == artifactKindAnnotation {
+			source = "approved organizational annotation recall"
 		}
 		for _, cardID := range targets {
 			if _, visible := cardByID[cardID]; !visible {

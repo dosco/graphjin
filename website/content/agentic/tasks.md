@@ -198,4 +198,9 @@ tasks with the [artifact store](/agentic/artifacts/); tune `tasks.max_per_owner`
 or `graphjin://task` resource; lifecycle and journals use GraphQL, while only
 `ask_graphjin_agent` adds a new `task_id` argument.
 
+After a task closes, MCP `next` guidance offers one more explicit step: distill
+selected durable learnings into owner-only [catalog annotations](/agentic/annotations/).
+Those notes still require review and a later approval before they become shared
+catalog context; task history is never promoted automatically.
+
 At runtime, inspect `query_catalog(id: "help:tasks")` for the local contract.

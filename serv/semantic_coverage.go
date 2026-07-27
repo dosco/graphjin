@@ -95,7 +95,7 @@ func (s *graphjinService) queryCatalogCoverage(ctx context.Context, snapshot *co
 			query := base
 			query.Search = groups[groupIndex].search
 			query.Explain = true
-			hints := s.semantic.hintsForVector(snapshot, query, index, vector)
+			hints := s.semantic.hintsForVector(ctx, snapshot, query, index, vector)
 			result := groups[groupIndex].result
 			var err error
 			if len(hints.hints) != 0 {

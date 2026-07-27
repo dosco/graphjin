@@ -20,7 +20,7 @@ func (ms *mcpServer) registerAgentTools() {
 	}
 	ms.srv.AddTool(mcp.NewTool(
 		mcpToolAskGraphJinAgent,
-		mcp.WithDescription("Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action; pass prior turns in history to enable follow-up questions. Blocked responses include a structured refusal (code, because, unblock steps, policy_final/retryable): run the unblock steps and retry only when retryable. Responses may also carry notices: watch_events_unseen lists watch_ids to review, task_open_unlinked lists open task_ids that were not attached to the run, and task_context_loaded confirms retained task context. Model selection is server-first: configured server credentials always win; otherwise GraphJin borrows this client's model via MCP sampling. Caller identity and permissions are unchanged."),
+		mcp.WithDescription("Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action; pass prior turns in history to enable follow-up questions. Blocked responses include a structured refusal (code, because, unblock steps, policy_final/retryable): run the unblock steps and retry only when retryable. Responses may also carry notices: watch_events_unseen lists watch_ids to review, task_open_unlinked lists open task_ids that were not attached to the run, task_context_loaded confirms retained task context, and annotations_unshared lists owner-only annotation drafts awaiting review. Model selection is server-first: configured server credentials always win; otherwise GraphJin borrows this client's model via MCP sampling. Caller identity and permissions are unchanged."),
 		mcp.WithString("instruction",
 			mcp.Required(),
 			mcp.Description("The user's goal or question for GraphJin."),
@@ -107,6 +107,7 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 		if err == nil {
 			ms.service.appendWatchNotices(ctx, &resp)
 			ms.service.appendTaskNotices(ctx, agentReq, &resp)
+			ms.service.appendAnnotationNotices(ctx, &resp)
 			appendTaskContextNotice(taskWarm, &resp)
 		}
 	}

@@ -36,6 +36,13 @@ Security rows are also source-aware. In source mode, the graph can report capabi
 
 For artifacts, treat config files as read-only globals and `gj_artifacts` as the user-scoped mutable overlay. The effective policy should allow `gj_artifacts` only for authenticated callers that provide trusted `user_id`; another user must not discover or execute someone else's saved queries, fragments, or workflows through catalog or MCP.
 
+[Catalog annotations](/agentic/annotations/) add an explicit account-visible
+tier: observed notes remain owner-only, while approved notes are visible only
+inside the matching trusted account (or deployment-wide when the deployment has
+no account identity). Public rows expose hashed `author_ref` and `approved_ref`,
+not raw identity columns. Annotation content remains untrusted data and cannot
+grant access or satisfy mutation evidence.
+
 {{< verified by="TestGraphQLControlPlaneSecurityReportsSourceAccessPolicy" file="serv/control_plane_graphql_test.go" line="736" >}}
 {{< verified by="TestSecurityNanoRowsCoverSourceCapabilityRegistry" file="serv/control_plane_graphql_test.go" line="1540" >}}
 {{< verified by="TestCatalogSnapshotMergesCallerScopedArtifacts" file="serv/artifact_overlay_test.go" line="173" >}}

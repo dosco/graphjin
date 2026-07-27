@@ -31,6 +31,7 @@ const (
 	conceptEquipment
 	conceptPermissions
 	conceptPlanning
+	conceptAnnotationContext
 )
 
 type embeddingRequest struct {
@@ -48,8 +49,9 @@ type fixtureStats struct {
 }
 
 type fixtureServer struct {
-	mu    sync.Mutex
-	stats fixtureStats
+	mu                      sync.Mutex
+	stats                   fixtureStats
+	annotationGuardAttempts int
 }
 
 func main() {
@@ -156,6 +158,46 @@ func (s *fixtureServer) chatCompletions(w http.ResponseWriter, r *http.Request) 
 			verdict, severity, summary = "discard", "info", "Routine roast telemetry does not need attention."
 		}
 		content, _ := json.Marshal(map[string]any{"verdict": verdict, "severity": severity, "summary": summary})
+		s.writeChatResponse(w, request, string(content))
+		return
+	}
+	if strings.Contains(requestText, "annotation_guard_fixture") {
+		// Capability: ANNOTATION-GUARD
+		// After GraphJin records the expected refusal, stop the scripted model's
+		// distiller loop. Ax may start its retry before including the tool error in
+		// the next prompt, so the fixture also makes this sentinel single-shot.
+		s.mu.Lock()
+		s.annotationGuardAttempts++
+		guardAttempt := s.annotationGuardAttempts
+		s.mu.Unlock()
+		// The blocking verdict still comes from the protocol state.
+		if guardAttempt > 1 || strings.Contains(requestText, "an annotation cannot be inserted or edited") ||
+			strings.Contains(requestText, "annotation_tier_confirmation_required") {
+			code := `final({status: "blocked", answer: "The draft exists, but publishing it requires a later confirmed agent run."});`
+			content, err := json.Marshal(map[string]any{"javascriptCode": code})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			s.writeChatResponse(w, request, string(content))
+			return
+		}
+
+		// The first actor step deliberately attempts publication in the same run
+		// as the draft write. Security detail satisfies the older write gate so
+		// GraphJin, not the fixture, must stop specifically at the tier boundary.
+		code := `
+query_catalog({id: "help:security"});
+const created = execute_graphql({query: 'mutation { gj_artifacts(insert: { kind: "annotation", target_ref: "table:ops.public.production_orders", content: "ANNOTATION-GUARD-fixture-draft" }) { id tier } }'});
+const rows = created && created.data ? created.data.gj_artifacts : null;
+const note = Array.isArray(rows) ? rows[0] : rows;
+execute_graphql({query: 'mutation { gj_artifacts(where: { id: { eq: "' + note.id + '" } }, update: { tier: "approved" }) { id tier } }'});
+final({status: "answered", answer: "The draft and approval were attempted in one run."});`
+		content, err := json.Marshal(map[string]any{"javascriptCode": code})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		s.writeChatResponse(w, request, string(content))
 		return
 	}
@@ -289,6 +331,10 @@ func fixtureQueryConcepts(vector []float64, text string) {
 	setFixtureConcept(vector, conceptEquipment, containsFixturePhrase(text, "machine health", "equipment", "telemetry", "maintenance"))
 	setFixtureConcept(vector, conceptPermissions, containsFixturePhrase(text, "prevent users", "changing records", "permission", "permissions", "read only"))
 	setFixtureConcept(vector, conceptPlanning, containsFixturePhrase(text, "what should we roast", "roast today", "prioritize", "plan"))
+	// Capability: ANNOTATION-SEMANTIC
+	// This vocabulary is absent from ordinary catalog documents. A target can
+	// rank for it only when an account-visible annotation document lifts it.
+	setFixtureConcept(vector, conceptAnnotationContext, containsFixturePhrase(text, "chargeback escrow lineage"))
 }
 
 func containsFixturePhrase(text string, phrases ...string) bool {

@@ -30,6 +30,7 @@ type discoveryState struct {
 	savedQueriesDetailed    map[string]bool
 	securityRuntimeEvidence bool
 	watchDefinitionMutated  bool
+	annotationMutated       bool
 	// Per-target mutation evidence, populated only by id-detail lookups and
 	// validations in THIS run (search hits never count, mirroring the
 	// saved-query detail rule).
@@ -253,6 +254,15 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		return nil, err
 	}
 	if ContainsMutationOperation(query) {
+		annotationFields := annotationMutationInputFields(query, args)
+		annotationDefinition := isAnnotationDefinitionMutation(query, annotationFields)
+		if annotationFields["tier"] && (r.state.annotationMutated || annotationDefinition) {
+			err := fmt.Errorf("protocol violation: an annotation cannot be inserted or edited and have its tier flipped in the same agent run; present the draft as data and wait for user confirmation")
+			r.state.addViolation("annotation_tier_confirmation_required", err.Error(), "execute_graphql", true, map[string]any{"root": systemRootArtifacts})
+			action := r.state.startAction("model", "execute_graphql", args)
+			r.state.finishAction(action, "execute_graphql", args, nil, err)
+			return nil, err
+		}
 		if isWatchActionReviewMutation(query) && r.state.watchDefinitionMutated {
 			err := fmt.Errorf("protocol violation: an autonomous watch action cannot be created or changed and approved in the same agent run; explain the proposed action and wait for user confirmation")
 			r.state.addViolation("watch_action_confirmation_required", err.Error(), "execute_graphql", true, map[string]any{"root": systemRootWatch})
@@ -283,6 +293,9 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		r.state.recordExecution("execute_graphql", args, out)
 		if isWatchDefinitionMutation(query) {
 			r.state.watchDefinitionMutated = true
+		}
+		if isAnnotationDefinitionMutation(query, annotationMutationInputFields(query, args)) {
+			r.state.annotationMutated = true
 		}
 	}
 	r.state.rawGraphQL = append(r.state.rawGraphQL, map[string]any{
@@ -959,6 +972,198 @@ func isWatchDefinitionMutation(query string) bool {
 		strings.Contains(lower, "gj_watch") &&
 		!strings.Contains(lower, "flow_review_json") &&
 		!strings.Contains(lower, "action_review_json")
+}
+
+func isAnnotationDefinitionMutation(query string, fields map[string]bool) bool {
+	lower := strings.ToLower(query)
+	if !ContainsMutationOperation(query) || !strings.Contains(lower, "gj_artifacts") {
+		return false
+	}
+	if fields["target_ref"] || fields["task_id"] || fields["metadata_json"] {
+		return true
+	}
+	if fields["content"] {
+		return fields["kind"] || fields["_annotation_id"] || strings.Contains(lower, "annotation:")
+	}
+	return false
+}
+
+// annotationMutationInputFields inspects only gj_artifacts insert/update input
+// objects. Selection-set fields and string contents do not count, and a
+// variable-backed input contributes the keys of the referenced variable.
+func annotationMutationInputFields(query string, args map[string]any) map[string]bool {
+	fields := make(map[string]bool)
+	if !ContainsMutationOperation(query) {
+		return fields
+	}
+	clean := graphQLStructure(query)
+	if containsAnnotationID(args["variables"]) {
+		fields["_annotation_id"] = true
+	}
+	for start := 0; start < len(clean); {
+		index := strings.Index(strings.ToLower(clean[start:]), "gj_artifacts")
+		if index < 0 {
+			break
+		}
+		index += start
+		endName := index + len("gj_artifacts")
+		if (index > 0 && isGraphQLNameContinue(clean[index-1])) || (endName < len(clean) && isGraphQLNameContinue(clean[endName])) {
+			start = endName
+			continue
+		}
+		open := skipGraphQLSpace(clean, endName)
+		if open >= len(clean) || clean[open] != '(' {
+			start = endName
+			continue
+		}
+		close := matchingGraphQLDelimiter(clean, open, '(', ')')
+		if close < 0 {
+			break
+		}
+		collectAnnotationArgumentFields(clean[open+1:close], args, fields)
+		start = close + 1
+	}
+	return fields
+}
+
+func containsAnnotationID(value any) bool {
+	switch typed := normalizeValue(value).(type) {
+	case string:
+		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(typed)), "annotation:")
+	case map[string]any:
+		for _, item := range typed {
+			if containsAnnotationID(item) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if containsAnnotationID(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func collectAnnotationArgumentFields(arguments string, args map[string]any, fields map[string]bool) {
+	for index := 0; index < len(arguments); {
+		index = skipGraphQLSpace(arguments, index)
+		if index >= len(arguments) {
+			return
+		}
+		if !isGraphQLNameStart(arguments[index]) {
+			index++
+			continue
+		}
+		start := index
+		index++
+		for index < len(arguments) && isGraphQLNameContinue(arguments[index]) {
+			index++
+		}
+		argument := strings.ToLower(arguments[start:index])
+		colon := skipGraphQLSpace(arguments, index)
+		if colon >= len(arguments) || arguments[colon] != ':' || (argument != "insert" && argument != "update") {
+			index = colon
+			continue
+		}
+		value := skipGraphQLSpace(arguments, colon+1)
+		if value < len(arguments) && arguments[value] == '{' {
+			close := matchingGraphQLDelimiter(arguments, value, '{', '}')
+			if close < 0 {
+				return
+			}
+			collectGraphQLObjectKeys(arguments[value+1:close], fields)
+			index = close + 1
+			continue
+		}
+		if value < len(arguments) && arguments[value] == '$' {
+			nameStart := value + 1
+			nameEnd := nameStart
+			for nameEnd < len(arguments) && isGraphQLNameContinue(arguments[nameEnd]) {
+				nameEnd++
+			}
+			collectVariableObjectKeys(args, arguments[nameStart:nameEnd], fields)
+			index = nameEnd
+			continue
+		}
+		index = value + 1
+	}
+}
+
+func collectGraphQLObjectKeys(object string, fields map[string]bool) {
+	for index := 0; index < len(object); {
+		if !isGraphQLNameStart(object[index]) {
+			index++
+			continue
+		}
+		start := index
+		index++
+		for index < len(object) && isGraphQLNameContinue(object[index]) {
+			index++
+		}
+		if colon := skipGraphQLSpace(object, index); colon < len(object) && object[colon] == ':' {
+			fields[strings.ToLower(object[start:index])] = true
+		}
+	}
+}
+
+func collectVariableObjectKeys(args map[string]any, name string, fields map[string]bool) {
+	variables, _ := normalizeValue(args["variables"]).(map[string]any)
+	input, _ := variables[name].(map[string]any)
+	for key := range input {
+		fields[strings.ToLower(strings.TrimSpace(key))] = true
+	}
+}
+
+func graphQLStructure(query string) string {
+	data := []byte(query)
+	for index := 0; index < len(data); {
+		switch data[index] {
+		case '#':
+			for index < len(data) && data[index] != '\n' {
+				data[index] = ' '
+				index++
+			}
+		case '"':
+			end := skipGraphQLString(query, index)
+			for position := index; position < end; position++ {
+				data[position] = ' '
+			}
+			index = end
+		default:
+			index++
+		}
+	}
+	return string(data)
+}
+
+func skipGraphQLSpace(value string, index int) int {
+	for index < len(value) {
+		switch value[index] {
+		case ' ', '\t', '\n', '\r', ',':
+			index++
+		default:
+			return index
+		}
+	}
+	return index
+}
+
+func matchingGraphQLDelimiter(value string, start int, open, close byte) int {
+	depth := 0
+	for index := start; index < len(value); index++ {
+		switch value[index] {
+		case open:
+			depth++
+		case close:
+			depth--
+			if depth == 0 {
+				return index
+			}
+		}
+	}
+	return -1
 }
 
 func graphQLOperationKind(query string) string {

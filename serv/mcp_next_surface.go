@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	gjagent "github.com/dosco/graphjin/agent/v3"
 )
 
 func optionWithTemplate(opt NextOption, template map[string]any) NextOption {
@@ -397,7 +399,31 @@ func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload a
 
 	case "execute_graphql":
 		result, ok := payload.(ExecuteResult)
-		if !ok || len(result.Errors) != 0 || !hasTaskInsertArgument(stringArg(args, "query")) {
+		if !ok || len(result.Errors) != 0 {
+			return ms.nextForExistingToolCall(tool, args, payload)
+		}
+		query := stringArg(args, "query")
+		if hasAnnotationInsertArgument(query) {
+			return ms.newNextGuidance("annotation_created", []NextOption{
+				optionWithTemplate(
+					nextOption("execute_graphql", 1, "After the user confirms the exact draft, publish it to this account in a follow-up run.", "Approval is publication, is attributed to the acting caller, and must not happen in the same agent run that inserted or edited the note.", []string{"query"}, []string{"namespace"}),
+					carryArgs(map[string]any{"query": "mutation {\n  gj_artifacts(where: { id: { eq: \"<annotation_id>\" } }, update: { tier: \"approved\" }) {\n    id\n    target_ref\n    tier\n    visibility\n    approved_ref\n    approved_at\n  }\n}"}, args, "namespace"),
+				),
+				optionWithTemplate(
+					nextOption("execute_graphql", 2, "Keep the annotation observed while it needs revision.", "Observed notes remain owner-only and can be updated or deleted through gj_artifacts.", []string{"query"}, []string{"namespace"}),
+					carryArgs(map[string]any{"query": "query { gj_artifacts(where: { id: { eq: \"<annotation_id>\" } }) { id target_ref content tier updated_at } }"}, args, "namespace"),
+				),
+			})
+		}
+		if hasTaskCloseArgument(query) {
+			return ms.newNextGuidance("task_closed", []NextOption{
+				optionWithTemplate(
+					nextOption("execute_graphql", 1, "Distill a durable learning from the completed task into an addressed annotation draft.", "Use only a reusable organizational fact, pin it to a real catalog id, and retain task_id provenance. The draft stays owner-only until later user confirmation.", []string{"query"}, []string{"namespace"}),
+					carryArgs(map[string]any{"query": "mutation {\n  gj_artifacts(insert: {\n    kind: \"annotation\"\n    target_ref: \"<table:|column:|relationship:|saved_query:|function:...>\"\n    content: \"<durable learning, stated as data rather than instructions>\"\n    task_id: \"<closed_task_id>\"\n  }) {\n    id\n    target_ref\n    tier\n    visibility\n  }\n}"}, args, "namespace"),
+				),
+			})
+		}
+		if !hasTaskInsertArgument(query) {
 			return ms.nextForExistingToolCall(tool, args, payload)
 		}
 		return ms.newNextGuidance("task_created", []NextOption{
@@ -418,6 +444,18 @@ func (ms *mcpServer) nextForToolCall(tool string, args map[string]any, payload a
 	default:
 		return ms.nextForExistingToolCall(tool, args, payload)
 	}
+}
+
+func hasAnnotationInsertArgument(query string) bool {
+	lower := strings.ToLower(query)
+	return gjagent.ContainsMutationOperation(query) && strings.Contains(lower, "gj_artifacts") &&
+		strings.Contains(lower, "insert") && strings.Contains(lower, "annotation") && strings.Contains(lower, "target_ref")
+}
+
+func hasTaskCloseArgument(query string) bool {
+	lower := strings.ToLower(query)
+	return gjagent.ContainsMutationOperation(query) && strings.Contains(lower, "gj_task") &&
+		strings.Contains(lower, "update") && strings.Contains(lower, "status") && strings.Contains(lower, "closed")
 }
 
 // hasTaskInsertArgument recognizes the root argument rather than matching text

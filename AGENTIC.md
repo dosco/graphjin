@@ -276,7 +276,7 @@ flowchart LR
   subgraph ROOTS["Governed graph (definition root → action root)"]
     APP["Application roots<br/>business data — never copied"]
     CAT["gj_catalog<br/>discovery spine"]
-    ART["gj_artifacts<br/>saved queries · fragments · workflows<br/>owner-scoped"]
+    ART["gj_artifacts<br/>saved queries · fragments · workflows · annotations<br/>owner/account-scoped"]
     TSK["gj_task → gj_task_entry<br/>declared goal → provenance trail"]
     WCH["gj_watch → gj_watch_event<br/>standing questions → fired-event inbox"]
     WFL["gj_workflow → gj_workflow_execution<br/>definitions → ephemeral runs"]
@@ -1141,6 +1141,31 @@ bounded nanoDB projection (see
 store. The runtime contract is discoverable with
 `query_catalog(id: "help:artifacts")`.
 
+### Catalog Annotations: Reviewed Notes With An Address
+
+`gj_artifacts(kind: "annotation")` stores a bounded freeform organizational note
+against a catalog card ID beginning with `table:`, `column:`, `relationship:`,
+`saved_query:`, or `function:`. Annotation text is always untrusted data, never
+instructions, policy, authorization, or mutation evidence.
+
+An insert is forced to the owner-only `observed` tier. A separate update to
+`tier: "approved"` publishes it to the caller's account (or deployment-wide
+when there is no account) and stamps the actual approver. Owners approve their
+own notes; admins may moderate other owners' notes. Editing an approved note
+demotes it and clears approval attribution. The built-in agent cannot create or
+edit a note and approve it in the same run.
+
+Exact `query_catalog(id: ...)` and `ids` lookups merge visible approved notes as
+an `annotations` detail section with load-bearing data-not-instructions framing.
+Raw `gj_catalog` remains source/catalog truth and never contains annotation
+text. Dropped targets can still return a `stale_annotation_target` detail, but
+that historical note cannot recreate a schema entity or mutation evidence.
+Lexical discovery uses the normal artifact projection. Semantic discovery
+embeds each approved note as a separate account-filtered document that lifts its
+target without changing the entity document. Demotion or deletion removes it
+from the next semantic generation. The full website guide is
+[Catalog Annotations](https://graphjin.com/agentic/annotations/).
+
 ### Tasks: Explicit Durable Intent With A Trail
 
 `gj_task` stores a caller-declared goal and optional working snapshot;
@@ -1183,6 +1208,9 @@ owner-scoped and benign when the task is missing or foreign; a real delete
 cascades entries and clears `task_id` on linked watches. Prefer closing so the
 trail remains auditable. No `graphjin://task` MCP resource exists. The runtime
 contract is `query_catalog(id: "help:tasks")`.
+After close, MCP next guidance can offer distilling selected durable learnings
+into observed annotations for a later explicit review; nothing is promoted
+automatically.
 
 ### Watches: Standing Questions With A Durable Inbox
 
@@ -1484,6 +1512,9 @@ artifacts:
 Config-folder fragments, saved queries, and workflows remain global,
 read-only artifacts. Database-backed artifacts are scoped by `owner_id = user_id`
 and can override same-name globals without changing config files.
+Annotation artifacts use the same store but a different lifecycle: observed
+notes are owner-only; approved notes are account-visible reviewed context tied
+to a catalog card ID.
 Declared tasks use `gj_task` and `gj_task_entry` in that same database. They
 are owner-scoped, created only by an explicit mutation, and can correlate an
 embedded-agent run or a watch without granting any additional permission.

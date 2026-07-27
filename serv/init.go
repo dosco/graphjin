@@ -64,7 +64,7 @@ func validateConf(s *graphjinService) error {
 	// the override is visible rather than silent.
 	if effectiveMode(s.conf) == modeProd {
 		if s.conf.Core.Artifacts.Enabled {
-			s.log.Warn("prod mode: artifacts persistence is disabled (agentic-only); saved queries, fragments, and workflows are not written to the database. Use agentic mode to enable it.")
+			s.log.Warn("prod mode: artifacts persistence is disabled (agentic-only); saved queries, fragments, workflows, and catalog annotations are not written to the database. Use agentic mode to enable it.")
 			s.conf.Core.Artifacts.Enabled = false
 		}
 		if s.conf.Agent.Enabled {

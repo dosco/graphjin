@@ -149,7 +149,9 @@ Declared tasks keep themselves visible through owner-scoped response notices.
 reports a declared saved-query check that left its task open. Notice IDs are
 correlation hints only; callers must still use the governed task roots, and a
 task ID never grants access. See [Declared Tasks](/agentic/tasks/) for the full
-lifecycle.
+lifecycle. `annotations_unshared` similarly lists bounded owner-only catalog
+annotation drafts. The agent can draft one, but it cannot approve a new or
+edited note in the same run; see [Catalog Annotations](/agentic/annotations/).
 
 When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen`, a count, and `watch_ids`. For MCP sessions with concrete per-watch subscriptions, the notice is limited to those watches; query and acknowledge only the listed IDs. MCP clients can subscribe to `graphjin://watch-events/unseen/{watch_id}` for watch-specific push signals, while the aggregate `graphjin://watch-events/unseen` resource remains the owner/account-wide compatibility path. Resource notifications identify a changed resource but do not contain the full event payload.
 

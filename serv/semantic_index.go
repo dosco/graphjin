@@ -24,8 +24,8 @@ import (
 )
 
 const (
-	semanticIndexFormatVersion    = 1
-	semanticDocumentFormatVersion = 1
+	semanticIndexFormatVersion    = 2
+	semanticDocumentFormatVersion = 2
 	semanticEmbeddingBatchSize    = 64
 	semanticEmbeddingConcurrency  = 2
 	semanticQueryCacheSize        = 1024
@@ -157,6 +157,7 @@ type semanticDocument struct {
 	Text          string
 	TargetCardIDs []string
 	MemberColumns []string
+	AccountRef    string
 }
 
 type semanticDocumentMap struct {
@@ -164,6 +165,7 @@ type semanticDocumentMap struct {
 	Kind          string   `json:"kind"`
 	TargetCardIDs []string `json:"target_card_ids"`
 	MemberColumns []string `json:"member_columns,omitempty"`
+	AccountRef    string   `json:"account_ref,omitempty"`
 	VectorOffset  int      `json:"vector_offset"`
 }
 
@@ -406,7 +408,8 @@ func (i *semanticCatalogIndex) ensureCurrent(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	if active := i.current(); active != nil && active.manifest.CatalogRevision == snapshot.Revision {
+	revision := i.semanticCatalogRevision(ctx, snapshot)
+	if active := i.current(); active != nil && active.manifest.CatalogRevision == revision {
 		return
 	}
 	if i.redisErr != nil {
@@ -420,7 +423,7 @@ func (i *semanticCatalogIndex) ensureCurrent(ctx context.Context) {
 				return
 			}
 			i.setActive(loaded)
-			if loaded.manifest.CatalogRevision == snapshot.Revision {
+			if loaded.manifest.CatalogRevision == revision {
 				return
 			}
 		}
@@ -429,7 +432,7 @@ func (i *semanticCatalogIndex) ensureCurrent(ctx context.Context) {
 	if i.redis == nil {
 		localSemanticBuildMu.Lock()
 		defer localSemanticBuildMu.Unlock()
-		if warm, err := i.newestValidIndex(); err == nil && warm.manifest.CatalogRevision == snapshot.Revision {
+		if warm, err := i.newestValidIndex(); err == nil && warm.manifest.CatalogRevision == revision {
 			i.setActive(warm)
 			return
 		}
@@ -456,7 +459,7 @@ func (i *semanticCatalogIndex) ensureCurrent(ctx context.Context) {
 		if activeID, err := i.redisActive(ctx); err == nil && activeID != "" {
 			if loaded, err := i.load(activeID); err == nil {
 				i.setActive(loaded)
-				if loaded.manifest.CatalogRevision != snapshot.Revision {
+				if loaded.manifest.CatalogRevision != revision {
 					time.AfterFunc(time.Second, i.CatalogChanged)
 				}
 			}
@@ -498,6 +501,17 @@ func (i *semanticCatalogIndex) build(ctx context.Context, snapshot *core.Catalog
 		return nil, err
 	}
 	documents := buildSemanticDocuments(metadata, snapshot)
+	annotationDocuments, err := i.service.approvedAnnotationSemanticDocuments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	documents = append(documents, annotationDocuments...)
+	sort.Slice(documents, func(a, b int) bool {
+		if documents[a].Kind != documents[b].Kind {
+			return documents[a].Kind < documents[b].Kind
+		}
+		return documents[a].Hash < documents[b].Hash
+	})
 	if len(documents) == 0 {
 		return nil, errors.New("semantic document builder produced no safe documents")
 	}
@@ -579,6 +593,7 @@ func (i *semanticCatalogIndex) build(ctx context.Context, snapshot *core.Catalog
 			Kind:          document.Kind,
 			TargetCardIDs: append([]string(nil), document.TargetCardIDs...),
 			MemberColumns: append([]string(nil), document.MemberColumns...),
+			AccountRef:    document.AccountRef,
 			VectorOffset:  len(flat),
 		}
 		flat = append(flat, vectors[n]...)
@@ -596,7 +611,7 @@ func (i *semanticCatalogIndex) build(ctx context.Context, snapshot *core.Catalog
 		GenerationID:          id,
 		CreatedAt:             time.Now().UTC(),
 		Fingerprint:           i.fingerprint,
-		CatalogRevision:       snapshot.Revision,
+		CatalogRevision:       i.semanticCatalogRevision(ctx, snapshot),
 		DimensionPreset:       strings.ToLower(strings.TrimSpace(i.conf.Dimensions)),
 		ActualDimension:       actualDimension,
 		DocumentCount:         len(docs),

@@ -1,6 +1,6 @@
 ---
 title: "Agentic"
-description: "MCP, catalog discovery, security posture, durable verified tasks, source mode, workflows, watches, and OAuth."
+description: "MCP, catalog discovery, reviewed graph memory, durable verified tasks, source mode, workflows, watches, and OAuth."
 nav_group: "agentic"
 weight: 4
 ---
@@ -33,6 +33,11 @@ Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data 
     <a href="/agentic/workflows/">Understand workflows</a>
   </article>
 </div>
+
+Approved [catalog annotations](/agentic/annotations/) add reviewed organizational
+context to exact catalog detail and semantic recall without changing source
+metadata. They remain untrusted data, carry author and approval attribution,
+and become stale historical notes when their addressed catalog entity vanishes.
 
 <aside class="agentic-watch-feature">
   <div>

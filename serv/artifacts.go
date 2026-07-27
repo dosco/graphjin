@@ -18,7 +18,7 @@ import (
 
 const artifactsRootTable = "gj_artifacts"
 
-const artifactStoreFields = `id name kind path source visibility read_only account_id owner_id content content_json metadata_json content_hash status revision created_at updated_at`
+const artifactStoreFields = `id name kind path source visibility read_only account_id owner_id content content_json metadata_json content_hash status target_ref tier catalog_revision task_id approved_by approved_at revision created_at updated_at`
 
 const revisionStoreFields = `domain revision updated_at`
 
@@ -60,9 +60,17 @@ func artifactColumns() []core.ManagedColumn {
 		cpCol("metadata_json", "json", false),
 		cpCol("content_hash", "text", false),
 		cpCol("status", "text", false),
+		cpCol("target_ref", "text", false),
+		cpCol("tier", "text", false),
+		cpCol("catalog_revision", "text", false),
+		cpCol("task_id", "text", false),
+		cpCol("approved_by", "text", false),
+		cpCol("approved_at", "text", false),
 		cpCol("revision", "integer", false),
 		cpCol("account_ref", "text", false),
 		cpCol("owner_ref", "text", false),
+		cpCol("author_ref", "text", false),
+		cpCol("approved_ref", "text", false),
 		cpCol("created_at", "text", false),
 		cpCol("updated_at", "text", false),
 	}
@@ -156,11 +164,22 @@ func (h artifactControlPlane) dbArtifactRows(ctx context.Context) ([]map[string]
 	if !hasUser {
 		return nil, nil
 	}
-	rows, err := s.internalStoreAllRows(ctx, "artifacts", `where: { owner_id: { eq: $owner_id } }`, artifactStoreFields, map[string]any{"owner_id": userID})
+	admin := s.identityRoleIsAdmin(ctx)
+	where := `where: { owner_id: { eq: $owner_id } }`
+	vars := map[string]any{"owner_id": userID}
+	if admin {
+		where = ""
+		vars = nil
+	} else if accountID, ok := identityVarString(ctx, "account_id"); ok {
+		where = `where: { or: [{ owner_id: { eq: $owner_id } }, { and: [{ visibility: { eq: "account" } }, { account_id: { eq: $account_id } }] }, { and: [{ visibility: { eq: "account" } }, { account_id: { eq: "" } }] }] }`
+		vars["account_id"] = accountID
+	} else {
+		where = `where: { or: [{ owner_id: { eq: $owner_id } }, { and: [{ visibility: { eq: "account" } }, { account_id: { eq: "" } }] }] }`
+	}
+	rows, err := s.internalStoreAllRows(ctx, "artifacts", where, artifactStoreFields, vars)
 	if err != nil {
 		return nil, err
 	}
-	admin := s.identityRoleIsAdmin(ctx)
 	var out []map[string]any
 	for _, row := range rows {
 		visibility := stringMapValue(row, "visibility")
@@ -168,7 +187,10 @@ func (h artifactControlPlane) dbArtifactRows(ctx context.Context) ([]map[string]
 			continue
 		}
 		ownerID := stringMapValue(row, "owner_id")
-		if ownerID != userID {
+		accountID := stringMapValue(row, "account_id")
+		callerAccount, _ := identityVarString(ctx, "account_id")
+		visible := ownerID == userID || admin || (visibility == "account" && (accountID == "" || accountID == callerAccount))
+		if !visible {
 			continue
 		}
 		out = append(out, artifactProjectionRow(row, admin))
@@ -224,25 +246,31 @@ func (h artifactControlPlane) globalArtifactRows() ([]map[string]any, error) {
 		content := string(b)
 		now := time.Now().UTC().Format(time.RFC3339)
 		out = append(out, map[string]any{
-			"id":            "config:" + rel,
-			"name":          strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)),
-			"kind":          kind,
-			"path":          rel,
-			"source":        "config",
-			"visibility":    "global",
-			"read_only":     true,
-			"account_id":    "",
-			"owner_id":      "",
-			"content":       content,
-			"content_json":  nil,
-			"metadata_json": map[string]any{"path": rel},
-			"content_hash":  hashString(content),
-			"status":        "approved",
-			"revision":      int64(1),
-			"account_ref":   "",
-			"owner_ref":     "",
-			"created_at":    now,
-			"updated_at":    now,
+			"id":               "config:" + rel,
+			"name":             strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)),
+			"kind":             kind,
+			"path":             rel,
+			"source":           "config",
+			"visibility":       "global",
+			"read_only":        true,
+			"account_id":       "",
+			"owner_id":         "",
+			"content":          content,
+			"content_json":     nil,
+			"metadata_json":    map[string]any{"path": rel},
+			"content_hash":     hashString(content),
+			"status":           "approved",
+			"target_ref":       "",
+			"tier":             "",
+			"catalog_revision": "",
+			"task_id":          "",
+			"approved_by":      "",
+			"approved_at":      "",
+			"revision":         int64(1),
+			"account_ref":      "",
+			"owner_ref":        "",
+			"created_at":       now,
+			"updated_at":       now,
 		})
 	}
 	if s.fs != nil {
@@ -352,6 +380,22 @@ func (h artifactControlPlane) upsertArtifact(ctx context.Context, root core.Mana
 			Details:    map[string]any{"root": artifactsRootTable},
 		})
 		return nil, fmt.Errorf("gj_artifacts write requires user identity")
+	}
+	requestedKind := normalizeArtifactKind(stringInput(root.Input, "kind", "artifact"))
+	requestedID := strings.TrimSpace(stringWhere(root.Where, "id"))
+	if requestedID == "" {
+		requestedID = strings.TrimSpace(stringInput(root.Input, "id", ""))
+	}
+	var requestedExisting map[string]any
+	var err error
+	if requestedID != "" {
+		requestedExisting, err = s.internalArtifactStoreRow(ctx, requestedID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if requestedKind == artifactKindAnnotation || normalizeArtifactKind(stringMapValue(requestedExisting, "kind")) == artifactKindAnnotation {
+		return h.upsertAnnotation(ctx, root, requestedExisting)
 	}
 	visibility := stringInput(root.Input, "visibility", "user")
 	if visibility == "global" {
@@ -602,6 +646,12 @@ content_json JSONB,
 metadata_json JSONB,
 content_hash TEXT NOT NULL DEFAULT '',
 status TEXT NOT NULL DEFAULT 'approved',
+target_ref TEXT NOT NULL DEFAULT '',
+tier TEXT NOT NULL DEFAULT '',
+catalog_revision TEXT NOT NULL DEFAULT '',
+task_id TEXT NOT NULL DEFAULT '',
+approved_by TEXT NOT NULL DEFAULT '',
+approved_at TEXT NOT NULL DEFAULT '',
 revision BIGINT NOT NULL DEFAULT 1,
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -629,9 +679,17 @@ content_json LONGTEXT,
 metadata_json LONGTEXT,
 content_hash VARCHAR(128) NOT NULL DEFAULT '',
 status VARCHAR(32) NOT NULL DEFAULT 'approved',
+target_ref VARCHAR(1024) NOT NULL DEFAULT '',
+tier VARCHAR(32) NOT NULL DEFAULT '',
+catalog_revision VARCHAR(191) NOT NULL DEFAULT '',
+task_id VARCHAR(191) NOT NULL DEFAULT '',
+approved_by VARCHAR(191) NOT NULL DEFAULT '',
+approved_at VARCHAR(64) NOT NULL DEFAULT '',
 revision BIGINT NOT NULL DEFAULT 1,
 created_at VARCHAR(64) NOT NULL DEFAULT '',
-updated_at VARCHAR(64) NOT NULL DEFAULT ''
+updated_at VARCHAR(64) NOT NULL DEFAULT '',
+KEY idx_graphjin_artifacts_annotation_target (kind, target_ref(191), tier),
+KEY idx_graphjin_artifacts_annotation_owner (owner_id, kind, tier)
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`, table),
 			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 domain VARCHAR(64) PRIMARY KEY,
@@ -656,6 +714,12 @@ content_json TEXT,
 metadata_json TEXT,
 content_hash TEXT NOT NULL DEFAULT '',
 status TEXT NOT NULL DEFAULT 'approved',
+target_ref TEXT NOT NULL DEFAULT '',
+tier TEXT NOT NULL DEFAULT '',
+catalog_revision TEXT NOT NULL DEFAULT '',
+task_id TEXT NOT NULL DEFAULT '',
+approved_by TEXT NOT NULL DEFAULT '',
+approved_at TEXT NOT NULL DEFAULT '',
 revision INTEGER NOT NULL DEFAULT 1,
 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -677,6 +741,14 @@ func artifactMigrationDDL(dbType, schema string) []string {
 	return []string{
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS content_hash TEXT NOT NULL DEFAULT ''`, table),
 		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved'`, table),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS target_ref TEXT NOT NULL DEFAULT ''`, table),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS tier TEXT NOT NULL DEFAULT ''`, table),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS catalog_revision TEXT NOT NULL DEFAULT ''`, table),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS task_id TEXT NOT NULL DEFAULT ''`, table),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS approved_by TEXT NOT NULL DEFAULT ''`, table),
+		fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS approved_at TEXT NOT NULL DEFAULT ''`, table),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (kind, target_ref, tier)`, quotePGIdent("idx_graphjin_artifacts_annotation_target"), table),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (owner_id, kind, tier)`, quotePGIdent("idx_graphjin_artifacts_annotation_owner"), table),
 	}
 }
 
@@ -690,16 +762,68 @@ func (s *graphjinService) migrateArtifactSchema(ctx context.Context, db *sql.DB,
 		return nil
 	}
 	table := artifactTableName(dbType, schema, "artifacts")
-	contentHashDef := "TEXT NOT NULL DEFAULT ''"
-	statusDef := "TEXT NOT NULL DEFAULT 'approved'"
+	columns := []struct{ name, definition string }{
+		{"content_hash", "TEXT NOT NULL DEFAULT ''"},
+		{"status", "TEXT NOT NULL DEFAULT 'approved'"},
+		{"target_ref", "TEXT NOT NULL DEFAULT ''"},
+		{"tier", "TEXT NOT NULL DEFAULT ''"},
+		{"catalog_revision", "TEXT NOT NULL DEFAULT ''"},
+		{"task_id", "TEXT NOT NULL DEFAULT ''"},
+		{"approved_by", "TEXT NOT NULL DEFAULT ''"},
+		{"approved_at", "TEXT NOT NULL DEFAULT ''"},
+	}
 	if dbType == "mysql" || dbType == "mariadb" {
-		contentHashDef = "VARCHAR(128) NOT NULL DEFAULT ''"
-		statusDef = "VARCHAR(32) NOT NULL DEFAULT 'approved'"
+		columns = []struct{ name, definition string }{
+			{"content_hash", "VARCHAR(128) NOT NULL DEFAULT ''"},
+			{"status", "VARCHAR(32) NOT NULL DEFAULT 'approved'"},
+			{"target_ref", "VARCHAR(1024) NOT NULL DEFAULT ''"},
+			{"tier", "VARCHAR(32) NOT NULL DEFAULT ''"},
+			{"catalog_revision", "VARCHAR(191) NOT NULL DEFAULT ''"},
+			{"task_id", "VARCHAR(191) NOT NULL DEFAULT ''"},
+			{"approved_by", "VARCHAR(191) NOT NULL DEFAULT ''"},
+			{"approved_at", "VARCHAR(64) NOT NULL DEFAULT ''"},
+		}
 	}
-	if err := ensureSQLColumn(ctx, db, dbType, table, "content_hash", contentHashDef); err != nil {
-		return err
+	for _, column := range columns {
+		if err := ensureSQLColumn(ctx, db, dbType, table, column.name, column.definition); err != nil {
+			return err
+		}
 	}
-	return ensureSQLColumn(ctx, db, dbType, table, "status", statusDef)
+	return ensureArtifactAnnotationIndexes(ctx, db, dbType, table)
+}
+
+func ensureArtifactAnnotationIndexes(ctx context.Context, db *sql.DB, dbType, table string) error {
+	indexes := []struct {
+		name    string
+		columns string
+	}{
+		{"idx_graphjin_artifacts_annotation_target", "kind, target_ref, tier"},
+		{"idx_graphjin_artifacts_annotation_owner", "owner_id, kind, tier"},
+	}
+	for _, index := range indexes {
+		if dbType == "mysql" || dbType == "mariadb" {
+			rows, err := db.QueryContext(ctx, fmt.Sprintf("SHOW INDEX FROM %s WHERE Key_name = '%s'", table, index.name))
+			if err == nil {
+				exists := rows.Next()
+				_ = rows.Close()
+				if exists {
+					continue
+				}
+			}
+			columns := index.columns
+			if strings.Contains(columns, "target_ref") {
+				columns = "kind, target_ref(191), tier"
+			}
+			if _, err := db.ExecContext(ctx, fmt.Sprintf("CREATE INDEX %s ON %s (%s)", quoteStoreIdent(dbType, index.name), table, columns)); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (%s)", quoteStoreIdent(dbType, index.name), table, index.columns)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureSQLColumn(ctx context.Context, db *sql.DB, dbType, table, column, definition string) error {
@@ -987,26 +1111,35 @@ func jsonValue(s string, _ string) any {
 func artifactProjectionRow(row map[string]any, rawIDs bool) map[string]any {
 	accountID := stringMapValue(row, "account_id")
 	ownerID := stringMapValue(row, "owner_id")
+	approvedBy := stringMapValue(row, "approved_by")
 	return map[string]any{
-		"id":            stringMapValue(row, "id"),
-		"name":          stringMapValue(row, "name"),
-		"kind":          stringMapValue(row, "kind"),
-		"path":          stringMapValue(row, "path"),
-		"source":        stringMapValue(row, "source"),
-		"visibility":    stringMapValue(row, "visibility"),
-		"read_only":     boolMapValue(row, "read_only"),
-		"account_id":    safeArtifactIdentity(accountID, rawIDs),
-		"owner_id":      safeArtifactIdentity(ownerID, rawIDs),
-		"content":       stringMapValue(row, "content"),
-		"content_json":  row["content_json"],
-		"metadata_json": row["metadata_json"],
-		"content_hash":  stringMapValue(row, "content_hash"),
-		"status":        artifactStatus(stringMapValue(row, "status")),
-		"revision":      int64MapValue(row, "revision"),
-		"account_ref":   safeArtifactIdentity(accountID, false),
-		"owner_ref":     safeArtifactIdentity(ownerID, false),
-		"created_at":    stringMapValue(row, "created_at"),
-		"updated_at":    stringMapValue(row, "updated_at"),
+		"id":               stringMapValue(row, "id"),
+		"name":             stringMapValue(row, "name"),
+		"kind":             stringMapValue(row, "kind"),
+		"path":             stringMapValue(row, "path"),
+		"source":           stringMapValue(row, "source"),
+		"visibility":       stringMapValue(row, "visibility"),
+		"read_only":        boolMapValue(row, "read_only"),
+		"account_id":       safeArtifactIdentity(accountID, rawIDs),
+		"owner_id":         safeArtifactIdentity(ownerID, rawIDs),
+		"content":          stringMapValue(row, "content"),
+		"content_json":     row["content_json"],
+		"metadata_json":    row["metadata_json"],
+		"content_hash":     stringMapValue(row, "content_hash"),
+		"status":           artifactStatus(stringMapValue(row, "status")),
+		"target_ref":       stringMapValue(row, "target_ref"),
+		"tier":             stringMapValue(row, "tier"),
+		"catalog_revision": stringMapValue(row, "catalog_revision"),
+		"task_id":          stringMapValue(row, "task_id"),
+		"approved_by":      safeArtifactIdentity(approvedBy, rawIDs),
+		"approved_at":      stringMapValue(row, "approved_at"),
+		"revision":         int64MapValue(row, "revision"),
+		"account_ref":      safeArtifactIdentity(accountID, false),
+		"owner_ref":        safeArtifactIdentity(ownerID, false),
+		"author_ref":       safeArtifactIdentity(ownerID, false),
+		"approved_ref":     safeArtifactIdentity(approvedBy, false),
+		"created_at":       stringMapValue(row, "created_at"),
+		"updated_at":       stringMapValue(row, "updated_at"),
 	}
 }
 

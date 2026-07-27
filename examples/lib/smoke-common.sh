@@ -22,6 +22,7 @@ DEMO_NAME="${DEMO_NAME:-demo}"
 RUN_AGENT="${GRAPHJIN_AGENT_SMOKE:-auto}"
 RUN_AGENT_EVAL="${GRAPHJIN_AGENT_EVAL:-never}"
 RUN_MODEL_RESOLUTION="${GRAPHJIN_MODEL_RESOLUTION_SMOKE:-${GRAPHJIN_SAMPLING_SMOKE:-never}}"
+RUN_DEEP="${GRAPHJIN_DEEP_SMOKE:-never}"
 TIMEOUT="${GRAPHJIN_SMOKE_TIMEOUT:-180}"
 USER_ID="${GRAPHJIN_SMOKE_USER_ID:-demo-user}"
 USER_ROLE="${GRAPHJIN_SMOKE_USER_ROLE:-user}"
@@ -38,7 +39,7 @@ usage() {
 ${DEMO_NAME} GraphJin smoke suite.
 
 Usage:
-  smoke.sh [--url URL] [--agent|--no-agent|--agent-eval] [--model-resolution]
+  smoke.sh [--url URL] [--agent|--no-agent|--agent-eval] [--model-resolution] [--deep]
 
 Options:
   --url URL     GraphJin base URL (default: ${BASE_URL}).
@@ -46,6 +47,7 @@ Options:
   --agent-eval  Run stricter open-ended agent protocol evals.
   --model-resolution  Check automatic MCP client-model fallback and REST failure.
   --no-agent    Skip REST and MCP agent checks.
+  --deep        Run slow real-time background-worker checks supported by the demo.
 USAGE
 }
 
@@ -67,6 +69,10 @@ smoke_parse_args() {
         ;;
       --model-resolution|--sampling)
         RUN_MODEL_RESOLUTION="always"
+        shift
+        ;;
+      --deep)
+        RUN_DEEP="always"
         shift
         ;;
       --no-agent)
@@ -150,29 +156,35 @@ jwt_hs256() {
   printf '%s.%s.%s' "$header" "$payload" "$sig"
 }
 
-# build_auth_args [role] -> sets the global AUTH_ARGS curl-arg array for that
-# role. Dev identity headers are always sent (dev-mode servers trust them,
-# JWT-mode servers ignore them); when SMOKE_JWT_SECRET is set a freshly minted
-# HS256 bearer token is added too (agentic-mode servers verify it).
-build_auth_args() {
-  local role="${1:-$USER_ROLE}"
+# build_auth_args_for_identity <user> <role> <account> sets AUTH_ARGS for an
+# explicit principal. Keeping identity construction in one place lets the same
+# isolation tests run against dev header trust and agentic JWT verification.
+build_auth_args_for_identity() {
+  local user="$1"
+  local role="$2"
+  local account="$3"
   AUTH_ARGS=(
     -H "Content-Type: application/json"
-    -H "X-User-ID: ${USER_ID}"
+    -H "X-User-ID: ${user}"
     -H "X-User-Role: ${role}"
-    -H "X-Account-ID: ${ACCOUNT_ID}"
+    -H "X-Account-ID: ${account}"
   )
   if [ -n "${SMOKE_JWT_SECRET:-}" ]; then
     local claims token
     claims="$(jq -nc \
-      --arg sub "$USER_ID" \
+      --arg sub "$user" \
       --arg role "$role" \
-      --arg acct "$ACCOUNT_ID" \
+      --arg acct "$account" \
       --arg rc "$SMOKE_JWT_ROLES_CLAIM" \
       '{sub: $sub, account_id: $acct, iat: (now | floor), exp: ((now | floor) + 3600)} + {($rc): [$role]}')"
     token="$(jwt_hs256 "$SMOKE_JWT_SECRET" "$claims")"
     AUTH_ARGS+=(-H "Authorization: Bearer ${token}")
   fi
+}
+
+# build_auth_args [role] preserves the original role-only helper contract.
+build_auth_args() {
+  build_auth_args_for_identity "$USER_ID" "${1:-$USER_ROLE}" "$ACCOUNT_ID"
 }
 
 # --- transport + assertions --------------------------------------------------
@@ -215,6 +227,31 @@ post_json_as_role() {
   )"
   if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
     echo "HTTP $http_code from $url (role=${role})" >&2
+    sed -n '1,160p' "$out" >&2
+    return 1
+  fi
+}
+
+post_json_as_identity() {
+  local user="$1"
+  local role="$2"
+  local account="$3"
+  local url="$4"
+  local payload="$5"
+  local out="$6"
+  local http_code
+  build_auth_args_for_identity "$user" "$role" "$account"
+  local identity_auth=("${AUTH_ARGS[@]}")
+  http_code="$(
+    curl -sS --max-time "$TIMEOUT" \
+      -o "$out" \
+      -w '%{http_code}' \
+      -X POST "$url" \
+      "${identity_auth[@]}" \
+      --data "$payload"
+  )"
+  if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+    echo "HTTP $http_code from $url (user=${user}, role=${role}, account=${account})" >&2
     sed -n '1,160p' "$out" >&2
     return 1
   fi
@@ -268,11 +305,12 @@ assert_jq_args() {
 graphql() {
   local name="$1"
   local query="$2"
+  local capability="${3:-}"
   local payload out
   out="$TMP_DIR/${name}.json"
   payload="$(jq -n --arg query "$query" '{query:$query}')"
   post_json "${BASE_URL%/}/api/v1/graphql" "$payload" "$out"
-  assert_jq "$out" '((.errors // []) | length) == 0' "$name has no GraphQL errors"
+  assert_jq "$out" '((.errors // []) | length) == 0' "${capability:+[${capability}] }$name has no GraphQL errors"
   printf '%s\n' "$out"
 }
 
@@ -280,12 +318,13 @@ graphql() {
 graphql_expect_error() {
   local name="$1"
   local query="$2"
+  local capability="${3:-}"
   local payload out
   out="$TMP_DIR/${name}.json"
   payload="$(jq -n --arg query "$query" '{query:$query}')"
   post_json "${BASE_URL%/}/api/v1/graphql" "$payload" "$out" || true
   if ! jq -e '((.errors // []) | length) > 0' "$out" >/dev/null 2>&1; then
-    echo "expected GraphQL errors for $name, got:" >&2
+    echo "expected GraphQL errors for ${capability:+[${capability}] }$name, got:" >&2
     jq . "$out" >&2 || cat "$out" >&2
     return 1
   fi
@@ -303,6 +342,40 @@ graphql_as_role() {
   printf '%s\n' "$out"
 }
 
+graphql_as_identity() {
+  local user="$1"
+  local role="$2"
+  local account="$3"
+  local name="$4"
+  local query="$5"
+  local capability="${6:-}"
+  local payload out
+  out="$TMP_DIR/${name}.json"
+  payload="$(jq -n --arg query "$query" '{query:$query}')"
+  post_json_as_identity "$user" "$role" "$account" "${BASE_URL%/}/api/v1/graphql" "$payload" "$out"
+  assert_jq "$out" '((.errors // []) | length) == 0' "${capability:+[${capability}] }$name has no GraphQL errors"
+  printf '%s\n' "$out"
+}
+
+graphql_expect_error_as_identity() {
+  local user="$1"
+  local role="$2"
+  local account="$3"
+  local name="$4"
+  local query="$5"
+  local capability="${6:-}"
+  local payload out
+  out="$TMP_DIR/${name}.json"
+  payload="$(jq -n --arg query "$query" '{query:$query}')"
+  post_json_as_identity "$user" "$role" "$account" "${BASE_URL%/}/api/v1/graphql" "$payload" "$out" || true
+  if ! jq -e '((.errors // []) | length) > 0' "$out" >/dev/null 2>&1; then
+    echo "expected GraphQL errors for ${capability:+[${capability}] }$name, got:" >&2
+    jq . "$out" >&2 || cat "$out" >&2
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
+
 rest_saved_query() {
   local name="$1"
   local out="$TMP_DIR/rest-${name}.json"
@@ -314,6 +387,7 @@ rest_saved_query() {
 mcp_tool() {
   local name="$1"
   local args_json="$2"
+  local capability="${3:-}"
   # Stateful MCP servers (mcp.http_stateful) require an initialized session;
   # stateless ones tolerate the same flow, so initialize lazily either way.
   if [ -z "${MCP_INITIALIZED:-}" ]; then
@@ -333,7 +407,63 @@ mcp_tool() {
     -H "Accept: application/json, text/event-stream" \
     --data "$payload" >/dev/null
   mcp_body_json "$raw" > "$out"
-  assert_jq "$out" '(.error? | not) and (.result? != null)' "MCP ${name} returned a result" >/dev/null
+  assert_jq "$out" '(.error? | not) and (.result? != null)' "${capability:+[${capability}] }MCP ${name} returned a result" >/dev/null
+  printf '%s\n' "$out"
+}
+
+# mcp_tool_as_identity initializes, calls, and terminates a dedicated MCP
+# session with one explicit principal. Stateful sessions are identity-bound, so
+# sharing the default session here would make account-isolation checks invalid.
+mcp_tool_as_identity() {
+  local user="$1"
+  local role="$2"
+  local account="$3"
+  local name="$4"
+  local args_json="$5"
+  local label="${6:-identity-${name}}"
+  local capability="${7:-}"
+  local init_raw="$TMP_DIR/mcp-${label}-initialize.raw"
+  local init_headers="$TMP_DIR/mcp-${label}-initialize.headers"
+  local raw="$TMP_DIR/mcp-${label}-call.raw"
+  local out="$TMP_DIR/mcp-${label}-call.json"
+  local init_payload payload session_id http_code
+
+  build_auth_args_for_identity "$user" "$role" "$account"
+  local identity_auth=("${AUTH_ARGS[@]}")
+  init_payload='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"gj-smoke-identity","version":"1.0"}}}'
+  http_code="$(curl -sS --max-time "$TIMEOUT" -o "$init_raw" -D "$init_headers" -w '%{http_code}' \
+    -X POST "${BASE_URL%/}/api/v1/mcp" "${identity_auth[@]}" \
+    -H "Accept: application/json, text/event-stream" --data "$init_payload")"
+  if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+    echo "HTTP $http_code from MCP initialize (${label})" >&2
+    sed -n '1,80p' "$init_raw" >&2
+    return 1
+  fi
+  session_id="$(grep -i '^mcp-session-id:' "$init_headers" | tr -d '\r' | awk '{print $2}' | head -1 || true)"
+  curl -sS --max-time "$TIMEOUT" -o /dev/null \
+    -X POST "${BASE_URL%/}/api/v1/mcp" "${identity_auth[@]}" \
+    ${session_id:+-H "Mcp-Session-Id: ${session_id}"} \
+    -H "Accept: application/json, text/event-stream" \
+    --data '{"jsonrpc":"2.0","method":"notifications/initialized"}' || true
+
+  payload="$(jq -n --arg name "$name" --argjson args "$args_json" \
+    '{jsonrpc:"2.0", id:2, method:"tools/call", params:{name:$name, arguments:$args}}')"
+  http_code="$(curl -sS --max-time "$TIMEOUT" -o "$raw" -w '%{http_code}' \
+    -X POST "${BASE_URL%/}/api/v1/mcp" "${identity_auth[@]}" \
+    ${session_id:+-H "Mcp-Session-Id: ${session_id}"} \
+    -H "Accept: application/json, text/event-stream" --data "$payload")"
+  if [ -n "$session_id" ]; then
+    curl -sS --max-time "$TIMEOUT" -o /dev/null \
+      -X DELETE "${BASE_URL%/}/api/v1/mcp" "${identity_auth[@]}" \
+      -H "Mcp-Session-Id: ${session_id}" -H "Accept: application/json, text/event-stream" || true
+  fi
+  if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+    echo "HTTP $http_code from MCP tool ${name} (${label})" >&2
+    sed -n '1,120p' "$raw" >&2
+    return 1
+  fi
+  mcp_body_json "$raw" > "$out"
+  assert_jq "$out" '(.error? | not) and (.result? != null)' "${capability:+[${capability}] }MCP ${name} returned a result for ${label}" >/dev/null
   printf '%s\n' "$out"
 }
 
