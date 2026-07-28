@@ -120,6 +120,54 @@ To avoid running the entire suite (which can be slow):
 -   **Security-critical components**: Use Go's built-in fuzz testing (`go test -fuzz=FuzzName`) for parsers and input validation.
 -   **Focus areas**: GraphQL lexer/parser, JSON processing, SQL generation edge cases.
 
+## Demo Smoke Suites (`examples/*/scripts/smoke.sh`)
+
+Each vertical demo (coffee-roastery, saas-ops, pcb-fab, corrugated-plant, …) ships a black-box smoke suite that runs against a live demo server. These are contract checks over HTTP/MCP, not Go tests — start the server first:
+
+```bash
+graphjin serve --demo --path examples/coffee-roastery
+examples/coffee-roastery/scripts/smoke.sh              # base checks
+examples/coffee-roastery/scripts/smoke.sh --agent-eval # + open-ended agent evals
+```
+
+Flags: `--agent` (require agent checks), `--agent-eval` (stricter model-driven evals), `--no-agent`, `--deep` (waits for real background sweeps), `--model-resolution`, `--url URL`.
+
+### 1. Where code goes
+
+-   **Domain checks** (this demo's tables, saved queries, workflows) go in the demo's own `scripts/smoke.sh`.
+-   **Reusable capability suites** (`run_watch_lifecycle_suite`, `run_refusal_suite`, …) go in `examples/lib/smoke-common.sh` and are parameterized by table/prompt so every demo can call them.
+-   The shared lib provides: `graphql <label> <query>`, `mcp_tool <name> <json-args>`, `post_json`, `run_agent_rest_prompt`, `assert_jq <file> <jq-expr> <message>`, `assert_jq_args`, `log`/`pass`/`fail`, and identity helpers (`graphql_as_identity`, `build_auth_args_for_identity`) that send dev headers plus a minted HS256 JWT so the same test runs against header-trust and JWT-verified servers.
+
+### 2. Capability contract comments
+
+Every suite function carries a header comment naming what it proves:
+
+```bash
+# Capability: TASK-VERIFY-NOW
+# Contract: Closing with a passing saved-query proof closes the task ...
+# Deeper coverage: TestTaskImmediateVerificationPassAndFail.
+run_task_control_plane_suite() { ... }
+```
+
+`scripts/check-capability-smokes.sh` enforces that these IDs exist and map to suites — add the ID there when introducing a new capability. `Deeper coverage:` names the Go tests that own the fine-grained cases; the smoke proves the wiring end to end.
+
+### 3. State hygiene (non-negotiable)
+
+Smoke suites run against a **persistent, reused** demo state (`<path>/demo`). Anything you leak is still there months later, and catalog pollution directly degrades the agent: one leaked-state instance carried 108 `smoke_route_*` subscription entries against 3 real saved queries, which broke agent discovery outright.
+
+-   **Unique names**: every created resource uses a `smoke_` prefix plus a `$(date +%s)_$$` suffix.
+-   **Track and clean**: append created IDs to suite-level arrays and delete them in `smoke_extra_cleanup` (invoked by the shared EXIT trap). Cleanup must be idempotent — suffix every delete with `|| true`.
+-   **Known leak**: inserting a `gj_watch` registers its named subscription as a `gj_artifacts` row with `kind: "saved_query"` that currently outlives the watch. Until watch deletion cascades, cleanup must also delete that artifact by name.
+-   **Owner scoping**: `gj_artifacts`, `gj_watch`, and `gj_task` rows are owner-scoped — delete them under the same identity that created them; an admin bulk-delete will silently skip other owners' rows.
+-   **Reset**: interrupted runs leak by design. To reset a demo completely, stop the server and delete `<path>/demo`; a fresh provision also clears the `<path>/.graphjin` control-plane store (artifacts, watches, tasks) — on older builds delete that directory yourself, or stale saved queries survive the reset.
+
+### 4. Agent evals (`--agent-eval`)
+
+-   **Assert outcomes, not tool presence.** "The agent called `query_catalog`" is procedure; the eval must check the conclusion: real seeded values quoted in the answer, a verdict actually stated, and negative patterns excluding the known failure shapes (schema-blaming, "cannot determine", invented columns). Pin an exact verdict or figure only when one is unambiguously derivable from the seed — if the prompt's scope is genuinely open (orders alone vs orders plus subscriptions), several verdicts are defensible and pinning one makes the eval reject correct answers. Route the calculation through a workflow before pinning its result.
+-   **Natural language first.** At least one eval per demo uses the PROMPTS.md wording verbatim with zero tool coaching — that is what users type, and tool-prescriptive prompts hide real failures.
+-   **Absorb variance, not wrongness.** Model-driven evals may retry (2 attempts); an assertion that a wrong conclusion could pass on retry is a broken eval.
+-   **Model floor**: these evals need roughly a gpt-4.1-class server model (`GJ_AGENT_MODEL=gpt-4.1`); provider defaults in the mini/flash tier stall in the discovery loop. Switch providers per run with `GJ_AGENT_PROVIDER` / `GJ_AGENT_API_KEY_ENV`.
+
 ## Key constraints
 -   **Do not use ORMs** internally.
 -   **Do not use reflection** in the hot path.
