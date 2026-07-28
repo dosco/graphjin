@@ -235,10 +235,14 @@ POST   /api/v1/watches/cleanup-preview
 POST   /api/v1/watches/cleanup-apply
 ```
 
-Cleanup preview groups candidates by `expired_ephemeral`, `disabled_stale`, `errored_stale`, `orphaned_events`, and `retention_events`. Cleanup apply requires the dry-run token plus explicit IDs or allowed reason filters. Broad durable watch deletion is refused unless the caller selects watch IDs explicitly.
+Cleanup preview groups candidates by `expired_ephemeral`, `disabled_stale`, `errored_stale`, `orphaned_events`, `retention_events`, and `orphaned_saved_queries`. Cleanup apply requires the dry-run token plus explicit IDs (`watch_ids`, `event_ids`, `artifact_ids`) or allowed reason filters. Broad durable watch deletion is refused unless the caller selects watch IDs explicitly.
+
+Creating a watch in dev mode registers its named subscription as a `saved_query` artifact for catalog discovery. Deleting the watch removes that artifact again unless another watch still references the same query name, and `orphaned_saved_queries` sweeps up subscription saved queries that no longer match any watch (rows left behind by older releases included). Saved queries with `query` or `mutation` operations are never cleanup candidates.
 
 {{< verified by="TestWatchCleanupPreviewAndApplyScopesDurableDeletion" file="serv/watches_test.go" line="1142" >}}
 {{< verified by="TestWatchRESTWrappersCRUDAndUnseenEvents" file="serv/watches_test.go" line="1210" >}}
+{{< verified by="TestDeleteWatchRemovesRegisteredSavedQueryArtifact" file="serv/watches_test.go" line="965" >}}
+{{< verified by="TestWatchCleanupSweepsOrphanedSavedQueryArtifacts" file="serv/watches_test.go" line="1023" >}}
 
 ## Delivery
 

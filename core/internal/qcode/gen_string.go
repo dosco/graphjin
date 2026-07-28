@@ -18,9 +18,9 @@ func _() {
 	_ = x[QTUpsert-7]
 }
 
-const _QType_name = "UnknownQuerySubcriptionMutationInsertUpdateDeleteUpsert"
+const _QType_name = "UnknownQuerySubscriptionMutationInsertUpdateDeleteUpsert"
 
-var _QType_index = [...]uint8{0, 7, 12, 23, 31, 37, 43, 49, 55}
+var _QType_index = [...]uint8{0, 7, 12, 24, 32, 38, 44, 50, 56}
 
 func (i QType) String() string {
 	idx := int(i) - 0

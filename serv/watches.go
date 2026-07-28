@@ -575,6 +575,9 @@ func (h watchControlPlane) deleteWatch(ctx context.Context, root core.ManagedMut
 			return nil, err
 		}
 	}
+	if err := s.cleanupWatchSavedQueryArtifacts(ctx, existing); err != nil {
+		return nil, err
+	}
 	s.markWatchChanged("watch delete")
 	s.publishWatchRunnerChanged(ctx)
 	return map[string]any{"id": id, "deleted": true}, nil

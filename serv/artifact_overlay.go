@@ -668,10 +668,13 @@ func savedQueryOperation(query string, meta map[string]any) string {
 }
 
 func metadataOperation(meta map[string]any) string {
-	if op, _ := meta["operation"].(string); strings.TrimSpace(op) != "" {
-		return strings.ToLower(strings.TrimSpace(op))
+	op, _ := meta["operation"].(string)
+	op = strings.ToLower(strings.TrimSpace(op))
+	if op == "subcription" {
+		// Rows registered before the QType.String() typo fix carry this value.
+		return "subscription"
 	}
-	return ""
+	return op
 }
 
 func fragmentOnType(def string) string {
