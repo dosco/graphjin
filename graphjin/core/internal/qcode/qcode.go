@@ -25,7 +25,7 @@ type QType int8
 const (
 	QTUnknown      QType = iota // Unknown
 	QTQuery                     // Query
-	QTSubscription              // Subcription
+	QTSubscription              // Subscription
 	QTMutation                  // Mutation
 	QTInsert                    // Insert
 	QTUpdate                    // Update

@@ -9,14 +9,17 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dosco/graphjin/core/v3"
 )
 
 const (
-	watchCleanupReasonExpiredEphemeral = "expired_ephemeral"
-	watchCleanupReasonDisabledStale    = "disabled_stale"
-	watchCleanupReasonErroredStale     = "errored_stale"
-	watchCleanupReasonOrphanedEvents   = "orphaned_events"
-	watchCleanupReasonRetentionEvents  = "retention_events"
+	watchCleanupReasonExpiredEphemeral     = "expired_ephemeral"
+	watchCleanupReasonDisabledStale        = "disabled_stale"
+	watchCleanupReasonErroredStale         = "errored_stale"
+	watchCleanupReasonOrphanedEvents       = "orphaned_events"
+	watchCleanupReasonRetentionEvents      = "retention_events"
+	watchCleanupReasonOrphanedSavedQueries = "orphaned_saved_queries"
 )
 
 type watchCleanupOptions struct {
@@ -47,17 +50,19 @@ type watchCleanupCandidate struct {
 }
 
 type watchCleanupApplyRequest struct {
-	Token      string   `json:"token"`
-	StaleHours int      `json:"stale_hours,omitempty"`
-	Reasons    []string `json:"reasons,omitempty"`
-	WatchIDs   []string `json:"watch_ids,omitempty"`
-	EventIDs   []string `json:"event_ids,omitempty"`
+	Token       string   `json:"token"`
+	StaleHours  int      `json:"stale_hours,omitempty"`
+	Reasons     []string `json:"reasons,omitempty"`
+	WatchIDs    []string `json:"watch_ids,omitempty"`
+	EventIDs    []string `json:"event_ids,omitempty"`
+	ArtifactIDs []string `json:"artifact_ids,omitempty"`
 }
 
 type watchCleanupApplyResult struct {
-	ExpiredWatchIDs []string `json:"expired_watch_ids,omitempty"`
-	DeletedWatchIDs []string `json:"deleted_watch_ids,omitempty"`
-	DeletedEventIDs []string `json:"deleted_event_ids,omitempty"`
+	ExpiredWatchIDs    []string `json:"expired_watch_ids,omitempty"`
+	DeletedWatchIDs    []string `json:"deleted_watch_ids,omitempty"`
+	DeletedEventIDs    []string `json:"deleted_event_ids,omitempty"`
+	DeletedArtifactIDs []string `json:"deleted_artifact_ids,omitempty"`
 }
 
 func (s *graphjinService) previewWatchCleanup(ctx context.Context, opts watchCleanupOptions) (watchCleanupPreview, error) {
@@ -127,6 +132,14 @@ func (s *graphjinService) previewWatchCleanup(ctx context.Context, opts watchCle
 				out.Candidates[c.Reason] = append(out.Candidates[c.Reason], c)
 			}
 		}
+	}
+
+	orphans, err := s.orphanedSavedQueryArtifacts(ctx, watchRows, ownerID, admin)
+	if err != nil {
+		return out, err
+	}
+	for _, c := range orphans {
+		out.Candidates[c.Reason] = append(out.Candidates[c.Reason], c)
 	}
 
 	for reason, rows := range out.Candidates {
@@ -220,12 +233,14 @@ func (s *graphjinService) applyWatchCleanup(ctx context.Context, req watchCleanu
 	reasons := stringSet(req.Reasons)
 	watchIDs := stringSet(req.WatchIDs)
 	eventIDs := stringSet(req.EventIDs)
-	if len(reasons) == 0 && len(watchIDs) == 0 && len(eventIDs) == 0 {
-		return result, fmt.Errorf("watch cleanup apply requires reasons, watch_ids, or event_ids")
+	artifactIDs := stringSet(req.ArtifactIDs)
+	if len(reasons) == 0 && len(watchIDs) == 0 && len(eventIDs) == 0 && len(artifactIDs) == 0 {
+		return result, fmt.Errorf("watch cleanup apply requires reasons, watch_ids, event_ids, or artifact_ids")
 	}
 	expiredDone := map[string]bool{}
 	deletedWatchDone := map[string]bool{}
 	deletedEventDone := map[string]bool{}
+	deletedArtifactDone := map[string]bool{}
 	for reason, rows := range preview.Candidates {
 		for _, c := range rows {
 			switch c.Kind {
@@ -266,6 +281,18 @@ func (s *graphjinService) applyWatchCleanup(ctx context.Context, req watchCleanu
 				}
 				deletedEventDone[c.ID] = true
 				result.DeletedEventIDs = append(result.DeletedEventIDs, c.ID)
+			case "saved_query":
+				if deletedArtifactDone[c.ID] {
+					continue
+				}
+				if !artifactIDs[c.ID] && !reasons[reason] {
+					continue
+				}
+				if err := s.deleteSavedQueryArtifactRow(ctx, c.ID); err != nil {
+					return result, err
+				}
+				deletedArtifactDone[c.ID] = true
+				result.DeletedArtifactIDs = append(result.DeletedArtifactIDs, c.ID)
 			}
 		}
 	}
@@ -278,6 +305,12 @@ func (s *graphjinService) applyWatchCleanup(ctx context.Context, req watchCleanu
 		if err := s.bumpArtifactRevision(ctx, "watch_events"); err != nil {
 			return result, err
 		}
+	}
+	if len(result.DeletedArtifactIDs) != 0 {
+		if err := s.bumpArtifactRevision(ctx, "artifacts"); err != nil {
+			return result, err
+		}
+		s.markArtifactChanged("watch cleanup apply")
 	}
 	if len(result.ExpiredWatchIDs) != 0 || len(result.DeletedWatchIDs) != 0 || len(result.DeletedEventIDs) != 0 {
 		s.markWatchChanged("watch cleanup apply")
@@ -307,11 +340,17 @@ func (s *graphjinService) deleteWatchByID(ctx context.Context, id string) error 
 	if strings.TrimSpace(id) == "" {
 		return nil
 	}
+	row, err := s.internalWatchStoreRow(ctx, id)
+	if err != nil {
+		return err
+	}
 	if _, err := s.internalStoreMutationRows(ctx, "watches", `where: { id: { eq: $id } }, delete: true`, `id`, map[string]any{"id": id}); err != nil {
 		return err
 	}
-	_, err := s.deleteWatchEvents(ctx, id)
-	return err
+	if _, err := s.deleteWatchEvents(ctx, id); err != nil {
+		return err
+	}
+	return s.cleanupWatchSavedQueryArtifacts(ctx, row)
 }
 
 func stringSet(values []string) map[string]bool {
@@ -323,4 +362,194 @@ func stringSet(values []string) map[string]bool {
 		}
 	}
 	return out
+}
+
+// watchSavedQueryRefs returns the saved-query names a watch references: the
+// explicit saved_query_name and the operation name of its inline subscription
+// query, both of which dev-mode allow-list saves register as saved_query
+// artifacts during watch validation.
+func watchSavedQueryRefs(row map[string]any) []string {
+	var refs []string
+	if name := strings.TrimSpace(stringMapValue(row, "saved_query_name")); name != "" {
+		refs = append(refs, name)
+	}
+	if query := strings.TrimSpace(stringMapValue(row, "query")); query != "" {
+		if header, err := core.Operation(query); err == nil {
+			if name := strings.TrimSpace(header.Name); name != "" {
+				refs = append(refs, name)
+			}
+		}
+	}
+	return refs
+}
+
+// savedQueryNamesMatch tolerates a namespace qualifier on either side:
+// "ns.orders" matches "orders", but "ns1.orders" does not match "ns2.orders".
+func savedQueryNamesMatch(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if a == "" || b == "" {
+		return false
+	}
+	if strings.EqualFold(a, b) {
+		return true
+	}
+	ans, abase := splitQualifiedArtifactName(a)
+	bns, bbase := splitQualifiedArtifactName(b)
+	return strings.EqualFold(abase, bbase) && (ans == "" || bns == "")
+}
+
+func savedQuerySubscriptionArtifact(row map[string]any) bool {
+	return artifactKindMatches(row["kind"], artifactKindSavedQuery) &&
+		savedQueryOperation(rowContent(row), metadataMap(row)) == "subscription"
+}
+
+// orphanedSavedQueryArtifacts lists db-backed subscription saved-query
+// artifacts whose name no existing watch references (by saved_query_name or
+// inline query operation name). References are checked against every watch
+// regardless of owner so a shared name is never cleaned up early; candidates
+// are limited to rows the caller could delete.
+func (s *graphjinService) orphanedSavedQueryArtifacts(
+	ctx context.Context,
+	watchRows []map[string]any,
+	ownerID string,
+	admin bool,
+) ([]watchCleanupCandidate, error) {
+	if _, _, _, ok := s.artifactDB(); !ok {
+		return nil, nil
+	}
+	if err := s.checkArtifactKindWritable(artifactKindSavedQuery); err != nil {
+		return nil, nil
+	}
+	refs := make([]string, 0, len(watchRows))
+	for _, row := range watchRows {
+		refs = append(refs, watchSavedQueryRefs(row)...)
+	}
+	artifactRows, err := s.internalStoreAllRows(ctx, "artifacts", "", artifactStoreFields, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []watchCleanupCandidate
+	for _, row := range artifactRows {
+		if !admin && stringMapValue(row, "owner_id") != ownerID {
+			continue
+		}
+		if !savedQuerySubscriptionArtifact(row) {
+			continue
+		}
+		name := stringMapValue(row, "name")
+		referenced := false
+		for _, ref := range refs {
+			if savedQueryNamesMatch(name, ref) {
+				referenced = true
+				break
+			}
+		}
+		if referenced {
+			continue
+		}
+		out = append(out, watchCleanupCandidate{
+			Kind:      "saved_query",
+			ID:        stringMapValue(row, "id"),
+			Name:      name,
+			Reason:    watchCleanupReasonOrphanedSavedQueries,
+			Action:    "delete_artifact",
+			CreatedAt: stringMapValue(row, "created_at"),
+			UpdatedAt: stringMapValue(row, "updated_at"),
+			OwnerID:   safeArtifactIdentity(stringMapValue(row, "owner_id"), false),
+		})
+	}
+	return out, nil
+}
+
+func (s *graphjinService) deleteSavedQueryArtifactRow(ctx context.Context, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
+	_, err := s.internalStoreMutationRows(ctx, "artifacts", `where: { id: { eq: $id } }, delete: true`, `id`, map[string]any{"id": id})
+	return err
+}
+
+// cleanupWatchSavedQueryArtifacts removes the saved-query artifacts that watch
+// creation registered for the deleted watch's subscription, unless another
+// watch still references the same query name. Non-subscription artifacts are
+// never touched, and locked kinds are left for policy review.
+func (s *graphjinService) cleanupWatchSavedQueryArtifacts(ctx context.Context, watchRow map[string]any) error {
+	if watchRow == nil {
+		return nil
+	}
+	refs := watchSavedQueryRefs(watchRow)
+	if len(refs) == 0 {
+		return nil
+	}
+	if _, _, _, ok := s.artifactDB(); !ok {
+		return nil
+	}
+	if err := s.checkArtifactKindWritable(artifactKindSavedQuery); err != nil {
+		return nil
+	}
+	watchRows, err := s.internalStoreAllRows(ctx, "watches", "", watchStoreFields, nil)
+	if err != nil {
+		return err
+	}
+	deletedID := stringMapValue(watchRow, "id")
+	var otherRefs []string
+	for _, row := range watchRows {
+		if stringMapValue(row, "id") == deletedID {
+			continue
+		}
+		otherRefs = append(otherRefs, watchSavedQueryRefs(row)...)
+	}
+	var orphaned []string
+	for _, ref := range refs {
+		referenced := false
+		for _, other := range otherRefs {
+			if savedQueryNamesMatch(other, ref) {
+				referenced = true
+				break
+			}
+		}
+		if !referenced {
+			orphaned = append(orphaned, ref)
+		}
+	}
+	if len(orphaned) == 0 {
+		return nil
+	}
+	ownerID := stringMapValue(watchRow, "owner_id")
+	if ownerID == "" {
+		return nil
+	}
+	artifactRows, err := s.internalStoreAllRows(ctx, "artifacts", `where: { owner_id: { eq: $owner_id } }`, artifactStoreFields, map[string]any{"owner_id": ownerID})
+	if err != nil {
+		return err
+	}
+	deleted := false
+	for _, row := range artifactRows {
+		if !savedQuerySubscriptionArtifact(row) {
+			continue
+		}
+		name := stringMapValue(row, "name")
+		match := false
+		for _, ref := range orphaned {
+			if savedQueryNamesMatch(name, ref) {
+				match = true
+				break
+			}
+		}
+		if !match {
+			continue
+		}
+		if err := s.deleteSavedQueryArtifactRow(ctx, stringMapValue(row, "id")); err != nil {
+			return err
+		}
+		deleted = true
+	}
+	if deleted {
+		if err := s.bumpArtifactRevision(ctx, "artifacts"); err != nil {
+			return err
+		}
+		s.markArtifactChanged("watch saved query cleanup")
+	}
+	return nil
 }
