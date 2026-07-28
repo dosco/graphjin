@@ -222,6 +222,16 @@ func initDemoState(status demoStatus) (*demoState, error) {
 			status.Emit("state", "failed", err.Error())
 			return nil, err
 		}
+		// A fresh provision is the documented "delete <path>/demo to reset"
+		// path. The control-plane store (artifacts, watches, tasks) lives in
+		// <path>/.graphjin, not under demo/ — clear it too, or deleted demo
+		// data resurrects as stale saved queries and watches in the catalog.
+		localState := filepath.Join(cpath, core.LocalStateDir)
+		if rmErr := os.RemoveAll(localState); rmErr != nil {
+			status.Emit("state", "warning", fmt.Sprintf("could not clear %s: %v", localState, rmErr))
+		} else {
+			status.Emit("state", "cleared", "control-plane store reset with demo state")
+		}
 		return &demoState{
 			Dir:      stateDir,
 			FirstRun: true,
