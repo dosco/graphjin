@@ -55,6 +55,7 @@ artifacts:
   schema: _graphjin
   globals_path: ./config
   auto_init: true
+  max_per_owner: 200
 ```
 
 With `auto_init: true`, GraphJin creates `_graphjin.artifacts` when the service starts. Current updates increment the live artifact row's `revision` value in place; GraphJin does not create or expose artifact history rows.
@@ -65,19 +66,20 @@ For compatibility, an explicit legacy `artifacts.enabled: true` without `source`
 
 `gj_artifacts` is backed by a real SQL table, but GraphJin never hand-writes SQL against it: control-plane reads and writes run back through GraphJin's own engine under the reserved, non-forgeable `__graphjin_internal_store` role — the same compiled, validated query machinery that serves your app, across every supported database. [Catalog annotations](/agentic/annotations/), [declared tasks](/agentic/tasks/), and [watches](/agentic/watches/) persist through the same store.
 
-List and search reads are served from an in-memory nanoDB projection, so discovery costs no database round-trips. The projection is a **bounded search index**, not a copy of the store: per artifact, `content` is capped (default 32KB, tunable via `artifacts.projection_content_max_bytes`) and marked with `content_truncated: true`; oversized `content_json`/`metadata_json` are dropped from the projection rather than truncated into invalid JSON. Execution reads — running a saved query, loading a workflow — always read through to the store, so nothing functional is ever truncated. The projection refreshes immediately on GraphJin-made mutations and through a private revision subscription for external writes. `artifacts.poll_seconds` controls reconnect and fallback checks when that subscription is unavailable; an idle system does no projection work.
+List and search reads are served from an in-memory nanoDB projection, so discovery costs no database round-trips. The projection is a **bounded search index**, not a copy of the store: per artifact, `content` is capped (default 32KB, tunable via `artifacts.projection_content_max_bytes`) and marked with `content_truncated: true`; oversized `content_json`/`metadata_json` are dropped from the projection rather than truncated into invalid JSON. The shared owner budget for catalog-visible saved queries, fragments, and workflows defaults to 200 and is tunable via `artifacts.max_per_owner`; existing rows remain updatable at the cap. Execution reads — running a saved query, loading a workflow — always read through to the store, so nothing functional is ever truncated. The projection refreshes immediately on GraphJin-made mutations and through a private revision subscription for external writes. `artifacts.poll_seconds` controls reconnect and fallback checks when that subscription is unavailable; an idle system does no projection work.
 
 {{< verified by="TestArtifactProjectionCapsJSONFieldsButStoreKeepsFull" file="serv/artifact_overlay_test.go" line="345" >}}
 {{< verified by="TestArtifactProjectionHonorsConfiguredCap" file="serv/artifact_overlay_test.go" line="395" >}}
 
-## Writes in development
+## Writes and learning
 
-Named query auto-save uses the artifact overlay when both conditions are true:
+Named query auto-save is a development-only learning behavior. It uses the artifact overlay when all conditions are true:
 
-- The artifact store is enabled (the `dev`/`agentic` default).
+- The service runs in `mode: dev`; agentic mode keeps dynamic authoring enabled but disables learning.
+- The artifact store is enabled.
 - The request context has `user_id`.
 
-With both conditions, named queries and captured fragments save to `gj_artifacts`. Without either condition, dev-mode auto-save falls back to the global `queries/` and `queries/fragments/` files.
+With all conditions, named queries and captured fragments save to `gj_artifacts`. In dev mode without a configured store or user identity, auto-save falls back to the global `queries/` and `queries/fragments/` files. Agentic and production modes do not learn queries.
 
 Workflow writes use the same rule. `gj_workflow` and `save_workflow` write user workflow artifacts when `user_id` and the store are present. Otherwise they write global `workflows/*.js` files only in dev fallback mode.
 

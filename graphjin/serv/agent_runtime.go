@@ -87,6 +87,7 @@ type agentCatalogResult struct {
 	Details     []core.CatalogCardDetail     `json:"details,omitempty"`
 	Edges       []core.CatalogEdge           `json:"edges,omitempty"`
 	Matches     map[string]core.CatalogMatch `json:"matches,omitempty"`
+	Facets      map[string]int               `json:"facets,omitempty"`
 	Retrieval   *catalogRetrievalMetadata    `json:"retrieval,omitempty"`
 	Coverage    []agentCatalogCoverageGroup  `json:"coverage,omitempty"`
 	Next        any                          `json:"next,omitempty"`
@@ -140,6 +141,7 @@ func (r *serviceAgentRuntime) GraphQLHelp(ctx context.Context, args map[string]a
 		Truncated:   len(result.Cards) >= q.Limit,
 		Cards:       gjagent.SummarizeCatalogCards(result.Cards),
 		Matches:     result.Matches,
+		Facets:      result.Facets,
 		Next:        agentCatalogNext("query_catalog", "Inspect a returned help row by id, or continue with filtered catalog discovery."),
 	}, nil
 }
@@ -204,6 +206,7 @@ func (r *serviceAgentRuntime) queryCatalogSnapshot(ctx context.Context, snap *co
 			Truncated:   len(result.Cards) >= q.Limit,
 			Cards:       gjagent.SummarizeCatalogCards(result.Cards),
 			Matches:     result.Matches,
+			Facets:      result.Facets,
 			Retrieval:   &retrieval,
 			Coverage:    groups,
 			Next:        agentCatalogCoverageNext(result),
@@ -225,6 +228,7 @@ func (r *serviceAgentRuntime) queryCatalogSnapshot(ctx context.Context, snap *co
 		Truncated:   len(result.Cards) >= q.Limit,
 		Cards:       gjagent.SummarizeCatalogCards(result.Cards),
 		Matches:     result.Matches,
+		Facets:      result.Facets,
 		Retrieval:   retrievalPtr,
 		Next:        agentCatalogNextForQuery(q, result.Cards),
 	}, nil

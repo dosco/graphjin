@@ -188,7 +188,7 @@ batched detail lookups (`query_catalog({ids: [...]})`). Progress is observable
 per action: MCP callers that send a `_meta.progressToken` receive
 `notifications/progress` events, and the REST endpoint streams `action`/
 `result` SSE frames when called with `Accept: text/event-stream`. Seed and
-default catalog page sizes are tunable via `agent.seed_limit` (default 10) and
+default catalog page sizes are tunable via `agent.seed_limit` (default 40) and
 `agent.catalog_default_limit` (default 20).
 
 Requests may carry a retained `task_id` for an explicitly created open
@@ -351,6 +351,9 @@ For store-backed rows (artifacts, tasks, task entries, watches, watch events) th
   or workflow for execution reads through to the artifact store, never the
   projection. When `content_truncated` is true, read the full row through
   `gj_artifacts`.
+- Saved queries, fragments, and workflows share a per-owner budget
+  (`artifacts.max_per_owner`, default 200). Existing rows remain updatable at
+  the cap; development learning stops without failing the caller's query.
 - Refresh is revision-gated: a poller (`artifacts.poll_seconds`, default 15s)
   compares a revision counter and rebuilds the projection only when a write
   actually changed it — an idle system does no projection work. Mutations made

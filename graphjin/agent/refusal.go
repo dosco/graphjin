@@ -83,6 +83,10 @@ func refusalPriority(code string) int {
 		return 70
 	case "saved_query_detail_required":
 		return 60
+	case "raw_graphql_discovery_required":
+		// A concrete rejected execute_graphql call is more actionable than the
+		// generic finalize-time observation that model discovery was absent.
+		return 55
 	case "raw_graphql_catalog_required", "model_discovery_required":
 		return 50
 	case "ungrounded_answer_fields":
@@ -155,7 +159,7 @@ func unblockStepsForViolation(s *discoveryState, v protocolViolation) []unblockS
 				Reason: "Choose a workflow and inspect its detail row by id before executing it.",
 			},
 		}}
-	case "catalog_seed_failed", "catalog_seed_required", "model_discovery_required", "raw_graphql_catalog_required":
+	case "catalog_seed_failed", "catalog_seed_required", "model_discovery_required", "raw_graphql_catalog_required", "raw_graphql_discovery_required":
 		return catalogDiscoverySteps(s)
 	default:
 		if policyFinalViolation(v.Code) {
@@ -275,7 +279,7 @@ func lawfulAlternativeForViolation(v protocolViolation) string {
 		return "Inspect the selected workflow detail by id, then execute it through the governed workflow-execution root."
 	case "ungrounded_answer_fields":
 		return "Re-run the governed query or workflow that actually returns the cited fields, or restate the conclusion using only fields and values observed in this run's results."
-	case "catalog_seed_failed", "catalog_seed_required", "model_discovery_required", "raw_graphql_catalog_required":
+	case "catalog_seed_failed", "catalog_seed_required", "model_discovery_required", "raw_graphql_catalog_required", "raw_graphql_discovery_required":
 		return "Perform catalog-first discovery, then answer or run the GraphQL action from that evidence."
 	default:
 		if policyFinalViolation(v.Code) {

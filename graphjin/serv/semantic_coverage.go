@@ -234,7 +234,14 @@ func fuseCatalogCoverage(snapshot *core.CatalogSnapshot, base core.CatalogQuery,
 		}
 	}
 
-	result := core.CatalogQueryOutput{Cards: ordered, Matches: make(map[string]core.CatalogMatch, len(ordered))}
+	result := core.CatalogQueryOutput{
+		Cards:   ordered,
+		Matches: make(map[string]core.CatalogMatch, len(ordered)),
+		Facets:  make(map[string]int),
+	}
+	for _, item := range byID {
+		result.Facets[item.card.Kind]++
+	}
 	for _, card := range ordered {
 		match := byID[card.ID].match
 		match.Score = byID[card.ID].score

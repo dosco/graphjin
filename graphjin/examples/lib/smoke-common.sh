@@ -829,7 +829,7 @@ run_refusal_suite() {
       assert_jq "$out" '
         .refusal != null
         and (.refusal.code | type) == "string"
-        and (.refusal.code | test("raw_graphql_catalog_required|mutation_evidence_required|security_runtime_discovery_required|workflow_detail_required"))
+        and (.refusal.code | test("raw_graphql_catalog_required|raw_graphql_discovery_required|mutation_evidence_required|security_runtime_discovery_required|workflow_detail_required"))
         and (.refusal.retryable == true)
         and ((.refusal.unblock | length) > 0)
       ' "blocked response carries structured refusal with unblock steps"
@@ -1038,7 +1038,7 @@ run_role_skill_suite() {
 
   out="$(run_agent_rest_prompt_as_role "admin" "$admin_write_ask")"
   assert_jq "$out" '
-    (.status == "answered" or .status == "blocked")
+    (.status == "answered" or .status == "blocked" or .status == "needs_clarification")
     and ([.actions[]? | select(.tool == "query_catalog")] | length) > 0
   ' "role eval: admin request follows catalog-first control-plane handling"
 

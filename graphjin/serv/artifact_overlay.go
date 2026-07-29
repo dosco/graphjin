@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -95,10 +96,16 @@ func (s *graphjinService) saveSavedQueryArtifactOrFallback(ctx context.Context, 
 		"namespace": req.Namespace,
 		"operation": req.Operation,
 	}
+	if registered, _ := ctx.Value(watchSavedQueryRegistrationContextKey{}).(bool); registered {
+		meta["watch_registered"] = true
+	}
 	if len(req.ActionJSON) != 0 {
 		meta["variables"] = rawMessageMapToAny(req.ActionJSON)
 	}
 	if _, err := s.saveUserArtifact(ctx, artifactKindSavedQuery, name, string(content), meta); err != nil {
+		if s.handleArtifactLearningCap(ctx, err, artifactKindSavedQuery) {
+			return true, nil
+		}
 		return true, err
 	}
 
@@ -109,11 +116,34 @@ func (s *graphjinService) saveSavedQueryArtifactOrFallback(ctx context.Context, 
 		}
 		fragMeta := map[string]any{"namespace": req.Namespace}
 		if _, err := s.saveUserArtifact(ctx, artifactKindFragment, fragName, string(bytes.TrimSpace(fragment.Value)), fragMeta); err != nil {
+			if s.handleArtifactLearningCap(ctx, err, artifactKindFragment) {
+				return true, nil
+			}
 			return true, err
 		}
 	}
 	s.markCatalogChanged("saved query artifact")
 	return true, nil
+}
+
+func (s *graphjinService) handleArtifactLearningCap(ctx context.Context, err error, kind string) bool {
+	var policyErr artifactPolicyError
+	if !errors.As(err, &policyErr) || policyErr.Code != "artifact_owner_cap_reached" {
+		return false
+	}
+	s.recordRuntimeEvent(ctx, runtimeEvent{
+		Phase:      "catalog",
+		Status:     runtimeStatusDegraded,
+		Severity:   "warn",
+		Summary:    "Allow-list learning stopped because the owner's catalog artifact budget is full.",
+		NextAction: "Delete obsolete saved queries, fragments, or workflows, or raise artifacts.max_per_owner after reviewing catalog hygiene.",
+		ErrorCode:  policyErr.Code,
+		Details: map[string]any{
+			"kind":  normalizeArtifactKind(kind),
+			"limit": policyErr.Limit,
+		},
+	})
+	return true
 }
 
 func savedQueryArtifactContent(req core.SavedQuerySaveRequest) []byte {

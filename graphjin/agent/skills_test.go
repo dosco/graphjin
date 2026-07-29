@@ -502,7 +502,7 @@ func BenchmarkSkillPromptConstruction(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = ax.NewAgent(agentSignature, map[string]ax.Value{
-			"contextFields": []ax.Value{"history"},
+			"contextFields": []ax.Value{"history", "context"},
 			"skills":        skillValues(definitions),
 		})
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -93,7 +94,12 @@ func artifactUserCtx(userID string) context.Context {
 }
 
 func TestSavedQueryAutoSaveUsesUserArtifactWhenConfigured(t *testing.T) {
-	svc := newArtifactOverlayTestService(t, nil)
+	autoInit := true
+	svc := newArtifactOverlayTestServiceWithOptions(t, nil, core.ArtifactsConfig{
+		Enabled: true, Source: "main", AutoInit: &autoInit, GlobalsPath: ".",
+	}, func(conf *Config) {
+		conf.Core.Mode = "dev"
+	})
 	ctx := artifactUserCtx("user_1")
 	res, err := svc.gj.GraphQL(ctx, `query auto_users { users(order_by: { id: asc }) { id name } }`, nil, &core.RequestConfig{})
 	if err != nil || len(res.Errors) != 0 {
@@ -112,6 +118,55 @@ func TestSavedQueryAutoSaveUsesUserArtifactWhenConfigured(t *testing.T) {
 	}
 	if ok, _ := svc.fs.Exists("/queries/global_users.gql"); !ok {
 		t.Fatal("anonymous dev auto-save should write global query file")
+	}
+}
+
+func TestArtifactOwnerCapBlocksDirectWritesButLearningNoOps(t *testing.T) {
+	autoInit := true
+	svc := newArtifactOverlayTestServiceWithArtifacts(t, nil, core.ArtifactsConfig{
+		Enabled: true, Source: "main", AutoInit: &autoInit, GlobalsPath: ".", MaxPerOwner: 2,
+	})
+	ctx := artifactUserCtx("user_1")
+	if _, err := svc.saveUserArtifact(ctx, artifactKindSavedQuery, "query_one", `query query_one { users { id } }`, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.saveUserArtifact(ctx, artifactKindFragment, "user_fields", `fragment user_fields on users { id }`, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := svc.saveUserArtifact(ctx, artifactKindWorkflow, "workflow_three", `return { ok: true }`, nil)
+	var policyErr artifactPolicyError
+	if !errors.As(err, &policyErr) || policyErr.Code != "artifact_owner_cap_reached" || policyErr.Limit != 2 {
+		t.Fatalf("direct cap error = %#v, want typed artifact_owner_cap_reached limit 2", err)
+	}
+	// Existing rows remain updatable while the shared budget is full.
+	if _, err := svc.saveUserArtifact(ctx, artifactKindSavedQuery, "query_one", `query query_one { users { id name } }`, nil); err != nil {
+		t.Fatalf("update at cap: %v", err)
+	}
+
+	handled, err := svc.saveSavedQueryArtifactOrFallback(ctx, core.SavedQuerySaveRequest{
+		Name:      "learned_query",
+		Operation: "query",
+		Query:     []byte(`query learned_query { users { id } }`),
+	})
+	if err != nil || !handled {
+		t.Fatalf("learning at cap: handled=%v err=%v", handled, err)
+	}
+	if _, ok, err := svc.userArtifactRow(ctx, artifactKindSavedQuery, "learned_query"); err != nil || ok {
+		t.Fatalf("learning must stop without writing at cap: ok=%v err=%v", ok, err)
+	}
+	if svc.runtimeEvents == nil {
+		t.Fatal("runtime event store is not initialized")
+	}
+	sawCapEvent := false
+	for _, row := range svc.runtimeEvents.Rows(context.Background(), svc.runtimeCurrentStatus()) {
+		if row["kind"] == runtimeKindEvent && row["error_code"] == "artifact_owner_cap_reached" {
+			sawCapEvent = true
+			break
+		}
+	}
+	if !sawCapEvent {
+		t.Fatal("learning no-op did not emit artifact_owner_cap_reached runtime event")
 	}
 }
 

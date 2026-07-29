@@ -51,6 +51,12 @@
 					"title": "Projection Content Max Bytes",
 					"description": "Per-field byte cap for content and JSON fields in the in-memory gj_artifacts search projection; oversized values are dropped from the projection but stay fully readable through the artifact store",
 					"default": 32768
+				},
+				"max_per_owner": {
+					"type": "integer",
+					"title": "Max Artifacts Per Owner",
+					"description": "Shared maximum catalog-visible saved-query fragment and workflow artifacts per owner; existing rows remain updatable at the cap",
+					"default": 200
 				}
 			},
 			"additionalProperties": false,

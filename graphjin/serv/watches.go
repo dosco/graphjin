@@ -24,6 +24,8 @@ const watchStoreFields = `id name task_id description query saved_query_name var
 
 const watchEventStoreFields = `id watch_id data_hash data_json data_truncated evidence_json delivery_status delivery_attempts delivery_json receipt_json enrichment_json seen seen_at snoozed_until account_id owner_id created_at updated_at`
 
+type watchSavedQueryRegistrationContextKey struct{}
+
 type watchControlPlane struct {
 	service *graphjinService
 }
@@ -693,6 +695,7 @@ func (h watchControlPlane) validateWatchDefinition(
 		evidence["operation_name"] = header.Name
 		if h.service != nil && h.service.gj != nil {
 			probeCtx, cancel := context.WithTimeout(ctx, watchValidationProbeTimeout)
+			probeCtx = context.WithValue(probeCtx, watchSavedQueryRegistrationContextKey{}, true)
 			member, err := h.service.gj.Subscribe(probeCtx, query, vars, nil)
 			cursorVars := memberCursorVariableNames(member)
 			if member != nil {

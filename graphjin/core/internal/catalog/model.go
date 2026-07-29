@@ -94,6 +94,7 @@ type Query struct {
 type QueryResult struct {
 	Cards   []Card           `json:"cards"`
 	Matches map[string]Match `json:"matches,omitempty"`
+	Facets  map[string]int   `json:"facets,omitempty"`
 }
 
 type Match struct {

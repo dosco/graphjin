@@ -505,7 +505,7 @@ func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 	}
 	sub.kind = gj.subscriptionKind(&sub.s)
 
-	if !gj.prod && !sub.s.trustedReservedRole {
+	if gj.learn && !sub.s.trustedReservedRole {
 		err = gj.saveToAllowList(c, sub.s.cs.st.qc, sub.s.r.namespace)
 		if err != nil {
 			return

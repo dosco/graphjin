@@ -41,6 +41,14 @@ func CanonicalMode(mode string) (string, error) {
 	}
 }
 
+func isAgenticMode(c *Config) bool {
+	if c == nil {
+		return false
+	}
+	mode, err := CanonicalMode(c.Mode)
+	return err == nil && mode == sourcecap.ModeAgentic
+}
+
 // NormalizeMode makes mode the single deployment-mode selector. When mode is
 // omitted, existing production:true configs continue to imply prod mode.
 func (c *Config) NormalizeMode() error {
@@ -454,6 +462,9 @@ func (c *Config) validateArtifactsConfig() error {
 	if c.Artifacts.PollSeconds < 0 {
 		return fmt.Errorf("artifacts.poll_seconds must be greater than or equal to 0")
 	}
+	if c.Artifacts.MaxPerOwner < 0 {
+		return fmt.Errorf("artifacts.max_per_owner must be greater than or equal to 0")
+	}
 	sourceName := strings.TrimSpace(c.Artifacts.Source)
 	if sourceName == "" {
 		for _, source := range c.Sources {
@@ -602,6 +613,9 @@ func (c *Config) normalizeArtifactsDefaults() {
 	}
 	if c.Artifacts.ProjectionContentMaxBytes <= 0 {
 		c.Artifacts.ProjectionContentMaxBytes = 32 * 1024
+	}
+	if c.Artifacts.MaxPerOwner == 0 {
+		c.Artifacts.MaxPerOwner = 200
 	}
 }
 
@@ -886,7 +900,7 @@ func (c *Config) EffectiveIdentityConfig() IdentityConfig {
 // EffectiveArtifactsConfig returns artifact config with source-mode defaults.
 func (c *Config) EffectiveArtifactsConfig() ArtifactsConfig {
 	if c == nil {
-		return ArtifactsConfig{Schema: "_graphjin", GlobalsPath: "./config", PollSeconds: 15, ProjectionContentMaxBytes: 32 * 1024}
+		return ArtifactsConfig{Schema: "_graphjin", GlobalsPath: "./config", PollSeconds: 15, ProjectionContentMaxBytes: 32 * 1024, MaxPerOwner: 200}
 	}
 	out := c.Artifacts.clone()
 	tmp := &Config{Artifacts: out, Sources: c.Sources}
@@ -1513,6 +1527,7 @@ type ArtifactsConfig struct {
 	Locked                    []string `mapstructure:"locked" json:"locked" yaml:"locked" jsonschema:"title=Locked Artifact Kinds,description=Artifact kinds that refuse writes through gj_artifacts"`
 	PollSeconds               int      `mapstructure:"poll_seconds" json:"poll_seconds" yaml:"poll_seconds" jsonschema:"title=Artifact Poll Seconds,default=15,description=Fallback and reconnect interval for internal artifact and watch revision subscriptions"`
 	ProjectionContentMaxBytes int      `mapstructure:"projection_content_max_bytes" json:"projection_content_max_bytes" yaml:"projection_content_max_bytes" jsonschema:"title=Projection Content Max Bytes,default=32768,description=Per-field byte cap for content and JSON fields in the in-memory gj_artifacts search projection; oversized values are dropped from the projection but stay fully readable through the artifact store"`
+	MaxPerOwner               int      `mapstructure:"max_per_owner" json:"max_per_owner" yaml:"max_per_owner" jsonschema:"title=Max Artifacts Per Owner,default=200,description=Shared maximum catalog-visible saved-query fragment and workflow artifacts per owner; existing rows remain updatable at the cap"`
 }
 
 // WatchesConfig declares the GraphJin-managed watch store and runner settings.

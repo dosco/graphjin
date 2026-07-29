@@ -1020,6 +1020,53 @@ func TestDeleteWatchRemovesRegisteredSavedQueryArtifact(t *testing.T) {
 	}
 }
 
+func TestDeleteWatchPreservesSavedQueryNameArtifact(t *testing.T) {
+	db, svc := newSQLiteWatchService(t, 20)
+	if err := svc.initArtifactsBeforeCore(); err != nil {
+		t.Fatalf("initArtifactsBeforeCore: %v", err)
+	}
+	const name = "user_owned_subscription"
+	if err := svc.fs.Put("/queries/"+name+".gql", []byte(cursorOrdersWatchQuery(name))); err != nil {
+		t.Fatalf("save global subscription fixture: %v", err)
+	}
+	startSQLiteWatchCore(t, svc, db)
+	cp := newWatchControlPlane(svc)
+	ctx := contextWithUserRole(artifactUserCtx("user_1"), "analyst")
+	if _, err := svc.saveUserArtifact(ctx, artifactKindSavedQuery, name, cursorOrdersWatchQuery(name), map[string]any{
+		"operation": "subscription",
+	}); err != nil {
+		t.Fatalf("save user subscription: %v", err)
+	}
+	watch, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "insert",
+		Input: map[string]interface{}{
+			"name":             "consumer",
+			"saved_query_name": name,
+		},
+	})
+	if err != nil {
+		t.Fatalf("insert saved-query watch: %v", err)
+	}
+	if _, err := cp.mutateRow(ctx, core.ManagedMutationRoot{
+		Table:     watchesRootTable,
+		Operation: "delete",
+		Where:     map[string]interface{}{"id": map[string]interface{}{"eq": watch["id"]}},
+	}); err != nil {
+		t.Fatalf("delete saved-query watch: %v", err)
+	}
+	if got := savedQueryArtifactNames(t, db); len(got) != 1 || got[0] != name {
+		t.Fatalf("saved_query_name artifact must survive watch deletion, got %v", got)
+	}
+	preview, err := svc.previewWatchCleanup(ctx, watchCleanupOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Counts[watchCleanupReasonOrphanedSavedQueries] != 0 {
+		t.Fatalf("user-owned subscription must not become an orphan candidate: %+v", preview.Candidates)
+	}
+}
+
 func TestWatchCleanupSweepsOrphanedSavedQueryArtifacts(t *testing.T) {
 	db, svc := newSQLiteWatchService(t, 20)
 	if err := svc.initArtifactsBeforeCore(); err != nil {
@@ -1041,8 +1088,13 @@ func TestWatchCleanupSweepsOrphanedSavedQueryArtifacts(t *testing.T) {
 	}
 	if _, err := svc.saveUserArtifact(ctx, artifactKindSavedQuery, "stale_routes",
 		`subscription stale_routes { orders(first: 25, after: $cursor) { id } orders_cursor }`,
-		map[string]any{"operation": "subscription"}); err != nil {
+		map[string]any{"operation": "subscription", "watch_registered": true}); err != nil {
 		t.Fatalf("save orphan subscription artifact: %v", err)
+	}
+	if _, err := svc.saveUserArtifact(ctx, artifactKindSavedQuery, "user_subscription",
+		`subscription user_subscription { orders(first: 25, after: $cursor) { id } orders_cursor }`,
+		map[string]any{"operation": "subscription"}); err != nil {
+		t.Fatalf("save user subscription artifact: %v", err)
 	}
 	if _, err := svc.saveUserArtifact(ctx, artifactKindSavedQuery, "plain_query",
 		`query plain_query { orders { id } }`,
@@ -1074,7 +1126,7 @@ func TestWatchCleanupSweepsOrphanedSavedQueryArtifacts(t *testing.T) {
 	if len(applied.DeletedArtifactIDs) != 1 || applied.DeletedArtifactIDs[0] != orphanID {
 		t.Fatalf("deleted artifact ids = %+v", applied)
 	}
-	if got := savedQueryArtifactNames(t, db); len(got) != 2 || got[0] != "live_routes" || got[1] != "plain_query" {
+	if got := savedQueryArtifactNames(t, db); len(got) != 3 || got[0] != "live_routes" || got[1] != "plain_query" || got[2] != "user_subscription" {
 		t.Fatalf("cleanup should only remove the orphaned subscription artifact, got %v", got)
 	}
 	preview, err = svc.previewWatchCleanup(ctx, watchCleanupOptions{})

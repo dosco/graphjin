@@ -23,16 +23,15 @@ func newFailingExecProtocol(t *testing.T, execOut any) *protocolRuntime {
 	if _, err := runtime.Seed(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"kind": "saved_query"}); err != nil {
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:ops:public.green_lots"}); err != nil {
 		t.Fatal(err)
 	}
 	return runtime
 }
 
-// The failure that motivated this guard: a seed that surfaces no saved query,
-// so the model authors raw GraphQL against an invented field. GraphJin must
-// perform the skipped approved-path discovery itself and name real candidates.
-func TestFailedExecutionDiscoversApprovedSavedQueriesNotSeeded(t *testing.T) {
+// Failed execution recovery must use evidence already discovered in the run;
+// it must not perform hidden catalog calls or inject extra cards.
+func TestFailedExecutionDoesNotPerformHiddenCatalogLookup(t *testing.T) {
 	base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
 		Errors: []ErrorInfo{{Message: "field 'available' is not a column or a function"}},
 	}}
@@ -57,9 +56,9 @@ func TestFailedExecutionDiscoversApprovedSavedQueriesNotSeeded(t *testing.T) {
 	if !ok {
 		t.Fatalf("recovery = %#v", res.Recovery)
 	}
-	names, _ := recovery["approved_saved_queries"].([]string)
-	if len(names) == 0 {
-		t.Fatal("failed execution must name approved saved queries discovered on the agent's behalf")
+	next, ok := recovery["next"].(map[string]any)
+	if !ok || next["recommended_tool"] != toolQueryCatalog {
+		t.Fatalf("recovery.next = %#v, want structured query_catalog pointer", recovery["next"])
 	}
 	// The directive must reach errors[].message: a model that has decided the
 	// run failed summarizes the message, not sibling guidance fields.
@@ -69,23 +68,14 @@ func TestFailedExecutionDiscoversApprovedSavedQueriesNotSeeded(t *testing.T) {
 	if !strings.Contains(res.Errors[0].Message, "field 'available' is not a column") {
 		t.Fatalf("error message = %q, want the original compiler text preserved", res.Errors[0].Message)
 	}
-	if !strings.Contains(res.Errors[0].Message, names[0]) {
-		t.Fatalf("error message = %q, want approved saved query %q named", res.Errors[0].Message, names[0])
-	}
-	// The lookup is attributed evidence, not a model action, and must not
-	// satisfy the saved-query detail guard.
 	recoveryActions := 0
 	for _, action := range runtime.state.actions {
 		if action.Source == "recovery" && action.Tool == "query_catalog" {
 			recoveryActions++
 		}
 	}
-	// One saved-query list, performed at seed time and reused after the failure.
-	if recoveryActions != 1 {
-		t.Fatalf("recovery-sourced catalog actions = %d, want 1 (seed-time list)", recoveryActions)
-	}
-	if runtime.state.savedQueryDetailed(names[0]) {
-		t.Fatalf("saved-query lookup must not satisfy the detail guard for %q", names[0])
+	if recoveryActions != 0 {
+		t.Fatalf("recovery-sourced catalog actions = %d, want none", recoveryActions)
 	}
 	// It must run at most once per run, even across repeated failures.
 	before := len(base.calls)
@@ -94,45 +84,6 @@ func TestFailedExecutionDiscoversApprovedSavedQueriesNotSeeded(t *testing.T) {
 	}
 	if got := len(base.calls) - before; got != 1 {
 		t.Fatalf("second failure issued %d extra calls, want 1 (execute only)", got)
-	}
-}
-
-// The seed itself must surface the approved path when the ranked search buries
-// it under tables and columns — the model cannot prefer what it never sees.
-func TestSeedSurfacesApprovedSavedQueriesWhenSearchRanksThemOut(t *testing.T) {
-	base := &fakeRuntime{}
-	runtime := newProtocolRuntime(base, "does the roast plan cover committed shipments", "", 20, nil, nil, CatalogSearchFeatures{})
-	seed, err := runtime.Seed(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	result := mapValue(seed)
-	if result == nil {
-		t.Fatalf("seed = %#v", seed)
-	}
-	cards := catalogCards(result)
-	found := false
-	for _, card := range cards {
-		if stringFromMap(card, "id") == "saved_query:daily_roast_context" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("seed cards must include the approved saved query: %#v", result["cards"])
-	}
-	if int(floatFromAny(result["count"])) != len(cards) {
-		t.Fatalf("count = %v, want %d", result["count"], len(cards))
-	}
-	// Supplied discovery is not the model's own, and does not pre-satisfy the
-	// detail guard that still gates execution.
-	if runtime.state.modelDiscoveryAction {
-		t.Fatal("saved-query supplement must not count as the model's discovery action")
-	}
-	if runtime.state.savedQueryDetailed("daily_roast_context") {
-		t.Fatal("saved-query supplement must not satisfy the detail guard")
-	}
-	if runtime.state.actions[1].Source != "recovery" {
-		t.Fatalf("supplement action source = %q, want recovery", runtime.state.actions[1].Source)
 	}
 }
 
@@ -169,68 +120,6 @@ func TestRawGraphQLCoveredBySavedQueryStillExecutes(t *testing.T) {
 	}
 }
 
-// Watch-registered subscription entries share the saved_query kind but cannot
-// be run through execute_saved_query; recommending them wastes the model's
-// steps (observed live: 108 smoke-test subscriptions drowned the 3 real
-// queries). The supplement must carry executable read queries only.
-func TestSavedQuerySupplementSkipsSubscriptionsAndMutations(t *testing.T) {
-	base := &fakeRuntime{}
-	base.catalogOverride = func(args map[string]any) any {
-		if stringArg(args, "kind") == "saved_query" {
-			return map[string]any{
-				"count": 3,
-				"cards": []any{
-					map[string]any{
-						"id": "saved_query:smoke_route_coffee_1", "kind": "saved_query", "name": "smoke_route_coffee_1",
-						"safety_json": map[string]any{"operation": "subscription"},
-					},
-					map[string]any{
-						"id": "saved_query:reset_lots", "kind": "saved_query", "name": "reset_lots",
-						"safety_json": `{"operation":"mutation"}`,
-					},
-					map[string]any{
-						"id": "saved_query:daily_roast_context", "kind": "saved_query", "name": "daily_roast_context",
-						"safety_json": map[string]any{"operation": "query"},
-					},
-				},
-			}
-		}
-		return fakeCatalogResult(args)
-	}
-	runtime := newProtocolRuntime(base, "roast plan coverage", "", 20, nil, nil, CatalogSearchFeatures{})
-	if _, err := runtime.Seed(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	cards := runtime.state.savedQuerySupplementCards
-	if len(cards) != 1 || stringFromMap(cards[0], "name") != "daily_roast_context" {
-		names := make([]string, 0, len(cards))
-		for _, card := range cards {
-			names = append(names, stringFromMap(card, "name"))
-		}
-		t.Fatalf("supplement cards = %v, want only daily_roast_context", names)
-	}
-}
-
-// A seed that already surfaced saved queries needs no supplement.
-func TestSeedSkipsSupplementWhenSavedQueriesAlreadyPresent(t *testing.T) {
-	base := &fakeRuntime{}
-	base.catalogOverride = func(map[string]any) any {
-		return map[string]any{
-			"count": 1,
-			"cards": []any{map[string]any{
-				"id": "saved_query:daily_roast_context", "kind": "saved_query", "name": "daily_roast_context",
-			}},
-		}
-	}
-	runtime := newProtocolRuntime(base, "roast plan", "", 20, nil, nil, CatalogSearchFeatures{})
-	if _, err := runtime.Seed(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if len(base.calls) != 1 {
-		t.Fatalf("catalog calls = %v, want only the seed", base.calls)
-	}
-}
-
 // Authoring raw GraphQL straight off the seed is what produced invented field
 // names and a silently wrong result set. It must fail while the run can still
 // recover, not at finalize after the work is wasted.
@@ -247,8 +136,8 @@ func TestRawGraphQLRejectedBeforeModelDiscovery(t *testing.T) {
 	if !strings.Contains(err.Error(), "not discovery") {
 		t.Fatalf("error = %q, want the seed-is-not-discovery rejection", err)
 	}
-	if !strings.Contains(err.Error(), "daily_roast_context") {
-		t.Fatalf("error = %q, want the approved saved query named", err)
+	if len(base.calls) != 1 {
+		t.Fatalf("catalog calls = %v, want only the seed", base.calls)
 	}
 	for _, call := range base.calls {
 		if call == "execute_graphql" {
@@ -267,6 +156,30 @@ func TestRawGraphQLRejectedBeforeModelDiscovery(t *testing.T) {
 	}
 }
 
+func TestRawGraphQLRejectedAfterBroadCatalogListing(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "inspect roast quality", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{
+		"database": "roast_warehouse",
+		"kind":     "column",
+		"table":    "roast_batches",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { roast_batches { id } }"})
+	if err == nil || !strings.Contains(err.Error(), "broad catalog results are not discovery detail") {
+		t.Fatalf("error = %v, want exact-detail discovery rejection", err)
+	}
+	for _, call := range base.calls {
+		if call == "execute_graphql" {
+			t.Fatal("raw GraphQL after only a broad listing must never reach the runtime")
+		}
+	}
+}
+
 // The guard must not obstruct the normal governed path: discover, then query.
 func TestRawGraphQLAllowedAfterModelDiscovery(t *testing.T) {
 	base := &fakeRuntime{}
@@ -282,8 +195,7 @@ func TestRawGraphQLAllowedAfterModelDiscovery(t *testing.T) {
 	}
 }
 
-// The seed's own search stays a single unexpanded call; the saved-query
-// supplement is a separate lookup, never a coverage expansion of the seed.
+// The seed stays one unexpanded catalog call with no hidden supplement.
 func TestSeedSearchItselfIsASingleUnexpandedCall(t *testing.T) {
 	base := &fakeRuntime{}
 	runtime := newProtocolRuntime(base, "does the roast plan cover committed shipments", "", 20, nil, nil, CatalogSearchFeatures{})
@@ -299,7 +211,7 @@ func TestSeedSearchItselfIsASingleUnexpandedCall(t *testing.T) {
 	}
 }
 
-func TestExecuteGraphQLErrorAttachesSavedQueryRecovery(t *testing.T) {
+func TestExecuteGraphQLErrorAttachesCompactRecovery(t *testing.T) {
 	runtime := newFailingExecProtocol(t, executeResult{
 		Errors: []ErrorInfo{{
 			Message:    "no db column found for field 'available' on table 'green_lots'",
@@ -319,18 +231,15 @@ func TestExecuteGraphQLErrorAttachesSavedQueryRecovery(t *testing.T) {
 		t.Fatalf("recovery = %#v", res.Recovery)
 	}
 	instruction, _ := recovery["instruction"].(string)
-	if !strings.Contains(instruction, "never advise schema or data changes") {
+	if !strings.Contains(instruction, "do not report it as broken or propose schema changes") {
 		t.Fatalf("recovery instruction = %q", instruction)
 	}
-	names, _ := recovery["approved_saved_queries"].([]string)
-	found := false
-	for _, name := range names {
-		if name == "daily_roast_context" {
-			found = true
-		}
+	next, ok := recovery["next"].(map[string]any)
+	if !ok || next["recommended_tool"] != toolQueryCatalog {
+		t.Fatalf("recovery.next = %#v, want structured query_catalog pointer", recovery["next"])
 	}
-	if !found {
-		t.Fatalf("approved_saved_queries = %v, want daily_roast_context", names)
+	if _, exists := recovery["approved_saved_queries"]; exists {
+		t.Fatalf("recovery should not inject saved-query cards: %#v", recovery)
 	}
 }
 
