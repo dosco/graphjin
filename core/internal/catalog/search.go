@@ -102,16 +102,18 @@ func (s *Snapshot) query(q Query, hints []CandidateHint) (QueryResult, error) {
 		}
 		items = append(items, rankedCard{card: card, match: match})
 	}
+	facets := rankedCardFacets(items)
 
 	if err := sortRankedCards(items, q.OrderBy, search != ""); err != nil {
 		return QueryResult{}, err
 	}
 	items = offsetRankedCards(items, q.Offset)
+	items = reserveKindDiversity(items, limit, q)
 	if len(items) > limit {
 		items = items[:limit]
 	}
 
-	result := QueryResult{Cards: make([]Card, 0, len(items))}
+	result := QueryResult{Cards: make([]Card, 0, len(items)), Facets: facets}
 	if q.Explain && search != "" {
 		result.Matches = make(map[string]Match, len(items))
 	}
@@ -330,14 +332,16 @@ func (s *Snapshot) queryWithHints(q Query, limit int, where map[string]any, sear
 		}
 		items = append(items, rankedCard{card: entry.card, match: entry.match})
 	}
+	facets := rankedCardFacets(items)
 	if err := sortRankedCards(items, q.OrderBy, true); err != nil {
 		return QueryResult{}, err
 	}
 	items = offsetRankedCards(items, q.Offset)
+	items = reserveKindDiversity(items, limit, q)
 	if len(items) > limit {
 		items = items[:limit]
 	}
-	result := QueryResult{Cards: make([]Card, 0, len(items))}
+	result := QueryResult{Cards: make([]Card, 0, len(items)), Facets: facets}
 	if q.Explain {
 		result.Matches = make(map[string]Match, len(items))
 	}
@@ -358,6 +362,65 @@ func offsetRankedCards(items []rankedCard, offset int) []rankedCard {
 		return nil
 	}
 	return items[offset:]
+}
+
+// rankedCardFacets counts kinds in the full filtered pool before ordering,
+// offset, and truncation. Callers can therefore see which kinds were cut from
+// a page instead of trying to infer coverage from the returned cards alone.
+func rankedCardFacets(items []rankedCard) map[string]int {
+	if len(items) == 0 {
+		return nil
+	}
+	facets := make(map[string]int)
+	for _, item := range items {
+		facets[item.card.Kind]++
+	}
+	return facets
+}
+
+// reserveKindDiversity keeps up to half of a truncated page representative by
+// reserving the first card from each kind, in rank order, then filling the
+// remaining slots from the original ranking. The selected cards are emitted in
+// their original sorted order, so the top-ranked card never changes.
+func reserveKindDiversity(items []rankedCard, limit int, q Query) []rankedCard {
+	if limit <= 0 || len(items) <= limit || len(q.OrderBy) != 0 || q.Offset != 0 {
+		return items
+	}
+
+	firstByKind := make([]int, 0)
+	seenKinds := make(map[string]struct{})
+	for index, item := range items {
+		if _, seen := seenKinds[item.card.Kind]; seen {
+			continue
+		}
+		seenKinds[item.card.Kind] = struct{}{}
+		firstByKind = append(firstByKind, index)
+	}
+	reserveCount := min(len(firstByKind), limit/2)
+	selected := make([]bool, len(items))
+	selectedCount := 0
+	for _, index := range firstByKind[:reserveCount] {
+		selected[index] = true
+		selectedCount++
+	}
+	for index := range items {
+		if selectedCount >= limit {
+			break
+		}
+		if selected[index] {
+			continue
+		}
+		selected[index] = true
+		selectedCount++
+	}
+
+	out := make([]rankedCard, 0, selectedCount)
+	for index, item := range items {
+		if selected[index] {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func catalogExactIdentifier(card Card, search string) bool {

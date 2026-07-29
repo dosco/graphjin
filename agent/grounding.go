@@ -20,8 +20,8 @@ const (
 	// minGroundedTokenLength skips short incidental tokens such as ids in
 	// prose; real field references (plan_status, remaining_kg) are longer.
 	minGroundedTokenLength = 5
-	// maxRecoverySavedQueries caps the candidate list attached to a failed
-	// execution result.
+	// maxRecoverySavedQueries caps already-discovered candidates mentioned by
+	// the raw-GraphQL guard so recovery cannot flood the prompt.
 	maxRecoverySavedQueries = 8
 	// maxUngroundedTokens caps the reported token list in the violation.
 	maxUngroundedTokens = 8
@@ -190,26 +190,9 @@ func joinRecoveryMessage(message, directive string) string {
 
 const recoveryDirectivePrefix = "GraphJin recovery:"
 
-// recommendedSavedQueryNames returns the saved queries worth naming in
-// guidance: the operation-filtered supplement set when present, else every
-// saved query discovered this run.
+// recommendedSavedQueryNames returns saved queries already discovered in this
+// run. Recovery never performs hidden catalog calls or injects extra cards.
 func recommendedSavedQueryNames(s *discoveryState) []string {
-	if len(s.savedQuerySupplementCards) != 0 {
-		var names []string
-		for _, card := range s.savedQuerySupplementCards {
-			name := stringFromMap(card, "name")
-			if name == "" {
-				name = savedQueryNameFromID(stringFromMap(card, "id"))
-			}
-			if name = canonicalSavedQueryName(name); name != "" {
-				names = appendUniqueString(names, name)
-			}
-		}
-		if len(names) != 0 {
-			sort.Strings(names)
-			return names
-		}
-	}
 	return sortedBoolKeys(s.savedQueriesDiscovered)
 }
 
@@ -228,36 +211,18 @@ func approvedSavedQuerySuffix(s *discoveryState) string {
 		strings.Join(names, ", ") + "): query_catalog({id:\"saved_query:<name>\"}) then execute_saved_query({name:\"<name>\"})."
 }
 
-// recoveryDirective renders the imperative one-liner appended to failed
-// execution errors. Re-authoring dynamically from real column names is the
-// primary recovery; a matching approved saved query is a shortcut.
-func recoveryDirective(recovery map[string]any) string {
-	directive := recoveryDirectivePrefix + " this is a query-authoring mistake, not a data or schema problem." +
-		" The live schema is authoritative — do not report it as broken, do not propose schema changes, and do not stop at blocked." +
-		" Re-discover the real field names with query_catalog, re-author the query from the returned columns, and retry in this run."
-	names, _ := recovery["approved_saved_queries"].([]string)
-	if len(names) == 0 {
-		return directive
-	}
-	return directive +
-		" A matching approved saved query is a governed shortcut (" + strings.Join(names, ", ") + "):" +
-		" query_catalog({id:\"saved_query:<name>\"}), then execute_saved_query({name:\"<name>\"})."
+// recoveryDirective is the single sentence appended to execution errors; the
+// structured recovery.next field carries the actionable tool pointer.
+func recoveryDirective(map[string]any) string {
+	return recoveryDirectivePrefix + " the live schema is authoritative; do not report it as broken or propose schema changes—follow recovery.next to re-discover real fields and retry in this run."
 }
 
-func executionRecovery(s *discoveryState) map[string]any {
-	recovery := map[string]any{
-		"instruction": "This query did not match the live schema. The schema is authoritative: never advise schema or data changes and do not stop at blocked. Recover in this run — follow errors[].extensions.graphjin_repair, re-discover the real table and field names with query_catalog, re-author the query from the returned columns, and retry.",
-		"next":        []string{toolQueryCatalog},
+func executionRecovery(_ *discoveryState) map[string]any {
+	return map[string]any{
+		"instruction": "The live schema is authoritative; do not report it as broken or propose schema changes—follow errors[].extensions.graphjin_repair and next to re-discover real fields and retry in this run.",
+		"next": catalogNext(
+			toolQueryCatalog,
+			"Inspect the real table and column details, re-author the query from returned fields, and retry in this run.",
+		),
 	}
-	names := recommendedSavedQueryNames(s)
-	if len(names) > maxRecoverySavedQueries {
-		names = names[:maxRecoverySavedQueries]
-	}
-	if len(names) != 0 {
-		recovery["approved_saved_queries"] = names
-		recovery["saved_query_usage"] = `query_catalog({id:"saved_query:<name>"}) then execute_saved_query({name:"<name>"})`
-		recovery["instruction"] = recovery["instruction"].(string) +
-			" A saved query in approved_saved_queries that matches the request is a governed shortcut: inspect it with query_catalog({id:\"saved_query:<name>\"}), then execute_saved_query."
-	}
-	return recovery
 }

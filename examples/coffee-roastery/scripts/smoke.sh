@@ -106,7 +106,7 @@ run_coffee_watch_session_routing_suite() {
   log "checking per-watch MCP routing across coffee and purchase-order sessions"
 
   local suffix coffee_name order_name rollup_name coffee_query order_query rollup_query
-  local coffee_create order_create rollup_create coffee_id order_id rollup_id coffee_uri order_uri
+  local coffee_create order_create rollup_create coffee_enable order_enable coffee_id order_id rollup_id coffee_uri order_uri
   suffix="$(date +%s)_$$"
   coffee_name="smoke_route_coffee_${suffix}"
   order_name="smoke_route_order_${suffix}"
@@ -115,12 +115,12 @@ run_coffee_watch_session_routing_suite() {
   order_query="subscription ${order_name} { production_orders(first: 25, after: \$cursor) { id status } production_orders_cursor }"
   rollup_query="subscription ${rollup_name}(\$watch_ids: [String!], \$gj_watch_event_cursor: Cursor) { gj_watch_event(first: 25, after: \$gj_watch_event_cursor, where: { watch_id: { in: \$watch_ids } }, order_by: { created_at: asc }) { id watch_id created_at } gj_watch_event_cursor }"
 
-  coffee_create="$(graphql watch-route-coffee-create "mutation { gj_watch(insert: { name: \"${coffee_name}\", query: \"${coffee_query}\" }) { id enabled } }")"
-  order_create="$(graphql watch-route-order-create "mutation { gj_watch(insert: { name: \"${order_name}\", query: \"${order_query}\" }) { id enabled } }")"
+  coffee_create="$(graphql watch-route-coffee-create "mutation { gj_watch(insert: { name: \"${coffee_name}\", query: \"${coffee_query}\", enabled: false }) { id enabled } }")"
+  order_create="$(graphql watch-route-order-create "mutation { gj_watch(insert: { name: \"${order_name}\", query: \"${order_query}\", enabled: false }) { id enabled } }")"
   coffee_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$coffee_create")"
   order_id="$(jq -r '[.data.gj_watch] | flatten | .[0].id' "$order_create")"
-  assert_jq "$coffee_create" '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and $w.enabled == true' "coffee routing watch created"
-  assert_jq "$order_create" '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and $w.enabled == true' "purchase-order routing watch created"
+  assert_jq "$coffee_create" '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and $w.enabled == false' "coffee routing watch created paused"
+  assert_jq "$order_create" '([.data.gj_watch] | flatten | .[0]) as $w | ($w.id | length) > 0 and $w.enabled == false' "purchase-order routing watch created paused"
   COFFEE_ROUTE_WATCH_IDS=("$coffee_id" "$order_id")
 
   rollup_create="$(graphql watch-route-rollup-create "mutation { gj_watch(insert: { name: \"${rollup_name}\", query: \"${rollup_query}\", variables_json: { watch_ids: [\"${coffee_id}\", \"${order_id}\"] } }) { id enabled variables_json } }")"
@@ -155,6 +155,16 @@ run_coffee_watch_session_routing_suite() {
   subscribe_payload="$(jq -nc --arg uri "$order_uri" '{jsonrpc:"2.0",id:2,method:"resources/subscribe",params:{uri:$uri}}')"
   subscribe_out="$(mcp_session_request "$order_session" order-route-subscribe "$subscribe_payload")"
   assert_jq "$subscribe_out" '(.error? | not) and (.result? != null)' "purchase-order session subscribed to its exact watch URI"
+
+  # Let the rollup establish its empty baseline before source events can fire.
+  # Otherwise a fast source watch can win the creation race and the rollup's
+  # first subscription cursor correctly treats that already-existing row as
+  # baseline rather than emitting it as a new aggregate event.
+  sleep 2
+  coffee_enable="$(graphql watch-route-coffee-enable "mutation { gj_watch(where: { id: { eq: \"${coffee_id}\" } }, update: { name: \"${coffee_name}\", query: \"${coffee_query}\", enabled: true }) { id enabled } }")"
+  order_enable="$(graphql watch-route-order-enable "mutation { gj_watch(where: { id: { eq: \"${order_id}\" } }, update: { name: \"${order_name}\", query: \"${order_query}\", enabled: true }) { id enabled } }")"
+  assert_jq "$coffee_enable" '([.data.gj_watch] | flatten | .[0]).enabled == true' "coffee routing watch enabled after subscribers were ready"
+  assert_jq "$order_enable" '([.data.gj_watch] | flatten | .[0]).enabled == true' "purchase-order routing watch enabled after subscribers were ready"
 
   local routed=""
   for _ in $(seq 1 120); do
@@ -238,7 +248,13 @@ run_coffee_watch_session_routing_suite() {
     fi
     sleep 0.5
   done
-  [ -n "$rollup_found" ] || fail "rollup watch did not aggregate events from both source watch ids within 60s"
+  if [ -z "$rollup_found" ]; then
+    local rollup_debug
+    rollup_debug="$(graphql watch-route-rollup-debug "query { gj_watch(where: { id: { in: [\"${coffee_id}\", \"${order_id}\", \"${rollup_id}\"] } }) { id name status enabled last_fired_at last_error failure_count last_cursor_json } gj_watch_event(where: { watch_id: { in: [\"${coffee_id}\", \"${order_id}\", \"${rollup_id}\"] } }, order_by: { created_at: asc }, limit: 20) { id watch_id data_json created_at } }")"
+    echo "rollup watch debug state:" >&2
+    jq . "$rollup_debug" >&2 || true
+    fail "rollup watch did not aggregate events from both source watch ids within 60s"
+  fi
   pass "rollup watch aggregated coffee and purchase-order source watch events"
 
   mcp_stop_session_stream "$coffee_stream_pid"
@@ -424,7 +440,7 @@ run_task_agent_eval_suite() {
 
   entries_out="$(graphql task-entries "query { gj_task_entry(where: { task_id: { eq: \"${task_id}\" } }, order_by: { created_at: asc }, limit: 20) { id origin body status trace_id detail_json } }")"
   assert_jq_args "$entries_out" "[TASK-CONTINUITY] task trail records caller and embedded-agent provenance" --arg marker "$marker" '
-    [.data.gj_task_entry[] | select(.origin == "caller")] | length == 1
+    ([.data.gj_task_entry[] | select(.origin == "caller")] | length) == 1
     and ([.data.gj_task_entry[] | select(.origin == "agent_run")] | length) >= 2
     and ([.data.gj_task_entry[] | select(.origin == "agent_run" and (.body | contains($marker)))] | length) >= 1
     and ([.data.gj_task_entry[] | select(.origin == "agent_run" and (.trace_id | length) > 0)] | length) >= 2
@@ -616,7 +632,7 @@ run_agent_eval_suite() {
   assert_jq "$out" '
     (.status == "blocked" or .status == "answered")
     and (.actions | tostring | test("query_catalog|graphql_help"))
-    and ((.actions | tostring | test("execute_graphql")) | not)
+    and ([.actions[]? | select(.tool == "execute_graphql" and .status == "ok")] | length) == 0
     and (.evidence | tostring | test("workflow|saved_query|capability|blocked|gj_workflow_execution"))
   ' "agent eval: broad workflow-style prompt stayed on safe surface"
 

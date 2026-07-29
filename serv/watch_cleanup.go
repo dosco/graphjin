@@ -383,6 +383,21 @@ func watchSavedQueryRefs(row map[string]any) []string {
 	return refs
 }
 
+// watchRegisteredSavedQueryRefs returns only names registered by an inline
+// watch query. saved_query_name references pre-existing user artifacts and must
+// never become cascade-delete targets.
+func watchRegisteredSavedQueryRefs(row map[string]any) []string {
+	query := strings.TrimSpace(stringMapValue(row, "query"))
+	if query == "" {
+		return nil
+	}
+	header, err := core.Operation(query)
+	if err != nil || strings.TrimSpace(header.Name) == "" {
+		return nil
+	}
+	return []string{strings.TrimSpace(header.Name)}
+}
+
 // savedQueryNamesMatch tolerates a namespace qualifier on either side:
 // "ns.orders" matches "orders", but "ns1.orders" does not match "ns2.orders".
 func savedQueryNamesMatch(a, b string) bool {
@@ -402,6 +417,14 @@ func savedQueryNamesMatch(a, b string) bool {
 func savedQuerySubscriptionArtifact(row map[string]any) bool {
 	return artifactKindMatches(row["kind"], artifactKindSavedQuery) &&
 		savedQueryOperation(rowContent(row), metadataMap(row)) == "subscription"
+}
+
+func savedQueryWatchRegisteredArtifact(row map[string]any) bool {
+	if !savedQuerySubscriptionArtifact(row) {
+		return false
+	}
+	registered, _ := metadataMap(row)["watch_registered"].(bool)
+	return registered
 }
 
 // orphanedSavedQueryArtifacts lists db-backed subscription saved-query
@@ -434,7 +457,7 @@ func (s *graphjinService) orphanedSavedQueryArtifacts(
 		if !admin && stringMapValue(row, "owner_id") != ownerID {
 			continue
 		}
-		if !savedQuerySubscriptionArtifact(row) {
+		if !savedQueryWatchRegisteredArtifact(row) {
 			continue
 		}
 		name := stringMapValue(row, "name")
@@ -478,7 +501,7 @@ func (s *graphjinService) cleanupWatchSavedQueryArtifacts(ctx context.Context, w
 	if watchRow == nil {
 		return nil
 	}
-	refs := watchSavedQueryRefs(watchRow)
+	refs := watchRegisteredSavedQueryRefs(watchRow)
 	if len(refs) == 0 {
 		return nil
 	}

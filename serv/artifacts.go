@@ -449,6 +449,11 @@ func (h artifactControlPlane) upsertArtifact(ctx context.Context, root core.Mana
 	if existing != nil && !admin && stringMapValue(existing, "owner_id") != ownerID {
 		return nil, fmt.Errorf("gj_artifacts write denied")
 	}
+	if existing == nil {
+		if err := h.enforceArtifactOwnerLimit(ctx, ownerID, kind); err != nil {
+			return nil, err
+		}
+	}
 	revision := int64(1)
 	createdAt := now
 	if existing != nil {
@@ -913,15 +918,58 @@ func (s *graphjinService) checkArtifactKindWritable(kind string) error {
 	return nil
 }
 
+func (h artifactControlPlane) enforceArtifactOwnerLimit(ctx context.Context, ownerID, kind string) error {
+	if h.service == nil || h.service.conf == nil {
+		return nil
+	}
+	kind = normalizeArtifactKind(kind)
+	switch kind {
+	case artifactKindSavedQuery, artifactKindFragment, artifactKindWorkflow:
+	default:
+		return nil
+	}
+	max := h.service.conf.Core.EffectiveArtifactsConfig().MaxPerOwner
+	if max <= 0 {
+		return nil
+	}
+	kinds := []any{artifactKindSavedQuery, artifactKindFragment, artifactKindWorkflow}
+	rows, err := h.service.internalStoreAllRows(
+		ctx,
+		"artifacts",
+		`where: { kind: { in: $kinds }, owner_id: { eq: $owner_id } }`,
+		`id`,
+		map[string]any{"kinds": kinds, "owner_id": ownerID},
+	)
+	if err != nil {
+		return err
+	}
+	if len(rows) >= max {
+		return artifactPolicyError{
+			Code:        "artifact_owner_cap_reached",
+			Kind:        kind,
+			Limit:       max,
+			PolicyFinal: true,
+		}
+	}
+	return nil
+}
+
 type artifactPolicyError struct {
 	Code        string
 	Kind        string
+	Limit       int
 	PolicyFinal bool
 }
 
 func (e artifactPolicyError) Error() string {
 	if e.Code == "" {
 		e.Code = "artifact_policy_error"
+	}
+	if e.Code == "artifact_owner_cap_reached" {
+		if e.Limit > 0 {
+			return fmt.Sprintf("%s: owner catalog artifact cap reached (%d)", e.Code, e.Limit)
+		}
+		return e.Code
 	}
 	if e.Kind == "" {
 		return e.Code

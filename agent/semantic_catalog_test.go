@@ -79,6 +79,90 @@ func TestSemanticCatalogGuidanceAndToolSchemaAreConditional(t *testing.T) {
 	}
 }
 
+func TestRuntimeSeedUsageInstructionsNameExactCodePathsAndShapes(t *testing.T) {
+	for _, phrase := range []string{
+		"inputs.context._graphjin_discovery",
+		"do not require one saved query per requested entity",
+		"const card = saved[0]",
+		"never put them in Promise.then callbacks",
+		"inputs.distilledContext does not exist",
+		"result.cards[0]",
+		"execute_saved_query({name: card.title})",
+		"execution.data",
+		"never make another catalog call",
+		"identical repeated query_catalog request is rejected before execution",
+		"returns recovery.execution instead",
+		"globalThis.graphjinLastExecution",
+		"graphjinLastExecution.result.data",
+		"Never infer that business data is absent from catalog-card prose",
+	} {
+		if !strings.Contains(runtimeSeedUsageInstructions, phrase) {
+			t.Fatalf("runtime seed guidance missing %q", phrase)
+		}
+	}
+}
+
+func TestExecutorHandoffInstructionsRequireExplicitDiscovery(t *testing.T) {
+	for _, phrase := range []string{
+		"initial catalog seed is orientation only",
+		"never satisfies the required model-driven discovery action",
+		`query_catalog({kind:"saved_query", limit:10})`,
+		"globalThis.graphjinDistilledContext",
+		"globalThis.graphjinHistory",
+		"most recent entries",
+		"rejected until its JavaScript references graphjinHistory",
+		"globalThis.graphjinExecutorRequest",
+		"normalized user request",
+		"runtime-only seed fallback",
+		"Never treat a draft answer from the distiller as final evidence",
+		"globalThis.graphjinLastExecution",
+		"graphjinLastExecution.result.data",
+	} {
+		if !strings.Contains(executorHandoffInstructions, phrase) {
+			t.Fatalf("executor handoff guidance missing %q", phrase)
+		}
+	}
+}
+
+func TestProtocolRejectsIdenticalCatalogRequestLoopsAndReplaysExecution(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "find customers", "", 40, nil, nil, CatalogSearchFeatures{})
+	args := map[string]any{"kind": "saved_query", "search": "daily planning", "limit": 10}
+
+	if _, err := runtime.QueryCatalog(context.Background(), cloneMap(args)); err != nil {
+		t.Fatalf("first query_catalog call: %v", err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), cloneMap(args)); err == nil || !strings.Contains(err.Error(), "duplicate query_catalog call rejected") {
+		t.Fatalf("duplicate error = %v", err)
+	}
+	if got := len(base.calls); got != 1 {
+		t.Fatalf("runtime calls = %d, want one successful catalog dispatch", got)
+	}
+
+	execution := map[string]any{"data": map[string]any{"production_orders": []any{map[string]any{"product_name": "Northstar"}}}}
+	runtime.state.recordExecution("execute_saved_query", map[string]any{"name": "daily_roast_context"}, execution)
+	replayed, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
+	if err != nil {
+		t.Fatalf("post-execution duplicate recovery: %v", err)
+	}
+	recovery := mapValue(mapValue(replayed)["recovery"])
+	replayedExecution := mapValue(recovery["execution"])
+	if got := mapValue(mapValue(replayedExecution["result"])["data"]); got == nil || got["production_orders"] == nil {
+		t.Fatalf("post-execution recovery did not replay live data: %+v", replayed)
+	}
+	if got := len(base.calls); got != 1 {
+		t.Fatalf("runtime calls after recovery = %d, want one catalog dispatch", got)
+	}
+}
+
+func cloneMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
 func TestSemanticCoverageProtocolValidationAndOneBatchLimit(t *testing.T) {
 	features := CatalogSearchFeatures{SemanticRecall: true, CoverageBatch: true}
 	newRuntime := func(enabled bool) (*protocolRuntime, *fakeRuntime) {
@@ -94,9 +178,8 @@ func TestSemanticCoverageProtocolValidationAndOneBatchLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The seed's own search must stay one unexpanded lexical/semantic call;
-	// coverage batching remains the model's explicit one-shot choice. The
-	// approved saved-query supplement is a separate lookup, never a `searches`
-	// expansion of the seed.
+	// coverage batching remains the model's explicit one-shot choice. No hidden
+	// saved-query lookup may expand the seed.
 	seedArgs := seedRuntime.state.actions[0].Args
 	if stringArg(seedArgs, "search") != "find customers" || seedArgs["searches"] != nil {
 		t.Fatalf("semantic seed changed or expanded automatically: args=%+v", seedArgs)
@@ -221,23 +304,20 @@ func TestSemanticAgentInspectsCoveragePathBeforeExecution(t *testing.T) {
 	if response.Status != StatusAnswered {
 		t.Fatalf("response = %+v", response)
 	}
-	// Seed, approved saved-query supplement, model coverage batch, and detail;
-	// the raw execution then proceeds directly on that discovery evidence.
-	if len(runtime.catalogArgs) != 4 {
-		t.Fatalf("catalog calls = %+v, want seed, supplement, coverage, detail", runtime.catalogArgs)
+	// Seed, model coverage batch, and detail; the raw execution then proceeds
+	// directly on that discovery evidence without a hidden supplement lookup.
+	if len(runtime.catalogArgs) != 3 {
+		t.Fatalf("catalog calls = %+v, want seed, coverage, detail", runtime.catalogArgs)
 	}
-	if stringArg(runtime.catalogArgs[1], "kind") != "saved_query" {
-		t.Fatalf("second catalog call was not the saved-query supplement: %+v", runtime.catalogArgs[1])
-	}
-	if len(stringSliceArg(runtime.catalogArgs[2], "searches")) != 3 {
-		t.Fatalf("third catalog call was not coverage: %+v", runtime.catalogArgs[2])
+	if len(stringSliceArg(runtime.catalogArgs[1], "searches")) != 3 {
+		t.Fatalf("second catalog call was not coverage: %+v", runtime.catalogArgs[1])
 	}
 	wantDetails := []string{"table:customers", "relationship:orders_products", "table:products"}
-	gotDetails := detailIDsFromArgs(runtime.catalogArgs[3])
+	gotDetails := detailIDsFromArgs(runtime.catalogArgs[2])
 	if strings.Join(gotDetails, "|") != strings.Join(wantDetails, "|") {
 		t.Fatalf("detail inspection = %v, want returned endpoints and real path %v", gotDetails, wantDetails)
 	}
-	wantCalls := "query_catalog|query_catalog|query_catalog|query_catalog|execute_graphql"
+	wantCalls := "query_catalog|query_catalog|query_catalog|execute_graphql"
 	if got := strings.Join(base.calls, "|"); got != wantCalls {
 		t.Fatalf("tool order = %s, want %s", got, wantCalls)
 	}

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-DEMO_DIR="$ROOT_DIR/examples/coffee-roastery"
+DEMO_DIR="${GRAPHJIN_SEMANTIC_SMOKE_DEMO_DIR:-$ROOT_DIR/examples/coffee-roastery}"
 MODE="${GRAPHJIN_SEMANTIC_SMOKE_MODE:-fixture}"
 PORT="${GRAPHJIN_SEMANTIC_SMOKE_PORT:-18080}"
 EMBEDDING_PORT="${GRAPHJIN_SEMANTIC_SMOKE_EMBEDDING_PORT:-18081}"
@@ -32,6 +32,7 @@ Options:
   -h, --help              Show this help.
 
 Live-provider environment:
+  GRAPHJIN_SEMANTIC_SMOKE_DEMO_DIR Override the demo directory (useful for isolated state).
   GRAPHJIN_SEMANTIC_PROVIDER       Ax provider name (default: openai).
   GRAPHJIN_SEMANTIC_MODEL          Embedding model (default: text-embedding-3-small).
   GRAPHJIN_SEMANTIC_BASE_URL       Optional provider base URL.

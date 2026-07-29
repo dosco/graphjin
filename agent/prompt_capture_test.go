@@ -20,7 +20,8 @@ type recordedCall struct {
 // recordingClient implements ax.AIClient and captures every Chat request ax renders,
 // so we can inspect exactly what the model receives per pipeline stage.
 type recordingClient struct {
-	calls []recordedCall
+	calls     []recordedCall
+	responses []string
 }
 
 func (c *recordingClient) Chat(_ context.Context, values map[string]ax.Value, options map[string]ax.Value) (ax.Value, error) {
@@ -31,9 +32,13 @@ func (c *recordingClient) Chat(_ context.Context, values map[string]ax.Value, op
 	// Return a minimal valid result so ax advances to the next pipeline stage: ax reads
 	// results[].content (axllm.go:1096) and parses it against the requested response_format.
 	// Every JS-runtime stage requests a { javascriptCode } output; final() ends the stage.
+	content := `{"javascriptCode":"await final('done', {})"}`
+	if index := len(c.calls) - 1; index < len(c.responses) {
+		content = c.responses[index]
+	}
 	return map[string]ax.Value{
 		"results": []ax.Value{
-			map[string]ax.Value{"content": `{"javascriptCode":"await final('done', {})"}`},
+			map[string]ax.Value{"content": content},
 		},
 	}, nil
 }
@@ -46,17 +51,44 @@ func (c *recordingClient) Stream(context.Context, map[string]ax.Value, map[strin
 	return nil, nil
 }
 
-// TestCaptureRenderedPromptPerStage is a DIAGNOSTIC (not an assertion). It dumps what the
-// real ax pipeline sends to the LLM so we can see whether defaultAgentMessage and
-// runtimeUsageInstructions land in the same stage or different stages, and whether tool
-// descriptions reach the model. Set PROMPT_CAPTURE_DIR to also write full per-call dumps.
+// TestCaptureRenderedPromptPerStage asserts the RLM prompt boundary and also
+// logs the remaining staged payloads. Set PROMPT_CAPTURE_DIR to write full
+// per-call dumps for manual auditing.
 //
 //	go test ./agent -run TestCaptureRenderedPromptPerStage -v
 func TestCaptureRenderedPromptPerStage(t *testing.T) {
-	rec := &recordingClient{}
+	const (
+		seedID          = "saved_query:seed_prompt_leak_sentinel"
+		seedSummary     = "SEED_SUMMARY_MUST_STAY_IN_RUNTIME_7F3A"
+		facetKindAudit  = "facet_digest_sentinel_kind"
+		toolResultAudit = "TOOL_RESULT_STAGING_AUDIT_91C2"
+	)
+	rec := &recordingClient{responses: []string{
+		`{"javascriptCode":"await final('Inspect the GraphJin catalog and answer from evidence.', {})"}`,
+		`{"javascriptCode":"void graphjinDistilledContext.count; const audit = await query_catalog({id:'help:discovery'}); console.log(audit);"}`,
+		`{"javascriptCode":"await final('Answer from the inspected catalog.', {ok:true})"}`,
+	}}
+	runtime := &fakeRuntime{}
+	runtime.catalogOverride = func(args map[string]any) any {
+		if stringArg(args, "id") == "help:discovery" {
+			return map[string]any{
+				"count": 1,
+				"cards": []any{map[string]any{
+					"id": "help:discovery", "kind": "help", "summary": toolResultAudit,
+				}},
+			}
+		}
+		return map[string]any{
+			"count":  1,
+			"facets": map[string]any{facetKindAudit: 17},
+			"cards": []any{map[string]any{
+				"id": seedID, "kind": "saved_query", "summary": seedSummary,
+			}},
+		}
+	}
 	runner := newAgent(
 		Config{Provider: "openai", APIKeyEnv: "GRAPHJIN_UNUSED", TimeoutSeconds: 50, MaxSteps: 4},
-		&fakeRuntime{},
+		runtime,
 		WithClientFactory(func(Config) (ax.AIClient, error) { return rec, nil }),
 		// Intentionally NO WithProgramFactory: we want ax's real prompt assembly.
 	)
@@ -85,9 +117,11 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 
 	outDir := os.Getenv("PROMPT_CAPTURE_DIR")
 	t.Logf("captured %d Chat call(s)", len(rec.calls))
-	var runtimeReached, skillReached, markdownReached bool
+	var runtimeReached, skillReached, markdownReached, toolResultStaged bool
+	var rendered strings.Builder
 	for i, call := range rec.calls {
 		blob := "===VALUES===\n" + dumpAXValue(call.values) + "\n===OPTIONS===\n" + dumpAXValue(call.options)
+		rendered.WriteString(blob)
 		var present []string
 		for _, m := range markers {
 			if strings.Contains(blob, m.marker) {
@@ -102,6 +136,9 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 		}
 		if strings.Contains(blob, "markdown table") { // responder answer-field formatting guidance
 			markdownReached = true
+		}
+		if strings.Contains(blob, toolResultAudit) {
+			toolResultStaged = true
 		}
 		t.Logf("call #%d: len=%d markers=%v", i, len(blob), present)
 		if outDir != "" {
@@ -124,6 +161,20 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 	if !markdownReached {
 		t.Error("markdown answer-formatting guidance reached no stage — the responder answer-field guidance regressed")
 	}
+	if strings.Contains(rendered.String(), seedID) || strings.Contains(rendered.String(), seedSummary) {
+		t.Error("catalog seed card content leaked into a staged prompt instead of staying on inputs.context")
+	}
+	if !strings.Contains(rendered.String(), "catalog_facets") || !strings.Contains(rendered.String(), facetKindAudit) {
+		t.Error("the small catalog facet digest did not reach a staged prompt")
+	}
+	loadedSkillBytes := 0
+	for _, definition := range allowedSkills(false, nil) {
+		loadedSkillBytes += len(definition.content)
+	}
+	t.Logf(
+		"payload audit: staged_bytes=%d runtime_usage_bytes=%d loaded_skill_bytes=%d tool_result_staged=%t",
+		rendered.Len(), len(runtimeUsageInstructions), loadedSkillBytes, toolResultStaged,
+	)
 }
 
 func TestCaptureRenderedSkillsPerCapabilityProfile(t *testing.T) {

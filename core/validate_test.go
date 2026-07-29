@@ -331,6 +331,15 @@ func TestConfigValidate(t *testing.T) {
 			wantErr: true,
 			errMsg:  "artifacts.poll_seconds",
 		},
+		{
+			name: "sources used rejects negative artifact owner cap",
+			config: Config{
+				Sources:   []SourceConfig{{Name: "app", Kind: "database", Type: "postgres"}},
+				Artifacts: ArtifactsConfig{Enabled: true, Source: "app", MaxPerOwner: -1},
+			},
+			wantErr: true,
+			errMsg:  "artifacts.max_per_owner",
+		},
 	}
 
 	for _, tt := range tests {
@@ -360,7 +369,7 @@ func TestNormalizeSourcesAppliesIdentityAccessAndArtifactDefaults(t *testing.T) 
 	if conf.Identity.UserIDClaim != "sub" || conf.Identity.NamespaceClaim != "account_id" || conf.Identity.Query != conf.RolesQuery {
 		t.Fatalf("identity defaults not applied: %+v", conf.Identity)
 	}
-	if conf.Artifacts.Source != "app" || conf.Artifacts.Schema != "_graphjin" || conf.Artifacts.GlobalsPath != "./config" || !conf.Artifacts.AutoInitEnabled() || conf.Artifacts.PollSeconds != 15 {
+	if conf.Artifacts.Source != "app" || conf.Artifacts.Schema != "_graphjin" || conf.Artifacts.GlobalsPath != "./config" || !conf.Artifacts.AutoInitEnabled() || conf.Artifacts.PollSeconds != 15 || conf.Artifacts.MaxPerOwner != 200 {
 		t.Fatalf("artifact defaults not applied: %+v", conf.Artifacts)
 	}
 	app, _ := conf.SourceByName("app")

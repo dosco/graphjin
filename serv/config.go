@@ -1169,7 +1169,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("agent.timeout_seconds", 50)
 	vi.SetDefault("agent.read_only", false)
 	vi.SetDefault("agent.return_trace", false)
-	vi.SetDefault("agent.seed_limit", 10)
+	vi.SetDefault("agent.seed_limit", 40)
 	vi.SetDefault("agent.catalog_default_limit", 20)
 	// model and base_url both contain optional/underscored paths that are used
 	// heavily by local OpenAI-compatible smoke and Ollama deployments. Bind them

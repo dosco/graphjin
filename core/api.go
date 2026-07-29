@@ -100,6 +100,7 @@ type graphjinEngine struct {
 	subs                       sync.Map
 	prod                       bool
 	prodSec                    bool
+	learn                      bool
 	namespace                  string
 	printFormat                []byte
 	opts                       []Option
@@ -376,6 +377,7 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		log:         _log.New(os.Stderr, "", 0),
 		prod:        conf.Production,
 		prodSec:     conf.Production,
+		learn:       !conf.Production && !isAgenticMode(conf),
 		printFormat: []byte(fmt.Sprintf("gj-%x:", t.UnixNano())),
 		opts:        options,
 		fs:          fs,
@@ -853,8 +855,9 @@ func (g *GraphJin) GraphQL(c context.Context,
 		gj.cache.Set((APQ_PX + rc.APQKey), r.query)
 	}
 
-	// if not production then save named queries to allow list
-	if !gj.prod && r.name != "" && r.name != "IntrospectionQuery" {
+	// Development learning saves named queries to the allow list. Agentic mode
+	// keeps dynamic authoring enabled but does not mint permanent query entries.
+	if gj.learn && r.name != "" && r.name != "IntrospectionQuery" {
 		if err = gj.saveToAllowList(c, resp.qc, resp.res.namespace); err != nil {
 			return
 		}
@@ -1276,6 +1279,7 @@ func (g *GraphJin) newGraphJinReloadingConfigDatabases(base *graphjinEngine, nex
 		log:         log,
 		prod:        conf.Production,
 		prodSec:     conf.Production,
+		learn:       !conf.Production && !isAgenticMode(conf),
 		printFormat: printFormat,
 		opts:        opts,
 		fs:          base.fs,
@@ -1428,6 +1432,7 @@ func (g *GraphJin) newGraphJinReloadingDatabase(base *graphjinEngine, database s
 		log:         log,
 		prod:        conf.Production,
 		prodSec:     conf.Production,
+		learn:       !conf.Production && !isAgenticMode(conf),
 		printFormat: printFormat,
 		opts:        base.opts,
 		fs:          base.fs,

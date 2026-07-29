@@ -188,6 +188,9 @@ func TestCoffeeRoasteryServiceRuntimeCoverageBatch(t *testing.T) {
 	if result.Retrieval == nil || result.Retrieval.Mode != "coverage_hybrid" || len(result.Coverage) != 3 {
 		t.Fatalf("service runtime omitted coverage metadata: %+v", result)
 	}
+	if result.Facets["table"] != 4 || result.Facets["relationship"] != 3 {
+		t.Fatalf("service runtime facets = %+v, want the full coverage union", result.Facets)
+	}
 	next, ok := result.Next.(map[string]any)
 	if !ok {
 		t.Fatalf("coverage next = %T, want map", result.Next)

@@ -1105,7 +1105,7 @@ endpoint works via `agent.base_url`.
 | `agent.timeout_seconds` | integer | `50` | Request timeout for agent runs; values below 50 are raised to the 50-second minimum |
 | `agent.read_only` | boolean | `false` | Force the server-side agent to reject mutations, including saved-query mutations |
 | `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
-| `agent.seed_limit` | integer | `10` | Initial `query_catalog(search: instruction)` seed row cap |
+| `agent.seed_limit` | integer | `40` | Initial `query_catalog(search: instruction)` seed row cap |
 | `agent.catalog_default_limit` | integer | `20` | Default row limit for model-issued catalog queries |
 
 There are no per-request agent modes. The server-side agent's internal runtime
