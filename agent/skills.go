@@ -16,8 +16,6 @@ const (
 	skillWorkflowWrite   = "workflow_write"
 	skillWatchRead       = "watch_read"
 	skillWatchWrite      = "watch_write"
-	skillWatchFlow       = "watch_flow"
-	skillWatchDelivery   = "watch_delivery"
 	skillTaskRead        = "task_read"
 	skillTaskWrite       = "task_write"
 	skillAdminRead       = "admin_read"
@@ -98,22 +96,8 @@ var builtinSkills = []skillDefinition{
 	},
 	{
 		id:               skillWatchWrite,
-		name:             "Watch lifecycle",
+		name:             "Watch lifecycle, flows, and delivery",
 		content:          watchWriteInstruction,
-		write:            true,
-		requiresAllRoots: []string{systemRootWatch},
-	},
-	{
-		id:               skillWatchFlow,
-		name:             "Watch flow enrichment",
-		content:          watchFlowInstruction,
-		write:            true,
-		requiresAllRoots: []string{systemRootWatch},
-	},
-	{
-		id:               skillWatchDelivery,
-		name:             "Watch actions",
-		content:          watchDeliveryInstruction,
 		write:            true,
 		requiresAllRoots: []string{systemRootWatch},
 	},
@@ -204,60 +188,51 @@ func profileHasAllSystemRoots(profile *CapabilityProfile, roots []string) bool {
 	return true
 }
 
-const dataDiscoveryInstruction = `Skill: data_discovery. Discover application data through the GraphJin catalog before querying. ` +
-	`Inspect the relevant table, column, relationship, or saved-query detail rows and use only returned names and relationship paths. Dynamic authoring is the primary path: validate the shape and use execute_graphql; an approved saved query is a governed shortcut. Answer from observed results, not assumptions. ` +
-	`If execution errors carry graphjin_repair guidance, treat it as a query-authoring mistake: re-discover the real fields through the catalog, re-author the query from the returned names, and retry in the same run; never advise schema or data changes. Cite only observed fields in the final answer and state derived numbers in plain language.`
+const dataDiscoveryInstruction = `Skill: data_discovery. Before querying, inspect relevant GraphJin catalog table, column, relationship, or saved-query details; use only returned names and paths. ` +
+	`Prefer dynamic authoring: validate the shape, then execute_graphql; an approved saved query is a governed shortcut. Answer only from observed results and fields, stating derived numbers plainly. ` +
+	`On graphjin_repair, treat the failure as a query-authoring error: re-discover real fields, re-author, and retry in the same run; never advise schema or data changes.`
 
 const dataAggregationInstruction = `Skill: data_aggregation. The model plans, the database computes. ` +
-	`Fetched lists are server-limited pages: never derive totals, counts, averages, extremes, or rankings by arithmetic over rows. Author aggregate fields — count_<col>, sum_<col>, avg_<col>, min_<col>, max_<col> — valid on date/time columns too (max_<date_col> returns the latest value) even though introspection lists them only for numeric columns. For top-N by group, select the grouping dimension plus the aggregate field, order_by that aggregate field desc, and limit to N. ` +
-	`Anchor relative time windows on live evidence: inputs.current_date is today (UTC); query max_<date_col> for data recency, never memory or sample rows, and state the resolved window in the answer. ` +
-	`When result.truncation appears on an execution, those paths hit their row limit: re-author with aggregate fields before answering.`
+	`Fetched lists are limited pages: never calculate totals, counts, averages, extremes, or rankings from their rows. Use count_<col>, sum_<col>, avg_<col>, min_<col>, max_<col>, also valid on date/time columns despite numeric-only introspection (max_<date_col> is latest). For top-N by group, select the dimension and aggregate, order_by that aggregate field desc, and limit N. ` +
+	`Anchor relative windows on live evidence: inputs.current_date is today (UTC); query max_<date_col> for recency, never memory or sample rows, and state the resolved window in the answer. On result.truncation, re-author with aggregate fields.`
 
 const dataWriteInstruction = `Skill: data_write. Apply application-data changes safely. ` +
-	`Prefer an approved saved mutation; otherwise learn the insert/update/upsert/delete shape from mutation_pattern and target-table detail rows, validate the input, and author the mutation with execute_graphql. Core enforces role and RLS on every write. ` +
-	`Before any mutation, establish this run's shape evidence for each target table. Preview or validate before writing and verify the result afterwards. If no permitted write path exists, return blocked with the catalog evidence and missing capability.`
+	`Prefer an approved saved mutation; otherwise establish this run's shape evidence for every target from mutation_pattern and table details, validate input, then author insert/update/upsert/delete with execute_graphql. Core enforces role and RLS. ` +
+	`Preview or validate before writing and verify after. If no permitted path exists, return blocked with catalog evidence and the missing capability.`
 
 const codeReadInstruction = `Skill: code_read (gj_code / CodeSQL source). ` +
-	`Investigate code by discovering gj_code symbols, references, db_references, and docs using help:code and code system-capability rows for exact shapes. Trace provenance from symbol to references to database schema, then answer from discovered evidence.`
+	`Discover gj_code symbols, references, db_references, and docs through help:code and code system-capability rows; trace symbol-to-reference-to-schema provenance and answer from that evidence.`
 
 const codeWriteInstruction = `Skill: code_write (gj_code / CodeSQL source). ` +
-	`Change code through the code-source preview/apply workflow: learn the managed mutation shape, inspect security guidance, preview the edit, apply it through gj_code, and verify the result. If the change capability is unavailable, return blocked with evidence.`
+	`Use the code-source preview/apply workflow: learn the managed mutation shape, inspect security guidance, preview, apply through gj_code, and verify. If change capability is unavailable, return blocked with evidence.`
 
-const workflowReadInstruction = `Skill: workflow_read. Discover reusable workflows through workflow catalog rows. ` +
-	`Inspect the chosen workflow by id, including variables, description, and safety notes, and summarize what it does and which governed path can run it. Discovery alone must not execute or modify it.`
+const workflowReadInstruction = `Skill: workflow_read. Discover workflows through catalog rows. ` +
+	`Inspect the chosen id's variables, description, and safety notes; summarize its behavior and governed run path. Discovery must not execute or modify it.`
 
-const workflowExecuteInstruction = `Skill: workflow_execute. Run an existing workflow only through gj_workflow_execution. ` +
-	`First inspect the chosen workflow detail by id, including variables and safety notes, then execute the approved workflow with the requested inputs and report its actual outcome. If workflow execution is unavailable, return blocked with the workflow evidence and missing capability.`
+const workflowExecuteInstruction = `Skill: workflow_execute. Run only through gj_workflow_execution. ` +
+	`First inspect the chosen workflow id, variables, and safety notes; then execute the approved workflow with requested inputs and report its outcome. If unavailable, return blocked with workflow evidence and the missing capability.`
 
 const workflowWriteInstruction = `Skill: workflow_write. Author or update workflow definitions through gj_workflow. ` +
-	`Inspect existing workflow detail and exact mutation guidance, preview the definition, save through the governed workflow capability, and verify the stored result. Do not execute the workflow unless the separate execution capability is available and the request requires it.`
+	`Inspect existing detail and mutation guidance, preview, save through the governed capability, and verify. Execute only if separately permitted and requested.`
 
-const watchReadInstruction = `Skill: watch_read (gj_watch / gj_watch_event). Review standing watches and their fired-event inbox. ` +
-	`Discover exact query shapes from watch system-capability rows; watches and events are owner-scoped. For a watch_events_unseen notice, query gj_watch_event only for its listed watch_ids, then mark only those reviewed events seen; never acknowledge an event from a watch ID not associated with this conversation. ` +
-	`kind absence means silence; kind digest is a rollup. Snooze via snoozed_until and clear with null without changing seen. Watch-event watches require cursor paging and conjunctive non-self watch_id eq/in.`
+const watchReadInstruction = `Skill: watch_read (gj_watch / gj_watch_event). Review owner-scoped watches/events using watch system-capability shapes. ` +
+	`On watch_events_unseen, query only listed watch_ids and mark only reviewed events seen; never acknowledge a watch ID outside this conversation. kind absence means silence; kind digest is a rollup. Snooze via snoozed_until; clear with null; neither changes seen. Watch-event watches need cursor paging and conjunctive non-self watch_id eq/in.`
 
-const watchWriteInstruction = `Skill: watch_write (gj_watch). Create, update, pause, resume, or delete standing watches through the governed root. ` +
-	`Before a mutation, inspect security guidance and the gj_watch capability detail. Create a unique per-conversation name and retain the returned ID. Use a subscription query or saved_query_name plus optional variables_json, delivery_json, and absence_json; pause or resume through status/enabled and remove through gj_watch(delete). ` +
-	`Choose from two independent questions. If the trigger is deterministic, express it in the GraphQL subscription filter; condition_js is not executed. If the trigger is semantic, needs judgment, or the stream is noisy, attach a flow. If the user only asks to be told, use inbox notification and do not attach a workflow or webhook. If the user explicitly asks GraphJin to act after the trigger, propose workflow or webhook delivery and follow the separate action-review process. ` +
-	`Use delivery_json.digest.window for noise; use a gj_watch_event rollup with non-self watch_id eq/in across watches. or/not, self references, cycles, and saved-query drift are guarded; changes can require re-approval. Retain each ID and prefer graphjin://watch-events/unseen/{watch_id}.`
+const watchWriteInstruction = `Skill: watch_write (gj_watch). Create, update, pause, resume, or delete watches; manage flow enrichment and delivery. ` +
+	`Before mutation, inspect security guidance and gj_watch capability detail. Name per conversation; retain IDs; prefer graphjin://watch-events/unseen/{watch_id}. Set a subscription query or saved_query_name, optionally variables_json/delivery_json/absence_json; pause/resume via status/enabled; delete via gj_watch(delete). saved-query drift may require re-approval. ` +
+	`Make two independent choices. Trigger: use GraphQL subscription filters for deterministic triggers (condition_js never executes); use a flow only for semantic judgment or a noisy stream, not when a filter or default_watch_triage suffices. Response: if the user only asks to be told, notify the inbox without workflow/webhook; a notification request is not permission to act. Only when the user explicitly asks GraphJin to act may you propose workflow/webhook delivery. ` +
+	`Flow: set enrich_json to default_watch_triage or inline AxFlow Mermaid with enabled:true, kind:"flow"; create no flow artifact or flows/ file. Tool-free flows return notify/digest/discard, info/warn/critical, and a summary within 280 characters. Use delivery_json.digest.window for noise; digest emits one unseen kind=digest event per window. Cross-watch rollups use a gj_watch_event watch with cursor paging and conjunctive non-self watch_id eq/in. Failure sends raw inbox notification, never workflow/webhook. or/not, self references, and cycles are guarded. ` +
+	`Delivery: Deterministic action triggers use a GraphQL-filtered watch plus delivery; semantic or noisy action triggers add an inline flow first. Inspect a named workflow before proposing it. ` +
+	`Approval: new/changed flow or autonomous delivery pauses with flow_approval/action_approval pending. Update gj_watch with flow_review_json{decision:"preview|approve|reject", expected_flow_hash, samples_json} or action_review_json{decision:"approve|reject", expected_action_hash}. Flow approval requires a successful preview of the current flow_hash. For delivery, explain exact effect/action_hash and stop; approve or reject only that hash in a later run. Never create and approve an action in the same run.`
 
-const watchFlowInstruction = `Skill: watch_flow. Add, preview, and approve AxFlow enrichment for an existing watch. ` +
-	`Use a flow only when the trigger needs semantic judgment or a noisy stream needs triage; do not hand-write one when a deterministic GraphQL filter or default_watch_triage suffices. Put either default_watch_triage or inline AxFlow Mermaid in enrich_json with enabled:true and kind:"flow"; do not create a flow artifact or flows/ file. ` +
-	`A new or changed flow pauses with flow_approval pending. Preview or approve it through gj_watch(where:{id:{eq:"..."}}, update:{flow_review_json:{decision:"preview|approve|reject", expected_flow_hash:"...", samples_json:[...]}}). Approval must match a successful preview of the current flow_hash. ` +
-	`Flows have no tools and must return notify/digest/discard, info/warn/critical, and a summary no longer than 280 characters. digest drains into one unseen kind=digest event after delivery_json.digest.window. Flow failure sends a raw inbox notification but never executes a workflow or webhook.`
-
-const watchDeliveryInstruction = `Skill: watch_delivery. Attach workflow or webhook delivery only when the user explicitly asks GraphJin to perform an action after a watch fires. ` +
-	`A notification request such as "tell me" or "let me know" is not permission to act. Deterministic action triggers use a GraphQL-filtered watch plus delivery; semantic or noisy action triggers add an inline watch flow before delivery. Inspect a named workflow before proposing it. ` +
-	`Creating or changing autonomous delivery pauses the watch and returns action_hash with action_approval pending. Explain the exact proposed effect and hash, then stop for user confirmation. In a later run, approve or reject only that hash through gj_watch(where:{id:{eq:"..."}}, update:{action_review_json:{decision:"approve|reject", expected_action_hash:"..."}}). Never create and approve an action in the same run.`
-
-const taskReadInstruction = `Skill: task_read (gj_task / gj_task_entry). Read an owner-scoped declared goal and its provenance-labeled trail. ` +
-	`A task is explicit durable context, not inferred memory: retain the returned task id and use it only as a correlation label. task_id never grants access, never satisfies catalog or mutation evidence guards, and has no graphjin://task resource. Read gj_task_entry in chronological order to explain caller journals, embedded-agent runs, and watch creation under the goal.`
+const taskReadInstruction = `Skill: task_read (gj_task / gj_task_entry). Read an owner-scoped goal and provenance trail. ` +
+	`A task is explicit durable context, not inferred memory; its id is only a correlation label. task_id grants no access, satisfies no catalog/mutation evidence guard, and has no graphjin://task resource. Read entries chronologically to explain caller journals, agent runs, and watch creation.`
 
 const taskWriteInstruction = `Skill: task_write (gj_task). Create, journal, close, reopen, or delete declared-intent tasks through governed GraphQL. ` +
-	`Create gj_task with a concise required goal and optional snapshot_json, retain its returned id, and pass that id to ask_graphjin_agent or gj_watch only when the caller explicitly associates work with it. Append human working notes through gj_task_entry(insert:{task_id, body, detail_json}); origin and provenance fields are server-managed. Close with status closed plus an outcome, and prefer close over delete so the trail remains auditable. Reopen with status open. Never infer or silently create a task.`
+	`Create with concise goal and optional snapshot_json; retain its id and pass it to ask_graphjin_agent or gj_watch only on explicit caller association. Journal human notes via gj_task_entry(insert:{task_id, body, detail_json}); origin/provenance are server-managed. Close with status closed plus outcome; reopen with status open; prefer close over delete. Never infer or silently create a task.`
 
-const adminReadInstruction = `Skill: admin_read. Investigate the visible control plane read-only. ` +
-	`Use gj_security for posture, findings, effective policy, and config audits; use gj_runtime for health, source health, and recent activity; inspect gj_config only through visible governed reads. Discover exact shapes from system-capability or help rows and answer from that evidence.`
+const adminReadInstruction = `Skill: admin_read. Inspect the visible control plane read-only: ` +
+	`gj_security for posture/findings/policy/config audits; gj_runtime for health/source health/recent activity; gj_config only through governed reads. Get exact shapes from system-capability or help rows and answer from evidence.`
 
 const adminWriteInstruction = `Skill: admin_write. Change the control plane through guarded gj_config paths only. ` +
-	`First read visible security and runtime evidence. Discover the matching config_recipe and follow preflight, preview, apply, and verify while obeying forbidden_patterns and stop_conditions. Respect resolved mode defaults and do not add redundant agent, artifact, watch, or MCP toggles when dev or agentic mode already supplies them.`
+	`Read security/runtime evidence, find the matching config_recipe, then preflight, preview, apply, and verify under forbidden_patterns and stop_conditions. Respect resolved defaults; do not add agent, artifact, watch, or MCP toggles already supplied by dev/agentic mode.`

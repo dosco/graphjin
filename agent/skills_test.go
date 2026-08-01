@@ -37,7 +37,7 @@ func optionSkillIDs(t *testing.T, value ax.Value) []string {
 	return ids
 }
 
-func TestBuiltinSkillsAreTheOrderedSixteenFocusedGuides(t *testing.T) {
+func TestBuiltinSkillsAreTheOrderedFourteenFocusedGuides(t *testing.T) {
 	want := []string{
 		skillDataDiscovery,
 		skillDataAggregation,
@@ -49,8 +49,6 @@ func TestBuiltinSkillsAreTheOrderedSixteenFocusedGuides(t *testing.T) {
 		skillWorkflowWrite,
 		skillWatchRead,
 		skillWatchWrite,
-		skillWatchFlow,
-		skillWatchDelivery,
 		skillTaskRead,
 		skillTaskWrite,
 		skillAdminRead,
@@ -116,7 +114,7 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 		{
 			name:    "watch lifecycle",
 			profile: profileWithRoleAndRoots("user", systemRootWatch),
-			want:    append(append([]string{}, baseWrite...), skillWatchRead, skillWatchWrite, skillWatchFlow, skillWatchDelivery),
+			want:    append(append([]string{}, baseWrite...), skillWatchRead, skillWatchWrite),
 		},
 		{
 			name:    "task entries read only root",
@@ -183,14 +181,19 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		profile *CapabilityProfile
 		max     int
 	}{
-		// Budgets grew deliberately when data_aggregation became the 16th
-		// skill — domain teaching moved out of the uncounted runtime blob
-		// and into the accounted skill channel.
-		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3584},
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 11 * 1024},
+		// Budgets ratchet both ways. They grew when data_aggregation moved
+		// teaching into the accounted skill channel, then dropped when the
+		// always-co-loaded write-side watch guides merged and prose tightened.
+		// Keep modest headroom so prompt growth remains a deliberate diff.
+		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 2816},
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 17 * 512},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			payload, err := json.Marshal(skillValues(allowedSkills(false, tc.profile)))
+			definitions := allowedSkills(false, tc.profile)
+			for _, definition := range definitions {
+				t.Logf("%s content: %d bytes", definition.id, len(definition.content))
+			}
+			payload, err := json.Marshal(skillValues(definitions))
 			if err != nil {
 				t.Fatalf("marshal skills: %v", err)
 			}
@@ -203,25 +206,39 @@ func TestSkillPayloadBudgets(t *testing.T) {
 }
 
 func TestWatchSkillsTeachAllFourDecisionBranches(t *testing.T) {
+	// The merged watch_write guide must retain the behavioral contract formerly
+	// split across watch_write, watch_flow, and watch_delivery.
 	for _, fragment := range []string{
 		"deterministic",
 		"semantic",
 		"noisy",
 		"only asks to be told",
 		"explicitly asks GraphJin to act",
-	} {
-		if !strings.Contains(watchWriteInstruction, fragment) {
-			t.Fatalf("watch lifecycle guidance missing %q", fragment)
-		}
-	}
-	for _, fragment := range []string{
 		"notification request",
 		"is not permission to act",
 		"Deterministic action triggers",
 		"semantic or noisy action triggers",
+		"security guidance",
+		"condition_js never executes",
+		"default_watch_triage",
+		"inline AxFlow Mermaid",
+		"create no flow artifact or flows/ file",
+		"Tool-free flows",
+		"notify/digest/discard",
+		"info/warn/critical",
+		"280 characters",
+		"delivery_json.digest.window for noise",
+		"Failure sends raw inbox notification, never workflow/webhook",
+		"Inspect a named workflow",
+		"flow_approval/action_approval pending",
+		"flow_review_json",
+		"successful preview of the current flow_hash",
+		"action_review_json",
+		"only that hash in a later run",
+		"Never create and approve an action in the same run",
 	} {
-		if !strings.Contains(watchDeliveryInstruction, fragment) {
-			t.Fatalf("watch action guidance missing %q", fragment)
+		if !strings.Contains(watchWriteInstruction, fragment) {
+			t.Fatalf("watch lifecycle guidance missing %q", fragment)
 		}
 	}
 }
