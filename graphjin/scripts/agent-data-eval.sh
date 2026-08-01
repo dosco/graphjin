@@ -117,7 +117,13 @@ fi
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$LEDGER"
-[ -n "$REPORT" ] || REPORT="$LEDGER/report-$STAMP-$PHASE.json"
+# Default reports live in the ledger directly (one entry per run); an
+# explicit --report elsewhere gets an additional ledger copy for -trend.
+LEDGER_FLAG="$LEDGER"
+if [ -z "$REPORT" ]; then
+  REPORT="$LEDGER/$STAMP-$PHASE-$(printf '%s' "$MODEL" | tr -c 'a-zA-Z0-9.-' '_').json"
+  LEDGER_FLAG=""
+fi
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/gj-agent-eval.XXXXXX")"
 SERVER_PID=""
 SERVER_LOG="$SCRATCH/server.log"
@@ -200,8 +206,9 @@ run_eval() {
     -live -corpus "" -data-corpus testdata/data_eval_cases.json
     -profiles "$profiles" -phase "$phase" -model "$model"
     -graphjin-commit "$(git rev-parse HEAD)" -repeats "$REPEATS"
-    -timeout 6m -report "$report" -ledger "$LEDGER"
+    -timeout 6m -report "$report"
   )
+  [ -n "$LEDGER_FLAG" ] && args+=(-ledger "$LEDGER_FLAG")
   [ -n "$baseline" ] && args+=(-baseline "$baseline")
   local status=0
   (cd agent && go run ./cmd/skill-eval "${args[@]}") || status=$?
@@ -226,7 +233,8 @@ stop_server
 if [ -n "$WEAK_ARM" ]; then
   echo "==> weak-model arm ($WEAK_ARM); advisory only, never gates"
   boot_server "$WEAK_ARM"
-  run_eval "$WEAK_ARM" baseline "$LEDGER/report-$STAMP-weak.json" "" advisory
+  run_eval "$WEAK_ARM" baseline \
+    "$LEDGER/$STAMP-weak-$(printf '%s' "$WEAK_ARM" | tr -c 'a-zA-Z0-9.-' '_').json" "" advisory
   stop_server
 fi
 
