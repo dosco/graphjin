@@ -31,6 +31,18 @@ func (co *Compiler) compileFields(
 		return
 	}
 
+	// Ordering by an aggregate (order_by: { sum_price: desc }) forces a
+	// grouped compilation even when the selection itself has no aggregate
+	// field: ORDER BY SUM(x) is only valid alongside a GROUP BY over the
+	// selected columns. Without this the ORDER BY references an aggregate
+	// in an ungrouped query, which every dialect rejects.
+	for _, ob := range sel.OrderBy {
+		if ob.IsFunc {
+			sel.GroupCols = true
+			break
+		}
+	}
+
 	if err = validateSelector(qc, sel, tr); err != nil {
 		return
 	}
@@ -348,6 +360,15 @@ func (co *Compiler) addOrderByColumns(sel *Select) {
 		return
 	}
 	for _, ob := range sel.OrderBy {
+		// Aggregate order-by (sum_price → ORDER BY SUM(price)) and
+		// SELECT-list-alias order-by (ORDER BY "revenue") never reference
+		// the raw column in the emitted SQL. BCols feeds both the base
+		// SELECT list and GROUP BY, so projecting the aggregate's source
+		// column here would add it to GROUP BY and collapse every group
+		// to a single row — turning SUM per dimension into per-row values.
+		if ob.IsFunc || ob.Alias != "" {
+			continue
+		}
 		sel.addBaseCol(Column{Col: ob.Col})
 	}
 }
