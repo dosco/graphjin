@@ -3,6 +3,8 @@ package psql_test
 import (
 	"strings"
 	"testing"
+
+	"github.com/dosco/graphjin/core/v3/internal/psql"
 )
 
 // compileToSQL compiles a GraphQL query through the shared qcode + psql
@@ -16,6 +18,19 @@ func compileToSQL(t *testing.T, gql string) string {
 	_, sqlBytes, err := pcompile.CompileEx(qc)
 	if err != nil {
 		t.Fatalf("psql compile: %v", err)
+	}
+	return string(sqlBytes)
+}
+
+func compileToDialectSQL(t *testing.T, dbType, gql string) string {
+	t.Helper()
+	qc, err := qcompile.Compile([]byte(gql), nil, "user", "")
+	if err != nil {
+		t.Fatalf("qcode compile: %v", err)
+	}
+	_, sqlBytes, err := psql.NewCompiler(psql.Config{DBType: dbType}).CompileEx(qc)
+	if err != nil {
+		t.Fatalf("%s compile: %v", dbType, err)
 	}
 	return string(sqlBytes)
 }
@@ -110,5 +125,50 @@ func TestOrderByAggregateWithoutSelectionSQL(t *testing.T) {
 	}
 	if !strings.Contains(sql, `ORDER BY SUM("products"."price") DESC`) {
 		t.Errorf("ORDER BY must reference the aggregate expression, SQL:\n%s", sql)
+	}
+}
+
+func TestOrderByAggregateMSSQLSQL(t *testing.T) {
+	sql := compileToDialectSQL(t, "mssql", `query {
+		products(order_by: { sum_price: desc }, limit: 1) {
+			name
+			sum_price
+		}
+	}`)
+
+	if !strings.Contains(sql, `ORDER BY SUM([products_0].[price]) DESC`) {
+		t.Fatalf("MSSQL ORDER BY must retain the aggregate expression, SQL:\n%s", sql)
+	}
+}
+
+func TestNestedOrderByAggregateMSSQLSQL(t *testing.T) {
+	sql := compileToDialectSQL(t, "mssql", `query {
+		users {
+			id
+			products(order_by: { sum_price: desc }, limit: 1) {
+				name
+				sum_price
+			}
+		}
+	}`)
+
+	if !strings.Contains(sql, `ORDER BY SUM([products_1].[price]) DESC`) {
+		t.Fatalf("nested MSSQL ORDER BY must retain the aggregate expression, SQL:\n%s", sql)
+	}
+}
+
+func TestGroupedAggregateOracleSQL(t *testing.T) {
+	sql := compileToDialectSQL(t, "oracle", `query {
+		products(limit: 5) {
+			name
+			count_id
+		}
+	}`)
+
+	if !strings.Contains(sql, `GROUP BY "PRODUCTS"."NAME"`) {
+		t.Fatalf("Oracle grouped page must retain its dimension GROUP BY, SQL:\n%s", sql)
+	}
+	if strings.Contains(sql, `ORDER BY "PRODUCTS"."ID"`) {
+		t.Fatalf("Oracle grouped page must not order by an ungrouped primary key, SQL:\n%s", sql)
 	}
 }
