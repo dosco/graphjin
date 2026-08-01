@@ -56,8 +56,9 @@ type dataOracle struct {
 	Extract          string         `json:"extract,omitempty"`
 	DimensionExtract string         `json:"dimension_extract,omitempty"`
 	// PickMax selects the row with the largest numeric value from a grouped
-	// result in the runner. Used instead of order_by on the aggregate, which
-	// the engine currently miscompiles (silently un-groups the selection).
+	// result in the runner. Alternative to order_by-on-the-aggregate oracles:
+	// it ranks outside the engine, so it stays trustworthy even if the
+	// grouped-order-by compile path regresses.
 	PickMax *pickMaxRule `json:"pick_max,omitempty"`
 	// AnchorQuery resolves a live data anchor (e.g. max_<date_col>) whose
 	// value substitutes {{anchor}} / {{anchor±Nd}} tokens in Variables.
