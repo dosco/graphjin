@@ -17,6 +17,7 @@
 # recall regressing vs the baseline. Below-target recall (< 0.90) warns.
 set -euo pipefail
 
+INVOKE_DIR="$PWD"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
@@ -112,6 +113,23 @@ fi
 case "$PHASE" in baseline|candidate) ;; *) echo "--phase must be baseline or candidate" >&2; exit 1 ;; esac
 if [ "$PHASE" = "candidate" ] && [ -z "$BASELINE" ]; then
   echo "--baseline <report.json> is required for the candidate phase" >&2
+  exit 1
+fi
+
+# The runner executes from agent/, so every user-supplied path must be
+# absolute before it is handed on; relative paths keep their meaning
+# against the caller's directory.
+abspath() {
+  case "$1" in
+    ""|/*) printf '%s' "$1" ;;
+    *) printf '%s/%s' "$INVOKE_DIR" "$1" ;;
+  esac
+}
+BASELINE="$(abspath "$BASELINE")"
+REPORT="$(abspath "$REPORT")"
+LEDGER="$(abspath "$LEDGER")"
+if [ -n "$BASELINE" ] && [ ! -f "$BASELINE" ]; then
+  echo "baseline report not found: $BASELINE" >&2
   exit 1
 fi
 
