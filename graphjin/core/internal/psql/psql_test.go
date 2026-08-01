@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 
 	err = qcompile.AddRole("user", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
-			Columns: []string{"id", "name", "price", "users", "customers"},
+			Columns: []string{"id", "name", "price", "created_at", "users", "customers"},
 			Filters: []string{
 				"{ price: { gt: 0 } }",
 				"{ price: { lt: 8 } }",

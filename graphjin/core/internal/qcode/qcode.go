@@ -683,6 +683,13 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			return err
 		}
 
+		// Analytics partition/order columns are stored as names in WindowSpec,
+		// so validate them after compileFields has built the field list while
+		// the selector's role config is still in scope.
+		if err := co.validateAnalytics(qc, sel, tr); err != nil {
+			return err
+		}
+
 		// Resolve deferred order_by aliases now that the SELECT list is
 		// known. compileArgOrderByObj records alias-based ordering
 		// tentatively; this pass rejects any alias that doesn't match
