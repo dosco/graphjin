@@ -37,9 +37,10 @@ func optionSkillIDs(t *testing.T, value ax.Value) []string {
 	return ids
 }
 
-func TestBuiltinSkillsAreTheOrderedFifteenFocusedGuides(t *testing.T) {
+func TestBuiltinSkillsAreTheOrderedSixteenFocusedGuides(t *testing.T) {
 	want := []string{
 		skillDataDiscovery,
+		skillDataAggregation,
 		skillDataWrite,
 		skillCodeRead,
 		skillCodeWrite,
@@ -86,8 +87,8 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 		systemRootTask,
 		systemRootTaskEntry,
 	}
-	baseRead := []string{skillDataDiscovery, skillCodeRead}
-	baseWrite := []string{skillDataDiscovery, skillDataWrite, skillCodeRead, skillCodeWrite}
+	baseRead := []string{skillDataDiscovery, skillDataAggregation, skillCodeRead}
+	baseWrite := []string{skillDataDiscovery, skillDataAggregation, skillDataWrite, skillCodeRead, skillCodeWrite}
 
 	for _, tc := range []struct {
 		name     string
@@ -143,6 +144,7 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 			profile:  profileWithRoleAndRoots("admin", allRoots...),
 			want: []string{
 				skillDataDiscovery,
+				skillDataAggregation,
 				skillCodeRead,
 				skillWorkflowRead,
 				skillWatchRead,
@@ -181,8 +183,11 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		profile *CapabilityProfile
 		max     int
 	}{
-		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3 * 1024},
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 10 * 1024},
+		// Budgets grew deliberately when data_aggregation became the 16th
+		// skill — domain teaching moved out of the uncounted runtime blob
+		// and into the accounted skill channel.
+		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3584},
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 11 * 1024},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload, err := json.Marshal(skillValues(allowedSkills(false, tc.profile)))

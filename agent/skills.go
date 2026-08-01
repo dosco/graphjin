@@ -6,21 +6,22 @@ import "strings"
 // independent guides: capability filtering decides which guides Ax receives,
 // while GraphJin runtime policy remains the authorization boundary.
 const (
-	skillDataDiscovery = "data_discovery"
-	skillDataWrite     = "data_write"
-	skillCodeRead      = "code_read"
-	skillCodeWrite     = "code_write"
-	skillWorkflowRead  = "workflow_read"
-	skillWorkflowExec  = "workflow_execute"
-	skillWorkflowWrite = "workflow_write"
-	skillWatchRead     = "watch_read"
-	skillWatchWrite    = "watch_write"
-	skillWatchFlow     = "watch_flow"
-	skillWatchDelivery = "watch_delivery"
-	skillTaskRead      = "task_read"
-	skillTaskWrite     = "task_write"
-	skillAdminRead     = "admin_read"
-	skillAdminWrite    = "admin_write"
+	skillDataDiscovery   = "data_discovery"
+	skillDataAggregation = "data_aggregation"
+	skillDataWrite       = "data_write"
+	skillCodeRead        = "code_read"
+	skillCodeWrite       = "code_write"
+	skillWorkflowRead    = "workflow_read"
+	skillWorkflowExec    = "workflow_execute"
+	skillWorkflowWrite   = "workflow_write"
+	skillWatchRead       = "watch_read"
+	skillWatchWrite      = "watch_write"
+	skillWatchFlow       = "watch_flow"
+	skillWatchDelivery   = "watch_delivery"
+	skillTaskRead        = "task_read"
+	skillTaskWrite       = "task_write"
+	skillAdminRead       = "admin_read"
+	skillAdminWrite      = "admin_write"
 )
 
 // Agent tool names (the small, fixed tool surface).
@@ -65,6 +66,7 @@ type skillDefinition struct {
 // and telemetry remain deterministic.
 var builtinSkills = []skillDefinition{
 	{id: skillDataDiscovery, name: "Data discovery", content: dataDiscoveryInstruction},
+	{id: skillDataAggregation, name: "Data aggregation", content: dataAggregationInstruction},
 	{id: skillDataWrite, name: "Data write", content: dataWriteInstruction, write: true},
 	{id: skillCodeRead, name: "Code read", content: codeReadInstruction},
 	{id: skillCodeWrite, name: "Code write", content: codeWriteInstruction, write: true},
@@ -203,8 +205,13 @@ func profileHasAllSystemRoots(profile *CapabilityProfile, roots []string) bool {
 }
 
 const dataDiscoveryInstruction = `Skill: data_discovery. Discover application data through the GraphJin catalog before querying. ` +
-	`Inspect the relevant table, column, relationship, or saved-query detail rows and use only returned names and relationship paths. Prefer an approved saved query; otherwise validate the discovered shape and use execute_graphql. Answer from observed results, not assumptions. ` +
-	`If execution errors carry graphjin_repair guidance, treat it as a query-authoring mistake: re-discover the real fields through the catalog, re-author the query from the returned names, and retry in the same run — a matching approved saved query is a governed shortcut; never advise schema or data changes. Cite only observed fields in the final answer and state derived numbers in plain language.`
+	`Inspect the relevant table, column, relationship, or saved-query detail rows and use only returned names and relationship paths. Dynamic authoring is the primary path: validate the shape and use execute_graphql; an approved saved query is a governed shortcut. Answer from observed results, not assumptions. ` +
+	`If execution errors carry graphjin_repair guidance, treat it as a query-authoring mistake: re-discover the real fields through the catalog, re-author the query from the returned names, and retry in the same run; never advise schema or data changes. Cite only observed fields in the final answer and state derived numbers in plain language.`
+
+const dataAggregationInstruction = `Skill: data_aggregation. The model plans, the database computes. ` +
+	`Fetched lists are server-limited pages: never derive totals, counts, averages, extremes, or rankings by arithmetic over rows. Author aggregate fields — count_<col>, sum_<col>, avg_<col>, min_<col>, max_<col> — valid on date/time columns too (max_<date_col> returns the latest value) even though introspection lists them only for numeric columns. For top-N by group, select the grouping dimension plus the aggregate field and compare the complete grouped rows. ` +
+	`Anchor relative time windows on live evidence: inputs.current_date is today (UTC); query max_<date_col> for data recency, never memory or sample rows, and state the resolved window in the answer. ` +
+	`When result.truncation appears on an execution, those paths hit their row limit: re-author with aggregate fields before answering.`
 
 const dataWriteInstruction = `Skill: data_write. Apply application-data changes safely. ` +
 	`Prefer an approved saved mutation; otherwise learn the insert/update/upsert/delete shape from mutation_pattern and target-table detail rows, validate the input, and author the mutation with execute_graphql. Core enforces role and RLS on every write. ` +

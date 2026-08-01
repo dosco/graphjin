@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	ax "github.com/ax-llm/ax/packages/go"
 )
@@ -90,6 +91,8 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 		Config{Provider: "openai", APIKeyEnv: "GRAPHJIN_UNUSED", TimeoutSeconds: 50, MaxSteps: 4},
 		runtime,
 		WithClientFactory(func(Config) (ax.AIClient, error) { return rec, nil }),
+		// Fixed clock so the current_date input is a deterministic sentinel.
+		WithNow(func() time.Time { return time.Date(2031, 5, 17, 9, 0, 0, 0, time.UTC) }),
 		// Intentionally NO WithProgramFactory: we want ax's real prompt assembly.
 	)
 
@@ -108,11 +111,13 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 		{"base:next.args.id", "next.args.id"},
 		{"runtimeUsage", "goja runtime profile"},
 		{"SKILL:data_write", "Skill: data_write"},
+		{"SKILL:data_aggregation", "Skill: data_aggregation"},
 		{"responder:markdown", "markdown table"},
 		{"toolDesc:saved_query", "pre-approved saved query"},
 		{"toolDesc:execute_graphql", "Execute raw GraphJin GraphQL"},
 		{"primitive:final", "final("},
 		{"primitive:askClarification", "askClarification"},
+		{"input:current_date", "2031-05-17"},
 	}
 
 	outDir := os.Getenv("PROMPT_CAPTURE_DIR")
@@ -166,6 +171,9 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 	}
 	if !strings.Contains(rendered.String(), "catalog_facets") || !strings.Contains(rendered.String(), facetKindAudit) {
 		t.Error("the small catalog facet digest did not reach a staged prompt")
+	}
+	if !strings.Contains(rendered.String(), "2031-05-17") {
+		t.Error("the current_date input did not reach a staged prompt — date anchoring guidance has no value to anchor on")
 	}
 	loadedSkillBytes := 0
 	for _, definition := range allowedSkills(false, nil) {

@@ -2621,3 +2621,53 @@ func TestStage3_DistinctAggregateNestedJoinThroughNonDistinctColumn(t *testing.T
 		t.Fatal("expected at least one purchase row or a clean compile-time error, got neither")
 	}
 }
+
+// TestResultTruncatedRoots covers the compiled-limit truncation signal end
+// to end: a limit-clamped list flags, a pure aggregate (NoLimit) does not,
+// and a mixed dimension+aggregate selection keeps its limit and flags.
+func TestResultTruncatedRoots(t *testing.T) {
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(),
+		`query { products(limit: 3) { id } }`, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	truncated := res.TruncatedRoots()
+	if len(truncated) != 1 || truncated[0].Path != "products" ||
+		truncated[0].Rows != 3 || truncated[0].Limit != 3 {
+		t.Fatalf("limit-clamped list not flagged: %+v", truncated)
+	}
+
+	if dbType == "mongodb" {
+		return // aggregate functions are not supported on the MongoDB harness
+	}
+
+	res, err = gj.GraphQL(context.Background(),
+		`query { products { count_id max_price } }`, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if truncated := res.TruncatedRoots(); len(truncated) != 0 {
+		t.Fatalf("pure aggregate flagged as truncated: %+v", truncated)
+	}
+	limits := res.RootLimits()
+	if len(limits) != 1 || !limits[0].Aggregate || !limits[0].NoLimit {
+		t.Fatalf("pure aggregate root limits = %+v", limits)
+	}
+
+	res, err = gj.GraphQL(context.Background(),
+		`query { products(limit: 5) { name count_id } }`, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	truncated = res.TruncatedRoots()
+	if len(truncated) != 1 || truncated[0].Path != "products" || truncated[0].Limit != 5 {
+		t.Fatalf("grouped page not flagged: %+v", truncated)
+	}
+}

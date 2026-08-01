@@ -95,10 +95,55 @@ func TestRuntimeSeedUsageInstructionsNameExactCodePathsAndShapes(t *testing.T) {
 		"globalThis.graphjinLastExecution",
 		"graphjinLastExecution.result.data",
 		"Never infer that business data is absent from catalog-card prose",
+		// Dynamic-first identity: authoring is the primary path, saved
+		// queries a governed shortcut, and aggregate questions re-author
+		// past row-page saved results.
+		"primary path is dynamic authoring",
+		"re-author with aggregate fields",
+		"current_date",
 	} {
 		if !strings.Contains(runtimeSeedUsageInstructions, phrase) {
 			t.Fatalf("runtime seed guidance missing %q", phrase)
 		}
+	}
+	if strings.Contains(runtimeSeedUsageInstructions, "The normal governed path is") {
+		t.Fatal("runtime seed guidance regressed to saved-query-first choreography")
+	}
+}
+
+func TestRuntimeUsageInstructionsCarryTheTruncationContract(t *testing.T) {
+	// The runtime blob carries only the mechanical result-shape contract;
+	// the domain teaching lives in the data_aggregation skill.
+	for _, phrase := range []string{
+		"result.truncation",
+		"reached its row limit",
+		"data_aggregation",
+	} {
+		if !strings.Contains(runtimeUsageInstructions, phrase) {
+			t.Fatalf("runtime usage guidance missing %q", phrase)
+		}
+	}
+}
+
+func TestDataAggregationSkillTeachesEngineSideComputation(t *testing.T) {
+	for _, phrase := range []string{
+		"The model plans, the database computes",
+		"count_<col>, sum_<col>, avg_<col>, min_<col>, max_<col>",
+		"max_<date_col>",
+		"compare the complete grouped rows",
+		"inputs.current_date is today (UTC)",
+		"state the resolved window in the answer",
+		"result.truncation",
+	} {
+		if !strings.Contains(dataAggregationInstruction, phrase) {
+			t.Fatalf("data_aggregation skill missing %q", phrase)
+		}
+	}
+	// The engine currently miscompiles order_by on an aggregate field
+	// (silently un-groups the selection); the skill must not steer models
+	// into that form until the compiler fix lands.
+	if strings.Contains(dataAggregationInstruction, "order_by") {
+		t.Fatal("data_aggregation skill teaches order_by on aggregates; remove until the compiler bug is fixed")
 	}
 }
 

@@ -1257,6 +1257,9 @@ func resultSummary(tool string, args map[string]any, out any) map[string]any {
 			if errs, ok := m["errors"].([]any); ok {
 				summary["error_count"] = len(errs)
 			}
+			if trunc := mapValue(m["truncation"]); trunc != nil {
+				summary["truncated"] = trunc["roots"]
+			}
 		}
 		return summary
 	}
