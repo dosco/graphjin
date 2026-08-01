@@ -13,8 +13,8 @@
 #   scripts/agent-data-eval.sh --phase candidate --baseline .graphjin-evals/<report>.json
 #   cd agent && go run ./cmd/skill-eval -trend ../.graphjin-evals
 #
-# Candidate phase exits 2 when a hard gate fails (ground-truth recall < 0.90,
-# or any recall regression vs the baseline).
+# Candidate phase exits 2 when a hard gate fails: ground-truth or method
+# recall regressing vs the baseline. Below-target recall (< 0.90) warns.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -126,11 +126,14 @@ if [ -z "$REPORT" ]; then
 fi
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/gj-agent-eval.XXXXXX")"
 SERVER_PID=""
+BOOTED_PORT=0
 SERVER_LOG="$SCRATCH/server.log"
 
 kill_port() {
-  # `go run` does not always take its compiled child down with it; sweep the
-  # port so reruns never hit "already serving".
+  # `go run` does not always take its compiled child down with it, so sweep
+  # the port — but ONLY when this run booted it. A concurrent session that
+  # refuses to boot (port busy) must never kill the owner's server.
+  [ "$BOOTED_PORT" = "1" ] || return 0
   lsof -ti ":$PORT" 2>/dev/null | xargs kill 2>/dev/null || true
 }
 
@@ -166,6 +169,7 @@ boot_server() {
     GOTOOLCHAIN=auto go run ./cmd serve --demo --path "$DEMO_PATH" \
     >"$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
+  BOOTED_PORT=1
   local waited=0
   until curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; do
     sleep 2
@@ -186,6 +190,7 @@ stop_server() {
   fi
   kill_port
   SERVER_PID=""
+  BOOTED_PORT=0
 }
 
 run_eval() {
