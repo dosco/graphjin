@@ -12,13 +12,13 @@ Run after starting the demo server:
   graphjin serve --demo --path examples/pcb-fab
 
 Usage:
-  examples/pcb-fab/scripts/smoke.sh [--url URL] [--agent|--no-agent|--agent-eval] [--model-resolution]
+  examples/pcb-fab/scripts/smoke.sh [--url URL] [--agent|--no-agent|--agent-eval] [--missing-model-credentials]
 
 Options:
   --url URL     GraphJin base URL. Defaults to GRAPHJIN_URL or http://localhost:8082.
   --agent       Require REST and MCP agent checks.
   --agent-eval  Run stricter open-ended agent protocol evals against REST.
-  --model-resolution  Check automatic MCP client-model fallback and REST failure.
+  --missing-model-credentials  Check fail-closed MCP and REST behavior.
   --no-agent    Skip REST and MCP agent checks.'
 
 MOCK_PID=""
@@ -274,8 +274,8 @@ case "$RUN_AGENT_EVAL" in
     ;;
 esac
 
-if [ "$RUN_MODEL_RESOLUTION" = "always" ]; then
-  run_model_resolution_suite
+if [ "$RUN_MODEL_CREDENTIALS" = "always" ]; then
+  run_model_credentials_suite
 fi
 
 log "pcb fab smoke suite passed"

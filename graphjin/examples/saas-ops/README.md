@@ -46,10 +46,9 @@ examples/saas-ops/scripts/smoke.sh --agent-eval   # + agent protocol evals
 ```
 
 Because this demo boots in seconds, the shared smoke harness also uses it for
-the client-model fallback checks. It boots the demo with an intentionally empty
-server key environment, verifies a sampling-capable MCP client succeeds with at
-least one `sampling/createMessage` call, verifies `--no-sampling` fails with
-`model_sampling_unavailable`, and verifies REST reports missing server
-credentials. Run that gate through `scripts/demo-smoke-all.sh`.
+the missing-model-credentials check. It boots the demo with an intentionally
+empty server key environment and verifies both MCP and REST fail closed with
+`model_credentials_required`. Run that gate through
+`scripts/demo-smoke-all.sh`.
 
 See [PROMPTS.md](PROMPTS.md) for agent prompts to try interactively.

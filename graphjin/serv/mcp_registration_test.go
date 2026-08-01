@@ -13,9 +13,9 @@ import (
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/core/v3/featurecap"
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/server"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type deadlineCaptureWriter struct {
@@ -94,25 +94,9 @@ func TestExtendDeadlineForMCPRequestClearsNotificationStreamDeadline(t *testing.
 
 func resourceURIsFromServer(t *testing.T, srv *server.MCPServer) map[string]bool {
 	t.Helper()
-
-	c, err := client.NewInProcessClient(srv)
-	if err != nil {
-		t.Fatalf("new in-process client: %v", err)
-	}
-	defer c.Close()
-
-	if err := c.Start(context.Background()); err != nil {
-		t.Fatalf("start in-process client: %v", err)
-	}
-
-	initReq := mcp.InitializeRequest{}
-	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	initReq.Params.ClientInfo = mcp.Implementation{Name: "test-client", Version: "1.0.0"}
-	if _, err := c.Initialize(context.Background(), initReq); err != nil {
-		t.Fatalf("initialize in-process client: %v", err)
-	}
-
-	result, err := c.ListResources(context.Background(), mcp.ListResourcesRequest{})
+	ctx := context.Background()
+	c := connectOfficialTestClient(t, ctx, srv)
+	result, err := c.ListResources(ctx, nil)
 	if err != nil {
 		t.Fatalf("list resources: %v", err)
 	}
@@ -126,25 +110,9 @@ func resourceURIsFromServer(t *testing.T, srv *server.MCPServer) map[string]bool
 
 func promptNamesFromServer(t *testing.T, srv *server.MCPServer) map[string]bool {
 	t.Helper()
-
-	c, err := client.NewInProcessClient(srv)
-	if err != nil {
-		t.Fatalf("new in-process client: %v", err)
-	}
-	defer c.Close()
-
-	if err := c.Start(context.Background()); err != nil {
-		t.Fatalf("start in-process client: %v", err)
-	}
-
-	initReq := mcp.InitializeRequest{}
-	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	initReq.Params.ClientInfo = mcp.Implementation{Name: "test-client", Version: "1.0.0"}
-	if _, err := c.Initialize(context.Background(), initReq); err != nil {
-		t.Fatalf("initialize in-process client: %v", err)
-	}
-
-	result, err := c.ListPrompts(context.Background(), mcp.ListPromptsRequest{})
+	ctx := context.Background()
+	c := connectOfficialTestClient(t, ctx, srv)
+	result, err := c.ListPrompts(ctx, nil)
 	if err != nil {
 		t.Fatalf("list prompts: %v", err)
 	}
@@ -158,37 +126,37 @@ func promptNamesFromServer(t *testing.T, srv *server.MCPServer) map[string]bool 
 
 func toolsFromServer(t *testing.T, srv *server.MCPServer, ctx context.Context) map[string]mcp.Tool {
 	t.Helper()
-
-	c, err := client.NewInProcessClient(srv)
-	if err != nil {
-		t.Fatalf("new in-process client: %v", err)
-	}
-	defer c.Close()
-
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := c.Start(ctx); err != nil {
-		t.Fatalf("start in-process client: %v", err)
-	}
-
-	initReq := mcp.InitializeRequest{}
-	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	initReq.Params.ClientInfo = mcp.Implementation{Name: "test-client", Version: "1.0.0"}
-	if _, err := c.Initialize(ctx, initReq); err != nil {
-		t.Fatalf("initialize in-process client: %v", err)
-	}
-
-	result, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+	c := connectOfficialTestClient(t, ctx, srv)
+	result, err := c.ListTools(ctx, nil)
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
 
 	tools := make(map[string]mcp.Tool, len(result.Tools))
 	for _, tool := range result.Tools {
-		tools[tool.Name] = tool
+		tools[tool.Name] = server.ToolFromSDK(tool)
 	}
 	return tools
+}
+
+func connectOfficialTestClient(t *testing.T, ctx context.Context, srv *server.MCPServer) *sdk.ClientSession {
+	t.Helper()
+	serverTransport, clientTransport := sdk.NewInMemoryTransports()
+	serverSession, err := srv.SDK().Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("connect official MCP server: %v", err)
+	}
+	t.Cleanup(func() { _ = serverSession.Close() })
+	client := sdk.NewClient(&sdk.Implementation{Name: "test-client", Version: "1.0.0"}, nil)
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("connect official MCP client: %v", err)
+	}
+	t.Cleanup(func() { _ = clientSession.Close() })
+	return clientSession
 }
 
 func TestRegisterConfigTools_DoesNotExposeLegacyConfigTools(t *testing.T) {

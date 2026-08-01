@@ -234,36 +234,16 @@ A calling agent should treat this as protocol, not prose: execute the
 `policy_final`. The contract is discoverable at runtime with
 `query_catalog(id: "help:refusals")`.
 
-### Automatic Model Resolution
+### Server-Owned Model Resolution
 
-Model selection is automatic and server-first on every request:
+The built-in agent always uses the provider, model, and credential environment
+variable configured under `agent`. MCP clients do not supply a model. If the
+environment variable named by `agent.api_key_env` is empty,
+`ask_graphjin_agent` and watch enrichment fail closed with
+`model_credentials_required`; REST reports the same missing-credentials state.
 
-1. If the environment variable named by `agent.api_key_env` is populated, use
-   the server provider. Client sampling is never attempted, even if the client
-   supports it or the provider call fails.
-2. Otherwise, MCP uses the calling client's model through
-   `sampling/createMessage`.
-3. Without server credentials or a sampling-capable MCP client, the tool
-   returns `model_sampling_unavailable`. REST requires server credentials
-   because it has no MCP sampling session.
-
-`agent.sampling` is deprecated. Omit it for the automatic behavior above. Set
-it to `off` only to prohibit client-model fallback; existing legacy values
-continue to resolve automatically.
-
-Sampling changes only which model drives the reasoning loop. Caller identity,
-role, row-level security, evidence gates, and refusals are unchanged — a
-hostile sampling response cannot talk the agent past its guards, because the
-guards are enforced in Go, not by the model. Sampling works over stdio and
-stateful HTTP; stateful HTTP is enabled by default in dev and agentic modes
-(per-request auth still applies; the session carries capabilities, not identity).
-
-A reference sampling-capable client lives at `tools/mcp-sampling-client`: it
-connects over streamable HTTP, advertises the sampling capability, and answers
-`sampling/createMessage` by forwarding to any OpenAI-compatible endpoint (the
-agent's reasoning wire protocol — ax — requires strict JSON output, which the
-client enforces via structured outputs). The demo smoke suites use it for the end-to-end
-borrow-the-caller's-model checks.
+The removed `agent.sampling` setting and its environment aliases are rejected
+with guidance to configure GraphJin-owned model credentials.
 
 ## Graph Surfaces And Boundaries
 

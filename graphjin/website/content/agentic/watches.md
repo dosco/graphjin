@@ -85,7 +85,7 @@ mutation {
 }
 ```
 
-Inline Mermaid must compile through AxFlow and return exactly `verdict` (`notify`, `digest`, or `discard`), `severity` (`info`, `warn`, or `critical`), and `summary` (at most 280 characters). Flows use GraphJin's server-side `agent` provider/model/credential settings with MCP sampling forced off; they run without tools, GraphJin bindings, or workflow callables. A new or changed flow is stored paused with approval pending. Preview it against explicit samples or retained events, then optionally approve and resume in the same mutation:
+Inline Mermaid must compile through AxFlow and return exactly `verdict` (`notify`, `digest`, or `discard`), `severity` (`info`, `warn`, or `critical`), and `summary` (at most 280 characters). Flows use GraphJin's server-side `agent` provider/model/credential settings; they run without tools, GraphJin bindings, or workflow callables. A new or changed flow is stored paused with approval pending. Preview it against explicit samples or retained events, then optionally approve and resume in the same mutation:
 
 ```graphql
 mutation {

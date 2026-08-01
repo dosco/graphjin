@@ -90,7 +90,7 @@ graphjin serve --demo --path examples/saas-ops    # from a repo clone
 ```
 
 - **Sources:** `app` (SQLite), workflows, control plane. Port 8083.
-- **Shows off:** zero-dependency onboarding, saved queries (`churn_risk_context`, `mrr_summary_context`, `ticket_sla_context`), workflows (`sla_breach_check`, `dunning_retry_check`), and the fail-closed automatic fallback from missing server credentials to MCP client sampling.
+- **Shows off:** zero-dependency onboarding, saved queries (`churn_risk_context`, `mrr_summary_context`, `ticket_sla_context`), workflows (`sla_breach_check`, `dunning_retry_check`), and fail-closed agent behavior when server model credentials are missing.
 
 **Ask it:**
 

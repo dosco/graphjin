@@ -216,7 +216,7 @@ stored preview and approval state. Workflow or webhook delivery is independently
 pinned by `action_hash` and approved through `action_review_json` only after
 explicit user confirmation.
 Runtime flows use only the server model client and receive no tools, bindings,
-workflow callables, or MCP sampling. Their fixed result contract is `verdict`
+workflow callables, or client model callbacks. Their fixed result contract is `verdict`
 (`notify|digest|discard`), `severity` (`info|warn|critical`), and a
 280-character summary. Any flow failure sends the raw unseen notification but
 never executes a workflow or webhook.

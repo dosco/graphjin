@@ -21,7 +21,7 @@ BASE_URL="${GRAPHJIN_URL:-${BASE_URL:-http://localhost:8080}}"
 DEMO_NAME="${DEMO_NAME:-demo}"
 RUN_AGENT="${GRAPHJIN_AGENT_SMOKE:-auto}"
 RUN_AGENT_EVAL="${GRAPHJIN_AGENT_EVAL:-never}"
-RUN_MODEL_RESOLUTION="${GRAPHJIN_MODEL_RESOLUTION_SMOKE:-${GRAPHJIN_SAMPLING_SMOKE:-never}}"
+RUN_MODEL_CREDENTIALS="${GRAPHJIN_MODEL_CREDENTIALS_SMOKE:-never}"
 RUN_DEEP="${GRAPHJIN_DEEP_SMOKE:-never}"
 TIMEOUT="${GRAPHJIN_SMOKE_TIMEOUT:-180}"
 USER_ID="${GRAPHJIN_SMOKE_USER_ID:-demo-user}"
@@ -39,13 +39,13 @@ usage() {
 ${DEMO_NAME} GraphJin smoke suite.
 
 Usage:
-  smoke.sh [--url URL] [--agent|--no-agent|--agent-eval] [--model-resolution] [--deep]
+  smoke.sh [--url URL] [--agent|--no-agent|--agent-eval] [--missing-model-credentials] [--deep]
 
 Options:
   --url URL     GraphJin base URL (default: ${BASE_URL}).
   --agent       Require REST and MCP agent checks.
   --agent-eval  Run stricter open-ended agent protocol evals.
-  --model-resolution  Check automatic MCP client-model fallback and REST failure.
+  --missing-model-credentials  Check fail-closed MCP and REST behavior.
   --no-agent    Skip REST and MCP agent checks.
   --deep        Run slow real-time background-worker checks supported by the demo.
 USAGE
@@ -67,8 +67,8 @@ smoke_parse_args() {
         RUN_AGENT_EVAL="always"
         shift
         ;;
-      --model-resolution|--sampling)
-        RUN_MODEL_RESOLUTION="always"
+      --missing-model-credentials)
+        RUN_MODEL_CREDENTIALS="always"
         shift
         ;;
       --deep)
@@ -388,8 +388,7 @@ mcp_tool() {
   local name="$1"
   local args_json="$2"
   local capability="${3:-}"
-  # Stateful MCP servers (mcp.http_stateful) require an initialized session;
-  # stateless ones tolerate the same flow, so initialize lazily either way.
+  # Legacy MCP requests use an initialized session; initialize lazily here.
   if [ -z "${MCP_INITIALIZED:-}" ]; then
     mcp_initialize || true
     MCP_INITIALIZED=1
@@ -469,8 +468,7 @@ mcp_tool_as_identity() {
 
 mcp_resource_read() {
   local uri="$1"
-  # Stateful MCP servers (mcp.http_stateful) require an initialized session;
-  # stateless ones tolerate the same flow, so initialize lazily either way.
+  # Legacy MCP requests use an initialized session; initialize lazily here.
   if [ -z "${MCP_INITIALIZED:-}" ]; then
     mcp_initialize || true
     MCP_INITIALIZED=1
@@ -492,7 +490,7 @@ mcp_resource_read() {
   printf '%s\n' "$out"
 }
 
-# --- stateful MCP session helpers (mcp.http_stateful: true) ------------------
+# --- legacy stateful MCP session helpers ------------------------------------
 
 MCP_SESSION_ID=""
 
@@ -1080,20 +1078,19 @@ run_admin_root_suite() {
   assert_jq "$user_out" '((.errors // []) | length) > 0 and ((((.data // {}) | .gj_security) // []) | length) == 0' "normal user is denied gj_security with an error"
 }
 
-# Automatic model-resolution checks for a server intentionally booted without
-# provider credentials. The Go sampling/no-sampling clients are driven by the
-# outer runner.
-run_model_resolution_suite() {
-  log "checking automatic model fallback without server credentials"
-  mcp_initialize || fail "MCP initialize failed (is mcp.http_stateful enabled?)"
+# Missing-model-credentials checks for a server intentionally booted without
+# provider credentials.
+run_model_credentials_suite() {
+  log "checking fail-closed behavior without server model credentials"
+  mcp_initialize || fail "legacy MCP initialize failed"
   local out
   out="$(mcp_tool_session ask_graphjin_agent '{"instruction":"List one saved query."}')"
-  assert_jq "$out" '.result.isError == true and ((.result.structuredContent.code // "") == "model_sampling_unavailable")' "non-sampling MCP client gets model_sampling_unavailable"
+  assert_jq "$out" '.result.isError == true and ((.result.structuredContent.code // "") == "model_credentials_required")' "MCP requires GraphJin-owned model credentials"
 
   local rest_out="$TMP_DIR/agent-no-server-model.json" rest_code
   rest_code="$(curl -sS --max-time "$TIMEOUT" -o "$rest_out" -w '%{http_code}' \
     -X POST "${BASE_URL%/}/api/v1/agent" "${AUTH_HEADERS[@]}" \
     --data '{"instruction":"Say hello. Do not run any tools."}')"
   [ "$rest_code" = "503" ] || fail "REST without server credentials returned HTTP ${rest_code}, want 503"
-  assert_jq "$rest_out" '(.errors[0].message // "") | test("provider API key is not configured")' "REST requires server credentials"
+  assert_jq "$rest_out" '(.errors[0].message // "") | test("provider API key is not configured")' "REST requires GraphJin-owned model credentials"
 }

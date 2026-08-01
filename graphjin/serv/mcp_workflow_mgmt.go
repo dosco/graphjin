@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
 // Workflow metadata is stored as a JSON header comment in the JS file:

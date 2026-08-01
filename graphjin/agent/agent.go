@@ -28,9 +28,6 @@ const (
 	defaultTimeoutSeconds = minTimeoutSeconds
 	defaultSeedLimit      = 40
 	defaultCatalogLimit   = 20
-	SamplingOff           = "off"
-	SamplingAuto          = "auto"
-	SamplingRequire       = "require"
 
 	// maxInstructionBytes bounds the user instruction (token/cost guard).
 	maxInstructionBytes = 16 * 1024
@@ -58,7 +55,6 @@ type Config struct {
 	Model          string `mapstructure:"model" jsonschema:"title=Agent Model"`
 	APIKeyEnv      string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
 	BaseURL        string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
-	Sampling       string `mapstructure:"sampling" jsonschema:"title=MCP Client Sampling (Deprecated),description=Set to off only when MCP client sampling must be prohibited; omission and legacy values use automatic server-first resolution"`
 	MaxSteps       int    `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
 	TimeoutSeconds int    `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
 	ReadOnly       bool   `mapstructure:"read_only" jsonschema:"title=Force Agent Read-Only,default=false"`
@@ -518,14 +514,6 @@ func (c Config) withDefaults() Config {
 	}
 	if c.CatalogDefaultLimit <= 0 {
 		c.CatalogDefaultLimit = defaultCatalogLimit
-	}
-	switch strings.ToLower(strings.TrimSpace(c.Sampling)) {
-	case SamplingAuto:
-		c.Sampling = SamplingAuto
-	case SamplingRequire:
-		c.Sampling = SamplingRequire
-	default:
-		c.Sampling = SamplingOff
 	}
 	c.TimeoutSeconds = EffectiveTimeoutSeconds(c.TimeoutSeconds)
 	return c

@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/server"
 	"github.com/spf13/afero"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap/zaptest"

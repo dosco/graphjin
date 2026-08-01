@@ -25,25 +25,23 @@ const (
 )
 
 type agentStatusResponse struct {
-	Status                  string `json:"status"`
-	Enabled                 bool   `json:"enabled"`
-	Ready                   bool   `json:"ready"`
-	RESTReady               bool   `json:"rest_ready"`
-	ServerModelReady        bool   `json:"server_model_ready"`
-	ClientSamplingAllowed   bool   `json:"client_sampling_allowed"`
-	ClientSamplingAvailable bool   `json:"client_sampling_available"`
-	Endpoint                string `json:"endpoint"`
-	MCPTool                 string `json:"mcp_tool"`
-	Provider                string `json:"provider"`
-	Model                   string `json:"model,omitempty"`
-	APIKeyEnv               string `json:"api_key_env"`
-	APIKeyConfigured        bool   `json:"api_key_configured"`
-	MaxSteps                int    `json:"max_steps"`
-	TimeoutSeconds          int    `json:"timeout_seconds"`
-	ReadOnly                bool   `json:"read_only"`
-	ReturnTrace             bool   `json:"return_trace"`
-	Namespace               string `json:"namespace,omitempty"`
-	Message                 string `json:"message"`
+	Status           string `json:"status"`
+	Enabled          bool   `json:"enabled"`
+	Ready            bool   `json:"ready"`
+	RESTReady        bool   `json:"rest_ready"`
+	ServerModelReady bool   `json:"server_model_ready"`
+	Endpoint         string `json:"endpoint"`
+	MCPTool          string `json:"mcp_tool"`
+	Provider         string `json:"provider"`
+	Model            string `json:"model,omitempty"`
+	APIKeyEnv        string `json:"api_key_env"`
+	APIKeyConfigured bool   `json:"api_key_configured"`
+	MaxSteps         int    `json:"max_steps"`
+	TimeoutSeconds   int    `json:"timeout_seconds"`
+	ReadOnly         bool   `json:"read_only"`
+	ReturnTrace      bool   `json:"return_trace"`
+	Namespace        string `json:"namespace,omitempty"`
+	Message          string `json:"message"`
 }
 
 // Agent is the HTTP handler for the server-side GraphJin agent endpoint.
@@ -209,41 +207,35 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 
 	apiKeyConfigured := strings.TrimSpace(os.Getenv(apiKeyEnv)) != ""
 	serverModelReady := apiKeyConfigured || (len(injectedServerClient) != 0 && injectedServerClient[0])
-	clientSamplingAllowed := normalizeAgentSamplingMode(conf.Sampling) != gjagent.SamplingOff
 	status := "ready"
 	message := "GraphJin agent is ready."
-	ready := conf.Enabled && (serverModelReady || clientSamplingAllowed)
+	ready := conf.Enabled && serverModelReady
 	switch {
 	case !conf.Enabled:
 		status = "disabled"
-		message = "Enable agent.enabled; REST also needs " + apiKeyEnv + ", while MCP may use a sampling-capable client."
-	case !serverModelReady && clientSamplingAllowed:
-		status = "client_sampling_required"
-		message = "REST requires " + apiKeyEnv + "; MCP can use a sampling-capable client."
+		message = "Enable agent.enabled and configure GraphJin-owned model credentials in " + apiKeyEnv + "."
 	case !serverModelReady:
 		status = "missing_key"
-		message = "GraphJin agent is enabled but " + apiKeyEnv + " is not set and client sampling is disabled."
+		message = "GraphJin agent is enabled but " + apiKeyEnv + " is not set."
 	}
 
 	resp := agentStatusResponse{
-		Status:                  status,
-		Enabled:                 conf.Enabled,
-		Ready:                   ready,
-		RESTReady:               conf.Enabled && serverModelReady,
-		ServerModelReady:        serverModelReady,
-		ClientSamplingAllowed:   conf.Enabled && clientSamplingAllowed,
-		ClientSamplingAvailable: false, // REST status has no MCP client session.
-		Endpoint:                routeAgent,
-		MCPTool:                 mcpToolAskGraphJinAgent,
-		Provider:                provider,
-		Model:                   strings.TrimSpace(conf.Model),
-		APIKeyEnv:               apiKeyEnv,
-		APIKeyConfigured:        apiKeyConfigured,
-		MaxSteps:                maxSteps,
-		TimeoutSeconds:          timeoutSeconds,
-		ReadOnly:                conf.ReadOnly,
-		ReturnTrace:             conf.ReturnTrace,
-		Message:                 message,
+		Status:           status,
+		Enabled:          conf.Enabled,
+		Ready:            ready,
+		RESTReady:        conf.Enabled && serverModelReady,
+		ServerModelReady: serverModelReady,
+		Endpoint:         routeAgent,
+		MCPTool:          mcpToolAskGraphJinAgent,
+		Provider:         provider,
+		Model:            strings.TrimSpace(conf.Model),
+		APIKeyEnv:        apiKeyEnv,
+		APIKeyConfigured: apiKeyConfigured,
+		MaxSteps:         maxSteps,
+		TimeoutSeconds:   timeoutSeconds,
+		ReadOnly:         conf.ReadOnly,
+		ReturnTrace:      conf.ReturnTrace,
+		Message:          message,
 	}
 	if ns != nil {
 		resp.Namespace = *ns
@@ -359,9 +351,6 @@ func recordAgentRuntimeEvent(s *graphjinService, ctx context.Context, req gjagen
 			"history_turns":       len(req.History),
 			"return_trace":        req.ReturnTrace != nil && *req.ReturnTrace,
 		},
-	}
-	if samplingPath := agentSamplingPathFromContext(ctx); samplingPath != "" {
-		event.Details["sampling_path"] = samplingPath
 	}
 	// Audit trail: what the agent actually did, independent of return_trace.
 	if len(resp.Skills) != 0 {

@@ -155,7 +155,6 @@ func TestTaskAgentMCPFlowWarmStartsAndJournals(t *testing.T) {
 	logger := zap.NewNop()
 	svc.log, svc.zlog = logger.Sugar(), logger
 	svc.conf.Agent.Enabled = true
-	svc.conf.Agent.Sampling = gjagent.SamplingOff
 	ctx := contextWithUserRole(artifactUserCtx("mcp_task_owner"), "analyst")
 	task := insertTaskForTest(t, cp, ctx, "Continue the MCP investigation")
 	taskID := fmt.Sprint(task["id"])

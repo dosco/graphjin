@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -12,8 +13,8 @@ import (
 
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/server"
 )
 
 // mcpMarshalJSON marshals data to JSON without HTML escaping.
@@ -125,50 +126,34 @@ type mcpServer struct {
 
 // newMCPServerWithContext creates a new MCP server with an auth context
 func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServer {
-	// Create hooks to handle prefixed tool names from Claude Desktop
-	// Claude Desktop may prefix tool names with "server_name:" when calling tools
 	var ms *mcpServer
-	hooks := &server.Hooks{}
-	hooks.AddBeforeCallTool(func(ctx context.Context, id any, req *mcp.CallToolRequest) {
-		// Strip any "server_name:" prefix from tool name
-		// e.g., "webshop-development:list_tables" -> "list_tables"
-		if idx := strings.LastIndex(req.Params.Name, ":"); idx != -1 {
-			req.Params.Name = req.Params.Name[idx+1:]
-		}
-	})
-	hooks.AddAfterSubscribe(func(ctx context.Context, id any, req *mcp.SubscribeRequest, result *mcp.EmptyResult) {
-		if ms != nil {
-			s.mcpWatchSubs.subscribe(ms.effectiveIdentityContext(ctx), ms.srv, s, req.Params.URI)
-		}
-	})
-	hooks.AddAfterUnsubscribe(func(ctx context.Context, id any, req *mcp.UnsubscribeRequest, result *mcp.EmptyResult) {
-		if ms != nil {
-			s.mcpWatchSubs.unsubscribe(ms.effectiveIdentityContext(ctx), req.Params.URI)
-		}
-	})
-	hooks.AddOnUnregisterSession(func(ctx context.Context, session server.ClientSession) {
-		s.mcpWatchSubs.remove(session.SessionID())
-	})
 
 	startupProfile := s.mcpStartupCapabilityProfile(ctx)
 	mcpSrv := server.NewMCPServer(
 		"graphjin",
 		version,
-		server.WithToolCapabilities(true),
-		server.WithPromptCapabilities(true),
-		server.WithResourceCapabilities(true, false),
-		server.WithHooks(hooks),
 		server.WithToolFilter(func(callCtx context.Context, tools []mcp.Tool) []mcp.Tool {
 			if ms == nil {
 				return tools
 			}
 			return ms.applyCallerToolMetadata(callCtx, tools)
 		}),
+		server.WithSubscribeHandler(
+			func(callCtx context.Context, uri string) error {
+				if ms == nil {
+					return fmt.Errorf("MCP server is not ready")
+				}
+				return ms.subscribeWatchResource(callCtx, uri)
+			},
+			func(callCtx context.Context, uri string) error {
+				if ms == nil {
+					return fmt.Errorf("MCP server is not ready")
+				}
+				return ms.unsubscribeWatchResource(callCtx, uri)
+			},
+		),
 		server.WithInstructions(mcpServerInstructions(s.conf, startupProfile)),
 	)
-	if samplingEnabledForConfig(s.conf) {
-		mcpSrv.EnableSampling()
-	}
 
 	// Snapshot which databases are read-only from the config file.
 	// This snapshot is immutable — MCP config updates cannot change it.
@@ -200,6 +185,7 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 
 type mcpHTTPTransportCache struct {
 	handler *server.StreamableHTTPServer
+	server  *mcpServer
 }
 
 func (s *graphjinService) closeMCPHTTPTransport() {
@@ -220,18 +206,14 @@ func (s *graphjinService) closeMCPHTTPTransport() {
 }
 
 func (s *graphjinService) mcpHTTPTransport(ctx context.Context) *server.StreamableHTTPServer {
-	if s == nil || s.conf == nil || !s.conf.MCP.HTTPStateful {
-		mcpSrv := s.newMCPServerWithContext(ctx)
-		return server.NewStreamableHTTPServer(mcpSrv.srv, server.WithStateLess(true))
-	}
-
 	s.mcpHTTPMu.Lock()
 	defer s.mcpHTTPMu.Unlock()
 
 	if s.mcpHTTP == nil || s.mcpHTTP.handler == nil {
 		mcpSrv := s.newMCPServerWithContext(context.Background())
 		s.mcpHTTP = &mcpHTTPTransportCache{
-			handler: server.NewStreamableHTTPServer(mcpSrv.srv, server.WithStateful(true)),
+			handler: server.NewDualStreamableHTTPServer(mcpSrv.srv),
+			server:  mcpSrv,
 		}
 	}
 	return s.mcpHTTP.handler
@@ -299,7 +281,7 @@ func (s *HttpService) RunMCPStdio(ctx context.Context) error {
 	}
 
 	mcpSrv := s1.newMCPServerWithContext(authCtx)
-	return server.ServeStdio(mcpSrv.srv)
+	return server.ServeStdio(ctx, mcpSrv.srv)
 }
 
 // MCPHandler returns an HTTP handler for MCP HTTP transport
@@ -355,7 +337,8 @@ func extendDeadlineForMCPRequest(w http.ResponseWriter, r *http.Request, conf *C
 	// The Streamable HTTP GET channel remains open for server notifications.
 	// It must not inherit the global 10-second server deadline while waiting
 	// for a watch event or another asynchronous notification.
-	if r != nil && r.Method == http.MethodGet && isSSERequest(r) {
+	if r != nil && ((r.Method == http.MethodGet && isSSERequest(r)) ||
+		(r.Method == http.MethodPost && mcpRequestMethod(r) == "subscriptions/listen")) {
 		clearStreamDeadline(w)
 		return
 	}
@@ -390,4 +373,22 @@ func mcpRequestCallsTool(r *http.Request, tool string) bool {
 		name = name[idx+1:]
 	}
 	return name == tool
+}
+
+func mcpRequestMethod(r *http.Request) string {
+	if r == nil || r.Body == nil {
+		return ""
+	}
+	body, err := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if err != nil {
+		return ""
+	}
+	var req struct {
+		Method string `json:"method"`
+	}
+	if json.Unmarshal(body, &req) != nil {
+		return ""
+	}
+	return req.Method
 }

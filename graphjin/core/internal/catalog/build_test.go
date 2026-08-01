@@ -482,7 +482,7 @@ func TestKnownEmptyToolManifestDoesNotInventToolCapabilities(t *testing.T) {
 func TestBuildIncludesHelpRows(t *testing.T) {
 	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{EnabledTools: []string{"query_catalog", "validate_where_clause", "execute_saved_query"}})
 
-	for _, id := range []string{"help:discovery", "help:mcp_tools", "help:query", "help:mutations", "help:saved_queries", "help:workflow_runtime", "help:security", "help:errors", "help:artifacts", "help:watches", "help:refusals", "help:sampling"} {
+	for _, id := range []string{"help:discovery", "help:mcp_tools", "help:query", "help:mutations", "help:saved_queries", "help:workflow_runtime", "help:security", "help:errors", "help:artifacts", "help:watches", "help:refusals"} {
 		card, ok := findCatalogCard(snap, id)
 		if !ok {
 			t.Fatalf("expected help card %s", id)
@@ -625,8 +625,8 @@ func TestBuildIncludesConfigRecipes(t *testing.T) {
 	if !ok {
 		t.Fatal("expected agent tuning recipe")
 	}
-	if strings.Contains(agentRecipe.ExamplesJSON, `sampling: \"auto\"`) || !strings.Contains(agentRecipe.ExamplesJSON, "automatic server-first") {
-		t.Fatalf("agent tuning recipe has stale sampling guidance: %s", agentRecipe.ExamplesJSON)
+	if !strings.Contains(agentRecipe.ExamplesJSON, "missing server credentials fail closed") {
+		t.Fatalf("agent tuning recipe lacks server-credential guidance: %s", agentRecipe.ExamplesJSON)
 	}
 }
 

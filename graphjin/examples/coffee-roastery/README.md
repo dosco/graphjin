@@ -301,17 +301,9 @@ Ax provider clients default to temperature zero. Candidate hard gates cover
 behavioral recall, used-skill recall/precision, safety, prompt-token growth,
 actor turns, and absence of skill discovery; latency regressions are warnings.
 
-To verify automatic model routing, run the reference sampling-capable client
-against the running demo. With provider credentials it must use the server
-model and report zero sampling calls; without server credentials it borrows the
-calling client's model:
-
-```bash
-go run ./tools/mcp-sampling-client \
-  --url http://localhost:8080/api/v1/mcp \
-  --jwt-secret coffee-roastery-demo-jwt-secret \
-  --instruction "List the approved saved queries. Discovery only."
-```
+The agent and watch enrichment always use the demo's configured server model.
+When its credential environment variable is empty, they return
+`model_credentials_required` instead of borrowing a client model.
 
 The smoke script defaults to `http://localhost:8080`. Use `--url` or `GRAPHJIN_URL` when running on another port.
 

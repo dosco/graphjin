@@ -7,11 +7,9 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
 const (
@@ -47,174 +45,6 @@ type watchEventScope struct {
 	SourceNodeID string `json:"source_node_id,omitempty"`
 }
 
-type watchMCPSubscription struct {
-	SessionID string
-	UserID    string
-	AccountID string
-	WatchID   string
-	URI       string
-	Server    *server.MCPServer
-}
-
-type watchMCPSubscriptionRegistry struct {
-	mu   sync.RWMutex
-	subs map[string]watchMCPSubscription
-}
-
-func (r *watchMCPSubscriptionRegistry) subscribe(ctx context.Context, srv *server.MCPServer, s *graphjinService, uri string) {
-	watchID, ok := watchIDFromUnseenResourceURI(uri)
-	if !ok || uri != watchEventsUnseenResourceURI(watchID) || srv == nil || s == nil {
-		return
-	}
-	session := server.ClientSessionFromContext(ctx)
-	if session == nil {
-		return
-	}
-	userID, ok := artifactUserID(ctx)
-	if !ok {
-		return
-	}
-	accountID, _ := identityVarString(ctx, "account_id")
-	r.mu.Lock()
-	if r.subs == nil {
-		r.subs = map[string]watchMCPSubscription{}
-	}
-	key := watchMCPSubscriptionKey(session.SessionID(), userID, accountID, uri)
-	r.subs[key] = watchMCPSubscription{
-		SessionID: session.SessionID(),
-		UserID:    userID,
-		AccountID: accountID,
-		WatchID:   watchID,
-		URI:       uri,
-		Server:    srv,
-	}
-	r.mu.Unlock()
-	payload, err := s.unseenWatchEventsPayload(ctx, watchID)
-	if err == nil && payload.Count > 0 {
-		if !sendWatchEventsResourceUpdate(srv, session.SessionID(), uri) {
-			r.removeSubscription(session.SessionID(), userID, accountID, uri)
-		}
-	}
-}
-
-func (r *watchMCPSubscriptionRegistry) unsubscribe(ctx context.Context, uri string) {
-	watchID, ok := watchIDFromUnseenResourceURI(uri)
-	if !ok || uri != watchEventsUnseenResourceURI(watchID) {
-		return
-	}
-	session := server.ClientSessionFromContext(ctx)
-	if session == nil {
-		return
-	}
-	userID, ok := artifactUserID(ctx)
-	if !ok {
-		r.remove(session.SessionID())
-		return
-	}
-	accountID, _ := identityVarString(ctx, "account_id")
-	r.removeSubscription(session.SessionID(), userID, accountID, uri)
-}
-
-func (r *watchMCPSubscriptionRegistry) remove(sessionID string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for key, sub := range r.subs {
-		if sub.SessionID == sessionID {
-			delete(r.subs, key)
-		}
-	}
-}
-
-func (r *watchMCPSubscriptionRegistry) removeSubscription(sessionID, userID, accountID, uri string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.subs, watchMCPSubscriptionKey(sessionID, userID, accountID, uri))
-}
-
-func (r *watchMCPSubscriptionRegistry) matching(ownerID string, accountID ...string) []watchMCPSubscription {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]watchMCPSubscription, 0, len(r.subs))
-	wantAccount := ""
-	if len(accountID) != 0 {
-		wantAccount = accountID[0]
-	}
-	for _, sub := range r.subs {
-		if sub.UserID == ownerID && (wantAccount == "" || sub.AccountID == wantAccount) {
-			out = append(out, sub)
-		}
-	}
-	return out
-}
-
-func (r *watchMCPSubscriptionRegistry) matchingScope(scope watchEventScope) []watchMCPSubscription {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	wantAccount := strings.TrimSpace(scope.AccountID)
-	wantWatch := strings.TrimSpace(scope.WatchID)
-	candidates := make([]watchMCPSubscription, 0, len(r.subs))
-	exactBySession := map[string]bool{}
-	for _, sub := range r.subs {
-		if sub.UserID != strings.TrimSpace(scope.OwnerID) || (wantAccount != "" && sub.AccountID != wantAccount) {
-			continue
-		}
-		candidates = append(candidates, sub)
-		if wantWatch != "" && sub.WatchID != "" {
-			exactBySession[watchMCPSubscriptionSessionKey(sub)] = true
-		}
-	}
-	out := make([]watchMCPSubscription, 0, len(candidates))
-	for _, sub := range candidates {
-		if wantWatch == "" {
-			// Old Redis publishers do not include watch_id. Preserve the aggregate
-			// wakeup path during rolling upgrades and do not guess an exact URI.
-			if sub.WatchID == "" {
-				out = append(out, sub)
-			}
-			continue
-		}
-		if exactBySession[watchMCPSubscriptionSessionKey(sub)] {
-			if sub.WatchID == wantWatch {
-				out = append(out, sub)
-			}
-			continue
-		}
-		if sub.WatchID == "" {
-			out = append(out, sub)
-		}
-	}
-	return out
-}
-
-func (r *watchMCPSubscriptionRegistry) watchIDsForSession(sessionID, userID, accountID string) ([]string, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	set := map[string]struct{}{}
-	for _, sub := range r.subs {
-		if sub.SessionID != sessionID || sub.UserID != userID || sub.AccountID != accountID || sub.WatchID == "" {
-			continue
-		}
-		set[sub.WatchID] = struct{}{}
-	}
-	if len(set) == 0 {
-		return nil, false
-	}
-	out := make([]string, 0, len(set))
-	for watchID := range set {
-		out = append(out, watchID)
-	}
-	sort.Strings(out)
-	return out, true
-}
-
-func watchMCPSubscriptionKey(sessionID, userID, accountID, uri string) string {
-	return strings.Join([]string{sessionID, userID, accountID, uri}, "\x00")
-}
-
-func watchMCPSubscriptionSessionKey(sub watchMCPSubscription) string {
-	return strings.Join([]string{sub.SessionID, sub.UserID, sub.AccountID}, "\x00")
-}
-
 func watchEventsUnseenResourceURI(watchID string) string {
 	watchID = strings.TrimSpace(watchID)
 	if watchID == "" {
@@ -244,6 +74,35 @@ func watchIDFromUnseenResourceURI(uri string) (string, bool) {
 		return "", false
 	}
 	return watchID, true
+}
+
+func (ms *mcpServer) subscribeWatchResource(ctx context.Context, uri string) error {
+	if ms == nil || ms.service == nil || !ms.service.watchesEnabled() {
+		return fmt.Errorf("GraphJin watch subscriptions are unavailable")
+	}
+	watchID, ok := watchIDFromUnseenResourceURI(uri)
+	if !ok || watchID == "" || uri != watchEventsUnseenResourceURI(watchID) {
+		return fmt.Errorf("subscriptions require a concrete GraphJin watch URI")
+	}
+	identityCtx := ms.effectiveIdentityContext(ctx)
+	ownerID, ok := artifactUserID(identityCtx)
+	if !ok {
+		return fmt.Errorf("watch subscription requires user identity")
+	}
+	row, err := ms.service.internalWatchStoreRow(identityCtx, watchID)
+	if err != nil {
+		return err
+	}
+	accountID, _ := identityVarString(identityCtx, "account_id")
+	if row == nil || stringMapValue(row, "owner_id") != ownerID ||
+		strings.TrimSpace(stringMapValue(row, "account_id")) != strings.TrimSpace(accountID) {
+		return fmt.Errorf("watch subscription denied")
+	}
+	return nil
+}
+
+func (ms *mcpServer) unsubscribeWatchResource(ctx context.Context, uri string) error {
+	return ms.subscribeWatchResource(ctx, uri)
 }
 
 func (ms *mcpServer) registerWatchResources() {
@@ -370,9 +229,15 @@ func (s *graphjinService) notifyWatchEventsResourceScope(scope watchEventScope, 
 	if s == nil || ownerID == "" {
 		return
 	}
-	for _, sub := range s.mcpWatchSubs.matchingScope(scope) {
-		if !sendWatchEventsResourceUpdate(sub.Server, sub.SessionID, sub.URI) {
-			s.mcpWatchSubs.remove(sub.SessionID)
+	watchID := strings.TrimSpace(scope.WatchID)
+	if watchID != "" {
+		s.mcpHTTPMu.Lock()
+		cached := s.mcpHTTP
+		s.mcpHTTPMu.Unlock()
+		if cached != nil && cached.server != nil {
+			if err := cached.server.srv.ResourceUpdated(context.Background(), watchEventsUnseenResourceURI(watchID)); err != nil {
+				s.recordWatchRunnerError("notify MCP watch resource", err, map[string]any{"watch_id": watchID})
+			}
 		}
 	}
 	if publish {
@@ -413,29 +278,6 @@ func watchEventScopesFromRows(rows []map[string]any) []watchEventScope {
 		out = append(out, scope)
 	}
 	return out
-}
-
-func (s *graphjinService) watchIDsForMCPContext(ctx context.Context) ([]string, bool) {
-	session := server.ClientSessionFromContext(ctx)
-	if s == nil || session == nil {
-		return nil, false
-	}
-	userID, ok := artifactUserID(ctx)
-	if !ok {
-		return nil, false
-	}
-	accountID, _ := identityVarString(ctx, "account_id")
-	return s.mcpWatchSubs.watchIDsForSession(session.SessionID(), userID, accountID)
-}
-
-func sendWatchEventsResourceUpdate(srv *server.MCPServer, sessionID, uri string) bool {
-	if srv == nil || strings.TrimSpace(sessionID) == "" || strings.TrimSpace(uri) == "" {
-		return false
-	}
-	err := srv.SendNotificationToSpecificClient(sessionID, mcp.MethodNotificationResourceUpdated, map[string]any{
-		"uri": uri,
-	})
-	return err == nil
 }
 
 func watchEventsResourceText(content []mcp.ResourceContents) (watchEventsUnseenResource, error) {

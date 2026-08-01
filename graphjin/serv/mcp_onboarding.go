@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
 const onboardingCandidateTTL = 15 * time.Minute

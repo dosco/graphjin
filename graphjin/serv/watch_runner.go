@@ -1460,18 +1460,11 @@ func (s *graphjinService) appendWatchNotices(ctx context.Context, resp *gjagent.
 	if resp == nil || s == nil || !s.watchesEnabled() {
 		return
 	}
-	watchIDs, exactScope := s.watchIDsForMCPContext(ctx)
-	if !exactScope {
-		watchIDs = nil
-	}
-	count, since, unseenWatchIDs, err := s.unseenWatchEventSummary(ctx, watchIDs)
+	count, since, unseenWatchIDs, err := s.unseenWatchEventSummary(ctx, nil)
 	if err != nil || count == 0 {
 		return
 	}
 	message := "You have unseen watch events. Query gj_watch_event and mark reviewed events seen with gj_watch_event(update)."
-	if exactScope {
-		message = "You have unseen events for this MCP session's subscribed watches. Query gj_watch_event for only the listed watch_ids and mark reviewed events seen with gj_watch_event(update)."
-	}
 	resp.Notices = append(resp.Notices, gjagent.ResponseNotice{
 		Kind:     "watch_events_unseen",
 		Message:  message,

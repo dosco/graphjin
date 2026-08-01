@@ -64,10 +64,7 @@ make smoke-all
 ```
 
 The suites share one harness, [`lib/smoke-common.sh`](lib/smoke-common.sh):
-transport/assert helpers, dev-header and JWT auth modes, stateful-MCP session
-helpers, and generic capability suites each demo composes with its own domain
-checks. The automatic model-resolution checks are driven by
-[`tools/mcp-sampling-client`](../tools/mcp-sampling-client/) — an MCP client
-that proves configured server credentials produce zero sampling calls, then
-advertises sampling and forwards `sampling/createMessage` to an
-OpenAI-compatible endpoint when the server key is intentionally absent.
+transport/assert helpers, dev-header and JWT auth modes, legacy stateful-MCP
+session helpers, and generic capability suites each demo composes with its own
+domain checks. Model-resolution checks verify that missing GraphJin-owned
+provider credentials fail closed with `model_credentials_required`.

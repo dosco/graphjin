@@ -16,6 +16,5 @@ use (
 	./plugin/otel
 	./serv
 	./tests
-	./tools/mcp-sampling-client
 	./wasm
 )
