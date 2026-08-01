@@ -162,10 +162,11 @@ There are no per-request modes. A single operator kill-switch,
 `agent.read_only: true`, forces the agent read-only: mutations are rejected at
 execution — including saved mutations — regardless of the caller's role.
 GraphJin derives a capability profile from the caller and preloads every
-permitted Ax skill. The fixed set is `data_discovery`, `data_write`,
-`code_read`, `code_write`, `workflow_read`, `workflow_execute`,
-`workflow_write`, `watch_read`, `watch_write`, `watch_flow`, `watch_delivery`,
-`task_read`, `task_write`, `admin_read`, and `admin_write`. There is no lexical router, embedding search, skill catalog, or
+permitted Ax skill. The fixed set is `data_discovery`, `data_aggregation`,
+`data_write`, `code_read`, `code_write`, `workflow_read`, `workflow_execute`,
+`workflow_write`, `watch_read`, `watch_write`, `task_read`, `task_write`,
+`admin_read`, and `admin_write`; `watch_write` carries the whole write side of
+watches, including flow enrichment and workflow/webhook delivery. There is no lexical router, embedding search, skill catalog, or
 skill-loading turn. Read-only posture removes all write guides; workflow,
 watch, and admin guides require their governed roots, and admin guides also
 require the admin role.

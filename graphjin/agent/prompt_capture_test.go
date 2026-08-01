@@ -239,6 +239,11 @@ func TestCaptureRenderedSkillsPerCapabilityProfile(t *testing.T) {
 					t.Errorf("forbidden skill %q leaked into an Ax prompt", definition.id)
 				}
 			}
+			for _, retired := range []string{"Skill: watch_flow", "Skill: watch_delivery"} {
+				if strings.Contains(rendered, retired) {
+					t.Errorf("retired skill marker %q leaked into an Ax prompt", retired)
+				}
+			}
 		})
 	}
 }
