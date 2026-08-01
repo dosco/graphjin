@@ -691,6 +691,14 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			return err
 		}
 
+		// Role/config authorization for ORDER BY and DISTINCT ON columns —
+		// mirrors the SELECT-list checks in validateField. Must run before
+		// the cursor block below appends system entries (PK tie-breakers,
+		// clustering keys), which are exempt.
+		if err := co.validateOrderBy(qc, sel, tr); err != nil {
+			return err
+		}
+
 		// Order is important AddFilters must come after compileArgs
 		if userNeeded := addFilters(qc, &sel.Where, tr); userNeeded && role == "anon" {
 			sel.SkipRender = SkipTypeUserNeeded
