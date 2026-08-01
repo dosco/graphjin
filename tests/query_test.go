@@ -789,6 +789,45 @@ func Example_queryWithAggregation() {
 	// Output: {"products":[{"count_id":100}]}
 }
 
+func Example_queryWithAggregationOrderedByAggregate() {
+	// Regression test: ordering a grouped aggregate by the aggregate field
+	// used to add the aggregate's source column (subject_id) to GROUP BY,
+	// collapsing every group to a single row. The query then returned one
+	// row's value (100, the max subject_id) instead of the true top group.
+	//
+	// Seed data: verb alternates per row — 'Bought' on even ids, 'Joined'
+	// on odd — so SUM(subject_id) is 2550 for Bought vs 2500 for Joined.
+	//
+	// Skip for MongoDB: its notifications fixture is a 2-document
+	// polymorphic-relationship set, not the 100-row webshop seed.
+	if dbType == "mongodb" {
+		fmt.Println(`{"notifications":[{"sum_subject_id":2550,"verb":"Bought"}]}`)
+		return
+	}
+
+	gql := `query {
+		notifications(order_by: { sum_subject_id: desc }, limit: 1) {
+			verb
+			sum_subject_id
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"notifications":[{"sum_subject_id":2550,"verb":"Bought"}]}
+}
+
 func Example_queryWithAggregationBlockedColumn() {
 	gql := `query {
 		products {
