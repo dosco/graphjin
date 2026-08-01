@@ -226,18 +226,6 @@ func (co *Compiler) validateOrderBy(qc *QCode, sel *Select, tr trval) error {
 		if ob.KeyVar != "" {
 			continue
 		}
-		if ob.IsFunc {
-			// Same message isFunction emits for aggregate SELECT fields
-			// when aggregation is disabled compiler-wide.
-			if co.c.DisableAgg && ob.Func.Agg {
-				return fmt.Errorf("order_by: aggreation disabled: db function '%s' cannot be used",
-					ob.Func.Name)
-			}
-			if tr.isFuncsBlocked() {
-				return fmt.Errorf("order_by: %w",
-					validateErr(tr, ob.Func.Name, "all db functions blocked"))
-			}
-		}
 		trv := tr
 		if !strings.EqualFold(ob.Col.Table, sel.Ti.Name) ||
 			!strings.EqualFold(ob.Col.Schema, sel.Ti.Schema) {
@@ -245,6 +233,18 @@ func (co *Compiler) validateOrderBy(qc *QCode, sel *Select, tr trval) error {
 			// references another table's column; check that table's role
 			// config, same as a child selector on it would.
 			trv = co.getRole(tr.role, ob.Col.Schema, ob.Col.Table, ob.Col.Table)
+		}
+		if ob.IsFunc {
+			// Same message isFunction emits for aggregate SELECT fields
+			// when aggregation is disabled compiler-wide.
+			if co.c.DisableAgg && ob.Func.Agg {
+				return fmt.Errorf("order_by: aggreation disabled: db function '%s' cannot be used",
+					ob.Func.Name)
+			}
+			if trv.isFuncsBlocked() {
+				return fmt.Errorf("order_by: %w",
+					validateErr(trv, ob.Func.Name, "all db functions blocked"))
+			}
 		}
 		if !trv.columnAllowed(qc, ob.Col.Name) {
 			return fmt.Errorf("order_by: %w",
