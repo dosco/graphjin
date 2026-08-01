@@ -211,7 +211,7 @@ func (co *Compiler) compileChildColumns(
 			aggExists = true
 		}
 
-		if err := co.compileFieldArgs(sel, &field, f.Args, role); err != nil {
+		if err := co.compileFieldArgs(qc, sel, &field, f.Args, role); err != nil {
 			return err
 		}
 
