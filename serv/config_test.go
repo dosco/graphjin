@@ -193,9 +193,6 @@ agent:
 	if !defaults.Agent.Enabled || defaults.Agent.Provider != "openai" || defaults.Agent.APIKeyEnv != "OPENAI_API_KEY" {
 		t.Fatalf("unexpected agent defaults: %+v", defaults.Agent)
 	}
-	if defaults.Agent.Sampling != "" {
-		t.Fatalf("sampling default = %q, want automatic/omitted", defaults.Agent.Sampling)
-	}
 	if defaults.Agent.MaxSteps != 8 || defaults.Agent.TimeoutSeconds != 50 || defaults.Agent.ReadOnly || defaults.Agent.ReturnTrace {
 		t.Fatalf("unexpected agent runtime defaults: %+v", defaults.Agent)
 	}
@@ -217,7 +214,7 @@ func TestParsedDevAndAgenticRuntimeDefaults(t *testing.T) {
 			if !conf.Core.Tasks.Enabled {
 				t.Fatalf("task defaults = %+v", conf.Core.Tasks)
 			}
-			if !conf.Agent.Enabled || !conf.MCP.HTTPStateful || !conf.MCP.IncludeToolsWithAgent {
+			if !conf.Agent.Enabled || !conf.MCP.IncludeToolsWithAgent {
 				t.Fatalf("service defaults: agent=%+v mcp=%+v", conf.Agent, conf.MCP)
 			}
 			listed := strings.Join(mcpToolList(conf), ",")
@@ -233,7 +230,6 @@ func TestParsedDevAndAgenticRuntimeDefaults(t *testing.T) {
 				"watches.runner":               "all",
 				"tasks.enabled":                true,
 				"agent.enabled":                true,
-				"mcp.http_stateful":            true,
 				"mcp.include_tools_with_agent": true,
 			} {
 				if got := effectiveSettingValue(settings, key); got != want {
@@ -261,7 +257,7 @@ func TestParsedProdAndDirectConfigKeepLiteralDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
-	if prod.Core.Artifacts.Enabled || prod.Core.Watches.Enabled || prod.Core.Tasks.Enabled || prod.Agent.Enabled || prod.MCP.HTTPStateful || prod.MCP.IncludeToolsWithAgent {
+	if prod.Core.Artifacts.Enabled || prod.Core.Watches.Enabled || prod.Core.Tasks.Enabled || prod.Agent.Enabled || prod.MCP.IncludeToolsWithAgent {
 		t.Fatalf("prod defaults changed: artifacts=%+v watches=%+v tasks=%+v agent=%+v mcp=%+v", prod.Core.Artifacts, prod.Core.Watches, prod.Core.Tasks, prod.Agent, prod.MCP)
 	}
 
@@ -270,7 +266,7 @@ func TestParsedProdAndDirectConfigKeepLiteralDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	applyRuntimeModeDefaults(direct)
-	if direct.Core.Artifacts.Enabled || direct.Core.Watches.Enabled || direct.Core.Tasks.Enabled || direct.Agent.Enabled || direct.MCP.HTTPStateful || direct.MCP.IncludeToolsWithAgent {
+	if direct.Core.Artifacts.Enabled || direct.Core.Watches.Enabled || direct.Core.Tasks.Enabled || direct.Agent.Enabled || direct.MCP.IncludeToolsWithAgent {
 		t.Fatalf("direct Go config received parsed defaults: %+v", direct)
 	}
 }
@@ -285,13 +281,12 @@ watches:
 agent:
   enabled: false
 mcp:
-  http_stateful: false
   include_tools_with_agent: false
 `, "yaml")
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
-	if conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled || conf.Core.Tasks.Enabled || conf.Agent.Enabled || conf.MCP.HTTPStateful || conf.MCP.IncludeToolsWithAgent {
+	if conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled || conf.Core.Tasks.Enabled || conf.Agent.Enabled || conf.MCP.IncludeToolsWithAgent {
 		t.Fatalf("explicit opt-outs not preserved: artifacts=%+v watches=%+v tasks=%+v agent=%+v mcp=%+v", conf.Core.Artifacts, conf.Core.Watches, conf.Core.Tasks, conf.Agent, conf.MCP)
 	}
 	if conf.Core.Watches.Runner != "all" {
@@ -350,14 +345,28 @@ tasks:
 func TestParsedRuntimeDefaultsRespectEnvironmentOverrides(t *testing.T) {
 	t.Setenv("GJ_ARTIFACTS_ENABLED", "false")
 	t.Setenv("GJ_AGENT_ENABLED", "false")
-	t.Setenv("GJ_MCP_HTTP_STATEFUL", "false")
 	t.Setenv("GJ_MCP_INCLUDE_TOOLS_WITH_AGENT", "false")
 	conf, err := NewConfig("mode: agentic\n", "yaml")
 	if err != nil {
 		t.Fatalf("NewConfig: %v", err)
 	}
-	if conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled || conf.Core.Tasks.Enabled || conf.Agent.Enabled || conf.MCP.HTTPStateful || conf.MCP.IncludeToolsWithAgent {
+	if conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled || conf.Core.Tasks.Enabled || conf.Agent.Enabled || conf.MCP.IncludeToolsWithAgent {
 		t.Fatalf("environment opt-outs not preserved: artifacts=%+v watches=%+v tasks=%+v agent=%+v mcp=%+v", conf.Core.Artifacts, conf.Core.Watches, conf.Core.Tasks, conf.Agent, conf.MCP)
+	}
+}
+
+func TestRemovedMCPSettingsAreRejected(t *testing.T) {
+	for _, config := range []string{
+		"agent:\n  sampling: off\n",
+		"mcp:\n  http_stateful: true\n",
+	} {
+		if _, err := NewConfig(config, "yaml"); err == nil || !strings.Contains(err.Error(), "was removed") {
+			t.Fatalf("removed config %q error = %v", config, err)
+		}
+	}
+	t.Setenv("GJ_AGENT_SAMPLING", "auto")
+	if _, err := NewConfig("", "yaml"); err == nil || !strings.Contains(err.Error(), "agent.sampling was removed") {
+		t.Fatalf("removed environment alias error = %v", err)
 	}
 }
 

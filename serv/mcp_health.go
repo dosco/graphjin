@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
 // registerHealthTools is retained as an inert compatibility hook.

@@ -845,11 +845,14 @@ func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntim
 	ownerCtx := s.watchOwnerContext(ctx, *def)
 	agentConf := agentConfigFromService(s.conf)
 	agentConf.ReadOnly = true
-	agentConf.Sampling = gjagent.SamplingOff
 	agentConf.MaxSteps = cfg.MaxSteps
 	runner, err := newGraphJinAgentRunner(s, agentConf)
 	if err != nil {
 		enrichment = map[string]any{"status": "error", "error": err.Error()}
+		if errors.Is(err, gjagent.ErrMissingAPIKey) {
+			enrichment["code"] = modelCredentialsRequiredCode
+			err = fmt.Errorf("%s: GraphJin-owned model credentials are required: %w", modelCredentialsRequiredCode, err)
+		}
 		if storeErr := s.storeWatchEnrichment(ctx, eventID, status, false, enrichment); storeErr != nil {
 			return true, storeErr
 		}
@@ -872,6 +875,10 @@ func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntim
 	resp, err := runner.Run(ownerCtx, req)
 	if err != nil {
 		enrichment = map[string]any{"status": "error", "error": err.Error()}
+		if errors.Is(err, gjagent.ErrMissingAPIKey) {
+			enrichment["code"] = modelCredentialsRequiredCode
+			err = fmt.Errorf("%s: GraphJin-owned model credentials are required: %w", modelCredentialsRequiredCode, err)
+		}
 		if storeErr := s.storeWatchEnrichment(ctx, eventID, status, false, enrichment); storeErr != nil {
 			return true, storeErr
 		}
@@ -897,6 +904,9 @@ func (s *graphjinService) triageWatchEvent(ctx context.Context, def *watchRuntim
 		enrichment := map[string]any{
 			"status": "error", "kind": "flow", "flow_hash": cfg.FlowHash,
 			"fail_open_notification": true, "fail_open_action": failOpenNotification, "error": reason,
+		}
+		if errors.Is(runErr, gjagent.ErrMissingAPIKey) {
+			enrichment["code"] = modelCredentialsRequiredCode
 		}
 		if err := s.storeWatchEnrichment(ctx, eventID, deliveryStatus, false, enrichment); err != nil {
 			return true, err

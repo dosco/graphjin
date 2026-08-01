@@ -13,7 +13,7 @@ import (
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
 type controlPlaneGraphQL struct {

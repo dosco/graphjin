@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/server"
 )
 
 func TestHandleGetJSRuntimeAPI_IncludesMappedTools(t *testing.T) {

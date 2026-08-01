@@ -272,7 +272,7 @@ func TestCoffeeRoasteryMinimalAgenticConfigResolvesRuntimeDefaults(t *testing.T)
 	if got := cfg.Agent.TimeoutSeconds; got != 50 {
 		t.Fatalf("agent timeout = %d, want default 50", got)
 	}
-	if !cfg.MCP.HTTPStateful || !cfg.MCP.IncludeToolsWithAgent {
+	if !cfg.MCP.IncludeToolsWithAgent {
 		t.Fatalf("MCP runtime defaults missing: %+v", cfg.MCP)
 	}
 	if !cfg.Core.Artifacts.Enabled || cfg.Core.Artifacts.Source == "__graphjin_artifacts" || !cfg.Core.Watches.Enabled || cfg.Core.Watches.Runner != "all" {
@@ -317,7 +317,7 @@ func TestDemoConfigsKeepZeroConfigurationDefaultsMinimal(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ReadInConfig: %v", err)
 			}
-			if !cfg.Agent.Enabled || !cfg.MCP.HTTPStateful || !cfg.MCP.IncludeToolsWithAgent || !cfg.Core.Artifacts.Enabled || !cfg.Core.Watches.Enabled || cfg.Core.Watches.Runner != "all" {
+			if !cfg.Agent.Enabled || !cfg.MCP.IncludeToolsWithAgent || !cfg.Core.Artifacts.Enabled || !cfg.Core.Watches.Enabled || cfg.Core.Watches.Runner != "all" {
 				t.Fatalf("minimal config did not resolve complete runtime: agent=%+v mcp=%+v artifacts=%+v watches=%+v", cfg.Agent, cfg.MCP, cfg.Core.Artifacts, cfg.Core.Watches)
 			}
 		})

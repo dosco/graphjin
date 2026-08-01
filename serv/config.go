@@ -333,12 +333,6 @@ type MCPConfig struct {
 	// Set false to make the agent the only front-door tool.
 	IncludeToolsWithAgent bool `mapstructure:"include_tools_with_agent" jsonschema:"title=Include MCP Tools With Agent,description=Parsed dev and agentic configs default to true; prod and direct Go configs remain false"`
 
-	// HTTPStateful enables persistent Streamable HTTP MCP sessions. This is
-	// required for server-initiated client sampling over HTTP and should be used
-	// behind sticky sessions in multi-node deployments. It defaults on in dev
-	// and agentic modes and remains off by default in prod.
-	HTTPStateful bool `mapstructure:"http_stateful" jsonschema:"title=Stateful MCP HTTP Transport,description=Parsed dev and agentic configs default to true; prod and direct Go configs remain false"`
-
 	// LegacyDiscovery keeps legacy HTTP helper endpoints such as
 	// /api/v1/discovery and /api/v1/workflows available for compatibility.
 	// It no longer expands the MCP tool surface; MCP is catalog-first.
@@ -739,6 +733,9 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	config.explicitSettings = captureRuntimeDefaultExplicitSettings(viper)
 
 	webUIExplicit := webUISettingExplicit(viper)
+	if err := validateRemovedMCPSettings(viper); err != nil {
+		return nil, err
+	}
 	if err := normalizeCatalogAutoBools(viper); err != nil {
 		return nil, err
 	}
@@ -787,6 +784,9 @@ func NewConfig(config, format string) (*Config, error) {
 	c.explicitSettings = captureRuntimeDefaultExplicitSettings(viper)
 
 	webUIExplicit := webUISettingExplicit(viper)
+	if err := validateRemovedMCPSettings(viper); err != nil {
+		return nil, err
+	}
 	if err := normalizeCatalogAutoBools(viper); err != nil {
 		return nil, err
 	}
@@ -805,6 +805,28 @@ func NewConfig(config, format string) (*Config, error) {
 	c.webUIExplicit = webUIExplicit
 
 	return c, nil
+}
+
+func validateRemovedMCPSettings(v *viper.Viper) error {
+	if v == nil {
+		return nil
+	}
+	if v.InConfig("agent.sampling") || removedSettingEnvPresent("AGENT_SAMPLING") {
+		return fmt.Errorf("agent.sampling was removed: configure GraphJin-owned agent.provider, agent.model, and agent.api_key_env credentials")
+	}
+	if v.InConfig("mcp.http_stateful") || removedSettingEnvPresent("MCP_HTTP_STATEFUL") {
+		return fmt.Errorf("mcp.http_stateful was removed: GraphJin now serves modern stateless and legacy stateful MCP automatically at the same endpoint")
+	}
+	return nil
+}
+
+func removedSettingEnvPresent(suffix string) bool {
+	for _, prefix := range []string{"GJ_", "SG_", "SJ_"} {
+		if _, ok := os.LookupEnv(prefix + suffix); ok {
+			return true
+		}
+	}
+	return false
 }
 
 var boolMapType = reflect.TypeOf(map[string]bool{})
@@ -882,8 +904,6 @@ var runtimeDefaultKeys = []string{
 	"watches.runner",
 	"tasks.enabled",
 	"agent.enabled",
-	"agent.sampling",
-	"mcp.http_stateful",
 	"mcp.include_tools_with_agent",
 }
 
@@ -955,9 +975,6 @@ func applyRuntimeModeDefaults(c *Config) {
 
 	if !c.settingExplicit("agent.enabled") {
 		c.Agent.Enabled = true
-	}
-	if !c.settingExplicit("mcp.http_stateful") {
-		c.MCP.HTTPStateful = true
 	}
 	if !c.settingExplicit("mcp.include_tools_with_agent") {
 		c.MCP.IncludeToolsWithAgent = true
@@ -1145,7 +1162,6 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.legacy_discovery", false)
 	vi.SetDefault("mcp.only", false)
 	vi.SetDefault("mcp.include_tools_with_agent", false)
-	vi.SetDefault("mcp.http_stateful", false)
 	vi.SetDefault("mcp.cursor_cache_ttl", 1800)   // 30 minutes
 	vi.SetDefault("mcp.cursor_cache_size", 10000) // max in-memory entries
 	vi.SetDefault("mcp.oauth.enabled", false)
@@ -1163,8 +1179,6 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("agent.model", "")
 	vi.SetDefault("agent.api_key_env", "OPENAI_API_KEY")
 	vi.SetDefault("agent.base_url", "")
-	// Sampling is deprecated as a selection mode. Empty, auto, and require all
-	// mean automatic server-first resolution; only off remains an opt-out.
 	vi.SetDefault("agent.max_steps", 8)
 	vi.SetDefault("agent.timeout_seconds", 50)
 	vi.SetDefault("agent.read_only", false)
@@ -1179,9 +1193,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("agent.model", "GJ_AGENT_MODEL", "SG_AGENT_MODEL", "SJ_AGENT_MODEL")                                                                     //nolint:errcheck
 	vi.BindEnv("agent.base_url", "GJ_AGENT_BASE_URL", "SG_AGENT_BASE_URL", "SJ_AGENT_BASE_URL")                                                         //nolint:errcheck
 	vi.BindEnv("agent.enabled", "GJ_AGENT_ENABLED", "SG_AGENT_ENABLED", "SJ_AGENT_ENABLED")                                                             //nolint:errcheck
-	vi.BindEnv("agent.sampling", "GJ_AGENT_SAMPLING", "SG_AGENT_SAMPLING", "SJ_AGENT_SAMPLING")                                                         //nolint:errcheck
 	vi.BindEnv("agent.api_key_env", "GJ_AGENT_API_KEY_ENV", "SG_AGENT_API_KEY_ENV", "SJ_AGENT_API_KEY_ENV")                                             //nolint:errcheck
-	vi.BindEnv("mcp.http_stateful", "GJ_MCP_HTTP_STATEFUL", "SG_MCP_HTTP_STATEFUL", "SJ_MCP_HTTP_STATEFUL")                                             //nolint:errcheck
 	vi.BindEnv("mcp.include_tools_with_agent", "GJ_MCP_INCLUDE_TOOLS_WITH_AGENT", "SG_MCP_INCLUDE_TOOLS_WITH_AGENT", "SJ_MCP_INCLUDE_TOOLS_WITH_AGENT") //nolint:errcheck
 
 	// Local encrypted keystore defaults.
@@ -1255,7 +1267,6 @@ func (c *Config) EffectiveSettings() map[string]any {
 	setEffectiveSetting(settings, "watches.runner", c.Core.Watches.Runner)
 	setEffectiveSetting(settings, "tasks.enabled", c.Core.Tasks.Enabled)
 	setEffectiveSetting(settings, "agent.enabled", c.Agent.Enabled)
-	setEffectiveSetting(settings, "mcp.http_stateful", c.MCP.HTTPStateful)
 	setEffectiveSetting(settings, "mcp.include_tools_with_agent", c.MCP.IncludeToolsWithAgent)
 	return settings
 }

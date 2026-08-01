@@ -121,7 +121,6 @@ type graphjinService struct {
 	workflowCache        *workflowRegistrySnapshot
 	mcpHTTPMu            sync.Mutex
 	mcpHTTP              *mcpHTTPTransportCache
-	mcpWatchSubs         watchMCPSubscriptionRegistry
 	watchCoordMu         sync.Mutex
 	watchCoord           watchCoordinator
 	watchSnoozeMu        sync.Mutex
@@ -493,8 +492,7 @@ func OptionSetSemanticEmbeddingClient(client SemanticEmbeddingClient) Option {
 }
 
 // OptionSetAgentClientFactory injects a server-side agent model client. An
-// injected client is treated exactly like configured provider credentials:
-// MCP never falls back to client sampling while it is present.
+// injected client is treated exactly like configured provider credentials.
 func OptionSetAgentClientFactory(factory gjagent.ClientFactory) Option {
 	return func(s *graphjinService) error {
 		s.agentClientFactory = factory

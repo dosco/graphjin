@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
-	"github.com/mark3labs/mcp-go/mcp"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"

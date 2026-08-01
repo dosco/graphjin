@@ -9,7 +9,7 @@ import (
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
 const mcpToolAskGraphJinAgent = "ask_graphjin_agent"
@@ -20,7 +20,7 @@ func (ms *mcpServer) registerAgentTools() {
 	}
 	ms.srv.AddTool(mcp.NewTool(
 		mcpToolAskGraphJinAgent,
-		mcp.WithDescription("Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action; pass prior turns in history to enable follow-up questions. Blocked responses include a structured refusal (code, because, unblock steps, policy_final/retryable): run the unblock steps and retry only when retryable. Responses may also carry notices: watch_events_unseen lists watch_ids to review, task_open_unlinked lists open task_ids that were not attached to the run, task_context_loaded confirms retained task context, and annotations_unshared lists owner-only annotation drafts awaiting review. Model selection is server-first: configured server credentials always win; otherwise GraphJin borrows this client's model via MCP sampling. Caller identity and permissions are unchanged."),
+		mcp.WithDescription("Ask GraphJin's server-side Ax agent to do catalog-first discovery, safe saved-query execution, and return a typed answer/result. Use this when the caller wants GraphJin to orchestrate discovery instead of manually chaining MCP tools. Send a _meta.progressToken to receive notifications/progress events per agent action; pass prior turns in history to enable follow-up questions. Blocked responses include a structured refusal (code, because, unblock steps, policy_final/retryable): run the unblock steps and retry only when retryable. Responses may also carry notices: watch_events_unseen lists watch_ids to review, task_open_unlinked lists open task_ids that were not attached to the run, task_context_loaded confirms retained task context, and annotations_unshared lists owner-only annotation drafts awaiting review. The agent always uses GraphJin-owned provider credentials. Caller identity and permissions are unchanged."),
 		mcp.WithString("instruction",
 			mcp.Required(),
 			mcp.Description("The user's goal or question for GraphJin."),
@@ -92,43 +92,52 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 	}
 
 	agentConf := agentConfigFromService(ms.service.conf)
-	samplingPath, agentOpts, err := ms.agentSamplingOptions(ctx, agentConf)
-	ctx = withAgentSamplingPath(ctx, samplingPath)
 	var resp gjagent.Response
+	runner, err := newGraphJinAgentRunner(ms.service, agentConf)
+	if err != nil {
+		recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, taskWarm, time.Since(start), err)
+		ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), err)
+		if errors.Is(err, gjagent.ErrMissingAPIKey) {
+			return modelCredentialsRequiredToolResult(agentConf), nil
+		}
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	resp, err = runner.Run(ctx, agentReq)
 	if err == nil {
-		var runner graphjinAgentRunner
-		runner, err = newGraphJinAgentRunner(ms.service, agentConf, agentOpts...)
-		if err != nil {
-			recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, taskWarm, time.Since(start), err)
-			ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), err)
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		resp, err = runner.Run(ctx, agentReq)
-		if err == nil {
-			ms.service.appendWatchNotices(ctx, &resp)
-			ms.service.appendTaskNotices(ctx, agentReq, &resp)
-			ms.service.appendAnnotationNotices(ctx, &resp)
-			appendTaskContextNotice(taskWarm, &resp)
-		}
+		ms.service.appendWatchNotices(ctx, &resp)
+		ms.service.appendTaskNotices(ctx, agentReq, &resp)
+		ms.service.appendAnnotationNotices(ctx, &resp)
+		appendTaskContextNotice(taskWarm, &resp)
 	}
 	recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, taskWarm, time.Since(start), err)
 	ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), err)
 	if err != nil {
-		if errors.Is(err, errMCPSamplingUnavailable) {
-			payload := map[string]any{
-				"code":    "model_sampling_unavailable",
-				"message": "No server model credentials are configured and this MCP client does not support sampling.",
-			}
-			data, marshalErr := mcpMarshalJSON(payload, false)
-			if marshalErr == nil {
-				result := mcpToolResultJSONBytes(data)
-				result.IsError = true
-				return result, nil
-			}
+		if errors.Is(err, gjagent.ErrMissingAPIKey) {
+			return modelCredentialsRequiredToolResult(agentConf), nil
 		}
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
+}
+
+func modelCredentialsRequiredToolResult(conf gjagent.Config) *mcp.CallToolResult {
+	apiKeyEnv := strings.TrimSpace(conf.APIKeyEnv)
+	if apiKeyEnv == "" {
+		apiKeyEnv = defaultAgentAPIKeyEnv
+	}
+	payload := map[string]any{
+		"status":      gjagent.StatusBlocked,
+		"code":        modelCredentialsRequiredCode,
+		"message":     "GraphJin-owned model credentials are required for agent execution.",
+		"api_key_env": apiKeyEnv,
+	}
+	data, err := mcpMarshalJSON(payload, false)
+	if err != nil {
+		return mcp.NewToolResultError(modelCredentialsRequiredCode)
+	}
+	result := mcpToolResultJSONBytes(data)
+	result.IsError = true
+	return result
 }
 
 func agentRequestFromArgs(args map[string]any) gjagent.Request {

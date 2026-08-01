@@ -14,8 +14,8 @@ examples/saas-ops/scripts/smoke.sh
 
 Add `--agent-eval` for stricter agent protocol evals. The shared
 `scripts/demo-smoke-all.sh` gate also reboots this demo without server
-credentials to verify automatic MCP client-model fallback, non-sampling client
-failure, and the REST missing-credentials response.
+credentials to verify the fail-closed MCP and REST missing-credentials
+responses.
 
 ## Churn Risk
 

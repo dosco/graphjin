@@ -113,7 +113,6 @@ Topic routing:
 | declared tasks and their trail | graphql_help(for: "tasks") | query_catalog(id: "help:tasks") |
 | watches and their event inbox | graphql_help(for: "watches") | query_catalog(id: "help:watches") |
 | blocked agent responses / refusals | graphql_help(for: "refusals") | query_catalog(id: "help:refusals") |
-| automatic agent model selection | graphql_help(for: "sampling") | query_catalog(id: "help:sampling") |
 | code/source changes | graphql_help(for: "code") | query_catalog(id: "help:code") |
 | errors | graphql_help(for: "errors") | query_catalog(id: "help:errors") |
 
@@ -147,7 +146,7 @@ Legacy discovery MCP tools are gone from MCP. Their prompt knowledge now lives i
 - Watch actions: workflow or webhook delivery is autonomous and must be explicitly requested. Creating or changing one pauses the watch with action_approval pending and returns action_hash. The hash pins query source, variables, flow, delivery configuration, and resolved workflow source. Explain the proposed action and stop for user confirmation; never create/change and approve it in the same agent run. On a later confirmed request, submit gj_watch(where: { id: { eq: "..." } }, update: { action_review_json: { decision: "approve", expected_action_hash: "..." } }). Relevant definition or workflow-source changes require review again.
 - Watch notices: agent responses may include notices[] with kind "watch_events_unseen", count, and watch_ids. Query and acknowledge only the listed watch IDs. A notifications/resources/updated URI identifies which watch changed, but read that resource or gj_watch_event to retrieve event data.
 - Refusal handling: when an agent response is blocked, read refusal { code because unblock lawful_alternative policy_final retryable }. Execute the unblock steps (each names a tool and args), then retry only if retryable; policy_final means do not retry — follow lawful_alternative or escalate to an operator.
-- Model selection is automatic and server-first: configured server credentials always win; without them, ask_graphjin_agent requires this MCP client to support sampling/createMessage. agent.sampling "off" disables that client-model fallback. Caller identity, permissions, and evidence gates are unchanged.
+- Agent execution always uses GraphJin-owned provider credentials. If they are absent, ask_graphjin_agent returns model_credentials_required. Caller identity, permissions, and evidence gates are unchanged.
 - GraphQL catalog discovery: use gj_catalog as the single discovery root, for example gj_catalog(where: { kind: { eq: "table" } }) { id kind name summary } or gj_catalog(where: { kind: { eq: "capability" } }) { name summary safety_json }.
 - Config and schema actions: use gj_config(id: "current", update: ...) for config changes; source-mode updates require preview/apply. MCP no longer exposes legacy schema reload/change helper tools.
 - Query repair: inspect errors[].extensions.graphjin_repair, then inspect relevant schema or language items before retrying.

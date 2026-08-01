@@ -2,7 +2,7 @@
 app_name: "{{- .AppName }} Agentic"
 mode: agentic
 # Agentic mode includes a private managed artifact store, approved-watch
-# runner, built-in agent, stateful MCP HTTP, and the primitive MCP tools.
+# runner, built-in agent, dual modern/legacy MCP HTTP, and primitive MCP tools.
 # Add explicit settings only to opt out or customize them.
 production: true
 host_port: 0.0.0.0:8080
@@ -38,9 +38,8 @@ mcp:
   allow_dev_tools: false
   legacy_discovery: false
 
-# The agent is enabled automatically. If the provider key selected by
-# agent.api_key_env is populated, REST and MCP use that server model. Otherwise
-# MCP borrows a sampling-capable client's model. REST has no sampling session.
+# The agent is enabled automatically. REST and MCP use GraphJin-owned model
+# credentials selected by agent.api_key_env.
 # Override only when needed:
 # agent:
 #   provider: openai

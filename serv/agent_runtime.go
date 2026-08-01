@@ -11,6 +11,8 @@ import (
 	"github.com/dosco/graphjin/core/v3"
 )
 
+const modelCredentialsRequiredCode = "model_credentials_required"
+
 func (c *Config) agentEnabled() bool {
 	return c != nil && c.Agent.Enabled && c.agenticSurfaceEnabled()
 }
@@ -35,7 +37,6 @@ func agentConfigFromService(conf *Config) gjagent.Config {
 		Model:               conf.Agent.Model,
 		APIKeyEnv:           conf.Agent.APIKeyEnv,
 		BaseURL:             conf.Agent.BaseURL,
-		Sampling:            conf.Agent.Sampling,
 		MaxSteps:            conf.Agent.MaxSteps,
 		TimeoutSeconds:      gjagent.EffectiveTimeoutSeconds(conf.Agent.TimeoutSeconds),
 		ReadOnly:            conf.Agent.ReadOnly,

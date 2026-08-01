@@ -105,9 +105,9 @@ primitive tools alongside them. Set `mcp.include_tools_with_agent: false` only
 when the agent should be the single front door. Raw GraphQL remains separately
 gated by `mcp.allow_raw_queries`.
 
-Streamable HTTP is stateful by default in these modes, so an MCP client can
-supply its model through sampling when no server provider key is configured.
-Production retains the previous stateless, agent-off defaults.
+The same Streamable HTTP endpoint serves modern stateless MCP `2026-07-28`
+requests and legacy stateful clients automatically. The built-in agent always
+uses GraphJin-owned provider credentials and fails closed when they are absent.
 
 For local development, named query auto-save and workflow saves fall back to config files only when there is no `user_id` or no artifact store.
 
@@ -128,7 +128,7 @@ Three **dev-mode** tools do this. They are registered even when the built-in age
 
 ### What an agent can change
 
-Databases, roles and RBAC in full (per-role, per-table `query`/`insert`/`update`/`upsert`/`delete` with `limit`, `filters`, `columns`, `presets`, and `block`), source access policy, tables, blocklist, functions, resolvers, relationships, workflows, and an allowlisted slice of `serv` — the agent's `model`, `max_steps`, `timeout_seconds`, `sampling`, `read_only`, `return_trace`, plus `log_level`, `log_format`, `web_ui`, `http_compress`, `server_timing`, and `rate_limiter`.
+Databases, roles and RBAC in full (per-role, per-table `query`/`insert`/`update`/`upsert`/`delete` with `limit`, `filters`, `columns`, `presets`, and `block`), source access policy, tables, blocklist, functions, resolvers, relationships, workflows, and an allowlisted slice of `serv` — the agent's `model`, `max_steps`, `timeout_seconds`, `read_only`, `return_trace`, plus `log_level`, `log_format`, `web_ui`, `http_compress`, `server_timing`, and `rate_limiter`.
 
 Database changes are all-or-nothing: every new or changed connection is tested live, and if any one fails, no database change is applied.
 

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Boot every example demo in sequence, run its full smoke suite (base + agent
 # + agent-eval), tear it down, and print a summary table. Also runs the MCP
-# automatic model-resolution checks: a credentialed coffee boot must stay on
-# the server model with zero sampling calls, while a rebooted saas-ops demo
-# with an intentionally empty server key must borrow the MCP client's model.
+# missing-model-credentials check: a rebooted saas-ops demo with an
+# intentionally empty server key must fail closed in MCP and REST.
 #
 # The "default" entry covers the bare `graphjin serve --demo` flow: a
 # CGO_ENABLED=0 binary (like releases) run in an empty directory must
@@ -14,7 +13,7 @@
 # a provider key (OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_APIKEY); curl,
 # jq, openssl on PATH; ports 8080-8083 and 8093 free.
 #
-# Usage: scripts/demo-smoke-all.sh [--only <demo>] [--skip-model-routing] [--skip-agent] [--deep]
+# Usage: scripts/demo-smoke-all.sh [--only <demo>] [--skip-model-credentials] [--skip-agent] [--deep]
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -78,7 +77,7 @@ default_demo_graphql() {
 }
 
 ONLY=""
-SKIP_MODEL_ROUTING=""
+SKIP_MODEL_CREDENTIALS=""
 SKIP_AGENT=""
 RUN_DEEP=""
 while [ "$#" -gt 0 ]; do
@@ -87,8 +86,8 @@ while [ "$#" -gt 0 ]; do
       ONLY="${2:-}"
       shift 2
       ;;
-    --skip-model-routing|--skip-sampling)
-      SKIP_MODEL_ROUTING=1
+    --skip-model-credentials)
+      SKIP_MODEL_CREDENTIALS=1
       shift
       ;;
     --skip-agent)
@@ -111,7 +110,6 @@ while [ "$#" -gt 0 ]; do
 done
 
 DEMOS="default coffee-roastery saas-ops corrugated-plant pcb-fab"
-MODEL_ROUTING_INSTRUCTION='Say hello. Do not run any tools.'
 
 port_for_demo() {
   case "$1" in
@@ -264,7 +262,7 @@ run_demo() {
   local demo="$1"
   local port
   port="$(port_for_demo "$demo")"
-  local started ok=1 model_routing="-"
+  local started ok=1 model_credentials="-"
   started="$(date +%s)"
   load_env_file "examples/${demo}/.env"
 
@@ -278,76 +276,36 @@ run_demo() {
     ok=""
   fi
 
-  # Server-first routing: even a sampling-capable MCP client must receive the
-  # answer with zero sampling/createMessage calls while credentials exist.
-  if [ -z "$SKIP_MODEL_ROUTING" ] && [ "$demo" = "coffee-roastery" ] && [ -n "$ok" ]; then
-    echo "==> checking server-first MCP model routing"
-    if go run ./tools/mcp-sampling-client \
-        --url "http://localhost:${port}/api/v1/mcp" \
-        --jwt-secret "coffee-roastery-demo-jwt-secret" \
-        --instruction "$MODEL_ROUTING_INSTRUCTION" \
-        | tee /dev/stderr | jq -e '.sampling_calls == 0 and (.is_error | not)' >/dev/null; then
-      model_routing="server:ok"
-    else
-      model_routing="server:FAIL"
-      ok=""
-    fi
-  fi
-
   kill_server
 
-  # Client fallback: reboot SaaS Ops with an intentionally empty provider-key
-  # env, without setting sampling or stateful-HTTP configuration.
-  if [ -z "$SKIP_MODEL_ROUTING" ] && [ "$demo" = "saas-ops" ] && [ -n "$ok" ]; then
-    echo "==> rebooting ${demo} for MCP client-model fallback"
+  # Reboot SaaS Ops with an intentionally empty provider-key environment and
+  # verify that both MCP and REST fail closed.
+  if [ -z "$SKIP_MODEL_CREDENTIALS" ] && [ "$demo" = "saas-ops" ] && [ -n "$ok" ]; then
+    echo "==> rebooting ${demo} for missing model credentials"
     if boot_demo "$demo" "$port" \
-        -u GJ_AGENT_SAMPLING -u SG_AGENT_SAMPLING -u SJ_AGENT_SAMPLING \
-        -u GJ_MCP_HTTP_STATEFUL -u SG_MCP_HTTP_STATEFUL -u SJ_MCP_HTTP_STATEFUL \
         GO_ENV=agentic \
         GJ_AGENT_API_KEY_ENV=GRAPHJIN_SMOKE_EMPTY_AGENT_KEY \
         GRAPHJIN_SMOKE_EMPTY_AGENT_KEY=; then
       local req_ok=1
-      "examples/${demo}/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent --model-resolution || req_ok=""
+      "examples/${demo}/scripts/smoke.sh" --url "http://localhost:${port}" --no-agent --missing-model-credentials || req_ok=""
       if [ -n "$req_ok" ]; then
-        if go run ./tools/mcp-sampling-client \
-            --url "http://localhost:${port}/api/v1/mcp" \
-            --jwt-secret "saas-ops-demo-jwt-secret" \
-            --instruction "$MODEL_ROUTING_INSTRUCTION" \
-            | tee /dev/stderr | jq -e '.sampling_calls >= 1 and (.is_error | not)' >/dev/null; then
-          :
-        else
-          req_ok=""
-        fi
-      fi
-      if [ -n "$req_ok" ]; then
-        if go run ./tools/mcp-sampling-client --no-sampling \
-            --url "http://localhost:${port}/api/v1/mcp" \
-            --jwt-secret "saas-ops-demo-jwt-secret" \
-            --instruction "List one saved query." \
-            | tee /dev/stderr | jq -e '.is_error == true' >/dev/null; then
-          :
-        else
-          req_ok=""
-        fi
-      fi
-      if [ -n "$req_ok" ]; then
-        model_routing="fallback:ok"
+        model_credentials="missing:ok"
       else
-        model_routing="fallback:FAIL"
+        model_credentials="missing:FAIL"
         ok=""
       fi
       kill_server
     else
-      model_routing="fallback:BOOT-FAIL"
+      model_credentials="missing:BOOT-FAIL"
       ok=""
     fi
   fi
 
   local dur=$(($(date +%s) - started))
   if [ -n "$ok" ]; then
-    record "${demo} | PASS | ${model_routing} | ${dur}s"
+    record "${demo} | PASS | ${model_credentials} | ${dur}s"
   else
-    record "${demo} | FAIL | ${model_routing} | ${dur}s"
+    record "${demo} | FAIL | ${model_credentials} | ${dur}s"
     return 1
   fi
 }
@@ -460,7 +418,7 @@ for demo in $DEMOS; do
 done
 
 echo
-echo "demo | result | model routing | duration"
+echo "demo | result | model credentials | duration"
 echo "---- | ------ | ------------- | --------"
 for row in "${RESULTS[@]}"; do
   printf '%s\n' "$row"

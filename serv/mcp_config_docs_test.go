@@ -52,7 +52,7 @@ func TestAgenticConfigDocsTemplate(t *testing.T) {
 			t.Fatalf("agentic docs template contains redundant runtime default %q:\n%s", redundant, agenticConfigTemplate)
 		}
 	}
-	if !strings.Contains(agenticConfigTemplate, "agent is enabled automatically") || !strings.Contains(agenticConfigTemplate, "sampling-capable client's model") {
-		t.Fatalf("agentic docs template should explain automatic model resolution:\n%s", agenticConfigTemplate)
+	if !strings.Contains(agenticConfigTemplate, "agent is enabled automatically") || !strings.Contains(agenticConfigTemplate, "GraphJin-owned model") {
+		t.Fatalf("agentic docs template should explain server-owned model credentials:\n%s", agenticConfigTemplate)
 	}
 }

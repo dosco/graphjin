@@ -140,7 +140,7 @@ curl -sS http://localhost:8080/api/v1/agent \
 
 ### Streaming and status
 
-The REST endpoint streams progress when called with `Accept: text/event-stream`: `action` frames as the agent works, `result` frames as evidence lands, then a final `complete` frame carrying the full response. MCP callers that pass `_meta.progressToken` receive `notifications/progress` events per action. `GET /api/v1/agent/status` reports server-model readiness separately from client-sampling availability; the built-in web console uses the REST-ready result to decide whether to offer the chat page.
+The REST endpoint streams progress when called with `Accept: text/event-stream`: `action` frames as the agent works, `result` frames as evidence lands, then a final `complete` frame carrying the full response. MCP callers that pass `_meta.progressToken` receive `notifications/progress` events per action. `GET /api/v1/agent/status` reports server-model readiness; the built-in web console uses that result to decide whether to offer the chat page.
 
 ## Structured refusals
 
@@ -160,17 +160,15 @@ edited note in the same run; see [Catalog Annotations](/agentic/annotations/).
 The built-in console renders these notices defensively, including unknown future
 kinds; see [Mission Control](/agentic/mission-control/).
 
-When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen`, a count, and `watch_ids`. For MCP sessions with concrete per-watch subscriptions, the notice is limited to those watches; query and acknowledge only the listed IDs. MCP clients can subscribe to `graphjin://watch-events/unseen/{watch_id}` for watch-specific push signals, while the aggregate `graphjin://watch-events/unseen` resource remains the owner/account-wide compatibility path. Resource notifications identify a changed resource but do not contain the full event payload.
+When the caller has unreviewed [watch events](/agentic/watches/), agent responses include a `notices` entry with kind `watch_events_unseen`, a count, and `watch_ids` scoped to the caller's owner/account identity. MCP clients can subscribe to `graphjin://watch-events/unseen/{watch_id}` for watch-specific push signals, while the aggregate `graphjin://watch-events/unseen` resource remains readable as the owner/account-wide recovery path. Resource notifications identify a changed resource but do not contain the full event payload.
 
-## Automatic model selection
+## Server-owned model selection
 
-GraphJin resolves the model source for every request:
-
-1. When the configured provider key environment variable is populated, GraphJin always uses the server model. It does not ask the MCP client to sample, including when the provider request later fails.
-2. Without server credentials, MCP borrows the calling client's model through `sampling/createMessage` over stdio or stateful HTTP.
-3. Without either path, MCP returns `model_sampling_unavailable`. REST returns a missing-server-credentials error because REST has no MCP sampling session.
-
-This removes the need for a server-side model key when an MCP client supports sampling. Only the model changes: caller identity, roles, row-level security, evidence gates, and refusals apply exactly as with a server model. Stateful MCP HTTP is already the `dev`/`agentic` default. The legacy `agent.sampling` setting is deprecated; omit it for automatic server-first behavior and set it to `off` only to prohibit client sampling.
+GraphJin always uses the provider, model, and credential environment variable
+configured under `agent`. If the configured credential is missing,
+`ask_graphjin_agent` and watch enrichment fail closed with
+`model_credentials_required`; REST reports the same missing-credentials state.
+The removed `agent.sampling` setting is rejected with migration guidance.
 
 ## OpenAI-compatible endpoints
 

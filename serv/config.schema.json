@@ -949,11 +949,6 @@
 					"title": "Include MCP Tools With Agent",
 					"description": "Parsed dev and agentic configs default to true; prod and direct Go configs remain false"
 				},
-				"http_stateful": {
-					"type": "boolean",
-					"title": "Stateful MCP HTTP Transport",
-					"description": "Parsed dev and agentic configs default to true; prod and direct Go configs remain false"
-				},
 				"legacy_discovery": {
 					"type": "boolean",
 					"title": "Enable Legacy Discovery Tools",

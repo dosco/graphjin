@@ -78,7 +78,7 @@ func TestCmdNewWritesAgenticAndSourcesTemplates(t *testing.T) {
 
 func assertGeneratedRuntimeDefaults(t *testing.T, mode string, conf *serv.Config) {
 	t.Helper()
-	if !conf.Agent.Enabled || !conf.MCP.HTTPStateful || !conf.MCP.IncludeToolsWithAgent || !conf.Core.Artifacts.Enabled || !conf.Core.Watches.Enabled || conf.Core.Watches.Runner != "all" {
+	if !conf.Agent.Enabled || !conf.MCP.IncludeToolsWithAgent || !conf.Core.Artifacts.Enabled || !conf.Core.Watches.Enabled || conf.Core.Watches.Runner != "all" {
 		t.Fatalf("generated %s config did not resolve complete runtime: agent=%+v mcp=%+v artifacts=%+v watches=%+v", mode, conf.Agent, conf.MCP, conf.Core.Artifacts, conf.Core.Watches)
 	}
 }
@@ -145,7 +145,7 @@ func TestRenderedTemplatesReadWithInheritance(t *testing.T) {
 		if name == "dev.yml" || name == "agentic.yml" {
 			assertGeneratedRuntimeDefaults(t, name, conf)
 		}
-		if name == "prod.yml" && (conf.Agent.Enabled || conf.MCP.HTTPStateful || conf.MCP.IncludeToolsWithAgent || conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled) {
+		if name == "prod.yml" && (conf.Agent.Enabled || conf.MCP.IncludeToolsWithAgent || conf.Core.Artifacts.Enabled || conf.Core.Watches.Enabled) {
 			t.Fatalf("generated prod config changed isolation defaults: agent=%+v mcp=%+v artifacts=%+v watches=%+v", conf.Agent, conf.MCP, conf.Core.Artifacts, conf.Core.Watches)
 		}
 	}

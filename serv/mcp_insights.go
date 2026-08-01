@@ -3,7 +3,7 @@ package serv
 import (
 	"context"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
 // registerInsightsTools is retained as an inert compatibility hook.

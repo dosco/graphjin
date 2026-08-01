@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -146,7 +147,6 @@ func (s *graphjinService) runWatchFlow(ctx context.Context, cfg watchEnrichmentC
 		return watchFlowRun{}, fmt.Errorf("watch flow service is not configured")
 	}
 	agentConf := agentConfigFromService(s.conf)
-	agentConf.Sampling = gjagent.SamplingOff
 	var client ax.AIClient
 	var err error
 	if s.agentClientFactory != nil {
@@ -155,6 +155,9 @@ func (s *graphjinService) runWatchFlow(ctx context.Context, cfg watchEnrichmentC
 		client, err = gjagent.DefaultClientFactory(agentConf)
 	}
 	if err != nil {
+		if errors.Is(err, gjagent.ErrMissingAPIKey) {
+			return watchFlowRun{}, fmt.Errorf("%s: GraphJin-owned model credentials are required: %w", modelCredentialsRequiredCode, err)
+		}
 		return watchFlowRun{}, err
 	}
 	limited := &watchFlowAIClient{inner: client, maxCalls: defaultWatchFlowMaxCalls}

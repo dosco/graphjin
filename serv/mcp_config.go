@@ -15,7 +15,7 @@ import (
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/core/v3/openapi"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 	"github.com/spf13/viper"
 )
 
@@ -302,7 +302,7 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithStringItems(),
 		),
 		mcp.WithObject("serv",
-			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, max_steps, timeout_seconds, sampling, read_only, return_trace, seed_limit, catalog_default_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
+			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
 				"agent changes are read live; the rest are persisted and take effect on the next restart (automatic when reload_on_config_change is enabled). "+
 				"Secret-bearing sections (auth, redis, uploads) are read-only on gj_config and cannot be patched here. scope reports serv or mixed and reload_mode reports hot or restart."),
 		),
@@ -2313,7 +2313,7 @@ var servWritableReload = map[string]string{
 // startup wiring or name secrets and are excluded.
 var agentWritableFields = map[string]bool{
 	"model": true, "max_steps": true, "timeout_seconds": true,
-	"sampling": true, "read_only": true, "return_trace": true,
+	"read_only": true, "return_trace": true,
 	"seed_limit": true, "catalog_default_limit": true,
 }
 
@@ -2351,13 +2351,13 @@ func validateServConfigPatch(patch map[string]any) (changes []string, reload str
 			if !ok {
 				return nil, "", fmt.Errorf("serv.agent must be an object")
 			}
+			if _, removed := m["sampling"]; removed {
+				return nil, "", fmt.Errorf("serv.agent.sampling was removed: configure GraphJin-owned agent.provider, agent.model, and agent.api_key_env credentials")
+			}
 			for f := range m {
 				if !agentWritableFields[f] {
 					return nil, "", fmt.Errorf("serv.agent.%s is not writable; writable agent fields: %s", f, strings.Join(sortedKeys(agentWritableFields), ", "))
 				}
-			}
-			if s, ok := m["sampling"].(string); ok && !strInSet(s, "off", "auto", "require") {
-				return nil, "", fmt.Errorf("serv.agent.sampling is deprecated; omit it for automatic model resolution or set it to off")
 			}
 			changes = append(changes, "updated serv.agent")
 		case "log_level":
@@ -2421,9 +2421,6 @@ func applyServConfigPatch(conf *Config, patch map[string]any) {
 func applyAgentConfigPatch(a *AgentConfig, m map[string]any) {
 	if v, ok := m["model"].(string); ok {
 		a.Model = v
-	}
-	if v, ok := m["sampling"].(string); ok {
-		a.Sampling = v
 	}
 	if v, ok := configInt(m["max_steps"]); ok {
 		a.MaxSteps = v

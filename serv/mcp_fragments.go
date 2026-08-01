@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
 // registerFragmentTools is retained as an inert compatibility hook.
