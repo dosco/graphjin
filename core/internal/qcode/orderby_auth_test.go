@@ -170,6 +170,30 @@ func TestOrderByNestedRelationAllowlist(t *testing.T) {
 	}
 }
 
+// TestOrderByNestedRelationFuncsDisabled: aggregate ordering through a
+// relationship must consult the related table's role config, matching an
+// aggregate field selected from that table.
+func TestOrderByNestedRelationFuncsDisabled(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	if err := qc.AddRole("user", "public", "users", qcode.TRConfig{
+		Query: qcode.QueryConfig{DisableFunctions: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := qc.Compile([]byte(`
+		query { products(order_by: { users: { sum_id: desc } }) {
+			id
+		} }`), nil, "user", "")
+	if err == nil {
+		t.Fatal("expected compile error ordering by a related aggregate with functions disabled, got nil")
+	}
+	if !strings.Contains(err.Error(), "all db functions blocked") ||
+		!strings.Contains(err.Error(), "role: 'user'") {
+		t.Errorf("error should report functions blocked for the related role, got: %v", err)
+	}
+}
+
 // TestOrderByConfigVariantExemptFromAllowlist: named order_by variants
 // from the table config (order_by: $var) are dev-authored, and every
 // variant compiles into the SQL no matter which one the client's
