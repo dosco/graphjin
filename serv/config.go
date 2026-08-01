@@ -1154,6 +1154,9 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("host", "HOST")                                  //nolint:errcheck
 	vi.BindEnv("port", "PORT")                                  //nolint:errcheck
 	vi.BindEnv("web_ui", "GJ_WEB_UI", "SG_WEB_UI", "SJ_WEB_UI") //nolint:errcheck
+	// Eval harnesses lower the implicit row limit to reproduce the
+	// truncated-aggregation failure class without touching demo seeds.
+	vi.BindEnv("default_limit", "GJ_DEFAULT_LIMIT", "SG_DEFAULT_LIMIT", "SJ_DEFAULT_LIMIT") //nolint:errcheck
 
 	vi.SetDefault("auth.subs_creds_in_vars", false)
 

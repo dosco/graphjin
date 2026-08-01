@@ -1,0 +1,207 @@
+[
+  {
+    "id": "agg-mrr-total",
+    "group": "aggregate",
+    "prompt": "What is our total monthly recurring revenue across all accounts right now?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts { sum_mrr_cents } }",
+      "extract": "accounts.0.sum_mrr_cents"
+    },
+    "answer": {"kind": "number", "accept_scales": [1, 0.01]},
+    "method": {"require_query_match": ["sum_mrr_cents"], "forbid_finalize_from_list_only": true},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000},
+    "sanity_hint": 1980000
+  },
+  {
+    "id": "agg-open-tickets",
+    "group": "aggregate",
+    "prompt": "How many support tickets are currently open?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { support_tickets(where: {status: {eq: \"open\"}}) { count_id } }",
+      "extract": "support_tickets.0.count_id"
+    },
+    "answer": {"kind": "number"},
+    "method": {"require_query_match": ["count_"], "forbid_finalize_from_list_only": true},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "agg-failed-invoices",
+    "group": "aggregate",
+    "prompt": "What is the total dollar amount of failed invoices?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { invoices(where: {status: {eq: \"failed\"}}) { sum_amount_cents } }",
+      "extract": "invoices.0.sum_amount_cents"
+    },
+    "answer": {"kind": "number", "accept_scales": [1, 0.01]},
+    "method": {"require_query_match": ["sum_amount_cents"], "forbid_finalize_from_list_only": true},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "agg-usage-quantity",
+    "group": "aggregate",
+    "prompt": "What is the total usage quantity recorded across all usage events?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { usage_events { sum_quantity } }",
+      "extract": "usage_events.0.sum_quantity"
+    },
+    "answer": {"kind": "number"},
+    "method": {"require_query_match": ["sum_quantity"], "forbid_finalize_from_list_only": true},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "agg-avg-invoice",
+    "group": "aggregate",
+    "prompt": "What is the average invoice amount?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { invoices { avg_amount_cents } }",
+      "extract": "invoices.0.avg_amount_cents"
+    },
+    "answer": {"kind": "number", "tolerance_pct": 0.01, "accept_scales": [1, 0.01]},
+    "method": {"require_query_match": ["avg_amount_cents|sum_amount_cents"], "forbid_finalize_from_list_only": true},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "agg-usage-event-count",
+    "group": "aggregate",
+    "prompt": "How many usage events have we recorded in total?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { usage_events { count_id } }",
+      "extract": "usage_events.0.count_id"
+    },
+    "answer": {"kind": "number"},
+    "method": {"require_query_match": ["count_"], "forbid_finalize_from_list_only": true},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "anchor-latest-usage",
+    "group": "anchor",
+    "prompt": "What is the date of the most recent usage event?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { usage_events { max_occurred_at } }",
+      "extract": "usage_events.0.max_occurred_at"
+    },
+    "answer": {"kind": "date"},
+    "method": {"require_query_match": ["max_occurred_at|order_by"]},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "anchor-usage-window",
+    "group": "anchor",
+    "prompt": "How many usage events occurred in the five days up to and including the most recent event?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "anchor_query": "query { usage_events { max_occurred_at } }",
+      "anchor_extract": "usage_events.0.max_occurred_at",
+      "query": "query events($from: String!) { usage_events(where: {occurred_at: {gte: $from}}) { count_id } }",
+      "variables": {"from": "{{anchor-5d}}"},
+      "extract": "usage_events.0.count_id"
+    },
+    "answer": {"kind": "number"},
+    "method": {"require_query_match": ["count_"], "forbid_finalize_from_list_only": true},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "anchor-renewals-30d",
+    "group": "anchor",
+    "prompt": "How many subscriptions come up for renewal in the next 30 days?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query renewals($from: String!, $to: String!) { subscriptions(where: {and: [{renews_at: {gte: $from}}, {renews_at: {lte: $to}}]}) { count_id } }",
+      "variables": {"from": "{{today}}", "to": "{{today+30d}}"},
+      "extract": "subscriptions.0.count_id"
+    },
+    "answer": {"kind": "number"},
+    "method": {"require_query_match": ["count_"], "forbid_finalize_from_list_only": true},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "anchor-soonest-renewal",
+    "group": "anchor",
+    "prompt": "Which account has the soonest upcoming renewal, and when is it?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts(where: {status: {in: [\"active\", \"churn_risk\"]}}, order_by: {renewal_date: asc}, limit: 1) { name renewal_date } }",
+      "extract": "accounts.0.renewal_date",
+      "dimension_extract": "accounts.0.name"
+    },
+    "answer": {"kind": "date"},
+    "method": {"require_query_match": ["order_by"]},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "rank-top-account-mrr",
+    "group": "ranking",
+    "prompt": "Which account generates the most monthly recurring revenue, and how much is it?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts(order_by: {mrr_cents: desc}, limit: 1) { name mrr_cents } }",
+      "extract": "accounts.0.mrr_cents",
+      "dimension_extract": "accounts.0.name"
+    },
+    "answer": {"kind": "number", "accept_scales": [1, 0.01]},
+    "method": {"require_query_match": ["order_by"]},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "rank-plan-mrr",
+    "group": "ranking",
+    "prompt": "Which plan tier contributes the most total monthly recurring revenue, and how much?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts { plan sum_mrr_cents } }",
+      "pick_max": {"list": "accounts", "value": "sum_mrr_cents", "dimension": "plan"}
+    },
+    "answer": {"kind": "number", "accept_scales": [1, 0.01]},
+    "method": {"require_query_match": ["sum_mrr_cents"], "forbid_finalize_from_list_only": true},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000},
+    "sanity_hint": 1610000
+  },
+  {
+    "id": "rank-open-severity",
+    "group": "ranking",
+    "prompt": "Which severity level has the most open support tickets right now?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { support_tickets(where: {status: {eq: \"open\"}}) { severity count_id } }",
+      "pick_max": {"list": "support_tickets", "value": "count_id", "dimension": "severity"}
+    },
+    "answer": {"kind": "number"},
+    "method": {"require_query_match": ["count_"], "forbid_finalize_from_list_only": true},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  },
+  {
+    "id": "rank-churn-exposure",
+    "group": "ranking",
+    "prompt": "Among churn-risk accounts, which one has the most revenue at stake and how much monthly revenue is that?",
+    "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
+    "expected_status": "answered",
+    "oracle": {
+      "query": "query { accounts(where: {status: {eq: \"churn_risk\"}}, order_by: {mrr_cents: desc}, limit: 1) { name mrr_cents } }",
+      "extract": "accounts.0.mrr_cents",
+      "dimension_extract": "accounts.0.name"
+    },
+    "answer": {"kind": "number", "accept_scales": [1, 0.01]},
+    "method": {"require_query_match": ["order_by"]},
+    "budget": {"max_actor_turns": 10, "max_total_tokens": 400000}
+  }
+]

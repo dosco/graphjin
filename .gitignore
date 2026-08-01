@@ -73,3 +73,6 @@ snowflake-wip.md
 docs/DESIGN-OPENAPI-TOPLEVEL.md
 
 .env
+
+# agent data-eval ledger (reports are local artifacts)
+.graphjin-evals/

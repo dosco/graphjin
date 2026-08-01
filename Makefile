@@ -157,6 +157,17 @@ demo-agent-smoke:
 smoke-all:
 	@scripts/demo-smoke-all.sh $(SMOKE_ALL_ARGS)
 
+# Ground-truth agent data-accuracy eval loop (boots saas-ops itself).
+# Baseline before a change, candidate (gated) after; trend shows history.
+agent-data-eval-baseline:
+	@scripts/agent-data-eval.sh --phase baseline $(AGENT_EVAL_ARGS)
+
+agent-data-eval:
+	@scripts/agent-data-eval.sh --phase candidate --baseline $(BASELINE) $(AGENT_EVAL_ARGS)
+
+agent-data-eval-trend:
+	@cd agent && go run ./cmd/skill-eval -trend ../.graphjin-evals
+
 # Smoke the bare `graphjin serve --demo` flow (CGO-free binary, built-in demo)
 smoke-default:
 	@scripts/demo-smoke-all.sh --only default

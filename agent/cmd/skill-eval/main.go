@@ -93,6 +93,19 @@ type runResult struct {
 	NoSkillDiscoveryCall bool              `json:"no_skill_discovery_call"`
 	Response             *gjagent.Response `json:"response,omitempty"`
 	Error                string            `json:"error,omitempty"`
+
+	// Ground-truth data corpus fields; empty on skill corpus runs.
+	AnswerExcerpt     string   `json:"answer_excerpt,omitempty"`
+	OracleValue       string   `json:"oracle_value,omitempty"`
+	OracleDimension   string   `json:"oracle_dimension,omitempty"`
+	OracleError       string   `json:"oracle_error,omitempty"`
+	OracleWarning     string   `json:"oracle_warning,omitempty"`
+	GroundTruthPass   *bool    `json:"ground_truth_pass,omitempty"`
+	GroundTruthDetail string   `json:"ground_truth_detail,omitempty"`
+	MethodPass        *bool    `json:"method_pass,omitempty"`
+	ExecutedQueries   []string `json:"executed_queries,omitempty"`
+	BudgetExceeded    bool     `json:"budget_exceeded,omitempty"`
+	FailureBucket     string   `json:"failure_bucket,omitempty"`
 }
 
 type metrics struct {
@@ -121,25 +134,29 @@ type acceptance struct {
 	ActorTurnsPass            *bool    `json:"actor_turns_pass,omitempty"`
 	NormalPromptTokensPass    *bool    `json:"normal_prompt_tokens_pass,omitempty"`
 	AdminPromptTokensPass     *bool    `json:"admin_prompt_tokens_pass,omitempty"`
+	GroundTruthRecallPass     *bool    `json:"ground_truth_recall_pass,omitempty"`
+	MethodRecallPass          *bool    `json:"method_recall_pass,omitempty"`
 	HardPass                  bool     `json:"hard_pass"`
 	Warnings                  []string `json:"warnings,omitempty"`
 }
 
 type report struct {
-	SchemaVersion      string      `json:"schema_version"`
-	Phase              string      `json:"phase"`
-	GeneratedAt        string      `json:"generated_at"`
-	Model              string      `json:"model"`
-	AxVersion          string      `json:"ax_version"`
-	GraphJinCommit     string      `json:"graphjin_commit"`
-	PromptRegistryHash string      `json:"prompt_registry_hash"`
-	Temperature        float64     `json:"temperature"`
-	Seed               int64       `json:"seed"`
-	Repeats            int         `json:"repeats"`
-	RepresentativeOnly bool        `json:"representative_only"`
-	Metrics            metrics     `json:"metrics"`
-	Acceptance         acceptance  `json:"acceptance"`
-	Runs               []runResult `json:"runs"`
+	SchemaVersion      string            `json:"schema_version"`
+	Phase              string            `json:"phase"`
+	GeneratedAt        string            `json:"generated_at"`
+	Model              string            `json:"model"`
+	AxVersion          string            `json:"ax_version"`
+	GraphJinCommit     string            `json:"graphjin_commit"`
+	PromptRegistryHash string            `json:"prompt_registry_hash"`
+	Temperature        float64           `json:"temperature"`
+	Seed               int64             `json:"seed"`
+	Repeats            int               `json:"repeats"`
+	RepresentativeOnly bool              `json:"representative_only"`
+	Metrics            metrics           `json:"metrics"`
+	DataMetrics        *dataMetrics      `json:"data_metrics,omitempty"`
+	DataVerdicts       []dataCaseVerdict `json:"data_verdicts,omitempty"`
+	Acceptance         acceptance        `json:"acceptance"`
+	Runs               []runResult       `json:"runs"`
 }
 
 type task struct {
@@ -159,15 +176,25 @@ func main() {
 		model           = flag.String("model", os.Getenv("GRAPHJIN_SKILL_EVAL_MODEL"), "provider/model identifier")
 		axVersionFlag   = flag.String("ax-version", os.Getenv("GRAPHJIN_SKILL_EVAL_AX_VERSION"), "server Ax version; defaults to this evaluator build")
 		graphjinCommit  = flag.String("graphjin-commit", os.Getenv("GRAPHJIN_SKILL_EVAL_COMMIT"), "GraphJin commit under evaluation")
-		registryPath    = flag.String("prompt-registry", "skills.go", "file hashed as the prompt registry")
+		registryPath    = flag.String("prompt-registry", "skills.go,agent.go", "comma-separated files hashed together as the prompt registry")
 		repeats         = flag.Int("repeats", 3, "runs per case")
 		limit           = flag.Int("limit", 24, "maximum representative cases; zero means all selected cases")
 		allCases        = flag.Bool("all", false, "run the full 60-case corpus instead of the representative subset")
 		seed            = flag.Int64("seed", 23, "deterministic randomized-order seed")
 		timeout         = flag.Duration("timeout", 90*time.Second, "HTTP timeout per request")
 		includeResponse = flag.Bool("include-response", false, "include full GraphJin responses in the report")
+		dataCorpusPath  = flag.String("data-corpus", "", "ground-truth data corpus; empty skips data-accuracy evaluation")
+		ledgerDir       = flag.String("ledger", "", "append the report to this directory for -trend history")
+		trendDir        = flag.String("trend", "", "print recall trend from this ledger directory and exit")
 	)
 	flag.Parse()
+
+	if *trendDir != "" {
+		if err := runTrend(*trendDir); err != nil {
+			exitf("%v", err)
+		}
+		return
+	}
 
 	if !*live {
 		exitf("provider evaluation is opt-in; rerun with -live after confirming provider traffic and cost")
@@ -190,7 +217,7 @@ func main() {
 	if strings.TrimSpace(*graphjinCommit) == "" {
 		exitf("-graphjin-commit is required")
 	}
-	registryHash := fileHash(*registryPath)
+	registryHash := registryHashFor(*registryPath)
 	if registryHash == "" {
 		exitf("could not hash prompt registry %s", *registryPath)
 	}
@@ -214,7 +241,10 @@ func main() {
 		baselineReport = &loaded
 	}
 
-	cases := readJSON[[]evalCase](*corpusPath)
+	var cases []evalCase
+	if strings.TrimSpace(*corpusPath) != "" {
+		cases = readJSON[[]evalCase](*corpusPath)
+	}
 	profiles := readJSON[endpointProfiles](*profilesPath)
 	selected := selectCases(cases, !*allCases, *limit)
 	tasks, err := makeTasks(selected, profiles.Profiles, *repeats)
@@ -223,6 +253,23 @@ func main() {
 	}
 	rng := rand.New(rand.NewSource(*seed))
 	rng.Shuffle(len(tasks), func(i, j int) { tasks[i], tasks[j] = tasks[j], tasks[i] })
+
+	var dataCases []dataEvalCase
+	var dataTasks []dataTask
+	if strings.TrimSpace(*dataCorpusPath) != "" {
+		dataCases = readJSON[[]dataEvalCase](*dataCorpusPath)
+		if err := validateDataCases(dataCases); err != nil {
+			exitf("%v", err)
+		}
+		dataTasks, err = makeDataTasks(dataCases, profiles.Profiles, *repeats)
+		if err != nil {
+			exitf("%v", err)
+		}
+		rng.Shuffle(len(dataTasks), func(i, j int) { dataTasks[i], dataTasks[j] = dataTasks[j], dataTasks[i] })
+	}
+	if len(tasks) == 0 && len(dataTasks) == 0 {
+		exitf("nothing to run: skill corpus is empty and no -data-corpus was provided")
+	}
 
 	client := &http.Client{Timeout: *timeout}
 	results := make([]runResult, 0, len(tasks))
@@ -236,8 +283,20 @@ func main() {
 			order+1, len(tasks), item.testCase.ID, item.repeat, result.Status, result.LatencyMS)
 	}
 
+	dataResults := make([]runResult, 0, len(dataTasks))
+	for order, item := range dataTasks {
+		result := runDataOne(client, item, len(tasks)+order+1)
+		dataResults = append(dataResults, result)
+		verdict := "pass"
+		if result.FailureBucket != "" {
+			verdict = result.FailureBucket
+		}
+		fmt.Fprintf(os.Stderr, "[data %d/%d] %s repeat=%d status=%s verdict=%s latency=%dms\n",
+			order+1, len(dataTasks), item.testCase.ID, item.repeat, result.Status, verdict, result.LatencyMS)
+	}
+
 	out := report{
-		SchemaVersion:      "graphjin-skill-eval-v1",
+		SchemaVersion:      "graphjin-skill-eval-v2",
 		Phase:              *phase,
 		GeneratedAt:        time.Now().UTC().Format(time.RFC3339),
 		Model:              *model,
@@ -250,10 +309,26 @@ func main() {
 		RepresentativeOnly: !*allCases,
 		Runs:               results,
 	}
+	out.Runs = append(results, dataResults...)
 	out.Metrics = calculateMetrics(results, cases)
 	out.Acceptance = calculateAcceptance(out.Metrics, nil)
 	if baselineReport != nil {
 		out.Acceptance = calculateAcceptance(out.Metrics, &baselineReport.Metrics)
+	}
+	if len(dataCases) != 0 {
+		verdicts := aggregateDataVerdicts(dataCases, dataResults)
+		dataMetricsOut := calculateDataMetrics(verdicts, dataResults)
+		out.DataMetrics = &dataMetricsOut
+		out.DataVerdicts = verdicts
+		var baselineData *dataMetrics
+		if baselineReport != nil {
+			baselineData = baselineReport.DataMetrics
+			if baselineData == nil {
+				out.Acceptance.Warnings = append(out.Acceptance.Warnings,
+					"baseline has no data metrics; ground-truth gates use absolute thresholds only")
+			}
+		}
+		applyDataAcceptance(&out.Acceptance, dataMetricsOut, baselineData)
 	}
 
 	data, err := json.MarshalIndent(out, "", "  ")
@@ -266,9 +341,37 @@ func main() {
 	} else if err := os.WriteFile(*reportPath, data, 0o644); err != nil {
 		exitf("write report: %v", err)
 	}
+	if *ledgerDir != "" {
+		if err := writeLedgerCopy(*ledgerDir, out, data); err != nil {
+			fmt.Fprintf(os.Stderr, "ledger write failed: %v\n", err)
+		}
+	}
 	if *phase == "candidate" && !out.Acceptance.HardPass {
 		os.Exit(2)
 	}
+}
+
+// registryHashFor hashes the concatenation of comma-separated files; the
+// prompt surface spans skills.go and agent.go, so both feed the registry
+// hash by default.
+func registryHashFor(paths string) string {
+	var buf bytes.Buffer
+	for _, path := range strings.Split(paths, ",") {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return ""
+		}
+		buf.Write(data)
+	}
+	if buf.Len() == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(buf.Bytes())
+	return hex.EncodeToString(sum[:])
 }
 
 func selectCases(cases []evalCase, representativeOnly bool, limit int) []evalCase {
