@@ -143,16 +143,19 @@ if [ -z "$REPORT" ]; then
   LEDGER_FLAG=""
 fi
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/gj-agent-eval.XXXXXX")"
+SERVER_BIN="$SCRATCH/graphjin-server"
+EVAL_BIN="$SCRATCH/skill-eval"
 SERVER_PID=""
 BOOTED_PORT=0
 SERVER_LOG="$SCRATCH/server.log"
 
 kill_port() {
-  # `go run` does not always take its compiled child down with it, so sweep
-  # the port — but ONLY when this run booted it. A concurrent session that
-  # refuses to boot (port busy) must never kill the owner's server.
+  # Last-resort sweep, only when this run booted the port. Two guards matter:
+  # BOOTED_PORT (never touch a concurrent session's server) and -sTCP:LISTEN
+  # (`lsof -ti :PORT` also matches CLIENTS of that port, so an unfiltered
+  # sweep kills the eval runner itself mid-run).
   [ "$BOOTED_PORT" = "1" ] || return 0
-  lsof -ti ":$PORT" 2>/dev/null | xargs kill 2>/dev/null || true
+  lsof -ti ":$PORT" -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null || true
 }
 
 cleanup() {
@@ -184,7 +187,7 @@ boot_server() {
   fi
   echo "==> booting $DEMO_PATH (model=$model, default_limit=$DEFAULT_LIMIT)"
   GO_ENV=agentic GJ_AGENT_MODEL="$model" GJ_DEFAULT_LIMIT="$DEFAULT_LIMIT" \
-    GOTOOLCHAIN=auto go run ./cmd serve --demo --path "$DEMO_PATH" \
+    "$SERVER_BIN" serve --demo --path "$DEMO_PATH" \
     >"$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
   BOOTED_PORT=1
@@ -226,7 +229,8 @@ run_eval() {
   }' >"$profiles"
 
   local args=(
-    -live -corpus "" -data-corpus testdata/data_eval_cases.json
+    -live -corpus "" -data-corpus "$ROOT/agent/testdata/data_eval_cases.json"
+    -prompt-registry "$ROOT/agent/skills.go,$ROOT/agent/agent.go"
     -profiles "$profiles" -phase "$phase" -model "$model"
     -graphjin-commit "$(git rev-parse HEAD)" -repeats "$REPEATS"
     -timeout 6m -report "$report"
@@ -234,7 +238,7 @@ run_eval() {
   [ -n "$LEDGER_FLAG" ] && args+=(-ledger "$LEDGER_FLAG")
   [ -n "$baseline" ] && args+=(-baseline "$baseline")
   local status=0
-  (cd agent && go run ./cmd/skill-eval "${args[@]}") || status=$?
+  "$EVAL_BIN" "${args[@]}" || status=$?
   if [ -f "$report" ]; then
     echo "==> report: $report"
     jq -r '"ground-truth recall: \(.data_metrics.ground_truth_recall // "n/a")  method recall: \(.data_metrics.method_recall // "n/a")",
@@ -247,6 +251,10 @@ run_eval() {
   fi
   return 0
 }
+
+echo "==> building server and eval runner"
+GOTOOLCHAIN=auto go build -o "$SERVER_BIN" ./cmd
+(cd agent && GOTOOLCHAIN=auto go build -o "$EVAL_BIN" ./cmd/skill-eval)
 
 boot_server "$MODEL"
 STATUS=0
