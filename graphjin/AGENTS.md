@@ -168,6 +168,29 @@ Smoke suites run against a **persistent, reused** demo state (`<path>/demo`). An
 -   **Absorb variance, not wrongness.** Model-driven evals may retry (2 attempts); an assertion that a wrong conclusion could pass on retry is a broken eval.
 -   **Model floor**: these evals need roughly a gpt-4.1-class server model (`GJ_AGENT_MODEL=gpt-4.1`); provider defaults in the mini/flash tier stall in the discovery loop. Switch providers per run with `GJ_AGENT_PROVIDER` / `GJ_AGENT_API_KEY_ENV`.
 
+### 5. Data-accuracy eval loop (`scripts/agent-data-eval.sh`)
+
+The smoke `--agent-eval` suites are wiring checks; the data-accuracy loop is the scored harness for improving the agent's *answers*. It boots the saas-ops demo with `GJ_DEFAULT_LIMIT=10` (so truncated-page aggregation is reproducible), runs `agent/testdata/data_eval_cases.json` through `agent/cmd/skill-eval`, and scores every case on three dimensions:
+
+1.  **Ground truth** — the answer must match a runtime oracle: a trusted DB-side-aggregate GraphQL query executed against the same server's `/api/v1/graphql`, so date-relative seeds and `data_anchor` shifting never desync ground truth.
+2.  **Method** — the executed queries (read from the response action trail) must show the *database* computed the result (`sum_*`/`count_*`/`order_by` on aggregates). This catches right-number-wrong-method runs that sum a row page client-side on a table small enough to get away with it. The principle under test: **the model plans, the engine computes.**
+3.  **Efficiency** — advisory per-case budgets on actor turns and tokens; exceeding one feeds the `runaway` failure bucket, never a hard gate.
+
+Failed runs are auto-classified (`client_side_aggregation`, `stale_anchor`, `wrong_window`, `ranking_method`, `truncated_finalize`, `runaway`, …) so a report reads as a diagnosis. Per-case verdicts are majority-of-repeats with a separate consistency score, so single-sample flake is absorbed without hiding real wrongness.
+
+The loop:
+
+```sh
+make agent-data-eval-baseline                      # before a change
+# ...land the prompt/guardrail change...
+make agent-data-eval BASELINE=.graphjin-evals/<report>.json   # exits 2 on gate failure
+make agent-data-eval-trend                         # recall history across iterations
+```
+
+The candidate phase gates as a **ratchet**: ground-truth recall and method recall must not regress vs the baseline (method is the leading indicator — it can improve before answers do). The 0.90 ground-truth target is a warning until reached, so below-target candidates that improve still land during the climb. `--weak-arm gpt-4.1-mini` adds an advisory flash-tier run to measure guardrail robustness; it never gates.
+
+Authoring rules for new cases (enforced by `agent/data_eval_corpus_test.go`): prompts are natural language with zero tool coaching; oracles are pure aggregates or `limit: 1` group-bys only (pure aggregate roots self-set no-limit, keeping oracles immune to the low boot limit); tolerance stays within 1–5% and only for genuinely fractional values; ranking cases must require `order_by` in their method rule. When a field report arrives (an external eval, a user complaint), convert each failure into a corpus case in the matching group — that is how feedback accumulates instead of evaporating.
+
 ## Key constraints
 -   **Do not use ORMs** internally.
 -   **Do not use reflection** in the hot path.
