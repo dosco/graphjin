@@ -268,7 +268,7 @@ func generateAggregations(schema *core.TableSchema) AggregationInfo {
 // hit the failure first.
 func aggregationLimitations() []string {
 	return []string{
-		"order_by does not work on aggregate aliases (sum_*, count_*, custom names from sum(expr:)). Sort aggregated results in workflow JavaScript.",
+		"In a grouped selection, order_by must target an aggregate field or alias (order_by: { sum_price: desc }, or a sum(expr:) alias) or the grouping dimension — ordering by a raw ungrouped column pulls that column into GROUP BY and changes the grouping.",
 		"Aggregates at non-root nested levels work but the GROUP BY happens at the root selection only. distinct: dedupes rows; it does not bucket.",
 		"Nesting a join through a column that is not in distinct: of an aggregating select is rejected at compile time — root at the dimension table instead and inspect metric_by_dimension query_pattern catalog rows.",
 		"Recursive (find:) selections cannot contain aggregate fields at the same level — fold via parent if needed.",
@@ -557,7 +557,7 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	guide.Tips = append(guide.Tips,
 		"Discover workflow items with query_catalog(where: {kind: {eq: 'workflow'}}) first — reuse an existing workflow through gj_workflow_execution when one fits the question.",
 		"Queries should be TOP-DOWN: start from the grouping/parent table, nest into children. NEVER filter bottom-up from leaf tables.",
-		"order_by can target aggregation aliases when distinct is present and expression aggregate aliases; sort in workflow JavaScript only for metrics computed after query execution.",
+		"order_by can target aggregate fields and aliases directly (order_by: { sum_price: desc }, or an expression-aggregate alias) — combine with limit for top-N-by-metric rankings.",
 		"Use distinct: [columns] for GROUP BY — group_by does not exist.",
 		"Use analytics directives for reporting rows: @running, @moving, @previous, @next, @first, @last, @rank, @denseRank, and @rowNumber while keeping each input row visible.",
 		"Use relationship catalog rows, details_json, and edges_json to discover join paths — NEVER guess at FK relationships.",

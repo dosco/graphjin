@@ -130,7 +130,7 @@ func TestDataAggregationSkillTeachesEngineSideComputation(t *testing.T) {
 		"The model plans, the database computes",
 		"count_<col>, sum_<col>, avg_<col>, min_<col>, max_<col>",
 		"max_<date_col>",
-		"compare the complete grouped rows",
+		"order_by that aggregate field desc",
 		"inputs.current_date is today (UTC)",
 		"state the resolved window in the answer",
 		"result.truncation",
@@ -139,11 +139,13 @@ func TestDataAggregationSkillTeachesEngineSideComputation(t *testing.T) {
 			t.Fatalf("data_aggregation skill missing %q", phrase)
 		}
 	}
-	// The engine currently miscompiles order_by on an aggregate field
-	// (silently un-groups the selection); the skill must not steer models
-	// into that form until the compiler fix lands.
-	if strings.Contains(dataAggregationInstruction, "order_by") {
-		t.Fatal("data_aggregation skill teaches order_by on aggregates; remove until the compiler bug is fixed")
+	// Rankings are computed database-side: the compiler preserves GROUP BY
+	// under aggregate order_by (core/internal/qcode
+	// TestOrderByAggregateKeepsGrouping), so the skill steers models to
+	// order_by + limit. Fetch-all-groups-and-compare is the client-side
+	// arithmetic failure mode this skill exists to prevent.
+	if strings.Contains(dataAggregationInstruction, "compare the complete grouped rows") {
+		t.Fatal("data_aggregation skill regressed to client-side group comparison for rankings")
 	}
 }
 

@@ -167,8 +167,9 @@
     "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
     "expected_status": "answered",
     "oracle": {
-      "query": "query { accounts { plan sum_mrr_cents } }",
-      "pick_max": {"list": "accounts", "value": "sum_mrr_cents", "dimension": "plan"}
+      "query": "query { accounts(order_by: {sum_mrr_cents: desc}, limit: 1) { plan sum_mrr_cents } }",
+      "extract": "accounts.0.sum_mrr_cents",
+      "dimension_extract": "accounts.0.plan"
     },
     "answer": {"kind": "number", "accept_scales": [1, 0.01]},
     "method": {"require_query_match": ["sum_mrr_cents"], "forbid_finalize_from_list_only": true},
@@ -182,8 +183,9 @@
     "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
     "expected_status": "answered",
     "oracle": {
-      "query": "query { support_tickets(where: {status: {eq: \"open\"}}) { severity count_id } }",
-      "pick_max": {"list": "support_tickets", "value": "count_id", "dimension": "severity"}
+      "query": "query { support_tickets(where: {status: {eq: \"open\"}}, order_by: {count_id: desc}, limit: 1) { severity count_id } }",
+      "extract": "support_tickets.0.count_id",
+      "dimension_extract": "support_tickets.0.severity"
     },
     "answer": {"kind": "number"},
     "method": {"require_query_match": ["count_"], "forbid_finalize_from_list_only": true},
