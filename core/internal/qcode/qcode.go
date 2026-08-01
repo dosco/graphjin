@@ -1609,7 +1609,7 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 	return nil
 }
 
-func (co *Compiler) compileArgFilter(sel *Select,
+func (co *Compiler) compileArgFilter(qc *QCode, sel *Select,
 	selID int32, arg graph.Arg, role string,
 ) (ex *Exp, err error) {
 	st := util.NewStackInf()
@@ -1625,11 +1625,79 @@ func (co *Compiler) compileArgFilter(sel *Select,
 	if err != nil {
 		return
 	}
+	if err = co.validateUserFilter(qc, sel, ex, role); err != nil {
+		return nil, err
+	}
 
 	if nu && role == "anon" {
 		sel.SkipRender = SkipTypeUserNeeded
 	}
 	return
+}
+
+// validateUserFilter applies field-equivalent column authorization to the
+// expression compiled from a client-authored where/includeIf/skipIf argument.
+// It intentionally runs here, before that expression is merged with sel.Where
+// or a field filter: role-config filters are compiled separately by AddRole and
+// may reference row-security columns that clients are not allowed to read.
+//
+// Columns on nested relations are checked against the owning table's role, and
+// ValRef operands ({col: "..."}) are checked as well as predicate-left columns.
+// Relationship join predicates in Exp.Joins are compiler-generated and remain
+// exempt. The filter grammar has no arbitrary DB-function expression nodes;
+// its fixed comparison/GIS operators therefore do not consult DisableFunctions.
+func (co *Compiler) validateUserFilter(qc *QCode, sel *Select, ex *Exp, role string) error {
+	if ex == nil {
+		return nil
+	}
+
+	if err := co.validateUserFilterColumn(qc, sel, ex.Left.Col, role); err != nil {
+		return err
+	}
+	if ex.Right.ValType == ValRef {
+		if err := co.validateUserFilterColumn(qc, sel, ex.Right.Col, role); err != nil {
+			return err
+		}
+	}
+	for _, child := range ex.Children {
+		if err := co.validateUserFilter(qc, sel, child, role); err != nil {
+			return err
+		}
+	}
+	for _, arm := range ex.CaseArms {
+		if err := co.validateUserFilter(qc, sel, arm.When, role); err != nil {
+			return err
+		}
+		if err := co.validateUserFilter(qc, sel, arm.Then, role); err != nil {
+			return err
+		}
+	}
+	return co.validateUserFilter(qc, sel, ex.Else, role)
+}
+
+func (co *Compiler) validateUserFilterColumn(
+	qc *QCode,
+	sel *Select,
+	col sdata.DBColumn,
+	role string,
+) error {
+	if col.Name == "" {
+		return nil
+	}
+	if col.Blocked {
+		return fmt.Errorf("column: '%s.%s.%s' blocked", col.Schema, col.Table, col.Name)
+	}
+
+	sameTable := strings.EqualFold(col.Schema, sel.Ti.Schema) &&
+		strings.EqualFold(col.Table, sel.Ti.Name)
+	tr := co.getRole(role, col.Schema, col.Table, col.Table)
+	if !sameTable && tr.isBlocked(qc.SType) {
+		return fmt.Errorf("%s blocked: %s (role: %s)", qc.SType, col.Table, role)
+	}
+	if !tr.columnAllowed(qc, col.Name) {
+		return validateErr(tr, col.Name, "db column blocked")
+	}
+	return nil
 }
 
 func addAndFilterLast(fil *Filter, ex *Exp) {

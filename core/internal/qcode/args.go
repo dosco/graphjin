@@ -21,7 +21,7 @@ func (co *Compiler) compileSelectArgs(qc *QCode, sel *Select, args []graph.Arg, 
 			err = co.compileArgSearch(sel, a)
 
 		case "where":
-			err = co.compileArgWhere(sel, a, role)
+			err = co.compileArgWhere(qc, sel, a, role)
 
 		case "orderBy", "order_by", "order":
 			err = co.compileArgOrderBy(sel, a)
@@ -240,7 +240,7 @@ func (co *Compiler) compileArgSearch(sel *Select, arg graph.Arg) (err error) {
 	return nil
 }
 
-func (co *Compiler) compileArgWhere(sel *Select, arg graph.Arg, role string) (err error) {
+func (co *Compiler) compileArgWhere(qc *QCode, sel *Select, arg graph.Arg, role string) (err error) {
 	if arg.Val.Type == graph.NodeVar {
 		return fmt.Errorf("where must be an inline object; use variables only inside filter values")
 	}
@@ -248,7 +248,7 @@ func (co *Compiler) compileArgWhere(sel *Select, arg graph.Arg, role string) (er
 		return
 	}
 
-	ex, err := co.compileArgFilter(sel, -1, arg, role)
+	ex, err := co.compileArgFilter(qc, sel, -1, arg, role)
 	if err != nil {
 		return
 	}
@@ -279,7 +279,7 @@ func (co *Compiler) compileArgOrderBy(sel *Select, arg graph.Arg) (err error) {
 	return nil
 }
 
-func (co *Compiler) compileArgSkipIncludeIf(skip bool, sel *Select, f *Field, arg graph.Arg, role string) (err error) {
+func (co *Compiler) compileArgSkipIncludeIf(qc *QCode, skip bool, sel *Select, f *Field, arg graph.Arg, role string) (err error) {
 	if err = validateArg(arg, graph.NodeObj); err != nil {
 		return
 	}
@@ -292,7 +292,7 @@ func (co *Compiler) compileArgSkipIncludeIf(skip bool, sel *Select, f *Field, ar
 		sid = -1
 	}
 
-	ex, err := co.compileArgFilter(sel, sid, arg, role)
+	ex, err := co.compileArgFilter(qc, sel, sid, arg, role)
 	if err != nil {
 		return
 	}
@@ -459,17 +459,17 @@ func isCursorVar(name string) bool {
 	return name == "cursor" || strings.Contains(name, "_cursor")
 }
 
-func (co *Compiler) compileFieldArgs(sel *Select, f *Field, args []graph.Arg, role string) (err error) {
+func (co *Compiler) compileFieldArgs(qc *QCode, sel *Select, f *Field, args []graph.Arg, role string) (err error) {
 	for _, a := range args {
 		switch a.Name {
 		case "args":
 			err = co.compileFuncArgArgs(sel, f, a)
 
 		case "includeIf", "include_if":
-			err = co.compileArgSkipIncludeIf(false, sel, f, a, role)
+			err = co.compileArgSkipIncludeIf(qc, false, sel, f, a, role)
 
 		case "skipIf", "skip_if":
-			err = co.compileArgSkipIncludeIf(true, sel, f, a, role)
+			err = co.compileArgSkipIncludeIf(qc, true, sel, f, a, role)
 
 		case "expr":
 			// Consumed by isFunction during expression-aggregate compilation.
