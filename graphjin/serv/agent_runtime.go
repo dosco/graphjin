@@ -437,7 +437,7 @@ func executeAgentResultFromCore(res *core.Result, err error) ExecuteResult {
 	for _, e := range res.Errors {
 		result.Errors = append(result.Errors, ErrorInfo{Message: e.Message, Extensions: e.Extensions})
 	}
-	return result
+	return attachExecuteTruncation(result, res)
 }
 
 func (r *serviceAgentRuntime) requireCatalogAccess(ctx context.Context) error {

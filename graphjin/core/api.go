@@ -744,6 +744,7 @@ type Result struct {
 	cacheControl string
 	cacheHit     bool
 	subCursors   map[string]string
+	rootLimits   []RootLimitInfo
 	Vars         json.RawMessage   `json:"-"`
 	Data         json.RawMessage   `json:"data,omitempty"`
 	Hash         [sha256.Size]byte `json:"-"`
@@ -1076,6 +1077,7 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 	err = s.compileAndExecuteWrapper(c)
 
 	resp.qc = s.qcode()
+	resp.res.rootLimits = rootLimitInfoFromQCode(resp.qc)
 	resp.res.sql = s.sql()
 	resp.res.cacheControl = s.cacheHeader()
 	resp.res.Vars = r.vars

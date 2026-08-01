@@ -54,6 +54,21 @@ func (ms *mcpServer) registerExecutionTools() {
 type ExecuteResult struct {
 	Data   json.RawMessage `json:"data"`
 	Errors []ErrorInfo     `json:"errors,omitempty"`
+	// Truncation marks result lists that reached their compiled row limit —
+	// pages, not populations. Callers must not aggregate over them.
+	Truncation *gjagent.TruncationInfo `json:"truncation,omitempty"`
+}
+
+// attachExecuteTruncation decorates a successful execution result with the
+// shared truncation marker when any list hit its compiled limit.
+func attachExecuteTruncation(result ExecuteResult, res *core.Result) ExecuteResult {
+	if res == nil || len(result.Errors) != 0 {
+		return result
+	}
+	if roots := res.TruncatedRoots(); len(roots) != 0 {
+		result.Truncation = &gjagent.TruncationInfo{Roots: roots, Message: gjagent.TruncationMessage(roots)}
+	}
+	return result
 }
 
 // ErrorInfo represents an error from query execution
@@ -121,6 +136,7 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 		for _, e := range res.Errors {
 			result.Errors = append(result.Errors, ms.errorInfoFromCoreError(query, e, "execute_graphql"))
 		}
+		result = attachExecuteTruncation(result, res)
 	}
 	return ms.toolResultJSON("execute_graphql", args, result)
 }
@@ -173,6 +189,7 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 		for _, e := range res.Errors {
 			result.Errors = append(result.Errors, ms.errorInfoFromCoreError("", e, "execute_saved_query"))
 		}
+		result = attachExecuteTruncation(result, res)
 	}
 	return ms.toolResultJSON("execute_saved_query", args, result)
 }
