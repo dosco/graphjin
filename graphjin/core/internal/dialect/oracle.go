@@ -34,7 +34,8 @@ func (d *OracleDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 	// Skip for:
 	// - JSON virtual tables (Type == "json") which don't have a real primary key
 	// - Recursive relationships where order depends on traversal pattern
-	if len(sel.OrderBy) == 0 && sel.Ti.Type != "json" && sel.Rel.Type != sdata.RelRecursive {
+	// - Grouped selections where the primary key is not part of GROUP BY
+	if len(sel.OrderBy) == 0 && !sel.GroupCols && sel.Ti.Type != "json" && sel.Rel.Type != sdata.RelRecursive {
 		needsOrderBy := sel.Singular ||
 			sel.Paging.LimitVar != "" ||
 			sel.Paging.Limit != 0 ||

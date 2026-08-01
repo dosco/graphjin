@@ -1018,26 +1018,10 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 			}
 			d.renderGroupBy(ctx, r, sel)
 
-			// Add ORDER BY if needed
-			if len(sel.OrderBy) > 0 {
-				ctx.WriteString(` ORDER BY `)
-				for i, ob := range sel.OrderBy {
-					if i != 0 {
-						ctx.WriteString(`, `)
-					}
-					t := sel.Ti.Name
-					if sel.ID >= 0 {
-						t = fmt.Sprintf("%s_%d", t, sel.ID)
-					}
-					r.ColWithTable(t, ob.Col.Name)
-					switch ob.Order {
-					case qcode.OrderAsc:
-						ctx.WriteString(` ASC`)
-					case qcode.OrderDesc:
-						ctx.WriteString(` DESC`)
-					}
-				}
-			}
+			// Use the shared MSSQL inline ORDER BY renderer so functions,
+			// select-list aliases, variables, and related columns keep the
+			// same semantics for nested and root selections.
+			d.renderOrderBy(ctx, r, sel, "")
 
 			// Apply child paging (OFFSET/FETCH); RenderLimit adds the
 			// ORDER BY (SELECT NULL) fallback MSSQL requires when none is set.
@@ -1832,21 +1816,33 @@ func (d *MSSQLDialect) renderOrderBy(ctx Context, r InlineChildRenderer, sel *qc
 		if ob.Var != "" {
 			t = fmt.Sprintf("_gj_ob_%s_%s", ob.Col.Table, ob.Col.Name)
 			col = "ord"
-		} else if alias != "" {
-			t = alias
+			r.ColWithTable(t, col)
+		} else if ob.Alias != "" {
+			ctx.Quote(ob.Alias)
 		} else {
-			if t == "" {
-				t = sel.Ti.Name
-			}
-			if t == sel.Ti.Name {
-				if sel.ID >= 0 {
-					t = fmt.Sprintf("%s_%d", t, sel.ID)
-				}
+			if alias != "" {
+				t = alias
 			} else {
-				t = fmt.Sprintf("%s_0", t)
+				if t == "" {
+					t = sel.Ti.Name
+				}
+				if t == sel.Ti.Name {
+					if sel.ID >= 0 {
+						t = fmt.Sprintf("%s_%d", t, sel.ID)
+					}
+				} else {
+					t = fmt.Sprintf("%s_0", t)
+				}
+			}
+			if ob.IsFunc {
+				ctx.WriteString(strings.ToUpper(ob.Func.Name))
+				ctx.WriteString(`(`)
+			}
+			r.ColWithTable(t, col)
+			if ob.IsFunc {
+				ctx.WriteString(`)`)
 			}
 		}
-		r.ColWithTable(t, col)
 
 		if ob.KeyVar != "" && ob.Key != "" {
 			ctx.WriteString(` END`)
