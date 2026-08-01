@@ -290,6 +290,94 @@ func TestOrderByAggregateDisabledCompilerWide(t *testing.T) {
 	}
 }
 
+// TestOrderByCursorPKExempt: cursor pagination appends the primary key
+// to ORDER BY (orderByIDCol) after validateOrderBy runs. That entry is
+// compiler-generated, not user-driven, so a role whose allowlist omits
+// the PK must still be able to paginate.
+func TestOrderByCursorPKExempt(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	if err := qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"name"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	q, err := qc.Compile([]byte(`
+		query { products(first: 20, after: $cursor, order_by: { name: asc }) {
+			name
+		} }`), nil, "user", "")
+	if err != nil {
+		t.Fatalf("cursor pagination must work when the PK is outside the allowlist: %v", err)
+	}
+
+	var sawPK bool
+	for _, ob := range q.Selects[0].OrderBy {
+		if ob.Col.Name == "id" {
+			sawPK = true
+		}
+	}
+	if !sawPK {
+		t.Error("expected the cursor tie-breaker PK in OrderBy")
+	}
+}
+
+// TestOrderByMatchesFieldAuthorization pins the invariant the whole pass
+// exists to hold: ordering by a column is allowed exactly when selecting
+// it is. columnAllowed keys off qc.SType, so this must hold for mutation
+// selections (which consult update.cols) as well as plain queries —
+// otherwise order_by would be either a leak or a false rejection.
+func TestOrderByMatchesFieldAuthorization(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		role      qcode.TRConfig
+		selectGQL string
+		orderGQL  string
+	}{
+		{
+			name: "query/query.cols",
+			role: qcode.TRConfig{
+				Query: qcode.QueryConfig{Columns: []string{"id", "name"}},
+			},
+			selectGQL: `query { products { price } }`,
+			orderGQL:  `query { products(order_by: { price: desc }) { id } }`,
+		},
+		{
+			name: "mutation/update.cols",
+			role: qcode.TRConfig{
+				Update: qcode.UpdateConfig{Columns: []string{"id", "name"}},
+			},
+			selectGQL: `mutation { users(update: $data, where: { id: { eq: 1 } }) {
+				id
+				products { price }
+			} }`,
+			orderGQL: `mutation { users(update: $data, where: { id: { eq: 1 } }) {
+				id
+				products(order_by: { price: desc }) { id }
+			} }`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			compile := func(gql string) error {
+				qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+				if err := qc.AddRole("user", "public", "products", tc.role); err != nil {
+					t.Fatal(err)
+				}
+				_, err := qc.Compile([]byte(gql), nil, "user", "")
+				return err
+			}
+			errSel := compile(tc.selectGQL)
+			errOrd := compile(tc.orderGQL)
+
+			if errSel == nil && errOrd != nil {
+				t.Errorf("order_by rejected a column that select allows: %v", errOrd)
+			}
+			if errSel != nil && errOrd == nil {
+				t.Errorf("order_by allowed a column that select rejects (%v) — the leak this pass closes", errSel)
+			}
+		})
+	}
+}
+
 // TestOrderByAliasStillWorks: ordering by a SELECT-list alias of a field
 // the role can read keeps working — the alias path is authorized through
 // the compiled field it points at, not re-checked as a column.
