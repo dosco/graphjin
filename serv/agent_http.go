@@ -25,23 +25,26 @@ const (
 )
 
 type agentStatusResponse struct {
-	Status           string `json:"status"`
-	Enabled          bool   `json:"enabled"`
-	Ready            bool   `json:"ready"`
-	RESTReady        bool   `json:"rest_ready"`
-	ServerModelReady bool   `json:"server_model_ready"`
-	Endpoint         string `json:"endpoint"`
-	MCPTool          string `json:"mcp_tool"`
-	Provider         string `json:"provider"`
-	Model            string `json:"model,omitempty"`
-	APIKeyEnv        string `json:"api_key_env"`
-	APIKeyConfigured bool   `json:"api_key_configured"`
-	MaxSteps         int    `json:"max_steps"`
-	TimeoutSeconds   int    `json:"timeout_seconds"`
-	ReadOnly         bool   `json:"read_only"`
-	ReturnTrace      bool   `json:"return_trace"`
-	Namespace        string `json:"namespace,omitempty"`
-	Message          string `json:"message"`
+	Status               string   `json:"status"`
+	Enabled              bool     `json:"enabled"`
+	Ready                bool     `json:"ready"`
+	RESTReady            bool     `json:"rest_ready"`
+	ServerModelReady     bool     `json:"server_model_ready"`
+	Endpoint             string   `json:"endpoint"`
+	MCPTool              string   `json:"mcp_tool"`
+	Provider             string   `json:"provider"`
+	Model                string   `json:"model,omitempty"`
+	APIKeyEnv            string   `json:"api_key_env"`
+	APIKeyConfigured     bool     `json:"api_key_configured"`
+	MaxSteps             int      `json:"max_steps"`
+	TimeoutSeconds       int      `json:"timeout_seconds"`
+	ReadOnly             bool     `json:"read_only"`
+	ReturnTrace          bool     `json:"return_trace"`
+	Namespace            string   `json:"namespace,omitempty"`
+	RoleClass            string   `json:"role_class,omitempty"`
+	AvailableSystemRoots []string `json:"available_system_roots,omitempty"`
+	BlockedSystemRoots   []string `json:"blocked_system_roots,omitempty"`
+	Message              string   `json:"message"`
 }
 
 // Agent is the HTTP handler for the server-side GraphJin agent endpoint.
@@ -79,7 +82,13 @@ func (s1 *HttpService) apiV1AgentStatus(ns *string) http.Handler {
 			return
 		}
 
-		_ = json.NewEncoder(w).Encode(agentStatusFromConfig(agentConfigFromService(s.conf), ns, s.agentClientFactory != nil))
+		status := agentStatusFromConfig(agentConfigFromService(s.conf), ns, s.agentClientFactory != nil)
+		if profile := s.agentCapabilityProfile(r.Context()); profile != nil {
+			status.RoleClass = profile.RoleClass
+			status.AvailableSystemRoots = append([]string(nil), profile.AvailableSystemRoots...)
+			status.BlockedSystemRoots = append([]string(nil), profile.BlockedSystemRoots...)
+		}
+		_ = json.NewEncoder(w).Encode(status)
 	}
 	return http.HandlerFunc(h)
 }

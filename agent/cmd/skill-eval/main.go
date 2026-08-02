@@ -188,6 +188,7 @@ func main() {
 		trendDir        = flag.String("trend", "", "print recall trend from this ledger directory and exit")
 	)
 	flag.Parse()
+	fmt.Fprintln(os.Stderr, "warning: skill-eval is deprecated and frozen for one release; use `graphjin eval` for new suites")
 
 	if *trendDir != "" {
 		if err := runTrend(*trendDir); err != nil {

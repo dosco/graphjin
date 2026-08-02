@@ -33,6 +33,7 @@ const requiredRoutes = [
   'integrations/multi-database/index.html',
   'agentic/mcp/index.html',
   'agentic/server-agent/index.html',
+  'agentic/evaluation/index.html',
   'agentic/tasks/index.html',
   'agentic/watches/index.html',
   'agentic/watch-automation/index.html',
@@ -88,6 +89,7 @@ const requiredContent = [
   'integrations/federation.md',
   'agentic/mcp.md',
   'agentic/server-agent.md',
+  'agentic/evaluation.md',
   'agentic/tasks.md',
   'agentic/watches.md',
   'agentic/watch-automation.md',
@@ -122,7 +124,16 @@ const requiredRenderedContent = [
   ['agentic/tasks/index.html', 'saved_query_name'],
   ['agentic/tasks/index.html', 'TestTaskVerificationClaimIsSingleWinnerAcrossReplicas'],
   ['agentic/server-agent/index.html', 'Task and watch notices'],
+  ['agentic/evaluation/index.html', 'Your first evaluation in ten minutes'],
+  ['agentic/evaluation/index.html', 'right number for the wrong reason'],
+  ['agentic/evaluation/index.html', 'remove it through the CLI'],
+  ['agentic/evaluation/index.html', '0.90'],
+  ['agentic/evaluation/index.html', 'oracle_value_hash'],
+  ['agentic/evaluation/index.html', 'Never upload the'],
+  ['agentic/evaluation/index.html', 'Then restore that known baseline before the CI run.'],
+  ['agentic/evaluation/index.html', 'v1 is a reinforcement-learning trainer.'],
   ['agentic/index.html', 'Use durable verified tasks'],
+  ['agentic/index.html', 'Evaluate the agent'],
   ['agentic/mcp/index.html', 'Configure GraphJin from your AI IDE'],
   ['agentic/mcp/index.html', 'graphjin mcp --demo'],
   ['start/install/index.html', 'graphjin mcp --demo'],
@@ -281,6 +292,23 @@ if (await exists(path.join(publicRoot, 'agentic', 'watch-automation', 'index.htm
   }
   if (!/\sclass=(?:"mermaid"|'mermaid'|mermaid)(?=\s|>)/.test(watchGuide)) {
     failures.push('Watch automation guide is missing its lifecycle or decision diagram');
+  }
+}
+
+if (await exists(path.join(publicRoot, 'agentic', 'evaluation', 'index.html'))) {
+  const evaluationGuide = await readFile(
+    path.join(publicRoot, 'agentic', 'evaluation', 'index.html'),
+    'utf8'
+  );
+  if (!evaluationGuide.includes('<h1>Evaluate the GraphJin Agent</h1>')) {
+    failures.push('Agent evaluation guide lost its full page heading');
+  }
+  if (!evaluationGuide.includes('>Agent Evaluation</a>')) {
+    failures.push('Agent evaluation guide is missing its shortened sidebar label');
+  }
+  const diagrams = evaluationGuide.match(/\sclass=(?:"mermaid"|'mermaid'|mermaid)(?=\s|>)/g) || [];
+  if (diagrams.length < 2) {
+    failures.push('Agent evaluation guide is missing its evaluation or baseline lifecycle diagram');
   }
 }
 

@@ -37,6 +37,10 @@ verification, and annotation-draft notices link directly into
 
 More verticals - a zero-Docker SaaS ops demo, a corrugated-box plant with JWT roles, a PCB fab spanning eight sources - are on the [demos page](/start/demos/).
 
+Once the agent answers a useful question, use [GraphJin Eval](/agentic/evaluation/)
+to turn that confidence into a repeatable release check. It verifies the answer,
+the database-side method, the governed behavior, and safety across repeated runs.
+
 ## Configure it
 
 `agentic.yml` loads when the environment is agentic. The agent itself needs no feature toggle:

@@ -2,6 +2,8 @@ package main
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -56,6 +58,7 @@ func Cmd() {
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(cliCmd())
 	rootCmd.AddCommand(configCmd())
+	rootCmd.AddCommand(evalCmd())
 	rootCmd.AddCommand(versionCmd())
 
 	// rootCmd.AddCommand(&cobra.Command{
@@ -66,6 +69,11 @@ func Cmd() {
 	// })
 
 	if err := rootCmd.Execute(); err != nil {
+		var exitErr *evalExitError
+		if errors.As(err, &exitErr) {
+			fmt.Fprintln(os.Stderr, exitErr.Err)
+			os.Exit(exitErr.Code)
+		}
 		log.Fatalf("%s", err)
 	}
 }
