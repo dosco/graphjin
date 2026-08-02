@@ -33,7 +33,7 @@ import {
   useOperatorIdentity,
 } from "../services/identity";
 import { parseJSON, relativeTime } from "../services/graphql";
-import { DataErrorState, EmptyState, LoadingState, Metric, PageHeader, Panel, StatusPill } from "../components/ui";
+import { DataErrorState, EmptyState, LoadingState, PageHeader, Panel, StatusPill } from "../components/ui";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,14 +44,32 @@ import { cn } from "@/lib/utils";
 
 const validTabs = new Set(["tasks", "watches", "annotations"]);
 const refreshInterval = 15000;
+const sectionMeta = {
+  tasks: {
+    eyebrow: "User workspace",
+    title: "Tasks",
+    description: "Declared goals, verification state, and the durable trail behind agent work.",
+  },
+  watches: {
+    eyebrow: "User workspace",
+    title: "Watch inbox",
+    description: "Events that need attention across your governed GraphJin watches.",
+  },
+  annotations: {
+    eyebrow: "User workspace",
+    title: "Artifacts",
+    description: "Observed and approved annotations retained as reviewed graph memory.",
+  },
+};
 
-const MissionControl = () => {
+const MissionControl = ({ section }) => {
   const identity = useOperatorIdentity();
   const identityKey = operatorIdentityKey(identity);
   const hasIdentity = hasOperatorIdentity(identity);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const [tab, setTab] = React.useState(validTabs.has(requestedTab) ? requestedTab : "tasks");
+  const fixedSection = validTabs.has(section) ? section : "";
+  const [tab, setTab] = React.useState(fixedSection || (validTabs.has(requestedTab) ? requestedTab : "tasks"));
   const [selectedTask, setSelectedTask] = React.useState(null);
   const [selectedEvent, setSelectedEvent] = React.useState(null);
 
@@ -64,11 +82,13 @@ const MissionControl = () => {
     queryKey: ["mission", "watches", identityKey],
     queryFn: fetchMissionWatches,
     refetchInterval: refreshInterval,
+    enabled: !fixedSection || fixedSection === "watches",
   });
   const annotationsQuery = useQuery({
     queryKey: ["mission", "annotations", identityKey],
     queryFn: fetchMissionAnnotations,
     refetchInterval: refreshInterval,
+    enabled: !fixedSection || fixedSection === "annotations",
   });
 
   const tasks = tasksQuery.data || [];
@@ -87,7 +107,14 @@ const MissionControl = () => {
     watches: isFeatureUnavailable(watchesQuery.error),
     annotations: isFeatureUnavailable(annotationsQuery.error),
   };
-  const visibleTabs = ["tasks", "watches", "annotations"].filter((name) => !unavailable[name]);
+  const visibleTabs = (fixedSection ? [fixedSection] : ["tasks", "watches", "annotations"]).filter((name) => !unavailable[name]);
+  const meta = sectionMeta[fixedSection || tab] || sectionMeta.tasks;
+
+  React.useEffect(() => {
+    if (fixedSection) {
+      setTab(fixedSection);
+    }
+  }, [fixedSection]);
 
   React.useEffect(() => {
     const linkedTaskID = searchParams.get("task_id");
@@ -118,7 +145,9 @@ const MissionControl = () => {
   function openTask(task) {
     setSelectedTask(task);
     const next = new URLSearchParams(searchParams);
-    next.set("tab", "tasks");
+    if (!fixedSection) {
+      next.set("tab", "tasks");
+    }
     next.set("task_id", task.id);
     setSearchParams(next, { replace: true });
   }
@@ -131,21 +160,23 @@ const MissionControl = () => {
   }
 
   const openTasks = tasks.filter((task) => task.status === "open" || task.status === "verifying").length;
-  const verificationFailures = tasks.filter((task) => task.verify_status === "failed").length;
-
   return (
-    <div className="mx-auto grid w-full min-w-0 max-w-7xl gap-6">
+    <div className="grid w-full min-w-0 gap-6">
       <PageHeader
-        eyebrow="Agentic Operations"
-        title="Mission Control"
-        description="The shared human view over declared tasks, fired watch events, and reviewed graph memory."
+        eyebrow={meta.eyebrow}
+        title={meta.title}
+        description={meta.description}
         actions={
           canShowMission ? (
-            <Badge variant={identity.role === "admin" ? "warning" : "outline"}>
-              <UserRound aria-hidden="true" />
-              {identity.userId || "Session identity"}
-              {identity.accountId ? ` · ${identity.accountId}` : ""}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              {tab === "tasks" && <Badge variant={openTasks ? "warning" : "muted"}>{openTasks} open</Badge>}
+              {tab === "watches" && <Badge variant={events.length ? "warning" : "muted"}>{events.length} unseen</Badge>}
+              {tab === "annotations" && <Badge variant={drafts.length ? "warning" : "muted"}>{drafts.length} drafts</Badge>}
+              <Badge variant={identity.role === "admin" ? "warning" : "outline"}>
+                <UserRound aria-hidden="true" />
+                {identity.userId || "Session identity"}
+              </Badge>
+            </div>
           ) : null
         }
       />
@@ -156,13 +187,6 @@ const MissionControl = () => {
         <NoIdentityState />
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric label="Open tasks" value={openTasks} detail={`${tasks.length} visible task records`} tone={openTasks ? "warn" : "good"} />
-            <Metric label="Verification failures" value={verificationFailures} detail="Outcomes that reopened for more work" tone={verificationFailures ? "warn" : "good"} />
-            <Metric label="Unseen watch events" value={events.length} detail={`${watches.length} visible watches`} tone={events.length ? "warn" : "good"} />
-            <Metric label="Unshared drafts" value={drafts.length} detail="Observed notes awaiting review" tone={drafts.length ? "warn" : "good"} />
-          </div>
-
           <FeatureUnavailableHints unavailable={unavailable} />
 
           {visibleTabs.length === 0 ? (
@@ -172,7 +196,7 @@ const MissionControl = () => {
             />
           ) : (
             <div className="grid gap-4">
-              <Tabs value={tab} onValueChange={changeTab}>
+              {!fixedSection && <Tabs value={tab} onValueChange={changeTab}>
                 <TabsList className="h-auto max-w-full flex-wrap justify-start">
                   {!unavailable.tasks && (
                     <TabsTrigger value="tasks">
@@ -196,7 +220,7 @@ const MissionControl = () => {
                     </TabsTrigger>
                   )}
                 </TabsList>
-              </Tabs>
+              </Tabs>}
 
               {tab === "tasks" && !unavailable.tasks && (
                 <TasksPanel query={tasksQuery} tasks={tasks} onOpenTask={openTask} />
@@ -347,7 +371,7 @@ function TaskDrawer({ task, identityKey, onClose }) {
                 {task.verify_after && <DetailRow label="Verify after" value={formatDate(task.verify_after)} />}
                 {task.verify_json && <JSONBlock title="Verification contract" value={task.verify_json} />}
                 <Button asChild variant="outline" size="sm" className="justify-self-start">
-                  <Link to={`/agent?task_id=${encodeURIComponent(task.id)}`}>
+                  <Link to={`/user/agent?task_id=${encodeURIComponent(task.id)}`}>
                     <Bot aria-hidden="true" />
                     Continue in Agent
                   </Link>

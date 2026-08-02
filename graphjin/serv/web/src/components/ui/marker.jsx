@@ -3,7 +3,7 @@ import { CircleCheck, CircleDashed, CircleHelp, CircleX, Loader2 } from "lucide-
 
 import { cn } from "@/lib/utils";
 
-const icons = {
+const statusIcons = {
   answered: CircleCheck,
   ready: CircleCheck,
   blocked: CircleX,
@@ -13,24 +13,29 @@ const icons = {
   pending: CircleDashed,
 };
 
-const variants = {
-  answered: "border-emerald-300 bg-card text-emerald-700",
-  ready: "border-emerald-300 bg-card text-emerald-700",
-  blocked: "border-red-300 bg-card text-red-700",
-  error: "border-red-300 bg-card text-red-700",
-  loading: "border-border bg-card text-muted-foreground",
-  needs_clarification: "border-amber-300 bg-card text-amber-700",
-  pending: "border-border bg-card text-muted-foreground",
-};
-
-function Marker({ status = "pending", label, className }) {
-  const normalized = String(status || "pending").toLowerCase();
-  const Icon = icons[normalized] || CircleDashed;
+function Marker({ className, variant = "default", status, label, children, ...props }) {
+  const normalized = String(status || "").toLowerCase();
+  const Icon = statusIcons[normalized];
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium", variants[normalized] || variants.pending, className)}>
-      <Icon className={cn("size-3.5", normalized === "loading" && "animate-spin")} aria-hidden="true" />
-      {label || status}
-    </span>
+    <div
+      data-slot="marker"
+      data-variant={variant}
+      role={status ? "status" : undefined}
+      className={cn(
+        "group/marker relative flex min-h-4 w-full items-center gap-2 text-left text-sm text-muted-foreground",
+        variant === "separator" && "before:mr-1 before:h-px before:min-w-0 before:flex-1 before:bg-border after:ml-1 after:h-px after:min-w-0 after:flex-1 after:bg-border",
+        variant === "border" && "border-b pb-2",
+        status && "w-fit text-xs",
+        (normalized === "ready" || normalized === "answered") && "text-emerald-700 dark:text-emerald-400",
+        (normalized === "error" || normalized === "blocked") && "text-destructive",
+        normalized === "needs_clarification" && "text-amber-700 dark:text-amber-400",
+        className
+      )}
+      {...props}
+    >
+      {Icon && <span data-slot="marker-icon" aria-hidden="true" className="size-4 shrink-0"><Icon className={cn("size-4", normalized === "loading" && "animate-spin")} /></span>}
+      <span data-slot="marker-content" className="min-w-0 break-words">{children || label || status}</span>
+    </div>
   );
 }
 
