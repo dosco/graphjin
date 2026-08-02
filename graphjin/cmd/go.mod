@@ -5,6 +5,7 @@ go 1.25.5
 require (
 	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
+	github.com/dosco/graphjin/agent/v3 v3.20.4
 	github.com/dosco/graphjin/auth/v3 v3.20.4
 	github.com/dosco/graphjin/core/v3 v3.20.4
 	github.com/dosco/graphjin/examples v0.0.0
@@ -31,6 +32,7 @@ require (
 )
 
 replace (
+	github.com/dosco/graphjin/agent/v3 => ../agent
 	github.com/dosco/graphjin/auth/v3 => ../auth
 	github.com/dosco/graphjin/core/v3 => ../core
 	github.com/dosco/graphjin/examples => ../examples

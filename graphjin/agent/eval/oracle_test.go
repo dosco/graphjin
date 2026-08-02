@@ -1,0 +1,72 @@
+package eval
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+)
+
+type doerFunc func(*http.Request) (*http.Response, error)
+
+func (fn doerFunc) Do(request *http.Request) (*http.Response, error) { return fn(request) }
+
+func jsonResponse(status int, body string) *http.Response {
+	return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}
+}
+
+func TestVerifierResolvesAnchorAndExtraction(t *testing.T) {
+	calls := 0
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return jsonResponse(200, `{"data":{"events":[{"max_at":"2026-08-01"}]}}`), nil
+		}
+		body, _ := io.ReadAll(request.Body)
+		if !strings.Contains(string(body), `2026-07-25`) {
+			t.Fatalf("resolved variables missing shifted anchor: %s", body)
+		}
+		return jsonResponse(200, `{"data":{"events":[{"count_id":42}]}}`), nil
+	})
+	result, err := (Verifier{Client: doer, BaseURL: "http://graphjin.test", Now: func() time.Time { return time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC) }}).Resolve(context.Background(), OracleSpec{
+		AnchorQuery: "query { events { max_at } }", AnchorExtract: "events.0.max_at",
+		Query:     "query Q($from: String!) { events(where: {at: {gte: $from}}) { count_id } }",
+		Variables: map[string]any{"from": "{{anchor-7d}}"}, Extract: "events.0.count_id",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Value != "42" || calls != 2 {
+		t.Fatalf("result=%+v calls=%d", result, calls)
+	}
+}
+
+func TestGroundTruthToleranceAndScales(t *testing.T) {
+	task := Task{ExpectedStatus: "answered", Answer: AnswerRule{Kind: "number", TolerancePct: 0.01, AcceptScales: []float64{1, 0.01}}}
+	pass, detail := evaluateGroundTruth(task, OracleResult{Value: "1980000"}, responseWithAnswer("answered", "The total is $19,800."))
+	if !pass {
+		t.Fatalf("scaled answer failed: %s", detail)
+	}
+	pass, _ = evaluateGroundTruth(task, OracleResult{Value: "1980000"}, responseWithAnswer("answered", "The total is $12."))
+	if pass {
+		t.Fatal("incorrect numeric answer passed")
+	}
+}
+
+func TestVerifierPickMax(t *testing.T) {
+	doer := doerFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(200, `{"data":{"accounts":[{"name":"A","total":4},{"name":"B","total":9}]}}`), nil
+	})
+	result, err := (Verifier{Client: doer, BaseURL: "http://graphjin.test"}).Resolve(context.Background(), OracleSpec{
+		Query:   "query { accounts { name total } }",
+		PickMax: &PickMaxRule{List: "accounts", Value: "total", Dimension: "name"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Value != "9" || result.Dimension != "B" {
+		t.Fatalf("unexpected pick_max result: %+v", result)
+	}
+}

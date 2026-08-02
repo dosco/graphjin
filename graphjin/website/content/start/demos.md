@@ -98,6 +98,12 @@ graphjin serve --demo --path examples/saas-ops    # from a repo clone
 - "Summarize MRR by plan and flag any account with failed payments."
 - "Which open support tickets are past or nearest their SLA - and who owns them?"
 
+The SaaS Ops demo is also the no-Docker starting point for
+[evaluating the agent](/agentic/evaluation/). `graphjin eval create --demo`
+builds a verified suite from this catalog before any evaluated-agent traffic,
+then `graphjin eval run --demo` checks answers, methods, behavior, and safety
+across repeated runs.
+
 More prompts: [saas-ops/PROMPTS.md](https://github.com/dosco/graphjin/blob/master/examples/saas-ops/PROMPTS.md)
 
 ## Corrugated plant {#corrugated-plant}

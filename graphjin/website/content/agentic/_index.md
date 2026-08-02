@@ -15,19 +15,25 @@ Agentic GraphJin gives AI clients a discoverable, policy-aware surface for data 
     <a href="/agentic/server-agent/">Use the server-side agent</a>
   </article>
   <article>
-    <span>02 · Continue</span>
+    <span>02 · Prove</span>
+    <h2>Know the agent still works.</h2>
+    <p>Build verified tasks from your catalog, check both answers and methods, and gate model, prompt, or GraphJin changes against a trusted baseline.</p>
+    <a href="/agentic/evaluation/">Evaluate the agent</a>
+  </article>
+  <article>
+    <span>03 · Continue</span>
     <h2>Carry declared intent across runs.</h2>
     <p>Owner-scoped tasks warm-start later agent runs, journal their provenance, stay visible through notices, and can require a saved query to prove the declared outcome before close.</p>
     <a href="/agentic/tasks/">Use durable verified tasks</a>
   </article>
   <article>
-    <span>03 · Watch</span>
+    <span>04 · Watch</span>
     <h2>Keep a standing question running.</h2>
     <p>A cursor-backed watch records changes. An optional tool-free AI flow can summarize, score, or suppress noise before the right conversation wakes.</p>
     <a href="/agentic/watch-automation/">Choose a watch and flow</a>
   </article>
   <article>
-    <span>04 · Act</span>
+    <span>05 · Act</span>
     <h2>Run only the action that was approved.</h2>
     <p>Workflows can use governed GraphJin tools, but autonomous watch delivery remains paused until the exact current action hash is confirmed.</p>
     <a href="/agentic/workflows/">Understand workflows</a>

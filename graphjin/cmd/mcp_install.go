@@ -255,6 +255,7 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 			}
 
 			printPostInstallGuide(cmd.OutOrStdout(), opts, codexPlan)
+			printEvalSkillInstallResults(cmd.OutOrStdout(), installGraphJinEvalSkills(opts))
 		},
 	}
 
@@ -868,6 +869,79 @@ func printPostInstallGuide(w io.Writer, opts mcpInstallOptions, codexPlan codexI
 		}
 	}
 
+	fmt.Fprintln(w)
+}
+
+type evalSkillInstallResult struct {
+	Client    string
+	Path      string
+	Installed bool
+	Err       error
+}
+
+func installGraphJinEvalSkills(opts mcpInstallOptions) []evalSkillInstallResult {
+	data, err := tmpl.ReadFile("tmpl/skills/graphjin-eval/SKILL.md")
+	if err != nil {
+		return []evalSkillInstallResult{{Client: opts.Client, Path: "embedded:tmpl/skills/graphjin-eval/SKILL.md", Err: err}}
+	}
+	wd, wdErr := os.Getwd()
+	home, homeErr := os.UserHomeDir()
+	var results []evalSkillInstallResult
+	install := func(client, base string, baseErr error) {
+		path := "embedded:tmpl/skills/graphjin-eval/SKILL.md"
+		if baseErr == nil {
+			path = filepath.Join(base, "."+client, "skills", "graphjin-eval", "SKILL.md")
+		}
+		result := evalSkillInstallResult{Client: client, Path: path, Err: baseErr}
+		if result.Err == nil {
+			result.Err = writeEvalSkill(path, data)
+			result.Installed = result.Err == nil
+		}
+		results = append(results, result)
+	}
+	base, baseErr := wd, wdErr
+	if opts.Scope == "global" {
+		base, baseErr = home, homeErr
+	}
+	if usesClaude(opts.Client) {
+		install("claude", base, baseErr)
+	}
+	if usesCodex(opts.Client) {
+		install("codex", base, baseErr)
+	}
+	return results
+}
+
+func writeEvalSkill(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	existing, err := os.ReadFile(path)
+	if err == nil && bytes.Equal(existing, data) {
+		return os.Chmod(path, 0o600)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
+func printEvalSkillInstallResults(w io.Writer, results []evalSkillInstallResult) {
+	if len(results) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "GraphJin Eval skill")
+	for _, result := range results {
+		if result.Installed {
+			fmt.Fprintf(w, "  %s: installed %s\n", result.Client, result.Path)
+		} else {
+			fmt.Fprintf(w, "  %s: MCP install succeeded; skill install unavailable (%v)\n", result.Client, result.Err)
+			fmt.Fprintf(w, "  bundled skill: %s\n", result.Path)
+		}
+	}
 	fmt.Fprintln(w)
 }
 
