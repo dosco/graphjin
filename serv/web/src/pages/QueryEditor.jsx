@@ -4,7 +4,7 @@ import { createGraphiQLFetcher } from "@graphiql/toolkit";
 import { GraphiQL } from "graphiql";
 
 import { PageHeader } from "../components/ui";
-import { Card, CardContent } from "@/components/ui/card";
+import { useTheme } from "@/components/theme-provider";
 import "graphiql/style.css";
 
 const defaultEndpoint = import.meta.env.VITE_DEFAULT_ENDPOINT || "/api/v1/graphql";
@@ -25,6 +25,7 @@ query SourceHealth {
 `;
 
 const QueryEditor = () => {
+  const { resolvedTheme } = useTheme();
   const fetcher = useMemo(() => {
     let apiPath = defaultEndpoint;
     const urlParams = new URLSearchParams(window.location.search);
@@ -46,23 +47,13 @@ const QueryEditor = () => {
   }, []);
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-6">
-      <PageHeader
-        eyebrow="GraphQL"
-        title="Workbench"
-        description="Run GraphJin queries against the same endpoint used by applications and system-root views."
-      />
-      <Card className="overflow-hidden">
-        <CardContent className="p-0">
-          <div className="graphiql-shell">
-            <GraphiQL
-              fetcher={fetcher}
-              forcedTheme="light"
-              initialQuery={defaultQuery}
-            />
-          </div>
-        </CardContent>
-      </Card>
+    <div className="grid h-[calc(100dvh-6.25rem)] min-h-[38rem] grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+      <div className="border-b px-4 py-4 sm:px-6">
+        <PageHeader eyebrow="GraphQL" title="Workbench" description="Run application and system-root queries against the active GraphJin endpoint." />
+      </div>
+      <div className="graphiql-shell min-h-0">
+        <GraphiQL fetcher={fetcher} forcedTheme={resolvedTheme} initialQuery={defaultQuery} />
+      </div>
     </div>
   );
 };

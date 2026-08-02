@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 
 import { graphqlRequest, parseJSON } from "../services/graphql";
 import { DataErrorState, EmptyState, LoadingState, PageHeader, Panel, StatusPill } from "../components/ui";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 const catalogQuery = `query CatalogExplorer {
   items: gj_catalog(where: { kind: { in: ["database", "table", "column", "relationship", "function", "query", "fragment", "capability", "system_capability", "workflow", "help"] } }, order_by: { kind: asc }, limit: 240) {
@@ -16,9 +17,10 @@ const catalogQuery = `query CatalogExplorer {
 
 const kinds = ["all", "database", "table", "column", "relationship", "system_capability", "capability", "workflow", "help"];
 
-const CatalogExplorer = () => {
-  const [kind, setKind] = useState("all");
+const CatalogExplorer = ({ initialKind = "all", title = "Catalog", description = "Schema, source capabilities, workflows, and GraphJin help from gj_catalog." }) => {
+  const [kind, setKind] = useState(initialKind);
   const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(null);
   const { data, isLoading, error } = useQuery({
     queryKey: ["catalog-explorer"],
     queryFn: () => graphqlRequest(catalogQuery),
@@ -44,11 +46,11 @@ const CatalogExplorer = () => {
     <div className="mx-auto grid max-w-7xl gap-6">
       <PageHeader
         eyebrow="Discovery"
-        title="Catalog"
-        description="Schema, source capabilities, workflows, and GraphJin help from gj_catalog."
+        title={title}
+        description={description}
       />
 
-      <div className="grid gap-3 rounded-lg border bg-card p-4 shadow-xs md:grid-cols-[minmax(0,1fr)_14rem] md:items-center">
+      <div className="grid gap-3 border-y bg-muted/20 px-3 py-3 md:grid-cols-[minmax(0,1fr)_14rem] md:items-center">
         <label className="relative block">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search catalog rows" />
@@ -62,7 +64,7 @@ const CatalogExplorer = () => {
         </Select>
       </div>
 
-      <Panel title="Catalog Rows" description={`${filtered.length} of ${items.length} visible rows`}>
+      <Panel title="Catalog rows" description={`${filtered.length} of ${items.length} visible rows`} contentClassName="p-0 sm:p-0">
         {isLoading ? (
           <LoadingState label="Reading gj_catalog" />
         ) : error ? (
@@ -72,48 +74,101 @@ const CatalogExplorer = () => {
             unavailableMessage="The catalog root could not be reached from the current GraphJin service."
           />
         ) : filtered.length ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((item) => (
-              <CatalogCard key={item.id} item={item} />
+          <div className="divide-y">
+            <div className="hidden grid-cols-[8rem_minmax(0,1fr)_minmax(9rem,0.7fr)_7rem_1.5rem] gap-4 bg-muted/25 px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
+              <span>Kind</span><span>Name</span><span>Location</span><span>Status</span><span />
+            </div>
+            {filtered.map((item, index) => (
+              <CatalogRow key={`${item.kind}:${item.id || item.name || item.title || "row"}:${index}`} item={item} onOpen={setSelected} />
             ))}
           </div>
         ) : (
           <EmptyState title="No catalog rows" message="Try a different filter or grant this role catalog read access." />
         )}
       </Panel>
+      <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
+        <SheetContent side="right" className="grid w-[min(96vw,44rem)] grid-rows-[auto_minmax(0,1fr)] p-0 sm:w-[44rem]">
+          {selected && <CatalogInspector item={selected} />}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 };
 
-const CatalogCard = ({ item }) => {
+const CatalogRow = ({ item, onOpen }) => {
   const details = parseJSON(item.details_json, {});
-  const examples = parseJSON(item.examples_json, []);
   const location = [item.database_name, item.schema_name, item.table_name, item.column_name].filter(Boolean).join(".");
   return (
-    <article className="grid min-h-52 gap-3 rounded-md border bg-background p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <Badge variant="outline" className="mb-2">{item.kind}</Badge>
-          <h3 className="truncate text-sm font-semibold leading-5">{item.title || item.name || item.id}</h3>
-        </div>
-        {typeof item.enabled === "boolean" && <StatusPill status={item.enabled ? "enabled" : "disabled"} />}
+    <button type="button" onClick={() => onOpen(item)} className="grid w-full gap-2 px-4 py-3 text-left transition hover:bg-muted/45 md:grid-cols-[8rem_minmax(0,1fr)_minmax(9rem,0.7fr)_7rem_1.5rem] md:items-center md:gap-4">
+      <Badge variant="outline" className="w-fit">{formatKind(item.kind)}</Badge>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold">{item.title || item.name || item.id}</p>
+        {item.summary && <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{item.summary}</p>}
       </div>
-      {item.summary && <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">{item.summary}</p>}
-      {location && <span className="truncate text-xs text-muted-foreground">{location}</span>}
-      <div className="flex flex-wrap gap-2">
-        {item.source_kind && <Badge variant="secondary">{item.source_kind}</Badge>}
-        {item.risk_level && <Badge variant="outline">{item.risk_level}</Badge>}
-        {item.sensitivity && <Badge variant="outline">{item.sensitivity}</Badge>}
-        {details?.root && <Badge variant="outline">{details.root}</Badge>}
-      </div>
-      {(item.graphql_query || item.graphql_mutation || examples?.length > 0) && (
-        <pre className="max-h-32 overflow-auto rounded-md bg-muted p-3 text-xs leading-5">
-          <code>{item.graphql_query || item.graphql_mutation || exampleText(examples[0])}</code>
-        </pre>
-      )}
-    </article>
+      <span className="truncate text-xs text-muted-foreground">{location || item.source || details?.root || "—"}</span>
+      <span>{typeof item.enabled === "boolean" ? <StatusPill status={item.enabled ? "enabled" : "disabled"} /> : item.risk_level ? <StatusPill severity={item.risk_level} /> : <span className="text-xs text-muted-foreground">—</span>}</span>
+      <ChevronRight className="hidden size-4 text-muted-foreground md:block" aria-hidden="true" />
+    </button>
   );
 };
+
+const CatalogInspector = ({ item }) => {
+  const details = parseJSON(item.details_json, {});
+  const evidence = parseJSON(item.evidence_json, null);
+  const examples = parseJSON(item.examples_json, []);
+  const safety = parseJSON(item.safety_json, null);
+  const location = [item.database_name, item.schema_name, item.table_name, item.column_name].filter(Boolean).join(".");
+  const query = item.graphql_query || item.graphql_mutation || exampleText(examples?.[0]);
+  const metadata = [
+    ["Kind", formatKind(item.kind)],
+    ["Location", location],
+    ["Source", item.source],
+    ["Source kind", item.source_kind],
+    ["Risk", item.risk_level],
+    ["Sensitivity", item.sensitivity],
+    ["Confidence", item.confidence],
+    ["Updated", item.updated_at],
+  ].filter(([, value]) => value != null && value !== "");
+  return (
+    <>
+      <SheetHeader className="border-b px-5 py-5 pr-12 text-left">
+        <div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{formatKind(item.kind)}</Badge>{typeof item.enabled === "boolean" && <StatusPill status={item.enabled ? "enabled" : "disabled"} />}</div>
+        <SheetTitle className="mt-2 text-xl">{item.title || item.name || item.id}</SheetTitle>
+        <SheetDescription>{item.summary || "Catalog metadata and executable references from GraphJin."}</SheetDescription>
+      </SheetHeader>
+      <div className="min-h-0 overflow-y-auto px-5 py-5">
+        {metadata.length > 0 && (
+          <dl className="divide-y border-y text-sm">
+            {metadata.map(([label, value]) => <div key={label} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-4 py-2.5"><dt className="text-muted-foreground">{label}</dt><dd className="min-w-0 break-words font-medium">{String(value)}</dd></div>)}
+          </dl>
+        )}
+        {query && <InspectorSection title="GraphQL"><pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-4 text-xs leading-5"><code>{query}</code></pre></InspectorSection>}
+        {Object.keys(details || {}).length > 0 && <InspectorSection title="Details"><JSONBlock value={details} /></InspectorSection>}
+        {hasInspectorValue(evidence) && <InspectorSection title="Evidence"><JSONBlock value={evidence} /></InspectorSection>}
+        {hasInspectorValue(safety) && <InspectorSection title="Safety"><JSONBlock value={safety} /></InspectorSection>}
+      </div>
+    </>
+  );
+};
+
+const InspectorSection = ({ title, children }) => (
+  <section className="mt-6 border-t pt-4">
+    <h3 className="mb-3 text-sm font-semibold">{title}</h3>
+    {children}
+  </section>
+);
+
+const JSONBlock = ({ value }) => <pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-4 text-xs leading-5"><code>{JSON.stringify(value, null, 2)}</code></pre>;
+
+function hasInspectorValue(value) {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (value && typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  return value != null && value !== "";
+}
 
 function exampleText(example) {
   if (!example) {

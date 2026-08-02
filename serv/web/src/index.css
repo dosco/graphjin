@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Inter, "Segoe UI", sans-serif;
@@ -22,6 +25,15 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-ribbon: var(--ribbon);
+  --color-ribbon-foreground: var(--ribbon-foreground);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -31,25 +43,65 @@
 
 :root {
   color-scheme: light;
-  --radius: 0.5rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.17 0.004 255);
+  --radius: 0.625rem;
+  --background: oklch(0.995 0.002 255);
+  --foreground: oklch(0.18 0.01 258);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.17 0.004 255);
+  --card-foreground: oklch(0.18 0.01 258);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.17 0.004 255);
-  --primary: oklch(0.22 0.004 255);
+  --popover-foreground: oklch(0.18 0.01 258);
+  --primary: oklch(0.22 0.015 258);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.975 0.002 255);
-  --secondary-foreground: oklch(0.2 0.004 255);
-  --muted: oklch(0.982 0.002 255);
-  --muted-foreground: oklch(0.43 0.006 255);
-  --accent: oklch(0.97 0.002 255);
-  --accent-foreground: oklch(0.18 0.004 255);
+  --secondary: oklch(0.965 0.006 255);
+  --secondary-foreground: oklch(0.22 0.012 258);
+  --muted: oklch(0.97 0.005 255);
+  --muted-foreground: oklch(0.48 0.014 258);
+  --accent: oklch(0.95 0.009 255);
+  --accent-foreground: oklch(0.2 0.012 258);
   --destructive: oklch(0.52 0.17 28);
-  --border: oklch(0.89 0.003 255);
-  --input: oklch(0.89 0.003 255);
-  --ring: oklch(0.42 0.006 255);
+  --success: oklch(0.55 0.13 155);
+  --warning: oklch(0.69 0.14 75);
+  --border: oklch(0.9 0.008 255);
+  --input: oklch(0.9 0.008 255);
+  --ring: oklch(0.49 0.04 258);
+  --chart-1: oklch(0.58 0.17 258);
+  --chart-2: oklch(0.61 0.13 166);
+  --chart-3: oklch(0.69 0.14 75);
+  --chart-4: oklch(0.6 0.17 312);
+  --chart-5: oklch(0.62 0.18 28);
+  --ribbon: oklch(0.995 0.002 255);
+  --ribbon-foreground: oklch(0.18 0.01 258);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.16 0.012 258);
+  --foreground: oklch(0.95 0.006 255);
+  --card: oklch(0.2 0.014 258);
+  --card-foreground: oklch(0.95 0.006 255);
+  --popover: oklch(0.2 0.014 258);
+  --popover-foreground: oklch(0.95 0.006 255);
+  --primary: oklch(0.92 0.008 255);
+  --primary-foreground: oklch(0.18 0.012 258);
+  --secondary: oklch(0.25 0.016 258);
+  --secondary-foreground: oklch(0.93 0.007 255);
+  --muted: oklch(0.235 0.014 258);
+  --muted-foreground: oklch(0.68 0.018 255);
+  --accent: oklch(0.27 0.02 258);
+  --accent-foreground: oklch(0.96 0.006 255);
+  --destructive: oklch(0.64 0.2 26);
+  --success: oklch(0.69 0.15 155);
+  --warning: oklch(0.78 0.14 78);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.63 0.04 255);
+  --chart-1: oklch(0.68 0.18 258);
+  --chart-2: oklch(0.7 0.14 166);
+  --chart-3: oklch(0.78 0.14 75);
+  --chart-4: oklch(0.7 0.17 312);
+  --chart-5: oklch(0.7 0.18 28);
+  --ribbon: oklch(0.18 0.012 258);
+  --ribbon-foreground: oklch(0.95 0.006 255);
 }
 
 * {
@@ -77,6 +129,15 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 button,
@@ -107,13 +168,13 @@ code,
 }
 
 .graphiql-shell {
-  height: min(78vh, 980px);
-  min-height: 620px;
+  height: 100%;
+  min-height: 0;
 }
 
 .graphiql-container {
   height: 100%;
-  border-radius: var(--radius);
+  border-radius: 0;
   overflow: hidden;
   background: var(--card);
 }
@@ -150,7 +211,17 @@ code,
 
 @media (max-width: 768px) {
   .graphiql-shell {
-    height: 72vh;
-    min-height: 520px;
+    min-height: 32rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

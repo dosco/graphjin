@@ -4,7 +4,6 @@ import { AlertCircle, CheckCircle2, Loader2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const cx = cn;
 
@@ -21,32 +20,32 @@ export function PageHeader({ eyebrow, title, description, actions }) {
   );
 }
 
-export function Panel({ title, description, children, action, className }) {
+export function Panel({ title, description, children, action, className, contentClassName }) {
   return (
-    <Card className={cx("min-w-0", className)}>
+    <section className={cx("min-w-0 border-y bg-background", className)}>
       {(title || action) && (
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <header className="flex flex-col gap-3 border-b bg-muted/25 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
           <div>
-            {title && <CardTitle>{title}</CardTitle>}
-            {description && <CardDescription>{description}</CardDescription>}
+            {title && <h2 className="text-sm font-semibold text-foreground">{title}</h2>}
+            {description && <p className="mt-1 text-sm leading-5 text-muted-foreground">{description}</p>}
           </div>
           {action}
-        </CardHeader>
+        </header>
       )}
-      <CardContent className={cx(!(title || action) && "pt-5")}>{children}</CardContent>
-    </Card>
+      <div className={cx("px-4 py-4 sm:px-5", !(title || action) && "py-5", contentClassName)}>{children}</div>
+    </section>
   );
 }
 
-export function Metric({ label, value, detail, tone = "neutral" }) {
+export function Metric({ label, value, detail, tone = "neutral", className }) {
   const toneClass =
     tone === "good"
-      ? "border-emerald-300 bg-card"
+      ? "bg-emerald-500/8"
       : tone === "warn"
-        ? "border-amber-300 bg-card"
-        : "border-border bg-card";
+        ? "bg-amber-500/10"
+        : "bg-muted/45";
   return (
-    <div className={cx("flex min-h-28 flex-col justify-between gap-3 rounded-lg border p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.68)]", toneClass)}>
+    <div className={cx("flex min-h-24 flex-col justify-between gap-2 rounded-lg p-4", toneClass, className)}>
       <span className="text-xs font-medium uppercase text-muted-foreground">{label}</span>
       <strong className="text-2xl font-semibold leading-none tracking-normal text-foreground">{value ?? 0}</strong>
       {detail && <small className="text-xs leading-5 text-muted-foreground">{detail}</small>}
@@ -73,7 +72,7 @@ export function StatusPill({ status, severity }) {
 
 export function LoadingState({ label = "Loading" }) {
   return (
-    <div className="flex min-h-32 items-center justify-center gap-2 rounded-lg border bg-card p-6 text-sm text-muted-foreground shadow-[0_1px_2px_rgba(28,35,48,0.05)]">
+    <div className="flex min-h-32 items-center justify-center gap-2 bg-muted/25 p-6 text-sm text-muted-foreground">
       <Loader2 aria-hidden="true" className="size-4 animate-spin" />
       <span>{label}</span>
     </div>

@@ -5,7 +5,6 @@ import { ArrowRight, Database, RefreshCw, ShieldCheck } from "lucide-react";
 import { compactNumber, graphqlRequest, parseJSON, relativeTime } from "../services/graphql";
 import { DataErrorState, EmptyState, LoadingState, Metric, PageHeader, Panel, StatusPill } from "../components/ui";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 
 const runtimeQuery = `query RuntimeDashboard {
   status: gj_runtime(where: { kind: { eq: "status" } }, limit: 1) {
@@ -92,8 +91,7 @@ const Dashboard = () => {
         />
       ) : (
         <>
-          <Card className="overflow-hidden">
-            <CardContent className="grid gap-6 p-5 xl:grid-cols-[1.25fr_0.75fr]">
+          <section className="grid gap-6 border-y py-6 xl:grid-cols-[1.25fr_0.75fr] xl:items-stretch" aria-label="Runtime summary">
               <div className="flex min-h-48 flex-col justify-center gap-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill status={status?.status} severity={status?.severity} />
@@ -109,22 +107,21 @@ const Dashboard = () => {
                   </p>
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Metric label="Sources" value={compactNumber(sources.length)} detail={`${readySources} ready`} tone={degradedSources ? "warn" : "good"} />
-                <Metric label="Tables" value={compactNumber(status?.table_count)} detail={status?.schema_ready ? "schema ready" : "schema pending"} />
-                <Metric label="Catalog" value={status?.catalog_revision ? "Ready" : "Pending"} detail={status?.active_database || "no active database"} />
-                <Metric label="Runtime Read" value={runtimeRead ? "On" : "Limited"} detail={status?.node_id || "current node"} tone={runtimeRead ? "good" : "warn"} />
+              <div className="grid gap-px bg-border sm:grid-cols-2">
+                <Metric className="rounded-none bg-background" label="Sources" value={compactNumber(sources.length)} detail={`${readySources} ready`} tone={degradedSources ? "warn" : "good"} />
+                <Metric className="rounded-none bg-background" label="Tables" value={compactNumber(status?.table_count)} detail={status?.schema_ready ? "schema ready" : "schema pending"} />
+                <Metric className="rounded-none bg-background" label="Catalog" value={status?.catalog_revision ? "Ready" : "Pending"} detail={status?.active_database || "no active database"} />
+                <Metric className="rounded-none bg-background" label="Runtime Read" value={runtimeRead ? "On" : "Limited"} detail="current node" tone={runtimeRead ? "good" : "warn"} />
               </div>
-            </CardContent>
-          </Card>
+          </section>
 
           <div className="grid gap-4 xl:grid-cols-2">
             <Panel title="Source Health" description="Ephemeral gj_runtime source rows from the current node.">
               {sources.length ? (
-                <div className="grid gap-2">
+                <div className="divide-y">
                   {sources.map((source) => (
-                    <div className="grid gap-3 rounded-md border bg-muted/30 p-3 sm:grid-cols-[2.25rem_minmax(0,1fr)_auto] sm:items-center" key={source.id || source.source}>
-                      <div className="flex size-9 items-center justify-center rounded-md border bg-background text-muted-foreground">
+                    <div className="grid gap-3 py-3 first:pt-0 last:pb-0 sm:grid-cols-[2.25rem_minmax(0,1fr)_auto] sm:items-center" key={source.id || source.source}>
+                      <div className="flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground">
                         <Database size={17} aria-hidden="true" />
                       </div>
                       <div className="min-w-0">
@@ -157,16 +154,16 @@ const Dashboard = () => {
                 />
               ) : (
                 <div className="grid gap-4">
-                  <div className="flex gap-3 rounded-md border bg-muted/30 p-4">
+                  <div className="flex gap-3 border-b pb-4">
                     <ShieldCheck className="mt-0.5 size-5 text-emerald-700" aria-hidden="true" />
                     <div>
                       <strong className="text-sm font-medium">{securitySummary?.title || securitySummary?.summary || "Security summary"}</strong>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">{summaryText(securitySummary)}</p>
                     </div>
                   </div>
-                  <div className="grid gap-2">
+                  <div className="divide-y">
                     {findings.length ? findings.map((finding) => (
-                      <div className="flex items-center gap-3 rounded-md border bg-background p-3" key={finding.id}>
+                      <div className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0" key={finding.id}>
                         <StatusPill status={finding.severity} />
                         <span className="min-w-0 truncate text-sm">{finding.title}</span>
                       </div>
@@ -205,9 +202,9 @@ const Dashboard = () => {
 
             <Panel title="Recent Runtime Events" description="Bounded event rows from gj_runtime.">
               {events.length ? (
-                <div className="grid gap-2">
+                <div className="divide-y">
                   {events.map((event) => (
-                    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border bg-muted/30 p-3" key={event.id}>
+                    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3 first:pt-0 last:pb-0" key={event.id}>
                       <StatusPill status={event.status} severity={event.severity} />
                       <div className="min-w-0">
                         <strong className="block truncate text-sm font-medium">{event.summary}</strong>
