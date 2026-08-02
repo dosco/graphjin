@@ -2683,8 +2683,8 @@ func TestResultTruncatedRoots(t *testing.T) {
 		t.Fatalf("limit-clamped list not flagged: %+v", truncated)
 	}
 
-	if dbType == "mongodb" {
-		return // aggregate functions are not supported on the MongoDB harness
+	if dbType == "mongodb" || dbType == "cassandra" {
+		return // aggregate/group queries are not supported on these harnesses
 	}
 
 	res, err = gj.GraphQL(context.Background(),

@@ -300,6 +300,15 @@ func (b *chBuilder) collectFields(sel *qcode.Select, n *chNode) error {
 			n.Aggregates = append(n.Aggregates, chAggregate{Fn: f.Func.Name, Col: col, Alias: f.FieldName})
 		}
 	}
+	// Mixed dimension+aggregate selections use the same grouping columns the
+	// shared compiler calculated for SQL dialects. Without this, ClickHouse's
+	// aggregate projection drops regular fields and silently collapses the
+	// result to a single global aggregate row.
+	if sel.GroupCols && !sel.GlobalAgg && len(n.Aggregates) > 0 {
+		for _, col := range sel.BCols {
+			n.GroupBy = ensureCol(n.GroupBy, col.Col.Name)
+		}
+	}
 	for _, dc := range sel.DistinctOn {
 		add(dc.Name)
 		n.GroupBy = append(n.GroupBy, dc.Name)
