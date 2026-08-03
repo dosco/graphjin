@@ -32,6 +32,7 @@ type fakeProgram struct {
 	output         ax.Value
 	err            error
 	actionLog      ax.Value
+	chatLog        ax.Value
 	options        map[string]ax.Value
 	forwardValues  map[string]ax.Value
 	forwardOptions map[string]ax.Value
@@ -59,6 +60,9 @@ func (p *fakeProgram) GetUsage() ax.Value {
 }
 
 func (p *fakeProgram) GetChatLog() ax.Value {
+	if p.chatLog != nil {
+		return p.chatLog
+	}
 	return []ax.Value{
 		map[string]ax.Value{"item1": map[string]ax.Value{"usage": map[string]ax.Value{
 			"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12,
@@ -1539,6 +1543,25 @@ func TestUsageSummaryTokens(t *testing.T) {
 	}
 	if usage["total_tokens"] != int64(12) || usage["prompt_tokens"] != int64(8) {
 		t.Fatalf("token totals = %+v", usage)
+	}
+	totals := SummarizeUsage(usage)
+	if totals != (UsageTotals{PromptTokens: 8, CompletionTokens: 4, TotalTokens: 12, LLMCalls: 1}) {
+		t.Fatalf("SummarizeUsage = %+v", totals)
+	}
+}
+
+func TestUsageSummaryAxModelUsageShape(t *testing.T) {
+	program := &fakeProgram{chatLog: []ax.Value{
+		map[string]ax.Value{"item1": map[string]ax.Value{"model_usage": map[string]ax.Value{"tokens": map[string]ax.Value{
+			"prompt_tokens": 10, "completion_tokens": 3, "total_tokens": 13,
+		}}}},
+		map[string]ax.Value{"item1": map[string]ax.Value{"model_usage": map[string]ax.Value{"tokens": map[string]ax.Value{
+			"prompt_tokens": 20, "completion_tokens": 7, "total_tokens": 27,
+		}}}},
+	}}
+	usage := SummarizeUsage(usageSummary(program))
+	if usage != (UsageTotals{PromptTokens: 30, CompletionTokens: 10, TotalTokens: 40, LLMCalls: 2}) {
+		t.Fatalf("Ax model_usage summary = %+v", usage)
 	}
 }
 

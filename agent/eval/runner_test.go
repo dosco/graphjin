@@ -3,6 +3,7 @@ package eval
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -41,6 +42,9 @@ func TestRunnerMajorityConfirmationAndPrivateTrajectories(t *testing.T) {
 	}
 	if !report.Acceptance.HardPass {
 		t.Fatalf("report not accepted: %+v", report.Acceptance)
+	}
+	if report.Metrics.TotalTokens != 90 || report.Metrics.LLMCalls != 12 || report.ProviderUsage.TotalTokens != 90 || report.ProviderUsage.LLMCalls != 12 {
+		t.Fatalf("usage accounting = metrics %+v provider %+v", report.Metrics, report.ProviderUsage)
 	}
 	if len(report.EpisodePaths) != 6 {
 		t.Fatalf("episode paths = %d, want 6", len(report.EpisodePaths))
@@ -140,6 +144,71 @@ func TestRunnerKeepsHiddenOracleOutOfAgentRequest(t *testing.T) {
 	}
 }
 
+func TestPassingMajorityDoesNotPolluteFailureHistogram(t *testing.T) {
+	task := Task{ID: "task", Category: CategoryAggregate, Difficulty: DifficultyT1}
+	passed := Episode{Score: ScoreDetail{
+		Pass:   true,
+		Vector: ScoreVector{Safety: true, Behavior: true},
+	}}
+	missed := Episode{Score: ScoreDetail{
+		Pass:            false,
+		FailureCategory: "behavior_mismatch",
+		Vector:          ScoreVector{Safety: true, Behavior: false},
+	}}
+
+	verdict := aggregateTask(task, []Episode{passed, passed, missed}, nil)
+	if !verdict.Pass || verdict.FailureCategory != "" {
+		t.Fatalf("passing majority retained a failure category: %+v", verdict)
+	}
+	metrics := calculateMetrics([]Task{task}, []TaskVerdict{verdict}, []Episode{passed, passed, missed}, map[string][]Episode{task.ID: {passed, passed, missed}}, 23)
+	if len(metrics.FailureCategories) != 0 {
+		t.Fatalf("passing task polluted the failure histogram: %+v", metrics.FailureCategories)
+	}
+}
+
+func TestRunnerStopsAndRejectsProviderEnvironmentFailure(t *testing.T) {
+	task := scoredTask(t)
+	suite := Suite{Name: "test", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	agentCalls := 0
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		agentCalls++
+		response := gjagent.Response{Status: "error", Errors: []gjagent.ErrorInfo{{Message: "You have no credits remaining. Add credits to continue using the API."}}}
+		data, _ := json.Marshal(response)
+		return jsonResponse(200, string(data)), nil
+	})
+	store := NewStore(t.TempDir())
+	report, err := (Runner{Client: doer}).Run(context.Background(), suite, &StaticInstance{URL: "http://graphjin.test", TargetLabel: "test"}, RunOptions{Repeats: 3, Store: store, AutoBaseline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agentCalls != 1 {
+		t.Fatalf("agent calls = %d, want fail-fast after one provider error", agentCalls)
+	}
+	if !report.Acceptance.EnvironmentFailure || report.Acceptance.HardPass || report.Metrics.EnvironmentErrors != 1 {
+		t.Fatalf("provider failure was not an environment rejection: metrics=%+v acceptance=%+v", report.Metrics, report.Acceptance)
+	}
+	baseline, err := store.LoadBaseline()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline != nil {
+		t.Fatalf("environment failure was promoted: %+v", baseline)
+	}
+	reportData, err := os.ReadFile(filepath.Join(store.Root, "reports", report.RunID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(reportData), "no credits") {
+		t.Fatalf("shareable report leaked provider details: %s", reportData)
+	}
+}
+
 func TestFingerprintMismatchFallsBackToMethodComparison(t *testing.T) {
 	methodPass := true
 	baseline := &Report{DatasetFingerprint: DatasetFingerprint{CatalogHash: "old"}, Tasks: []TaskVerdict{{TaskID: "x", Pass: true, MethodPass: &methodPass, SafetyPass: true, BehaviorPass: true}}}
@@ -204,6 +273,40 @@ func TestRecallQualityNoticeDoesNotReplaceRegressionOrSafetyGates(t *testing.T) 
 	candidate.Metrics.SafetyPrecision = 0
 	if unsafe := compareBaseline(candidate, nil); unsafe.HardPass {
 		t.Fatalf("unsafe first run was accepted: %+v", unsafe)
+	}
+}
+
+func TestUsageComparisonShowsFinalizedAndActualProviderDeltas(t *testing.T) {
+	baseline := &Report{
+		RunID:            "baseline-run",
+		SuiteFingerprint: "same-suite",
+		Provenance:       RunProvenance{Provider: "google-gemini", Model: "gemini-test"},
+		Metrics:          Metrics{EpisodeCount: 4, TotalTokens: 100},
+		ProviderUsage:    ProviderUsage{TotalTokens: 110},
+	}
+	candidate := Report{
+		SuiteFingerprint: "same-suite",
+		Provenance:       RunProvenance{Provider: "google-gemini", Model: "gemini-test"},
+		Metrics:          Metrics{EpisodeCount: 4, TotalTokens: 80},
+		ProviderUsage:    ProviderUsage{TotalTokens: 95},
+	}
+	comparison := compareUsage(candidate, baseline)
+	if comparison == nil || !comparison.Comparable {
+		t.Fatalf("usage comparison unavailable: %+v", comparison)
+	}
+	if comparison.FinalizedTokensDelta != -20 || comparison.ProviderTokensDelta != -15 || comparison.TokensPerEpisodeDelta != -5 {
+		t.Fatalf("usage deltas = %+v", comparison)
+	}
+	if comparison.FinalizedTokensChangePercent == nil || *comparison.FinalizedTokensChangePercent != -20 {
+		t.Fatalf("finalized percentage = %+v", comparison.FinalizedTokensChangePercent)
+	}
+	if comparison.ProviderTokensChangePercent == nil || *comparison.ProviderTokensChangePercent != -13.64 {
+		t.Fatalf("provider percentage = %+v", comparison.ProviderTokensChangePercent)
+	}
+
+	candidate.Provenance.Model = "different-model"
+	if changedModel := compareUsage(candidate, baseline); changedModel.Comparable || !strings.Contains(changedModel.Reason, "model differs") {
+		t.Fatalf("cross-model token comparison should be advisory: %+v", changedModel)
 	}
 }
 
@@ -321,6 +424,251 @@ func TestAutoBaselineFirstPassingRun(t *testing.T) {
 	if info, err := os.Stat(store.BaselinePath()); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("baseline permissions: info=%v err=%v", info, err)
 	}
+}
+
+func TestRunnerResumesOnlyRemainingFinalizedSlots(t *testing.T) {
+	task := scoredTask(t)
+	suite := Suite{Name: "resume", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(t.TempDir())
+	instance := &StaticInstance{URL: "http://graphjin.test", Dataset: DatasetFingerprint{CatalogHash: "catalog"}, TargetLabel: "local"}
+	ctx, cancel := context.WithCancel(context.Background())
+	firstCalls := 0
+	first := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		firstCalls++
+		if firstCalls == 2 {
+			cancel()
+			<-request.Context().Done()
+			return nil, request.Context().Err()
+		}
+		return passingAgentResponse(), nil
+	})
+	opts := RunOptions{Intent: RunIntentRun, Repeats: 3, Seed: 23, Store: store, BinaryFingerprint: "binary", Provenance: RunProvenance{Model: "model"}}
+	firstReport, err := (Runner{Client: first, RetryDelay: time.Nanosecond}).Run(ctx, suite, instance, opts)
+	if !errors.Is(err, ErrRunInterrupted) {
+		t.Fatalf("first run error = %v, want interruption", err)
+	}
+	if firstReport.Progress.CompletedInitialSlots != 1 {
+		t.Fatalf("first progress = %+v", firstReport.Progress)
+	}
+
+	secondCalls := 0
+	second := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		secondCalls++
+		return passingAgentResponse(), nil
+	})
+	prepared, err := (Runner{Client: second, RetryDelay: time.Nanosecond}).Prepare(context.Background(), suite, instance, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close() //nolint:errcheck
+	preview := prepared.Preview()
+	if !preview.Resuming || preview.ReusedEpisodes != 1 || preview.RemainingInitialSlots != 2 {
+		t.Fatalf("resume preview = %+v", preview)
+	}
+	secondReport, err := prepared.Execute(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondCalls != 2 || secondReport.RunID != firstReport.RunID || secondReport.RunStatus != RunStatusComplete {
+		t.Fatalf("resumed calls=%d first=%s second=%+v", secondCalls, firstReport.RunID, secondReport)
+	}
+	episodes, err := store.LoadEpisodes(secondReport.RunID)
+	if err != nil || len(episodes) != 3 {
+		t.Fatalf("episodes=%d err=%v", len(episodes), err)
+	}
+}
+
+func TestRunnerResumesRemainingConfirmationSlots(t *testing.T) {
+	task := scoredTask(t)
+	suite := Suite{Name: "confirmation-resume", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	baseline := &Report{RunID: "baseline", Tasks: []TaskVerdict{{TaskID: task.ID, Pass: true, SafetyPass: true, BehaviorPass: true}}}
+	store := NewStore(t.TempDir())
+	instance := &StaticInstance{URL: "http://graphjin.test", Dataset: DatasetFingerprint{CatalogHash: "catalog"}, TargetLabel: "local"}
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	first := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		calls++
+		if calls == 5 {
+			cancel()
+			<-request.Context().Done()
+			return nil, request.Context().Err()
+		}
+		response := responseWithAnswer(gjagent.StatusAnswered, "The total is 41.")
+		if calls == 4 {
+			response.Answer = "The total is 42."
+		}
+		response.Skills = []gjagent.SkillUsage{{ID: "data_discovery"}}
+		response.Actions = []map[string]any{{"tool": "query_catalog", "status": "ok"}, {"tool": "execute_graphql", "status": "ok", "args": map[string]any{"query": "query { accounts { sum_mrr } }"}}}
+		data, _ := json.Marshal(response)
+		return jsonResponse(200, string(data)), nil
+	})
+	opts := RunOptions{Intent: RunIntentRun, Repeats: 3, Seed: 23, Baseline: baseline, Store: store, BinaryFingerprint: "binary", Provenance: RunProvenance{Model: "model"}}
+	firstReport, err := (Runner{Client: first, RetryDelay: time.Nanosecond}).Run(ctx, suite, instance, opts)
+	if !errors.Is(err, ErrRunInterrupted) || firstReport.Progress.CompletedInitialSlots != 3 || firstReport.Progress.CompletedConfirmation != 1 {
+		t.Fatalf("interrupted confirmation report=%+v err=%v", firstReport, err)
+	}
+
+	resumeCalls := 0
+	second := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		resumeCalls++
+		return passingAgentResponse(), nil
+	})
+	prepared, err := (Runner{Client: second, RetryDelay: time.Nanosecond}).Prepare(context.Background(), suite, instance, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close() //nolint:errcheck
+	if preview := prepared.Preview(); preview.RemainingInitialSlots != 0 || preview.PossibleConfirmationSlots != 2 || preview.ReusedEpisodes != 4 {
+		t.Fatalf("confirmation resume preview = %+v", preview)
+	}
+	report, err := prepared.Execute(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumeCalls != 2 || report.Progress.CompletedConfirmation != 3 || !report.Acceptance.HardPass {
+		t.Fatalf("resume calls=%d report=%+v", resumeCalls, report)
+	}
+}
+
+func TestRunnerRetriesTransientAttemptWithoutPollutingMetrics(t *testing.T) {
+	task := scoredTask(t)
+	suite := Suite{Name: "retry", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	secret := "AIza-canary-secret-value-1234567890"
+	store := NewStore(t.TempDir()).WithSecrets(secret)
+	calls := 0
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		calls++
+		if calls == 1 {
+			response := gjagent.Response{Status: gjagent.StatusBlocked, Errors: []gjagent.ErrorInfo{{
+				Message:    "Post https://provider.test/generate?key=" + secret + ": context deadline exceeded",
+				Extensions: map[string]any{"code": gjagent.ErrorCodeProviderTimeout, "retryable": true},
+			}}}
+			data, _ := json.Marshal(response)
+			return jsonResponse(200, string(data)), nil
+		}
+		return passingAgentResponse(), nil
+	})
+	report, err := (Runner{Client: doer, RetryDelay: time.Nanosecond}).Run(context.Background(), suite, &StaticInstance{URL: "http://graphjin.test", Dataset: DatasetFingerprint{CatalogHash: "catalog"}, TargetLabel: "local"}, RunOptions{Repeats: 1, Store: store, BinaryFingerprint: "binary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || report.Progress.ProviderAttempts != 2 || report.Progress.RetryCount != 1 || report.Metrics.EnvironmentErrors != 0 {
+		t.Fatalf("calls=%d progress=%+v metrics=%+v", calls, report.Progress, report.Metrics)
+	}
+	attemptFiles, err := filepath.Glob(filepath.Join(store.Root, "attempts", report.RunID, "*.json"))
+	if err != nil || len(attemptFiles) != 1 {
+		t.Fatalf("attempt files=%v err=%v", attemptFiles, err)
+	}
+	data, err := os.ReadFile(attemptFiles[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), secret) || !strings.Contains(string(data), "[REDACTED]") {
+		t.Fatalf("attempt redaction failed: %s", data)
+	}
+}
+
+func TestRunnerEnvironmentFailureWritesMetricFreePartialReport(t *testing.T) {
+	task := scoredTask(t)
+	suite := Suite{Name: "environment", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(t.TempDir())
+	calls := 0
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		calls++
+		response := gjagent.Response{Status: gjagent.StatusBlocked, Errors: []gjagent.ErrorInfo{{Message: "invalid api key", Extensions: map[string]any{"code": gjagent.ErrorCodeProviderAuth, "retryable": false}}}}
+		data, _ := json.Marshal(response)
+		return jsonResponse(200, string(data)), nil
+	})
+	report, err := (Runner{Client: doer, RetryDelay: time.Nanosecond}).Run(context.Background(), suite, &StaticInstance{URL: "http://graphjin.test", TargetLabel: "local"}, RunOptions{Repeats: 3, Store: store, BinaryFingerprint: "binary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || report.RunStatus != RunStatusEnvironmentFailed || !report.Acceptance.EnvironmentFailure {
+		t.Fatalf("calls=%d report=%+v", calls, report)
+	}
+	data, err := os.ReadFile(filepath.Join(store.Root, "reports", report.RunID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{`"metrics"`, `"tasks"`, `"acceptance"`} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("partial report contains %s: %s", forbidden, data)
+		}
+	}
+}
+
+func TestRunnerClassifiesStructuredProviderCodeFromHTTPErrorBody(t *testing.T) {
+	task := scoredTask(t)
+	suite := Suite{Name: "structured-http-error", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(t.TempDir())
+	calls := 0
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		calls++
+		response := gjagent.Response{Status: gjagent.StatusError, Errors: []gjagent.ErrorInfo{{
+			Message:    "The model provider did not respond before the configured timeout.",
+			Extensions: map[string]any{"code": gjagent.ErrorCodeProviderTimeout, "retryable": true},
+		}}}
+		data, _ := json.Marshal(response)
+		return jsonResponse(http.StatusInternalServerError, string(data)), nil
+	})
+	report, err := (Runner{Client: doer, RetryDelay: time.Nanosecond}).Run(context.Background(), suite, &StaticInstance{URL: "http://graphjin.test", TargetLabel: "local"}, RunOptions{Repeats: 1, Store: store, BinaryFingerprint: "binary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || report.RunStatus != RunStatusEnvironmentFailed {
+		t.Fatalf("calls=%d report=%+v", calls, report)
+	}
+	manifest, err := store.LoadManifest(report.RunID)
+	if err != nil || manifest.LastEnvironmentCode != gjagent.ErrorCodeProviderTimeout {
+		t.Fatalf("manifest=%+v err=%v", manifest, err)
+	}
+}
+
+func passingAgentResponse() *http.Response {
+	response := responseWithAnswer(gjagent.StatusAnswered, "The total is 42.")
+	response.Skills = []gjagent.SkillUsage{{ID: "data_discovery"}}
+	response.Actions = []map[string]any{
+		{"tool": "query_catalog", "status": "ok"},
+		{"tool": "execute_graphql", "status": "ok", "args": map[string]any{"query": "query { accounts { sum_mrr } }"}},
+	}
+	data, _ := json.Marshal(response)
+	return jsonResponse(200, string(data))
 }
 
 type scriptedEvalDoer struct {

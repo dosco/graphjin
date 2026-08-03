@@ -138,7 +138,8 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 	completionType := runtimeCompletionType(result)
 	if s.executorStage && (completionType == "final" || completionType == "askclarification") && s.pendingFinal != nil {
 		if message := strings.TrimSpace(s.pendingFinal()); message != "" {
-			if s.pendingContinuation != nil {
+			protocolCode, publicMessage := pendingFinalProtocol(message)
+			if protocolCode == "saved_query_execution_required" && s.pendingContinuation != nil {
 				if continuation := strings.TrimSpace(s.pendingContinuation()); continuation != "" {
 					// The model already chose to terminate, so execute the narrow,
 					// protocol-derived continuation in the same runtime session and
@@ -163,14 +164,26 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 			return map[string]any{
 				"kind": "result",
 				"result": map[string]any{
-					"graphjin_protocol": "saved_query_execution_required",
-					"message":           message,
-					"next":              message,
+					"graphjin_protocol": protocolCode,
+					"message":           publicMessage,
+					"next":              publicMessage,
 				},
 			}
 		}
 	}
 	return result
+}
+
+func pendingFinalProtocol(message string) (string, string) {
+	for _, item := range []struct{ prefix, code string }{
+		{"execution_repair_required:", "execution_repair_required"},
+		{"database_computation_required:", "database_computation_required"},
+	} {
+		if strings.HasPrefix(message, item.prefix) {
+			return item.code, strings.TrimSpace(strings.TrimPrefix(message, item.prefix))
+		}
+	}
+	return "saved_query_execution_required", message
 }
 
 func (s *graphJinCodeSession) Inspect(options map[string]ax.Value) ax.Value {

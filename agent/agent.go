@@ -157,6 +157,16 @@ type Response struct {
 	TraceID  string           `json:"trace_id,omitempty"`
 }
 
+// UsageTotals is the stable, provider-neutral token accounting exposed by an
+// agent run. Ax keeps richer usage state internally; GraphJin uses these fields
+// for logs, traces, evaluation budgets, and baseline comparisons.
+type UsageTotals struct {
+	PromptTokens     int64 `json:"prompt_tokens"`
+	CompletionTokens int64 `json:"completion_tokens"`
+	TotalTokens      int64 `json:"total_tokens"`
+	LLMCalls         int64 `json:"llm_calls"`
+}
+
 type SkillUsage struct {
 	ID     string `json:"id"`
 	Name   string `json:"name,omitempty"`
@@ -417,8 +427,8 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 			protocol.state.modelDiscoveryAction = true
 			protocol.state.addGrounding(narrowed)
 		},
-		protocol.state.pendingRequiredSavedQueryExecution,
-		protocol.state.pendingRequiredSavedQueryContinuation,
+		protocol.state.pendingRequiredFinalization,
+		protocol.state.pendingRequiredFinalizationContinuation,
 	)
 	for _, tool := range tools {
 		t := tool
@@ -858,6 +868,19 @@ func usageSummary(program Program) any {
 	return summary
 }
 
+// SummarizeUsage normalizes the stable token fields from Response.Usage. It is
+// intentionally tolerant of JSON numbers and Ax-native values so observability
+// consumers do not need to understand provider-specific response shapes.
+func SummarizeUsage(value any) UsageTotals {
+	mapped, _ := normalizeValue(value).(map[string]any)
+	return UsageTotals{
+		PromptTokens:     int64(floatFromAny(mapped["prompt_tokens"])),
+		CompletionTokens: int64(floatFromAny(mapped["completion_tokens"])),
+		TotalTokens:      int64(floatFromAny(mapped["total_tokens"])),
+		LLMCalls:         int64(floatFromAny(mapped["llm_calls"])),
+	}
+}
+
 func floatFromAny(value any) float64 {
 	switch v := value.(type) {
 	case float64:
@@ -900,7 +923,7 @@ func responseFromError(err error, traceID string, program Program, returnTrace b
 	resp := Response{
 		Status:  StatusError,
 		TraceID: traceID,
-		Errors:  []ErrorInfo{{Message: err.Error()}},
+		Errors:  []ErrorInfo{PublicErrorInfo(err, "", "")},
 	}
 	if isNoRuntimeCodeError(err) {
 		resp.Status = StatusBlocked

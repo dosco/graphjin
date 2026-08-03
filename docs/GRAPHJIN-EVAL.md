@@ -23,8 +23,16 @@ by `graphjin cli setup`. Local and demo instances are embedded loopback services
 with the agent forced read-only and background watch workers disabled. Remote
 CI can override the saved token with `GRAPHJIN_EVAL_TOKEN`.
 
-Commands that can invoke a model show their expected request count before
-traffic starts. A non-interactive caller must pass `--yes`.
+Commands that can invoke a model show reused episodes, remaining initial slots,
+possible confirmation slots, and the maximum provider attempts including one
+retry for each pending slot. A non-interactive caller must pass `--yes`.
+
+Google uses `GOOGLE_API_KEY` by convention:
+
+```sh
+GJ_AGENT_PROVIDER=google-gemini
+GJ_AGENT_API_KEY_ENV=GOOGLE_API_KEY
+```
 
 ## Commands
 
@@ -38,11 +46,20 @@ traffic starts. A non-interactive caller must pass `--yes`.
 - `graphjin eval rm <task-id>`: remove a task through the same normalized,
   validated suite writer. It confirms interactively unless `--yes` is set.
 - `graphjin eval run`: execute three repetitions per task. A baseline regression
-  receives one fresh three-repetition confirmation run.
+  receives one fresh three-repetition confirmation run. It automatically
+  resumes the newest strictly compatible incomplete run.
 - `graphjin eval baseline`: run the suite and deliberately promote it only if it
   passes.
 - `graphjin eval bench --scale N --seed S`: sample the extended distribution and
   report pass@k, pass^k, bootstrap recall intervals, and per-tier metrics.
+
+`run`, `baseline`, and `bench` accept `--resume <run-id>` to select one
+compatible incomplete run and `--restart` to intentionally create a fresh run.
+Those flags are mutually exclusive. Resumption is strict: suite/oracle/dataset,
+binary and server fingerprints, schemas, reward, provider/model, seed/repeats,
+baseline identity, target, provenance, and promotion intent must match. Model
+quality failures are completed slots and are reused; provider/environment
+attempts are retried rather than scored.
 
 The hidden `import-corpus` command converts the frozen behavioral and data
 corpora to the v1 schema. `agent/cmd/skill-eval` remains unchanged for one
@@ -61,16 +78,36 @@ Local state is stored with owner-only permissions:
   baseline.json
   reports/<run-id>.json
   episodes/<run-id>/<task>-<rep>.json
+  attempts/<run-id>/<task>-attempt-<number>.json
+  runs/<run-id>.json
+  locks/<run-id>.lock
 ```
 
 Reports are shareable and contain metrics, task IDs, tiers, failure categories,
 provenance, fingerprints, and acceptance state. They do not contain prompts,
 answers, database rows, executed queries, request headers, authentication tokens,
 token contents, or secrets. Aggregate token-usage counts remain in the report as
-efficiency metrics.
+efficiency metrics. GraphJin obtains them from Ax's `GetUsage()` state and the
+merged stage chat logs. A complete report separates finalized-slot usage from
+actual provider usage, which includes failed attempts and retries. When the
+suite, provider, model, and finalized episode count match the baseline, the
+report also records total-token and tokens-per-episode deltas and percentages.
+Cross-model or differently shaped runs retain their absolute counts but mark the
+comparison advisory rather than presenting an apples-to-oranges regression.
 Episode files are private trajectories containing the request, response, action
 trail, oracle query/result, usage, timing, and seeds. `--debug` prints their
 paths; it does not move private data into the report.
+Attempt files contain sanitized interrupted or failed provider attempts and are
+also private. Manifests checkpoint progress and contain only allowlisted,
+non-secret provenance. Even private files never contain credentials: provider
+URL keys, authorization values, configured secrets, and recognizable provider
+key patterns are redacted before persistence.
+
+An interrupted run checkpoints after every attempt and finalized slot. Rerun
+the same command to resume automatically, or use the exact command printed by
+`graphjin eval` status. A compatible run is protected by an OS-held advisory
+lock so two processes cannot duplicate provider traffic. Old episode folders
+without a run manifest remain inspectable but are never imported.
 
 ## Gates and exit codes
 
@@ -78,7 +115,12 @@ paths; it does not move private data into the report.
 - `1`: confirmed regression or another hard gate failure.
 - `2`: invalid suite. One or more oracles failed before any evaluated-agent
   traffic; this is not counted as a model regression.
-- `3`: target/environment failure.
+- `3`: target/environment failure. Transient timeout/rate-limit/transport/5xx
+  failures retry once, then write a metric-free partial report. Authentication,
+  quota, or unavailable-model failures stop immediately. No baseline is
+  promoted.
+- `130`: interrupted by `SIGINT` or `SIGTERM`; progress is checkpointed and the
+  CLI prints the exact resume command.
 
 Safety is always a hard gate. Efficiency budgets are advisory. The first safe,
 valid run can establish a baseline at its observed recall; recall below `0.90`

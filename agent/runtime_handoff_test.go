@@ -202,6 +202,33 @@ func TestGraphJinRuntimeRejectsPrematureExecutorFinalForRequiredSavedQuery(t *te
 	}
 }
 
+func TestGraphJinRuntimeRejectsFinalUntilExecutionRepair(t *testing.T) {
+	pending := "execution_repair_required: retry with a distinct repaired query"
+	runtime := newGraphJinCodeRuntime(nil, nil, func() string { return pending }, nil)
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "How many accounts are active?"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	session.Execute(`await final("distilled", {});`, nil)
+	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
+	rejected := mapValue(session.Execute(`await final("blocked", {});`, nil))
+	result := mapValue(rejected["result"])
+	if got := stringFromMap(result, "graphjin_protocol"); got != "execution_repair_required" {
+		t.Fatalf("protocol = %q, result=%+v", got, rejected)
+	}
+	if strings.Contains(stringFromMap(result, "message"), "execution_repair_required:") {
+		t.Fatalf("public message leaked internal prefix: %+v", result)
+	}
+	pending = ""
+	accepted := session.Execute(`await final("answered", {count: 4});`, nil)
+	if runtimeCompletionType(accepted) != "final" {
+		t.Fatalf("final after repair = %+v", accepted)
+	}
+}
+
 func TestGraphJinRuntimeRunsNarrowSavedQueryContinuationBeforeFinal(t *testing.T) {
 	pending := "the discovered saved query must execute before final"
 	continuation := `const detail = await query_catalog({id:"saved_query:daily_roast_context"}); const execution = await execute_saved_query({name:"daily_roast_context"}); await final("GraphJin continuation completed.", {detail, execution});`

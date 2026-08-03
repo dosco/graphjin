@@ -65,7 +65,11 @@ func (v Verifier) Resolve(ctx context.Context, oracle OracleSpec) (OracleResult,
 	if err != nil {
 		return OracleResult{}, err
 	}
-	data, err := postGraphQL(ctx, client, v.BaseURL, v.Headers, oracle.Query, variables)
+	query, queryVariables, err := resolveOracleQueryVariables(oracle.Query, variables)
+	if err != nil {
+		return OracleResult{}, err
+	}
+	data, err := postGraphQL(ctx, client, v.BaseURL, v.Headers, query, queryVariables)
 	if err != nil {
 		return OracleResult{}, err
 	}
@@ -95,6 +99,31 @@ func (v Verifier) Resolve(ctx context.Context, oracle OracleSpec) (OracleResult,
 	return result, nil
 }
 
+func oracleVariableMarker(name string) string {
+	return "__GRAPHJIN_EVAL_" + strings.ToUpper(strings.TrimSpace(name)) + "__"
+}
+
+func resolveOracleQueryVariables(query string, variables map[string]any) (string, map[string]any, error) {
+	remaining := make(map[string]any, len(variables))
+	for name, value := range variables {
+		remaining[name] = value
+		markerJSON, err := json.Marshal(oracleVariableMarker(name))
+		if err != nil {
+			return "", nil, fmt.Errorf("encode oracle marker %q: %w", name, err)
+		}
+		if !strings.Contains(query, string(markerJSON)) {
+			continue
+		}
+		valueJSON, err := json.Marshal(value)
+		if err != nil {
+			return "", nil, fmt.Errorf("encode oracle variable %q: %w", name, err)
+		}
+		query = strings.ReplaceAll(query, string(markerJSON), string(valueJSON))
+		delete(remaining, name)
+	}
+	return query, remaining, nil
+}
+
 func postGraphQL(ctx context.Context, client HTTPDoer, baseURL string, headers map[string]string, query string, variables map[string]any) (any, error) {
 	payload := map[string]any{"query": query}
 	if len(variables) != 0 {
@@ -122,6 +151,14 @@ func postAgent(ctx context.Context, client HTTPDoer, baseURL string, headers map
 	payload := gjagent.Request{Instruction: prompt, ReturnTrace: &trace}
 	raw, status, latency, err := postJSON(ctx, client, agentURL(baseURL), headers, payload)
 	if err != nil {
+		// The server intentionally preserves its historical HTTP status while
+		// returning stable provider codes in the JSON body. Decode that body so
+		// Eval classifies the structured code instead of flattening every HTTP
+		// 500 into a generic transport/server failure.
+		var response gjagent.Response
+		if len(raw) != 0 && json.Unmarshal(raw, &response) == nil && len(response.Errors) != 0 {
+			return response, status, latency, nil
+		}
 		return gjagent.Response{}, status, latency, err
 	}
 	var response gjagent.Response
@@ -156,7 +193,7 @@ func postJSON(ctx context.Context, client HTTPDoer, url string, headers map[stri
 		return nil, response.StatusCode, latency, err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, response.StatusCode, latency, fmt.Errorf("HTTP %d: %s", response.StatusCode, truncateText(string(raw), 500))
+		return raw, response.StatusCode, latency, fmt.Errorf("HTTP %d: %s", response.StatusCode, truncateText(string(raw), 500))
 	}
 	return raw, response.StatusCode, latency, nil
 }

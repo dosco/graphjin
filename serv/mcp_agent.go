@@ -10,6 +10,7 @@ import (
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const mcpToolAskGraphJinAgent = "ask_graphjin_agent"
@@ -63,6 +64,7 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 		return mcp.NewToolResultError("GraphJin agent is disabled"), nil
 	}
 	start := time.Now()
+	agentConf := agentConfigFromService(ms.service.conf)
 	ctx = ms.effectiveContext(ctx)
 	ctx = ms.service.applyIdentityContext(ctx)
 	args := req.GetArguments()
@@ -74,7 +76,8 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 	agentReq.Capabilities = ms.service.agentCapabilityProfile(ctx)
 	taskWarm, err := ms.service.resolveAgentTaskContext(ctx, &agentReq)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		info, _ := agentPublicFailure(agentConf, err)
+		return mcp.NewToolResultError(info.Message), nil
 	}
 
 	// Clients that send a progress token get one notifications/progress event per
@@ -86,36 +89,47 @@ func (ms *mcpServer) handleAskGraphJinAgent(ctx context.Context, req mcp.CallToo
 			_ = ms.srv.SendNotificationToClient(notifyCtx, "notifications/progress", map[string]any{
 				"progressToken": token,
 				"progress":      float64(event.Index),
-				"message":       agentProgressMessage(event),
+				"message":       agentProgressMessage(event, configuredAgentSecret(agentConf)),
 			})
 		}
 	}
 
-	agentConf := agentConfigFromService(ms.service.conf)
 	var resp gjagent.Response
 	runner, err := newGraphJinAgentRunner(ms.service, agentConf)
 	if err != nil {
-		recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, taskWarm, time.Since(start), err)
-		ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), err)
 		if errors.Is(err, gjagent.ErrMissingAPIKey) {
+			recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, taskWarm, time.Since(start), err)
+			ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), err)
 			return modelCredentialsRequiredToolResult(agentConf), nil
 		}
-		return mcp.NewToolResultError(err.Error()), nil
+		info, publicErr := agentPublicFailure(agentConf, err)
+		resp = gjagent.Response{Status: gjagent.StatusError, Errors: []gjagent.ErrorInfo{info}}
+		recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, taskWarm, time.Since(start), publicErr)
+		ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), publicErr)
+		return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
 	}
 	resp, err = runner.Run(ctx, agentReq)
+	runErr := err
 	if err == nil {
 		ms.service.appendWatchNotices(ctx, &resp)
 		ms.service.appendTaskNotices(ctx, agentReq, &resp)
 		ms.service.appendAnnotationNotices(ctx, &resp)
 		appendTaskContextNotice(taskWarm, &resp)
 	}
+	resp = sanitizeAgentResponse(agentConf, resp)
+	if err != nil {
+		_, err = agentPublicFailure(agentConf, err)
+	}
+	recordAgentUsageObservability(ms.service, trace.SpanFromContext(ctx), "mcp", agentConf, resp, time.Since(start))
 	recordAgentRuntimeEvent(ms.service, ctx, agentReq, resp, taskWarm, time.Since(start), err)
 	ms.service.appendTaskTrailEntry(ctx, agentReq, resp, time.Since(start), err)
 	if err != nil {
-		if errors.Is(err, gjagent.ErrMissingAPIKey) {
+		if errors.Is(runErr, gjagent.ErrMissingAPIKey) {
 			return modelCredentialsRequiredToolResult(agentConf), nil
 		}
-		return mcp.NewToolResultError(err.Error()), nil
+		info := gjagent.PublicErrorInfo(runErr, agentConf.Provider, agentConf.Model, configuredAgentSecret(agentConf))
+		resp = gjagent.Response{Status: gjagent.StatusError, Errors: []gjagent.ErrorInfo{info}}
+		return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
 	}
 	return ms.toolResultJSON(mcpToolAskGraphJinAgent, args, resp)
 }
@@ -166,7 +180,7 @@ func agentRequestFromArgs(args map[string]any) gjagent.Request {
 
 // agentProgressMessage renders one ActionEvent as a compact progress line,
 // e.g. `query_catalog(id=table:db.products) ok — 3 cards`.
-func agentProgressMessage(event gjagent.ActionEvent) string {
+func agentProgressMessage(event gjagent.ActionEvent, secrets ...string) string {
 	var arg string
 	for _, key := range []string{"id", "ids", "search", "name", "table", "kind", "for"} {
 		if value, ok := event.Args[key]; ok && value != nil {
@@ -188,5 +202,5 @@ func agentProgressMessage(event gjagent.ActionEvent) string {
 	if len(msg) > 200 {
 		msg = msg[:200]
 	}
-	return msg
+	return gjagent.SanitizeText(msg, secrets...)
 }

@@ -2,12 +2,16 @@ package serv
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"runtime/debug"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,6 +19,7 @@ import (
 	"github.com/dosco/graphjin/auth/v3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -44,6 +49,7 @@ type agentStatusResponse struct {
 	RoleClass            string   `json:"role_class,omitempty"`
 	AvailableSystemRoots []string `json:"available_system_roots,omitempty"`
 	BlockedSystemRoots   []string `json:"blocked_system_roots,omitempty"`
+	EvalFingerprint      string   `json:"eval_fingerprint,omitempty"`
 	Message              string   `json:"message"`
 }
 
@@ -88,6 +94,7 @@ func (s1 *HttpService) apiV1AgentStatus(ns *string) http.Handler {
 			status.AvailableSystemRoots = append([]string(nil), profile.AvailableSystemRoots...)
 			status.BlockedSystemRoots = append([]string(nil), profile.BlockedSystemRoots...)
 		}
+		status.EvalFingerprint = agentEvalFingerprint(status)
 		_ = json.NewEncoder(w).Encode(status)
 	}
 	return http.HandlerFunc(h)
@@ -103,10 +110,15 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 		extendDeadlineForAgent(w, s.conf)
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				if s != nil && s.log != nil {
-					s.log.Errorf("agent handler panic: %v", recovered)
+				secret := ""
+				if s != nil {
+					secret = configuredAgentSecret(agentConfigFromService(s.conf))
 				}
-				writeAgentError(w, http.StatusInternalServerError, fmt.Sprintf("agent handler panic: %v", recovered))
+				message := gjagent.SanitizeText(fmt.Sprintf("agent handler panic: %v", recovered), secret)
+				if s != nil && s.log != nil {
+					s.log.Errorf("%s", message)
+				}
+				writeAgentError(w, http.StatusInternalServerError, message)
 			}
 		}()
 
@@ -173,25 +185,34 @@ func (s1 *HttpService) apiV1Agent(ns *string) http.Handler {
 			}
 		}
 		status := agentHTTPStatus(err)
+		agentConf := agentConfigFromService(s.conf)
 		if err != nil {
-			spanError(span, err)
+			info, publicErr := agentPublicFailure(agentConf, err)
+			spanError(span, publicErr)
+			err = publicErr
 			resp = gjagent.Response{
 				Status: gjagent.StatusError,
-				Errors: []gjagent.ErrorInfo{{
-					Message: err.Error(),
-				}},
+				Errors: []gjagent.ErrorInfo{info},
 			}
+		} else {
+			resp = sanitizeAgentResponse(agentConf, resp)
 		}
 		if taskResolved {
 			s.appendTaskTrailEntry(ctx, req, resp, time.Since(start), err)
 		}
 		recordAgentRuntimeEvent(s, ctx, req, resp, taskWarm, time.Since(start), err)
+		recordAgentUsageObservability(s, span, "rest", agentConf, resp, time.Since(start))
 
 		if span.IsRecording() {
-			span.SetAttributes(
+			attrs := []attribute.KeyValue{
 				attribute.String("http.path", r.RequestURI),
 				attribute.String("http.method", r.Method),
-				attribute.String("agent.status", resp.Status))
+				attribute.String("agent.status", resp.Status),
+			}
+			if code := agentResponseErrorCode(resp); code != "" {
+				attrs = append(attrs, attribute.String("agent.error_code", code))
+			}
+			span.SetAttributes(attrs...)
 		}
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(resp)
@@ -249,6 +270,7 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 	if ns != nil {
 		resp.Namespace = *ns
 	}
+	resp.EvalFingerprint = agentEvalFingerprint(resp)
 	return resp
 }
 
@@ -269,7 +291,10 @@ func (s *graphjinService) agentSSE(ctx context.Context, w http.ResponseWriter, r
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
+	agentConf := agentConfigFromService(s.conf)
+	secret := configuredAgentSecret(agentConf)
 	writeEvent := func(event string, payload any) {
+		payload = gjagent.SanitizeValue(payload, secret)
 		data, err := json.Marshal(payload)
 		if err != nil {
 			return
@@ -282,18 +307,33 @@ func (s *graphjinService) agentSSE(ctx context.Context, w http.ResponseWriter, r
 
 	resp, err := runner.Run(ctx, req)
 	if err != nil {
+		info, publicErr := agentPublicFailure(agentConf, err)
+		err = publicErr
 		resp = gjagent.Response{
 			Status: gjagent.StatusError,
-			Errors: []gjagent.ErrorInfo{{Message: err.Error()}},
+			Errors: []gjagent.ErrorInfo{info},
 		}
 	} else {
 		s.appendWatchNotices(ctx, &resp)
 		s.appendTaskNotices(ctx, req, &resp)
 		s.appendAnnotationNotices(ctx, &resp)
 		appendTaskContextNotice(taskWarm, &resp)
+		resp = sanitizeAgentResponse(agentConf, resp)
 	}
 	s.appendTaskTrailEntry(ctx, req, resp, time.Since(start), err)
 	recordAgentRuntimeEvent(s, ctx, req, resp, taskWarm, time.Since(start), err)
+	span := trace.SpanFromContext(ctx)
+	recordAgentUsageObservability(s, span, "sse", agentConf, resp, time.Since(start))
+	if span.IsRecording() {
+		attrs := []attribute.KeyValue{attribute.String("agent.status", resp.Status), attribute.Bool("agent.sse", true)}
+		if code := agentResponseErrorCode(resp); code != "" {
+			attrs = append(attrs, attribute.String("agent.error_code", code))
+		}
+		span.SetAttributes(attrs...)
+		if err != nil {
+			spanError(span, err)
+		}
+	}
 	writeEvent("result", resp)
 	writeEvent("complete", map[string]any{"status": resp.Status})
 }
@@ -320,9 +360,108 @@ func writeAgentError(w http.ResponseWriter, status int, message string) {
 	_ = json.NewEncoder(w).Encode(gjagent.Response{
 		Status: gjagent.StatusError,
 		Errors: []gjagent.ErrorInfo{{
-			Message: message,
+			Message: gjagent.SanitizeText(message),
 		}},
 	})
+}
+
+func configuredAgentSecret(conf gjagent.Config) string {
+	apiKeyEnv := strings.TrimSpace(conf.APIKeyEnv)
+	if apiKeyEnv == "" {
+		apiKeyEnv = defaultAgentAPIKeyEnv
+	}
+	return os.Getenv(apiKeyEnv)
+}
+
+func agentPublicFailure(conf gjagent.Config, err error) (gjagent.ErrorInfo, error) {
+	secret := configuredAgentSecret(conf)
+	info := gjagent.PublicErrorInfo(err, conf.Provider, conf.Model, secret)
+	return info, errors.New(info.Message)
+}
+
+func sanitizeAgentResponse(conf gjagent.Config, resp gjagent.Response) gjagent.Response {
+	return gjagent.SanitizeResponse(resp, configuredAgentSecret(conf))
+}
+
+func recordAgentUsageObservability(s *graphjinService, span trace.Span, surface string, conf gjagent.Config, resp gjagent.Response, duration time.Duration) {
+	if resp.Usage == nil {
+		return
+	}
+	usage := gjagent.SummarizeUsage(resp.Usage)
+	provider := strings.TrimSpace(conf.Provider)
+	if provider == "" {
+		provider = defaultAgentProvider
+	}
+	if s != nil && s.log != nil {
+		s.log.Infow("GraphJin agent usage",
+			"surface", surface,
+			"status", resp.Status,
+			"provider", provider,
+			"model", conf.Model,
+			"prompt_tokens", usage.PromptTokens,
+			"completion_tokens", usage.CompletionTokens,
+			"total_tokens", usage.TotalTokens,
+			"llm_calls", usage.LLMCalls,
+			"duration_ms", duration.Milliseconds(),
+		)
+	}
+	if span != nil && span.IsRecording() {
+		span.SetAttributes(
+			attribute.Int64("agent.prompt_tokens", usage.PromptTokens),
+			attribute.Int64("agent.completion_tokens", usage.CompletionTokens),
+			attribute.Int64("agent.total_tokens", usage.TotalTokens),
+			attribute.Int64("agent.llm_calls", usage.LLMCalls),
+		)
+	}
+}
+
+func agentEvalFingerprint(status agentStatusResponse) string {
+	available := append([]string(nil), status.AvailableSystemRoots...)
+	blocked := append([]string(nil), status.BlockedSystemRoots...)
+	sort.Strings(available)
+	sort.Strings(blocked)
+	payload := struct {
+		Version              string   `json:"version"`
+		Build                string   `json:"build"`
+		PromptRegistryHash   string   `json:"prompt_registry_hash"`
+		Provider             string   `json:"provider"`
+		Model                string   `json:"model"`
+		APIKeyEnv            string   `json:"api_key_env"`
+		MaxSteps             int      `json:"max_steps"`
+		TimeoutSeconds       int      `json:"timeout_seconds"`
+		ReadOnly             bool     `json:"read_only"`
+		ReturnTrace          bool     `json:"return_trace"`
+		Namespace            string   `json:"namespace"`
+		RoleClass            string   `json:"role_class"`
+		AvailableSystemRoots []string `json:"available_system_roots"`
+		BlockedSystemRoots   []string `json:"blocked_system_roots"`
+	}{
+		Version: version, Build: agentBuildIdentity(), PromptRegistryHash: gjagent.PromptRegistryHash(),
+		Provider: status.Provider, Model: status.Model, APIKeyEnv: status.APIKeyEnv,
+		MaxSteps: status.MaxSteps, TimeoutSeconds: status.TimeoutSeconds,
+		ReadOnly: status.ReadOnly, ReturnTrace: status.ReturnTrace,
+		Namespace: status.Namespace, RoleClass: status.RoleClass,
+		AvailableSystemRoots: available, BlockedSystemRoots: blocked,
+	}
+	data, _ := json.Marshal(payload)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func agentBuildIdentity() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	parts := []string{info.Main.Path + "@" + info.Main.Version}
+	for _, dep := range info.Deps {
+		switch dep.Path {
+		case "github.com/ax-llm/ax/packages/go", "github.com/dosco/graphjin/agent/v3", "github.com/dosco/graphjin/serv/v3":
+			parts = append(parts, dep.Path+"@"+dep.Version)
+		}
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ";")
 }
 
 func agentHTTPStatus(err error) int {
@@ -343,6 +482,11 @@ func agentHTTPStatus(err error) int {
 func recordAgentRuntimeEvent(s *graphjinService, ctx context.Context, req gjagent.Request, resp gjagent.Response, taskWarm taskWarmStart, duration time.Duration, err error) {
 	if s == nil {
 		return
+	}
+	conf := agentConfigFromService(s.conf)
+	resp = sanitizeAgentResponse(conf, resp)
+	if err != nil {
+		_, err = agentPublicFailure(conf, err)
 	}
 	event := runtimeEvent{
 		Kind:       runtimeKindEvent,
@@ -388,7 +532,10 @@ func recordAgentRuntimeEvent(s *graphjinService, ctx context.Context, req gjagen
 		event.Status = runtimeStatusFailed
 		event.Severity = "error"
 		event.Summary = "GraphJin agent request failed"
-		event.ErrorCode = "agent_error"
+		event.ErrorCode = agentResponseErrorCode(resp)
+		if event.ErrorCode == "" {
+			event.ErrorCode = gjagent.ErrorCodeAgentError
+		}
 		event.Details["error"] = err.Error()
 	} else if len(resp.Errors) != 0 {
 		event.Status = runtimeStatusDegraded
@@ -396,6 +543,15 @@ func recordAgentRuntimeEvent(s *graphjinService, ctx context.Context, req gjagen
 		event.Summary = "GraphJin agent returned errors"
 	}
 	s.recordRuntimeEvent(ctx, event)
+}
+
+func agentResponseErrorCode(resp gjagent.Response) string {
+	for _, responseError := range resp.Errors {
+		if code, ok := responseError.Extensions["code"].(string); ok && strings.TrimSpace(code) != "" {
+			return strings.TrimSpace(code)
+		}
+	}
+	return ""
 }
 
 const (

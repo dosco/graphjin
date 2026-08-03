@@ -243,6 +243,119 @@ func TestExecuteGraphQLErrorAttachesCompactRecovery(t *testing.T) {
 	}
 }
 
+func TestWrongDialectAggregateGetsSpecificRepairAndPreservesExtensions(t *testing.T) {
+	runtime := newFailingExecProtocol(t, executeResult{
+		Errors: []ErrorInfo{{
+			Message:    "field accounts_aggregate not found",
+			Extensions: map[string]any{"compiler_stage": "qcode"},
+		}},
+	})
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts_aggregate { aggregate { count } } }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := out.(executeResult)
+	if len(res.Errors) != 1 {
+		t.Fatalf("errors = %+v", res.Errors)
+	}
+	extensions := res.Errors[0].Extensions
+	if extensions["compiler_stage"] != "qcode" || extensions["code"] != "wrong_dialect_aggregate" {
+		t.Fatalf("extensions = %+v, want original metadata and stable repair code", extensions)
+	}
+	repair := mapValue(extensions["graphjin_repair"])
+	if stringFromMap(repair, "kind") != "wrong_dialect_aggregate" || !strings.Contains(stringFromMap(repair, "message"), "count_id") {
+		t.Fatalf("graphjin_repair = %+v", repair)
+	}
+	recovery := mapValue(res.Recovery)
+	if !strings.Contains(stringFromMap(recovery, "instruction"), "does not use <table>_aggregate roots") {
+		t.Fatalf("recovery = %+v", recovery)
+	}
+}
+
+func TestFailedQueryRequiresDistinctRepairAndRejectsDuplicate(t *testing.T) {
+	base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
+		Errors: []ErrorInfo{{Message: "field not found"}},
+	}}
+	runtime := newProtocolRuntime(base, "How many accounts are active?", "", 20, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:public.accounts"}); err != nil {
+		t.Fatal(err)
+	}
+	failed := "query { accounts { wrong_count } }"
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": failed}); err != nil {
+		t.Fatal(err)
+	}
+	if message := runtime.state.pendingRequiredFinalization(); !strings.HasPrefix(message, "execution_repair_required:") {
+		t.Fatalf("pending final = %q", message)
+	}
+	before := len(base.calls)
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": failed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(base.calls) != before {
+		t.Fatal("identical failed query reached the database runtime")
+	}
+	duplicate := out.(executeResult)
+	if got := stringFromMap(duplicate.Errors[0].Extensions, "code"); got != "duplicate_failed_query" {
+		t.Fatalf("duplicate code = %q", got)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts { count_id } }"}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.state.pendingFailedQueryKey != "" || !runtime.state.repairFailureExhausted {
+		t.Fatalf("repair state = pending:%q exhausted:%t", runtime.state.pendingFailedQueryKey, runtime.state.repairFailureExhausted)
+	}
+}
+
+func TestDatabaseComputationFinalGuard(t *testing.T) {
+	state := newDiscoveryState("How many accounts are active?")
+	state.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { accounts { id status } }"}, executeResult{
+		Data: map[string]any{"accounts": []any{map[string]any{"id": 1}}},
+	})
+	if message := state.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
+		t.Fatalf("row-list final guard = %q", message)
+	}
+	state.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { accounts { count_id } }"}, executeResult{
+		Data: map[string]any{"accounts": []any{map[string]any{"count_id": 12}}},
+	})
+	if message := state.pendingDatabaseComputation(); message != "" {
+		t.Fatalf("aggregate result remained blocked: %q", message)
+	}
+
+	ranking := newDiscoveryState("Which plan contributes the most total revenue?")
+	ranking.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { plans { name sum_revenue } }"}, executeResult{
+		Data: map[string]any{"plans": []any{map[string]any{"name": "pro", "sum_revenue": 10}}},
+	})
+	if message := ranking.pendingDatabaseComputation(); !strings.Contains(message, "aggregate order_by") {
+		t.Fatalf("ranking guard = %q", message)
+	}
+	ranking.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { plans(order_by: {sum_revenue: desc}, limit: 1) { name sum_revenue } }"}, executeResult{
+		Data: map[string]any{"plans": []any{map[string]any{"name": "pro", "sum_revenue": 10}}},
+	})
+	if message := ranking.pendingDatabaseComputation(); message != "" {
+		t.Fatalf("database-ranked result remained blocked: %q", message)
+	}
+
+	savedRows := newDiscoveryState("How many accounts are active?")
+	savedRows.recordExecution(toolExecuteSavedQuery, map[string]any{"name": "account_rows"}, executeResult{
+		Data: map[string]any{"accounts": []any{map[string]any{"id": 1}, map[string]any{"id": 2}}},
+	})
+	if message := savedRows.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
+		t.Fatalf("row-returning saved query bypassed computation guard: %q", message)
+	}
+	savedAggregate := newDiscoveryState("What is the total monthly recurring revenue?")
+	savedAggregate.savedQueryGraphQL["mrr_summary"] = "query { accounts { total: sum_mrr } }"
+	savedAggregate.recordExecution(toolExecuteSavedQuery, map[string]any{"name": "mrr_summary"}, executeResult{
+		Data: map[string]any{"accounts": []any{map[string]any{"total": 42}}},
+	})
+	if message := savedAggregate.pendingDatabaseComputation(); message != "" {
+		t.Fatalf("aggregate saved query remained blocked: %q", message)
+	}
+}
+
 func TestExecuteGraphQLSuccessAttachesNoRecovery(t *testing.T) {
 	runtime := newFailingExecProtocol(t, executeResult{
 		Data: map[string]any{"green_lots": []any{map[string]any{"remaining_kg": 720}}},

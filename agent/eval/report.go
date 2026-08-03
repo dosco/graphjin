@@ -10,7 +10,10 @@ const (
 )
 
 type RunProvenance struct {
+	Provider           string  `json:"provider,omitempty"`
 	Model              string  `json:"model,omitempty"`
+	APIKeyEnv          string  `json:"api_key_env,omitempty"`
+	ServerFingerprint  string  `json:"server_eval_fingerprint,omitempty"`
 	AxVersion          string  `json:"ax_version,omitempty"`
 	GraphJinCommit     string  `json:"graphjin_commit,omitempty"`
 	PromptRegistryHash string  `json:"prompt_registry_hash,omitempty"`
@@ -18,6 +21,45 @@ type RunProvenance struct {
 	Seed               int64   `json:"seed"`
 	Repeats            int     `json:"repeats"`
 	Target             string  `json:"target"`
+}
+
+type RunProgress struct {
+	PlannedInitialSlots      int `json:"planned_initial_slots"`
+	PlannedConfirmationSlots int `json:"planned_confirmation_slots,omitempty"`
+	CompletedInitialSlots    int `json:"completed_initial_slots"`
+	CompletedConfirmation    int `json:"completed_confirmation_slots,omitempty"`
+	ProviderAttempts         int `json:"provider_attempts"`
+	RetryCount               int `json:"retry_count,omitempty"`
+	ReusedEpisodeCount       int `json:"reused_episode_count,omitempty"`
+}
+
+type ProviderUsage struct {
+	PromptTokens     int64 `json:"prompt_tokens"`
+	CompletionTokens int64 `json:"completion_tokens"`
+	TotalTokens      int64 `json:"total_tokens"`
+	LLMCalls         int64 `json:"llm_calls"`
+	LatencyMS        int64 `json:"latency_ms"`
+}
+
+// UsageComparison separates finalized-slot efficiency from actual provider
+// traffic. Provider totals include failed attempts and retries; finalized
+// totals are the stable quality-run denominator used for agent regressions.
+type UsageComparison struct {
+	BaselineRunID                 string   `json:"baseline_run_id"`
+	Comparable                    bool     `json:"comparable"`
+	Reason                        string   `json:"reason,omitempty"`
+	BaselineFinalizedTokens       int64    `json:"baseline_finalized_tokens"`
+	CandidateFinalizedTokens      int64    `json:"candidate_finalized_tokens"`
+	FinalizedTokensDelta          int64    `json:"finalized_tokens_delta"`
+	FinalizedTokensChangePercent  *float64 `json:"finalized_tokens_change_percent,omitempty"`
+	BaselineProviderTokens        int64    `json:"baseline_provider_tokens"`
+	CandidateProviderTokens       int64    `json:"candidate_provider_tokens"`
+	ProviderTokensDelta           int64    `json:"provider_tokens_delta"`
+	ProviderTokensChangePercent   *float64 `json:"provider_tokens_change_percent,omitempty"`
+	BaselineTokensPerEpisode      float64  `json:"baseline_tokens_per_episode"`
+	CandidateTokensPerEpisode     float64  `json:"candidate_tokens_per_episode"`
+	TokensPerEpisodeDelta         float64  `json:"tokens_per_episode_delta"`
+	TokensPerEpisodeChangePercent *float64 `json:"tokens_per_episode_change_percent,omitempty"`
 }
 
 type Episode struct {
@@ -99,9 +141,11 @@ type Metrics struct {
 	RecallCI          ConfidenceInterval         `json:"recall_ci"`
 	ByTier            map[Difficulty]TierMetrics `json:"by_tier,omitempty"`
 	FailureCategories map[string]int             `json:"failure_categories,omitempty"`
+	EnvironmentErrors int                        `json:"environment_errors,omitempty"`
 	PromptTokens      int64                      `json:"prompt_tokens"`
 	CompletionTokens  int64                      `json:"completion_tokens"`
 	TotalTokens       int64                      `json:"total_tokens"`
+	LLMCalls          int64                      `json:"llm_calls"`
 	MedianActorTurns  float64                    `json:"median_actor_turns"`
 	LatencyP50MS      float64                    `json:"latency_p50_ms"`
 	LatencyP95MS      float64                    `json:"latency_p95_ms"`
@@ -114,6 +158,7 @@ type Acceptance struct {
 	HardPass               bool     `json:"hard_pass"`
 	BaselineCompared       bool     `json:"baseline_compared"`
 	ValueComparisonEnabled bool     `json:"value_comparison_enabled"`
+	EnvironmentFailure     bool     `json:"environment_failure,omitempty"`
 	IntersectionTaskCount  int      `json:"intersection_task_count,omitempty"`
 	Notices                []string `json:"notices,omitempty"`
 }
@@ -122,6 +167,7 @@ type Report struct {
 	SchemaVersion        string             `json:"schema_version"`
 	RewardVersion        string             `json:"reward_version"`
 	RunID                string             `json:"run_id"`
+	RunStatus            RunStatus          `json:"run_status"`
 	Mode                 RunMode            `json:"mode"`
 	GeneratedAt          time.Time          `json:"generated_at"`
 	SuiteFingerprint     string             `json:"suite_fingerprint"`
@@ -129,12 +175,36 @@ type Report struct {
 	DatasetFingerprint   DatasetFingerprint `json:"dataset_fingerprint"`
 	OracleValueHash      string             `json:"oracle_value_hash,omitempty"`
 	Provenance           RunProvenance      `json:"provenance"`
+	Progress             RunProgress        `json:"progress"`
+	ProviderUsage        ProviderUsage      `json:"provider_usage"`
+	UsageComparison      *UsageComparison   `json:"usage_comparison,omitempty"`
 	Metrics              Metrics            `json:"metrics"`
 	Tasks                []TaskVerdict      `json:"tasks"`
 	Acceptance           Acceptance         `json:"acceptance"`
 	InvalidOracles       map[string]string  `json:"invalid_oracles,omitempty"`
 	InvalidOracleDetails map[string]string  `json:"-"`
 	EpisodePaths         []string           `json:"-"`
+}
+
+// PartialReport is written when a run is interrupted or the provider
+// environment fails. It intentionally has no metrics, task verdicts, or
+// baseline acceptance fields.
+type PartialReport struct {
+	SchemaVersion      string             `json:"schema_version"`
+	RewardVersion      string             `json:"reward_version"`
+	RunID              string             `json:"run_id"`
+	RunStatus          RunStatus          `json:"run_status"`
+	Mode               RunMode            `json:"mode"`
+	GeneratedAt        time.Time          `json:"generated_at"`
+	SuiteFingerprint   string             `json:"suite_fingerprint"`
+	CatalogFingerprint string             `json:"catalog_fingerprint"`
+	DatasetFingerprint DatasetFingerprint `json:"dataset_fingerprint"`
+	OracleValueHash    string             `json:"oracle_value_hash,omitempty"`
+	Provenance         RunProvenance      `json:"provenance"`
+	Progress           RunProgress        `json:"progress"`
+	ProviderUsage      ProviderUsage      `json:"provider_usage"`
+	EnvironmentCode    string             `json:"environment_code,omitempty"`
+	Notice             string             `json:"notice,omitempty"`
 }
 
 func (r Report) TaskMap() map[string]TaskVerdict {

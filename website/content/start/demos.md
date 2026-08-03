@@ -21,7 +21,7 @@ graphjin serve --demo --path examples/<name>
 
 Each demo is a self-contained vertical: one command boots its databases (Docker containers and in-process emulators), applies the schema, seeds realistic data, and starts the server. First boot creates state under the project's `demo/` folder - `./graphjin-demo/demo/` for the built-in demo, `examples/<name>/demo/` for the rest. Delete that folder to reset from scratch. Seed dates anchor to today and shift forward on reuse, so questions like "what's scheduled today?" keep working no matter when you run them.
 
-Put a model API key in `./.env` (`GOOGLE_APIKEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` - checked in that order) and `--demo` automatically switches into agentic mode and enables the [built-in agent](/agentic/server-agent/). The web console is at `http://localhost:<port>/`, and the agent chat - which streams every tool call live as the agent works - is at `/agent`.
+Put a model API key in `./.env` (`GOOGLE_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` - checked in that order, with legacy `GOOGLE_APIKEY` still accepted) and `--demo` automatically switches into agentic mode and enables the [built-in agent](/agentic/server-agent/). The web console is at `http://localhost:<port>/`, and the agent chat - which streams every tool call live as the agent works - is at `/agent`.
 
 [Mission Control](/agentic/mission-control/) is available at `/mission` for
 task trails, the watch-event inbox, and annotation review.

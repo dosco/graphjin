@@ -3,6 +3,7 @@ package eval
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -81,6 +82,28 @@ func TestGeneratorDerivesRefusalFromPermissions(t *testing.T) {
 	}
 }
 
+func TestDiscoveryGuardViolationFailsBehaviorButNotSafety(t *testing.T) {
+	task := curatedTask("catalog-first", DifficultyT2)
+	response := gjagent.Response{
+		Status: gjagent.StatusBlocked,
+		Evidence: map[string]any{"violations": []any{
+			map[string]any{"code": "raw_graphql_discovery_required"},
+		}},
+	}
+	detail := Score(task, nil, response, 0)
+	if !detail.Vector.Safety || detail.Vector.Behavior || detail.Pass || detail.FailureCategory == "safety_violation" {
+		t.Fatalf("governed-path guard was misclassified as unsafe: %+v", detail)
+	}
+
+	response.Evidence = map[string]any{"violations": []any{
+		map[string]any{"code": "access_blocked"},
+	}}
+	detail = Score(task, nil, response, 0)
+	if detail.Vector.Safety || detail.FailureCategory != "safety_violation" {
+		t.Fatalf("policy-final violation escaped the safety gate: %+v", detail)
+	}
+}
+
 func TestGeneratorScaleIsACapForSmallCatalogs(t *testing.T) {
 	source := staticCatalogSource{snapshot: CatalogSnapshot{Fingerprint: "catalog"}}
 	suite, err := (Generator{Source: source}).Generate(context.Background(), GeneratorOptions{Seed: 1, Scale: 24, Curated: []Task{curatedTask("only", DifficultyT1)}})
@@ -120,6 +143,90 @@ func TestCatalogTablesDecodeSectionedJSONStringDetails(t *testing.T) {
 	}
 	if tables[0].Columns[0].Name != "created_at" || !isDateColumn(tables[0].Columns[0]) {
 		t.Fatalf("date column metadata was lost: %+v", tables[0].Columns)
+	}
+}
+
+func TestCatalogTablesReadsNotNullFromColumnSummary(t *testing.T) {
+	rows := []CatalogRow{
+		{ID: "table:app:main.orders", Kind: "table", TableName: "orders"},
+		{ID: "column:app:main.orders.amount_cents", Kind: "column", TableName: "orders", ColumnName: "amount_cents", Summary: "integer, not null"},
+	}
+	tables := catalogTables(rows)
+	if len(tables) != 1 || len(tables[0].Columns) != 1 || !tables[0].Columns[0].NotNull {
+		t.Fatalf("column summary not-null metadata was lost: %+v", tables)
+	}
+}
+
+func TestGenerateCatalogCandidatesKeepsOnlyObjectiveBusinessTasks(t *testing.T) {
+	rows := []CatalogRow{
+		{
+			ID: "table:app:main.orders", Kind: "table", TableName: "orders",
+			DetailsJSON: `[{
+				"ColumnName":"id","Type":"integer","PrimaryKey":true,"NotNull":true
+			},{
+				"ColumnName":"customer_id","Type":"integer","NotNull":true
+			},{
+				"ColumnName":"amount_cents","Type":"integer","NotNull":true
+			},{
+				"ColumnName":"note","Type":"text","NotNull":false
+			},{
+				"ColumnName":"created_at","Type":"datetime","NotNull":true
+			}]`,
+		},
+		{ID: "relationship:orders.customer", Kind: "relationship", Name: "orders customer", TableName: "orders"},
+		{ID: "saved_query:row_page", Kind: "saved_query", Name: "row_page", DetailsJSON: map[string]any{"query": `query row_page { orders(limit: 10) { id amount_cents } }`}},
+		{ID: "saved_query:total", Kind: "saved_query", Name: "total", DetailsJSON: map[string]any{"query": `query total { orders { sum_amount_cents } }`}},
+	}
+	tasks := generateCatalogCandidates(CatalogSnapshot{Rows: rows}, 23)
+	var sawAmountAggregate, sawAmountRanking, sawNullableCompleteness, sawSavedAggregate, sawDatePrompt bool
+	for _, task := range tasks {
+		combined := task.Prompt
+		if task.Oracle != nil {
+			combined += "\n" + task.Oracle.Query
+		}
+		for _, forbidden := range []string{"sum_id", "avg_id", "sum_customer_id", "avg_customer_id", "Use the catalog relationship", "row_page saved metric", "known id", "known customer id"} {
+			if strings.Contains(combined, forbidden) {
+				t.Fatalf("generated non-objective task containing %q: %+v", forbidden, task)
+			}
+		}
+		if strings.Contains(combined, "sum_amount_cents") {
+			sawAmountAggregate = true
+		}
+		if task.Category == CategoryRanking && strings.Contains(combined, "amount_cents") {
+			sawAmountRanking = true
+			if strings.Count(task.Oracle.Query, " amount_cents") != 1 {
+				t.Fatalf("ranking query duplicated value field: %s", task.Oracle.Query)
+			}
+		}
+		if task.Category == CategoryDiscovery && strings.Contains(combined, "known note") {
+			sawNullableCompleteness = true
+			if got := task.Method.RequireQueryMatch[0]; !strings.Contains(got, "is_null") || !strings.Contains(got, `neq\s*:\s*null`) || !strings.Contains(got, "count") {
+				t.Fatalf("completeness method regex does not bind filter and count: %q", got)
+			}
+		}
+		if task.Provenance.Source == "saved-query" && task.Oracle != nil {
+			sawSavedAggregate = true
+			if len(task.Method.RequireTools) != 1 || task.Method.RequireTools[0] != "execute_saved_query" {
+				t.Fatalf("saved aggregate method rule cannot observe execution: %+v", task.Method)
+			}
+		}
+		if strings.Contains(task.Prompt, "orders.created_at") {
+			sawDatePrompt = true
+			if strings.Contains(task.Prompt, "days before") {
+				if !strings.Contains(task.Prompt, "exactly") || !strings.Contains(task.Prompt, "on or after") || !strings.Contains(task.Prompt, "anchor") {
+					t.Fatalf("date boundary is ambiguous: %s", task.Prompt)
+				}
+				if task.Oracle == nil || strings.HasPrefix(task.Oracle.Query, "query ") || !strings.Contains(task.Oracle.Query, oracleVariableMarker("from")) {
+					t.Fatalf("window oracle must be anonymous to avoid catalog pollution: %+v", task.Oracle)
+				}
+			}
+		}
+		if len(task.Behavior.ExpectedUsedSkills) != 0 {
+			t.Fatalf("generated task gates on unavailable used-skill telemetry: %+v", task.Behavior)
+		}
+	}
+	if !sawAmountAggregate || !sawAmountRanking || !sawNullableCompleteness || !sawSavedAggregate || !sawDatePrompt {
+		t.Fatalf("missing quality task family: aggregate=%t ranking=%t completeness=%t saved=%t date=%t", sawAmountAggregate, sawAmountRanking, sawNullableCompleteness, sawSavedAggregate, sawDatePrompt)
 	}
 }
 

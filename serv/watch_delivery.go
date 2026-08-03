@@ -827,6 +827,7 @@ func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntim
 	if def == nil {
 		return true, nil
 	}
+	started := time.Now()
 	if cfg.Kind == "flow" {
 		return s.triageWatchEvent(ctx, def, eventID, dataJSON, evidenceJSON, cfg)
 	}
@@ -873,6 +874,7 @@ func (s *graphjinService) enrichWatchEvent(ctx context.Context, def *watchRuntim
 		Capabilities: s.agentCapabilityProfile(ownerCtx),
 	}
 	resp, err := runner.Run(ownerCtx, req)
+	recordAgentUsageObservability(s, nil, "watch_enrichment", agentConf, resp, time.Since(started))
 	if err != nil {
 		enrichment = map[string]any{"status": "error", "error": err.Error()}
 		if errors.Is(err, gjagent.ErrMissingAPIKey) {
