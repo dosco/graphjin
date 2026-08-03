@@ -43,6 +43,36 @@ func TestVerifierResolvesAnchorAndExtraction(t *testing.T) {
 	}
 }
 
+func TestVerifierInlinesAnchoredVariableWithoutNamingQuery(t *testing.T) {
+	calls := 0
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return jsonResponse(200, `{"data":{"events":[{"max_at":"2026-08-01"}]}}`), nil
+		}
+		body, _ := io.ReadAll(request.Body)
+		payload := string(body)
+		if !strings.Contains(payload, `"query":"{ events(where: {at: {gte: \"2026-07-25\"}}) { count_id } }"`) {
+			t.Fatalf("anchor was not inlined into anonymous query: %s", payload)
+		}
+		if strings.Contains(payload, `"variables"`) || strings.Contains(payload, oracleVariableMarker("from")) {
+			t.Fatalf("inlined oracle leaked a marker or unused variables: %s", payload)
+		}
+		return jsonResponse(200, `{"data":{"events":[{"count_id":42}]}}`), nil
+	})
+	result, err := (Verifier{Client: doer, BaseURL: "http://graphjin.test"}).Resolve(context.Background(), OracleSpec{
+		AnchorQuery: "{ events { max_at } }", AnchorExtract: "events.0.max_at",
+		Query:     `{ events(where: {at: {gte: "` + oracleVariableMarker("from") + `"}}) { count_id } }`,
+		Variables: map[string]any{"from": "{{anchor-7d}}"}, Extract: "events.0.count_id",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Value != "42" || calls != 2 {
+		t.Fatalf("result=%+v calls=%d", result, calls)
+	}
+}
+
 func TestGroundTruthToleranceAndScales(t *testing.T) {
 	task := Task{ExpectedStatus: "answered", Answer: AnswerRule{Kind: "number", TolerancePct: 0.01, AcceptScales: []float64{1, 0.01}}}
 	pass, detail := evaluateGroundTruth(task, OracleResult{Value: "1980000"}, responseWithAnswer("answered", "The total is $19,800."))

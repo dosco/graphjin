@@ -36,7 +36,11 @@ type AgentStatus struct {
 	Enabled              bool     `json:"enabled"`
 	Ready                bool     `json:"ready"`
 	ReadOnly             bool     `json:"read_only"`
+	Provider             string   `json:"provider,omitempty"`
 	Model                string   `json:"model"`
+	APIKeyEnv            string   `json:"api_key_env,omitempty"`
+	TimeoutSeconds       int      `json:"timeout_seconds,omitempty"`
+	EvalFingerprint      string   `json:"eval_fingerprint,omitempty"`
 	Namespace            string   `json:"namespace,omitempty"`
 	RoleClass            string   `json:"role_class,omitempty"`
 	AvailableSystemRoots []string `json:"available_system_roots,omitempty"`
@@ -67,7 +71,10 @@ func (s HTTPCatalogSource) Snapshot(ctx context.Context) (CatalogSnapshot, error
 	if client == nil {
 		client = &http.Client{Timeout: 90 * time.Second}
 	}
-	query := `query GraphJinEvalCatalog {
+	// Keep this anonymous. Named dynamic operations are discoverable as saved
+	// queries, so naming the generator's own catalog read makes it generate a
+	// benchmark task about itself and changes the catalog it is measuring.
+	query := `{
   gj_catalog(
     where: { kind: { in: ["table", "column", "relationship", "saved_query", "query", "annotation"] } }
     order_by: { id: asc }
@@ -219,8 +226,9 @@ func (g Generator) Generate(ctx context.Context, opts GeneratorOptions) (*Suite,
 }
 
 type generatorColumn struct {
-	Name string
-	Type string
+	Name    string
+	Type    string
+	NotNull bool
 }
 
 type generatorTable struct {
@@ -248,42 +256,43 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 			continue
 		}
 		tasks = append(tasks, generatedTask(seed, table.ID, CategoryAggregate, DifficultyT1,
-			fmt.Sprintf("How many %s records are there?", humanize(table.Name)),
+			fmt.Sprintf("How many records are in %s?", humanize(table.Name)),
 			fmt.Sprintf("query { %s { count_%s } }", table.Name, pk), table.Name+".0.count_"+pk,
-			"number", []string{"count_"}))
+			"number", []string{aggregateMethodPattern("count", pk)}))
 		for _, column := range table.Columns {
-			completenessQuery := fmt.Sprintf("query { %s(where: {not: {%s: {is_null: true}}}) { count_%s } }", table.Name, column.Name, pk)
-			tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, CategoryDiscovery, DifficultyT2,
-				fmt.Sprintf("How many %s records have a known %s?", humanize(table.Name), humanize(column.Name)),
-				completenessQuery, table.Name+".0.count_"+pk, "number", []string{"is_null", "count_"}))
-			if isNumericType(column.Type) {
+			if !column.NotNull && !isIdentifierColumn(table, column) {
+				completenessQuery := fmt.Sprintf("query { %s(where: {not: {%s: {is_null: true}}}) { count_%s } }", table.Name, column.Name, pk)
+				tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, CategoryDiscovery, DifficultyT2,
+					fmt.Sprintf("How many records in %s have a known %s?", humanize(table.Name), humanize(column.Name)),
+					completenessQuery, table.Name+".0.count_"+pk, "number", []string{filteredCountMethodPattern(column.Name, `(?:is_null|neq\s*:\s*null)`, pk)}))
+			}
+			if isNumericType(column.Type) && !isIdentifierColumn(table, column) {
 				for _, fn := range []string{"sum", "avg", "min", "max"} {
 					field := fn + "_" + column.Name
 					tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, CategoryAggregate, DifficultyT1,
 						fmt.Sprintf("What is the %s %s across all %s?", aggregatePhrase(fn), humanize(column.Name), humanize(table.Name)),
 						fmt.Sprintf("query { %s { %s } }", table.Name, field), table.Name+".0."+field,
-						"number", []string{field}))
+						"number", []string{aggregateMethodPattern(fn, column.Name)}))
 				}
 				label := table.LabelColumn
-				if label == "" {
-					label = pk
+				if label != "" && label != column.Name {
+					tasks = append(tasks,
+						generatedRankingTask(seed, table, column, label, "desc", "highest"),
+						generatedRankingTask(seed, table, column, label, "asc", "lowest"),
+					)
 				}
-				tasks = append(tasks,
-					generatedRankingTask(seed, table, column, label, "desc", "highest"),
-					generatedRankingTask(seed, table, column, label, "asc", "lowest"),
-				)
 			}
 			if isDateColumn(column) {
 				field := "max_" + column.Name
 				tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, CategoryWindow, DifficultyT2,
-					fmt.Sprintf("What is the most recent %s date in %s?", humanize(column.Name), humanize(table.Name)),
+					fmt.Sprintf("What is the latest date recorded in %s.%s?", table.Name, column.Name),
 					fmt.Sprintf("query { %s { %s } }", table.Name, field), table.Name+".0."+field,
-					"date", []string{field}))
-				for _, days := range []int{7, 30, 90} {
-					query := fmt.Sprintf("query EvalWindow($from: String!) { %s(where: {%s: {gte: $from}}) { count_%s } }", table.Name, column.Name, pk)
+					"date", []string{latestDateMethodPattern(column.Name)}))
+				for _, days := range []int{7, 14, 30, 60, 90, 120, 180} {
+					query := fmt.Sprintf("{ %s(where: {%s: {gte: %q}}) { count_%s } }", table.Name, column.Name, oracleVariableMarker("from"), pk)
 					task := generatedTask(seed, table.ID+":"+column.Name, CategoryWindow, DifficultyT2,
-						fmt.Sprintf("How many %s fall in the %d days ending at the latest %s?", humanize(table.Name), days, humanize(column.Name)),
-						query, table.Name+".0.count_"+pk, "number", []string{"count_"})
+						fmt.Sprintf("Using the latest recorded %s as the anchor, how many records in %s have %s on or after the date exactly %d days before that anchor?", column.Name, table.Name, column.Name, days),
+						query, table.Name+".0.count_"+pk, "number", []string{filteredCountMethodPattern(column.Name, `gte\s*:`, pk)})
 					task.Oracle.AnchorQuery = fmt.Sprintf("query { %s { max_%s } }", table.Name, column.Name)
 					task.Oracle.AnchorExtract = table.Name + ".0.max_" + column.Name
 					task.Oracle.Variables = map[string]any{"from": fmt.Sprintf("{{anchor-%dd}}", days)}
@@ -294,20 +303,15 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 	}
 	for _, row := range snapshot.Rows {
 		switch row.Kind {
-		case "relationship":
-			if row.TableName == "" {
-				continue
-			}
-			tasks = append(tasks, Task{
-				Category: CategoryTraversal, Difficulty: DifficultyT3,
-				Slug:              "traverse-" + row.Name,
-				Prompt:            fmt.Sprintf("Use the catalog relationship %s to summarize the connected records.", humanize(row.Name)),
-				Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "catalog-entity", Seed: seed, SourceID: row.ID},
-				CapabilityProfile: CapabilityProfile{RoleClass: "user"}, ExpectedStatus: gjagent.StatusAnswered,
-				Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}, ExpectedUsedSkills: []string{"data_discovery"}},
-			})
-		case "saved_query", "query", "annotation":
+		case "saved_query", "annotation":
 			if query := queryFromDetails(row.DetailsJSON); query != "" && readOnlyGraphQL(query) {
+				oracle, method, ok := aggregateOracleFromQuery(query)
+				if !ok {
+					// A generic "explain this result" prompt has no stable ground
+					// truth. Keep row-returning saved queries out until the suite
+					// has a task-specific oracle for them.
+					continue
+				}
 				source, requiredAction := "saved-query", "execute_saved_query"
 				if row.Kind == "annotation" {
 					source, requiredAction = "annotation", "execute_graphql"
@@ -319,9 +323,11 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 					CapabilityProfile: CapabilityProfile{RoleClass: "user"}, ExpectedStatus: gjagent.StatusAnswered,
 					Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", requiredAction}, ForbiddenActions: []string{"execute_graphql:mutation"}},
 				}
-				if oracle, method, ok := aggregateOracleFromQuery(query); ok {
-					task.Oracle = &oracle
-					task.Answer = AnswerRule{Kind: "number"}
+				task.Oracle = &oracle
+				task.Answer = AnswerRule{Kind: "number"}
+				if row.Kind == "saved_query" {
+					task.Method = MethodRule{RequireTools: []string{"execute_saved_query"}}
+				} else {
 					task.Method = MethodRule{RequireQueryMatch: []string{method}, ForbidFinalizeFromListOnly: true}
 				}
 				tasks = append(tasks, task)
@@ -352,6 +358,26 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 	return tasks
 }
 
+func aggregateMethodPattern(fn, column string) string {
+	fn = regexp.QuoteMeta(fn)
+	column = regexp.QuoteMeta(column)
+	return fmt.Sprintf(`(?:%s_%s|%s\s*\(\s*expr\s*:\s*%s\s*\))`, fn, column, fn, column)
+}
+
+// filteredCountMethodPattern requires the filter and database-side count to
+// occur in the same successful query. This prevents a failed filtered attempt
+// plus a later unfiltered/list query from looking like a governed aggregate.
+func filteredCountMethodPattern(column, filter, primaryKey string) string {
+	column = regexp.QuoteMeta(column)
+	count := aggregateMethodPattern("count", primaryKey)
+	return fmt.Sprintf(`(?s)where\s*:\s*\{.*\b%s\s*:\s*\{.*%s.*\}.*\}.*%s`, column, filter, count)
+}
+
+func latestDateMethodPattern(column string) string {
+	column = regexp.QuoteMeta(column)
+	return fmt.Sprintf(`(?s)(?:max_%s|order_by\s*:\s*\{.*\b%s\s*:\s*desc.*\}.*limit\s*:\s*1|limit\s*:\s*1.*order_by\s*:\s*\{.*\b%s\s*:\s*desc)`, column, column, column)
+}
+
 func generatedTask(seed int64, source string, category Category, difficulty Difficulty, prompt, query, extract, answerKind string, method []string) Task {
 	return Task{
 		Category: category, Difficulty: difficulty, Prompt: prompt,
@@ -360,14 +386,14 @@ func generatedTask(seed int64, source string, category Category, difficulty Diff
 		CapabilityProfile: CapabilityProfile{RoleClass: "user"}, ExpectedStatus: gjagent.StatusAnswered,
 		Oracle: &OracleSpec{Query: query, Extract: extract}, Answer: AnswerRule{Kind: answerKind},
 		Method:   MethodRule{RequireQueryMatch: method, ForbidFinalizeFromListOnly: answerKind == "number"},
-		Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}, ExpectedUsedSkills: []string{"data_discovery"}},
+		Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}},
 	}
 }
 
 func generatedRankingTask(seed int64, table generatorTable, value generatorColumn, label, direction, superlative string) Task {
 	query := fmt.Sprintf("query { %s(order_by: {%s: %s}, limit: 1) { %s %s } }", table.Name, value.Name, direction, label, value.Name)
 	task := generatedTask(seed, table.ID+":"+value.Name, CategoryRanking, DifficultyT3,
-		fmt.Sprintf("Which %s has the %s %s, and what is the value?", humanize(table.Name), superlative, humanize(value.Name)),
+		fmt.Sprintf("Which record in %s has the %s %s, and what is the value?", humanize(table.Name), superlative, humanize(value.Name)),
 		query, table.Name+".0."+value.Name, "number", []string{"order_by"})
 	task.Oracle.DimensionExtract = table.Name + ".0." + label
 	task.Method.ForbidFinalizeFromListOnly = false
@@ -401,7 +427,11 @@ func catalogTables(rows []CatalogRow) []generatorTable {
 			continue
 		}
 		typeName := detailString(row.DetailsJSON, "type", "data_type", "db_type")
-		table.Columns = appendColumn(table.Columns, generatorColumn{Name: row.ColumnName, Type: typeName})
+		table.Columns = appendColumn(table.Columns, generatorColumn{
+			Name: row.ColumnName, Type: typeName,
+			NotNull: detailBool(row.DetailsJSON, "not_null", "notNull", "required") ||
+				strings.Contains(strings.ToLower(row.Summary), "not null"),
+		})
 	}
 	result := make([]generatorTable, 0, len(byName))
 	for _, table := range byName {
@@ -445,7 +475,10 @@ func mergeTableDetails(table *generatorTable, raw any) {
 			return
 		}
 		typeName := mapString(details, "type", "data_type", "db_type")
-		table.Columns = appendColumn(table.Columns, generatorColumn{Name: name, Type: typeName})
+		table.Columns = appendColumn(table.Columns, generatorColumn{
+			Name: name, Type: typeName,
+			NotNull: mapBool(details, "not_null", "notNull", "required"),
+		})
 		if mapBool(details, "primary", "primary_key", "primaryKey") {
 			table.PrimaryKey = name
 		}
@@ -458,6 +491,7 @@ func appendColumn(columns []generatorColumn, value generatorColumn) []generatorC
 			if columns[i].Type == "" {
 				columns[i].Type = value.Type
 			}
+			columns[i].NotNull = columns[i].NotNull || value.NotNull
 			return columns
 		}
 	}
@@ -470,6 +504,14 @@ func detailString(raw any, keys ...string) string {
 		if found == "" {
 			found = mapString(details, keys...)
 		}
+	})
+	return found
+}
+
+func detailBool(raw any, keys ...string) bool {
+	var found bool
+	walkDetailMaps(raw, func(details map[string]any) {
+		found = found || mapBool(details, keys...)
 	})
 	return found
 }
@@ -584,6 +626,12 @@ func isNumericType(value string) bool {
 		}
 	}
 	return false
+}
+
+func isIdentifierColumn(table generatorTable, column generatorColumn) bool {
+	name := strings.ToLower(strings.TrimSpace(column.Name))
+	primaryKey := strings.ToLower(strings.TrimSpace(table.PrimaryKey))
+	return name == "id" || name == primaryKey || strings.HasSuffix(name, "_id")
 }
 
 func isDateType(value string) bool {

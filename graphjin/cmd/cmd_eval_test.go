@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gjeval "github.com/dosco/graphjin/agent/v3/eval"
+	"github.com/spf13/cobra"
 )
 
 type evalRoundTripFunc func(*http.Request) (*http.Response, error)
@@ -38,8 +39,14 @@ func TestEvalCommandSurfaceAndContextualFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bench.Flags().Lookup("scale") == nil || bench.Flags().Lookup("seed") == nil {
-		t.Fatal("bench is missing --scale or --seed")
+	if bench.Flags().Lookup("scale") == nil || bench.Flags().Lookup("seed") == nil || bench.Flags().Lookup("resume") == nil || bench.Flags().Lookup("restart") == nil {
+		t.Fatal("bench is missing scale, seed, or resume flags")
+	}
+	for _, name := range []string{"run", "baseline"} {
+		child, _, err := command.Find([]string{name})
+		if err != nil || child.Flags().Lookup("resume") == nil || child.Flags().Lookup("restart") == nil {
+			t.Fatalf("%s is missing resume flags", name)
+		}
 	}
 	create, _, err := command.Find([]string{"create"})
 	if err != nil {
@@ -112,6 +119,7 @@ func TestEvalReportExitCodes(t *testing.T) {
 		code   int
 	}{
 		{report: &gjeval.Report{Acceptance: gjeval.Acceptance{SuiteValid: false}}, code: 2},
+		{report: &gjeval.Report{Acceptance: gjeval.Acceptance{SuiteValid: true, EnvironmentFailure: true}}, code: 3},
 		{report: &gjeval.Report{Acceptance: gjeval.Acceptance{SuiteValid: true, HardPass: false}}, code: 1},
 	}
 	for _, test := range tests {
@@ -123,6 +131,62 @@ func TestEvalReportExitCodes(t *testing.T) {
 	}
 	if err := evalReportExit(&gjeval.Report{Acceptance: gjeval.Acceptance{SuiteValid: true, HardPass: true}}); err != nil {
 		t.Fatalf("passing report returned error: %v", err)
+	}
+	err := evalExecutionError(gjeval.ErrRunInterrupted)
+	var interrupted *evalExitError
+	if !errors.As(err, &interrupted) || interrupted.Code != 130 {
+		t.Fatalf("interruption error=%v, want exit 130", err)
+	}
+}
+
+func TestPrintEvalReportJSONOmitsIncompleteMetrics(t *testing.T) {
+	command := &cobra.Command{}
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	printEvalReport(command, &evalCLIOptions{JSON: true}, &gjeval.Report{
+		SchemaVersion: gjeval.ReportSchemaVersion, RunID: "partial", RunStatus: gjeval.RunStatusEnvironmentFailed,
+		Metrics: gjeval.Metrics{Recall: 0.75}, Tasks: []gjeval.TaskVerdict{{TaskID: "private-task"}},
+		Acceptance: gjeval.Acceptance{EnvironmentFailure: true},
+	})
+	for _, forbidden := range []string{`"metrics"`, `"tasks"`, `"acceptance"`, "private-task", "0.75"} {
+		if strings.Contains(output.String(), forbidden) {
+			t.Fatalf("partial JSON contains %s: %s", forbidden, output.String())
+		}
+	}
+	if !strings.Contains(output.String(), `"run_status": "environment_failed"`) {
+		t.Fatalf("partial JSON lost status: %s", output.String())
+	}
+}
+
+func TestPrintEvalReportShowsTokenUsageAndBaselineChange(t *testing.T) {
+	command := &cobra.Command{}
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	minusTen := -10.0
+	report := &gjeval.Report{
+		RunID: "candidate", RunStatus: gjeval.RunStatusComplete,
+		Provenance: gjeval.RunProvenance{Repeats: 3},
+		Progress:   gjeval.RunProgress{ProviderAttempts: 4},
+		Metrics: gjeval.Metrics{
+			EpisodeCount: 3, PromptTokens: 210, CompletionTokens: 60, TotalTokens: 270, LLMCalls: 6,
+		},
+		ProviderUsage: gjeval.ProviderUsage{PromptTokens: 230, CompletionTokens: 70, TotalTokens: 300, LLMCalls: 7},
+		UsageComparison: &gjeval.UsageComparison{
+			BaselineRunID: "baseline", Comparable: true,
+			FinalizedTokensDelta: -30, FinalizedTokensChangePercent: &minusTen,
+			TokensPerEpisodeDelta: -10, TokensPerEpisodeChangePercent: &minusTen,
+			ProviderTokensDelta: -20, ProviderTokensChangePercent: &minusTen,
+		},
+	}
+	printEvalReport(command, &evalCLIOptions{}, report)
+	for _, phrase := range []string{
+		"Finalized usage: 270 tokens", "90.0 tokens per episode",
+		"Actual provider usage: 300 tokens", "failed attempts and retries are included",
+		"Token change vs baseline baseline", "finalized -10.0% (-30)",
+	} {
+		if !strings.Contains(output.String(), phrase) {
+			t.Fatalf("output missing %q: %s", phrase, output.String())
+		}
 	}
 }
 
@@ -153,11 +217,21 @@ func TestEnsureEvalAgentReady(t *testing.T) {
 		if request.URL.Path != "/api/v1/agent/status" || request.Header.Get("Authorization") != "Bearer test" {
 			t.Fatalf("unexpected readiness request: %s headers=%v", request.URL, request.Header)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"enabled":true,"ready":true}`))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"enabled":true,"ready":true,"provider":"google-gemini","model":"gemini-test","api_key_env":"GOOGLE_API_KEY","timeout_seconds":120,"eval_fingerprint":"server"}`))}, nil
 	})}
 	instance := &gjeval.StaticInstance{URL: "http://graphjin.test/api/v1/graphql", RequestHeaders: map[string]string{"Authorization": "Bearer test"}}
-	if err := ensureEvalAgentReady(context.Background(), client, instance); err != nil {
+	status, err := ensureEvalAgentReady(context.Background(), client, instance)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if status.TimeoutSeconds != 120 || status.Provider != "google-gemini" || evalAgentClient(status).Timeout != 150*time.Second {
+		t.Fatalf("unexpected status or timeout: %+v client=%s", status, evalAgentClient(status).Timeout)
+	}
+}
+
+func TestEvalResumeFlagConflict(t *testing.T) {
+	if _, err := evalResumePolicy(&evalCLIOptions{Restart: true, ResumeRunID: "run-1"}); err == nil {
+		t.Fatal("--resume and --restart were accepted together")
 	}
 }
 
@@ -212,7 +286,7 @@ func TestEvalSuiteStatusWithBaseline(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := gjeval.NewStore(filepath.Join(cpath, gjeval.DefaultStateDir))
-	baseline := gjeval.Report{SchemaVersion: gjeval.ReportSchemaVersion, RunID: "baseline", Acceptance: gjeval.Acceptance{HardPass: true}}
+	baseline := gjeval.Report{SchemaVersion: gjeval.ReportSchemaVersion, RunID: "baseline", RunStatus: gjeval.RunStatusComplete, Acceptance: gjeval.Acceptance{HardPass: true, SafetyPass: true}}
 	if err := store.PromoteBaseline(baseline); err != nil {
 		t.Fatal(err)
 	}
@@ -225,5 +299,30 @@ func TestEvalSuiteStatusWithBaseline(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Status: 1 tasks") || !strings.Contains(output.String(), "Baseline: baseline") {
 		t.Fatalf("unexpected status: %s", output.String())
+	}
+}
+
+func TestEvalStatusListsIncompleteRunWithoutPrivateContent(t *testing.T) {
+	original := cpath
+	cpath = t.TempDir()
+	defer func() { cpath = original }()
+	store := gjeval.NewStore(filepath.Join(cpath, gjeval.DefaultStateDir))
+	_, err := store.WriteManifest(gjeval.RunManifest{
+		RunID: "resume-me", Intent: gjeval.RunIntentRun, Status: gjeval.RunStatusInterrupted,
+		UpdatedAt: time.Unix(2, 0), Provenance: gjeval.RunProvenance{Model: "gemini-test"},
+		Progress: gjeval.RunProgress{PlannedInitialSlots: 6, CompletedInitialSlots: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := evalCmd()
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	command.SetArgs(nil)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "resume-me") || !strings.Contains(output.String(), "2/6 initial slots") || !strings.Contains(output.String(), "--resume resume-me") {
+		t.Fatalf("unexpected incomplete status: %s", output.String())
 	}
 }

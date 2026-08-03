@@ -207,6 +207,11 @@ func (s *graphjinService) appendTaskTrailEntry(ctx context.Context, req gjagent.
 	if s == nil || strings.TrimSpace(req.TaskID) == "" || !s.tasksEnabled() {
 		return
 	}
+	conf := agentConfigFromService(s.conf)
+	resp = sanitizeAgentResponse(conf, resp)
+	if runErr != nil {
+		_, runErr = agentPublicFailure(conf, runErr)
+	}
 	if s.conf != nil && s.conf.Core.Artifacts.Source != "" && s.conf.artifactSourceReadOnly() {
 		return
 	}
@@ -223,6 +228,9 @@ func (s *graphjinService) appendTaskTrailEntry(ctx context.Context, req gjagent.
 	}
 	if resp.Usage != nil {
 		detail["usage"] = resp.Usage
+	}
+	if code := agentResponseErrorCode(resp); code != "" {
+		detail["error_code"] = code
 	}
 	if runErr != nil {
 		detail["error"] = runErr.Error()

@@ -34,6 +34,10 @@ var answerFieldTokenPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\b[a-z][a-z0-9]*(?:[A-Z][A-Za-z0-9]*)+\b`),
 }
 
+var databaseAggregateFieldPattern = regexp.MustCompile(`(?i)(?:\b(?:count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+|\b(?:count|sum|avg|min|max|stddev|variance)\s*\(\s*expr\s*:)`)
+var databaseAggregateKeyPattern = regexp.MustCompile(`(?i)^(?:count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+$`)
+var wrongDialectAggregatePattern = regexp.MustCompile(`(?i)\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b`)
+
 // groundingVocabulary lists identifier-shaped protocol, tool, skill, and
 // system-root terms an answer may always use without data evidence. Domain
 // field names never belong here — they must come from run evidence.
@@ -136,11 +140,12 @@ func executionFailed(out any) bool {
 // The guidance is also appended to each error message, not just carried in a
 // sibling field. A model that has decided the run failed reads errors[].message
 // and summarizes it; recovery advice it never opens does not change behavior.
-func attachExecutionRecovery(out any, s *discoveryState) any {
+func attachExecutionRecovery(out any, s *discoveryState, query string) any {
 	if !executionFailed(out) {
 		return out
 	}
-	recovery := executionRecovery(s)
+	out = attachWrongDialectAggregateRepair(out, query)
+	recovery := executionRecovery(s, query)
 	directive := recoveryDirective(recovery)
 	switch res := out.(type) {
 	case executeResult:
@@ -217,12 +222,174 @@ func recoveryDirective(map[string]any) string {
 	return recoveryDirectivePrefix + " the live schema is authoritative; do not report it as broken or propose schema changes—follow recovery.next to re-discover real fields and retry in this run."
 }
 
-func executionRecovery(_ *discoveryState) map[string]any {
-	return map[string]any{
+func executionRecovery(_ *discoveryState, query string) map[string]any {
+	recovery := map[string]any{
 		"instruction": "The live schema is authoritative; do not report it as broken or propose schema changes—follow errors[].extensions.graphjin_repair and next to re-discover real fields and retry in this run.",
 		"next": catalogNext(
 			toolQueryCatalog,
 			"Inspect the real table and column details, re-author the query from returned fields, and retry in this run.",
 		),
 	}
+	if wrongDialectAggregateQuery(query) {
+		recovery["instruction"] = "GraphJin does not use <table>_aggregate roots. Select aggregate fields directly on the real table root, for example orders { count_id sum_total }, and use aggregate order_by for rankings."
+		recovery["next"] = map[string]any{
+			"tool":   toolGraphQLHelp,
+			"args":   map[string]any{"for": "query"},
+			"reason": "Open GraphJin query help, inspect the exact table detail, and retry with count_/sum_/avg_/min_/max_<column> fields on that table root.",
+		}
+	}
+	return recovery
+}
+
+func attachWrongDialectAggregateRepair(out any, query string) any {
+	if !wrongDialectAggregateQuery(query) {
+		return out
+	}
+	repair := map[string]any{
+		"kind":    "wrong_dialect_aggregate",
+		"message": "GraphJin aggregates are fields on the table selection (for example orders { count_id sum_total }); GraphJin does not expose a <table>_aggregate root.",
+		"next":    map[string]any{"tool": toolGraphQLHelp, "args": map[string]any{"for": "query"}},
+	}
+	apply := func(errors []ErrorInfo) []ErrorInfo {
+		for i := range errors {
+			if errors[i].Extensions == nil {
+				errors[i].Extensions = map[string]any{}
+			}
+			errors[i].Extensions["code"] = "wrong_dialect_aggregate"
+			errors[i].Extensions["graphjin_repair"] = repair
+		}
+		return errors
+	}
+	switch res := out.(type) {
+	case executeResult:
+		res.Errors = apply(res.Errors)
+		return res
+	case *executeResult:
+		if res != nil {
+			res.Errors = apply(res.Errors)
+		}
+		return res
+	case map[string]any:
+		for _, item := range anySlice(res["errors"]) {
+			entry := mapValue(item)
+			if entry == nil {
+				continue
+			}
+			extensions := mapValue(entry["extensions"])
+			if extensions == nil {
+				extensions = map[string]any{}
+				entry["extensions"] = extensions
+			}
+			extensions["code"] = "wrong_dialect_aggregate"
+			extensions["graphjin_repair"] = repair
+		}
+		return res
+	default:
+		return out
+	}
+}
+
+func wrongDialectAggregateQuery(query string) bool {
+	return wrongDialectAggregatePattern.MatchString(query)
+}
+
+func (s *discoveryState) pendingDatabaseComputation() string {
+	needsAggregate, needsAggregateOrder := databaseComputationIntent(s.instruction)
+	if !needsAggregate {
+		return ""
+	}
+	for _, execution := range s.executions {
+		if execution["has_data"] != true || executionErrorCount(execution["error_count"]) != 0 {
+			continue
+		}
+		if strings.EqualFold(stringFromMap(execution, "tool"), toolExecuteSavedQuery) {
+			query := s.savedQueryGraphQLFor(stringFromMap(execution, "name"))
+			hasAggregate := databaseAggregateFieldPattern.MatchString(query) || execution["database_aggregate"] == true
+			if hasAggregate && (!needsAggregateOrder || strings.Contains(strings.ToLower(query), "order_by")) {
+				return ""
+			}
+			continue
+		}
+		query := stringFromMap(execution, "query")
+		if !databaseAggregateFieldPattern.MatchString(query) {
+			continue
+		}
+		if !needsAggregateOrder || strings.Contains(strings.ToLower(query), "order_by") {
+			return ""
+		}
+	}
+	requirement := "a successful database-side aggregate field such as count_/sum_/avg_/min_/max_<column>"
+	if needsAggregateOrder {
+		requirement += " with aggregate order_by for the requested ranking"
+	}
+	return "database_computation_required: this request asks for a count, total, average, extreme, or ranking, but the run only has row-list or failed evidence. Execute " + requirement + " and answer from that result; do not calculate from fetched rows."
+}
+
+func resultContainsAggregateField(value any) bool {
+	var walk func(any, int) bool
+	walk = func(current any, depth int) bool {
+		if depth > 16 {
+			return false
+		}
+		switch typed := normalizeValue(current).(type) {
+		case map[string]any:
+			for key, item := range typed {
+				if databaseAggregateKeyPattern.MatchString(key) || walk(item, depth+1) {
+					return true
+				}
+			}
+		case []any:
+			for _, item := range typed {
+				if walk(item, depth+1) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(value, 0)
+}
+
+func executionErrorCount(value any) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case float64:
+		return int64(typed)
+	default:
+		return 0
+	}
+}
+
+func databaseComputationIntent(instruction string) (aggregate, aggregateOrder bool) {
+	lower := strings.ToLower(strings.TrimSpace(instruction))
+	if lower == "" {
+		return false, false
+	}
+	for _, phrase := range []string{"how many", "count ", "count of", "total ", "sum ", "average", " avg ", "mean ", "minimum", "maximum", "highest", "lowest", "latest", "earliest", "extreme"} {
+		if strings.Contains(" "+lower+" ", phrase) {
+			aggregate = true
+			break
+		}
+	}
+	for _, phrase := range []string{"top ", "rank", "ranking"} {
+		if strings.Contains(" "+lower+" ", phrase) {
+			aggregate = true
+			aggregateOrder = true
+			break
+		}
+	}
+	choosesGroup := strings.Contains(lower, "which ") || strings.Contains(lower, "who ")
+	if choosesGroup {
+		for _, phrase := range []string{"most ", "least ", "highest ", "lowest "} {
+			if strings.Contains(" "+lower+" ", phrase) {
+				aggregate = true
+				aggregateOrder = true
+				break
+			}
+		}
+	}
+	return aggregate, aggregateOrder
 }

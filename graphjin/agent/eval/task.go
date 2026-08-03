@@ -22,10 +22,13 @@ import (
 const (
 	TaskSchemaVersion     = "graphjin.eval.task/v1"
 	SuiteSchemaVersion    = "graphjin.eval.suite/v1"
-	EpisodeSchemaVersion  = "graphjin.eval.episode/v1"
-	ReportSchemaVersion   = "graphjin.eval.report/v1"
-	GeneratorVersion      = "graphjin.eval.generator/v1"
-	RewardVersion         = "graphjin.eval.reward/v1"
+	EpisodeSchemaVersion  = "graphjin.eval.episode/v2"
+	ReportSchemaVersion   = "graphjin.eval.report/v2"
+	LegacyReportVersion   = "graphjin.eval.report/v1"
+	RunManifestVersion    = "graphjin.eval.run/v1"
+	AttemptSchemaVersion  = "graphjin.eval.attempt/v1"
+	GeneratorVersion      = "graphjin.eval.generator/v3"
+	RewardVersion         = "graphjin.eval.reward/v2"
 	DefaultSuiteSize      = 24
 	DefaultRepeats        = 3
 	DefaultEvaluationDir  = "eval"

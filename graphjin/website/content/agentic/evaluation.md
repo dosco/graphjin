@@ -84,7 +84,7 @@ put one supported key in `./.env`:
 ```dotenv
 OPENAI_API_KEY=...
 # or ANTHROPIC_API_KEY=...
-# or GOOGLE_APIKEY=...
+# or GOOGLE_API_KEY=...
 ```
 
 Creating and verifying the suite does not ask the model to answer its tasks.
@@ -125,11 +125,12 @@ baseline exists. Immediately after `create`, seeing `Baseline: none` is normal.
 graphjin eval run --demo
 ```
 
-The traffic preview looks like this:
+The traffic preview separates work already paid for from work still authorized:
 
 ```text
-Provider traffic preview: up to <tasks × 3> provider-backed agent runs
-(<tasks> tasks x 3 repeats, excluding confirmation reruns).
+Provider traffic preview: fresh run; <initial> initial slots remain, up to
+<confirmation> confirmation slots, and at most <attempts> provider attempts
+including one transient retry per pending slot.
 ```
 
 Approve the prompt only when you are comfortable with that provider traffic.
@@ -148,6 +149,25 @@ first safe run is promoted automatically at its observed recall and becomes the
 reference for later changes. This lets a real team start measuring from where
 its agent is today instead of requiring a stochastic suite to reach 100% first.
 Recall below `0.90` produces a prominent quality warning, not a failed command.
+
+GraphJin writes a private run manifest before the first provider request and
+checkpoints it after every attempt and finalized slot. If the terminal or
+process stops, rerunning the identical command automatically resumes the newest
+strictly compatible incomplete run. Completed model failures count as finished
+slots; failed provider attempts do not.
+
+Use a particular checkpoint or deliberately start over like this:
+
+```bash
+graphjin eval run --demo --resume <run-id>
+graphjin eval run --demo --restart
+```
+
+`--resume` and `--restart` cannot be combined. `graphjin eval --demo` lists
+incomplete runs, progress, model, last update, and exact resume/restart commands.
+Compatibility is intentionally strict, so a changed suite, oracle values,
+dataset, binary/server fingerprint, provider/model, target, baseline, seed, or
+promotion intent starts a fresh run instead of silently mixing evidence.
 
 ### 5. Read the shareable report
 
@@ -169,6 +189,14 @@ the task prompts, model answers, database rows, executed queries, headers,
 token contents, or secrets. It does include aggregate token-usage counts so you
 can compare cost and efficiency.
 
+GraphJin reads usage from Ax after every agent run. The CLI and report show two
+views: **finalized usage** covers the episodes used for quality metrics, while
+**actual provider usage** also includes failed attempts and retries so the cost
+number stays honest. Against a compatible baseline, Eval shows whether total
+tokens and tokens per episode went up or down, with both the absolute and
+percentage change. Token comparisons are marked advisory when the suite,
+provider, model, or finalized episode count differs.
+
 ## Read the result without being a statistician
 
 | Metric | How to read it |
@@ -180,6 +208,7 @@ can compare cost and efficiency.
 | **Consistency** | How often the repeated runs passed, averaged across tasks. A task passing two of three runs has consistency `0.667`. |
 | **pass@3** | The fraction of tasks where at least one of the three initial runs passed. High pass@3 with lower consistency means the model can solve the task but is unreliable. |
 | **pass³** | The fraction of tasks where all three initial runs passed. This is the stricter reliability view. |
+| **Token usage** | Finalized tokens measure agent efficiency; actual provider tokens include failed attempts and retries. Tokens per episode and the baseline percentage make increases or decreases easy to spot. |
 | **Tier metrics** | The same recall, pass@3, pass³, and confidence interval split across difficulty tiers T1 through T4. |
 
 The overall reward is useful for optimization experiments, but the release gate
@@ -274,7 +303,8 @@ category.
 | `0` | Accepted | The candidate passed the applicable gates. |
 | `1` | Confirmed regression or hard gate failure | Inspect task failure categories; do not replace the baseline automatically. |
 | `2` | Invalid suite | Repair or recreate the failing oracle. No evaluated-agent run was counted as a regression. |
-| `3` | Target or environment failure | Check model credentials, target configuration, network reachability, and agent readiness. |
+| `3` | Target or environment failure | Transient provider failures retry once; then check credentials, quota, model availability, target configuration, network reachability, and agent readiness. No partial metrics or baseline promotion is produced. |
+| `130` | User interruption | The active request was cancelled, progress was checkpointed, and the printed command resumes the remaining slots. |
 
 | Failure category | What it usually means | First investigation |
 | --- | --- | --- |
@@ -286,7 +316,8 @@ category.
 | `value_mismatch` | The answer disagreed with the fresh oracle. | Compare the private episode's response with the oracle result. |
 | `behavior_mismatch` | Required discovery, tool use, skill, or response status was absent. | Inspect the expected behavior rule and action trail. |
 | `runaway` | Advisory turn, token, or latency budget was exceeded. | Look for repeated discovery or recovery loops; correctness may still pass. |
-| `transport_error` | The agent endpoint failed or returned an unusable response. | Check readiness, credentials, timeout, and target connectivity. |
+| `provider_timeout`, `provider_rate_limit`, `provider_transport`, `provider_5xx` | A retryable provider/environment failure exhausted its one retry. | Resume after the provider or network recovers; the attempt is excluded from quality metrics. |
+| `provider_auth`, `provider_quota`, `provider_model_unavailable` | The configured environment cannot run this model. | Correct the key, quota, or model before resuming; these errors do not retry. |
 
 For deeper diagnosis, rerun with `--debug`. It prints the local episode paths:
 
@@ -297,6 +328,11 @@ graphjin eval run --demo --debug
 Episodes contain the full prompt, answer, action trail, executed queries,
 oracle query and result, usage, timing, and seeds. Keep them private. Share the
 report unless someone explicitly needs the sensitive trajectory.
+
+Interrupted and environment-failed provider calls are written separately under
+`.graphjin-evals/attempts/<run-id>/`. They are private too. A partial report has
+only status, progress, provenance, usage, and a safe environment code—never
+partial recall, task verdicts, or a baseline comparison.
 
 ## Choose the right target
 
@@ -330,7 +366,8 @@ Provider-backed evaluation is intentionally explicit:
 
 - `create` uses catalog and read-only oracle traffic, not evaluated-agent runs.
 - `add` previews its expected model and oracle traffic before continuing.
-- `run`, `baseline`, and `bench` show the maximum initial agent-run count.
+- `run`, `baseline`, and `bench` show reused slots, remaining initial slots,
+  possible confirmation slots, and the retry-inclusive provider-attempt ceiling.
 - interactive commands ask before spending model traffic;
 - non-interactive commands require `--yes`.
 
@@ -341,11 +378,18 @@ Local state has owner-only permissions:
   baseline.json
   reports/<run-id>.json
   episodes/<run-id>/<task>-<repeat>.json
+  attempts/<run-id>/<task>-attempt-<number>.json
+  runs/<run-id>.json
+  locks/<run-id>.lock
 ```
 
 The baseline and reports use the sanitized report schema and are suitable for
-controlled sharing. Episode files are not. Never upload the `episodes/`
-directory as a routine CI artifact.
+controlled sharing. Episodes and attempts are private trajectories. Private
+files may contain prompts, answers, rows, and queries, but even private files
+never contain credentials: GraphJin recursively redacts provider URL keys,
+authorization values, the configured provider secret, and recognizable key
+patterns before writing. Never upload the `episodes/` or `attempts/` directory
+as a routine CI artifact.
 
 ## Add a minimal CI gate
 
@@ -369,16 +413,20 @@ test -f eval/baseline.json
 mkdir -p .graphjin-evals
 cp eval/baseline.json .graphjin-evals/baseline.json
 
-graphjin eval run --yes --json > graphjin-eval-report.json
+graphjin eval run --restart --yes --json > graphjin-eval-report.json
 ```
+
+CI uses `--restart` because each candidate gate is intentionally fresh; local
+interactive work normally benefits from automatic resumption.
 
 Configure the provider key as a CI secret. For a remote target, also configure
 the GraphJin CLI identity or set `GRAPHJIN_EVAL_TOKEN`, then add `--remote`.
 
 Upload only `graphjin-eval-report.json` or `.graphjin-evals/reports/`. Keep
-`.graphjin-evals/episodes/` private. Exit `1` should block the candidate; exits
-`2` and `3` should route to suite or infrastructure repair rather than be
-reported as model-quality regressions.
+`.graphjin-evals/episodes/` and `.graphjin-evals/attempts/` private. Exit `1`
+should block the candidate; exits `2`, `3`, and `130` should route to suite,
+infrastructure, or interrupted-job handling rather than be reported as
+model-quality regressions.
 
 ## Run the frontier benchmark
 

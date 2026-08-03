@@ -29,6 +29,7 @@ type discoveryState struct {
 	catalogKinds            map[string]bool
 	savedQueriesDiscovered  map[string]bool
 	savedQueriesDetailed    map[string]bool
+	savedQueryGraphQL       map[string]string
 	securityRuntimeEvidence bool
 	watchDefinitionMutated  bool
 	annotationMutated       bool
@@ -46,6 +47,11 @@ type discoveryState struct {
 	suggestedNext     []any
 	validations       []map[string]any
 	executions        []map[string]any
+	// A failed raw GraphQL execution must be followed by one genuinely
+	// different repair execution before the actor may terminate. Identical
+	// retries are rejected without spending another database execution.
+	pendingFailedQueryKey  string
+	repairFailureExhausted bool
 	// lastExecution retains the most recent successful execution result for
 	// one narrow recovery case: an actor that ignores that result and repeats
 	// the preceding catalog lookup. Ax's runtime is a persistent REPL, but the
@@ -165,6 +171,7 @@ func newDiscoveryState(instruction string) *discoveryState {
 		catalogKinds:           map[string]bool{},
 		savedQueriesDiscovered: map[string]bool{},
 		savedQueriesDetailed:   map[string]bool{},
+		savedQueryGraphQL:      map[string]string{},
 		detailKinds:            map[string]bool{},
 		tablesDetailed:         map[string]bool{},
 		tablesValidated:        map[string]bool{},
@@ -402,10 +409,36 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			return nil, err
 		}
 	}
+	queryKey := executionQueryKey(args)
+	if r.state.pendingFailedQueryKey != "" && queryKey == r.state.pendingFailedQueryKey {
+		out := attachExecutionRecovery(executeResult{Errors: []ErrorInfo{{
+			Message: "identical failed GraphQL query retry rejected; re-author the query from live GraphJin catalog/help evidence before executing again",
+			Extensions: map[string]any{
+				"code":      "duplicate_failed_query",
+				"retryable": true,
+				"graphjin_repair": map[string]any{
+					"kind": "distinct_query_required",
+					"next": catalogNext(toolQueryCatalog, "Inspect the real table/column detail or graphql_help({for:\"query\"}), then execute a distinct repaired query."),
+				},
+			},
+		}}}, r.state, "")
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
+	}
+	wasRepairPending := r.state.pendingFailedQueryKey != ""
 	action := r.state.startAction("model", "execute_graphql", args)
 	out, err := r.base.ExecuteGraphQL(ctx, args)
 	if err == nil && executionFailed(out) {
-		out = attachExecutionRecovery(out, r.state)
+		out = attachExecutionRecovery(out, r.state, query)
+		if wasRepairPending {
+			r.state.pendingFailedQueryKey = ""
+			r.state.repairFailureExhausted = true
+		} else if !r.state.repairFailureExhausted {
+			r.state.pendingFailedQueryKey = queryKey
+		}
+	} else if err == nil && wasRepairPending {
+		r.state.pendingFailedQueryKey = ""
 	}
 	r.state.finishAction(action, "execute_graphql", args, out, err)
 	if err == nil {
@@ -563,6 +596,16 @@ func (s *discoveryState) recordDetailEvidence(ids []string, out any) {
 			if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
 				s.workflowsDetailed[name] = true
 			}
+		case "saved_query":
+			name := savedQueryNameFromID(stringFromMap(card, "id"))
+			if name == "" {
+				name = stringFromMap(card, "name")
+			}
+			if query := strings.TrimSpace(stringFromMap(card, "graphql_query")); name != "" && query != "" {
+				for _, candidate := range savedQueryNameCandidates(name) {
+					s.savedQueryGraphQL[candidate] = query
+				}
+			}
 		}
 	}
 	for _, id := range ids {
@@ -659,8 +702,12 @@ func (s *discoveryState) recordValidation(args map[string]any, out any) {
 
 func (s *discoveryState) recordExecution(tool string, args map[string]any, out any) {
 	item := resultSummary(tool, args, out)
+	item["tool"] = tool
 	if tool == "execute_saved_query" {
 		item["name"] = stringArg(args, "name")
+	}
+	if tool == "execute_graphql" {
+		item["query"] = stringArg(args, "query")
 	}
 	s.executions = append(s.executions, item)
 	if item["has_data"] == true {
@@ -670,6 +717,30 @@ func (s *discoveryState) recordExecution(tool string, args map[string]any, out a
 			"result": normalizeValue(out),
 		}
 	}
+}
+
+func executionQueryKey(args map[string]any) string {
+	return stringify(normalizeValue(map[string]any{
+		"query":     stringArg(args, "query"),
+		"variables": args["variables"],
+	}))
+}
+
+func (s *discoveryState) pendingRequiredFinalization() string {
+	if s.pendingFailedQueryKey != "" {
+		return "execution_repair_required: the first GraphQL execution failed. Read errors[].extensions.graphjin_repair and result.recovery, then execute one distinct repaired query before finalizing; an identical retry is rejected."
+	}
+	if message := s.pendingRequiredSavedQueryExecution(); message != "" {
+		return message
+	}
+	return s.pendingDatabaseComputation()
+}
+
+func (s *discoveryState) pendingRequiredFinalizationContinuation() string {
+	if s.pendingFailedQueryKey != "" || s.pendingDatabaseComputation() != "" {
+		return ""
+	}
+	return s.pendingRequiredSavedQueryContinuation()
 }
 
 // pendingRequiredSavedQueryExecution guards explicit, ordered user requests
@@ -1253,6 +1324,7 @@ func resultSummary(tool string, args map[string]any, out any) map[string]any {
 			if data, ok := m["data"]; ok && data != nil {
 				summary["has_data"] = true
 				summary["data_shape"] = dataShape(data)
+				summary["database_aggregate"] = resultContainsAggregateField(data)
 			}
 			if errs, ok := m["errors"].([]any); ok {
 				summary["error_count"] = len(errs)
@@ -1395,6 +1467,15 @@ func (s *discoveryState) savedQueryDetailed(name string) bool {
 		}
 	}
 	return false
+}
+
+func (s *discoveryState) savedQueryGraphQLFor(name string) string {
+	for _, candidate := range savedQueryNameCandidates(name) {
+		if query := strings.TrimSpace(s.savedQueryGraphQL[candidate]); query != "" {
+			return query
+		}
+	}
+	return ""
 }
 
 func savedQueryNameCandidates(name string) []string {

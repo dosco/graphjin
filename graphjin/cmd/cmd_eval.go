@@ -3,21 +3,30 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
 	gjeval "github.com/dosco/graphjin/agent/v3/eval"
 	"github.com/spf13/cobra"
 )
+
+// Let the agent service enforce its own timeout and return a structured
+// response before the Eval transport gives up on the request.
+const evalAgentHTTPTimeout = time.Duration(demoAgentTimeoutSeconds+30) * time.Second
 
 type evalExitError struct {
 	Code int
@@ -34,11 +43,13 @@ func (e *evalExitError) Error() string {
 func (e *evalExitError) Unwrap() error { return e.Err }
 
 type evalCLIOptions struct {
-	Demo   bool
-	Remote bool
-	Yes    bool
-	JSON   bool
-	Debug  bool
+	Demo        bool
+	Remote      bool
+	Yes         bool
+	JSON        bool
+	Debug       bool
+	ResumeRunID string
+	Restart     bool
 }
 
 func evalCmd() *cobra.Command {
@@ -65,6 +76,24 @@ func evalCmd() *cobra.Command {
 	cmd.AddCommand(evalBenchCmd(opts))
 	cmd.AddCommand(evalImportCmd())
 	return cmd
+}
+
+func addEvalResumeFlags(cmd *cobra.Command, opts *evalCLIOptions) {
+	cmd.Flags().StringVar(&opts.ResumeRunID, "resume", "", "resume one compatible incomplete run by id")
+	cmd.Flags().BoolVar(&opts.Restart, "restart", false, "start a fresh run without deleting incomplete state")
+}
+
+func evalResumePolicy(opts *evalCLIOptions) (gjeval.ResumePolicy, error) {
+	if opts.Restart && strings.TrimSpace(opts.ResumeRunID) != "" {
+		return "", errors.New("--resume and --restart are mutually exclusive")
+	}
+	if opts.Restart {
+		return gjeval.ResumeFresh, nil
+	}
+	if strings.TrimSpace(opts.ResumeRunID) != "" {
+		return gjeval.ResumeExact, nil
+	}
+	return gjeval.ResumeAuto, nil
 }
 
 func evalRemoveCmd(opts *evalCLIOptions) *cobra.Command {
@@ -180,10 +209,11 @@ func evalAddCmd(opts *evalCLIOptions) *cobra.Command {
 				return evalEnvironmentError(err)
 			}
 			defer instance.Close() //nolint:errcheck
-			client := &http.Client{Timeout: 180 * time.Second}
-			if err := ensureEvalAgentReady(cmd.Context(), client, instance); err != nil {
+			status, err := ensureEvalAgentReady(cmd.Context(), &http.Client{Timeout: 30 * time.Second}, instance)
+			if err != nil {
 				return evalEnvironmentError(err)
 			}
+			client := evalAgentClient(status)
 			author := gjeval.Author{Client: client, Verifier: gjeval.Verifier{Client: client}}
 			question := args[0]
 			for attempt := 0; attempt < 2; attempt++ {
@@ -249,7 +279,7 @@ func evalRunCmd(opts *evalCLIOptions, promote bool) *cobra.Command {
 	if promote {
 		use, short = "baseline", "Run and deliberately promote a passing baseline"
 	}
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
 		Args:  cobra.NoArgs,
@@ -262,20 +292,13 @@ func evalRunCmd(opts *evalCLIOptions, promote bool) *cobra.Command {
 			if err != nil {
 				return &evalExitError{Code: 2, Err: err}
 			}
-			expected := fmt.Sprintf("up to %d provider-backed agent runs (%d tasks x %d repeats, excluding confirmation reruns)", len(suite.Tasks)*gjeval.DefaultRepeats, len(suite.Tasks), gjeval.DefaultRepeats)
-			if err := approveProviderTraffic(cmd, opts.Yes, expected); err != nil {
-				return err
-			}
-			report, store, err := executeEvalSuite(cmd.Context(), cmd, opts, projectPath, target, *suite, gjeval.RunModeRun, 23, !promote)
+			report, _, err := executeEvalSuite(cmd.Context(), cmd, opts, projectPath, target, *suite, gjeval.RunModeRun, 23, !promote, promote, 0)
 			if err != nil {
 				return err
 			}
 			if promote {
 				if !report.Acceptance.HardPass {
 					return &evalExitError{Code: 1, Err: errors.New("cannot promote a failing evaluation")}
-				}
-				if err := store.PromoteBaseline(*report); err != nil {
-					return err
 				}
 				if !opts.JSON {
 					fmt.Fprintln(cmd.OutOrStdout(), "Promoted this run as the baseline.")
@@ -284,6 +307,8 @@ func evalRunCmd(opts *evalCLIOptions, promote bool) *cobra.Command {
 			return evalReportExit(report)
 		},
 	}
+	addEvalResumeFlags(cmd, opts)
+	return cmd
 }
 
 func evalBaselineCmd(opts *evalCLIOptions) *cobra.Command { return evalRunCmd(opts, true) }
@@ -299,38 +324,59 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 			if scale <= 0 {
 				return errors.New("--scale must be positive")
 			}
-			if err := approveProviderTraffic(cmd, opts.Yes, fmt.Sprintf("up to %d provider-backed agent runs (%d generated tasks x %d repeats)", scale*gjeval.DefaultRepeats, scale, gjeval.DefaultRepeats)); err != nil {
+			policy, err := evalResumePolicy(opts)
+			if err != nil {
 				return err
 			}
 			projectPath, target, err := resolveEvalTarget(cmd, opts)
 			if err != nil {
 				return err
 			}
-			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: seed})
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: seed})
 			if err != nil {
 				return evalEnvironmentError(err)
 			}
 			defer instance.Close() //nolint:errcheck
-			client := &http.Client{Timeout: 180 * time.Second}
-			if err := ensureEvalAgentReady(cmd.Context(), client, instance); err != nil {
+			status, err := ensureEvalAgentReady(ctx, &http.Client{Timeout: 30 * time.Second}, instance)
+			if err != nil {
 				return evalEnvironmentError(err)
 			}
+			catalogClient := &http.Client{Timeout: 120 * time.Second}
 			suite, err := (gjeval.Generator{
-				Source:   gjeval.HTTPCatalogSource{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
-				Verifier: &gjeval.Verifier{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
-			}).Generate(cmd.Context(), gjeval.GeneratorOptions{Seed: seed, Scale: scale, Name: "GraphJin Frontier Benchmark"})
+				Source:   gjeval.HTTPCatalogSource{Client: catalogClient, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
+				Verifier: &gjeval.Verifier{Client: catalogClient, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
+			}).Generate(ctx, gjeval.GeneratorOptions{Seed: seed, Scale: scale, Name: "GraphJin Frontier Benchmark"})
 			if err != nil {
 				return &evalExitError{Code: 2, Err: err}
 			}
-			store := gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir))
+			store := evalStore(projectPath, status)
 			baseline, err := store.LoadBaseline()
 			if err != nil {
 				return err
 			}
-			runner := gjeval.Runner{Client: client}
-			report, err := runner.Run(cmd.Context(), *suite, instance, gjeval.RunOptions{Mode: gjeval.RunModeBenchmark, Repeats: gjeval.DefaultRepeats, Seed: seed, Provenance: evalProvenance(instance, seed), Baseline: baseline, Store: store})
+			prepared, err := (gjeval.Runner{Client: evalAgentClient(status)}).Prepare(ctx, *suite, instance, gjeval.RunOptions{
+				Mode: gjeval.RunModeBenchmark, Intent: gjeval.RunIntentBench, Repeats: gjeval.DefaultRepeats, Seed: seed,
+				Provenance: evalProvenance(instance, seed, status), Baseline: baseline, Store: store,
+				ResumePolicy: policy, ResumeRunID: opts.ResumeRunID, BinaryFingerprint: evalBinaryFingerprint(),
+				InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed),
+			})
 			if err != nil {
-				return err
+				return evalEnvironmentError(err)
+			}
+			defer prepared.Close() //nolint:errcheck
+			if preview := prepared.Preview(); preview.MaximumProviderAttempts > 0 {
+				if err := approveProviderTraffic(cmd, opts.Yes, preview.String()); err != nil {
+					return err
+				}
+			}
+			report, err := prepared.Execute(ctx)
+			if err != nil {
+				if report != nil {
+					printEvalReport(cmd, opts, report)
+				}
+				return evalExecutionError(err)
 			}
 			printEvalReport(cmd, opts, report)
 			return evalReportExit(report)
@@ -338,6 +384,7 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 	}
 	cmd.Flags().IntVar(&scale, "scale", 100, "number of verified generated benchmark tasks")
 	cmd.Flags().Int64Var(&seed, "seed", 23, "deterministic generator and rollout seed")
+	addEvalResumeFlags(cmd, opts)
 	return cmd
 }
 
@@ -367,24 +414,55 @@ func evalImportCmd() *cobra.Command {
 	return cmd
 }
 
-func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOptions, projectPath string, target gjeval.Target, suite gjeval.Suite, mode gjeval.RunMode, seed int64, autoBaseline bool) (*gjeval.Report, *gjeval.Store, error) {
+func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOptions, projectPath string, target gjeval.Target, suite gjeval.Suite, mode gjeval.RunMode, seed int64, autoBaseline, deliberatePromotion bool, scale int) (*gjeval.Report, *gjeval.Store, error) {
+	policy, err := evalResumePolicy(opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: seed})
 	if err != nil {
 		return nil, nil, evalEnvironmentError(err)
 	}
 	defer instance.Close() //nolint:errcheck
-	client := &http.Client{Timeout: 180 * time.Second}
-	if err := ensureEvalAgentReady(ctx, client, instance); err != nil {
+	status, err := ensureEvalAgentReady(ctx, &http.Client{Timeout: 30 * time.Second}, instance)
+	if err != nil {
 		return nil, nil, evalEnvironmentError(err)
 	}
-	store := gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir))
+	store := evalStore(projectPath, status)
 	baseline, err := store.LoadBaseline()
 	if err != nil {
 		return nil, nil, err
 	}
-	report, err := (gjeval.Runner{Client: client}).Run(ctx, suite, instance, gjeval.RunOptions{Mode: mode, Repeats: gjeval.DefaultRepeats, Seed: seed, Provenance: evalProvenance(instance, seed), Baseline: baseline, Store: store, AutoBaseline: autoBaseline})
+	intent := gjeval.RunIntentRun
+	if deliberatePromotion {
+		intent = gjeval.RunIntentBaseline
+	} else if mode == gjeval.RunModeBenchmark {
+		intent = gjeval.RunIntentBench
+	}
+	prepared, err := (gjeval.Runner{Client: evalAgentClient(status)}).Prepare(ctx, suite, instance, gjeval.RunOptions{
+		Mode: mode, Intent: intent, Repeats: gjeval.DefaultRepeats, Seed: seed,
+		Provenance: evalProvenance(instance, seed, status), Baseline: baseline, Store: store,
+		AutoBaseline: autoBaseline, DeliberatePromotion: deliberatePromotion,
+		ResumePolicy: policy, ResumeRunID: opts.ResumeRunID, BinaryFingerprint: evalBinaryFingerprint(),
+		InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed),
+	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, evalEnvironmentError(err)
+	}
+	defer prepared.Close() //nolint:errcheck
+	if preview := prepared.Preview(); preview.MaximumProviderAttempts > 0 {
+		if err := approveProviderTraffic(cmd, opts.Yes, preview.String()); err != nil {
+			return nil, nil, err
+		}
+	}
+	report, err := prepared.Execute(ctx)
+	if err != nil {
+		if report != nil {
+			printEvalReport(cmd, opts, report)
+		}
+		return report, store, evalExecutionError(err)
 	}
 	printEvalReport(cmd, opts, report)
 	return report, store, nil
@@ -399,7 +477,15 @@ func evalStatus(cmd *cobra.Command, opts *evalCLIOptions) error {
 	store := gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir))
 	suite, suiteErr := gjeval.LoadSuite(suitePath)
 	baseline, baselineErr := store.LoadBaseline()
+	runs, runsErr := store.ListRuns()
+	incomplete := make([]gjeval.RunManifest, 0)
+	for _, run := range runs {
+		if !run.Complete() {
+			incomplete = append(incomplete, run)
+		}
+	}
 	status := map[string]any{"suite_path": suitePath, "state_dir": store.Root, "suite_exists": suiteErr == nil, "baseline_exists": baselineErr == nil && baseline != nil}
+	status["incomplete_runs"] = incomplete
 	if suite != nil {
 		status["task_count"] = len(suite.Tasks)
 		status["catalog_fingerprint"] = suite.CatalogFingerprint
@@ -414,6 +500,9 @@ func evalStatus(cmd *cobra.Command, opts *evalCLIOptions) error {
 	if baselineErr != nil {
 		status["baseline_error"] = baselineErr.Error()
 	}
+	if runsErr != nil {
+		status["runs_error"] = runsErr.Error()
+	}
 	if opts.JSON {
 		return writeEvalJSON(cmd.OutOrStdout(), status)
 	}
@@ -427,6 +516,11 @@ func evalStatus(cmd *cobra.Command, opts *evalCLIOptions) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "Baseline: none")
 	} else {
 		fmt.Fprintf(cmd.OutOrStdout(), "Baseline: %s (recall %.3f)\n", baseline.RunID, baseline.Metrics.Recall)
+	}
+	for _, run := range incomplete {
+		fmt.Fprintf(cmd.OutOrStdout(), "Incomplete: %s (%s, %d/%d initial slots, model %s, updated %s)\n", run.RunID, run.Status, run.Progress.CompletedInitialSlots, run.Progress.PlannedInitialSlots, run.Provenance.Model, run.UpdatedAt.Format(time.RFC3339))
+		fmt.Fprintf(cmd.OutOrStdout(), "Resume: %s\n", run.ResumeCommand())
+		fmt.Fprintf(cmd.OutOrStdout(), "Restart: %s\n", run.RestartCommand())
 	}
 	return nil
 }
@@ -481,12 +575,50 @@ func approveProviderTraffic(cmd *cobra.Command, yes bool, expected string) error
 }
 
 func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Report) {
+	if report.RunStatus != "" && report.RunStatus != gjeval.RunStatusComplete {
+		if opts.JSON {
+			_ = writeEvalJSON(cmd.OutOrStdout(), gjeval.PartialReport{
+				SchemaVersion: report.SchemaVersion, RewardVersion: report.RewardVersion,
+				RunID: report.RunID, RunStatus: report.RunStatus, Mode: report.Mode,
+				GeneratedAt: time.Now().UTC(), SuiteFingerprint: report.SuiteFingerprint,
+				CatalogFingerprint: report.CatalogFingerprint, DatasetFingerprint: report.DatasetFingerprint,
+				OracleValueHash: report.OracleValueHash, Provenance: report.Provenance,
+				Progress: report.Progress, ProviderUsage: report.ProviderUsage,
+				Notice: "evaluation is incomplete; finalized quality metrics are unavailable",
+			})
+			return
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Run %s: %s (%d/%d initial slots complete; %d provider attempts).\n", report.RunID, report.RunStatus, report.Progress.CompletedInitialSlots, report.Progress.PlannedInitialSlots, report.Progress.ProviderAttempts)
+		fmt.Fprintf(cmd.OutOrStdout(), "Provider usage so far: %d tokens (%d prompt, %d completion) across %d model calls; failed attempts and retries are included.\n",
+			report.ProviderUsage.TotalTokens, report.ProviderUsage.PromptTokens, report.ProviderUsage.CompletionTokens, report.ProviderUsage.LLMCalls)
+		return
+	}
 	if opts.JSON {
 		_ = writeEvalJSON(cmd.OutOrStdout(), report)
 		return
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Run %s: recall %.3f, ground truth %.3f, method %.3f, safety %.3f\n", report.RunID, report.Metrics.Recall, report.Metrics.GroundTruthRecall, report.Metrics.MethodRecall, report.Metrics.SafetyPrecision)
 	fmt.Fprintf(cmd.OutOrStdout(), "pass@%d %.3f, pass^%d %.3f; accepted=%t\n", report.Provenance.Repeats, report.Metrics.PassAtK, report.Provenance.Repeats, report.Metrics.PassPowerK, report.Acceptance.HardPass)
+	perEpisode := 0.0
+	if report.Metrics.EpisodeCount != 0 {
+		perEpisode = float64(report.Metrics.TotalTokens) / float64(report.Metrics.EpisodeCount)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Finalized usage: %d tokens (%d prompt, %d completion) across %d model calls; %.1f tokens per episode.\n",
+		report.Metrics.TotalTokens, report.Metrics.PromptTokens, report.Metrics.CompletionTokens, report.Metrics.LLMCalls, perEpisode)
+	fmt.Fprintf(cmd.OutOrStdout(), "Actual provider usage: %d tokens across %d model calls and %d provider attempts; failed attempts and retries are included.\n",
+		report.ProviderUsage.TotalTokens, report.ProviderUsage.LLMCalls, report.Progress.ProviderAttempts)
+	if comparison := report.UsageComparison; comparison != nil {
+		if comparison.Comparable {
+			fmt.Fprintf(cmd.OutOrStdout(), "Token change vs baseline %s: finalized %+.1f%% (%+d), per episode %+.1f%% (%+.1f), actual provider %+.1f%% (%+d).\n",
+				comparison.BaselineRunID,
+				evalPercent(comparison.FinalizedTokensChangePercent), comparison.FinalizedTokensDelta,
+				evalPercent(comparison.TokensPerEpisodeChangePercent), comparison.TokensPerEpisodeDelta,
+				evalPercent(comparison.ProviderTokensChangePercent), comparison.ProviderTokensDelta,
+			)
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Token comparison vs baseline %s is advisory only: %s.\n", comparison.BaselineRunID, comparison.Reason)
+		}
+	}
 	for _, notice := range report.Acceptance.Notices {
 		fmt.Fprintf(cmd.OutOrStdout(), "Notice: %s\n", notice)
 	}
@@ -505,9 +637,19 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 	}
 }
 
+func evalPercent(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
 func evalReportExit(report *gjeval.Report) error {
 	if !report.Acceptance.SuiteValid {
 		return &evalExitError{Code: 2, Err: errors.New("evaluation suite is invalid")}
+	}
+	if report.Acceptance.EnvironmentFailure {
+		return evalEnvironmentError(errors.New("evaluation environment failed during provider-backed execution"))
 	}
 	if !report.Acceptance.HardPass {
 		return &evalExitError{Code: 1, Err: errors.New("evaluation gate failed")}
@@ -517,47 +659,107 @@ func evalReportExit(report *gjeval.Report) error {
 
 func evalEnvironmentError(err error) error { return &evalExitError{Code: 3, Err: err} }
 
-func ensureEvalAgentReady(ctx context.Context, client *http.Client, instance gjeval.Instance) error {
+func evalExecutionError(err error) error {
+	if errors.Is(err, gjeval.ErrRunInterrupted) {
+		return &evalExitError{Code: 130, Err: err}
+	}
+	return err
+}
+
+func ensureEvalAgentReady(ctx context.Context, client *http.Client, instance gjeval.Instance) (gjeval.AgentStatus, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(instance.BaseURL()), "/")
 	for _, suffix := range []string{"/api/v1/agent/status", "/api/v1/agent", "/api/v1/graphql"} {
 		baseURL = strings.TrimSuffix(baseURL, suffix)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/v1/agent/status", nil)
 	if err != nil {
-		return err
+		return gjeval.AgentStatus{}, err
 	}
 	for key, value := range instance.Headers() {
 		request.Header.Set(key, value)
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("read agent status: %w", err)
+		return gjeval.AgentStatus{}, fmt.Errorf("read agent status: %w", err)
 	}
 	defer response.Body.Close()
 	var status gjeval.AgentStatus
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("agent status returned HTTP %d", response.StatusCode)
+		return gjeval.AgentStatus{}, fmt.Errorf("agent status returned HTTP %d", response.StatusCode)
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&status); err != nil {
-		return fmt.Errorf("decode agent status: %w", err)
+		return gjeval.AgentStatus{}, fmt.Errorf("decode agent status: %w", err)
 	}
 	if !status.Enabled || !status.Ready {
 		message := strings.TrimSpace(status.Message)
 		if message == "" {
 			message = "agent is disabled or its model credentials are unavailable"
 		}
-		return errors.New(message)
+		return status, errors.New(message)
 	}
-	return nil
+	return status, nil
+}
+
+func evalAgentClient(status gjeval.AgentStatus) *http.Client {
+	timeout := evalAgentHTTPTimeout
+	if status.TimeoutSeconds > 0 {
+		timeout = time.Duration(status.TimeoutSeconds+30) * time.Second
+	}
+	return &http.Client{Timeout: timeout}
+}
+
+func evalStore(projectPath string, status gjeval.AgentStatus) *gjeval.Store {
+	apiKeyEnv := strings.TrimSpace(status.APIKeyEnv)
+	if apiKeyEnv == "" {
+		apiKeyEnv = strings.TrimSpace(os.Getenv("GJ_AGENT_API_KEY_ENV"))
+	}
+	return gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir)).WithSecrets(os.Getenv(apiKeyEnv))
+}
+
+func evalBinaryFingerprint() string {
+	path, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func evalInvocationArgs(opts *evalCLIOptions, projectPath string, scale int, seed int64) []string {
+	args := make([]string, 0, 10)
+	if opts.Demo {
+		args = append(args, "--demo")
+	}
+	if opts.Remote {
+		args = append(args, "--remote")
+	}
+	args = append(args, "--path", strconv.Quote(projectPath))
+	if scale > 0 {
+		args = append(args, "--scale", strconv.Itoa(scale), "--seed", strconv.FormatInt(seed, 10))
+	}
+	if opts.JSON {
+		args = append(args, "--json")
+	}
+	if opts.Debug {
+		args = append(args, "--debug")
+	}
+	return args
 }
 
 func evalSuitePath(projectPath string) string {
 	return filepath.Join(projectPath, gjeval.DefaultEvaluationDir, gjeval.DefaultSuiteFilename)
 }
 
-func evalProvenance(instance gjeval.Instance, seed int64) gjeval.RunProvenance {
+func evalProvenance(instance gjeval.Instance, seed int64, status gjeval.AgentStatus) gjeval.RunProvenance {
 	return gjeval.RunProvenance{
-		Model:              os.Getenv("GJ_AGENT_MODEL"),
+		Provider:           status.Provider,
+		Model:              status.Model,
+		APIKeyEnv:          status.APIKeyEnv,
+		ServerFingerprint:  status.EvalFingerprint,
 		AxVersion:          evalAxVersion(),
 		GraphJinCommit:     commit,
 		PromptRegistryHash: evalPromptRegistryHash(),

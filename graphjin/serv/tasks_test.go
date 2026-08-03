@@ -120,6 +120,11 @@ func TestTaskControlPlaneLifecycleScopeAndTrail(t *testing.T) {
 
 func TestTaskAgentTrailDedupesAndWarmStarts(t *testing.T) {
 	svc, cp := newSQLiteTaskService(t, 5, 20)
+	const secretEnv = "GRAPHJIN_TASK_TRAIL_PROVIDER_SECRET"
+	const secret = "AIza-task-canary-secret-1234567890"
+	t.Setenv(secretEnv, secret)
+	svc.conf.Agent.Provider = "google-gemini"
+	svc.conf.Agent.APIKeyEnv = secretEnv
 	ctx := artifactUserCtx("user_1")
 	task := insertTaskForTest(t, cp, ctx, "Explain the weekly order backlog")
 	taskID := fmt.Sprint(task["id"])
@@ -140,6 +145,18 @@ func TestTaskAgentTrailDedupesAndWarmStarts(t *testing.T) {
 	rows, err := svc.internalStoreAllRows(ctx, "task_entries", `where: { task_id: { eq: $task_id }, trace_id: { eq: $trace_id } }`, taskEntryStoreFields, map[string]any{"task_id": taskID, "trace_id": resp.TraceID})
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("agent trail trace dedupe rows=%d err=%v: %+v", len(rows), err, rows)
+	}
+	leaky := gjagent.Response{Status: gjagent.StatusError, TraceID: "trace-secret", Errors: []gjagent.ErrorInfo{{Message: "Authorization: Bearer " + secret, Extensions: map[string]any{"code": gjagent.ErrorCodeProviderTimeout, "retryable": true}}}, Actions: []any{map[string]any{"error": "https://provider.test/generate?key=" + secret}}}
+	svc.appendTaskTrailEntry(ctx, gjagent.Request{TaskID: taskID}, leaky, time.Millisecond, fmt.Errorf("provider request failed with %s", secret))
+	secretRows, err := svc.internalStoreAllRows(ctx, "task_entries", `where: { task_id: { eq: $task_id }, trace_id: { eq: $trace_id } }`, taskEntryStoreFields, map[string]any{"task_id": taskID, "trace_id": leaky.TraceID})
+	if err != nil || len(secretRows) != 1 {
+		t.Fatalf("secret trail rows=%d err=%v", len(secretRows), err)
+	}
+	if strings.Contains(fmt.Sprint(secretRows[0]), secret) {
+		t.Fatalf("task trail leaked provider credential: %+v", secretRows[0])
+	}
+	if !strings.Contains(fmt.Sprint(secretRows[0]), gjagent.ErrorCodeProviderTimeout) {
+		t.Fatalf("task trail lost stable provider code: %+v", secretRows[0])
 	}
 
 	req := gjagent.Request{

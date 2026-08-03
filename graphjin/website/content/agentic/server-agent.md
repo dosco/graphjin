@@ -15,7 +15,7 @@ It is enabled by default in `dev` and `agentic` modes. Use it when you want Grap
 The coffee-roastery demo ships with data, workflows, source code, and the agent wired up:
 
 ```bash
-# with OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_APIKEY in ./.env the demo
+# with OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY in ./.env the demo
 # switches into agentic mode and enables the built-in agent automatically
 graphjin serve --demo --path examples/coffee-roastery
 ```
@@ -119,7 +119,7 @@ For standing requests, the watch skills apply the two-axis decision in [Choosing
 
 Request fields: `instruction` (required), and optional `context`, `namespace`, `task_id`, `max_steps`, `return_trace`. A retained open or verifying [declared task](/agentic/tasks/) warm-starts the request and journals its result; it never grants access or satisfies evidence guards.
 
-Response fields: `status` (`answered` | `needs_clarification` | `blocked` | `error`), `answer`, and optional `skills`, `skill`, `data`, `evidence`, `actions`, `next`, `refusal`, `notices`, `errors`, `usage`, `trace`, `trace_id`. `skills` contains the guides Ax reported through `used(...)`; deprecated `skill` is the first used ID through v3.
+Response fields: `status` (`answered` | `needs_clarification` | `blocked` | `error`), `answer`, and optional `skills`, `skill`, `data`, `evidence`, `actions`, `next`, `refusal`, `notices`, `errors`, `usage`, `trace`, `trace_id`. `skills` contains the guides Ax reported through `used(...)`; deprecated `skill` is the first used ID through v3. `usage` is derived from Ax `GetUsage()` plus its merged stage chat logs and includes provider-neutral prompt, completion, total-token, and model-call counts when the provider reports them. GraphJin also writes those aggregate counts to the structured `GraphJin agent usage` log and agent trace attributes; prompts and answers are never added to that usage log.
 
 ### REST
 

@@ -5,9 +5,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/subosito/gotenv"
 )
+
+const demoAgentTimeoutSeconds = 300
 
 func loadDemoEnv(configPath string, out io.Writer) error {
 	paths := []string{".env", filepath.Join(configPath, ".env")}
@@ -80,7 +83,7 @@ func applyDemoAgentEnvDefaults(out io.Writer) {
 	if _, ok := os.LookupEnv("GJ_AGENT_TIMEOUT_SECONDS"); !ok {
 		// Generous cap: client-sampled runs add an MCP round trip per model call,
 		// and reasoning models spend longer per call.
-		_ = os.Setenv("GJ_AGENT_TIMEOUT_SECONDS", "300")
+		_ = os.Setenv("GJ_AGENT_TIMEOUT_SECONDS", strconv.Itoa(demoAgentTimeoutSeconds))
 		changed = true
 	}
 	if changed && out != nil {

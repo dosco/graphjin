@@ -15,7 +15,11 @@ import (
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/server"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type scriptedAgentRunner struct {
@@ -184,6 +188,9 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if !readyStatus.ReadOnly || !readyStatus.ReturnTrace {
 		t.Fatalf("agent flags not reflected in status: %+v", readyStatus)
 	}
+	if readyStatus.EvalFingerprint == "" || strings.Contains(rec.Body.String(), "test-secret") {
+		t.Fatalf("status fingerprint missing or secret leaked: %+v body=%s", readyStatus, rec.Body.String())
+	}
 }
 
 func TestAgentStatusMethodNotAllowed(t *testing.T) {
@@ -206,11 +213,13 @@ func TestAgentRESTScriptedResponseAndAuthContext(t *testing.T) {
 		Data:     map[string]any{"count": 2},
 		Evidence: map[string]any{"source": "catalog"},
 		Actions:  []any{map[string]any{"tool": "query_catalog", "source": "model"}},
+		Usage:    map[string]any{"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17, "llm_calls": 2},
 		TraceID:  "trace-1",
 	}}
 	withScriptedAgentRunner(t, runner)
 
-	logger := zap.NewNop()
+	logCore, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(logCore)
 	svc := &graphjinService{
 		conf: &Config{
 			Core: core.Config{Sources: []core.SourceConfig{{Name: "graphjin", Kind: "database", Type: "sqlite"}}},
@@ -253,6 +262,10 @@ func TestAgentRESTScriptedResponseAndAuthContext(t *testing.T) {
 	}
 	if got := runner.ctx.Value(core.UserIDKey); got != "user-1" {
 		t.Fatalf("auth context user_id = %v, want user-1", got)
+	}
+	usageLogs := observed.FilterMessage("GraphJin agent usage").All()
+	if len(usageLogs) != 1 || usageLogs[0].ContextMap()["total_tokens"] != int64(17) {
+		t.Fatalf("REST usage log = %+v", usageLogs)
 	}
 }
 
@@ -605,6 +618,57 @@ func TestAgentRESTNamespaceRouteWins(t *testing.T) {
 	}
 }
 
+func TestAgentProviderFailureRedactedAcrossRESTSSEAndMCP(t *testing.T) {
+	const keyEnv = "GRAPHJIN_TEST_PROVIDER_SECRET"
+	const secret = "AIza-canary-secret-value-1234567890"
+	t.Setenv(keyEnv, secret)
+	rawErr := fmt.Errorf("Post https://provider.test/generate?key=%s: context deadline exceeded", secret)
+	newService := func() (*HttpService, *scriptedAgentRunner) {
+		runner := &scriptedAgentRunner{
+			err:  rawErr,
+			emit: []gjagent.ActionEvent{{Tool: "execute_graphql", Status: "error", Error: "Authorization: Bearer " + secret}},
+		}
+		withScriptedAgentRunner(t, runner)
+		hs := newAgentHTTPTestService(&Config{Serv: Serv{Agent: AgentConfig{
+			Enabled: true, Provider: "google-gemini", Model: "gemini-test", APIKeyEnv: keyEnv,
+		}}})
+		return hs, runner
+	}
+
+	for _, accept := range []string{"application/json", "text/event-stream"} {
+		t.Run(accept, func(t *testing.T) {
+			hs, _ := newService()
+			req := httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{"instruction":"test provider failure"}`))
+			req.Header.Set("Accept", accept)
+			rec := httptest.NewRecorder()
+			hs.Agent(nil).ServeHTTP(rec, req)
+			body := rec.Body.String()
+			if strings.Contains(body, secret) {
+				t.Fatalf("%s response leaked provider credentials: %s", accept, body)
+			}
+			if !strings.Contains(body, gjagent.ErrorCodeProviderTimeout) {
+				t.Fatalf("%s response omitted structured timeout: %s", accept, body)
+			}
+		})
+	}
+
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.service.conf.Agent.Enabled = true
+	ms.service.conf.Agent.Provider = "google-gemini"
+	ms.service.conf.Agent.Model = "gemini-test"
+	ms.service.conf.Agent.APIKeyEnv = keyEnv
+	runner := &scriptedAgentRunner{err: rawErr}
+	withScriptedAgentRunner(t, runner)
+	res, err := ms.handleAskGraphJinAgent(context.Background(), newToolRequest(map[string]any{"instruction": "test provider failure"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(res)
+	if strings.Contains(string(data), secret) || !strings.Contains(string(data), "did not respond") || !strings.Contains(string(data), gjagent.ErrorCodeProviderTimeout) {
+		t.Fatalf("MCP error was not safely redacted: %s", data)
+	}
+}
+
 func TestAgentRESTSSEStreamsActionsAndResult(t *testing.T) {
 	runner := &scriptedAgentRunner{
 		resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "streamed", Skill: "data_discovery"},
@@ -687,11 +751,14 @@ func TestAgentAuditHelpers(t *testing.T) {
 		t.Fatalf("violation codes = %v", codes)
 	}
 
+	const auditSecretEnv = "GRAPHJIN_AUDIT_PROVIDER_SECRET"
+	const auditSecret = "AIza-audit-canary-secret-1234567890"
+	t.Setenv(auditSecretEnv, auditSecret)
 	store := newMemoryRuntimeEventStore(runtimeEventOptions{
 		MaxEvents: 4,
 		Now:       func() time.Time { return time.Unix(10, 0) },
 	})
-	svc := &graphjinService{conf: &Config{}, runtimeEvents: store}
+	svc := &graphjinService{conf: &Config{Serv: Serv{Agent: AgentConfig{Provider: "google-gemini", APIKeyEnv: auditSecretEnv}}}, runtimeEvents: store}
 	recordAgentRuntimeEvent(svc, context.Background(), gjagent.Request{Instruction: "run saved query", TaskID: "task:audit"}, gjagent.Response{
 		Status:  gjagent.StatusBlocked,
 		Refusal: &gjagent.Refusal{Code: "saved_query_detail_required"},
@@ -718,6 +785,19 @@ func TestAgentAuditHelpers(t *testing.T) {
 	skills, _ := details["skills"].([]any)
 	if len(skills) != 2 || details["skill"] != "workflow_read" {
 		t.Fatalf("skill telemetry missing from runtime event details: %+v", details)
+	}
+	providerErr := fmt.Errorf("Post https://provider.test/generate?key=%s: context deadline exceeded", auditSecret)
+	info := gjagent.PublicErrorInfo(providerErr, "google-gemini", "gemini-test", auditSecret)
+	recordAgentRuntimeEvent(svc, context.Background(), gjagent.Request{}, gjagent.Response{Status: gjagent.StatusError, Errors: []gjagent.ErrorInfo{info}}, taskWarmStart{}, time.Millisecond, providerErr)
+	sawProviderCode := false
+	for _, row := range store.Rows(context.Background(), runtimeStatus{}) {
+		if strings.Contains(fmt.Sprint(row), auditSecret) {
+			t.Fatalf("runtime event leaked provider credential: %+v", row)
+		}
+		sawProviderCode = sawProviderCode || fmt.Sprint(row["error_code"]) == gjagent.ErrorCodeProviderTimeout
+	}
+	if !sawProviderCode {
+		t.Fatal("runtime telemetry lost the stable provider timeout code")
 	}
 }
 
@@ -783,5 +863,54 @@ func TestAgentProgressMessage(t *testing.T) {
 	})
 	if msg != "query_catalog(id=table:db:public.products) ok — 1 cards" {
 		t.Fatalf("progress message = %q", msg)
+	}
+	secret := "AIza-progress-canary-secret-1234567890"
+	msg = agentProgressMessage(gjagent.ActionEvent{Tool: "execute_graphql", Status: "error", Error: "https://provider.test/generate?key=" + secret}, secret)
+	if strings.Contains(msg, secret) || !strings.Contains(msg, "[REDACTED]") {
+		t.Fatalf("progress message leaked provider credential: %q", msg)
+	}
+}
+
+func TestRecordAgentUsageObservabilityLogsStableTokenFields(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+	service := &graphjinService{log: logger.Sugar()}
+	spans := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans))
+	_, span := provider.Tracer("test").Start(context.Background(), "agent usage")
+	recordAgentUsageObservability(service, span, "rest", gjagent.Config{Provider: "google-gemini", Model: "gemini-test"}, gjagent.Response{
+		Status: gjagent.StatusAnswered,
+		Usage: map[string]any{
+			"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17, "llm_calls": 2,
+		},
+	}, 250*time.Millisecond)
+	span.End()
+
+	entries := logs.All()
+	if len(entries) != 1 || entries[0].Message != "GraphJin agent usage" {
+		t.Fatalf("usage logs = %+v", entries)
+	}
+	fields := entries[0].ContextMap()
+	for key, want := range map[string]any{
+		"surface": "rest", "provider": "google-gemini", "model": "gemini-test",
+		"prompt_tokens": int64(12), "completion_tokens": int64(5), "total_tokens": int64(17),
+		"llm_calls": int64(2), "duration_ms": int64(250),
+	} {
+		if got := fields[key]; got != want {
+			t.Fatalf("%s = %#v, want %#v; fields=%+v", key, got, want, fields)
+		}
+	}
+	ended := spans.Ended()
+	if len(ended) != 1 {
+		t.Fatalf("ended spans = %d", len(ended))
+	}
+	attributes := map[string]int64{}
+	for _, field := range ended[0].Attributes() {
+		if field.Value.Type() == attribute.INT64 {
+			attributes[string(field.Key)] = field.Value.AsInt64()
+		}
+	}
+	if attributes["agent.total_tokens"] != 17 || attributes["agent.llm_calls"] != 2 {
+		t.Fatalf("usage span attributes = %+v", attributes)
 	}
 }
