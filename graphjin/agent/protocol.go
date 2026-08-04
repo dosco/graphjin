@@ -80,7 +80,12 @@ type discoveryState struct {
 	// One empty lexical/coverage search is allowed and returned with concrete
 	// recovery guidance. A second blind search is rejected before dispatch so
 	// the actor must consume known ids or enumerate the catalog by kind.
-	emptySearchStreak  int
+	emptySearchStreak int
+	// One unresolved id-detail lookup is likewise allowed with concrete known-id
+	// guidance. A second unknown guess is rejected before dispatch. A detail id
+	// already surfaced by this run remains eligible for lookup so following the
+	// recovery guidance can resolve and reset the streak.
+	emptyDetailStreak  int
 	capabilities       *CapabilityProfile
 	observe            func(ActionEvent)
 	coverageSearchUsed bool
@@ -252,10 +257,18 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 	}
 	r.addNamespace(args)
 	searchRequest := isCatalogSearchRequest(args)
+	detailIDs := detailIDsFromArgs(args)
 	requestKey := stringify(normalizeValue(args))
 	if searchRequest && r.state.emptySearchStreak > 0 {
 		r.state.emptySearchStreak++
 		out := r.state.emptySearchExhaustedResult()
+		action := r.state.startAction("model", "query_catalog", args)
+		r.state.finishAction(action, "query_catalog", args, out, nil)
+		return out, nil
+	}
+	if len(detailIDs) != 0 && r.state.emptyDetailStreak > 0 && !r.state.hasKnownCatalogID(detailIDs) {
+		r.state.emptyDetailStreak++
+		out := r.state.emptyDetailExhaustedResult(detailIDs)
 		action := r.state.startAction("model", "query_catalog", args)
 		r.state.finishAction(action, "query_catalog", args, out, nil)
 		return out, nil
@@ -292,11 +305,25 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 		r.state.recordCatalog(args, out, false)
 		if len(catalogCards(out)) != 0 {
 			r.state.emptySearchStreak = 0
+			if len(detailIDs) == 0 {
+				r.state.emptyDetailStreak = 0
+			}
 		} else if searchRequest {
 			r.state.emptySearchStreak = 1
 			out = attachEmptySearchRecovery(out, r.state.emptySearchNext(
 				"No catalog cards matched. Drop search filters and inspect a known id, or enumerate tables with query_catalog({kind:\"table\"}) instead of trying another blind search.",
 			))
+		}
+		if len(detailIDs) != 0 {
+			returned := returnedCatalogDetailIDs(detailIDs, out)
+			if len(returned) != 0 {
+				r.state.emptyDetailStreak = 0
+			} else {
+				r.state.emptyDetailStreak = 1
+				out = attachEmptyDetailRecovery(out, detailIDs, r.state.emptyDetailNext(
+					"The requested catalog id was not returned. Inspect a known id or enumerate tables by kind before trying another detail lookup.",
+				))
+			}
 		}
 	}
 	r.state.finishAction(action, "query_catalog", args, out, err)
@@ -326,6 +353,25 @@ func attachEmptySearchRecovery(out any, next map[string]any) any {
 	return result
 }
 
+func attachEmptyDetailRecovery(out any, missedIDs []string, next map[string]any) any {
+	result := cloneAnyMap(mapValue(out))
+	if len(catalogCards(result)) == 0 {
+		result["cards"] = []any{}
+	}
+	recovery := map[string]any{
+		"kind":        "empty_detail",
+		"instruction": "The requested catalog detail was not found. Use a known catalog id from this run or enumerate tables by kind instead of guessing another id.",
+		"missed_ids":  append([]string(nil), missedIDs...),
+		"known_ids":   next["known_ids"],
+		"next":        next,
+	}
+	if len(missedIDs) == 1 {
+		recovery["missed_id"] = missedIDs[0]
+	}
+	result["recovery"] = recovery
+	return result
+}
+
 func (s *discoveryState) emptySearchExhaustedResult() executeResult {
 	next := s.emptySearchNext("A prior catalog search already returned no cards. Enumerate tables by kind or inspect a known id before searching again.")
 	return executeResult{
@@ -350,6 +396,40 @@ func (s *discoveryState) emptySearchExhaustedResult() executeResult {
 	}
 }
 
+func (s *discoveryState) emptyDetailExhaustedResult(missedIDs []string) executeResult {
+	next := s.emptyDetailNext("A prior catalog detail lookup returned no matching card. Inspect a known id or enumerate tables by kind before trying another detail lookup.")
+	repair := map[string]any{
+		"kind":       "empty_detail_exhausted",
+		"missed_ids": append([]string(nil), missedIDs...),
+		"known_ids":  next["known_ids"],
+		"next":       next,
+	}
+	if len(missedIDs) == 1 {
+		repair["missed_id"] = missedIDs[0]
+	}
+	recovery := map[string]any{
+		"kind":        "empty_detail_exhausted",
+		"instruction": "Do not guess another catalog id. Inspect one of the known ids or enumerate tables by kind.",
+		"missed_ids":  repair["missed_ids"],
+		"known_ids":   next["known_ids"],
+		"next":        next,
+	}
+	if len(missedIDs) == 1 {
+		recovery["missed_id"] = missedIDs[0]
+	}
+	return executeResult{
+		Errors: []ErrorInfo{{
+			Message: "consecutive empty catalog detail lookup rejected; stop guessing ids and use a known catalog id or enumerate tables by kind",
+			Extensions: map[string]any{
+				"code":            "empty_detail_exhausted",
+				"retryable":       true,
+				"graphjin_repair": repair,
+			},
+		}},
+		Recovery: recovery,
+	}
+}
+
 func (s *discoveryState) emptySearchNext(reason string) map[string]any {
 	knownIDs := s.knownCatalogIDs(emptySearchKnownIDLimit)
 	return map[string]any{
@@ -358,6 +438,27 @@ func (s *discoveryState) emptySearchNext(reason string) map[string]any {
 		"reason":           reason,
 		"known_ids":        knownIDs,
 	}
+}
+
+func (s *discoveryState) emptyDetailNext(reason string) map[string]any {
+	return s.emptySearchNext(reason)
+}
+
+func (s *discoveryState) hasKnownCatalogID(ids []string) bool {
+	if s == nil {
+		return false
+	}
+	for _, id := range ids {
+		if s.catalogIDs[id] {
+			return true
+		}
+		for knownID := range s.catalogIDs {
+			if strings.EqualFold(strings.TrimSpace(id), strings.TrimSpace(knownID)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *discoveryState) knownCatalogIDs(limit int) []string {
@@ -469,6 +570,7 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		r.state.cacheSuccessfulExecution(executionKey, out)
 		if !executionFailed(out) {
 			r.state.emptySearchStreak = 0
+			r.state.emptyDetailStreak = 0
 		}
 		// A rejected out-of-order attempt is recoverable inside the same actor
 		// run. Once the model has inspected the exact detail and the governed
@@ -594,6 +696,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		r.state.cacheSuccessfulExecution(queryKey, out)
 		if !executionFailed(out) {
 			r.state.emptySearchStreak = 0
+			r.state.emptyDetailStreak = 0
 			r.state.resolveRawGraphQLDiscoveryViolations()
 		}
 		if isWatchDefinitionMutation(query) {
@@ -1030,6 +1133,7 @@ func (s *discoveryState) selectCachedExecution(tool string, args map[string]any,
 		return
 	}
 	s.emptySearchStreak = 0
+	s.emptyDetailStreak = 0
 	s.lastExecution = map[string]any{
 		"tool":   tool,
 		"args":   redactArgs(args),
