@@ -509,6 +509,21 @@ func OptionSetRuntimeSchemaDDLDir(dir string) Option {
 	}
 }
 
+// OptionDisableQueryLearning suppresses dev-mode named-query and fragment
+// auto-save for this embedded service instance. Existing saved queries remain
+// discoverable and executable. This is intended for deterministic evaluation
+// and other read-only harnesses whose catalog must not mutate while measured.
+func OptionDisableQueryLearning() Option {
+	return func(s *graphjinService) error {
+		s.coreOptions = append(s.coreOptions, core.OptionSetSavedQuerySaveHook(
+			func(context.Context, core.SavedQuerySaveRequest) (bool, error) {
+				return true, nil
+			},
+		))
+		return nil
+	}
+}
+
 // OptionSetZapLogger sets service structured logger
 func OptionSetZapLogger(zlog *zap.Logger) Option {
 	return func(s *graphjinService) error {

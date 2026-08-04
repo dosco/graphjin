@@ -77,6 +77,28 @@ func TestEvalEmbeddedSQLiteMockPipeline(t *testing.T) {
 	if len(snapshot.Profiles) != 1 || len(snapshot.Profiles[0].AvailableSystemRoots) == 0 {
 		t.Fatalf("agent status did not expose the caller capability profile: %+v", snapshot.Profiles)
 	}
+	if snapshot.Status.MaxSteps != 8 {
+		t.Fatalf("embedded eval agent max steps = %d, want 8", snapshot.Status.MaxSteps)
+	}
+	namedRead := gjeval.OracleSpec{
+		Query:   `query EvalNamedReadMustNotPersist { subscriptions(limit: 1) { id } }`,
+		Extract: "subscriptions.0.id",
+	}
+	if _, err := verifier.Resolve(context.Background(), namedRead); err != nil {
+		t.Fatalf("execute named eval read: %v", err)
+	}
+	afterNamedRead, err := source.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterNamedRead.Fingerprint != snapshot.Fingerprint {
+		t.Fatalf("named eval read changed catalog fingerprint: before=%s after=%s", snapshot.Fingerprint, afterNamedRead.Fingerprint)
+	}
+	for _, row := range afterNamedRead.Rows {
+		if row.Kind == "saved_query" && row.Name == "EvalNamedReadMustNotPersist" {
+			t.Fatalf("named eval read persisted as saved query: %+v", row)
+		}
+	}
 	generator := gjeval.Generator{
 		Source:   source,
 		Verifier: verifier,

@@ -78,6 +78,13 @@ func (s1 *HttpService) apiV1ConsoleBootstrap(ns *string) http.Handler {
 				Capabilities: consoleWorkspaceCapabilities(roots, features, "admin"),
 			})
 		}
+		if consoleAdminWorkspaceAvailable(roots, features) && evalReportsDirectoryAvailable(s.conf) {
+			workspaces = append(workspaces, consoleBootstrapWorkspace{
+				ID:           "trainer",
+				DefaultPath:  "/trainer/reports",
+				Capabilities: []string{evalReportsCapability},
+			})
+		}
 
 		identity := consoleBootstrapIdentity{
 			Role:          role,

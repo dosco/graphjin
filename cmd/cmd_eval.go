@@ -74,6 +74,8 @@ func evalCmd() *cobra.Command {
 	cmd.AddCommand(evalRunCmd(opts, false))
 	cmd.AddCommand(evalBaselineCmd(opts))
 	cmd.AddCommand(evalBenchCmd(opts))
+	cmd.AddCommand(evalPublishCmd(opts))
+	cmd.AddCommand(evalFreezeSuiteCmd(opts))
 	cmd.AddCommand(evalImportCmd())
 	return cmd
 }
@@ -316,11 +318,23 @@ func evalBaselineCmd(opts *evalCLIOptions) *cobra.Command { return evalRunCmd(op
 func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 	var scale int
 	var seed int64
+	var public bool
 	cmd := &cobra.Command{
 		Use:   "bench",
 		Short: "Generate and run the extended stratified benchmark distribution",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if public {
+				spec := gjeval.PublicBenchmark()
+				if opts.Remote {
+					return errors.New("--public cannot be combined with --remote; the public benchmark runs against the pinned demo")
+				}
+				if cmd.Flags().Changed("scale") || cmd.Flags().Changed("seed") {
+					return fmt.Errorf("--public pins --scale=%d and --seed=%d; remove the scale and seed overrides", spec.Scale, spec.Seed)
+				}
+				scale, seed = spec.Scale, spec.Seed
+				opts.Demo = true
+			}
 			if scale <= 0 {
 				return errors.New("--scale must be positive")
 			}
@@ -344,10 +358,15 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 				return evalEnvironmentError(err)
 			}
 			catalogClient := &http.Client{Timeout: 120 * time.Second}
-			suite, err := (gjeval.Generator{
-				Source:   gjeval.HTTPCatalogSource{Client: catalogClient, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
-				Verifier: &gjeval.Verifier{Client: catalogClient, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
-			}).Generate(ctx, gjeval.GeneratorOptions{Seed: seed, Scale: scale, Name: "GraphJin Frontier Benchmark"})
+			var suite *gjeval.Suite
+			if public {
+				suite, err = loadPublicEvalSuite()
+			} else {
+				suite, err = (gjeval.Generator{
+					Source:   gjeval.HTTPCatalogSource{Client: catalogClient, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
+					Verifier: &gjeval.Verifier{Client: catalogClient, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
+				}).Generate(ctx, gjeval.GeneratorOptions{Seed: seed, Scale: scale, Name: "GraphJin Frontier Benchmark"})
+			}
 			if err != nil {
 				return &evalExitError{Code: 2, Err: err}
 			}
@@ -384,7 +403,52 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 	}
 	cmd.Flags().IntVar(&scale, "scale", 100, "number of verified generated benchmark tasks")
 	cmd.Flags().Int64Var(&seed, "seed", 23, "deterministic generator and rollout seed")
+	cmd.Flags().BoolVar(&public, "public", false, "run the frozen, reproducible public benchmark suite")
 	addEvalResumeFlags(cmd, opts)
+	return cmd
+}
+
+func evalFreezeSuiteCmd(opts *evalCLIOptions) *cobra.Command {
+	var output string
+	cmd := &cobra.Command{
+		Use:    "freeze-suite",
+		Short:  "Regenerate the frozen public benchmark suite",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if opts.Remote {
+				return errors.New("freeze-suite cannot use --remote")
+			}
+			spec := gjeval.PublicBenchmark()
+			opts.Demo = true
+			projectPath, target, err := resolveEvalTarget(cmd, opts)
+			if err != nil {
+				return err
+			}
+			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: spec.Seed})
+			if err != nil {
+				return evalEnvironmentError(err)
+			}
+			defer instance.Close() //nolint:errcheck
+			client := &http.Client{Timeout: 120 * time.Second}
+			suite, err := (gjeval.Generator{
+				Source:   gjeval.HTTPCatalogSource{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
+				Verifier: &gjeval.Verifier{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
+			}).Generate(cmd.Context(), gjeval.GeneratorOptions{Seed: spec.Seed, Scale: spec.Scale, Name: "GraphJin Public Benchmark " + spec.Generation})
+			if err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+			if err := gjeval.SaveSuite(output, *suite); err != nil {
+				return err
+			}
+			if err := os.Chmod(output, 0o644); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Froze %d public benchmark tasks to %s (suite fingerprint %s).\n", len(suite.Tasks), output, gjeval.SuiteFingerprint(*suite))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&output, "out", "cmd/benchmark/public-suite.json", "output path for the committed public suite")
 	return cmd
 }
 
@@ -578,7 +642,7 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 	if report.RunStatus != "" && report.RunStatus != gjeval.RunStatusComplete {
 		if opts.JSON {
 			_ = writeEvalJSON(cmd.OutOrStdout(), gjeval.PartialReport{
-				SchemaVersion: report.SchemaVersion, RewardVersion: report.RewardVersion,
+				SchemaVersion: report.SchemaVersion, UsageAccountingVersion: report.UsageAccountingVersion, RewardVersion: report.RewardVersion,
 				RunID: report.RunID, RunStatus: report.RunStatus, Mode: report.Mode,
 				GeneratedAt: time.Now().UTC(), SuiteFingerprint: report.SuiteFingerprint,
 				CatalogFingerprint: report.CatalogFingerprint, DatasetFingerprint: report.DatasetFingerprint,
@@ -591,6 +655,7 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 		fmt.Fprintf(cmd.OutOrStdout(), "Run %s: %s (%d/%d initial slots complete; %d provider attempts).\n", report.RunID, report.RunStatus, report.Progress.CompletedInitialSlots, report.Progress.PlannedInitialSlots, report.Progress.ProviderAttempts)
 		fmt.Fprintf(cmd.OutOrStdout(), "Provider usage so far: %d tokens (%d prompt, %d completion) across %d model calls; failed attempts and retries are included.\n",
 			report.ProviderUsage.TotalTokens, report.ProviderUsage.PromptTokens, report.ProviderUsage.CompletionTokens, report.ProviderUsage.LLMCalls)
+		printProviderUsageCompleteness(cmd, report.ProviderUsage)
 		return
 	}
 	if opts.JSON {
@@ -607,6 +672,7 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 		report.Metrics.TotalTokens, report.Metrics.PromptTokens, report.Metrics.CompletionTokens, report.Metrics.LLMCalls, perEpisode)
 	fmt.Fprintf(cmd.OutOrStdout(), "Actual provider usage: %d tokens across %d model calls and %d provider attempts; failed attempts and retries are included.\n",
 		report.ProviderUsage.TotalTokens, report.ProviderUsage.LLMCalls, report.Progress.ProviderAttempts)
+	printProviderUsageCompleteness(cmd, report.ProviderUsage)
 	if comparison := report.UsageComparison; comparison != nil {
 		if comparison.Comparable {
 			fmt.Fprintf(cmd.OutOrStdout(), "Token change vs baseline %s: finalized %+.1f%% (%+d), per episode %+.1f%% (%+.1f), actual provider %+.1f%% (%+d).\n",
@@ -635,6 +701,14 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 			}
 		}
 	}
+}
+
+func printProviderUsageCompleteness(cmd *cobra.Command, usage gjeval.ProviderUsage) {
+	if usage.Complete {
+		fmt.Fprintln(cmd.OutOrStdout(), "Provider usage accounting is complete for every attempt.")
+		return
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Provider usage accounting is incomplete: %d timeout or transport attempt(s) returned no provider usage. Recorded tokens are a lower bound.\n", usage.UnknownAttempts)
 }
 
 func evalPercent(value *float64) float64 {
@@ -766,6 +840,7 @@ func evalProvenance(instance gjeval.Instance, seed int64, status gjeval.AgentSta
 		Temperature:        0,
 		Seed:               seed,
 		Repeats:            gjeval.DefaultRepeats,
+		MaxSteps:           status.MaxSteps,
 		Target:             instance.Label(),
 	}
 }

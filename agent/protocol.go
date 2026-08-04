@@ -12,6 +12,8 @@ import (
 
 const protocolContextKey = "_graphjin_discovery"
 
+const emptySearchKnownIDLimit = 6
+
 type protocolRuntime struct {
 	base          GraphRuntime
 	state         *discoveryState
@@ -49,9 +51,18 @@ type discoveryState struct {
 	executions        []map[string]any
 	// A failed raw GraphQL execution must be followed by one genuinely
 	// different repair execution before the actor may terminate. Identical
-	// retries are rejected without spending another database execution.
-	pendingFailedQueryKey  string
-	repairFailureExhausted bool
+	// retries are rejected without spending another database execution. Failed
+	// identities remain rejected for the rest of the run; the pending key only
+	// tracks whether the current failure still needs one distinct repair.
+	pendingFailedQueryKey string
+	failedQueryKeys       map[string]bool
+	// Successful executions are memoized by their normalized operation and
+	// variables. Repeating one never reaches the database again. The first
+	// redundant call arms a one-turn completion grace period; another already
+	// seen call lets the runtime finalize from the governed cached evidence.
+	successfulExecutions map[string]any
+	completionLatchKey   string
+	completionReady      bool
 	// lastExecution retains the most recent successful execution result for
 	// one narrow recovery case: an actor that ignores that result and repeats
 	// the preceding catalog lookup. Ax's runtime is a persistent REPL, but the
@@ -66,6 +77,10 @@ type discoveryState struct {
 	// received. Only successful model calls are recorded; the seed and failed
 	// attempts do not spend this budget.
 	catalogRequestKeys map[string]bool
+	// One empty lexical/coverage search is allowed and returned with concrete
+	// recovery guidance. A second blind search is rejected before dispatch so
+	// the actor must consume known ids or enumerate the catalog by kind.
+	emptySearchStreak  int
 	capabilities       *CapabilityProfile
 	observe            func(ActionEvent)
 	coverageSearchUsed bool
@@ -177,6 +192,8 @@ func newDiscoveryState(instruction string) *discoveryState {
 		tablesValidated:        map[string]bool{},
 		workflowsDetailed:      map[string]bool{},
 		catalogRequestKeys:     map[string]bool{},
+		failedQueryKeys:        map[string]bool{},
+		successfulExecutions:   map[string]any{},
 	}
 	state.addGrounding(state.instruction)
 	return state
@@ -208,13 +225,14 @@ func (r *protocolRuntime) GraphQLHelp(ctx context.Context, args map[string]any) 
 	out, err := r.base.GraphQLHelp(ctx, args)
 	r.state.finishAction(action, "graphql_help", args, out, err)
 	if err == nil {
+		r.state.clearCompletionLatch()
 		r.state.modelDiscoveryAction = true
 		topic := stringArg(args, "for")
 		if topic == "" {
 			topic = "discovery"
 		}
 		r.state.helpTopics = appendUniqueString(r.state.helpTopics, topic)
-		r.state.recordCatalogRows(out)
+		r.state.recordCatalogRows(out, true)
 		r.state.recordNext(out)
 	}
 	return out, err
@@ -233,10 +251,19 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 		r.state.coverageSearchUsed = true
 	}
 	r.addNamespace(args)
+	searchRequest := isCatalogSearchRequest(args)
 	requestKey := stringify(normalizeValue(args))
+	if searchRequest && r.state.emptySearchStreak > 0 {
+		r.state.emptySearchStreak++
+		out := r.state.emptySearchExhaustedResult()
+		action := r.state.startAction("model", "query_catalog", args)
+		r.state.finishAction(action, "query_catalog", args, out, nil)
+		return out, nil
+	}
 	if requestKey != "" && r.state.catalogRequestKeys[requestKey] {
 		message := "duplicate query_catalog call rejected: this exact request already returned catalog evidence; reuse the prior result and follow its next guidance instead of searching again"
 		if r.state.lastExecution != nil {
+			r.state.recordRepeatedCall("query_catalog:" + requestKey)
 			out := map[string]any{
 				"cards": []any{},
 				"recovery": map[string]any{
@@ -256,15 +283,103 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 	}
 	action := r.state.startAction("model", "query_catalog", args)
 	out, err := r.base.QueryCatalog(ctx, args)
-	r.state.finishAction(action, "query_catalog", args, out, err)
 	if err == nil {
+		r.state.clearCompletionLatch()
 		if requestKey != "" {
 			r.state.catalogRequestKeys[requestKey] = true
 		}
 		r.state.modelDiscoveryAction = true
 		r.state.recordCatalog(args, out, false)
+		if len(catalogCards(out)) != 0 {
+			r.state.emptySearchStreak = 0
+		} else if searchRequest {
+			r.state.emptySearchStreak = 1
+			out = attachEmptySearchRecovery(out, r.state.emptySearchNext(
+				"No catalog cards matched. Drop search filters and inspect a known id, or enumerate tables with query_catalog({kind:\"table\"}) instead of trying another blind search.",
+			))
+		}
 	}
+	r.state.finishAction(action, "query_catalog", args, out, err)
 	return out, err
+}
+
+func isCatalogSearchRequest(args map[string]any) bool {
+	if len(detailIDsFromArgs(args)) != 0 {
+		return false
+	}
+	_, hasSearch := args["search"]
+	_, hasSearches := args["searches"]
+	return hasSearch || hasSearches
+}
+
+func attachEmptySearchRecovery(out any, next map[string]any) any {
+	result := cloneAnyMap(mapValue(out))
+	if result == nil {
+		result = map[string]any{"cards": []any{}}
+	}
+	result["recovery"] = map[string]any{
+		"kind":        "empty_search",
+		"instruction": "The search returned no catalog cards. Broaden once by dropping filters, enumerate tables by kind, or inspect one of the catalog ids already discovered in this run.",
+		"known_ids":   next["known_ids"],
+		"next":        next,
+	}
+	return result
+}
+
+func (s *discoveryState) emptySearchExhaustedResult() executeResult {
+	next := s.emptySearchNext("A prior catalog search already returned no cards. Enumerate tables by kind or inspect a known id before searching again.")
+	return executeResult{
+		Errors: []ErrorInfo{{
+			Message: "consecutive empty catalog search rejected; stop varying blind search text and use the supplied catalog ids or enumerate tables by kind",
+			Extensions: map[string]any{
+				"code":      "empty_search_exhausted",
+				"retryable": true,
+				"graphjin_repair": map[string]any{
+					"kind":      "empty_search_exhausted",
+					"known_ids": next["known_ids"],
+					"next":      next,
+				},
+			},
+		}},
+		Recovery: map[string]any{
+			"kind":        "empty_search_exhausted",
+			"instruction": "Do not issue another lexical search. Enumerate the catalog by kind or inspect a known id.",
+			"known_ids":   next["known_ids"],
+			"next":        next,
+		},
+	}
+}
+
+func (s *discoveryState) emptySearchNext(reason string) map[string]any {
+	knownIDs := s.knownCatalogIDs(emptySearchKnownIDLimit)
+	return map[string]any{
+		"recommended_tool": toolQueryCatalog,
+		"args":             map[string]any{"kind": "table", "limit": 20},
+		"reason":           reason,
+		"known_ids":        knownIDs,
+	}
+}
+
+func (s *discoveryState) knownCatalogIDs(limit int) []string {
+	if s == nil || limit <= 0 {
+		return nil
+	}
+	ids := make([]string, 0, limit)
+	for _, id := range s.catalogDetails {
+		if id != "" {
+			ids = appendUniqueString(ids, id)
+			if len(ids) == limit {
+				return ids
+			}
+		}
+	}
+	for _, id := range sortedBoolKeys(s.catalogIDs) {
+		ids = appendUniqueString(ids, id)
+		if len(ids) == limit {
+			break
+		}
+	}
+	return ids
 }
 
 func (r *protocolRuntime) validateCoverageSearches(args map[string]any) ([]string, error) {
@@ -331,11 +446,30 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		r.state.finishAction(action, "execute_saved_query", args, nil, err)
 		return nil, err
 	}
+	executionKey := savedQueryExecutionKey(args)
+	if cached, ok := r.state.cachedExecution(executionKey); ok {
+		if out, rejected := pendingCachedExecutionRejection(r.state, ""); rejected {
+			action := r.state.startAction("model", "execute_saved_query", args)
+			r.state.finishAction(action, "execute_saved_query", args, out, nil)
+			return out, nil
+		}
+		out := cachedExecutionResult(r.state, cached)
+		r.state.selectCachedExecution("execute_saved_query", args, out)
+		r.state.recordRepeatedCall(executionKey)
+		action := r.state.startAction("model", "execute_saved_query", args)
+		r.state.finishAction(action, "execute_saved_query", args, out, nil)
+		return out, nil
+	}
+	r.state.clearCompletionLatch()
 	action := r.state.startAction("model", "execute_saved_query", args)
 	out, err := r.base.ExecuteSavedQuery(ctx, args)
 	r.state.finishAction(action, "execute_saved_query", args, out, err)
 	if err == nil {
 		r.state.recordExecution("execute_saved_query", args, out)
+		r.state.cacheSuccessfulExecution(executionKey, out)
+		if !executionFailed(out) {
+			r.state.emptySearchStreak = 0
+		}
 		// A rejected out-of-order attempt is recoverable inside the same actor
 		// run. Once the model has inspected the exact detail and the governed
 		// execution succeeds, retain the attempt in the action/evidence trail but
@@ -410,7 +544,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		}
 	}
 	queryKey := executionQueryKey(args)
-	if r.state.pendingFailedQueryKey != "" && queryKey == r.state.pendingFailedQueryKey {
+	if r.state.failedQueryKeys[queryKey] {
 		out := attachExecutionRecovery(executeResult{Errors: []ErrorInfo{{
 			Message: "identical failed GraphQL query retry rejected; re-author the query from live GraphJin catalog/help evidence before executing again",
 			Extensions: map[string]any{
@@ -426,15 +560,29 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		r.state.finishAction(action, "execute_graphql", args, out, nil)
 		return out, nil
 	}
+	if cached, ok := r.state.cachedExecution(queryKey); ok {
+		if out, rejected := pendingCachedExecutionRejection(r.state, query); rejected {
+			action := r.state.startAction("model", "execute_graphql", args)
+			r.state.finishAction(action, "execute_graphql", args, out, nil)
+			return out, nil
+		}
+		out := cachedExecutionResult(r.state, cached)
+		r.state.selectCachedExecution("execute_graphql", args, out)
+		r.state.recordRepeatedCall(queryKey)
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
+	}
+	r.state.clearCompletionLatch()
 	wasRepairPending := r.state.pendingFailedQueryKey != ""
 	action := r.state.startAction("model", "execute_graphql", args)
 	out, err := r.base.ExecuteGraphQL(ctx, args)
 	if err == nil && executionFailed(out) {
 		out = attachExecutionRecovery(out, r.state, query)
+		r.state.failedQueryKeys[queryKey] = true
 		if wasRepairPending {
 			r.state.pendingFailedQueryKey = ""
-			r.state.repairFailureExhausted = true
-		} else if !r.state.repairFailureExhausted {
+		} else {
 			r.state.pendingFailedQueryKey = queryKey
 		}
 	} else if err == nil && wasRepairPending {
@@ -443,6 +591,11 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	r.state.finishAction(action, "execute_graphql", args, out, err)
 	if err == nil {
 		r.state.recordExecution("execute_graphql", args, out)
+		r.state.cacheSuccessfulExecution(queryKey, out)
+		if !executionFailed(out) {
+			r.state.emptySearchStreak = 0
+			r.state.resolveRawGraphQLDiscoveryViolations()
+		}
 		if isWatchDefinitionMutation(query) {
 			r.state.watchDefinitionMutated = true
 		}
@@ -535,7 +688,7 @@ func (s *discoveryState) recordCatalog(args map[string]any, out any, seed bool) 
 			"seed":     seed,
 		})
 	}
-	ids := detailIDsFromArgs(args)
+	ids := returnedCatalogDetailIDs(detailIDsFromArgs(args), out)
 	for _, id := range ids {
 		s.catalogDetails = appendUniqueString(s.catalogDetails, id)
 		s.catalogIDs[id] = true
@@ -543,7 +696,11 @@ func (s *discoveryState) recordCatalog(args map[string]any, out any, seed bool) 
 			s.securityRuntimeEvidence = true
 		}
 	}
-	s.recordCatalogRows(out)
+	// Seed search is deliberately broad. Its result set can contain one
+	// unrelated saved query among many table, column, help, and workflow cards;
+	// that is context, not an unambiguous governed route selected by the model.
+	// Only model-driven discovery may arm implicit saved-query execution.
+	s.recordCatalogRows(out, !seed)
 	if len(ids) != 0 {
 		s.recordDetailEvidence(ids, out)
 		if s.catalogKindSeen("saved_query") {
@@ -558,6 +715,27 @@ func (s *discoveryState) recordCatalog(args map[string]any, out any, seed bool) 
 		}
 	}
 	s.recordNext(out)
+}
+
+// returnedCatalogDetailIDs prevents a guessed or stale id from becoming
+// protocol evidence merely because the catalog request itself succeeded. Only
+// ids actually present in returned detail cards can satisfy detail-before-use
+// guards for raw GraphQL, saved queries, workflows, or mutations.
+func returnedCatalogDetailIDs(requested []string, out any) []string {
+	if len(requested) == 0 {
+		return nil
+	}
+	wanted := make(map[string]bool, len(requested))
+	for _, id := range requested {
+		wanted[id] = true
+	}
+	ids := make([]string, 0, len(requested))
+	for _, card := range catalogCards(out) {
+		if id := stringFromMap(card, "id"); wanted[id] {
+			ids = appendUniqueString(ids, id)
+		}
+	}
+	return ids
 }
 
 // detailIDsFromArgs collects the requested detail ids from the single `id`
@@ -634,7 +812,7 @@ func tableNameFromCatalogID(id string) string {
 	return strings.TrimSpace(name)
 }
 
-func (s *discoveryState) recordCatalogRows(out any) {
+func (s *discoveryState) recordCatalogRows(out any, discoverSavedQueries bool) {
 	for _, card := range catalogCards(out) {
 		id := stringFromMap(card, "id")
 		kind := stringFromMap(card, "kind")
@@ -651,7 +829,7 @@ func (s *discoveryState) recordCatalogRows(out any) {
 		if kind != "" {
 			s.catalogKinds[kind] = true
 		}
-		if kind == "saved_query" {
+		if kind == "saved_query" && discoverSavedQueries {
 			if name == "" {
 				name = strings.TrimPrefix(id, "saved_query:")
 			}
@@ -720,10 +898,206 @@ func (s *discoveryState) recordExecution(tool string, args map[string]any, out a
 }
 
 func executionQueryKey(args map[string]any) string {
-	return stringify(normalizeValue(map[string]any{
-		"query":     stringArg(args, "query"),
+	return "execute_graphql:" + stringify(normalizeValue(map[string]any{
+		"query":     normalizeGraphQLIdentity(stringArg(args, "query")),
 		"variables": args["variables"],
+		"namespace": strings.TrimSpace(stringArg(args, "namespace")),
 	}))
+}
+
+func savedQueryExecutionKey(args map[string]any) string {
+	return "execute_saved_query:" + stringify(normalizeValue(map[string]any{
+		"name":      strings.ToLower(strings.TrimSpace(stringArg(args, "name"))),
+		"variables": args["variables"],
+		"namespace": strings.TrimSpace(stringArg(args, "namespace")),
+	}))
+}
+
+// normalizeGraphQLIdentity is deliberately conservative: whitespace and
+// comments outside string values are insignificant in GraphQL, while quoted
+// contents must remain byte-for-byte distinct.
+func normalizeGraphQLIdentity(query string) string {
+	var out strings.Builder
+	inString := false
+	inBlockString := false
+	escaped := false
+	pendingSpace := false
+	for i := 0; i < len(query); i++ {
+		if !inString && i+2 < len(query) && query[i:i+3] == `"""` {
+			if pendingSpace && out.Len() != 0 {
+				out.WriteByte(' ')
+			}
+			pendingSpace = false
+			inString = true
+			inBlockString = true
+			out.WriteString(`"""`)
+			i += 2
+			continue
+		}
+		if inBlockString && i+2 < len(query) && query[i:i+3] == `"""` {
+			out.WriteString(`"""`)
+			i += 2
+			inString = false
+			inBlockString = false
+			continue
+		}
+		ch := query[i]
+		if inString {
+			out.WriteByte(ch)
+			if !inBlockString && ch == '\\' && !escaped {
+				escaped = true
+				continue
+			}
+			if !inBlockString && ch == '"' && !escaped {
+				inString = false
+			}
+			escaped = false
+			continue
+		}
+		if ch == '#' {
+			for i+1 < len(query) && query[i+1] != '\n' && query[i+1] != '\r' {
+				i++
+			}
+			pendingSpace = true
+			continue
+		}
+		if ch == '"' {
+			if pendingSpace && out.Len() != 0 {
+				out.WriteByte(' ')
+			}
+			pendingSpace = false
+			inString = true
+			out.WriteByte(ch)
+			continue
+		}
+		if unicode.IsSpace(rune(ch)) || ch == ',' {
+			pendingSpace = true
+			continue
+		}
+		if pendingSpace && out.Len() != 0 {
+			out.WriteByte(' ')
+		}
+		pendingSpace = false
+		out.WriteByte(ch)
+	}
+	return strings.TrimSpace(out.String())
+}
+
+func (s *discoveryState) cachedExecution(key string) (any, bool) {
+	if s == nil || key == "" {
+		return nil, false
+	}
+	value, ok := s.successfulExecutions[key]
+	return normalizeValue(value), ok
+}
+
+func (s *discoveryState) cacheSuccessfulExecution(key string, out any) {
+	if s == nil || key == "" || executionFailed(out) || resultSummary("execute_graphql", nil, out)["has_data"] != true {
+		return
+	}
+	s.successfulExecutions[key] = normalizeValue(out)
+}
+
+func pendingCachedExecutionRejection(state *discoveryState, query string) (any, bool) {
+	if state == nil {
+		return nil, false
+	}
+	requirement := strings.TrimSpace(state.pendingRequiredFinalization())
+	if requirement == "" {
+		return nil, false
+	}
+	code, message := pendingFinalProtocol(requirement)
+	out := attachExecutionRecovery(executeResult{Errors: []ErrorInfo{{
+		Message: "identical execution repeated while " + code + " is unmet; cached rows withheld because they cannot answer this request",
+		Extensions: map[string]any{
+			"code":      code,
+			"retryable": true,
+			"graphjin_repair": map[string]any{
+				"kind": "distinct_aggregate_required",
+				"next": message,
+			},
+		},
+	}}}, state, query)
+	return out, true
+}
+
+// selectCachedExecution makes the governed evidence selected by the current
+// actor step the completion source. Without this, query A -> query B -> cached
+// query A leaves the completion binding pointed at query B even though the
+// model just reselected A.
+func (s *discoveryState) selectCachedExecution(tool string, args map[string]any, out any) {
+	if s == nil || executionFailed(out) || resultSummary(tool, args, out)["has_data"] != true {
+		return
+	}
+	s.emptySearchStreak = 0
+	s.lastExecution = map[string]any{
+		"tool":   tool,
+		"args":   redactArgs(args),
+		"result": normalizeValue(out),
+	}
+}
+
+func cachedExecutionResult(state *discoveryState, cached any) any {
+	out := mapValue(cached)
+	if out == nil {
+		out = map[string]any{"data": normalizeValue(cached)}
+	} else {
+		out = cloneAnyMap(out)
+	}
+	out["cached"] = true
+	if state != nil {
+		if requirement := strings.TrimSpace(state.pendingRequiredFinalization()); requirement != "" {
+			code, publicMessage := pendingFinalProtocol(requirement)
+			next := "The identical successful execution was not run again. A pending " + code + " requirement still blocks finalization."
+			if publicMessage != "" {
+				next += " " + publicMessage
+			}
+			out["recovery"] = map[string]any{
+				"code": code,
+				"kind": code,
+				"next": next,
+			}
+			return out
+		}
+	}
+	out["recovery"] = map[string]any{
+		"code": "completion_required",
+		"kind": "completion_required",
+		"next": "The identical successful execution was not run again. Call final now using this cached result.data.",
+	}
+	return out
+}
+
+func (s *discoveryState) answerReadyForCompletion() bool {
+	return s != nil && s.seedOK && s.modelDiscoveryAction && !s.hasBlockingViolation() &&
+		s.lastExecution != nil && s.pendingRequiredFinalization() == ""
+}
+
+func (s *discoveryState) recordRepeatedCall(key string) {
+	if !s.answerReadyForCompletion() {
+		return
+	}
+	if s.completionLatchKey == "" {
+		s.completionLatchKey = key
+		return
+	}
+	s.completionReady = true
+}
+
+func (s *discoveryState) clearCompletionLatch() {
+	if s == nil {
+		return
+	}
+	s.completionLatchKey = ""
+	s.completionReady = false
+}
+
+func (s *discoveryState) completionContinuation() string {
+	if s == nil || !s.completionReady || !s.answerReadyForCompletion() {
+		return ""
+	}
+	s.completionReady = false
+	return `await final("GraphJin duplicate execution recovery completed.", {execution: globalThis.` + runtimeLastExecutionKey + `});`
 }
 
 func (s *discoveryState) pendingRequiredFinalization() string {
@@ -999,6 +1373,20 @@ func (s *discoveryState) resolveSavedQueryDetailViolation(name string) {
 	}
 }
 
+func (s *discoveryState) resolveRawGraphQLDiscoveryViolations() {
+	for i := range s.violations {
+		violation := &s.violations[i]
+		if violation.Code != "raw_graphql_catalog_required" && violation.Code != "raw_graphql_discovery_required" {
+			continue
+		}
+		violation.Blocking = false
+		if violation.Details == nil {
+			violation.Details = map[string]any{}
+		}
+		violation.Details["resolved"] = true
+	}
+}
+
 func (s *discoveryState) finalize(resp Response) Response {
 	if resp.Status == "" {
 		resp.Status = StatusAnswered
@@ -1009,6 +1397,8 @@ func (s *discoveryState) finalize(resp Response) Response {
 	if resp.Status == StatusError && s.hasBlockingViolation() {
 		resp = blockResponse(resp)
 	}
+	resp = s.recoverResolvedTerminalRefusalResponse(resp)
+	resp = s.recoverCompletionLatchResponse(resp)
 	resp = s.recoverLostExecutionResponse(resp)
 	resp = s.recoverLostHistoryResponse(resp)
 	if resp.Status == StatusAnswered {
@@ -1047,6 +1437,75 @@ func (s *discoveryState) finalize(resp Response) Response {
 	} else {
 		resp.Refusal = nil
 	}
+	return resp
+}
+
+// recoverResolvedTerminalRefusalResponse removes a stale model refusal only
+// when this same run subsequently satisfied that exact protocol requirement
+// and its final tool action was a successful data-bearing execution. Policy
+// refusals and any still-blocking requirement remain untouched.
+func (s *discoveryState) recoverResolvedTerminalRefusalResponse(resp Response) Response {
+	if s == nil || resp.Status != StatusBlocked || resp.Refusal == nil || resp.Refusal.PolicyFinal ||
+		strings.TrimSpace(resp.Answer) == "" || s.hasBlockingViolation() ||
+		s.pendingRequiredFinalization() != "" || !s.terminalExecutionSucceeded() ||
+		!s.hasResolvedViolation(resp.Refusal.Code) {
+		return resp
+	}
+	for _, item := range resp.Errors {
+		code := stringFromMap(item.Extensions, "code")
+		if code != "" && !s.hasResolvedViolation(code) {
+			return resp
+		}
+	}
+	resp.Status = StatusAnswered
+	resp.Refusal = nil
+	resp.Errors = nil
+	resp.Next = nil
+	return resp
+}
+
+func (s *discoveryState) terminalExecutionSucceeded() bool {
+	if len(s.actions) == 0 {
+		return false
+	}
+	action := s.actions[len(s.actions)-1]
+	return action.Status == "ok" &&
+		(action.Tool == toolExecuteGraphQL || action.Tool == toolExecuteSavedQuery) &&
+		action.Summary["has_data"] == true && executionErrorCount(action.Summary["error_count"]) == 0
+}
+
+func (s *discoveryState) hasResolvedViolation(code string) bool {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return false
+	}
+	for _, violation := range s.violations {
+		if violation.Code == code && !violation.Blocking && mapValue(violation.Details)["resolved"] == true {
+			return true
+		}
+	}
+	return false
+}
+
+// recoverCompletionLatchResponse is the hard-stop safety net for a model that
+// used its final actor step to repeat an already-successful execution. The
+// cached result has already passed the same discovery, safety, repair, and
+// database-computation guards required by the runtime auto-final path.
+func (s *discoveryState) recoverCompletionLatchResponse(resp Response) Response {
+	if s == nil || resp.Status != StatusError || s.completionLatchKey == "" ||
+		!onlyActorLoopError(resp.Errors) || !s.answerReadyForCompletion() {
+		return resp
+	}
+	data, ok := s.lastExecutionData()
+	if !ok {
+		return resp
+	}
+	resp.Status = StatusAnswered
+	resp.Answer = "The governed GraphJin execution completed successfully. Returned data:\n\n" + executionDataExcerpt(data, 8*1024)
+	resp.Data = data
+	resp.Errors = nil
+	resp.Refusal = nil
+	resp.Next = nil
 	return resp
 }
 
@@ -1095,7 +1554,13 @@ func explicitHistoryRepeatRequest(instruction string) bool {
 }
 
 func onlyActorLoopError(errors []ErrorInfo) bool {
-	return len(errors) == 1 && strings.Contains(strings.ToLower(errors[0].Message), "actor loop exceeded")
+	if len(errors) != 1 {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(stringFromMap(errors[0].Extensions, "code")), "agent_actor_steps_exhausted") {
+		return true
+	}
+	return strings.Contains(strings.ToLower(errors[0].Message), "actor loop exceeded")
 }
 
 // recoverLostExecutionResponse repairs one internally contradictory model
@@ -1285,6 +1750,7 @@ func redactArgs(args map[string]any) map[string]any {
 
 func resultSummary(tool string, args map[string]any, out any) map[string]any {
 	summary := map[string]any{}
+	addStructuredResultSummary(summary, out)
 	if tool == "query_catalog" || tool == "graphql_help" {
 		cards := catalogCards(out)
 		summary["card_count"] = len(cards)
@@ -1321,13 +1787,13 @@ func resultSummary(tool string, args map[string]any, out any) map[string]any {
 	if tool == "execute_saved_query" || tool == "execute_graphql" {
 		m := mapValue(out)
 		if m != nil {
+			if m["cached"] == true {
+				summary["cached"] = true
+			}
 			if data, ok := m["data"]; ok && data != nil {
 				summary["has_data"] = true
 				summary["data_shape"] = dataShape(data)
 				summary["database_aggregate"] = resultContainsAggregateField(data)
-			}
-			if errs, ok := m["errors"].([]any); ok {
-				summary["error_count"] = len(errs)
 			}
 			if trunc := mapValue(m["truncation"]); trunc != nil {
 				summary["truncated"] = trunc["roots"]
@@ -1345,6 +1811,55 @@ func resultSummary(tool string, args map[string]any, out any) map[string]any {
 		return summary
 	}
 	return summary
+}
+
+func addStructuredResultSummary(summary map[string]any, out any) {
+	m := mapValue(out)
+	if m == nil {
+		return
+	}
+	errorCodes := map[string]bool{}
+	recoveryCodes := map[string]bool{}
+	if errs := anySlice(m["errors"]); len(errs) != 0 {
+		summary["error_count"] = len(errs)
+		for _, item := range errs {
+			extensions := mapValue(mapValue(item)["extensions"])
+			if code := stringFromMap(extensions, "code"); code != "" {
+				errorCodes[code] = true
+			}
+			if repair := mapValue(extensions["graphjin_repair"]); repair != nil {
+				if code := stringFromMap(repair, "code"); code != "" {
+					recoveryCodes[code] = true
+				}
+				if kind := stringFromMap(repair, "kind"); kind != "" {
+					recoveryCodes[kind] = true
+				}
+			}
+		}
+	}
+	if recovery := mapValue(m["recovery"]); recovery != nil {
+		if code := stringFromMap(recovery, "code"); code != "" {
+			recoveryCodes[code] = true
+		}
+		if kind := stringFromMap(recovery, "kind"); kind != "" {
+			recoveryCodes[kind] = true
+		}
+		if next := mapValue(recovery["next"]); next != nil {
+			tool := stringFromMap(next, "tool")
+			if tool == "" {
+				tool = stringFromMap(next, "recommended_tool")
+			}
+			if tool != "" {
+				summary["recovery_tool"] = tool
+			}
+		}
+	}
+	if len(errorCodes) != 0 {
+		summary["error_codes"] = sortedBoolKeys(errorCodes)
+	}
+	if len(recoveryCodes) != 0 {
+		summary["recovery_codes"] = sortedBoolKeys(recoveryCodes)
+	}
 }
 
 func catalogCards(out any) []map[string]any {

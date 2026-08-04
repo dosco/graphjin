@@ -27,6 +27,13 @@ candidate, or understand an evaluation failure.
   compatible baseline, report the total-token and tokens-per-episode direction
   and percentage; treat cross-model or differently shaped comparisons as
   advisory.
+- Check `provider_usage.complete`. If false, `unknown_attempts` counts provider
+  calls that returned no usage and all recorded token totals are lower bounds.
+  Never compare token percentages across accounting versions, providers,
+  models, configured `max_steps`, or incomplete provider usage.
+- Before calling two runs a same-build comparison, require matching
+  `provenance.binary_fingerprint`. It is the SHA-256 of the exact CLI
+  executable and catches runtime changes that do not alter prompt hashes.
 - Full prompts, answers, rows, and executed queries stay in local episode files.
   Share reports, not episode files, unless the user explicitly asks for the
   private trajectory.
@@ -124,7 +131,14 @@ Use the report's failure category as the first routing signal:
 - `truncated_finalize`: the agent finalized from a limited row page.
 - `wrong_window` or `stale_anchor`: the date boundary or anchor was wrong.
 - `value_mismatch`: the answer disagreed with the fresh runtime oracle.
-- `runaway`: the run exceeded its advisory turn, token, or latency budget.
+- `runaway`: the agent exhausted its eight actor steps or exceeded an advisory
+  turn, token, or latency budget. Diagnose repeated calls; do not increase the
+  global step limit to make redundant work more expensive.
+
+For failed executions, read the private action summary's `error_codes`,
+`recovery_codes`, and `recovery_tool` before opening the full chat log. These
+stable fields identify the repair path without treating raw error prose as an
+interface.
 
 Use `--debug` only when deeper diagnosis is required. It prints local episode
 paths. Keep episodes and attempts private because they contain trajectories.

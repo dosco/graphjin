@@ -23,21 +23,26 @@ const (
 // prompt. The most recent authorized execution is also retained as a narrow
 // recovery path when the distiller already completed the governed query.
 type graphJinCodeRuntime struct {
-	base                *axgoja.Runtime
-	lastExecution       func() any
-	onDistilledResult   func(any)
-	pendingFinal        func() string
-	pendingContinuation func() string
+	base                   *axgoja.Runtime
+	lastExecution          func() any
+	onDistilledResult      func(any)
+	pendingFinal           func() string
+	pendingContinuation    func() string
+	completionContinuation func() string
 }
 
-func newGraphJinCodeRuntime(lastExecution func() any, onDistilledResult func(any), pendingFinal func() string, pendingContinuation func() string) *graphJinCodeRuntime {
-	return &graphJinCodeRuntime{
+func newGraphJinCodeRuntime(lastExecution func() any, onDistilledResult func(any), pendingFinal func() string, pendingContinuation func() string, completionContinuation ...func() string) *graphJinCodeRuntime {
+	runtime := &graphJinCodeRuntime{
 		base:                axgoja.NewRuntime(),
 		lastExecution:       lastExecution,
 		onDistilledResult:   onDistilledResult,
 		pendingFinal:        pendingFinal,
 		pendingContinuation: pendingContinuation,
 	}
+	if len(completionContinuation) != 0 {
+		runtime.completionContinuation = completionContinuation[0]
+	}
+	return runtime
 }
 
 func (r *graphJinCodeRuntime) Language() string {
@@ -66,33 +71,35 @@ func (r *graphJinCodeRuntime) CreateSession(globals map[string]ax.Value, options
 	inputs := mapValue(globals["inputs"])
 	context := mapValue(inputs["context"])
 	return &graphJinCodeSession{
-		base:                session,
-		lastExecution:       r.lastExecution,
-		onDistilledResult:   r.onDistilledResult,
-		pendingFinal:        r.pendingFinal,
-		pendingContinuation: r.pendingContinuation,
-		originalInstruction: stringFromMap(inputs, "instruction"),
-		seedContext:         normalizeValue(context[protocolContextKey]),
-		originalHistory:     normalizeValue(inputs["history"]),
+		base:                   session,
+		lastExecution:          r.lastExecution,
+		onDistilledResult:      r.onDistilledResult,
+		pendingFinal:           r.pendingFinal,
+		pendingContinuation:    r.pendingContinuation,
+		completionContinuation: r.completionContinuation,
+		originalInstruction:    stringFromMap(inputs, "instruction"),
+		seedContext:            normalizeValue(context[protocolContextKey]),
+		originalHistory:        normalizeValue(inputs["history"]),
 	}, nil
 }
 
 type graphJinCodeSession struct {
-	base                ax.CodeSession
-	lastExecution       func() any
-	onDistilledResult   func(any)
-	pendingFinal        func() string
-	pendingContinuation func() string
-	originalInstruction string
-	seedContext         any
-	originalHistory     any
-	executorRequest     any
-	distilledContext    any
-	executorStage       bool
-	handoffReadRequired bool
-	handoffRead         bool
-	historyReadRequired bool
-	historyRead         bool
+	base                   ax.CodeSession
+	lastExecution          func() any
+	onDistilledResult      func(any)
+	pendingFinal           func() string
+	pendingContinuation    func() string
+	completionContinuation func() string
+	originalInstruction    string
+	seedContext            any
+	originalHistory        any
+	executorRequest        any
+	distilledContext       any
+	executorStage          bool
+	handoffReadRequired    bool
+	handoffRead            bool
+	historyReadRequired    bool
+	historyRead            bool
 }
 
 func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) ax.Value {
@@ -171,7 +178,27 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 			}
 		}
 	}
+	if s.executorStage && s.completionContinuation != nil {
+		if continuation := strings.TrimSpace(s.completionContinuation()); continuation != "" {
+			s.handoffRead = true
+			s.refreshLastExecutionBinding(options)
+			return s.base.Execute(continuation, options)
+		}
+	}
 	return result
+}
+
+func (s *graphJinCodeSession) refreshLastExecutionBinding(options map[string]ax.Value) {
+	if s.lastExecution == nil {
+		return
+	}
+	execution := s.lastExecution()
+	if execution == nil {
+		return
+	}
+	snapshot := s.base.SnapshotGlobals(options)
+	snapshot = snapshotWithRuntimeBinding(snapshot, runtimeLastExecutionKey, normalizeValue(execution))
+	s.base.PatchGlobals(snapshot, options)
 }
 
 func pendingFinalProtocol(message string) (string, string) {

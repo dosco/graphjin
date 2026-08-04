@@ -202,6 +202,169 @@ func TestProtocolRejectsIdenticalCatalogRequestLoopsAndReplaysExecution(t *testi
 	}
 }
 
+func TestProtocolEscalatesConsecutiveEmptyCatalogSearches(t *testing.T) {
+	base := &fakeRuntime{catalogOverride: func(map[string]any) any {
+		return map[string]any{"count": 0, "cards": []any{}}
+	}}
+	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
+	knownID := "table:app:main.usage_events"
+	runtime.state.catalogIDs[knownID] = true
+
+	first, err := runtime.QueryCatalog(context.Background(), map[string]any{"search": "usage total"})
+	if err != nil {
+		t.Fatalf("first empty search: %v", err)
+	}
+	firstResult := mapValue(first)
+	firstRecovery := mapValue(firstResult["recovery"])
+	if len(catalogCards(first)) != 0 || executionFailed(first) || stringFromMap(firstRecovery, "kind") != "empty_search" {
+		t.Fatalf("first empty search = %+v, want cards:[] plus non-error recovery", first)
+	}
+	if got := len(base.calls); got != 1 {
+		t.Fatalf("base calls after first empty search = %d, want 1", got)
+	}
+	firstSummary := runtime.state.actions[len(runtime.state.actions)-1].Summary
+	if !containsString(evidenceStringSlice(firstSummary["recovery_codes"]), "empty_search") ||
+		firstSummary["recovery_tool"] != toolQueryCatalog {
+		t.Fatalf("first empty search summary = %+v", firstSummary)
+	}
+
+	second, err := runtime.QueryCatalog(context.Background(), map[string]any{"search": "quantity"})
+	if err != nil {
+		t.Fatalf("second empty search refusal: %v", err)
+	}
+	refusal, ok := second.(executeResult)
+	if !ok || len(refusal.Errors) != 1 {
+		t.Fatalf("second empty search = %#v, want structured refusal", second)
+	}
+	extensions := refusal.Errors[0].Extensions
+	if stringFromMap(extensions, "code") != "empty_search_exhausted" || extensions["retryable"] != true {
+		t.Fatalf("second empty search extensions = %+v", extensions)
+	}
+	repair := mapValue(extensions["graphjin_repair"])
+	next := mapValue(repair["next"])
+	if !containsString(stringSliceArg(next, "known_ids"), knownID) ||
+		stringFromMap(next, "recommended_tool") != toolQueryCatalog ||
+		stringFromMap(mapValue(next["args"]), "kind") != "table" {
+		t.Fatalf("second empty search repair = %+v, want known id and table enumeration", repair)
+	}
+	if got := len(base.calls); got != 1 {
+		t.Fatalf("second blind search reached base runtime: calls=%d, want 1", got)
+	}
+	summary := runtime.state.actions[len(runtime.state.actions)-1].Summary
+	if !containsString(evidenceStringSlice(summary["error_codes"]), "empty_search_exhausted") ||
+		!containsString(evidenceStringSlice(summary["recovery_codes"]), "empty_search_exhausted") {
+		t.Fatalf("structured refusal summary = %+v", summary)
+	}
+}
+
+func TestProtocolNonEmptyCatalogResultResetsEmptySearchStreak(t *testing.T) {
+	base := &fakeRuntime{catalogOverride: func(args map[string]any) any {
+		if stringArg(args, "kind") == "table" {
+			return map[string]any{
+				"count": 1,
+				"cards": []any{map[string]any{
+					"id": "table:app:main.usage_events", "kind": "table", "table_name": "usage_events",
+				}},
+			}
+		}
+		return map[string]any{"count": 0, "cards": []any{}}
+	}}
+	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
+
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"search": "missing usage"}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.state.emptySearchStreak != 1 {
+		t.Fatalf("empty streak after first miss = %d, want 1", runtime.state.emptySearchStreak)
+	}
+	// The recovery-prescribed enumerate-by-kind call is not another blind
+	// lexical search. A non-empty result resets the guard.
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"kind": "table", "limit": 20}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.state.emptySearchStreak != 0 {
+		t.Fatalf("empty streak after non-empty enumeration = %d, want 0", runtime.state.emptySearchStreak)
+	}
+	later, err := runtime.QueryCatalog(context.Background(), map[string]any{"search": "still missing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executionFailed(later) || stringFromMap(mapValue(mapValue(later)["recovery"]), "kind") != "empty_search" {
+		t.Fatalf("later empty search = %+v, want a fresh first-empty recovery", later)
+	}
+	if got := len(base.calls); got != 3 {
+		t.Fatalf("base calls = %d, want all three non-refused requests dispatched", got)
+	}
+}
+
+func TestProtocolEmptyCatalogDetailLookupIsUnaffected(t *testing.T) {
+	base := &fakeRuntime{catalogOverride: func(map[string]any) any {
+		return map[string]any{"count": 0, "cards": []any{}}
+	}}
+	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
+	runtime.state.emptySearchStreak = 1
+
+	out, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:app:main.missing"})
+	if err != nil {
+		t.Fatalf("empty detail lookup: %v", err)
+	}
+	if executionFailed(out) || mapValue(mapValue(out)["recovery"]) != nil {
+		t.Fatalf("empty detail lookup received blind-search recovery: %+v", out)
+	}
+	if got := len(base.calls); got != 1 {
+		t.Fatalf("empty detail lookup base calls = %d, want 1", got)
+	}
+	if runtime.state.emptySearchStreak != 1 {
+		t.Fatalf("empty detail lookup changed search streak to %d", runtime.state.emptySearchStreak)
+	}
+	if containsString(runtime.state.catalogDetails, "table:app:main.missing") {
+		t.Fatalf("empty detail lookup became protocol evidence: %v", runtime.state.catalogDetails)
+	}
+}
+
+func TestProtocolEmptySavedQueryDetailDoesNotAuthorizeExecution(t *testing.T) {
+	base := &fakeRuntime{catalogOverride: func(map[string]any) any {
+		return map[string]any{"count": 0, "cards": []any{}}
+	}}
+	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
+	// Reproduce a broad seed that contained some unrelated saved query. That
+	// must not make a guessed, empty detail id authoritative.
+	runtime.state.catalogKinds["saved_query"] = true
+
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "saved_query:usage_events_total"}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.state.savedQueryDetailed("usage_events_total") {
+		t.Fatal("empty saved-query detail lookup authorized the guessed name")
+	}
+	before := len(base.calls)
+	if _, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"}); err == nil ||
+		!strings.Contains(err.Error(), "inspect query_catalog") {
+		t.Fatalf("guessed saved query execution error = %v", err)
+	}
+	if got := len(base.calls); got != before {
+		t.Fatalf("guessed saved query reached base runtime: calls=%d want=%d", got, before)
+	}
+}
+
+func TestProtocolSuccessfulExecutionResetsEmptySearchStreak(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "show invoice", "", 40, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:app:main.invoices"}
+	runtime.state.emptySearchStreak = 1
+
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": "query { invoices(limit: 1) { id status } }",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.state.emptySearchStreak != 0 {
+		t.Fatalf("empty streak after successful execution = %d, want 0", runtime.state.emptySearchStreak)
+	}
+}
+
 func cloneMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for key, value := range in {

@@ -1,0 +1,12 @@
+{{- $data := index hugo.Data "benchmarks" -}}
+{{- $runs := default (slice) $data.runs -}}
+{{- $matches := where $runs "run_id" .Page.Params.run_id -}}
+{{- range first 1 $matches -}}
+<div class="benchmark-run-meta" aria-label="Benchmark run summary">
+  <div><span>Recall</span><strong>{{ printf "%.1f%%" (mul .recall 100) }}</strong></div>
+  <div><span>Pass@3</span><strong>{{ printf "%.1f%%" (mul .pass_at_k 100) }}</strong></div>
+  <div><span>Method</span><strong>{{ printf "%.1f%%" (mul .method_recall 100) }}</strong></div>
+  <div><span>Safety</span><strong>{{ printf "%.1f%%" (mul .safety_precision 100) }}</strong></div>
+  <div><span>Cohort</span><strong>{{ if .ranked }}Ranked{{ else }}Unranked{{ end }}</strong></div>
+</div>
+{{- end -}}

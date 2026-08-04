@@ -184,18 +184,31 @@ graphjin eval run --demo --yes --json > graphjin-eval-report.json
 ```
 
 The report contains verdicts, metrics, failure categories, fingerprints, model
-and prompt-registry provenance, and the acceptance decision. It does not contain
-the task prompts, model answers, database rows, executed queries, headers,
-token contents, or secrets. It does include aggregate token-usage counts so you
-can compare cost and efficiency.
+and prompt-registry provenance, and the acceptance decision. Provenance also
+includes `binary_fingerprint`, the exact CLI executable SHA-256. Compare it
+before treating two score changes as a same-build A/B. The report does not
+contain the task prompts, model answers, database rows, executed queries,
+headers, token contents, or secrets. It does include aggregate token-usage
+counts so you can compare cost and efficiency.
 
 GraphJin reads usage from Ax after every agent run. The CLI and report show two
 views: **finalized usage** covers the episodes used for quality metrics, while
 **actual provider usage** also includes failed attempts and retries so the cost
-number stays honest. Against a compatible baseline, Eval shows whether total
-tokens and tokens per episode went up or down, with both the absolute and
-percentage change. Token comparisons are marked advisory when the suite,
-provider, model, or finalized episode count differs.
+number stays honest. Usage from successful model calls is preserved even when
+the agent later ends with an error, including an actor-step exhaustion.
+
+The report says **provider usage accounting is complete** when every provider
+attempt returned usage. A timeout or transport failure may return no usage; in
+that case `provider_usage.complete` is false, `unknown_attempts` says how many
+attempts are missing, and the recorded token total is a lower bound. GraphJin
+does not silently treat those unknown attempts as zero.
+
+Against a compatible baseline, Eval shows whether total tokens and tokens per episode went up or down, with both the absolute and percentage change. Reports
+use `graphjin.eval.report/v3` and a separate `usage_accounting_version`. Token
+percentages are disabled when the accounting version, provider, model,
+configured `max_steps`, suite shape, or finalized episode count differs, or
+when either run has unknown provider usage. Quality and safety comparisons are
+still valid.
 
 ## Read the result without being a statistician
 
@@ -208,7 +221,7 @@ provider, model, or finalized episode count differs.
 | **Consistency** | How often the repeated runs passed, averaged across tasks. A task passing two of three runs has consistency `0.667`. |
 | **pass@3** | The fraction of tasks where at least one of the three initial runs passed. High pass@3 with lower consistency means the model can solve the task but is unreliable. |
 | **pass³** | The fraction of tasks where all three initial runs passed. This is the stricter reliability view. |
-| **Token usage** | Finalized tokens measure agent efficiency; actual provider tokens include failed attempts and retries. Tokens per episode and the baseline percentage make increases or decreases easy to spot. |
+| **Token usage** | Finalized tokens measure agent efficiency; actual provider tokens include finalized errors, failed attempts, and retries. A complete marker means every attempt returned usage; otherwise the total is a lower bound. |
 | **Tier metrics** | The same recall, pass@3, pass³, and confidence interval split across difficulty tiers T1 through T4. |
 
 The overall reward is useful for optimization experiments, but the release gate
@@ -315,7 +328,7 @@ category.
 | `wrong_window` / `stale_anchor` | The date boundary or live data anchor was wrong. | Inspect the anchor query and resolved window. |
 | `value_mismatch` | The answer disagreed with the fresh oracle. | Compare the private episode's response with the oracle result. |
 | `behavior_mismatch` | Required discovery, tool use, skill, or response status was absent. | Inspect the expected behavior rule and action trail. |
-| `runaway` | Advisory turn, token, or latency budget was exceeded. | Look for repeated discovery or recovery loops; correctness may still pass. |
+| `runaway` | The agent exhausted its eight actor steps, or an advisory turn, token, or latency budget was exceeded. | Look for repeated discovery or execution loops. Increasing `max_steps` is not the remedy for repeated work. |
 | `provider_timeout`, `provider_rate_limit`, `provider_transport`, `provider_5xx` | A retryable provider/environment failure exhausted its one retry. | Resume after the provider or network recovers; the attempt is excluded from quality metrics. |
 | `provider_auth`, `provider_quota`, `provider_model_unavailable` | The configured environment cannot run this model. | Correct the key, quota, or model before resuming; these errors do not retry. |
 
@@ -328,11 +341,23 @@ graphjin eval run --demo --debug
 Episodes contain the full prompt, answer, action trail, executed queries,
 oracle query and result, usage, timing, and seeds. Keep them private. Share the
 report unless someone explicitly needs the sensitive trajectory.
+Failed execution summaries include stable `error_codes`, `recovery_codes`, and
+`recovery_tool` fields, which make wrong-dialect and repair loops visible
+without relying only on an error count.
 
 Interrupted and environment-failed provider calls are written separately under
 `.graphjin-evals/attempts/<run-id>/`. They are private too. A partial report has
 only status, progress, provenance, usage, and a safe environment code—never
 partial recall, task verdicts, or a baseline comparison.
+
+GraphJin keeps the global agent limit at eight actor steps. If a model repeats
+an identical successful query, GraphJin does not hit the database again: it
+returns the cached governed result with a completion instruction and gives the
+model one grace turn to answer. A second repeated call can be completed from
+that evidence. If the limit is otherwise exhausted, the episode records
+`agent_actor_steps_exhausted`, keeps usage from the calls that already happened,
+and Eval classifies it as `runaway`. Raise a task-specific limit only when its
+trace shows distinct productive progress on every turn.
 
 ## Choose the right target
 

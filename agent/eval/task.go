@@ -20,22 +20,24 @@ import (
 )
 
 const (
-	TaskSchemaVersion     = "graphjin.eval.task/v1"
-	SuiteSchemaVersion    = "graphjin.eval.suite/v1"
-	EpisodeSchemaVersion  = "graphjin.eval.episode/v2"
-	ReportSchemaVersion   = "graphjin.eval.report/v2"
-	LegacyReportVersion   = "graphjin.eval.report/v1"
-	RunManifestVersion    = "graphjin.eval.run/v1"
-	AttemptSchemaVersion  = "graphjin.eval.attempt/v1"
-	GeneratorVersion      = "graphjin.eval.generator/v3"
-	RewardVersion         = "graphjin.eval.reward/v2"
-	DefaultSuiteSize      = 24
-	DefaultRepeats        = 3
-	DefaultEvaluationDir  = "eval"
-	DefaultSuiteFilename  = "suite.yml"
-	DefaultStateDir       = ".graphjin-evals"
-	defaultMaxActorTurns  = int64(10)
-	defaultMaxTotalTokens = int64(400000)
+	TaskSchemaVersion      = "graphjin.eval.task/v1"
+	SuiteSchemaVersion     = "graphjin.eval.suite/v1"
+	EpisodeSchemaVersion   = "graphjin.eval.episode/v2"
+	ReportSchemaVersion    = "graphjin.eval.report/v3"
+	ReportV2Version        = "graphjin.eval.report/v2"
+	LegacyReportVersion    = "graphjin.eval.report/v1"
+	UsageAccountingVersion = "graphjin.eval.usage/v2"
+	RunManifestVersion     = "graphjin.eval.run/v1"
+	AttemptSchemaVersion   = "graphjin.eval.attempt/v1"
+	GeneratorVersion       = "graphjin.eval.generator/v3"
+	RewardVersion          = "graphjin.eval.reward/v2"
+	DefaultSuiteSize       = 24
+	DefaultRepeats         = 3
+	DefaultEvaluationDir   = "eval"
+	DefaultSuiteFilename   = "suite.yml"
+	DefaultStateDir        = ".graphjin-evals"
+	defaultMaxActorTurns   = int64(10)
+	defaultMaxTotalTokens  = int64(400000)
 )
 
 type Category string

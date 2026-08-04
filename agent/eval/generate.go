@@ -40,6 +40,7 @@ type AgentStatus struct {
 	Model                string   `json:"model"`
 	APIKeyEnv            string   `json:"api_key_env,omitempty"`
 	TimeoutSeconds       int      `json:"timeout_seconds,omitempty"`
+	MaxSteps             int      `json:"max_steps,omitempty"`
 	EvalFingerprint      string   `json:"eval_fingerprint,omitempty"`
 	Namespace            string   `json:"namespace,omitempty"`
 	RoleClass            string   `json:"role_class,omitempty"`

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 type Store struct {
@@ -146,7 +147,11 @@ func (s *Store) WriteReport(report Report) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return path, atomicWrite(path, append(data, '\n'), 0o600)
+	markdown := []byte(s.redact(RenderReportMarkdown(report)))
+	if err := atomicWrite(path, append(data, '\n'), 0o600); err != nil {
+		return path, err
+	}
+	return path, atomicWrite(s.ReportMarkdownPath(report.RunID), markdown, 0o600)
 }
 
 func (s *Store) WritePartialReport(report PartialReport) (string, error) {
@@ -161,7 +166,134 @@ func (s *Store) WritePartialReport(report PartialReport) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return path, atomicWrite(path, append(data, '\n'), 0o600)
+	markdown := []byte(s.redact(RenderPartialReportMarkdown(report)))
+	if err := atomicWrite(path, append(data, '\n'), 0o600); err != nil {
+		return path, err
+	}
+	return path, atomicWrite(s.ReportMarkdownPath(report.RunID), markdown, 0o600)
+}
+
+func (s *Store) ReportMarkdownPath(runID string) string {
+	return filepath.Join(s.Root, "reports", runID+".md")
+}
+
+type StoredReport struct {
+	Report
+	EnvironmentCode string `json:"environment_code,omitempty"`
+	Notice          string `json:"notice,omitempty"`
+}
+
+type ReportSummary struct {
+	RunID                 string        `json:"run_id"`
+	RunStatus             RunStatus     `json:"run_status"`
+	Mode                  RunMode       `json:"mode"`
+	GeneratedAt           time.Time     `json:"generated_at"`
+	SuiteFingerprint      string        `json:"suite_fingerprint"`
+	SuiteIdentity         string        `json:"suite_identity"`
+	Provenance            RunProvenance `json:"provenance"`
+	TaskCount             int           `json:"task_count"`
+	EpisodeCount          int           `json:"episode_count"`
+	Recall                float64       `json:"recall"`
+	PassAtK               float64       `json:"pass_at_k"`
+	SafetyPrecision       float64       `json:"safety_precision"`
+	TotalTokens           int64         `json:"total_tokens"`
+	ProviderTotalTokens   int64         `json:"provider_total_tokens"`
+	ProviderUsageComplete bool          `json:"provider_usage_complete"`
+	Accepted              bool          `json:"accepted"`
+	HasMarkdown           bool          `json:"has_markdown"`
+}
+
+func (s *Store) LoadReport(runID string) (*StoredReport, error) {
+	if !safeStoreComponent(runID) {
+		return nil, fmt.Errorf("invalid report run_id %q", runID)
+	}
+	data, err := os.ReadFile(filepath.Join(s.Root, "reports", runID+".json"))
+	if err != nil {
+		return nil, err
+	}
+	var report StoredReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return nil, fmt.Errorf("parse report %s: %w", runID, err)
+	}
+	if !supportedReportSchema(report.SchemaVersion) {
+		return nil, fmt.Errorf("unsupported report schema_version %q", report.SchemaVersion)
+	}
+	if report.RunID != runID {
+		return nil, fmt.Errorf("report identity mismatch: requested %q, found %q", runID, report.RunID)
+	}
+	return &report, nil
+}
+
+func (s *Store) LoadReportMarkdown(runID string) ([]byte, error) {
+	if !safeStoreComponent(runID) {
+		return nil, fmt.Errorf("invalid report run_id %q", runID)
+	}
+	data, err := os.ReadFile(s.ReportMarkdownPath(runID))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	return data, err
+}
+
+func (s *Store) ListReports() ([]ReportSummary, error) {
+	dir := filepath.Join(s.Root, "reports")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ReportSummary, 0, len(entries))
+	var invalid []string
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		runID := strings.TrimSuffix(entry.Name(), ".json")
+		report, err := s.LoadReport(runID)
+		if err != nil {
+			invalid = append(invalid, entry.Name())
+			continue
+		}
+		_, markdownErr := os.Stat(s.ReportMarkdownPath(runID))
+		hasMarkdown := markdownErr == nil
+		if markdownErr != nil && !os.IsNotExist(markdownErr) {
+			invalid = append(invalid, entry.Name()+" (markdown)")
+		}
+		out = append(out, ReportSummary{
+			RunID: report.RunID, RunStatus: report.RunStatus, Mode: report.Mode, GeneratedAt: report.GeneratedAt,
+			SuiteFingerprint: report.SuiteFingerprint, SuiteIdentity: SuiteIdentity(report.Report), Provenance: report.Provenance,
+			TaskCount: report.Metrics.TaskCount, EpisodeCount: report.Metrics.EpisodeCount, Recall: report.Metrics.Recall,
+			PassAtK: report.Metrics.PassAtK, SafetyPrecision: report.Metrics.SafetyPrecision,
+			TotalTokens: report.Metrics.TotalTokens, ProviderTotalTokens: report.ProviderUsage.TotalTokens,
+			ProviderUsageComplete: report.ProviderUsage.Complete, Accepted: report.Acceptance.HardPass, HasMarkdown: hasMarkdown,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].GeneratedAt.Equal(out[j].GeneratedAt) {
+			return out[i].RunID > out[j].RunID
+		}
+		return out[i].GeneratedAt.After(out[j].GeneratedAt)
+	})
+	if len(invalid) != 0 {
+		sort.Strings(invalid)
+		return out, fmt.Errorf("ignored unreadable report files: %s", strings.Join(invalid, ", "))
+	}
+	return out, nil
+}
+
+func supportedReportSchema(version string) bool {
+	return version == ReportSchemaVersion || version == ReportV2Version || version == LegacyReportVersion
+}
+
+func (s *Store) redact(value string) string {
+	for _, secret := range s.secrets {
+		if secret != "" {
+			value = strings.ReplaceAll(value, secret, "[REDACTED]")
+		}
+	}
+	return value
 }
 
 func safeStoreComponent(value string) bool {
@@ -182,7 +314,7 @@ func (s *Store) LoadBaseline() (*Report, error) {
 	if err := json.Unmarshal(data, &report); err != nil {
 		return nil, fmt.Errorf("parse baseline: %w", err)
 	}
-	if report.SchemaVersion != ReportSchemaVersion && report.SchemaVersion != LegacyReportVersion {
+	if !supportedReportSchema(report.SchemaVersion) {
 		return nil, fmt.Errorf("unsupported baseline schema_version %q", report.SchemaVersion)
 	}
 	if report.RunStatus != "" && report.RunStatus != RunStatusComplete {

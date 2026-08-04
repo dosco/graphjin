@@ -77,7 +77,7 @@ func applyDemoAgentEnvDefaults(out io.Writer) {
 		}
 	}
 	if _, ok := os.LookupEnv("GJ_AGENT_MAX_STEPS"); !ok {
-		_ = os.Setenv("GJ_AGENT_MAX_STEPS", "10")
+		_ = os.Setenv("GJ_AGENT_MAX_STEPS", "8")
 		changed = true
 	}
 	if _, ok := os.LookupEnv("GJ_AGENT_TIMEOUT_SECONDS"); !ok {

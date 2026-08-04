@@ -3659,6 +3659,98 @@ pre code {
   max-width: 18rem;
 }
 
+/* Homepage: public agent benchmark (#benchmark) */
+.benchmark-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.benchmark-proof-grid article,
+.benchmark-empty {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 1.2rem;
+}
+
+.benchmark-proof-grid article > span,
+.benchmark-run-meta span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.benchmark-proof-grid h3 {
+  margin: 0.45rem 0;
+}
+
+.benchmark-proof-grid p,
+.benchmark-empty span,
+.benchmark-unranked > p {
+  color: var(--muted);
+}
+
+.benchmark-empty {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.benchmark-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.benchmark-table {
+  margin: 0;
+  min-width: 42rem;
+}
+
+.benchmark-table th,
+.benchmark-table td {
+  white-space: nowrap;
+}
+
+.benchmark-unranked {
+  margin-top: 2rem;
+}
+
+.benchmark-run-meta {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: 1.5rem 0 2rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.benchmark-run-meta > div {
+  display: grid;
+  gap: 0.35rem;
+  background: var(--panel);
+  padding: 1rem;
+}
+
+.benchmark-run-meta strong {
+  color: var(--accent-readable);
+  font-size: 1.15rem;
+}
+
+@media (max-width: 900px) {
+  .benchmark-proof-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .benchmark-run-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   @keyframes gj-rise {
     from {
