@@ -14,6 +14,9 @@ candidate, or understand an evaluation failure.
 - Always use `graphjin eval` commands with `--json` for machine-readable state.
 - Never edit `eval/suite.yml`, hidden oracle definitions, tolerances, reward
   weights, reports, or baseline files by hand.
+- Never hand-edit `website/data/benchmarks.yaml` or
+  `website/content/benchmark/runs/`. `graphjin eval publish` is the only
+  supported writer; it writes one row and one run page and never runs Git.
 - Use `graphjin eval rm <task-id>` as the supported task-removal path; never
   delete a task from the suite file manually.
 - Never invent an oracle, field, threshold, or business interpretation.
@@ -40,6 +43,12 @@ candidate, or understand an evaluation failure.
 - Failed/interrupted provider attempts stay under `.graphjin-evals/attempts/`.
   They are private, and no persisted file may contain a credential.
 - Use `GOOGLE_API_KEY` as the canonical Google credential name.
+- Publishing does not refuse a low score. Never rerun a completed benchmark to
+  make the public board look better; publish the observed result with its
+  `accepted` state.
+- Never publish an off-suite run unless the user explicitly asks for it. When
+  asked, use `--allow-off-suite` and verify it appears as unranked with the
+  mismatch reason.
 
 ## Workflow
 
@@ -105,9 +114,24 @@ candidate, or understand an evaluation failure.
    graphjin eval bench --scale 100 --seed 23 --yes --json
    ```
 
-8. In CI, restore the deliberately promoted sanitized baseline, require it to
+8. Run the frozen public cohort only after the user approves provider traffic:
+
+   ```sh
+   graphjin eval bench --public --yes --json
+   ```
+
+   Publish the resulting run only when the user explicitly asks. Review both
+   generated files before committing them:
+
+   ```sh
+   graphjin eval publish <run-id> --yes
+   ```
+
+   Do not add `--allow-off-suite` without a separate explicit ask.
+
+9. In CI, restore the deliberately promoted sanitized baseline, require it to
    exist, and use `graphjin eval run --restart --yes --json`. Upload reports
-   only; never upload episodes or attempts.
+   (`.json` and `.md`) only; never upload episodes or attempts.
 
 ## Diagnosis
 
