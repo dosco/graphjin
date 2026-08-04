@@ -2239,6 +2239,11 @@
 			"description": "Enable the web UI. Defaults on in dev and agentic modes, off in prod.",
 			"default": false
 		},
+		"eval_state_dir": {
+			"type": "string",
+			"title": "Evaluation Report State Directory",
+			"description": "Evaluation report state directory for the non-production Trainer console.\nRelative paths resolve from config_path. Set to \"off\" to disable the API."
+		},
 		"enable_tracing": {
 			"type": "boolean",
 			"title": "Enable Tracing",

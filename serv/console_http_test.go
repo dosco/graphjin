@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -67,6 +69,27 @@ func TestConsoleBootstrapAgenticScopesAdminWorkspace(t *testing.T) {
 	}
 	if admin.Identity.DisplayName != "admin-1" || !admin.Identity.Authenticated || admin.Identity.Role != "admin" {
 		t.Fatalf("agentic admin identity = %+v", admin.Identity)
+	}
+}
+
+func TestConsoleBootstrapAdvertisesTrainerWhenReportBackendExists(t *testing.T) {
+	stateDir := filepath.Join(t.TempDir(), "eval-state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	conf := &Config{Core: core.Config{Mode: "dev"}, Serv: Serv{EvalStateDir: stateDir}}
+	hs := newAgentHTTPTestService(conf)
+	req := httptest.NewRequest(http.MethodGet, routeConsoleBootstrap, nil)
+	rec := httptest.NewRecorder()
+	hs.ConsoleBootstrap(nil).ServeHTTP(rec, req)
+	response := decodeConsoleBootstrap(t, rec)
+	if !hasConsoleWorkspace(response.Workspaces, "trainer") {
+		t.Fatalf("trainer workspace missing: %+v", response.Workspaces)
+	}
+	for _, workspace := range response.Workspaces {
+		if workspace.ID == "trainer" && (workspace.DefaultPath != "/trainer/reports" || len(workspace.Capabilities) != 1 || workspace.Capabilities[0] != evalReportsCapability) {
+			t.Fatalf("trainer workspace = %+v", workspace)
+		}
 	}
 }
 
