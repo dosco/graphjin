@@ -1,0 +1,451 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	gjeval "github.com/dosco/graphjin/agent/v3/eval"
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+)
+
+const benchmarkDataVersion = "graphjin.benchmark.data/v1"
+
+type benchmarkData struct {
+	SchemaVersion string           `yaml:"schema_version"`
+	Suite         benchmarkSuite   `yaml:"suite"`
+	Runs          []benchmarkEntry `yaml:"runs"`
+}
+
+type benchmarkSuite struct {
+	Generation       string  `yaml:"generation,omitempty"`
+	Identity         string  `yaml:"identity,omitempty"`
+	SuiteFingerprint string  `yaml:"suite_fingerprint,omitempty"`
+	CatalogHash      string  `yaml:"catalog_hash,omitempty"`
+	SeedManifestHash string  `yaml:"seed_manifest_hash,omitempty"`
+	Mode             string  `yaml:"mode,omitempty"`
+	Seed             int64   `yaml:"seed,omitempty"`
+	Repeats          int     `yaml:"repeats,omitempty"`
+	MaxSteps         int     `yaml:"max_steps,omitempty"`
+	Temperature      float64 `yaml:"temperature,omitempty"`
+	RewardVersion    string  `yaml:"reward_version,omitempty"`
+}
+
+type benchmarkEntry struct {
+	RunID                  string    `yaml:"run_id"`
+	Slug                   string    `yaml:"slug"`
+	Label                  string    `yaml:"label"`
+	Release                string    `yaml:"release,omitempty"`
+	Notes                  string    `yaml:"notes,omitempty"`
+	Ranked                 bool      `yaml:"ranked"`
+	UnrankedReason         string    `yaml:"unranked_reason,omitempty"`
+	Generation             string    `yaml:"generation"`
+	GeneratedAt            time.Time `yaml:"generated_at"`
+	Model                  string    `yaml:"model"`
+	Provider               string    `yaml:"provider,omitempty"`
+	GraphJinCommit         string    `yaml:"graphjin_commit,omitempty"`
+	BinaryFingerprint      string    `yaml:"binary_fingerprint,omitempty"`
+	SuiteIdentity          string    `yaml:"suite_identity"`
+	SuiteFingerprint       string    `yaml:"suite_fingerprint"`
+	CatalogHash            string    `yaml:"catalog_hash"`
+	SeedManifestHash       string    `yaml:"seed_manifest_hash,omitempty"`
+	OracleValueHash        string    `yaml:"oracle_value_hash,omitempty"`
+	DataAnchor             string    `yaml:"data_anchor,omitempty"`
+	RewardVersion          string    `yaml:"reward_version"`
+	UsageAccountingVersion string    `yaml:"usage_accounting_version,omitempty"`
+	Seed                   int64     `yaml:"seed"`
+	Repeats                int       `yaml:"repeats"`
+	MaxSteps               int       `yaml:"max_steps"`
+	Temperature            float64   `yaml:"temperature"`
+	TaskCount              int       `yaml:"task_count"`
+	EpisodeCount           int       `yaml:"episode_count"`
+	Recall                 float64   `yaml:"recall"`
+	RecallCILow            float64   `yaml:"recall_ci_low"`
+	RecallCIHigh           float64   `yaml:"recall_ci_high"`
+	PassAtK                float64   `yaml:"pass_at_k"`
+	PassPowerK             float64   `yaml:"pass_power_k"`
+	GroundTruthRecall      float64   `yaml:"ground_truth_recall"`
+	MethodRecall           float64   `yaml:"method_recall"`
+	SafetyPrecision        float64   `yaml:"safety_precision"`
+	BehaviorRecall         float64   `yaml:"behavior_recall"`
+	MeanReward             float64   `yaml:"mean_reward"`
+	TotalTokens            int64     `yaml:"total_tokens"`
+	ProviderTotalTokens    int64     `yaml:"provider_total_tokens"`
+	Accepted               bool      `yaml:"accepted"`
+}
+
+type evalPublishOptions struct {
+	Site          string
+	Data          string
+	Label         string
+	Release       string
+	Notes         string
+	Force         bool
+	AllowOffSuite bool
+}
+
+func evalPublishCmd(evalOpts *evalCLIOptions) *cobra.Command {
+	opts := &evalPublishOptions{}
+	cmd := &cobra.Command{
+		Use:   "publish <run-id>",
+		Short: "Publish one shareable evaluation report to the benchmark website",
+		Long: `Publish one completed evaluation report to the benchmark website.
+
+The command writes one leaderboard row and one run page, then stops. It never
+runs git. Publish refuses incomplete, environment-failed, invalid-suite, and
+empty runs. It deliberately does not refuse a low score: accepted=false is a
+benchmark result, not a reason to hide the run.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runEvalPublish(cmd, evalOpts, opts, strings.TrimSpace(args[0]))
+		},
+	}
+	cmd.Flags().StringVar(&opts.Site, "site", "website", "website root")
+	cmd.Flags().StringVar(&opts.Data, "data", "", "leaderboard data file (default <site>/data/benchmarks.yaml)")
+	cmd.Flags().StringVar(&opts.Label, "label", "", "leaderboard display label (default: model)")
+	cmd.Flags().StringVar(&opts.Release, "release", "", "GraphJin release label (default: short commit)")
+	cmd.Flags().StringVar(&opts.Notes, "notes", "", "short public notes for this run")
+	cmd.Flags().BoolVar(&opts.Force, "force", false, "replace an existing row and overwrite its page")
+	cmd.Flags().BoolVar(&opts.AllowOffSuite, "allow-off-suite", false, "publish a non-matching run as explicitly unranked")
+	return cmd
+}
+
+func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPublishOptions, runID string) error {
+	stateDir, err := evalStateDirForPublish(cmd, evalOpts)
+	if err != nil {
+		return err
+	}
+	store := gjeval.NewStore(stateDir)
+	stored, err := store.LoadReport(runID)
+	if err != nil {
+		return err
+	}
+	report := stored.Report
+	if report.RunStatus != gjeval.RunStatusComplete {
+		return &evalExitError{Code: 1, Err: fmt.Errorf("run %s is %s; only complete runs can be published", runID, report.RunStatus)}
+	}
+	if !report.Acceptance.SuiteValid {
+		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has an invalid suite", runID)}
+	}
+	if report.Acceptance.EnvironmentFailure {
+		return &evalExitError{Code: 3, Err: fmt.Errorf("run %s has an evaluation environment failure", runID)}
+	}
+	if report.Metrics.TaskCount == 0 {
+		return &evalExitError{Code: 1, Err: fmt.Errorf("run %s has no scored tasks", runID)}
+	}
+
+	dataPath := opts.Data
+	if strings.TrimSpace(dataPath) == "" {
+		dataPath = filepath.Join(opts.Site, "data", "benchmarks.yaml")
+	}
+	data, err := loadBenchmarkData(dataPath)
+	if err != nil {
+		return err
+	}
+	slug := benchmarkRunSlug(runID)
+	pagePath := filepath.Join(opts.Site, "content", "benchmark", "runs", slug+".md")
+	existing := -1
+	for i := range data.Runs {
+		if data.Runs[i].RunID == runID {
+			existing = i
+			break
+		}
+	}
+	if existing >= 0 && !opts.Force {
+		return fmt.Errorf("run %s is already published; use --force to replace it", runID)
+	}
+	if _, err := os.Stat(pagePath); err == nil && !opts.Force {
+		return fmt.Errorf("benchmark page %s already exists; use --force to overwrite it", pagePath)
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	mismatches := benchmarkComparabilityMismatches(report, data.Suite)
+	ranked := len(mismatches) == 0
+	if !ranked && !opts.AllowOffSuite {
+		return fmt.Errorf("run %s does not match the public benchmark cohort (%s); use --allow-off-suite to publish it as unranked", runID, strings.Join(mismatches, ", "))
+	}
+	if !evalOpts.Yes {
+		if !isInteractiveTTY() {
+			return errors.New("benchmark publishing requires --yes in non-interactive mode")
+		}
+		ok, err := promptConfirm(newPromptIO(cmd.InOrStdin(), cmd.OutOrStdout()), fmt.Sprintf("Publish evaluation run %s to %s?", runID, opts.Site), false)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("publish aborted")
+		}
+	}
+
+	if data.Suite.Identity == "" && ranked {
+		data.Suite = benchmarkSuiteFromReport(report)
+	}
+	label := strings.TrimSpace(opts.Label)
+	if label == "" {
+		label = strings.TrimSpace(report.Provenance.Model)
+	}
+	if label == "" {
+		label = "Unknown model"
+	}
+	release := strings.TrimSpace(opts.Release)
+	if release == "" {
+		release = shortRevision(report.Provenance.GraphJinCommit)
+	}
+	if strings.TrimSpace(report.Provenance.GraphJinCommit) == "" {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Warning: graphjin_commit is empty; this run cannot appear on the GraphJin release timeline.")
+	}
+	entry := benchmarkEntryFromReport(report, slug, label, release, opts.Notes, ranked, strings.Join(mismatches, "; "))
+	if existing >= 0 {
+		data.Runs[existing] = entry
+	} else {
+		data.Runs = append(data.Runs, entry)
+	}
+	sort.Slice(data.Runs, func(i, j int) bool { return data.Runs[i].RunID < data.Runs[j].RunID })
+
+	markdown, err := store.LoadReportMarkdown(runID)
+	if err != nil {
+		return err
+	}
+	if markdown == nil {
+		markdown = []byte(gjeval.RenderReportMarkdown(report))
+	}
+	page, err := renderBenchmarkRunPage(entry, markdown)
+	if err != nil {
+		return err
+	}
+	yamlData, err := marshalBenchmarkData(data)
+	if err != nil {
+		return err
+	}
+	if err := atomicWritePublicFile(dataPath, yamlData); err != nil {
+		return err
+	}
+	if err := atomicWritePublicFile(pagePath, page); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Published benchmark data: %s\nPublished run page: %s\nReview and commit these files.\n", dataPath, pagePath)
+	return nil
+}
+
+func evalStateDirForPublish(cmd *cobra.Command, opts *evalCLIOptions) (string, error) {
+	if opts.Demo && opts.Remote {
+		return "", errors.New("--demo and --remote are mutually exclusive")
+	}
+	projectPath := cpath
+	if opts.Demo && !flagChanged(cmd, "path") && !flagChanged(cmd, "config") {
+		projectPath = demoDefaultPath
+	}
+	abs, err := filepath.Abs(projectPath)
+	if err != nil {
+		return "", err
+	}
+	stateDir := filepath.Join(abs, gjeval.DefaultStateDir)
+	info, err := os.Stat(stateDir)
+	if os.IsNotExist(err) {
+		return "", fmt.Errorf("no evaluation state at `%s`; run `graphjin eval bench --public --yes` first", stateDir)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("evaluation state path is not a directory: %s", stateDir)
+	}
+	return stateDir, nil
+}
+
+func benchmarkComparabilityMismatches(report gjeval.Report, suite benchmarkSuite) []string {
+	var mismatches []string
+	spec := gjeval.PublicBenchmark()
+	if spec.SuiteFingerprint != "" && report.SuiteFingerprint != spec.SuiteFingerprint {
+		mismatches = append(mismatches, "suite_fingerprint")
+	}
+	if suite.Identity != "" && gjeval.SuiteIdentity(report) != suite.Identity {
+		want := reportFromBenchmarkSuite(suite)
+		mismatches = append(mismatches, gjeval.SuiteIdentityMismatches(report, want)...)
+		if len(mismatches) == 0 {
+			mismatches = append(mismatches, "suite_identity")
+		}
+	}
+	return sortedUniqueStrings(mismatches)
+}
+
+func benchmarkSuiteFromReport(report gjeval.Report) benchmarkSuite {
+	return benchmarkSuite{
+		Generation: gjeval.PublicBenchmarkGeneration, Identity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
+		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
+		Mode: string(report.Mode), Seed: report.Provenance.Seed, Repeats: report.Provenance.Repeats,
+		MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature, RewardVersion: report.RewardVersion,
+	}
+}
+
+func reportFromBenchmarkSuite(s benchmarkSuite) gjeval.Report {
+	return gjeval.Report{
+		Mode: gjeval.RunMode(s.Mode), SuiteFingerprint: s.SuiteFingerprint, RewardVersion: s.RewardVersion,
+		DatasetFingerprint: gjeval.DatasetFingerprint{CatalogHash: s.CatalogHash, SeedManifestHash: s.SeedManifestHash},
+		Provenance:         gjeval.RunProvenance{Seed: s.Seed, Repeats: s.Repeats, MaxSteps: s.MaxSteps, Temperature: s.Temperature},
+	}
+}
+
+func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes string, ranked bool, reason string) benchmarkEntry {
+	return benchmarkEntry{
+		RunID: report.RunID, Slug: slug, Label: label, Release: release, Notes: strings.TrimSpace(notes), Ranked: ranked, UnrankedReason: reason,
+		Generation: gjeval.PublicBenchmarkGeneration, GeneratedAt: report.GeneratedAt, Model: report.Provenance.Model, Provider: report.Provenance.Provider,
+		GraphJinCommit: report.Provenance.GraphJinCommit, BinaryFingerprint: report.Provenance.BinaryFingerprint,
+		SuiteIdentity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
+		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
+		OracleValueHash: report.OracleValueHash, DataAnchor: report.DatasetFingerprint.DataAnchor,
+		RewardVersion: report.RewardVersion, UsageAccountingVersion: report.UsageAccountingVersion,
+		Seed: report.Provenance.Seed, Repeats: report.Provenance.Repeats, MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature,
+		TaskCount: report.Metrics.TaskCount, EpisodeCount: report.Metrics.EpisodeCount, Recall: report.Metrics.Recall,
+		RecallCILow: report.Metrics.RecallCI.Low, RecallCIHigh: report.Metrics.RecallCI.High,
+		PassAtK: report.Metrics.PassAtK, PassPowerK: report.Metrics.PassPowerK,
+		GroundTruthRecall: report.Metrics.GroundTruthRecall, MethodRecall: report.Metrics.MethodRecall,
+		SafetyPrecision: report.Metrics.SafetyPrecision, BehaviorRecall: report.Metrics.BehaviorRecall,
+		MeanReward: report.Metrics.MeanReward, TotalTokens: report.Metrics.TotalTokens,
+		ProviderTotalTokens: report.ProviderUsage.TotalTokens, Accepted: report.Acceptance.HardPass,
+	}
+}
+
+func loadBenchmarkData(path string) (benchmarkData, error) {
+	data := benchmarkData{SchemaVersion: benchmarkDataVersion, Runs: []benchmarkEntry{}}
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return data, nil
+	}
+	if err != nil {
+		return data, err
+	}
+	decoder := yaml.NewDecoder(strings.NewReader(string(raw)))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&data); err != nil {
+		return data, fmt.Errorf("parse benchmark data %s: %w", path, err)
+	}
+	if data.SchemaVersion == "" {
+		data.SchemaVersion = benchmarkDataVersion
+	}
+	if data.SchemaVersion != benchmarkDataVersion {
+		return data, fmt.Errorf("unsupported benchmark data schema_version %q", data.SchemaVersion)
+	}
+	if data.Runs == nil {
+		data.Runs = []benchmarkEntry{}
+	}
+	return data, nil
+}
+
+func marshalBenchmarkData(data benchmarkData) ([]byte, error) {
+	data.SchemaVersion = benchmarkDataVersion
+	raw, err := yaml.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte("# Generated by `graphjin eval publish`; review and commit this file.\n"), raw...), nil
+}
+
+func renderBenchmarkRunPage(entry benchmarkEntry, markdown []byte) ([]byte, error) {
+	front := struct {
+		Title       string    `yaml:"title"`
+		Description string    `yaml:"description"`
+		Date        time.Time `yaml:"date"`
+		RunID       string    `yaml:"run_id"`
+		Generation  string    `yaml:"benchmark_generation"`
+		Ranked      bool      `yaml:"ranked"`
+		Model       string    `yaml:"model"`
+		Provider    string    `yaml:"provider,omitempty"`
+		Release     string    `yaml:"release,omitempty"`
+	}{
+		Title: entry.Label + " benchmark run", Description: "Verified GraphJin public benchmark report for " + entry.Label + ".",
+		Date: entry.GeneratedAt, RunID: entry.RunID, Generation: entry.Generation, Ranked: entry.Ranked,
+		Model: entry.Model, Provider: entry.Provider, Release: entry.Release,
+	}
+	frontData, err := yaml.Marshal(front)
+	if err != nil {
+		return nil, err
+	}
+	body := stripMarkdownReportTitle(string(markdown))
+	return []byte("---\n" + string(frontData) + "---\n\n{{< benchmark-run-meta >}}\n\n" + body), nil
+}
+
+func stripMarkdownReportTitle(markdown string) string {
+	lines := strings.Split(markdown, "\n")
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "# GraphJin evaluation report") {
+		lines = lines[1:]
+		for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+			lines = lines[1:]
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+var benchmarkRunIDPattern = regexp.MustCompile(`(?i)^(\d{8})T(\d{6})(?:\.\d+)?Z-(.+)$`)
+
+func benchmarkRunSlug(runID string) string {
+	value := strings.ToLower(strings.TrimSpace(runID))
+	if match := benchmarkRunIDPattern.FindStringSubmatch(runID); len(match) == 4 {
+		value = strings.ToLower(match[1] + "t" + match[2] + "-" + match[3])
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+			lastDash = false
+		} else if !lastDash && b.Len() > 0 {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func shortRevision(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 8 {
+		return value[:8]
+	}
+	return value
+}
+
+func sortedUniqueStrings(values []string) []string {
+	sort.Strings(values)
+	out := values[:0]
+	for _, value := range values {
+		if len(out) == 0 || out[len(out)-1] != value {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func atomicWritePublicFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".graphjin-benchmark-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o644)
+}

@@ -106,6 +106,10 @@ type Serv struct {
 	// Enable the web UI. Defaults on in dev and agentic modes, off in prod.
 	WebUI bool `mapstructure:"web_ui" jsonschema:"title=Enable Web UI,default=false"`
 
+	// Evaluation report state directory for the non-production Trainer console.
+	// Relative paths resolve from config_path. Set to "off" to disable the API.
+	EvalStateDir string `mapstructure:"eval_state_dir" jsonschema:"title=Evaluation Report State Directory"`
+
 	// Enable OpenTrace request tracing
 	EnableTracing bool `mapstructure:"enable_tracing" jsonschema:"title=Enable Tracing,default=true"`
 

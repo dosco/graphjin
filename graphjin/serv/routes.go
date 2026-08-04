@@ -7,19 +7,21 @@ import (
 )
 
 const (
-	routeGraphQL          = "/api/v1/graphql"
-	routeAgent            = "/api/v1/agent"
-	routeAgentStatus      = "/api/v1/agent/status"
-	routeConsoleBootstrap = "/api/v1/console/bootstrap"
-	routeREST             = "/api/v1/rest/"
-	routeWorkflows        = "/api/v1/workflows/"
-	routeWatches          = "/api/v1/watches"
-	routeWatchEvents      = "/api/v1/watch-events"
-	routeOpenAPI          = "/api/v1/openapi.json"
-	routeMCP              = "/api/v1/mcp"
-	routeMCPMsg           = "/api/v1/mcp/message"
-	routeConfSchema       = "/api/v1/config/schema.json"
-	healthRoute           = "/health"
+	routeGraphQL           = "/api/v1/graphql"
+	routeAgent             = "/api/v1/agent"
+	routeAgentStatus       = "/api/v1/agent/status"
+	routeConsoleBootstrap  = "/api/v1/console/bootstrap"
+	routeEvalReports       = "/api/v1/eval/reports"
+	routeEvalReportsPrefix = "/api/v1/eval/reports/"
+	routeREST              = "/api/v1/rest/"
+	routeWorkflows         = "/api/v1/workflows/"
+	routeWatches           = "/api/v1/watches"
+	routeWatchEvents       = "/api/v1/watch-events"
+	routeOpenAPI           = "/api/v1/openapi.json"
+	routeMCP               = "/api/v1/mcp"
+	routeMCPMsg            = "/api/v1/mcp/message"
+	routeConfSchema        = "/api/v1/config/schema.json"
+	healthRoute            = "/health"
 )
 
 type Mux interface {
@@ -64,6 +66,10 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		if ns == nil {
 			mux.Handle(routeGraphQL, s1.GraphQL(ah))
 			mux.Handle(routeConsoleBootstrap, s1.ConsoleBootstrap(ah))
+			if evalReportsConfigured(s.conf) {
+				mux.Handle(routeEvalReports, s1.EvalReports(ah))
+				mux.Handle(routeEvalReportsPrefix, s1.EvalReports(ah))
+			}
 			mux.Handle(routeAgentStatus, s1.AgentStatus(ah))
 			if s.conf.agentEnabled() {
 				mux.Handle(routeAgent, s1.Agent(ah))
@@ -82,6 +88,10 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		} else {
 			mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
 			mux.Handle(routeConsoleBootstrap, s1.ConsoleBootstrapWithNS(ah, *ns))
+			if evalReportsConfigured(s.conf) {
+				mux.Handle(routeEvalReports, s1.EvalReportsWithNS(ah, *ns))
+				mux.Handle(routeEvalReportsPrefix, s1.EvalReportsWithNS(ah, *ns))
+			}
 			mux.Handle(routeAgentStatus, s1.AgentStatusWithNS(ah, *ns))
 			if s.conf.agentEnabled() {
 				mux.Handle(routeAgent, s1.AgentWithNS(ah, *ns))

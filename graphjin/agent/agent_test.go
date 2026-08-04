@@ -80,6 +80,24 @@ type fakeRuntime struct {
 	catalogOverride func(args map[string]any) any
 }
 
+type successfulExecutionRuntime struct {
+	fakeRuntime
+	graphqlCalls int
+	savedCalls   int
+}
+
+func (r *successfulExecutionRuntime) ExecuteGraphQL(_ context.Context, args map[string]any) (any, error) {
+	r.graphqlCalls++
+	r.calls = append(r.calls, toolExecuteGraphQL)
+	return map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "INV-1", "status": "paid"}}}}, nil
+}
+
+func (r *successfulExecutionRuntime) ExecuteSavedQuery(_ context.Context, args map[string]any) (any, error) {
+	r.savedCalls++
+	r.calls = append(r.calls, toolExecuteSavedQuery)
+	return map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "INV-1", "status": "paid"}}}}, nil
+}
+
 func (r *fakeRuntime) GraphQLHelp(_ context.Context, args map[string]any) (any, error) {
 	return r.record("graphql_help", args), nil
 }
@@ -1219,6 +1237,124 @@ func TestFinalizeRecoversSuccessfulExecutionDataIgnoredByModel(t *testing.T) {
 	}
 }
 
+func TestDuplicateSuccessfulGraphQLIsSuppressedAndArmsCompletion(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "Show invoice INV-1", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:main:invoices"}
+	args := map[string]any{
+		"query":     "query { invoices(where: { id: { eq: $id } }) { id status } }",
+		"variables": map[string]any{"id": "INV-1"},
+	}
+	first, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil || executionFailed(first) {
+		t.Fatalf("first execution = %+v err=%v", first, err)
+	}
+	duplicate, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query":     "  query  { invoices(where: { id: { eq: $id } }) { id status } } # same operation\n",
+		"variables": map[string]any{"id": "INV-1"},
+	})
+	if err != nil || base.graphqlCalls != 1 {
+		t.Fatalf("duplicate reached database: calls=%d result=%+v err=%v", base.graphqlCalls, duplicate, err)
+	}
+	if stringFromMap(mapValue(duplicate)["recovery"].(map[string]any), "code") != "completion_required" || runtime.state.completionLatchKey == "" {
+		t.Fatalf("duplicate recovery/latch = result:%+v state:%+v", duplicate, runtime.state)
+	}
+	if got := runtime.state.actions[len(runtime.state.actions)-1].Summary["cached"]; got != true {
+		t.Fatalf("duplicate action summary cached = %v, want true", got)
+	}
+	_, err = runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil || base.graphqlCalls != 1 || !runtime.state.completionReady {
+		t.Fatalf("second duplicate did not trigger completion: calls=%d ready=%t err=%v", base.graphqlCalls, runtime.state.completionReady, err)
+	}
+}
+
+func TestDistinctExecutionClearsDuplicateCompletionLatch(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "Show invoice details", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:main:invoices"}
+	first := map[string]any{"query": "query { invoices(limit: 1) { id status } }"}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(first)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(first)); err != nil {
+		t.Fatal(err)
+	}
+	distinct := map[string]any{"query": "query { invoices(limit: 2) { id status } }"}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), distinct); err != nil {
+		t.Fatal(err)
+	}
+	if base.graphqlCalls != 2 || runtime.state.completionLatchKey != "" || runtime.state.completionReady {
+		t.Fatalf("distinct execution did not continue cleanly: calls=%d latch=%q ready=%t", base.graphqlCalls, runtime.state.completionLatchKey, runtime.state.completionReady)
+	}
+}
+
+func TestDuplicateSuccessfulSavedQueryIsSuppressed(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "Show the invoice snapshot", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.markSavedQueryDetailed("invoice_snapshot")
+	args := map[string]any{"name": "invoice_snapshot", "variables": map[string]any{"account": 7}}
+	if _, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args)); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
+	if err != nil || base.savedCalls != 1 || mapValue(duplicate)["cached"] != true {
+		t.Fatalf("saved-query duplicate = %+v calls=%d err=%v", duplicate, base.savedCalls, err)
+	}
+}
+
+func TestDuplicateSuccessfulMutationIsNotExecutedTwice(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "Mark invoice INV-1 paid", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.securityRuntimeEvidence = true
+	runtime.state.catalogDetails = []string{"table:main:invoices"}
+	runtime.state.tablesDetailed["invoices"] = true
+	args := map[string]any{
+		"query":     "mutation($id: String!) { invoices(where: { id: { eq: $id } }, update: { status: paid }) { id status } }",
+		"variables": map[string]any{"id": "INV-1"},
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args)); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil || base.graphqlCalls != 1 || mapValue(duplicate)["cached"] != true {
+		t.Fatalf("mutation duplicate = %+v calls=%d err=%v", duplicate, base.graphqlCalls, err)
+	}
+}
+
+func TestFinalizeRecoversArmedCompletionOnActorExhaustion(t *testing.T) {
+	state := newDiscoveryState("Show invoice INV-1")
+	state.seedOK = true
+	state.modelDiscoveryAction = true
+	result := map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "INV-1"}}}}
+	state.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { invoices { id } }"}, result)
+	state.completionLatchKey = "execute_graphql:test"
+	resp := state.finalize(Response{Status: StatusError, Errors: []ErrorInfo{{
+		Message:    "agent actor loop exceeded max steps",
+		Extensions: map[string]any{"code": "agent_actor_steps_exhausted", "retryable": false},
+	}}})
+	if resp.Status != StatusAnswered || resp.Data == nil || len(resp.Errors) != 0 {
+		t.Fatalf("armed exhaustion did not recover cached evidence: %+v", resp)
+	}
+}
+
+func TestResponseFromErrorStructuresActorExhaustionAndKeepsUsage(t *testing.T) {
+	resp := responseFromError(errors.New("agent actor loop exceeded max steps"), "trace", &fakeProgram{}, true)
+	if resp.Status != StatusError || len(resp.Errors) != 1 || resp.Errors[0].Extensions["code"] != "agent_actor_steps_exhausted" || resp.Errors[0].Extensions["retryable"] != false {
+		t.Fatalf("actor exhaustion error = %+v", resp)
+	}
+	if totals := SummarizeUsage(resp.Usage); totals.TotalTokens != 12 || totals.LLMCalls != 1 {
+		t.Fatalf("actor exhaustion usage = %+v", totals)
+	}
+}
+
 func TestFinalizeDoesNotRecoverLostResultClaimAcrossBlockingViolation(t *testing.T) {
 	state := newDiscoveryState("Summarize restricted production context")
 	state.seedOK = true
@@ -1318,6 +1454,31 @@ func TestPendingRequiredSavedQueryExecutionForNaturalLiveData(t *testing.T) {
 	completed.recordExecution("execute_saved_query", map[string]any{"name": "daily_roast_context"}, map[string]any{"data": map[string]any{"production_orders": []any{1}}})
 	if pending := completed.pendingRequiredSavedQueryExecution(); pending != "" {
 		t.Fatalf("successful execution should satisfy final guard: %q", pending)
+	}
+}
+
+func TestSeedCatalogSavedQueryDoesNotBecomeRequiredRoute(t *testing.T) {
+	state := newDiscoveryState("What is the latest subscription renewal date?")
+	result := map[string]any{
+		"cards": []any{
+			map[string]any{"id": "table:app:main.subscriptions", "kind": "table"},
+			map[string]any{"id": "saved_query:churn_risk_context", "kind": "saved_query", "name": "churn_risk_context"},
+		},
+	}
+	state.recordCatalog(map[string]any{"search": state.instruction}, result, true)
+	if state.savedQueriesDiscovered["churn_risk_context"] {
+		t.Fatal("broad seed result became an implicit saved-query route")
+	}
+	if pending := state.pendingRequiredSavedQueryExecution(); pending != "" {
+		t.Fatalf("seed result forced unrelated saved-query execution: %q", pending)
+	}
+
+	state.recordCatalog(map[string]any{"search": "churn risk context"}, result, false)
+	if !state.savedQueriesDiscovered["churn_risk_context"] {
+		t.Fatal("model-driven saved-query discovery was not recorded")
+	}
+	if pending := state.pendingRequiredSavedQueryExecution(); !strings.Contains(pending, `execute_saved_query({name:"churn_risk_context"})`) {
+		t.Fatalf("model-driven unambiguous route was not enforced: %q", pending)
 	}
 }
 

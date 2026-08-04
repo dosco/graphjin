@@ -132,8 +132,8 @@ func TestLoadDemoEnvInfersAgentFromOpenAIKey(t *testing.T) {
 	if got := os.Getenv("GO_ENV"); got != "agentic" {
 		t.Fatalf("GO_ENV = %q, want agentic", got)
 	}
-	if got := os.Getenv("GJ_AGENT_MAX_STEPS"); got != "10" {
-		t.Fatalf("GJ_AGENT_MAX_STEPS = %q, want 10", got)
+	if got := os.Getenv("GJ_AGENT_MAX_STEPS"); got != "8" {
+		t.Fatalf("GJ_AGENT_MAX_STEPS = %q, want 8", got)
 	}
 	if got := os.Getenv("GJ_AGENT_TIMEOUT_SECONDS"); got != "300" {
 		t.Fatalf("GJ_AGENT_TIMEOUT_SECONDS = %q, want 300", got)

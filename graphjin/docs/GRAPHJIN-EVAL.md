@@ -84,19 +84,33 @@ Local state is stored with owner-only permissions:
 ```
 
 Reports are shareable and contain metrics, task IDs, tiers, failure categories,
-provenance, fingerprints, and acceptance state. They do not contain prompts,
-answers, database rows, executed queries, request headers, authentication tokens,
-token contents, or secrets. Aggregate token-usage counts remain in the report as
-efficiency metrics. GraphJin obtains them from Ax's `GetUsage()` state and the
-merged stage chat logs. A complete report separates finalized-slot usage from
-actual provider usage, which includes failed attempts and retries. When the
-suite, provider, model, and finalized episode count match the baseline, the
-report also records total-token and tokens-per-episode deltas and percentages.
-Cross-model or differently shaped runs retain their absolute counts but mark the
-comparison advisory rather than presenting an apples-to-oranges regression.
+provenance, fingerprints, and acceptance state. Report provenance includes the
+exact CLI executable SHA-256 as `binary_fingerprint`; use it to prove that two
+runs really used the same build before attributing a score change. They do not
+contain prompts, answers, database rows, executed queries, request headers,
+authentication tokens, token contents, or secrets. Aggregate token-usage counts
+remain in the report as efficiency metrics. GraphJin obtains them from Ax's
+`GetUsage()` state and the merged stage chat logs, including successful model
+calls made before an agent
+error. A complete report separates finalized-slot usage from actual provider
+usage, which includes finalized errors, failed attempts, and retries.
+`provider_usage.complete` says whether every attempt returned usage;
+`unknown_attempts` counts timeouts or transport failures where the provider
+returned none. When usage is incomplete, recorded tokens are a lower bound.
+
+Reports use `graphjin.eval.report/v3` and identify their accounting rules with
+`usage_accounting_version`. Token percentages are comparable only when the
+suite shape, accounting version, provider, model, configured `max_steps`, and
+finalized episode count match and both runs have complete provider usage.
+Other runs retain absolute counts but do not present an apples-to-oranges token
+percentage. Quality and safety comparisons remain valid.
 Episode files are private trajectories containing the request, response, action
 trail, oracle query/result, usage, timing, and seeds. `--debug` prints their
 paths; it does not move private data into the report.
+Failed execution action summaries retain stable `error_codes`,
+`recovery_codes`, and `recovery_tool` fields without copying provider or
+compiler error prose, so common repair loops can be triaged without guessing
+from `error_count` alone.
 Attempt files contain sanitized interrupted or failed provider attempts and are
 also private. Manifests checkpoint progress and contain only allowlisted,
 non-secret provenance. Even private files never contain credentials: provider
@@ -127,6 +141,14 @@ valid run can establish a baseline at its observed recall; recall below `0.90`
 produces a quality warning instead of blocking adoption. Later runs compare the
 aggregate recall over the task-ID intersection, and new tasks remain advisory
 until promoted.
+
+GraphJin deliberately keeps the global agent limit at eight actor steps. Eval
+counts actor turns from executor `stage_request` trace events and classifies
+`agent_actor_steps_exhausted` as `runaway`. More steps are not the remedy for a
+model repeating the same successful work: GraphJin suppresses the repeated
+database call, returns cached governed evidence with a completion directive,
+and gives the model one grace turn to finish. A future task-specific increase
+should require traces showing distinct productive progress on every turn.
 
 Value correctness is compared when dataset fingerprints match or when both
 reports have the same aggregate `oracle_value_hash`. The latter hashes the suite

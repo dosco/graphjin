@@ -11,6 +11,22 @@ type failingExecRuntime struct {
 	execOut any
 }
 
+type sequencedExecRuntime struct {
+	*fakeRuntime
+	outputs []any
+	calls   int
+}
+
+func (r *sequencedExecRuntime) ExecuteGraphQL(_ context.Context, args map[string]any) (any, error) {
+	r.record(toolExecuteGraphQL, args)
+	if r.calls >= len(r.outputs) {
+		return nil, nil
+	}
+	out := r.outputs[r.calls]
+	r.calls++
+	return out, nil
+}
+
 func (r *failingExecRuntime) ExecuteGraphQL(_ context.Context, args map[string]any) (any, error) {
 	r.record("execute_graphql", args)
 	return r.execOut, nil
@@ -272,6 +288,105 @@ func TestWrongDialectAggregateGetsSpecificRepairAndPreservesExtensions(t *testin
 	}
 }
 
+func TestAggregateIntentUnknownFieldGetsSpecificRepair(t *testing.T) {
+	tests := []struct {
+		name         string
+		instruction  string
+		query        string
+		errorMessage string
+		catalogField string
+		wantHint     string
+	}{
+		{
+			name:         "invented total root",
+			instruction:  "What is the total quantity across all usage events?",
+			query:        "query { usage_events_total }",
+			errorMessage: "table not found: usage_events_total",
+			catalogField: "column:app:main.usage_events.quantity",
+			wantHint:     "sum_quantity",
+		},
+		{
+			name:         "function style count",
+			instruction:  "How many subscriptions are there?",
+			query:        "query { subscriptions { count_id: count(column: id) } }",
+			errorMessage: "unknown argument 'column'",
+			wantHint:     "count_id",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
+				Errors: []ErrorInfo{{
+					Message:    test.errorMessage,
+					Extensions: map[string]any{"compiler_stage": "qcode"},
+				}},
+			}}
+			runtime := newProtocolRuntime(base, test.instruction, "", 20, nil, nil, CatalogSearchFeatures{})
+			runtime.state.seedOK = true
+			runtime.state.modelDiscoveryAction = true
+			runtime.state.catalogDetails = []string{"table:app:main.usage_events"}
+			if test.catalogField != "" {
+				runtime.state.catalogIDs[test.catalogField] = true
+			}
+			out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": test.query})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res := out.(executeResult)
+			if len(res.Errors) != 1 {
+				t.Fatalf("errors = %+v", res.Errors)
+			}
+			extensions := res.Errors[0].Extensions
+			if extensions["compiler_stage"] != "qcode" || extensions["code"] != "wrong_dialect_aggregate" {
+				t.Fatalf("extensions = %+v, want preserved compiler metadata and aggregate repair", extensions)
+			}
+			repair := mapValue(extensions["graphjin_repair"])
+			message := stringFromMap(repair, "message")
+			if stringFromMap(repair, "kind") != "wrong_dialect_aggregate" ||
+				!strings.Contains(message, "fields on the table selection") ||
+				!strings.Contains(message, test.wantHint) {
+				t.Fatalf("graphjin_repair = %+v, want concrete hint %q", repair, test.wantHint)
+			}
+			recovery := mapValue(res.Recovery)
+			if !strings.Contains(stringFromMap(recovery, "instruction"), test.wantHint) ||
+				stringFromMap(mapValue(recovery["next"]), "tool") != toolGraphQLHelp {
+				t.Fatalf("recovery = %+v, want graphql_help and concrete hint %q", recovery, test.wantHint)
+			}
+		})
+	}
+}
+
+func TestNonAggregateUnknownFieldKeepsGenericRecovery(t *testing.T) {
+	base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
+		Errors: []ErrorInfo{{
+			Message:    "unknown field display_label",
+			Extensions: map[string]any{"compiler_stage": "qcode"},
+		}},
+	}}
+	runtime := newProtocolRuntime(base, "Show the account display label", "", 20, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:app:main.accounts"}
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts { display_label } }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := out.(executeResult)
+	if len(res.Errors) != 1 {
+		t.Fatalf("errors = %+v", res.Errors)
+	}
+	if code := stringFromMap(res.Errors[0].Extensions, "code"); code == "wrong_dialect_aggregate" {
+		t.Fatalf("non-aggregate failure received aggregate repair: %+v", res.Errors[0])
+	}
+	if repair := mapValue(res.Errors[0].Extensions["graphjin_repair"]); repair != nil {
+		t.Fatalf("non-aggregate failure received graphjin_repair: %+v", repair)
+	}
+	recovery := mapValue(res.Recovery)
+	if next := mapValue(recovery["next"]); next["recommended_tool"] != toolQueryCatalog {
+		t.Fatalf("recovery = %+v, want generic query_catalog path", recovery)
+	}
+}
+
 func TestFailedQueryRequiresDistinctRepairAndRejectsDuplicate(t *testing.T) {
 	base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
 		Errors: []ErrorInfo{{Message: "field not found"}},
@@ -305,8 +420,24 @@ func TestFailedQueryRequiresDistinctRepairAndRejectsDuplicate(t *testing.T) {
 	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts { count_id } }"}); err != nil {
 		t.Fatal(err)
 	}
-	if runtime.state.pendingFailedQueryKey != "" || !runtime.state.repairFailureExhausted {
-		t.Fatalf("repair state = pending:%q exhausted:%t", runtime.state.pendingFailedQueryKey, runtime.state.repairFailureExhausted)
+	if runtime.state.pendingFailedQueryKey != "" || len(runtime.state.failedQueryKeys) != 2 {
+		t.Fatalf("repair state = pending:%q failed:%v", runtime.state.pendingFailedQueryKey, runtime.state.failedQueryKeys)
+	}
+	distinctFailed := "query { accounts { count_id } }"
+	before = len(base.calls)
+	out, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": distinctFailed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(base.calls) != before || stringFromMap(out.(executeResult).Errors[0].Extensions, "code") != "duplicate_failed_query" {
+		t.Fatalf("distinct failed query was re-executed: calls=%d result=%+v", len(base.calls), out)
+	}
+	newFailure := "query { accounts { max_id } }"
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": newFailure}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.state.pendingFailedQueryKey != executionQueryKey(map[string]any{"query": newFailure}) || len(runtime.state.failedQueryKeys) != 3 {
+		t.Fatalf("new failed identity did not re-arm repair: pending=%q failed=%v", runtime.state.pendingFailedQueryKey, runtime.state.failedQueryKeys)
 	}
 }
 
@@ -339,6 +470,33 @@ func TestDatabaseComputationFinalGuard(t *testing.T) {
 		t.Fatalf("database-ranked result remained blocked: %q", message)
 	}
 
+	recordRanking := newDiscoveryState("Which record in invoices has the highest amount cents, and what is the value?")
+	recordRanking.seedOK = true
+	recordRanking.modelDiscoveryAction = true
+	rankingArgs := map[string]any{"query": "query { invoices(order_by: { amount_cents: desc }, limit: 1) { id amount_cents } }"}
+	rankingResult := executeResult{Data: map[string]any{"invoices": []any{map[string]any{"id": 7, "amount_cents": 9900}}}}
+	action := recordRanking.startAction("model", toolExecuteGraphQL, rankingArgs)
+	recordRanking.finishAction(action, toolExecuteGraphQL, rankingArgs, rankingResult, nil)
+	recordRanking.recordExecution(toolExecuteGraphQL, rankingArgs, rankingResult)
+	if message := recordRanking.pendingDatabaseComputation(); message != "" {
+		t.Fatalf("order_by+limit record ranking remained blocked: %q", message)
+	}
+	if resp := recordRanking.finalize(Response{Status: StatusAnswered, Answer: "Invoice 7 has the highest amount cents: 9900."}); resp.Status != StatusAnswered {
+		t.Fatalf("order_by+limit ranking did not finalize: %+v", resp)
+	}
+
+	wrongRankedColumn := newDiscoveryState("Which record in invoices has the highest amount cents, and what is the value?")
+	wrongRankedColumn.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { invoices(order_by: { id: desc }, limit: 1) { id amount_cents } }"}, rankingResult)
+	if message := wrongRankedColumn.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
+		t.Fatalf("unrelated order_by column bypassed ranking guard: %q", message)
+	}
+
+	countWithLimit := newDiscoveryState("How many invoices are there?")
+	countWithLimit.recordExecution(toolExecuteGraphQL, rankingArgs, rankingResult)
+	if message := countWithLimit.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
+		t.Fatalf("order_by+limit bypassed strict count guard: %q", message)
+	}
+
 	savedRows := newDiscoveryState("How many accounts are active?")
 	savedRows.recordExecution(toolExecuteSavedQuery, map[string]any{"name": "account_rows"}, executeResult{
 		Data: map[string]any{"accounts": []any{map[string]any{"id": 1}, map[string]any{"id": 2}}},
@@ -353,6 +511,141 @@ func TestDatabaseComputationFinalGuard(t *testing.T) {
 	})
 	if message := savedAggregate.pendingDatabaseComputation(); message != "" {
 		t.Fatalf("aggregate saved query remained blocked: %q", message)
+	}
+}
+
+func TestCachedExecutionRecoveryKeepsPendingRequirement(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "How many invoices are there?", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:main:invoices"}
+	args := map[string]any{"query": "query { invoices { id } }"}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args)); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil || base.graphqlCalls != 1 {
+		t.Fatalf("cached execution = %+v calls=%d err=%v", duplicate, base.graphqlCalls, err)
+	}
+	result, ok := duplicate.(executeResult)
+	if !ok || len(result.Errors) != 1 {
+		t.Fatalf("cached rejection = %#v, want one structured error", duplicate)
+	}
+	if result.Data != nil || mapValue(duplicate)["data"] != nil {
+		t.Fatalf("cached rejection exposed data: %#v", duplicate)
+	}
+	errorInfo := result.Errors[0]
+	if got := stringFromMap(errorInfo.Extensions, "code"); got != "database_computation_required" {
+		t.Fatalf("cached error code = %q, want database_computation_required", got)
+	}
+	repair := mapValue(errorInfo.Extensions["graphjin_repair"])
+	next := stringFromMap(repair, "next")
+	if strings.Contains(next, "Call final now") ||
+		!strings.Contains(next, "max_<column>") ||
+		!strings.Contains(next, "do not calculate from fetched rows") {
+		t.Fatalf("cached repair guidance = %q", next)
+	}
+	if got := stringFromMap(repair, "kind"); got != "distinct_aggregate_required" {
+		t.Fatalf("cached repair kind = %q", got)
+	}
+	summary := runtime.state.actions[len(runtime.state.actions)-1].Summary
+	if summary["has_data"] == true || !containsString(evidenceStringSlice(summary["error_codes"]), "database_computation_required") ||
+		!containsString(evidenceStringSlice(summary["recovery_codes"]), "distinct_aggregate_required") {
+		t.Fatalf("cached rejection summary = %#v", summary)
+	}
+	if runtime.state.completionLatchKey != "" || runtime.state.completionReady {
+		t.Fatalf("pending requirement armed completion latch: %+v", runtime.state)
+	}
+}
+
+func TestCachedSavedQueryWithPendingRequirementWithholdsRows(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "How many invoices are there?", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.markSavedQueryDetailed("invoice_snapshot")
+	args := map[string]any{"name": "invoice_snapshot"}
+	if _, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args)); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
+	if err != nil || base.savedCalls != 1 {
+		t.Fatalf("cached saved query = %+v calls=%d err=%v", duplicate, base.savedCalls, err)
+	}
+	result, ok := duplicate.(executeResult)
+	if !ok || result.Data != nil || len(result.Errors) != 1 {
+		t.Fatalf("cached saved-query rejection = %#v", duplicate)
+	}
+	if got := stringFromMap(result.Errors[0].Extensions, "code"); got != "database_computation_required" {
+		t.Fatalf("cached saved-query error code = %q", got)
+	}
+	repair := mapValue(result.Errors[0].Extensions["graphjin_repair"])
+	if next := stringFromMap(repair, "next"); !strings.Contains(next, "count_") || !strings.Contains(next, "do not calculate from fetched rows") {
+		t.Fatalf("cached saved-query repair guidance = %q", next)
+	}
+}
+
+func TestCachedExecutionBecomesCurrentCompletionEvidence(t *testing.T) {
+	base := &sequencedExecRuntime{
+		fakeRuntime: &fakeRuntime{},
+		outputs: []any{
+			map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "A"}}}},
+			map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "B"}}}},
+		},
+	}
+	runtime := newProtocolRuntime(base, "Show invoice A", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:main:invoices"}
+	queryA := map[string]any{"query": `query { invoices(where: {id: {eq: "A"}}) { id } }`}
+	queryB := map[string]any{"query": `query { invoices(where: {id: {eq: "B"}}) { id } }`}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(queryA)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(queryB)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(queryA)); err != nil {
+		t.Fatal(err)
+	}
+	if base.calls != 2 {
+		t.Fatalf("cached query reached database: calls=%d", base.calls)
+	}
+	data, ok := runtime.state.lastExecutionData()
+	rows := anySlice(mapValue(data)["invoices"])
+	if !ok || len(rows) != 1 || stringFromMap(mapValue(rows[0]), "id") != "A" {
+		t.Fatalf("cached completion evidence = %+v, want query A", data)
+	}
+}
+
+func TestFinalizeClearsResolvedDiscoveryRefusalAfterTerminalExecution(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "Show invoice INV-1", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:main:invoices"}
+	runtime.state.addViolation("raw_graphql_discovery_required", "inspect the relevant catalog detail first", toolExecuteGraphQL, true, nil)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { invoices(limit: 1) { id status } }"}); err != nil {
+		t.Fatal(err)
+	}
+	resp := runtime.state.finalize(Response{
+		Status: StatusBlocked,
+		Answer: "Invoice INV-1 is paid.",
+		Refusal: &Refusal{
+			Code:          "raw_graphql_discovery_required",
+			BlockedAction: toolExecuteGraphQL,
+			Because:       []string{"inspect the relevant catalog detail first"},
+			Retryable:     true,
+		},
+		Errors: []ErrorInfo{{Message: "inspect the relevant catalog detail first", Extensions: map[string]any{"code": "raw_graphql_discovery_required"}}},
+	})
+	if resp.Status != StatusAnswered || resp.Refusal != nil || len(resp.Errors) != 0 {
+		t.Fatalf("resolved terminal execution remained blocked: %+v", resp)
+	}
+	violations := anySlice(mapValue(resp.Evidence)["violations"])
+	if len(violations) != 1 || mapValue(violations[0])["blocking"] != false || mapValue(mapValue(violations[0])["details"])["resolved"] != true {
+		t.Fatalf("resolved discovery violation evidence = %+v", violations)
 	}
 }
 
@@ -484,5 +777,35 @@ func TestGroundingCorpusOverflowDisablesCheck(t *testing.T) {
 	}
 	if tokens := state.ungroundedAnswerTokens("inventedFieldName everywhere"); tokens != nil {
 		t.Fatalf("tokens = %v, want nil after overflow", tokens)
+	}
+}
+
+func TestResultSummaryCarriesRecoveryCodesWithoutMessages(t *testing.T) {
+	summary := resultSummary(toolExecuteGraphQL, nil, map[string]any{
+		"errors": []any{map[string]any{
+			"message": "private compiler detail",
+			"extensions": map[string]any{
+				"code": "wrong_dialect_aggregate",
+				"graphjin_repair": map[string]any{
+					"kind": "wrong_dialect_aggregate",
+					"next": map[string]any{"tool": toolGraphQLHelp},
+				},
+			},
+		}},
+		"recovery": map[string]any{
+			"next": map[string]any{"tool": toolGraphQLHelp},
+		},
+	})
+	if got := summary["error_codes"]; stringify(got) != `["wrong_dialect_aggregate"]` {
+		t.Fatalf("error codes = %v", got)
+	}
+	if got := summary["recovery_codes"]; stringify(got) != `["wrong_dialect_aggregate"]` {
+		t.Fatalf("recovery codes = %v", got)
+	}
+	if got := summary["recovery_tool"]; got != toolGraphQLHelp {
+		t.Fatalf("recovery tool = %v, want %s", got, toolGraphQLHelp)
+	}
+	if strings.Contains(stringify(summary), "private compiler detail") {
+		t.Fatalf("action summary leaked error prose: %v", summary)
 	}
 }

@@ -15,3 +15,5 @@ groups:
     title: Configure
   - id: reference
     title: Reference
+  - id: benchmark
+    title: Benchmark

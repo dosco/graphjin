@@ -123,6 +123,15 @@ func TestStoreEpisodeWriteOnceAndLegacyBaselineReader(t *testing.T) {
 	if err != nil || loaded == nil || loaded.RunID != legacy.RunID {
 		t.Fatalf("legacy baseline = %+v err=%v", loaded, err)
 	}
+	v2 := Report{SchemaVersion: ReportV2Version, RunID: "v2", Acceptance: Acceptance{HardPass: true, SafetyPass: true}}
+	data, _ = json.Marshal(v2)
+	if err := os.WriteFile(store.BaselinePath(), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = store.LoadBaseline()
+	if err != nil || loaded == nil || loaded.RunID != v2.RunID {
+		t.Fatalf("v2 baseline = %+v err=%v", loaded, err)
+	}
 	if err := store.PromoteBaseline(Report{RunID: "partial", RunStatus: RunStatusInterrupted, Acceptance: Acceptance{HardPass: true, SafetyPass: true}}); err == nil {
 		t.Fatal("incomplete report was promoted")
 	}
@@ -154,12 +163,100 @@ func TestStoreRecoversAttemptAccountingAfterManifestLag(t *testing.T) {
 		t.Fatalf("attempts=%+v err=%v", loaded, err)
 	}
 	rebuildRunAccounting(&manifest, nil, loaded)
-	if manifest.Progress.ProviderAttempts != 1 || manifest.Progress.RetryCount != 0 || manifest.ProviderUsage.TotalTokens != 3 {
+	if manifest.Progress.ProviderAttempts != 1 || manifest.Progress.RetryCount != 0 || manifest.ProviderUsage.TotalTokens != 3 || manifest.ProviderUsage.Complete || manifest.ProviderUsage.UnknownAttempts != 1 {
 		t.Fatalf("rebuilt manifest = %+v", manifest)
 	}
 	attempt.Attempt = 2
 	if _, err := store.WriteAttempt(attempt); err != nil {
 		t.Fatalf("next attempt collided after accounting recovery: %v", err)
+	}
+}
+
+func TestStoreWritesAndLoadsShareableMarkdown(t *testing.T) {
+	store := NewStore(t.TempDir()).WithSecrets("super-secret")
+	report := markdownTestReport()
+	report.RunID = "markdown-run"
+	report.Acceptance.Notices = []string{"token super-secret was configured"}
+	jsonPath, err := store.WriteReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	markdownPath := store.ReportMarkdownPath(report.RunID)
+	for _, path := range []string{jsonPath, markdownPath} {
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("permissions for %s: info=%v err=%v", path, info, err)
+		}
+	}
+	markdown, err := store.LoadReportMarkdown(report.RunID)
+	if err != nil || !strings.Contains(string(markdown), "[REDACTED]") || strings.Contains(string(markdown), "super-secret") {
+		t.Fatalf("markdown redaction failed: %q err=%v", markdown, err)
+	}
+	loaded, err := store.LoadReport(report.RunID)
+	if err != nil || loaded.RunID != report.RunID || loaded.RunStatus != RunStatusComplete {
+		t.Fatalf("loaded=%+v err=%v", loaded, err)
+	}
+}
+
+func TestStoreLoadsPartialReportWithoutLosingNotice(t *testing.T) {
+	store := NewStore(t.TempDir())
+	partial := PartialReport{SchemaVersion: ReportSchemaVersion, RunID: "partial", RunStatus: RunStatusEnvironmentFailed, EnvironmentCode: "provider_timeout", Notice: "try again"}
+	if _, err := store.WritePartialReport(partial); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.LoadReport(partial.RunID)
+	if err != nil || loaded.EnvironmentCode != partial.EnvironmentCode || loaded.Notice != partial.Notice {
+		t.Fatalf("partial=%+v err=%v", loaded, err)
+	}
+}
+
+func TestStoreLoadReportValidation(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.Init(); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(store.Root, "reports", name+".json"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("corrupt", "{")
+	write("unknown", `{"schema_version":"graphjin.eval.report/v999","run_id":"unknown"}`)
+	write("mismatch", `{"schema_version":"graphjin.eval.report/v3","run_id":"other"}`)
+	for _, runID := range []string{"corrupt", "unknown", "mismatch", "../outside"} {
+		if _, err := store.LoadReport(runID); err == nil {
+			t.Fatalf("LoadReport(%q) succeeded", runID)
+		}
+	}
+	if markdown, err := store.LoadReportMarkdown("missing"); err != nil || markdown != nil {
+		t.Fatalf("missing markdown=%q err=%v", markdown, err)
+	}
+}
+
+func TestStoreListReportsSortsAndSkipsTempFiles(t *testing.T) {
+	store := NewStore(t.TempDir())
+	older := markdownTestReport()
+	older.RunID, older.GeneratedAt = "older", time.Unix(1, 0)
+	newer := markdownTestReport()
+	newer.RunID, newer.GeneratedAt = "newer", time.Unix(2, 0)
+	newer.Tasks = []TaskVerdict{{TaskID: "public", Slug: "private-slug"}}
+	if _, err := store.WriteReport(older); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.WriteReport(newer); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store.Root, "reports", ".graphjin-eval-temp"), []byte("private-slug"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	summaries, err := store.ListReports()
+	if err != nil || len(summaries) != 2 || summaries[0].RunID != "newer" || !summaries[0].HasMarkdown {
+		t.Fatalf("summaries=%+v err=%v", summaries, err)
+	}
+	data, _ := json.Marshal(summaries[0])
+	if strings.Contains(string(data), "private-slug") || strings.Contains(string(data), "tasks") {
+		t.Fatalf("summary leaked task data: %s", data)
 	}
 }
 

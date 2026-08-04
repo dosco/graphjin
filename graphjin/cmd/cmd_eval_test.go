@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -24,7 +25,7 @@ func (fn evalRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, er
 
 func TestEvalCommandSurfaceAndContextualFlags(t *testing.T) {
 	command := evalCmd()
-	want := map[string]bool{"create": false, "add": false, "rm": false, "run": false, "baseline": false, "bench": false}
+	want := map[string]bool{"create": false, "add": false, "rm": false, "run": false, "baseline": false, "bench": false, "publish": false}
 	for _, child := range command.Commands() {
 		if _, ok := want[child.Name()]; ok {
 			want[child.Name()] = true
@@ -39,8 +40,8 @@ func TestEvalCommandSurfaceAndContextualFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bench.Flags().Lookup("scale") == nil || bench.Flags().Lookup("seed") == nil || bench.Flags().Lookup("resume") == nil || bench.Flags().Lookup("restart") == nil {
-		t.Fatal("bench is missing scale, seed, or resume flags")
+	if bench.Flags().Lookup("scale") == nil || bench.Flags().Lookup("seed") == nil || bench.Flags().Lookup("public") == nil || bench.Flags().Lookup("resume") == nil || bench.Flags().Lookup("restart") == nil {
+		t.Fatal("bench is missing scale, seed, public, or resume flags")
 	}
 	for _, name := range []string{"run", "baseline"} {
 		child, _, err := command.Find([]string{name})
@@ -54,6 +55,30 @@ func TestEvalCommandSurfaceAndContextualFlags(t *testing.T) {
 	}
 	if create.Flags().Lookup("scale") != nil || create.Flags().Lookup("seed") != nil {
 		t.Fatal("create exposed bench-only flags")
+	}
+}
+
+func TestEvalProvenanceIncludesConfiguredMaxSteps(t *testing.T) {
+	instance := &gjeval.StaticInstance{TargetLabel: "demo"}
+	provenance := evalProvenance(instance, 23, gjeval.AgentStatus{
+		Provider: "google-gemini", Model: "gemini-test", MaxSteps: 8,
+	})
+	if provenance.MaxSteps != 8 {
+		t.Fatalf("max steps = %d, want 8", provenance.MaxSteps)
+	}
+}
+
+func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
+	suite, err := loadPublicEvalSuite()
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := gjeval.PublicBenchmark()
+	if len(suite.Tasks) != spec.Scale || suite.Generator.Scale != spec.Scale || suite.Generator.Seed != spec.Seed {
+		t.Fatalf("suite shape = tasks:%d generator:%+v spec:%+v", len(suite.Tasks), suite.Generator, spec)
+	}
+	if got := gjeval.SuiteFingerprint(*suite); got != spec.SuiteFingerprint {
+		t.Fatalf("suite fingerprint = %s, want %s", got, spec.SuiteFingerprint)
 	}
 }
 
@@ -148,10 +173,17 @@ func TestPrintEvalReportJSONOmitsIncompleteMetrics(t *testing.T) {
 		Metrics: gjeval.Metrics{Recall: 0.75}, Tasks: []gjeval.TaskVerdict{{TaskID: "private-task"}},
 		Acceptance: gjeval.Acceptance{EnvironmentFailure: true},
 	})
-	for _, forbidden := range []string{`"metrics"`, `"tasks"`, `"acceptance"`, "private-task", "0.75"} {
-		if strings.Contains(output.String(), forbidden) {
+	var payload map[string]any
+	if err := json.Unmarshal(output.Bytes(), &payload); err != nil {
+		t.Fatalf("decode partial JSON: %v\n%s", err, output.String())
+	}
+	for _, forbidden := range []string{"metrics", "tasks", "acceptance"} {
+		if _, exists := payload[forbidden]; exists {
 			t.Fatalf("partial JSON contains %s: %s", forbidden, output.String())
 		}
+	}
+	if strings.Contains(output.String(), "private-task") {
+		t.Fatalf("partial JSON contains private task data: %s", output.String())
 	}
 	if !strings.Contains(output.String(), `"run_status": "environment_failed"`) {
 		t.Fatalf("partial JSON lost status: %s", output.String())
@@ -170,7 +202,7 @@ func TestPrintEvalReportShowsTokenUsageAndBaselineChange(t *testing.T) {
 		Metrics: gjeval.Metrics{
 			EpisodeCount: 3, PromptTokens: 210, CompletionTokens: 60, TotalTokens: 270, LLMCalls: 6,
 		},
-		ProviderUsage: gjeval.ProviderUsage{PromptTokens: 230, CompletionTokens: 70, TotalTokens: 300, LLMCalls: 7},
+		ProviderUsage: gjeval.ProviderUsage{PromptTokens: 230, CompletionTokens: 70, TotalTokens: 300, LLMCalls: 7, Complete: true},
 		UsageComparison: &gjeval.UsageComparison{
 			BaselineRunID: "baseline", Comparable: true,
 			FinalizedTokensDelta: -30, FinalizedTokensChangePercent: &minusTen,
@@ -182,8 +214,27 @@ func TestPrintEvalReportShowsTokenUsageAndBaselineChange(t *testing.T) {
 	for _, phrase := range []string{
 		"Finalized usage: 270 tokens", "90.0 tokens per episode",
 		"Actual provider usage: 300 tokens", "failed attempts and retries are included",
+		"Provider usage accounting is complete for every attempt",
 		"Token change vs baseline baseline", "finalized -10.0% (-30)",
 	} {
+		if !strings.Contains(output.String(), phrase) {
+			t.Fatalf("output missing %q: %s", phrase, output.String())
+		}
+	}
+}
+
+func TestPrintEvalReportMarksUnknownProviderUsageAsLowerBound(t *testing.T) {
+	command := &cobra.Command{}
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	printEvalReport(command, &evalCLIOptions{}, &gjeval.Report{
+		RunID: "candidate", RunStatus: gjeval.RunStatusComplete,
+		Provenance: gjeval.RunProvenance{Repeats: 3},
+		ProviderUsage: gjeval.ProviderUsage{
+			TotalTokens: 300, LLMCalls: 7, UnknownAttempts: 2,
+		},
+	})
+	for _, phrase := range []string{"usage accounting is incomplete", "2 timeout or transport attempt(s)", "Recorded tokens are a lower bound"} {
 		if !strings.Contains(output.String(), phrase) {
 			t.Fatalf("output missing %q: %s", phrase, output.String())
 		}

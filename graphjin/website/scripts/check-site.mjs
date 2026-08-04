@@ -37,6 +37,9 @@ const requiredRoutes = [
   'agentic/tasks/index.html',
   'agentic/watches/index.html',
   'agentic/watch-automation/index.html',
+  'benchmark/index.html',
+  'benchmark/methodology/index.html',
+  'benchmark/runs/index.html',
   'configure/sources-mode/index.html',
   'configure/how-it-works/index.html',
   'configure/discovery-semantic-search/index.html',
@@ -53,6 +56,7 @@ const requiredAnchors = [
   'agent',
   'watch-automation',
   'proof',
+  'benchmark',
   'demos',
   'databases',
   'how',
@@ -98,6 +102,9 @@ const requiredContent = [
   'agentic/source-mode.md',
   'agentic/workflows.md',
   'agentic/oauth.md',
+  'benchmark/_index.md',
+  'benchmark/methodology.md',
+  'benchmark/runs/_index.md',
   'configure/sources-mode.md',
   'configure/how-it-works.md',
   'configure/database.md',
@@ -135,6 +142,12 @@ const requiredRenderedContent = [
   ['agentic/evaluation/index.html', 'even private files'],
   ['agentic/evaluation/index.html', 'provider-attempt ceiling'],
   ['agentic/evaluation/index.html', 'tokens per episode went up or down'],
+  ['agentic/evaluation/index.html', 'provider usage accounting is complete'],
+  ['agentic/evaluation/index.html', 'recorded token total is a lower bound'],
+  ['agentic/evaluation/index.html', 'binary_fingerprint'],
+  ['agentic/evaluation/index.html', 'recovery_codes'],
+  ['agentic/evaluation/index.html', 'agent_actor_steps_exhausted'],
+  ['agentic/evaluation/index.html', 'Increasing <code>max_steps</code> is not the remedy'],
   ['agentic/evaluation/index.html', '<code>130</code>'],
   ['agentic/evaluation/index.html', 'run --restart --yes --json'],
   ['agentic/evaluation/index.html', 'v1 is a reinforcement-learning trainer.'],
@@ -152,6 +165,10 @@ const requiredRenderedContent = [
   ['agentic/watch-automation/index.html', 'Alerts fail open.'],
   ['agentic/watch-automation/index.html', 'Actions fail closed.'],
   ['agentic/watch-automation/index.html', 'graphjin://watch-events/unseen/watch%3Acoffee_roast_'],
+  ['benchmark/index.html', 'How well can an agent work against a real organization?'],
+  ['benchmark/index.html', 'No published runs yet.'],
+  ['benchmark/methodology/index.html', 'Frozen suite, live verification'],
+  ['benchmark/runs/index.html', 'Published Benchmark Runs'],
 ];
 
 async function exists(file) {
@@ -250,6 +267,18 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     }
   }
   for (const required of [
+    '21% was the problem. This is the scoreboard.',
+    'Checked against live truth',
+    'The database has to do the work',
+    'Forbidden means failed',
+    'See the leaderboard',
+    'How runs are scored',
+  ]) {
+    if (!home.includes(required)) {
+      failures.push(`Homepage missing benchmark copy: ${required}`);
+    }
+  }
+  for (const required of [
     'Set it up by talking to it.',
     'graphjin mcp --demo',
     'no Docker, no config file',
@@ -267,6 +296,8 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     '/start/demos/#coffee-roastery',
     '/agentic/mcp/',
     '/configure/how-it-works/',
+    '/benchmark/',
+    '/benchmark/methodology/',
   ]) {
     const escaped = href.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const hrefPattern = new RegExp(`href=(?:"${escaped}"|'${escaped}'|${escaped})(?=\\s|>)`);
@@ -281,6 +312,26 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     const socialPattern = new RegExp(`<meta\\s[^>]*(?:property|name)=(["'])?${socialMeta}\\1(?=[\\s/>])`);
     if (!socialPattern.test(home)) {
       failures.push(`Homepage missing social meta ${socialMeta}`);
+    }
+  }
+}
+
+const benchmarkIndexPath = path.join(publicRoot, 'benchmark', 'index.html');
+if (await exists(benchmarkIndexPath)) {
+  const benchmarkHTML = await readFile(benchmarkIndexPath, 'utf8');
+  if (!benchmarkHTML.includes('data-benchmark-row') && !benchmarkHTML.includes('data-benchmark-empty')) {
+    failures.push('Benchmark page has neither a leaderboard row nor the required empty state');
+  }
+}
+
+const benchmarkDataPath = path.join(siteRoot, 'data', 'benchmarks.yaml');
+if (await exists(benchmarkDataPath)) {
+  const benchmarkData = await readFile(benchmarkDataPath, 'utf8');
+  for (const match of benchmarkData.matchAll(/^\s*slug:\s*["']?([^"'#\s]+)["']?\s*$/gm)) {
+    const slug = match[1];
+    const page = path.join(publicRoot, 'benchmark', 'runs', slug, 'index.html');
+    if (!(await exists(page))) {
+      failures.push(`Benchmark data slug ${slug} has no built run page`);
     }
   }
 }

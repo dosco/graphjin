@@ -429,6 +429,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		},
 		protocol.state.pendingRequiredFinalization,
 		protocol.state.pendingRequiredFinalizationContinuation,
+		protocol.state.completionContinuation,
 	)
 	for _, tool := range tools {
 		t := tool
@@ -585,7 +586,7 @@ func (a *Agent) tools(ctx context.Context, req Request, rt GraphRuntime) []ax.To
 				return a.call(ctx, req.Namespace, args, rt.ValidateWhereClause)
 			}),
 	}
-	tools = append(tools, a.tool("execute_saved_query", "Execute a pre-approved saved query by name. This is rejected unless this run already called query_catalog({id:\"saved_query:<same name>\"}); the initial seed and saved-query lists do not satisfy this detail requirement. Prefer this over raw GraphQL. The result shape is { data, errors }; read rows from result.data.",
+	tools = append(tools, a.tool("execute_saved_query", "Execute a pre-approved saved query by name. This is rejected unless this run already called query_catalog({id:\"saved_query:<same name>\"}); the initial seed and saved-query lists do not satisfy this detail requirement. The result shape is { data, errors }; read rows from result.data.",
 		[]ax.Field{
 			field("name", "string", "Saved query name.", false),
 			field("variables", "json", "Optional variables object.", true),
@@ -925,6 +926,15 @@ func responseFromError(err error, traceID string, program Program, returnTrace b
 		TraceID: traceID,
 		Errors:  []ErrorInfo{PublicErrorInfo(err, "", "")},
 	}
+	if isActorStepsExhaustedError(err) {
+		resp.Errors = []ErrorInfo{{
+			Message: "agent actor loop exceeded max steps",
+			Extensions: map[string]any{
+				"code":      "agent_actor_steps_exhausted",
+				"retryable": false,
+			},
+		}}
+	}
 	if isNoRuntimeCodeError(err) {
 		resp.Status = StatusBlocked
 		resp.Answer = "I could not complete the GraphJin agent loop because the model did not emit a runnable action. No unsafe GraphJin execution was performed."
@@ -946,6 +956,10 @@ func responseFromError(err error, traceID string, program Program, returnTrace b
 		resp = attachProgramMetadata(resp, program, returnTrace)
 	}
 	return resp
+}
+
+func isActorStepsExhaustedError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "actor loop exceeded max steps")
 }
 
 func isNoRuntimeCodeError(err error) bool {
@@ -988,14 +1002,14 @@ func attachProgramMetadata(resp Response, program Program, returnTrace bool) Res
 	if program == nil {
 		return resp
 	}
+	if resp.Usage == nil {
+		resp.Usage = usageSummary(program)
+	}
 	if returnTrace {
 		if resp.Actions == nil {
 			resp.Actions = normalizeValue(program.GetActionLog())
 		}
 		resp.Trace = normalizeValue(program.ExportTrace())
-	}
-	if resp.Usage == nil {
-		resp.Usage = usageSummary(program)
 	}
 	return resp
 }

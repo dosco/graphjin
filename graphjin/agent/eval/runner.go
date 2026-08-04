@@ -103,6 +103,7 @@ func (r Runner) Prepare(ctx context.Context, suite Suite, instance Instance, opt
 	opts.Provenance.Seed = opts.Seed
 	opts.Provenance.Repeats = opts.Repeats
 	opts.Provenance.Target = instance.Label()
+	opts.Provenance.BinaryFingerprint = opts.BinaryFingerprint
 	client := r.Client
 	if client == nil {
 		client = &http.Client{Timeout: 90 * time.Second}
@@ -112,17 +113,19 @@ func (r Runner) Prepare(ctx context.Context, suite Suite, instance Instance, opt
 		requestedRunID = newRunID(r.now())
 	}
 	report := &Report{
-		SchemaVersion:      ReportSchemaVersion,
-		RewardVersion:      RewardVersion,
-		RunID:              requestedRunID,
-		RunStatus:          RunStatusRunning,
-		Mode:               opts.Mode,
-		GeneratedAt:        r.now(),
-		SuiteFingerprint:   SuiteFingerprint(suite),
-		CatalogFingerprint: suite.CatalogFingerprint,
-		DatasetFingerprint: instance.Fingerprint(),
-		Provenance:         opts.Provenance,
-		Acceptance:         Acceptance{SuiteValid: true},
+		SchemaVersion:          ReportSchemaVersion,
+		UsageAccountingVersion: UsageAccountingVersion,
+		RewardVersion:          RewardVersion,
+		RunID:                  requestedRunID,
+		RunStatus:              RunStatusRunning,
+		Mode:                   opts.Mode,
+		GeneratedAt:            r.now(),
+		SuiteFingerprint:       SuiteFingerprint(suite),
+		CatalogFingerprint:     suite.CatalogFingerprint,
+		DatasetFingerprint:     instance.Fingerprint(),
+		Provenance:             opts.Provenance,
+		ProviderUsage:          ProviderUsage{Complete: true},
+		Acceptance:             Acceptance{SuiteValid: true},
 	}
 
 	verifier := Verifier{Client: client, Now: r.Now, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
@@ -169,7 +172,7 @@ func (r Runner) Prepare(ctx context.Context, suite Suite, instance Instance, opt
 		BinaryFingerprint: opts.BinaryFingerprint, ServerEvalFingerprint: opts.Provenance.ServerFingerprint,
 		Provenance: opts.Provenance, BaselineRunID: baselineRunID, BaselineFingerprint: BaselineFingerprint(opts.Baseline),
 		AutoBaseline: opts.AutoBaseline, DeliberatePromotion: opts.DeliberatePromotion,
-		Progress: RunProgress{PlannedInitialSlots: len(suite.Tasks) * opts.Repeats}, InvocationArgs: append([]string(nil), opts.InvocationArgs...),
+		Progress: RunProgress{PlannedInitialSlots: len(suite.Tasks) * opts.Repeats}, ProviderUsage: ProviderUsage{Complete: true}, InvocationArgs: append([]string(nil), opts.InvocationArgs...),
 	}
 	var existing []Episode
 	var existingAttempts []Attempt
@@ -372,6 +375,10 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 		if ctx.Err() != nil {
 			code, retryable = "interrupted", false
 		}
+		if providerUsageUnknown(code) {
+			p.manifest.ProviderUsage.Complete = false
+			p.manifest.ProviderUsage.UnknownAttempts++
+		}
 		if code == "" {
 			if err := p.runner.persistEpisode(p.report, p.opts.Store, episode); err != nil {
 				return Episode{}, "", err
@@ -455,7 +462,7 @@ func (p *PreparedRun) finishIncomplete(status RunStatus, code string, cause erro
 			notice = "evaluation environment failed; finalized quality metrics are unavailable"
 		}
 		_, err := p.opts.Store.WritePartialReport(PartialReport{
-			SchemaVersion: p.report.SchemaVersion, RewardVersion: p.report.RewardVersion,
+			SchemaVersion: p.report.SchemaVersion, UsageAccountingVersion: p.report.UsageAccountingVersion, RewardVersion: p.report.RewardVersion,
 			RunID: p.report.RunID, RunStatus: status, Mode: p.report.Mode, GeneratedAt: p.runner.now(),
 			SuiteFingerprint: p.report.SuiteFingerprint, CatalogFingerprint: p.report.CatalogFingerprint,
 			DatasetFingerprint: p.report.DatasetFingerprint, OracleValueHash: p.report.OracleValueHash,
@@ -588,7 +595,7 @@ func rebuildRunAccounting(manifest *RunManifest, episodes []Episode, attempts []
 	if manifest == nil {
 		return
 	}
-	usage := ProviderUsage{}
+	usage := ProviderUsage{Complete: true}
 	finalized := make(map[string]bool, len(episodes))
 	for _, episode := range episodes {
 		finalized[episodeSlotKey(episode)] = true
@@ -606,6 +613,10 @@ func rebuildRunAccounting(manifest *RunManifest, episodes []Episode, attempts []
 		usage.TotalTokens += attempt.Tokens.Total
 		usage.LLMCalls += attempt.Tokens.LLMCalls
 		usage.LatencyMS += attempt.LatencyMS
+		if providerUsageUnknown(attempt.ErrorCode) {
+			usage.Complete = false
+			usage.UnknownAttempts++
+		}
 	}
 	retries := 0
 	for slot, failed := range failedBySlot {
@@ -618,6 +629,15 @@ func rebuildRunAccounting(manifest *RunManifest, episodes []Episode, attempts []
 	manifest.Progress.ProviderAttempts = len(episodes) + len(attempts)
 	manifest.Progress.RetryCount = retries
 	manifest.ProviderUsage = usage
+}
+
+func providerUsageUnknown(code string) bool {
+	switch strings.TrimSpace(code) {
+	case gjagent.ErrorCodeProviderTimeout, gjagent.ErrorCodeProviderTransport, gjagent.ErrorCodeProviderServer:
+		return true
+	default:
+		return false
+	}
 }
 
 func episodeEnvironment(episode Episode) (string, bool) {
@@ -1017,11 +1037,7 @@ func compareUsage(candidate Report, baseline *Report) *UsageComparison {
 		CandidateTokensPerEpisode: candidatePerEpisode,
 		TokensPerEpisodeDelta:     roundUsage(candidatePerEpisode - baselinePerEpisode),
 	}
-	out.FinalizedTokensChangePercent = usageChangePercent(candidate.Metrics.TotalTokens, baseline.Metrics.TotalTokens)
-	out.ProviderTokensChangePercent = usageChangePercent(candidateProviderTokens, baselineProviderTokens)
-	out.TokensPerEpisodeChangePercent = usageFloatChangePercent(candidatePerEpisode, baselinePerEpisode)
-
-	reasons := make([]string, 0, 4)
+	reasons := make([]string, 0, 8)
 	if candidate.SuiteFingerprint == "" || baseline.SuiteFingerprint == "" || candidate.SuiteFingerprint != baseline.SuiteFingerprint {
 		reasons = append(reasons, "suite differs")
 	}
@@ -1033,6 +1049,16 @@ func compareUsage(candidate Report, baseline *Report) *UsageComparison {
 		candidate.Provenance.Model != baseline.Provenance.Model {
 		reasons = append(reasons, "model differs or is unavailable")
 	}
+	if candidate.UsageAccountingVersion == "" || baseline.UsageAccountingVersion == "" ||
+		candidate.UsageAccountingVersion != baseline.UsageAccountingVersion {
+		reasons = append(reasons, "usage accounting version differs or is unavailable")
+	}
+	if candidate.Provenance.MaxSteps <= 0 || baseline.Provenance.MaxSteps <= 0 || candidate.Provenance.MaxSteps != baseline.Provenance.MaxSteps {
+		reasons = append(reasons, "max-step configuration differs or is unavailable")
+	}
+	if !candidate.ProviderUsage.Complete || !baseline.ProviderUsage.Complete {
+		reasons = append(reasons, "provider usage is incomplete")
+	}
 	if candidate.Metrics.EpisodeCount == 0 || candidate.Metrics.EpisodeCount != baseline.Metrics.EpisodeCount {
 		reasons = append(reasons, "finalized episode count differs")
 	}
@@ -1041,6 +1067,11 @@ func compareUsage(candidate Report, baseline *Report) *UsageComparison {
 	}
 	out.Comparable = len(reasons) == 0
 	out.Reason = strings.Join(reasons, "; ")
+	if out.Comparable {
+		out.FinalizedTokensChangePercent = usageChangePercent(candidate.Metrics.TotalTokens, baseline.Metrics.TotalTokens)
+		out.ProviderTokensChangePercent = usageChangePercent(candidateProviderTokens, baselineProviderTokens)
+		out.TokensPerEpisodeChangePercent = usageFloatChangePercent(candidatePerEpisode, baselinePerEpisode)
+	}
 	return out
 }
 

@@ -119,7 +119,13 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 			return nil, err
 		}
 	}
-	options := []serv.Option{serv.OptionSetLogOutput(os.Stderr)}
+	// The demo keeps its trusted local dev identity, but Eval suppresses
+	// dev-mode named-query learning so a model cannot mutate the catalog and
+	// invalidate suite/resume fingerprints during the measurement itself.
+	options := []serv.Option{
+		serv.OptionSetLogOutput(os.Stderr),
+		serv.OptionDisableQueryLearning(),
+	}
 	if e.ClientFactory != nil {
 		options = append(options, serv.OptionSetAgentClientFactory(e.ClientFactory))
 	}

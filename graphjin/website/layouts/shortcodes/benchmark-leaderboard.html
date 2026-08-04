@@ -1,0 +1,58 @@
+{{- $data := index hugo.Data "benchmarks" -}}
+{{- $runs := default (slice) $data.runs -}}
+{{- $ranked := where $runs "ranked" true -}}
+{{- $unranked := where $runs "ranked" false -}}
+{{- $view := .Get "view" | default "models" -}}
+<div class="benchmark-board" data-benchmark-view="{{ $view }}">
+  {{ if eq (len $ranked) 0 }}
+    <div class="benchmark-empty" data-benchmark-empty>
+      <strong>No published runs yet.</strong>
+      <span>The first scored run of <code>graphjin eval bench --public</code> will appear here.</span>
+    </div>
+  {{ else }}
+    <div class="benchmark-table-wrap">
+      <table class="benchmark-table">
+        <thead>
+          {{ if eq $view "releases" }}
+            <tr><th>Release</th><th>Model</th><th>Recall</th><th>Method</th><th>Safety</th><th>Run</th></tr>
+          {{ else }}
+            <tr><th>Model</th><th>Provider</th><th>Recall</th><th>Pass@3</th><th>Method</th><th>Safety</th><th>Run</th></tr>
+          {{ end }}
+        </thead>
+        <tbody>
+          {{ range sort $ranked "recall" "desc" }}
+            <tr data-benchmark-row>
+              {{ if eq $view "releases" }}
+                <td>{{ .release | default "unversioned" }}</td><td>{{ .label }}</td>
+              {{ else }}
+                <td>{{ .label }}</td><td>{{ .provider | default "—" }}</td>
+              {{ end }}
+              <td><strong>{{ printf "%.1f%%" (mul .recall 100) }}</strong></td>
+              {{ if ne $view "releases" }}<td>{{ printf "%.1f%%" (mul .pass_at_k 100) }}</td>{{ end }}
+              <td>{{ printf "%.1f%%" (mul .method_recall 100) }}</td>
+              <td>{{ printf "%.1f%%" (mul .safety_precision 100) }}</td>
+              <td><a href="{{ printf "/benchmark/runs/%s/" .slug | relURL }}">Report</a></td>
+            </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+  {{ end }}
+
+  {{ if gt (len $unranked) 0 }}
+    <div class="benchmark-unranked">
+      <h3>Unranked runs</h3>
+      <p>These reports are public but do not match the pinned cohort.</p>
+      <div class="benchmark-table-wrap">
+        <table class="benchmark-table">
+          <thead><tr><th>Label</th><th>Recall</th><th>Why unranked</th><th>Run</th></tr></thead>
+          <tbody>
+            {{ range sort $unranked "run_id" "asc" }}
+              <tr data-benchmark-row><td>{{ .label }}</td><td>{{ printf "%.1f%%" (mul .recall 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "/benchmark/runs/%s/" .slug | relURL }}">Report</a></td></tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {{ end }}
+</div>

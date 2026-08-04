@@ -30,7 +30,7 @@ func TestRunnerMajorityConfirmationAndPrivateTrajectories(t *testing.T) {
 	doer := &scriptedEvalDoer{}
 	store := NewStore(t.TempDir())
 	instance := &StaticInstance{URL: "http://graphjin.test", Dataset: baseline.DatasetFingerprint, TargetLabel: "test"}
-	report, err := (Runner{Client: doer, Now: func() time.Time { return time.Unix(100, 0) }}).Run(context.Background(), suite, instance, RunOptions{Repeats: 3, Seed: 23, Baseline: baseline, Store: store})
+	report, err := (Runner{Client: doer, Now: func() time.Time { return time.Unix(100, 0) }}).Run(context.Background(), suite, instance, RunOptions{Repeats: 3, Seed: 23, Baseline: baseline, Store: store, BinaryFingerprint: "test-binary"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,6 +42,9 @@ func TestRunnerMajorityConfirmationAndPrivateTrajectories(t *testing.T) {
 	}
 	if !report.Acceptance.HardPass {
 		t.Fatalf("report not accepted: %+v", report.Acceptance)
+	}
+	if report.Provenance.BinaryFingerprint != "test-binary" {
+		t.Fatalf("report binary fingerprint = %q, want test-binary", report.Provenance.BinaryFingerprint)
 	}
 	if report.Metrics.TotalTokens != 90 || report.Metrics.LLMCalls != 12 || report.ProviderUsage.TotalTokens != 90 || report.ProviderUsage.LLMCalls != 12 {
 		t.Fatalf("usage accounting = metrics %+v provider %+v", report.Metrics, report.ProviderUsage)
@@ -70,6 +73,13 @@ func TestRunnerMajorityConfirmationAndPrivateTrajectories(t *testing.T) {
 	}
 	if strings.Contains(string(reportJSON), "episode_paths") {
 		t.Fatal("shareable report leaked local episode paths")
+	}
+	var storedReport Report
+	if err := json.Unmarshal(reportJSON, &storedReport); err != nil {
+		t.Fatal(err)
+	}
+	if storedReport.Provenance.BinaryFingerprint != "test-binary" {
+		t.Fatalf("stored report binary fingerprint = %q, want test-binary", storedReport.Provenance.BinaryFingerprint)
 	}
 	if info, err := os.Stat(reportPath); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("report permissions: info=%v err=%v", info, err)
@@ -278,17 +288,19 @@ func TestRecallQualityNoticeDoesNotReplaceRegressionOrSafetyGates(t *testing.T) 
 
 func TestUsageComparisonShowsFinalizedAndActualProviderDeltas(t *testing.T) {
 	baseline := &Report{
-		RunID:            "baseline-run",
-		SuiteFingerprint: "same-suite",
-		Provenance:       RunProvenance{Provider: "google-gemini", Model: "gemini-test"},
-		Metrics:          Metrics{EpisodeCount: 4, TotalTokens: 100},
-		ProviderUsage:    ProviderUsage{TotalTokens: 110},
+		RunID:                  "baseline-run",
+		SuiteFingerprint:       "same-suite",
+		UsageAccountingVersion: UsageAccountingVersion,
+		Provenance:             RunProvenance{Provider: "google-gemini", Model: "gemini-test", MaxSteps: 8},
+		Metrics:                Metrics{EpisodeCount: 4, TotalTokens: 100},
+		ProviderUsage:          ProviderUsage{TotalTokens: 110, Complete: true},
 	}
 	candidate := Report{
-		SuiteFingerprint: "same-suite",
-		Provenance:       RunProvenance{Provider: "google-gemini", Model: "gemini-test"},
-		Metrics:          Metrics{EpisodeCount: 4, TotalTokens: 80},
-		ProviderUsage:    ProviderUsage{TotalTokens: 95},
+		SuiteFingerprint:       "same-suite",
+		UsageAccountingVersion: UsageAccountingVersion,
+		Provenance:             RunProvenance{Provider: "google-gemini", Model: "gemini-test", MaxSteps: 8},
+		Metrics:                Metrics{EpisodeCount: 4, TotalTokens: 80},
+		ProviderUsage:          ProviderUsage{TotalTokens: 95, Complete: true},
 	}
 	comparison := compareUsage(candidate, baseline)
 	if comparison == nil || !comparison.Comparable {
@@ -307,6 +319,29 @@ func TestUsageComparisonShowsFinalizedAndActualProviderDeltas(t *testing.T) {
 	candidate.Provenance.Model = "different-model"
 	if changedModel := compareUsage(candidate, baseline); changedModel.Comparable || !strings.Contains(changedModel.Reason, "model differs") {
 		t.Fatalf("cross-model token comparison should be advisory: %+v", changedModel)
+	}
+	if changedModel := compareUsage(candidate, baseline); changedModel.FinalizedTokensChangePercent != nil || changedModel.ProviderTokensChangePercent != nil {
+		t.Fatalf("cross-model token percentages must be disabled: %+v", changedModel)
+	}
+}
+
+func TestUsageComparisonRejectsAccountingAndMaxStepDrift(t *testing.T) {
+	baseline := &Report{
+		RunID: "baseline", SuiteFingerprint: "suite", UsageAccountingVersion: UsageAccountingVersion,
+		Provenance: RunProvenance{Provider: "google-gemini", Model: "gemini", MaxSteps: 8},
+		Metrics:    Metrics{EpisodeCount: 1, TotalTokens: 10}, ProviderUsage: ProviderUsage{TotalTokens: 10, Complete: true},
+	}
+	candidate := Report{
+		SuiteFingerprint: "suite", UsageAccountingVersion: "graphjin.eval.usage/vNext",
+		Provenance: RunProvenance{Provider: "google-gemini", Model: "gemini", MaxSteps: 12},
+		Metrics:    Metrics{EpisodeCount: 1, TotalTokens: 12}, ProviderUsage: ProviderUsage{TotalTokens: 12, Complete: true},
+	}
+	comparison := compareUsage(candidate, baseline)
+	if comparison.Comparable || !strings.Contains(comparison.Reason, "usage accounting version") || !strings.Contains(comparison.Reason, "max-step") {
+		t.Fatalf("accounting drift was treated as comparable: %+v", comparison)
+	}
+	if comparison.FinalizedTokensChangePercent != nil || comparison.ProviderTokensChangePercent != nil || comparison.TokensPerEpisodeChangePercent != nil {
+		t.Fatalf("incomparable percentage fields must be omitted: %+v", comparison)
 	}
 }
 
@@ -579,6 +614,9 @@ func TestRunnerRetriesTransientAttemptWithoutPollutingMetrics(t *testing.T) {
 	if calls != 2 || report.Progress.ProviderAttempts != 2 || report.Progress.RetryCount != 1 || report.Metrics.EnvironmentErrors != 0 {
 		t.Fatalf("calls=%d progress=%+v metrics=%+v", calls, report.Progress, report.Metrics)
 	}
+	if report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 1 {
+		t.Fatalf("timeout usage completeness = %+v, want one unknown attempt", report.ProviderUsage)
+	}
 	attemptFiles, err := filepath.Glob(filepath.Join(store.Root, "attempts", report.RunID, "*.json"))
 	if err != nil || len(attemptFiles) != 1 {
 		t.Fatalf("attempt files=%v err=%v", attemptFiles, err)
@@ -589,6 +627,49 @@ func TestRunnerRetriesTransientAttemptWithoutPollutingMetrics(t *testing.T) {
 	}
 	if strings.Contains(string(data), secret) || !strings.Contains(string(data), "[REDACTED]") {
 		t.Fatalf("attempt redaction failed: %s", data)
+	}
+}
+
+func TestRunnerFinalizesActorExhaustionWithCapturedUsage(t *testing.T) {
+	task := scoredTask(t)
+	suite := Suite{Name: "actor-exhaustion", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(t.TempDir())
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		response := gjagent.Response{
+			Status: gjagent.StatusError,
+			Errors: []gjagent.ErrorInfo{{
+				Message:    "agent actor loop exceeded max steps",
+				Extensions: map[string]any{"code": "agent_actor_steps_exhausted", "retryable": false},
+			}},
+			Usage: map[string]any{"prompt_tokens": 100, "completion_tokens": 25, "total_tokens": 125, "llm_calls": 8},
+		}
+		data, _ := json.Marshal(response)
+		return jsonResponse(200, string(data)), nil
+	})
+	report, err := (Runner{Client: doer}).Run(context.Background(), suite, &StaticInstance{
+		URL: "http://graphjin.test", Dataset: DatasetFingerprint{CatalogHash: "catalog"}, TargetLabel: "local",
+	}, RunOptions{Repeats: 1, Store: store, BinaryFingerprint: "binary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.RunStatus != RunStatusComplete || report.Progress.CompletedInitialSlots != 1 || report.Progress.ProviderAttempts != 1 {
+		t.Fatalf("actor exhaustion was not finalized: %+v", report.Progress)
+	}
+	if report.Metrics.TotalTokens != 125 || report.Metrics.LLMCalls != 8 || report.ProviderUsage.TotalTokens != 125 || !report.ProviderUsage.Complete {
+		t.Fatalf("actor exhaustion usage = metrics:%+v provider:%+v", report.Metrics, report.ProviderUsage)
+	}
+	if report.Metrics.FailureCategories["runaway"] != 1 {
+		t.Fatalf("failure categories = %+v", report.Metrics.FailureCategories)
+	}
+	manifest, err := store.LoadManifest(report.RunID)
+	if err != nil || manifest.ProviderUsage.TotalTokens != 125 || manifest.ProviderUsage.LLMCalls != 8 {
+		t.Fatalf("manifest usage = %+v err=%v", manifest.ProviderUsage, err)
 	}
 }
 
@@ -615,6 +696,9 @@ func TestRunnerEnvironmentFailureWritesMetricFreePartialReport(t *testing.T) {
 	}
 	if calls != 1 || report.RunStatus != RunStatusEnvironmentFailed || !report.Acceptance.EnvironmentFailure {
 		t.Fatalf("calls=%d report=%+v", calls, report)
+	}
+	if !report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 0 {
+		t.Fatalf("auth failure should have known zero usage: %+v", report.ProviderUsage)
 	}
 	data, err := os.ReadFile(filepath.Join(store.Root, "reports", report.RunID+".json"))
 	if err != nil {
@@ -653,6 +737,9 @@ func TestRunnerClassifiesStructuredProviderCodeFromHTTPErrorBody(t *testing.T) {
 	}
 	if calls != 2 || report.RunStatus != RunStatusEnvironmentFailed {
 		t.Fatalf("calls=%d report=%+v", calls, report)
+	}
+	if report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 2 {
+		t.Fatalf("exhausted timeouts usage = %+v, want two unknown attempts", report.ProviderUsage)
 	}
 	manifest, err := store.LoadManifest(report.RunID)
 	if err != nil || manifest.LastEnvironmentCode != gjagent.ErrorCodeProviderTimeout {

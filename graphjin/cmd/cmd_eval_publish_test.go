@@ -1,0 +1,158 @@
+package main
+
+import (
+	"bytes"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	gjeval "github.com/dosco/graphjin/agent/v3/eval"
+	"github.com/spf13/cobra"
+)
+
+func TestEvalPublishRefusalsAndLowScoreBoundary(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*gjeval.Report)
+		code int
+	}{
+		{"incomplete", func(r *gjeval.Report) { r.RunStatus = gjeval.RunStatusInterrupted }, 1},
+		{"invalid_suite", func(r *gjeval.Report) { r.Acceptance.SuiteValid = false }, 2},
+		{"environment_failed", func(r *gjeval.Report) { r.Acceptance.EnvironmentFailure = true }, 3},
+		{"empty", func(r *gjeval.Report) { r.Metrics.TaskCount = 0 }, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			project, site := t.TempDir(), t.TempDir()
+			report := publishTestReport("20260803T101112.000000000Z-" + tc.name)
+			tc.edit(&report)
+			writePublishTestReport(t, project, report)
+			err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site})
+			var exitErr *evalExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != tc.code {
+				t.Fatalf("error = %v, want exit %d", err, tc.code)
+			}
+		})
+	}
+
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101112.000000000Z-low-score")
+	report.Acceptance.HardPass = false
+	report.Metrics.Recall = .31
+	writePublishTestReport(t, project, report)
+	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err != nil {
+		t.Fatalf("low score was refused: %v", err)
+	}
+	data, err := loadBenchmarkData(filepath.Join(site, "data", "benchmarks.yaml"))
+	if err != nil || len(data.Runs) != 1 || data.Runs[0].Accepted {
+		t.Fatalf("published low score = %+v err=%v", data.Runs, err)
+	}
+}
+
+func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101112.000000000Z-ab12cd34")
+	report.Tasks = []gjeval.TaskVerdict{{TaskID: "task", Slug: "private-task-slug"}}
+	report.InvalidOracleDetails = map[string]string{"task": "private oracle prose"}
+	report.EpisodePaths = []string{"/private/episode.json"}
+	writePublishTestReport(t, project, report)
+	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err != nil {
+		t.Fatal(err)
+	}
+	dataPath := filepath.Join(site, "data", "benchmarks.yaml")
+	pagePath := filepath.Join(site, "content", "benchmark", "runs", "20260803t101112-ab12cd34.md")
+	for _, path := range []string{dataPath, pagePath} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o644 {
+			t.Fatalf("mode for %s: info=%v err=%v", path, info, err)
+		}
+		for _, private := range []string{"private-task-slug", "private oracle prose", "/private/episode.json"} {
+			if strings.Contains(string(raw), private) {
+				t.Fatalf("%s leaked %q", path, private)
+			}
+		}
+	}
+	data, err := loadBenchmarkData(dataPath)
+	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || data.Runs[0].UnrankedReason != "" {
+		t.Fatalf("data=%+v err=%v", data, err)
+	}
+	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err == nil {
+		t.Fatal("idempotent publish succeeded without --force")
+	}
+	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site, Force: true}); err != nil {
+		t.Fatalf("forced replacement failed: %v", err)
+	}
+	data, err = loadBenchmarkData(dataPath)
+	if err != nil || len(data.Runs) != 1 {
+		t.Fatalf("forced data=%+v err=%v", data.Runs, err)
+	}
+}
+
+func TestEvalPublishOffSuiteIsSeparated(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	first := publishTestReport("20260803T101112.000000000Z-first")
+	writePublishTestReport(t, project, first)
+	if err := publishTestRun(t, project, site, first.RunID, &evalPublishOptions{Site: site}); err != nil {
+		t.Fatal(err)
+	}
+	second := publishTestReport("20260803T101113.000000000Z-second")
+	second.DatasetFingerprint.CatalogHash = "other-catalog"
+	writePublishTestReport(t, project, second)
+	if err := publishTestRun(t, project, site, second.RunID, &evalPublishOptions{Site: site}); err == nil || !strings.Contains(err.Error(), "catalog_hash") {
+		t.Fatalf("off-suite publish error = %v", err)
+	}
+	if err := publishTestRun(t, project, site, second.RunID, &evalPublishOptions{Site: site, AllowOffSuite: true}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := loadBenchmarkData(filepath.Join(site, "data", "benchmarks.yaml"))
+	if err != nil || len(data.Runs) != 2 || data.Runs[1].Ranked || !strings.Contains(data.Runs[1].UnrankedReason, "catalog_hash") {
+		t.Fatalf("data=%+v err=%v", data.Runs, err)
+	}
+}
+
+func TestBenchmarkRunSlug(t *testing.T) {
+	if got := benchmarkRunSlug("20260803T101112.000000000Z-ab12cd34"); got != "20260803t101112-ab12cd34" {
+		t.Fatalf("slug = %q", got)
+	}
+}
+
+func publishTestReport(runID string) gjeval.Report {
+	return gjeval.Report{
+		SchemaVersion: gjeval.ReportSchemaVersion, UsageAccountingVersion: gjeval.UsageAccountingVersion, RewardVersion: gjeval.RewardVersion,
+		RunID: runID, RunStatus: gjeval.RunStatusComplete, Mode: gjeval.RunModeBenchmark, GeneratedAt: time.Date(2026, 8, 3, 10, 11, 12, 0, time.UTC),
+		SuiteFingerprint:   gjeval.PublicBenchmark().SuiteFingerprint,
+		DatasetFingerprint: gjeval.DatasetFingerprint{CatalogHash: "catalog", SeedManifestHash: "manifest", DataAnchor: "anchor"}, OracleValueHash: "oracle",
+		Provenance:    gjeval.RunProvenance{Provider: "openai", Model: "gpt-test", GraphJinCommit: "abcdef123456", BinaryFingerprint: "binary", Seed: 23, Repeats: 3, MaxSteps: 8},
+		Metrics:       gjeval.Metrics{TaskCount: 2, EpisodeCount: 6, Recall: .5, GroundTruthRecall: .5, MethodRecall: .5, SafetyPrecision: 1, BehaviorRecall: 1, PassAtK: .75, PassPowerK: .25},
+		ProviderUsage: gjeval.ProviderUsage{TotalTokens: 100, Complete: true},
+		Acceptance:    gjeval.Acceptance{SuiteValid: true, SafetyPass: true, HardPass: true},
+	}
+}
+
+func writePublishTestReport(t *testing.T, project string, report gjeval.Report) {
+	t.Helper()
+	store := gjeval.NewStore(filepath.Join(project, gjeval.DefaultStateDir))
+	if _, err := store.WriteReport(report); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func publishTestRun(t *testing.T, project, site, runID string, opts *evalPublishOptions) error {
+	t.Helper()
+	original := cpath
+	cpath = project
+	defer func() { cpath = original }()
+	if opts.Site == "" {
+		opts.Site = site
+	}
+	command := &cobra.Command{}
+	command.SetOut(new(bytes.Buffer))
+	command.SetErr(new(bytes.Buffer))
+	return runEvalPublish(command, &evalCLIOptions{Yes: true}, opts, runID)
+}

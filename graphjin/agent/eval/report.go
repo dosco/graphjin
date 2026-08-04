@@ -16,10 +16,12 @@ type RunProvenance struct {
 	ServerFingerprint  string  `json:"server_eval_fingerprint,omitempty"`
 	AxVersion          string  `json:"ax_version,omitempty"`
 	GraphJinCommit     string  `json:"graphjin_commit,omitempty"`
+	BinaryFingerprint  string  `json:"binary_fingerprint,omitempty"`
 	PromptRegistryHash string  `json:"prompt_registry_hash,omitempty"`
 	Temperature        float64 `json:"temperature"`
 	Seed               int64   `json:"seed"`
 	Repeats            int     `json:"repeats"`
+	MaxSteps           int     `json:"max_steps,omitempty"`
 	Target             string  `json:"target"`
 }
 
@@ -39,6 +41,8 @@ type ProviderUsage struct {
 	TotalTokens      int64 `json:"total_tokens"`
 	LLMCalls         int64 `json:"llm_calls"`
 	LatencyMS        int64 `json:"latency_ms"`
+	Complete         bool  `json:"complete"`
+	UnknownAttempts  int   `json:"unknown_attempts,omitempty"`
 }
 
 // UsageComparison separates finalized-slot efficiency from actual provider
@@ -164,47 +168,49 @@ type Acceptance struct {
 }
 
 type Report struct {
-	SchemaVersion        string             `json:"schema_version"`
-	RewardVersion        string             `json:"reward_version"`
-	RunID                string             `json:"run_id"`
-	RunStatus            RunStatus          `json:"run_status"`
-	Mode                 RunMode            `json:"mode"`
-	GeneratedAt          time.Time          `json:"generated_at"`
-	SuiteFingerprint     string             `json:"suite_fingerprint"`
-	CatalogFingerprint   string             `json:"catalog_fingerprint"`
-	DatasetFingerprint   DatasetFingerprint `json:"dataset_fingerprint"`
-	OracleValueHash      string             `json:"oracle_value_hash,omitempty"`
-	Provenance           RunProvenance      `json:"provenance"`
-	Progress             RunProgress        `json:"progress"`
-	ProviderUsage        ProviderUsage      `json:"provider_usage"`
-	UsageComparison      *UsageComparison   `json:"usage_comparison,omitempty"`
-	Metrics              Metrics            `json:"metrics"`
-	Tasks                []TaskVerdict      `json:"tasks"`
-	Acceptance           Acceptance         `json:"acceptance"`
-	InvalidOracles       map[string]string  `json:"invalid_oracles,omitempty"`
-	InvalidOracleDetails map[string]string  `json:"-"`
-	EpisodePaths         []string           `json:"-"`
+	SchemaVersion          string             `json:"schema_version"`
+	UsageAccountingVersion string             `json:"usage_accounting_version,omitempty"`
+	RewardVersion          string             `json:"reward_version"`
+	RunID                  string             `json:"run_id"`
+	RunStatus              RunStatus          `json:"run_status"`
+	Mode                   RunMode            `json:"mode"`
+	GeneratedAt            time.Time          `json:"generated_at"`
+	SuiteFingerprint       string             `json:"suite_fingerprint"`
+	CatalogFingerprint     string             `json:"catalog_fingerprint"`
+	DatasetFingerprint     DatasetFingerprint `json:"dataset_fingerprint"`
+	OracleValueHash        string             `json:"oracle_value_hash,omitempty"`
+	Provenance             RunProvenance      `json:"provenance"`
+	Progress               RunProgress        `json:"progress"`
+	ProviderUsage          ProviderUsage      `json:"provider_usage"`
+	UsageComparison        *UsageComparison   `json:"usage_comparison,omitempty"`
+	Metrics                Metrics            `json:"metrics"`
+	Tasks                  []TaskVerdict      `json:"tasks"`
+	Acceptance             Acceptance         `json:"acceptance"`
+	InvalidOracles         map[string]string  `json:"invalid_oracles,omitempty"`
+	InvalidOracleDetails   map[string]string  `json:"-"`
+	EpisodePaths           []string           `json:"-"`
 }
 
 // PartialReport is written when a run is interrupted or the provider
 // environment fails. It intentionally has no metrics, task verdicts, or
 // baseline acceptance fields.
 type PartialReport struct {
-	SchemaVersion      string             `json:"schema_version"`
-	RewardVersion      string             `json:"reward_version"`
-	RunID              string             `json:"run_id"`
-	RunStatus          RunStatus          `json:"run_status"`
-	Mode               RunMode            `json:"mode"`
-	GeneratedAt        time.Time          `json:"generated_at"`
-	SuiteFingerprint   string             `json:"suite_fingerprint"`
-	CatalogFingerprint string             `json:"catalog_fingerprint"`
-	DatasetFingerprint DatasetFingerprint `json:"dataset_fingerprint"`
-	OracleValueHash    string             `json:"oracle_value_hash,omitempty"`
-	Provenance         RunProvenance      `json:"provenance"`
-	Progress           RunProgress        `json:"progress"`
-	ProviderUsage      ProviderUsage      `json:"provider_usage"`
-	EnvironmentCode    string             `json:"environment_code,omitempty"`
-	Notice             string             `json:"notice,omitempty"`
+	SchemaVersion          string             `json:"schema_version"`
+	UsageAccountingVersion string             `json:"usage_accounting_version,omitempty"`
+	RewardVersion          string             `json:"reward_version"`
+	RunID                  string             `json:"run_id"`
+	RunStatus              RunStatus          `json:"run_status"`
+	Mode                   RunMode            `json:"mode"`
+	GeneratedAt            time.Time          `json:"generated_at"`
+	SuiteFingerprint       string             `json:"suite_fingerprint"`
+	CatalogFingerprint     string             `json:"catalog_fingerprint"`
+	DatasetFingerprint     DatasetFingerprint `json:"dataset_fingerprint"`
+	OracleValueHash        string             `json:"oracle_value_hash,omitempty"`
+	Provenance             RunProvenance      `json:"provenance"`
+	Progress               RunProgress        `json:"progress"`
+	ProviderUsage          ProviderUsage      `json:"provider_usage"`
+	EnvironmentCode        string             `json:"environment_code,omitempty"`
+	Notice                 string             `json:"notice,omitempty"`
 }
 
 func (r Report) TaskMap() map[string]TaskVerdict {

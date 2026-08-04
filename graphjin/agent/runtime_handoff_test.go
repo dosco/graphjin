@@ -59,6 +59,42 @@ func TestGraphJinRuntimeCarriesExecutionAcrossAxStagePatch(t *testing.T) {
 	}
 }
 
+func TestGraphJinRuntimeAutoFinalizesAfterDuplicateGraceTurn(t *testing.T) {
+	execution := map[string]any{
+		"tool":   toolExecuteGraphQL,
+		"result": map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "INV-1"}}}},
+	}
+	ready := false
+	runtime := newGraphJinCodeRuntime(
+		func() any { return execution }, nil, nil, nil,
+		func() string {
+			if !ready {
+				return ""
+			}
+			ready = false
+			return `await final("GraphJin duplicate execution recovery completed.", {execution: globalThis.graphjinLastExecution});`
+		},
+	)
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "Show invoice INV-1"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	session.Execute(`await final("distilled", {});`, nil)
+	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
+	ready = true
+	completed := session.Execute(`console.log("cached duplicate observed");`, nil)
+	if runtimeCompletionType(completed) != "final" {
+		t.Fatalf("protocol completion = %+v, want final", completed)
+	}
+	evidence, ok := runtimeFinalEvidence(completed)
+	if !ok || mapValue(mapValue(evidence)["execution"])["tool"] != toolExecuteGraphQL {
+		t.Fatalf("protocol completion evidence = %+v", evidence)
+	}
+}
+
 func TestGraphJinRuntimeCarriesDistillerPayloadAcrossAxStagePatch(t *testing.T) {
 	var distilled any
 	runtime := newGraphJinCodeRuntime(nil, func(value any) { distilled = value }, nil, nil)
