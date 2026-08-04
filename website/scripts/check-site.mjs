@@ -267,12 +267,12 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     }
   }
   for (const required of [
-    '21% was the problem. This is the scoreboard.',
-    'Checked against live truth',
-    'The database has to do the work',
-    'Forbidden means failed',
-    'See the leaderboard',
-    'How runs are scored',
+    'Can AI answer real business questions?',
+    'Did it get the answer right?',
+    'Did it check everything?',
+    'Did it follow the rules?',
+    'See the results',
+    'How the test works',
   ]) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing benchmark copy: ${required}`);

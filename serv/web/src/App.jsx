@@ -17,6 +17,7 @@ const QueryEditor = lazy(() => import("./pages/QueryEditor"));
 const ApiDocs = lazy(() => import("./pages/ApiDocs"));
 const AgentChat = lazy(() => import("./pages/AgentChat"));
 const MissionControl = lazy(() => import("./pages/MissionControl"));
+const EvalReports = lazy(() => import("./pages/EvalReports"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +51,7 @@ const App = () => {
                   <Route path="/admin/code" element={<CodeInsight />} />
                   <Route path="/admin/config" element={<ConfigViewer />} />
                   <Route path="/admin/api" element={<ApiDocs />} />
+                  <Route path="/trainer/reports" element={<EvalReports />} />
 
                   <Route path="/agent" element={<NavigateWithSearch to="/user/agent" />} />
                   <Route path="/mission" element={<LegacyMissionRedirect />} />

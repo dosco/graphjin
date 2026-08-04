@@ -16,6 +16,8 @@ graphjin eval create
 graphjin eval add "Which customers are at churn risk?"
 graphjin eval run --yes
 graphjin eval bench --scale 100 --seed 23 --yes
+graphjin eval bench --public --yes
+graphjin eval publish <run-id> --yes
 ```
 
 Use `--demo` for the bundled SQLite demo or `--remote` for the identity created
@@ -52,6 +54,13 @@ GJ_AGENT_API_KEY_ENV=GOOGLE_API_KEY
   passes.
 - `graphjin eval bench --scale N --seed S`: sample the extended distribution and
   report pass@k, pass^k, bootstrap recall intervals, and per-tier metrics.
+- `graphjin eval bench --public`: run the committed 100-task public benchmark
+  generation against the bundled demo. The suite, scale `100`, and seed `23`
+  are pinned; scale/seed overrides and remote targets are refused.
+- `graphjin eval publish <run-id>`: copy one completed shareable report into the
+  website as a leaderboard row and run page. It writes files for review and
+  never runs Git. `--allow-off-suite` publishes a mismatch as explicitly
+  unranked instead of mixing it into the cohort.
 
 `run`, `baseline`, and `bench` accept `--resume <run-id>` to select one
 compatible incomplete run and `--restart` to intentionally create a fresh run.
@@ -77,6 +86,7 @@ Local state is stored with owner-only permissions:
 .graphjin-evals/
   baseline.json
   reports/<run-id>.json
+  reports/<run-id>.md
   episodes/<run-id>/<task>-<rep>.json
   attempts/<run-id>/<task>-attempt-<number>.json
   runs/<run-id>.json
@@ -156,6 +166,53 @@ fingerprint plus all resolved oracle values and dimensions in task-ID order, so
 stable local and remote targets can retain ground-truth regression gates without
 putting individual values in the shareable report. When neither proof matches,
 GraphJin records the mismatch and compares method correctness instead.
+
+## Public benchmark
+
+The public benchmark is a frozen, committed suite rather than a newly generated
+distribution on every run. That stability is what makes model comparisons and
+GraphJin release timelines meaningful. `graphjin eval bench --public` loads the
+embedded suite, starts the bundled demo, and re-verifies every hidden oracle
+against the live instance before any evaluated-agent traffic.
+
+The suite is public for reproducibility. When the questions need to rotate,
+maintainers regenerate the artifact with the hidden `freeze-suite` command,
+change `PublicBenchmarkGeneration`, and publish subsequent runs as a new
+generation. Earlier generations keep their own cohort and history.
+
+Ranked suite identity is the hash of exactly these fields:
+
+- `mode` and `suite_fingerprint`;
+- `dataset_fingerprint.catalog_hash` and
+  `dataset_fingerprint.seed_manifest_hash`;
+- `provenance.seed`, `provenance.repeats`, `provenance.max_steps`, and
+  `provenance.temperature`; and
+- `reward_version`.
+
+Model and provider are excluded so different models can be compared on one
+suite. GraphJin commit and binary fingerprint are excluded so release changes
+can be shown over time. `oracle_value_hash` and
+`dataset_fingerprint.data_anchor` remain audit columns but are excluded from
+identity: the demo shifts relative dates forward, so both can change with the
+calendar while the frozen task remains the same.
+
+Each finished run now writes both `reports/<run-id>.json` and
+`reports/<run-id>.md` at owner-only permissions. Markdown is generated from the
+same shareable projection as JSON: it cannot include task slugs, raw oracle
+errors, or local episode paths. Existing JSON-only reports render on demand in
+the Trainer console and during publish.
+
+`graphjin eval publish <run-id>` is the only sanctioned path into
+`website/data/benchmarks.yaml` and `website/content/benchmark/runs/`. It asks for
+confirmation, rejects empty runs, writes exactly those two public files, and
+prints their paths for human review. Publish refuses incomplete,
+environment-failed, and invalid-suite runs. It does not refuse a low score — a
+low score is a result.
+
+The non-production console advertises Trainer → Reports only when the resolved
+eval state directory exists and the current caller has operator access. Set
+`eval_state_dir` when reports live somewhere other than
+`<config_path>/.graphjin-evals`, or set it to `off` to disable the API.
 
 ## Engine boundary
 

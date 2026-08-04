@@ -47,9 +47,10 @@ export const workspaceDefinitions = {
     id: "trainer",
     label: "Trainer",
     description: "Evals and model training",
-    defaultPath: "/trainer/overview",
-    icon: FlaskConical,
-    items: [],
+    defaultPath: "/trainer/reports",
+    items: [
+      { path: "/trainer/reports", label: "Reports", icon: FlaskConical, layout: "document" },
+    ],
   },
 };
 

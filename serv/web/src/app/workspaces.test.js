@@ -23,4 +23,15 @@ describe("console workspace registry", () => {
   it("does not invent Trainer navigation before the backend advertises it", () => {
     expect(availableWorkspaces({ workspaces: [{ id: "user" }, { id: "admin" }] }).map((workspace) => workspace.id)).not.toContain("trainer");
   });
+
+  it("exposes the report document only when the backend advertises Trainer", () => {
+    const bootstrap = { workspaces: [{ id: "user" }, { id: "trainer", capabilities: ["eval.reports"] }] };
+    expect(availableWorkspaces(bootstrap).map((workspace) => workspace.id)).toEqual(["user", "trainer"]);
+    expect(commandItems(bootstrap).find((item) => item.workspace.id === "trainer")).toMatchObject({
+      path: "/trainer/reports",
+      label: "Reports",
+      layout: "document",
+    });
+    expect(routeDefinition("/trainer/reports").workspace.id).toBe("trainer");
+  });
 });
