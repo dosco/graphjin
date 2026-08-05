@@ -515,6 +515,12 @@ func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
 		}
 	}
 
+	if len(cs.st.qc.HasuraAggregates) != 0 {
+		if s.data, err = reshapeHasuraAggregateData(s.data, cs.st.qc.HasuraAggregates); err != nil {
+			return fmt.Errorf("reshape Hasura-compatible aggregate response: %w", err)
+		}
+	}
+
 	// Whole responses are intentionally not cached. Fragment caches are
 	// handled at each source fetch; mutations only publish invalidations.
 	if s.gj.responseCache != nil && s.r.operation != qcode.QTQuery {

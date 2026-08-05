@@ -259,103 +259,6 @@ func TestExecuteGraphQLErrorAttachesCompactRecovery(t *testing.T) {
 	}
 }
 
-func TestWrongDialectAggregateGetsSpecificRepairAndPreservesExtensions(t *testing.T) {
-	runtime := newFailingExecProtocol(t, executeResult{
-		Errors: []ErrorInfo{{
-			Message:    "field accounts_aggregate not found",
-			Extensions: map[string]any{"compiler_stage": "qcode"},
-		}},
-	})
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts_aggregate { aggregate { count } } }"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	res := out.(executeResult)
-	if len(res.Errors) != 1 {
-		t.Fatalf("errors = %+v", res.Errors)
-	}
-	extensions := res.Errors[0].Extensions
-	if extensions["compiler_stage"] != "qcode" || extensions["code"] != "wrong_dialect_aggregate" {
-		t.Fatalf("extensions = %+v, want original metadata and stable repair code", extensions)
-	}
-	repair := mapValue(extensions["graphjin_repair"])
-	if stringFromMap(repair, "kind") != "wrong_dialect_aggregate" || !strings.Contains(stringFromMap(repair, "message"), "count_id") {
-		t.Fatalf("graphjin_repair = %+v", repair)
-	}
-	recovery := mapValue(res.Recovery)
-	if !strings.Contains(stringFromMap(recovery, "instruction"), "does not use <table>_aggregate roots") {
-		t.Fatalf("recovery = %+v", recovery)
-	}
-}
-
-func TestAggregateIntentUnknownFieldGetsSpecificRepair(t *testing.T) {
-	tests := []struct {
-		name         string
-		instruction  string
-		query        string
-		errorMessage string
-		catalogField string
-		wantHint     string
-	}{
-		{
-			name:         "invented total root",
-			instruction:  "What is the total quantity across all usage events?",
-			query:        "query { usage_events_total }",
-			errorMessage: "table not found: usage_events_total",
-			catalogField: "column:app:main.usage_events.quantity",
-			wantHint:     "sum_quantity",
-		},
-		{
-			name:         "function style count",
-			instruction:  "How many subscriptions are there?",
-			query:        "query { subscriptions { count_id: count(column: id) } }",
-			errorMessage: "unknown argument 'column'",
-			wantHint:     "count_id",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
-				Errors: []ErrorInfo{{
-					Message:    test.errorMessage,
-					Extensions: map[string]any{"compiler_stage": "qcode"},
-				}},
-			}}
-			runtime := newProtocolRuntime(base, test.instruction, "", 20, nil, nil, CatalogSearchFeatures{})
-			runtime.state.seedOK = true
-			runtime.state.modelDiscoveryAction = true
-			runtime.state.catalogDetails = []string{"table:app:main.usage_events"}
-			if test.catalogField != "" {
-				runtime.state.catalogIDs[test.catalogField] = true
-			}
-			out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": test.query})
-			if err != nil {
-				t.Fatal(err)
-			}
-			res := out.(executeResult)
-			if len(res.Errors) != 1 {
-				t.Fatalf("errors = %+v", res.Errors)
-			}
-			extensions := res.Errors[0].Extensions
-			if extensions["compiler_stage"] != "qcode" || extensions["code"] != "wrong_dialect_aggregate" {
-				t.Fatalf("extensions = %+v, want preserved compiler metadata and aggregate repair", extensions)
-			}
-			repair := mapValue(extensions["graphjin_repair"])
-			message := stringFromMap(repair, "message")
-			if stringFromMap(repair, "kind") != "wrong_dialect_aggregate" ||
-				!strings.Contains(message, "fields on the table selection") ||
-				!strings.Contains(message, test.wantHint) {
-				t.Fatalf("graphjin_repair = %+v, want concrete hint %q", repair, test.wantHint)
-			}
-			recovery := mapValue(res.Recovery)
-			if !strings.Contains(stringFromMap(recovery, "instruction"), test.wantHint) ||
-				stringFromMap(mapValue(recovery["next"]), "tool") != toolGraphQLHelp {
-				t.Fatalf("recovery = %+v, want graphql_help and concrete hint %q", recovery, test.wantHint)
-			}
-		})
-	}
-}
-
 func TestNonAggregateUnknownFieldKeepsGenericRecovery(t *testing.T) {
 	base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
 		Errors: []ErrorInfo{{
@@ -374,9 +277,6 @@ func TestNonAggregateUnknownFieldKeepsGenericRecovery(t *testing.T) {
 	res := out.(executeResult)
 	if len(res.Errors) != 1 {
 		t.Fatalf("errors = %+v", res.Errors)
-	}
-	if code := stringFromMap(res.Errors[0].Extensions, "code"); code == "wrong_dialect_aggregate" {
-		t.Fatalf("non-aggregate failure received aggregate repair: %+v", res.Errors[0])
 	}
 	if repair := mapValue(res.Errors[0].Extensions["graphjin_repair"]); repair != nil {
 		t.Fatalf("non-aggregate failure received graphjin_repair: %+v", repair)
@@ -456,6 +356,14 @@ func TestDatabaseComputationFinalGuard(t *testing.T) {
 		t.Fatalf("aggregate result remained blocked: %q", message)
 	}
 
+	compat := newDiscoveryState("How many accounts are active?")
+	compat.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { accounts_aggregate { aggregate { count } } }"}, executeResult{
+		Data: map[string]any{"accounts_aggregate": map[string]any{"aggregate": map[string]any{"count": 12}}},
+	})
+	if message := compat.pendingDatabaseComputation(); message != "" {
+		t.Fatalf("Hasura-compatible aggregate result remained blocked: %q", message)
+	}
+
 	ranking := newDiscoveryState("Which plan contributes the most total revenue?")
 	ranking.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { plans { name sum_revenue } }"}, executeResult{
 		Data: map[string]any{"plans": []any{map[string]any{"name": "pro", "sum_revenue": 10}}},
@@ -511,6 +419,17 @@ func TestDatabaseComputationFinalGuard(t *testing.T) {
 	})
 	if message := savedAggregate.pendingDatabaseComputation(); message != "" {
 		t.Fatalf("aggregate saved query remained blocked: %q", message)
+	}
+}
+
+func TestResultContainsHasuraCompatibleAggregate(t *testing.T) {
+	value := map[string]any{
+		"accounts_aggregate": map[string]any{
+			"aggregate": map[string]any{"count": 12, "max": map[string]any{"renewed_at": "2027-02-19"}},
+		},
+	}
+	if !resultContainsAggregateField(value) {
+		t.Fatal("Hasura-compatible aggregate result was not recognized")
 	}
 }
 
@@ -785,9 +704,9 @@ func TestResultSummaryCarriesRecoveryCodesWithoutMessages(t *testing.T) {
 		"errors": []any{map[string]any{
 			"message": "private compiler detail",
 			"extensions": map[string]any{
-				"code": "wrong_dialect_aggregate",
+				"code": "field_not_on_table",
 				"graphjin_repair": map[string]any{
-					"kind": "wrong_dialect_aggregate",
+					"kind": "field_not_on_table",
 					"next": map[string]any{"tool": toolGraphQLHelp},
 				},
 			},
@@ -796,10 +715,10 @@ func TestResultSummaryCarriesRecoveryCodesWithoutMessages(t *testing.T) {
 			"next": map[string]any{"tool": toolGraphQLHelp},
 		},
 	})
-	if got := summary["error_codes"]; stringify(got) != `["wrong_dialect_aggregate"]` {
+	if got := summary["error_codes"]; stringify(got) != `["field_not_on_table"]` {
 		t.Fatalf("error codes = %v", got)
 	}
-	if got := summary["recovery_codes"]; stringify(got) != `["wrong_dialect_aggregate"]` {
+	if got := summary["recovery_codes"]; stringify(got) != `["field_not_on_table"]` {
 		t.Fatalf("recovery codes = %v", got)
 	}
 	if got := summary["recovery_tool"]; got != toolGraphQLHelp {

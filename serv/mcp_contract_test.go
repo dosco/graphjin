@@ -976,12 +976,11 @@ func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
 			wantTools:    []string{"query_catalog", "get_catalog_card"},
 		},
 		{
-			name:         "wrong_dialect_aggregate_suffix",
-			errorMsg:     `table not found: orders_aggregate`,
-			query:        `query { orders_aggregate { aggregate { count } } }`,
-			wantKind:     fixKindWrongDialect,
-			wantInRepair: []string{"orders", "sum(expr:", "_aggregate"},
-			wantTools:    []string{"query_catalog"},
+			name:      "aggregate_suffix_is_not_wrong_dialect",
+			errorMsg:  `table not found: orders_aggregate`,
+			query:     `query { orders_aggregate { aggregate { count } } }`,
+			wantKind:  fixKindTableNotFound,
+			wantTools: []string{"query_catalog"},
 		},
 		{
 			name:     "generic_fallback",

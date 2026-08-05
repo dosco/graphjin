@@ -27,9 +27,10 @@ type QuerySyntaxReference struct {
 
 // AggregationsSyntax describes available aggregation functions
 type AggregationsSyntax struct {
-	Functions []string `json:"functions"`
-	Usage     string   `json:"usage"`
-	WithGroup string   `json:"with_group"`
+	Functions        []string `json:"functions"`
+	Usage            string   `json:"usage"`
+	HasuraCompatible string   `json:"hasura_compatible"`
+	WithGroup        string   `json:"with_group"`
 }
 
 // AnalyticsDirectivesSyntax describes GraphJin reporting directives.
@@ -206,8 +207,9 @@ var querySyntaxReference = QuerySyntaxReference{
 			"sum(expr: {...}) - sum of an arithmetic expression (revenue = price × qty, margin, ratios)",
 			"avg(expr: {...}) / min(expr: {...}) / max(expr: {...}) - same pattern for other aggregates",
 		},
-		Usage:     "{ products { count_id sum_price avg_price revenue: sum(expr: { mul: [price, quantity] }) } }",
-		WithGroup: "{ products(distinct: [category_id]) { category_id count_id sum_price revenue: sum(expr: { mul: [price, quantity] }) } } - group by category",
+		Usage:            "{ products { count_id sum_price avg_price revenue: sum(expr: { mul: [price, quantity] }) } }",
+		HasuraCompatible: "{ products_aggregate(where: {active: {eq: true}}) { aggregate { count sum { price } avg { price } min { price } max { price } } } } - compatibility syntax for query roots; nodes, count(columns:/distinct:), inner aliases, and subscriptions are not supported",
+		WithGroup:        "{ products(distinct: [category_id]) { category_id count_id sum_price revenue: sum(expr: { mul: [price, quantity] }) } } - group by category",
 	},
 	AnalyticsDirectives: AnalyticsDirectivesSyntax{
 		Directives: []string{

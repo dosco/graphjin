@@ -29,7 +29,7 @@ const (
 	UsageAccountingVersion = "graphjin.eval.usage/v2"
 	RunManifestVersion     = "graphjin.eval.run/v1"
 	AttemptSchemaVersion   = "graphjin.eval.attempt/v1"
-	GeneratorVersion       = "graphjin.eval.generator/v3"
+	GeneratorVersion       = "graphjin.eval.generator/v4"
 	RewardVersion          = "graphjin.eval.reward/v2"
 	DefaultSuiteSize       = 24
 	DefaultRepeats         = 3

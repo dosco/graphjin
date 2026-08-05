@@ -35,12 +35,11 @@ const (
 )
 
 var (
-	reAmbiguousRel      = regexp.MustCompile(`ambiguous relationship\s+(\S+)\s*->\s*(\S+):\s*multiple foreign keys\s*\(([^)]+)\)`)
-	reNestedShape       = regexp.MustCompile(`nested selection '([^']+)' joins through parent column '([^']+)\.([^']+)', which is not in distinct: \[([^\]]+)\]`)
-	rePartitionReq      = regexp.MustCompile(`table\s+"([^"]+)"\s+requires a filter on (?:partition|temporal) column\s+"([^"]+)"`)
-	reFieldNotOnTable   = regexp.MustCompile(`field '([^']+)' is not a column or a function`)
-	reWrongDialectArg   = regexp.MustCompile(`unknown argument\s+['"` + "`" + `]?(aggregation|aggregate)['"` + "`" + `]?`)
-	reWrongDialectField = regexp.MustCompile(`(?i)([a-z0-9_]+)_aggregate\b`)
+	reAmbiguousRel    = regexp.MustCompile(`ambiguous relationship\s+(\S+)\s*->\s*(\S+):\s*multiple foreign keys\s*\(([^)]+)\)`)
+	reNestedShape     = regexp.MustCompile(`nested selection '([^']+)' joins through parent column '([^']+)\.([^']+)', which is not in distinct: \[([^\]]+)\]`)
+	rePartitionReq    = regexp.MustCompile(`table\s+"([^"]+)"\s+requires a filter on (?:partition|temporal) column\s+"([^"]+)"`)
+	reFieldNotOnTable = regexp.MustCompile(`field '([^']+)' is not a column or a function`)
+	reWrongDialectArg = regexp.MustCompile(`unknown argument\s+['"` + "`" + `]?(aggregation|aggregate)['"` + "`" + `]?`)
 )
 
 // buildFixQueryErrorRepair classifies a failing query+error and returns structured repair guidance.
@@ -223,43 +222,34 @@ query {
 }`, field)
 }
 
-// isWrongDialectError flags Hasura-style aggregate leakage: either the `aggregation:` argument or a `<table>_aggregate` field suffix in the source query.
-func isWrongDialectError(errorMsg, query string) bool {
-	if reWrongDialectArg.MatchString(errorMsg) {
-		return true
-	}
-	errLower := strings.ToLower(errorMsg)
-	if !(strings.Contains(errLower, "table") && (strings.Contains(errLower, "not found") || strings.Contains(errLower, "unknown") || strings.Contains(errLower, "does not exist"))) {
-		return false
-	}
-	return reWrongDialectField.MatchString(query)
+// isWrongDialectError flags unsupported aggregate arguments. The supported
+// <table>_aggregate query form is compiled directly and is not an error arm.
+func isWrongDialectError(errorMsg, _ string) bool {
+	return reWrongDialectArg.MatchString(errorMsg)
 }
 
-func fillWrongDialectArm(res *FixQueryErrorResult, errorMsg, query string) {
+func fillWrongDialectArm(res *FixQueryErrorResult, _ string, _ string) {
 	res.Kind = fixKindWrongDialect
 	res.FollowUpTools = []string{"query_catalog", "get_catalog_card", "validate_where_clause"}
 
 	tableHint := "<table>"
-	if m := reWrongDialectField.FindStringSubmatch(query); m != nil {
-		tableHint = m[1]
-	}
-
-	if reWrongDialectArg.MatchString(errorMsg) {
-		res.Diagnosis = "Query used the Hasura/PostgREST `aggregation`/`aggregate` argument. GraphJin has no such argument — aggregates are leaf-level fields: `sum_<col>`, `avg_<col>`, `count_<col>`, or `<alias>: sum(expr: { mul: [<col_a>, <col_b>] })` for arithmetic. Use query_catalog language/query-pattern items for the full grammar."
-	} else {
-		res.Diagnosis = fmt.Sprintf(
-			"Query referenced `%s_aggregate` — the Hasura aggregate-table shape. GraphJin has no `_aggregate` suffix; aggregates live as leaf fields on the original table: `sum_<col>`, `count_<col>`, or `<alias>: sum(expr: { ... })` for arithmetic. Use query_catalog language/query-pattern items for the full grammar.",
-			tableHint)
-	}
+	res.Diagnosis = "Query used an unsupported `aggregation:`/`aggregate:` argument. Use GraphJin aggregate leaf fields or the supported Hasura-compatible `<table>_aggregate { aggregate { ... } }` query shape. Use query_catalog language/query-pattern items for the full grammar."
 
 	res.RepairedQuery = fmt.Sprintf(
-		`# Aggregates are leaf fields on %s — no _aggregate selection, no aggregation: argument.
+		`# Native GraphJin aggregate fields:
 query {
   %s {
     count_<pk_column>
     sum_<numeric_col>
     avg_<numeric_col>
     revenue: sum(expr: { mul: [<col_a>, <col_b>] })
+  }
+}
+
+# Hasura-compatible query aggregate syntax:
+query {
+  %s_aggregate {
+    aggregate { count sum { <numeric_col> } }
   }
 }`,
 		tableHint, tableHint)

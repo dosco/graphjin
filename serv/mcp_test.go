@@ -1660,6 +1660,18 @@ func TestQuerySyntaxReference_HasRemoteJoins(t *testing.T) {
 	}
 }
 
+func TestQuerySyntaxReference_HasBothAggregateForms(t *testing.T) {
+	ref := querySyntaxReference.Aggregations
+	if !strings.Contains(ref.Usage, "count_id") {
+		t.Fatalf("native aggregate syntax missing: %q", ref.Usage)
+	}
+	for _, want := range []string{"products_aggregate", "aggregate", "count", "sum { price }"} {
+		if !strings.Contains(ref.HasuraCompatible, want) {
+			t.Fatalf("Hasura-compatible aggregate syntax missing %q: %q", want, ref.HasuraCompatible)
+		}
+	}
+}
+
 func TestQuerySyntaxReference_HasAnalyticsDirectives(t *testing.T) {
 	ref := querySyntaxReference
 	if len(ref.AnalyticsDirectives.Directives) == 0 {

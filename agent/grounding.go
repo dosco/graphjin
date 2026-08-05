@@ -35,16 +35,11 @@ var answerFieldTokenPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\b[a-z][a-z0-9]*(?:[A-Z][A-Za-z0-9]*)+\b`),
 }
 
-var databaseAggregateFieldPattern = regexp.MustCompile(`(?i)(?:\b(?:count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+|\b(?:count|sum|avg|min|max|stddev|variance)\s*\(\s*expr\s*:)`)
+var databaseAggregateFieldPattern = regexp.MustCompile(`(?i)(?:\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b|\b(?:count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+|\b(?:count|sum|avg|min|max|stddev|variance)\s*\(\s*expr\s*:)`)
 var databaseAggregateKeyPattern = regexp.MustCompile(`(?i)^(?:count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+$`)
+var hasuraAggregateResultKeyPattern = regexp.MustCompile(`(?i)^(?:count|sum|avg|min|max|stddev|variance)$`)
 var databaseOrderFieldPattern = regexp.MustCompile(`(?i)\border_by\s*:\s*\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:`)
 var databaseLimitPattern = regexp.MustCompile(`(?i)\blimit\s*:\s*(?:[1-9][0-9]*|\$[a-zA-Z_][a-zA-Z0-9_]*)`)
-var wrongDialectAggregatePattern = regexp.MustCompile(`(?i)\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b`)
-var aggregateFunctionCallPattern = regexp.MustCompile(`(?i)\b(?:count|sum|avg|min|max|stddev|variance)\s*\(`)
-var aggregateFunctionColumnPattern = regexp.MustCompile(`(?i)\b(count|sum|avg|min|max|stddev|variance)\s*\(\s*(?:column|expr)\s*:\s*([a-zA-Z_][a-zA-Z0-9_]*)`)
-var unknownGraphQLShapePattern = regexp.MustCompile(`(?i)(?:\bunknown\s+(?:graphql\s+)?(?:field|root|column|table)\b|\b(?:field|root|column|table)\b.{0,96}\b(?:not found|does not exist|not a (?:column|function))\b)`)
-var unknownArgumentPattern = regexp.MustCompile(`(?i)\bunknown\s+argument\b`)
-var graphQLIdentifierPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // groundingVocabulary lists identifier-shaped protocol, tool, skill, and
 // system-root terms an answer may always use without data evidence. Domain
@@ -148,15 +143,11 @@ func executionFailed(out any) bool {
 // The guidance is also appended to each error message, not just carried in a
 // sibling field. A model that has decided the run failed reads errors[].message
 // and summarizes it; recovery advice it never opens does not change behavior.
-func attachExecutionRecovery(out any, s *discoveryState, query string) any {
+func attachExecutionRecovery(out any, _ *discoveryState, _ string) any {
 	if !executionFailed(out) {
 		return out
 	}
-	aggregateSyntaxFailure, aggregateFieldHint := aggregateSyntaxRepair(out, s, query)
-	if aggregateSyntaxFailure {
-		out = attachWrongDialectAggregateRepair(out, aggregateFieldHint)
-	}
-	recovery := executionRecovery(s, aggregateSyntaxFailure, aggregateFieldHint)
+	recovery := executionRecovery()
 	directive := recoveryDirective(recovery)
 	switch res := out.(type) {
 	case executeResult:
@@ -233,221 +224,14 @@ func recoveryDirective(map[string]any) string {
 	return recoveryDirectivePrefix + " the live schema is authoritative; do not report it as broken or propose schema changes—follow recovery.next to re-discover real fields and retry in this run."
 }
 
-func executionRecovery(_ *discoveryState, aggregateSyntaxFailure bool, aggregateFieldHint string) map[string]any {
-	recovery := map[string]any{
+func executionRecovery() map[string]any {
+	return map[string]any{
 		"instruction": "The live schema is authoritative; do not report it as broken or propose schema changes—follow errors[].extensions.graphjin_repair and next to re-discover real fields and retry in this run.",
 		"next": catalogNext(
 			toolQueryCatalog,
 			"Inspect the real table and column details, re-author the query from returned fields, and retry in this run.",
 		),
 	}
-	if aggregateSyntaxFailure {
-		recovery["instruction"] = aggregateSyntaxRepairMessage(aggregateFieldHint)
-		recovery["next"] = map[string]any{
-			"tool":   toolGraphQLHelp,
-			"args":   map[string]any{"for": "query"},
-			"reason": "Open GraphJin query help, inspect the exact table detail, and retry with count_/sum_/avg_/min_/max_<column> fields on that table root.",
-		}
-	}
-	return recovery
-}
-
-func attachWrongDialectAggregateRepair(out any, aggregateFieldHint string) any {
-	repair := map[string]any{
-		"kind":    "wrong_dialect_aggregate",
-		"message": aggregateSyntaxRepairMessage(aggregateFieldHint),
-		"next":    map[string]any{"tool": toolGraphQLHelp, "args": map[string]any{"for": "query"}},
-	}
-	apply := func(errors []ErrorInfo) []ErrorInfo {
-		for i := range errors {
-			if errors[i].Extensions == nil {
-				errors[i].Extensions = map[string]any{}
-			}
-			errors[i].Extensions["code"] = "wrong_dialect_aggregate"
-			errors[i].Extensions["graphjin_repair"] = repair
-		}
-		return errors
-	}
-	switch res := out.(type) {
-	case executeResult:
-		res.Errors = apply(res.Errors)
-		return res
-	case *executeResult:
-		if res != nil {
-			res.Errors = apply(res.Errors)
-		}
-		return res
-	case map[string]any:
-		for _, item := range anySlice(res["errors"]) {
-			entry := mapValue(item)
-			if entry == nil {
-				continue
-			}
-			extensions := mapValue(entry["extensions"])
-			if extensions == nil {
-				extensions = map[string]any{}
-				entry["extensions"] = extensions
-			}
-			extensions["code"] = "wrong_dialect_aggregate"
-			extensions["graphjin_repair"] = repair
-		}
-		return res
-	default:
-		return out
-	}
-}
-
-func wrongDialectAggregateQuery(query string) bool {
-	return wrongDialectAggregatePattern.MatchString(query)
-}
-
-// aggregateSyntaxRepair recognizes the failure shape instead of attempting to
-// enumerate every aggregate spelling a model might invent. The historical
-// <table>_aggregate form remains an unconditional trigger. Other unknown
-// field/root failures require aggregate intent, and unknown arguments require
-// an aggregate function call so ordinary GraphQL argument mistakes retain the
-// generic schema-recovery path.
-func aggregateSyntaxRepair(out any, s *discoveryState, query string) (bool, string) {
-	hint := aggregateFieldHint(s, query)
-	if wrongDialectAggregateQuery(query) {
-		return true, hint
-	}
-	if s == nil {
-		return false, ""
-	}
-	aggregateIntent, _ := databaseComputationIntent(s.instruction)
-	if !aggregateIntent {
-		return false, ""
-	}
-	for _, errorInfo := range executionErrorInfo(out) {
-		if unknownAggregateFieldCode(stringFromMap(errorInfo.Extensions, "code")) ||
-			unknownGraphQLShapePattern.MatchString(errorInfo.Message) ||
-			(aggregateFunctionCallPattern.MatchString(query) && unknownArgumentPattern.MatchString(errorInfo.Message)) {
-			return true, hint
-		}
-	}
-	return false, ""
-}
-
-func executionErrorInfo(out any) []ErrorInfo {
-	switch res := out.(type) {
-	case executeResult:
-		return res.Errors
-	case *executeResult:
-		if res != nil {
-			return res.Errors
-		}
-	case map[string]any:
-		errors := anySlice(res["errors"])
-		out := make([]ErrorInfo, 0, len(errors))
-		for _, item := range errors {
-			entry := mapValue(item)
-			if entry == nil {
-				continue
-			}
-			out = append(out, ErrorInfo{
-				Message:    stringFromMap(entry, "message"),
-				Extensions: mapValue(entry["extensions"]),
-			})
-		}
-		return out
-	}
-	return nil
-}
-
-func unknownAggregateFieldCode(code string) bool {
-	code = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(code), "-", "_"))
-	switch code {
-	case "unknown_field", "unknown_root", "unknown_column", "unknown_table",
-		"field_not_found", "root_not_found", "column_not_found", "table_not_found",
-		"field_not_on_table":
-		return true
-	default:
-		return false
-	}
-}
-
-func aggregateSyntaxRepairMessage(hint string) string {
-	message := "GraphJin does not use <table>_aggregate roots or function-style aggregate fields. Aggregates are fields on the table selection (for example orders { count_id sum_total })."
-	if hint != "" {
-		message += " For this request, retry with " + hint + " on the table selection."
-	}
-	return message
-}
-
-func aggregateFieldHint(s *discoveryState, query string) string {
-	if match := aggregateFunctionColumnPattern.FindStringSubmatch(query); len(match) == 3 {
-		return strings.ToLower(match[1]) + "_" + strings.ToLower(match[2])
-	}
-	if s == nil {
-		return ""
-	}
-	operation := aggregateOperationForInstruction(s.instruction)
-	if operation == "" {
-		return ""
-	}
-	var fields []string
-	for id := range s.catalogIDs {
-		if field := catalogColumnField(id); field != "" && instructionMentionsField(s.instruction, field) {
-			fields = appendUniqueString(fields, field)
-		}
-	}
-	if len(fields) == 0 {
-		return ""
-	}
-	sort.Slice(fields, func(i, j int) bool {
-		if len(fields[i]) == len(fields[j]) {
-			return fields[i] < fields[j]
-		}
-		return len(fields[i]) > len(fields[j])
-	})
-	return operation + "_" + fields[0]
-}
-
-func aggregateOperationForInstruction(instruction string) string {
-	lower := " " + strings.ToLower(strings.TrimSpace(instruction)) + " "
-	for _, candidate := range []struct {
-		operation string
-		phrases   []string
-	}{
-		{operation: "count", phrases: []string{" how many ", " count ", " count of "}},
-		{operation: "avg", phrases: []string{" average", " avg ", " mean "}},
-		{operation: "sum", phrases: []string{" total ", " sum "}},
-		{operation: "min", phrases: []string{" minimum", " lowest", " earliest"}},
-		{operation: "max", phrases: []string{" maximum", " highest", " latest"}},
-	} {
-		for _, phrase := range candidate.phrases {
-			if strings.Contains(lower, phrase) {
-				return candidate.operation
-			}
-		}
-	}
-	return ""
-}
-
-func catalogColumnField(id string) string {
-	id = strings.TrimSpace(id)
-	if !strings.HasPrefix(strings.ToLower(id), "column:") {
-		return ""
-	}
-	if index := strings.LastIndexByte(id, '.'); index >= 0 && index+1 < len(id) {
-		field := id[index+1:]
-		if graphQLIdentifierPattern.MatchString(field) {
-			return strings.ToLower(field)
-		}
-	}
-	return ""
-}
-
-func instructionMentionsField(instruction, field string) bool {
-	normalize := func(value string) string {
-		return strings.Join(strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
-			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-		}), " ")
-	}
-	haystack := " " + normalize(instruction) + " "
-	needle := normalize(field)
-	return needle != "" && strings.Contains(haystack, " "+needle+" ")
 }
 
 func (s *discoveryState) pendingDatabaseComputation() string {
@@ -542,7 +326,9 @@ func resultContainsAggregateField(value any) bool {
 		switch typed := normalizeValue(current).(type) {
 		case map[string]any:
 			for key, item := range typed {
-				if databaseAggregateKeyPattern.MatchString(key) || walk(item, depth+1) {
+				if databaseAggregateKeyPattern.MatchString(key) ||
+					(strings.EqualFold(key, "aggregate") && hasuraAggregateResult(item)) ||
+					walk(item, depth+1) {
 					return true
 				}
 			}
@@ -556,6 +342,16 @@ func resultContainsAggregateField(value any) bool {
 		return false
 	}
 	return walk(value, 0)
+}
+
+func hasuraAggregateResult(value any) bool {
+	result := mapValue(value)
+	for key := range result {
+		if hasuraAggregateResultKeyPattern.MatchString(key) {
+			return true
+		}
+	}
+	return false
 }
 
 func executionErrorCount(value any) int64 {
