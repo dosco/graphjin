@@ -35,7 +35,7 @@ var answerFieldTokenPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\b[a-z][a-z0-9]*(?:[A-Z][A-Za-z0-9]*)+\b`),
 }
 
-var databaseAggregateFieldPattern = regexp.MustCompile(`(?i)(?:\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b|\b(?:count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+|\b(?:count|sum|avg|min|max|stddev|variance)\s*\(\s*expr\s*:)`)
+var databaseAggregateFieldPattern = regexp.MustCompile(`(?is)(?:\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b.*?\baggregate\s*\{|\b(?:count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+|\b(?:count|sum|avg|min|max|stddev|variance)\s*\(\s*expr\s*:)`)
 var databaseAggregateKeyPattern = regexp.MustCompile(`(?i)^(?:count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+$`)
 var hasuraAggregateResultKeyPattern = regexp.MustCompile(`(?i)^(?:count|sum|avg|min|max|stddev|variance)$`)
 var databaseOrderFieldPattern = regexp.MustCompile(`(?i)\border_by\s*:\s*\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:`)

@@ -364,6 +364,14 @@ func TestDatabaseComputationFinalGuard(t *testing.T) {
 		t.Fatalf("Hasura-compatible aggregate result remained blocked: %q", message)
 	}
 
+	realSuffixTable := newDiscoveryState("How many audit aggregate rows are active?")
+	realSuffixTable.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { audit_aggregate { id } }"}, executeResult{
+		Data: map[string]any{"audit_aggregate": []any{map[string]any{"id": 1}}},
+	})
+	if message := realSuffixTable.pendingDatabaseComputation(); !strings.HasPrefix(message, "database_computation_required:") {
+		t.Fatalf("real _aggregate table falsely counted as database aggregate: %q", message)
+	}
+
 	ranking := newDiscoveryState("Which plan contributes the most total revenue?")
 	ranking.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { plans { name sum_revenue } }"}, executeResult{
 		Data: map[string]any{"plans": []any{map[string]any{"name": "pro", "sum_revenue": 10}}},

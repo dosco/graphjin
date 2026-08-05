@@ -42,6 +42,14 @@ func TestMethodAcceptsHasuraCompatibleFilteredCount(t *testing.T) {
 	}
 }
 
+func TestMethodDoesNotTreatRealAggregateSuffixTableAsComputation(t *testing.T) {
+	rule := MethodRule{ForbidFinalizeFromListOnly: true}
+	query := `query { audit_aggregate { id } }`
+	if evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{query}, nil) {
+		t.Fatal("real table with _aggregate suffix should not satisfy aggregate method guard")
+	}
+}
+
 func TestScoreMethodIgnoresFailedFilteredQuery(t *testing.T) {
 	task := Task{
 		ExpectedStatus: gjagent.StatusAnswered,
