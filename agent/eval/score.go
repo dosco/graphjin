@@ -60,7 +60,7 @@ var defaultForbiddenPhrases = []string{
 }
 
 var (
-	aggregateFieldPattern = regexp.MustCompile(`(?i)(?:\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b|\b(count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+|\b(count|sum|avg|min|max|stddev|variance)\s*\(\s*expr\s*:)`)
+	aggregateFieldPattern = regexp.MustCompile(`(?is)(?:\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b.*?\baggregate\s*\{|\b(count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+|\b(count|sum|avg|min|max|stddev|variance)\s*\(\s*expr\s*:)`)
 	defaultNumberPattern  = regexp.MustCompile(`-?\$?\d[\d,]*(?:\.\d+)?`)
 )
 

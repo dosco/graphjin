@@ -101,13 +101,13 @@ func TestHasuraAggregateUnsupportedShapes(t *testing.T) {
 		query string
 		want  string
 	}{
-		{"nodes", `query { products_aggregate { nodes { id } aggregate { count } } }`, "does not support nodes"},
+		{"nodes", `query { products_aggregate { nodes { id } aggregate { count } } }`, "nodes is not supported"},
 		{"count args", `query { products_aggregate { aggregate { count(columns: [id], distinct: true) } } }`, "count arguments"},
 		{"aggregate alias", `query { products_aggregate { totals: aggregate { count } } }`, "alias on aggregate"},
-		{"inner alias", `query { products_aggregate { aggregate { total: count } } }`, "does not support aliases"},
-		{"column alias", `query { products_aggregate { aggregate { max { latest: created_at } } } }`, "does not support aliases"},
-		{"unknown aggregate", `query { products_aggregate { aggregate { median { price } } } }`, "unsupported Hasura-compatible aggregate field"},
-		{"subscription", `subscription { products_aggregate { aggregate { count } } }`, "not supported in subscriptions"},
+		{"inner alias", `query { products_aggregate { aggregate { total: count } } }`, "is not supported"},
+		{"column alias", `query { products_aggregate { aggregate { max { latest: created_at } } } }`, "is not supported"},
+		{"unknown aggregate", `query { products_aggregate { aggregate { median { price } } } }`, "aggregate field \"median\" is unsupported"},
+		{"subscription", `subscription { products_aggregate { aggregate { count } } }`, "subscription roots are not supported"},
 	}
 	compiler, err := qcode.NewCompiler(dbs, qcode.Config{})
 	if err != nil {
@@ -118,6 +118,9 @@ func TestHasuraAggregateUnsupportedShapes(t *testing.T) {
 			_, err := compiler.Compile([]byte(tt.query), nil, "user", "")
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want substring %q", err, tt.want)
+			}
+			if !strings.Contains(err.Error(), "Supported form:") || !strings.Contains(err.Error(), "Native equivalent:") {
+				t.Fatalf("error lacks actionable syntax guidance: %v", err)
 			}
 		})
 	}

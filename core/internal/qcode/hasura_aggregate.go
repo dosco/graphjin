@@ -56,7 +56,8 @@ func (co *Compiler) rewriteHasuraAggregates(op *graph.Operation) ([]HasuraAggreg
 			continue
 		}
 		if op.Type == graph.OpSub {
-			return nil, fmt.Errorf("Hasura-compatible aggregate root %q is not supported in subscriptions; use a query operation", root.Name)
+			return nil, hasuraAggregateSupportError(root.Name, baseName, table,
+				"subscription roots are not supported; use a query operation")
 		}
 		if op.Type != graph.OpQuery {
 			continue
@@ -77,9 +78,12 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 	if root.Alias != "" {
 		responseKey = root.Alias
 	}
+	unsupported := func(detail string) error {
+		return hasuraAggregateSupportError(requestedRoot, baseName, table, detail)
+	}
 
 	if len(root.Children) == 0 {
-		return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate root %q requires an aggregate selection", requestedRoot)
+		return HasuraAggregateRoot{}, unsupported("an aggregate selection is required")
 	}
 
 	var aggregate *graph.Field
@@ -88,23 +92,23 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 		switch child.Name {
 		case "aggregate":
 			if aggregate != nil {
-				return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate root %q contains aggregate more than once", requestedRoot)
+				return HasuraAggregateRoot{}, unsupported("aggregate may be selected only once")
 			}
 			aggregate = child
 		case "nodes":
-			return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate root %q does not support nodes; query the %q table root separately", requestedRoot, baseName)
+			return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("nodes is not supported; query the %q table root separately", baseName))
 		default:
-			return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate root %q supports only the aggregate selection; found %q", requestedRoot, child.Name)
+			return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("only the aggregate selection is supported; found %q", child.Name))
 		}
 	}
 	if aggregate == nil {
-		return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate root %q requires an aggregate selection", requestedRoot)
+		return HasuraAggregateRoot{}, unsupported("an aggregate selection is required")
 	}
 	if aggregate.Alias != "" {
-		return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate root %q does not support an alias on aggregate", requestedRoot)
+		return HasuraAggregateRoot{}, unsupported("an alias on aggregate is not supported")
 	}
 	if len(aggregate.Args) != 0 || len(aggregate.Directives) != 0 {
-		return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate root %q does not support arguments or directives on aggregate", requestedRoot)
+		return HasuraAggregateRoot{}, unsupported("arguments or directives on aggregate are not supported")
 	}
 
 	plan := HasuraAggregateRoot{ResponseKey: responseKey}
@@ -113,19 +117,19 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 	for _, aggregateChildID := range aggregate.Children {
 		field := &op.Fields[aggregateChildID]
 		if field.Alias != "" {
-			return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate field %q on %q does not support aliases", field.Name, requestedRoot)
+			return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("alias %q on aggregate field %q is not supported", field.Alias, field.Name))
 		}
 		if len(field.Directives) != 0 {
-			return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate field %q on %q does not support directives", field.Name, requestedRoot)
+			return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("directives on aggregate field %q are not supported", field.Name))
 		}
 
 		switch field.Name {
 		case "count":
 			if len(field.Args) != 0 {
-				return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible count arguments such as columns or distinct are not supported on %q; use a filtered table root with count_<column>", requestedRoot)
+				return HasuraAggregateRoot{}, unsupported("count arguments such as columns or distinct are not supported; filter the aggregate root instead")
 			}
 			if len(field.Children) != 0 {
-				return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible count on %q must be a scalar field", requestedRoot)
+				return HasuraAggregateRoot{}, unsupported("count must be a scalar field")
 			}
 			column, err := hasuraCountColumn(table)
 			if err != nil {
@@ -143,22 +147,22 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 
 		default:
 			if !hasuraAggregateFunctions[field.Name] {
-				return HasuraAggregateRoot{}, fmt.Errorf("unsupported Hasura-compatible aggregate field %q on %q; supported fields are count, sum, avg, min, max, stddev, and variance", field.Name, requestedRoot)
+				return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("aggregate field %q is unsupported", field.Name))
 			}
 			if len(field.Args) != 0 {
-				return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate field %q on %q does not support arguments", field.Name, requestedRoot)
+				return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("arguments on aggregate field %q are not supported", field.Name))
 			}
 			if len(field.Children) == 0 {
-				return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate field %q on %q requires at least one column", field.Name, requestedRoot)
+				return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("aggregate field %q requires at least one column", field.Name))
 			}
 			functionName := field.Name
 			for _, columnID := range field.Children {
 				columnField := &op.Fields[columnID]
 				if columnField.Alias != "" {
-					return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate column %q under %s on %q does not support aliases", columnField.Name, functionName, requestedRoot)
+					return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("alias %q on column %q under %s is not supported", columnField.Alias, columnField.Name, functionName))
 				}
 				if len(columnField.Args) != 0 || len(columnField.Directives) != 0 || len(columnField.Children) != 0 {
-					return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate column %q under %s on %q must be a plain scalar selection", columnField.Name, functionName, requestedRoot)
+					return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("column %q under %s must be a plain scalar selection", columnField.Name, functionName))
 				}
 				columnName := co.ParseName(columnField.Name)
 				if _, ok := table.GetColumnIndex(columnName); !ok {
@@ -180,13 +184,23 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 		}
 	}
 	if len(plan.Fields) == 0 {
-		return HasuraAggregateRoot{}, fmt.Errorf("Hasura-compatible aggregate root %q requires at least one aggregate field", requestedRoot)
+		return HasuraAggregateRoot{}, unsupported("at least one aggregate field is required")
 	}
 
 	root.Name = baseName
 	root.Alias = responseKey
 	root.Children = nativeChildren
 	return plan, nil
+}
+
+func hasuraAggregateSupportError(requestedRoot, baseName string, table sdata.DBTable, detail string) error {
+	countColumn := "<primary_key>"
+	if column, err := hasuraCountColumn(table); err == nil {
+		countColumn = column
+	}
+	return fmt.Errorf(
+		"Hasura-compatible aggregate root %q: %s. Supported form: %s { aggregate { count sum { <column> } avg { <column> } min { <column> } max { <column> } } }. Native equivalent: %s { count_%s sum_<column> avg_<column> min_<column> max_<column> }",
+		requestedRoot, detail, requestedRoot, baseName, countColumn)
 }
 
 func hasuraCountColumn(table sdata.DBTable) (string, error) {
