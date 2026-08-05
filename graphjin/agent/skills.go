@@ -192,9 +192,10 @@ const dataDiscoveryInstruction = `Skill: data_discovery. Before querying, inspec
 	`Prefer dynamic authoring: validate the shape, then execute_graphql; an approved saved query is a governed shortcut. Answer only from observed results and fields, stating derived numbers plainly. ` +
 	`On graphjin_repair, treat the failure as a query-authoring error: re-discover real fields, re-author, and retry in the same run; never advise schema or data changes.`
 
-const dataAggregationInstruction = `Skill: data_aggregation. The model plans, the database computes. ` +
-	`Fetched lists are limited pages: never calculate totals, counts, averages, extremes, or rankings from their rows. Use count_<col>, sum_<col>, avg_<col>, min_<col>, max_<col>, also valid on date/time columns despite numeric-only introspection (max_<date_col> is latest). For top-N by group, select the dimension and aggregate, order_by that aggregate field desc, and limit N. ` +
-	`Anchor relative windows on live evidence: inputs.current_date is today (UTC); query max_<date_col> for recency, never memory or sample rows, and state the resolved window in the answer. On result.truncation, re-author with aggregate fields.`
+const dataAggregationInstruction = `Skill: data_aggregation. The model plans, the database computes. Limited lists are pages: never derive totals, counts, averages, extremes, or rankings from rows. ` +
+	`Prefer native: { products { count_id sum_price avg_price min_price max_price } }. Hasura-compatible: { products_aggregate { aggregate { count sum { price } avg { price } min { price } max { price } } } }. ` +
+	`Never omit aggregate: { products_aggregate { count } } is invalid. On a Hasura aggregate error, copy its Supported form or Native equivalent with verified names; do not repeat it or restart discovery. ` +
+	`Aggregates work on dates: max_<date_col> is latest. For top-N groups, select dimension and aggregate, order_by aggregate desc, and limit N. Anchor relative windows on inputs.current_date (UTC), query max_<date_col>, and state the window. On result.truncation, re-author with aggregates.`
 
 const dataWriteInstruction = `Skill: data_write. Apply application-data changes safely. ` +
 	`Prefer an approved saved mutation; otherwise establish this run's shape evidence for every target from mutation_pattern and table details, validate input, then author insert/update/upsert/delete with execute_graphql. Core enforces role and RLS. ` +
