@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -19,6 +20,8 @@ const (
 	singularSuffixCamel = "ByID"
 	singularSuffixSnake = "_by_id"
 )
+
+var qualifiedGraphQLRootPattern = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s*[({]`)
 
 type QType int8
 
@@ -540,7 +543,14 @@ func (co *Compiler) Compile(
 	var op graph.Operation
 	op, err = graph.Parse(query)
 	if err != nil {
+		err = qualifiedGraphQLRootError(query, err)
 		return
+	}
+	// The permissive lexer in older parser builds can recover from a dotted
+	// root by discarding the leading identifiers. Reject it explicitly rather
+	// than compiling a misleading partial root.
+	if qualifiedErr := qualifiedGraphQLRootError(query, nil); qualifiedErr != nil {
+		return nil, qualifiedErr
 	}
 
 	var hasuraAggregates []HasuraAggregateRoot
@@ -582,6 +592,21 @@ func (co *Compiler) Compile(
 		}
 	}
 	return
+}
+
+func qualifiedGraphQLRootError(query []byte, parseErr error) error {
+	match := qualifiedGraphQLRootPattern.FindSubmatch(query)
+	if len(match) != 2 {
+		return parseErr
+	}
+	qualified := string(match[1])
+	parts := strings.Split(qualified, ".")
+	unqualified := parts[len(parts)-1]
+	message := fmt.Sprintf("roots are unqualified table names: write `%s`, not `%s`", unqualified, qualified)
+	if parseErr != nil {
+		return fmt.Errorf("%w: %s", parseErr, message)
+	}
+	return fmt.Errorf("invalid GraphQL root %q: %s", qualified, message)
 }
 
 func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) error {

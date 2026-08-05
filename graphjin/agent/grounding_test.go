@@ -736,3 +736,19 @@ func TestResultSummaryCarriesRecoveryCodesWithoutMessages(t *testing.T) {
 		t.Fatalf("action summary leaked error prose: %v", summary)
 	}
 }
+
+func TestDatabaseAggregatePatternAcceptsShallowCompatibilitySyntax(t *testing.T) {
+	queries := []string{
+		`query { support_tickets_aggregate { count } }`,
+		`query { usage_events_aggregate { min { quantity } } }`,
+		`query { usage_events_aggregate(where: { quantity: { gt: 0 } }) { count } }`,
+	}
+	for _, query := range queries {
+		if !databaseAggregateFieldPattern.MatchString(query) {
+			t.Fatalf("shallow aggregate query was not recognized: %s", query)
+		}
+	}
+	if databaseAggregateFieldPattern.MatchString(`query { audit_aggregate { id } }`) {
+		t.Fatal("ordinary table ending in _aggregate must not receive aggregate credit")
+	}
+}

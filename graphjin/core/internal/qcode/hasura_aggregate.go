@@ -2,6 +2,7 @@ package qcode
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
@@ -53,7 +54,7 @@ func (co *Compiler) rewriteHasuraAggregates(op *graph.Operation) ([]HasuraAggreg
 		baseName := strings.TrimSuffix(root.Name, hasuraAggregateSuffix)
 		table, err := co.Find("", co.ParseName(baseName))
 		if err != nil {
-			continue
+			return nil, co.unknownHasuraAggregateRootError(root.Name, baseName)
 		}
 		if op.Type == graph.OpSub {
 			return nil, hasuraAggregateSupportError(root.Name, baseName, table,
@@ -87,6 +88,7 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 	}
 
 	var aggregate *graph.Field
+	var shallowChildren []int32
 	for _, childID := range root.Children {
 		child := &op.Fields[childID]
 		switch child.Name {
@@ -98,23 +100,36 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 		case "nodes":
 			return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("nodes is not supported; query the %q table root separately", baseName))
 		default:
-			return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("only the aggregate selection is supported; found %q", child.Name))
+			if !isHasuraAggregateFunction(child.Name) {
+				return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("only aggregate function fields are supported; found %q", child.Name))
+			}
+			shallowChildren = append(shallowChildren, childID)
 		}
 	}
-	if aggregate == nil {
-		return HasuraAggregateRoot{}, unsupported("an aggregate selection is required")
+	if aggregate != nil && len(shallowChildren) != 0 {
+		return HasuraAggregateRoot{}, unsupported("the aggregate wrapper and shallow aggregate fields cannot be mixed")
 	}
-	if aggregate.Alias != "" {
-		return HasuraAggregateRoot{}, unsupported("an alias on aggregate is not supported")
+
+	aggregateChildren := shallowChildren
+	pathPrefix := []string(nil)
+	if aggregate != nil {
+		if aggregate.Alias != "" {
+			return HasuraAggregateRoot{}, unsupported("an alias on aggregate is not supported")
+		}
+		if len(aggregate.Args) != 0 || len(aggregate.Directives) != 0 {
+			return HasuraAggregateRoot{}, unsupported("arguments or directives on aggregate are not supported")
+		}
+		aggregateChildren = aggregate.Children
+		pathPrefix = []string{"aggregate"}
 	}
-	if len(aggregate.Args) != 0 || len(aggregate.Directives) != 0 {
-		return HasuraAggregateRoot{}, unsupported("arguments or directives on aggregate are not supported")
+	if len(aggregateChildren) == 0 {
+		return HasuraAggregateRoot{}, unsupported("at least one aggregate field is required")
 	}
 
 	plan := HasuraAggregateRoot{ResponseKey: responseKey}
-	nativeChildren := make([]int32, 0, len(aggregate.Children))
+	nativeChildren := make([]int32, 0, len(aggregateChildren))
 	seenNative := make(map[string]bool)
-	for _, aggregateChildID := range aggregate.Children {
+	for _, aggregateChildID := range aggregateChildren {
 		field := &op.Fields[aggregateChildID]
 		if field.Alias != "" {
 			return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("alias %q on aggregate field %q is not supported", field.Alias, field.Name))
@@ -143,7 +158,7 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 			field.Name = native
 			field.ParentID = root.ID
 			nativeChildren = append(nativeChildren, field.ID)
-			plan.Fields = append(plan.Fields, HasuraAggregateField{NativeField: native, Path: []string{"aggregate", "count"}})
+			plan.Fields = append(plan.Fields, HasuraAggregateField{NativeField: native, Path: aggregateResponsePath(pathPrefix, "count")})
 
 		default:
 			if !hasuraAggregateFunctions[field.Name] {
@@ -158,6 +173,7 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 			functionName := field.Name
 			for _, columnID := range field.Children {
 				columnField := &op.Fields[columnID]
+				responseColumn := columnField.Name
 				if columnField.Alias != "" {
 					return HasuraAggregateRoot{}, unsupported(fmt.Sprintf("alias %q on column %q under %s is not supported", columnField.Alias, columnField.Name, functionName))
 				}
@@ -178,7 +194,7 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 				nativeChildren = append(nativeChildren, columnField.ID)
 				plan.Fields = append(plan.Fields, HasuraAggregateField{
 					NativeField: native,
-					Path:        []string{"aggregate", functionName, columnField.Name[len(functionName)+1:]},
+					Path:        aggregateResponsePath(pathPrefix, functionName, responseColumn),
 				})
 			}
 		}
@@ -191,6 +207,72 @@ func (co *Compiler) rewriteHasuraAggregateRoot(op *graph.Operation, root *graph.
 	root.Alias = responseKey
 	root.Children = nativeChildren
 	return plan, nil
+}
+
+func isHasuraAggregateFunction(name string) bool {
+	return name == "count" || hasuraAggregateFunctions[name]
+}
+
+func aggregateResponsePath(prefix []string, parts ...string) []string {
+	path := make([]string, 0, len(prefix)+len(parts))
+	path = append(path, prefix...)
+	return append(path, parts...)
+}
+
+func (co *Compiler) unknownHasuraAggregateRootError(requestedRoot, baseName string) error {
+	want := strings.ToLower(co.ParseName(baseName))
+	var suggestions []string
+	seen := make(map[string]bool)
+	for _, table := range co.s.GetTables() {
+		name := strings.ToLower(table.Name)
+		if want == "" || (!strings.Contains(name, want) && !strings.Contains(want, name) && !strings.HasSuffix(name, "_"+want)) {
+			continue
+		}
+		suggestion := table.Name + hasuraAggregateSuffix
+		if !seen[suggestion] {
+			seen[suggestion] = true
+			suggestions = append(suggestions, suggestion)
+		}
+	}
+	sort.Strings(suggestions)
+	if len(suggestions) > 3 {
+		suggestions = suggestions[:3]
+	}
+	if len(suggestions) == 1 {
+		return fmt.Errorf("unknown Hasura-compatible aggregate root %q: table %q was not found; did you mean %q?", requestedRoot, baseName, suggestions[0])
+	}
+	if len(suggestions) > 1 {
+		return fmt.Errorf("unknown Hasura-compatible aggregate root %q: table %q was not found; did you mean one of %q?", requestedRoot, baseName, suggestions)
+	}
+	return fmt.Errorf("unknown Hasura-compatible aggregate root %q: table %q was not found", requestedRoot, baseName)
+}
+
+func hasAggregateFunctionChildren(op *graph.Operation, field graph.Field) bool {
+	if len(field.Children) == 0 {
+		return false
+	}
+	for _, childID := range field.Children {
+		if !isHasuraAggregateFunction(op.Fields[childID].Name) {
+			return false
+		}
+	}
+	return true
+}
+
+func (co *Compiler) hasSchemaFieldOrRelationship(table sdata.DBTable, name string) bool {
+	if _, ok := table.ColumnExists(name); ok {
+		return true
+	}
+	rels, err := co.s.GetFirstDegree(table)
+	if err != nil {
+		return false
+	}
+	for _, rel := range rels {
+		if co.ParseName(rel.Name) == name || co.ParseName(rel.Table.Name) == name {
+			return true
+		}
+	}
+	return false
 }
 
 func hasuraAggregateSupportError(requestedRoot, baseName string, table sdata.DBTable, detail string) error {

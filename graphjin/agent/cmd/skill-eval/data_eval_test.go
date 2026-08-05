@@ -6,6 +6,20 @@ import (
 	"time"
 )
 
+func TestAggregateFieldPatternAcceptsShallowCompatibilitySyntax(t *testing.T) {
+	for _, query := range []string{
+		`query { support_tickets_aggregate { count } }`,
+		`query { usage_events_aggregate { min { quantity } } }`,
+	} {
+		if !aggregateFieldPattern.MatchString(query) {
+			t.Fatalf("shallow aggregate query was not recognized: %s", query)
+		}
+	}
+	if aggregateFieldPattern.MatchString(`query { audit_aggregate { id } }`) {
+		t.Fatal("ordinary table ending in _aggregate must not receive aggregate credit")
+	}
+}
+
 func TestWalkPath(t *testing.T) {
 	data := map[string]any{
 		"accounts": []any{
