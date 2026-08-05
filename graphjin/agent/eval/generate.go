@@ -362,7 +362,11 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 func aggregateMethodPattern(fn, column string) string {
 	fn = regexp.QuoteMeta(fn)
 	column = regexp.QuoteMeta(column)
-	return fmt.Sprintf(`(?:%s_%s|%s\s*\(\s*expr\s*:\s*%s\s*\))`, fn, column, fn, column)
+	compat := fmt.Sprintf(`(?s:\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b.*?\baggregate\s*\{.*?\b%s\s*\{.*?\b%s\b)`, fn, column)
+	if fn == "count" {
+		compat = `(?s:\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b.*?\baggregate\s*\{.*?\bcount\b)`
+	}
+	return fmt.Sprintf(`(?:%s_%s|%s\s*\(\s*expr\s*:\s*%s\s*\)|%s)`, fn, column, fn, column, compat)
 }
 
 // filteredCountMethodPattern requires the filter and database-side count to
@@ -371,12 +375,14 @@ func aggregateMethodPattern(fn, column string) string {
 func filteredCountMethodPattern(column, filter, primaryKey string) string {
 	column = regexp.QuoteMeta(column)
 	count := aggregateMethodPattern("count", primaryKey)
-	return fmt.Sprintf(`(?s)where\s*:\s*\{.*\b%s\s*:\s*\{.*%s.*\}.*\}.*%s`, column, filter, count)
+	native := fmt.Sprintf(`where\s*:\s*\{.*\b%s\s*:\s*\{.*%s.*\}.*\}.*%s`, column, filter, count)
+	compat := fmt.Sprintf(`\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b.*where\s*:\s*\{.*\b%s\s*:\s*\{.*%s.*\}.*\}.*\baggregate\s*\{.*\bcount\b`, column, filter)
+	return fmt.Sprintf(`(?s)(?:%s|%s)`, native, compat)
 }
 
 func latestDateMethodPattern(column string) string {
 	column = regexp.QuoteMeta(column)
-	return fmt.Sprintf(`(?s)(?:max_%s|order_by\s*:\s*\{.*\b%s\s*:\s*desc.*\}.*limit\s*:\s*1|limit\s*:\s*1.*order_by\s*:\s*\{.*\b%s\s*:\s*desc)`, column, column, column)
+	return fmt.Sprintf(`(?s)(?:max_%s|\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b.*?\baggregate\s*\{.*?\bmax\s*\{.*?\b%s\b|order_by\s*:\s*\{.*\b%s\s*:\s*desc.*\}.*limit\s*:\s*1|limit\s*:\s*1.*order_by\s*:\s*\{.*\b%s\s*:\s*desc)`, column, column, column, column)
 }
 
 func generatedTask(seed int64, source string, category Category, difficulty Difficulty, prompt, query, extract, answerKind string, method []string) Task {

@@ -118,8 +118,9 @@ var defaultForbiddenPhrases = []string{
 	"schema does not",
 }
 
-// aggregateFieldPattern recognizes DB-side aggregate fields in authored queries.
-var aggregateFieldPattern = regexp.MustCompile(`\b(count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+`)
+// aggregateFieldPattern recognizes DB-side aggregate fields in authored queries,
+// including the compiler-supported Hasura-compatible aggregate root.
+var aggregateFieldPattern = regexp.MustCompile(`(?i)(?:\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b|\b(count|sum|avg|min|max|stddev|variance)_[a-zA-Z0-9_]+)`)
 
 // defaultNumberPattern extracts numeric answer candidates from prose.
 var defaultNumberPattern = regexp.MustCompile(`-?\$?\d[\d,]*(?:\.\d+)?`)

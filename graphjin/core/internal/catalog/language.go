@@ -267,6 +267,20 @@ var languageFeatures = []Feature{
 		SuggestedNext: []string{"query_catalog", "validate_where_clause"},
 	},
 	{
+		ID:      "pattern.aggregate",
+		Kind:    "query_pattern",
+		Name:    "database aggregate",
+		Scope:   "query",
+		Summary: "Compute aggregates in the database using native GraphJin fields or the supported Hasura-compatible aggregate query shape.",
+		Examples: []string{
+			`{ products { count_id sum_price avg_price min_price max_price } }`,
+			`{ products_aggregate(where: { active: { eq: true } }) { aggregate { count sum { price } avg { price } min { price } max { price } } } }`,
+		},
+		CommonMistakes: []string{
+			"Hasura-compatible nodes, count(columns:/distinct:), inner aliases, and subscription roots are not supported.",
+		},
+	},
+	{
 		ID:      "pattern.grouped_summary",
 		Kind:    "query_pattern",
 		Name:    "grouped summary",

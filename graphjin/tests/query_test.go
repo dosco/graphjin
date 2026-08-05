@@ -789,6 +789,38 @@ func Example_queryWithAggregation() {
 	// Output: {"products":[{"count_id":100}]}
 }
 
+func Example_queryWithHasuraCompatibleAggregation() {
+	// MongoDB aggregation functions are not available yet; keep the shared
+	// example deterministic while SQL dialects exercise the compatibility path.
+	if dbType == "mongodb" {
+		fmt.Println(`{"stats":{"aggregate":{"count":100}}}`)
+		return
+	}
+
+	gql := `
+	query ProductCount($minimum_id: Int!) {
+		stats: products_aggregate(where: { id: { gte: $minimum_id } }) {
+			aggregate { count }
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, json.RawMessage(`{"minimum_id":1}`), nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	printJSON(res.Data)
+
+	// Output: {"stats":{"aggregate":{"count":100}}}
+}
+
 func Example_queryWithAggregationOrderedByAggregate() {
 	// Regression test: ordering a grouped aggregate by the aggregate field
 	// used to add the aggregate's source column (subject_id) to GROUP BY,

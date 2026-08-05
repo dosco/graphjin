@@ -32,12 +32,11 @@ const (
 )
 
 var (
-	repairAmbiguousRel      = regexp.MustCompile(`ambiguous relationship\s+(\S+)\s*->\s*(\S+):\s*multiple foreign keys\s*\(([^)]+)\)`)
-	repairNestedShape       = regexp.MustCompile(`nested selection '([^']+)' joins through parent column '([^']+)\.([^']+)', which is not in distinct: \[([^\]]+)\]`)
-	repairPartitionReq      = regexp.MustCompile(`table\s+"([^"]+)"\s+requires a filter on (?:partition|temporal) column\s+"([^"]+)"`)
-	repairFieldNotOnTable   = regexp.MustCompile(`field '([^']+)' is not a column or a function`)
-	repairWrongDialectArg   = regexp.MustCompile(`unknown argument\s+['"` + "`" + `]?(aggregation|aggregate)['"` + "`" + `]?`)
-	repairWrongDialectField = regexp.MustCompile(`(?i)([a-z0-9_]+)_aggregate\b`)
+	repairAmbiguousRel    = regexp.MustCompile(`ambiguous relationship\s+(\S+)\s*->\s*(\S+):\s*multiple foreign keys\s*\(([^)]+)\)`)
+	repairNestedShape     = regexp.MustCompile(`nested selection '([^']+)' joins through parent column '([^']+)\.([^']+)', which is not in distinct: \[([^\]]+)\]`)
+	repairPartitionReq    = regexp.MustCompile(`table\s+"([^"]+)"\s+requires a filter on (?:partition|temporal) column\s+"([^"]+)"`)
+	repairFieldNotOnTable = regexp.MustCompile(`field '([^']+)' is not a column or a function`)
+	repairWrongDialectArg = regexp.MustCompile(`unknown argument\s+['"` + "`" + `]?(aggregation|aggregate)['"` + "`" + `]?`)
 )
 
 func BuildGraphJinErrorRepair(query, errorMsg string) ErrorRepair {
@@ -147,18 +146,10 @@ func fillRepairPartitionFilter(res *ErrorRepair, errorMsg string) {
 	res.RepairedQuery = fmt.Sprintf("query {\n  %s(where: { %s: { gt: \"2026-01-01\" } }) { id }\n}", m[1], m[2])
 }
 
-func fillRepairWrongDialect(res *ErrorRepair, errorMsg, query string) {
+func fillRepairWrongDialect(res *ErrorRepair, _ string, _ string) {
 	res.Kind = repairKindWrongDialect
 	res.Next = []string{"query_catalog", "validate_where_clause"}
-	table := "<table>"
-	if m := repairWrongDialectField.FindStringSubmatch(query); m != nil {
-		table = m[1]
-	}
-	if repairWrongDialectArg.MatchString(errorMsg) {
-		res.Diagnosis = "Query used a Hasura/PostgREST aggregate argument. GraphJin aggregates are leaf fields such as sum_<col>, avg_<col>, count_<col>, or aliases using expr."
-	} else {
-		res.Diagnosis = fmt.Sprintf("Query referenced %q, the Hasura aggregate-table shape. GraphJin has no _aggregate suffix; aggregates are leaf fields on the original table.", table+"_aggregate")
-	}
+	res.Diagnosis = "Query used an unsupported aggregate argument. Use GraphJin aggregate leaf fields or the supported Hasura-compatible <table>_aggregate query shape."
 }
 
 func isRepairAnalyticsDirective(errLower string) bool {
@@ -176,15 +167,8 @@ func isRepairAnalyticsDirective(errLower string) bool {
 		strings.Contains(errLower, "@rownumber")
 }
 
-func isRepairWrongDialect(errorMsg, query string) bool {
-	if repairWrongDialectArg.MatchString(errorMsg) {
-		return true
-	}
-	errLower := strings.ToLower(errorMsg)
-	if !(strings.Contains(errLower, "table") && (strings.Contains(errLower, "not found") || strings.Contains(errLower, "unknown") || strings.Contains(errLower, "does not exist"))) {
-		return false
-	}
-	return repairWrongDialectField.MatchString(query)
+func isRepairWrongDialect(errorMsg, _ string) bool {
+	return repairWrongDialectArg.MatchString(errorMsg)
 }
 
 func splitRepairCSV(csv string) []string {

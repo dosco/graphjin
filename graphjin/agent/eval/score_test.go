@@ -14,6 +14,9 @@ func TestMethodAcceptsEquivalentDatabaseAggregate(t *testing.T) {
 	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{`{ usage_events { total_quantity: sum(expr: quantity) } }`}, nil) {
 		t.Fatal("expression aggregate should satisfy the database-computed method rule")
 	}
+	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{`{ usage_events_aggregate { aggregate { sum { quantity } } } }`}, nil) {
+		t.Fatal("Hasura-compatible aggregate should satisfy the database-computed method rule")
+	}
 }
 
 func TestMethodAcceptsLatestRowQuery(t *testing.T) {
@@ -21,6 +24,21 @@ func TestMethodAcceptsLatestRowQuery(t *testing.T) {
 	query := `query { subscriptions(order_by: { started_at: desc }, limit: 1) { started_at } }`
 	if !evaluateMethod(rule, AnswerRule{Kind: "date"}, []string{query}, nil) {
 		t.Fatal("descending order with limit one should satisfy the latest-date method rule")
+	}
+	compat := `query { subscriptions_aggregate { aggregate { max { started_at } } } }`
+	if !evaluateMethod(rule, AnswerRule{Kind: "date"}, []string{compat}, nil) {
+		t.Fatal("Hasura-compatible max should satisfy the latest-date method rule")
+	}
+}
+
+func TestMethodAcceptsHasuraCompatibleFilteredCount(t *testing.T) {
+	rule := MethodRule{
+		RequireQueryMatch:          []string{filteredCountMethodPattern("occurred_at", `gte\s*:`, "id")},
+		ForbidFinalizeFromListOnly: true,
+	}
+	query := `query { events_aggregate(where: {occurred_at: {gte: "2026-01-01"}}) { aggregate { count } } }`
+	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{query}, nil) {
+		t.Fatal("Hasura-compatible filtered count should satisfy the method rule")
 	}
 }
 

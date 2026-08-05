@@ -18,7 +18,7 @@ func TestNewErrorIncludesGraphJinRepairExtension(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected graphjin_repair extension, got %#v", raw)
 	}
-	if repair.Kind != repairKindWrongDialect {
-		t.Fatalf("expected wrong dialect repair, got %+v", repair)
+	if repair.Kind != repairKindTableNotFound {
+		t.Fatalf("expected table-not-found repair, got %+v", repair)
 	}
 }
