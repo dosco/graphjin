@@ -138,6 +138,9 @@ func (co *Compiler) compileChildColumns(
 		}
 
 		if len(f.Children) != 0 {
+			if name == "aggregate" && hasAggregateFunctionChildren(op, f) && !co.hasSchemaFieldOrRelationship(sel.Ti, name) {
+				return fmt.Errorf("field %q on table %q is not valid aggregate syntax: aggregates are fields such as %q, or use the %q root", name, sel.Ti.Name, "count_id", sel.Ti.Name+hasuraAggregateSuffix)
+			}
 			val := f.ID | (sel.ID << 16)
 			st.Push(val)
 			continue

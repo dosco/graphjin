@@ -23,3 +23,28 @@ func TestHasuraAggregateSQLMatchesNativeGraphJin(t *testing.T) {
 		t.Fatalf("compatibility SQL differs from native GraphJin SQL\ncompat:\n%s\nnative:\n%s", compat, native)
 	}
 }
+
+func TestShallowHasuraAggregateSQLMatchesWrappedAndNative(t *testing.T) {
+	variables := map[string]json.RawMessage{"minimum": json.RawMessage(`10`)}
+	shallow := compileGQLToPSQLString(t, `
+		query Totals($minimum: Int!) {
+			products_aggregate(where: {price: {gte: $minimum}}, limit: 1) {
+				count sum { price } max { created_at }
+			}
+		}`, variables, "user")
+	wrapped := compileGQLToPSQLString(t, `
+		query Totals($minimum: Int!) {
+			products_aggregate(where: {price: {gte: $minimum}}, limit: 1) {
+				aggregate { count sum { price } max { created_at } }
+			}
+		}`, variables, "user")
+	native := compileGQLToPSQLString(t, `
+		query Totals($minimum: Int!) {
+			products_aggregate: products(where: {price: {gte: $minimum}}, limit: 1) {
+				count_id sum_price max_created_at
+			}
+		}`, variables, "user")
+	if shallow != wrapped || shallow != native {
+		t.Fatalf("aggregate dialect SQL differs\nshallow:\n%s\nwrapped:\n%s\nnative:\n%s", shallow, wrapped, native)
+	}
+}

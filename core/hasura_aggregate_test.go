@@ -46,6 +46,20 @@ func TestReshapeHasuraAggregateDataPreservesNullRoot(t *testing.T) {
 	assertJSONEqual(t, got, []byte(`{"private_aggregate":null}`))
 }
 
+func TestReshapeShallowHasuraAggregateData(t *testing.T) {
+	data := []byte(`{"support_tickets_aggregate":[{"count_id":5,"min_created_at":"2026-01-02"}]}`)
+	plans := []qcode.HasuraAggregateRoot{{ResponseKey: "support_tickets_aggregate", Fields: []qcode.HasuraAggregateField{
+		{NativeField: "count_id", Path: []string{"count"}},
+		{NativeField: "min_created_at", Path: []string{"min", "created_at"}},
+	}}}
+	got, err := reshapeHasuraAggregateData(data, plans)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte(`{"support_tickets_aggregate":{"count":5,"min":{"created_at":"2026-01-02"}}}`)
+	assertJSONEqual(t, got, want)
+}
+
 func assertJSONEqual(t *testing.T, got, want []byte) {
 	t.Helper()
 	var gotValue, wantValue any

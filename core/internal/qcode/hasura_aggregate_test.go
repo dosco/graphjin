@@ -44,6 +44,75 @@ func TestHasuraAggregateRewrite(t *testing.T) {
 	}
 }
 
+func TestHasuraAggregateShallowRewrite(t *testing.T) {
+	compiler, err := qcode.NewCompiler(dbs, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := compiler.Compile([]byte(`
+		query {
+			products_aggregate {
+				count
+				min { price }
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled.HasuraAggregates) != 1 {
+		t.Fatalf("Hasura aggregate plans = %d, want 1", len(compiled.HasuraAggregates))
+	}
+	wantPaths := [][]string{{"count"}, {"min", "price"}}
+	for i, field := range compiled.HasuraAggregates[0].Fields {
+		if strings.Join(field.Path, ".") != strings.Join(wantPaths[i], ".") {
+			t.Fatalf("field %d response path = %#v, want %#v", i, field.Path, wantPaths[i])
+		}
+	}
+	if len(compiled.Selects) != 1 || compiled.Selects[0].Table != "products" || !compiled.Selects[0].GlobalAgg {
+		t.Fatalf("lowered aggregate select = %#v", compiled.Selects)
+	}
+}
+
+func TestHasuraAggregateQualifiedRootHint(t *testing.T) {
+	compiler, err := qcode.NewCompiler(dbs, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = compiler.Compile([]byte(`query { app.main.products_aggregate { count } }`), nil, "user", "")
+	if err == nil {
+		t.Fatal("expected qualified-root parse error")
+	}
+	want := "roots are unqualified table names: write `products_aggregate`, not `app.main.products_aggregate`"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want substring %q", err, want)
+	}
+}
+
+func TestHasuraAggregateUnknownRootSuggestsSchemaTable(t *testing.T) {
+	schema := hasuraAggregateSchema(t, []sdata.DBColumn{
+		{Schema: "public", Table: "support_tickets", Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true},
+	})
+	compiler, err := qcode.NewCompiler(schema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = compiler.Compile([]byte(`query { tickets_aggregate { count } }`), nil, "user", "")
+	if err == nil || !strings.Contains(err.Error(), `did you mean "support_tickets_aggregate"`) {
+		t.Fatalf("error = %v, want support_tickets_aggregate suggestion", err)
+	}
+}
+
+func TestNativeAggregateWrapperHint(t *testing.T) {
+	compiler, err := qcode.NewCompiler(dbs, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = compiler.Compile([]byte(`query { products { aggregate { count } } }`), nil, "user", "")
+	if err == nil || !strings.Contains(err.Error(), `aggregates are fields such as "count_id", or use the "products_aggregate" root`) {
+		t.Fatalf("error = %v, want native aggregate syntax hint", err)
+	}
+}
+
 func TestHasuraAggregateCountUsesNonNullFallback(t *testing.T) {
 	schema := hasuraAggregateSchema(t, []sdata.DBColumn{
 		{Schema: "public", Table: "events", Name: "nullable_value", Type: "text"},
@@ -107,6 +176,7 @@ func TestHasuraAggregateUnsupportedShapes(t *testing.T) {
 		{"inner alias", `query { products_aggregate { aggregate { total: count } } }`, "is not supported"},
 		{"column alias", `query { products_aggregate { aggregate { max { latest: created_at } } } }`, "is not supported"},
 		{"unknown aggregate", `query { products_aggregate { aggregate { median { price } } } }`, "aggregate field \"median\" is unsupported"},
+		{"mixed wrapper and shallow", `query { products_aggregate { count aggregate { max { price } } } }`, "cannot be mixed"},
 		{"subscription", `subscription { products_aggregate { aggregate { count } } }`, "subscription roots are not supported"},
 	}
 	compiler, err := qcode.NewCompiler(dbs, qcode.Config{})
