@@ -128,11 +128,15 @@ func TestRuntimeUsageInstructionsCarryTheTruncationContract(t *testing.T) {
 func TestDataAggregationSkillTeachesEngineSideComputation(t *testing.T) {
 	for _, phrase := range []string{
 		"The model plans, the database computes",
-		"count_<col>, sum_<col>, avg_<col>, min_<col>, max_<col>",
+		"products { count_id sum_price avg_price min_price max_price }",
+		"products_aggregate { aggregate { count sum { price } avg { price } min { price } max { price } } }",
+		"products_aggregate { count }",
+		"copy its Supported form or Native equivalent",
+		"do not repeat it or restart discovery",
 		"max_<date_col>",
-		"order_by that aggregate field desc",
-		"inputs.current_date is today (UTC)",
-		"state the resolved window in the answer",
+		"order_by aggregate desc",
+		"inputs.current_date (UTC)",
+		"state the window",
 		"result.truncation",
 	} {
 		if !strings.Contains(dataAggregationInstruction, phrase) {
