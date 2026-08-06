@@ -11,42 +11,4 @@ suite:
     repeats: 3
     max_steps: 8
     reward_version: graphjin.eval.reward/v2
-runs:
-    - run_id: 20260806T102034.420366000Z-2d6d25e5
-      slug: 20260806t102034-2d6d25e5
-      label: Gemini 3.5 Flash-Lite
-      release: e247212a
-      ranked: true
-      generation: "2026.1"
-      generated_at: 2026-08-06T10:20:34.420375Z
-      model: gemini-3.5-flash-lite
-      provider: google-gemini
-      graphjin_commit: e247212a
-      binary_fingerprint: 95ecfaa69be80fa08c471c1c95184f9aab13ce0dd6917a5551aaa3d3731c66ac
-      suite_identity: 1e2e88ebd84ac045e9b5a96e41861b8e
-      suite_fingerprint: bcf5ec66e2bd37941a664ec4c77d90b1
-      catalog_hash: 800eb4c4dbf2947c38ba8e89feecf6b8
-      seed_manifest_hash: 4f2503818a39e065a76873c117d07c31
-      oracle_value_hash: 44b46ab31f66acec0952ae0fbd5a4fd1ee2f539c53813ac740040e803d87d3a0
-      data_anchor: "2026-08-06"
-      reward_version: graphjin.eval.reward/v2
-      usage_accounting_version: graphjin.eval.usage/v2
-      seed: 23
-      repeats: 3
-      max_steps: 8
-      temperature: 0
-      task_count: 100
-      episode_count: 300
-      recall: 0.11
-      recall_ci_low: 0.05
-      recall_ci_high: 0.18
-      pass_at_k: 0.16
-      pass_power_k: 0.06
-      ground_truth_recall: 0.8775510204081632
-      method_recall: 0.11224489795918367
-      safety_precision: 1
-      behavior_recall: 0.91
-      mean_reward: 0.7395519999999999
-      total_tokens: 8795174
-      provider_total_tokens: 8795174
-      accepted: true
+runs: []
