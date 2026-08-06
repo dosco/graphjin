@@ -29,15 +29,17 @@ const (
 	UsageAccountingVersion = "graphjin.eval.usage/v2"
 	RunManifestVersion     = "graphjin.eval.run/v1"
 	AttemptSchemaVersion   = "graphjin.eval.attempt/v1"
-	GeneratorVersion       = "graphjin.eval.generator/v4"
-	RewardVersion          = "graphjin.eval.reward/v2"
-	DefaultSuiteSize       = 24
-	DefaultRepeats         = 3
-	DefaultEvaluationDir   = "eval"
-	DefaultSuiteFilename   = "suite.yml"
-	DefaultStateDir        = ".graphjin-evals"
-	defaultMaxActorTurns   = int64(10)
-	defaultMaxTotalTokens  = int64(400000)
+	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
+	// generated task semantics change, including method-rule dialect support.
+	GeneratorVersion      = "graphjin.eval.generator/v5"
+	RewardVersion         = "graphjin.eval.reward/v2"
+	DefaultSuiteSize      = 24
+	DefaultRepeats        = 3
+	DefaultEvaluationDir  = "eval"
+	DefaultSuiteFilename  = "suite.yml"
+	DefaultStateDir       = ".graphjin-evals"
+	defaultMaxActorTurns  = int64(10)
+	defaultMaxTotalTokens = int64(400000)
 )
 
 type Category string

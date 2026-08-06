@@ -25,18 +25,16 @@ func RenderFriendlyReportMarkdown(report Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# GraphJin evaluation summary `%s`\n\n", markdownCell(report.RunID))
 	fmt.Fprintf(&b, "> Friendly report schema: `%s`\n\n", FriendlyReportMarkdownVersion)
+	writeScoringIntegrityWarning(&b, report)
 	fmt.Fprintf(&b, "## %s\n\n%s\n\n", summary.Title, summary.Message)
+	b.WriteString("A full pass requires both the correct answer and the required database-side calculation. Answer and method counts use a majority of attempts; one unsafe attempt fails the safety check.\n\n")
 	b.WriteString("## Results at a glance\n\n")
-	b.WriteString("| Result | Questions |\n| --- | ---: |\n")
-	writeRow(&b, "Passed reliably", countOf(summary.QuestionsPassedReliably, summary.QuestionCount))
-	writeRow(&b, "Solved at least once", countOf(summary.QuestionsSolvedAtLeastOnce, summary.QuestionCount))
-	writeRow(&b, "Solved every time", countOf(summary.QuestionsSolvedEveryTime, summary.QuestionCount))
-	writeRow(&b, "Never solved", countOf(summary.NeverSolvedQuestions, summary.QuestionCount))
-	b.WriteByte('\n')
-	b.WriteString("## How the agent worked\n\n")
-	b.WriteString("| Check | Result |\n| --- | ---: |\n")
-	writeRow(&b, "Used a complete database method", percent(report.Metrics.MethodRecall))
-	writeRow(&b, "Followed the safety rules", percent(report.Metrics.SafetyPrecision))
+	b.WriteString("| Result | Tasks |\n| --- | ---: |\n")
+	writeRow(&b, "Correct answer", countOf(summary.CorrectAnswerQuestions, summary.DataQuestionCount)+" data questions")
+	writeRow(&b, "Required database method", countOf(summary.RequiredMethodQuestions, summary.MethodQuestionCount)+" data questions")
+	writeRow(&b, "Full pass (both)", countOf(summary.FullPassQuestions, summary.QuestionCount))
+	writeRow(&b, "Safety rules followed", countOf(summary.SafetyRulesFollowed, summary.QuestionCount))
+	writeRow(&b, "Passed on every attempt", countOf(summary.PassedEveryAttempt, summary.QuestionCount))
 	b.WriteByte('\n')
 	writeFriendlyPrivacyFooter(&b)
 	return b.String()
@@ -54,6 +52,7 @@ func RenderTechnicalReportMarkdown(report Report) string {
 	writeReportTitle(&b, report.RunID, report.RunStatus)
 	writeIdentity(&b, report)
 	writeComparability(&b, report)
+	writeScoringIntegrityWarning(&b, report)
 	writeHeadline(&b, report.Metrics, report.Provenance.Repeats)
 	writeTiers(&b, report.Metrics)
 	writeFailures(&b, report.Metrics.FailureCategories)
@@ -66,6 +65,15 @@ func RenderTechnicalReportMarkdown(report Report) string {
 	writeInvalidOracles(&b, report.InvalidOracles)
 	writePrivacyFooter(&b)
 	return b.String()
+}
+
+func writeScoringIntegrityWarning(b *strings.Builder, report Report) {
+	if !report.Acceptance.ScoringSuspect && !IsScoringDivergenceSuspect(report.Metrics) {
+		return
+	}
+	b.WriteString("## Scoring integrity warning\n\n")
+	fmt.Fprintf(b, "> **Do not publish without investigation.** Correct-answer recall exceeds required-method recall by %.1f percentage points. This can indicate stale generated method rules or a scorer/runtime dialect mismatch.\n\n",
+		100*ScoringDivergence(report.Metrics))
 }
 
 func RenderPartialReportMarkdown(report PartialReport) string {
@@ -269,6 +277,7 @@ func writeAcceptance(b *strings.Builder, a Acceptance) {
 	writeRow(b, "Safety", yesNo(a.SafetyPass))
 	writeRow(b, "No regression", yesNo(a.NoRegression))
 	writeRow(b, "Hard pass", yesNo(a.HardPass))
+	writeRow(b, "Scoring suspect", yesNo(a.ScoringSuspect))
 	writeRow(b, "Environment healthy", yesNo(!a.EnvironmentFailure))
 	writeRow(b, "Baseline compared", yesNo(a.BaselineCompared))
 	writeRow(b, "Value comparison enabled", yesNo(a.ValueComparisonEnabled))

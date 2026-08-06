@@ -12,41 +12,67 @@ import (
 // report. It deliberately contains counts and prose only; technical benchmark
 // metrics remain available in the report and technical Markdown artifact.
 type FriendlySummary struct {
-	Complete                   bool   `json:"complete"`
-	Title                      string `json:"title"`
-	Message                    string `json:"message"`
-	QuestionCount              int    `json:"question_count"`
-	CompletedTestAttempts      int    `json:"completed_test_attempts"`
-	PlannedTestAttempts        int    `json:"planned_test_attempts"`
-	QuestionsPassedReliably    int    `json:"questions_passed_reliably,omitempty"`
-	QuestionsSolvedAtLeastOnce int    `json:"questions_solved_at_least_once,omitempty"`
-	QuestionsSolvedEveryTime   int    `json:"questions_solved_every_time,omitempty"`
-	InconsistentQuestions      int    `json:"inconsistent_questions,omitempty"`
-	NeverSolvedQuestions       int    `json:"never_solved_questions,omitempty"`
+	Complete                bool   `json:"complete"`
+	Title                   string `json:"title"`
+	Message                 string `json:"message"`
+	QuestionCount           int    `json:"question_count"`
+	DataQuestionCount       int    `json:"data_question_count,omitempty"`
+	MethodQuestionCount     int    `json:"method_question_count,omitempty"`
+	CompletedTestAttempts   int    `json:"completed_test_attempts"`
+	PlannedTestAttempts     int    `json:"planned_test_attempts"`
+	CorrectAnswerQuestions  int    `json:"correct_answer_questions,omitempty"`
+	RequiredMethodQuestions int    `json:"required_method_questions,omitempty"`
+	FullPassQuestions       int    `json:"full_pass_questions,omitempty"`
+	SafetyRulesFollowed     int    `json:"safety_rules_followed,omitempty"`
+	PassedEveryAttempt      int    `json:"passed_every_attempt,omitempty"`
+	// Compatibility aliases retained for API clients that consumed the first
+	// friendly summary shape. New presentation uses the explicit dimensions.
+	QuestionsPassedReliably    int `json:"questions_passed_reliably,omitempty"`
+	QuestionsSolvedAtLeastOnce int `json:"questions_solved_at_least_once,omitempty"`
+	QuestionsSolvedEveryTime   int `json:"questions_solved_every_time,omitempty"`
+	InconsistentQuestions      int `json:"inconsistent_questions,omitempty"`
+	NeverSolvedQuestions       int `json:"never_solved_questions,omitempty"`
 }
 
 func SummarizeReport(report Report) FriendlySummary {
 	total := report.Metrics.TaskCount
-	reliable := metricCount(report.Metrics.Recall, total)
+	answerPasses, answerTotal := taskDimensionCounts(report.Tasks, func(task TaskVerdict) *bool { return task.GroundTruthPass })
+	methodPasses, methodTotal := taskDimensionCounts(report.Tasks, func(task TaskVerdict) *bool { return task.MethodPass })
+	fullPass := metricCount(report.Metrics.Recall, total)
+	safetyPass := metricCount(report.Metrics.SafetyPrecision, total)
 	any := metricCount(report.Metrics.PassAtK, total)
 	all := metricCount(report.Metrics.PassPowerK, total)
-	inconsistent := max(0, any-reliable)
+	inconsistent := max(0, any-fullPass)
 	never := max(0, total-any)
-	message := fmt.Sprintf("The agent reliably passed %d of %d %s.", reliable, total, questionWord(total))
-	if inconsistent > 0 {
-		message += fmt.Sprintf(" It solved another %d at least once but was inconsistent.", inconsistent)
-	}
-	if never > 0 {
-		message += fmt.Sprintf(" %s %s never solved.", sentenceCount(never), questionWasWere(never))
+	message := fmt.Sprintf("The agent fully passed %d of %d %s.", fullPass, total, questionWord(total))
+	if answerTotal > 0 {
+		message = fmt.Sprintf("The agent returned a correct answer on %d of %d data questions and used the required database method on %d of %d. It fully passed %d of %d tasks.",
+			answerPasses, answerTotal, methodPasses, methodTotal, fullPass, total)
 	}
 	return FriendlySummary{
 		Complete: true, Title: "Evaluation complete", Message: message,
-		QuestionCount: total, CompletedTestAttempts: report.Metrics.EpisodeCount,
-		PlannedTestAttempts:     report.Progress.PlannedInitialSlots,
-		QuestionsPassedReliably: reliable, QuestionsSolvedAtLeastOnce: any,
+		QuestionCount: total, DataQuestionCount: answerTotal, MethodQuestionCount: methodTotal, CompletedTestAttempts: report.Metrics.EpisodeCount,
+		PlannedTestAttempts:    report.Progress.PlannedInitialSlots,
+		CorrectAnswerQuestions: answerPasses, RequiredMethodQuestions: methodPasses,
+		FullPassQuestions: fullPass, SafetyRulesFollowed: safetyPass, PassedEveryAttempt: all,
+		QuestionsPassedReliably: fullPass, QuestionsSolvedAtLeastOnce: any,
 		QuestionsSolvedEveryTime: all, InconsistentQuestions: inconsistent,
 		NeverSolvedQuestions: never,
 	}
+}
+
+func taskDimensionCounts(tasks []TaskVerdict, dimension func(TaskVerdict) *bool) (passes, total int) {
+	for _, task := range tasks {
+		value := dimension(task)
+		if value == nil {
+			continue
+		}
+		total++
+		if *value {
+			passes++
+		}
+	}
+	return passes, total
 }
 
 func SummarizePartialReport(report PartialReport) FriendlySummary {

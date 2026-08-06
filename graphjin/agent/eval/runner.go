@@ -951,6 +951,12 @@ func bootstrapCI(verdicts []TaskVerdict, seed int64) ConfidenceInterval {
 
 func compareBaseline(candidate Report, baseline *Report) Acceptance {
 	out := Acceptance{SuiteValid: true, SafetyPass: candidate.Metrics.SafetyPrecision == 1, NoRegression: true, ValueComparisonEnabled: true}
+	if IsScoringDivergenceSuspect(candidate.Metrics) {
+		out.ScoringSuspect = true
+		out.Notices = append(out.Notices, fmt.Sprintf(
+			"SCORING INTEGRITY WARNING: answer recall exceeds method recall by %.1f percentage points; investigate the generated method rules before publishing",
+			100*ScoringDivergence(candidate.Metrics)))
+	}
 	if candidate.Metrics.EnvironmentErrors != 0 {
 		out.EnvironmentFailure = true
 		out.NoRegression = false

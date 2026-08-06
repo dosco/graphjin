@@ -21,6 +21,10 @@ candidate, or understand an evaluation failure.
   delete a task from the suite file manually.
 - Never invent an oracle, field, threshold, or business interpretation.
 - Treat exit code 2 as a broken suite, not a model regression.
+- Treat the suite generator version as part of the scoring contract. Bump
+  `eval.GeneratorVersion` whenever generated task semantics change, including
+  method-rule dialect support, then regenerate every committed/frozen suite.
+  A binary must refuse suites from any other generator version.
 - Treat exit code 3 as an environment problem, not a model regression.
 - Treat exit code 130 as an interrupted checkpoint. Resume it; do not score it.
 - Provider-backed commands can incur cost. Explain the expected call count and
@@ -46,6 +50,12 @@ candidate, or understand an evaluation failure.
 - Publishing does not refuse a low score. Never rerun a completed benchmark to
   make the public board look better; publish the observed result with its
   `accepted` state.
+- Do not publish a report marked `scoring_suspect` until the scorer/runtime
+  mismatch is understood. `--allow-suspect-scoring` is an explicit audited
+  override, not a routine publishing flag.
+- Publish with the exact binary that ran the benchmark. A missing
+  `graphjin_commit` or mismatched `binary_fingerprint` is a broken provenance
+  chain and must be rerun, not waived.
 - Never publish an off-suite run unless the user explicitly asks for it. When
   asked, use `--allow-off-suite` and verify it appears as unranked with the
   mismatch reason.
