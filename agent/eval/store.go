@@ -142,16 +142,20 @@ func (s *Store) WriteReport(report Report) (string, error) {
 	if err := s.Init(); err != nil {
 		return "", err
 	}
-	path := filepath.Join(s.Root, "reports", report.RunID+".json")
+	path := s.ReportPath(report.RunID)
 	data, err := sanitizedJSON(report, s.secrets...)
 	if err != nil {
 		return "", err
 	}
-	markdown := []byte(s.redact(RenderReportMarkdown(report)))
+	markdown := []byte(s.redact(RenderFriendlyReportMarkdown(report)))
+	technicalMarkdown := []byte(s.redact(RenderTechnicalReportMarkdown(report)))
 	if err := atomicWrite(path, append(data, '\n'), 0o600); err != nil {
 		return path, err
 	}
-	return path, atomicWrite(s.ReportMarkdownPath(report.RunID), markdown, 0o600)
+	if err := atomicWrite(s.ReportMarkdownPath(report.RunID), markdown, 0o600); err != nil {
+		return path, err
+	}
+	return path, atomicWrite(s.ReportTechnicalMarkdownPath(report.RunID), technicalMarkdown, 0o600)
 }
 
 func (s *Store) WritePartialReport(report PartialReport) (string, error) {
@@ -161,20 +165,32 @@ func (s *Store) WritePartialReport(report PartialReport) (string, error) {
 	if err := s.Init(); err != nil {
 		return "", err
 	}
-	path := filepath.Join(s.Root, "reports", report.RunID+".json")
+	path := s.ReportPath(report.RunID)
 	data, err := sanitizedJSON(report, s.secrets...)
 	if err != nil {
 		return "", err
 	}
-	markdown := []byte(s.redact(RenderPartialReportMarkdown(report)))
+	markdown := []byte(s.redact(RenderFriendlyPartialReportMarkdown(report)))
+	technicalMarkdown := []byte(s.redact(RenderTechnicalPartialReportMarkdown(report)))
 	if err := atomicWrite(path, append(data, '\n'), 0o600); err != nil {
 		return path, err
 	}
-	return path, atomicWrite(s.ReportMarkdownPath(report.RunID), markdown, 0o600)
+	if err := atomicWrite(s.ReportMarkdownPath(report.RunID), markdown, 0o600); err != nil {
+		return path, err
+	}
+	return path, atomicWrite(s.ReportTechnicalMarkdownPath(report.RunID), technicalMarkdown, 0o600)
+}
+
+func (s *Store) ReportPath(runID string) string {
+	return filepath.Join(s.Root, "reports", runID+".json")
 }
 
 func (s *Store) ReportMarkdownPath(runID string) string {
 	return filepath.Join(s.Root, "reports", runID+".md")
+}
+
+func (s *Store) ReportTechnicalMarkdownPath(runID string) string {
+	return filepath.Join(s.Root, "reports", runID+".technical.md")
 }
 
 type StoredReport struct {
@@ -184,30 +200,34 @@ type StoredReport struct {
 }
 
 type ReportSummary struct {
-	RunID                 string        `json:"run_id"`
-	RunStatus             RunStatus     `json:"run_status"`
-	Mode                  RunMode       `json:"mode"`
-	GeneratedAt           time.Time     `json:"generated_at"`
-	SuiteFingerprint      string        `json:"suite_fingerprint"`
-	SuiteIdentity         string        `json:"suite_identity"`
-	Provenance            RunProvenance `json:"provenance"`
-	TaskCount             int           `json:"task_count"`
-	EpisodeCount          int           `json:"episode_count"`
-	Recall                float64       `json:"recall"`
-	PassAtK               float64       `json:"pass_at_k"`
-	SafetyPrecision       float64       `json:"safety_precision"`
-	TotalTokens           int64         `json:"total_tokens"`
-	ProviderTotalTokens   int64         `json:"provider_total_tokens"`
-	ProviderUsageComplete bool          `json:"provider_usage_complete"`
-	Accepted              bool          `json:"accepted"`
-	HasMarkdown           bool          `json:"has_markdown"`
+	RunID                 string          `json:"run_id"`
+	RunStatus             RunStatus       `json:"run_status"`
+	Mode                  RunMode         `json:"mode"`
+	GeneratedAt           time.Time       `json:"generated_at"`
+	SuiteFingerprint      string          `json:"suite_fingerprint"`
+	SuiteIdentity         string          `json:"suite_identity"`
+	Provenance            RunProvenance   `json:"provenance"`
+	TaskCount             int             `json:"task_count"`
+	EpisodeCount          int             `json:"episode_count"`
+	Recall                float64         `json:"recall"`
+	PassAtK               float64         `json:"pass_at_k"`
+	SafetyPrecision       float64         `json:"safety_precision"`
+	TotalTokens           int64           `json:"total_tokens"`
+	ProviderTotalTokens   int64           `json:"provider_total_tokens"`
+	ProviderUsageComplete bool            `json:"provider_usage_complete"`
+	Accepted              bool            `json:"accepted"`
+	HasMarkdown           bool            `json:"has_markdown"`
+	HasTechnicalMarkdown  bool            `json:"has_technical_markdown"`
+	Progress              RunProgress     `json:"progress"`
+	EnvironmentCode       string          `json:"environment_code,omitempty"`
+	FriendlySummary       FriendlySummary `json:"friendly_summary"`
 }
 
 func (s *Store) LoadReport(runID string) (*StoredReport, error) {
 	if !safeStoreComponent(runID) {
 		return nil, fmt.Errorf("invalid report run_id %q", runID)
 	}
-	data, err := os.ReadFile(filepath.Join(s.Root, "reports", runID+".json"))
+	data, err := os.ReadFile(s.ReportPath(runID))
 	if err != nil {
 		return nil, err
 	}
@@ -229,6 +249,17 @@ func (s *Store) LoadReportMarkdown(runID string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid report run_id %q", runID)
 	}
 	data, err := os.ReadFile(s.ReportMarkdownPath(runID))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	return data, err
+}
+
+func (s *Store) LoadReportTechnicalMarkdown(runID string) ([]byte, error) {
+	if !safeStoreComponent(runID) {
+		return nil, fmt.Errorf("invalid report run_id %q", runID)
+	}
+	data, err := os.ReadFile(s.ReportTechnicalMarkdownPath(runID))
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -261,6 +292,11 @@ func (s *Store) ListReports() ([]ReportSummary, error) {
 		if markdownErr != nil && !os.IsNotExist(markdownErr) {
 			invalid = append(invalid, entry.Name()+" (markdown)")
 		}
+		_, technicalMarkdownErr := os.Stat(s.ReportTechnicalMarkdownPath(runID))
+		hasTechnicalMarkdown := technicalMarkdownErr == nil
+		if technicalMarkdownErr != nil && !os.IsNotExist(technicalMarkdownErr) {
+			invalid = append(invalid, entry.Name()+" (technical markdown)")
+		}
 		out = append(out, ReportSummary{
 			RunID: report.RunID, RunStatus: report.RunStatus, Mode: report.Mode, GeneratedAt: report.GeneratedAt,
 			SuiteFingerprint: report.SuiteFingerprint, SuiteIdentity: SuiteIdentity(report.Report), Provenance: report.Provenance,
@@ -268,6 +304,8 @@ func (s *Store) ListReports() ([]ReportSummary, error) {
 			PassAtK: report.Metrics.PassAtK, SafetyPrecision: report.Metrics.SafetyPrecision,
 			TotalTokens: report.Metrics.TotalTokens, ProviderTotalTokens: report.ProviderUsage.TotalTokens,
 			ProviderUsageComplete: report.ProviderUsage.Complete, Accepted: report.Acceptance.HardPass, HasMarkdown: hasMarkdown,
+			HasTechnicalMarkdown: hasTechnicalMarkdown, Progress: report.Progress, EnvironmentCode: report.EnvironmentCode,
+			FriendlySummary: SummarizeStoredReport(*report),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

@@ -1,4 +1,4 @@
-import{v as e}from"./ui-BJ0wq8r5.js";import{p as t}from"./index-ClLypNuM.js";var n=e(`book-open-check`,[[`path`,{d:`M12 21V7`,key:`gj6g52`}],[`path`,{d:`m16 12 2 2 4-4`,key:`mdajum`}],[`path`,{d:`M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3`,key:`8arnkb`}]]),r=`query MissionTasks {
+import{$ as e,C as t}from"./index-CoHP-QNn.js";var n=e(`book-open-check`,[[`path`,{d:`M12 21V7`,key:`gj6g52`}],[`path`,{d:`m16 12 2 2 4-4`,key:`mdajum`}],[`path`,{d:`M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3`,key:`8arnkb`}]]),r=`query MissionTasks {
   gj_task(order_by: { updated_at: desc }, limit: 100) {
     id goal status outcome snapshot_json verify_json verify_status verify_after
     verify_attempts owner_ref account_ref last_entry_at created_at updated_at closed_at

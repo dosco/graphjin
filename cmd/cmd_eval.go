@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -21,7 +23,9 @@ import (
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
 	gjeval "github.com/dosco/graphjin/agent/v3/eval"
+	"github.com/dosco/graphjin/serv/v3"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // Let the agent service enforce its own timeout and return a structured
@@ -393,11 +397,11 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 			report, err := prepared.Execute(ctx)
 			if err != nil {
 				if report != nil {
-					printEvalReport(cmd, opts, report)
+					printEvalReport(cmd, opts, report, store)
 				}
 				return evalExecutionError(err)
 			}
-			printEvalReport(cmd, opts, report)
+			printEvalReport(cmd, opts, report, store)
 			return evalReportExit(report)
 		},
 	}
@@ -524,11 +528,11 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 	report, err := prepared.Execute(ctx)
 	if err != nil {
 		if report != nil {
-			printEvalReport(cmd, opts, report)
+			printEvalReport(cmd, opts, report, store)
 		}
 		return report, store, evalExecutionError(err)
 	}
-	printEvalReport(cmd, opts, report)
+	printEvalReport(cmd, opts, report, store)
 	return report, store, nil
 }
 
@@ -638,57 +642,78 @@ func approveProviderTraffic(cmd *cobra.Command, yes bool, expected string) error
 	return nil
 }
 
-func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Report) {
+func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Report, store *gjeval.Store) {
 	if report.RunStatus != "" && report.RunStatus != gjeval.RunStatusComplete {
+		environmentCode := ""
+		if store != nil {
+			if manifest, err := store.LoadManifest(report.RunID); err == nil {
+				environmentCode = manifest.LastEnvironmentCode
+			}
+		}
+		partial := gjeval.PartialReport{
+			SchemaVersion: report.SchemaVersion, UsageAccountingVersion: report.UsageAccountingVersion, RewardVersion: report.RewardVersion,
+			RunID: report.RunID, RunStatus: report.RunStatus, Mode: report.Mode,
+			GeneratedAt: time.Now().UTC(), SuiteFingerprint: report.SuiteFingerprint,
+			CatalogFingerprint: report.CatalogFingerprint, DatasetFingerprint: report.DatasetFingerprint,
+			OracleValueHash: report.OracleValueHash, Provenance: report.Provenance,
+			Progress: report.Progress, ProviderUsage: report.ProviderUsage, EnvironmentCode: environmentCode,
+			Notice: "evaluation is incomplete; finalized quality metrics are unavailable",
+		}
 		if opts.JSON {
-			_ = writeEvalJSON(cmd.OutOrStdout(), gjeval.PartialReport{
-				SchemaVersion: report.SchemaVersion, UsageAccountingVersion: report.UsageAccountingVersion, RewardVersion: report.RewardVersion,
-				RunID: report.RunID, RunStatus: report.RunStatus, Mode: report.Mode,
-				GeneratedAt: time.Now().UTC(), SuiteFingerprint: report.SuiteFingerprint,
-				CatalogFingerprint: report.CatalogFingerprint, DatasetFingerprint: report.DatasetFingerprint,
-				OracleValueHash: report.OracleValueHash, Provenance: report.Provenance,
-				Progress: report.Progress, ProviderUsage: report.ProviderUsage,
-				Notice: "evaluation is incomplete; finalized quality metrics are unavailable",
-			})
+			_ = writeEvalJSON(cmd.OutOrStdout(), partial)
+			printEvalReportLocations(cmd, opts, report, store)
 			return
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Run %s: %s (%d/%d initial slots complete; %d provider attempts).\n", report.RunID, report.RunStatus, report.Progress.CompletedInitialSlots, report.Progress.PlannedInitialSlots, report.Progress.ProviderAttempts)
-		fmt.Fprintf(cmd.OutOrStdout(), "Provider usage so far: %d tokens (%d prompt, %d completion) across %d model calls; failed attempts and retries are included.\n",
-			report.ProviderUsage.TotalTokens, report.ProviderUsage.PromptTokens, report.ProviderUsage.CompletionTokens, report.ProviderUsage.LLMCalls)
-		printProviderUsageCompleteness(cmd, report.ProviderUsage)
+		summary := gjeval.SummarizePartialReport(partial)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s\n%s\n", summary.Title, summary.Message)
+		fmt.Fprintf(cmd.OutOrStdout(), "Test attempts: %d of %d complete.\n", summary.CompletedTestAttempts, summary.PlannedTestAttempts)
+		if opts.Debug {
+			fmt.Fprintf(cmd.OutOrStdout(), "Technical: status=%s, provider attempts=%d, retries=%d.\n", report.RunStatus, report.Progress.ProviderAttempts, report.Progress.RetryCount)
+			fmt.Fprintf(cmd.OutOrStdout(), "Provider usage so far: %d tokens (%d prompt, %d completion) across %d model calls; failed attempts and retries are included.\n",
+				report.ProviderUsage.TotalTokens, report.ProviderUsage.PromptTokens, report.ProviderUsage.CompletionTokens, report.ProviderUsage.LLMCalls)
+			printProviderUsageCompleteness(cmd, report.ProviderUsage)
+		}
+		printEvalReportLocations(cmd, opts, report, store)
 		return
 	}
 	if opts.JSON {
 		_ = writeEvalJSON(cmd.OutOrStdout(), report)
+		printEvalReportLocations(cmd, opts, report, store)
 		return
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Run %s: recall %.3f, ground truth %.3f, method %.3f, safety %.3f\n", report.RunID, report.Metrics.Recall, report.Metrics.GroundTruthRecall, report.Metrics.MethodRecall, report.Metrics.SafetyPrecision)
-	fmt.Fprintf(cmd.OutOrStdout(), "pass@%d %.3f, pass^%d %.3f; accepted=%t\n", report.Provenance.Repeats, report.Metrics.PassAtK, report.Provenance.Repeats, report.Metrics.PassPowerK, report.Acceptance.HardPass)
-	perEpisode := 0.0
-	if report.Metrics.EpisodeCount != 0 {
-		perEpisode = float64(report.Metrics.TotalTokens) / float64(report.Metrics.EpisodeCount)
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Finalized usage: %d tokens (%d prompt, %d completion) across %d model calls; %.1f tokens per episode.\n",
-		report.Metrics.TotalTokens, report.Metrics.PromptTokens, report.Metrics.CompletionTokens, report.Metrics.LLMCalls, perEpisode)
-	fmt.Fprintf(cmd.OutOrStdout(), "Actual provider usage: %d tokens across %d model calls and %d provider attempts; failed attempts and retries are included.\n",
-		report.ProviderUsage.TotalTokens, report.ProviderUsage.LLMCalls, report.Progress.ProviderAttempts)
-	printProviderUsageCompleteness(cmd, report.ProviderUsage)
-	if comparison := report.UsageComparison; comparison != nil {
-		if comparison.Comparable {
-			fmt.Fprintf(cmd.OutOrStdout(), "Token change vs baseline %s: finalized %+.1f%% (%+d), per episode %+.1f%% (%+.1f), actual provider %+.1f%% (%+d).\n",
-				comparison.BaselineRunID,
-				evalPercent(comparison.FinalizedTokensChangePercent), comparison.FinalizedTokensDelta,
-				evalPercent(comparison.TokensPerEpisodeChangePercent), comparison.TokensPerEpisodeDelta,
-				evalPercent(comparison.ProviderTokensChangePercent), comparison.ProviderTokensDelta,
-			)
-		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "Token comparison vs baseline %s is advisory only: %s.\n", comparison.BaselineRunID, comparison.Reason)
-		}
-	}
-	for _, notice := range report.Acceptance.Notices {
-		fmt.Fprintf(cmd.OutOrStdout(), "Notice: %s\n", notice)
-	}
+	summary := gjeval.SummarizeReport(*report)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s\n%s\n", summary.Title, summary.Message)
+	fmt.Fprintf(cmd.OutOrStdout(), "Questions passed reliably: %d of %d. Solved at least once: %d of %d. Solved every time: %d of %d.\n",
+		summary.QuestionsPassedReliably, summary.QuestionCount,
+		summary.QuestionsSolvedAtLeastOnce, summary.QuestionCount,
+		summary.QuestionsSolvedEveryTime, summary.QuestionCount)
 	if opts.Debug {
+		fmt.Fprintf(cmd.OutOrStdout(), "Technical: recall %.3f, ground truth %.3f, method %.3f, safety %.3f.\n", report.Metrics.Recall, report.Metrics.GroundTruthRecall, report.Metrics.MethodRecall, report.Metrics.SafetyPrecision)
+		fmt.Fprintf(cmd.OutOrStdout(), "Technical: pass@%d %.3f, pass^%d %.3f; accepted=%t.\n", report.Provenance.Repeats, report.Metrics.PassAtK, report.Provenance.Repeats, report.Metrics.PassPowerK, report.Acceptance.HardPass)
+		perEpisode := 0.0
+		if report.Metrics.EpisodeCount != 0 {
+			perEpisode = float64(report.Metrics.TotalTokens) / float64(report.Metrics.EpisodeCount)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Finalized usage: %d tokens (%d prompt, %d completion) across %d model calls; %.1f tokens per episode.\n",
+			report.Metrics.TotalTokens, report.Metrics.PromptTokens, report.Metrics.CompletionTokens, report.Metrics.LLMCalls, perEpisode)
+		fmt.Fprintf(cmd.OutOrStdout(), "Actual provider usage: %d tokens across %d model calls and %d provider attempts; failed attempts and retries are included.\n",
+			report.ProviderUsage.TotalTokens, report.ProviderUsage.LLMCalls, report.Progress.ProviderAttempts)
+		printProviderUsageCompleteness(cmd, report.ProviderUsage)
+		if comparison := report.UsageComparison; comparison != nil {
+			if comparison.Comparable {
+				fmt.Fprintf(cmd.OutOrStdout(), "Token change vs baseline %s: finalized %+.1f%% (%+d), per episode %+.1f%% (%+.1f), actual provider %+.1f%% (%+d).\n",
+					comparison.BaselineRunID,
+					evalPercent(comparison.FinalizedTokensChangePercent), comparison.FinalizedTokensDelta,
+					evalPercent(comparison.TokensPerEpisodeChangePercent), comparison.TokensPerEpisodeDelta,
+					evalPercent(comparison.ProviderTokensChangePercent), comparison.ProviderTokensDelta,
+				)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "Token comparison vs baseline %s is advisory only: %s.\n", comparison.BaselineRunID, comparison.Reason)
+			}
+		}
+		for _, notice := range report.Acceptance.Notices {
+			fmt.Fprintf(cmd.OutOrStdout(), "Notice: %s\n", notice)
+		}
 		for taskID, detail := range report.InvalidOracleDetails {
 			fmt.Fprintf(cmd.OutOrStdout(), "Invalid oracle: %s (%s)\n", taskID, detail)
 		}
@@ -701,6 +726,73 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 			}
 		}
 	}
+	printEvalReportLocations(cmd, opts, report, store)
+}
+
+func printEvalReportLocations(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Report, store *gjeval.Store) {
+	if store == nil || report == nil || strings.TrimSpace(report.RunID) == "" {
+		return
+	}
+	out := cmd.OutOrStdout()
+	if opts.JSON {
+		// Keep stdout as one machine-readable JSON document.
+		out = cmd.ErrOrStderr()
+	}
+	projectPath := filepath.Dir(store.Root)
+	fmt.Fprintf(out, "\nFriendly report:  %s\n", store.ReportMarkdownPath(report.RunID))
+	fmt.Fprintf(out, "Technical report: %s\n", store.ReportTechnicalMarkdownPath(report.RunID))
+	fmt.Fprintf(out, "JSON report:      %s\n", store.ReportPath(report.RunID))
+	serveCommand := fmt.Sprintf("graphjin --path %s serve", strconv.Quote(projectPath))
+	if opts.Demo {
+		serveCommand += " --demo"
+	}
+	if consoleURL := evalConsoleReportURL(projectPath, opts.Demo, report.RunID); consoleURL != "" {
+		fmt.Fprintf(out, "Console:         %s (start with `%s`)\n", consoleURL, serveCommand)
+	} else {
+		fmt.Fprintf(out, "Console:         start `%s`, then open Trainer -> Reports\n", serveCommand)
+	}
+	if report.RunStatus != "" && report.RunStatus != gjeval.RunStatusComplete {
+		if manifest, err := store.LoadManifest(report.RunID); err == nil {
+			fmt.Fprintf(out, "Resume:          %s\n", manifest.ResumeCommand())
+		}
+		return
+	}
+	public := gjeval.PublicBenchmark()
+	if report.SuiteFingerprint == public.SuiteFingerprint {
+		fmt.Fprintf(out, "Publish:         graphjin --path %s eval publish %s --yes\n", strconv.Quote(projectPath), report.RunID)
+	} else {
+		fmt.Fprintln(out, "Publish:         not a ranked public-suite run")
+	}
+}
+
+func evalConsoleReportURL(projectPath string, demo bool, runID string) string {
+	configName := serv.GetConfigName()
+	if demo {
+		configName = "dev"
+	}
+	data, err := os.ReadFile(filepath.Join(projectPath, configName+".yml"))
+	if err != nil {
+		return ""
+	}
+	var config struct {
+		HostPort string `yaml:"host_port"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return ""
+	}
+	hostPort := strings.TrimSpace(config.HostPort)
+	if hostPort == "" {
+		hostPort = "0.0.0.0:8080"
+	}
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil || port == "" {
+		return ""
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/trainer/reports?run=" + url.QueryEscape(runID)
 }
 
 func printProviderUsageCompleteness(cmd *cobra.Command, usage gjeval.ProviderUsage) {

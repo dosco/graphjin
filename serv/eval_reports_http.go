@@ -25,28 +25,32 @@ type evalReportsListResponse struct {
 }
 
 type evalReportDetailResponse struct {
-	Available       bool             `json:"available"`
-	StateDir        string           `json:"state_dir"`
-	RunID           string           `json:"run_id"`
-	RunStatus       gjeval.RunStatus `json:"run_status"`
-	Mode            gjeval.RunMode   `json:"mode"`
-	GeneratedAt     time.Time        `json:"generated_at"`
-	Provider        string           `json:"provider,omitempty"`
-	Model           string           `json:"model,omitempty"`
-	TaskCount       int              `json:"task_count"`
-	EpisodeCount    int              `json:"episode_count"`
-	Recall          float64          `json:"recall"`
-	PassAtK         float64          `json:"pass_at_k"`
-	GroundTruth     float64          `json:"ground_truth_recall"`
-	Method          float64          `json:"method_recall"`
-	Safety          float64          `json:"safety_precision"`
-	Behavior        float64          `json:"behavior_recall"`
-	TotalTokens     int64            `json:"total_tokens"`
-	ProviderTokens  int64            `json:"provider_total_tokens"`
-	Accepted        bool             `json:"accepted"`
-	EnvironmentCode string           `json:"environment_code,omitempty"`
-	Notice          string           `json:"notice,omitempty"`
-	Markdown        string           `json:"markdown"`
+	Available         bool                   `json:"available"`
+	StateDir          string                 `json:"state_dir"`
+	RunID             string                 `json:"run_id"`
+	RunStatus         gjeval.RunStatus       `json:"run_status"`
+	Mode              gjeval.RunMode         `json:"mode"`
+	GeneratedAt       time.Time              `json:"generated_at"`
+	Provider          string                 `json:"provider,omitempty"`
+	Model             string                 `json:"model,omitempty"`
+	TaskCount         int                    `json:"task_count"`
+	EpisodeCount      int                    `json:"episode_count"`
+	Recall            float64                `json:"recall"`
+	PassAtK           float64                `json:"pass_at_k"`
+	PassPowerK        float64                `json:"pass_power_k"`
+	GroundTruth       float64                `json:"ground_truth_recall"`
+	Method            float64                `json:"method_recall"`
+	Safety            float64                `json:"safety_precision"`
+	Behavior          float64                `json:"behavior_recall"`
+	TotalTokens       int64                  `json:"total_tokens"`
+	ProviderTokens    int64                  `json:"provider_total_tokens"`
+	Accepted          bool                   `json:"accepted"`
+	EnvironmentCode   string                 `json:"environment_code,omitempty"`
+	Notice            string                 `json:"notice,omitempty"`
+	Progress          gjeval.RunProgress     `json:"progress"`
+	FriendlySummary   gjeval.FriendlySummary `json:"friendly_summary"`
+	Markdown          string                 `json:"markdown"`
+	TechnicalMarkdown string                 `json:"technical_markdown"`
 }
 
 func (s *HttpService) EvalReports(ah auth.HandlerFunc) http.Handler {
@@ -134,22 +138,44 @@ func handleEvalReportDetail(w http.ResponseWriter, store *gjeval.Store, stateDir
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "report_unreadable", "message": err.Error()})
 		return
 	}
-	if markdown == nil {
-		if report.RunStatus == "" || report.RunStatus == gjeval.RunStatusComplete {
-			markdown = []byte(gjeval.RenderReportMarkdown(report.Report))
-		} else {
-			markdown = []byte(gjeval.RenderPartialReportMarkdown(storedPartialReport(report)))
+	technicalMarkdown, err := store.LoadReportTechnicalMarkdown(runID)
+	if err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "report_unreadable", "message": err.Error()})
+		return
+	}
+	partial := storedPartialReport(report)
+	if technicalMarkdown == nil && markdown != nil && !strings.Contains(string(markdown), gjeval.FriendlyReportMarkdownVersion) {
+		// A single Markdown artifact predates the dual-report format and is the
+		// technical report. Preserve it while generating the friendly view from
+		// canonical JSON.
+		technicalMarkdown = markdown
+		markdown = nil
+	}
+	if report.RunStatus == "" || report.RunStatus == gjeval.RunStatusComplete {
+		if markdown == nil {
+			markdown = []byte(gjeval.RenderFriendlyReportMarkdown(report.Report))
+		}
+		if technicalMarkdown == nil {
+			technicalMarkdown = []byte(gjeval.RenderTechnicalReportMarkdown(report.Report))
+		}
+	} else {
+		if markdown == nil {
+			markdown = []byte(gjeval.RenderFriendlyPartialReportMarkdown(partial))
+		}
+		if technicalMarkdown == nil {
+			technicalMarkdown = []byte(gjeval.RenderTechnicalPartialReportMarkdown(partial))
 		}
 	}
 	writeJSONStatus(w, http.StatusOK, evalReportDetailResponse{
 		Available: true, StateDir: stateDir, RunID: report.RunID, RunStatus: report.RunStatus, Mode: report.Mode,
 		GeneratedAt: report.GeneratedAt, Provider: report.Provenance.Provider, Model: report.Provenance.Model,
 		TaskCount: report.Metrics.TaskCount, EpisodeCount: report.Metrics.EpisodeCount,
-		Recall: report.Metrics.Recall, PassAtK: report.Metrics.PassAtK, GroundTruth: report.Metrics.GroundTruthRecall,
+		Recall: report.Metrics.Recall, PassAtK: report.Metrics.PassAtK, PassPowerK: report.Metrics.PassPowerK, GroundTruth: report.Metrics.GroundTruthRecall,
 		Method: report.Metrics.MethodRecall, Safety: report.Metrics.SafetyPrecision, Behavior: report.Metrics.BehaviorRecall,
 		TotalTokens: report.Metrics.TotalTokens, ProviderTokens: report.ProviderUsage.TotalTokens,
 		Accepted: report.Acceptance.HardPass, EnvironmentCode: report.EnvironmentCode, Notice: report.Notice,
-		Markdown: string(markdown),
+		Progress: report.Progress, FriendlySummary: gjeval.SummarizeStoredReport(*report),
+		Markdown: string(markdown), TechnicalMarkdown: string(technicalMarkdown),
 	})
 }
 
