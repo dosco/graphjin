@@ -3,11 +3,11 @@
 {{- $matches := where $runs "run_id" .Page.Params.run_id -}}
 {{- range first 1 $matches -}}
 <div class="benchmark-run-meta" aria-label="Benchmark run summary">
-  <div><span>Reliable <small>(recall)</small></span><strong>{{ printf "%.1f%%" (mul .recall 100) }}</strong></div>
-  <div><span>At least once <small>(pass@3)</small></span><strong>{{ printf "%.1f%%" (mul .pass_at_k 100) }}</strong></div>
-  <div><span>Every time <small>(pass³)</small></span><strong>{{ printf "%.1f%%" (mul .pass_power_k 100) }}</strong></div>
-  <div><span>Complete DB method <small>(method recall)</small></span><strong>{{ printf "%.1f%%" (mul .method_recall 100) }}</strong></div>
-  <div><span>Rules followed <small>(safety)</small></span><strong>{{ printf "%.1f%%" (mul .safety_precision 100) }}</strong></div>
+  <div><span>Reliable <small>(recall)</small></span><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></div>
+  <div><span>At least once <small>(pass@3)</small></span><strong>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</strong></div>
+  <div><span>Every time <small>(pass³)</small></span><strong>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</strong></div>
+  <div><span>Complete DB method <small>(method recall)</small></span><strong>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</strong></div>
+  <div><span>Rules followed <small>(safety)</small></span><strong>{{ printf "%.1f%%" (mul (float .safety_precision) 100) }}</strong></div>
   <div><span>Cohort</span><strong>{{ if .ranked }}Ranked{{ else }}Unranked{{ end }}</strong></div>
 </div>
 {{- end -}}
