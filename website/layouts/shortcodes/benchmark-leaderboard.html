@@ -27,11 +27,11 @@
               {{ else }}
                 <td>{{ .label }}</td><td>{{ .provider | default "—" }}</td>
               {{ end }}
-              <td><strong>{{ printf "%.1f%%" (mul .recall 100) }}</strong></td>
-              {{ if ne $view "releases" }}<td>{{ printf "%.1f%%" (mul .pass_at_k 100) }}</td>{{ end }}
-              {{ if ne $view "releases" }}<td>{{ printf "%.1f%%" (mul .pass_power_k 100) }}</td>{{ end }}
-              <td>{{ printf "%.1f%%" (mul .method_recall 100) }}</td>
-              <td>{{ printf "%.1f%%" (mul .safety_precision 100) }}</td>
+              <td><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></td>
+              {{ if ne $view "releases" }}<td>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</td>{{ end }}
+              {{ if ne $view "releases" }}<td>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</td>{{ end }}
+              <td>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</td>
+              <td>{{ printf "%.1f%%" (mul (float .safety_precision) 100) }}</td>
               <td><a href="{{ printf "/benchmark/runs/%s/" .slug | relURL }}">Report</a></td>
             </tr>
           {{ end }}
@@ -49,7 +49,7 @@
           <thead><tr><th>Label</th><th>Reliable <small>(recall)</small></th><th>Why unranked</th><th>Run</th></tr></thead>
           <tbody>
             {{ range sort $unranked "run_id" "asc" }}
-              <tr data-benchmark-row><td>{{ .label }}</td><td>{{ printf "%.1f%%" (mul .recall 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "/benchmark/runs/%s/" .slug | relURL }}">Report</a></td></tr>
+              <tr data-benchmark-row><td>{{ .label }}</td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "/benchmark/runs/%s/" .slug | relURL }}">Report</a></td></tr>
             {{ end }}
           </tbody>
         </table>

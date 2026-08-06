@@ -166,7 +166,6 @@ const requiredRenderedContent = [
   ['agentic/watch-automation/index.html', 'Actions fail closed.'],
   ['agentic/watch-automation/index.html', 'graphjin://watch-events/unseen/watch%3Acoffee_roast_'],
   ['benchmark/index.html', 'How well can an agent work against a real organization?'],
-  ['benchmark/index.html', 'No published runs yet.'],
   ['benchmark/methodology/index.html', 'Frozen suite, live verification'],
   ['benchmark/runs/index.html', 'Published Benchmark Runs'],
 ];
@@ -213,6 +212,14 @@ for (const [route, expected] of requiredRenderedContent) {
     if (!html.includes(expected)) {
       failures.push(`${route} missing rendered root document text: ${expected}`);
     }
+  }
+}
+
+const benchmarkIndex = path.join(publicRoot, 'benchmark/index.html');
+if (await exists(benchmarkIndex)) {
+  const html = await readFile(benchmarkIndex, 'utf8');
+  if (!html.includes('No published runs yet.') && !html.includes('data-benchmark-row')) {
+    failures.push('benchmark/index.html has neither an empty state nor a published benchmark row');
   }
 }
 
