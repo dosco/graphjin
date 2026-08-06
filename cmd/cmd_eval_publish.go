@@ -77,17 +77,19 @@ type benchmarkEntry struct {
 	MeanReward             float64   `yaml:"mean_reward"`
 	TotalTokens            int64     `yaml:"total_tokens"`
 	ProviderTotalTokens    int64     `yaml:"provider_total_tokens"`
+	ScoringSuspect         bool      `yaml:"scoring_suspect,omitempty"`
 	Accepted               bool      `yaml:"accepted"`
 }
 
 type evalPublishOptions struct {
-	Site          string
-	Data          string
-	Label         string
-	Release       string
-	Notes         string
-	Force         bool
-	AllowOffSuite bool
+	Site                string
+	Data                string
+	Label               string
+	Release             string
+	Notes               string
+	Force               bool
+	AllowOffSuite       bool
+	AllowSuspectScoring bool
 }
 
 func evalPublishCmd(evalOpts *evalCLIOptions) *cobra.Command {
@@ -98,9 +100,10 @@ func evalPublishCmd(evalOpts *evalCLIOptions) *cobra.Command {
 		Long: `Publish one completed evaluation report to the benchmark website.
 
 The command writes one leaderboard row and one run page, then stops. It never
-runs git. Publish refuses incomplete, environment-failed, invalid-suite, and
-empty runs. It deliberately does not refuse a low score: accepted=false is a
-benchmark result, not a reason to hide the run.`,
+runs git. Publish refuses incomplete, environment-failed, invalid-suite,
+build-mismatched, empty, and scoring-suspect runs. It deliberately does not
+refuse a low score: accepted=false is a benchmark result, not a reason to hide
+the run.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEvalPublish(cmd, evalOpts, opts, strings.TrimSpace(args[0]))
@@ -113,6 +116,7 @@ benchmark result, not a reason to hide the run.`,
 	cmd.Flags().StringVar(&opts.Notes, "notes", "", "short public notes for this run")
 	cmd.Flags().BoolVar(&opts.Force, "force", false, "replace an existing row and overwrite its page")
 	cmd.Flags().BoolVar(&opts.AllowOffSuite, "allow-off-suite", false, "publish a non-matching run as explicitly unranked")
+	cmd.Flags().BoolVar(&opts.AllowSuspectScoring, "allow-suspect-scoring", false, "publish despite an answer/method scoring divergence warning")
 	return cmd
 }
 
@@ -138,6 +142,19 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	}
 	if report.Metrics.TaskCount == 0 {
 		return &evalExitError{Code: 1, Err: fmt.Errorf("run %s has no scored tasks", runID)}
+	}
+	if strings.TrimSpace(report.Provenance.GraphJinCommit) == "" {
+		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has no graphjin_commit; rebuild and rerun before publishing", runID)}
+	}
+	currentFingerprint := evalBinaryFingerprint()
+	if currentFingerprint == "" {
+		return &evalExitError{Code: 2, Err: errors.New("cannot fingerprint the current GraphJin binary; publishing cannot verify build identity")}
+	}
+	if report.Provenance.BinaryFingerprint == "" || report.Provenance.BinaryFingerprint != currentFingerprint {
+		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s binary_fingerprint does not match the current GraphJin build; publish with the same binary that ran the benchmark", runID)}
+	}
+	if (report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics)) && !opts.AllowSuspectScoring {
+		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has a suspect answer/method scoring divergence; investigate it or use --allow-suspect-scoring to override", runID)}
 	}
 
 	dataPath := opts.Data
@@ -166,7 +183,14 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 		return err
 	}
 
-	mismatches := benchmarkComparabilityMismatches(report, data.Suite)
+	comparisonSuite := data.Suite
+	if len(data.Runs) == 0 {
+		// With no published rows, the first run defines the metadata for the
+		// current pinned cohort. This permits an intentional regenerated public
+		// suite to replace the prior empty cohort without an off-suite override.
+		comparisonSuite = benchmarkSuite{}
+	}
+	mismatches := benchmarkComparabilityMismatches(report, comparisonSuite)
 	ranked := len(mismatches) == 0
 	if !ranked && !opts.AllowOffSuite {
 		return fmt.Errorf("run %s does not match the public benchmark cohort (%s); use --allow-off-suite to publish it as unranked", runID, strings.Join(mismatches, ", "))
@@ -184,7 +208,7 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 		}
 	}
 
-	if data.Suite.Identity == "" && ranked {
+	if (data.Suite.Identity == "" || len(data.Runs) == 0) && ranked {
 		data.Suite = benchmarkSuiteFromReport(report)
 	}
 	label := strings.TrimSpace(opts.Label)
@@ -197,9 +221,6 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	release := strings.TrimSpace(opts.Release)
 	if release == "" {
 		release = shortRevision(report.Provenance.GraphJinCommit)
-	}
-	if strings.TrimSpace(report.Provenance.GraphJinCommit) == "" {
-		fmt.Fprintln(cmd.ErrOrStderr(), "Warning: graphjin_commit is empty; this run cannot appear on the GraphJin release timeline.")
 	}
 	entry := benchmarkEntryFromReport(report, slug, label, release, opts.Notes, ranked, strings.Join(mismatches, "; "))
 	if existing >= 0 {
@@ -320,7 +341,7 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		GroundTruthRecall: report.Metrics.GroundTruthRecall, MethodRecall: report.Metrics.MethodRecall,
 		SafetyPrecision: report.Metrics.SafetyPrecision, BehaviorRecall: report.Metrics.BehaviorRecall,
 		MeanReward: report.Metrics.MeanReward, TotalTokens: report.Metrics.TotalTokens,
-		ProviderTotalTokens: report.ProviderUsage.TotalTokens, Accepted: report.Acceptance.HardPass,
+		ProviderTotalTokens: report.ProviderUsage.TotalTokens, ScoringSuspect: report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics), Accepted: report.Acceptance.HardPass,
 	}
 }
 

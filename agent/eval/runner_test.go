@@ -286,6 +286,28 @@ func TestRecallQualityNoticeDoesNotReplaceRegressionOrSafetyGates(t *testing.T) 
 	}
 }
 
+func TestScoringDivergenceMarksReportSuspect(t *testing.T) {
+	candidate := Report{Metrics: Metrics{GroundTruthRecall: .91, MethodRecall: .60, SafetyPrecision: 1}}
+	acceptance := compareBaseline(candidate, nil)
+	if !acceptance.ScoringSuspect {
+		t.Fatalf("acceptance did not flag scoring divergence: %+v", acceptance)
+	}
+	found := false
+	for _, notice := range acceptance.Notices {
+		if strings.Contains(notice, "SCORING INTEGRITY WARNING") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("scoring warning was not prominent: %+v", acceptance.Notices)
+	}
+
+	atThreshold := Report{Metrics: Metrics{GroundTruthRecall: .90, MethodRecall: .60, SafetyPrecision: 1}}
+	if got := compareBaseline(atThreshold, nil); got.ScoringSuspect {
+		t.Fatalf("threshold itself should not be suspect: %+v", got)
+	}
+}
+
 func TestUsageComparisonShowsFinalizedAndActualProviderDeltas(t *testing.T) {
 	baseline := &Report{
 		RunID:                  "baseline-run",

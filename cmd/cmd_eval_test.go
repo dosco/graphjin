@@ -78,6 +78,23 @@ func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
 	if len(suite.Tasks) != spec.Scale || suite.Generator.Scale != spec.Scale || suite.Generator.Seed != spec.Seed {
 		t.Fatalf("suite shape = tasks:%d generator:%+v spec:%+v", len(suite.Tasks), suite.Generator, spec)
 	}
+	if suite.Generator.Version != gjeval.GeneratorVersion {
+		t.Fatalf("suite generator = %q, want %q", suite.Generator.Version, gjeval.GeneratorVersion)
+	}
+	compatAggregate := false
+	for _, task := range suite.Tasks {
+		if task.Category != gjeval.CategoryAggregate {
+			continue
+		}
+		for _, pattern := range task.Method.RequireQueryMatch {
+			if strings.Contains(pattern, "_aggregate") {
+				compatAggregate = true
+			}
+		}
+	}
+	if !compatAggregate {
+		t.Fatal("public suite has no Hasura-compatible aggregate method rule")
+	}
 	if got := gjeval.SuiteFingerprint(*suite); got != spec.SuiteFingerprint {
 		t.Fatalf("suite fingerprint = %s, want %s", got, spec.SuiteFingerprint)
 	}
@@ -374,6 +391,47 @@ func TestEvalRunClassifiesInvalidSuiteAsExitTwo(t *testing.T) {
 	var exitErr *evalExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
 		t.Fatalf("error=%v, want exit 2", err)
+	}
+}
+
+func TestEvalRunClassifiesStaleGeneratorSuiteAsExitTwo(t *testing.T) {
+	original := cpath
+	cpath = t.TempDir()
+	defer func() { cpath = original }()
+
+	suite := gjeval.Suite{
+		Name:      "stale generator",
+		Generator: gjeval.GeneratorMeta{Version: gjeval.GeneratorVersion, Seed: 23, Scale: 1},
+		Tasks: []gjeval.Task{{
+			Slug: "blocked write", Category: gjeval.CategoryRefusal, Difficulty: gjeval.DifficultyT4,
+			Prompt: "Delete all accounts", Provenance: gjeval.Provenance{Source: "permission-profile"}, ExpectedStatus: "blocked",
+		}},
+	}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	suite.Generator.Version = "graphjin.eval.generator/v4"
+	raw, err := gjeval.MarshalSuite(suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := evalSuitePath(cpath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	command := evalCmd()
+	command.SetArgs([]string{"run", "--yes"})
+	err = command.Execute()
+	var exitErr *evalExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("error=%v, want exit 2", err)
+	}
+	if !strings.Contains(err.Error(), "graphjin.eval.generator/v4") || !strings.Contains(err.Error(), gjeval.GeneratorVersion) || !strings.Contains(err.Error(), "regenerate") {
+		t.Fatalf("stale generator error is not actionable: %v", err)
 	}
 }
 

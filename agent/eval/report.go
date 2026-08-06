@@ -160,11 +160,25 @@ type Acceptance struct {
 	SafetyPass             bool     `json:"safety_pass"`
 	NoRegression           bool     `json:"no_regression"`
 	HardPass               bool     `json:"hard_pass"`
+	ScoringSuspect         bool     `json:"scoring_suspect,omitempty"`
 	BaselineCompared       bool     `json:"baseline_compared"`
 	ValueComparisonEnabled bool     `json:"value_comparison_enabled"`
 	EnvironmentFailure     bool     `json:"environment_failure,omitempty"`
 	IntersectionTaskCount  int      `json:"intersection_task_count,omitempty"`
 	Notices                []string `json:"notices,omitempty"`
+}
+
+const ScoringDivergenceThreshold = 0.30
+
+// ScoringDivergence returns the gap between reliable answer correctness and
+// reliable method correctness. A large positive gap is evidence that the
+// generated method contract or scorer may not match the runtime dialect.
+func ScoringDivergence(metrics Metrics) float64 {
+	return metrics.GroundTruthRecall - metrics.MethodRecall
+}
+
+func IsScoringDivergenceSuspect(metrics Metrics) bool {
+	return ScoringDivergence(metrics) > ScoringDivergenceThreshold+1e-9
 }
 
 type Report struct {

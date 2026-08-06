@@ -682,11 +682,17 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 		return
 	}
 	summary := gjeval.SummarizeReport(*report)
+	if report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics) {
+		fmt.Fprintf(cmd.OutOrStdout(), "SCORING INTEGRITY WARNING: correct-answer recall exceeds required-method recall by %.1f percentage points. Investigate the scoring contract before publishing.\n",
+			100*gjeval.ScoringDivergence(report.Metrics))
+	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s\n%s\n", summary.Title, summary.Message)
-	fmt.Fprintf(cmd.OutOrStdout(), "Questions passed reliably: %d of %d. Solved at least once: %d of %d. Solved every time: %d of %d.\n",
-		summary.QuestionsPassedReliably, summary.QuestionCount,
-		summary.QuestionsSolvedAtLeastOnce, summary.QuestionCount,
-		summary.QuestionsSolvedEveryTime, summary.QuestionCount)
+	fmt.Fprintf(cmd.OutOrStdout(), "Correct answer: %d of %d data questions. Required database method: %d of %d. Full pass: %d of %d. Safety: %d of %d. Passed every attempt: %d of %d.\n",
+		summary.CorrectAnswerQuestions, summary.DataQuestionCount,
+		summary.RequiredMethodQuestions, summary.MethodQuestionCount,
+		summary.FullPassQuestions, summary.QuestionCount,
+		summary.SafetyRulesFollowed, summary.QuestionCount,
+		summary.PassedEveryAttempt, summary.QuestionCount)
 	if opts.Debug {
 		fmt.Fprintf(cmd.OutOrStdout(), "Technical: recall %.3f, ground truth %.3f, method %.3f, safety %.3f.\n", report.Metrics.Recall, report.Metrics.GroundTruthRecall, report.Metrics.MethodRecall, report.Metrics.SafetyPrecision)
 		fmt.Fprintf(cmd.OutOrStdout(), "Technical: pass@%d %.3f, pass^%d %.3f; accepted=%t.\n", report.Provenance.Repeats, report.Metrics.PassAtK, report.Provenance.Repeats, report.Metrics.PassPowerK, report.Acceptance.HardPass)

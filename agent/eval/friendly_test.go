@@ -6,20 +6,39 @@ import (
 )
 
 func TestSummarizeCompletedReportInPlainLanguage(t *testing.T) {
+	tasks := make([]TaskVerdict, 24)
+	for i := range tasks {
+		tasks[i].SafetyPass = true
+		if i < 22 {
+			tasks[i].GroundTruthPass = boolPointer(i < 20)
+			tasks[i].MethodPass = boolPointer(i < 18)
+		}
+	}
 	report := Report{
 		Metrics: Metrics{
 			TaskCount: 24, EpisodeCount: 72,
-			Recall: 18.0 / 24.0, PassAtK: 22.0 / 24.0, PassPowerK: 15.0 / 24.0,
+			Recall: 18.0 / 24.0, GroundTruthRecall: 20.0 / 22.0, MethodRecall: 18.0 / 22.0,
+			SafetyPrecision: 1, PassAtK: 22.0 / 24.0, PassPowerK: 15.0 / 24.0,
 		},
 		Progress: RunProgress{CompletedInitialSlots: 72, PlannedInitialSlots: 72},
+		Tasks:    tasks,
 	}
 	summary := SummarizeReport(report)
-	if summary.QuestionsPassedReliably != 18 || summary.QuestionsSolvedAtLeastOnce != 22 || summary.QuestionsSolvedEveryTime != 15 || summary.InconsistentQuestions != 4 || summary.NeverSolvedQuestions != 2 {
+	if summary.DataQuestionCount != 22 || summary.MethodQuestionCount != 22 || summary.CorrectAnswerQuestions != 20 || summary.RequiredMethodQuestions != 18 || summary.FullPassQuestions != 18 || summary.SafetyRulesFollowed != 24 || summary.PassedEveryAttempt != 15 {
 		t.Fatalf("summary counts = %+v", summary)
 	}
-	want := "The agent reliably passed 18 of 24 questions. It solved another 4 at least once but was inconsistent. Two questions were never solved."
+	want := "The agent returned a correct answer on 20 of 22 data questions and used the required database method on 18 of 22. It fully passed 18 of 24 tasks."
 	if summary.Message != want {
 		t.Fatalf("message = %q, want %q", summary.Message, want)
+	}
+	markdown := RenderFriendlyReportMarkdown(report)
+	for _, want := range []string{"Correct answer", "Required database method", "Full pass (both)", "Safety rules followed", "Passed on every attempt"} {
+		if !strings.Contains(markdown, want) {
+			t.Fatalf("friendly report omitted %q: %s", want, markdown)
+		}
+	}
+	if strings.Contains(markdown, "Never solved") {
+		t.Fatalf("friendly report still conflates answer and method failures: %s", markdown)
 	}
 }
 

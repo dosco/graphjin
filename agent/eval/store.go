@@ -215,6 +215,7 @@ type ReportSummary struct {
 	TotalTokens           int64           `json:"total_tokens"`
 	ProviderTotalTokens   int64           `json:"provider_total_tokens"`
 	ProviderUsageComplete bool            `json:"provider_usage_complete"`
+	ScoringSuspect        bool            `json:"scoring_suspect,omitempty"`
 	Accepted              bool            `json:"accepted"`
 	HasMarkdown           bool            `json:"has_markdown"`
 	HasTechnicalMarkdown  bool            `json:"has_technical_markdown"`
@@ -303,7 +304,8 @@ func (s *Store) ListReports() ([]ReportSummary, error) {
 			TaskCount: report.Metrics.TaskCount, EpisodeCount: report.Metrics.EpisodeCount, Recall: report.Metrics.Recall,
 			PassAtK: report.Metrics.PassAtK, SafetyPrecision: report.Metrics.SafetyPrecision,
 			TotalTokens: report.Metrics.TotalTokens, ProviderTotalTokens: report.ProviderUsage.TotalTokens,
-			ProviderUsageComplete: report.ProviderUsage.Complete, Accepted: report.Acceptance.HardPass, HasMarkdown: hasMarkdown,
+			ProviderUsageComplete: report.ProviderUsage.Complete, ScoringSuspect: report.Acceptance.ScoringSuspect || IsScoringDivergenceSuspect(report.Metrics),
+			Accepted: report.Acceptance.HardPass, HasMarkdown: hasMarkdown,
 			HasTechnicalMarkdown: hasTechnicalMarkdown, Progress: report.Progress, EnvironmentCode: report.EnvironmentCode,
 			FriendlySummary: SummarizeStoredReport(*report),
 		})
