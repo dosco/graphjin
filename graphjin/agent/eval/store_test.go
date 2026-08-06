@@ -182,15 +182,20 @@ func TestStoreWritesAndLoadsShareableMarkdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	markdownPath := store.ReportMarkdownPath(report.RunID)
-	for _, path := range []string{jsonPath, markdownPath} {
+	technicalMarkdownPath := store.ReportTechnicalMarkdownPath(report.RunID)
+	for _, path := range []string{jsonPath, markdownPath, technicalMarkdownPath} {
 		info, err := os.Stat(path)
 		if err != nil || info.Mode().Perm() != 0o600 {
 			t.Fatalf("permissions for %s: info=%v err=%v", path, info, err)
 		}
 	}
 	markdown, err := store.LoadReportMarkdown(report.RunID)
-	if err != nil || !strings.Contains(string(markdown), "[REDACTED]") || strings.Contains(string(markdown), "super-secret") {
-		t.Fatalf("markdown redaction failed: %q err=%v", markdown, err)
+	if err != nil || strings.Contains(string(markdown), "super-secret") || !strings.Contains(string(markdown), "Results at a glance") {
+		t.Fatalf("friendly markdown failed: %q err=%v", markdown, err)
+	}
+	technical, err := store.LoadReportTechnicalMarkdown(report.RunID)
+	if err != nil || !strings.Contains(string(technical), "[REDACTED]") || strings.Contains(string(technical), "super-secret") {
+		t.Fatalf("technical markdown redaction failed: %q err=%v", technical, err)
 	}
 	loaded, err := store.LoadReport(report.RunID)
 	if err != nil || loaded.RunID != report.RunID || loaded.RunStatus != RunStatusComplete {

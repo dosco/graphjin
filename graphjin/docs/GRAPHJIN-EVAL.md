@@ -29,6 +29,14 @@ Commands that can invoke a model show reused episodes, remaining initial slots,
 possible confirmation slots, and the maximum provider attempts including one
 retry for each pending slot. A non-interactive caller must pass `--yes`.
 
+After every run, the CLI prints the friendly Markdown, technical benchmark
+Markdown, and canonical JSON report paths, the local Trainer report URL (plus
+the command that starts its console), and either the public-suite publish
+command or a clear note that the run is not ranked.
+Interrupted and environment-failed runs print their report paths and exact
+resume command instead. With `--json`, the report remains the only document on
+stdout and these human-readable pointers are written to stderr.
+
 Google uses `GOOGLE_API_KEY` by convention:
 
 ```sh
@@ -87,6 +95,7 @@ Local state is stored with owner-only permissions:
   baseline.json
   reports/<run-id>.json
   reports/<run-id>.md
+  reports/<run-id>.technical.md
   episodes/<run-id>/<task>-<rep>.json
   attempts/<run-id>/<task>-attempt-<number>.json
   runs/<run-id>.json
@@ -196,11 +205,14 @@ can be shown over time. `oracle_value_hash` and
 identity: the demo shifts relative dates forward, so both can change with the
 calendar while the frozen task remains the same.
 
-Each finished run now writes both `reports/<run-id>.json` and
-`reports/<run-id>.md` at owner-only permissions. Markdown is generated from the
-same shareable projection as JSON: it cannot include task slugs, raw oracle
-errors, or local episode paths. Existing JSON-only reports render on demand in
-the Trainer console and during publish.
+Each finished run writes canonical `reports/<run-id>.json`, a plain-language
+`reports/<run-id>.md`, and an industry-standard
+`reports/<run-id>.technical.md` at owner-only permissions. Both Markdown views
+are generated from the same shareable projection as JSON: neither can include
+task slugs, raw oracle errors, or local episode paths. Trainer exposes an
+explicit Summary / Technical benchmark switch. Existing JSON-only or legacy
+single-Markdown reports render both views on demand in Trainer and during
+publish.
 
 `graphjin eval publish <run-id>` is the only sanctioned path into
 `website/data/benchmarks.yaml` and `website/content/benchmark/runs/`. It asks for

@@ -175,7 +175,15 @@ Reports are written under the evaluated project:
 
 ```text
 .graphjin-evals/reports/<run-id>.json
+.graphjin-evals/reports/<run-id>.md
+.graphjin-evals/reports/<run-id>.technical.md
 ```
+
+The ordinary Markdown report explains the result in plain language. The
+technical Markdown report preserves benchmark-standard metrics, confidence
+intervals, provenance, fingerprints, task verdicts, and provider accounting.
+Trainer lets you switch between both views without changing the canonical JSON
+result.
 
 Use `--json` when another program needs the complete shareable report:
 
@@ -402,6 +410,8 @@ Local state has owner-only permissions:
 .graphjin-evals/
   baseline.json
   reports/<run-id>.json
+  reports/<run-id>.md
+  reports/<run-id>.technical.md
   episodes/<run-id>/<task>-<repeat>.json
   attempts/<run-id>/<task>-attempt-<number>.json
   runs/<run-id>.json

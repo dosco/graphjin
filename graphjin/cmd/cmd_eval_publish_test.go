@@ -82,6 +82,15 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || data.Runs[0].UnrankedReason != "" {
 		t.Fatalf("data=%+v err=%v", data, err)
 	}
+	page, err := os.ReadFile(pagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, phrase := range []string{"## Evaluation complete", "## Results at a glance", "## Technical benchmark report", "## Headline", "Pass@k"} {
+		if !strings.Contains(string(page), phrase) {
+			t.Fatalf("published page missing %q: %s", phrase, page)
+		}
+	}
 	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err == nil {
 		t.Fatal("idempotent publish succeeded without --force")
 	}
@@ -91,6 +100,35 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 	data, err = loadBenchmarkData(dataPath)
 	if err != nil || len(data.Runs) != 1 {
 		t.Fatalf("forced data=%+v err=%v", data.Runs, err)
+	}
+}
+
+func TestEvalPublishUpgradesLegacySingleTechnicalMarkdown(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101112.000000000Z-legacy")
+	writePublishTestReport(t, project, report)
+	store := gjeval.NewStore(filepath.Join(project, gjeval.DefaultStateDir))
+	technical, err := store.LoadReportTechnicalMarkdown(report.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.ReportMarkdownPath(report.RunID), technical, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(store.ReportTechnicalMarkdownPath(report.RunID)); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := os.ReadFile(filepath.Join(site, "content", "benchmark", "runs", "20260803t101112-legacy.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, phrase := range []string{gjeval.FriendlyReportMarkdownVersion, gjeval.TechnicalReportMarkdownVersion} {
+		if !strings.Contains(string(page), phrase) {
+			t.Fatalf("published legacy page missing %q: %s", phrase, page)
+		}
 	}
 }
 

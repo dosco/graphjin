@@ -131,7 +131,8 @@ candidate, or understand an evaluation failure.
 
 9. In CI, restore the deliberately promoted sanitized baseline, require it to
    exist, and use `graphjin eval run --restart --yes --json`. Upload reports
-   (`.json` and `.md`) only; never upload episodes or attempts.
+   (`.json`, friendly `.md`, and `.technical.md`) only; never upload episodes
+   or attempts.
 
 ## Diagnosis
 

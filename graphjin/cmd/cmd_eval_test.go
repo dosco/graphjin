@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -172,7 +173,7 @@ func TestPrintEvalReportJSONOmitsIncompleteMetrics(t *testing.T) {
 		SchemaVersion: gjeval.ReportSchemaVersion, RunID: "partial", RunStatus: gjeval.RunStatusEnvironmentFailed,
 		Metrics: gjeval.Metrics{Recall: 0.75}, Tasks: []gjeval.TaskVerdict{{TaskID: "private-task"}},
 		Acceptance: gjeval.Acceptance{EnvironmentFailure: true},
-	})
+	}, nil)
 	var payload map[string]any
 	if err := json.Unmarshal(output.Bytes(), &payload); err != nil {
 		t.Fatalf("decode partial JSON: %v\n%s", err, output.String())
@@ -187,6 +188,30 @@ func TestPrintEvalReportJSONOmitsIncompleteMetrics(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), `"run_status": "environment_failed"`) {
 		t.Fatalf("partial JSON lost status: %s", output.String())
+	}
+}
+
+func TestPrintEvalReportJSONIncludesPartialEnvironmentCode(t *testing.T) {
+	projectPath := t.TempDir()
+	store := gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir))
+	if _, err := store.WriteManifest(gjeval.RunManifest{
+		RunID: "partial-quota", Status: gjeval.RunStatusEnvironmentFailed, LastEnvironmentCode: "provider_quota",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	command := &cobra.Command{}
+	stdout, stderr := new(bytes.Buffer), new(bytes.Buffer)
+	command.SetOut(stdout)
+	command.SetErr(stderr)
+	printEvalReport(command, &evalCLIOptions{JSON: true}, &gjeval.Report{
+		SchemaVersion: gjeval.ReportSchemaVersion, RunID: "partial-quota", RunStatus: gjeval.RunStatusEnvironmentFailed,
+	}, store)
+	var partial gjeval.PartialReport
+	if err := json.Unmarshal(stdout.Bytes(), &partial); err != nil {
+		t.Fatalf("decode partial JSON: %v\n%s", err, stdout.String())
+	}
+	if partial.EnvironmentCode != "provider_quota" {
+		t.Fatalf("environment code = %q, want provider_quota", partial.EnvironmentCode)
 	}
 }
 
@@ -210,7 +235,7 @@ func TestPrintEvalReportShowsTokenUsageAndBaselineChange(t *testing.T) {
 			ProviderTokensDelta: -20, ProviderTokensChangePercent: &minusTen,
 		},
 	}
-	printEvalReport(command, &evalCLIOptions{}, report)
+	printEvalReport(command, &evalCLIOptions{Debug: true}, report, nil)
 	for _, phrase := range []string{
 		"Finalized usage: 270 tokens", "90.0 tokens per episode",
 		"Actual provider usage: 300 tokens", "failed attempts and retries are included",
@@ -227,17 +252,106 @@ func TestPrintEvalReportMarksUnknownProviderUsageAsLowerBound(t *testing.T) {
 	command := &cobra.Command{}
 	output := new(bytes.Buffer)
 	command.SetOut(output)
-	printEvalReport(command, &evalCLIOptions{}, &gjeval.Report{
+	printEvalReport(command, &evalCLIOptions{Debug: true}, &gjeval.Report{
 		RunID: "candidate", RunStatus: gjeval.RunStatusComplete,
 		Provenance: gjeval.RunProvenance{Repeats: 3},
 		ProviderUsage: gjeval.ProviderUsage{
 			TotalTokens: 300, LLMCalls: 7, UnknownAttempts: 2,
 		},
-	})
+	}, nil)
 	for _, phrase := range []string{"usage accounting is incomplete", "2 timeout or transport attempt(s)", "Recorded tokens are a lower bound"} {
 		if !strings.Contains(output.String(), phrase) {
 			t.Fatalf("output missing %q: %s", phrase, output.String())
 		}
+	}
+}
+
+func TestPrintEvalReportShowsArtifactsConsoleAndPublishCommand(t *testing.T) {
+	projectPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectPath, "dev.yml"), []byte("host_port: 0.0.0.0:8083\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir))
+	command := &cobra.Command{}
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	report := &gjeval.Report{
+		RunID:            "public-run",
+		RunStatus:        gjeval.RunStatusComplete,
+		SuiteFingerprint: gjeval.PublicBenchmark().SuiteFingerprint,
+		Provenance:       gjeval.RunProvenance{Repeats: 3},
+	}
+
+	printEvalReport(command, &evalCLIOptions{Demo: true}, report, store)
+
+	for _, phrase := range []string{
+		"Friendly report:  " + store.ReportMarkdownPath(report.RunID),
+		"Technical report: " + store.ReportTechnicalMarkdownPath(report.RunID),
+		"JSON report:      " + store.ReportPath(report.RunID),
+		"Console:         http://127.0.0.1:8083/trainer/reports?run=public-run",
+		"graphjin --path " + strconv.Quote(projectPath) + " serve --demo",
+		"Publish:         graphjin --path " + strconv.Quote(projectPath) + " eval publish public-run --yes",
+	} {
+		if !strings.Contains(output.String(), phrase) {
+			t.Fatalf("output missing %q: %s", phrase, output.String())
+		}
+	}
+}
+
+func TestPrintEvalReportShowsResumeForPartialRun(t *testing.T) {
+	projectPath := t.TempDir()
+	store := gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir))
+	manifest := gjeval.RunManifest{
+		RunID:               "partial-run",
+		Intent:              gjeval.RunIntentBench,
+		Status:              gjeval.RunStatusInterrupted,
+		InvocationArgs:      []string{"--demo", "--scale", "5", "--seed", "23"},
+		LastEnvironmentCode: "provider_quota",
+	}
+	if _, err := store.WriteManifest(manifest); err != nil {
+		t.Fatal(err)
+	}
+	command := &cobra.Command{}
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+
+	printEvalReport(command, &evalCLIOptions{Demo: true}, &gjeval.Report{
+		RunID: "partial-run", RunStatus: gjeval.RunStatusEnvironmentFailed,
+		Provenance: gjeval.RunProvenance{Provider: "google-gemini", Repeats: 3},
+		Progress:   gjeval.RunProgress{CompletedInitialSlots: 36, PlannedInitialSlots: 72},
+	}, store)
+
+	if !strings.Contains(output.String(), "GraphJin completed 36 of 72 test attempts before Google stopped accepting requests because of quota limits") {
+		t.Fatalf("friendly quota explanation missing: %s", output.String())
+	}
+	if !strings.Contains(output.String(), "Resume:          graphjin eval bench --demo --scale 5 --seed 23 --resume partial-run --yes") {
+		t.Fatalf("resume command missing: %s", output.String())
+	}
+	if strings.Contains(output.String(), "Publish:") {
+		t.Fatalf("partial run should not print publish guidance: %s", output.String())
+	}
+}
+
+func TestPrintEvalReportKeepsJSONStdoutMachineReadable(t *testing.T) {
+	projectPath := t.TempDir()
+	store := gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir))
+	command := &cobra.Command{}
+	stdout, stderr := new(bytes.Buffer), new(bytes.Buffer)
+	command.SetOut(stdout)
+	command.SetErr(stderr)
+	report := &gjeval.Report{RunID: "json-run", RunStatus: gjeval.RunStatusComplete}
+
+	printEvalReport(command, &evalCLIOptions{JSON: true}, report, store)
+
+	var decoded gjeval.Report
+	if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+		t.Fatalf("stdout is not one JSON report: %v\n%s", err, stdout.String())
+	}
+	if strings.Contains(stdout.String(), "Markdown report:") {
+		t.Fatalf("stdout contains human guidance: %s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Friendly report:  "+store.ReportMarkdownPath(report.RunID)) {
+		t.Fatalf("stderr missing report guidance: %s", stderr.String())
 	}
 }
 

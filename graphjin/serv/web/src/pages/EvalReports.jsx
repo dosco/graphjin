@@ -5,8 +5,9 @@ import { useSearchParams } from "react-router-dom";
 
 import { DataErrorState, EmptyState, LoadingState, Metric, PageHeader, Panel, StatusPill } from "../components/ui";
 import { MarkdownContent } from "@/components/ui/markdown-content";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchEvalReport, fetchEvalReports } from "../services/evals";
-import { compactNumber, relativeTime } from "../services/graphql";
+import { relativeTime } from "../services/graphql";
 
 const EvalReports = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -69,11 +70,11 @@ const EvalReports = () => {
                 >
                   <div className="flex min-w-0 items-center justify-between gap-3">
                     <strong className="truncate text-sm font-medium">{report.provenance?.model || "Unknown model"}</strong>
-                    <StatusPill status={report.accepted ? "passed" : report.run_status || "pending"} />
+                    <StatusPill status={reportStatus(report)} />
                   </div>
                   <span className="truncate font-mono text-xs text-muted-foreground">{report.run_id}</span>
                   <span className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                    <span>{formatPercent(report.recall)} recall</span>
+                    <span>{reportListResult(report)}</span>
                     <span>{relativeTime(report.generated_at)}</span>
                   </span>
                 </button>
@@ -101,23 +102,49 @@ const EvalReports = () => {
 };
 
 function EvalReportDetail({ report }) {
+  const summary = report.friendly_summary || {};
+  const complete = summary.complete === true;
   return (
     <div className="grid min-w-0 gap-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric label="Recall" value={formatPercent(report.recall)} detail={`${report.task_count || 0} tasks`} tone={report.accepted ? "good" : "warn"} />
-        <Metric label="Pass@3" value={formatPercent(report.pass_at_k)} detail={`${report.episode_count || 0} episodes`} />
-        <Metric label="Method" value={formatPercent(report.method_recall)} detail="database-complete" />
-        <Metric label="Safety" value={formatPercent(report.safety_precision)} detail={report.safety_precision === 1 ? "hard gate passed" : "hard gate failed"} tone={report.safety_precision === 1 ? "good" : "warn"} />
-        <Metric label="Provider tokens" value={compactNumber(report.provider_total_tokens)} detail={report.provider || "provider not recorded"} />
-      </div>
+      {complete ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric label="Questions passed reliably" value={countOf(summary.questions_passed_reliably, summary.question_count)} detail={formatPercent(report.recall)} tone={report.accepted ? "good" : "warn"} />
+          <Metric label="Solved at least once" value={countOf(summary.questions_solved_at_least_once, summary.question_count)} detail={formatPercent(report.pass_at_k)} />
+          <Metric label="Solved every time" value={countOf(summary.questions_solved_every_time, summary.question_count)} detail={formatPercent(report.pass_power_k)} />
+          <Metric label="Complete DB method" value={formatPercent(report.method_recall)} detail="database did the full calculation" />
+          <Metric label="Rules followed" value={formatPercent(report.safety_precision)} detail={report.safety_precision === 1 ? "all safety checks passed" : "a safety check failed"} tone={report.safety_precision === 1 ? "good" : "warn"} />
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Metric label="Test attempts" value={countOf(summary.completed_test_attempts, summary.planned_test_attempts)} detail="completed work is saved" tone="warn" />
+          <Metric label="Questions" value={summary.question_count || "n/a"} detail="no overall score is available" />
+        </div>
+      )}
 
-      <Panel
-        title={report.model || "Evaluation report"}
-        description={`${report.run_id} · ${relativeTime(report.generated_at)}`}
-        action={<StatusPill status={report.accepted ? "passed" : report.run_status || "not accepted"} />}
-      >
-        <MarkdownContent value={report.markdown} className="gap-5 text-sm" />
-      </Panel>
+      <Tabs defaultValue="summary" className="grid min-w-0 gap-4">
+        <TabsList className="w-fit">
+          <TabsTrigger value="summary">Plain-language summary</TabsTrigger>
+          <TabsTrigger value="technical">Technical benchmark</TabsTrigger>
+        </TabsList>
+        <TabsContent value="summary" className="mt-0">
+          <Panel
+            title={summary.title || report.model || "Evaluation summary"}
+            description={`${report.model || "Unknown model"} · ${report.run_id} · ${relativeTime(report.generated_at)}`}
+            action={<StatusPill status={reportStatus(report)} />}
+          >
+            <MarkdownContent value={report.markdown} className="gap-5 text-sm" />
+          </Panel>
+        </TabsContent>
+        <TabsContent value="technical" className="mt-0">
+          <Panel
+            title="Technical benchmark report"
+            description="Industry-standard metrics, provenance, fingerprints, task verdicts, and provider accounting."
+            action={<StatusPill status={reportStatus(report)} />}
+          >
+            <MarkdownContent value={report.technical_markdown} className="gap-5 text-sm" />
+          </Panel>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -143,4 +170,26 @@ function formatPercent(value) {
   return Number.isFinite(number) ? `${(number * 100).toFixed(1)}%` : "n/a";
 }
 
+function countOf(value, total) {
+  const count = Number(value);
+  const maximum = Number(total);
+  return Number.isFinite(count) && Number.isFinite(maximum) ? `${count} of ${maximum}` : "n/a";
+}
+
+function reportListResult(report) {
+  const summary = report.friendly_summary || {};
+  if (summary.complete) {
+    return `${countOf(summary.questions_passed_reliably, summary.question_count)} reliable`;
+  }
+  return `${countOf(summary.completed_test_attempts, summary.planned_test_attempts)} attempts`;
+}
+
+function reportStatus(report) {
+  if (report.run_status === "environment_failed") return "stopped";
+  if (report.run_status === "interrupted") return "paused";
+  if (report.accepted) return "passed";
+  return report.run_status === "complete" ? "needs improvement" : report.run_status || "pending";
+}
+
 export default EvalReports;
+export { EvalReportDetail, reportListResult, reportStatus };

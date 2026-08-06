@@ -7,12 +7,45 @@ import (
 	"time"
 )
 
-const ReportMarkdownVersion = "graphjin.eval.report.md/v1"
+const (
+	ReportMarkdownVersion          = "graphjin.eval.report.md/v1"
+	FriendlyReportMarkdownVersion  = "graphjin.eval.report.friendly.md/v1"
+	TechnicalReportMarkdownVersion = ReportMarkdownVersion
+)
 
-// RenderReportMarkdown renders a finalized report as shareable GFM. Task slugs,
-// invalid-oracle prose, and local episode paths are cleared before rendering so
-// Markdown can never be more revealing than reports/<run-id>.json.
+// RenderReportMarkdown preserves the original technical renderer for callers
+// that used the eval package before friendly reports were added.
 func RenderReportMarkdown(report Report) string {
+	return RenderTechnicalReportMarkdown(report)
+}
+
+// RenderFriendlyReportMarkdown renders the default plain-language report.
+func RenderFriendlyReportMarkdown(report Report) string {
+	summary := SummarizeReport(report)
+	var b strings.Builder
+	fmt.Fprintf(&b, "# GraphJin evaluation summary `%s`\n\n", markdownCell(report.RunID))
+	fmt.Fprintf(&b, "> Friendly report schema: `%s`\n\n", FriendlyReportMarkdownVersion)
+	fmt.Fprintf(&b, "## %s\n\n%s\n\n", summary.Title, summary.Message)
+	b.WriteString("## Results at a glance\n\n")
+	b.WriteString("| Result | Questions |\n| --- | ---: |\n")
+	writeRow(&b, "Passed reliably", countOf(summary.QuestionsPassedReliably, summary.QuestionCount))
+	writeRow(&b, "Solved at least once", countOf(summary.QuestionsSolvedAtLeastOnce, summary.QuestionCount))
+	writeRow(&b, "Solved every time", countOf(summary.QuestionsSolvedEveryTime, summary.QuestionCount))
+	writeRow(&b, "Never solved", countOf(summary.NeverSolvedQuestions, summary.QuestionCount))
+	b.WriteByte('\n')
+	b.WriteString("## How the agent worked\n\n")
+	b.WriteString("| Check | Result |\n| --- | ---: |\n")
+	writeRow(&b, "Used a complete database method", percent(report.Metrics.MethodRecall))
+	writeRow(&b, "Followed the safety rules", percent(report.Metrics.SafetyPrecision))
+	b.WriteByte('\n')
+	writeFriendlyPrivacyFooter(&b)
+	return b.String()
+}
+
+// RenderTechnicalReportMarkdown renders the standards-style benchmark report.
+// Task slugs, invalid-oracle prose, and local episode paths are cleared before
+// rendering so Markdown can never be more revealing than reports/<run-id>.json.
+func RenderTechnicalReportMarkdown(report Report) string {
 	report.InvalidOracleDetails = nil
 	report.EpisodePaths = nil
 	report.Tasks = publicTaskVerdicts(report.Tasks)
@@ -36,9 +69,30 @@ func RenderReportMarkdown(report Report) string {
 }
 
 func RenderPartialReportMarkdown(report PartialReport) string {
+	return RenderTechnicalPartialReportMarkdown(report)
+}
+
+func RenderFriendlyPartialReportMarkdown(report PartialReport) string {
+	summary := SummarizePartialReport(report)
+	var b strings.Builder
+	fmt.Fprintf(&b, "# GraphJin evaluation summary `%s`\n\n", markdownCell(report.RunID))
+	fmt.Fprintf(&b, "> Friendly report schema: `%s`\n\n", FriendlyReportMarkdownVersion)
+	fmt.Fprintf(&b, "## %s\n\n%s\n\n", summary.Title, summary.Message)
+	b.WriteString("## Saved progress\n\n")
+	b.WriteString("| Progress | Completed |\n| --- | ---: |\n")
+	writeRow(&b, "Test attempts", countOf(summary.CompletedTestAttempts, summary.PlannedTestAttempts))
+	if summary.QuestionCount > 0 {
+		writeRow(&b, "Questions in this evaluation", fmt.Sprint(summary.QuestionCount))
+	}
+	b.WriteByte('\n')
+	writeFriendlyPrivacyFooter(&b)
+	return b.String()
+}
+
+func RenderTechnicalPartialReportMarkdown(report PartialReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# GraphJin evaluation report `%s`\n\n", markdownCell(report.RunID))
-	fmt.Fprintf(&b, "> Status: **%s**. Finalized quality metrics are unavailable.\n\n", markdownCell(string(report.RunStatus)))
+	fmt.Fprintf(&b, "> Status: **%s** · Technical Markdown schema: `%s`. Finalized quality metrics are unavailable.\n\n", markdownCell(string(report.RunStatus)), TechnicalReportMarkdownVersion)
 	writePartialIdentity(&b, report)
 	if report.EnvironmentCode != "" || report.Notice != "" {
 		b.WriteString("## Run notice\n\n")
@@ -73,7 +127,7 @@ func publicTaskVerdicts(tasks []TaskVerdict) []TaskVerdict {
 
 func writeReportTitle(b *strings.Builder, runID string, status RunStatus) {
 	fmt.Fprintf(b, "# GraphJin evaluation report `%s`\n\n", markdownCell(runID))
-	fmt.Fprintf(b, "> Status: **%s** · Markdown schema: `%s`\n\n", markdownCell(string(status)), ReportMarkdownVersion)
+	fmt.Fprintf(b, "> Status: **%s** · Technical Markdown schema: `%s`\n\n", markdownCell(string(status)), TechnicalReportMarkdownVersion)
 }
 
 func writeIdentity(b *strings.Builder, r Report) {
@@ -263,6 +317,14 @@ func writeInvalidOracles(b *strings.Builder, invalid map[string]string) {
 
 func writePrivacyFooter(b *strings.Builder) {
 	b.WriteString("---\n\nThis shareable report contains aggregate metrics, public task identifiers, fingerprints, and acceptance state. It excludes prompts, answers, database rows, executed queries, request headers, credentials, task slugs, raw oracle errors, and local episode paths.\n")
+}
+
+func writeFriendlyPrivacyFooter(b *strings.Builder) {
+	b.WriteString("---\n\nThis shareable summary contains evaluation outcomes only. It excludes prompts, answers, database rows, queries, credentials, and private execution details.\n")
+}
+
+func countOf(value, total int) string {
+	return fmt.Sprintf("%d of %d", value, total)
 }
 
 func writeRow(b *strings.Builder, field, value string) {

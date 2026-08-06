@@ -61,7 +61,8 @@ export function StatusPill({ status, severity }) {
     normalized === "closed" || normalized === "active"
       ? "good"
       : normalized === "degraded" || normalized === "warn" || normalized === "warning" ||
-        normalized === "verifying" || normalized === "pending"
+        normalized === "verifying" || normalized === "pending" || normalized === "paused" ||
+        normalized === "stopped" || normalized === "needs improvement"
         ? "warn"
       : normalized === "failed" || normalized === "error" || normalized === "critical" || normalized === "high"
         ? "bad"
