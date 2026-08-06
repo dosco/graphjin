@@ -797,9 +797,16 @@ func Example_queryWithHasuraCompatibleAggregation() {
 		return
 	}
 
+	// Keep the count scoped to the canonical seed rows because earlier examples
+	// insert additional products into the shared dialect test database.
 	gql := `
 	query ProductCount($minimum_id: Int!) {
-		stats: products_aggregate(where: { id: { gte: $minimum_id } }) {
+		stats: products_aggregate(where: {
+			and: [
+				{ id: { gte: $minimum_id } },
+				{ id: { lteq: 100 } },
+			]
+		}) {
 			aggregate { count }
 		}
 	}`
