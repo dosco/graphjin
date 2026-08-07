@@ -118,6 +118,17 @@ func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
 	}
 }
 
+func TestPublicBenchmarkEnvironmentSupportsBehavioralTasks(t *testing.T) {
+	public := evalBenchEnvSpec(gjeval.TargetDemo, "/tmp/deeporg", 23, true)
+	if !public.Writable || !public.Reactive || !public.Resettable {
+		t.Fatalf("public benchmark environment = %+v, want writable, reactive, and resettable", public)
+	}
+	private := evalBenchEnvSpec(gjeval.TargetLocal, "/tmp/private-eval", 23, false)
+	if private.Writable || private.Reactive || private.Resettable {
+		t.Fatalf("ordinary generated benchmark environment unexpectedly widened capabilities: %+v", private)
+	}
+}
+
 func TestEvalRemoveTaskKeepsSuiteValid(t *testing.T) {
 	original := cpath
 	cpath = t.TempDir()

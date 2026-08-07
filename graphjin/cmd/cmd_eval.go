@@ -352,7 +352,7 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: seed})
+			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, evalBenchEnvSpec(target, projectPath, seed, public))
 			if err != nil {
 				return evalEnvironmentError(err)
 			}
@@ -410,6 +410,13 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&public, "public", false, "run the frozen, reproducible public benchmark suite")
 	addEvalResumeFlags(cmd, opts)
 	return cmd
+}
+
+func evalBenchEnvSpec(target gjeval.Target, projectPath string, seed int64, public bool) gjeval.EnvSpec {
+	return gjeval.EnvSpec{
+		Target: target, ConfigPath: projectPath, Seed: seed,
+		Writable: public, Reactive: public, Resettable: public,
+	}
 }
 
 func evalFreezeSuiteCmd(opts *evalCLIOptions) *cobra.Command {
