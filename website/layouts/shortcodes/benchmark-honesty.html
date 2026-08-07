@@ -1,0 +1,30 @@
+{{- $data := index hugo.Data "benchmarks" -}}
+{{- $runs := default (slice) $data.runs -}}
+{{- $accepted := sort (where (where $runs "ranked" true) "accepted" true) "recall" "desc" -}}
+<aside class="benchmark-honesty" aria-labelledby="benchmark-honesty-title">
+  <p class="home-section-label">Read the fine print</p>
+  <h2 id="benchmark-honesty-title">What this board does—and does not—prove</h2>
+  <div class="benchmark-honesty-grid">
+    <section>
+      <h3>Suite composition</h3>
+      {{ with $data.suite.category_counts }}
+      <table><thead><tr><th>Task family</th><th>Questions</th></tr></thead><tbody>
+        {{ range (slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal") }}
+          {{ $count := index $.Site.Data.benchmarks.suite.category_counts . | default 0 }}
+          {{ if gt (int $count) 0 }}<tr><td>{{ humanize . }}</td><td>{{ $count }}</td></tr>{{ end }}
+        {{ end }}
+      </tbody></table>
+      {{ else }}<p>Composition metadata was not recorded for this historical cohort.</p>{{ end }}
+    </section>
+    <section>
+      <h3>Consistency and scope</h3>
+      {{ range first 1 $accepted }}<p><strong>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</strong> passed on every attempt, alongside the majority-of-three full-pass result shown above.</p>{{ end }}
+      <p>The current suite measures governed, read-only organizational questions. Mutations and long-running watches are product capabilities, not claims made by this benchmark.</p>
+    </section>
+    <section>
+      <h3>Cost and corrections</h3>
+      {{ range first 1 $accepted }}<p>Cost uses recorded provider prompt and completion tokens multiplied by {{ .pricing_source | default "the supplied list-price card" }}. It is an estimate, not an invoice.</p>{{ end }}
+      <p>We previously retracted a run whose stale scoring contract rejected a valid database dialect. Read the <a href="/benchmark/methodology/#scoring-correction">correction and the guards added afterward</a>.</p>
+    </section>
+  </div>
+</aside>

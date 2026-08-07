@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,7 @@ func TestEvalPublishRefusalsAndLowScoreBoundary(t *testing.T) {
 		{"empty", func(r *gjeval.Report) { r.Metrics.TaskCount = 0 }, 1},
 		{"empty_commit", func(r *gjeval.Report) { r.Provenance.GraphJinCommit = "" }, 2},
 		{"wrong_binary", func(r *gjeval.Report) { r.Provenance.BinaryFingerprint = "different-binary" }, 2},
+		{"incomplete_usage", func(r *gjeval.Report) { r.ProviderUsage.Complete = false }, 2},
 		{"suspect_scoring", func(r *gjeval.Report) {
 			r.Metrics.GroundTruthRecall = .9
 			r.Metrics.MethodRecall = .2
@@ -207,6 +209,84 @@ func TestEvalPublishReplacesEmptyPriorCohortMetadata(t *testing.T) {
 	}
 }
 
+func TestEvalPublishAdvancesOfficialCohortAndKeepsHistory(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101112.000000000Z-current-cohort")
+	report.Tasks = []gjeval.TaskVerdict{
+		{TaskID: "aggregate", Category: gjeval.CategoryAggregate},
+		{TaskID: "refusal", Category: gjeval.CategoryRefusal},
+	}
+	writePublishTestReport(t, project, report)
+	dataPath := filepath.Join(site, "data", "benchmarks.yaml")
+	if err := os.MkdirAll(filepath.Dir(dataPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := benchmarkData{
+		SchemaVersion: benchmarkDataVersion,
+		Suite:         benchmarkSuite{Generation: "2026.1", Identity: "old-suite", SuiteFingerprint: "old-fingerprint"},
+		Runs: []benchmarkEntry{{RunID: "old-run", Slug: "old-run", Label: "Historical", Ranked: true,
+			Generation: "2026.1", SuiteFingerprint: "old-fingerprint"}},
+	}
+	raw, err := marshalBenchmarkData(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err != nil {
+		t.Fatalf("official cohort advance was refused: %v", err)
+	}
+	data, err := loadBenchmarkData(dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.Suite.SuiteFingerprint != report.SuiteFingerprint || data.Suite.GeneratorVersion != gjeval.GeneratorVersion {
+		t.Fatalf("suite did not advance: %+v", data.Suite)
+	}
+	if data.Suite.CategoryCounts[string(gjeval.CategoryAggregate)] != 1 || data.Suite.CategoryCounts[string(gjeval.CategoryRefusal)] != 1 {
+		t.Fatalf("category composition was not recorded: %+v", data.Suite.CategoryCounts)
+	}
+	for _, entry := range data.Runs {
+		switch entry.RunID {
+		case "old-run":
+			if entry.Ranked || !strings.Contains(entry.UnrankedReason, "2026.1") {
+				t.Fatalf("historical row was not demoted clearly: %+v", entry)
+			}
+		case report.RunID:
+			if !entry.Ranked {
+				t.Fatalf("current official row is unranked: %+v", entry)
+			}
+		}
+	}
+}
+
+func TestEvalPublishRecordsAuditableListPrice(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101112.000000000Z-priced")
+	report.Metrics.LatencyP50MS = 1250
+	report.Metrics.LatencyP95MS = 3400
+	writePublishTestReport(t, project, report)
+	opts := &evalPublishOptions{
+		Site: site, PromptPricePerMillion: 2, CompletionPricePerMillion: 8,
+		PricingSource: "provider price card, 2026-08-06",
+	}
+	if err := publishTestRun(t, project, site, report.RunID, opts); err != nil {
+		t.Fatal(err)
+	}
+	data, err := loadBenchmarkData(filepath.Join(site, "data", "benchmarks.yaml"))
+	if err != nil || len(data.Runs) != 1 {
+		t.Fatalf("priced data = %+v err=%v", data, err)
+	}
+	entry := data.Runs[0]
+	if math.Abs(entry.EstimatedListCostUSD-0.00056) > 1e-12 || math.Abs(entry.EstimatedListCostPerTaskUSD-0.00028) > 1e-12 {
+		t.Fatalf("wrong list price calculation: %+v", entry)
+	}
+	if entry.PromptTokens != 40 || entry.CompletionTokens != 60 || entry.LatencyP50MS != 1250 || entry.PricingSource != opts.PricingSource {
+		t.Fatalf("pricing provenance was not preserved: %+v", entry)
+	}
+}
+
 func TestBenchmarkRunSlug(t *testing.T) {
 	if got := benchmarkRunSlug("20260803T101112.000000000Z-ab12cd34"); got != "20260803t101112-ab12cd34" {
 		t.Fatalf("slug = %q", got)
@@ -221,7 +301,7 @@ func publishTestReport(runID string) gjeval.Report {
 		DatasetFingerprint: gjeval.DatasetFingerprint{CatalogHash: "catalog", SeedManifestHash: "manifest", DataAnchor: "anchor"}, OracleValueHash: "oracle",
 		Provenance:    gjeval.RunProvenance{Provider: "openai", Model: "gpt-test", GraphJinCommit: "abcdef123456", BinaryFingerprint: evalBinaryFingerprint(), Seed: 23, Repeats: 3, MaxSteps: 8},
 		Metrics:       gjeval.Metrics{TaskCount: 2, EpisodeCount: 6, Recall: .5, GroundTruthRecall: .5, MethodRecall: .5, SafetyPrecision: 1, BehaviorRecall: 1, PassAtK: .75, PassPowerK: .25},
-		ProviderUsage: gjeval.ProviderUsage{TotalTokens: 100, Complete: true},
+		ProviderUsage: gjeval.ProviderUsage{PromptTokens: 40, CompletionTokens: 60, TotalTokens: 100, Complete: true},
 		Acceptance:    gjeval.Acceptance{SuiteValid: true, SafetyPass: true, HardPass: true},
 	}
 }

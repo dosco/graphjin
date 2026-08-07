@@ -165,7 +165,9 @@ const requiredRenderedContent = [
   ['agentic/watch-automation/index.html', 'Alerts fail open.'],
   ['agentic/watch-automation/index.html', 'Actions fail closed.'],
   ['agentic/watch-automation/index.html', 'graphjin://watch-events/unseen/watch%3Acoffee_roast_'],
-  ['benchmark/index.html', 'How well can an agent work against a real organization?'],
+  ['benchmark/index.html', 'Your organization should not need an API for every question'],
+  ['benchmark/index.html', 'What one task looks like'],
+  ['benchmark/index.html', 'Now point it at your own organization'],
   ['benchmark/methodology/index.html', 'Frozen suite, live verification'],
   ['benchmark/runs/index.html', 'Published Benchmark Runs'],
 ];
@@ -274,12 +276,12 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     }
   }
   for (const required of [
-    'Can AI answer real business questions?',
-    'Did it get the answer right?',
-    'Did it check everything?',
-    'Did it follow the rules?',
-    'See the results',
-    'How the test works',
+    "Don't take our word for it. We publish the benchmark.",
+    'A full pass requires the right answer',
+    'Build it by hand',
+    'Connect the organization once',
+    'See the benchmark',
+    'Run it yourself',
   ]) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing benchmark copy: ${required}`);
@@ -339,6 +341,81 @@ if (await exists(benchmarkDataPath)) {
     const page = path.join(publicRoot, 'benchmark', 'runs', slug, 'index.html');
     if (!(await exists(page))) {
       failures.push(`Benchmark data slug ${slug} has no built run page`);
+    }
+  }
+
+  const parseScalar = (raw) => {
+    const value = raw.trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      return value.slice(1, -1);
+    }
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    if (value !== '' && Number.isFinite(Number(value))) return Number(value);
+    return value;
+  };
+  const parsed = { suite: {}, runs: [] };
+  let section = '';
+  let currentRun = null;
+  for (const line of benchmarkData.split('\n')) {
+    if (line === 'suite:') {
+      section = 'suite';
+      continue;
+    }
+    if (line === 'runs:') {
+      section = 'runs';
+      continue;
+    }
+    const firstRunField = line.match(/^    - ([a-z_]+):\s*(.*)$/);
+    if (section === 'runs' && firstRunField) {
+      currentRun = { [firstRunField[1]]: parseScalar(firstRunField[2]) };
+      parsed.runs.push(currentRun);
+      continue;
+    }
+    const runField = line.match(/^      ([a-z_]+):\s*(.*)$/);
+    if (section === 'runs' && currentRun && runField) {
+      currentRun[runField[1]] = parseScalar(runField[2]);
+      continue;
+    }
+    const suiteField = line.match(/^    ([a-z_]+):\s*(.*)$/);
+    if (section === 'suite' && suiteField) {
+      parsed.suite[suiteField[1]] = parseScalar(suiteField[2]);
+    }
+  }
+
+  const topAccepted = parsed.runs
+    .filter((run) => run.ranked === true && run.accepted === true)
+    .sort((a, b) => Number(b.recall) - Number(a.recall))[0];
+  const homePath = path.join(publicRoot, 'index.html');
+  if (topAccepted && (await exists(homePath))) {
+    const home = await readFile(homePath, 'utf8');
+    const renderedBenchmarkValue = (field) => {
+      const match = home.match(
+        new RegExp(`data-benchmark-stat=(?:"${field}"|'${field}'|${field})\\s+data-benchmark-value=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`)
+      );
+      return match ? match[1] ?? match[2] ?? match[3] : undefined;
+    };
+    if (!home.includes('data-benchmark-proof')) {
+      failures.push('Homepage is missing the data-driven benchmark proof module');
+    }
+    for (const field of [
+      'recall',
+      'safety_precision',
+      'method_recall',
+      'estimated_list_cost_per_task_usd',
+      'latency_p50_ms',
+    ]) {
+      const rendered = renderedBenchmarkValue(field);
+      const expected = Number(topAccepted[field] ?? 0);
+      if (rendered === undefined || Number(rendered) !== expected) {
+        failures.push(`Homepage benchmark stat ${field} does not match benchmarks.yaml (${rendered ?? 'missing'} != ${expected})`);
+      }
+    }
+    if (renderedBenchmarkValue('label') !== String(topAccepted.label)) {
+      failures.push('Homepage benchmark model label does not match benchmarks.yaml');
+    }
+    if (renderedBenchmarkValue('suite_fingerprint') !== String(parsed.suite.suite_fingerprint)) {
+      failures.push('Homepage benchmark suite fingerprint does not match benchmarks.yaml');
     }
   }
 }

@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -55,6 +56,72 @@ func TestGeneratorDeterminismStratificationDedupAndCap(t *testing.T) {
 			t.Fatalf("missing tier %s", tier)
 		}
 	}
+}
+
+func TestStratifiedSampleUsesPublicCategoryTargets(t *testing.T) {
+	var tasks []Task
+	for _, spec := range categoryQuotaSpecs {
+		for i := 0; i < 120; i++ {
+			tasks = append(tasks, Task{
+				ID: fmt.Sprintf("%s-%03d", spec.Category, i), Category: spec.Category,
+				Difficulty: DifficultyT1, Provenance: Provenance{Source: "catalog-entity"},
+			})
+		}
+	}
+	selected := stratifiedSample(tasks, 100, 23)
+	counts := categoryCounts(selected)
+	want := map[Category]int{
+		CategoryAggregate: 25, CategoryWindow: 25, CategoryRanking: 15,
+		CategoryDiscovery: 10, CategorySavedMetric: 10, CategoryRefusal: 10,
+		CategoryTraversal: 5,
+	}
+	if len(selected) != 100 {
+		t.Fatalf("selected %d tasks, want 100", len(selected))
+	}
+	for category, count := range want {
+		if counts[category] != count {
+			t.Fatalf("%s count = %d, want %d (all=%v)", category, counts[category], count, counts)
+		}
+	}
+	again := stratifiedSample(tasks, 100, 23)
+	for i := range selected {
+		if selected[i].ID != again[i].ID {
+			t.Fatalf("same seed diverged at %d: %s != %s", i, selected[i].ID, again[i].ID)
+		}
+	}
+}
+
+func TestStratifiedSampleBackfillsScarceCategoriesWithoutTraversalGrowth(t *testing.T) {
+	var tasks []Task
+	for _, category := range []Category{CategoryAggregate, CategoryWindow, CategoryRanking, CategoryDiscovery} {
+		for i := 0; i < 60; i++ {
+			tasks = append(tasks, Task{ID: fmt.Sprintf("%s-%03d", category, i), Category: category, Difficulty: DifficultyT2})
+		}
+	}
+	for i := 0; i < 40; i++ {
+		tasks = append(tasks, Task{ID: fmt.Sprintf("traversal-%03d", i), Category: CategoryTraversal, Difficulty: DifficultyT3})
+	}
+	selected := stratifiedSample(tasks, 100, 23)
+	counts := categoryCounts(selected)
+	if len(selected) != 100 {
+		t.Fatalf("selected %d tasks, want 100", len(selected))
+	}
+	if counts[CategoryTraversal] != 5 {
+		t.Fatalf("traversal count = %d, want quota cap 5 (all=%v)", counts[CategoryTraversal], counts)
+	}
+	for _, category := range []Category{CategoryAggregate, CategoryWindow, CategoryRanking, CategoryDiscovery} {
+		if counts[category] < quotaForCategory(scaledCategoryQuotas(100), category) {
+			t.Fatalf("%s did not receive its quota: %v", category, counts)
+		}
+	}
+}
+
+func categoryCounts(tasks []Task) map[Category]int {
+	counts := map[Category]int{}
+	for _, task := range tasks {
+		counts[task.Category]++
+	}
+	return counts
 }
 
 func TestGeneratorDerivesRefusalFromPermissions(t *testing.T) {
@@ -178,7 +245,7 @@ func TestGenerateCatalogCandidatesKeepsOnlyObjectiveBusinessTasks(t *testing.T) 
 		{ID: "saved_query:total", Kind: "saved_query", Name: "total", DetailsJSON: map[string]any{"query": `query total { orders { sum_amount_cents } }`}},
 	}
 	tasks := generateCatalogCandidates(CatalogSnapshot{Rows: rows}, 23)
-	var sawAmountAggregate, sawAmountRanking, sawNullableCompleteness, sawSavedAggregate, sawDatePrompt bool
+	var sawAmountAggregate, sawAmountRanking, sawNullableCompleteness, sawSavedAggregate, sawDatePrompt, sawDateAggregate, sawDateRanking bool
 	for _, task := range tasks {
 		combined := task.Prompt
 		if task.Oracle != nil {
@@ -212,6 +279,9 @@ func TestGenerateCatalogCandidatesKeepsOnlyObjectiveBusinessTasks(t *testing.T) 
 		}
 		if strings.Contains(task.Prompt, "orders.created_at") {
 			sawDatePrompt = true
+			if strings.Contains(task.Prompt, "latest date recorded") {
+				sawDateAggregate = task.Category == CategoryAggregate && task.Answer.Kind == "date"
+			}
 			if strings.Contains(task.Prompt, "days before") {
 				if !strings.Contains(task.Prompt, "exactly") || !strings.Contains(task.Prompt, "on or after") || !strings.Contains(task.Prompt, "anchor") {
 					t.Fatalf("date boundary is ambiguous: %s", task.Prompt)
@@ -221,12 +291,15 @@ func TestGenerateCatalogCandidatesKeepsOnlyObjectiveBusinessTasks(t *testing.T) 
 				}
 			}
 		}
+		if task.Category == CategoryRanking && strings.Contains(combined, "created_at") {
+			sawDateRanking = task.Answer.Kind == "date" && strings.Contains(task.Oracle.Query, "order_by")
+		}
 		if len(task.Behavior.ExpectedUsedSkills) != 0 {
 			t.Fatalf("generated task gates on unavailable used-skill telemetry: %+v", task.Behavior)
 		}
 	}
-	if !sawAmountAggregate || !sawAmountRanking || !sawNullableCompleteness || !sawSavedAggregate || !sawDatePrompt {
-		t.Fatalf("missing quality task family: aggregate=%t ranking=%t completeness=%t saved=%t date=%t", sawAmountAggregate, sawAmountRanking, sawNullableCompleteness, sawSavedAggregate, sawDatePrompt)
+	if !sawAmountAggregate || !sawAmountRanking || !sawNullableCompleteness || !sawSavedAggregate || !sawDatePrompt || !sawDateAggregate || !sawDateRanking {
+		t.Fatalf("missing quality task family: aggregate=%t ranking=%t completeness=%t saved=%t date=%t date_aggregate=%t date_ranking=%t", sawAmountAggregate, sawAmountRanking, sawNullableCompleteness, sawSavedAggregate, sawDatePrompt, sawDateAggregate, sawDateRanking)
 	}
 }
 
@@ -237,6 +310,17 @@ func TestAggregateOracleFromSavedQueryAliases(t *testing.T) {
 	}
 	if _, _, ok := aggregateOracleFromQuery(`query Q($status: String!) { invoices(where: {status: {eq: $status}}) { sum_amount_cents } }`); ok {
 		t.Fatal("variable-dependent saved query should not become an unbound oracle")
+	}
+	oracle, _, ok = aggregateOracleFromQuery(`query active_account_mrr { accounts { sum_mrr_cents } }`)
+	if !ok || oracle.Extract != "accounts.0.sum_mrr_cents" {
+		t.Fatalf("operation name substring was mistaken for an aggregate: %+v ok=%t", oracle, ok)
+	}
+	oracle, _, ok = aggregateOracleFromQuery(`query churn_risk_account_count { accounts { count_id } }`)
+	if !ok || oracle.Extract != "accounts.0.count_id" {
+		t.Fatalf("operation suffix was mistaken for an aggregate: %+v ok=%t", oracle, ok)
+	}
+	if _, _, ok := aggregateOracleFromQuery(`query context { accounts { account_id } }`); ok {
+		t.Fatal("account_id was mistaken for count_id")
 	}
 }
 

@@ -40,6 +40,7 @@ More verticals - a zero-Docker SaaS ops demo, a corrugated-box plant with JWT ro
 Once the agent answers a useful question, use [GraphJin Eval](/agentic/evaluation/)
 to turn that confidence into a repeatable release check. It verifies the answer,
 the database-side method, the governed behavior, and safety across repeated runs.
+The same contract is published across vendors in the [public agent benchmark](/benchmark/).
 
 ## Configure it
 

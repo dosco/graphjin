@@ -82,7 +82,9 @@ func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
 		t.Fatalf("suite generator = %q, want %q", suite.Generator.Version, gjeval.GeneratorVersion)
 	}
 	compatAggregate := false
+	categoryCounts := map[gjeval.Category]int{}
 	for _, task := range suite.Tasks {
+		categoryCounts[task.Category]++
 		if task.Category != gjeval.CategoryAggregate {
 			continue
 		}
@@ -94,6 +96,19 @@ func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
 	}
 	if !compatAggregate {
 		t.Fatal("public suite has no Hasura-compatible aggregate method rule")
+	}
+	for category, bounds := range map[gjeval.Category][2]int{
+		gjeval.CategoryAggregate:   {20, 30},
+		gjeval.CategoryWindow:      {20, 30},
+		gjeval.CategoryRanking:     {15, 20},
+		gjeval.CategoryDiscovery:   {10, 15},
+		gjeval.CategorySavedMetric: {10, 10},
+		gjeval.CategoryRefusal:     {10, 10},
+		gjeval.CategoryTraversal:   {0, 5},
+	} {
+		if categoryCounts[category] < bounds[0] || categoryCounts[category] > bounds[1] {
+			t.Fatalf("public suite %s count = %d, want %d..%d (all=%v)", category, categoryCounts[category], bounds[0], bounds[1], categoryCounts)
+		}
 	}
 	if got := gjeval.SuiteFingerprint(*suite); got != spec.SuiteFingerprint {
 		t.Fatalf("suite fingerprint = %s, want %s", got, spec.SuiteFingerprint)

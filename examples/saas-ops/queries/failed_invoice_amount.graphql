@@ -1,0 +1,5 @@
+query failed_invoice_amount {
+  invoices(where: { status: { eq: "failed" } }) {
+    sum_amount_cents
+  }
+}

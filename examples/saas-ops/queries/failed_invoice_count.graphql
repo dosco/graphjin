@@ -1,0 +1,5 @@
+query failed_invoice_count {
+  invoices(where: { status: { eq: "failed" } }) {
+    count_id
+  }
+}
