@@ -794,6 +794,9 @@ func TestRunnerResumesRemainingConfirmationSlots(t *testing.T) {
 	if !errors.Is(err, ErrRunInterrupted) || firstReport.Progress.CompletedInitialSlots != 3 || firstReport.Progress.CompletedConfirmation != 1 {
 		t.Fatalf("interrupted confirmation report=%+v err=%v", firstReport, err)
 	}
+	if firstReport.ProviderUsage.Complete || firstReport.ProviderUsage.UnknownAttempts != 1 {
+		t.Fatalf("interrupted usage = %+v, want one unknown attempt", firstReport.ProviderUsage)
+	}
 
 	resumeCalls := 0
 	second := doerFunc(func(request *http.Request) (*http.Response, error) {
@@ -817,6 +820,9 @@ func TestRunnerResumesRemainingConfirmationSlots(t *testing.T) {
 	}
 	if resumeCalls != 2 || report.Progress.CompletedConfirmation != 3 || !report.Acceptance.HardPass {
 		t.Fatalf("resume calls=%d report=%+v", resumeCalls, report)
+	}
+	if report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 1 {
+		t.Fatalf("resumed usage = %+v, want interrupted attempt to remain unknown", report.ProviderUsage)
 	}
 }
 
