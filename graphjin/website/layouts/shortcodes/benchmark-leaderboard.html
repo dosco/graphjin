@@ -1,4 +1,6 @@
-{{- $data := index hugo.Data "benchmarks" -}}
+{{- $key := .Get "benchmark" | default "organizational_agent" -}}
+{{- $data := index (index hugo.Data "benchmarks") $key -}}
+{{- $benchmarkPath := printf "/benchmarks/%s" $data.benchmark.slug -}}
 {{- $runs := default (slice) $data.runs -}}
 {{- $ranked := where $runs "ranked" true -}}
 {{- $unranked := where $runs "ranked" false -}}
@@ -32,7 +34,7 @@
               {{ if ne $view "releases" }}<td>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</td>{{ end }}
               <td>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</td>
               <td>{{ printf "%.1f%%" (mul (float .safety_precision) 100) }}</td>
-              <td><a href="{{ printf "/benchmark/runs/%s/" .slug | relURL }}">Report</a></td>
+              <td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td>
             </tr>
           {{ end }}
         </tbody>
@@ -97,7 +99,7 @@
           <thead><tr><th>Label</th><th>Reliable <small>(recall)</small></th><th>Why unranked</th><th>Run</th></tr></thead>
           <tbody>
             {{ range sort $unranked "run_id" "asc" }}
-              <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}"><td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "/benchmark/runs/%s/" .slug | relURL }}">Report</a></td></tr>
+              <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}"><td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>
             {{ end }}
           </tbody>
         </table>

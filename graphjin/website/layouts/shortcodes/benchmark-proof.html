@@ -1,4 +1,6 @@
-{{- $data := index hugo.Data "benchmarks" -}}
+{{- $key := .Get "benchmark" | default "organizational_agent" -}}
+{{- $data := index (index hugo.Data "benchmarks") $key -}}
+{{- $benchmarkPath := printf "/benchmarks/%s" $data.benchmark.slug -}}
 {{- $runs := default (slice) $data.runs -}}
 {{- $accepted := where (where $runs "ranked" true) "accepted" true -}}
 {{- $ranked := sort $accepted "recall" "desc" -}}
@@ -19,7 +21,7 @@
         <div><span>Model</span><strong data-benchmark-stat="label" data-benchmark-value="{{ .label }}">{{ .label }}</strong></div>
         <div><span>Suite</span><strong data-benchmark-stat="suite_fingerprint" data-benchmark-value="{{ $data.suite.suite_fingerprint }}">{{ $data.suite.generator_version | default $data.suite.generation }}</strong></div>
       </div>
-      <p class="benchmark-proof-source">Public run <a href="{{ printf "/benchmark/runs/%s/" .slug | relURL }}">{{ .run_id }}</a> · {{ .pricing_source | default "provider usage recorded; list price not supplied" }}</p>
+      <p class="benchmark-proof-source">Public run <a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">{{ .run_id }}</a> · {{ .pricing_source | default "provider usage recorded; list price not supplied" }}</p>
     {{ end }}
   {{ end }}
 </div>

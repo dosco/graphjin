@@ -15,12 +15,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const benchmarkDataVersion = "graphjin.benchmark.data/v1"
+const (
+	benchmarkDataVersion = "graphjin.benchmark.data/v2"
+	defaultBenchmarkSlug = "organizational-agent"
+	defaultBenchmarkName = "The Organizational Agent Benchmark"
+)
+
+type benchmarkIdentity struct {
+	Slug string `yaml:"slug"`
+	Name string `yaml:"name"`
+}
 
 type benchmarkData struct {
-	SchemaVersion string           `yaml:"schema_version"`
-	Suite         benchmarkSuite   `yaml:"suite"`
-	Runs          []benchmarkEntry `yaml:"runs"`
+	SchemaVersion string            `yaml:"schema_version"`
+	Benchmark     benchmarkIdentity `yaml:"benchmark"`
+	Suite         benchmarkSuite    `yaml:"suite"`
+	Runs          []benchmarkEntry  `yaml:"runs"`
 }
 
 type benchmarkSuite struct {
@@ -95,6 +105,7 @@ type benchmarkEntry struct {
 type evalPublishOptions struct {
 	Site                      string
 	Data                      string
+	Benchmark                 string
 	Label                     string
 	Release                   string
 	Notes                     string
@@ -124,7 +135,8 @@ the run.`,
 		},
 	}
 	cmd.Flags().StringVar(&opts.Site, "site", "website", "website root")
-	cmd.Flags().StringVar(&opts.Data, "data", "", "leaderboard data file (default <site>/data/benchmarks.yaml)")
+	cmd.Flags().StringVar(&opts.Data, "data", "", "leaderboard data file (default <site>/data/benchmarks/<benchmark>.yaml)")
+	cmd.Flags().StringVar(&opts.Benchmark, "benchmark", defaultBenchmarkSlug, "public benchmark slug")
 	cmd.Flags().StringVar(&opts.Label, "label", "", "leaderboard display label (default: model)")
 	cmd.Flags().StringVar(&opts.Release, "release", "", "GraphJin release label (default: short commit)")
 	cmd.Flags().StringVar(&opts.Notes, "notes", "", "short public notes for this run")
@@ -138,6 +150,10 @@ the run.`,
 }
 
 func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPublishOptions, runID string) error {
+	benchmark, benchmarkKey, err := resolveBenchmarkIdentity(opts.Benchmark)
+	if err != nil {
+		return &evalExitError{Code: 2, Err: err}
+	}
 	stateDir, err := evalStateDirForPublish(cmd, evalOpts)
 	if err != nil {
 		return err
@@ -182,14 +198,14 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 
 	dataPath := opts.Data
 	if strings.TrimSpace(dataPath) == "" {
-		dataPath = filepath.Join(opts.Site, "data", "benchmarks.yaml")
+		dataPath = filepath.Join(opts.Site, "data", "benchmarks", benchmarkKey+".yaml")
 	}
-	data, err := loadBenchmarkData(dataPath)
+	data, err := loadBenchmarkData(dataPath, benchmark)
 	if err != nil {
 		return err
 	}
 	slug := benchmarkRunSlug(runID)
-	pagePath := filepath.Join(opts.Site, "content", "benchmark", "runs", slug+".md")
+	pagePath := filepath.Join(opts.Site, "content", "benchmarks", benchmark.Slug, "runs", slug+".md")
 	existing := -1
 	for i := range data.Runs {
 		if data.Runs[i].RunID == runID {
@@ -207,7 +223,10 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	}
 
 	comparisonSuite := data.Suite
-	currentPublicSuite := gjeval.PublicBenchmark().SuiteFingerprint
+	currentPublicSuite := ""
+	if benchmark.Slug == defaultBenchmarkSlug {
+		currentPublicSuite = gjeval.PublicBenchmark().SuiteFingerprint
+	}
 	advancingCohort := currentPublicSuite != "" && report.SuiteFingerprint == currentPublicSuite &&
 		data.Suite.SuiteFingerprint != "" && data.Suite.SuiteFingerprint != report.SuiteFingerprint
 	if len(data.Runs) == 0 || advancingCohort {
@@ -216,7 +235,7 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 		// suite to replace the prior empty cohort without an off-suite override.
 		comparisonSuite = benchmarkSuite{}
 	}
-	mismatches := benchmarkComparabilityMismatches(report, comparisonSuite)
+	mismatches := benchmarkComparabilityMismatches(report, comparisonSuite, currentPublicSuite)
 	ranked := len(mismatches) == 0
 	if !ranked && !opts.AllowOffSuite {
 		return fmt.Errorf("run %s does not match the public benchmark cohort (%s); use --allow-off-suite to publish it as unranked", runID, strings.Join(mismatches, ", "))
@@ -287,7 +306,7 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	if technicalMarkdown == nil {
 		technicalMarkdown = []byte(gjeval.RenderTechnicalReportMarkdown(report))
 	}
-	page, err := renderBenchmarkRunPage(entry, markdown, technicalMarkdown)
+	page, err := renderBenchmarkRunPage(benchmark, benchmarkKey, entry, markdown, technicalMarkdown)
 	if err != nil {
 		return err
 	}
@@ -331,10 +350,9 @@ func evalStateDirForPublish(cmd *cobra.Command, opts *evalCLIOptions) (string, e
 	return stateDir, nil
 }
 
-func benchmarkComparabilityMismatches(report gjeval.Report, suite benchmarkSuite) []string {
+func benchmarkComparabilityMismatches(report gjeval.Report, suite benchmarkSuite, officialSuiteFingerprint string) []string {
 	var mismatches []string
-	spec := gjeval.PublicBenchmark()
-	if spec.SuiteFingerprint != "" && report.SuiteFingerprint != spec.SuiteFingerprint {
+	if officialSuiteFingerprint != "" && report.SuiteFingerprint != officialSuiteFingerprint {
 		mismatches = append(mismatches, "suite_fingerprint")
 	}
 	if suite.Identity != "" && gjeval.SuiteIdentity(report) != suite.Identity {
@@ -405,8 +423,8 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 	}
 }
 
-func loadBenchmarkData(path string) (benchmarkData, error) {
-	data := benchmarkData{SchemaVersion: benchmarkDataVersion, Runs: []benchmarkEntry{}}
+func loadBenchmarkData(path string, benchmark benchmarkIdentity) (benchmarkData, error) {
+	data := benchmarkData{SchemaVersion: benchmarkDataVersion, Benchmark: benchmark, Runs: []benchmarkEntry{}}
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return data, nil
@@ -425,6 +443,12 @@ func loadBenchmarkData(path string) (benchmarkData, error) {
 	if data.SchemaVersion != benchmarkDataVersion {
 		return data, fmt.Errorf("unsupported benchmark data schema_version %q", data.SchemaVersion)
 	}
+	if data.Benchmark.Slug != benchmark.Slug {
+		return data, fmt.Errorf("benchmark data %s belongs to %q, not %q", path, data.Benchmark.Slug, benchmark.Slug)
+	}
+	if strings.TrimSpace(data.Benchmark.Name) == "" {
+		return data, fmt.Errorf("benchmark data %s has no benchmark name", path)
+	}
 	if data.Runs == nil {
 		data.Runs = []benchmarkEntry{}
 	}
@@ -440,11 +464,12 @@ func marshalBenchmarkData(data benchmarkData) ([]byte, error) {
 	return append([]byte("# Generated by `graphjin eval publish`; review and commit this file.\n"), raw...), nil
 }
 
-func renderBenchmarkRunPage(entry benchmarkEntry, markdown, technicalMarkdown []byte) ([]byte, error) {
+func renderBenchmarkRunPage(benchmark benchmarkIdentity, benchmarkKey string, entry benchmarkEntry, markdown, technicalMarkdown []byte) ([]byte, error) {
 	front := struct {
 		Title       string    `yaml:"title"`
 		Description string    `yaml:"description"`
 		Date        time.Time `yaml:"date"`
+		Benchmark   string    `yaml:"benchmark"`
 		RunID       string    `yaml:"run_id"`
 		Generation  string    `yaml:"benchmark_generation"`
 		Ranked      bool      `yaml:"ranked"`
@@ -452,8 +477,9 @@ func renderBenchmarkRunPage(entry benchmarkEntry, markdown, technicalMarkdown []
 		Provider    string    `yaml:"provider,omitempty"`
 		Release     string    `yaml:"release,omitempty"`
 	}{
-		Title: entry.Label + " benchmark run", Description: "Verified GraphJin public benchmark report for " + entry.Label + ".",
-		Date: entry.GeneratedAt, RunID: entry.RunID, Generation: entry.Generation, Ranked: entry.Ranked,
+		Title: entry.Label + " benchmark run", Description: "Verified report from " + benchmark.Name + " for " + entry.Label + ".",
+		Benchmark: benchmark.Slug,
+		Date:      entry.GeneratedAt, RunID: entry.RunID, Generation: entry.Generation, Ranked: entry.Ranked,
 		Model: entry.Model, Provider: entry.Provider, Release: entry.Release,
 	}
 	frontData, err := yaml.Marshal(front)
@@ -463,7 +489,35 @@ func renderBenchmarkRunPage(entry benchmarkEntry, markdown, technicalMarkdown []
 	friendlyBody := stripMarkdownReportTitle(string(markdown))
 	technicalBody := stripMarkdownReportTitle(string(technicalMarkdown))
 	body := friendlyBody + "\n\n---\n\n## Technical benchmark report\n\n" + technicalBody
-	return []byte("---\n" + string(frontData) + "---\n\n{{< benchmark-run-meta >}}\n\n" + body), nil
+	shortcode := fmt.Sprintf("{{< benchmark-run-meta benchmark=%q >}}", benchmarkKey)
+	return []byte("---\n" + string(frontData) + "---\n\n" + shortcode + "\n\n" + body), nil
+}
+
+var benchmarkSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+
+func resolveBenchmarkIdentity(value string) (benchmarkIdentity, string, error) {
+	slug := strings.ToLower(strings.TrimSpace(value))
+	if slug == "" {
+		slug = defaultBenchmarkSlug
+	}
+	if !benchmarkSlugPattern.MatchString(slug) {
+		return benchmarkIdentity{}, "", fmt.Errorf("invalid benchmark slug %q; use lowercase letters, numbers, and single hyphens", value)
+	}
+	name := benchmarkName(slug)
+	return benchmarkIdentity{Slug: slug, Name: name}, strings.ReplaceAll(slug, "-", "_"), nil
+}
+
+func benchmarkName(slug string) string {
+	if slug == defaultBenchmarkSlug {
+		return defaultBenchmarkName
+	}
+	parts := strings.Split(slug, "-")
+	for i, part := range parts {
+		if part != "" {
+			parts[i] = strings.ToUpper(part[:1]) + part[1:]
+		}
+	}
+	return strings.Join(parts, " ") + " Benchmark"
 }
 
 func stripMarkdownReportTitle(markdown string) string {

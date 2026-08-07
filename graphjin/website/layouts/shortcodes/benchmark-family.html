@@ -1,0 +1,26 @@
+{{- $benchmarks := index hugo.Data "benchmarks" -}}
+<div class="benchmark-family" data-benchmark-family>
+  <div class="benchmark-table-wrap">
+    <table class="benchmark-table">
+      <thead><tr><th>Benchmark</th><th>Status</th><th>Models on board</th><th>Last updated</th></tr></thead>
+      <tbody>
+        {{- range $key, $data := $benchmarks }}
+          {{- $ranked := where ($data.runs | default (slice)) "ranked" true -}}
+          {{- $runs := sort ($data.runs | default (slice)) "generated_at" "desc" -}}
+          <tr data-benchmark-family-row="{{ $data.benchmark.slug }}">
+            <td><a href="{{ printf "/benchmarks/%s/" $data.benchmark.slug | relURL }}"><strong>{{ $data.benchmark.name }}</strong></a></td>
+            <td>Live</td>
+            <td>
+              {{- if gt (len $ranked) 0 -}}
+                {{- range $index, $run := sort $ranked "label" "asc" -}}
+                  {{- if gt $index 0 }}, {{ end -}}{{ $run.label }}
+                {{- end -}}
+              {{- else -}}No ranked models yet{{- end -}}
+            </td>
+            <td>{{ if gt (len $runs) 0 }}{{ $latest := index $runs 0 }}{{ time.Format "2006-01-02" $latest.generated_at }}{{ else }}Not published{{ end }}</td>
+          </tr>
+        {{- end }}
+      </tbody>
+    </table>
+  </div>
+</div>

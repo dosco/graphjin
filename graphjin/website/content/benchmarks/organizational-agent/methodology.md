@@ -2,11 +2,13 @@
 title: "Benchmark Methodology"
 nav_title: "Methodology"
 description: "How GraphJin scores answers, methods, safety, behavior, efficiency, and benchmark comparability."
-nav_group: "benchmark"
+nav_group: "benchmarks"
 weight: 1
+aliases:
+  - /benchmark/methodology/
 ---
 
-The Organizational Agent Benchmark, published by GraphJin, asks models to work
+The Organizational Agent Benchmark, built and published by GraphJin, asks models to work
 against a real, governed organizational schema. It measures the final answer
 and the path used to reach it instead of treating text-to-SQL as a single
 exact-match problem.

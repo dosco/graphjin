@@ -1,4 +1,5 @@
-{{- $data := index hugo.Data "benchmarks" -}}
+{{- $key := .Get "benchmark" | default "organizational_agent" -}}
+{{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $runs := default (slice) $data.runs -}}
 {{- $accepted := sort (where (where $runs "ranked" true) "accepted" true) "recall" "desc" -}}
 <aside class="benchmark-honesty" aria-labelledby="benchmark-honesty-title">
@@ -10,7 +11,7 @@
       {{ with $data.suite.category_counts }}
       <table><thead><tr><th>Task family</th><th>Questions</th></tr></thead><tbody>
         {{ range (slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal") }}
-          {{ $count := index $.Site.Data.benchmarks.suite.category_counts . | default 0 }}
+          {{ $count := index $data.suite.category_counts . | default 0 }}
           {{ if gt (int $count) 0 }}<tr><td>{{ humanize . }}</td><td>{{ $count }}</td></tr>{{ end }}
         {{ end }}
       </tbody></table>
@@ -24,7 +25,7 @@
     <section>
       <h3>Cost and corrections</h3>
       {{ range first 1 $accepted }}<p>Cost uses recorded provider prompt and completion tokens multiplied by {{ .pricing_source | default "the supplied list-price card" }}. It is an estimate, not an invoice.</p>{{ end }}
-      <p>We previously retracted a run whose stale scoring contract rejected a valid database dialect. Read the <a href="/benchmark/methodology/#scoring-correction">correction and the guards added afterward</a>.</p>
+      <p>We previously retracted a run whose stale scoring contract rejected a valid database dialect. Read the <a href="{{ printf "/benchmarks/%s/methodology/#scoring-correction" $data.benchmark.slug | relURL }}">correction and the guards added afterward</a>.</p>
     </section>
   </div>
 </aside>

@@ -1,13 +1,15 @@
 ---
 title: "The Organizational Agent Benchmark"
 description: "A public comparison of AI agents answering governed organizational questions, with correctness, consistency, cost, latency, and GraphJin build provenance."
+aliases:
+  - /benchmark/
 ---
 
-Published by GraphJin. Scores measure a model operating through a specific
+Built and published by GraphJin. Scores measure a model operating through a specific
 GraphJin build against one frozen, governed task suite—not the model in
 isolation.
 
-## Can an AI agent answer an organization's real questions?
+## Can an AI agent answer an organization's real questions—correctly, governed, and at a cost you'd pay?
 
 A deployment engineer inherits undocumented schemas, SaaS APIs, old saved
 queries, and a different access policy for every team. The usual answer is
@@ -35,7 +37,11 @@ Historical cohorts remain available as unranked reports when the suite advances.
 Capability is only half the comparison: the board also shows how many provider
 tokens, how much time, and how much estimated list-price spend each result took.
 
-{{< benchmark-leaderboard >}}
+Each score measures a model operating through the GraphJin release printed on
+its row; releases are versioned, and models are re-run after material harness
+changes.
+
+{{< benchmark-leaderboard benchmark="organizational_agent" >}}
 
 ## Reproduce it
 
@@ -46,7 +52,7 @@ verifying the suite does not.
 
 {{< code-card filename="terminal" language="bash" >}}
 graphjin eval bench --public --yes
-graphjin eval publish <run-id> --yes
+graphjin eval publish <run-id> --benchmark organizational-agent --yes
 {{< /code-card >}}
 
 Publishing writes a leaderboard row and a Markdown run page for human review.
@@ -63,7 +69,7 @@ GJ_AGENT_MODEL=gpt-5.4-mini \
 OPENAI_API_KEY="..." \
 graphjin eval bench --public --yes
 
-graphjin eval publish <run-id> --label "Your model" --yes
+graphjin eval publish <run-id> --benchmark organizational-agent --label "Your model" --yes
 {{< /code-card >}}
 
 The publication gates protect model makers too. A row cannot enter the ranked
@@ -87,7 +93,7 @@ Private reports and episode traces stay in the local `.graphjin-evals/` store.
 Publishing is a separate, explicit command, and the public report format is
 metrics-only: no prompts, answers, rows, queries, credentials, or local paths.
 
-{{< benchmark-honesty >}}
+{{< benchmark-honesty benchmark="organizational_agent" >}}
 
 ## GraphJin releases over time
 
@@ -95,7 +101,7 @@ The same published runs can also show whether GraphJin's planning, governance,
 and agent runtime improve for a model while the benchmark generation stays
 fixed.
 
-{{< benchmark-leaderboard view="releases" >}}
+{{< benchmark-leaderboard benchmark="organizational_agent" view="releases" >}}
 
-Read the [scoring and privacy methodology](/benchmark/methodology/) or browse
-the [published run archive](/benchmark/runs/).
+Read the [scoring and privacy methodology](/benchmarks/organizational-agent/methodology/) or browse
+the [published run archive](/benchmarks/organizational-agent/runs/).
