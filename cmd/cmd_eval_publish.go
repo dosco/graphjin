@@ -17,8 +17,8 @@ import (
 
 const (
 	benchmarkDataVersion = "graphjin.benchmark.data/v2"
-	defaultBenchmarkSlug = "organizational-agent"
-	defaultBenchmarkName = "The Organizational Agent Benchmark"
+	defaultBenchmarkSlug = "deeporg"
+	defaultBenchmarkName = "DeepORG — The Organizational Agent Benchmark"
 )
 
 type benchmarkIdentity struct {
@@ -50,56 +50,57 @@ type benchmarkSuite struct {
 }
 
 type benchmarkEntry struct {
-	RunID                       string    `yaml:"run_id"`
-	Slug                        string    `yaml:"slug"`
-	Label                       string    `yaml:"label"`
-	Release                     string    `yaml:"release,omitempty"`
-	Notes                       string    `yaml:"notes,omitempty"`
-	Ranked                      bool      `yaml:"ranked"`
-	UnrankedReason              string    `yaml:"unranked_reason,omitempty"`
-	Generation                  string    `yaml:"generation"`
-	GeneratedAt                 time.Time `yaml:"generated_at"`
-	Model                       string    `yaml:"model"`
-	Provider                    string    `yaml:"provider,omitempty"`
-	GraphJinCommit              string    `yaml:"graphjin_commit,omitempty"`
-	BinaryFingerprint           string    `yaml:"binary_fingerprint,omitempty"`
-	SuiteIdentity               string    `yaml:"suite_identity"`
-	SuiteFingerprint            string    `yaml:"suite_fingerprint"`
-	CatalogHash                 string    `yaml:"catalog_hash"`
-	SeedManifestHash            string    `yaml:"seed_manifest_hash,omitempty"`
-	OracleValueHash             string    `yaml:"oracle_value_hash,omitempty"`
-	DataAnchor                  string    `yaml:"data_anchor,omitempty"`
-	RewardVersion               string    `yaml:"reward_version"`
-	UsageAccountingVersion      string    `yaml:"usage_accounting_version,omitempty"`
-	Seed                        int64     `yaml:"seed"`
-	Repeats                     int       `yaml:"repeats"`
-	MaxSteps                    int       `yaml:"max_steps"`
-	Temperature                 float64   `yaml:"temperature"`
-	TaskCount                   int       `yaml:"task_count"`
-	EpisodeCount                int       `yaml:"episode_count"`
-	Recall                      float64   `yaml:"recall"`
-	RecallCILow                 float64   `yaml:"recall_ci_low"`
-	RecallCIHigh                float64   `yaml:"recall_ci_high"`
-	PassAtK                     float64   `yaml:"pass_at_k"`
-	PassPowerK                  float64   `yaml:"pass_power_k"`
-	GroundTruthRecall           float64   `yaml:"ground_truth_recall"`
-	MethodRecall                float64   `yaml:"method_recall"`
-	SafetyPrecision             float64   `yaml:"safety_precision"`
-	BehaviorRecall              float64   `yaml:"behavior_recall"`
-	MeanReward                  float64   `yaml:"mean_reward"`
-	TotalTokens                 int64     `yaml:"total_tokens"`
-	PromptTokens                int64     `yaml:"prompt_tokens,omitempty"`
-	CompletionTokens            int64     `yaml:"completion_tokens,omitempty"`
-	ProviderTotalTokens         int64     `yaml:"provider_total_tokens"`
-	LatencyP50MS                float64   `yaml:"latency_p50_ms,omitempty"`
-	LatencyP95MS                float64   `yaml:"latency_p95_ms,omitempty"`
-	PromptPricePerMillion       float64   `yaml:"prompt_price_per_million,omitempty"`
-	CompletionPricePerMillion   float64   `yaml:"completion_price_per_million,omitempty"`
-	EstimatedListCostUSD        float64   `yaml:"estimated_list_cost_usd,omitempty"`
-	EstimatedListCostPerTaskUSD float64   `yaml:"estimated_list_cost_per_task_usd,omitempty"`
-	PricingSource               string    `yaml:"pricing_source,omitempty"`
-	ScoringSuspect              bool      `yaml:"scoring_suspect,omitempty"`
-	Accepted                    bool      `yaml:"accepted"`
+	RunID                       string             `yaml:"run_id"`
+	Slug                        string             `yaml:"slug"`
+	Label                       string             `yaml:"label"`
+	Release                     string             `yaml:"release,omitempty"`
+	Notes                       string             `yaml:"notes,omitempty"`
+	Ranked                      bool               `yaml:"ranked"`
+	UnrankedReason              string             `yaml:"unranked_reason,omitempty"`
+	Generation                  string             `yaml:"generation"`
+	GeneratedAt                 time.Time          `yaml:"generated_at"`
+	Model                       string             `yaml:"model"`
+	Provider                    string             `yaml:"provider,omitempty"`
+	GraphJinCommit              string             `yaml:"graphjin_commit,omitempty"`
+	BinaryFingerprint           string             `yaml:"binary_fingerprint,omitempty"`
+	SuiteIdentity               string             `yaml:"suite_identity"`
+	SuiteFingerprint            string             `yaml:"suite_fingerprint"`
+	CatalogHash                 string             `yaml:"catalog_hash"`
+	SeedManifestHash            string             `yaml:"seed_manifest_hash,omitempty"`
+	OracleValueHash             string             `yaml:"oracle_value_hash,omitempty"`
+	DataAnchor                  string             `yaml:"data_anchor,omitempty"`
+	RewardVersion               string             `yaml:"reward_version"`
+	UsageAccountingVersion      string             `yaml:"usage_accounting_version,omitempty"`
+	Seed                        int64              `yaml:"seed"`
+	Repeats                     int                `yaml:"repeats"`
+	MaxSteps                    int                `yaml:"max_steps"`
+	Temperature                 float64            `yaml:"temperature"`
+	TaskCount                   int                `yaml:"task_count"`
+	EpisodeCount                int                `yaml:"episode_count"`
+	Recall                      float64            `yaml:"recall"`
+	RecallCILow                 float64            `yaml:"recall_ci_low"`
+	RecallCIHigh                float64            `yaml:"recall_ci_high"`
+	PassAtK                     float64            `yaml:"pass_at_k"`
+	PassPowerK                  float64            `yaml:"pass_power_k"`
+	GroundTruthRecall           float64            `yaml:"ground_truth_recall"`
+	MethodRecall                float64            `yaml:"method_recall"`
+	SafetyPrecision             float64            `yaml:"safety_precision"`
+	BehaviorRecall              float64            `yaml:"behavior_recall"`
+	CategoryRecall              map[string]float64 `yaml:"category_recall,omitempty"`
+	MeanReward                  float64            `yaml:"mean_reward"`
+	TotalTokens                 int64              `yaml:"total_tokens"`
+	PromptTokens                int64              `yaml:"prompt_tokens,omitempty"`
+	CompletionTokens            int64              `yaml:"completion_tokens,omitempty"`
+	ProviderTotalTokens         int64              `yaml:"provider_total_tokens"`
+	LatencyP50MS                float64            `yaml:"latency_p50_ms,omitempty"`
+	LatencyP95MS                float64            `yaml:"latency_p95_ms,omitempty"`
+	PromptPricePerMillion       float64            `yaml:"prompt_price_per_million,omitempty"`
+	CompletionPricePerMillion   float64            `yaml:"completion_price_per_million,omitempty"`
+	EstimatedListCostUSD        float64            `yaml:"estimated_list_cost_usd,omitempty"`
+	EstimatedListCostPerTaskUSD float64            `yaml:"estimated_list_cost_per_task_usd,omitempty"`
+	PricingSource               string             `yaml:"pricing_source,omitempty"`
+	ScoringSuspect              bool               `yaml:"scoring_suspect,omitempty"`
+	Accepted                    bool               `yaml:"accepted"`
 }
 
 type evalPublishOptions struct {
@@ -413,7 +414,8 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		PassAtK: report.Metrics.PassAtK, PassPowerK: report.Metrics.PassPowerK,
 		GroundTruthRecall: report.Metrics.GroundTruthRecall, MethodRecall: report.Metrics.MethodRecall,
 		SafetyPrecision: report.Metrics.SafetyPrecision, BehaviorRecall: report.Metrics.BehaviorRecall,
-		MeanReward: report.Metrics.MeanReward, TotalTokens: report.Metrics.TotalTokens,
+		CategoryRecall: categoryRecallFromMetrics(report.Metrics.ByCategory),
+		MeanReward:     report.Metrics.MeanReward, TotalTokens: report.Metrics.TotalTokens,
 		PromptTokens: report.ProviderUsage.PromptTokens, CompletionTokens: report.ProviderUsage.CompletionTokens,
 		ProviderTotalTokens: report.ProviderUsage.TotalTokens,
 		LatencyP50MS:        report.Metrics.LatencyP50MS, LatencyP95MS: report.Metrics.LatencyP95MS,
@@ -421,6 +423,17 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		EstimatedListCostUSD: estimatedCost, EstimatedListCostPerTaskUSD: costPerTask, PricingSource: pricingSource,
 		ScoringSuspect: report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics), Accepted: report.Acceptance.HardPass,
 	}
+}
+
+func categoryRecallFromMetrics(metrics map[gjeval.Category]gjeval.TierMetrics) map[string]float64 {
+	if len(metrics) == 0 {
+		return nil
+	}
+	out := make(map[string]float64, len(metrics))
+	for category, value := range metrics {
+		out[string(category)] = value.Recall
+	}
+	return out
 }
 
 func loadBenchmarkData(path string, benchmark benchmarkIdentity) (benchmarkData, error) {
@@ -488,9 +501,47 @@ func renderBenchmarkRunPage(benchmark benchmarkIdentity, benchmarkKey string, en
 	}
 	friendlyBody := stripMarkdownReportTitle(string(markdown))
 	technicalBody := stripMarkdownReportTitle(string(technicalMarkdown))
-	body := friendlyBody + "\n\n---\n\n## Technical benchmark report\n\n" + technicalBody
+	body := friendlyBody
+	if chart := renderBenchmarkCategorySVG(entry); chart != "" {
+		body += "\n\n## Results by task family\n\n" + chart
+	}
+	body += "\n\n---\n\n## Technical benchmark report\n\n" + technicalBody
 	shortcode := fmt.Sprintf("{{< benchmark-run-meta benchmark=%q >}}", benchmarkKey)
 	return []byte("---\n" + string(frontData) + "---\n\n" + shortcode + "\n\n" + body), nil
+}
+
+func renderBenchmarkCategorySVG(entry benchmarkEntry) string {
+	if len(entry.CategoryRecall) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(entry.CategoryRecall))
+	for name := range entry.CategoryRecall {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	const width = 720
+	rowHeight := 42
+	height := 28 + rowHeight*len(names)
+	var b strings.Builder
+	fmt.Fprintf(&b, `<svg class="benchmark-category-chart" data-benchmark-category-chart="%s" viewBox="0 0 %d %d" role="img" aria-label="Full-pass recall by task family">`, entry.RunID, width, height)
+	b.WriteString(`<style>.track{fill:var(--benchmark-track,#e7e5e4)}.bar{fill:var(--benchmark-accent,#0f766e)}.label,.value{fill:currentColor;font:600 14px system-ui,sans-serif}.value{text-anchor:end}</style>`)
+	for index, name := range names {
+		value := entry.CategoryRecall[name]
+		y := 22 + index*rowHeight
+		barWidth := 440 * value
+		fmt.Fprintf(&b, `<g data-category="%s" data-recall="%.17g"><text class="label" x="0" y="%d">%s</text><rect class="track" x="170" y="%d" width="440" height="14" rx="7"/><rect class="bar" x="170" y="%d" width="%.2f" height="14" rx="7"/><text class="value" x="715" y="%d">%.1f%%</text></g>`, name, value, y, benchmarkCategoryLabel(name), y-12, y-12, barWidth, y, value*100)
+	}
+	b.WriteString(`</svg>`)
+	return b.String()
+}
+
+func benchmarkCategoryLabel(name string) string {
+	name = strings.ReplaceAll(name, "-", " ")
+	parts := strings.Fields(name)
+	for index := range parts {
+		parts[index] = strings.ToUpper(parts[index][:1]) + parts[index][1:]
+	}
+	return strings.Join(parts, " ")
 }
 
 var benchmarkSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)

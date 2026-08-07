@@ -134,7 +134,7 @@ candidate, or understand an evaluation failure.
    generated files before committing them:
 
    ```sh
-   graphjin eval publish <run-id> --benchmark organizational-agent --yes
+   graphjin eval publish <run-id> --benchmark deeporg --yes
    ```
 
    Do not add `--allow-off-suite` without a separate explicit ask.

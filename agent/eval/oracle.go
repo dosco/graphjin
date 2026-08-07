@@ -73,17 +73,23 @@ func (v Verifier) Resolve(ctx context.Context, oracle OracleSpec) (OracleResult,
 	if err != nil {
 		return OracleResult{}, err
 	}
-	result := OracleResult{Data: data, Variables: variables}
+	result := OracleResult{Data: data, Variables: variables, Dimension: oracle.DimensionLiteral}
 	if oracle.PickMax != nil {
 		result.Value, result.Dimension, err = pickMaxRow(data, oracle.PickMax)
 		return result, err
 	}
 	raw, ok := walkPath(data, oracle.Extract)
 	if !ok {
+		if oracle.AllowMissing {
+			return result, nil
+		}
 		return OracleResult{}, fmt.Errorf("oracle extract %q not found in result", oracle.Extract)
 	}
 	result.Value = valueString(raw)
 	if strings.TrimSpace(result.Value) == "" {
+		if oracle.AllowMissing {
+			return result, nil
+		}
 		return OracleResult{}, fmt.Errorf("oracle extract %q is empty", oracle.Extract)
 	}
 	if oracle.DimensionExtract != "" {
@@ -146,9 +152,13 @@ func postGraphQL(ctx context.Context, client HTTPDoer, baseURL string, headers m
 	return envelope, nil
 }
 
-func postAgent(ctx context.Context, client HTTPDoer, baseURL string, headers map[string]string, prompt string) (gjagent.Response, int, int64, error) {
+func postAgent(ctx context.Context, client HTTPDoer, baseURL string, headers map[string]string, prompt string, history []TurnSpec) (gjagent.Response, int, int64, error) {
 	trace := true
-	payload := gjagent.Request{Instruction: prompt, ReturnTrace: &trace}
+	turns := make([]gjagent.Turn, 0, len(history))
+	for _, turn := range history {
+		turns = append(turns, gjagent.Turn{Role: turn.Role, Content: turn.Content})
+	}
+	payload := gjagent.Request{Instruction: prompt, History: turns, ReturnTrace: &trace}
 	raw, status, latency, err := postJSON(ctx, client, agentURL(baseURL), headers, payload)
 	if err != nil {
 		// The server intentionally preserves its historical HTTP status while

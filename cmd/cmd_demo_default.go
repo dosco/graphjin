@@ -80,9 +80,10 @@ func extractDefaultDemo(dstDir string) error {
 		if p == "." {
 			return os.MkdirAll(dstDir, 0o755)
 		}
-		// scripts/ holds the repo smoke suite, which depends on the
-		// surrounding examples/ tree; it is not part of the demo project.
-		if d.IsDir() && p == "scripts" {
+		// scripts/ depends on the surrounding examples tree. demo/ and
+		// .graphjin/ are ignored local runtime state that go:embed can still
+		// see; shipping either would make a supposedly fresh demo stale.
+		if d.IsDir() && (p == "scripts" || p == "demo" || p == ".graphjin") {
 			return fs.SkipDir
 		}
 		dst := filepath.Join(dstDir, filepath.FromSlash(p))

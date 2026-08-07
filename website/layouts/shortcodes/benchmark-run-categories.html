@@ -1,0 +1,19 @@
+{{- $key := .Get "benchmark" | default "deeporg" -}}
+{{- $data := index (index hugo.Data "benchmarks") $key -}}
+{{- $matches := where (default (slice) $data.runs) "run_id" .Page.Params.run_id -}}
+{{- range first 1 $matches -}}
+  {{- with .category_recall -}}
+    {{- $metrics := . -}}
+    {{- $names := slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal" "action" "reactive" "multi-turn" "cross-source" -}}
+    {{- $scratch := newScratch -}}{{- $scratch.Set "count" 0 -}}
+    {{- range $names -}}{{- if isset $metrics . -}}{{- $scratch.Add "count" 1 -}}{{- end -}}{{- end -}}
+    {{- $height := add 28 (mul ($scratch.Get "count") 42) -}}
+    {{- $scratch.Set "row" 0 -}}
+    <svg class="benchmark-category-chart" data-benchmark-category-chart="{{ $.Page.Params.run_id }}" viewBox="0 0 720 {{ $height }}" role="img" aria-label="Full-pass recall by task family">
+      <style>.track{fill:var(--benchmark-track,#e7e5e4)}.bar{fill:var(--benchmark-accent,#0f766e)}.label,.value{fill:currentColor;font:600 14px system-ui,sans-serif}.value{text-anchor:end}</style>
+      {{- range $names -}}{{- $name := . -}}{{- if isset $metrics $name -}}{{- $value := float (index $metrics $name) -}}{{- $y := add 22 (mul ($scratch.Get "row") 42) -}}
+      <g data-category="{{ $name }}" data-recall="{{ printf "%.17g" $value }}"><text class="label" x="0" y="{{ $y }}">{{ humanize $name }}</text><rect class="track" x="170" y="{{ sub $y 12 }}" width="440" height="14" rx="7"/><rect class="bar" x="170" y="{{ sub $y 12 }}" width="{{ printf "%.2f" (mul 440 $value) }}" height="14" rx="7"/><text class="value" x="715" y="{{ $y }}">{{ printf "%.1f%%" (mul $value 100) }}</text></g>
+      {{- $scratch.Add "row" 1 -}}{{- end -}}{{- end -}}
+    </svg>
+  {{- end -}}
+{{- end -}}

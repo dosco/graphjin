@@ -38,7 +38,7 @@ func (a Author) Propose(ctx context.Context, baseURL string, headers map[string]
 		client = &http.Client{Timeout: 120 * time.Second}
 	}
 	instruction := `You are authoring one hidden GraphJin evaluation task, not answering the business question for the user. Use catalog discovery to resolve real table and field names. Never invent a business definition. If the question is ambiguous, do not guess: return status needs_clarification and one concise clarification question. Otherwise propose a read-only GraphQL oracle that computes the answer in the database. Return only one JSON object with this exact shape: {"status":"ready","interpretation":"plain language interpretation","category":"aggregate|ranking|window|traversal|saved-metric|discovery","difficulty":"T1|T2|T3|T4","oracle":{"query":"query ...","variables":{},"extract":"root.0.field","dimension_extract":"optional"},"answer":{"kind":"number|string|date","tolerance_pct":0,"accept_scales":[]},"method":{"require_query_match":["regex"],"forbid_finalize_from_list_only":true}}. The oracle is hidden from the evaluated agent and must be read-only. Business question: ` + question
-	response, _, _, err := postAgent(ctx, client, baseURL, headers, instruction)
+	response, _, _, err := postAgent(ctx, client, baseURL, headers, instruction, nil)
 	if err != nil {
 		return Task{}, OracleResult{}, AuthorProposal{}, err
 	}

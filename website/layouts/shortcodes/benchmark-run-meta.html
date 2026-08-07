@@ -1,4 +1,4 @@
-{{- $key := .Get "benchmark" | default "organizational_agent" -}}
+{{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $runs := default (slice) $data.runs -}}
 {{- $matches := where $runs "run_id" .Page.Params.run_id -}}

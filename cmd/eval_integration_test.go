@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -177,4 +180,166 @@ func TestEvalEmbeddedSQLiteMockPipeline(t *testing.T) {
 	if exitErr, ok := evalReportExit(invalid).(*evalExitError); !ok || exitErr.Code != 2 {
 		t.Fatalf("invalid suite exit=%v, want code 2", evalReportExit(invalid))
 	}
+}
+
+func TestEvalEmbeddedReactiveDeliveryMockPipeline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded reactive service integration")
+	}
+	project := t.TempDir()
+	if err := extractDefaultDemo(project); err != nil {
+		t.Fatal(err)
+	}
+	originalPath, originalConf, originalDB, originalOpened := cpath, conf, db, dbOpened
+	defer func() {
+		cpath, conf, db, dbOpened = originalPath, originalConf, originalDB, originalOpened
+	}()
+	t.Setenv("GO_ENV", "dev")
+	client := &evalScriptClient{code: `
+const security = await query_catalog({id:"help:security"});
+const runtime = await query_catalog({id:"help:runtime"});
+const help = await query_catalog({id:"help:watches"});
+const inbox = await execute_graphql({query:"query { gj_watch_event(where: {seen: {eq: false}}, order_by: {created_at: desc}, limit: 1) { id watch_id data_json seen } }"});
+const event = inbox.data.gj_watch_event[0];
+const marked = await execute_graphql({query:"mutation MarkSeen($id: String!) { gj_watch_event(where: {id: {eq: $id}}, update: {seen: true}) { id seen } }", variables:{id:event.id}});
+await final({status:"answered", answer:"Reviewed the delivered watch event and marked it seen.", data:{event:event, marked:marked.data}, evidence:[security,runtime,help]});
+`}
+	factory := func(gjagent.Config) (ax.AIClient, error) { return client, nil }
+	instance, err := (evalEnvironment{ClientFactory: factory}).Start(context.Background(), gjeval.EnvSpec{
+		Target: gjeval.TargetDemo, ConfigPath: project, Seed: 23,
+		Writable: true, Reactive: true, Resettable: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer instance.Close() //nolint:errcheck
+
+	write := `mutation { payments(insert: {id: 990123, invoice_id: 1, amount_cents: 123, reference: "ROLE-CHECK", recorded_at: "2027-01-15T12:00:00Z"}) { id } }`
+	userBody, err := evalIntegrationGraphQL(instance.BaseURL(), instance.Headers(), write)
+	if err != nil || bytes.Contains(userBody, []byte(`"errors"`)) {
+		t.Fatalf("writable user role could not perform paired action: err=%v body=%s", err, userBody)
+	}
+	resettable, ok := instance.(gjeval.ResettableInstance)
+	if !ok {
+		t.Fatal("reactive instance is not resettable")
+	}
+	if err := resettable.Reset(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	observerHeaders := make(map[string]string, len(instance.Headers())+1)
+	for key, value := range instance.Headers() {
+		observerHeaders[key] = value
+	}
+	observerHeaders["X-User-Role"] = "anon"
+	delete(observerHeaders, "X-User-ID")
+	delete(observerHeaders, "X-Account-ID")
+	observerBody, err := evalIntegrationGraphQL(instance.BaseURL(), observerHeaders, write)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(observerBody, []byte(`"errors"`)) {
+		t.Fatalf("anonymous role unexpectedly performed the paired payment action: %s", observerBody)
+	}
+
+	verifier := &gjeval.Verifier{BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+	source := gjeval.HTTPCatalogSource{BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+	suite, err := (gjeval.Generator{Source: source, Verifier: verifier}).Generate(context.Background(), gjeval.GeneratorOptions{Seed: 23, Scale: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var delivery, definition *gjeval.Task
+	var reactiveSlugs []string
+	for index := range suite.Tasks {
+		if suite.Tasks[index].Category == gjeval.CategoryReactive {
+			reactiveSlugs = append(reactiveSlugs, suite.Tasks[index].Slug)
+		}
+		if suite.Tasks[index].Category == gjeval.CategoryReactive && suite.Tasks[index].Mutation != nil && len(suite.Tasks[index].Mutation.Setup) != 0 {
+			delivery = &suite.Tasks[index]
+		}
+		if suite.Tasks[index].Category == gjeval.CategoryReactive && suite.Tasks[index].Mutation != nil && strings.Contains(suite.Tasks[index].Mutation.ExpectedValue, "deeporg_failed_invoices") {
+			definition = &suite.Tasks[index]
+		}
+	}
+	if delivery == nil || definition == nil {
+		t.Fatalf("generated suite is missing reactive tasks: delivery=%v definition=%v slugs=%v", delivery != nil, definition != nil, reactiveSlugs)
+	}
+	task := *delivery
+	suite.Tasks = []gjeval.Task{task}
+	suite.Generator.Scale = 1
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	report, err := (gjeval.Runner{}).Run(context.Background(), *suite, instance, gjeval.RunOptions{Repeats: 1, Seed: 23})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.RunStatus != gjeval.RunStatusComplete || len(report.Tasks) != 1 || !report.Tasks[0].Pass {
+		failures, _ := json.Marshal(report.Tasks)
+		t.Fatalf("reactive mock pipeline failed: status=%s tasks=%s notices=%s", report.RunStatus, failures, strings.Join(report.Acceptance.Notices, "; "))
+	}
+
+	definitionMutation := `mutation { gj_watch(insert: {name: "deeporg_failed_invoices", query: "subscription deeporg_failed_invoices($status: String!) { invoices(where: {status: {eq: $status}}, first: 25, after: $cursor) { id status attempts } invoices_cursor }", variables_json: {status: "failed"}, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name query delivery_json } }`
+	definitionBody, err := evalIntegrationGraphQL(instance.BaseURL(), instance.Headers(), definitionMutation)
+	if err != nil || bytes.Contains(definitionBody, []byte(`"errors"`)) {
+		t.Fatalf("reactive definition mutation is not executable: err=%v body=%s", err, definitionBody)
+	}
+	if err := resettable.Reset(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	client.setCode(fmt.Sprintf(`
+const security = await query_catalog({id:"help:security"});
+const runtime = await query_catalog({id:"help:runtime"});
+const help = await query_catalog({id:"help:watches"});
+const created = await execute_graphql({query:%q});
+await final({status:"answered", answer:"Created the hourly failed-invoice watch.", data:created.data, evidence:[security,runtime,help]});
+`, definitionMutation))
+	definitionSuite := *suite
+	definitionSuite.Tasks = []gjeval.Task{*definition}
+	definitionSuite.Generator.Scale = 1
+	if err := definitionSuite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	definitionStore := gjeval.NewStore(t.TempDir())
+	definitionReport, err := (gjeval.Runner{}).Run(context.Background(), definitionSuite, instance, gjeval.RunOptions{Repeats: 1, Seed: 23, Store: definitionStore})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if definitionReport.RunStatus != gjeval.RunStatusComplete || len(definitionReport.Tasks) != 1 || !definitionReport.Tasks[0].Pass {
+		failures, _ := json.Marshal(definitionReport.Tasks)
+		episodes, _ := definitionStore.LoadEpisodes(definitionReport.RunID)
+		var evidence []byte
+		if len(episodes) != 0 {
+			responseJSON, _ := json.Marshal(episodes[0].Response)
+			var response struct {
+				Actions []map[string]any `json:"actions"`
+			}
+			_ = json.Unmarshal(responseJSON, &response)
+			evidence, _ = json.Marshal(struct {
+				Actions  []map[string]any         `json:"actions"`
+				Mutation *gjeval.MutationEvidence `json:"mutation"`
+			}{Actions: response.Actions, Mutation: episodes[0].Mutation})
+		}
+		t.Fatalf("reactive definition pipeline failed: status=%s tasks=%s episodes=%s notices=%s", definitionReport.RunStatus, failures, evidence, strings.Join(definitionReport.Acceptance.Notices, "; "))
+	}
+}
+
+func evalIntegrationGraphQL(baseURL string, headers map[string]string, query string) ([]byte, error) {
+	payload, err := json.Marshal(map[string]any{"query": query})
+	if err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequest(http.MethodPost, strings.TrimRight(baseURL, "/")+"/api/v1/graphql", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	return io.ReadAll(response.Body)
 }

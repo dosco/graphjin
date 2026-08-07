@@ -5,12 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
@@ -87,12 +90,8 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		return nil, err
 	}
 	cloned := *loaded
-	cloned.Agent.Enabled = true
-	cloned.Agent.ReadOnly = true
-	cloned.Agent.ReturnTrace = true
-	cloned.WatchAndReload = false
-	cloned.Core.Watches.Runner = "off"
-	cloned.Core.Watches.EnrichmentWorkers = 0
+	configureEvalInstance(&cloned, spec)
+	apiServer := startSaaSOpsEvalAPIMock(&cloned)
 
 	var runtime *DemoRuntime
 	restoreDemoGlobals := func() {}
@@ -101,6 +100,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		localStatePath := filepath.Join(configPath, ".graphjin")
 		if _, demoErr := os.Stat(demoStatePath); os.IsNotExist(demoErr) {
 			if _, localErr := os.Stat(localStatePath); localErr == nil {
+				closeEvalAPIServer(apiServer)
 				return nil, fmt.Errorf("refusing to provision a fresh demo over existing %s; start or reset the demo explicitly first", localStatePath)
 			}
 		}
@@ -115,44 +115,107 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		conf = &cloned
 		runtime, err = StartDemo(ctx, []string{"sqlite"}, e.StatusOut)
 		if err != nil {
+			closeEvalAPIServer(apiServer)
 			restoreDemoGlobals()
 			return nil, err
 		}
 	}
-	// The demo keeps its trusted local dev identity, but Eval suppresses
-	// dev-mode named-query learning so a model cannot mutate the catalog and
-	// invalidate suite/resume fingerprints during the measurement itself.
-	options := []serv.Option{
-		serv.OptionSetLogOutput(os.Stderr),
-		serv.OptionDisableQueryLearning(),
-	}
-	if e.ClientFactory != nil {
-		options = append(options, serv.OptionSetAgentClientFactory(e.ClientFactory))
-	}
-	if runtime != nil && len(runtime.Databases) != 0 {
-		options = append(options,
-			serv.OptionSetDatabases(runtime.Databases),
-			serv.OptionSetRuntimeSchemaDDLDir(demoRuntimeSchemaDDLDir()),
-		)
-	}
-	service, err := serv.NewGraphJinService(&cloned, options...)
-	if err != nil {
+	var diskSnapshot *evalSQLiteSnapshot
+	if spec.Resettable && spec.Target != gjeval.TargetDemo {
 		if runtime != nil {
 			cleanupAll(ctx, runtime.Cleanups)
 		}
 		restoreDemoGlobals()
-		return nil, err
+		closeEvalAPIServer(apiServer)
+		return nil, errors.New("resettable evaluation currently requires the SQLite demo target")
 	}
-	mux := http.NewServeMux()
-	if err := service.Attach(mux); err != nil {
-		_ = service.Close()
+	handler := &evalSwappableHandler{}
+	var service *serv.HttpService
+	startService := func() error {
+		fresh, readErr := serv.ReadInConfig(filepath.Join(configPath, configName))
+		if readErr != nil {
+			return readErr
+		}
+		configureEvalInstance(fresh, spec)
+		applySaaSOpsEvalAPIBaseURL(fresh, apiServer)
+		cloned = *fresh
+		// The demo keeps its trusted local dev identity, but Eval suppresses
+		// named-query learning so an episode cannot mutate benchmark identity.
+		options := []serv.Option{serv.OptionSetLogOutput(os.Stderr), serv.OptionDisableQueryLearning()}
+		if e.ClientFactory != nil {
+			options = append(options, serv.OptionSetAgentClientFactory(e.ClientFactory))
+		}
+		if runtime != nil && len(runtime.Databases) != 0 {
+			options = append(options, serv.OptionSetDatabases(runtime.Databases), serv.OptionSetRuntimeSchemaDDLDir(demoRuntimeSchemaDDLDir()))
+		}
+		created, createErr := serv.NewGraphJinService(&cloned, options...)
+		if createErr != nil {
+			return createErr
+		}
+		mux := http.NewServeMux()
+		if attachErr := created.Attach(mux); attachErr != nil {
+			_ = created.Close()
+			return attachErr
+		}
+		service = created
+		handler.Set(mux)
+		return nil
+	}
+	if err := startService(); err != nil {
+		if diskSnapshot != nil {
+			_ = diskSnapshot.Close()
+		}
 		if runtime != nil {
 			cleanupAll(ctx, runtime.Cleanups)
 		}
 		restoreDemoGlobals()
+		closeEvalAPIServer(apiServer)
 		return nil, err
 	}
-	server := httptest.NewServer(mux)
+	if spec.Resettable {
+		// The managed control-plane database is created by service startup, not
+		// demo provisioning. Close once before copying so the baseline contains
+		// both application state and a checkpointed artifact/watch/task store.
+		if err := service.Close(); err != nil {
+			if runtime != nil {
+				cleanupAll(ctx, runtime.Cleanups)
+			}
+			restoreDemoGlobals()
+			closeEvalAPIServer(apiServer)
+			return nil, err
+		}
+		if runtime != nil {
+			cleanupAll(ctx, runtime.Cleanups)
+		}
+		diskSnapshot, err = newEvalSQLiteSnapshot(configPath)
+		if err != nil {
+			if runtime != nil {
+				cleanupAll(ctx, runtime.Cleanups)
+			}
+			restoreDemoGlobals()
+			closeEvalAPIServer(apiServer)
+			return nil, err
+		}
+		cpath = configPath
+		conf = &cloned
+		runtime, err = StartDemo(ctx, []string{"sqlite"}, e.StatusOut)
+		if err != nil {
+			_ = diskSnapshot.Close()
+			restoreDemoGlobals()
+			closeEvalAPIServer(apiServer)
+			return nil, err
+		}
+		if err := startService(); err != nil {
+			_ = diskSnapshot.Close()
+			if runtime != nil {
+				cleanupAll(ctx, runtime.Cleanups)
+			}
+			restoreDemoGlobals()
+			closeEvalAPIServer(apiServer)
+			return nil, err
+		}
+	}
+	server := httptest.NewServer(handler)
 	headers := map[string]string{}
 	if cloned.Auth.Development {
 		headers["X-User-ID"] = "graphjin-eval"
@@ -174,6 +237,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 			cleanupAll(ctx, runtime.Cleanups)
 		}
 		restoreDemoGlobals()
+		closeEvalAPIServer(apiServer)
 		return nil, err
 	}
 	dataset := gjeval.DatasetFingerprint{CatalogHash: snapshot.Fingerprint}
@@ -181,7 +245,10 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		dataset.DataAnchor, dataset.SeedManifestHash = evalDemoManifestFingerprint(configPath)
 	}
 	closed := false
+	var lifecycle sync.Mutex
 	closeFn := func() error {
+		lifecycle.Lock()
+		defer lifecycle.Unlock()
 		if closed {
 			return nil
 		}
@@ -193,16 +260,237 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 			cleanupAll(shutdownCtx, runtime.Cleanups)
 			cancel()
 		}
+		if diskSnapshot != nil {
+			_ = diskSnapshot.Close()
+		}
+		closeEvalAPIServer(apiServer)
 		restoreDemoGlobals()
 		return serviceErr
 	}
-	return &gjeval.StaticInstance{
+	base := &gjeval.StaticInstance{
 		URL:            server.URL,
 		RequestHeaders: headers,
 		Dataset:        dataset,
 		TargetLabel:    string(spec.Target),
 		CloseFunc:      closeFn,
-	}, nil
+	}
+	if diskSnapshot == nil {
+		return base, nil
+	}
+	resetFn := func(resetCtx context.Context) error {
+		lifecycle.Lock()
+		defer lifecycle.Unlock()
+		if closed {
+			return errors.New("evaluation instance is closed")
+		}
+		handler.Set(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "evaluation reset in progress", http.StatusServiceUnavailable)
+		}))
+		if service != nil {
+			_ = service.Close()
+		}
+		if runtime != nil {
+			cleanupAll(resetCtx, runtime.Cleanups)
+		}
+		if err := diskSnapshot.Restore(); err != nil {
+			return err
+		}
+		cpath = configPath
+		conf = &cloned
+		var restartErr error
+		runtime, restartErr = StartDemo(resetCtx, []string{"sqlite"}, e.StatusOut)
+		if restartErr != nil {
+			return restartErr
+		}
+		return startService()
+	}
+	return &gjeval.ResettableStaticInstance{StaticInstance: base, ResetFunc: resetFn}, nil
+}
+
+func configureEvalInstance(config *serv.Config, spec gjeval.EnvSpec) {
+	config.Agent.Enabled = true
+	config.Agent.ReadOnly = !spec.Writable
+	config.Agent.ReturnTrace = true
+	config.WatchAndReload = false
+	if spec.Reactive {
+		config.Core.Watches.Runner = "all"
+		// Eval owns this isolated instance, so a one-second revision poll and a
+		// short subscription poll make delivery tests deterministic without
+		// weakening production defaults.
+		config.Core.Artifacts.PollSeconds = 1
+		config.SubsPollDuration = 100 * time.Millisecond
+	} else {
+		config.Core.Watches.Runner = "off"
+	}
+	config.Core.Watches.EnrichmentWorkers = 0
+	for index := range config.Core.Sources {
+		source := &config.Core.Sources[index]
+		if source.Kind == "file" && source.Root != "" && !filepath.IsAbs(source.Root) {
+			source.Root = filepath.Join(config.ConfigPath, source.Root)
+		}
+		if source.SpecsDir != "" && !filepath.IsAbs(source.SpecsDir) {
+			source.SpecsDir = filepath.Join(config.ConfigPath, source.SpecsDir)
+		}
+	}
+}
+
+func startSaaSOpsEvalAPIMock(config *serv.Config) *httptest.Server {
+	if config == nil {
+		return nil
+	}
+	hasAccountHealth := false
+	for _, source := range config.Core.Sources {
+		if source.Name == "account_health_api" {
+			hasAccountHealth = true
+			break
+		}
+	}
+	if !hasAccountHealth {
+		return nil
+	}
+	health := map[string]map[string]any{
+		"1": {"account_id": 1, "health": "red", "executive_owner": "Avery Chen", "open_risk_count": 4},
+		"2": {"account_id": 2, "health": "green", "executive_owner": "Jordan Lee", "open_risk_count": 0},
+		"3": {"account_id": 3, "health": "yellow", "executive_owner": "Morgan Diaz", "open_risk_count": 1},
+		"4": {"account_id": 4, "health": "red", "executive_owner": "Sam Rivera", "open_risk_count": 3},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/account-health/")
+		value, ok := health[id]
+		if !ok {
+			http.Error(w, `{"error":"account not found"}`, http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(value)
+	}))
+	applySaaSOpsEvalAPIBaseURL(config, server)
+	return server
+}
+
+func applySaaSOpsEvalAPIBaseURL(config *serv.Config, server *httptest.Server) {
+	if config == nil || server == nil {
+		return
+	}
+	for sourceIndex := range config.Core.Sources {
+		source := &config.Core.Sources[sourceIndex]
+		if source.Name != "account_health_api" {
+			continue
+		}
+		for name, spec := range source.Specs {
+			spec.BaseURL = server.URL
+			source.Specs[name] = spec
+		}
+	}
+}
+
+func closeEvalAPIServer(server *httptest.Server) {
+	if server != nil {
+		server.Close()
+	}
+}
+
+type evalSwappableHandler struct {
+	mu      sync.RWMutex
+	handler http.Handler
+}
+
+func (h *evalSwappableHandler) Set(handler http.Handler) {
+	h.mu.Lock()
+	h.handler = handler
+	h.mu.Unlock()
+}
+
+func (h *evalSwappableHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	handler := h.handler
+	h.mu.RUnlock()
+	if handler == nil {
+		http.Error(w, "evaluation service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	handler.ServeHTTP(w, r)
+}
+
+type evalSQLiteSnapshot struct {
+	dir   string
+	files map[string]string
+}
+
+func newEvalSQLiteSnapshot(configPath string) (*evalSQLiteSnapshot, error) {
+	dir, err := os.MkdirTemp("", "graphjin-eval-snapshot-")
+	if err != nil {
+		return nil, err
+	}
+	snapshot := &evalSQLiteSnapshot{dir: dir, files: map[string]string{}}
+	candidates := []string{filepath.Join(configPath, ".graphjin", "artifacts.sqlite3")}
+	_ = filepath.WalkDir(filepath.Join(configPath, "demo", "databases"), func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr == nil && !entry.IsDir() {
+			ext := strings.ToLower(filepath.Ext(path))
+			if ext == ".db" || ext == ".sqlite" || ext == ".sqlite3" {
+				candidates = append(candidates, path)
+			}
+		}
+		return nil
+	})
+	for index, source := range candidates {
+		if _, statErr := os.Stat(source); statErr != nil {
+			continue
+		}
+		target := filepath.Join(dir, fmt.Sprintf("%03d%s", index, filepath.Ext(source)))
+		if err := copyEvalFile(source, target); err != nil {
+			_ = snapshot.Close()
+			return nil, err
+		}
+		snapshot.files[source] = target
+	}
+	if len(snapshot.files) == 0 {
+		_ = snapshot.Close()
+		return nil, errors.New("resettable SQLite evaluation found no database files to snapshot")
+	}
+	return snapshot, nil
+}
+
+func (s *evalSQLiteSnapshot) Restore() error {
+	for target, source := range s.files {
+		for _, sidecar := range []string{"-wal", "-shm", "-journal"} {
+			if err := os.Remove(target + sidecar); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		if err := copyEvalFile(source, target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *evalSQLiteSnapshot) Close() error {
+	if s == nil || s.dir == "" {
+		return nil
+	}
+	return os.RemoveAll(s.dir)
+}
+
+func copyEvalFile(source, target string) error {
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
+	}
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
 }
 
 func evalDemoManifestFingerprint(configPath string) (anchor, fingerprint string) {

@@ -1,4 +1,4 @@
-{{- $key := .Get "benchmark" | default "organizational_agent" -}}
+{{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $runs := default (slice) $data.runs -}}
 {{- $accepted := sort (where (where $runs "ranked" true) "accepted" true) "recall" "desc" -}}
@@ -10,7 +10,7 @@
       <h3>Suite composition</h3>
       {{ with $data.suite.category_counts }}
       <table><thead><tr><th>Task family</th><th>Questions</th></tr></thead><tbody>
-        {{ range (slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal") }}
+        {{ range (slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal" "action" "reactive" "multi-turn" "cross-source") }}
           {{ $count := index $data.suite.category_counts . | default 0 }}
           {{ if gt (int $count) 0 }}<tr><td>{{ humanize . }}</td><td>{{ $count }}</td></tr>{{ end }}
         {{ end }}
@@ -20,7 +20,7 @@
     <section>
       <h3>Consistency and scope</h3>
       {{ range first 1 $accepted }}<p><strong>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</strong> passed on every attempt, alongside the majority-of-three full-pass result shown above.</p>{{ end }}
-      <p>The current suite measures governed, read-only organizational questions. Mutations and long-running watches are product capabilities, not claims made by this benchmark.</p>
+      <p>Each generation states exactly which read, refusal, action, reactive, multi-turn, and cross-source capabilities it contains. Product capabilities outside that composition are not benchmark claims.</p>
     </section>
     <section>
       <h3>Cost and corrections</h3>

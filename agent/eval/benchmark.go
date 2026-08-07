@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 )
 
-const PublicBenchmarkGeneration = "2026.2"
+const PublicBenchmarkGeneration = "2027.1"
 
 type PublicBenchmarkSpec struct {
 	Generation       string  `json:"generation"`
@@ -32,7 +32,7 @@ func PublicBenchmark() PublicBenchmarkSpec {
 	}
 }
 
-const publicBenchmarkSuiteFingerprint = "01b9d91038fdb3c78bbb9ef01ef4fd36"
+const publicBenchmarkSuiteFingerprint = "0d9f2f2aa62a1af975c58b05d9a2120a"
 
 type suiteIdentityProjection struct {
 	Mode             RunMode `json:"mode"`

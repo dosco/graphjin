@@ -429,7 +429,10 @@ func evalFreezeSuiteCmd(opts *evalCLIOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: spec.Seed})
+			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{
+				Target: target, ConfigPath: projectPath, Seed: spec.Seed,
+				Writable: true, Reactive: true, Resettable: true,
+			})
 			if err != nil {
 				return evalEnvironmentError(err)
 			}
@@ -438,7 +441,7 @@ func evalFreezeSuiteCmd(opts *evalCLIOptions) *cobra.Command {
 			suite, err := (gjeval.Generator{
 				Source:   gjeval.HTTPCatalogSource{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
 				Verifier: &gjeval.Verifier{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
-			}).Generate(cmd.Context(), gjeval.GeneratorOptions{Seed: spec.Seed, Scale: spec.Scale, Name: "GraphJin Public Benchmark " + spec.Generation})
+			}).Generate(cmd.Context(), gjeval.GeneratorOptions{Seed: spec.Seed, Scale: spec.Scale, Name: "DeepORG Public Benchmark " + spec.Generation})
 			if err != nil {
 				return &evalExitError{Code: 2, Err: err}
 			}
@@ -489,7 +492,11 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: seed})
+	writable, reactive, resettable := evalSuiteEnvironmentRequirements(suite)
+	instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, gjeval.EnvSpec{
+		Target: target, ConfigPath: projectPath, Seed: seed,
+		Writable: writable, Reactive: reactive, Resettable: resettable,
+	})
 	if err != nil {
 		return nil, nil, evalEnvironmentError(err)
 	}
@@ -534,6 +541,18 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 	}
 	printEvalReport(cmd, opts, report, store)
 	return report, store, nil
+}
+
+func evalSuiteEnvironmentRequirements(suite gjeval.Suite) (writable, reactive, resettable bool) {
+	for _, task := range suite.Tasks {
+		if task.Mutation != nil {
+			writable, resettable = true, true
+		}
+		if task.Category == gjeval.CategoryReactive {
+			reactive = true
+		}
+	}
+	return writable, reactive, resettable
 }
 
 func evalStatus(cmd *cobra.Command, opts *evalCLIOptions) error {

@@ -3659,7 +3659,7 @@ pre code {
   max-width: 18rem;
 }
 
-/* Homepage: organizational agent benchmark (#benchmark) */
+/* DeepORG benchmark and homepage proof (#benchmark) */
 .benchmark-hook-section {
   border-top: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
@@ -3668,6 +3668,142 @@ pre code {
 
 .benchmark-hook {
   margin-top: 1.4rem;
+}
+
+.benchmark-wordmark {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  align-items: baseline;
+  margin: 0 0 1.5rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0 0 1rem;
+}
+
+.benchmark-wordmark strong {
+  color: var(--heading);
+  font-family: var(--font-mono);
+  font-size: clamp(1.45rem, 4vw, 2.4rem);
+  letter-spacing: -0.06em;
+}
+
+.benchmark-wordmark span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.benchmark-svg-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: clamp(0.8rem, 2vw, 1.25rem);
+  color: var(--heading);
+}
+
+.benchmark-svg-wrap-compact {
+  max-width: 58rem;
+}
+
+.benchmark-proof-chart {
+  display: grid;
+  gap: 1.25rem;
+  color: var(--heading);
+  --benchmark-track: color-mix(in srgb, var(--line) 80%, var(--panel));
+  --benchmark-accent: var(--accent-readable);
+}
+
+.benchmark-proof-row {
+  display: grid;
+  grid-template-areas:
+    "label bar value"
+    ". badge .";
+  grid-template-columns: 13rem minmax(12rem, 1fr) 6.5rem;
+  gap: 0.25rem 1rem;
+  align-items: center;
+}
+
+.benchmark-proof-label {
+  grid-area: label;
+  font-size: 0.9rem;
+}
+
+.benchmark-proof-bar {
+  display: block;
+  grid-area: bar;
+  width: 100%;
+  height: 1rem;
+}
+
+.benchmark-proof-bar .track {
+  fill: var(--benchmark-track);
+}
+
+.benchmark-proof-bar .bar {
+  fill: var(--benchmark-accent);
+}
+
+.benchmark-proof-value {
+  display: flex;
+  grid-area: value;
+  justify-content: space-between;
+  color: var(--heading);
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.benchmark-proof-value span {
+  color: var(--accent-readable);
+}
+
+.benchmark-proof-badge {
+  grid-area: badge;
+  color: var(--heading);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 640px) {
+  .benchmark-proof-chart {
+    gap: 1.5rem;
+  }
+
+  .benchmark-proof-row {
+    grid-template-areas:
+      "label value"
+      "bar bar"
+      "badge badge";
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.45rem 0.75rem;
+  }
+
+  .benchmark-proof-label,
+  .benchmark-proof-value {
+    font-size: 0.82rem;
+  }
+}
+
+.benchmark-model-chart,
+.benchmark-category-comparison,
+.benchmark-category-chart {
+  display: block;
+  width: 100%;
+  min-width: 42rem;
+  height: auto;
+  color: var(--heading);
+  --benchmark-track: color-mix(in srgb, var(--line) 80%, var(--panel));
+  --benchmark-accent: var(--accent-readable);
+  --benchmark-accent-alt: #3b82f6;
+}
+
+.benchmark-category-chart {
+  margin: 1.2rem 0 2rem;
+}
+
+.benchmark-chart-note {
+  max-width: 68rem;
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 .benchmark-stat-strip {
@@ -3985,6 +4121,12 @@ pre code {
 @media (max-width: 520px) {
   .benchmark-stat-strip {
     grid-template-columns: 1fr;
+  }
+
+  .benchmark-svg-wrap {
+    margin-inline: calc(var(--page-pad) * -0.5);
+    border-radius: 0;
+    padding-inline: calc(var(--page-pad) * 0.5);
   }
 
   .benchmark-efficiency-table,

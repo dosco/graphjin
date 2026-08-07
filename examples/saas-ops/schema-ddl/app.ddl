@@ -42,6 +42,14 @@ type invoices {
   last_attempt_at: TimestampWithTimeZone!
 }
 
+type payments {
+  id: Bigint! @id
+  invoice_id: Bigint! @relation(type: invoices, field: id)
+  amount_cents: Bigint!
+  reference: Text! @unique
+  recorded_at: TimestampWithTimeZone!
+}
+
 type support_tickets {
   id: Bigint! @id
   account_id: Bigint! @relation(type: accounts, field: id)
@@ -49,6 +57,8 @@ type support_tickets {
   subject: Text!
   severity: Text!
   status: Text! @default(value: "'open'")
+  resolution_note: Text
+  resolved_at: TimestampWithTimeZone
   opened_at: TimestampWithTimeZone!
   sla_due_at: TimestampWithTimeZone!
 }

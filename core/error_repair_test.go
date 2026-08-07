@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -20,5 +21,38 @@ func TestNewErrorIncludesGraphJinRepairExtension(t *testing.T) {
 	}
 	if repair.Kind != repairKindTableNotFound {
 		t.Fatalf("expected table-not-found repair, got %+v", repair)
+	}
+}
+
+func TestBuildGraphJinErrorRepairNullComparison(t *testing.T) {
+	query := `query { users(where: { deleted_at: { neq: null } }) { id } }`
+	repair := BuildGraphJinErrorRepair(query, "[Where] `neq: null` is not a valid null comparison; use `is_null: false`")
+	if repair.Kind != repairKindNullComparison {
+		t.Fatalf("unexpected repair: %+v", repair)
+	}
+	if !strings.Contains(repair.RepairedQuery, "is_null: false") || strings.Contains(repair.RepairedQuery, "neq: null") {
+		t.Fatalf("repair is not executable: %q", repair.RepairedQuery)
+	}
+}
+
+func TestBuildGraphJinErrorRepairAggregateFilter(t *testing.T) {
+	errMessage := "[Where] aggregate token `max: created_at` cannot be embedded in a `gte` filter; first query `max_created_at`, then filter `gte` with the returned literal"
+	repair := BuildGraphJinErrorRepair("query { users { id } }", errMessage)
+	if repair.Kind != repairKindAggregateFilter {
+		t.Fatalf("unexpected repair: %+v", repair)
+	}
+	if !strings.Contains(repair.Diagnosis, "second query") {
+		t.Fatalf("missing two-step diagnosis: %+v", repair)
+	}
+}
+
+func TestBuildGraphJinErrorRepairQualifiedRoot(t *testing.T) {
+	query := `query { app.accounts { id } }`
+	repair := BuildGraphJinErrorRepair(query, "invalid GraphQL root \"app.accounts\": roots are unqualified table names: write `accounts`, not `app.accounts`")
+	if repair.Kind != repairKindQualifiedRoot {
+		t.Fatalf("unexpected repair: %+v", repair)
+	}
+	if repair.RepairedQuery != `query { accounts { id } }` {
+		t.Fatalf("unexpected repaired query: %q", repair.RepairedQuery)
 	}
 }

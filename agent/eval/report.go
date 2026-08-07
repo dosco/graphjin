@@ -82,10 +82,21 @@ type Episode struct {
 	Provenance    RunProvenance      `json:"provenance"`
 	Response      any                `json:"response,omitempty"`
 	Oracle        *EpisodeOracle     `json:"oracle,omitempty"`
+	Mutation      *MutationEvidence  `json:"mutation,omitempty"`
 	Score         ScoreDetail        `json:"score"`
 	HTTPStatus    int                `json:"http_status,omitempty"`
 	LatencyMS     int64              `json:"latency_ms"`
 	Error         string             `json:"error,omitempty"`
+}
+
+type MutationEvidence struct {
+	PostState            OracleResult `json:"post_state"`
+	ExpectedValue        string       `json:"expected_value"`
+	ExpectedDimension    string       `json:"expected_dimension,omitempty"`
+	PostStatePass        bool         `json:"post_state_pass"`
+	CollateralBeforeHash string       `json:"collateral_before_hash,omitempty"`
+	CollateralAfterHash  string       `json:"collateral_after_hash,omitempty"`
+	CollateralPass       bool         `json:"collateral_pass"`
 }
 
 type EpisodeRequest struct {
@@ -144,6 +155,7 @@ type Metrics struct {
 	PassPowerK        float64                    `json:"pass_power_k"`
 	RecallCI          ConfidenceInterval         `json:"recall_ci"`
 	ByTier            map[Difficulty]TierMetrics `json:"by_tier,omitempty"`
+	ByCategory        map[Category]TierMetrics   `json:"by_category,omitempty"`
 	FailureCategories map[string]int             `json:"failure_categories,omitempty"`
 	EnvironmentErrors int                        `json:"environment_errors,omitempty"`
 	PromptTokens      int64                      `json:"prompt_tokens"`

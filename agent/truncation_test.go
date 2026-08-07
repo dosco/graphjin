@@ -62,3 +62,17 @@ func TestExecuteResultSummaryCarriesTruncation(t *testing.T) {
 		t.Fatalf("clean result gained truncated marker: %+v", clean)
 	}
 }
+
+func TestRedactArgsPreservesOrdinaryGraphQLForMethodScoring(t *testing.T) {
+	query := "mutation { gj_watch(insert: {query: \"" + strings.Repeat("x", 600) + "\", delivery_json: {kind: \"inbox\"}}) { id } }"
+	args := redactArgs(map[string]any{
+		"query":     query,
+		"variables": map[string]any{"token": "secret"},
+	})
+	if got := args["query"]; got != query {
+		t.Fatalf("ordinary GraphQL action query was truncated: got %d bytes, want %d", len(got.(string)), len(query))
+	}
+	if args["variables"] != "[redacted]" {
+		t.Fatalf("variables were not redacted: %+v", args)
+	}
+}

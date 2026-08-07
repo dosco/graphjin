@@ -38,9 +38,10 @@ const requiredRoutes = [
   'agentic/watches/index.html',
   'agentic/watch-automation/index.html',
   'benchmarks/index.html',
+  'benchmarks/deeporg/index.html',
+  'benchmarks/deeporg/methodology/index.html',
+  'benchmarks/deeporg/runs/index.html',
   'benchmarks/organizational-agent/index.html',
-  'benchmarks/organizational-agent/methodology/index.html',
-  'benchmarks/organizational-agent/runs/index.html',
   'benchmark/index.html',
   'benchmark/methodology/index.html',
   'benchmark/runs/index.html',
@@ -107,9 +108,9 @@ const requiredContent = [
   'agentic/workflows.md',
   'agentic/oauth.md',
   'benchmarks/_index.md',
-  'benchmarks/organizational-agent/_index.md',
-  'benchmarks/organizational-agent/methodology.md',
-  'benchmarks/organizational-agent/runs/_index.md',
+  'benchmarks/deeporg/_index.md',
+  'benchmarks/deeporg/methodology.md',
+  'benchmarks/deeporg/runs/_index.md',
   'configure/sources-mode.md',
   'configure/how-it-works.md',
   'configure/database.md',
@@ -171,12 +172,12 @@ const requiredRenderedContent = [
   ['agentic/watch-automation/index.html', 'Actions fail closed.'],
   ['agentic/watch-automation/index.html', 'graphjin://watch-events/unseen/watch%3Acoffee_roast_'],
   ['benchmarks/index.html', 'Public, governed benchmark suites'],
-  ['benchmarks/index.html', 'data-benchmark-family-row=organizational-agent'],
-  ['benchmarks/organizational-agent/index.html', 'Can an AI agent answer an organization&rsquo;s real questions—correctly, governed, and at a cost you&rsquo;d pay?'],
-  ['benchmarks/organizational-agent/index.html', 'What one task looks like'],
-  ['benchmarks/organizational-agent/index.html', 'Now point it at your own organization'],
-  ['benchmarks/organizational-agent/methodology/index.html', 'Frozen suite, live verification'],
-  ['benchmarks/organizational-agent/runs/index.html', 'Published Benchmark Runs'],
+  ['benchmarks/index.html', 'data-benchmark-family-row=deeporg'],
+  ['benchmarks/deeporg/index.html', 'The Organizational Agent Benchmark · by GraphJin'],
+  ['benchmarks/deeporg/index.html', 'Model comparison'],
+  ['benchmarks/deeporg/index.html', 'Run DeepORG on your organization'],
+  ['benchmarks/deeporg/methodology/index.html', 'Frozen suite, live verification'],
+  ['benchmarks/deeporg/runs/index.html', 'Published DeepORG Runs'],
 ];
 
 async function exists(file) {
@@ -225,9 +226,10 @@ for (const [route, expected] of requiredRenderedContent) {
 }
 
 for (const [route, target] of [
-  ['benchmark/index.html', '/benchmarks/organizational-agent/'],
-  ['benchmark/methodology/index.html', '/benchmarks/organizational-agent/methodology/'],
-  ['benchmark/runs/index.html', '/benchmarks/organizational-agent/runs/'],
+  ['benchmark/index.html', '/benchmarks/deeporg/'],
+  ['benchmark/methodology/index.html', '/benchmarks/deeporg/methodology/'],
+  ['benchmark/runs/index.html', '/benchmarks/deeporg/runs/'],
+  ['benchmarks/organizational-agent/index.html', '/benchmarks/deeporg/'],
 ]) {
   const file = path.join(publicRoot, route);
   if (await exists(file)) {
@@ -238,11 +240,11 @@ for (const [route, target] of [
   }
 }
 
-const organizationalBenchmarkIndex = path.join(publicRoot, 'benchmarks', 'organizational-agent', 'index.html');
-if (await exists(organizationalBenchmarkIndex)) {
-  const html = await readFile(organizationalBenchmarkIndex, 'utf8');
-  if (!html.includes('No published runs yet.') && !html.includes('data-benchmark-row')) {
-    failures.push('organizational benchmark page has neither an empty state nor a published benchmark row');
+const deepOrgBenchmarkIndex = path.join(publicRoot, 'benchmarks', 'deeporg', 'index.html');
+if (await exists(deepOrgBenchmarkIndex)) {
+  const html = await readFile(deepOrgBenchmarkIndex, 'utf8');
+  if (!html.includes('No published runs yet.') && !html.includes('data-benchmark-model-chart')) {
+    failures.push('DeepORG page has neither an empty state nor a published benchmark chart');
   }
 }
 
@@ -297,12 +299,12 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     }
   }
   for (const required of [
-    "Don't take our word for it. We publish The Organizational Agent Benchmark.",
-    'Built and published by GraphJin',
+    'DeepORG · by GraphJin',
+    'Can an AI agent handle the questions an organization actually asks?',
     'A full pass requires the right answer',
     'Build it by hand',
     'Connect the organization once',
-    'See the benchmark',
+    'See DeepORG',
     'Run it yourself',
   ]) {
     if (!home.includes(required)) {
@@ -327,8 +329,8 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     '/start/demos/#coffee-roastery',
     '/agentic/mcp/',
     '/configure/how-it-works/',
-    '/benchmarks/organizational-agent/',
-    '/benchmarks/organizational-agent/methodology/',
+    '/benchmarks/deeporg/',
+    '/benchmarks/deeporg/methodology/',
   ]) {
     const escaped = href.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const hrefPattern = new RegExp(`href=(?:"${escaped}"|'${escaped}'|${escaped})(?=\\s|>)`);
@@ -347,15 +349,15 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   }
 }
 
-const benchmarkIndexPath = path.join(publicRoot, 'benchmarks', 'organizational-agent', 'index.html');
+const benchmarkIndexPath = path.join(publicRoot, 'benchmarks', 'deeporg', 'index.html');
 if (await exists(benchmarkIndexPath)) {
   const benchmarkHTML = await readFile(benchmarkIndexPath, 'utf8');
-  if (!benchmarkHTML.includes('data-benchmark-row') && !benchmarkHTML.includes('data-benchmark-empty')) {
-    failures.push('Benchmark page has neither a leaderboard row nor the required empty state');
+  if (!benchmarkHTML.includes('data-benchmark-model-chart') && !benchmarkHTML.includes('data-benchmark-empty')) {
+    failures.push('DeepORG page has neither a model chart nor the required empty state');
   }
 }
 
-const benchmarkDataPath = path.join(siteRoot, 'data', 'benchmarks', 'organizational_agent.yaml');
+const benchmarkDataPath = path.join(siteRoot, 'data', 'benchmarks', 'deeporg.yaml');
 if (await exists(benchmarkDataPath)) {
   const benchmarkData = await readFile(benchmarkDataPath, 'utf8');
 
@@ -372,6 +374,7 @@ if (await exists(benchmarkDataPath)) {
   const parsed = { benchmark: {}, suite: {}, runs: [] };
   let section = '';
   let currentRun = null;
+  let runSubsection = '';
   for (const line of benchmarkData.split('\n')) {
     if (line === 'benchmark:') {
       section = 'benchmark';
@@ -389,11 +392,23 @@ if (await exists(benchmarkDataPath)) {
     if (section === 'runs' && firstRunField) {
       currentRun = { [firstRunField[1]]: parseScalar(firstRunField[2]) };
       parsed.runs.push(currentRun);
+      runSubsection = '';
       continue;
     }
     const runField = line.match(/^      ([a-z0-9_]+):\s*(.*)$/);
     if (section === 'runs' && currentRun && runField) {
-      currentRun[runField[1]] = parseScalar(runField[2]);
+      if (runField[1] === 'category_recall') {
+        currentRun.category_recall = {};
+        runSubsection = 'category_recall';
+      } else {
+        currentRun[runField[1]] = parseScalar(runField[2]);
+        runSubsection = '';
+      }
+      continue;
+    }
+    const nestedRunField = line.match(/^        ([a-z0-9_-]+):\s*(.*)$/);
+    if (section === 'runs' && currentRun && runSubsection === 'category_recall' && nestedRunField) {
+      currentRun.category_recall[nestedRunField[1]] = parseScalar(nestedRunField[2]);
       continue;
     }
     const suiteField = line.match(/^    ([a-z0-9_]+):\s*(.*)$/);
@@ -407,13 +422,13 @@ if (await exists(benchmarkDataPath)) {
   }
 
   if (!benchmarkData.includes('schema_version: graphjin.benchmark.data/v2')) {
-    failures.push('Organizational benchmark data is not schema v2');
+    failures.push('DeepORG benchmark data is not schema v2');
   }
-  if (parsed.benchmark.slug !== 'organizational-agent' || parsed.benchmark.name !== 'The Organizational Agent Benchmark') {
-    failures.push(`Organizational benchmark identity is invalid (${parsed.benchmark.slug ?? 'missing'} / ${parsed.benchmark.name ?? 'missing'})`);
+  if (parsed.benchmark.slug !== 'deeporg' || parsed.benchmark.name !== 'DeepORG — The Organizational Agent Benchmark') {
+    failures.push(`DeepORG benchmark identity is invalid (${parsed.benchmark.slug ?? 'missing'} / ${parsed.benchmark.name ?? 'missing'})`);
   }
   for (const run of parsed.runs) {
-    const page = path.join(publicRoot, 'benchmarks', 'organizational-agent', 'runs', String(run.slug), 'index.html');
+    const page = path.join(publicRoot, 'benchmarks', 'deeporg', 'runs', String(run.slug), 'index.html');
     if (!(await exists(page))) {
       failures.push(`Benchmark data slug ${run.slug} has no built run page`);
     }
@@ -422,7 +437,7 @@ if (await exists(benchmarkDataPath)) {
       failures.push(`Benchmark run ${run.slug} is missing its old URL alias`);
     } else {
       const aliasHTML = await readFile(alias, 'utf8');
-      const target = `/benchmarks/organizational-agent/runs/${run.slug}/`;
+      const target = `/benchmarks/deeporg/runs/${run.slug}/`;
       if (!aliasHTML.includes(target)) {
         failures.push(`Benchmark run alias ${run.slug} does not redirect to ${target}`);
       }
@@ -449,16 +464,33 @@ if (await exists(benchmarkDataPath)) {
     const benchmarkHTML = await readFile(benchmarkIndexPath, 'utf8');
     for (const run of rankedRuns) {
       const escapedRunID = String(run.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const boardMarker = new RegExp(`data-benchmark-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
-      if (!boardMarker) {
-        failures.push(`Benchmark leaderboard is missing its model row for ${run.run_id}`);
+      const chartMarker = new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
+      if (!chartMarker) {
+        failures.push(`DeepORG chart is missing ${run.run_id}`);
       } else {
-        const boardRowStart = benchmarkHTML.lastIndexOf('<tr', boardMarker.index);
-        const boardRowEnd = benchmarkHTML.indexOf('>', boardMarker.index);
-        const boardRowTag = benchmarkHTML.slice(boardRowStart, boardRowEnd + 1);
-        const renderedRelease = renderedDataAttribute(boardRowTag, 'data-graphjin-release');
-        if (!run.release || renderedRelease !== String(run.release)) {
-          failures.push(`Benchmark row ${run.run_id} does not expose its GraphJin release (${renderedRelease ?? 'missing'} != ${run.release ?? 'missing'})`);
+        const chartStart = benchmarkHTML.lastIndexOf('<g', chartMarker.index);
+        const chartEnd = benchmarkHTML.indexOf('>', chartMarker.index);
+        const chartTag = benchmarkHTML.slice(chartStart, chartEnd + 1);
+        const reliablePasses = Number(run.task_count ?? 0) * Number(run.recall ?? 0);
+        const expectedChartValues = [
+          ['data-recall', Number(run.recall ?? 0)],
+          ['data-cost-per-reliable-pass-usd', reliablePasses > 0 ? Number(run.estimated_list_cost_usd ?? 0) / reliablePasses : 0],
+          ['data-latency-p50-ms', Number(run.latency_p50_ms ?? 0)],
+        ];
+        for (const [field, expected] of expectedChartValues) {
+          const rendered = Number(renderedDataAttribute(chartTag, field));
+          if (!Number.isFinite(rendered) || Math.abs(rendered - expected) > 1e-12) {
+            failures.push(`DeepORG chart ${field} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expected})`);
+          }
+        }
+      }
+      for (const [category, expectedValue] of Object.entries(run.category_recall ?? {})) {
+        const escapedCategory = category.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const categoryPattern = new RegExp(`data-category-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})\\s+data-category=(?:"${escapedCategory}"|'${escapedCategory}'|${escapedCategory})\\s+data-recall=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`);
+        const match = categoryPattern.exec(benchmarkHTML);
+        const rendered = match ? Number(match[1] ?? match[2] ?? match[3]) : Number.NaN;
+        if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
+          failures.push(`DeepORG category chart ${category} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
         }
       }
       const marker = new RegExp(`data-benchmark-efficiency-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
@@ -473,11 +505,11 @@ if (await exists(benchmarkDataPath)) {
         const rendered = renderedDataAttribute(rowTag, field);
         const expected = Number(expectedValue(run));
         if (rendered === undefined || Number(rendered) !== expected) {
-          failures.push(`Benchmark efficiency ${field} for ${run.run_id} does not match organizational_agent.yaml (${rendered ?? 'missing'} != ${expected})`);
+          failures.push(`Benchmark efficiency ${field} for ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
         }
       }
 
-      const runPagePath = path.join(publicRoot, 'benchmarks', 'organizational-agent', 'runs', String(run.slug), 'index.html');
+      const runPagePath = path.join(publicRoot, 'benchmarks', 'deeporg', 'runs', String(run.slug), 'index.html');
       if (await exists(runPagePath)) {
         const runPage = await readFile(runPagePath, 'utf8');
         const summaryPattern = new RegExp(`data-benchmark-run-summary=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`);
@@ -493,7 +525,16 @@ if (await exists(benchmarkDataPath)) {
           const rendered = renderedDataAttribute(summaryTag, field);
           const expected = Number(expectedValue(run));
           if (rendered === undefined || Number(rendered) !== expected) {
-            failures.push(`Benchmark run summary ${field} for ${run.run_id} does not match organizational_agent.yaml (${rendered ?? 'missing'} != ${expected})`);
+            failures.push(`Benchmark run summary ${field} for ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
+          }
+        }
+        for (const [category, expectedValue] of Object.entries(run.category_recall ?? {})) {
+          const escapedCategory = category.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const categoryPattern = new RegExp(`data-category=(?:"${escapedCategory}"|'${escapedCategory}'|${escapedCategory})\\s+data-recall=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`);
+          const match = categoryPattern.exec(runPage);
+          const rendered = match ? Number(match[1] ?? match[2] ?? match[3]) : Number.NaN;
+          if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
+            failures.push(`DeepORG run category ${category} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
           }
         }
       }
@@ -506,33 +547,13 @@ if (await exists(benchmarkDataPath)) {
   const homePath = path.join(publicRoot, 'index.html');
   if (topAccepted && (await exists(homePath))) {
     const home = await readFile(homePath, 'utf8');
-    const renderedBenchmarkValue = (field) => {
-      const match = home.match(
-        new RegExp(`data-benchmark-stat=(?:"${field}"|'${field}'|${field})\\s+data-benchmark-value=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`)
-      );
-      return match ? match[1] ?? match[2] ?? match[3] : undefined;
-    };
     if (!home.includes('data-benchmark-proof')) {
       failures.push('Homepage is missing the data-driven benchmark proof module');
     }
-    for (const field of [
-      'recall',
-      'safety_precision',
-      'method_recall',
-      'estimated_list_cost_per_task_usd',
-      'latency_p50_ms',
-    ]) {
-      const rendered = renderedBenchmarkValue(field);
-      const expected = Number(topAccepted[field] ?? 0);
-      if (rendered === undefined || Number(rendered) !== expected) {
-        failures.push(`Homepage benchmark stat ${field} does not match organizational_agent.yaml (${rendered ?? 'missing'} != ${expected})`);
-      }
-    }
-    if (renderedBenchmarkValue('label') !== String(topAccepted.label)) {
-      failures.push('Homepage benchmark model label does not match organizational_agent.yaml');
-    }
-    if (renderedBenchmarkValue('suite_fingerprint') !== String(parsed.suite.suite_fingerprint)) {
-      failures.push('Homepage benchmark suite fingerprint does not match organizational_agent.yaml');
+    const escapedRunID = String(topAccepted.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const chartMarker = new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(home);
+    if (!chartMarker) {
+      failures.push('Homepage benchmark chart does not include the top ranked run from deeporg.yaml');
     }
   }
 }
@@ -613,7 +634,9 @@ for (const file of htmlFiles) {
   if (html.includes('GraphJin Agent Benchmark')) {
     failures.push(`${rel} contains the retired benchmark name`);
   }
-  const isBenchmarkAlias = rel === 'benchmark/index.html' || rel.startsWith(`benchmark${path.sep}`);
+  const isBenchmarkAlias = rel === 'benchmark/index.html' || rel.startsWith(`benchmark${path.sep}`) ||
+    rel === path.join('benchmarks', 'organizational-agent', 'index.html') ||
+    rel.startsWith(path.join('benchmarks', 'organizational-agent') + path.sep);
   if (!isBenchmarkAlias) {
     for (const meta of ['section', 'kind', 'slug', 'source']) {
       const metaPattern = new RegExp(`\\sdata-pagefind-meta=(?:"${meta}"|'${meta}'|${meta})(?=\\s|>|/)`);
