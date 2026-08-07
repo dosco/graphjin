@@ -489,11 +489,13 @@ func renderBenchmarkRunPage(benchmark benchmarkIdentity, benchmarkKey string, en
 		Model       string    `yaml:"model"`
 		Provider    string    `yaml:"provider,omitempty"`
 		Release     string    `yaml:"release,omitempty"`
+		Aliases     []string  `yaml:"aliases,omitempty"`
 	}{
 		Title: entry.Label + " benchmark run", Description: "Verified report from " + benchmark.Name + " for " + entry.Label + ".",
 		Benchmark: benchmark.Slug,
 		Date:      entry.GeneratedAt, RunID: entry.RunID, Generation: entry.Generation, Ranked: entry.Ranked,
 		Model: entry.Model, Provider: entry.Provider, Release: entry.Release,
+		Aliases: benchmarkRunAliases(benchmark.Slug, entry.Slug),
 	}
 	frontData, err := yaml.Marshal(front)
 	if err != nil {
@@ -508,6 +510,16 @@ func renderBenchmarkRunPage(benchmark benchmarkIdentity, benchmarkKey string, en
 	body += "\n\n---\n\n## Technical benchmark report\n\n" + technicalBody
 	shortcode := fmt.Sprintf("{{< benchmark-run-meta benchmark=%q >}}", benchmarkKey)
 	return []byte("---\n" + string(frontData) + "---\n\n" + shortcode + "\n\n" + body), nil
+}
+
+func benchmarkRunAliases(benchmarkSlug, runSlug string) []string {
+	if benchmarkSlug != defaultBenchmarkSlug {
+		return nil
+	}
+	return []string{
+		"/benchmark/runs/" + runSlug + "/",
+		"/benchmarks/organizational-agent/runs/" + runSlug + "/",
+	}
 }
 
 func renderBenchmarkCategorySVG(entry benchmarkEntry) string {
