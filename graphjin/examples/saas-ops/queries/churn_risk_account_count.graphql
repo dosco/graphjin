@@ -1,0 +1,5 @@
+query churn_risk_account_count {
+  accounts(where: { status: { eq: "churn_risk" } }) {
+    count_id
+  }
+}

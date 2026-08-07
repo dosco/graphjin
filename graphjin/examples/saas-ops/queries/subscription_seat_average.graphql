@@ -1,0 +1,5 @@
+query subscription_seat_average {
+  subscriptions {
+    avg_seats
+  }
+}

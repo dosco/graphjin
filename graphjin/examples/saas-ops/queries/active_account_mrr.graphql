@@ -1,0 +1,5 @@
+query active_account_mrr {
+  accounts(where: { status: { eq: "active" } }) {
+    sum_mrr_cents
+  }
+}

@@ -12,7 +12,8 @@ it instead of treating text-to-SQL as a single exact-match problem.
 
 ## Frozen suite, live verification
 
-Generation `2026.1` contains a committed, deterministic 100-task suite built
+Generation `2026.2` uses generator contract `graphjin.eval.generator/v6` and a
+committed, deterministic 100-task suite built
 from the bundled SaaS Ops demo at seed `23`. Publishing the suite makes results
 reproducible. Future generations can rotate the questions without rewriting
 the history of earlier cohorts.
@@ -63,6 +64,20 @@ demo's relative dates shift with the calendar.
 A run outside the pinned cohort can be published only with an explicit
 `--allow-off-suite`; it appears in a separate unranked table with the mismatch
 reason.
+
+## Scoring correction
+
+An early public run was retracted after its stale suite rejected a valid
+database aggregate dialect. The model's answers were usually correct, but the
+published method score said otherwise. We removed the row instead of
+rewording the false result.
+
+Three guards followed: a generator-version mismatch now makes the suite
+invalid before provider traffic starts; a large answer/method divergence marks
+the report as scoring-suspect and blocks publication; and publishing requires
+the run's binary fingerprint to match the binary doing the publishing. Older
+valid cohort pages remain historical, but the retracted result does not appear
+on the board.
 
 ## Privacy
 

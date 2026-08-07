@@ -8,6 +8,8 @@ weight: 25
 
 The fastest start needs nothing but the binary: `graphjin serve --demo` with no `--path` extracts the built-in SaaS ops demo to `./graphjin-demo` and boots it on SQLite - no clone, no Docker, ready in seconds.
 
+The governed read-only answering claim is measured on this same SaaS Ops environment in the [public agent benchmark](/benchmark/).
+
 ```bash
 graphjin serve --demo
 ```

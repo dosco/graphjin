@@ -1,0 +1,5 @@
+query open_ticket_count {
+  support_tickets(where: { status: { eq: "open" } }) {
+    count_id
+  }
+}

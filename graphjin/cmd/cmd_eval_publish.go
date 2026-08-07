@@ -24,72 +24,86 @@ type benchmarkData struct {
 }
 
 type benchmarkSuite struct {
-	Generation       string  `yaml:"generation,omitempty"`
-	Identity         string  `yaml:"identity,omitempty"`
-	SuiteFingerprint string  `yaml:"suite_fingerprint,omitempty"`
-	CatalogHash      string  `yaml:"catalog_hash,omitempty"`
-	SeedManifestHash string  `yaml:"seed_manifest_hash,omitempty"`
-	Mode             string  `yaml:"mode,omitempty"`
-	Seed             int64   `yaml:"seed,omitempty"`
-	Repeats          int     `yaml:"repeats,omitempty"`
-	MaxSteps         int     `yaml:"max_steps,omitempty"`
-	Temperature      float64 `yaml:"temperature,omitempty"`
-	RewardVersion    string  `yaml:"reward_version,omitempty"`
+	Generation       string         `yaml:"generation,omitempty"`
+	GeneratorVersion string         `yaml:"generator_version,omitempty"`
+	Identity         string         `yaml:"identity,omitempty"`
+	SuiteFingerprint string         `yaml:"suite_fingerprint,omitempty"`
+	CatalogHash      string         `yaml:"catalog_hash,omitempty"`
+	SeedManifestHash string         `yaml:"seed_manifest_hash,omitempty"`
+	Mode             string         `yaml:"mode,omitempty"`
+	Seed             int64          `yaml:"seed,omitempty"`
+	Repeats          int            `yaml:"repeats,omitempty"`
+	MaxSteps         int            `yaml:"max_steps,omitempty"`
+	Temperature      float64        `yaml:"temperature,omitempty"`
+	RewardVersion    string         `yaml:"reward_version,omitempty"`
+	CategoryCounts   map[string]int `yaml:"category_counts,omitempty"`
 }
 
 type benchmarkEntry struct {
-	RunID                  string    `yaml:"run_id"`
-	Slug                   string    `yaml:"slug"`
-	Label                  string    `yaml:"label"`
-	Release                string    `yaml:"release,omitempty"`
-	Notes                  string    `yaml:"notes,omitempty"`
-	Ranked                 bool      `yaml:"ranked"`
-	UnrankedReason         string    `yaml:"unranked_reason,omitempty"`
-	Generation             string    `yaml:"generation"`
-	GeneratedAt            time.Time `yaml:"generated_at"`
-	Model                  string    `yaml:"model"`
-	Provider               string    `yaml:"provider,omitempty"`
-	GraphJinCommit         string    `yaml:"graphjin_commit,omitempty"`
-	BinaryFingerprint      string    `yaml:"binary_fingerprint,omitempty"`
-	SuiteIdentity          string    `yaml:"suite_identity"`
-	SuiteFingerprint       string    `yaml:"suite_fingerprint"`
-	CatalogHash            string    `yaml:"catalog_hash"`
-	SeedManifestHash       string    `yaml:"seed_manifest_hash,omitempty"`
-	OracleValueHash        string    `yaml:"oracle_value_hash,omitempty"`
-	DataAnchor             string    `yaml:"data_anchor,omitempty"`
-	RewardVersion          string    `yaml:"reward_version"`
-	UsageAccountingVersion string    `yaml:"usage_accounting_version,omitempty"`
-	Seed                   int64     `yaml:"seed"`
-	Repeats                int       `yaml:"repeats"`
-	MaxSteps               int       `yaml:"max_steps"`
-	Temperature            float64   `yaml:"temperature"`
-	TaskCount              int       `yaml:"task_count"`
-	EpisodeCount           int       `yaml:"episode_count"`
-	Recall                 float64   `yaml:"recall"`
-	RecallCILow            float64   `yaml:"recall_ci_low"`
-	RecallCIHigh           float64   `yaml:"recall_ci_high"`
-	PassAtK                float64   `yaml:"pass_at_k"`
-	PassPowerK             float64   `yaml:"pass_power_k"`
-	GroundTruthRecall      float64   `yaml:"ground_truth_recall"`
-	MethodRecall           float64   `yaml:"method_recall"`
-	SafetyPrecision        float64   `yaml:"safety_precision"`
-	BehaviorRecall         float64   `yaml:"behavior_recall"`
-	MeanReward             float64   `yaml:"mean_reward"`
-	TotalTokens            int64     `yaml:"total_tokens"`
-	ProviderTotalTokens    int64     `yaml:"provider_total_tokens"`
-	ScoringSuspect         bool      `yaml:"scoring_suspect,omitempty"`
-	Accepted               bool      `yaml:"accepted"`
+	RunID                       string    `yaml:"run_id"`
+	Slug                        string    `yaml:"slug"`
+	Label                       string    `yaml:"label"`
+	Release                     string    `yaml:"release,omitempty"`
+	Notes                       string    `yaml:"notes,omitempty"`
+	Ranked                      bool      `yaml:"ranked"`
+	UnrankedReason              string    `yaml:"unranked_reason,omitempty"`
+	Generation                  string    `yaml:"generation"`
+	GeneratedAt                 time.Time `yaml:"generated_at"`
+	Model                       string    `yaml:"model"`
+	Provider                    string    `yaml:"provider,omitempty"`
+	GraphJinCommit              string    `yaml:"graphjin_commit,omitempty"`
+	BinaryFingerprint           string    `yaml:"binary_fingerprint,omitempty"`
+	SuiteIdentity               string    `yaml:"suite_identity"`
+	SuiteFingerprint            string    `yaml:"suite_fingerprint"`
+	CatalogHash                 string    `yaml:"catalog_hash"`
+	SeedManifestHash            string    `yaml:"seed_manifest_hash,omitempty"`
+	OracleValueHash             string    `yaml:"oracle_value_hash,omitempty"`
+	DataAnchor                  string    `yaml:"data_anchor,omitempty"`
+	RewardVersion               string    `yaml:"reward_version"`
+	UsageAccountingVersion      string    `yaml:"usage_accounting_version,omitempty"`
+	Seed                        int64     `yaml:"seed"`
+	Repeats                     int       `yaml:"repeats"`
+	MaxSteps                    int       `yaml:"max_steps"`
+	Temperature                 float64   `yaml:"temperature"`
+	TaskCount                   int       `yaml:"task_count"`
+	EpisodeCount                int       `yaml:"episode_count"`
+	Recall                      float64   `yaml:"recall"`
+	RecallCILow                 float64   `yaml:"recall_ci_low"`
+	RecallCIHigh                float64   `yaml:"recall_ci_high"`
+	PassAtK                     float64   `yaml:"pass_at_k"`
+	PassPowerK                  float64   `yaml:"pass_power_k"`
+	GroundTruthRecall           float64   `yaml:"ground_truth_recall"`
+	MethodRecall                float64   `yaml:"method_recall"`
+	SafetyPrecision             float64   `yaml:"safety_precision"`
+	BehaviorRecall              float64   `yaml:"behavior_recall"`
+	MeanReward                  float64   `yaml:"mean_reward"`
+	TotalTokens                 int64     `yaml:"total_tokens"`
+	PromptTokens                int64     `yaml:"prompt_tokens,omitempty"`
+	CompletionTokens            int64     `yaml:"completion_tokens,omitempty"`
+	ProviderTotalTokens         int64     `yaml:"provider_total_tokens"`
+	LatencyP50MS                float64   `yaml:"latency_p50_ms,omitempty"`
+	LatencyP95MS                float64   `yaml:"latency_p95_ms,omitempty"`
+	PromptPricePerMillion       float64   `yaml:"prompt_price_per_million,omitempty"`
+	CompletionPricePerMillion   float64   `yaml:"completion_price_per_million,omitempty"`
+	EstimatedListCostUSD        float64   `yaml:"estimated_list_cost_usd,omitempty"`
+	EstimatedListCostPerTaskUSD float64   `yaml:"estimated_list_cost_per_task_usd,omitempty"`
+	PricingSource               string    `yaml:"pricing_source,omitempty"`
+	ScoringSuspect              bool      `yaml:"scoring_suspect,omitempty"`
+	Accepted                    bool      `yaml:"accepted"`
 }
 
 type evalPublishOptions struct {
-	Site                string
-	Data                string
-	Label               string
-	Release             string
-	Notes               string
-	Force               bool
-	AllowOffSuite       bool
-	AllowSuspectScoring bool
+	Site                      string
+	Data                      string
+	Label                     string
+	Release                   string
+	Notes                     string
+	Force                     bool
+	AllowOffSuite             bool
+	AllowSuspectScoring       bool
+	PromptPricePerMillion     float64
+	CompletionPricePerMillion float64
+	PricingSource             string
 }
 
 func evalPublishCmd(evalOpts *evalCLIOptions) *cobra.Command {
@@ -117,6 +131,9 @@ the run.`,
 	cmd.Flags().BoolVar(&opts.Force, "force", false, "replace an existing row and overwrite its page")
 	cmd.Flags().BoolVar(&opts.AllowOffSuite, "allow-off-suite", false, "publish a non-matching run as explicitly unranked")
 	cmd.Flags().BoolVar(&opts.AllowSuspectScoring, "allow-suspect-scoring", false, "publish despite an answer/method scoring divergence warning")
+	cmd.Flags().Float64Var(&opts.PromptPricePerMillion, "prompt-price-per-million", 0, "provider list price in USD per million prompt tokens")
+	cmd.Flags().Float64Var(&opts.CompletionPricePerMillion, "completion-price-per-million", 0, "provider list price in USD per million completion tokens")
+	cmd.Flags().StringVar(&opts.PricingSource, "pricing-source", "", "public pricing source or price-card date")
 	return cmd
 }
 
@@ -156,6 +173,12 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	if (report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics)) && !opts.AllowSuspectScoring {
 		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has a suspect answer/method scoring divergence; investigate it or use --allow-suspect-scoring to override", runID)}
 	}
+	if !report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 0 {
+		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has incomplete provider usage accounting; publishing requires complete prompt and completion totals", runID)}
+	}
+	if (opts.PromptPricePerMillion == 0) != (opts.CompletionPricePerMillion == 0) || opts.PromptPricePerMillion < 0 || opts.CompletionPricePerMillion < 0 {
+		return &evalExitError{Code: 2, Err: errors.New("list pricing requires both non-negative --prompt-price-per-million and --completion-price-per-million values")}
+	}
 
 	dataPath := opts.Data
 	if strings.TrimSpace(dataPath) == "" {
@@ -184,7 +207,10 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	}
 
 	comparisonSuite := data.Suite
-	if len(data.Runs) == 0 {
+	currentPublicSuite := gjeval.PublicBenchmark().SuiteFingerprint
+	advancingCohort := currentPublicSuite != "" && report.SuiteFingerprint == currentPublicSuite &&
+		data.Suite.SuiteFingerprint != "" && data.Suite.SuiteFingerprint != report.SuiteFingerprint
+	if len(data.Runs) == 0 || advancingCohort {
 		// With no published rows, the first run defines the metadata for the
 		// current pinned cohort. This permits an intentional regenerated public
 		// suite to replace the prior empty cohort without an off-suite override.
@@ -208,7 +234,20 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 		}
 	}
 
-	if (data.Suite.Identity == "" || len(data.Runs) == 0) && ranked {
+	if advancingCohort && ranked {
+		previousGeneration := strings.TrimSpace(data.Suite.Generation)
+		if previousGeneration == "" {
+			previousGeneration = "previous"
+		}
+		for i := range data.Runs {
+			if !data.Runs[i].Ranked {
+				continue
+			}
+			data.Runs[i].Ranked = false
+			data.Runs[i].UnrankedReason = "previous public benchmark cohort (" + previousGeneration + ")"
+		}
+		data.Suite = benchmarkSuiteFromReport(report)
+	} else if (data.Suite.Identity == "" || len(data.Runs) == 0) && ranked {
 		data.Suite = benchmarkSuiteFromReport(report)
 	}
 	label := strings.TrimSpace(opts.Label)
@@ -222,7 +261,7 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	if release == "" {
 		release = shortRevision(report.Provenance.GraphJinCommit)
 	}
-	entry := benchmarkEntryFromReport(report, slug, label, release, opts.Notes, ranked, strings.Join(mismatches, "; "))
+	entry := benchmarkEntryFromReport(report, slug, label, release, opts.Notes, ranked, strings.Join(mismatches, "; "), opts)
 	if existing >= 0 {
 		data.Runs[existing] = entry
 	} else {
@@ -309,11 +348,17 @@ func benchmarkComparabilityMismatches(report gjeval.Report, suite benchmarkSuite
 }
 
 func benchmarkSuiteFromReport(report gjeval.Report) benchmarkSuite {
+	categoryCounts := map[string]int{}
+	for _, task := range report.Tasks {
+		categoryCounts[string(task.Category)]++
+	}
 	return benchmarkSuite{
-		Generation: gjeval.PublicBenchmarkGeneration, Identity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
+		Generation: gjeval.PublicBenchmarkGeneration, GeneratorVersion: gjeval.GeneratorVersion,
+		Identity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
 		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
 		Mode: string(report.Mode), Seed: report.Provenance.Seed, Repeats: report.Provenance.Repeats,
 		MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature, RewardVersion: report.RewardVersion,
+		CategoryCounts: categoryCounts,
 	}
 }
 
@@ -325,7 +370,17 @@ func reportFromBenchmarkSuite(s benchmarkSuite) gjeval.Report {
 	}
 }
 
-func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes string, ranked bool, reason string) benchmarkEntry {
+func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes string, ranked bool, reason string, opts *evalPublishOptions) benchmarkEntry {
+	estimatedCost := float64(report.ProviderUsage.PromptTokens)*opts.PromptPricePerMillion/1_000_000 +
+		float64(report.ProviderUsage.CompletionTokens)*opts.CompletionPricePerMillion/1_000_000
+	costPerTask := 0.0
+	if report.Metrics.TaskCount > 0 {
+		costPerTask = estimatedCost / float64(report.Metrics.TaskCount)
+	}
+	pricingSource := strings.TrimSpace(opts.PricingSource)
+	if pricingSource == "" && (opts.PromptPricePerMillion != 0 || opts.CompletionPricePerMillion != 0) {
+		pricingSource = "provider list pricing"
+	}
 	return benchmarkEntry{
 		RunID: report.RunID, Slug: slug, Label: label, Release: release, Notes: strings.TrimSpace(notes), Ranked: ranked, UnrankedReason: reason,
 		Generation: gjeval.PublicBenchmarkGeneration, GeneratedAt: report.GeneratedAt, Model: report.Provenance.Model, Provider: report.Provenance.Provider,
@@ -341,7 +396,12 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		GroundTruthRecall: report.Metrics.GroundTruthRecall, MethodRecall: report.Metrics.MethodRecall,
 		SafetyPrecision: report.Metrics.SafetyPrecision, BehaviorRecall: report.Metrics.BehaviorRecall,
 		MeanReward: report.Metrics.MeanReward, TotalTokens: report.Metrics.TotalTokens,
-		ProviderTotalTokens: report.ProviderUsage.TotalTokens, ScoringSuspect: report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics), Accepted: report.Acceptance.HardPass,
+		PromptTokens: report.ProviderUsage.PromptTokens, CompletionTokens: report.ProviderUsage.CompletionTokens,
+		ProviderTotalTokens: report.ProviderUsage.TotalTokens,
+		LatencyP50MS:        report.Metrics.LatencyP50MS, LatencyP95MS: report.Metrics.LatencyP95MS,
+		PromptPricePerMillion: opts.PromptPricePerMillion, CompletionPricePerMillion: opts.CompletionPricePerMillion,
+		EstimatedListCostUSD: estimatedCost, EstimatedListCostPerTaskUSD: costPerTask, PricingSource: pricingSource,
+		ScoringSuspect: report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics), Accepted: report.Acceptance.HardPass,
 	}
 }
 

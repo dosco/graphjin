@@ -1,0 +1,5 @@
+query active_subscription_mrr {
+  subscriptions(where: { status: { eq: "active" } }) {
+    sum_mrr_cents
+  }
+}
