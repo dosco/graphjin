@@ -253,7 +253,7 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 		if suite.Tasks[index].Category == gjeval.CategoryReactive {
 			reactiveSlugs = append(reactiveSlugs, suite.Tasks[index].Slug)
 		}
-		if suite.Tasks[index].Category == gjeval.CategoryReactive && suite.Tasks[index].Mutation != nil && len(suite.Tasks[index].Mutation.Setup) != 0 {
+		if suite.Tasks[index].Slug == "reactive-delivery-payments" {
 			delivery = &suite.Tasks[index]
 		}
 		if suite.Tasks[index].Category == gjeval.CategoryReactive && suite.Tasks[index].Mutation != nil && strings.Contains(suite.Tasks[index].Mutation.ExpectedValue, "deeporg_failed_invoices") {
@@ -262,6 +262,9 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 	}
 	if delivery == nil || definition == nil {
 		t.Fatalf("generated suite is missing reactive tasks: delivery=%v definition=%v slugs=%v", delivery != nil, definition != nil, reactiveSlugs)
+	}
+	if delivery.Mutation == nil || len(delivery.Mutation.Setup) != 2 {
+		t.Fatalf("payment delivery setup = %+v, want watch plus post-subscription payment", delivery.Mutation)
 	}
 	task := *delivery
 	suite.Tasks = []gjeval.Task{task}

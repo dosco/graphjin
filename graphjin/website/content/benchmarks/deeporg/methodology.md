@@ -22,7 +22,7 @@ silently replacing history.
 
 ## Frozen suite, live verification
 
-Generation `2027.1` uses generator contract `graphjin.eval.generator/v7` and a
+Generation `2027.1` uses generator contract `graphjin.eval.generator/v8` and a
 committed, deterministic 100-task suite built from the bundled SaaS Ops demo at
 seed `23`. Alongside organizational questions and governed refusals, this
 generation measures writes with post-state and collateral-safety checks,

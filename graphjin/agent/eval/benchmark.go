@@ -32,7 +32,7 @@ func PublicBenchmark() PublicBenchmarkSpec {
 	}
 }
 
-const publicBenchmarkSuiteFingerprint = "0d9f2f2aa62a1af975c58b05d9a2120a"
+const publicBenchmarkSuiteFingerprint = "68bc8a8784947a44d12a87d7f2c5a856"
 
 type suiteIdentityProjection struct {
 	Mode             RunMode `json:"mode"`
