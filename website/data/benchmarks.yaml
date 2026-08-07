@@ -110,7 +110,8 @@ runs:
       slug: 20260807t030756-753da3df
       label: OpenAI GPT-4o mini
       release: 6211d6ce
-      ranked: true
+      ranked: false
+      unranked_reason: superseded by current-generation OpenAI comparison
       generation: "2026.2"
       generated_at: 2026-08-07T03:07:56.615996Z
       model: gpt-4o-mini
@@ -152,4 +153,51 @@ runs:
       estimated_list_cost_usd: 3.6469344
       estimated_list_cost_per_task_usd: 0.036469344
       pricing_source: https://developers.openai.com/api/docs/models/gpt-4o-mini (2026-08-06)
+      accepted: true
+    - run_id: 20260807T082714.336661000Z-5f6ae1af
+      slug: 20260807t082714-5f6ae1af
+      label: OpenAI GPT-5.4 mini
+      release: 89df23ec
+      ranked: true
+      generation: "2026.2"
+      generated_at: 2026-08-07T08:27:14.33668Z
+      model: gpt-5.4-mini
+      provider: openai
+      graphjin_commit: 89df23ec
+      binary_fingerprint: 0b6d0184be2252d83ef643b10293f49ad57d8e4c6d3317ef7057e572c9307ae6
+      suite_identity: 854d85d91e578865557c7d3ffea2c75c
+      suite_fingerprint: 01b9d91038fdb3c78bbb9ef01ef4fd36
+      catalog_hash: 6cd8763cb98a6d0991a13bc953971503
+      seed_manifest_hash: 4f2503818a39e065a76873c117d07c31
+      oracle_value_hash: ff9edf5e17ebe6734eb4ee8e4875b69e042e93c8493b32d8637147669d655704
+      data_anchor: "2026-08-07"
+      reward_version: graphjin.eval.reward/v2
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 100
+      episode_count: 300
+      recall: 0.68
+      recall_ci_low: 0.59
+      recall_ci_high: 0.78
+      pass_at_k: 0.85
+      pass_power_k: 0.45
+      ground_truth_recall: 0.7555555555555555
+      method_recall: 0.7444444444444445
+      safety_precision: 1
+      behavior_recall: 0.9
+      mean_reward: 0.847836
+      total_tokens: 8934342
+      prompt_tokens: 8632099
+      completion_tokens: 302243
+      provider_total_tokens: 8934342
+      latency_p50_ms: 9634
+      latency_p95_ms: 24478
+      prompt_price_per_million: 0.75
+      completion_price_per_million: 4.5
+      estimated_list_cost_usd: 7.834167750000001
+      estimated_list_cost_per_task_usd: 0.07834167750000001
+      pricing_source: https://developers.openai.com/api/docs/models/gpt-5.4-mini (2026-08-07)
       accepted: true

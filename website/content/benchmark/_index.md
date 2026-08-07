@@ -1,9 +1,13 @@
 ---
-title: "GraphJin Agent Benchmark"
-description: "A public, reproducible measure of how agentic models answer real organizational questions under GraphJin governance."
+title: "The Organizational Agent Benchmark"
+description: "A public comparison of AI agents answering governed organizational questions, with correctness, consistency, cost, latency, and GraphJin build provenance."
 ---
 
-## Your organization should not need an API for every question
+Published by GraphJin. Scores measure a model operating through a specific
+GraphJin build against one frozen, governed task suite—not the model in
+isolation.
+
+## Can an AI agent answer an organization's real questions?
 
 A deployment engineer inherits undocumented schemas, SaaS APIs, old saved
 queries, and a different access policy for every team. The usual answer is
@@ -16,7 +20,9 @@ question without waiting for somebody to build a new API—and the same policy
 still decides what it may see and do.
 
 That is a large claim, so we measure the part we can prove today: governed,
-read-only organizational questions against a real schema, in public.
+read-only organizational questions and required refusals against a real schema,
+in public. Correctness, consistency, safety, token use, latency, and estimated
+list-price cost are reported together.
 
 ## What one task looks like
 
@@ -53,7 +59,7 @@ Point GraphJin at your model and run the identical suite:
 
 {{< code-card filename="terminal" language="bash" >}}
 GJ_AGENT_PROVIDER=openai \
-GJ_AGENT_MODEL=gpt-5-mini \
+GJ_AGENT_MODEL=gpt-5.4-mini \
 OPENAI_API_KEY="..." \
 graphjin eval bench --public --yes
 

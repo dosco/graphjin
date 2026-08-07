@@ -6,9 +6,16 @@ nav_group: "benchmark"
 weight: 1
 ---
 
-The GraphJin Agent Benchmark asks models to work against a real, governed
-organizational schema. It measures the final answer and the path used to reach
-it instead of treating text-to-SQL as a single exact-match problem.
+The Organizational Agent Benchmark, published by GraphJin, asks models to work
+against a real, governed organizational schema. It measures the final answer
+and the path used to reach it instead of treating text-to-SQL as a single
+exact-match problem.
+
+Every leaderboard score belongs to the submitted system: a model and provider
+operating through the recorded GraphJin commit and exact binary. It is not a
+context-free claim about the model. Material agent-runtime changes therefore
+require a new run and remain visible as a new GraphJin build rather than
+silently replacing history.
 
 ## Frozen suite, live verification
 

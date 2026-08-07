@@ -165,7 +165,7 @@ const requiredRenderedContent = [
   ['agentic/watch-automation/index.html', 'Alerts fail open.'],
   ['agentic/watch-automation/index.html', 'Actions fail closed.'],
   ['agentic/watch-automation/index.html', 'graphjin://watch-events/unseen/watch%3Acoffee_roast_'],
-  ['benchmark/index.html', 'Your organization should not need an API for every question'],
+  ['benchmark/index.html', 'Can an AI agent answer an organization&rsquo;s real questions?'],
   ['benchmark/index.html', 'What one task looks like'],
   ['benchmark/index.html', 'Now point it at your own organization'],
   ['benchmark/methodology/index.html', 'Frozen suite, live verification'],
@@ -403,6 +403,18 @@ if (await exists(benchmarkDataPath)) {
     const benchmarkHTML = await readFile(benchmarkIndexPath, 'utf8');
     for (const run of rankedRuns) {
       const escapedRunID = String(run.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const boardMarker = new RegExp(`data-benchmark-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
+      if (!boardMarker) {
+        failures.push(`Benchmark leaderboard is missing its model row for ${run.run_id}`);
+      } else {
+        const boardRowStart = benchmarkHTML.lastIndexOf('<tr', boardMarker.index);
+        const boardRowEnd = benchmarkHTML.indexOf('>', boardMarker.index);
+        const boardRowTag = benchmarkHTML.slice(boardRowStart, boardRowEnd + 1);
+        const renderedRelease = renderedDataAttribute(boardRowTag, 'data-graphjin-release');
+        if (!run.release || renderedRelease !== String(run.release)) {
+          failures.push(`Benchmark row ${run.run_id} does not expose its GraphJin release (${renderedRelease ?? 'missing'} != ${run.release ?? 'missing'})`);
+        }
+      }
       const marker = new RegExp(`data-benchmark-efficiency-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
       if (!marker) {
         failures.push(`Benchmark leaderboard is missing efficiency data for ${run.run_id}`);

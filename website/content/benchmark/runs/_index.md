@@ -1,6 +1,6 @@
 ---
 title: "Published Benchmark Runs"
-description: "The public archive of shareable GraphJin Agent Benchmark reports."
+description: "The public archive of shareable Organizational Agent Benchmark reports, published by GraphJin."
 ---
 
 Each page is generated from the same shareable projection as its local eval
