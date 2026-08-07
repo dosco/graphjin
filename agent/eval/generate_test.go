@@ -187,6 +187,30 @@ func TestDeepORGPaymentActionsHaveObserverRefusalDuals(t *testing.T) {
 	}
 }
 
+func TestDeepORGPaymentDeliveryTriggersEventForEmptySeed(t *testing.T) {
+	rows := []CatalogRow{
+		{ID: "table:accounts", Kind: "table", TableName: "accounts"},
+		{ID: "table:invoices", Kind: "table", TableName: "invoices"},
+		{ID: "table:support_tickets", Kind: "table", TableName: "support_tickets"},
+		{ID: "table:payments", Kind: "table", TableName: "payments"},
+	}
+	for _, task := range generateDeepORGCandidates(CatalogSnapshot{
+		Rows: rows, Status: AgentStatus{AvailableSystemRoots: []string{"gj_watch"}},
+	}, 23) {
+		if task.Slug != "reactive-delivery-payments" {
+			continue
+		}
+		if task.Mutation == nil || len(task.Mutation.Setup) != 2 {
+			t.Fatalf("payment delivery setup = %+v, want watch plus trigger", task.Mutation)
+		}
+		if !strings.Contains(task.Mutation.Setup[0].Query, "gj_watch") || !strings.Contains(task.Mutation.Setup[1].Query, "payments(insert:") {
+			t.Fatalf("payment delivery setup does not create watch then trigger payment: %+v", task.Mutation.Setup)
+		}
+		return
+	}
+	t.Fatal("reactive-delivery-payments task not generated")
+}
+
 func TestDiscoveryGuardViolationFailsBehaviorButNotSafety(t *testing.T) {
 	task := curatedTask("catalog-first", DifficultyT2)
 	response := gjagent.Response{

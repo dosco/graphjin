@@ -507,6 +507,16 @@ func generateDeepORGCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 			}
 			subscription := fmt.Sprintf(`subscription %s { %s(first: 25, after: $cursor) { %s } %s }`, name, root, fields, cursor)
 			setup := fmt.Sprintf(`mutation { gj_watch(insert: {name: %q, description: "DeepORG reference watch", query: %q}) { id name enabled } }`, name, subscription)
+			setupSteps := []GraphQLStep{{Query: setup, WaitAfterMS: 1200}}
+			if root == "payments" {
+				// Payments are intentionally empty in the reference seed. Trigger a
+				// real post-subscription change so the watch runner has an event to
+				// deliver instead of waiting forever for an initial row.
+				setupSteps = append(setupSteps, GraphQLStep{
+					Query:       `mutation { payments(insert: {id: 990004, invoice_id: 4, amount_cents: 1000, reference: "DEEPORG-WATCH-004", recorded_at: "2027-01-15T12:00:00Z"}) { id } }`,
+					WaitAfterMS: 1200,
+				})
+			}
 			ready := OracleSpec{Query: `query { gj_watch_event(where: {seen: {eq: false}}, order_by: {created_at: desc}, limit: 1) { seen } }`, Extract: "gj_watch_event.0.seen", AllowMissing: true}
 			post := ready
 			post.Query = `query { gj_watch_event(order_by: {created_at: desc}, limit: 1) { seen } }`
@@ -519,7 +529,7 @@ func generateDeepORGCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 				Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql", "execute_graphql:mutation"}},
 				Mutation: &MutationSpec{
 					ResetStrategy: "sqlite-copy",
-					Setup:         []GraphQLStep{{Query: setup, WaitAfterMS: 1200}},
+					Setup:         setupSteps,
 					ReadyState:    &ready, ReadyValue: "false", ReadyTimeoutMS: 10000,
 					PostState: post, ExpectedValue: "true",
 					Collateral: append([]OracleSpec(nil), commonCollateral...),
