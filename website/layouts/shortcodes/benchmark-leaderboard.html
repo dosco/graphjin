@@ -40,6 +40,54 @@
     </div>
   {{ end }}
 
+  {{ if and (eq $view "models") (gt (len $ranked) 0) }}
+    <div class="benchmark-efficiency">
+      <h3>Operational efficiency</h3>
+      <p>Every row covers the same 300 evaluated attempts. Token counts come from complete provider accounting; latency is per attempt; cost uses the published provider list price. Lower is better.</p>
+      <div class="benchmark-table-wrap">
+        <table class="benchmark-table benchmark-efficiency-table">
+          <thead>
+            <tr><th>Model</th><th>Provider tokens / attempt</th><th>Latency / attempt</th><th>Estimated list cost</th></tr>
+          </thead>
+          <tbody>
+            {{ range sort $ranked "recall" "desc" }}
+              {{- $providerTokens := int (default .total_tokens .provider_total_tokens) -}}
+              {{- $promptTokens := int (.prompt_tokens | default 0) -}}
+              {{- $completionTokens := int (.completion_tokens | default 0) -}}
+              {{- $episodes := int (.episode_count | default 0) -}}
+              {{- $reliablePasses := mul (float (.task_count | default 0)) (float (.recall | default 0)) -}}
+              <tr
+                data-benchmark-efficiency-run="{{ .run_id }}"
+                data-provider-total-tokens="{{ $providerTokens }}"
+                data-prompt-tokens="{{ $promptTokens }}"
+                data-completion-tokens="{{ $completionTokens }}"
+                data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}"
+                data-latency-p95-ms="{{ printf "%.17g" (float (.latency_p95_ms | default 0)) }}"
+                data-estimated-list-cost-usd="{{ printf "%.17g" (float (.estimated_list_cost_usd | default 0)) }}"
+                data-estimated-list-cost-per-task-usd="{{ printf "%.17g" (float (.estimated_list_cost_per_task_usd | default 0)) }}">
+                <td data-label="Model"><strong>{{ .label }}</strong><small>{{ .provider | default "—" }}</small></td>
+                <td data-label="Provider tokens / attempt">
+                  {{ if and (gt $providerTokens 0) (gt $episodes 0) }}
+                    <strong>{{ printf "%.1fk" (div (div (float $providerTokens) (float $episodes)) 1000) }}</strong>
+                    <small>{{ printf "%.2fM total" (div (float $providerTokens) 1000000) }}{{ if and (gt $promptTokens 0) (gt $completionTokens 0) }} · {{ printf "%.2fM in / %.2fM out" (div (float $promptTokens) 1000000) (div (float $completionTokens) 1000000) }}{{ end }}</small>
+                  {{ else }}—{{ end }}
+                </td>
+                <td data-label="Latency / attempt">
+                  {{ with .latency_p50_ms }}<strong>{{ printf "%.1fs p50" (div (float .) 1000) }}</strong>{{ else }}—{{ end }}
+                  {{ with .latency_p95_ms }}<small>{{ printf "%.1fs p95" (div (float .) 1000) }}</small>{{ end }}
+                </td>
+                <td data-label="Estimated list cost">
+                  {{ with .estimated_list_cost_per_task_usd }}<strong>{{ printf "$%.3f / task" (float .) }}</strong>{{ else }}—{{ end }}
+                  {{ with .estimated_list_cost_usd }}<small>{{ printf "$%.2f full run" (float .) }}{{ if gt $reliablePasses 0 }} · {{ printf "$%.3f / reliable pass" (div (float .) $reliablePasses) }}{{ end }}</small>{{ end }}
+                </td>
+              </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {{ end }}
+
   {{ if gt (len $unranked) 0 }}
     <div class="benchmark-unranked">
       <h3>Unranked runs</h3>

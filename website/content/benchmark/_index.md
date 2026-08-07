@@ -26,6 +26,8 @@ read-only organizational questions against a real schema, in public.
 
 Every ranked row below used the same frozen cohort. Low scores stay public.
 Historical cohorts remain available as unranked reports when the suite advances.
+Capability is only half the comparison: the board also shows how many provider
+tokens, how much time, and how much estimated list-price spend each result took.
 
 {{< benchmark-leaderboard >}}
 
