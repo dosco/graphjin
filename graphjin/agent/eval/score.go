@@ -99,6 +99,9 @@ func Score(task Task, oracle *OracleResult, response gjagent.Response, latencyMS
 		detail.Vector.GroundTruth = boolPointer(groundTruth)
 		detail.Vector.Method = boolPointer(method)
 		detail.GroundTruthDetail = explanation
+	} else if task.Mutation != nil {
+		method := evaluateMethod(task.Method, task.Answer, successfulQueries, successfulTools)
+		detail.Vector.Method = boolPointer(method)
 	}
 	detail.Vector.Efficiency = efficiencyScore(task.Budget, detail.ActorTurns, detail.Tokens.Total, latencyMS)
 	detail.Vector.Reward = fixedReward(detail.Vector)

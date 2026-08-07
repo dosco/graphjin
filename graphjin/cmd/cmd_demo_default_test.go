@@ -82,6 +82,11 @@ func TestResolveDemoPathExtractsBuiltinDemo(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(demoDefaultPath, "scripts")); !os.IsNotExist(err) {
 		t.Errorf("scripts/ must not be extracted")
 	}
+	for _, generated := range []string{"demo", ".graphjin"} {
+		if _, err := os.Stat(filepath.Join(demoDefaultPath, generated)); !os.IsNotExist(err) {
+			t.Errorf("generated state %s/ must not be extracted", generated)
+		}
+	}
 
 	// The demo config must keep sources on SQLite so no containers start.
 	data, err := os.ReadFile(filepath.Join(demoDefaultPath, "dev.yml"))

@@ -112,7 +112,7 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, phrase := range []string{"## Evaluation complete", "## Results at a glance", "## Technical benchmark report", "## Headline", "Pass@k"} {
+	for _, phrase := range []string{"## Evaluation complete", "## Results at a glance", "## Results by task family", "data-benchmark-category-chart", "data-category=\"aggregate\"", "## Technical benchmark report", "## Headline", "Pass@k"} {
 		if !strings.Contains(string(page), phrase) {
 			t.Fatalf("published page missing %q: %s", phrase, page)
 		}
@@ -326,7 +326,7 @@ func TestEvalPublishRoutesNamedBenchmark(t *testing.T) {
 	}
 }
 
-func TestEvalPublishCommandDefaultsToOrganizationalBenchmark(t *testing.T) {
+func TestEvalPublishCommandDefaultsToDeepORG(t *testing.T) {
 	cmd := evalPublishCmd(&evalCLIOptions{})
 	flag := cmd.Flags().Lookup("benchmark")
 	if flag == nil || flag.DefValue != defaultBenchmarkSlug {
@@ -351,8 +351,12 @@ func publishTestReport(runID string) gjeval.Report {
 		RunID: runID, RunStatus: gjeval.RunStatusComplete, Mode: gjeval.RunModeBenchmark, GeneratedAt: time.Date(2026, 8, 3, 10, 11, 12, 0, time.UTC),
 		SuiteFingerprint:   gjeval.PublicBenchmark().SuiteFingerprint,
 		DatasetFingerprint: gjeval.DatasetFingerprint{CatalogHash: "catalog", SeedManifestHash: "manifest", DataAnchor: "anchor"}, OracleValueHash: "oracle",
-		Provenance:    gjeval.RunProvenance{Provider: "openai", Model: "gpt-test", GraphJinCommit: "abcdef123456", BinaryFingerprint: evalBinaryFingerprint(), Seed: 23, Repeats: 3, MaxSteps: 8},
-		Metrics:       gjeval.Metrics{TaskCount: 2, EpisodeCount: 6, Recall: .5, GroundTruthRecall: .5, MethodRecall: .5, SafetyPrecision: 1, BehaviorRecall: 1, PassAtK: .75, PassPowerK: .25},
+		Provenance: gjeval.RunProvenance{Provider: "openai", Model: "gpt-test", GraphJinCommit: "abcdef123456", BinaryFingerprint: evalBinaryFingerprint(), Seed: 23, Repeats: 3, MaxSteps: 8},
+		Metrics: gjeval.Metrics{
+			TaskCount: 2, EpisodeCount: 6, Recall: .5, GroundTruthRecall: .5, MethodRecall: .5,
+			SafetyPrecision: 1, BehaviorRecall: 1, PassAtK: .75, PassPowerK: .25,
+			ByCategory: map[gjeval.Category]gjeval.TierMetrics{gjeval.CategoryAggregate: {TaskCount: 2, Recall: .5}},
+		},
 		ProviderUsage: gjeval.ProviderUsage{PromptTokens: 40, CompletionTokens: 60, TotalTokens: 100, Complete: true},
 		Acceptance:    gjeval.Acceptance{SuiteValid: true, SafetyPass: true, HardPass: true},
 	}
@@ -390,5 +394,5 @@ func publishTestBenchmark(t *testing.T) benchmarkIdentity {
 }
 
 func publishTestDataPath(site string) string {
-	return filepath.Join(site, "data", "benchmarks", "organizational_agent.yaml")
+	return filepath.Join(site, "data", "benchmarks", "deeporg.yaml")
 }

@@ -22,6 +22,9 @@ const (
 	repairKindColumnNotFound      = "column_not_found"
 	repairKindFieldNotOnTable     = "field_not_on_table"
 	repairKindAnalyticsDirective  = "analytics_directive"
+	repairKindNullComparison      = "null_comparison"
+	repairKindAggregateFilter     = "aggregate_filter_anchor"
+	repairKindQualifiedRoot       = "qualified_root"
 	repairKindWrongDialect        = "wrong_dialect"
 	repairKindOperatorInvalid     = "operator_or_syntax_invalid"
 	repairKindSyntaxParse         = "syntax_or_parse_error"
@@ -37,6 +40,7 @@ var (
 	repairPartitionReq    = regexp.MustCompile(`table\s+"([^"]+)"\s+requires a filter on (?:partition|temporal) column\s+"([^"]+)"`)
 	repairFieldNotOnTable = regexp.MustCompile(`field '([^']+)' is not a column or a function`)
 	repairWrongDialectArg = regexp.MustCompile(`unknown argument\s+['"` + "`" + `]?(aggregation|aggregate)['"` + "`" + `]?`)
+	repairQualifiedRoot   = regexp.MustCompile("roots are unqualified table names: write `([^`]+)`, not `([^`]+)`")
 )
 
 func BuildGraphJinErrorRepair(query, errorMsg string) ErrorRepair {
@@ -44,6 +48,17 @@ func BuildGraphJinErrorRepair(query, errorMsg string) ErrorRepair {
 	errLower := strings.ToLower(errorMsg)
 
 	switch {
+	case strings.Contains(errorMsg, "`neq: null` is not a valid null comparison"):
+		res.Kind = repairKindNullComparison
+		res.Diagnosis = "Null checks use the dedicated is_null operator. Replace neq: null with is_null: false."
+		res.RepairedQuery = strings.Replace(query, "neq: null", "is_null: false", 1)
+		res.Next = []string{"validate_where_clause"}
+	case strings.Contains(errorMsg, "aggregate token") && strings.Contains(errorMsg, "cannot be embedded"):
+		res.Kind = repairKindAggregateFilter
+		res.Diagnosis = "An aggregate result cannot be embedded inside a where operand. Query the named aggregate first, then use its returned scalar as a literal in a second query."
+		res.Next = []string{"query_catalog", "validate_where_clause"}
+	case repairQualifiedRoot.MatchString(errorMsg):
+		fillRepairQualifiedRoot(&res, query, errorMsg)
 	case repairAmbiguousRel.MatchString(errorMsg):
 		fillRepairMultiFK(&res, errorMsg)
 	case repairNestedShape.MatchString(errorMsg):
@@ -102,6 +117,18 @@ func BuildGraphJinErrorRepair(query, errorMsg string) ErrorRepair {
 	}
 
 	return res
+}
+
+func fillRepairQualifiedRoot(res *ErrorRepair, query, errorMsg string) {
+	res.Kind = repairKindQualifiedRoot
+	res.Next = []string{"query_catalog"}
+	match := repairQualifiedRoot.FindStringSubmatch(errorMsg)
+	if match == nil {
+		res.Diagnosis = "GraphQL roots are unqualified table names; remove the database or schema prefix."
+		return
+	}
+	res.Diagnosis = fmt.Sprintf("GraphQL root %q must be written as the unqualified table name %q.", match[2], match[1])
+	res.RepairedQuery = strings.Replace(query, match[2], match[1], 1)
 }
 
 func (r ErrorRepair) Known() bool {

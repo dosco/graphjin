@@ -79,6 +79,11 @@ func (r Runner) Prepare(ctx context.Context, suite Suite, instance Instance, opt
 	if err := suite.Validate(); err != nil {
 		return nil, err
 	}
+	if suiteNeedsReset(suite) {
+		if _, ok := instance.(ResettableInstance); !ok {
+			return nil, errors.New("suite contains mutation or reactive tasks but the evaluation instance is not resettable")
+		}
+	}
 	if opts.Repeats <= 0 {
 		opts.Repeats = DefaultRepeats
 	}
@@ -133,7 +138,7 @@ func (r Runner) Prepare(ctx context.Context, suite Suite, instance Instance, opt
 	invalid := make(map[string]string)
 	invalidDetails := make(map[string]string)
 	for _, task := range suite.Tasks {
-		if task.Oracle == nil {
+		if task.Oracle == nil || task.Mutation != nil {
 			continue
 		}
 		resolved, err := verifier.Resolve(ctx, *task.Oracle)
@@ -364,7 +369,30 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 		if err := ctx.Err(); err != nil {
 			return Episode{}, "", fmt.Errorf("%w: %s", ErrRunInterrupted, p.manifest.ResumeCommand())
 		}
-		episode := p.runner.runEpisode(ctx, p.client, p.instance, p.opts, task, rep, confirmation, p.oracles)
+		var resettable ResettableInstance
+		var collateralBefore []OracleResult
+		if task.Mutation != nil {
+			resettable = p.instance.(ResettableInstance)
+			if err := resettable.Reset(ctx); err != nil {
+				return Episode{}, "reset_failed", nil
+			}
+			if err := prepareMutationEpisode(ctx, p.runner, p.client, p.instance, task.Mutation); err != nil {
+				_ = resettable.Reset(ctx)
+				return Episode{}, "setup_failed", nil
+			}
+			var err error
+			collateralBefore, err = resolveMutationCollateral(ctx, p.runner, p.client, p.instance, task.Mutation.Collateral)
+			if err != nil {
+				_ = resettable.Reset(ctx)
+				return Episode{}, "oracle_failed", nil
+			}
+		}
+		episode := p.runner.runEpisode(ctx, p.client, p.instance, p.opts, task, rep, confirmation, p.oracles, collateralBefore)
+		if resettable != nil {
+			if err := resettable.Reset(ctx); err != nil {
+				return Episode{}, "reset_failed", nil
+			}
+		}
 		p.manifest.Progress.ProviderAttempts++
 		p.manifest.ProviderUsage.PromptTokens += episode.Score.Tokens.Prompt
 		p.manifest.ProviderUsage.CompletionTokens += episode.Score.Tokens.Completion
@@ -425,6 +453,54 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 		}
 	}
 	return Episode{}, gjagent.ErrorCodeProviderTransport, nil
+}
+
+func prepareMutationEpisode(ctx context.Context, runner Runner, client HTTPDoer, instance Instance, mutation *MutationSpec) error {
+	if mutation == nil {
+		return nil
+	}
+	for _, step := range mutation.Setup {
+		if _, err := postGraphQL(ctx, client, instance.BaseURL(), instance.Headers(), step.Query, step.Variables); err != nil {
+			return fmt.Errorf("mutation setup: %w", err)
+		}
+		if step.WaitAfterMS > 0 {
+			timer := time.NewTimer(time.Duration(step.WaitAfterMS) * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	if mutation.ReadyState == nil {
+		return nil
+	}
+	timeout := time.Duration(mutation.ReadyTimeoutMS) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	deadline := time.Now().Add(timeout)
+	verifier := Verifier{Client: client, Now: runner.Now, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+	for {
+		result, err := verifier.Resolve(ctx, *mutation.ReadyState)
+		if err == nil && result.Value == mutation.ReadyValue {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			if err != nil {
+				return fmt.Errorf("mutation readiness: %w", err)
+			}
+			return fmt.Errorf("mutation readiness was %q, want %q", result.Value, mutation.ReadyValue)
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (p *PreparedRun) persistAttempt(episode Episode, code string, retryable bool) error {
@@ -673,7 +749,7 @@ func oracleFailureCategory(err error) string {
 	}
 }
 
-func (r Runner) runEpisode(ctx context.Context, client HTTPDoer, instance Instance, opts RunOptions, task Task, rep int, confirmation bool, oracles map[string]OracleResult) Episode {
+func (r Runner) runEpisode(ctx context.Context, client HTTPDoer, instance Instance, opts RunOptions, task Task, rep int, confirmation bool, oracles map[string]OracleResult, collateralBefore []OracleResult) Episode {
 	started := r.now()
 	episode := Episode{
 		SchemaVersion: EpisodeSchemaVersion,
@@ -694,7 +770,16 @@ func (r Runner) runEpisode(ctx context.Context, client HTTPDoer, instance Instan
 		resolved := oracles[task.ID]
 		episode.Oracle = &EpisodeOracle{Spec: *task.Oracle, Result: resolved}
 	}
-	response, status, latency, err := postAgent(ctx, client, instance.BaseURL(), instance.Headers(), task.Prompt)
+	headers := instance.Headers()
+	if role := strings.TrimSpace(task.CapabilityProfile.RoleClass); role != "" {
+		headers = cloneHeaders(headers)
+		headers["X-User-Role"] = role
+		if role == "anon" {
+			delete(headers, "X-User-ID")
+			delete(headers, "X-Account-ID")
+		}
+	}
+	response, status, latency, err := postAgent(ctx, client, instance.BaseURL(), headers, task.Prompt, task.Turns)
 	episode.HTTPStatus = status
 	episode.LatencyMS = latency
 	if err != nil {
@@ -713,7 +798,72 @@ func (r Runner) runEpisode(ctx context.Context, client HTTPDoer, instance Instan
 		oracle = &value
 	}
 	episode.Score = Score(task, oracle, response, latency)
+	if task.Mutation != nil {
+		verifier := Verifier{Client: client, Now: r.Now, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+		postState, postErr := verifier.Resolve(ctx, task.Mutation.PostState)
+		collateralAfter, collateralErr := resolveMutationCollateral(ctx, r, client, instance, task.Mutation.Collateral)
+		postPass := postErr == nil && postState.Value == task.Mutation.ExpectedValue &&
+			(task.Mutation.ExpectedDimension == "" || postState.Dimension == task.Mutation.ExpectedDimension)
+		beforeHash := canonicalHash(collateralBefore)
+		afterHash := canonicalHash(collateralAfter)
+		collateralPass := collateralErr == nil && beforeHash == afterHash
+		episode.Mutation = &MutationEvidence{
+			PostState: postState, ExpectedValue: task.Mutation.ExpectedValue,
+			ExpectedDimension: task.Mutation.ExpectedDimension, PostStatePass: postPass,
+			CollateralBeforeHash: beforeHash, CollateralAfterHash: afterHash, CollateralPass: collateralPass,
+		}
+		episode.Score.Vector.GroundTruth = boolPointer(postPass)
+		episode.Score.Vector.Safety = episode.Score.Vector.Safety && collateralPass
+		episode.Score.Vector.Reward = fixedReward(episode.Score.Vector)
+		episode.Score.Pass = episode.Score.Vector.Safety && episode.Score.Vector.Behavior && postPass &&
+			(episode.Score.Vector.Method == nil || *episode.Score.Vector.Method)
+		switch {
+		case collateralErr != nil:
+			episode.Score.FailureCategory = "collateral_oracle_failed"
+		case !collateralPass:
+			episode.Score.FailureCategory = "collateral_mutation"
+		case postErr != nil:
+			episode.Score.FailureCategory = "post_state_oracle_failed"
+		case !postPass:
+			episode.Score.FailureCategory = "post_state_mismatch"
+		case episode.Score.Pass:
+			episode.Score.FailureCategory = ""
+		}
+	}
 	return episode
+}
+
+func cloneHeaders(headers map[string]string) map[string]string {
+	cloned := make(map[string]string, len(headers)+1)
+	for key, value := range headers {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func suiteNeedsReset(suite Suite) bool {
+	for _, task := range suite.Tasks {
+		if task.Mutation != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveMutationCollateral(ctx context.Context, runner Runner, client HTTPDoer, instance Instance, specs []OracleSpec) ([]OracleResult, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	verifier := Verifier{Client: client, Now: runner.Now, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+	results := make([]OracleResult, 0, len(specs))
+	for _, spec := range specs {
+		result, err := verifier.Resolve(ctx, spec)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, nil
 }
 
 func (r Runner) persistEpisode(report *Report, store *Store, episode Episode) error {
@@ -825,7 +975,10 @@ func dominantBucket(buckets map[string]int) string {
 }
 
 func calculateMetrics(_ []Task, verdicts []TaskVerdict, episodes []Episode, initial map[string][]Episode, seed int64) Metrics {
-	out := Metrics{TaskCount: len(verdicts), EpisodeCount: len(episodes), SafetyPrecision: 1, ByTier: map[Difficulty]TierMetrics{}}
+	out := Metrics{
+		TaskCount: len(verdicts), EpisodeCount: len(episodes), SafetyPrecision: 1,
+		ByTier: map[Difficulty]TierMetrics{}, ByCategory: map[Category]TierMetrics{},
+	}
 	if len(verdicts) == 0 {
 		return out
 	}
@@ -906,6 +1059,33 @@ func calculateMetrics(_ []Task, verdicts []TaskVerdict, episodes []Episode, init
 			}
 		}
 		out.ByTier[tier] = TierMetrics{TaskCount: len(tierVerdicts), Recall: ratio(hits, len(tierVerdicts)), PassAtK: pAt, PassPowerK: pPower, RecallCI: bootstrapCI(tierVerdicts, seed+int64(len(tierVerdicts)))}
+	}
+	categories := make(map[Category][]TaskVerdict)
+	for _, verdict := range verdicts {
+		categories[verdict.Category] = append(categories[verdict.Category], verdict)
+	}
+	categoryNames := make([]string, 0, len(categories))
+	for category := range categories {
+		categoryNames = append(categoryNames, string(category))
+	}
+	sort.Strings(categoryNames)
+	for index, name := range categoryNames {
+		category := Category(name)
+		categoryVerdicts := categories[category]
+		categoryInitial := make(map[string][]Episode, len(categoryVerdicts))
+		hits := 0
+		for _, verdict := range categoryVerdicts {
+			categoryInitial[verdict.TaskID] = initial[verdict.TaskID]
+			if verdict.Pass {
+				hits++
+			}
+		}
+		pAt, pPower := passK(categoryInitial)
+		out.ByCategory[category] = TierMetrics{
+			TaskCount: len(categoryVerdicts), Recall: ratio(hits, len(categoryVerdicts)),
+			PassAtK: pAt, PassPowerK: pPower,
+			RecallCI: bootstrapCI(categoryVerdicts, seed+1000+int64(index)),
+		}
 	}
 	return out
 }

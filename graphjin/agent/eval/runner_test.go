@@ -122,6 +122,221 @@ func TestRunnerInvalidOracleAbortsBeforeAgentTraffic(t *testing.T) {
 	}
 }
 
+func TestRunnerPassesDeclaredConversationHistory(t *testing.T) {
+	task := scoredTask(t)
+	task.Category = CategoryMultiTurn
+	task.Turns = []TurnSpec{
+		{Role: "user", Content: "Which account did we just discuss?"},
+		{Role: "assistant", Content: "Meridian Robotics."},
+	}
+	if err := task.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	suite := Suite{Name: "history", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		var payload gjagent.Request
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload.History) != 2 || payload.History[1].Content != "Meridian Robotics." {
+			t.Fatalf("history = %+v", payload.History)
+		}
+		return passingAgentResponse(), nil
+	})
+	instance := &StaticInstance{URL: "http://graphjin.test", TargetLabel: "test"}
+	if _, err := (Runner{Client: doer}).Run(context.Background(), suite, instance, RunOptions{Repeats: 1}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunnerUsesTaskCapabilityRoleWithoutMutatingInstanceHeaders(t *testing.T) {
+	task := scoredTask(t)
+	task.CapabilityProfile.RoleClass = "anon"
+	if err := task.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	suite := Suite{Name: "role", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"accounts":[{"sum_mrr":42}]}}`), nil
+		}
+		if got := request.Header.Get("X-User-Role"); got != "anon" {
+			t.Fatalf("agent request role = %q, want anon", got)
+		}
+		if got := request.Header.Get("X-User-ID"); got != "" {
+			t.Fatalf("anonymous agent request retained user id %q", got)
+		}
+		return passingAgentResponse(), nil
+	})
+	headers := map[string]string{"X-User-ID": "graphjin-eval", "X-User-Role": "user"}
+	instance := &StaticInstance{URL: "http://graphjin.test", RequestHeaders: headers, TargetLabel: "test"}
+	if _, err := (Runner{Client: doer}).Run(context.Background(), suite, instance, RunOptions{Repeats: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got := headers["X-User-Role"]; got != "user" {
+		t.Fatalf("instance headers mutated to %q", got)
+	}
+}
+
+func TestRunnerResetsMutationEpisodesAndChecksPostStateAndCollateral(t *testing.T) {
+	task := Task{
+		Category: CategoryAction, Difficulty: DifficultyT4, Slug: "record-payment",
+		Prompt: "Record payment PAY-EVAL-001 for invoice 1.", ExpectedStatus: gjagent.StatusAnswered,
+		Provenance: Provenance{GeneratorVersion: GeneratorVersion, Source: "curated"},
+		Method:     MethodRule{RequireQueryMatch: []string{`mutation.*payments`}},
+		Behavior:   BehaviorRule{RequiredActions: []string{"execute_graphql:mutation"}},
+		Mutation: &MutationSpec{
+			ResetStrategy: "sqlite-copy", ExpectedValue: "1", ExpectedDimension: "PAY-EVAL-001",
+			PostState:  OracleSpec{Query: `query { payments(where: {reference: {eq: "PAY-EVAL-001"}}) { count_id reference } }`, Extract: "payments.0.count_id", DimensionExtract: "payments.0.reference"},
+			Collateral: []OracleSpec{{Query: `query { accounts { count_id } }`, Extract: "accounts.0.count_id"}},
+		},
+	}
+	if err := task.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	suite := Suite{Name: "mutation", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			query := valueString(payload["query"])
+			if strings.Contains(query, "payments") {
+				return jsonResponse(200, `{"data":{"payments":[{"count_id":1,"reference":"PAY-EVAL-001"}]}}`), nil
+			}
+			return jsonResponse(200, `{"data":{"accounts":[{"count_id":7}]}}`), nil
+		}
+		response := responseWithAnswer(gjagent.StatusAnswered, "Payment recorded.")
+		response.Actions = []map[string]any{{
+			"tool": "execute_graphql", "status": "ok",
+			"args":    map[string]any{"query": `mutation { payments(insert: {reference: "PAY-EVAL-001"}) { id } }`},
+			"summary": map[string]any{"error_count": 0},
+		}}
+		data, _ := json.Marshal(response)
+		return jsonResponse(200, string(data)), nil
+	})
+	resets := 0
+	instance := &ResettableStaticInstance{
+		StaticInstance: &StaticInstance{URL: "http://graphjin.test", TargetLabel: "test"},
+		ResetFunc:      func(context.Context) error { resets++; return nil },
+	}
+	report, err := (Runner{Client: doer}).Run(context.Background(), suite, instance, RunOptions{Repeats: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resets != 4 {
+		t.Fatalf("resets = %d, want before and after each episode", resets)
+	}
+	if len(report.Tasks) != 1 || !report.Tasks[0].Pass {
+		t.Fatalf("mutation verdict = %+v", report.Tasks)
+	}
+}
+
+func TestRunnerPerformsReactiveSetupAndWaitsForDeliveryBeforeAgentTraffic(t *testing.T) {
+	task := Task{
+		Category: CategoryReactive, Difficulty: DifficultyT4, Slug: "review-watch-event",
+		Prompt: "Review the unseen watch event and mark it seen.", ExpectedStatus: gjagent.StatusAnswered,
+		Provenance: Provenance{GeneratorVersion: GeneratorVersion, Source: "curated"},
+		Method:     MethodRule{RequireQueryMatch: []string{`mutation.*gj_watch_event`}},
+		Behavior:   BehaviorRule{RequiredActions: []string{"execute_graphql:mutation"}},
+		Mutation: &MutationSpec{
+			ResetStrategy: "sqlite-copy",
+			Setup:         []GraphQLStep{{Query: `mutation { gj_watch(insert: {name: "reference"}) { id } }`}},
+			ReadyState:    &OracleSpec{Query: `query { gj_watch_event(where: {seen: {eq: false}}) { seen } }`, Extract: "gj_watch_event.0.seen", AllowMissing: true},
+			ReadyValue:    "false", ReadyTimeoutMS: 1000,
+			PostState: OracleSpec{Query: `query { gj_watch_event { seen } }`, Extract: "gj_watch_event.0.seen"}, ExpectedValue: "true",
+		},
+	}
+	if err := task.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	suite := Suite{Name: "reactive", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	setupComplete := false
+	agentCalled := false
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			query := valueString(payload["query"])
+			switch {
+			case strings.Contains(query, "mutation") && strings.Contains(query, "gj_watch"):
+				setupComplete = true
+				return jsonResponse(200, `{"data":{"gj_watch":{"id":"watch:reference"}}}`), nil
+			case strings.Contains(query, "seen: {eq: false}"):
+				if !setupComplete {
+					t.Fatal("readiness checked before setup")
+				}
+				return jsonResponse(200, `{"data":{"gj_watch_event":[{"seen":false}]}}`), nil
+			default:
+				return jsonResponse(200, `{"data":{"gj_watch_event":[{"seen":true}]}}`), nil
+			}
+		}
+		if !setupComplete {
+			t.Fatal("agent called before reactive delivery was ready")
+		}
+		agentCalled = true
+		response := responseWithAnswer(gjagent.StatusAnswered, "Reviewed the event.")
+		response.Actions = []map[string]any{{
+			"tool": "execute_graphql", "status": "ok",
+			"args":    map[string]any{"query": `mutation { gj_watch_event(where: {id: {eq: "event"}}, update: {seen: true}) { id } }`},
+			"summary": map[string]any{"error_count": 0},
+		}}
+		data, _ := json.Marshal(response)
+		return jsonResponse(200, string(data)), nil
+	})
+	instance := &ResettableStaticInstance{
+		StaticInstance: &StaticInstance{URL: "http://graphjin.test", TargetLabel: "test"},
+		ResetFunc: func(context.Context) error {
+			setupComplete = false
+			return nil
+		},
+	}
+	report, err := (Runner{Client: doer}).Run(context.Background(), suite, instance, RunOptions{Repeats: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !agentCalled || len(report.Tasks) != 1 || !report.Tasks[0].Pass {
+		t.Fatalf("reactive verdict = %+v agent_called=%v", report.Tasks, agentCalled)
+	}
+}
+
+func TestRunnerRejectsMutationSuiteWithoutResettableInstance(t *testing.T) {
+	task := Task{
+		Category: CategoryAction, Difficulty: DifficultyT4, Slug: "mutation", Prompt: "Do it.",
+		ExpectedStatus: gjagent.StatusAnswered, Provenance: Provenance{GeneratorVersion: GeneratorVersion, Source: "curated"},
+		Mutation: &MutationSpec{ResetStrategy: "sqlite-copy", ExpectedValue: "1", PostState: OracleSpec{Query: `query { payments { count_id } }`, Extract: "payments.0.count_id"}},
+	}
+	if err := task.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	suite := Suite{Name: "mutation", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	_, err := (Runner{}).Prepare(context.Background(), suite, &StaticInstance{URL: "http://graphjin.test"}, RunOptions{})
+	if err == nil || !strings.Contains(err.Error(), "not resettable") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestRunnerKeepsHiddenOracleOutOfAgentRequest(t *testing.T) {
 	task := scoredTask(t)
 	suite := Suite{Name: "test", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}

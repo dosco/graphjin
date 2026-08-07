@@ -1,6 +1,9 @@
 package eval
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 type Target string
 
@@ -15,6 +18,9 @@ type EnvSpec struct {
 	ConfigPath string `json:"config_path,omitempty"`
 	Anchor     string `json:"anchor,omitempty"`
 	Seed       int64  `json:"seed,omitempty"`
+	Writable   bool   `json:"writable,omitempty"`
+	Reactive   bool   `json:"reactive,omitempty"`
+	Resettable bool   `json:"resettable,omitempty"`
 }
 
 type DatasetFingerprint struct {
@@ -63,6 +69,18 @@ type InstancePool interface {
 type ResettableInstance interface {
 	Instance
 	Reset(context.Context) error
+}
+
+type ResettableStaticInstance struct {
+	*StaticInstance
+	ResetFunc func(context.Context) error
+}
+
+func (i *ResettableStaticInstance) Reset(ctx context.Context) error {
+	if i == nil || i.ResetFunc == nil {
+		return errors.New("evaluation instance does not define reset")
+	}
+	return i.ResetFunc(ctx)
 }
 
 type StaticInstance struct {

@@ -1,109 +1,105 @@
-{{- $key := .Get "benchmark" | default "organizational_agent" -}}
+{{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $benchmarkPath := printf "/benchmarks/%s" $data.benchmark.slug -}}
 {{- $runs := default (slice) $data.runs -}}
-{{- $ranked := where $runs "ranked" true -}}
+{{- $ranked := sort (where $runs "ranked" true) "recall" "desc" -}}
 {{- $unranked := where $runs "ranked" false -}}
 {{- $view := .Get "view" | default "models" -}}
-<div class="benchmark-board" data-benchmark-view="{{ $view }}">
+<div class="benchmark-board benchmark-board-{{ $view }}" data-benchmark-view="{{ $view }}">
   {{ if eq (len $ranked) 0 }}
     <div class="benchmark-empty" data-benchmark-empty>
       <strong>No published runs yet.</strong>
       <span>The first scored run of <code>graphjin eval bench --public</code> will appear here.</span>
     </div>
-  {{ else }}
+  {{ else if eq $view "chart" }}
+    {{- $height := add 34 (mul (len $ranked) 64) -}}
+    <div class="benchmark-svg-wrap">
+      <svg class="benchmark-model-chart" data-benchmark-model-chart viewBox="0 0 920 {{ $height }}" role="img" aria-label="DeepORG full-pass score, reliable-pass cost, and median latency by model">
+        <style>.track{fill:var(--benchmark-track,#e7e5e4)}.bar{fill:var(--benchmark-accent,#0f766e)}.label,.value,.badge{fill:currentColor;font-family:system-ui,sans-serif}.label{font-size:15px;font-weight:700}.value{font-size:14px;font-weight:800;text-anchor:end}.badge{font-size:12px}</style>
+        {{ range $index, $run := $ranked }}
+          {{- $y := add 30 (mul $index 64) -}}
+          {{- $width := mul 520 (float $run.recall) -}}
+          {{- $reliablePasses := mul (float ($run.task_count | default 0)) (float ($run.recall | default 0)) -}}
+          {{- $costPerReliable := 0.0 -}}
+          {{- if gt $reliablePasses 0 -}}{{- $costPerReliable = div (float ($run.estimated_list_cost_usd | default 0)) $reliablePasses -}}{{- end -}}
+          <g data-benchmark-chart-run="{{ $run.run_id }}" data-recall="{{ printf "%.17g" (float $run.recall) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $costPerReliable }}" data-latency-p50-ms="{{ printf "%.17g" (float ($run.latency_p50_ms | default 0)) }}">
+            <text class="label" x="0" y="{{ $y }}">{{ $run.label }}</text>
+            <rect class="track" x="220" y="{{ sub $y 16 }}" width="520" height="18" rx="9"/>
+            <rect class="bar" x="220" y="{{ sub $y 16 }}" width="{{ printf "%.2f" $width }}" height="18" rx="9"/>
+            <text class="value" x="810" y="{{ $y }}">{{ printf "%.1f%%" (mul (float $run.recall) 100) }}</text>
+            <text class="badge" x="220" y="{{ add $y 20 }}">{{ if gt $costPerReliable 0 }}{{ printf "$%.3f / reliable pass" $costPerReliable }}{{ else }}cost unavailable{{ end }} · {{ with $run.latency_p50_ms }}{{ printf "%.1fs p50" (div (float .) 1000) }}{{ else }}latency unavailable{{ end }}</text>
+            <a href="{{ printf "%s/runs/%s/" $benchmarkPath $run.slug | relURL }}"><text class="badge" x="820" y="{{ add $y 20 }}">report →</text></a>
+          </g>
+        {{ end }}
+      </svg>
+    </div>
+    <p class="benchmark-chart-note"><strong>Full pass</strong> means the right answer, the required database method, and every safety rule. Cost uses provider list pricing; latency is per attempt. Longer bars are better. Lower cost and latency are better.</p>
+  {{ else if eq $view "categories" }}
+    {{- $categories := slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal" "action" "reactive" "multi-turn" "cross-source" -}}
+    {{- $scratch := newScratch -}}
+    {{- $scratch.Set "rows" 0 -}}
+    {{- range $categories -}}{{- if gt (int (index $data.suite.category_counts . | default 0)) 0 -}}{{- $scratch.Add "rows" (add 1 (len $ranked)) -}}{{- end -}}{{- end -}}
+    {{- $height := add 18 (mul ($scratch.Get "rows") 30) -}}
+    {{- $scratch.Set "y" 22 -}}
+    <div class="benchmark-svg-wrap">
+      <svg class="benchmark-category-comparison" data-benchmark-category-comparison viewBox="0 0 920 {{ $height }}" role="img" aria-label="DeepORG full-pass score by task family and model">
+        <style>.track{fill:var(--benchmark-track,#e7e5e4)}.bar{fill:var(--benchmark-accent,#0f766e)}.bar.alt{fill:var(--benchmark-accent-alt,#2563eb)}.category,.model,.value{fill:currentColor;font-family:system-ui,sans-serif}.category{font-size:14px;font-weight:800}.model{font-size:12px}.value{font-size:12px;font-weight:700;text-anchor:end}</style>
+        {{ range $categories }}
+          {{- $category := . -}}
+          {{- $count := int (index $data.suite.category_counts $category | default 0) -}}
+          {{- if gt $count 0 -}}
+            {{- $y := $scratch.Get "y" -}}
+            <text class="category" x="0" y="{{ $y }}">{{ humanize $category }} · {{ $count }} tasks</text>
+            {{- $scratch.Add "y" 30 -}}
+            {{- range $index, $run := $ranked -}}
+              {{- $value := float (index ($run.category_recall | default dict) $category | default 0) -}}
+              {{- $rowY := $scratch.Get "y" -}}
+              <g data-category-run="{{ $run.run_id }}" data-category="{{ $category }}" data-recall="{{ printf "%.17g" $value }}">
+                <text class="model" x="16" y="{{ $rowY }}">{{ $run.label }}</text>
+                <rect class="track" x="220" y="{{ sub $rowY 13 }}" width="520" height="14" rx="7"/>
+                <rect class="bar{{ if eq (mod $index 2) 1 }} alt{{ end }}" x="220" y="{{ sub $rowY 13 }}" width="{{ printf "%.2f" (mul 520 $value) }}" height="14" rx="7"/>
+                <text class="value" x="810" y="{{ $rowY }}">{{ printf "%.1f%%" (mul $value 100) }}</text>
+              </g>
+              {{- $scratch.Add "y" 30 -}}
+            {{- end -}}
+          {{- end -}}
+        {{ end }}
+      </svg>
+    </div>
+  {{ else if eq $view "operational" }}
     <div class="benchmark-table-wrap">
-      <table class="benchmark-table">
-        <thead>
-          {{ if eq $view "releases" }}
-            <tr><th>Release</th><th>Model</th><th>Reliable <small>(recall)</small></th><th>Complete DB method <small>(method recall)</small></th><th>Rules followed <small>(safety)</small></th><th>Run</th></tr>
-          {{ else }}
-            <tr><th>Model + GraphJin build</th><th>Provider</th><th>Reliable <small>(recall)</small></th><th>At least once <small>(pass@3)</small></th><th>Every time <small>(pass³)</small></th><th>Complete DB method <small>(method recall)</small></th><th>Rules followed <small>(safety)</small></th><th>Run</th></tr>
-          {{ end }}
-        </thead>
+      <table class="benchmark-table benchmark-efficiency-table">
+        <thead><tr><th>Model + GraphJin build</th><th>Provider tokens / attempt</th><th>Latency / attempt</th><th>Estimated list cost</th></tr></thead>
         <tbody>
-          {{ range sort $ranked "recall" "desc" }}
-            <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}">
-              {{ if eq $view "releases" }}
-                <td>{{ .release | default "unversioned" }}</td><td>{{ .label }}</td>
-              {{ else }}
-                <td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ .provider | default "—" }}</td>
-              {{ end }}
-              <td><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></td>
-              {{ if ne $view "releases" }}<td>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</td>{{ end }}
-              {{ if ne $view "releases" }}<td>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</td>{{ end }}
-              <td>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</td>
-              <td>{{ printf "%.1f%%" (mul (float .safety_precision) 100) }}</td>
-              <td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td>
+          {{ range $ranked }}
+            {{- $providerTokens := int (default .total_tokens .provider_total_tokens) -}}
+            {{- $promptTokens := int (.prompt_tokens | default 0) -}}
+            {{- $completionTokens := int (.completion_tokens | default 0) -}}
+            {{- $episodes := int (.episode_count | default 0) -}}
+            {{- $reliablePasses := mul (float (.task_count | default 0)) (float (.recall | default 0)) -}}
+            <tr data-benchmark-efficiency-run="{{ .run_id }}" data-provider-total-tokens="{{ $providerTokens }}" data-prompt-tokens="{{ $promptTokens }}" data-completion-tokens="{{ $completionTokens }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-latency-p95-ms="{{ printf "%.17g" (float (.latency_p95_ms | default 0)) }}" data-estimated-list-cost-usd="{{ printf "%.17g" (float (.estimated_list_cost_usd | default 0)) }}" data-estimated-list-cost-per-task-usd="{{ printf "%.17g" (float (.estimated_list_cost_per_task_usd | default 0)) }}">
+              <td data-label="Model"><strong>{{ .label }}</strong><small>{{ .provider | default "—" }} · GraphJin build {{ .release | default "unversioned" }}</small></td>
+              <td data-label="Provider tokens / attempt">{{ if and (gt $providerTokens 0) (gt $episodes 0) }}<strong>{{ printf "%.1fk" (div (div (float $providerTokens) (float $episodes)) 1000) }}</strong><small>{{ printf "%.2fM total" (div (float $providerTokens) 1000000) }}{{ if and (gt $promptTokens 0) (gt $completionTokens 0) }} · {{ printf "%.2fM in / %.2fM out" (div (float $promptTokens) 1000000) (div (float $completionTokens) 1000000) }}{{ end }}</small>{{ else }}—{{ end }}</td>
+              <td data-label="Latency / attempt">{{ with .latency_p50_ms }}<strong>{{ printf "%.1fs p50" (div (float .) 1000) }}</strong>{{ else }}—{{ end }}{{ with .latency_p95_ms }}<small>{{ printf "%.1fs p95" (div (float .) 1000) }}</small>{{ end }}</td>
+              <td data-label="Estimated list cost">{{ with .estimated_list_cost_per_task_usd }}<strong>{{ printf "$%.3f / task" (float .) }}</strong>{{ else }}—{{ end }}{{ with .estimated_list_cost_usd }}<small>{{ printf "$%.2f full run" (float .) }}{{ if gt $reliablePasses 0 }} · {{ printf "$%.3f / reliable pass" (div (float .) $reliablePasses) }}{{ end }}</small>{{ end }}</td>
             </tr>
           {{ end }}
         </tbody>
       </table>
     </div>
-  {{ end }}
-
-  {{ if and (eq $view "models") (gt (len $ranked) 0) }}
-    <div class="benchmark-efficiency">
-      <h3>Operational efficiency</h3>
-      <p>Every row covers the same 300 evaluated attempts. Token counts come from complete provider accounting; latency is per attempt; cost uses the published provider list price. Lower is better.</p>
-      <div class="benchmark-table-wrap">
-        <table class="benchmark-table benchmark-efficiency-table">
-          <thead>
-            <tr><th>Model</th><th>Provider tokens / attempt</th><th>Latency / attempt</th><th>Estimated list cost</th></tr>
-          </thead>
-          <tbody>
-            {{ range sort $ranked "recall" "desc" }}
-              {{- $providerTokens := int (default .total_tokens .provider_total_tokens) -}}
-              {{- $promptTokens := int (.prompt_tokens | default 0) -}}
-              {{- $completionTokens := int (.completion_tokens | default 0) -}}
-              {{- $episodes := int (.episode_count | default 0) -}}
-              {{- $reliablePasses := mul (float (.task_count | default 0)) (float (.recall | default 0)) -}}
-              <tr
-                data-benchmark-efficiency-run="{{ .run_id }}"
-                data-provider-total-tokens="{{ $providerTokens }}"
-                data-prompt-tokens="{{ $promptTokens }}"
-                data-completion-tokens="{{ $completionTokens }}"
-                data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}"
-                data-latency-p95-ms="{{ printf "%.17g" (float (.latency_p95_ms | default 0)) }}"
-                data-estimated-list-cost-usd="{{ printf "%.17g" (float (.estimated_list_cost_usd | default 0)) }}"
-                data-estimated-list-cost-per-task-usd="{{ printf "%.17g" (float (.estimated_list_cost_per_task_usd | default 0)) }}">
-                <td data-label="Model"><strong>{{ .label }}</strong><small>{{ .provider | default "—" }} · GraphJin build {{ .release | default "unversioned" }}</small></td>
-                <td data-label="Provider tokens / attempt">
-                  {{ if and (gt $providerTokens 0) (gt $episodes 0) }}
-                    <strong>{{ printf "%.1fk" (div (div (float $providerTokens) (float $episodes)) 1000) }}</strong>
-                    <small>{{ printf "%.2fM total" (div (float $providerTokens) 1000000) }}{{ if and (gt $promptTokens 0) (gt $completionTokens 0) }} · {{ printf "%.2fM in / %.2fM out" (div (float $promptTokens) 1000000) (div (float $completionTokens) 1000000) }}{{ end }}</small>
-                  {{ else }}—{{ end }}
-                </td>
-                <td data-label="Latency / attempt">
-                  {{ with .latency_p50_ms }}<strong>{{ printf "%.1fs p50" (div (float .) 1000) }}</strong>{{ else }}—{{ end }}
-                  {{ with .latency_p95_ms }}<small>{{ printf "%.1fs p95" (div (float .) 1000) }}</small>{{ end }}
-                </td>
-                <td data-label="Estimated list cost">
-                  {{ with .estimated_list_cost_per_task_usd }}<strong>{{ printf "$%.3f / task" (float .) }}</strong>{{ else }}—{{ end }}
-                  {{ with .estimated_list_cost_usd }}<small>{{ printf "$%.2f full run" (float .) }}{{ if gt $reliablePasses 0 }} · {{ printf "$%.3f / reliable pass" (div (float .) $reliablePasses) }}{{ end }}</small>{{ end }}
-                </td>
-              </tr>
-            {{ end }}
-          </tbody>
-        </table>
-      </div>
+  {{ else }}
+    <div class="benchmark-table-wrap">
+      <table class="benchmark-table">
+        <thead><tr><th>Model + GraphJin build</th><th>Provider</th><th>Full pass</th><th>At least once</th><th>Every time</th><th>Database method</th><th>Safety</th><th>Run</th></tr></thead>
+        <tbody>
+          {{ range $ranked }}
+            <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}"><td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ .provider | default "—" }}</td><td><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></td><td>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .safety_precision) 100) }}</td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>
+          {{ end }}
+        </tbody>
+      </table>
     </div>
-  {{ end }}
-
-  {{ if gt (len $unranked) 0 }}
-    <div class="benchmark-unranked">
-      <h3>Unranked runs</h3>
-      <p>These reports are public but do not match the pinned cohort.</p>
-      <div class="benchmark-table-wrap">
-        <table class="benchmark-table">
-          <thead><tr><th>Label</th><th>Reliable <small>(recall)</small></th><th>Why unranked</th><th>Run</th></tr></thead>
-          <tbody>
-            {{ range sort $unranked "run_id" "asc" }}
-              <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}"><td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>
-            {{ end }}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    {{ if gt (len $unranked) 0 }}
+      <div class="benchmark-unranked"><h3>Unranked runs</h3><p>Historical reports that do not match the pinned cohort.</p><div class="benchmark-table-wrap"><table class="benchmark-table"><thead><tr><th>Label</th><th>Full pass</th><th>Why unranked</th><th>Run</th></tr></thead><tbody>{{ range sort $unranked "run_id" "asc" }}<tr data-benchmark-row data-benchmark-run="{{ .run_id }}"><td><strong>{{ .label }}</strong></td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>{{ end }}</tbody></table></div></div>
+    {{ end }}
   {{ end }}
 </div>

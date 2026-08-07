@@ -97,17 +97,20 @@ func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
 	if !compatAggregate {
 		t.Fatal("public suite has no Hasura-compatible aggregate method rule")
 	}
-	for category, bounds := range map[gjeval.Category][2]int{
-		gjeval.CategoryAggregate:   {20, 30},
-		gjeval.CategoryWindow:      {20, 30},
-		gjeval.CategoryRanking:     {15, 20},
-		gjeval.CategoryDiscovery:   {10, 15},
-		gjeval.CategorySavedMetric: {10, 10},
-		gjeval.CategoryRefusal:     {10, 10},
-		gjeval.CategoryTraversal:   {0, 5},
+	for category, want := range map[gjeval.Category]int{
+		gjeval.CategoryAggregate:   17,
+		gjeval.CategoryWindow:      17,
+		gjeval.CategoryRanking:     13,
+		gjeval.CategoryDiscovery:   8,
+		gjeval.CategorySavedMetric: 8,
+		gjeval.CategoryRefusal:     10,
+		gjeval.CategoryAction:      10,
+		gjeval.CategoryReactive:    8,
+		gjeval.CategoryMultiTurn:   5,
+		gjeval.CategoryCrossSource: 4,
 	} {
-		if categoryCounts[category] < bounds[0] || categoryCounts[category] > bounds[1] {
-			t.Fatalf("public suite %s count = %d, want %d..%d (all=%v)", category, categoryCounts[category], bounds[0], bounds[1], categoryCounts)
+		if categoryCounts[category] != want {
+			t.Fatalf("public suite %s count = %d, want %d (all=%v)", category, categoryCounts[category], want, categoryCounts)
 		}
 	}
 	if got := gjeval.SuiteFingerprint(*suite); got != spec.SuiteFingerprint {
@@ -322,7 +325,7 @@ func TestPrintEvalReportShowsArtifactsConsoleAndPublishCommand(t *testing.T) {
 		"JSON report:      " + store.ReportPath(report.RunID),
 		"Console:         http://127.0.0.1:8083/trainer/reports?run=public-run",
 		"graphjin --path " + strconv.Quote(projectPath) + " serve --demo",
-		"Publish:         graphjin --path " + strconv.Quote(projectPath) + " eval publish public-run --benchmark organizational-agent --yes",
+		"Publish:         graphjin --path " + strconv.Quote(projectPath) + " eval publish public-run --benchmark deeporg --yes",
 	} {
 		if !strings.Contains(output.String(), phrase) {
 			t.Fatalf("output missing %q: %s", phrase, output.String())

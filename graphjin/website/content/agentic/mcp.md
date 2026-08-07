@@ -17,7 +17,7 @@ codex mcp add graphjin -- graphjin mcp --demo
 
 `graphjin mcp --demo` extracts the built-in SaaS ops demo to `./graphjin-demo` — SQLite, in-process, no containers — and serves MCP over stdio. Your IDE's own model does the reasoning, so no provider key is needed. Delete `./graphjin-demo` to reset. Point at another [demo vertical](/start/demos/) from a repo clone with `--path examples/<name>`.
 
-The catalog-first, governed read-only path is measured across models in [The Organizational Agent Benchmark](/benchmarks/organizational-agent/).
+The catalog-first, governed path is measured across models in [DeepORG](/benchmarks/deeporg/).
 
 The demo deliberately keeps its own configuration out of reach. It sets `mcp.allow_config_updates: false` and puts the `gj_config` root behind `admin`, so a stdio caller gets `validate_config` — enough to dry-run a change — but neither `get_current_config` nor `update_current_config`. To configure GraphJin from your IDE, scaffold your own project with `graphjin serve new my-api`; the generated `dev.yml` enables all three.
 

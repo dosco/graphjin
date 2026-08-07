@@ -22,7 +22,7 @@ That is the purpose of GraphJin Eval: prove that a model, prompt, skill, or
 GraphJin change still produces correct, governed answers on **your catalog and
 your data**.
 
-For the cross-vendor version of this contract on one frozen public cohort, see [The Organizational Agent Benchmark](/benchmarks/organizational-agent/), built and published by GraphJin.
+For the cross-vendor version of this contract on one frozen public cohort, see [DeepORG](/benchmarks/deeporg/), built and published by GraphJin.
 
 {{< callout type="note" title="Eval is a release check, not a model leaderboard." >}}
 Start with the questions your users actually ask. GraphJin builds executable

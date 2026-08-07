@@ -20,7 +20,7 @@ watches, artifacts).
 
 ## What's inside
 
-- **app** (SQLite): accounts, users, subscriptions, invoices, support_tickets,
+- **app** (SQLite): accounts, users, subscriptions, invoices, payments, support_tickets,
   usage_events — seeded with a small deterministic dataset. Meridian Robotics
   is the churn-risk anchor: failed payments, a breached-SLA urgent ticket,
   collapsing usage, and a renewal nine days out.
@@ -30,6 +30,10 @@ watches, artifacts).
 - **Watches + artifacts** enabled (`gj_watch`, `gj_watch_event`,
   `gj_artifacts`; the `runbook` artifact kind is locked to demo policy
   refusals).
+- **Three reference watches** in `reference-watches.graphql` cover failed
+  invoices, urgent-ticket SLA risk, and churn-risk accounts. Apply them through
+  GraphiQL or ask the governed agent to create the equivalent standing
+  questions; DeepORG's reactive tasks use the same public `gj_watch` contract.
 
 ## Identity
 

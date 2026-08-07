@@ -1,27 +1,23 @@
-{{- $key := .Get "benchmark" | default "organizational_agent" -}}
+{{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $benchmarkPath := printf "/benchmarks/%s" $data.benchmark.slug -}}
-{{- $runs := default (slice) $data.runs -}}
-{{- $accepted := where (where $runs "ranked" true) "accepted" true -}}
-{{- $ranked := sort $accepted "recall" "desc" -}}
+{{- $ranked := sort (where (default (slice) $data.runs) "ranked" true) "recall" "desc" -}}
 <div id="benchmark" class="benchmark-hook" data-benchmark-proof>
   {{ if eq (len $ranked) 0 }}
-    <div class="benchmark-empty" data-benchmark-empty>
-      <strong>No accepted public run yet.</strong>
-      <span>The first completed run of the frozen public suite will populate these proof points.</span>
-    </div>
+    <div class="benchmark-empty" data-benchmark-empty><strong>No public run yet.</strong><span>The first completed run will appear here.</span></div>
   {{ else }}
-    {{ range first 1 $ranked }}
-      <div class="benchmark-stat-strip" aria-label="Top accepted public benchmark result">
-        <div><span>Full pass</span><strong data-benchmark-stat="recall" data-benchmark-value="{{ printf "%.17g" (float .recall) }}">{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></div>
-        <div><span>Safety</span><strong data-benchmark-stat="safety_precision" data-benchmark-value="{{ printf "%.17g" (float .safety_precision) }}">{{ printf "%.1f%%" (mul (float .safety_precision) 100) }}</strong></div>
-        <div><span>Database method</span><strong data-benchmark-stat="method_recall" data-benchmark-value="{{ printf "%.17g" (float .method_recall) }}">{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</strong></div>
-        <div><span>List cost / question</span><strong data-benchmark-stat="estimated_list_cost_per_task_usd" data-benchmark-value="{{ printf "%.17g" (float (.estimated_list_cost_per_task_usd | default 0)) }}">{{ with .estimated_list_cost_per_task_usd }}{{ printf "$%.3f" (float .) }}{{ else }}—{{ end }}</strong></div>
-        <div><span>Median latency</span><strong data-benchmark-stat="latency_p50_ms" data-benchmark-value="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}">{{ with .latency_p50_ms }}{{ printf "%.1fs" (div (float .) 1000) }}{{ else }}—{{ end }}</strong></div>
-        <div><span>Model</span><strong data-benchmark-stat="label" data-benchmark-value="{{ .label }}">{{ .label }}</strong></div>
-        <div><span>Suite</span><strong data-benchmark-stat="suite_fingerprint" data-benchmark-value="{{ $data.suite.suite_fingerprint }}">{{ $data.suite.generator_version | default $data.suite.generation }}</strong></div>
+    <div class="benchmark-svg-wrap benchmark-svg-wrap-compact">
+      <div class="benchmark-proof-chart" data-benchmark-model-chart role="img" aria-label="DeepORG public model comparison">
+        {{ range $run := $ranked }}{{- $width := mul 410 (float $run.recall) -}}{{- $reliable := mul (float $run.task_count) (float $run.recall) -}}{{- $cost := 0.0 -}}{{- if gt $reliable 0 -}}{{- $cost = div (float ($run.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
+        <div class="benchmark-proof-row" data-benchmark-chart-run="{{ $run.run_id }}" data-recall="{{ printf "%.17g" (float $run.recall) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-latency-p50-ms="{{ printf "%.17g" (float ($run.latency_p50_ms | default 0)) }}">
+          <strong class="benchmark-proof-label">{{ $run.label }}</strong>
+          <svg class="benchmark-proof-bar" viewBox="0 0 410 16" preserveAspectRatio="none" aria-hidden="true"><rect class="track" width="410" height="16" rx="8"/><rect class="bar" width="{{ printf "%.2f" $width }}" height="16" rx="8"/></svg>
+          <a class="benchmark-proof-value" href="{{ printf "%s/runs/%s/" $benchmarkPath $run.slug | relURL }}">{{ printf "%.1f%%" (mul (float $run.recall) 100) }} <span aria-hidden="true">→</span></a>
+          <span class="benchmark-proof-badge">{{ if gt $cost 0 }}{{ printf "$%.3f / reliable pass" $cost }}{{ else }}cost unavailable{{ end }} · {{ with $run.latency_p50_ms }}{{ printf "%.1fs p50" (div (float .) 1000) }}{{ else }}latency unavailable{{ end }}</span>
+        </div>
+        {{ end }}
       </div>
-      <p class="benchmark-proof-source">Public run <a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">{{ .run_id }}</a> · {{ .pricing_source | default "provider usage recorded; list price not supplied" }}</p>
-    {{ end }}
+    </div>
+    <p class="benchmark-proof-source">Full pass requires the correct answer, required database method, and safety. <a href="{{ $benchmarkPath | relURL }}">Compare cost, tokens, latency, and task families →</a></p>
   {{ end }}
 </div>

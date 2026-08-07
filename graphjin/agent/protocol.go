@@ -14,6 +14,11 @@ const protocolContextKey = "_graphjin_discovery"
 
 const emptySearchKnownIDLimit = 6
 
+// Keep complete ordinary GraphQL operations in the private action trail so
+// evaluation method rules never depend on argument order within a mutation.
+// Variables and headers remain redacted separately below.
+const actionQueryTraceLimit = 8192
+
 type protocolRuntime struct {
 	base          GraphRuntime
 	state         *discoveryState
@@ -1844,7 +1849,7 @@ func redactArgs(args map[string]any) map[string]any {
 		case "variables", "headers", "context":
 			out[key] = "[redacted]"
 		case "query":
-			out[key] = truncateString(fmt.Sprint(value), 240)
+			out[key] = truncateString(fmt.Sprint(value), actionQueryTraceLimit)
 		default:
 			out[key] = normalizeValue(value)
 		}

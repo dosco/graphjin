@@ -49,6 +49,38 @@ sources:
       schema.read: true
       schema.write: false
 
+  - name: sla_policies
+    kind: file
+    backend: local
+    root: files
+    read_only: true
+    max_list_page_size: 25
+    capabilities:
+      files.list: true
+      files.read: true
+      files.write: false
+      files.delete: false
+      files.watch: false
+
+  - name: account_health_api
+    kind: api
+    specs_dir: specs
+    specs:
+      account-health:
+        base_url: http://127.0.0.1:18094
+        joins:
+          getAccountHealth:
+            parent_table: app:main.accounts
+            parent_column: id
+            param: account_id
+            expose_as: account_health
+        concurrency:
+          max_concurrent: 4
+          rate_limit_per_second: 20
+    capabilities:
+      api.read: true
+      api.write: false
+
 system:
   root_access:
     gj_config: admin

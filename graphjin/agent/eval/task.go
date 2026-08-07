@@ -31,7 +31,7 @@ const (
 	AttemptSchemaVersion   = "graphjin.eval.attempt/v1"
 	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
 	// generated task semantics change, including method-rule dialect support.
-	GeneratorVersion      = "graphjin.eval.generator/v6"
+	GeneratorVersion      = "graphjin.eval.generator/v7"
 	RewardVersion         = "graphjin.eval.reward/v2"
 	DefaultSuiteSize      = 24
 	DefaultRepeats        = 3
@@ -52,6 +52,10 @@ const (
 	CategoryTraversal   Category = "traversal"
 	CategorySavedMetric Category = "saved-metric"
 	CategoryRefusal     Category = "refusal"
+	CategoryAction      Category = "action"
+	CategoryReactive    Category = "reactive"
+	CategoryMultiTurn   Category = "multi-turn"
+	CategoryCrossSource Category = "cross-source"
 )
 
 type Difficulty string
@@ -92,9 +96,6 @@ type Task struct {
 	Behavior          BehaviorRule      `json:"behavior,omitempty" yaml:"behavior,omitempty"`
 	Budget            Budget            `json:"budget,omitempty" yaml:"budget,omitempty"`
 
-	// Turns and Mutation are v1 schema reservations. The v1 runner rejects
-	// populated values instead of pretending to implement resettable multi-turn
-	// or mutation environments.
 	Turns    []TurnSpec    `json:"turns,omitempty" yaml:"turns,omitempty"`
 	Mutation *MutationSpec `json:"mutation,omitempty" yaml:"mutation,omitempty"`
 }
@@ -105,7 +106,24 @@ type TurnSpec struct {
 }
 
 type MutationSpec struct {
-	ResetStrategy string `json:"reset_strategy,omitempty" yaml:"reset_strategy,omitempty"`
+	ResetStrategy     string        `json:"reset_strategy" yaml:"reset_strategy"`
+	Setup             []GraphQLStep `json:"setup,omitempty" yaml:"setup,omitempty"`
+	ReadyState        *OracleSpec   `json:"ready_state,omitempty" yaml:"ready_state,omitempty"`
+	ReadyValue        string        `json:"ready_value,omitempty" yaml:"ready_value,omitempty"`
+	ReadyTimeoutMS    int64         `json:"ready_timeout_ms,omitempty" yaml:"ready_timeout_ms,omitempty"`
+	PostState         OracleSpec    `json:"post_state" yaml:"post_state"`
+	ExpectedValue     string        `json:"expected_value" yaml:"expected_value"`
+	ExpectedDimension string        `json:"expected_dimension,omitempty" yaml:"expected_dimension,omitempty"`
+	Collateral        []OracleSpec  `json:"collateral,omitempty" yaml:"collateral,omitempty"`
+}
+
+// GraphQLStep is trusted environment setup performed after an episode reset
+// and before the model sees the task. It is deliberately kept out of the
+// action trail so only the model's own method is scored.
+type GraphQLStep struct {
+	Query       string         `json:"query" yaml:"query"`
+	Variables   map[string]any `json:"variables,omitempty" yaml:"variables,omitempty"`
+	WaitAfterMS int64          `json:"wait_after_ms,omitempty" yaml:"wait_after_ms,omitempty"`
 }
 
 type OracleSpec struct {
@@ -113,9 +131,11 @@ type OracleSpec struct {
 	Variables        map[string]any `json:"variables,omitempty" yaml:"variables,omitempty"`
 	Extract          string         `json:"extract,omitempty" yaml:"extract,omitempty"`
 	DimensionExtract string         `json:"dimension_extract,omitempty" yaml:"dimension_extract,omitempty"`
+	DimensionLiteral string         `json:"dimension_literal,omitempty" yaml:"dimension_literal,omitempty"`
 	PickMax          *PickMaxRule   `json:"pick_max,omitempty" yaml:"pick_max,omitempty"`
 	AnchorQuery      string         `json:"anchor_query,omitempty" yaml:"anchor_query,omitempty"`
 	AnchorExtract    string         `json:"anchor_extract,omitempty" yaml:"anchor_extract,omitempty"`
+	AllowMissing     bool           `json:"allow_missing,omitempty" yaml:"allow_missing,omitempty"`
 }
 
 type PickMaxRule struct {
@@ -189,6 +209,15 @@ func (t *Task) Normalize() error {
 	t.Behavior.ForbiddenUsedSkills = sortedUnique(t.Behavior.ForbiddenUsedSkills)
 	t.Behavior.ExpectedLoadedSkills = sortedUnique(t.Behavior.ExpectedLoadedSkills)
 	t.Behavior.ForbiddenLoadedSkills = sortedUnique(t.Behavior.ForbiddenLoadedSkills)
+	for i := range t.Turns {
+		t.Turns[i].Role = strings.ToLower(strings.TrimSpace(t.Turns[i].Role))
+		t.Turns[i].Content = strings.TrimSpace(t.Turns[i].Content)
+	}
+	if t.Mutation != nil {
+		t.Mutation.ResetStrategy = strings.ToLower(strings.TrimSpace(t.Mutation.ResetStrategy))
+		t.Mutation.ExpectedValue = strings.TrimSpace(t.Mutation.ExpectedValue)
+		t.Mutation.ExpectedDimension = strings.TrimSpace(t.Mutation.ExpectedDimension)
+	}
 	if err := t.validateShape(); err != nil {
 		return err
 	}
@@ -227,8 +256,45 @@ func (t Task) validateShape() error {
 	if !validDifficulty(t.Difficulty) {
 		return fmt.Errorf("task %q has invalid difficulty %q", t.Slug, t.Difficulty)
 	}
-	if len(t.Turns) != 0 || t.Mutation != nil {
-		return fmt.Errorf("task %q uses reserved v2 turns or mutation fields", t.Slug)
+	for index, turn := range t.Turns {
+		if turn.Role != "user" && turn.Role != "assistant" {
+			return fmt.Errorf("task %q turn %d has invalid role %q", t.Slug, index+1, turn.Role)
+		}
+		if strings.TrimSpace(turn.Content) == "" {
+			return fmt.Errorf("task %q turn %d has empty content", t.Slug, index+1)
+		}
+	}
+	if t.Mutation != nil {
+		if t.Mutation.ResetStrategy != "sqlite-copy" {
+			return fmt.Errorf("task %q mutation reset_strategy must be sqlite-copy", t.Slug)
+		}
+		if strings.TrimSpace(t.Mutation.ExpectedValue) == "" {
+			return fmt.Errorf("task %q mutation needs expected_value", t.Slug)
+		}
+		if err := t.Mutation.PostState.Validate(); err != nil {
+			return fmt.Errorf("task %q mutation post_state: %w", t.Slug, err)
+		}
+		if t.Mutation.ExpectedDimension != "" && t.Mutation.PostState.DimensionExtract == "" {
+			return fmt.Errorf("task %q mutation expected_dimension needs post_state dimension_extract", t.Slug)
+		}
+		for index, step := range t.Mutation.Setup {
+			if err := step.Validate(); err != nil {
+				return fmt.Errorf("task %q mutation setup %d: %w", t.Slug, index+1, err)
+			}
+		}
+		if t.Mutation.ReadyState != nil {
+			if err := t.Mutation.ReadyState.Validate(); err != nil {
+				return fmt.Errorf("task %q mutation ready_state: %w", t.Slug, err)
+			}
+			if strings.TrimSpace(t.Mutation.ReadyValue) == "" {
+				return fmt.Errorf("task %q mutation ready_state needs ready_value", t.Slug)
+			}
+		}
+		for index, collateral := range t.Mutation.Collateral {
+			if err := collateral.Validate(); err != nil {
+				return fmt.Errorf("task %q mutation collateral %d: %w", t.Slug, index+1, err)
+			}
+		}
 	}
 	if t.Oracle != nil {
 		if err := t.Oracle.Validate(); err != nil {
@@ -251,6 +317,19 @@ func (t Task) validateShape() error {
 	return nil
 }
 
+func (s GraphQLStep) Validate() error {
+	if strings.TrimSpace(s.Query) == "" {
+		return errors.New("setup step needs query")
+	}
+	if !gjagent.ContainsMutationOperation(s.Query) {
+		return errors.New("setup step must be a GraphQL mutation")
+	}
+	if s.WaitAfterMS < 0 || s.WaitAfterMS > 30000 {
+		return errors.New("setup step wait_after_ms must be between 0 and 30000")
+	}
+	return nil
+}
+
 func (o OracleSpec) Validate() error {
 	if strings.TrimSpace(o.Query) == "" {
 		return errors.New("oracle needs query")
@@ -263,6 +342,9 @@ func (o OracleSpec) Validate() error {
 	}
 	if o.AnchorQuery != "" && strings.TrimSpace(o.AnchorExtract) == "" {
 		return errors.New("oracle anchor_query needs anchor_extract")
+	}
+	if o.DimensionExtract != "" && o.DimensionLiteral != "" {
+		return errors.New("oracle cannot use both dimension_extract and dimension_literal")
 	}
 	if o.PickMax != nil && (o.PickMax.List == "" || o.PickMax.Value == "" || o.PickMax.Dimension == "") {
 		return errors.New("oracle pick_max needs list, value, and dimension")
@@ -326,10 +408,13 @@ func (t Task) ContentID() (string, error) {
 		Method            MethodRule        `json:"method,omitempty"`
 		Behavior          BehaviorRule      `json:"behavior,omitempty"`
 		Budget            Budget            `json:"budget,omitempty"`
+		Turns             []TurnSpec        `json:"turns,omitempty"`
+		Mutation          *MutationSpec     `json:"mutation,omitempty"`
 	}{
 		SchemaVersion: canonical.SchemaVersion, Category: canonical.Category, Difficulty: canonical.Difficulty,
 		Prompt: canonical.Prompt, CapabilityProfile: canonical.CapabilityProfile, ExpectedStatus: canonical.ExpectedStatus,
 		Oracle: canonical.Oracle, Answer: canonical.Answer, Method: canonical.Method, Behavior: canonical.Behavior, Budget: canonical.Budget,
+		Turns: canonical.Turns, Mutation: canonical.Mutation,
 	}
 	data, err := json.Marshal(content)
 	if err != nil {
@@ -341,7 +426,8 @@ func (t Task) ContentID() (string, error) {
 
 func validCategory(value Category) bool {
 	switch value {
-	case CategoryDiscovery, CategoryAggregate, CategoryRanking, CategoryWindow, CategoryTraversal, CategorySavedMetric, CategoryRefusal:
+	case CategoryDiscovery, CategoryAggregate, CategoryRanking, CategoryWindow, CategoryTraversal, CategorySavedMetric, CategoryRefusal,
+		CategoryAction, CategoryReactive, CategoryMultiTurn, CategoryCrossSource:
 		return true
 	default:
 		return false

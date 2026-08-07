@@ -319,6 +319,13 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 		return true, nil
 	}
 
+	if isNotEqualsOperator(name) && node.Type == graph.NodeLabel && strings.EqualFold(node.Val, "null") {
+		return false, errors.New("[Where] `neq: null` is not a valid null comparison; use `is_null: false`")
+	}
+	if aggregate, column, ok := aggregateFilterOperand(name, node); ok {
+		return false, fmt.Errorf("[Where] aggregate token `%s: %s` cannot be embedded in a `%s` filter; first query `%s_%s`, then filter `%s` with the returned literal", aggregate, column, name, aggregate, column, name)
+	}
+
 	switch name {
 	case "eq", "equals":
 		ex.Op = OpEquals
@@ -431,6 +438,38 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 	}
 
 	return true, nil
+}
+
+func isNotEqualsOperator(name string) bool {
+	switch name {
+	case "neq", "notEquals", "not_equals":
+		return true
+	default:
+		return false
+	}
+}
+
+// aggregateFilterOperand reports unsupported two-stage expressions such as
+// { gte: { max: created_at } }. Aggregate results are values, not operands in
+// GraphJin's where grammar, so callers must fetch the aggregate first and then
+// use the returned literal in a second query.
+func aggregateFilterOperand(opName string, node *graph.Node) (aggregate, column string, ok bool) {
+	if _, comparison := colRefOpFor(opName); !comparison || node.Type != graph.NodeObj || len(node.Children) != 1 {
+		return "", "", false
+	}
+	child := node.Children[0]
+	switch strings.ToLower(child.Name) {
+	case "max", "min", "avg", "sum", "count":
+	default:
+		return "", "", false
+	}
+	if child.Type != graph.NodeLabel && child.Type != graph.NodeStr {
+		return "", "", false
+	}
+	if child.Val == "" {
+		return "", "", false
+	}
+	return strings.ToLower(child.Name), child.Val, true
 }
 
 // isColRefOperand reports whether the operator value is { col: "..." }.

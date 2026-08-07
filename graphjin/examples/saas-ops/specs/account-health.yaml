@@ -1,0 +1,32 @@
+openapi: 3.0.0
+info:
+  title: Account Health API
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:18094
+paths:
+  /account-health/{account_id}:
+    get:
+      operationId: getAccountHealth
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Current account health signal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: integer
+                  health:
+                    type: string
+                  executive_owner:
+                    type: string
+                  open_risk_count:
+                    type: integer
