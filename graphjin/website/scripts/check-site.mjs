@@ -383,6 +383,65 @@ if (await exists(benchmarkDataPath)) {
     }
   }
 
+  const renderedDataAttribute = (html, field) => {
+    const match = html.match(
+      new RegExp(`${field}=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`)
+    );
+    return match ? match[1] ?? match[2] ?? match[3] : undefined;
+  };
+  const efficiencyFields = [
+    ['data-provider-total-tokens', (run) => run.provider_total_tokens ?? run.total_tokens ?? 0],
+    ['data-prompt-tokens', (run) => run.prompt_tokens ?? 0],
+    ['data-completion-tokens', (run) => run.completion_tokens ?? 0],
+    ['data-latency-p50-ms', (run) => run.latency_p50_ms ?? 0],
+    ['data-latency-p95-ms', (run) => run.latency_p95_ms ?? 0],
+    ['data-estimated-list-cost-usd', (run) => run.estimated_list_cost_usd ?? 0],
+    ['data-estimated-list-cost-per-task-usd', (run) => run.estimated_list_cost_per_task_usd ?? 0],
+  ];
+  const rankedRuns = parsed.runs.filter((run) => run.ranked === true);
+  if (rankedRuns.length > 0 && (await exists(benchmarkIndexPath))) {
+    const benchmarkHTML = await readFile(benchmarkIndexPath, 'utf8');
+    for (const run of rankedRuns) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const marker = new RegExp(`data-benchmark-efficiency-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
+      if (!marker) {
+        failures.push(`Benchmark leaderboard is missing efficiency data for ${run.run_id}`);
+        continue;
+      }
+      const rowStart = benchmarkHTML.lastIndexOf('<tr', marker.index);
+      const rowEnd = benchmarkHTML.indexOf('>', marker.index);
+      const rowTag = benchmarkHTML.slice(rowStart, rowEnd + 1);
+      for (const [field, expectedValue] of efficiencyFields) {
+        const rendered = renderedDataAttribute(rowTag, field);
+        const expected = Number(expectedValue(run));
+        if (rendered === undefined || Number(rendered) !== expected) {
+          failures.push(`Benchmark efficiency ${field} for ${run.run_id} does not match benchmarks.yaml (${rendered ?? 'missing'} != ${expected})`);
+        }
+      }
+
+      const runPagePath = path.join(publicRoot, 'benchmark', 'runs', String(run.slug), 'index.html');
+      if (await exists(runPagePath)) {
+        const runPage = await readFile(runPagePath, 'utf8');
+        const summaryPattern = new RegExp(`data-benchmark-run-summary=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`);
+        const summaryMatch = summaryPattern.exec(runPage);
+        if (!summaryMatch) {
+          failures.push(`Benchmark run page ${run.run_id} is missing its operational summary`);
+          continue;
+        }
+        const summaryStart = runPage.lastIndexOf('<div', summaryMatch.index);
+        const summaryEnd = runPage.indexOf('>', summaryMatch.index);
+        const summaryTag = runPage.slice(summaryStart, summaryEnd + 1);
+        for (const [field, expectedValue] of efficiencyFields.filter(([name]) => !['data-prompt-tokens', 'data-completion-tokens'].includes(name))) {
+          const rendered = renderedDataAttribute(summaryTag, field);
+          const expected = Number(expectedValue(run));
+          if (rendered === undefined || Number(rendered) !== expected) {
+            failures.push(`Benchmark run summary ${field} for ${run.run_id} does not match benchmarks.yaml (${rendered ?? 'missing'} != ${expected})`);
+          }
+        }
+      }
+    }
+  }
+
   const topAccepted = parsed.runs
     .filter((run) => run.ranked === true && run.accepted === true)
     .sort((a, b) => Number(b.recall) - Number(a.recall))[0];

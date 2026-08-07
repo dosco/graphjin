@@ -3898,9 +3898,40 @@ pre code {
   margin-top: 2rem;
 }
 
+.benchmark-efficiency {
+  margin-top: 2rem;
+}
+
+.benchmark-efficiency > p {
+  color: var(--muted);
+}
+
+.benchmark-efficiency-table {
+  min-width: 40rem;
+}
+
+.benchmark-efficiency-table th,
+.benchmark-efficiency-table td {
+  white-space: normal;
+}
+
+.benchmark-efficiency-table td > strong,
+.benchmark-efficiency-table td > small,
+.benchmark-run-meta strong > small {
+  display: block;
+}
+
+.benchmark-efficiency-table td > small,
+.benchmark-run-meta strong > small {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
 .benchmark-run-meta {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   margin: 1.5rem 0 2rem;
@@ -3951,6 +3982,59 @@ pre code {
 @media (max-width: 520px) {
   .benchmark-stat-strip {
     grid-template-columns: 1fr;
+  }
+
+  .benchmark-efficiency-table,
+  .benchmark-efficiency-table tbody,
+  .benchmark-efficiency-table tr,
+  .benchmark-efficiency-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .benchmark-efficiency-table {
+    min-width: 0;
+  }
+
+  .benchmark-efficiency-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+
+  .benchmark-efficiency-table tr + tr {
+    border-top: 1px solid var(--line);
+  }
+
+  .benchmark-efficiency-table td {
+    display: grid;
+    grid-template-columns: minmax(7.5rem, 0.8fr) minmax(0, 1.2fr);
+    gap: 1rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .benchmark-efficiency-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .benchmark-efficiency-table td::before {
+    content: attr(data-label);
+    grid-row: 1 / span 2;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.07em;
+    line-height: 1.35;
+    text-transform: uppercase;
+  }
+
+  .benchmark-efficiency-table td > strong,
+  .benchmark-efficiency-table td > small {
+    grid-column: 2;
   }
 }
 
