@@ -112,7 +112,7 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, phrase := range []string{"## Evaluation complete", "## Results at a glance", "## Results by task family", "data-benchmark-category-chart", "data-category=\"aggregate\"", "## Technical benchmark report", "## Headline", "Pass@k"} {
+	for _, phrase := range []string{"## Evaluation complete", "## Results at a glance", "## Results by task family", "data-benchmark-category-chart", "data-category=\"aggregate\"", "## Technical benchmark report", "## Headline", "Pass@k", "/benchmark/runs/20260803t101112-ab12cd34/", "/benchmarks/organizational-agent/runs/20260803t101112-ab12cd34/"} {
 		if !strings.Contains(string(page), phrase) {
 			t.Fatalf("published page missing %q: %s", phrase, page)
 		}
@@ -323,6 +323,9 @@ func TestEvalPublishRoutesNamedBenchmark(t *testing.T) {
 		if !strings.Contains(string(page), expected) {
 			t.Fatalf("named benchmark page missing %q: %s", expected, page)
 		}
+	}
+	if strings.Contains(string(page), "/benchmark/runs/") || strings.Contains(string(page), "/benchmarks/organizational-agent/runs/") {
+		t.Fatalf("named benchmark page inherited DeepORG aliases: %s", page)
 	}
 }
 
