@@ -4,24 +4,28 @@ benchmark:
     slug: deeporg
     name: DeepORG — The Organizational Agent Benchmark
 suite:
-    generation: "2026.2"
-    generator_version: graphjin.eval.generator/v6
-    identity: 854d85d91e578865557c7d3ffea2c75c
-    suite_fingerprint: 01b9d91038fdb3c78bbb9ef01ef4fd36
-    catalog_hash: 6cd8763cb98a6d0991a13bc953971503
-    seed_manifest_hash: 4f2503818a39e065a76873c117d07c31
+    generation: "2027.1"
+    generator_version: graphjin.eval.generator/v8
+    identity: cb685e3db1ed8c509d4332538b8b4315
+    suite_fingerprint: 68bc8a8784947a44d12a87d7f2c5a856
+    catalog_hash: c5bca3b5cb6572af53a9d4e954b87031
+    seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
     mode: bench
     seed: 23
     repeats: 3
     max_steps: 8
     reward_version: graphjin.eval.reward/v2
     category_counts:
-        aggregate: 24
-        discovery: 12
-        ranking: 17
+        action: 10
+        aggregate: 17
+        cross-source: 4
+        discovery: 8
+        multi-turn: 5
+        ranking: 13
+        reactive: 8
         refusal: 10
-        saved-metric: 10
-        window: 27
+        saved-metric: 8
+        window: 17
 runs:
     - run_id: 20260807T000640.940677000Z-04d010a6
       slug: 20260807t000640-04d010a6
@@ -71,7 +75,8 @@ runs:
       slug: 20260807t024250-e8e04365
       label: Gemini 3.5 Flash-Lite
       release: 6211d6ce
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2026.2)
       generation: "2026.2"
       generated_at: 2026-08-07T02:42:50.026835Z
       model: gemini-3.5-flash-lite
@@ -180,7 +185,8 @@ runs:
       slug: 20260807t082714-5f6ae1af
       label: OpenAI GPT-5.4 mini
       release: 89df23ec
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2026.2)
       generation: "2026.2"
       generated_at: 2026-08-07T08:27:14.33668Z
       model: gpt-5.4-mini
@@ -230,3 +236,61 @@ runs:
       estimated_list_cost_per_task_usd: 0.07834167750000001
       pricing_source: https://developers.openai.com/api/docs/models/gpt-5.4-mini (2026-08-07)
       accepted: true
+    - run_id: 20260807T213721.945412000Z-a982c882
+      slug: 20260807t213721-a982c882
+      label: OpenAI GPT-5.4 mini
+      release: 50487db0
+      ranked: true
+      generation: "2027.1"
+      generated_at: 2026-08-07T21:37:21.945421Z
+      model: gpt-5.4-mini
+      provider: openai
+      graphjin_commit: 50487db0
+      binary_fingerprint: 4bc8de729249521ea41abb80b11497ca6c4442c07412a1e7f61b69c505953f25
+      suite_identity: cb685e3db1ed8c509d4332538b8b4315
+      suite_fingerprint: 68bc8a8784947a44d12a87d7f2c5a856
+      catalog_hash: c5bca3b5cb6572af53a9d4e954b87031
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: ca0e65b6cc90b2fab571931af64a258f9be9a03fb7a3e0829daa89b372917d29
+      data_anchor: "2026-08-07"
+      reward_version: graphjin.eval.reward/v2
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 100
+      episode_count: 300
+      recall: 0.57
+      recall_ci_low: 0.47
+      recall_ci_high: 0.66
+      pass_at_k: 0.71
+      pass_power_k: 0.36
+      ground_truth_recall: 0.5777777777777777
+      method_recall: 0.5888888888888889
+      safety_precision: 0.99
+      behavior_recall: 0.67
+      category_recall:
+        action: 0
+        aggregate: 0.8235294117647058
+        cross-source: 0
+        discovery: 0.625
+        multi-turn: 0
+        ranking: 0.8461538461538461
+        reactive: 0
+        refusal: 1
+        saved-metric: 1
+        window: 0.5294117647058824
+      mean_reward: 0.7484689999999996
+      total_tokens: 10502601
+      prompt_tokens: 10171756
+      completion_tokens: 330845
+      provider_total_tokens: 10502601
+      latency_p50_ms: 8084
+      latency_p95_ms: 23054
+      prompt_price_per_million: 0.75
+      completion_price_per_million: 4.5
+      estimated_list_cost_usd: 9.1176195
+      estimated_list_cost_per_task_usd: 0.091176195
+      pricing_source: https://developers.openai.com/api/docs/models/gpt-5.4-mini (2026-08-07)
+      accepted: false
