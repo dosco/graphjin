@@ -3659,7 +3659,7 @@ pre code {
   max-width: 18rem;
 }
 
-/* Homepage: public agent benchmark (#benchmark) */
+/* Homepage: organizational agent benchmark (#benchmark) */
 .benchmark-hook-section {
   border-top: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
@@ -3917,11 +3917,14 @@ pre code {
 
 .benchmark-efficiency-table td > strong,
 .benchmark-efficiency-table td > small,
+.benchmark-model-cell > strong,
+.benchmark-model-cell > small,
 .benchmark-run-meta strong > small {
   display: block;
 }
 
 .benchmark-efficiency-table td > small,
+.benchmark-model-cell > small,
 .benchmark-run-meta strong > small {
   margin-top: 0.25rem;
   color: var(--muted);

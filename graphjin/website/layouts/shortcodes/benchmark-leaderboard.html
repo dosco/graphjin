@@ -16,16 +16,16 @@
           {{ if eq $view "releases" }}
             <tr><th>Release</th><th>Model</th><th>Reliable <small>(recall)</small></th><th>Complete DB method <small>(method recall)</small></th><th>Rules followed <small>(safety)</small></th><th>Run</th></tr>
           {{ else }}
-            <tr><th>Model</th><th>Provider</th><th>Reliable <small>(recall)</small></th><th>At least once <small>(pass@3)</small></th><th>Every time <small>(pass³)</small></th><th>Complete DB method <small>(method recall)</small></th><th>Rules followed <small>(safety)</small></th><th>Run</th></tr>
+            <tr><th>Model + GraphJin build</th><th>Provider</th><th>Reliable <small>(recall)</small></th><th>At least once <small>(pass@3)</small></th><th>Every time <small>(pass³)</small></th><th>Complete DB method <small>(method recall)</small></th><th>Rules followed <small>(safety)</small></th><th>Run</th></tr>
           {{ end }}
         </thead>
         <tbody>
           {{ range sort $ranked "recall" "desc" }}
-            <tr data-benchmark-row>
+            <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}">
               {{ if eq $view "releases" }}
                 <td>{{ .release | default "unversioned" }}</td><td>{{ .label }}</td>
               {{ else }}
-                <td>{{ .label }}</td><td>{{ .provider | default "—" }}</td>
+                <td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ .provider | default "—" }}</td>
               {{ end }}
               <td><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></td>
               {{ if ne $view "releases" }}<td>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</td>{{ end }}
@@ -65,7 +65,7 @@
                 data-latency-p95-ms="{{ printf "%.17g" (float (.latency_p95_ms | default 0)) }}"
                 data-estimated-list-cost-usd="{{ printf "%.17g" (float (.estimated_list_cost_usd | default 0)) }}"
                 data-estimated-list-cost-per-task-usd="{{ printf "%.17g" (float (.estimated_list_cost_per_task_usd | default 0)) }}">
-                <td data-label="Model"><strong>{{ .label }}</strong><small>{{ .provider | default "—" }}</small></td>
+                <td data-label="Model"><strong>{{ .label }}</strong><small>{{ .provider | default "—" }} · GraphJin build {{ .release | default "unversioned" }}</small></td>
                 <td data-label="Provider tokens / attempt">
                   {{ if and (gt $providerTokens 0) (gt $episodes 0) }}
                     <strong>{{ printf "%.1fk" (div (div (float $providerTokens) (float $episodes)) 1000) }}</strong>
@@ -97,7 +97,7 @@
           <thead><tr><th>Label</th><th>Reliable <small>(recall)</small></th><th>Why unranked</th><th>Run</th></tr></thead>
           <tbody>
             {{ range sort $unranked "run_id" "asc" }}
-              <tr data-benchmark-row><td>{{ .label }}</td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "/benchmark/runs/%s/" .slug | relURL }}">Report</a></td></tr>
+              <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}"><td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "/benchmark/runs/%s/" .slug | relURL }}">Report</a></td></tr>
             {{ end }}
           </tbody>
         </table>
