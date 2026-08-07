@@ -1,6 +1,6 @@
 {
   "name": "graphjin",
-  "version": "3.20.6",
+  "version": "3.20.7",
   "description": "GraphJin — one governed graph for AI agents: GraphQL + MCP over your databases, files, APIs, and code",
   "bin": {
     "graphjin": "bin/graphjin.js"
