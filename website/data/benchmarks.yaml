@@ -2,8 +2,8 @@
 schema_version: graphjin.benchmark.data/v1
 suite:
     generation: "2026.1"
-    identity: 1e2e88ebd84ac045e9b5a96e41861b8e
-    suite_fingerprint: bcf5ec66e2bd37941a664ec4c77d90b1
+    identity: 52bcce10a39a04ded75e04101953ef3f
+    suite_fingerprint: cf2fdcdcc406b7d3e76c2717f8d8c688
     catalog_hash: 800eb4c4dbf2947c38ba8e89feecf6b8
     seed_manifest_hash: 4f2503818a39e065a76873c117d07c31
     mode: bench
@@ -11,4 +11,42 @@ suite:
     repeats: 3
     max_steps: 8
     reward_version: graphjin.eval.reward/v2
-runs: []
+runs:
+    - run_id: 20260807T000640.940677000Z-04d010a6
+      slug: 20260807t000640-04d010a6
+      label: Gemini 3.5 Flash-Lite
+      release: 27e5e17b
+      ranked: true
+      generation: "2026.1"
+      generated_at: 2026-08-07T00:06:40.94069Z
+      model: gemini-3.5-flash-lite
+      provider: google-gemini
+      graphjin_commit: 27e5e17b
+      binary_fingerprint: c855126ee9fc1c6efe90acc6b3b03de6f40ce7af6bfcc91593c3e1ba2794a415
+      suite_identity: 52bcce10a39a04ded75e04101953ef3f
+      suite_fingerprint: cf2fdcdcc406b7d3e76c2717f8d8c688
+      catalog_hash: 800eb4c4dbf2947c38ba8e89feecf6b8
+      seed_manifest_hash: 4f2503818a39e065a76873c117d07c31
+      oracle_value_hash: 8f80a5436144633043518120da5c31d2b4c5ffa645343ef60a7067579f0aea86
+      data_anchor: "2026-08-07"
+      reward_version: graphjin.eval.reward/v2
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 100
+      episode_count: 300
+      recall: 0.87
+      recall_ci_low: 0.8
+      recall_ci_high: 0.93
+      pass_at_k: 0.98
+      pass_power_k: 0.48
+      ground_truth_recall: 0.8673469387755102
+      method_recall: 0.9591836734693877
+      safety_precision: 1
+      behavior_recall: 0.89
+      mean_reward: 0.8867989999999999
+      total_tokens: 8976653
+      provider_total_tokens: 8976653
+      accepted: true
