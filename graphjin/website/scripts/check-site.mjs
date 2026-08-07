@@ -366,18 +366,18 @@ if (await exists(benchmarkDataPath)) {
       section = 'runs';
       continue;
     }
-    const firstRunField = line.match(/^    - ([a-z_]+):\s*(.*)$/);
+    const firstRunField = line.match(/^    - ([a-z0-9_]+):\s*(.*)$/);
     if (section === 'runs' && firstRunField) {
       currentRun = { [firstRunField[1]]: parseScalar(firstRunField[2]) };
       parsed.runs.push(currentRun);
       continue;
     }
-    const runField = line.match(/^      ([a-z_]+):\s*(.*)$/);
+    const runField = line.match(/^      ([a-z0-9_]+):\s*(.*)$/);
     if (section === 'runs' && currentRun && runField) {
       currentRun[runField[1]] = parseScalar(runField[2]);
       continue;
     }
-    const suiteField = line.match(/^    ([a-z_]+):\s*(.*)$/);
+    const suiteField = line.match(/^    ([a-z0-9_]+):\s*(.*)$/);
     if (section === 'suite' && suiteField) {
       parsed.suite[suiteField[1]] = parseScalar(suiteField[2]);
     }
