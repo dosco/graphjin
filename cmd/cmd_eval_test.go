@@ -322,7 +322,7 @@ func TestPrintEvalReportShowsArtifactsConsoleAndPublishCommand(t *testing.T) {
 		"JSON report:      " + store.ReportPath(report.RunID),
 		"Console:         http://127.0.0.1:8083/trainer/reports?run=public-run",
 		"graphjin --path " + strconv.Quote(projectPath) + " serve --demo",
-		"Publish:         graphjin --path " + strconv.Quote(projectPath) + " eval publish public-run --yes",
+		"Publish:         graphjin --path " + strconv.Quote(projectPath) + " eval publish public-run --benchmark organizational-agent --yes",
 	} {
 		if !strings.Contains(output.String(), phrase) {
 			t.Fatalf("output missing %q: %s", phrase, output.String())

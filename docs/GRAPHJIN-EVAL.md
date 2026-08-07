@@ -17,7 +17,7 @@ graphjin eval add "Which customers are at churn risk?"
 graphjin eval run --yes
 graphjin eval bench --scale 100 --seed 23 --yes
 graphjin eval bench --public --yes
-graphjin eval publish <run-id> --yes
+graphjin eval publish <run-id> --benchmark organizational-agent --yes
 ```
 
 Use `--demo` for the bundled SQLite demo or `--remote` for the identity created
@@ -65,10 +65,11 @@ GJ_AGENT_API_KEY_ENV=GOOGLE_API_KEY
 - `graphjin eval bench --public`: run the committed 100-task public benchmark
   generation against the bundled demo. The suite, scale `100`, and seed `23`
   are pinned; scale/seed overrides and remote targets are refused.
-- `graphjin eval publish <run-id>`: copy one completed shareable report into the
-  website as a leaderboard row and run page. It writes files for review and
-  never runs Git. `--allow-off-suite` publishes a mismatch as explicitly
-  unranked instead of mixing it into the cohort.
+- `graphjin eval publish <run-id> --benchmark <slug>`: copy one completed
+  shareable report into that benchmark's website data and run archive. The slug
+  defaults to `organizational-agent`. Publish writes files for review and never
+  runs Git. `--allow-off-suite` publishes a mismatch as explicitly unranked
+  instead of mixing it into the cohort.
 
 `run`, `baseline`, and `bench` accept `--resume <run-id>` to select one
 compatible incomplete run and `--restart` to intentionally create a fresh run.
@@ -214,12 +215,14 @@ explicit Summary / Technical benchmark switch. Existing JSON-only or legacy
 single-Markdown reports render both views on demand in Trainer and during
 publish.
 
-`graphjin eval publish <run-id>` is the only sanctioned path into
-`website/data/benchmarks.yaml` and `website/content/benchmark/runs/`. It asks for
-confirmation, rejects empty runs, writes exactly those two public files, and
-prints their paths for human review. Publish refuses incomplete,
-environment-failed, and invalid-suite runs. It does not refuse a low score — a
-low score is a result.
+`graphjin eval publish <run-id> --benchmark organizational-agent` is the only
+sanctioned path into `website/data/benchmarks/organizational_agent.yaml` and
+`website/content/benchmarks/organizational-agent/runs/`. The benchmark flag
+defaults to `organizational-agent`; it selects publication metadata and paths,
+not eval-engine behavior. Publish asks for confirmation, rejects empty runs,
+writes exactly those two public files, and prints their paths for human review.
+It refuses incomplete, environment-failed, and invalid-suite runs. It does not
+refuse a low score — a low score is a result.
 
 The non-production console advertises Trainer → Reports only when the resolved
 eval state directory exists and the current caller has operator access. Set

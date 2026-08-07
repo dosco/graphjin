@@ -54,7 +54,7 @@ func TestEvalPublishRefusalsAndLowScoreBoundary(t *testing.T) {
 	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err != nil {
 		t.Fatalf("low score was refused: %v", err)
 	}
-	data, err := loadBenchmarkData(filepath.Join(site, "data", "benchmarks.yaml"))
+	data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
 	if err != nil || len(data.Runs) != 1 || data.Runs[0].Accepted {
 		t.Fatalf("published low score = %+v err=%v", data.Runs, err)
 	}
@@ -72,7 +72,7 @@ func TestEvalPublishSuspectScoringRequiresExplicitOverride(t *testing.T) {
 	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site, AllowSuspectScoring: true}); err != nil {
 		t.Fatalf("explicit suspect override failed: %v", err)
 	}
-	data, err := loadBenchmarkData(filepath.Join(site, "data", "benchmarks.yaml"))
+	data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
 	if err != nil || len(data.Runs) != 1 || !data.Runs[0].ScoringSuspect {
 		t.Fatalf("suspect benchmark data = %+v err=%v", data.Runs, err)
 	}
@@ -88,8 +88,8 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err != nil {
 		t.Fatal(err)
 	}
-	dataPath := filepath.Join(site, "data", "benchmarks.yaml")
-	pagePath := filepath.Join(site, "content", "benchmark", "runs", "20260803t101112-ab12cd34.md")
+	dataPath := publishTestDataPath(site)
+	pagePath := filepath.Join(site, "content", "benchmarks", defaultBenchmarkSlug, "runs", "20260803t101112-ab12cd34.md")
 	for _, path := range []string{dataPath, pagePath} {
 		raw, err := os.ReadFile(path)
 		if err != nil {
@@ -104,7 +104,7 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 			}
 		}
 	}
-	data, err := loadBenchmarkData(dataPath)
+	data, err := loadBenchmarkData(dataPath, publishTestBenchmark(t))
 	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || data.Runs[0].UnrankedReason != "" {
 		t.Fatalf("data=%+v err=%v", data, err)
 	}
@@ -123,7 +123,7 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site, Force: true}); err != nil {
 		t.Fatalf("forced replacement failed: %v", err)
 	}
-	data, err = loadBenchmarkData(dataPath)
+	data, err = loadBenchmarkData(dataPath, publishTestBenchmark(t))
 	if err != nil || len(data.Runs) != 1 {
 		t.Fatalf("forced data=%+v err=%v", data.Runs, err)
 	}
@@ -147,7 +147,7 @@ func TestEvalPublishUpgradesLegacySingleTechnicalMarkdown(t *testing.T) {
 	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err != nil {
 		t.Fatal(err)
 	}
-	page, err := os.ReadFile(filepath.Join(site, "content", "benchmark", "runs", "20260803t101112-legacy.md"))
+	page, err := os.ReadFile(filepath.Join(site, "content", "benchmarks", defaultBenchmarkSlug, "runs", "20260803t101112-legacy.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestEvalPublishOffSuiteIsSeparated(t *testing.T) {
 	if err := publishTestRun(t, project, site, second.RunID, &evalPublishOptions{Site: site, AllowOffSuite: true}); err != nil {
 		t.Fatal(err)
 	}
-	data, err := loadBenchmarkData(filepath.Join(site, "data", "benchmarks.yaml"))
+	data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
 	if err != nil || len(data.Runs) != 2 || data.Runs[1].Ranked || !strings.Contains(data.Runs[1].UnrankedReason, "catalog_hash") {
 		t.Fatalf("data=%+v err=%v", data.Runs, err)
 	}
@@ -184,12 +184,13 @@ func TestEvalPublishReplacesEmptyPriorCohortMetadata(t *testing.T) {
 	project, site := t.TempDir(), t.TempDir()
 	report := publishTestReport("20260803T101112.000000000Z-regenerated-cohort")
 	writePublishTestReport(t, project, report)
-	dataPath := filepath.Join(site, "data", "benchmarks.yaml")
+	dataPath := publishTestDataPath(site)
 	if err := os.MkdirAll(filepath.Dir(dataPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	old := benchmarkData{
 		SchemaVersion: benchmarkDataVersion,
+		Benchmark:     publishTestBenchmark(t),
 		Suite:         benchmarkSuite{Identity: "old-suite", SuiteFingerprint: "old-fingerprint"},
 		Runs:          []benchmarkEntry{},
 	}
@@ -203,7 +204,7 @@ func TestEvalPublishReplacesEmptyPriorCohortMetadata(t *testing.T) {
 	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err != nil {
 		t.Fatalf("regenerated empty cohort was refused: %v", err)
 	}
-	data, err := loadBenchmarkData(dataPath)
+	data, err := loadBenchmarkData(dataPath, publishTestBenchmark(t))
 	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || data.Suite.SuiteFingerprint != report.SuiteFingerprint {
 		t.Fatalf("regenerated cohort data = %+v err=%v", data, err)
 	}
@@ -217,12 +218,13 @@ func TestEvalPublishAdvancesOfficialCohortAndKeepsHistory(t *testing.T) {
 		{TaskID: "refusal", Category: gjeval.CategoryRefusal},
 	}
 	writePublishTestReport(t, project, report)
-	dataPath := filepath.Join(site, "data", "benchmarks.yaml")
+	dataPath := publishTestDataPath(site)
 	if err := os.MkdirAll(filepath.Dir(dataPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	old := benchmarkData{
 		SchemaVersion: benchmarkDataVersion,
+		Benchmark:     publishTestBenchmark(t),
 		Suite:         benchmarkSuite{Generation: "2026.1", Identity: "old-suite", SuiteFingerprint: "old-fingerprint"},
 		Runs: []benchmarkEntry{{RunID: "old-run", Slug: "old-run", Label: "Historical", Ranked: true,
 			Generation: "2026.1", SuiteFingerprint: "old-fingerprint"}},
@@ -237,7 +239,7 @@ func TestEvalPublishAdvancesOfficialCohortAndKeepsHistory(t *testing.T) {
 	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err != nil {
 		t.Fatalf("official cohort advance was refused: %v", err)
 	}
-	data, err := loadBenchmarkData(dataPath)
+	data, err := loadBenchmarkData(dataPath, publishTestBenchmark(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +276,7 @@ func TestEvalPublishRecordsAuditableListPrice(t *testing.T) {
 	if err := publishTestRun(t, project, site, report.RunID, opts); err != nil {
 		t.Fatal(err)
 	}
-	data, err := loadBenchmarkData(filepath.Join(site, "data", "benchmarks.yaml"))
+	data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
 	if err != nil || len(data.Runs) != 1 {
 		t.Fatalf("priced data = %+v err=%v", data, err)
 	}
@@ -290,6 +292,56 @@ func TestEvalPublishRecordsAuditableListPrice(t *testing.T) {
 func TestBenchmarkRunSlug(t *testing.T) {
 	if got := benchmarkRunSlug("20260803T101112.000000000Z-ab12cd34"); got != "20260803t101112-ab12cd34" {
 		t.Fatalf("slug = %q", got)
+	}
+}
+
+func TestEvalPublishRoutesNamedBenchmark(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101112.000000000Z-science")
+	report.SuiteFingerprint = "scientific-suite-fingerprint"
+	writePublishTestReport(t, project, report)
+	opts := &evalPublishOptions{Site: site, Benchmark: "scientific-research"}
+	if err := publishTestRun(t, project, site, report.RunID, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	benchmark := benchmarkIdentity{Slug: "scientific-research", Name: "Scientific Research Benchmark"}
+	dataPath := filepath.Join(site, "data", "benchmarks", "scientific_research.yaml")
+	data, err := loadBenchmarkData(dataPath, benchmark)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.SchemaVersion != benchmarkDataVersion || data.Benchmark != benchmark || len(data.Runs) != 1 {
+		t.Fatalf("named benchmark data = %+v", data)
+	}
+	pagePath := filepath.Join(site, "content", "benchmarks", "scientific-research", "runs", "20260803t101112-science.md")
+	page, err := os.ReadFile(pagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"benchmark: scientific-research", `benchmark-run-meta benchmark="scientific_research"`} {
+		if !strings.Contains(string(page), expected) {
+			t.Fatalf("named benchmark page missing %q: %s", expected, page)
+		}
+	}
+}
+
+func TestEvalPublishCommandDefaultsToOrganizationalBenchmark(t *testing.T) {
+	cmd := evalPublishCmd(&evalCLIOptions{})
+	flag := cmd.Flags().Lookup("benchmark")
+	if flag == nil || flag.DefValue != defaultBenchmarkSlug {
+		t.Fatalf("benchmark flag = %+v, want default %q", flag, defaultBenchmarkSlug)
+	}
+}
+
+func TestEvalPublishRejectsInvalidBenchmarkSlug(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101112.000000000Z-invalid-benchmark")
+	writePublishTestReport(t, project, report)
+	err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site, Benchmark: "../escape"})
+	var exitErr *evalExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "invalid benchmark slug") {
+		t.Fatalf("invalid benchmark error = %v", err)
 	}
 }
 
@@ -326,4 +378,17 @@ func publishTestRun(t *testing.T, project, site, runID string, opts *evalPublish
 	command.SetOut(new(bytes.Buffer))
 	command.SetErr(new(bytes.Buffer))
 	return runEvalPublish(command, &evalCLIOptions{Yes: true}, opts, runID)
+}
+
+func publishTestBenchmark(t *testing.T) benchmarkIdentity {
+	t.Helper()
+	benchmark, _, err := resolveBenchmarkIdentity(defaultBenchmarkSlug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return benchmark
+}
+
+func publishTestDataPath(site string) string {
+	return filepath.Join(site, "data", "benchmarks", "organizational_agent.yaml")
 }

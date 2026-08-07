@@ -765,7 +765,7 @@ func printEvalReportLocations(cmd *cobra.Command, opts *evalCLIOptions, report *
 	}
 	public := gjeval.PublicBenchmark()
 	if report.SuiteFingerprint == public.SuiteFingerprint {
-		fmt.Fprintf(out, "Publish:         graphjin --path %s eval publish %s --yes\n", strconv.Quote(projectPath), report.RunID)
+		fmt.Fprintf(out, "Publish:         graphjin --path %s eval publish %s --benchmark %s --yes\n", strconv.Quote(projectPath), report.RunID, defaultBenchmarkSlug)
 	} else {
 		fmt.Fprintln(out, "Publish:         not a ranked public-suite run")
 	}

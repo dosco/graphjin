@@ -6,13 +6,15 @@
       {{ with .Description }}<p>{{ . }}</p>{{ end }}
     </header>
     {{ .Content }}
-    <div class="doc-card-grid">
-      {{ range .Pages.ByWeight }}
-        <a class="doc-card" href="{{ .RelPermalink }}">
-          <strong>{{ .Title }}</strong>
-          {{ with .Description }}<span>{{ . }}</span>{{ end }}
-        </a>
-      {{ end }}
-    </div>
+    {{ if not .Params.hide_child_cards }}
+      <div class="doc-card-grid">
+        {{ range .Pages.ByWeight }}
+          <a class="doc-card" href="{{ .RelPermalink }}">
+            <strong>{{ .Title }}</strong>
+            {{ with .Description }}<span>{{ . }}</span>{{ end }}
+          </a>
+        {{ end }}
+      </div>
+    {{ end }}
   </article>
 {{ end }}

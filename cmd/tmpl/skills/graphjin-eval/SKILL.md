@@ -14,9 +14,9 @@ candidate, or understand an evaluation failure.
 - Always use `graphjin eval` commands with `--json` for machine-readable state.
 - Never edit `eval/suite.yml`, hidden oracle definitions, tolerances, reward
   weights, reports, or baseline files by hand.
-- Never hand-edit `website/data/benchmarks.yaml` or
-  `website/content/benchmark/runs/`. `graphjin eval publish` is the only
-  supported writer; it writes one row and one run page and never runs Git.
+- Never hand-edit `website/data/benchmarks/<benchmark>.yaml` or
+  `website/content/benchmarks/<benchmark>/runs/`. `graphjin eval publish` is the
+  only supported writer; it writes one row and one run page and never runs Git.
 - Use `graphjin eval rm <task-id>` as the supported task-removal path; never
   delete a task from the suite file manually.
 - Never invent an oracle, field, threshold, or business interpretation.
@@ -134,7 +134,7 @@ candidate, or understand an evaluation failure.
    generated files before committing them:
 
    ```sh
-   graphjin eval publish <run-id> --yes
+   graphjin eval publish <run-id> --benchmark organizational-agent --yes
    ```
 
    Do not add `--allow-off-suite` without a separate explicit ask.

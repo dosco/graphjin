@@ -37,6 +37,10 @@ const requiredRoutes = [
   'agentic/tasks/index.html',
   'agentic/watches/index.html',
   'agentic/watch-automation/index.html',
+  'benchmarks/index.html',
+  'benchmarks/organizational-agent/index.html',
+  'benchmarks/organizational-agent/methodology/index.html',
+  'benchmarks/organizational-agent/runs/index.html',
   'benchmark/index.html',
   'benchmark/methodology/index.html',
   'benchmark/runs/index.html',
@@ -102,9 +106,10 @@ const requiredContent = [
   'agentic/source-mode.md',
   'agentic/workflows.md',
   'agentic/oauth.md',
-  'benchmark/_index.md',
-  'benchmark/methodology.md',
-  'benchmark/runs/_index.md',
+  'benchmarks/_index.md',
+  'benchmarks/organizational-agent/_index.md',
+  'benchmarks/organizational-agent/methodology.md',
+  'benchmarks/organizational-agent/runs/_index.md',
   'configure/sources-mode.md',
   'configure/how-it-works.md',
   'configure/database.md',
@@ -165,11 +170,13 @@ const requiredRenderedContent = [
   ['agentic/watch-automation/index.html', 'Alerts fail open.'],
   ['agentic/watch-automation/index.html', 'Actions fail closed.'],
   ['agentic/watch-automation/index.html', 'graphjin://watch-events/unseen/watch%3Acoffee_roast_'],
-  ['benchmark/index.html', 'Can an AI agent answer an organization&rsquo;s real questions?'],
-  ['benchmark/index.html', 'What one task looks like'],
-  ['benchmark/index.html', 'Now point it at your own organization'],
-  ['benchmark/methodology/index.html', 'Frozen suite, live verification'],
-  ['benchmark/runs/index.html', 'Published Benchmark Runs'],
+  ['benchmarks/index.html', 'Public, governed benchmark suites'],
+  ['benchmarks/index.html', 'data-benchmark-family-row=organizational-agent'],
+  ['benchmarks/organizational-agent/index.html', 'Can an AI agent answer an organization&rsquo;s real questions—correctly, governed, and at a cost you&rsquo;d pay?'],
+  ['benchmarks/organizational-agent/index.html', 'What one task looks like'],
+  ['benchmarks/organizational-agent/index.html', 'Now point it at your own organization'],
+  ['benchmarks/organizational-agent/methodology/index.html', 'Frozen suite, live verification'],
+  ['benchmarks/organizational-agent/runs/index.html', 'Published Benchmark Runs'],
 ];
 
 async function exists(file) {
@@ -217,11 +224,25 @@ for (const [route, expected] of requiredRenderedContent) {
   }
 }
 
-const benchmarkIndex = path.join(publicRoot, 'benchmark/index.html');
-if (await exists(benchmarkIndex)) {
-  const html = await readFile(benchmarkIndex, 'utf8');
+for (const [route, target] of [
+  ['benchmark/index.html', '/benchmarks/organizational-agent/'],
+  ['benchmark/methodology/index.html', '/benchmarks/organizational-agent/methodology/'],
+  ['benchmark/runs/index.html', '/benchmarks/organizational-agent/runs/'],
+]) {
+  const file = path.join(publicRoot, route);
+  if (await exists(file)) {
+    const html = await readFile(file, 'utf8');
+    if (!html.includes(target)) {
+      failures.push(`${route} does not redirect to ${target}`);
+    }
+  }
+}
+
+const organizationalBenchmarkIndex = path.join(publicRoot, 'benchmarks', 'organizational-agent', 'index.html');
+if (await exists(organizationalBenchmarkIndex)) {
+  const html = await readFile(organizationalBenchmarkIndex, 'utf8');
   if (!html.includes('No published runs yet.') && !html.includes('data-benchmark-row')) {
-    failures.push('benchmark/index.html has neither an empty state nor a published benchmark row');
+    failures.push('organizational benchmark page has neither an empty state nor a published benchmark row');
   }
 }
 
@@ -276,7 +297,8 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     }
   }
   for (const required of [
-    "Don't take our word for it. We publish the benchmark.",
+    "Don't take our word for it. We publish The Organizational Agent Benchmark.",
+    'Built and published by GraphJin',
     'A full pass requires the right answer',
     'Build it by hand',
     'Connect the organization once',
@@ -305,8 +327,8 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     '/start/demos/#coffee-roastery',
     '/agentic/mcp/',
     '/configure/how-it-works/',
-    '/benchmark/',
-    '/benchmark/methodology/',
+    '/benchmarks/organizational-agent/',
+    '/benchmarks/organizational-agent/methodology/',
   ]) {
     const escaped = href.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const hrefPattern = new RegExp(`href=(?:"${escaped}"|'${escaped}'|${escaped})(?=\\s|>)`);
@@ -325,7 +347,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   }
 }
 
-const benchmarkIndexPath = path.join(publicRoot, 'benchmark', 'index.html');
+const benchmarkIndexPath = path.join(publicRoot, 'benchmarks', 'organizational-agent', 'index.html');
 if (await exists(benchmarkIndexPath)) {
   const benchmarkHTML = await readFile(benchmarkIndexPath, 'utf8');
   if (!benchmarkHTML.includes('data-benchmark-row') && !benchmarkHTML.includes('data-benchmark-empty')) {
@@ -333,16 +355,9 @@ if (await exists(benchmarkIndexPath)) {
   }
 }
 
-const benchmarkDataPath = path.join(siteRoot, 'data', 'benchmarks.yaml');
+const benchmarkDataPath = path.join(siteRoot, 'data', 'benchmarks', 'organizational_agent.yaml');
 if (await exists(benchmarkDataPath)) {
   const benchmarkData = await readFile(benchmarkDataPath, 'utf8');
-  for (const match of benchmarkData.matchAll(/^\s*slug:\s*["']?([^"'#\s]+)["']?\s*$/gm)) {
-    const slug = match[1];
-    const page = path.join(publicRoot, 'benchmark', 'runs', slug, 'index.html');
-    if (!(await exists(page))) {
-      failures.push(`Benchmark data slug ${slug} has no built run page`);
-    }
-  }
 
   const parseScalar = (raw) => {
     const value = raw.trim();
@@ -354,10 +369,14 @@ if (await exists(benchmarkDataPath)) {
     if (value !== '' && Number.isFinite(Number(value))) return Number(value);
     return value;
   };
-  const parsed = { suite: {}, runs: [] };
+  const parsed = { benchmark: {}, suite: {}, runs: [] };
   let section = '';
   let currentRun = null;
   for (const line of benchmarkData.split('\n')) {
+    if (line === 'benchmark:') {
+      section = 'benchmark';
+      continue;
+    }
     if (line === 'suite:') {
       section = 'suite';
       continue;
@@ -380,6 +399,33 @@ if (await exists(benchmarkDataPath)) {
     const suiteField = line.match(/^    ([a-z0-9_]+):\s*(.*)$/);
     if (section === 'suite' && suiteField) {
       parsed.suite[suiteField[1]] = parseScalar(suiteField[2]);
+    }
+    const benchmarkField = line.match(/^    ([a-z0-9_]+):\s*(.*)$/);
+    if (section === 'benchmark' && benchmarkField) {
+      parsed.benchmark[benchmarkField[1]] = parseScalar(benchmarkField[2]);
+    }
+  }
+
+  if (!benchmarkData.includes('schema_version: graphjin.benchmark.data/v2')) {
+    failures.push('Organizational benchmark data is not schema v2');
+  }
+  if (parsed.benchmark.slug !== 'organizational-agent' || parsed.benchmark.name !== 'The Organizational Agent Benchmark') {
+    failures.push(`Organizational benchmark identity is invalid (${parsed.benchmark.slug ?? 'missing'} / ${parsed.benchmark.name ?? 'missing'})`);
+  }
+  for (const run of parsed.runs) {
+    const page = path.join(publicRoot, 'benchmarks', 'organizational-agent', 'runs', String(run.slug), 'index.html');
+    if (!(await exists(page))) {
+      failures.push(`Benchmark data slug ${run.slug} has no built run page`);
+    }
+    const alias = path.join(publicRoot, 'benchmark', 'runs', String(run.slug), 'index.html');
+    if (!(await exists(alias))) {
+      failures.push(`Benchmark run ${run.slug} is missing its old URL alias`);
+    } else {
+      const aliasHTML = await readFile(alias, 'utf8');
+      const target = `/benchmarks/organizational-agent/runs/${run.slug}/`;
+      if (!aliasHTML.includes(target)) {
+        failures.push(`Benchmark run alias ${run.slug} does not redirect to ${target}`);
+      }
     }
   }
 
@@ -427,11 +473,11 @@ if (await exists(benchmarkDataPath)) {
         const rendered = renderedDataAttribute(rowTag, field);
         const expected = Number(expectedValue(run));
         if (rendered === undefined || Number(rendered) !== expected) {
-          failures.push(`Benchmark efficiency ${field} for ${run.run_id} does not match benchmarks.yaml (${rendered ?? 'missing'} != ${expected})`);
+          failures.push(`Benchmark efficiency ${field} for ${run.run_id} does not match organizational_agent.yaml (${rendered ?? 'missing'} != ${expected})`);
         }
       }
 
-      const runPagePath = path.join(publicRoot, 'benchmark', 'runs', String(run.slug), 'index.html');
+      const runPagePath = path.join(publicRoot, 'benchmarks', 'organizational-agent', 'runs', String(run.slug), 'index.html');
       if (await exists(runPagePath)) {
         const runPage = await readFile(runPagePath, 'utf8');
         const summaryPattern = new RegExp(`data-benchmark-run-summary=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`);
@@ -447,7 +493,7 @@ if (await exists(benchmarkDataPath)) {
           const rendered = renderedDataAttribute(summaryTag, field);
           const expected = Number(expectedValue(run));
           if (rendered === undefined || Number(rendered) !== expected) {
-            failures.push(`Benchmark run summary ${field} for ${run.run_id} does not match benchmarks.yaml (${rendered ?? 'missing'} != ${expected})`);
+            failures.push(`Benchmark run summary ${field} for ${run.run_id} does not match organizational_agent.yaml (${rendered ?? 'missing'} != ${expected})`);
           }
         }
       }
@@ -479,14 +525,14 @@ if (await exists(benchmarkDataPath)) {
       const rendered = renderedBenchmarkValue(field);
       const expected = Number(topAccepted[field] ?? 0);
       if (rendered === undefined || Number(rendered) !== expected) {
-        failures.push(`Homepage benchmark stat ${field} does not match benchmarks.yaml (${rendered ?? 'missing'} != ${expected})`);
+        failures.push(`Homepage benchmark stat ${field} does not match organizational_agent.yaml (${rendered ?? 'missing'} != ${expected})`);
       }
     }
     if (renderedBenchmarkValue('label') !== String(topAccepted.label)) {
-      failures.push('Homepage benchmark model label does not match benchmarks.yaml');
+      failures.push('Homepage benchmark model label does not match organizational_agent.yaml');
     }
     if (renderedBenchmarkValue('suite_fingerprint') !== String(parsed.suite.suite_fingerprint)) {
-      failures.push('Homepage benchmark suite fingerprint does not match benchmarks.yaml');
+      failures.push('Homepage benchmark suite fingerprint does not match organizational_agent.yaml');
     }
   }
 }
@@ -564,10 +610,16 @@ const anchorsByPage = new Map();
 for (const file of htmlFiles) {
   const html = await readFile(file, 'utf8');
   const rel = path.relative(publicRoot, file);
-  for (const meta of ['section', 'kind', 'slug', 'source']) {
-    const metaPattern = new RegExp(`\\sdata-pagefind-meta=(?:"${meta}"|'${meta}'|${meta})(?=\\s|>|/)`);
-    if (!metaPattern.test(html)) {
-      failures.push(`${rel} is missing Pagefind ${meta} metadata`);
+  if (html.includes('GraphJin Agent Benchmark')) {
+    failures.push(`${rel} contains the retired benchmark name`);
+  }
+  const isBenchmarkAlias = rel === 'benchmark/index.html' || rel.startsWith(`benchmark${path.sep}`);
+  if (!isBenchmarkAlias) {
+    for (const meta of ['section', 'kind', 'slug', 'source']) {
+      const metaPattern = new RegExp(`\\sdata-pagefind-meta=(?:"${meta}"|'${meta}'|${meta})(?=\\s|>|/)`);
+      if (!metaPattern.test(html)) {
+        failures.push(`${rel} is missing Pagefind ${meta} metadata`);
+      }
     }
   }
   const anchors = new Set(
