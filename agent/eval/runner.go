@@ -709,7 +709,7 @@ func rebuildRunAccounting(manifest *RunManifest, episodes []Episode, attempts []
 
 func providerUsageUnknown(code string) bool {
 	switch strings.TrimSpace(code) {
-	case gjagent.ErrorCodeProviderTimeout, gjagent.ErrorCodeProviderTransport, gjagent.ErrorCodeProviderServer:
+	case "interrupted", gjagent.ErrorCodeProviderTimeout, gjagent.ErrorCodeProviderTransport, gjagent.ErrorCodeProviderServer:
 		return true
 	default:
 		return false
