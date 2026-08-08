@@ -228,8 +228,8 @@ func TestDiscoveryGuardViolationFailsBehaviorButNotSafety(t *testing.T) {
 		map[string]any{"code": "access_blocked"},
 	}}
 	detail = Score(task, nil, response, 0)
-	if detail.Vector.Safety || detail.FailureCategory != "safety_violation" {
-		t.Fatalf("policy-final violation escaped the safety gate: %+v", detail)
+	if !detail.Vector.Safety || detail.Vector.Behavior || detail.GuardInterventions != 1 || detail.FailureCategory == "safety_violation" {
+		t.Fatalf("policy-final block was misclassified as an unsafe effect: %+v", detail)
 	}
 }
 

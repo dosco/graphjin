@@ -26,6 +26,12 @@ func TestEvalPublishRefusalsAndLowScoreBoundary(t *testing.T) {
 		{"empty", func(r *gjeval.Report) { r.Metrics.TaskCount = 0 }, 1},
 		{"empty_commit", func(r *gjeval.Report) { r.Provenance.GraphJinCommit = "" }, 2},
 		{"wrong_binary", func(r *gjeval.Report) { r.Provenance.BinaryFingerprint = "different-binary" }, 2},
+		{"wrong_rescorer_binary", func(r *gjeval.Report) {
+			r.RescoredFrom = "source-run"
+			r.ScoringProvenance = &gjeval.ScoringProvenance{
+				GraphJinCommit: "scorer-commit", BinaryFingerprint: "different-binary", RewardVersion: gjeval.RewardVersion,
+			}
+		}, 2},
 		{"incomplete_usage", func(r *gjeval.Report) { r.ProviderUsage.Complete = false }, 2},
 		{"suspect_scoring", func(r *gjeval.Report) {
 			r.Metrics.GroundTruthRecall = .9
@@ -258,6 +264,78 @@ func TestEvalPublishAdvancesOfficialCohortAndKeepsHistory(t *testing.T) {
 		case report.RunID:
 			if !entry.Ranked {
 				t.Fatalf("current official row is unranked: %+v", entry)
+			}
+		}
+	}
+}
+
+func TestEvalPublishAdvancesCorrectedScoringContractAndKeepsExecutionProvenance(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101112.000000000Z-rescored")
+	report.RescoredFrom = "20260802T101112.000000000Z-original"
+	report.Provenance.GraphJinCommit = "original-agent-commit"
+	report.Provenance.BinaryFingerprint = "original-agent-binary"
+	report.ScoringProvenance = &gjeval.ScoringProvenance{
+		GraphJinCommit: "current-scorer-commit", BinaryFingerprint: evalBinaryFingerprint(), RewardVersion: gjeval.RewardVersion,
+	}
+	report.Metrics.GuardInterventions = 4
+	report.Metrics.UnsafeEffects = 0
+	writePublishTestReport(t, project, report)
+
+	dataPath := publishTestDataPath(site)
+	if err := os.MkdirAll(filepath.Dir(dataPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldReport := report
+	oldReport.RescoredFrom = ""
+	oldReport.ScoringProvenance = nil
+	oldReport.RewardVersion = "graphjin.eval.reward/v2"
+	old := benchmarkData{
+		SchemaVersion: benchmarkDataVersion,
+		Benchmark:     publishTestBenchmark(t),
+		Suite: benchmarkSuite{
+			Generation: gjeval.PublicBenchmarkGeneration, GeneratorVersion: gjeval.GeneratorVersion,
+			Identity: gjeval.SuiteIdentity(oldReport), SuiteFingerprint: report.SuiteFingerprint,
+			CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
+			Mode: string(report.Mode), Seed: report.Provenance.Seed, Repeats: report.Provenance.Repeats,
+			MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature, RewardVersion: oldReport.RewardVersion,
+		},
+		Runs: []benchmarkEntry{{
+			RunID: "old-v2-run", Slug: "old-v2-run", Label: "Old scoring", Ranked: true,
+			Generation: gjeval.PublicBenchmarkGeneration, SuiteIdentity: gjeval.SuiteIdentity(oldReport),
+			SuiteFingerprint: report.SuiteFingerprint, RewardVersion: oldReport.RewardVersion,
+		}},
+	}
+	raw, err := marshalBenchmarkData(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site}); err != nil {
+		t.Fatalf("corrected scoring publish was refused: %v", err)
+	}
+
+	data, err := loadBenchmarkData(dataPath, publishTestBenchmark(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.Suite.RewardVersion != gjeval.RewardVersion {
+		t.Fatalf("suite reward version = %q, want %q", data.Suite.RewardVersion, gjeval.RewardVersion)
+	}
+	for _, entry := range data.Runs {
+		switch entry.RunID {
+		case "old-v2-run":
+			if entry.Ranked || !strings.Contains(entry.UnrankedReason, "corrected scoring contract") {
+				t.Fatalf("old scoring row was not superseded: %+v", entry)
+			}
+		case report.RunID:
+			if !entry.Ranked || entry.RescoredFrom != report.RescoredFrom || entry.GuardInterventions != 4 || entry.UnsafeEffects != 0 {
+				t.Fatalf("rescored row metadata = %+v", entry)
+			}
+			if entry.GraphJinCommit != report.Provenance.GraphJinCommit || entry.BinaryFingerprint != report.Provenance.BinaryFingerprint {
+				t.Fatalf("execution provenance was replaced by scorer provenance: %+v", entry)
 			}
 		}
 	}

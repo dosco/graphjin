@@ -2,10 +2,12 @@
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $benchmarkPath := printf "/benchmarks/%s" $data.benchmark.slug -}}
 {{- $runs := default (slice) $data.runs -}}
-{{- $ranked := sort (where $runs "ranked" true) "recall" "desc" -}}
+{{- $generation := $data.suite.generation -}}
+{{- $ranked := sort (where (where $runs "ranked" true) "generation" $generation) "recall" "desc" -}}
 {{- $unranked := where $runs "ranked" false -}}
 {{- $view := .Get "view" | default "models" -}}
-<div class="benchmark-board benchmark-board-{{ $view }}" data-benchmark-view="{{ $view }}">
+<div class="benchmark-board benchmark-board-{{ $view }}" data-benchmark-view="{{ $view }}" data-benchmark-generation="{{ $generation }}">
+  <div class="benchmark-generation-current" data-benchmark-generation-current="{{ $generation }}"><strong>Generation {{ $generation }}</strong><span>Current write-capable suite</span></div>
   {{ if eq (len $ranked) 0 }}
     <div class="benchmark-empty" data-benchmark-empty>
       <strong>No published runs yet.</strong>
@@ -33,7 +35,7 @@
         {{ end }}
       </svg>
     </div>
-    <p class="benchmark-chart-note"><strong>Full pass</strong> means the right answer, the required database method, and every safety rule. Cost uses provider list pricing; latency is per attempt. Longer bars are better. Lower cost and latency are better.</p>
+    <p class="benchmark-chart-note"><strong>Full pass</strong> means the right answer, the required database method, the expected behavior, and no unsafe effect. Guard interventions are reported separately. Cost uses provider list pricing; latency is per attempt. Longer bars are better. Lower cost and latency are better.</p>
   {{ else if eq $view "categories" }}
     {{- $categories := slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal" "action" "reactive" "multi-turn" "cross-source" -}}
     {{- $scratch := newScratch -}}
@@ -90,16 +92,16 @@
   {{ else }}
     <div class="benchmark-table-wrap">
       <table class="benchmark-table">
-        <thead><tr><th>Model + GraphJin build</th><th>Provider</th><th>Full pass</th><th>At least once</th><th>Every time</th><th>Database method</th><th>Safety</th><th>Run</th></tr></thead>
+        <thead><tr><th>Model + GraphJin build</th><th>Provider</th><th>Full pass</th><th>At least once</th><th>Every time</th><th>Database method</th><th>Governance</th><th>Run</th></tr></thead>
         <tbody>
           {{ range $ranked }}
-            <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}"><td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ .provider | default "—" }}</td><td><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></td><td>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .safety_precision) 100) }}</td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>
+            <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}" data-guard-interventions="{{ int (.guard_interventions | default 0) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}"><td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ .provider | default "—" }}</td><td><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></td><td>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</td><td><strong>{{ int (.unsafe_effects | default 0) }} unsafe effects</strong><small>{{ int (.guard_interventions | default 0) }} guard interventions · {{ printf "%.1f%%" (mul (float .safety_precision) 100) }} effect safety</small></td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>
           {{ end }}
         </tbody>
       </table>
     </div>
     {{ if gt (len $unranked) 0 }}
-      <div class="benchmark-unranked"><h3>Unranked runs</h3><p>Historical reports that do not match the pinned cohort.</p><div class="benchmark-table-wrap"><table class="benchmark-table"><thead><tr><th>Label</th><th>Full pass</th><th>Why unranked</th><th>Run</th></tr></thead><tbody>{{ range sort $unranked "run_id" "asc" }}<tr data-benchmark-row data-benchmark-run="{{ .run_id }}"><td><strong>{{ .label }}</strong></td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>{{ end }}</tbody></table></div></div>
+      <details class="benchmark-unranked" data-benchmark-generation-history><summary><strong>Prior generations and superseded scoring</strong> · {{ len $unranked }} runs</summary><p>Collapsed by default so the current generation remains the comparison surface. Every historical row keeps its original report and generation.</p><div class="benchmark-table-wrap"><table class="benchmark-table"><thead><tr><th>Generation</th><th>Label</th><th>Full pass</th><th>Why unranked</th><th>Run</th></tr></thead><tbody>{{ range sort $unranked "run_id" "desc" }}<tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-benchmark-history-generation="{{ .generation }}"><td><strong>{{ .generation }}</strong></td><td><strong>{{ .label }}</strong></td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>{{ end }}</tbody></table></div></details>
     {{ end }}
   {{ end }}
 </div>

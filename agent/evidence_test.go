@@ -1,7 +1,11 @@
 package agent
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -42,5 +46,40 @@ func TestResponseEvidenceHelpersIgnoreMalformedValues(t *testing.T) {
 	}
 	if got := ProtocolViolationCodes(resp); got != nil {
 		t.Fatalf("ProtocolViolationCodes malformed = %v, want nil", got)
+	}
+}
+
+func TestBlockingGuardRegistryCoversProtocolEmitters(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "protocol.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unclassified []string
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) < 4 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "addViolation" {
+			return true
+		}
+		blocking, ok := call.Args[3].(*ast.Ident)
+		if !ok || blocking.Name != "true" {
+			return true
+		}
+		literal, ok := call.Args[0].(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			unclassified = append(unclassified, "<non-literal blocking guard>")
+			return true
+		}
+		code, err := strconv.Unquote(literal.Value)
+		if err != nil || !IsBlockingGuardViolationCode(code) {
+			unclassified = append(unclassified, literal.Value)
+		}
+		return true
+	})
+	if len(unclassified) != 0 {
+		t.Fatalf("blocking protocol guards missing from BlockingGuardViolationCodes: %v", unclassified)
 	}
 }

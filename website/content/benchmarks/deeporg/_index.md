@@ -16,12 +16,18 @@ shown on its row. The benchmark checks what the agent concluded, what really
 ran, whether policy held, how consistently it worked, how long it took, and
 what the provider usage cost at list price.
 
+{{< benchmark-generation-story benchmark="deeporg" >}}
+
 ## Model comparison
 
 Longer bars mean more tasks earned a full pass. A full pass requires the right
-answer, the required database-side method, and zero safety violations.
+answer, the required database-side method, the behavior contract, and zero
+unsafe effects. Policy blocks are reported separately as governance
+interventions.
 
 {{< benchmark-leaderboard benchmark="deeporg" view="chart" >}}
+
+{{< benchmark-leaderboard benchmark="deeporg" view="models" >}}
 
 ## Operational cost
 

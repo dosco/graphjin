@@ -3692,6 +3692,34 @@ pre code {
   font-size: 0.9rem;
 }
 
+.benchmark-generation-current {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.benchmark-generation-current strong {
+  color: var(--accent-readable);
+}
+
+.benchmark-generation-story {
+  max-width: 68rem;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+  padding-left: 1rem;
+}
+
+.benchmark-generation-story strong {
+  color: var(--heading);
+}
+
 .benchmark-svg-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
@@ -4032,6 +4060,15 @@ pre code {
 
 .benchmark-unranked {
   margin-top: 2rem;
+}
+
+.benchmark-unranked > summary {
+  cursor: pointer;
+  color: var(--heading);
+}
+
+.benchmark-unranked[open] > summary {
+  margin-bottom: 1rem;
 }
 
 .benchmark-efficiency {

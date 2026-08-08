@@ -904,6 +904,7 @@ func aggregateTask(task Task, initial, confirmation []Episode) TaskVerdict {
 	var reward float64
 	buckets := map[string]int{}
 	for _, episode := range selected {
+		verdict.GuardInterventions += episode.Score.GuardInterventions
 		if episode.Score.Pass {
 			passes++
 		}
@@ -1017,6 +1018,10 @@ func calculateMetrics(_ []Task, verdicts []TaskVerdict, episodes []Episode, init
 		}
 	}
 	for _, episode := range episodes {
+		out.GuardInterventions += episode.Score.GuardInterventions
+		if !episode.Score.Vector.Safety {
+			out.UnsafeEffects++
+		}
 		if episode.Score.FailureCategory == "environment_failure" || episode.Score.FailureCategory == "transport_error" {
 			out.EnvironmentErrors++
 		}

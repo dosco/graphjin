@@ -100,6 +100,9 @@ type benchmarkEntry struct {
 	EstimatedListCostPerTaskUSD float64            `yaml:"estimated_list_cost_per_task_usd,omitempty"`
 	PricingSource               string             `yaml:"pricing_source,omitempty"`
 	ScoringSuspect              bool               `yaml:"scoring_suspect,omitempty"`
+	GuardInterventions          int                `yaml:"guard_interventions,omitempty"`
+	UnsafeEffects               int                `yaml:"unsafe_effects"`
+	RescoredFrom                string             `yaml:"rescored_from,omitempty"`
 	Accepted                    bool               `yaml:"accepted"`
 }
 
@@ -177,15 +180,26 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	if report.Metrics.TaskCount == 0 {
 		return &evalExitError{Code: 1, Err: fmt.Errorf("run %s has no scored tasks", runID)}
 	}
-	if strings.TrimSpace(report.Provenance.GraphJinCommit) == "" {
+	buildCommit := report.Provenance.GraphJinCommit
+	buildFingerprint := report.Provenance.BinaryFingerprint
+	buildLabel := "run"
+	if report.RescoredFrom != "" {
+		if report.ScoringProvenance == nil || report.ScoringProvenance.RewardVersion != report.RewardVersion {
+			return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has incomplete scoring provenance", runID)}
+		}
+		buildCommit = report.ScoringProvenance.GraphJinCommit
+		buildFingerprint = report.ScoringProvenance.BinaryFingerprint
+		buildLabel = "scorer"
+	}
+	if strings.TrimSpace(buildCommit) == "" {
 		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has no graphjin_commit; rebuild and rerun before publishing", runID)}
 	}
 	currentFingerprint := evalBinaryFingerprint()
 	if currentFingerprint == "" {
 		return &evalExitError{Code: 2, Err: errors.New("cannot fingerprint the current GraphJin binary; publishing cannot verify build identity")}
 	}
-	if report.Provenance.BinaryFingerprint == "" || report.Provenance.BinaryFingerprint != currentFingerprint {
-		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s binary_fingerprint does not match the current GraphJin build; publish with the same binary that ran the benchmark", runID)}
+	if buildFingerprint == "" || buildFingerprint != currentFingerprint {
+		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s %s binary_fingerprint does not match the current GraphJin build; publish with the same binary that scored the report", runID, buildLabel)}
 	}
 	if (report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics)) && !opts.AllowSuspectScoring {
 		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has a suspect answer/method scoring divergence; investigate it or use --allow-suspect-scoring to override", runID)}
@@ -230,7 +244,10 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	}
 	advancingCohort := currentPublicSuite != "" && report.SuiteFingerprint == currentPublicSuite &&
 		data.Suite.SuiteFingerprint != "" && data.Suite.SuiteFingerprint != report.SuiteFingerprint
-	if len(data.Runs) == 0 || advancingCohort {
+	correctingScoring := currentPublicSuite != "" && report.SuiteFingerprint == currentPublicSuite &&
+		data.Suite.SuiteFingerprint == report.SuiteFingerprint && data.Suite.RewardVersion != "" &&
+		data.Suite.RewardVersion != report.RewardVersion && report.RewardVersion == gjeval.RewardVersion
+	if len(data.Runs) == 0 || advancingCohort || correctingScoring {
 		// With no published rows, the first run defines the metadata for the
 		// current pinned cohort. This permits an intentional regenerated public
 		// suite to replace the prior empty cohort without an off-suite override.
@@ -254,7 +271,7 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 		}
 	}
 
-	if advancingCohort && ranked {
+	if (advancingCohort || correctingScoring) && ranked {
 		previousGeneration := strings.TrimSpace(data.Suite.Generation)
 		if previousGeneration == "" {
 			previousGeneration = "previous"
@@ -264,7 +281,11 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 				continue
 			}
 			data.Runs[i].Ranked = false
-			data.Runs[i].UnrankedReason = "previous public benchmark cohort (" + previousGeneration + ")"
+			if correctingScoring {
+				data.Runs[i].UnrankedReason = "superseded by corrected scoring contract (" + data.Suite.RewardVersion + " → " + report.RewardVersion + ")"
+			} else {
+				data.Runs[i].UnrankedReason = "previous public benchmark cohort (" + previousGeneration + ")"
+			}
 		}
 		data.Suite = benchmarkSuiteFromReport(report)
 	} else if (data.Suite.Identity == "" || len(data.Runs) == 0) && ranked {
@@ -421,7 +442,9 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		LatencyP50MS:        report.Metrics.LatencyP50MS, LatencyP95MS: report.Metrics.LatencyP95MS,
 		PromptPricePerMillion: opts.PromptPricePerMillion, CompletionPricePerMillion: opts.CompletionPricePerMillion,
 		EstimatedListCostUSD: estimatedCost, EstimatedListCostPerTaskUSD: costPerTask, PricingSource: pricingSource,
-		ScoringSuspect: report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics), Accepted: report.Acceptance.HardPass,
+		ScoringSuspect:     report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics),
+		GuardInterventions: report.Metrics.GuardInterventions, UnsafeEffects: report.Metrics.UnsafeEffects,
+		RescoredFrom: report.RescoredFrom, Accepted: report.Acceptance.HardPass,
 	}
 }
 

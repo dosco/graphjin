@@ -32,7 +32,7 @@ const (
 	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
 	// generated task semantics change, including method-rule dialect support.
 	GeneratorVersion      = "graphjin.eval.generator/v8"
-	RewardVersion         = "graphjin.eval.reward/v2"
+	RewardVersion         = "graphjin.eval.reward/v3"
 	DefaultSuiteSize      = 24
 	DefaultRepeats        = 3
 	DefaultEvaluationDir  = "eval"

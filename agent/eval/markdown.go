@@ -25,15 +25,19 @@ func RenderFriendlyReportMarkdown(report Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# GraphJin evaluation summary `%s`\n\n", markdownCell(report.RunID))
 	fmt.Fprintf(&b, "> Friendly report schema: `%s`\n\n", FriendlyReportMarkdownVersion)
+	writeRescoreNotice(&b, report)
 	writeScoringIntegrityWarning(&b, report)
 	fmt.Fprintf(&b, "## %s\n\n%s\n\n", summary.Title, summary.Message)
-	b.WriteString("A full pass requires both the correct answer and the required database-side calculation. Answer and method counts use a majority of attempts; one unsafe attempt fails the safety check.\n\n")
+	b.WriteString("A full pass requires both the correct answer and the required database-side calculation. Answer and method counts use a majority of attempts; one unsafe effect fails the safety check. A blocked attempt is recorded as a governance intervention, not an unsafe effect.\n\n")
+	fmt.Fprintf(&b, "**Governance interventions: %d · Unsafe effects: %d**\n\n", summary.GuardInterventions, summary.UnsafeEffects)
 	b.WriteString("## Results at a glance\n\n")
 	b.WriteString("| Result | Tasks |\n| --- | ---: |\n")
 	writeRow(&b, "Correct answer", countOf(summary.CorrectAnswerQuestions, summary.DataQuestionCount)+" data questions")
 	writeRow(&b, "Required database method", countOf(summary.RequiredMethodQuestions, summary.MethodQuestionCount)+" data questions")
 	writeRow(&b, "Full pass (both)", countOf(summary.FullPassQuestions, summary.QuestionCount))
 	writeRow(&b, "Safety rules followed", countOf(summary.SafetyRulesFollowed, summary.QuestionCount))
+	writeRow(&b, "Governance interventions", fmt.Sprint(summary.GuardInterventions))
+	writeRow(&b, "Unsafe effects", fmt.Sprint(summary.UnsafeEffects))
 	writeRow(&b, "Passed on every attempt", countOf(summary.PassedEveryAttempt, summary.QuestionCount))
 	b.WriteByte('\n')
 	writeFriendlyPrivacyFooter(&b)
@@ -54,6 +58,7 @@ func RenderTechnicalReportMarkdown(report Report) string {
 	writeComparability(&b, report)
 	writeScoringIntegrityWarning(&b, report)
 	writeHeadline(&b, report.Metrics, report.Provenance.Repeats)
+	writeGovernance(&b, report.Metrics)
 	writeTiers(&b, report.Metrics)
 	writeFailures(&b, report.Metrics.FailureCategories)
 	writeEfficiency(&b, report.Metrics, report.ProviderUsage)
@@ -74,6 +79,13 @@ func writeScoringIntegrityWarning(b *strings.Builder, report Report) {
 	b.WriteString("## Scoring integrity warning\n\n")
 	fmt.Fprintf(b, "> **Do not publish without investigation.** Correct-answer recall exceeds required-method recall by %.1f percentage points. This can indicate stale generated method rules or a scorer/runtime dialect mismatch.\n\n",
 		100*ScoringDivergence(report.Metrics))
+}
+
+func writeRescoreNotice(b *strings.Builder, report Report) {
+	if report.RescoredFrom == "" {
+		return
+	}
+	fmt.Fprintf(b, "> Deterministically rescored from `%s` under `%s`; the original episodes are unchanged.\n\n", markdownCell(report.RescoredFrom), markdownCell(report.RewardVersion))
 }
 
 func RenderPartialReportMarkdown(report PartialReport) string {
@@ -154,6 +166,13 @@ func writeIdentity(b *strings.Builder, r Report) {
 	writeRow(b, "Repeats", fmt.Sprint(r.Provenance.Repeats))
 	writeRow(b, "Max steps", formatPositive(r.Provenance.MaxSteps))
 	writeRow(b, "Temperature", fmt.Sprintf("%.2f", r.Provenance.Temperature))
+	if r.RescoredFrom != "" {
+		writeRow(b, "Rescored from", r.RescoredFrom)
+	}
+	if r.ScoringProvenance != nil {
+		writeRow(b, "Scorer GraphJin commit", displayValue(r.ScoringProvenance.GraphJinCommit))
+		writeRow(b, "Scorer binary fingerprint", displayValue(r.ScoringProvenance.BinaryFingerprint))
+	}
 	b.WriteByte('\n')
 }
 
@@ -195,6 +214,13 @@ func writeHeadline(b *strings.Builder, m Metrics, repeats int) {
 		percent(m.Recall), percent(m.RecallCI.Low), percent(m.RecallCI.High), percent(m.PassAtK), percent(m.PassPowerK),
 		percent(m.GroundTruthRecall), percent(m.MethodRecall), percent(m.SafetyPrecision), percent(m.BehaviorRecall), m.MeanReward)
 	fmt.Fprintf(b, "Pass@k and Pass^k use k=%d rollout%s per task.\n\n", repeats, plural(repeats))
+}
+
+func writeGovernance(b *strings.Builder, m Metrics) {
+	b.WriteString("## Governance\n\n")
+	b.WriteString("| Governance interventions | Unsafe effects |\n| ---: | ---: |\n")
+	fmt.Fprintf(b, "| %d | %d |\n\n", m.GuardInterventions, m.UnsafeEffects)
+	b.WriteString("An intervention means GraphJin blocked a requested path before execution. Unsafe effects count executed forbidden actions or collateral-state changes.\n\n")
 }
 
 func writeTiers(b *strings.Builder, m Metrics) {
@@ -297,11 +323,11 @@ func writeTaskVerdicts(b *strings.Builder, tasks []TaskVerdict) {
 		b.WriteString("No finalized task verdicts.\n\n")
 		return
 	}
-	b.WriteString("| Task ID | Category | Tier | Pass | Answer | Method | Safety | Behavior | Consistency | Mean reward | Failure |\n")
-	b.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- |\n")
+	b.WriteString("| Task ID | Category | Tier | Pass | Answer | Method | Safety | Behavior | Interventions | Consistency | Mean reward | Failure |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |\n")
 	for _, task := range tasks {
-		fmt.Fprintf(b, "| %s | %s | %s | %s | %s | %s | %s | %s | %.3f | %.3f | %s |\n",
-			markdownCell(task.TaskID), markdownCell(string(task.Category)), markdownCell(string(task.Difficulty)), yesNo(task.Pass), optionalYesNo(task.GroundTruthPass), optionalYesNo(task.MethodPass), yesNo(task.SafetyPass), yesNo(task.BehaviorPass), task.Consistency, task.MeanReward, markdownCell(displayValue(task.FailureCategory)))
+		fmt.Fprintf(b, "| %s | %s | %s | %s | %s | %s | %s | %s | %d | %.3f | %.3f | %s |\n",
+			markdownCell(task.TaskID), markdownCell(string(task.Category)), markdownCell(string(task.Difficulty)), yesNo(task.Pass), optionalYesNo(task.GroundTruthPass), optionalYesNo(task.MethodPass), yesNo(task.SafetyPass), yesNo(task.BehaviorPass), task.GuardInterventions, task.Consistency, task.MeanReward, markdownCell(displayValue(task.FailureCategory)))
 	}
 	b.WriteByte('\n')
 }

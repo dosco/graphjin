@@ -78,6 +78,7 @@ func evalCmd() *cobra.Command {
 	cmd.AddCommand(evalRunCmd(opts, false))
 	cmd.AddCommand(evalBaselineCmd(opts))
 	cmd.AddCommand(evalBenchCmd(opts))
+	cmd.AddCommand(evalRescoreCmd(opts))
 	cmd.AddCommand(evalPublishCmd(opts))
 	cmd.AddCommand(evalFreezeSuiteCmd(opts))
 	cmd.AddCommand(evalImportCmd())
@@ -412,6 +413,40 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 	return cmd
 }
 
+func evalRescoreCmd(opts *evalCLIOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rescore <run-id>",
+		Short: "Recompute a completed run from its stored episodes without provider traffic",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runID := strings.TrimSpace(args[0])
+			stateDir, err := evalStateDirForPublish(cmd, opts)
+			if err != nil {
+				return err
+			}
+			report, err := gjeval.RescoreRun(filepath.Join(stateDir, "episodes", runID))
+			if err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+			if report.ScoringProvenance == nil {
+				report.ScoringProvenance = &gjeval.ScoringProvenance{RewardVersion: gjeval.RewardVersion}
+			}
+			report.ScoringProvenance.GraphJinCommit = commit
+			report.ScoringProvenance.BinaryFingerprint = evalBinaryFingerprint()
+			store := gjeval.NewStore(stateDir).WithSecrets(os.Getenv(report.Provenance.APIKeyEnv))
+			if _, err := store.WriteReport(report); err != nil {
+				return err
+			}
+			if opts.JSON {
+				return writeEvalJSON(cmd.OutOrStdout(), report)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Rescored %s as %s under %s with no provider traffic.\n", runID, report.RunID, report.RewardVersion)
+			printEvalReport(cmd, opts, &report, store)
+			return evalReportExit(&report)
+		},
+	}
+}
+
 func evalBenchEnvSpec(target gjeval.Target, projectPath string, seed int64, public bool) gjeval.EnvSpec {
 	return gjeval.EnvSpec{
 		Target: target, ConfigPath: projectPath, Seed: seed,
@@ -719,6 +754,7 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 		summary.FullPassQuestions, summary.QuestionCount,
 		summary.SafetyRulesFollowed, summary.QuestionCount,
 		summary.PassedEveryAttempt, summary.QuestionCount)
+	fmt.Fprintf(cmd.OutOrStdout(), "Governance interventions: %d. Unsafe effects: %d.\n", summary.GuardInterventions, summary.UnsafeEffects)
 	if opts.Debug {
 		fmt.Fprintf(cmd.OutOrStdout(), "Technical: recall %.3f, ground truth %.3f, method %.3f, safety %.3f.\n", report.Metrics.Recall, report.Metrics.GroundTruthRecall, report.Metrics.MethodRecall, report.Metrics.SafetyPrecision)
 		fmt.Fprintf(cmd.OutOrStdout(), "Technical: pass@%d %.3f, pass^%d %.3f; accepted=%t.\n", report.Provenance.Repeats, report.Metrics.PassAtK, report.Provenance.Repeats, report.Metrics.PassPowerK, report.Acceptance.HardPass)
