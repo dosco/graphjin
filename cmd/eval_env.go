@@ -138,7 +138,11 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		}
 		configureEvalInstance(fresh, spec)
 		applySaaSOpsEvalAPIBaseURL(fresh, apiServer)
-		cloned = *fresh
+		// Each embedded service owns its config for its entire lifetime. A reset
+		// may leave subscription workers finishing their shutdown after Close
+		// returns, so reusing cloned here would race those readers while the next
+		// service is initialized.
+		serviceConfig := *fresh
 		// The demo keeps its trusted local dev identity, but Eval suppresses
 		// named-query learning so an episode cannot mutate benchmark identity.
 		options := []serv.Option{serv.OptionSetLogOutput(os.Stderr), serv.OptionDisableQueryLearning()}
@@ -148,7 +152,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		if runtime != nil && len(runtime.Databases) != 0 {
 			options = append(options, serv.OptionSetDatabases(runtime.Databases), serv.OptionSetRuntimeSchemaDDLDir(demoRuntimeSchemaDDLDir()))
 		}
-		created, createErr := serv.NewGraphJinService(&cloned, options...)
+		created, createErr := serv.NewGraphJinService(&serviceConfig, options...)
 		if createErr != nil {
 			return createErr
 		}
