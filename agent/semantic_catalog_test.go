@@ -459,6 +459,77 @@ func TestMutationEvidenceRepairRequiresSuccessfulRetryBeforeFinal(t *testing.T) 
 	}
 }
 
+func TestMutationEvidenceRepairRoutesWeakModelBroadSearchToExactDialectEvidence(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	base.catalogOverride = fakeCatalogResult
+	runtime := newProtocolRuntime(base, "close support ticket 2", "", 40, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"table:app:main.support_tickets", "help:mutations"} {
+		runtime.state.catalogIDs[id] = true
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:app:main.support_tickets"}); err != nil {
+		t.Fatal(err)
+	}
+
+	query := `mutation { update_support_tickets_by_pk(pk_columns: {id: 2}, _set: {status: "resolved"}) { id } }`
+	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
+	if err != nil || !executionFailed(first) {
+		t.Fatalf("first mutation = %+v err=%v, want recoverable guard result", first, err)
+	}
+	nextArgs := mapValue(mapValue(mapValue(mapValue(first)["recovery"])["next"])["args"])
+	ids := stringSliceArg(nextArgs, "ids")
+	if !containsString(ids, "help:mutations") || !containsString(ids, "table:app:main.support_tickets") {
+		t.Fatalf("mutation dialect repair args = %+v, want exact syntax and table detail", nextArgs)
+	}
+
+	// This reproduces the weak-model failure from the public run: it ignores the
+	// exact next args and asks for another broad table enumeration. The protocol
+	// should execute the already-selected narrow continuation instead.
+	out, err := runtime.QueryCatalog(context.Background(), map[string]any{"kind": "table", "limit": 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stringSliceArg(base.args, "ids"); !containsString(got, "help:mutations") || !containsString(got, "table:app:main.support_tickets") {
+		t.Fatalf("routed catalog args = %+v, want exact pending repair", base.args)
+	}
+	if len(catalogCards(out)) != 2 || !runtime.state.hasCatalogDetailID("help:mutations") {
+		t.Fatalf("routed catalog result = %+v state=%+v", out, runtime.state.catalogDetails)
+	}
+	if pending := runtime.state.pendingRequiredFinalization(); !strings.HasPrefix(pending, "execution_retry_required:") {
+		t.Fatalf("pending after routed detail = %q, want retry requirement", pending)
+	}
+}
+
+func TestWatchDetailDidYouMeanUsesKnownHelpID(t *testing.T) {
+	base := &fakeRuntime{catalogOverride: func(args map[string]any) any {
+		if id := stringArg(args, "id"); id == "workflow:deeporg_new_payments" {
+			return map[string]any{"count": 0, "cards": []any{}}
+		}
+		return fakeCatalogResult(args)
+	}}
+	runtime := newProtocolRuntime(base, "watch newly recorded payments", "", 40, nil, nil, CatalogSearchFeatures{})
+	runtime.state.catalogIDs["help:watches"] = true
+
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "workflow:deeporg_new_payments"}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "capability:gj_watch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stringArg(base.args, "id"); got != "help:watches" {
+		t.Fatalf("corrected detail id = %q, want help:watches", got)
+	}
+	if len(catalogCards(out)) != 1 || !runtime.state.hasCatalogDetailID("help:watches") {
+		t.Fatalf("corrected watch detail = %+v state=%+v", out, runtime.state.catalogDetails)
+	}
+}
+
 func TestProtocolEscalatesConsecutiveEmptyCatalogSearches(t *testing.T) {
 	base := &fakeRuntime{catalogOverride: func(map[string]any) any {
 		return map[string]any{"count": 0, "cards": []any{}}

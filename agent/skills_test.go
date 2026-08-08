@@ -258,7 +258,7 @@ func TestSkillsExposeEnforcedDiscoveryPrerequisites(t *testing.T) {
 		{
 			name:      "data writes",
 			guidance:  dataWriteInstruction,
-			fragments: []string{"help:security", "help:runtime", "exact catalog IDs", "mutation_pattern", "table details"},
+			fragments: []string{"help:security", "help:runtime", "exact catalog IDs", "mutation_pattern", "table details", "table-root mutation syntax", "never invent Hasura"},
 		},
 		{
 			name:      "watch reads",
