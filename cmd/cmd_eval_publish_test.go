@@ -111,7 +111,7 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 		}
 	}
 	data, err := loadBenchmarkData(dataPath, publishTestBenchmark(t))
-	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || data.Runs[0].UnrankedReason != "" {
+	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || data.Runs[0].UnrankedReason != "" || data.Suite.ComparisonGeneration != gjeval.PublicBenchmarkGeneration || data.Suite.ScopeLabel != defaultBenchmarkScope || len(data.Suite.GenerationScopes) != 3 {
 		t.Fatalf("data=%+v err=%v", data, err)
 	}
 	page, err := os.ReadFile(pagePath)
@@ -251,6 +251,9 @@ func TestEvalPublishAdvancesOfficialCohortAndKeepsHistory(t *testing.T) {
 	}
 	if data.Suite.SuiteFingerprint != report.SuiteFingerprint || data.Suite.GeneratorVersion != gjeval.GeneratorVersion {
 		t.Fatalf("suite did not advance: %+v", data.Suite)
+	}
+	if data.Suite.ComparisonGeneration != gjeval.PublicBenchmarkGeneration || data.Suite.ScopeLabel != defaultBenchmarkScope || data.Suite.GenerationScopes["2027.1"] == "" {
+		t.Fatalf("suite comparison metadata did not advance: %+v", data.Suite)
 	}
 	if data.Suite.CategoryCounts[string(gjeval.CategoryAggregate)] != 1 || data.Suite.CategoryCounts[string(gjeval.CategoryRefusal)] != 1 {
 		t.Fatalf("category composition was not recorded: %+v", data.Suite.CategoryCounts)

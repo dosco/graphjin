@@ -1,26 +1,27 @@
 {{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $runs := default (slice) $data.runs -}}
-{{- $accepted := sort (where (where (where $runs "ranked" true) "generation" $data.suite.generation) "accepted" true) "recall" "desc" -}}
+{{- $comparisonGeneration := default $data.suite.generation $data.suite.comparison_generation -}}
+{{- $accepted := sort (where (where (where $runs "ranked" true) "generation" $comparisonGeneration) "accepted" true) "recall" "desc" -}}
 <aside class="benchmark-honesty" aria-labelledby="benchmark-honesty-title">
   <p class="home-section-label">Read the fine print</p>
   <h2 id="benchmark-honesty-title">What this board does—and does not—prove</h2>
   <div class="benchmark-honesty-grid">
     <section>
       <h3>Suite composition</h3>
-      {{ with $data.suite.category_counts }}
+      {{ if eq $comparisonGeneration $data.suite.generation }}{{ with $data.suite.category_counts }}
       <table><thead><tr><th>Task family</th><th>Questions</th></tr></thead><tbody>
         {{ range (slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal" "action" "reactive" "multi-turn" "cross-source") }}
           {{ $count := index $data.suite.category_counts . | default 0 }}
           {{ if gt (int $count) 0 }}<tr><td>{{ humanize . }}</td><td>{{ $count }}</td></tr>{{ end }}
         {{ end }}
       </tbody></table>
-      {{ else }}<p>Composition metadata was not recorded for this historical cohort.</p>{{ end }}
+      {{ else }}<p>Composition metadata was not recorded for this historical cohort.</p>{{ end }}{{ else }}<p>Generation {{ $comparisonGeneration }} is temporarily restored as the comparison surface while generation {{ $data.suite.generation }} is rerun. Its per-model family breakdowns remain available in each report.</p>{{ end }}
     </section>
     <section>
       <h3>Consistency and scope</h3>
       {{ range first 1 $accepted }}<p><strong>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</strong> passed on every attempt, alongside the majority-of-three full-pass result shown above.</p>{{ end }}
-      <p>This generation measures the task families listed here: governed reads, refusals, approved actions, reactive checks, multi-turn work, and cross-source questions. Product capabilities outside this frozen composition are not benchmark claims.</p>
+      <p>{{ $data.suite.scope_label }}. Product capabilities outside the frozen composition are not benchmark claims.</p>
     </section>
     <section>
       <h3>Cost and corrections</h3>

@@ -214,6 +214,16 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 	}
 	defer instance.Close() //nolint:errcheck
 
+	verifier := &gjeval.Verifier{BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+	source := gjeval.HTTPCatalogSource{BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+	snapshot, err := source.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Status.ReadOnly {
+		t.Fatal("embedded writable eval reports read_only=true from /api/v1/agent/status")
+	}
+
 	write := `mutation { payments(insert: {id: 990123, invoice_id: 1, amount_cents: 123, reference: "ROLE-CHECK", recorded_at: "2027-01-15T12:00:00Z"}) { id } }`
 	userBody, err := evalIntegrationGraphQL(instance.BaseURL(), instance.Headers(), write)
 	if err != nil || bytes.Contains(userBody, []byte(`"errors"`)) {
@@ -241,13 +251,11 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 		t.Fatalf("anonymous role unexpectedly performed the paired payment action: %s", observerBody)
 	}
 
-	verifier := &gjeval.Verifier{BaseURL: instance.BaseURL(), Headers: instance.Headers()}
-	source := gjeval.HTTPCatalogSource{BaseURL: instance.BaseURL(), Headers: instance.Headers()}
 	suite, err := (gjeval.Generator{Source: source, Verifier: verifier}).Generate(context.Background(), gjeval.GeneratorOptions{Seed: 23, Scale: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var delivery, definition *gjeval.Task
+	var delivery, definition, crossSource *gjeval.Task
 	var reactiveSlugs []string
 	for index := range suite.Tasks {
 		if suite.Tasks[index].Category == gjeval.CategoryReactive {
@@ -259,26 +267,47 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 		if suite.Tasks[index].Category == gjeval.CategoryReactive && suite.Tasks[index].Mutation != nil && strings.Contains(suite.Tasks[index].Mutation.ExpectedValue, "deeporg_failed_invoices") {
 			definition = &suite.Tasks[index]
 		}
+		if suite.Tasks[index].Slug == "cross-source-account-health-1" {
+			crossSource = &suite.Tasks[index]
+		}
 	}
-	if delivery == nil || definition == nil {
-		t.Fatalf("generated suite is missing reactive tasks: delivery=%v definition=%v slugs=%v", delivery != nil, definition != nil, reactiveSlugs)
+	if delivery == nil || definition == nil || crossSource == nil {
+		t.Fatalf("generated suite is missing reactive/cross-source tasks: delivery=%v definition=%v cross_source=%v slugs=%v", delivery != nil, definition != nil, crossSource != nil, reactiveSlugs)
 	}
 	if delivery.Mutation == nil || len(delivery.Mutation.Setup) != 2 {
 		t.Fatalf("payment delivery setup = %+v, want watch plus post-subscription payment", delivery.Mutation)
 	}
+	if crossSource.Oracle == nil {
+		t.Fatal("cross-source task omitted its runtime oracle")
+	}
+	crossSourceResult, err := verifier.Resolve(context.Background(), *crossSource.Oracle)
+	if err != nil || crossSourceResult.Value == "" || crossSourceResult.Dimension == "" {
+		t.Fatalf("embedded eval could not join the app database to account_health_api: result=%+v err=%v", crossSourceResult, err)
+	}
+
 	task := *delivery
 	suite.Tasks = []gjeval.Task{task}
 	suite.Generator.Scale = 1
 	if err := suite.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	report, err := (gjeval.Runner{}).Run(context.Background(), *suite, instance, gjeval.RunOptions{Repeats: 1, Seed: 23})
+	deliveryStore := gjeval.NewStore(t.TempDir())
+	report, err := (gjeval.Runner{}).Run(context.Background(), *suite, instance, gjeval.RunOptions{Repeats: 1, Seed: 23, Store: deliveryStore})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.RunStatus != gjeval.RunStatusComplete || len(report.Tasks) != 1 || !report.Tasks[0].Pass {
 		failures, _ := json.Marshal(report.Tasks)
 		t.Fatalf("reactive mock pipeline failed: status=%s tasks=%s notices=%s", report.RunStatus, failures, strings.Join(report.Acceptance.Notices, "; "))
+	}
+	deliveryEpisodes, err := deliveryStore.LoadEpisodes(report.RunID)
+	if err != nil || len(deliveryEpisodes) != 1 || deliveryEpisodes[0].Mutation == nil || !deliveryEpisodes[0].Mutation.PostStatePass || !deliveryEpisodes[0].Mutation.CollateralPass {
+		t.Fatalf("watch delivery did not preserve event mutation contract: count=%d mutation=%+v err=%v", len(deliveryEpisodes), func() any {
+			if len(deliveryEpisodes) == 0 {
+				return nil
+			}
+			return deliveryEpisodes[0].Mutation
+		}(), err)
 	}
 
 	definitionMutation := `mutation { gj_watch(insert: {name: "deeporg_failed_invoices", query: "subscription deeporg_failed_invoices($status: String!) { invoices(where: {status: {eq: $status}}, first: 25, after: $cursor) { id status attempts } invoices_cursor }", variables_json: {status: "failed"}, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name query delivery_json } }`
@@ -323,6 +352,17 @@ await final({status:"answered", answer:"Created the hourly failed-invoice watch.
 			}{Actions: response.Actions, Mutation: episodes[0].Mutation})
 		}
 		t.Fatalf("reactive definition pipeline failed: status=%s tasks=%s episodes=%s notices=%s", definitionReport.RunStatus, failures, evidence, strings.Join(definitionReport.Acceptance.Notices, "; "))
+	}
+	definitionEpisodes, err := definitionStore.LoadEpisodes(definitionReport.RunID)
+	if err != nil || len(definitionEpisodes) != 1 {
+		t.Fatalf("load reactive definition episode: count=%d err=%v", len(definitionEpisodes), err)
+	}
+	definitionResponse, _ := json.Marshal(definitionEpisodes[0].Response)
+	if !bytes.Contains(definitionResponse, []byte("Skill: data_write")) || !bytes.Contains(definitionResponse, []byte("Skill: watch_write")) {
+		t.Fatalf("writable/reactive executor trace omitted loaded skills: %s", definitionResponse)
+	}
+	if definitionEpisodes[0].Mutation == nil || !definitionEpisodes[0].Mutation.PostStatePass || !definitionEpisodes[0].Mutation.CollateralPass {
+		t.Fatalf("watch definition did not preserve mutation contract: %+v", definitionEpisodes[0].Mutation)
 	}
 }
 

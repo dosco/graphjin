@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -157,8 +158,7 @@ func TestBlockedCompletionPromptContract(t *testing.T) {
 				WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
 				WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
 					program.options = options
-					runtime, _ := options["runtime"].(map[string]ax.Value)
-					prompt, _ = runtime["usageInstructions"].(string)
+					prompt = fmt.Sprint(normalizeValue(options["instructionAddenda"]))
 					program.onForward = func(p *fakeProgram) {
 						callProgramTool(t, p, toolQueryCatalog, map[string]ax.Value{"id": "help:discovery"})
 					}
@@ -175,8 +175,8 @@ func TestBlockedCompletionPromptContract(t *testing.T) {
 			if resp.Status != StatusBlocked {
 				t.Fatalf("status = %s, want blocked", resp.Status)
 			}
-			if !strings.Contains(prompt, blockedCompletionInstructions) {
-				t.Fatal("live runtime prompt omitted blocked-completion directive")
+			if !strings.Contains(prompt, "Governed blocked-completion directive") {
+				t.Fatal("live executor prompt omitted blocked-completion directive")
 			}
 			if strings.Contains(blockedCompletionInstructions, instruction) {
 				t.Fatal("blocked-completion directive contains a benchmark-specific prompt rule")
@@ -192,7 +192,7 @@ func TestBlockedCompletionPromptContract(t *testing.T) {
 }
 
 func TestBlockedCompletionContractPreservesPermittedWorkAndRepair(t *testing.T) {
-	prompt := runtimeInstructionText(CatalogSearchFeatures{})
+	prompt := runtimeInstructionText(CatalogSearchFeatures{}) + "\n\n" + blockedCompletionInstructions
 	for _, phrase := range []string{
 		"When an execution result contains errors, recover inside this run",
 		"errors[].extensions.graphjin_repair",

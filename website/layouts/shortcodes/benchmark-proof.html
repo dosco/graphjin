@@ -2,9 +2,11 @@
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $benchmarkPath := printf "/benchmarks/%s" $data.benchmark.slug -}}
 {{- $generation := $data.suite.generation -}}
-{{- $ranked := first 1 (sort (where (where (default (slice) $data.runs) "ranked" true) "generation" $generation) "recall" "desc") -}}
-<div id="benchmark" class="benchmark-hook" data-benchmark-proof data-benchmark-generation="{{ $generation }}">
-  <div class="benchmark-generation-current" data-benchmark-generation-current="{{ $generation }}"><strong>Generation {{ $generation }} leader</strong><span>Current write-capable suite</span></div>
+{{- $comparisonGeneration := default $generation $data.suite.comparison_generation -}}
+{{- $ranked := first 1 (sort (where (where (default (slice) $data.runs) "ranked" true) "generation" $comparisonGeneration) "recall" "desc") -}}
+<div id="benchmark" class="benchmark-hook" data-benchmark-proof data-benchmark-generation="{{ $comparisonGeneration }}" data-benchmark-target-generation="{{ $generation }}">
+  <div class="benchmark-generation-current" data-benchmark-generation-current="{{ $comparisonGeneration }}"><strong>Generation {{ $comparisonGeneration }} — {{ index $data.suite.generation_scopes $comparisonGeneration }}</strong><span>{{ $data.suite.scope_label }}</span></div>
+  {{ if ne $comparisonGeneration $generation }}<p class="benchmark-proof-source" data-benchmark-rerun-pending>Generation {{ $generation }} is retracted; corrected rerun pending.</p>{{ end }}
   {{ if eq (len $ranked) 0 }}
     <div class="benchmark-empty" data-benchmark-empty><strong>No public run yet.</strong><span>The first completed run will appear here.</span></div>
   {{ else }}
