@@ -474,6 +474,13 @@ if (await exists(benchmarkDataPath)) {
     if (!benchmarkHTML.includes('data-benchmark-generation-history')) {
       failures.push('DeepORG board is missing collapsed prior-generation history');
     }
+    for (const generation of new Set(parsed.runs.filter((run) => run.ranked !== true).map((run) => String(run.generation)))) {
+      const escapedGeneration = generation.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const historyPattern = new RegExp(`data-benchmark-history-group=(?:"${escapedGeneration}"|'${escapedGeneration}'|${escapedGeneration})(?=\\s|>)`);
+      if (!historyPattern.test(benchmarkHTML)) {
+        failures.push(`DeepORG board is missing collapsed history group ${generation}`);
+      }
+    }
     for (const run of rankedRuns) {
       const escapedRunID = String(run.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const chartMarker = new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);

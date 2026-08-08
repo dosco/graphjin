@@ -14,7 +14,9 @@ DeepORG tests models against a live organizational system—not a quiz of stored
 answers. Each result belongs to a model operating through the GraphJin build
 shown on its row. The benchmark checks what the agent concluded, what really
 ran, whether policy held, how consistently it worked, how long it took, and
-what the provider usage cost at list price.
+what the provider usage cost at list price. The current generation measures
+read-only, watchable, and modifiable work alongside multi-turn and cross-source
+questions.
 
 {{< benchmark-generation-story benchmark="deeporg" >}}
 
