@@ -4059,7 +4059,7 @@ pre code {
 }
 
 .benchmark-unranked {
-  margin-top: 2rem;
+  margin-top: 0.75rem;
 }
 
 .benchmark-unranked > summary {
@@ -4069,6 +4069,21 @@ pre code {
 
 .benchmark-unranked[open] > summary {
   margin-bottom: 1rem;
+}
+
+.benchmark-history {
+  margin-top: 2rem;
+}
+
+.benchmark-history > p {
+  color: var(--muted);
+}
+
+.benchmark-governance-detail {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 .benchmark-efficiency {
