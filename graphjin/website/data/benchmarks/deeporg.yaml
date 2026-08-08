@@ -5,6 +5,12 @@ benchmark:
     name: DeepORG — The Organizational Agent Benchmark
 suite:
     generation: "2027.1"
+    comparison_generation: "2026.2"
+    scope_label: 2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source
+    generation_scopes:
+        "2026.1": governed read-only Q&A
+        "2026.2": governed read-only Q&A
+        "2027.1": adds writes, alerts, follow-ups, multi-source
     generator_version: graphjin.eval.generator/v8
     identity: 63d08400d4ca5dc51560d1e0236afcda
     suite_fingerprint: 68bc8a8784947a44d12a87d7f2c5a856
@@ -76,8 +82,7 @@ runs:
       slug: 20260807t024250-e8e04365
       label: Gemini 3.5 Flash-Lite
       release: 6211d6ce
-      ranked: false
-      unranked_reason: previous public benchmark cohort (2026.2)
+      ranked: true
       generation: "2026.2"
       generated_at: 2026-08-07T02:42:50.026835Z
       model: gemini-3.5-flash-lite
@@ -188,8 +193,7 @@ runs:
       slug: 20260807t082714-5f6ae1af
       label: OpenAI GPT-5.4 mini
       release: 89df23ec
-      ranked: false
-      unranked_reason: previous public benchmark cohort (2026.2)
+      ranked: true
       generation: "2026.2"
       generated_at: 2026-08-07T08:27:14.33668Z
       model: gpt-5.4-mini
@@ -364,7 +368,8 @@ runs:
       slug: 20260808t005514-b4bb1850
       label: OpenAI GPT-5.4 mini
       release: 50487db0
-      ranked: true
+      ranked: false
+      unranked_reason: "agent stage defect: distiller blocked before write-capable executor; rerun pending"
       generation: "2027.1"
       generated_at: 2026-08-08T00:55:14.620632Z
       model: gpt-5.4-mini
@@ -425,7 +430,8 @@ runs:
       slug: 20260808t005629-c310b509
       label: Gemini 3.5 Flash-Lite
       release: 50487db0
-      ranked: true
+      ranked: false
+      unranked_reason: "agent stage defect: distiller blocked before write-capable executor; rerun pending"
       generation: "2027.1"
       generated_at: 2026-08-08T00:56:29.454411Z
       model: gemini-3.5-flash-lite

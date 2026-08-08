@@ -185,6 +185,50 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 	)
 }
 
+func TestBlockedCompletionGuidanceIsExecutorOnly(t *testing.T) {
+	const blockedMarker = "Governed blocked-completion directive"
+	rec := &recordingClient{responses: []string{
+		`{"javascriptCode":"await final('Carry out the requested write and reactive work.', {})"}`,
+		`{"javascriptCode":"await final({status:'answered',answer:'done'}, {})"}`,
+	}}
+	runner := newAgent(
+		Config{Provider: "openai", APIKeyEnv: "GRAPHJIN_UNUSED", TimeoutSeconds: 50, MaxSteps: 4},
+		&fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return rec, nil }),
+	)
+
+	_, _ = runner.Run(context.Background(), Request{
+		Instruction:  "create a payment watch and record the matching payment",
+		Capabilities: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent),
+	})
+	if len(rec.calls) < 2 {
+		t.Fatalf("captured %d calls, want distiller and executor prompts", len(rec.calls))
+	}
+
+	distiller := dumpAXValue(rec.calls[0].values) + dumpAXValue(rec.calls[0].options)
+	if strings.Contains(distiller, "Skill: data_write") || strings.Contains(distiller, "Skill: watch_write") {
+		t.Fatal("distiller unexpectedly received executor skill documents")
+	}
+	if strings.Contains(distiller, blockedMarker) {
+		t.Fatal("distiller received capability-denial guidance without the executor's authoritative skill documents")
+	}
+
+	var executorWithCapabilities bool
+	for _, call := range rec.calls[1:] {
+		rendered := dumpAXValue(call.values) + dumpAXValue(call.options)
+		if strings.Contains(rendered, "Skill: data_write") && strings.Contains(rendered, "Skill: watch_write") {
+			executorWithCapabilities = true
+			if !strings.Contains(rendered, blockedMarker) {
+				t.Fatal("write-capable executor omitted blocked-completion guidance")
+			}
+			break
+		}
+	}
+	if !executorWithCapabilities {
+		t.Fatal("no executor prompt combined data_write, watch_write, and capability-denial guidance")
+	}
+}
+
 func TestCaptureRenderedSkillsPerCapabilityProfile(t *testing.T) {
 	allRoots := []string{
 		systemRootSecurity,

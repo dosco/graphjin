@@ -451,7 +451,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		// runtime into the executor runtime. The GraphJin wrapper preserves the
 		// most recent successful execution under a non-input global instead;
 		// keep that recovery rule in the executor-specific instruction channel.
-		"instructionAddenda": []ax.Value{executorHandoffInstructions},
+		"instructionAddenda": []ax.Value{executorHandoffInstructions, blockedCompletionInstructions},
 		// History and caller context are context fields: staged prompts see only
 		// compact metadata while the full values remain available to runtime code
 		// as inputs.history and inputs.context. In particular, the catalog seed at
@@ -459,9 +459,10 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		"contextFields": []ax.Value{"history", "context"},
 		"runtime": map[string]ax.Value{
 			"language": "JavaScript",
-			// Universal GraphJin discovery and safety guidance remains here.
-			// Capability-filtered domain guides are rendered by Ax from
-			// constructor skills.
+			// Universal GraphJin discovery guidance remains here. Capability-
+			// filtered domain guides and capability-denial guidance are rendered
+			// only for the executor, where Ax also renders the authoritative skill
+			// documents. The distiller intentionally has no skill documents.
 			"usageInstructions": runtimeInstructionText(a.catalogSearch),
 		},
 		"max_actor_steps": maxSteps,
@@ -2133,7 +2134,7 @@ const blockedCompletionInstructions = `Governed blocked-completion directive. Th
 
 func runtimeInstructionText(features CatalogSearchFeatures) string {
 	base := runtimeSeedUsageInstructions + "\n\n" + runtimeUsageInstructions
-	return catalogSearchInstruction(base, features) + "\n\n" + blockedCompletionInstructions
+	return catalogSearchInstruction(base, features)
 }
 
 const semanticCatalogUsageInstructions = `Semantic catalog recall is available. Search with the user's business terminology as short noun-and-intent phrases; do not guess table names, SQL, GraphQL, provider terminology, or sample values. For multi-entity questions, begin with the combined relationship intent. Semantic matches are recall candidates, never schema proof: inspect returned card ids before querying, answering, or acting, and accept joins only from returned catalog relationship paths. Do not expand an exact or already well-covered seed. Only when the seed is incomplete — a required endpoint or verified path is missing, columns are needed but only tables were found, or results are empty or materially ambiguous — make at most one query_catalog({searches:[...]}) coverage call with two or three diversified phrases: the compact combined intent, the first missing concept, and optionally the second concept or relationship/action wording. The coverage call, detail inspection, and final answer are one atomic exploration step. The coverage result supplies a deterministic, visibility-filtered next.args.ids containing relevant endpoint tables and returned relationship-path cards. In the same JavaScript block, store the result as coverage; call query_catalog({ids: coverage.next.args.ids}) exactly (never derive or pass an empty ids array); then call final from those inspected details without another catalog call. Never defer inspection or final to another actor step. If any earlier step returned coverage or reports that adaptive coverage was already used, never call searches again; continue from its next.args.ids. Read retrieval metadata and lexical_fallback; do not repeat the batch.`

@@ -20,6 +20,11 @@ context-free claim about the model. Material agent-runtime changes therefore
 require a new run and remain visible as a new GraphJin build rather than
 silently replacing history.
 
+Generation scope: **2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds
+writes, alerts, follow-ups, multi-source.** When a generation is retracted, the
+board restores the most recent valid comparison surface and keeps the affected
+run reports visible with their unranked reason.
+
 ## Frozen suite, live verification
 
 Generation `2027.1` uses generator contract `graphjin.eval.generator/v8` and a

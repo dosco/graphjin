@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	benchmarkDataVersion = "graphjin.benchmark.data/v2"
-	defaultBenchmarkSlug = "deeporg"
-	defaultBenchmarkName = "DeepORG — The Organizational Agent Benchmark"
+	benchmarkDataVersion  = "graphjin.benchmark.data/v2"
+	defaultBenchmarkSlug  = "deeporg"
+	defaultBenchmarkName  = "DeepORG — The Organizational Agent Benchmark"
+	defaultBenchmarkScope = "2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source"
 )
 
 type benchmarkIdentity struct {
@@ -34,19 +35,22 @@ type benchmarkData struct {
 }
 
 type benchmarkSuite struct {
-	Generation       string         `yaml:"generation,omitempty"`
-	GeneratorVersion string         `yaml:"generator_version,omitempty"`
-	Identity         string         `yaml:"identity,omitempty"`
-	SuiteFingerprint string         `yaml:"suite_fingerprint,omitempty"`
-	CatalogHash      string         `yaml:"catalog_hash,omitempty"`
-	SeedManifestHash string         `yaml:"seed_manifest_hash,omitempty"`
-	Mode             string         `yaml:"mode,omitempty"`
-	Seed             int64          `yaml:"seed,omitempty"`
-	Repeats          int            `yaml:"repeats,omitempty"`
-	MaxSteps         int            `yaml:"max_steps,omitempty"`
-	Temperature      float64        `yaml:"temperature,omitempty"`
-	RewardVersion    string         `yaml:"reward_version,omitempty"`
-	CategoryCounts   map[string]int `yaml:"category_counts,omitempty"`
+	Generation           string            `yaml:"generation,omitempty"`
+	ComparisonGeneration string            `yaml:"comparison_generation,omitempty"`
+	ScopeLabel           string            `yaml:"scope_label,omitempty"`
+	GenerationScopes     map[string]string `yaml:"generation_scopes,omitempty"`
+	GeneratorVersion     string            `yaml:"generator_version,omitempty"`
+	Identity             string            `yaml:"identity,omitempty"`
+	SuiteFingerprint     string            `yaml:"suite_fingerprint,omitempty"`
+	CatalogHash          string            `yaml:"catalog_hash,omitempty"`
+	SeedManifestHash     string            `yaml:"seed_manifest_hash,omitempty"`
+	Mode                 string            `yaml:"mode,omitempty"`
+	Seed                 int64             `yaml:"seed,omitempty"`
+	Repeats              int               `yaml:"repeats,omitempty"`
+	MaxSteps             int               `yaml:"max_steps,omitempty"`
+	Temperature          float64           `yaml:"temperature,omitempty"`
+	RewardVersion        string            `yaml:"reward_version,omitempty"`
+	CategoryCounts       map[string]int    `yaml:"category_counts,omitempty"`
 }
 
 type benchmarkEntry struct {
@@ -303,6 +307,21 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 		release = shortRevision(report.Provenance.GraphJinCommit)
 	}
 	entry := benchmarkEntryFromReport(report, slug, label, release, opts.Notes, ranked, strings.Join(mismatches, "; "), opts)
+	if ranked {
+		for i := range data.Runs {
+			if data.Runs[i].Ranked && data.Runs[i].Generation != entry.Generation {
+				data.Runs[i].Ranked = false
+				data.Runs[i].UnrankedReason = "previous public benchmark cohort (" + data.Runs[i].Generation + ")"
+			}
+		}
+		data.Suite.ComparisonGeneration = entry.Generation
+	}
+	if benchmark.Slug == defaultBenchmarkSlug && data.Suite.ScopeLabel == "" {
+		data.Suite.ScopeLabel = defaultBenchmarkScope
+	}
+	if benchmark.Slug == defaultBenchmarkSlug && len(data.Suite.GenerationScopes) == 0 {
+		data.Suite.GenerationScopes = defaultBenchmarkGenerationScopes()
+	}
 	if existing >= 0 {
 		data.Runs[existing] = entry
 	} else {
@@ -393,12 +412,21 @@ func benchmarkSuiteFromReport(report gjeval.Report) benchmarkSuite {
 		categoryCounts[string(task.Category)]++
 	}
 	return benchmarkSuite{
-		Generation: gjeval.PublicBenchmarkGeneration, GeneratorVersion: gjeval.GeneratorVersion,
+		Generation: gjeval.PublicBenchmarkGeneration, ComparisonGeneration: gjeval.PublicBenchmarkGeneration,
+		ScopeLabel: defaultBenchmarkScope, GenerationScopes: defaultBenchmarkGenerationScopes(), GeneratorVersion: gjeval.GeneratorVersion,
 		Identity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
 		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
 		Mode: string(report.Mode), Seed: report.Provenance.Seed, Repeats: report.Provenance.Repeats,
 		MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature, RewardVersion: report.RewardVersion,
 		CategoryCounts: categoryCounts,
+	}
+}
+
+func defaultBenchmarkGenerationScopes() map[string]string {
+	return map[string]string{
+		"2026.1": "governed read-only Q&A",
+		"2026.2": "governed read-only Q&A",
+		"2027.1": "adds writes, alerts, follow-ups, multi-source",
 	}
 }
 
