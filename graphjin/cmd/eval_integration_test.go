@@ -358,8 +358,18 @@ await final({status:"answered", answer:"Created the hourly failed-invoice watch.
 		t.Fatalf("load reactive definition episode: count=%d err=%v", len(definitionEpisodes), err)
 	}
 	definitionResponse, _ := json.Marshal(definitionEpisodes[0].Response)
-	if !bytes.Contains(definitionResponse, []byte("Skill: data_write")) || !bytes.Contains(definitionResponse, []byte("Skill: watch_write")) {
-		t.Fatalf("writable/reactive executor trace omitted loaded skills: %s", definitionResponse)
+	for _, fragment := range [][]byte{
+		[]byte("Skill: data_write"),
+		[]byte("Skill: watch_write"),
+		[]byte("help:security"),
+		[]byte("help:runtime"),
+		[]byte("help:watches"),
+		[]byte("named source and application relationship"),
+		[]byte("exact catalog IDs"),
+	} {
+		if !bytes.Contains(definitionResponse, fragment) {
+			t.Fatalf("writable/reactive executor trace omitted %q guidance: %s", fragment, definitionResponse)
+		}
 	}
 	if definitionEpisodes[0].Mutation == nil || !definitionEpisodes[0].Mutation.PostStatePass || !definitionEpisodes[0].Mutation.CollateralPass {
 		t.Fatalf("watch definition did not preserve mutation contract: %+v", definitionEpisodes[0].Mutation)
