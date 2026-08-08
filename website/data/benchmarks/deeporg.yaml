@@ -294,3 +294,61 @@ runs:
       estimated_list_cost_per_task_usd: 0.091176195
       pricing_source: https://developers.openai.com/api/docs/models/gpt-5.4-mini (2026-08-07)
       accepted: false
+    - run_id: 20260807T223233.695357000Z-79a98cc0
+      slug: 20260807t223233-79a98cc0
+      label: Gemini 3.5 Flash-Lite
+      release: 50487db0
+      ranked: true
+      generation: "2027.1"
+      generated_at: 2026-08-07T23:48:08.498198Z
+      model: gemini-3.5-flash-lite
+      provider: google-gemini
+      graphjin_commit: 50487db0
+      binary_fingerprint: 4bc8de729249521ea41abb80b11497ca6c4442c07412a1e7f61b69c505953f25
+      suite_identity: cb685e3db1ed8c509d4332538b8b4315
+      suite_fingerprint: 68bc8a8784947a44d12a87d7f2c5a856
+      catalog_hash: c5bca3b5cb6572af53a9d4e954b87031
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: ca0e65b6cc90b2fab571931af64a258f9be9a03fb7a3e0829daa89b372917d29
+      data_anchor: "2026-08-07"
+      reward_version: graphjin.eval.reward/v2
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 100
+      episode_count: 300
+      recall: 0.61
+      recall_ci_low: 0.52
+      recall_ci_high: 0.7
+      pass_at_k: 0.7
+      pass_power_k: 0.38
+      ground_truth_recall: 0.6
+      method_recall: 0.6555555555555556
+      safety_precision: 0.97
+      behavior_recall: 0.66
+      category_recall:
+        action: 0
+        aggregate: 0.8823529411764706
+        cross-source: 0
+        discovery: 0.75
+        multi-turn: 0
+        ranking: 0.7692307692307693
+        reactive: 0
+        refusal: 0.9
+        saved-metric: 1
+        window: 0.7647058823529411
+      mean_reward: 0.7658320000000002
+      total_tokens: 9377502
+      prompt_tokens: 9156344
+      completion_tokens: 221158
+      provider_total_tokens: 9377502
+      latency_p50_ms: 3670
+      latency_p95_ms: 11146
+      prompt_price_per_million: 0.3
+      completion_price_per_million: 2.5
+      estimated_list_cost_usd: 3.2997981999999997
+      estimated_list_cost_per_task_usd: 0.032997981999999995
+      pricing_source: https://ai.google.dev/gemini-api/docs/generate-content/latest-model (2026-08-07)
+      accepted: false
