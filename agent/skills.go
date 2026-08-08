@@ -188,7 +188,7 @@ func profileHasAllSystemRoots(profile *CapabilityProfile, roots []string) bool {
 	return true
 }
 
-const dataDiscoveryInstruction = `Skill: data_discovery. Before querying, inspect relevant GraphJin catalog table, column, relationship, or saved-query details; use only returned names and paths. ` +
+const dataDiscoveryInstruction = `Skill: data_discovery. Before querying, inspect relevant GraphJin source:<name>, table, column, relationship, or saved-query details by reusing exact catalog IDs; never shorten or invent them. For cross-source work, inspect the named source and application relationship, then query the joined field instead of a same-named local table. ` +
 	`Prefer dynamic authoring: validate the shape, then execute_graphql; an approved saved query is a governed shortcut. Answer only from observed results and fields, stating derived numbers plainly. ` +
 	`On graphjin_repair, treat the failure as a query-authoring error: re-discover real fields, re-author, and retry in the same run; never advise schema or data changes.`
 
@@ -198,7 +198,7 @@ const dataAggregationInstruction = `Skill: data_aggregation. The model plans, th
 	`Aggregates work on dates: max_<date_col> is latest. For top-N groups, select dimension and aggregate, order_by aggregate desc, and limit N. Anchor relative windows on inputs.current_date (UTC), query max_<date_col>, and state the window. On result.truncation, re-author with aggregates.`
 
 const dataWriteInstruction = `Skill: data_write. Apply application-data changes safely. ` +
-	`Prefer an approved saved mutation; otherwise establish this run's shape evidence for every target from mutation_pattern and table details, validate input, then author insert/update/upsert/delete with execute_graphql. Core enforces role and RLS. ` +
+	`Prefer an approved saved mutation; otherwise first inspect help:security, help:runtime, mutation_pattern, and target table details by reusing exact catalog IDs, validate input, then author insert/update/upsert/delete with execute_graphql. Core enforces role and RLS. ` +
 	`Preview or validate before writing and verify after. If no permitted path exists, return blocked with catalog evidence and the missing capability.`
 
 const codeReadInstruction = `Skill: code_read (gj_code / CodeSQL source). ` +
@@ -217,10 +217,11 @@ const workflowWriteInstruction = `Skill: workflow_write. Author or update workfl
 	`Inspect existing detail and mutation guidance, preview, save through the governed capability, and verify. Execute only if separately permitted and requested.`
 
 const watchReadInstruction = `Skill: watch_read (gj_watch / gj_watch_event). Review owner-scoped watches/events using watch system-capability shapes. ` +
+	`First inspect help:watches and follow its exact examples; never invent table IDs for system roots. ` +
 	`On watch_events_unseen, query only listed watch_ids and mark only reviewed events seen; never acknowledge a watch ID outside this conversation. kind absence means silence; kind digest is a rollup. Snooze via snoozed_until; clear with null; neither changes seen. Watch-event watches need cursor paging and conjunctive non-self watch_id eq/in.`
 
 const watchWriteInstruction = `Skill: watch_write (gj_watch). Create, update, pause, resume, or delete watches; manage flow enrichment and delivery. ` +
-	`Before mutation, inspect security guidance and gj_watch capability detail. Name per conversation; retain IDs; prefer graphjin://watch-events/unseen/{watch_id}. Set a subscription query or saved_query_name, optionally variables_json/delivery_json/absence_json; pause/resume via status/enabled; delete via gj_watch(delete). saved-query drift may require re-approval. ` +
+	`Before mutation, inspect help:security, help:runtime, help:watches, and gj_watch capability detail using exact catalog IDs. Name per conversation; retain IDs; prefer graphjin://watch-events/unseen/{watch_id}. Set a subscription query or saved_query_name, optionally variables_json/delivery_json/absence_json; pause/resume via status/enabled; delete via gj_watch(delete). saved-query drift may require re-approval. ` +
 	`Make two independent choices. Trigger: use GraphQL subscription filters for deterministic triggers (condition_js never executes); use a flow only for semantic judgment or a noisy stream, not when a filter or default_watch_triage suffices. Response: if the user only asks to be told, notify the inbox without workflow/webhook; a notification request is not permission to act. Only when the user explicitly asks GraphJin to act may you propose workflow/webhook delivery. ` +
 	`Flow: set enrich_json to default_watch_triage or inline AxFlow Mermaid with enabled:true, kind:"flow"; create no flow artifact or flows/ file. Tool-free flows return notify/digest/discard, info/warn/critical, and a summary within 280 characters. Use delivery_json.digest.window for noise; digest emits one unseen kind=digest event per window. Cross-watch rollups use a gj_watch_event watch with cursor paging and conjunctive non-self watch_id eq/in. Failure sends raw inbox notification, never workflow/webhook. or/not, self references, and cycles are guarded. ` +
 	`Delivery: Deterministic action triggers use a GraphQL-filtered watch plus delivery; semantic or noisy action triggers add an inline flow first. Inspect a named workflow before proposing it. ` +

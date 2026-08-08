@@ -369,7 +369,7 @@ runs:
       label: OpenAI GPT-5.4 mini
       release: 50487db0
       ranked: false
-      unranked_reason: "agent stage defect: distiller blocked before write-capable executor; rerun pending"
+      unranked_reason: "agent harness defect: write/watch execution path was incomplete; rerun pending"
       generation: "2027.1"
       generated_at: 2026-08-08T00:55:14.620632Z
       model: gpt-5.4-mini
@@ -431,7 +431,7 @@ runs:
       label: Gemini 3.5 Flash-Lite
       release: 50487db0
       ranked: false
-      unranked_reason: "agent stage defect: distiller blocked before write-capable executor; rerun pending"
+      unranked_reason: "agent harness defect: write/watch execution path was incomplete; rerun pending"
       generation: "2027.1"
       generated_at: 2026-08-08T00:56:29.454411Z
       model: gemini-3.5-flash-lite

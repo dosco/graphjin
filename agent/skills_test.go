@@ -181,12 +181,11 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		profile *CapabilityProfile
 		max     int
 	}{
-		// Budgets ratchet both ways. They grew when data_aggregation moved
-		// teaching into the accounted skill channel, then dropped when the
-		// always-co-loaded write-side watch guides merged and prose tightened.
-		// Keep modest headroom so prompt growth remains a deliberate diff.
-		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 2816},
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 17 * 512},
+		// Budgets ratchet both ways. The current allowance includes the exact
+		// discovery prerequisites enforced by the write and cross-source guards.
+		// Keep modest headroom so any further prompt growth remains deliberate.
+		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3 * 1024},
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18 * 512},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			definitions := allowedSkills(false, tc.profile)
@@ -218,7 +217,9 @@ func TestWatchSkillsTeachAllFourDecisionBranches(t *testing.T) {
 		"is not permission to act",
 		"Deterministic action triggers",
 		"semantic or noisy action triggers",
-		"security guidance",
+		"help:security",
+		"help:runtime",
+		"help:watches",
 		"condition_js never executes",
 		"default_watch_triage",
 		"inline AxFlow Mermaid",
@@ -240,6 +241,43 @@ func TestWatchSkillsTeachAllFourDecisionBranches(t *testing.T) {
 		if !strings.Contains(watchWriteInstruction, fragment) {
 			t.Fatalf("watch lifecycle guidance missing %q", fragment)
 		}
+	}
+}
+
+func TestSkillsExposeEnforcedDiscoveryPrerequisites(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		guidance  string
+		fragments []string
+	}{
+		{
+			name:      "cross-source reads",
+			guidance:  dataDiscoveryInstruction,
+			fragments: []string{"source:<name>", "exact catalog IDs", "joined field"},
+		},
+		{
+			name:      "data writes",
+			guidance:  dataWriteInstruction,
+			fragments: []string{"help:security", "help:runtime", "exact catalog IDs", "mutation_pattern", "table details"},
+		},
+		{
+			name:      "watch reads",
+			guidance:  watchReadInstruction,
+			fragments: []string{"help:watches", "exact examples", "never invent table IDs"},
+		},
+		{
+			name:      "watch writes",
+			guidance:  watchWriteInstruction,
+			fragments: []string{"help:security", "help:runtime", "help:watches", "exact catalog IDs"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, fragment := range tc.fragments {
+				if !strings.Contains(tc.guidance, fragment) {
+					t.Fatalf("skill guidance missing enforced prerequisite %q: %s", fragment, tc.guidance)
+				}
+			}
+		})
 	}
 }
 
