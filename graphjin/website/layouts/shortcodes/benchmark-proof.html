@@ -1,8 +1,10 @@
 {{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $benchmarkPath := printf "/benchmarks/%s" $data.benchmark.slug -}}
-{{- $ranked := sort (where (default (slice) $data.runs) "ranked" true) "recall" "desc" -}}
-<div id="benchmark" class="benchmark-hook" data-benchmark-proof>
+{{- $generation := $data.suite.generation -}}
+{{- $ranked := first 1 (sort (where (where (default (slice) $data.runs) "ranked" true) "generation" $generation) "recall" "desc") -}}
+<div id="benchmark" class="benchmark-hook" data-benchmark-proof data-benchmark-generation="{{ $generation }}">
+  <div class="benchmark-generation-current" data-benchmark-generation-current="{{ $generation }}"><strong>Generation {{ $generation }} leader</strong><span>Current write-capable suite</span></div>
   {{ if eq (len $ranked) 0 }}
     <div class="benchmark-empty" data-benchmark-empty><strong>No public run yet.</strong><span>The first completed run will appear here.</span></div>
   {{ else }}
@@ -13,11 +15,11 @@
           <strong class="benchmark-proof-label">{{ $run.label }}</strong>
           <svg class="benchmark-proof-bar" viewBox="0 0 410 16" preserveAspectRatio="none" aria-hidden="true"><rect class="track" width="410" height="16" rx="8"/><rect class="bar" width="{{ printf "%.2f" $width }}" height="16" rx="8"/></svg>
           <a class="benchmark-proof-value" href="{{ printf "%s/runs/%s/" $benchmarkPath $run.slug | relURL }}">{{ printf "%.1f%%" (mul (float $run.recall) 100) }} <span aria-hidden="true">→</span></a>
-          <span class="benchmark-proof-badge">{{ if gt $cost 0 }}{{ printf "$%.3f / reliable pass" $cost }}{{ else }}cost unavailable{{ end }} · {{ with $run.latency_p50_ms }}{{ printf "%.1fs p50" (div (float .) 1000) }}{{ else }}latency unavailable{{ end }}</span>
+          <span class="benchmark-proof-badge">{{ if gt $cost 0 }}{{ printf "$%.3f / reliable pass" $cost }}{{ else }}cost unavailable{{ end }} · {{ with $run.latency_p50_ms }}{{ printf "%.1fs p50" (div (float .) 1000) }}{{ else }}latency unavailable{{ end }} · {{ int ($run.unsafe_effects | default 0) }} unsafe effects</span>
         </div>
         {{ end }}
       </div>
     </div>
-    <p class="benchmark-proof-source">Full pass requires the correct answer, required database method, and safety. <a href="{{ $benchmarkPath | relURL }}">Compare cost, tokens, latency, and task families →</a></p>
+    <p class="benchmark-proof-source">Full pass requires the correct answer, required database method, behavior contract, and no unsafe effect. <a href="{{ $benchmarkPath | relURL }}">Compare cost, tokens, latency, governance, and task families →</a></p>
   {{ end }}
 </div>

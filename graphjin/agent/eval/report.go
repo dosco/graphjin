@@ -25,6 +25,15 @@ type RunProvenance struct {
 	Target             string  `json:"target"`
 }
 
+// ScoringProvenance identifies the build that deterministically rescored a
+// stored run. RunProvenance continues to identify the model/runtime build that
+// produced the original episodes.
+type ScoringProvenance struct {
+	GraphJinCommit    string `json:"graphjin_commit,omitempty"`
+	BinaryFingerprint string `json:"binary_fingerprint,omitempty"`
+	RewardVersion     string `json:"reward_version"`
+}
+
 type RunProgress struct {
 	PlannedInitialSlots      int `json:"planned_initial_slots"`
 	PlannedConfirmationSlots int `json:"planned_confirmation_slots,omitempty"`
@@ -126,6 +135,7 @@ type TaskVerdict struct {
 	FailureCategory     string     `json:"failure_category,omitempty"`
 	EpisodeCount        int        `json:"episode_count"`
 	ConfirmationCount   int        `json:"confirmation_count,omitempty"`
+	GuardInterventions  int        `json:"guard_interventions,omitempty"`
 }
 
 type ConfidenceInterval struct {
@@ -142,29 +152,31 @@ type TierMetrics struct {
 }
 
 type Metrics struct {
-	TaskCount         int                        `json:"task_count"`
-	EpisodeCount      int                        `json:"episode_count"`
-	Recall            float64                    `json:"recall"`
-	GroundTruthRecall float64                    `json:"ground_truth_recall"`
-	MethodRecall      float64                    `json:"method_recall"`
-	SafetyPrecision   float64                    `json:"safety_precision"`
-	BehaviorRecall    float64                    `json:"behavior_recall"`
-	MeanConsistency   float64                    `json:"mean_consistency"`
-	MeanReward        float64                    `json:"mean_reward"`
-	PassAtK           float64                    `json:"pass_at_k"`
-	PassPowerK        float64                    `json:"pass_power_k"`
-	RecallCI          ConfidenceInterval         `json:"recall_ci"`
-	ByTier            map[Difficulty]TierMetrics `json:"by_tier,omitempty"`
-	ByCategory        map[Category]TierMetrics   `json:"by_category,omitempty"`
-	FailureCategories map[string]int             `json:"failure_categories,omitempty"`
-	EnvironmentErrors int                        `json:"environment_errors,omitempty"`
-	PromptTokens      int64                      `json:"prompt_tokens"`
-	CompletionTokens  int64                      `json:"completion_tokens"`
-	TotalTokens       int64                      `json:"total_tokens"`
-	LLMCalls          int64                      `json:"llm_calls"`
-	MedianActorTurns  float64                    `json:"median_actor_turns"`
-	LatencyP50MS      float64                    `json:"latency_p50_ms"`
-	LatencyP95MS      float64                    `json:"latency_p95_ms"`
+	TaskCount          int                        `json:"task_count"`
+	EpisodeCount       int                        `json:"episode_count"`
+	Recall             float64                    `json:"recall"`
+	GroundTruthRecall  float64                    `json:"ground_truth_recall"`
+	MethodRecall       float64                    `json:"method_recall"`
+	SafetyPrecision    float64                    `json:"safety_precision"`
+	BehaviorRecall     float64                    `json:"behavior_recall"`
+	MeanConsistency    float64                    `json:"mean_consistency"`
+	MeanReward         float64                    `json:"mean_reward"`
+	PassAtK            float64                    `json:"pass_at_k"`
+	PassPowerK         float64                    `json:"pass_power_k"`
+	RecallCI           ConfidenceInterval         `json:"recall_ci"`
+	ByTier             map[Difficulty]TierMetrics `json:"by_tier,omitempty"`
+	ByCategory         map[Category]TierMetrics   `json:"by_category,omitempty"`
+	FailureCategories  map[string]int             `json:"failure_categories,omitempty"`
+	EnvironmentErrors  int                        `json:"environment_errors,omitempty"`
+	GuardInterventions int                        `json:"guard_interventions,omitempty"`
+	UnsafeEffects      int                        `json:"unsafe_effects"`
+	PromptTokens       int64                      `json:"prompt_tokens"`
+	CompletionTokens   int64                      `json:"completion_tokens"`
+	TotalTokens        int64                      `json:"total_tokens"`
+	LLMCalls           int64                      `json:"llm_calls"`
+	MedianActorTurns   float64                    `json:"median_actor_turns"`
+	LatencyP50MS       float64                    `json:"latency_p50_ms"`
+	LatencyP95MS       float64                    `json:"latency_p95_ms"`
 }
 
 type Acceptance struct {
@@ -198,6 +210,8 @@ type Report struct {
 	UsageAccountingVersion string             `json:"usage_accounting_version,omitempty"`
 	RewardVersion          string             `json:"reward_version"`
 	RunID                  string             `json:"run_id"`
+	RescoredFrom           string             `json:"rescored_from,omitempty"`
+	ScoringProvenance      *ScoringProvenance `json:"scoring_provenance,omitempty"`
 	RunStatus              RunStatus          `json:"run_status"`
 	Mode                   RunMode            `json:"mode"`
 	GeneratedAt            time.Time          `json:"generated_at"`

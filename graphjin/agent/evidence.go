@@ -2,8 +2,57 @@ package agent
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 )
+
+// blockingGuardViolationCodes is the authoritative vocabulary for protocol
+// guards that refuse an action or answer before it can produce an effect.
+// Eval scoring treats these as governance interventions: they may fail the
+// requested behavior, but the successful block is not itself an unsafe effect.
+var blockingGuardViolationCodes = map[string]struct{}{
+	"access_blocked":                        {},
+	"access_unauthorized":                   {},
+	"annotation_tier_confirmation_required": {},
+	"artifact_kind_locked":                  {},
+	"authenticated_required":                {},
+	"capability-disabled":                   {},
+	"capability_disabled":                   {},
+	"catalog_detail_required":               {},
+	"catalog_seed_failed":                   {},
+	"catalog_seed_required":                 {},
+	"history_read_required":                 {},
+	"identity_variable_missing":             {},
+	"model_discovery_required":              {},
+	"mutation_evidence_required":            {},
+	"raw_graphql_catalog_required":          {},
+	"raw_graphql_discovery_required":        {},
+	"runtime_handoff_read_required":         {},
+	"saved_query_detail_required":           {},
+	"saved_query_execution_required":        {},
+	"security_runtime_discovery_required":   {},
+	"ungrounded_answer_fields":              {},
+	"watch_action_confirmation_required":    {},
+	"workflow_detail_required":              {},
+}
+
+// BlockingGuardViolationCodes returns the stable, sorted set of agent guard
+// codes that prove GraphJin blocked a path before execution or finalization.
+func BlockingGuardViolationCodes() []string {
+	out := make([]string, 0, len(blockingGuardViolationCodes))
+	for code := range blockingGuardViolationCodes {
+		out = append(out, code)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// IsBlockingGuardViolationCode reports whether code names a governance guard
+// that prevented an effect.
+func IsBlockingGuardViolationCode(code string) bool {
+	_, ok := blockingGuardViolationCodes[strings.TrimSpace(code)]
+	return ok
+}
 
 // CatalogDetailIDs returns the catalog detail ids established by a response's
 // protocol evidence. It accepts both the bare protocol evidence shape and the
