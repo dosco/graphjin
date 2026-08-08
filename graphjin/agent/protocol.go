@@ -261,6 +261,19 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 		r.state.coverageSearchUsed = true
 	}
 	r.addNamespace(args)
+	// A recoverable execution guard already selected the exact missing catalog
+	// evidence. Weak models sometimes respond by issuing another broad catalog
+	// search instead of following recovery.next, then repeat that search until
+	// the actor budget is exhausted. Keep the actor loop unchanged, but route
+	// the next catalog call through the narrow protocol-derived continuation.
+	if repairArgs := r.state.pendingRecoverableCatalogArgs(); len(repairArgs) != 0 {
+		args = repairArgs
+		r.addNamespace(args)
+	}
+	// Catalog seed results are authoritative enough to correct an invented
+	// watch capability id to the exact help row. This is a deterministic
+	// did-you-mean repair, not a new hidden discovery call.
+	args = r.state.correctKnownCatalogDetailArgs(args)
 	searchRequest := isCatalogSearchRequest(args)
 	detailIDs := detailIDsFromArgs(args)
 	requestKey := stringify(normalizeValue(args))
@@ -905,6 +918,29 @@ func detailIDsFromArgs(args map[string]any) []string {
 	return out
 }
 
+// correctKnownCatalogDetailArgs repairs a narrow class of invented ids when
+// the exact authoritative id is already present in this run's catalog seed.
+// In particular, weaker models commonly guess capability:gj_watch even though
+// the governed watch mutation shape lives at help:watches.
+func (s *discoveryState) correctKnownCatalogDetailArgs(args map[string]any) map[string]any {
+	ids := detailIDsFromArgs(args)
+	if s == nil || len(ids) != 1 || s.hasKnownCatalogID(ids) {
+		return args
+	}
+	missed := strings.ToLower(strings.TrimSpace(ids[0]))
+	corrected := ""
+	if strings.Contains(missed, "watch") && s.catalogIDs["help:watches"] {
+		corrected = "help:watches"
+	}
+	if corrected == "" {
+		return args
+	}
+	out := cloneAnyMap(args)
+	delete(out, "ids")
+	out["id"] = corrected
+	return out
+}
+
 // recordDetailEvidence marks per-target evidence established by an id-detail
 // lookup: catalog kinds seen in detail, table cards (by table name and by the
 // table:<...> id suffix), and workflow cards. Search results never reach here.
@@ -1290,9 +1326,20 @@ func (s *discoveryState) pendingRecoverableExecution() string {
 }
 
 func (s *discoveryState) pendingRecoverableExecutionContinuation() string {
+	args := s.pendingRecoverableCatalogArgs()
+	if len(args) == 0 {
+		return ""
+	}
+	return `const evidence = await query_catalog(` + stringify(normalizeValue(args)) + `); console.log(evidence);`
+}
+
+// pendingRecoverableCatalogArgs returns the exact catalog lookup selected by a
+// recoverable execution guard. Both the finalization continuation and the next
+// explicit query_catalog call use this single source of truth.
+func (s *discoveryState) pendingRecoverableCatalogArgs() map[string]any {
 	violation, ok := s.primaryRecoverableExecutionViolation()
 	if !ok || !s.recoverableExecutionEvidenceMissing(violation) {
-		return ""
+		return nil
 	}
 	var next map[string]any
 	switch violation.Code {
@@ -1303,13 +1350,13 @@ func (s *discoveryState) pendingRecoverableExecutionContinuation() string {
 	case "workflow_detail_required":
 		next = s.workflowEvidenceNext()
 	default:
-		return ""
+		return nil
 	}
 	args := mapValue(next["args"])
 	if stringFromMap(next, "recommended_tool") != toolQueryCatalog || len(args) == 0 {
-		return ""
+		return nil
 	}
-	return `const evidence = await query_catalog(` + stringify(normalizeValue(args)) + `); console.log(evidence);`
+	return cloneAnyMap(args)
 }
 
 func (s *discoveryState) primaryRecoverableExecutionViolation() (protocolViolation, bool) {
@@ -1547,15 +1594,53 @@ func (s *discoveryState) missingMutationEvidence(roots []string) []string {
 		if strings.HasPrefix(root, "gj_") {
 			continue
 		}
-		if s.tablesDetailed[root] || s.tablesValidated[root] {
+		table, dialectRepair := s.mutationTargetTable(root)
+		if dialectRepair && !s.hasCatalogDetailID("help:mutations") {
+			missing = appendUniqueString(missing, root)
 			continue
 		}
-		if s.detailKinds["mutation_pattern"] && s.tableSeenInCatalog(root) {
+		if s.tablesDetailed[table] || s.tablesValidated[table] {
+			continue
+		}
+		if s.detailKinds["mutation_pattern"] && s.tableSeenInCatalog(table) {
 			continue
 		}
 		missing = appendUniqueString(missing, root)
 	}
 	return missing
+}
+
+func (s *discoveryState) hasCatalogDetailID(id string) bool {
+	id = strings.ToLower(strings.TrimSpace(id))
+	for _, detailID := range s.catalogDetails {
+		if strings.EqualFold(strings.TrimSpace(detailID), id) {
+			return true
+		}
+	}
+	return false
+}
+
+// mutationTargetTable maps common Hasura-style mutation roots back to a table
+// already surfaced by GraphJin. The mapping is used only to select evidence;
+// it never rewrites or executes the model's GraphQL.
+func (s *discoveryState) mutationTargetTable(root string) (string, bool) {
+	root = strings.ToLower(strings.TrimSpace(root))
+	if root == "" || s.catalogIDForTable(root) != "" || s.tablesDetailed[root] || s.tablesValidated[root] {
+		return root, false
+	}
+	for _, prefix := range []string{"insert_", "update_", "delete_"} {
+		if !strings.HasPrefix(root, prefix) {
+			continue
+		}
+		candidate := strings.TrimPrefix(root, prefix)
+		for _, suffix := range []string{"_by_pk", "_one", "_many"} {
+			candidate = strings.TrimSuffix(candidate, suffix)
+		}
+		if candidate != "" && (s.catalogIDForTable(candidate) != "" || s.tablesDetailed[candidate] || s.tablesValidated[candidate]) {
+			return candidate, true
+		}
+	}
+	return root, false
 }
 
 func (s *discoveryState) hasWatchMutationEvidence(root string) bool {
@@ -1603,7 +1688,11 @@ func (s *discoveryState) mutationEvidenceNext(tables []string) map[string]any {
 			ids = append(ids, "help:watches")
 			continue
 		}
-		id := s.catalogIDForTable(table)
+		target, dialectRepair := s.mutationTargetTable(table)
+		if dialectRepair && !s.hasCatalogDetailID("help:mutations") {
+			ids = append(ids, "help:mutations")
+		}
+		id := s.catalogIDForTable(target)
 		if id == "" {
 			return catalogRepairNext(
 				map[string]any{"kind": "table", "limit": 20},

@@ -197,9 +197,10 @@ const dataAggregationInstruction = `Skill: data_aggregation. The model plans, th
 	`Never omit aggregate: { products_aggregate { count } } is invalid. On a Hasura aggregate error, copy its Supported form or Native equivalent with verified names; do not repeat it or restart discovery. ` +
 	`Aggregates work on dates: max_<date_col> is latest. For top-N groups, select dimension and aggregate, order_by aggregate desc, and limit N. Anchor relative windows on inputs.current_date (UTC), query max_<date_col>, and state the window. On result.truncation, re-author with aggregates.`
 
-const dataWriteInstruction = `Skill: data_write. Apply application-data changes safely. ` +
-	`Prefer an approved saved mutation; otherwise first inspect help:security, help:runtime, mutation_pattern, and target table details by reusing exact catalog IDs, validate input, then author insert/update/upsert/delete with execute_graphql. Core enforces role and RLS. ` +
-	`Preview or validate before writing and verify after. If no permitted path exists, return blocked with catalog evidence and the missing capability.`
+const dataWriteInstruction = `Skill: data_write. ` +
+	`Inspect exact catalog IDs for help:security, help:runtime, mutation_pattern, and target table details; validate, then use execute_graphql. ` +
+	`Use GraphJin table-root mutation syntax: mutation { support_tickets(where:{id:{eq:2}},update:{status:"resolved"}){id status} }; never invent Hasura update_<table>_by_pk, pk_columns, or _set. ` +
+	`Prefer approved saved mutations. Core enforces role/RLS. Preview/validate first, verify after; if unavailable, return blocked with catalog evidence and missing capability.`
 
 const codeReadInstruction = `Skill: code_read (gj_code / CodeSQL source). ` +
 	`Discover gj_code symbols, references, db_references, and docs through help:code and code system-capability rows; trace symbol-to-reference-to-schema provenance and answer from that evidence.`
