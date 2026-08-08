@@ -825,6 +825,7 @@ func TestRunRequiresLaterUserConfirmationForWatchActionApproval(t *testing.T) {
 			program.options = options
 			program.onForward = func(p *fakeProgram) {
 				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:watches"})
 				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{
 					"query": `mutation { gj_watch(insert: { name: "reorder", query: "subscription { inventory { id } }", delivery_json: { kind: "workflow", name: "draft_po" } }) { id action_hash action_approval } }`,
 				})
@@ -849,7 +850,7 @@ func TestRunRequiresLaterUserConfirmationForWatchActionApproval(t *testing.T) {
 	if !responseHasProtocolError(resp, "watch_action_confirmation_required") {
 		t.Fatalf("missing watch_action_confirmation_required: %+v", resp.Errors)
 	}
-	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|execute_graphql" {
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|query_catalog|execute_graphql" {
 		t.Fatalf("runtime calls = %s, approval must not reach runtime", got)
 	}
 }
