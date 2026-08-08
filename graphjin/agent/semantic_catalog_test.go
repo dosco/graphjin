@@ -301,6 +301,164 @@ func TestProtocolRejectsIdenticalCatalogRequestLoopsAndReplaysExecution(t *testi
 	}
 }
 
+func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
+	newRuntime := func(t *testing.T) *protocolRuntime {
+		t.Helper()
+		base := &fakeRuntime{catalogOverride: func(args map[string]any) any {
+			if len(detailIDsFromArgs(args)) != 0 {
+				return fakeCatalogResult(args)
+			}
+			return map[string]any{
+				"count": 2,
+				"cards": []any{
+					map[string]any{"id": "table:app:main.products", "kind": "table", "table_name": "products"},
+					map[string]any{"id": "workflow:daily_roast", "kind": "workflow", "name": "daily_roast"},
+				},
+			}
+		}}
+		runtime := newProtocolRuntime(base, "perform governed write", "", 40, nil, nil, CatalogSearchFeatures{})
+		if _, err := runtime.Seed(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		return runtime
+	}
+	assertRepair := func(t *testing.T, out any, code string) {
+		t.Helper()
+		if !executionFailed(out) {
+			t.Fatalf("%s result = %+v, want structured execution failure", code, out)
+		}
+		result := mapValue(out)
+		errors := anySlice(result["errors"])
+		if len(errors) != 1 {
+			t.Fatalf("%s errors = %+v", code, errors)
+		}
+		extensions := mapValue(mapValue(errors[0])["extensions"])
+		repair := mapValue(extensions["graphjin_repair"])
+		next := mapValue(repair["next"])
+		if stringFromMap(extensions, "code") != code || extensions["retryable"] != true ||
+			stringFromMap(next, "recommended_tool") != toolQueryCatalog || len(mapValue(next["args"])) == 0 {
+			t.Fatalf("%s structured repair = %+v", code, result)
+		}
+		if stringFromMap(mapValue(result["recovery"]), "code") != code {
+			t.Fatalf("%s sibling recovery = %+v", code, result["recovery"])
+		}
+	}
+
+	t.Run("security runtime", func(t *testing.T) {
+		runtime := newRuntime(t)
+		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:discovery"}); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+			"query": `mutation { products(insert: {name: "x"}) { id } }`,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertRepair(t, out, "security_runtime_discovery_required")
+	})
+
+	t.Run("mutation shape", func(t *testing.T) {
+		runtime := newRuntime(t)
+		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+			"query": `mutation { products(insert: {name: "x"}) { id } }`,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertRepair(t, out, "mutation_evidence_required")
+		next := mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"])
+		if !containsString(stringSliceArg(next, "ids"), "table:app:main.products") {
+			t.Fatalf("mutation repair did not name exact table detail: %+v", next)
+		}
+	})
+
+	t.Run("workflow detail", func(t *testing.T) {
+		runtime := newRuntime(t)
+		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+			"query": `mutation { gj_workflow_execution(insert: {name: "daily_roast"}) { id } }`,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertRepair(t, out, "workflow_detail_required")
+	})
+
+	t.Run("watch mutation shape", func(t *testing.T) {
+		runtime := newRuntime(t)
+		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+			"query": `mutation { gj_watch(insert: {name: "late_orders", query: "subscription { orders { id } }"}) { id } }`,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertRepair(t, out, "mutation_evidence_required")
+		next := mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"])
+		if !containsString(stringSliceArg(next, "ids"), "help:watches") {
+			t.Fatalf("watch repair did not name help:watches: %+v", next)
+		}
+	})
+}
+
+func TestMutationEvidenceRepairRequiresSuccessfulRetryBeforeFinal(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	base.catalogOverride = func(args map[string]any) any {
+		if len(detailIDsFromArgs(args)) != 0 {
+			return fakeCatalogResult(args)
+		}
+		return map[string]any{
+			"count": 1,
+			"cards": []any{map[string]any{
+				"id": "table:app:main.products", "kind": "table", "table_name": "products",
+			}},
+		}
+	}
+	runtime := newProtocolRuntime(base, "add a product", "", 40, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
+		t.Fatal(err)
+	}
+	query := `mutation { products(insert: {name: "x"}) { id } }`
+	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
+	if err != nil || !executionFailed(first) {
+		t.Fatalf("first mutation = %+v err=%v, want recoverable guard result", first, err)
+	}
+	if pending := runtime.state.pendingRequiredFinalization(); !strings.HasPrefix(pending, "execution_evidence_required:") {
+		t.Fatalf("pending before detail = %q", pending)
+	}
+	continuation := runtime.state.pendingRequiredFinalizationContinuation()
+	if !strings.Contains(continuation, `table:app:main.products`) || strings.Contains(continuation, "execute_graphql") {
+		t.Fatalf("discovery continuation = %q, want exact detail only", continuation)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:app:main.products"}); err != nil {
+		t.Fatal(err)
+	}
+	if pending := runtime.state.pendingRequiredFinalization(); !strings.HasPrefix(pending, "execution_retry_required:") {
+		t.Fatalf("pending after detail = %q", pending)
+	}
+	if continuation := runtime.state.pendingRequiredFinalizationContinuation(); continuation != "" {
+		t.Fatalf("post-detail continuation = %q, model must re-author the mutation", continuation)
+	}
+	second, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
+	if err != nil || executionFailed(second) || base.graphqlCalls != 1 {
+		t.Fatalf("repaired mutation = %+v err=%v calls=%d", second, err, base.graphqlCalls)
+	}
+	if runtime.state.hasBlockingViolation() || runtime.state.pendingRequiredFinalization() != "" {
+		t.Fatalf("successful retry left blocking state: violations=%+v pending=%q", runtime.state.violations, runtime.state.pendingRequiredFinalization())
+	}
+}
+
 func TestProtocolEscalatesConsecutiveEmptyCatalogSearches(t *testing.T) {
 	base := &fakeRuntime{catalogOverride: func(map[string]any) any {
 		return map[string]any{"count": 0, "cards": []any{}}

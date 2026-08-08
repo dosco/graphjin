@@ -612,10 +612,16 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	}
 	if writeLikeGraphQL(query) && !r.state.securityRuntimeEvidence {
 		err := fmt.Errorf("protocol violation: inspect security/runtime catalog guidance before write-capable or control-plane GraphQL")
-		r.state.addViolation("security_runtime_discovery_required", err.Error(), "execute_graphql", true, map[string]any{"required": []any{"help:security", "help:runtime"}})
+		details := map[string]any{"required": []any{"help:security", "help:runtime"}}
+		r.state.addViolation("security_runtime_discovery_required", err.Error(), "execute_graphql", true, details)
+		next := catalogRepairNext(
+			map[string]any{"ids": []any{"help:security", "help:runtime"}},
+			"Inspect the exact security and runtime guidance in a discovery-only actor step, then re-author the write from returned evidence.",
+		)
+		out := recoverableProtocolFailure("security_runtime_discovery_required", err.Error(), "write_prerequisite_detail_required", next, details)
 		action := r.state.startAction("model", "execute_graphql", args)
-		r.state.finishAction(action, "execute_graphql", args, nil, err)
-		return nil, err
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
 	}
 	if ContainsMutationOperation(query) {
 		annotationFields := annotationMutationInputFields(query, args)
@@ -637,17 +643,23 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		roots := MutationRootFields(query)
 		if missing := r.state.missingMutationEvidence(roots); len(missing) != 0 {
 			err := fmt.Errorf("protocol violation: gather mutation-shape evidence for %s before executing a mutation: inspect the target table's catalog detail with query_catalog({id:\"table:...\"}), validate_where_clause the target, inspect a mutation_pattern detail row, or use an approved saved mutation", strings.Join(missing, ", "))
-			r.state.addViolation("mutation_evidence_required", err.Error(), "execute_graphql", true, map[string]any{"tables": missing})
+			details := map[string]any{"tables": missing}
+			r.state.addViolation("mutation_evidence_required", err.Error(), "execute_graphql", true, details)
+			next := r.state.mutationEvidenceNext(missing)
+			out := recoverableProtocolFailure("mutation_evidence_required", err.Error(), "mutation_shape_detail_required", next, details)
 			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, nil, err)
-			return nil, err
+			r.state.finishAction(action, "execute_graphql", args, out, nil)
+			return out, nil
 		}
 		if requiresWorkflowDetail(roots) && !r.state.hasWorkflowDetailEvidence() {
 			err := fmt.Errorf("protocol violation: inspect the workflow detail by id before executing it through %s", systemRootWorkflowExec)
-			r.state.addViolation("workflow_detail_required", err.Error(), "execute_graphql", true, map[string]any{"root": systemRootWorkflowExec})
+			details := map[string]any{"root": systemRootWorkflowExec}
+			r.state.addViolation("workflow_detail_required", err.Error(), "execute_graphql", true, details)
+			next := r.state.workflowEvidenceNext()
+			out := recoverableProtocolFailure("workflow_detail_required", err.Error(), "workflow_detail_required", next, details)
 			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, nil, err)
-			return nil, err
+			r.state.finishAction(action, "execute_graphql", args, out, nil)
+			return out, nil
 		}
 	}
 	queryKey := executionQueryKey(args)
@@ -702,7 +714,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		if !executionFailed(out) {
 			r.state.emptySearchStreak = 0
 			r.state.emptyDetailStreak = 0
-			r.state.resolveRawGraphQLDiscoveryViolations()
+			r.state.resolveSuccessfulExecutionViolations()
 		}
 		if isWatchDefinitionMutation(query) {
 			r.state.watchDefinitionMutated = true
@@ -716,6 +728,40 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		"write_like": writeLikeGraphQL(query),
 	})
 	return out, err
+}
+
+func recoverableProtocolFailure(code, message, kind string, next, details map[string]any) executeResult {
+	repair := map[string]any{
+		"code": code,
+		"kind": kind,
+		"next": next,
+	}
+	if len(details) != 0 {
+		repair["details"] = details
+	}
+	directive := recoveryDirectivePrefix + " follow recovery.next in a discovery-only actor step, then re-author and retry the operation in this run."
+	return executeResult{
+		Errors: []ErrorInfo{{
+			Message: joinRecoveryMessage(message, directive),
+			Extensions: map[string]any{
+				"code":            code,
+				"retryable":       true,
+				"graphjin_repair": repair,
+			},
+		}},
+		Recovery: map[string]any{
+			"code":        code,
+			"kind":        kind,
+			"instruction": "Gather the named evidence in a separate actor step so its returned schema and policy details are visible before GraphQL is authored.",
+			"next":        next,
+		},
+	}
+}
+
+func catalogRepairNext(args map[string]any, reason string) map[string]any {
+	next := catalogNext(toolQueryCatalog, reason)
+	next["args"] = args
+	return next
 }
 
 func (r *protocolRuntime) addNamespace(args map[string]any) {
@@ -1213,6 +1259,9 @@ func (s *discoveryState) pendingRequiredFinalization() string {
 	if s.pendingFailedQueryKey != "" {
 		return "execution_repair_required: the first GraphQL execution failed. Read errors[].extensions.graphjin_repair and result.recovery, then execute one distinct repaired query before finalizing; an identical retry is rejected."
 	}
+	if message := s.pendingRecoverableExecution(); message != "" {
+		return message
+	}
 	if message := s.pendingRequiredSavedQueryExecution(); message != "" {
 		return message
 	}
@@ -1223,7 +1272,79 @@ func (s *discoveryState) pendingRequiredFinalizationContinuation() string {
 	if s.pendingFailedQueryKey != "" || s.pendingDatabaseComputation() != "" {
 		return ""
 	}
+	if continuation := s.pendingRecoverableExecutionContinuation(); continuation != "" {
+		return continuation
+	}
 	return s.pendingRequiredSavedQueryContinuation()
+}
+
+func (s *discoveryState) pendingRecoverableExecution() string {
+	violation, ok := s.primaryRecoverableExecutionViolation()
+	if !ok {
+		return ""
+	}
+	if s.recoverableExecutionEvidenceMissing(violation) {
+		return "execution_evidence_required: the attempted GraphQL operation is missing required same-run evidence. Follow errors[].extensions.graphjin_repair.next in a discovery-only actor step; after the result is visible, re-author and execute the operation before finalizing."
+	}
+	return "execution_retry_required: the required evidence is now present, but the rejected GraphQL operation has not been retried successfully. Re-author it from the returned detail and execute it before finalizing."
+}
+
+func (s *discoveryState) pendingRecoverableExecutionContinuation() string {
+	violation, ok := s.primaryRecoverableExecutionViolation()
+	if !ok || !s.recoverableExecutionEvidenceMissing(violation) {
+		return ""
+	}
+	var next map[string]any
+	switch violation.Code {
+	case "security_runtime_discovery_required":
+		next = catalogRepairNext(map[string]any{"ids": []any{"help:security", "help:runtime"}}, "Inspect write prerequisites.")
+	case "mutation_evidence_required":
+		next = s.mutationEvidenceNext(stringListFromDetails(violation.Details, "tables"))
+	case "workflow_detail_required":
+		next = s.workflowEvidenceNext()
+	default:
+		return ""
+	}
+	args := mapValue(next["args"])
+	if stringFromMap(next, "recommended_tool") != toolQueryCatalog || len(args) == 0 {
+		return ""
+	}
+	return `const evidence = await query_catalog(` + stringify(normalizeValue(args)) + `); console.log(evidence);`
+}
+
+func (s *discoveryState) primaryRecoverableExecutionViolation() (protocolViolation, bool) {
+	if s == nil {
+		return protocolViolation{}, false
+	}
+	var fallback protocolViolation
+	hasFallback := false
+	for _, code := range []string{"security_runtime_discovery_required", "mutation_evidence_required", "workflow_detail_required"} {
+		for _, violation := range s.violations {
+			if violation.Blocking && violation.Code == code {
+				if s.recoverableExecutionEvidenceMissing(violation) {
+					return violation, true
+				}
+				if !hasFallback {
+					fallback = violation
+					hasFallback = true
+				}
+			}
+		}
+	}
+	return fallback, hasFallback
+}
+
+func (s *discoveryState) recoverableExecutionEvidenceMissing(violation protocolViolation) bool {
+	switch violation.Code {
+	case "security_runtime_discovery_required":
+		return !s.securityRuntimeEvidence
+	case "mutation_evidence_required":
+		return len(s.missingMutationEvidence(stringListFromDetails(violation.Details, "tables"))) != 0
+	case "workflow_detail_required":
+		return !s.hasWorkflowDetailEvidence()
+	default:
+		return false
+	}
 }
 
 // pendingRequiredSavedQueryExecution guards explicit, ordered user requests
@@ -1401,9 +1522,9 @@ func (s *discoveryState) hasCatalogDetailEvidence() bool {
 // mutation-shape evidence in this run. A target table is covered when its table
 // card detail was inspected by id, it was passed through validate_where_clause,
 // or a mutation_pattern detail was inspected AND the table surfaced in any
-// catalog result. gj_* system roots are excluded — they are governed by the
-// security/runtime gate. An unparseable mutation (no roots) demands generic
-// shape evidence.
+// catalog result. Watch roots require help:watches or their exact capability
+// detail; other gj_* roots are governed by their dedicated gates. An
+// unparseable mutation (no roots) demands generic shape evidence.
 func (s *discoveryState) missingMutationEvidence(roots []string) []string {
 	if len(roots) == 0 {
 		if s.detailKinds["mutation_pattern"] || len(s.tablesDetailed) != 0 || len(s.tablesValidated) != 0 {
@@ -1414,7 +1535,16 @@ func (s *discoveryState) missingMutationEvidence(roots []string) []string {
 	var missing []string
 	for _, root := range roots {
 		root = strings.ToLower(strings.TrimSpace(root))
-		if root == "" || strings.HasPrefix(root, "gj_") {
+		if root == "" {
+			continue
+		}
+		if root == systemRootWatch || root == systemRootWatchEvent {
+			if !s.hasWatchMutationEvidence(root) {
+				missing = appendUniqueString(missing, root)
+			}
+			continue
+		}
+		if strings.HasPrefix(root, "gj_") {
 			continue
 		}
 		if s.tablesDetailed[root] || s.tablesValidated[root] {
@@ -1426,6 +1556,20 @@ func (s *discoveryState) missingMutationEvidence(roots []string) []string {
 		missing = appendUniqueString(missing, root)
 	}
 	return missing
+}
+
+func (s *discoveryState) hasWatchMutationEvidence(root string) bool {
+	if s == nil {
+		return false
+	}
+	root = strings.ToLower(strings.TrimSpace(root))
+	for _, id := range s.catalogDetails {
+		lower := strings.ToLower(strings.TrimSpace(id))
+		if lower == "help:watches" || lower == root || strings.HasSuffix(lower, ":"+root) || strings.Contains(lower, ":"+root+".") {
+			return true
+		}
+	}
+	return false
 }
 
 // tableSeenInCatalog reports whether any catalog result in this run surfaced a
@@ -1450,6 +1594,69 @@ func requiresWorkflowDetail(roots []string) bool {
 
 func (s *discoveryState) hasWorkflowDetailEvidence() bool {
 	return s != nil && (len(s.workflowsDetailed) != 0 || len(s.savedQueriesDetailed) != 0)
+}
+
+func (s *discoveryState) mutationEvidenceNext(tables []string) map[string]any {
+	ids := make([]any, 0, len(tables))
+	for _, table := range tables {
+		if table == systemRootWatch || table == systemRootWatchEvent {
+			ids = append(ids, "help:watches")
+			continue
+		}
+		id := s.catalogIDForTable(table)
+		if id == "" {
+			return catalogRepairNext(
+				map[string]any{"kind": "table", "limit": 20},
+				"Enumerate visible tables, select the exact mutation target, then inspect that table card by id in a discovery-only actor step.",
+			)
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return catalogRepairNext(
+			map[string]any{"kind": "mutation_pattern", "limit": 20},
+			"Inspect a mutation pattern or the exact target table detail before retrying the write.",
+		)
+	}
+	return catalogRepairNext(
+		map[string]any{"ids": ids},
+		"Inspect the exact target table detail and author the mutation only from its returned column and mutation-shape evidence.",
+	)
+}
+
+func (s *discoveryState) catalogIDForTable(table string) string {
+	table = strings.ToLower(strings.TrimSpace(table))
+	best := ""
+	for id := range s.catalogIDs {
+		if tableNameFromCatalogID(id) == table && (best == "" || id < best) {
+			best = id
+		}
+	}
+	return best
+}
+
+func (s *discoveryState) workflowEvidenceNext() map[string]any {
+	workflowIDs := make([]string, 0)
+	for id := range s.catalogIDs {
+		if strings.HasPrefix(strings.ToLower(id), "workflow:") {
+			workflowIDs = append(workflowIDs, id)
+		}
+	}
+	if len(workflowIDs) != 0 {
+		sort.Strings(workflowIDs)
+		ids := make([]any, len(workflowIDs))
+		for i := range workflowIDs {
+			ids[i] = workflowIDs[i]
+		}
+		return catalogRepairNext(
+			map[string]any{"ids": ids},
+			"Inspect the discovered workflow detail by id before retrying workflow execution.",
+		)
+	}
+	return catalogRepairNext(
+		map[string]any{"kind": "workflow", "limit": 20},
+		"Enumerate visible workflows, choose the exact workflow, and inspect its detail row before retrying execution.",
+	)
 }
 
 func (s *discoveryState) catalogKindSeen(kind string) bool {
@@ -1482,10 +1689,12 @@ func (s *discoveryState) resolveSavedQueryDetailViolation(name string) {
 	}
 }
 
-func (s *discoveryState) resolveRawGraphQLDiscoveryViolations() {
+func (s *discoveryState) resolveSuccessfulExecutionViolations() {
 	for i := range s.violations {
 		violation := &s.violations[i]
-		if violation.Code != "raw_graphql_catalog_required" && violation.Code != "raw_graphql_discovery_required" {
+		switch violation.Code {
+		case "raw_graphql_catalog_required", "raw_graphql_discovery_required", "security_runtime_discovery_required", "mutation_evidence_required", "workflow_detail_required":
+		default:
 			continue
 		}
 		violation.Blocking = false

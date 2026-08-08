@@ -229,6 +229,52 @@ func TestBlockedCompletionGuidanceIsExecutorOnly(t *testing.T) {
 	}
 }
 
+func TestExecutorLoopRepairsMutationEvidenceWithExactContinuation(t *testing.T) {
+	const detailSentinel = "PRODUCT_MUTATION_COLUMNS_ID_NAME"
+	rec := &recordingClient{responses: []string{
+		`{"javascriptCode":"await final('Add the product through the governed write path.', {target:'products'})"}`,
+		`{"javascriptCode":"void graphjinDistilledContext.target; const security = await query_catalog({id:'help:security'}); console.log(security);"}`,
+		`{"javascriptCode":"const execution = await execute_graphql({query:'mutation { products(insert:{name:\"x\"}) { id } }'}); console.log(execution);"}`,
+		`{"javascriptCode":"await final('blocked before mutation evidence', {})"}`,
+		`{"javascriptCode":"const execution = await execute_graphql({query:'mutation { products(insert:{name:\"x\"}) { id name } }'}); await final({status:'answered',answer:'Added.',data:execution.data},{execution});"}`,
+	}}
+	runtime := &successfulExecutionRuntime{}
+	runtime.catalogOverride = func(args map[string]any) any {
+		if len(detailIDsFromArgs(args)) != 0 {
+			result := cloneAnyMap(mapValue(fakeCatalogResult(args)))
+			result["details"] = []any{map[string]any{"section": "mutation", "content": detailSentinel}}
+			return result
+		}
+		return map[string]any{
+			"count": 1,
+			"cards": []any{map[string]any{
+				"id": "table:app:main.products", "kind": "table", "table_name": "products",
+			}},
+		}
+	}
+	runner := newAgent(
+		Config{Provider: "openai", APIKeyEnv: "GRAPHJIN_UNUSED", TimeoutSeconds: 50, MaxSteps: 8},
+		runtime,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return rec, nil }),
+	)
+
+	_, _ = runner.Run(context.Background(), Request{Instruction: "add product x"})
+	if len(rec.calls) < 5 {
+		t.Fatalf("captured %d calls, want distiller plus repair/retry executor turns", len(rec.calls))
+	}
+	if runtime.graphqlCalls != 1 {
+		t.Fatalf("raw GraphQL calls = %d, rejected mutation must not reach the base runtime", runtime.graphqlCalls)
+	}
+	repairPrompt := dumpAXValue(rec.calls[3].values) + dumpAXValue(rec.calls[3].options)
+	if !strings.Contains(repairPrompt, "mutation_evidence_required") || !strings.Contains(repairPrompt, "graphjin_repair") {
+		t.Fatal("mutation rejection did not reach the next executor turn as structured repair evidence")
+	}
+	postContinuationPrompt := dumpAXValue(rec.calls[4].values) + dumpAXValue(rec.calls[4].options)
+	if !strings.Contains(postContinuationPrompt, detailSentinel) {
+		t.Fatal("the exact mutation detail continuation did not reach the retry turn")
+	}
+}
+
 func TestCaptureRenderedSkillsPerCapabilityProfile(t *testing.T) {
 	allRoots := []string{
 		systemRootSecurity,

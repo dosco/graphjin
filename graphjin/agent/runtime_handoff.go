@@ -146,8 +146,26 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 	if s.executorStage && (completionType == "final" || completionType == "askclarification") && s.pendingFinal != nil {
 		if message := strings.TrimSpace(s.pendingFinal()); message != "" {
 			protocolCode, publicMessage := pendingFinalProtocol(message)
-			if protocolCode == "saved_query_execution_required" && s.pendingContinuation != nil {
+			if s.pendingContinuation != nil {
 				if continuation := strings.TrimSpace(s.pendingContinuation()); continuation != "" {
+					if protocolCode == "execution_evidence_required" {
+						// Recoverable write/control-plane guards already know the exact
+						// catalog evidence still required. Run only that discovery now;
+						// because the code has no final(), Ax advances to another executor
+						// turn where the model can author from the returned detail.
+						s.handoffRead = true
+						return s.base.Execute(continuation, options)
+					}
+					if protocolCode != "saved_query_execution_required" {
+						return map[string]any{
+							"kind": "result",
+							"result": map[string]any{
+								"graphjin_protocol": protocolCode,
+								"message":           publicMessage,
+								"next":              publicMessage,
+							},
+						}
+					}
 					// The model already chose to terminate, so execute the narrow,
 					// protocol-derived continuation in the same runtime session and
 					// return its live result to the next actor step. This is limited to
@@ -204,6 +222,8 @@ func (s *graphJinCodeSession) refreshLastExecutionBinding(options map[string]ax.
 func pendingFinalProtocol(message string) (string, string) {
 	for _, item := range []struct{ prefix, code string }{
 		{"execution_repair_required:", "execution_repair_required"},
+		{"execution_evidence_required:", "execution_evidence_required"},
+		{"execution_retry_required:", "execution_retry_required"},
 		{"database_computation_required:", "database_computation_required"},
 	} {
 		if strings.HasPrefix(message, item.prefix) {
@@ -277,11 +297,38 @@ func referencesGraphJinCallable(code string) bool {
 		"query_catalog", "graphql_help", "validate_where_clause",
 		"execute_saved_query", "execute_graphql",
 	} {
-		if strings.Contains(code, name+"(") {
+		if referencesCallableInvocation(code, name) {
 			return true
 		}
 	}
 	return false
+}
+
+// referencesCallableInvocation recognizes the bare runtime-call form even when
+// a model inserts whitespace before the opening parenthesis. The boundary check
+// avoids treating longer helper names as GraphJin calls.
+func referencesCallableInvocation(code, name string) bool {
+	for offset := 0; offset < len(code); {
+		index := strings.Index(code[offset:], name)
+		if index < 0 {
+			return false
+		}
+		index += offset
+		beforeOK := index == 0 || !isJavaScriptIdentifierByte(code[index-1])
+		after := index + len(name)
+		for after < len(code) && (code[after] == ' ' || code[after] == '\t' || code[after] == '\r' || code[after] == '\n') {
+			after++
+		}
+		if beforeOK && after < len(code) && code[after] == '(' {
+			return true
+		}
+		offset = index + len(name)
+	}
+	return false
+}
+
+func isJavaScriptIdentifierByte(value byte) bool {
+	return value == '_' || value == '$' || value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
 }
 
 func instructionNeedsHistory(instruction string) bool {
