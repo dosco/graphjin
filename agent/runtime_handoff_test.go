@@ -95,6 +95,55 @@ func TestGraphJinRuntimeAutoFinalizesAfterDuplicateGraceTurn(t *testing.T) {
 	}
 }
 
+func TestGraphJinRuntimeExecutesDeterministicSystemRootRepair(t *testing.T) {
+	ready := false
+	catalogCalls := 0
+	executionCalls := 0
+	runtime := newGraphJinCodeRuntime(
+		nil, nil, nil, nil,
+		func() string {
+			if !ready {
+				return ""
+			}
+			ready = false
+			return `globalThis.graphjinSystemRootPrerequisites = await query_catalog({ids:["help:security","help:runtime"]}); globalThis.graphjinSystemRootRepair = await execute_graphql({"query":"query { gj_watch_event(where: { seen: { eq: false } }) { id watch_id data_json seen } }"}); console.log(globalThis.graphjinSystemRootRepair);`
+		},
+	)
+	runtime.RegisterCallable(toolQueryCatalog, func(params ax.Value) (ax.Value, error) {
+		catalogCalls++
+		ids := anySlice(mapValue(params)["ids"])
+		if len(ids) != 2 || ids[0] != "help:security" || ids[1] != "help:runtime" {
+			t.Fatalf("catalog repair args = %+v", params)
+		}
+		return map[string]any{"cards": []any{map[string]any{"id": "help:security"}, map[string]any{"id": "help:runtime"}}}, nil
+	})
+	runtime.RegisterCallable(toolExecuteGraphQL, func(params ax.Value) (ax.Value, error) {
+		executionCalls++
+		query := stringFromMap(mapValue(params), "query")
+		for _, fragment := range []string{"gj_watch_event", "data_json", "seen"} {
+			if !strings.Contains(query, fragment) {
+				t.Fatalf("repaired query missing %q: %s", fragment, query)
+			}
+		}
+		return map[string]any{"data": map[string]any{"gj_watch_event": []any{map[string]any{"id": "we:1", "seen": false}}}}, nil
+	})
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "Review the unseen watch event."},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	session.Execute(`await final("distilled", {});`, nil)
+	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
+
+	ready = true
+	result := session.Execute(`console.log("model attempted watch_events_unseen");`, nil)
+	if catalogCalls != 1 || executionCalls != 1 {
+		t.Fatalf("deterministic repair calls catalog=%d execution=%d result=%+v", catalogCalls, executionCalls, result)
+	}
+}
+
 func TestGraphJinRuntimeCarriesDistillerPayloadAcrossAxStagePatch(t *testing.T) {
 	var distilled any
 	runtime := newGraphJinCodeRuntime(nil, func(value any) { distilled = value }, nil, nil)

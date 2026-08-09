@@ -314,6 +314,22 @@ func TestWatchSystemRootDidYouMeanRepairNamesCanonicalRootsAndRecovers(t *testin
 	if !containsString(evidenceStringSlice(summary["recovery_codes"]), "system_root_did_you_mean") || summary["recovery_tool"] != toolExecuteGraphQL {
 		t.Fatalf("repair action summary = %#v", summary)
 	}
+	runtime.state.securityRuntimeEvidence = false
+	continuation := runtime.state.completionContinuation()
+	for _, fragment := range []string{
+		`query_catalog({ids:["help:security","help:runtime"]})`,
+		`execute_graphql({"query":`,
+		`query { gj_watch_event(`,
+		`data_json`,
+	} {
+		if !strings.Contains(continuation, fragment) {
+			t.Fatalf("system-root continuation missing %q: %s", fragment, continuation)
+		}
+	}
+	if runtime.state.pendingSystemRootQuery != "" {
+		t.Fatalf("system-root continuation was not consumed: %q", runtime.state.pendingSystemRootQuery)
+	}
+	runtime.state.securityRuntimeEvidence = true
 
 	corrected := `query { gj_watch_event(where: { seen: { eq: false } }, limit: 1) { id watch_id seen } }`
 	passed, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": corrected})

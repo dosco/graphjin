@@ -252,6 +252,7 @@ func TestWatchSkillsTeachAllFourDecisionBranches(t *testing.T) {
 		"help:security",
 		"help:runtime",
 		"help:watches",
+		`delivery_json: { kind: "inbox", digest: { window: "1h" } }`,
 		"condition_js never executes",
 		"default_watch_triage",
 		"inline AxFlow Mermaid",
@@ -272,6 +273,24 @@ func TestWatchSkillsTeachAllFourDecisionBranches(t *testing.T) {
 	} {
 		if !strings.Contains(watchWriteInstruction, fragment) {
 			t.Fatalf("watch lifecycle guidance missing %q", fragment)
+		}
+	}
+}
+
+func TestWatchReadSkillUsesCanonicalEventAndAcknowledgementShapes(t *testing.T) {
+	for _, fragment := range []string{
+		"help:security",
+		"help:runtime",
+		"help:watches",
+		"gj_watch_event(where:",
+		"data_json",
+		"not event_json or payload_json",
+		`eq: "<event_id>"`,
+		"update: { seen: true }",
+		"quote its exact string id",
+	} {
+		if !strings.Contains(watchReadInstruction, fragment) {
+			t.Fatalf("watch read guidance missing %q", fragment)
 		}
 	}
 }

@@ -1013,7 +1013,10 @@ func parseWatchDeliveryConfig(raw string) (watchDeliveryConfig, bool, error) {
 	if err := json.Unmarshal([]byte(raw), &m); err != nil {
 		return watchDeliveryConfig{}, false, fmt.Errorf("delivery_json is invalid: %w", err)
 	}
-	cfg := watchDeliveryConfig{Kind: strings.ToLower(strings.TrimSpace(fmt.Sprint(m["kind"])))}
+	// An omitted kind is the ordinary inbox form. Use the nil-safe helper here:
+	// fmt.Sprint(nil) produces "<nil>", which bypasses the default case below
+	// and rejects otherwise valid digest-only input.
+	cfg := watchDeliveryConfig{Kind: strings.ToLower(stringFromAny(m["kind"]))}
 	if webhook, ok := m["webhook"]; ok {
 		cfg.Kind = "webhook"
 		cfg.Webhook = parseWatchWebhookConfig(webhook)

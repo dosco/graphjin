@@ -285,6 +285,8 @@ func TestExecutorHandoffInstructionsRequireExplicitDiscovery(t *testing.T) {
 		"Never treat a draft answer from the distiller as final evidence",
 		"globalThis.graphjinLastExecution",
 		"graphjinLastExecution.result.data",
+		"globalThis.graphjinSystemRootRepair",
+		"graphjinSystemRootRepair.data",
 	} {
 		if !strings.Contains(executorHandoffInstructions, phrase) {
 			t.Fatalf("executor handoff guidance missing %q", phrase)

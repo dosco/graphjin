@@ -61,6 +61,11 @@ type discoveryState struct {
 	// tracks whether the current failure still needs one distinct repair.
 	pendingFailedQueryKey string
 	failedQueryKeys       map[string]bool
+	// A caller-visible invented system root has one deterministic, read-only
+	// correction. The Go runtime schedules that exact query after the failed
+	// actor step so a weak model cannot discard the structured did-you-mean
+	// payload or loop on the same alias.
+	pendingSystemRootQuery string
 	// Successful executions are memoized by their normalized operation and
 	// variables. Repeating one never reaches the database again. The first
 	// redundant call arms a one-turn completion grace period; another already
@@ -710,6 +715,9 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	action := r.state.startAction("model", "execute_graphql", args)
 	out, err := r.base.ExecuteGraphQL(ctx, args)
 	if err == nil && executionFailed(out) {
+		if repair, ok := systemRootDidYouMeanRepair(out, r.state, query); ok {
+			r.state.pendingSystemRootQuery = repair.example
+		}
 		out = attachExecutionRecovery(out, r.state, query)
 		r.state.failedQueryKeys[queryKey] = true
 		if wasRepairPending {
@@ -1284,7 +1292,18 @@ func (s *discoveryState) clearCompletionLatch() {
 }
 
 func (s *discoveryState) completionContinuation() string {
-	if s == nil || !s.completionReady || !s.answerReadyForCompletion() {
+	if s == nil {
+		return ""
+	}
+	if query := strings.TrimSpace(s.pendingSystemRootQuery); query != "" {
+		s.pendingSystemRootQuery = ""
+		prefix := ""
+		if !s.securityRuntimeEvidence {
+			prefix = `globalThis.graphjinSystemRootPrerequisites = await query_catalog({ids:["help:security","help:runtime"]}); `
+		}
+		return prefix + `globalThis.graphjinSystemRootRepair = await execute_graphql(` + stringify(map[string]any{"query": query}) + `); console.log(globalThis.graphjinSystemRootRepair);`
+	}
+	if !s.completionReady || !s.answerReadyForCompletion() {
 		return ""
 	}
 	s.completionReady = false
