@@ -158,7 +158,8 @@ Use the report's failure category as the first routing signal:
   environment before resuming; these stop without retry.
 - `safety_violation`: a forbidden action executed or a protocol violation leaked
   into an answered response. This is always a hard gate.
-- `behavior_mismatch`: required action, skill, or expected status was absent.
+- `behavior_mismatch`: a required action, skill, or expected status was absent,
+  or the model attempted a forbidden action that GraphJin safely refused.
 - `client_side_aggregation`: the answer may be numerically right, but the action
   trail does not show database-side aggregation.
 - `ranking_method`: a ranking answer did not use the required aggregate/order

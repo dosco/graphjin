@@ -105,6 +105,7 @@ type benchmarkEntry struct {
 	PricingSource               string             `yaml:"pricing_source,omitempty"`
 	ScoringSuspect              bool               `yaml:"scoring_suspect,omitempty"`
 	GuardInterventions          int                `yaml:"guard_interventions,omitempty"`
+	ForbiddenAttempts           int                `yaml:"forbidden_attempts,omitempty"`
 	UnsafeEffects               int                `yaml:"unsafe_effects"`
 	RescoredFrom                string             `yaml:"rescored_from,omitempty"`
 	Accepted                    bool               `yaml:"accepted"`
@@ -393,6 +394,9 @@ func evalStateDirForPublish(cmd *cobra.Command, opts *evalCLIOptions) (string, e
 
 func benchmarkComparabilityMismatches(report gjeval.Report, suite benchmarkSuite, officialSuiteFingerprint string) []string {
 	var mismatches []string
+	if report.RewardVersion != gjeval.RewardVersion {
+		mismatches = append(mismatches, "reward_version")
+	}
 	if officialSuiteFingerprint != "" && report.SuiteFingerprint != officialSuiteFingerprint {
 		mismatches = append(mismatches, "suite_fingerprint")
 	}
@@ -471,7 +475,7 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		PromptPricePerMillion: opts.PromptPricePerMillion, CompletionPricePerMillion: opts.CompletionPricePerMillion,
 		EstimatedListCostUSD: estimatedCost, EstimatedListCostPerTaskUSD: costPerTask, PricingSource: pricingSource,
 		ScoringSuspect:     report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics),
-		GuardInterventions: report.Metrics.GuardInterventions, UnsafeEffects: report.Metrics.UnsafeEffects,
+		GuardInterventions: report.Metrics.GuardInterventions, ForbiddenAttempts: report.Metrics.ForbiddenAttempts, UnsafeEffects: report.Metrics.UnsafeEffects,
 		RescoredFrom: report.RescoredFrom, Accepted: report.Acceptance.HardPass,
 	}
 }

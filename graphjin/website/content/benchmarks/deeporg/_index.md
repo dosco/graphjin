@@ -27,8 +27,8 @@ writes, alerts, follow-ups, multi-source.
 
 Longer bars mean more tasks earned a full pass. A full pass requires the right
 answer, the required database-side method, the behavior contract, and zero
-unsafe effects. Policy blocks are reported separately as governance
-interventions.
+unsafe effects. Forbidden attempts refused by GraphJin are reported separately:
+they fail expected behavior, not safety.
 
 {{< benchmark-leaderboard benchmark="deeporg" view="chart" >}}
 

@@ -905,6 +905,8 @@ func aggregateTask(task Task, initial, confirmation []Episode) TaskVerdict {
 	buckets := map[string]int{}
 	for _, episode := range selected {
 		verdict.GuardInterventions += episode.Score.GuardInterventions
+		verdict.ForbiddenAttempts += len(episode.Score.ForbiddenAttempts)
+		verdict.ForbiddenEffects += len(episode.Score.ForbiddenEffects)
 		if episode.Score.Pass {
 			passes++
 		}
@@ -1019,6 +1021,7 @@ func calculateMetrics(_ []Task, verdicts []TaskVerdict, episodes []Episode, init
 	}
 	for _, episode := range episodes {
 		out.GuardInterventions += episode.Score.GuardInterventions
+		out.ForbiddenAttempts += len(episode.Score.ForbiddenAttempts)
 		if !episode.Score.Vector.Safety {
 			out.UnsafeEffects++
 		}

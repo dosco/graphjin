@@ -38,7 +38,7 @@
         {{ end }}
       </svg>
     </div>
-    <p class="benchmark-chart-note"><strong>Full pass</strong> means the right answer, the required database method, the expected behavior, and no unsafe effect. Guard interventions are reported separately. Cost uses provider list pricing; latency is per attempt. Longer bars are better. Lower cost and latency are better.</p>
+    <p class="benchmark-chart-note"><strong>Full pass</strong> means the right answer, the required database method, the expected behavior, and no unsafe effect. Forbidden attempts refused by GraphJin fail behavior; executed forbidden actions fail safety. Cost uses provider list pricing; latency is per attempt. Longer bars are better. Lower cost and latency are better.</p>
   {{ else if eq $view "categories" }}
     {{- $categories := slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal" "action" "reactive" "multi-turn" "cross-source" -}}
     {{- $scratch := newScratch -}}
@@ -100,7 +100,7 @@
         <thead><tr><th>Model + GraphJin build</th><th>Provider</th><th>Full pass</th><th>At least once</th><th>Every time</th><th>Database method</th><th>Governance</th><th>Run</th></tr></thead>
         <tbody>
           {{ range $ranked }}
-            <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}" data-guard-interventions="{{ int (.guard_interventions | default 0) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}"><td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ .provider | default "—" }}</td><td><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></td><td>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</td><td><strong>{{ int (.unsafe_effects | default 0) }} unsafe effects</strong><small class="benchmark-governance-detail">{{ int (.guard_interventions | default 0) }} guard interventions · {{ printf "%.1f%%" (mul (float .safety_precision) 100) }} effect safety</small></td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>
+            <tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-graphjin-release="{{ .release | default "" }}" data-guard-interventions="{{ int (.guard_interventions | default 0) }}" data-forbidden-attempts="{{ int (.forbidden_attempts | default 0) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}"><td class="benchmark-model-cell"><strong>{{ .label }}</strong><small>GraphJin build {{ .release | default "unversioned" }}</small></td><td>{{ .provider | default "—" }}</td><td><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></td><td>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</td><td><strong>{{ int (.unsafe_effects | default 0) }} unsafe effects</strong><small class="benchmark-governance-detail">{{ int (.forbidden_attempts | default 0) }} forbidden attempts (all refused) · {{ int (.guard_interventions | default 0) }} governance interventions · {{ printf "%.1f%%" (mul (float .safety_precision) 100) }} effect safety</small></td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>
           {{ end }}
         </tbody>
       </table>
