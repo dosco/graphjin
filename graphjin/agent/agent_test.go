@@ -1639,7 +1639,7 @@ func TestRunPassesHistoryAndSeedAsContextFields(t *testing.T) {
 		t.Fatalf("directResponse = %+v, want off so discovery cannot bypass the executor", program.options["directResponse"])
 	}
 	addenda, ok := normalizeValue(program.options["instructionAddenda"]).([]any)
-	if !ok || len(addenda) != 2 || !strings.Contains(fmt.Sprint(addenda[0]), "graphjinLastExecution.result.data") || !strings.Contains(fmt.Sprint(addenda[1]), "Governed blocked-completion directive") {
+	if !ok || len(addenda) != 2 || !strings.Contains(fmt.Sprint(addenda[0]), "graphjinLastExecution.result.data") || !strings.Contains(fmt.Sprint(addenda[1]), "Governed per-run capability facts") {
 		t.Fatalf("instructionAddenda = %+v, want executor handoff and capability-denial rules", program.options["instructionAddenda"])
 	}
 	turns, ok := normalizeValue(program.forwardValues["history"]).([]any)

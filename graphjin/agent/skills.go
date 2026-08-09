@@ -47,6 +47,23 @@ const (
 	systemRootTaskEntry    = "gj_task_entry"
 )
 
+// fixedSystemRoots is the complete GraphJin-owned root vocabulary. Capability
+// profiles expose a caller-filtered subset of these names; application roots
+// never belong here.
+var fixedSystemRoots = []string{
+	systemRootCatalog,
+	systemRootSecurity,
+	systemRootRuntime,
+	systemRootConfig,
+	systemRootWorkflow,
+	systemRootWorkflowExec,
+	systemRootArtifacts,
+	systemRootWatch,
+	systemRootWatchEvent,
+	systemRootTask,
+	systemRootTaskEntry,
+}
+
 // skillDefinition is GraphJin-owned prompt content plus server-side filtering
 // metadata. The metadata is never sent to Ax and never grants authorization.
 // Prerequisites continue to be enforced by GraphJin's runtime policy.
@@ -152,6 +169,81 @@ func allowedSkills(readOnly bool, profile *CapabilityProfile) []skillDefinition 
 		out = append(out, definition)
 	}
 	return out
+}
+
+type completionCapabilityRule struct {
+	skillID     string
+	affirmative string
+	denial      string
+}
+
+// completionCapabilityRules are rendered after allowedSkills has already
+// evaluated the caller's capability profile. Each branch is therefore a fact
+// about this run, not a conditional the model must evaluate. Keep denial text
+// scoped to its exact capability class so one unavailable control-plane root
+// cannot be generalized into a global read-only claim.
+var completionCapabilityRules = []completionCapabilityRule{
+	{
+		skillID:     skillDataWrite,
+		affirmative: "data_write is loaded for this run; application-table writes are available to attempt through GraphJin's role and RLS guards. Inspect the exact target and write prerequisites, then call execute_graphql instead of describing the mutation.",
+		denial:      "data_write is not loaded for this run; application-table mutations are not available to this caller. For a request that specifically requires an application-data write, inspect the seed and at most one relevant policy detail, then immediately return blocked without attempting that mutation.",
+	},
+	{
+		skillID:     skillCodeWrite,
+		affirmative: "code_write is loaded for this run; governed CodeSQL changes are available to attempt through the documented gj_code preview/apply path.",
+		denial:      "code_write is not loaded for this run; code changes are not available to this caller. For a request that specifically requires a code change, inspect at most one relevant policy detail, then immediately return blocked without attempting the change.",
+	},
+	{
+		skillID:     skillWorkflowExec,
+		affirmative: "workflow_execute is loaded for this run; after inspecting the selected workflow detail, execute the requested approved workflow through gj_workflow_execution.",
+		denial:      "workflow_execute is not loaded for this run; workflow execution is not available to this caller. For a request that specifically requires execution, inspect at most one workflow or policy detail, then immediately return blocked without attempting it.",
+	},
+	{
+		skillID:     skillWorkflowWrite,
+		affirmative: "workflow_write is loaded for this run; governed workflow authoring is available to attempt through gj_workflow after its exact detail and mutation guidance are inspected.",
+		denial:      "workflow_write is not loaded for this run; workflow creation or modification is not available to this caller. For a request that specifically requires authoring, inspect at most one workflow or policy detail, then immediately return blocked without attempting it.",
+	},
+	{
+		skillID:     skillWatchWrite,
+		affirmative: "watch_write is loaded for this run; watch lifecycle writes are available to attempt. Inspect help:security, help:runtime, and help:watches, then create watches with execute_graphql using GraphJin's root shape, for example: mutation { gj_watch(insert: { name: \"new_orders_<suffix>\", query: \"subscription new_orders { orders(first: 25, after: $cursor) { id } orders_cursor }\" }) { id status enabled } }. Do not claim that watch creation is read-only or unavailable.",
+		denial:      "watch_write is not loaded for this run; gj_watch lifecycle mutations are not available to this caller. For a request that specifically requires watch creation, update, pause, resume, or deletion, inspect at most one watch or policy detail, then immediately return blocked without attempting a watch mutation.",
+	},
+	{
+		skillID:     skillTaskWrite,
+		affirmative: "task_write is loaded for this run; governed gj_task lifecycle writes are available to attempt after the exact task guidance is inspected.",
+		denial:      "task_write is not loaded for this run; gj_task lifecycle mutations are not available to this caller. For a request that specifically requires task creation or modification, inspect at most one task or policy detail, then immediately return blocked without attempting it.",
+	},
+	{
+		skillID:     skillAdminRead,
+		affirmative: "admin_read is loaded for this run; caller-visible administrative inspection through gj_security, gj_runtime, and governed gj_config reads is available.",
+		denial:      "admin_read is not loaded for this run; administrative control-plane inspection is not available to this caller. For a request that specifically requires that inspection, make at most one policy lookup, then immediately return blocked.",
+	},
+	{
+		skillID:     skillAdminWrite,
+		affirmative: "admin_write is loaded for this run; guarded configuration changes are available to attempt through the documented gj_config preflight, preview, apply, and verify path.",
+		denial:      "admin_write is not loaded for this run; gj_config changes are not available to this caller. For a request that specifically requires a configuration change, inspect at most one config recipe or policy detail, then immediately return blocked without attempting it.",
+	},
+}
+
+func capabilityCompletionInstructions(skills []skillDefinition) string {
+	loaded := make(map[string]bool, len(skills))
+	for _, skill := range skills {
+		loaded[skill.id] = true
+	}
+
+	var out strings.Builder
+	out.WriteString("Governed per-run capability facts. Go computed each branch below from the caller's loaded skills. Apply only the rule for the exact capability class requested; one unavailable class says nothing about any other class.\n")
+	for _, rule := range completionCapabilityRules {
+		out.WriteString("- ")
+		if loaded[rule.skillID] {
+			out.WriteString(rule.affirmative)
+		} else {
+			out.WriteString(rule.denial)
+		}
+		out.WriteByte('\n')
+	}
+	out.WriteString("A loaded capability authorizes an attempt through the normal runtime guards; only a runtime denial or failed in-run recovery may block it. Never infer a global posture from another capability class.")
+	return out.String()
 }
 
 func profileIsAdmin(profile *CapabilityProfile) bool {
