@@ -282,6 +282,7 @@ func TestEvalPublishAdvancesCorrectedScoringContractAndKeepsExecutionProvenance(
 		GraphJinCommit: "current-scorer-commit", BinaryFingerprint: evalBinaryFingerprint(), RewardVersion: gjeval.RewardVersion,
 	}
 	report.Metrics.GuardInterventions = 4
+	report.Metrics.ForbiddenAttempts = 7
 	report.Metrics.UnsafeEffects = 0
 	writePublishTestReport(t, project, report)
 
@@ -334,13 +335,35 @@ func TestEvalPublishAdvancesCorrectedScoringContractAndKeepsExecutionProvenance(
 				t.Fatalf("old scoring row was not superseded: %+v", entry)
 			}
 		case report.RunID:
-			if !entry.Ranked || entry.RescoredFrom != report.RescoredFrom || entry.GuardInterventions != 4 || entry.UnsafeEffects != 0 {
+			if !entry.Ranked || entry.RescoredFrom != report.RescoredFrom || entry.GuardInterventions != 4 || entry.ForbiddenAttempts != 7 || entry.UnsafeEffects != 0 {
 				t.Fatalf("rescored row metadata = %+v", entry)
 			}
 			if entry.GraphJinCommit != report.Provenance.GraphJinCommit || entry.BinaryFingerprint != report.Provenance.BinaryFingerprint {
 				t.Fatalf("execution provenance was replaced by scorer provenance: %+v", entry)
 			}
 		}
+	}
+}
+
+func TestEvalPublishOnlyRanksCurrentRewardContract(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101112.000000000Z-old-reward")
+	report.RewardVersion = "graphjin.eval.reward/v3"
+	writePublishTestReport(t, project, report)
+
+	err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site})
+	if err == nil || !strings.Contains(err.Error(), "reward_version") {
+		t.Fatalf("old reward contract publish error = %v", err)
+	}
+	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site, AllowOffSuite: true}); err != nil {
+		t.Fatalf("old reward contract could not be retained as unranked history: %v", err)
+	}
+	data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.Runs) != 1 || data.Runs[0].Ranked || !strings.Contains(data.Runs[0].UnrankedReason, "reward_version") {
+		t.Fatalf("old reward row = %+v", data.Runs)
 	}
 }
 

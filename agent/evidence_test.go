@@ -64,22 +64,28 @@ func TestBlockingGuardRegistryCoversProtocolEmitters(t *testing.T) {
 		if !ok || selector.Sel.Name != "addViolation" {
 			return true
 		}
-		blocking, ok := call.Args[3].(*ast.Ident)
-		if !ok || blocking.Name != "true" {
-			return true
-		}
 		literal, ok := call.Args[0].(*ast.BasicLit)
 		if !ok || literal.Kind != token.STRING {
-			unclassified = append(unclassified, "<non-literal blocking guard>")
+			unclassified = append(unclassified, "<non-literal guard code>")
 			return true
 		}
 		code, err := strconv.Unquote(literal.Value)
-		if err != nil || !IsBlockingGuardViolationCode(code) {
+		if err != nil {
 			unclassified = append(unclassified, literal.Value)
+			return true
+		}
+		blocking, ok := call.Args[3].(*ast.Ident)
+		if !ok || (blocking.Name != "true" && blocking.Name != "false") {
+			unclassified = append(unclassified, code+"=<non-literal classification>")
+			return true
+		}
+		registered := IsBlockingGuardViolationCode(code)
+		if (blocking.Name == "true") != registered {
+			unclassified = append(unclassified, code+"="+blocking.Name)
 		}
 		return true
 	})
 	if len(unclassified) != 0 {
-		t.Fatalf("blocking protocol guards missing from BlockingGuardViolationCodes: %v", unclassified)
+		t.Fatalf("protocol guard classifications drifted from BlockingGuardViolationCodes: %v", unclassified)
 	}
 }
