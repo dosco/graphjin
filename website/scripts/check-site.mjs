@@ -454,6 +454,8 @@ if (await exists(benchmarkDataPath)) {
     ['data-provider-total-tokens', (run) => run.provider_total_tokens ?? run.total_tokens ?? 0],
     ['data-prompt-tokens', (run) => run.prompt_tokens ?? 0],
     ['data-completion-tokens', (run) => run.completion_tokens ?? 0],
+    ['data-provider-usage-incomplete', (run) => run.provider_usage_incomplete ?? false],
+    ['data-provider-unknown-attempts', (run) => run.provider_unknown_attempts ?? 0],
     ['data-latency-p50-ms', (run) => run.latency_p50_ms ?? 0],
     ['data-latency-p95-ms', (run) => run.latency_p95_ms ?? 0],
     ['data-estimated-list-cost-usd', (run) => run.estimated_list_cost_usd ?? 0],
@@ -522,8 +524,10 @@ if (await exists(benchmarkDataPath)) {
       const rowTag = benchmarkHTML.slice(rowStart, rowEnd + 1);
       for (const [field, expectedValue] of efficiencyFields) {
         const rendered = renderedDataAttribute(rowTag, field);
-        const expected = Number(expectedValue(run));
-        if (rendered === undefined || Number(rendered) !== expected) {
+        const rawExpected = expectedValue(run);
+        const expected = typeof rawExpected === 'boolean' ? String(rawExpected) : Number(rawExpected);
+        const actual = typeof rawExpected === 'boolean' ? rendered : Number(rendered);
+        if (rendered === undefined || actual !== expected) {
           failures.push(`Benchmark efficiency ${field} for ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
         }
       }
@@ -547,6 +551,9 @@ if (await exists(benchmarkDataPath)) {
       const runPagePath = path.join(publicRoot, 'benchmarks', 'deeporg', 'runs', String(run.slug), 'index.html');
       if (await exists(runPagePath)) {
         const runPage = await readFile(runPagePath, 'utf8');
+        if (run.notes && !runPage.includes(String(run.notes))) {
+          failures.push(`Benchmark run page ${run.run_id} is missing its public run note`);
+        }
         const summaryPattern = new RegExp(`data-benchmark-run-summary=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`);
         const summaryMatch = summaryPattern.exec(runPage);
         if (!summaryMatch) {
@@ -558,8 +565,10 @@ if (await exists(benchmarkDataPath)) {
         const summaryTag = runPage.slice(summaryStart, summaryEnd + 1);
         for (const [field, expectedValue] of efficiencyFields.filter(([name]) => !['data-prompt-tokens', 'data-completion-tokens'].includes(name))) {
           const rendered = renderedDataAttribute(summaryTag, field);
-          const expected = Number(expectedValue(run));
-          if (rendered === undefined || Number(rendered) !== expected) {
+          const rawExpected = expectedValue(run);
+          const expected = typeof rawExpected === 'boolean' ? String(rawExpected) : Number(rawExpected);
+          const actual = typeof rawExpected === 'boolean' ? rendered : Number(rendered);
+          if (rendered === undefined || actual !== expected) {
             failures.push(`Benchmark run summary ${field} for ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
           }
         }

@@ -61,6 +61,7 @@ type benchmarkEntry struct {
 	GeneratedAt                 time.Time          `yaml:"generated_at"`
 	Model                       string             `yaml:"model"`
 	Provider                    string             `yaml:"provider,omitempty"`
+	ResponseFormat              string             `yaml:"response_format,omitempty"`
 	GraphJinCommit              string             `yaml:"graphjin_commit,omitempty"`
 	BinaryFingerprint           string             `yaml:"binary_fingerprint,omitempty"`
 	SuiteIdentity               string             `yaml:"suite_identity"`
@@ -92,6 +93,8 @@ type benchmarkEntry struct {
 	PromptTokens                int64              `yaml:"prompt_tokens,omitempty"`
 	CompletionTokens            int64              `yaml:"completion_tokens,omitempty"`
 	ProviderTotalTokens         int64              `yaml:"provider_total_tokens"`
+	ProviderUsageIncomplete     bool               `yaml:"provider_usage_incomplete,omitempty"`
+	ProviderUnknownAttempts     int                `yaml:"provider_unknown_attempts,omitempty"`
 	LatencyP50MS                float64            `yaml:"latency_p50_ms,omitempty"`
 	LatencyP95MS                float64            `yaml:"latency_p95_ms,omitempty"`
 	PromptPricePerMillion       float64            `yaml:"prompt_price_per_million,omitempty"`
@@ -116,6 +119,7 @@ type evalPublishOptions struct {
 	Force                     bool
 	AllowOffSuite             bool
 	AllowSuspectScoring       bool
+	AllowIncompleteUsage      bool
 	PromptPricePerMillion     float64
 	CompletionPricePerMillion float64
 	PricingSource             string
@@ -129,10 +133,11 @@ func evalPublishCmd(evalOpts *evalCLIOptions) *cobra.Command {
 		Long: `Publish one completed evaluation report to the benchmark website.
 
 The command writes one leaderboard row and one run page, then stops. It never
-runs git. Publish refuses incomplete, environment-failed, invalid-suite,
-build-mismatched, empty, and scoring-suspect runs. It deliberately does not
-refuse a low score: accepted=false is a benchmark result, not a reason to hide
-the run.`,
+runs git. Publish refuses incomplete runs, environment failures, invalid suites,
+build mismatches, empty runs, scoring-suspect runs, and incomplete provider
+usage unless the corresponding explicit override is supplied. It deliberately
+does not refuse a low score: accepted=false is a benchmark result, not a reason
+to hide the run.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEvalPublish(cmd, evalOpts, opts, strings.TrimSpace(args[0]))
@@ -147,6 +152,7 @@ the run.`,
 	cmd.Flags().BoolVar(&opts.Force, "force", false, "replace an existing row and overwrite its page")
 	cmd.Flags().BoolVar(&opts.AllowOffSuite, "allow-off-suite", false, "publish a non-matching run as explicitly unranked")
 	cmd.Flags().BoolVar(&opts.AllowSuspectScoring, "allow-suspect-scoring", false, "publish despite an answer/method scoring divergence warning")
+	cmd.Flags().BoolVar(&opts.AllowIncompleteUsage, "allow-incomplete-usage", false, "publish with an explicit partial-usage disclosure and no cost estimate")
 	cmd.Flags().Float64Var(&opts.PromptPricePerMillion, "prompt-price-per-million", 0, "provider list price in USD per million prompt tokens")
 	cmd.Flags().Float64Var(&opts.CompletionPricePerMillion, "completion-price-per-million", 0, "provider list price in USD per million completion tokens")
 	cmd.Flags().StringVar(&opts.PricingSource, "pricing-source", "", "public pricing source or price-card date")
@@ -204,11 +210,15 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	if (report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics)) && !opts.AllowSuspectScoring {
 		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has a suspect answer/method scoring divergence; investigate it or use --allow-suspect-scoring to override", runID)}
 	}
-	if !report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 0 {
-		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has incomplete provider usage accounting; publishing requires complete prompt and completion totals", runID)}
+	usageIncomplete := !report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 0
+	if usageIncomplete && !opts.AllowIncompleteUsage {
+		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has incomplete provider usage accounting; rerun it or use --allow-incomplete-usage to publish a disclosed subtotal without cost", runID)}
 	}
 	if (opts.PromptPricePerMillion == 0) != (opts.CompletionPricePerMillion == 0) || opts.PromptPricePerMillion < 0 || opts.CompletionPricePerMillion < 0 {
 		return &evalExitError{Code: 2, Err: errors.New("list pricing requires both non-negative --prompt-price-per-million and --completion-price-per-million values")}
+	}
+	if usageIncomplete && (opts.PromptPricePerMillion != 0 || opts.CompletionPricePerMillion != 0 || strings.TrimSpace(opts.PricingSource) != "") {
+		return &evalExitError{Code: 2, Err: errors.New("incomplete provider usage cannot produce a list-cost estimate; omit pricing flags")}
 	}
 
 	dataPath := opts.Data
@@ -411,8 +421,12 @@ func reportFromBenchmarkSuite(s benchmarkSuite) gjeval.Report {
 }
 
 func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes string, ranked bool, reason string, opts *evalPublishOptions) benchmarkEntry {
-	estimatedCost := float64(report.ProviderUsage.PromptTokens)*opts.PromptPricePerMillion/1_000_000 +
-		float64(report.ProviderUsage.CompletionTokens)*opts.CompletionPricePerMillion/1_000_000
+	usageIncomplete := !report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 0
+	estimatedCost := 0.0
+	if !usageIncomplete {
+		estimatedCost = float64(report.ProviderUsage.PromptTokens)*opts.PromptPricePerMillion/1_000_000 +
+			float64(report.ProviderUsage.CompletionTokens)*opts.CompletionPricePerMillion/1_000_000
+	}
 	costPerTask := 0.0
 	if report.Metrics.TaskCount > 0 {
 		costPerTask = estimatedCost / float64(report.Metrics.TaskCount)
@@ -424,6 +438,7 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 	return benchmarkEntry{
 		RunID: report.RunID, Slug: slug, Label: label, Release: release, Notes: strings.TrimSpace(notes), Ranked: ranked, UnrankedReason: reason,
 		Generation: gjeval.PublicBenchmarkGeneration, GeneratedAt: report.GeneratedAt, Model: report.Provenance.Model, Provider: report.Provenance.Provider,
+		ResponseFormat: report.Provenance.ResponseFormat,
 		GraphJinCommit: report.Provenance.GraphJinCommit, BinaryFingerprint: report.Provenance.BinaryFingerprint,
 		SuiteIdentity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
 		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
@@ -438,8 +453,9 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		CategoryRecall: categoryRecallFromMetrics(report.Metrics.ByCategory),
 		MeanReward:     report.Metrics.MeanReward, TotalTokens: report.Metrics.TotalTokens,
 		PromptTokens: report.ProviderUsage.PromptTokens, CompletionTokens: report.ProviderUsage.CompletionTokens,
-		ProviderTotalTokens: report.ProviderUsage.TotalTokens,
-		LatencyP50MS:        report.Metrics.LatencyP50MS, LatencyP95MS: report.Metrics.LatencyP95MS,
+		ProviderTotalTokens: report.ProviderUsage.TotalTokens, ProviderUsageIncomplete: usageIncomplete,
+		ProviderUnknownAttempts: report.ProviderUsage.UnknownAttempts,
+		LatencyP50MS:            report.Metrics.LatencyP50MS, LatencyP95MS: report.Metrics.LatencyP95MS,
 		PromptPricePerMillion: opts.PromptPricePerMillion, CompletionPricePerMillion: opts.CompletionPricePerMillion,
 		EstimatedListCostUSD: estimatedCost, EstimatedListCostPerTaskUSD: costPerTask, PricingSource: pricingSource,
 		ScoringSuspect:     report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics),

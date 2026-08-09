@@ -13,6 +13,7 @@ type RunProvenance struct {
 	Provider           string  `json:"provider,omitempty"`
 	Model              string  `json:"model,omitempty"`
 	APIKeyEnv          string  `json:"api_key_env,omitempty"`
+	ResponseFormat     string  `json:"response_format,omitempty"`
 	ServerFingerprint  string  `json:"server_eval_fingerprint,omitempty"`
 	AxVersion          string  `json:"ax_version,omitempty"`
 	GraphJinCommit     string  `json:"graphjin_commit,omitempty"`

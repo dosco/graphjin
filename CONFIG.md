@@ -1088,9 +1088,10 @@ Dev and agentic modes enable it automatically. See
 
 It is an RLM (reasoning-with-code) loop built on Ax: the model writes JavaScript
 that calls the catalog tools and the typed result is parsed from `key: value`
-output. The model only needs to be good at **code generation** — it does not
-need provider tool-calling or structured-output modes — so any OpenAI-compatible
-endpoint works via `agent.base_url`.
+output. The model does not need provider tool-calling, but the Ax client requests
+structured JSON for each typed stage. GraphJin defaults to strict `json_schema`;
+OpenAI-compatible endpoints with incomplete strict-schema support can use
+`agent.response_format: json_object`.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -1099,6 +1100,7 @@ endpoint works via `agent.base_url`.
 | `agent.model` | string | - | Model name for the provider |
 | `agent.api_key_env` | string | `OPENAI_API_KEY` | Env var holding the provider API key; must be non-empty (use a dummy value for keyless local endpoints) |
 | `agent.base_url` | string | - | OpenAI-compatible provider base URL (e.g. a local or self-hosted endpoint) |
+| `agent.response_format` | string | `json_schema` | Structured-output mode: strict `json_schema`, or `json_object` for compatible endpoints whose strict schema decoder is unreliable |
 | `agent.max_steps` | integer | `8` | Maximum agent actor steps per request |
 | `agent.timeout_seconds` | integer | `50` | Request timeout for agent runs; values below 50 are raised to the 50-second minimum |
 | `agent.read_only` | boolean | `false` | Force the server-side agent to reject mutations, including saved-query mutations |

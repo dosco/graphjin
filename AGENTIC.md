@@ -155,8 +155,10 @@ that calls the same catalog tools as runtime globals (`query_catalog`,
 `graphql_help`, `validate_where_clause`, `execute_saved_query`,
 `execute_graphql`, `final`), and the typed result is parsed from `key: value`
 output. There is no dependency on
-provider tool-calling or structured-output modes — the model only needs to
-generate competent code — so any OpenAI-compatible endpoint works.
+provider tool-calling, but Ax requests structured JSON for each typed stage.
+The default is strict `json_schema`; set `agent.response_format: json_object`
+for an OpenAI-compatible endpoint whose strict schema decoder does not reliably
+complete GraphJin's response schema.
 
 There are no per-request modes. A single operator kill-switch,
 `agent.read_only: true`, forces the agent read-only: mutations are rejected at

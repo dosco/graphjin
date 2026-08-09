@@ -23,6 +23,7 @@ const (
 
 	defaultProvider       = "openai"
 	defaultAPIKeyEnv      = "OPENAI_API_KEY"
+	defaultResponseFormat = ResponseFormatJSONSchema
 	defaultMaxSteps       = 8
 	minTimeoutSeconds     = 50
 	defaultTimeoutSeconds = minTimeoutSeconds
@@ -55,6 +56,7 @@ type Config struct {
 	Model          string `mapstructure:"model" jsonschema:"title=Agent Model"`
 	APIKeyEnv      string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
 	BaseURL        string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
+	ResponseFormat string `mapstructure:"response_format" jsonschema:"title=Agent Response Format,default=json_schema,enum=json_schema,enum=json_object"`
 	MaxSteps       int    `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
 	TimeoutSeconds int    `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
 	ReadOnly       bool   `mapstructure:"read_only" jsonschema:"title=Force Agent Read-Only,default=false"`
@@ -338,6 +340,9 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		return Response{}, ErrInstructionTooLong
 	}
 	cfg := a.config.withDefaults()
+	if err := ValidateResponseFormat(cfg.ResponseFormat); err != nil {
+		return Response{}, err
+	}
 	// read_only is the single operator kill-switch (D3) that forces the agent to
 	// read/discovery-only regardless of the caller's role. It replaces the removed
 	// per-request safe/discovery_only/raw_allowed modes.
@@ -355,6 +360,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if err != nil {
 		return Response{}, err
 	}
+	client = withResponseFormat(client, cfg.ResponseFormat)
 
 	traceID := a.traceID()
 	var program Program
@@ -518,6 +524,7 @@ func (c Config) withDefaults() Config {
 	if c.APIKeyEnv == "" {
 		c.APIKeyEnv = defaultAPIKeyEnv
 	}
+	c.ResponseFormat = EffectiveResponseFormat(c.ResponseFormat)
 	if c.MaxSteps <= 0 {
 		c.MaxSteps = defaultMaxSteps
 	}

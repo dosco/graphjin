@@ -146,9 +146,15 @@ func TestScoreBehaviorRequiresSuccessfulActionOutcome(t *testing.T) {
 }
 
 func TestResponseEnvironmentFailureRecognizesProviderAuthHeaderError(t *testing.T) {
-	response := gjagent.Response{Status: "error", Errors: []gjagent.ErrorInfo{{Message: "invalid x-api-key"}}}
-	if !responseEnvironmentFailure(response) {
-		t.Fatal("Anthropic authentication failure must be classified as an environment error")
+	for _, message := range []string{
+		"invalid x-api-key",
+		"status: UNAUTHENTICATED: Request had invalid authentication credentials",
+		"code:429 message:The request queue is full. status:RESOURCE_EXHAUSTED",
+	} {
+		response := gjagent.Response{Status: "error", Errors: []gjagent.ErrorInfo{{Message: message}}}
+		if !responseEnvironmentFailure(response) {
+			t.Fatalf("authentication failure %q must be classified as an environment error", message)
+		}
 	}
 }
 

@@ -482,3 +482,63 @@ runs:
       unsafe_effects: 0
       rescored_from: 20260807T223233.695357000Z-79a98cc0
       accepted: true
+    - run_id: 20260808T183634.266245000Z-ecff3212
+      slug: 20260808t183634-ecff3212
+      label: Gemma 4 26B A4B IT (Vertex AI MaaS)
+      release: b0a97fd8
+      notes: Vertex AI Model as a Service (MaaS) capacity pressure affected latency during this run; the reported latency reflects observed shared-service conditions, not model-only performance. Provider token total is a known subtotal because two interrupted attempts returned no usage.
+      ranked: true
+      generation: "2027.1"
+      generated_at: 2026-08-08T18:36:34.266245Z
+      model: google/gemma-4-26b-a4b-it-maas
+      provider: openai-compatible
+      response_format: json_object
+      graphjin_commit: b0a97fd8
+      binary_fingerprint: 71c66f69db6d6b368adaf84de00684633d8c15af387521bc70d0222d5220d54f
+      suite_identity: 63d08400d4ca5dc51560d1e0236afcda
+      suite_fingerprint: 68bc8a8784947a44d12a87d7f2c5a856
+      catalog_hash: c5bca3b5cb6572af53a9d4e954b87031
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 84e5a3b073f2474b15e4e1677551673e3949b133351b2de1c139f288d051c979
+      data_anchor: "2026-08-08"
+      reward_version: graphjin.eval.reward/v3
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 100
+      episode_count: 300
+      recall: 0.64
+      recall_ci_low: 0.55
+      recall_ci_high: 0.73
+      pass_at_k: 0.75
+      pass_power_k: 0.27
+      ground_truth_recall: 0.6333333333333333
+      method_recall: 0.6222222222222222
+      safety_precision: 1
+      behavior_recall: 0.67
+      category_recall:
+        action: 0
+        aggregate: 0.8823529411764706
+        cross-source: 0
+        discovery: 0.625
+        multi-turn: 0.2
+        ranking: 0.7692307692307693
+        reactive: 0
+        refusal: 1
+        saved-metric: 0.875
+        window: 0.9411764705882353
+      mean_reward: 0.7459149999999998
+      total_tokens: 15841423
+      prompt_tokens: 15332608
+      completion_tokens: 696551
+      provider_total_tokens: 16029159
+      provider_usage_incomplete: true
+      provider_unknown_attempts: 2
+      latency_p50_ms: 39471
+      latency_p95_ms: 139924
+      guard_interventions: 228
+      unsafe_effects: 0
+      rescored_from: 20260808T123933.585320000Z-d293e684
+      accepted: true

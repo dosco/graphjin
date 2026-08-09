@@ -2,6 +2,7 @@
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
 {{- $runs := default (slice) $data.runs -}}
 {{- $accepted := sort (where (where (where $runs "ranked" true) "generation" $data.suite.generation) "accepted" true) "recall" "desc" -}}
+{{- $priced := where $accepted "estimated_list_cost_usd" "gt" 0 -}}
 <aside class="benchmark-honesty" aria-labelledby="benchmark-honesty-title">
   <p class="home-section-label">Read the fine print</p>
   <h2 id="benchmark-honesty-title">What this board does—and does not—prove</h2>
@@ -24,7 +25,8 @@
     </section>
     <section>
       <h3>Cost and corrections</h3>
-      {{ range first 1 $accepted }}<p>Cost uses recorded provider prompt and completion tokens multiplied by {{ .pricing_source | default "the supplied list-price card" }}. It is an estimate, not an invoice.</p>{{ end }}
+      {{ range first 1 $priced }}<p>Cost uses recorded provider prompt and completion tokens multiplied by {{ .pricing_source | default "the supplied list-price card" }}. It is an estimate, not an invoice.</p>{{ end }}
+      <p>Runs with incomplete provider usage show the known token subtotal, disclose unmetered attempts, and omit cost estimates.</p>
       <p>We previously retracted a run whose stale scoring contract rejected a valid database dialect. Read the <a href="{{ printf "/benchmarks/%s/methodology/#scoring-correction" $data.benchmark.slug | relURL }}">correction and the guards added afterward</a>.</p>
     </section>
   </div>

@@ -84,6 +84,39 @@ func TestEvalPublishSuspectScoringRequiresExplicitOverride(t *testing.T) {
 	}
 }
 
+func TestEvalPublishIncompleteUsageRequiresExplicitUnpricedOverride(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101112.000000000Z-incomplete-usage-override")
+	report.ProviderUsage.Complete = false
+	report.ProviderUsage.UnknownAttempts = 2
+	writePublishTestReport(t, project, report)
+
+	err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site})
+	if err == nil || !strings.Contains(err.Error(), "--allow-incomplete-usage") {
+		t.Fatalf("incomplete usage publish error = %v", err)
+	}
+	err = publishTestRun(t, project, site, report.RunID, &evalPublishOptions{
+		Site: site, AllowIncompleteUsage: true, PromptPricePerMillion: .15, CompletionPricePerMillion: .60,
+	})
+	if err == nil || !strings.Contains(err.Error(), "omit pricing flags") {
+		t.Fatalf("priced incomplete usage publish error = %v", err)
+	}
+	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site, AllowIncompleteUsage: true}); err != nil {
+		t.Fatalf("explicit incomplete usage override failed: %v", err)
+	}
+	data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
+	if err != nil || len(data.Runs) != 1 {
+		t.Fatalf("incomplete usage benchmark data = %+v err=%v", data.Runs, err)
+	}
+	entry := data.Runs[0]
+	if !entry.ProviderUsageIncomplete || entry.ProviderUnknownAttempts != 2 || entry.ProviderTotalTokens != report.ProviderUsage.TotalTokens {
+		t.Fatalf("incomplete usage disclosure = %+v", entry)
+	}
+	if entry.EstimatedListCostUSD != 0 || entry.EstimatedListCostPerTaskUSD != 0 || entry.PricingSource != "" {
+		t.Fatalf("incomplete usage unexpectedly priced = %+v", entry)
+	}
+}
+
 func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 	project, site := t.TempDir(), t.TempDir()
 	report := publishTestReport("20260803T101112.000000000Z-ab12cd34")

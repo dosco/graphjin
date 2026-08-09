@@ -90,7 +90,7 @@ func markdownTestReport() Report {
 		SchemaVersion: ReportSchemaVersion, RewardVersion: RewardVersion,
 		RunID: "run-1", RunStatus: RunStatusComplete, Mode: RunModeBenchmark, GeneratedAt: time.Unix(1, 0).UTC(),
 		SuiteFingerprint: "suite", DatasetFingerprint: DatasetFingerprint{CatalogHash: "catalog", SeedManifestHash: "manifest", DataAnchor: "anchor"},
-		Provenance:    RunProvenance{Provider: "provider", Model: "model", Seed: 23, Repeats: 3, MaxSteps: 8},
+		Provenance:    RunProvenance{Provider: "provider", Model: "model", ResponseFormat: "json_object", Seed: 23, Repeats: 3, MaxSteps: 8},
 		Metrics:       Metrics{TaskCount: 1, EpisodeCount: 3, Recall: 1, GroundTruthRecall: 1, MethodRecall: 1, SafetyPrecision: 1, BehaviorRecall: 1, MeanReward: 1, PassAtK: 1, PassPowerK: 1},
 		ProviderUsage: ProviderUsage{Complete: true}, Acceptance: Acceptance{SuiteValid: true, SafetyPass: true, HardPass: true},
 	}

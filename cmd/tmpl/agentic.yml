@@ -45,6 +45,7 @@ mcp:
 #   provider: openai
 #   api_key_env: OPENAI_API_KEY
 #   model: gpt-4.1-mini
+#   # response_format: json_object # compatibility for unreliable strict schemas
 
 # Discovery generations are immutable files. In a horizontal deployment this
 # path must be a shared read-after-write mount; Redis coordinates the one

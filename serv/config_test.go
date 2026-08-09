@@ -107,13 +107,14 @@ func TestDiscoveryAndSemanticNestedEnvironmentOverrides(t *testing.T) {
 func TestAgentModelAndBaseURLEnvironmentOverrides(t *testing.T) {
 	t.Setenv("GJ_AGENT_MODEL", "coffee-agent-smoke-v1")
 	t.Setenv("GJ_AGENT_BASE_URL", "http://127.0.0.1:18081/v1")
+	t.Setenv("GJ_AGENT_RESPONSE_FORMAT", "json_object")
 
 	vi := newViperWithDefaults()
 	var conf Config
 	if err := vi.Unmarshal(&conf); err != nil {
 		t.Fatal(err)
 	}
-	if conf.Agent.Model != "coffee-agent-smoke-v1" || conf.Agent.BaseURL != "http://127.0.0.1:18081/v1" {
+	if conf.Agent.Model != "coffee-agent-smoke-v1" || conf.Agent.BaseURL != "http://127.0.0.1:18081/v1" || conf.Agent.ResponseFormat != "json_object" {
 		t.Fatalf("agent environment overrides were not applied: %+v", conf.Agent)
 	}
 }
@@ -168,6 +169,7 @@ agent:
   model: local-model
   api_key_env: GRAPHJIN_AGENT_KEY
   base_url: http://127.0.0.1:11434/v1
+  response_format: json_object
   max_steps: 3
   timeout_seconds: 11
   read_only: true
@@ -179,7 +181,7 @@ agent:
 	if !conf.Agent.Enabled || conf.Agent.Provider != "openai-compatible" || conf.Agent.Model != "local-model" {
 		t.Fatalf("agent provider config drift: %+v", conf.Agent)
 	}
-	if conf.Agent.APIKeyEnv != "GRAPHJIN_AGENT_KEY" || conf.Agent.BaseURL != "http://127.0.0.1:11434/v1" {
+	if conf.Agent.APIKeyEnv != "GRAPHJIN_AGENT_KEY" || conf.Agent.BaseURL != "http://127.0.0.1:11434/v1" || conf.Agent.ResponseFormat != "json_object" {
 		t.Fatalf("agent connection config drift: %+v", conf.Agent)
 	}
 	if conf.Agent.MaxSteps != 3 || conf.Agent.TimeoutSeconds != 11 || !conf.Agent.ReadOnly || !conf.Agent.ReturnTrace {
@@ -190,11 +192,17 @@ agent:
 	if err != nil {
 		t.Fatalf("NewConfig defaults: %v", err)
 	}
-	if !defaults.Agent.Enabled || defaults.Agent.Provider != "openai" || defaults.Agent.APIKeyEnv != "OPENAI_API_KEY" {
+	if !defaults.Agent.Enabled || defaults.Agent.Provider != "openai" || defaults.Agent.APIKeyEnv != "OPENAI_API_KEY" || defaults.Agent.ResponseFormat != "json_schema" {
 		t.Fatalf("unexpected agent defaults: %+v", defaults.Agent)
 	}
 	if defaults.Agent.MaxSteps != 8 || defaults.Agent.TimeoutSeconds != 50 || defaults.Agent.ReadOnly || defaults.Agent.ReturnTrace {
 		t.Fatalf("unexpected agent runtime defaults: %+v", defaults.Agent)
+	}
+}
+
+func TestAgentConfigRejectsInvalidResponseFormat(t *testing.T) {
+	if _, err := NewConfig("agent:\n  response_format: xml\n", "yaml"); err == nil {
+		t.Fatal("expected invalid agent.response_format to be rejected")
 	}
 }
 

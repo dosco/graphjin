@@ -224,6 +224,11 @@ that case `provider_usage.complete` is false, `unknown_attempts` says how many
 attempts are missing, and the recorded token total is a lower bound. GraphJin
 does not silently treat those unknown attempts as zero.
 
+`graphjin eval publish` refuses such a report by default. An audited public run
+may use `--allow-incomplete-usage`; the benchmark then labels the token count as
+a known subtotal, records the number of unmetered attempts, and omits all cost
+estimates. Pricing flags cannot be combined with this override.
+
 Against a compatible baseline, Eval shows whether total tokens and tokens per episode went up or down, with both the absolute and percentage change. Reports
 use `graphjin.eval.report/v3` and a separate `usage_accounting_version`. Token
 percentages are disabled when the accounting version, provider, model,
