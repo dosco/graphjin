@@ -176,17 +176,18 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 		t.Error("the current_date input did not reach a staged prompt — date anchoring guidance has no value to anchor on")
 	}
 	loadedSkillBytes := 0
-	for _, definition := range allowedSkills(false, nil) {
+	loadedSkills := allowedSkills(false, nil)
+	for _, definition := range loadedSkills {
 		loadedSkillBytes += len(definition.content)
 	}
 	t.Logf(
-		"payload audit: staged_bytes=%d runtime_usage_bytes=%d loaded_skill_bytes=%d tool_result_staged=%t",
-		rendered.Len(), len(runtimeUsageInstructions), loadedSkillBytes, toolResultStaged,
+		"payload audit: staged_bytes=%d runtime_usage_bytes=%d loaded_skill_bytes=%d capability_addendum_bytes=%d tool_result_staged=%t",
+		rendered.Len(), len(runtimeUsageInstructions), loadedSkillBytes, len(capabilityCompletionInstructions(loadedSkills)), toolResultStaged,
 	)
 }
 
-func TestBlockedCompletionGuidanceIsExecutorOnly(t *testing.T) {
-	const blockedMarker = "Governed blocked-completion directive"
+func TestCapabilityCompletionGuidanceIsExecutorOnly(t *testing.T) {
+	const capabilityMarker = "Governed per-run capability facts"
 	rec := &recordingClient{responses: []string{
 		`{"javascriptCode":"await final('Carry out the requested write and reactive work.', {})"}`,
 		`{"javascriptCode":"await final({status:'answered',answer:'done'}, {})"}`,
@@ -209,7 +210,7 @@ func TestBlockedCompletionGuidanceIsExecutorOnly(t *testing.T) {
 	if strings.Contains(distiller, "Skill: data_write") || strings.Contains(distiller, "Skill: watch_write") {
 		t.Fatal("distiller unexpectedly received executor skill documents")
 	}
-	if strings.Contains(distiller, blockedMarker) {
+	if strings.Contains(distiller, capabilityMarker) {
 		t.Fatal("distiller received capability-denial guidance without the executor's authoritative skill documents")
 	}
 
@@ -218,14 +219,17 @@ func TestBlockedCompletionGuidanceIsExecutorOnly(t *testing.T) {
 		rendered := dumpAXValue(call.values) + dumpAXValue(call.options)
 		if strings.Contains(rendered, "Skill: data_write") && strings.Contains(rendered, "Skill: watch_write") {
 			executorWithCapabilities = true
-			if !strings.Contains(rendered, blockedMarker) {
-				t.Fatal("write-capable executor omitted blocked-completion guidance")
+			if !strings.Contains(rendered, capabilityMarker) {
+				t.Fatal("write-capable executor omitted capability-completion guidance")
+			}
+			if !strings.Contains(rendered, "watch_write is loaded for this run") || strings.Contains(rendered, "watch_write is not loaded") {
+				t.Fatal("write-capable executor received the wrong Go-selected watch branch")
 			}
 			break
 		}
 	}
 	if !executorWithCapabilities {
-		t.Fatal("no executor prompt combined data_write, watch_write, and capability-denial guidance")
+		t.Fatal("no executor prompt combined data_write, watch_write, and capability-completion guidance")
 	}
 }
 

@@ -204,6 +204,38 @@ func TestSkillPayloadBudgets(t *testing.T) {
 	}
 }
 
+func TestCapabilityCompletionInstructionBudgets(t *testing.T) {
+	allRoots := []string{
+		systemRootSecurity,
+		systemRootRuntime,
+		systemRootConfig,
+		systemRootWorkflow,
+		systemRootWorkflowExec,
+		systemRootWatch,
+		systemRootWatchEvent,
+		systemRootTask,
+		systemRootTaskEntry,
+	}
+	for _, tc := range []struct {
+		name     string
+		readOnly bool
+		profile  *CapabilityProfile
+		max      int
+	}{
+		{name: "read-only user", readOnly: true, profile: profileWithRoleAndRoots("user"), max: 4 * 1024},
+		{name: "watch user", profile: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent), max: 4 * 1024},
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 4 * 1024},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := capabilityCompletionInstructions(allowedSkills(tc.readOnly, tc.profile))
+			if len(payload) > tc.max {
+				t.Fatalf("capability addendum = %d bytes, max %d", len(payload), tc.max)
+			}
+			t.Logf("capability addendum: %d bytes", len(payload))
+		})
+	}
+}
+
 func TestWatchSkillsTeachAllFourDecisionBranches(t *testing.T) {
 	// The merged watch_write guide must retain the behavioral contract formerly
 	// split across watch_write, watch_flow, and watch_delivery.

@@ -126,22 +126,41 @@ func TestRuntimeUsageInstructionsCarryTheTruncationContract(t *testing.T) {
 	}
 }
 
-func TestBlockedCompletionPromptContract(t *testing.T) {
+func TestCapabilityCompletionPromptContract(t *testing.T) {
+	denied := capabilityCompletionInstructions(allowedSkills(true, profileWithRoleAndRoots("user")))
 	for _, phrase := range []string{
-		"skills loaded for this run are authoritative evidence",
-		"absence of write skills is authoritative evidence",
-		"matching skill is not loaded",
-		"at most one model-driven query_catalog or graphql_help lookup",
-		`final({status:"blocked", answer, evidence, next})`,
-		"Do not ask for target clarification",
-		"attempt the forbidden mutation",
-		"enter schema-repair loops for a policy denial",
-		`"Recover before blocking" applies only`,
-		"permitted reads, permitted writes, and their normal recovery paths continue unchanged",
+		"Governed per-run capability facts",
+		"data_write is not loaded for this run",
+		"application-table mutations are not available to this caller",
+		"code_write is not loaded for this run",
+		"watch_write is not loaded for this run",
+		"admin_write is not loaded for this run",
+		"Never infer a global posture from another capability class",
 	} {
-		if !strings.Contains(blockedCompletionInstructions, phrase) {
-			t.Fatalf("blocked-completion guidance missing %q", phrase)
+		if !strings.Contains(denied, phrase) {
+			t.Fatalf("capability-completion guidance missing %q", phrase)
 		}
+	}
+	for _, overgeneralization := range []string{"absence of write skills", "global read-only posture"} {
+		if strings.Contains(denied, overgeneralization) {
+			t.Fatalf("capability-completion guidance retained overgeneralization %q", overgeneralization)
+		}
+	}
+
+	watchEnabled := capabilityCompletionInstructions(allowedSkills(false,
+		profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent)))
+	for _, phrase := range []string{
+		"watch_write is loaded for this run",
+		"watch lifecycle writes are available to attempt",
+		"mutation { gj_watch(insert:",
+		"Do not claim that watch creation is read-only or unavailable",
+	} {
+		if !strings.Contains(watchEnabled, phrase) {
+			t.Fatalf("watch-enabled guidance missing %q", phrase)
+		}
+	}
+	if strings.Contains(watchEnabled, "watch_write is not loaded") {
+		t.Fatal("watch-enabled guidance retained the watch denial branch")
 	}
 
 	// These are the two public refusal behaviors this contract must resolve.
@@ -175,11 +194,11 @@ func TestBlockedCompletionPromptContract(t *testing.T) {
 			if resp.Status != StatusBlocked {
 				t.Fatalf("status = %s, want blocked", resp.Status)
 			}
-			if !strings.Contains(prompt, "Governed blocked-completion directive") {
-				t.Fatal("live executor prompt omitted blocked-completion directive")
+			if !strings.Contains(prompt, "Governed per-run capability facts") {
+				t.Fatal("live executor prompt omitted capability-completion facts")
 			}
-			if strings.Contains(blockedCompletionInstructions, instruction) {
-				t.Fatal("blocked-completion directive contains a benchmark-specific prompt rule")
+			if strings.Contains(denied, instruction) {
+				t.Fatal("capability-completion facts contain a benchmark-specific prompt rule")
 			}
 			if containsString(optionSkillIDs(t, program.options["skills"]), skillDataWrite) {
 				t.Fatal("read-only refusal prompt unexpectedly received data_write")
@@ -191,19 +210,22 @@ func TestBlockedCompletionPromptContract(t *testing.T) {
 	}
 }
 
-func TestBlockedCompletionContractPreservesPermittedWorkAndRepair(t *testing.T) {
-	prompt := runtimeInstructionText(CatalogSearchFeatures{}) + "\n\n" + blockedCompletionInstructions
+func TestCapabilityCompletionContractPreservesPermittedWorkAndRepair(t *testing.T) {
+	permittedSkills := allowedSkills(false, profileWithRoleAndRoots("admin", systemRootConfig))
+	prompt := runtimeInstructionText(CatalogSearchFeatures{}) + "\n\n" + capabilityCompletionInstructions(permittedSkills)
 	for _, phrase := range []string{
 		"When an execution result contains errors, recover inside this run",
 		"errors[].extensions.graphjin_repair",
-		"otherwise permitted read or write execution returned a repairable query or schema error",
+		"data_write is loaded for this run",
+		"admin_write is loaded for this run",
+		"only a runtime denial or failed in-run recovery may block it",
 	} {
 		if !strings.Contains(prompt, phrase) {
 			t.Fatalf("combined runtime prompt missing recovery contract %q", phrase)
 		}
 	}
 
-	permitted := skillIDs(allowedSkills(false, profileWithRoleAndRoots("admin", systemRootConfig)))
+	permitted := skillIDs(permittedSkills)
 	for _, skill := range []string{skillDataDiscovery, skillDataWrite, skillAdminWrite} {
 		if !containsString(permitted, skill) {
 			t.Fatalf("writable admin profile lost permitted skill %q: %v", skill, permitted)
