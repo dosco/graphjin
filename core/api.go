@@ -866,7 +866,7 @@ func (g *GraphJin) GraphQL(c context.Context,
 	return
 }
 
-// GraphQLTx is similiar to the GraphQL function except that it can be used
+// GraphQLTx is similar to the GraphQL function except that it can be used
 // within a database transactions.
 func (g *GraphJin) GraphQLTx(c context.Context,
 	tx *sql.Tx,
@@ -958,7 +958,7 @@ func (g *GraphJin) GraphQLBySavedQuery(c context.Context,
 	return
 }
 
-// GraphQLByNameTx is similiar to the GraphQLByName function except
+// GraphQLByNameTx is similar to the GraphQLByName function except
 // that it can be used within a database transactions.
 func (g *GraphJin) GraphQLByNameTx(c context.Context,
 	tx *sql.Tx,
