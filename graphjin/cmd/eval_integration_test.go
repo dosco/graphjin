@@ -316,7 +316,7 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 	client.setSequence(
 		`await final('Review the payments watch event through the governed watch path.', {watch:'payments'});`,
 		`await used('watch_read'); const security = await query_catalog({id:"help:security"}); const runtime = await query_catalog({id:"help:runtime"}); const help = await query_catalog({id:"help:watches"}); const wrong = await execute_graphql({query:"query { watch_events_unseen { id watch_id seen } }"}); await final('Continue from the watch-root repair.', {security,runtime,help,wrong});`,
-		`await used('watch_read'); const inbox = await execute_graphql({query:"query { gj_watch_event(where: {seen: {eq: false}}, order_by: {created_at: desc}, limit: 1) { id watch_id data_json seen } }"}); const event = inbox.data.gj_watch_event[0]; const marked = await execute_graphql({query:"mutation MarkSeen($id: String!) { gj_watch_event(where: {id: {eq: $id}}, update: {seen:true}) { id seen } }", variables:{id:event.id}}); await final({status:"answered", answer:"Reviewed the delivered payment watch event and marked it seen.", data:{event,marked:marked.data}});`,
+		`await used('watch_read'); const event = graphjinSystemRootRepair.data.gj_watch_event[0]; const marked = await execute_graphql({query:"mutation MarkSeen($id: String!) { gj_watch_event(where: {id: {eq: $id}}, update: {seen:true}) { id seen } }", variables:{id:event.id}}); await final({status:"answered", answer:"Reviewed the delivered payment watch event and marked it seen.", data:{event,marked:marked.data}});`,
 	)
 	deliveryStore := gjeval.NewStore(t.TempDir())
 	report, err := (gjeval.Runner{}).Run(context.Background(), *suite, instance, gjeval.RunOptions{Repeats: 1, Seed: 23, Store: deliveryStore})

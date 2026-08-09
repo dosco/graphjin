@@ -322,6 +322,14 @@ func TestNormalizeWatchDeliveryPreservesDigest(t *testing.T) {
 	if !action || cfg.Digest.Window != 7*24*time.Hour || !strings.Contains(got, `"digest":{"window":"168h0m0s"}`) {
 		t.Fatalf("action digest = %q %+v action=%v", got, cfg, action)
 	}
+	got, cfg, action, err = normalizeWatchDeliveryJSON(`{"digest":{"window":"1h"}}`)
+	if err != nil {
+		t.Fatalf("normalize digest with default inbox kind: %v", err)
+	}
+	if action || cfg.Kind != "inbox" || cfg.Digest.Window != time.Hour ||
+		got != `{"digest":{"window":"1h0m0s"},"kind":"inbox"}` {
+		t.Fatalf("default inbox digest = %q %+v action=%v", got, cfg, action)
+	}
 }
 
 func watchTestJSONString(value any) string {
