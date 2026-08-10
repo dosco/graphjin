@@ -279,6 +279,39 @@ func TestGraphJinRuntimeRequiresExplicitHandoffReadBeforeToolCall(t *testing.T) 
 	}
 }
 
+func TestGraphJinRuntimeUsesGovernedDistillerDetailFallback(t *testing.T) {
+	runtime := newGraphJinCodeRuntime(nil, nil, nil, nil).WithHandoffFallback(func() any {
+		return map[string]any{
+			"catalog_detail_ids": []any{"source:account_health_api", "table:app:main.account_health"},
+			"catalog_detail": map[string]any{
+				"cards": []any{map[string]any{"id": "source:account_health_api"}},
+				"details": []any{map[string]any{
+					"section": "query_shape",
+					"content": `query { accounts { account_health { health open_risk_count } } }`,
+				}},
+			},
+		}
+	})
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "Combine the account and health API."},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	session.Execute(`await final("combine sources", {});`, nil)
+	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
+	guarded := mapValue(session.Execute(`await final("guessed", {});`, nil))
+	if stringFromMap(mapValue(guarded["result"]), "graphjin_protocol") != "runtime_handoff_read_required" {
+		t.Fatalf("fallback-blind final = %+v", guarded)
+	}
+	accepted := session.Execute(`const shape = graphjinDistilledContext.catalog_detail.details[0].content; await final("use shape", {shape});`, nil)
+	if runtimeCompletionType(accepted) != "final" {
+		t.Fatalf("fallback-grounded final = %+v", accepted)
+	}
+}
+
 func TestGraphJinRuntimeRejectsPrematureExecutorFinalForRequiredSavedQuery(t *testing.T) {
 	pending := `const detail = await query_catalog({id:"saved_query:daily_roast_context"}); const execution = await execute_saved_query({name:"daily_roast_context"});`
 	runtime := newGraphJinCodeRuntime(nil, nil, func() string { return pending }, nil)
@@ -328,13 +361,17 @@ func TestGraphJinRuntimeRejectsFinalUntilExecutionRepair(t *testing.T) {
 	defer session.Close()
 	session.Execute(`await final("distilled", {});`, nil)
 	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
-	rejected := mapValue(session.Execute(`await final("blocked", {});`, nil))
+	rejected := mapValue(session.Execute(`await final("blocked", {execution:{errors:[{message:"unknown root"}], recovery:{next:"query accounts instead"}}});`, nil))
 	result := mapValue(rejected["result"])
 	if got := stringFromMap(result, "graphjin_protocol"); got != "execution_repair_required" {
 		t.Fatalf("protocol = %q, result=%+v", got, rejected)
 	}
 	if strings.Contains(stringFromMap(result, "message"), "execution_repair_required:") {
 		t.Fatalf("public message leaked internal prefix: %+v", result)
+	}
+	attempt := mapValue(result["attempt"])
+	if mapValue(attempt["execution"])["errors"] == nil {
+		t.Fatalf("repair response discarded attempted execution evidence: %+v", result)
 	}
 	pending = ""
 	accepted := session.Execute(`await final("answered", {count: 4});`, nil)
@@ -397,10 +434,15 @@ func TestGraphJinRuntimeRequiresCodeReadForHistoryDependentFollowUp(t *testing.T
 	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
 
 	guarded := mapValue(session.Execute(`await final("missing trail", {});`, nil))
-	if stringFromMap(mapValue(guarded["result"]), "graphjin_protocol") != "history_read_required" {
+	guardResult := mapValue(guarded["result"])
+	if stringFromMap(guardResult, "graphjin_protocol") != "history_read_required" {
 		t.Fatalf("history-blind executor step = %+v, want history_read_required", guarded)
 	}
-	accepted := mapValue(session.Execute(`const prior = graphjinHistory.at(-1); await final("repeat marker", {marker: prior.content});`, nil))
+	history := anySlice(guardResult["history"])
+	if len(history) != 1 || stringFromMap(mapValue(history[0]), "content") != "FIRST-TRAIL-RUNTIME-ONLY" {
+		t.Fatalf("automatic history recovery = %+v", guardResult)
+	}
+	accepted := mapValue(session.Execute(`await final("repeat marker", {marker: "FIRST-TRAIL-RUNTIME-ONLY"});`, nil))
 	if runtimeCompletionType(accepted) != "final" {
 		t.Fatalf("history-grounded executor final = %+v, want final", accepted)
 	}
