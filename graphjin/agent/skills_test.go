@@ -11,7 +11,23 @@ import (
 )
 
 func profileWithRoleAndRoots(role string, roots ...string) *CapabilityProfile {
-	return &CapabilityProfile{RoleClass: role, AvailableSystemRoots: roots}
+	actions := []string{
+		CapabilityActionDataInsert,
+		CapabilityActionDataUpdate,
+		CapabilityActionDataDelete,
+		CapabilityActionCodeWrite,
+	}
+	for _, root := range roots {
+		for _, action := range []string{"insert", "update", "delete"} {
+			actions = append(actions, root+"."+action)
+		}
+	}
+	return &CapabilityProfile{
+		RoleClass:            role,
+		AllowedActions:       actions,
+		AvailableTools:       []string{toolGraphQLHelp, toolQueryCatalog, toolValidateWhere, toolExecuteSavedQuery, toolExecuteGraphQL},
+		AvailableSystemRoots: roots,
+	}
 }
 
 func skillIDs(definitions []skillDefinition) []string {
@@ -94,7 +110,7 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 		profile  *CapabilityProfile
 		want     []string
 	}{
-		{name: "anonymous", want: baseWrite},
+		{name: "missing profile fails closed", want: baseRead},
 		{name: "anonymous read only", readOnly: true, want: baseRead},
 		{
 			name:    "workflow execution only",

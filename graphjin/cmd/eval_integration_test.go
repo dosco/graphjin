@@ -315,7 +315,7 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 	}
 	client.setSequence(
 		`await final('Review the payments watch event through the governed watch path.', {watch:'payments'});`,
-		`await used('watch_read'); const security = await query_catalog({id:"help:security"}); const runtime = await query_catalog({id:"help:runtime"}); const help = await query_catalog({id:"help:watches"}); const wrong = await execute_graphql({query:"query { watch_events_unseen { id watch_id seen } }"}); await final('Continue from the watch-root repair.', {security,runtime,help,wrong});`,
+		`await used('watch_read'); const handoff = globalThis.graphjinDistilledContext; const security = await query_catalog({id:"help:security"}); const runtime = await query_catalog({id:"help:runtime"}); const help = await query_catalog({id:"help:watches"}); const wrong = await execute_graphql({query:"query { watch_events_unseen { id watch_id seen } }"}); await final('Continue from the watch-root repair.', {handoff,security,runtime,help,wrong});`,
 		`await used('watch_read'); const event = graphjinSystemRootRepair.data.gj_watch_event[0]; const marked = await execute_graphql({query:"mutation MarkSeen($id: String!) { gj_watch_event(where: {id: {eq: $id}}, update: {seen:true}) { id seen } }", variables:{id:event.id}}); await final({status:"answered", answer:"Reviewed the delivered payment watch event and marked it seen.", data:{event,marked:marked.data}});`,
 	)
 	deliveryStore := gjeval.NewStore(t.TempDir())
@@ -392,8 +392,9 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 const security = await query_catalog({id:"help:security"});
 const runtime = await query_catalog({id:"help:runtime"});
 const help = await query_catalog({id:"help:watches"});
+const table = await query_catalog({id:"table:app:main.invoices"});
 const created = await execute_graphql({query:%q});
-await final({status:"answered", answer:"Created the hourly failed-invoice watch.", data:created.data, evidence:[security,runtime,help]});
+await final({status:"answered", answer:"Created the hourly failed-invoice watch.", data:created.data, evidence:[security,runtime,help,table]});
 `, definitionMutation))
 	definitionSuite := *suite
 	definitionSuite.Tasks = []gjeval.Task{*definition}

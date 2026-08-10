@@ -754,7 +754,7 @@ func TestRunBlocksUnverifiedMutation(t *testing.T) {
 		}),
 	)
 
-	resp, err := runner.Run(context.Background(), Request{Instruction: "add a product"})
+	resp, err := runner.Run(context.Background(), Request{Instruction: "add a product", Capabilities: profileWithRoleAndRoots("user")})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -797,7 +797,7 @@ func TestRunAllowsMutationAfterTableDetail(t *testing.T) {
 		}),
 	)
 
-	resp, err := runner.Run(context.Background(), Request{Instruction: "add a product"})
+	resp, err := runner.Run(context.Background(), Request{Instruction: "add a product", Capabilities: profileWithRoleAndRoots("user")})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -826,6 +826,7 @@ func TestRunRequiresLaterUserConfirmationForWatchActionApproval(t *testing.T) {
 			program.onForward = func(p *fakeProgram) {
 				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:security"})
 				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:watches"})
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "table:db:public.inventory"})
 				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{
 					"query": `mutation { gj_watch(insert: { name: "reorder", query: "subscription { inventory { id } }", delivery_json: { kind: "workflow", name: "draft_po" } }) { id action_hash action_approval } }`,
 				})
@@ -850,7 +851,7 @@ func TestRunRequiresLaterUserConfirmationForWatchActionApproval(t *testing.T) {
 	if !responseHasProtocolError(resp, "watch_action_confirmation_required") {
 		t.Fatalf("missing watch_action_confirmation_required: %+v", resp.Errors)
 	}
-	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|query_catalog|execute_graphql" {
+	if got := strings.Join(rt.calls, "|"); got != "query_catalog|query_catalog|query_catalog|query_catalog|execute_graphql" {
 		t.Fatalf("runtime calls = %s, approval must not reach runtime", got)
 	}
 }
@@ -1034,6 +1035,7 @@ func TestRunFiltersRefusalUnblockStepsByCapabilityProfile(t *testing.T) {
 		Instruction: "add a product",
 		Capabilities: &CapabilityProfile{
 			AvailableTools:       []string{toolQueryCatalog, toolExecuteGraphQL},
+			AllowedActions:       []string{CapabilityActionDataInsert},
 			AvailableSystemRoots: []string{systemRootCatalog},
 		},
 	})
@@ -1062,6 +1064,40 @@ func TestRunFiltersRefusalUnblockStepsByCapabilityProfile(t *testing.T) {
 	}
 	if !strings.Contains(resp.Refusal.LawfulAlternative, "authorized operator") {
 		t.Fatalf("lawful alternative = %q, want operator handoff", resp.Refusal.LawfulAlternative)
+	}
+}
+
+func TestExecuteGraphQLCapabilityDenialIsPolicyFinalAndNeverDispatched(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	profile := profileWithRoleAndRoots("user")
+	profile.AllowedActions = []string{CapabilityActionDataUpdate}
+	runtime := newProtocolRuntime(base, "add a product", "", 8, profile, nil, CatalogSearchFeatures{})
+	args := map[string]any{"query": `mutation { products(insert: {name: "x"}) { id } }`}
+
+	first, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil || !executionFailed(first) || base.graphqlCalls != 0 {
+		t.Fatalf("capability denial = %+v err=%v calls=%d", first, err, base.graphqlCalls)
+	}
+	errors := anySlice(mapValue(first)["errors"])
+	if len(errors) != 1 {
+		t.Fatalf("capability denial errors = %+v", errors)
+	}
+	extensions := mapValue(mapValue(errors[0])["extensions"])
+	if stringFromMap(extensions, "code") != "capability_disabled" || extensions["policy_final"] != true || extensions["retryable"] != false {
+		t.Fatalf("capability denial extensions = %+v", extensions)
+	}
+	if continuation := runtime.state.completionContinuation(); !strings.Contains(continuation, `await final(`) {
+		t.Fatalf("policy-final continuation = %q", continuation)
+	}
+	if continuation := runtime.state.completionContinuation(); continuation != "" {
+		t.Fatalf("policy-final continuation repeated: %q", continuation)
+	}
+	second, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil || !executionFailed(second) || base.graphqlCalls != 0 {
+		t.Fatalf("repeated capability denial = %+v err=%v calls=%d", second, err, base.graphqlCalls)
+	}
+	if got := len(runtime.state.violations); got != 1 {
+		t.Fatalf("policy-final denial accumulated %d violations, want one", got)
 	}
 }
 
@@ -1311,7 +1347,7 @@ func TestDuplicateSuccessfulSavedQueryIsSuppressed(t *testing.T) {
 
 func TestDuplicateSuccessfulMutationIsNotExecutedTwice(t *testing.T) {
 	base := &successfulExecutionRuntime{}
-	runtime := newProtocolRuntime(base, "Mark invoice INV-1 paid", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime := newProtocolRuntime(base, "Mark invoice INV-1 paid", "", 8, profileWithRoleAndRoots("user"), nil, CatalogSearchFeatures{})
 	runtime.state.seedOK = true
 	runtime.state.modelDiscoveryAction = true
 	runtime.state.securityRuntimeEvidence = true
@@ -1502,7 +1538,7 @@ func TestRunAllowsMutationAfterWhereValidation(t *testing.T) {
 		}),
 	)
 
-	resp, err := runner.Run(context.Background(), Request{Instruction: "update the product name"})
+	resp, err := runner.Run(context.Background(), Request{Instruction: "update the product name", Capabilities: profileWithRoleAndRoots("user")})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

@@ -47,6 +47,7 @@ type agentStatusResponse struct {
 	ReturnTrace          bool     `json:"return_trace"`
 	Namespace            string   `json:"namespace,omitempty"`
 	RoleClass            string   `json:"role_class,omitempty"`
+	AllowedActions       []string `json:"allowed_actions,omitempty"`
 	AvailableSystemRoots []string `json:"available_system_roots,omitempty"`
 	BlockedSystemRoots   []string `json:"blocked_system_roots,omitempty"`
 	EvalFingerprint      string   `json:"eval_fingerprint,omitempty"`
@@ -91,6 +92,7 @@ func (s1 *HttpService) apiV1AgentStatus(ns *string) http.Handler {
 		status := agentStatusFromConfig(agentConfigFromService(s.conf), ns, s.agentClientFactory != nil)
 		if profile := s.agentCapabilityProfile(r.Context()); profile != nil {
 			status.RoleClass = profile.RoleClass
+			status.AllowedActions = append([]string(nil), profile.AllowedActions...)
 			status.AvailableSystemRoots = append([]string(nil), profile.AvailableSystemRoots...)
 			status.BlockedSystemRoots = append([]string(nil), profile.BlockedSystemRoots...)
 		}
@@ -418,8 +420,10 @@ func recordAgentUsageObservability(s *graphjinService, span trace.Span, surface 
 func agentEvalFingerprint(status agentStatusResponse) string {
 	available := append([]string(nil), status.AvailableSystemRoots...)
 	blocked := append([]string(nil), status.BlockedSystemRoots...)
+	allowedActions := append([]string(nil), status.AllowedActions...)
 	sort.Strings(available)
 	sort.Strings(blocked)
+	sort.Strings(allowedActions)
 	payload := struct {
 		Version              string   `json:"version"`
 		Build                string   `json:"build"`
@@ -433,6 +437,7 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 		ReturnTrace          bool     `json:"return_trace"`
 		Namespace            string   `json:"namespace"`
 		RoleClass            string   `json:"role_class"`
+		AllowedActions       []string `json:"allowed_actions"`
 		AvailableSystemRoots []string `json:"available_system_roots"`
 		BlockedSystemRoots   []string `json:"blocked_system_roots"`
 	}{
@@ -441,6 +446,7 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 		MaxSteps: status.MaxSteps, TimeoutSeconds: status.TimeoutSeconds,
 		ReadOnly: status.ReadOnly, ReturnTrace: status.ReturnTrace,
 		Namespace: status.Namespace, RoleClass: status.RoleClass,
+		AllowedActions:       allowedActions,
 		AvailableSystemRoots: available, BlockedSystemRoots: blocked,
 	}
 	data, _ := json.Marshal(payload)

@@ -134,11 +134,22 @@ type CapabilityProfile struct {
 	Mode                  string   `json:"mode,omitempty"`
 	CatalogRevision       string   `json:"catalog_revision,omitempty"`
 	AvailableTools        []string `json:"available_tools,omitempty"`
+	AllowedActions        []string `json:"allowed_actions,omitempty"`
 	AvailableSystemRoots  []string `json:"available_system_roots,omitempty"`
 	BlockedSystemRoots    []string `json:"blocked_system_roots,omitempty"`
 	RecommendedEntrypoint string   `json:"recommended_entrypoint,omitempty"`
 	SafetyNotes           []string `json:"safety_notes,omitempty"`
 }
+
+// Bounded caller-action vocabulary carried by CapabilityProfile. Reads stay
+// represented by AvailableSystemRoots; these tokens describe only mutating
+// surfaces whose availability must not be inferred from global agent mode.
+const (
+	CapabilityActionDataInsert = "data.insert"
+	CapabilityActionDataUpdate = "data.update"
+	CapabilityActionDataDelete = "data.delete"
+	CapabilityActionCodeWrite  = "code.write"
+)
 
 type Response struct {
 	Status   string           `json:"status"`
@@ -415,7 +426,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	protocol.state.addGrounding(runReq.Context, historyValue(req.History))
 	tools := a.tools(ctx, runReq, protocol)
 	skills := allowedSkills(readOnly, req.Capabilities)
-	capabilityInstructions := capabilityCompletionInstructions(skills)
+	capabilityInstructions := capabilityCompletionInstructions(skills, req.Capabilities)
 	runtime := newGraphJinCodeRuntime(
 		func() any { return protocol.state.lastExecution },
 		func(narrowed any) {
@@ -427,6 +438,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 			// exact same-run detail calls.
 			protocol.state.modelDiscoveryAction = true
 			protocol.state.addGrounding(narrowed)
+			protocol.state.recordDistilledSourceIDs(narrowed)
 		},
 		protocol.state.pendingRequiredFinalization,
 		protocol.state.pendingRequiredFinalizationContinuation,

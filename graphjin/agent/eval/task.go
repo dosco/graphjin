@@ -77,6 +77,7 @@ type Provenance struct {
 type CapabilityProfile struct {
 	RoleClass            string   `json:"role_class,omitempty" yaml:"role_class,omitempty"`
 	ReadOnly             bool     `json:"read_only,omitempty" yaml:"read_only,omitempty"`
+	AllowedActions       []string `json:"allowed_actions,omitempty" yaml:"allowed_actions,omitempty"`
 	AvailableSystemRoots []string `json:"available_system_roots,omitempty" yaml:"available_system_roots,omitempty"`
 }
 
@@ -197,6 +198,7 @@ func (t *Task) Normalize() error {
 		t.Provenance.GeneratorVersion = GeneratorVersion
 	}
 	t.CapabilityProfile.AvailableSystemRoots = sortedUnique(t.CapabilityProfile.AvailableSystemRoots)
+	t.CapabilityProfile.AllowedActions = sortedUnique(t.CapabilityProfile.AllowedActions)
 	t.Method.RequireQueryMatch = sortedUnique(t.Method.RequireQueryMatch)
 	t.Method.ForbidQueryMatch = sortedUnique(t.Method.ForbidQueryMatch)
 	t.Method.RequireTools = sortedUnique(t.Method.RequireTools)
@@ -380,6 +382,7 @@ func (t Task) ContentID() (string, error) {
 	canonical := t
 	canonical.SchemaVersion = TaskSchemaVersion
 	canonical.CapabilityProfile.AvailableSystemRoots = sortedUnique(canonical.CapabilityProfile.AvailableSystemRoots)
+	canonical.CapabilityProfile.AllowedActions = sortedUnique(canonical.CapabilityProfile.AllowedActions)
 	canonical.Method.RequireQueryMatch = sortedUnique(canonical.Method.RequireQueryMatch)
 	canonical.Method.ForbidQueryMatch = sortedUnique(canonical.Method.ForbidQueryMatch)
 	canonical.Method.RequireTools = sortedUnique(canonical.Method.RequireTools)

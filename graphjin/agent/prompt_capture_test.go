@@ -98,7 +98,8 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 
 	// Ignore Run's outcome; we only need the captured Chat requests. A normal
 	// writable profile preloads data_write alongside the other core guides.
-	_, _ = runner.Run(context.Background(), Request{Instruction: "create a new order for a customer and update product inventory"})
+	profile := profileWithRoleAndRoots("user")
+	_, _ = runner.Run(context.Background(), Request{Instruction: "create a new order for a customer and update product inventory", Capabilities: profile})
 
 	if len(rec.calls) == 0 {
 		t.Fatal("no Chat calls captured — ax did not reach the client (Seed may have failed)")
@@ -176,7 +177,7 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 		t.Error("the current_date input did not reach a staged prompt — date anchoring guidance has no value to anchor on")
 	}
 	loadedSkillBytes := 0
-	loadedSkills := allowedSkills(false, nil)
+	loadedSkills := allowedSkills(false, profile)
 	for _, definition := range loadedSkills {
 		loadedSkillBytes += len(definition.content)
 	}
@@ -262,7 +263,7 @@ func TestExecutorLoopRepairsMutationEvidenceWithExactContinuation(t *testing.T) 
 		WithClientFactory(func(Config) (ax.AIClient, error) { return rec, nil }),
 	)
 
-	_, _ = runner.Run(context.Background(), Request{Instruction: "add product x"})
+	_, _ = runner.Run(context.Background(), Request{Instruction: "add product x", Capabilities: profileWithRoleAndRoots("user")})
 	if len(rec.calls) < 5 {
 		t.Fatalf("captured %d calls, want distiller plus repair/retry executor turns", len(rec.calls))
 	}

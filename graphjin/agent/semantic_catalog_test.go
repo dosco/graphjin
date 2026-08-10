@@ -9,6 +9,18 @@ import (
 	ax "github.com/ax-llm/ax/packages/go"
 )
 
+type watchDefinitionFailureRuntime struct {
+	fakeRuntime
+	graphqlCalls int
+}
+
+func (r *watchDefinitionFailureRuntime) ExecuteGraphQL(_ context.Context, _ map[string]any) (any, error) {
+	r.graphqlCalls++
+	return map[string]any{"errors": []any{map[string]any{
+		"message": "gj_watch subscription probe failed: query must use cursor pagination",
+	}}}, nil
+}
+
 func TestSemanticCatalogGuidanceAndToolSchemaAreConditional(t *testing.T) {
 	features := CatalogSearchFeatures{SemanticRecall: true, CoverageBatch: true}
 	if got := catalogSearchInstruction(runtimeUsageInstructions, CatalogSearchFeatures{}); got != runtimeUsageInstructions {
@@ -340,7 +352,8 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 				},
 			}
 		}}
-		runtime := newProtocolRuntime(base, "perform governed write", "", 40, nil, nil, CatalogSearchFeatures{})
+		profile := profileWithRoleAndRoots("user", systemRootWorkflowExec, systemRootWatch, systemRootWatchEvent)
+		runtime := newProtocolRuntime(base, "perform governed write", "", 40, profile, nil, CatalogSearchFeatures{})
 		if _, err := runtime.Seed(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -420,7 +433,7 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 			t.Fatal(err)
 		}
 		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
-			"query": `mutation { gj_watch(insert: {name: "late_orders", query: "subscription { orders { id } }"}) { id } }`,
+			"query": `mutation { gj_watch(insert: {name: "late_products", query: "subscription { products { id } }"}) { id } }`,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -429,6 +442,9 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		next := mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"])
 		if !containsString(stringSliceArg(next, "ids"), "help:watches") {
 			t.Fatalf("watch repair did not name help:watches: %+v", next)
+		}
+		if !containsString(stringSliceArg(next, "ids"), "table:app:main.products") {
+			t.Fatalf("watch repair did not name embedded subscription table: %+v", next)
 		}
 	})
 }
@@ -446,7 +462,7 @@ func TestMutationEvidenceRepairRequiresSuccessfulRetryBeforeFinal(t *testing.T) 
 			}},
 		}
 	}
-	runtime := newProtocolRuntime(base, "add a product", "", 40, nil, nil, CatalogSearchFeatures{})
+	runtime := newProtocolRuntime(base, "add a product", "", 40, profileWithRoleAndRoots("user"), nil, CatalogSearchFeatures{})
 	if _, err := runtime.Seed(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -483,10 +499,59 @@ func TestMutationEvidenceRepairRequiresSuccessfulRetryBeforeFinal(t *testing.T) 
 	}
 }
 
+func TestCrossSourceHandoffRequiresEverySelectedSourceDetail(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	base.catalogOverride = fakeCatalogResult
+	runtime := newProtocolRuntime(base, "compare customer orders with support tickets", "", 40, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:discovery"}); err != nil {
+		t.Fatal(err)
+	}
+	runtime.state.recordDistilledSourceIDs(map[string]any{
+		"sources": []any{
+			map[string]any{"id": "source:crm"},
+			map[string]any{"id": "source:support"},
+		},
+	})
+
+	query := `query { customers { id } }`
+	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
+	if err != nil || !executionFailed(first) || base.graphqlCalls != 0 {
+		t.Fatalf("cross-source guard = %+v err=%v calls=%d", first, err, base.graphqlCalls)
+	}
+	extensions := mapValue(mapValue(anySlice(mapValue(first)["errors"])[0])["extensions"])
+	if stringFromMap(extensions, "code") != "cross_source_detail_required" {
+		t.Fatalf("cross-source error = %+v", extensions)
+	}
+	continuation := runtime.state.pendingRequiredFinalizationContinuation()
+	for _, id := range []string{"source:crm", "source:support"} {
+		if !strings.Contains(continuation, id) {
+			t.Fatalf("cross-source continuation %q missing %q", continuation, id)
+		}
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"kind": "table", "limit": 20}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"source:crm", "source:support"} {
+		if !runtime.state.hasCatalogDetailID(id) {
+			t.Fatalf("catalog details = %+v, missing %s", runtime.state.catalogDetails, id)
+		}
+	}
+	second, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
+	if err != nil || executionFailed(second) || base.graphqlCalls != 1 {
+		t.Fatalf("cross-source retry = %+v err=%v calls=%d", second, err, base.graphqlCalls)
+	}
+	if runtime.state.hasBlockingViolation() || runtime.state.pendingRequiredFinalization() != "" {
+		t.Fatalf("cross-source retry left blocking state: violations=%+v pending=%q", runtime.state.violations, runtime.state.pendingRequiredFinalization())
+	}
+}
+
 func TestMutationEvidenceRepairRoutesWeakModelBroadSearchToExactDialectEvidence(t *testing.T) {
 	base := &successfulExecutionRuntime{}
 	base.catalogOverride = fakeCatalogResult
-	runtime := newProtocolRuntime(base, "close support ticket 2", "", 40, nil, nil, CatalogSearchFeatures{})
+	runtime := newProtocolRuntime(base, "close support ticket 2", "", 40, profileWithRoleAndRoots("user"), nil, CatalogSearchFeatures{})
 	if _, err := runtime.Seed(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -551,6 +616,84 @@ func TestWatchDetailDidYouMeanUsesKnownHelpID(t *testing.T) {
 	}
 	if len(catalogCards(out)) != 1 || !runtime.state.hasCatalogDetailID("help:watches") {
 		t.Fatalf("corrected watch detail = %+v state=%+v", out, runtime.state.catalogDetails)
+	}
+}
+
+func TestWatchCreationRecoversThroughContractAndEmbeddedSubscriptionDetail(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	base.catalogOverride = fakeCatalogResult
+	profile := profileWithRoleAndRoots("user", systemRootWatch)
+	runtime := newProtocolRuntime(base, "watch newly recorded payments", "", 40, profile, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	runtime.state.catalogIDs["help:watches"] = true
+	runtime.state.catalogIDs["table:app:main.payments"] = true
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
+		t.Fatal(err)
+	}
+	args := map[string]any{
+		"query": `mutation($watch: JSON!) { gj_watch(insert: $watch) { id name } }`,
+		"variables": map[string]any{"watch": map[string]any{
+			"name":  "new_payments",
+			"query": `subscription($cursor: Cursor) { payments(first: 25, after: $cursor) { id created_at } payments_cursor }`,
+		}},
+	}
+	first, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil || !executionFailed(first) || base.graphqlCalls != 0 {
+		t.Fatalf("watch prerequisite = %+v err=%v calls=%d", first, err, base.graphqlCalls)
+	}
+	nextArgs := mapValue(mapValue(mapValue(mapValue(first)["recovery"])["next"])["args"])
+	for _, id := range []string{"help:watches", "table:app:main.payments"} {
+		if !containsString(stringSliceArg(nextArgs, "ids"), id) {
+			t.Fatalf("watch prerequisite args = %+v, missing %s", nextArgs, id)
+		}
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"search": "another broad attempt"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"help:watches", "table:app:main.payments"} {
+		if !runtime.state.hasCatalogDetailID(id) {
+			t.Fatalf("watch detail state = %+v, missing %s", runtime.state.catalogDetails, id)
+		}
+	}
+	second, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil || executionFailed(second) || base.graphqlCalls != 1 {
+		t.Fatalf("watch retry = %+v err=%v calls=%d", second, err, base.graphqlCalls)
+	}
+}
+
+func TestInvalidWatchSubscriptionSchedulesExactCreationRepair(t *testing.T) {
+	base := &watchDefinitionFailureRuntime{}
+	base.catalogOverride = fakeCatalogResult
+	profile := profileWithRoleAndRoots("user", systemRootWatch)
+	runtime := newProtocolRuntime(base, "watch newly recorded payments", "", 40, profile, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.securityRuntimeEvidence = true
+	runtime.state.catalogIDs["help:watches"] = true
+	runtime.state.catalogIDs["table:app:main.payments"] = true
+	for _, id := range []string{"help:watches", "table:app:main.payments"} {
+		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	args := map[string]any{"query": `mutation {
+		gj_watch(insert: {name: "new_payments", query: "subscription { payments { id created_at } }"}) { id name }
+	}`}
+	out, err := runtime.ExecuteGraphQL(context.Background(), args)
+	if err != nil || !executionFailed(out) || base.graphqlCalls != 1 {
+		t.Fatalf("invalid watch = %+v err=%v calls=%d", out, err, base.graphqlCalls)
+	}
+	extensions := mapValue(mapValue(anySlice(mapValue(out)["errors"])[0])["extensions"])
+	if stringFromMap(extensions, "code") != "watch_query_invalid" || extensions["retryable"] != true {
+		t.Fatalf("invalid watch extensions = %+v", extensions)
+	}
+	continuation := runtime.state.pendingRequiredFinalizationContinuation()
+	for _, id := range []string{"help:watches", "table:app:main.payments"} {
+		if !strings.Contains(continuation, id) {
+			t.Fatalf("invalid watch continuation %q missing %s", continuation, id)
+		}
 	}
 }
 

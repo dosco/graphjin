@@ -21,6 +21,7 @@ var blockingGuardViolationCodes = map[string]struct{}{
 	"catalog_detail_required":               {},
 	"catalog_seed_failed":                   {},
 	"catalog_seed_required":                 {},
+	"cross_source_detail_required":          {},
 	"history_read_required":                 {},
 	"identity_variable_missing":             {},
 	"model_discovery_required":              {},

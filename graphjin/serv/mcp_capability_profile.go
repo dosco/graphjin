@@ -16,6 +16,7 @@ type MCPCapabilityProfile struct {
 	Authenticated         bool                   `json:"authenticated"`
 	CatalogRevision       string                 `json:"catalog_revision,omitempty"`
 	AvailableTools        []string               `json:"available_tools,omitempty"`
+	AllowedActions        []string               `json:"allowed_actions,omitempty"`
 	AvailableRoots        []MCPRootProfile       `json:"available_roots,omitempty"`
 	BlockedRoots          []MCPRootProfile       `json:"blocked_roots,omitempty"`
 	VisibleCapabilities   []MCPCatalogCapability `json:"visible_capabilities,omitempty"`
@@ -142,6 +143,7 @@ func (ms *mcpServer) callerCapabilityProfile(ctx context.Context, includeVisible
 			profile.SafetyNotes = append(profile.SafetyNotes, "gj_catalog is not available to this caller; request authenticated/admin access instead of inventing schema.")
 		}
 	}
+	profile.AllowedActions = ms.callerAllowedActions(ctx)
 	profile.RecommendedEntrypoint = ms.recommendedMCPEntrypoint(ctx)
 	if includeVisibleCapabilities && ms.rootVisibleForContext(ctx, "gj_catalog") {
 		profile.VisibleCapabilities = ms.visibleCatalogCapabilities(ctx)

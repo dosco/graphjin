@@ -68,13 +68,15 @@ var fixedSystemRoots = []string{
 // metadata. The metadata is never sent to Ax and never grants authorization.
 // Prerequisites continue to be enforced by GraphJin's runtime policy.
 type skillDefinition struct {
-	id               string
-	name             string
-	content          string
-	write            bool
-	adminOnly        bool
-	requiresAnyRoots []string
-	requiresAllRoots []string
+	id                 string
+	name               string
+	content            string
+	write              bool
+	adminOnly          bool
+	requiresAnyRoots   []string
+	requiresAllRoots   []string
+	requiresAnyActions []string
+	requiresAllActions []string
 }
 
 // builtinSkills is deliberately ordered so constructor prompts, tests, hashes,
@@ -82,9 +84,12 @@ type skillDefinition struct {
 var builtinSkills = []skillDefinition{
 	{id: skillDataDiscovery, name: "Data discovery", content: dataDiscoveryInstruction},
 	{id: skillDataAggregation, name: "Data aggregation", content: dataAggregationInstruction},
-	{id: skillDataWrite, name: "Data write", content: dataWriteInstruction, write: true},
+	{
+		id: skillDataWrite, name: "Data write", content: dataWriteInstruction, write: true,
+		requiresAnyActions: []string{CapabilityActionDataInsert, CapabilityActionDataUpdate, CapabilityActionDataDelete},
+	},
 	{id: skillCodeRead, name: "Code read", content: codeReadInstruction},
-	{id: skillCodeWrite, name: "Code write", content: codeWriteInstruction, write: true},
+	{id: skillCodeWrite, name: "Code write", content: codeWriteInstruction, write: true, requiresAllActions: []string{CapabilityActionCodeWrite}},
 	{
 		id:               skillWorkflowRead,
 		name:             "Workflow discovery",
@@ -92,18 +97,20 @@ var builtinSkills = []skillDefinition{
 		requiresAnyRoots: []string{systemRootWorkflow, systemRootWorkflowExec},
 	},
 	{
-		id:               skillWorkflowExec,
-		name:             "Workflow execution",
-		content:          workflowExecuteInstruction,
-		write:            true,
-		requiresAllRoots: []string{systemRootWorkflowExec},
+		id:                 skillWorkflowExec,
+		name:               "Workflow execution",
+		content:            workflowExecuteInstruction,
+		write:              true,
+		requiresAllRoots:   []string{systemRootWorkflowExec},
+		requiresAllActions: []string{systemRootWorkflowExec + ".insert"},
 	},
 	{
-		id:               skillWorkflowWrite,
-		name:             "Workflow authoring",
-		content:          workflowWriteInstruction,
-		write:            true,
-		requiresAllRoots: []string{systemRootWorkflow},
+		id:                 skillWorkflowWrite,
+		name:               "Workflow authoring",
+		content:            workflowWriteInstruction,
+		write:              true,
+		requiresAllRoots:   []string{systemRootWorkflow},
+		requiresAnyActions: []string{systemRootWorkflow + ".insert", systemRootWorkflow + ".update", systemRootWorkflow + ".delete"},
 	},
 	{
 		id:               skillWatchRead,
@@ -112,11 +119,12 @@ var builtinSkills = []skillDefinition{
 		requiresAnyRoots: []string{systemRootWatch, systemRootWatchEvent},
 	},
 	{
-		id:               skillWatchWrite,
-		name:             "Watch lifecycle, flows, and delivery",
-		content:          watchWriteInstruction,
-		write:            true,
-		requiresAllRoots: []string{systemRootWatch},
+		id:                 skillWatchWrite,
+		name:               "Watch lifecycle, flows, and delivery",
+		content:            watchWriteInstruction,
+		write:              true,
+		requiresAllRoots:   []string{systemRootWatch},
+		requiresAnyActions: []string{systemRootWatch + ".insert", systemRootWatch + ".update", systemRootWatch + ".delete"},
 	},
 	{
 		id:               skillTaskRead,
@@ -125,11 +133,12 @@ var builtinSkills = []skillDefinition{
 		requiresAnyRoots: []string{systemRootTask, systemRootTaskEntry},
 	},
 	{
-		id:               skillTaskWrite,
-		name:             "Task lifecycle",
-		content:          taskWriteInstruction,
-		write:            true,
-		requiresAllRoots: []string{systemRootTask},
+		id:                 skillTaskWrite,
+		name:               "Task lifecycle",
+		content:            taskWriteInstruction,
+		write:              true,
+		requiresAllRoots:   []string{systemRootTask},
+		requiresAnyActions: []string{systemRootTask + ".insert", systemRootTask + ".update", systemRootTask + ".delete"},
 	},
 	{
 		id:               skillAdminRead,
@@ -139,12 +148,13 @@ var builtinSkills = []skillDefinition{
 		requiresAnyRoots: []string{systemRootSecurity, systemRootRuntime, systemRootConfig},
 	},
 	{
-		id:               skillAdminWrite,
-		name:             "Admin configuration",
-		content:          adminWriteInstruction,
-		write:            true,
-		adminOnly:        true,
-		requiresAllRoots: []string{systemRootConfig},
+		id:                 skillAdminWrite,
+		name:               "Admin configuration",
+		content:            adminWriteInstruction,
+		write:              true,
+		adminOnly:          true,
+		requiresAllRoots:   []string{systemRootConfig},
+		requiresAnyActions: []string{systemRootConfig + ".insert", systemRootConfig + ".update"},
 	},
 }
 
@@ -164,6 +174,12 @@ func allowedSkills(readOnly bool, profile *CapabilityProfile) []skillDefinition 
 			continue
 		}
 		if !profileHasAllSystemRoots(profile, definition.requiresAllRoots) {
+			continue
+		}
+		if len(definition.requiresAnyActions) != 0 && !profileHasAnyAction(profile, definition.requiresAnyActions) {
+			continue
+		}
+		if !profileHasAllActions(profile, definition.requiresAllActions) {
 			continue
 		}
 		out = append(out, definition)
@@ -225,7 +241,7 @@ var completionCapabilityRules = []completionCapabilityRule{
 	},
 }
 
-func capabilityCompletionInstructions(skills []skillDefinition) string {
+func capabilityCompletionInstructions(skills []skillDefinition, profiles ...*CapabilityProfile) string {
 	loaded := make(map[string]bool, len(skills))
 	for _, skill := range skills {
 		loaded[skill.id] = true
@@ -241,6 +257,19 @@ func capabilityCompletionInstructions(skills []skillDefinition) string {
 			out.WriteString(rule.denial)
 		}
 		out.WriteByte('\n')
+	}
+	var profile *CapabilityProfile
+	if len(profiles) != 0 {
+		profile = profiles[0]
+	}
+	for _, action := range []string{CapabilityActionDataInsert, CapabilityActionDataUpdate, CapabilityActionDataDelete} {
+		out.WriteString("- ")
+		out.WriteString(action)
+		if profileHasAction(profile, action) {
+			out.WriteString(" is granted for this caller; the matching scoped operation may be attempted through normal evidence and core policy guards.\n")
+		} else {
+			out.WriteString(" is not granted for this caller; do not attempt that operation.\n")
+		}
 	}
 	out.WriteString("A loaded capability authorizes an attempt through the normal runtime guards; only a runtime denial or failed in-run recovery may block it. Never infer a global posture from another capability class.")
 	return out.String()
@@ -260,6 +289,36 @@ func profileHasSystemRoot(profile *CapabilityProfile, root string) bool {
 		}
 	}
 	return false
+}
+
+func profileHasAction(profile *CapabilityProfile, action string) bool {
+	if profile == nil {
+		return false
+	}
+	for _, allowed := range profile.AllowedActions {
+		if strings.EqualFold(strings.TrimSpace(allowed), strings.TrimSpace(action)) {
+			return true
+		}
+	}
+	return false
+}
+
+func profileHasAnyAction(profile *CapabilityProfile, actions []string) bool {
+	for _, action := range actions {
+		if profileHasAction(profile, action) {
+			return true
+		}
+	}
+	return false
+}
+
+func profileHasAllActions(profile *CapabilityProfile, actions []string) bool {
+	for _, action := range actions {
+		if !profileHasAction(profile, action) {
+			return false
+		}
+	}
+	return true
 }
 
 func profileHasAnySystemRoot(profile *CapabilityProfile, roots []string) bool {
