@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -852,5 +853,51 @@ func TestDatabaseAggregatePatternAcceptsShallowCompatibilitySyntax(t *testing.T)
 	}
 	if databaseAggregateFieldPattern.MatchString(`query { audit_aggregate { id } }`) {
 		t.Fatal("ordinary table ending in _aggregate must not receive aggregate credit")
+	}
+}
+
+// TestExecutionRecoveryNamesFailedQueryTables pins the read-path counterpart of
+// the mutation-evidence defect. Benchmark run 35621a4f shows a cross-source
+// episode issuing one invented-field query seven times against the generic
+// "inspect the real table and column details" directive: it named no table and
+// no call shape, so the model had nothing to correct toward.
+func TestExecutionRecoveryNamesFailedQueryTables(t *testing.T) {
+	state := newDiscoveryState("Combine the account with the account-health API.")
+	state.catalogIDs["table:app:main.accounts"] = true
+	state.catalogIDs["table:app:main.account_health"] = true
+
+	query := `{ account_health(where: {name: {eq: "Meridian Robotics"}}) { open_risks health_color } }`
+	recovery := executionRecovery(state, query)
+	next, ok := recovery["next"].(map[string]any)
+	if !ok {
+		t.Fatalf("recovery.next = %#v", recovery["next"])
+	}
+	if next["recommended_tool"] != toolQueryCatalog {
+		t.Fatalf("recovery must keep the structured catalog pointer: %#v", next)
+	}
+	args, _ := next["args"].(map[string]any)
+	ids, _ := args["ids"].([]any)
+	if len(ids) == 0 {
+		t.Fatalf("recovery must name the failed query's table ids: %#v", next)
+	}
+	if fmt.Sprint(ids[0]) != "table:app:main.account_health" {
+		t.Fatalf("recovery named the wrong table: %#v", ids)
+	}
+	if !strings.Contains(fmt.Sprint(next["reason"]), "does not carry column names") {
+		t.Fatalf("recovery must reject list-only evidence: %#v", next["reason"])
+	}
+}
+
+// TestExecutionRecoveryFallsBackWhenRootsAreUnknown keeps the generic directive
+// for a genuinely unrecognizable root instead of inventing an id.
+func TestExecutionRecoveryFallsBackWhenRootsAreUnknown(t *testing.T) {
+	state := newDiscoveryState("Query something unknown.")
+	recovery := executionRecovery(state, `{ mystery_root { id } }`)
+	next, _ := recovery["next"].(map[string]any)
+	if next == nil || next["recommended_tool"] != toolQueryCatalog {
+		t.Fatalf("expected the generic catalog pointer: %#v", recovery["next"])
+	}
+	if _, named := next["args"]; named {
+		t.Fatalf("unknown roots must not fabricate catalog ids: %#v", next)
 	}
 }

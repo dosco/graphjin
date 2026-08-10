@@ -151,7 +151,7 @@ func attachExecutionRecovery(out any, state *discoveryState, query string) any {
 	if repair, ok := systemRootDidYouMeanRepair(out, state, query); ok {
 		return attachSystemRootDidYouMean(out, repair)
 	}
-	recovery := executionRecovery()
+	recovery := executionRecovery(state, query)
 	directive := recoveryDirective(recovery)
 	switch res := out.(type) {
 	case executeResult:
@@ -477,14 +477,53 @@ func recoveryDirective(map[string]any) string {
 	return recoveryDirectivePrefix + " the live schema is authoritative; do not report it as broken or propose schema changes—follow recovery.next to re-discover real fields and retry in this run."
 }
 
-func executionRecovery() map[string]any {
+// executionRecovery builds the generic post-failure directive. Whenever the
+// failed query's roots resolve to known catalog ids it names them, because a
+// bare "inspect the real table and column details" leaves a weak model no way
+// to tell which table or which call shape is meant: benchmark run 35621a4f
+// shows a cross-source episode re-issuing one invented-field query seven times
+// against exactly this advice. Same defect, and same fix, as the mutation
+// evidence continuation.
+func executionRecovery(state *discoveryState, query string) map[string]any {
+	instruction := "The live schema is authoritative; do not report it as broken or propose schema changes—follow errors[].extensions.graphjin_repair and next to re-discover real fields and retry in this run."
+	if ids := state.catalogIDsForQueryRoots(query); len(ids) != 0 {
+		return map[string]any{
+			"instruction": instruction,
+			"next": map[string]any{
+				"recommended_tool": toolQueryCatalog,
+				"args":             map[string]any{"ids": ids},
+				"reason":           "Inspect these exact table details, re-author the query from the column names they return — including nested related roots — and retry in this run. A table list or search does not carry column names.",
+			},
+		}
+	}
 	return map[string]any{
-		"instruction": "The live schema is authoritative; do not report it as broken or propose schema changes—follow errors[].extensions.graphjin_repair and next to re-discover real fields and retry in this run.",
+		"instruction": instruction,
 		"next": catalogNext(
 			toolQueryCatalog,
-			"Inspect the real table and column details, re-author the query from returned fields, and retry in this run.",
+			"Inspect the real table and column details by id, re-author the query from returned fields, and retry in this run.",
 		),
 	}
+}
+
+// catalogIDsForQueryRoots maps the read roots of a failed query to catalog ids
+// this run can inspect. Unresolvable roots are skipped rather than discarding
+// the ids that did resolve.
+func (s *discoveryState) catalogIDsForQueryRoots(query string) []any {
+	if s == nil || strings.TrimSpace(query) == "" {
+		return nil
+	}
+	ids := make([]any, 0, 4)
+	seen := map[string]bool{}
+	for _, root := range QueryRootFields(query) {
+		target, _ := s.mutationTargetTable(root)
+		id := s.catalogIDForTable(target)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func (s *discoveryState) pendingDatabaseComputation() string {
