@@ -250,6 +250,35 @@ func TestGraphJinRuntimeRepairsMalformedDistillerDraftWithOriginalRequestAndSeed
 	}
 }
 
+func TestGraphJinRuntimeRequiresExplicitHandoffReadBeforeToolCall(t *testing.T) {
+	calls := 0
+	runtime := newGraphJinCodeRuntime(nil, nil, nil, nil)
+	runtime.RegisterCallable(toolQueryCatalog, func(params ax.Value) (ax.Value, error) {
+		calls++
+		return map[string]any{"cards": []any{map[string]any{"id": stringFromMap(mapValue(params), "id")}}}, nil
+	})
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "Compare the CRM and support sources."},
+	}, map[string]ax.Value{
+		"reservedNames": []any{"inputs", "executorRequest", "distilledContext"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	session.Execute(`await final("compare sources", {sources: [{id: "source:crm"}, {id: "source:support"}]});`, nil)
+	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
+	guarded := mapValue(session.Execute(`await query_catalog({id: "source:crm"});`, nil))
+	if calls != 0 || stringFromMap(mapValue(guarded["result"]), "graphjin_protocol") != "runtime_handoff_read_required" {
+		t.Fatalf("handoff-blind tool call = %+v calls=%d", guarded, calls)
+	}
+	accepted := mapValue(session.Execute(`const selected = graphjinDistilledContext.sources; await query_catalog({id: selected[0].id});`, nil))
+	if calls != 1 || stringFromMap(accepted, "kind") != "result" {
+		t.Fatalf("handoff-grounded tool call = %+v calls=%d", accepted, calls)
+	}
+}
+
 func TestGraphJinRuntimeRejectsPrematureExecutorFinalForRequiredSavedQuery(t *testing.T) {
 	pending := `const detail = await query_catalog({id:"saved_query:daily_roast_context"}); const execution = await execute_saved_query({name:"daily_roast_context"});`
 	runtime := newGraphJinCodeRuntime(nil, nil, func() string { return pending }, nil)
@@ -351,7 +380,7 @@ func TestGraphJinRuntimeRequiresCodeReadForHistoryDependentFollowUp(t *testing.T
 	runtime := newGraphJinCodeRuntime(nil, nil, nil, nil)
 	session, err := runtime.CreateSession(map[string]ax.Value{
 		"inputs": map[string]any{
-			"instruction": "Continue the prior task and repeat its marker.",
+			"instruction": "What is its amount?",
 			"history": []any{
 				map[string]any{"role": "assistant", "content": "FIRST-TRAIL-RUNTIME-ONLY"},
 			},

@@ -101,9 +101,9 @@ func TestSkillEvaluationCorpusAvailabilityAndExclusion(t *testing.T) {
 	forbiddenMisses := 0
 
 	for _, testCase := range cases {
-		profile := &CapabilityProfile{
-			RoleClass:            testCase.CapabilityProfile.RoleClass,
-			AvailableSystemRoots: append([]string(nil), testCase.CapabilityProfile.AvailableSystemRoots...),
+		profile := profileWithRoleAndRoots(testCase.CapabilityProfile.RoleClass, testCase.CapabilityProfile.AvailableSystemRoots...)
+		if testCase.CapabilityProfile.ReadOnly {
+			profile.AllowedActions = nil
 		}
 		loaded := skillIDs(allowedSkills(testCase.CapabilityProfile.ReadOnly, profile))
 		for _, expected := range testCase.ExpectedLoadedSkills {

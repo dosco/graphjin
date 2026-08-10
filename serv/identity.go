@@ -329,9 +329,9 @@ func graphQLAccessFailureReason(err error) string {
 	switch {
 	case strings.Contains(msg, "identity variable") && strings.Contains(msg, "required"):
 		return "identity_variable_missing"
-	case strings.Contains(msg, "requires authenticated"):
+	case strings.Contains(msg, "requires authenticated") || strings.Contains(msg, "requires user identity"):
 		return "authenticated_required"
-	case strings.Contains(msg, "unauthorized"):
+	case strings.Contains(msg, "unauthorized") || strings.Contains(msg, "access denied") || (strings.Contains(msg, "gj_") && strings.Contains(msg, " denied")):
 		return "access_unauthorized"
 	case strings.Contains(msg, "blocked"):
 		return "access_blocked"

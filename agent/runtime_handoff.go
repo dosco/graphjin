@@ -95,6 +95,7 @@ type graphJinCodeSession struct {
 	originalHistory        any
 	executorRequest        any
 	distilledContext       any
+	explicitHandoff        bool
 	executorStage          bool
 	handoffReadRequired    bool
 	handoffRead            bool
@@ -116,7 +117,7 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 			},
 		}
 	}
-	if s.executorStage && s.handoffReadRequired && !s.handoffRead && !readsHandoff && !usesGraphJinCallable {
+	if s.executorStage && s.handoffReadRequired && !s.handoffRead && !readsHandoff && (!usesGraphJinCallable || s.explicitHandoff) {
 		return map[string]any{
 			"kind": "result",
 			"result": map[string]any{
@@ -133,7 +134,7 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 	if readsHandoff {
 		s.handoffRead = true
 	}
-	if usesGraphJinCallable {
+	if usesGraphJinCallable && !s.explicitHandoff {
 		// A real GraphJin call supplies fresh, same-run evidence and is still
 		// governed by the protocol runtime. Do not let the context-orientation
 		// guard preempt stricter query/mutation evidence checks.
@@ -243,7 +244,7 @@ func (s *graphJinCodeSession) SnapshotGlobals(options map[string]ax.Value) ax.Va
 
 func (s *graphJinCodeSession) PatchGlobals(snapshot ax.Value, options map[string]ax.Value) ax.Value {
 	s.executorStage = true
-	s.historyReadRequired = hasRuntimeHandoffValue(s.originalHistory) && instructionNeedsHistory(s.originalInstruction)
+	s.historyReadRequired = hasRuntimeHandoffValue(s.originalHistory)
 	distilled := runtimeBindingFromSnapshot(snapshot, "distilledContext")
 	if distilled == nil {
 		distilled = s.distilledContext
@@ -404,6 +405,7 @@ func (s *graphJinCodeSession) captureDistillerHandoff(result ax.Value) {
 					if value := normalizeValue(draft[key]); hasRuntimeHandoffValue(value) {
 						s.distilledContext = value
 						narrowed = value
+						s.explicitHandoff = true
 						break
 					}
 				}
@@ -414,6 +416,7 @@ func (s *graphJinCodeSession) captureDistillerHandoff(result ax.Value) {
 		if value := normalizeValue(args[1]); hasRuntimeHandoffValue(value) {
 			s.distilledContext = value
 			narrowed = value
+			s.explicitHandoff = true
 		}
 	}
 	if !hasRuntimeHandoffValue(s.distilledContext) && hasRuntimeHandoffValue(s.seedContext) {

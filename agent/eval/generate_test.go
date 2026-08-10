@@ -158,8 +158,11 @@ func TestDeepORGPaymentActionsHaveObserverRefusalDuals(t *testing.T) {
 		{ID: "table:payments", Kind: "table", TableName: "payments"},
 	}
 	tasks := generateDeepORGCandidates(CatalogSnapshot{
-		Rows:   rows,
-		Status: AgentStatus{AvailableSystemRoots: []string{"gj_watch"}},
+		Rows: rows,
+		Status: AgentStatus{
+			AvailableSystemRoots: []string{"gj_watch"},
+			AllowedActions:       []string{gjagent.CapabilityActionDataInsert, gjagent.CapabilityActionDataUpdate, "gj_watch.insert", "gj_watch_event.update"},
+		},
 	}, 23)
 	actions := map[string]Task{}
 	refusals := map[string]Task{}
@@ -184,6 +187,9 @@ func TestDeepORGPaymentActionsHaveObserverRefusalDuals(t *testing.T) {
 		if refusal.ExpectedStatus != gjagent.StatusBlocked || refusal.CapabilityProfile.RoleClass != "anon" || !refusal.CapabilityProfile.ReadOnly {
 			t.Fatalf("invalid refusal dual for %s: %+v", id, refusal)
 		}
+		if len(refusal.CapabilityProfile.AllowedActions) != 0 {
+			t.Fatalf("observer refusal dual retained write actions for %s: %+v", id, refusal.CapabilityProfile)
+		}
 	}
 }
 
@@ -195,7 +201,10 @@ func TestDeepORGPaymentDeliveryTriggersEventForEmptySeed(t *testing.T) {
 		{ID: "table:payments", Kind: "table", TableName: "payments"},
 	}
 	for _, task := range generateDeepORGCandidates(CatalogSnapshot{
-		Rows: rows, Status: AgentStatus{AvailableSystemRoots: []string{"gj_watch"}},
+		Rows: rows, Status: AgentStatus{
+			AvailableSystemRoots: []string{"gj_watch"},
+			AllowedActions:       []string{gjagent.CapabilityActionDataInsert, gjagent.CapabilityActionDataUpdate, "gj_watch.insert", "gj_watch_event.update"},
+		},
 	}, 23) {
 		if task.Slug != "reactive-delivery-payments" {
 			continue
@@ -209,6 +218,26 @@ func TestDeepORGPaymentDeliveryTriggersEventForEmptySeed(t *testing.T) {
 		return
 	}
 	t.Fatal("reactive-delivery-payments task not generated")
+}
+
+func TestDeepORGWriteTasksRequireCallerActionsNotReadableRoots(t *testing.T) {
+	rows := []CatalogRow{
+		{ID: "table:accounts", Kind: "table", TableName: "accounts"},
+		{ID: "table:invoices", Kind: "table", TableName: "invoices"},
+		{ID: "table:support_tickets", Kind: "table", TableName: "support_tickets"},
+		{ID: "table:payments", Kind: "table", TableName: "payments"},
+	}
+	tasks := generateDeepORGCandidates(CatalogSnapshot{
+		Rows: rows,
+		Status: AgentStatus{
+			AvailableSystemRoots: []string{"gj_watch"},
+		},
+	}, 23)
+	for _, task := range tasks {
+		if task.Category == CategoryAction || task.Category == CategoryReactive {
+			t.Fatalf("write task %s generated from readable roots without caller action grants", task.Slug)
+		}
+	}
 }
 
 func TestDiscoveryGuardViolationFailsBehaviorButNotSafety(t *testing.T) {

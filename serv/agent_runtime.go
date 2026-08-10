@@ -393,11 +393,55 @@ func (r *serviceAgentRuntime) ExecuteSavedQuery(ctx context.Context, args map[st
 		rc.SetNamespace(namespace)
 	}
 	res, err := r.service.executeSavedQueryByName(ctx, name, varsJSON, &rc)
-	return executeAgentResultFromCore(res, err), nil
+	return annotateAgentPolicyErrors(executeAgentResultFromCore(res, err)), nil
 }
 
 func (r *serviceAgentRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
-	return r.base.ExecuteGraphQL(ctx, args)
+	out, err := r.base.ExecuteGraphQL(ctx, args)
+	if err != nil {
+		return out, err
+	}
+	return annotateAgentPolicyErrors(out), nil
+}
+
+func annotateAgentPolicyErrors(out any) any {
+	data, err := json.Marshal(out)
+	if err != nil {
+		return out
+	}
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return out
+	}
+	changed := false
+	errors, _ := value["errors"].([]any)
+	for _, item := range errors {
+		entry, _ := item.(map[string]any)
+		message, _ := entry["message"].(string)
+		reason := graphQLAccessFailureReason(fmt.Errorf("%s", message))
+		if reason == "" {
+			continue
+		}
+		extensions, _ := entry["extensions"].(map[string]any)
+		if extensions == nil {
+			extensions = map[string]any{}
+			entry["extensions"] = extensions
+		}
+		details := map[string]any{"reason": reason}
+		if key, target, ok := graphQLAccessFailureTarget(fmt.Errorf("%s", message)); ok {
+			details[key] = target
+		}
+		extensions["code"] = reason
+		extensions["policy_final"] = true
+		extensions["retryable"] = false
+		extensions["details"] = details
+		extensions["lawful_alternative"] = "Retry only after the caller's authenticated identity, role, or configured access policy changes."
+		changed = true
+	}
+	if !changed {
+		return out
+	}
+	return value
 }
 
 func agentVariablesJSON(value any) (json.RawMessage, error) {
