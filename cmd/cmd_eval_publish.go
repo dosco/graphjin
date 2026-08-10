@@ -310,9 +310,22 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	entry := benchmarkEntryFromReport(report, slug, label, release, opts.Notes, ranked, strings.Join(mismatches, "; "), opts)
 	if ranked {
 		for i := range data.Runs {
-			if data.Runs[i].Ranked && data.Runs[i].Generation != entry.Generation {
+			if !data.Runs[i].Ranked {
+				continue
+			}
+			if data.Runs[i].Generation != entry.Generation {
 				data.Runs[i].Ranked = false
 				data.Runs[i].UnrankedReason = "previous public benchmark cohort (" + data.Runs[i].Generation + ")"
+				continue
+			}
+			// Same cohort, same model, older GraphJin build. The leaderboard compares
+			// models and does not deduplicate rows, so leaving both ranked lists one
+			// model twice at two scores. Release-to-release progress stays visible
+			// through the superseded row and the release timeline.
+			if data.Runs[i].RunID != entry.RunID &&
+				strings.EqualFold(strings.TrimSpace(data.Runs[i].Label), strings.TrimSpace(entry.Label)) {
+				data.Runs[i].Ranked = false
+				data.Runs[i].UnrankedReason = "superseded by GraphJin build " + entry.Release
 			}
 		}
 		data.Suite.ComparisonGeneration = entry.Generation
