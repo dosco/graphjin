@@ -1866,6 +1866,7 @@ func (s *discoveryState) hasWorkflowDetailEvidence() bool {
 
 func (s *discoveryState) mutationEvidenceNext(tables []string) map[string]any {
 	ids := make([]any, 0, len(tables))
+	unresolved := make([]string, 0, len(tables))
 	for _, table := range tables {
 		if table == systemRootWatch || table == systemRootWatchEvent {
 			ids = append(ids, "help:watches")
@@ -1875,25 +1876,34 @@ func (s *discoveryState) mutationEvidenceNext(tables []string) map[string]any {
 		if dialectRepair && !s.hasCatalogDetailID("help:mutations") {
 			ids = append(ids, "help:mutations")
 		}
-		id := s.catalogIDForTable(target)
-		if id == "" {
-			return catalogRepairNext(
-				map[string]any{"kind": "table", "limit": 20},
-				"Enumerate visible tables, select the exact mutation target, then inspect that table card by id in a discovery-only actor step.",
-			)
+		// An unresolved target must not discard the ids that did resolve. A weak
+		// model handed a bare "enumerate visible tables" directive obeys it
+		// literally, gets a list, and retries the same rejected mutation: a list
+		// is not the detail lookup this guard requires. Name every id we can and
+		// enumerate only for what is genuinely unknown.
+		if id := s.catalogIDForTable(target); id != "" {
+			ids = append(ids, id)
+			continue
 		}
-		ids = append(ids, id)
+		unresolved = appendUniqueString(unresolved, target)
 	}
 	if len(ids) == 0 {
+		if len(unresolved) != 0 {
+			return catalogRepairNext(
+				map[string]any{"kind": "table", "limit": 20},
+				fmt.Sprintf("No catalog id is known for %s. Enumerate visible tables, select the exact mutation target, then inspect that table card by id — a table list alone does not satisfy this requirement.", strings.Join(unresolved, ", ")),
+			)
+		}
 		return catalogRepairNext(
 			map[string]any{"kind": "mutation_pattern", "limit": 20},
 			"Inspect a mutation pattern or the exact target table detail before retrying the write.",
 		)
 	}
-	return catalogRepairNext(
-		map[string]any{"ids": ids},
-		"Inspect the exact target table detail and author the mutation only from its returned column and mutation-shape evidence.",
-	)
+	reason := "Inspect the exact target table detail by id and author the mutation only from its returned column and mutation-shape evidence."
+	if len(unresolved) != 0 {
+		reason += fmt.Sprintf(" No catalog id is known for %s yet: enumerate visible tables to locate it, then inspect it by id as well.", strings.Join(unresolved, ", "))
+	}
+	return catalogRepairNext(map[string]any{"ids": ids}, reason)
 }
 
 func (s *discoveryState) catalogIDForTable(table string) string {

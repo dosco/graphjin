@@ -1243,3 +1243,62 @@ func TestSemanticAgentInspectsCoveragePathBeforeExecution(t *testing.T) {
 		t.Fatalf("tool order = %s, want %s", got, wantCalls)
 	}
 }
+
+// TestMutationEvidenceNextKeepsResolvedIDs pins the creation defect found in
+// benchmark run 35621a4f: one unresolved mutation target discarded every catalog
+// id that did resolve and returned a bare "enumerate visible tables" directive.
+// The model obeyed it literally, received a table list, retried the same mutation,
+// and was rejected identically until the step budget ran out — a list is not the
+// by-id detail lookup this guard requires.
+func TestMutationEvidenceNextKeepsResolvedIDs(t *testing.T) {
+	state := newDiscoveryState("Create a watch for churn risk accounts.")
+	state.catalogIDs["table:app:main.accounts"] = true
+
+	// gj_watch resolves to help:watches, accounts resolves to its table card, and
+	// the invented subscription root does not resolve at all.
+	next := state.mutationEvidenceNext([]string{systemRootWatch, "accounts", "churn_risk_accounts"})
+	args, _ := next["args"].(map[string]any)
+	if args == nil {
+		t.Fatalf("continuation carried no args: %#v", next)
+	}
+	ids, _ := args["ids"].([]any)
+	if len(ids) == 0 {
+		t.Fatalf("resolved ids were discarded by an unresolved target: %#v", args)
+	}
+	var haveTable, haveWatchHelp bool
+	for _, id := range ids {
+		switch fmt.Sprint(id) {
+		case "table:app:main.accounts":
+			haveTable = true
+		case "help:watches":
+			haveWatchHelp = true
+		}
+	}
+	if !haveTable || !haveWatchHelp {
+		t.Fatalf("continuation must name every resolvable id, got %#v", ids)
+	}
+	if _, listed := args["kind"]; listed {
+		t.Fatalf("continuation fell back to enumeration despite resolvable ids: %#v", args)
+	}
+	reason := fmt.Sprint(next["reason"])
+	if !strings.Contains(reason, "churn_risk_accounts") {
+		t.Fatalf("continuation must name the unresolved target so it can be located: %q", reason)
+	}
+}
+
+// TestMutationEvidenceNextEnumeratesOnlyWhenNothingResolves keeps the fallback
+// for the genuinely-unknown case, and states plainly that a list is insufficient.
+func TestMutationEvidenceNextEnumeratesOnlyWhenNothingResolves(t *testing.T) {
+	state := newDiscoveryState("Close a ticket.")
+	next := state.mutationEvidenceNext([]string{"mystery_table"})
+	args, _ := next["args"].(map[string]any)
+	if args == nil || args["kind"] != "table" {
+		t.Fatalf("expected table enumeration when nothing resolves: %#v", next)
+	}
+	reason := fmt.Sprint(next["reason"])
+	for _, want := range []string{"mystery_table", "does not satisfy"} {
+		if !strings.Contains(reason, want) {
+			t.Fatalf("fallback reason must name the target and reject list-only evidence, got %q", reason)
+		}
+	}
+}
