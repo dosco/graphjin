@@ -79,6 +79,8 @@ func refusalPriority(code string) int {
 		return 90
 	case "security_runtime_discovery_required":
 		return 80
+	case "cross_source_detail_required":
+		return 75
 	case "workflow_detail_required", "mutation_evidence_required":
 		return 70
 	case "saved_query_detail_required":
@@ -146,6 +148,18 @@ func unblockStepsForViolation(s *discoveryState, v protocolViolation) []unblockS
 			))
 		}
 		return steps
+	case "cross_source_detail_required":
+		ids := stringListFromDetails(v.Details, "sources")
+		if len(ids) == 0 {
+			return catalogDiscoverySteps(s)
+		}
+		return []unblockStepSpec{{
+			step: UnblockStep{
+				Tool:   toolQueryCatalog,
+				Args:   map[string]any{"ids": ids},
+				Reason: "Inspect every source selected by the distiller before authoring the cross-source operation.",
+			},
+		}}
 	case "security_runtime_discovery_required":
 		return []unblockStepSpec{
 			{step: UnblockStep{Tool: toolQueryCatalog, Args: map[string]any{"id": "help:security"}, Reason: "Inspect security guidance before write-capable GraphQL."}, roots: []string{systemRootSecurity}},
@@ -273,6 +287,8 @@ func lawfulAlternativeForViolation(v protocolViolation) string {
 		return "Inspect the saved query detail first, then execute the approved saved query."
 	case "mutation_evidence_required":
 		return "Use catalog detail and validation evidence, or an approved saved mutation, before executing the write."
+	case "cross_source_detail_required":
+		return "Inspect every source selected by the distiller, then re-author the operation using only those exact source details."
 	case "security_runtime_discovery_required":
 		return "Read visible security/runtime guidance first; if those roots are not visible, ask an authorized operator to perform the write."
 	case "workflow_detail_required":

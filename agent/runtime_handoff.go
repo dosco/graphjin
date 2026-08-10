@@ -25,10 +25,21 @@ const (
 type graphJinCodeRuntime struct {
 	base                   *axgoja.Runtime
 	lastExecution          func() any
+	handoffFallback        func() any
 	onDistilledResult      func(any)
 	pendingFinal           func() string
 	pendingContinuation    func() string
 	completionContinuation func() string
+}
+
+// WithHandoffFallback supplies runtime-only evidence gathered by GraphJin
+// callables during distillation. Ax preserves JavaScript variables across the
+// stage patch, but a weak distiller can still discard a useful catalog result
+// by ending with final(request, {}). Keep the governed result on the same Goja
+// session instead of asking the executor to rediscover or guess it.
+func (r *graphJinCodeRuntime) WithHandoffFallback(fallback func() any) *graphJinCodeRuntime {
+	r.handoffFallback = fallback
+	return r
 }
 
 func newGraphJinCodeRuntime(lastExecution func() any, onDistilledResult func(any), pendingFinal func() string, pendingContinuation func() string, completionContinuation ...func() string) *graphJinCodeRuntime {
@@ -73,6 +84,7 @@ func (r *graphJinCodeRuntime) CreateSession(globals map[string]ax.Value, options
 	return &graphJinCodeSession{
 		base:                   session,
 		lastExecution:          r.lastExecution,
+		handoffFallback:        r.handoffFallback,
 		onDistilledResult:      r.onDistilledResult,
 		pendingFinal:           r.pendingFinal,
 		pendingContinuation:    r.pendingContinuation,
@@ -86,6 +98,7 @@ func (r *graphJinCodeRuntime) CreateSession(globals map[string]ax.Value, options
 type graphJinCodeSession struct {
 	base                   ax.CodeSession
 	lastExecution          func() any
+	handoffFallback        func() any
 	onDistilledResult      func(any)
 	pendingFinal           func() string
 	pendingContinuation    func() string
@@ -95,6 +108,7 @@ type graphJinCodeSession struct {
 	originalHistory        any
 	executorRequest        any
 	distilledContext       any
+	explicitHandoff        bool
 	executorStage          bool
 	handoffReadRequired    bool
 	handoffRead            bool
@@ -107,16 +121,22 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 	readsHandoff := referencesRuntimeHandoff(code)
 	usesGraphJinCallable := referencesGraphJinCallable(code)
 	if s.executorStage && s.historyReadRequired && !s.historyRead && !readsHistory {
+		// The condition and the safe recovery are both known in Go. Surface the
+		// bounded prior turns once, mark the prerequisite satisfied, and let the
+		// next actor step use the returned value. Requiring a weak model to spell a
+		// magic global name merely turns a deterministic handoff into a retry loop.
+		s.historyRead = true
 		return map[string]any{
 			"kind": "result",
 			"result": map[string]any{
 				"graphjin_protocol": "history_read_required",
-				"message":           "This follow-up depends on runtime-only prior turns. Read and narrow globalThis.graphjinHistory in JavaScript before calling GraphJin tools or finalizing.",
-				"next":              "Select the most recent relevant content and catalog_ids from graphjinHistory, then re-establish this run's catalog evidence and answer from both.",
+				"message":           "This follow-up depends on prior turns. GraphJin supplied the bounded history below; use its most recent relevant content, then re-establish this run's catalog evidence.",
+				"history":           normalizeValue(s.originalHistory),
+				"next":              "Resolve the referenced entity from history, inspect its exact catalog detail, and execute the required query.",
 			},
 		}
 	}
-	if s.executorStage && s.handoffReadRequired && !s.handoffRead && !readsHandoff && !usesGraphJinCallable {
+	if s.executorStage && s.handoffReadRequired && !s.handoffRead && !readsHandoff && (!usesGraphJinCallable || s.explicitHandoff) {
 		return map[string]any{
 			"kind": "result",
 			"result": map[string]any{
@@ -133,7 +153,7 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 	if readsHandoff {
 		s.handoffRead = true
 	}
-	if usesGraphJinCallable {
+	if usesGraphJinCallable && !s.explicitHandoff {
 		// A real GraphJin call supplies fresh, same-run evidence and is still
 		// governed by the protocol runtime. Do not let the context-orientation
 		// guard preempt stricter query/mutation evidence checks.
@@ -146,8 +166,26 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 	if s.executorStage && (completionType == "final" || completionType == "askclarification") && s.pendingFinal != nil {
 		if message := strings.TrimSpace(s.pendingFinal()); message != "" {
 			protocolCode, publicMessage := pendingFinalProtocol(message)
-			if protocolCode == "saved_query_execution_required" && s.pendingContinuation != nil {
+			if s.pendingContinuation != nil {
 				if continuation := strings.TrimSpace(s.pendingContinuation()); continuation != "" {
+					if protocolCode == "execution_evidence_required" {
+						// Recoverable write/control-plane guards already know the exact
+						// catalog evidence still required. Run only that discovery now;
+						// because the code has no final(), Ax advances to another executor
+						// turn where the model can author from the returned detail.
+						s.handoffRead = true
+						return s.base.Execute(continuation, options)
+					}
+					if protocolCode != "saved_query_execution_required" {
+						return map[string]any{
+							"kind": "result",
+							"result": map[string]any{
+								"graphjin_protocol": protocolCode,
+								"message":           publicMessage,
+								"next":              publicMessage,
+							},
+						}
+					}
 					// The model already chose to terminate, so execute the narrow,
 					// protocol-derived continuation in the same runtime session and
 					// return its live result to the next actor step. This is limited to
@@ -174,6 +212,7 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 					"graphjin_protocol": protocolCode,
 					"message":           publicMessage,
 					"next":              publicMessage,
+					"attempt":           runtimeFinalEvidenceValue(result),
 				},
 			}
 		}
@@ -204,6 +243,8 @@ func (s *graphJinCodeSession) refreshLastExecutionBinding(options map[string]ax.
 func pendingFinalProtocol(message string) (string, string) {
 	for _, item := range []struct{ prefix, code string }{
 		{"execution_repair_required:", "execution_repair_required"},
+		{"execution_evidence_required:", "execution_evidence_required"},
+		{"execution_retry_required:", "execution_retry_required"},
 		{"database_computation_required:", "database_computation_required"},
 	} {
 		if strings.HasPrefix(message, item.prefix) {
@@ -223,7 +264,7 @@ func (s *graphJinCodeSession) SnapshotGlobals(options map[string]ax.Value) ax.Va
 
 func (s *graphJinCodeSession) PatchGlobals(snapshot ax.Value, options map[string]ax.Value) ax.Value {
 	s.executorStage = true
-	s.historyReadRequired = hasRuntimeHandoffValue(s.originalHistory) && instructionNeedsHistory(s.originalInstruction)
+	s.historyReadRequired = hasRuntimeHandoffValue(s.originalHistory)
 	distilled := runtimeBindingFromSnapshot(snapshot, "distilledContext")
 	if distilled == nil {
 		distilled = s.distilledContext
@@ -277,11 +318,38 @@ func referencesGraphJinCallable(code string) bool {
 		"query_catalog", "graphql_help", "validate_where_clause",
 		"execute_saved_query", "execute_graphql",
 	} {
-		if strings.Contains(code, name+"(") {
+		if referencesCallableInvocation(code, name) {
 			return true
 		}
 	}
 	return false
+}
+
+// referencesCallableInvocation recognizes the bare runtime-call form even when
+// a model inserts whitespace before the opening parenthesis. The boundary check
+// avoids treating longer helper names as GraphJin calls.
+func referencesCallableInvocation(code, name string) bool {
+	for offset := 0; offset < len(code); {
+		index := strings.Index(code[offset:], name)
+		if index < 0 {
+			return false
+		}
+		index += offset
+		beforeOK := index == 0 || !isJavaScriptIdentifierByte(code[index-1])
+		after := index + len(name)
+		for after < len(code) && (code[after] == ' ' || code[after] == '\t' || code[after] == '\r' || code[after] == '\n') {
+			after++
+		}
+		if beforeOK && after < len(code) && code[after] == '(' {
+			return true
+		}
+		offset = index + len(name)
+	}
+	return false
+}
+
+func isJavaScriptIdentifierByte(value byte) bool {
+	return value == '_' || value == '$' || value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
 }
 
 func instructionNeedsHistory(instruction string) bool {
@@ -327,6 +395,11 @@ func runtimeFinalEvidence(value any) (any, bool) {
 	return normalizeValue(args[1]), true
 }
 
+func runtimeFinalEvidenceValue(value any) any {
+	evidence, _ := runtimeFinalEvidence(value)
+	return evidence
+}
+
 func (s *graphJinCodeSession) captureDistillerHandoff(result ax.Value) {
 	step := mapValue(result)
 	if step == nil {
@@ -357,6 +430,7 @@ func (s *graphJinCodeSession) captureDistillerHandoff(result ax.Value) {
 					if value := normalizeValue(draft[key]); hasRuntimeHandoffValue(value) {
 						s.distilledContext = value
 						narrowed = value
+						s.explicitHandoff = true
 						break
 					}
 				}
@@ -367,6 +441,14 @@ func (s *graphJinCodeSession) captureDistillerHandoff(result ax.Value) {
 		if value := normalizeValue(args[1]); hasRuntimeHandoffValue(value) {
 			s.distilledContext = value
 			narrowed = value
+			s.explicitHandoff = true
+		}
+	}
+	if !hasRuntimeHandoffValue(s.distilledContext) && s.handoffFallback != nil {
+		if value := normalizeValue(s.handoffFallback()); hasRuntimeHandoffValue(value) {
+			s.distilledContext = value
+			narrowed = value
+			s.explicitHandoff = true
 		}
 	}
 	if !hasRuntimeHandoffValue(s.distilledContext) && hasRuntimeHandoffValue(s.seedContext) {

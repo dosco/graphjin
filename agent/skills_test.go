@@ -11,7 +11,23 @@ import (
 )
 
 func profileWithRoleAndRoots(role string, roots ...string) *CapabilityProfile {
-	return &CapabilityProfile{RoleClass: role, AvailableSystemRoots: roots}
+	actions := []string{
+		CapabilityActionDataInsert,
+		CapabilityActionDataUpdate,
+		CapabilityActionDataDelete,
+		CapabilityActionCodeWrite,
+	}
+	for _, root := range roots {
+		for _, action := range []string{"insert", "update", "delete"} {
+			actions = append(actions, root+"."+action)
+		}
+	}
+	return &CapabilityProfile{
+		RoleClass:            role,
+		AllowedActions:       actions,
+		AvailableTools:       []string{toolGraphQLHelp, toolQueryCatalog, toolValidateWhere, toolExecuteSavedQuery, toolExecuteGraphQL},
+		AvailableSystemRoots: roots,
+	}
 }
 
 func skillIDs(definitions []skillDefinition) []string {
@@ -94,7 +110,7 @@ func TestAllowedSkillsCapabilityMatrix(t *testing.T) {
 		profile  *CapabilityProfile
 		want     []string
 	}{
-		{name: "anonymous", want: baseWrite},
+		{name: "missing profile fails closed", want: baseRead},
 		{name: "anonymous read only", readOnly: true, want: baseRead},
 		{
 			name:    "workflow execution only",
@@ -181,12 +197,11 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		profile *CapabilityProfile
 		max     int
 	}{
-		// Budgets ratchet both ways. They grew when data_aggregation moved
-		// teaching into the accounted skill channel, then dropped when the
-		// always-co-loaded write-side watch guides merged and prose tightened.
-		// Keep modest headroom so prompt growth remains a deliberate diff.
-		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 2816},
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 17 * 512},
+		// Budgets ratchet both ways. The current allowance includes the exact
+		// discovery prerequisites enforced by the write and cross-source guards.
+		// Keep modest headroom so any further prompt growth remains deliberate.
+		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3 * 1024},
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18 * 512},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			definitions := allowedSkills(false, tc.profile)
@@ -205,6 +220,38 @@ func TestSkillPayloadBudgets(t *testing.T) {
 	}
 }
 
+func TestCapabilityCompletionInstructionBudgets(t *testing.T) {
+	allRoots := []string{
+		systemRootSecurity,
+		systemRootRuntime,
+		systemRootConfig,
+		systemRootWorkflow,
+		systemRootWorkflowExec,
+		systemRootWatch,
+		systemRootWatchEvent,
+		systemRootTask,
+		systemRootTaskEntry,
+	}
+	for _, tc := range []struct {
+		name     string
+		readOnly bool
+		profile  *CapabilityProfile
+		max      int
+	}{
+		{name: "read-only user", readOnly: true, profile: profileWithRoleAndRoots("user"), max: 4 * 1024},
+		{name: "watch user", profile: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent), max: 4 * 1024},
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 4 * 1024},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := capabilityCompletionInstructions(allowedSkills(tc.readOnly, tc.profile))
+			if len(payload) > tc.max {
+				t.Fatalf("capability addendum = %d bytes, max %d", len(payload), tc.max)
+			}
+			t.Logf("capability addendum: %d bytes", len(payload))
+		})
+	}
+}
+
 func TestWatchSkillsTeachAllFourDecisionBranches(t *testing.T) {
 	// The merged watch_write guide must retain the behavioral contract formerly
 	// split across watch_write, watch_flow, and watch_delivery.
@@ -218,7 +265,10 @@ func TestWatchSkillsTeachAllFourDecisionBranches(t *testing.T) {
 		"is not permission to act",
 		"Deterministic action triggers",
 		"semantic or noisy action triggers",
-		"security guidance",
+		"help:security",
+		"help:runtime",
+		"help:watches",
+		`delivery_json: { kind: "inbox", digest: { window: "1h" } }`,
 		"condition_js never executes",
 		"default_watch_triage",
 		"inline AxFlow Mermaid",
@@ -240,6 +290,61 @@ func TestWatchSkillsTeachAllFourDecisionBranches(t *testing.T) {
 		if !strings.Contains(watchWriteInstruction, fragment) {
 			t.Fatalf("watch lifecycle guidance missing %q", fragment)
 		}
+	}
+}
+
+func TestWatchReadSkillUsesCanonicalEventAndAcknowledgementShapes(t *testing.T) {
+	for _, fragment := range []string{
+		"help:security",
+		"help:runtime",
+		"help:watches",
+		"gj_watch_event(where:",
+		"data_json",
+		"not event_json or payload_json",
+		`eq: "<event_id>"`,
+		"update: { seen: true }",
+		"quote its exact string id",
+	} {
+		if !strings.Contains(watchReadInstruction, fragment) {
+			t.Fatalf("watch read guidance missing %q", fragment)
+		}
+	}
+}
+
+func TestSkillsExposeEnforcedDiscoveryPrerequisites(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		guidance  string
+		fragments []string
+	}{
+		{
+			name:      "cross-source reads",
+			guidance:  dataDiscoveryInstruction,
+			fragments: []string{"source:<name>", "exact catalog IDs", "joined field"},
+		},
+		{
+			name:      "data writes",
+			guidance:  dataWriteInstruction,
+			fragments: []string{"help:security", "help:runtime", "exact catalog IDs", "mutation_pattern", "table details", "table-root mutation syntax", "never invent Hasura"},
+		},
+		{
+			name:      "watch reads",
+			guidance:  watchReadInstruction,
+			fragments: []string{"help:watches", "exact examples", "never invent table IDs"},
+		},
+		{
+			name:      "watch writes",
+			guidance:  watchWriteInstruction,
+			fragments: []string{"help:security", "help:runtime", "help:watches", "exact catalog IDs"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, fragment := range tc.fragments {
+				if !strings.Contains(tc.guidance, fragment) {
+					t.Fatalf("skill guidance missing enforced prerequisite %q: %s", fragment, tc.guidance)
+				}
+			}
+		})
 	}
 }
 

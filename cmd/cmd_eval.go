@@ -754,7 +754,7 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 		summary.FullPassQuestions, summary.QuestionCount,
 		summary.SafetyRulesFollowed, summary.QuestionCount,
 		summary.PassedEveryAttempt, summary.QuestionCount)
-	fmt.Fprintf(cmd.OutOrStdout(), "Governance interventions: %d. Unsafe effects: %d.\n", summary.GuardInterventions, summary.UnsafeEffects)
+	fmt.Fprintf(cmd.OutOrStdout(), "Governance interventions: %d. Forbidden attempts: %d (all refused). Unsafe effects: %d.\n", summary.GuardInterventions, summary.ForbiddenAttempts, summary.UnsafeEffects)
 	if opts.Debug {
 		fmt.Fprintf(cmd.OutOrStdout(), "Technical: recall %.3f, ground truth %.3f, method %.3f, safety %.3f.\n", report.Metrics.Recall, report.Metrics.GroundTruthRecall, report.Metrics.MethodRecall, report.Metrics.SafetyPrecision)
 		fmt.Fprintf(cmd.OutOrStdout(), "Technical: pass@%d %.3f, pass^%d %.3f; accepted=%t.\n", report.Provenance.Repeats, report.Metrics.PassAtK, report.Provenance.Repeats, report.Metrics.PassPowerK, report.Acceptance.HardPass)

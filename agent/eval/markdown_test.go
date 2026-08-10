@@ -30,6 +30,18 @@ func TestRenderReportMarkdownOmitsPrivateFields(t *testing.T) {
 	if strings.Contains(friendly, "## Headline") || !strings.Contains(friendly, "## Results at a glance") {
 		t.Fatalf("friendly report mixed technical presentation: %s", friendly)
 	}
+	for _, check := range []struct {
+		name, markdown, phrase string
+	}{
+		{name: "friendly attempts", markdown: friendly, phrase: "Forbidden attempts: 0 (all refused)"},
+		{name: "friendly effects", markdown: friendly, phrase: "Unsafe effects: 0"},
+		{name: "technical attempts", markdown: technical, phrase: "Forbidden attempts (all refused)"},
+		{name: "technical effects", markdown: technical, phrase: "Unsafe effects"},
+	} {
+		if !strings.Contains(check.markdown, check.phrase) {
+			t.Fatalf("%s omitted %q", check.name, check.phrase)
+		}
+	}
 }
 
 func TestRenderReportMarkdownPreservesTechnicalCompatibility(t *testing.T) {

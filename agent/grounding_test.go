@@ -259,6 +259,108 @@ func TestExecuteGraphQLErrorAttachesCompactRecovery(t *testing.T) {
 	}
 }
 
+func TestWatchSystemRootDidYouMeanRepairNamesCanonicalRootsAndRecovers(t *testing.T) {
+	base := &sequencedExecRuntime{
+		fakeRuntime: &fakeRuntime{},
+		outputs: []any{
+			executeResult{Errors: []ErrorInfo{{
+				Message: "table not found: main.watch_events_unseen",
+				Extensions: map[string]any{
+					"graphjin_repair": map[string]any{"kind": "table_not_found"},
+				},
+			}}},
+			map[string]any{"data": map[string]any{
+				systemRootWatchEvent: []any{map[string]any{"id": "event-1", "watch_id": "watch-1", "seen": false}},
+			}},
+		},
+	}
+	profile := profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent)
+	runtime := newProtocolRuntime(base, "review the unseen watch event", "", 20, profile, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"help:watches"}
+	runtime.state.securityRuntimeEvidence = true
+
+	failed, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `query { watch_events_unseen { id watch_id seen } }`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := failed.(executeResult)
+	if !ok || len(result.Errors) != 1 {
+		t.Fatalf("failed result = %#v", failed)
+	}
+	extensions := result.Errors[0].Extensions
+	if got := stringFromMap(extensions, "code"); got != "system_root_did_you_mean" {
+		t.Fatalf("error code = %q, want system_root_did_you_mean", got)
+	}
+	repair := mapValue(extensions["graphjin_repair"])
+	if got := stringFromMap(repair, "attempted_root"); got != "watch_events_unseen" {
+		t.Fatalf("attempted root = %q", got)
+	}
+	candidates := evidenceStringSlice(repair["available_system_roots"])
+	if len(candidates) != 2 || candidates[0] != systemRootWatchEvent || candidates[1] != systemRootWatch {
+		t.Fatalf("candidate roots = %v, want [%s %s]", candidates, systemRootWatchEvent, systemRootWatch)
+	}
+	if example := stringFromMap(repair, "example_query"); !strings.Contains(example, "query { gj_watch_event(") {
+		t.Fatalf("example query = %q", example)
+	}
+	next := mapValue(repair["next"])
+	if stringFromMap(next, "recommended_tool") != toolExecuteGraphQL {
+		t.Fatalf("repair next = %#v", next)
+	}
+	summary := runtime.state.actions[len(runtime.state.actions)-1].Summary
+	if !containsString(evidenceStringSlice(summary["recovery_codes"]), "system_root_did_you_mean") || summary["recovery_tool"] != toolExecuteGraphQL {
+		t.Fatalf("repair action summary = %#v", summary)
+	}
+	runtime.state.securityRuntimeEvidence = false
+	continuation := runtime.state.completionContinuation()
+	for _, fragment := range []string{
+		`query_catalog({ids:["help:security","help:runtime"]})`,
+		`execute_graphql({"query":`,
+		`query { gj_watch_event(`,
+		`data_json`,
+	} {
+		if !strings.Contains(continuation, fragment) {
+			t.Fatalf("system-root continuation missing %q: %s", fragment, continuation)
+		}
+	}
+	if runtime.state.pendingSystemRootQuery != "" {
+		t.Fatalf("system-root continuation was not consumed: %q", runtime.state.pendingSystemRootQuery)
+	}
+	runtime.state.securityRuntimeEvidence = true
+
+	corrected := `query { gj_watch_event(where: { seen: { eq: false } }, limit: 1) { id watch_id seen } }`
+	passed, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": corrected})
+	if err != nil || executionFailed(passed) {
+		t.Fatalf("corrected execution = %#v err=%v", passed, err)
+	}
+	if base.calls != 2 || runtime.state.pendingFailedQueryKey != "" {
+		t.Fatalf("repair state: calls=%d pending=%q", base.calls, runtime.state.pendingFailedQueryKey)
+	}
+}
+
+func TestSystemRootDidYouMeanDoesNotRewriteApplicationTableFailure(t *testing.T) {
+	runtime := newProtocolRuntime(&failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
+		Errors: []ErrorInfo{{Message: "table not found: main.watchlists"}},
+	}}, "show watchlists", "", 20, profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent), nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:main:watchlists"}
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { watchlists { id } }`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := out.(executeResult)
+	if got := stringFromMap(result.Errors[0].Extensions, "code"); got == "system_root_did_you_mean" {
+		t.Fatal("ordinary application table received a system-root rewrite")
+	}
+	if next := mapValue(mapValue(result.Recovery)["next"]); stringFromMap(next, "recommended_tool") != toolQueryCatalog {
+		t.Fatalf("ordinary recovery = %#v", result.Recovery)
+	}
+}
+
 func TestNonAggregateUnknownFieldKeepsGenericRecovery(t *testing.T) {
 	base := &failingExecRuntime{fakeRuntime: &fakeRuntime{}, execOut: executeResult{
 		Errors: []ErrorInfo{{

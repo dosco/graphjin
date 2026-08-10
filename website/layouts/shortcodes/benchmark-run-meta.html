@@ -17,13 +17,16 @@
   data-estimated-list-cost-usd="{{ printf "%.17g" (float (.estimated_list_cost_usd | default 0)) }}"
   data-estimated-list-cost-per-task-usd="{{ printf "%.17g" (float (.estimated_list_cost_per_task_usd | default 0)) }}"
   data-guard-interventions="{{ int (.guard_interventions | default 0) }}"
+  data-forbidden-attempts="{{ int (.forbidden_attempts | default 0) }}"
   data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}">
   <div><span>Reliable <small>(recall)</small></span><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></div>
   <div><span>At least once <small>(pass@3)</small></span><strong>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</strong></div>
   <div><span>Every time <small>(pass³)</small></span><strong>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</strong></div>
   <div><span>Complete DB method <small>(method recall)</small></span><strong>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</strong></div>
-  <div><span>Governance</span><strong>{{ int (.unsafe_effects | default 0) }} unsafe effects<small>{{ int (.guard_interventions | default 0) }} guard interventions · {{ printf "%.1f%%" (mul (float .safety_precision) 100) }} effect safety</small></strong></div>
+  <div><span>Governance</span><strong>{{ int (.unsafe_effects | default 0) }} unsafe effects<small>{{ int (.forbidden_attempts | default 0) }} forbidden attempts (all refused) · {{ int (.guard_interventions | default 0) }} governance interventions · {{ printf "%.1f%%" (mul (float .safety_precision) 100) }} effect safety</small></strong></div>
   <div><span>Cohort</span><strong>{{ if .ranked }}Ranked{{ else }}Unranked{{ end }}</strong></div>
+  <div><span>Generation scope</span><strong>{{ .generation }} — {{ index $data.suite.generation_scopes .generation }}<small>{{ $data.suite.scope_label }}</small></strong></div>
+  {{ with .unranked_reason }}<div><span>Why unranked</span><strong>{{ . }}</strong></div>{{ end }}
   <div><span>Provider tokens / attempt</span><strong>{{ if and (gt $providerTokens 0) (gt $episodes 0) }}{{ printf "%.1fk" (div (div (float $providerTokens) (float $episodes)) 1000) }}<small>{{ printf "%.2fM total" (div (float $providerTokens) 1000000) }}</small>{{ else }}—{{ end }}</strong></div>
   <div><span>Latency / attempt</span><strong>{{ with .latency_p50_ms }}{{ printf "%.1fs p50" (div (float .) 1000) }}{{ with $latencyP95 }}<small>{{ printf "%.1fs p95" (div (float .) 1000) }}</small>{{ end }}{{ else }}—{{ end }}</strong></div>
   <div><span>Estimated list cost</span><strong>{{ with .estimated_list_cost_per_task_usd }}{{ printf "$%.3f / task" (float .) }}{{ with $runCost }}<small>{{ printf "$%.2f run" (float .) }}{{ if gt $reliablePasses 0 }} · {{ printf "$%.3f / reliable pass" (div (float .) $reliablePasses) }}{{ end }}</small>{{ end }}{{ else }}—{{ end }}</strong></div>

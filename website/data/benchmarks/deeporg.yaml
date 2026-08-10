@@ -5,8 +5,14 @@ benchmark:
     name: DeepORG — The Organizational Agent Benchmark
 suite:
     generation: "2027.1"
+    comparison_generation: "2027.1"
+    scope_label: 2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source
+    generation_scopes:
+        "2026.1": governed read-only Q&A
+        "2026.2": governed read-only Q&A
+        "2027.1": adds writes, alerts, follow-ups, multi-source
     generator_version: graphjin.eval.generator/v8
-    identity: 63d08400d4ca5dc51560d1e0236afcda
+    identity: 878ca848c7e2390d46f9242e55d32696
     suite_fingerprint: 68bc8a8784947a44d12a87d7f2c5a856
     catalog_hash: c5bca3b5cb6572af53a9d4e954b87031
     seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
@@ -14,7 +20,7 @@ suite:
     seed: 23
     repeats: 3
     max_steps: 8
-    reward_version: graphjin.eval.reward/v3
+    reward_version: graphjin.eval.reward/v4
     category_counts:
         action: 10
         aggregate: 17
@@ -77,7 +83,7 @@ runs:
       label: Gemini 3.5 Flash-Lite
       release: 6211d6ce
       ranked: false
-      unranked_reason: previous public benchmark cohort (2026.2)
+      unranked_reason: superseded by corrected scoring contract (graphjin.eval.reward/v3 → graphjin.eval.reward/v4)
       generation: "2026.2"
       generated_at: 2026-08-07T02:42:50.026835Z
       model: gemini-3.5-flash-lite
@@ -189,7 +195,7 @@ runs:
       label: OpenAI GPT-5.4 mini
       release: 89df23ec
       ranked: false
-      unranked_reason: previous public benchmark cohort (2026.2)
+      unranked_reason: superseded by corrected scoring contract (graphjin.eval.reward/v3 → graphjin.eval.reward/v4)
       generation: "2026.2"
       generated_at: 2026-08-07T08:27:14.33668Z
       model: gpt-5.4-mini
@@ -364,7 +370,8 @@ runs:
       slug: 20260808t005514-b4bb1850
       label: OpenAI GPT-5.4 mini
       release: 50487db0
-      ranked: true
+      ranked: false
+      unranked_reason: 'agent harness defect: write/watch execution path was incomplete; rerun pending'
       generation: "2027.1"
       generated_at: 2026-08-08T00:55:14.620632Z
       model: gpt-5.4-mini
@@ -425,7 +432,8 @@ runs:
       slug: 20260808t005629-c310b509
       label: Gemini 3.5 Flash-Lite
       release: 50487db0
-      ranked: true
+      ranked: false
+      unranked_reason: 'agent harness defect: write/watch execution path was incomplete; rerun pending'
       generation: "2027.1"
       generated_at: 2026-08-08T00:56:29.454411Z
       model: gemini-3.5-flash-lite
@@ -481,4 +489,65 @@ runs:
       guard_interventions: 109
       unsafe_effects: 0
       rescored_from: 20260807T223233.695357000Z-79a98cc0
+      accepted: true
+    - run_id: 20260809T103929.615620000Z-a1f5f033
+      slug: 20260809t103929-a1f5f033
+      label: Gemini 3.5 Flash-Lite
+      release: 070daeae
+      ranked: true
+      generation: "2027.1"
+      generated_at: 2026-08-09T10:39:29.615626Z
+      model: gemini-3.5-flash-lite
+      provider: google-gemini
+      graphjin_commit: 070daeae
+      binary_fingerprint: 9e9458ce6f182a72145ebbc78277cfda216497d46ee35d2d368e023821cf608b
+      suite_identity: 878ca848c7e2390d46f9242e55d32696
+      suite_fingerprint: 68bc8a8784947a44d12a87d7f2c5a856
+      catalog_hash: c5bca3b5cb6572af53a9d4e954b87031
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 84e5a3b073f2474b15e4e1677551673e3949b133351b2de1c139f288d051c979
+      data_anchor: "2026-08-09"
+      reward_version: graphjin.eval.reward/v4
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 100
+      episode_count: 300
+      recall: 0.69
+      recall_ci_low: 0.6
+      recall_ci_high: 0.78
+      pass_at_k: 0.82
+      pass_power_k: 0.37
+      ground_truth_recall: 0.7555555555555555
+      method_recall: 0.7888888888888889
+      safety_precision: 1
+      behavior_recall: 0.73
+      category_recall:
+        action: 0.5
+        aggregate: 1
+        cross-source: 0
+        discovery: 0.875
+        multi-turn: 0
+        ranking: 0.9230769230769231
+        reactive: 0.25
+        refusal: 0.3
+        saved-metric: 0.875
+        window: 0.9411764705882353
+      mean_reward: 0.8249929999999995
+      total_tokens: 11512538
+      prompt_tokens: 11261407
+      completion_tokens: 251131
+      provider_total_tokens: 11512538
+      latency_p50_ms: 4073
+      latency_p95_ms: 26333
+      prompt_price_per_million: 0.3
+      completion_price_per_million: 2.5
+      estimated_list_cost_usd: 4.0062496
+      estimated_list_cost_per_task_usd: 0.040062496
+      pricing_source: https://ai.google.dev/gemini-api/docs/generate-content/latest-model (2026-08-07)
+      guard_interventions: 231
+      forbidden_attempts: 73
+      unsafe_effects: 0
       accepted: true

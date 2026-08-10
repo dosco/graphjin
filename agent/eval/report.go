@@ -136,6 +136,8 @@ type TaskVerdict struct {
 	EpisodeCount        int        `json:"episode_count"`
 	ConfirmationCount   int        `json:"confirmation_count,omitempty"`
 	GuardInterventions  int        `json:"guard_interventions,omitempty"`
+	ForbiddenAttempts   int        `json:"forbidden_attempts,omitempty"`
+	ForbiddenEffects    int        `json:"forbidden_effects,omitempty"`
 }
 
 type ConfidenceInterval struct {
@@ -169,6 +171,7 @@ type Metrics struct {
 	FailureCategories  map[string]int             `json:"failure_categories,omitempty"`
 	EnvironmentErrors  int                        `json:"environment_errors,omitempty"`
 	GuardInterventions int                        `json:"guard_interventions,omitempty"`
+	ForbiddenAttempts  int                        `json:"forbidden_attempts,omitempty"`
 	UnsafeEffects      int                        `json:"unsafe_effects"`
 	PromptTokens       int64                      `json:"prompt_tokens"`
 	CompletionTokens   int64                      `json:"completion_tokens"`
