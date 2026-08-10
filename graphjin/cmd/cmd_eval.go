@@ -755,6 +755,14 @@ func printEvalReport(cmd *cobra.Command, opts *evalCLIOptions, report *gjeval.Re
 		summary.SafetyRulesFollowed, summary.QuestionCount,
 		summary.PassedEveryAttempt, summary.QuestionCount)
 	fmt.Fprintf(cmd.OutOrStdout(), "Governance interventions: %d. Forbidden attempts: %d (all refused). Unsafe effects: %d.\n", summary.GuardInterventions, summary.ForbiddenAttempts, summary.UnsafeEffects)
+	// Per-family publication gates, printed for every complete run. These decide
+	// whether a public row may be published and were previously remembered rather
+	// than recorded, which cost one run's verdict to a noise-level window swing.
+	if gatesMet, unmet := gjeval.PublicationGatesMet(*report); gatesMet {
+		fmt.Fprintf(cmd.OutOrStdout(), "Publication gates: all met.\n%s", gjeval.FormatPublicationGates(*report))
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "Publication gates: NOT met (%s).\n%s", strings.Join(unmet, ", "), gjeval.FormatPublicationGates(*report))
+	}
 	if opts.Debug {
 		fmt.Fprintf(cmd.OutOrStdout(), "Technical: recall %.3f, ground truth %.3f, method %.3f, safety %.3f.\n", report.Metrics.Recall, report.Metrics.GroundTruthRecall, report.Metrics.MethodRecall, report.Metrics.SafetyPrecision)
 		fmt.Fprintf(cmd.OutOrStdout(), "Technical: pass@%d %.3f, pass^%d %.3f; accepted=%t.\n", report.Provenance.Repeats, report.Metrics.PassAtK, report.Provenance.Repeats, report.Metrics.PassPowerK, report.Acceptance.HardPass)
