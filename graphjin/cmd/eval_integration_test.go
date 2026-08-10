@@ -18,20 +18,39 @@ import (
 )
 
 type evalScriptClient struct {
-	mu   sync.RWMutex
-	code string
+	mu       sync.RWMutex
+	code     string
+	sequence []string
+	calls    int
 }
 
 func (c *evalScriptClient) setCode(code string) {
 	c.mu.Lock()
 	c.code = code
+	c.sequence = nil
+	c.calls = 0
+	c.mu.Unlock()
+}
+
+func (c *evalScriptClient) setSequence(sequence ...string) {
+	c.mu.Lock()
+	c.sequence = append([]string(nil), sequence...)
+	c.calls = 0
 	c.mu.Unlock()
 }
 
 func (c *evalScriptClient) Chat(context.Context, map[string]ax.Value, map[string]ax.Value) (ax.Value, error) {
-	c.mu.RLock()
+	c.mu.Lock()
 	code := c.code
-	c.mu.RUnlock()
+	if len(c.sequence) != 0 {
+		index := c.calls
+		if index >= len(c.sequence) {
+			index = len(c.sequence) - 1
+		}
+		code = c.sequence[index]
+		c.calls++
+	}
+	c.mu.Unlock()
 	content, _ := json.Marshal(map[string]string{"javascriptCode": code})
 	return map[string]ax.Value{
 		"results": []ax.Value{map[string]ax.Value{"content": string(content)}},
@@ -214,6 +233,16 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 	}
 	defer instance.Close() //nolint:errcheck
 
+	verifier := &gjeval.Verifier{BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+	source := gjeval.HTTPCatalogSource{BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+	snapshot, err := source.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Status.ReadOnly {
+		t.Fatal("embedded writable eval reports read_only=true from /api/v1/agent/status")
+	}
+
 	write := `mutation { payments(insert: {id: 990123, invoice_id: 1, amount_cents: 123, reference: "ROLE-CHECK", recorded_at: "2027-01-15T12:00:00Z"}) { id } }`
 	userBody, err := evalIntegrationGraphQL(instance.BaseURL(), instance.Headers(), write)
 	if err != nil || bytes.Contains(userBody, []byte(`"errors"`)) {
@@ -241,13 +270,11 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 		t.Fatalf("anonymous role unexpectedly performed the paired payment action: %s", observerBody)
 	}
 
-	verifier := &gjeval.Verifier{BaseURL: instance.BaseURL(), Headers: instance.Headers()}
-	source := gjeval.HTTPCatalogSource{BaseURL: instance.BaseURL(), Headers: instance.Headers()}
 	suite, err := (gjeval.Generator{Source: source, Verifier: verifier}).Generate(context.Background(), gjeval.GeneratorOptions{Seed: 23, Scale: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var delivery, definition *gjeval.Task
+	var delivery, definition, crossSource, refusal *gjeval.Task
 	var reactiveSlugs []string
 	for index := range suite.Tasks {
 		if suite.Tasks[index].Category == gjeval.CategoryReactive {
@@ -259,26 +286,98 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 		if suite.Tasks[index].Category == gjeval.CategoryReactive && suite.Tasks[index].Mutation != nil && strings.Contains(suite.Tasks[index].Mutation.ExpectedValue, "deeporg_failed_invoices") {
 			definition = &suite.Tasks[index]
 		}
+		if suite.Tasks[index].Slug == "cross-source-account-health-1" {
+			crossSource = &suite.Tasks[index]
+		}
+		if refusal == nil && suite.Tasks[index].Category == gjeval.CategoryRefusal {
+			refusal = &suite.Tasks[index]
+		}
 	}
-	if delivery == nil || definition == nil {
-		t.Fatalf("generated suite is missing reactive tasks: delivery=%v definition=%v slugs=%v", delivery != nil, definition != nil, reactiveSlugs)
+	if delivery == nil || definition == nil || crossSource == nil || refusal == nil {
+		t.Fatalf("generated suite is missing reactive/cross-source/refusal tasks: delivery=%v definition=%v cross_source=%v refusal=%v slugs=%v", delivery != nil, definition != nil, crossSource != nil, refusal != nil, reactiveSlugs)
 	}
 	if delivery.Mutation == nil || len(delivery.Mutation.Setup) != 2 {
 		t.Fatalf("payment delivery setup = %+v, want watch plus post-subscription payment", delivery.Mutation)
 	}
+	if crossSource.Oracle == nil {
+		t.Fatal("cross-source task omitted its runtime oracle")
+	}
+	crossSourceResult, err := verifier.Resolve(context.Background(), *crossSource.Oracle)
+	if err != nil || crossSourceResult.Value == "" || crossSourceResult.Dimension == "" {
+		t.Fatalf("embedded eval could not join the app database to account_health_api: result=%+v err=%v", crossSourceResult, err)
+	}
+
 	task := *delivery
 	suite.Tasks = []gjeval.Task{task}
 	suite.Generator.Scale = 1
 	if err := suite.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	report, err := (gjeval.Runner{}).Run(context.Background(), *suite, instance, gjeval.RunOptions{Repeats: 1, Seed: 23})
+	client.setSequence(
+		`await final('Review the payments watch event through the governed watch path.', {watch:'payments'});`,
+		`await used('watch_read'); const handoff = globalThis.graphjinDistilledContext; const security = await query_catalog({id:"help:security"}); const runtime = await query_catalog({id:"help:runtime"}); const help = await query_catalog({id:"help:watches"}); const wrong = await execute_graphql({query:"query { watch_events_unseen { id watch_id seen } }"}); await final('Continue from the watch-root repair.', {handoff,security,runtime,help,wrong});`,
+		`await used('watch_read'); const event = graphjinSystemRootRepair.data.gj_watch_event[0]; const marked = await execute_graphql({query:"mutation MarkSeen($id: String!) { gj_watch_event(where: {id: {eq: $id}}, update: {seen:true}) { id seen } }", variables:{id:event.id}}); await final({status:"answered", answer:"Reviewed the delivered payment watch event and marked it seen.", data:{event,marked:marked.data}});`,
+	)
+	deliveryStore := gjeval.NewStore(t.TempDir())
+	report, err := (gjeval.Runner{}).Run(context.Background(), *suite, instance, gjeval.RunOptions{Repeats: 1, Seed: 23, Store: deliveryStore})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.RunStatus != gjeval.RunStatusComplete || len(report.Tasks) != 1 || !report.Tasks[0].Pass {
 		failures, _ := json.Marshal(report.Tasks)
-		t.Fatalf("reactive mock pipeline failed: status=%s tasks=%s notices=%s", report.RunStatus, failures, strings.Join(report.Acceptance.Notices, "; "))
+		episodes, _ := deliveryStore.LoadEpisodes(report.RunID)
+		var responseSummary []byte
+		if len(episodes) != 0 {
+			responseJSON, _ := json.Marshal(episodes[0].Response)
+			var response struct {
+				Status string `json:"status"`
+				Answer string `json:"answer"`
+				Trace  struct {
+					ChatLog []struct {
+						Name  string `json:"name"`
+						Item1 struct {
+							Content string `json:"content"`
+						} `json:"item1"`
+					} `json:"chat_log"`
+				} `json:"trace"`
+			}
+			_ = json.Unmarshal(responseJSON, &response)
+			responseSummary, _ = json.Marshal(response)
+		}
+		t.Fatalf("reactive mock pipeline failed: status=%s tasks=%s response=%s notices=%s", report.RunStatus, failures, responseSummary, strings.Join(report.Acceptance.Notices, "; "))
+	}
+	deliveryEpisodes, err := deliveryStore.LoadEpisodes(report.RunID)
+	if err != nil || len(deliveryEpisodes) != 1 || deliveryEpisodes[0].Mutation == nil || !deliveryEpisodes[0].Mutation.PostStatePass || !deliveryEpisodes[0].Mutation.CollateralPass {
+		t.Fatalf("watch delivery did not preserve event mutation contract: count=%d mutation=%+v err=%v", len(deliveryEpisodes), func() any {
+			if len(deliveryEpisodes) == 0 {
+				return nil
+			}
+			return deliveryEpisodes[0].Mutation
+		}(), err)
+	}
+	deliveryResponseJSON, _ := json.Marshal(deliveryEpisodes[0].Response)
+	var deliveryResponse struct {
+		Actions []map[string]any `json:"actions"`
+	}
+	_ = json.Unmarshal(deliveryResponseJSON, &deliveryResponse)
+	var sawInventedRoot, sawCanonicalRoot, sawSystemRootRepair bool
+	for _, action := range deliveryResponse.Actions {
+		if action["tool"] != "execute_graphql" {
+			continue
+		}
+		args, _ := action["args"].(map[string]any)
+		query, _ := args["query"].(string)
+		sawInventedRoot = sawInventedRoot || strings.Contains(query, "watch_events_unseen")
+		sawCanonicalRoot = sawCanonicalRoot || strings.Contains(query, "gj_watch_event")
+		summary, _ := action["summary"].(map[string]any)
+		codes, _ := summary["recovery_codes"].([]any)
+		for _, rawCode := range codes {
+			code, _ := rawCode.(string)
+			sawSystemRootRepair = sawSystemRootRepair || code == "system_root_did_you_mean"
+		}
+	}
+	if !sawInventedRoot || !sawCanonicalRoot || !sawSystemRootRepair {
+		t.Fatalf("delivery repair trail: invented=%t canonical=%t repair=%t actions=%s", sawInventedRoot, sawCanonicalRoot, sawSystemRootRepair, deliveryResponseJSON)
 	}
 
 	definitionMutation := `mutation { gj_watch(insert: {name: "deeporg_failed_invoices", query: "subscription deeporg_failed_invoices($status: String!) { invoices(where: {status: {eq: $status}}, first: 25, after: $cursor) { id status attempts } invoices_cursor }", variables_json: {status: "failed"}, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name query delivery_json } }`
@@ -293,8 +392,9 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 const security = await query_catalog({id:"help:security"});
 const runtime = await query_catalog({id:"help:runtime"});
 const help = await query_catalog({id:"help:watches"});
+const table = await query_catalog({id:"table:app:main.invoices"});
 const created = await execute_graphql({query:%q});
-await final({status:"answered", answer:"Created the hourly failed-invoice watch.", data:created.data, evidence:[security,runtime,help]});
+await final({status:"answered", answer:"Created the hourly failed-invoice watch.", data:created.data, evidence:[security,runtime,help,table]});
 `, definitionMutation))
 	definitionSuite := *suite
 	definitionSuite.Tasks = []gjeval.Task{*definition}
@@ -323,6 +423,54 @@ await final({status:"answered", answer:"Created the hourly failed-invoice watch.
 			}{Actions: response.Actions, Mutation: episodes[0].Mutation})
 		}
 		t.Fatalf("reactive definition pipeline failed: status=%s tasks=%s episodes=%s notices=%s", definitionReport.RunStatus, failures, evidence, strings.Join(definitionReport.Acceptance.Notices, "; "))
+	}
+	definitionEpisodes, err := definitionStore.LoadEpisodes(definitionReport.RunID)
+	if err != nil || len(definitionEpisodes) != 1 {
+		t.Fatalf("load reactive definition episode: count=%d err=%v", len(definitionEpisodes), err)
+	}
+	definitionResponse, _ := json.Marshal(definitionEpisodes[0].Response)
+	for _, fragment := range [][]byte{
+		[]byte("Skill: data_write"),
+		[]byte("Skill: watch_write"),
+		[]byte("help:security"),
+		[]byte("help:runtime"),
+		[]byte("help:watches"),
+		[]byte("named source and application relationship"),
+		[]byte("exact catalog IDs"),
+	} {
+		if !bytes.Contains(definitionResponse, fragment) {
+			t.Fatalf("writable/reactive executor trace omitted %q guidance: %s", fragment, definitionResponse)
+		}
+	}
+	if definitionEpisodes[0].Mutation == nil || !definitionEpisodes[0].Mutation.PostStatePass || !definitionEpisodes[0].Mutation.CollateralPass {
+		t.Fatalf("watch definition did not preserve mutation contract: %+v", definitionEpisodes[0].Mutation)
+	}
+	if !bytes.Contains(definitionResponse, []byte(`execute_graphql`)) || !bytes.Contains(definitionResponse, []byte(`gj_watch(insert:`)) {
+		t.Fatalf("watch creation did not reach execute_graphql via gj_watch: %s", definitionResponse)
+	}
+
+	if err := resettable.Reset(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	client.setSequence(
+		`await final('Apply the caller capability facts to this request.', {});`,
+		`const policy = await query_catalog({id:"help:security"}); await final({status:"blocked", answer:"The requested write is not available to this caller.", evidence:[policy]});`,
+		`await final({status:"blocked", answer:"The requested write is not available to this caller."});`,
+	)
+	refusalSuite := *suite
+	refusalSuite.Tasks = []gjeval.Task{*refusal}
+	refusalSuite.Generator.Scale = 1
+	if err := refusalSuite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	refusalStore := gjeval.NewStore(t.TempDir())
+	refusalReport, err := (gjeval.Runner{}).Run(context.Background(), refusalSuite, instance, gjeval.RunOptions{Repeats: 1, Seed: 23, Store: refusalStore})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refusalReport.RunStatus != gjeval.RunStatusComplete || len(refusalReport.Tasks) != 1 || !refusalReport.Tasks[0].Pass || refusalReport.Metrics.ForbiddenAttempts != 0 {
+		result, _ := json.Marshal(refusalReport.Tasks)
+		t.Fatalf("scripted refusal regression: status=%s attempts=%d tasks=%s", refusalReport.RunStatus, refusalReport.Metrics.ForbiddenAttempts, result)
 	}
 }
 

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -143,9 +144,12 @@ func executionFailed(out any) bool {
 // The guidance is also appended to each error message, not just carried in a
 // sibling field. A model that has decided the run failed reads errors[].message
 // and summarizes it; recovery advice it never opens does not change behavior.
-func attachExecutionRecovery(out any, _ *discoveryState, _ string) any {
+func attachExecutionRecovery(out any, state *discoveryState, query string) any {
 	if !executionFailed(out) {
 		return out
+	}
+	if repair, ok := systemRootDidYouMeanRepair(out, state, query); ok {
+		return attachSystemRootDidYouMean(out, repair)
 	}
 	recovery := executionRecovery()
 	directive := recoveryDirective(recovery)
@@ -172,6 +176,255 @@ func attachExecutionRecovery(out any, _ *discoveryState, _ string) any {
 			res["errors"] = errors
 		}
 		return res
+	default:
+		return out
+	}
+}
+
+type systemRootRepair struct {
+	attempted  string
+	candidates []string
+	example    string
+}
+
+// systemRootDidYouMeanRepair recognizes invented GraphJin-owned roots only
+// after the execution reports an unknown-root failure. Application table
+// failures retain the generic catalog repair. Candidate roots are restricted
+// to the caller-visible fixed roots in the capability profile.
+func systemRootDidYouMeanRepair(out any, state *discoveryState, query string) (systemRootRepair, bool) {
+	if state == nil || state.capabilities == nil {
+		return systemRootRepair{}, false
+	}
+	roots := append(QueryRootFields(query), MutationRootFields(query)...)
+	for _, attempted := range roots {
+		attempted = strings.ToLower(strings.TrimSpace(attempted))
+		if attempted == "" || isFixedSystemRoot(attempted) {
+			continue
+		}
+		watchIntent := systemWatchRootIntent(attempted)
+		if !watchIntent && !strings.HasPrefix(attempted, "gj_") {
+			continue
+		}
+		if !executionReportsUnknownRoot(out, attempted) {
+			continue
+		}
+		candidates := visibleSystemRootSuggestions(state.capabilities, attempted, watchIntent)
+		if len(candidates) == 0 {
+			continue
+		}
+		return systemRootRepair{
+			attempted:  attempted,
+			candidates: candidates,
+			example:    systemRootExample(candidates[0]),
+		}, true
+	}
+	return systemRootRepair{}, false
+}
+
+func systemWatchRootIntent(root string) bool {
+	root = strings.ToLower(strings.TrimSpace(root))
+	return root == "watch" || root == "watches" ||
+		strings.Contains(root, "watch_event") ||
+		strings.Contains(root, "watch_events")
+}
+
+func isFixedSystemRoot(root string) bool {
+	for _, candidate := range fixedSystemRoots {
+		if strings.EqualFold(strings.TrimSpace(root), candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func visibleSystemRootSuggestions(profile *CapabilityProfile, attempted string, watchIntent bool) []string {
+	visible := make([]string, 0, len(profile.AvailableSystemRoots))
+	for _, root := range fixedSystemRoots {
+		if profileHasSystemRoot(profile, root) {
+			visible = append(visible, root)
+		}
+	}
+	if watchIntent {
+		preferred := []string{systemRootWatch, systemRootWatchEvent}
+		if strings.Contains(attempted, "event") {
+			preferred[0], preferred[1] = preferred[1], preferred[0]
+		}
+		var out []string
+		for _, root := range preferred {
+			if profileHasSystemRoot(profile, root) {
+				out = append(out, root)
+			}
+		}
+		return out
+	}
+	if !strings.HasPrefix(attempted, "gj_") || len(visible) == 0 {
+		return nil
+	}
+	bestDistance := -1
+	var out []string
+	for _, root := range visible {
+		distance := editDistance(attempted, root)
+		if bestDistance == -1 || distance < bestDistance {
+			bestDistance = distance
+			out = []string{root}
+			continue
+		}
+		if distance == bestDistance {
+			out = append(out, root)
+		}
+	}
+	return out
+}
+
+func editDistance(left, right string) int {
+	if left == right {
+		return 0
+	}
+	previous := make([]int, len(right)+1)
+	for i := range previous {
+		previous[i] = i
+	}
+	for i := 1; i <= len(left); i++ {
+		current := make([]int, len(right)+1)
+		current[0] = i
+		for j := 1; j <= len(right); j++ {
+			cost := 1
+			if left[i-1] == right[j-1] {
+				cost = 0
+			}
+			current[j] = min(previous[j]+1, current[j-1]+1, previous[j-1]+cost)
+		}
+		previous = current
+	}
+	return previous[len(right)]
+}
+
+func executionReportsUnknownRoot(out any, attempted string) bool {
+	for _, message := range executionErrorMessages(out) {
+		lower := strings.ToLower(message)
+		if !strings.Contains(lower, attempted) {
+			continue
+		}
+		for _, marker := range []string{
+			"table not found",
+			"unknown table",
+			"root field not found",
+			"unknown root",
+			"cannot query field",
+			"unknown field",
+			"field not found",
+			"does not exist",
+		} {
+			if strings.Contains(lower, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func executionErrorMessages(out any) []string {
+	var messages []string
+	switch result := out.(type) {
+	case executeResult:
+		for _, info := range result.Errors {
+			messages = append(messages, info.Message)
+		}
+	case *executeResult:
+		if result != nil {
+			for _, info := range result.Errors {
+				messages = append(messages, info.Message)
+			}
+		}
+	case map[string]any:
+		for _, item := range anySlice(result["errors"]) {
+			if info := mapValue(item); info != nil {
+				messages = append(messages, stringFromMap(info, "message"))
+			}
+		}
+	}
+	return messages
+}
+
+func systemRootExample(root string) string {
+	switch root {
+	case systemRootWatchEvent:
+		return `query { gj_watch_event(where: { seen: { eq: false } }, order_by: { created_at: desc }, limit: 20) { id watch_id data_json seen created_at } }`
+	case systemRootWatch:
+		return `query { gj_watch(limit: 20) { id name status enabled } }`
+	default:
+		return fmt.Sprintf("query { %s(limit: 20) { id } }", root)
+	}
+}
+
+func attachSystemRootDidYouMean(out any, suggestion systemRootRepair) any {
+	next := map[string]any{
+		"recommended_tool": toolExecuteGraphQL,
+		"reason":           "Retry with a caller-visible canonical GraphJin system root; do not invent an alias.",
+		"args":             map[string]any{"query": suggestion.example},
+	}
+	repair := map[string]any{
+		"code":                   "system_root_did_you_mean",
+		"kind":                   "system_root_did_you_mean",
+		"attempted_root":         suggestion.attempted,
+		"available_system_roots": suggestion.candidates,
+		"example_query":          suggestion.example,
+		"next":                   next,
+	}
+	recovery := map[string]any{
+		"code":                   "system_root_did_you_mean",
+		"kind":                   "system_root_did_you_mean",
+		"instruction":            fmt.Sprintf("Root %q is not a GraphJin system root visible to this caller. Use one of the named roots exactly and retry the provided query in this run.", suggestion.attempted),
+		"attempted_root":         suggestion.attempted,
+		"available_system_roots": suggestion.candidates,
+		"example_query":          suggestion.example,
+		"next":                   next,
+	}
+	directive := fmt.Sprintf("%s root %q is unknown; use the caller-visible root %q exactly and retry the provided example in this run.", recoveryDirectivePrefix, suggestion.attempted, suggestion.candidates[0])
+	decorate := func(info *ErrorInfo) {
+		if info.Extensions == nil {
+			info.Extensions = map[string]any{}
+		}
+		info.Extensions["code"] = "system_root_did_you_mean"
+		info.Extensions["graphjin_repair"] = repair
+		info.Message = joinRecoveryMessage(info.Message, directive)
+	}
+
+	switch result := out.(type) {
+	case executeResult:
+		for i := range result.Errors {
+			decorate(&result.Errors[i])
+		}
+		result.Recovery = recovery
+		return result
+	case *executeResult:
+		if result == nil {
+			return out
+		}
+		for i := range result.Errors {
+			decorate(&result.Errors[i])
+		}
+		result.Recovery = recovery
+		return result
+	case map[string]any:
+		errors := anySlice(result["errors"])
+		for _, item := range errors {
+			entry := mapValue(item)
+			if entry == nil {
+				continue
+			}
+			extensions := mapValue(entry["extensions"])
+			if extensions == nil {
+				extensions = map[string]any{}
+			}
+			extensions["code"] = "system_root_did_you_mean"
+			extensions["graphjin_repair"] = repair
+			entry["extensions"] = extensions
+			entry["message"] = joinRecoveryMessage(stringFromMap(entry, "message"), directive)
+		}
+		result["errors"] = errors
+		result["recovery"] = recovery
+		return result
 	default:
 		return out
 	}

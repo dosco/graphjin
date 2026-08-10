@@ -95,6 +95,55 @@ func TestGraphJinRuntimeAutoFinalizesAfterDuplicateGraceTurn(t *testing.T) {
 	}
 }
 
+func TestGraphJinRuntimeExecutesDeterministicSystemRootRepair(t *testing.T) {
+	ready := false
+	catalogCalls := 0
+	executionCalls := 0
+	runtime := newGraphJinCodeRuntime(
+		nil, nil, nil, nil,
+		func() string {
+			if !ready {
+				return ""
+			}
+			ready = false
+			return `globalThis.graphjinSystemRootPrerequisites = await query_catalog({ids:["help:security","help:runtime"]}); globalThis.graphjinSystemRootRepair = await execute_graphql({"query":"query { gj_watch_event(where: { seen: { eq: false } }) { id watch_id data_json seen } }"}); console.log(globalThis.graphjinSystemRootRepair);`
+		},
+	)
+	runtime.RegisterCallable(toolQueryCatalog, func(params ax.Value) (ax.Value, error) {
+		catalogCalls++
+		ids := anySlice(mapValue(params)["ids"])
+		if len(ids) != 2 || ids[0] != "help:security" || ids[1] != "help:runtime" {
+			t.Fatalf("catalog repair args = %+v", params)
+		}
+		return map[string]any{"cards": []any{map[string]any{"id": "help:security"}, map[string]any{"id": "help:runtime"}}}, nil
+	})
+	runtime.RegisterCallable(toolExecuteGraphQL, func(params ax.Value) (ax.Value, error) {
+		executionCalls++
+		query := stringFromMap(mapValue(params), "query")
+		for _, fragment := range []string{"gj_watch_event", "data_json", "seen"} {
+			if !strings.Contains(query, fragment) {
+				t.Fatalf("repaired query missing %q: %s", fragment, query)
+			}
+		}
+		return map[string]any{"data": map[string]any{"gj_watch_event": []any{map[string]any{"id": "we:1", "seen": false}}}}, nil
+	})
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "Review the unseen watch event."},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	session.Execute(`await final("distilled", {});`, nil)
+	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
+
+	ready = true
+	result := session.Execute(`console.log("model attempted watch_events_unseen");`, nil)
+	if catalogCalls != 1 || executionCalls != 1 {
+		t.Fatalf("deterministic repair calls catalog=%d execution=%d result=%+v", catalogCalls, executionCalls, result)
+	}
+}
+
 func TestGraphJinRuntimeCarriesDistillerPayloadAcrossAxStagePatch(t *testing.T) {
 	var distilled any
 	runtime := newGraphJinCodeRuntime(nil, func(value any) { distilled = value }, nil, nil)
@@ -201,6 +250,68 @@ func TestGraphJinRuntimeRepairsMalformedDistillerDraftWithOriginalRequestAndSeed
 	}
 }
 
+func TestGraphJinRuntimeRequiresExplicitHandoffReadBeforeToolCall(t *testing.T) {
+	calls := 0
+	runtime := newGraphJinCodeRuntime(nil, nil, nil, nil)
+	runtime.RegisterCallable(toolQueryCatalog, func(params ax.Value) (ax.Value, error) {
+		calls++
+		return map[string]any{"cards": []any{map[string]any{"id": stringFromMap(mapValue(params), "id")}}}, nil
+	})
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "Compare the CRM and support sources."},
+	}, map[string]ax.Value{
+		"reservedNames": []any{"inputs", "executorRequest", "distilledContext"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	session.Execute(`await final("compare sources", {sources: [{id: "source:crm"}, {id: "source:support"}]});`, nil)
+	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
+	guarded := mapValue(session.Execute(`await query_catalog({id: "source:crm"});`, nil))
+	if calls != 0 || stringFromMap(mapValue(guarded["result"]), "graphjin_protocol") != "runtime_handoff_read_required" {
+		t.Fatalf("handoff-blind tool call = %+v calls=%d", guarded, calls)
+	}
+	accepted := mapValue(session.Execute(`const selected = graphjinDistilledContext.sources; await query_catalog({id: selected[0].id});`, nil))
+	if calls != 1 || stringFromMap(accepted, "kind") != "result" {
+		t.Fatalf("handoff-grounded tool call = %+v calls=%d", accepted, calls)
+	}
+}
+
+func TestGraphJinRuntimeUsesGovernedDistillerDetailFallback(t *testing.T) {
+	runtime := newGraphJinCodeRuntime(nil, nil, nil, nil).WithHandoffFallback(func() any {
+		return map[string]any{
+			"catalog_detail_ids": []any{"source:account_health_api", "table:app:main.account_health"},
+			"catalog_detail": map[string]any{
+				"cards": []any{map[string]any{"id": "source:account_health_api"}},
+				"details": []any{map[string]any{
+					"section": "query_shape",
+					"content": `query { accounts { account_health { health open_risk_count } } }`,
+				}},
+			},
+		}
+	})
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "Combine the account and health API."},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	session.Execute(`await final("combine sources", {});`, nil)
+	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
+	guarded := mapValue(session.Execute(`await final("guessed", {});`, nil))
+	if stringFromMap(mapValue(guarded["result"]), "graphjin_protocol") != "runtime_handoff_read_required" {
+		t.Fatalf("fallback-blind final = %+v", guarded)
+	}
+	accepted := session.Execute(`const shape = graphjinDistilledContext.catalog_detail.details[0].content; await final("use shape", {shape});`, nil)
+	if runtimeCompletionType(accepted) != "final" {
+		t.Fatalf("fallback-grounded final = %+v", accepted)
+	}
+}
+
 func TestGraphJinRuntimeRejectsPrematureExecutorFinalForRequiredSavedQuery(t *testing.T) {
 	pending := `const detail = await query_catalog({id:"saved_query:daily_roast_context"}); const execution = await execute_saved_query({name:"daily_roast_context"});`
 	runtime := newGraphJinCodeRuntime(nil, nil, func() string { return pending }, nil)
@@ -250,13 +361,17 @@ func TestGraphJinRuntimeRejectsFinalUntilExecutionRepair(t *testing.T) {
 	defer session.Close()
 	session.Execute(`await final("distilled", {});`, nil)
 	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
-	rejected := mapValue(session.Execute(`await final("blocked", {});`, nil))
+	rejected := mapValue(session.Execute(`await final("blocked", {execution:{errors:[{message:"unknown root"}], recovery:{next:"query accounts instead"}}});`, nil))
 	result := mapValue(rejected["result"])
 	if got := stringFromMap(result, "graphjin_protocol"); got != "execution_repair_required" {
 		t.Fatalf("protocol = %q, result=%+v", got, rejected)
 	}
 	if strings.Contains(stringFromMap(result, "message"), "execution_repair_required:") {
 		t.Fatalf("public message leaked internal prefix: %+v", result)
+	}
+	attempt := mapValue(result["attempt"])
+	if mapValue(attempt["execution"])["errors"] == nil {
+		t.Fatalf("repair response discarded attempted execution evidence: %+v", result)
 	}
 	pending = ""
 	accepted := session.Execute(`await final("answered", {count: 4});`, nil)
@@ -302,7 +417,7 @@ func TestGraphJinRuntimeRequiresCodeReadForHistoryDependentFollowUp(t *testing.T
 	runtime := newGraphJinCodeRuntime(nil, nil, nil, nil)
 	session, err := runtime.CreateSession(map[string]ax.Value{
 		"inputs": map[string]any{
-			"instruction": "Continue the prior task and repeat its marker.",
+			"instruction": "What is its amount?",
 			"history": []any{
 				map[string]any{"role": "assistant", "content": "FIRST-TRAIL-RUNTIME-ONLY"},
 			},
@@ -319,10 +434,15 @@ func TestGraphJinRuntimeRequiresCodeReadForHistoryDependentFollowUp(t *testing.T
 	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
 
 	guarded := mapValue(session.Execute(`await final("missing trail", {});`, nil))
-	if stringFromMap(mapValue(guarded["result"]), "graphjin_protocol") != "history_read_required" {
+	guardResult := mapValue(guarded["result"])
+	if stringFromMap(guardResult, "graphjin_protocol") != "history_read_required" {
 		t.Fatalf("history-blind executor step = %+v, want history_read_required", guarded)
 	}
-	accepted := mapValue(session.Execute(`const prior = graphjinHistory.at(-1); await final("repeat marker", {marker: prior.content});`, nil))
+	history := anySlice(guardResult["history"])
+	if len(history) != 1 || stringFromMap(mapValue(history[0]), "content") != "FIRST-TRAIL-RUNTIME-ONLY" {
+		t.Fatalf("automatic history recovery = %+v", guardResult)
+	}
+	accepted := mapValue(session.Execute(`await final("repeat marker", {marker: "FIRST-TRAIL-RUNTIME-ONLY"});`, nil))
 	if runtimeCompletionType(accepted) != "final" {
 		t.Fatalf("history-grounded executor final = %+v, want final", accepted)
 	}

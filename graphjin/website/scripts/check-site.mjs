@@ -463,13 +463,27 @@ if (await exists(benchmarkDataPath)) {
     ['data-guard-interventions', (run) => run.guard_interventions ?? 0],
     ['data-unsafe-effects', (run) => run.unsafe_effects ?? 0],
   ];
+  const comparisonGeneration = parsed.suite.comparison_generation ?? parsed.suite.generation;
   const rankedRuns = parsed.runs.filter(
-    (run) => run.ranked === true && run.generation === parsed.suite.generation
+    (run) => run.ranked === true && run.generation === comparisonGeneration
   );
   if (rankedRuns.length > 0 && (await exists(benchmarkIndexPath))) {
     const benchmarkHTML = await readFile(benchmarkIndexPath, 'utf8');
-    if (String(renderedDataAttribute(benchmarkHTML, 'data-benchmark-generation-current')) !== String(parsed.suite.generation)) {
-      failures.push(`DeepORG current generation marker does not match deeporg.yaml (${parsed.suite.generation})`);
+    if (String(renderedDataAttribute(benchmarkHTML, 'data-benchmark-generation-current')) !== String(comparisonGeneration)) {
+      failures.push(`DeepORG comparison generation marker does not match deeporg.yaml (${comparisonGeneration})`);
+    }
+    const renderedScopeLabel = String(parsed.suite.scope_label ?? '').replaceAll('&', '&amp;');
+    if (!benchmarkHTML.includes(renderedScopeLabel)) {
+      failures.push('DeepORG board is missing its generation scope label');
+    }
+    for (const [generation, scope] of Object.entries(parsed.suite.generation_scopes ?? {})) {
+      const renderedGenerationScope = `Generation ${generation} — ${String(scope).replaceAll('&', '&amp;')}`;
+      if (!benchmarkHTML.includes(renderedGenerationScope)) {
+        failures.push(`DeepORG board is missing the scope for generation ${generation}`);
+      }
+    }
+    if (comparisonGeneration !== parsed.suite.generation && !benchmarkHTML.includes('data-benchmark-rerun-pending')) {
+      failures.push('DeepORG board is missing the current-generation retraction notice');
     }
     if (!benchmarkHTML.includes('data-benchmark-generation-history')) {
       failures.push('DeepORG board is missing collapsed prior-generation history');
@@ -584,7 +598,7 @@ if (await exists(benchmarkDataPath)) {
   }
 
   const topAccepted = parsed.runs
-    .filter((run) => run.ranked === true && run.accepted === true && run.generation === parsed.suite.generation)
+    .filter((run) => run.ranked === true && run.accepted === true && run.generation === comparisonGeneration)
     .sort((a, b) => Number(b.recall) - Number(a.recall))[0];
   const homePath = path.join(publicRoot, 'index.html');
   if (topAccepted && (await exists(homePath))) {
@@ -598,7 +612,7 @@ if (await exists(benchmarkDataPath)) {
     if (!chartMarker) {
       failures.push('Homepage benchmark chart does not include the top ranked run from deeporg.yaml');
     }
-    if (String(renderedDataAttribute(home, 'data-benchmark-generation')) !== String(parsed.suite.generation)) {
+    if (String(renderedDataAttribute(home, 'data-benchmark-generation')) !== String(comparisonGeneration)) {
       failures.push('Homepage benchmark proof generation does not match deeporg.yaml');
     }
     const storyMarker = renderedDataAttribute(benchmarkPage, 'data-current-recall');

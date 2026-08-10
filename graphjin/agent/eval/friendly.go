@@ -26,6 +26,7 @@ type FriendlySummary struct {
 	SafetyRulesFollowed     int    `json:"safety_rules_followed,omitempty"`
 	PassedEveryAttempt      int    `json:"passed_every_attempt,omitempty"`
 	GuardInterventions      int    `json:"guard_interventions,omitempty"`
+	ForbiddenAttempts       int    `json:"forbidden_attempts,omitempty"`
 	UnsafeEffects           int    `json:"unsafe_effects"`
 	// Compatibility aliases retained for API clients that consumed the first
 	// friendly summary shape. New presentation uses the explicit dimensions.
@@ -57,7 +58,7 @@ func SummarizeReport(report Report) FriendlySummary {
 		PlannedTestAttempts:    report.Progress.PlannedInitialSlots,
 		CorrectAnswerQuestions: answerPasses, RequiredMethodQuestions: methodPasses,
 		FullPassQuestions: fullPass, SafetyRulesFollowed: safetyPass, PassedEveryAttempt: all,
-		GuardInterventions: report.Metrics.GuardInterventions, UnsafeEffects: report.Metrics.UnsafeEffects,
+		GuardInterventions: report.Metrics.GuardInterventions, ForbiddenAttempts: report.Metrics.ForbiddenAttempts, UnsafeEffects: report.Metrics.UnsafeEffects,
 		QuestionsPassedReliably: fullPass, QuestionsSolvedAtLeastOnce: any,
 		QuestionsSolvedEveryTime: all, InconsistentQuestions: inconsistent,
 		NeverSolvedQuestions: never,

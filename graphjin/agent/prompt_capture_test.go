@@ -98,7 +98,8 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 
 	// Ignore Run's outcome; we only need the captured Chat requests. A normal
 	// writable profile preloads data_write alongside the other core guides.
-	_, _ = runner.Run(context.Background(), Request{Instruction: "create a new order for a customer and update product inventory"})
+	profile := profileWithRoleAndRoots("user")
+	_, _ = runner.Run(context.Background(), Request{Instruction: "create a new order for a customer and update product inventory", Capabilities: profile})
 
 	if len(rec.calls) == 0 {
 		t.Fatal("no Chat calls captured — ax did not reach the client (Seed may have failed)")
@@ -176,13 +177,107 @@ func TestCaptureRenderedPromptPerStage(t *testing.T) {
 		t.Error("the current_date input did not reach a staged prompt — date anchoring guidance has no value to anchor on")
 	}
 	loadedSkillBytes := 0
-	for _, definition := range allowedSkills(false, nil) {
+	loadedSkills := allowedSkills(false, profile)
+	for _, definition := range loadedSkills {
 		loadedSkillBytes += len(definition.content)
 	}
 	t.Logf(
-		"payload audit: staged_bytes=%d runtime_usage_bytes=%d loaded_skill_bytes=%d tool_result_staged=%t",
-		rendered.Len(), len(runtimeUsageInstructions), loadedSkillBytes, toolResultStaged,
+		"payload audit: staged_bytes=%d runtime_usage_bytes=%d loaded_skill_bytes=%d capability_addendum_bytes=%d tool_result_staged=%t",
+		rendered.Len(), len(runtimeUsageInstructions), loadedSkillBytes, len(capabilityCompletionInstructions(loadedSkills)), toolResultStaged,
 	)
+}
+
+func TestCapabilityCompletionGuidanceIsExecutorOnly(t *testing.T) {
+	const capabilityMarker = "Governed per-run capability facts"
+	rec := &recordingClient{responses: []string{
+		`{"javascriptCode":"await final('Carry out the requested write and reactive work.', {})"}`,
+		`{"javascriptCode":"await final({status:'answered',answer:'done'}, {})"}`,
+	}}
+	runner := newAgent(
+		Config{Provider: "openai", APIKeyEnv: "GRAPHJIN_UNUSED", TimeoutSeconds: 50, MaxSteps: 4},
+		&fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return rec, nil }),
+	)
+
+	_, _ = runner.Run(context.Background(), Request{
+		Instruction:  "create a payment watch and record the matching payment",
+		Capabilities: profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent),
+	})
+	if len(rec.calls) < 2 {
+		t.Fatalf("captured %d calls, want distiller and executor prompts", len(rec.calls))
+	}
+
+	distiller := dumpAXValue(rec.calls[0].values) + dumpAXValue(rec.calls[0].options)
+	if strings.Contains(distiller, "Skill: data_write") || strings.Contains(distiller, "Skill: watch_write") {
+		t.Fatal("distiller unexpectedly received executor skill documents")
+	}
+	if strings.Contains(distiller, capabilityMarker) {
+		t.Fatal("distiller received capability-denial guidance without the executor's authoritative skill documents")
+	}
+
+	var executorWithCapabilities bool
+	for _, call := range rec.calls[1:] {
+		rendered := dumpAXValue(call.values) + dumpAXValue(call.options)
+		if strings.Contains(rendered, "Skill: data_write") && strings.Contains(rendered, "Skill: watch_write") {
+			executorWithCapabilities = true
+			if !strings.Contains(rendered, capabilityMarker) {
+				t.Fatal("write-capable executor omitted capability-completion guidance")
+			}
+			if !strings.Contains(rendered, "watch_write is loaded for this run") || strings.Contains(rendered, "watch_write is not loaded") {
+				t.Fatal("write-capable executor received the wrong Go-selected watch branch")
+			}
+			break
+		}
+	}
+	if !executorWithCapabilities {
+		t.Fatal("no executor prompt combined data_write, watch_write, and capability-completion guidance")
+	}
+}
+
+func TestExecutorLoopRepairsMutationEvidenceWithExactContinuation(t *testing.T) {
+	const detailSentinel = "PRODUCT_MUTATION_COLUMNS_ID_NAME"
+	rec := &recordingClient{responses: []string{
+		`{"javascriptCode":"await final('Add the product through the governed write path.', {target:'products'})"}`,
+		`{"javascriptCode":"void graphjinDistilledContext.target; const security = await query_catalog({id:'help:security'}); console.log(security);"}`,
+		`{"javascriptCode":"const execution = await execute_graphql({query:'mutation { products(insert:{name:\"x\"}) { id } }'}); console.log(execution);"}`,
+		`{"javascriptCode":"await final('blocked before mutation evidence', {})"}`,
+		`{"javascriptCode":"const execution = await execute_graphql({query:'mutation { products(insert:{name:\"x\"}) { id name } }'}); await final({status:'answered',answer:'Added.',data:execution.data},{execution});"}`,
+	}}
+	runtime := &successfulExecutionRuntime{}
+	runtime.catalogOverride = func(args map[string]any) any {
+		if len(detailIDsFromArgs(args)) != 0 {
+			result := cloneAnyMap(mapValue(fakeCatalogResult(args)))
+			result["details"] = []any{map[string]any{"section": "mutation", "content": detailSentinel}}
+			return result
+		}
+		return map[string]any{
+			"count": 1,
+			"cards": []any{map[string]any{
+				"id": "table:app:main.products", "kind": "table", "table_name": "products",
+			}},
+		}
+	}
+	runner := newAgent(
+		Config{Provider: "openai", APIKeyEnv: "GRAPHJIN_UNUSED", TimeoutSeconds: 50, MaxSteps: 8},
+		runtime,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return rec, nil }),
+	)
+
+	_, _ = runner.Run(context.Background(), Request{Instruction: "add product x", Capabilities: profileWithRoleAndRoots("user")})
+	if len(rec.calls) < 5 {
+		t.Fatalf("captured %d calls, want distiller plus repair/retry executor turns", len(rec.calls))
+	}
+	if runtime.graphqlCalls != 1 {
+		t.Fatalf("raw GraphQL calls = %d, rejected mutation must not reach the base runtime", runtime.graphqlCalls)
+	}
+	repairPrompt := dumpAXValue(rec.calls[3].values) + dumpAXValue(rec.calls[3].options)
+	if !strings.Contains(repairPrompt, "mutation_evidence_required") || !strings.Contains(repairPrompt, "graphjin_repair") {
+		t.Fatal("mutation rejection did not reach the next executor turn as structured repair evidence")
+	}
+	postContinuationPrompt := dumpAXValue(rec.calls[4].values) + dumpAXValue(rec.calls[4].options)
+	if !strings.Contains(postContinuationPrompt, detailSentinel) {
+		t.Fatal("the exact mutation detail continuation did not reach the retry turn")
+	}
 }
 
 func TestCaptureRenderedSkillsPerCapabilityProfile(t *testing.T) {

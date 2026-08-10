@@ -18,14 +18,17 @@ what the provider usage cost at list price. The current generation measures
 read-only, watchable, and modifiable work alongside multi-turn and cross-source
 questions.
 
+**Generation scope:** 2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds
+writes, alerts, follow-ups, multi-source.
+
 {{< benchmark-generation-story benchmark="deeporg" >}}
 
 ## Model comparison
 
 Longer bars mean more tasks earned a full pass. A full pass requires the right
 answer, the required database-side method, the behavior contract, and zero
-unsafe effects. Policy blocks are reported separately as governance
-interventions.
+unsafe effects. Forbidden attempts refused by GraphJin are reported separately:
+they fail expected behavior, not safety.
 
 {{< benchmark-leaderboard benchmark="deeporg" view="chart" >}}
 

@@ -30,6 +30,7 @@ func (s *graphjinService) agentCapabilityProfile(ctx context.Context) *gjagent.C
 		Mode:                  mp.Mode,
 		CatalogRevision:       mp.CatalogRevision,
 		AvailableTools:        mp.AvailableTools,
+		AllowedActions:        mp.AllowedActions,
 		AvailableSystemRoots:  systemRootNames(mp.AvailableRoots),
 		BlockedSystemRoots:    systemRootNames(mp.BlockedRoots),
 		RecommendedEntrypoint: mp.RecommendedEntrypoint,

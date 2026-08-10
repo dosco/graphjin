@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -51,23 +52,40 @@ type discoveryState struct {
 	helpTopics        []string
 	catalogSearches   []map[string]any
 	catalogDetails    []string
-	suggestedNext     []any
-	validations       []map[string]any
-	executions        []map[string]any
+	// lastCatalogDetail retains the most recent successful exact detail result
+	// for the runtime-only distiller -> executor handoff. It is never rendered
+	// into a prompt or accepted as authorization by itself.
+	lastCatalogDetail any
+	// distilledSourceIDs are exact source cards selected by the distiller for
+	// the executor handoff. When more than one source is selected, the executor
+	// must inspect every source detail before it can author cross-source
+	// GraphQL. This prevents the distiller-to-executor boundary from collapsing
+	// a multi-source plan into one guessed source.
+	distilledSourceIDs []string
+	suggestedNext      []any
+	validations        []map[string]any
+	executions         []map[string]any
 	// A failed raw GraphQL execution must be followed by one genuinely
 	// different repair execution before the actor may terminate. Identical
 	// retries are rejected without spending another database execution. Failed
 	// identities remain rejected for the rest of the run; the pending key only
 	// tracks whether the current failure still needs one distinct repair.
-	pendingFailedQueryKey string
-	failedQueryKeys       map[string]bool
+	pendingFailedQueryKey   string
+	pendingFailedCatalogIDs []string
+	failedQueryKeys         map[string]bool
+	// A caller-visible invented system root has one deterministic, read-only
+	// correction. The Go runtime schedules that exact query after the failed
+	// actor step so a weak model cannot discard the structured did-you-mean
+	// payload or loop on the same alias.
+	pendingSystemRootQuery string
 	// Successful executions are memoized by their normalized operation and
 	// variables. Repeating one never reaches the database again. The first
 	// redundant call arms a one-turn completion grace period; another already
 	// seen call lets the runtime finalize from the governed cached evidence.
-	successfulExecutions map[string]any
-	completionLatchKey   string
-	completionReady      bool
+	successfulExecutions       map[string]any
+	completionLatchKey         string
+	completionReady            bool
+	terminalContinuationIssued bool
 	// lastExecution retains the most recent successful execution result for
 	// one narrow recovery case: an actor that ignores that result and repeats
 	// the preceding catalog lookup. Ax's runtime is a persistent REPL, but the
@@ -261,9 +279,28 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 		r.state.coverageSearchUsed = true
 	}
 	r.addNamespace(args)
+	// A recoverable execution guard already selected the exact missing catalog
+	// evidence. Weak models sometimes respond by issuing another broad catalog
+	// search instead of following recovery.next, then repeat that search until
+	// the actor budget is exhausted. Keep the actor loop unchanged, but route
+	// the next catalog call through the narrow protocol-derived continuation.
+	protocolRepair := false
+	if repairArgs := r.state.pendingRecoverableCatalogArgs(); len(repairArgs) != 0 {
+		args = repairArgs
+		r.addNamespace(args)
+		protocolRepair = true
+	}
+	// Catalog seed results are authoritative enough to correct an invented
+	// watch capability id to the exact help row. This is a deterministic
+	// did-you-mean repair, not a new hidden discovery call.
+	args = r.state.correctKnownCatalogDetailArgs(args)
 	searchRequest := isCatalogSearchRequest(args)
 	detailIDs := detailIDsFromArgs(args)
 	requestKey := stringify(normalizeValue(args))
+	if protocolRepair {
+		r.state.emptyDetailStreak = 0
+		delete(r.state.catalogRequestKeys, requestKey)
+	}
 	if searchRequest && r.state.emptySearchStreak > 0 {
 		r.state.emptySearchStreak++
 		out := r.state.emptySearchExhaustedResult()
@@ -308,6 +345,9 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 		}
 		r.state.modelDiscoveryAction = true
 		r.state.recordCatalog(args, out, false)
+		if len(returnedCatalogDetailIDs(detailIDs, out)) != 0 {
+			r.state.lastCatalogDetail = normalizeValue(out)
+		}
 		if len(catalogCards(out)) != 0 {
 			r.state.emptySearchStreak = 0
 			if len(detailIDs) == 0 {
@@ -333,6 +373,20 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 	}
 	r.state.finishAction(action, "query_catalog", args, out, err)
 	return out, err
+}
+
+// runtimeHandoffEvidence returns only exact detail evidence selected by the
+// model during distillation. The value stays inside the shared Goja session;
+// it is a continuity mechanism, while the normal same-run execution and policy
+// guards remain authoritative.
+func (s *discoveryState) runtimeHandoffEvidence() any {
+	if s == nil || s.lastCatalogDetail == nil || len(s.catalogDetails) == 0 {
+		return nil
+	}
+	return map[string]any{
+		"catalog_detail_ids": append([]string(nil), s.catalogDetails...),
+		"catalog_detail":     normalizeValue(s.lastCatalogDetail),
+	}
 }
 
 func isCatalogSearchRequest(args map[string]any) bool {
@@ -589,6 +643,28 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
 	r.addNamespace(args)
 	query := stringArg(args, "query")
+	if r.state.hasPolicyFinalBlockingViolation() {
+		out := r.state.policyFinalExecutionResult()
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
+	}
+	if missing := r.state.missingCapabilityActions(query); len(missing) != 0 {
+		message := "caller capability profile does not grant the requested GraphQL action: " + strings.Join(missing, ", ")
+		var allowed []string
+		if r.state.capabilities != nil {
+			allowed = append([]string(nil), r.state.capabilities.AllowedActions...)
+		}
+		details := map[string]any{
+			"missing_actions": missing,
+			"allowed_actions": allowed,
+		}
+		r.state.addViolation("capability_disabled", message, "execute_graphql", true, details)
+		out := policyFinalFailure("capability_disabled", message, details)
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
+	}
 	if !r.state.hasCatalogEvidence() {
 		err := fmt.Errorf("protocol violation: inspect catalog evidence before execute_graphql")
 		r.state.addViolation("raw_graphql_catalog_required", err.Error(), "execute_graphql", true, nil)
@@ -610,12 +686,31 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		r.state.finishAction(action, "execute_graphql", args, nil, err)
 		return nil, err
 	}
+	if missing := r.state.missingDistilledSourceDetails(); len(missing) != 0 {
+		err := fmt.Errorf("protocol violation: inspect every source selected by the distiller before authoring cross-source GraphQL: %s", strings.Join(missing, ", "))
+		details := map[string]any{"sources": missing}
+		r.state.addViolation("cross_source_detail_required", err.Error(), "execute_graphql", true, details)
+		next := catalogRepairNext(
+			map[string]any{"ids": append([]string(nil), missing...)},
+			"Inspect the exact source details in one discovery-only actor step, then re-author the cross-source operation from the returned source cards.",
+		)
+		out := recoverableProtocolFailure("cross_source_detail_required", err.Error(), "cross_source_detail_required", next, details)
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
+	}
 	if writeLikeGraphQL(query) && !r.state.securityRuntimeEvidence {
 		err := fmt.Errorf("protocol violation: inspect security/runtime catalog guidance before write-capable or control-plane GraphQL")
-		r.state.addViolation("security_runtime_discovery_required", err.Error(), "execute_graphql", true, map[string]any{"required": []any{"help:security", "help:runtime"}})
+		details := map[string]any{"required": []any{"help:security", "help:runtime"}}
+		r.state.addViolation("security_runtime_discovery_required", err.Error(), "execute_graphql", true, details)
+		next := catalogRepairNext(
+			map[string]any{"ids": []any{"help:security", "help:runtime"}},
+			"Inspect the exact security and runtime guidance in a discovery-only actor step, then re-author the write from returned evidence.",
+		)
+		out := recoverableProtocolFailure("security_runtime_discovery_required", err.Error(), "write_prerequisite_detail_required", next, details)
 		action := r.state.startAction("model", "execute_graphql", args)
-		r.state.finishAction(action, "execute_graphql", args, nil, err)
-		return nil, err
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
 	}
 	if ContainsMutationOperation(query) {
 		annotationFields := annotationMutationInputFields(query, args)
@@ -635,19 +730,30 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			return nil, err
 		}
 		roots := MutationRootFields(query)
+		if containsStringFold(roots, systemRootWatch) {
+			for _, root := range watchSubscriptionRoots(query, args) {
+				roots = appendUniqueString(roots, root)
+			}
+		}
 		if missing := r.state.missingMutationEvidence(roots); len(missing) != 0 {
 			err := fmt.Errorf("protocol violation: gather mutation-shape evidence for %s before executing a mutation: inspect the target table's catalog detail with query_catalog({id:\"table:...\"}), validate_where_clause the target, inspect a mutation_pattern detail row, or use an approved saved mutation", strings.Join(missing, ", "))
-			r.state.addViolation("mutation_evidence_required", err.Error(), "execute_graphql", true, map[string]any{"tables": missing})
+			details := map[string]any{"tables": missing}
+			r.state.addViolation("mutation_evidence_required", err.Error(), "execute_graphql", true, details)
+			next := r.state.mutationEvidenceNext(missing)
+			out := recoverableProtocolFailure("mutation_evidence_required", err.Error(), "mutation_shape_detail_required", next, details)
 			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, nil, err)
-			return nil, err
+			r.state.finishAction(action, "execute_graphql", args, out, nil)
+			return out, nil
 		}
 		if requiresWorkflowDetail(roots) && !r.state.hasWorkflowDetailEvidence() {
 			err := fmt.Errorf("protocol violation: inspect the workflow detail by id before executing it through %s", systemRootWorkflowExec)
-			r.state.addViolation("workflow_detail_required", err.Error(), "execute_graphql", true, map[string]any{"root": systemRootWorkflowExec})
+			details := map[string]any{"root": systemRootWorkflowExec}
+			r.state.addViolation("workflow_detail_required", err.Error(), "execute_graphql", true, details)
+			next := r.state.workflowEvidenceNext()
+			out := recoverableProtocolFailure("workflow_detail_required", err.Error(), "workflow_detail_required", next, details)
 			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, nil, err)
-			return nil, err
+			r.state.finishAction(action, "execute_graphql", args, out, nil)
+			return out, nil
 		}
 	}
 	queryKey := executionQueryKey(args)
@@ -685,12 +791,30 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	action := r.state.startAction("model", "execute_graphql", args)
 	out, err := r.base.ExecuteGraphQL(ctx, args)
 	if err == nil && executionFailed(out) {
-		out = attachExecutionRecovery(out, r.state, query)
-		r.state.failedQueryKeys[queryKey] = true
-		if wasRepairPending {
+		if denied, ok := policyFinalExecutionError(out); ok {
+			code := stringFromMap(denied.Extensions, "code")
+			details := mapValue(denied.Extensions["details"])
+			r.state.addExecutionPolicyViolation(code, denied.Message, details)
 			r.state.pendingFailedQueryKey = ""
+			r.state.clearCompletionLatch()
+			out = markPolicyFinalExecution(out, code, details)
 		} else {
-			r.state.pendingFailedQueryKey = queryKey
+			if repair, ok := systemRootDidYouMeanRepair(out, r.state, query); ok {
+				r.state.pendingSystemRootQuery = repair.example
+			}
+			if isWatchDefinitionMutation(query) && watchDefinitionExecutionFailed(out) {
+				ids := r.state.watchRepairCatalogIDs(query, args)
+				r.state.pendingFailedCatalogIDs = append([]string(nil), ids...)
+				out = attachWatchQueryRepair(out, ids)
+			} else {
+				out = attachExecutionRecovery(out, r.state, query)
+			}
+			r.state.failedQueryKeys[queryKey] = true
+			if wasRepairPending {
+				r.state.pendingFailedQueryKey = ""
+			} else {
+				r.state.pendingFailedQueryKey = queryKey
+			}
 		}
 	} else if err == nil && wasRepairPending {
 		r.state.pendingFailedQueryKey = ""
@@ -702,7 +826,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		if !executionFailed(out) {
 			r.state.emptySearchStreak = 0
 			r.state.emptyDetailStreak = 0
-			r.state.resolveRawGraphQLDiscoveryViolations()
+			r.state.resolveSuccessfulExecutionViolations()
 		}
 		if isWatchDefinitionMutation(query) {
 			r.state.watchDefinitionMutated = true
@@ -716,6 +840,57 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		"write_like": writeLikeGraphQL(query),
 	})
 	return out, err
+}
+
+func (s *discoveryState) addExecutionPolicyViolation(code, message string, details map[string]any) {
+	switch code {
+	case "artifact_kind_locked":
+		s.addViolation("artifact_kind_locked", message, toolExecuteGraphQL, true, details)
+	case "access_unauthorized":
+		s.addViolation("access_unauthorized", message, toolExecuteGraphQL, true, details)
+	case "access_blocked":
+		s.addViolation("access_blocked", message, toolExecuteGraphQL, true, details)
+	case "authenticated_required":
+		s.addViolation("authenticated_required", message, toolExecuteGraphQL, true, details)
+	case "identity_variable_missing":
+		s.addViolation("identity_variable_missing", message, toolExecuteGraphQL, true, details)
+	default:
+		s.addViolation("capability_disabled", message, toolExecuteGraphQL, true, details)
+	}
+}
+
+func recoverableProtocolFailure(code, message, kind string, next, details map[string]any) executeResult {
+	repair := map[string]any{
+		"code": code,
+		"kind": kind,
+		"next": next,
+	}
+	if len(details) != 0 {
+		repair["details"] = details
+	}
+	directive := recoveryDirectivePrefix + " follow recovery.next in a discovery-only actor step, then re-author and retry the operation in this run."
+	return executeResult{
+		Errors: []ErrorInfo{{
+			Message: joinRecoveryMessage(message, directive),
+			Extensions: map[string]any{
+				"code":            code,
+				"retryable":       true,
+				"graphjin_repair": repair,
+			},
+		}},
+		Recovery: map[string]any{
+			"code":        code,
+			"kind":        kind,
+			"instruction": "Gather the named evidence in a separate actor step so its returned schema and policy details are visible before GraphQL is authored.",
+			"next":        next,
+		},
+	}
+}
+
+func catalogRepairNext(args map[string]any, reason string) map[string]any {
+	next := catalogNext(toolQueryCatalog, reason)
+	next["args"] = args
+	return next
 }
 
 func (r *protocolRuntime) addNamespace(args map[string]any) {
@@ -856,6 +1031,29 @@ func detailIDsFromArgs(args map[string]any) []string {
 	for _, id := range stringSliceArg(args, "ids") {
 		out = appendUniqueString(out, id)
 	}
+	return out
+}
+
+// correctKnownCatalogDetailArgs repairs a narrow class of invented ids when
+// the exact authoritative id is already present in this run's catalog seed.
+// In particular, weaker models commonly guess capability:gj_watch even though
+// the governed watch mutation shape lives at help:watches.
+func (s *discoveryState) correctKnownCatalogDetailArgs(args map[string]any) map[string]any {
+	ids := detailIDsFromArgs(args)
+	if s == nil || len(ids) != 1 || s.hasKnownCatalogID(ids) {
+		return args
+	}
+	missed := strings.ToLower(strings.TrimSpace(ids[0]))
+	corrected := ""
+	if strings.Contains(missed, "watch") && s.catalogIDs["help:watches"] {
+		corrected = "help:watches"
+	}
+	if corrected == "" {
+		return args
+	}
+	out := cloneAnyMap(args)
+	delete(out, "ids")
+	out["id"] = corrected
 	return out
 }
 
@@ -1202,7 +1400,25 @@ func (s *discoveryState) clearCompletionLatch() {
 }
 
 func (s *discoveryState) completionContinuation() string {
-	if s == nil || !s.completionReady || !s.answerReadyForCompletion() {
+	if s == nil {
+		return ""
+	}
+	if s.hasPolicyFinalBlockingViolation() && !s.terminalContinuationIssued {
+		s.terminalContinuationIssued = true
+		violation, _ := s.primaryBlockingViolation()
+		return `await final("GraphJin policy refusal completed.", {policy_refusal:` + stringify(map[string]any{
+			"code": violation.Code, "message": violation.Message, "details": violation.Details,
+		}) + `});`
+	}
+	if query := strings.TrimSpace(s.pendingSystemRootQuery); query != "" {
+		s.pendingSystemRootQuery = ""
+		prefix := ""
+		if !s.securityRuntimeEvidence {
+			prefix = `globalThis.graphjinSystemRootPrerequisites = await query_catalog({ids:["help:security","help:runtime"]}); `
+		}
+		return prefix + `globalThis.graphjinSystemRootRepair = await execute_graphql(` + stringify(map[string]any{"query": query}) + `); console.log(globalThis.graphjinSystemRootRepair);`
+	}
+	if !s.completionReady || !s.answerReadyForCompletion() {
 		return ""
 	}
 	s.completionReady = false
@@ -1213,6 +1429,9 @@ func (s *discoveryState) pendingRequiredFinalization() string {
 	if s.pendingFailedQueryKey != "" {
 		return "execution_repair_required: the first GraphQL execution failed. Read errors[].extensions.graphjin_repair and result.recovery, then execute one distinct repaired query before finalizing; an identical retry is rejected."
 	}
+	if message := s.pendingRecoverableExecution(); message != "" {
+		return message
+	}
 	if message := s.pendingRequiredSavedQueryExecution(); message != "" {
 		return message
 	}
@@ -1220,10 +1439,105 @@ func (s *discoveryState) pendingRequiredFinalization() string {
 }
 
 func (s *discoveryState) pendingRequiredFinalizationContinuation() string {
-	if s.pendingFailedQueryKey != "" || s.pendingDatabaseComputation() != "" {
+	if s.pendingFailedQueryKey != "" {
+		if len(s.pendingFailedCatalogIDs) == 0 {
+			return ""
+		}
+		ids := append([]string(nil), s.pendingFailedCatalogIDs...)
+		s.pendingFailedCatalogIDs = nil
+		return `const evidence = await query_catalog(` + stringify(map[string]any{"ids": ids}) + `); console.log(evidence);`
+	}
+	if s.pendingDatabaseComputation() != "" {
 		return ""
 	}
+	if continuation := s.pendingRecoverableExecutionContinuation(); continuation != "" {
+		return continuation
+	}
 	return s.pendingRequiredSavedQueryContinuation()
+}
+
+func (s *discoveryState) pendingRecoverableExecution() string {
+	violation, ok := s.primaryRecoverableExecutionViolation()
+	if !ok {
+		return ""
+	}
+	if s.recoverableExecutionEvidenceMissing(violation) {
+		return "execution_evidence_required: the attempted GraphQL operation is missing required same-run evidence. Follow errors[].extensions.graphjin_repair.next in a discovery-only actor step; after the result is visible, re-author and execute the operation before finalizing."
+	}
+	return "execution_retry_required: the required evidence is now present, but the rejected GraphQL operation has not been retried successfully. Re-author it from the returned detail and execute it before finalizing."
+}
+
+func (s *discoveryState) pendingRecoverableExecutionContinuation() string {
+	args := s.pendingRecoverableCatalogArgs()
+	if len(args) == 0 {
+		return ""
+	}
+	return `const evidence = await query_catalog(` + stringify(normalizeValue(args)) + `); console.log(evidence);`
+}
+
+// pendingRecoverableCatalogArgs returns the exact catalog lookup selected by a
+// recoverable execution guard. Both the finalization continuation and the next
+// explicit query_catalog call use this single source of truth.
+func (s *discoveryState) pendingRecoverableCatalogArgs() map[string]any {
+	violation, ok := s.primaryRecoverableExecutionViolation()
+	if !ok || !s.recoverableExecutionEvidenceMissing(violation) {
+		return nil
+	}
+	var next map[string]any
+	switch violation.Code {
+	case "cross_source_detail_required":
+		next = catalogRepairNext(map[string]any{"ids": stringListFromDetails(violation.Details, "sources")}, "Inspect every source selected by the distiller.")
+	case "security_runtime_discovery_required":
+		next = catalogRepairNext(map[string]any{"ids": []any{"help:security", "help:runtime"}}, "Inspect write prerequisites.")
+	case "mutation_evidence_required":
+		next = s.mutationEvidenceNext(stringListFromDetails(violation.Details, "tables"))
+	case "workflow_detail_required":
+		next = s.workflowEvidenceNext()
+	default:
+		return nil
+	}
+	args := mapValue(next["args"])
+	if stringFromMap(next, "recommended_tool") != toolQueryCatalog || len(args) == 0 {
+		return nil
+	}
+	return cloneAnyMap(args)
+}
+
+func (s *discoveryState) primaryRecoverableExecutionViolation() (protocolViolation, bool) {
+	if s == nil {
+		return protocolViolation{}, false
+	}
+	var fallback protocolViolation
+	hasFallback := false
+	for _, code := range []string{"security_runtime_discovery_required", "cross_source_detail_required", "mutation_evidence_required", "workflow_detail_required"} {
+		for _, violation := range s.violations {
+			if violation.Blocking && violation.Code == code {
+				if s.recoverableExecutionEvidenceMissing(violation) {
+					return violation, true
+				}
+				if !hasFallback {
+					fallback = violation
+					hasFallback = true
+				}
+			}
+		}
+	}
+	return fallback, hasFallback
+}
+
+func (s *discoveryState) recoverableExecutionEvidenceMissing(violation protocolViolation) bool {
+	switch violation.Code {
+	case "cross_source_detail_required":
+		return len(s.missingDistilledSourceDetails()) != 0
+	case "security_runtime_discovery_required":
+		return !s.securityRuntimeEvidence
+	case "mutation_evidence_required":
+		return len(s.missingMutationEvidence(stringListFromDetails(violation.Details, "tables"))) != 0
+	case "workflow_detail_required":
+		return !s.hasWorkflowDetailEvidence()
+	default:
+		return false
+	}
 }
 
 // pendingRequiredSavedQueryExecution guards explicit, ordered user requests
@@ -1401,9 +1715,9 @@ func (s *discoveryState) hasCatalogDetailEvidence() bool {
 // mutation-shape evidence in this run. A target table is covered when its table
 // card detail was inspected by id, it was passed through validate_where_clause,
 // or a mutation_pattern detail was inspected AND the table surfaced in any
-// catalog result. gj_* system roots are excluded — they are governed by the
-// security/runtime gate. An unparseable mutation (no roots) demands generic
-// shape evidence.
+// catalog result. Watch roots require help:watches or their exact capability
+// detail; other gj_* roots are governed by their dedicated gates. An
+// unparseable mutation (no roots) demands generic shape evidence.
 func (s *discoveryState) missingMutationEvidence(roots []string) []string {
 	if len(roots) == 0 {
 		if s.detailKinds["mutation_pattern"] || len(s.tablesDetailed) != 0 || len(s.tablesValidated) != 0 {
@@ -1414,18 +1728,116 @@ func (s *discoveryState) missingMutationEvidence(roots []string) []string {
 	var missing []string
 	for _, root := range roots {
 		root = strings.ToLower(strings.TrimSpace(root))
-		if root == "" || strings.HasPrefix(root, "gj_") {
+		if root == "" {
 			continue
 		}
-		if s.tablesDetailed[root] || s.tablesValidated[root] {
+		if root == systemRootWatch || root == systemRootWatchEvent {
+			if !s.hasWatchMutationEvidence(root) {
+				missing = appendUniqueString(missing, root)
+			}
 			continue
 		}
-		if s.detailKinds["mutation_pattern"] && s.tableSeenInCatalog(root) {
+		if strings.HasPrefix(root, "gj_") {
+			continue
+		}
+		table, dialectRepair := s.mutationTargetTable(root)
+		if dialectRepair && !s.hasCatalogDetailID("help:mutations") {
+			missing = appendUniqueString(missing, root)
+			continue
+		}
+		if s.tablesDetailed[table] || s.tablesValidated[table] {
+			continue
+		}
+		if s.detailKinds["mutation_pattern"] && s.tableSeenInCatalog(table) {
 			continue
 		}
 		missing = appendUniqueString(missing, root)
 	}
 	return missing
+}
+
+func (s *discoveryState) hasCatalogDetailID(id string) bool {
+	id = strings.ToLower(strings.TrimSpace(id))
+	for _, detailID := range s.catalogDetails {
+		if strings.EqualFold(strings.TrimSpace(detailID), id) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *discoveryState) recordDistilledSourceIDs(value any) {
+	if s == nil {
+		return
+	}
+	var visit func(any)
+	visit = func(current any) {
+		switch typed := normalizeValue(current).(type) {
+		case map[string]any:
+			if id := strings.TrimSpace(stringFromMap(typed, "id")); strings.HasPrefix(strings.ToLower(id), "source:") {
+				s.distilledSourceIDs = appendUniqueString(s.distilledSourceIDs, id)
+			}
+			for _, child := range typed {
+				visit(child)
+			}
+		case []any:
+			for _, child := range typed {
+				visit(child)
+			}
+		}
+	}
+	visit(value)
+	sort.Strings(s.distilledSourceIDs)
+}
+
+func (s *discoveryState) missingDistilledSourceDetails() []string {
+	if s == nil || len(s.distilledSourceIDs) < 2 {
+		return nil
+	}
+	missing := make([]string, 0, len(s.distilledSourceIDs))
+	for _, id := range s.distilledSourceIDs {
+		if !s.hasCatalogDetailID(id) {
+			missing = append(missing, id)
+		}
+	}
+	return missing
+}
+
+// mutationTargetTable maps common Hasura-style mutation roots back to a table
+// already surfaced by GraphJin. The mapping is used only to select evidence;
+// it never rewrites or executes the model's GraphQL.
+func (s *discoveryState) mutationTargetTable(root string) (string, bool) {
+	root = strings.ToLower(strings.TrimSpace(root))
+	if root == "" || s.catalogIDForTable(root) != "" || s.tablesDetailed[root] || s.tablesValidated[root] {
+		return root, false
+	}
+	for _, prefix := range []string{"insert_", "update_", "delete_"} {
+		if !strings.HasPrefix(root, prefix) {
+			continue
+		}
+		candidate := strings.TrimPrefix(root, prefix)
+		for _, suffix := range []string{"_by_pk", "_one", "_many"} {
+			candidate = strings.TrimSuffix(candidate, suffix)
+		}
+		if candidate != "" && (s.catalogIDForTable(candidate) != "" || s.tablesDetailed[candidate] || s.tablesValidated[candidate]) {
+			return candidate, true
+		}
+	}
+	return root, false
+}
+
+func (s *discoveryState) hasWatchMutationEvidence(root string) bool {
+	if s == nil {
+		return false
+	}
+	root = strings.ToLower(strings.TrimSpace(root))
+	for _, id := range s.catalogDetails {
+		lower := strings.ToLower(strings.TrimSpace(id))
+		if lower == "help:watches" || lower == root || strings.HasSuffix(lower, ":"+root) || strings.Contains(lower, ":"+root+".") {
+			return true
+		}
+	}
+	return false
 }
 
 // tableSeenInCatalog reports whether any catalog result in this run surfaced a
@@ -1450,6 +1862,73 @@ func requiresWorkflowDetail(roots []string) bool {
 
 func (s *discoveryState) hasWorkflowDetailEvidence() bool {
 	return s != nil && (len(s.workflowsDetailed) != 0 || len(s.savedQueriesDetailed) != 0)
+}
+
+func (s *discoveryState) mutationEvidenceNext(tables []string) map[string]any {
+	ids := make([]any, 0, len(tables))
+	for _, table := range tables {
+		if table == systemRootWatch || table == systemRootWatchEvent {
+			ids = append(ids, "help:watches")
+			continue
+		}
+		target, dialectRepair := s.mutationTargetTable(table)
+		if dialectRepair && !s.hasCatalogDetailID("help:mutations") {
+			ids = append(ids, "help:mutations")
+		}
+		id := s.catalogIDForTable(target)
+		if id == "" {
+			return catalogRepairNext(
+				map[string]any{"kind": "table", "limit": 20},
+				"Enumerate visible tables, select the exact mutation target, then inspect that table card by id in a discovery-only actor step.",
+			)
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return catalogRepairNext(
+			map[string]any{"kind": "mutation_pattern", "limit": 20},
+			"Inspect a mutation pattern or the exact target table detail before retrying the write.",
+		)
+	}
+	return catalogRepairNext(
+		map[string]any{"ids": ids},
+		"Inspect the exact target table detail and author the mutation only from its returned column and mutation-shape evidence.",
+	)
+}
+
+func (s *discoveryState) catalogIDForTable(table string) string {
+	table = strings.ToLower(strings.TrimSpace(table))
+	best := ""
+	for id := range s.catalogIDs {
+		if tableNameFromCatalogID(id) == table && (best == "" || id < best) {
+			best = id
+		}
+	}
+	return best
+}
+
+func (s *discoveryState) workflowEvidenceNext() map[string]any {
+	workflowIDs := make([]string, 0)
+	for id := range s.catalogIDs {
+		if strings.HasPrefix(strings.ToLower(id), "workflow:") {
+			workflowIDs = append(workflowIDs, id)
+		}
+	}
+	if len(workflowIDs) != 0 {
+		sort.Strings(workflowIDs)
+		ids := make([]any, len(workflowIDs))
+		for i := range workflowIDs {
+			ids[i] = workflowIDs[i]
+		}
+		return catalogRepairNext(
+			map[string]any{"ids": ids},
+			"Inspect the discovered workflow detail by id before retrying workflow execution.",
+		)
+	}
+	return catalogRepairNext(
+		map[string]any{"kind": "workflow", "limit": 20},
+		"Enumerate visible workflows, choose the exact workflow, and inspect its detail row before retrying execution.",
+	)
 }
 
 func (s *discoveryState) catalogKindSeen(kind string) bool {
@@ -1482,10 +1961,12 @@ func (s *discoveryState) resolveSavedQueryDetailViolation(name string) {
 	}
 }
 
-func (s *discoveryState) resolveRawGraphQLDiscoveryViolations() {
+func (s *discoveryState) resolveSuccessfulExecutionViolations() {
 	for i := range s.violations {
 		violation := &s.violations[i]
-		if violation.Code != "raw_graphql_catalog_required" && violation.Code != "raw_graphql_discovery_required" {
+		switch violation.Code {
+		case "raw_graphql_catalog_required", "raw_graphql_discovery_required", "security_runtime_discovery_required", "cross_source_detail_required", "mutation_evidence_required", "workflow_detail_required":
+		default:
 			continue
 		}
 		violation.Blocking = false
@@ -2135,6 +2616,205 @@ func writeLikeGraphQL(query string) bool {
 		strings.Contains(lower, "gj_watch")
 }
 
+func (s *discoveryState) missingCapabilityActions(query string) []string {
+	if !ContainsMutationOperation(query) {
+		return nil
+	}
+	var missing []string
+	for _, item := range mutationRootActions(query) {
+		action := capabilityActionForMutation(item.root, item.action)
+		if action != "" && !profileHasAction(s.capabilities, action) {
+			missing = appendUniqueString(missing, action)
+		}
+	}
+	return missing
+}
+
+type mutationRootAction struct {
+	root   string
+	action string
+}
+
+func mutationRootActions(query string) []mutationRootAction {
+	clean := graphQLStructure(query)
+	var out []mutationRootAction
+	for _, root := range MutationRootFields(query) {
+		actions := mutationActionsForRoot(clean, root)
+		if len(actions) == 0 {
+			switch {
+			case strings.HasPrefix(root, "insert_"):
+				actions = []string{"insert"}
+			case strings.HasPrefix(root, "delete_"):
+				actions = []string{"delete"}
+			default:
+				actions = []string{"update"}
+			}
+		}
+		for _, action := range actions {
+			out = append(out, mutationRootAction{root: root, action: action})
+		}
+	}
+	return out
+}
+
+func mutationActionsForRoot(clean, root string) []string {
+	lower := strings.ToLower(clean)
+	root = strings.ToLower(strings.TrimSpace(root))
+	var out []string
+	for offset := 0; offset < len(lower); {
+		relative := strings.Index(lower[offset:], root)
+		if relative < 0 {
+			break
+		}
+		start := offset + relative
+		end := start + len(root)
+		offset = end
+		if (start > 0 && isGraphQLNameContinue(lower[start-1])) || (end < len(lower) && isGraphQLNameContinue(lower[end])) {
+			continue
+		}
+		open := skipGraphQLSpace(clean, end)
+		if open >= len(clean) || clean[open] != '(' {
+			continue
+		}
+		close := matchingGraphQLDelimiter(clean, open, '(', ')')
+		if close < 0 {
+			continue
+		}
+		for _, name := range topLevelGraphQLArgumentNames(clean[open+1 : close]) {
+			switch name {
+			case "insert":
+				out = appendUniqueString(out, "insert")
+			case "update":
+				out = appendUniqueString(out, "update")
+			case "delete":
+				out = appendUniqueString(out, "delete")
+			case "upsert":
+				out = appendUniqueString(out, "insert")
+				out = appendUniqueString(out, "update")
+			}
+		}
+	}
+	return out
+}
+
+func topLevelGraphQLArgumentNames(value string) []string {
+	var out []string
+	braceDepth, bracketDepth, parenDepth := 0, 0, 0
+	for index := 0; index < len(value); {
+		switch value[index] {
+		case '{':
+			braceDepth++
+			index++
+			continue
+		case '}':
+			braceDepth--
+			index++
+			continue
+		case '[':
+			bracketDepth++
+			index++
+			continue
+		case ']':
+			bracketDepth--
+			index++
+			continue
+		case '(':
+			parenDepth++
+			index++
+			continue
+		case ')':
+			parenDepth--
+			index++
+			continue
+		}
+		if braceDepth != 0 || bracketDepth != 0 || parenDepth != 0 || !isGraphQLNameStart(value[index]) {
+			index++
+			continue
+		}
+		start := index
+		index++
+		for index < len(value) && isGraphQLNameContinue(value[index]) {
+			index++
+		}
+		if colon := skipGraphQLSpace(value, index); colon < len(value) && value[colon] == ':' {
+			out = appendUniqueString(out, strings.ToLower(value[start:index]))
+		}
+	}
+	return out
+}
+
+func capabilityActionForMutation(root, action string) string {
+	root = strings.ToLower(strings.TrimSpace(root))
+	action = strings.ToLower(strings.TrimSpace(action))
+	if strings.HasPrefix(root, "insert_") {
+		action, root = "insert", strings.TrimPrefix(root, "insert_")
+	} else if strings.HasPrefix(root, "update_") {
+		action, root = "update", strings.TrimPrefix(root, "update_")
+	} else if strings.HasPrefix(root, "delete_") {
+		action, root = "delete", strings.TrimPrefix(root, "delete_")
+	}
+	for _, suffix := range []string{"_by_pk", "_one", "_many"} {
+		root = strings.TrimSuffix(root, suffix)
+	}
+	if isFixedSystemRoot(root) {
+		return root + "." + action
+	}
+	switch action {
+	case "insert":
+		return CapabilityActionDataInsert
+	case "delete":
+		return CapabilityActionDataDelete
+	default:
+		return CapabilityActionDataUpdate
+	}
+}
+
+func policyFinalFailure(code, message string, details map[string]any) executeResult {
+	return executeResult{Errors: []ErrorInfo{{Message: message, Extensions: map[string]any{
+		"code": code, "retryable": false, "policy_final": true, "tool": toolExecuteGraphQL,
+		"details": details,
+	}}}}
+}
+
+func (s *discoveryState) policyFinalExecutionResult() executeResult {
+	violation, _ := s.primaryBlockingViolation()
+	return policyFinalFailure(violation.Code, violation.Message, violation.Details)
+}
+
+func policyFinalExecutionError(out any) (ErrorInfo, bool) {
+	value := mapValue(normalizeValue(out))
+	for _, item := range anySlice(value["errors"]) {
+		entry := mapValue(item)
+		extensions := mapValue(entry["extensions"])
+		code := stringFromMap(extensions, "code")
+		policyFinal, _ := extensions["policy_final"].(bool)
+		if code != "" && (policyFinal || policyFinalViolation(code)) {
+			return ErrorInfo{Message: stringFromMap(entry, "message"), Extensions: extensions}, true
+		}
+	}
+	return ErrorInfo{}, false
+}
+
+func markPolicyFinalExecution(out any, code string, details map[string]any) any {
+	value := cloneAnyMap(mapValue(normalizeValue(out)))
+	if value == nil {
+		return policyFinalFailure(code, "GraphJin policy denied the requested action", details)
+	}
+	for _, item := range anySlice(value["errors"]) {
+		entry := mapValue(item)
+		extensions := mapValue(entry["extensions"])
+		if extensions == nil {
+			extensions = map[string]any{}
+			entry["extensions"] = extensions
+		}
+		extensions["code"] = code
+		extensions["retryable"] = false
+		extensions["policy_final"] = true
+		extensions["details"] = details
+	}
+	return value
+}
+
 func isWatchActionReviewMutation(query string) bool {
 	lower := strings.ToLower(query)
 	return ContainsMutationOperation(query) &&
@@ -2148,6 +2828,193 @@ func isWatchDefinitionMutation(query string) bool {
 		strings.Contains(lower, "gj_watch") &&
 		!strings.Contains(lower, "flow_review_json") &&
 		!strings.Contains(lower, "action_review_json")
+}
+
+func containsStringFold(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(target)) {
+			return true
+		}
+	}
+	return false
+}
+
+func watchSubscriptionRoots(query string, args map[string]any) []string {
+	subscription := watchSubscriptionText(query, args)
+	if subscription == "" {
+		return nil
+	}
+	roots := QueryRootFields(subscription)
+	tables := make([]string, 0, len(roots))
+	for _, root := range roots {
+		// GraphJin subscriptions expose a companion <root>_cursor field for
+		// resumable delivery. It is part of the selected table's contract, not
+		// another application mutation target with its own catalog card.
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(root)), "_cursor") {
+			continue
+		}
+		tables = appendUniqueString(tables, root)
+	}
+	return tables
+}
+
+func watchSubscriptionText(query string, args map[string]any) string {
+	clean := graphQLStructure(query)
+	lower := strings.ToLower(clean)
+	for offset := 0; offset < len(lower); {
+		relative := strings.Index(lower[offset:], systemRootWatch)
+		if relative < 0 {
+			return ""
+		}
+		start := offset + relative
+		end := start + len(systemRootWatch)
+		offset = end
+		if (start > 0 && isGraphQLNameContinue(lower[start-1])) || (end < len(lower) && isGraphQLNameContinue(lower[end])) {
+			continue
+		}
+		open := skipGraphQLSpace(clean, end)
+		if open >= len(clean) || clean[open] != '(' {
+			continue
+		}
+		close := matchingGraphQLDelimiter(clean, open, '(', ')')
+		if close < 0 {
+			return ""
+		}
+		if value := graphQLStringField(query, clean, open+1, close, "query", args); value != "" {
+			return value
+		}
+		for _, argument := range []string{"insert", "update", "upsert"} {
+			if input := graphQLVariableArgument(clean, open+1, close, argument, args); input != nil {
+				if value, ok := input["query"].(string); ok {
+					return strings.TrimSpace(value)
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func graphQLStringField(raw, clean string, start, end int, field string, args map[string]any) string {
+	lower := strings.ToLower(clean[start:end])
+	for offset := 0; offset < len(lower); {
+		relative := strings.Index(lower[offset:], field)
+		if relative < 0 {
+			return ""
+		}
+		fieldStart := start + offset + relative
+		fieldEnd := fieldStart + len(field)
+		offset += relative + len(field)
+		if (fieldStart > start && isGraphQLNameContinue(clean[fieldStart-1])) || (fieldEnd < end && isGraphQLNameContinue(clean[fieldEnd])) {
+			continue
+		}
+		colon := skipGraphQLSpace(clean, fieldEnd)
+		if colon >= end || clean[colon] != ':' {
+			continue
+		}
+		// graphQLStructure blanks string literals while preserving byte offsets.
+		// Locate the value in the raw operation so an inline quoted subscription
+		// remains visible to the watch prerequisite parser.
+		value := skipGraphQLSpace(raw, colon+1)
+		if value >= end {
+			return ""
+		}
+		if raw[value] == '"' {
+			stringEnd := skipGraphQLString(raw, value)
+			if strings.HasPrefix(raw[value:stringEnd], `"""`) {
+				return strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(raw[value:stringEnd], `"""`), `"""`))
+			}
+			decoded, err := strconv.Unquote(raw[value:stringEnd])
+			if err == nil {
+				return strings.TrimSpace(decoded)
+			}
+			return ""
+		}
+		if raw[value] == '$' {
+			nameStart := value + 1
+			nameEnd := nameStart
+			for nameEnd < end && isGraphQLNameContinue(raw[nameEnd]) {
+				nameEnd++
+			}
+			variables, _ := normalizeValue(args["variables"]).(map[string]any)
+			if result, ok := variables[raw[nameStart:nameEnd]].(string); ok {
+				return strings.TrimSpace(result)
+			}
+		}
+	}
+	return ""
+}
+
+func graphQLVariableArgument(clean string, start, end int, argument string, args map[string]any) map[string]any {
+	lower := strings.ToLower(clean[start:end])
+	for offset := 0; offset < len(lower); {
+		relative := strings.Index(lower[offset:], argument)
+		if relative < 0 {
+			return nil
+		}
+		nameStart := start + offset + relative
+		nameEnd := nameStart + len(argument)
+		offset += relative + len(argument)
+		if (nameStart > start && isGraphQLNameContinue(clean[nameStart-1])) || (nameEnd < end && isGraphQLNameContinue(clean[nameEnd])) {
+			continue
+		}
+		colon := skipGraphQLSpace(clean, nameEnd)
+		value := skipGraphQLSpace(clean, colon+1)
+		if colon >= end || clean[colon] != ':' || value >= end || clean[value] != '$' {
+			continue
+		}
+		variableStart := value + 1
+		variableEnd := variableStart
+		for variableEnd < end && isGraphQLNameContinue(clean[variableEnd]) {
+			variableEnd++
+		}
+		variables, _ := normalizeValue(args["variables"]).(map[string]any)
+		return mapValue(variables[clean[variableStart:variableEnd]])
+	}
+	return nil
+}
+
+func watchDefinitionExecutionFailed(out any) bool {
+	value := mapValue(normalizeValue(out))
+	for _, item := range anySlice(value["errors"]) {
+		message := strings.ToLower(stringFromMap(mapValue(item), "message"))
+		for _, marker := range []string{"gj_watch subscription", "gj_watch query", "cursor pagination", "subscription probe failed"} {
+			if strings.Contains(message, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *discoveryState) watchRepairCatalogIDs(query string, args map[string]any) []string {
+	ids := []string{"help:watches"}
+	for _, root := range watchSubscriptionRoots(query, args) {
+		if id := s.catalogIDForTable(root); id != "" {
+			ids = appendUniqueString(ids, id)
+		}
+	}
+	return ids
+}
+
+func attachWatchQueryRepair(out any, ids []string) any {
+	value := cloneAnyMap(mapValue(normalizeValue(out)))
+	if value == nil {
+		return out
+	}
+	next := catalogRepairNext(map[string]any{"ids": ids}, "Inspect the exact watch contract and embedded subscription table details, then execute one distinct repaired gj_watch mutation.")
+	for _, item := range anySlice(value["errors"]) {
+		entry := mapValue(item)
+		extensions := mapValue(entry["extensions"])
+		if extensions == nil {
+			extensions = map[string]any{}
+			entry["extensions"] = extensions
+		}
+		extensions["code"] = "watch_query_invalid"
+		extensions["retryable"] = true
+		extensions["graphjin_repair"] = map[string]any{"kind": "watch_query_invalid", "next": next}
+	}
+	value["recovery"] = map[string]any{"code": "watch_query_invalid", "kind": "watch_query_invalid", "next": next}
+	return value
 }
 
 func isAnnotationDefinitionMutation(query string, fields map[string]bool) bool {
