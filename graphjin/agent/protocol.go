@@ -52,6 +52,10 @@ type discoveryState struct {
 	helpTopics        []string
 	catalogSearches   []map[string]any
 	catalogDetails    []string
+	// lastCatalogDetail retains the most recent successful exact detail result
+	// for the runtime-only distiller -> executor handoff. It is never rendered
+	// into a prompt or accepted as authorization by itself.
+	lastCatalogDetail any
 	// distilledSourceIDs are exact source cards selected by the distiller for
 	// the executor handoff. When more than one source is selected, the executor
 	// must inspect every source detail before it can author cross-source
@@ -341,6 +345,9 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 		}
 		r.state.modelDiscoveryAction = true
 		r.state.recordCatalog(args, out, false)
+		if len(returnedCatalogDetailIDs(detailIDs, out)) != 0 {
+			r.state.lastCatalogDetail = normalizeValue(out)
+		}
 		if len(catalogCards(out)) != 0 {
 			r.state.emptySearchStreak = 0
 			if len(detailIDs) == 0 {
@@ -366,6 +373,20 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 	}
 	r.state.finishAction(action, "query_catalog", args, out, err)
 	return out, err
+}
+
+// runtimeHandoffEvidence returns only exact detail evidence selected by the
+// model during distillation. The value stays inside the shared Goja session;
+// it is a continuity mechanism, while the normal same-run execution and policy
+// guards remain authoritative.
+func (s *discoveryState) runtimeHandoffEvidence() any {
+	if s == nil || s.lastCatalogDetail == nil || len(s.catalogDetails) == 0 {
+		return nil
+	}
+	return map[string]any{
+		"catalog_detail_ids": append([]string(nil), s.catalogDetails...),
+		"catalog_detail":     normalizeValue(s.lastCatalogDetail),
+	}
 }
 
 func isCatalogSearchRequest(args map[string]any) bool {

@@ -25,10 +25,21 @@ const (
 type graphJinCodeRuntime struct {
 	base                   *axgoja.Runtime
 	lastExecution          func() any
+	handoffFallback        func() any
 	onDistilledResult      func(any)
 	pendingFinal           func() string
 	pendingContinuation    func() string
 	completionContinuation func() string
+}
+
+// WithHandoffFallback supplies runtime-only evidence gathered by GraphJin
+// callables during distillation. Ax preserves JavaScript variables across the
+// stage patch, but a weak distiller can still discard a useful catalog result
+// by ending with final(request, {}). Keep the governed result on the same Goja
+// session instead of asking the executor to rediscover or guess it.
+func (r *graphJinCodeRuntime) WithHandoffFallback(fallback func() any) *graphJinCodeRuntime {
+	r.handoffFallback = fallback
+	return r
 }
 
 func newGraphJinCodeRuntime(lastExecution func() any, onDistilledResult func(any), pendingFinal func() string, pendingContinuation func() string, completionContinuation ...func() string) *graphJinCodeRuntime {
@@ -73,6 +84,7 @@ func (r *graphJinCodeRuntime) CreateSession(globals map[string]ax.Value, options
 	return &graphJinCodeSession{
 		base:                   session,
 		lastExecution:          r.lastExecution,
+		handoffFallback:        r.handoffFallback,
 		onDistilledResult:      r.onDistilledResult,
 		pendingFinal:           r.pendingFinal,
 		pendingContinuation:    r.pendingContinuation,
@@ -86,6 +98,7 @@ func (r *graphJinCodeRuntime) CreateSession(globals map[string]ax.Value, options
 type graphJinCodeSession struct {
 	base                   ax.CodeSession
 	lastExecution          func() any
+	handoffFallback        func() any
 	onDistilledResult      func(any)
 	pendingFinal           func() string
 	pendingContinuation    func() string
@@ -108,12 +121,18 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 	readsHandoff := referencesRuntimeHandoff(code)
 	usesGraphJinCallable := referencesGraphJinCallable(code)
 	if s.executorStage && s.historyReadRequired && !s.historyRead && !readsHistory {
+		// The condition and the safe recovery are both known in Go. Surface the
+		// bounded prior turns once, mark the prerequisite satisfied, and let the
+		// next actor step use the returned value. Requiring a weak model to spell a
+		// magic global name merely turns a deterministic handoff into a retry loop.
+		s.historyRead = true
 		return map[string]any{
 			"kind": "result",
 			"result": map[string]any{
 				"graphjin_protocol": "history_read_required",
-				"message":           "This follow-up depends on runtime-only prior turns. Read and narrow globalThis.graphjinHistory in JavaScript before calling GraphJin tools or finalizing.",
-				"next":              "Select the most recent relevant content and catalog_ids from graphjinHistory, then re-establish this run's catalog evidence and answer from both.",
+				"message":           "This follow-up depends on prior turns. GraphJin supplied the bounded history below; use its most recent relevant content, then re-establish this run's catalog evidence.",
+				"history":           normalizeValue(s.originalHistory),
+				"next":              "Resolve the referenced entity from history, inspect its exact catalog detail, and execute the required query.",
 			},
 		}
 	}
@@ -193,6 +212,7 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 					"graphjin_protocol": protocolCode,
 					"message":           publicMessage,
 					"next":              publicMessage,
+					"attempt":           runtimeFinalEvidenceValue(result),
 				},
 			}
 		}
@@ -375,6 +395,11 @@ func runtimeFinalEvidence(value any) (any, bool) {
 	return normalizeValue(args[1]), true
 }
 
+func runtimeFinalEvidenceValue(value any) any {
+	evidence, _ := runtimeFinalEvidence(value)
+	return evidence
+}
+
 func (s *graphJinCodeSession) captureDistillerHandoff(result ax.Value) {
 	step := mapValue(result)
 	if step == nil {
@@ -414,6 +439,13 @@ func (s *graphJinCodeSession) captureDistillerHandoff(result ax.Value) {
 	}
 	if len(args) > 1 {
 		if value := normalizeValue(args[1]); hasRuntimeHandoffValue(value) {
+			s.distilledContext = value
+			narrowed = value
+			s.explicitHandoff = true
+		}
+	}
+	if !hasRuntimeHandoffValue(s.distilledContext) && s.handoffFallback != nil {
+		if value := normalizeValue(s.handoffFallback()); hasRuntimeHandoffValue(value) {
 			s.distilledContext = value
 			narrowed = value
 			s.explicitHandoff = true
