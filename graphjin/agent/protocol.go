@@ -112,6 +112,9 @@ type discoveryState struct {
 	capabilities       *CapabilityProfile
 	observe            func(ActionEvent)
 	coverageSearchUsed bool
+	// mutationEvidenceSupplied keeps the one-shot discharge of a missing
+	// mutation-shape prerequisite from becoming an unbounded fetch loop.
+	mutationEvidenceSupplied bool
 	// history is bounded, untrusted caller/task context. It never satisfies a
 	// discovery guard, but an explicit request to repeat a prior answered turn
 	// can safely recover from an actor-loop failure after this run has performed
@@ -736,6 +739,29 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			}
 		}
 		if missing := r.state.missingMutationEvidence(roots); len(missing) != 0 {
+			// Both the requirement and its safe discharge are known in Go: the exact
+			// catalog ids are resolvable, so supply the detail once instead of asking
+			// the model to fetch it. Same reasoning as history_read_required — naming
+			// the lookup and hoping a weak model performs it turns a deterministic
+			// prerequisite into a retry loop, which is what held DeepORG watch
+			// creation at 0/4 while the recovery correctly named the table id.
+			//
+			// The guard's purpose survives: a mutation must be authored from real
+			// column evidence, and that evidence is now in hand. It is supplied at
+			// most once per run so a genuinely unknown target still fails loudly.
+			// Scoped to gj_watch on purpose. Ordinary mutation targets are served
+			// well by the existing repair ladder — governed writes pass 6/10 through
+			// it — and widening this would bypass a deliberate design. Watch creation
+			// is the case that stalls, because its evidence requirement covers the
+			// embedded subscription's tables rather than the mutation root the model
+			// is actually writing to.
+			if containsStringFold(roots, systemRootWatch) {
+				if supplied, ok := r.supplyMutationEvidence(ctx, missing); ok {
+					action := r.state.startAction("model", "execute_graphql", args)
+					r.state.finishAction(action, "execute_graphql", args, supplied, nil)
+					return supplied, nil
+				}
+			}
 			err := fmt.Errorf("protocol violation: gather mutation-shape evidence for %s before executing a mutation: inspect the target table's catalog detail with query_catalog({id:\"table:...\"}), validate_where_clause the target, inspect a mutation_pattern detail row, or use an approved saved mutation", strings.Join(missing, ", "))
 			details := map[string]any{"tables": missing}
 			r.state.addViolation("mutation_evidence_required", err.Error(), "execute_graphql", true, details)
@@ -805,7 +831,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			if isWatchDefinitionMutation(query) && watchDefinitionExecutionFailed(out) {
 				ids := r.state.watchRepairCatalogIDs(query, args)
 				r.state.pendingFailedCatalogIDs = append([]string(nil), ids...)
-				out = attachWatchQueryRepair(out, ids)
+				out = attachWatchQueryRepair(out, ids, watchSubscriptionRoots(query, args))
 			} else {
 				out = attachExecutionRecovery(out, r.state, query)
 			}
@@ -3006,12 +3032,20 @@ func (s *discoveryState) watchRepairCatalogIDs(query string, args map[string]any
 	return ids
 }
 
-func attachWatchQueryRepair(out any, ids []string) any {
+func attachWatchQueryRepair(out any, ids []string, roots []string) any {
 	value := cloneAnyMap(mapValue(normalizeValue(out)))
 	if value == nil {
 		return out
 	}
-	next := catalogRepairNext(map[string]any{"ids": ids}, "Inspect the exact watch contract and embedded subscription table details, then execute one distinct repaired gj_watch mutation.")
+	reason := "Inspect the exact watch contract and embedded subscription table details, then execute one distinct repaired gj_watch mutation."
+	// A watch subscription must be cursor-backed. The probe reports that
+	// requirement but not its shape, which leaves a weak model re-submitting the
+	// same cursor-less subscription. Name the corrected form with this watch's
+	// real root, the way every other repair names its arguments.
+	if shape := watchCursorShape(value, roots); shape != "" {
+		reason = "This watch subscription is not cursor-backed. Re-author it as " + shape + " then execute one distinct repaired gj_watch mutation."
+	}
+	next := catalogRepairNext(map[string]any{"ids": ids}, reason)
 	for _, item := range anySlice(value["errors"]) {
 		entry := mapValue(item)
 		extensions := mapValue(entry["extensions"])
@@ -3255,4 +3289,74 @@ func truncateString(value string, max int) string {
 		return value[:max]
 	}
 	return value[:max-3] + "..."
+}
+
+// supplyMutationEvidence discharges a missing mutation-shape prerequisite by
+// fetching the target tables' catalog detail itself and returning it to the
+// model, rather than naming the lookup and hoping the model performs it.
+//
+// It applies at most once per run, and only when every missing target resolves
+// to a known catalog id: a genuinely unknown or invented target still fails
+// loudly through the ordinary rejection so the model must locate it.
+func (r *protocolRuntime) supplyMutationEvidence(ctx context.Context, missing []string) (any, bool) {
+	if r == nil || r.state == nil || r.state.mutationEvidenceSupplied || len(missing) == 0 {
+		return nil, false
+	}
+	ids := make([]any, 0, len(missing))
+	for _, table := range missing {
+		target, _ := r.state.mutationTargetTable(table)
+		id := r.state.catalogIDForTable(target)
+		if id == "" {
+			return nil, false
+		}
+		ids = append(ids, id)
+	}
+	args := map[string]any{"ids": ids}
+	r.addNamespace(args)
+	out, err := r.base.QueryCatalog(ctx, args)
+	if err != nil {
+		return nil, false
+	}
+	// Only count evidence the catalog actually returned, so a stale id cannot
+	// satisfy the guard it was meant to enforce.
+	if len(catalogCards(out)) == 0 {
+		return nil, false
+	}
+	r.state.mutationEvidenceSupplied = true
+	r.state.recordCatalog(args, out, false)
+	return map[string]any{
+		"graphjin_protocol": "mutation_shape_evidence_supplied",
+		"message":           "GraphJin fetched the mutation-shape evidence this write requires. Author the mutation only from the returned column and mutation-shape evidence below, then execute it.",
+		"cards":             normalizeValue(mapValue(normalizeValue(out))["cards"]),
+		"tables":            missing,
+		"next":              "Re-author the mutation from these returned columns and execute it once.",
+	}, true
+}
+
+// watchCursorShape returns the corrected cursor-backed subscription shape when a
+// watch probe rejected the query for missing cursor pagination. It substitutes
+// the watch's real root so the model does not have to translate a template.
+func watchCursorShape(value map[string]any, roots []string) string {
+	cursorFault := false
+	for _, item := range anySlice(value["errors"]) {
+		message := strings.ToLower(stringFromMap(mapValue(item), "message"))
+		if strings.Contains(message, "cursor pagination") {
+			cursorFault = true
+			break
+		}
+	}
+	if !cursorFault {
+		return ""
+	}
+	root := ""
+	for _, candidate := range roots {
+		if candidate != "" && !strings.HasPrefix(candidate, "gj_") {
+			root = candidate
+			break
+		}
+	}
+	if root == "" {
+		root = "<table>"
+	}
+	return "subscription { " + root + "(first: 25, after: $cursor) { ... } " + root + "_cursor }"
 }
