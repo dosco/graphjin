@@ -1302,3 +1302,85 @@ func TestMutationEvidenceNextEnumeratesOnlyWhenNothingResolves(t *testing.T) {
 		}
 	}
 }
+
+// TestSupplyMutationEvidenceDischargesKnownTarget pins the fix that took DeepORG
+// watch creation off zero. The recovery already named the exact catalog id, and
+// the model still did not fetch it, so every creation episode looped on
+// mutation_evidence_required until its step budget ran out. GraphJin knows the id
+// and can fetch the detail itself, exactly as history_read_required supplies the
+// bounded history rather than naming a global for the model to read.
+func TestSupplyMutationEvidenceDischargesKnownTarget(t *testing.T) {
+	base := &recordingRuntime{cards: []map[string]any{{
+		"id": "table:app:main.accounts", "kind": "table", "table_name": "accounts",
+	}}}
+	rt := &protocolRuntime{base: base, state: newDiscoveryState("Watch churn-risk accounts.")}
+	rt.state.catalogIDs["table:app:main.accounts"] = true
+
+	out, ok := rt.supplyMutationEvidence(context.Background(), []string{"accounts"})
+	if !ok {
+		t.Fatal("a resolvable target must be discharged rather than rejected")
+	}
+	mapped := mapValue(normalizeValue(out))
+	if mapped["graphjin_protocol"] != "mutation_shape_evidence_supplied" {
+		t.Fatalf("unexpected payload: %#v", mapped)
+	}
+	if len(anySlice(mapped["cards"])) == 0 {
+		t.Fatalf("supplied evidence carried no catalog cards: %#v", mapped)
+	}
+	if base.catalogCalls != 1 {
+		t.Fatalf("expected exactly one catalog fetch, got %d", base.catalogCalls)
+	}
+	// The prerequisite must now be satisfied so the re-authored mutation proceeds.
+	if missing := rt.state.missingMutationEvidence([]string{"accounts"}); len(missing) != 0 {
+		t.Fatalf("supplied evidence did not satisfy the guard, still missing %v", missing)
+	}
+	// One shot only: a second miss must fall through to the loud rejection.
+	if _, ok := rt.supplyMutationEvidence(context.Background(), []string{"invoices"}); ok {
+		t.Fatal("evidence supply must apply at most once per run")
+	}
+}
+
+// TestSupplyMutationEvidenceRejectsUnknownTarget keeps an invented target failing
+// loudly: GraphJin can only discharge a prerequisite it can actually resolve.
+func TestSupplyMutationEvidenceRejectsUnknownTarget(t *testing.T) {
+	base := &recordingRuntime{}
+	rt := &protocolRuntime{base: base, state: newDiscoveryState("Watch churn risk.")}
+	if _, ok := rt.supplyMutationEvidence(context.Background(), []string{"churn_risk_accounts"}); ok {
+		t.Fatal("an unresolvable target must not be silently discharged")
+	}
+	if base.catalogCalls != 0 {
+		t.Fatalf("no catalog fetch should happen for an unresolvable target, got %d", base.catalogCalls)
+	}
+}
+
+// recordingRuntime is a GraphRuntime that returns fixed catalog cards and counts
+// lookups, so a test can assert both the payload and that GraphJin fetched once.
+type recordingRuntime struct {
+	cards        []map[string]any
+	catalogCalls int
+}
+
+func (r *recordingRuntime) QueryCatalog(context.Context, map[string]any) (any, error) {
+	r.catalogCalls++
+	cards := make([]any, 0, len(r.cards))
+	for _, card := range r.cards {
+		cards = append(cards, card)
+	}
+	return map[string]any{"cards": cards}, nil
+}
+
+func (r *recordingRuntime) GraphQLHelp(context.Context, map[string]any) (any, error) {
+	return map[string]any{"cards": []any{}}, nil
+}
+
+func (r *recordingRuntime) ValidateWhereClause(context.Context, map[string]any) (any, error) {
+	return map[string]any{}, nil
+}
+
+func (r *recordingRuntime) ExecuteSavedQuery(context.Context, map[string]any) (any, error) {
+	return map[string]any{}, nil
+}
+
+func (r *recordingRuntime) ExecuteGraphQL(context.Context, map[string]any) (any, error) {
+	return map[string]any{}, nil
+}

@@ -137,26 +137,47 @@ func TestReplayRefusalRunawayReachesTerminalDenial(t *testing.T) {
 	}
 }
 
-// TestReplayReactiveCreationNamesRequiredEvidence pins the creation mechanism
-// found in forensics: mutationEvidenceNext returned an enumerate-tables fallback
-// instead of the exact catalog detail id, so the model listed tables, corrected
-// its root, retried, and was rejected identically until exhaustion.
-func TestReplayReactiveCreationNamesRequiredEvidence(t *testing.T) {
+// TestReplayReactiveCreationSuppliesEvidence pins the fix that took DeepORG watch
+// creation off zero. The recovery already named the exact catalog id and the model
+// still did not fetch it, so every creation episode looped on
+// mutation_evidence_required until its step budget ran out. GraphJin now fetches
+// the detail itself, the same way history_read_required supplies bounded history
+// instead of naming a global for the model to read.
+//
+// The fixture's embedded subscription targets a real application table, which is
+// the case GraphJin can discharge. Trajectories that watch a system root or an
+// invented table must still be rejected — see the sibling test.
+func TestReplayReactiveCreationSuppliesEvidence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded replay integration")
+	}
+	fixture := loadReplayFixture(t, "reactive-reactive-create-deeporg-failed-invoices-rep1.json")
+	observed := replayFixture(t, fixture)
+	t.Logf("baseline: %s/%s turns=%d | replay: status=%s turns=%d recovery=%v errors=%v",
+		fixture.Observed.Status, fixture.Observed.FailureCategory, fixture.Observed.ActorTurns,
+		observed.Status, observed.ActorTurns, observed.RecoveryCodes, observed.ErrorCodes)
+
+	// A resolvable target must be discharged, not rejected: the guard's own
+	// requirement is satisfied by GraphJin supplying the column evidence.
+	if observed.HasCode("mutation_evidence_required") {
+		t.Errorf("resolvable watch target was still rejected for missing evidence instead of being supplied it: %+v", observed)
+	}
+}
+
+// TestReplayReactiveCreationRejectsSystemRootTarget keeps the guard honest. This
+// trajectory's subscription watches gj_watch_event, a system root rather than an
+// application table, so GraphJin cannot resolve a table detail for it and must
+// fail loudly rather than silently discharge the prerequisite.
+func TestReplayReactiveCreationRejectsSystemRootTarget(t *testing.T) {
 	if testing.Short() {
 		t.Skip("embedded replay integration")
 	}
 	fixture := loadReplayFixture(t, "reactive-reactive-create-deeporg-churn-accounts-rep2.json")
 	observed := replayFixture(t, fixture)
-	t.Logf("baseline: %s/%s | replay: status=%s turns=%d recovery=%v errors=%v",
-		fixture.Observed.Status, fixture.Observed.FailureCategory,
+	t.Logf("replay: status=%s turns=%d recovery=%v errors=%v",
 		observed.Status, observed.ActorTurns, observed.RecoveryCodes, observed.ErrorCodes)
 
 	if !observed.HasCode("mutation_evidence_required") {
-		t.Skipf("creation trajectory no longer reaches the evidence guard: %+v", observed)
-	}
-	// The guard may fire, but it must not leave the model looping on identical
-	// rejected mutations: that is the signature of an under-specified recovery.
-	if observed.HasCode("duplicate_failed_query") {
-		t.Errorf("evidence guard left the model retrying identical mutations; recovery must name the exact catalog detail id: %+v", observed)
+		t.Errorf("an unresolvable watch target must still be rejected: %+v", observed)
 	}
 }

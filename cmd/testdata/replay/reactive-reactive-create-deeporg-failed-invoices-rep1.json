@@ -1,0 +1,101 @@
+{
+  "run_id": "20260810T215510.649786000Z-6fac5a6f",
+  "task_id": "gjv1_159ac16e4e6d2127c01d1fd8",
+  "task_slug": "reactive-create-deeporg-failed-invoices",
+  "repeat": 1,
+  "task": {
+    "schema_version": "graphjin.eval.task/v1",
+    "id": "gjv1_159ac16e4e6d2127c01d1fd8",
+    "slug": "reactive-create-deeporg-failed-invoices",
+    "category": "reactive",
+    "difficulty": "T4",
+    "prompt": "Tell me whenever a failed invoice changes. Create a durable watch named deeporg_failed_invoices and deliver an inbox digest hourly.",
+    "provenance": {
+      "generator_version": "graphjin.eval.generator/v8",
+      "source": "deeporg-reference-watch",
+      "generation_seed": 23,
+      "source_id": "deeporg_failed_invoices"
+    },
+    "capability_profile": {
+      "role_class": "user",
+      "available_system_roots": [
+        "gj_artifacts",
+        "gj_catalog",
+        "gj_runtime",
+        "gj_security",
+        "gj_task",
+        "gj_task_entry",
+        "gj_watch",
+        "gj_watch_event",
+        "gj_workflow",
+        "gj_workflow_execution"
+      ]
+    },
+    "expected_status": "answered",
+    "answer": {},
+    "method": {
+      "require_query_match": [
+        "(?s)delivery_json.*digest.*window\\s*:\\s*\"1h\"",
+        "(?s)mutation.*gj_watch.*insert.*status.*failed"
+      ]
+    },
+    "behavior": {
+      "required_actions": [
+        "execute_graphql:mutation",
+        "query_catalog"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 10,
+      "max_total_tokens": 400000
+    },
+    "mutation": {
+      "reset_strategy": "sqlite-copy",
+      "post_state": {
+        "query": "query { gj_watch(where: {name: {eq: \"deeporg_failed_invoices\"}}, limit: 1) { query delivery_json } }",
+        "extract": "gj_watch.0.query",
+        "dimension_extract": "gj_watch.0.delivery_json",
+        "allow_missing": true
+      },
+      "expected_value": "subscription deeporg_failed_invoices($status: String!) { invoices(where: {status: {eq: $status}}, first: 25, after: $cursor) { id status attempts } invoices_cursor }",
+      "expected_dimension": "{\"digest\":{\"window\":\"1h0m0s\"},\"kind\":\"inbox\"}",
+      "collateral": [
+        {
+          "query": "query { accounts(order_by: {id: asc}) { id name plan status mrr_cents renewal_date last_active_at } }",
+          "extract": "accounts"
+        },
+        {
+          "query": "query { invoices(order_by: {id: asc}) { id account_id subscription_id amount_cents status attempts due_at last_attempt_at } }",
+          "extract": "invoices"
+        },
+        {
+          "query": "query { subscriptions(order_by: {id: asc}) { id account_id plan seats mrr_cents status started_at renews_at } }",
+          "extract": "subscriptions"
+        },
+        {
+          "query": "query { users(order_by: {id: asc}) { id account_id name email role last_login_at } }",
+          "extract": "users"
+        }
+      ]
+    }
+  },
+  "programs": [
+    "const helpSec = await graphql_help({ for: 'security' });\nconst helpRuntime = await graphql_help({ for: 'runtime' });\nconst helpWatches = await query_catalog({ id: 'help:watches' });\nconst res = await execute_graphql({\n  query: `mutation {\n    gj_watch(insert: {\n      name: \"deeporg_failed_invoices\",\n      query: \"subscription watch_failed_invoices { invoices(where: { status: { eq: \\\"failed\\\" } }) { id status amount_cents } }\",\n      delivery_json: {\n        kind: \"inbox\",\n        digest: {\n          window: \"1h\"\n        }\n      }\n    }) {\n      id\n      name\n      status\n      enabled\n      delivery_json\n    }\n  }`\n});\nawait final('Created durable watch named deeporg_failed_invoices to monitor failed invoice changes and deliver an inbox digest hourly.', { res, helpSec, helpRuntime, helpWatches });",
+    "const watchRes = await execute_graphql({\n  query: `mutation {\n    gj_watch(insert: {\n      name: \"deeporg_failed_invoices\",\n      query: \"subscription watch_failed_invoices { invoices(where: { status: { eq: \\\"failed\\\" } }) { id status amount_cents } }\",\n      delivery_json: {\n        kind: \"inbox\",\n        digest: {\n          window: \"1h\"\n        }\n      }\n    }) {\n      id\n      name\n      status\n      enabled\n      delivery_json\n    }\n  }`\n});\nawait final('Successfully created the durable watch named deeporg_failed_invoices to monitor failed invoices with an hourly inbox digest.', { watchRes });",
+    "const watchRes = await execute_graphql({\n  query: `mutation {\n    gj_watch(insert: {\n      name: \\\"deeporg_failed_invoices\\\",\n      query: \\\"subscription watch_failed_invoices { invoices(where: { status: { eq: \\\\\\\"failed\\\\\\\" } }) { id status amount_cents } }\\\",\n      delivery_json: {\n        kind: \\\"inbox\\\",\n        digest: {\n          window: \\\"1h\\\"\n        }\n      }\n    }) {\n      id\n      name\n      status\n      enabled\n      delivery_json\n    }\n  }`\n});\nawait final('Successfully created the durable watch named deeporg_failed_invoices to monitor failed invoices with an hourly inbox digest.', { watchRes });",
+    "const detail = await query_catalog({ id: 'table:app:main.invoices' });\nconst res = await execute_graphql({\n  query: `mutation {\n    gj_watch(insert: {\n      name: \"deeporg_failed_invoices\",\n      query: \"subscription watch_failed_invoices { invoices(where: { status: { eq: \\\"failed\\\" } }) { id status amount_cents } }\",\n      delivery_json: {\n        kind: \"inbox\",\n        digest: {\n          window: \"1h\"\n        }\n      }\n    }) {\n      id\n      name\n      status\n      enabled\n      delivery_json\n    }\n  }`\n});\nawait final('Created durable watch named deeporg_failed_invoices to monitor failed invoice changes and deliver an inbox digest hourly.', { res, detail });",
+    "const res = await execute_graphql({\n  query: `mutation {\n    gj_watch(insert: {\n      name: \"deeporg_failed_invoices\",\n      query: \"subscription watch_failed_invoices { invoices(where: { status: { eq: \\\"failed\\\" } }) { id status amount_cents } }\",\n      delivery_json: {\n        kind: \"inbox\",\n        digest: {\n          window: \"1h\"\n        }\n      }\n    }) {\n      id\n      name\n      status\n      enabled\n      delivery_json\n    }\n  }`\n});\nawait final('Successfully created the durable watch named deeporg_failed_invoices to monitor failed invoices with an hourly inbox digest.', { res });",
+    "const res = await execute_graphql({\n  query: `mutation {\n    gj_watch(insert: {\n      name: \"deeporg_failed_invoices\",\n      query: \"subscription watch_failed_invoices { invoices(where: { status: { eq: \\\"failed\\\" } }) { id status amount_cents } }\",\n      delivery_json: {\n        kind: \"inbox\",\n        digest: {\n          window: \"1h\"\n        }\n      }\n    }) {\n      id\n      name\n      status\n      enabled\n      delivery_json\n    }\n  }`\n});\nawait final('Successfully created the durable watch named deeporg_failed_invoices to monitor failed invoices with an hourly inbox digest.', { res });",
+    "const res = await execute_graphql({\n  query: `mutation {\n    gj_watch(insert: {\n      name: \"deeporg_failed_invoices\",\n      query: \"subscription watch_failed_invoices { invoices(where: { status: { eq: \\\"failed\\\" } }) { id status amount_cents } }\",\n      delivery_json: {\n        kind: \"inbox\",\n        digest: {\n          window: \"1h\"\n        }\n      }\n    }) {\n      id\n      name\n      status\n      enabled\n      delivery_json\n    }\n  }`\n});\nawait final('Successfully created the durable watch named deeporg_failed_invoices to monitor failed invoices with an hourly inbox digest.', { res });",
+    "const res = await execute_graphql({\n  query: `mutation {\n    gj_watch(insert: {\n      name: \"deeporg_failed_invoices\",\n      query: \"subscription watch_failed_invoices { invoices(where: { status: { eq: \\\"failed\\\" } }) { id status amount_cents } }\",\n      delivery_json: {\n        kind: \"inbox\",\n        digest: {\n          window: \"1h\"\n        }\n      }\n    }) {\n      id\n      name\n      status\n      enabled\n      delivery_json\n    }\n  }`\n});\nawait final('Successfully created the durable watch named deeporg_failed_invoices to monitor failed invoices with an hourly inbox digest.', { res });"
+  ],
+  "observed": {
+    "status": "blocked",
+    "failure_category": "post_state_mismatch",
+    "actor_turns": 8,
+    "violation_codes": [
+      "mutation_evidence_required"
+    ],
+    "pass": false
+  }
+}
