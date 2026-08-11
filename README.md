@@ -1,5 +1,7 @@
 # GraphJin — One Governed Graph for Your AI Agents
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fdosco%2Fgraphjin.svg)](https://mcptoplist.com/server/glama%2Fdosco%2Fgraphjin)
+
 [![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
 [![NPM Package](https://img.shields.io/npm/v/graphjin?style=for-the-badge)](https://www.npmjs.com/package/graphjin)
 [![Docker Pulls](https://img.shields.io/docker/pulls/dosco/graphjin?style=for-the-badge)](https://hub.docker.com/r/dosco/graphjin/tags)
