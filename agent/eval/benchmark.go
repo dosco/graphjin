@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 )
 
-const PublicBenchmarkGeneration = "2027.1"
+const PublicBenchmarkGeneration = "2027.2"
 
 type PublicBenchmarkSpec struct {
 	Generation       string  `json:"generation"`
@@ -32,7 +32,12 @@ func PublicBenchmark() PublicBenchmarkSpec {
 	}
 }
 
-const publicBenchmarkSuiteFingerprint = "68bc8a8784947a44d12a87d7f2c5a856"
+// Generation 2027.2 rewrote reactive watch creation from an exact-string
+// expectation on the stored subscription to a semantic post-state, and widened
+// the cross-source file rule to accept either valid way of reading a file
+// source. Both were unpassable-or-over-strict task defects rather than agent
+// failures; see agent/eval/generate.go for the reasoning.
+const publicBenchmarkSuiteFingerprint = "500042cc313e1a0a3dc603125f774b95"
 
 type suiteIdentityProjection struct {
 	Mode             RunMode `json:"mode"`

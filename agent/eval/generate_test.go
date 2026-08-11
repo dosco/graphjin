@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -434,4 +435,108 @@ func TestStratifiedSamplePrefersCuratedBusinessIntent(t *testing.T) {
 
 func curatedTask(slug string, tier Difficulty) Task {
 	return Task{Slug: slug, Category: CategoryDiscovery, Difficulty: tier, Prompt: "Question " + slug, Provenance: Provenance{Source: "imported"}, ExpectedStatus: "answered"}
+}
+
+// TestReactiveCreationPostStateIsSemantic pins the task-design fix. An exact
+// string expectation on the stored subscription made watch creation a dictation
+// test: the prompt names neither the page size, the selected columns, nor the
+// operation name, so of the many correct watches for the request exactly one
+// passed. Creation sat at 0/4 across three separate agent fixes, each of which
+// demonstrably changed the mechanism and never the score.
+func TestReactiveCreationPostStateIsSemantic(t *testing.T) {
+	tasks := generateDeepORGCandidates(deeporgWatchSnapshot(), 23)
+	checked := 0
+	for _, task := range tasks {
+		if task.Category != CategoryReactive || task.Mutation == nil {
+			continue
+		}
+		if !strings.Contains(task.Slug, "reactive-create-") {
+			continue
+		}
+		checked++
+		// The value compared must be deterministic from the prompt. The watch name
+		// is stated in the prompt; a subscription's text is not.
+		if strings.Contains(task.Mutation.ExpectedValue, "subscription ") {
+			t.Errorf("%s still expects a canonical subscription string: %q",
+				task.Slug, task.Mutation.ExpectedValue)
+		}
+		if !strings.Contains(task.Prompt, task.Mutation.ExpectedValue) {
+			t.Errorf("%s expects %q, which the prompt does not state",
+				task.Slug, task.Mutation.ExpectedValue)
+		}
+		// The requirement moves into the post-state filter: right name, and a
+		// cursor-backed subscription over the intended root.
+		query := task.Mutation.PostState.Query
+		if !strings.Contains(query, "like:") || !strings.Contains(query, "_cursor%") {
+			t.Errorf("%s post-state does not assert a cursor-backed subscription: %s", task.Slug, query)
+		}
+		// delivery_json stays exact: GraphJin normalizes it, so its form is
+		// genuinely determined rather than guessed.
+		if task.Mutation.ExpectedDimension != `{"digest":{"window":"1h0m0s"},"kind":"inbox"}` {
+			t.Errorf("%s lost the normalized delivery expectation: %q", task.Slug, task.Mutation.ExpectedDimension)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no reactive creation tasks were generated")
+	}
+}
+
+// TestCrossSourceFileMethodAcceptsBothReadForms keeps the file-read requirement
+// honest. core/fstable_bridge.go treats a data selection as requesting inline
+// content, so requiring a literal inline_data: true rejected a correct answer.
+func TestCrossSourceFileMethodAcceptsBothReadForms(t *testing.T) {
+	tasks := deepORGCrossSourceTasks(23, CapabilityProfile{RoleClass: "user"})
+	var pattern string
+	for _, task := range tasks {
+		if task.Category != CategoryCrossSource || !strings.Contains(task.Slug, "file") {
+			continue
+		}
+		for _, candidate := range task.Method.RequireQueryMatch {
+			if strings.Contains(candidate, "sla_policies") {
+				pattern = candidate
+			}
+		}
+		break
+	}
+	if pattern == "" {
+		t.Fatal("no cross-source file method rule was generated")
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("method rule does not compile: %v", err)
+	}
+	for _, tc := range []struct {
+		name  string
+		query string
+		want  bool
+	}{
+		{"explicit inline_data", `query { sla_policies(key: "support-sla-policy.md", inline_data: true) { data } }`, true},
+		{"data selection alone", `query { sla_policies(key: "support-sla-policy.md") { data } }`, true},
+		{"metadata only is not a read", `query { sla_policies(key: "support-sla-policy.md") { key size } }`, false},
+		{"no file query at all", `query { support_tickets_aggregate { aggregate { count } } }`, false},
+	} {
+		if got := re.MatchString(tc.query); got != tc.want {
+			t.Errorf("%s: match=%v want=%v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// deeporgWatchSnapshot is the minimum catalog and capability shape the DeepORG
+// reference generator requires before it emits watch tasks.
+func deeporgWatchSnapshot() CatalogSnapshot {
+	rows := []CatalogRow{}
+	for _, name := range []string{"accounts", "invoices", "support_tickets", "payments"} {
+		rows = append(rows,
+			CatalogRow{ID: "table:app:main." + name, Kind: "table", TableName: name},
+			CatalogRow{ID: "column:app:main." + name + ".id", Kind: "column", TableName: name, ColumnName: "id"},
+		)
+	}
+	return CatalogSnapshot{
+		Rows: rows,
+		Status: AgentStatus{
+			RoleClass:            "user",
+			AvailableSystemRoots: []string{"gj_watch", "gj_watch_event"},
+			AllowedActions:       []string{"gj_watch.insert", "gj_watch_event.update"},
+		},
+	}
 }

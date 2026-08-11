@@ -472,11 +472,13 @@ func generateDeepORGCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 
 	if contains(profile.AvailableSystemRoots, "gj_watch") && !profile.ReadOnly &&
 		contains(profile.AllowedActions, "gj_watch.insert") && contains(profile.AllowedActions, "gj_watch_event.update") {
-		watchSpecs := []struct{ name, question, subscription, method string }{
-			{"deeporg_failed_invoices", "Tell me whenever a failed invoice changes.", `subscription deeporg_failed_invoices($status: String!) { invoices(where: {status: {eq: $status}}, first: 25, after: $cursor) { id status attempts } invoices_cursor }`, `(?s)mutation.*gj_watch.*insert.*status.*failed`},
-			{"deeporg_urgent_tickets", "Watch open urgent support tickets for changes.", `subscription deeporg_urgent_tickets { support_tickets(where: {status: {eq: "open"}, severity: {eq: "urgent"}}, first: 25, after: $cursor) { id status severity } support_tickets_cursor }`, `(?s)mutation.*gj_watch.*insert.*severity.*urgent`},
-			{"deeporg_churn_accounts", "Watch churn-risk accounts for changes.", `subscription deeporg_churn_accounts { accounts(where: {status: {eq: "churn_risk"}}, first: 25, after: $cursor) { id status renewal_date } accounts_cursor }`, `(?s)mutation.*gj_watch.*insert.*status.*churn_risk`},
-			{"deeporg_new_payments", "Watch newly recorded payments.", `subscription deeporg_new_payments { payments(first: 25, after: $cursor) { id reference amount_cents } payments_cursor }`, `(?s)mutation.*gj_watch.*insert.*payments`},
+		// table is the watched root; the post-state asserts the stored subscription
+		// is cursor-backed over it rather than matching one canonical string.
+		watchSpecs := []struct{ name, question, subscription, method, table string }{
+			{"deeporg_failed_invoices", "Tell me whenever a failed invoice changes.", `subscription deeporg_failed_invoices($status: String!) { invoices(where: {status: {eq: $status}}, first: 25, after: $cursor) { id status attempts } invoices_cursor }`, `(?s)mutation.*gj_watch.*insert.*status.*failed`, "invoices"},
+			{"deeporg_urgent_tickets", "Watch open urgent support tickets for changes.", `subscription deeporg_urgent_tickets { support_tickets(where: {status: {eq: "open"}, severity: {eq: "urgent"}}, first: 25, after: $cursor) { id status severity } support_tickets_cursor }`, `(?s)mutation.*gj_watch.*insert.*severity.*urgent`, "support_tickets"},
+			{"deeporg_churn_accounts", "Watch churn-risk accounts for changes.", `subscription deeporg_churn_accounts { accounts(where: {status: {eq: "churn_risk"}}, first: 25, after: $cursor) { id status renewal_date } accounts_cursor }`, `(?s)mutation.*gj_watch.*insert.*status.*churn_risk`, "accounts"},
+			{"deeporg_new_payments", "Watch newly recorded payments.", `subscription deeporg_new_payments { payments(first: 25, after: $cursor) { id reference amount_cents } payments_cursor }`, `(?s)mutation.*gj_watch.*insert.*payments`, "payments"},
 		}
 		for _, watch := range watchSpecs {
 			tasks = append(tasks, Task{
@@ -488,11 +490,24 @@ func generateDeepORGCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 				Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql:mutation"}},
 				Mutation: &MutationSpec{
 					ResetStrategy: "sqlite-copy",
+					// Semantic post-state. An exact-string expectation on the stored
+					// subscription made this a dictation test: the prompt names neither
+					// the page size, the selected columns, nor the operation name, so of
+					// the many correct watches for the request exactly one passed. Three
+					// separate agent fixes moved the mechanism and never the score.
+					//
+					// The where clause carries the requirement instead — a watch under
+					// the requested name whose subscription is cursor-backed over the
+					// intended root — and the extracted value is the name, which is
+					// stated in the prompt and therefore deterministic. delivery_json
+					// stays an exact comparison because GraphJin normalizes it.
 					PostState: OracleSpec{
-						Query:   fmt.Sprintf(`query { gj_watch(where: {name: {eq: %q}}, limit: 1) { query delivery_json } }`, watch.name),
-						Extract: "gj_watch.0.query", DimensionExtract: "gj_watch.0.delivery_json", AllowMissing: true,
+						Query: fmt.Sprintf(
+							`query { gj_watch(where: {name: {eq: %q}, query: {like: %q}}, limit: 1) { name delivery_json } }`,
+							watch.name, "%"+watch.table+"_cursor%"),
+						Extract: "gj_watch.0.name", DimensionExtract: "gj_watch.0.delivery_json", AllowMissing: true,
 					},
-					ExpectedValue: watch.subscription, ExpectedDimension: `{"digest":{"window":"1h0m0s"},"kind":"inbox"}`,
+					ExpectedValue: watch.name, ExpectedDimension: `{"digest":{"window":"1h0m0s"},"kind":"inbox"}`,
 					Collateral: append([]OracleSpec(nil), commonCollateral...),
 				},
 			})
@@ -609,9 +624,15 @@ func deepORGCrossSourceTasks(seed int64, profile CapabilityProfile) []Task {
 			Prompt:            fmt.Sprintf("Read the support SLA policy file and check the live ticket database. How quickly must %s tickets be resolved, and how many open %s tickets exist now?", item.severity, item.severity),
 			Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-file", Seed: seed, SourceID: item.slug},
 			CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
-			Oracle:   &OracleSpec{Query: query, Extract: "support_tickets.0.count_id", DimensionLiteral: item.policy},
-			Answer:   AnswerRule{Kind: "number"},
-			Method:   MethodRule{RequireQueryMatch: []string{"support_tickets", `sla_policies\s*\(.*inline_data\s*:\s*true`}},
+			Oracle: &OracleSpec{Query: query, Extract: "support_tickets.0.count_id", DimensionLiteral: item.policy},
+			Answer: AnswerRule{Kind: "number"},
+			// Two forms genuinely read the file: an explicit inline_data: true, or
+			// selecting data, which core/fstable_bridge.go treats as requesting
+			// inline content. Requiring only the first rejected a correct answer.
+			Method: MethodRule{RequireQueryMatch: []string{
+				"support_tickets",
+				`(?s)sla_policies\s*\((?:[^)]*inline_data\s*:\s*true|[^)]*\)\s*\{[^}]*\bdata\b)`,
+			}},
 			Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}},
 		})
 	}
