@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strconv"
 	"unicode"
 	"unicode/utf8"
 )
@@ -141,7 +142,7 @@ func (l *lexer) current() []byte {
 
 // emit passes an item back to the client.
 func (l *lexer) emit(t MType) {
-	l.items = append(l.items, item{t, l.start, l.current(), l.line})
+	value := l.current()
 	// Some items contain text internally. If so, count their newlines.
 	if t == itemStringVal {
 		for i := l.start; i < l.pos; i++ {
@@ -149,8 +150,59 @@ func (l *lexer) emit(t MType) {
 				l.line++
 			}
 		}
+		// lexString only tracks escapes well enough to find the closing quote; the
+		// raw slice still carries them. GraphQL string values are escaped text, so
+		// a value must be unescaped here or a consumer sees a literal backslash.
+		// This mattered for gj_watch: an embedded subscription filter written
+		// correctly as eq: \"failed\" reached the subscription parser as eq:
+		// \"failed\" and failed with `unrecognized character in action: U+005C`.
+		value = unescapeStringValue(value)
 	}
+	l.items = append(l.items, item{t, l.start, value, l.line})
 	l.start = l.pos
+}
+
+// unescapeStringValue resolves GraphQL string escape sequences. It allocates
+// only when an escape is present, so ordinary values keep pointing at the input
+// buffer. An unrecognized escape keeps both characters rather than guessing.
+func unescapeStringValue(value []byte) []byte {
+	if bytes.IndexByte(value, '\\') == -1 {
+		return value
+	}
+	out := make([]byte, 0, len(value))
+	for i := 0; i < len(value); i++ {
+		if value[i] != '\\' || i+1 >= len(value) {
+			out = append(out, value[i])
+			continue
+		}
+		i++
+		switch value[i] {
+		case '"', '\\', '/', '\'':
+			out = append(out, value[i])
+		case 'b':
+			out = append(out, '\b')
+		case 'f':
+			out = append(out, '\f')
+		case 'n':
+			out = append(out, '\n')
+		case 'r':
+			out = append(out, '\r')
+		case 't':
+			out = append(out, '\t')
+		case 'u':
+			if i+4 < len(value) {
+				if r, err := strconv.ParseUint(string(value[i+1:i+5]), 16, 32); err == nil {
+					out = utf8.AppendRune(out, rune(r))
+					i += 4
+					continue
+				}
+			}
+			out = append(out, '\\', value[i])
+		default:
+			out = append(out, '\\', value[i])
+		}
+	}
+	return out
 }
 
 // emitL passes an item back to the client and lowercases the value.
