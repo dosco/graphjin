@@ -885,13 +885,18 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			if mismatches := r.unobservedWrittenValues(ctx, query); len(mismatches) != 0 {
 				r.state.recordObservedValueRejection(normalizeGraphQLIdentity(query))
 				described := r.describeUnobservedValues(ctx, mismatches)
-				err := fmt.Errorf("protocol violation: %s. Use one of the values already in use, or re-execute this write unchanged if the new value is genuinely intended", described)
+				// The message used to offer the bypass in the same breath as the
+				// instruction, and that is the option models took: across two runs
+				// "closed" writes rose from 46 to 64 while "resolved" fell to 2. The
+				// behaviour still allows a different write through, but the guidance no
+				// longer advertises it as an equal choice.
+				err := fmt.Errorf("protocol violation: %s. Choose the value from that list which matches the intent and re-author the write with it", described)
 				details := map[string]any{"fault": "value_outside_observed_set"}
 				r.state.addViolation("observed_value_mismatch", err.Error(), "execute_graphql", true, details)
 				out := recoverableProtocolFailure("observed_value_mismatch", err.Error(), "observed_value_mismatch",
 					map[string]any{
 						"recommended_tool": "execute_graphql",
-						"reason":           "Re-author the write with a value the column already uses, then execute it once.",
+						"reason":           "Re-author the write using one of the values listed for that column, then execute it once.",
 					}, details)
 				action := r.state.startAction("model", "execute_graphql", args)
 				r.state.finishAction(action, "execute_graphql", args, out, nil)
