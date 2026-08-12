@@ -66,6 +66,15 @@ func (r *columnCardRuntime) ExecuteGraphQL(_ context.Context, args map[string]an
 
 func (r *columnCardRuntime) QueryCatalog(_ context.Context, args map[string]any) (any, error) {
 	r.catalogCalls++
+	// The live catalog reads kind and table as explicit arguments and returns
+	// nothing for a raw where object it cannot validate — silently, with no error.
+	// Answering only the shorthand is what makes that regression visible here.
+	if _, ok := args["where"]; ok {
+		return map[string]any{"cards": []any{}}, nil
+	}
+	if table, _ := args["table"].(string); table != "support_tickets" {
+		return map[string]any{"cards": []any{}}, nil
+	}
 	cards := []any{}
 	for column, values := range r.values {
 		evidence, _ := json.Marshal(map[string]any{"ColumnName": column, "observed_values": values})

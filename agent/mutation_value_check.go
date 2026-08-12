@@ -28,7 +28,12 @@ import (
 // data. So this interrupts once with the facts and then lets the same write
 // through, rather than deciding the value is wrong.
 
-const observedValueMismatchLimit = 4
+const (
+	observedValueMismatchLimit = 4
+	// observedValueCardLimit bounds one table's column cards; wide tables exist and
+	// the lookup must stay a single bounded read.
+	observedValueCardLimit = 60
+)
 
 // columnAssignment is one column set by a mutation to a literal string.
 type columnAssignment struct {
@@ -220,13 +225,19 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 		return cached
 	}
 	out := map[string][]string{}
-	result, err := r.base.QueryCatalog(ctx, map[string]any{
-		"where": map[string]any{
-			"kind":       map[string]any{"eq": "column"},
-			"table_name": map[string]any{"eq": table},
-		},
-	})
-	if err == nil {
+	// The kind and table shorthands are read as explicit arguments by the catalog
+	// tool; a raw where object has to survive field-vocabulary validation and comes
+	// back empty when it does not, with no error. Measured across a full run, no
+	// call using where ever returned a column card, while the shorthand did — which
+	// is why this check silently found nothing and never fired.
+	for _, request := range []map[string]any{
+		{"kind": "column", "table": table, "limit": observedValueCardLimit},
+		{"table": table, "limit": observedValueCardLimit},
+	} {
+		result, err := r.base.QueryCatalog(ctx, request)
+		if err != nil {
+			continue
+		}
 		for _, card := range catalogCards(mapValue(result)) {
 			entry := mapValue(card)
 			// The card id always carries the column; column_name depends on which
@@ -242,6 +253,9 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 			if values := observedValuesFromEvidence(entry["evidence_json"]); len(values) != 0 {
 				out[strings.ToLower(column)] = values
 			}
+		}
+		if len(out) != 0 {
+			break
 		}
 	}
 	if r.state.observedValues == nil {
