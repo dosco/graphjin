@@ -200,6 +200,10 @@ func synthesiseResolvers(reg *openapi.Registry) []ResolverConfig {
 					Type:   "openapi",
 					Table:  op.Join.ParentTable,
 					Column: op.Join.ParentColumn,
+					// The join's response shape is known from the spec. Without this the
+					// table registers with no columns at all, so the catalog publishes
+					// "0 columns" for it and every consumer has to guess field names.
+					remoteColumns: openapi.SynthesiseColumns("", op.ExposeAs, op.ResponseSchema, op.ResultPath),
 					Props: ResolverProps{
 						"spec_key":         op.SpecKey,
 						"operation_id":     op.OperationID,

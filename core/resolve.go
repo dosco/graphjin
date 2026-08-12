@@ -81,6 +81,24 @@ func (gj *graphjinEngine) initResolvers() error {
 }
 
 // initRemote initializes the remote resolver
+// remoteTableColumns returns the response columns for a remote table with their
+// schema and table names bound to where the table is actually registered. A
+// synthesised resolver knows its response shape; a hand-written one does not, and
+// returns nil so the table keeps its previous empty shape.
+func remoteTableColumns(rc ResolverConfig) []sdata.DBColumn {
+	if len(rc.remoteColumns) == 0 {
+		return nil
+	}
+	out := make([]sdata.DBColumn, 0, len(rc.remoteColumns))
+	for i, c := range rc.remoteColumns {
+		c.Schema = rc.Schema
+		c.Table = rc.Name
+		c.ID = int32(i)
+		out = append(out, c)
+	}
+	return out
+}
+
 func (gj *graphjinEngine) initRemote(
 	rc ResolverConfig, rtmap map[string]ResolverFn, dbinfo *sdata.DBInfo,
 ) error {
@@ -126,7 +144,7 @@ func (gj *graphjinEngine) initRemote(
 		FKeyCol:    col.Name,
 	}
 
-	nt := sdata.NewDBTable(rc.Schema, rc.Name, "remote", nil)
+	nt := sdata.NewDBTable(rc.Schema, rc.Name, "remote", remoteTableColumns(rc))
 	nt.PrimaryCols = []sdata.DBColumn{col1}
 	nt.PrimaryCol = col1
 

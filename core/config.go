@@ -11,6 +11,7 @@ import (
 
 	"github.com/dosco/graphjin/core/v3/featurecap"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/dosco/graphjin/core/v3/openapi"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
@@ -2128,6 +2129,12 @@ type ResolverConfig struct {
 	Column    string
 	StripPath string        `mapstructure:"strip_path" json:"strip_path" yaml:"strip_path"`
 	Props     ResolverProps `mapstructure:",remain"`
+
+	// remoteColumns carries the response shape a synthesised resolver already
+	// knows, so the remote table it registers is not empty. It is unexported
+	// because it is derived, never configured: a user writing a resolver by hand
+	// has no response schema to describe.
+	remoteColumns []sdata.DBColumn
 }
 
 type ResolverReq struct {
