@@ -1470,6 +1470,23 @@ func TestMalformedWatchSubscriptionStringDetection(t *testing.T) {
 		query: `mutation { gj_watch(insert: {name: "w", query: "subscription { invoices { id }`,
 		want:  true,
 	}, {
+		// Commas between input fields are optional in GraphQL. Accepting only a
+		// comma or brace after the string rejected every multi-line watch mutation —
+		// the natural shape a model writes, and 42 of 66 attempts in one run. The
+		// original cases were all comma-separated, so the detector looked correct.
+		name:  "escaped filter, no comma before the next field",
+		query: `mutation { gj_watch(insert: {name: "w" query: "subscription { invoices(where: {status: {eq: \"failed\"}}) { id } invoices_cursor }" delivery_json: {kind: "inbox"}}) { id } }`,
+		want:  false,
+	}, {
+		name:  "multi-line insert with newline separators",
+		query: "mutation {\n  gj_watch(insert: {\n    name: \"w\"\n    query: \"subscription { invoices { id } invoices_cursor }\"\n    delivery_json: { kind: \"inbox\" }\n  }) { id }\n}",
+		want:  false,
+	}, {
+		// The genuine defect still has to be caught without its comma.
+		name:  "unescaped filter quotes, no comma",
+		query: `mutation { gj_watch(insert: {name: "w" query: "subscription { invoices(where: {status: {eq: "failed"}}) { id } }" delivery_json: {kind: "inbox"}}) { id } }`,
+		want:  true,
+	}, {
 		name:  "not a watch mutation at all",
 		query: `mutation { support_tickets(where: {id: {eq: 1}}, update: {status: "resolved"}) { id } }`,
 		want:  false,

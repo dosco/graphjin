@@ -3586,6 +3586,32 @@ const (
 // subscription contains an unescaped double quote, which closes the string early
 // and makes the surrounding mutation unparseable. A subscription supplied through
 // a variable carries no inline string and is never flagged.
+// closesInputStringValue reports whether what follows a closing quote is a valid
+// continuation of a GraphQL input object. Commas between input fields are optional,
+// so the next field's name is just as legal as a comma — treating only commas and
+// braces as valid rejected every multi-line watch mutation, which is the natural
+// shape a model writes and was the majority of them.
+func closesInputStringValue(remainder string) bool {
+	remainder = strings.TrimSpace(remainder)
+	if remainder == "" || strings.HasPrefix(remainder, ",") || strings.HasPrefix(remainder, "}") || strings.HasPrefix(remainder, ")") {
+		return true
+	}
+	// A following field is name: value. Anything else after the string — a bare
+	// word, another quote, a closing paren of an inner selection — means the string
+	// ended somewhere it should not have.
+	name := 0
+	for name < len(remainder) && (remainder[name] == '_' ||
+		(remainder[name] >= 'a' && remainder[name] <= 'z') ||
+		(remainder[name] >= 'A' && remainder[name] <= 'Z') ||
+		(remainder[name] >= '0' && remainder[name] <= '9')) {
+		name++
+	}
+	if name == 0 {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(remainder[name:]), ":")
+}
+
 func malformedWatchSubscriptionString(query string) bool {
 	lower := strings.ToLower(query)
 	at := strings.Index(lower, "query:")
@@ -3604,8 +3630,7 @@ func malformedWatchSubscriptionString(query string) bool {
 		case '"':
 			// Where the string closes matters: a close followed by the mutation
 			// continuing is correct, anything else means it ended early.
-			remainder := strings.TrimSpace(rest[i+1:])
-			return !(strings.HasPrefix(remainder, ",") || strings.HasPrefix(remainder, "}") || remainder == "")
+			return !closesInputStringValue(rest[i+1:])
 		}
 	}
 	return true // unterminated
