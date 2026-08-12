@@ -121,6 +121,13 @@ type discoveryState struct {
 	// mutationEvidenceSupplied keeps the one-shot discharge of a missing
 	// mutation-shape prerequisite from becoming an unbounded fetch loop.
 	mutationEvidenceSupplied bool
+	// observedValues caches sampled column value sets per table so a write path
+	// costs at most one extra catalog read per table.
+	observedValues map[string]map[string][]string
+	// observedValueNoticeSupplied keeps the value-vocabulary notice to one
+	// interception: sampled values are evidence, not schema, so a caller that means
+	// it must be able to proceed.
+	observedValueNoticeSupplied bool
 	// historyReferentSupplied keeps the retained-subject repair to one
 	// interception. A follow-up that legitimately spans every row must be able to
 	// proceed by re-issuing the same unscoped query.
@@ -843,6 +850,23 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			action := r.state.startAction("model", "execute_graphql", args)
 			r.state.finishAction(action, "execute_graphql", args, nil, err)
 			return nil, err
+		}
+		if !r.state.observedValueNoticeSupplied {
+			if mismatches := r.unobservedWrittenValues(ctx, query); len(mismatches) != 0 {
+				r.state.observedValueNoticeSupplied = true
+				described := r.describeUnobservedValues(ctx, mismatches)
+				err := fmt.Errorf("protocol violation: %s. Use one of the values already in use, or re-execute this write unchanged if the new value is genuinely intended", described)
+				details := map[string]any{"fault": "value_outside_observed_set"}
+				r.state.addViolation("observed_value_mismatch", err.Error(), "execute_graphql", true, details)
+				out := recoverableProtocolFailure("observed_value_mismatch", err.Error(), "observed_value_mismatch",
+					map[string]any{
+						"recommended_tool": "execute_graphql",
+						"reason":           "Re-author the write with a value the column already uses, then execute it once.",
+					}, details)
+				action := r.state.startAction("model", "execute_graphql", args)
+				r.state.finishAction(action, "execute_graphql", args, out, nil)
+				return out, nil
+			}
 		}
 		roots := MutationRootFields(query)
 		if containsStringFold(roots, systemRootWatch) {
@@ -2172,7 +2196,7 @@ func (s *discoveryState) resolveSuccessfulExecutionViolations() {
 			// blocked at finalization. That is what took multi-turn from 1/21 to 0/21
 			// between two runs of the same suite — the guard was right about the
 			// defect and wrong about being unrecoverable.
-			"history_referent_unresolved", "watch_query_invalid":
+			"history_referent_unresolved", "watch_query_invalid", "observed_value_mismatch":
 		default:
 			continue
 		}
