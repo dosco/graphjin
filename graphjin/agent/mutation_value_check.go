@@ -230,6 +230,8 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 	// back empty when it does not, with no error. Measured across a full run, no
 	// call using where ever returned a column card, while the shorthand did — which
 	// is why this check silently found nothing and never fired.
+	cardsSeen := 0
+	sampleID := ""
 	for _, request := range []map[string]any{
 		{"kind": "column", "table": table, "limit": observedValueCardLimit},
 		{"table": table, "limit": observedValueCardLimit},
@@ -243,6 +245,10 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 		}
 		for _, card := range catalogCards(mapValue(result)) {
 			entry := mapValue(card)
+			cardsSeen++
+			if sampleID == "" {
+				sampleID = stringFromMap(entry, "id")
+			}
 			// The card id always carries the column; column_name depends on which
 			// fields the catalog surface projects, so it is the fallback rather than
 			// the source.
@@ -269,7 +275,7 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 	// full benchmark runs and three wrong diagnoses, each made by inspection because
 	// a quiet check leaves no trace to read. An empty result and a matching value are
 	// indistinguishable from the outside; this separates them.
-	r.state.recordObservedValueLookup(table, out)
+	r.state.recordObservedValueLookup(table, out, cardsSeen, sampleID)
 	return out
 }
 

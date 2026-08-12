@@ -2525,7 +2525,10 @@ func (s *discoveryState) recordReferentRejection(identity string) {
 	s.historyReferentRejected[identity] = true
 }
 
-func (s *discoveryState) recordObservedValueLookup(table string, values map[string][]string) {
+// recordObservedValueLookup captures enough to localise a silent lookup without
+// another run: how many cards came back at all separates a filter that returns
+// nothing from cards that return without their evidence.
+func (s *discoveryState) recordObservedValueLookup(table string, values map[string][]string, cardsSeen int, sampleID string) {
 	if s == nil {
 		return
 	}
@@ -2538,6 +2541,8 @@ func (s *discoveryState) recordObservedValueLookup(table string, values map[stri
 		"table":               table,
 		"columns_with_values": len(columns),
 		"columns":             columns,
+		"cards_returned":      cardsSeen,
+		"first_card_id":       sampleID,
 	})
 }
 
