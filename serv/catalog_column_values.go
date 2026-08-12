@@ -50,20 +50,36 @@ func (s *graphjinService) observedColumnValues() map[string][]string {
 	if s == nil || s.columnValueSamplingDisabled() {
 		return nil
 	}
+	values, firstSample := s.sampleColumnValuesOnce()
+	if firstSample && len(values) != 0 {
+		// The catalog is materialised, and anything built before this point holds
+		// cards with no values. Sampling cannot run until the engine can describe its
+		// own schema, so the first build almost always precedes it: that is why cards
+		// kept arriving without values even though every layer sampled correctly in
+		// isolation. Refresh once, outside the sampling lock, so the rebuild can call
+		// back in without deadlocking.
+		s.markCatalogChanged("column value sampling")
+	}
+	return values
+}
+
+// sampleColumnValuesOnce performs the sampling attempt under its own lock and
+// reports whether this call was the one that completed it.
+func (s *graphjinService) sampleColumnValuesOnce() (map[string][]string, bool) {
 	s.columnValuesMu.Lock()
 	defer s.columnValuesMu.Unlock()
 	if s.columnValuesSampled {
-		return s.columnValues
+		return s.columnValues, false
 	}
 	md, err := s.metadataForColumnValues()
 	if err != nil || md == nil {
 		// GraphJin is not ready to describe its own schema yet. Leave the attempt
 		// unmade so a later build can take it.
-		return nil
+		return nil, false
 	}
 	s.columnValues = s.sampleObservedColumnValues(context.Background(), md)
 	s.columnValuesSampled = true
-	return s.columnValues
+	return s.columnValues, true
 }
 
 func (s *graphjinService) metadataForColumnValues() (*core.MetadataSnapshot, error) {
