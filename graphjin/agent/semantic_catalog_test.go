@@ -1512,3 +1512,53 @@ func TestMutationEvidenceIsSuppliedPerTable(t *testing.T) {
 		t.Fatal("an unsupplied table must not inherit another table's supply")
 	}
 }
+
+// TestCrossSourceSupplyResolvesSectionIDs pins the id shape that made the supply
+// inert in its first measured run. The distiller selects sections —
+// source:<name>:capabilities — the catalog serves cards, and asking for the section
+// verbatim returns nothing: the supply fired zero times while the guard refused 8
+// of 24 cross-source episodes on ids nobody could fetch.
+func TestCrossSourceSupplyResolvesSectionIDs(t *testing.T) {
+	if got := sourceCardID("source:account_health_api:capabilities"); got != "source:account_health_api" {
+		t.Fatalf("sourceCardID = %q", got)
+	}
+	if got := sourceCardID("source:crm"); got != "source:crm" {
+		t.Fatalf("a plain card id must pass through, got %q", got)
+	}
+	if got := sourceCardID("table:app:main.accounts"); got != "table:app:main.accounts" {
+		t.Fatalf("non-source ids must pass through, got %q", got)
+	}
+
+	base := &successfulExecutionRuntime{}
+	base.catalogOverride = fakeCatalogResult
+	runtime := newProtocolRuntime(base, "combine the account with the health api", "", 40, nil, nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:discovery"}); err != nil {
+		t.Fatal(err)
+	}
+	runtime.state.recordDistilledSourceIDs(map[string]any{
+		"sources": []any{
+			map[string]any{"id": "source:account_health_api:capabilities"},
+			map[string]any{"id": "source:app"},
+		},
+	})
+
+	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { accounts { id account_health { health } } }`})
+	if err != nil || base.graphqlCalls != 0 {
+		t.Fatalf("first attempt = %+v err=%v calls=%d", first, err, base.graphqlCalls)
+	}
+	supplied := mapValue(first)
+	if stringFromMap(supplied, "graphjin_protocol") != "cross_source_evidence_supplied" {
+		t.Fatalf("supply should resolve the section to its card, got %+v", supplied)
+	}
+	// The card is what gets fetched; the section requirement is satisfied by it.
+	if !runtime.state.hasCatalogDetailID("source:account_health_api") {
+		t.Fatalf("card detail not recorded: %+v", runtime.state.catalogDetails)
+	}
+	if len(runtime.state.missingDistilledSourceDetails()) != 0 {
+		t.Fatalf("section requirement should be satisfied by the card, still missing %v",
+			runtime.state.missingDistilledSourceDetails())
+	}
+}
