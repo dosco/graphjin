@@ -244,6 +244,14 @@ func TestIdenticalUnscopedRetryIsRefusedAgain(t *testing.T) {
 	if !state.refuseUnscopedReferent(unscoped) {
 		t.Fatal("an identical retry must be refused again, not waved through")
 	}
+	state.recordReferentRejection(unscoped)
+
+	// But not forever. Refusing indefinitely turned a wrong answer into a guaranteed
+	// timeout: measured over one run the guard fired 31 times across 7 episodes, the
+	// model resending the same query until its step budget was gone.
+	if state.refuseUnscopedReferent(unscoped) {
+		t.Fatal("a third identical attempt must proceed; further refusals only burn the step budget")
+	}
 
 	// A genuinely different operation proceeds: re-authoring shows the message was
 	// considered, and the retained subject could be wrong, so the run must not dead-end.
