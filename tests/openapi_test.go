@@ -239,6 +239,17 @@ paths:
 		},
 	})
 
+	// Engines without foreign keys get their webshop relationships declared in the
+	// shared fixture, and some declare those tables without a source. That cannot
+	// coexist with the api source this test must configure, so the fixture itself
+	// says when the test does not apply — checking the shape rather than naming
+	// engines keeps a future one from failing here the same way.
+	for _, table := range conf.Tables {
+		if strings.TrimSpace(table.Source) == "" {
+			t.Skipf("%s: shared fixture declares table %q without a source, which cannot coexist with an api source", dbType, table.Name)
+		}
+	}
+
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		t.Fatal(err)
