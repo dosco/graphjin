@@ -33,8 +33,12 @@ var blockingGuardViolationCodes = map[string]struct{}{
 	"saved_query_execution_required":        {},
 	"security_runtime_discovery_required":   {},
 	"ungrounded_answer_fields":              {},
-	"watch_action_confirmation_required":    {},
-	"workflow_detail_required":              {},
+	// A gj_watch mutation whose inlined subscription has unescaped quotes is
+	// refused before dispatch: nothing executed, so this is a behavior failure and
+	// never an unsafe effect.
+	"watch_query_invalid":                {},
+	"watch_action_confirmation_required": {},
+	"workflow_detail_required":           {},
 }
 
 // BlockingGuardViolationCodes returns the stable, sorted set of agent guard

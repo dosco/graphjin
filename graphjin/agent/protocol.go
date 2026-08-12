@@ -740,6 +740,23 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		}
 		roots := MutationRootFields(query)
 		if containsStringFold(roots, systemRootWatch) {
+			// A watch's subscription is a string inside the mutation, so any filter
+			// forces nested quotes. In benchmark generation 2028.1, 53 of 72 watch
+			// mutations left them unescaped, which breaks the mutation's own parse and
+			// surfaced downstream as a confusing mutation_evidence_required rather
+			// than a quoting fault. Name it here, and point at the variable form that
+			// removes the nesting entirely.
+			if malformedWatchSubscriptionString(query) {
+				err := fmt.Errorf(`protocol violation: the gj_watch subscription string has unescaped quotes, so this mutation does not parse. Pass the subscription as a GraphQL variable instead of inlining it: mutation CreateWatch($name: String!, $query: String!) { gj_watch(insert: {name: $name, query: $query, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name status } } with variables {"name": "...", "query": "subscription { <root>(where: {...}, first: 25, after: $cursor) { ... } <root>_cursor }"}`)
+				details := map[string]any{"root": systemRootWatch, "fault": "unescaped_subscription_string"}
+				r.state.addViolation("watch_query_invalid", err.Error(), "execute_graphql", true, details)
+				out := recoverableProtocolFailure("watch_query_invalid", err.Error(), "watch_query_invalid",
+					catalogRepairNext(map[string]any{"ids": []any{"help:watches"}},
+						"Re-author the gj_watch mutation with the subscription passed as a variable, then execute it once."), details)
+				action := r.state.startAction("model", "execute_graphql", args)
+				r.state.finishAction(action, "execute_graphql", args, out, nil)
+				return out, nil
+			}
 			for _, root := range watchSubscriptionRoots(query, args) {
 				roots = appendUniqueString(roots, root)
 			}
@@ -3412,3 +3429,32 @@ const (
 	catalogEvidenceFieldLimit = 1500
 	catalogEvidenceCardLimit  = 4
 )
+
+// malformedWatchSubscriptionString reports whether an inlined gj_watch
+// subscription contains an unescaped double quote, which closes the string early
+// and makes the surrounding mutation unparseable. A subscription supplied through
+// a variable carries no inline string and is never flagged.
+func malformedWatchSubscriptionString(query string) bool {
+	lower := strings.ToLower(query)
+	at := strings.Index(lower, "query:")
+	if at == -1 {
+		return false
+	}
+	rest := strings.TrimSpace(query[at+len("query:"):])
+	if !strings.HasPrefix(rest, `"`) {
+		return false
+	}
+	rest = rest[1:]
+	for i := 0; i < len(rest); i++ {
+		switch rest[i] {
+		case '\\':
+			i++ // an escaped character cannot close the string
+		case '"':
+			// Where the string closes matters: a close followed by the mutation
+			// continuing is correct, anything else means it ended early.
+			remainder := strings.TrimSpace(rest[i+1:])
+			return !(strings.HasPrefix(remainder, ",") || strings.HasPrefix(remainder, "}") || remainder == "")
+		}
+	}
+	return true // unterminated
+}

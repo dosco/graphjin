@@ -1440,3 +1440,42 @@ func TestCatalogCardEvidenceBoundsFieldSize(t *testing.T) {
 		t.Errorf("field length %d exceeds the bound %d", got, catalogEvidenceFieldLimit)
 	}
 }
+
+// TestMalformedWatchSubscriptionStringDetection pins the dominant cause of watch
+// creation failing in benchmark generation 2028.1: 53 of 72 watch mutations left
+// the nested quotes in their inlined subscription unescaped, which breaks the
+// mutation's own parse and surfaced as a misleading evidence error.
+func TestMalformedWatchSubscriptionStringDetection(t *testing.T) {
+	for _, tc := range []struct {
+		name, query string
+		want        bool
+	}{{
+		name:  "unescaped filter quotes",
+		query: `mutation { gj_watch(insert: {name: "w", query: "subscription { invoices(where: {status: {eq: "failed"}}) { id } invoices_cursor }"}) { id } }`,
+		want:  true,
+	}, {
+		name:  "properly escaped filter",
+		query: `mutation { gj_watch(insert: {name: "w", query: "subscription { invoices(where: {status: {eq: \"failed\"}}) { id } invoices_cursor }"}) { id } }`,
+		want:  false,
+	}, {
+		name:  "unfiltered subscription needs no escaping",
+		query: `mutation { gj_watch(insert: {name: "w", query: "subscription { invoices(first: 25, after: $cursor) { id } invoices_cursor }"}) { id } }`,
+		want:  false,
+	}, {
+		name:  "subscription passed as a variable",
+		query: `mutation CreateWatch($name: String!, $query: String!) { gj_watch(insert: {name: $name, query: $query}) { id } }`,
+		want:  false,
+	}, {
+		name:  "unterminated string",
+		query: `mutation { gj_watch(insert: {name: "w", query: "subscription { invoices { id }`,
+		want:  true,
+	}, {
+		name:  "not a watch mutation at all",
+		query: `mutation { support_tickets(where: {id: {eq: 1}}, update: {status: "resolved"}) { id } }`,
+		want:  false,
+	}} {
+		if got := malformedWatchSubscriptionString(tc.query); got != tc.want {
+			t.Errorf("%s: malformedWatchSubscriptionString = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
