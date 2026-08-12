@@ -75,8 +75,44 @@ func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := gjeval.PublicBenchmark()
-	if len(suite.Tasks) != spec.Scale || suite.Generator.Scale != spec.Scale || suite.Generator.Seed != spec.Seed {
-		t.Fatalf("suite shape = tasks:%d generator:%+v spec:%+v", len(suite.Tasks), suite.Generator, spec)
+	// Scale bounds the intent tier, which is what the benchmark measures. Execution
+	// twins ride along with their needs so a pair is never split, so the total task
+	// count exceeds the scale by exactly the number of twins.
+	intentTasks, executionTwins := 0, 0
+	for _, task := range suite.Tasks {
+		if task.Tier == gjeval.TierExecution {
+			executionTwins++
+			continue
+		}
+		intentTasks++
+	}
+	if intentTasks != spec.Scale || suite.Generator.Scale != spec.Scale || suite.Generator.Seed != spec.Seed {
+		t.Fatalf("suite shape = intent:%d twins:%d generator:%+v spec:%+v",
+			intentTasks, executionTwins, suite.Generator, spec)
+	}
+	if executionTwins == 0 {
+		t.Fatal("public suite has no execution twins; the planning gap would be uncomputable")
+	}
+	// Every twin must have its intent counterpart, or the planning gap it exists to
+	// compute is meaningless for that need.
+	tiersByNeed := map[string]map[string]bool{}
+	for _, task := range suite.Tasks {
+		if task.NeedID == "" {
+			continue
+		}
+		if tiersByNeed[task.NeedID] == nil {
+			tiersByNeed[task.NeedID] = map[string]bool{}
+		}
+		tier := task.Tier
+		if tier == "" {
+			tier = gjeval.TierIntent
+		}
+		tiersByNeed[task.NeedID][tier] = true
+	}
+	for need, tiers := range tiersByNeed {
+		if !tiers[gjeval.TierIntent] || !tiers[gjeval.TierExecution] {
+			t.Fatalf("need %s is missing a tier: %v", need, tiers)
+		}
 	}
 	if suite.Generator.Version != gjeval.GeneratorVersion {
 		t.Fatalf("suite generator = %q, want %q", suite.Generator.Version, gjeval.GeneratorVersion)
@@ -98,16 +134,18 @@ func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
 		t.Fatal("public suite has no Hasura-compatible aggregate method rule")
 	}
 	for category, want := range map[gjeval.Category]int{
-		gjeval.CategoryAggregate:   17,
-		gjeval.CategoryWindow:      17,
+		// Generation 2028.1 counts include execution twins alongside their intent
+		// tasks, which is why the write-side families grew.
+		gjeval.CategoryAggregate:   16,
+		gjeval.CategoryWindow:      16,
 		gjeval.CategoryRanking:     13,
-		gjeval.CategoryDiscovery:   8,
-		gjeval.CategorySavedMetric: 8,
+		gjeval.CategoryDiscovery:   9,
+		gjeval.CategorySavedMetric: 9,
 		gjeval.CategoryRefusal:     10,
-		gjeval.CategoryAction:      10,
-		gjeval.CategoryReactive:    8,
+		gjeval.CategoryAction:      15,
+		gjeval.CategoryReactive:    12,
 		gjeval.CategoryMultiTurn:   5,
-		gjeval.CategoryCrossSource: 4,
+		gjeval.CategoryCrossSource: 8,
 	} {
 		if categoryCounts[category] != want {
 			t.Fatalf("public suite %s count = %d, want %d (all=%v)", category, categoryCounts[category], want, categoryCounts)

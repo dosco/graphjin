@@ -130,15 +130,34 @@ func TestEvalEmbeddedSQLiteMockPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(suite.Tasks) != 100 {
-		t.Fatalf("generated %d tasks, want 100", len(suite.Tasks))
+	// Scale bounds the intent tier; execution twins accompany their needs, so the
+	// total exceeds the scale by the twin count.
+	intentTasks := 0
+	for _, generated := range suite.Tasks {
+		if generated.Tier != gjeval.TierExecution {
+			intentTasks++
+		}
 	}
-	suite.Tasks = suite.Tasks[:1]
+	if intentTasks != 100 {
+		t.Fatalf("generated %d intent tasks (of %d total), want 100", intentTasks, len(suite.Tasks))
+	}
+	// Pick a catalog-derived aggregate task explicitly rather than taking the first
+	// one: the suite now leads with the curated reference families, whose tasks
+	// verify post-state mutations instead of answering from an oracle.
+	var chosen *gjeval.Task
+	for i := range suite.Tasks {
+		candidate := &suite.Tasks[i]
+		if candidate.Category == gjeval.CategoryAggregate && candidate.Oracle != nil && candidate.Mutation == nil {
+			chosen = candidate
+			break
+		}
+	}
+	if chosen == nil {
+		t.Fatal("generated suite has no aggregate task with an oracle to script")
+	}
+	suite.Tasks = []gjeval.Task{*chosen}
 	suite.Generator.Scale = 1
 	task := &suite.Tasks[0]
-	if task.Oracle == nil {
-		t.Fatalf("generated integration task has no oracle: %+v", task)
-	}
 	oracle, err := verifier.Resolve(context.Background(), *task.Oracle)
 	if err != nil {
 		t.Fatal(err)

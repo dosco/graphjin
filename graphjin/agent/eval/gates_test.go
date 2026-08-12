@@ -97,8 +97,8 @@ func TestPublicationGatesGlobalCriteria(t *testing.T) {
 	}
 
 	regressed := reportWithFamilies(t, Metrics{Recall: 0.60}, base)
-	if met, unmet := PublicationGatesMet(regressed); met || !contains(unmet, "overall_recall") {
-		t.Fatalf("an overall regression must block publication, unmet=%v", unmet)
+	if met, unmet := PublicationGatesMet(regressed); met || !contains(unmet, "intent_recall") {
+		t.Fatalf("an intent-tier regression must block publication, unmet=%v", unmet)
 	}
 }
 
@@ -136,5 +136,92 @@ func TestFormatPublicationGatesReportsEveryCriterion(t *testing.T) {
 	}
 	if !strings.Contains(out, "[ok  ] window") {
 		t.Fatalf("recalibrated window floor must render as met:\n%s", out)
+	}
+}
+
+// TestPlanningGapDiscriminatesLayers is the acceptance bar for the whole tier
+// design. The pair only earns its place if a differently-named but semantically
+// correct watch passes the intent oracle while failing the execution twin, and if
+// the resulting metrics name planning as the failing layer.
+func TestPlanningGapDiscriminatesLayers(t *testing.T) {
+	// An agent that satisfied the need with its own naming.
+	improvised := MutationSpec{ExpectedValue: "1"}
+	if !improvised.AcceptsValue("1") {
+		t.Fatal("intent oracle must accept a satisfying watch regardless of its name")
+	}
+	twin := MutationSpec{ExpectedValue: "deeporg_new_payments"}
+	if twin.AcceptsValue("finance_failed_invoice_alerts") {
+		t.Fatal("execution twin must reject a different name: it dictated one")
+	}
+
+	// Planning gap: the operation is within reach, the translation was not made.
+	verdicts := []TaskVerdict{
+		{TaskID: "a", NeedID: "watch-invoices", Tier: TierIntent, Pass: false},
+		{TaskID: "b", NeedID: "watch-invoices", Tier: TierExecution, Pass: true},
+		// A need the agent handled end to end.
+		{TaskID: "c", NeedID: "watch-payments", Tier: TierIntent, Pass: true},
+		{TaskID: "d", NeedID: "watch-payments", Tier: TierExecution, Pass: true},
+		// Read-only families carry no tier and must count as intent.
+		{TaskID: "e", Category: CategoryAggregate, Pass: true},
+	}
+	var metrics Metrics
+	applyTierScores(&metrics, verdicts)
+
+	if metrics.IntentTasks != 3 || metrics.ExecutionTasks != 2 {
+		t.Fatalf("tier counts = intent %d, execution %d; untiered tasks must count as intent",
+			metrics.IntentTasks, metrics.ExecutionTasks)
+	}
+	if metrics.IntentRecall != 2.0/3.0 {
+		t.Errorf("intent recall = %v, want 2/3", metrics.IntentRecall)
+	}
+	if metrics.ExecutionRecall != 1 {
+		t.Errorf("execution recall = %v, want 1", metrics.ExecutionRecall)
+	}
+	if metrics.PlanningGap != 1 {
+		t.Errorf("planning gap = %d, want 1 (twin passed, intent failed)", metrics.PlanningGap)
+	}
+	if metrics.ExecutionGap != 0 {
+		t.Errorf("execution gap = %d, want 0", metrics.ExecutionGap)
+	}
+}
+
+// TestExecutionGapFlagsAnOverSpecifiedTwin covers the inverse: the agent met the
+// need but failed the dictated form, which indicts the twin rather than the agent.
+func TestExecutionGapFlagsAnOverSpecifiedTwin(t *testing.T) {
+	var metrics Metrics
+	applyTierScores(&metrics, []TaskVerdict{
+		{TaskID: "a", NeedID: "n", Tier: TierIntent, Pass: true},
+		{TaskID: "b", NeedID: "n", Tier: TierExecution, Pass: false},
+	})
+	if metrics.ExecutionGap != 1 || metrics.PlanningGap != 0 {
+		t.Fatalf("gaps = planning %d, execution %d; want 0 and 1", metrics.PlanningGap, metrics.ExecutionGap)
+	}
+}
+
+// TestExecutionTierIsReportedNotGated keeps instrumentation out of the bar. A
+// perfect execution tier must not rescue a failing intent tier.
+func TestExecutionTierIsReportedNotGated(t *testing.T) {
+	report := Report{
+		Metrics: Metrics{
+			Recall: 0.95, IntentRecall: 0.40, IntentTasks: 10,
+			ExecutionRecall: 1.0, ExecutionTasks: 10,
+		},
+		Tasks: []TaskVerdict{
+			{Category: CategoryRefusal, Tier: TierIntent, Pass: false},
+			{Category: CategoryRefusal, Tier: TierExecution, Pass: true},
+		},
+	}
+	met, unmet := PublicationGatesMet(report)
+	if met {
+		t.Fatal("a strong execution tier must not carry a failing intent tier")
+	}
+	if !contains(unmet, "intent_recall") {
+		t.Fatalf("intent recall must be the failing gate, unmet=%v", unmet)
+	}
+	// The blended recall is deliberately not what the gate reads.
+	for _, gate := range PublicationGates(report) {
+		if gate.Name == "intent_recall" && strings.Contains(gate.Detail, "0.95") {
+			t.Fatalf("gate read the blended recall instead of the intent tier: %s", gate.Detail)
+		}
 	}
 }

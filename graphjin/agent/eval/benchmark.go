@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 )
 
-const PublicBenchmarkGeneration = "2027.2"
+const PublicBenchmarkGeneration = "2028.1"
 
 type PublicBenchmarkSpec struct {
 	Generation       string  `json:"generation"`
@@ -37,7 +37,7 @@ func PublicBenchmark() PublicBenchmarkSpec {
 // the cross-source file rule to accept either valid way of reading a file
 // source. Both were unpassable-or-over-strict task defects rather than agent
 // failures; see agent/eval/generate.go for the reasoning.
-const publicBenchmarkSuiteFingerprint = "500042cc313e1a0a3dc603125f774b95"
+const publicBenchmarkSuiteFingerprint = "3f2189b64beab7ad35c02a4138257b60"
 
 type suiteIdentityProjection struct {
 	Mode             RunMode `json:"mode"`

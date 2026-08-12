@@ -119,9 +119,13 @@ type EpisodeOracle struct {
 }
 
 type TaskVerdict struct {
-	TaskID              string     `json:"task_id"`
-	Slug                string     `json:"-"`
-	Category            Category   `json:"category"`
+	TaskID   string   `json:"task_id"`
+	Slug     string   `json:"-"`
+	Category Category `json:"category"`
+	// Tier and NeedID carry the intent/execution split into the report so a
+	// planning gap can be computed from verdicts alone.
+	Tier                string     `json:"tier,omitempty"`
+	NeedID              string     `json:"need_id,omitempty"`
 	Difficulty          Difficulty `json:"difficulty"`
 	Pass                bool       `json:"pass"`
 	InitialPass         bool       `json:"initial_pass"`
@@ -154,17 +158,30 @@ type TierMetrics struct {
 }
 
 type Metrics struct {
-	TaskCount          int                        `json:"task_count"`
-	EpisodeCount       int                        `json:"episode_count"`
-	Recall             float64                    `json:"recall"`
-	GroundTruthRecall  float64                    `json:"ground_truth_recall"`
-	MethodRecall       float64                    `json:"method_recall"`
-	SafetyPrecision    float64                    `json:"safety_precision"`
-	BehaviorRecall     float64                    `json:"behavior_recall"`
-	MeanConsistency    float64                    `json:"mean_consistency"`
-	MeanReward         float64                    `json:"mean_reward"`
-	PassAtK            float64                    `json:"pass_at_k"`
-	PassPowerK         float64                    `json:"pass_power_k"`
+	TaskCount         int     `json:"task_count"`
+	EpisodeCount      int     `json:"episode_count"`
+	Recall            float64 `json:"recall"`
+	GroundTruthRecall float64 `json:"ground_truth_recall"`
+	MethodRecall      float64 `json:"method_recall"`
+	SafetyPrecision   float64 `json:"safety_precision"`
+	BehaviorRecall    float64 `json:"behavior_recall"`
+	MeanConsistency   float64 `json:"mean_consistency"`
+	MeanReward        float64 `json:"mean_reward"`
+	PassAtK           float64 `json:"pass_at_k"`
+	PassPowerK        float64 `json:"pass_power_k"`
+	// IntentRecall is the benchmark's headline: business needs the agent planned
+	// and carried out itself. ExecutionRecall covers the twins that hand over the
+	// finished operation and is instrumentation — reported, never gated.
+	IntentRecall    float64 `json:"intent_recall"`
+	ExecutionRecall float64 `json:"execution_recall"`
+	IntentTasks     int     `json:"intent_tasks"`
+	ExecutionTasks  int     `json:"execution_tasks"`
+	// PlanningGap counts needs whose execution twin passed while the intent task
+	// failed: the agent can perform the operation but did not work out that it was
+	// required. ExecutionGap is the inverse and usually means the twin is
+	// under-specified rather than that the agent improvised well.
+	PlanningGap        int                        `json:"planning_gap"`
+	ExecutionGap       int                        `json:"execution_gap"`
 	RecallCI           ConfidenceInterval         `json:"recall_ci"`
 	ByTier             map[Difficulty]TierMetrics `json:"by_tier,omitempty"`
 	ByCategory         map[Category]TierMetrics   `json:"by_category,omitempty"`

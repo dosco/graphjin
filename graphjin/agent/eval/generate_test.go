@@ -540,3 +540,116 @@ func deeporgWatchSnapshot() CatalogSnapshot {
 		},
 	}
 }
+
+// TestIntentTasksSpeakBusinessNotGraphJin is the guard that keeps the benchmark
+// honest about what it measures. Anyone who could phrase a request operationally
+// learned the vocabulary from GraphJin's catalog in-session, so an intent prompt
+// that leaks that vocabulary has handed the agent the plan it was supposed to
+// produce.
+func TestIntentTasksSpeakBusinessNotGraphJin(t *testing.T) {
+	leaks := []string{
+		"gj_watch", "gj_artifacts", "subscription", "mutation", "graphql",
+		"durable watch", "inbox digest", "cursor", "delivery_json",
+		"resolved_at", "resolution note", "account-health api", "policy file",
+	}
+	tasks := generateDeepORGCandidates(deeporgWatchSnapshot(), 23)
+	checked := 0
+	for _, task := range tasks {
+		if task.Tier != TierIntent {
+			continue
+		}
+		checked++
+		prompt := strings.ToLower(task.Prompt)
+		for _, leak := range leaks {
+			if strings.Contains(prompt, leak) {
+				t.Errorf("intent task %s leaks operational vocabulary %q: %s", task.Slug, leak, task.Prompt)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no intent-tier tasks were generated")
+	}
+}
+
+// TestEveryWriteNeedHasBothTiers keeps the planning-gap statistic computable: it
+// only means anything when both halves of a need are present.
+func TestEveryWriteNeedHasBothTiers(t *testing.T) {
+	tasks := generateDeepORGCandidates(deeporgWatchSnapshot(), 23)
+	tiers := map[string]map[string]bool{}
+	for _, task := range tasks {
+		if task.NeedID == "" {
+			continue
+		}
+		if tiers[task.NeedID] == nil {
+			tiers[task.NeedID] = map[string]bool{}
+		}
+		tier := task.Tier
+		if tier == "" {
+			tier = TierIntent
+		}
+		if tiers[task.NeedID][tier] {
+			t.Errorf("need %s has two %s tasks", task.NeedID, tier)
+		}
+		tiers[task.NeedID][tier] = true
+	}
+	if len(tiers) == 0 {
+		t.Fatal("no paired needs were generated")
+	}
+	for need, present := range tiers {
+		if !present[TierIntent] || !present[TierExecution] {
+			t.Errorf("need %s is missing a tier: %v", need, present)
+		}
+	}
+}
+
+// TestIntentWatchPostStateIsNameAgnostic pins the intent oracle's shape. A watch
+// satisfying the business need may carry any name, because the caller never
+// supplied one.
+func TestIntentWatchPostStateIsNameAgnostic(t *testing.T) {
+	checked := 0
+	for _, task := range generateDeepORGCandidates(deeporgWatchSnapshot(), 23) {
+		if task.Tier != TierIntent || task.Mutation == nil || task.Category != CategoryReactive {
+			continue
+		}
+		checked++
+		query := task.Mutation.PostState.Query
+		if strings.Contains(query, "name: {eq:") {
+			t.Errorf("%s intent oracle pins a watch name the prompt never gave: %s", task.Slug, query)
+		}
+		if !strings.Contains(query, "_cursor%") || !strings.Contains(query, "delivery_json") {
+			t.Errorf("%s intent oracle does not assert a cursor-backed, delivering watch: %s", task.Slug, query)
+		}
+		if task.Mutation.ExpectedValue != "1" {
+			t.Errorf("%s should require exactly one satisfying watch, got %q", task.Slug, task.Mutation.ExpectedValue)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no reactive intent tasks were generated")
+	}
+}
+
+// TestAcceptedDimensionsAllowBoundedCadence covers the one case a filter cannot
+// express: the caller bounded the cadence rather than dictating it.
+func TestAcceptedDimensionsAllowBoundedCadence(t *testing.T) {
+	spec := MutationSpec{
+		ExpectedValue:      "1",
+		ExpectedDimension:  `{"digest":{"window":"1h0m0s"},"kind":"inbox"}`,
+		AcceptedDimensions: []string{`{"digest":{"window":"30m0s"},"kind":"inbox"}`},
+	}
+	for _, tc := range []struct {
+		name, dimension string
+		want            bool
+	}{
+		{"exact expectation", `{"digest":{"window":"1h0m0s"},"kind":"inbox"}`, true},
+		{"accepted tighter window", `{"digest":{"window":"30m0s"},"kind":"inbox"}`, true},
+		{"window beyond the bound", `{"digest":{"window":"24h0m0s"},"kind":"inbox"}`, false},
+	} {
+		if got := spec.AcceptsDimension(tc.dimension); got != tc.want {
+			t.Errorf("%s: AcceptsDimension=%v want %v", tc.name, got, tc.want)
+		}
+	}
+	// An unset expectation with no accepted set means the dimension is not checked.
+	if !(MutationSpec{}).AcceptsDimension("anything") {
+		t.Error("an unchecked dimension must not reject")
+	}
+}
