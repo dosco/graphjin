@@ -232,9 +232,14 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 	// is why this check silently found nothing and never fired.
 	cardsSeen := 0
 	sampleID := ""
+	// explain routes the read to the freshly built catalog snapshot; without it the
+	// request can be served from a projection that returns the right cards with no
+	// evidence attached. Measured on a live service: sampling reports nine columns
+	// and cards fetched by the model carry their values, while this lookup received
+	// twenty-three correctly filtered cards and not one value.
 	for _, request := range []map[string]any{
-		{"kind": "column", "table": table, "limit": observedValueCardLimit},
-		{"table": table, "limit": observedValueCardLimit},
+		{"kind": "column", "table": table, "limit": observedValueCardLimit, "explain": true},
+		{"table": table, "limit": observedValueCardLimit, "explain": true},
 	} {
 		// Every other internal catalog read scopes itself to the run's namespace.
 		// This one did not, which returns nothing wherever a namespace is configured.
