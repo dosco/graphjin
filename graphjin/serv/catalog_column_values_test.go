@@ -113,3 +113,54 @@ func TestQuoteSQLIdentifierEscapesQuotes(t *testing.T) {
 		t.Fatalf("qualifiedSQLName(main) = %s, want unqualified", got)
 	}
 }
+
+// TestSamplingIsRetriedUntilGraphJinIsReady pins the startup race that made column
+// values vanish at random. A sync.Once here meant a catalog build arriving before
+// GraphJin finished initialising spent the Once without sampling, and the process
+// then published no column values at all for its entire life.
+//
+// It struck non-deterministically: two benchmark runs on the same build, one
+// publishing values and one publishing none, which made the absence look like a
+// per-column problem and cost three wrong diagnoses.
+func TestSamplingIsRetriedUntilGraphJinIsReady(t *testing.T) {
+	svc := &graphjinService{conf: &Config{}}
+
+	// GraphJin is not ready: no attempt can be made, and none is recorded.
+	if values := svc.observedColumnValues(); values != nil {
+		t.Fatalf("an unready service must publish no values, got %v", values)
+	}
+	if svc.columnValuesSampled {
+		t.Fatal("an attempt that could not run must not count as done, or the retry never happens")
+	}
+
+	// A later build, once the engine can describe its schema, must still get to sample.
+	if svc.observedColumnValues(); svc.columnValuesSampled {
+		t.Fatal("still unready, so still not sampled")
+	}
+}
+
+// TestSamplingWithNoEnumColumnsStopsRetrying keeps the retry from becoming a query
+// on every catalog build: an attempt that ran and found nothing is still done.
+func TestSamplingWithNoEnumColumnsStopsRetrying(t *testing.T) {
+	svc := &graphjinService{conf: &Config{}}
+	svc.columnValues = nil
+	svc.columnValuesSampled = true
+
+	if values := svc.observedColumnValues(); values != nil {
+		t.Fatalf("a completed empty sample must stay empty, got %v", values)
+	}
+	if !svc.columnValuesSampled {
+		t.Fatal("a completed attempt must remain done")
+	}
+}
+
+// TestSamplingDisabledByConfigNeverAttempts holds the off-switch.
+func TestSamplingDisabledByConfigNeverAttempts(t *testing.T) {
+	svc := &graphjinService{conf: &Config{Serv: Serv{DisableColumnValueSampling: true}}}
+	if values := svc.observedColumnValues(); values != nil {
+		t.Fatalf("sampling is disabled, got %v", values)
+	}
+	if svc.columnValuesSampled {
+		t.Fatal("disabled sampling must not record an attempt")
+	}
+}
