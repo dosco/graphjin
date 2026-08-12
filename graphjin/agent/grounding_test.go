@@ -616,6 +616,58 @@ func TestCachedSavedQueryWithPendingRequirementWithholdsRows(t *testing.T) {
 	}
 }
 
+// TestCachedSavedQueryRejectionPointsAtAuthoring pins the distinction that broke a
+// run: raw GraphQL can be re-authored in place, a saved query cannot. Generation
+// 2028.1 recorded the same saved query re-run ten times, each rejection sending the
+// model to a catalog search that returned nothing, until the step budget ran out.
+func TestCachedSavedQueryRejectionPointsAtAuthoring(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "How many invoices are there?", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.markSavedQueryDetailed("invoice_snapshot")
+	args := map[string]any{"name": "invoice_snapshot"}
+	if _, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args)); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedResult, _ := duplicate.(executeResult)
+	if len(savedResult.Errors) != 1 {
+		t.Fatalf("expected one error, got %#v", duplicate)
+	}
+	repair := mapValue(savedResult.Errors[0].Extensions["graphjin_repair"])
+	if kind := stringFromMap(repair, "kind"); kind != "saved_query_cannot_satisfy_requirement" {
+		t.Fatalf("saved-query repair kind = %q", kind)
+	}
+	if tool := stringFromMap(repair, "recommended_tool"); tool != "execute_graphql" {
+		t.Fatalf("saved-query repair must name execute_graphql, got %q", tool)
+	}
+	// The guidance text every caller already reads must survive beside it.
+	if next := stringFromMap(repair, "next"); !strings.Contains(next, "count_") || !strings.Contains(next, "do not calculate from fetched rows") {
+		t.Fatalf("saved-query repair lost its guidance: %q", next)
+	}
+	if !strings.Contains(savedResult.Errors[0].Message, "re-running it will keep failing") {
+		t.Fatalf("saved-query message must say repetition cannot work: %q", savedResult.Errors[0].Message)
+	}
+
+	// Raw GraphQL keeps the repeat-differently repair, because the caller owns the query.
+	graphqlOut, rejected := pendingCachedExecutionRejection(runtime.state, "{ invoices { id } }", false)
+	if !rejected {
+		t.Fatal("a pending requirement must reject the cached GraphQL execution")
+	}
+	graphqlResult, _ := graphqlOut.(executeResult)
+	graphqlRepair := mapValue(graphqlResult.Errors[0].Extensions["graphjin_repair"])
+	if kind := stringFromMap(graphqlRepair, "kind"); kind != "distinct_aggregate_required" {
+		t.Fatalf("raw GraphQL repair kind = %q, want the re-author path", kind)
+	}
+	if tool := stringFromMap(graphqlRepair, "recommended_tool"); tool != "" {
+		t.Fatalf("raw GraphQL needs no tool redirect, got %q", tool)
+	}
+}
+
 func TestCachedExecutionBecomesCurrentCompletionEvidence(t *testing.T) {
 	base := &sequencedExecRuntime{
 		fakeRuntime: &fakeRuntime{},
