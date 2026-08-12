@@ -275,3 +275,27 @@ func compatibleTestManifest(runID string) RunManifest {
 		Provenance: RunProvenance{Provider: "provider", Model: "model", ServerFingerprint: "server", Target: "local", Seed: 23, Repeats: 3},
 	}
 }
+
+// TestReportNeverCarriesActionEvidence guards the privacy split after episodes
+// began recording bounded catalog-card payloads. Those payloads exist so a private
+// trajectory can answer "what did the model actually see"; a shareable report must
+// still carry only metrics, ids, and verdicts.
+func TestReportNeverCarriesActionEvidence(t *testing.T) {
+	report := Report{
+		SchemaVersion: ReportSchemaVersion,
+		RunID:         "20260101T000000.000000000Z-abcdef12",
+		Metrics:       Metrics{Recall: 1, IntentRecall: 1, IntentTasks: 1},
+		Tasks:         []TaskVerdict{{TaskID: "gjv1_x", Category: CategoryAggregate, Pass: true}},
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The Report type has no field able to carry them; assert the shape rather
+	// than trusting that no future field is added silently.
+	for _, forbidden := range []string{"examples_json", "evidence_json", "observed_values", "actions", "trace", "chat_log"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Errorf("shareable report leaked %q: %s", forbidden, encoded)
+		}
+	}
+}

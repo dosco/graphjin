@@ -133,7 +133,13 @@ type protocolAction struct {
 	Args    map[string]any `json:"args,omitempty"`
 	Status  string         `json:"status"`
 	Summary map[string]any `json:"summary,omitempty"`
-	Error   string         `json:"error,omitempty"`
+	// Evidence is a bounded copy of a catalog detail card's guidance fields. The
+	// summary records that a card was returned but not what it said, which made
+	// "did the model actually see this?" unanswerable from a stored trajectory and
+	// produced two wrong diagnoses in two days. It is private-episode material
+	// only: shareable reports never carry it.
+	Evidence map[string]any `json:"evidence,omitempty"`
+	Error    string         `json:"error,omitempty"`
 
 	startedAt time.Time
 }
@@ -953,6 +959,7 @@ func (s *discoveryState) finishAction(index int, tool string, args map[string]an
 	}
 	s.addGrounding(args, out)
 	s.actions[index].Summary = resultSummary(tool, args, out)
+	s.actions[index].Evidence = catalogCardEvidence(tool, args, out)
 	s.emitAction(s.actions[index])
 }
 
@@ -3360,3 +3367,48 @@ func watchCursorShape(value map[string]any, roots []string) string {
 	}
 	return "subscription { " + root + "(first: 25, after: $cursor) { ... } " + root + "_cursor }"
 }
+
+// catalogCardEvidence captures what a detail lookup actually told the model, so a
+// stored trajectory can answer whether the guidance it needed was present. Only
+// by-id catalog lookups qualify: searches return card lists whose bulk is the
+// reason summaries exist, and execution results are already described by their
+// summary and recovery codes.
+func catalogCardEvidence(tool string, args map[string]any, out any) map[string]any {
+	if tool != toolQueryCatalog || len(detailIDsFromArgs(args)) == 0 {
+		return nil
+	}
+	cards := catalogCards(out)
+	if len(cards) == 0 {
+		return nil
+	}
+	evidence := make(map[string]any, len(cards))
+	for _, card := range cards {
+		id := stringFromMap(card, "id")
+		if id == "" {
+			continue
+		}
+		fields := map[string]any{}
+		for _, key := range []string{"examples_json", "evidence_json", "safety_json", "suggested_next_json", "summary"} {
+			if value := truncateString(stringFromMap(card, key), catalogEvidenceFieldLimit); value != "" {
+				fields[key] = value
+			}
+		}
+		if len(fields) != 0 {
+			evidence[id] = fields
+		}
+		if len(evidence) >= catalogEvidenceCardLimit {
+			break
+		}
+	}
+	if len(evidence) == 0 {
+		return nil
+	}
+	return evidence
+}
+
+const (
+	// Bounds keep an episode file readable and stop a large card from dominating
+	// the trajectory it is meant to explain.
+	catalogEvidenceFieldLimit = 1500
+	catalogEvidenceCardLimit  = 4
+)

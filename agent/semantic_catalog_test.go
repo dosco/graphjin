@@ -1384,3 +1384,59 @@ func (r *recordingRuntime) ExecuteSavedQuery(context.Context, map[string]any) (a
 func (r *recordingRuntime) ExecuteGraphQL(context.Context, map[string]any) (any, error) {
 	return map[string]any{}, nil
 }
+
+// TestCatalogCardEvidenceRecordsWhatTheModelSaw closes a diagnostic gap that cost
+// two wrong diagnoses in two days: action summaries recorded that a card was
+// returned but never what it said, so "did the model actually have this guidance?"
+// could only be answered by reading generator source.
+func TestCatalogCardEvidenceRecordsWhatTheModelSaw(t *testing.T) {
+	out := map[string]any{"cards": []any{map[string]any{
+		"id":            "column:app:main.support_tickets.status",
+		"summary":       "Ticket status",
+		"examples_json": `["where: { status: { eq: \"open\" } }","status values: open, pending, resolved"]`,
+		"evidence_json": `{"ColumnName":"status","observed_values":["open","pending","resolved"]}`,
+	}}}
+	evidence := catalogCardEvidence(toolQueryCatalog,
+		map[string]any{"id": "column:app:main.support_tickets.status"}, out)
+	if evidence == nil {
+		t.Fatal("a by-id catalog lookup must record the card's guidance")
+	}
+	card, _ := evidence["column:app:main.support_tickets.status"].(map[string]any)
+	if card == nil {
+		t.Fatalf("evidence not keyed by card id: %#v", evidence)
+	}
+	if !strings.Contains(fmt.Sprint(card["examples_json"]), "open, pending, resolved") {
+		t.Errorf("examples not captured: %#v", card["examples_json"])
+	}
+	if !strings.Contains(fmt.Sprint(card["evidence_json"]), "observed_values") {
+		t.Errorf("evidence not captured: %#v", card["evidence_json"])
+	}
+}
+
+// TestCatalogCardEvidenceSkipsSearchesAndExecutions keeps episodes bounded. Search
+// results are card lists whose bulk is the reason summaries exist, and executions
+// are already described by their summary and recovery codes.
+func TestCatalogCardEvidenceSkipsSearchesAndExecutions(t *testing.T) {
+	cards := map[string]any{"cards": []any{map[string]any{"id": "table:app:main.accounts", "summary": "Accounts"}}}
+	if got := catalogCardEvidence(toolQueryCatalog, map[string]any{"search": "accounts"}, cards); got != nil {
+		t.Errorf("a search must not record card payloads: %#v", got)
+	}
+	if got := catalogCardEvidence(toolExecuteGraphQL, map[string]any{"query": "query { accounts { id } }"}, cards); got != nil {
+		t.Errorf("an execution must not record card payloads: %#v", got)
+	}
+}
+
+// TestCatalogCardEvidenceBoundsFieldSize stops one large card from dominating the
+// trajectory it exists to explain.
+func TestCatalogCardEvidenceBoundsFieldSize(t *testing.T) {
+	huge := strings.Repeat("x", catalogEvidenceFieldLimit*3)
+	out := map[string]any{"cards": []any{map[string]any{"id": "table:app:main.accounts", "evidence_json": huge}}}
+	evidence := catalogCardEvidence(toolQueryCatalog, map[string]any{"id": "table:app:main.accounts"}, out)
+	card, _ := evidence["table:app:main.accounts"].(map[string]any)
+	if card == nil {
+		t.Fatal("expected the card to be recorded")
+	}
+	if got := len(fmt.Sprint(card["evidence_json"])); got > catalogEvidenceFieldLimit+16 {
+		t.Errorf("field length %d exceeds the bound %d", got, catalogEvidenceFieldLimit)
+	}
+}
