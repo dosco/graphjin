@@ -72,16 +72,17 @@ func (r *columnCardRuntime) QueryCatalog(_ context.Context, args map[string]any)
 	if _, ok := args["where"]; ok {
 		return map[string]any{"cards": []any{}}, nil
 	}
-	// Without explain the read can be served from a projection that returns the
-	// right cards carrying no evidence, which is what kept this check silent on a
-	// live service while the values were demonstrably present.
-	if explain, _ := args["explain"].(bool); !explain {
+	// A filtered read returns summaries with evidence_json blanked; payloads travel
+	// only on detail lookups by id. Serving evidence only for an ids request is what
+	// makes that distinction fail loudly here instead of silently finding nothing,
+	// which is what happened across four benchmark runs.
+	if _, byID := args["ids"]; !byID {
+		if table, _ := args["table"].(string); table != "support_tickets" {
+			return map[string]any{"cards": []any{}}, nil
+		}
 		return map[string]any{"cards": []any{map[string]any{
 			"id": "column:app:main.support_tickets.status", "kind": "column", "table_name": "support_tickets",
 		}}}, nil
-	}
-	if table, _ := args["table"].(string); table != "support_tickets" {
-		return map[string]any{"cards": []any{}}, nil
 	}
 	cards := []any{}
 	for column, values := range r.values {
