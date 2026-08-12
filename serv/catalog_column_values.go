@@ -31,21 +31,38 @@ const (
 	columnValueTimeout     = 3 * time.Second
 )
 
-// observedColumnValues returns the sampled sets, computing them once per service.
-// Every catalog build path calls this, including per-request overlay builds, so it
-// must not re-query the database each time. Values refresh when the process does;
-// an enum gaining a value mid-run is not worth a live query on every card read.
+// observedColumnValues returns the sampled sets, sampling once per service. Every
+// catalog build path calls this, including per-request overlay builds, so it must
+// not re-query the database each time. Values refresh when the process does; an
+// enum gaining a value mid-run is not worth a live query on every card read.
+//
+// Sampling is retried until an attempt can actually be made. A sync.Once here meant
+// that if the first catalog build happened before GraphJin finished initialising,
+// the closure returned without sampling, the Once was spent, and the process
+// published no column values for its entire life. That is a startup race, so it
+// struck at random: of two benchmark runs on the same build, one published values
+// and one published none, which made the missing values look like a per-column
+// problem for days.
+//
+// An attempt that runs and finds nothing still counts as done, so a schema with no
+// enum-like columns does not re-query on every build.
 func (s *graphjinService) observedColumnValues() map[string][]string {
 	if s == nil || s.columnValueSamplingDisabled() {
 		return nil
 	}
-	s.columnValuesOnce.Do(func() {
-		md, err := s.metadataForColumnValues()
-		if err != nil || md == nil {
-			return
-		}
-		s.columnValues = s.sampleObservedColumnValues(context.Background(), md)
-	})
+	s.columnValuesMu.Lock()
+	defer s.columnValuesMu.Unlock()
+	if s.columnValuesSampled {
+		return s.columnValues
+	}
+	md, err := s.metadataForColumnValues()
+	if err != nil || md == nil {
+		// GraphJin is not ready to describe its own schema yet. Leave the attempt
+		// unmade so a later build can take it.
+		return nil
+	}
+	s.columnValues = s.sampleObservedColumnValues(context.Background(), md)
+	s.columnValuesSampled = true
 	return s.columnValues
 }
 

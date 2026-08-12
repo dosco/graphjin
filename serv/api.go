@@ -84,7 +84,8 @@ type graphjinService struct {
 	logLevel              int                // log level
 	conf                  *Config            // parsed config
 	dbs                   map[string]*sql.DB // named database connections (all equal)
-	columnValuesOnce      sync.Once          // guards the one-time enum-value sampling
+	columnValuesMu        sync.Mutex         // guards the enum-value sampling attempt
+	columnValuesSampled   bool               // true once an attempt actually ran
 	columnValues          map[string][]string
 	managedDBs            map[string]managedDB
 	runtimeCore           *core.Config
