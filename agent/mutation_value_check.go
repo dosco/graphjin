@@ -229,7 +229,13 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 	if err == nil {
 		for _, card := range catalogCards(mapValue(result)) {
 			entry := mapValue(card)
-			column := stringFromMap(entry, "column_name")
+			// The card id always carries the column; column_name depends on which
+			// fields the catalog surface projects, so it is the fallback rather than
+			// the source.
+			column := columnNameFromCatalogID(stringFromMap(entry, "id"))
+			if column == "" {
+				column = stringFromMap(entry, "column_name")
+			}
 			if column == "" {
 				continue
 			}
@@ -243,6 +249,18 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 	}
 	r.state.observedValues[table] = out
 	return out
+}
+
+// columnNameFromCatalogID reads the column out of column:<db>:<schema>.<table>.<column>.
+func columnNameFromCatalogID(id string) string {
+	trimmed := strings.TrimSpace(id)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "column:") {
+		return ""
+	}
+	if index := strings.LastIndex(trimmed, "."); index >= 0 && index < len(trimmed)-1 {
+		return trimmed[index+1:]
+	}
+	return ""
 }
 
 func observedValuesFromEvidence(raw any) []string {
