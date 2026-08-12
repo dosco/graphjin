@@ -225,21 +225,58 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 		return cached
 	}
 	out := map[string][]string{}
-	// The kind and table shorthands are read as explicit arguments by the catalog
-	// tool; a raw where object has to survive field-vocabulary validation and comes
-	// back empty when it does not, with no error. Measured across a full run, no
-	// call using where ever returned a column card, while the shorthand did — which
-	// is why this check silently found nothing and never fired.
 	cardsSeen := 0
 	sampleID := ""
-	// explain routes the read to the freshly built catalog snapshot; without it the
-	// request can be served from a projection that returns the right cards with no
-	// evidence attached. Measured on a live service: sampling reports nine columns
-	// and cards fetched by the model carry their values, while this lookup received
-	// twenty-three correctly filtered cards and not one value.
+
+	// Two calls, and the second is the one that matters. A filtered catalog read
+	// returns summaries: every card comes back with evidence_json blanked, by
+	// design, because payloads travel only on detail lookups by id. This check spent
+	// four full benchmark runs finding nothing for that reason alone — the cards
+	// arrived, correctly filtered, deliberately stripped of the values being asked
+	// for.
+	//
+	// So the filter supplies what it does carry, the ids, and those are then fetched
+	// in full.
+	ids := r.columnCardIDs(ctx, table, &cardsSeen, &sampleID)
+	if len(ids) != 0 {
+		detail := map[string]any{"ids": ids}
+		r.addNamespace(detail)
+		if result, err := r.base.QueryCatalog(ctx, detail); err == nil {
+			for _, card := range catalogCards(mapValue(result)) {
+				entry := mapValue(card)
+				column := columnNameFromCatalogID(stringFromMap(entry, "id"))
+				if column == "" {
+					column = stringFromMap(entry, "column_name")
+				}
+				if column == "" {
+					continue
+				}
+				if values := observedValuesFromEvidence(entry["evidence_json"]); len(values) != 0 {
+					out[strings.ToLower(column)] = values
+				}
+			}
+		}
+	}
+
+	if r.state.observedValues == nil {
+		r.state.observedValues = map[string]map[string][]string{}
+	}
+	r.state.observedValues[table] = out
+	// Record what the lookup found. A quiet check leaves no trace to read, and this
+	// one stayed quiet across four runs while every layer it depends on tested clean.
+	r.state.recordObservedValueLookup(table, out, cardsSeen, sampleID)
+	return out
+}
+
+// columnCardIDs lists a table's column card ids. The kind and table shorthands are
+// read as explicit arguments by every catalog surface; a raw where object has to
+// survive field-vocabulary validation and comes back empty when it does not, with
+// no error.
+func (r *protocolRuntime) columnCardIDs(ctx context.Context, table string, cardsSeen *int, sampleID *string) []any {
+	var ids []any
 	for _, request := range []map[string]any{
-		{"kind": "column", "table": table, "limit": observedValueCardLimit, "explain": true},
-		{"table": table, "limit": observedValueCardLimit, "explain": true},
+		{"kind": "column", "table": table, "limit": observedValueCardLimit},
+		{"table": table, "limit": observedValueCardLimit},
 	} {
 		// Every other internal catalog read scopes itself to the run's namespace.
 		// This one did not, which returns nothing wherever a namespace is configured.
@@ -250,41 +287,25 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 		}
 		for _, card := range catalogCards(mapValue(result)) {
 			entry := mapValue(card)
-			cardsSeen++
-			if sampleID == "" {
-				sampleID = stringFromMap(entry, "id")
+			*cardsSeen++
+			id := stringFromMap(entry, "id")
+			if *sampleID == "" {
+				*sampleID = id
 			}
-			// The card id always carries the column; column_name depends on which
-			// fields the catalog surface projects, so it is the fallback rather than
-			// the source.
-			column := columnNameFromCatalogID(stringFromMap(entry, "id"))
-			if column == "" {
-				column = stringFromMap(entry, "column_name")
-			}
-			if column == "" {
-				continue
-			}
-			if values := observedValuesFromEvidence(entry["evidence_json"]); len(values) != 0 {
-				out[strings.ToLower(column)] = values
+			if columnNameFromCatalogID(id) != "" {
+				ids = append(ids, id)
 			}
 		}
-		if len(out) != 0 {
+		if len(ids) != 0 {
 			break
 		}
 	}
-	if r.state.observedValues == nil {
-		r.state.observedValues = map[string]map[string][]string{}
+	if len(ids) > observedValueCardLimit {
+		ids = ids[:observedValueCardLimit]
 	}
-	r.state.observedValues[table] = out
-	// Record what the lookup found. This check has now stayed silent across three
-	// full benchmark runs and three wrong diagnoses, each made by inspection because
-	// a quiet check leaves no trace to read. An empty result and a matching value are
-	// indistinguishable from the outside; this separates them.
-	r.state.recordObservedValueLookup(table, out, cardsSeen, sampleID)
-	return out
+	return ids
 }
 
-// columnNameFromCatalogID reads the column out of column:<db>:<schema>.<table>.<column>.
 func columnNameFromCatalogID(id string) string {
 	trimmed := strings.TrimSpace(id)
 	if !strings.HasPrefix(strings.ToLower(trimmed), "column:") {
