@@ -37,7 +37,7 @@ func PublicBenchmark() PublicBenchmarkSpec {
 // the cross-source file rule to accept either valid way of reading a file
 // source. Both were unpassable-or-over-strict task defects rather than agent
 // failures; see agent/eval/generate.go for the reasoning.
-const publicBenchmarkSuiteFingerprint = "3f2189b64beab7ad35c02a4138257b60"
+const publicBenchmarkSuiteFingerprint = "48948f16cde80d254d040e9433eb57f0"
 
 type suiteIdentityProjection struct {
 	Mode             RunMode `json:"mode"`
