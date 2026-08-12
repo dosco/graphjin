@@ -168,6 +168,15 @@ func TestObservedValueNoticeRefusesAnIdenticalRetry(t *testing.T) {
 	if !strings.Contains(string(payload), "observed_value_mismatch") {
 		t.Fatalf("first attempt should surface the vocabulary notice: %s", payload)
 	}
+	// The notice must not advertise the bypass. Offering "or re-execute this write
+	// unchanged" alongside the instruction is the option models took: across two runs
+	// "closed" writes rose from 46 to 64 while "resolved" fell to 2.
+	if strings.Contains(string(payload), "unchanged") {
+		t.Fatalf("the notice must not present re-sending unchanged as an equal choice: %s", payload)
+	}
+	if !strings.Contains(string(payload), "open, pending, resolved") {
+		t.Fatalf("the notice must name the values to choose from: %s", payload)
+	}
 	if base.mutationCalls != 0 {
 		t.Fatalf("the write must not reach the database on the notice, calls=%d", base.mutationCalls)
 	}
