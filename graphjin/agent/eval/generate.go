@@ -652,6 +652,60 @@ func generateDeepORGCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 				},
 			})
 		}
+
+		// Confirmation flows. This is the one place operational phrasing occurs
+		// honestly: the caller states a need, the agent proposes a concrete watch,
+		// and the caller approves it. The final instruction names a watch and a
+		// cadence because the agent's own proposal introduced them, not because the
+		// caller knew GraphJin's vocabulary. It also exercises the two-run approval
+		// path the runtime enforces via watch_action_confirmation_required.
+		for _, flow := range []struct{ slug, need, proposal, table, filter string }{
+			{
+				"confirm-failed-invoice-watch",
+				"Finance keeps missing invoices that fail to collect, and wants to stop finding out late.",
+				"I can set up a standing watch named finance_failed_invoices over invoices filtered to failed, delivering an inbox digest every hour. Shall I create it?",
+				"invoices", "failed",
+			},
+			{
+				"confirm-urgent-ticket-watch",
+				"Support leadership is tired of discovering urgent tickets after the fact.",
+				"I can set up a standing watch named support_urgent_tickets over support tickets filtered to urgent, delivering an inbox digest every hour. Shall I create it?",
+				"support_tickets", "urgent",
+			},
+		} {
+			clauses := []string{
+				fmt.Sprintf(`{query: {like: %q}}`, "%"+flow.table+"_cursor%"),
+				fmt.Sprintf(`{query: {like: %q}}`, "%"+flow.filter+"%"),
+				`{delivery_json: {is_null: false}}`,
+			}
+			tasks = append(tasks, Task{
+				Category: CategoryMultiTurn, Difficulty: DifficultyT4,
+				Slug: "multi-turn-" + flow.slug, Tier: TierIntent,
+				// The approval itself is the instruction; the plan lives in history.
+				Prompt: "Yes, go ahead and set that up.",
+				Turns: []TurnSpec{
+					{Role: "user", Content: flow.need},
+					{Role: "assistant", Content: flow.proposal},
+				},
+				Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-confirmation", Seed: seed, SourceID: flow.slug},
+				CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
+				Method:   MethodRule{RequireQueryMatch: []string{`(?s)mutation.*gj_watch.*insert`}},
+				Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql:mutation"}},
+				Mutation: &MutationSpec{
+					ResetStrategy: "sqlite-copy",
+					// Name-agnostic on purpose: the agent proposed a name and may
+					// reasonably use it or a close variant. What must hold is that the
+					// approved watch matches what was proposed semantically.
+					PostState: OracleSpec{
+						Query: fmt.Sprintf(`query { gj_watch(where: {and: [%s]}) { count_id } }`,
+							strings.Join(clauses, ", ")),
+						Extract: "gj_watch.0.count_id", AllowMissing: true,
+					},
+					ExpectedValue: "1",
+					Collateral:    append([]OracleSpec(nil), commonCollateral...),
+				},
+			})
+		}
 	}
 
 	tasks = append(tasks, deepORGMultiTurnTasks(seed, profile)...)

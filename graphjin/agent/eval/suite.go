@@ -85,6 +85,10 @@ func (s Suite) Validate() error {
 }
 
 func taskStructureKey(task Task) string {
+	// Turns and Mutation are part of what makes a task distinct. Confirmation
+	// flows share one approval prompt ("Yes, go ahead and set that up") and differ
+	// only in the history that precedes them and the post-state they verify, so
+	// omitting either collapsed them into a single task.
 	value := struct {
 		Category          Category
 		Difficulty        Difficulty
@@ -92,7 +96,9 @@ func taskStructureKey(task Task) string {
 		CapabilityProfile CapabilityProfile
 		Oracle            *OracleSpec
 		Behavior          BehaviorRule
-	}{task.Category, task.Difficulty, strings.ToLower(strings.TrimSpace(task.Prompt)), task.CapabilityProfile, task.Oracle, task.Behavior}
+		Turns             []TurnSpec
+		Mutation          *MutationSpec
+	}{task.Category, task.Difficulty, strings.ToLower(strings.TrimSpace(task.Prompt)), task.CapabilityProfile, task.Oracle, task.Behavior, task.Turns, task.Mutation}
 	data, _ := json.Marshal(value)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])

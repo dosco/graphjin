@@ -653,3 +653,44 @@ func TestAcceptedDimensionsAllowBoundedCadence(t *testing.T) {
 		t.Error("an unchecked dimension must not reject")
 	}
 }
+
+// TestConfirmationFlowsCarryTheProposal pins the one honest home for operational
+// phrasing. The final instruction may name a watch and a cadence only because the
+// agent's own proposal introduced them; the caller never knew GraphJin's
+// vocabulary. The plan must therefore live in history, not in the prompt.
+func TestConfirmationFlowsCarryTheProposal(t *testing.T) {
+	checked := 0
+	for _, task := range generateDeepORGCandidates(deeporgWatchSnapshot(), 23) {
+		if task.Provenance.Source != "deeporg-reference-confirmation" {
+			continue
+		}
+		checked++
+		if len(task.Turns) != 2 {
+			t.Fatalf("%s must carry the need and the agent's proposal, got %d turns", task.Slug, len(task.Turns))
+		}
+		if task.Turns[0].Role != "user" || task.Turns[1].Role != "assistant" {
+			t.Errorf("%s turn roles = %q,%q; want user then assistant", task.Slug, task.Turns[0].Role, task.Turns[1].Role)
+		}
+		// The proposal is what makes the operational vocabulary legitimate.
+		proposal := strings.ToLower(task.Turns[1].Content)
+		if !strings.Contains(proposal, "watch named") || !strings.Contains(proposal, "hour") {
+			t.Errorf("%s proposal does not name a watch and a cadence: %s", task.Slug, task.Turns[1].Content)
+		}
+		// The prompt must be a bare approval: no plan, no vocabulary.
+		prompt := strings.ToLower(task.Prompt)
+		for _, leak := range []string{"watch", "invoices", "support_tickets", "digest", "hour"} {
+			if strings.Contains(prompt, leak) {
+				t.Errorf("%s approval prompt restates the plan (%q): %s", task.Slug, leak, task.Prompt)
+			}
+		}
+		if task.Mutation == nil || task.Mutation.ExpectedValue != "1" {
+			t.Errorf("%s must verify exactly one satisfying watch", task.Slug)
+		}
+		if strings.Contains(task.Mutation.PostState.Query, "name: {eq:") {
+			t.Errorf("%s pins a name; the agent proposed it and may vary it: %s", task.Slug, task.Mutation.PostState.Query)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no confirmation-flow tasks were generated")
+	}
+}
