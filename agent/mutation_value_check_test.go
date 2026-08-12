@@ -142,11 +142,15 @@ func TestUnobservedWrittenValuesStaysQuiet(t *testing.T) {
 	}
 }
 
-// TestObservedValueNoticeFiresOnceThenAllowsTheWrite is the property that keeps
-// sampled values honest as evidence: a caller who means the new value must be able
-// to proceed, because the sample is what the data contains, not what the column
-// allows.
-func TestObservedValueNoticeFiresOnceThenAllowsTheWrite(t *testing.T) {
+// TestObservedValueNoticeRefusesAnIdenticalRetry corrects the rule this test used to
+// assert. Letting the next attempt through, whatever it contained, was meant to keep
+// sampled values honest as evidence — but the measured behaviour was the model
+// re-sending the same write unchanged. Of eleven episodes told a ticket status column
+// holds open, pending and resolved, ten resubmitted "closed" verbatim and it landed.
+//
+// A different write still proceeds, which is what keeps the sample evidence rather
+// than schema; repeating a rejected one is not a considered decision.
+func TestObservedValueNoticeRefusesAnIdenticalRetry(t *testing.T) {
 	runtime, base := ticketValueRuntime(t)
 	runtime.state.seedOK = true
 	runtime.state.modelDiscoveryAction = true
@@ -168,11 +172,27 @@ func TestObservedValueNoticeFiresOnceThenAllowsTheWrite(t *testing.T) {
 		t.Fatalf("the write must not reach the database on the notice, calls=%d", base.mutationCalls)
 	}
 
-	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args)); err != nil {
-		t.Fatalf("the repeated write should proceed: %v", err)
+	// The identical retry is refused again rather than waved through.
+	second, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil {
+		t.Fatalf("the identical retry should return a repair, not an error: %v", err)
+	}
+	payload, _ = json.Marshal(second)
+	if !strings.Contains(string(payload), "observed_value_mismatch") {
+		t.Fatalf("an identical retry must be refused again: %s", payload)
+	}
+	if base.mutationCalls != 0 {
+		t.Fatalf("an identical retry must not reach the database, calls=%d", base.mutationCalls)
+	}
+
+	// A genuinely different write proceeds: the sample says what the column holds,
+	// not what it permits, so the run is never left without a way forward.
+	different := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed", resolution_note: "closing per request"}) { id status } }`}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), different); err != nil {
+		t.Fatalf("a different write should proceed: %v", err)
 	}
 	if base.mutationCalls != 1 {
-		t.Fatalf("expected the second attempt to execute, calls=%d", base.mutationCalls)
+		t.Fatalf("expected the differing write to execute, calls=%d", base.mutationCalls)
 	}
 }
 
