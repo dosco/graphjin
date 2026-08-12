@@ -2142,7 +2142,14 @@ func (s *discoveryState) resolveSuccessfulExecutionViolations() {
 	for i := range s.violations {
 		violation := &s.violations[i]
 		switch violation.Code {
-		case "raw_graphql_catalog_required", "raw_graphql_discovery_required", "security_runtime_discovery_required", "cross_source_detail_required", "mutation_evidence_required", "workflow_detail_required":
+		case "raw_graphql_catalog_required", "raw_graphql_discovery_required", "security_runtime_discovery_required", "cross_source_detail_required", "mutation_evidence_required", "workflow_detail_required",
+			// Both of these intercept one call and hand back what it needs to
+			// proceed. Leaving them out of this list made them terminal: the run
+			// could satisfy the guard, execute correctly, and still be forced to
+			// blocked at finalization. That is what took multi-turn from 1/21 to 0/21
+			// between two runs of the same suite — the guard was right about the
+			// defect and wrong about being unrecoverable.
+			"history_referent_unresolved", "watch_query_invalid":
 		default:
 			continue
 		}

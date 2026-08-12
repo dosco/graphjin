@@ -161,3 +161,44 @@ func TestHistoryEntityReferencesPrefersRecentTurns(t *testing.T) {
 		t.Fatalf("most recent binding must lead, got %v", refs)
 	}
 }
+
+// TestRecoveredReferentGuardStillAnswers is the property whose absence cost a whole
+// family. A blocking violation forces the final response to blocked, so a guard
+// that intercepts one call and is then satisfied has to be discharged. Without
+// that, multi-turn went from 1/21 to 0/21 between two runs of the same suite: the
+// guard correctly named the missing filter, the model added it, and the answer was
+// thrown away anyway.
+func TestRecoveredReferentGuardStillAnswers(t *testing.T) {
+	state := newDiscoveryState("How many users belong to it?")
+	state.addViolation("history_referent_unresolved", "subject not bound", "execute_graphql", true,
+		map[string]any{"retained_subject": []entityReference{{Entity: "account", ID: "3"}}})
+	if !state.hasBlockingViolation() {
+		t.Fatal("the guard must block the call that triggered it")
+	}
+
+	state.resolveSuccessfulExecutionViolations()
+	if state.hasBlockingViolation() {
+		t.Fatal("a satisfied referent guard must not keep blocking the run")
+	}
+	for _, violation := range state.violations {
+		if violation.Code == "history_referent_unresolved" && violation.Details["resolved"] != true {
+			t.Fatal("the discharged guard must be recorded as resolved")
+		}
+	}
+
+	// The same holds for the watch quoting guard, which also intercepts one call.
+	watch := newDiscoveryState("Create a watch for failed invoices.")
+	watch.addViolation("watch_query_invalid", "unescaped subscription string", "execute_graphql", true, nil)
+	watch.resolveSuccessfulExecutionViolations()
+	if watch.hasBlockingViolation() {
+		t.Fatal("a repaired watch mutation must not keep blocking the run")
+	}
+
+	// A genuine policy refusal must stay terminal.
+	refusal := newDiscoveryState("Delete every invoice.")
+	refusal.addViolation("access_blocked", "policy refusal", "execute_graphql", true, nil)
+	refusal.resolveSuccessfulExecutionViolations()
+	if !refusal.hasBlockingViolation() {
+		t.Fatal("a policy refusal must survive a later successful execution")
+	}
+}
