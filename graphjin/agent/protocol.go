@@ -2182,6 +2182,11 @@ func (s *discoveryState) finalize(resp Response) Response {
 					fmt.Sprintf("answer cites field-like identifiers absent from this run's tool evidence: %s; answer only from fields observed in execution results and state derived values in plain language", strings.Join(tokens, ", ")),
 					"", true, map[string]any{"tokens": tokens})
 			}
+			if executed, requested := s.mismatchedSavedMetric(); executed != "" {
+				s.addViolation("saved_metric_identity_mismatch",
+					fmt.Sprintf("answer reports the result of saved query %q, but the request names %q; execute %q and answer from its result", executed, requested, requested),
+					"", true, map[string]any{"executed": executed, "requested": requested})
+			}
 			if s.hasBlockingViolation() {
 				resp = blockResponse(resp)
 			}

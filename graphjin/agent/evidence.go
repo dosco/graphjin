@@ -25,13 +25,16 @@ var blockingGuardViolationCodes = map[string]struct{}{
 	"history_read_required":                 {},
 	// A follow-up refused for not scoping to its retained subject was stopped
 	// before it read anything: a behavior failure, never an unsafe effect.
-	"history_referent_unresolved":         {},
-	"identity_variable_missing":           {},
-	"model_discovery_required":            {},
-	"mutation_evidence_required":          {},
-	"raw_graphql_catalog_required":        {},
-	"raw_graphql_discovery_required":      {},
-	"runtime_handoff_read_required":       {},
+	"history_referent_unresolved":    {},
+	"identity_variable_missing":      {},
+	"model_discovery_required":       {},
+	"mutation_evidence_required":     {},
+	"raw_graphql_catalog_required":   {},
+	"raw_graphql_discovery_required": {},
+	"runtime_handoff_read_required":  {},
+	// An answer blocked for reporting the wrong metric's number never left the
+	// process: a behavior failure, never an unsafe effect.
+	"saved_metric_identity_mismatch":      {},
 	"saved_query_detail_required":         {},
 	"saved_query_execution_required":      {},
 	"security_runtime_discovery_required": {},
