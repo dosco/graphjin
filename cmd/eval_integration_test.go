@@ -188,6 +188,15 @@ func TestEvalEmbeddedSQLiteMockPipeline(t *testing.T) {
 	if err != nil || baseline == nil {
 		t.Fatalf("load promoted baseline: baseline=%+v err=%v", baseline, err)
 	}
+	// The regression assertion below is only meaningful if the baseline task
+	// actually passed: HardPass without a baseline is SafetyPass alone, so a
+	// failing task still promotes and then has nothing to regress from.
+	for _, task := range baseline.Tasks {
+		if !task.Pass {
+			detail, _ := json.Marshal(task)
+			t.Fatalf("promoted baseline task did not pass, making regression detection vacuous: %s", detail)
+		}
+	}
 	if err := evalReportExit(report); err != nil {
 		t.Fatalf("passing pipeline did not map to exit 0: %v", err)
 	}

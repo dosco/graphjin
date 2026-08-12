@@ -990,8 +990,8 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 	for _, t := range snapshot.Tables {
 		cardID := "table:" + t.ID
 		nodeID := "node:" + cardID
-		keyCols := keyColumns(columnsByTable[t.ID])
-		summary := tableSummary(t, keyCols)
+		keyCols, allColumnsListed := keyColumns(columnsByTable[t.ID])
+		summary := tableSummary(t, keyCols, allColumnsListed)
 		out.Cards = append(out.Cards, Card{
 			ID:               cardID,
 			Kind:             "table",
@@ -1011,11 +1011,17 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 			DetailRef:        cardID,
 		})
 		out.Details = append(out.Details, CardDetail{
-			ID:       cardID + ":columns",
-			CardID:   cardID,
-			Section:  "key_columns",
-			Content:  "Primary keys, foreign keys, indexed columns, date/status/numeric columns, and likely sensitive columns are highlighted for model planning.",
-			DataJSON: mustJSON(keyCols),
+			ID:      cardID + ":columns",
+			CardID:  cardID,
+			Section: "key_columns",
+			Content: columnListContent(allColumnsListed),
+			DataJSON: mustJSON(map[string]any{
+				"columns":        keyCols,
+				"total_columns":  t.ColumnCount,
+				"listed_columns": len(keyCols),
+				"complete":       allColumnsListed,
+				"remaining_via":  columnListRemainingVia(t, allColumnsListed),
+			}),
 		})
 		out.Details = append(out.Details, CardDetail{
 			ID:      cardID + ":samples_profile",
@@ -1879,20 +1885,59 @@ func sortedStringSet(values map[string]struct{}) []string {
 	return out
 }
 
-func keyColumns(cols []MetadataColumn) []MetadataColumn {
+// columnListLimit bounds how many columns a table card lists inline. A table at
+// or under the limit publishes every column: the key-column heuristics exist to
+// summarise a wide table, and applying them to a narrow one hides fields for no
+// benefit.
+//
+// Benchmark generation 2028.1 measured that cost on the account_health API join,
+// whose four synthesised columns are account_id, health, executive_owner, and
+// open_risk_count. Only the first two heuristics matched — account_id as a foreign
+// key, open_risk_count as a metric — so the card published the count and hid the
+// health value. Every cross-source episode then answered the numeric half and
+// guessed the qualitative half: health_score, health_color, status, none of which
+// exist. Narrow tables are the common shape for API joins, views, and lookups.
+const columnListLimit = 12
+
+// keyColumns returns the columns a table card lists, and whether that list is the
+// table's complete set. Callers must publish the flag: a filtered list a model
+// cannot distinguish from a complete one invites invented field names.
+func keyColumns(cols []MetadataColumn) ([]MetadataColumn, bool) {
+	if len(cols) <= columnListLimit {
+		return cols, true
+	}
 	var out []MetadataColumn
 	for _, c := range cols {
 		if c.PrimaryKey || c.UniqueKey || c.Indexed || c.IndexName != "" || looksForeignKey(c) || looksDateColumn(c) || looksMetricColumn(c) || looksStatusColumn(c) {
 			out = append(out, c)
 		}
 	}
-	if len(out) > 12 {
-		out = out[:12]
+	if len(out) > columnListLimit {
+		out = out[:columnListLimit]
 	}
-	return out
+	return out, len(out) == len(cols)
 }
 
-func tableSummary(t MetadataTable, keyCols []MetadataColumn) string {
+// columnListContent states whether the listed columns are the table's full set.
+// A model that cannot tell a summary from a complete list has to guess the rest.
+func columnListContent(complete bool) string {
+	if complete {
+		return "Every column on this table is listed below with its type; this is the complete set, so no field names need to be guessed."
+	}
+	return "This table is too wide to list inline, so only primary keys, foreign keys, indexed columns, date/status/numeric columns, and likely sensitive columns appear below. The list is a subset: read remaining_via for the call that returns every column."
+}
+
+// columnListRemainingVia names the exact call that returns the columns a
+// truncated list omits. A subset without a route to the rest is what makes a
+// model invent field names.
+func columnListRemainingVia(t MetadataTable, complete bool) string {
+	if complete {
+		return ""
+	}
+	return fmt.Sprintf(`query_catalog(where: { kind: { eq: "column" }, table_name: { eq: %q } })`, t.TableName)
+}
+
+func tableSummary(t MetadataTable, keyCols []MetadataColumn, allColumnsListed bool) string {
 	parts := []string{fmt.Sprintf("%d columns", t.ColumnCount)}
 	if t.PrimaryKey != "" {
 		parts = append(parts, "primary key "+t.PrimaryKey)
@@ -1902,7 +1947,11 @@ func tableSummary(t MetadataTable, keyCols []MetadataColumn) string {
 		for _, c := range keyCols {
 			names = append(names, c.ColumnName)
 		}
-		parts = append(parts, "key columns: "+strings.Join(names, ", "))
+		label := "key columns: "
+		if allColumnsListed {
+			label = "columns: "
+		}
+		parts = append(parts, label+strings.Join(names, ", "))
 	}
 	if t.Comment != "" {
 		parts = append(parts, t.Comment)
