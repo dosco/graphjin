@@ -203,6 +203,14 @@ func TestObservedValueLookupIsRecorded(t *testing.T) {
 	if record["columns_with_values"] != 1 {
 		t.Errorf("lookup should report the columns it found values for, got %v", record["columns_with_values"])
 	}
+	// Cards returned is what separates a filter that finds nothing from cards that
+	// arrive without their evidence — the two remaining explanations for a silent check.
+	if record["cards_returned"] != 1 {
+		t.Errorf("lookup should report how many cards came back, got %v", record["cards_returned"])
+	}
+	if id, _ := record["first_card_id"].(string); id == "" {
+		t.Error("lookup should record a card id so the returned rows can be identified")
+	}
 
 	// A table the catalog knows nothing about records the empty result rather than
 	// nothing at all — that is the case three diagnoses could not see.
