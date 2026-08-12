@@ -513,3 +513,46 @@ func evalIntegrationGraphQL(baseURL string, headers map[string]string, query str
 	defer response.Body.Close()
 	return io.ReadAll(response.Body)
 }
+
+// TestDemoCatalogPublishesRealStatusValues is the end-to-end proof for the fix
+// benchmark 2028.1 motivated. Asked to close a ticket that had been "sorted out",
+// the agent wrote status "closed" against a schema whose statuses are open,
+// pending, and resolved — because the catalog card showed a "<status>" placeholder.
+// The card must now name the real values.
+func TestDemoCatalogPublishesRealStatusValues(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded demo catalog integration")
+	}
+	project := t.TempDir()
+	if err := extractDefaultDemo(project); err != nil {
+		t.Fatal(err)
+	}
+	originalPath, originalConf, originalDB, originalOpened := cpath, conf, db, dbOpened
+	defer func() {
+		cpath, conf, db, dbOpened = originalPath, originalConf, originalDB, originalOpened
+	}()
+	t.Setenv("GO_ENV", "dev")
+
+	instance, err := (evalEnvironment{}).Start(context.Background(), gjeval.EnvSpec{
+		Target: gjeval.TargetDemo, ConfigPath: project, Seed: 23,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer instance.Close() //nolint:errcheck
+
+	body, err := evalIntegrationGraphQL(instance.BaseURL(), instance.Headers(),
+		`query { gj_catalog(where: {id: {eq: "column:app:main.support_tickets.status"}}, limit: 1) { id examples_json evidence_json } }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := string(body)
+	if strings.Contains(card, "<status>") {
+		t.Errorf("status column card still shows a placeholder instead of sampled values: %s", card)
+	}
+	for _, want := range []string{"open", "pending", "resolved"} {
+		if !strings.Contains(card, want) {
+			t.Errorf("status column card omits the real value %q: %s", want, card)
+		}
+	}
+}

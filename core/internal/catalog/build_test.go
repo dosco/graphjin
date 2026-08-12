@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -837,4 +838,57 @@ func hasEntrypoint(snap *Snapshot, name string) bool {
 		}
 	}
 	return false
+}
+
+// TestColumnCardPublishesObservedValues pins the fix for the defect benchmark
+// 2028.1 measured: a status column's example was a placeholder, so a model asked
+// to close a "sorted out" ticket wrote status "closed" against a schema whose
+// statuses are open, pending, and resolved.
+func TestColumnCardPublishesObservedValues(t *testing.T) {
+	column := MetadataColumn{
+		ID: "app:main.support_tickets.status", TableID: "app:main.support_tickets",
+		DatabaseName: "app", SchemaName: "main", TableName: "support_tickets",
+		ColumnName: "status", Type: "text",
+	}
+	observed := []string{"open", "pending", "resolved"}
+
+	// Examples are stored as JSON, so decode before asserting on their text.
+	var examples []string
+	if err := json.Unmarshal([]byte(columnExamples(column, observed)), &examples); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(examples, " | ")
+	for _, want := range []string{`eq: "open"`, "open, pending, resolved"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("column examples missing %q: %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "<status>") {
+		t.Errorf("observed values must replace the placeholder: %s", joined)
+	}
+
+	// Evidence carries the closed set for callers that read evidence, not examples.
+	evidence := mustJSON(columnEvidence(column, observed))
+	if !strings.Contains(evidence, "observed_values") || !strings.Contains(evidence, "resolved") {
+		t.Errorf("column evidence omits the observed value set: %s", evidence)
+	}
+}
+
+// TestColumnCardKeepsPlaceholderWithoutSamples keeps the old behavior when
+// sampling is off or a column exceeded its cardinality cap.
+func TestColumnCardKeepsPlaceholderWithoutSamples(t *testing.T) {
+	column := MetadataColumn{
+		ID: "app:main.support_tickets.status", TableName: "support_tickets",
+		ColumnName: "status", Type: "text",
+	}
+	var examples []string
+	if err := json.Unmarshal([]byte(columnExamples(column, nil)), &examples); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(examples, " | "), "<status>") {
+		t.Errorf("expected the placeholder example without samples: %v", examples)
+	}
+	if evidence := mustJSON(columnEvidence(column, nil)); strings.Contains(evidence, "observed_values") {
+		t.Errorf("evidence must omit the field entirely without samples: %s", evidence)
+	}
 }

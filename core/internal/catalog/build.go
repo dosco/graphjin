@@ -1035,7 +1035,12 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 	for _, c := range snapshot.Columns {
 		cardID := "column:" + c.ID
 		nodeID := "node:" + cardID
+		// A sensitive column never publishes its values, whatever the caller sampled.
+		observed := opts.ObservedColumnValues[cardID]
 		sensitive, sensitivity := columnSensitivity(c)
+		if sensitive {
+			observed = nil
+		}
 		summary := columnSummary(c, sensitive, sensitivity)
 		out.Cards = append(out.Cards, Card{
 			ID:               cardID,
@@ -1053,8 +1058,8 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 			Confidence:       "medium",
 			Sensitive:        sensitive,
 			Sensitivity:      sensitivity,
-			EvidenceJSON:     mustJSON(c),
-			ExamplesJSON:     columnExamples(c),
+			EvidenceJSON:     mustJSON(columnEvidence(c, observed)),
+			ExamplesJSON:     columnExamples(c, observed),
 			SuggestedNext:    suggestedNextJSON(opts, columnSuggestedNext(c)...),
 			DetailRef:        cardID,
 		})
@@ -1941,19 +1946,37 @@ func tableExamples(t MetadataTable, keyCols []MetadataColumn) string {
 	return mustJSON([]string{fmt.Sprintf("{ %s(limit: 10) { %s } }", t.TableName, strings.Join(fields, " "))})
 }
 
-func columnExamples(c MetadataColumn) string {
+func columnExamples(c MetadataColumn, observed []string) string {
 	var examples []string
 	switch {
 	case looksMetricColumn(c):
 		examples = append(examples, fmt.Sprintf("{ %s { sum_%s avg_%s } }", c.TableName, c.ColumnName, c.ColumnName))
 	case looksDateColumn(c):
 		examples = append(examples, fmt.Sprintf(`where: { %s: { gte: $from, lt: $to } }`, c.ColumnName))
+	case len(observed) != 0:
+		// Show a real value and list the closed set. A placeholder here is what let
+		// a model invent a status this schema does not have.
+		examples = append(examples,
+			fmt.Sprintf(`where: { %s: { eq: %q } }`, c.ColumnName, observed[0]),
+			fmt.Sprintf("%s values: %s", c.ColumnName, strings.Join(observed, ", ")))
 	case looksStatusColumn(c):
 		examples = append(examples, fmt.Sprintf(`where: { %s: { eq: "<status>" } }`, c.ColumnName))
 	default:
 		examples = append(examples, fmt.Sprintf("{ %s(limit: 10) { %s } }", c.TableName, c.ColumnName))
 	}
 	return mustJSON(examples)
+}
+
+// columnEvidence publishes the observed value set alongside the column metadata
+// so a caller reading evidence, not examples, still sees the closed set.
+func columnEvidence(c MetadataColumn, observed []string) any {
+	if len(observed) == 0 {
+		return c
+	}
+	return struct {
+		MetadataColumn
+		ObservedValues []string `json:"observed_values"`
+	}{c, observed}
 }
 
 func columnSuggestedNext(c MetadataColumn) []string {
