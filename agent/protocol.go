@@ -885,18 +885,31 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			if mismatches := r.unobservedWrittenValues(ctx, query); len(mismatches) != 0 {
 				r.state.recordObservedValueRejection(normalizeGraphQLIdentity(query))
 				described := r.describeUnobservedValues(ctx, mismatches)
-				// The message used to offer the bypass in the same breath as the
-				// instruction, and that is the option models took: across two runs
-				// "closed" writes rose from 46 to 64 while "resolved" fell to 2. The
-				// behaviour still allows a different write through, but the guidance no
-				// longer advertises it as an equal choice.
-				err := fmt.Errorf("protocol violation: %s. Choose the value from that list which matches the intent and re-author the write with it", described)
+				// A list did not move behaviour — ten of eleven episodes handed one
+				// resubmitted "closed" verbatim. Every repair that measurably changed
+				// what a model did named the exact answer, so when a clear nearest value
+				// exists the corrected write is supplied outright. Offered, never
+				// executed: mapping intent onto a vocabulary is the model's call.
+				suggestions := r.suggestedWrittenValues(ctx, mismatches)
 				details := map[string]any{"fault": "value_outside_observed_set"}
+				guidance := "Choose the value from that list which matches the intent and re-author the write with it"
+				reason := "Re-author the write using one of the values listed for that column, then execute it once."
+				if len(suggestions) != 0 {
+					details["closest_values"] = suggestions
+				}
+				if len(suggestions) == len(mismatches) {
+					if repaired, ok := substituteWrittenValues(query, mismatches, suggestions); ok {
+						details["repaired_query"] = repaired
+						guidance = "The corrected write is in errors[].extensions.details.repaired_query — execute it exactly as given if the suggested value matches the intent, otherwise re-author with another value from the list"
+						reason = "Execute details.repaired_query if the suggested value matches the intent; otherwise re-author the write with another value that column already uses."
+					}
+				}
+				err := fmt.Errorf("protocol violation: %s. %s", described, guidance)
 				r.state.addViolation("observed_value_mismatch", err.Error(), "execute_graphql", true, details)
 				out := recoverableProtocolFailure("observed_value_mismatch", err.Error(), "observed_value_mismatch",
 					map[string]any{
 						"recommended_tool": "execute_graphql",
-						"reason":           "Re-author the write using one of the values listed for that column, then execute it once.",
+						"reason":           reason,
 					}, details)
 				action := r.state.startAction("model", "execute_graphql", args)
 				r.state.finishAction(action, "execute_graphql", args, out, nil)

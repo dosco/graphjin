@@ -258,3 +258,108 @@ func TestObservedValueLookupIsRecorded(t *testing.T) {
 		t.Fatalf("an empty lookup must still be recorded, got %+v", other.state.observedValueLookups)
 	}
 }
+
+// TestClosestObservedValuePicksTheMeasuredCase pins the mapping the whole family
+// turns on — "closed" against a column holding open, pending and resolved — and the
+// shapes where suggesting would be guessing.
+func TestClosestObservedValuePicksTheMeasuredCase(t *testing.T) {
+	ticket := []string{"open", "pending", "resolved"}
+	if got, ok := closestObservedValue("closed", ticket); !ok || got != "resolved" {
+		t.Fatalf(`closest to "closed" = %q ok=%v, want "resolved"`, got, ok)
+	}
+	// Nothing plausibly near: no suggestion, so the plain list stands.
+	if got, ok := closestObservedValue("done", ticket); ok {
+		t.Fatalf(`"done" has no clear neighbour, got %q`, got)
+	}
+	// A tie is ambiguity, and ambiguity is not a suggestion.
+	if got, ok := closestObservedValue("ab", []string{"abc", "abd"}); ok {
+		t.Fatalf("a tie must not suggest, got %q", got)
+	}
+}
+
+// TestSubstituteWrittenValuesRewritesOnlyTheMismatch pins the surgical property:
+// the suggested value replaces exactly the rejected literal, and the rest of the
+// mutation — the note, the where clause — comes through byte for byte.
+func TestSubstituteWrittenValuesRewritesOnlyTheMismatch(t *testing.T) {
+	query := `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed", resolution_note: "closed it as asked"}) { id status } }`
+	mismatches := []columnAssignment{{Table: "support_tickets", Column: "status", Value: "closed"}}
+	repaired, ok := substituteWrittenValues(query, mismatches, map[string]string{"support_tickets.status": "resolved"})
+	if !ok {
+		t.Fatal("expected a substitution")
+	}
+	if !strings.Contains(repaired, `status: "resolved"`) {
+		t.Fatalf("status not rewritten: %s", repaired)
+	}
+	// The same word elsewhere is untouched: only the mismatched literal moves.
+	if !strings.Contains(repaired, `resolution_note: "closed it as asked"`) {
+		t.Fatalf("note must survive byte for byte: %s", repaired)
+	}
+	if !strings.Contains(repaired, `where: {id: {eq: 2}}`) {
+		t.Fatalf("where clause must survive: %s", repaired)
+	}
+
+	// All or nothing: a mismatch without a suggestion withholds the repair.
+	two := []columnAssignment{
+		{Table: "support_tickets", Column: "status", Value: "closed"},
+		{Table: "support_tickets", Column: "severity", Value: "sev1"},
+	}
+	if _, ok := substituteWrittenValues(query, two, map[string]string{"support_tickets.status": "resolved"}); ok {
+		t.Fatal("a partly suggested batch must not produce a repaired query")
+	}
+
+	// A suggested value with a quote must arrive escaped, not break the mutation.
+	quoted, ok := substituteWrittenValues(query, mismatches, map[string]string{"support_tickets.status": `won"t fix`})
+	if !ok || !strings.Contains(quoted, `status: "won\"t fix"`) {
+		t.Fatalf("escaping lost: %s ok=%v", quoted, ok)
+	}
+}
+
+// TestObservedValueNoticeCarriesTheCorrectedWrite is the end-to-end shape: the
+// first refusal names the nearest value and hands back the corrected mutation.
+func TestObservedValueNoticeCarriesTheCorrectedWrite(t *testing.T) {
+	runtime, _ := ticketValueRuntime(t)
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.securityRuntimeEvidence = true
+	runtime.state.mutationEvidenceSupplied = true
+	runtime.state.tablesDetailed["support_tickets"] = true
+	runtime.state.catalogDetails = []string{"table:app:main.support_tickets"}
+	args := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed"}) { id status } }`}
+
+	first, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil {
+		t.Fatalf("first attempt errored instead of returning a repair: %v", err)
+	}
+	payload, _ := json.Marshal(first)
+	for _, want := range []string{"repaired_query", "closest_values", "closest of these"} {
+		if !strings.Contains(string(payload), want) {
+			t.Fatalf("notice must carry %q: %s", want, payload)
+		}
+	}
+	// Assert on the decoded mutation, not on JSON escaping.
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	repairedText := ""
+	var dig func(any)
+	dig = func(v any) {
+		switch typed := v.(type) {
+		case map[string]any:
+			if q, ok := typed["repaired_query"].(string); ok {
+				repairedText = q
+			}
+			for _, item := range typed {
+				dig(item)
+			}
+		case []any:
+			for _, item := range typed {
+				dig(item)
+			}
+		}
+	}
+	dig(decoded)
+	if !strings.Contains(repairedText, `status: "resolved"`) {
+		t.Fatalf("repaired mutation should carry the suggested value: %q", repairedText)
+	}
+}
