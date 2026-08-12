@@ -15,6 +15,12 @@ const protocolContextKey = "_graphjin_discovery"
 
 const emptySearchKnownIDLimit = 6
 
+// emptyDetailKnownIDLimit bounds the id space searched when a detail lookup
+// misses. It is far larger than the display limit because it is matched against,
+// not shown: finding the one card a short id names needs the whole space, while
+// the model is only ever handed the few best candidates.
+const emptyDetailKnownIDLimit = 512
+
 // Keep complete ordinary GraphQL operations in the private action trail so
 // evaluation method rules never depend on argument order within a mutation.
 // Variables and headers remain redacted separately below.
@@ -377,10 +383,31 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 			if len(returned) != 0 {
 				r.state.emptyDetailStreak = 0
 			} else {
+				known := r.state.knownCatalogIDs(emptyDetailKnownIDLimit)
+				// A short id names a real card whose qualifiers were omitted. Serving
+				// it costs one base call; reporting it costs a step, and the step after
+				// a missed detail is a refused execution whose envelope has no data
+				// field, which is where executor code crashes instead of recovering.
+				if repairs, ok := repairCatalogDetailIDs(detailIDs, known); ok {
+					if repaired, repairErr := r.base.QueryCatalog(ctx, rewriteCatalogIDArgs(args, repairs)); repairErr == nil {
+						canonical := make([]string, 0, len(repairs))
+						for _, id := range repairs {
+							canonical = appendUniqueString(canonical, id)
+						}
+						if len(returnedCatalogDetailIDs(canonical, repaired)) != 0 {
+							r.state.emptyDetailStreak = 0
+							out = attachCatalogIDRepairNotice(repaired, repairs)
+							r.state.recordCatalog(rewriteCatalogIDArgs(args, repairs), out, false)
+							r.state.lastCatalogDetail = normalizeValue(out)
+							r.state.finishAction(action, "query_catalog", args, out, nil)
+							return out, nil
+						}
+					}
+				}
 				r.state.emptyDetailStreak = 1
 				out = attachEmptyDetailRecovery(out, detailIDs, r.state.emptyDetailNext(
 					"The requested catalog id was not returned. Inspect a known id or enumerate tables by kind before trying another detail lookup.",
-				))
+				), catalogIDSuggestions(detailIDs, known))
 			}
 		}
 	}
@@ -425,7 +452,29 @@ func attachEmptySearchRecovery(out any, next map[string]any) any {
 	return result
 }
 
-func attachEmptyDetailRecovery(out any, missedIDs []string, next map[string]any) any {
+// attachCatalogIDRepairNotice records which requested id was served under its
+// canonical name, so later calls in the run use the published id rather than the
+// short form that missed.
+func attachCatalogIDRepairNotice(out any, repairs map[string]string) any {
+	result := cloneAnyMap(mapValue(out))
+	served := make([]map[string]any, 0, len(repairs))
+	requested := make([]string, 0, len(repairs))
+	for missed := range repairs {
+		requested = appendUniqueString(requested, missed)
+	}
+	sort.Strings(requested)
+	for _, missed := range requested {
+		served = append(served, map[string]any{"requested": missed, "canonical": repairs[missed]})
+	}
+	result["recovery"] = map[string]any{
+		"kind":        "catalog_id_qualified",
+		"instruction": "The requested id omitted its database and schema qualifiers and matched exactly one published card, which is returned here. Use the canonical id for the rest of this run.",
+		"resolved":    served,
+	}
+	return result
+}
+
+func attachEmptyDetailRecovery(out any, missedIDs []string, next map[string]any, suggestions map[string][]string) any {
 	result := cloneAnyMap(mapValue(out))
 	if len(catalogCards(result)) == 0 {
 		result["cards"] = []any{}
@@ -439,6 +488,12 @@ func attachEmptyDetailRecovery(out any, missedIDs []string, next map[string]any)
 	}
 	if len(missedIDs) == 1 {
 		recovery["missed_id"] = missedIDs[0]
+	}
+	if len(suggestions) != 0 {
+		// Named candidates beat a list to scan: these ids do not exist, and the
+		// closest published cards are what the caller has to choose between.
+		recovery["did_you_mean"] = suggestions
+		recovery["instruction"] = "The requested catalog detail was not found. Inspect one of the did_you_mean candidates, or enumerate tables by kind; do not guess another id."
 	}
 	result["recovery"] = recovery
 	return result
