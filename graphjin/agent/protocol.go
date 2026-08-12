@@ -115,6 +115,10 @@ type discoveryState struct {
 	// mutationEvidenceSupplied keeps the one-shot discharge of a missing
 	// mutation-shape prerequisite from becoming an unbounded fetch loop.
 	mutationEvidenceSupplied bool
+	// historyReferentSupplied keeps the retained-subject repair to one
+	// interception. A follow-up that legitimately spans every row must be able to
+	// proceed by re-issuing the same unscoped query.
+	historyReferentSupplied bool
 	// history is bounded, untrusted caller/task context. It never satisfies a
 	// discovery guard, but an explicit request to repeat a prior answered turn
 	// can safely recover from an actor-loop failure after this run has performed
@@ -615,6 +619,26 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		r.state.finishAction(action, "execute_saved_query", args, nil, err)
 		return nil, err
 	}
+	// A saved metric carries its own fixed scope. When the follow-up inherits a
+	// subject from prior turns and neither the saved query nor the supplied
+	// variables bind it, running it answers a broader question than the one asked —
+	// and unlike raw GraphQL the caller cannot narrow it by editing the query, so
+	// the repair has to point at authoring instead.
+	if refs := unresolvedHistoryReferent(r.state.instruction, r.state.savedQueryGraphQLFor(name), args, r.state.history); len(refs) != 0 && !r.state.historyReferentSupplied {
+		r.state.historyReferentSupplied = true
+		described := describeEntityReferences(refs)
+		err := fmt.Errorf("protocol violation: this follow-up is scoped to %s, but saved query %q does not filter on it and a saved query cannot be narrowed at call time. Author the scoped query with execute_graphql, or pass a variable this saved query accepts that binds the subject", described, name)
+		details := map[string]any{"retained_subject": refs, "name": name, "fault": "unscoped_saved_query_for_referent"}
+		r.state.addViolation("history_referent_unresolved", err.Error(), "execute_saved_query", true, details)
+		out := recoverableProtocolFailure("history_referent_unresolved", err.Error(), "history_referent_unresolved",
+			map[string]any{
+				"recommended_tool": "execute_graphql",
+				"reason":           "Author a query scoped to " + described + " and execute it once, rather than reporting this saved metric's unscoped result.",
+			}, details)
+		action := r.state.startAction("model", "execute_saved_query", args)
+		r.state.finishAction(action, "execute_saved_query", args, out, nil)
+		return out, nil
+	}
 	executionKey := savedQueryExecutionKey(args)
 	if cached, ok := r.state.cachedExecution(executionKey); ok {
 		if out, rejected := pendingCachedExecutionRejection(r.state, ""); rejected {
@@ -720,6 +744,28 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		action := r.state.startAction("model", "execute_graphql", args)
 		r.state.finishAction(action, "execute_graphql", args, out, nil)
 		return out, nil
+	}
+	if !ContainsMutationOperation(query) {
+		// A follow-up that points at "it" or "that account" has to inherit its
+		// subject from prior turns. When the retained subject is known and the
+		// authored query binds none of it, the answer will describe the whole table
+		// instead of the one row asked about. Name the subject once; which filter
+		// path reaches it is the model's decision, not this guard's.
+		if refs := unresolvedHistoryReferent(r.state.instruction, query, args, r.state.history); len(refs) != 0 && !r.state.historyReferentSupplied {
+			r.state.historyReferentSupplied = true
+			described := describeEntityReferences(refs)
+			err := fmt.Errorf("protocol violation: this follow-up inherits its subject from prior turns, which retained %s, but the query filters on none of it. Re-author the query scoped to the retained subject before answering", described)
+			details := map[string]any{"retained_subject": refs, "fault": "unresolved_history_referent"}
+			r.state.addViolation("history_referent_unresolved", err.Error(), "execute_graphql", true, details)
+			out := recoverableProtocolFailure("history_referent_unresolved", err.Error(), "history_referent_unresolved",
+				map[string]any{
+					"recommended_tool": "execute_graphql",
+					"reason":           "Add the where clause that scopes this query to " + described + ", then execute it once. If the retained subject genuinely does not apply, execute the unscoped query again and it will run.",
+				}, details)
+			action := r.state.startAction("model", "execute_graphql", args)
+			r.state.finishAction(action, "execute_graphql", args, out, nil)
+			return out, nil
+		}
 	}
 	if ContainsMutationOperation(query) {
 		annotationFields := annotationMutationInputFields(query, args)
