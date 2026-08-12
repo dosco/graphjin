@@ -255,8 +255,13 @@ func (g Generator) Generate(ctx context.Context, opts GeneratorOptions) (*Suite,
 }
 
 type generatorColumn struct {
-	Name    string
-	Type    string
+	Name string
+	Type string
+	// ID is the column's catalog card id. Provenance must name a card a consumer
+	// can actually fetch: the composite table:<table>:<column> form reads like an
+	// id but resolves to nothing, and anything following provenance back to the
+	// catalog gets an empty detail instead of the column it was promised.
+	ID      string
 	NotNull bool
 }
 
@@ -284,21 +289,21 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 		if pk == "" {
 			continue
 		}
-		tasks = append(tasks, generatedTask(seed, table.ID, CategoryAggregate, DifficultyT1,
+		tasks = append(tasks, generatedTask(seed, table.ID, table.ID, CategoryAggregate, DifficultyT1,
 			fmt.Sprintf("How many records are in %s?", humanize(table.Name)),
 			fmt.Sprintf("query { %s { count_%s } }", table.Name, pk), table.Name+".0.count_"+pk,
 			"number", []string{aggregateMethodPattern("count", pk)}))
 		for _, column := range table.Columns {
 			if !isIdentifierColumn(table, column) {
 				completenessQuery := fmt.Sprintf("query { %s(where: {not: {%s: {is_null: true}}}) { count_%s } }", table.Name, column.Name, pk)
-				tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, CategoryDiscovery, DifficultyT2,
+				tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, column.ID, CategoryDiscovery, DifficultyT2,
 					fmt.Sprintf("How many records in %s have a known %s?", humanize(table.Name), humanize(column.Name)),
 					completenessQuery, table.Name+".0.count_"+pk, "number", []string{filteredCountMethodPattern(column.Name, `(?:is_null|neq\s*:\s*null)`, pk)}))
 			}
 			if isNumericType(column.Type) && !isIdentifierColumn(table, column) {
 				for _, fn := range []string{"sum", "avg", "min", "max"} {
 					field := fn + "_" + column.Name
-					tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, CategoryAggregate, DifficultyT1,
+					tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, column.ID, CategoryAggregate, DifficultyT1,
 						fmt.Sprintf("What is the %s %s across all %s?", aggregatePhrase(fn), humanize(column.Name), humanize(table.Name)),
 						fmt.Sprintf("query { %s { %s } }", table.Name, field), table.Name+".0."+field,
 						"number", []string{aggregateMethodPattern(fn, column.Name)}))
@@ -316,7 +321,7 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 				// A database-side max over a date column is an aggregate, not a
 				// window. Keeping it with the aggregate family makes the public
 				// composition describe what the database is actually asked to do.
-				tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, CategoryAggregate, DifficultyT2,
+				tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, column.ID, CategoryAggregate, DifficultyT2,
 					fmt.Sprintf("What is the latest date recorded in %s.%s?", table.Name, column.Name),
 					fmt.Sprintf("query { %s { %s } }", table.Name, field), table.Name+".0."+field,
 					"date", []string{latestDateMethodPattern(column.Name)}))
@@ -328,7 +333,7 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 				}
 				for _, days := range []int{7, 14, 30, 60, 90, 120, 180} {
 					query := fmt.Sprintf("{ %s(where: {%s: {gte: %q}}) { count_%s } }", table.Name, column.Name, oracleVariableMarker("from"), pk)
-					task := generatedTask(seed, table.ID+":"+column.Name, CategoryWindow, DifficultyT2,
+					task := generatedTask(seed, table.ID+":"+column.Name, column.ID, CategoryWindow, DifficultyT2,
 						fmt.Sprintf("Using the latest recorded %s as the anchor, how many records in %s have %s on or after the date exactly %d days before that anchor?", column.Name, table.Name, column.Name, days),
 						query, table.Name+".0.count_"+pk, "number", []string{filteredCountMethodPattern(column.Name, `gte\s*:`, pk)})
 					task.Oracle.AnchorQuery = fmt.Sprintf("query { %s { max_%s } }", table.Name, column.Name)
@@ -896,11 +901,16 @@ func latestDateMethodPattern(column string) string {
 	return fmt.Sprintf(`(?s)(?:max_%s|\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b.*?(?:\baggregate\s*\{.*?)?\bmax\s*\{.*?\b%s\b|order_by\s*:\s*\{.*\b%s\s*:\s*desc.*\}.*limit\s*:\s*1|limit\s*:\s*1.*order_by\s*:\s*\{.*\b%s\s*:\s*desc)`, column, column, column, column)
 }
 
-func generatedTask(seed int64, source string, category Category, difficulty Difficulty, prompt, query, extract, answerKind string, method []string) Task {
+// generatedTask builds a catalog-derived task. slugKey names the task for humans
+// and may be a composite; sourceID must be a resolvable catalog card id.
+func generatedTask(seed int64, slugKey, sourceID string, category Category, difficulty Difficulty, prompt, query, extract, answerKind string, method []string) Task {
+	if strings.TrimSpace(sourceID) == "" {
+		sourceID = slugKey
+	}
 	return Task{
 		Category: category, Difficulty: difficulty, Prompt: prompt,
-		Slug:              string(category) + "-" + source + "-" + extract,
-		Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "catalog-entity", Seed: seed, SourceID: source},
+		Slug:              string(category) + "-" + slugKey + "-" + extract,
+		Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "catalog-entity", Seed: seed, SourceID: sourceID},
 		CapabilityProfile: CapabilityProfile{RoleClass: "user"}, ExpectedStatus: gjagent.StatusAnswered,
 		Oracle: &OracleSpec{Query: query, Extract: extract}, Answer: AnswerRule{Kind: answerKind},
 		Method:   MethodRule{RequireQueryMatch: method, ForbidFinalizeFromListOnly: answerKind == "number"},
@@ -914,7 +924,9 @@ func generatedRankingTask(seed int64, table generatorTable, value generatorColum
 	if isDateColumn(value) {
 		answerKind = "date"
 	}
-	task := generatedTask(seed, table.ID+":"+value.Name, CategoryRanking, DifficultyT3,
+	// The superlative belongs in the slug: highest and lowest are different tasks
+	// over the same column and would otherwise be indistinguishable in reports.
+	task := generatedTask(seed, table.ID+":"+value.Name+":"+superlative, value.ID, CategoryRanking, DifficultyT3,
 		fmt.Sprintf("Which record in %s has the %s %s, and what is the value?", humanize(table.Name), superlative, humanize(value.Name)),
 		query, table.Name+".0."+value.Name, answerKind, []string{"order_by"})
 	task.Oracle.DimensionExtract = table.Name + ".0." + label
@@ -950,7 +962,7 @@ func catalogTables(rows []CatalogRow) []generatorTable {
 		}
 		typeName := detailString(row.DetailsJSON, "type", "data_type", "db_type")
 		table.Columns = appendColumn(table.Columns, generatorColumn{
-			Name: row.ColumnName, Type: typeName,
+			Name: row.ColumnName, Type: typeName, ID: row.ID,
 			NotNull: detailBool(row.DetailsJSON, "not_null", "notNull", "required") ||
 				strings.Contains(strings.ToLower(row.Summary), "not null"),
 		})
@@ -1012,6 +1024,13 @@ func appendColumn(columns []generatorColumn, value generatorColumn) []generatorC
 		if columns[i].Name == value.Name {
 			if columns[i].Type == "" {
 				columns[i].Type = value.Type
+			}
+			// Table details describe columns before the column cards are walked, so
+			// the first occurrence of a column usually has no card id. Enrich rather
+			// than discard: dropping the id here is what left provenance pointing at
+			// a composite string no consumer can resolve.
+			if columns[i].ID == "" {
+				columns[i].ID = value.ID
 			}
 			columns[i].NotNull = columns[i].NotNull || value.NotNull
 			return columns
