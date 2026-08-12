@@ -718,6 +718,11 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		if !executionFailed(out) {
 			r.state.emptySearchStreak = 0
 			r.state.emptyDetailStreak = 0
+			// The retained-subject guard fires on this path too, so it has to be
+			// dischargeable here. Discharge lived only in the raw-GraphQL path, which
+			// meant a follow-up correctly rescoped through a saved query stayed blocked
+			// on a requirement it had already met.
+			r.state.resolveSuccessfulSavedQueryViolations()
 		}
 		// A rejected out-of-order attempt is recoverable inside the same actor
 		// run. Once the model has inspected the exact detail and the governed
@@ -2128,6 +2133,24 @@ func (s *discoveryState) resolveSavedQueryDetailViolation(name string) {
 		violation := &s.violations[i]
 		if violation.Code != "saved_query_detail_required" ||
 			!strings.EqualFold(strings.TrimSpace(stringFromMap(violation.Details, "name")), name) {
+			continue
+		}
+		violation.Blocking = false
+		if violation.Details == nil {
+			violation.Details = map[string]any{}
+		}
+		violation.Details["resolved"] = true
+	}
+}
+
+// resolveSuccessfulSavedQueryViolations discharges the guards a governed
+// saved-query execution genuinely satisfies. It is deliberately narrower than the
+// raw-GraphQL list: a saved query succeeding does not retroactively justify raw
+// GraphQL authored without discovery.
+func (s *discoveryState) resolveSuccessfulSavedQueryViolations() {
+	for i := range s.violations {
+		violation := &s.violations[i]
+		if violation.Code != "history_referent_unresolved" {
 			continue
 		}
 		violation.Blocking = false

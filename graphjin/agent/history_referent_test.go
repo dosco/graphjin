@@ -202,3 +202,27 @@ func TestRecoveredReferentGuardStillAnswers(t *testing.T) {
 		t.Fatal("a policy refusal must survive a later successful execution")
 	}
 }
+
+// TestReferentGuardDischargesOnSavedQueryPath covers the asymmetry that kept a
+// third of the intercepted episodes blocked: the guard fires on the saved-query
+// path as well as on raw GraphQL, but discharge was wired only into the GraphQL
+// path. A follow-up correctly rescoped through a saved query stayed blocked on a
+// requirement it had already satisfied.
+func TestReferentGuardDischargesOnSavedQueryPath(t *testing.T) {
+	state := newDiscoveryState("What is that account's current MRR in cents?")
+	state.addViolation("history_referent_unresolved", "subject not bound", "execute_saved_query", true, nil)
+
+	state.resolveSuccessfulSavedQueryViolations()
+	if state.hasBlockingViolation() {
+		t.Fatal("a scoped saved-query execution must discharge the referent guard")
+	}
+
+	// The narrower list must not hand a saved query the power to justify raw
+	// GraphQL authored without discovery.
+	discovery := newDiscoveryState("Show me everything.")
+	discovery.addViolation("raw_graphql_discovery_required", "no discovery", "execute_graphql", true, nil)
+	discovery.resolveSuccessfulSavedQueryViolations()
+	if !discovery.hasBlockingViolation() {
+		t.Fatal("a saved query must not discharge the raw-GraphQL discovery prerequisite")
+	}
+}
