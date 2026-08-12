@@ -183,3 +183,32 @@ func TestColumnNameFromCatalogID(t *testing.T) {
 		}
 	}
 }
+
+// TestObservedValueLookupIsRecorded makes a silent check legible. This one stayed
+// quiet across three full benchmark runs and three wrong diagnoses, every one of
+// them reached by inspection because nothing in the trajectory distinguished "found
+// no columns" from "found them and the value matched".
+func TestObservedValueLookupIsRecorded(t *testing.T) {
+	runtime, _ := ticketValueRuntime(t)
+	runtime.unobservedWrittenValues(context.Background(),
+		`mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "resolved"}) { id } }`)
+
+	if len(runtime.state.observedValueLookups) != 1 {
+		t.Fatalf("expected one recorded lookup, got %+v", runtime.state.observedValueLookups)
+	}
+	record := runtime.state.observedValueLookups[0]
+	if record["table"] != "support_tickets" {
+		t.Errorf("lookup should name the table, got %v", record["table"])
+	}
+	if record["columns_with_values"] != 1 {
+		t.Errorf("lookup should report the columns it found values for, got %v", record["columns_with_values"])
+	}
+
+	// A table the catalog knows nothing about records the empty result rather than
+	// nothing at all — that is the case three diagnoses could not see.
+	other, _ := ticketValueRuntime(t)
+	other.observedColumnValues(context.Background(), "unknown_table")
+	if len(other.state.observedValueLookups) != 1 || other.state.observedValueLookups[0]["columns_with_values"] != 0 {
+		t.Fatalf("an empty lookup must still be recorded, got %+v", other.state.observedValueLookups)
+	}
+}

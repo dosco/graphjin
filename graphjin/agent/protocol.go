@@ -121,6 +121,9 @@ type discoveryState struct {
 	// mutationEvidenceSupplied keeps the one-shot discharge of a missing
 	// mutation-shape prerequisite from becoming an unbounded fetch loop.
 	mutationEvidenceSupplied bool
+	// observedValueLookups records what each write-time value lookup returned, so a
+	// check that stays silent can be told apart from one that found nothing.
+	observedValueLookups []map[string]any
 	// observedValues caches sampled column value sets per table so a write path
 	// costs at most one extra catalog read per table.
 	observedValues map[string]map[string][]string
@@ -2522,6 +2525,22 @@ func (s *discoveryState) recordReferentRejection(identity string) {
 	s.historyReferentRejected[identity] = true
 }
 
+func (s *discoveryState) recordObservedValueLookup(table string, values map[string][]string) {
+	if s == nil {
+		return
+	}
+	columns := make([]string, 0, len(values))
+	for column := range values {
+		columns = append(columns, column)
+	}
+	sort.Strings(columns)
+	s.observedValueLookups = append(s.observedValueLookups, map[string]any{
+		"table":               table,
+		"columns_with_values": len(columns),
+		"columns":             columns,
+	})
+}
+
 func (s *discoveryState) hasBlockingViolation() bool {
 	for _, violation := range s.violations {
 		if violation.Blocking {
@@ -2570,6 +2589,9 @@ func (s *discoveryState) mergeEvidence(model any) any {
 		"raw_graphql":              s.rawGraphQL,
 		"suggested_next":           s.suggestedNext,
 		"violations":               s.violations,
+	}
+	if len(s.observedValueLookups) != 0 {
+		protocol["observed_value_lookups"] = s.observedValueLookups
 	}
 	if model == nil {
 		return protocol
