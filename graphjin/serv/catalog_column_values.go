@@ -51,6 +51,17 @@ func (s *graphjinService) observedColumnValues() map[string][]string {
 		return nil
 	}
 	values, firstSample := s.sampleColumnValuesOnce()
+	if firstSample && s.log != nil {
+		// Whether value publishing is working has been invisible from outside: a
+		// service that samples nothing looks exactly like one whose columns have no
+		// closed value sets, and an agent then invents values with no error anywhere
+		// to explain why. Say what happened, once.
+		if len(values) == 0 {
+			s.log.Infof("catalog column values: sampled no enum-like columns; cards will show placeholder examples")
+		} else {
+			s.log.Infof("catalog column values: sampled %d column(s); rebuilding catalog so cards publish them", len(values))
+		}
+	}
 	if firstSample && len(values) != 0 {
 		// The catalog is materialised, and anything built before this point holds
 		// cards with no values. Sampling cannot run until the engine can describe its
