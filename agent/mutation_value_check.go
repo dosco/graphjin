@@ -234,6 +234,9 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 		{"kind": "column", "table": table, "limit": observedValueCardLimit},
 		{"table": table, "limit": observedValueCardLimit},
 	} {
+		// Every other internal catalog read scopes itself to the run's namespace.
+		// This one did not, which returns nothing wherever a namespace is configured.
+		r.addNamespace(request)
 		result, err := r.base.QueryCatalog(ctx, request)
 		if err != nil {
 			continue
@@ -262,6 +265,11 @@ func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string
 		r.state.observedValues = map[string]map[string][]string{}
 	}
 	r.state.observedValues[table] = out
+	// Record what the lookup found. This check has now stayed silent across three
+	// full benchmark runs and three wrong diagnoses, each made by inspection because
+	// a quiet check leaves no trace to read. An empty result and a matching value are
+	// indistinguishable from the outside; this separates them.
+	r.state.recordObservedValueLookup(table, out)
 	return out
 }
 
