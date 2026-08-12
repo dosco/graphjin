@@ -72,7 +72,6 @@ func (r *columnCardRuntime) QueryCatalog(_ context.Context, args map[string]any)
 		cards = append(cards, map[string]any{
 			"id":            "column:app:main.support_tickets." + column,
 			"kind":          "column",
-			"column_name":   column,
 			"table_name":    "support_tickets",
 			"evidence_json": string(evidence),
 		})
@@ -156,5 +155,22 @@ func TestObservedValueNoticeFiresOnceThenAllowsTheWrite(t *testing.T) {
 	}
 	if base.mutationCalls != 1 {
 		t.Fatalf("expected the second attempt to execute, calls=%d", base.mutationCalls)
+	}
+}
+
+// TestColumnNameFromCatalogID pins the identifier the lookup relies on. The card id
+// always carries the column; column_name depends on which fields a catalog surface
+// projects, so reading only that field made the check silently find nothing.
+func TestColumnNameFromCatalogID(t *testing.T) {
+	for id, want := range map[string]string{
+		"column:app:main.support_tickets.status": "status",
+		"column:app:public.orders.total_cents":   "total_cents",
+		"table:app:main.support_tickets":         "",
+		"":                                       "",
+		"column:":                                "",
+	} {
+		if got := columnNameFromCatalogID(id); got != want {
+			t.Errorf("columnNameFromCatalogID(%q) = %q, want %q", id, got, want)
+		}
 	}
 }
