@@ -140,7 +140,7 @@ type discoveryState struct {
 	// the default path. Keying on identity keeps the hatch for a genuinely different
 	// operation while refusing a byte-identical retry, which is the same standard
 	// the duplicate-query guards already apply.
-	historyReferentRejected map[string]bool
+	historyReferentRejected map[string]int
 	// history is bounded, untrusted caller/task context. It never satisfies a
 	// discovery guard, but an explicit request to repeat a prior answered turn
 	// can safely recover from an actor-loop failure after this run has performed
@@ -2505,12 +2505,22 @@ func blockResponse(resp Response) Response {
 // different operation is allowed through after the first refusal: re-authoring is
 // evidence the message was considered, and the sampled subject could be wrong, so
 // the run must never be left with no way forward.
+// maxUnscopedReferentRefusals bounds how often one operation may be refused for
+// ignoring the retained subject.
+//
+// Refusing an identical retry indefinitely was worse than letting it through.
+// Measured over a run, the guard fired 31 times across 7 episodes — the model
+// resent the same unscoped query until the step budget was gone, so a wrong answer
+// became a guaranteed timeout with nothing to show. Being told twice is the useful
+// part; a third refusal only spends the caller's remaining steps.
+const maxUnscopedReferentRefusals = 2
+
 func (s *discoveryState) refuseUnscopedReferent(identity string) bool {
 	if s == nil {
 		return false
 	}
-	if identity != "" && s.historyReferentRejected[identity] {
-		return true
+	if identity != "" && s.historyReferentRejected[identity] > 0 {
+		return s.historyReferentRejected[identity] < maxUnscopedReferentRefusals
 	}
 	return len(s.historyReferentRejected) == 0
 }
@@ -2519,10 +2529,10 @@ func (s *discoveryState) recordReferentRejection(identity string) {
 	if s == nil || identity == "" {
 		return
 	}
-	if s.historyReferentRejected == nil {
-		s.historyReferentRejected = map[string]bool{}
+	if s.historyReferentRejected == nil { // count, so the refusal can be bounded
+		s.historyReferentRejected = map[string]int{}
 	}
-	s.historyReferentRejected[identity] = true
+	s.historyReferentRejected[identity]++
 }
 
 // recordObservedValueLookup captures enough to localise a silent lookup without
