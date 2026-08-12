@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -277,5 +278,32 @@ paths:
 	}
 	if found.ColumnCount != len(got) {
 		t.Errorf("ColumnCount = %d but %d columns published: %v", found.ColumnCount, len(got), got)
+	}
+
+	// The join edge has to be published too. Without it the catalog describes the
+	// table as standalone, and a caller reasonably queries it top-level with an
+	// invented filter — which is what every cross-source episode did — when the only
+	// way to reach it is nested under its parent.
+	var edge *core.MetadataRelationship
+	for i := range md.Relationships {
+		if md.Relationships[i].FromTableName == "payment" && md.Relationships[i].ToTableName == "users" {
+			edge = &md.Relationships[i]
+			break
+		}
+	}
+	if edge == nil {
+		t.Fatalf("no payment -> users relationship published; relationships = %+v", md.Relationships)
+	}
+	if edge.ToColumnName != "stripe_id" {
+		t.Errorf("join edge should land on the configured parent column, got %q", edge.ToColumnName)
+	}
+	if edge.Source != "remote_join" {
+		t.Errorf("join edge source = %q, want remote_join", edge.Source)
+	}
+	// The internal key column must stay off the published column list.
+	for name := range got {
+		if strings.HasPrefix(name, "__") {
+			t.Errorf("internal join key %q must not be published as a column", name)
+		}
 	}
 }

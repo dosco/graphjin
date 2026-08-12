@@ -145,6 +145,10 @@ func (gj *graphjinEngine) metadataSnapshot(skip map[string]struct{}) *MetadataSn
 				}
 				return columns[i].Name < columns[j].Name
 			})
+			columnNames := make(map[string]struct{}, len(columns))
+			for _, column := range columns {
+				columnNames[column.Name] = struct{}{}
+			}
 			primaryKeys := make([]string, 0, len(t.PrimaryCols))
 			for _, column := range columns {
 				if column.PrimaryKey {
@@ -237,6 +241,50 @@ func (gj *graphjinEngine) metadataSnapshot(skip map[string]struct{}) *MetadataSn
 						Source:           "foreign_key",
 					})
 				}
+			}
+			// An API-join table's link to its parent lives on a synthetic key column
+			// that is deliberately absent from the selectable column list. Relationships
+			// were derived only from that list, so the join was never published: the
+			// catalog described account_health as a standalone table and every
+			// cross-source episode queried it top-level with an invented filter, when
+			// the only way to reach it is nested under accounts. The edge is emitted
+			// here without adding the internal column to the published surface.
+			for _, c := range t.PrimaryCols {
+				if c.FKeyTable == "" || c.FKeyCol == "" {
+					continue
+				}
+				if _, listed := columnNames[c.Name]; listed {
+					continue
+				}
+				targetDB := dbName
+				if c.FKeyDatabase != "" {
+					targetDB = c.FKeyDatabase
+				}
+				if _, ok := skip[targetDB]; ok {
+					continue
+				}
+				targetSchema := c.FKeySchema
+				if targetSchema == "" {
+					targetSchema = t.Schema
+				}
+				colID := metadataColumnID(dbName, c.Schema, c.Table, c.Name)
+				targetID := metadataColumnID(targetDB, targetSchema, c.FKeyTable, c.FKeyCol)
+				out.Relationships = append(out.Relationships, MetadataRelationship{
+					ID:               colID + "->" + targetID,
+					FromDatabaseName: dbName,
+					FromSchemaName:   c.Schema,
+					FromTableName:    c.Table,
+					FromColumnName:   c.Name,
+					FromColumnID:     colID,
+					ToDatabaseName:   targetDB,
+					ToSchemaName:     targetSchema,
+					ToTableName:      c.FKeyTable,
+					ToColumnName:     c.FKeyCol,
+					ToColumnID:       targetID,
+					RelType:          "one_to_one",
+					IsCrossDatabase:  targetDB != dbName,
+					Source:           "remote_join",
+				})
 			}
 		}
 		for _, fn := range ctx.schema.GetFunctions() {
