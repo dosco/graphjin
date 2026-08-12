@@ -148,11 +148,18 @@ func graphQLNamedObject(clean, name string, from, to int) (int, int, bool) {
 	return 0, 0, false
 }
 
-// graphQLStringFields returns the `name: "value"` pairs directly in an input
+// stringLiteralSpan is one string value with the byte range of its contents in
+// the enclosing text, quotes excluded, so a repair can rewrite exactly that value.
+type stringLiteralSpan struct {
+	value      string
+	start, end int
+}
+
+// graphQLStringFieldSpans returns the `name: "value"` pairs directly in an input
 // object body, skipping nested objects so a where clause inside an insert does not
 // contribute assignments.
-func graphQLStringFields(body string) map[string]string {
-	out := map[string]string{}
+func graphQLStringFieldSpans(body string) map[string]stringLiteralSpan {
+	out := map[string]stringLiteralSpan{}
 	for i := 0; i < len(body); {
 		switch {
 		case body[i] == '{' || body[i] == '[':
@@ -185,11 +192,19 @@ func graphQLStringFields(body string) map[string]string {
 			if end <= value {
 				return out
 			}
-			out[field] = text
+			out[field] = stringLiteralSpan{value: text, start: value + 1, end: end - 1}
 			i = end
 		default:
 			i++
 		}
+	}
+	return out
+}
+
+func graphQLStringFields(body string) map[string]string {
+	out := map[string]string{}
+	for field, literal := range graphQLStringFieldSpans(body) {
+		out[field] = literal.value
 	}
 	return out
 }
@@ -359,8 +374,171 @@ func (r *protocolRuntime) describeUnobservedValues(ctx context.Context, mismatch
 	parts := make([]string, 0, len(mismatches))
 	for _, m := range mismatches {
 		values := r.observedColumnValues(ctx, m.Table)[strings.ToLower(m.Column)]
-		parts = append(parts, fmt.Sprintf("%s.%s is being set to %q, but the values present in that column are %s",
-			m.Table, m.Column, m.Value, strings.Join(values, ", ")))
+		line := fmt.Sprintf("%s.%s is being set to %q, but the values present in that column are %s",
+			m.Table, m.Column, m.Value, strings.Join(values, ", "))
+		if suggested, ok := closestObservedValue(m.Value, values); ok {
+			line += fmt.Sprintf("; the closest of these to %q is %q", m.Value, suggested)
+		}
+		parts = append(parts, line)
 	}
 	return strings.Join(parts, "; ")
+}
+
+// The list alone did not move behaviour. Run 2cae6c1c handed eleven episodes the
+// values open, pending and resolved; ten resubmitted "closed" and across two runs
+// those writes rose from 46 to 64. Every repair today that measurably changed what
+// a model did named the exact answer — the repaired watch mutation, the canonical
+// catalog id, the retained subject — and every one that named a list did not. So
+// when one existing value is clearly nearest to the rejected one, the repair now
+// says which, and carries the corrected write. It is offered, never executed: the
+// mapping from "close it off" to a vocabulary is a semantic call, and it stays the
+// model's.
+
+// closestObservedValue returns the observed value nearest to the rejected one, and
+// only when there is a clear winner: a tie or a weak best is no suggestion at all,
+// which falls back to the plain list.
+func closestObservedValue(written string, values []string) (string, bool) {
+	target := strings.ToLower(strings.TrimSpace(written))
+	if target == "" || len(values) == 0 {
+		return "", false
+	}
+	best, second := 0.0, 0.0
+	bestValue := ""
+	for _, value := range values {
+		score := valueSimilarity(target, strings.ToLower(value))
+		if score > best {
+			second = best
+			best = score
+			bestValue = value
+		} else if score > second {
+			second = score
+		}
+	}
+	if best < 0.2 || best <= second {
+		return "", false
+	}
+	return bestValue, true
+}
+
+// valueSimilarity blends character-bigram overlap with shared affixes, which is
+// what recognises closed/resolved as kin (the shared "ed") while leaving unrelated
+// words unmatched.
+func valueSimilarity(a, b string) float64 {
+	if a == b {
+		return 1
+	}
+	aGrams, bGrams := valueBigrams(a), valueBigrams(b)
+	if len(aGrams) == 0 || len(bGrams) == 0 {
+		return 0
+	}
+	shared := 0
+	for gram := range aGrams {
+		if bGrams[gram] {
+			shared++
+		}
+	}
+	score := 2 * float64(shared) / float64(len(aGrams)+len(bGrams))
+	for l := 2; l <= 3; l++ {
+		if len(a) >= l && len(b) >= l {
+			if a[:l] == b[:l] {
+				score += 0.15
+			}
+			if a[len(a)-l:] == b[len(b)-l:] {
+				score += 0.15
+			}
+		}
+	}
+	return score
+}
+
+func valueBigrams(value string) map[string]bool {
+	out := map[string]bool{}
+	for i := 0; i+2 <= len(value); i++ {
+		out[value[i:i+2]] = true
+	}
+	return out
+}
+
+// writtenValueSpan is a string assignment plus the byte range of its literal in
+// the raw mutation, so the suggested value can replace exactly that literal.
+type writtenValueSpan struct {
+	columnAssignment
+	start, end int
+}
+
+func mutationWrittenValueSpans(query string) []writtenValueSpan {
+	if !ContainsMutationOperation(query) {
+		return nil
+	}
+	clean := graphQLStructure(query)
+	var out []writtenValueSpan
+	for _, root := range MutationRootFields(query) {
+		if strings.HasPrefix(strings.ToLower(root), "gj_") {
+			continue
+		}
+		for _, keyword := range []string{"update", "insert"} {
+			for _, span := range mutationInputBlocks(clean, root, keyword) {
+				for column, literal := range graphQLStringFieldSpans(query[span[0]:span[1]]) {
+					out = append(out, writtenValueSpan{
+						columnAssignment: columnAssignment{Table: root, Column: column, Value: literal.value},
+						start:            span[0] + literal.start,
+						end:              span[0] + literal.end,
+					})
+				}
+			}
+		}
+	}
+	return out
+}
+
+// substituteWrittenValues returns the mutation with every mismatched literal
+// replaced by its suggested value. All or nothing: a partly substituted mutation
+// would look corrected while still carrying a rejected value.
+func substituteWrittenValues(query string, mismatches []columnAssignment, suggestions map[string]string) (string, bool) {
+	spans := mutationWrittenValueSpans(query)
+	type edit struct {
+		start, end int
+		text       string
+	}
+	var edits []edit
+	for _, mismatch := range mismatches {
+		suggested, ok := suggestions[mismatch.Table+"."+strings.ToLower(mismatch.Column)]
+		if !ok {
+			return "", false
+		}
+		found := false
+		for _, span := range spans {
+			if span.Table == mismatch.Table && strings.EqualFold(span.Column, mismatch.Column) && span.Value == mismatch.Value {
+				edits = append(edits, edit{start: span.start, end: span.end, text: escapeGraphQLStringValue(suggested)})
+				found = true
+			}
+		}
+		if !found {
+			return "", false
+		}
+	}
+	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })
+	out := query
+	for _, e := range edits {
+		out = out[:e.start] + e.text + out[e.end:]
+	}
+	return out, true
+}
+
+func escapeGraphQLStringValue(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	return strings.ReplaceAll(value, `"`, `\"`)
+}
+
+// suggestedWrittenValues maps each mismatch to its closest observed value, keyed
+// table.column. Mismatches with no clear candidate are simply absent.
+func (r *protocolRuntime) suggestedWrittenValues(ctx context.Context, mismatches []columnAssignment) map[string]string {
+	out := map[string]string{}
+	for _, mismatch := range mismatches {
+		values := r.observedColumnValues(ctx, mismatch.Table)[strings.ToLower(mismatch.Column)]
+		if suggested, ok := closestObservedValue(mismatch.Value, values); ok {
+			out[mismatch.Table+"."+strings.ToLower(mismatch.Column)] = suggested
+		}
+	}
+	return out
 }
