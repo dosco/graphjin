@@ -2053,11 +2053,31 @@ func (s *discoveryState) missingDistilledSourceDetails() []string {
 	}
 	missing := make([]string, 0, len(s.distilledSourceIDs))
 	for _, id := range s.distilledSourceIDs {
-		if !s.hasCatalogDetailID(id) {
+		// The distiller may select a section — source:<name>:capabilities — but the
+		// catalog serves cards, and a card detail lookup returns its sections. So
+		// inspecting the card satisfies the section: demanding the section id
+		// verbatim left the requirement unmeetable by either the model or the
+		// supply, and the guard refused 8 of 24 cross-source episodes on ids nobody
+		// could fetch.
+		if !s.hasCatalogDetailID(id) && !s.hasCatalogDetailID(sourceCardID(id)) {
 			missing = append(missing, id)
 		}
 	}
 	return missing
+}
+
+// sourceCardID maps a distilled source detail id onto the card that serves it:
+// source:<name>:<section> -> source:<name>. Ids of other shapes pass through.
+func sourceCardID(id string) string {
+	trimmed := strings.TrimSpace(id)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "source:") {
+		return trimmed
+	}
+	rest := trimmed[len("source:"):]
+	if index := strings.Index(rest, ":"); index > 0 {
+		return trimmed[:len("source:")+index]
+	}
+	return trimmed
 }
 
 // mutationTargetTable maps common Hasura-style mutation roots back to a table
@@ -3647,9 +3667,21 @@ func (r *protocolRuntime) supplyCrossSourceEvidence(ctx context.Context, missing
 	if r == nil || r.state == nil || r.state.crossSourceEvidenceSupplied || len(missing) == 0 {
 		return nil, false
 	}
+	// Fetch cards, not sections: a section id like source:x:capabilities returns no
+	// card of its own, and asking for it verbatim is why this supply fired zero
+	// times in its first measured run.
 	ids := make([]any, 0, len(missing))
+	seen := map[string]bool{}
 	for _, id := range missing {
-		ids = append(ids, id)
+		card := sourceCardID(id)
+		if card == "" || seen[card] {
+			continue
+		}
+		seen[card] = true
+		ids = append(ids, card)
+	}
+	if len(ids) == 0 {
+		return nil, false
 	}
 	args := map[string]any{"ids": ids}
 	r.addNamespace(args)
@@ -3657,13 +3689,16 @@ func (r *protocolRuntime) supplyCrossSourceEvidence(ctx context.Context, missing
 	if err != nil || len(catalogCards(out)) == 0 {
 		return nil, false
 	}
-	r.state.crossSourceEvidenceSupplied = true
 	r.state.recordCatalog(args, out, false)
 	if len(r.state.missingDistilledSourceDetails()) != 0 {
 		// The catalog answered without the cards this guard tracks. Report rather
-		// than let the cross-source operation through.
+		// than let the cross-source operation through — and leave the attempt
+		// unspent, so a run where the catalog recovers can still be helped. A spent
+		// flag on a failed attempt is the one-shot mistake this file has now made
+		// four times.
 		return nil, false
 	}
+	r.state.crossSourceEvidenceSupplied = true
 	result := map[string]any{
 		"graphjin_protocol": "cross_source_evidence_supplied",
 		"message":           "GraphJin fetched the source details this cross-source operation requires. Author the query from the returned source cards, then execute it.",
