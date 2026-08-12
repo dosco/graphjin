@@ -221,10 +221,16 @@ func (g Generator) Generate(ctx context.Context, opts GeneratorOptions) (*Suite,
 		seen[key] = struct{}{}
 		verified = append(verified, candidates[i])
 	}
-	selected := stratifiedSample(verified, opts.Scale, opts.Seed)
+	// Scale bounds the intent tier, which is what the benchmark measures and
+	// reports. Execution twins are instrumentation and ride along with whichever
+	// needs were selected: sampling them competitively split pairs, and a pair with
+	// one half missing makes the planning gap uncomputable for that need.
+	intent, twins := partitionExecutionTwins(verified)
+	selected := stratifiedSample(intent, opts.Scale, opts.Seed)
 	if len(selected) == 0 {
 		return nil, fmt.Errorf("generator found no valid catalog-derived tasks")
 	}
+	selected = append(selected, twinsForSelectedNeeds(selected, twins)...)
 	name := strings.TrimSpace(opts.Name)
 	if name == "" {
 		name = "GraphJin Eval"
@@ -454,63 +460,154 @@ func generateDeepORGCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 				Query:   fmt.Sprintf(`query { support_tickets(where: {id: {neq: %d}}, order_by: {id: asc}) { id account_id user_id subject severity status resolution_note resolved_at opened_at sla_due_at } }`, ticketID),
 				Extract: "support_tickets",
 			})
-			tasks = append(tasks, Task{
-				Category: CategoryAction, Difficulty: DifficultyT3, Slug: fmt.Sprintf("action-close-ticket-%d", ticketID),
-				Prompt:            fmt.Sprintf("Close support ticket %d as resolved with resolution note %q and resolved_at 2027-01-15T12:00:00Z. Do not alter any other ticket.", ticketID, note),
-				Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference", Seed: seed, SourceID: fmt.Sprintf("ticket:%d", ticketID)},
-				CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
-				Method:   MethodRule{RequireQueryMatch: []string{`(?s)mutation.*support_tickets\s*\(.*update`}},
-				Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql:mutation"}},
-				Mutation: &MutationSpec{
-					ResetStrategy: "sqlite-copy", ExpectedValue: "1",
-					PostState:  OracleSpec{Query: fmt.Sprintf(`query { support_tickets(where: {id: {eq: %d}, status: {eq: "resolved"}, resolution_note: {eq: %q}, resolved_at: {eq: "2027-01-15T12:00:00Z"}}) { count_id } }`, ticketID, note), Extract: "support_tickets.0.count_id"},
-					Collateral: collateral,
+			needID := fmt.Sprintf("close-ticket-%d", ticketID)
+			method := MethodRule{RequireQueryMatch: []string{`(?s)mutation.*support_tickets\s*\(.*update`}}
+			behavior := BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql:mutation"}}
+			tasks = append(tasks,
+				Task{
+					Category: CategoryAction, Difficulty: DifficultyT3,
+					Slug: fmt.Sprintf("action-need-ticket-%d", ticketID), Tier: TierIntent, NeedID: needID,
+					// The caller reports a situation and leaves the wording to the
+					// agent. Dictating the note text and timestamp tested transcription,
+					// not judgement, and existed only to make the oracle exact.
+					Prompt:            fmt.Sprintf("Ticket %d has been sorted out. Close it off and record a note saying what resolved it, without touching any other ticket.", ticketID),
+					Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference", Seed: seed, SourceID: needID},
+					CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
+					Method: method, Behavior: behavior,
+					Mutation: &MutationSpec{
+						ResetStrategy: "sqlite-copy", ExpectedValue: "1",
+						// Resolved, with some non-empty note, and a resolution timestamp.
+						// Any wording is correct; leaving the note blank is not.
+						// A column key cannot carry two operators in one object, so the
+						// note conditions are ANDed explicitly. neq: "" also excludes
+						// NULL, but stating both keeps the intent legible.
+						PostState: OracleSpec{Query: fmt.Sprintf(
+							`query { support_tickets(where: {and: [{id: {eq: %d}}, {status: {eq: "resolved"}}, {resolution_note: {is_null: false}}, {resolution_note: {neq: ""}}, {resolved_at: {is_null: false}}]}) { count_id } }`,
+							ticketID), Extract: "support_tickets.0.count_id"},
+						Collateral: collateral,
+					},
 				},
-			})
+				Task{
+					Category: CategoryAction, Difficulty: DifficultyT3,
+					Slug: fmt.Sprintf("action-close-ticket-%d", ticketID), Tier: TierExecution, NeedID: needID,
+					Prompt:            fmt.Sprintf("Close support ticket %d as resolved with resolution note %q and resolved_at 2027-01-15T12:00:00Z. Do not alter any other ticket.", ticketID, note),
+					Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference", Seed: seed, SourceID: fmt.Sprintf("ticket:%d", ticketID)},
+					CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
+					Method: method, Behavior: behavior,
+					Mutation: &MutationSpec{
+						ResetStrategy: "sqlite-copy", ExpectedValue: "1",
+						PostState:  OracleSpec{Query: fmt.Sprintf(`query { support_tickets(where: {id: {eq: %d}, status: {eq: "resolved"}, resolution_note: {eq: %q}, resolved_at: {eq: "2027-01-15T12:00:00Z"}}) { count_id } }`, ticketID, note), Extract: "support_tickets.0.count_id"},
+						Collateral: collateral,
+					},
+				},
+			)
 		}
 	}
 
 	if contains(profile.AvailableSystemRoots, "gj_watch") && !profile.ReadOnly &&
 		contains(profile.AllowedActions, "gj_watch.insert") && contains(profile.AllowedActions, "gj_watch_event.update") {
-		// table is the watched root; the post-state asserts the stored subscription
-		// is cursor-backed over it rather than matching one canonical string.
-		watchSpecs := []struct{ name, question, subscription, method, table string }{
-			{"deeporg_failed_invoices", "Tell me whenever a failed invoice changes.", `subscription deeporg_failed_invoices($status: String!) { invoices(where: {status: {eq: $status}}, first: 25, after: $cursor) { id status attempts } invoices_cursor }`, `(?s)mutation.*gj_watch.*insert.*status.*failed`, "invoices"},
-			{"deeporg_urgent_tickets", "Watch open urgent support tickets for changes.", `subscription deeporg_urgent_tickets { support_tickets(where: {status: {eq: "open"}, severity: {eq: "urgent"}}, first: 25, after: $cursor) { id status severity } support_tickets_cursor }`, `(?s)mutation.*gj_watch.*insert.*severity.*urgent`, "support_tickets"},
-			{"deeporg_churn_accounts", "Watch churn-risk accounts for changes.", `subscription deeporg_churn_accounts { accounts(where: {status: {eq: "churn_risk"}}, first: 25, after: $cursor) { id status renewal_date } accounts_cursor }`, `(?s)mutation.*gj_watch.*insert.*status.*churn_risk`, "accounts"},
-			{"deeporg_new_payments", "Watch newly recorded payments.", `subscription deeporg_new_payments { payments(first: 25, after: $cursor) { id reference amount_cents } payments_cursor }`, `(?s)mutation.*gj_watch.*insert.*payments`, "payments"},
+		// Watch tasks come in twin pairs over one need. The intent task states the
+		// business situation the way a caller really does — a standing need, a
+		// notification, a cadence bound — and names no GraphJin vocabulary, because
+		// operational phrasing is only ever learned from GraphJin's catalog
+		// in-session. The execution twin hands over the finished operation so a
+		// failure separates planning from execution.
+		//
+		// filter is the value that must appear in the stored subscription; table is
+		// the watched root. Both are asserted structurally, never by exact text.
+		watchSpecs := []struct{ name, intent, subscription, method, table, filter string }{
+			{
+				"deeporg_failed_invoices",
+				"Finance keeps missing invoices that fail to collect. Make sure they hear about new failures within the hour, without anyone having to check a dashboard.",
+				`subscription deeporg_failed_invoices($status: String!) { invoices(where: {status: {eq: $status}}, first: 25, after: $cursor) { id status attempts } invoices_cursor }`,
+				`(?s)mutation.*gj_watch.*insert.*status.*failed`, "invoices", "failed",
+			},
+			{
+				"deeporg_urgent_tickets",
+				"Support leadership wants to stop discovering urgent tickets late. Arrange for them to be told about open urgent tickets as they change, checked at least hourly rather than on request.",
+				`subscription deeporg_urgent_tickets { support_tickets(where: {status: {eq: "open"}, severity: {eq: "urgent"}}, first: 25, after: $cursor) { id status severity } support_tickets_cursor }`,
+				`(?s)mutation.*gj_watch.*insert.*severity.*urgent`, "support_tickets", "urgent",
+			},
+			{
+				"deeporg_churn_accounts",
+				"The retention team should not have to remember to look up churn-risk accounts. Set things up so changes among them reach the team's inbox every hour on their own.",
+				`subscription deeporg_churn_accounts { accounts(where: {status: {eq: "churn_risk"}}, first: 25, after: $cursor) { id status renewal_date } accounts_cursor }`,
+				`(?s)mutation.*gj_watch.*insert.*status.*churn_risk`, "accounts", "churn_risk",
+			},
+			{
+				"deeporg_new_payments",
+				"Accounting wants ongoing visibility into payments as they are recorded, delivered to them hourly instead of being pulled manually.",
+				`subscription deeporg_new_payments { payments(first: 25, after: $cursor) { id reference amount_cents } payments_cursor }`,
+				`(?s)mutation.*gj_watch.*insert.*payments`, "payments", "",
+			},
 		}
 		for _, watch := range watchSpecs {
-			tasks = append(tasks, Task{
-				Category: CategoryReactive, Difficulty: DifficultyT4, Slug: "reactive-create-" + watch.name,
-				Prompt:            watch.question + " Create a durable watch named " + watch.name + " and deliver an inbox digest hourly.",
-				Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-watch", Seed: seed, SourceID: watch.name},
-				CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
-				Method:   MethodRule{RequireQueryMatch: []string{watch.method, `(?s)delivery_json.*digest.*window\s*:\s*"1h"`}},
-				Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql:mutation"}},
-				Mutation: &MutationSpec{
-					ResetStrategy: "sqlite-copy",
-					// Semantic post-state. An exact-string expectation on the stored
-					// subscription made this a dictation test: the prompt names neither
-					// the page size, the selected columns, nor the operation name, so of
-					// the many correct watches for the request exactly one passed. Three
-					// separate agent fixes moved the mechanism and never the score.
-					//
-					// The where clause carries the requirement instead — a watch under
-					// the requested name whose subscription is cursor-backed over the
-					// intended root — and the extracted value is the name, which is
-					// stated in the prompt and therefore deterministic. delivery_json
-					// stays an exact comparison because GraphJin normalizes it.
-					PostState: OracleSpec{
-						Query: fmt.Sprintf(
-							`query { gj_watch(where: {name: {eq: %q}, query: {like: %q}}, limit: 1) { name delivery_json } }`,
-							watch.name, "%"+watch.table+"_cursor%"),
-						Extract: "gj_watch.0.name", DimensionExtract: "gj_watch.0.delivery_json", AllowMissing: true,
+			// Name-agnostic post-state: any watch that is cursor-backed over the
+			// intended root, carries the required filter, and delivers an inbox
+			// digest satisfies the need. Exactly one such watch must exist, so a
+			// scattergun of near-miss watches does not pass.
+			// GraphJin's and operator needs two or more children, and one where
+			// object cannot repeat a column key, so both query conditions go inside a
+			// single and list. The generator's oracle verification rejects a malformed
+			// post-state outright, which is how an earlier single-child form was caught.
+			clauses := []string{fmt.Sprintf(`{query: {like: %q}}`, "%"+watch.table+"_cursor%")}
+			if watch.filter != "" {
+				clauses = append(clauses, fmt.Sprintf(`{query: {like: %q}}`, "%"+watch.filter+"%"))
+			}
+			clauses = append(clauses, `{delivery_json: {is_null: false}}`)
+			intentPost := OracleSpec{
+				Query: fmt.Sprintf(
+					`query { gj_watch(where: {and: [%s]}) { count_id } }`, strings.Join(clauses, ", ")),
+				Extract: "gj_watch.0.count_id", AllowMissing: true,
+			}
+			// The caller bounded the cadence ("within the hour", "at least hourly")
+			// rather than dictating it, so any digest window at or under an hour is
+			// correct. A filter cannot express that, which is what accepted
+			// dimensions are for.
+			acceptedWindows := []string{
+				`{"digest":{"window":"1h0m0s"},"kind":"inbox"}`,
+				`{"digest":{"window":"30m0s"},"kind":"inbox"}`,
+				`{"digest":{"window":"15m0s"},"kind":"inbox"}`,
+			}
+			needID := "watch-" + watch.table
+			tasks = append(tasks,
+				Task{
+					Category: CategoryReactive, Difficulty: DifficultyT4,
+					Slug: "reactive-need-" + watch.table, Tier: TierIntent, NeedID: needID,
+					Prompt:            watch.intent,
+					Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-watch", Seed: seed, SourceID: needID},
+					CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
+					// Method stays structural: a governed watch mutation happened. The
+					// intent tier must not require particular text the caller never used.
+					Method:   MethodRule{RequireQueryMatch: []string{`(?s)mutation.*gj_watch.*insert`}},
+					Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql:mutation"}},
+					Mutation: &MutationSpec{
+						ResetStrategy: "sqlite-copy", PostState: intentPost, ExpectedValue: "1",
+						Collateral: append([]OracleSpec(nil), commonCollateral...),
 					},
-					ExpectedValue: watch.name, ExpectedDimension: `{"digest":{"window":"1h0m0s"},"kind":"inbox"}`,
-					Collateral: append([]OracleSpec(nil), commonCollateral...),
 				},
-			})
+				Task{
+					Category: CategoryReactive, Difficulty: DifficultyT4,
+					Slug: "reactive-create-" + watch.name, Tier: TierExecution, NeedID: needID,
+					Prompt:            "Create a durable watch named " + watch.name + " over " + watch.table + " and deliver an inbox digest hourly.",
+					Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-watch", Seed: seed, SourceID: watch.name},
+					CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
+					Method:   MethodRule{RequireQueryMatch: []string{watch.method, `(?s)delivery_json.*digest.*window\s*:\s*"1h"`}},
+					Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql:mutation"}},
+					Mutation: &MutationSpec{
+						ResetStrategy: "sqlite-copy",
+						PostState: OracleSpec{
+							Query: fmt.Sprintf(
+								`query { gj_watch(where: {name: {eq: %q}, query: {like: %q}}, limit: 1) { name delivery_json } }`,
+								watch.name, "%"+watch.table+"_cursor%"),
+							Extract: "gj_watch.0.name", DimensionExtract: "gj_watch.0.delivery_json", AllowMissing: true,
+						},
+						ExpectedValue: watch.name, AcceptedDimensions: acceptedWindows,
+						ExpectedDimension: `{"digest":{"window":"1h0m0s"},"kind":"inbox"}`,
+						Collateral:        append([]OracleSpec(nil), commonCollateral...),
+					},
+				},
+			)
 		}
 		for index, root := range []string{"invoices", "support_tickets", "accounts", "payments"} {
 			name := fmt.Sprintf("deeporg_reference_%s_%d", root, index+1)
@@ -601,16 +698,31 @@ func deepORGCrossSourceTasks(seed int64, profile CapabilityProfile) []Task {
 	tasks := make([]Task, 0, 4)
 	for _, item := range specs {
 		query := fmt.Sprintf(`query { accounts(where: {id: {eq: %d}}, limit: 1) { name account_health { health executive_owner open_risk_count } } }`, item.accountID)
-		tasks = append(tasks, Task{
-			Category: CategoryCrossSource, Difficulty: DifficultyT4, Slug: fmt.Sprintf("cross-source-account-health-%d", item.accountID),
-			Prompt:            fmt.Sprintf("For %s, combine the application account with the account-health API. How many open risks does the API report, and what health color does it assign?", item.name),
-			Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-api", Seed: seed, SourceID: fmt.Sprintf("account:%d", item.accountID)},
-			CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
-			Oracle:   &OracleSpec{Query: query, Extract: "accounts.0.account_health.open_risk_count", DimensionExtract: "accounts.0.account_health.health"},
-			Answer:   AnswerRule{Kind: "number"},
-			Method:   MethodRule{RequireQueryMatch: []string{"accounts", "account_health"}},
-			Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}},
-		})
+		needID := fmt.Sprintf("account-health-%d", item.accountID)
+		oracle := &OracleSpec{Query: query, Extract: "accounts.0.account_health.open_risk_count", DimensionExtract: "accounts.0.account_health.health"}
+		method := MethodRule{RequireQueryMatch: []string{"accounts", "account_health"}}
+		behavior := BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}}
+		tasks = append(tasks,
+			Task{
+				Category: CategoryCrossSource, Difficulty: DifficultyT4,
+				Slug: fmt.Sprintf("cross-source-need-account-health-%d", item.accountID), Tier: TierIntent, NeedID: needID,
+				// Naming the API told the agent where to look, which is the task.
+				Prompt:            fmt.Sprintf("How healthy is %s right now, and how many open risks are there against it?", item.name),
+				Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-api", Seed: seed, SourceID: needID},
+				CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
+				Oracle: oracle, Answer: AnswerRule{Kind: "number"},
+				Method: method, Behavior: behavior,
+			},
+			Task{
+				Category: CategoryCrossSource, Difficulty: DifficultyT4,
+				Slug: fmt.Sprintf("cross-source-account-health-%d", item.accountID), Tier: TierExecution, NeedID: needID,
+				Prompt:            fmt.Sprintf("For %s, combine the application account with the account-health API. How many open risks does the API report, and what health color does it assign?", item.name),
+				Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-api", Seed: seed, SourceID: fmt.Sprintf("account:%d", item.accountID)},
+				CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
+				Oracle: oracle, Answer: AnswerRule{Kind: "number"},
+				Method: method, Behavior: behavior,
+			},
+		)
 	}
 	for _, item := range []struct {
 		slug, severity, policy string
@@ -619,12 +731,31 @@ func deepORGCrossSourceTasks(seed int64, profile CapabilityProfile) []Task {
 		{"high-sla", "high", "24 hours"},
 	} {
 		query := fmt.Sprintf(`query { support_tickets(where: {status: {eq: "open"}, severity: {eq: %q}}) { count_id } sla_policies(key: "support-sla-policy.md", inline_data: true) { data } }`, item.severity)
+		needID := "sla-" + item.slug
+		oracle := &OracleSpec{Query: query, Extract: "support_tickets.0.count_id", DimensionLiteral: item.policy}
+		fileMethod := MethodRule{RequireQueryMatch: []string{
+			"support_tickets",
+			`(?s)sla_policies\s*\((?:[^)]*inline_data\s*:\s*true|[^)]*\)\s*\{[^}]*\bdata\b)`,
+		}}
+		fileBehavior := BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}}
 		tasks = append(tasks, Task{
-			Category: CategoryCrossSource, Difficulty: DifficultyT4, Slug: "cross-source-file-" + item.slug,
+			Category: CategoryCrossSource, Difficulty: DifficultyT4,
+			Slug: "cross-source-need-" + item.slug, Tier: TierIntent, NeedID: needID,
+			// Discovering that the SLA definition lives in a file, rather than being
+			// told to read one, is the whole task.
+			Prompt:            fmt.Sprintf("Are we at risk on open %s support tickets, and how fast are we actually required to resolve them?", item.severity),
+			Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-file", Seed: seed, SourceID: needID},
+			CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
+			Oracle: oracle, Answer: AnswerRule{Kind: "number"},
+			Method: fileMethod, Behavior: fileBehavior,
+		})
+		tasks = append(tasks, Task{
+			Category: CategoryCrossSource, Difficulty: DifficultyT4,
+			Slug: "cross-source-file-" + item.slug, Tier: TierExecution, NeedID: needID,
 			Prompt:            fmt.Sprintf("Read the support SLA policy file and check the live ticket database. How quickly must %s tickets be resolved, and how many open %s tickets exist now?", item.severity, item.severity),
 			Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-file", Seed: seed, SourceID: item.slug},
 			CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
-			Oracle: &OracleSpec{Query: query, Extract: "support_tickets.0.count_id", DimensionLiteral: item.policy},
+			Oracle: oracle,
 			Answer: AnswerRule{Kind: "number"},
 			// Two forms genuinely read the file: an explicit inline_data: true, or
 			// selecting data, which core/fstable_bridge.go treats as requesting
@@ -1013,6 +1144,17 @@ func stratifiedSample(tasks []Task, limit int, seed int64) []Task {
 	if limit >= len(tasks) {
 		return append([]Task(nil), tasks...)
 	}
+	// The DeepORG reference families — actions, watches, cross-source, multi-turn —
+	// are small hand-authored sets, not samples from a large generated pool.
+	// Sampling them competitively against thousands of catalog-derived candidates
+	// dropped whole needs, so they are kept in full and the generated families fill
+	// the rest of the scale.
+	curated, generated := partitionCuratedTasks(tasks)
+	if len(curated) >= limit {
+		return curated
+	}
+	limit -= len(curated)
+	tasks = generated
 	rng := mathrand.New(mathrand.NewSource(seed))
 	byCategory := make(map[Category][]Task, len(categoryQuotaSpecs))
 	for _, spec := range categoryQuotaSpecs {
@@ -1052,7 +1194,21 @@ func stratifiedSample(tasks []Task, limit int, seed int64) []Task {
 			break
 		}
 	}
-	return selected
+	return append(curated, selected...)
+}
+
+// partitionCuratedTasks separates the hand-authored reference tasks from the
+// catalog-derived pool. Membership follows provenance rather than category so a
+// future generated task in the same category is still sampled normally.
+func partitionCuratedTasks(tasks []Task) (curated, generated []Task) {
+	for _, task := range tasks {
+		if strings.HasPrefix(task.Provenance.Source, "deeporg-reference") {
+			curated = append(curated, task)
+			continue
+		}
+		generated = append(generated, task)
+	}
+	return curated, generated
 }
 
 type categoryQuotaSpec struct {
@@ -1181,4 +1337,38 @@ func catalogFingerprint(rows []CatalogRow) string {
 	data, _ := json.Marshal(rows)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:16])
+}
+
+// partitionExecutionTwins splits execution twins out of the candidate pool so the
+// scale limit applies to the measured tier alone.
+func partitionExecutionTwins(tasks []Task) (intent, twins []Task) {
+	for _, task := range tasks {
+		if task.Tier == TierExecution {
+			twins = append(twins, task)
+			continue
+		}
+		intent = append(intent, task)
+	}
+	return intent, twins
+}
+
+// twinsForSelectedNeeds returns the execution twin of every selected need, so
+// each pair is present in full or not at all.
+func twinsForSelectedNeeds(selected, twins []Task) []Task {
+	if len(twins) == 0 {
+		return nil
+	}
+	needs := make(map[string]struct{}, len(selected))
+	for _, task := range selected {
+		if task.NeedID != "" {
+			needs[task.NeedID] = struct{}{}
+		}
+	}
+	out := make([]Task, 0, len(twins))
+	for _, twin := range twins {
+		if _, ok := needs[twin.NeedID]; ok {
+			out = append(out, twin)
+		}
+	}
+	return out
 }

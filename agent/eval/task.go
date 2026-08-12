@@ -31,7 +31,7 @@ const (
 	AttemptSchemaVersion   = "graphjin.eval.attempt/v1"
 	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
 	// generated task semantics change, including method-rule dialect support.
-	GeneratorVersion      = "graphjin.eval.generator/v9"
+	GeneratorVersion      = "graphjin.eval.generator/v10"
 	RewardVersion         = "graphjin.eval.reward/v4"
 	DefaultSuiteSize      = 24
 	DefaultRepeats        = 3
@@ -58,6 +58,13 @@ const (
 	CategoryCrossSource Category = "cross-source"
 )
 
+// Task tiers. An empty tier reads as intent: the read-only families were always
+// phrased as business questions.
+const (
+	TierIntent    = "intent"
+	TierExecution = "execution"
+)
+
 type Difficulty string
 
 const (
@@ -82,11 +89,22 @@ type CapabilityProfile struct {
 }
 
 type Task struct {
-	SchemaVersion     string            `json:"schema_version" yaml:"schema_version"`
-	ID                string            `json:"id" yaml:"id"`
-	Slug              string            `json:"slug" yaml:"slug"`
-	Category          Category          `json:"category" yaml:"category"`
-	Difficulty        Difficulty        `json:"difficulty" yaml:"difficulty"`
+	SchemaVersion string     `json:"schema_version" yaml:"schema_version"`
+	ID            string     `json:"id" yaml:"id"`
+	Slug          string     `json:"slug" yaml:"slug"`
+	Category      Category   `json:"category" yaml:"category"`
+	Difficulty    Difficulty `json:"difficulty" yaml:"difficulty"`
+	// Tier separates what the benchmark actually claims to measure from its
+	// instrumentation. TierIntent tasks phrase a business need the way a caller
+	// really states it and require the agent to plan the translation; TierExecution
+	// twins hand it the finished operation so a failure can be attributed to
+	// execution rather than planning. Anyone who could speak operationally learned
+	// the vocabulary from GraphJin's catalog in-session, so intent is the only
+	// phrasing that crosses the natural-language boundary in practice.
+	Tier string `json:"tier,omitempty" yaml:"tier,omitempty"`
+	// NeedID pairs an intent task with its execution twin over one underlying
+	// need, so "twin passes, intent fails" reads as a planning gap.
+	NeedID            string            `json:"need_id,omitempty" yaml:"need_id,omitempty"`
 	Prompt            string            `json:"prompt" yaml:"prompt"`
 	Provenance        Provenance        `json:"provenance" yaml:"provenance"`
 	CapabilityProfile CapabilityProfile `json:"capability_profile" yaml:"capability_profile"`
@@ -115,7 +133,14 @@ type MutationSpec struct {
 	PostState         OracleSpec    `json:"post_state" yaml:"post_state"`
 	ExpectedValue     string        `json:"expected_value" yaml:"expected_value"`
 	ExpectedDimension string        `json:"expected_dimension,omitempty" yaml:"expected_dimension,omitempty"`
-	Collateral        []OracleSpec  `json:"collateral,omitempty" yaml:"collateral,omitempty"`
+	// AcceptedValues and AcceptedDimensions widen post-state acceptance for intent
+	// tasks, where several results are equally correct. Prefer encoding the
+	// requirement in the post-state WHERE clause and expecting exactly one match;
+	// reach for these only where a filter cannot express the choice, such as a
+	// digest window the caller bounded rather than dictated.
+	AcceptedValues     []string     `json:"accepted_values,omitempty" yaml:"accepted_values,omitempty"`
+	AcceptedDimensions []string     `json:"accepted_dimensions,omitempty" yaml:"accepted_dimensions,omitempty"`
+	Collateral         []OracleSpec `json:"collateral,omitempty" yaml:"collateral,omitempty"`
 }
 
 // GraphQLStep is trusted environment setup performed after an episode reset
@@ -471,4 +496,38 @@ func sortedUnique(values []string) []string {
 		write++
 	}
 	return out[:write]
+}
+
+// IsExecutionTwin reports whether a task hands the agent a finished operation.
+// Execution twins are instrumentation: they are reported, never gated.
+func (t Task) IsExecutionTwin() bool { return t.Tier == TierExecution }
+
+// AcceptsValue reports whether a post-state value satisfies the spec. Exact
+// ExpectedValue remains the contract; AcceptedValues only widens it.
+func (m MutationSpec) AcceptsValue(value string) bool {
+	if value == m.ExpectedValue {
+		return true
+	}
+	return containsExactString(m.AcceptedValues, value)
+}
+
+// AcceptsDimension reports whether a post-state dimension satisfies the spec. An
+// empty expectation with no accepted set means the dimension is not checked.
+func (m MutationSpec) AcceptsDimension(dimension string) bool {
+	if m.ExpectedDimension == "" && len(m.AcceptedDimensions) == 0 {
+		return true
+	}
+	if m.ExpectedDimension != "" && dimension == m.ExpectedDimension {
+		return true
+	}
+	return containsExactString(m.AcceptedDimensions, dimension)
+}
+
+func containsExactString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

@@ -802,8 +802,8 @@ func (r Runner) runEpisode(ctx context.Context, client HTTPDoer, instance Instan
 		verifier := Verifier{Client: client, Now: r.Now, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
 		postState, postErr := verifier.Resolve(ctx, task.Mutation.PostState)
 		collateralAfter, collateralErr := resolveMutationCollateral(ctx, r, client, instance, task.Mutation.Collateral)
-		postPass := postErr == nil && postState.Value == task.Mutation.ExpectedValue &&
-			(task.Mutation.ExpectedDimension == "" || postState.Dimension == task.Mutation.ExpectedDimension)
+		postPass := postErr == nil && task.Mutation.AcceptsValue(postState.Value) &&
+			task.Mutation.AcceptsDimension(postState.Dimension)
 		beforeHash := canonicalHash(collateralBefore)
 		afterHash := canonicalHash(collateralAfter)
 		collateralPass := collateralErr == nil && beforeHash == afterHash
@@ -892,6 +892,8 @@ func aggregateTask(task Task, initial, confirmation []Episode) TaskVerdict {
 		TaskID:              task.ID,
 		Slug:                task.Slug,
 		Category:            task.Category,
+		Tier:                task.Tier,
+		NeedID:              task.NeedID,
 		Difficulty:          task.Difficulty,
 		Pass:                pass,
 		InitialPass:         initialPass,
@@ -1051,6 +1053,7 @@ func calculateMetrics(_ []Task, verdicts []TaskVerdict, episodes []Episode, init
 	out.LatencyP95MS = percentile(latencies, 0.95)
 	out.PassAtK, out.PassPowerK = passK(initial)
 	out.RecallCI = bootstrapCI(verdicts, seed)
+	applyTierScores(&out, verdicts)
 	for _, tier := range []Difficulty{DifficultyT1, DifficultyT2, DifficultyT3, DifficultyT4} {
 		var tierVerdicts []TaskVerdict
 		tierInitial := map[string][]Episode{}
@@ -1358,4 +1361,61 @@ func episodeSeed(seed int64, taskID string, repeat int, confirmation bool) int64
 		value ^= 0x5eed5eed
 	}
 	return value
+}
+
+// applyTierScores splits the headline intent measurement from its execution
+// instrumentation and reports where the two disagree.
+//
+// A need whose execution twin passes while its intent task fails is a planning
+// gap: the agent can perform the operation and did not work out that it was
+// required. The inverse usually means the twin is over-specified rather than that
+// the agent improvised especially well, so it is surfaced for review too.
+func applyTierScores(out *Metrics, verdicts []TaskVerdict) {
+	intentPass, executionPass := 0, 0
+	type pair struct{ intent, execution *bool }
+	needs := map[string]*pair{}
+	for i := range verdicts {
+		verdict := verdicts[i]
+		passed := verdict.Pass
+		switch verdict.Tier {
+		case TierExecution:
+			out.ExecutionTasks++
+			if passed {
+				executionPass++
+			}
+		default:
+			// An absent tier reads as intent: the read-only families were always
+			// phrased as business questions.
+			out.IntentTasks++
+			if passed {
+				intentPass++
+			}
+		}
+		if verdict.NeedID == "" {
+			continue
+		}
+		entry := needs[verdict.NeedID]
+		if entry == nil {
+			entry = &pair{}
+			needs[verdict.NeedID] = entry
+		}
+		if verdict.Tier == TierExecution {
+			entry.execution = &passed
+		} else {
+			entry.intent = &passed
+		}
+	}
+	out.IntentRecall = ratio(intentPass, out.IntentTasks)
+	out.ExecutionRecall = ratio(executionPass, out.ExecutionTasks)
+	for _, entry := range needs {
+		if entry.intent == nil || entry.execution == nil {
+			continue
+		}
+		switch {
+		case *entry.execution && !*entry.intent:
+			out.PlanningGap++
+		case *entry.intent && !*entry.execution:
+			out.ExecutionGap++
+		}
+	}
 }
