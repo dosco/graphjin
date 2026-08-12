@@ -226,3 +226,41 @@ func TestQueryCatalogReportsInventedIDWithCandidates(t *testing.T) {
 		t.Fatalf("an unresolvable id must not trigger a retry, got %v", base.requested)
 	}
 }
+
+// TestRecoveryEvidenceCapturesWhatTheModelReceived closes a diagnostic gap that has
+// repeatedly forced conclusions to be drawn from source rather than trajectories.
+// Action summaries carry recovery codes but not the payload, so whether the
+// candidates or the resolved subject actually reached the model was unanswerable.
+func TestRecoveryEvidenceCapturesWhatTheModelReceived(t *testing.T) {
+	base := &qualifiedOnlyRuntime{}
+	runtime := newProtocolRuntime(base, "How many open tickets are there?", "", 0, nil, nil, CatalogSearchFeatures{})
+	for _, id := range publishedIDs {
+		runtime.state.catalogIDs[id] = true
+	}
+
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:tickets"}); err != nil {
+		t.Fatal(err)
+	}
+	last := runtime.state.actions[len(runtime.state.actions)-1]
+	payload, _ := json.Marshal(last.Evidence)
+	for _, want := range []string{"recovery", "did_you_mean", "table:app:main.support_tickets"} {
+		if !strings.Contains(string(payload), want) {
+			t.Fatalf("action evidence must record %q: %s", want, payload)
+		}
+	}
+}
+
+// TestRecoveryEvidenceStaysAbsentWithoutARecovery keeps clean actions clean.
+func TestRecoveryEvidenceStaysAbsentWithoutARecovery(t *testing.T) {
+	if got := recoveryEvidence(map[string]any{"cards": []any{}}); got != nil {
+		t.Fatalf("a call with no recovery must record nothing, got %v", got)
+	}
+	// Oversized payloads are truncated rather than dropped or stored whole.
+	long := strings.Repeat("x", catalogEvidenceFieldLimit*2)
+	captured := recoveryEvidence(map[string]any{"recovery": map[string]any{"kind": "empty_detail", "instruction": long}})
+	recovery := mapValue(captured["recovery"])
+	text, _ := recovery["instruction"].(string)
+	if len(text) > catalogEvidenceFieldLimit+8 || !strings.HasSuffix(text, "…") {
+		t.Fatalf("oversized payload must be truncated, got %d bytes", len(text))
+	}
+}
