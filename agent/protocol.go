@@ -1125,7 +1125,7 @@ func (s *discoveryState) finishAction(index int, tool string, args map[string]an
 	}
 	s.addGrounding(args, out)
 	s.actions[index].Summary = resultSummary(tool, args, out)
-	s.actions[index].Evidence = catalogCardEvidence(tool, args, out)
+	s.actions[index].Evidence = mergeActionEvidence(catalogCardEvidence(tool, args, out), recoveryEvidence(out))
 	s.emitAction(s.actions[index])
 }
 
@@ -3614,6 +3614,55 @@ func watchCursorShape(value map[string]any, roots []string) string {
 // by-id catalog lookups qualify: searches return card lists whose bulk is the
 // reason summaries exist, and execution results are already described by their
 // summary and recovery codes.
+// recoveryEvidence records the repair a call actually handed back, bounded.
+//
+// Action summaries carry recovery *codes* but not the payload, so "did the model
+// receive the candidate ids, or the resolved subject, or nothing?" has not been
+// answerable from a trajectory. Several diagnoses today turned on exactly that and
+// could only be narrowed by re-deriving it from source, which is how two wrong
+// readings got published earlier this week.
+func recoveryEvidence(out any) map[string]any {
+	recovery := mapValue(mapValue(out)["recovery"])
+	if len(recovery) == 0 {
+		return nil
+	}
+	captured := map[string]any{}
+	for _, field := range []string{"kind", "instruction", "did_you_mean", "missed_ids", "known_ids", "resolved", "retained_subject", "repaired_query"} {
+		value, ok := recovery[field]
+		if !ok || value == nil {
+			continue
+		}
+		captured[field] = boundedEvidenceValue(value)
+	}
+	if len(captured) == 0 {
+		return nil
+	}
+	return map[string]any{"recovery": captured}
+}
+
+// boundedEvidenceValue keeps a captured payload from growing an episode without
+// limit; the shape matters for diagnosis, not the tail.
+func boundedEvidenceValue(value any) any {
+	text := stringify(normalizeValue(value))
+	if len(text) <= catalogEvidenceFieldLimit {
+		return normalizeValue(value)
+	}
+	return text[:catalogEvidenceFieldLimit] + "…"
+}
+
+func mergeActionEvidence(values ...map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, value := range values {
+		for key, item := range value {
+			out[key] = item
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func catalogCardEvidence(tool string, args map[string]any, out any) map[string]any {
 	if tool != toolQueryCatalog || len(detailIDsFromArgs(args)) == 0 {
 		return nil
