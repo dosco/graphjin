@@ -121,6 +121,10 @@ type discoveryState struct {
 	// mutationEvidenceSupplied keeps the one-shot discharge of a missing
 	// mutation-shape prerequisite from becoming an unbounded fetch loop.
 	mutationEvidenceSupplied bool
+	// mutationEvidenceSuppliedFor records which target tables already had their
+	// shape evidence supplied, so a write touching a second table is not refused
+	// because a first one was helped.
+	mutationEvidenceSuppliedFor map[string]bool
 	// observedValueLookups records what each write-time value lookup returned, so a
 	// check that stays silent can be told apart from one that found nothing.
 	observedValueLookups []map[string]any
@@ -3617,13 +3621,6 @@ func truncateString(value string, max int) string {
 	return value[:max-3] + "..."
 }
 
-// supplyMutationEvidence discharges a missing mutation-shape prerequisite by
-// fetching the target tables' catalog detail itself and returning it to the
-// model, rather than naming the lookup and hoping the model performs it.
-//
-// It applies at most once per run, and only when every missing target resolves
-// to a known catalog id: a genuinely unknown or invented target still fails
-// loudly through the ordinary rejection so the model must locate it.
 // supplyCrossSourceEvidence fetches the source cards a cross-source operation
 // requires and returns them once, rather than spending an actor step asking for ids
 // the run already holds. It only counts evidence the catalog actually returned, so
@@ -3661,9 +3658,23 @@ func (r *protocolRuntime) supplyCrossSourceEvidence(ctx context.Context, missing
 	return result, true
 }
 
+// supplyMutationEvidence discharges a missing mutation-shape prerequisite by
+// fetching the target tables' catalog detail itself and returning it to the model,
+// rather than naming the lookup and hoping the model performs it.
+//
+// It applies once per target table, and only when every missing target resolves to
+// a known catalog id: a genuinely unknown or invented target still fails loudly
+// through the ordinary rejection so the model must locate it. A single run-wide
+// flag meant a run needing evidence for a second table never got it — the same
+// one-shot mistake corrected twice elsewhere in this file.
 func (r *protocolRuntime) supplyMutationEvidence(ctx context.Context, missing []string) (any, bool) {
-	if r == nil || r.state == nil || r.state.mutationEvidenceSupplied || len(missing) == 0 {
+	if r == nil || r.state == nil || len(missing) == 0 {
 		return nil, false
+	}
+	for _, table := range missing {
+		if r.state.mutationEvidenceSuppliedFor[strings.ToLower(strings.TrimSpace(table))] {
+			return nil, false
+		}
 	}
 	ids := make([]any, 0, len(missing))
 	for _, table := range missing {
@@ -3684,6 +3695,12 @@ func (r *protocolRuntime) supplyMutationEvidence(ctx context.Context, missing []
 	// satisfy the guard it was meant to enforce.
 	if len(catalogCards(out)) == 0 {
 		return nil, false
+	}
+	if r.state.mutationEvidenceSuppliedFor == nil {
+		r.state.mutationEvidenceSuppliedFor = map[string]bool{}
+	}
+	for _, table := range missing {
+		r.state.mutationEvidenceSuppliedFor[strings.ToLower(strings.TrimSpace(table))] = true
 	}
 	r.state.mutationEvidenceSupplied = true
 	r.state.recordCatalog(args, out, false)
