@@ -668,6 +668,55 @@ func TestCachedSavedQueryRejectionPointsAtAuthoring(t *testing.T) {
 	}
 }
 
+// TestAnchoredAggregateNoticeNamesTheQueriedRoot covers the shape behind every
+// window runaway in generation 2028.1. "Using the latest recorded X as the anchor,
+// how many records ..." legitimately reads a row first; the notice then called that
+// evidence insufficient without saying the anchor was fine, and the model
+// resubmitted the same query until the step cap. All seven runaways spent all eight
+// steps this way.
+func TestAnchoredAggregateNoticeNamesTheQueriedRoot(t *testing.T) {
+	state := newDiscoveryState("Using the latest recorded last_active_at as the anchor, how many records in accounts have last_active_at on or after the date exactly 90 days before that anchor?")
+	state.executions = []map[string]any{{
+		"tool":        toolExecuteGraphQL,
+		"query":       "query { maxAnchor: accounts(order_by: { last_active_at: desc }, limit: 1) { last_active_at } }",
+		"has_data":    true,
+		"error_count": 0,
+	}}
+
+	notice := state.pendingDatabaseComputation()
+	if notice == "" {
+		t.Fatal("a row-only anchor read must still require the aggregate")
+	}
+	if !strings.Contains(notice, "accounts") {
+		t.Fatalf("notice must name the root already queried: %q", notice)
+	}
+	// The anchor value is usable; saying so is what stops the resubmit loop.
+	if !strings.Contains(notice, "intermediate value") || !strings.Contains(notice, "do not resubmit the row query") {
+		t.Fatalf("notice must keep the anchor and forbid the resubmit: %q", notice)
+	}
+
+	// Once the aggregate has run, the requirement is discharged.
+	state.executions = append(state.executions, map[string]any{
+		"tool":        toolExecuteGraphQL,
+		"query":       `query { accounts(where: { last_active_at: { gte: "2026-05-13" } }) { count_id } }`,
+		"has_data":    true,
+		"error_count": 0,
+	})
+	if notice := state.pendingDatabaseComputation(); notice != "" {
+		t.Fatalf("a database-side aggregate must satisfy the requirement, got %q", notice)
+	}
+}
+
+// TestAggregateNoticeWithoutRowEvidenceKeepsGenericGuidance holds the first-step
+// case: with nothing read yet there is no root to name.
+func TestAggregateNoticeWithoutRowEvidenceKeepsGenericGuidance(t *testing.T) {
+	state := newDiscoveryState("How many accounts are there?")
+	notice := state.pendingDatabaseComputation()
+	if notice == "" || strings.Contains(notice, "intermediate value") {
+		t.Fatalf("with no row evidence the generic requirement stands: %q", notice)
+	}
+}
+
 func TestCachedExecutionBecomesCurrentCompletionEvidence(t *testing.T) {
 	base := &sequencedExecRuntime{
 		fakeRuntime: &fakeRuntime{},

@@ -563,7 +563,45 @@ func (s *discoveryState) pendingDatabaseComputation() string {
 	if needsAggregateOrder {
 		requirement += " with aggregate order_by for the requested ranking"
 	}
+	// Anchored questions read a row first on purpose: "using the latest recorded X
+	// as the anchor, how many records ..." needs that value before the count can be
+	// filtered. Generation 2028.1 measured every window runaway starting here — the
+	// anchor read succeeded, this notice called the evidence insufficient without
+	// saying the anchor was fine, and the model resubmitted the same query to the
+	// step cap. Naming the root already queried says which step is still missing.
+	if roots := s.rowEvidenceRoots(); len(roots) != 0 {
+		return "database_computation_required: the run has rows from " + strings.Join(roots, ", ") +
+			", which can serve as an intermediate value, but the answer itself still needs " + requirement +
+			" on " + roots[len(roots)-1] + ". Keep the value already read and execute that aggregate as a distinct query; do not resubmit the row query and do not calculate from fetched rows."
+	}
 	return "database_computation_required: this request asks for a count, total, average, extreme, or ranking, but the run only has row-list or failed evidence. Execute " + requirement + " and answer from that result; do not calculate from fetched rows."
+}
+
+// rowEvidenceRoots names the query roots this run already read rows from, most
+// recent last. It reports only roots from successful row reads, so the guidance
+// never points at a table the run failed to query.
+func (s *discoveryState) rowEvidenceRoots() []string {
+	var out []string
+	for _, execution := range s.executions {
+		if execution["has_data"] != true || executionErrorCount(execution["error_count"]) != 0 {
+			continue
+		}
+		query := stringFromMap(execution, "query")
+		if query == "" {
+			continue
+		}
+		for _, root := range QueryRootFields(query) {
+			root = strings.TrimSpace(root)
+			if root == "" || strings.HasPrefix(strings.ToLower(root), "gj_") {
+				continue
+			}
+			out = appendUniqueString(out, root)
+		}
+	}
+	if len(out) > 3 {
+		out = out[len(out)-3:]
+	}
+	return out
 }
 
 // databaseOrderedRowIntent recognizes extrema where the user wants the record
