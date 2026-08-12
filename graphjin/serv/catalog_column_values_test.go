@@ -164,3 +164,25 @@ func TestSamplingDisabledByConfigNeverAttempts(t *testing.T) {
 		t.Fatal("disabled sampling must not record an attempt")
 	}
 }
+
+// TestFirstSampleIsReportedOnce pins the signal the catalog refresh hangs off.
+// Sampling cannot run until the engine can describe its own schema, so the first
+// catalog build almost always precedes it and materialises cards with no values.
+// Only the call that completes sampling may trigger the rebuild; repeating it on
+// every build would rebuild the catalog forever.
+func TestFirstSampleIsReportedOnce(t *testing.T) {
+	svc := &graphjinService{conf: &Config{}}
+
+	// Not ready: no attempt, so nothing to announce and the retry stays open.
+	if values, first := svc.sampleColumnValuesOnce(); values != nil || first {
+		t.Fatalf("an unready service must not report a sample, got values=%v first=%v", values, first)
+	}
+
+	// Simulate the attempt completing.
+	svc.columnValues = map[string][]string{"column:app:main.support_tickets.status": {"open", "resolved"}}
+	svc.columnValuesSampled = true
+
+	if values, first := svc.sampleColumnValuesOnce(); first || len(values) != 1 {
+		t.Fatalf("a completed sample must not re-announce, got values=%v first=%v", values, first)
+	}
+}
