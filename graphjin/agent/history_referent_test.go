@@ -226,3 +226,29 @@ func TestReferentGuardDischargesOnSavedQueryPath(t *testing.T) {
 		t.Fatal("a saved query must not discharge the raw-GraphQL discovery prerequisite")
 	}
 }
+
+// TestIdenticalUnscopedRetryIsRefusedAgain pins the flaw a one-shot flag created.
+// The guard refused the unscoped query, the model re-sent it byte-identical, the
+// flag was already spent, and the unscoped answer went out — the escape hatch was
+// the default path. Measured on multi-turn-same-account-failed, which ran
+// invoices_aggregate with a status filter and no account filter twice in a row.
+func TestIdenticalUnscopedRetryIsRefusedAgain(t *testing.T) {
+	state := newDiscoveryState("How many failed invoices does that account have?")
+	unscoped := normalizeGraphQLIdentity(`{ invoices_aggregate(where: { status: { eq: "failed" } }) { count } }`)
+
+	if !state.refuseUnscopedReferent(unscoped) {
+		t.Fatal("the first unscoped attempt must be refused")
+	}
+	state.recordReferentRejection(unscoped)
+
+	if !state.refuseUnscopedReferent(unscoped) {
+		t.Fatal("an identical retry must be refused again, not waved through")
+	}
+
+	// A genuinely different operation proceeds: re-authoring shows the message was
+	// considered, and the retained subject could be wrong, so the run must not dead-end.
+	other := normalizeGraphQLIdentity(`{ invoices { id status account_id } }`)
+	if state.refuseUnscopedReferent(other) {
+		t.Fatal("a different operation must be allowed after the first refusal")
+	}
+}

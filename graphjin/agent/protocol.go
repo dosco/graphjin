@@ -128,10 +128,16 @@ type discoveryState struct {
 	// interception: sampled values are evidence, not schema, so a caller that means
 	// it must be able to proceed.
 	observedValueNoticeSupplied bool
-	// historyReferentSupplied keeps the retained-subject repair to one
-	// interception. A follow-up that legitimately spans every row must be able to
-	// proceed by re-issuing the same unscoped query.
-	historyReferentSupplied bool
+	// historyReferentRejected records the operations already refused for not
+	// scoping to the retained subject, by identity.
+	//
+	// A one-shot flag was wrong here. It let the next attempt through whatever it
+	// contained, and the measured behaviour was the model re-sending the identical
+	// unscoped query and answering the unscoped question — the escape hatch became
+	// the default path. Keying on identity keeps the hatch for a genuinely different
+	// operation while refusing a byte-identical retry, which is the same standard
+	// the duplicate-query guards already apply.
+	historyReferentRejected map[string]bool
 	// history is bounded, untrusted caller/task context. It never satisfies a
 	// discovery guard, but an explicit request to repeat a prior answered turn
 	// can safely recover from an actor-loop failure after this run has performed
@@ -686,8 +692,8 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 	// variables bind it, running it answers a broader question than the one asked —
 	// and unlike raw GraphQL the caller cannot narrow it by editing the query, so
 	// the repair has to point at authoring instead.
-	if refs := unresolvedHistoryReferent(r.state.instruction, r.state.savedQueryGraphQLFor(name), args, r.state.history); len(refs) != 0 && !r.state.historyReferentSupplied {
-		r.state.historyReferentSupplied = true
+	if refs := unresolvedHistoryReferent(r.state.instruction, r.state.savedQueryGraphQLFor(name), args, r.state.history); len(refs) != 0 && r.state.refuseUnscopedReferent("saved:"+strings.ToLower(strings.TrimSpace(name))) {
+		r.state.recordReferentRejection("saved:" + strings.ToLower(strings.TrimSpace(name)))
 		described := describeEntityReferences(refs)
 		err := fmt.Errorf("protocol violation: this follow-up is scoped to %s, but saved query %q does not filter on it and a saved query cannot be narrowed at call time. Author the scoped query with execute_graphql, or pass a variable this saved query accepts that binds the subject", described, name)
 		details := map[string]any{"retained_subject": refs, "name": name, "fault": "unscoped_saved_query_for_referent"}
@@ -818,8 +824,8 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		// authored query binds none of it, the answer will describe the whole table
 		// instead of the one row asked about. Name the subject once; which filter
 		// path reaches it is the model's decision, not this guard's.
-		if refs := unresolvedHistoryReferent(r.state.instruction, query, args, r.state.history); len(refs) != 0 && !r.state.historyReferentSupplied {
-			r.state.historyReferentSupplied = true
+		if refs := unresolvedHistoryReferent(r.state.instruction, query, args, r.state.history); len(refs) != 0 && r.state.refuseUnscopedReferent(normalizeGraphQLIdentity(query)) {
+			r.state.recordReferentRejection(normalizeGraphQLIdentity(query))
 			described := describeEntityReferences(refs)
 			err := fmt.Errorf("protocol violation: this follow-up inherits its subject from prior turns, which retained %s, but the query filters on none of it. Re-author the query scoped to the retained subject before answering", described)
 			details := map[string]any{"retained_subject": refs, "fault": "unresolved_history_referent"}
@@ -2485,6 +2491,35 @@ func blockResponse(resp Response) Response {
 		resp.Answer = "I could not answer because the required GraphJin discovery protocol was not completed."
 	}
 	return resp
+}
+
+// refuseUnscopedReferent decides whether an operation that ignores the retained
+// subject is refused.
+//
+// The first one always is. A byte-identical retry is refused again, because
+// repeating the same omission is not a decision to query every row — measured
+// behaviour was exactly that retry, answering the unscoped question. A genuinely
+// different operation is allowed through after the first refusal: re-authoring is
+// evidence the message was considered, and the sampled subject could be wrong, so
+// the run must never be left with no way forward.
+func (s *discoveryState) refuseUnscopedReferent(identity string) bool {
+	if s == nil {
+		return false
+	}
+	if identity != "" && s.historyReferentRejected[identity] {
+		return true
+	}
+	return len(s.historyReferentRejected) == 0
+}
+
+func (s *discoveryState) recordReferentRejection(identity string) {
+	if s == nil || identity == "" {
+		return
+	}
+	if s.historyReferentRejected == nil {
+		s.historyReferentRejected = map[string]bool{}
+	}
+	s.historyReferentRejected[identity] = true
 }
 
 func (s *discoveryState) hasBlockingViolation() bool {
