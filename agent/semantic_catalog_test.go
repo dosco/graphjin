@@ -1495,3 +1495,20 @@ func TestMalformedWatchSubscriptionStringDetection(t *testing.T) {
 		}
 	}
 }
+
+// TestMutationEvidenceIsSuppliedPerTable pins the scope of the mutation-shape
+// supply. A single run-wide flag meant a write touching a second table was refused
+// because a first one had already been helped — the same one-shot mistake corrected
+// twice elsewhere in this file, and the reason the watch prerequisite kept firing
+// after the supply existed.
+func TestMutationEvidenceIsSuppliedPerTable(t *testing.T) {
+	state := newDiscoveryState("watch failed invoices and urgent tickets")
+	state.mutationEvidenceSuppliedFor = map[string]bool{"invoices": true}
+
+	if !state.mutationEvidenceSuppliedFor["invoices"] {
+		t.Fatal("a supplied table must be recorded")
+	}
+	if state.mutationEvidenceSuppliedFor["support_tickets"] {
+		t.Fatal("an unsupplied table must not inherit another table's supply")
+	}
+}
