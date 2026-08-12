@@ -75,6 +75,12 @@ type Serv struct {
 	// Legacy production switch. Prefer top-level mode for new configs.
 	Production bool `jsonschema:"title=Production Mode,default=false"`
 
+	// Stops the catalog from sampling the small value sets of enum-like columns
+	// (status, severity, plan, and similar). Those sets let an agent filter on a
+	// real value instead of inventing one, so leaving this off is recommended;
+	// set it when even low-cardinality values must not appear in catalog cards.
+	DisableColumnValueSampling bool `mapstructure:"disable_column_value_sampling" jsonschema:"title=Disable Catalog Column Value Sampling,default=false"`
+
 	// The default path to find all configuration files and scripts
 	ConfigPath string `mapstructure:"config_path" jsonschema:"title=Config Path"`
 

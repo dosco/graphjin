@@ -118,6 +118,11 @@ func (s *graphjinService) catalogBuildOptions() core.CatalogBuildOptions {
 	if s == nil {
 		return opts
 	}
+	// Enum values belong here rather than at one build site: gj_catalog is served
+	// from more than one snapshot path (the cache and the per-request artifact
+	// overlay), and a card that shows real values on one path and a placeholder on
+	// another is worse than neither.
+	opts.ObservedColumnValues = s.observedColumnValues()
 	if s.conf != nil {
 		opts.EnabledTools = mcpToolList(s.conf)
 		opts.EnabledToolsKnown = true

@@ -26,6 +26,17 @@ type BuildOptions struct {
 	EnabledToolsKnown      bool         `json:"enabled_tools_known,omitempty"`
 	WorkflowRuntime        string       `json:"workflow_runtime,omitempty"`
 	WorkflowTimeoutSeconds int          `json:"workflow_timeout_seconds,omitempty"`
+	// ObservedColumnValues carries the small, closed value sets of enum-like
+	// columns, keyed by column card id. The catalog build is pure schema-in /
+	// cards-out and never touches data, so a caller with a live connection samples
+	// these and passes them in.
+	//
+	// Without them a status column's example is a placeholder — where: { status:
+	// { eq: "<status>" } } — and a model has no way to learn the real values short
+	// of sampling rows itself. Benchmark 2028.1 measured the cost: asked to close a
+	// ticket that was "sorted out", the agent wrote status "closed" against a schema
+	// whose statuses are open, pending, and resolved.
+	ObservedColumnValues map[string][]string `json:"observed_column_values,omitempty"`
 }
 
 type Source struct {
