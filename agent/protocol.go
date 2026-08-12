@@ -696,7 +696,7 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 	}
 	executionKey := savedQueryExecutionKey(args)
 	if cached, ok := r.state.cachedExecution(executionKey); ok {
-		if out, rejected := pendingCachedExecutionRejection(r.state, ""); rejected {
+		if out, rejected := pendingCachedExecutionRejection(r.state, "", true); rejected {
 			action := r.state.startAction("model", "execute_saved_query", args)
 			r.state.finishAction(action, "execute_saved_query", args, out, nil)
 			return out, nil
@@ -924,7 +924,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		return out, nil
 	}
 	if cached, ok := r.state.cachedExecution(queryKey); ok {
-		if out, rejected := pendingCachedExecutionRejection(r.state, query); rejected {
+		if out, rejected := pendingCachedExecutionRejection(r.state, query, false); rejected {
 			action := r.state.startAction("model", "execute_graphql", args)
 			r.state.finishAction(action, "execute_graphql", args, out, nil)
 			return out, nil
@@ -1455,7 +1455,12 @@ func (s *discoveryState) cacheSuccessfulExecution(key string, out any) {
 	s.successfulExecutions[key] = normalizeValue(out)
 }
 
-func pendingCachedExecutionRejection(state *discoveryState, query string) (any, bool) {
+// pendingCachedExecutionRejection withholds cached rows that cannot answer the
+// outstanding requirement. savedQuery marks the caller: a saved query's text is
+// fixed, so "repeat this differently" is unachievable through it, and generation
+// 2028.1 recorded exactly that loop — the same saved query re-run ten times, each
+// rejection sending the model to a catalog search that returned nothing.
+func pendingCachedExecutionRejection(state *discoveryState, query string, savedQuery bool) (any, bool) {
 	if state == nil {
 		return nil, false
 	}
@@ -1464,15 +1469,26 @@ func pendingCachedExecutionRejection(state *discoveryState, query string) (any, 
 		return nil, false
 	}
 	code, message := pendingFinalProtocol(requirement)
+	repair := map[string]any{
+		"kind": "distinct_aggregate_required",
+		"next": message,
+	}
+	failure := "identical execution repeated while " + code + " is unmet; cached rows withheld because they cannot answer this request"
+	if savedQuery {
+		failure = "this saved query was already executed and its rows cannot satisfy " + code +
+			"; a saved query is fixed, so re-running it will keep failing. Author the required query with execute_graphql instead"
+		// next stays the guidance text every caller already reads; the tool is named
+		// beside it so the model stops re-entering the saved query it cannot change.
+		repair["kind"] = "saved_query_cannot_satisfy_requirement"
+		repair["recommended_tool"] = "execute_graphql"
+	}
 	out := attachExecutionRecovery(executeResult{Errors: []ErrorInfo{{
-		Message: "identical execution repeated while " + code + " is unmet; cached rows withheld because they cannot answer this request",
+		Message: failure,
 		Extensions: map[string]any{
 			"code":      code,
 			"retryable": true,
-			"graphjin_repair": map[string]any{
-				"kind": "distinct_aggregate_required",
-				"next": message,
-			},
+
+			"graphjin_repair": repair,
 		},
 	}}}, state, query)
 	return out, true
