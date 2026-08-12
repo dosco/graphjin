@@ -518,24 +518,23 @@ func TestCrossSourceHandoffRequiresEverySelectedSourceDetail(t *testing.T) {
 	})
 
 	query := `query { customers { id } }`
+	// The guarantee is that no cross-source GraphQL executes until every selected
+	// source has been inspected. GraphJin now does the inspecting instead of spending
+	// an actor step demanding it — the ids are already known — so the first attempt
+	// returns the source cards and still does not execute.
 	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
-	if err != nil || !executionFailed(first) || base.graphqlCalls != 0 {
+	if err != nil || base.graphqlCalls != 0 {
 		t.Fatalf("cross-source guard = %+v err=%v calls=%d", first, err, base.graphqlCalls)
 	}
-	extensions := mapValue(mapValue(anySlice(mapValue(first)["errors"])[0])["extensions"])
-	if stringFromMap(extensions, "code") != "cross_source_detail_required" {
-		t.Fatalf("cross-source error = %+v", extensions)
+	supplied := mapValue(first)
+	if stringFromMap(supplied, "graphjin_protocol") != "cross_source_evidence_supplied" {
+		t.Fatalf("cross-source first attempt = %+v", supplied)
 	}
-	continuation := runtime.state.pendingRequiredFinalizationContinuation()
+	payload := stringify(normalizeValue(supplied))
 	for _, id := range []string{"source:crm", "source:support"} {
-		if !strings.Contains(continuation, id) {
-			t.Fatalf("cross-source continuation %q missing %q", continuation, id)
+		if !strings.Contains(payload, id) {
+			t.Fatalf("supplied evidence %q missing %q", payload, id)
 		}
-	}
-	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"kind": "table", "limit": 20}); err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range []string{"source:crm", "source:support"} {
 		if !runtime.state.hasCatalogDetailID(id) {
 			t.Fatalf("catalog details = %+v, missing %s", runtime.state.catalogDetails, id)
 		}

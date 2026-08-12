@@ -127,6 +127,9 @@ type discoveryState struct {
 	// observedValues caches sampled column value sets per table so a write path
 	// costs at most one extra catalog read per table.
 	observedValues map[string]map[string][]string
+	// crossSourceEvidenceSupplied keeps the one-shot fetch of source cards from
+	// repeating if the ids ever stop registering.
+	crossSourceEvidenceSupplied bool
 	// observedValueRejected records the writes already refused for using a value the
 	// column has never held, by identity.
 	//
@@ -802,6 +805,14 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		return nil, err
 	}
 	if missing := r.state.missingDistilledSourceDetails(); len(missing) != 0 {
+		// The ids are already known, so the round trip buys nothing and costs a step:
+		// this guard blocked 8 of 24 cross-source episodes on the frozen suite while 9
+		// of them spent all eight steps. Supplying the cards is the same treatment
+		// mutation-shape evidence already gets, and the requirement is still met by
+		// content the catalog actually returned rather than by the asking.
+		if out, ok := r.supplyCrossSourceEvidence(ctx, missing, args); ok {
+			return out, nil
+		}
 		err := fmt.Errorf("protocol violation: inspect every source selected by the distiller before authoring cross-source GraphQL: %s", strings.Join(missing, ", "))
 		details := map[string]any{"sources": missing}
 		r.state.addViolation("cross_source_detail_required", err.Error(), "execute_graphql", true, details)
@@ -3613,6 +3624,43 @@ func truncateString(value string, max int) string {
 // It applies at most once per run, and only when every missing target resolves
 // to a known catalog id: a genuinely unknown or invented target still fails
 // loudly through the ordinary rejection so the model must locate it.
+// supplyCrossSourceEvidence fetches the source cards a cross-source operation
+// requires and returns them once, rather than spending an actor step asking for ids
+// the run already holds. It only counts evidence the catalog actually returned, so
+// a stale id cannot satisfy the guard it was meant to enforce.
+func (r *protocolRuntime) supplyCrossSourceEvidence(ctx context.Context, missing []string, queryArgs map[string]any) (any, bool) {
+	if r == nil || r.state == nil || r.state.crossSourceEvidenceSupplied || len(missing) == 0 {
+		return nil, false
+	}
+	ids := make([]any, 0, len(missing))
+	for _, id := range missing {
+		ids = append(ids, id)
+	}
+	args := map[string]any{"ids": ids}
+	r.addNamespace(args)
+	out, err := r.base.QueryCatalog(ctx, args)
+	if err != nil || len(catalogCards(out)) == 0 {
+		return nil, false
+	}
+	r.state.crossSourceEvidenceSupplied = true
+	r.state.recordCatalog(args, out, false)
+	if len(r.state.missingDistilledSourceDetails()) != 0 {
+		// The catalog answered without the cards this guard tracks. Report rather
+		// than let the cross-source operation through.
+		return nil, false
+	}
+	result := map[string]any{
+		"graphjin_protocol": "cross_source_evidence_supplied",
+		"message":           "GraphJin fetched the source details this cross-source operation requires. Author the query from the returned source cards, then execute it.",
+		"cards":             normalizeValue(mapValue(normalizeValue(out))["cards"]),
+		"sources":           missing,
+		"next":              "Re-execute the cross-source query now that every selected source has been inspected.",
+	}
+	action := r.state.startAction("model", "execute_graphql", queryArgs)
+	r.state.finishAction(action, "execute_graphql", queryArgs, result, nil)
+	return result, true
+}
+
 func (r *protocolRuntime) supplyMutationEvidence(ctx context.Context, missing []string) (any, bool) {
 	if r == nil || r.state == nil || r.state.mutationEvidenceSupplied || len(missing) == 0 {
 		return nil, false
