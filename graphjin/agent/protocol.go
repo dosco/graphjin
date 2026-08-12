@@ -127,10 +127,16 @@ type discoveryState struct {
 	// observedValues caches sampled column value sets per table so a write path
 	// costs at most one extra catalog read per table.
 	observedValues map[string]map[string][]string
-	// observedValueNoticeSupplied keeps the value-vocabulary notice to one
-	// interception: sampled values are evidence, not schema, so a caller that means
-	// it must be able to proceed.
-	observedValueNoticeSupplied bool
+	// observedValueRejected records the writes already refused for using a value the
+	// column has never held, by identity.
+	//
+	// A one-shot flag let whatever came next through, and the measured behaviour was
+	// the model re-sending the identical write: of eleven episodes shown that a
+	// ticket status column holds open, pending and resolved, ten resubmitted "closed"
+	// unchanged and the writes landed. Sampled values are still evidence rather than
+	// schema, so a genuinely different write proceeds — but repeating a rejected one
+	// verbatim is not a considered decision.
+	observedValueRejected map[string]bool
 	// historyReferentRejected records the operations already refused for not
 	// scoping to the retained subject, by identity.
 	//
@@ -860,9 +866,9 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			r.state.finishAction(action, "execute_graphql", args, nil, err)
 			return nil, err
 		}
-		if !r.state.observedValueNoticeSupplied {
+		if r.state.refuseUnobservedValue(normalizeGraphQLIdentity(query)) {
 			if mismatches := r.unobservedWrittenValues(ctx, query); len(mismatches) != 0 {
-				r.state.observedValueNoticeSupplied = true
+				r.state.recordObservedValueRejection(normalizeGraphQLIdentity(query))
 				described := r.describeUnobservedValues(ctx, mismatches)
 				err := fmt.Errorf("protocol violation: %s. Use one of the values already in use, or re-execute this write unchanged if the new value is genuinely intended", described)
 				details := map[string]any{"fault": "value_outside_observed_set"}
@@ -2554,6 +2560,30 @@ func (s *discoveryState) recordObservedValueLookup(table string, values map[stri
 		"cards_returned":      cardsSeen,
 		"first_card_id":       sampleID,
 	})
+}
+
+// refuseUnobservedValue mirrors the retained-subject rule: the first write using an
+// unseen value is refused, a byte-identical retry is refused again, and a genuinely
+// different write proceeds. The sample describes what the column holds, not what it
+// permits, so the run must never be left without a way forward.
+func (s *discoveryState) refuseUnobservedValue(identity string) bool {
+	if s == nil {
+		return false
+	}
+	if identity != "" && s.observedValueRejected[identity] {
+		return true
+	}
+	return len(s.observedValueRejected) == 0
+}
+
+func (s *discoveryState) recordObservedValueRejection(identity string) {
+	if s == nil || identity == "" {
+		return
+	}
+	if s.observedValueRejected == nil {
+		s.observedValueRejected = map[string]bool{}
+	}
+	s.observedValueRejected[identity] = true
 }
 
 func (s *discoveryState) hasBlockingViolation() bool {
