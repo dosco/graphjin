@@ -877,12 +877,25 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			// than a quoting fault. Name it here, and point at the variable form that
 			// removes the nesting entirely.
 			if malformedWatchSubscriptionString(query) {
-				err := fmt.Errorf(`protocol violation: the gj_watch subscription string has unescaped quotes, so this mutation does not parse. Pass the subscription as a GraphQL variable instead of inlining it: mutation CreateWatch($name: String!, $query: String!) { gj_watch(insert: {name: $name, query: $query, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name status } } with variables {"name": "...", "query": "subscription { <root>(where: {...}, first: 25, after: $cursor) { ... } <root>_cursor }"}`)
+				// The intended string is unambiguous, so the corrected mutation is
+				// supplied rather than described. It is offered, not executed: running a
+				// rewritten mutation would execute a subscription the caller never wrote.
+				repaired, repairable := repairWatchSubscriptionString(query)
 				details := map[string]any{"root": systemRootWatch, "fault": "unescaped_subscription_string"}
+				var err error
+				if repairable {
+					details["repaired_query"] = repaired
+					err = fmt.Errorf("protocol violation: the gj_watch subscription string has unescaped quotes, so this mutation does not parse. The corrected mutation is in errors[].extensions.details.repaired_query — execute it exactly as given: %s", repaired)
+				} else {
+					err = fmt.Errorf(`protocol violation: the gj_watch subscription string has unescaped quotes, so this mutation does not parse. Pass the subscription as a GraphQL variable instead of inlining it: mutation CreateWatch($name: String!, $query: String!) { gj_watch(insert: {name: $name, query: $query, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name status } } with variables {"name": "...", "query": "subscription { <root>(where: {...}, first: 25, after: $cursor) { ... } <root>_cursor }"}`)
+				}
 				r.state.addViolation("watch_query_invalid", err.Error(), "execute_graphql", true, details)
+				repairGuidance := "Re-author the gj_watch mutation with the subscription passed as a variable, then execute it once."
+				if repairable {
+					repairGuidance = "Execute details.repaired_query exactly as supplied; it is this same mutation with the subscription string escaped."
+				}
 				out := recoverableProtocolFailure("watch_query_invalid", err.Error(), "watch_query_invalid",
-					catalogRepairNext(map[string]any{"ids": []any{"help:watches"}},
-						"Re-author the gj_watch mutation with the subscription passed as a variable, then execute it once."), details)
+					catalogRepairNext(map[string]any{"ids": []any{"help:watches"}}, repairGuidance), details)
 				action := r.state.startAction("model", "execute_graphql", args)
 				r.state.finishAction(action, "execute_graphql", args, out, nil)
 				return out, nil
