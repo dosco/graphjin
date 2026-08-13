@@ -2,7 +2,6 @@
 title: "DeepORG — The Organizational Agent Benchmark"
 description: "A public comparison of AI agents doing real organizational work, with correctness, consistency, safety, cost, latency, and GraphJin build provenance."
 aliases:
-  - /benchmark/
   - /benchmarks/organizational-agent/
 ---
 
@@ -64,6 +63,8 @@ graphjin eval publish <run-id> --benchmark deeporg --yes
 
 Publishing writes one deterministic YAML row and one Markdown report page for
 human review. It never runs Git, and low scores remain valid publishable results.
+`--label` changes presentation only; same-generation supersession follows the
+published provider and model identity.
 
 ## Run DeepORG on your organization
 

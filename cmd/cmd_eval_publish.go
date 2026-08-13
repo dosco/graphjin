@@ -146,7 +146,7 @@ the run.`,
 	cmd.Flags().StringVar(&opts.Site, "site", "website", "website root")
 	cmd.Flags().StringVar(&opts.Data, "data", "", "leaderboard data file (default <site>/data/benchmarks/<benchmark>.yaml)")
 	cmd.Flags().StringVar(&opts.Benchmark, "benchmark", defaultBenchmarkSlug, "public benchmark slug")
-	cmd.Flags().StringVar(&opts.Label, "label", "", "leaderboard display label (default: model)")
+	cmd.Flags().StringVar(&opts.Label, "label", "", "leaderboard display label only; model identity uses provider and model (default: model)")
 	cmd.Flags().StringVar(&opts.Release, "release", "", "GraphJin release label (default: short commit)")
 	cmd.Flags().StringVar(&opts.Notes, "notes", "", "short public notes for this run")
 	cmd.Flags().BoolVar(&opts.Force, "force", false, "replace an existing row and overwrite its page")
@@ -318,12 +318,10 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 				data.Runs[i].UnrankedReason = "previous public benchmark cohort (" + data.Runs[i].Generation + ")"
 				continue
 			}
-			// Same cohort, same model, older GraphJin build. The leaderboard compares
-			// models and does not deduplicate rows, so leaving both ranked lists one
-			// model twice at two scores. Release-to-release progress stays visible
-			// through the superseded row and the release timeline.
-			if data.Runs[i].RunID != entry.RunID &&
-				strings.EqualFold(strings.TrimSpace(data.Runs[i].Label), strings.TrimSpace(entry.Label)) {
+			// Same cohort, same provider/model, older GraphJin build. Display labels
+			// are presentation only and may change between publishes. Legacy rows that
+			// predate provider/model provenance fall back to matching the label.
+			if data.Runs[i].RunID != entry.RunID && sameBenchmarkModel(data.Runs[i], entry) {
 				data.Runs[i].Ranked = false
 				data.Runs[i].UnrankedReason = "superseded by GraphJin build " + entry.Release
 			}
@@ -403,6 +401,36 @@ func evalStateDirForPublish(cmd *cobra.Command, opts *evalCLIOptions) (string, e
 		return "", fmt.Errorf("evaluation state path is not a directory: %s", stateDir)
 	}
 	return stateDir, nil
+}
+
+func sameBenchmarkModel(a, b benchmarkEntry) bool {
+	aIdentity, aOK := benchmarkModelIdentity(a)
+	bIdentity, bOK := benchmarkModelIdentity(b)
+	if aOK && bOK {
+		return aIdentity == bIdentity
+	}
+	aLabel := strings.TrimSpace(a.Label)
+	bLabel := strings.TrimSpace(b.Label)
+	return aLabel != "" && bLabel != "" && strings.EqualFold(aLabel, bLabel)
+}
+
+func benchmarkModelIdentity(entry benchmarkEntry) (string, bool) {
+	provider := canonicalBenchmarkProvider(entry.Provider)
+	model := strings.ToLower(strings.TrimSpace(entry.Model))
+	if provider == "" || model == "" {
+		return "", false
+	}
+	return provider + "\x00" + model, true
+}
+
+func canonicalBenchmarkProvider(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	switch provider {
+	case "gemini", "google-gemini":
+		return "google-gemini"
+	default:
+		return provider
+	}
 }
 
 func benchmarkComparabilityMismatches(report gjeval.Report, suite benchmarkSuite, officialSuiteFingerprint string) []string {

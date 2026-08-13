@@ -1,0 +1,15 @@
+{{- $data := index (index hugo.Data "benchmarks") "deeporg" -}}
+{{- $generation := $data.suite.generation -}}
+{{- $comparisonGeneration := default $generation $data.suite.comparison_generation -}}
+{{- $ranked := sort (where (where (default (slice) $data.runs) "ranked" true) "generation" $comparisonGeneration) "recall" "desc" -}}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="robots" content="noindex, nofollow">
+    <title>DeepORG social card</title>
+  </head>
+  <body data-deeporg-og-card data-benchmark-generation="{{ $comparisonGeneration }}">
+    {{ range first 1 $ranked }}<div hidden data-benchmark-og-run="{{ .run_id }}" data-model-label="{{ .label }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-task-count="{{ int .task_count }}"></div>{{ end }}
+  </body>
+</html>

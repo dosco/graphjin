@@ -393,6 +393,132 @@ func TestEvalPublishRecordsAuditableListPrice(t *testing.T) {
 	}
 }
 
+func TestEvalPublishSupersedesByStableModelIdentity(t *testing.T) {
+	tests := []struct {
+		name              string
+		firstProvider     string
+		firstModel        string
+		firstLabel        string
+		secondProvider    string
+		secondModel       string
+		secondLabel       string
+		wantRanked        int
+		wantFirstUnranked bool
+	}{
+		{
+			name: "display label can change", firstProvider: "openai", firstModel: "gpt-test", firstLabel: "Original label",
+			secondProvider: "openai", secondModel: "gpt-test", secondLabel: "New friendly label", wantRanked: 1, wantFirstUnranked: true,
+		},
+		{
+			name: "gemini provider aliases are canonical", firstProvider: "google-gemini", firstModel: "gemini-test", firstLabel: "Gemini old",
+			secondProvider: "gemini", secondModel: "gemini-test", secondLabel: "Gemini new", wantRanked: 1, wantFirstUnranked: true,
+		},
+		{
+			name: "provider and model identity is normalized", firstProvider: " OpenAI ", firstModel: " GPT-Test ", firstLabel: "Original label",
+			secondProvider: "openai", secondModel: "gpt-test", secondLabel: "New friendly label", wantRanked: 1, wantFirstUnranked: true,
+		},
+		{
+			name: "same model name through different providers coexists", firstProvider: "openai", firstModel: "shared-model", firstLabel: "OpenAI route",
+			secondProvider: "openrouter", secondModel: "shared-model", secondLabel: "OpenAI route", wantRanked: 2,
+		},
+		{
+			name: "different models coexist", firstProvider: "openai", firstModel: "gpt-small", firstLabel: "Shared label",
+			secondProvider: "openai", secondModel: "gpt-large", secondLabel: "Shared label", wantRanked: 2,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			project, site := t.TempDir(), t.TempDir()
+			first := publishTestReport("20260803T101112.000000000Z-first-model")
+			first.Provenance.Provider = tc.firstProvider
+			first.Provenance.Model = tc.firstModel
+			writePublishTestReport(t, project, first)
+			if err := publishTestRun(t, project, site, first.RunID, &evalPublishOptions{Site: site, Label: tc.firstLabel}); err != nil {
+				t.Fatal(err)
+			}
+
+			second := publishTestReport("20260803T101113.000000000Z-second-model")
+			second.Provenance.Provider = tc.secondProvider
+			second.Provenance.Model = tc.secondModel
+			writePublishTestReport(t, project, second)
+			if err := publishTestRun(t, project, site, second.RunID, &evalPublishOptions{Site: site, Label: tc.secondLabel}); err != nil {
+				t.Fatal(err)
+			}
+
+			data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(data.Runs) != 2 {
+				t.Fatalf("rows = %d, want 2: %+v", len(data.Runs), data.Runs)
+			}
+			if data.Runs[0].Provider != tc.firstProvider || data.Runs[0].Model != tc.firstModel ||
+				data.Runs[1].Provider != tc.secondProvider || data.Runs[1].Model != tc.secondModel {
+				t.Fatalf("publisher changed model provenance: %+v", data.Runs)
+			}
+			ranked := 0
+			for _, entry := range data.Runs {
+				if entry.Ranked {
+					ranked++
+				}
+			}
+			if ranked != tc.wantRanked {
+				t.Fatalf("ranked rows = %d, want %d: %+v", ranked, tc.wantRanked, data.Runs)
+			}
+			if data.Runs[0].Ranked == tc.wantFirstUnranked {
+				t.Fatalf("first row ranked = %v, want %v: %+v", data.Runs[0].Ranked, !tc.wantFirstUnranked, data.Runs[0])
+			}
+			if tc.wantFirstUnranked && !strings.Contains(data.Runs[0].UnrankedReason, "superseded by GraphJin build") {
+				t.Fatalf("first row supersession reason = %q", data.Runs[0].UnrankedReason)
+			}
+		})
+	}
+}
+
+func TestEvalPublishLegacyRowFallsBackToLabelIdentity(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	report := publishTestReport("20260803T101113.000000000Z-current-model")
+	writePublishTestReport(t, project, report)
+	dataPath := publishTestDataPath(site)
+	if err := os.MkdirAll(filepath.Dir(dataPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := benchmarkEntry{
+		RunID: "20260803T101112.000000000Z-legacy-model", Slug: "legacy-model", Label: "Shared friendly label",
+		Ranked: true, Generation: gjeval.PublicBenchmarkGeneration,
+	}
+	data := benchmarkData{
+		SchemaVersion: benchmarkDataVersion,
+		Benchmark:     publishTestBenchmark(t),
+		Suite:         benchmarkSuiteFromReport(report),
+		Runs:          []benchmarkEntry{legacy},
+	}
+	raw, err := marshalBenchmarkData(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishTestRun(t, project, site, report.RunID, &evalPublishOptions{Site: site, Label: legacy.Label}); err != nil {
+		t.Fatal(err)
+	}
+	data, err = loadBenchmarkData(dataPath, publishTestBenchmark(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.Runs) != 2 || data.Runs[0].Ranked || !data.Runs[1].Ranked {
+		t.Fatalf("legacy fallback rows = %+v", data.Runs)
+	}
+}
+
+func TestSameBenchmarkModelDoesNotMatchEmptyLegacyLabels(t *testing.T) {
+	if sameBenchmarkModel(benchmarkEntry{}, benchmarkEntry{}) {
+		t.Fatal("identity-less legacy rows with empty labels must not match")
+	}
+}
+
 func TestBenchmarkRunSlug(t *testing.T) {
 	if got := benchmarkRunSlug("20260803T101112.000000000Z-ab12cd34"); got != "20260803t101112-ab12cd34" {
 		t.Fatalf("slug = %q", got)

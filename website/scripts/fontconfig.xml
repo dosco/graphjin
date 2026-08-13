@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <cachedir prefix="xdg">fontconfig</cachedir>
+  <config>
+    <rescan>
+      <int>0</int>
+    </rescan>
+  </config>
+</fontconfig>

@@ -13,13 +13,14 @@
     <meta property="og:url" content="{{ .Permalink }}">
     <meta property="og:title" content="{{ $metaTitle }}">
     <meta property="og:description" content="{{ $description }}">
-    <meta property="og:image" content="{{ "og/graphjin-og.png" | absURL }}">
+    {{ $ogImage := .Params.og_image | default "og/graphjin-og.png" }}
+    <meta property="og:image" content="{{ $ogImage | absURL }}">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ $metaTitle }}">
     <meta name="twitter:description" content="{{ $description }}">
-    <meta name="twitter:image" content="{{ "og/graphjin-og.png" | absURL }}">
+    <meta name="twitter:image" content="{{ $ogImage | absURL }}">
     <script>
       (() => {
         try {
@@ -34,6 +35,7 @@
   </head>
   {{ $bodyClass := "site-body" }}
   {{ if .IsHome }}{{ $bodyClass = printf "%s is-home" $bodyClass }}{{ end }}
+  {{ if .Params.benchmark_landing }}{{ $bodyClass = printf "%s is-benchmark-landing" $bodyClass }}{{ end }}
   <body class="{{ $bodyClass }}">
     <a class="skip-link" href="#main-content">Skip to content</a>
 
@@ -60,7 +62,7 @@
       (dict "label" "Agentic" "href" "/agentic/mcp/" "active" (eq $section "agentic"))
       (dict "label" "Configure" "href" "/configure/sources-mode/" "active" (eq $section "configure"))
       (dict "label" "Reference" "href" "/reference/database-support/" "active" (eq $section "reference"))
-      (dict "label" "Benchmarks" "href" "/benchmarks/" "active" (eq $section "benchmarks"))
+      (dict "label" "Benchmarks" "href" "/benchmark/" "active" (eq $section "benchmarks"))
     }}
 
     <header class="site-header" data-pagefind-ignore>
@@ -109,6 +111,10 @@
 
     {{ if .IsHome }}
       <main id="main-content" class="content content-home" data-pagefind-body>
+        {{ block "main" . }}{{ end }}
+      </main>
+    {{ else if .Params.benchmark_landing }}
+      <main id="main-content" class="content content-benchmark-landing" data-pagefind-body>
         {{ block "main" . }}{{ end }}
       </main>
     {{ else }}
