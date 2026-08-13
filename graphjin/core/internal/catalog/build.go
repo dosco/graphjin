@@ -1098,7 +1098,21 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 			EvidenceJSON:     mustJSON(r),
 			ExamplesJSON:     mustJSON([]string{relationshipExample(r)}),
 		})
-		out.Edges = append(out.Edges, Edge{ID: "edge:" + cardID, FromID: "node:column:" + r.FromColumnID, ToID: "node:column:" + r.ToColumnID, Kind: "references", Summary: summary})
+		edge := Edge{ID: "edge:" + cardID, FromID: "node:column:" + r.FromColumnID, ToID: "node:column:" + r.ToColumnID, Kind: "references", Summary: summary}
+		if r.Source == "remote_join" {
+			// A remote join hangs off a synthetic key column that is deliberately
+			// absent from the published surface, so a column-level edge dangles from
+			// a node that does not exist and no table detail ever shows the route in.
+			// That is how weeks of episodes kept querying account_health at the top
+			// level: the only card naming the way in was the relationship card
+			// itself, which nothing routinely fetches. Attach the edge where both
+			// sides actually have nodes — the tables.
+			edge.FromID = "node:table:" + parentTableID(r.FromColumnID)
+			edge.ToID = "node:table:" + parentTableID(r.ToColumnID)
+			edge.Kind = "served_under"
+			edge.Summary = fmt.Sprintf("%s is an API join served nested under %s; query it as %s { %s { ... } }", r.FromTableName, r.ToTableName, r.ToTableName, r.FromTableName)
+		}
+		out.Edges = append(out.Edges, edge)
 	}
 
 	for _, fn := range snapshot.Functions {
@@ -2041,6 +2055,15 @@ func relationshipExample(r MetadataRelationship) string {
 
 func ownerSourcesJSON(values ...string) string {
 	return mustJSON(sortedStrings(values))
+}
+
+// parentTableID trims a column id to its table id: app:main.account_health.__x
+// becomes app:main.account_health.
+func parentTableID(columnID string) string {
+	if index := strings.LastIndex(columnID, "."); index > 0 {
+		return columnID[:index]
+	}
+	return columnID
 }
 
 func relationshipOwnerSources(r MetadataRelationship) []string {

@@ -2771,6 +2771,11 @@ func parseRemoteJoinRelationshipID(id string) (string, string, bool) {
 // relationshipIDsInText scans free text — an edges_json payload — for relationship
 // ids. Terminators are the characters that can follow an id inside JSON.
 func relationshipIDsInText(text string) []string {
+	// Go's JSON encoder writes > as \u003e inside string content, so a live
+	// edges_json payload spells the arrow -\u003e. The integration probe caught the
+	// unnormalized form slipping past both the scanner (which terminates ids on a
+	// backslash) and the parser (which splits on ->).
+	text = strings.ReplaceAll(text, `\u003e`, ">")
 	var out []string
 	terminators := "\"'\\ \t\n,}]"
 	for start := 0; start < len(text); {

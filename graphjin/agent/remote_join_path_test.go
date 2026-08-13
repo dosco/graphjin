@@ -109,6 +109,15 @@ func TestRemoteJoinRegistersFromEdges(t *testing.T) {
 	if len(got) != 2 || !strings.Contains(got[0], "account_health") {
 		t.Fatalf("edge scan = %v", got)
 	}
+	// The live payload spells the arrow -\u003e: Go's JSON encoder escapes > inside
+	// string content, and the first scanner version cut the id at the backslash.
+	escaped := relationshipIDsInText(`[{"id":"edge:relationship:app:main.account_health.__account_health_id-\u003eapp:main.accounts.id","kind":"served_under"}]`)
+	if len(escaped) != 1 {
+		t.Fatalf("escaped-arrow scan = %v", escaped)
+	}
+	if from, parent, ok := parseRemoteJoinRelationshipID(escaped[0]); !ok || from != "account_health" || parent != "accounts" {
+		t.Fatalf("escaped-arrow parse = %q %q %v", from, parent, ok)
+	}
 
 	base := &remoteJoinRuntime{}
 	runtime := newProtocolRuntime(base, "How healthy is Meridian Robotics right now?", "", 8, nil, nil, CatalogSearchFeatures{})
