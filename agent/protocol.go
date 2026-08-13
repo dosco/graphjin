@@ -1435,6 +1435,21 @@ func (s *discoveryState) recordCatalogRows(out any, discoverSavedQueries bool) {
 				s.remoteJoinParents[strings.ToLower(strings.TrimSpace(from))] = parent
 			}
 		}
+		// Detail lookups also carry the join in edges_json — and fetching the table
+		// detail is what episodes actually do, far more often than fetching the
+		// relationship card itself. Run baa86d61: the redirect armed in 3 episodes
+		// via relationship cards while 19 doomed top-level queries ran in episodes
+		// that had inspected the table but never the relationship.
+		if edges := stringFromMap(card, "edges_json"); strings.Contains(edges, "relationship:") {
+			for _, candidate := range relationshipIDsInText(edges) {
+				if from, parent, ok := parseRemoteJoinRelationshipID(candidate); ok {
+					if s.remoteJoinParents == nil {
+						s.remoteJoinParents = map[string]string{}
+					}
+					s.remoteJoinParents[strings.ToLower(strings.TrimSpace(from))] = parent
+				}
+			}
+		}
 		if id != "" {
 			s.catalogIDs[id] = true
 			if isSecurityRuntimeID(id) {
@@ -2751,6 +2766,29 @@ func parseRemoteJoinRelationshipID(id string) (string, string, bool) {
 		return "", "", false
 	}
 	return fromTable, parent, true
+}
+
+// relationshipIDsInText scans free text — an edges_json payload — for relationship
+// ids. Terminators are the characters that can follow an id inside JSON.
+func relationshipIDsInText(text string) []string {
+	var out []string
+	terminators := "\"'\\ \t\n,}]"
+	for start := 0; start < len(text); {
+		index := strings.Index(text[start:], "relationship:")
+		if index < 0 {
+			break
+		}
+		index += start
+		end := index
+		for end < len(text) && !strings.ContainsRune(terminators, rune(text[end])) {
+			end++
+		}
+		if end > index {
+			out = appendUniqueString(out, text[index:end])
+		}
+		start = end + 1
+	}
+	return out
 }
 
 // tableAndColumnFromQualified splits db:schema.table.column into its last two

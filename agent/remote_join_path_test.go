@@ -99,3 +99,45 @@ func TestRemoteJoinInterceptionStaysScoped(t *testing.T) {
 		t.Fatalf("unregistered root should execute, calls=%d", bare.execCalls)
 	}
 }
+
+// TestRemoteJoinRegistersFromEdges pins the wider registration path. Run baa86d61
+// armed the redirect in 3 episodes via relationship cards while 19 doomed
+// top-level queries ran in episodes that had inspected the table detail — which
+// carries the same join in edges_json — but never the relationship card itself.
+func TestRemoteJoinRegistersFromEdges(t *testing.T) {
+	got := relationshipIDsInText(`{"edges":[{"id":"relationship:app:main.account_health.__account_health_id->app:main.accounts.id","kind":"relationship"},{"id":"relationship:app:main.invoices.account_id->app:main.accounts.id"}]}`)
+	if len(got) != 2 || !strings.Contains(got[0], "account_health") {
+		t.Fatalf("edge scan = %v", got)
+	}
+
+	base := &remoteJoinRuntime{}
+	runtime := newProtocolRuntime(base, "How healthy is Meridian Robotics right now?", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.catalogDetails = []string{"table:app:main.account_health"}
+	// Only the table card, as a detail response: no relationship card anywhere.
+	runtime.state.recordCatalogRows(map[string]any{"cards": []any{map[string]any{
+		"id":         "table:app:main.account_health",
+		"kind":       "table",
+		"table_name": "account_health",
+		"edges_json": `[{"id":"relationship:app:main.account_health.__account_health_id->app:main.accounts.id","kind":"relationship"}]`,
+	}}}, false)
+
+	out, err := runtime.ExecuteGraphQL(context.Background(),
+		map[string]any{"query": `query { account_health { health } }`})
+	if err != nil {
+		t.Fatalf("interception should return a repair: %v", err)
+	}
+	if base.execCalls != 0 {
+		t.Fatalf("the doomed query must not execute, calls=%d", base.execCalls)
+	}
+	payload, _ := json.Marshal(out)
+	if !strings.Contains(string(payload), "nested under accounts") {
+		t.Fatalf("repair must name the parent: %s", payload)
+	}
+	// The ordinary foreign-key edge in the same payload must register nothing:
+	// invoices is a real table, freely queryable at the top level.
+	if _, joined := runtime.state.remoteJoinParents["invoices"]; joined {
+		t.Fatal("an ordinary foreign-key edge must not mark its table join-only")
+	}
+}
