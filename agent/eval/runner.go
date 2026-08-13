@@ -400,6 +400,14 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 		p.manifest.ProviderUsage.LLMCalls += episode.Score.Tokens.LLMCalls
 		p.manifest.ProviderUsage.LatencyMS += episode.LatencyMS
 		code, retryable := episodeEnvironment(episode)
+		// Auth errors are classified fatal for callers, and for a dead key that is
+		// right — but a benchmark run observes hundreds of successes around a single
+		// stray 403, which providers emit while billing state propagates. Two runs
+		// died one episode apart tonight on exactly that. Give auth one retry after
+		// the long backoff: a genuinely bad key fails both attempts and still aborts.
+		if code == gjagent.ErrorCodeProviderAuth {
+			retryable = true
+		}
 		if ctx.Err() != nil {
 			code, retryable = "interrupted", false
 		}
@@ -459,18 +467,17 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 // whole run down. Three flash runs on the frozen suite died exactly this way at
 // 85, 131 and 60 episodes, each abandoning a half-finished, fully paid run that a
 // one-minute wait would have carried through.
+// An explicitly configured RetryDelay wins outright — tests and operators set it
+// deliberately. The window-scale default applies only when nothing is configured.
 func retryDelayForCode(configured time.Duration, code string) time.Duration {
-	base := configured
-	if base <= 0 {
-		base = 2 * time.Second
+	if configured > 0 {
+		return configured
 	}
 	switch code {
-	case gjagent.ErrorCodeProviderRateLimit, gjagent.ErrorCodeProviderQuota:
-		if base < 75*time.Second {
-			return 75 * time.Second
-		}
+	case gjagent.ErrorCodeProviderRateLimit, gjagent.ErrorCodeProviderQuota, gjagent.ErrorCodeProviderAuth:
+		return 75 * time.Second
 	}
-	return base
+	return 2 * time.Second
 }
 
 func prepareMutationEpisode(ctx context.Context, runner Runner, client HTTPDoer, instance Instance, mutation *MutationSpec) error {

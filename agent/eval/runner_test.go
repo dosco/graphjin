@@ -937,7 +937,11 @@ func TestRunnerEnvironmentFailureWritesMetricFreePartialReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 || report.RunStatus != RunStatusEnvironmentFailed || !report.Acceptance.EnvironmentFailure {
+	// Auth gets exactly one retry before aborting: two runs died one episode apart
+	// on single stray 403s amid hundreds of successes while the key probed valid,
+	// so one blip is treated as propagation, and a dead key still fails both
+	// attempts and aborts.
+	if calls != 2 || report.RunStatus != RunStatusEnvironmentFailed || !report.Acceptance.EnvironmentFailure {
 		t.Fatalf("calls=%d report=%+v", calls, report)
 	}
 	if !report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 0 {
