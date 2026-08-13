@@ -21,10 +21,13 @@ func TestRetryDelayForCode(t *testing.T) {
 	}{
 		{"rate limit waits out the window", 0, gjagent.ErrorCodeProviderRateLimit, 75 * time.Second},
 		{"quota waits out the window", 0, gjagent.ErrorCodeProviderQuota, 75 * time.Second},
+		{"auth blip waits out billing propagation", 0, gjagent.ErrorCodeProviderAuth, 75 * time.Second},
 		{"transport blip stays snappy", 0, gjagent.ErrorCodeProviderTransport, 2 * time.Second},
 		{"server error stays snappy", 0, gjagent.ErrorCodeProviderServer, 2 * time.Second},
 		{"configured delay survives for blips", 5 * time.Second, gjagent.ErrorCodeProviderTransport, 5 * time.Second},
 		{"configured delay above the window wins", 2 * time.Minute, gjagent.ErrorCodeProviderQuota, 2 * time.Minute},
+		// Deliberate configuration wins downward too: tests set nanosecond delays.
+		{"configured delay below the window wins", time.Nanosecond, gjagent.ErrorCodeProviderAuth, time.Nanosecond},
 	} {
 		if got := retryDelayForCode(tc.configured, tc.code); got != tc.want {
 			t.Errorf("%s: retryDelayForCode(%v, %s) = %v, want %v", tc.name, tc.configured, tc.code, got, tc.want)
