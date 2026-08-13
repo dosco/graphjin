@@ -194,14 +194,28 @@ func TestObservedValueNoticeRefusesAnIdenticalRetry(t *testing.T) {
 		t.Fatalf("an identical retry must not reach the database, calls=%d", base.mutationCalls)
 	}
 
-	// A genuinely different write proceeds: the sample says what the column holds,
-	// not what it permits, so the run is never left without a way forward.
+	// A different write still carrying the same unobserved value gets a second
+	// correction. One correction was measured twice — runs 2cae6c1c and 969337b6 —
+	// and both times the model varied the note, kept the value, and the write
+	// landed (10 of 11, then 8 of 11 episodes).
 	different := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed", resolution_note: "closing per request"}) { id status } }`}
-	if _, err := runtime.ExecuteGraphQL(context.Background(), different); err != nil {
-		t.Fatalf("a different write should proceed: %v", err)
+	third, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(different))
+	if err != nil {
+		t.Fatalf("the second correction should be a repair, not an error: %v", err)
+	}
+	payload, _ = json.Marshal(third)
+	if !strings.Contains(string(payload), "observed_value_mismatch") || base.mutationCalls != 0 {
+		t.Fatalf("same value in a varied write gets a second correction, calls=%d: %s", base.mutationCalls, payload)
+	}
+
+	// The third attempt proceeds: two corrections is friction, not schema, so a
+	// caller who genuinely means the value is never left without a way forward.
+	persisted := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed", resolution_note: "the customer insists on closed"}) { id status } }`}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), persisted); err != nil {
+		t.Fatalf("the persisted write should proceed: %v", err)
 	}
 	if base.mutationCalls != 1 {
-		t.Fatalf("expected the differing write to execute, calls=%d", base.mutationCalls)
+		t.Fatalf("expected the persisted write to execute, calls=%d", base.mutationCalls)
 	}
 }
 
