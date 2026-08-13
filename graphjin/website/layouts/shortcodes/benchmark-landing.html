@@ -1,0 +1,166 @@
+{{- $key := .Get "benchmark" | default "deeporg" -}}
+{{- $data := index (index hugo.Data "benchmarks") $key -}}
+{{- $generation := $data.suite.generation -}}
+{{- $comparisonGeneration := default $generation $data.suite.comparison_generation -}}
+{{- $ranked := sort (where (where (default (slice) $data.runs) "ranked" true) "generation" $comparisonGeneration) "recall" "desc" -}}
+{{- $best := newScratch -}}
+{{- $best.Set "recall" 0.0 -}}
+{{- $best.Set "every" 0.0 -}}
+{{- $best.Set "answer" 0.0 -}}
+{{- $best.Set "method" 0.0 -}}
+{{- $best.Set "behavior" 0.0 -}}
+{{- $best.Set "unsafe" 999999 -}}
+{{- $best.Set "latency" 999999999.0 -}}
+{{- $best.Set "cost" 999999999.0 -}}
+{{- range $ranked -}}
+  {{- if gt (float .recall) (float ($best.Get "recall")) -}}{{- $best.Set "recall" (float .recall) -}}{{- end -}}
+  {{- if gt (float .pass_power_k) (float ($best.Get "every")) -}}{{- $best.Set "every" (float .pass_power_k) -}}{{- end -}}
+  {{- if gt (float .ground_truth_recall) (float ($best.Get "answer")) -}}{{- $best.Set "answer" (float .ground_truth_recall) -}}{{- end -}}
+  {{- if gt (float .method_recall) (float ($best.Get "method")) -}}{{- $best.Set "method" (float .method_recall) -}}{{- end -}}
+  {{- if gt (float .behavior_recall) (float ($best.Get "behavior")) -}}{{- $best.Set "behavior" (float .behavior_recall) -}}{{- end -}}
+  {{- if lt (int (.unsafe_effects | default 0)) (int ($best.Get "unsafe")) -}}{{- $best.Set "unsafe" (int (.unsafe_effects | default 0)) -}}{{- end -}}
+  {{- if and (gt (float (.latency_p50_ms | default 0)) 0) (lt (float .latency_p50_ms) (float ($best.Get "latency"))) -}}{{- $best.Set "latency" (float .latency_p50_ms) -}}{{- end -}}
+  {{- $reliable := mul (float .task_count) (float .recall) -}}
+  {{- $cost := 0.0 -}}
+  {{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
+  {{- if and (gt $cost 0) (lt $cost (float ($best.Get "cost"))) -}}{{- $best.Set "cost" $cost -}}{{- end -}}
+{{- end -}}
+
+<div class="benchmark-landing-page" data-benchmark-landing data-benchmark-generation="{{ $comparisonGeneration }}">
+  {{ if eq (len $ranked) 0 }}
+    <section class="benchmark-landing-empty"><p class="benchmark-landing-eyebrow">Benchmarks</p><h1>DeepORG</h1><p>No public run has been published yet.</p></section>
+  {{ else }}
+    {{ range first 1 $ranked }}
+      {{- $leader := . -}}
+      {{- $reliable := mul (float .task_count) (float .recall) -}}
+      {{- $cost := 0.0 -}}
+      {{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
+      <section class="benchmark-landing-hero" aria-labelledby="benchmark-landing-title">
+        <div class="benchmark-landing-meta"><p class="benchmark-landing-eyebrow">Benchmarks</p><p>Last updated: {{ time.Format "2006-01-02" .generated_at }}</p></div>
+        <h1 id="benchmark-landing-title">DeepORG</h1>
+        <p class="benchmark-landing-subtitle">The Organizational Agent Benchmark</p>
+        <div class="benchmark-landing-intro">
+          <h2>Can an AI agent handle the questions an organization actually asks?</h2>
+          <p>DeepORG tests models against live questions across real organizational systems. It measures what matters: correct answers, the right execution path, and zero unsafe effects.</p>
+        </div>
+        <div class="benchmark-landing-proof" data-benchmark-leader="{{ .run_id }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-task-count="{{ int .task_count }}" data-repeats="{{ int .repeats }}">
+          <div class="benchmark-landing-score">
+            <strong><span>{{ printf "%.0f" (mul (float .recall) 100) }}</span><small>/100</small></strong>
+            <h2>Full pass score</h2>
+            <p>{{ .label }} achieved {{ printf "%.1f" (mul (float .recall) 100) }} out of 100 full passes across {{ int .task_count }} live tasks with {{ int .repeats }} attempts each.</p>
+            {{ if and (isset . "recall_ci_low") (isset . "recall_ci_high") (ge (float .recall_ci_low) 0.0) (le (float .recall_ci_high) 1.0) (ge (float .recall_ci_high) (float .recall_ci_low)) }}
+              <p class="benchmark-confidence" data-recall-ci-low="{{ printf "%.17g" (float .recall_ci_low) }}" data-recall-ci-high="{{ printf "%.17g" (float .recall_ci_high) }}"><span>Estimated range: {{ printf "%.0f" (mul (float .recall_ci_low) 100) }}–{{ printf "%.0f" (mul (float .recall_ci_high) 100) }}</span><a href="/benchmarks/deeporg/methodology/#what-is-scored">What this means</a></p>
+            {{ end }}
+          </div>
+          <div class="benchmark-landing-safety">
+            <strong>{{ int (.unsafe_effects | default 0) }}</strong>
+            <h2>unsafe effects</h2>
+            {{ if eq (int (.unsafe_effects | default 0)) 0 }}
+              <p>Zero unsafe effects across {{ int .episode_count }} attempts. No unintended writes, updates, or side effects.</p>
+            {{ else }}
+              <p>{{ int .unsafe_effects }} unsafe {{ if eq (int .unsafe_effects) 1 }}effect{{ else }}effects{{ end }} across {{ int .episode_count }} attempts.</p>
+            {{ end }}
+          </div>
+        </div>
+        <div class="benchmark-landing-actions">
+          <a class="button-primary" href="#run-it-yourself">Run it yourself <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
+          <a class="benchmark-text-link" href="/benchmarks/deeporg/methodology/">See the technical methodology <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
+        </div>
+        <div class="benchmark-landing-stats" aria-label="Benchmark summary">
+          <div><span>Latency (p50)</span><strong>{{ with .latency_p50_ms }}{{ printf "%.1fs" (div (float .) 1000) }}{{ else }}—{{ end }}</strong><small>per attempt</small></div>
+          <div><span>Reliable pass</span><strong>{{ if gt $cost 0 }}{{ printf "$%.3f" $cost }}{{ else }}—{{ end }}</strong><small>at list price</small></div>
+          <div><span>Scope</span><strong>{{ int .task_count }}</strong><small>live tasks</small></div>
+          <div><span>Attempts</span><strong>{{ int .repeats }}</strong><small>attempts each</small></div>
+          <div><span>Generation</span><strong>{{ .generation }}</strong><small>tested on</small></div>
+        </div>
+      </section>
+    {{ end }}
+
+    <section class="benchmark-landing-section benchmark-comparison-section" aria-labelledby="benchmark-comparison-title">
+      <div class="benchmark-landing-section-heading">
+        <p class="benchmark-landing-eyebrow">Model comparison</p>
+        <h2 id="benchmark-comparison-title">{{ if gt (len $ranked) 1 }}Compare models{{ else }}How this result breaks down{{ end }}</h2>
+        <p>{{ if gt (len $ranked) 1 }}Each row highlights the strongest published result.{{ else }}More model columns will appear automatically as comparable results are published.{{ end }}</p>
+      </div>
+      <div class="benchmark-matrix-wrap" role="region" aria-label="DeepORG model comparison" tabindex="0">
+        <table class="benchmark-matrix{{ if gt (len $ranked) 3 }} is-wide{{ end }}">
+          <caption class="sr-only">DeepORG benchmark results by model</caption>
+          <thead>
+            <tr><th scope="col">What is measured</th>{{ range $ranked }}<th scope="col" data-benchmark-model="{{ .run_id }}"><strong>{{ .label }}</strong><span>{{ humanize .provider }} · GraphJin {{ .release }}</span></th>{{ end }}</tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row"><strong>Full passes</strong><span>Passed the complete four-part contract</span></th>{{ range $ranked }}<td class="{{ if and (gt (len $ranked) 1) (eq (float .recall) (float ($best.Get "recall"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float .recall) 100) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Passed every attempt</strong><span>All {{ int $data.suite.repeats }} tries earned a full pass</span></th>{{ range $ranked }}<td class="{{ if and (gt (len $ranked) 1) (eq (float .pass_power_k) (float ($best.Get "every"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Correct answer</strong><span>Matched live, hidden ground truth</span></th>{{ range $ranked }}<td class="{{ if and (gt (len $ranked) 1) (eq (float .ground_truth_recall) (float ($best.Get "answer"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float .ground_truth_recall) 100) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Right method</strong><span>The governed system did the real work</span></th>{{ range $ranked }}<td class="{{ if and (gt (len $ranked) 1) (eq (float .method_recall) (float ($best.Get "method"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Expected behavior</strong><span>Followed the rules for the task</span></th>{{ range $ranked }}<td class="{{ if and (gt (len $ranked) 1) (eq (float .behavior_recall) (float ($best.Get "behavior"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float .behavior_recall) 100) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Unsafe effects</strong><span>Lower is better</span></th>{{ range $ranked }}<td class="{{ if and (gt (len $ranked) 1) (eq (int (.unsafe_effects | default 0)) (int ($best.Get "unsafe"))) }}is-best{{ end }}">{{ int (.unsafe_effects | default 0) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Median response</strong><span>Lower is better · per attempt</span></th>{{ range $ranked }}<td class="{{ if and (gt (len $ranked) 1) (eq (float (.latency_p50_ms | default 0)) (float ($best.Get "latency"))) }}is-best{{ end }}">{{ with .latency_p50_ms }}{{ printf "%.1fs" (div (float .) 1000) }}{{ else }}—{{ end }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Cost per reliable pass</strong><span>Lower is better · provider list price</span></th>{{ range $ranked }}{{- $reliable := mul (float .task_count) (float .recall) -}}{{- $cost := 0.0 -}}{{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}<td class="{{ if and (gt (len $ranked) 1) (eq $cost (float ($best.Get "cost"))) }}is-best{{ end }}">{{ if gt $cost 0 }}{{ printf "$%.3f" $cost }}{{ else }}—{{ end }}</td>{{ end }}</tr>
+          </tbody>
+        </table>
+      </div>
+      {{ if gt (len $ranked) 3 }}<p class="benchmark-scroll-hint">Scroll to compare models <i class="ti ti-arrow-right" aria-hidden="true"></i></p>{{ end }}
+      <div class="benchmark-matrix-reports">{{ range $ranked }}{{- $reliable := mul (float .task_count) (float .recall) -}}{{- $cost := 0.0 -}}{{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}<a data-benchmark-comparison-run="{{ .run_id }}" data-full-pass="{{ printf "%.17g" (float .recall) }}" data-every-time="{{ printf "%.17g" (float .pass_power_k) }}" data-ground-truth="{{ printf "%.17g" (float .ground_truth_recall) }}" data-method="{{ printf "%.17g" (float .method_recall) }}" data-behavior="{{ printf "%.17g" (float .behavior_recall) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-task-count="{{ int .task_count }}" data-generation="{{ .generation }}" href="{{ printf "/benchmarks/deeporg/runs/%s/" .slug | relURL }}">{{ .label }} technical run <i class="ti ti-arrow-right" aria-hidden="true"></i></a>{{ end }}</div>
+    </section>
+
+    <section class="benchmark-landing-section benchmark-meaning-section" aria-labelledby="benchmark-meaning-title">
+      <div class="benchmark-landing-section-heading">
+        <p class="benchmark-landing-eyebrow">The score, in plain English</p>
+        <h2 id="benchmark-meaning-title">What {{ range first 1 $ranked }}{{ printf "%.0f" (mul (float .recall) 100) }}{{ end }} actually means</h2>
+        <p>The agent fully succeeded on {{ range first 1 $ranked }}{{ printf "%.0f" (mul (float .recall) (float .task_count)) }} of {{ int .task_count }} real-work tasks. Each task was tried {{ int .repeats }} times{{ end }}, and a pass had to meet all four checks.</p>
+      </div>
+      <ol class="benchmark-pass-contract">
+        <li><span>1</span><div><strong>Correct answer</strong><p>It got the answer right.</p></div></li>
+        <li><span>2</span><div><strong>Right way of getting it</strong><p>The governed system did the real work; the model did not guess.</p></div></li>
+        <li><span>3</span><div><strong>Expected behavior</strong><p>It followed the rules for that task.</p></div></li>
+        <li><span>4</span><div><strong>No unsafe effects</strong><p>It made no unsafe or unauthorized change.</p></div></li>
+      </ol>
+    </section>
+
+    {{- $counts := $data.suite.category_counts -}}
+    {{- $findCount := add (int (index $counts "discovery")) (int (index $counts "saved-metric")) -}}
+    {{- $answerCount := add (add (int (index $counts "aggregate")) (int (index $counts "ranking"))) (int (index $counts "window")) -}}
+    {{- $actCount := add (int (index $counts "action")) (int (index $counts "refusal")) -}}
+    {{- $taskTotal := 0 -}}{{- range $counts -}}{{- $taskTotal = add $taskTotal (int .) -}}{{- end -}}
+    <section class="benchmark-landing-section benchmark-scope-section" aria-labelledby="benchmark-scope-title">
+      <div class="benchmark-landing-section-heading">
+        <p class="benchmark-landing-eyebrow">{{ $taskTotal }} real-work tasks</p>
+        <h2 id="benchmark-scope-title">What DeepORG actually tests</h2>
+        <p>DeepORG uses everyday organizational work—not trivia questions. The ten technical task families are grouped here into six things anyone can recognize.</p>
+      </div>
+      <div class="benchmark-scope-grid">
+        <article data-benchmark-task-count="{{ $findCount }}"><i class="ti ti-file-search" aria-hidden="true"></i><h3>Find the right information</h3><p>Locate the useful data without loading the whole company into the prompt.</p><span>{{ $findCount }} tasks · discovery + saved metrics</span></article>
+        <article data-benchmark-task-count="{{ $answerCount }}"><i class="ti ti-calculator" aria-hidden="true"></i><h3>Work out the answer</h3><p>Calculate totals, rankings, and time windows in the database.</p><span>{{ $answerCount }} tasks · aggregates + rankings + windows</span></article>
+        <article data-benchmark-task-count="{{ int (index $counts "multi-turn") }}"><i class="ti ti-messages" aria-hidden="true"></i><h3>Follow the conversation</h3><p>Use context from an earlier question in the next one.</p><span>{{ int (index $counts "multi-turn") }} tasks · multi-turn</span></article>
+        <article data-benchmark-task-count="{{ int (index $counts "cross-source") }}"><i class="ti ti-network" aria-hidden="true"></i><h3>Connect different systems</h3><p>Combine databases, APIs, files, and code when the answer spans them.</p><span>{{ int (index $counts "cross-source") }} tasks · cross-source</span></article>
+        <article data-benchmark-task-count="{{ $actCount }}"><i class="ti ti-shield-check" aria-hidden="true"></i><h3>Act only when allowed</h3><p>Make approved changes and refuse work that policy forbids.</p><span>{{ $actCount }} tasks · actions + refusals</span></article>
+        <article data-benchmark-task-count="{{ int (index $counts "reactive") }}"><i class="ti ti-activity-heartbeat" aria-hidden="true"></i><h3>Notice what changed</h3><p>Watch for new events, missing events, and conditions needing attention.</p><span>{{ int (index $counts "reactive") }} tasks · reactive</span></article>
+      </div>
+    </section>
+
+    <section class="benchmark-landing-section benchmark-example-section" aria-labelledby="benchmark-example-title">
+      <div class="benchmark-example-copy">
+        <p class="benchmark-landing-eyebrow">Illustrative example</p>
+        <h2 id="benchmark-example-title">From question to verified answer</h2>
+        <p>DeepORG evaluates the complete agent workflow end to end, just like production.</p>
+        <ol><li><span>1</span><div><strong>Ask</strong><p>A user asks a real question in natural language.</p></div></li><li><span>2</span><div><strong>Execute</strong><p>The agent selects and runs the governed method.</p></div></li><li><span>3</span><div><strong>Verify</strong><p>DeepORG checks the answer, method, behavior, and safety.</p></div></li><li><span>4</span><div><strong>Result</strong><p>Only all four together earn a full pass.</p></div></li></ol>
+      </div>
+      <div class="benchmark-example-flow">
+        <div><span>Question</span><strong>What was our ARR last month by region?</strong></div>
+        <i class="ti ti-arrow-down" aria-hidden="true"></i>
+        <div><span>Method used (database-side)</span><code>arr_by_region(as_of_date: "2026-07-31")</code></div>
+        <i class="ti ti-arrow-down" aria-hidden="true"></i>
+        <div class="benchmark-example-answer"><span>Answer (verified)</span><table><thead><tr><th>Region</th><th>ARR (USD)</th></tr></thead><tbody><tr><td>North America</td><td>$12,431,000</td></tr><tr><td>EMEA</td><td>$7,842,000</td></tr><tr><td>APAC</td><td>$5,219,000</td></tr><tr><td>Latin America</td><td>$1,908,000</td></tr><tr><th>Total</th><th>$27,400,000</th></tr></tbody></table></div>
+        <i class="ti ti-arrow-down" aria-hidden="true"></i>
+        <div class="benchmark-example-result"><strong><i class="ti ti-circle-check" aria-hidden="true"></i> Full pass</strong><span>Correct answer · right method · expected behavior · zero unsafe effects</span></div>
+        <p>Illustrative flow—not a published test item.</p>
+      </div>
+    </section>
+
+    <section id="run-it-yourself" class="benchmark-landing-section benchmark-final-section" aria-labelledby="benchmark-run-title">
+      <article><i class="ti ti-terminal-2" aria-hidden="true"></i><div><h2 id="benchmark-run-title">Run DeepORG yourself</h2><p>Test the frozen public benchmark with your own model and GraphJin build.</p><code>graphjin eval bench --public --yes</code><a href="/benchmarks/deeporg/#run-it-yourself">Run it yourself <i class="ti ti-arrow-right" aria-hidden="true"></i></a></div></article>
+      <article><i class="ti ti-book-2" aria-hidden="true"></i><div><h2>See the technical methodology</h2><p>Read how the suite is built, scored, kept comparable, and protected from misleading results.</p><a href="/benchmarks/deeporg/methodology/">See the methodology <i class="ti ti-arrow-right" aria-hidden="true"></i></a><a href="/benchmarks/deeporg/runs/">Browse published runs <i class="ti ti-arrow-right" aria-hidden="true"></i></a></div></article>
+    </section>
+  {{ end }}
+</div>

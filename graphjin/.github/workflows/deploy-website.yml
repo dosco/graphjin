@@ -6,6 +6,11 @@ on:
     paths:
       - "website/**"
       - ".github/workflows/deploy-website.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "website/**"
+      - ".github/workflows/deploy-website.yml"
   workflow_dispatch:
 
 permissions:
@@ -39,6 +44,7 @@ jobs:
           extended: true
 
       - name: Setup Pages
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         uses: actions/configure-pages@v6
 
       - name: Install dependencies
@@ -54,6 +60,7 @@ jobs:
         run: npm run check
 
       - name: Upload artifact
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         uses: actions/upload-pages-artifact@v5
         with:
           path: website/public
@@ -61,6 +68,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     environment:
       name: github-pages

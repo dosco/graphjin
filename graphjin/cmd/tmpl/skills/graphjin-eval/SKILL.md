@@ -17,6 +17,8 @@ candidate, or understand an evaluation failure.
 - Never hand-edit `website/data/benchmarks/<benchmark>.yaml` or
   `website/content/benchmarks/<benchmark>/runs/`. `graphjin eval publish` is the
   only supported writer; it writes one row and one run page and never runs Git.
+- Treat `eval publish --label` as presentation only. Supersession uses the
+  normalized provider and model identity, not the display label.
 - Use `graphjin eval rm <task-id>` as the supported task-removal path; never
   delete a task from the suite file manually.
 - Never invent an oracle, field, threshold, or business interpretation.

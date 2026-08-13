@@ -16,6 +16,8 @@ const requiredRoutes = [
   'favicon.svg',
   'favicon.ico',
   'og/graphjin-og.png',
+  'og/deeporg-og.png',
+  'og/index.html',
   'start/install/index.html',
   'start/quick-start/index.html',
   'start/demos/index.html',
@@ -111,6 +113,7 @@ const requiredContent = [
   'benchmarks/deeporg/_index.md',
   'benchmarks/deeporg/methodology.md',
   'benchmarks/deeporg/runs/_index.md',
+  'benchmark/_index.md',
   'configure/sources-mode.md',
   'configure/how-it-works.md',
   'configure/database.md',
@@ -178,6 +181,8 @@ const requiredRenderedContent = [
   ['benchmarks/deeporg/index.html', 'Run DeepORG on your organization'],
   ['benchmarks/deeporg/methodology/index.html', 'Frozen suite, live verification'],
   ['benchmarks/deeporg/runs/index.html', 'Published DeepORG Runs'],
+  ['benchmark/index.html', 'What DeepORG actually tests'],
+  ['benchmark/index.html', 'From question to verified answer'],
 ];
 
 async function exists(file) {
@@ -226,7 +231,6 @@ for (const [route, expected] of requiredRenderedContent) {
 }
 
 for (const [route, target] of [
-  ['benchmark/index.html', '/benchmarks/deeporg/'],
   ['benchmark/methodology/index.html', '/benchmarks/deeporg/methodology/'],
   ['benchmark/runs/index.html', '/benchmarks/deeporg/runs/'],
   ['benchmarks/organizational-agent/index.html', '/benchmarks/deeporg/'],
@@ -301,11 +305,10 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   for (const required of [
     'DeepORG · by GraphJin',
     'Can an AI agent handle the questions an organization actually asks?',
-    'A full pass requires the right answer',
-    'Build it by hand',
-    'Connect the organization once',
-    'See DeepORG',
-    'Run it yourself',
+    'Full pass score',
+    'Right way of getting it',
+    'See what the score means',
+    'Technical methodology',
   ]) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing benchmark copy: ${required}`);
@@ -331,6 +334,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     '/configure/how-it-works/',
     '/benchmarks/deeporg/',
     '/benchmarks/deeporg/methodology/',
+    '/benchmark/',
   ]) {
     const escaped = href.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const hrefPattern = new RegExp(`href=(?:"${escaped}"|'${escaped}'|${escaped})(?=\\s|>)`);
@@ -375,6 +379,7 @@ if (await exists(benchmarkDataPath)) {
   let section = '';
   let currentRun = null;
   let runSubsection = '';
+  let suiteSubsection = '';
   for (const line of benchmarkData.split('\n')) {
     if (line === 'benchmark:') {
       section = 'benchmark';
@@ -413,7 +418,19 @@ if (await exists(benchmarkDataPath)) {
     }
     const suiteField = line.match(/^    ([a-z0-9_]+):\s*(.*)$/);
     if (section === 'suite' && suiteField) {
-      parsed.suite[suiteField[1]] = parseScalar(suiteField[2]);
+      if (['category_counts', 'generation_scopes'].includes(suiteField[1])) {
+        parsed.suite[suiteField[1]] = {};
+        suiteSubsection = suiteField[1];
+      } else {
+        parsed.suite[suiteField[1]] = parseScalar(suiteField[2]);
+        suiteSubsection = '';
+      }
+      continue;
+    }
+    const nestedSuiteField = line.match(/^        ([a-z0-9_.-]+):\s*(.*)$/);
+    if (section === 'suite' && suiteSubsection && nestedSuiteField) {
+      parsed.suite[suiteSubsection][nestedSuiteField[1].replace(/^['"]|['"]$/g, '')] = parseScalar(nestedSuiteField[2]);
+      continue;
     }
     const benchmarkField = line.match(/^    ([a-z0-9_]+):\s*(.*)$/);
     if (section === 'benchmark' && benchmarkField) {
@@ -467,6 +484,135 @@ if (await exists(benchmarkDataPath)) {
   const rankedRuns = parsed.runs.filter(
     (run) => run.ranked === true && run.generation === comparisonGeneration
   );
+  const topRanked = [...rankedRuns].sort((a, b) => Number(b.recall) - Number(a.recall))[0];
+  const benchmarkLandingPath = path.join(publicRoot, 'benchmark', 'index.html');
+  if (rankedRuns.length > 0 && (await exists(benchmarkLandingPath))) {
+    const landingHTML = await readFile(benchmarkLandingPath, 'utf8');
+    if (!landingHTML.includes('data-benchmark-landing')) {
+      failures.push('Friendly DeepORG page is missing its landing marker');
+    }
+    if (String(renderedDataAttribute(landingHTML, 'data-benchmark-generation')) !== String(comparisonGeneration)) {
+      failures.push('Friendly DeepORG page generation does not match deeporg.yaml');
+    }
+    const renderedModelColumns = [...landingHTML.matchAll(/data-benchmark-model=(?:"([^"]+)"|'([^']+)'|([^\s>]+))/g)]
+      .map((match) => match[1] ?? match[2] ?? match[3]);
+    if (renderedModelColumns.length !== rankedRuns.length) {
+      failures.push(`Friendly DeepORG comparison rendered ${renderedModelColumns.length} model columns for ${rankedRuns.length} ranked runs`);
+    }
+    const leaderMarker = new RegExp(`data-benchmark-leader=(?:"${String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}"|'${String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}'|${String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?=\\s|>)`).exec(landingHTML);
+    if (!leaderMarker) {
+      failures.push('Friendly DeepORG hero does not use the top ranked run');
+    } else {
+      const leaderStart = landingHTML.lastIndexOf('<div', leaderMarker.index);
+      const leaderEnd = landingHTML.indexOf('>', leaderMarker.index);
+      const leaderTag = landingHTML.slice(leaderStart, leaderEnd + 1);
+      const reliablePasses = Number(topRanked.task_count ?? 0) * Number(topRanked.recall ?? 0);
+      const expectedLeaderValues = [
+        ['data-recall', Number(topRanked.recall ?? 0)],
+        ['data-unsafe-effects', Number(topRanked.unsafe_effects ?? 0)],
+        ['data-latency-p50-ms', Number(topRanked.latency_p50_ms ?? 0)],
+        ['data-cost-per-reliable-pass-usd', reliablePasses > 0 ? Number(topRanked.estimated_list_cost_usd ?? 0) / reliablePasses : 0],
+        ['data-task-count', Number(topRanked.task_count ?? 0)],
+        ['data-repeats', Number(topRanked.repeats ?? 0)],
+      ];
+      for (const [field, expected] of expectedLeaderValues) {
+        if (Number(renderedDataAttribute(leaderTag, field)) !== expected) {
+          failures.push(`Friendly DeepORG hero ${field} does not match deeporg.yaml`);
+        }
+      }
+    }
+    const expectedComparisonHeading = rankedRuns.length > 1 ? 'Compare models' : 'How this result breaks down';
+    if (!landingHTML.includes(`>${expectedComparisonHeading}</h2>`)) {
+      failures.push(`Friendly DeepORG comparison heading should be “${expectedComparisonHeading}”`);
+    }
+    const hasScrollHint = /\bbenchmark-scroll-hint\b/.test(landingHTML);
+    if (hasScrollHint !== (rankedRuns.length > 3)) {
+      failures.push('Friendly DeepORG comparison scroll hint does not match its model count');
+    }
+    const bestCellCount = (landingHTML.match(/\bis-best\b/g) ?? []).length;
+    if ((rankedRuns.length < 2 && bestCellCount > 0) || (rankedRuns.length > 1 && bestCellCount === 0)) {
+      failures.push('Friendly DeepORG best-value highlighting does not match its model count');
+    }
+    if (!landingHTML.includes(`What ${Math.round(Number(topRanked.recall) * 100)} actually means`)) {
+      failures.push('Friendly DeepORG plain-English score heading does not match the top ranked run');
+    }
+    const validConfidence = Number.isFinite(Number(topRanked.recall_ci_low)) &&
+      Number.isFinite(Number(topRanked.recall_ci_high)) &&
+      Number(topRanked.recall_ci_low) >= 0 && Number(topRanked.recall_ci_high) <= 1 &&
+      Number(topRanked.recall_ci_high) >= Number(topRanked.recall_ci_low);
+    const renderedConfidenceLow = renderedDataAttribute(landingHTML, 'data-recall-ci-low');
+    const renderedConfidenceHigh = renderedDataAttribute(landingHTML, 'data-recall-ci-high');
+    if (validConfidence) {
+      if (Number(renderedConfidenceLow) !== Number(topRanked.recall_ci_low) || Number(renderedConfidenceHigh) !== Number(topRanked.recall_ci_high)) {
+        failures.push('Friendly DeepORG confidence range does not match deeporg.yaml');
+      }
+    } else if (renderedConfidenceLow !== undefined || renderedConfidenceHigh !== undefined) {
+      failures.push('Friendly DeepORG renders an invalid or unavailable confidence range');
+    }
+    if (!landingHTML.includes('https://graphjin.com/og/deeporg-og.png')) {
+      failures.push('Friendly DeepORG page does not reference its dedicated social card');
+    }
+    for (const run of rankedRuns) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const marker = new RegExp(`data-benchmark-comparison-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(landingHTML);
+      if (!marker) {
+        failures.push(`Friendly DeepORG comparison is missing ${run.run_id}`);
+        continue;
+      }
+      const linkStart = landingHTML.lastIndexOf('<a', marker.index);
+      const linkEnd = landingHTML.indexOf('>', marker.index);
+      const linkTag = landingHTML.slice(linkStart, linkEnd + 1);
+      const reliablePasses = Number(run.task_count ?? 0) * Number(run.recall ?? 0);
+      const expected = [
+        ['data-full-pass', Number(run.recall ?? 0)],
+        ['data-every-time', Number(run.pass_power_k ?? 0)],
+        ['data-ground-truth', Number(run.ground_truth_recall ?? 0)],
+        ['data-method', Number(run.method_recall ?? 0)],
+        ['data-behavior', Number(run.behavior_recall ?? 0)],
+        ['data-unsafe-effects', Number(run.unsafe_effects ?? 0)],
+        ['data-latency-p50-ms', Number(run.latency_p50_ms ?? 0)],
+        ['data-cost-per-reliable-pass-usd', reliablePasses > 0 ? Number(run.estimated_list_cost_usd ?? 0) / reliablePasses : 0],
+        ['data-task-count', Number(run.task_count ?? 0)],
+      ];
+      for (const [field, value] of expected) {
+        if (Number(renderedDataAttribute(linkTag, field)) !== value) {
+          failures.push(`Friendly DeepORG ${field} for ${run.run_id} does not match deeporg.yaml`);
+        }
+      }
+      if (String(renderedDataAttribute(linkTag, 'data-generation')) !== String(run.generation)) {
+        failures.push(`Friendly DeepORG generation for ${run.run_id} does not match deeporg.yaml`);
+      }
+      const expectedReport = `/benchmarks/deeporg/runs/${run.slug}/`;
+      if (renderedDataAttribute(linkTag, 'href') !== expectedReport) {
+        failures.push(`Friendly DeepORG technical report link for ${run.run_id} is incomplete`);
+      }
+    }
+    const renderedTaskCounts = [...landingHTML.matchAll(/data-benchmark-task-count=(?:"(\d+)"|'(\d+)'|(\d+))/g)]
+      .map((match) => Number(match[1] ?? match[2] ?? match[3]));
+    const publishedTaskCount = Object.values(parsed.suite.category_counts ?? {}).reduce((total, value) => total + Number(value), 0);
+    if (renderedTaskCounts.reduce((total, value) => total + value, 0) !== publishedTaskCount) {
+      failures.push('Friendly DeepORG task group counts do not add up to the published suite');
+    }
+  }
+
+  const benchmarkOGPath = path.join(publicRoot, 'og', 'index.html');
+  if (topRanked && (await exists(benchmarkOGPath))) {
+    const benchmarkOG = await readFile(benchmarkOGPath, 'utf8');
+    if (String(renderedDataAttribute(benchmarkOG, 'data-benchmark-generation')) !== String(comparisonGeneration)) {
+      failures.push('DeepORG social card generation does not match deeporg.yaml');
+    }
+    if (String(renderedDataAttribute(benchmarkOG, 'data-benchmark-og-run')) !== String(topRanked.run_id)) {
+      failures.push('DeepORG social card does not use the top ranked run');
+    }
+    if (String(renderedDataAttribute(benchmarkOG, 'data-model-label')) !== String(topRanked.label)) {
+      failures.push('DeepORG social card model label does not match deeporg.yaml');
+    }
+    if (Number(renderedDataAttribute(benchmarkOG, 'data-recall')) !== Number(topRanked.recall) ||
+        Number(renderedDataAttribute(benchmarkOG, 'data-unsafe-effects')) !== Number(topRanked.unsafe_effects ?? 0) ||
+        Number(renderedDataAttribute(benchmarkOG, 'data-task-count')) !== Number(topRanked.task_count ?? 0)) {
+      failures.push('DeepORG social card metrics do not match deeporg.yaml');
+    }
+  }
   if (rankedRuns.length > 0 && (await exists(benchmarkIndexPath))) {
     const benchmarkHTML = await readFile(benchmarkIndexPath, 'utf8');
     if (String(renderedDataAttribute(benchmarkHTML, 'data-benchmark-generation-current')) !== String(comparisonGeneration)) {
@@ -597,31 +743,61 @@ if (await exists(benchmarkDataPath)) {
     }
   }
 
-  const topAccepted = parsed.runs
-    .filter((run) => run.ranked === true && run.accepted === true && run.generation === comparisonGeneration)
-    .sort((a, b) => Number(b.recall) - Number(a.recall))[0];
   const homePath = path.join(publicRoot, 'index.html');
-  if (topAccepted && (await exists(homePath))) {
+  if (topRanked && (await exists(homePath))) {
     const home = await readFile(homePath, 'utf8');
     const benchmarkPage = await readFile(benchmarkIndexPath, 'utf8');
     if (!home.includes('data-benchmark-proof')) {
       failures.push('Homepage is missing the data-driven benchmark proof module');
     }
-    const escapedRunID = String(topAccepted.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedRunID = String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const chartMarker = new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(home);
     if (!chartMarker) {
       failures.push('Homepage benchmark chart does not include the top ranked run from deeporg.yaml');
+    } else {
+      const chartStart = home.lastIndexOf('<div', chartMarker.index);
+      const chartEnd = home.indexOf('>', chartMarker.index);
+      const chartTag = home.slice(chartStart, chartEnd + 1);
+      const reliablePasses = Number(topRanked.task_count ?? 0) * Number(topRanked.recall ?? 0);
+      const expected = [
+        ['data-recall', Number(topRanked.recall ?? 0)],
+        ['data-cost-per-reliable-pass-usd', reliablePasses > 0 ? Number(topRanked.estimated_list_cost_usd ?? 0) / reliablePasses : 0],
+        ['data-latency-p50-ms', Number(topRanked.latency_p50_ms ?? 0)],
+        ['data-unsafe-effects', Number(topRanked.unsafe_effects ?? 0)],
+        ['data-task-count', Number(topRanked.task_count ?? 0)],
+        ['data-repeats', Number(topRanked.repeats ?? 0)],
+      ];
+      for (const [field, value] of expected) {
+        const rendered = Number(renderedDataAttribute(chartTag, field));
+        if (!Number.isFinite(rendered) || Math.abs(rendered - value) > 1e-12) {
+          failures.push(`Homepage benchmark ${field} does not match deeporg.yaml (${rendered} != ${value})`);
+        }
+      }
     }
     if (String(renderedDataAttribute(home, 'data-benchmark-generation')) !== String(comparisonGeneration)) {
       failures.push('Homepage benchmark proof generation does not match deeporg.yaml');
     }
     const storyMarker = renderedDataAttribute(benchmarkPage, 'data-current-recall');
-    if (storyMarker === undefined || Number(storyMarker) !== Number(topAccepted.recall)) {
-      failures.push(`DeepORG generation story recall does not match deeporg.yaml (${storyMarker ?? 'missing'} != ${topAccepted.recall})`);
+    if (storyMarker === undefined || Number(storyMarker) !== Number(topRanked.recall)) {
+      failures.push(`DeepORG generation story recall does not match deeporg.yaml (${storyMarker ?? 'missing'} != ${topRanked.recall})`);
     }
     const storySafety = renderedDataAttribute(benchmarkPage, 'data-current-unsafe-effects');
-    if (storySafety === undefined || Number(storySafety) !== Number(topAccepted.unsafe_effects ?? 0)) {
-      failures.push(`DeepORG generation story unsafe effects do not match deeporg.yaml (${storySafety ?? 'missing'} != ${topAccepted.unsafe_effects ?? 0})`);
+    if (storySafety === undefined || Number(storySafety) !== Number(topRanked.unsafe_effects ?? 0)) {
+      failures.push(`DeepORG generation story unsafe effects do not match deeporg.yaml (${storySafety ?? 'missing'} != ${topRanked.unsafe_effects ?? 0})`);
+    }
+  }
+}
+
+const deepORGCardPath = path.join(publicRoot, 'og', 'deeporg-og.png');
+if (await exists(deepORGCardPath)) {
+  const png = await readFile(deepORGCardPath);
+  if (png.length < 24 || png.toString('ascii', 1, 4) !== 'PNG') {
+    failures.push('DeepORG social card is not a valid PNG');
+  } else {
+    const width = png.readUInt32BE(16);
+    const height = png.readUInt32BE(20);
+    if (width !== 1200 || height !== 630) {
+      failures.push(`DeepORG social card is ${width}x${height}; expected 1200x630`);
     }
   }
 }
@@ -705,7 +881,8 @@ for (const file of htmlFiles) {
   const isBenchmarkAlias = rel === 'benchmark/index.html' || rel.startsWith(`benchmark${path.sep}`) ||
     rel === path.join('benchmarks', 'organizational-agent', 'index.html') ||
     rel.startsWith(path.join('benchmarks', 'organizational-agent') + path.sep);
-  if (!isBenchmarkAlias) {
+  const isBuildOnlyDocument = rel === path.join('og', 'index.html');
+  if (!isBenchmarkAlias && !isBuildOnlyDocument) {
     for (const meta of ['section', 'kind', 'slug', 'source']) {
       const metaPattern = new RegExp(`\\sdata-pagefind-meta=(?:"${meta}"|'${meta}'|${meta})(?=\\s|>|/)`);
       if (!metaPattern.test(html)) {
