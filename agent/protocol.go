@@ -141,6 +141,9 @@ type discoveryState struct {
 	// remoteJoinNoticed keeps the violation record to one per root; the
 	// interception itself repeats, because the intercepted call cannot succeed.
 	remoteJoinNoticed map[string]bool
+	// observedValueStrikes counts refusals per (table, column, value), so an
+	// unobserved value is corrected twice and then allowed through.
+	observedValueStrikes map[string]int
 	// observedValueRejected records the writes already refused for using a value the
 	// column has never held, by identity.
 	//
@@ -913,9 +916,9 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			r.state.finishAction(action, "execute_graphql", args, nil, err)
 			return nil, err
 		}
-		if r.state.refuseUnobservedValue(normalizeGraphQLIdentity(query)) {
-			if mismatches := r.unobservedWrittenValues(ctx, query); len(mismatches) != 0 {
-				r.state.recordObservedValueRejection(normalizeGraphQLIdentity(query))
+		{
+			if mismatches := r.unobservedWrittenValues(ctx, query); len(mismatches) != 0 &&
+				r.state.refuseUnobservedWrite(normalizeGraphQLIdentity(query), mismatches) {
 				described := r.describeUnobservedValues(ctx, mismatches)
 				// A list did not move behaviour — ten of eleven episodes handed one
 				// resubmitted "closed" verbatim. Every repair that measurably changed
@@ -1406,19 +1409,30 @@ func (s *discoveryState) recordCatalogRows(out any, discoverSavedQueries bool) {
 		// A remote_join relationship names the only route into its from-table.
 		// Remember it: a top-level query on that table cannot return data, and the
 		// interception that redirects it needs to know the parent.
-		if kind == "relationship" && strings.EqualFold(stringFromMap(card, "source"), "remote_join") {
-			var rel struct {
-				FromTableName string
-				ToTableName   string
+		//
+		// The id is the source of truth here, not the payload. Relationship cards
+		// mostly arrive as summary rows — filtered reads strip evidence_json by
+		// design — and the first version of this registration read only the payload,
+		// so it registered nothing across an entire run while 29 doomed top-level
+		// queries went through. The synthetic __<table>_ key in the id is the
+		// remote-join signature and survives every read shape.
+		if kind == "relationship" {
+			from, parent, ok := parseRemoteJoinRelationshipID(id)
+			if !ok && strings.EqualFold(stringFromMap(card, "source"), "remote_join") {
+				var rel struct {
+					FromTableName string
+					ToTableName   string
+				}
+				if evidence := stringFromMap(card, "evidence_json"); evidence != "" {
+					_ = json.Unmarshal([]byte(evidence), &rel)
+				}
+				from, parent, ok = rel.FromTableName, rel.ToTableName, rel.FromTableName != "" && rel.ToTableName != ""
 			}
-			if evidence := stringFromMap(card, "evidence_json"); evidence != "" {
-				_ = json.Unmarshal([]byte(evidence), &rel)
-			}
-			if rel.FromTableName != "" && rel.ToTableName != "" {
+			if ok {
 				if s.remoteJoinParents == nil {
 					s.remoteJoinParents = map[string]string{}
 				}
-				s.remoteJoinParents[strings.ToLower(strings.TrimSpace(rel.FromTableName))] = rel.ToTableName
+				s.remoteJoinParents[strings.ToLower(strings.TrimSpace(from))] = parent
 			}
 		}
 		if id != "" {
@@ -2669,28 +2683,88 @@ func (s *discoveryState) recordObservedValueLookup(table string, values map[stri
 	})
 }
 
-// refuseUnobservedValue mirrors the retained-subject rule: the first write using an
-// unseen value is refused, a byte-identical retry is refused again, and a genuinely
-// different write proceeds. The sample describes what the column holds, not what it
-// permits, so the run must never be left without a way forward.
-func (s *discoveryState) refuseUnobservedValue(identity string) bool {
-	if s == nil {
+// refuseUnobservedWrite decides whether a write using values a column has never
+// held is refused, and records the refusal when it is.
+//
+// A byte-identical retry is always refused. Beyond that, each unobserved value
+// gets two refusals — each carrying the exact corrected write — and the third
+// attempt proceeds. One refusal was measured twice, in runs 2cae6c1c and
+// 969337b6: the model varied the note, kept the value, and the write landed, in
+// 10 of 11 and then 8 of 11 episodes. Two corrections is friction, not schema;
+// a caller who genuinely means the new value expresses it by persisting past
+// corrections that each offered the alternative, so the run is never left
+// without a way forward.
+func (s *discoveryState) refuseUnobservedWrite(identity string, mismatches []columnAssignment) bool {
+	if s == nil || len(mismatches) == 0 {
 		return false
 	}
 	if identity != "" && s.observedValueRejected[identity] {
 		return true
 	}
-	return len(s.observedValueRejected) == 0
+	refuse := false
+	for _, mismatch := range mismatches {
+		if s.observedValueStrikes[valueStrikeKey(mismatch)] < 2 {
+			refuse = true
+		}
+	}
+	if !refuse {
+		return false
+	}
+	if identity != "" {
+		if s.observedValueRejected == nil {
+			s.observedValueRejected = map[string]bool{}
+		}
+		s.observedValueRejected[identity] = true
+	}
+	if s.observedValueStrikes == nil {
+		s.observedValueStrikes = map[string]int{}
+	}
+	for _, mismatch := range mismatches {
+		s.observedValueStrikes[valueStrikeKey(mismatch)]++
+	}
+	return true
 }
 
-func (s *discoveryState) recordObservedValueRejection(identity string) {
-	if s == nil || identity == "" {
-		return
+func valueStrikeKey(mismatch columnAssignment) string {
+	return strings.ToLower(mismatch.Table) + "." + strings.ToLower(mismatch.Column) + "=" + strings.ToLower(mismatch.Value)
+}
+
+// parseRemoteJoinRelationshipID reads the join out of a relationship card id:
+// relationship:app:main.account_health.__account_health_id->app:main.accounts.id
+// names account_health as join-only under accounts. Only the synthetic
+// __<table>_ key qualifies; ordinary foreign-key relationships never carry it.
+func parseRemoteJoinRelationshipID(id string) (string, string, bool) {
+	trimmed := strings.TrimSpace(id)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "relationship:") {
+		return "", "", false
 	}
-	if s.observedValueRejected == nil {
-		s.observedValueRejected = map[string]bool{}
+	parts := strings.SplitN(trimmed[len("relationship:"):], "->", 2)
+	if len(parts) != 2 {
+		return "", "", false
 	}
-	s.observedValueRejected[identity] = true
+	fromTable, fromColumn := tableAndColumnFromQualified(parts[0])
+	parent, _ := tableAndColumnFromQualified(parts[1])
+	if fromTable == "" || parent == "" {
+		return "", "", false
+	}
+	if !strings.HasPrefix(strings.ToLower(fromColumn), "__"+strings.ToLower(fromTable)+"_") {
+		return "", "", false
+	}
+	return fromTable, parent, true
+}
+
+// tableAndColumnFromQualified splits db:schema.table.column into its last two
+// segments.
+func tableAndColumnFromQualified(qualified string) (string, string) {
+	value := qualified
+	if index := strings.Index(value, ":"); index >= 0 {
+		value = value[index+1:]
+	}
+	segments := strings.Split(value, ".")
+	if len(segments) < 2 {
+		return "", ""
+	}
+	return segments[len(segments)-2], segments[len(segments)-1]
 }
 
 // topLevelRemoteJoinRoot reports the first root field that is a join-only remote
