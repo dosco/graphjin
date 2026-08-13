@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -134,6 +135,12 @@ type discoveryState struct {
 	// crossSourceEvidenceSupplied keeps the one-shot fetch of source cards from
 	// repeating if the ids ever stop registering.
 	crossSourceEvidenceSupplied bool
+	// remoteJoinParents maps a join-only remote table to the parent it is served
+	// under, learned from relationship cards whose source is remote_join.
+	remoteJoinParents map[string]string
+	// remoteJoinNoticed keeps the violation record to one per root; the
+	// interception itself repeats, because the intercepted call cannot succeed.
+	remoteJoinNoticed map[string]bool
 	// observedValueRejected records the writes already refused for using a value the
 	// column has never held, by identity.
 	//
@@ -843,6 +850,31 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		return out, nil
 	}
 	if !ContainsMutationOperation(query) {
+		// A join-only remote table cannot be queried at the top level: the table has
+		// no rows of its own, only a route through its parent. Run 969337b6 counted
+		// 32 top-level account_health attempts, every one an error, several episodes
+		// burning their whole step budget on a route GraphJin knew was closed while
+		// knowing the open one. The intercepted call could never succeed, so this
+		// repair replaces a doomed execution rather than costing one.
+		if root, parent, ok := r.state.topLevelRemoteJoinRoot(query); ok {
+			err := fmt.Errorf("protocol violation: %s is an API join served only nested under %s, so a top-level %s query cannot return data. Re-author it as query { %s(where: {<filter on %s>}) { %s { <fields> } } } and execute that", root, parent, root, parent, parent, root)
+			details := map[string]any{"root": root, "parent": parent, "fault": "remote_join_root_top_level"}
+			if !r.state.remoteJoinNoticed[strings.ToLower(root)] {
+				if r.state.remoteJoinNoticed == nil {
+					r.state.remoteJoinNoticed = map[string]bool{}
+				}
+				r.state.remoteJoinNoticed[strings.ToLower(root)] = true
+				r.state.addViolation("remote_join_path_required", err.Error(), "execute_graphql", true, details)
+			}
+			out := recoverableProtocolFailure("remote_join_path_required", err.Error(), "remote_join_path_required",
+				map[string]any{
+					"recommended_tool": "execute_graphql",
+					"reason":           "Query " + parent + " and select " + root + " nested inside it; the join carries the filter through the parent row.",
+				}, details)
+			action := r.state.startAction("model", "execute_graphql", args)
+			r.state.finishAction(action, "execute_graphql", args, out, nil)
+			return out, nil
+		}
 		// A follow-up that points at "it" or "that account" has to inherit its
 		// subject from prior turns. When the retained subject is known and the
 		// authored query binds none of it, the answer will describe the whole table
@@ -900,8 +932,12 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				if len(suggestions) == len(mismatches) {
 					if repaired, ok := substituteWrittenValues(query, mismatches, suggestions); ok {
 						details["repaired_query"] = repaired
-						guidance = "The corrected write is in errors[].extensions.details.repaired_query — execute it exactly as given if the suggested value matches the intent, otherwise re-author with another value from the list"
-						reason = "Execute details.repaired_query if the suggested value matches the intent; otherwise re-author the write with another value that column already uses."
+						// Run 969337b6 measured 2 of 10 episodes taking the repair when it
+						// was conditioned on "if the suggested value matches the intent" —
+						// invited to judge, the model judged that "closed" matches "close it
+						// off". The schema's convention is a fact, so state it as one.
+						guidance = "This schema expresses that state with the suggested value; the corrected write is in errors[].extensions.details.repaired_query — execute it exactly as given"
+						reason = "Execute details.repaired_query exactly as given; it is this same write expressed in the vocabulary this column actually uses."
 					}
 				}
 				err := fmt.Errorf("protocol violation: %s. %s", described, guidance)
@@ -1366,6 +1402,24 @@ func (s *discoveryState) recordCatalogRows(out any, discoverSavedQueries bool) {
 		name := stringFromMap(card, "name")
 		if name == "" {
 			name = savedQueryNameFromID(id)
+		}
+		// A remote_join relationship names the only route into its from-table.
+		// Remember it: a top-level query on that table cannot return data, and the
+		// interception that redirects it needs to know the parent.
+		if kind == "relationship" && strings.EqualFold(stringFromMap(card, "source"), "remote_join") {
+			var rel struct {
+				FromTableName string
+				ToTableName   string
+			}
+			if evidence := stringFromMap(card, "evidence_json"); evidence != "" {
+				_ = json.Unmarshal([]byte(evidence), &rel)
+			}
+			if rel.FromTableName != "" && rel.ToTableName != "" {
+				if s.remoteJoinParents == nil {
+					s.remoteJoinParents = map[string]string{}
+				}
+				s.remoteJoinParents[strings.ToLower(strings.TrimSpace(rel.FromTableName))] = rel.ToTableName
+			}
 		}
 		if id != "" {
 			s.catalogIDs[id] = true
@@ -2277,7 +2331,7 @@ func (s *discoveryState) resolveSuccessfulExecutionViolations() {
 			// blocked at finalization. That is what took multi-turn from 1/21 to 0/21
 			// between two runs of the same suite — the guard was right about the
 			// defect and wrong about being unrecoverable.
-			"history_referent_unresolved", "watch_query_invalid", "observed_value_mismatch":
+			"history_referent_unresolved", "watch_query_invalid", "observed_value_mismatch", "remote_join_path_required":
 		default:
 			continue
 		}
@@ -2637,6 +2691,20 @@ func (s *discoveryState) recordObservedValueRejection(identity string) {
 		s.observedValueRejected = map[string]bool{}
 	}
 	s.observedValueRejected[identity] = true
+}
+
+// topLevelRemoteJoinRoot reports the first root field that is a join-only remote
+// table, with the parent it must be reached through.
+func (s *discoveryState) topLevelRemoteJoinRoot(query string) (string, string, bool) {
+	if s == nil || len(s.remoteJoinParents) == 0 {
+		return "", "", false
+	}
+	for _, root := range QueryRootFields(query) {
+		if parent := s.remoteJoinParents[strings.ToLower(strings.TrimSpace(root))]; parent != "" {
+			return root, parent, true
+		}
+	}
+	return "", "", false
 }
 
 func (s *discoveryState) hasBlockingViolation() bool {

@@ -30,9 +30,12 @@ var blockingGuardViolationCodes = map[string]struct{}{
 	"model_discovery_required":    {},
 	// A write held back for using a value absent from the column never reached the
 	// database: a behavior failure, never an unsafe effect.
-	"observed_value_mismatch":        {},
-	"mutation_evidence_required":     {},
-	"raw_graphql_catalog_required":   {},
+	"observed_value_mismatch":      {},
+	"mutation_evidence_required":   {},
+	"raw_graphql_catalog_required": {},
+	// A top-level query on a join-only remote table is intercepted before a doomed
+	// execution: a behavior failure, never an unsafe effect.
+	"remote_join_path_required":      {},
 	"raw_graphql_discovery_required": {},
 	"runtime_handoff_read_required":  {},
 	// An answer blocked for reporting the wrong metric's number never left the
