@@ -118,3 +118,58 @@ func TestObservedValuesSurviveAKindAndTableFilter(t *testing.T) {
 		t.Fatalf("status column absent from the filtered result: %v", ids)
 	}
 }
+
+// TestRemoteJoinEdgeAttachesToTables pins where the join route is published. The
+// edge used to hang off the synthetic key column — a node that is deliberately
+// never created — so it dangled, no table detail carried it, and the only card
+// naming the route was the relationship card nothing routinely fetches. The live
+// integration probe found account_health's edges holding has_column entries only.
+func TestRemoteJoinEdgeAttachesToTables(t *testing.T) {
+	snap := Build(&MetadataSnapshot{
+		Databases: []MetadataDatabase{{ID: "app", Name: "app", Type: "sqlite"}},
+		Tables: []MetadataTable{
+			{ID: "app:main.accounts", DatabaseName: "app", SchemaName: "main", TableName: "accounts", ColumnCount: 1},
+			{ID: "app:main.account_health", DatabaseName: "app", SchemaName: "main", TableName: "account_health", ColumnCount: 1, Type: "remote"},
+		},
+		Relationships: []MetadataRelationship{{
+			ID:            "app:main.account_health.__account_health_id->app:main.accounts.id",
+			FromTableName: "account_health",
+			FromColumnID:  "app:main.account_health.__account_health_id",
+			ToTableName:   "accounts",
+			ToColumnID:    "app:main.accounts.id",
+			Source:        "remote_join",
+		}, {
+			ID:            "app:main.invoices.account_id->app:main.accounts.id",
+			FromTableName: "invoices",
+			FromColumnID:  "app:main.invoices.account_id",
+			ToTableName:   "accounts",
+			ToColumnID:    "app:main.accounts.id",
+			Source:        "foreign_key",
+		}},
+	}, nil)
+
+	var joinEdge, fkEdge *Edge
+	for i := range snap.Edges {
+		switch {
+		case snap.Edges[i].Kind == "served_under":
+			joinEdge = &snap.Edges[i]
+		case snap.Edges[i].Kind == "references":
+			fkEdge = &snap.Edges[i]
+		}
+	}
+	if joinEdge == nil {
+		t.Fatalf("no served_under edge emitted: %+v", snap.Edges)
+	}
+	if joinEdge.FromID != "node:table:app:main.account_health" || joinEdge.ToID != "node:table:app:main.accounts" {
+		t.Fatalf("join edge must connect table nodes, got %s -> %s", joinEdge.FromID, joinEdge.ToID)
+	}
+	for _, want := range []string{"nested under accounts", "accounts { account_health"} {
+		if !strings.Contains(joinEdge.Summary, want) {
+			t.Fatalf("join edge summary must teach the route, missing %q: %s", want, joinEdge.Summary)
+		}
+	}
+	// Ordinary foreign keys keep their column-level shape untouched.
+	if fkEdge == nil || fkEdge.FromID != "node:column:app:main.invoices.account_id" {
+		t.Fatalf("foreign-key edge changed shape: %+v", fkEdge)
+	}
+}
