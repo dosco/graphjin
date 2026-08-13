@@ -440,10 +440,7 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 		if err := p.persistManifest(); err != nil {
 			return Episode{}, "", err
 		}
-		delay := p.runner.RetryDelay
-		if delay <= 0 {
-			delay = 2 * time.Second
-		}
+		delay := retryDelayForCode(p.runner.RetryDelay, code)
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
@@ -453,6 +450,27 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 		}
 	}
 	return Episode{}, gjagent.ErrorCodeProviderTransport, nil
+}
+
+// retryDelayForCode sizes the single transient retry to the failure it follows.
+// Rate and quota limits are windows, not blips: they refill on the order of a
+// minute, and the 2-second delay meant the one retry fired into the same closed
+// window every time — one slot then failed twice within seconds and took the
+// whole run down. Three flash runs on the frozen suite died exactly this way at
+// 85, 131 and 60 episodes, each abandoning a half-finished, fully paid run that a
+// one-minute wait would have carried through.
+func retryDelayForCode(configured time.Duration, code string) time.Duration {
+	base := configured
+	if base <= 0 {
+		base = 2 * time.Second
+	}
+	switch code {
+	case gjagent.ErrorCodeProviderRateLimit, gjagent.ErrorCodeProviderQuota:
+		if base < 75*time.Second {
+			return 75 * time.Second
+		}
+	}
+	return base
 }
 
 func prepareMutationEpisode(ctx context.Context, runner Runner, client HTTPDoer, instance Instance, mutation *MutationSpec) error {
