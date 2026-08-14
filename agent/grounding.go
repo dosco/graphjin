@@ -545,6 +545,9 @@ func (s *discoveryState) pendingDatabaseComputation() string {
 			if allowsRankedRows && queryUsesDatabaseRanking(query, s.instruction) {
 				return ""
 			}
+			if !needsAggregateOrder && queryReadsAnsweringStoredCount(query, s.instruction) {
+				return ""
+			}
 			continue
 		}
 		query := stringFromMap(execution, "query")
@@ -555,11 +558,21 @@ func (s *discoveryState) pendingDatabaseComputation() string {
 		if allowsRankedRows && queryUsesDatabaseRanking(query, s.instruction) {
 			return ""
 		}
+		// Some schemas store the asked-for quantity as a plain column: the
+		// account-health API publishes open_risk_count, and "how many open risks"
+		// is answered by reading it, not by aggregating anything. Generation
+		// 2028.1 measured this guard refusing that correct read 10 of 12 times —
+		// method scored the queries right while the model burned its whole step
+		// budget resubmitting them, because no aggregate exists to run. A stored
+		// scalar cannot rank, so ranking intents still require the aggregate path.
+		if !needsAggregateOrder && queryReadsAnsweringStoredCount(query, s.instruction) {
+			return ""
+		}
 	}
 	if allowsRankedRows {
 		return "database_computation_required: this request asks for an extreme or ranking, but the run only has row-list or failed evidence. Execute one distinct database-side query that applies order_by on the requested ranked column together with a limit, then answer from that result."
 	}
-	requirement := "a successful database-side aggregate field such as count_/sum_/avg_/min_/max_<column>"
+	requirement := "a successful database-side aggregate field such as count_/sum_/avg_/min_/max_<column>, or a stored *_count column that names the asked quantity (for example open_risk_count for open risks)"
 	if needsAggregateOrder {
 		requirement += " with aggregate order_by for the requested ranking"
 	}
@@ -602,6 +615,52 @@ func (s *discoveryState) rowEvidenceRoots() []string {
 		out = out[len(out)-3:]
 	}
 	return out
+}
+
+// storedCountFieldPattern matches a selected scalar column named *_count. The
+// optional trailing group captures "(", "{" or ":" so the caller can reject
+// root calls, nested objects and alias names — RE2 has no lookahead, so the
+// rejection reads the capture instead. An alias TARGET (risks: open_risk_count)
+// still matches with an empty capture, which is correct: the read is the same.
+var storedCountFieldPattern = regexp.MustCompile(`\b([A-Za-z][A-Za-z0-9_]*_count)\b(\s*[:({])?`)
+
+// queryReadsAnsweringStoredCount reports whether the query selects a stored
+// *_count scalar whose name stem the instruction actually asks about —
+// open_risk_count for "how many open risks". It mirrors
+// queryUsesDatabaseRanking's philosophy: the schema names the quantity, and the
+// instruction must be asking for that quantity, so an unrelated invoice_count
+// never discharges a question about risks.
+func queryReadsAnsweringStoredCount(query, instruction string) bool {
+	tokens := strings.FieldsFunc(strings.ToLower(instruction), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	if len(tokens) == 0 {
+		return false
+	}
+	lowered := " " + strings.Join(tokens, " ") + " "
+	for _, match := range storedCountFieldPattern.FindAllStringSubmatch(query, -1) {
+		if match[2] != "" {
+			// Followed by "(", "{" or ":" — a root call, a nested object, or an
+			// alias name aliasing something else. Not a scalar read of the column.
+			continue
+		}
+		matched := false
+		stemFits := true
+		for _, part := range strings.Split(strings.TrimSuffix(strings.ToLower(match[1]), "_count"), "_") {
+			if len(part) < 3 {
+				continue
+			}
+			if !strings.Contains(lowered, part) {
+				stemFits = false
+				break
+			}
+			matched = true
+		}
+		if stemFits && matched {
+			return true
+		}
+	}
+	return false
 }
 
 // databaseOrderedRowIntent recognizes extrema where the user wants the record

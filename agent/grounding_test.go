@@ -1002,3 +1002,90 @@ func TestExecutionRecoveryFallsBackWhenRootsAreUnknown(t *testing.T) {
 		t.Fatalf("unknown roots must not fabricate catalog ids: %#v", next)
 	}
 }
+
+// TestStoredCountColumnDischargesCountIntent pins the discharge added after
+// generation 2028.1 measured pendingDatabaseComputation refusing the correct
+// read 10 of 12 times on the account-health family: "how many open risks" is
+// answered by the stored column account_health.open_risk_count, and no
+// aggregate exists to run against an API join.
+func TestStoredCountColumnDischargesCountIntent(t *testing.T) {
+	discharge := func(t *testing.T, instruction, query string) string {
+		t.Helper()
+		state := newDiscoveryState(instruction)
+		state.executions = []map[string]any{{
+			"tool": toolExecuteGraphQL, "query": query, "has_data": true, "error_count": 0,
+		}}
+		return state.pendingDatabaseComputation()
+	}
+
+	healthQuestion := "How healthy is Meridian Robotics right now, and how many open risks are there against it?"
+	nested := `query { accounts(where: {id: {eq: 1}}, limit: 1) { name account_health { health executive_owner open_risk_count } } }`
+
+	// (1) The real episode shape discharges.
+	if got := discharge(t, healthQuestion, nested); got != "" {
+		t.Fatalf("stored count read must discharge, got %q", got)
+	}
+	// (2) Multi-line, comma-free GraphQL — the shape models actually write.
+	multiline := "query {\n  accounts(where: {id: {eq: 1}} limit: 1) {\n    name\n    account_health {\n      health\n      open_risk_count\n    }\n  }\n}"
+	if got := discharge(t, healthQuestion, multiline); got != "" {
+		t.Fatalf("multi-line form must discharge, got %q", got)
+	}
+	// (3) JSON-escaped quotes, as query text arrives from runtime args.
+	escaped := `query { accounts(where: {name: {eq: \"Meridian Robotics\"}}) { account_health { open_risk_count } } }`
+	if got := discharge(t, healthQuestion, escaped); got != "" {
+		t.Fatalf("escaped-quote form must discharge, got %q", got)
+	}
+	// (4) A plain row fetch answers nothing and stays blocked.
+	if got := discharge(t, "How many open urgent tickets are there?", `query { support_tickets { id status } }`); got == "" {
+		t.Fatal("a row fetch must not discharge a count intent")
+	}
+	// (5) A window anchor read stays blocked, and the message still names the
+	// anchored root plus the new stored-count wording.
+	state := newDiscoveryState("Using the latest payment as the anchor, how many tickets were opened after it?")
+	state.executions = []map[string]any{{
+		"tool": toolExecuteGraphQL, "has_data": true, "error_count": 0,
+		"query": `query { payments(order_by: {occurred_at: desc}, limit: 1) { occurred_at } }`,
+	}}
+	if got := state.pendingDatabaseComputation(); got == "" {
+		t.Fatal("an anchor read must not discharge")
+	} else {
+		for _, want := range []string{"payments", "stored *_count column"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("blocked message should carry %q: %s", want, got)
+			}
+		}
+	}
+	// (6) Ranking intent never discharges via a stored scalar: a column cannot rank.
+	if got := discharge(t, "Which account has the most open risks?", nested); got == "" {
+		t.Fatal("ranking intent must still require the aggregate path")
+	}
+	// (7) An unrelated stored count does not discharge — the stem must be asked about.
+	if got := discharge(t, "How many open risks are there?", `query { accounts { invoice_count } }`); got == "" {
+		t.Fatal("invoice_count must not answer a question about risks")
+	}
+	// (8) Alias-name gaming is rejected; the alias-target form is a genuine read.
+	if got := discharge(t, healthQuestion, `query { accounts { account_health { open_risk_count: id } } }`); got == "" {
+		t.Fatal("aliasing another field AS open_risk_count must not discharge")
+	}
+	if got := discharge(t, healthQuestion, `query { accounts { account_health { risks: open_risk_count } } }`); got != "" {
+		t.Fatalf("alias-target read must discharge, got %q", got)
+	}
+	// (9) The saved-query path discharges symmetrically.
+	saved := newDiscoveryState(healthQuestion)
+	saved.savedQueryGraphQL["account_health_snapshot"] = nested
+	saved.executions = []map[string]any{{
+		"tool": toolExecuteSavedQuery, "name": "account_health_snapshot", "has_data": true, "error_count": 0,
+	}}
+	if got := saved.pendingDatabaseComputation(); got != "" {
+		t.Fatalf("saved-query stored count must discharge, got %q", got)
+	}
+	// (10) The two patterns partition: the aggregate pattern does not claim
+	// stored counts, and the stored-count pattern does not scalar-claim
+	// aggregate fields.
+	if databaseAggregateFieldPattern.MatchString("open_risk_count") {
+		t.Fatal("aggregate pattern must not match a stored *_count column")
+	}
+	if queryReadsAnsweringStoredCount(`query { support_tickets { count_id } }`, "how many tickets") {
+		t.Fatal("count_id is an aggregate field, not a stored count; the aggregate path owns it")
+	}
+}
