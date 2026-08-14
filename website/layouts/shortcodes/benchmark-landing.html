@@ -91,7 +91,7 @@
           <p>Point a language model at raw credentials and it invents what it cannot see — tables, joins, numbers. It sounds confident. It is guessing.</p>
           <p>GraphJin gives the agent a governed map of everything you run. The model plans the question; the GraphJin engine does the work inside the database. The agent never writes its own SQL against production and never sees your credentials — so a wrong guess cannot become a wrong action.</p>
         </div>
-        <figure class="benchmark-why-figure" aria-label="An AI agent guessing at disconnected systems">{{ readFile "static/svg/problem-blind-agent.svg" | safeHTML }}</figure>
+        <figure class="diagram-wrap benchmark-why-figure" aria-label="An AI agent guessing at disconnected systems">{{ readFile "static/svg/problem-blind-agent.svg" | safeHTML }}</figure>
       </div>
       <p class="benchmark-why-kicker">One agent across the stack you already run</p>
       {{ partial "database-strip.html" . }}
