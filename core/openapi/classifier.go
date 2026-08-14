@@ -402,11 +402,10 @@ func exposeAs(specKey, operationID string, override OperationOverride) string {
 	return specKey + "_" + toSnakeCase(operationID)
 }
 
-// toSnakeCase converts camelCase / PascalCase identifiers to snake_case.
-// It's intentionally conservative: only inserts an underscore at a
-// lower→upper transition. Acronyms (UserID → user_id) are handled by
-// also breaking before the last upper in an upper run that's followed
-// by a lower — the standard idiom for this conversion.
+// toSnakeCase converts camelCase / PascalCase identifiers and arbitrary
+// operationId strings to valid snake_case identifiers suitable for GraphQL
+// field names. Non-alphanumeric characters (such as '.', '-', '/') are
+// converted to underscores, and consecutive underscores are collapsed.
 func toSnakeCase(s string) string {
 	if s == "" {
 		return s
@@ -414,22 +413,34 @@ func toSnakeCase(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 4)
 	runes := []rune(s)
+	lastWasUnderscore := false
+
 	for i, r := range runes {
 		isUpper := r >= 'A' && r <= 'Z'
-		if i > 0 && isUpper {
-			prev := runes[i-1]
-			prevIsLower := prev >= 'a' && prev <= 'z'
-			nextIsLower := i+1 < len(runes) && runes[i+1] >= 'a' && runes[i+1] <= 'z'
-			prevIsUpper := prev >= 'A' && prev <= 'Z'
-			if prevIsLower || (prevIsUpper && nextIsLower) {
+		isLower := r >= 'a' && r <= 'z'
+		isDigit := r >= '0' && r <= '9'
+
+		if isUpper {
+			if i > 0 && !lastWasUnderscore {
+				prev := runes[i-1]
+				prevIsLower := (prev >= 'a' && prev <= 'z') || (prev >= '0' && prev <= '9')
+				nextIsLower := i+1 < len(runes) && runes[i+1] >= 'a' && runes[i+1] <= 'z'
+				prevIsUpper := prev >= 'A' && prev <= 'Z'
+				if prevIsLower || (prevIsUpper && nextIsLower) {
+					b.WriteByte('_')
+				}
+			}
+			b.WriteRune(r + ('a' - 'A'))
+			lastWasUnderscore = false
+		} else if isLower || isDigit {
+			b.WriteRune(r)
+			lastWasUnderscore = false
+		} else {
+			if !lastWasUnderscore && b.Len() > 0 {
 				b.WriteByte('_')
+				lastWasUnderscore = true
 			}
 		}
-		if isUpper {
-			b.WriteRune(r + ('a' - 'A'))
-		} else {
-			b.WriteRune(r)
-		}
 	}
-	return b.String()
+	return strings.Trim(b.String(), "_")
 }

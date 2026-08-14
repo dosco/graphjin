@@ -288,6 +288,18 @@ func TestToSnakeCase(t *testing.T) {
 		{"listAuditLogs", "list_audit_logs"},
 		{"GetHTTPStatus", "get_http_status"},
 		{"already_snake", "already_snake"},
+		{"WidgetController_list_v1.0", "widget_controller_list_v1_0"},
+		{"user.profile-v2", "user_profile_v2"},
+		{"api.v1.0.users.list", "api_v1_0_users_list"},
+		{"some--operation...id", "some_operation_id"},
+		{"trailing.dots...", "trailing_dots"},
+		{"XMLHttpRequest", "xml_http_request"},
+		{"foo...bar", "foo_bar"},
+		{".list", "list"},
+		{"v1.2.3", "v1_2_3"},
+		{"2FA_verify", "2_fa_verify"},
+		{"---", ""},
+		{"Widget_Controller", "widget_controller"},
 		{"", ""},
 	}
 	for _, tc := range cases {
