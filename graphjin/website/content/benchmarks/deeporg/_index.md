@@ -17,8 +17,7 @@ what the provider usage cost at list price. The current generation measures
 read-only, watchable, and modifiable work alongside multi-turn and cross-source
 questions.
 
-**Generation scope:** 2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds
-writes, alerts, follow-ups, multi-source.
+**Generation scope:** {{< benchmark-scope benchmark="deeporg" >}}.
 
 {{< benchmark-generation-story benchmark="deeporg" >}}
 

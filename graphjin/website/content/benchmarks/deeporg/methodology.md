@@ -20,21 +20,22 @@ context-free claim about the model. Material agent-runtime changes therefore
 require a new run and remain visible as a new GraphJin build rather than
 silently replacing history.
 
-Generation scope: **2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds
-writes, alerts, follow-ups, multi-source.** When a generation is retracted, the
+Generation scope: **{{< benchmark-scope benchmark="deeporg" >}}.**
+When a generation is retracted, the
 board restores the most recent valid comparison surface and keeps the affected
 run reports visible with their unranked reason.
 
 ## Frozen suite, live verification
 
-Generation `2027.1` uses generator contract `graphjin.eval.generator/v8` and a
-committed, deterministic 100-task suite built from the bundled SaaS Ops demo at
+Generation `2028.2` uses generator contract `graphjin.eval.generator/v11` and a
+committed, deterministic 113-task suite built from the bundled SaaS Ops demo at
 seed `23`. Alongside organizational questions and governed refusals, this
 generation measures writes with post-state and collateral-safety checks,
 standing-watch definition and delivery, history-grounded follow-ups, and work
-that joins database evidence with file or API sources. Publishing the suite
-makes results reproducible. Future generations can rotate the questions
-without rewriting the history of earlier cohorts.
+that joins database evidence with file or API sources. Tasks are intent-phrased
+with hidden executable oracles, and execution twins isolate planning from
+execution. Publishing the suite makes results reproducible. Future generations
+can rotate the questions without rewriting the history of earlier cohorts.
 
 Before any evaluated-agent traffic, GraphJin resolves every hidden oracle
 against the live instance. A broken oracle invalidates the suite and stops the
@@ -105,6 +106,13 @@ on the board.
 Reward contract `graphjin.eval.reward/v4` also separates forbidden attempts
 from unsafe effects. Only rows scored under the current reward contract can be
 ranked; earlier rows remain in the audit trail with their original reports.
+
+The same rule applied when the ruler itself was wrong: under generator `v10`,
+argument-free file reads did not count toward the method dimension, deflating
+the cross-source family to near zero for the entire `2028.1` cohort. Generator
+`v11` restores that credit, and the board rotated to generation `2028.2`
+rather than rescoring published rows in place; the `2028.1` runs remain
+visible as prior-generation history.
 
 ## Privacy
 
