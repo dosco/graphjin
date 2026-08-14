@@ -4,17 +4,19 @@ benchmark:
     slug: deeporg
     name: DeepORG — The Organizational Agent Benchmark
 suite:
-    generation: "2028.1"
-    comparison_generation: "2028.1"
-    scope_label: 2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source
+    generation: "2028.2"
+    comparison_generation: "2028.2"
+    scope_label: 2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source · 2028.1 — intent-phrased tasks with execution twins · 2028.2 — cross-source ruler fix (v11)
     generation_scopes:
         "2026.1": governed read-only Q&A
         "2026.2": governed read-only Q&A
         "2027.1": adds writes, alerts, follow-ups, multi-source
-    generator_version: graphjin.eval.generator/v10
-    identity: 5deccd6fa5d94a79f7857d2c9d0d14b4
-    suite_fingerprint: 48948f16cde80d254d040e9433eb57f0
-    catalog_hash: 66a4277e7107024b7835f68a4ec8e14d
+        "2028.1": intent-phrased tasks with execution twins, v10 ruler
+        "2028.2": 'cross-source ruler fix (v11): argument-free file reads count'
+    generator_version: graphjin.eval.generator/v11
+    identity: 308df3840f76a1e97096df77c3e41f1e
+    suite_fingerprint: b77fb918d9dd40dc7204cc4241d6c763
+    catalog_hash: 51a57f1958b4c8e15a09f10d73f6a3f9
     seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
     mode: bench
     seed: 23
@@ -619,7 +621,8 @@ runs:
       label: Gemini 3.5 Flash-Lite
       release: 304bc6c6
       notes: First 2028.1 cohort row. Tasks are intent-phrased with hidden executable oracles; execution twins isolate planning from execution. The dictated-operation tier is near ceiling; intent translation is the open gap.
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.1)
       generation: "2028.1"
       generated_at: 2026-08-13T02:24:33.428262Z
       model: gemini-3.5-flash-lite
@@ -675,7 +678,8 @@ runs:
       label: GPT-5.4 mini
       release: 304bc6c6
       notes: 'The cohort''s cautious profile: a perfect refusal score, but 28 of 30 write requests declined or deferred to clarification, and date windows computed client-side against method guidance. Capability and willingness to act are different axes.'
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.1)
       generation: "2028.1"
       generated_at: 2026-08-13T04:32:16.981304Z
       model: gpt-5.4-mini
@@ -731,7 +735,8 @@ runs:
       label: Gemini 3.7 Flash
       release: 56dcbcca
       notes: 'Cohort leader and the first model to be both obedient and capable: perfect refusals, perfect dictated writes, and perfect aggregate, ranking and saved-metric families. Reaches for its own arithmetic less than half as often as 3.5 Flash, which is where the gap between them comes from.'
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.1)
       generation: "2028.1"
       generated_at: 2026-08-14T00:55:26.922356Z
       model: gemini-3.7-flash
@@ -787,7 +792,8 @@ runs:
       label: Gemini 3.5 Flash
       release: 304bc6c6
       notes: 'Completed across several resumes through provider quota and auth interruptions, so token accounting has gaps: usage and cost are withheld rather than understated, and the scores are unaffected. Strongest of the 3.5 pair on follow-up conversations and intent-phrased writes; weakest on discovery, where it computes counts client-side instead of delegating to the database.'
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.1)
       generation: "2028.1"
       generated_at: 2026-08-14T08:22:21.174245Z
       model: gemini-3.5-flash
@@ -837,4 +843,60 @@ runs:
       guard_interventions: 120
       unsafe_effects: 0
       rescored_from: 20260813T084030.817526000Z-d86d5b60
+      accepted: true
+    - run_id: 20260814T084150.544485000Z-5d12a35b
+      slug: 20260814t084150-5d12a35b
+      label: Gemini 3.7 Flash
+      release: 2e9e4a3d
+      notes: 'First generation-2028.2 row: v11 restores the 2027.2 cross-source file-read widening that v10 regressed, and the engine now serves a decoded text column on file sources. Clean single run, complete usage accounting.'
+      ranked: true
+      generation: "2028.2"
+      generated_at: 2026-08-14T08:41:50.544493Z
+      model: gemini-3.7-flash
+      provider: gemini
+      graphjin_commit: 2e9e4a3da315a40c836dde73c2224cbe2b75c51a
+      binary_fingerprint: 550850a24b34ea3f0dbe9c8c64706e55f608835f2f772641e30f070c5a0b0ead
+      suite_identity: 308df3840f76a1e97096df77c3e41f1e
+      suite_fingerprint: b77fb918d9dd40dc7204cc4241d6c763
+      catalog_hash: 51a57f1958b4c8e15a09f10d73f6a3f9
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 1d8137d08d2ab37b1d1bc1ae6207ddb3b227cb03335814c734e9e3bfb8d152e6
+      data_anchor: "2026-08-14"
+      reward_version: graphjin.eval.reward/v4
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.8230088495575221
+      recall_ci_low: 0.7522123893805309
+      recall_ci_high: 0.8849557522123894
+      pass_at_k: 0.9380530973451328
+      pass_power_k: 0.7079646017699115
+      ground_truth_recall: 0.8349514563106796
+      method_recall: 0.941747572815534
+      safety_precision: 1
+      behavior_recall: 0.9646017699115044
+      category_recall:
+        action: 0.6
+        aggregate: 1
+        cross-source: 0.875
+        discovery: 1
+        multi-turn: 0.7142857142857143
+        ranking: 1
+        reactive: 0.3333333333333333
+        refusal: 1
+        saved-metric: 1
+        window: 0.8
+      mean_reward: 0.9231053097345133
+      total_tokens: 13626436
+      prompt_tokens: 12776110
+      completion_tokens: 264016
+      provider_total_tokens: 13626436
+      latency_p50_ms: 10225
+      latency_p95_ms: 32128
+      guard_interventions: 127
+      unsafe_effects: 0
       accepted: true
