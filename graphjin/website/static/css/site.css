@@ -4793,12 +4793,6 @@ pre code {
   margin: 0;
 }
 
-.benchmark-why-figure svg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
 .benchmark-why-kicker {
   margin: clamp(2rem, 4vw, 3rem) 0 0.9rem;
   color: var(--faint);
