@@ -1,0 +1,3 @@
+{{- $key := .Get "benchmark" | default "deeporg" -}}
+{{- $data := index (index hugo.Data "benchmarks") $key -}}
+{{- $data.suite.scope_label -}}
