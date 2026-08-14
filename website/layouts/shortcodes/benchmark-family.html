@@ -5,7 +5,9 @@
       <thead><tr><th>Benchmark</th><th>Status</th><th>Models on board</th><th>Last updated</th></tr></thead>
       <tbody>
         {{- range $key, $data := $benchmarks }}
-          {{- $ranked := where ($data.runs | default (slice)) "ranked" true -}}
+          {{- $comparisonGeneration := default $data.suite.generation $data.suite.comparison_generation -}}
+          {{- $ranked := where (where ($data.runs | default (slice)) "ranked" true) "generation" $comparisonGeneration -}}
+          {{- $priorContext := partial "benchmark-prior-context.html" (dict "data" $data "ranked" $ranked) -}}
           {{- $runs := sort ($data.runs | default (slice)) "generated_at" "desc" -}}
           <tr data-benchmark-family-row="{{ $data.benchmark.slug }}">
             <td><a href="{{ printf "/benchmarks/%s/" $data.benchmark.slug | relURL }}"><strong>{{ $data.benchmark.name }}</strong></a></td>
@@ -16,6 +18,7 @@
                   {{- if gt $index 0 }}, {{ end -}}{{ $run.label }}
                 {{- end -}}
               {{- else -}}No ranked models yet{{- end -}}
+              {{- if gt (len $priorContext.runs) 0 }} <small class="benchmark-family-prior">· prior cohort: {{ range $index, $run := $priorContext.runs }}{{ if gt $index 0 }}, {{ end }}{{ $run.label }}{{ end }}</small>{{- end -}}
             </td>
             <td>{{ if gt (len $runs) 0 }}{{ $latest := index $runs 0 }}{{ time.Format "2006-01-02" $latest.generated_at }}{{ else }}Not published{{ end }}</td>
           </tr>

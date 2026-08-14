@@ -485,6 +485,32 @@ if (await exists(benchmarkDataPath)) {
     (run) => run.ranked === true && run.generation === comparisonGeneration
   );
   const topRanked = [...rankedRuns].sort((a, b) => Number(b.recall) - Number(a.recall))[0];
+  // Mirrors layouts/partials/benchmark-prior-context.html: for each model absent
+  // from the current ranked cohort, its most recent legitimately demoted cohort
+  // row from the latest prior generation. Retracted/superseded runs never qualify.
+  const priorCohortContext = (() => {
+    const rankedModels = new Set(rankedRuns.map((run) => String(run.model)));
+    const candidates = parsed.runs.filter(
+      (run) => run.accepted === true && String(run.unranked_reason ?? '').startsWith('previous public benchmark cohort')
+    );
+    const priorGeneration = candidates.map((run) => String(run.generation)).sort().at(-1);
+    if (!priorGeneration) return { generation: undefined, runs: [] };
+    const seenModels = new Set();
+    const runs = [];
+    const ordered = candidates
+      .filter((run) => String(run.generation) === priorGeneration)
+      .sort((a, b) => String(b.generated_at).localeCompare(String(a.generated_at)));
+    for (const run of ordered) {
+      const model = String(run.model);
+      if (rankedModels.has(model) || seenModels.has(model)) continue;
+      seenModels.add(model);
+      runs.push(run);
+    }
+    runs.sort((a, b) => Number(b.recall) - Number(a.recall));
+    return { generation: priorGeneration, runs };
+  })();
+  const contextRuns = priorCohortContext.runs;
+  const displayedColumnCount = rankedRuns.length + contextRuns.length;
   const benchmarkLandingPath = path.join(publicRoot, 'benchmark', 'index.html');
   if (rankedRuns.length > 0 && (await exists(benchmarkLandingPath))) {
     const landingHTML = await readFile(benchmarkLandingPath, 'utf8');
@@ -496,8 +522,8 @@ if (await exists(benchmarkDataPath)) {
     }
     const renderedModelColumns = [...landingHTML.matchAll(/data-benchmark-model=(?:"([^"]+)"|'([^']+)'|([^\s>]+))/g)]
       .map((match) => match[1] ?? match[2] ?? match[3]);
-    if (renderedModelColumns.length !== rankedRuns.length) {
-      failures.push(`Friendly DeepORG comparison rendered ${renderedModelColumns.length} model columns for ${rankedRuns.length} ranked runs`);
+    if (renderedModelColumns.length !== displayedColumnCount) {
+      failures.push(`Friendly DeepORG comparison rendered ${renderedModelColumns.length} model columns for ${rankedRuns.length} ranked + ${contextRuns.length} prior-cohort runs`);
     }
     const leaderMarker = new RegExp(`data-benchmark-leader=(?:"${String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}"|'${String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}'|${String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?=\\s|>)`).exec(landingHTML);
     if (!leaderMarker) {
@@ -521,12 +547,12 @@ if (await exists(benchmarkDataPath)) {
         }
       }
     }
-    const expectedComparisonHeading = rankedRuns.length > 1 ? 'Compare models' : 'How this result breaks down';
+    const expectedComparisonHeading = displayedColumnCount > 1 ? 'Compare models' : 'How this result breaks down';
     if (!landingHTML.includes(`>${expectedComparisonHeading}</h2>`)) {
       failures.push(`Friendly DeepORG comparison heading should be “${expectedComparisonHeading}”`);
     }
     const hasScrollHint = /\bbenchmark-scroll-hint\b/.test(landingHTML);
-    if (hasScrollHint !== (rankedRuns.length > 3)) {
+    if (hasScrollHint !== (displayedColumnCount > 3)) {
       failures.push('Friendly DeepORG comparison scroll hint does not match its model count');
     }
     const bestCellCount = (landingHTML.match(/\bis-best\b/g) ?? []).length;
@@ -552,7 +578,11 @@ if (await exists(benchmarkDataPath)) {
     if (!landingHTML.includes('https://graphjin.com/og/deeporg-og.png')) {
       failures.push('Friendly DeepORG page does not reference its dedicated social card');
     }
-    for (const run of rankedRuns) {
+    const landingComparisonRuns = [
+      ...rankedRuns.map((run) => ({ run, prior: false })),
+      ...contextRuns.map((run) => ({ run, prior: true })),
+    ];
+    for (const { run, prior } of landingComparisonRuns) {
       const escapedRunID = String(run.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const marker = new RegExp(`data-benchmark-comparison-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(landingHTML);
       if (!marker) {
@@ -562,6 +592,13 @@ if (await exists(benchmarkDataPath)) {
       const linkStart = landingHTML.lastIndexOf('<a', marker.index);
       const linkEnd = landingHTML.indexOf('>', marker.index);
       const linkTag = landingHTML.slice(linkStart, linkEnd + 1);
+      const linkPriorCohort = renderedDataAttribute(linkTag, 'data-benchmark-prior-cohort');
+      if (prior && linkPriorCohort !== String(run.generation)) {
+        failures.push(`Friendly DeepORG prior-cohort marker for ${run.run_id} does not match deeporg.yaml`);
+      }
+      if (!prior && linkPriorCohort !== undefined) {
+        failures.push(`Friendly DeepORG ranked run ${run.run_id} must not carry a prior-cohort marker`);
+      }
       const reliablePasses = Number(run.task_count ?? 0) * Number(run.recall ?? 0);
       const expected = [
         ['data-full-pass', Number(run.recall ?? 0)],
@@ -738,6 +775,77 @@ if (await exists(benchmarkDataPath)) {
           if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
             failures.push(`DeepORG run category ${category} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
           }
+        }
+      }
+    }
+
+    if (contextRuns.length > 0 && !benchmarkHTML.includes('data-benchmark-prior-note')) {
+      failures.push('DeepORG board is missing the prior-cohort context note');
+    }
+    for (const run of contextRuns) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const chartMarker = new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
+      if (!chartMarker) {
+        failures.push(`DeepORG chart is missing prior-cohort run ${run.run_id}`);
+      } else {
+        const chartStart = benchmarkHTML.lastIndexOf('<g', chartMarker.index);
+        const chartEnd = benchmarkHTML.indexOf('>', chartMarker.index);
+        const chartTag = benchmarkHTML.slice(chartStart, chartEnd + 1);
+        const reliablePasses = Number(run.task_count ?? 0) * Number(run.recall ?? 0);
+        const expectedChartValues = [
+          ['data-recall', Number(run.recall ?? 0)],
+          ['data-cost-per-reliable-pass-usd', reliablePasses > 0 ? Number(run.estimated_list_cost_usd ?? 0) / reliablePasses : 0],
+          ['data-latency-p50-ms', Number(run.latency_p50_ms ?? 0)],
+        ];
+        for (const [field, expected] of expectedChartValues) {
+          const rendered = Number(renderedDataAttribute(chartTag, field));
+          if (!Number.isFinite(rendered) || Math.abs(rendered - expected) > 1e-12) {
+            failures.push(`DeepORG chart ${field} for prior-cohort ${run.run_id} does not match deeporg.yaml (${rendered} != ${expected})`);
+          }
+        }
+        if (renderedDataAttribute(chartTag, 'data-benchmark-prior-cohort') !== String(run.generation)) {
+          failures.push(`DeepORG chart prior-cohort marker for ${run.run_id} does not match deeporg.yaml`);
+        }
+      }
+      // Family bars compare only same-ruler runs; a prior-cohort row in the
+      // categories chart would present a superseded ruler as comparable.
+      if (new RegExp(`data-category-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).test(benchmarkHTML)) {
+        failures.push(`DeepORG category chart must not include prior-cohort run ${run.run_id}`);
+      }
+      const efficiencyMarker = new RegExp(`data-benchmark-efficiency-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
+      if (!efficiencyMarker) {
+        failures.push(`Benchmark leaderboard is missing efficiency data for prior-cohort ${run.run_id}`);
+      } else {
+        const rowStart = benchmarkHTML.lastIndexOf('<tr', efficiencyMarker.index);
+        const rowEnd = benchmarkHTML.indexOf('>', efficiencyMarker.index);
+        const rowTag = benchmarkHTML.slice(rowStart, rowEnd + 1);
+        for (const [field, expectedValue] of efficiencyFields) {
+          const rendered = renderedDataAttribute(rowTag, field);
+          const expected = Number(expectedValue(run));
+          if (rendered === undefined || Number(rendered) !== expected) {
+            failures.push(`Benchmark efficiency ${field} for prior-cohort ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
+          }
+        }
+        if (renderedDataAttribute(rowTag, 'data-benchmark-prior-cohort') !== String(run.generation)) {
+          failures.push(`Benchmark efficiency prior-cohort marker for ${run.run_id} does not match deeporg.yaml`);
+        }
+      }
+      const scoreRowMarker = new RegExp(`data-benchmark-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
+      if (!scoreRowMarker) {
+        failures.push(`Benchmark leaderboard is missing governance data for prior-cohort ${run.run_id}`);
+      } else {
+        const scoreRowStart = benchmarkHTML.lastIndexOf('<tr', scoreRowMarker.index);
+        const scoreRowEnd = benchmarkHTML.indexOf('>', scoreRowMarker.index);
+        const scoreRowTag = benchmarkHTML.slice(scoreRowStart, scoreRowEnd + 1);
+        for (const [field, expectedValue] of governanceFields) {
+          const rendered = renderedDataAttribute(scoreRowTag, field);
+          const expected = Number(expectedValue(run));
+          if (rendered === undefined || Number(rendered) !== expected) {
+            failures.push(`Benchmark governance ${field} for prior-cohort ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
+          }
+        }
+        if (renderedDataAttribute(scoreRowTag, 'data-benchmark-prior-cohort') !== String(run.generation)) {
+          failures.push(`Benchmark leaderboard prior-cohort marker for ${run.run_id} does not match deeporg.yaml`);
         }
       }
     }
