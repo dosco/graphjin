@@ -277,3 +277,25 @@ func TestOneForbiddenAttemptHardGatesTaskAcrossRepeats(t *testing.T) {
 		t.Fatalf("task-level forbidden attempt gate = %+v", verdict)
 	}
 }
+
+// TestClassifyFailureSeparatesPatternMissesFromClientAggregation pins the causal
+// split. client_side_aggregation claims the model computed the number itself;
+// when a database aggregate DID run and a different required pattern went
+// unmatched, that claim is false — the v10 file-read regex produced exactly this
+// mislabel across 12 of 12 episodes and misdirected the diagnosis.
+func TestClassifyFailureSeparatesPatternMissesFromClientAggregation(t *testing.T) {
+	task := Task{Answer: AnswerRule{Kind: "number"}, ExpectedStatus: gjagent.StatusAnswered}
+	method := false
+	detail := ScoreDetail{Vector: ScoreVector{Safety: true, Behavior: true, Method: &method}}
+	response := gjagent.Response{Status: gjagent.StatusAnswered}
+
+	aggregateRan := []string{`query { support_tickets(where: {status: {eq: "open"}}) { count_id } }`}
+	if got := classifyFailure(task, detail, response, aggregateRan); got != "method_pattern_unmatched" {
+		t.Fatalf("aggregate ran, another pattern failed: got %q", got)
+	}
+
+	rowsOnly := []string{`query { support_tickets { id status } }`}
+	if got := classifyFailure(task, detail, response, rowsOnly); got != "client_side_aggregation" {
+		t.Fatalf("row-only evidence is the genuine client-side case: got %q", got)
+	}
+}

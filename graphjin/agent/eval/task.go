@@ -31,7 +31,7 @@ const (
 	AttemptSchemaVersion   = "graphjin.eval.attempt/v1"
 	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
 	// generated task semantics change, including method-rule dialect support.
-	GeneratorVersion      = "graphjin.eval.generator/v10"
+	GeneratorVersion      = "graphjin.eval.generator/v11"
 	RewardVersion         = "graphjin.eval.reward/v4"
 	DefaultSuiteSize      = 24
 	DefaultRepeats        = 3

@@ -111,7 +111,7 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 		}
 	}
 	data, err := loadBenchmarkData(dataPath, publishTestBenchmark(t))
-	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || data.Runs[0].UnrankedReason != "" || data.Suite.ComparisonGeneration != gjeval.PublicBenchmarkGeneration || data.Suite.ScopeLabel != defaultBenchmarkScope || len(data.Suite.GenerationScopes) != 3 {
+	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || data.Runs[0].UnrankedReason != "" || data.Suite.ComparisonGeneration != gjeval.PublicBenchmarkGeneration || data.Suite.ScopeLabel != defaultBenchmarkScope || len(data.Suite.GenerationScopes) != 5 {
 		t.Fatalf("data=%+v err=%v", data, err)
 	}
 	page, err := os.ReadFile(pagePath)

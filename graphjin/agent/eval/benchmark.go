@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 )
 
-const PublicBenchmarkGeneration = "2028.1"
+const PublicBenchmarkGeneration = "2028.2"
 
 type PublicBenchmarkSpec struct {
 	Generation       string  `json:"generation"`
@@ -37,7 +37,14 @@ func PublicBenchmark() PublicBenchmarkSpec {
 // the cross-source file rule to accept either valid way of reading a file
 // source. Both were unpassable-or-over-strict task defects rather than agent
 // failures; see agent/eval/generate.go for the reasoning.
-const publicBenchmarkSuiteFingerprint = "48948f16cde80d254d040e9433eb57f0"
+//
+// Generation 2028.2 restores that widening: the v10 pattern regressed it by
+// anchoring on "sla_policies(", so the argument-free read every model writes
+// scored method false while producing correct answers (12 of 12 episodes of the
+// strongest model's run, 7 with ground truth true). v11 also accepts the new
+// decoded text column and splits method_pattern_unmatched out of the
+// client_side_aggregation label so the failure taxonomy stays causal.
+const publicBenchmarkSuiteFingerprint = "b77fb918d9dd40dc7204cc4241d6c763"
 
 type suiteIdentityProjection struct {
 	Mode             RunMode `json:"mode"`

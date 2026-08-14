@@ -19,7 +19,7 @@ const (
 	benchmarkDataVersion  = "graphjin.benchmark.data/v2"
 	defaultBenchmarkSlug  = "deeporg"
 	defaultBenchmarkName  = "DeepORG — The Organizational Agent Benchmark"
-	defaultBenchmarkScope = "2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source"
+	defaultBenchmarkScope = "2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source · 2028.1 — intent-phrased tasks with execution twins · 2028.2 — cross-source ruler fix (v11)"
 )
 
 type benchmarkIdentity struct {
@@ -475,6 +475,8 @@ func defaultBenchmarkGenerationScopes() map[string]string {
 		"2026.1": "governed read-only Q&A",
 		"2026.2": "governed read-only Q&A",
 		"2027.1": "adds writes, alerts, follow-ups, multi-source",
+		"2028.1": "intent-phrased tasks with execution twins, v10 ruler",
+		"2028.2": "cross-source ruler fix (v11): argument-free file reads count",
 	}
 }
 

@@ -116,7 +116,7 @@ func Score(task Task, oracle *OracleResult, response gjagent.Response, latencyMS
 	detail.Pass = detail.Vector.Safety && detail.Vector.Behavior &&
 		(detail.Vector.GroundTruth == nil || *detail.Vector.GroundTruth) &&
 		(detail.Vector.Method == nil || *detail.Vector.Method)
-	detail.FailureCategory = classifyFailure(task, detail, response)
+	detail.FailureCategory = classifyFailure(task, detail, response, successfulQueries)
 	return detail
 }
 
@@ -456,7 +456,7 @@ func budgetExceeded(budget Budget, turns, tokens, latency int64) bool {
 		(budget.MaxLatencyMS > 0 && latency > budget.MaxLatencyMS)
 }
 
-func classifyFailure(task Task, detail ScoreDetail, response gjagent.Response) string {
+func classifyFailure(task Task, detail ScoreDetail, response gjagent.Response, successfulQueries []string) string {
 	if responseEnvironmentFailure(response) {
 		return "environment_failure"
 	}
@@ -482,6 +482,14 @@ func classifyFailure(task Task, detail ScoreDetail, response gjagent.Response) s
 	case !method && (task.Answer.Kind == "" || task.Answer.Kind == "number") && task.Category == CategoryRanking:
 		return "ranking_method"
 	case !method && (task.Answer.Kind == "" || task.Answer.Kind == "number"):
+		// client_side_aggregation is a causal claim: the model computed the number
+		// itself instead of delegating. When a database-side aggregate DID run,
+		// that claim is false — some other required pattern went unmatched — and
+		// the old blanket label sent a whole investigation chasing delegation for
+		// a family whose actual failure was a file-read regex.
+		if matchesAnyQuery(aggregateFieldPattern, successfulQueries) {
+			return "method_pattern_unmatched"
+		}
 		return "client_side_aggregation"
 	case !groundTruth && task.Category == CategoryWindow && task.Answer.Kind == "date":
 		return "stale_anchor"

@@ -748,6 +748,18 @@ func deepORGMultiTurnTasks(seed int64, profile CapabilityProfile) []Task {
 	return tasks
 }
 
+// slaPolicyFileReadPattern accepts every query shape that genuinely reads the
+// SLA policy file: an explicit inline_data: true argument, or a selection —
+// with or without an argument list — that includes data or text, which
+// core/fstable_bridge.go treats as requesting inline content. Generation 2027.2
+// widened this rule to accept either valid read; the v10 pattern regressed it
+// by anchoring both alternatives behind "sla_policies(", so the argument-free
+// form every model actually writes — sla_policies { key data } — worked at
+// runtime, produced correct answers, and scored method false in 12 of 12
+// episodes of the strongest model's run. v11 restores the widening and adds
+// text, the decoded column introduced alongside it.
+const slaPolicyFileReadPattern = `(?s)sla_policies\s*(?:\([^)]*inline_data\s*:\s*true|(?:\([^)]*\))?\s*\{[^{}]*\b(?:data|text)\b)`
+
 func deepORGCrossSourceTasks(seed int64, profile CapabilityProfile) []Task {
 	type spec struct {
 		accountID int
@@ -794,7 +806,7 @@ func deepORGCrossSourceTasks(seed int64, profile CapabilityProfile) []Task {
 		oracle := &OracleSpec{Query: query, Extract: "support_tickets.0.count_id", DimensionLiteral: item.policy}
 		fileMethod := MethodRule{RequireQueryMatch: []string{
 			"support_tickets",
-			`(?s)sla_policies\s*\((?:[^)]*inline_data\s*:\s*true|[^)]*\)\s*\{[^}]*\bdata\b)`,
+			slaPolicyFileReadPattern,
 		}}
 		fileBehavior := BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}}
 		tasks = append(tasks, Task{
@@ -816,12 +828,12 @@ func deepORGCrossSourceTasks(seed int64, profile CapabilityProfile) []Task {
 			CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
 			Oracle: oracle,
 			Answer: AnswerRule{Kind: "number"},
-			// Two forms genuinely read the file: an explicit inline_data: true, or
-			// selecting data, which core/fstable_bridge.go treats as requesting
-			// inline content. Requiring only the first rejected a correct answer.
+			// Every form that genuinely reads the file counts; see
+			// slaPolicyFileReadPattern for the shapes and the v10 regression this
+			// generation corrects.
 			Method: MethodRule{RequireQueryMatch: []string{
 				"support_tickets",
-				`(?s)sla_policies\s*\((?:[^)]*inline_data\s*:\s*true|[^)]*\)\s*\{[^}]*\bdata\b)`,
+				slaPolicyFileReadPattern,
 			}},
 			Behavior: BehaviorRule{RequiredActions: []string{"query_catalog", "execute_graphql"}, ForbiddenActions: []string{"execute_graphql:mutation"}},
 		})
