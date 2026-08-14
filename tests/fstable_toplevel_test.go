@@ -92,3 +92,99 @@ func TestMixedRootDBPlusFilesystemContent(t *testing.T) {
 		t.Fatalf("policy content lost: %q", got["text"])
 	}
 }
+
+// TestFilesystemUnknownColumnErrors pins the failure mode observed in
+// benchmark episodes: a model hallucinated relational columns onto a file
+// source — `sla_policies { id severity response_time_hours ... }` — and the
+// engine executed the query successfully, returning rows that silently
+// omitted every hallucinated field. The agent then answered from nulls
+// without ever reading the file. Filesystem tables have a fixed, known
+// column set (core/fstable_bridge.go fixedFilesystemColumns), so unknown
+// selections must fail at compile time like they do on database tables,
+// giving the model an error it can self-correct from.
+func TestFilesystemUnknownColumnErrors(t *testing.T) {
+	root := t.TempDir()
+	policy := "Urgent tickets: resolve within 4 hours.\n"
+	if err := os.MkdirAll(filepath.Join(root, "support"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "support", "sla-policy.md"), []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		DefaultLimit:     10,
+		Sources: []core.SourceConfig{
+			{Name: core.DefaultDBName, Kind: "database", Type: dbType, Default: true, Access: core.SourceAccessConfig{
+				Read: core.AccessModeAuthenticated,
+			}},
+			{Name: "policies", Kind: "file", Backend: "local", Root: root},
+		},
+	})
+	for _, table := range conf.Tables {
+		if strings.TrimSpace(table.Source) == "" {
+			t.Skipf("%s: shared fixture declares table %q without a source", dbType, table.Name)
+		}
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close() //nolint:errcheck
+
+	// The exact benchmark shape: every selected field is a hallucinated
+	// relational column; none exist on a file source.
+	_, err = gj.GraphQL(sourceModeIntegrationUserContext(),
+		`query {
+			policies { id severity response_time_hours resolution_time_hours description }
+		}`, nil, nil)
+	if err == nil {
+		t.Fatal("selecting nonexistent columns on a filesystem table succeeded; want a compile error")
+	}
+	for _, want := range []string{"id", "policies"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q should name %q so the model can self-correct", err, want)
+		}
+	}
+
+	// A single unknown column mixed into valid ones must also fail — this is
+	// the second episode shape (`{ id severity max_resolution_hours ... }`).
+	_, err = gj.GraphQL(sourceModeIntegrationUserContext(),
+		`query {
+			policies(key: "support/sla-policy.md") { key size severity }
+		}`, nil, nil)
+	if err == nil {
+		t.Fatal("mixed valid+unknown column selection succeeded; want a compile error")
+	}
+	if !strings.Contains(err.Error(), "severity") {
+		t.Fatalf("error %q should name the unknown column", err)
+	}
+
+	// Guardrail: the full fixed column surface still works. (Aliases are
+	// deliberately absent here — remote-table responses drop aliased fields,
+	// a separate pre-existing gap in the jsn filter, not a validation issue.)
+	res, err := gj.GraphQL(sourceModeIntegrationUserContext(),
+		`query {
+			policies(key: "support/sla-policy.md") {
+				key size content_type etag modified_at url text
+			}
+		}`, nil, nil)
+	if err != nil {
+		t.Fatalf("valid fixed-column selection broke: %v", err)
+	}
+	var out struct {
+		Policies []map[string]any `json:"policies"`
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Policies) != 1 || out.Policies[0]["key"] != "support/sla-policy.md" {
+		t.Fatalf("valid selection returned %s", res.Data)
+	}
+	if out.Policies[0]["text"] != policy {
+		t.Fatalf("text column = %q, want the policy body", out.Policies[0]["text"])
+	}
+}
