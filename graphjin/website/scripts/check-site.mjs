@@ -183,6 +183,12 @@ const requiredRenderedContent = [
   ['benchmarks/deeporg/runs/index.html', 'Published DeepORG Runs'],
   ['benchmark/index.html', 'What DeepORG actually tests'],
   ['benchmark/index.html', 'From question to verified answer'],
+  ['benchmark/index.html', 'We grade our own AI agent in public.'],
+  ['benchmark/index.html', "Most AI agents guess. Ours can't."],
+  ['benchmark/index.html', 'Watch it answer a real question.'],
+  ['benchmark/index.html', 'The agent never holds the keys.'],
+  ['benchmark/index.html', 'graphjin serve --demo'],
+  ['benchmark/index.html', 'not a published test item'],
 ];
 
 async function exists(file) {
@@ -630,6 +636,9 @@ if (await exists(benchmarkDataPath)) {
     if (renderedTaskCounts.reduce((total, value) => total + value, 0) !== publishedTaskCount) {
       failures.push('Friendly DeepORG task group counts do not add up to the published suite');
     }
+    if (Number(renderedDataAttribute(landingHTML, 'data-benchmark-episode-count')) !== Number(topRanked.episode_count ?? 0)) {
+      failures.push('Friendly DeepORG safety story episode count does not match deeporg.yaml');
+    }
   }
 
   const benchmarkOGPath = path.join(publicRoot, 'og', 'index.html');
@@ -954,6 +963,14 @@ if (await exists(path.join(siteRoot, 'static', 'js', 'site.js'))) {
       failures.push(`Watch story motion is missing progressive enhancement guard: ${required}`);
     }
   }
+  for (const required of [
+    "document.querySelector('[data-benchmark-count-up]')",
+    "document.querySelectorAll('[data-bench-reveal], [data-bench-demo]')",
+  ]) {
+    if (!siteJS.includes(required)) {
+      failures.push(`Benchmark landing motion is missing progressive enhancement guard: ${required}`);
+    }
+  }
 }
 
 if (await exists(path.join(siteRoot, 'static', 'css', 'site.css'))) {
@@ -963,6 +980,14 @@ if (await exists(path.join(siteRoot, 'static', 'css', 'site.css'))) {
   }
   if (!siteCSS.includes('@media (prefers-reduced-motion: no-preference)')) {
     failures.push('Watch story CSS lost its reduced-motion boundary');
+  }
+  for (const required of [
+    '[data-bench-reveal][data-bench-motion="ready"]',
+    '[data-bench-demo][data-bench-motion="ready"]',
+  ]) {
+    if (!siteCSS.includes(required)) {
+      failures.push(`Benchmark landing CSS can no longer distinguish JavaScript-enhanced rendering: ${required}`);
+    }
   }
 }
 

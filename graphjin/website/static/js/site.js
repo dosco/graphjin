@@ -1119,3 +1119,53 @@ if (
     }, 9000);
   }
 }
+
+// Benchmark landing: count the hero score up to the server-rendered value.
+const benchCountUp = document.querySelector('[data-benchmark-count-up]');
+if (
+  benchCountUp &&
+  window.matchMedia('(prefers-reduced-motion: no-preference)').matches
+) {
+  const benchCountText = benchCountUp.textContent;
+  const benchCountTarget = Number.parseInt(benchCountText, 10);
+  if (Number.isFinite(benchCountTarget) && benchCountTarget > 0) {
+    const benchCountStart = performance.now();
+    const benchCountTick = (now) => {
+      const progress = Math.min((now - benchCountStart) / 1100, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      if (progress < 1) {
+        benchCountUp.textContent = String(Math.round(benchCountTarget * eased));
+        requestAnimationFrame(benchCountTick);
+      } else {
+        benchCountUp.textContent = benchCountText; // restore the exact rendered value
+      }
+    };
+    requestAnimationFrame(benchCountTick);
+  }
+}
+
+// Benchmark landing: reveal story bands and the demo conversation as they enter view.
+const benchRevealTargets = document.querySelectorAll('[data-bench-reveal], [data-bench-demo]');
+if (benchRevealTargets.length > 0) {
+  if (
+    'IntersectionObserver' in window &&
+    window.matchMedia('(prefers-reduced-motion: no-preference)').matches
+  ) {
+    const benchRevealObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add('is-visible');
+          benchRevealObserver.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.18 }
+    );
+    for (const el of benchRevealTargets) {
+      el.dataset.benchMotion = 'ready';
+      benchRevealObserver.observe(el);
+    }
+  } else {
+    for (const el of benchRevealTargets) el.classList.add('is-visible');
+  }
+}
