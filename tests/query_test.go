@@ -1519,6 +1519,71 @@ func Example_queryWithRemoteAPIJoin() {
 	// Output: {"users":[{"email":"user1@test.com","payments":[{"desc":"Payment 1 for payment_id_1001"},{"desc":"Payment 2 for payment_id_1001"}]},{"email":"user2@test.com","payments":[{"desc":"Payment 1 for payment_id_1002"},{"desc":"Payment 2 for payment_id_1002"}]}]}
 }
 
+// Example_queryWithRemoteAPIJoinAliases is the row-join variant of the
+// remote alias tests: a user resolver table nested under a database
+// parent, its field requested under an alias. The response filter must
+// match the upstream JSON by source name (desc) and emit the alias.
+func Example_queryWithRemoteAPIJoinAliases() {
+	gql := `query {
+		users(order_by: { id: asc }, limit: 1) {
+			email
+			payments {
+				note: desc
+			}
+		}
+	}`
+
+	// fake remote api service
+	mux := http.NewServeMux()
+	mux.HandleFunc("/payments/", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Path[10:]
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"data":[{"desc":"Payment 1 for %s"}]}`, id) //nolint:errcheck
+	})
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		panic(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	server := &http.Server{Handler: mux}
+	go func() {
+		log.Fatal(server.Serve(listener)) //nolint:gosec
+	}()
+	for i := 0; i < 100; i++ {
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/payments/test", port))
+		if err == nil {
+			resp.Body.Close() //nolint:errcheck
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
+	conf.Resolvers = []core.ResolverConfig{{
+		Name:      "payments",
+		Type:      "remote_api",
+		Table:     "users",
+		Column:    "stripe_id",
+		StripPath: "data",
+		Props:     core.ResolverProps{"url": fmt.Sprintf("http://localhost:%d/payments/$id", port)},
+	}}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"users":[{"email":"user1@test.com","payments":[{"note":"Payment 1 for payment_id_1001"}]}]}
+}
+
 func Example_queryWithCursorPagination1() {
 	gql := `query {
 		products(

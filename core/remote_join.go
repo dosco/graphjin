@@ -144,7 +144,7 @@ func (s *gstate) resolveRemotes(
 
 				var ob bytes.Buffer
 				if len(sel.Fields) != 0 {
-					if err = jsn.Filter(&ob, b, fieldsToList(sel.Fields)); err != nil {
+					if err = jsn.FilterAliased(&ob, b, fieldsToFilterList(sel.Fields)); err != nil {
 						return nil, nil, "", err
 					}
 				} else {
@@ -272,12 +272,20 @@ func (s *gstate) parentFieldIds() ([][]byte, map[string]*qcode.Select, error) {
 	return fm, sm, nil
 }
 
-// fieldsToList converts a list of qcode.Field to a list of strings
-func fieldsToList(fields []qcode.Field) []string {
-	var f []string
+// fieldsToFilterList converts qcode fields to jsn filter fields: match
+// the resolver JSON by source column name, emit under the GraphQL field
+// name (the alias). Fields with no captured column name fall back to
+// the field name for matching, which keeps unaliased selections working
+// against any qcode path that doesn't set Col.
+func fieldsToFilterList(fields []qcode.Field) []jsn.FilterField {
+	f := make([]jsn.FilterField, 0, len(fields))
 
 	for _, col := range fields {
-		f = append(f, col.FieldName)
+		key := col.Col.Name
+		if key == "" {
+			key = col.FieldName
+		}
+		f = append(f, jsn.FilterField{Key: key, As: col.FieldName})
 	}
 	return f
 }

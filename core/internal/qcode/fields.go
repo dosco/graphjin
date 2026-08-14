@@ -136,6 +136,10 @@ func (co *Compiler) compileChildColumns(
 			if err := validateRemoteField(sel, name); err != nil {
 				return err
 			}
+			// Remote tables have no DB column to resolve, but the response
+			// filter still needs the source name: it matches resolver JSON
+			// by Col.Name and emits under FieldName (the alias).
+			field.Col.Name = name
 			sel.Fields = append(sel.Fields, field)
 			continue
 		}

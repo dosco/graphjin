@@ -317,6 +317,14 @@ func selectSignature(sel *qcode.Select) string {
 	}
 	b.WriteByte('|')
 	for _, f := range sel.Fields {
+		// Aliased fields ship the source column under the output name, so
+		// the signature needs both: `name: key` and `name: url` produce
+		// different fragments. Unaliased fields keep the bare-name form so
+		// existing cache entries stay addressable.
+		if f.Col.Name != "" && f.Col.Name != f.FieldName {
+			b.WriteString(f.Col.Name)
+			b.WriteByte(':')
+		}
 		b.WriteString(f.FieldName)
 		b.WriteByte(',')
 	}

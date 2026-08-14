@@ -430,6 +430,74 @@ func TestFilterEscapedQuotesAcrossRecords(t *testing.T) {
 	}
 }
 
+func TestFilterAliased(t *testing.T) {
+	cases := []struct {
+		name   string
+		input  string
+		fields []jsn.FilterField
+		want   string
+	}{
+		{
+			name:  "rename scalar and keep unaliased sibling",
+			input: `[{"key":"a","url":"u1","size":9},{"key":"b","url":"u2","size":8}]`,
+			fields: []jsn.FilterField{
+				{Key: "key", As: "name"},
+				{Key: "url", As: "url"},
+			},
+			want: `[{"name":"a","url":"u1"},{"name":"b","url":"u2"}]`,
+		},
+		{
+			name:  "same source under two output names",
+			input: `[{"key":"a","url":"u1"}]`,
+			fields: []jsn.FilterField{
+				{Key: "key", As: "name"},
+				{Key: "key", As: "key"},
+				{Key: "url"},
+			},
+			want: `[{"name":"a","key":"a","url":"u1"}]`,
+		},
+		{
+			name:  "rename object list and null values",
+			input: `{"meta":{"a":1},"items":[{"id":1}],"gone":null,"skip":true}`,
+			fields: []jsn.FilterField{
+				{Key: "meta", As: "m"},
+				{Key: "items", As: "list"},
+				{Key: "gone", As: "absent"},
+			},
+			want: `{"m":{"a":1},"list":[{"id":1}],"absent":null}`,
+		},
+		{
+			name:  "rename with escaped quotes in value",
+			input: `[{"key":"{\"a\":\"x\"}","n":1},{"key":"z","n":2}]`,
+			fields: []jsn.FilterField{
+				{Key: "key", As: "meta"},
+				{Key: "n", As: "n"},
+			},
+			want: `[{"meta":"{\"a\":\"x\"}","n":1},{"meta":"z","n":2}]`,
+		},
+		{
+			name:  "rename preserves value-side formatting",
+			input: `{"key" : "a", "other": 1}`,
+			fields: []jsn.FilterField{
+				{Key: "key", As: "name"},
+			},
+			want: `{"name" : "a"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var b bytes.Buffer
+			if err := jsn.FilterAliased(&b, []byte(tc.input), tc.fields); err != nil {
+				t.Fatal(err)
+			}
+			if got := b.String(); got != tc.want {
+				t.Errorf("got %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestEscapedBackslashesAcrossScanners(t *testing.T) {
 	value := []byte(`[{"id":1,"meta":"{\"path\":\"c:\\\\tmp\",\"quote\":\"\\\"\"}","child":{"id":2}},{"id":3,"meta":"slash\\\\quote\\\"end"}]`)
 

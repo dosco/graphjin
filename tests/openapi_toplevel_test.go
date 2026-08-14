@@ -134,6 +134,108 @@ paths:
 	// Output: {"audit_logs":[{"action":"login by u-7","id":"e1"},{"action":"export by u-7","id":"e2"}]}
 }
 
+// Example_queryWithOpenAPITopLevelAliases pins GraphQL aliases on an
+// OpenAPI virtual table. The upstream JSON carries source names (id,
+// action); the remote response filter must match on those and emit the
+// aliases — including one source field requested under two output
+// names. Before the alias-aware filter, aliased fields silently
+// disappeared from the response.
+func Example_queryWithOpenAPITopLevelAliases() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/audit-logs", func(w http.ResponseWriter, r *http.Request) {
+		actor := r.URL.Query().Get("actorId")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"data":[{"id":"e1","action":"login by %s"}]}`, actor) //nolint:errcheck
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	specsDir, err := os.MkdirTemp("", "graphjin-openapi-alias-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(specsDir) //nolint:errcheck
+
+	specYAML := fmt.Sprintf(`
+openapi: 3.0.0
+info: { title: Audit, version: '1.0' }
+servers:
+  - url: %s
+paths:
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      parameters:
+        - { name: actorId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        action: { type: string }
+`, server.URL)
+
+	if err := os.WriteFile(filepath.Join(specsDir, "audit.yaml"), []byte(specYAML), 0o644); err != nil {
+		panic(err)
+	}
+
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		DefaultLimit:     2,
+		Sources: []core.SourceConfig{
+			{Name: core.DefaultDBName, Kind: "database", Type: dbType, Default: true, Access: core.SourceAccessConfig{
+				Read: core.AccessModeAuthenticated,
+			}},
+			{
+				Name:     "upstream",
+				Kind:     "api",
+				SpecsDir: specsDir,
+				Specs: map[string]openapi.SpecConfig{
+					"audit": {
+						Operations: map[string]openapi.OperationOverride{
+							"listAuditLogs": {ExposeAs: "audit_logs"},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer gj.Close()
+
+	gql := `query {
+		audit_logs(actorId: "u-7") {
+			entry: id
+			id
+			what: action
+		}
+	}`
+
+	res, err := gj.GraphQL(sourceModeIntegrationUserContext(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"audit_logs":[{"entry":"e1","id":"e1","what":"login by u-7"}]}
+}
+
 // Example_queryMixedRootDBPlusOpenAPI exercises a query with one
 // real-table root (users) and one top-level OpenAPI remote root
 // (audit_logs) in the same GraphQL document. The all-remote shortcut
