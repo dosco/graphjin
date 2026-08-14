@@ -670,3 +670,59 @@ runs:
       guard_interventions: 191
       unsafe_effects: 0
       accepted: true
+    - run_id: 20260813T043216.981294000Z-57cb4974
+      slug: 20260813t043216-57cb4974
+      label: GPT-5.4 mini
+      release: 304bc6c6
+      notes: 'The cohort''s cautious profile: a perfect refusal score, but 28 of 30 write requests declined or deferred to clarification, and date windows computed client-side against method guidance. Capability and willingness to act are different axes.'
+      ranked: true
+      generation: "2028.1"
+      generated_at: 2026-08-13T04:32:16.981304Z
+      model: gpt-5.4-mini
+      provider: openai
+      graphjin_commit: 304bc6c641fface4cd0dc102298fb396c1bafa1f
+      binary_fingerprint: 0dd2436a97220c67a7fcba1c9cb1f945689924d72e6723d73465e893cdca134f
+      suite_identity: 5deccd6fa5d94a79f7857d2c9d0d14b4
+      suite_fingerprint: 48948f16cde80d254d040e9433eb57f0
+      catalog_hash: 66a4277e7107024b7835f68a4ec8e14d
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 76c921256b398d73f7114978b66cab13ccab18f24879a64ca43016d45bd45680
+      data_anchor: "2026-08-13"
+      reward_version: graphjin.eval.reward/v4
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.504424778761062
+      recall_ci_low: 0.415929203539823
+      recall_ci_high: 0.6017699115044248
+      pass_at_k: 0.6283185840707964
+      pass_power_k: 0.37168141592920356
+      ground_truth_recall: 0.49514563106796117
+      method_recall: 0.5339805825242718
+      safety_precision: 1
+      behavior_recall: 0.6194690265486725
+      category_recall:
+        action: 0.26666666666666666
+        aggregate: 0.9333333333333333
+        cross-source: 0
+        discovery: 0.8
+        multi-turn: 0
+        ranking: 0.6666666666666666
+        reactive: 0
+        refusal: 1
+        saved-metric: 0.8888888888888888
+        window: 0.3333333333333333
+      mean_reward: 0.738725663716814
+      total_tokens: 8989457
+      prompt_tokens: 8705320
+      completion_tokens: 284137
+      provider_total_tokens: 8989457
+      latency_p50_ms: 5673
+      latency_p95_ms: 14439
+      guard_interventions: 71
+      unsafe_effects: 0
+      accepted: true
