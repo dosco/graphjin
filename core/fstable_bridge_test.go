@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -74,7 +75,7 @@ func TestBridge_LocalRoundtrip(t *testing.T) {
 	for _, c := range tab.Columns {
 		colNames = append(colNames, c.Name)
 	}
-	for _, want := range []string{"key", "size", "content_type", "etag", "modified_at", "url", "data"} {
+	for _, want := range []string{"key", "size", "content_type", "etag", "modified_at", "url", "data", "text"} {
 		found := false
 		for _, n := range colNames {
 			if n == want {
@@ -560,5 +561,85 @@ func TestParsePositiveInt(t *testing.T) {
 		if (err == nil) != ok {
 			t.Errorf("parsePositiveInt(%q) ok=%v, want %v", in, err == nil, ok)
 		}
+	}
+}
+
+// TestBridge_TextColumnDecodesUTF8 pins the decoded content column. data stays
+// the lossless base64 contract; text is the directly usable form — consumers
+// without a base64 decoder (the agent's JS runtime has none) were decoding file
+// bodies token by token in their heads.
+func TestBridge_TextColumnDecodesUTF8(t *testing.T) {
+	root := t.TempDir()
+	mkfile(t, root, "a/policy.md", []byte("Urgent tickets: resolve within 4 hours."))
+	mkfile(t, root, "a/blob.bin", []byte{0xff, 0xfe, 0x00, 0x91})
+
+	cfgRoot := t.TempDir()
+	schema := []byte(`# dbinfo:postgres,120005,public
+
+type users {
+  id: Bigint! @id @unique
+}
+`)
+	if err := os.WriteFile(filepath.Join(cfgRoot, "db.ddl"), schema, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gj, err := NewGraphJinWithFS(&Config{
+		MockDB: true, EnableSchema: true, DisableAllowList: true, DBType: "postgres",
+		Sources: []SourceConfig{
+			{Name: "app", Kind: "database", Type: "postgres", Default: true},
+			{Name: "policies", Kind: "file", Backend: "local", Root: root},
+		},
+	}, nil, NewOsFS(cfgRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	// Selecting text alone triggers the content fetch: no data field, no
+	// inline_data argument.
+	res, err := gj.GraphQL(context.Background(),
+		`query { policies(where: { key: { eq: "a/policy.md" } }) { key text } }`, nil, nil)
+	if err != nil {
+		t.Fatalf("GraphQL text read: %v", err)
+	}
+	var out struct {
+		Policies []map[string]any `json:"policies"`
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Policies) != 1 || out.Policies[0]["text"] != "Urgent tickets: resolve within 4 hours." {
+		t.Fatalf("text read = %+v", out.Policies)
+	}
+
+	// Both content forms agree: text decoded, data base64 of the same bytes.
+	res, err = gj.GraphQL(context.Background(),
+		`query { policies(where: { key: { eq: "a/policy.md" } }) { key text data } }`, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base64.StdEncoding.DecodeString(out.Policies[0]["data"].(string))
+	if err != nil || string(raw) != out.Policies[0]["text"].(string) {
+		t.Fatalf("data/text disagree: %v / %+v", err, out.Policies[0])
+	}
+
+	// Binary content: data still serves base64, text stays null rather than
+	// serving mojibake.
+	res, err = gj.GraphQL(context.Background(),
+		`query { policies(where: { key: { eq: "a/blob.bin" } }) { key text data } }`, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Policies[0]["text"] != nil {
+		t.Fatalf("binary file must have null text, got %v", out.Policies[0]["text"])
+	}
+	if out.Policies[0]["data"] == nil {
+		t.Fatal("binary file must still serve base64 data")
 	}
 }

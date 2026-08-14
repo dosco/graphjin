@@ -173,3 +173,94 @@ func TestRemoteJoinEdgeAttachesToTables(t *testing.T) {
 		t.Fatalf("foreign-key edge changed shape: %+v", fkEdge)
 	}
 }
+
+// TestTableExamplesForFilesystemTables pins the example a model actually copies.
+// The generic form led with an id column filesystem tables do not have and never
+// showed the content read; episodes show models copying it verbatim.
+func TestTableExamplesForFilesystemTables(t *testing.T) {
+	fsCols := []MetadataColumn{}
+	for i, name := range []string{"key", "size", "content_type", "etag", "modified_at", "url", "data", "text"} {
+		fsCols = append(fsCols, MetadataColumn{
+			ID: "app:main.sla_policies." + name, TableID: "app:main.sla_policies",
+			DatabaseName: "app", SchemaName: "main", TableName: "sla_policies",
+			ColumnName: name, Type: "text", Ordinal: i,
+		})
+	}
+	snap := Build(&MetadataSnapshot{
+		Databases: []MetadataDatabase{{ID: "app", Name: "app", Type: "sqlite"}},
+		Tables: []MetadataTable{{
+			ID: "app:main.sla_policies", DatabaseName: "app", SchemaName: "main",
+			TableName: "sla_policies", ColumnCount: len(fsCols), Type: "remote",
+		}},
+		Columns: fsCols,
+	}, nil)
+	card, ok := findCatalogCard(snap, "table:app:main.sla_policies")
+	if !ok {
+		t.Fatal("sla_policies card missing")
+	}
+	// The JSON encoder HTML-escapes angle brackets, so <key> arrives as
+	// \u003ckey\u003e; assert on the stable fragments.
+	for _, want := range []string{"(key:", "u003ckey", "text data", "prefix:"} {
+		if !strings.Contains(card.ExamplesJSON, want) {
+			t.Fatalf("filesystem example must teach the content read, missing %q: %s", want, card.ExamplesJSON)
+		}
+	}
+	if strings.Contains(card.ExamplesJSON, "id") && !strings.Contains(card.ExamplesJSON, "modified_at") {
+		t.Fatalf("filesystem example must not invent columns: %s", card.ExamplesJSON)
+	}
+	if strings.Contains(card.ExamplesJSON, "{ id ") {
+		t.Fatalf("filesystem example must not lead with a nonexistent id: %s", card.ExamplesJSON)
+	}
+
+	// An API-join remote (spec-derived columns, no key/url/data) keeps the
+	// generic shape without an invented id.
+	apiCols := []MetadataColumn{}
+	for i, name := range []string{"account_id", "health", "executive_owner", "open_risk_count"} {
+		apiCols = append(apiCols, MetadataColumn{
+			ID: "app:main.account_health." + name, TableID: "app:main.account_health",
+			DatabaseName: "app", SchemaName: "main", TableName: "account_health",
+			ColumnName: name, Type: "text", Ordinal: i,
+		})
+	}
+	snap = Build(&MetadataSnapshot{
+		Databases: []MetadataDatabase{{ID: "app", Name: "app", Type: "sqlite"}},
+		Tables: []MetadataTable{{
+			ID: "app:main.account_health", DatabaseName: "app", SchemaName: "main",
+			TableName: "account_health", ColumnCount: len(apiCols), Type: "remote",
+		}},
+		Columns: apiCols,
+	}, nil)
+	card, ok = findCatalogCard(snap, "table:app:main.account_health")
+	if !ok {
+		t.Fatal("account_health card missing")
+	}
+	if strings.Contains(card.ExamplesJSON, "id ") && !strings.Contains(card.ExamplesJSON, "account_id") {
+		t.Fatalf("api-join example must not invent an id column: %s", card.ExamplesJSON)
+	}
+	if !strings.Contains(card.ExamplesJSON, "account_id") {
+		t.Fatalf("api-join example should use real columns: %s", card.ExamplesJSON)
+	}
+
+	// A plain DB table with an id keeps the historical shape.
+	dbCols := []MetadataColumn{
+		{ID: "app:main.users.id", TableID: "app:main.users", DatabaseName: "app", SchemaName: "main",
+			TableName: "users", ColumnName: "id", Type: "bigint", PrimaryKey: true, Ordinal: 0},
+		{ID: "app:main.users.email", TableID: "app:main.users", DatabaseName: "app", SchemaName: "main",
+			TableName: "users", ColumnName: "email", Type: "text", Ordinal: 1},
+	}
+	snap = Build(&MetadataSnapshot{
+		Databases: []MetadataDatabase{{ID: "app", Name: "app", Type: "sqlite"}},
+		Tables: []MetadataTable{{
+			ID: "app:main.users", DatabaseName: "app", SchemaName: "main",
+			TableName: "users", ColumnCount: len(dbCols), PrimaryKey: "id",
+		}},
+		Columns: dbCols,
+	}, nil)
+	card, ok = findCatalogCard(snap, "table:app:main.users")
+	if !ok {
+		t.Fatal("users card missing")
+	}
+	if !strings.Contains(card.ExamplesJSON, "id") || !strings.Contains(card.ExamplesJSON, "email") {
+		t.Fatalf("db table example regressed: %s", card.ExamplesJSON)
+	}
+}

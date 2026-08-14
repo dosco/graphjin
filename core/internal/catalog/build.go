@@ -1997,7 +1997,26 @@ func columnSummary(c MetadataColumn, sensitive bool, sensitivity string) string 
 }
 
 func tableExamples(t MetadataTable, keyCols []MetadataColumn) string {
-	fields := []string{"id"}
+	// A filesystem-backed table's example has to teach the read that matters:
+	// pass key: to fetch one file, select text (decoded) or data (base64) to
+	// inline its content. The generic example below used to be emitted here too,
+	// leading with an id column these tables do not have — episodes show models
+	// copying it verbatim and never discovering the content read.
+	if isFilesystemShapedTable(t, keyCols) {
+		return mustJSON([]string{
+			fmt.Sprintf("{ %s(prefix: \"\", limit: 10) { key size content_type modified_at } }", t.TableName),
+			fmt.Sprintf("{ %s(key: \"<key>\") { key content_type text data } }", t.TableName),
+		})
+	}
+	// Only lead with id when the table actually has one; remote tables often do
+	// not, and an invented field in the one example a model reads is a trap.
+	fields := []string{}
+	for _, c := range keyCols {
+		if c.ColumnName == "id" {
+			fields = append(fields, "id")
+			break
+		}
+	}
 	for _, c := range keyCols {
 		if len(fields) >= 4 {
 			break
@@ -2006,7 +2025,28 @@ func tableExamples(t MetadataTable, keyCols []MetadataColumn) string {
 			fields = append(fields, c.ColumnName)
 		}
 	}
+	if len(fields) == 0 {
+		fields = append(fields, "id")
+	}
 	return mustJSON([]string{fmt.Sprintf("{ %s(limit: 10) { %s } }", t.TableName, strings.Join(fields, " "))})
+}
+
+// isFilesystemShapedTable recognises the fixed column shape the filesystem
+// bridge registers (core/fstable_bridge.go): a remote table carrying key, url
+// and data. API-join remotes have their own spec-derived columns and never
+// match.
+func isFilesystemShapedTable(t MetadataTable, cols []MetadataColumn) bool {
+	if !strings.EqualFold(strings.TrimSpace(t.Type), "remote") {
+		return false
+	}
+	need := map[string]bool{"key": false, "url": false, "data": false}
+	for _, c := range cols {
+		name := strings.ToLower(c.ColumnName)
+		if _, ok := need[name]; ok {
+			need[name] = true
+		}
+	}
+	return need["key"] && need["url"] && need["data"]
 }
 
 func columnExamples(c MetadataColumn, observed []string) string {

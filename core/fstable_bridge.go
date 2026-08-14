@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dosco/graphjin/core/v3/fstable"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
@@ -36,13 +37,14 @@ type FilesystemBackendFactory func(conf FilesystemConfig) (fstable.Backend, erro
 // order.
 func fixedFilesystemColumns(schema, table string) []sdata.DBColumn {
 	cols := []sdata.DBColumn{
-		{Name: "key", Type: "text", PrimaryKey: true, NotNull: true},
+		{Name: "key", Type: "text", PrimaryKey: true, NotNull: true, Comment: "Path-like object key; pass key: to read one file"},
 		{Name: "size", Type: "bigint"},
 		{Name: "content_type", Type: "text"},
 		{Name: "etag", Type: "text"},
 		{Name: "modified_at", Type: "timestamp without time zone"},
 		{Name: "url", Type: "text"},
-		{Name: "data", Type: "text"},
+		{Name: "data", Type: "text", Comment: "File body, base64-encoded; selecting it inlines file content"},
+		{Name: "text", Type: "text", Comment: "File body decoded as UTF-8 text when valid, else null; selecting it inlines file content"},
 	}
 	for i := range cols {
 		cols[i].Schema = schema
@@ -307,7 +309,7 @@ func (b *filesystemBridge) planQuery(req ResolverReq) (filesystemQueryPlan, erro
 		key:        args["key"],
 		prefix:     args["prefix"],
 		after:      args["after"],
-		inlineData: args["inline_data"] == "true" || filesystemSelectsData(req.Sel),
+		inlineData: args["inline_data"] == "true" || filesystemSelectsContent(req.Sel),
 		globalSort: filesystemNeedsGlobalSort(req.Sel.OrderBy),
 	}
 
@@ -406,12 +408,20 @@ func (b *filesystemBridge) pageSize(plan filesystemQueryPlan) int {
 	return plan.resultTarget
 }
 
-func filesystemSelectsData(sel *qcode.Select) bool {
+// filesystemSelectsContent reports whether the selection asks for file content
+// in either shape: data (base64) or text (decoded UTF-8). Selecting either
+// inlines the file body, so callers need no inline_data argument.
+func filesystemSelectsContent(sel *qcode.Select) bool {
 	if sel == nil {
 		return false
 	}
 	for _, f := range sel.Fields {
-		if f.Col.Name == "data" || f.FieldName == "data" {
+		switch f.Col.Name {
+		case "data", "text":
+			return true
+		}
+		switch f.FieldName {
+		case "data", "text":
 			return true
 		}
 	}
@@ -1111,6 +1121,7 @@ func (b *filesystemBridge) entryToRow(ctx context.Context, e fstable.Entry, inli
 		"modified_at":  e.ModifiedAt.UTC().Format(time.RFC3339Nano),
 		"url":          url,
 		"data":         nil,
+		"text":         nil,
 	}
 
 	if inlineData {
@@ -1124,6 +1135,12 @@ func (b *filesystemBridge) entryToRow(ctx context.Context, e fstable.Entry, inli
 			return nil, fmt.Errorf("filesystem(%s): read: %w", b.name, rerr)
 		}
 		row["data"] = base64.StdEncoding.EncodeToString(buf)
+		// The base64 form is the lossless contract; text is the usable one.
+		// Consumers without a base64 decoder — the agent's JS runtime has none —
+		// were decoding file bodies token by token in their heads.
+		if utf8.Valid(buf) {
+			row["text"] = string(buf)
+		}
 	}
 
 	return row, nil
