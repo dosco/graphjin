@@ -145,6 +145,7 @@ func (s *gstate) executeManagedQueryRaw(c context.Context, forSubscription bool)
 		Database: dbName,
 		Roots:    make([]ManagedQueryRoot, 0, len(qc.Roots)),
 	}
+	countAggsByRoot := make([][]managedCountAggregate, 0, len(qc.Roots))
 	for _, rootID := range qc.Roots {
 		sel := qc.Selects[rootID]
 		if sel.Paging.Backward || sel.Paging.Type == qcode.PTBackward {
@@ -159,6 +160,26 @@ func (s *gstate) executeManagedQueryRaw(c context.Context, forSubscription bool)
 			Limit:     int(sel.Paging.Limit),
 			Offset:    int(sel.Paging.Offset),
 		}
+		countAggs := managedCountAggregates(sel.Fields)
+		if len(countAggs) != 0 && len(root.Fields) == 0 && !sel.Paging.Cursor {
+			// Aggregate-only selection: fetch the counted columns under hidden
+			// names and drop paging so the count covers the whole filtered set,
+			// the same way SQL COUNT ignores the default row limit.
+			used := make(map[string]struct{}, len(countAggs))
+			for i := range countAggs {
+				if countAggs[i].column == "" {
+					continue
+				}
+				name := managedHiddenFieldName("__gj_agg_", countAggs[i].column, used)
+				used[name] = struct{}{}
+				countAggs[i].hiddenField = name
+				root.Fields = append(root.Fields, ManagedMutationField{Name: name, Column: countAggs[i].column})
+			}
+			root.Limit, root.Offset = 0, 0
+		} else {
+			countAggs = nil
+		}
+		countAggsByRoot = append(countAggsByRoot, countAggs)
 		if sel.Paging.Cursor {
 			root.Limit = 0
 			root.Offset = 0
@@ -171,8 +192,102 @@ func (s *gstate) executeManagedQueryRaw(c context.Context, forSubscription bool)
 	if err != nil {
 		return true, nil, err
 	}
+	data, err = applyManagedCountAggregates(data, req.Roots, countAggsByRoot)
+	if err != nil {
+		return true, nil, err
+	}
 	data, err = s.pageManagedQueryResult(c, data, qc)
 	return true, data, err
+}
+
+// managedCountAggregate describes one count_<col> selection on a managed root.
+type managedCountAggregate struct {
+	fieldName   string
+	column      string
+	hiddenField string
+}
+
+// managedCountAggregates returns the count aggregates selected on a managed
+// root. managedSelectedFields silently drops every function field, so before
+// this a `gj_watch { count_id }` compiled cleanly and then projected to an
+// empty object. Returns nil when the selection holds any function the managed
+// layer cannot compute (sums, windows), preserving the historical shape there.
+func managedCountAggregates(fields []qcode.Field) []managedCountAggregate {
+	var out []managedCountAggregate
+	for _, f := range fields {
+		if f.Type != qcode.FieldTypeFunc {
+			continue
+		}
+		if f.Window != nil || !strings.EqualFold(f.Func.Name, "count") {
+			return nil
+		}
+		column := ""
+		if len(f.Args) != 0 && f.Args[0].Type == qcode.ArgTypeCol {
+			column = f.Args[0].Col.Name
+		} else if f.Col.Name != "" {
+			column = f.Col.Name
+		}
+		out = append(out, managedCountAggregate{fieldName: f.FieldName, column: column})
+	}
+	return out
+}
+
+// applyManagedCountAggregates folds each aggregate-only managed root's row set
+// into the single-row shape the SQL path produces for the same selection. A
+// column-scoped count skips null values, and treats the empty string as null
+// to match the managed filter layer's own is_null semantics.
+func applyManagedCountAggregates(data json.RawMessage, roots []ManagedQueryRoot, aggsByRoot [][]managedCountAggregate) (json.RawMessage, error) {
+	found := false
+	for _, aggs := range aggsByRoot {
+		if len(aggs) != 0 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return data, nil
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(data, &top); err != nil {
+		return nil, fmt.Errorf("managed query result must be an object: %w", err)
+	}
+	for i, aggs := range aggsByRoot {
+		if len(aggs) == 0 || i >= len(roots) {
+			continue
+		}
+		fieldName := roots[i].FieldName
+		var rows []map[string]any
+		if raw, ok := top[fieldName]; ok && len(raw) != 0 {
+			if err := json.Unmarshal(raw, &rows); err != nil {
+				return nil, fmt.Errorf("managed aggregate root %s must return an array: %w", fieldName, err)
+			}
+		}
+		out := make(map[string]any, len(aggs))
+		for _, agg := range aggs {
+			if agg.hiddenField == "" {
+				out[agg.fieldName] = len(rows)
+				continue
+			}
+			count := 0
+			for _, row := range rows {
+				value, ok := row[agg.hiddenField]
+				if !ok || value == nil {
+					continue
+				}
+				if text, isText := value.(string); isText && text == "" {
+					continue
+				}
+				count++
+			}
+			out[agg.fieldName] = count
+		}
+		encoded, err := json.Marshal([]map[string]any{out})
+		if err != nil {
+			return nil, err
+		}
+		top[fieldName] = encoded
+	}
+	return json.Marshal(top)
 }
 
 func appendManagedCursorFields(fields []ManagedMutationField, sel *qcode.Select) []ManagedMutationField {
@@ -525,7 +640,15 @@ func managedExpToValue(ex *qcode.Exp, vars map[string]json.RawMessage) interface
 		if col == "" {
 			return nil
 		}
-		return map[string]interface{}{col: map[string]interface{}{"is_null": ex.Op == qcode.OpIsNull}}
+		// qcode encodes `is_null: false` as OpIsNull carrying the literal in
+		// Right.Val and leaves the flip to the renderer (psql/exp.go). Ignoring
+		// the literal here silently inverted `is_null: false` into
+		// `is_null: true`, excluding every populated row.
+		wantNull := ex.Op == qcode.OpIsNull
+		if strings.EqualFold(ex.Right.Val, "false") {
+			wantNull = !wantNull
+		}
+		return map[string]interface{}{col: map[string]interface{}{"is_null": wantNull}}
 	default:
 		col := managedLeftColumn(ex)
 		if col == "" {
