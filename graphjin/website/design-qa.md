@@ -1,6 +1,8 @@
 # DeepORG benchmark design QA
 
 - Source visual truth: `/Users/vr/.codex/generated_images/019ff70c-5f30-7de2-8e74-1bda446487da/exec-c71ea9f3-3722-4a83-88f9-a472ab2e8eee.png`
+- Social-card visual reference: `/var/folders/05/mknp9cx51rx9lnrkmxrs39bw0000gp/T/codex-clipboard-de54b7b7-25a4-4c5b-b350-7e16513e188b.png` (2048 × 1136)
+- Social-card implementation: `/Users/vr/src/graphjin/website/public/og/deeporg-og.png` (1200 × 630)
 - Implementation route: `http://127.0.0.1:1313/benchmark/`
 - Intended viewport: 864 CSS px wide, light theme, desktop state
 - Source pixels: 864 × 1821
@@ -44,6 +46,8 @@ Blocked for the same reason. The intended focused checks are the hero score spli
 7. The first 1200 × 630 card pass was rejected for heavy typography, crowded copy, and excessive metric framing. The generator was simplified to a sparse two-metric composition, switched to the freely licensed Inter font loaded from a pinned local package, and reduced to the active model, score, safety result, scope, and generation.
 8. The selected page source and revised 1200 × 630 card were opened together for visual comparison. The card now follows the source's white editorial hierarchy, thin rules, restrained lime accent, and open spacing; this asset-level comparison does not replace the blocked browser QA for the full page.
 9. Restored the source's full framing question—“Can an AI agent handle the questions an organization actually asks?”—and compared the regenerated card with the source in the same visual input. The full line fits without wrapping, clipping, or crowding at 1200 × 630.
+10. Reworked the social card from a hero-and-metrics layout into the supplied performance-table direction. The 2048 × 1136 reference and 1200 × 630 implementation were opened in the same comparison input. The implementation preserves the reference's pale neutral canvas, large gray statement, generous header gap, model-column hierarchy, thin horizontal rules, regular-weight row labels, and selective bold results while adapting the content to DeepORG's live leader. No P0/P1/P2 card-level mismatches remain; the full-page browser QA remains independently blocked.
+11. Updated the social-card title to “DeepORG Benchmark” and regenerated it against the current ranked model. The expanded title fits on one line with clear separation from the GraphJin wordmark and framing question.
 
 ## Final result
 
