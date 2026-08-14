@@ -399,7 +399,46 @@ func exposeAs(specKey, operationID string, override OperationOverride) string {
 	if override.ExposeAs != "" {
 		return override.ExposeAs
 	}
-	return specKey + "_" + toSnakeCase(operationID)
+	return sanitizeGraphQLName(specKey + "_" + toSnakeCase(operationID))
+}
+
+// sanitizeGraphQLName converts an arbitrary generated name to the GraphQL
+// Name grammar: [_A-Za-z][_0-9A-Za-z]*. OpenAPI operationIds are free-form
+// strings, so punctuation that is valid there must not leak into the field
+// names exposed by GraphJin. Consecutive invalid characters collapse to keep
+// generated names readable; existing valid underscores remain unchanged.
+func sanitizeGraphQLName(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 1)
+	replacingInvalid := false
+
+	for _, r := range s {
+		isLetter := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+		isDigit := r >= '0' && r <= '9'
+		if !isLetter && !isDigit && r != '_' {
+			if replacingInvalid {
+				continue
+			}
+			r = '_'
+			replacingInvalid = true
+		} else {
+			replacingInvalid = false
+		}
+
+		if b.Len() == 0 && isDigit {
+			b.WriteByte('_')
+		}
+		b.WriteRune(r)
+	}
+
+	if b.Len() == 0 {
+		return "_"
+	}
+	name := b.String()
+	if strings.HasPrefix(name, "__") {
+		name = "_" + strings.TrimLeft(name, "_")
+	}
+	return name
 }
 
 // toSnakeCase converts camelCase / PascalCase identifiers to snake_case.
