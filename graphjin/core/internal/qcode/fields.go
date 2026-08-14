@@ -133,6 +133,9 @@ func (co *Compiler) compileChildColumns(
 		// these are all remote fields we use
 		// these later to strip the response json
 		if sel.Rel.Type == sdata.RelRemote {
+			if err := validateRemoteField(sel, name); err != nil {
+				return err
+			}
 			sel.Fields = append(sel.Fields, field)
 			continue
 		}
@@ -276,6 +279,30 @@ func (co *Compiler) compileChildColumns(
 		}
 	}
 	return nil
+}
+
+// validateRemoteField enforces the closed column surface on remote tables
+// that declare one (StrictColumns, e.g. filesystem tables). All other
+// remote tables keep the historical lenient pass-through: resolver-backed
+// and OpenAPI tables may serve fields their registered columns don't list.
+// Keyword selections (__typename, *_cursor) stay pass-through everywhere —
+// they are protocol fields, not columns.
+func validateRemoteField(sel *Select, name string) error {
+	if !sel.Ti.StrictColumns {
+		return nil
+	}
+	if name == "__typename" || strings.HasSuffix(name, "_cursor") {
+		return nil
+	}
+	if _, ok := sel.Ti.ColumnExists(name); ok {
+		return nil
+	}
+	cols := make([]string, len(sel.Ti.Columns))
+	for i, c := range sel.Ti.Columns {
+		cols[i] = c.Name
+	}
+	return fmt.Errorf("column '%s' does not exist on table '%s'; available columns: %s",
+		name, sel.Ti.Name, strings.Join(cols, ", "))
 }
 
 // hasNonAggField reports whether the field list contains any FieldTypeCol

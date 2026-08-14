@@ -160,6 +160,12 @@ func (gj *graphjinEngine) loadFilesystemIntegration() error {
 
 		t := sdata.NewDBTable(schema, fc.Name, "remote", fixedFilesystemColumns(schema, fc.Name))
 		t.Args = fixedFilesystemArgs(schema, fc.Name)
+		// The column surface is closed — every backend serves exactly the
+		// fixed set — so unknown selections should fail at compile time the
+		// way they do on database tables. Without this, a hallucinated
+		// column rides the remote pass-through and comes back as silently
+		// absent instead of an error the caller can correct from.
+		t.StrictColumns = true
 		pdb.dbinfo.AddTable(t)
 
 		gj.conf.Resolvers = append(gj.conf.Resolvers, ResolverConfig{

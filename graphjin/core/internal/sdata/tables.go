@@ -49,7 +49,14 @@ type DBTable struct {
 	PartitionRangeDays   int               // Default range in days for auto-injected partition filter (0 = warn only)
 	PartitionNone        bool
 	ImplicitPartitionKey string
-	colMap               map[string]int
+	// StrictColumns marks Columns as the table's complete surface: selecting
+	// a column not in the list is a compile error instead of the lenient
+	// pass-through remote tables get by default. Set by integrations whose
+	// column set is closed (filesystem tables); OpenAPI and user-resolver
+	// tables leave it false because their registered columns may be partial
+	// or absent entirely.
+	StrictColumns bool
+	colMap        map[string]int
 
 	// Args lists synthetic field-level arguments (used for top-level
 	// remote tables that take query/path params as GraphQL args).
