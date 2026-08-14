@@ -108,6 +108,32 @@ func (s *gstate) renderNanoSelect(
 		filtered = append(filtered, row)
 	}
 
+	// Aggregate-only count selections fold the whole filtered set into the
+	// single-row shape the SQL path produces, before paging: SQL COUNT ignores
+	// the default row limit. Before this, nanoRenderRow silently dropped every
+	// non-search function field, so `gj_watch { count_id }` returned [{}].
+	if aggs := managedCountAggregates(sel.Fields); len(aggs) != 0 &&
+		!sel.Paging.Cursor && !nanoHasPlainFields(sel.Fields) {
+		row := make(map[string]any, len(aggs))
+		for _, agg := range aggs {
+			if agg.column == "" {
+				row[agg.fieldName] = len(filtered)
+				continue
+			}
+			count := 0
+			for _, r := range filtered {
+				if !isNullish(r[agg.column]) {
+					count++
+				}
+			}
+			row[agg.fieldName] = count
+		}
+		if sel.Singular {
+			return row, nil, nil
+		}
+		return []any{row}, nil, nil
+	}
+
 	sort.SliceStable(filtered, func(i, j int) bool {
 		return s.nanoLess(snap, sel, filtered[i], filtered[j], search)
 	})
@@ -365,9 +391,12 @@ func (s *gstate) nanoEval(
 	case qcode.OpNotRegex, qcode.OpNotIRegex:
 		return !regexValue(left, right, ex.Op == qcode.OpNotIRegex)
 	case qcode.OpIsNull:
-		return isNullish(left)
+		// qcode keeps the `is_null:` literal in Right.Val and leaves the flip
+		// to the executor (psql/exp.go does the same): `is_null: false` means
+		// IS NOT NULL. Ignoring the literal inverted the filter here.
+		return isNullish(left) == !strings.EqualFold(ex.Right.Val, "false")
 	case qcode.OpIsNotNull:
-		return !isNullish(left)
+		return isNullish(left) == strings.EqualFold(ex.Right.Val, "false")
 	default:
 		return true
 	}
@@ -575,4 +604,16 @@ func regexValue(a, b any, insensitive bool) bool {
 
 func isNullish(v any) bool {
 	return v == nil || fmt.Sprint(v) == ""
+}
+
+// nanoHasPlainFields reports whether the selection carries any regular column
+// field; count folding only applies to aggregate-only selections, mirroring
+// the managed-handler path.
+func nanoHasPlainFields(fields []qcode.Field) bool {
+	for _, f := range fields {
+		if f.Type == qcode.FieldTypeCol {
+			return true
+		}
+	}
+	return false
 }
