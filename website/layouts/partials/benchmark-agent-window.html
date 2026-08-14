@@ -1,0 +1,22 @@
+{{- /* The /benchmark/ demo conversation window. Content mirrors the homepage
+     hero's first rotation pair verbatim — the bundled SaaS Ops demo answering
+     its churn question — so the two surfaces never drift apart on the story.
+     Reuses the global .ai-window conversation classes; the extra
+     .benchmark-agent-window class opts into the source-chip styling that is
+     otherwise scoped to .ai-window-hero. */ -}}
+<div class="ai-window benchmark-agent-window" data-bench-demo>
+  <div class="window-chrome"><span></span><span></span><span></span><i aria-hidden="true">✣</i><strong>GraphJin Agent · SaaS Ops demo</strong></div>
+  <div class="ai-conversation">
+    <div class="chat-user">Which account is most at risk of churn—and why?</div>
+    <div class="assistant-row">
+      <div class="assistant-avatar" aria-hidden="true">✣</div>
+      <div class="chat-assistant">
+        <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>query_catalog</span></div><code>3 relevant sources discovered</code><div class="hero-source-list" aria-label="Sources discovered"><span><strong>Postgres</strong> accounts + invoices</span><span><strong>Snowflake</strong> product usage</span><span><strong>CRM API</strong> opportunities</span></div></div>
+        <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>validate_where_clause</span></div><code>relationships + churn filters valid</code></div>
+        <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>execute_graphql</span></div><code>3 optimized, policy-checked operations</code></div>
+        <p class="done-line"><span aria-hidden="true">✓</span><span class="done-text"> Evidence checked · 3 systems · 3 operations</span></p>
+        <p class="assistant-copy">Meridian Robotics — renewal in 9 days, usage down 38%, two failed payments, and an unresolved escalation.</p>
+      </div>
+    </div>
+  </div>
+</div>

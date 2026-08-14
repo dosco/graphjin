@@ -42,16 +42,16 @@
       {{- $cost := 0.0 -}}
       {{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
       <section class="benchmark-landing-hero" aria-labelledby="benchmark-landing-title">
-        <div class="benchmark-landing-meta"><p class="benchmark-landing-eyebrow">Benchmarks</p><p>Last updated: {{ time.Format "2006-01-02" .generated_at }}</p></div>
+        <div class="benchmark-landing-meta"><p class="benchmark-landing-eyebrow">Benchmarks · by GraphJin</p><p>Last updated: {{ time.Format "2006-01-02" .generated_at }}</p></div>
         <h1 id="benchmark-landing-title">DeepORG</h1>
         <p class="benchmark-landing-subtitle">The Organizational Agent Benchmark</p>
         <div class="benchmark-landing-intro">
-          <h2>Can an AI agent handle the questions an organization actually asks?</h2>
-          <p>DeepORG tests models against live questions across real organizational systems. It measures what matters: correct answers, the right execution path, and zero unsafe effects.</p>
+          <h2>We grade our own AI agent in public.</h2>
+          <p>GraphJin connects one AI agent to every database, API, and file system you run — governed, so it can only do what policy allows. DeepORG is the public exam it has to pass: {{ int .task_count }} real organizational questions, {{ int .repeats }} attempts each, scored against live data.</p>
         </div>
         <div class="benchmark-landing-proof" data-benchmark-leader="{{ .run_id }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-task-count="{{ int .task_count }}" data-repeats="{{ int .repeats }}">
           <div class="benchmark-landing-score">
-            <strong><span>{{ printf "%.0f" (mul (float .recall) 100) }}</span><small>/100</small></strong>
+            <strong><span data-benchmark-count-up>{{ printf "%.0f" (mul (float .recall) 100) }}</span><small>/100</small></strong>
             <h2>Full pass score</h2>
             <p>{{ .label }} achieved {{ printf "%.1f" (mul (float .recall) 100) }} out of 100 full passes across {{ int .task_count }} live tasks with {{ int .repeats }} attempts each.</p>
             {{ if and (isset . "recall_ci_low") (isset . "recall_ci_high") (ge (float .recall_ci_low) 0.0) (le (float .recall_ci_high) 1.0) (ge (float .recall_ci_high) (float .recall_ci_low)) }}
@@ -70,6 +70,7 @@
         </div>
         <div class="benchmark-landing-actions">
           <a class="button-primary" href="#run-it-yourself">Run it yourself <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
+          <a class="benchmark-text-link" href="#watch-it-work">Watch it work <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
           <a class="benchmark-text-link" href="/benchmarks/deeporg/methodology/">See the technical methodology <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
         </div>
         <div class="benchmark-landing-stats" aria-label="Benchmark summary">
@@ -82,11 +83,63 @@
       </section>
     {{ end }}
 
+    <section class="benchmark-landing-section benchmark-why-section" aria-labelledby="benchmark-why-title" data-bench-reveal>
+      <div class="benchmark-why-grid">
+        <div class="benchmark-landing-section-heading">
+          <p class="benchmark-landing-eyebrow">What GraphJin is</p>
+          <h2 id="benchmark-why-title">Most AI agents guess. Ours can't.</h2>
+          <p>Point a language model at raw credentials and it invents what it cannot see — tables, joins, numbers. It sounds confident. It is guessing.</p>
+          <p>GraphJin gives the agent a governed map of everything you run. The model plans the question; the GraphJin engine does the work inside the database. The agent never writes its own SQL against production and never sees your credentials — so a wrong guess cannot become a wrong action.</p>
+        </div>
+        <figure class="benchmark-why-figure" aria-label="An AI agent guessing at disconnected systems">{{ readFile "static/svg/problem-blind-agent.svg" | safeHTML }}</figure>
+      </div>
+      <p class="benchmark-why-kicker">One agent across the stack you already run</p>
+      {{ partial "database-strip.html" . }}
+    </section>
+
+    <section id="watch-it-work" class="benchmark-landing-section benchmark-watch-section" aria-labelledby="benchmark-watch-title">
+      <div class="benchmark-landing-section-heading">
+        <p class="benchmark-landing-eyebrow">The demo</p>
+        <h2 id="benchmark-watch-title">Watch it answer a real question.</h2>
+        <p>This is GraphJin's built-in SaaS Ops demo — the same environment DeepORG measures. One command runs it on your laptop.</p>
+      </div>
+      <div class="benchmark-watch-grid">
+        <div class="benchmark-watch-demo">
+          {{ partial "benchmark-agent-window.html" . }}
+          <p class="benchmark-watch-run"><code>graphjin serve --demo</code><a href="/start/demos/">Try it on your machine <i class="ti ti-arrow-right" aria-hidden="true"></i></a></p>
+          <p class="benchmark-watch-fineprint">Illustrative conversation from the bundled SaaS Ops demo—not a published test item.</p>
+        </div>
+        <div class="benchmark-watch-rail">
+          <h3>From question to verified answer</h3>
+          <ol>
+            <li><span>1</span><div><strong>Ask</strong><p>A person asks in plain language.</p></div></li>
+            <li><span>2</span><div><strong>Execute</strong><p>The agent picks a governed method; the engine runs it in the database.</p></div></li>
+            <li><span>3</span><div><strong>Verify</strong><p>DeepORG checks the answer, the method, the behavior, and safety.</p></div></li>
+            <li><span>4</span><div><strong>Result</strong><p>Only all four together count as a pass.</p></div></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="benchmark-landing-section benchmark-meaning-section" aria-labelledby="benchmark-meaning-title" data-bench-reveal>
+      <div class="benchmark-landing-section-heading">
+        <p class="benchmark-landing-eyebrow">The score, in plain English</p>
+        <h2 id="benchmark-meaning-title">What {{ range first 1 $ranked }}{{ printf "%.0f" (mul (float .recall) 100) }}{{ end }} actually means</h2>
+        <p>The agent fully succeeded on {{ range first 1 $ranked }}{{ printf "%.0f" (mul (float .recall) (float .task_count)) }} of {{ int .task_count }} real-work tasks. Each task was tried {{ int .repeats }} times{{ end }}, and a pass had to meet all four checks.</p>
+      </div>
+      <ol class="benchmark-pass-contract">
+        <li><span>1</span><div><strong>Correct answer</strong><p>It got the answer right.</p></div></li>
+        <li><span>2</span><div><strong>Right way of getting it</strong><p>The governed system did the real work; the model did not guess.</p></div></li>
+        <li><span>3</span><div><strong>Expected behavior</strong><p>It followed the rules for that task.</p></div></li>
+        <li><span>4</span><div><strong>No unsafe effects</strong><p>It made no unsafe or unauthorized change.</p></div></li>
+      </ol>
+    </section>
+
     <section class="benchmark-landing-section benchmark-comparison-section" aria-labelledby="benchmark-comparison-title">
       <div class="benchmark-landing-section-heading">
-        <p class="benchmark-landing-eyebrow">Model comparison</p>
+        <p class="benchmark-landing-eyebrow">Public receipts</p>
         <h2 id="benchmark-comparison-title">{{ if gt (len $displayColumns) 1 }}Compare models{{ else }}How this result breaks down{{ end }}</h2>
-        <p>{{ if gt (len $contextRuns) 0 }}Solid columns are the generation {{ $comparisonGeneration }} cohort. Muted columns carry each model's most recent generation {{ $priorGeneration }} cohort result forward until it is rerun.{{ else if gt (len $ranked) 1 }}Each row highlights the strongest published result.{{ else }}More model columns will appear automatically as comparable results are published.{{ end }}</p>
+        <p>{{ if gt (len $contextRuns) 0 }}We run the same frozen exam against every model and publish every result — including the ones that fail. Solid columns are the current generation {{ $comparisonGeneration }} cohort; muted columns carry each model's latest generation {{ $priorGeneration }} result forward until it is rerun. Every column links to its full technical report.{{ else if gt (len $ranked) 1 }}We run the same frozen exam against every model and publish every result — including the ones that fail. Each row highlights the strongest published result, and every column links to its full technical report.{{ else }}We run the same frozen exam against every model and publish every result — including the ones that fail. More model columns will appear automatically as comparable results are published.{{ end }}</p>
       </div>
       <div class="benchmark-matrix-wrap" role="region" aria-label="DeepORG model comparison" tabindex="0">
         <table class="benchmark-matrix{{ if gt (len $displayColumns) 3 }} is-wide{{ end }}">
@@ -111,30 +164,16 @@
       <div class="benchmark-matrix-reports">{{ range $displayColumns }}{{ $run := .run }}{{- $reliable := mul (float $run.task_count) (float $run.recall) -}}{{- $cost := 0.0 -}}{{- if gt $reliable 0 -}}{{- $cost = div (float ($run.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}<a data-benchmark-comparison-run="{{ $run.run_id }}" {{ if .prior }}data-benchmark-prior-cohort="{{ $run.generation }}" {{ end }}data-full-pass="{{ printf "%.17g" (float $run.recall) }}" data-every-time="{{ printf "%.17g" (float $run.pass_power_k) }}" data-ground-truth="{{ printf "%.17g" (float $run.ground_truth_recall) }}" data-method="{{ printf "%.17g" (float $run.method_recall) }}" data-behavior="{{ printf "%.17g" (float $run.behavior_recall) }}" data-unsafe-effects="{{ int ($run.unsafe_effects | default 0) }}" data-latency-p50-ms="{{ printf "%.17g" (float ($run.latency_p50_ms | default 0)) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-task-count="{{ int $run.task_count }}" data-generation="{{ $run.generation }}" href="{{ printf "/benchmarks/deeporg/runs/%s/" $run.slug | relURL }}">{{ $run.label }} technical run <i class="ti ti-arrow-right" aria-hidden="true"></i></a>{{ end }}</div>
     </section>
 
-    <section class="benchmark-landing-section benchmark-meaning-section" aria-labelledby="benchmark-meaning-title">
-      <div class="benchmark-landing-section-heading">
-        <p class="benchmark-landing-eyebrow">The score, in plain English</p>
-        <h2 id="benchmark-meaning-title">What {{ range first 1 $ranked }}{{ printf "%.0f" (mul (float .recall) 100) }}{{ end }} actually means</h2>
-        <p>The agent fully succeeded on {{ range first 1 $ranked }}{{ printf "%.0f" (mul (float .recall) (float .task_count)) }} of {{ int .task_count }} real-work tasks. Each task was tried {{ int .repeats }} times{{ end }}, and a pass had to meet all four checks.</p>
-      </div>
-      <ol class="benchmark-pass-contract">
-        <li><span>1</span><div><strong>Correct answer</strong><p>It got the answer right.</p></div></li>
-        <li><span>2</span><div><strong>Right way of getting it</strong><p>The governed system did the real work; the model did not guess.</p></div></li>
-        <li><span>3</span><div><strong>Expected behavior</strong><p>It followed the rules for that task.</p></div></li>
-        <li><span>4</span><div><strong>No unsafe effects</strong><p>It made no unsafe or unauthorized change.</p></div></li>
-      </ol>
-    </section>
-
     {{- $counts := $data.suite.category_counts -}}
     {{- $findCount := add (int (index $counts "discovery")) (int (index $counts "saved-metric")) -}}
     {{- $answerCount := add (add (int (index $counts "aggregate")) (int (index $counts "ranking"))) (int (index $counts "window")) -}}
     {{- $actCount := add (int (index $counts "action")) (int (index $counts "refusal")) -}}
     {{- $taskTotal := 0 -}}{{- range $counts -}}{{- $taskTotal = add $taskTotal (int .) -}}{{- end -}}
-    <section class="benchmark-landing-section benchmark-scope-section" aria-labelledby="benchmark-scope-title">
+    <section class="benchmark-landing-section benchmark-scope-section" aria-labelledby="benchmark-scope-title" data-bench-reveal>
       <div class="benchmark-landing-section-heading">
         <p class="benchmark-landing-eyebrow">{{ $taskTotal }} real-work tasks</p>
         <h2 id="benchmark-scope-title">What DeepORG actually tests</h2>
-        <p>DeepORG uses everyday organizational work—not trivia questions. The ten technical task families are grouped here into six things anyone can recognize.</p>
+        <p>DeepORG asks for everyday organizational work — the questions a real company asks in a normal week — grouped here into six things anyone can recognize.</p>
       </div>
       <div class="benchmark-scope-grid">
         <article data-benchmark-task-count="{{ $findCount }}"><i class="ti ti-file-search" aria-hidden="true"></i><h3>Find the right information</h3><p>Locate the useful data without loading the whole company into the prompt.</p><span>{{ $findCount }} tasks · discovery + saved metrics</span></article>
@@ -146,27 +185,21 @@
       </div>
     </section>
 
-    <section class="benchmark-landing-section benchmark-example-section" aria-labelledby="benchmark-example-title">
-      <div class="benchmark-example-copy">
-        <p class="benchmark-landing-eyebrow">Illustrative example</p>
-        <h2 id="benchmark-example-title">From question to verified answer</h2>
-        <p>DeepORG evaluates the complete agent workflow end to end, just like production.</p>
-        <ol><li><span>1</span><div><strong>Ask</strong><p>A user asks a real question in natural language.</p></div></li><li><span>2</span><div><strong>Execute</strong><p>The agent selects and runs the governed method.</p></div></li><li><span>3</span><div><strong>Verify</strong><p>DeepORG checks the answer, method, behavior, and safety.</p></div></li><li><span>4</span><div><strong>Result</strong><p>Only all four together earn a full pass.</p></div></li></ol>
+    <section class="benchmark-landing-section benchmark-safety-section" aria-labelledby="benchmark-safety-title" data-bench-reveal>
+      <div class="benchmark-landing-section-heading">
+        <p class="benchmark-landing-eyebrow">The safety story</p>
+        <h2 id="benchmark-safety-title">The agent never holds the keys.</h2>
+        {{ range first 1 $ranked }}<p data-benchmark-safety-story data-benchmark-episode-count="{{ int (.episode_count | default 0) }}" data-benchmark-unsafe-effects="{{ int (.unsafe_effects | default 0) }}">Every operation is compiled, policy-checked, and logged by GraphJin before it runs. That is how {{ int (.unsafe_effects | default 0) }} unsafe effects across {{ int (.episode_count | default 0) }} attempts is possible — and why part of the exam is refusing work that policy forbids.</p>{{ end }}
       </div>
-      <div class="benchmark-example-flow">
-        <div><span>Question</span><strong>What was our ARR last month by region?</strong></div>
-        <i class="ti ti-arrow-down" aria-hidden="true"></i>
-        <div><span>Method used (database-side)</span><code>arr_by_region(as_of_date: "2026-07-31")</code></div>
-        <i class="ti ti-arrow-down" aria-hidden="true"></i>
-        <div class="benchmark-example-answer"><span>Answer (verified)</span><table><thead><tr><th>Region</th><th>ARR (USD)</th></tr></thead><tbody><tr><td>North America</td><td>$12,431,000</td></tr><tr><td>EMEA</td><td>$7,842,000</td></tr><tr><td>APAC</td><td>$5,219,000</td></tr><tr><td>Latin America</td><td>$1,908,000</td></tr><tr><th>Total</th><th>$27,400,000</th></tr></tbody></table></div>
-        <i class="ti ti-arrow-down" aria-hidden="true"></i>
-        <div class="benchmark-example-result"><strong><i class="ti ti-circle-check" aria-hidden="true"></i> Full pass</strong><span>Correct answer · right method · expected behavior · zero unsafe effects</span></div>
-        <p>Illustrative flow—not a published test item.</p>
+      <div class="benchmark-safety-grid">
+        <article><i class="ti ti-shield-check" aria-hidden="true"></i><h3>Policy decides, not the prompt.</h3><p>Access rules live in GraphJin's configuration, outside the model. No clever wording can talk the agent past them.</p></article>
+        <article><i class="ti ti-circle-check" aria-hidden="true"></i><h3>Every answer carries evidence.</h3><p>Each result links back to the exact governed operations that produced it, so you can check the work instead of trusting the prose.</p></article>
+        <article><i class="ti ti-book-2" aria-hidden="true"></i><h3>Refusing is part of the exam.</h3><p>DeepORG includes questions the agent must decline. Doing the forbidden thing fails the test — politely refusing passes it.</p></article>
       </div>
     </section>
 
     <section id="run-it-yourself" class="benchmark-landing-section benchmark-final-section" aria-labelledby="benchmark-run-title">
-      <article><i class="ti ti-terminal-2" aria-hidden="true"></i><div><h2 id="benchmark-run-title">Run DeepORG yourself</h2><p>Test the frozen public benchmark with your own model and GraphJin build.</p><code>graphjin eval bench --public --yes</code><a href="/benchmarks/deeporg/#run-it-yourself">Run it yourself <i class="ti ti-arrow-right" aria-hidden="true"></i></a></div></article>
+      <article><i class="ti ti-terminal-2" aria-hidden="true"></i><div><h2 id="benchmark-run-title">Run DeepORG yourself</h2><p>Same exam, your laptop. Test the frozen public benchmark with your own model and GraphJin build.</p><code>graphjin eval bench --public --yes</code><a href="/benchmarks/deeporg/#run-it-yourself">Run it yourself <i class="ti ti-arrow-right" aria-hidden="true"></i></a></div></article>
       <article><i class="ti ti-book-2" aria-hidden="true"></i><div><h2>See the technical methodology</h2><p>Read how the suite is built, scored, kept comparable, and protected from misleading results.</p><a href="/benchmarks/deeporg/methodology/">See the methodology <i class="ti ti-arrow-right" aria-hidden="true"></i></a><a href="/benchmarks/deeporg/runs/">Browse published runs <i class="ti ti-arrow-right" aria-hidden="true"></i></a></div></article>
     </section>
   {{ end }}
