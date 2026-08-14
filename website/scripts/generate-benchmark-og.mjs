@@ -81,48 +81,52 @@ const taskCount = Number(attribute(html, 'data-task-count'));
 const hasRankedRun = Boolean(runID && modelLabel && Number.isFinite(recall));
 const score = Math.round(recall * 100);
 const safeUnsafeEffects = Number.isFinite(unsafeEffects) ? unsafeEffects : 0;
-const scope = Number.isFinite(taskCount) ? `${taskCount} live tasks` : 'Frozen public suite';
+const scope = Number.isFinite(taskCount) ? String(taskCount) : '—';
 
 const layers = [
-  { input: await textLayer(span('GraphJin', { size: 20, weight: 'SemiBold' }), 250, 'left', interSemibold), left: 64, top: 43 },
-  { input: await textLayer(span(`BENCHMARKS  ·  GENERATION ${generation}`, { color: '#777781', size: 11, weight: 'SemiBold' }), 480, 'right', interSemibold), left: 656, top: 48 },
-  { input: await rule(1072), left: 64, top: 82 },
-  { input: await textLayer(span('ORGANIZATIONAL AGENT BENCHMARK', { color: '#64a900', size: 11, weight: 'SemiBold' }), 500, 'left', interSemibold), left: 64, top: 119 },
-  { input: await textLayer(span('DeepORG', { size: 76, weight: 'SemiBold' }), 720, 'left', interSemibold), left: 60, top: 145 },
-  { input: await textLayer(span('Can an AI agent handle the questions an organization actually asks?', { color: '#60606a', size: 24 }), 980), left: 64, top: 238 },
+  { input: await textLayer(span('DeepORG Benchmark', { size: 34, weight: 'SemiBold' }), 520, 'left', interSemibold), left: 48, top: 42 },
+  { input: await textLayer(span('GraphJin', { color: '#555963', size: 15, weight: 'SemiBold' }), 220, 'right', interSemibold), left: 932, top: 52 },
+  { input: await textLayer(span('Can an AI agent handle the questions an organization actually asks?', { color: '#555963', size: 29 }), 1080), left: 48, top: 100 },
+  { input: await textLayer(span('Benchmark', { size: 18 }), 360), left: 48, top: 247 },
 ];
 
 if (hasRankedRun) {
   layers.push(
-    { input: await textLayer(span('TESTED MODEL', { color: '#85858e', size: 10, weight: 'SemiBold' }), 120, 'left', interSemibold), left: 64, top: 295 },
-    { input: await textLayer(span(modelLabel, { size: 15, weight: 'SemiBold' }), 600, 'left', interSemibold), left: 178, top: 290 },
-    { input: await rule(1072), left: 64, top: 333 },
-    { input: await textLayer(`${span(String(score), { size: 96, weight: 'SemiBold' })}${span('/100', { color: '#b8b8c0', size: 42, weight: 'SemiBold' })}`, 480, 'left', interSemibold), left: 60, top: 361 },
-    { input: await textLayer(span('Full pass score', { size: 20, weight: 'SemiBold' }), 360, 'left', interSemibold), left: 64, top: 474 },
-    { input: await rule(1, 144), left: 622, top: 363 },
-    { input: await textLayer(span(String(safeUnsafeEffects), { size: 96, weight: 'SemiBold' }), 300, 'left', interSemibold), left: 682, top: 361 },
-    { input: await textLayer(span('unsafe effects', { size: 20, weight: 'SemiBold' }), 360, 'left', interSemibold), left: 686, top: 474 },
+    { input: await textLayer(span(modelLabel, { size: 20, weight: 'SemiBold' }), 650, 'left', interSemibold), left: 470, top: 240 },
+    { input: await textLayer(span(`Generation ${generation}`, { color: '#676b75', size: 13 }), 650), left: 470, top: 276 },
+    { input: await rule(1104, 1, '#d6dae2'), left: 48, top: 321 },
+
+    { input: await textLayer(span('Full pass score', { size: 21 }), 360), left: 48, top: 348 },
+    { input: await textLayer(span('Answer, method, behavior, and safety', { color: '#676b75', size: 13 }), 360), left: 48, top: 381 },
+    { input: await textLayer(`${span(String(score), { size: 30, weight: 'SemiBold' })}${span('/100', { color: '#676b75', size: 22 })}`, 650, 'left', interSemibold), left: 470, top: 347 },
+    { input: await rule(1104, 1, '#d6dae2'), left: 48, top: 413 },
+
+    { input: await textLayer(span('Unsafe effects', { size: 21 }), 360), left: 48, top: 440 },
+    { input: await textLayer(span('Unintended writes, updates, or changes', { color: '#676b75', size: 13 }), 360), left: 48, top: 473 },
+    { input: await textLayer(span(String(safeUnsafeEffects), { size: 30, weight: 'SemiBold' }), 650, 'left', interSemibold), left: 470, top: 439 },
+    { input: await rule(1104, 1, '#d6dae2'), left: 48, top: 505 },
+
+    { input: await textLayer(span('Live tasks', { size: 21 }), 360), left: 48, top: 532 },
+    { input: await textLayer(span('Frozen public organizational suite', { color: '#676b75', size: 13 }), 360), left: 48, top: 565 },
+    { input: await textLayer(span(scope, { size: 30, weight: 'SemiBold' }), 650, 'left', interSemibold), left: 470, top: 531 },
   );
 } else {
   layers.push(
-    { input: await rule(1072), left: 64, top: 333 },
-    { input: await textLayer(span('A frozen public suite for real organizational work.', { size: 34, weight: 'SemiBold' }), 920, 'left', interSemibold), left: 64, top: 385 },
+    { input: await textLayer(span('No ranked model yet', { size: 20, weight: 'SemiBold' }), 650, 'left', interSemibold), left: 470, top: 240 },
+    { input: await textLayer(span(`Generation ${generation}`, { color: '#676b75', size: 13 }), 650), left: 470, top: 276 },
+    { input: await rule(1104, 1, '#d6dae2'), left: 48, top: 321 },
+    { input: await textLayer(span('Public suite', { size: 21 }), 360), left: 48, top: 367 },
+    { input: await textLayer(span('Results appear after a reviewed publication', { color: '#676b75', size: 13 }), 420), left: 48, top: 400 },
+    { input: await textLayer(span('Frozen and reproducible', { size: 26, weight: 'SemiBold' }), 650, 'left', interSemibold), left: 470, top: 365 },
   );
 }
-
-layers.push(
-  { input: await rule(1072), left: 64, top: 543 },
-  { input: await textLayer(span(scope, { color: '#60606a', size: 13, weight: 'SemiBold' }), 300, 'left', interSemibold), left: 64, top: 576 },
-  { input: await textLayer(span(`Generation ${generation}`, { color: '#60606a', size: 13 }), 300, 'center'), left: 450, top: 576 },
-  { input: await textLayer(span('graphjin.com/benchmark', { color: '#60606a', size: 13 }), 300, 'right'), left: 836, top: 576 },
-);
 
 await sharp({
   create: {
     width,
     height,
     channels: 4,
-    background: '#ffffff',
+    background: '#f7f8fc',
   },
 })
   .composite(layers)
