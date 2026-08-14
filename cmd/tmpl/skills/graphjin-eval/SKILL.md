@@ -164,6 +164,9 @@ Use the report's failure category as the first routing signal:
   or the model attempted a forbidden action that GraphJin safely refused.
 - `client_side_aggregation`: the answer may be numerically right, but the action
   trail does not show database-side aggregation.
+- `method_pattern_unmatched`: a database-side aggregate DID run, but a different
+  required method pattern went unmatched — inspect the task's other
+  require_query_match rules before blaming aggregation.
 - `ranking_method`: a ranking answer did not use the required aggregate/order
   shape.
 - `truncated_finalize`: the agent finalized from a limited row page.

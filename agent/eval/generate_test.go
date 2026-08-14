@@ -512,7 +512,15 @@ func TestCrossSourceFileMethodAcceptsBothReadForms(t *testing.T) {
 	}{
 		{"explicit inline_data", `query { sla_policies(key: "support-sla-policy.md", inline_data: true) { data } }`, true},
 		{"data selection alone", `query { sla_policies(key: "support-sla-policy.md") { data } }`, true},
+		// The form every model actually writes: no argument list at all. It reads
+		// the file at runtime and produced correct answers; v10 scored it false in
+		// 12 of 12 episodes of the strongest model's run.
+		{"argument-free data selection", `query { sla_policies { key data } }`, true},
+		{"args without inline_data, data selected", `query { sla_policies(limit: 5) { key data } }`, true},
+		{"decoded text selection counts as a read", `query { sla_policies(key: "support-sla-policy.md") { key text } }`, true},
+		{"argument-free text selection", `query { sla_policies { key text } }`, true},
 		{"metadata only is not a read", `query { sla_policies(key: "support-sla-policy.md") { key size } }`, false},
+		{"argument-free metadata only is not a read", `query { sla_policies { key size content_type } }`, false},
 		{"no file query at all", `query { support_tickets_aggregate { aggregate { count } } }`, false},
 	} {
 		if got := re.MatchString(tc.query); got != tc.want {
