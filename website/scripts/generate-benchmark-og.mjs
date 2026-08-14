@@ -30,42 +30,13 @@ function decodeHTML(value) {
     .replaceAll('&amp;', '&');
 }
 
-function escapeMarkup(value) {
+function escapeXML(value) {
   return String(value)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&apos;');
-}
-
-function span(text, { color = '#0b0b0e', size, weight = 'Normal' }) {
-  return `<span font_desc="Inter ${weight} ${size}" foreground="${color}">${escapeMarkup(text)}</span>`;
-}
-
-async function textLayer(markup, layerWidth, align = 'left', fontfile = interRegular) {
-  return sharp({
-    text: {
-      text: markup,
-      font: 'Inter',
-      fontfile,
-      width: layerWidth,
-      align,
-      dpi: 72,
-      rgba: true,
-    },
-  }).png().toBuffer();
-}
-
-async function rule(layerWidth, layerHeight = 1, color = '#dcdce3') {
-  return sharp({
-    create: {
-      width: layerWidth,
-      height: layerHeight,
-      channels: 4,
-      background: color,
-    },
-  }).png().toBuffer();
 }
 
 await access(source, constants.R_OK);
@@ -83,53 +54,56 @@ const score = Math.round(recall * 100);
 const safeUnsafeEffects = Number.isFinite(unsafeEffects) ? unsafeEffects : 0;
 const scope = Number.isFinite(taskCount) ? String(taskCount) : '—';
 
-const layers = [
-  { input: await textLayer(span('DeepORG Benchmark', { size: 34, weight: 'SemiBold' }), 520, 'left', interSemibold), left: 48, top: 42 },
-  { input: await textLayer(span('GraphJin', { color: '#555963', size: 15, weight: 'SemiBold' }), 220, 'right', interSemibold), left: 932, top: 52 },
-  { input: await textLayer(span('Can an AI agent handle the questions an organization actually asks?', { color: '#555963', size: 29 }), 1080), left: 48, top: 100 },
-  { input: await textLayer(span('Benchmark', { size: 18 }), 360), left: 48, top: 247 },
-];
+const [regularFont, semiboldFont] = await Promise.all([
+  readFile(interRegular, 'base64'),
+  readFile(interSemibold, 'base64'),
+]);
 
-if (hasRankedRun) {
-  layers.push(
-    { input: await textLayer(span(modelLabel, { size: 20, weight: 'SemiBold' }), 650, 'left', interSemibold), left: 470, top: 240 },
-    { input: await textLayer(span(`Generation ${generation}`, { color: '#676b75', size: 13 }), 650), left: 470, top: 276 },
-    { input: await rule(1104, 1, '#d6dae2'), left: 48, top: 321 },
+const rankedRun = hasRankedRun
+  ? `
+    <text x="470" y="263" font-size="20" font-weight="600">${escapeXML(modelLabel)}</text>
+    <text x="470" y="292" fill="#676b75" font-size="13">Generation ${escapeXML(generation)}</text>
+    <line x1="48" y1="321" x2="1152" y2="321" stroke="#d6dae2"/>
 
-    { input: await textLayer(span('Full pass score', { size: 21 }), 360), left: 48, top: 348 },
-    { input: await textLayer(span('Answer, method, behavior, and safety', { color: '#676b75', size: 13 }), 360), left: 48, top: 381 },
-    { input: await textLayer(`${span(String(score), { size: 30, weight: 'SemiBold' })}${span('/100', { color: '#676b75', size: 22 })}`, 650, 'left', interSemibold), left: 470, top: 347 },
-    { input: await rule(1104, 1, '#d6dae2'), left: 48, top: 413 },
+    <text x="48" y="372" font-size="21">Full pass score</text>
+    <text x="48" y="397" fill="#676b75" font-size="13">Answer, method, behavior, and safety</text>
+    <text x="470" y="377"><tspan font-size="30" font-weight="600">${score}</tspan><tspan fill="#676b75" font-size="22">/100</tspan></text>
+    <line x1="48" y1="413" x2="1152" y2="413" stroke="#d6dae2"/>
 
-    { input: await textLayer(span('Unsafe effects', { size: 21 }), 360), left: 48, top: 440 },
-    { input: await textLayer(span('Unintended writes, updates, or changes', { color: '#676b75', size: 13 }), 360), left: 48, top: 473 },
-    { input: await textLayer(span(String(safeUnsafeEffects), { size: 30, weight: 'SemiBold' }), 650, 'left', interSemibold), left: 470, top: 439 },
-    { input: await rule(1104, 1, '#d6dae2'), left: 48, top: 505 },
+    <text x="48" y="464" font-size="21">Unsafe effects</text>
+    <text x="48" y="489" fill="#676b75" font-size="13">Unintended writes, updates, or changes</text>
+    <text x="470" y="470" font-size="30" font-weight="600">${safeUnsafeEffects}</text>
+    <line x1="48" y1="505" x2="1152" y2="505" stroke="#d6dae2"/>
 
-    { input: await textLayer(span('Live tasks', { size: 21 }), 360), left: 48, top: 532 },
-    { input: await textLayer(span('Frozen public organizational suite', { color: '#676b75', size: 13 }), 360), left: 48, top: 565 },
-    { input: await textLayer(span(scope, { size: 30, weight: 'SemiBold' }), 650, 'left', interSemibold), left: 470, top: 531 },
-  );
-} else {
-  layers.push(
-    { input: await textLayer(span('No ranked model yet', { size: 20, weight: 'SemiBold' }), 650, 'left', interSemibold), left: 470, top: 240 },
-    { input: await textLayer(span(`Generation ${generation}`, { color: '#676b75', size: 13 }), 650), left: 470, top: 276 },
-    { input: await rule(1104, 1, '#d6dae2'), left: 48, top: 321 },
-    { input: await textLayer(span('Public suite', { size: 21 }), 360), left: 48, top: 367 },
-    { input: await textLayer(span('Results appear after a reviewed publication', { color: '#676b75', size: 13 }), 420), left: 48, top: 400 },
-    { input: await textLayer(span('Frozen and reproducible', { size: 26, weight: 'SemiBold' }), 650, 'left', interSemibold), left: 470, top: 365 },
-  );
-}
+    <text x="48" y="556" font-size="21">Live tasks</text>
+    <text x="48" y="581" fill="#676b75" font-size="13">Frozen public organizational suite</text>
+    <text x="470" y="562" font-size="30" font-weight="600">${escapeXML(scope)}</text>`
+  : `
+    <text x="470" y="263" font-size="20" font-weight="600">No ranked model yet</text>
+    <text x="470" y="292" fill="#676b75" font-size="13">Generation ${escapeXML(generation)}</text>
+    <line x1="48" y1="321" x2="1152" y2="321" stroke="#d6dae2"/>
+    <text x="48" y="391" font-size="21">Public suite</text>
+    <text x="48" y="416" fill="#676b75" font-size="13">Results appear after a reviewed publication</text>
+    <text x="470" y="398" font-size="26" font-weight="600">Frozen and reproducible</text>`;
 
-await sharp({
-  create: {
-    width,
-    height,
-    channels: 4,
-    background: '#f7f8fc',
-  },
-})
-  .composite(layers)
+const card = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs>
+    <style>
+      @font-face { font-family: Inter; font-style: normal; font-weight: 400; src: url(data:font/woff2;base64,${regularFont}) format('woff2'); }
+      @font-face { font-family: Inter; font-style: normal; font-weight: 600; src: url(data:font/woff2;base64,${semiboldFont}) format('woff2'); }
+    </style>
+  </defs>
+  <rect width="1200" height="630" fill="#f7f8fc"/>
+  <g fill="#0b0b0e" font-family="Inter, sans-serif" font-weight="400">
+    <text x="48" y="70" font-size="34" font-weight="600">DeepORG Benchmark</text>
+    <text x="1152" y="70" fill="#555963" font-size="15" font-weight="600" text-anchor="end">GraphJin</text>
+    <text x="48" y="135" fill="#555963" font-size="29">Can an AI agent handle the questions an organization actually asks?</text>
+    <text x="48" y="267" font-size="18">Benchmark</text>
+    ${rankedRun}
+  </g>
+</svg>`;
+
+await sharp(Buffer.from(card))
   .png({ compressionLevel: 9 })
   .toFile(output);
 
