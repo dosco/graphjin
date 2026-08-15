@@ -221,7 +221,7 @@ var completionCapabilityRules = []completionCapabilityRule{
 	},
 	{
 		skillID:     skillWatchWrite,
-		affirmative: "watch_write is loaded for this run; watch lifecycle writes are available to attempt. Inspect help:security, help:runtime, and help:watches, then create watches with execute_graphql using GraphJin's root shape, for example: mutation { gj_watch(insert: { name: \"new_orders_<suffix>\", query: \"subscription new_orders { orders(first: 25, after: $cursor) { id } orders_cursor }\", delivery_json: { kind: \"inbox\", digest: { window: \"1h\" } } }) { id status enabled delivery_json } }. Do not claim that watch creation is read-only or unavailable.",
+		affirmative: "watch_write is loaded for this run; watch lifecycle writes are available to attempt. Inspect help:security, help:runtime, and help:watches, then create watches with execute_graphql using GraphJin's root shape, scoping the subscription to the asked-for condition, for example: mutation { gj_watch(insert: { name: \"failed_orders_<suffix>\", query: \"subscription { orders(where: { status: { eq: \\\"failed\\\" } }, first: 25, after: $cursor) { id } orders_cursor }\", delivery_json: { kind: \"inbox\", digest: { window: \"1h\" } } }) { id status enabled delivery_json } }. Do not claim that watch creation is read-only or unavailable.",
 		denial:      "watch_write is not loaded for this run; gj_watch lifecycle mutations are not available to this caller. For a request that specifically requires watch creation, update, pause, resume, or deletion, inspect at most one watch or policy detail, then immediately return blocked without attempting a watch mutation.",
 	},
 	{
