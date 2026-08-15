@@ -1075,10 +1075,6 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 		return mm, nil
 	}
 
-	if update {
-		sub.updt <- mm
-	}
-
 	res := &Result{
 		operation:  qcode.QTQuery,
 		name:       sub.s.r.name,
@@ -1089,13 +1085,23 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 		subCursors: cloneStringMap(mm.cursors),
 	}
 
-	// If this is an update notification, avoid blocking indefinitely by using a timeout.
-	// For the initial subscription response, perform a blocking send to guarantee delivery.
+	// If this is an update notification, avoid blocking indefinitely by using a
+	// timeout. For the initial subscription response, perform a blocking send to
+	// guarantee delivery.
+	//
+	// The member's cursor and hash advance only once the row has actually been
+	// delivered. Committing first and then giving up on the send lost the row
+	// outright: the cursor had already moved past it, so the next poll asked for
+	// what came after, and a subscriber that was busy for 250ms silently never
+	// saw that update. Leaving the member untouched instead re-delivers it on the
+	// next poll, which is what a cursor-backed subscription promises.
 	if update {
 		select {
 		case rc <- res:
 		case <-time.After(250 * time.Millisecond):
+			return mmsg{id: id}, nil
 		}
+		sub.updt <- mm
 	} else {
 		rc <- res
 	}
