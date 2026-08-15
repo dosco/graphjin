@@ -3,7 +3,7 @@ module github.com/dosco/graphjin/agent/v3
 go 1.25.0
 
 require (
-	github.com/ax-llm/ax/packages/go v0.0.0-20260815100850-30ae9feee183
+	github.com/ax-llm/ax/packages/go v0.0.0-20260815231914-14939d967762
 	github.com/dosco/graphjin/core/v3 v3.20.20
 	github.com/gofrs/flock v0.13.0
 )
