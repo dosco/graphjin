@@ -530,6 +530,28 @@ func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
 	return
 }
 
+// readOnlyDatabaseMutationError returns the blocking error when a mutation
+// targets a database configured read-only. routed reports whether the target
+// database is settled: compile resolves multi-database routing, so before it
+// runs the target is only known when the request names one or a single
+// database is configured — otherwise this defers to the post-compile call.
+func (s *gstate) readOnlyDatabaseMutationError(routed bool) error {
+	if s.r.operation != qcode.QTMutation {
+		return nil
+	}
+	dbName := s.database
+	if dbName == "" {
+		if !routed && len(s.gj.databases) > 1 {
+			return nil
+		}
+		dbName = s.gj.defaultDB
+	}
+	if dbConf, ok := s.gj.conf.Databases[dbName]; ok && dbConf.ReadOnly {
+		return fmt.Errorf("mutations blocked: database %s is read-only", dbName)
+	}
+	return nil
+}
+
 func (s *gstate) compileAndExecute(c context.Context) (err error) {
 	if s.gj.conf.MockDB {
 		// compile query for the role
@@ -565,6 +587,15 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 		if err = s.executeRoleQuery(c, defaultConn); err != nil {
 			return
 		}
+	}
+
+	// A read-only database refuses every mutation, and it should not have to
+	// understand one first. Compilation can fail on its own terms — an unknown
+	// column, a bad argument — and report that instead of the fact that no
+	// write was ever possible, which is both the less useful answer and the
+	// one that says more about the schema than a refused caller needs.
+	if err = s.readOnlyDatabaseMutationError(false); err != nil {
+		return
 	}
 
 	// Compile query for the role (this also determines target database for multi-DB)
@@ -612,15 +643,8 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 	}
 
 	// Block mutations on read-only databases (absolute, independent of roles)
-	if s.r.operation == qcode.QTMutation {
-		dbName := s.database
-		if dbName == "" {
-			dbName = s.gj.defaultDB
-		}
-		if dbConf, ok := s.gj.conf.Databases[dbName]; ok && dbConf.ReadOnly {
-			err = fmt.Errorf("mutations blocked: database %s is read-only", dbName)
-			return
-		}
+	if err = s.readOnlyDatabaseMutationError(true); err != nil {
+		return
 	}
 
 	// set default variables
