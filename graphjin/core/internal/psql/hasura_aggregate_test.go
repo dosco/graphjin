@@ -48,3 +48,27 @@ func TestShallowHasuraAggregateSQLMatchesWrappedAndNative(t *testing.T) {
 		t.Fatalf("aggregate dialect SQL differs\nshallow:\n%s\nwrapped:\n%s\nnative:\n%s", shallow, wrapped, native)
 	}
 }
+
+// TestColumnArgAggregateSQLMatchesNative pins the `<agg>(column: <col>)`
+// spelling to byte-identical SQL with the prefix form it aliases — the
+// compiler builds the same Function shape, so the renderer must not be able
+// to tell the two apart.
+func TestColumnArgAggregateSQLMatchesNative(t *testing.T) {
+	columnForm := compileGQLToPSQLString(t, `
+		query {
+			products(limit: 1) {
+				count_id: count(column: id)
+				max_price: max(column: price)
+			}
+		}`, nil, "user")
+	native := compileGQLToPSQLString(t, `
+		query {
+			products(limit: 1) {
+				count_id
+				max_price
+			}
+		}`, nil, "user")
+	if columnForm != native {
+		t.Fatalf("column-arg SQL differs from native prefix SQL\ncolumn form:\n%s\nnative:\n%s", columnForm, native)
+	}
+}

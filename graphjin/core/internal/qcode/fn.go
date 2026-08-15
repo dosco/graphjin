@@ -26,6 +26,22 @@ func (co *Compiler) isFunction(sel *Select, name string, f graph.Field) (
 		}
 	}
 
+	// Sibling path: `<aggregate>(column: <col>)` is another spelling of the
+	// prefix form `<aggregate>_<col>` and compiles to the identical Function
+	// shape. It must be intercepted here for the same ambiguity reason as
+	// `expr:` — isFunctionEx's named-function branch would otherwise swallow
+	// the bare name with Agg unset and no source column, and the argument
+	// itself would then die as `unknown argument 'column'`.
+	if colArg, ok := findArg(f.Args, "column"); ok {
+		fn, isFunc, err = co.compileColumnAggFunction(sel, name, colArg)
+		if err != nil || isFunc {
+			if err == nil && co.c.DisableAgg && fn.Agg {
+				err = fmt.Errorf("aggreation disabled: db function '%s' cannot be used", fn.Name)
+			}
+			return
+		}
+	}
+
 	if fn, isFunc, err = co.compileWindowFunction(sel, name); isFunc || err != nil {
 		return
 	}
@@ -214,6 +230,43 @@ func findArg(args []graph.Arg, name string) (graph.Arg, bool) {
 		}
 	}
 	return graph.Arg{}, false
+}
+
+// columnAggregateNames are the registry aggregates that accept the
+// `<agg>(column: <col>)` spelling. The registry's Agg flag alone cannot gate
+// this: length/lower/upper carry Agg despite not aggregating.
+var columnAggregateNames = map[string]struct{}{
+	"count": {}, "sum": {}, "avg": {}, "max": {}, "min": {},
+	"stddev": {}, "stddev_pop": {}, "stddev_samp": {}, "var_samp": {}, "var_pop": {},
+}
+
+// compileColumnAggFunction compiles `<aggregate>(column: <col>)` to the exact
+// Function shape the prefix form `<aggregate>_<col>` produces, so everything
+// downstream — GROUP BY, limit suppression, role column checks, SQL rendering —
+// is origin-blind.
+func (co *Compiler) compileColumnAggFunction(sel *Select, name string, colArg graph.Arg) (
+	fn Function, isFunc bool, err error,
+) {
+	if _, ok := columnAggregateNames[name]; !ok {
+		return fn, false, nil
+	}
+	dbFn, ok := co.s.GetFunctions()[name]
+	if !ok {
+		return fn, false, nil
+	}
+	node := colArg.Val
+	if node == nil || (node.Type != graph.NodeStr && node.Type != graph.NodeLabel) {
+		return fn, false, fmt.Errorf("%s: column: expected a column name", name)
+	}
+	col, err := sel.Ti.GetColumn(co.ParseName(node.Val))
+	if err != nil {
+		return fn, false, err
+	}
+	fn.Name = name
+	fn.Func = dbFn
+	fn.Agg = true
+	fn.Args = []Arg{{Type: ArgTypeCol, Col: col}}
+	return fn, true, nil
 }
 
 type funcInfo struct {

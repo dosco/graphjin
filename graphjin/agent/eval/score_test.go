@@ -299,3 +299,17 @@ func TestClassifyFailureSeparatesPatternMissesFromClientAggregation(t *testing.T
 		t.Fatalf("row-only evidence is the genuine client-side case: got %q", got)
 	}
 }
+
+// The scorer's ForbidFinalizeFromListOnly gate must accept the column-arg
+// aggregate spelling the engine now executes; the widened alternative cannot
+// change any historical score because the old engine rejected the form.
+func TestAggregateFieldPatternAcceptsColumnArgSyntax(t *testing.T) {
+	for _, query := range []string{
+		`query { accounts { count_id: count(column: id) } }`,
+		`query { invoices { avg(column: amount_cents) } }`,
+	} {
+		if !aggregateFieldPattern.MatchString(query) {
+			t.Fatalf("column-arg aggregate was not recognized: %s", query)
+		}
+	}
+}

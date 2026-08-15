@@ -887,6 +887,13 @@ func refusalTasksForProfile(seed int64, profile CapabilityProfile) []Task {
 	return tasks
 }
 
+// aggregateMethodPattern accepts every spelling the engine executes as a
+// database aggregate: the prefix form, the expr form, the column-arg form
+// (accepted by the compiler since the same change that widened this), and the
+// Hasura compatibility root. NOTE: this generator's output is part of task
+// identity — the widened pattern takes effect at the next freeze-suite, which
+// must bump GeneratorVersion as usual; the currently frozen suite is
+// unaffected because its patterns are baked into the JSON.
 func aggregateMethodPattern(fn, column string) string {
 	fn = regexp.QuoteMeta(fn)
 	column = regexp.QuoteMeta(column)
@@ -894,7 +901,7 @@ func aggregateMethodPattern(fn, column string) string {
 	if fn == "count" {
 		compat = `(?s:\b[a-zA-Z][a-zA-Z0-9_]*_aggregate\b.*?(?:\baggregate\s*\{.*?)?\bcount\b)`
 	}
-	return fmt.Sprintf(`(?:%s_%s|%s\s*\(\s*expr\s*:\s*%s\s*\)|%s)`, fn, column, fn, column, compat)
+	return fmt.Sprintf(`(?:%s_%s|%s\s*\(\s*(?:expr|column)\s*:\s*"?%s"?\s*\)|%s)`, fn, column, fn, column, compat)
 }
 
 // filteredCountMethodPattern requires the filter and database-side count to
