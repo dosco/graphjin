@@ -546,6 +546,13 @@ func (s *gstate) readOnlyDatabaseMutationError(routed bool) error {
 		}
 		dbName = s.gj.defaultDB
 	}
+	// A database with a managed-mutation handler is read-only only to SQL;
+	// its gj_* mutations have their own authority and their own errors. On
+	// the compile-failure path especially, "read-only" must not mask a more
+	// specific managed rejection (a workflow-shape error, a locked kind).
+	if !routed && s.gj.managedMutationHandlers[dbName] != nil {
+		return nil
+	}
 	if dbConf, ok := s.gj.conf.Databases[dbName]; ok && dbConf.ReadOnly {
 		return fmt.Errorf("mutations blocked: database %s is read-only", dbName)
 	}
