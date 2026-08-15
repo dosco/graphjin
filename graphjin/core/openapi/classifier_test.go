@@ -70,6 +70,37 @@ paths:
 	}
 }
 
+func TestClassifySanitizesGeneratedExposeAs(t *testing.T) {
+	doc := loadDoc(t, `
+openapi: 3.0.0
+info: { title: Test, version: 1.0.0 }
+paths:
+  /widgets:
+    get:
+      operationId: WidgetController_list_v1.0
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+`)
+
+	spec := &Spec{Key: "partner-api.v2"}
+	ops, _ := classifyAll(spec, doc, SpecConfig{})
+	if len(ops) != 1 {
+		t.Fatalf("want 1 op, got %d", len(ops))
+	}
+	if got, want := ops[0].ExposeAs, "partner_api_v2_widget_controller_list_v1_0"; got != want {
+		t.Errorf("exposeAs = %q, want %q", got, want)
+	}
+}
+
 func TestClassifyRowJoinUpgrade(t *testing.T) {
 	doc := loadDoc(t, `
 openapi: 3.0.0
@@ -294,6 +325,27 @@ func TestToSnakeCase(t *testing.T) {
 		got := toSnakeCase(tc.in)
 		if got != tc.want {
 			t.Errorf("toSnakeCase(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestSanitizeGraphQLName(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"valid_name", "valid_name"},
+		{"valid__name", "valid__name"},
+		{"api-v2.WidgetController_list_v1.0", "api_v2_WidgetController_list_v1_0"},
+		{"3pl_list_widgets", "_3pl_list_widgets"},
+		{"__reserved", "_reserved"},
+		{"many...separators", "many_separators"},
+		{"ümlaut", "_mlaut"},
+		{"", "_"},
+	}
+	for _, tc := range cases {
+		got := sanitizeGraphQLName(tc.in)
+		if got != tc.want {
+			t.Errorf("sanitizeGraphQLName(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
