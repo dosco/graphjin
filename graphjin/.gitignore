@@ -24,6 +24,9 @@
 /demo/tmp
 /demo/
 .graphjin/
+# Default extraction path for the built-in demo (cmd/cmd_demo_default.go);
+# running `graphjin demo` or `graphjin serv` from a clone creates it.
+/graphjin-demo/
 examples/*/demo/
 examples/*/codesql/
 
