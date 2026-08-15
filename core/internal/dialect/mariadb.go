@@ -886,21 +886,54 @@ func (d *MariaDBDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
 // Unlike MySQL, MariaDB does not support CAST(... AS JSON), so we use
 // JSON_TABLE to extract the array values.
 func (d *MariaDBDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32) {
-	ctx.WriteString(`SELECT _gj_jt.* FROM `)
-	ctx.WriteString(`(SELECT `)
-
 	t := table
 	if pid > 0 {
 		t = fmt.Sprintf("%s_%d", table, pid)
 	}
-	ctx.ColWithTable(t, ex.Right.Col.Name)
+	d.renderArrayColumnRows(ctx, ctx.ColWithTable, t, ex)
+}
 
-	ctx.WriteString(` as ids) j, `)
-	ctx.WriteString(`JSON_TABLE(j.ids, "$[*]" COLUMNS(`)
+// renderArrayColumnRows expands the JSON array held in ex.Right's column into
+// one row per element, so the result can sit on the right of an IN. The column
+// is handed to JSON_TABLE directly: wrapping it in a derived table first (as
+// the MySQL dialect does, since it has to CAST AS JSON) breaks correlation on
+// MariaDB, where a derived table cannot see the enclosing query. Element type
+// comes from the left (scalar key) column it is matched against.
+func (d *MariaDBDialect) renderArrayColumnRows(
+	ctx Context, colWithTable func(table, col string), table string, ex *qcode.Exp,
+) {
+	ctx.WriteString(`SELECT _gj_jt.* FROM JSON_TABLE(`)
+	colWithTable(table, ex.Right.Col.Name)
+	ctx.WriteString(`, '$[*]' COLUMNS(`)
 	ctx.WriteString(ex.Right.Col.Name)
 	ctx.WriteString(` `)
-	ctx.WriteString(ex.Left.Col.Type)
-	ctx.WriteString(` PATH "$" ERROR ON ERROR)) AS _gj_jt`)
+	ctx.WriteString(mariadbJSONTableColType(ex.Left.Col.Type))
+	ctx.WriteString(` PATH '$' ERROR ON ERROR)) AS _gj_jt`)
+}
+
+// mariadbJSONTableColType maps a column type to one MariaDB accepts in a
+// JSON_TABLE COLUMNS clause.
+func mariadbJSONTableColType(colType string) string {
+	switch strings.ToLower(strings.TrimSpace(colType)) {
+	case "varchar", "character varying", "text", "string":
+		return "TEXT"
+	case "int", "integer", "int4", "int8", "bigint", "smallint":
+		return "BIGINT"
+	case "boolean", "bool":
+		return "TINYINT"
+	case "float", "double", "numeric", "real":
+		return "DECIMAL(65,30)"
+	case "json", "jsonb":
+		return "JSON"
+	case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
+		return "DATETIME"
+	case "date":
+		return "DATE"
+	case "time", "timetz":
+		return "TIME"
+	default:
+		return colType
+	}
 }
 
 // MariaDB 10.6+ uses the same LEFT OUTER JOIN LATERAL syntax as MySQL 8+,
@@ -1600,14 +1633,14 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 		ctx.WriteString(` (`)
 
 		if ex.Right.Col.Name != "" {
+			var t string
 			if ex.Right.ID >= 0 && psel != nil && ex.Right.ID == psel.ID {
-				t := psel.Ti.Name
+				t = psel.Ti.Name
 				if psel.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, psel.ID)
 				}
-				r.ColWithTable(t, ex.Right.Col.Name)
 			} else {
-				t := ex.Right.Col.Table
+				t = ex.Right.Col.Table
 				if t == "" {
 					t = sel.Ti.Name
 				}
@@ -1619,6 +1652,13 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 				} else if ex.Right.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, ex.Right.ID)
 				}
+			}
+
+			// An array column holds the ids as a JSON array, so it has to be
+			// expanded into rows before IN can match a scalar key against it.
+			if ex.Right.Col.Array {
+				d.renderArrayColumnRows(ctx, r.ColWithTable, t, ex)
+			} else {
 				r.ColWithTable(t, ex.Right.Col.Name)
 			}
 		} else if ex.Right.ValType == qcode.ValVar {
@@ -1758,26 +1798,7 @@ func (d *MariaDBDialect) renderValPrefix(ctx Context, r InlineChildRenderer, pse
 
 				ctx.WriteString(`, '$[*]' COLUMNS (id `)
 
-				switch colType {
-				case "varchar", "character varying", "text", "string":
-					ctx.WriteString("TEXT")
-				case "int", "integer", "int4", "int8", "bigint", "smallint":
-					ctx.WriteString("BIGINT")
-				case "boolean", "bool":
-					ctx.WriteString("TINYINT")
-				case "float", "double", "numeric", "real":
-					ctx.WriteString("DECIMAL(65,30)")
-				case "json", "jsonb":
-					ctx.WriteString("JSON")
-				case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
-					ctx.WriteString("DATETIME")
-				case "date":
-					ctx.WriteString("DATE")
-				case "time", "timetz":
-					ctx.WriteString("TIME")
-				default:
-					ctx.WriteString(colType)
-				}
+				ctx.WriteString(mariadbJSONTableColType(colType))
 
 				ctx.WriteString(` PATH '$.`)
 				ctx.WriteString(jsonKey)

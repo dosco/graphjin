@@ -1,5 +1,3 @@
-//go:build !mysql && !mariadb
-
 package tests_test
 
 import (
@@ -23,6 +21,10 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 	if dbType == "bigquery" {
 		t.Skip("bigquery: array-column relationship joins need UNNEST lowering in the dialect/simulator")
 	}
+	if dbType == "redshift" {
+		t.Skip("redshift: emulator fixture has no webshop products/users tables to configure")
+	}
+	skipMariaDBNestedLimit(t)
 
 	gql := `
 	query {
@@ -73,6 +75,9 @@ func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 	if dbType == "sqlite" || dbType == "mssql" || dbType == "snowflake" || dbType == "bigquery" {
 		t.Skip("skipping test for sqlite/mssql/snowflake/bigquery (array-column connect mutations are not fully implemented)")
 	}
+	if dbType == "redshift" {
+		t.Skip("redshift: emulator fixture has no webshop products/users tables to configure")
+	}
 
 	gql := `mutation {
 		products(insert: $data) {
@@ -119,7 +124,6 @@ func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 	assert.Equal(t, exp, stdJSON(res.Data))
 }
 
-// TODO: Fix: Does not work in MYSQL
 func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
 	skipCassandra(t, "array/collection columns are not seeded in the cassandra fixture")
 	skipClickHouse(t, "array/collection columns are not seeded in the fixture")
@@ -132,6 +136,10 @@ func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
 	if dbType == "bigquery" {
 		t.Skip("bigquery: JSON virtual tables over arrays need RelEmbedded UNNEST lowering in the dialect/simulator")
 	}
+	if dbType == "redshift" {
+		t.Skip("redshift: emulator fixture has no webshop products/users tables to configure")
+	}
+	skipMariaDBNestedLimit(t)
 
 	gql := `query {
 		products(
@@ -177,11 +185,15 @@ func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
 			{Name: "count", Type: "int"},
 		},
 	})
-	// Append array column config to existing products table or add new
+	// Append array column config to existing products table or add new.
+	// Array must be declared: only Postgres has a native array type that
+	// discovery can infer from, MySQL/MariaDB/SQLite hold the ids as a JSON
+	// array inside a text column that looks like any other scalar column.
+	categoryIDs := core.Column{Name: "category_ids", ForeignKey: "categories.id", Array: true}
 	found := false
 	for i, t := range conf.Tables {
 		if t.Name == "products" {
-			conf.Tables[i].Columns = append(conf.Tables[i].Columns, core.Column{Name: "category_ids", ForeignKey: "categories.id"})
+			conf.Tables[i].Columns = append(conf.Tables[i].Columns, categoryIDs)
 			found = true
 			break
 		}
@@ -189,7 +201,7 @@ func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
 	if !found {
 		conf.Tables = append(conf.Tables, core.Table{
 			Name:    "products",
-			Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id"}},
+			Columns: []core.Column{categoryIDs},
 		})
 	}
 
