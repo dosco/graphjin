@@ -146,18 +146,18 @@ type discoveryState struct {
 	// interception itself repeats, because the intercepted call cannot succeed.
 	remoteJoinNoticed map[string]bool
 	// observedValueStrikes counts refusals per (table, column, value), so an
-	// unobserved value is corrected twice and then allowed through.
-	observedValueStrikes map[string]int
-	// observedValueRejected records the writes already refused for using a value the
-	// column has never held, by identity.
+	// unobserved value is corrected twice and then allowed through — the sole
+	// authority for this guard.
 	//
-	// A one-shot flag let whatever came next through, and the measured behaviour was
-	// the model re-sending the identical write: of eleven episodes shown that a
-	// ticket status column holds open, pending and resolved, ten resubmitted "closed"
-	// unchanged and the writes landed. Sampled values are still evidence rather than
-	// schema, so a genuinely different write proceeds — but repeating a rejected one
-	// verbatim is not a considered decision.
-	observedValueRejected map[string]bool
+	// It briefly shared the job with a query-text identity map, and the pairing
+	// was measured to make the let-through unreachable: models never resubmit
+	// byte-identical queries, they reword the note or reorder fields, so every
+	// repeat hit the unbounded text veto while the strike counter stalled below
+	// its limit. One run showed 5–7 fires per episode across ten episodes, all
+	// writing the same rejected value, none ever allowed through. Keying every
+	// refusal on the mismatch itself makes the third attempt land regardless of
+	// phrasing, which is what "two corrections, then the caller decides" meant.
+	observedValueStrikes map[string]int
 	// historyReferentRejected records the operations already refused for not
 	// scoping to the retained subject, by identity.
 	//
@@ -922,7 +922,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		}
 		{
 			if mismatches := r.unobservedWrittenValues(ctx, query); len(mismatches) != 0 &&
-				r.state.refuseUnobservedWrite(normalizeGraphQLIdentity(query), mismatches) {
+				r.state.refuseUnobservedWrite(mismatches) {
 				described := r.describeUnobservedValues(ctx, mismatches)
 				// A list did not move behaviour — ten of eleven episodes handed one
 				// resubmitted "closed" verbatim. Every repair that measurably changed
@@ -2720,20 +2720,20 @@ func (s *discoveryState) recordObservedValueLookup(table string, values map[stri
 // refuseUnobservedWrite decides whether a write using values a column has never
 // held is refused, and records the refusal when it is.
 //
-// A byte-identical retry is always refused. Beyond that, each unobserved value
-// gets two refusals — each carrying the exact corrected write — and the third
-// attempt proceeds. One refusal was measured twice, in runs 2cae6c1c and
-// 969337b6: the model varied the note, kept the value, and the write landed, in
-// 10 of 11 and then 8 of 11 episodes. Two corrections is friction, not schema;
+// Each unobserved value gets two refusals — each carrying the exact corrected
+// write — and the third attempt proceeds, however it is phrased. One refusal
+// was measured twice, in runs 2cae6c1c and 969337b6: the model varied the
+// note, kept the value, and the write landed, in 10 of 11 and then 8 of 11
+// episodes. A later query-text veto meant to catch byte-identical retries was
+// measured to invert the design (run dcea36f8: 5–7 refusals per episode, no
+// let-through ever) because models never retry byte-identically — see the
+// observedValueStrikes field comment. Two corrections is friction, not schema;
 // a caller who genuinely means the new value expresses it by persisting past
 // corrections that each offered the alternative, so the run is never left
 // without a way forward.
-func (s *discoveryState) refuseUnobservedWrite(identity string, mismatches []columnAssignment) bool {
+func (s *discoveryState) refuseUnobservedWrite(mismatches []columnAssignment) bool {
 	if s == nil || len(mismatches) == 0 {
 		return false
-	}
-	if identity != "" && s.observedValueRejected[identity] {
-		return true
 	}
 	refuse := false
 	for _, mismatch := range mismatches {
@@ -2743,12 +2743,6 @@ func (s *discoveryState) refuseUnobservedWrite(identity string, mismatches []col
 	}
 	if !refuse {
 		return false
-	}
-	if identity != "" {
-		if s.observedValueRejected == nil {
-			s.observedValueRejected = map[string]bool{}
-		}
-		s.observedValueRejected[identity] = true
 	}
 	if s.observedValueStrikes == nil {
 		s.observedValueStrikes = map[string]int{}

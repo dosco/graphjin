@@ -203,3 +203,45 @@ func TestReplayUnknownColumnWriteGetsColumnNamedRecovery(t *testing.T) {
 		t.Errorf("failed write recovery must carry its kind: %+v", observed)
 	}
 }
+
+// TestReplayValueGuardLetsThirdAttemptLand replays the run-dcea36f8 episode
+// whose value-vocabulary guard re-fired seven times on the same rejected
+// status "closed" and never let the caller's decision land: a query-text veto
+// short-circuited the (table, column, value) strike budget, and models never
+// resubmit byte-identically. With strikes as the sole authority the third
+// attempt must reach dispatch. Mechanism only, never score: the canned
+// programs still write "closed", so the task's post-state may well fail — the
+// defect was the unreachable let-through, not the vocabulary.
+func TestReplayValueGuardLetsThirdAttemptLand(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded replay integration")
+	}
+	fixture := loadReplayFixture(t, "action-need-ticket-3-rep1.json")
+	baselineFires := 0
+	for _, code := range fixture.Observed.ViolationCodes {
+		if code == "observed_value_mismatch" {
+			baselineFires++
+		}
+	}
+	if baselineFires < 3 {
+		t.Fatalf("fixture is not a value-guard loop baseline: %+v", fixture.Observed)
+	}
+	observed := replayFixture(t, fixture)
+	t.Logf("baseline: status=%s turns=%d fires=%d | replay: status=%s turns=%d violations=%v",
+		fixture.Observed.Status, fixture.Observed.ActorTurns, baselineFires,
+		observed.Status, observed.ActorTurns, observed.ViolationCodes)
+
+	fires := 0
+	for _, code := range observed.ViolationCodes {
+		if code == "observed_value_mismatch" {
+			fires++
+		}
+	}
+	if fires > 2 {
+		t.Errorf("two corrections is the whole budget, got %d fires: %+v", fires, observed)
+	}
+	if fixture.Observed.ActorTurns > 0 && observed.ActorTurns >= fixture.Observed.ActorTurns {
+		t.Errorf("the let-through must shorten the loop: baseline %d turns, replay %d turns",
+			fixture.Observed.ActorTurns, observed.ActorTurns)
+	}
+}

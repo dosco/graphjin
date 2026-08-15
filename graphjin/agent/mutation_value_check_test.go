@@ -181,7 +181,11 @@ func TestObservedValueNoticeRefusesAnIdenticalRetry(t *testing.T) {
 		t.Fatalf("the write must not reach the database on the notice, calls=%d", base.mutationCalls)
 	}
 
-	// The identical retry is refused again rather than waved through.
+	// The identical retry is refused again — and it consumes the second strike,
+	// exactly like a reworded one. Strikes are keyed on the mismatch itself
+	// (table, column, value), not the query text: a text-keyed veto was measured
+	// in run dcea36f8 to re-fire 5–7 times per episode with no let-through ever,
+	// because models reword rather than resubmit byte-identically.
 	second, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
 	if err != nil {
 		t.Fatalf("the identical retry should return a repair, not an error: %v", err)
@@ -194,22 +198,9 @@ func TestObservedValueNoticeRefusesAnIdenticalRetry(t *testing.T) {
 		t.Fatalf("an identical retry must not reach the database, calls=%d", base.mutationCalls)
 	}
 
-	// A different write still carrying the same unobserved value gets a second
-	// correction. One correction was measured twice — runs 2cae6c1c and 969337b6 —
-	// and both times the model varied the note, kept the value, and the write
-	// landed (10 of 11, then 8 of 11 episodes).
-	different := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed", resolution_note: "closing per request"}) { id status } }`}
-	third, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(different))
-	if err != nil {
-		t.Fatalf("the second correction should be a repair, not an error: %v", err)
-	}
-	payload, _ = json.Marshal(third)
-	if !strings.Contains(string(payload), "observed_value_mismatch") || base.mutationCalls != 0 {
-		t.Fatalf("same value in a varied write gets a second correction, calls=%d: %s", base.mutationCalls, payload)
-	}
-
-	// The third attempt proceeds: two corrections is friction, not schema, so a
-	// caller who genuinely means the value is never left without a way forward.
+	// The third attempt proceeds however it is phrased: two corrections is
+	// friction, not schema, so a caller who genuinely means the value is never
+	// left without a way forward.
 	persisted := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed", resolution_note: "the customer insists on closed"}) { id status } }`}
 	if _, err := runtime.ExecuteGraphQL(context.Background(), persisted); err != nil {
 		t.Fatalf("the persisted write should proceed: %v", err)
