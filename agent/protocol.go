@@ -1147,7 +1147,21 @@ func recoverableProtocolFailure(code, message, kind string, next, details map[st
 	if len(details) != 0 {
 		repair["details"] = details
 	}
+	// Every caller passes a kind-specific next.reason; surface THAT as the
+	// directive and the instruction. The generic sentences used here before
+	// contradicted the specific fix for every kind whose recommended tool is
+	// execute_graphql — measured across a benchmark run, models followed the
+	// louder "discovery-only actor step" text into catalog reads and resubmitted
+	// the same wrong write while the computed repaired_query sat unexecuted.
+	// recoveryDirectivePrefix must lead the directive: it is the dedupe marker
+	// joinRecoveryMessage keys on.
+	reason := stringFromMap(next, "reason")
 	directive := recoveryDirectivePrefix + " follow recovery.next in a discovery-only actor step, then re-author and retry the operation in this run."
+	instruction := "Gather the named evidence in a separate actor step so its returned schema and policy details are visible before GraphQL is authored."
+	if reason != "" {
+		directive = recoveryDirectivePrefix + " " + reason
+		instruction = reason
+	}
 	return executeResult{
 		Errors: []ErrorInfo{{
 			Message: joinRecoveryMessage(message, directive),
@@ -1160,7 +1174,7 @@ func recoverableProtocolFailure(code, message, kind string, next, details map[st
 		Recovery: map[string]any{
 			"code":        code,
 			"kind":        kind,
-			"instruction": "Gather the named evidence in a separate actor step so its returned schema and policy details are visible before GraphQL is authored.",
+			"instruction": instruction,
 			"next":        next,
 		},
 	}
@@ -3997,7 +4011,7 @@ func recoveryEvidence(out any) map[string]any {
 		return nil
 	}
 	captured := map[string]any{}
-	for _, field := range []string{"kind", "instruction", "did_you_mean", "missed_ids", "known_ids", "resolved", "retained_subject", "repaired_query"} {
+	for _, field := range []string{"kind", "instruction", "next", "did_you_mean", "missed_ids", "known_ids", "resolved", "retained_subject", "repaired_query"} {
 		value, ok := recovery[field]
 		if !ok || value == nil {
 			continue
