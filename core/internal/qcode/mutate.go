@@ -814,7 +814,26 @@ func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, c
 
 		col, ok := m.Ti.ColumnExists(k)
 		if !ok {
-			continue
+			// Object- and list-valued keys are relationship targets or nested
+			// shapes: processNestedMutations resolves those and errors on the
+			// truly unknown ones. Keyword keys (find/where/connect/disconnect)
+			// are consumed by the mutation compiler itself. Everything else is
+			// a scalar the caller believes is a column, and silently dropping
+			// it loses data — a benchmark insert lost its timestamp this way
+			// and only failed two steps later as a NOT NULL constraint — so it
+			// now errors exactly like unknown object keys always have.
+			node := data.CMap[k1]
+			if node != nil && (node.Type == graph.NodeObj || node.Type == graph.NodeList) {
+				continue
+			}
+			if _, keyword := insertTypes[k]; keyword {
+				continue
+			}
+			if _, keyword := updateTypes[k]; keyword {
+				continue
+			}
+			_, err := m.Ti.GetColumn(k)
+			return nil, err
 		}
 
 		if col.Blocked {

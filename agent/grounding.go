@@ -485,9 +485,14 @@ func recoveryDirective(map[string]any) string {
 // against exactly this advice. Same defect, and same fix, as the mutation
 // evidence continuation.
 func executionRecovery(state *discoveryState, query string) map[string]any {
+	// The code/kind pair flows into the action summary's recovery_codes, which
+	// is what replay assertions and run diagnosis read; without it an
+	// execution-error recovery left no machine-readable trace at all.
 	instruction := "The live schema is authoritative; do not report it as broken or propose schema changes—follow errors[].extensions.graphjin_repair and next to re-discover real fields and retry in this run."
 	if ids := state.catalogIDsForQueryRoots(query); len(ids) != 0 {
 		return map[string]any{
+			"code":        "execution_error",
+			"kind":        "execution_error",
 			"instruction": instruction,
 			"next": map[string]any{
 				"recommended_tool": toolQueryCatalog,
@@ -497,6 +502,8 @@ func executionRecovery(state *discoveryState, query string) map[string]any {
 		}
 	}
 	return map[string]any{
+		"code":        "execution_error",
+		"kind":        "execution_error",
 		"instruction": instruction,
 		"next": catalogNext(
 			toolQueryCatalog,
@@ -505,16 +512,18 @@ func executionRecovery(state *discoveryState, query string) map[string]any {
 	}
 }
 
-// catalogIDsForQueryRoots maps the read roots of a failed query to catalog ids
-// this run can inspect. Unresolvable roots are skipped rather than discarding
-// the ids that did resolve.
+// catalogIDsForQueryRoots maps the roots of a failed operation to catalog ids
+// this run can inspect. Mutation roots resolve too — a failed write used to
+// get the id-less generic fallback because only read roots were consulted.
+// Unresolvable roots are skipped rather than discarding the ids that did
+// resolve.
 func (s *discoveryState) catalogIDsForQueryRoots(query string) []any {
 	if s == nil || strings.TrimSpace(query) == "" {
 		return nil
 	}
 	ids := make([]any, 0, 4)
 	seen := map[string]bool{}
-	for _, root := range QueryRootFields(query) {
+	for _, root := range append(QueryRootFields(query), MutationRootFields(query)...) {
 		target, _ := s.mutationTargetTable(root)
 		id := s.catalogIDForTable(target)
 		if id == "" || seen[id] {

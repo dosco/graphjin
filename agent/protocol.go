@@ -132,6 +132,10 @@ type discoveryState struct {
 	// observedValues caches sampled column value sets per table so a write path
 	// costs at most one extra catalog read per table.
 	observedValues map[string]map[string][]string
+	// tableColumnNames caches each table's full column-name list (from the same
+	// phase-one catalog read observedValues starts with) so a failed write's
+	// recovery can name the real columns without another catalog round trip.
+	tableColumnNames map[string][]string
 	// crossSourceEvidenceSupplied keeps the one-shot fetch of source cards from
 	// repeating if the ids ever stop registering.
 	crossSourceEvidenceSupplied bool
@@ -1087,6 +1091,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				out = attachWatchQueryRepair(out, ids, watchSubscriptionRoots(query, args))
 			} else {
 				out = attachExecutionRecovery(out, r.state, query)
+				out = r.attachUnknownColumnRecovery(ctx, out, query)
 			}
 			r.state.failedQueryKeys[queryKey] = true
 			if wasRepairPending {

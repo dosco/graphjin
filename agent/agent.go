@@ -1591,6 +1591,16 @@ func (r *coreRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (
 func executeResultFromCore(res *core.Result, err error) executeResult {
 	result := executeResult{}
 	if err != nil {
+		// Core populates res.Errors alongside err on compile and execution
+		// failures, and those entries carry extensions.graphjin_repair (e.g.
+		// kind column_not_found). Flattening to err.Error() threw the
+		// structure away and left the model a bare string.
+		if res != nil && len(res.Errors) != 0 {
+			for _, e := range res.Errors {
+				result.Errors = append(result.Errors, ErrorInfo{Message: e.Message, Extensions: e.Extensions})
+			}
+			return result
+		}
 		result.Errors = []ErrorInfo{{Message: err.Error()}}
 		return result
 	}

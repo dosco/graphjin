@@ -181,3 +181,25 @@ func TestReplayReactiveCreationRejectsSystemRootTarget(t *testing.T) {
 		t.Errorf("an unresolvable watch target must still be rejected: %+v", observed)
 	}
 }
+
+// TestReplayUnknownColumnWriteGetsColumnNamedRecovery replays the run-5d12a35b
+// payments episode whose insert used created_at (real column: recorded_at) and
+// retried the identical query until duplicate_failed_query locked it out. With
+// strict mutation columns the failure now surfaces at compile naming the
+// column, and the enriched recovery names the table's real columns and carries
+// a machine-readable kind. Mechanism only, never score: canned programs cannot
+// adapt to the better error.
+func TestReplayUnknownColumnWriteGetsColumnNamedRecovery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded replay integration")
+	}
+	fixture := loadReplayFixture(t, "action-record-payment-deeporg-pay-002-rep1.json")
+	observed := replayFixture(t, fixture)
+	t.Logf("baseline: status=%s turns=%d | replay: status=%s turns=%d recovery=%v errors=%v",
+		fixture.Observed.Status, fixture.Observed.ActorTurns,
+		observed.Status, observed.ActorTurns, observed.RecoveryCodes, observed.ErrorCodes)
+
+	if !observed.HasCode("execution_error") {
+		t.Errorf("failed write recovery must carry its kind: %+v", observed)
+	}
+}
