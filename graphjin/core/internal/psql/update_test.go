@@ -62,8 +62,7 @@ func nestedUpdateManyToMany(t *testing.T) {
 			"quantity": 5,
 			"due_date": "now",
 			"customer": {
-				"email": "thedude@rug.com",
-				"full_name": "The Dude"
+				"vip": true
 			},
 			"product": {
 				"name": "Apple",
@@ -255,8 +254,6 @@ func nestedUpdateRecursive(t *testing.T) {
 		"data": json.RawMessage(`{
 			"id": 1002,
 			"body": "hello 2",
-			"created_at": "now",
-			"updated_at": "now",
 			"comments": {
 				"find": "children",
 				"connect":{ "id": 5 }

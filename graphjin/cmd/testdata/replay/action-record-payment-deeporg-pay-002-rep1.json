@@ -1,0 +1,121 @@
+{
+  "run_id": "20260814T084150.544485000Z-5d12a35b",
+  "task_id": "gjv1_96994c03845657a0dcf83cb8",
+  "task_slug": "action-record-payment-deeporg-pay-002",
+  "repeat": 1,
+  "task": {
+    "schema_version": "graphjin.eval.task/v1",
+    "id": "gjv1_96994c03845657a0dcf83cb8",
+    "slug": "action-record-payment-deeporg-pay-002",
+    "category": "action",
+    "difficulty": "T3",
+    "prompt": "Record payment DEEPORG-PAY-002 with id 900002 for invoice 2, amount 580000 cents, at 2027-01-15T12:00:00Z. Do not change the invoice or any other record.",
+    "provenance": {
+      "generator_version": "graphjin.eval.generator/v11",
+      "source": "deeporg-reference",
+      "generation_seed": 23,
+      "source_id": "DEEPORG-PAY-002"
+    },
+    "capability_profile": {
+      "role_class": "user",
+      "allowed_actions": [
+        "data.insert",
+        "data.update",
+        "gj_artifacts.delete",
+        "gj_artifacts.insert",
+        "gj_artifacts.update",
+        "gj_task.delete",
+        "gj_task.insert",
+        "gj_task.update",
+        "gj_task_entry.delete",
+        "gj_task_entry.insert",
+        "gj_task_entry.update",
+        "gj_watch.delete",
+        "gj_watch.insert",
+        "gj_watch.update",
+        "gj_watch_event.delete",
+        "gj_watch_event.insert",
+        "gj_watch_event.update",
+        "gj_workflow_execution.insert"
+      ],
+      "available_system_roots": [
+        "gj_artifacts",
+        "gj_catalog",
+        "gj_runtime",
+        "gj_security",
+        "gj_task",
+        "gj_task_entry",
+        "gj_watch",
+        "gj_watch_event",
+        "gj_workflow",
+        "gj_workflow_execution"
+      ]
+    },
+    "expected_status": "answered",
+    "answer": {},
+    "method": {
+      "require_query_match": [
+        "(?s)mutation.*payments\\s*\\(\\s*insert"
+      ]
+    },
+    "behavior": {
+      "required_actions": [
+        "execute_graphql:mutation",
+        "query_catalog"
+      ]
+    },
+    "budget": {
+      "max_actor_turns": 10,
+      "max_total_tokens": 400000
+    },
+    "mutation": {
+      "reset_strategy": "sqlite-copy",
+      "post_state": {
+        "query": "query { payments(where: {id: {eq: 900002}, invoice_id: {eq: 2}, amount_cents: {eq: 580000}, reference: {eq: \"DEEPORG-PAY-002\"}, recorded_at: {eq: \"2027-01-15T12:00:00Z\"}}) { count_id } }",
+        "extract": "payments.0.count_id"
+      },
+      "expected_value": "1",
+      "collateral": [
+        {
+          "query": "query { accounts(order_by: {id: asc}) { id name plan status mrr_cents renewal_date last_active_at } }",
+          "extract": "accounts"
+        },
+        {
+          "query": "query { invoices(order_by: {id: asc}) { id account_id subscription_id amount_cents status attempts due_at last_attempt_at } }",
+          "extract": "invoices"
+        },
+        {
+          "query": "query { subscriptions(order_by: {id: asc}) { id account_id plan seats mrr_cents status started_at renews_at } }",
+          "extract": "subscriptions"
+        },
+        {
+          "query": "query { users(order_by: {id: asc}) { id account_id name email role last_login_at } }",
+          "extract": "users"
+        },
+        {
+          "query": "query { payments(where: {id: {neq: 900002}}, order_by: {id: asc}) { id invoice_id amount_cents reference recorded_at } }",
+          "extract": "payments"
+        }
+      ]
+    }
+  },
+  "programs": [
+    "used(\"data_write\");\nused(\"data_discovery\");\n\nconst cat = await query_catalog({ search: \"payment\" });\nconst tableCard = cat.cards.find(c =\u003e c.kind === \"table\" \u0026\u0026 (c.title === \"payments\" || c.id.includes(\"payment\"))) || cat.cards[0];\nconst detail = await query_catalog({ id: tableCard.id });\n\nconst mutation = `\nmutation InsertPayment {\n  payments(insert: {\n    id: 900002,\n    invoice_id: 2,\n    amount_cents: 580000,\n    reference: \"DEEPORG-PAY-002\",\n    created_at: \"2027-01-15T12:00:00Z\"\n  }) {\n    id\n    invoice_id\n    amount_cents\n    reference\n    created_at\n  }\n}\n`;\n\nconst exec = await execute_graphql({ query: mutation });\n\nawait final(\"Report the recorded payment details to the user\", {\n  status: \"answered\",\n  data: exec.data,\n  errors: exec.errors\n});",
+    "if (typeof globalThis.graphjinLastExecution !== 'undefined' \u0026\u0026 globalThis.graphjinLastExecution?.result?.data) {\n  await final(\"Report the recorded payment details to the user\", {\n    status: \"answered\",\n    data: globalThis.graphjinLastExecution.result.data\n  });\n} else {\n  await used(\"data_write\");\n  await used(\"data_discovery\");\n\n  const cat = await query_catalog({ search: \"payment\" });\n  const tableCard = cat.cards.find(c =\u003e c.kind === \"table\" \u0026\u0026 (c.title === \"payments\" || c.id.includes(\"payment\"))) || cat.cards[0];\n  await query_catalog({ id: tableCard.id });\n\n  const mutation = `\n  mutation InsertPayment {\n    payments(insert: {\n      id: 900002,\n      invoice_id: 2,\n      amount_cents: 580000,\n      reference: \"DEEPORG-PAY-002\",\n      created_at: \"2027-01-15T12:00:00Z\"\n    }) {\n      id\n      invoice_id\n      amount_cents\n      reference\n      created_at\n    }\n  }\n  `;\n\n  const exec = await execute_graphql({ query: mutation });\n\n  await final(\"Report the recorded payment details to the user\", {\n    status: \"answered\",\n    data: exec.data,\n    errors: exec.errors\n  });\n}",
+    "await used(\"data_write\");\nawait used(\"data_discovery\");\n\nconst cat = await query_catalog({ search: \"payment\" });\nconst card = cat.cards?.find(c =\u003e c.kind === \"table\" || c.title === \"payments\") || cat.cards?.[0];\nif (card?.id) {\n  await query_catalog({ id: card.id });\n}\n\nconst mutation = `\nmutation {\n  payments(insert: {\n    id: 900002,\n    invoice_id: 2,\n    amount_cents: 580000,\n    reference: \"DEEPORG-PAY-002\",\n    created_at: \"2027-01-15T12:00:00Z\"\n  }) {\n    id\n    invoice_id\n    amount_cents\n    reference\n    created_at\n  }\n}\n`;\n\nconst res = await execute_graphql({ query: mutation });\n\nawait final(\"Report the recorded payment details to the user\", {\n  status: \"answered\",\n  data: res.data,\n  errors: res.errors\n});",
+    "await used(\"data_write\");\nawait used(\"data_discovery\");\n\nconst seed = inputs.context?._graphjin_discovery;\nlet tableId = \"table:payments\";\nif (seed?.cards) {\n  const pCard = seed.cards.find(c =\u003e c.kind === \"table\" \u0026\u0026 (c.title === \"payments\" || c.id.includes(\"payment\")));\n  if (pCard) tableId = pCard.id;\n}\n\nawait query_catalog({ id: tableId });\n\nconst mutation = `\nmutation InsertPayment {\n  payments(insert: {\n    id: 900002,\n    invoice_id: 2,\n    amount_cents: 580000,\n    reference: \"DEEPORG-PAY-002\",\n    created_at: \"2027-01-15T12:00:00Z\"\n  }) {\n    id\n    invoice_id\n    amount_cents\n    reference\n    created_at\n  }\n}\n`;\n\nconst res = await execute_graphql({ query: mutation });\n\nawait final(\"Report the recorded payment details to the user\", {\n  status: \"answered\",\n  data: res.data,\n  errors: res.errors\n});",
+    "const seed = inputs.context?._graphjin_discovery?.cards || [];\nconst paymentCard = seed.find(c =\u003e c.kind === 'table' \u0026\u0026 (c.title === 'payments' || c.id.includes('payment'))) || seed.find(c =\u003e c.id.includes('payment')) || { id: 'table:public:payments' };\n\nawait used('data_write');\nawait used('data_discovery');\n\nawait query_catalog({ id: paymentCard.id });\n\nconst mutation = `\nmutation InsertPayment {\n  payments(insert: {\n    id: 900002,\n    invoice_id: 2,\n    amount_cents: 580000,\n    reference: \"DEEPORG-PAY-002\",\n    created_at: \"2027-01-15T12:00:00Z\"\n  }) {\n    id\n    invoice_id\n    amount_cents\n    reference\n    created_at\n  }\n}\n`;\n\nconst res = await execute_graphql({ query: mutation });\n\nawait final(\"Report the recorded payment details to the user\", {\n  status: \"answered\",\n  data: res.data,\n  errors: res.errors\n});",
+    "if (globalThis.graphjinLastExecution \u0026\u0026 globalThis.graphjinLastExecution.result \u0026\u0026 globalThis.graphjinLastExecution.result.data) {\n  await final(\"Report the recorded payment details to the user\", {\n    status: \"answered\",\n    data: globalThis.graphjinLastExecution.result.data\n  });\n} else {\n  await used(\"data_write\");\n  await used(\"data_discovery\");\n  \n  const seed = inputs.context?._graphjin_discovery?.cards || [];\n  const tableCard = seed.find(c =\u003e c.kind === \"table\" \u0026\u0026 (c.title === \"payments\" || c.id.includes(\"payment\"))) || seed.find(c =\u003e c.id.includes(\"payment\")) || { id: \"table:payments\" };\n  \n  // Query table detail\n  await query_catalog({ id: tableCard.id });\n  \n  const mutation = `\n  mutation {\n    payments(insert: {\n      id: 900002,\n      invoice_id: 2,\n      amount_cents: 580000,\n      reference: \"DEEPORG-PAY-002\",\n      created_at: \"2027-01-15T12:00:00Z\"\n    }) {\n      id\n      invoice_id\n      amount_cents\n      reference\n      created_at\n    }\n  }\n  `;\n  \n  const res = await execute_graphql({ query: mutation });\n  \n  await final(\"Report the recorded payment details to the user\", {\n    status: \"answered\",\n    data: res.data,\n    errors: res.errors\n  });\n}",
+    "if (globalThis.graphjinLastExecution \u0026\u0026 globalThis.graphjinLastExecution.result \u0026\u0026 globalThis.graphjinLastExecution.result.data) {\n  await final(\"Report the recorded payment details to the user\", {\n    payment: globalThis.graphjinLastExecution.result.data.payments || globalThis.graphjinLastExecution.result.data\n  });\n} else {\n  await used(\"data_write\");\n  await used(\"data_discovery\");\n\n  const seedCards = inputs.context?._graphjin_discovery?.cards || [];\n  const paymentCard = seedCards.find(c =\u003e c.title === \"payments\" || (c.id \u0026\u0026 c.id.includes(\"payment\")));\n\n  if (paymentCard) {\n    await query_catalog({ id: paymentCard.id });\n  } else {\n    await query_catalog({ search: \"payments\" });\n  }\n\n  const mutation = `\n  mutation InsertPayment {\n    payments(insert: {\n      id: 900002,\n      invoice_id: 2,\n      amount_cents: 580000,\n      reference: \"DEEPORG-PAY-002\",\n      created_at: \"2027-01-15T12:00:00Z\"\n    }) {\n      id\n      invoice_id\n      amount_cents\n      reference\n      created_at\n    }\n  }\n  `;\n\n  const res = await execute_graphql({ query: mutation });\n\n  await final(\"Report the recorded payment details to the user\", {\n    payment: res.data?.payments || res.data || res\n  });\n}",
+    "await used('data_write');\nawait used('data_discovery');\n\nif (globalThis.graphjinLastExecution?.result?.data) {\n  await final('Confirm payment record details to the user', {\n    payment: globalThis.graphjinLastExecution.result.data.payments || globalThis.graphjinLastExecution.result.data\n  });\n} else {\n  const mutation = `\n  mutation InsertPayment {\n    payments(insert: {\n      id: 900002,\n      invoice_id: 2,\n      amount_cents: 580000,\n      reference: \"DEEPORG-PAY-002\",\n      created_at: \"2027-01-15T12:00:00Z\"\n    }) {\n      id\n      invoice_id\n      amount_cents\n      reference\n      created_at\n    }\n  }\n  `;\n\n  const res = await execute_graphql({ query: mutation });\n  await final('Confirm payment record details to the user', {\n    payment: res.data?.payments || res.data || res\n  });\n}"
+  ],
+  "observed": {
+    "status": "blocked",
+    "failure_category": "post_state_mismatch",
+    "actor_turns": 8,
+    "violation_codes": [
+      "security_runtime_discovery_required"
+    ],
+    "pass": false
+  }
+}

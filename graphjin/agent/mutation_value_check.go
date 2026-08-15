@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -541,4 +542,113 @@ func (r *protocolRuntime) suggestedWrittenValues(ctx context.Context, mismatches
 		}
 	}
 	return out
+}
+
+// A failed write's error used to name the fault ("column: 'payments.created_at'
+// not found", or the NOT NULL constraint two steps downstream of a silently
+// dropped key) without ever naming what the table actually has — and the model
+// retried the identical wrong column until the duplicate guard locked it out.
+// The catalog knows the columns; put them in the recovery.
+
+var unknownColumnErrorPatterns = []*regexp.Regexp{
+	// column: 'payments.created_at' not found  (optionally schema-qualified)
+	regexp.MustCompile(`column: '(?:[A-Za-z0-9_]+\.)?([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)' not found`),
+	// NOT NULL constraint failed: payments.recorded_at
+	regexp.MustCompile(`NOT NULL constraint failed: ([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)`),
+	// field 'created_at' is not a column or a function  (selection-set form; no table)
+	regexp.MustCompile(`field '([A-Za-z0-9_]+)' is not a column or a function`),
+}
+
+// attachUnknownColumnRecovery extends an attached execution recovery with the
+// failed table's real column names when the error is of the unknown-column
+// family. It reuses the value check's phase-one catalog read — the returned
+// card ids encode every column name — so this costs no extra catalog calls
+// beyond the one bounded list.
+func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out any, query string) any {
+	if r == nil || !executionFailed(out) {
+		return out
+	}
+	table, column := "", ""
+	for _, message := range executionErrorMessages(out) {
+		for _, pattern := range unknownColumnErrorPatterns {
+			match := pattern.FindStringSubmatch(message)
+			if match == nil {
+				continue
+			}
+			if len(match) == 3 {
+				table, column = match[1], match[2]
+			} else {
+				column = match[1]
+			}
+			break
+		}
+		if column != "" {
+			break
+		}
+	}
+	if column == "" {
+		return out
+	}
+	if table == "" {
+		for _, root := range append(MutationRootFields(query), QueryRootFields(query)...) {
+			if target, ok := r.state.mutationTargetTable(root); ok && target != "" {
+				table = target
+				break
+			}
+		}
+	}
+	if table == "" {
+		return out
+	}
+	columns := r.observedColumnNames(ctx, table)
+	if len(columns) == 0 {
+		return out
+	}
+	note := fmt.Sprintf(" The column %q does not exist on %s; its columns are: %s.", column, table, strings.Join(columns, ", "))
+	details := map[string]any{"unknown_column": column, "table_columns": map[string]any{table: columns}}
+	amend := func(recovery map[string]any) {
+		if recovery == nil {
+			return
+		}
+		recovery["instruction"] = stringValue(recovery["instruction"]) + note
+		recovery["details"] = details
+	}
+	switch res := out.(type) {
+	case executeResult:
+		amend(mapValue(res.Recovery))
+		return res
+	case *executeResult:
+		amend(mapValue(res.Recovery))
+		return res
+	case map[string]any:
+		amend(mapValue(res["recovery"]))
+		return res
+	default:
+		return out
+	}
+}
+
+// observedColumnNames lists a table's column names from the catalog, cached
+// per run. Phase one of the value lookup already carries them: every column
+// card id ends in its column name.
+func (r *protocolRuntime) observedColumnNames(ctx context.Context, table string) []string {
+	if r == nil || r.base == nil || strings.TrimSpace(table) == "" {
+		return nil
+	}
+	if cached, ok := r.state.tableColumnNames[table]; ok {
+		return cached
+	}
+	cardsSeen := 0
+	sampleID := ""
+	var columns []string
+	for _, id := range r.columnCardIDs(ctx, table, &cardsSeen, &sampleID) {
+		if name := columnNameFromCatalogID(stringValue(id)); name != "" {
+			columns = append(columns, name)
+		}
+	}
+	if r.state.tableColumnNames == nil {
+		r.state.tableColumnNames = map[string][]string{}
+	}
+	r.state.tableColumnNames[table] = columns
+	return columns
 }
