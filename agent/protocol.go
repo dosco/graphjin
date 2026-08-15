@@ -517,6 +517,35 @@ func attachCatalogIDRepairNotice(out any, repairs map[string]string) any {
 	return result
 }
 
+// attachWatchNormalizationNotice records that a gj_watch subscription string
+// arrived with unescaped quotes and was executed as its parse-verified
+// re-escaping. The notice rides the recovery block rather than a violation
+// code: re-escaping is a reading of what the caller wrote, not a rewrite, and
+// the registry contract leaves no room for a non-blocking code — an
+// unregistered code fails safety scoring, a registered one must block.
+func attachWatchNormalizationNotice(out any, repaired string) any {
+	recovery := map[string]any{
+		"kind":           "watch_subscription_normalized",
+		"code":           "watch_subscription_normalized",
+		"instruction":    `The gj_watch subscription string arrived with unescaped quotes; the mutation executed as its verified re-escaping, shown in repaired_query. Escape nested quotes as \" in future watch mutations.`,
+		"repaired_query": repaired,
+	}
+	switch res := out.(type) {
+	case executeResult:
+		res.Recovery = recovery
+		return res
+	case *executeResult:
+		res.Recovery = recovery
+		return res
+	case map[string]any:
+		res = cloneAnyMap(res)
+		res["recovery"] = recovery
+		return res
+	default:
+		return out
+	}
+}
+
 func attachEmptyDetailRecovery(out any, missedIDs []string, next map[string]any, suggestions map[string][]string) any {
 	result := cloneAnyMap(mapValue(out))
 	if len(catalogCards(result)) == 0 {
@@ -779,6 +808,7 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
 	r.addNamespace(args)
 	query := stringArg(args, "query")
+	normalizedWatchQuery := ""
 	if r.state.hasPolicyFinalBlockingViolation() {
 		out := r.state.policyFinalExecutionResult()
 		action := r.state.startAction("model", "execute_graphql", args)
@@ -968,28 +998,30 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			// than a quoting fault. Name it here, and point at the variable form that
 			// removes the nesting entirely.
 			if malformedWatchSubscriptionString(query) {
-				// The intended string is unambiguous, so the corrected mutation is
-				// supplied rather than described. It is offered, not executed: running a
-				// rewritten mutation would execute a subscription the caller never wrote.
 				repaired, repairable := repairWatchSubscriptionString(query)
-				details := map[string]any{"root": systemRootWatch, "fault": "unescaped_subscription_string"}
-				var err error
 				if repairable {
-					details["repaired_query"] = repaired
-					err = fmt.Errorf("protocol violation: the gj_watch subscription string has unescaped quotes, so this mutation does not parse. The corrected mutation is in errors[].extensions.details.repaired_query — execute it exactly as given: %s", repaired)
+					// The repair is parse-verified and re-escaping does not change
+					// what was written — this is the unique reading of the caller's
+					// own mutation, so it executes rather than being offered back.
+					// Offering was measured across a benchmark run: 3 of 13 blocked
+					// episodes executed the repair; 5 narrated it to the user as
+					// their final answer. Every downstream guard still runs against
+					// the normalized mutation, and the result carries a recovery
+					// notice naming the normalization.
+					query = repaired
+					args = cloneAnyMap(args)
+					args["query"] = repaired
+					normalizedWatchQuery = repaired
 				} else {
-					err = fmt.Errorf(`protocol violation: the gj_watch subscription string has unescaped quotes, so this mutation does not parse. Pass the subscription as a GraphQL variable instead of inlining it: mutation CreateWatch($name: String!, $query: String!) { gj_watch(insert: {name: $name, query: $query, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name status } } with variables {"name": "...", "query": "subscription { <root>(where: {...}, first: 25, after: $cursor) { ... } <root>_cursor }"}`)
+					details := map[string]any{"root": systemRootWatch, "fault": "unescaped_subscription_string"}
+					err := fmt.Errorf(`protocol violation: the gj_watch subscription string has unescaped quotes, so this mutation does not parse. Pass the subscription as a GraphQL variable instead of inlining it: mutation CreateWatch($name: String!, $query: String!) { gj_watch(insert: {name: $name, query: $query, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name status } } with variables {"name": "...", "query": "subscription { <root>(where: {...}, first: 25, after: $cursor) { ... } <root>_cursor }"}`)
+					r.state.addViolation("watch_query_invalid", err.Error(), "execute_graphql", true, details)
+					out := recoverableProtocolFailure("watch_query_invalid", err.Error(), "watch_query_invalid",
+						catalogRepairNext(map[string]any{"ids": []any{"help:watches"}}, "Re-author the gj_watch mutation with the subscription passed as a variable, then execute it once."), details)
+					action := r.state.startAction("model", "execute_graphql", args)
+					r.state.finishAction(action, "execute_graphql", args, out, nil)
+					return out, nil
 				}
-				r.state.addViolation("watch_query_invalid", err.Error(), "execute_graphql", true, details)
-				repairGuidance := "Re-author the gj_watch mutation with the subscription passed as a variable, then execute it once."
-				if repairable {
-					repairGuidance = "Execute details.repaired_query exactly as supplied; it is this same mutation with the subscription string escaped."
-				}
-				out := recoverableProtocolFailure("watch_query_invalid", err.Error(), "watch_query_invalid",
-					catalogRepairNext(map[string]any{"ids": []any{"help:watches"}}, repairGuidance), details)
-				action := r.state.startAction("model", "execute_graphql", args)
-				r.state.finishAction(action, "execute_graphql", args, out, nil)
-				return out, nil
 			}
 			for _, root := range watchSubscriptionRoots(query, args) {
 				roots = appendUniqueString(roots, root)
@@ -1102,6 +1134,9 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		}
 	} else if err == nil && wasRepairPending {
 		r.state.pendingFailedQueryKey = ""
+	}
+	if normalizedWatchQuery != "" && err == nil && !executionFailed(out) {
+		out = attachWatchNormalizationNotice(out, normalizedWatchQuery)
 	}
 	r.state.finishAction(action, "execute_graphql", args, out, err)
 	if err == nil {

@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -67,5 +69,76 @@ func TestRepairWatchSubscriptionStringDeclinesWhenAmbiguous(t *testing.T) {
 		if repaired, ok := repairWatchSubscriptionString(tc.query); ok {
 			t.Errorf("%s: expected no repair, got %s", tc.name, repaired)
 		}
+	}
+}
+
+// watchNormalizeRuntime accepts any executed mutation and records what arrived.
+type watchNormalizeRuntime struct {
+	fakeRuntime
+	mutationCalls int
+	lastQuery     string
+}
+
+func (r *watchNormalizeRuntime) ExecuteGraphQL(_ context.Context, args map[string]any) (any, error) {
+	r.mutationCalls++
+	r.lastQuery, _ = args["query"].(string)
+	return map[string]any{"data": map[string]any{"gj_watch": map[string]any{"id": "watch:abc", "status": "active"}}}, nil
+}
+
+// TestMalformedWatchSubscriptionExecutesNormalized pins accept-and-normalize:
+// a repairable unescaped subscription string executes as its parse-verified
+// re-escaping in the same step, carrying a recovery notice instead of a
+// blocking violation. Offering the repair back was measured across a
+// benchmark run at 3 recoveries out of 13 blocks, with 5 episodes narrating
+// the repair to the user as their final answer.
+func TestMalformedWatchSubscriptionExecutesNormalized(t *testing.T) {
+	base := &watchNormalizeRuntime{}
+	profile := &CapabilityProfile{RoleClass: "user", AllowedActions: []string{"gj_watch.insert", "gj_watch.update"}}
+	runtime := newProtocolRuntime(base, "Watch failed invoices.", "", 8, profile, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.securityRuntimeEvidence = true
+	runtime.state.mutationEvidenceSupplied = true
+	runtime.state.tablesDetailed["invoices"] = true
+	runtime.state.catalogDetails = []string{"help:watches", "table:app:main.invoices"}
+
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { gj_watch(insert: { name: "failed_invoices", query: "subscription { invoices(where: { status: { eq: "failed" } }, first: 25, after: $cursor) { id } invoices_cursor }", delivery_json: { kind: "inbox" } }) { id status } }`,
+	})
+	if err != nil {
+		t.Fatalf("normalized execution errored: %v", err)
+	}
+	if base.mutationCalls != 1 {
+		t.Fatalf("the repaired mutation must execute in the same step, calls=%d", base.mutationCalls)
+	}
+	if !strings.Contains(base.lastQuery, `\"failed\"`) {
+		t.Fatalf("dispatch must receive the escaped form: %q", base.lastQuery)
+	}
+	payload, _ := json.Marshal(out)
+	for _, want := range []string{"watch_subscription_normalized", "repaired_query"} {
+		if !strings.Contains(string(payload), want) {
+			t.Fatalf("result must carry the normalization notice, missing %q: %s", want, payload)
+		}
+	}
+	if strings.Contains(string(payload), "watch_query_invalid") {
+		t.Fatalf("a repairable string must not record the blocking violation: %s", payload)
+	}
+	if runtime.state.hasBlockingViolation() {
+		t.Fatal("normalization must not leave a blocking violation behind")
+	}
+
+	// An unrepairable string keeps the historical blocking refusal.
+	blockedOut, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { gj_watch(insert: { name: "broken", query: "subscription { invoices { id }`,
+	})
+	if err != nil {
+		t.Fatalf("unrepairable case should return a refusal, not an error: %v", err)
+	}
+	payload, _ = json.Marshal(blockedOut)
+	if !strings.Contains(string(payload), "watch_query_invalid") {
+		t.Fatalf("an unrepairable string must still block: %s", payload)
+	}
+	if base.mutationCalls != 1 {
+		t.Fatalf("the unrepairable mutation must not dispatch, calls=%d", base.mutationCalls)
 	}
 }
