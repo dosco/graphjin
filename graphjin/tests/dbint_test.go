@@ -1248,3 +1248,16 @@ func skipClickHouse(t *testing.T, reason string) {
 		t.Skipf("clickhouse: %s", reason)
 	}
 }
+
+// skipMariaDBNestedLimit skips a test whose expectation depends on `limit`
+// being applied to a nested plural child. MariaDB has no LATERAL, so
+// MariaDBDialect.RenderInlineChild renders a correlated child as a bare
+// json_arrayagg over the whole relationship (a derived table there could not
+// see the parent row) and emits no LIMIT — every child row comes back. Skipped
+// with a reason rather than left to fail on a diff of hundreds of rows.
+func skipMariaDBNestedLimit(t *testing.T) {
+	t.Helper()
+	if dbType == "mariadb" {
+		t.Skip("mariadb: `limit` on a nested plural child is not applied (no LATERAL, correlated child aggregates the full relationship)")
+	}
+}
