@@ -589,17 +589,19 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 		}
 	}
 
-	// A read-only database refuses every mutation, and it should not have to
-	// understand one first. Compilation can fail on its own terms — an unknown
-	// column, a bad argument — and report that instead of the fact that no
-	// write was ever possible, which is both the less useful answer and the
-	// one that says more about the schema than a refused caller needs.
-	if err = s.readOnlyDatabaseMutationError(false); err != nil {
-		return
-	}
-
 	// Compile query for the role (this also determines target database for multi-DB)
 	if err = s.compile(); err != nil {
+		// A mutation that cannot compile against a read-only database is
+		// refused for being read-only, not for whatever the compiler happened
+		// to notice first — an unknown column says more about the schema than
+		// a refused caller needs and less about why the write was impossible.
+		// Only failed compiles are reconsidered here: managed-root mutations
+		// compile cleanly and are dispatched further down, which is why the
+		// authoritative check stays after them rather than moving up here.
+		if roErr := s.readOnlyDatabaseMutationError(false); roErr != nil {
+			err = roErr
+			return
+		}
 		err = s.sourceModeAuthorizeCompileError(err)
 		return
 	}
