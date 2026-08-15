@@ -892,3 +892,25 @@ func TestColumnCardKeepsPlaceholderWithoutSamples(t *testing.T) {
 		t.Errorf("evidence must omit the field entirely without samples: %s", evidence)
 	}
 }
+
+// TestWatchHelpLeadsWithFilteredExample pins the help:watches card the
+// mutation-evidence gate steers models to. Its first example is what models
+// copy; an unfiltered lead produced unscoped watch-everything watches across a
+// full benchmark family, so the lead must show the where filter with its
+// escaped quotes and keep the cursor contract.
+func TestWatchHelpLeadsWithFilteredExample(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{EnabledTools: []string{"query_catalog"}})
+	card, ok := findCatalogCard(snap, "help:watches")
+	if !ok {
+		t.Fatal("help:watches card missing")
+	}
+	var examples []string
+	if err := json.Unmarshal([]byte(card.ExamplesJSON), &examples); err != nil || len(examples) == 0 {
+		t.Fatalf("examples undecodable: %v", err)
+	}
+	for _, want := range []string{"where:", `\"failed\"`, "after: $cursor", "orders_cursor", "delivery_json"} {
+		if !strings.Contains(examples[0], want) {
+			t.Fatalf("help:watches lead example must teach the filtered watch, missing %q: %s", want, examples[0])
+		}
+	}
+}

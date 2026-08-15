@@ -493,3 +493,42 @@ func TestWatchFirstWaveCapabilityRows(t *testing.T) {
 		t.Fatalf("watch event capability row missing snoozed_until: %s", eventText)
 	}
 }
+
+// Models copy a card's first example verbatim, and episode evidence truncates
+// deep examples — so the LEAD example is the one teaching position that
+// reliably reaches the model. These pins hold it to the filtered shape: a
+// benchmark run of unfiltered lead examples produced watch-everything watches
+// across the whole reactive-create family.
+func TestWatchTeachingLeadsWithFilteredShape(t *testing.T) {
+	_, svc := newSQLiteWatchService(t, 20)
+	rows := newControlPlaneGraphQL(svc).systemCapabilityRows()
+	var watchRow map[string]any
+	for _, row := range rows {
+		if stringFromAny(row["name"]) == "gj_watch.insert_update_delete" {
+			watchRow = row
+		}
+	}
+	if watchRow == nil {
+		t.Fatal("gj_watch capability row missing")
+	}
+	var examples []map[string]string
+	if err := json.Unmarshal([]byte(stringFromAny(watchRow["examples_json"])), &examples); err != nil || len(examples) == 0 {
+		t.Fatalf("examples_json undecodable: %v", err)
+	}
+	lead := examples[0]["query"]
+	for _, want := range []string{"where:", `\"failed\"`, "after: $cursor", "orders_cursor"} {
+		if !strings.Contains(lead, want) {
+			t.Fatalf("lead capability example must teach the filtered escaped-inline watch, missing %q: %s", want, lead)
+		}
+	}
+
+	spec, ok := graphQLHelpSpecFor("watches")
+	if !ok || len(spec.Examples) == 0 {
+		t.Fatal("watches help spec missing")
+	}
+	for _, want := range []string{"where:", `\"failed\"`, "orders_cursor"} {
+		if !strings.Contains(spec.Examples[0], want) {
+			t.Fatalf("graphql_help watches lead example must be filtered, missing %q: %s", want, spec.Examples[0])
+		}
+	}
+}
