@@ -344,7 +344,7 @@ const dataDiscoveryInstruction = `Skill: data_discovery. Before querying, inspec
 	`On graphjin_repair, treat the failure as a query-authoring error: re-discover real fields, re-author, and retry in the same run; never advise schema or data changes.`
 
 const dataAggregationInstruction = `Skill: data_aggregation. The model plans, the database computes. Limited lists are pages: never derive totals, counts, averages, extremes, or rankings from rows. ` +
-	`Prefer native: { products { count_id sum_price avg_price min_price max_price } }. Hasura-compatible: { products_aggregate { aggregate { count sum { price } avg { price } min { price } max { price } } } }. ` +
+	`Prefer native: { products { count_id sum_price avg_price min_price max_price } }. count(column: id) also executes; always alias it to the prefix name: count_id: count(column: id). Hasura-compatible: { products_aggregate { aggregate { count sum { price } avg { price } min { price } max { price } } } }. ` +
 	`Never omit aggregate: { products_aggregate { count } } is invalid. On a Hasura aggregate error, copy its Supported form or Native equivalent with verified names; do not repeat it or restart discovery. ` +
 	`Aggregates work on dates: max_<date_col> is latest. For top-N groups, select dimension and aggregate, order_by aggregate desc, and limit N. Anchor relative windows on inputs.current_date (UTC), query max_<date_col>, and state the window. On result.truncation, re-author with aggregates.`
 

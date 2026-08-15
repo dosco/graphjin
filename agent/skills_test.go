@@ -200,8 +200,11 @@ func TestSkillPayloadBudgets(t *testing.T) {
 		// Budgets ratchet both ways. The current allowance includes the exact
 		// discovery prerequisites enforced by the write and cross-source guards.
 		// Keep modest headroom so any further prompt growth remains deliberate.
-		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3 * 1024},
-		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18 * 512},
+		// +128: the column-arg aggregate aliasing clause in data_aggregation —
+		// the engine accepts count(column: id) and the alias keeps every
+		// aggregate detector and frozen method pattern matching.
+		{name: "normal user", profile: profileWithRoleAndRoots("user"), max: 3*1024 + 128},
+		{name: "full admin", profile: profileWithRoleAndRoots("admin", allRoots...), max: 18*512 + 128},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			definitions := allowedSkills(false, tc.profile)

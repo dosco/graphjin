@@ -1089,3 +1089,21 @@ func TestStoredCountColumnDischargesCountIntent(t *testing.T) {
 		t.Fatal("count_id is an aggregate field, not a stored count; the aggregate path owns it")
 	}
 }
+
+// The engine accepts `<agg>(column: <col>)` as a spelling of the prefix form;
+// the guard must recognize it as a database aggregate or a correct query loops
+// on database_computation_required exactly as the pre-widening episodes did.
+func TestDatabaseAggregatePatternAcceptsColumnArgSyntax(t *testing.T) {
+	for _, query := range []string{
+		`query { accounts { max_renewal_date: max(column: renewal_date) } }`,
+		`query { accounts(where: { renewal_date: { gte: "2027-01-30" } }) { count_id: count(column: id) } }`,
+		`query { invoices { total: sum(column: amount_cents) } }`,
+	} {
+		if !databaseAggregateFieldPattern.MatchString(query) {
+			t.Fatalf("column-arg aggregate was not recognized: %s", query)
+		}
+	}
+	if databaseAggregateFieldPattern.MatchString(`query { accounts { max(colour: renewal_date) } }`) {
+		t.Fatal("a non-column argument must not receive aggregate credit")
+	}
+}

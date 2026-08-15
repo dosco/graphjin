@@ -480,6 +480,16 @@ func (co *Compiler) compileFieldArgs(qc *QCode, sel *Select, f *Field, args []gr
 				err = fmt.Errorf("`expr:` is only valid on aggregate fields, not on column %q", f.FieldName)
 			}
 
+		case "column":
+			// Consumed by isFunction during column-aggregate compilation. Only a
+			// field that path actually produced (an aggregate function carrying
+			// the resolved ArgTypeCol) may tolerate it; every other field keeps
+			// its historical rejection — otherwise `lower(column: name)` would
+			// silently compile as an argument-less function call.
+			if f.Type != FieldTypeFunc || len(f.Args) == 0 || f.Args[0].Type != ArgTypeCol || !f.Func.Agg {
+				err = unknownArg(a)
+			}
+
 		default:
 			err = unknownArg(a)
 		}
