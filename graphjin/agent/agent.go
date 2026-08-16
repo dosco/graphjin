@@ -583,6 +583,20 @@ func (c *reasoningClient) Embed(ctx context.Context, req map[string]ax.Value, op
 	return c.inner.Embed(ctx, req, opts)
 }
 
+// GetFeatures forwards the provider's capability report. ax type-asserts this
+// optional method to decide the structured-output mechanism, and a wrapper
+// that swallows it silently gets the permissive default instead — which sent
+// DeepSeek a json_schema request it rejects, turning a working run into 71
+// consecutive format errors. Any future wrapper must forward it too.
+func (c *reasoningClient) GetFeatures(model string) map[string]ax.Value {
+	if inner, ok := c.inner.(interface {
+		GetFeatures(string) map[string]ax.Value
+	}); ok {
+		return inner.GetFeatures(model)
+	}
+	return nil
+}
+
 func (c *reasoningClient) Stream(ctx context.Context, req map[string]ax.Value, opts map[string]ax.Value) ([]ax.Value, error) {
 	return c.inner.Stream(ctx, c.withBudget(req), opts)
 }
