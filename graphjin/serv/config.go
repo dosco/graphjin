@@ -1204,7 +1204,9 @@ func newViperWithDefaults() *viper.Viper {
 	// the public provider endpoint.
 	vi.BindEnv("agent.provider", "GJ_AGENT_PROVIDER", "SG_AGENT_PROVIDER", "SJ_AGENT_PROVIDER")                                                         //nolint:errcheck
 	vi.BindEnv("agent.model", "GJ_AGENT_MODEL", "SG_AGENT_MODEL", "SJ_AGENT_MODEL")                                                                     //nolint:errcheck
-	vi.BindEnv("agent.reasoning", "GJ_AGENT_REASONING", "SG_AGENT_REASONING", "SJ_AGENT_REASONING")                                                                     //nolint:errcheck
+	vi.BindEnv("agent.reasoning", "GJ_AGENT_REASONING", "SG_AGENT_REASONING", "SJ_AGENT_REASONING")                                                     //nolint:errcheck
+	vi.BindEnv("agent.timeout_seconds", "GJ_AGENT_TIMEOUT_SECONDS", "SG_AGENT_TIMEOUT_SECONDS", "SJ_AGENT_TIMEOUT_SECONDS")                             //nolint:errcheck
+	vi.BindEnv("agent.max_steps", "GJ_AGENT_MAX_STEPS", "SG_AGENT_MAX_STEPS", "SJ_AGENT_MAX_STEPS")                                                                     //nolint:errcheck
 	vi.BindEnv("agent.base_url", "GJ_AGENT_BASE_URL", "SG_AGENT_BASE_URL", "SJ_AGENT_BASE_URL")                                                         //nolint:errcheck
 	vi.BindEnv("agent.enabled", "GJ_AGENT_ENABLED", "SG_AGENT_ENABLED", "SJ_AGENT_ENABLED")                                                             //nolint:errcheck
 	vi.BindEnv("agent.api_key_env", "GJ_AGENT_API_KEY_ENV", "SG_AGENT_API_KEY_ENV", "SJ_AGENT_API_KEY_ENV")                                             //nolint:errcheck
