@@ -178,6 +178,80 @@ func TestLoadDemoEnvDoesNotOverrideExplicitAgentEnv(t *testing.T) {
 	}
 }
 
+func TestLoadDemoEnvPinnedProviderSelectsItsOwnKey(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	configDir := filepath.Join(dir, "examples", "coffee-roastery")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("OPENAI_API_KEY=from-openai\nGOOGLE_API_KEY=from-google\n"), 0o600); err != nil {
+		t.Fatalf("write root .env: %v", err)
+	}
+	unsetEnv(t, "GO_ENV", "GOOGLE_APIKEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS")
+	t.Setenv("GJ_AGENT_PROVIDER", "gemini")
+
+	var out bytes.Buffer
+	if err := loadDemoEnv(configDir, &out); err != nil {
+		t.Fatalf("load .env files: %v", err)
+	}
+	if got := os.Getenv("GJ_AGENT_API_KEY_ENV"); got != "GOOGLE_API_KEY" {
+		t.Fatalf("GJ_AGENT_API_KEY_ENV = %q, want GOOGLE_API_KEY; a pinned provider must not inherit the OpenAI key", got)
+	}
+	if got := os.Getenv("GJ_AGENT_PROVIDER"); got != "gemini" {
+		t.Fatalf("GJ_AGENT_PROVIDER = %q, want gemini", got)
+	}
+	if strings.Contains(out.String(), "warning") {
+		t.Fatalf("unexpected warning when a matching key exists: %q", out.String())
+	}
+}
+
+func TestLoadDemoEnvPinnedProviderResolvesUnlistedKey(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	configDir := filepath.Join(dir, "examples", "coffee-roastery")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DEEPSEEK_API_KEY=from-deepseek\n"), 0o600); err != nil {
+		t.Fatalf("write root .env: %v", err)
+	}
+	unsetEnv(t, "GO_ENV", "GOOGLE_APIKEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS")
+	t.Setenv("GJ_AGENT_PROVIDER", "deepseek")
+
+	if err := loadDemoEnv(configDir, nil); err != nil {
+		t.Fatalf("load .env files: %v", err)
+	}
+	if got := os.Getenv("GJ_AGENT_API_KEY_ENV"); got != "DEEPSEEK_API_KEY" {
+		t.Fatalf("GJ_AGENT_API_KEY_ENV = %q, want DEEPSEEK_API_KEY", got)
+	}
+	if got := os.Getenv("GO_ENV"); got != "agentic" {
+		t.Fatalf("GO_ENV = %q, want agentic; a provider-only key must still enable the agent", got)
+	}
+}
+
+func TestLoadDemoEnvPinnedProviderWithoutKeyWarns(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	configDir := filepath.Join(dir, "examples", "coffee-roastery")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("OPENAI_API_KEY=from-openai\n"), 0o600); err != nil {
+		t.Fatalf("write root .env: %v", err)
+	}
+	unsetEnv(t, "GO_ENV", "GOOGLE_APIKEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GJ_AGENT_ENABLED", "GJ_AGENT_API_KEY_ENV", "GJ_AGENT_MAX_STEPS", "GJ_AGENT_TIMEOUT_SECONDS")
+	t.Setenv("GJ_AGENT_PROVIDER", "gemini")
+
+	var out bytes.Buffer
+	if err := loadDemoEnv(configDir, &out); err != nil {
+		t.Fatalf("load .env files: %v", err)
+	}
+	if !strings.Contains(out.String(), "gemini is pinned but no matching key variable is set") {
+		t.Fatalf("expected a pinned-provider warning, got %q", out.String())
+	}
+}
+
 func chdir(t *testing.T, dir string) {
 	t.Helper()
 	old, err := os.Getwd()

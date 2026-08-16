@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/subosito/gotenv"
 )
@@ -58,6 +59,17 @@ func loadDemoEnvFile(envPath string, out io.Writer) error {
 
 func applyDemoAgentEnvDefaults(out io.Writer) {
 	keyEnv, provider := demoAgentKeyEnv()
+	_, keyEnvPinned := os.LookupEnv("GJ_AGENT_API_KEY_ENV")
+	if pinned := strings.TrimSpace(os.Getenv("GJ_AGENT_PROVIDER")); pinned != "" && !keyEnvPinned {
+		// A pinned provider must not inherit an unrelated provider's key. Sending
+		// OPENAI_API_KEY to Gemini comes back as a rejected credential, which reads
+		// like an expired key rather than the misconfiguration it is.
+		if matched := demoAgentProviderKeyEnv(pinned); matched != "" {
+			keyEnv, provider = matched, pinned
+		} else if keyEnv != "" && out != nil {
+			fmt.Fprintf(out, "demo env %-18s warning %s is pinned but no matching key variable is set; falling back to %s\n", "agent", pinned, keyEnv)
+		}
+	}
 	if keyEnv == "" {
 		return
 	}
@@ -109,4 +121,27 @@ func demoAgentKeyEnv() (string, string) {
 		}
 	}
 	return "", ""
+}
+
+// demoAgentProviderKeyEnv resolves the key variable an explicitly pinned
+// provider authenticates with. Unknown providers return an empty string so
+// custom setups keep whatever the caller configured.
+func demoAgentProviderKeyEnv(provider string) string {
+	var candidates []string
+	switch strings.ToLower(provider) {
+	case "openai":
+		candidates = []string{"OPENAI_API_KEY"}
+	case "anthropic":
+		candidates = []string{"ANTHROPIC_API_KEY"}
+	case "google-gemini", "gemini", "google":
+		candidates = []string{"GOOGLE_API_KEY", "GEMINI_API_KEY"}
+	case "deepseek":
+		candidates = []string{"DEEPSEEK_API_KEY"}
+	}
+	for _, candidate := range candidates {
+		if os.Getenv(candidate) != "" {
+			return candidate
+		}
+	}
+	return ""
 }
