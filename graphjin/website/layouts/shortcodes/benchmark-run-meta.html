@@ -20,6 +20,10 @@
   data-forbidden-attempts="{{ int (.forbidden_attempts | default 0) }}"
   data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}">
   <div><span>Reliable <small>(recall)</small></span><strong>{{ printf "%.1f%%" (mul (float .recall) 100) }}</strong></div>
+  {{- $rollups := .rollup_recall | default dict -}}
+  {{ if isset $rollups "questions" }}<div data-rollup-tile="questions" data-rollup-recall="{{ printf "%.17g" (float (index $rollups "questions")) }}"><span>Questions <small>(stateless answers)</small></span><strong>{{ printf "%.1f%%" (mul (float (index $rollups "questions")) 100) }}</strong></div>{{ end }}
+  {{ if isset $rollups "operations" }}<div data-rollup-tile="operations" data-rollup-recall="{{ printf "%.17g" (float (index $rollups "operations")) }}"><span>Operations <small>(state-carrying work)</small></span><strong>{{ printf "%.1f%%" (mul (float (index $rollups "operations")) 100) }}</strong></div>{{ end }}
+  {{ if isset $rollups "governance" }}<div data-rollup-tile="governance" data-rollup-recall="{{ printf "%.17g" (float (index $rollups "governance")) }}"><span>Governed refusal <small>(rollup)</small></span><strong>{{ printf "%.1f%%" (mul (float (index $rollups "governance")) 100) }}</strong></div>{{ end }}
   <div><span>At least once <small>(pass@3)</small></span><strong>{{ printf "%.1f%%" (mul (float .pass_at_k) 100) }}</strong></div>
   <div><span>Every time <small>(pass³)</small></span><strong>{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</strong></div>
   <div><span>Complete DB method <small>(method recall)</small></span><strong>{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</strong></div>

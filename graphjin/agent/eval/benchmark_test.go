@@ -82,3 +82,44 @@ func identityMismatchName(short string) string {
 		return short
 	}
 }
+
+// TestBenchmarkRollupMapCoversEveryCategory pins the frozen v1 mapping: every
+// valid category maps to exactly one rollup, so a future twelfth category
+// cannot silently vanish from every rollup, and no category can count twice.
+func TestBenchmarkRollupMapCoversEveryCategory(t *testing.T) {
+	all := []Category{
+		CategoryDiscovery, CategoryAggregate, CategoryRanking, CategoryWindow,
+		CategoryTraversal, CategorySavedMetric, CategoryRefusal, CategoryAction,
+		CategoryReactive, CategoryMultiTurn, CategoryCrossSource,
+	}
+	seen := map[Category]string{}
+	for _, rollup := range benchmarkRollups {
+		for _, member := range rollup.Categories {
+			if prior, dup := seen[member]; dup {
+				t.Fatalf("category %s mapped twice: %s and %s", member, prior, rollup.Name)
+			}
+			seen[member] = rollup.Name
+		}
+	}
+	for _, category := range all {
+		if _, ok := seen[category]; !ok {
+			t.Fatalf("category %s is missing from the rollup mapping", category)
+		}
+		if !validCategory(category) {
+			t.Fatalf("test list carries an invalid category %s", category)
+		}
+	}
+	if len(seen) != len(all) {
+		t.Fatalf("mapping covers %d categories, expected %d", len(seen), len(all))
+	}
+	// The projection the publisher embeds must mirror the slice exactly.
+	projected := BenchmarkRollupMap()
+	for category, name := range seen {
+		if projected[string(category)] != name {
+			t.Fatalf("projection disagrees for %s: %s != %s", category, projected[string(category)], name)
+		}
+	}
+	if got := BenchmarkRollupNames(); len(got) != 3 || got[0] != "questions" || got[1] != "operations" || got[2] != "governance" {
+		t.Fatalf("frozen display order changed: %v", got)
+	}
+}

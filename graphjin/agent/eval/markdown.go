@@ -60,6 +60,7 @@ func RenderTechnicalReportMarkdown(report Report) string {
 	writeScoringIntegrityWarning(&b, report)
 	writeHeadline(&b, report.Metrics, report.Provenance.Repeats)
 	writeGovernance(&b, report.Metrics)
+	writeRollups(&b, report.Metrics)
 	writeTiers(&b, report.Metrics)
 	writeFailures(&b, report.Metrics.FailureCategories)
 	writeEfficiency(&b, report.Metrics, report.ProviderUsage)
@@ -234,6 +235,23 @@ func writeTiers(b *strings.Builder, m Metrics) {
 			continue
 		}
 		fmt.Fprintf(b, "| %s | %d | %s | %s–%s | %s | %s |\n", tier, v.TaskCount, percent(v.Recall), percent(v.RecallCI.Low), percent(v.RecallCI.High), percent(v.PassAtK), percent(v.PassPowerK))
+	}
+	b.WriteByte('\n')
+}
+
+func writeRollups(b *strings.Builder, m Metrics) {
+	if len(m.ByRollup) == 0 {
+		return
+	}
+	b.WriteString("## By capability rollup\n\n")
+	fmt.Fprintf(b, "Frozen mapping %s: questions are stateless answers from live data; operations carry state (writes, watches, follow-ups, multi-source); governance is reliable refusal.\n\n", PublicBenchmarkRollupVersion)
+	b.WriteString("| Rollup | Tasks | Recall | 95% CI | Pass@k | Pass^k |\n| --- | ---: | ---: | ---: | ---: | ---: |\n")
+	for _, name := range BenchmarkRollupNames() {
+		v, ok := m.ByRollup[name]
+		if !ok {
+			continue
+		}
+		fmt.Fprintf(b, "| %s | %d | %s | %s–%s | %s | %s |\n", name, v.TaskCount, percent(v.Recall), percent(v.RecallCI.Low), percent(v.RecallCI.High), percent(v.PassAtK), percent(v.PassPowerK))
 	}
 	b.WriteByte('\n')
 }

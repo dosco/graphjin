@@ -1127,6 +1127,38 @@ func calculateMetrics(_ []Task, verdicts []TaskVerdict, episodes []Episode, init
 			RecallCI: bootstrapCI(categoryVerdicts, seed+1000+int64(index)),
 		}
 	}
+	// Capability rollups aggregate whole verdict sets per frozen group —
+	// task-weighted by construction, with pass^k recomputed over the group's
+	// own episodes rather than averaged from category numbers, which would be
+	// a mean of means. CI seeds offset by 2000 to keep every bootstrap stream
+	// distinct from the difficulty and category loops above.
+	for index, rollup := range benchmarkRollups {
+		var rollupVerdicts []TaskVerdict
+		rollupInitial := map[string][]Episode{}
+		hits := 0
+		for _, verdict := range verdicts {
+			if RollupForCategory(verdict.Category) != rollup.Name {
+				continue
+			}
+			rollupVerdicts = append(rollupVerdicts, verdict)
+			rollupInitial[verdict.TaskID] = initial[verdict.TaskID]
+			if verdict.Pass {
+				hits++
+			}
+		}
+		if len(rollupVerdicts) == 0 {
+			continue
+		}
+		pAt, pPower := passK(rollupInitial)
+		if out.ByRollup == nil {
+			out.ByRollup = map[string]TierMetrics{}
+		}
+		out.ByRollup[rollup.Name] = TierMetrics{
+			TaskCount: len(rollupVerdicts), Recall: ratio(hits, len(rollupVerdicts)),
+			PassAtK: pAt, PassPowerK: pPower,
+			RecallCI: bootstrapCI(rollupVerdicts, seed+2000+int64(index)),
+		}
+	}
 	return out
 }
 

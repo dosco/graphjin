@@ -185,6 +185,7 @@ type Metrics struct {
 	RecallCI           ConfidenceInterval         `json:"recall_ci"`
 	ByTier             map[Difficulty]TierMetrics `json:"by_tier,omitempty"`
 	ByCategory         map[Category]TierMetrics   `json:"by_category,omitempty"`
+	ByRollup           map[string]TierMetrics     `json:"by_rollup,omitempty"`
 	FailureCategories  map[string]int             `json:"failure_categories,omitempty"`
 	EnvironmentErrors  int                        `json:"environment_errors,omitempty"`
 	GuardInterventions int                        `json:"guard_interventions,omitempty"`
