@@ -228,6 +228,100 @@ func TestConcurrentRunMatchesSerialResults(t *testing.T) {
 	}
 }
 
+// TestConcurrentRunResumesRunScheduledSerially pins that scheduling is not a
+// comparability key: an interrupted serial run resumes with --concurrency (the
+// whole point of the flag, since the runs worth resuming are the slow ones),
+// and the finished run still declares it was scheduled concurrently.
+func TestConcurrentRunResumesRunScheduledSerially(t *testing.T) {
+	suite := concurrencySuite(t, 2, 0)
+	store := NewStore(t.TempDir())
+	instance := &StaticInstance{URL: "http://graphjin.test", TargetLabel: "test"}
+	probe := &concurrencyProbe{}
+	inner := concurrencyDoer(t, probe, time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	first := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if !strings.HasSuffix(request.URL.Path, "/graphql") {
+			calls++
+			if calls == 2 {
+				cancel()
+				<-request.Context().Done()
+				return nil, request.Context().Err()
+			}
+		}
+		return inner.Do(request)
+	})
+	opts := RunOptions{Intent: RunIntentRun, Repeats: 3, Seed: 23, Store: store, BinaryFingerprint: "binary", Provenance: RunProvenance{Model: "model"}}
+	firstReport, err := (Runner{Client: first, RetryDelay: time.Nanosecond}).Run(ctx, suite, instance, opts)
+	if !errors.Is(err, ErrRunInterrupted) {
+		t.Fatalf("first run error = %v, want interruption", err)
+	}
+	if firstReport.Provenance.Concurrency != 0 {
+		t.Fatalf("serial first leg concurrency = %d, want 0", firstReport.Provenance.Concurrency)
+	}
+
+	resumed := opts
+	resumed.Concurrency = 4
+	report, err := (Runner{Client: inner, RetryDelay: time.Nanosecond}).Run(context.Background(), suite, instance, resumed)
+	if err != nil {
+		t.Fatalf("resume with concurrency: %v", err)
+	}
+	if report.RunID != firstReport.RunID {
+		t.Fatalf("resume started a new run %s (first %s)", report.RunID, firstReport.RunID)
+	}
+	if report.RunStatus != RunStatusComplete {
+		t.Fatalf("resumed run status = %s", report.RunStatus)
+	}
+	if report.Provenance.Concurrency != 4 {
+		t.Fatalf("resumed provenance concurrency = %d, want 4", report.Provenance.Concurrency)
+	}
+
+}
+
+// TestSerialResumeKeepsConcurrentRunOnRecord is the other direction: finishing
+// a concurrent run serially must not erase that it was scheduled concurrently,
+// since the latency it already recorded stays non-comparable with a serial row.
+func TestSerialResumeKeepsConcurrentRunOnRecord(t *testing.T) {
+	suite := concurrencySuite(t, 2, 0)
+	store := NewStore(t.TempDir())
+	instance := &StaticInstance{URL: "http://graphjin.test", TargetLabel: "test"}
+	probe := &concurrencyProbe{}
+	inner := concurrencyDoer(t, probe, time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var calls atomic.Int64
+	first := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if !strings.HasSuffix(request.URL.Path, "/graphql") && calls.Add(1) == 2 {
+			cancel()
+			<-request.Context().Done()
+			return nil, request.Context().Err()
+		}
+		return inner.Do(request)
+	})
+	opts := RunOptions{Intent: RunIntentRun, Repeats: 3, Seed: 23, Store: store, BinaryFingerprint: "binary", Provenance: RunProvenance{Model: "model"}, Concurrency: 4}
+	firstReport, err := (Runner{Client: first, RetryDelay: time.Nanosecond}).Run(ctx, suite, instance, opts)
+	if !errors.Is(err, ErrRunInterrupted) {
+		t.Fatalf("first run error = %v, want interruption", err)
+	}
+	if firstReport.Provenance.Concurrency != 4 {
+		t.Fatalf("interrupted concurrent leg concurrency = %d, want 4", firstReport.Provenance.Concurrency)
+	}
+
+	serial := opts
+	serial.Concurrency = 1
+	report, err := (Runner{Client: inner, RetryDelay: time.Nanosecond}).Run(context.Background(), suite, instance, serial)
+	if err != nil {
+		t.Fatalf("serial resume of a concurrent run: %v", err)
+	}
+	if report.RunID != firstReport.RunID {
+		t.Fatalf("serial resume started a new run %s (first %s)", report.RunID, firstReport.RunID)
+	}
+	if report.Provenance.Concurrency != 4 {
+		t.Fatalf("concurrency dropped off the record on serial resume: %d", report.Provenance.Concurrency)
+	}
+}
+
 // TestConcurrentRunStopsOnEnvironmentFailure pins the failure contract: the
 // first environment failure cancels the pool, in-flight slots drain, and the
 // run finishes incomplete exactly as the serial loop would.

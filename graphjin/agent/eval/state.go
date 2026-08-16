@@ -295,7 +295,7 @@ func manifestCompatibilityMismatches(have, want RunManifest) []string {
 	check(have.RewardVersion == want.RewardVersion, "reward_version")
 	check(have.GeneratorVersion == want.GeneratorVersion, "generator_version")
 	check(have.BinaryFingerprint != "" && have.BinaryFingerprint == want.BinaryFingerprint, "binary_fingerprint")
-	check(canonicalHash(have.Provenance) == canonicalHash(want.Provenance), "provenance")
+	check(canonicalHash(comparableProvenance(have.Provenance)) == canonicalHash(comparableProvenance(want.Provenance)), "provenance")
 	check(have.BaselineRunID == want.BaselineRunID && have.BaselineFingerprint == want.BaselineFingerprint, "baseline")
 	check(have.AutoBaseline == want.AutoBaseline, "auto_baseline")
 	check(have.DeliberatePromotion == want.DeliberatePromotion, "deliberate_promotion")
