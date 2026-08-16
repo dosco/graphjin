@@ -818,9 +818,9 @@ if (await exists(benchmarkDataPath)) {
         }
         for (const [rollup, expectedValue] of Object.entries(run.rollup_recall ?? {})) {
           const escapedRollup = rollup.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const rollupPattern = new RegExp(`data-rollup=(?:"${escapedRollup}"|'${escapedRollup}')\\s+data-rollup-recall=(?:"([^"]*)"|'([^']*)')`);
+          const rollupPattern = new RegExp(`data-rollup=(?:"${escapedRollup}"|'${escapedRollup}'|${escapedRollup})\\s+data-rollup-recall=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`);
           const match = rollupPattern.exec(runPage);
-          const rendered = match ? Number(match[1] ?? match[2]) : Number.NaN;
+          const rendered = match ? Number(match[1] ?? match[2] ?? match[3]) : Number.NaN;
           if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
             failures.push(`DeepORG run rollup ${rollup} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
           }

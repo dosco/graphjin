@@ -348,6 +348,14 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	}
 	sort.Slice(data.Runs, func(i, j int) bool { return data.Runs[i].RunID < data.Runs[j].RunID })
 
+	// The rollup mapping is frozen, versioned data the site checker validates
+	// rows against; a same-generation publish must carry it too, not only the
+	// cohort-advance path that rebuilds the whole suite block.
+	if data.Suite.RollupMapVersion != gjeval.PublicBenchmarkRollupVersion {
+		data.Suite.RollupMapVersion = gjeval.PublicBenchmarkRollupVersion
+		data.Suite.RollupMap = gjeval.BenchmarkRollupMap()
+	}
+
 	markdown, err := store.LoadReportMarkdown(runID)
 	if err != nil {
 		return err
