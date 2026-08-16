@@ -22,6 +22,10 @@ type RunProvenance struct {
 	Seed               int64   `json:"seed"`
 	Repeats            int     `json:"repeats"`
 	MaxSteps           int     `json:"max_steps,omitempty"`
+	// Reasoning records the provider thinking effort the run used. Absent
+	// means the provider default, which for some adapters is thinking off —
+	// runs are not comparable across different values.
+	Reasoning          string  `json:"reasoning,omitempty"`
 	Target             string  `json:"target"`
 }
 

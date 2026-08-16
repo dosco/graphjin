@@ -55,6 +55,14 @@ type Config struct {
 	Model          string `mapstructure:"model" jsonschema:"title=Agent Model"`
 	APIKeyEnv      string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
 	BaseURL        string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
+	// Reasoning selects the provider's thinking effort for models that have
+	// one. It is deliberately explicit: providers disagree on the default,
+	// and DeepSeek's adapter disables thinking outright unless a level is
+	// supplied — a reasoning model shipped with its reasoning off looks
+	// exactly like a weak model, which is how a benchmark run measured 0.177
+	// before this setting existed. Accepted: none, low, medium, high, xhigh
+	// (highest). Empty keeps the provider default.
+	Reasoning      string `mapstructure:"reasoning" jsonschema:"title=Agent Reasoning Effort,description=Provider thinking effort for models that support it: none low medium high xhigh"`
 	MaxSteps       int    `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
 	TimeoutSeconds int    `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
 	ReadOnly       bool   `mapstructure:"read_only" jsonschema:"title=Force Agent Read-Only,default=false"`
@@ -535,7 +543,68 @@ func DefaultClientFactory(cfg Config) (ax.AIClient, error) {
 		options["baseUrl"] = cfg.BaseURL
 		options["base_url"] = cfg.BaseURL
 	}
-	return ax.NewAI(cfg.Provider, options), nil
+	client := ax.NewAI(cfg.Provider, options)
+	if reasoning := normalizedReasoningEffort(cfg.Reasoning); reasoning != "" {
+		client = &reasoningClient{inner: client, budget: reasoning}
+	}
+	return client, nil
+}
+
+// reasoningClient sets the thinking budget on every request ax hands to the
+// provider. ax builds each request's model_config from a fixed key set and
+// never carries a caller-supplied budget into it, so configuring the client
+// or the program has no effect — provider adapters then see no thinking
+// signal and disable thinking outright. Setting it here, at the boundary ax
+// itself calls, is the one place the value survives.
+type reasoningClient struct {
+	inner  ax.AIClient
+	budget string
+}
+
+func (c *reasoningClient) withBudget(req map[string]ax.Value) map[string]ax.Value {
+	if req == nil {
+		return req
+	}
+	config, _ := req["model_config"].(map[string]ax.Value)
+	if config == nil {
+		config = map[string]ax.Value{}
+	}
+	config["thinkingTokenBudget"] = c.budget
+	config["thinking_token_budget"] = c.budget
+	req["model_config"] = config
+	return req
+}
+
+func (c *reasoningClient) Chat(ctx context.Context, req map[string]ax.Value, opts map[string]ax.Value) (ax.Value, error) {
+	return c.inner.Chat(ctx, c.withBudget(req), opts)
+}
+
+func (c *reasoningClient) Embed(ctx context.Context, req map[string]ax.Value, opts map[string]ax.Value) (ax.Value, error) {
+	return c.inner.Embed(ctx, req, opts)
+}
+
+func (c *reasoningClient) Stream(ctx context.Context, req map[string]ax.Value, opts map[string]ax.Value) ([]ax.Value, error) {
+	return c.inner.Stream(ctx, c.withBudget(req), opts)
+}
+
+// normalizedReasoningEffort maps the configured effort onto the vocabulary ax
+// providers accept, and drops anything unrecognized rather than passing a
+// value through that would silently disable thinking.
+func normalizedReasoningEffort(reasoning string) string {
+	switch strings.ToLower(strings.TrimSpace(reasoning)) {
+	case "none":
+		return "none"
+	case "low", "minimal":
+		return "low"
+	case "medium", "default":
+		return "medium"
+	case "high":
+		return "high"
+	case "xhigh", "highest", "max":
+		return "highest"
+	default:
+		return ""
+	}
 }
 
 func (c Config) withDefaults() Config {

@@ -1009,6 +1009,7 @@ func evalProvenance(instance gjeval.Instance, seed int64, status gjeval.AgentSta
 		Seed:               seed,
 		Repeats:            gjeval.DefaultRepeats,
 		MaxSteps:           status.MaxSteps,
+		Reasoning:          status.Reasoning,
 		Target:             instance.Label(),
 	}
 }
