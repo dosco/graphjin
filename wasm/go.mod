@@ -3,8 +3,8 @@ module github.com/dosco/graphjin/wasm/v3
 go 1.25.0
 
 require (
-	github.com/dosco/graphjin/conf/v3 v3.20.21
-	github.com/dosco/graphjin/core/v3 v3.20.21
+	github.com/dosco/graphjin/conf/v3 v3.20.22
+	github.com/dosco/graphjin/core/v3 v3.20.22
 )
 
 replace (
