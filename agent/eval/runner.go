@@ -263,6 +263,13 @@ func (r Runner) Prepare(ctx context.Context, suite Suite, instance Instance, opt
 	}
 	opts.RunID = want.RunID
 	report.RunID = want.RunID
+	if want.Provenance.Concurrency > report.Provenance.Concurrency {
+		// A run scheduled concurrently at any point keeps that on its record: the
+		// latency percentiles it already collected never become comparable with a
+		// serial row, even when the remaining slots finish serially.
+		report.Provenance.Concurrency = want.Provenance.Concurrency
+	}
+	want.Provenance.Concurrency = report.Provenance.Concurrency
 	reusedInitial, reusedConfirmation := countEpisodeKinds(existing)
 	want.Progress.ReusedEpisodeCount = len(existing)
 	want.Progress.CompletedInitialSlots = reusedInitial
@@ -506,10 +513,19 @@ func (p *PreparedRun) executeSlots(ctx context.Context, pending []slotRequest) (
 	return episodes, "", "", nil
 }
 
+// resumeCommand formats the manifest's resume hint under the shared lock:
+// concurrent slots keep updating its counters while another slot is building
+// an interruption error out of it.
+func (p *PreparedRun) resumeCommand() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.manifest.ResumeCommand()
+}
+
 func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confirmation bool) (Episode, string, error) {
 	for localAttempt := 1; localAttempt <= p.opts.MaxTransientAttempts; localAttempt++ {
 		if err := ctx.Err(); err != nil {
-			return Episode{}, "", fmt.Errorf("%w: %s", ErrRunInterrupted, p.manifest.ResumeCommand())
+			return Episode{}, "", fmt.Errorf("%w: %s", ErrRunInterrupted, p.resumeCommand())
 		}
 		episode, gateCode := func() (Episode, string) {
 			if task.Mutation != nil {
@@ -550,6 +566,11 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 		}
 		p.mu.Lock()
 		p.manifest.Progress.ProviderAttempts++
+		// Attempt numbers identify a record run-wide, so each slot keeps the number
+		// its own increment produced. Re-reading the counter at persist time hands
+		// two concurrent failures the same number, and the second one overwrites
+		// the first on disk.
+		attemptNumber := p.manifest.Progress.ProviderAttempts
 		p.manifest.ProviderUsage.PromptTokens += episode.Score.Tokens.Prompt
 		p.manifest.ProviderUsage.CompletionTokens += episode.Score.Tokens.Completion
 		p.manifest.ProviderUsage.TotalTokens += episode.Score.Tokens.Total
@@ -594,7 +615,7 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 			return episode, "", nil
 		}
 		p.mu.Lock()
-		if err := p.persistAttempt(episode, code, retryable); err != nil {
+		if err := p.persistAttempt(episode, code, retryable, attemptNumber); err != nil {
 			p.mu.Unlock()
 			return Episode{}, "", err
 		}
@@ -606,7 +627,7 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 		}
 		p.mu.Unlock()
 		if code == "interrupted" {
-			return Episode{}, "", fmt.Errorf("%w: %s", ErrRunInterrupted, p.manifest.ResumeCommand())
+			return Episode{}, "", fmt.Errorf("%w: %s", ErrRunInterrupted, p.resumeCommand())
 		}
 		if !retryable || localAttempt == p.opts.MaxTransientAttempts {
 			return Episode{}, code, nil
@@ -623,7 +644,7 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return Episode{}, "", fmt.Errorf("%w: %s", ErrRunInterrupted, p.manifest.ResumeCommand())
+			return Episode{}, "", fmt.Errorf("%w: %s", ErrRunInterrupted, p.resumeCommand())
 		case <-timer.C:
 		}
 	}
@@ -698,14 +719,14 @@ func prepareMutationEpisode(ctx context.Context, runner Runner, client HTTPDoer,
 	}
 }
 
-func (p *PreparedRun) persistAttempt(episode Episode, code string, retryable bool) error {
+func (p *PreparedRun) persistAttempt(episode Episode, code string, retryable bool, number int) error {
 	if p.opts.Store == nil {
 		return nil
 	}
 	attempt := Attempt{
 		RunID: episode.RunID, TaskID: episode.TaskID, TaskSlug: episode.TaskSlug,
 		Repeat: episode.Repeat, Confirmation: episode.Confirmation,
-		Attempt: p.manifest.Progress.ProviderAttempts, StartedAt: episode.StartedAt, CompletedAt: p.runner.now(),
+		Attempt: number, StartedAt: episode.StartedAt, CompletedAt: p.runner.now(),
 		HTTPStatus: episode.HTTPStatus, LatencyMS: episode.LatencyMS,
 		ErrorCode: code, Retryable: retryable, Error: episode.Error, Response: episode.Response, Tokens: episode.Score.Tokens,
 	}
@@ -833,7 +854,7 @@ func validateResumedEpisodes(episodes []Episode, suite Suite, instance Instance,
 		if episode.Seed != episodeSeed(opts.Seed, task.ID, episode.Repeat, episode.Confirmation) {
 			return fmt.Errorf("resumed episode seed mismatch for slot %s (have %d)", episodeSlotKey(episode), episode.Seed)
 		}
-		if canonicalHash(episode.Dataset) != canonicalHash(instance.Fingerprint()) || canonicalHash(episode.Provenance) != canonicalHash(opts.Provenance) || episode.RewardVersion != RewardVersion {
+		if canonicalHash(episode.Dataset) != canonicalHash(instance.Fingerprint()) || canonicalHash(comparableProvenance(episode.Provenance)) != canonicalHash(comparableProvenance(opts.Provenance)) || episode.RewardVersion != RewardVersion {
 			return fmt.Errorf("resumed episode provenance mismatch for slot %s", episodeSlotKey(episode))
 		}
 		if task.Oracle != nil {
@@ -846,6 +867,15 @@ func validateResumedEpisodes(episodes []Episode, suite Suite, instance Instance,
 		}
 	}
 	return nil
+}
+
+// comparableProvenance drops the fields that describe how a run was scheduled
+// rather than what it measured. Episodes are independent of one another, so a
+// serial run stays resumable with --concurrency (and the reverse): each episode
+// keeps recording the concurrency it actually ran under.
+func comparableProvenance(provenance RunProvenance) RunProvenance {
+	provenance.Concurrency = 0
+	return provenance
 }
 
 func validateResumedAttempts(attempts []Attempt, suite Suite, opts RunOptions, runID string) error {
