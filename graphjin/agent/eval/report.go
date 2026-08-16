@@ -26,6 +26,9 @@ type RunProvenance struct {
 	// means the provider default, which for some adapters is thinking off —
 	// runs are not comparable across different values.
 	Reasoning          string  `json:"reasoning,omitempty"`
+	// TimeoutSeconds is the agent's per-run deadline. The harness sizes its
+	// own HTTP timeout from it: one request covers a whole multi-step run.
+	TimeoutSeconds     int     `json:"timeout_seconds,omitempty"`
 	Target             string  `json:"target"`
 }
 
