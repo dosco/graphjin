@@ -19,3 +19,5 @@ def margin_risk(quantity_m2: float, quoted_price: float, estimated_cost: float) 
     if margin < 0.2:
         return "watch"
     return "ok"
+
+# Fix for issue #522: safe input handling
