@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
@@ -35,6 +36,14 @@ type RunOptions struct {
 	BinaryFingerprint    string
 	InvocationArgs       []string
 	MaxTransientAttempts int
+	// Concurrency is the number of episode slots executed at once. Zero and
+	// one mean the historical serial order, byte-for-byte. Above one,
+	// read-only episodes run in parallel while any episode that mutates the
+	// demo database (task.Mutation != nil — it resets state before and after)
+	// holds the instance exclusively. Per-episode latency is still measured
+	// per episode, but percentiles observed under load are not comparable to
+	// serial rows, so the value is recorded in run provenance.
+	Concurrency int
 }
 
 type Runner struct {
@@ -59,6 +68,17 @@ type PreparedRun struct {
 	lock     *RunLock
 	invalid  bool
 	closed   bool
+
+	// mu guards the shared accounting a slot performs — manifest counters and
+	// usage sums, report episode paths, and manifest/episode/attempt persists.
+	// It is never held across agent traffic or retry sleeps.
+	mu sync.Mutex
+	// slotGate serializes database occupancy: read-only episodes hold it
+	// shared, and any episode that resets the instance (task.Mutation != nil)
+	// holds it exclusively — a concurrent reader would otherwise observe a
+	// half-prepared or half-reset world and fail in ways indistinguishable
+	// from the model being wrong.
+	slotGate sync.RWMutex
 }
 
 func (r Runner) Run(ctx context.Context, suite Suite, instance Instance, opts RunOptions) (*Report, error) {
@@ -104,6 +124,15 @@ func (r Runner) Prepare(ctx context.Context, suite Suite, instance Instance, opt
 	}
 	if opts.MaxTransientAttempts <= 0 {
 		opts.MaxTransientAttempts = 2
+	}
+	if opts.Concurrency < 1 {
+		opts.Concurrency = 1
+	}
+	if opts.Concurrency > 16 {
+		opts.Concurrency = 16
+	}
+	if opts.Concurrency > 1 {
+		opts.Provenance.Concurrency = opts.Concurrency
 	}
 	opts.Provenance.Seed = opts.Seed
 	opts.Provenance.Repeats = opts.Repeats
@@ -288,21 +317,25 @@ func (p *PreparedRun) Execute(ctx context.Context) (*Report, error) {
 		}
 		p.appendEpisodePath(episode)
 	}
+	pending := make([]slotRequest, 0, len(p.suite.Tasks)*p.opts.Repeats)
 	for _, task := range p.suite.Tasks {
 		for rep := 1; rep <= p.opts.Repeats; rep++ {
 			if episodeSlotPresent(initial[task.ID], rep) {
 				continue
 			}
-			episode, environmentCode, err := p.executeSlot(ctx, task, rep, false)
-			if err != nil {
-				return p.finishIncomplete(RunStatusInterrupted, "interrupted", err)
-			}
-			if environmentCode != "" {
-				return p.finishIncomplete(RunStatusEnvironmentFailed, environmentCode, nil)
-			}
-			initial[task.ID] = append(initial[task.ID], episode)
-			allEpisodes = append(allEpisodes, episode)
+			pending = append(pending, slotRequest{task: task, rep: rep})
 		}
+	}
+	done, status, code, err := p.executeSlots(ctx, pending)
+	if err != nil {
+		return p.finishIncomplete(status, code, err)
+	}
+	if code != "" {
+		return p.finishIncomplete(status, code, nil)
+	}
+	for _, episode := range done {
+		initial[episode.TaskID] = append(initial[episode.TaskID], episode)
+		allEpisodes = append(allEpisodes, episode)
 	}
 
 	baselineTasks := map[string]TaskVerdict{}
@@ -320,21 +353,25 @@ func (p *PreparedRun) Execute(ctx context.Context) (*Report, error) {
 	if err := p.persistManifest(); err != nil {
 		return nil, err
 	}
+	pendingConfirmation := make([]slotRequest, 0, len(confirmationTasks)*p.opts.Repeats)
 	for _, task := range confirmationTasks {
 		for rep := 1; rep <= p.opts.Repeats; rep++ {
 			if episodeSlotPresent(confirmation[task.ID], rep) {
 				continue
 			}
-			episode, environmentCode, err := p.executeSlot(ctx, task, rep, true)
-			if err != nil {
-				return p.finishIncomplete(RunStatusInterrupted, "interrupted", err)
-			}
-			if environmentCode != "" {
-				return p.finishIncomplete(RunStatusEnvironmentFailed, environmentCode, nil)
-			}
-			confirmation[task.ID] = append(confirmation[task.ID], episode)
-			allEpisodes = append(allEpisodes, episode)
+			pendingConfirmation = append(pendingConfirmation, slotRequest{task: task, rep: rep, confirmation: true})
 		}
+	}
+	confirmed, status, code, err := p.executeSlots(ctx, pendingConfirmation)
+	if err != nil {
+		return p.finishIncomplete(status, code, err)
+	}
+	if code != "" {
+		return p.finishIncomplete(status, code, nil)
+	}
+	for _, episode := range confirmed {
+		confirmation[episode.TaskID] = append(confirmation[episode.TaskID], episode)
+		allEpisodes = append(allEpisodes, episode)
 	}
 
 	for _, task := range p.suite.Tasks {
@@ -373,41 +410,152 @@ func (p *PreparedRun) Execute(ctx context.Context) (*Report, error) {
 	return p.report, nil
 }
 
+// slotRequest is one planned episode: a task, a repeat number, and which
+// phase it belongs to.
+type slotRequest struct {
+	task         Task
+	rep          int
+	confirmation bool
+}
+
+type slotResult struct {
+	episode Episode
+	code    string
+	err     error
+}
+
+// executeSlots runs the pending slots and returns their episodes in pending
+// order, so downstream aggregation sees the same sequence a serial run
+// produces. At Concurrency 1 it is the historical loop verbatim. Above one it
+// fans out over a bounded worker pool; the first failure (environment code or
+// interruption) cancels the remaining work, drains in-flight slots, and is
+// reported exactly as the serial loop would have reported it.
+func (p *PreparedRun) executeSlots(ctx context.Context, pending []slotRequest) ([]Episode, RunStatus, string, error) {
+	if len(pending) == 0 {
+		return nil, "", "", nil
+	}
+	workers := p.opts.Concurrency
+	if workers <= 1 || len(pending) == 1 {
+		episodes := make([]Episode, 0, len(pending))
+		for _, request := range pending {
+			episode, code, err := p.executeSlot(ctx, request.task, request.rep, request.confirmation)
+			if err != nil {
+				return nil, RunStatusInterrupted, "interrupted", err
+			}
+			if code != "" {
+				return nil, RunStatusEnvironmentFailed, code, nil
+			}
+			episodes = append(episodes, episode)
+		}
+		return episodes, "", "", nil
+	}
+	if workers > len(pending) {
+		workers = len(pending)
+	}
+
+	poolCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	jobs := make(chan int)
+	results := make([]slotResult, len(pending))
+	var failure slotResult
+	var failed bool
+	var failureMu sync.Mutex
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				request := pending[index]
+				episode, code, err := p.executeSlot(poolCtx, request.task, request.rep, request.confirmation)
+				results[index] = slotResult{episode: episode, code: code, err: err}
+				if err != nil || code != "" {
+					failureMu.Lock()
+					if !failed {
+						failed = true
+						failure = results[index]
+					}
+					failureMu.Unlock()
+					cancel()
+				}
+			}
+		}()
+	}
+	for index := range pending {
+		select {
+		case jobs <- index:
+		case <-poolCtx.Done():
+		}
+		if poolCtx.Err() != nil {
+			break
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	if failed {
+		if failure.err != nil {
+			return nil, RunStatusInterrupted, "interrupted", failure.err
+		}
+		return nil, RunStatusEnvironmentFailed, failure.code, nil
+	}
+	episodes := make([]Episode, 0, len(pending))
+	for index := range pending {
+		episodes = append(episodes, results[index].episode)
+	}
+	return episodes, "", "", nil
+}
+
 func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confirmation bool) (Episode, string, error) {
 	for localAttempt := 1; localAttempt <= p.opts.MaxTransientAttempts; localAttempt++ {
 		if err := ctx.Err(); err != nil {
 			return Episode{}, "", fmt.Errorf("%w: %s", ErrRunInterrupted, p.manifest.ResumeCommand())
 		}
-		var resettable ResettableInstance
-		var collateralBefore []OracleResult
-		if task.Mutation != nil {
-			resettable = p.instance.(ResettableInstance)
-			if err := resettable.Reset(ctx); err != nil {
-				return Episode{}, "reset_failed", nil
+		episode, gateCode := func() (Episode, string) {
+			if task.Mutation != nil {
+				p.slotGate.Lock()
+				defer p.slotGate.Unlock()
+			} else {
+				p.slotGate.RLock()
+				defer p.slotGate.RUnlock()
 			}
-			if err := prepareMutationEpisode(ctx, p.runner, p.client, p.instance, task.Mutation); err != nil {
-				_ = resettable.Reset(ctx)
-				return Episode{}, "setup_failed", nil
+			var resettable ResettableInstance
+			var collateralBefore []OracleResult
+			if task.Mutation != nil {
+				resettable = p.instance.(ResettableInstance)
+				if err := resettable.Reset(ctx); err != nil {
+					return Episode{}, "reset_failed"
+				}
+				if err := prepareMutationEpisode(ctx, p.runner, p.client, p.instance, task.Mutation); err != nil {
+					_ = resettable.Reset(ctx)
+					return Episode{}, "setup_failed"
+				}
+				var err error
+				collateralBefore, err = resolveMutationCollateral(ctx, p.runner, p.client, p.instance, task.Mutation.Collateral)
+				if err != nil {
+					_ = resettable.Reset(ctx)
+					return Episode{}, "oracle_failed"
+				}
 			}
-			var err error
-			collateralBefore, err = resolveMutationCollateral(ctx, p.runner, p.client, p.instance, task.Mutation.Collateral)
-			if err != nil {
-				_ = resettable.Reset(ctx)
-				return Episode{}, "oracle_failed", nil
+			episode := p.runner.runEpisode(ctx, p.client, p.instance, p.opts, task, rep, confirmation, p.oracles, collateralBefore)
+			if resettable != nil {
+				if err := resettable.Reset(ctx); err != nil {
+					return Episode{}, "reset_failed"
+				}
 			}
+			return episode, ""
+		}()
+		if gateCode != "" {
+			return Episode{}, gateCode, nil
 		}
-		episode := p.runner.runEpisode(ctx, p.client, p.instance, p.opts, task, rep, confirmation, p.oracles, collateralBefore)
-		if resettable != nil {
-			if err := resettable.Reset(ctx); err != nil {
-				return Episode{}, "reset_failed", nil
-			}
-		}
+		p.mu.Lock()
 		p.manifest.Progress.ProviderAttempts++
 		p.manifest.ProviderUsage.PromptTokens += episode.Score.Tokens.Prompt
 		p.manifest.ProviderUsage.CompletionTokens += episode.Score.Tokens.Completion
 		p.manifest.ProviderUsage.TotalTokens += episode.Score.Tokens.Total
 		p.manifest.ProviderUsage.LLMCalls += episode.Score.Tokens.LLMCalls
 		p.manifest.ProviderUsage.LatencyMS += episode.LatencyMS
+		p.mu.Unlock()
 		code, retryable := episodeEnvironment(episode)
 		// Auth errors are classified fatal for callers, and for a dead key that is
 		// right — but a benchmark run observes hundreds of successes around a single
@@ -421,11 +569,15 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 			code, retryable = "interrupted", false
 		}
 		if providerUsageUnknown(code) {
+			p.mu.Lock()
 			p.manifest.ProviderUsage.Complete = false
 			p.manifest.ProviderUsage.UnknownAttempts++
+			p.mu.Unlock()
 		}
 		if code == "" {
+			p.mu.Lock()
 			if err := p.runner.persistEpisode(p.report, p.opts.Store, episode); err != nil {
+				p.mu.Unlock()
 				return Episode{}, "", err
 			}
 			if confirmation {
@@ -435,28 +587,37 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 			}
 			p.manifest.UpdatedAt = p.runner.now()
 			if err := p.persistManifest(); err != nil {
+				p.mu.Unlock()
 				return Episode{}, "", err
 			}
+			p.mu.Unlock()
 			return episode, "", nil
 		}
+		p.mu.Lock()
 		if err := p.persistAttempt(episode, code, retryable); err != nil {
+			p.mu.Unlock()
 			return Episode{}, "", err
 		}
 		p.manifest.LastEnvironmentCode = code
 		p.manifest.UpdatedAt = p.runner.now()
 		if err := p.persistManifest(); err != nil {
+			p.mu.Unlock()
 			return Episode{}, "", err
 		}
+		p.mu.Unlock()
 		if code == "interrupted" {
 			return Episode{}, "", fmt.Errorf("%w: %s", ErrRunInterrupted, p.manifest.ResumeCommand())
 		}
 		if !retryable || localAttempt == p.opts.MaxTransientAttempts {
 			return Episode{}, code, nil
 		}
+		p.mu.Lock()
 		p.manifest.Progress.RetryCount++
 		if err := p.persistManifest(); err != nil {
+			p.mu.Unlock()
 			return Episode{}, "", err
 		}
+		p.mu.Unlock()
 		delay := retryDelayForCode(p.runner.RetryDelay, code)
 		timer := time.NewTimer(delay)
 		select {

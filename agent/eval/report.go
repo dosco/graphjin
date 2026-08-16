@@ -29,6 +29,10 @@ type RunProvenance struct {
 	// TimeoutSeconds is the agent's per-run deadline. The harness sizes its
 	// own HTTP timeout from it: one request covers a whole multi-step run.
 	TimeoutSeconds     int     `json:"timeout_seconds,omitempty"`
+	// Concurrency records parallel episode execution (absent means serial).
+	// Latency percentiles measured under load are not comparable to serial
+	// rows, which is why the row must say how it ran.
+	Concurrency        int     `json:"concurrency,omitempty"`
 	Target             string  `json:"target"`
 }
 

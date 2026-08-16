@@ -54,6 +54,7 @@ type evalCLIOptions struct {
 	Debug       bool
 	ResumeRunID string
 	Restart     bool
+	Concurrency int
 }
 
 func evalCmd() *cobra.Command {
@@ -88,6 +89,7 @@ func evalCmd() *cobra.Command {
 func addEvalResumeFlags(cmd *cobra.Command, opts *evalCLIOptions) {
 	cmd.Flags().StringVar(&opts.ResumeRunID, "resume", "", "resume one compatible incomplete run by id")
 	cmd.Flags().BoolVar(&opts.Restart, "restart", false, "start a fresh run without deleting incomplete state")
+	cmd.Flags().IntVar(&opts.Concurrency, "concurrency", 1, "episodes in flight at once; mutation episodes still run exclusively (max 16)")
 }
 
 func evalResumePolicy(opts *evalCLIOptions) (gjeval.ResumePolicy, error) {
@@ -384,7 +386,7 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 				Mode: gjeval.RunModeBenchmark, Intent: gjeval.RunIntentBench, Repeats: gjeval.DefaultRepeats, Seed: seed,
 				Provenance: evalProvenance(instance, seed, status), Baseline: baseline, Store: store,
 				ResumePolicy: policy, ResumeRunID: opts.ResumeRunID, BinaryFingerprint: evalBinaryFingerprint(),
-				InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed),
+				InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed), Concurrency: opts.Concurrency,
 			})
 			if err != nil {
 				return evalEnvironmentError(err)
@@ -563,7 +565,7 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 		Provenance: evalProvenance(instance, seed, status), Baseline: baseline, Store: store,
 		AutoBaseline: autoBaseline, DeliberatePromotion: deliberatePromotion,
 		ResumePolicy: policy, ResumeRunID: opts.ResumeRunID, BinaryFingerprint: evalBinaryFingerprint(),
-		InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed),
+		InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed), Concurrency: opts.Concurrency,
 	})
 	if err != nil {
 		return nil, nil, evalEnvironmentError(err)
@@ -988,6 +990,9 @@ func evalInvocationArgs(opts *evalCLIOptions, projectPath string, scale int, see
 	}
 	if opts.Debug {
 		args = append(args, "--debug")
+	}
+	if opts.Concurrency > 1 {
+		args = append(args, "--concurrency", strconv.Itoa(opts.Concurrency))
 	}
 	return args
 }
