@@ -111,7 +111,16 @@ func (r Runner) Prepare(ctx context.Context, suite Suite, instance Instance, opt
 	opts.Provenance.BinaryFingerprint = opts.BinaryFingerprint
 	client := r.Client
 	if client == nil {
-		client = &http.Client{Timeout: 90 * time.Second}
+		// One agent request covers a whole multi-step run, so the harness must
+		// outlast the agent's own deadline rather than cutting it short. A
+		// reasoning-mode model spends far longer per step, and a fixed 90s
+		// ceiling turned every DeepSeek thinking episode into provider_timeout
+		// — indistinguishable from a model that cannot answer.
+		timeout := 90 * time.Second
+		if configured := opts.Provenance.TimeoutSeconds; configured > 0 {
+			timeout = time.Duration(configured)*time.Second + 30*time.Second
+		}
+		client = &http.Client{Timeout: timeout}
 	}
 	requestedRunID := opts.RunID
 	if requestedRunID == "" {
