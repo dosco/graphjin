@@ -1800,3 +1800,42 @@ func TestRunRejectsOverlongInstruction(t *testing.T) {
 		t.Fatalf("err = %v, want ErrInstructionTooLong", err)
 	}
 }
+
+// TestReasoningEffortReachesTheProvider pins the setting that a benchmark run
+// paid for: DeepSeek's adapter disables thinking unless a level is supplied,
+// so a reasoning model shipped with the default ran with reasoning off and
+// scored like a weak one. Config → ax model_config must carry the level.
+func TestReasoningEffortReachesTheProvider(t *testing.T) {
+	for _, tc := range []struct{ configured, want string }{
+		{"high", "high"},
+		{"xhigh", "highest"},
+		{"max", "highest"},
+		{"medium", "medium"},
+		{"none", "none"},
+		{"", ""},
+		{"nonsense", ""},
+	} {
+		if got := normalizedReasoningEffort(tc.configured); got != tc.want {
+			t.Fatalf("normalizedReasoningEffort(%q) = %q, want %q", tc.configured, got, tc.want)
+		}
+	}
+
+	t.Setenv("TEST_REASONING_KEY", "secret")
+	client, err := DefaultClientFactory(Config{
+		Provider: "deepseek", Model: "deepseek-v4-flash",
+		APIKeyEnv: "TEST_REASONING_KEY", Reasoning: "high",
+	})
+	if err != nil {
+		t.Fatalf("client factory: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected a client")
+	}
+	// An unset level must not fabricate a model_config: the provider default
+	// stays the provider's business.
+	if _, err := DefaultClientFactory(Config{
+		Provider: "deepseek", Model: "deepseek-v4-flash", APIKeyEnv: "TEST_REASONING_KEY",
+	}); err != nil {
+		t.Fatalf("client factory without reasoning: %v", err)
+	}
+}
