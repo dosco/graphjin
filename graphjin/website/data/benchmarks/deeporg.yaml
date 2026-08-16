@@ -34,6 +34,19 @@ suite:
         refusal: 10
         saved-metric: 9
         window: 15
+    rollup_map_version: v1
+    rollup_map:
+        action: operations
+        aggregate: questions
+        cross-source: operations
+        discovery: questions
+        multi-turn: operations
+        ranking: questions
+        reactive: operations
+        refusal: governance
+        saved-metric: questions
+        traversal: questions
+        window: questions
 runs:
     - run_id: 20260807T000640.940677000Z-04d010a6
       slug: 20260807t000640-04d010a6
@@ -849,7 +862,8 @@ runs:
       label: Gemini 3.7 Flash
       release: 2e9e4a3d
       notes: 'First generation-2028.2 row: v11 restores the 2027.2 cross-source file-read widening that v10 regressed, and the engine now serves a decoded text column on file sources. Clean single run, complete usage accounting.'
-      ranked: true
+      ranked: false
+      unranked_reason: superseded by GraphJin build 2e9e4a3d
       generation: "2028.2"
       generated_at: 2026-08-14T08:41:50.544493Z
       model: gemini-3.7-flash
@@ -905,7 +919,8 @@ runs:
       label: Gemini 3.5 Flash-Lite
       release: fd7a2a5d
       notes: 'Second generation-2028.2 row, on the post-fix build: watch teaching leads with the filtered subscription shape, the compiler accepts the column-arg aggregate spelling, and a failed write names the table''s real columns. Same frozen suite, seed and step cap as the 3.7 Flash row. Complete usage accounting.'
-      ranked: true
+      ranked: false
+      unranked_reason: superseded by GraphJin build fd7a2a5d
       generation: "2028.2"
       generated_at: 2026-08-15T05:49:44.123794Z
       model: gemini-3.5-flash-lite
@@ -955,4 +970,134 @@ runs:
       latency_p95_ms: 9869
       guard_interventions: 231
       unsafe_effects: 0
+      accepted: true
+    - run_id: 20260816T001003.659008000Z-61f8293f
+      slug: 20260816t001003-61f8293f
+      label: Gemini 3.7 Flash
+      release: 2e9e4a3d
+      notes: First generation-2028.2 row, republished with capability rollups (frozen mapping v1). Rescored from the original clean run at zero provider cost; scores unchanged.
+      ranked: true
+      generation: "2028.2"
+      generated_at: 2026-08-16T00:10:03.659008Z
+      model: gemini-3.7-flash
+      provider: gemini
+      graphjin_commit: 2e9e4a3da315a40c836dde73c2224cbe2b75c51a
+      binary_fingerprint: 550850a24b34ea3f0dbe9c8c64706e55f608835f2f772641e30f070c5a0b0ead
+      suite_identity: 308df3840f76a1e97096df77c3e41f1e
+      suite_fingerprint: b77fb918d9dd40dc7204cc4241d6c763
+      catalog_hash: 51a57f1958b4c8e15a09f10d73f6a3f9
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 1d8137d08d2ab37b1d1bc1ae6207ddb3b227cb03335814c734e9e3bfb8d152e6
+      data_anchor: "2026-08-14"
+      reward_version: graphjin.eval.reward/v4
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.8230088495575221
+      recall_ci_low: 0.7522123893805309
+      recall_ci_high: 0.8849557522123894
+      pass_at_k: 0.9380530973451328
+      pass_power_k: 0.7079646017699115
+      ground_truth_recall: 0.8349514563106796
+      method_recall: 0.941747572815534
+      safety_precision: 1
+      behavior_recall: 0.9646017699115044
+      category_recall:
+        action: 0.6
+        aggregate: 1
+        cross-source: 0.875
+        discovery: 1
+        multi-turn: 0.7142857142857143
+        ranking: 1
+        reactive: 0.3333333333333333
+        refusal: 1
+        saved-metric: 1
+        window: 0.8
+      rollup_recall:
+        governance: 1
+        operations: 0.5952380952380952
+        questions: 0.9508196721311475
+      rollup_pass_power:
+        governance: 1
+        operations: 0.4523809523809524
+        questions: 0.8360655737704918
+      mean_reward: 0.9231053097345133
+      total_tokens: 13626436
+      prompt_tokens: 12776110
+      completion_tokens: 264016
+      provider_total_tokens: 13626436
+      latency_p50_ms: 10225
+      latency_p95_ms: 32128
+      guard_interventions: 127
+      unsafe_effects: 0
+      rescored_from: 20260814T084150.544485000Z-5d12a35b
+      accepted: true
+    - run_id: 20260816T001039.601090000Z-72791803
+      slug: 20260816t001039-72791803
+      label: Gemini 3.5 Flash-Lite
+      release: fd7a2a5d
+      notes: Second generation-2028.2 row, republished with capability rollups (frozen mapping v1). Rescored from the post-fix run at zero provider cost; scores unchanged.
+      ranked: true
+      generation: "2028.2"
+      generated_at: 2026-08-16T00:10:39.60109Z
+      model: gemini-3.5-flash-lite
+      provider: gemini
+      graphjin_commit: fd7a2a5d5566f6030eeff1b7b2ae57b38ac9e8c0
+      binary_fingerprint: 62e83c4522a5bd90fbb79aa1cc2e50d372640bc7e7d40c516a6f63acaf6d092b
+      suite_identity: 308df3840f76a1e97096df77c3e41f1e
+      suite_fingerprint: b77fb918d9dd40dc7204cc4241d6c763
+      catalog_hash: 51a57f1958b4c8e15a09f10d73f6a3f9
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 74097a5e716ada74e25ca680d1b76c4308f29459ad13fb0074fe27ae570ff2b9
+      data_anchor: "2026-08-15"
+      reward_version: graphjin.eval.reward/v4
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.6814159292035398
+      recall_ci_low: 0.5929203539823009
+      recall_ci_high: 0.7699115044247787
+      pass_at_k: 0.8141592920353983
+      pass_power_k: 0.48672566371681414
+      ground_truth_recall: 0.6796116504854369
+      method_recall: 0.7378640776699029
+      safety_precision: 1
+      behavior_recall: 0.7699115044247787
+      category_recall:
+        action: 0.6
+        aggregate: 0.8666666666666667
+        cross-source: 0.125
+        discovery: 0.9
+        multi-turn: 0.14285714285714285
+        ranking: 0.9166666666666666
+        reactive: 0.16666666666666666
+        refusal: 0.8
+        saved-metric: 0.8888888888888888
+        window: 1
+      rollup_recall:
+        governance: 0.8
+        operations: 0.30952380952380953
+        questions: 0.9180327868852459
+      rollup_pass_power:
+        governance: 0.8
+        operations: 0.19047619047619047
+        questions: 0.639344262295082
+      mean_reward: 0.825095575221239
+      total_tokens: 10593288
+      prompt_tokens: 10364819
+      completion_tokens: 228469
+      provider_total_tokens: 10593288
+      latency_p50_ms: 3839
+      latency_p95_ms: 9869
+      guard_interventions: 231
+      unsafe_effects: 0
+      rescored_from: 20260815T054944.123786000Z-dcea36f8
       accepted: true
