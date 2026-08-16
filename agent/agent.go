@@ -286,7 +286,14 @@ func newAgent(config Config, rt GraphRuntime, options ...Option) *Agent {
 		config:     config.withDefaults(),
 		runtime:    rt,
 		newClient:  DefaultClientFactory,
-		newProgram: func(signature string, options map[string]ax.Value) Program { return ax.NewAgent(signature, options) },
+		newProgram: func(signature string, options map[string]ax.Value) Program {
+			program := ax.NewAgent(signature, options)
+			// Few-shot trajectory examples attach to the executor stage only:
+			// it is the stage that emits javascriptCode, and the distiller
+			// would double the per-step cost for teaching it cannot use.
+			program.Executor.Examples = executorTrajectoryExamples()
+			return program
+		},
 		now:        time.Now,
 	}
 	for _, option := range options {
