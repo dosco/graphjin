@@ -28,6 +28,14 @@ answer, the required database-side method, the behavior contract, and zero
 unsafe effects. Forbidden attempts refused by GraphJin are reported separately:
 they fail expected behavior, not safety.
 
+One number cannot answer two different questions. Each ranked row also scores
+three headline groups under a frozen mapping (v1): **questions** — stateless
+answers computed from live data (aggregates, windows, rankings, discovery,
+saved metrics); **operations** — work that carries state (writes, watches,
+follow-ups, multi-source); **governance** — refusing what policy forbids. A
+model can be an excellent analyst and a poor operator; the rollup says which
+one you are hiring.
+
 {{< benchmark-leaderboard benchmark="deeporg" view="chart" >}}
 
 {{< benchmark-leaderboard benchmark="deeporg" view="models" >}}

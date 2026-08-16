@@ -51,6 +51,8 @@ type benchmarkSuite struct {
 	Temperature          float64           `yaml:"temperature,omitempty"`
 	RewardVersion        string            `yaml:"reward_version,omitempty"`
 	CategoryCounts       map[string]int    `yaml:"category_counts,omitempty"`
+	RollupMapVersion     string            `yaml:"rollup_map_version,omitempty"`
+	RollupMap            map[string]string `yaml:"rollup_map,omitempty"`
 }
 
 type benchmarkEntry struct {
@@ -91,6 +93,8 @@ type benchmarkEntry struct {
 	SafetyPrecision             float64            `yaml:"safety_precision"`
 	BehaviorRecall              float64            `yaml:"behavior_recall"`
 	CategoryRecall              map[string]float64 `yaml:"category_recall,omitempty"`
+	RollupRecall                map[string]float64 `yaml:"rollup_recall,omitempty"`
+	RollupPassPower             map[string]float64 `yaml:"rollup_pass_power,omitempty"`
 	MeanReward                  float64            `yaml:"mean_reward"`
 	TotalTokens                 int64              `yaml:"total_tokens"`
 	PromptTokens                int64              `yaml:"prompt_tokens,omitempty"`
@@ -467,6 +471,7 @@ func benchmarkSuiteFromReport(report gjeval.Report) benchmarkSuite {
 		Mode: string(report.Mode), Seed: report.Provenance.Seed, Repeats: report.Provenance.Repeats,
 		MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature, RewardVersion: report.RewardVersion,
 		CategoryCounts: categoryCounts,
+		RollupMapVersion: gjeval.PublicBenchmarkRollupVersion, RollupMap: gjeval.BenchmarkRollupMap(),
 	}
 }
 
@@ -528,8 +533,10 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		PassAtK: report.Metrics.PassAtK, PassPowerK: report.Metrics.PassPowerK,
 		GroundTruthRecall: report.Metrics.GroundTruthRecall, MethodRecall: report.Metrics.MethodRecall,
 		SafetyPrecision: report.Metrics.SafetyPrecision, BehaviorRecall: report.Metrics.BehaviorRecall,
-		CategoryRecall: categoryRecallFromMetrics(report.Metrics.ByCategory),
-		MeanReward:     report.Metrics.MeanReward, TotalTokens: measuredTotal,
+		CategoryRecall:  categoryRecallFromMetrics(report.Metrics.ByCategory),
+		RollupRecall:    rollupMetricFromReport(report.Metrics.ByRollup, func(v gjeval.TierMetrics) float64 { return v.Recall }),
+		RollupPassPower: rollupMetricFromReport(report.Metrics.ByRollup, func(v gjeval.TierMetrics) float64 { return v.PassPowerK }),
+		MeanReward:      report.Metrics.MeanReward, TotalTokens: measuredTotal,
 		PromptTokens: promptTokens, CompletionTokens: completionTokens,
 		ProviderTotalTokens: providerTotal,
 		LatencyP50MS:        report.Metrics.LatencyP50MS, LatencyP95MS: report.Metrics.LatencyP95MS,
@@ -540,6 +547,21 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		GuardInterventions: report.Metrics.GuardInterventions, ForbiddenAttempts: report.Metrics.ForbiddenAttempts, UnsafeEffects: report.Metrics.UnsafeEffects,
 		RescoredFrom: report.RescoredFrom, Accepted: report.Acceptance.HardPass,
 	}
+}
+
+// rollupMetricFromReport projects one field of the eval-computed rollup
+// metrics. The values are computed in agent/eval from whole verdict sets —
+// task-weighted, with pass^k over the rollup's own episodes — never derived
+// here from category numbers, which would be a mean of means.
+func rollupMetricFromReport(metrics map[string]gjeval.TierMetrics, pick func(gjeval.TierMetrics) float64) map[string]float64 {
+	if len(metrics) == 0 {
+		return nil
+	}
+	out := make(map[string]float64, len(metrics))
+	for name, value := range metrics {
+		out[name] = pick(value)
+	}
+	return out
 }
 
 func categoryRecallFromMetrics(metrics map[gjeval.Category]gjeval.TierMetrics) map[string]float64 {
@@ -621,12 +643,42 @@ func renderBenchmarkRunPage(benchmark benchmarkIdentity, benchmarkKey string, en
 	friendlyBody := stripMarkdownReportTitle(string(markdown))
 	technicalBody := stripMarkdownReportTitle(string(technicalMarkdown))
 	body := friendlyBody
+	if rollups := renderBenchmarkRollupLine(entry); rollups != "" {
+		body += "\n\n## Capability rollup\n\n" + rollups
+	}
 	if chart := renderBenchmarkCategorySVG(entry); chart != "" {
 		body += "\n\n## Results by task family\n\n" + chart
 	}
 	body += "\n\n---\n\n## Technical benchmark report\n\n" + technicalBody
 	shortcode := fmt.Sprintf("{{< benchmark-run-meta benchmark=%q >}}", benchmarkKey)
 	return []byte("---\n" + string(frontData) + "---\n\n" + shortcode + "\n\n" + body), nil
+}
+
+// renderBenchmarkRollupLine renders the frozen capability rollup as
+// publish-time HTML with machine-readable values, so the site checker can
+// assert the rendered numbers against the row and the row against its
+// category scores. Numbers are computed in Go and baked into the page — the
+// same never-template-computed rule the category SVG follows.
+func renderBenchmarkRollupLine(entry benchmarkEntry) string {
+	if len(entry.RollupRecall) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(`<p data-benchmark-rollups data-rollup-run="` + entry.RunID + `">`)
+	first := true
+	for _, name := range gjeval.BenchmarkRollupNames() {
+		value, ok := entry.RollupRecall[name]
+		if !ok {
+			continue
+		}
+		if !first {
+			b.WriteString(" · ")
+		}
+		first = false
+		fmt.Fprintf(&b, `<span data-rollup=%q data-rollup-recall="%.17g">%s %.1f%%</span>`, name, value, name, value*100)
+	}
+	b.WriteString(`</p>`)
+	return b.String()
 }
 
 func benchmarkRunAliases(benchmarkSlug, runSlug string) []string {

@@ -46,6 +46,74 @@ func PublicBenchmark() PublicBenchmarkSpec {
 // client_side_aggregation label so the failure taxonomy stays causal.
 const publicBenchmarkSuiteFingerprint = "b77fb918d9dd40dc7204cc4241d6c763"
 
+// PublicBenchmarkRollupVersion freezes the capability-rollup mapping below.
+// The board's single recall conflates two different deployment questions —
+// "can it answer questions about my org?" and "can it operate my org?" — and
+// one measured run answered them 0.9 and 0.2 with the same headline number.
+// The mapping is data, versioned like every other frozen ruler piece: a row
+// publishes the rollup its generation's mapping produced, and changing the
+// mapping is a visible version bump, never a silent regrouping.
+const PublicBenchmarkRollupVersion = "v1"
+
+// benchmarkRollup names one capability group and the task categories it
+// covers. Ordered: display order is part of the frozen contract.
+type benchmarkRollup struct {
+	Name       string
+	Categories []Category
+	Reason     string
+}
+
+// benchmarkRollups is the frozen v1 capability mapping.
+//
+// Judgment calls, recorded: multi-turn reads as follow-up questions but what
+// it demands is carrying state and often executing (confirming a proposed
+// watch), so it counts as operations. Refusal is a governance property, not a
+// capability — folding it into either capability group would let a safety
+// score pad a capability score. Traversal is mapped for completeness; the
+// current public suite generates none.
+var benchmarkRollups = []benchmarkRollup{
+	{Name: "questions", Categories: []Category{CategoryAggregate, CategoryWindow, CategoryRanking, CategoryDiscovery, CategorySavedMetric, CategoryTraversal},
+		Reason: "stateless answers computed from live data"},
+	{Name: "operations", Categories: []Category{CategoryAction, CategoryReactive, CategoryMultiTurn, CategoryCrossSource},
+		Reason: "writes, watches, follow-ups, and multi-source work that carries state"},
+	{Name: "governance", Categories: []Category{CategoryRefusal},
+		Reason: "declining what policy forbids, reliably and legibly"},
+}
+
+// RollupForCategory returns the frozen rollup name for a category, or "".
+func RollupForCategory(category Category) string {
+	for _, rollup := range benchmarkRollups {
+		for _, member := range rollup.Categories {
+			if member == category {
+				return rollup.Name
+			}
+		}
+	}
+	return ""
+}
+
+// BenchmarkRollupMap projects the frozen mapping as category → rollup name,
+// the shape the publisher embeds so the site checker can validate rollup
+// numbers against category numbers without a second copy of this table.
+func BenchmarkRollupMap() map[string]string {
+	out := make(map[string]string)
+	for _, rollup := range benchmarkRollups {
+		for _, member := range rollup.Categories {
+			out[string(member)] = rollup.Name
+		}
+	}
+	return out
+}
+
+// BenchmarkRollupNames returns the frozen display order.
+func BenchmarkRollupNames() []string {
+	names := make([]string, 0, len(benchmarkRollups))
+	for _, rollup := range benchmarkRollups {
+		names = append(names, rollup.Name)
+	}
+	return names
+}
+
 type suiteIdentityProjection struct {
 	Mode             RunMode `json:"mode"`
 	SuiteFingerprint string  `json:"suite_fingerprint"`

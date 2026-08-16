@@ -407,10 +407,11 @@ if (await exists(benchmarkDataPath)) {
       continue;
     }
     const runField = line.match(/^      ([a-z0-9_]+):\s*(.*)$/);
+    const nestedRunMapKeys = ['category_recall', 'rollup_recall', 'rollup_pass_power'];
     if (section === 'runs' && currentRun && runField) {
-      if (runField[1] === 'category_recall') {
-        currentRun.category_recall = {};
-        runSubsection = 'category_recall';
+      if (nestedRunMapKeys.includes(runField[1])) {
+        currentRun[runField[1]] = {};
+        runSubsection = runField[1];
       } else {
         currentRun[runField[1]] = parseScalar(runField[2]);
         runSubsection = '';
@@ -418,13 +419,13 @@ if (await exists(benchmarkDataPath)) {
       continue;
     }
     const nestedRunField = line.match(/^        ([a-z0-9_-]+):\s*(.*)$/);
-    if (section === 'runs' && currentRun && runSubsection === 'category_recall' && nestedRunField) {
-      currentRun.category_recall[nestedRunField[1]] = parseScalar(nestedRunField[2]);
+    if (section === 'runs' && currentRun && nestedRunMapKeys.includes(runSubsection) && nestedRunField) {
+      currentRun[runSubsection][nestedRunField[1]] = parseScalar(nestedRunField[2]);
       continue;
     }
     const suiteField = line.match(/^    ([a-z0-9_]+):\s*(.*)$/);
     if (section === 'suite' && suiteField) {
-      if (['category_counts', 'generation_scopes'].includes(suiteField[1])) {
+      if (['category_counts', 'generation_scopes', 'rollup_map'].includes(suiteField[1])) {
         parsed.suite[suiteField[1]] = {};
         suiteSubsection = suiteField[1];
       } else {
@@ -718,6 +719,36 @@ if (await exists(benchmarkDataPath)) {
           failures.push(`DeepORG category chart ${category} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
         }
       }
+      // Capability rollups: the chart's data attributes must match the row,
+      // and the row must match what the frozen mapping computes from the
+      // row's own category scores and the suite's task counts — the
+      // assertion that keeps rollups derived, never hand-typed.
+      for (const [rollup, expectedValue] of Object.entries(run.rollup_recall ?? {})) {
+        const chartTag = new RegExp(`<g[^>]*data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}')[^>]*>`).exec(benchmarkHTML)?.[0] ?? '';
+        const rendered = Number(renderedDataAttribute(chartTag, `data-rollup-${rollup}`));
+        if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
+          failures.push(`DeepORG chart rollup ${rollup} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
+        }
+      }
+      if (run.rollup_recall && run.ranked && parsed.suite?.rollup_map && parsed.suite?.category_counts) {
+        const recomputed = {};
+        const weights = {};
+        for (const [category, group] of Object.entries(parsed.suite.rollup_map)) {
+          const count = Number(parsed.suite.category_counts[category] ?? 0);
+          const score = run.category_recall?.[category];
+          if (count > 0 && score !== undefined) {
+            recomputed[group] = (recomputed[group] ?? 0) + count * Number(score);
+            weights[group] = (weights[group] ?? 0) + count;
+          }
+        }
+        for (const [group, expectedValue] of Object.entries(run.rollup_recall)) {
+          if (!(group in recomputed)) continue;
+          const derived = recomputed[group] / weights[group];
+          if (Math.abs(derived - Number(expectedValue)) > 1e-9) {
+            failures.push(`DeepORG rollup ${group} for ${run.run_id} disagrees with its category scores (${expectedValue} != derived ${derived})`);
+          }
+        }
+      }
       const marker = new RegExp(`data-benchmark-efficiency-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
       if (!marker) {
         failures.push(`Benchmark leaderboard is missing efficiency data for ${run.run_id}`);
@@ -783,6 +814,15 @@ if (await exists(benchmarkDataPath)) {
           const rendered = match ? Number(match[1] ?? match[2] ?? match[3]) : Number.NaN;
           if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
             failures.push(`DeepORG run category ${category} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
+          }
+        }
+        for (const [rollup, expectedValue] of Object.entries(run.rollup_recall ?? {})) {
+          const escapedRollup = rollup.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const rollupPattern = new RegExp(`data-rollup=(?:"${escapedRollup}"|'${escapedRollup}')\\s+data-rollup-recall=(?:"([^"]*)"|'([^']*)')`);
+          const match = rollupPattern.exec(runPage);
+          const rendered = match ? Number(match[1] ?? match[2]) : Number.NaN;
+          if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
+            failures.push(`DeepORG run rollup ${rollup} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
           }
         }
       }

@@ -183,6 +183,7 @@
         <article data-benchmark-task-count="{{ $actCount }}"><i class="ti ti-shield-check" aria-hidden="true"></i><h3>Act only when allowed</h3><p>Make approved changes and refuse work that policy forbids.</p><span>{{ $actCount }} tasks · actions + refusals</span></article>
         <article data-benchmark-task-count="{{ int (index $counts "reactive") }}"><i class="ti ti-activity-heartbeat" aria-hidden="true"></i><h3>Notice what changed</h3><p>Watch for new events, missing events, and conditions needing attention.</p><span>{{ int (index $counts "reactive") }} tasks · reactive</span></article>
       </div>
+      {{ with $data.suite.rollup_map_version }}<p class="benchmark-chart-note" data-benchmark-rollup-note>On the leaderboard these score under three headline groups (frozen mapping {{ . }}): <strong>questions</strong> — finding and working out answers; <strong>operations</strong> — conversations, connections, changes, and watches; <strong>governance</strong> — refusing what policy forbids.</p>{{ end }}
     </section>
 
     <section class="benchmark-landing-section benchmark-safety-section" aria-labelledby="benchmark-safety-title" data-bench-reveal>
