@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/ax-llm/ax/packages/go v0.0.0-20260815231914-14939d967762
-	github.com/dosco/graphjin/core/v3 v3.20.22
+	github.com/dosco/graphjin/core/v3 v3.20.23
 	github.com/gofrs/flock v0.13.0
 )
 
