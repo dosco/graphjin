@@ -1,6 +1,8 @@
 package agent
 
 import (
+	ax "github.com/ax-llm/ax/packages/go"
+
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -26,6 +28,10 @@ func PromptRegistryHash() string {
 		RuntimeInstructions         string          `json:"runtime_instructions"`
 		SemanticCatalogInstructions string          `json:"semantic_catalog_instructions"`
 		Skills                      []skillSnapshot `json:"skills"`
+		// ExecutorExamples are provider-visible prompt content on every actor
+		// step; two eval runs differing only in examples must not share a
+		// prompt-registry hash.
+		ExecutorExamples []ax.Value `json:"executor_examples,omitempty"`
 	}
 
 	skills := make([]skillSnapshot, 0, len(builtinSkills))
@@ -47,6 +53,7 @@ func PromptRegistryHash() string {
 		RuntimeInstructions:         runtimeUsageInstructions,
 		SemanticCatalogInstructions: semanticCatalogUsageInstructions,
 		Skills:                      skills,
+		ExecutorExamples:            executorTrajectoryExamples(),
 	})
 	if err != nil {
 		panic(err) // The snapshot contains only JSON-native values.
