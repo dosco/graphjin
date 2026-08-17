@@ -3,7 +3,8 @@ module github.com/dosco/graphjin/agent/v3
 go 1.25.0
 
 require (
-	github.com/ax-llm/ax/packages/go v0.0.0-20260815231914-14939d967762
+	github.com/ax-llm/ax/packages/go v0.0.0-20260817012209-94681b903c12
+	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
 	github.com/dosco/graphjin/core/v3 v3.20.24
 	github.com/gofrs/flock v0.13.0
 )
@@ -41,7 +42,6 @@ require (
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
-	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59 // indirect
 	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.7 // indirect
 	github.com/getkin/kin-openapi v0.131.0 // indirect

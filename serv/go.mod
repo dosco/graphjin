@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	cloud.google.com/go/storage v1.62.1
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
-	github.com/ax-llm/ax/packages/go v0.0.0-20260815231914-14939d967762
+	github.com/ax-llm/ax/packages/go v0.0.0-20260817012209-94681b903c12
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
 	github.com/dosco/graphjin/agent/v3 v3.20.24

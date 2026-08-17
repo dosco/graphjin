@@ -112,6 +112,8 @@ github.com/ax-llm/ax/packages/go v0.0.0-20260815100850-30ae9feee183 h1:kx5q337BO
 github.com/ax-llm/ax/packages/go v0.0.0-20260815100850-30ae9feee183/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/ax-llm/ax/packages/go v0.0.0-20260815231914-14939d967762 h1:/dectfBvP0HkQ1vwmUOJjQ9NQ2TUawQGgNqfVmThfnk=
 github.com/ax-llm/ax/packages/go v0.0.0-20260815231914-14939d967762/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
+github.com/ax-llm/ax/packages/go v0.0.0-20260817012209-94681b903c12 h1:KLkYA20U+mcVYcN0gX4twL/uvtFJ+Ivo86Lzk42vXwA=
+github.com/ax-llm/ax/packages/go v0.0.0-20260817012209-94681b903c12/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/bahlo/generic-list-go v0.2.0 h1:5sz/EEAK+ls5wF+NeqDpk5+iNdMDXrh3z3nPnH1Wvgk=
 github.com/bahlo/generic-list-go v0.2.0/go.mod h1:2KvAjgMlE5NNynlg/5iLrrCCZ2+5xWbdbCW3pNTGyYg=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 h1:mXoPYz/Ul5HYEDvkta6I8/rnYM5gSdSV2tJ6XbZuEtY=
@@ -167,9 +169,11 @@ github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59/go.mod h1:MxLav0peU43G
 github.com/dosco/graphjin/auth/v3 v3.20.2 h1:bkvKeNuBTI+31Oti/kqdFEbR+hDWgdLiv0jc6aZY7bo=
 github.com/dosco/graphjin/auth/v3 v3.20.2/go.mod h1:4thZiT71ecLgdO/hpnmBaZFBpxZ+KHYiJ02gKhR3xNI=
 github.com/dosco/graphjin/auth/v3 v3.20.20/go.mod h1:Gj2mgs1se3KDkzccg9KOaS+huO0Gumep93O664UGDko=
+github.com/dosco/graphjin/auth/v3 v3.20.22/go.mod h1:w/PYoHWsvzBEH/IiqEwh4KhT52NOPkmXGTPo4QpuVNA=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.2 h1:8Knx+Z9Qj89bWM6tk7hMErSxPJyC9hXEgC78nvHNyWo=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.2/go.mod h1:E27uxul4hpT9JoC+aTwITUR215ta5QmKJGRBeG8MEZQ=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.20/go.mod h1:V0pdkiiKEmp0M0cO0Slxghvwzuymh9hMgX+YYjempbI=
+github.com/dosco/graphjin/plugin/otel/v3 v3.20.22/go.mod h1:KnHyQjI/TqnDgSZIfUe6hvufkDJJ4NcB8nonjwA5G38=
 github.com/duckdb/duckdb-go-bindings v0.10502.0 h1:Uhg/dfvPLQv4cH35lMD48hqUcdOh2Z7bcuykjr4qnOA=
 github.com/duckdb/duckdb-go-bindings v0.10502.0/go.mod h1:8KF3oEKrmYdSbZnQ1BPTdxAZDHRaM1LEv+oBvL2nSLk=
 github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10502.0 h1:1GxSHSI1ef3sCdDVrJ9l8s6aTd7P1K788os9lHrs43g=
