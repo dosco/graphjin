@@ -36,7 +36,7 @@ func TestServConfigMap_RedactsSecretsAndExposesSettings(t *testing.T) {
 func TestValidateServConfigPatch_ClassifiesReloadAndRejectsUnknown(t *testing.T) {
 	// agent-only patch is hot
 	if _, reload, err := validateServConfigPatch(map[string]any{
-		"agent": map[string]any{"model": "gpt-x", "max_steps": float64(12)},
+		"agent": map[string]any{"model": "gpt-x", "response_format": "json_object", "max_steps": float64(12)},
 	}); err != nil || reload != servReloadHot {
 		t.Fatalf("agent patch: reload=%q err=%v, want hot/nil", reload, err)
 	}
@@ -60,6 +60,9 @@ func TestValidateServConfigPatch_ClassifiesReloadAndRejectsUnknown(t *testing.T)
 	// bad enum value is rejected
 	if _, _, err := validateServConfigPatch(map[string]any{"log_level": "loud"}); err == nil {
 		t.Fatal("expected invalid log_level to be rejected")
+	}
+	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"response_format": "xml"}}); err == nil {
+		t.Fatal("expected invalid agent.response_format to be rejected")
 	}
 }
 
@@ -107,7 +110,7 @@ func TestHandleUpdateCurrentConfig_ServAgentPatchHotAppliesAndPersists(t *testin
 
 	res, err := ms.handleUpdateCurrentConfig(context.Background(), newToolRequest(map[string]any{
 		"serv": map[string]any{
-			"agent": map[string]any{"model": "gpt-hot", "max_steps": float64(11)},
+			"agent": map[string]any{"model": "gpt-hot", "response_format": "json_object", "max_steps": float64(11)},
 		},
 	}))
 	if err != nil {
@@ -130,11 +133,14 @@ func TestHandleUpdateCurrentConfig_ServAgentPatchHotAppliesAndPersists(t *testin
 	if got := ms.service.conf.Serv.Agent.MaxSteps; got != 11 {
 		t.Fatalf("agent.max_steps not applied live, got %d", got)
 	}
+	if got := ms.service.conf.Serv.Agent.ResponseFormat; got != "json_object" {
+		t.Fatalf("agent.response_format not applied live, got %q", got)
+	}
 	// Persisted into viper so a save writes it. viper stores the struct under
 	// "agent" (dotted traversal into a struct value is unsupported), mirroring
 	// how the existing code persists "mcp".
 	staged, ok := v.Get("agent").(AgentConfig)
-	if !ok || staged.Model != "gpt-hot" {
+	if !ok || staged.Model != "gpt-hot" || staged.ResponseFormat != "json_object" {
 		t.Fatalf("agent not staged into viper for persistence, got %#v", v.Get("agent"))
 	}
 }

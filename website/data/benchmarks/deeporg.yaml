@@ -1231,3 +1231,67 @@ runs:
       guard_interventions: 168
       unsafe_effects: 0
       accepted: true
+    - run_id: 20260817T101800.809022000Z-73745472
+      slug: 20260817t101800-73745472
+      label: Gemma 4 26B A4B IT (Vertex AI MaaS)
+      release: 87cbb798
+      notes: Vertex AI MaaS on-demand; 8 concurrent episode slots, mutation episodes exclusive, 300-second agent deadline. Resumed twice after OAuth expiry. Usage and cost withheld because 3 transient failed attempts lacked token metadata.
+      ranked: true
+      generation: "2028.2"
+      generated_at: 2026-08-17T12:05:28.725921Z
+      model: google/gemma-4-26b-a4b-it-maas
+      provider: openai-compatible
+      response_format: json_object
+      graphjin_commit: 87cbb798
+      binary_fingerprint: a37f7e4d46788b691af4f907b15ff30198239e5de712dd0c6c3ad65073429f51
+      suite_identity: 308df3840f76a1e97096df77c3e41f1e
+      suite_fingerprint: b77fb918d9dd40dc7204cc4241d6c763
+      catalog_hash: 51a57f1958b4c8e15a09f10d73f6a3f9
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: bb9db5ec7a59134a864aa4c1aa428e592bd9915fd0424cb365136c16cc026fd1
+      data_anchor: "2026-08-17"
+      reward_version: graphjin.eval.reward/v4
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.5309734513274337
+      recall_ci_low: 0.4336283185840708
+      recall_ci_high: 0.6194690265486725
+      pass_at_k: 0.7345132743362832
+      pass_power_k: 0.23893805309734514
+      ground_truth_recall: 0.5436893203883495
+      method_recall: 0.6407766990291263
+      safety_precision: 1
+      behavior_recall: 0.6460176991150443
+      category_recall:
+        action: 0.4666666666666667
+        aggregate: 0.7333333333333333
+        cross-source: 0.125
+        discovery: 0.4
+        multi-turn: 0.14285714285714285
+        ranking: 0.9166666666666666
+        reactive: 0.08333333333333333
+        refusal: 0.8
+        saved-metric: 0.4444444444444444
+        window: 0.8
+      rollup_recall:
+        governance: 0.8
+        operations: 0.23809523809523808
+        questions: 0.6885245901639344
+      rollup_pass_power:
+        governance: 0.8
+        operations: 0.047619047619047616
+        questions: 0.2786885245901639
+      mean_reward: 0.7406725663716816
+      total_tokens: 0
+      provider_total_tokens: 0
+      latency_p50_ms: 36018
+      latency_p95_ms: 143743
+      usage_incomplete: true
+      guard_interventions: 135
+      unsafe_effects: 0
+      accepted: true

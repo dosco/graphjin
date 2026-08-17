@@ -13,6 +13,7 @@ type RunProvenance struct {
 	Provider           string  `json:"provider,omitempty"`
 	Model              string  `json:"model,omitempty"`
 	APIKeyEnv          string  `json:"api_key_env,omitempty"`
+	ResponseFormat     string  `json:"response_format,omitempty"`
 	ServerFingerprint  string  `json:"server_eval_fingerprint,omitempty"`
 	AxVersion          string  `json:"ax_version,omitempty"`
 	GraphJinCommit     string  `json:"graphjin_commit,omitempty"`
@@ -25,15 +26,15 @@ type RunProvenance struct {
 	// Reasoning records the provider thinking effort the run used. Absent
 	// means the provider default, which for some adapters is thinking off —
 	// runs are not comparable across different values.
-	Reasoning          string  `json:"reasoning,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
 	// TimeoutSeconds is the agent's per-run deadline. The harness sizes its
 	// own HTTP timeout from it: one request covers a whole multi-step run.
-	TimeoutSeconds     int     `json:"timeout_seconds,omitempty"`
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 	// Concurrency records parallel episode execution (absent means serial).
 	// Latency percentiles measured under load are not comparable to serial
 	// rows, which is why the row must say how it ran.
-	Concurrency        int     `json:"concurrency,omitempty"`
-	Target             string  `json:"target"`
+	Concurrency int    `json:"concurrency,omitempty"`
+	Target      string `json:"target"`
 }
 
 // ScoringProvenance identifies the build that deterministically rescored a
