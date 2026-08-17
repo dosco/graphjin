@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/core/v3/openapi"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
@@ -302,7 +303,7 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithStringItems(),
 		),
 		mcp.WithObject("serv",
-			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
+			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, response_format, max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
 				"agent changes are read live; the rest are persisted and take effect on the next restart (automatic when reload_on_config_change is enabled). "+
 				"Secret-bearing sections (auth, redis, uploads) are read-only on gj_config and cannot be patched here. scope reports serv or mixed and reload_mode reports hot or restart."),
 		),
@@ -2313,7 +2314,8 @@ var servWritableReload = map[string]string{
 // startup wiring or name secrets and are excluded.
 var agentWritableFields = map[string]bool{
 	"model": true, "max_steps": true, "timeout_seconds": true,
-	"read_only": true, "return_trace": true,
+	"response_format": true,
+	"read_only":       true, "return_trace": true,
 	"seed_limit": true, "catalog_default_limit": true,
 }
 
@@ -2357,6 +2359,15 @@ func validateServConfigPatch(patch map[string]any) (changes []string, reload str
 			for f := range m {
 				if !agentWritableFields[f] {
 					return nil, "", fmt.Errorf("serv.agent.%s is not writable; writable agent fields: %s", f, strings.Join(sortedKeys(agentWritableFields), ", "))
+				}
+			}
+			if responseFormat, ok := m["response_format"]; ok {
+				value, ok := responseFormat.(string)
+				if !ok {
+					return nil, "", fmt.Errorf("serv.agent.response_format must be a string")
+				}
+				if err := gjagent.ValidateResponseFormat(value); err != nil {
+					return nil, "", err
 				}
 			}
 			changes = append(changes, "updated serv.agent")
@@ -2421,6 +2432,9 @@ func applyServConfigPatch(conf *Config, patch map[string]any) {
 func applyAgentConfigPatch(a *AgentConfig, m map[string]any) {
 	if v, ok := m["model"].(string); ok {
 		a.Model = v
+	}
+	if v, ok := m["response_format"].(string); ok {
+		a.ResponseFormat = gjagent.EffectiveResponseFormat(v)
 	}
 	if v, ok := configInt(m["max_steps"]); ok {
 		a.MaxSteps = v

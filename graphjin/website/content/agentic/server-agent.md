@@ -64,7 +64,7 @@ See the [Config Reference](/reference/config-reference/) for all options.
 
 The agent is an RLM (reasoning-with-code) loop, not a tool-calling loop. The model **writes JavaScript** that calls the discovery and execution tools as runtime globals inside a sandbox — `query_catalog({...})`, `graphql_help({...})`, `validate_where_clause({...})`, `execute_saved_query({...})`, `execute_graphql({...})`, and `final({...})`. GraphJin runs that code, feeds results back, and the typed result is parsed from the model's `key: value` output. The sandbox is goja, a JavaScript interpreter embedded in the GraphJin process - no external runtime is involved.
 
-This means the only model requirement is that it is **good at code generation** and follows the `key: value` output format. It does **not** need provider function-calling or structured-output/JSON modes, so any OpenAI-compatible chat-completions endpoint works (see [OpenAI-compatible endpoints](#openai-compatible-endpoints)).
+This means the model must be **good at code generation** and follow the typed output contract. It does not need provider function-calling. Ax requests structured JSON for each typed stage; GraphJin uses strict `json_schema` by default and offers a `json_object` compatibility mode for OpenAI-compatible endpoints whose strict decoder is unreliable (see [OpenAI-compatible endpoints](#openai-compatible-endpoints)).
 
 Every answer is grounded in observed evidence. Go-side protocol guards enforce the catalog-first contract — for example a saved query may only run after its `saved_query` catalog row has been inspected — and downgrade an `answered` result to `blocked` (with evidence) when a required step was skipped. Models cannot talk their way past the guards; only real tool results count.
 
@@ -185,9 +185,10 @@ agent:
   model: <model-name>
   api_key_env: OPENAI_API_KEY # must hold a non-empty value (a dummy is fine for keyless local endpoints)
   base_url: https://your-endpoint/v1
+  # response_format: json_object # use only when strict json_schema is unreliable
 ```
 
-Because the loop is driven by generated code rather than provider tool-calling, the practical requirement is a model that codegens well — not one with native function-calling support.
+Because the loop is driven by generated code rather than provider tool-calling, the practical requirement is a model that codegens well — not one with native function-calling support. Keep the default `json_schema` when the endpoint implements it reliably; `json_object` relaxes schema enforcement while preserving JSON output.
 
 ## When to use it
 
