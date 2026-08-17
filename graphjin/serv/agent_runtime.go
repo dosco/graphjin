@@ -37,6 +37,7 @@ func agentConfigFromService(conf *Config) gjagent.Config {
 		Model:               conf.Agent.Model,
 		APIKeyEnv:           conf.Agent.APIKeyEnv,
 		BaseURL:             conf.Agent.BaseURL,
+		ResponseFormat:      conf.Agent.ResponseFormat,
 		Reasoning:           conf.Agent.Reasoning,
 		MaxSteps:            conf.Agent.MaxSteps,
 		TimeoutSeconds:      gjagent.EffectiveTimeoutSeconds(conf.Agent.TimeoutSeconds),

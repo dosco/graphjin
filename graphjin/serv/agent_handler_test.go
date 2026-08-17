@@ -162,6 +162,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 				Provider:       "anthropic",
 				Model:          "test-model",
 				APIKeyEnv:      "GRAPHJIN_READY_AGENT_KEY",
+				ResponseFormat: "json_object",
 				MaxSteps:       3,
 				TimeoutSeconds: 12,
 				ReadOnly:       true,
@@ -182,7 +183,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if !readyStatus.Enabled || !readyStatus.Ready || !readyStatus.RESTReady || readyStatus.Status != "ready" || !readyStatus.APIKeyConfigured || !readyStatus.ServerModelReady {
 		t.Fatalf("unexpected ready status: %+v", readyStatus)
 	}
-	if readyStatus.Provider != "anthropic" || readyStatus.Model != "test-model" || readyStatus.MaxSteps != 3 || readyStatus.TimeoutSeconds != 50 {
+	if readyStatus.Provider != "anthropic" || readyStatus.Model != "test-model" || readyStatus.ResponseFormat != "json_object" || readyStatus.MaxSteps != 3 || readyStatus.TimeoutSeconds != 50 {
 		t.Fatalf("configured values not reflected in status: %+v", readyStatus)
 	}
 	if !readyStatus.ReadOnly || !readyStatus.ReturnTrace {

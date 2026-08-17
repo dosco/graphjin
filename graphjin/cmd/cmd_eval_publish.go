@@ -67,6 +67,7 @@ type benchmarkEntry struct {
 	GeneratedAt                 time.Time          `yaml:"generated_at"`
 	Model                       string             `yaml:"model"`
 	Provider                    string             `yaml:"provider,omitempty"`
+	ResponseFormat              string             `yaml:"response_format,omitempty"`
 	GraphJinCommit              string             `yaml:"graphjin_commit,omitempty"`
 	BinaryFingerprint           string             `yaml:"binary_fingerprint,omitempty"`
 	SuiteIdentity               string             `yaml:"suite_identity"`
@@ -478,7 +479,7 @@ func benchmarkSuiteFromReport(report gjeval.Report) benchmarkSuite {
 		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
 		Mode: string(report.Mode), Seed: report.Provenance.Seed, Repeats: report.Provenance.Repeats,
 		MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature, RewardVersion: report.RewardVersion,
-		CategoryCounts: categoryCounts,
+		CategoryCounts:   categoryCounts,
 		RollupMapVersion: gjeval.PublicBenchmarkRollupVersion, RollupMap: gjeval.BenchmarkRollupMap(),
 	}
 }
@@ -530,6 +531,7 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 	return benchmarkEntry{
 		RunID: report.RunID, Slug: slug, Label: label, Release: release, Notes: strings.TrimSpace(notes), Ranked: ranked, UnrankedReason: reason,
 		Generation: gjeval.PublicBenchmarkGeneration, GeneratedAt: report.GeneratedAt, Model: report.Provenance.Model, Provider: report.Provenance.Provider,
+		ResponseFormat: report.Provenance.ResponseFormat,
 		GraphJinCommit: report.Provenance.GraphJinCommit, BinaryFingerprint: report.Provenance.BinaryFingerprint,
 		SuiteIdentity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
 		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
