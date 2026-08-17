@@ -41,6 +41,7 @@ type agentStatusResponse struct {
 	Model                string   `json:"model,omitempty"`
 	APIKeyEnv            string   `json:"api_key_env"`
 	APIKeyConfigured     bool     `json:"api_key_configured"`
+	ResponseFormat       string   `json:"response_format"`
 	MaxSteps             int      `json:"max_steps"`
 	Reasoning            string   `json:"reasoning,omitempty"`
 	TimeoutSeconds       int      `json:"timeout_seconds"`
@@ -264,6 +265,7 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 		Model:            strings.TrimSpace(conf.Model),
 		APIKeyEnv:        apiKeyEnv,
 		APIKeyConfigured: apiKeyConfigured,
+		ResponseFormat:   gjagent.EffectiveResponseFormat(conf.ResponseFormat),
 		MaxSteps:         maxSteps,
 		Reasoning:        strings.TrimSpace(conf.Reasoning),
 		TimeoutSeconds:   timeoutSeconds,
@@ -433,6 +435,7 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 		Provider             string   `json:"provider"`
 		Model                string   `json:"model"`
 		APIKeyEnv            string   `json:"api_key_env"`
+		ResponseFormat       string   `json:"response_format"`
 		MaxSteps             int      `json:"max_steps"`
 		Reasoning            string   `json:"reasoning,omitempty"`
 		TimeoutSeconds       int      `json:"timeout_seconds"`
@@ -446,7 +449,8 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 	}{
 		Version: version, Build: agentBuildIdentity(), PromptRegistryHash: gjagent.PromptRegistryHash(),
 		Provider: status.Provider, Model: status.Model, APIKeyEnv: status.APIKeyEnv,
-		MaxSteps: status.MaxSteps, Reasoning: status.Reasoning, TimeoutSeconds: status.TimeoutSeconds,
+		ResponseFormat: status.ResponseFormat,
+		MaxSteps:       status.MaxSteps, Reasoning: status.Reasoning, TimeoutSeconds: status.TimeoutSeconds,
 		ReadOnly: status.ReadOnly, ReturnTrace: status.ReturnTrace,
 		Namespace: status.Namespace, RoleClass: status.RoleClass,
 		AllowedActions:       allowedActions,

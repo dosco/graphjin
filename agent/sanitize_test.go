@@ -53,3 +53,17 @@ func TestProviderQuotaWinsOverGoogleResourceExhaustedFallback(t *testing.T) {
 		t.Fatalf("quota classification = %+v", classification)
 	}
 }
+
+func TestProviderAuthRecognizesGoogleUnauthenticatedResponse(t *testing.T) {
+	classification := ClassifyProviderError(errors.New("status: UNAUTHENTICATED: Request had invalid authentication credentials"))
+	if classification.Code != ErrorCodeProviderAuth || classification.Retryable {
+		t.Fatalf("auth classification = %+v", classification)
+	}
+}
+
+func TestProviderRateLimitRecognizesGoogleQueueExhaustion(t *testing.T) {
+	classification := ClassifyProviderError(errors.New("code:429 message:The request queue is full. status:RESOURCE_EXHAUSTED"))
+	if classification.Code != ErrorCodeProviderRateLimit || !classification.Retryable {
+		t.Fatalf("rate-limit classification = %+v", classification)
+	}
+}
