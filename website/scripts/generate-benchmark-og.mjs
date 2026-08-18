@@ -182,7 +182,7 @@ const card = `<!doctype html>
 </head>
 <body>
   <header><h1>DeepORG Benchmark</h1><strong>graphjin.com/benchmark</strong></header>
-  <p class="question">Can an AI agent answer the questions an organization actually asks — against a live database, with the right method, expected behavior, and no unsafe writes?</p>
+  <p class="question">Can an AI agent actually do what your organization needs — answer the question, carry out the operation, refuse what it should — against a live database, with no unsafe writes?</p>
   ${rankedRun}
   <footer><span>One frozen exam · ${escapeHTML(scope)} tasks · every model runs the same suite</span><span>Generation ${escapeHTML(generation)}</span></footer>
 </body>
