@@ -2,6 +2,9 @@
 {{- $generation := $data.suite.generation -}}
 {{- $comparisonGeneration := default $generation $data.suite.comparison_generation -}}
 {{- $ranked := sort (where (where (default (slice) $data.runs) "ranked" true) "generation" $comparisonGeneration) "recall" "desc" -}}
+{{- $columns := first 4 $ranked -}}
+{{- $suiteTasks := 0 -}}
+{{- range $data.suite.category_counts -}}{{- $suiteTasks = add $suiteTasks (int .) -}}{{- end -}}
 <!doctype html>
 <html lang="en">
   <head>
@@ -9,7 +12,8 @@
     <meta name="robots" content="noindex, nofollow">
     <title>DeepORG social card</title>
   </head>
-  <body data-deeporg-og-card data-benchmark-generation="{{ $comparisonGeneration }}">
-    {{ range first 1 $ranked }}<div hidden data-benchmark-og-run="{{ .run_id }}" data-model-label="{{ .label }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-task-count="{{ int .task_count }}"></div>{{ end }}
+  <body data-deeporg-og-card data-benchmark-generation="{{ $comparisonGeneration }}" data-suite-tasks="{{ $suiteTasks }}" data-suite-repeats="{{ int $data.suite.repeats }}">
+    {{ range $columns }}<div hidden data-benchmark-og-run="{{ .run_id }}" data-model-label="{{ .label }}" data-model-provider="{{ humanize .provider }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-every="{{ printf "%.17g" (float (.pass_power_k | default 0)) }}" data-answer="{{ printf "%.17g" (float (.ground_truth_recall | default 0)) }}" data-method="{{ printf "%.17g" (float (.method_recall | default 0)) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-task-count="{{ int .task_count }}"></div>
+    {{ end }}
   </body>
 </html>

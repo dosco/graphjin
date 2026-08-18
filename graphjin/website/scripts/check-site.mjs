@@ -554,9 +554,24 @@ if (await exists(benchmarkDataPath)) {
         }
       }
     }
-    const expectedComparisonHeading = displayedColumnCount > 1 ? 'Compare models' : 'How this result breaks down';
-    if (!landingHTML.includes(`>${expectedComparisonHeading}</h2>`)) {
-      failures.push(`Friendly DeepORG comparison heading should be “${expectedComparisonHeading}”`);
+    // The comparison block doubles as the shareable card and the social image,
+    // so it must name the benchmark and state the suite size rather than lead
+    // with a generic "compare models" heading.
+    if (!landingHTML.includes('>The DeepORG Benchmark</p>')) {
+      failures.push('Friendly DeepORG comparison card lost its benchmark-name eyebrow');
+    }
+    if (!landingHTML.includes('>Can an AI agent answer what your organization actually asks?</h2>')) {
+      failures.push('Friendly DeepORG comparison card lost its benchmark question heading');
+    }
+    const suiteTaskTotal = Object.values(parsed.suite.category_counts ?? {}).reduce(
+      (total, value) => total + Number(value),
+      0
+    );
+    if (!new RegExp(`DeepORG runs one frozen exam of ${suiteTaskTotal} tasks`).test(landingHTML)) {
+      failures.push('Friendly DeepORG comparison card should state the frozen suite size');
+    }
+    if (!/\bbenchmark-card-footer\b/.test(landingHTML)) {
+      failures.push('Friendly DeepORG comparison card lost its provenance footer');
     }
     const hasScrollHint = /\bbenchmark-scroll-hint\b/.test(landingHTML);
     if (hasScrollHint !== (displayedColumnCount > 3)) {
