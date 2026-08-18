@@ -310,11 +310,14 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
   }
   for (const required of [
     'DeepORG · by GraphJin',
-    'Can an AI agent handle the questions an organization actually asks?',
-    'Full pass score',
+    'Can an AI agent actually do what your organization needs?',
+    'Ours can — and we publish the proof.',
+    'We publish the exam. Every result, including the failures.',
+    "We haven't run the frontier models yet.",
     'Right way of getting it',
-    'See what the score means',
-    'Technical methodology',
+    'Try it in 2 minutes',
+    'Boot the exact demo it was graded on',
+    'See the full exam',
   ]) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing benchmark copy: ${required}`);
@@ -948,6 +951,44 @@ if (await exists(benchmarkDataPath)) {
     }
     if (String(renderedDataAttribute(home, 'data-benchmark-generation')) !== String(comparisonGeneration)) {
       failures.push('Homepage benchmark proof generation does not match deeporg.yaml');
+    }
+    // The hero states the benchmark claims as numbers. They render from the
+    // yaml through the benchmark-hero shortcode; assert them here so the
+    // homepage can never outrun the published board.
+    const heroMarker = /<[^>]*data-benchmark-hero[^>]*>/.exec(home);
+    if (!heroMarker) {
+      failures.push('Homepage hero is missing the data-driven benchmark-hero module');
+    } else {
+      const heroTag = heroMarker[0];
+      const heroAttempts = rankedRuns.reduce((total, run) => total + Number(run.episode_count ?? 0), 0);
+      const heroUnsafe = rankedRuns.reduce((total, run) => total + Number(run.unsafe_effects ?? 0), 0);
+      const heroExpected = [
+        ['data-hero-models', rankedRuns.length],
+        ['data-hero-attempts', heroAttempts],
+        ['data-hero-unsafe', heroUnsafe],
+        ['data-hero-tasks', Number(topRanked.task_count ?? 0)],
+        ['data-hero-repeats', Number(parsed.suite.repeats ?? 0)],
+      ];
+      for (const [field, value] of heroExpected) {
+        const rendered = Number(renderedDataAttribute(heroTag, field));
+        if (!Number.isFinite(rendered) || rendered !== value) {
+          failures.push(`Homepage hero ${field} does not match deeporg.yaml (${rendered} != ${value})`);
+        }
+      }
+      // Truth guard: a hardcoded zero anywhere on the homepage becomes a lie
+      // the moment any ranked run reports an unsafe effect.
+      if (heroUnsafe !== 0 && /\b0 unsafe effects\b/.test(home)) {
+        failures.push(`Homepage claims 0 unsafe effects but the ranked cohort reports ${heroUnsafe}`);
+      }
+      // Staleness guard: the hero and proof module say no frontier model has
+      // been run. The moment one is ranked, that copy must change by hand.
+      const frontierPattern = /opus|gpt-5|ultra|-pro\b/i;
+      for (const run of rankedRuns) {
+        const identity = `${run.label ?? ''} ${run.model ?? ''}`;
+        if (frontierPattern.test(identity)) {
+          failures.push(`Ranked model "${run.label ?? run.model}" looks like a frontier model; update the no-frontier hero/proof copy (or the frontier pattern in check-site)`);
+        }
+      }
     }
     const storyMarker = renderedDataAttribute(benchmarkPage, 'data-current-recall');
     if (storyMarker === undefined || Number(storyMarker) !== Number(topRanked.recall)) {

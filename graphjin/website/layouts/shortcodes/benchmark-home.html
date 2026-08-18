@@ -6,51 +6,39 @@
 <section id="proof" class="home-section home-benchmark-section" aria-labelledby="home-benchmark-title">
   <div class="home-section-heading">
     <p class="home-section-label">DeepORG · by GraphJin</p>
-    <h2 id="home-benchmark-title">Can an AI agent handle the questions an organization actually asks?</h2>
-    <p>DeepORG tests models on live organizational work—not trivia. A result counts only when the answer, the way it was produced, the expected behavior, and safety all pass together.</p>
+    <h2 id="home-benchmark-title">We publish the exam. Every result, including the failures.</h2>
+    <p>DeepORG grades models on live organizational work — questions to answer, operations to carry out, and requests to refuse. A result counts only when the answer, the way it was produced, the expected behavior, and safety all pass together.</p>
   </div>
   <div id="benchmark" class="home-benchmark" data-benchmark-proof data-benchmark-generation="{{ $comparisonGeneration }}">
     {{ if eq (len $ranked) 0 }}
       <div class="benchmark-empty" data-benchmark-empty><strong>No public run yet.</strong><span>The first completed run will appear here.</span></div>
     {{ else }}
-      {{ range first 1 $ranked }}
-        {{- $reliable := mul (float .task_count) (float .recall) -}}
-        {{- $cost := 0.0 -}}
-        {{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
-        <div class="home-benchmark-proof" data-benchmark-chart-run="{{ .run_id }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-task-count="{{ int .task_count }}" data-repeats="{{ int .repeats }}">
-          <div class="home-benchmark-score">
-            <strong><span>{{ printf "%.0f" (mul (float .recall) 100) }}</span><small>/100</small></strong>
-            <h3>Full pass score</h3>
-            <p>{{ .label }} fully passed {{ printf "%.0f" (mul (float .recall) (float .task_count)) }} of {{ int .task_count }} live tasks, with {{ int .repeats }} attempts each.</p>
+      <div class="home-benchmark-board" role="list" aria-label="Ranked models on the current DeepORG cohort">
+        {{ range $ranked }}
+          {{- $reliable := mul (float .task_count) (float .recall) -}}
+          {{- $cost := 0.0 -}}
+          {{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
+          <div class="home-benchmark-row" role="listitem" data-benchmark-chart-run="{{ .run_id }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-task-count="{{ int .task_count }}" data-repeats="{{ int .repeats }}">
+            <a class="home-benchmark-row-label" href="{{ printf "/benchmarks/deeporg/runs/%s/" .slug | relURL }}">{{ .label }}</a>
+            <span class="home-benchmark-row-bar" aria-hidden="true"><i style="width: {{ printf "%.1f" (mul (float .recall) 100) }}%"></i></span>
+            <span class="home-benchmark-row-score"><strong>{{ printf "%.0f" (mul (float .recall) 100) }}</strong><small>/100</small></span>
+            <span class="home-benchmark-row-safety">{{ int (.unsafe_effects | default 0) }} unsafe</span>
           </div>
-          <div class="home-benchmark-safety">
-            <strong>{{ int (.unsafe_effects | default 0) }}</strong>
-            <h3>unsafe effects</h3>
-            {{ if eq (int (.unsafe_effects | default 0)) 0 }}
-              <p>No unintended writes, updates, or side effects across {{ int .episode_count }} attempts.</p>
-            {{ else }}
-              <p>{{ int .unsafe_effects }} unsafe {{ if eq (int .unsafe_effects) 1 }}effect{{ else }}effects{{ end }} across {{ int .episode_count }} attempts.</p>
-            {{ end }}
-          </div>
-        </div>
-        <div class="home-benchmark-stats" aria-label="Benchmark summary">
-          <div><span>Latency (p50)</span><strong>{{ with .latency_p50_ms }}{{ printf "%.1fs" (div (float .) 1000) }}{{ else }}—{{ end }}</strong></div>
-          <div><span>Reliable pass</span><strong>{{ if gt $cost 0 }}{{ printf "$%.3f" $cost }}{{ else }}—{{ end }}</strong></div>
-          <div><span>Live tasks</span><strong>{{ int .task_count }}</strong></div>
-          <div><span>Attempts each</span><strong>{{ int .repeats }}</strong></div>
-          <div><span>Generation</span><strong>{{ .generation }}</strong></div>
-        </div>
-        <div class="home-benchmark-meaning">
-          <div><span>1</span><strong>Correct answer</strong></div>
-          <div><span>2</span><strong>Right way of getting it</strong></div>
-          <div><span>3</span><strong>Expected behavior</strong></div>
-          <div><span>4</span><strong>No unsafe effects</strong></div>
-        </div>
-      {{ end }}
+        {{ end }}
+      </div>
+      <p class="home-benchmark-kicker">Every model above is small, fast, and cheap to run. We haven't run the frontier models yet.</p>
+      <div class="home-benchmark-meaning">
+        <div><span>1</span><strong>Correct answer</strong></div>
+        <div><span>2</span><strong>Right way of getting it</strong></div>
+        <div><span>3</span><strong>Expected behavior</strong></div>
+        <div><span>4</span><strong>No unsafe effects</strong></div>
+      </div>
     {{ end }}
   </div>
   <div class="home-actions">
-    <a class="button-primary" href="/benchmark/">See what the score means</a>
-    <a class="button-secondary" href="/benchmarks/deeporg/methodology/">Technical methodology</a>
+    <a class="button-primary" href="#quickstart">Boot the exact demo it was graded on</a>
+    <a class="button-secondary" href="/benchmark/">See the full exam <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
+    <a class="benchmark-text-link" href="/benchmarks/deeporg/methodology/">Technical methodology <i class="ti ti-arrow-right" aria-hidden="true"></i></a>
   </div>
+  <p class="home-benchmark-loop"><code>graphjin serve --demo</code> starts the same pinned dataset the exam runs against — ask it the same questions yourself.</p>
 </section>
