@@ -141,7 +141,7 @@
     <section class="benchmark-landing-section benchmark-comparison-section" aria-labelledby="benchmark-comparison-title">
       <div class="benchmark-landing-section-heading">
         <p class="benchmark-landing-eyebrow">The DeepORG Benchmark</p>
-        <h2 id="benchmark-comparison-title">DeepORG: can an AI agent actually do what your organization needs?</h2>
+        <h2 id="benchmark-comparison-title">DeepORG: Can an AI agent actually do what your organization needs?</h2>
         <p>DeepORG runs one frozen exam of {{ $suiteTasks }} tasks against a live organizational database — questions to answer, operations to carry out, and requests it should refuse. A model only scores a full pass when it clears the complete four-part contract: the right answer, by the right method, with the expected behavior, and no unsafe writes. Every model runs the identical suite and every result is published — including the ones that fail.</p>
         <p class="benchmark-comparison-cohort">{{ if gt (len $contextRuns) 0 }}Solid columns are the current generation {{ $comparisonGeneration }} cohort; muted columns carry each model's latest generation {{ $priorGeneration }} result forward until it is rerun. Every column links to its full technical report.{{ else if gt (len $ranked) 1 }}Each row highlights the strongest published result, and every column links to its full technical report.{{ else }}More model columns will appear automatically as comparable results are published.{{ end }}</p>
       </div>
