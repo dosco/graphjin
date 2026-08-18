@@ -116,7 +116,11 @@ func ClassifyProviderError(err error) ProviderErrorClassification {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded), strings.Contains(message, "context deadline exceeded"), strings.Contains(message, "deadline exceeded"), strings.Contains(message, "request timeout"), strings.Contains(message, "timed out"):
 		return ProviderErrorClassification{Code: ErrorCodeProviderTimeout, Message: "The model provider did not respond before the configured timeout.", Retryable: true}
-	case strings.Contains(message, "no credits remaining"), strings.Contains(message, "credit balance"), strings.Contains(message, "insufficient_quota"), strings.Contains(message, "quota exceeded"), strings.Contains(message, "billing"):
+	// DeepSeek says "Insufficient Balance" and others say "insufficient funds";
+	// neither matched the older phrasings, so an exhausted account read as a
+	// generic agent error. A benchmark run then scored every remaining episode
+	// as a model failure instead of halting: 204 zeros from a billing problem.
+	case strings.Contains(message, "no credits remaining"), strings.Contains(message, "credit balance"), strings.Contains(message, "insufficient balance"), strings.Contains(message, "insufficient funds"), strings.Contains(message, "insufficient_quota"), strings.Contains(message, "quota exceeded"), strings.Contains(message, "billing"), strings.Contains(message, "payment required"), strings.Contains(message, "status code 402"):
 		return ProviderErrorClassification{Code: ErrorCodeProviderQuota, Message: "The model provider quota or credits are exhausted."}
 	case strings.Contains(message, "rate limit"), strings.Contains(message, "too many requests"), strings.Contains(message, "resource exhausted"), strings.Contains(message, "resource_exhausted"), strings.Contains(message, "request queue is full"):
 		return ProviderErrorClassification{Code: ErrorCodeProviderRateLimit, Message: "The model provider is temporarily rate-limited.", Retryable: true}

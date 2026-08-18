@@ -54,6 +54,27 @@ func TestProviderQuotaWinsOverGoogleResourceExhaustedFallback(t *testing.T) {
 	}
 }
 
+// A DeepSeek benchmark run drained its account mid-suite. "Insufficient
+// Balance" matched none of the quota phrasings, so it classified as a generic
+// agent error and the harness scored 204 remaining episodes as model failures
+// instead of halting the run on an environment problem.
+func TestProviderQuotaRecognizesBalanceExhaustion(t *testing.T) {
+	for _, message := range []string{
+		"Insufficient Balance",
+		"error, status code: 402, message: Insufficient Balance",
+		"insufficient funds for this request",
+		"Payment Required",
+	} {
+		classification := ClassifyProviderError(errors.New(message))
+		if classification.Code != ErrorCodeProviderQuota {
+			t.Fatalf("ClassifyProviderError(%q) = %+v, want %s", message, classification, ErrorCodeProviderQuota)
+		}
+		if classification.Retryable {
+			t.Fatalf("ClassifyProviderError(%q) must not be retryable; a drained account does not refill on backoff", message)
+		}
+	}
+}
+
 func TestProviderAuthRecognizesGoogleUnauthenticatedResponse(t *testing.T) {
 	classification := ClassifyProviderError(errors.New("status: UNAUTHENTICATED: Request had invalid authentication credentials"))
 	if classification.Code != ErrorCodeProviderAuth || classification.Retryable {
