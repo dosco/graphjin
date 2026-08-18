@@ -560,7 +560,7 @@ if (await exists(benchmarkDataPath)) {
     if (!landingHTML.includes('>The DeepORG Benchmark</p>')) {
       failures.push('Friendly DeepORG comparison card lost its benchmark-name eyebrow');
     }
-    if (!landingHTML.includes('>Can an AI agent answer what your organization actually asks?</h2>')) {
+    if (!landingHTML.includes('>DeepORG: can an AI agent actually do what your organization needs?</h2>')) {
       failures.push('Friendly DeepORG comparison card lost its benchmark question heading');
     }
     const suiteTaskTotal = Object.values(parsed.suite.category_counts ?? {}).reduce(
