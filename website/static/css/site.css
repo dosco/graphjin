@@ -4567,6 +4567,12 @@ pre code {
   font-size: 0.92rem;
 }
 
+.benchmark-small-model-note {
+  margin-top: 0.9rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .benchmark-card-footer {
   display: flex;
   flex-wrap: wrap;
