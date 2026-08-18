@@ -1098,7 +1098,14 @@ if ((await exists(suitePath)) && (await exists(tryPath))) {
   const suite = JSON.parse(await readFile(suitePath, 'utf8'));
   const prompts = new Set((suite.tasks ?? []).map((task) => String(task.prompt)));
   const homeHTML = await readFile(tryPath, 'utf8');
-  const trySection = homeHTML.slice(homeHTML.indexOf('data-benchmark-try'));
+  // Scope to the section itself. Scanning to end-of-document would swallow any
+  // blockquote a later section adds and report it as a fake exam item.
+  const tryStart = homeHTML.indexOf('data-benchmark-try');
+  if (tryStart === -1) {
+    failures.push('Homepage lost the try-the-exam section');
+  }
+  const tryEnd = tryStart === -1 ? -1 : homeHTML.indexOf('</section>', tryStart);
+  const trySection = tryStart === -1 ? '' : homeHTML.slice(tryStart, tryEnd === -1 ? undefined : tryEnd);
   const quoted = [...trySection.matchAll(/<blockquote>([\s\S]*?)<\/blockquote>/g)].map((match) =>
     match[1]
       .replace(/<[^>]*>/g, '')
@@ -1109,7 +1116,7 @@ if ((await exists(suitePath)) && (await exists(tryPath))) {
       .replace(/\u2019/g, "'")
       .trim()
   );
-  if (quoted.length === 0) {
+  if (tryStart !== -1 && quoted.length === 0) {
     failures.push('Homepage try-the-exam section quotes no benchmark items');
   }
   for (const prompt of quoted) {
