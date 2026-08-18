@@ -4535,6 +4535,30 @@ pre code {
 
 .benchmark-comparison-section {
   background: var(--canvas);
+  /* The comparison reads as a standalone card: people screenshot this block on
+     its own, so it carries the benchmark name, the contract, and the source. */
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+}
+
+.benchmark-comparison-cohort {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.benchmark-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  justify-content: space-between;
+  margin-top: 1.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.benchmark-card-footer span:last-child {
+  font-weight: 600;
 }
 
 .benchmark-meaning-section {

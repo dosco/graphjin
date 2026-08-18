@@ -21,6 +21,25 @@ function attribute(html, name) {
   return match ? decodeHTML(match[1] ?? match[2] ?? match[3]) : undefined;
 }
 
+// Every ranked column of the current cohort, in the order the page renders
+// them, so the card and the comparison table can never tell different stories.
+function columns(html) {
+  return [...html.matchAll(/<div hidden data-benchmark-og-run=[^>]*><\/div>/g)]
+    .map((match) => match[0])
+    .map((row) => ({
+      label: attribute(row, 'data-model-label'),
+      provider: attribute(row, 'data-model-provider'),
+      recall: Number(attribute(row, 'data-recall')),
+      every: Number(attribute(row, 'data-every')),
+      answer: Number(attribute(row, 'data-answer')),
+      method: Number(attribute(row, 'data-method')),
+      unsafe: Number(attribute(row, 'data-unsafe-effects')),
+    }))
+    .filter((column) => column.label && Number.isFinite(column.recall));
+}
+
+const percent = (value) => (Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : '—');
+
 function decodeHTML(value) {
   return String(value)
     .replaceAll('&quot;', '"')
@@ -76,14 +95,10 @@ await mkdir(path.dirname(cardSource), { recursive: true });
 
 const html = await readFile(source, 'utf8');
 const generation = attribute(html, 'data-benchmark-generation') ?? 'Current public suite';
-const runID = attribute(html, 'data-benchmark-og-run');
-const modelLabel = attribute(html, 'data-model-label');
-const recall = Number(attribute(html, 'data-recall'));
-const unsafeEffects = Number(attribute(html, 'data-unsafe-effects'));
-const taskCount = Number(attribute(html, 'data-task-count'));
-const hasRankedRun = Boolean(runID && modelLabel && Number.isFinite(recall));
-const score = Math.round(recall * 100);
-const safeUnsafeEffects = Number.isFinite(unsafeEffects) ? unsafeEffects : 0;
+const taskCount = Number(attribute(html, 'data-suite-tasks'));
+const repeats = Number(attribute(html, 'data-suite-repeats'));
+const models = columns(html);
+const hasRankedRun = models.length > 0;
 const scope = Number.isFinite(taskCount) ? String(taskCount) : '—';
 
 const [regularFont, semiboldFont] = await Promise.all([
@@ -91,28 +106,49 @@ const [regularFont, semiboldFont] = await Promise.all([
   readFile(interSemibold, 'base64'),
 ]);
 
+const metricRows = [
+  { label: 'Full passes', note: 'Passed the complete four-part contract', key: 'recall', format: percent, better: 'high' },
+  { label: 'Passed every attempt', note: `All ${Number.isFinite(repeats) ? repeats : 3} tries earned a full pass`, key: 'every', format: percent, better: 'high' },
+  { label: 'Correct answer', note: 'Matched live, hidden ground truth', key: 'answer', format: percent, better: 'high' },
+  { label: 'Right method', note: 'The governed system did the real work', key: 'method', format: percent, better: 'high' },
+  { label: 'Unsafe effects', note: 'Lower is better', key: 'unsafe', format: (value) => String(value ?? 0), better: 'low' },
+];
+
+function bestValue(row) {
+  const values = models.map((model) => model[row.key]).filter((value) => Number.isFinite(value));
+  if (values.length === 0) return undefined;
+  return row.better === 'low' ? Math.min(...values) : Math.max(...values);
+}
+
 const rankedRun = hasRankedRun
-  ? `<div class="model">
-      <strong>${escapeHTML(modelLabel)}</strong>
-      <span>Generation ${escapeHTML(generation)}</span>
-    </div>
-    <div class="metric score">
-      <div><strong>Full pass score</strong><span>Answer, method, behavior, and safety</span></div>
-      <p><b>${score}</b><span>/100</span></p>
-    </div>
-    <div class="metric unsafe">
-      <div><strong>Unsafe effects</strong><span>Unintended writes, updates, or changes</span></div>
-      <p><b>${safeUnsafeEffects}</b></p>
-    </div>
-    <div class="metric tasks">
-      <div><strong>Live tasks</strong><span>Frozen public organizational suite</span></div>
-      <p><b>${escapeHTML(scope)}</b></p>
-    </div>`
-  : `<div class="model">
-      <strong>No ranked model yet</strong>
-      <span>Generation ${escapeHTML(generation)}</span>
-    </div>
-    <div class="empty">Frozen and reproducible</div>`;
+  ? `<table>
+      <thead>
+        <tr><th class="metric-name">What is measured</th>${models
+          .map(
+            (model) =>
+              `<th><strong>${escapeHTML(model.label)}</strong><span>${escapeHTML(model.provider ?? '')}</span></th>`
+          )
+          .join('')}</tr>
+      </thead>
+      <tbody>
+        ${metricRows
+          .map((row) => {
+            const best = bestValue(row);
+            const cells = models
+              .map((model) => {
+                const value = model[row.key];
+                const isBest = models.length > 1 && Number.isFinite(value) && value === best;
+                return `<td class="${isBest ? 'is-best' : ''}">${escapeHTML(row.format(value))}</td>`;
+              })
+              .join('');
+            return `<tr><th class="metric-name"><strong>${escapeHTML(row.label)}</strong><span>${escapeHTML(
+              row.note
+            )}</span></th>${cells}</tr>`;
+          })
+          .join('')}
+      </tbody>
+    </table>`
+  : `<div class="empty">No ranked model yet · frozen and reproducible</div>`;
 
 const card = `<!doctype html>
 <html lang="en">
@@ -123,35 +159,32 @@ const card = `<!doctype html>
   @font-face { font-family: Inter; font-style: normal; font-weight: 600; src: url(data:font/woff2;base64,${semiboldFont}) format('woff2'); }
   * { box-sizing: border-box; }
   html, body { width: ${width}px; height: ${height}px; margin: 0; overflow: hidden; }
-  body { background: #f7f8fc; color: #0b0b0e; font-family: Inter, sans-serif; }
-  header { position: absolute; left: 48px; right: 48px; top: 43px; display: flex; align-items: baseline; justify-content: space-between; }
-  header h1 { margin: 0; font-size: 34px; font-weight: 600; line-height: 1; }
+  body { background: #f7f8fc; color: #0b0b0e; font-family: Inter, sans-serif; padding: 38px 44px 0; }
+  header { display: flex; align-items: baseline; justify-content: space-between; }
+  header h1 { margin: 0; font-size: 33px; font-weight: 600; line-height: 1; letter-spacing: -0.01em; }
   header strong { color: #555963; font-size: 15px; font-weight: 600; }
-  .question { position: absolute; left: 48px; top: 107px; margin: 0; color: #555963; font-size: 29px; line-height: 1.2; }
-  .label { position: absolute; left: 48px; top: 250px; font-size: 18px; line-height: 1; }
-  .model { position: absolute; left: 470px; top: 246px; }
-  .model strong, .model span { display: block; }
-  .model strong { font-size: 20px; font-weight: 600; line-height: 1.2; }
-  .model span { margin-top: 10px; color: #676b75; font-size: 13px; }
-  .metric { position: absolute; left: 48px; right: 48px; height: 92px; border-top: 1px solid #d6dae2; }
-  .metric > div { position: absolute; left: 0; top: 29px; }
-  .metric strong, .metric span { display: block; }
-  .metric strong { font-size: 21px; font-weight: 400; line-height: 1.1; }
-  .metric > div span { margin-top: 8px; color: #676b75; font-size: 13px; }
-  .metric p { position: absolute; left: 422px; top: 27px; margin: 0; line-height: 1; }
-  .metric p b { display: inline; font-size: 30px; font-weight: 600; }
-  .metric p span { display: inline; color: #676b75; font-size: 22px; }
-  .score { top: 321px; }
-  .unsafe { top: 413px; }
-  .tasks { top: 505px; }
-  .empty { position: absolute; left: 470px; top: 378px; font-size: 26px; font-weight: 600; }
+  .question { margin: 13px 0 0; color: #555963; font-size: 19px; line-height: 1.35; max-width: 1000px; }
+  table { width: 100%; margin-top: 20px; border-collapse: collapse; table-layout: fixed; }
+  th, td { text-align: left; vertical-align: middle; }
+  thead th { padding: 0 12px 12px 0; border-bottom: 1px solid #c9cedb; }
+  thead th strong { display: block; font-size: 17px; font-weight: 600; line-height: 1.2; }
+  thead th span { display: block; margin-top: 4px; color: #676b75; font-size: 12px; font-weight: 400; }
+  .metric-name { width: 300px; padding-right: 20px; }
+  tbody .metric-name strong { display: block; font-size: 17px; font-weight: 600; line-height: 1.2; }
+  tbody .metric-name span { display: block; margin-top: 3px; color: #676b75; font-size: 12px; font-weight: 400; }
+  tbody tr { border-bottom: 1px solid #e2e6ee; }
+  tbody th, tbody td { height: 71px; }
+  tbody td { font-size: 26px; font-weight: 600; padding-right: 12px; }
+  tbody td.is-best { color: #2f6b1f; }
+  .empty { margin-top: 120px; font-size: 26px; font-weight: 600; }
+  footer { position: absolute; left: 44px; right: 44px; bottom: 26px; display: flex; justify-content: space-between; color: #676b75; font-size: 13px; }
 </style>
 </head>
 <body>
-  <header><h1>DeepORG Benchmark</h1><strong>GraphJin</strong></header>
-  <p class="question">Can an AI agent handle the questions an organization actually asks?</p>
-  <div class="label">Benchmark</div>
+  <header><h1>DeepORG Benchmark</h1><strong>graphjin.com/benchmark</strong></header>
+  <p class="question">Can an AI agent answer the questions an organization actually asks — against a live database, with the right method, expected behavior, and no unsafe writes?</p>
   ${rankedRun}
+  <footer><span>One frozen exam · ${escapeHTML(scope)} tasks · every model runs the same suite</span><span>Generation ${escapeHTML(generation)}</span></footer>
 </body>
 </html>`;
 
