@@ -50,7 +50,8 @@
         <p class="benchmark-landing-subtitle">The Organizational Agent Benchmark</p>
         <div class="benchmark-landing-intro">
           <h2>We grade our own AI agent in public.</h2>
-          <p>GraphJin connects one AI agent to every database, API, and file system you run — governed, so it can only do what policy allows. DeepORG is the public exam it has to pass: {{ int .task_count }} real organizational questions, {{ int .repeats }} attempts each, scored against live data.</p>
+          <p>GraphJin connects one AI agent to every database, API, and file system you run — governed, so it can only do what policy allows. DeepORG is the public exam it has to pass: {{ int .task_count }} real organizational tasks — questions to answer, operations to carry out, and requests it should refuse — {{ int .repeats }} attempts each, scored against live data.</p>
+          <p class="benchmark-small-model-note">Every ranked model on this board is small, fast, and cheap to run. The frontier models have not been run yet.</p>
         </div>
         <div class="benchmark-landing-proof" data-benchmark-leader="{{ .run_id }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-task-count="{{ int .task_count }}" data-repeats="{{ int .repeats }}">
           <div class="benchmark-landing-score">
