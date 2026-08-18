@@ -1088,6 +1088,37 @@ if (await exists(path.join(siteRoot, 'static', 'css', 'site.css'))) {
 }
 
 if (await exists(path.join(siteRoot, 'static', 'install.sh'))) {
+// The homepage invites readers to run three exam items verbatim and calls them
+// real published tasks. They are transcribed into the benchmark-try shortcode,
+// so a suite rotation would silently turn that invitation into fiction. Assert
+// every quoted item still exists word-for-word in the committed suite.
+const suitePath = path.join(repoRoot, 'cmd', 'benchmark', 'public-suite.json');
+const tryPath = path.join(publicRoot, 'index.html');
+if ((await exists(suitePath)) && (await exists(tryPath))) {
+  const suite = JSON.parse(await readFile(suitePath, 'utf8'));
+  const prompts = new Set((suite.tasks ?? []).map((task) => String(task.prompt)));
+  const homeHTML = await readFile(tryPath, 'utf8');
+  const trySection = homeHTML.slice(homeHTML.indexOf('data-benchmark-try'));
+  const quoted = [...trySection.matchAll(/<blockquote>([\s\S]*?)<\/blockquote>/g)].map((match) =>
+    match[1]
+      .replace(/<[^>]*>/g, '')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;|&rsquo;/g, "'")
+      .replace(/&amp;/g, '&')
+      .replace(/[\u201c\u201d]/g, '')
+      .replace(/\u2019/g, "'")
+      .trim()
+  );
+  if (quoted.length === 0) {
+    failures.push('Homepage try-the-exam section quotes no benchmark items');
+  }
+  for (const prompt of quoted) {
+    if (!prompts.has(prompt)) {
+      failures.push(`Homepage quotes "${prompt.slice(0, 60)}..." as a published DeepORG item, but it is not in cmd/benchmark/public-suite.json`);
+    }
+  }
+}
+
   const rootInstall = await readFile(path.join(repoRoot, 'install.sh'), 'utf8');
   const siteInstall = await readFile(path.join(siteRoot, 'static', 'install.sh'), 'utf8');
   if (rootInstall !== siteInstall) {
