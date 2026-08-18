@@ -1173,7 +1173,8 @@ runs:
       label: Gemini 3.5 Flash-Lite
       release: e6ea37df
       notes: 'Rerun on the build carrying this session''s guard fixes. Headline recall is flat within the noise band (0.681 to 0.699) and is not claimed as an improvement; the movement is in operations (0.310 to 0.357) and governance (0.800 to 1.000), with reactive recall 0.167 to 0.417. Mechanism counts are the evidence: watch-quoting blocks fell from 627 to 65 with 27 subscriptions normalized and executed instead of refused, value-guard refusals halved from 61 to 27, and reactive episodes blocked fell from 24 to 10. Questions dipped 0.918 to 0.885 on window and multi-turn variance.'
-      ranked: true
+      ranked: false
+      unranked_reason: superseded by GraphJin build e6ea37df
       generation: "2028.2"
       generated_at: 2026-08-16T07:22:00.19621Z
       model: gemini-3.5-flash-lite
@@ -1359,4 +1360,74 @@ runs:
       guard_interventions: 100
       unsafe_effects: 0
       rescored_from: 20260817T080637.033539000Z-b3deb70b
+      accepted: true
+    - run_id: 20260818T021049.661097000Z-ab21692a
+      slug: 20260818t021049-ab21692a
+      label: Gemini 3.5 Flash-Lite
+      release: e6ea37df
+      notes: Generation 2028.2 rescored from run 20260816T072200 to attach provider list pricing from the committed price card; scores are unchanged and reproduced exactly from the stored episodes.
+      ranked: true
+      generation: "2028.2"
+      generated_at: 2026-08-18T02:10:49.661097Z
+      model: gemini-3.5-flash-lite
+      provider: gemini
+      graphjin_commit: e6ea37dfbd89fb0eb65c5b7677fcc32eef049962
+      binary_fingerprint: 66192e3fe01c3da479437446a1687ba487e61235dd17a63c18b7e3baf964d4dc
+      suite_identity: 308df3840f76a1e97096df77c3e41f1e
+      suite_fingerprint: b77fb918d9dd40dc7204cc4241d6c763
+      catalog_hash: 51a57f1958b4c8e15a09f10d73f6a3f9
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 74097a5e716ada74e25ca680d1b76c4308f29459ad13fb0074fe27ae570ff2b9
+      data_anchor: "2026-08-16"
+      reward_version: graphjin.eval.reward/v4
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.6991150442477876
+      recall_ci_low: 0.6194690265486725
+      recall_ci_high: 0.7787610619469026
+      pass_at_k: 0.8230088495575221
+      pass_power_k: 0.37168141592920356
+      ground_truth_recall: 0.7087378640776699
+      method_recall: 0.7961165048543689
+      safety_precision: 1
+      behavior_recall: 0.8053097345132744
+      category_recall:
+        action: 0.6
+        aggregate: 0.9333333333333333
+        cross-source: 0.125
+        discovery: 0.9
+        multi-turn: 0
+        ranking: 0.9166666666666666
+        reactive: 0.4166666666666667
+        refusal: 1
+        saved-metric: 0.8888888888888888
+        window: 0.8
+      rollup_recall:
+        governance: 1
+        operations: 0.35714285714285715
+        questions: 0.8852459016393442
+      rollup_pass_power:
+        governance: 0.9
+        operations: 0.047619047619047616
+        questions: 0.5081967213114754
+      mean_reward: 0.8241504424778764
+      total_tokens: 12594963
+      prompt_tokens: 12310846
+      completion_tokens: 284117
+      provider_total_tokens: 12594963
+      latency_p50_ms: 3851
+      latency_p95_ms: 11287
+      prompt_price_per_million: 0.3
+      completion_price_per_million: 2.5
+      estimated_list_cost_usd: 4.4035463
+      estimated_list_cost_per_task_usd: 0.038969436283185846
+      pricing_source: https://ai.google.dev/gemini-api/docs/pricing (standard, 2026-08-06)
+      guard_interventions: 168
+      unsafe_effects: 0
+      rescored_from: 20260816T072200.196202000Z-3e8d5a0d
       accepted: true

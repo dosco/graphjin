@@ -1,0 +1,30 @@
+# Provider list prices for published benchmark rows, in USD per million tokens.
+#
+# Cost is the most useful column on the board — a score without it says nothing
+# about whether the work is affordable — but it used to arrive through
+# --prompt-price-per-million / --completion-price-per-million at publish time.
+# Flags are easy to forget, and the entire 2028.2 cohort was published without
+# them, leaving the leaderboard's cost-per-reliable-pass axis reading zero for
+# every model. Prices belong with the data, not in a shell command.
+#
+# The publisher looks a row up by provider and model. The CLI flags still work
+# and take precedence, for a model that is not listed yet or a negotiated rate
+# that is not list price.
+#
+# Record `source` and `as_of` for every entry: a published cost figure is a
+# claim, and it needs a citation like any other number on the board.
+version: 1
+models:
+  - provider: gemini
+    model: gemini-3.5-flash-lite
+    prompt_per_million: 0.30
+    completion_per_million: 2.50
+    source: https://ai.google.dev/gemini-api/docs/pricing (standard, 2026-08-06)
+    as_of: 2026-08-06
+
+  - provider: deepseek
+    model: deepseek-v4-flash
+    prompt_per_million: 0.14
+    completion_per_million: 0.28
+    source: https://api-docs.deepseek.com/quick_start/pricing (standard, 2026-08-17)
+    as_of: 2026-08-17

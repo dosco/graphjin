@@ -511,6 +511,15 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 	promptTokens, completionTokens := report.ProviderUsage.PromptTokens, report.ProviderUsage.CompletionTokens
 	providerTotal, measuredTotal := report.ProviderUsage.TotalTokens, report.Metrics.TotalTokens
 	promptPrice, completionPrice := opts.PromptPricePerMillion, opts.CompletionPricePerMillion
+	// Flags win, so a negotiated rate or an unlisted model still publishes; the
+	// committed price card covers everything else, which is the common case.
+	cardCitation := ""
+	if promptPrice == 0 && completionPrice == 0 {
+		if price, ok := lookupModelPrice(report.Provenance.Provider, report.Provenance.Model); ok {
+			promptPrice, completionPrice = price.PromptPerMillion, price.CompletionPerMillion
+			cardCitation = price.citation()
+		}
+	}
 	if usageIncomplete {
 		promptTokens, completionTokens, providerTotal, measuredTotal = 0, 0, 0, 0
 		promptPrice, completionPrice = 0, 0
@@ -522,6 +531,9 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		costPerTask = estimatedCost / float64(report.Metrics.TaskCount)
 	}
 	pricingSource := strings.TrimSpace(opts.PricingSource)
+	if pricingSource == "" && cardCitation != "" {
+		pricingSource = cardCitation
+	}
 	if pricingSource == "" && (promptPrice != 0 || completionPrice != 0) {
 		pricingSource = "provider list pricing"
 	}
