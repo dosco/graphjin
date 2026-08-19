@@ -22,6 +22,15 @@ models:
     source: https://ai.google.dev/gemini-api/docs/pricing (standard, 2026-08-06)
     as_of: 2026-08-06
 
+  - provider: gemini
+    model: gemini-3.7-flash
+    prompt_per_million: 0.75
+    completion_per_million: 3.75
+    # Promotional rate through 2026-12-31; it doubles to 1.50/7.50 on
+    # 2027-01-01, so revisit this entry rather than assuming it holds.
+    source: https://ai.google.dev/gemini-api/docs/pricing (standard, paid tier, 2026-08-19)
+    as_of: 2026-08-19
+
   - provider: deepseek
     model: deepseek-v4-flash
     prompt_per_million: 0.14
