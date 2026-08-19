@@ -68,6 +68,10 @@ type benchmarkEntry struct {
 	Model                       string             `yaml:"model"`
 	Provider                    string             `yaml:"provider,omitempty"`
 	ResponseFormat              string             `yaml:"response_format,omitempty"`
+	// Reasoning records the provider thinking effort the run used. It changes
+	// both capability and cost, so two rows for the same model are not
+	// comparable without it — and it used to survive only as prose in the notes.
+	Reasoning                   string             `yaml:"reasoning,omitempty"`
 	GraphJinCommit              string             `yaml:"graphjin_commit,omitempty"`
 	BinaryFingerprint           string             `yaml:"binary_fingerprint,omitempty"`
 	SuiteIdentity               string             `yaml:"suite_identity"`
@@ -543,7 +547,7 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 	return benchmarkEntry{
 		RunID: report.RunID, Slug: slug, Label: label, Release: release, Notes: strings.TrimSpace(notes), Ranked: ranked, UnrankedReason: reason,
 		Generation: gjeval.PublicBenchmarkGeneration, GeneratedAt: report.GeneratedAt, Model: report.Provenance.Model, Provider: report.Provenance.Provider,
-		ResponseFormat: report.Provenance.ResponseFormat,
+		ResponseFormat: report.Provenance.ResponseFormat, Reasoning: report.Provenance.Reasoning,
 		GraphJinCommit: report.Provenance.GraphJinCommit, BinaryFingerprint: report.Provenance.BinaryFingerprint,
 		SuiteIdentity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
 		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
