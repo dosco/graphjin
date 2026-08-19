@@ -75,6 +75,10 @@ type demoState struct {
 	FirstRun bool
 	Manifest demoManifest
 	Status   demoStatus
+	// PinnedAnchor is the anchor a resumed evaluation requires. When set, the
+	// manifest records it after the shift instead of today's date, because the
+	// data was moved to meet the run rather than to meet the clock.
+	PinnedAnchor string
 	// ShiftDays is how many whole days the reused demo data lags behind
 	// today; date columns are shifted forward by this much on startup.
 	ShiftDays int
@@ -162,8 +166,8 @@ func StartDemo(ctx context.Context, dbFlags []string, statusOut io.Writer) (*Dem
 	status.Emit("seed", "seeding", "loading first-run data")
 	runDemoSeed()
 
-	if state.ShiftDays > 0 {
-		status.Emit("refresh", "shifting", fmt.Sprintf("moving demo dates forward %d day(s)", state.ShiftDays))
+	if state.ShiftDays != 0 {
+		status.Emit("refresh", "shifting", fmt.Sprintf("moving demo dates %+d day(s)", state.ShiftDays))
 		shiftDemoDates(ctx, runtime.Databases, state)
 	}
 
@@ -280,15 +284,23 @@ func initDemoState(status demoStatus) (*demoState, error) {
 	state := &demoState{Dir: stateDir, Manifest: manifest, Status: status}
 	state.ShiftDays = demoDataShiftDays(manifest, time.Now())
 	// An evaluation resuming an incomplete run pins the anchor its finished
-	// episodes were graded against. Shifting now would move the data out from
-	// under them and the resume would be refused on dataset fingerprint, which
-	// is what stranded an overnight benchmark run mid-suite.
-	if pinned := strings.TrimSpace(demoPinnedDataAnchor); pinned != "" && state.ShiftDays > 0 {
-		if pinned == strings.TrimSpace(manifest.DataAnchor) {
-			status.Emit("state", "pinned", fmt.Sprintf("holding demo data at anchor %s for the resumed evaluation; skipping the %d day(s) shift", pinned, state.ShiftDays))
+	// episodes were graded against, and the data is moved to meet it. Holding
+	// still is the common case (the run started today and the clock has since
+	// passed midnight); moving backwards recovers a run whose demo has already
+	// been shifted forward by a later boot. Without this a run that outlived a
+	// UTC midnight was stranded, its completed episodes unusable.
+	if pinned := strings.TrimSpace(demoPinnedDataAnchor); pinned != "" {
+		if delta, err := demoAnchorDelta(manifest.DataAnchor, pinned); err != nil {
+			status.Emit("state", "unpinned", fmt.Sprintf("cannot read anchor %q; shifting normally", pinned))
+		} else if delta == 0 {
+			if state.ShiftDays > 0 {
+				status.Emit("state", "pinned", fmt.Sprintf("holding demo data at anchor %s for the resumed evaluation; skipping the %d day(s) shift", pinned, state.ShiftDays))
+			}
 			state.ShiftDays = 0
 		} else {
-			status.Emit("state", "unpinned", fmt.Sprintf("requested anchor %s but demo data is anchored %s; shifting normally", pinned, manifest.DataAnchor))
+			status.Emit("state", "rewinding", fmt.Sprintf("demo data is anchored %s; moving %+d day(s) to meet the resumed run's anchor %s", manifest.DataAnchor, delta, pinned))
+			state.ShiftDays = delta
+			state.PinnedAnchor = pinned
 		}
 	}
 	if state.ShiftDays > 0 {
@@ -328,8 +340,14 @@ func (s *demoState) writeManifest(dbs map[string]*sql.DB) error {
 	s.Manifest.ConfigHash = demoConfigHash()
 	s.Manifest.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	// Seeds ran (first run) or dates were shifted (reuse) during this
-	// startup, so the data now pretends today is day zero.
-	s.Manifest.DataAnchor = time.Now().UTC().Format(demoDataAnchorLayout)
+	// startup, so the data now pretends today is day zero — unless a resumed
+	// evaluation pinned an anchor, in which case the data was moved to meet
+	// that run and the manifest must say so.
+	if pinned := strings.TrimSpace(s.PinnedAnchor); pinned != "" {
+		s.Manifest.DataAnchor = pinned
+	} else {
+		s.Manifest.DataAnchor = time.Now().UTC().Format(demoDataAnchorLayout)
+	}
 	if s.Manifest.Sources == nil {
 		s.Manifest.Sources = make(map[string]demoManifestItem)
 	}
@@ -1018,7 +1036,7 @@ func startWarehouseSimDemo(ctx context.Context, name string, dbConf core.Databas
 
 	dbPath := filepath.Join(dataDir, "warehouse.duckdb")
 	initialized := warehouseSimulatorInitialized(dbPath)
-	if initialized && state.ShiftDays > 0 {
+	if initialized && state.ShiftDays != 0 {
 		// Reused simulator state: shift its dates in the file now, while it
 		// is still closed — DuckDB allows a single read-write handle.
 		if tables, err := demoTemporalColumns(name); err != nil {
@@ -1026,7 +1044,7 @@ func startWarehouseSimDemo(ctx context.Context, name string, dbConf core.Databas
 		} else if n, err := shiftDuckDBFileDates(ctx, dbPath, tables, state.ShiftDays); err != nil {
 			status.Emit(name, "failed", fmt.Sprintf("date refresh failed (%s); delete %s to reseed", err, state.Dir))
 		} else if n > 0 {
-			status.Emit(name, "refreshed", fmt.Sprintf("%d date column(s) moved forward %d day(s)", n, state.ShiftDays))
+			status.Emit(name, "refreshed", fmt.Sprintf("%d date column(s) moved %+d day(s)", n, state.ShiftDays))
 		}
 	}
 	connector := hostedemu.NewConnector(hostedemu.Config{
