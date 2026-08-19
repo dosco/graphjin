@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/dosco/graphjin/serv/v3"
@@ -40,6 +41,24 @@ func main() {
 		// field docs at the top level.
 		ExpandedStruct: true,
 		Anonymous:      true,
+	}
+
+	// $defs are keyed by bare type name, and three reachable types are all
+	// called Config: serv.Config (the root), core.Config, and agent.Config.
+	// ExpandedStruct inlines the root and then deletes its definition, so a
+	// same-named type from another package was left pointing at a $ref that no
+	// longer existed — agent.* has never appeared in this schema. Qualify any
+	// name that would collide with the root's.
+	rootName := reflect.TypeOf(serv.Config{}).Name()
+	r.Namer = func(t reflect.Type) string {
+		name := t.Name()
+		if name == "" || name != rootName {
+			return name
+		}
+		if t.PkgPath() == reflect.TypeOf(serv.Config{}).PkgPath() {
+			return name
+		}
+		return packageQualifiedName(t, name)
 	}
 
 	// Field descriptions come from Go source comments. The repo is
@@ -74,4 +93,19 @@ func main() {
 	if err := os.WriteFile(*out, b, 0o644); err != nil {
 		panic(err)
 	}
+}
+
+// packageQualifiedName prefixes a type name with its owning package so it
+// cannot collide in $defs: github.com/dosco/graphjin/agent/v3.Config becomes
+// AgentConfig. Trailing module version elements (v2, v3, …) are skipped.
+func packageQualifiedName(t reflect.Type, name string) string {
+	parts := strings.Split(t.PkgPath(), "/")
+	for i := len(parts) - 1; i >= 0; i-- {
+		part := parts[i]
+		if part == "" || (len(part) > 1 && part[0] == 'v' && strings.Trim(part[1:], "0123456789") == "") {
+			continue
+		}
+		return strings.ToUpper(part[:1]) + part[1:] + name
+	}
+	return name
 }

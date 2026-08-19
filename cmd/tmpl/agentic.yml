@@ -42,10 +42,19 @@ mcp:
 # credentials selected by agent.api_key_env.
 # Override only when needed:
 # agent:
-#   provider: openai
+#   provider: openai                  # any named Ax deployment profile
 #   api_key_env: OPENAI_API_KEY
 #   model: gpt-4.1-mini
-#   response_format: json_schema
+#   structured_output_mode: auto      # auto | native | function | json_object
+#
+# The profile owns the endpoint, auth, capabilities and model rules, so a
+# different deployment is a different profile name, not a code change:
+# agent:
+#   provider: vertex-ai
+#   model: google/gemma-4-26b-a4b-it-maas
+#   api_key_env: VERTEX_AI_TOKEN
+#   base_url: https://REGION-aiplatform.googleapis.com/v1beta1/projects/PROJECT/locations/REGION/endpoints/openapi
+#   structured_output_mode: auto
 
 # Discovery generations are immutable files. In a horizontal deployment this
 # path must be a shared read-after-write mount; Redis coordinates the one

@@ -183,6 +183,11 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if !readyStatus.Enabled || !readyStatus.Ready || !readyStatus.RESTReady || readyStatus.Status != "ready" || !readyStatus.APIKeyConfigured || !readyStatus.ServerModelReady {
 		t.Fatalf("unexpected ready status: %+v", readyStatus)
 	}
+	// The status surface reports the canonical mode; the deprecated alias it was
+	// configured with resolves to json_object.
+	if readyStatus.StructuredOutputMode != "json_object" {
+		t.Fatalf("status structured_output_mode = %q, want json_object", readyStatus.StructuredOutputMode)
+	}
 	if readyStatus.Provider != "anthropic" || readyStatus.Model != "test-model" || readyStatus.ResponseFormat != "json_object" || readyStatus.MaxSteps != 3 || readyStatus.TimeoutSeconds != 50 {
 		t.Fatalf("configured values not reflected in status: %+v", readyStatus)
 	}

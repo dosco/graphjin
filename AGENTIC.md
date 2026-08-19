@@ -156,9 +156,12 @@ that calls the same catalog tools as runtime globals (`query_catalog`,
 `execute_graphql`, `final`), and the typed result is parsed from `key: value`
 output. There is no dependency on
 provider tool-calling, but Ax requests structured JSON for each typed stage.
-The default is strict `json_schema`; set `agent.response_format: json_object`
-for an OpenAI-compatible endpoint whose strict schema decoder does not reliably
-complete GraphJin's response schema.
+Which mechanism it uses is not GraphJin's decision: `agent.provider` names an Ax
+deployment profile, `agent.model` selects a model within it, and the profile's
+model rules declare which structured-output mechanisms that pairing supports.
+`agent.structured_output_mode: auto` (the default) takes that verified choice.
+Set `native`, `function`, or `json_object` to override it — an explicit mode the
+deployment cannot serve fails before a request is sent rather than at parse time.
 
 There are no per-request modes. A single operator kill-switch,
 `agent.read_only: true`, forces the agent read-only: mutations are rejected at

@@ -192,8 +192,14 @@ agent:
 	if err != nil {
 		t.Fatalf("NewConfig defaults: %v", err)
 	}
-	if !defaults.Agent.Enabled || defaults.Agent.Provider != "openai" || defaults.Agent.APIKeyEnv != "OPENAI_API_KEY" || defaults.Agent.ResponseFormat != "json_schema" {
+	if !defaults.Agent.Enabled || defaults.Agent.Provider != "openai" || defaults.Agent.APIKeyEnv != "OPENAI_API_KEY" {
 		t.Fatalf("unexpected agent defaults: %+v", defaults.Agent)
+	}
+	// Structured output defaults to auto: the Ax deployment profile and its
+	// model rules choose the mechanism, and the deprecated response_format
+	// alias stays empty unless an operator sets it.
+	if defaults.Agent.StructuredOutputMode != "auto" || defaults.Agent.ResponseFormat != "" {
+		t.Fatalf("unexpected structured output defaults: %+v", defaults.Agent)
 	}
 	if defaults.Agent.MaxSteps != 8 || defaults.Agent.TimeoutSeconds != 50 || defaults.Agent.ReadOnly || defaults.Agent.ReturnTrace {
 		t.Fatalf("unexpected agent runtime defaults: %+v", defaults.Agent)

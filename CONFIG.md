@@ -1089,18 +1089,25 @@ Dev and agentic modes enable it automatically. See
 It is an RLM (reasoning-with-code) loop built on Ax: the model writes JavaScript
 that calls the catalog tools and the typed result is parsed from `key: value`
 output. The model does not need provider tool-calling, but the Ax client requests
-structured JSON for each typed stage. GraphJin defaults to strict `json_schema`;
-OpenAI-compatible endpoints with incomplete strict-schema support can use
-`agent.response_format: json_object`.
+structured JSON for each typed stage. Deployments differ in which
+structured-output mechanisms they support, so Ax selects one from the named
+deployment profile and its model rules. `agent.structured_output_mode: auto`
+(the default) accepts that selection; the explicit modes are an override.
+
+Ax 24 separates the official `openai` profile from the conservative
+`openai-compatible` one. Point third-party OpenAI-compatible endpoints
+(vLLM, OpenRouter, Together, LM Studio, …) at `provider: openai-compatible` so
+they inherit that deployment's capabilities rather than OpenAI's.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `agent.enabled` | boolean | dev/agentic: `true`; prod: `false` | Enable the REST endpoint and MCP tool |
-| `agent.provider` | string | `openai` | Ax provider profile passed to `NewAI` (e.g. `openai`, `openai-compatible`, `google-gemini`) |
-| `agent.model` | string | - | Model name for the provider |
+| `agent.provider` | string | `openai` | Named Ax deployment profile. The profile owns the endpoint, authentication, capabilities, and model rules — any profile name Ax ships is valid (`openai`, `openai-compatible`, `google-gemini`, `vertex-ai`, `anthropic`, `groq`, `amazon-bedrock`, …) |
+| `agent.model` | string | - | Model within the selected deployment profile. Profiles carry per-model rules, so the pairing decides capabilities |
 | `agent.api_key_env` | string | `OPENAI_API_KEY` | Env var holding the provider API key; must be non-empty (use a dummy value for keyless local endpoints) |
 | `agent.base_url` | string | - | OpenAI-compatible provider base URL (e.g. a local or self-hosted endpoint) |
-| `agent.response_format` | string | `json_schema` | Structured-output mode: strict `json_schema`, or `json_object` for compatible endpoints whose strict schema decoder is unreliable |
+| `agent.structured_output_mode` | string | `auto` | How Ax requests structured output: `auto` lets the profile and model rule pick the verified mechanism; `native` (JSON Schema), `function`, and `json_object` force one. An explicit mode the deployment cannot serve fails before any request is sent |
+| `agent.response_format` | string | - | **Deprecated** alias of `agent.structured_output_mode`: `json_schema` maps to `native`, `json_object` to `json_object`. Set only one; the canonical key wins |
 | `agent.max_steps` | integer | `8` | Maximum agent actor steps per request |
 | `agent.timeout_seconds` | integer | `50` | Request timeout for agent runs; values below 50 are raised to the 50-second minimum |
 | `agent.read_only` | boolean | `false` | Force the server-side agent to reject mutations, including saved-query mutations |

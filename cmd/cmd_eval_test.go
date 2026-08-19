@@ -62,13 +62,13 @@ func TestEvalCommandSurfaceAndContextualFlags(t *testing.T) {
 func TestEvalProvenanceIncludesConfiguredAgentSettings(t *testing.T) {
 	instance := &gjeval.StaticInstance{TargetLabel: "demo"}
 	provenance := evalProvenance(instance, 23, gjeval.AgentStatus{
-		Provider: "google-gemini", Model: "gemini-test", ResponseFormat: "json_object", MaxSteps: 8,
+		Provider: "google-gemini", Model: "gemini-test", StructuredOutputMode: "json_object", MaxSteps: 8,
 	})
 	if provenance.MaxSteps != 8 {
 		t.Fatalf("max steps = %d, want 8", provenance.MaxSteps)
 	}
-	if provenance.ResponseFormat != "json_object" {
-		t.Fatalf("response format = %q, want json_object", provenance.ResponseFormat)
+	if provenance.StructuredOutputMode != "json_object" {
+		t.Fatalf("structured output mode = %q, want json_object", provenance.StructuredOutputMode)
 	}
 }
 

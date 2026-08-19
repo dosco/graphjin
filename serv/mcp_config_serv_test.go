@@ -64,6 +64,15 @@ func TestValidateServConfigPatch_ClassifiesReloadAndRejectsUnknown(t *testing.T)
 	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"response_format": "xml"}}); err == nil {
 		t.Fatal("expected invalid agent.response_format to be rejected")
 	}
+	// The canonical key is writable and validated the same way.
+	if _, reload, err := validateServConfigPatch(map[string]any{
+		"agent": map[string]any{"structured_output_mode": "json_object"},
+	}); err != nil || reload != servReloadHot {
+		t.Fatalf("structured_output_mode patch: reload=%q err=%v, want hot/nil", reload, err)
+	}
+	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"structured_output_mode": "strict"}}); err == nil {
+		t.Fatal("expected an invalid agent.structured_output_mode to be rejected")
+	}
 }
 
 func TestClassifyConfigUpdateImpact(t *testing.T) {
@@ -135,6 +144,11 @@ func TestHandleUpdateCurrentConfig_ServAgentPatchHotAppliesAndPersists(t *testin
 	}
 	if got := ms.service.conf.Serv.Agent.ResponseFormat; got != "json_object" {
 		t.Fatalf("agent.response_format not applied live, got %q", got)
+	}
+	// The deprecated alias still resolves to a canonical mode, so the runtime
+	// reads one value regardless of which key the operator patched.
+	if got := ms.service.conf.Serv.Agent.StructuredOutputMode; got != "json_object" {
+		t.Fatalf("legacy response_format did not resolve to a mode, got %q", got)
 	}
 	// Persisted into viper so a save writes it. viper stores the struct under
 	// "agent" (dotted traversal into a struct value is unsupported), mirroring

@@ -608,7 +608,7 @@ Instead of your client chaining `query_catalog` → `validate_where_clause` → 
 - **Machine-actionable refusals:** blocked responses carry a structured `refusal` (code, reasons, unblock steps, `policy_final`/`retryable`) so a calling agent can course-correct in one step instead of guessing.
 - **Server-owned model:** `ask_graphjin_agent` always uses the provider, model, and credential environment variable configured under `agent`. Without server credentials it fails closed with `model_credentials_required`.
 
-It is an RLM loop — the model writes JavaScript that calls the discovery tools, and the typed result is parsed from `key: value` output. It needs strong **code generation**, not provider tool-calling. Ax requests structured JSON for typed stages; strict `json_schema` is the default, with `agent.response_format: json_object` available for OpenAI-compatible endpoints whose strict decoder is unreliable. See [AGENTIC.md](AGENTIC.md#server-side-agent) and [CONFIG.md](CONFIG.md#agent-configuration).
+It is an RLM loop — the model writes JavaScript that calls the discovery tools, and the typed result is parsed from `key: value` output. It needs strong **code generation**, not provider tool-calling. Ax requests structured JSON for typed stages, choosing the mechanism from the named deployment profile (`agent.provider`) and its rules for the selected model; `agent.structured_output_mode: auto` is the default, with `native`, `function`, and `json_object` available as overrides. See [AGENTIC.md](AGENTIC.md#server-side-agent) and [CONFIG.md](CONFIG.md#agent-configuration).
 
 ## JS Workflows (GraphQL + REST)
 

@@ -40,6 +40,7 @@ type AgentStatus struct {
 	Model                string   `json:"model"`
 	APIKeyEnv            string   `json:"api_key_env,omitempty"`
 	ResponseFormat       string   `json:"response_format,omitempty"`
+	StructuredOutputMode string   `json:"structured_output_mode,omitempty"`
 	TimeoutSeconds       int      `json:"timeout_seconds,omitempty"`
 	MaxSteps             int      `json:"max_steps,omitempty"`
 	Reasoning            string   `json:"reasoning,omitempty"`

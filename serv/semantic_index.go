@@ -42,6 +42,9 @@ type SemanticEmbeddingClient interface {
 type axSemanticEmbeddingClient struct {
 	client ax.AIClient
 	model  string
+	// initErr records why the Ax client could not be built. Construction has no
+	// error return, so the failure is reported when the client is first used.
+	initErr error
 }
 
 func newAxSemanticEmbeddingClient(conf SemanticCatalogSearchConfig) SemanticEmbeddingClient {
@@ -54,13 +57,40 @@ func newAxSemanticEmbeddingClient(conf SemanticCatalogSearchConfig) SemanticEmbe
 	if baseURL := strings.TrimSpace(conf.BaseURL); baseURL != "" {
 		options["base_url"] = baseURL
 	}
+	client, err := newSemanticProfileClient(conf.Provider, options)
 	return &axSemanticEmbeddingClient{
-		client: ax.NewAI(conf.Provider, options),
-		model:  conf.EmbeddingModel,
+		client:  client,
+		model:   conf.EmbeddingModel,
+		initErr: err,
 	}
 }
 
+// newSemanticProfileClient builds the embedding client for a named Ax
+// deployment profile. ax.NewAI panics on an unknown profile, and from Ax 24
+// also when the profile requires credentials it was not given — semantic
+// indexing deliberately passes an empty key rather than let Ax fall back to
+// another provider's default. Recover so catalog indexing reports a
+// configuration problem instead of taking down the server.
+func newSemanticProfileClient(provider string, options map[string]ax.Value) (client ax.AIClient, err error) {
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			return
+		}
+		client = nil
+		if axErr, ok := recovered.(ax.AxError); ok {
+			err = fmt.Errorf("semantic catalog search provider %q: %s", provider, axErr.Message)
+			return
+		}
+		err = fmt.Errorf("semantic catalog search provider %q is not a usable Ax deployment profile: %v", provider, recovered)
+	}()
+	return ax.NewAI(provider, options), nil
+}
+
 func (c *axSemanticEmbeddingClient) Embed(ctx context.Context, texts []string, dimensions *int) ([][]float32, error) {
+	if c != nil && c.initErr != nil {
+		return nil, c.initErr
+	}
 	if c == nil || c.client == nil {
 		return nil, errors.New("Ax embedding client is not initialized")
 	}

@@ -1040,21 +1040,22 @@ func evalSuitePath(projectPath string) string {
 
 func evalProvenance(instance gjeval.Instance, seed int64, status gjeval.AgentStatus) gjeval.RunProvenance {
 	return gjeval.RunProvenance{
-		Provider:           status.Provider,
-		Model:              status.Model,
-		APIKeyEnv:          status.APIKeyEnv,
-		ResponseFormat:     status.ResponseFormat,
-		ServerFingerprint:  status.EvalFingerprint,
-		AxVersion:          evalAxVersion(),
-		GraphJinCommit:     commit,
-		PromptRegistryHash: evalPromptRegistryHash(),
-		Temperature:        0,
-		Seed:               seed,
-		Repeats:            gjeval.DefaultRepeats,
-		MaxSteps:           status.MaxSteps,
-		Reasoning:          status.Reasoning,
-		TimeoutSeconds:     status.TimeoutSeconds,
-		Target:             instance.Label(),
+		Provider:             status.Provider,
+		Model:                status.Model,
+		APIKeyEnv:            status.APIKeyEnv,
+		ResponseFormat:       status.ResponseFormat,
+		StructuredOutputMode: status.StructuredOutputMode,
+		ServerFingerprint:    status.EvalFingerprint,
+		AxVersion:            evalAxVersion(),
+		GraphJinCommit:       commit,
+		PromptRegistryHash:   evalPromptRegistryHash(),
+		Temperature:          0,
+		Seed:                 seed,
+		Repeats:              gjeval.DefaultRepeats,
+		MaxSteps:             status.MaxSteps,
+		Reasoning:            status.Reasoning,
+		TimeoutSeconds:       status.TimeoutSeconds,
+		Target:               instance.Label(),
 	}
 }
 

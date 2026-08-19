@@ -128,15 +128,46 @@ func demoAgentKeyEnv() (string, string) {
 // custom setups keep whatever the caller configured.
 func demoAgentProviderKeyEnv(provider string) string {
 	var candidates []string
+	// Ax 24 accepts any named deployment profile, so this is convenience for the
+	// common ones and never a gate: a profile absent from this list still works
+	// when the operator sets GJ_AGENT_API_KEY_ENV explicitly.
 	switch strings.ToLower(provider) {
 	case "openai":
 		candidates = []string{"OPENAI_API_KEY"}
+	case "openai-compatible", "openai_compatible", "compatible":
+		candidates = []string{"OPENAI_COMPATIBLE_API_KEY", "OPENAI_API_KEY"}
 	case "anthropic":
 		candidates = []string{"ANTHROPIC_API_KEY"}
 	case "google-gemini", "gemini", "google":
 		candidates = []string{"GOOGLE_API_KEY", "GEMINI_API_KEY"}
-	case "deepseek":
+	case "vertex-ai", "vertex-openai":
+		candidates = []string{"VERTEX_AI_TOKEN", "GOOGLE_VERTEX_TOKEN", "GOOGLE_API_KEY"}
+	case "deepseek", "deepseek-responses":
 		candidates = []string{"DEEPSEEK_API_KEY"}
+	case "grok":
+		candidates = []string{"GROK_API_KEY", "XAI_API_KEY"}
+	case "groq":
+		candidates = []string{"GROQ_API_KEY"}
+	case "mistral":
+		candidates = []string{"MISTRAL_API_KEY"}
+	case "cohere":
+		candidates = []string{"COHERE_API_KEY"}
+	case "fireworks":
+		candidates = []string{"FIREWORKS_API_KEY"}
+	case "cerebras":
+		candidates = []string{"CEREBRAS_API_KEY"}
+	case "together":
+		candidates = []string{"TOGETHER_API_KEY"}
+	case "azure-openai", "azure-foundry":
+		candidates = []string{"AZURE_OPENAI_API_KEY"}
+	case "amazon-bedrock":
+		candidates = []string{"AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID"}
+	case "huggingface-router":
+		candidates = []string{"HUGGINGFACE_API_KEY", "HF_TOKEN"}
+	case "deepinfra":
+		candidates = []string{"DEEPINFRA_API_KEY"}
+	case "openrouter":
+		candidates = []string{"OPENROUTER_API_KEY"}
 	}
 	for _, candidate := range candidates {
 		if os.Getenv(candidate) != "" {
