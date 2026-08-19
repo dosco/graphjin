@@ -490,6 +490,17 @@ if (await exists(benchmarkDataPath)) {
     ['data-guard-interventions', (run) => run.guard_interventions ?? 0],
     ['data-unsafe-effects', (run) => run.unsafe_effects ?? 0],
   ];
+  // A run's thinking effort changes both what it can do and what it costs, so
+  // two rows for the same model are not comparable without it. It lives in run
+  // provenance; assert the published row carries it rather than leaving the
+  // fact to prose in the notes.
+  // Ranked rows only: superseded rows were published before the field existed
+  // and cannot be rescored retroactively for every historical build.
+  for (const run of (parsed.runs ?? []).filter((entry) => entry.ranked === true)) {
+    if (/reasoning_effort|thinking enabled/i.test(String(run.notes ?? '')) && !String(run.reasoning ?? '').trim()) {
+      failures.push(`Run ${run.run_id} describes its thinking effort in notes but has no reasoning field`);
+    }
+  }
   const comparisonGeneration = parsed.suite.comparison_generation ?? parsed.suite.generation;
   const rankedRuns = parsed.runs.filter(
     (run) => run.ranked === true && run.generation === comparisonGeneration

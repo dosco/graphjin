@@ -1302,7 +1302,8 @@ runs:
       label: DeepSeek V4 Flash
       release: 56da87df
       notes: Generation 2028.2 under ax 23.0.16 with thinking enabled (reasoning_effort high) on the validated json_object output rung. Supersedes the earlier DeepSeek row, which ran with thinking silently disabled and scored 0.177. Episodes ran 8-wide with mutation tasks write-locked, so latency percentiles are not comparable with serial rows. Token accounting has 19 unknown attempts from provider timeouts, so usage and cost are withheld rather than understated.
-      ranked: true
+      ranked: false
+      unranked_reason: superseded by GraphJin build 56da87df
       generation: "2028.2"
       generated_at: 2026-08-17T23:46:15.174443Z
       model: deepseek-v4-flash
@@ -1430,4 +1431,69 @@ runs:
       guard_interventions: 168
       unsafe_effects: 0
       rescored_from: 20260816T072200.196202000Z-3e8d5a0d
+      accepted: true
+    - run_id: 20260819T082108.835413000Z-c1a191da
+      slug: 20260819t082108-c1a191da
+      label: DeepSeek V4 Flash
+      release: 56da87df
+      notes: Generation 2028.2 under ax 23.0.16 with thinking enabled at reasoning_effort high, on the validated json_object output rung. Supersedes the earlier DeepSeek row, which ran with thinking silently disabled and scored 0.177. Episodes ran 8-wide with mutation tasks write-locked, so latency percentiles are not comparable with serial rows. Token accounting has 19 unknown attempts from provider timeouts, so usage and cost are withheld rather than understated.
+      ranked: true
+      generation: "2028.2"
+      generated_at: 2026-08-19T08:21:08.835413Z
+      model: deepseek-v4-flash
+      provider: deepseek
+      reasoning: high
+      graphjin_commit: 56da87dfcd0d8f17d0538b43cc252d3972da6889
+      binary_fingerprint: d1e255166b1f29db2ef57d639bf6c992a14c0d2a6f3577db5dfd265d4d198272
+      suite_identity: 308df3840f76a1e97096df77c3e41f1e
+      suite_fingerprint: b77fb918d9dd40dc7204cc4241d6c763
+      catalog_hash: 51a57f1958b4c8e15a09f10d73f6a3f9
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 4ef426f5dcef00d805a4a203015f8cb3c4f0c69aef41e09135d55de38596bd5e
+      data_anchor: "2026-08-17"
+      reward_version: graphjin.eval.reward/v4
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.6637168141592921
+      recall_ci_low: 0.5663716814159292
+      recall_ci_high: 0.7433628318584071
+      pass_at_k: 0.8141592920353983
+      pass_power_k: 0.3274336283185841
+      ground_truth_recall: 0.7475728155339806
+      method_recall: 0.7087378640776699
+      safety_precision: 1
+      behavior_recall: 0.8141592920353983
+      category_recall:
+        action: 0.4
+        aggregate: 0.9333333333333333
+        cross-source: 0.375
+        discovery: 0.1
+        multi-turn: 0.2857142857142857
+        ranking: 0.75
+        reactive: 0.5833333333333334
+        refusal: 1
+        saved-metric: 1
+        window: 0.9333333333333333
+      rollup_recall:
+        governance: 1
+        operations: 0.42857142857142855
+        questions: 0.7704918032786885
+      rollup_pass_power:
+        governance: 1
+        operations: 0.023809523809523808
+        questions: 0.4262295081967213
+      mean_reward: 0.8027300884955749
+      total_tokens: 0
+      provider_total_tokens: 0
+      latency_p50_ms: 210206
+      latency_p95_ms: 950617
+      usage_incomplete: true
+      guard_interventions: 100
+      unsafe_effects: 0
+      rescored_from: 20260817T080637.033539000Z-b3deb70b
       accepted: true
