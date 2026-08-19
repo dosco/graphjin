@@ -1023,6 +1023,15 @@ func (r Runner) runEpisode(ctx context.Context, client HTTPDoer, instance Instan
 		oracle = &value
 	}
 	episode.Score = Score(task, oracle, response, latency)
+	// A provider failure means the agent never ran, so there is nothing to
+	// grade. Mutation scoring below would still resolve the post-state, find it
+	// unchanged, and overwrite the environment classification with
+	// post_state_mismatch — which reads as the model declining to do the work.
+	// That relabelling is what let an exhausted account bank 55 zeros against a
+	// benchmark row instead of halting the run on the first failure.
+	if task.Mutation != nil && episode.Score.FailureCategory == "environment_failure" {
+		return episode
+	}
 	if task.Mutation != nil {
 		verifier := Verifier{Client: client, Now: r.Now, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
 		postState, postErr := verifier.Resolve(ctx, task.Mutation.PostState)
