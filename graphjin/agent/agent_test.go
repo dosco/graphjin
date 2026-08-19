@@ -36,12 +36,16 @@ type fakeProgram struct {
 	options        map[string]ax.Value
 	forwardValues  map[string]ax.Value
 	forwardOptions map[string]ax.Value
-	onForward      func(*fakeProgram)
+	// forwardClient records the client Ax was handed, so tests can prove
+	// GraphJin passes the factory's client through without decorating it.
+	forwardClient ax.AIClient
+	onForward     func(*fakeProgram)
 }
 
-func (p *fakeProgram) Forward(_ context.Context, _ ax.AIClient, values map[string]ax.Value, options map[string]ax.Value) (ax.Value, error) {
+func (p *fakeProgram) Forward(_ context.Context, client ax.AIClient, values map[string]ax.Value, options map[string]ax.Value) (ax.Value, error) {
 	p.forwardValues = values
 	p.forwardOptions = options
+	p.forwardClient = client
 	if p.onForward != nil {
 		p.onForward(p)
 	}

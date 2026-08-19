@@ -181,14 +181,29 @@ Point the agent at any OpenAI-compatible chat-completions endpoint (vLLM, Ollama
 
 ```yaml
 agent:
-  provider: openai            # or: openai-compatible
+  provider: openai-compatible # third-party endpoints; `openai` is official OpenAI
   model: <model-name>
   api_key_env: OPENAI_API_KEY # must hold a non-empty value (a dummy is fine for keyless local endpoints)
   base_url: https://your-endpoint/v1
-  # response_format: json_object # use only when strict json_schema is unreliable
+  structured_output_mode: auto # auto | native | function | json_object
 ```
 
-Because the loop is driven by generated code rather than provider tool-calling, the practical requirement is a model that codegens well — not one with native function-calling support. Keep the default `json_schema` when the endpoint implements it reliably; `json_object` relaxes schema enforcement while preserving JSON output.
+Because the loop is driven by generated code rather than provider tool-calling, the practical requirement is a model that codegens well — not one with native function-calling support.
+
+`agent.provider` names an Ax **deployment profile**, and `agent.model` selects a model within it. The profile owns the endpoint, authentication, capabilities, and per-model rules, so pointing GraphJin at a different deployment is a configuration change rather than a code change:
+
+```yaml
+agent:
+  provider: vertex-ai
+  model: google/gemma-4-26b-a4b-it-maas
+  api_key_env: VERTEX_AI_TOKEN
+  base_url: https://REGION-aiplatform.googleapis.com/v1beta1/projects/PROJECT/locations/REGION/endpoints/openapi
+  structured_output_mode: auto
+```
+
+Deployments differ in which structured-output mechanisms they support, and `auto` takes the one the profile and model rule have verified for that pairing. Set `native`, `function`, or `json_object` to override it; an explicit mode the deployment cannot serve fails before a request is sent.
+
+**Migration note.** Ax 24 separates the official `openai` profile from the conservative `openai-compatible` one. If you point GraphJin at a third-party OpenAI-compatible endpoint, use `provider: openai-compatible` so it inherits that deployment's capabilities rather than OpenAI's. The deprecated `agent.response_format` still works: `json_schema` maps to `native`, `json_object` to `json_object`.
 
 ## When to use it
 

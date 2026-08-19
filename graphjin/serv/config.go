@@ -1080,10 +1080,12 @@ func normalizeAgentConfig(c *Config) error {
 	if c == nil {
 		return nil
 	}
-	if err := gjagent.ValidateResponseFormat(c.Agent.ResponseFormat); err != nil {
+	if err := gjagent.ValidateStructuredOutputMode(c.Agent.StructuredOutputMode, c.Agent.ResponseFormat); err != nil {
 		return err
 	}
-	c.Agent.ResponseFormat = gjagent.EffectiveResponseFormat(c.Agent.ResponseFormat)
+	// Resolve the deprecated alias once, here, so every downstream reader sees a
+	// single canonical mode and never has to re-derive precedence.
+	c.Agent.StructuredOutputMode = gjagent.EffectiveStructuredOutputMode(c.Agent.StructuredOutputMode, c.Agent.ResponseFormat)
 	return nil
 }
 
@@ -1209,7 +1211,10 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("agent.model", "")
 	vi.SetDefault("agent.api_key_env", "OPENAI_API_KEY")
 	vi.SetDefault("agent.base_url", "")
-	vi.SetDefault("agent.response_format", gjagent.ResponseFormatJSONSchema)
+	// Both default to empty: an explicit response_format must still be able to
+	// win over an unset canonical key, and the resolver supplies "auto".
+	vi.SetDefault("agent.structured_output_mode", "")
+	vi.SetDefault("agent.response_format", "")
 	vi.SetDefault("agent.max_steps", 8)
 	vi.SetDefault("agent.timeout_seconds", 50)
 	vi.SetDefault("agent.read_only", false)
@@ -1226,6 +1231,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("agent.timeout_seconds", "GJ_AGENT_TIMEOUT_SECONDS", "SG_AGENT_TIMEOUT_SECONDS", "SJ_AGENT_TIMEOUT_SECONDS")                             //nolint:errcheck
 	vi.BindEnv("agent.max_steps", "GJ_AGENT_MAX_STEPS", "SG_AGENT_MAX_STEPS", "SJ_AGENT_MAX_STEPS")                                                     //nolint:errcheck
 	vi.BindEnv("agent.base_url", "GJ_AGENT_BASE_URL", "SG_AGENT_BASE_URL", "SJ_AGENT_BASE_URL")                                                         //nolint:errcheck
+	vi.BindEnv("agent.structured_output_mode", "GJ_AGENT_STRUCTURED_OUTPUT_MODE", "SG_AGENT_STRUCTURED_OUTPUT_MODE", "SJ_AGENT_STRUCTURED_OUTPUT_MODE") //nolint:errcheck
 	vi.BindEnv("agent.response_format", "GJ_AGENT_RESPONSE_FORMAT", "SG_AGENT_RESPONSE_FORMAT", "SJ_AGENT_RESPONSE_FORMAT")                             //nolint:errcheck
 	vi.BindEnv("agent.enabled", "GJ_AGENT_ENABLED", "SG_AGENT_ENABLED", "SJ_AGENT_ENABLED")                                                             //nolint:errcheck
 	vi.BindEnv("agent.api_key_env", "GJ_AGENT_API_KEY_ENV", "SG_AGENT_API_KEY_ENV", "SJ_AGENT_API_KEY_ENV")                                             //nolint:errcheck

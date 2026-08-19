@@ -303,7 +303,7 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithStringItems(),
 		),
 		mcp.WithObject("serv",
-			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, response_format, max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
+			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, structured_output_mode, response_format [deprecated alias], max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
 				"agent changes are read live; the rest are persisted and take effect on the next restart (automatic when reload_on_config_change is enabled). "+
 				"Secret-bearing sections (auth, redis, uploads) are read-only on gj_config and cannot be patched here. scope reports serv or mixed and reload_mode reports hot or restart."),
 		),
@@ -2314,6 +2314,9 @@ var servWritableReload = map[string]string{
 // startup wiring or name secrets and are excluded.
 var agentWritableFields = map[string]bool{
 	"model": true, "max_steps": true, "timeout_seconds": true,
+	"structured_output_mode": true,
+	// response_format is the deprecated alias of structured_output_mode; it
+	// stays writable so existing automation keeps working.
 	"response_format": true,
 	"read_only":       true, "return_trace": true,
 	"seed_limit": true, "catalog_default_limit": true,
@@ -2361,12 +2364,23 @@ func validateServConfigPatch(patch map[string]any) (changes []string, reload str
 					return nil, "", fmt.Errorf("serv.agent.%s is not writable; writable agent fields: %s", f, strings.Join(sortedKeys(agentWritableFields), ", "))
 				}
 			}
+			structuredMode, legacyFormat := "", ""
+			if mode, ok := m["structured_output_mode"]; ok {
+				value, ok := mode.(string)
+				if !ok {
+					return nil, "", fmt.Errorf("serv.agent.structured_output_mode must be a string")
+				}
+				structuredMode = value
+			}
 			if responseFormat, ok := m["response_format"]; ok {
 				value, ok := responseFormat.(string)
 				if !ok {
 					return nil, "", fmt.Errorf("serv.agent.response_format must be a string")
 				}
-				if err := gjagent.ValidateResponseFormat(value); err != nil {
+				legacyFormat = value
+			}
+			if structuredMode != "" || legacyFormat != "" {
+				if err := gjagent.ValidateStructuredOutputMode(structuredMode, legacyFormat); err != nil {
 					return nil, "", err
 				}
 			}
@@ -2434,7 +2448,13 @@ func applyAgentConfigPatch(a *AgentConfig, m map[string]any) {
 		a.Model = v
 	}
 	if v, ok := m["response_format"].(string); ok {
-		a.ResponseFormat = gjagent.EffectiveResponseFormat(v)
+		a.ResponseFormat = strings.TrimSpace(v)
+		a.StructuredOutputMode = gjagent.EffectiveStructuredOutputMode("", v)
+	}
+	// Applied after the alias so an explicit canonical value in the same patch
+	// wins, matching the precedence config loading uses.
+	if v, ok := m["structured_output_mode"].(string); ok {
+		a.StructuredOutputMode = gjagent.EffectiveStructuredOutputMode(v, "")
 	}
 	if v, ok := configInt(m["max_steps"]); ok {
 		a.MaxSteps = v

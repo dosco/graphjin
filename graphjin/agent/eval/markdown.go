@@ -159,7 +159,7 @@ func writeIdentity(b *strings.Builder, r Report) {
 	writeRow(b, "Mode", string(r.Mode))
 	writeRow(b, "Provider", displayValue(r.Provenance.Provider))
 	writeRow(b, "Model", displayValue(r.Provenance.Model))
-	writeRow(b, "Response format", displayValue(r.Provenance.ResponseFormat))
+	writeRow(b, "Structured output mode", displayValue(structuredOutputModeForDisplay(r.Provenance)))
 	writeRow(b, "Target", displayValue(r.Provenance.Target))
 	writeRow(b, "GraphJin commit", displayValue(r.Provenance.GraphJinCommit))
 	writeRow(b, "Binary fingerprint", displayValue(r.Provenance.BinaryFingerprint))
@@ -186,7 +186,7 @@ func writePartialIdentity(b *strings.Builder, r PartialReport) {
 	writeRow(b, "Mode", string(r.Mode))
 	writeRow(b, "Provider", displayValue(r.Provenance.Provider))
 	writeRow(b, "Model", displayValue(r.Provenance.Model))
-	writeRow(b, "Response format", displayValue(r.Provenance.ResponseFormat))
+	writeRow(b, "Structured output mode", displayValue(structuredOutputModeForDisplay(r.Provenance)))
 	writeRow(b, "Target", displayValue(r.Provenance.Target))
 	writeRow(b, "Suite fingerprint", displayValue(r.SuiteFingerprint))
 	writeRow(b, "Catalog hash", displayValue(r.DatasetFingerprint.CatalogHash))
@@ -463,4 +463,20 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// structuredOutputModeForDisplay prefers the mode new runs record and falls
+// back to the deprecated response_format so reports published before the
+// rename keep showing what they ran with.
+func structuredOutputModeForDisplay(p RunProvenance) string {
+	if p.StructuredOutputMode != "" {
+		return p.StructuredOutputMode
+	}
+	switch p.ResponseFormat {
+	case "json_schema":
+		return "native (from response_format json_schema)"
+	case "json_object":
+		return "json_object (from response_format json_object)"
+	}
+	return ""
 }

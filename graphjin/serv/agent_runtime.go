@@ -32,19 +32,20 @@ func agentConfigFromService(conf *Config) gjagent.Config {
 		return gjagent.Config{}
 	}
 	return gjagent.Config{
-		Enabled:             conf.Agent.Enabled,
-		Provider:            conf.Agent.Provider,
-		Model:               conf.Agent.Model,
-		APIKeyEnv:           conf.Agent.APIKeyEnv,
-		BaseURL:             conf.Agent.BaseURL,
-		ResponseFormat:      conf.Agent.ResponseFormat,
-		Reasoning:           conf.Agent.Reasoning,
-		MaxSteps:            conf.Agent.MaxSteps,
-		TimeoutSeconds:      gjagent.EffectiveTimeoutSeconds(conf.Agent.TimeoutSeconds),
-		ReadOnly:            conf.Agent.ReadOnly,
-		ReturnTrace:         conf.Agent.ReturnTrace,
-		SeedLimit:           conf.Agent.SeedLimit,
-		CatalogDefaultLimit: conf.Agent.CatalogDefaultLimit,
+		Enabled:              conf.Agent.Enabled,
+		Provider:             conf.Agent.Provider,
+		Model:                conf.Agent.Model,
+		APIKeyEnv:            conf.Agent.APIKeyEnv,
+		BaseURL:              conf.Agent.BaseURL,
+		ResponseFormat:       conf.Agent.ResponseFormat,
+		StructuredOutputMode: conf.Agent.StructuredOutputMode,
+		Reasoning:            conf.Agent.Reasoning,
+		MaxSteps:             conf.Agent.MaxSteps,
+		TimeoutSeconds:       gjagent.EffectiveTimeoutSeconds(conf.Agent.TimeoutSeconds),
+		ReadOnly:             conf.Agent.ReadOnly,
+		ReturnTrace:          conf.Agent.ReturnTrace,
+		SeedLimit:            conf.Agent.SeedLimit,
+		CatalogDefaultLimit:  conf.Agent.CatalogDefaultLimit,
 	}
 }
 

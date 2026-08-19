@@ -23,7 +23,7 @@ const (
 
 	defaultProvider       = "openai"
 	defaultAPIKeyEnv      = "OPENAI_API_KEY"
-	defaultResponseFormat = ResponseFormatJSONSchema
+	defaultStructuredOutputMode = StructuredOutputAuto
 	defaultMaxSteps       = 8
 	minTimeoutSeconds     = 50
 	defaultTimeoutSeconds = minTimeoutSeconds
@@ -56,7 +56,13 @@ type Config struct {
 	Model          string `mapstructure:"model" jsonschema:"title=Agent Model"`
 	APIKeyEnv      string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
 	BaseURL        string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
-	ResponseFormat string `mapstructure:"response_format" jsonschema:"title=Agent Response Format,default=json_schema,enum=json_schema,enum=json_object"`
+	// StructuredOutputMode selects the Ax structured-output mechanism. "auto"
+	// lets the deployment profile and its model rules choose the mechanism Ax
+	// has verified for that pairing; the explicit values are an override.
+	StructuredOutputMode string `mapstructure:"structured_output_mode" jsonschema:"title=Agent Structured Output Mode,default=auto,enum=auto,enum=native,enum=function,enum=json_object"`
+	// ResponseFormat is the deprecated predecessor of StructuredOutputMode:
+	// json_schema maps to native, json_object to json_object. Set only one.
+	ResponseFormat string `mapstructure:"response_format" jsonschema:"title=Agent Response Format (deprecated: use structured_output_mode),enum=json_schema,enum=json_object"`
 	// Reasoning selects the provider's thinking effort for models that have
 	// one. It is deliberately explicit: providers disagree on the default,
 	// and DeepSeek's adapter disables thinking outright unless a level is
@@ -366,7 +372,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		return Response{}, ErrInstructionTooLong
 	}
 	cfg := a.config.withDefaults()
-	if err := ValidateResponseFormat(cfg.ResponseFormat); err != nil {
+	if err := ValidateStructuredOutputMode(cfg.StructuredOutputMode, cfg.ResponseFormat); err != nil {
 		return Response{}, err
 	}
 	// read_only is the single operator kill-switch (D3) that forces the agent to
@@ -392,7 +398,6 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if err != nil {
 		return Response{}, err
 	}
-	client = withResponseFormat(client, cfg.ResponseFormat)
 
 	var program Program
 	var protocol *protocolRuntime
@@ -518,6 +523,10 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	}, map[string]ax.Value{
 		"runtime":         runtime,
 		"max_actor_steps": maxSteps,
+		// Ax resolves this against the deployment profile and model rules, and
+		// fails before transport if the deployment cannot serve an explicit
+		// mode. GraphJin never inspects the provider or model name itself.
+		"structured_output_mode": cfg.StructuredOutputMode,
 	})
 	if err != nil {
 		if finalResp, ok := responseFromFinalActionLog(program.GetActionLog(), traceID); ok {
@@ -549,11 +558,38 @@ func DefaultClientFactory(cfg Config) (ax.AIClient, error) {
 		options["baseUrl"] = cfg.BaseURL
 		options["base_url"] = cfg.BaseURL
 	}
-	client := ax.NewAI(cfg.Provider, options)
+	client, err := newProfileClient(cfg.Provider, options)
+	if err != nil {
+		return nil, err
+	}
 	if reasoning := normalizedReasoningEffort(cfg.Reasoning); reasoning != "" {
 		client = &reasoningClient{inner: client, budget: reasoning}
 	}
 	return client, nil
+}
+
+// newProfileClient builds the client for a named Ax deployment profile.
+//
+// ax.NewAI panics rather than returning an error when the profile name is not
+// in its catalog, when the profile requires credentials it was not given, or
+// when the descriptor names a transport the binding cannot build. A mistyped
+// agent.provider would therefore take down the server instead of failing
+// configuration, which is unacceptable now that any profile name is valid
+// input. Recover and report it as the configuration error it is.
+func newProfileClient(provider string, options map[string]ax.Value) (client ax.AIClient, err error) {
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			return
+		}
+		client = nil
+		if axErr, ok := recovered.(ax.AxError); ok {
+			err = fmt.Errorf("agent.provider %q: %s", provider, axErr.Message)
+			return
+		}
+		err = fmt.Errorf("agent.provider %q is not a usable Ax deployment profile: %v", provider, recovered)
+	}()
+	return ax.NewAI(provider, options), nil
 }
 
 // reasoningClient sets the thinking budget on every request ax hands to the
@@ -634,7 +670,7 @@ func (c Config) withDefaults() Config {
 	if c.APIKeyEnv == "" {
 		c.APIKeyEnv = defaultAPIKeyEnv
 	}
-	c.ResponseFormat = EffectiveResponseFormat(c.ResponseFormat)
+	c.StructuredOutputMode = EffectiveStructuredOutputMode(c.StructuredOutputMode, c.ResponseFormat)
 	if c.MaxSteps <= 0 {
 		c.MaxSteps = defaultMaxSteps
 	}

@@ -158,9 +158,14 @@ func TestAxSemanticEmbeddingClientAcceptsRuntimeArrays(t *testing.T) {
 	}))
 	defer server.Close()
 
+	// Ax 24 requires a credential at construction for a profile that declares
+	// auth, even when the endpoint is a local fixture that ignores it. This is
+	// the dummy-value guidance CONFIG.md already gives for keyless endpoints.
+	t.Setenv("SEMANTIC_FIXTURE_KEY", "fixture-key")
 	client := newAxSemanticEmbeddingClient(SemanticCatalogSearchConfig{
 		Provider:       "openai",
 		EmbeddingModel: "fixture-embedding",
+		APIKeyEnv:      "SEMANTIC_FIXTURE_KEY",
 		BaseURL:        server.URL + "/v1",
 	})
 	dimensions := 4

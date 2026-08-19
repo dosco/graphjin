@@ -2,6 +2,89 @@
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"$id": "https://graphjin.com/schema/config.json",
 	"$defs": {
+		"AgentConfig": {
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"title": "Enable GraphJin Agent",
+					"description": "Parsed dev and agentic service configs default to enabled; prod and direct Go configs remain disabled"
+				},
+				"provider": {
+					"type": "string",
+					"title": "Agent Provider",
+					"default": "openai"
+				},
+				"model": {
+					"type": "string",
+					"title": "Agent Model"
+				},
+				"api_key_env": {
+					"type": "string",
+					"title": "Agent API Key Environment Variable",
+					"default": "OPENAI_API_KEY"
+				},
+				"base_url": {
+					"type": "string",
+					"title": "Agent Provider Base URL"
+				},
+				"structured_output_mode": {
+					"type": "string",
+					"enum": [
+						"auto",
+						"native",
+						"function",
+						"json_object"
+					],
+					"title": "Agent Structured Output Mode",
+					"default": "auto"
+				},
+				"response_format": {
+					"type": "string",
+					"enum": [
+						"json_schema",
+						"json_object"
+					],
+					"title": "Agent Response Format (deprecated: use structured_output_mode)"
+				},
+				"reasoning": {
+					"type": "string",
+					"title": "Agent Reasoning Effort",
+					"description": "Provider thinking effort for models that support it: none low medium high xhigh"
+				},
+				"max_steps": {
+					"type": "integer",
+					"title": "Agent Max Steps",
+					"default": 8
+				},
+				"timeout_seconds": {
+					"type": "integer",
+					"title": "Agent Timeout Seconds",
+					"default": 50
+				},
+				"read_only": {
+					"type": "boolean",
+					"title": "Force Agent Read-Only",
+					"default": false
+				},
+				"return_trace": {
+					"type": "boolean",
+					"title": "Return Agent Trace",
+					"default": false
+				},
+				"seed_limit": {
+					"type": "integer",
+					"title": "Agent Seed Catalog Limit",
+					"default": 40
+				},
+				"catalog_default_limit": {
+					"type": "integer",
+					"title": "Agent Catalog Default Limit",
+					"default": 20
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
 		"ArtifactsConfig": {
 			"properties": {
 				"enabled": {
@@ -2175,6 +2258,12 @@
 			"title": "Application Name",
 			"description": "Application name is used in log and debug messages"
 		},
+		"disable_column_value_sampling": {
+			"type": "boolean",
+			"title": "Disable Catalog Column Value Sampling",
+			"description": "Stops the catalog from sampling the small value sets of enum-like columns\n(status, severity, plan, and similar). Those sets let an agent filter on a\nreal value instead of inventing one, so leaving this off is recommended;\nset it when even low-cardinality values must not appear in catalog cards.",
+			"default": false
+		},
 		"config_path": {
 			"type": "string",
 			"title": "Config Path",
@@ -2302,7 +2391,7 @@
 			"description": "MCP (Model Context Protocol) server configuration"
 		},
 		"agent": {
-			"$ref": "#/$defs/Config",
+			"$ref": "#/$defs/AgentConfig",
 			"title": "GraphJin Agent Configuration",
 			"description": "Server-side GraphJin discovery/answer agent configuration"
 		},
