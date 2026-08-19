@@ -355,7 +355,9 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, evalBenchEnvSpec(target, projectPath, seed, public))
+			benchSpec := evalBenchEnvSpec(target, projectPath, seed, public)
+			benchSpec.PinDataAnchor = evalResumeDataAnchor(projectPath, policy, opts.ResumeRunID)
+			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, benchSpec)
 			if err != nil {
 				return evalEnvironmentError(err)
 			}
@@ -449,6 +451,40 @@ func evalRescoreCmd(opts *evalCLIOptions) *cobra.Command {
 	}
 }
 
+// evalResumeDataAnchor reports the demo data anchor an incomplete run was
+// graded against, so the environment can hold the demo there instead of
+// shifting dates to today. Read before the demo boots, because the boot itself
+// is what moves the data. Empty when starting fresh or when nothing resumable
+// is on disk.
+func evalResumeDataAnchor(projectPath string, policy gjeval.ResumePolicy, runID string) string {
+	if policy == gjeval.ResumeFresh {
+		return ""
+	}
+	store := gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir))
+	if id := strings.TrimSpace(runID); id != "" {
+		manifest, err := store.LoadManifest(id)
+		if err != nil || manifest == nil {
+			return ""
+		}
+		return manifest.DatasetFingerprint.DataAnchor
+	}
+	runs, err := store.ListRuns()
+	if err != nil {
+		return ""
+	}
+	anchor := ""
+	newest := ""
+	for _, manifest := range runs {
+		if manifest.Complete() || manifest.DatasetFingerprint.DataAnchor == "" {
+			continue
+		}
+		if stamp := manifest.UpdatedAt.Format(time.RFC3339Nano); stamp > newest {
+			newest, anchor = stamp, manifest.DatasetFingerprint.DataAnchor
+		}
+	}
+	return anchor
+}
+
 func evalBenchEnvSpec(target gjeval.Target, projectPath string, seed int64, public bool) gjeval.EnvSpec {
 	return gjeval.EnvSpec{
 		Target: target, ConfigPath: projectPath, Seed: seed,
@@ -540,6 +576,7 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 	instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, gjeval.EnvSpec{
 		Target: target, ConfigPath: projectPath, Seed: seed,
 		Writable: writable, Reactive: reactive, Resettable: resettable,
+		PinDataAnchor: evalResumeDataAnchor(projectPath, policy, opts.ResumeRunID),
 	})
 	if err != nil {
 		return nil, nil, evalEnvironmentError(err)

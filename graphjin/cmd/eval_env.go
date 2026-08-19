@@ -108,11 +108,14 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		// globals. The eval command is single-shot, so there is no concurrent
 		// command state to contend with.
 		previousPath, previousConf, previousDB, previousOpened := cpath, conf, db, dbOpened
+		previousAnchor := demoPinnedDataAnchor
 		restoreDemoGlobals = func() {
 			cpath, conf, db, dbOpened = previousPath, previousConf, previousDB, previousOpened
+			demoPinnedDataAnchor = previousAnchor
 		}
 		cpath = configPath
 		conf = &cloned
+		demoPinnedDataAnchor = spec.PinDataAnchor
 		runtime, err = StartDemo(ctx, []string{"sqlite"}, e.StatusOut)
 		if err != nil {
 			closeEvalAPIServer(apiServer)

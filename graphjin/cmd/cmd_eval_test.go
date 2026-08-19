@@ -619,3 +619,45 @@ func TestEvalStatusListsIncompleteRunWithoutPrivateContent(t *testing.T) {
 		t.Fatalf("unexpected incomplete status: %s", output.String())
 	}
 }
+
+// A public benchmark run takes 12-15 hours, so it routinely outlives a UTC
+// midnight. The demo's seed data is date-anchored and shifts forward on each
+// boot, which changes the dataset fingerprint — so resuming the next morning
+// was refused as incompatible and the completed episodes were stranded. The
+// environment now pins the anchor the incomplete run recorded.
+func TestEvalResumeDataAnchorPinsTheIncompleteRun(t *testing.T) {
+	dir := t.TempDir()
+	store := gjeval.NewStore(filepath.Join(dir, gjeval.DefaultStateDir))
+
+	yesterday := gjeval.RunManifest{
+		RunID: "20260818T171305.793809000Z-a7e60233", Status: gjeval.RunStatusEnvironmentFailed,
+		UpdatedAt: time.Date(2026, 8, 18, 23, 59, 0, 0, time.UTC),
+		DatasetFingerprint: gjeval.DatasetFingerprint{CatalogHash: "catalog", DataAnchor: "2026-08-18", SeedManifestHash: "seed"},
+	}
+	if _, err := store.WriteManifest(yesterday); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := evalResumeDataAnchor(dir, gjeval.ResumeAuto, ""); got != "2026-08-18" {
+		t.Fatalf("auto resume anchor = %q, want the incomplete run's 2026-08-18", got)
+	}
+	if got := evalResumeDataAnchor(dir, gjeval.ResumeExact, yesterday.RunID); got != "2026-08-18" {
+		t.Fatalf("exact resume anchor = %q, want 2026-08-18", got)
+	}
+	// A fresh run must never pin: it should be graded against today's data.
+	if got := evalResumeDataAnchor(dir, gjeval.ResumeFresh, ""); got != "" {
+		t.Fatalf("fresh run anchor = %q, want empty", got)
+	}
+
+	// A completed run is not a resume target, so it must not pin either.
+	done := yesterday
+	done.RunID = "20260818T000000.000000000Z-complete"
+	done.Status = gjeval.RunStatusComplete
+	done.DatasetFingerprint.DataAnchor = "2026-08-17"
+	if _, err := store.WriteManifest(done); err != nil {
+		t.Fatal(err)
+	}
+	if got := evalResumeDataAnchor(dir, gjeval.ResumeAuto, ""); got != "2026-08-18" {
+		t.Fatalf("anchor = %q; a complete run must not become the pin", got)
+	}
+}
