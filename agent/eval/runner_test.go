@@ -1051,3 +1051,61 @@ func scoredTask(t *testing.T) Task {
 func responseWithAnswer(status, answer string) gjagent.Response {
 	return gjagent.Response{Status: status, Answer: answer}
 }
+
+// A DeepSeek benchmark run drained its account during the write-locked block.
+// Each mutation episode was correctly classified environment_failure, then the
+// post-state override relabelled it post_state_mismatch — the post-state had
+// not changed, because the agent never ran. The harness therefore scored 55
+// billing failures as model failures and kept going instead of halting.
+func TestProviderFailureOnMutationTaskStaysAnEnvironmentFailure(t *testing.T) {
+	task := scoredTask(t)
+	task.Category = CategoryAction
+	task.Mutation = &MutationSpec{
+		ResetStrategy: "sqlite-copy", ExpectedValue: "1",
+		PostState: OracleSpec{Query: `query { payments { count_id } }`, Extract: "payments.0.count_id"},
+	}
+	task.Oracle = nil
+	if err := task.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	suite := Suite{Name: "quota", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+	if err := suite.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+
+	quota := gjagent.Response{
+		Status: gjagent.StatusError,
+		Errors: []gjagent.ErrorInfo{{
+			Message:    "Insufficient Balance",
+			Extensions: map[string]any{"code": gjagent.ErrorCodeProviderQuota, "retryable": false},
+		}},
+	}
+	body, _ := json.Marshal(quota)
+	doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/graphql") {
+			return jsonResponse(200, `{"data":{"payments":[{"count_id":0}]}}`), nil
+		}
+		return jsonResponse(200, string(body)), nil
+	})
+	instance := &ResettableStaticInstance{
+		StaticInstance: &StaticInstance{URL: "http://graphjin.test", TargetLabel: "test"},
+		ResetFunc:      func(context.Context) error { return nil },
+	}
+	report, err := (Runner{Client: doer, RetryDelay: time.Nanosecond}).Run(
+		context.Background(), suite, instance,
+		RunOptions{Repeats: 1, Seed: 23, Store: NewStore(t.TempDir()), MaxTransientAttempts: 1},
+	)
+	if err != nil {
+		t.Fatalf("run error = %v", err)
+	}
+	if report.RunStatus == RunStatusComplete {
+		t.Fatal("a drained provider must not produce a complete run")
+	}
+	if report.Metrics.EpisodeCount != 0 {
+		t.Fatalf("scored %d episode(s); a provider failure is not a model result", report.Metrics.EpisodeCount)
+	}
+	if report.RunStatus != RunStatusEnvironmentFailed {
+		t.Fatalf("run status = %s, want %s; a drained provider is an environment failure", report.RunStatus, RunStatusEnvironmentFailed)
+	}
+}
+
