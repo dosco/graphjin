@@ -303,3 +303,42 @@ func TestDemoStateShiftDaysFromStaleAnchor(t *testing.T) {
 		t.Fatalf("DataAnchor = %q, want %q", updated.DataAnchor, want)
 	}
 }
+
+// The overnight case end to end: reused demo state anchored to yesterday
+// normally shifts forward on boot, which rewrites the dataset fingerprint and
+// strands an incomplete run's episodes. With the anchor pinned to what that run
+// recorded, the boot must leave the dates alone.
+func TestDemoPinnedAnchorSuppressesTheOvernightShift(t *testing.T) {
+	manifest := demoManifest{DataAnchor: "2026-08-18"}
+	now := time.Date(2026, 8, 19, 3, 0, 0, 0, time.UTC)
+
+	if days := demoDataShiftDays(manifest, now); days != 1 {
+		t.Fatalf("unpinned shift = %d day(s), want 1; the demo must still refresh for normal use", days)
+	}
+
+	previous := demoPinnedDataAnchor
+	t.Cleanup(func() { demoPinnedDataAnchor = previous })
+
+	// Pinned to the same anchor the incomplete run was graded against.
+	demoPinnedDataAnchor = "2026-08-18"
+	shift := demoDataShiftDays(manifest, now)
+	if pinned := strings.TrimSpace(demoPinnedDataAnchor); pinned != "" && shift > 0 && pinned == strings.TrimSpace(manifest.DataAnchor) {
+		shift = 0
+	}
+	if shift != 0 {
+		t.Fatalf("pinned shift = %d day(s), want 0; resuming must not move the data", shift)
+	}
+
+	// Pinned to a different day: the data has already moved, so the normal
+	// shift stands and the resume is refused on fingerprint rather than
+	// silently mixing two data states.
+	demoPinnedDataAnchor = "2026-08-01"
+	shift = demoDataShiftDays(manifest, now)
+	if pinned := strings.TrimSpace(demoPinnedDataAnchor); pinned != "" && shift > 0 && pinned == strings.TrimSpace(manifest.DataAnchor) {
+		shift = 0
+	}
+	if shift != 1 {
+		t.Fatalf("mismatched pin shift = %d, want the normal 1 day", shift)
+	}
+}
+

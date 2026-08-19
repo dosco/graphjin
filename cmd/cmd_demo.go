@@ -279,11 +279,29 @@ func initDemoState(status demoStatus) (*demoState, error) {
 	status.Emit("state", "reused", "manifest verified")
 	state := &demoState{Dir: stateDir, Manifest: manifest, Status: status}
 	state.ShiftDays = demoDataShiftDays(manifest, time.Now())
+	// An evaluation resuming an incomplete run pins the anchor its finished
+	// episodes were graded against. Shifting now would move the data out from
+	// under them and the resume would be refused on dataset fingerprint, which
+	// is what stranded an overnight benchmark run mid-suite.
+	if pinned := strings.TrimSpace(demoPinnedDataAnchor); pinned != "" && state.ShiftDays > 0 {
+		if pinned == strings.TrimSpace(manifest.DataAnchor) {
+			status.Emit("state", "pinned", fmt.Sprintf("holding demo data at anchor %s for the resumed evaluation; skipping the %d day(s) shift", pinned, state.ShiftDays))
+			state.ShiftDays = 0
+		} else {
+			status.Emit("state", "unpinned", fmt.Sprintf("requested anchor %s but demo data is anchored %s; shifting normally", pinned, manifest.DataAnchor))
+		}
+	}
 	if state.ShiftDays > 0 {
 		status.Emit("state", "refreshing", fmt.Sprintf("demo data is %d day(s) old; shifting dates to today", state.ShiftDays))
 	}
 	return state, nil
 }
+
+// demoPinnedDataAnchor, when set, holds reused demo state at its recorded
+// anchor instead of shifting dates to today. StartDemo is CLI provisioning code
+// driven by command globals, so the evaluation environment sets this the same
+// way it sets cpath and conf, and restores it afterwards.
+var demoPinnedDataAnchor string
 
 func demoConfigHash() string {
 	h := sha256.New()

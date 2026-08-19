@@ -21,6 +21,13 @@ type EnvSpec struct {
 	Writable   bool   `json:"writable,omitempty"`
 	Reactive   bool   `json:"reactive,omitempty"`
 	Resettable bool   `json:"resettable,omitempty"`
+	// PinDataAnchor freezes the demo's date-relative seed data at one anchor
+	// day. Demo dates shift forward on every boot so "today" questions keep
+	// working, but that shift changes the dataset fingerprint — so a run that
+	// outlives a UTC midnight could not be resumed the next morning, since its
+	// completed episodes were graded against the previous day's data. Resuming
+	// pins the anchor the run started on and the boot leaves the dates alone.
+	PinDataAnchor string `json:"pin_data_anchor,omitempty"`
 }
 
 type DatasetFingerprint struct {
