@@ -50,6 +50,22 @@ func demoDataShiftDays(m demoManifest, now time.Time) int {
 	return days
 }
 
+// demoAnchorDelta reports the whole-day move that takes demo data anchored at
+// `from` to the anchor `to`. Negative means rewinding data a later boot already
+// shifted forward, which is how a run interrupted before a UTC midnight is
+// resumed the next day against the data it was actually graded on.
+func demoAnchorDelta(from, to string) (int, error) {
+	fromDay, err := time.Parse(demoDataAnchorLayout, strings.TrimSpace(from))
+	if err != nil {
+		return 0, err
+	}
+	toDay, err := time.Parse(demoDataAnchorLayout, strings.TrimSpace(to))
+	if err != nil {
+		return 0, err
+	}
+	return int(toDay.Sub(fromDay).Hours() / 24), nil
+}
+
 // demoTemporalColumns returns the date/timestamp columns per table for a demo
 // source, parsed from the project's GraphJin schema DDL. Sources without a
 // per-source DDL file fall back to the project-level db.ddl.
@@ -71,7 +87,7 @@ func demoTemporalColumns(source string) (map[string][]core.TemporalColumn, error
 // simulator locks them. Failures never block startup: each failed source is
 // reported with the reset path and skipped.
 func shiftDemoDates(ctx context.Context, dbs map[string]*sql.DB, state *demoState) {
-	if state == nil || state.ShiftDays <= 0 || len(dbs) == 0 {
+	if state == nil || state.ShiftDays == 0 || len(dbs) == 0 {
 		return
 	}
 	names := make([]string, 0, len(dbs))
@@ -213,13 +229,17 @@ func shiftColumnSQL(dbType, table string, col core.TemporalColumn, days int) str
 // and re-rendered in place; values that don't start with a calendar date are
 // left alone.
 func shiftSQLiteColumnSQL(t, c string, days int) string {
+	// The modifier carries its own sign. Writing '+%d days' with a negative
+	// count produces '+-1 days', which SQLite evaluates to NULL rather than
+	// rejecting — every temporal value in the column would be silently erased.
+	modifier := fmt.Sprintf("%+d days", days)
 	return fmt.Sprintf(`UPDATE %[1]s SET %[2]s = CASE
-WHEN length(%[2]s) = 10 THEN date(%[2]s, '+%[3]d days')
-WHEN instr(%[2]s, 'T') > 0 AND substr(%[2]s, -1) = 'Z' THEN strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ', %[2]s, '+%[3]d days')
-WHEN instr(%[2]s, 'T') > 0 THEN strftime('%%Y-%%m-%%dT%%H:%%M:%%S', %[2]s, '+%[3]d days')
-ELSE strftime('%%Y-%%m-%%d %%H:%%M:%%S', %[2]s, '+%[3]d days')
+WHEN length(%[2]s) = 10 THEN date(%[2]s, '%[3]s')
+WHEN instr(%[2]s, 'T') > 0 AND substr(%[2]s, -1) = 'Z' THEN strftime('%%Y-%%m-%%dT%%H:%%M:%%SZ', %[2]s, '%[3]s')
+WHEN instr(%[2]s, 'T') > 0 THEN strftime('%%Y-%%m-%%dT%%H:%%M:%%S', %[2]s, '%[3]s')
+ELSE strftime('%%Y-%%m-%%d %%H:%%M:%%S', %[2]s, '%[3]s')
 END
-WHERE %[2]s IS NOT NULL AND %[2]s GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'`, t, c, days)
+WHERE %[2]s IS NOT NULL AND %[2]s GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'`, t, c, modifier)
 }
 
 // shiftDuckDBFileDates shifts a warehouse simulator's DuckDB file in place.

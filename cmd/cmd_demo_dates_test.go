@@ -342,3 +342,79 @@ func TestDemoPinnedAnchorSuppressesTheOvernightShift(t *testing.T) {
 	}
 }
 
+// Recovering a run interrupted before a UTC midnight means moving the demo data
+// back to the anchor its completed episodes were graded against. The shift SQL
+// used to hardcode a '+' sign, so a negative count produced '+-1 days', which
+// SQLite evaluates to NULL — every temporal value would have been erased rather
+// than rewound.
+func TestShiftDemoConnDatesRewindsWithoutErasing(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close() //nolint:errcheck
+	if _, err := db.ExecContext(ctx, `CREATE TABLE invoices (due_on TEXT, due_at TEXT, seen_at TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO invoices VALUES ('2026-08-19','2026-08-19T14:30:00Z','2026-08-19 14:30:00')`); err != nil {
+		t.Fatal(err)
+	}
+	tables := map[string][]core.TemporalColumn{"invoices": {
+		{Name: "due_on", DateOnly: true}, {Name: "due_at"}, {Name: "seen_at"},
+	}}
+
+	if _, err := shiftDemoConnDates(ctx, db, "sqlite", tables, -1); err != nil {
+		t.Fatalf("rewind: %v", err)
+	}
+	var dueOn, dueAt, seenAt sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT due_on, due_at, seen_at FROM invoices`).Scan(&dueOn, &dueAt, &seenAt); err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]sql.NullString{"due_on": dueOn, "due_at": dueAt, "seen_at": seenAt} {
+		if !got.Valid {
+			t.Fatalf("%s was erased to NULL by the rewind", name)
+		}
+	}
+	if dueOn.String != "2026-08-18" {
+		t.Fatalf("due_on = %q, want 2026-08-18", dueOn.String)
+	}
+	if dueAt.String != "2026-08-18T14:30:00Z" {
+		t.Fatalf("due_at = %q, want the Z format preserved a day earlier", dueAt.String)
+	}
+	if seenAt.String != "2026-08-18 14:30:00" {
+		t.Fatalf("seen_at = %q, want the space format preserved a day earlier", seenAt.String)
+	}
+
+	// Round trip: forward again must restore the original values exactly.
+	if _, err := shiftDemoConnDates(ctx, db, "sqlite", tables, 1); err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT due_on, due_at, seen_at FROM invoices`).Scan(&dueOn, &dueAt, &seenAt); err != nil {
+		t.Fatal(err)
+	}
+	if dueOn.String != "2026-08-19" || dueAt.String != "2026-08-19T14:30:00Z" || seenAt.String != "2026-08-19 14:30:00" {
+		t.Fatalf("round trip lost fidelity: %q %q %q", dueOn.String, dueAt.String, seenAt.String)
+	}
+}
+
+func TestDemoAnchorDeltaSignsTheMove(t *testing.T) {
+	for _, tc := range []struct {
+		from, to string
+		want     int
+	}{
+		{"2026-08-19", "2026-08-18", -1},
+		{"2026-08-18", "2026-08-19", 1},
+		{"2026-08-19", "2026-08-19", 0},
+		{"2026-08-19", "2026-08-12", -7},
+	} {
+		got, err := demoAnchorDelta(tc.from, tc.to)
+		if err != nil {
+			t.Fatalf("demoAnchorDelta(%s,%s): %v", tc.from, tc.to, err)
+		}
+		if got != tc.want {
+			t.Fatalf("demoAnchorDelta(%s,%s) = %d, want %d", tc.from, tc.to, got, tc.want)
+		}
+	}
+}
+
