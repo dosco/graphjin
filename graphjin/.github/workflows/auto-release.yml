@@ -38,8 +38,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
+          # No registry-url: it makes setup-node write an .npmrc containing
+          # _authToken=${NODE_AUTH_TOKEN}, and with no token supplied that becomes a
+          # literal placeholder. npm then authenticates with garbage instead of
+          # falling through to OIDC. Default registry is npmjs.org anyway.
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Get current version
         id: current_version
