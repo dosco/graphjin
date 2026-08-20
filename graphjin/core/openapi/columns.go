@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -36,6 +37,38 @@ func SynthesiseColumns(schema, table string, ref *openapi3.SchemaRef, resultPath
 		cols = append(cols, col)
 	}
 	sort.Slice(cols, func(i, j int) bool { return cols[i].Name < cols[j].Name })
+	for i := range cols {
+		cols[i].ID = int32(i)
+	}
+	return cols
+}
+
+// SynthesiseMutationColumns returns the stable mutation envelope plus any
+// non-colliding fields declared by an object success response.
+func SynthesiseMutationColumns(schema, table string, ref *openapi3.SchemaRef) []sdata.DBColumn {
+	cols := []sdata.DBColumn{
+		{Schema: schema, Table: table, Name: "ok", Type: "boolean", NotNull: true},
+		{Schema: schema, Table: table, Name: "status_code", Type: "integer", NotNull: true},
+		{Schema: schema, Table: table, Name: "operation_id", Type: "text", NotNull: true},
+		{Schema: schema, Table: table, Name: "request_id", Type: "text", NotNull: true},
+		{Schema: schema, Table: table, Name: "response_json", Type: "json"},
+	}
+	reserved := make(map[string]struct{}, len(cols))
+	for _, col := range cols {
+		reserved[strings.ToLower(col.Name)] = struct{}{}
+	}
+	if ref != nil && ref.Value != nil && isType(ref.Value, "object") {
+		extra := make([]sdata.DBColumn, 0, len(ref.Value.Properties))
+		required := requiredSet(ref.Value)
+		for name, prop := range ref.Value.Properties {
+			if _, exists := reserved[strings.ToLower(name)]; exists {
+				continue
+			}
+			extra = append(extra, sdata.DBColumn{Schema: schema, Table: table, Name: name, Type: openapiSchemaToSQLType(prop), NotNull: required[name]})
+		}
+		sort.Slice(extra, func(i, j int) bool { return extra[i].Name < extra[j].Name })
+		cols = append(cols, extra...)
+	}
 	for i := range cols {
 		cols[i].ID = int32(i)
 	}

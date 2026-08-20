@@ -16,11 +16,12 @@ func _() {
 	_ = x[QTUpdate-5]
 	_ = x[QTDelete-6]
 	_ = x[QTUpsert-7]
+	_ = x[QTOpenAPICall-8]
 }
 
-const _QType_name = "UnknownQuerySubscriptionMutationInsertUpdateDeleteUpsert"
+const _QType_name = "UnknownQuerySubscriptionMutationInsertUpdateDeleteUpsertOpenAPICall"
 
-var _QType_index = [...]uint8{0, 7, 12, 24, 32, 38, 44, 50, 56}
+var _QType_index = [...]uint8{0, 7, 12, 24, 32, 38, 44, 50, 56, 67}
 
 func (i QType) String() string {
 	idx := int(i) - 0

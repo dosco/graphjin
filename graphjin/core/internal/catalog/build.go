@@ -29,6 +29,7 @@ func BuildWithOptions(snapshot *MetadataSnapshot, conf any, opts BuildOptions) *
 	sampleMode := catalogSampleMode(conf)
 	addCapabilities(out, sampleMode, opts)
 	addSchema(out, snapshot, sampleMode, opts)
+	addAPIOperations(out, snapshot, opts)
 	addCodeSources(out, snapshot, opts)
 	addLanguage(out, opts)
 	addConfig(out, conf)
@@ -40,6 +41,67 @@ func BuildWithOptions(snapshot *MetadataSnapshot, conf any, opts BuildOptions) *
 	out.Revision = RevisionFromSourceRevisions(out.SourceRevisions)
 	out.search = newSearchIndex(out)
 	return out
+}
+
+func addAPIOperations(out *Snapshot, snapshot *MetadataSnapshot, opts BuildOptions) {
+	for _, op := range snapshot.APIOperations {
+		title := strings.TrimSpace(op.RootName)
+		if title == "" {
+			title = op.OperationID
+		}
+		state := "active"
+		if !op.Active {
+			state = "skipped"
+		}
+		surface := "query"
+		if strings.EqualFold(op.Mode, "mutation") || strings.EqualFold(op.Method, "DELETE") ||
+			strings.EqualFold(op.Method, "POST") || strings.EqualFold(op.Method, "PUT") || strings.EqualFold(op.Method, "PATCH") {
+			surface = "mutation"
+		}
+		cardID := "api_operation:" + op.ID
+		summary := fmt.Sprintf("%s %s on API source %s (%s %s surface).", strings.ToUpper(op.Method), op.Path, op.SourceName, state, surface)
+		evidence := map[string]any{
+			"source": op.SourceName, "spec": op.SpecKey, "operation_id": op.OperationID,
+			"root": op.RootName, "method": strings.ToUpper(op.Method), "path": op.Path,
+			"surface": surface, "mode": op.Mode, "active": op.Active,
+			"skip_reason": op.SkipReason, "capability": op.Capability,
+			"allowed_roles": op.AllowedRoles, "request_media_type": op.RequestMediaType,
+			"success_statuses": op.SuccessStatuses,
+		}
+		card := Card{
+			ID:               cardID,
+			Kind:             "api_operation",
+			Title:            title,
+			Summary:          summary,
+			Source:           "core.openapi",
+			SourceKind:       sourcecap.KindAPI,
+			OwnerSource:      op.SourceName,
+			OwnerSourcesJSON: ownerSourcesJSON(op.SourceName),
+			RiskLevel:        op.RiskLevel,
+			Confidence:       "high",
+			EvidenceJSON:     mustJSON(evidence),
+			InputSchemaJSON:  op.RequestSchemaJSON,
+			OutputSchemaJSON: op.ResponseSchemaJSON,
+			SafetyJSON: mustJSON(map[string]any{
+				"capability": op.Capability, "allowed_roles": op.AllowedRoles,
+				"retry_enabled": op.RetryEnabled, "cross_resource_atomicity": false,
+				"active": op.Active, "skip_reason": op.SkipReason,
+			}),
+			SuggestedNext: suggestedNextJSON(opts, "get_catalog_card", "execute_graphql"),
+			DetailRef:     cardID,
+		}
+		if op.Active && surface == "mutation" && op.RootName != "" {
+			card.GraphQLMutation = `mutation OpenAPICall($request: JSON!) { ` + op.RootName + `(call: $request) { ok status_code operation_id request_id response_json } }`
+			card.ExamplesJSON = mustJSON([]string{card.GraphQLMutation})
+		}
+		out.Cards = append(out.Cards, card)
+		nodeID := "node:" + cardID
+		out.Nodes = append(out.Nodes, Node{ID: nodeID, Kind: "api_operation", Name: title, Summary: summary, CardID: cardID})
+		out.Edges = append(out.Edges, Edge{
+			ID: "edge:source-api-operation:" + op.ID, FromID: "node:source:" + op.SourceName,
+			ToID: nodeID, Kind: "exposes", Summary: "API source exposes operation",
+		})
+	}
 }
 
 func addSources(out *Snapshot, opts BuildOptions) {

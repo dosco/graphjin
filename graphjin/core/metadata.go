@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -15,6 +16,7 @@ type MetadataSnapshot struct {
 	Relationships []MetadataRelationship
 	Functions     []MetadataFunction
 	Indexes       []MetadataIndex
+	APIOperations []MetadataAPIOperation
 }
 
 type MetadataDatabase struct {
@@ -93,6 +95,30 @@ type MetadataIndex struct {
 	ColumnName   string
 	Name         string
 	Unique       bool
+}
+
+// MetadataAPIOperation is the catalog-safe projection of one classified
+// OpenAPI operation. It contains no authentication configuration or request
+// values and is safe to expose after caller-specific authorization filtering.
+type MetadataAPIOperation struct {
+	ID                 string
+	SourceName         string
+	SpecKey            string
+	OperationID        string
+	RootName           string
+	Method             string
+	Path               string
+	Mode               string
+	Active             bool
+	SkipReason         string
+	Capability         string
+	AllowedRoles       []string
+	RequestMediaType   string
+	RequestSchemaJSON  string
+	ResponseSchemaJSON string
+	SuccessStatuses    []int
+	RetryEnabled       bool
+	RiskLevel          string
 }
 
 // MetadataSnapshot returns a stable, queryable projection of the schemas that
@@ -299,8 +325,71 @@ func (gj *graphjinEngine) metadataSnapshot(skip map[string]struct{}) *MetadataSn
 			})
 		}
 	}
+	if gj.openapiRuntime != nil {
+		for _, specRuntime := range gj.openapiRuntime.AllSpecs() {
+			if specRuntime == nil || specRuntime.Spec() == nil {
+				continue
+			}
+			for i := range specRuntime.Spec().Operations {
+				op := &specRuntime.Spec().Operations[i]
+				capability := "api.read"
+				risk := "low"
+				switch strings.ToUpper(op.Method) {
+				case "DELETE":
+					capability, risk = "api.delete", "critical"
+				case "POST", "PUT", "PATCH":
+					capability, risk = "api.write", "high"
+				}
+				out.APIOperations = append(out.APIOperations, MetadataAPIOperation{
+					ID:                 op.SourceName + ":" + op.SpecKey + ":" + op.OperationID,
+					SourceName:         op.SourceName,
+					SpecKey:            op.SpecKey,
+					OperationID:        op.OperationID,
+					RootName:           op.ExposeAs,
+					Method:             op.Method,
+					Path:               op.PathTemplate,
+					Mode:               op.Mode.String(),
+					Active:             op.Mode != 0,
+					SkipReason:         op.SkipReason,
+					Capability:         capability,
+					AllowedRoles:       append([]string(nil), op.AllowedRoles...),
+					RequestMediaType:   op.RequestMediaType,
+					RequestSchemaJSON:  openAPIRequestSchemaJSON(op.PathParams, op.QueryParams, op.HeaderParams, op.RequestBodyRequired, op.RequestBodySchema),
+					ResponseSchemaJSON: openAPISchemaJSON(op.ResponseSchema),
+					SuccessStatuses:    append([]int(nil), op.SuccessStatuses...),
+					RetryEnabled:       op.RetryOnAuthFailure,
+					RiskLevel:          risk,
+				})
+			}
+		}
+	}
 	dedupeMetadataSnapshot(out)
 	return out
+}
+
+func openAPIRequestSchemaJSON(path, query, header interface{}, bodyRequired bool, body interface{}) string {
+	b, err := json.Marshal(map[string]interface{}{
+		"path":          path,
+		"query":         query,
+		"headers":       header,
+		"body_required": bodyRequired,
+		"body":          body,
+	})
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+func openAPISchemaJSON(schema interface{}) string {
+	if schema == nil {
+		return ""
+	}
+	b, err := json.Marshal(schema)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func dedupeMetadataSnapshot(out *MetadataSnapshot) {
@@ -309,12 +398,14 @@ func dedupeMetadataSnapshot(out *MetadataSnapshot) {
 	out.Relationships = uniqueMetadataByID(out.Relationships, func(v MetadataRelationship) string { return v.ID })
 	out.Functions = uniqueMetadataByID(out.Functions, func(v MetadataFunction) string { return v.ID })
 	out.Indexes = uniqueMetadataByID(out.Indexes, func(v MetadataIndex) string { return v.ID })
+	out.APIOperations = uniqueMetadataByID(out.APIOperations, func(v MetadataAPIOperation) string { return v.ID })
 
 	sort.SliceStable(out.Tables, func(i, j int) bool { return out.Tables[i].ID < out.Tables[j].ID })
 	sort.SliceStable(out.Columns, func(i, j int) bool { return out.Columns[i].ID < out.Columns[j].ID })
 	sort.SliceStable(out.Relationships, func(i, j int) bool { return out.Relationships[i].ID < out.Relationships[j].ID })
 	sort.SliceStable(out.Functions, func(i, j int) bool { return out.Functions[i].ID < out.Functions[j].ID })
 	sort.SliceStable(out.Indexes, func(i, j int) bool { return out.Indexes[i].ID < out.Indexes[j].ID })
+	sort.SliceStable(out.APIOperations, func(i, j int) bool { return out.APIOperations[i].ID < out.APIOperations[j].ID })
 }
 
 func uniqueMetadataByID[T any](items []T, id func(T) string) []T {

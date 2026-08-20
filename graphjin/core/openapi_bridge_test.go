@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	_log "log"
 	"net/http"
@@ -317,5 +318,72 @@ func TestCollisionCheckHandlesMissingDBInfo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "a/op1") || !strings.Contains(err.Error(), "b/op2") {
 		t.Errorf("error should identify both ops; got: %v", err)
+	}
+}
+
+func TestOpenAPIMutationRootsParticipateInCollisionChecks(t *testing.T) {
+	reg := &openapi.Registry{Specs: []*openapi.Spec{{
+		Key: "contract",
+		Operations: []openapi.OpDescriptor{
+			{SourceName: "api", SpecKey: "contract", OperationID: "list", ExposeAs: "shared_root", Mode: openapi.OpModeList},
+			{SourceName: "api", SpecKey: "contract", OperationID: "create", ExposeAs: "shared_root", Mode: openapi.OpModeMutation},
+		},
+	}}}
+	gj := &graphjinEngine{conf: &Config{}, log: silentLogger(t)}
+	allRoots := append(synthesiseResolvers(reg), synthesiseMutationCollisionResolvers(reg)...)
+	if len(allRoots) != 2 {
+		t.Fatalf("collision roots = %+v", allRoots)
+	}
+	if err := gj.validateOpenAPINoCollisions(allRoots); err == nil || !strings.Contains(err.Error(), "shared_root") {
+		t.Fatalf("collision error = %v", err)
+	}
+}
+
+func TestMutationOnlyRegistryStillProducesRegistrationRoot(t *testing.T) {
+	reg := &openapi.Registry{Specs: []*openapi.Spec{{
+		Key: "contract",
+		Operations: []openapi.OpDescriptor{{
+			SourceName: "api", SpecKey: "contract", OperationID: "create", ExposeAs: "create_item", Mode: openapi.OpModeMutation,
+		}},
+	}}}
+	if got := synthesiseResolvers(reg); len(got) != 0 {
+		t.Fatalf("mutation must not use resolver dispatch: %+v", got)
+	}
+	got := synthesiseMutationCollisionResolvers(reg)
+	if len(got) != 1 || got[0].Name != "create_item" || got[0].Props["source_name"] != "api" {
+		t.Fatalf("mutation registration roots = %+v", got)
+	}
+}
+
+type openAPICollisionManagedMutationHandler struct{}
+
+func (openAPICollisionManagedMutationHandler) ManagedMutationTables() []string {
+	return []string{"gj_task"}
+}
+
+func (openAPICollisionManagedMutationHandler) ExecuteManagedMutation(context.Context, ManagedMutationRequest) (json.RawMessage, error) {
+	return nil, nil
+}
+
+func TestOpenAPIRootCollisionWithManagedRootErrorsCaseInsensitively(t *testing.T) {
+	gj, _ := newTestEngineWithTables(t, &Config{}, "public")
+	gj.managedMutationHandlers = map[string]ManagedMutationHandler{
+		gj.defaultDB: openAPICollisionManagedMutationHandler{},
+	}
+	synth := []ResolverConfig{{
+		Name: "GJ_TASK",
+		Type: "openapi_mutation",
+		Props: ResolverProps{
+			"spec_key":     "tasks",
+			"operation_id": "createTask",
+		},
+	}}
+
+	err := gj.validateOpenAPINoCollisions(synth)
+	if err == nil {
+		t.Fatal("expected managed-root collision error")
+	}
+	if !strings.Contains(err.Error(), `managed root "gj_task"`) || !strings.Contains(err.Error(), "tasks/createTask") {
+		t.Fatalf("managed-root collision error = %v", err)
 	}
 }

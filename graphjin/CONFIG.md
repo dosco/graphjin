@@ -368,7 +368,7 @@ Deployment modes:
 | `database` | `data.read`, `data.write`, `schema.read`, `schema.write` |
 | `code` | `code.search`, `code.read`, `code.write`, `code.watch`, `code.infer_db_refs` |
 | `file` | `files.list`, `files.read`, `files.write`, `files.delete`, `files.watch` |
-| `api` | `api.read`, `api.write` |
+| `api` | `api.read`, `api.write`, `api.delete` |
 System capabilities live under `system.capabilities`: `catalog.read`, `security.read`, `config.read`, `config.write`, `runtime.read`, `raw_graphql.query`, `raw_graphql.mutate`, `schema.reload`, `schema.write`, `dev_tools.read`, and `legacy_discovery.read`.
 
 Workflow capabilities live under `workflows.capabilities`: `execute`, `read`, and `write`.
@@ -971,6 +971,10 @@ enable_camelcase: true
 debug: false
 log_vars: false
 ```
+
+The generated `intro.json` has no caller identity, so it omits role-scoped
+OpenAPI mutation roots. Live GraphQL introspection evaluates the caller's source
+capability, access mode, source read-only policy, and operation role allowlist.
 
 ### Analytics Mode
 
@@ -1710,7 +1714,7 @@ resolvers:
 
 ## OpenAPI Integration
 
-GraphJin can join data from any HTTP API that publishes an **OpenAPI 3** specification. Drop the spec into `config/specs/`, declare credentials and join wiring in your environment config (`dev.yml`/`prod.yml`), and the API's GET endpoints become joinable from your existing tables — without writing a custom resolver per integration.
+GraphJin can query and invoke explicitly enabled operations from any HTTP API that publishes an **OpenAPI 3.0 or 3.1** specification. Drop the spec into `config/specs/`, declare it under an API source, and GET endpoints become query fields while individually opted-in POST/PUT/PATCH/DELETE endpoints become isolated GraphQL mutation roots. OpenAPI 3.1 request schemas are validated with JSON Schema 2020-12 semantics.
 
 The OpenAPI integration is the spec-driven counterpart to `remote_api` (above). Use `remote_api` for ad-hoc URL joins; use OpenAPI when the upstream publishes a spec and you want auth, parameter wiring, and response shape derived automatically.
 
@@ -1737,7 +1741,16 @@ The OpenAPI integration is the spec-driven counterpart to `remote_api` (above). 
 
      - name: upstream
        kind: api
+       read_only: false
        specs_dir: ./config/specs
+       capabilities:
+         api.read: true
+         api.write: true
+         api.delete: false
+       access:
+         read: authenticated
+         write: authenticated
+         delete: blocked
        specs:
          interaction_studio:
            base_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api
@@ -1795,7 +1808,59 @@ Every GET in the spec is classified into one of:
 | **Row-join** | `GET /resource/{id}` with a matching `joins:` entry | Exposed as a child field on the parent DB table. The parent column's value populates the path parameter at query time. |
 | **Top-level (single)** | `GET /resource/{id}` without a `joins:` entry | Exposed as a top-level GraphQL field. The path parameter becomes a required field argument. |
 | **Top-level (list)** | `GET /resources` with optional query filters | Exposed as a top-level GraphQL field. Each query parameter becomes an optional field argument. |
-| **Skipped** | Async (Location header), binary response, mutating verb (POST/PUT/PATCH/DELETE), multi-segment path params, or single non-trailing path param without an explicit opt-in | Reason logged at boot. Single non-trailing path params can be opted in with `expose_top_level: true` (see Operation Overrides). |
+| **Mutation** | POST/PUT/PATCH/DELETE with `expose_mutation: true`, a supported JSON body, and declared 200/201/202/204 success response | Exposed only on the GraphQL mutation root through `call: JSON!`. Runtime capability, access, read-only, and role checks run before network I/O. |
+| **Skipped** | Async GET, binary response, mutating verb without explicit opt-in, unsupported request/response shape, multi-segment GET path params, or single non-trailing GET path param without opt-in | Reason logged at boot. Nothing is exposed silently. |
+
+#### OpenAPI mutations
+
+Mutations require both a source policy and an operation allowlist. API source access defaults are `read: authenticated`, `write: blocked`, and `delete: blocked`; `read_only: true` is an immutable veto for every non-GET call. DELETE additionally requires the separately default-off `api.delete` capability.
+
+```yaml
+sources:
+  - name: external_api
+    kind: api
+    read_only: false
+    capabilities:
+      api.read: true
+      api.write: true
+      api.delete: false
+    access:
+      read: authenticated
+      write: authenticated
+      delete: blocked
+    specs:
+      example:
+        base_url: ${EXTERNAL_API_BASE_URL}
+        auth:
+          scheme: bearer
+          token: ${EXTERNAL_API_TOKEN}
+        max_request_bytes: 65536
+        max_response_bytes: 1048576
+        operations:
+          createResource:
+            expose_as: external_create_resource
+            expose_mutation: true
+            allowed_roles: [operator]
+            retry_on_auth_failure: false
+```
+
+```graphql
+mutation CreateResource($request: JSON!) {
+  external_create_resource(call: $request) {
+    ok
+    status_code
+    operation_id
+    request_id
+    response_json
+  }
+}
+```
+
+The `request` object may contain only `path`, `query`, `headers`, and `body`. Parameter names and body values are validated against the operation schema before any network slot is acquired. Authentication, host, cookie, proxy, forwarding, connection, content length, and content type headers cannot be supplied by the caller. Method, URL, base URL, authentication, and media type always come from the server-side registry.
+
+Successful responses use a stable envelope. Declared object response fields may also be selected directly. A 204 response sets `ok: true`, returns `status_code: 204`, and leaves `response_json` null. OpenAPI calls cannot be mixed with SQL or managed roots, and only one OpenAPI root is allowed per mutation document: an upstream side effect cannot participate in a cross-resource transaction.
+
+Mutation transport errors are never replayed, and mutation callers do not follow HTTP redirects: a `3xx` response is returned as an upstream error instead of allowing a `307`/`308` to replay the body or move the write outside the configured base URL. A 401 refresh/retry is also disabled unless `retry_on_auth_failure: true` is explicitly configured; use that override only when the upstream operation is known to be safely idempotent. A transport failure can be reported as an ambiguous outcome and must not be blindly retried by the caller.
 
 #### Top-level virtual tables
 
@@ -1843,16 +1908,20 @@ sources:
 
 Configure auth per spec under the `auth:` block. All credential-bearing fields support `${VAR}` env-var expansion at load time.
 
-#### Bearer (static or pass-through)
+#### Bearer (static; pass-through configuration reserved)
 
 ```yaml
 auth:
   scheme: bearer
   token: ${API_TOKEN}
-  # Or, for multi-tenant deployments, forward the token from an inbound header:
+  # Reserved for multi-tenant pass-through once inbound headers are plumbed:
   # token_from_request:
   #   header: X-User-Token
 ```
+
+Static bearer tokens work today. `token_from_request` is parsed by the auth
+provider, but the GraphQL-to-OpenAPI bridge does not yet receive inbound HTTP
+headers, so do not rely on pass-through authentication in this release.
 
 #### Basic
 
@@ -1943,6 +2012,11 @@ sources:
           exportUsers:
             expose_top_level: true      # opt-in classification (see below)
             expose_as: is_users
+          createResource:
+            expose_mutation: true       # required for every non-GET operation
+            expose_as: create_resource
+            allowed_roles: [operator]   # required in prod/agentic modes
+            retry_on_auth_failure: false
 ```
 
 #### `expose_top_level`
@@ -1957,7 +2031,7 @@ Operations whose path has a single non-trailing path parameter — for example `
 { is_users(datasetId: "abc", pageSize: "200") { items { id email } } }
 ```
 
-`expose_top_level` does not opt-in operations that are skipped for other reasons (mutating verb, async, non-JSON, multi-segment path params).
+`expose_top_level` does not opt in mutating operations or GET operations skipped for async, non-JSON, or multi-segment path shapes. Use `expose_mutation` only for non-GET operations.
 
 ### Result Path Auto-Detection
 
@@ -1973,7 +2047,7 @@ Override per-operation via `expose_as:` (under `joins:` for row-joins, under `op
 
 ### Collision Defence
 
-GraphJin validates synthesised remote tables at boot so an OpenAPI op cannot silently shadow a real table.
+GraphJin validates synthesised query and mutation roots at boot so an OpenAPI operation cannot silently shadow a real table or another API root.
 
 | Collision | Behaviour |
 |---|---|
@@ -1998,13 +2072,14 @@ GraphJin reports the OpenAPI integration state at startup so you can verify what
 openapi: loaded interaction_studio.yaml (5 active, 12 skipped)
 openapi: GET /exports/{jobId} — skipped: non-JSON response (application/octet-stream)
 openapi: GET /jobs/{jobId}/status — skipped: async pattern (Location header on success response)
-openapi: POST /users — skipped: mutating verb (write-side not yet supported)
+openapi: POST /users — skipped: mutating verb requires expose_mutation: true
 openapi: GET /api/dataset/{datasetId}/users.json — skipped: path parameter not in trailing position (set expose_top_level: true to opt in)
 ```
 
 ### Limitations
 
-- **Read-only** — only GET operations are processed. Mutations (POST/PUT/PATCH/DELETE) are logged and skipped. Direct write support is planned.
+- **JSON request/response contract** — exposed mutations support declared primitive path/query/header parameters, JSON or vendor `+json` request bodies, and concrete 200/201/202/204 success responses. When `application/json` is absent, an operation with multiple competing vendor `+json` request schemas is skipped as ambiguous. Form, multipart, binary, callback, and arbitrary URL calls are not supported.
+- **No distributed transaction** — one OpenAPI mutation root executes per GraphQL operation and cannot be mixed with SQL or managed mutation roots.
 - **Async/export endpoints** — out of scope. GraphJin is a query engine, not a data-replication system. Job-based or file-download endpoints are skipped at classification.
 - **Header pass-through** — multi-tenant header forwarding (`token_from_request`) is wired through the auth provider but the bridge layer to inbound HTTP headers isn't yet plumbed. Static `${ENV}` tokens work today.
 - **Top-level args are scalar literals only** — quote numbers and booleans (`limit: "50"`). Nested object/array args are not supported in v1.

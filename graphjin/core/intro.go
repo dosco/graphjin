@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -10,6 +11,7 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/dosco/graphjin/core/v3/internal/util"
 	"github.com/dosco/graphjin/core/v3/internal/valid"
+	"github.com/dosco/graphjin/core/v3/openapi"
 )
 
 const (
@@ -191,24 +193,53 @@ var stdTypes = []FullType{
 }
 
 type Introspection struct {
-	schema      *sdata.DBSchema
-	camelCase   bool
-	disableAgg  bool
-	types       map[string]FullType
-	enumValues  map[string]EnumValue
-	inputValues map[string]InputValue
-	result      IntroResult
+	schema                  *sdata.DBSchema
+	camelCase               bool
+	disableAgg              bool
+	types                   map[string]FullType
+	enumValues              map[string]EnumValue
+	inputValues             map[string]InputValue
+	result                  IntroResult
+	visibleOpenAPIMutations map[string]bool
 }
 
 // introQuery returns the introspection query result
 func (gj *graphjinEngine) introQuery() (result json.RawMessage, err error) {
+	// This result is cached and may be written to intro.json without a caller
+	// identity. Caller-scoped OpenAPI mutations must therefore default to hidden;
+	// live introspection uses introQueryForContext below to opt authorized roots in.
+	return gj.introQueryWithVisibleOpenAPIMutations(map[string]bool{})
+}
+
+func (gj *graphjinEngine) introQueryForContext(ctx context.Context) (json.RawMessage, error) {
+	if gj == nil || gj.openapiRuntime == nil {
+		return gj.getIntroResult()
+	}
+	role, _ := gj.initialRequestRole(ctx)
+	visible := make(map[string]bool)
+	for _, runtime := range gj.openapiRuntime.AllSpecs() {
+		if runtime == nil || runtime.Spec() == nil {
+			continue
+		}
+		for i := range runtime.Spec().Operations {
+			op := &runtime.Spec().Operations[i]
+			if op.Mode == openapi.OpModeMutation {
+				visible[op.ExposeAs] = gj.conf.authorizeOpenAPIOperation(ctx, op, role).Allowed
+			}
+		}
+	}
+	return gj.introQueryWithVisibleOpenAPIMutations(visible)
+}
+
+func (gj *graphjinEngine) introQueryWithVisibleOpenAPIMutations(visible map[string]bool) (result json.RawMessage, err error) {
 	// Initialize the introspection object
 	in := Introspection{
-		camelCase:   gj.conf.EnableCamelcase,
-		disableAgg:  gj.conf.DisableAgg,
-		types:       make(map[string]FullType),
-		enumValues:  make(map[string]EnumValue),
-		inputValues: make(map[string]InputValue),
+		camelCase:               gj.conf.EnableCamelcase,
+		disableAgg:              gj.conf.DisableAgg,
+		types:                   make(map[string]FullType),
+		enumValues:              make(map[string]EnumValue),
+		inputValues:             make(map[string]InputValue),
+		visibleOpenAPIMutations: visible,
 	}
 
 	// Initialize the schema
@@ -323,6 +354,12 @@ func (in *Introspection) addTable(table sdata.DBTable, alias string) (err error)
 	if table.Type == "remote" {
 		return in.addRemoteTable(table, alias)
 	}
+	if table.Type == "openapi_mutation" {
+		if in.visibleOpenAPIMutations != nil && !in.visibleOpenAPIMutations[table.Name] {
+			return nil
+		}
+		return in.addOpenAPIMutationTable(table, alias)
+	}
 	var ftQS FullType
 
 	// add table type to query and subscription
@@ -356,6 +393,30 @@ func (in *Introspection) addTable(table sdata.DBTable, alias string) (err error)
 	in.addTypeTo("Subscription", ftQSByID)
 
 	return
+}
+
+func (in *Introspection) addOpenAPIMutationTable(table sdata.DBTable, alias string) error {
+	ft := FullType{Kind: KIND_OBJECT, InputFields: []InputValue{}, Interfaces: []TypeRef{}}
+	name := table.Name
+	if alias != "" {
+		name = alias
+	}
+	ft.Name = in.getName(name)
+	ft.Description = table.Comment
+	for _, column := range table.Columns {
+		if column.Blocked {
+			continue
+		}
+		field, err := in.getColumnField(column)
+		if err != nil {
+			return err
+		}
+		ft.Fields = append(ft.Fields, field)
+	}
+	ft.addArg("call", newTypeRef(KIND_NONNULL, "", newTypeRef("", TYPE_JSON, nil)))
+	in.addType(ft)
+	in.addTypeTo("Mutation", ft)
+	return nil
 }
 
 // addRemoteTable surfaces a synthetic remote table (OpenAPI virtual)

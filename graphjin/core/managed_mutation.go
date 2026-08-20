@@ -116,6 +116,8 @@ func mutationOperationName(qt qcode.QType) string {
 		return "upsert"
 	case qcode.QTDelete:
 		return "delete"
+	case qcode.QTOpenAPICall:
+		return "call"
 	default:
 		return qt.String()
 	}
@@ -126,7 +128,12 @@ func managedNodeToValue(node *graph.Node, vars map[string]json.RawMessage) (inte
 		return nil, nil
 	}
 	switch node.Type {
-	case graph.NodeStr, graph.NodeLabel:
+	case graph.NodeStr:
+		return managedStringValue(node.Val), nil
+	case graph.NodeLabel:
+		if node.Val == "null" {
+			return nil, nil
+		}
 		return managedStringValue(node.Val), nil
 	case graph.NodeNum:
 		if i, err := strconv.ParseInt(node.Val, 10, 64); err == nil {

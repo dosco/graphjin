@@ -289,6 +289,23 @@ func (s *graphjinService) executeSavedQueryByName(ctx context.Context, name stri
 	return s.gj.GraphQLByName(ctx, qualified, vars, rc)
 }
 
+func (s *graphjinService) savedQueryIsMutation(ctx context.Context, name string, rc *core.RequestConfig) (bool, error) {
+	if s == nil || s.gj == nil {
+		return false, fmt.Errorf("GraphJin engine is not initialized")
+	}
+	qualified := strings.TrimSpace(name)
+	if rc != nil {
+		if ns, ok := rc.GetNamespace(); ok {
+			qualified = qualifyAllowListName(ns, qualified)
+		}
+	}
+	details, _, err := s.getSavedQueryForContext(ctx, qualified)
+	if err != nil {
+		return false, err
+	}
+	return details != nil && (strings.EqualFold(strings.TrimSpace(details.Operation), "mutation") || isMutation(details.Query)), nil
+}
+
 func (s *graphjinService) listSavedQueriesForContext(ctx context.Context) ([]core.SavedQueryInfo, error) {
 	ctx = s.applyIdentityContext(ctx)
 	global, err := s.gj.ListSavedQueries()
@@ -444,7 +461,9 @@ func (s *graphjinService) catalogBuildOptionsForContext(ctx context.Context) cor
 
 func (s *graphjinService) catalogSnapshotForContext(ctx context.Context) (*core.CatalogSnapshot, error) {
 	ctx = s.applyIdentityContext(ctx)
-	if !s.artifactStoreForUser(ctx) {
+	legacyOpenAPI := s != nil && s.conf != nil && !s.conf.Core.IsSourcesUsed() &&
+		(len(s.conf.Core.OpenAPI) != 0 || strings.TrimSpace(s.conf.Core.OpenAPISpecsDir) != "")
+	if !s.artifactStoreForUser(ctx) && !legacyOpenAPI && (s.gj == nil || s.conf == nil || !s.conf.Core.IsSourcesUsed()) {
 		return s.catalogSnapshot()
 	}
 	var md *core.MetadataSnapshot
@@ -457,6 +476,7 @@ func (s *graphjinService) catalogSnapshotForContext(ctx context.Context) (*core.
 	} else {
 		md = &core.MetadataSnapshot{}
 	}
+	md = s.filterCatalogAPIOperationsForContext(ctx, md)
 	var conf *core.Config
 	if s.conf != nil {
 		conf = &s.conf.Core

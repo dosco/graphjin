@@ -79,31 +79,33 @@ type HookFn func(*core.Result)
 type graphjinService struct {
 	artifactProjectionRefreshes atomic.Int64
 
-	log                   *zap.SugaredLogger // logger
-	zlog                  *zap.Logger        // faster logger
-	logLevel              int                // log level
-	conf                  *Config            // parsed config
-	dbs                   map[string]*sql.DB // named database connections (all equal)
-	columnValuesMu        sync.Mutex         // guards the enum-value sampling attempt
-	columnValuesSampled   bool               // true once an attempt actually ran
-	columnValues          map[string][]string
-	managedDBs            map[string]managedDB
-	runtimeCore           *core.Config
-	secretStore           *localKeystore
-	metadataDB            string
-	managedArtifactDB     string
-	systemNanoDB          *core.NanoDB
-	gj                    *core.GraphJin
-	disc                  *DiscoveryManager
-	discovery             *discoveryGenerationManager
-	semantic              *semanticCatalogIndex
-	semanticEmbedder      SemanticEmbeddingClient
-	agentClientFactory    gjagent.ClientFactory
-	watchSubscribeForTest func(context.Context, watchRuntimeDefinition, json.RawMessage) (*core.Member, error)
-	srv                   *http.Server
-	srvMu                 sync.Mutex // guards srv: written by startHTTP, read by Shutdown
-	fs                    core.FS
-	coreOptions           []core.Option
+	log                    *zap.SugaredLogger // logger
+	zlog                   *zap.Logger        // faster logger
+	logLevel               int                // log level
+	conf                   *Config            // parsed config
+	dbs                    map[string]*sql.DB // named database connections (all equal)
+	columnValuesMu         sync.Mutex         // guards the enum-value sampling attempt
+	columnValuesSampled    bool               // true once an attempt actually ran
+	columnValues           map[string][]string
+	managedDBs             map[string]managedDB
+	startupReadOnlyDBs     map[string]bool
+	startupReadOnlySources map[string]bool
+	runtimeCore            *core.Config
+	secretStore            *localKeystore
+	metadataDB             string
+	managedArtifactDB      string
+	systemNanoDB           *core.NanoDB
+	gj                     *core.GraphJin
+	disc                   *DiscoveryManager
+	discovery              *discoveryGenerationManager
+	semantic               *semanticCatalogIndex
+	semanticEmbedder       SemanticEmbeddingClient
+	agentClientFactory     gjagent.ClientFactory
+	watchSubscribeForTest  func(context.Context, watchRuntimeDefinition, json.RawMessage) (*core.Member, error)
+	srv                    *http.Server
+	srvMu                  sync.Mutex // guards srv: written by startHTTP, read by Shutdown
+	fs                     core.FS
+	coreOptions            []core.Option
 	// asec         [32]byte
 	closeFn func()
 	chash   string
@@ -585,6 +587,7 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	if err := s.initConfig(); err != nil {
 		return nil, err
 	}
+	s.captureStartupReadOnlyPolicy()
 
 	// Default raw MCP execution to true in dev mode when MCP is enabled.
 	if !s.conf.Serv.Production && !s.conf.mcpDisabled() {
