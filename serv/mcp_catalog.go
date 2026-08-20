@@ -11,6 +11,7 @@ import (
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/core/v3"
+	gjopenapi "github.com/dosco/graphjin/core/v3/openapi"
 	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
@@ -890,11 +891,61 @@ func (ms *mcpServer) mcpCatalogSnapshot(ctx context.Context) (*core.CatalogSnaps
 	} else {
 		md = &core.MetadataSnapshot{}
 	}
+	md = s.filterCatalogAPIOperationsForContext(ctx, md)
 	var conf *core.Config
 	if s.conf != nil {
 		conf = &s.conf.Core
 	}
 	return core.BuildCatalogSnapshotWithOptions(md, conf, s.catalogBuildOptionsForContext(ctx)), nil
+}
+
+func (s *graphjinService) filterCatalogAPIOperationsForContext(ctx context.Context, md *core.MetadataSnapshot) *core.MetadataSnapshot {
+	if md == nil || s == nil || s.conf == nil || len(md.APIOperations) == 0 {
+		return md
+	}
+	ctx = s.applyIdentityContext(ctx)
+	role := runtimeRoleClass(ctx)
+	admins := s.conf.Core.EffectiveIdentityConfig().AdminRoles
+	isAdmin := systemRootAccessAllowed(core.AccessModeAdmin, role, admins, effectiveMode(s.conf), s.conf.DefaultBlock)
+	out := *md
+	out.APIOperations = make([]core.MetadataAPIOperation, 0, len(md.APIOperations))
+	for _, op := range md.APIOperations {
+		if !op.Active {
+			if isAdmin {
+				out.APIOperations = append(out.APIOperations, op)
+			}
+			continue
+		}
+		mutation := false
+		switch strings.ToUpper(op.Method) {
+		case "DELETE":
+			mutation = true
+		case "POST", "PUT", "PATCH":
+			mutation = true
+		}
+		decision := s.conf.Core.AuthorizeOpenAPIOperation(ctx, &gjopenapi.OpDescriptor{
+			SourceName: op.SourceName, OperationID: op.OperationID, Method: op.Method, AllowedRoles: op.AllowedRoles,
+		}, role)
+		if !decision.Allowed {
+			continue
+		}
+		if mutation {
+			if s.conf.Agent.ReadOnly || !s.conf.MCP.AllowMutations || !roleAllowedForAPIOperation(role, op.AllowedRoles) {
+				continue
+			}
+		}
+		out.APIOperations = append(out.APIOperations, op)
+	}
+	return &out
+}
+
+func roleAllowedForAPIOperation(role string, allowed []string) bool {
+	for _, candidate := range allowed {
+		if strings.EqualFold(strings.TrimSpace(candidate), strings.TrimSpace(role)) {
+			return true
+		}
+	}
+	return false
 }
 
 func catalogManagedWhere(q catalogGraphQLQuery) map[string]interface{} {

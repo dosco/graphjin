@@ -880,11 +880,13 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("sources: %v", err))
 		} else {
+			preserved := preserveProtectedReadOnlySources(parsed, ms.readOnlySources)
 			conf.Sources = parsed
 			if err := conf.RenormalizeSources(); err != nil {
 				errors = append(errors, fmt.Sprintf("sources: %v", err))
 			} else {
 				changes = append(changes, "updated sources")
+				changes = append(changes, preserved...)
 			}
 		}
 	}
@@ -894,11 +896,13 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("update_sources: %v", err))
 		} else {
+			preserved := preserveProtectedReadOnlySources(updated, ms.readOnlySources)
 			conf.Sources = updated
 			if err := conf.RenormalizeSources(); err != nil {
 				errors = append(errors, fmt.Sprintf("update_sources: %v", err))
 			} else {
 				changes = append(changes, patchChanges...)
+				changes = append(changes, preserved...)
 			}
 		}
 	}
@@ -1705,6 +1709,21 @@ func parseSourceConfigList(items []any) ([]core.SourceConfig, error) {
 	return out, nil
 }
 
+func preserveProtectedReadOnlySources(sources []core.SourceConfig, protected map[string]bool) []string {
+	var changes []string
+	for i := range sources {
+		if protected[canonicalSourcePolicyName(sources[i].Name)] && !sources[i].ReadOnly {
+			sources[i].ReadOnly = true
+			changes = append(changes, fmt.Sprintf("source %s: read_only preserved as true (tamper-protected)", sources[i].Name))
+		}
+	}
+	return changes
+}
+
+func canonicalSourcePolicyName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
 func mergeConfigSection(current any, patch map[string]interface{}, out any) error {
 	data, err := json.Marshal(current)
 	if err != nil {
@@ -1724,28 +1743,51 @@ func mergeConfigSection(current any, patch map[string]interface{}, out any) erro
 
 func sourceConfigInputSchema(required []string) map[string]any {
 	props := map[string]any{
-		"name":                     map[string]any{"type": "string", "description": "Source name"},
-		"kind":                     map[string]any{"type": "string", "enum": []string{"database", "code", "file", "api"}, "description": "External source kind"},
-		"default":                  map[string]any{"type": "boolean", "description": "Default source"},
-		"type":                     map[string]any{"type": "string", "description": "Database type"},
-		"connection_string":        map[string]any{"type": "string", "description": "Database connection string"},
-		"host":                     map[string]any{"type": "string", "description": "Database host"},
-		"port":                     map[string]any{"type": "number", "description": "Database port"},
-		"dbname":                   map[string]any{"type": "string", "description": "Database name"},
-		"user":                     map[string]any{"type": "string", "description": "Database user"},
-		"password":                 map[string]any{"type": "string", "description": "Database password"},
-		"path":                     map[string]any{"type": "string", "description": "Database/file path"},
-		"schema":                   map[string]any{"type": "string", "description": "Database schema"},
-		"read_only":                map[string]any{"type": "boolean", "description": "Read-only source"},
-		"analytics_mode":           map[string]any{"type": "boolean", "description": "Analytics mode"},
-		"infer_db_refs":            map[string]any{"type": "boolean", "description": "Infer database references"},
-		"backend":                  map[string]any{"type": "string", "description": "Filesystem backend"},
-		"bucket":                   map[string]any{"type": "string", "description": "Filesystem bucket"},
-		"region":                   map[string]any{"type": "string", "description": "Cloud region"},
-		"endpoint":                 map[string]any{"type": "string", "description": "Cloud endpoint"},
-		"prefix":                   map[string]any{"type": "string", "description": "Filesystem prefix"},
-		"root":                     map[string]any{"type": "string", "description": "Filesystem root"},
-		"specs_dir":                map[string]any{"type": "string", "description": "OpenAPI specs directory"},
+		"name":              map[string]any{"type": "string", "description": "Source name"},
+		"kind":              map[string]any{"type": "string", "enum": []string{"database", "code", "file", "api"}, "description": "External source kind"},
+		"default":           map[string]any{"type": "boolean", "description": "Default source"},
+		"type":              map[string]any{"type": "string", "description": "Database type"},
+		"connection_string": map[string]any{"type": "string", "description": "Database connection string"},
+		"host":              map[string]any{"type": "string", "description": "Database host"},
+		"port":              map[string]any{"type": "number", "description": "Database port"},
+		"dbname":            map[string]any{"type": "string", "description": "Database name"},
+		"user":              map[string]any{"type": "string", "description": "Database user"},
+		"password":          map[string]any{"type": "string", "description": "Database password"},
+		"path":              map[string]any{"type": "string", "description": "Database/file path"},
+		"schema":            map[string]any{"type": "string", "description": "Database schema"},
+		"read_only":         map[string]any{"type": "boolean", "description": "Read-only source"},
+		"analytics_mode":    map[string]any{"type": "boolean", "description": "Analytics mode"},
+		"infer_db_refs":     map[string]any{"type": "boolean", "description": "Infer database references"},
+		"backend":           map[string]any{"type": "string", "description": "Filesystem backend"},
+		"bucket":            map[string]any{"type": "string", "description": "Filesystem bucket"},
+		"region":            map[string]any{"type": "string", "description": "Cloud region"},
+		"endpoint":          map[string]any{"type": "string", "description": "Cloud endpoint"},
+		"prefix":            map[string]any{"type": "string", "description": "Filesystem prefix"},
+		"root":              map[string]any{"type": "string", "description": "Filesystem root"},
+		"specs_dir":         map[string]any{"type": "string", "description": "OpenAPI specs directory"},
+		"specs": map[string]any{
+			"type": "object", "description": "OpenAPI spec configurations keyed by spec name",
+			"additionalProperties": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"base_url":           map[string]any{"type": "string"},
+					"max_request_bytes":  map[string]any{"type": "integer", "minimum": 0},
+					"max_response_bytes": map[string]any{"type": "integer", "minimum": 0},
+					"operations": map[string]any{
+						"type": "object",
+						"additionalProperties": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"expose_as":             map[string]any{"type": "string"},
+								"expose_mutation":       map[string]any{"type": "boolean"},
+								"allowed_roles":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+								"retry_on_auth_failure": map[string]any{"type": "boolean"},
+							},
+						},
+					},
+				},
+			},
+		},
 		"capabilities":             map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "boolean"}, "description": "Source capabilities"},
 		"access":                   map[string]any{"type": "object", "description": "Source access policy"},
 		"max_open_conns":           map[string]any{"type": "number", "description": "Maximum open connections"},
@@ -3108,6 +3150,7 @@ func cloneCoreConfig(src core.Config) core.Config {
 	if src.Sources != nil {
 		dst.Sources = append([]core.SourceConfig(nil), src.Sources...)
 		for i := range dst.Sources {
+			dst.Sources[i].Access = cloneSourceAccessConfig(src.Sources[i].Access)
 			if src.Sources[i].Capabilities != nil {
 				dst.Sources[i].Capabilities = make(map[string]bool, len(src.Sources[i].Capabilities))
 				for name, value := range src.Sources[i].Capabilities {
@@ -3117,9 +3160,15 @@ func cloneCoreConfig(src core.Config) core.Config {
 			if src.Sources[i].Specs != nil {
 				dst.Sources[i].Specs = make(map[string]openapi.SpecConfig, len(src.Sources[i].Specs))
 				for name, spec := range src.Sources[i].Specs {
-					dst.Sources[i].Specs[name] = spec
+					dst.Sources[i].Specs[name] = spec.Clone()
 				}
 			}
+		}
+	}
+	if src.OpenAPI != nil {
+		dst.OpenAPI = make(map[string]openapi.SpecConfig, len(src.OpenAPI))
+		for name, spec := range src.OpenAPI {
+			dst.OpenAPI[name] = spec.Clone()
 		}
 	}
 	if src.System.Capabilities != nil {
@@ -3190,6 +3239,14 @@ func cloneCoreConfig(src core.Config) core.Config {
 		}
 	}
 
+	return dst
+}
+
+func cloneSourceAccessConfig(src core.SourceAccessConfig) core.SourceAccessConfig {
+	dst := src
+	dst.PublicTables = append([]string(nil), src.PublicTables...)
+	dst.AdminTables = append([]string(nil), src.AdminTables...)
+	dst.BlockedTables = append([]string(nil), src.BlockedTables...)
 	return dst
 }
 

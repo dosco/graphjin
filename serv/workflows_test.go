@@ -173,6 +173,27 @@ function main(input) {
 	}
 }
 
+func TestRunNamedWorkflow_CannotBypassMutationGate(t *testing.T) {
+	ms := newSQLiteReadyMCPServer(t, nil, nil)
+	ms.service.conf.MCP.AllowRawQueries = true
+	ms.service.conf.MCP.AllowMutations = false
+
+	if err := ms.service.fs.Put("/workflows/mutate.js", []byte(`
+function main() {
+  return gj.tools.executeGraphql({
+    query: "mutation { users(delete: true, where: { id: { eq: 1 } }) { id } }"
+  });
+}
+`)); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	_, err := ms.service.runNamedWorkflow(context.Background(), "mutate", map[string]any{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "mutations are not allowed") {
+		t.Fatalf("workflow mutation gate error = %v", err)
+	}
+}
+
 func TestHandleExecuteWorkflow_PassesVariables(t *testing.T) {
 	mem := afero.NewMemMapFs()
 	if err := mem.MkdirAll("/workflows", 0o755); err != nil {

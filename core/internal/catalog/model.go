@@ -206,6 +206,7 @@ type MetadataSnapshot struct {
 	Relationships []MetadataRelationship
 	Functions     []MetadataFunction
 	Indexes       []MetadataIndex
+	APIOperations []MetadataAPIOperation
 }
 
 type MetadataDatabase struct {
@@ -284,4 +285,25 @@ type MetadataIndex struct {
 	ColumnName   string
 	Name         string
 	Unique       bool
+}
+
+type MetadataAPIOperation struct {
+	ID                 string
+	SourceName         string
+	SpecKey            string
+	OperationID        string
+	RootName           string
+	Method             string
+	Path               string
+	Mode               string
+	Active             bool
+	SkipReason         string
+	Capability         string
+	AllowedRoles       []string
+	RequestMediaType   string
+	RequestSchemaJSON  string
+	ResponseSchemaJSON string
+	SuccessStatuses    []int
+	RetryEnabled       bool
+	RiskLevel          string
 }

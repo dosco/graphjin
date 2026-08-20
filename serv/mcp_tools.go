@@ -178,6 +178,15 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 	}
 
 	ctx = ms.service.applyIdentityContext(ctx)
+	if !ms.service.conf.MCP.AllowMutations {
+		mutation, err := ms.service.savedQueryIsMutation(ctx, name, &rc)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		if mutation {
+			return mcp.NewToolResultError("mutations are not allowed. Enable allow_mutations in config."), nil
+		}
+	}
 	res, err := ms.service.executeSavedQueryByName(ctx, name, varsJSON, &rc)
 
 	result := ExecuteResult{}

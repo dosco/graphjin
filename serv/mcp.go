@@ -118,10 +118,11 @@ func mcpToolList(conf *Config) []string {
 
 // mcpServer wraps the MCP server instance
 type mcpServer struct {
-	srv         *server.MCPServer
-	service     *graphjinService
-	ctx         context.Context // Auth context (user_id, user_role)
-	readOnlyDBs map[string]bool // snapshot from config at startup, immutable at runtime
+	srv             *server.MCPServer
+	service         *graphjinService
+	ctx             context.Context // Auth context (user_id, user_role)
+	readOnlyDBs     map[string]bool // snapshot from config at startup, immutable at runtime
+	readOnlySources map[string]bool // file-configured source read_only veto, immutable at runtime
 }
 
 // newMCPServerWithContext creates a new MCP server with an auth context
@@ -155,20 +156,20 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		server.WithInstructions(mcpServerInstructions(s.conf, startupProfile)),
 	)
 
-	// Snapshot which databases are read-only from the config file.
-	// This snapshot is immutable — MCP config updates cannot change it.
-	readOnlyDBs := make(map[string]bool)
-	for name, dbConf := range s.conf.Core.Databases {
-		if dbConf.ReadOnly {
-			readOnlyDBs[name] = true
-		}
+	// Copy the startup policy captured before any MCP mutation. A new MCP
+	// transport must not turn an earlier file-configured veto into writable.
+	if s.startupReadOnlyDBs == nil || s.startupReadOnlySources == nil {
+		s.captureStartupReadOnlyPolicy()
 	}
+	readOnlyDBs := cloneReadOnlyPolicy(s.startupReadOnlyDBs)
+	readOnlySources := cloneReadOnlyPolicy(s.startupReadOnlySources)
 
 	ms = &mcpServer{
-		srv:         mcpSrv,
-		service:     s,
-		ctx:         ctx,
-		readOnlyDBs: readOnlyDBs,
+		srv:             mcpSrv,
+		service:         s,
+		ctx:             ctx,
+		readOnlyDBs:     readOnlyDBs,
+		readOnlySources: readOnlySources,
 	}
 
 	// Register all MCP tools
@@ -181,6 +182,36 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 	ms.registerResources()
 
 	return ms
+}
+
+func (s *graphjinService) captureStartupReadOnlyPolicy() {
+	if s == nil || s.conf == nil {
+		return
+	}
+	if s.startupReadOnlyDBs == nil {
+		s.startupReadOnlyDBs = make(map[string]bool)
+		for name, database := range s.conf.Core.Databases {
+			if database.ReadOnly {
+				s.startupReadOnlyDBs[name] = true
+			}
+		}
+	}
+	if s.startupReadOnlySources == nil {
+		s.startupReadOnlySources = make(map[string]bool)
+		for _, source := range s.conf.Core.Sources {
+			if source.ReadOnly {
+				s.startupReadOnlySources[canonicalSourcePolicyName(source.Name)] = true
+			}
+		}
+	}
+}
+
+func cloneReadOnlyPolicy(in map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(in))
+	for name, value := range in {
+		out[name] = value
+	}
+	return out
 }
 
 type mcpHTTPTransportCache struct {

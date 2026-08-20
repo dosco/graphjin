@@ -34,6 +34,7 @@ const (
 	QTUpdate                    // Update
 	QTDelete                    // Delete
 	QTUpsert                    // Upsert
+	QTOpenAPICall               // OpenAPICall
 )
 
 type SelType int8
@@ -587,7 +588,12 @@ func (co *Compiler) Compile(
 	}
 
 	if qc.Type == QTMutation {
-		if err = co.compileMutation(qc, vmap, role); err != nil {
+		if qc.SType == QTOpenAPICall {
+			err = co.compileOpenAPIMutation(qc, vmap)
+		} else {
+			err = co.compileMutation(qc, vmap, role)
+		}
+		if err != nil {
 			return
 		}
 	}
@@ -702,6 +708,11 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 		if err := co.addRelInfo(name, op, qc, sel, field, role); err != nil {
 			return err
+		}
+		if sel.Ti.Type == "openapi_mutation" {
+			if sel.ParentID != -1 || qc.Type != QTMutation || qc.SType != QTOpenAPICall {
+				return fmt.Errorf("openapi mutation root %q is available only in a mutation with call", field.Name)
+			}
 		}
 
 		tr, err := co.setSelectorRoleConfig(role, name, qc, sel)
@@ -1544,10 +1555,16 @@ func (co *Compiler) checkDangerousQuery(qc *QCode, sel *Select) {
 func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string) error {
 	var err error
 
-	validateActionArg := func(arg graph.Arg) error {
+	validateActionArg := func(arg graph.Arg, call bool) error {
 		v := arg.Val
-		if v.Type != graph.NodeVar && v.Type != graph.NodeObj &&
-			(v.Type != graph.NodeList || len(v.Children) == 0 && v.Children[0].Type != graph.NodeObj) {
+		if v == nil {
+			return argErr(arg, "variable or an object")
+		}
+		if call && v.Type != graph.NodeVar && v.Type != graph.NodeObj {
+			return argErr(arg, "variable or an object")
+		}
+		if !call && v.Type != graph.NodeVar && v.Type != graph.NodeObj &&
+			(v.Type != graph.NodeList || len(v.Children) == 0 || v.Children[0].Type != graph.NodeObj) {
 			return argErr(arg, "variable, an object or a list of objects")
 		}
 		return nil
@@ -1571,22 +1588,27 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 		var fieldType QType
 		var actionArg graph.Arg
 		var conflictAction ConflictAction
+		actionCount := 0
 
 		for _, arg := range rf.Args {
 			switch arg.Name {
 			case "insert":
+				actionCount++
 				fieldType = QTInsert
 				actionArg = arg
-				err = validateActionArg(arg)
+				err = validateActionArg(arg, false)
 			case "update":
+				actionCount++
 				fieldType = QTUpdate
 				actionArg = arg
-				err = validateActionArg(arg)
+				err = validateActionArg(arg, false)
 			case "upsert":
+				actionCount++
 				fieldType = QTUpsert
 				actionArg = arg
-				err = validateActionArg(arg)
+				err = validateActionArg(arg, false)
 			case "delete":
+				actionCount++
 				fieldType = QTDelete
 				if ifNotArg(arg, graph.NodeBool) || ifNotArgVal(arg, "true") {
 					err = errors.New("value for 'delete' must be 'true'")
@@ -1601,15 +1623,23 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 					break
 				}
 				conflictAction = ConflictGet
+			case "call":
+				actionCount++
+				fieldType = QTOpenAPICall
+				actionArg = arg
+				err = validateActionArg(arg, true)
 			}
 
 			if err != nil {
 				return err
 			}
 		}
+		if actionCount > 1 {
+			return errors.New("each root mutation must contain exactly one action argument")
+		}
 
 		if fieldType == QTUnknown {
-			return errors.New(`mutations must contains one of the following arguments (insert, update, upsert or delete)`)
+			return errors.New(`mutations must contain one of the following arguments (insert, update, upsert, delete, or call)`)
 		}
 		if conflictAction != ConflictNone && fieldType != QTInsert {
 			return errors.New("on_conflict is only valid with insert")
@@ -1622,7 +1652,7 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 			}
 			qc.actionArg = actionArg
 		} else if fieldType != qc.SType {
-			return errors.New("all root mutations must be of the same type (insert, update, upsert or delete)")
+			return errors.New("all root mutations must be of the same type (insert, update, upsert, delete, or call)")
 		}
 		if conflictAction != ConflictNone {
 			if qc.InsertConflictAction != ConflictNone {

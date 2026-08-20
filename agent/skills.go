@@ -86,7 +86,7 @@ var builtinSkills = []skillDefinition{
 	{id: skillDataAggregation, name: "Data aggregation", content: dataAggregationInstruction},
 	{
 		id: skillDataWrite, name: "Data write", content: dataWriteInstruction, write: true,
-		requiresAnyActions: []string{CapabilityActionDataInsert, CapabilityActionDataUpdate, CapabilityActionDataDelete},
+		requiresAnyActions: []string{CapabilityActionDataInsert, CapabilityActionDataUpdate, CapabilityActionDataDelete, CapabilityActionAPIWrite, CapabilityActionAPIDelete},
 	},
 	{id: skillCodeRead, name: "Code read", content: codeReadInstruction},
 	{id: skillCodeWrite, name: "Code write", content: codeWriteInstruction, write: true, requiresAllActions: []string{CapabilityActionCodeWrite}},
@@ -262,7 +262,7 @@ func capabilityCompletionInstructions(skills []skillDefinition, profiles ...*Cap
 	if len(profiles) != 0 {
 		profile = profiles[0]
 	}
-	for _, action := range []string{CapabilityActionDataInsert, CapabilityActionDataUpdate, CapabilityActionDataDelete} {
+	for _, action := range []string{CapabilityActionDataInsert, CapabilityActionDataUpdate, CapabilityActionDataDelete, CapabilityActionAPIWrite, CapabilityActionAPIDelete} {
 		out.WriteString("- ")
 		out.WriteString(action)
 		if profileHasAction(profile, action) {

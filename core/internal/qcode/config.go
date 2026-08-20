@@ -206,6 +206,8 @@ func (trv *trval) filter(qt QType) (*Exp, bool) {
 		return trv.upsert.fil, trv.upsert.filNU
 	case QTDelete:
 		return trv.delete.fil, trv.delete.filNU
+	case QTOpenAPICall:
+		return nil, false
 	}
 	return nil, false
 }
@@ -231,6 +233,9 @@ func (trv *trval) columnAllowed(qt *QCode, name string) bool {
 	case QTDelete:
 		_, ok := trv.delete.cols[name]
 		return ok || len(trv.delete.cols) == 0
+	case QTOpenAPICall:
+		_, ok := trv.query.cols[name]
+		return ok || len(trv.query.cols) == 0
 	}
 	return false
 }
@@ -254,6 +259,8 @@ func (trv *trval) isBlocked(qt QType) bool {
 		return trv.upsert.block
 	case QTDelete:
 		return trv.delete.block
+	case QTOpenAPICall:
+		return false
 	}
 	return false
 }

@@ -346,6 +346,37 @@ mcp:
 #     # Or inline: private_key_pem: "-----BEGIN PRIVATE KEY-----\n..."
 #     # key_passphrase: optional-if-key-is-encrypted
 
+# --- OpenAPI source with explicit, role-scoped writes ---
+# Non-GET operations stay hidden unless expose_mutation is true. API source
+# defaults are read: authenticated, write: blocked, delete: blocked.
+# sources:
+#   - name: external_api
+#     kind: api
+#     read_only: false
+#     specs_dir: ./config/specs
+#     capabilities:
+#       api.read: true
+#       api.write: true
+#       api.delete: false
+#     access:
+#       read: authenticated
+#       write: authenticated
+#       delete: blocked
+#     specs:
+#       example:
+#         base_url: ${EXTERNAL_API_BASE_URL}
+#         auth:
+#           scheme: bearer
+#           token: ${EXTERNAL_API_TOKEN}
+#         max_request_bytes: 65536
+#         max_response_bytes: 1048576
+#         operations:
+#           createResource:
+#             expose_mutation: true
+#             expose_as: external_create_resource
+#             allowed_roles: [operator]
+#             retry_on_auth_failure: false
+
 # --- Database Connection Options (apply to any database type) ---
 #     # Size of database connection pool
 #     pool_size: 15

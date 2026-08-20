@@ -46,6 +46,42 @@ func TestCatalogSnapshotIncludesSchemaAndLanguageCards(t *testing.T) {
 	}
 }
 
+func TestCatalogSnapshotIncludesOpenAPIOperationContract(t *testing.T) {
+	snapshot := BuildCatalogSnapshot(&MetadataSnapshot{APIOperations: []MetadataAPIOperation{{
+		ID:                 "external_api.example.createResource",
+		SourceName:         "external_api",
+		SpecKey:            "example",
+		OperationID:        "createResource",
+		RootName:           "external_create_resource",
+		Method:             "POST",
+		Path:               "/widgets",
+		Mode:               "mutation",
+		Active:             true,
+		Capability:         "api.write",
+		AllowedRoles:       []string{"operator"},
+		RequestMediaType:   "application/json",
+		RequestSchemaJSON:  `{"type":"object"}`,
+		ResponseSchemaJSON: `{"type":"object"}`,
+		SuccessStatuses:    []int{201},
+		RiskLevel:          "high",
+	}}}, &Config{})
+
+	card, ok := snapshot.Card("api_operation:external_api.example.createResource")
+	if !ok {
+		t.Fatal("expected OpenAPI operation catalog card")
+	}
+	if card.Kind != "api_operation" || card.OwnerSource != "external_api" || card.RiskLevel != "high" {
+		t.Fatalf("unexpected API operation card: %#v", card)
+	}
+	if !strings.Contains(card.GraphQLMutation, "external_create_resource(call: $request)") {
+		t.Fatalf("missing stable mutation example: %s", card.GraphQLMutation)
+	}
+	if !strings.Contains(card.EvidenceJSON, `"capability":"api.write"`) ||
+		!strings.Contains(card.SafetyJSON, `"cross_resource_atomicity":false`) {
+		t.Fatalf("missing API policy evidence: evidence=%s safety=%s", card.EvidenceJSON, card.SafetyJSON)
+	}
+}
+
 func TestCatalogSnapshotHidesSourceModeAdminAndBlockedTables(t *testing.T) {
 	md := &MetadataSnapshot{
 		Databases: []MetadataDatabase{{ID: "app", Name: "app", Type: "postgres", IsDefault: true}},

@@ -263,6 +263,18 @@ func (c *Config) validateIsSourcesUsed() error {
 		if err := validateSourceAccessConfig(name, kind, source.Access); err != nil {
 			return err
 		}
+		if kind == sourcecap.KindAPI {
+			for specKey, spec := range source.Specs {
+				if spec.MaxRequestBytes < 0 || spec.MaxResponseBytes < 0 {
+					return fmt.Errorf("sources[%q].specs[%q]: request/response byte limits must be greater than or equal to zero", name, specKey)
+				}
+				for opID, override := range spec.Operations {
+					if override.ExposeMutation && c.modeForSourceDefaults() != sourcecap.ModeDev && !hasNonEmptyRole(override.AllowedRoles) {
+						return fmt.Errorf("sources[%q].specs[%q].operations[%q]: allowed_roles is required for exposed mutations in %s mode", name, specKey, opID, c.modeForSourceDefaults())
+					}
+				}
+			}
+		}
 	}
 	for _, table := range c.Tables {
 		if table.Generated {
@@ -295,6 +307,15 @@ func (c *Config) validateIsSourcesUsed() error {
 		return err
 	}
 	return nil
+}
+
+func hasNonEmptyRole(roles []string) bool {
+	for _, role := range roles {
+		if strings.TrimSpace(role) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func CanonicalSourceKind(kind string) (string, error) {
@@ -341,9 +362,15 @@ func (c *Config) clone() *Config {
 			if c.Sources[i].Specs != nil {
 				out.Sources[i].Specs = make(map[string]openapi.SpecConfig, len(c.Sources[i].Specs))
 				for k, v := range c.Sources[i].Specs {
-					out.Sources[i].Specs[k] = v
+					out.Sources[i].Specs[k] = v.Clone()
 				}
 			}
+		}
+	}
+	if c.OpenAPI != nil {
+		out.OpenAPI = make(map[string]openapi.SpecConfig, len(c.OpenAPI))
+		for key, spec := range c.OpenAPI {
+			out.OpenAPI[key] = spec.Clone()
 		}
 	}
 
@@ -679,8 +706,29 @@ func (c *Config) normalizeSourceAccessDefaults() {
 		switch kind {
 		case sourcecap.KindDatabase:
 			c.Sources[i].Access = effectiveDatabaseAccess(c.Sources[i].Access)
+		case sourcecap.KindAPI:
+			c.Sources[i].Access = effectiveAPIAccess(c.Sources[i].Access)
 		}
 	}
+}
+
+func effectiveAPIAccess(access SourceAccessConfig) SourceAccessConfig {
+	if strings.TrimSpace(access.Read) == "" {
+		access.Read = AccessModeAuthenticated
+	} else {
+		access.Read = normalizeAccessMode(access.Read)
+	}
+	if strings.TrimSpace(access.Write) == "" {
+		access.Write = AccessModeBlocked
+	} else {
+		access.Write = normalizeAccessMode(access.Write)
+	}
+	if strings.TrimSpace(access.Delete) == "" {
+		access.Delete = AccessModeBlocked
+	} else {
+		access.Delete = normalizeAccessMode(access.Delete)
+	}
+	return access
 }
 
 func effectiveDatabaseAccess(access SourceAccessConfig) SourceAccessConfig {
@@ -936,6 +984,8 @@ func (c *Config) EffectiveSourceAccess(source SourceConfig) SourceAccessConfig {
 	switch source.CanonicalKind() {
 	case sourcecap.KindDatabase:
 		return effectiveDatabaseAccess(source.Access.clone())
+	case sourcecap.KindAPI:
+		return effectiveAPIAccess(source.Access.clone())
 	default:
 		return source.Access.clone()
 	}
@@ -962,6 +1012,7 @@ func (c *Config) NormalizeSources() error {
 	c.OpenAPISpecsDir = ""
 	c.OpenAPI = nil
 
+	specOwners := make(map[string]string)
 	for _, source := range c.Sources {
 		name := strings.TrimSpace(source.Name)
 		kind, err := CanonicalSourceKind(source.Kind)
@@ -997,11 +1048,19 @@ func (c *Config) NormalizeSources() error {
 				if c.OpenAPI == nil {
 					c.OpenAPI = make(map[string]openapi.SpecConfig, len(source.Specs))
 				}
-				for key, spec := range source.Specs {
-					if _, exists := c.OpenAPI[key]; exists {
-						return fmt.Errorf("sources[%q]: duplicate openapi spec config %q", name, key)
+				keys := make([]string, 0, len(source.Specs))
+				for key := range source.Specs {
+					keys = append(keys, key)
+				}
+				sort.Strings(keys)
+				for _, key := range keys {
+					spec := source.Specs[key]
+					if first, exists := specOwners[key]; exists {
+						return fmt.Errorf("sources[%q] and sources[%q]: duplicate openapi spec config %q", first, name, key)
 					}
+					spec.SourceName = name
 					c.OpenAPI[key] = spec
+					specOwners[key] = name
 				}
 			}
 		}
@@ -1392,7 +1451,7 @@ type Config struct {
 	// "config/specs/interaction_studio.yaml"). Operations classifiable from
 	// the spec are auto-exposed; entries here add credentials, base URL
 	// overrides, DB-to-API join wiring, and concurrency caps.
-	OpenAPI map[string]openapi.SpecConfig `mapstructure:"openapi" json:"openapi" yaml:"openapi" jsonschema:"-"`
+	OpenAPI map[string]openapi.SpecConfig `mapstructure:"openapi" json:"openapi" yaml:"openapi" jsonschema:"title=Legacy OpenAPI Specifications"`
 
 	// All table specific configuration such as aliased tables and relationships
 	// between tables
@@ -1656,7 +1715,7 @@ type SourceConfig struct {
 	PublicBaseURL          string                        `mapstructure:"public_base_url" json:"public_base_url" yaml:"public_base_url" jsonschema:"title=Public Base URL"`
 	MaxListPageSize        int                           `mapstructure:"max_list_page_size" json:"max_list_page_size" yaml:"max_list_page_size" jsonschema:"title=Max List Page Size"`
 	SpecsDir               string                        `mapstructure:"specs_dir" json:"specs_dir" yaml:"specs_dir" jsonschema:"title=OpenAPI Specs Directory"`
-	Specs                  map[string]openapi.SpecConfig `mapstructure:"specs" json:"specs" yaml:"specs" jsonschema:"-"`
+	Specs                  map[string]openapi.SpecConfig `mapstructure:"specs" json:"specs" yaml:"specs" jsonschema:"title=OpenAPI Specifications"`
 	Capabilities           map[string]bool               `mapstructure:"capabilities" json:"capabilities,omitempty" yaml:"capabilities,omitempty" jsonschema:"title=Capabilities"`
 	Access                 SourceAccessConfig            `mapstructure:"access" json:"access" yaml:"access" jsonschema:"title=Access"`
 }

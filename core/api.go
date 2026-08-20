@@ -1040,7 +1040,7 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 	}
 
 	if !gj.prodSec && r.name == "IntrospectionQuery" {
-		resp.res.Data, err = gj.getIntroResult()
+		resp.res.Data, err = gj.introQueryForContext(c)
 		return
 	}
 
@@ -1113,7 +1113,11 @@ func (g *GraphJin) Reload() error {
 	if pdb := gj.primaryDB(); pdb != nil {
 		db = pdb.db
 	}
-	if err := g.newGraphJin(gj.conf, db, nil, gj.fs, gj.opts...); err != nil {
+	reloadConf := gj.conf
+	if gj.catalogConf != nil {
+		reloadConf = gj.catalogConf
+	}
+	if err := g.newGraphJin(reloadConf, db, nil, gj.fs, gj.opts...); err != nil {
 		return err
 	}
 	g.fireAllSchemaCallbacks()
@@ -1209,7 +1213,11 @@ func (g *GraphJin) ReloadWithDB(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	return g.newGraphJin(gj.conf, db, nil, gj.fs, gj.opts...)
+	reloadConf := gj.conf
+	if gj.catalogConf != nil {
+		reloadConf = gj.catalogConf
+	}
+	return g.newGraphJin(reloadConf, db, nil, gj.fs, gj.opts...)
 }
 
 // ReloadFromRuntimeSchemaCache atomically rebuilds the engine from a complete,

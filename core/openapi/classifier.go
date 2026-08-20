@@ -36,9 +36,8 @@ func classifyAll(spec *Spec, doc *openapi3.T, cfg SpecConfig) ([]OpDescriptor, [
 			continue
 		}
 
-		// Method-by-method so the per-method skip reasons are accurate.
-		// (Currently only GET is allowed; other methods are skipped with
-		// an explicit "mutating verb" reason for log clarity.)
+		// Method-by-method so the per-method skip reasons are accurate and
+		// mutating verbs can require an explicit operation-level opt-in.
 		methodOps := []struct {
 			method string
 			op     *openapi3.Operation
@@ -54,7 +53,8 @@ func classifyAll(spec *Spec, doc *openapi3.T, cfg SpecConfig) ([]OpDescriptor, [
 			if mo.op == nil {
 				continue
 			}
-			op := classifyOne(spec.Key, path, mo.method, mo.op, item, cfg)
+			op := classifyOne(spec, path, mo.method, mo.op, item, cfg)
+			op.JSONSchema2020 = doc.IsOpenAPI31OrLater()
 			ops = append(ops, op)
 			if op.Mode == OpModeSkipped {
 				warnings = append(warnings, fmt.Sprintf(
@@ -68,36 +68,47 @@ func classifyAll(spec *Spec, doc *openapi3.T, cfg SpecConfig) ([]OpDescriptor, [
 }
 
 // classifyOne is the per-operation classifier. It first decides whether
-// the operation can be exposed at all (mutating verbs, async patterns,
-// non-JSON responses are immediately skipped) and then picks between
-// RowJoin / SingleByID / List based on path shape and user configuration.
+// the operation can be exposed at all and then picks between Mutation,
+// RowJoin, SingleByID, or List based on method, shape, and configuration.
 func classifyOne(
-	specKey, path, method string,
+	spec *Spec, path, method string,
 	op *openapi3.Operation,
 	pathItem *openapi3.PathItem,
 	cfg SpecConfig,
 ) OpDescriptor {
-	d := OpDescriptor{
-		SpecKey:      specKey,
-		OperationID:  operationID(op, method, path),
-		Method:       method,
-		PathTemplate: path,
-		Mode:         OpModeSkipped,
+	specKey := ""
+	sourceName := ""
+	maxRequestBytes := int64(0)
+	maxResponseBytes := int64(0)
+	if spec != nil {
+		specKey = spec.Key
+		sourceName = spec.SourceName
+		maxRequestBytes = spec.MaxRequestBytes
+		maxResponseBytes = spec.MaxResponseBytes
 	}
-
-	// Read-only first cut: anything that mutates server state is out of
-	// scope until the write-side feature lands.
-	if method != "GET" {
-		d.SkipReason = "mutating verb (write-side not yet supported)"
-		return d
+	d := OpDescriptor{
+		SourceName:       sourceName,
+		SpecKey:          specKey,
+		OperationID:      operationID(op, method, path),
+		Method:           method,
+		PathTemplate:     path,
+		Mode:             OpModeSkipped,
+		MaxRequestBytes:  maxRequestBytes,
+		MaxResponseBytes: maxResponseBytes,
 	}
 
 	// Operations explicitly disabled via config never appear regardless
 	// of how they would otherwise classify.
-	if ov, ok := cfg.Operations[d.OperationID]; ok && ov.Disabled {
+	override := cfg.Operations[d.OperationID]
+	if override.Disabled {
 		d.SkipReason = "disabled by config"
 		return d
 	}
+
+	if method != "GET" {
+		return classifyMutation(d, op, pathItem, cfg, override)
+	}
+	d.RetryOnAuthFailure = true
 
 	// Find the success response. We only examine 200 — 201/202/204 are
 	// either non-applicable to GET or signal async/empty-body patterns
@@ -138,7 +149,6 @@ func classifyOne(
 	}
 	d.ResponseSchema = jsonContent.Schema
 
-	override := cfg.Operations[d.OperationID]
 	switch len(pathParams) {
 	case 0:
 		d.Mode = OpModeList
@@ -176,26 +186,225 @@ func classifyOne(
 		d.ExposeAs = d.Join.ExposeAs
 	}
 
-	if len(override.Defaults) > 0 {
-		// Viper lowercases YAML keys; restore the spec's param casing.
-		canonical := make(map[string]string, len(d.PathParams)+len(d.QueryParams))
-		for _, ps := range d.PathParams {
-			canonical[strings.ToLower(ps.Name)] = ps.Name
-		}
-		for _, ps := range d.QueryParams {
-			canonical[strings.ToLower(ps.Name)] = ps.Name
-		}
-		d.Defaults = make(map[string]string, len(override.Defaults))
-		for k, v := range override.Defaults {
-			if c, ok := canonical[strings.ToLower(k)]; ok {
-				d.Defaults[c] = v
-			} else {
-				d.Defaults[k] = v
-			}
+	d.Defaults = canonicalParameterDefaults(override.Defaults, d.PathParams, d.QueryParams)
+
+	return d
+}
+
+func classifyMutation(d OpDescriptor, op *openapi3.Operation, pathItem *openapi3.PathItem, cfg SpecConfig, override OperationOverride) OpDescriptor {
+	if !override.ExposeMutation {
+		d.SkipReason = "mutating verb requires expose_mutation: true"
+		return d
+	}
+	if _, joined := cfg.Joins[d.OperationID]; joined {
+		d.SkipReason = "mutations cannot be configured as remote joins"
+		return d
+	}
+	if override.ExposeTopLevel {
+		d.SkipReason = "expose_top_level is query-only and cannot be combined with expose_mutation"
+		return d
+	}
+	if reason := unsupportedMutationParameter(pathItem, op); reason != "" {
+		d.SkipReason = reason
+		return d
+	}
+
+	d.PathParams, d.QueryParams, d.HeaderParams = collectParams(pathItem, op)
+	for _, p := range append(append(append([]ParamSpec(nil), d.PathParams...), d.QueryParams...), d.HeaderParams...) {
+		if !isPrimitiveParamType(p.Type) {
+			d.SkipReason = fmt.Sprintf("unsupported %s parameter %q type %q", p.In, p.Name, p.Type)
+			return d
 		}
 	}
 
+	if op.RequestBody != nil {
+		if op.RequestBody.Value == nil {
+			d.SkipReason = "unresolved request body"
+			return d
+		}
+		mt, contentType, reason := pickJSONRequestContent(op.RequestBody.Value)
+		if reason != "" {
+			d.SkipReason = reason
+			return d
+		}
+		if mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
+			d.SkipReason = fmt.Sprintf("unsupported request body media type (%s); JSON schema required", contentType)
+			return d
+		}
+		d.RequestMediaType = contentType
+		d.RequestBodySchema = mt.Schema
+		d.RequestBodyRequired = op.RequestBody.Value.Required
+	}
+
+	statuses, responseSchema, reason := mutationSuccessResponses(op)
+	if reason != "" {
+		d.SkipReason = reason
+		return d
+	}
+	d.SuccessStatuses = statuses
+	d.ResponseSchema = responseSchema
+	d.AllowedRoles = canonicalRoles(override.AllowedRoles)
+	d.RetryOnAuthFailure = override.RetryOnAuthFailure
+	d.Defaults = canonicalParameterDefaults(override.Defaults, d.PathParams, d.QueryParams)
+	d.ExposeAs = exposeAs(d.SpecKey, d.OperationID, override)
+	d.Mode = OpModeMutation
 	return d
+}
+
+func canonicalParameterDefaults(defaults map[string]string, groups ...[]ParamSpec) map[string]string {
+	if len(defaults) == 0 {
+		return nil
+	}
+	// Viper lowercases YAML keys; restore the spec's parameter casing while
+	// keeping unknown keys intact for legacy compatibility.
+	canonical := make(map[string]string)
+	for _, specs := range groups {
+		for _, ps := range specs {
+			canonical[strings.ToLower(ps.Name)] = ps.Name
+		}
+	}
+	out := make(map[string]string, len(defaults))
+	for key, value := range defaults {
+		if name, ok := canonical[strings.ToLower(key)]; ok {
+			out[name] = value
+		} else {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func unsupportedMutationParameter(pathItem *openapi3.PathItem, op *openapi3.Operation) string {
+	refs := make([]*openapi3.ParameterRef, 0)
+	if pathItem != nil {
+		refs = append(refs, pathItem.Parameters...)
+	}
+	if op != nil {
+		refs = append(refs, op.Parameters...)
+	}
+	for _, ref := range refs {
+		if ref == nil || ref.Value == nil {
+			return "unresolved request parameter"
+		}
+		switch ParamLocation(ref.Value.In) {
+		case ParamInPath, ParamInQuery, ParamInHeader:
+		default:
+			return fmt.Sprintf("unsupported request parameter %q location %q", ref.Value.Name, ref.Value.In)
+		}
+	}
+	return ""
+}
+
+func isPrimitiveParamType(t string) bool {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "string", "integer", "number", "boolean":
+		return true
+	default:
+		return false
+	}
+}
+
+func pickJSONRequestContent(body *openapi3.RequestBody) (*openapi3.MediaType, string, string) {
+	if body == nil || len(body.Content) == 0 {
+		return nil, "", ""
+	}
+	if mt := body.Content["application/json"]; mt != nil {
+		return mt, "application/json", ""
+	}
+	keys := make([]string, 0, len(body.Content))
+	for contentType := range body.Content {
+		keys = append(keys, contentType)
+	}
+	sort.Strings(keys)
+	jsonTypes := make([]string, 0, len(keys))
+	for _, contentType := range keys {
+		base := strings.TrimSpace(strings.Split(strings.ToLower(contentType), ";")[0])
+		if base == "application/json" || strings.HasSuffix(base, "+json") {
+			jsonTypes = append(jsonTypes, contentType)
+		}
+	}
+	if len(jsonTypes) == 1 {
+		contentType := jsonTypes[0]
+		return body.Content[contentType], contentType, ""
+	}
+	if len(jsonTypes) > 1 {
+		return nil, "", fmt.Sprintf("ambiguous JSON request body media types (%s)", strings.Join(jsonTypes, ", "))
+	}
+	return nil, keys[0], ""
+}
+
+func mutationSuccessResponses(op *openapi3.Operation) ([]int, *openapi3.SchemaRef, string) {
+	if op == nil || op.Responses == nil {
+		return nil, nil, "no supported success response declared"
+	}
+	var statuses []int
+	var schema *openapi3.SchemaRef
+	for _, status := range []int{200, 201, 202, 204} {
+		ref := op.Responses.Value(fmt.Sprint(status))
+		if ref == nil || ref.Value == nil {
+			continue
+		}
+		if status != 204 {
+			mt, mediaType := pickMutationJSONContent(ref.Value)
+			if mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
+				return nil, nil, fmt.Sprintf("success response %d must declare a JSON schema (found %s)", status, mediaType)
+			}
+			if schema == nil {
+				schema = mt.Schema
+			}
+		}
+		statuses = append(statuses, status)
+	}
+	if len(statuses) == 0 {
+		return nil, nil, "no supported success response declared (expected 200, 201, 202, or 204)"
+	}
+	return statuses, schema, ""
+}
+
+// pickMutationJSONContent is intentionally stricter than the legacy GET
+// response classifier: the write contract supports application/json and
+// structured-syntax +json types, not streaming or loosely named media types.
+func pickMutationJSONContent(resp *openapi3.Response) (*openapi3.MediaType, string) {
+	if resp == nil || resp.Content == nil {
+		return nil, ""
+	}
+	if mt := resp.Content["application/json"]; mt != nil {
+		return mt, "application/json"
+	}
+	keys := make([]string, 0, len(resp.Content))
+	for contentType := range resp.Content {
+		keys = append(keys, contentType)
+	}
+	sort.Strings(keys)
+	for _, contentType := range keys {
+		base := strings.TrimSpace(strings.Split(strings.ToLower(contentType), ";")[0])
+		if base == "application/json" || strings.HasSuffix(base, "+json") {
+			return resp.Content[contentType], contentType
+		}
+	}
+	if len(keys) != 0 {
+		return nil, keys[0]
+	}
+	return nil, ""
+}
+
+func canonicalRoles(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, role := range in {
+		role = strings.TrimSpace(role)
+		if role == "" {
+			continue
+		}
+		key := strings.ToLower(role)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, role)
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
+	return out
 }
 
 // operationID returns the spec-supplied operationId or, when missing,
@@ -248,14 +457,22 @@ func pickJSONContent(resp *openapi3.Response) (*openapi3.MediaType, string) {
 	if resp == nil || resp.Content == nil {
 		return nil, ""
 	}
-	for ct, mt := range resp.Content {
-		if strings.Contains(strings.ToLower(ct), "json") {
-			return mt, ct
+	if mt := resp.Content["application/json"]; mt != nil {
+		return mt, "application/json"
+	}
+	keys := make([]string, 0, len(resp.Content))
+	for contentType := range resp.Content {
+		keys = append(keys, contentType)
+	}
+	sort.Strings(keys)
+	for _, contentType := range keys {
+		if strings.Contains(strings.ToLower(contentType), "json") {
+			return resp.Content[contentType], contentType
 		}
 	}
-	// Return first media type for diagnostic purposes only.
-	for ct := range resp.Content {
-		return nil, ct
+	// Return the first deterministic media type for diagnostics only.
+	if len(keys) != 0 {
+		return nil, keys[0]
 	}
 	return nil, ""
 }
@@ -307,6 +524,7 @@ func paramSpecFromOpenAPI(p *openapi3.Parameter) ParamSpec {
 		Name:     p.Name,
 		In:       ParamLocation(p.In),
 		Required: p.Required,
+		Schema:   p.Schema,
 	}
 	if p.Schema != nil && p.Schema.Value != nil {
 		s := p.Schema.Value

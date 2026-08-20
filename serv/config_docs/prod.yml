@@ -200,3 +200,33 @@ sources:
 
     # Required for tls. Can be a file path or the contents of the pem file
     # client_key: ./client-key.pem
+
+  # Add an API source only when outbound operations are required. Production
+  # rejects exposed mutations without allowed_roles; writes remain blocked
+  # unless capability, access, and each operation opt-in are all explicit.
+  # - name: external_api
+  #   kind: api
+  #   read_only: false
+  #   specs_dir: ./config/specs
+  #   capabilities:
+  #     api.read: true
+  #     api.write: true
+  #     api.delete: false
+  #   access:
+  #     read: authenticated
+  #     write: authenticated
+  #     delete: blocked
+  #   specs:
+  #     example:
+  #       base_url: ${EXTERNAL_API_BASE_URL}
+  #       auth:
+  #         scheme: bearer
+  #         token: ${EXTERNAL_API_TOKEN}
+  #       max_request_bytes: 65536
+  #       max_response_bytes: 1048576
+  #       operations:
+  #         createResource:
+  #           expose_mutation: true
+  #           expose_as: external_create_resource
+  #           allowed_roles: [operator]
+  #           retry_on_auth_failure: false

@@ -82,6 +82,9 @@ func metadataSourceNames(snapshot *MetadataSnapshot) []string {
 	for _, idx := range snapshot.Indexes {
 		add(idx.DatabaseName)
 	}
+	for _, op := range snapshot.APIOperations {
+		add(op.SourceName)
+	}
 	out := make([]string, 0, len(seen))
 	for name := range seen {
 		out = append(out, name)
@@ -127,6 +130,11 @@ func metadataForSources(snapshot *MetadataSnapshot, sources map[string]struct{})
 	for _, idx := range snapshot.Indexes {
 		if owns(idx.DatabaseName) {
 			out.Indexes = append(out.Indexes, idx)
+		}
+	}
+	for _, op := range snapshot.APIOperations {
+		if owns(op.SourceName) {
+			out.APIOperations = append(out.APIOperations, op)
 		}
 	}
 	return out

@@ -102,3 +102,30 @@ sources:
     #connection_string: ${GJ_DATABASE_URL}
     ping_timeout: 5m
     enable_tls: false
+
+  # Agentic API mutations remain default-off. Enabling one requires api.write,
+  # access.write, an operation opt-in and allowlist, plus MCP/agent write gates.
+  # - name: external_api
+  #   kind: api
+  #   read_only: false
+  #   specs_dir: ./config/specs
+  #   capabilities:
+  #     api.read: true
+  #     api.write: true
+  #     api.delete: false
+  #   access:
+  #     read: authenticated
+  #     write: authenticated
+  #     delete: blocked
+  #   specs:
+  #     example:
+  #       base_url: ${EXTERNAL_API_BASE_URL}
+  #       auth:
+  #         scheme: bearer
+  #         token: ${EXTERNAL_API_TOKEN}
+  #       operations:
+  #         createResource:
+  #           expose_mutation: true
+  #           expose_as: external_create_resource
+  #           allowed_roles: [operator]
+  #           retry_on_auth_failure: false

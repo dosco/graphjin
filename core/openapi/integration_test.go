@@ -235,6 +235,88 @@ func TestLoadMissingDirectoryIsBenign(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresAndRetainsOwningSource(t *testing.T) {
+	dir := t.TempDir()
+	specYAML := `
+openapi: 3.0.0
+info: { title: External API, version: '1.0' }
+paths:
+  /widgets:
+    get:
+      operationId: listWidgets
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+`
+	if err := os.WriteFile(filepath.Join(dir, "external.yaml"), []byte(specYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	missing, err := Load(LoaderOptions{SpecsDir: dir, RequireSource: true}, map[string]SpecConfig{"external": {}}, nil)
+	if err != nil {
+		t.Fatalf("load unowned spec: %v", err)
+	}
+	if len(missing.Registry.Specs) != 0 || len(missing.Warnings) == 0 {
+		t.Fatalf("unowned source should be skipped with a warning: %+v", missing)
+	}
+
+	owned, err := Load(LoaderOptions{SpecsDir: dir, RequireSource: true}, map[string]SpecConfig{
+		"external": {SourceName: "external_api"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("load owned spec: %v", err)
+	}
+	if len(owned.Registry.Specs) != 1 || owned.Registry.Specs[0].SourceName != "external_api" ||
+		len(owned.Registry.Specs[0].Operations) != 1 || owned.Registry.Specs[0].Operations[0].SourceName != "external_api" {
+		t.Fatalf("source provenance was not retained: %+v", owned.Registry.Specs)
+	}
+}
+
+func TestGenericMutationFixtureCoversVerbAndStatusMatrix(t *testing.T) {
+	overrides := map[string]OperationOverride{}
+	for _, operationID := range []string{"createWidget", "replaceWidget", "patchWidget", "deleteWidget", "oversizedResponse"} {
+		overrides[operationID] = OperationOverride{ExposeMutation: true, AllowedRoles: []string{"operator"}}
+	}
+	res, err := Load(LoaderOptions{SpecsDir: "testdata", RequireSource: true}, map[string]SpecConfig{
+		"generic_mutations": {SourceName: "fixture_api", Operations: overrides},
+	}, nil)
+	if err != nil {
+		t.Fatalf("load fixture: %v", err)
+	}
+	spec, ok := res.Registry.Get("generic_mutations")
+	if !ok {
+		t.Fatal("generic mutation fixture was not loaded")
+	}
+	want := map[string]struct {
+		method    string
+		status    int
+		mediaType string
+	}{
+		"createWidget":      {http.MethodPost, http.StatusCreated, "application/json"},
+		"replaceWidget":     {http.MethodPut, http.StatusOK, "application/json"},
+		"patchWidget":       {http.MethodPatch, http.StatusAccepted, "application/merge-patch+json"},
+		"deleteWidget":      {http.MethodDelete, http.StatusNoContent, ""},
+		"oversizedResponse": {http.MethodPost, http.StatusOK, "application/json"},
+	}
+	for i := range spec.Operations {
+		op := &spec.Operations[i]
+		expected, exists := want[op.OperationID]
+		if !exists {
+			continue
+		}
+		if op.Mode != OpModeMutation || op.Method != expected.method || len(op.SuccessStatuses) != 1 || op.SuccessStatuses[0] != expected.status || op.RequestMediaType != expected.mediaType {
+			t.Fatalf("operation %s = %+v, want method=%s status=%d media=%q", op.OperationID, op, expected.method, expected.status, expected.mediaType)
+		}
+		delete(want, op.OperationID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("fixture operations missing from registry: %+v", want)
+	}
+}
+
 // TestLoadIgnoresNonYAMLFiles confirms the loader's filter — a stray
 // README.md or .json file in config/specs shouldn't trip the parser.
 func TestLoadIgnoresNonYAMLFiles(t *testing.T) {

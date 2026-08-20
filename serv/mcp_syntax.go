@@ -143,6 +143,7 @@ type MutationOperations struct {
 	UpdateWhere       string `json:"update_where"`
 	Upsert            string `json:"upsert"`
 	Delete            string `json:"delete"`
+	OpenAPICall       string `json:"openapi_call"`
 }
 
 // NestedMutationInfo describes nested mutations
@@ -354,6 +355,7 @@ var mutationSyntaxReference = MutationSyntaxReference{
 		UpdateWhere:       "products(where: { price: { lt: 10 } }, update: { on_sale: true })",
 		Upsert:            "products(upsert: { id: $id, name: \"Name\" }) - insert or update based on id",
 		Delete:            "products(delete: true, where: { id: { eq: $id } })",
+		OpenAPICall:       "mutation ($request: JSON!) { <catalog_api_root>(call: $request) { ok status_code operation_id request_id response_json } } - use only a caller-visible api_operation catalog root",
 	},
 	CodeSQL: CodeSQLMutationDSL{
 		ReadBeforeWrite: `Query gj_code(where: { kind: { eq: "symbol" } }) or gj_code(where: { kind: { eq: "file" } }) and request code/code_context plus path/hash before editing source.`,
@@ -398,6 +400,7 @@ var mutationSyntaxReference = MutationSyntaxReference{
 		{Wrong: `owner: { id: 5 }`, Right: `owner: { connect: { id: 5 } }`, Reason: "Use connect to link to existing records, not direct assignment"},
 		{Wrong: `users(insert: { id: $id, email: $email }, on_conflict: get)`, Right: `users(insert: { email: $email }, on_conflict: get)`, Reason: "Supply exactly one inferable unique target; primary key plus another unique key is ambiguous"},
 		{Wrong: `users(update: { name: $name }, on_conflict: get)`, Right: `users(insert: { email: $email, name: $name }, on_conflict: get)`, Reason: "on_conflict: get is insert-only; use upsert for insert-or-update"},
+		{Wrong: `api_root(call: { url: "https://example.com", body: {...} })`, Right: `api_root(call: $request)`, Reason: "OpenAPI calls accept only declared path/query/header/body values; method, URL, authentication, and media type come from the server registry"},
 	},
 	Examples: []QueryExample{
 		{Description: "Simple insert", Query: "mutation { users(insert: { email: $email }) { id } }"},
@@ -410,6 +413,7 @@ var mutationSyntaxReference = MutationSyntaxReference{
 		{Description: "Delete by ID", Query: "mutation { products(delete: true, where: { id: { eq: $id } }) { id } }"},
 		{Description: "Connect existing record", Query: "mutation { products(insert: { name: $name, owner: { connect: { id: $owner_id } } }) { id } }"},
 		{Description: "Disconnect relationship", Query: "mutation { users(id: $id, update: { products: { disconnect: { id: $product_id } } }) { id } }"},
+		{Description: "Call an authorized OpenAPI mutation discovered as an api_operation catalog item", Query: "mutation ($request: JSON!) { external_create_resource(call: $request) { ok status_code operation_id request_id response_json } }", Variables: `{"request":{"body":{"name":"Example resource","enabled":true}}}`},
 	},
 }
 
