@@ -4,6 +4,10 @@ on:
   workflow_run:
     workflows: ["Build"]
     types: [completed]
+  # Manual escape hatch. Build skips workflow-only commits (paths-ignore), so a
+  # release-pipeline fix cannot trigger itself, and a failed publish otherwise
+  # needs an unrelated commit to retry.
+  workflow_dispatch:
 
 concurrency:
   group: auto-release-master
@@ -18,15 +22,16 @@ jobs:
       contents: write
       id-token: write
     if: |
+      github.event_name == 'workflow_dispatch' || (
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'master' &&
-      !contains(github.event.workflow_run.head_commit.message, '[skip-release]')
+      !contains(github.event.workflow_run.head_commit.message, '[skip-release]'))
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
           token: ${{ secrets.GR_TOKEN }}
 
@@ -46,7 +51,7 @@ jobs:
       - name: Determine version increment
         id: version_increment
         env:
-          COMMIT_MSG: ${{ github.event.workflow_run.head_commit.message }}
+          COMMIT_MSG: ${{ github.event.workflow_run.head_commit.message || '' }}
         run: |
           # Check commit message for version increment hints
           if [[ "$COMMIT_MSG" == *"[major]"* ]]; then
@@ -98,7 +103,7 @@ jobs:
           set -euo pipefail
 
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
-          WORKFLOW_SHA="${{ github.event.workflow_run.head_sha }}"
+          WORKFLOW_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
 
           git fetch origin master:refs/remotes/origin/master --tags
 
@@ -178,7 +183,7 @@ jobs:
 
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
           RELEASE_MODE="${{ steps.release_target.outputs.mode }}"
-          WORKFLOW_SHA="${{ github.event.workflow_run.head_sha }}"
+          WORKFLOW_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
 
           tags=(
             "auth/v$NEW_VERSION"
