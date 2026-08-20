@@ -12,6 +12,11 @@ concurrency:
 jobs:
   auto-release:
     runs-on: ubuntu-latest
+    permissions:
+      # contents: the `gh release delete` step below uses GITHUB_TOKEN.
+      # id-token: required for npm trusted publishing (OIDC).
+      contents: write
+      id-token: write
     if: |
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
@@ -28,7 +33,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Get current version
         id: current_version
@@ -256,8 +262,9 @@ jobs:
 
       - name: Publish to npm
         if: steps.push_release.outputs.pushed == 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+          # Trusted publishing (OIDC): the CLI mints a short-lived, workflow-scoped
+          # credential, so there is no NPM_TOKEN to leak or rotate. Requires npm >= 11.5
+          # and the trusted publisher configured for this repo + workflow on npmjs.com.
+          npm --version
           npm publish --access public
