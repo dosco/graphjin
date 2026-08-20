@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
+	gjopenapi "github.com/dosco/graphjin/core/v3/openapi"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
 
@@ -14,7 +15,7 @@ import (
 // remain the execution-time authority for every concrete table and row.
 func (ms *mcpServer) callerAllowedActions(ctx context.Context) []string {
 	conf := ms.config()
-	if conf == nil || conf.Agent.ReadOnly || !ms.toolAvailableForContext(ctx, "execute_graphql") {
+	if conf == nil || conf.Agent.ReadOnly || !conf.MCP.AllowMutations || !ms.toolAvailableForContext(ctx, "execute_graphql") {
 		return nil
 	}
 	ctx = ms.effectiveIdentityContext(ctx)
@@ -51,8 +52,12 @@ func (ms *mcpServer) callerAllowedActions(ctx context.Context) []string {
 				if writeEnabled && !source.ReadOnly && authenticated {
 					actions[gjagent.CapabilityActionCodeWrite] = true
 				}
+			case sourcecap.KindAPI:
+				// Concrete API operations are evaluated from the loaded registry below;
+				// source config alone does not reveal the operation's HTTP method.
 			}
 		}
+		ms.addCallerAllowedAPIActions(ctx, conf, role, actions)
 	}
 
 	for _, root := range mcpGraphJinRoots {
@@ -73,6 +78,34 @@ func (ms *mcpServer) callerAllowedActions(ctx context.Context) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func (ms *mcpServer) addCallerAllowedAPIActions(ctx context.Context, conf *Config, role string, actions map[string]bool) {
+	if ms == nil || ms.service == nil || ms.service.gj == nil || conf == nil {
+		return
+	}
+	md, err := ms.service.gj.MetadataSnapshot(ms.service.metadataSnapshotExcludes()...)
+	if err != nil || md == nil {
+		return
+	}
+	for _, operation := range md.APIOperations {
+		if !operation.Active {
+			continue
+		}
+		decision := conf.Core.AuthorizeOpenAPIOperation(ctx, &gjopenapi.OpDescriptor{
+			SourceName: operation.SourceName, OperationID: operation.OperationID,
+			Method: operation.Method, AllowedRoles: operation.AllowedRoles,
+		}, role)
+		if !decision.Allowed {
+			continue
+		}
+		switch strings.ToUpper(operation.Method) {
+		case "POST", "PUT", "PATCH":
+			actions[gjagent.CapabilityActionAPIWrite] = true
+		case "DELETE":
+			actions[gjagent.CapabilityActionAPIDelete] = true
+		}
+	}
 }
 
 func callerActionNeedsIdentity(root, action string) bool {

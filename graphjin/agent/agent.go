@@ -21,14 +21,14 @@ const (
 	StatusBlocked            = "blocked"
 	StatusError              = "error"
 
-	defaultProvider       = "openai"
-	defaultAPIKeyEnv      = "OPENAI_API_KEY"
+	defaultProvider             = "openai"
+	defaultAPIKeyEnv            = "OPENAI_API_KEY"
 	defaultStructuredOutputMode = StructuredOutputAuto
-	defaultMaxSteps       = 8
-	minTimeoutSeconds     = 50
-	defaultTimeoutSeconds = minTimeoutSeconds
-	defaultSeedLimit      = 40
-	defaultCatalogLimit   = 20
+	defaultMaxSteps             = 8
+	minTimeoutSeconds           = 50
+	defaultTimeoutSeconds       = minTimeoutSeconds
+	defaultSeedLimit            = 40
+	defaultCatalogLimit         = 20
 
 	// maxInstructionBytes bounds the user instruction (token/cost guard).
 	maxInstructionBytes = 16 * 1024
@@ -51,11 +51,11 @@ var (
 )
 
 type Config struct {
-	Enabled        bool   `mapstructure:"enabled" jsonschema:"title=Enable GraphJin Agent,description=Parsed dev and agentic service configs default to enabled; prod and direct Go configs remain disabled"`
-	Provider       string `mapstructure:"provider" jsonschema:"title=Agent Provider,default=openai"`
-	Model          string `mapstructure:"model" jsonschema:"title=Agent Model"`
-	APIKeyEnv      string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
-	BaseURL        string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
+	Enabled   bool   `mapstructure:"enabled" jsonschema:"title=Enable GraphJin Agent,description=Parsed dev and agentic service configs default to enabled; prod and direct Go configs remain disabled"`
+	Provider  string `mapstructure:"provider" jsonschema:"title=Agent Provider,default=openai"`
+	Model     string `mapstructure:"model" jsonschema:"title=Agent Model"`
+	APIKeyEnv string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
+	BaseURL   string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
 	// StructuredOutputMode selects the Ax structured-output mechanism. "auto"
 	// lets the deployment profile and its model rules choose the mechanism Ax
 	// has verified for that pairing; the explicit values are an override.
@@ -165,6 +165,8 @@ const (
 	CapabilityActionDataUpdate = "data.update"
 	CapabilityActionDataDelete = "data.delete"
 	CapabilityActionCodeWrite  = "code.write"
+	CapabilityActionAPIWrite   = "api.write"
+	CapabilityActionAPIDelete  = "api.delete"
 )
 
 type Response struct {

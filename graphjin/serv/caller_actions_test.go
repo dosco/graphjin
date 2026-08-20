@@ -10,7 +10,7 @@ import (
 )
 
 func TestCallerAllowedActionsFollowSourceAccessAndIdentity(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true})
+	ms := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true, AllowMutations: true})
 	source := &ms.service.conf.Core.Sources[0]
 	source.Capabilities = map[string]bool{sourcecap.KeyDataWrite: true}
 	source.Access = core.SourceAccessConfig{
@@ -35,6 +35,11 @@ func TestCallerAllowedActionsFollowSourceAccessAndIdentity(t *testing.T) {
 	if stringSliceContains(user, gjagent.CapabilityActionDataDelete) {
 		t.Fatalf("user actions = %+v, delete must remain blocked", user)
 	}
+	ms.service.conf.MCP.AllowMutations = false
+	if actions := ms.callerAllowedActions(sourceModeUserTestContext()); len(actions) != 0 {
+		t.Fatalf("MCP mutation gate actions = %+v, want none", actions)
+	}
+	ms.service.conf.MCP.AllowMutations = true
 
 	source.ReadOnly = true
 	readOnlySource := ms.callerAllowedActions(sourceModeUserTestContext())
@@ -57,7 +62,7 @@ func TestCallerAllowedActionsFollowSourceAccessAndIdentity(t *testing.T) {
 }
 
 func TestCallerCapabilityProfilePublishesOwnerScopedRootActionsOnlyToAuthenticatedCaller(t *testing.T) {
-	ms := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true})
+	ms := mockMcpServerWithConfig(MCPConfig{AllowRawQueries: true, AllowMutations: true})
 	ms.service.conf.Core.Tasks.Enabled = true
 
 	anon := ms.callerCapabilityProfile(context.Background(), false)

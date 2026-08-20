@@ -56,6 +56,7 @@ const (
 	KeyFilesWatch      = "files.watch"
 	KeyAPIRead         = "api.read"
 	KeyAPIWrite        = "api.write"
+	KeyAPIDelete       = "api.delete"
 )
 
 // Definition is the source of truth for a public sources[].capabilities key.
@@ -108,8 +109,9 @@ var definitions = []Definition{
 	def(KindFile, KeyFilesDelete, ActionDelete, true, false, false, "critical", EnforcementRuntimeCoarseReadOnly, true, "Delete file source objects.", kindReason(KindFile), mutateRecommendation),
 	def(KindFile, KeyFilesWatch, ActionWatch, true, false, false, "medium", EnforcementRuntimeCoarseReadOnly, true, "Watch file source changes.", kindReason(KindFile), mutateRecommendation),
 
-	def(KindAPI, KeyAPIRead, ActionRead, true, true, true, "medium", EnforcementConfigAudit, false, "Call read operations on remote API sources.", kindReason(KindAPI), readRecommendation),
-	def(KindAPI, KeyAPIWrite, ActionWrite, true, false, false, "high", EnforcementConfigAudit, true, "Call mutating operations on remote API sources.", kindReason(KindAPI), mutateRecommendation),
+	def(KindAPI, KeyAPIRead, ActionRead, true, true, true, "medium", EnforcementRuntime, false, "Call read operations on remote API sources.", kindReason(KindAPI), readRecommendation),
+	def(KindAPI, KeyAPIWrite, ActionWrite, true, false, false, "high", EnforcementRuntime, true, "Call POST, PUT, and PATCH operations on remote API sources.", kindReason(KindAPI), mutateRecommendation),
+	def(KindAPI, KeyAPIDelete, ActionDelete, false, false, false, "critical", EnforcementRuntime, true, "Call DELETE operations on remote API sources.", kindReason(KindAPI), mutateRecommendation),
 }
 
 var byKind map[string][]Definition
@@ -145,7 +147,7 @@ func def(kind, key, action string, dev, prod, agentic bool, severity, enforcemen
 	switch key {
 	case KeyCodeRead, KeyFilesRead, KeyAPIRead, KeyDataRead, KeyDataWrite:
 		d.ExampleValue = "true"
-	case KeyCodeWrite, KeyFilesWrite, KeyAPIWrite:
+	case KeyCodeWrite, KeyFilesWrite, KeyAPIWrite, KeyAPIDelete:
 		d.ExampleValue = "false"
 	}
 	return d

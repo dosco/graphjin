@@ -10,9 +10,9 @@ func TestExpandSpecConfigDefaultsEnv(t *testing.T) {
 			"listWidgets": {
 				ExposeTopLevel: true,
 				Defaults: map[string]string{
-					"region":    "${TEST_OAPI_DEFAULT_REGION}",
-					"format":    "json",
-					"missing":   "${TEST_OAPI_UNSET_VALUE}",
+					"region":  "${TEST_OAPI_DEFAULT_REGION}",
+					"format":  "json",
+					"missing": "${TEST_OAPI_UNSET_VALUE}",
 				},
 			},
 		},

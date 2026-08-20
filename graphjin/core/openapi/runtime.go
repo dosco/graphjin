@@ -3,6 +3,7 @@ package openapi
 import (
 	"fmt"
 	"net/http"
+	"sort"
 )
 
 // SpecRuntime is the per-spec runtime built once at boot from a parsed
@@ -48,6 +49,9 @@ func NewSpecRuntime(spec *Spec, httpClient *http.Client) (*SpecRuntime, error) {
 		op := &spec.Operations[i]
 		if op.Mode == OpModeSkipped {
 			continue
+		}
+		if _, exists := r.callers[op.OperationID]; exists {
+			return nil, fmt.Errorf("openapi: %s contains duplicate active operationId %q", spec.Key, op.OperationID)
 		}
 		r.callers[op.OperationID] = NewCaller(op, spec.BaseURL, auth, lim, httpClient)
 	}
@@ -128,6 +132,27 @@ func (r *Runtime) Caller(specKey, operationID string) (*Caller, bool) {
 	return rt.Caller(operationID)
 }
 
+// MutationByRoot resolves the registry operation and caller for a synthetic
+// GraphQL mutation root.
+func (r *Runtime) MutationByRoot(root string) (*OpDescriptor, *Caller, bool) {
+	if r == nil {
+		return nil, nil, false
+	}
+	for _, specRuntime := range r.specs {
+		if specRuntime == nil || specRuntime.spec == nil {
+			continue
+		}
+		for i := range specRuntime.spec.Operations {
+			op := &specRuntime.spec.Operations[i]
+			if op.Mode == OpModeMutation && op.ExposeAs == root {
+				caller, ok := specRuntime.callers[op.OperationID]
+				return op, caller, ok
+			}
+		}
+	}
+	return nil, nil, false
+}
+
 // Spec returns the runtime for a spec key.
 func (r *Runtime) Spec(specKey string) (*SpecRuntime, bool) {
 	if r == nil {
@@ -137,8 +162,7 @@ func (r *Runtime) Spec(specKey string) (*SpecRuntime, bool) {
 	return rt, ok
 }
 
-// AllSpecs returns every loaded spec runtime in deterministic order
-// (whatever order the Registry produced).
+// AllSpecs returns every loaded spec runtime in deterministic spec-key order.
 func (r *Runtime) AllSpecs() []*SpecRuntime {
 	if r == nil {
 		return nil
@@ -147,5 +171,8 @@ func (r *Runtime) AllSpecs() []*SpecRuntime {
 	for _, rt := range r.specs {
 		out = append(out, rt)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].spec.Key < out[j].spec.Key
+	})
 	return out
 }

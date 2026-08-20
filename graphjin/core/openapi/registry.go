@@ -33,6 +33,10 @@ const (
 	// Exposed at the top level as a virtual table whose query-param
 	// filters become GraphQL arguments.
 	OpModeList
+
+	// OpModeMutation — an explicitly allowlisted POST, PUT, PATCH, or DELETE
+	// operation exposed only on the GraphQL mutation root.
+	OpModeMutation
 )
 
 // String returns a human-readable mode label for log output.
@@ -44,6 +48,8 @@ func (m OpMode) String() string {
 		return "top-level (single)"
 	case OpModeList:
 		return "top-level (list)"
+	case OpModeMutation:
+		return "mutation"
 	default:
 		return "skipped"
 	}
@@ -58,15 +64,16 @@ const (
 	ParamInHeader ParamLocation = "header"
 )
 
-// ParamSpec is the loader-resolved view of an OpenAPI parameter, stripped
-// of the spec's full schema apparatus and reduced to what the resolver
-// actually needs at request-build time.
+// ParamSpec is the loader-resolved view of an OpenAPI parameter. It retains
+// the schema so primitive values can be checked against enum/range/format and
+// other declared constraints before any network call.
 type ParamSpec struct {
 	Name     string
 	In       ParamLocation
 	Required bool
 	Type     string // OpenAPI primitive type: string | integer | number | boolean
 	Format   string // optional secondary type info (date-time, uuid, etc.)
+	Schema   *openapi3.SchemaRef
 }
 
 // OpDescriptor is the per-operation registry entry produced by the loader.
@@ -74,9 +81,10 @@ type ParamSpec struct {
 // result extraction path, exposure config — is denormalised onto this
 // struct so the resolver hot path doesn't re-walk the OpenAPI document.
 type OpDescriptor struct {
+	SourceName   string // owning sources[].name (set only by normalization)
 	SpecKey      string // YAML filename without extension (e.g. "interaction_studio")
 	OperationID  string // OpenAPI operationId (synthesised when the spec omits it)
-	Method       string // always GET in the read-only first cut
+	Method       string // GET, POST, PUT, PATCH, or DELETE
 	PathTemplate string // OpenAPI path template, e.g. "/users/{userId}"
 
 	Mode       OpMode
@@ -109,6 +117,17 @@ type OpDescriptor struct {
 	// by the bridge to synthesise DBColumn entries for top-level virtual
 	// tables so they are visible to GraphQL introspection.
 	ResponseSchema *openapi3.SchemaRef
+
+	// Mutation request/response contract retained from the OpenAPI operation.
+	RequestMediaType    string
+	RequestBodySchema   *openapi3.SchemaRef
+	RequestBodyRequired bool
+	SuccessStatuses     []int
+	AllowedRoles        []string
+	RetryOnAuthFailure  bool
+	MaxRequestBytes     int64
+	MaxResponseBytes    int64
+	JSONSchema2020      bool // OpenAPI 3.1+ request schemas use JSON Schema 2020-12
 
 	// Defaults: fallback values for path/query params; caller args win.
 	Defaults map[string]string
@@ -153,13 +172,16 @@ func (op *OpDescriptor) ResolveCallParams(args map[string]string) (CallParams, e
 // Spec is the loader's per-file output: the parsed OpenAPI document, the
 // resolved per-spec configuration, and the classified operations.
 type Spec struct {
-	Key         string
-	SourcePath  string
-	Doc         *openapi3.T
-	BaseURL     string
-	Auth        AuthConfig
-	Concurrency ConcurrencyConfig
-	Operations  []OpDescriptor
+	Key              string
+	SourceName       string
+	SourcePath       string
+	Doc              *openapi3.T
+	BaseURL          string
+	Auth             AuthConfig
+	Concurrency      ConcurrencyConfig
+	MaxRequestBytes  int64
+	MaxResponseBytes int64
+	Operations       []OpDescriptor
 
 	// SkippedCount is a precomputed tally for boot logging; the per-op
 	// reasons live on individual OpDescriptors.

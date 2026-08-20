@@ -162,15 +162,15 @@ func TestAddRelColumnsForDatabaseJoin(t *testing.T) {
 
 	// Set up parent and child selects
 	parentSel := Select{
-		Field: Field{ID: 0, FieldName: "users"},
-		Table: "users",
+		Field:  Field{ID: 0, FieldName: "users"},
+		Table:  "users",
 		Fields: []Field{},
 		BCols:  []Column{},
 	}
 	childSel := Select{
-		Field: Field{ID: 1, ParentID: 0, FieldName: "orders"},
-		Table: "orders",
-		Ti:    sdata.DBTable{Name: "orders", Database: "analytics"},
+		Field:  Field{ID: 1, ParentID: 0, FieldName: "orders"},
+		Table:  "orders",
+		Ti:     sdata.DBTable{Name: "orders", Database: "analytics"},
 		Fields: []Field{},
 		BCols:  []Column{},
 		Rel: sdata.DBRel{

@@ -220,6 +220,33 @@ func TestTokenExchange(t *testing.T) {
 	}
 }
 
+func TestTokenEndpointErrorsAreRedacted(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"access_token":"response-secret"}`))
+	}))
+	defer srv.Close()
+
+	p, err := NewAuthProvider(AuthConfig{
+		Scheme:       "oauth2_client_credentials",
+		TokenURL:     srv.URL + "?client_secret=url-secret",
+		ClientID:     "client",
+		ClientSecret: "config-secret",
+	}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Apply(context.Background(), newTestRequest(t, "https://api.example.com"), nil)
+	if err == nil {
+		t.Fatal("expected token endpoint failure")
+	}
+	for _, secret := range []string{"response-secret", "url-secret", "config-secret", "access_token"} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("token endpoint error leaked %q: %v", secret, err)
+		}
+	}
+}
+
 func TestCachedTokenExpiry(t *testing.T) {
 	c := &cachedToken{}
 	var fetchCalls int

@@ -699,6 +699,7 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 	rows = append(rows, securitySourcePolicyEvaluations(conf, mode)...)
 	rows = append(rows, securitySourceAccessPolicyEvaluations(conf, mode)...)
 	rows = append(rows, securitySourceAccessSchemaFindings(ctx, mode)...)
+	rows = append(rows, securityOpenAPIOperationPolicyEvaluations(ctx, mode)...)
 	for i := range rows {
 		securityApplyReportContext(&rows[i], ctx)
 		rows[i].WeakensDefault = securityWeakensDefault(rows[i])
@@ -720,6 +721,120 @@ func securityPolicyEvaluationsForContext(ctx securityReportContext) []securityPo
 			"effective":         rows[i].Effective,
 			"weakens_default":   rows[i].WeakensDefault,
 		}
+	}
+	return rows
+}
+
+func securityOpenAPIOperationPolicyEvaluations(ctx securityReportContext, mode string) []securityPolicyEval {
+	if !ctx.Runtime || ctx.Service == nil || ctx.Service.gj == nil {
+		return nil
+	}
+	md, err := ctx.Service.gj.MetadataSnapshot(ctx.Service.metadataSnapshotExcludes()...)
+	if err != nil || md == nil {
+		return nil
+	}
+	return securityOpenAPIOperationPolicies(ctx.Conf, mode, md.APIOperations)
+}
+
+func securityOpenAPIOperationPolicies(conf *Config, mode string, operations []core.MetadataAPIOperation) []securityPolicyEval {
+	if conf == nil || len(operations) == 0 {
+		return nil
+	}
+	rows := make([]securityPolicyEval, 0, len(operations))
+	for _, op := range operations {
+		method := strings.ToUpper(strings.TrimSpace(op.Method))
+		capability, action := sourcecap.KeyAPIRead, sourcecap.ActionRead
+		switch method {
+		case "POST", "PUT", "PATCH":
+			capability, action = sourcecap.KeyAPIWrite, sourcecap.ActionWrite
+		case "DELETE":
+			capability, action = sourcecap.KeyAPIDelete, sourcecap.ActionDelete
+		}
+
+		source, sourceFound := conf.Core.OpenAPISourceByName(op.SourceName)
+		capabilityAllowed := false
+		accessMode := core.AccessModeBlocked
+		readOnlyBlocked := sourceFound && source.ReadOnly && action != sourcecap.ActionRead
+		if sourceFound {
+			capabilityAllowed, _ = conf.sourceCapabilityForSource(source, capability)
+			access := conf.Core.EffectiveSourceAccess(source)
+			switch action {
+			case sourcecap.ActionWrite:
+				accessMode = access.Write
+			case sourcecap.ActionDelete:
+				accessMode = access.Delete
+			default:
+				accessMode = access.Read
+			}
+		}
+		rolesConfigured := action == sourcecap.ActionRead || len(op.AllowedRoles) != 0
+		effectiveAllowed := op.Active && sourceFound && capabilityAllowed &&
+			normalizeSourceAccessAllowed(accessMode) && !readOnlyBlocked && rolesConfigured
+		defaultAllowed := action == sourcecap.ActionRead && op.Active && sourceCapabilityDefault(mode, sourcecap.KindAPI, capability)
+
+		blockedBy := "caller_identity"
+		switch {
+		case !op.Active:
+			blockedBy = "classification"
+		case !sourceFound:
+			blockedBy = "source"
+		case readOnlyBlocked:
+			blockedBy = "source.read_only"
+		case !capabilityAllowed:
+			blockedBy = "capability"
+		case !normalizeSourceAccessAllowed(accessMode):
+			blockedBy = "access"
+		case !rolesConfigured:
+			blockedBy = "allowed_roles"
+		}
+
+		id := "openapi.operation." + securityIDPart(op.SourceName) + "." + securityIDPart(op.SpecKey) + "." + securityIDPart(op.OperationID)
+		overrideKey := fmt.Sprintf("sources[%s].specs[%s].operations[%s]", op.SourceName, op.SpecKey, op.OperationID)
+		riskLevel := strings.TrimSpace(op.RiskLevel)
+		if riskLevel == "" {
+			riskLevel = securitySourceCapabilitySeverity(sourcecap.KindAPI, capability)
+		}
+		row := newSecurityPolicy(mode, id, "core", op.SourceName, sourcecap.KindAPI, capability, action,
+			fmt.Sprintf("%s %s", method, op.OperationID),
+			"Shows the effective runtime posture for one classified OpenAPI operation.",
+			defaultAllowed, effectiveAllowed,
+			overrideKey, fmt.Sprint(op.Active),
+			action != sourcecap.ActionRead, riskLevel,
+			"OpenAPI operations are gated by classification, owning-source capability, source access, read-only policy, and mutation role allowlists.",
+			"Keep non-GET operations unexposed unless required, use narrow allowed_roles, and review the source capability and access mode.")
+		// An operation is a discrete allow/block decision. Avoid the source-level
+		// read_only/read_write rendering used for broad write capabilities.
+		row.DefaultEffective = securityEffectiveBlock
+		if defaultAllowed {
+			row.DefaultEffective = securityEffectiveAllow
+		}
+		row.Effective = securityEffectiveBlock
+		if effectiveAllowed {
+			row.Effective = securityEffectiveAllow
+		}
+		row.TableName = op.RootName
+		row.ReadOnly = readOnlyBlocked
+		row.Details = map[string]any{
+			"spec":                     op.SpecKey,
+			"operation_id":             op.OperationID,
+			"root":                     op.RootName,
+			"method":                   method,
+			"path":                     op.Path,
+			"classification":           op.Mode,
+			"active":                   op.Active,
+			"skip_reason":              op.SkipReason,
+			"blocked_by":               blockedBy,
+			"access_mode":              accessMode,
+			"capability_allowed":       capabilityAllowed,
+			"allowed_roles":            op.AllowedRoles,
+			"success_statuses":         op.SuccessStatuses,
+			"retry_on_auth_failure":    op.RetryEnabled,
+			"request_media_type":       op.RequestMediaType,
+			"agent_read_only":          conf.Agent.ReadOnly,
+			"mcp_mutations_enabled":    conf.MCP.AllowMutations,
+			"cross_resource_atomicity": false,
+		}
+		rows = append(rows, row)
 	}
 	return rows
 }
@@ -898,6 +1013,27 @@ func securitySourceAccessPolicyEvaluations(conf *Config, mode string) []security
 			rows[len(rows)-2].Details = sourceAccessDetails(access)
 			rows[len(rows)-1].Details = sourceAccessDetails(access)
 			rows = append(rows, sourceAccessClassificationPolicies(mode, name, kind, access)...)
+		} else if kind == sourcecap.KindAPI {
+			start := len(rows)
+			rows = append(rows, sourceAccessDefaultPolicy(mode, name, kind, "read", access.Read, true))
+			rows = append(rows, sourceAccessDefaultPolicy(mode, name, kind, "write", access.Write, !source.ReadOnly))
+			rows = append(rows, sourceAccessDefaultPolicy(mode, name, kind, "delete", access.Delete, !source.ReadOnly))
+			for i, capability := range []string{sourcecap.KeyAPIRead, sourcecap.KeyAPIWrite, sourcecap.KeyAPIDelete} {
+				details := sourceAccessDetails(access)
+				enabled, explicit := conf.sourceCapabilityForSource(source, capability)
+				details["capability"] = capability
+				details["capability_enabled"] = enabled
+				details["capability_explicit"] = explicit
+				details["source_read_only"] = source.ReadOnly
+				if capability != sourcecap.KeyAPIRead && source.ReadOnly {
+					details["blocked_by"] = "sources[].read_only"
+				} else if !enabled {
+					details["blocked_by"] = "sources[].capabilities." + capability
+				} else {
+					details["blocked_by"] = ""
+				}
+				rows[start+i].Details = details
+			}
 		}
 	}
 	for root, accessMode := range conf.Core.EffectiveSystemRootAccess() {

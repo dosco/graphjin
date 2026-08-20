@@ -189,6 +189,73 @@
 			"additionalProperties": false,
 			"type": "object"
 		},
+		"AuthConfig": {
+			"properties": {
+				"scheme": {
+					"type": "string"
+				},
+				"token": {
+					"type": "string",
+					"x-graphjin-sensitive": "secret"
+				},
+				"token_from_request": {
+					"$ref": "#/$defs/TokenFromRequest"
+				},
+				"username": {
+					"type": "string"
+				},
+				"password": {
+					"type": "string",
+					"x-graphjin-sensitive": "secret"
+				},
+				"key_name": {
+					"type": "string"
+				},
+				"key_value": {
+					"type": "string",
+					"x-graphjin-sensitive": "secret"
+				},
+				"key_in": {
+					"type": "string"
+				},
+				"token_url": {
+					"type": "string"
+				},
+				"client_id": {
+					"type": "string"
+				},
+				"client_secret": {
+					"type": "string",
+					"x-graphjin-sensitive": "secret"
+				},
+				"scopes": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"request": {
+					"$ref": "#/$defs/TokenExchangeRequest"
+				},
+				"response": {
+					"$ref": "#/$defs/TokenExchangeResponse"
+				},
+				"attach_as": {
+					"type": "string"
+				},
+				"attach_name": {
+					"type": "string"
+				},
+				"attach_format": {
+					"type": "string"
+				},
+				"cache_ttl": {
+					"type": "string"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
 		"AuthLogin": {
 			"properties": {
 				"enabled": {
@@ -405,6 +472,18 @@
 						"other_table.id_column",
 						"users.id"
 					]
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"ConcurrencyConfig": {
+			"properties": {
+				"max_concurrent": {
+					"type": "integer"
+				},
+				"rate_limit_per_second": {
+					"type": "integer"
 				}
 			},
 			"additionalProperties": false,
@@ -986,6 +1065,24 @@
 			"additionalProperties": false,
 			"type": "object"
 		},
+		"JoinConfig": {
+			"properties": {
+				"parent_table": {
+					"type": "string"
+				},
+				"parent_column": {
+					"type": "string"
+				},
+				"param": {
+					"type": "string"
+				},
+				"expose_as": {
+					"type": "string"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
 		"KeystoreConfig": {
 			"properties": {
 				"key": {
@@ -1210,6 +1307,42 @@
 					},
 					"type": "array",
 					"title": "CodeSQL Databases"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"OperationOverride": {
+			"properties": {
+				"expose_as": {
+					"type": "string"
+				},
+				"result_path": {
+					"type": "string"
+				},
+				"disabled": {
+					"type": "boolean"
+				},
+				"expose_top_level": {
+					"type": "boolean"
+				},
+				"expose_mutation": {
+					"type": "boolean"
+				},
+				"allowed_roles": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array"
+				},
+				"retry_on_auth_failure": {
+					"type": "boolean"
+				},
+				"defaults": {
+					"additionalProperties": {
+						"type": "string"
+					},
+					"type": "object"
 				}
 			},
 			"additionalProperties": false,
@@ -1701,6 +1834,13 @@
 					"type": "string",
 					"title": "OpenAPI Specs Directory"
 				},
+				"specs": {
+					"additionalProperties": {
+						"$ref": "#/$defs/SpecConfig"
+					},
+					"type": "object",
+					"title": "OpenAPI Specifications"
+				},
 				"capabilities": {
 					"additionalProperties": {
 						"type": "boolean"
@@ -1711,6 +1851,39 @@
 				"access": {
 					"$ref": "#/$defs/SourceAccessConfig",
 					"title": "Access"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"SpecConfig": {
+			"properties": {
+				"base_url": {
+					"type": "string"
+				},
+				"auth": {
+					"$ref": "#/$defs/AuthConfig"
+				},
+				"joins": {
+					"additionalProperties": {
+						"$ref": "#/$defs/JoinConfig"
+					},
+					"type": "object"
+				},
+				"operations": {
+					"additionalProperties": {
+						"$ref": "#/$defs/OperationOverride"
+					},
+					"type": "object"
+				},
+				"concurrency": {
+					"$ref": "#/$defs/ConcurrencyConfig"
+				},
+				"max_request_bytes": {
+					"type": "integer"
+				},
+				"max_response_bytes": {
+					"type": "integer"
 				}
 			},
 			"additionalProperties": false,
@@ -1826,6 +1999,53 @@
 					"title": "Task Snapshot Max Bytes",
 					"description": "Byte cap for task snapshot_json and task-entry detail_json",
 					"default": 32768
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"TokenExchangeRequest": {
+			"properties": {
+				"method": {
+					"type": "string"
+				},
+				"body_format": {
+					"type": "string"
+				},
+				"body": {
+					"type": "object",
+					"x-graphjin-sensitive": "secret"
+				},
+				"headers": {
+					"additionalProperties": {
+						"type": "string"
+					},
+					"type": "object",
+					"x-graphjin-sensitive": "secret"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"TokenExchangeResponse": {
+			"properties": {
+				"token_field": {
+					"type": "string"
+				},
+				"expires_field": {
+					"type": "string"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"TokenFromRequest": {
+			"properties": {
+				"header": {
+					"type": "string"
+				},
+				"query": {
+					"type": "string"
 				}
 			},
 			"additionalProperties": false,
@@ -2098,6 +2318,13 @@
 			"type": "string",
 			"title": "OpenAPI Specs Directory",
 			"default": "./config/specs"
+		},
+		"openapi": {
+			"additionalProperties": {
+				"$ref": "#/$defs/SpecConfig"
+			},
+			"type": "object",
+			"title": "Legacy OpenAPI Specifications"
 		},
 		"tables": {
 			"items": {

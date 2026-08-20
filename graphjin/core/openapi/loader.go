@@ -90,6 +90,13 @@ func Load(opts LoaderOptions, configs map[string]SpecConfig, logger *log.Logger)
 		}
 
 		cfg := expandSpecConfig(configs[key])
+		if cfg.SourceName == "" {
+			cfg.SourceName = strings.TrimSpace(opts.DefaultSourceName)
+		}
+		if opts.RequireSource && cfg.SourceName == "" {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("openapi: skip %s: no owning api source (add it under sources[].specs)", name))
+			continue
+		}
 		cfg = canonicaliseOpKeys(cfg, doc)
 
 		baseURL := cfg.BaseURL
@@ -98,12 +105,15 @@ func Load(opts LoaderOptions, configs map[string]SpecConfig, logger *log.Logger)
 		}
 
 		spec := &Spec{
-			Key:         key,
-			SourcePath:  path,
-			Doc:         doc,
-			BaseURL:     baseURL,
-			Auth:        cfg.Auth,
-			Concurrency: cfg.Concurrency,
+			Key:              key,
+			SourceName:       cfg.SourceName,
+			SourcePath:       path,
+			Doc:              doc,
+			BaseURL:          baseURL,
+			Auth:             cfg.Auth,
+			Concurrency:      cfg.Concurrency,
+			MaxRequestBytes:  cfg.MaxRequestBytes,
+			MaxResponseBytes: cfg.MaxResponseBytes,
 		}
 
 		ops, opWarnings := classifyAll(spec, doc, cfg)
@@ -191,17 +201,10 @@ func canonicaliseOpKeys(cfg SpecConfig, doc *openapi3.T) SpecConfig {
 // every credential-bearing string. Maps and slices are copied so the
 // caller's configs aren't mutated.
 func expandSpecConfig(in SpecConfig) SpecConfig {
-	out := in
+	out := in.Clone()
 	out.BaseURL = expandEnv(in.BaseURL)
 	out.Auth = expandAuthConfig(in.Auth)
-	if len(in.Joins) > 0 {
-		out.Joins = make(map[string]JoinConfig, len(in.Joins))
-		for k, v := range in.Joins {
-			out.Joins[k] = v
-		}
-	}
 	if len(in.Operations) > 0 {
-		out.Operations = make(map[string]OperationOverride, len(in.Operations))
 		for k, v := range in.Operations {
 			if len(v.Defaults) > 0 {
 				expanded := make(map[string]string, len(v.Defaults))

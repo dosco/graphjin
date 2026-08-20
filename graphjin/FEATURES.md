@@ -717,7 +717,7 @@ query {
 
 ### OpenAPI Integration
 
-Drop an OpenAPI 3 spec into `config/specs/`, declare credentials and join wiring in your environment config, and every classifiable operation in the spec becomes a GraphQL field. Two shapes are emitted automatically:
+Drop an OpenAPI 3.0 or 3.1 spec into `config/specs/`, declare credentials and policy in your environment config, and classifiable GET operations become GraphQL query fields. Non-GET operations remain hidden unless each one is explicitly enabled as a mutation. OpenAPI 3.1 request schemas use JSON Schema 2020-12 validation.
 
 **Row-join fields** — `GET /resource/{id}` declared in `joins:` shows up as a child field on a parent DB table:
 
@@ -725,13 +725,13 @@ Drop an OpenAPI 3 spec into `config/specs/`, declare credentials and join wiring
 # config/dev.yml
 sources:
   - name: app
-    kind: sql
+    kind: database
     type: postgres
     connection_string: ${APP_DATABASE_URL}
     default: true
 
   - name: upstream
-    kind: openapi
+    kind: api
     specs_dir: ./config/specs
     specs:
       interaction_studio:
@@ -784,26 +784,67 @@ query {
 }
 ```
 
-**What gets classified** — every GET operation in the spec is auto-categorised:
+**What gets classified** — operations in the spec are categorised as follows:
 
 | Mode | Path shape | Behaviour |
 |---|---|---|
 | Row-join | `GET /resource/{id}` with a matching `joins:` entry | Child field on the parent DB table; parent column populates the path param |
 | Top-level (single) | `GET /resource/{id}` without a `joins:` entry | Root field; path param becomes a required field argument |
 | Top-level (list) | `GET /resources` with optional query filters | Root field; each query param becomes an optional field argument |
-| Skipped | Non-JSON response, mutating verb (POST/PUT/DELETE), or unsupported auth | Logged at boot; not exposed |
+| Mutation | `POST`, `PUT`, `PATCH`, or `DELETE` with `expose_mutation: true` | Mutation root with a validated `call: JSON!` envelope |
+| Skipped | Unsupported media/schema/auth, disabled operation, or non-GET without explicit mutation exposure | Recorded with a reason and not exposed |
+
+**Explicit mutations** require source capability, source access, and an operation role allowlist in addition to the per-operation opt-in:
+
+```yaml
+sources:
+  - name: external_api
+    kind: api
+    read_only: false
+    capabilities:
+      api.read: true
+      api.write: true
+      api.delete: false
+    access:
+      read: authenticated
+      write: authenticated
+      delete: blocked
+    specs:
+      example:
+        base_url: https://api.example.com/v1
+        operations:
+          createResource:
+            expose_as: external_create_resource
+            expose_mutation: true
+            allowed_roles: [operator]
+            retry_on_auth_failure: false
+```
+
+```graphql
+mutation CreateResource($request: JSON!) {
+  external_create_resource(call: $request) {
+    ok
+    status_code
+    operation_id
+    request_id
+    response_json
+  }
+}
+```
+
+The input object may contain only `path`, `query`, `headers`, and `body`. GraphJin validates declared parameter types and schema constraints plus the JSON request schema before network I/O. Successful `200`, `201`, `202`, and empty `204` responses use the same stable envelope. Write calls are not retried by default because a timeout or transport failure can leave the upstream outcome ambiguous, and redirects are returned as errors instead of replaying or relocating a write.
 
 **Authentication** — declared in YAML, applied automatically to every request to the upstream:
 
 | Scheme | Use for |
 |---|---|
-| `bearer` | static or pass-through tokens |
+| `bearer` | static tokens; pass-through fields are reserved but inbound-header plumbing is not available yet |
 | `basic` | username/password |
 | `api_key` | header or query param |
 | `oauth2_client_credentials` | machine-to-machine OAuth |
 | `token_exchange` | vendor-specific POST → JSON token flows |
 
-**Per-spec concurrency, response shaping, and overrides** — `result_path` strips JSON wrappers, `expose_as` renames a field on collision, `concurrency_limit` caps parallel calls per spec. See the [OpenAPI Integration config reference](CONFIG.md#openapi-integration) for the full surface.
+**Per-spec concurrency, response shaping, and overrides** — `result_path` strips JSON wrappers, `expose_as` renames a field on collision, and `concurrency.max_concurrent` caps parallel calls per spec. `max_request_bytes` and `max_response_bytes` bound mutation traffic. See the [OpenAPI Integration config reference](CONFIG.md#openapi-integration) for the full surface.
 
 **Boot log** reports what loaded and what was skipped:
 
@@ -813,7 +854,7 @@ openapi: GET /exports/{jobId} — skipped: non-JSON response (application/octet-
 openapi: GET /users/{userId} — exposed as is_profile (row-join on users.email)
 ```
 
-The integration is read-only today (GET only). Mutating verbs are a deferred feature — the [Filesystem Tables](#filesystem-tables) abstraction is the recommended path for write-side object-store operations.
+OpenAPI writes are not transactionally atomic with database mutations or other upstream calls. A GraphQL mutation document may contain only one OpenAPI mutation root, so workflows that span systems must use explicit application-level compensation and idempotency where the upstream supports it.
 
 ### Database Functions
 

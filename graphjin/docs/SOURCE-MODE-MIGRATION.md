@@ -167,6 +167,39 @@ access:
 `write` covers insert, update, and upsert. `delete` is separate and should stay
 blocked unless a deployment explicitly needs it.
 
+API sources use the same access modes, with safe defaults of
+`read: authenticated`, `write: blocked`, and `delete: blocked`. Move OpenAPI
+configuration under an owning `kind: api` source so provenance and runtime
+policy cannot be lost in a merged global spec map:
+
+```yaml
+sources:
+  - name: external_api
+    kind: api
+    read_only: false
+    specs_dir: ./config/specs
+    capabilities:
+      api.read: true
+      api.write: true
+      api.delete: false
+    access:
+      read: authenticated
+      write: authenticated
+      delete: blocked
+    specs:
+      example:
+        base_url: https://api.example.com/v1
+        operations:
+          createResource:
+            expose_mutation: true
+            allowed_roles: [operator]
+```
+
+Every non-GET operation remains hidden without its own `expose_mutation` opt-in.
+In production and agentic modes, each exposed operation also requires a
+non-empty `allowed_roles`. Keep `read_only: true` for API sources that should
+never write; config mutation preserves that file-configured veto.
+
 Use classifications for exceptions:
 
 ```yaml
@@ -249,6 +282,8 @@ policy evidence through `gj_security`.
    workflows.
 10. Keep config-folder fragments, saved queries, and workflows as read-only
     globals.
+11. Move OpenAPI specs under an owning `kind: api` source; explicitly enable
+    only required mutation operations and keep `api.delete` blocked by default.
 
 Current `gj_config.update` support is not a full config editor. It supports
 existing update paths such as `source_patches`, `sources`, `roles`, selected

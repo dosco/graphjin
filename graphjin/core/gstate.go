@@ -372,6 +372,16 @@ func (s *gstate) compileWithCompilers(st stmt, vars map[string]json.RawMessage, 
 		s.r.namespace); err != nil {
 		return
 	}
+	if st.qc.SType == qcode.QTOpenAPICall {
+		st.sql = ""
+		s.database = dbName
+		if s.cs == nil {
+			s.cs = &cstate{st: st}
+		} else {
+			s.cs.st = st
+		}
+		return nil
+	}
 
 	if dbCtx, ok := s.gj.GetDatabase(dbName); ok && dbCtx.nano != nil {
 		st.sql = ""
@@ -635,6 +645,11 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 	}
 
 	if handled, err1 := s.executeManagedQuery(c); handled {
+		err = err1
+		return
+	}
+
+	if handled, err1 := s.executeOpenAPIMutation(c); handled {
 		err = err1
 		return
 	}

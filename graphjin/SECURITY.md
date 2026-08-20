@@ -139,6 +139,41 @@ Legacy mode remains supported for existing applications that do not configure
 predicates, and `roles[].tables` as before. New multi-user and agentic
 deployments should use source mode.
 
+## OpenAPI Outbound Mutations
+
+OpenAPI writes are default-deny. Merely adding a `POST`, `PUT`, `PATCH`, or
+`DELETE` operation to a spec does not expose it. The operation must set
+`expose_mutation: true`, and runtime authorization must pass every applicable
+gate:
+
+- `POST`, `PUT`, and `PATCH` require `api.write` plus `access.write`;
+  `DELETE` separately requires `api.delete` plus `access.delete`.
+- API sources default to authenticated reads and blocked writes/deletes.
+- `sources[].read_only: true` is an immutable veto for non-GET calls. MCP config
+  updates cannot turn a file-configured read-only source writable.
+- The caller role must also appear in the operation's `allowed_roles`. That
+  allowlist is required for exposed mutations in production and agentic modes.
+- `mcp.allow_mutations` and `agent.read_only` remain additional entry-point kill
+  switches; the core runtime decision is authoritative even when discovery is
+  stale or a saved artifact invokes the mutation.
+
+The caller cannot choose the method, base URL, or path template. The `call`
+envelope accepts only declared primitive path/query/header parameters and a
+supported JSON body. Authentication, cookie, host, proxy, forwarding,
+hop-by-hop, and content-length headers are rejected before network I/O. Request
+and response sizes are bounded.
+
+Mutation calls are attempted once by default. Transport failures can be
+reported as ambiguous because the upstream may have committed the write;
+timeouts and cancellations are classified separately, and none of these cases
+is automatically retried. A one-time authentication refresh retry exists only when explicitly
+enabled for the operation. HTTP redirects are not followed for mutations, which
+prevents `307`/`308` body replay and keeps the operation at the configured
+destination. Completion metadata records source, operation,
+authorization gate, role class, correlation ID, sizes, hashes, status,
+duration, outcome, and retry count; it never records credentials, cookies, raw
+bodies, or upstream error bodies.
+
 ## Identity
 
 Identity is configured at the top level because it is common to all sources.
