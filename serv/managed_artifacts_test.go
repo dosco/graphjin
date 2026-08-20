@@ -1,16 +1,77 @@
 package serv
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 	_ "modernc.org/sqlite"
 )
+
+func TestOpenManagedArtifactSQLiteWaitsForTransientLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "artifacts.sqlite3")
+	if err := prepareManagedArtifactPath(path); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = holder.Close() })
+	if _, err := holder.Exec(`PRAGMA journal_mode=DELETE; CREATE TABLE lock_probe (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := holder.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if _, err := conn.ExecContext(context.Background(), "BEGIN EXCLUSIVE"); err != nil {
+		t.Fatal(err)
+	}
+
+	type openResult struct {
+		db  *sql.DB
+		err error
+	}
+	opened := make(chan openResult, 1)
+	go func() {
+		db, err := openManagedArtifactSQLite(context.Background(), path)
+		opened <- openResult{db: db, err: err}
+	}()
+
+	select {
+	case result := <-opened:
+		if result.db != nil {
+			_ = result.db.Close()
+		}
+		_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		t.Fatalf("managed SQLite open returned before the transient lock was released: %v", result.err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if _, err := conn.ExecContext(context.Background(), "ROLLBACK"); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case result := <-opened:
+		if result.err != nil {
+			t.Fatalf("managed SQLite open did not recover after lock release: %v", result.err)
+		}
+		if result.db == nil {
+			t.Fatal("managed SQLite open returned a nil database")
+		}
+		_ = result.db.Close()
+	case <-time.After(5 * time.Second):
+		t.Fatal("managed SQLite open did not finish after lock release")
+	}
+}
 
 func TestManagedArtifactStorePersistsAndIsolatesApplicationDatabase(t *testing.T) {
 	root := t.TempDir()
