@@ -74,7 +74,7 @@ func Example_subscription() {
 		} else {
 			// SQL databases: use SQL update
 			q := fmt.Sprintf(`UPDATE users SET phone = '650-447-000%d' WHERE id = 3`, i)
-			if _, err := db.Exec(q); err != nil {
+			if err := execWithLockRetry(q); err != nil {
 				panic(err)
 			}
 		}

@@ -264,6 +264,38 @@ func (co *Compiler) compileMutation(qc *QCode,
 	return co.configureInsertConflict(qc)
 }
 
+// compileOpenAPIMutation retains the call JSON object without treating its
+// keys as database columns. Runtime validation is performed against the
+// operation's OpenAPI request contract before any network slot is acquired.
+func (co *Compiler) compileOpenAPIMutation(qc *QCode, vmap map[string]json.RawMessage) error {
+	if len(qc.Roots) != 1 {
+		return errors.New("openapi mutations support exactly one root operation")
+	}
+	rootID := qc.Roots[0]
+	sel := &qc.Selects[rootID]
+	if sel.Ti.Type != "openapi_mutation" {
+		return fmt.Errorf("call is valid only on an openapi mutation root, not %q", sel.Ti.Name)
+	}
+	data, err := parseMutationDataFromArg(qc, sel.FieldName, vmap)
+	if err != nil {
+		return err
+	}
+	if data.Data == nil || data.Data.Type != graph.NodeObj {
+		return fmt.Errorf("openapi mutation call for %s must be a JSON object", sel.FieldName)
+	}
+	qc.Mutates = []Mutate{{
+		Field:    Field{Type: FieldTypeTable},
+		mData:    data,
+		ID:       0,
+		ParentID: -1,
+		SelID:    rootID,
+		Type:     MTNone,
+		Key:      sel.Table,
+		Ti:       sel.Ti,
+	}}
+	return nil
+}
+
 func (co *Compiler) configureInsertConflict(qc *QCode) error {
 	if qc.InsertConflictAction == ConflictNone {
 		return nil

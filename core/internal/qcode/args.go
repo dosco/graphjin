@@ -62,7 +62,7 @@ func (co *Compiler) compileSelectArgs(qc *QCode, sel *Select, args []graph.Arg, 
 		// case "skipIf", "skip_if":
 		// 	err = co.compileArgSkipIncludeIf(true, sel, &sel.Field, a, role)
 
-		case "insert", "update", "upsert", "delete":
+		case "insert", "update", "upsert", "delete", "call":
 
 		case "on_conflict", "onConflict":
 			if qc.SType != QTInsert || qc.InsertConflictAction != ConflictGet {

@@ -1,0 +1,99 @@
+openapi: 3.0.3
+info:
+  title: GraphJin OpenAPI mutation contract
+  version: "1.0"
+paths:
+  /widgets/{id}:
+    get:
+      operationId: getWidget
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Widget
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Widget" }
+    put:
+      operationId: replaceWidget
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WidgetInput" }
+      responses:
+        "200":
+          description: Replaced
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Widget" }
+    patch:
+      operationId: patchWidget
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: "#/components/schemas/WidgetInput" }
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Widget" }
+    delete:
+      operationId: deleteWidget
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+  /widgets:
+    post:
+      operationId: createWidget
+      parameters:
+        - { name: dry_run, in: query, required: false, schema: { type: boolean } }
+        - { name: X-Reason, in: header, required: false, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WidgetInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Widget" }
+  /oversized:
+    post:
+      operationId: oversizedResponse
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Oversized fixture response
+          content:
+            application/json:
+              schema: { type: object }
+components:
+  schemas:
+    WidgetInput:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1 }
+        enabled: { type: boolean }
+    Widget:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        enabled: { type: boolean }

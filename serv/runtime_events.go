@@ -561,6 +561,21 @@ func (s *graphjinService) runtimeSourceEvent(ctx context.Context, source core.So
 		event.Summary = fmt.Sprintf("API source %q is configured.", name)
 		event.NextAction = "Use gj_catalog and gj_security before API-source calls."
 		event.Details["specs_configured"] = len(source.Specs) != 0 || strings.TrimSpace(source.SpecsDir) != ""
+		if s != nil && s.conf != nil {
+			access := s.conf.Core.EffectiveSourceAccess(source)
+			event.Details["access"] = map[string]string{"read": access.Read, "write": access.Write, "delete": access.Delete}
+			read, _ := s.conf.sourceCapabilityForSource(source, sourcecap.KeyAPIRead)
+			write, _ := s.conf.sourceCapabilityForSource(source, sourcecap.KeyAPIWrite)
+			deleteAllowed, _ := s.conf.sourceCapabilityForSource(source, sourcecap.KeyAPIDelete)
+			event.Details["effective_api_posture"] = map[string]bool{
+				"read":   read && runtimeAPIAccessEnabled(access.Read),
+				"write":  write && !source.ReadOnly && runtimeAPIAccessEnabled(access.Write),
+				"delete": deleteAllowed && !source.ReadOnly && runtimeAPIAccessEnabled(access.Delete),
+			}
+			if operations := s.runtimeAPIOperationPosture(name, source, access); len(operations) != 0 {
+				event.Details["openapi_operations"] = operations
+			}
+		}
 	default:
 		event.Status = runtimeStatusDegraded
 		event.Severity = "warn"
@@ -575,6 +590,55 @@ func (s *graphjinService) runtimeSourceEvent(ctx context.Context, source core.So
 		event.NextAction = "Continue with catalog-guided queries; check gj_security before writes."
 	}
 	return event
+}
+
+func runtimeAPIAccessEnabled(accessMode string) bool {
+	return !strings.EqualFold(strings.TrimSpace(accessMode), core.AccessModeBlocked)
+}
+
+func (s *graphjinService) runtimeAPIOperationPosture(sourceName string, source core.SourceConfig, access core.SourceAccessConfig) map[string]int {
+	if s == nil || s.gj == nil {
+		return nil
+	}
+	md, err := s.gj.MetadataSnapshot(s.metadataSnapshotExcludes()...)
+	if err != nil || md == nil {
+		return nil
+	}
+	counts := map[string]int{}
+	read, _ := s.conf.sourceCapabilityForSource(source, sourcecap.KeyAPIRead)
+	write, _ := s.conf.sourceCapabilityForSource(source, sourcecap.KeyAPIWrite)
+	deleteAllowed, _ := s.conf.sourceCapabilityForSource(source, sourcecap.KeyAPIDelete)
+	for _, op := range md.APIOperations {
+		if op.SourceName != sourceName {
+			continue
+		}
+		counts["total"]++
+		if !op.Active {
+			counts["skipped"]++
+			continue
+		}
+		switch strings.ToUpper(strings.TrimSpace(op.Method)) {
+		case "GET":
+			counts["active_read"]++
+			if read && runtimeAPIAccessEnabled(access.Read) {
+				counts["potential_read"]++
+			}
+		case "DELETE":
+			counts["active_delete"]++
+			if deleteAllowed && !source.ReadOnly && runtimeAPIAccessEnabled(access.Delete) && len(op.AllowedRoles) != 0 {
+				counts["potential_delete"]++
+			}
+		default:
+			counts["active_write"]++
+			if write && !source.ReadOnly && runtimeAPIAccessEnabled(access.Write) && len(op.AllowedRoles) != 0 {
+				counts["potential_write"]++
+			}
+		}
+		if op.RetryEnabled && !strings.EqualFold(op.Method, "GET") {
+			counts["mutation_retry_enabled"]++
+		}
+	}
+	return counts
 }
 
 func (s *graphjinService) applyRuntimeDatabaseSourceHealth(ctx context.Context, event *runtimeEvent, source core.SourceConfig, stat core.DatabaseStats) {

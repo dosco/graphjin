@@ -373,12 +373,10 @@ func (r *serviceAgentRuntime) ValidateWhereClause(ctx context.Context, args map[
 	return r.base.ValidateWhereClause(ctx, args)
 }
 
-// ExecuteSavedQuery and ExecuteGraphQL delegate straight to core. GraphJin core is the
-// security boundary: it runs every query/mutation as the caller's role (resolved from the
-// request context) and enforces access via per-role table rules + RLS — including the gj_*
-// control-plane roots (e.g. gj_config is admin-only via modeBlocksRole in
-// core/source_access.go). execute_graphql is intentionally available to all callers; there
-// is no extra role gate at this layer.
+// ExecuteSavedQuery and ExecuteGraphQL run through the service-level mutation
+// kill switches before delegating to core. Core remains the authoritative
+// source/role/RLS boundary, but an agent must not bypass mcp.allow_mutations by
+// calling its internal runtime instead of the public MCP tool handler.
 func (r *serviceAgentRuntime) ExecuteSavedQuery(ctx context.Context, args map[string]any) (any, error) {
 	if r == nil || r.service == nil {
 		return r.base.ExecuteSavedQuery(ctx, args)
@@ -395,11 +393,29 @@ func (r *serviceAgentRuntime) ExecuteSavedQuery(ctx context.Context, args map[st
 	if namespace := stringArg(args, "namespace"); namespace != "" {
 		rc.SetNamespace(namespace)
 	}
+	mutationsAllowed := r.service.conf != nil && r.service.conf.MCP.AllowMutations
+	if r.conf.ReadOnly || !mutationsAllowed {
+		mutation, err := r.service.savedQueryIsMutation(ctx, name, &rc)
+		if err != nil {
+			return nil, err
+		}
+		if mutation {
+			if r.conf.ReadOnly {
+				return nil, fmt.Errorf("agent is in read-only mode: saved query %q is a mutation", name)
+			}
+			return nil, fmt.Errorf("mutations are not allowed: saved query %q is a mutation", name)
+		}
+	}
 	res, err := r.service.executeSavedQueryByName(ctx, name, varsJSON, &rc)
 	return annotateAgentPolicyErrors(executeAgentResultFromCore(res, err)), nil
 }
 
 func (r *serviceAgentRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
+	if r != nil && r.service != nil && r.service.conf != nil && !r.service.conf.MCP.AllowMutations {
+		if query := stringArg(args, "query"); isMutation(query) {
+			return nil, fmt.Errorf("mutations are not allowed. Enable allow_mutations in config")
+		}
+	}
 	out, err := r.base.ExecuteGraphQL(ctx, args)
 	if err != nil {
 		return out, err

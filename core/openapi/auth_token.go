@@ -38,8 +38,9 @@ func (o *oauth2CCAuth) OnUnauthorized(context.Context) error {
 	return nil
 }
 
-// fetch performs the token-endpoint POST. Errors are wrapped with the
-// token URL for debugging — credentials never appear in error messages.
+// fetch performs the token-endpoint POST. Diagnostics identify only the
+// endpoint origin so credentials embedded in userinfo, paths, or query values
+// never appear in error messages.
 func (o *oauth2CCAuth) fetch(ctx context.Context) (string, time.Duration, error) {
 	if o.cfg.TokenURL == "" {
 		return "", 0, fmt.Errorf("openapi: oauth2_client_credentials requires token_url")
@@ -58,23 +59,29 @@ func (o *oauth2CCAuth) fetch(ctx context.Context) (string, time.Duration, error)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", o.cfg.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", 0, err
+		return "", 0, fmt.Errorf("openapi: invalid token endpoint URL")
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
 	res, err := o.http.Do(req)
 	if err != nil {
-		return "", 0, fmt.Errorf("openapi: token endpoint %s: %w", o.cfg.TokenURL, err)
+		if ctx.Err() != nil {
+			return "", 0, ctx.Err()
+		}
+		return "", 0, fmt.Errorf("openapi: token endpoint %s transport error", safeEndpoint(o.cfg.TokenURL))
 	}
 	defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, DefaultMaxResponseBytes+1))
 	if err != nil {
 		return "", 0, err
 	}
+	if int64(len(body)) > DefaultMaxResponseBytes {
+		return "", 0, fmt.Errorf("openapi: token endpoint response exceeds %d bytes", DefaultMaxResponseBytes)
+	}
 	if res.StatusCode/100 != 2 {
-		return "", 0, fmt.Errorf("openapi: token endpoint %s returned %d: %s", o.cfg.TokenURL, res.StatusCode, truncate(body, 200))
+		return "", 0, fmt.Errorf("openapi: token endpoint %s returned %d (response_bytes=%d)", safeEndpoint(o.cfg.TokenURL), res.StatusCode, len(body))
 	}
 
 	// OAuth2 spec mandates access_token + token_type at minimum;
@@ -139,7 +146,7 @@ func (t *tokenExchangeAuth) fetch(ctx context.Context) (string, time.Duration, e
 
 	req, err := http.NewRequestWithContext(ctx, method, t.cfg.TokenURL, body)
 	if err != nil {
-		return "", 0, err
+		return "", 0, fmt.Errorf("openapi: invalid token endpoint URL")
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
@@ -151,16 +158,22 @@ func (t *tokenExchangeAuth) fetch(ctx context.Context) (string, time.Duration, e
 
 	res, err := t.http.Do(req)
 	if err != nil {
-		return "", 0, fmt.Errorf("openapi: token endpoint %s: %w", t.cfg.TokenURL, err)
+		if ctx.Err() != nil {
+			return "", 0, ctx.Err()
+		}
+		return "", 0, fmt.Errorf("openapi: token endpoint %s transport error", safeEndpoint(t.cfg.TokenURL))
 	}
 	defer res.Body.Close()
 
-	respBody, err := io.ReadAll(res.Body)
+	respBody, err := io.ReadAll(io.LimitReader(res.Body, DefaultMaxResponseBytes+1))
 	if err != nil {
 		return "", 0, err
 	}
+	if int64(len(respBody)) > DefaultMaxResponseBytes {
+		return "", 0, fmt.Errorf("openapi: token endpoint response exceeds %d bytes", DefaultMaxResponseBytes)
+	}
 	if res.StatusCode/100 != 2 {
-		return "", 0, fmt.Errorf("openapi: token endpoint %s returned %d: %s", t.cfg.TokenURL, res.StatusCode, truncate(respBody, 200))
+		return "", 0, fmt.Errorf("openapi: token endpoint %s returned %d (response_bytes=%d)", safeEndpoint(t.cfg.TokenURL), res.StatusCode, len(respBody))
 	}
 
 	tokField := "access_token"
@@ -190,6 +203,19 @@ func (t *tokenExchangeAuth) fetch(ctx context.Context) (string, time.Duration, e
 	}
 	ttl := parseTTL(ttlStr, t.cfg.CacheTTL)
 	return tok, ttl, nil
+}
+
+func safeEndpoint(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<configured>"
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.Path = ""
+	u.RawPath = ""
+	return u.String()
 }
 
 // encodeTokenRequestBody renders the request body in either JSON or

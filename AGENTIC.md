@@ -1602,7 +1602,7 @@ through the same graph language.
 | :--- | :--- |
 | SQL databases | GraphJin compiles GraphQL into dialect-specific SQL. Schema metadata feeds `gj_catalog`. |
 | MongoDB | GraphJin emits a JSON DSL that becomes aggregation pipelines. Collections participate as graph roots. |
-| OpenAPI sources | Configured OpenAPI specs become table-like graph surfaces for external operations. Catalog discovery gives the model names, shape, and source boundary. |
+| OpenAPI sources | GET operations become table-like query surfaces. Explicitly enabled writes become single-root `call` mutations; caller-visible `api_operation` catalog rows include source, shape, risk, and effective policy. |
 | Remote API resolvers | Remote API calls attach to graph fields while preserving that the data comes from an external service. |
 | Filesystem/object sources | Local directories, S3, GCS, and similar backends expose key/size/content-type/etag/modified/url/data-shaped virtual tables. |
 | CodeSQL sources | Source trees become queryable code databases, projected to agents through `gj_code`. |
@@ -1611,6 +1611,16 @@ through the same graph language.
 This is why `gj_catalog` is the first stop. It tells the agent what kind of
 surface it is touching before the agent chooses a query, mutation, workflow, or
 edit path.
+
+OpenAPI mutation discovery is caller-scoped. An operation is omitted when the
+source capability, source access mode, operation `allowed_roles`, source
+`read_only`, `mcp.allow_mutations`, or `agent.read_only` policy blocks that
+caller. Discovery is only a preflight: the GraphJin core repeats source and
+operation authorization at execution time, including for saved queries and
+workflows. The model supplies the declared `call` data; the server owns the
+HTTP method, destination, authentication, validation, limits, and no-retry
+policy. Mutation redirects are rejected rather than followed, so an upstream
+cannot replay the write or relocate it outside the configured base URL.
 
 ## Model-Facing Prompt Contract
 

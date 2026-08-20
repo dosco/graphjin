@@ -14,10 +14,9 @@ import (
 // API. Implementations are constructed once per spec at boot time and
 // reused across every operation against that spec.
 //
-// Apply mutates req in place. The hdrIn parameter carries headers from
-// the *incoming* GraphJin request, enabling per-tenant pass-through
-// patterns where the end-user's credentials are forwarded upstream
-// rather than a single service credential being shared across tenants.
+// Apply mutates req in place. The hdrIn parameter can carry headers from a
+// host application's incoming request. GraphJin's built-in GraphQL bridge does
+// not currently populate it, so pass-through auth there remains unavailable.
 //
 // OnUnauthorized is invoked by the resolver after a 401 response so
 // providers that cache tokens can invalidate them and the resolver can
@@ -69,10 +68,8 @@ type noopAuth struct{}
 func (noopAuth) Apply(context.Context, *http.Request, http.Header) error { return nil }
 func (noopAuth) OnUnauthorized(context.Context) error                    { return nil }
 
-// bearerAuth attaches a static or pass-through bearer token. The static
-// case covers most APIs that authenticate with a long-lived API key;
-// the TokenFromRequest case enables multi-tenant deployments where the
-// per-user token rides on the incoming GraphJin request.
+// bearerAuth attaches a static or host-supplied pass-through bearer token. The
+// static case covers most APIs that authenticate with a long-lived API key.
 type bearerAuth struct {
 	cfg AuthConfig
 }

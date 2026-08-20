@@ -150,8 +150,14 @@ func addTables(conf *Config, dbInfo *sdata.DBInfo, targetDB string) error {
 			continue
 		}
 
-		// skip aliases
+		// Aliases do not need the rest of the table metadata overlay, but their
+		// column blocklist still belongs to the underlying physical table. This
+		// is especially important for prefixed schemas where a stable GraphQL
+		// name aliases a physical table such as `legacy_orders`.
 		if t.Table != "" && t.Type == "" {
+			if err := applyTableBlocklist(dbInfo, t, t.Table); err != nil {
+				return err
+			}
 			continue
 		}
 		switch t.Type {
@@ -184,6 +190,9 @@ func updateTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 	t1, err := dbInfo.GetTable(schema, table.Name)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
+	}
+	if err := applyTableBlocklist(dbInfo, table, table.Name); err != nil {
+		return err
 	}
 
 	for _, c := range table.Columns {
@@ -225,6 +234,33 @@ func updateTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 		}
 	}
 
+	return nil
+}
+
+func applyTableBlocklist(dbInfo *sdata.DBInfo, table Table, physicalName string) error {
+	if len(table.Blocklist) == 0 {
+		return nil
+	}
+	schema := table.Schema
+	if schema == "" {
+		schema = dbInfo.Schema
+	}
+	dbTable, err := dbInfo.GetTable(schema, physicalName)
+	if err != nil {
+		return fmt.Errorf("table blocklist: %w", err)
+	}
+	blocked := make(map[string]struct{}, len(table.Blocklist))
+	for _, name := range table.Blocklist {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name != "" {
+			blocked[name] = struct{}{}
+		}
+	}
+	for i := range dbTable.Columns {
+		if _, ok := blocked[strings.ToLower(dbTable.Columns[i].Name)]; ok {
+			dbTable.Columns[i].Blocked = true
+		}
+	}
 	return nil
 }
 

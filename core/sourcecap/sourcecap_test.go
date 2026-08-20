@@ -58,3 +58,16 @@ func TestRegistryContainsOnlyExternalSources(t *testing.T) {
 		}
 	}
 }
+
+func TestAPICapabilitiesUseRuntimeEnforcement(t *testing.T) {
+	for _, key := range []string{KeyAPIRead, KeyAPIWrite, KeyAPIDelete} {
+		def, ok := Lookup(KindAPI, key)
+		if !ok || def.Enforcement != EnforcementRuntime {
+			t.Fatalf("%s definition = %+v", key, def)
+		}
+	}
+	deleteDef, _ := Lookup(KindAPI, KeyAPIDelete)
+	if deleteDef.Default(ModeDev) || deleteDef.Default(ModeProd) || deleteDef.Default(ModeAgentic) || !deleteDef.ReadOnlyBlocks || deleteDef.Severity != "critical" {
+		t.Fatalf("unsafe api.delete definition: %+v", deleteDef)
+	}
+}

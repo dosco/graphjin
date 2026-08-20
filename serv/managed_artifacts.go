@@ -28,21 +28,10 @@ func (s *graphjinService) initManagedArtifactStore() error {
 		return fmt.Errorf("managed artifact store %s: %w", path, err)
 	}
 
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		return fmt.Errorf("managed artifact store %s: open: %w", path, err)
-	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-
 	ctx := context.Background()
-	if err := db.PingContext(ctx); err != nil {
-		db.Close() //nolint:errcheck
-		return fmt.Errorf("managed artifact store %s: ping: %w", path, err)
-	}
-	if err := configureManagedArtifactSQLite(ctx, db); err != nil {
-		db.Close() //nolint:errcheck
-		return fmt.Errorf("managed artifact store %s: configure: %w", path, err)
+	db, err := openManagedArtifactSQLite(ctx, path)
+	if err != nil {
+		return fmt.Errorf("managed artifact store %s: %w", path, err)
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
 		db.Close() //nolint:errcheck
@@ -100,6 +89,28 @@ func prepareManagedArtifactPath(path string) error {
 		return err
 	}
 	return os.Chmod(path, 0o600)
+}
+
+func openManagedArtifactSQLite(ctx context.Context, path string) (*sql.DB, error) {
+	// Install the busy handler as part of connection creation. Setting it with a
+	// later PRAGMA is too late when a previous service instance is still releasing
+	// a WAL lock: the first Ping or journal-mode query can otherwise fail fast.
+	dsn := path + "?_pragma=busy_timeout%3d5000"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if err := db.PingContext(ctx); err != nil {
+		db.Close() //nolint:errcheck
+		return nil, fmt.Errorf("ping: %w", err)
+	}
+	if err := configureManagedArtifactSQLite(ctx, db); err != nil {
+		db.Close() //nolint:errcheck
+		return nil, fmt.Errorf("configure: %w", err)
+	}
+	return db, nil
 }
 
 func configureManagedArtifactSQLite(ctx context.Context, db *sql.DB) error {

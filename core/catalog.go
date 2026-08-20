@@ -343,6 +343,7 @@ func catalogMetadataSnapshot(md *MetadataSnapshot) *catalog.MetadataSnapshot {
 		Relationships: make([]catalog.MetadataRelationship, len(md.Relationships)),
 		Functions:     make([]catalog.MetadataFunction, len(md.Functions)),
 		Indexes:       make([]catalog.MetadataIndex, len(md.Indexes)),
+		APIOperations: make([]catalog.MetadataAPIOperation, len(md.APIOperations)),
 	}
 	for i, v := range md.Databases {
 		out.Databases[i] = catalog.MetadataDatabase(v)
@@ -361,6 +362,9 @@ func catalogMetadataSnapshot(md *MetadataSnapshot) *catalog.MetadataSnapshot {
 	}
 	for i, v := range md.Indexes {
 		out.Indexes[i] = catalog.MetadataIndex(v)
+	}
+	for i, v := range md.APIOperations {
+		out.APIOperations[i] = catalog.MetadataAPIOperation(v)
 	}
 	return out
 }
