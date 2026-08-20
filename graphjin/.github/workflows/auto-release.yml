@@ -275,4 +275,8 @@ jobs:
           # credential, so there is no NPM_TOKEN to leak or rotate. Requires npm >= 11.5
           # and the trusted publisher configured for this repo + workflow on npmjs.com.
           npm --version
+          # ENEEDAUTH has two causes: the runner never got an OIDC token (id-token
+          # permission not in effect), or npm found no trusted publisher matching this
+          # repo+workflow. This line tells them apart without exposing the token.
+          echo "OIDC token endpoint available: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}${ACTIONS_ID_TOKEN_REQUEST_URL:-NO}"
           npm publish --access public
