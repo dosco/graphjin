@@ -142,6 +142,12 @@ type discoveryState struct {
 	// securityRuntimeEvidenceSupplied keeps the one-shot fetch of the security
 	// and runtime guidance cards from repeating if the ids ever stop registering.
 	securityRuntimeEvidenceSupplied bool
+	// forcedFinalizeUsed records that the answer came from the tool-less
+	// finalize after actor-step exhaustion. Surfaced in evidence — never as a
+	// violation, since unregistered violation codes score as safety failures —
+	// so a run rescued this way stays distinguishable from one that finalized
+	// on its own.
+	forcedFinalizeUsed bool
 	// remoteJoinParents maps a join-only remote table to the parent it is served
 	// under, learned from relationship cards whose source is remote_join.
 	remoteJoinParents map[string]string
@@ -1810,6 +1816,40 @@ func cachedExecutionResult(state *discoveryState, cached any) any {
 	return out
 }
 
+// forcedFinalizeEvidenceByteLimit bounds the evidence handed to the tool-less
+// finalizer. The interesting content — the most recent successful execution —
+// goes in first; summaries are dropped before it is ever truncated.
+const forcedFinalizeEvidenceByteLimit = 32 * 1024
+
+// finalizeEvidenceDigest serializes the run's gathered evidence for the forced
+// finalize: the last successful execution result in full, execution summaries,
+// and the catalog ids inspected. Bounded so a huge result set cannot blow the
+// finalizer's prompt.
+func (s *discoveryState) finalizeEvidenceDigest(limit int) string {
+	if s == nil {
+		return ""
+	}
+	payload := map[string]any{
+		"last_execution":     s.lastExecution,
+		"executions":         s.executions,
+		"catalog_detail_ids": s.catalogDetails,
+	}
+	data, err := json.Marshal(payload)
+	if err == nil && (limit <= 0 || len(data) <= limit) {
+		return string(data)
+	}
+	// Too big: keep the part the answer actually lives in.
+	delete(payload, "executions")
+	data, err = json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	if limit > 0 && len(data) > limit {
+		return string(data[:limit]) + " …[truncated]"
+	}
+	return string(data)
+}
+
 func (s *discoveryState) answerReadyForCompletion() bool {
 	return s != nil && s.seedOK && s.modelDiscoveryAction && !s.hasBlockingViolation() &&
 		s.lastExecution != nil && s.pendingRequiredFinalization() == ""
@@ -2992,6 +3032,9 @@ func (s *discoveryState) mergeEvidence(model any) any {
 	}
 	if len(s.observedValueLookups) != 0 {
 		protocol["observed_value_lookups"] = s.observedValueLookups
+	}
+	if s.forcedFinalizeUsed {
+		protocol["forced_finalize"] = true
 	}
 	if model == nil {
 		return protocol
