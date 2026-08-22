@@ -1109,3 +1109,107 @@ func TestProviderFailureOnMutationTaskStaysAnEnvironmentFailure(t *testing.T) {
 	}
 }
 
+// The post-state oracle only re-reads the database; it cannot see what the
+// agent did. Relabelling every miss as post_state_mismatch therefore swallowed
+// the mechanism for episodes whose write never dispatched at all — 27 of the 41
+// mismatches in the Muse-Glimmer run were really guard blocks, refusals, or
+// step exhaustion. The category now survives unless a write actually ran.
+func TestMutationMissKeepsMechanismCategoryWhenNoWriteDispatched(t *testing.T) {
+	baseTask := func() Task {
+		task := Task{
+			Category: CategoryAction, Difficulty: DifficultyT4, Slug: "record-payment",
+			Prompt: "Record payment PAY-EVAL-002 for invoice 2.", ExpectedStatus: gjagent.StatusAnswered,
+			Provenance: Provenance{GeneratorVersion: GeneratorVersion, Source: "curated"},
+			Mutation: &MutationSpec{
+				ResetStrategy: "sqlite-copy", ExpectedValue: "1",
+				PostState: OracleSpec{Query: `query { payments(where: {reference: {eq: "PAY-EVAL-002"}}) { count_id } }`, Extract: "payments.0.count_id"},
+			},
+		}
+		if err := task.Normalize(); err != nil {
+			t.Fatal(err)
+		}
+		return task
+	}
+
+	cases := []struct {
+		name     string
+		response gjagent.Response
+		want     string
+	}{
+		{
+			// A guard refusal surfaces as status=blocked with the attempt's
+			// errors counted; the write never reached the database.
+			name: "guard-blocked write keeps refused_or_blocked",
+			response: gjagent.Response{
+				Status: gjagent.StatusBlocked, Answer: "",
+				Actions: []map[string]any{{
+					"tool": "execute_graphql", "status": "ok",
+					"args":    map[string]any{"query": `mutation { payments(insert: {reference: "PAY-EVAL-002"}) { id } }`},
+					"summary": map[string]any{"error_count": 1},
+				}},
+			},
+			want: "refused_or_blocked",
+		},
+		{
+			name: "steps-exhausted keeps runaway",
+			response: gjagent.Response{
+				Status: gjagent.StatusError,
+				Errors: []gjagent.ErrorInfo{{
+					Message:    "agent actor loop exceeded max steps",
+					Extensions: map[string]any{"code": "agent_actor_steps_exhausted"},
+				}},
+			},
+			want: "runaway",
+		},
+		{
+			// The write dispatched cleanly and still missed the expected
+			// post-state: that is the one case the label was made for.
+			name: "dispatched write keeps post_state_mismatch",
+			response: gjagent.Response{
+				Status: gjagent.StatusAnswered, Answer: "Payment recorded.",
+				Actions: []map[string]any{{
+					"tool": "execute_graphql", "status": "ok",
+					"args":    map[string]any{"query": `mutation { payments(insert: {reference: "PAY-WRONG"}) { id } }`},
+					"summary": map[string]any{"error_count": 0},
+				}},
+			},
+			want: "post_state_mismatch",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			task := baseTask()
+			suite := Suite{Name: "mutation", Generator: GeneratorMeta{Version: GeneratorVersion, Scale: 1}, Tasks: []Task{task}}
+			if err := suite.Normalize(); err != nil {
+				t.Fatal(err)
+			}
+			body, _ := json.Marshal(tc.response)
+			doer := doerFunc(func(request *http.Request) (*http.Response, error) {
+				if strings.HasSuffix(request.URL.Path, "/graphql") {
+					// The expected reference is never present: post-state always misses.
+					return jsonResponse(200, `{"data":{"payments":[{"count_id":0}]}}`), nil
+				}
+				return jsonResponse(200, string(body)), nil
+			})
+			instance := &ResettableStaticInstance{
+				StaticInstance: &StaticInstance{URL: "http://graphjin.test", TargetLabel: "test"},
+				ResetFunc:      func(context.Context) error { return nil },
+			}
+			report, err := (Runner{Client: doer}).Run(context.Background(), suite, instance,
+				RunOptions{Repeats: 1, Seed: 23, Store: NewStore(t.TempDir())})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report.Tasks) != 1 {
+				t.Fatalf("tasks = %d", len(report.Tasks))
+			}
+			if report.Tasks[0].Pass {
+				t.Fatal("a post-state miss must not pass")
+			}
+			if got := report.Tasks[0].FailureCategory; got != tc.want {
+				t.Fatalf("failure category = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

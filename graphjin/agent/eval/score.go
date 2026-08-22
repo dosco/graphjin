@@ -261,6 +261,20 @@ func matchesAnyQuery(pattern *regexp.Regexp, queries []string) bool {
 	return false
 }
 
+// executedMutation reports whether any successful action carried a mutation
+// operation. actionInventory's status and error_count filtering excludes
+// guard-blocked and errored attempts, so this means "a write actually
+// dispatched and returned cleanly", not "a write was tried".
+func executedMutation(response gjagent.Response) bool {
+	_, _, _, _, _, successfulOutcomes := actionInventory(response.Actions)
+	for _, outcome := range successfulOutcomes {
+		if strings.HasSuffix(outcome, ":mutation") {
+			return true
+		}
+	}
+	return false
+}
+
 func actionInventory(value any) (queries, successfulQueries, tools, successfulTools, outcomes, successfulOutcomes []string) {
 	for _, item := range toSlice(value) {
 		action := toMap(item)
