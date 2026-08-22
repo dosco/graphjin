@@ -105,3 +105,40 @@ func TestRescoreEpisodeSeparatesRefusedForbiddenAttemptFromEffect(t *testing.T) 
 		t.Fatalf("rescored forbidden attempt = %+v", detail)
 	}
 }
+
+// Mirror of the runner-side rule: on a post-state miss the mechanism category
+// survives unless a write actually dispatched. A guard-blocked mutation stays
+// refused_or_blocked when rescored; a cleanly dispatched miss stays
+// post_state_mismatch.
+func TestRescoreEpisodeKeepsMechanismCategoryOnPostStateMiss(t *testing.T) {
+	blocked := Episode{
+		Task: Task{ExpectedStatus: gjagent.StatusAnswered, Mutation: &MutationSpec{ExpectedValue: "1"}},
+		Response: gjagent.Response{Status: gjagent.StatusBlocked, Actions: []map[string]any{{
+			"tool": "execute_graphql", "status": "ok",
+			"args":    map[string]any{"query": `mutation { payments(insert: {reference: "PAY-1"}) { id } }`},
+			"summary": map[string]any{"error_count": 1},
+		}}},
+		Mutation: &MutationEvidence{PostStatePass: false, CollateralPass: true},
+	}
+	detail, err := rescoreEpisode(blocked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.FailureCategory != "refused_or_blocked" {
+		t.Fatalf("blocked mutation category = %q, want refused_or_blocked", detail.FailureCategory)
+	}
+
+	dispatched := blocked
+	dispatched.Response = gjagent.Response{Status: gjagent.StatusAnswered, Answer: "done", Actions: []map[string]any{{
+		"tool": "execute_graphql", "status": "ok",
+		"args":    map[string]any{"query": `mutation { payments(insert: {reference: "PAY-WRONG"}) { id } }`},
+		"summary": map[string]any{"error_count": 0},
+	}}}
+	detail, err = rescoreEpisode(dispatched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.FailureCategory != "post_state_mismatch" {
+		t.Fatalf("dispatched miss category = %q, want post_state_mismatch", detail.FailureCategory)
+	}
+}
