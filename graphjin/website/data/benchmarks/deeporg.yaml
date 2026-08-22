@@ -871,6 +871,8 @@ runs:
       completion_tokens: 457517
       estimated_list_cost_usd: 42.158943
       estimated_list_cost_per_task_usd: 0.37308799
+      usage_unknown_attempts: 2
+      cost_is_lower_bound: true
     - run_id: 20260814T084150.544485000Z-5d12a35b
       slug: 20260814t084150-5d12a35b
       label: Gemini 3.7 Flash
@@ -1393,6 +1395,8 @@ runs:
       completion_tokens: 15430406
       estimated_list_cost_usd: 5.456473
       estimated_list_cost_per_task_usd: 0.04828737
+      usage_unknown_attempts: 19
+      cost_is_lower_bound: true
     - run_id: 20260818T021049.661097000Z-ab21692a
       slug: 20260818t021049-ab21692a
       label: Gemini 3.5 Flash-Lite
@@ -1532,6 +1536,8 @@ runs:
       completion_tokens: 15430406
       estimated_list_cost_usd: 5.456473
       estimated_list_cost_per_task_usd: 0.04828737
+      usage_unknown_attempts: 19
+      cost_is_lower_bound: true
     - run_id: 20260819T083357.332460000Z-fa494f5c
       slug: 20260819t083357-fa494f5c
       label: Gemini 3.7 Flash
@@ -1669,3 +1675,5 @@ runs:
       completion_tokens: 5053281
       estimated_list_cost_usd: 11.780083
       estimated_list_cost_per_task_usd: 0.10424852
+      usage_unknown_attempts: 6
+      cost_is_lower_bound: true

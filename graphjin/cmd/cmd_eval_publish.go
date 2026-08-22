@@ -56,18 +56,18 @@ type benchmarkSuite struct {
 }
 
 type benchmarkEntry struct {
-	RunID                       string             `yaml:"run_id"`
-	Slug                        string             `yaml:"slug"`
-	Label                       string             `yaml:"label"`
-	Release                     string             `yaml:"release,omitempty"`
-	Notes                       string             `yaml:"notes,omitempty"`
-	Ranked                      bool               `yaml:"ranked"`
-	UnrankedReason              string             `yaml:"unranked_reason,omitempty"`
-	Generation                  string             `yaml:"generation"`
-	GeneratedAt                 time.Time          `yaml:"generated_at"`
-	Model                       string             `yaml:"model"`
-	Provider                    string             `yaml:"provider,omitempty"`
-	ResponseFormat              string             `yaml:"response_format,omitempty"`
+	RunID          string    `yaml:"run_id"`
+	Slug           string    `yaml:"slug"`
+	Label          string    `yaml:"label"`
+	Release        string    `yaml:"release,omitempty"`
+	Notes          string    `yaml:"notes,omitempty"`
+	Ranked         bool      `yaml:"ranked"`
+	UnrankedReason string    `yaml:"unranked_reason,omitempty"`
+	Generation     string    `yaml:"generation"`
+	GeneratedAt    time.Time `yaml:"generated_at"`
+	Model          string    `yaml:"model"`
+	Provider       string    `yaml:"provider,omitempty"`
+	ResponseFormat string    `yaml:"response_format,omitempty"`
 	// Reasoning records the provider thinking effort the run used. It changes
 	// both capability and cost, so two rows for the same model are not
 	// comparable without it — and it used to survive only as prose in the notes.
@@ -114,12 +114,28 @@ type benchmarkEntry struct {
 	PricingSource               string             `yaml:"pricing_source,omitempty"`
 	ScoringSuspect              bool               `yaml:"scoring_suspect,omitempty"`
 	UsageIncomplete             bool               `yaml:"usage_incomplete,omitempty"`
+	UsageUnknownAttempts        int                `yaml:"usage_unknown_attempts,omitempty"`
+	CostIsLowerBound            bool               `yaml:"cost_is_lower_bound,omitempty"`
 	GuardInterventions          int                `yaml:"guard_interventions,omitempty"`
 	ForbiddenAttempts           int                `yaml:"forbidden_attempts,omitempty"`
 	UnsafeEffects               int                `yaml:"unsafe_effects"`
 	RescoredFrom                string             `yaml:"rescored_from,omitempty"`
 	Accepted                    bool               `yaml:"accepted"`
 }
+
+// maxDisclosedUsageGap is the largest share of provider attempts that may have
+// unknown token counts before a row's usage is withheld outright. Below it the
+// row publishes measured totals marked as a lower bound; above it the
+// understatement could be large enough to mislead, so nothing is published.
+//
+// The threshold is on share of attempts, which deliberately overstates the risk:
+// the unknown attempts are failures, and failures are the cheap ones. A rejected
+// request bills nothing and a timeout bills a partial response, so a run with 5%
+// of attempts unknown is understating cost by well under 5%. Combined with the
+// row labelling itself a lower bound, 10% leaves plenty of margin — while the
+// runs that blow past it are mostly tiny aborted attempts whose receipts are
+// worthless anyway.
+const maxDisclosedUsageGap = 0.10
 
 type evalPublishOptions struct {
 	Site                      string
@@ -163,7 +179,7 @@ the run.`,
 	cmd.Flags().BoolVar(&opts.Force, "force", false, "replace an existing row and overwrite its page")
 	cmd.Flags().BoolVar(&opts.AllowOffSuite, "allow-off-suite", false, "publish a non-matching run as explicitly unranked")
 	cmd.Flags().BoolVar(&opts.AllowSuspectScoring, "allow-suspect-scoring", false, "publish despite an answer/method scoring divergence warning")
-	cmd.Flags().BoolVar(&opts.AllowIncompleteUsage, "allow-incomplete-usage", false, "publish a run whose token accounting has gaps; usage and cost are withheld from the row rather than understated")
+	cmd.Flags().BoolVar(&opts.AllowIncompleteUsage, "allow-incomplete-usage", false, fmt.Sprintf("publish a run whose token accounting has gaps on more than %.0f%% of attempts; usage and cost are withheld from the row rather than understated. Smaller gaps publish automatically as a disclosed lower bound", maxDisclosedUsageGap*100))
 	cmd.Flags().Float64Var(&opts.PromptPricePerMillion, "prompt-price-per-million", 0, "provider list price in USD per million prompt tokens")
 	cmd.Flags().Float64Var(&opts.CompletionPricePerMillion, "completion-price-per-million", 0, "provider list price in USD per million completion tokens")
 	cmd.Flags().StringVar(&opts.PricingSource, "pricing-source", "", "public pricing source or price-card date")
@@ -221,8 +237,12 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 	if (report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics)) && !opts.AllowSuspectScoring {
 		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has a suspect answer/method scoring divergence; investigate it or use --allow-suspect-scoring to override", runID)}
 	}
-	if (!report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 0) && !opts.AllowIncompleteUsage {
-		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has incomplete provider usage accounting; publishing requires complete prompt and completion totals, or --allow-incomplete-usage to publish the scores with usage withheld", runID)}
+	// A gap small enough to disclose publishes on its own: the row carries the
+	// unknown-attempt count and marks its cost a lower bound, so no operator
+	// acknowledgement is needed for what the data already says. Only a material
+	// gap still demands the flag, and there usage is withheld entirely.
+	if usageGapNeedsAcknowledgement(report) && !opts.AllowIncompleteUsage {
+		return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has incomplete provider usage accounting on more than %.0f%% of attempts; publishing requires complete prompt and completion totals, or --allow-incomplete-usage to publish the scores with usage withheld", runID, maxDisclosedUsageGap*100)}
 	}
 	if (opts.PromptPricePerMillion == 0) != (opts.CompletionPricePerMillion == 0) || opts.PromptPricePerMillion < 0 || opts.CompletionPricePerMillion < 0 {
 		return &evalExitError{Code: 2, Err: errors.New("list pricing requires both non-negative --prompt-price-per-million and --completion-price-per-million values")}
@@ -509,9 +529,27 @@ func reportFromBenchmarkSuite(s benchmarkSuite) gjeval.Report {
 func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes string, ranked bool, reason string, opts *evalPublishOptions) benchmarkEntry {
 	// A run interrupted by provider failures loses the token counts for the
 	// attempts in flight. Its scores are unaffected — every episode still ran and
-	// was graded — but its receipt has holes. Publishing the partial totals would
-	// understate cost silently, so usage is withheld and the row says so.
+	// was graded — but its receipt has holes.
+	//
+	// Withholding every number was the first answer to that, and it was too blunt:
+	// one stray 5xx in a multi-hour run blanked a cost that was 98% measured, and
+	// a benchmark whose cost column is empty is not much use. The rule is now
+	// proportionate. A small gap publishes the measured totals, flagged as a lower
+	// bound and carrying the unknown-attempt count so a reader can judge it. Only a
+	// gap large enough to move the number materially still withholds.
+	//
+	// The unknown attempts are failures, which are the cheap ones: a rejected
+	// request bills nothing and a timeout bills a partial response. So the true
+	// cost sits just above the published figure, never below it, which is what
+	// makes a lower bound honest rather than a guess.
 	usageIncomplete := !report.ProviderUsage.Complete || report.ProviderUsage.UnknownAttempts != 0
+	unknownAttempts := report.ProviderUsage.UnknownAttempts
+	totalAttempts := report.Progress.ProviderAttempts
+	withholdUsage := usageIncomplete
+	if usageIncomplete && totalAttempts > 0 &&
+		float64(unknownAttempts)/float64(totalAttempts) <= maxDisclosedUsageGap {
+		withholdUsage = false
+	}
 	promptTokens, completionTokens := report.ProviderUsage.PromptTokens, report.ProviderUsage.CompletionTokens
 	providerTotal, measuredTotal := report.ProviderUsage.TotalTokens, report.Metrics.TotalTokens
 	promptPrice, completionPrice := opts.PromptPricePerMillion, opts.CompletionPricePerMillion
@@ -524,7 +562,7 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 			cardCitation = price.citation()
 		}
 	}
-	if usageIncomplete {
+	if withholdUsage {
 		promptTokens, completionTokens, providerTotal, measuredTotal = 0, 0, 0, 0
 		promptPrice, completionPrice = 0, 0
 	}
@@ -541,7 +579,7 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 	if pricingSource == "" && (promptPrice != 0 || completionPrice != 0) {
 		pricingSource = "provider list pricing"
 	}
-	if usageIncomplete {
+	if withholdUsage {
 		pricingSource = ""
 	}
 	return benchmarkEntry{
@@ -568,9 +606,11 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		LatencyP50MS:        report.Metrics.LatencyP50MS, LatencyP95MS: report.Metrics.LatencyP95MS,
 		PromptPricePerMillion: promptPrice, CompletionPricePerMillion: completionPrice,
 		EstimatedListCostUSD: estimatedCost, EstimatedListCostPerTaskUSD: costPerTask, PricingSource: pricingSource,
-		ScoringSuspect:     report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics),
-		UsageIncomplete:    usageIncomplete,
-		GuardInterventions: report.Metrics.GuardInterventions, ForbiddenAttempts: report.Metrics.ForbiddenAttempts, UnsafeEffects: report.Metrics.UnsafeEffects,
+		ScoringSuspect:       report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics),
+		UsageIncomplete:      usageIncomplete,
+		UsageUnknownAttempts: unknownAttempts,
+		CostIsLowerBound:     usageIncomplete && !withholdUsage && estimatedCost > 0,
+		GuardInterventions:   report.Metrics.GuardInterventions, ForbiddenAttempts: report.Metrics.ForbiddenAttempts, UnsafeEffects: report.Metrics.UnsafeEffects,
 		RescoredFrom: report.RescoredFrom, Accepted: report.Acceptance.HardPass,
 	}
 }
@@ -854,4 +894,18 @@ func atomicWritePublicFile(path string, data []byte) error {
 		return err
 	}
 	return os.Chmod(path, 0o644)
+}
+
+// usageGapNeedsAcknowledgement reports whether a run's token accounting is holey
+// enough that publishing should require an explicit override. A run with no gap,
+// or one small enough to publish as a disclosed lower bound, needs none.
+func usageGapNeedsAcknowledgement(report gjeval.Report) bool {
+	if report.ProviderUsage.Complete && report.ProviderUsage.UnknownAttempts == 0 {
+		return false
+	}
+	total := report.Progress.ProviderAttempts
+	if total <= 0 {
+		return true
+	}
+	return float64(report.ProviderUsage.UnknownAttempts)/float64(total) > maxDisclosedUsageGap
 }
