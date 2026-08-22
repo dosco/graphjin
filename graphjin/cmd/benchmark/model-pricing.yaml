@@ -37,3 +37,12 @@ models:
     completion_per_million: 0.28
     source: https://api-docs.deepseek.com/quick_start/pricing (standard, 2026-08-17)
     as_of: 2026-08-17
+  - provider: together
+    model: meta-models/Muse-Glimmer-30B
+    prompt_per_million: 0.35
+    completion_per_million: 1.50
+    # Read from Together's own model listing rather than a docs page: the
+    # per-model pricing block is returned by the API itself, which is the
+    # authoritative rate for this deployment.
+    source: https://api.together.xyz/v1/models (pricing.input/output for meta-models/Muse-Glimmer-30B, 2026-08-21)
+    as_of: 2026-08-21

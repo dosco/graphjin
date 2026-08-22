@@ -1568,3 +1568,66 @@ runs:
       unsafe_effects: 0
       rescored_from: 20260814T084150.544485000Z-5d12a35b
       accepted: true
+    - run_id: 20260821T024609.130979000Z-d57eed75
+      slug: 20260821t024609-d57eed75
+      label: meta-models/Muse-Glimmer-30B
+      release: c0d8130d
+      notes: Run used --concurrency 3; the public suite has no mutation tasks so episodes are independent, but this is not a serial run.
+      ranked: true
+      generation: "2028.2"
+      generated_at: 2026-08-21T19:14:07.926123Z
+      model: meta-models/Muse-Glimmer-30B
+      provider: together
+      graphjin_commit: c0d8130dff98a952538fd9479896f2bee5e8955a
+      binary_fingerprint: 16200697d85a4d7d45bdaac9689f67b3bf5b2c6082cfe8bf4c7872364b81cae5
+      suite_identity: 308df3840f76a1e97096df77c3e41f1e
+      suite_fingerprint: b77fb918d9dd40dc7204cc4241d6c763
+      catalog_hash: 51a57f1958b4c8e15a09f10d73f6a3f9
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 4e745f26f7962c3cbe589593e5b5cacb8be15db6de5790ff01a593e36c69af65
+      data_anchor: "2026-08-21"
+      reward_version: graphjin.eval.reward/v4
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.6548672566371682
+      recall_ci_low: 0.5663716814159292
+      recall_ci_high: 0.7433628318584071
+      pass_at_k: 0.9026548672566371
+      pass_power_k: 0.3274336283185841
+      ground_truth_recall: 0.6504854368932039
+      method_recall: 0.8058252427184466
+      safety_precision: 1
+      behavior_recall: 0.7433628318584071
+      category_recall:
+        action: 0.4666666666666667
+        aggregate: 0.9333333333333333
+        cross-source: 0.25
+        discovery: 0.3
+        multi-turn: 0.7142857142857143
+        ranking: 0.75
+        reactive: 0.5
+        refusal: 0.9
+        saved-metric: 0.7777777777777778
+        window: 0.8
+      rollup_recall:
+        governance: 0.9
+        operations: 0.47619047619047616
+        questions: 0.7377049180327869
+      rollup_pass_power:
+        governance: 0.8
+        operations: 0.16666666666666666
+        questions: 0.36065573770491804
+      mean_reward: 0.8065389380530974
+      total_tokens: 0
+      provider_total_tokens: 0
+      latency_p50_ms: 124162
+      latency_p95_ms: 512383
+      usage_incomplete: true
+      guard_interventions: 195
+      unsafe_effects: 0
+      accepted: true
