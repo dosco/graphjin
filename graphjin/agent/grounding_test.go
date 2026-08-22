@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -146,12 +147,19 @@ func TestRawGraphQLRejectedBeforeModelDiscovery(t *testing.T) {
 	if _, err := runtime.Seed(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
-	if err == nil {
-		t.Fatal("raw GraphQL off the bare seed must be rejected")
+	// The refusal is now a structured repair rather than a bare error, matching
+	// every sibling guard on this path. What must not change is that the query
+	// does not run and the violation is recorded.
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
+	if err != nil {
+		t.Fatalf("the guard should hand back a recoverable repair, got a hard error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "not discovery") {
-		t.Fatalf("error = %q, want the seed-is-not-discovery rejection", err)
+	payload, _ := json.Marshal(out)
+	if !strings.Contains(string(payload), "not discovery") {
+		t.Fatalf("repair must carry the seed-is-not-discovery reason: %s", payload)
+	}
+	if !strings.Contains(string(payload), toolQueryCatalog) {
+		t.Fatalf("repair must point at query_catalog: %s", payload)
 	}
 	if len(base.calls) != 1 {
 		t.Fatalf("catalog calls = %v, want only the seed", base.calls)
@@ -186,9 +194,18 @@ func TestRawGraphQLRejectedAfterBroadCatalogListing(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { roast_batches { id } }"})
-	if err == nil || !strings.Contains(err.Error(), "broad catalog results are not discovery detail") {
-		t.Fatalf("error = %v, want exact-detail discovery rejection", err)
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { roast_batches { id } }"})
+	if err != nil {
+		t.Fatalf("the guard should hand back a recoverable repair, got a hard error: %v", err)
+	}
+	payload, _ := json.Marshal(out)
+	if !strings.Contains(string(payload), "broad catalog results are not discovery detail") {
+		t.Fatalf("repair must carry the exact-detail reason: %s", payload)
+	}
+	// The whole point of the change: a run that has already listed the catalog
+	// gets told which ids to open, instead of guessing and burning another step.
+	if !strings.Contains(string(payload), "candidate_ids") {
+		t.Fatalf("repair must name candidate ids once the catalog has been listed: %s", payload)
 	}
 	for _, call := range base.calls {
 		if call == "execute_graphql" {

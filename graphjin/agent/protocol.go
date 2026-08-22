@@ -845,12 +845,32 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	// the run can recover and name the governed path.
 	if !r.state.hasCatalogDetailEvidence() {
 		err := fmt.Errorf("protocol violation: the seed and broad catalog results are not discovery detail; inspect the relevant catalog item with query_catalog({id:\"...\"}) before authoring raw GraphQL.%s", approvedSavedQuerySuffix(r.state))
-		r.state.addViolation("raw_graphql_discovery_required", err.Error(), "execute_graphql", true, map[string]any{
+		details := map[string]any{
 			"approved_saved_queries": sortedBoolKeys(r.state.savedQueriesDiscovered),
-		})
+		}
+		// Every sibling guard below hands back a structured repair step. This one
+		// returned a bare error, and the actor paid for the difference: on the frozen
+		// suite it fired 51 times across 25 episodes, about twice per episode, because
+		// nothing named which id to open. Those episodes averaged 5.2 actor turns
+		// against 2.8 elsewhere and passed 48% against 64%, with the extra turns coming
+		// out of an eight-step budget. The requirement is unchanged — detail evidence
+		// is still mandatory before raw GraphQL — only the reply is now actionable.
+		// A short list: this is a nudge toward the right card, not a catalog dump.
+		known := r.state.knownCatalogIDs(emptySearchKnownIDLimit)
+		repairArgs := map[string]any{}
+		if len(known) != 0 {
+			details["candidate_ids"] = known
+			repairArgs["ids"] = append([]string(nil), known...)
+		}
+		r.state.addViolation("raw_graphql_discovery_required", err.Error(), "execute_graphql", true, details)
+		next := catalogRepairNext(
+			repairArgs,
+			"Inspect the exact catalog detail for the item this query targets in one discovery-only actor step, then re-author the raw GraphQL from the returned card.",
+		)
+		out := recoverableProtocolFailure("raw_graphql_discovery_required", err.Error(), "raw_graphql_discovery_required", next, details)
 		action := r.state.startAction("model", "execute_graphql", args)
-		r.state.finishAction(action, "execute_graphql", args, nil, err)
-		return nil, err
+		r.state.finishAction(action, "execute_graphql", args, out, nil)
+		return out, nil
 	}
 	if missing := r.state.missingDistilledSourceDetails(); len(missing) != 0 {
 		// The ids are already known, so the round trip buys nothing and costs a step:
