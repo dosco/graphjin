@@ -382,7 +382,10 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		}
 	}
 
-	t.Run("security runtime", func(t *testing.T) {
+	t.Run("security runtime evidence is supplied", func(t *testing.T) {
+		// The two prerequisite ids never vary, so the guard now fetches the
+		// guidance itself instead of refusing: supply, the treatment
+		// cross-source evidence already gets.
 		runtime := newRuntime(t)
 		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:discovery"}); err != nil {
 			t.Fatal(err)
@@ -393,7 +396,99 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		result := mapValue(out)
+		if stringFromMap(result, "graphjin_protocol") != "security_runtime_evidence_supplied" {
+			t.Fatalf("first write = %+v, want supplied security/runtime guidance", out)
+		}
+		if len(anySlice(result["cards"])) == 0 {
+			t.Fatalf("supply must carry the guidance cards: %+v", out)
+		}
+		// The supplied evidence discharges the prerequisite: the identical
+		// re-execute progresses to the next guard on the write path instead of
+		// refusing security/runtime again.
+		out, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{
+			"query": `mutation { products(insert: {name: "x"}) { id } }`,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertRepair(t, out, "mutation_evidence_required")
+	})
+
+	t.Run("security runtime refusal stands when the cards cannot be fetched", func(t *testing.T) {
+		base := &fakeRuntime{catalogOverride: func(args map[string]any) any {
+			for _, id := range detailIDsFromArgs(args) {
+				if id == "help:security" || id == "help:runtime" {
+					return map[string]any{"count": 0, "cards": []any{}}
+				}
+			}
+			return fakeCatalogResult(args)
+		}}
+		profile := profileWithRoleAndRoots("user")
+		runtime := newProtocolRuntime(base, "perform governed write", "", 40, profile, nil, CatalogSearchFeatures{})
+		if _, err := runtime.Seed(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:discovery"}); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+			"query": `mutation { products(insert: {name: "x"}) { id } }`,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		assertRepair(t, out, "security_runtime_discovery_required")
+		if runtime.state.securityRuntimeEvidenceSupplied {
+			t.Fatal("a failed supply must leave the one-shot attempt unspent")
+		}
+	})
+
+	t.Run("mutation evidence supplied on repeat refusal", func(t *testing.T) {
+		// The first refusal is the teaching moment; a model that re-sends the
+		// same blocked write gets the table card supplied instead of a spiral.
+		runtime := newRuntime(t)
+		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
+			t.Fatal(err)
+		}
+		write := map[string]any{"query": `mutation { products(insert: {name: "x"}) { id } }`}
+		out, err := runtime.ExecuteGraphQL(context.Background(), write)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertRepair(t, out, "mutation_evidence_required")
+		out, err = runtime.ExecuteGraphQL(context.Background(), write)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := mapValue(out)
+		if stringFromMap(result, "graphjin_protocol") != "mutation_shape_evidence_supplied" {
+			t.Fatalf("repeat refusal = %+v, want supplied mutation-shape evidence", out)
+		}
+		out, err = runtime.ExecuteGraphQL(context.Background(), write)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if executionFailed(out) {
+			if code := stringFromMap(mapValue(mapValue(anySlice(mapValue(out)["errors"])[0])["extensions"]), "code"); code == "mutation_evidence_required" {
+				t.Fatalf("third attempt still refused for mutation evidence: %+v", out)
+			}
+		}
+	})
+
+	t.Run("repeat refusal for an unresolvable table still refuses", func(t *testing.T) {
+		runtime := newRuntime(t)
+		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
+			t.Fatal(err)
+		}
+		write := map[string]any{"query": `mutation { ghosts(insert: {name: "x"}) { id } }`}
+		for attempt := 1; attempt <= 2; attempt++ {
+			out, err := runtime.ExecuteGraphQL(context.Background(), write)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertRepair(t, out, "mutation_evidence_required")
+		}
 	})
 
 	t.Run("mutation shape", func(t *testing.T) {
