@@ -30,6 +30,7 @@ type graphJinCodeRuntime struct {
 	pendingFinal           func() string
 	pendingContinuation    func() string
 	completionContinuation func() string
+	clarificationNudge     func() string
 }
 
 // WithHandoffFallback supplies runtime-only evidence gathered by GraphJin
@@ -39,6 +40,13 @@ type graphJinCodeRuntime struct {
 // session instead of asking the executor to rediscover or guess it.
 func (r *graphJinCodeRuntime) WithHandoffFallback(fallback func() any) *graphJinCodeRuntime {
 	r.handoffFallback = fallback
+	return r
+}
+
+// WithClarificationNudge supplies the one-shot redirect for a clarification
+// asked before any real discovery. Empty string means let the ask through.
+func (r *graphJinCodeRuntime) WithClarificationNudge(nudge func() string) *graphJinCodeRuntime {
+	r.clarificationNudge = nudge
 	return r
 }
 
@@ -89,6 +97,7 @@ func (r *graphJinCodeRuntime) CreateSession(globals map[string]ax.Value, options
 		pendingFinal:           r.pendingFinal,
 		pendingContinuation:    r.pendingContinuation,
 		completionContinuation: r.completionContinuation,
+		clarificationNudge:     r.clarificationNudge,
 		originalInstruction:    stringFromMap(inputs, "instruction"),
 		seedContext:            normalizeValue(context[protocolContextKey]),
 		originalHistory:        normalizeValue(inputs["history"]),
@@ -103,6 +112,7 @@ type graphJinCodeSession struct {
 	pendingFinal           func() string
 	pendingContinuation    func() string
 	completionContinuation func() string
+	clarificationNudge     func() string
 	originalInstruction    string
 	seedContext            any
 	originalHistory        any
@@ -213,6 +223,24 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 					"message":           publicMessage,
 					"next":              publicMessage,
 					"attempt":           runtimeFinalEvidenceValue(result),
+				},
+			}
+		}
+	}
+	if s.executorStage && completionType == "askclarification" && s.clarificationNudge != nil {
+		if message := strings.TrimSpace(s.clarificationNudge()); message != "" {
+			// A first-turn surrender: no final() in the returned code, so Ax
+			// advances another executor turn with the redirect as the tool
+			// result. A repeat ask returns empty from the nudge and terminates
+			// normally, so a genuine clarification is delayed by one turn at
+			// most. Runs after the pendingFinal machinery on purpose — a run
+			// that owes a repair keeps its stricter redirect.
+			return map[string]any{
+				"kind": "result",
+				"result": map[string]any{
+					"graphjin_protocol": "clarification_premature",
+					"message":           message,
+					"next":              "Run the named discovery steps and answer from what they return; ask the user only if the target is still ambiguous afterwards.",
 				},
 			}
 		}
