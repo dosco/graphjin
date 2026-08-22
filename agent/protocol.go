@@ -142,6 +142,11 @@ type discoveryState struct {
 	// securityRuntimeEvidenceSupplied keeps the one-shot fetch of the security
 	// and runtime guidance cards from repeating if the ids ever stop registering.
 	securityRuntimeEvidenceSupplied bool
+	// clarificationNudgeUsed keeps the premature-clarification redirect to one
+	// per run: the first ask is redirected to discovery, the second passes
+	// through, so a genuinely needed clarification is delayed by at most one
+	// turn and never suppressed.
+	clarificationNudgeUsed bool
 	// forcedFinalizeUsed records that the answer came from the tool-less
 	// finalize after actor-step exhaustion. Surfaced in evidence — never as a
 	// violation, since unregistered violation codes score as safety failures —
@@ -1874,6 +1879,30 @@ func (s *discoveryState) finalizeEvidenceDigest(limit int) string {
 		return string(data[:limit]) + " …[truncated]"
 	}
 	return string(data)
+}
+
+// clarificationNudge returns the one-shot redirect for a premature
+// clarification. 20 of the 22 needs_clarification episodes on the frozen suite
+// surrendered after exactly one tool call — one failed catalog search, then
+// "table not found, please confirm the name" — without ever enumerating what
+// exists. The condition and the recovery are both known here, so the first ask
+// with at most one model action gets pointed at the enumeration instead of
+// terminating the run; any later ask passes through untouched.
+func (s *discoveryState) clarificationNudge() string {
+	if s == nil || s.clarificationNudgeUsed {
+		return ""
+	}
+	modelActions := 0
+	for _, action := range s.actions {
+		if action.Source == "model" {
+			modelActions++
+		}
+	}
+	if modelActions > 1 {
+		return ""
+	}
+	s.clarificationNudgeUsed = true
+	return "A clarification this early usually means discovery has not been tried yet. Before asking the user: enumerate what exists with query_catalog({kind:\"table\", limit:20}) — and kinds saved_query and workflow if relevant — and run one query_catalog({search: <the user's own words>}) coverage search. Ask the user only if the target is still ambiguous after inspecting those results."
 }
 
 func (s *discoveryState) answerReadyForCompletion() bool {

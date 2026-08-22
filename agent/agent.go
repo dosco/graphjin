@@ -498,6 +498,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		protocol.state.completionContinuation,
 	)
 	runtime.WithHandoffFallback(protocol.state.runtimeHandoffEvidence)
+	runtime.WithClarificationNudge(protocol.state.clarificationNudge)
 	for _, tool := range tools {
 		t := tool
 		runtime.RegisterCallable(t.Name, func(params ax.Value) (ax.Value, error) {

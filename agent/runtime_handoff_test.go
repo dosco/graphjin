@@ -447,3 +447,62 @@ func TestGraphJinRuntimeRequiresCodeReadForHistoryDependentFollowUp(t *testing.T
 		t.Fatalf("history-grounded executor final = %+v, want final", accepted)
 	}
 }
+
+// 20 of the 22 needs_clarification episodes on the frozen suite surrendered
+// after exactly one tool call — a failed search, then "please confirm the
+// table name" — without enumerating what exists. The first premature ask is
+// redirected to discovery; the second passes through, so a genuine
+// clarification is delayed one turn at most.
+func TestGraphJinRuntimeNudgesPrematureClarificationOnce(t *testing.T) {
+	state := newDiscoveryState("mark the invoices watch event seen")
+	runtime := newGraphJinCodeRuntime(nil, nil, nil, nil).WithClarificationNudge(state.clarificationNudge)
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "mark the invoices watch event seen"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer session.Close()
+	session.Execute(`await final("distilled", {});`, nil)
+	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
+
+	first := mapValue(session.Execute(`await askClarification("Which invoices table did you mean?");`, nil))
+	result := mapValue(first["result"])
+	if stringFromMap(first, "kind") != "result" || stringFromMap(result, "graphjin_protocol") != "clarification_premature" {
+		t.Fatalf("first premature ask = %+v, want the discovery redirect", first)
+	}
+	if !strings.Contains(stringFromMap(result, "message"), "query_catalog") {
+		t.Fatalf("redirect must name the discovery calls: %+v", result)
+	}
+
+	second := mapValue(session.Execute(`await askClarification("Which invoices table did you mean?");`, nil))
+	if runtimeCompletionType(second) != "askclarification" {
+		t.Fatalf("second ask must pass through, got %+v", second)
+	}
+}
+
+// A clarification asked after real discovery work is legitimate and passes
+// through immediately.
+func TestGraphJinRuntimeLetsInformedClarificationThrough(t *testing.T) {
+	state := newDiscoveryState("mark the invoices watch event seen")
+	// Two model-sourced actions on record: this run has actually tried.
+	for i := 0; i < 2; i++ {
+		idx := state.startAction("model", "query_catalog", map[string]any{"search": "invoices"})
+		state.finishAction(idx, "query_catalog", map[string]any{"search": "invoices"}, map[string]any{"cards": []any{}}, nil)
+	}
+	runtime := newGraphJinCodeRuntime(nil, nil, nil, nil).WithClarificationNudge(state.clarificationNudge)
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "mark the invoices watch event seen"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer session.Close()
+	session.Execute(`await final("distilled", {});`, nil)
+	session.PatchGlobals(map[string]any{"version": 1, "bindings": map[string]any{}}, nil)
+
+	ask := mapValue(session.Execute(`await askClarification("Two invoices tables exist; which one?");`, nil))
+	if runtimeCompletionType(ask) != "askclarification" {
+		t.Fatalf("informed ask must pass through untouched, got %+v", ask)
+	}
+}
