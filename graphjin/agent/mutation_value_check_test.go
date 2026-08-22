@@ -198,15 +198,75 @@ func TestObservedValueNoticeRefusesAnIdenticalRetry(t *testing.T) {
 		t.Fatalf("an identical retry must not reach the database, calls=%d", base.mutationCalls)
 	}
 
-	// The third attempt proceeds however it is phrased: two corrections is
-	// friction, not schema, so a caller who genuinely means the value is never
-	// left without a way forward.
+	// The third attempt used to land as an informed override (dcea36f8). The
+	// Muse-Glimmer run measured who actually used that override: 8 episodes
+	// writing "closed" into open|pending|resolved after ignoring the exact
+	// repair twice — invalid states persisted to the database. With a
+	// clear-winner repaired_query in hand the refusal now stands past the
+	// strike cap, and the repair itself is the way forward.
 	persisted := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed", resolution_note: "the customer insists on closed"}) { id status } }`}
-	if _, err := runtime.ExecuteGraphQL(context.Background(), persisted); err != nil {
-		t.Fatalf("the persisted write should proceed: %v", err)
+	third, err := runtime.ExecuteGraphQL(context.Background(), persisted)
+	if err != nil {
+		t.Fatalf("the third attempt should return a repair, not an error: %v", err)
+	}
+	payload, _ = json.Marshal(third)
+	for _, want := range []string{"observed_value_mismatch", "mutation_value_repair", "repaired_query"} {
+		if !strings.Contains(string(payload), want) {
+			t.Fatalf("third attempt with a repair in hand must keep refusing (missing %q): %s", want, payload)
+		}
+	}
+	if base.mutationCalls != 0 {
+		t.Fatalf("an out-of-vocabulary write with a known repair must never reach the database, calls=%d", base.mutationCalls)
+	}
+	// The recovery's next step IS the corrected write, ready to execute.
+	next := mapValue(mapValue(mapValue(third)["recovery"])["next"])
+	repairedQuery := stringFromMap(mapValue(next["args"]), "query")
+	if !strings.Contains(repairedQuery, `"resolved"`) {
+		t.Fatalf("repair next must carry the corrected query, got %q", repairedQuery)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": repairedQuery}); err != nil {
+		t.Fatalf("the repaired write should execute: %v", err)
 	}
 	if base.mutationCalls != 1 {
-		t.Fatalf("expected the persisted write to execute, calls=%d", base.mutationCalls)
+		t.Fatalf("expected the repaired write to execute, calls=%d", base.mutationCalls)
+	}
+}
+
+// When no clear-winner repair exists — the written value resembles nothing the
+// sampler observed — the dcea36f8 let-through survives: two corrections are
+// friction, not schema, and the caller may genuinely know a value the sampler
+// has not seen.
+func TestObservedValueListOnlyMismatchStillLandsOnThirdAttempt(t *testing.T) {
+	runtime, base := ticketValueRuntime(t)
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.securityRuntimeEvidence = true
+	runtime.state.mutationEvidenceSupplied = true
+	runtime.state.tablesDetailed["support_tickets"] = true
+	runtime.state.catalogDetails = []string{"table:app:main.support_tickets"}
+	args := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "xx"}) { id status } }`}
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		out, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+		if err != nil {
+			t.Fatalf("attempt %d errored: %v", attempt, err)
+		}
+		payload, _ := json.Marshal(out)
+		if !strings.Contains(string(payload), "observed_value_mismatch") {
+			t.Fatalf("attempt %d should be refused: %s", attempt, payload)
+		}
+		if strings.Contains(string(payload), "repaired_query") {
+			t.Fatalf("no repair should exist for %q: %s", "xx", payload)
+		}
+	}
+	if base.mutationCalls != 0 {
+		t.Fatalf("refused attempts must not reach the database, calls=%d", base.mutationCalls)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args)); err != nil {
+		t.Fatalf("the third list-only attempt should proceed: %v", err)
+	}
+	if base.mutationCalls != 1 {
+		t.Fatalf("expected the third list-only attempt to execute, calls=%d", base.mutationCalls)
 	}
 }
 

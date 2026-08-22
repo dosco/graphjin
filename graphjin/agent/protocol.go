@@ -993,8 +993,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			return nil, err
 		}
 		{
-			if mismatches := r.unobservedWrittenValues(ctx, query); len(mismatches) != 0 &&
-				r.state.refuseUnobservedWrite(mismatches) {
+			if mismatches := r.unobservedWrittenValues(ctx, query); len(mismatches) != 0 {
 				described := r.describeUnobservedValues(ctx, mismatches)
 				// A list did not move behaviour — ten of eleven episodes handed one
 				// resubmitted "closed" verbatim. Every repair that measurably changed
@@ -1002,14 +1001,39 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				// exists the corrected write is supplied outright. Offered, never
 				// executed: mapping intent onto a vocabulary is the model's call.
 				suggestions := r.suggestedWrittenValues(ctx, mismatches)
-				details := map[string]any{"fault": "value_outside_observed_set"}
-				guidance := "Choose the value from that list which matches the intent and re-author the write with it"
-				reason := "Re-author the write using one of the values listed for that column, then execute it once."
-				if len(suggestions) != 0 {
-					details["closest_values"] = suggestions
-				}
+				repaired, repairExists := "", false
 				if len(suggestions) == len(mismatches) {
-					if repaired, ok := substituteWrittenValues(query, mismatches, suggestions); ok {
+					repaired, repairExists = substituteWrittenValues(query, mismatches, suggestions)
+				}
+				refuse := r.state.refuseUnobservedWrite(mismatches)
+				if !refuse && repairExists {
+					// dcea36f8 let the third identical attempt land so a caller
+					// could write a legitimately new value into an enum-like
+					// column. Measured across the Muse-Glimmer run, the only
+					// users of that override were 8 episodes writing "closed"
+					// into open|pending|resolved after ignoring the exact repair
+					// twice — invalid states landing in the database. When a
+					// clear-winner repair exists the refusal now stands past the
+					// strike cap; the let-through survives only for the
+					// list-only case, where the caller may genuinely know a
+					// value the sampler has not seen. Strikes still increment so
+					// the counters keep telling the story.
+					r.state.recordUnobservedWriteStrikes(mismatches)
+					refuse = true
+				}
+				if refuse {
+					details := map[string]any{"fault": "value_outside_observed_set"}
+					guidance := "Choose the value from that list which matches the intent and re-author the write with it"
+					reason := "Re-author the write using one of the values listed for that column, then execute it once."
+					kind := "observed_value_mismatch"
+					next := map[string]any{
+						"recommended_tool": "execute_graphql",
+						"reason":           reason,
+					}
+					if len(suggestions) != 0 {
+						details["closest_values"] = suggestions
+					}
+					if repairExists {
 						details["repaired_query"] = repaired
 						// Run 969337b6 measured 2 of 10 episodes taking the repair when it
 						// was conditioned on "if the suggested value matches the intent" —
@@ -1017,18 +1041,20 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 						// off". The schema's convention is a fact, so state it as one.
 						guidance = "This schema expresses that state with the suggested value; the corrected write is in errors[].extensions.details.repaired_query — execute it exactly as given"
 						reason = "Execute details.repaired_query exactly as given; it is this same write expressed in the vocabulary this column actually uses."
+						kind = "mutation_value_repair"
+						next = map[string]any{
+							"recommended_tool": "execute_graphql",
+							"args":             map[string]any{"query": repaired},
+							"reason":           reason,
+						}
 					}
+					err := fmt.Errorf("protocol violation: %s. %s", described, guidance)
+					r.state.addViolation("observed_value_mismatch", err.Error(), "execute_graphql", true, details)
+					out := recoverableProtocolFailure("observed_value_mismatch", err.Error(), kind, next, details)
+					action := r.state.startAction("model", "execute_graphql", args)
+					r.state.finishAction(action, "execute_graphql", args, out, nil)
+					return out, nil
 				}
-				err := fmt.Errorf("protocol violation: %s. %s", described, guidance)
-				r.state.addViolation("observed_value_mismatch", err.Error(), "execute_graphql", true, details)
-				out := recoverableProtocolFailure("observed_value_mismatch", err.Error(), "observed_value_mismatch",
-					map[string]any{
-						"recommended_tool": "execute_graphql",
-						"reason":           reason,
-					}, details)
-				action := r.state.startAction("model", "execute_graphql", args)
-				r.state.finishAction(action, "execute_graphql", args, out, nil)
-				return out, nil
 			}
 		}
 		roots := MutationRootFields(query)
@@ -2895,6 +2921,21 @@ func (s *discoveryState) refuseUnobservedWrite(mismatches []columnAssignment) bo
 		s.observedValueStrikes[valueStrikeKey(mismatch)]++
 	}
 	return true
+}
+
+// recordUnobservedWriteStrikes increments the per-(table,column,value) strike
+// counters without deciding anything, for the branch where a repair forces the
+// refusal past the strike cap and the counters should still tell the story.
+func (s *discoveryState) recordUnobservedWriteStrikes(mismatches []columnAssignment) {
+	if s == nil || len(mismatches) == 0 {
+		return
+	}
+	if s.observedValueStrikes == nil {
+		s.observedValueStrikes = map[string]int{}
+	}
+	for _, mismatch := range mismatches {
+		s.observedValueStrikes[valueStrikeKey(mismatch)]++
+	}
 }
 
 func valueStrikeKey(mismatch columnAssignment) string {

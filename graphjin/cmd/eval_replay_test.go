@@ -212,7 +212,15 @@ func TestReplayUnknownColumnWriteGetsColumnNamedRecovery(t *testing.T) {
 // attempt must reach dispatch. Mechanism only, never score: the canned
 // programs still write "closed", so the task's post-state may well fail — the
 // defect was the unreachable let-through, not the vocabulary.
-func TestReplayValueGuardLetsThirdAttemptLand(t *testing.T) {
+// dcea36f8's lesson — two corrections are friction, not schema, so the third
+// attempt lands — is superseded exactly when a clear-winner repaired_query
+// exists: the Muse-Glimmer run measured the override's only users as 8
+// episodes persisting "closed" into open|pending|resolved after ignoring the
+// exact repair twice. This fixture is such a repair-carrying loop, so the
+// refusal now stands for as long as the model resends the invalid value, and
+// the write never lands. The list-only let-through is pinned separately in
+// agent/mutation_value_check_test.go.
+func TestReplayValueGuardKeepsRefusingWhileRepairExists(t *testing.T) {
 	if testing.Short() {
 		t.Skip("embedded replay integration")
 	}
@@ -237,11 +245,10 @@ func TestReplayValueGuardLetsThirdAttemptLand(t *testing.T) {
 			fires++
 		}
 	}
-	if fires > 2 {
-		t.Errorf("two corrections is the whole budget, got %d fires: %+v", fires, observed)
+	if fires == 0 {
+		t.Errorf("the vocabulary guard must fire on this fixture: %+v", observed)
 	}
-	if fixture.Observed.ActorTurns > 0 && observed.ActorTurns >= fixture.Observed.ActorTurns {
-		t.Errorf("the let-through must shorten the loop: baseline %d turns, replay %d turns",
-			fixture.Observed.ActorTurns, observed.ActorTurns)
+	if observed.Status != "blocked" {
+		t.Errorf("an out-of-vocabulary write with a known repair must stay blocked, got %q", observed.Status)
 	}
 }
