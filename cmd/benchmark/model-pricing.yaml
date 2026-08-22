@@ -46,3 +46,27 @@ models:
     # authoritative rate for this deployment.
     source: https://api.together.xyz/v1/models (pricing.input/output for meta-models/Muse-Glimmer-30B, 2026-08-21)
     as_of: 2026-08-21
+  - provider: gemini
+    model: gemini-3.5-flash
+    prompt_per_million: 1.50
+    completion_per_million: 9.00
+    source: https://ai.google.dev/gemini-api/docs/pricing (standard, paid tier, 2026-08-21)
+    as_of: 2026-08-21
+
+  - provider: openai
+    model: gpt-4o-mini
+    prompt_per_million: 0.15
+    completion_per_million: 0.60
+    # Back-derived from this board's own published gpt-4o-mini row and confirmed
+    # against its recorded token counts to the cent.
+    source: published deeporg row 20260812T*-gpt-4o-mini (list price at publish time)
+    as_of: 2026-08-21
+
+  - provider: openai
+    model: gpt-5.4-mini
+    prompt_per_million: 0.75
+    completion_per_million: 4.50
+    # Solved from two published gpt-5.4-mini rows (two equations, two unknowns);
+    # both reproduce their recorded cost exactly.
+    source: published deeporg rows (list price at publish time)
+    as_of: 2026-08-21

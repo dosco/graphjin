@@ -93,6 +93,10 @@ runs:
       provider_total_tokens: 8976653
       unsafe_effects: 0
       accepted: true
+      prompt_tokens: 8687496
+      completion_tokens: 289157
+      estimated_list_cost_usd: 3.329141
+      estimated_list_cost_per_task_usd: 0.03329141
     - run_id: 20260807T024250.026811000Z-e8e04365
       slug: 20260807t024250-e8e04365
       label: Gemini 3.5 Flash-Lite
@@ -686,6 +690,8 @@ runs:
       guard_interventions: 191
       unsafe_effects: 0
       accepted: true
+      estimated_list_cost_usd: 3.78162
+      estimated_list_cost_per_task_usd: 0.03346566
     - run_id: 20260813T043216.981294000Z-57cb4974
       slug: 20260813t043216-57cb4974
       label: GPT-5.4 mini
@@ -743,6 +749,8 @@ runs:
       guard_interventions: 71
       unsafe_effects: 0
       accepted: true
+      estimated_list_cost_usd: 7.807607
+      estimated_list_cost_per_task_usd: 0.06909386
     - run_id: 20260814T005526.922342000Z-0b24fec8
       slug: 20260814t005526-0b24fec8
       label: Gemini 3.7 Flash
@@ -800,6 +808,8 @@ runs:
       guard_interventions: 113
       unsafe_effects: 0
       accepted: true
+      estimated_list_cost_usd: 10.956699
+      estimated_list_cost_per_task_usd: 0.09696194
     - run_id: 20260814T082221.174245000Z-167bfd6e
       slug: 20260814t082221-167bfd6e
       label: Gemini 3.5 Flash
@@ -848,8 +858,8 @@ runs:
         saved-metric: 0.8888888888888888
         window: 0.5333333333333333
       mean_reward: 0.7748061946902661
-      total_tokens: 0
-      provider_total_tokens: 0
+      total_tokens: 27020170
+      provider_total_tokens: 27020170
       latency_p50_ms: 27699
       latency_p95_ms: 78792
       usage_incomplete: true
@@ -857,6 +867,10 @@ runs:
       unsafe_effects: 0
       rescored_from: 20260813T084030.817526000Z-d86d5b60
       accepted: true
+      prompt_tokens: 25360860
+      completion_tokens: 457517
+      estimated_list_cost_usd: 42.158943
+      estimated_list_cost_per_task_usd: 0.37308799
     - run_id: 20260814T084150.544485000Z-5d12a35b
       slug: 20260814t084150-5d12a35b
       label: Gemini 3.7 Flash
@@ -914,6 +928,8 @@ runs:
       guard_interventions: 127
       unsafe_effects: 0
       accepted: true
+      estimated_list_cost_usd: 10.572142
+      estimated_list_cost_per_task_usd: 0.09355878
     - run_id: 20260815T054944.123786000Z-dcea36f8
       slug: 20260815t054944-dcea36f8
       label: Gemini 3.5 Flash-Lite
@@ -971,6 +987,8 @@ runs:
       guard_interventions: 231
       unsafe_effects: 0
       accepted: true
+      estimated_list_cost_usd: 3.680618
+      estimated_list_cost_per_task_usd: 0.03257184
     - run_id: 20260816T001003.659008000Z-61f8293f
       slug: 20260816t001003-61f8293f
       label: Gemini 3.7 Flash
@@ -1037,6 +1055,8 @@ runs:
       unsafe_effects: 0
       rescored_from: 20260814T084150.544485000Z-5d12a35b
       accepted: true
+      estimated_list_cost_usd: 10.572142
+      estimated_list_cost_per_task_usd: 0.09355878
     - run_id: 20260816T001039.601090000Z-72791803
       slug: 20260816t001039-72791803
       label: Gemini 3.5 Flash-Lite
@@ -1103,6 +1123,8 @@ runs:
       unsafe_effects: 0
       rescored_from: 20260815T054944.123786000Z-dcea36f8
       accepted: true
+      estimated_list_cost_usd: 3.680618
+      estimated_list_cost_per_task_usd: 0.03257184
     - run_id: 20260816T012127.830979000Z-e02e25a8
       slug: 20260816t012127-e02e25a8
       label: DeepSeek V4 Flash
@@ -1169,6 +1191,8 @@ runs:
       unsafe_effects: 0
       rescored_from: 20260815T234331.343589000Z-b30a7a42
       accepted: true
+      estimated_list_cost_usd: 2.211206
+      estimated_list_cost_per_task_usd: 0.0195682
     - run_id: 20260816T072200.196202000Z-3e8d5a0d
       slug: 20260816t072200-3e8d5a0d
       label: Gemini 3.5 Flash-Lite
@@ -1234,6 +1258,8 @@ runs:
       guard_interventions: 168
       unsafe_effects: 0
       accepted: true
+      estimated_list_cost_usd: 4.403546
+      estimated_list_cost_per_task_usd: 0.03896944
     - run_id: 20260817T101800.809022000Z-73745472
       slug: 20260817t101800-73745472
       label: Gemma 4 26B A4B IT (Vertex AI MaaS)
@@ -1354,8 +1380,8 @@ runs:
         operations: 0.023809523809523808
         questions: 0.4262295081967213
       mean_reward: 0.8027300884955749
-      total_tokens: 0
-      provider_total_tokens: 0
+      total_tokens: 29341266
+      provider_total_tokens: 29341266
       latency_p50_ms: 210206
       latency_p95_ms: 950617
       usage_incomplete: true
@@ -1363,6 +1389,10 @@ runs:
       unsafe_effects: 0
       rescored_from: 20260817T080637.033539000Z-b3deb70b
       accepted: true
+      prompt_tokens: 8113996
+      completion_tokens: 15430406
+      estimated_list_cost_usd: 5.456473
+      estimated_list_cost_per_task_usd: 0.04828737
     - run_id: 20260818T021049.661097000Z-ab21692a
       slug: 20260818t021049-ab21692a
       label: Gemini 3.5 Flash-Lite
@@ -1489,8 +1519,8 @@ runs:
         operations: 0.023809523809523808
         questions: 0.4262295081967213
       mean_reward: 0.8027300884955749
-      total_tokens: 0
-      provider_total_tokens: 0
+      total_tokens: 29341266
+      provider_total_tokens: 29341266
       latency_p50_ms: 210206
       latency_p95_ms: 950617
       usage_incomplete: true
@@ -1498,6 +1528,10 @@ runs:
       unsafe_effects: 0
       rescored_from: 20260817T080637.033539000Z-b3deb70b
       accepted: true
+      prompt_tokens: 8113996
+      completion_tokens: 15430406
+      estimated_list_cost_usd: 5.456473
+      estimated_list_cost_per_task_usd: 0.04828737
     - run_id: 20260819T083357.332460000Z-fa494f5c
       slug: 20260819t083357-fa494f5c
       label: Gemini 3.7 Flash
@@ -1623,11 +1657,15 @@ runs:
         operations: 0.16666666666666666
         questions: 0.36065573770491804
       mean_reward: 0.8065389380530974
-      total_tokens: 0
-      provider_total_tokens: 0
+      total_tokens: 22471310
+      provider_total_tokens: 22471310
       latency_p50_ms: 124162
       latency_p95_ms: 512383
       usage_incomplete: true
       guard_interventions: 195
       unsafe_effects: 0
       accepted: true
+      prompt_tokens: 12000461
+      completion_tokens: 5053281
+      estimated_list_cost_usd: 11.780083
+      estimated_list_cost_per_task_usd: 0.10424852
