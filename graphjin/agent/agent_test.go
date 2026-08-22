@@ -2102,3 +2102,156 @@ func TestForcedFinalizeDeclinesWhilePendingDatabaseComputation(t *testing.T) {
 		t.Fatalf("pending computation must preserve the exhaustion error: %q", resp.Status)
 	}
 }
+
+// The grounding gate is right that an identifier absent from the evidence is a
+// warning sign — but rejecting the whole answer over one invented label throws
+// away correct work. Of fourteen episodes blocked this way in one benchmark run,
+// four had the right result and one had already completed its database write.
+func TestUngroundedAnswerIsRestatedOnce(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{
+		"status": StatusAnswered,
+		"answer": "The sla_window shows 3 invoices are overdue.",
+	}}
+	var sawSignature string
+	var sawValues map[string]ax.Value
+	rewrites := 0
+	runner := newAgent(Config{TimeoutSeconds: 5}, &successfulExecutionRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "table:app:main.invoices"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{"query": `query { invoices { id } }`})
+			}
+			return program
+		}),
+		WithFinalizerFactory(func(signature string, _ map[string]ax.Value) Program {
+			rewrites++
+			sawSignature = signature
+			rewrite := &fakeProgram{output: map[string]ax.Value{"answer": "Three invoices are listed as unpaid."}}
+			rewrite.onForward = func(p *fakeProgram) { sawValues = p.forwardValues }
+			return rewrite
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{Instruction: "show the invoices"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if rewrites != 1 || sawSignature != ungroundedRewriteSignature {
+		t.Fatalf("rewrites = %d, signature = %q", rewrites, sawSignature)
+	}
+	if resp.Status != StatusAnswered || resp.Answer != "Three invoices are listed as unpaid." {
+		t.Fatalf("restated response = %q / %q: %+v", resp.Status, resp.Answer, resp.Errors)
+	}
+	// The rewrite is told what it may not say again, and what it said before.
+	if terms, _ := sawValues["ungrounded_terms"].(string); !strings.Contains(terms, "sla_window") {
+		t.Fatalf("rewrite must name the rejected identifiers, got %q", terms)
+	}
+	if draft, _ := sawValues["draft_answer"].(string); !strings.Contains(draft, "sla_window") {
+		t.Fatalf("rewrite must see the draft it is replacing, got %q", draft)
+	}
+	if responseHasProtocolError(resp, "ungrounded_answer_fields") {
+		t.Fatalf("a successful restatement must clear the rejection: %+v", resp.Errors)
+	}
+	evidence, _ := json.Marshal(resp.Evidence)
+	if !strings.Contains(string(evidence), `"ungrounded_rewrite":true`) {
+		t.Fatalf("the restatement must be recorded in evidence: %s", evidence)
+	}
+	// The discharged violation stays on the record, marked resolved.
+	if !strings.Contains(string(evidence), `"resolved":true`) {
+		t.Fatalf("the discharged rejection should remain visible as resolved: %s", evidence)
+	}
+}
+
+// An exhausted run that is rescued into an ungrounded answer gets both repairs
+// in turn: first the answer, then the language.
+func TestForcedFinalizeRescueCanAlsoBeRestated(t *testing.T) {
+	program := &fakeProgram{err: errors.New("agent actor loop exceeded max steps")}
+	var signatures []string
+	runner := newAgent(Config{TimeoutSeconds: 5}, &successfulExecutionRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "table:app:main.invoices"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{"query": `query { invoices { id } }`})
+			}
+			return program
+		}),
+		WithFinalizerFactory(func(signature string, _ map[string]ax.Value) Program {
+			signatures = append(signatures, signature)
+			if signature == ungroundedRewriteSignature {
+				return &fakeProgram{output: map[string]ax.Value{"answer": "One invoice is listed as paid."}}
+			}
+			return &fakeProgram{output: map[string]ax.Value{"answer": "The sla_window is clear."}}
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{Instruction: "show the invoices"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(signatures) != 2 || signatures[0] != finalizeSignature || signatures[1] != ungroundedRewriteSignature {
+		t.Fatalf("signatures = %v, want the rescue then the restatement", signatures)
+	}
+	if resp.Status != StatusAnswered || resp.Answer != "One invoice is listed as paid." {
+		t.Fatalf("response = %q / %q", resp.Status, resp.Answer)
+	}
+	evidence, _ := json.Marshal(resp.Evidence)
+	for _, marker := range []string{`"forced_finalize":true`, `"ungrounded_rewrite":true`} {
+		if !strings.Contains(string(evidence), marker) {
+			t.Fatalf("evidence missing %s: %s", marker, evidence)
+		}
+	}
+}
+
+// One restatement, not a negotiation. A rewrite that invents another identifier
+// is blocked exactly like the draft was.
+func TestUngroundedRewriteThatReoffendsStaysBlocked(t *testing.T) {
+	program := &fakeProgram{output: map[string]ax.Value{
+		"status": StatusAnswered,
+		"answer": "The sla_window shows 3 overdue.",
+	}}
+	rewrites := 0
+	runner := newAgent(Config{TimeoutSeconds: 5}, &successfulExecutionRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "table:app:main.invoices"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{"query": `query { invoices { id } }`})
+			}
+			return program
+		}),
+		WithFinalizerFactory(func(string, map[string]ax.Value) Program {
+			rewrites++
+			return &fakeProgram{output: map[string]ax.Value{"answer": "The renewal_window is clear instead."}}
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{Instruction: "show the invoices"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if rewrites != 1 {
+		t.Fatalf("rewrites = %d, want exactly one attempt", rewrites)
+	}
+	if resp.Status != StatusBlocked || !responseHasProtocolError(resp, "ungrounded_answer_fields") {
+		t.Fatalf("a re-offending restatement must stay blocked: %q %+v", resp.Status, resp.Errors)
+	}
+}
+
+// A rewrite that cannot lift the block is not worth a model call.
+func TestUngroundedRewriteSkippedWhenAnotherViolationAlsoBlocks(t *testing.T) {
+	state := newDiscoveryState("show the invoices")
+	state.addViolation("ungrounded_answer_fields", "cites sla_window", "", true, map[string]any{"tokens": []any{"sla_window"}})
+	state.addViolation("saved_metric_identity_mismatch", "wrong saved query", "", true, nil)
+	if state.onlyBlockingViolationIs("ungrounded_answer_fields") {
+		t.Fatal("a co-occurring blocking violation must disqualify the restatement")
+	}
+	state.resolveUngroundedAnswerViolation()
+	if !state.hasBlockingViolation() {
+		t.Fatal("discharging grounding must not clear an unrelated violation")
+	}
+}

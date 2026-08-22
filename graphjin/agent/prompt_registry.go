@@ -29,8 +29,11 @@ func PromptRegistryHash() string {
 		SemanticCatalogInstructions string `json:"semantic_catalog_instructions"`
 		// ForcedFinalizeSignature is provider-visible prompt text on the
 		// tool-less finalize after actor-step exhaustion.
-		ForcedFinalizeSignature string          `json:"forced_finalize_signature"`
-		Skills                  []skillSnapshot `json:"skills"`
+		ForcedFinalizeSignature string `json:"forced_finalize_signature"`
+		// UngroundedRewriteSignature is provider-visible prompt text on the
+		// single restatement offered when the grounding gate rejects an answer.
+		UngroundedRewriteSignature string          `json:"ungrounded_rewrite_signature"`
+		Skills                     []skillSnapshot `json:"skills"`
 		// ExecutorExamples are provider-visible prompt content on every actor
 		// step; two eval runs differing only in examples must not share a
 		// prompt-registry hash.
@@ -56,6 +59,7 @@ func PromptRegistryHash() string {
 		RuntimeInstructions:         runtimeUsageInstructions,
 		SemanticCatalogInstructions: semanticCatalogUsageInstructions,
 		ForcedFinalizeSignature:     finalizeSignature,
+		UngroundedRewriteSignature:  ungroundedRewriteSignature,
 		Skills:                      skills,
 		ExecutorExamples:            executorTrajectoryExamples(),
 	})

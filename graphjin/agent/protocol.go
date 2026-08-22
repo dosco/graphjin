@@ -147,6 +147,10 @@ type discoveryState struct {
 	// through, so a genuinely needed clarification is delayed by at most one
 	// turn and never suppressed.
 	clarificationNudgeUsed bool
+	// ungroundedRewriteUsed records that the answer was restated once after the
+	// grounding gate rejected a draft. One attempt per run: the model does not
+	// control the retry, so a single latch bounds it completely.
+	ungroundedRewriteUsed bool
 	// forcedFinalizeUsed records that the answer came from the tool-less
 	// finalize after actor-step exhaustion. Surfaced in evidence — never as a
 	// violation, since unregistered violation codes score as safety failures —
@@ -2553,6 +2557,64 @@ func (s *discoveryState) addViolation(code, message, tool string, blocking bool,
 	})
 }
 
+// resolveUngroundedAnswerViolation discharges a grounding rejection after the
+// answer has been restated. Violations accumulate rather than replace, so
+// without this the original rejection would still be blocking when the rewritten
+// answer arrives — and a perfectly grounded restatement would be refused by the
+// record of the draft it replaced.
+func (s *discoveryState) resolveUngroundedAnswerViolation() {
+	if s == nil {
+		return
+	}
+	for i := range s.violations {
+		violation := &s.violations[i]
+		if violation.Code != "ungrounded_answer_fields" || !violation.Blocking {
+			continue
+		}
+		violation.Blocking = false
+		if violation.Details == nil {
+			violation.Details = map[string]any{}
+		}
+		violation.Details["resolved"] = true
+	}
+}
+
+// ungroundedAnswerViolationTokens returns the identifiers a blocking grounding
+// rejection named, so a rewrite can be told exactly what not to say again.
+func (s *discoveryState) ungroundedAnswerViolationTokens() []string {
+	if s == nil {
+		return nil
+	}
+	for _, violation := range s.violations {
+		if violation.Code != "ungrounded_answer_fields" || !violation.Blocking {
+			continue
+		}
+		return stringListFromDetails(violation.Details, "tokens")
+	}
+	return nil
+}
+
+// onlyBlockingViolationIs reports whether every blocking violation carries the
+// given code. A rewrite that cannot lift the block is not worth a model call:
+// discharging grounding while a saved-metric mismatch is also blocking would
+// spend a request and still finalize as blocked.
+func (s *discoveryState) onlyBlockingViolationIs(code string) bool {
+	if s == nil {
+		return false
+	}
+	found := false
+	for _, violation := range s.violations {
+		if !violation.Blocking {
+			continue
+		}
+		if violation.Code != code {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
 func (s *discoveryState) resolveSavedQueryDetailViolation(name string) {
 	name = strings.TrimSpace(name)
 	for i := range s.violations {
@@ -3125,6 +3187,9 @@ func (s *discoveryState) mergeEvidence(model any) any {
 	}
 	if s.forcedFinalizeUsed {
 		protocol["forced_finalize"] = true
+	}
+	if s.ungroundedRewriteUsed {
+		protocol["ungrounded_rewrite"] = true
 	}
 	if model == nil {
 		return protocol
