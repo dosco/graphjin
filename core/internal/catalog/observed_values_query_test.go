@@ -264,3 +264,99 @@ func TestTableExamplesForFilesystemTables(t *testing.T) {
 		t.Fatalf("db table example regressed: %s", card.ExamplesJSON)
 	}
 }
+
+// The catalog was teaching the route it exists to prevent. A join-only table's
+// card carried a top-level example that can only error, and the relationship
+// card nested the parent inside the child — the inverted form. Benchmark
+// episodes reproduced both shapes exactly: models copy the one example on the
+// card they fetch, and cross-source is the worst category on the board.
+func TestRemoteJoinCardsTeachTheNestedRoute(t *testing.T) {
+	snap := Build(&MetadataSnapshot{
+		Databases: []MetadataDatabase{{ID: "app", Name: "app", Type: "sqlite"}},
+		Tables: []MetadataTable{
+			{ID: "app:main.accounts", DatabaseName: "app", SchemaName: "main", TableName: "accounts", ColumnCount: 3},
+			{ID: "app:main.account_health", DatabaseName: "app", SchemaName: "main", TableName: "account_health", ColumnCount: 4, Type: "remote"},
+		},
+		Columns: []MetadataColumn{
+			{ID: "app:main.accounts.id", TableID: "app:main.accounts", ColumnName: "id", Ordinal: 1},
+			{ID: "app:main.accounts.name", TableID: "app:main.accounts", ColumnName: "name", Ordinal: 2},
+			{ID: "app:main.accounts.plan", TableID: "app:main.accounts", ColumnName: "plan", Ordinal: 3},
+			{ID: "app:main.account_health.account_id", TableID: "app:main.account_health", ColumnName: "account_id", Ordinal: 1},
+			{ID: "app:main.account_health.health", TableID: "app:main.account_health", ColumnName: "health", Ordinal: 2},
+			{ID: "app:main.account_health.open_risk_count", TableID: "app:main.account_health", ColumnName: "open_risk_count", Ordinal: 3},
+		},
+		Relationships: []MetadataRelationship{{
+			ID:            "app:main.account_health.__account_health_id->app:main.accounts.id",
+			FromTableName: "account_health",
+			FromColumnID:  "app:main.account_health.__account_health_id",
+			ToTableName:   "accounts",
+			ToColumnID:    "app:main.accounts.id",
+			Source:        "remote_join",
+		}},
+	}, nil)
+
+	var tableCard, relCard *Card
+	for i := range snap.Cards {
+		switch {
+		case snap.Cards[i].ID == "table:app:main.account_health":
+			tableCard = &snap.Cards[i]
+		case snap.Cards[i].Kind == "relationship":
+			relCard = &snap.Cards[i]
+		}
+	}
+	if tableCard == nil || relCard == nil {
+		t.Fatal("expected both the join table card and its relationship card")
+	}
+
+	// The table card must not teach a top-level read of a table that has no
+	// rows of its own.
+	if strings.Contains(tableCard.ExamplesJSON, "{ account_health(limit") {
+		t.Fatalf("join table card still teaches the closed route: %s", tableCard.ExamplesJSON)
+	}
+	for _, want := range []string{"accounts(where:", "account_health {", "health"} {
+		if !strings.Contains(tableCard.ExamplesJSON, want) {
+			t.Fatalf("join table example missing %q: %s", want, tableCard.ExamplesJSON)
+		}
+	}
+	if strings.Index(tableCard.ExamplesJSON, "accounts(") > strings.Index(tableCard.ExamplesJSON, "account_health {") {
+		t.Fatalf("the parent must be the outer field: %s", tableCard.ExamplesJSON)
+	}
+
+	// The relationship card must read parent-outward, not child-outward.
+	if strings.Contains(relCard.ExamplesJSON, "{ account_health { accounts") {
+		t.Fatalf("relationship card still teaches the inverted nesting: %s", relCard.ExamplesJSON)
+	}
+	if !strings.Contains(relCard.ExamplesJSON, "{ accounts { account_health") {
+		t.Fatalf("relationship example should nest under the parent: %s", relCard.ExamplesJSON)
+	}
+	// The synthetic join column is deliberately unpublished, so it must never be
+	// the field an example teaches.
+	if strings.Contains(relCard.ExamplesJSON, "__account_health_id") {
+		t.Fatalf("example leaked the synthetic join column: %s", relCard.ExamplesJSON)
+	}
+}
+
+// A remote table without a remote_join relationship is an ordinary remote table
+// and keeps the generic example: the nested form is driven by the join, not by
+// the table being remote.
+func TestRemoteTableWithoutJoinKeepsGenericExample(t *testing.T) {
+	snap := Build(&MetadataSnapshot{
+		Databases: []MetadataDatabase{{ID: "app", Name: "app", Type: "sqlite"}},
+		Tables: []MetadataTable{
+			{ID: "app:main.weather", DatabaseName: "app", SchemaName: "main", TableName: "weather", ColumnCount: 2, Type: "remote"},
+		},
+		Columns: []MetadataColumn{
+			{ID: "app:main.weather.city", TableID: "app:main.weather", ColumnName: "city", Ordinal: 1},
+			{ID: "app:main.weather.temp_c", TableID: "app:main.weather", ColumnName: "temp_c", Ordinal: 2},
+		},
+	}, nil)
+	for i := range snap.Cards {
+		if snap.Cards[i].ID == "table:app:main.weather" {
+			if !strings.Contains(snap.Cards[i].ExamplesJSON, "{ weather(limit: 10)") {
+				t.Fatalf("an unjoined remote table should keep the generic example: %s", snap.Cards[i].ExamplesJSON)
+			}
+			return
+		}
+	}
+	t.Fatal("weather card not found")
+}
