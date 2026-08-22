@@ -22,12 +22,15 @@ func PromptRegistryHash() string {
 		RequiresAllRoots []string `json:"requires_all_roots,omitempty"`
 	}
 	type registrySnapshot struct {
-		AgentSignature              string          `json:"agent_signature"`
-		RuntimeSeedInstructions     string          `json:"runtime_seed_instructions"`
-		ExecutorHandoff             string          `json:"executor_handoff"`
-		RuntimeInstructions         string          `json:"runtime_instructions"`
-		SemanticCatalogInstructions string          `json:"semantic_catalog_instructions"`
-		Skills                      []skillSnapshot `json:"skills"`
+		AgentSignature              string `json:"agent_signature"`
+		RuntimeSeedInstructions     string `json:"runtime_seed_instructions"`
+		ExecutorHandoff             string `json:"executor_handoff"`
+		RuntimeInstructions         string `json:"runtime_instructions"`
+		SemanticCatalogInstructions string `json:"semantic_catalog_instructions"`
+		// ForcedFinalizeSignature is provider-visible prompt text on the
+		// tool-less finalize after actor-step exhaustion.
+		ForcedFinalizeSignature string          `json:"forced_finalize_signature"`
+		Skills                  []skillSnapshot `json:"skills"`
 		// ExecutorExamples are provider-visible prompt content on every actor
 		// step; two eval runs differing only in examples must not share a
 		// prompt-registry hash.
@@ -52,6 +55,7 @@ func PromptRegistryHash() string {
 		ExecutorHandoff:             executorHandoffInstructions,
 		RuntimeInstructions:         runtimeUsageInstructions,
 		SemanticCatalogInstructions: semanticCatalogUsageInstructions,
+		ForcedFinalizeSignature:     finalizeSignature,
 		Skills:                      skills,
 		ExecutorExamples:            executorTrajectoryExamples(),
 	})

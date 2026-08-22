@@ -281,6 +281,7 @@ type Agent struct {
 	runtime       GraphRuntime
 	newClient     ClientFactory
 	newProgram    ProgramFactory
+	newFinalizer  ProgramFactory
 	now           func() time.Time
 	catalogSearch CatalogSearchFeatures
 }
@@ -311,6 +312,14 @@ func newAgent(config Config, rt GraphRuntime, options ...Option) *Agent {
 			// would double the per-step cost for teaching it cannot use.
 			program.Executor.Examples = executorTrajectoryExamples()
 			return program
+		},
+		// The finalizer is a plain single-call generator, deliberately not the
+		// actor program: it exists for the moment the actor loop is out of
+		// steps, so it must not be able to call tools — and a separate factory
+		// keeps test fakes wired to WithProgramFactory from receiving a
+		// surprise second Forward.
+		newFinalizer: func(signature string, options map[string]ax.Value) Program {
+			return finalizeProgram{gen: ax.NewAx(signature, options)}
 		},
 		now: time.Now,
 	}
@@ -350,6 +359,17 @@ func WithProgramFactory(factory ProgramFactory) Option {
 	return func(a *Agent) {
 		if factory != nil {
 			a.newProgram = factory
+		}
+	}
+}
+
+// WithFinalizerFactory overrides the tool-less program used for the forced
+// finalize after actor-step exhaustion. Tests use it; production keeps the
+// default single-call generator.
+func WithFinalizerFactory(factory ProgramFactory) Option {
+	return func(a *Agent) {
+		if factory != nil {
+			a.newFinalizer = factory
 		}
 	}
 }
@@ -533,6 +553,16 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if err != nil {
 		if finalResp, ok := responseFromFinalActionLog(program.GetActionLog(), traceID); ok {
 			return protocol.state.finalize(attachProgramMetadata(finalResp, program, returnTrace)), nil
+		}
+		// An exhausted actor loop with a complete evidence trail is a
+		// finalization failure, not a knowledge failure: 26 of the 36 runaway
+		// episodes on the frozen suite ended with zero violations and the
+		// result already computed — "it had the number and never emitted it".
+		// Spend one tool-less model call turning that evidence into an answer;
+		// the response still passes every normal finalize gate, so an
+		// ungrounded rescue is blocked exactly like an ungrounded answer.
+		if resp, ok := a.forcedFinalize(ctx, client, protocol, program, cfg, req, traceID, returnTrace, err); ok {
+			return resp, nil
 		}
 		return protocol.state.finalize(responseFromError(err, traceID, program, returnTrace)), nil
 	}
@@ -1115,6 +1145,88 @@ func responseFromError(err error, traceID string, program Program, returnTrace b
 
 func isActorStepsExhaustedError(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "actor loop exceeded max steps")
+}
+
+// finalizeSignature is the tool-less program used when the actor loop runs out
+// of steps with a complete evidence trail. It is provider-visible prompt text,
+// so it is part of the prompt registry hash.
+const finalizeSignature = `"No more tool calls are available. Produce the final user-facing answer strictly from the evidence already gathered in this run. Never invent field names, values, or results that do not appear in the evidence; if the evidence does not contain the answer, say exactly what is missing."
+instruction:string "The user's original request.",
+evidence:string "The tool evidence this run gathered before its step budget ran out: the most recent successful execution result, execution summaries, and inspected catalog ids."
+-> answer:string "Final answer grounded only in the evidence."`
+
+// finalizeProgram adapts ax.NewAx — a single-call generator with no actor loop
+// and no tools — to the Program surface so the forced finalize can reuse the
+// factory seam and the usage plumbing. Only Forward and GetChatLog carry data.
+type finalizeProgram struct{ gen *ax.AxGen }
+
+func (p finalizeProgram) Forward(ctx context.Context, client ax.AIClient, values map[string]ax.Value, options map[string]ax.Value) (ax.Value, error) {
+	return p.gen.Forward(ctx, client, values, options)
+}
+func (p finalizeProgram) GetActionLog() ax.Value { return nil }
+func (p finalizeProgram) GetUsage() ax.Value     { return nil }
+func (p finalizeProgram) GetChatLog() ax.Value   { return p.gen.ChatLog }
+func (p finalizeProgram) ExportTrace() ax.Value  { return nil }
+
+// forcedFinalize turns an exhausted-but-evidence-complete run into an answer.
+// It refuses to run unless the protocol state says an answer is ready — seeded,
+// discovery performed, no blocking violation, a successful execution in hand,
+// and no pending required finalization — so it cannot be used to skip a repair
+// the run still owes. On any failure the caller falls through to the original
+// exhaustion error, and the episode stays a runaway.
+func (a *Agent) forcedFinalize(ctx context.Context, client ax.AIClient, protocol *protocolRuntime, program Program, cfg Config, req Request, traceID string, returnTrace bool, err error) (Response, bool) {
+	if a == nil || a.newFinalizer == nil || protocol == nil || protocol.state == nil {
+		return Response{}, false
+	}
+	if !isActorStepsExhaustedError(err) || !protocol.state.answerReadyForCompletion() {
+		return Response{}, false
+	}
+	finalizer := a.newFinalizer(finalizeSignature, map[string]ax.Value{})
+	if finalizer == nil {
+		return Response{}, false
+	}
+	out, ferr := finalizer.Forward(ctx, client, map[string]ax.Value{
+		"instruction": strings.TrimSpace(req.Instruction),
+		"evidence":    protocol.state.finalizeEvidenceDigest(forcedFinalizeEvidenceByteLimit),
+	}, map[string]ax.Value{
+		"structured_output_mode": cfg.StructuredOutputMode,
+	})
+	if ferr != nil {
+		return Response{}, false
+	}
+	answer := strings.TrimSpace(stringValue(mapValue(normalizeValue(out))["answer"]))
+	if answer == "" {
+		return Response{}, false
+	}
+	protocol.state.forcedFinalizeUsed = true
+	resp := Response{Status: StatusAnswered, Answer: answer, TraceID: traceID}
+	resp = attachProgramMetadata(resp, program, returnTrace)
+	resp.Usage = mergedUsage(resp.Usage, usageSummary(finalizer))
+	return protocol.state.finalize(resp), true
+}
+
+// mergedUsage folds the finalizer's single-call usage into the main program's
+// summary so the rescue's tokens are billed to the run rather than vanishing.
+func mergedUsage(base, extra any) any {
+	baseMap, _ := base.(map[string]any)
+	extraMap, _ := extra.(map[string]any)
+	if len(extraMap) == 0 {
+		return base
+	}
+	if len(baseMap) == 0 {
+		return extra
+	}
+	out := make(map[string]any, len(baseMap))
+	for key, value := range baseMap {
+		out[key] = value
+	}
+	for _, key := range []string{"llm_calls", "prompt_tokens", "completion_tokens", "total_tokens"} {
+		sum := floatFromAny(baseMap[key]) + floatFromAny(extraMap[key])
+		if sum != 0 {
+			out[key] = int64(sum)
+		}
+	}
+	return out
 }
 
 func isNoRuntimeCodeError(err error) bool {

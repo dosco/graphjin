@@ -757,6 +757,15 @@ func callProgramToolError(program *fakeProgram, name string, args map[string]ax.
 	return tool.Handler(args)
 }
 
+func responseHasErrorContaining(resp Response, fragment string) bool {
+	for _, e := range resp.Errors {
+		if strings.Contains(e.Message, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
 func responseHasProtocolError(resp Response, code string) bool {
 	for _, item := range resp.Errors {
 		if item.Extensions != nil && item.Extensions["code"] == code {
@@ -1911,5 +1920,185 @@ func TestReasoningEffortReachesTheProvider(t *testing.T) {
 		Provider: "deepseek", Model: "deepseek-v4-flash", APIKeyEnv: "TEST_REASONING_KEY",
 	}); err != nil {
 		t.Fatalf("client factory without reasoning: %v", err)
+	}
+}
+
+// An exhausted actor loop with a complete evidence trail — discovery done, a
+// successful execution in hand, no blocking violation — used to surface as a
+// bare "actor loop exceeded max steps" error with an empty answer. 26 of the 36
+// runaway episodes on the frozen suite died exactly that way, result computed
+// but never emitted. One tool-less finalize call now turns that evidence into
+// an answer, through the normal finalize gates.
+func TestForcedFinalizeRescuesExhaustedRunWithEvidence(t *testing.T) {
+	program := &fakeProgram{err: errors.New("agent actor loop exceeded max steps")}
+	finalizer := &fakeProgram{output: map[string]ax.Value{"answer": "The invoices are listed: INV-1 (paid)."}}
+	finalizerCalls := 0
+	// The rescue requires a successful execution with data in hand; the plain
+	// fakeRuntime returns none, which is the not-ready case tested below.
+	runner := newAgent(Config{TimeoutSeconds: 5}, &successfulExecutionRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "table:app:main.invoices"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{"query": `query { invoices { id } }`})
+			}
+			return program
+		}),
+		WithFinalizerFactory(func(signature string, _ map[string]ax.Value) Program {
+			finalizerCalls++
+			if signature != finalizeSignature {
+				t.Fatalf("finalizer signature = %q", signature)
+			}
+			return finalizer
+		}),
+	)
+
+	resp, err := runner.Run(context.Background(), Request{Instruction: "show the invoices"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if finalizerCalls != 1 {
+		t.Fatalf("finalizer calls = %d, want 1", finalizerCalls)
+	}
+	if resp.Status != StatusAnswered || resp.Answer != "The invoices are listed: INV-1 (paid)." {
+		t.Fatalf("rescued response = %q / %q: %+v", resp.Status, resp.Answer, resp.Errors)
+	}
+	for _, e := range resp.Errors {
+		if strings.Contains(e.Message, "actor loop exceeded max steps") {
+			t.Fatalf("rescued run must not carry the exhaustion error: %+v", resp.Errors)
+		}
+	}
+	evidence, _ := json.Marshal(resp.Evidence)
+	if !strings.Contains(string(evidence), `"forced_finalize":true`) {
+		t.Fatalf("rescue must be marked in evidence, got %s", evidence)
+	}
+	// The finalizer's evidence input carries the run's last execution.
+	evidenceInput, _ := finalizer.forwardValues["evidence"].(string)
+	if !strings.Contains(evidenceInput, "last_execution") {
+		t.Fatalf("finalizer evidence input = %q", evidenceInput)
+	}
+	// The rescue's tokens are billed to the run: both fakes carry one
+	// 8/4/12-token chat entry, so the merged usage doubles.
+	usage, _ := resp.Usage.(map[string]any)
+	if floatFromAny(usage["total_tokens"]) != 24 || floatFromAny(usage["llm_calls"]) != 2 {
+		t.Fatalf("merged usage = %+v", usage)
+	}
+}
+
+// Without a successful execution in hand the rescue must not run: there is no
+// evidence to answer from, and the exhaustion error is the honest outcome.
+func TestForcedFinalizeDeclinesWhenAnswerNotReady(t *testing.T) {
+	program := &fakeProgram{err: errors.New("agent actor loop exceeded max steps")}
+	finalizerCalls := 0
+	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "help:discovery"})
+			}
+			return program
+		}),
+		WithFinalizerFactory(func(string, map[string]ax.Value) Program {
+			finalizerCalls++
+			return &fakeProgram{output: map[string]ax.Value{"answer": "made up"}}
+		}),
+	)
+	resp, err := runner.Run(context.Background(), Request{Instruction: "how many invoices"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if finalizerCalls != 0 {
+		t.Fatal("finalizer must not run without a successful execution")
+	}
+	if resp.Status != StatusError || !responseHasErrorContaining(resp, "actor loop exceeded max steps") {
+		t.Fatalf("exhaustion must survive: %q %+v", resp.Status, resp.Errors)
+	}
+}
+
+// A finalizer failure falls through to the original error path unchanged.
+func TestForcedFinalizeFailureKeepsExhaustionError(t *testing.T) {
+	program := &fakeProgram{err: errors.New("agent actor loop exceeded max steps")}
+	runner := newAgent(Config{TimeoutSeconds: 5}, &successfulExecutionRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "table:app:main.invoices"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{"query": `query { invoices { id } }`})
+			}
+			return program
+		}),
+		WithFinalizerFactory(func(string, map[string]ax.Value) Program {
+			return &fakeProgram{err: errors.New("finalizer transport failed")}
+		}),
+	)
+	resp, err := runner.Run(context.Background(), Request{Instruction: "show the invoices"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusError || !responseHasErrorContaining(resp, "actor loop exceeded max steps") {
+		t.Fatalf("finalizer failure must preserve the exhaustion error: %q %+v", resp.Status, resp.Errors)
+	}
+}
+
+// The rescue passes the same grounding gate as any answer: a rescued response
+// citing a field the run never observed is blocked, not published.
+func TestForcedFinalizeUngroundedAnswerIsBlocked(t *testing.T) {
+	program := &fakeProgram{err: errors.New("agent actor loop exceeded max steps")}
+	runner := newAgent(Config{TimeoutSeconds: 5}, &successfulExecutionRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "table:app:main.invoices"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{"query": `query { invoices { id } }`})
+			}
+			return program
+		}),
+		WithFinalizerFactory(func(string, map[string]ax.Value) Program {
+			return &fakeProgram{output: map[string]ax.Value{"answer": "The sla_window field says everything is fine."}}
+		}),
+	)
+	resp, err := runner.Run(context.Background(), Request{Instruction: "show the invoices"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.Status != StatusBlocked || !responseHasProtocolError(resp, "ungrounded_answer_fields") {
+		t.Fatalf("ungrounded rescue must be blocked: %q %+v", resp.Status, resp.Errors)
+	}
+}
+
+// The rescue cannot bypass method discipline: a "how many" instruction with
+// only a row list in evidence still owes a database-side computation, and the
+// pending-finalization gate keeps the finalizer from answering around it.
+func TestForcedFinalizeDeclinesWhilePendingDatabaseComputation(t *testing.T) {
+	program := &fakeProgram{err: errors.New("agent actor loop exceeded max steps")}
+	finalizerCalls := 0
+	runner := newAgent(Config{TimeoutSeconds: 5}, &successfulExecutionRuntime{},
+		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
+		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
+			program.options = options
+			program.onForward = func(p *fakeProgram) {
+				callProgramTool(t, p, "query_catalog", map[string]ax.Value{"id": "table:app:main.invoices"})
+				callProgramTool(t, p, "execute_graphql", map[string]ax.Value{"query": `query { invoices { id } }`})
+			}
+			return program
+		}),
+		WithFinalizerFactory(func(string, map[string]ax.Value) Program {
+			finalizerCalls++
+			return &fakeProgram{output: map[string]ax.Value{"answer": "There are 1."}}
+		}),
+	)
+	resp, err := runner.Run(context.Background(), Request{Instruction: "how many invoices are there"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if finalizerCalls != 0 {
+		t.Fatal("finalizer must not run while a database computation is still owed")
+	}
+	if resp.Status != StatusError || !responseHasErrorContaining(resp, "actor loop exceeded max steps") {
+		t.Fatalf("pending computation must preserve the exhaustion error: %q", resp.Status)
 	}
 }
