@@ -44,6 +44,9 @@ func TestEvalCommandSurfaceAndContextualFlags(t *testing.T) {
 	if bench.Flags().Lookup("scale") == nil || bench.Flags().Lookup("seed") == nil || bench.Flags().Lookup("public") == nil || bench.Flags().Lookup("resume") == nil || bench.Flags().Lookup("restart") == nil {
 		t.Fatal("bench is missing scale, seed, public, or resume flags")
 	}
+	if bench.Flags().Lookup("auto-resume") == nil || bench.Flags().Lookup("auto-resume-attempts") == nil {
+		t.Fatal("bench is missing auto-resume flags")
+	}
 	for _, name := range []string{"run", "baseline"} {
 		child, _, err := command.Find([]string{name})
 		if err != nil || child.Flags().Lookup("resume") == nil || child.Flags().Lookup("restart") == nil {
@@ -631,7 +634,7 @@ func TestEvalResumeDataAnchorPinsTheIncompleteRun(t *testing.T) {
 
 	yesterday := gjeval.RunManifest{
 		RunID: "20260818T171305.793809000Z-a7e60233", Status: gjeval.RunStatusEnvironmentFailed,
-		UpdatedAt: time.Date(2026, 8, 18, 23, 59, 0, 0, time.UTC),
+		UpdatedAt:          time.Date(2026, 8, 18, 23, 59, 0, 0, time.UTC),
 		DatasetFingerprint: gjeval.DatasetFingerprint{CatalogHash: "catalog", DataAnchor: "2026-08-18", SeedManifestHash: "seed"},
 	}
 	if _, err := store.WriteManifest(yesterday); err != nil {

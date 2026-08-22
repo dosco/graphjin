@@ -47,14 +47,16 @@ func (e *evalExitError) Error() string {
 func (e *evalExitError) Unwrap() error { return e.Err }
 
 type evalCLIOptions struct {
-	Demo        bool
-	Remote      bool
-	Yes         bool
-	JSON        bool
-	Debug       bool
-	ResumeRunID string
-	Restart     bool
-	Concurrency int
+	Demo               bool
+	Remote             bool
+	Yes                bool
+	JSON               bool
+	Debug              bool
+	ResumeRunID        string
+	Restart            bool
+	Concurrency        int
+	AutoResume         bool
+	AutoResumeAttempts int
 }
 
 func evalCmd() *cobra.Command {
@@ -345,6 +347,11 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 			if scale <= 0 {
 				return errors.New("--scale must be positive")
 			}
+			if opts.AutoResume && !opts.Yes {
+				// Every resume re-runs the traffic approval. An unattended loop
+				// that parks on a prompt at 3am is worse than no loop at all.
+				return errors.New("--auto-resume runs unattended across provider outages; approve provider traffic up front with --yes")
+			}
 			policy, err := evalResumePolicy(opts)
 			if err != nil {
 				return err
@@ -384,22 +391,37 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			prepared, err := (gjeval.Runner{Client: evalAgentClient(status)}).Prepare(ctx, *suite, instance, gjeval.RunOptions{
-				Mode: gjeval.RunModeBenchmark, Intent: gjeval.RunIntentBench, Repeats: gjeval.DefaultRepeats, Seed: seed,
-				Provenance: evalProvenance(instance, seed, status), Baseline: baseline, Store: store,
-				ResumePolicy: policy, ResumeRunID: opts.ResumeRunID, BinaryFingerprint: evalBinaryFingerprint(),
-				InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed), Concurrency: opts.Concurrency,
-			})
-			if err != nil {
-				return evalEnvironmentError(err)
-			}
-			defer prepared.Close() //nolint:errcheck
-			if preview := prepared.Preview(); preview.MaximumProviderAttempts > 0 {
-				if err := approveProviderTraffic(cmd, opts.Yes, preview.String()); err != nil {
-					return err
+			// One attempt owns one PreparedRun. The run lock is released by
+			// Close, so scoping it here — rather than deferring to the end of
+			// the command — is what lets a later attempt resume the same run.
+			// The instance deliberately stays alive across attempts: restarting
+			// it would reboot the demo and shift its date-anchored seed data,
+			// changing the dataset fingerprint the resume must match.
+			attempt := func(ctx context.Context, policy gjeval.ResumePolicy, resumeRunID string) (*gjeval.Report, error) {
+				prepared, err := (gjeval.Runner{Client: evalAgentClient(status)}).Prepare(ctx, *suite, instance, gjeval.RunOptions{
+					Mode: gjeval.RunModeBenchmark, Intent: gjeval.RunIntentBench, Repeats: gjeval.DefaultRepeats, Seed: seed,
+					Provenance: evalProvenance(instance, seed, status), Baseline: baseline, Store: store,
+					ResumePolicy: policy, ResumeRunID: resumeRunID, BinaryFingerprint: evalBinaryFingerprint(),
+					InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed), Concurrency: opts.Concurrency,
+				})
+				if err != nil {
+					return nil, evalEnvironmentError(err)
 				}
+				defer prepared.Close() //nolint:errcheck
+				if preview := prepared.Preview(); preview.MaximumProviderAttempts > 0 {
+					if err := approveProviderTraffic(cmd, opts.Yes, preview.String()); err != nil {
+						return nil, err
+					}
+				}
+				return prepared.Execute(ctx)
 			}
-			report, err := prepared.Execute(ctx)
+			report, err := runAutoResumeBench(ctx, autoResumeConfig{
+				Enabled:     opts.AutoResume,
+				MaxAttempts: opts.AutoResumeAttempts,
+				Store:       store,
+				Provider:    status.Provider,
+				Stderr:      cmd.ErrOrStderr(),
+			}, policy, opts.ResumeRunID, attempt)
 			if err != nil {
 				if report != nil {
 					printEvalReport(cmd, opts, report, store)
@@ -413,6 +435,10 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 	cmd.Flags().IntVar(&scale, "scale", 100, "number of verified generated benchmark tasks")
 	cmd.Flags().Int64Var(&seed, "seed", 23, "deterministic generator and rollout seed")
 	cmd.Flags().BoolVar(&public, "public", false, "run the frozen, reproducible public benchmark suite")
+	cmd.Flags().BoolVar(&opts.AutoResume, "auto-resume", false,
+		"resume this run automatically when the provider stops it for a transient reason (timeout, rate limit, transport fault, 5xx); requires --yes")
+	cmd.Flags().IntVar(&opts.AutoResumeAttempts, "auto-resume-attempts", defaultAutoResumeAttempts,
+		"how many times --auto-resume may resume before giving up")
 	addEvalResumeFlags(cmd, opts)
 	return cmd
 }
@@ -1030,6 +1056,14 @@ func evalInvocationArgs(opts *evalCLIOptions, projectPath string, scale int, see
 	}
 	if opts.Concurrency > 1 {
 		args = append(args, "--concurrency", strconv.Itoa(opts.Concurrency))
+	}
+	if opts.AutoResume {
+		// The printed resume command is what an operator retypes after a halt;
+		// it should carry the same unattended behaviour the run started with.
+		args = append(args, "--auto-resume")
+		if opts.AutoResumeAttempts > 0 && opts.AutoResumeAttempts != defaultAutoResumeAttempts {
+			args = append(args, "--auto-resume-attempts", strconv.Itoa(opts.AutoResumeAttempts))
+		}
 	}
 	return args
 }
