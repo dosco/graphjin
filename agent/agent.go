@@ -553,7 +553,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	})
 	if err != nil {
 		if finalResp, ok := responseFromFinalActionLog(program.GetActionLog(), traceID); ok {
-			return protocol.state.finalize(attachProgramMetadata(finalResp, program, returnTrace)), nil
+			return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, attachProgramMetadata(finalResp, program, returnTrace)), nil
 		}
 		// An exhausted actor loop with a complete evidence trail is a
 		// finalization failure, not a knowledge failure: 26 of the 36 runaway
@@ -565,13 +565,13 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		if resp, ok := a.forcedFinalize(ctx, client, protocol, program, cfg, req, traceID, returnTrace, err); ok {
 			return resp, nil
 		}
-		return protocol.state.finalize(responseFromError(err, traceID, program, returnTrace)), nil
+		return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, responseFromError(err, traceID, program, returnTrace)), nil
 	}
 	resp = responseFromValue(output, traceID)
 	if resp.Status == "" {
 		resp.Status = StatusAnswered
 	}
-	return protocol.state.finalize(attachProgramMetadata(resp, program, returnTrace)), nil
+	return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, attachProgramMetadata(resp, program, returnTrace)), nil
 }
 
 func DefaultClientFactory(cfg Config) (ax.AIClient, error) {
@@ -1169,6 +1169,72 @@ func (p finalizeProgram) GetUsage() ax.Value     { return nil }
 func (p finalizeProgram) GetChatLog() ax.Value   { return p.gen.ChatLog }
 func (p finalizeProgram) ExportTrace() ax.Value  { return nil }
 
+// ungroundedRewriteSignature restates an answer the grounding gate rejected.
+// The gate is right to fire — an identifier absent from the evidence is how a
+// confident wrong answer looks — but rejecting the whole answer over one
+// invented label throws away correct work: of fourteen episodes blocked this way
+// in one run, four had the right result and one had already completed its write.
+// One restatement costs a call and saves the finding.
+const ungroundedRewriteSignature = `"The draft answer named identifiers that do not appear in this run's tool evidence, so it was rejected. Restate the answer using only what the evidence contains. Report values and states in plain language; never reuse a rejected identifier or invent a field name. If the evidence does not actually contain the answer, say plainly what is missing instead of restating around it."
+instruction:string "The user's original request.",
+evidence:string "The tool evidence this run gathered: the most recent successful execution result, execution summaries, and inspected catalog ids.",
+draft_answer:string "The rejected draft answer.",
+ungrounded_terms:string "The identifiers the draft named that the evidence does not contain."
+-> answer:string "The restated answer, grounded only in the evidence."`
+
+// finalizeWithGroundedRewrite finalizes a response and, when the only thing
+// standing between it and an answer is a grounding rejection, spends one
+// tool-less call restating it. The rewrite re-enters the same finalize, so every
+// gate runs again: a restatement that invents another identifier is blocked
+// exactly like the draft was, and the one-shot latch means it cannot ping-pong.
+func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AIClient, protocol *protocolRuntime, cfg Config, req Request, resp Response) Response {
+	if protocol == nil || protocol.state == nil {
+		return resp
+	}
+	draft := resp
+	finalized := protocol.state.finalize(resp)
+	if finalized.Status != StatusBlocked ||
+		a == nil || a.newFinalizer == nil || client == nil ||
+		protocol.state.ungroundedRewriteUsed ||
+		!protocol.state.onlyBlockingViolationIs("ungrounded_answer_fields") {
+		return finalized
+	}
+	tokens := protocol.state.ungroundedAnswerViolationTokens()
+	if len(tokens) == 0 || strings.TrimSpace(draft.Answer) == "" {
+		return finalized
+	}
+	// Spend the attempt before making the call: a rewrite lost to a transport
+	// failure has still had its chance, and the latch is what bounds the loop.
+	protocol.state.ungroundedRewriteUsed = true
+	finalizer := a.newFinalizer(ungroundedRewriteSignature, map[string]ax.Value{})
+	if finalizer == nil {
+		return finalized
+	}
+	out, err := finalizer.Forward(ctx, client, map[string]ax.Value{
+		"instruction":      strings.TrimSpace(req.Instruction),
+		"evidence":         protocol.state.finalizeEvidenceDigest(forcedFinalizeEvidenceByteLimit),
+		"draft_answer":     draft.Answer,
+		"ungrounded_terms": strings.Join(tokens, ", "),
+	}, map[string]ax.Value{
+		"structured_output_mode": cfg.StructuredOutputMode,
+	})
+	if err != nil {
+		return finalized
+	}
+	answer := strings.TrimSpace(stringValue(mapValue(normalizeValue(out))["answer"]))
+	if answer == "" {
+		return finalized
+	}
+	protocol.state.resolveUngroundedAnswerViolation()
+	// Re-finalize the draft rather than the blocked response: the blocked one
+	// carries the rejection's errors, its refusal, and already-merged evidence,
+	// and finalizing it again would wrap all three a second time.
+	rewritten := draft
+	rewritten.Answer = answer
+	rewritten.Usage = mergedUsage(rewritten.Usage, usageSummary(finalizer))
+	return protocol.state.finalize(rewritten)
+}
+
 // forcedFinalize turns an exhausted-but-evidence-complete run into an answer.
 // It refuses to run unless the protocol state says an answer is ready — seeded,
 // discovery performed, no blocking violation, a successful execution in hand,
@@ -1203,7 +1269,7 @@ func (a *Agent) forcedFinalize(ctx context.Context, client ax.AIClient, protocol
 	resp := Response{Status: StatusAnswered, Answer: answer, TraceID: traceID}
 	resp = attachProgramMetadata(resp, program, returnTrace)
 	resp.Usage = mergedUsage(resp.Usage, usageSummary(finalizer))
-	return protocol.state.finalize(resp), true
+	return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, resp), true
 }
 
 // mergedUsage folds the finalizer's single-call usage into the main program's
