@@ -140,6 +140,22 @@ func unblockStepsForViolation(s *discoveryState, v protocolViolation) []unblockS
 		if len(tables) == 0 {
 			return []unblockStepSpec{catalogSearchStep("mutation patterns and target table shape", "Find the mutation pattern and target table detail before executing a mutation.")}
 		}
+		// The in-run repair names exact catalog ids via mutationEvidenceNext;
+		// the refusal used to offer a weaker full-text search for the same
+		// prerequisite. Surface the same exact-id step, with the searches kept
+		// as the fallback when no state is available to resolve ids.
+		if s != nil {
+			next := s.mutationEvidenceNext(tables)
+			tool, _ := next["recommended_tool"].(string)
+			nextArgs, _ := next["args"].(map[string]any)
+			reason, _ := next["reason"].(string)
+			if tool != "" && len(nextArgs) != 0 {
+				if reason == "" {
+					reason = "Gather the named mutation-shape evidence before executing the write."
+				}
+				return []unblockStepSpec{{step: UnblockStep{Tool: tool, Args: nextArgs, Reason: reason}}}
+			}
+		}
 		steps := make([]unblockStepSpec, 0, len(tables))
 		for _, table := range tables {
 			steps = append(steps, catalogSearchStep(

@@ -825,8 +825,16 @@ func TestRunBlocksUnverifiedMutation(t *testing.T) {
 	if len(resp.Refusal.Unblock) == 0 || resp.Refusal.Unblock[0].Tool != toolQueryCatalog {
 		t.Fatalf("missing mutation unblock step: %+v", resp.Refusal.Unblock)
 	}
-	if search := resp.Refusal.Unblock[0].Args["search"]; !strings.Contains(fmt.Sprint(search), "products") {
-		t.Fatalf("mutation unblock search = %v, want products", search)
+	// The refusal now surfaces the same step the in-run repair computes. With no
+	// catalog id registered for the target in this fake, that is the exact
+	// kind-enumeration fallback, with the table named in the reason — not the
+	// old free-text search.
+	step := resp.Refusal.Unblock[0]
+	if kind := fmt.Sprint(step.Args["kind"]); kind != "table" {
+		t.Fatalf("mutation unblock args = %v, want the table enumeration fallback", step.Args)
+	}
+	if !strings.Contains(step.Reason, "products") {
+		t.Fatalf("mutation unblock reason = %q, want it to name the target table", step.Reason)
 	}
 	for _, call := range rt.calls {
 		if call == "execute_graphql" {
@@ -1072,7 +1080,18 @@ func TestAnnotationMutationInputFieldsDistinguishVariableEditFromApproval(t *tes
 
 func TestRunFiltersRefusalUnblockStepsByCapabilityProfile(t *testing.T) {
 	program := &fakeProgram{output: map[string]ax.Value{"status": StatusAnswered, "answer": "done"}}
-	runner := newAgent(Config{TimeoutSeconds: 5}, &fakeRuntime{},
+	// The security/runtime prerequisite is normally supplied rather than
+	// refused now; deny the two help cards so the refusal this test filters
+	// still occurs.
+	rt := &fakeRuntime{catalogOverride: func(args map[string]any) any {
+		for _, id := range detailIDsFromArgs(args) {
+			if id == "help:security" || id == "help:runtime" {
+				return map[string]any{"count": 0, "cards": []any{}}
+			}
+		}
+		return fakeCatalogResult(args)
+	}}
+	runner := newAgent(Config{TimeoutSeconds: 5}, rt,
 		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
 		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
 			program.options = options
