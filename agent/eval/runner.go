@@ -660,6 +660,33 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 // one-minute wait would have carried through.
 // An explicitly configured RetryDelay wins outright — tests and operators set it
 // deliberately. The window-scale default applies only when nothing is configured.
+// TransientEnvironmentCode reports whether a run-level halt is worth resuming.
+// The transient set is the one docs/GRAPHJIN-EVAL.md already promises callers:
+// timeouts, rate limits, transport faults, and provider 5xx are weather, and a
+// run that waits them out finishes with every completed episode intact.
+//
+// Everything else is terminal by design. Quota and an unavailable model need a
+// human. So does auth — the slot layer already grants it one extra attempt for
+// the stray 403 providers emit while billing state propagates
+// (see executeSlot), so a code that survives to a run-level halt is a real
+// credential problem. reset/setup/oracle failures are local, not weather, and
+// an interrupt is a deliberate stop that must never be undone by a retry loop.
+//
+// Deliberately not providerUsageUnknown: that set answers "were tokens
+// counted", excludes rate limits, and would refuse to resume the single most
+// common reason a long run stops.
+func TransientEnvironmentCode(code string) bool {
+	switch strings.TrimSpace(code) {
+	case gjagent.ErrorCodeProviderTimeout,
+		gjagent.ErrorCodeProviderRateLimit,
+		gjagent.ErrorCodeProviderTransport,
+		gjagent.ErrorCodeProviderServer:
+		return true
+	default:
+		return false
+	}
+}
+
 func retryDelayForCode(configured time.Duration, code string) time.Duration {
 	if configured > 0 {
 		return configured

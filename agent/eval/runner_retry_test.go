@@ -34,3 +34,31 @@ func TestRetryDelayForCode(t *testing.T) {
 		}
 	}
 }
+
+// The transient set decides whether an unattended run waits out a provider or
+// stops for a human. Quota and credentials must never be retried into: the
+// afternoon is wasted and the real problem stays hidden. Auth in particular is
+// terminal here even though the slot layer retries it once — a code that
+// survives to a run-level halt has already had its billing-propagation grace.
+func TestTransientEnvironmentCode(t *testing.T) {
+	for code, want := range map[string]bool{
+		gjagent.ErrorCodeProviderTimeout:          true,
+		gjagent.ErrorCodeProviderRateLimit:        true,
+		gjagent.ErrorCodeProviderTransport:        true,
+		gjagent.ErrorCodeProviderServer:           true,
+		gjagent.ErrorCodeProviderQuota:            false,
+		gjagent.ErrorCodeProviderAuth:             false,
+		gjagent.ErrorCodeProviderModelUnavailable: false,
+		gjagent.ErrorCodeAgentError:               false,
+		"reset_failed":                            false,
+		"setup_failed":                            false,
+		"oracle_failed":                           false,
+		"interrupted":                             false,
+		"":                                        false,
+		"  provider_timeout  ":                    true,
+	} {
+		if got := TransientEnvironmentCode(code); got != want {
+			t.Errorf("TransientEnvironmentCode(%q) = %v, want %v", code, got, want)
+		}
+	}
+}

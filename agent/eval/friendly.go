@@ -113,6 +113,13 @@ func metricCount(ratio float64, total int) int {
 	return min(total, max(0, value))
 }
 
+// FriendlyStopReason renders why a run stopped in the same prose the partial
+// report uses, so an operator-facing resume loop and the report it will
+// eventually print never describe one halt two different ways.
+func FriendlyStopReason(code, provider string) string {
+	return friendlyStopReason(code, provider)
+}
+
 func friendlyStopReason(code, provider string) string {
 	name := friendlyProviderName(provider)
 	switch strings.TrimSpace(code) {
