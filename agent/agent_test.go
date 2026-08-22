@@ -360,6 +360,57 @@ func TestClarificationErrorUsesQuestionAsAnswer(t *testing.T) {
 	}
 }
 
+// askClarification("plain question") packs a bare string (or a list holding
+// one) as args. That shape leaked the raw {type, args, __order} envelope into
+// the user-facing answer on 15 of 22 clarification episodes in one benchmark
+// run, because clarificationQuestion had no string case.
+func TestClarificationErrorUnwrapsBareStringArgs(t *testing.T) {
+	for name, payload := range map[string]any{
+		"string args": map[string]any{
+			"__order": []any{"args", "type"},
+			"args":    "Which invoices table did you mean?",
+			"type":    "askClarification",
+		},
+		"list of strings": map[string]any{
+			"__order": []any{"args", "type"},
+			"args":    []any{"Which invoices table did you mean?"},
+			"type":    "askClarification",
+		},
+	} {
+		resp := responseFromError(ax.AxError{Category: "clarification", Payload: payload}, "agent-test", nil, false)
+		if resp.Answer != "Which invoices table did you mean?" {
+			t.Fatalf("%s: answer = %q", name, resp.Answer)
+		}
+	}
+}
+
+// Even a question-less payload must never surface the tool-call envelope: the
+// fallback serializes only the args content with __order stripped.
+func TestClarificationFallbackNeverLeaksEnvelope(t *testing.T) {
+	resp := responseFromError(ax.AxError{
+		Category: "clarification",
+		Payload: map[string]any{
+			"__order": []any{"args", "type"},
+			"args": map[string]any{
+				"__order": []any{"missing"},
+				"missing": "the table name",
+			},
+			"type": "askClarification",
+		},
+	}, "agent-test", nil, false)
+	if resp.Answer == "" {
+		t.Fatal("fallback answer must not be empty")
+	}
+	for _, banned := range []string{"askClarification", "__order", `"type"`} {
+		if strings.Contains(resp.Answer, banned) {
+			t.Fatalf("answer leaked envelope token %q: %q", banned, resp.Answer)
+		}
+	}
+	if !strings.Contains(resp.Answer, "the table name") {
+		t.Fatalf("fallback should keep the args content: %q", resp.Answer)
+	}
+}
+
 func TestAgentSignatureIsAcceptedByAx(t *testing.T) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
