@@ -99,7 +99,11 @@
               <td data-label="Model"><strong>{{ $run.label }}</strong><small>{{ $run.provider | default "—" }} · GraphJin build {{ $run.release | default "unversioned" }}</small>{{ if $entry.prior }}<small class="benchmark-prior-tag">{{ $run.generation }} cohort</small>{{ end }}{{ with $run.notes }}<small class="benchmark-run-notes">{{ . }}</small>{{ end }}</td>
               <td data-label="Provider tokens / attempt">{{ if and (gt $providerTokens 0) (gt $episodes 0) }}<strong>{{ printf "%.1fk" (div (div (float $providerTokens) (float $episodes)) 1000) }}</strong><small>{{ printf "%.2fM total" (div (float $providerTokens) 1000000) }}{{ if and (gt $promptTokens 0) (gt $completionTokens 0) }} · {{ printf "%.2fM in / %.2fM out" (div (float $promptTokens) 1000000) (div (float $completionTokens) 1000000) }}{{ end }}</small>{{ else }}—{{ end }}</td>
               <td data-label="Latency / attempt">{{ with $run.latency_p50_ms }}<strong>{{ printf "%.1fs p50" (div (float .) 1000) }}</strong>{{ else }}—{{ end }}{{ with $run.latency_p95_ms }}<small>{{ printf "%.1fs p95" (div (float .) 1000) }}</small>{{ end }}</td>
-              <td data-label="Estimated list cost">{{ with $run.estimated_list_cost_per_task_usd }}<strong>{{ printf "$%.3f / task" (float .) }}</strong>{{ else }}—{{ end }}{{ with $run.estimated_list_cost_usd }}<small>{{ printf "$%.2f full run" (float .) }}{{ if gt $reliablePasses 0 }} · {{ printf "$%.3f / reliable pass" (div (float .) $reliablePasses) }}{{ end }}</small>{{ end }}</td>
+              {{- /* A row whose token accounting had a small gap publishes its measured
+                     cost as a lower bound. Mark it, so the figure is never read as exact. */ -}}
+              {{- $lb := $run.cost_is_lower_bound -}}
+              {{- $lbPrefix := "" -}}{{- if $lb }}{{ $lbPrefix = "≥ " }}{{ end -}}
+              <td data-label="Estimated list cost"{{ if $lb }} title="Lower bound: {{ $run.usage_unknown_attempts | default 0 }} of this run's attempts had unknown token counts, so the true cost is slightly higher."{{ end }}>{{ with $run.estimated_list_cost_per_task_usd }}<strong>{{ $lbPrefix }}{{ printf "$%.3f / task" (float .) }}</strong>{{ else }}—{{ end }}{{ with $run.estimated_list_cost_usd }}<small>{{ $lbPrefix }}{{ printf "$%.2f full run" (float .) }}{{ if gt $reliablePasses 0 }} · {{ $lbPrefix }}{{ printf "$%.3f / reliable pass" (div (float .) $reliablePasses) }}{{ end }}{{ if $lb }} · lower bound{{ end }}</small>{{ end }}</td>
             </tr>
           {{ end }}
         </tbody>
