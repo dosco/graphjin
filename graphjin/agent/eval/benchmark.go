@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 )
 
-const PublicBenchmarkGeneration = "2028.2"
+const PublicBenchmarkGeneration = "2028.3"
 
 type PublicBenchmarkSpec struct {
 	Generation       string  `json:"generation"`
@@ -44,7 +44,7 @@ func PublicBenchmark() PublicBenchmarkSpec {
 // strongest model's run, 7 with ground truth true). v11 also accepts the new
 // decoded text column and splits method_pattern_unmatched out of the
 // client_side_aggregation label so the failure taxonomy stays causal.
-const publicBenchmarkSuiteFingerprint = "b77fb918d9dd40dc7204cc4241d6c763"
+const publicBenchmarkSuiteFingerprint = "9e9a9f53f07a6fc7b691e312a9833c30"
 
 // PublicBenchmarkRollupVersion freezes the capability-rollup mapping below.
 // The board's single recall conflates two different deployment questions —

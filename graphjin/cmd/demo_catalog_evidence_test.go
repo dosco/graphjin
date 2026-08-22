@@ -98,7 +98,7 @@ func TestDemoCatalogServesJoinAndValueEvidence(t *testing.T) {
 		t.Fatalf("status examples should use a sampled value: %s", examples)
 	}
 
-	health := catalogCard("table:app:main.account_health", "id summary edges_json")
+	health := catalogCard("table:app:main.account_health", "id summary edges_json examples_json")
 	if summary, _ := health["summary"].(string); !strings.Contains(summary, "4 columns") {
 		t.Fatalf("account_health should publish its four columns: %q", summary)
 	}
@@ -106,5 +106,15 @@ func TestDemoCatalogServesJoinAndValueEvidence(t *testing.T) {
 	// The arrow arrives as -> or as Go's escaped -\u003e depending on the encoder.
 	if !regexp.MustCompile(`relationship:[^"]*account_health\.__account_health_[^"]*-(>|\\u003e)[^"]*accounts`).MatchString(edges) {
 		t.Fatalf("account_health edges must name its remote-join route: %s", edges)
+	}
+	// The example on this card is the one models copy. It used to show a
+	// top-level read of a table that has no rows of its own, and benchmark
+	// episodes reproduced that shape until their step budgets ran out.
+	examples, _ := health["examples_json"].(string)
+	if strings.Contains(examples, "{ account_health(limit") {
+		t.Fatalf("account_health example still teaches the closed route: %s", examples)
+	}
+	if !strings.Contains(examples, "accounts(where:") || !strings.Contains(examples, "account_health {") {
+		t.Fatalf("account_health example must teach the nested route: %s", examples)
 	}
 }

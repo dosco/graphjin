@@ -1049,6 +1049,16 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 		sort.Slice(cols, func(i, j int) bool { return cols[i].Ordinal < cols[j].Ordinal })
 	}
 
+	// A join-only remote table is reachable only nested under the parent row
+	// carrying its key, so its card must not teach a top-level read. Index the
+	// joins by the table they hang off before building any card.
+	remoteJoins := make(map[string]MetadataRelationship)
+	for _, r := range snapshot.Relationships {
+		if r.Source == "remote_join" {
+			remoteJoins[parentTableID(r.FromColumnID)] = r
+		}
+	}
+
 	for _, t := range snapshot.Tables {
 		cardID := "table:" + t.ID
 		nodeID := "node:" + cardID
@@ -1068,7 +1078,7 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 			RiskLevel:        "low",
 			Confidence:       "high",
 			EvidenceJSON:     mustJSON(t),
-			ExamplesJSON:     tableExamples(t, keyCols),
+			ExamplesJSON:     tableExamples(t, keyCols, remoteJoins, columnsByTable),
 			SuggestedNext:    suggestedNextJSON(opts, "query_catalog", "validate_where_clause"),
 			DetailRef:        cardID,
 		})
@@ -1158,7 +1168,7 @@ func addSchema(out *Snapshot, snapshot *MetadataSnapshot, sampleMode string, opt
 			RiskLevel:        "low",
 			Confidence:       "high",
 			EvidenceJSON:     mustJSON(r),
-			ExamplesJSON:     mustJSON([]string{relationshipExample(r)}),
+			ExamplesJSON:     mustJSON([]string{relationshipExample(r, columnsByTable[parentTableID(r.FromColumnID)])}),
 		})
 		edge := Edge{ID: "edge:" + cardID, FromID: "node:column:" + r.FromColumnID, ToID: "node:column:" + r.ToColumnID, Kind: "references", Summary: summary}
 		if r.Source == "remote_join" {
@@ -2058,7 +2068,15 @@ func columnSummary(c MetadataColumn, sensitive bool, sensitivity string) string 
 	return strings.Join(parts, ", ")
 }
 
-func tableExamples(t MetadataTable, keyCols []MetadataColumn) string {
+func tableExamples(t MetadataTable, keyCols []MetadataColumn, remoteJoins map[string]MetadataRelationship, columnsByTable map[string][]MetadataColumn) string {
+	// A join-only remote table has no rows of its own. The generic example below
+	// would teach a top-level read that can only ever error, and models copy the
+	// one example on the card they fetch: benchmark episodes reproduced this
+	// example's exact shape and spent whole step budgets on the closed route.
+	if join, ok := remoteJoins[t.ID]; ok {
+		parentKeys, _ := keyColumns(columnsByTable[parentTableID(join.ToColumnID)])
+		return mustJSON([]string{remoteJoinNestedExample(t, join, keyCols, parentKeys)})
+	}
 	// A filesystem-backed table's example has to teach the read that matters:
 	// pass key: to fetch one file, select text (decoded) or data (base64) to
 	// inline its content. The generic example below used to be emitted here too,
@@ -2151,7 +2169,60 @@ func columnSuggestedNext(c MetadataColumn) []string {
 	return []string{"query_catalog"}
 }
 
-func relationshipExample(r MetadataRelationship) string {
+// remoteJoinNestedExample teaches the only route into a join-only table: the
+// parent as the outer field, the join nested inside it. The filter placeholder
+// matches the wording the protocol guard uses when it intercepts the top-level
+// form, so the catalog and the guard describe one identical shape.
+func remoteJoinNestedExample(t MetadataTable, join MetadataRelationship, keyCols, parentKeys []MetadataColumn) string {
+	return fmt.Sprintf("{ %s(where: {<filter on %s>}, limit: 10) { %s %s { %s } } }",
+		join.ToTableName, join.ToTableName,
+		exampleFieldList(parentKeys, 3, true),
+		t.TableName,
+		exampleFieldList(keyCols, 4, false),
+	)
+}
+
+// exampleFieldList renders a selection set, optionally leading with id when the
+// table has one — remote tables often do not, and an invented field in the one
+// example a model reads is a trap.
+func exampleFieldList(cols []MetadataColumn, limit int, idFirst bool) string {
+	fields := []string{}
+	if idFirst {
+		for _, c := range cols {
+			if c.ColumnName == "id" {
+				fields = append(fields, "id")
+				break
+			}
+		}
+	}
+	for _, c := range cols {
+		if len(fields) >= limit {
+			break
+		}
+		if !idFirst || c.ColumnName != "id" {
+			fields = append(fields, c.ColumnName)
+		}
+	}
+	if len(fields) == 0 {
+		return "<fields>"
+	}
+	return strings.Join(fields, " ")
+}
+
+func relationshipExample(r MetadataRelationship, fromCols []MetadataColumn) string {
+	if r.Source == "remote_join" {
+		// The generic form below reads from-table outward, which for a remote
+		// join is backwards: it teaches exactly the inverted nesting benchmark
+		// episodes produced, one of them five times in a single run.
+		field := "<fields>"
+		for _, c := range fromCols {
+			if !strings.HasSuffix(c.ColumnName, "_id") {
+				field = c.ColumnName
+				break
+			}
+		}
+		return fmt.Sprintf("{ %s { %s { %s } } }", r.ToTableName, r.FromTableName, field)
+	}
 	return fmt.Sprintf("{ %s { %s { %s } } }", r.FromTableName, r.ToTableName, r.ToColumnName)
 }
 
