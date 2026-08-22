@@ -1126,7 +1126,16 @@ func clarificationAnswer(payload any) string {
 	if question := clarificationQuestion(value); question != "" {
 		return question
 	}
-	if text := stringify(value); strings.TrimSpace(text) != "" {
+	// The payload is ax's raw tool-call envelope {type, args, __order}.
+	// Stringifying it whole put that envelope verbatim into user-facing answers
+	// on 15 of 22 clarification episodes in one benchmark run. Serialize only
+	// the args content, with the __order bookkeeping stripped.
+	if m, ok := value.(map[string]any); ok {
+		if args, exists := m["args"]; exists {
+			value = args
+		}
+	}
+	if text := strings.TrimSpace(stringify(stripOrderKeys(value))); text != "" && text != "{}" && text != "[]" && text != "null" {
 		return text
 	}
 	return "I need a little more detail before I can answer safely."
@@ -1134,6 +1143,11 @@ func clarificationAnswer(payload any) string {
 
 func clarificationQuestion(value any) string {
 	switch v := value.(type) {
+	case string:
+		// askClarification("plain question") arrives with a bare string as args;
+		// without this case the question was unreachable and the whole envelope
+		// leaked through the stringify fallback.
+		return strings.TrimSpace(v)
 	case map[string]any:
 		if question := strings.TrimSpace(stringValue(v["question"])); question != "" {
 			return question
@@ -1151,6 +1165,31 @@ func clarificationQuestion(value any) string {
 		}
 	}
 	return ""
+}
+
+// stripOrderKeys removes the internal "__order" bookkeeping that value
+// normalization attaches to maps, recursively, so a serialized fallback reads
+// as the model's content rather than as a tool-call envelope.
+func stripOrderKeys(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, item := range v {
+			if k == "__order" {
+				continue
+			}
+			out[k] = stripOrderKeys(item)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(v))
+		for _, item := range v {
+			out = append(out, stripOrderKeys(item))
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func attachProgramMetadata(resp Response, program Program, returnTrace bool) Response {
