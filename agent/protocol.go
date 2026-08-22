@@ -156,6 +156,10 @@ type discoveryState struct {
 	// remoteJoinParents maps a join-only remote table to the parent it is served
 	// under, learned from relationship cards whose source is remote_join.
 	remoteJoinParents map[string]string
+	// remoteJoinRepairOffered records which join-only roots already received the
+	// full repair explanation, so a looping model gets the corrected query
+	// without the paragraph a second time.
+	remoteJoinRepairOffered map[string]bool
 	// remoteJoinNoticed keeps the violation record to one per root; the
 	// interception itself repeats, because the intercepted call cannot succeed.
 	remoteJoinNoticed map[string]bool
@@ -950,10 +954,26 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				r.state.remoteJoinNoticed[strings.ToLower(root)] = true
 				r.state.addViolation("remote_join_path_required", err.Error(), "execute_graphql", true, details)
 			}
-			out := recoverableProtocolFailure("remote_join_path_required", err.Error(), "remote_join_path_required",
+			// Describing the shape was not enough: models rewrote the same
+			// closed route sixteen ways in one episode. Hand over the query
+			// instead, the way the value guard hands over a corrected write —
+			// with the model's own filter grafted in when every column it names
+			// belongs to the parent.
+			repaired, grafted := r.remoteJoinRepairedQuery(ctx, query, root, parent)
+			details["repaired_query"] = repaired
+			reason := "Execute next.args.query exactly as given; it queries " + parent + " and returns " + root + " nested inside it."
+			if !grafted {
+				reason += " Fill the filter placeholder from the parent columns it names before executing."
+			}
+			if r.state.remoteJoinRepairSeen(root) {
+				// A repeat on the same root has already been taught the route.
+				reason = "Execute next.args.query exactly as given."
+			}
+			out := recoverableProtocolFailure("remote_join_path_required", err.Error(), "remote_join_repair",
 				map[string]any{
 					"recommended_tool": "execute_graphql",
-					"reason":           "Query " + parent + " and select " + root + " nested inside it; the join carries the filter through the parent row.",
+					"args":             map[string]any{"query": repaired},
+					"reason":           reason,
 				}, details)
 			action := r.state.startAction("model", "execute_graphql", args)
 			r.state.finishAction(action, "execute_graphql", args, out, nil)

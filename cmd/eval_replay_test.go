@@ -252,3 +252,45 @@ func TestReplayValueGuardKeepsRefusingWhileRepairExists(t *testing.T) {
 		t.Errorf("an out-of-vocabulary write with a known repair must stay blocked, got %q", observed.Status)
 	}
 }
+
+// TestReplayCrossSourceJoinIsHandedTheNestedQuery pins the repair against the
+// two recorded cross-source trajectories. rep1 is the runaway: the model
+// resent the same top-level account_health query byte for byte, five times,
+// because the refusal described the nested route in prose and prose was not
+// enough. rep2 is the control — it queries accounts, which is the open route,
+// and must never be intercepted.
+func TestReplayCrossSourceJoinIsHandedTheNestedQuery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded replay integration")
+	}
+
+	t.Run("closed route receives an executable repair", func(t *testing.T) {
+		fixture := loadReplayFixture(t, "cross-source-cross-source-account-health-1-rep1.json")
+		observed := replayFixture(t, fixture)
+		t.Logf("baseline: status=%s turns=%d | replay: status=%s turns=%d violations=%v recovery=%v",
+			fixture.Observed.Status, fixture.Observed.ActorTurns,
+			observed.Status, observed.ActorTurns, observed.ViolationCodes, observed.RecoveryCodes)
+
+		if !observed.HasCode("remote_join_path_required") {
+			t.Fatalf("a top-level join query must still be intercepted: %+v", observed)
+		}
+		// The mechanism under test is that the recovery now carries the corrected
+		// route rather than a description of it.
+		if !observed.HasCode("remote_join_repair") {
+			t.Errorf("the interception should offer the nested query: recovery=%v", observed.RecoveryCodes)
+		}
+	})
+
+	t.Run("open route is left alone", func(t *testing.T) {
+		fixture := loadReplayFixture(t, "cross-source-cross-source-account-health-1-rep2.json")
+		observed := replayFixture(t, fixture)
+		t.Logf("replay: status=%s turns=%d violations=%v", observed.Status, observed.ActorTurns, observed.ViolationCodes)
+
+		// This trajectory queries accounts and gets the field names wrong. That
+		// is an ordinary unknown-column failure; routing it through the join
+		// guard would teach the wrong lesson.
+		if observed.HasCode("remote_join_path_required") {
+			t.Errorf("querying the parent must not trip the join guard: %+v", observed)
+		}
+	})
+}
