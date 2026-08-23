@@ -158,6 +158,10 @@ type discoveryState struct {
 	// securityRuntimeEvidenceSupplied keeps the one-shot fetch of the security
 	// and runtime guidance cards from repeating if the ids ever stop registering.
 	securityRuntimeEvidenceSupplied bool
+	// systemRootDiscoverySupplied keeps the one-shot fetch of a system root's
+	// help contract from repeating; a run that cannot proceed from the supplied
+	// card must fail loudly on the normal refusal instead.
+	systemRootDiscoverySupplied bool
 	// clarificationNudgeUsed keeps the premature-clarification redirect to one
 	// per run: the first ask is redirected to discovery, the second passes
 	// through, so a genuinely needed clarification is delayed by at most one
@@ -954,6 +958,16 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	// surfaced as catalog_detail_ids in the protocol response. Fail here while
 	// the run can recover and name the governed path.
 	if !r.state.hasCatalogDetailEvidence() {
+		// A query whose every root is a gj_* system surface targets a contract
+		// that is fixed and known, so the demanded detail is deterministic: the
+		// run needs the system root's own help card, and which card that is
+		// does not depend on anything the model knows. Supply it once, the way
+		// security and mutation evidence are supplied — a reactive episode gave
+		// up after two of these refusals and reported "no unseen events found"
+		// over an inbox it never read.
+		if supplied, ok := r.supplySystemRootDiscovery(ctx, query, args); ok {
+			return supplied, nil
+		}
 		err := fmt.Errorf("protocol violation: the seed and broad catalog results are not discovery detail; inspect the relevant catalog item with query_catalog({id:\"...\"}) before authoring raw GraphQL.%s", approvedSavedQuerySuffix(r.state))
 		details := map[string]any{
 			"approved_saved_queries": sortedBoolKeys(r.state.savedQueriesDiscovered),
@@ -4750,4 +4764,70 @@ func malformedWatchSubscriptionString(query string) bool {
 		}
 	}
 	return true // unterminated
+}
+
+// systemRootHelpIDs names the help contract each raw-queryable gj_* surface is
+// documented by. Roots absent from this map get no supply and keep the normal
+// discovery refusal.
+var systemRootHelpIDs = map[string]string{
+	systemRootWatch:      "help:watches",
+	systemRootWatchEvent: "help:watches",
+	"gj_task":            "help:tasks",
+	"gj_artifact":        "help:artifacts",
+}
+
+// supplySystemRootDiscovery discharges the raw-GraphQL discovery prerequisite
+// for a query that touches only gj_* system roots, by fetching those roots'
+// help contracts itself and handing them back. The requirement survives — the
+// evidence is recorded exactly as a model-driven lookup would record it — and
+// it is supplied at most once per run so a genuinely stuck run still fails
+// loudly.
+func (r *protocolRuntime) supplySystemRootDiscovery(ctx context.Context, query string, queryArgs map[string]any) (any, bool) {
+	if r == nil || r.state == nil || r.state.systemRootDiscoverySupplied {
+		return nil, false
+	}
+	roots := QueryRootFields(query)
+	for _, root := range MutationRootFields(query) {
+		roots = appendUniqueString(roots, root)
+	}
+	if len(roots) == 0 {
+		return nil, false
+	}
+	ids := []any{}
+	seen := map[string]bool{}
+	for _, root := range roots {
+		fold := strings.ToLower(strings.TrimSpace(root))
+		help, ok := systemRootHelpIDs[fold]
+		if !ok {
+			return nil, false
+		}
+		if !seen[help] {
+			seen[help] = true
+			ids = append(ids, help)
+		}
+		if table := r.state.catalogIDForTable(fold); table != "" && !seen[table] {
+			seen[table] = true
+			ids = append(ids, table)
+		}
+	}
+	args := map[string]any{"ids": ids}
+	r.addNamespace(args)
+	out, err := r.base.QueryCatalog(ctx, args)
+	if err != nil || len(catalogCards(out)) == 0 {
+		return nil, false
+	}
+	r.state.recordCatalog(args, out, false)
+	if !r.state.hasCatalogDetailEvidence() {
+		return nil, false
+	}
+	r.state.systemRootDiscoverySupplied = true
+	result := map[string]any{
+		"graphjin_protocol": "system_root_discovery_supplied",
+		"message":           "GraphJin fetched the system-root contract this operation requires. Author the operation from the returned guidance, then execute it.",
+		"cards":             normalizeValue(mapValue(normalizeValue(out))["cards"]),
+		"next":              "Re-execute the operation now that the system-root contract has been inspected.",
+	}
+	action := r.state.startAction("model", "execute_graphql", queryArgs)
+	r.state.finishAction(action, "execute_graphql", queryArgs, result, nil)
+	return result, true
 }
