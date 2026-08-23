@@ -233,3 +233,75 @@ func TestWatchSubscriptionColumnRepair(t *testing.T) {
 		t.Fatal("a column absent from the subscription has nothing to rename")
 	}
 }
+
+// A query touching only gj_* system roots targets a fixed, documented
+// contract, so the discovery prerequisite is deterministic and gets supplied —
+// the same treatment security and mutation evidence already receive. The
+// recorded reactive episode gave up after two bare refusals of the canonical
+// inbox read and answered "no unseen events found" over an inbox it never read.
+func TestSystemRootDiscoveryIsSuppliedOnce(t *testing.T) {
+	base := &fakeRuntime{catalogOverride: func(args map[string]any) any {
+		ids, _ := args["ids"].([]any)
+		cards := make([]any, 0, len(ids))
+		for _, id := range ids {
+			cards = append(cards, map[string]any{"id": id, "kind": "help", "summary": "watch contract"})
+		}
+		return map[string]any{"cards": cards}
+	}}
+	runtime := newProtocolRuntime(base, "Review the unseen event from the payments watch", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+
+	inbox := `query { gj_watch_event(where: { seen: { eq: false } }, order_by: { created_at: desc }, limit: 1) { id watch_id data_json seen } }`
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(out)
+	if !strings.Contains(string(payload), "system_root_discovery_supplied") {
+		t.Fatalf("the first system-root read should be answered with the supplied contract: %s", payload)
+	}
+	if !strings.Contains(string(payload), "help:watches") {
+		t.Fatalf("the supply should carry the watch contract: %s", payload)
+	}
+	if len(runtime.state.catalogDetails) == 0 {
+		t.Fatal("the supplied contract must count as detail evidence")
+	}
+	if runtime.state.hasBlockingViolation() {
+		t.Fatal("a supplied prerequisite records no violation")
+	}
+	// The control-plane read also owes the one-shot security/runtime supply,
+	// so the ladder is two supplied steps; the attempt after them executes.
+	found := false
+	for attempt := 0; attempt < 3 && !found; attempt++ {
+		if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox}); err != nil {
+			t.Fatal(err)
+		}
+		for _, call := range base.calls {
+			if call == toolExecuteGraphQL {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("the retries should reach the runtime, calls=%v", base.calls)
+	}
+}
+
+// A mixed or app-table query keeps the normal refusal: the supply is for
+// contracts that are fixed, not a bypass of app-schema discovery.
+func TestAppTableQueriesKeepTheDiscoveryRefusal(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "count invoices", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { invoices { id } }`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(out)
+	if !strings.Contains(string(payload), "raw_graphql_discovery_required") {
+		t.Fatalf("an app table still requires model-driven discovery: %s", payload)
+	}
+}
