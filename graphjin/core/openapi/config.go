@@ -5,6 +5,14 @@
 // remote_api resolver.
 package openapi
 
+import "time"
+
+// DefaultTimeout bounds one upstream operation (including authentication)
+// when a spec does not set an explicit timeout. It stays below GraphJin's
+// standalone HTTP write deadline so an upstream stall can still be returned
+// as a GraphQL error instead of expiring the response socket first.
+const DefaultTimeout = 8 * time.Second
+
 // SpecConfig is the per-spec section a user adds to the GraphJin config
 // (keyed by spec filename without extension). Everything that cannot be
 // derived from the OpenAPI document itself lives here: credentials, base
@@ -42,6 +50,12 @@ type SpecConfig struct {
 	// Without this, a 1000-row parent select would spawn 1000 parallel
 	// HTTP calls to the upstream — a reliable way to get rate-limited.
 	Concurrency ConcurrencyConfig `mapstructure:"concurrency" json:"concurrency" yaml:"concurrency"`
+
+	// Timeout bounds each upstream request, including token acquisition. Zero
+	// selects DefaultTimeout. Keeping the bound per spec lets slower services
+	// opt into a larger budget when GraphJin is embedded behind a compatible
+	// outer HTTP deadline.
+	Timeout time.Duration `mapstructure:"timeout" json:"timeout" yaml:"timeout" jsonschema:"title=Upstream Request Timeout"`
 
 	// MaxRequestBytes and MaxResponseBytes bound encoded request bodies and
 	// upstream responses. Zero selects conservative package defaults.

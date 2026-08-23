@@ -16,6 +16,7 @@ sources:
     specs:
       stripe:
         base_url: https://api.stripe.com
+        timeout: 5s
         auth:
           scheme: bearer
           token: ${STRIPE_TOKEN}
@@ -23,6 +24,11 @@ sources:
           max_concurrent: 8
           rate_limit_per_second: 20
 ```
+
+`timeout` bounds the complete upstream operation, including authentication,
+retries, and response reads. It defaults to `8s`. A timed-out API field is
+returned as `null` with a GraphQL error while successful sibling roots remain
+available in `data`.
 
 ## Supported auth schemes
 
@@ -85,3 +91,24 @@ query ($id: ID!) {
 ```
 
 Top-level operations appear as virtual root fields when classified or explicitly exposed. Unsupported operations are skipped with boot-time diagnostics instead of half-registering a broken field.
+
+OpenAPI list roots and row-join objects accept the common `where`, `order_by`,
+`limit`, and `offset` arguments. GraphJin applies these to the returned JSON,
+while operation-specific path and query parameters are sent to the upstream:
+
+```graphql
+query {
+  payments_api(
+    where: { status: { eq: "failed" } }
+    order_by: { created_at: desc }
+    limit: 20
+  ) {
+    id
+    status
+    created_at
+  }
+}
+```
+
+Unsupported filter operators fail explicitly. API response fields do not
+support cursor pagination or `distinct`; use `limit` and `offset` for paging.

@@ -1771,6 +1771,7 @@ func sourceConfigInputSchema(required []string) map[string]any {
 				"type": "object",
 				"properties": map[string]any{
 					"base_url":           map[string]any{"type": "string"},
+					"timeout":            map[string]any{"type": "integer", "minimum": 0, "description": "Upstream timeout in nanoseconds (Go duration); YAML accepts values such as 5s"},
 					"max_request_bytes":  map[string]any{"type": "integer", "minimum": 0},
 					"max_response_bytes": map[string]any{"type": "integer", "minimum": 0},
 					"operations": map[string]any{

@@ -1658,6 +1658,16 @@ func TestQuerySyntaxReference_HasRemoteJoins(t *testing.T) {
 			t.Error("Expected query for remote join example")
 		}
 	}
+	foundOpenAPIFilter := false
+	for _, example := range querySyntaxReference.Examples.RemoteJoins {
+		if strings.Contains(example.Description, "OpenAPI") && strings.Contains(example.Query, "where:") {
+			foundOpenAPIFilter = true
+			break
+		}
+	}
+	if !foundOpenAPIFilter {
+		t.Error("Expected OpenAPI filtering example in remote join syntax reference")
+	}
 }
 
 func TestQuerySyntaxReference_HasBothAggregateForms(t *testing.T) {

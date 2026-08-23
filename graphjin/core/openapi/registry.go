@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -179,6 +180,7 @@ type Spec struct {
 	BaseURL          string
 	Auth             AuthConfig
 	Concurrency      ConcurrencyConfig
+	Timeout          time.Duration
 	MaxRequestBytes  int64
 	MaxResponseBytes int64
 	Operations       []OpDescriptor
