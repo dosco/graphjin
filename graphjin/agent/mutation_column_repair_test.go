@@ -288,3 +288,129 @@ func TestPendingFinalizationNamesTheCorrectedWrite(t *testing.T) {
 		t.Fatalf("the bounce should point at the exact corrected write: %q", message)
 	}
 }
+
+// The schema encodes the resolution idiom directly — status's observed value
+// "resolved" sits beside a resolved_at column — and 75 of 75 recorded ticket
+// episodes left that column null. The repairs now surface the fact; the value
+// stays the model's to author.
+func TestCompanionTimestampNoteNamesResolvedAt(t *testing.T) {
+	base := &strictWriteRuntime{columns: map[string][]string{
+		"support_tickets": {"id", "status", "resolution_note", "resolved_at", "opened_at"},
+	}}
+	runtime := newProtocolRuntime(base, "close ticket 2", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.tableColumnNames = map[string][]string{
+		"support_tickets": {"id", "status", "resolution_note", "resolved_at", "opened_at"},
+	}
+	runtime.state.tablesDetailed = map[string]bool{"support_tickets": true}
+
+	note := runtime.companionTimestampNote(context.Background(),
+		`mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "resolved", resolution_note: "done"}) { id } }`)
+	if !strings.Contains(note, "resolved_at") || !strings.Contains(note, `"resolved"`) {
+		t.Fatalf("the note should name the companion column and the transition: %q", note)
+	}
+	// Already stamped: nothing left to teach.
+	if note := runtime.companionTimestampNote(context.Background(),
+		`mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "resolved", resolved_at: "2027-01-15T12:00:00Z"}) { id } }`); note != "" {
+		t.Fatalf("a stamped transition needs no note: %q", note)
+	}
+	// A value with no companion column is silent.
+	if note := runtime.companionTimestampNote(context.Background(),
+		`mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "open"}) { id } }`); strings.Contains(note, "open_at") {
+		t.Fatalf("no invented companion columns: %q", note)
+	}
+}
+
+// The full ticket-resolution chain, in process: the value guard corrects the
+// vocabulary and teaches resolved_at, the rename repair corrects the column,
+// and the stamped write finalizes cleanly. This is the sequence 0 of 75
+// recorded episodes ever completed.
+func TestTicketResolutionChainFinalizesAnswered(t *testing.T) {
+	base := &strictWriteRuntime{columns: map[string][]string{
+		"support_tickets": {"id", "status", "resolution_note", "resolved_at", "opened_at"},
+	}}
+	profile := &CapabilityProfile{RoleClass: "user", AllowedActions: []string{CapabilityActionDataUpdate}}
+	runtime := newProtocolRuntime(base, "close ticket 1 with a note", "", 8, profile, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.tableColumnNames = map[string][]string{"support_tickets": {"id", "status", "resolution_note", "resolved_at", "opened_at"}}
+	runtime.state.tablesDetailed = map[string]bool{"support_tickets": true}
+	runtime.state.catalogDetails = []string{"table:app:main.support_tickets"}
+	runtime.state.securityRuntimeEvidence = true
+	runtime.state.observedValues = map[string]map[string][]string{
+		"support_tickets": {"status": {"open", "pending", "resolved"}},
+	}
+
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { support_tickets(where: { id: { eq: 1 } }, update: { status: "closed", notes: "Sorted." }) { id status } }`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovery := mapValue(mapValue(out)["recovery"])
+	valueRepair := stringFromMap(mapValue(mapValue(recovery["next"])["args"]), "query")
+	if !strings.Contains(valueRepair, `status: "resolved"`) {
+		t.Fatalf("the value repair should correct the vocabulary: %q", valueRepair)
+	}
+	if !strings.Contains(stringFromMap(mapValue(recovery["next"]), "reason"), "resolved_at") {
+		t.Fatalf("the value repair should teach the companion timestamp: %+v", recovery)
+	}
+	out, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": valueRepair})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed := runtime.state.lastMutationRepairedQuery
+	if !strings.Contains(renamed, "resolution_note:") {
+		t.Fatalf("the rename repair should correct the column: %q", renamed)
+	}
+	stamped := strings.Replace(renamed, "resolution_note:", `resolved_at: "2027-01-15T12:00:00Z", resolution_note:`, 1)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": stamped}); err != nil {
+		t.Fatal(err)
+	}
+	if len(base.writes) != 1 || !strings.Contains(base.writes[0], "resolved_at") {
+		t.Fatalf("the stamped resolution should land: %v", base.writes)
+	}
+	resp := runtime.state.finalize(Response{Status: StatusAnswered, Answer: "Ticket 1 is resolved with a note."})
+	if resp.Status != StatusAnswered {
+		t.Fatalf("the completed chain finalizes normally, got %s: %+v", resp.Status, resp.Errors)
+	}
+	_ = out
+}
+
+// A model that violates a guard AFTER its correct query already ran, then
+// correctly re-selects that query, receives it from the execution cache — and
+// the cached replay must discharge exactly as the original success did. Before
+// this, the retry a guard demanded could only ever arrive from the cache, which
+// never discharged, so the run was blocked with no path out.
+func TestCachedSuccessDischargesLikeAFreshOne(t *testing.T) {
+	runtime, base := strictWriteTestRuntime(t)
+	good := `mutation { payments(insert: { id: 900001, reference: "DEEPORG-PAY-001", invoice_id: 1, amount_cents: 480000, recorded_at: "2027-01-15T12:00:00Z" }) { id } }`
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": good}); err != nil {
+		t.Fatal(err)
+	}
+	if len(base.writes) != 1 {
+		t.Fatalf("the write should land: %v", base.writes)
+	}
+	// A refusal recorded after the success: re-sending a write with a value
+	// outside the observed set.
+	runtime.state.observedValues = map[string]map[string][]string{
+		"payments": {"reference": {"DEEPORG-PAY-001"}},
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { payments(insert: { id: 900002, reference: "INVENTED-REF", invoice_id: 1, amount_cents: 1, recorded_at: "2027-01-15T12:00:00Z" }) { id } }`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !runtime.state.hasBlockingViolation() {
+		t.Fatal("the out-of-vocabulary write should be refused")
+	}
+	// The model re-selects its earlier correct query; the cache serves it.
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": good}); err != nil {
+		t.Fatal(err)
+	}
+	if len(base.writes) != 1 {
+		t.Fatalf("the cached replay must not re-execute the write: %v", base.writes)
+	}
+	if runtime.state.hasBlockingViolation() {
+		t.Fatal("a cached successful execution should discharge like a fresh one")
+	}
+}

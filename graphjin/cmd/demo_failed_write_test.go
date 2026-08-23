@@ -167,3 +167,96 @@ await final({status:"answered", answer:"Recorded payment DEEPORG-PAY-001 with id
 		t.Fatalf("the corrected write should land exactly once, count=%d", got)
 	}
 }
+
+// The other five stable action losses are ticket resolutions: 0 of 75 recorded
+// episodes ever landed one. Three stacked faults — "closed" for a status whose
+// vocabulary is open|pending|resolved, notes for resolution_note, and
+// resolved_at left null. The run's repairs now answer all three in sequence:
+// the value guard corrects the vocabulary and its note names resolved_at, the
+// unknown-column repair corrects the column, and a model that acts on the
+// three teachings lands the exact row the benchmark oracle checks.
+func TestDemoTicketResolutionChainConverts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded service integration")
+	}
+	// A model's first write-like call is intercepted once by the security and
+	// runtime evidence supply; a real model reads the supplied cards and simply
+	// retries. And ax runs the same scripted program in the distiller stage
+	// before the executor stage, so progress is kept on the shared session's
+	// globals — the exact handoff mechanism real runs use — rather than
+	// re-deriving state and tripping the duplicate-execution guards.
+	chain := `
+const closed = 'mutation { support_tickets(where: { id: { eq: 1 } }, update: { status: "closed", notes: "Sorted out and resolved." }) { id status } }';
+let attempt = await execute_graphql({query: closed});
+if (!(attempt && attempt.recovery && attempt.recovery.next && attempt.recovery.next.args && attempt.recovery.next.args.query)) {
+  attempt = await execute_graphql({query: closed});
+}
+const valueRepair = attempt && attempt.recovery && attempt.recovery.next && attempt.recovery.next.args && attempt.recovery.next.args.query;
+if (!valueRepair) { throw new Error("no value repair in " + JSON.stringify(attempt)); }
+const taught = (attempt.recovery.instruction || "") + " " + ((attempt.recovery.next && attempt.recovery.next.reason) || "");
+if (taught.indexOf("resolved_at") < 0) { throw new Error("value repair did not teach resolved_at: " + taught); }
+const second = await execute_graphql({query: valueRepair});
+const renameRepair = second && second.recovery && second.recovery.details && second.recovery.details.repaired_query;
+let stamped;
+if (renameRepair) {
+  stamped = renameRepair.replace('resolution_note:', 'resolved_at: "2027-01-15T12:00:00Z", resolution_note:');
+} else {
+  stamped = valueRepair.replace('notes:', 'resolved_at: "2027-01-15T12:00:00Z", resolution_note:');
+}
+const done = await execute_graphql({query: stamped});
+await final({status:"answered", answer:"Ticket 1 is resolved with a resolution note recorded.", data:{done:done}, evidence:[done]});
+`
+	client := &evalScriptClient{}
+	client.setSequence(
+		`const seed = await query_catalog({search:"close support ticket resolution"}); console.log(seed);`,
+		`const detail = await query_catalog({id:"table:app:main.support_tickets"}); console.log(detail);`,
+		chain, chain, chain,
+	)
+	instance := demoFailedWriteInstance(t, client)
+
+	response, _, _, err := gjeval.PostAgentForReplay(
+		context.Background(), http.DefaultClient, instance.BaseURL(), instance.Headers(),
+		"Ticket 1 has been sorted out. Close it off and record a note saying what resolved it, without touching any other ticket.", nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "answered" {
+		payload, _ := json.Marshal(response)
+		t.Fatalf("the taught chain should finalize normally, got %s: %s", response.Status, payload)
+	}
+	// The benchmark oracle's own condition, byte for byte.
+	base := strings.TrimRight(strings.TrimSpace(instance.BaseURL()), "/")
+	for _, suffix := range []string{"/api/v1/agent/status", "/api/v1/agent", "/api/v1/graphql"} {
+		base = strings.TrimSuffix(base, suffix)
+	}
+	body, _ := json.Marshal(map[string]any{
+		"query": `query { support_tickets(where: {and: [{id: {eq: 1}}, {status: {eq: "resolved"}}, {resolution_note: {is_null: false}}, {resolution_note: {neq: ""}}, {resolved_at: {is_null: false}}]}) { count_id } }`,
+	})
+	request, err := http.NewRequest(http.MethodPost, base+"/api/v1/graphql", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	for key, value := range instance.Headers() {
+		request.Header.Set(key, value)
+	}
+	httpResponse, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer httpResponse.Body.Close() //nolint:errcheck
+	var decoded struct {
+		Data struct {
+			Tickets []struct {
+				Count int `json:"count_id"`
+			} `json:"support_tickets"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(httpResponse.Body).Decode(&decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Data.Tickets) == 0 || decoded.Data.Tickets[0].Count != 1 {
+		t.Fatalf("the resolved ticket should satisfy the oracle condition: %+v", decoded.Data)
+	}
+}

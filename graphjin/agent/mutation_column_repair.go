@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"context"
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -109,6 +111,51 @@ func repairUnknownMutationColumns(query string, columns []string) (string, []mut
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].From < out[j].From })
 	return repaired, out, true
+}
+
+// companionTimestampNote points a write at the timestamp column its own state
+// transition implies. The schema encodes the idiom directly — a status column
+// whose observed value "resolved" sits beside a resolved_at column exists to
+// have that column stamped on resolution — and the benchmark episodes show no
+// model discovering it unprompted: every ticket-resolution episode on record
+// wrote the status and the note and left resolved_at null. The value stays the
+// model's to author; only the schema fact is surfaced.
+func (r *protocolRuntime) companionTimestampNote(ctx context.Context, query string) string {
+	clean := graphQLStructure(query)
+	for _, root := range MutationRootFields(query) {
+		table, _ := r.state.mutationTargetTable(root)
+		if table == "" {
+			continue
+		}
+		columns := r.observedColumnNames(ctx, table)
+		if len(columns) == 0 {
+			continue
+		}
+		known := map[string]string{}
+		for _, column := range columns {
+			known[strings.ToLower(strings.TrimSpace(column))] = strings.TrimSpace(column)
+		}
+		for _, keyword := range []string{"insert", "update", "upsert"} {
+			for _, span := range mutationInputBlocks(clean, root, keyword) {
+				if span[0] < 0 || span[1] > len(query) || span[0] >= span[1] {
+					continue
+				}
+				set := map[string]bool{}
+				for _, key := range graphQLTopLevelKeys(clean[span[0]:span[1]]) {
+					set[strings.ToLower(key.name)] = true
+				}
+				for field, literal := range graphQLStringFieldSpans(query[span[0]:span[1]]) {
+					companion, ok := known[strings.ToLower(strings.TrimSpace(literal.value))+"_at"]
+					if !ok || set[strings.ToLower(companion)] {
+						continue
+					}
+					return fmt.Sprintf("This table also carries %s; a %s transition to %q normally stamps it in the same operation, e.g. %s: \"<current timestamp>\".",
+						companion, field, literal.value, companion)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // graphQLTopLevelKeys returns the depth-0 `name:` keys of an object body whose

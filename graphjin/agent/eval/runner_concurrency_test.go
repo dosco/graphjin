@@ -162,7 +162,7 @@ func TestConcurrentSlotsIsolateMutationsFromReaders(t *testing.T) {
 			return nil
 		},
 	}
-	report, err := (Runner{Client: concurrencyDoer(t, probe, 25 * time.Millisecond)}).Run(
+	report, err := (Runner{Client: concurrencyDoer(t, probe, 25*time.Millisecond)}).Run(
 		context.Background(), suite, instance,
 		RunOptions{Repeats: 2, Seed: 23, Store: NewStore(t.TempDir()), Concurrency: 4},
 	)

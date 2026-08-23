@@ -628,12 +628,17 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 			// your intent") losing to the factual one on the value repair, so
 			// the schema's vocabulary is stated as fact here too.
 			note = fmt.Sprintf(" This table spells those fields differently: %s. The corrected mutation is in details.repaired_query — execute it exactly as given.", strings.Join(renamed, ", "))
+			reason := "Execute details.repaired_query exactly as given; it is this same write expressed with the column names this table actually has."
+			if companion := r.companionTimestampNote(ctx, repaired); companion != "" {
+				note += " " + companion
+				reason += " " + companion
+			}
 			details["repaired_query"] = repaired
 			details["renamed_columns"] = renamed
 			next = map[string]any{
 				"recommended_tool": "execute_graphql",
 				"args":             map[string]any{"query": repaired},
-				"reason":           "Execute details.repaired_query exactly as given; it is this same write expressed with the column names this table actually has.",
+				"reason":           reason,
 			}
 		}
 	}
