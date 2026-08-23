@@ -137,6 +137,31 @@ func addSources(out *Snapshot, opts BuildOptions) {
 			"supported_capabilities": sourcecap.ValidKeys(kind),
 			"capability_details":     sourceCapabilityDetails(kind),
 		}
+		examples := sourceExamples(source)
+		next := suggestedNextJSON(opts, "query_catalog")
+		// A file source is queryable, and its card used to be the only card in
+		// the catalog that said nothing about how. Summary "file source
+		// read-only", examples listing config capability lines, suggested_next
+		// pointing back at query_catalog: models searching "SLA policy" land
+		// here, invent a policies(key:) table, get table_not_found, and end up
+		// fabricating the numbers. The file half of cross-source scored 0 in
+		// every benchmark run on record. The table card has taught the right
+		// reads for a while; this one now agrees with it.
+		if kind == sourcecap.KindFile {
+			summary += " — queryable as the " + name + " table: list by prefix, then read one object by key with text (decoded) or data (base64)"
+			examples = mustJSON([]string{
+				fmt.Sprintf("{ %s(prefix: \"\", limit: 10) { key size content_type modified_at } }", name),
+				fmt.Sprintf("{ %s(key: \"<key>\", inline_data: true) { key content_type text data } }", name),
+			})
+			// The column surface is fixed by the filesystem bridge
+			// (core/fstable_bridge.go fixedFilesystemColumns). This package
+			// cannot import core, so the list is restated here, as the
+			// filesystem-shaped table card already does.
+			details["table"] = name
+			details["fields"] = []string{"key", "size", "content_type", "etag", "modified_at", "url", "data", "text"}
+			details["arguments"] = []string{"key", "prefix", "limit", "after", "inline_data"}
+			next = suggestedNextJSON(opts, "query_catalog", "execute_graphql")
+		}
 		out.Cards = append(out.Cards, Card{
 			ID:               cardID,
 			Kind:             "source",
@@ -149,9 +174,9 @@ func addSources(out *Snapshot, opts BuildOptions) {
 			RiskLevel:        riskForReadOnly(source.ReadOnly),
 			Confidence:       "high",
 			EvidenceJSON:     mustJSON(details),
-			ExamplesJSON:     sourceExamples(source),
+			ExamplesJSON:     examples,
 			SafetyJSON:       mustJSON(map[string]any{"capabilities": "Source capabilities grant authenticated user access only; anonymous access is controlled separately.", "read_only_blocks_mutation": source.ReadOnly}),
-			SuggestedNext:    suggestedNextJSON(opts, "query_catalog"),
+			SuggestedNext:    next,
 			DetailRef:        cardID,
 		})
 		out.Details = append(out.Details, CardDetail{

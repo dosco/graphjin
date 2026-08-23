@@ -118,6 +118,23 @@ func TestDemoCatalogServesJoinAndValueEvidence(t *testing.T) {
 	if !strings.Contains(examples, "accounts(where:") || !strings.Contains(examples, "account_health {") {
 		t.Fatalf("account_health example must teach the nested route: %s", examples)
 	}
+
+	// The file source is the other half of every cross-source question, and its
+	// card used to dead-end: "file source read-only", config capability lines
+	// for examples, and query_catalog as the next step. Models searching for the
+	// SLA document landed here, invented a policies table, and answered from
+	// nothing — that half scored zero in every benchmark run on record.
+	policies := catalogCard("source:sla_policies", "id summary examples_json evidence_json suggested_next_json")
+	if summary, _ := policies["summary"].(string); !strings.Contains(summary, "queryable as the sla_policies table") {
+		t.Fatalf("the file source card must say it can be read: %q", summary)
+	}
+	policyExamples, _ := policies["examples_json"].(string)
+	if !strings.Contains(policyExamples, "sla_policies(prefix:") || !strings.Contains(policyExamples, "inline_data: true") {
+		t.Fatalf("the file source card must teach both reads: %s", policyExamples)
+	}
+	if next, _ := policies["suggested_next_json"].(string); !strings.Contains(next, "execute_graphql") {
+		t.Fatalf("a card that teaches a query must offer the tool that runs it: %s", next)
+	}
 }
 
 // TestDemoRemoteJoinRepairReturnsLiveRows drives the join repair end to end
