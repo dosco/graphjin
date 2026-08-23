@@ -15,6 +15,7 @@ import (
 
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/dosco/graphjin/core/v3/openapi"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // silentLogger discards log output so tests don't pollute stdout.
@@ -386,4 +387,134 @@ func TestOpenAPIRootCollisionWithManagedRootErrorsCaseInsensitively(t *testing.T
 	if !strings.Contains(err.Error(), `managed root "gj_task"`) || !strings.Contains(err.Error(), "tasks/createTask") {
 		t.Fatalf("managed-root collision error = %v", err)
 	}
+}
+
+// newTestEngineWithRealDBInfo builds an engine over a fully constructed DBInfo.
+// The collision-check helper above hand-rolls its DBInfo without the lookup
+// maps, which is fine for those tests but panics the moment a table with
+// columns is registered.
+func newTestEngineWithRealDBInfo(t *testing.T, schema string, tables ...string) *graphjinEngine {
+	t.Helper()
+	cols := make([]sdata.DBColumn, 0, len(tables))
+	for i, name := range tables {
+		cols = append(cols, sdata.DBColumn{
+			ID: int32(i), Schema: schema, Table: name, Name: "id", Type: "bigint", PrimaryKey: true,
+		})
+	}
+	return &graphjinEngine{
+		conf:      &Config{},
+		log:       silentLogger(t),
+		defaultDB: "primary",
+		rmap:      make(map[string]resItem),
+		databases: map[string]*dbContext{
+			"primary": {name: "primary", dbinfo: sdata.NewDBInfo("postgres", 150000, schema, "test", cols, nil, nil)},
+		},
+	}
+}
+
+// objectResponseSchema builds the kind of response schema a real spec declares:
+// an object with named properties, which is what lets GraphJin know the table's
+// column surface in the first place.
+func objectResponseSchema(names ...string) *openapi3.SchemaRef {
+	props := openapi3.Schemas{}
+	for _, name := range names {
+		props[name] = openapi3.NewSchemaRef("", openapi3.NewStringSchema())
+	}
+	schema := openapi3.NewObjectSchema()
+	schema.Properties = props
+	return openapi3.NewSchemaRef("", schema)
+}
+
+// TestOpenAPITablesCloseTheirColumnSurfaceWhenTheSpecDeclaresIt pins the
+// registration half of a benchmark failure. A join child selecting fields that
+// do not exist used to compile, ride the remote pass-through, and come back as
+// an empty object with no error — the episode that asked account_health for
+// open_risks and health_color answered that the risks were undefined.
+//
+// validateRemoteField has always had the right error; it only fires on tables
+// that declare a closed surface, and the two paths that register spec-described
+// tables never did. Leniency is still correct where the shape is genuinely
+// unknown, so it survives exactly there.
+func TestOpenAPITablesCloseTheirColumnSurfaceWhenTheSpecDeclaresIt(t *testing.T) {
+	gj := newTestEngineWithRealDBInfo(t, "public", "users")
+	reg := &openapi.Registry{Specs: []*openapi.Spec{{
+		Key: "health",
+		Operations: []openapi.OpDescriptor{
+			{
+				SpecKey: "health", OperationID: "listHealth", Mode: openapi.OpModeList,
+				ExposeAs:       "described_rows",
+				ResponseSchema: objectResponseSchema("health", "open_risk_count"),
+			},
+			{
+				// A response the spec never described: GraphJin cannot know
+				// which selections are wrong, so it must not guess.
+				SpecKey: "health", OperationID: "listOpaque", Mode: openapi.OpModeList,
+				ExposeAs: "opaque_rows",
+			},
+		},
+	}}}
+	if err := gj.preRegisterOpenAPITables(reg); err != nil {
+		t.Fatal(err)
+	}
+	dbinfo := gj.primaryDB().dbinfo
+	described, err := dbinfo.GetTable("public", "described_rows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !described.StrictColumns {
+		t.Error("a spec-described response must close its column surface")
+	}
+	opaque, err := dbinfo.GetTable("public", "opaque_rows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opaque.StrictColumns {
+		t.Error("an undescribed response must keep the lenient pass-through")
+	}
+}
+
+// The row-join path registers its tables in initRemote rather than the
+// pre-register sweep, and it is the one the demo's account_health uses — so it
+// is the one the recorded failure actually went through.
+func TestRowJoinTableClosesItsColumnSurfaceWhenColumnsAreKnown(t *testing.T) {
+	gj := newTestEngineWithRealDBInfo(t, "public", "users")
+	rtmap := map[string]ResolverFn{
+		"openapi": func(ResolverProps) (Resolver, error) { return &stubRemoteResolver{}, nil },
+	}
+	dbinfo := gj.primaryDB().dbinfo
+	described := ResolverConfig{
+		Name: "described_join", Type: "openapi", Schema: "public", Table: "users", Column: "id",
+		remoteColumns: []sdata.DBColumn{{Name: "health"}, {Name: "open_risk_count"}},
+	}
+	if err := gj.initRemote(described, rtmap, dbinfo); err != nil {
+		t.Fatal(err)
+	}
+	// A hand-written resolver carries no column list, so GraphJin never learned
+	// its shape and the historical pass-through is the honest default.
+	opaque := ResolverConfig{
+		Name: "opaque_join", Type: "openapi", Schema: "public", Table: "users", Column: "id",
+	}
+	if err := gj.initRemote(opaque, rtmap, dbinfo); err != nil {
+		t.Fatal(err)
+	}
+	got, err := dbinfo.GetTable("public", "described_join")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.StrictColumns {
+		t.Error("a join whose response columns are known must reject unknown selections")
+	}
+	got, err = dbinfo.GetTable("public", "opaque_join")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.StrictColumns {
+		t.Error("a join with no known columns must stay lenient")
+	}
+}
+
+type stubRemoteResolver struct{}
+
+func (stubRemoteResolver) Resolve(context.Context, ResolverReq) ([]byte, error) {
+	return []byte(`{}`), nil
 }

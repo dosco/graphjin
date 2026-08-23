@@ -144,7 +144,20 @@ func (gj *graphjinEngine) initRemote(
 		FKeyCol:    col.Name,
 	}
 
-	nt := sdata.NewDBTable(rc.Schema, rc.Name, "remote", remoteTableColumns(rc))
+	remoteColumns := remoteTableColumns(rc)
+	nt := sdata.NewDBTable(rc.Schema, rc.Name, "remote", remoteColumns)
+	// A resolver that knows its response shape has a closed column surface, so
+	// unknown selections should fail at compile time the way they do on database
+	// tables — the same reasoning filesystem tables were given. Without it the
+	// selection rides the remote pass-through and jsn.FilterAliased quietly drops
+	// every field the response does not carry: a benchmark episode asked a join
+	// for open_risks and health_color, neither of which exists, and was handed
+	// has_data:true with an empty object and no error. It reported the risks as
+	// undefined. A hand-written resolver returns no columns and keeps the
+	// historical pass-through, since GraphJin never learned its shape.
+	if len(remoteColumns) != 0 {
+		nt.StrictColumns = true
+	}
 	nt.PrimaryCols = []sdata.DBColumn{col1}
 	nt.PrimaryCol = col1
 
