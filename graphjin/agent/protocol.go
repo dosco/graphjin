@@ -36,14 +36,21 @@ type protocolRuntime struct {
 }
 
 type discoveryState struct {
-	instruction             string
-	seedOK                  bool
-	seedResult              any
-	modelDiscoveryAction    bool
-	catalogIDs              map[string]bool
-	catalogKinds            map[string]bool
-	savedQueriesDiscovered  map[string]bool
-	savedQueriesDetailed    map[string]bool
+	instruction            string
+	seedOK                 bool
+	seedResult             any
+	modelDiscoveryAction   bool
+	catalogIDs             map[string]bool
+	catalogKinds           map[string]bool
+	savedQueriesDiscovered map[string]bool
+	savedQueriesDetailed   map[string]bool
+	// savedQueryDetailMissed records the names a detail lookup in THIS run
+	// asked for and the catalog did not return. Absence has to be tracked
+	// separately from presence: an empty lookup deliberately does not mark a
+	// query detailed, so without this the run cannot tell "not looked up yet"
+	// from "looked up, does not exist" — and the guard demanded the lookup
+	// again either way.
+	savedQueryDetailMissed  map[string]bool
 	savedQueryGraphQL       map[string]string
 	securityRuntimeEvidence bool
 	watchDefinitionMutated  bool
@@ -394,6 +401,7 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 	}
 	if len(detailIDs) != 0 && r.state.emptyDetailStreak > 0 && !r.state.hasKnownCatalogID(detailIDs) {
 		r.state.emptyDetailStreak++
+		r.state.recordMissingCatalogDetails(detailIDs)
 		out := r.state.emptyDetailExhaustedResult(detailIDs)
 		action := r.state.startAction("model", "query_catalog", args)
 		r.state.finishAction(action, "query_catalog", args, out, nil)
@@ -470,6 +478,7 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 					}
 				}
 				r.state.emptyDetailStreak = 1
+				r.state.recordMissingCatalogDetails(detailIDs)
 				out = attachEmptyDetailRecovery(out, detailIDs, r.state.emptyDetailNext(
 					"The requested catalog id was not returned. Inspect a known id or enumerate tables by kind before trying another detail lookup.",
 				), catalogIDSuggestions(detailIDs, known))
@@ -789,6 +798,28 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		return nil, fmt.Errorf("query name is required")
 	}
 	if !r.state.savedQueryDetailed(name) {
+		// Demanding the detail lookup only makes sense while the lookup could
+		// still succeed. When the run already has evidence the card does not
+		// exist, the demand is unsatisfiable and the guard becomes a trap: the
+		// only discharge is a successful execution of the very query that does
+		// not exist. Episode ah1-001 answered its question correctly, looked the
+		// card up, got nothing, and finalized blocked on the demand to look it
+		// up. Name the real saved queries instead, with no violation recorded —
+		// nothing was violated.
+		if r.state.savedQueryKnownAbsent(name) {
+			known := sortedBoolKeys(r.state.savedQueriesDiscovered)
+			message := fmt.Sprintf("saved query %q is not in this run's catalog", name)
+			reason := "This saved query does not exist. Author the query directly with execute_graphql from catalog detail, or run one of the approved saved queries listed in details.known_saved_queries."
+			if len(known) == 0 {
+				reason = "This saved query does not exist and this run has surfaced no approved saved queries. Author the query directly with execute_graphql from catalog detail."
+			}
+			details := map[string]any{"name": name, "known_saved_queries": known, "fault": "unknown_saved_query"}
+			out := recoverableProtocolFailure("unknown_saved_query", message, "unknown_saved_query",
+				map[string]any{"recommended_tool": "execute_graphql", "reason": reason}, details)
+			action := r.state.startAction("model", "execute_saved_query", args)
+			r.state.finishAction(action, "execute_saved_query", args, out, nil)
+			return out, nil
+		}
 		err := fmt.Errorf("protocol violation: inspect query_catalog(id: %q) before execute_saved_query", "saved_query:"+name)
 		r.state.addViolation("saved_query_detail_required", err.Error(), "execute_saved_query", true, map[string]any{"name": name})
 		action := r.state.startAction("model", "execute_saved_query", args)
@@ -3533,6 +3564,55 @@ func (s *discoveryState) savedQueryDetailed(name string) bool {
 		}
 	}
 	return false
+}
+
+// recordMissingCatalogDetails notes the saved queries a detail lookup asked for
+// and the catalog did not return, and discharges any standing demand to inspect
+// them. The demand was to look the card up before executing; the lookup
+// happened, and the catalog's answer was that there is no such card. Leaving the
+// violation blocking made it unsatisfiable — episode ah1-001 produced the right
+// answer, ran a detail lookup that returned zero cards, and was still forced to
+// blocked by a guard asking for the lookup it had just performed.
+func (s *discoveryState) recordMissingCatalogDetails(ids []string) {
+	for _, id := range ids {
+		name := savedQueryNameFromID(strings.TrimSpace(id))
+		if name == "" {
+			continue
+		}
+		if s.savedQueryDetailMissed == nil {
+			s.savedQueryDetailMissed = map[string]bool{}
+		}
+		for _, candidate := range savedQueryNameCandidates(name) {
+			s.savedQueryDetailMissed[candidate] = true
+		}
+		s.resolveSavedQueryDetailViolation(name)
+	}
+}
+
+// savedQueryKnownAbsent reports whether this run has positive evidence that the
+// named saved query does not exist — either a detail lookup that came back
+// empty, or a catalog that returned saved queries and not this one. A run that
+// has seen no saved queries at all knows nothing, and keeps the blocking demand:
+// that is the case where the lookup is genuinely the next thing to do.
+func (s *discoveryState) savedQueryKnownAbsent(name string) bool {
+	candidates := savedQueryNameCandidates(name)
+	if len(candidates) == 0 {
+		return false
+	}
+	for _, candidate := range candidates {
+		if s.savedQueryDetailMissed[candidate] {
+			return true
+		}
+	}
+	if len(s.savedQueriesDiscovered) == 0 {
+		return false
+	}
+	for _, candidate := range candidates {
+		if s.savedQueriesDiscovered[candidate] {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *discoveryState) savedQueryGraphQLFor(name string) string {

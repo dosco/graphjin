@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -1139,12 +1140,97 @@ func TestProtocolEmptySavedQueryDetailDoesNotAuthorizeExecution(t *testing.T) {
 		t.Fatal("empty saved-query detail lookup authorized the guessed name")
 	}
 	before := len(base.calls)
-	if _, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"}); err == nil ||
-		!strings.Contains(err.Error(), "inspect query_catalog") {
-		t.Fatalf("guessed saved query execution error = %v", err)
+	out, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"})
+	if err != nil {
+		t.Fatalf("a name the catalog denies is a recoverable dead end, not a hard error: %v", err)
 	}
 	if got := len(base.calls); got != before {
 		t.Fatalf("guessed saved query reached base runtime: calls=%d want=%d", got, before)
+	}
+	// The refusal stands; what changed is what it asks for. Demanding
+	// query_catalog here was unsatisfiable — the lookup had just been performed
+	// and returned nothing — and the only discharge for the violation it
+	// recorded was a successful execution of the query that does not exist.
+	// Episode ah1-001 answered its question correctly and finalized blocked on
+	// exactly that loop.
+	recovery := mapValue(mapValue(out)["recovery"])
+	if stringFromMap(recovery, "code") != "unknown_saved_query" {
+		t.Fatalf("a proven-absent saved query should say so: %+v", out)
+	}
+	if strings.Contains(stringFromMap(recovery, "instruction"), "query_catalog") {
+		t.Fatalf("the recovery must not re-demand the lookup that just came back empty: %+v", recovery)
+	}
+	if runtime.state.hasBlockingViolation() {
+		t.Fatal("executing a saved query the catalog denies must not block the run")
+	}
+	for _, violation := range runtime.state.violations {
+		if violation.Code == "saved_query_detail_required" {
+			t.Fatalf("no detail requirement can be outstanding once the catalog answered: %+v", violation)
+		}
+	}
+}
+
+// TestProtocolSavedQueryDetailDemandSurvivesWithoutEvidence is the other half:
+// a run that has looked nothing up knows nothing, and the demand to inspect the
+// card before executing is exactly right. Only positive evidence of absence
+// converts it.
+func TestProtocolSavedQueryDetailDemandSurvivesWithoutEvidence(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
+
+	before := len(base.calls)
+	if _, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"}); err == nil ||
+		!strings.Contains(err.Error(), "inspect query_catalog") {
+		t.Fatalf("an un-inspected saved query must still be refused: %v", err)
+	}
+	if got := len(base.calls); got != before {
+		t.Fatalf("the refused query reached the base runtime: calls=%d want=%d", got, before)
+	}
+	if !runtime.state.hasBlockingViolation() {
+		t.Fatal("the detail requirement should still block until it is answered")
+	}
+}
+
+// TestProtocolSavedQueryAbsentFromDiscoveredSetIsRecoverable covers the second
+// arm: the catalog returned saved queries and this name was not among them, so
+// the run has seen what exists and the request is a wrong guess. Naming the real
+// ones is more use than demanding a lookup that will come back empty.
+func TestProtocolSavedQueryAbsentFromDiscoveredSetIsRecoverable(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
+	runtime.state.markSavedQueryDiscovered("daily_roast_context")
+
+	out, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovery := mapValue(mapValue(out)["recovery"])
+	if stringFromMap(recovery, "code") != "unknown_saved_query" {
+		t.Fatalf("a name absent from a known set should say so: %+v", out)
+	}
+	// details ride the error extensions rather than the recovery block.
+	payload, _ := json.Marshal(out)
+	if !strings.Contains(string(payload), `"known_saved_queries":["daily_roast_context"]`) {
+		t.Fatalf("the recovery should name the saved queries that do exist: %s", payload)
+	}
+	if runtime.state.hasBlockingViolation() {
+		t.Fatal("a wrong saved-query name must not block the run")
+	}
+}
+
+// A name the run has seen but not yet inspected is the case the original guard
+// was built for, and it is unchanged.
+func TestProtocolDiscoveredButUninspectedSavedQueryStillBlocks(t *testing.T) {
+	base := &fakeRuntime{}
+	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
+	runtime.state.markSavedQueryDiscovered("usage_events_total")
+
+	if _, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"}); err == nil ||
+		!strings.Contains(err.Error(), "inspect query_catalog") {
+		t.Fatalf("a real but un-inspected saved query must still be refused: %v", err)
+	}
+	if !runtime.state.hasBlockingViolation() {
+		t.Fatal("the detail requirement should block a query that does exist")
 	}
 }
 
