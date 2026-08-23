@@ -610,6 +610,16 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 		return out, ""
 	}
 	columns := r.observedColumnNames(ctx, table)
+	if len(columns) == 0 && isWatchDefinitionMutation(query) {
+		// A watch mutation's unknown column lives in its embedded subscription,
+		// so the table that owns it is the subscription's root, not gj_watch.
+		for _, root := range watchSubscriptionRoots(query, nil) {
+			if inner := r.observedColumnNames(ctx, root); len(inner) != 0 {
+				table, columns = root, inner
+				break
+			}
+		}
+	}
 	if len(columns) == 0 {
 		return out, ""
 	}
@@ -617,7 +627,41 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 	details := map[string]any{"unknown_column": column, "table_columns": map[string]any{table: columns}}
 	repaired := ""
 	var next map[string]any
-	if ContainsMutationOperation(query) {
+	if !ContainsMutationOperation(query) {
+		// A read that named one wrong column gets the same treatment as a
+		// write: the corrected query, whole. Episode same-account-mrr asked
+		// accounts for mrr, was told the real columns include mrr_cents, and
+		// resent mrr four times into the duplicate guard.
+		if candidate, ok := nearestColumn(column, columns, map[string]bool{}); ok {
+			fixed := renameGraphQLIdentifiers(query, map[string]string{strings.ToLower(column): candidate})
+			if fixed != query {
+				repaired = fixed
+				note = fmt.Sprintf(" This table spells that field %s. The corrected query is in details.repaired_query — execute it exactly as given.", candidate)
+				details["repaired_query"] = repaired
+				details["renamed_columns"] = []string{column + " -> " + candidate}
+				next = map[string]any{
+					"recommended_tool": "execute_graphql",
+					"args":             map[string]any{"query": repaired},
+					"reason":           "Execute details.repaired_query exactly as given; it is this same query expressed with the column names this table actually has.",
+				}
+			}
+		}
+	}
+	if isWatchDefinitionMutation(query) {
+		if candidate, ok := nearestColumn(column, columns, map[string]bool{}); ok {
+			if fixed, spliced := repairWatchSubscriptionColumn(query, column, candidate); spliced {
+				repaired = fixed
+				note = fmt.Sprintf(" The subscription's %s table spells that field %s. The corrected mutation is in details.repaired_query — execute it exactly as given.", table, candidate)
+				details["repaired_query"] = repaired
+				details["renamed_columns"] = []string{column + " -> " + candidate}
+				next = map[string]any{
+					"recommended_tool": "execute_graphql",
+					"args":             map[string]any{"query": repaired},
+					"reason":           "Execute details.repaired_query exactly as given; it is this same watch with its subscription expressed in the column names the table actually has.",
+				}
+			}
+		}
+	} else if ContainsMutationOperation(query) {
 		if fixed, renames, ok := repairUnknownMutationColumns(query, columns); ok {
 			repaired = fixed
 			renamed := make([]string, 0, len(renames))

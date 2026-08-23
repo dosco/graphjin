@@ -116,11 +116,13 @@ type strictWriteRuntime struct {
 	columns   map[string][]string
 	execCalls int
 	writes    []string
+	queries   []string
 }
 
 func (r *strictWriteRuntime) ExecuteGraphQL(_ context.Context, args map[string]any) (any, error) {
 	query, _ := args["query"].(string)
 	r.execCalls++
+	r.queries = append(r.queries, query)
 	if err := checkGraphQLParses(query); err != nil {
 		return nil, err
 	}
@@ -149,7 +151,85 @@ func (r *strictWriteRuntime) ExecuteGraphQL(_ context.Context, args map[string]a
 		}
 		r.writes = append(r.writes, query)
 	}
+	if !ContainsMutationOperation(query) {
+		clean := graphQLStructure(query)
+		for _, root := range QueryRootFields(query) {
+			columns, tracked := r.columns[strings.ToLower(root)]
+			if !tracked {
+				continue
+			}
+			known := map[string]bool{}
+			for _, column := range columns {
+				known[strings.ToLower(column)] = true
+			}
+			if unknown := unknownSelectionField(clean, root, known); unknown != "" {
+				return map[string]any{"errors": []any{map[string]any{
+					"message": fmt.Sprintf("field '%s' is not a column or a function", unknown),
+				}}}, nil
+			}
+		}
+	}
 	return map[string]any{"data": map[string]any{"payments": []any{map[string]any{"id": 900001}}}}, nil
+}
+
+// unknownSelectionField scans a root's selection for a flat field naming no
+// real column, the way the engine's compiler does. Aggregate forms and
+// protocol fields pass through.
+func unknownSelectionField(clean, root string, known map[string]bool) string {
+	lower := strings.ToLower(clean)
+	index := strings.Index(lower, strings.ToLower(root))
+	for index >= 0 {
+		end := index + len(root)
+		if (index > 0 && isGraphQLNameContinue(clean[index-1])) || (end < len(clean) && isGraphQLNameContinue(clean[end])) {
+			next := strings.Index(lower[end:], strings.ToLower(root))
+			if next < 0 {
+				return ""
+			}
+			index = end + next
+			continue
+		}
+		open := skipGraphQLSpace(clean, end)
+		if open < len(clean) && clean[open] == '(' {
+			open = skipGraphQLSpace(clean, matchingGraphQLDelimiter(clean, open, '(', ')')+1)
+		}
+		if open >= len(clean) || clean[open] != '{' {
+			return ""
+		}
+		close := matchingGraphQLDelimiter(clean, open, '{', '}')
+		body := clean[open+1 : close]
+		depth := 0
+		for i := 0; i < len(body); i++ {
+			switch c := body[i]; {
+			case c == '{' || c == '(':
+				depth++
+			case c == '}' || c == ')':
+				depth--
+			case depth == 0 && isGraphQLNameContinue(c):
+				start := i
+				for i < len(body) && isGraphQLNameContinue(body[i]) {
+					i++
+				}
+				name := strings.ToLower(body[start:i])
+				next := skipGraphQLSpace(body, i)
+				if next < len(body) && (body[next] == ':' || body[next] == '{' || body[next] == '(') {
+					i--
+					continue
+				}
+				aggregate := false
+				for _, prefix := range []string{"count_", "sum_", "avg_", "max_", "min_"} {
+					if strings.HasPrefix(name, prefix) {
+						aggregate = true
+					}
+				}
+				if !aggregate && !known[name] {
+					return body[start:i]
+				}
+				i--
+			}
+		}
+		return ""
+	}
+	return ""
 }
 
 func strictWriteTestRuntime(t *testing.T) (*protocolRuntime, *strictWriteRuntime) {
