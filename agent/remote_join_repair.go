@@ -17,9 +17,17 @@ import (
 // So the repair hands over the query rather than describing it, the same way the
 // value guard hands over a corrected write. The model's own filter is grafted in
 // when every column it names actually belongs to the parent; otherwise the shape
-// arrives with a hole and the real column names to fill it from. Offered, never
-// executed: choosing which row to ask about is the model's job, and only the
-// route is ours to fix.
+// arrives with a hole and the real column names to fill it from.
+//
+// Offering alone was measured and it did not work: across the round-2 A/B the
+// repair fired seven times and was executed zero times, and both cross-source
+// passes in that run were nested queries the model authored for itself after
+// reading the catalog. So a repair whose filter is entirely the model's own —
+// every column of it legal on the parent — now executes instead of being handed
+// back, on the same reasoning the watch-subscription repair executes: it is the
+// unique reading of the caller's own question, and only the route was ever ours
+// to fix. Anything less certain is still offered, because choosing which row to
+// ask about stays the model's job.
 
 // remoteJoinFilterOperators are the comparison and combinator keys GraphJin's
 // where grammar defines. They appear as object keys alongside column names, so
@@ -39,25 +47,48 @@ const (
 	remoteJoinRepairLimit      = 20
 )
 
+// remoteJoinFilterKind reports how much of the offered filter is the model's own
+// work, which is what decides whether the repair may execute rather than be
+// handed back.
+type remoteJoinFilterKind int
+
+const (
+	// remoteJoinFilterHole: nothing of the model's filter could be carried
+	// across, so the shape arrives with a placeholder and the parent's real
+	// column names to fill it from.
+	remoteJoinFilterHole remoteJoinFilterKind = iota
+	// remoteJoinFilterSalvaged: the filter named no parent column but carried a
+	// single string literal the parent's name column can take. The literal is
+	// the model's; the column is our inference, so this is offered, not run.
+	remoteJoinFilterSalvaged
+	// remoteJoinFilterGrafted: every column the model named belongs to the
+	// parent, so the corrected query asks the model's own question by the only
+	// route it has.
+	remoteJoinFilterGrafted
+)
+
 // remoteJoinRepairedQuery builds the nested query the intercepted one was
-// reaching for. grafted reports whether the model's own filter survived into it,
-// which decides how much the caller needs to explain.
-func (r *protocolRuntime) remoteJoinRepairedQuery(ctx context.Context, query, root, parent string) (string, bool) {
+// reaching for. The kind reports how much of the model's own filter survived
+// into it, which decides both how much the caller needs to explain and whether
+// the caller may execute it outright.
+func (r *protocolRuntime) remoteJoinRepairedQuery(ctx context.Context, query, root, parent string) (string, remoteJoinFilterKind) {
 	parentColumns := r.observedColumnNames(ctx, parent)
 	childColumns := r.observedColumnNames(ctx, root)
 
-	filter, grafted := r.remoteJoinFilter(ctx, query, root, parent, parentColumns)
+	filter, kind := r.remoteJoinFilter(ctx, query, root, parent, parentColumns)
 	return fmt.Sprintf("query { %s(where: %s, limit: %d) { %s %s { %s } } }",
 		parent, filter, remoteJoinRepairLimit,
 		remoteJoinFieldList(parentColumns, remoteJoinParentFieldLimit),
 		root,
 		remoteJoinFieldList(childColumns, remoteJoinChildFieldLimit),
-	), grafted
+	), kind
 }
 
-// remoteJoinFilter returns the model's own where body when it is legal on the
-// parent, and otherwise a hole naming the columns that are.
-func (r *protocolRuntime) remoteJoinFilter(ctx context.Context, query, root, parent string, parentColumns []string) (string, bool) {
+// remoteJoinFilter returns the model's own where object when it is legal on the
+// parent, then the salvage, and otherwise a hole naming the columns that are.
+// Every return is a complete `{...}` value: the where argument is spliced whole
+// into the repaired query, and a body without its own braces does not parse.
+func (r *protocolRuntime) remoteJoinFilter(ctx context.Context, query, root, parent string, parentColumns []string) (string, remoteJoinFilterKind) {
 	hole := "{<filter on " + parent + ">}"
 	if len(parentColumns) != 0 {
 		hole = "{<filter on " + parent + ", columns: " + strings.Join(remoteJoinCapped(parentColumns, 6), ", ") + ">}"
@@ -66,16 +97,16 @@ func (r *protocolRuntime) remoteJoinFilter(ctx context.Context, query, root, par
 		// Without the parent's columns there is nothing to validate a graft
 		// against, and grafting unchecked is how a filter on the child's own
 		// join column would survive into the repair.
-		return hole, false
+		return hole, remoteJoinFilterHole
 	}
 	body, ok := remoteJoinWhereBody(query, root)
 	if !ok {
-		return hole, false
+		return hole, remoteJoinFilterHole
 	}
 	// A filter carrying variables cannot be offered: the repair travels as a
 	// bare query string with no channel for the values it would reference.
 	if strings.Contains(body, "$") {
-		return hole, false
+		return hole, remoteJoinFilterHole
 	}
 	keys := map[string]bool{}
 	collectGraphQLObjectKeys(graphQLStructure(body), keys)
@@ -89,14 +120,61 @@ func (r *protocolRuntime) remoteJoinFilter(ctx context.Context, query, root, par
 			continue
 		}
 		if !allowed[key] {
-			return hole, false
+			return remoteJoinSalvagedFilter(body, parentColumns, hole)
 		}
 		named++
 	}
 	if named == 0 {
-		return hole, false
+		return remoteJoinSalvagedFilter(body, parentColumns, hole)
 	}
-	return body, true
+	// graphQLNamedObject returns an object's INTERIOR — the span between the
+	// braces, not including them. Round 2 spliced that interior straight into
+	// `where: %s` and shipped `where: name: {eq: "..."}` to seven episodes as a
+	// query to "execute exactly as given". None of them could.
+	return "{" + body + "}", remoteJoinFilterGrafted
+}
+
+// remoteJoinSalvagedFilter rescues the one thing a rejected filter still knows:
+// which row the model is asking about. Every miss observed across two benchmark
+// runs — client, account_name, executive_owner — carried the account's name as
+// its only literal and put it under a column the parent does not have. A lone
+// string literal plus a name column on the parent is therefore a filter the
+// model already wrote, moved to the column it belongs in. The value stays the
+// model's, so the caller offers this rather than running it.
+func remoteJoinSalvagedFilter(body string, parentColumns []string, hole string) (string, remoteJoinFilterKind) {
+	name := ""
+	for _, column := range parentColumns {
+		if strings.EqualFold(strings.TrimSpace(column), "name") {
+			name = strings.TrimSpace(column)
+			break
+		}
+	}
+	if name == "" {
+		return hole, remoteJoinFilterHole
+	}
+	literals := remoteJoinStringLiterals(body)
+	if len(literals) != 1 || strings.TrimSpace(literals[0]) == "" {
+		return hole, remoteJoinFilterHole
+	}
+	return fmt.Sprintf("{%s: {eq: %q}}", name, literals[0]), remoteJoinFilterSalvaged
+}
+
+// remoteJoinStringLiterals returns every quoted string value in a where body, in
+// order. Exactly one of them is what makes a salvage unambiguous.
+func remoteJoinStringLiterals(body string) []string {
+	var out []string
+	for i := 0; i < len(body); i++ {
+		if body[i] != '"' {
+			continue
+		}
+		value, next := graphQLStringLiteral(body, i)
+		if next <= i {
+			break
+		}
+		out = append(out, value)
+		i = next - 1
+	}
+	return out
 }
 
 // remoteJoinWhereBody extracts the intercepted query's where object, spans and

@@ -118,3 +118,112 @@ func TestDemoCatalogServesJoinAndValueEvidence(t *testing.T) {
 		t.Fatalf("account_health example must teach the nested route: %s", examples)
 	}
 }
+
+// TestDemoRemoteJoinRepairReturnsLiveRows drives the join repair end to end
+// against real GraphJin, for zero provider tokens, because the unit tests around
+// it could not have caught what shipped.
+//
+// The repair spent a whole benchmark round emitting `where: name: {eq: "..."}` —
+// the braces dropped, because the span helper it spliced returns an object's
+// interior — and told seven episodes to execute it exactly as given. Every unit
+// test passed: they asserted substrings, which the broken form also contains,
+// and the one named "...RepairedQueryExecutes" executed against a fake that
+// counted calls without reading them. Nothing in the package had ever handed the
+// string to something that parses.
+//
+// So this test does. The scripted model asks the closed question and reports
+// what came back; the assertion is on live rows, which only exist if a real
+// parser accepted the rewrite.
+func TestDemoRemoteJoinRepairReturnsLiveRows(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded service integration")
+	}
+	project := t.TempDir()
+	if err := extractDefaultDemo(project); err != nil {
+		t.Fatal(err)
+	}
+	originalPath, originalConf, originalDB, originalOpened := cpath, conf, db, dbOpened
+	defer func() {
+		cpath, conf, db, dbOpened = originalPath, originalConf, originalDB, originalOpened
+	}()
+	t.Setenv("GO_ENV", "dev")
+	// Reading the table card is what registers the remote join, exactly as a live
+	// run does. Then the closed route is asked for on purpose.
+	client := &evalScriptClient{code: `
+const card = await query_catalog({id:"table:app:main.account_health"});
+const probe = await execute_graphql({query:'query { account_health(where: {name: {eq: "Meridian Robotics"}}) { health open_risk_count } }'});
+const rows = (probe && probe.data && probe.data.accounts) || [];
+const first = rows[0] || {};
+const nested = first.account_health || {};
+const report = {
+  rows: rows.length,
+  name: first.name || "",
+  health: nested.health || "",
+  errors: (probe && probe.errors) ? probe.errors.length : 0,
+  recovery: (probe && probe.recovery) ? probe.recovery.kind : ""
+};
+await final({status:"answered", answer:"probe " + JSON.stringify(report), data:{probe:probe}, evidence:[card]});
+`}
+	environment := evalEnvironment{ClientFactory: func(gjagent.Config) (ax.AIClient, error) { return client, nil }}
+	instance, err := environment.Start(context.Background(), gjeval.EnvSpec{Target: gjeval.TargetDemo, ConfigPath: project, Seed: 23})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer instance.Close() //nolint:errcheck
+
+	base := strings.TrimRight(strings.TrimSpace(instance.BaseURL()), "/")
+	for _, suffix := range []string{"/api/v1/agent/status", "/api/v1/agent", "/api/v1/graphql"} {
+		base = strings.TrimSuffix(base, suffix)
+	}
+	trace := true
+	payload, _ := json.Marshal(gjagent.Request{
+		Instruction: "How healthy is Meridian Robotics right now?",
+		ReturnTrace: &trace,
+	})
+	request, err := http.NewRequest(http.MethodPost, base+"/api/v1/agent", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	for key, value := range instance.Headers() {
+		request.Header.Set(key, value)
+	}
+	httpResponse, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer httpResponse.Body.Close() //nolint:errcheck
+	var response gjagent.Response
+	if err := json.NewDecoder(httpResponse.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+
+	var report struct {
+		Rows     int    `json:"rows"`
+		Name     string `json:"name"`
+		Health   string `json:"health"`
+		Errors   int    `json:"errors"`
+		Recovery string `json:"recovery"`
+	}
+	_, encoded, found := strings.Cut(response.Answer, "probe ")
+	if !found {
+		t.Fatalf("scripted probe did not report (status=%s answer=%q errors=%v)", response.Status, response.Answer, response.Errors)
+	}
+	if err := json.Unmarshal([]byte(encoded), &report); err != nil {
+		t.Fatalf("probe report %q: %v", encoded, err)
+	}
+	if report.Errors != 0 {
+		t.Fatalf("the rewritten query was rejected by GraphJin: %+v", report)
+	}
+	if report.Rows == 0 {
+		t.Fatalf("the rewrite returned no rows, so the repair does not work: %+v", report)
+	}
+	if report.Name == "" || report.Health == "" {
+		t.Fatalf("the rewrite must return the parent row with the join nested inside it: %+v", report)
+	}
+	// The model asked for account_health and received accounts. Unannounced, that
+	// reshaping reads as an empty answer.
+	if report.Recovery != "remote_join_route_rewritten" {
+		t.Fatalf("an executed rewrite must tell the model what it is looking at: %+v", report)
+	}
+}
