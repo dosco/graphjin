@@ -180,6 +180,9 @@ type discoveryState struct {
 	// full repair explanation, so a looping model gets the corrected query
 	// without the paragraph a second time.
 	remoteJoinRepairOffered map[string]bool
+	// referentRewriteNoticed keeps the referent-binding violation record to one
+	// per query identity; the rewrite itself repeats freely.
+	referentRewriteNoticed map[string]bool
 	// remoteJoinNoticed keeps the violation record to one per root; the
 	// interception itself repeats, because the intercepted call cannot succeed.
 	remoteJoinNoticed map[string]bool
@@ -840,7 +843,15 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 	// variables bind it, running it answers a broader question than the one asked —
 	// and unlike raw GraphQL the caller cannot narrow it by editing the query, so
 	// the repair has to point at authoring instead.
-	if refs := unresolvedHistoryReferent(r.state.instruction, r.state.savedQueryGraphQLFor(name), args, r.state.history); len(refs) != 0 && r.state.refuseUnscopedReferent("saved:"+strings.ToLower(strings.TrimSpace(name))) {
+	// The strike cap exists so a run is never stranded on a guard that guessed
+	// wrong. But when the retained subject names a table this run knows, the
+	// scoped raw query the refusal asks for actually exists — and the cap's
+	// let-through was measured trading it for a wrong answer: same-invoice
+	// episodes ran the unscoped saved query on the third try and reported the
+	// whole table's total as invoice 10's amount. A bindable subject keeps the
+	// refusal standing, the same way a clear-winner value repair does.
+	if refs := unresolvedHistoryReferent(r.state.instruction, r.state.savedQueryGraphQLFor(name), args, r.state.history); len(refs) != 0 &&
+		(r.state.referentBindableToKnownTable(refs) || r.state.refuseUnscopedReferent("saved:"+strings.ToLower(strings.TrimSpace(name)))) {
 		r.state.recordReferentRejection("saved:" + strings.ToLower(strings.TrimSpace(name)))
 		described := describeEntityReferences(refs)
 		err := fmt.Errorf("protocol violation: this follow-up is scoped to %s, but saved query %q does not filter on it and a saved query cannot be narrowed at call time. Author the scoped query with execute_graphql, or pass a variable this saved query accepts that binds the subject", described, name)
@@ -907,6 +918,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	query := stringArg(args, "query")
 	normalizedWatchQuery := ""
 	rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent := "", "", ""
+	boundReferentQuery, boundReferent := "", referentBinding{}
 	if r.state.hasPolicyFinalBlockingViolation() {
 		out := r.state.policyFinalExecutionResult()
 		action := r.state.startAction("model", "execute_graphql", args)
@@ -1090,20 +1102,45 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		// authored query binds none of it, the answer will describe the whole table
 		// instead of the one row asked about. Name the subject once; which filter
 		// path reaches it is the model's decision, not this guard's.
-		if refs := unresolvedHistoryReferent(r.state.instruction, query, args, r.state.history); len(refs) != 0 && r.state.refuseUnscopedReferent(normalizeGraphQLIdentity(query)) {
-			r.state.recordReferentRejection(normalizeGraphQLIdentity(query))
-			described := describeEntityReferences(refs)
-			err := fmt.Errorf("protocol violation: this follow-up inherits its subject from prior turns, which retained %s, but the query filters on none of it. Re-author the query scoped to the retained subject before answering", described)
-			details := map[string]any{"retained_subject": refs, "fault": "unresolved_history_referent"}
-			r.state.addViolation("history_referent_unresolved", err.Error(), "execute_graphql", true, details)
-			out := recoverableProtocolFailure("history_referent_unresolved", err.Error(), "history_referent_unresolved",
-				map[string]any{
-					"recommended_tool": "execute_graphql",
-					"reason":           "Add the where clause that scopes this query to " + described + ", then execute it once. If the retained subject genuinely does not apply, execute the unscoped query again and it will run.",
-				}, details)
-			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, out, nil)
-			return out, nil
+		if refs := unresolvedHistoryReferent(r.state.instruction, query, args, r.state.history); len(refs) != 0 {
+			if rewritten, binding, ok := r.referentScopedRewrite(ctx, query, refs); ok {
+				// The binding is mechanical — the subject and id are the user's
+				// own words, the column is the catalog's — so the scoped query
+				// executes instead of being described. The refusal was measured
+				// on this exact shape and lost: its "execute the unscoped query
+				// again and it will run" escape hatch is the first thing a weak
+				// model reaches for, and the let-through's whole-table number
+				// was then reported as the subject's in four of six stable
+				// multi-turn losses.
+				identity := normalizeGraphQLIdentity(query)
+				if !r.state.referentRewriteNoticed[identity] {
+					if r.state.referentRewriteNoticed == nil {
+						r.state.referentRewriteNoticed = map[string]bool{}
+					}
+					r.state.referentRewriteNoticed[identity] = true
+					err := fmt.Errorf("protocol violation: this follow-up inherits its subject from prior turns, which retained %s, but the query filtered on none of it. It executed re-scoped to %s via %s.%s as: %s", describeEntityReferences(refs), binding.Ref.String(), binding.Root, binding.Column, rewritten)
+					r.state.addViolation("history_referent_unresolved", err.Error(), "execute_graphql", true,
+						map[string]any{"retained_subject": refs, "fault": "unresolved_history_referent", "repaired_query": rewritten})
+				}
+				query = rewritten
+				args = cloneAnyMap(args)
+				args["query"] = rewritten
+				boundReferentQuery, boundReferent = rewritten, binding
+			} else if r.state.refuseUnscopedReferent(normalizeGraphQLIdentity(query)) {
+				r.state.recordReferentRejection(normalizeGraphQLIdentity(query))
+				described := describeEntityReferences(refs)
+				err := fmt.Errorf("protocol violation: this follow-up inherits its subject from prior turns, which retained %s, but the query filters on none of it. Re-author the query scoped to the retained subject before answering", described)
+				details := map[string]any{"retained_subject": refs, "fault": "unresolved_history_referent"}
+				r.state.addViolation("history_referent_unresolved", err.Error(), "execute_graphql", true, details)
+				out := recoverableProtocolFailure("history_referent_unresolved", err.Error(), "history_referent_unresolved",
+					map[string]any{
+						"recommended_tool": "execute_graphql",
+						"reason":           "Add the where clause that scopes this query to " + described + ", then execute it once. If the retained subject genuinely does not apply, execute the unscoped query again and it will run.",
+					}, details)
+				action := r.state.startAction("model", "execute_graphql", args)
+				r.state.finishAction(action, "execute_graphql", args, out, nil)
+				return out, nil
+			}
 		}
 	}
 	if ContainsMutationOperation(query) {
@@ -1387,6 +1424,9 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	}
 	if rewrittenJoinQuery != "" && err == nil && !executionFailed(out) {
 		out = attachRemoteJoinRewriteNotice(out, rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent)
+	}
+	if boundReferentQuery != "" && err == nil && !executionFailed(out) {
+		out = attachReferentBindingNotice(out, boundReferentQuery, boundReferent)
 	}
 	r.state.finishAction(action, "execute_graphql", args, out, err)
 	if err == nil {
@@ -2289,6 +2329,18 @@ func (s *discoveryState) requiredSavedQueryExecution() (name string, explicit bo
 	explicit = name != ""
 	if name == "" {
 		name = s.unambiguousSavedQueryForLiveData()
+	}
+	// A follow-up that inherits its subject from prior turns cannot be served
+	// by a saved query that does not bind that subject: the referent guard
+	// refuses exactly that execution, so demanding it here wedged runs between
+	// two contradictory requirements. Episode same-invoice-amount rep3 authored
+	// the correct scoped query and was blocked five times by this demand for a
+	// saved query the other guard would never let run.
+	if name != "" && !explicit {
+		if refs := unresolvedHistoryReferent(s.instruction, "-", nil, s.history); len(refs) != 0 &&
+			!queryBindsReference(s.savedQueryGraphQLFor(name), nil, refs) {
+			return "", false
+		}
 	}
 	return name, explicit
 }

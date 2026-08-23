@@ -392,3 +392,61 @@ func prunedSelection(clean, raw string, known map[string]string) (string, bool) 
 	}
 	return strings.Join(kept, " "), true
 }
+
+// repairWatchSubscriptionColumn renames one unknown column inside a gj_watch
+// mutation's inline subscription string. The subscription travels as a quoted
+// value, which puts it out of reach of every other rename path — and a watch
+// episode failed on exactly this: `amount` for amount_cents inside the
+// subscription, honestly reported and never repaired. Escapes in the string
+// are untouched; identifiers cannot contain them.
+func repairWatchSubscriptionColumn(query, column, candidate string) (string, bool) {
+	clean := graphQLStructure(query)
+	for _, keyword := range []string{"insert", "update"} {
+		for _, span := range mutationInputBlocks(clean, systemRootWatch, keyword) {
+			if span[0] < 0 || span[1] > len(query) || span[0] >= span[1] {
+				continue
+			}
+			literal, ok := graphQLStringFieldSpans(query[span[0]:span[1]])["query"]
+			if !ok {
+				continue
+			}
+			from, to := span[0]+literal.start, span[0]+literal.end
+			if from < 0 || to > len(query) || from >= to {
+				continue
+			}
+			renamed := renameBareIdentifier(query[from:to], column, candidate)
+			if renamed == query[from:to] {
+				continue
+			}
+			return query[:from] + renamed + query[to:], true
+		}
+	}
+	return "", false
+}
+
+// renameBareIdentifier replaces whole-identifier occurrences in text. Unlike
+// renameGraphQLIdentifiers it does not skip string literals — it is used on
+// the INSIDE of one, where the identifiers live.
+func renameBareIdentifier(text, from, to string) string {
+	var out strings.Builder
+	out.Grow(len(text))
+	fold := strings.ToLower(from)
+	for i := 0; i < len(text); i++ {
+		if isGraphQLNameContinue(text[i]) {
+			start := i
+			for i < len(text) && isGraphQLNameContinue(text[i]) {
+				i++
+			}
+			word := text[start:i]
+			if strings.ToLower(word) == fold {
+				out.WriteString(to)
+			} else {
+				out.WriteString(word)
+			}
+			i--
+			continue
+		}
+		out.WriteByte(text[i])
+	}
+	return out.String()
+}
