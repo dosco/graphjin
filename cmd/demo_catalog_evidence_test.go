@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -225,5 +226,91 @@ await final({status:"answered", answer:"probe " + JSON.stringify(report), data:{
 	// reshaping reads as an empty answer.
 	if report.Recovery != "remote_join_route_rewritten" {
 		t.Fatalf("an executed rewrite must tell the model what it is looking at: %+v", report)
+	}
+}
+
+// TestDemoRemoteJoinChildRejectsUnknownFields pins the other half of the same
+// benchmark failure. The episode that asked account_health for open_risks and
+// health_color — neither of which exists — was handed has_data:true with an
+// empty object and no error at all, and answered that the account had an
+// undefined number of open risks.
+//
+// A top-level query with invented columns has always errored. The remote join
+// child did not: the selection rode the pass-through and jsn.FilterAliased
+// dropped every key the API response did not carry. Now that a resolver which
+// knows its response shape declares a closed column surface, the compile fails
+// and names the columns that do exist.
+func TestDemoRemoteJoinChildRejectsUnknownFields(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded service integration")
+	}
+	project := t.TempDir()
+	if err := extractDefaultDemo(project); err != nil {
+		t.Fatal(err)
+	}
+	originalPath, originalConf, originalDB, originalOpened := cpath, conf, db, dbOpened
+	defer func() {
+		cpath, conf, db, dbOpened = originalPath, originalConf, originalDB, originalOpened
+	}()
+	t.Setenv("GO_ENV", "dev")
+	client := &evalScriptClient{code: `await final({status:"blocked",answer:"not configured"});`}
+	environment := evalEnvironment{ClientFactory: func(gjagent.Config) (ax.AIClient, error) { return client, nil }}
+	instance, err := environment.Start(context.Background(), gjeval.EnvSpec{Target: gjeval.TargetDemo, ConfigPath: project, Seed: 23})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer instance.Close() //nolint:errcheck
+
+	base := strings.TrimRight(strings.TrimSpace(instance.BaseURL()), "/")
+	for _, suffix := range []string{"/api/v1/agent/status", "/api/v1/agent", "/api/v1/graphql"} {
+		base = strings.TrimSuffix(base, suffix)
+	}
+	run := func(query string) (map[string]any, string) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"query": query})
+		request, err := http.NewRequest(http.MethodPost, base+"/api/v1/graphql", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		for key, value := range instance.Headers() {
+			request.Header.Set(key, value)
+		}
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close() //nolint:errcheck
+		raw, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var envelope map[string]any
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			t.Fatalf("decode %q: %v (%s)", query, err, raw)
+		}
+		return envelope, string(raw)
+	}
+
+	// The real columns still work, nested under the parent.
+	envelope, raw := run(`query { accounts(where: {name: {eq: "Meridian Robotics"}}, limit: 1) { id name account_health { health open_risk_count } } }`)
+	if envelope["errors"] != nil {
+		t.Fatalf("the real join columns must still resolve: %s", raw)
+	}
+	if !strings.Contains(raw, "open_risk_count") {
+		t.Fatalf("the nested join should carry its data: %s", raw)
+	}
+
+	// The invented ones from the recorded episode must not come back empty.
+	_, raw = run(`query { accounts(where: {name: {eq: "Meridian Robotics"}}, limit: 1) { id name account_health { open_risks health_color } } }`)
+	if !strings.Contains(raw, "errors") {
+		t.Fatalf("invented join columns must error rather than resolve to nothing: %s", raw)
+	}
+	if !strings.Contains(raw, "open_risks") {
+		t.Fatalf("the error should name the column that does not exist: %s", raw)
+	}
+	// Naming the alternatives is what lets a model correct itself in one turn.
+	if !strings.Contains(raw, "open_risk_count") {
+		t.Fatalf("the error should list the columns that do exist: %s", raw)
 	}
 }

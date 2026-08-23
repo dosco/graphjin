@@ -156,8 +156,17 @@ func (gj *graphjinEngine) preRegisterOpenAPITables(reg *openapi.Registry) error 
 			if op.Mode != openapi.OpModeSingleByID && op.Mode != openapi.OpModeList {
 				continue
 			}
-			t := sdata.NewDBTable(schema, op.ExposeAs, "remote", openapi.SynthesiseColumns(schema, op.ExposeAs, op.ResponseSchema, op.ResultPath))
+			cols := openapi.SynthesiseColumns(schema, op.ExposeAs, op.ResponseSchema, op.ResultPath)
+			t := sdata.NewDBTable(schema, op.ExposeAs, "remote", cols)
 			t.Args = openapi.SynthesiseArgs(schema, op.ExposeAs, *op)
+			// Same closed surface the mutation branch above declares: when the
+			// spec described the response, a selection outside it is an error
+			// worth naming rather than a field that silently comes back absent.
+			// SynthesiseColumns returns nothing for an open-shaped schema, and
+			// those tables keep the lenient pass-through.
+			if len(cols) != 0 {
+				t.StrictColumns = true
+			}
 			pdb.dbinfo.AddTable(t)
 		}
 	}
