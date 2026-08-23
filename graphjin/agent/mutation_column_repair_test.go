@@ -494,3 +494,85 @@ func TestCachedSuccessDischargesLikeAFreshOne(t *testing.T) {
 		t.Fatal("a cached successful execution should discharge like a fresh one")
 	}
 }
+
+// catalogOverrideForSupply makes the fake catalog answer the security/runtime
+// supply with real-looking cards, so the supply path engages as it does live.
+func (r *protocolRuntime) catalogOverrideForSupply(base *strictWriteRuntime) {
+	base.catalogOverride = func(args map[string]any) any {
+		ids, _ := args["ids"].([]any)
+		cards := make([]any, 0, len(ids))
+		for _, id := range ids {
+			cards = append(cards, map[string]any{"id": id, "kind": "help", "summary": "guidance"})
+		}
+		return map[string]any{"cards": cards}
+	}
+}
+
+// Run ab4-trt exposed the gate's blind spot: 26 action episodes made exactly
+// one write call, had it consumed by the security-evidence supply, and
+// finalized "Ticket 1 has been closed with a note" over a database that never
+// changed — invisible because nothing marked the attempt. An intercepted write
+// is an attempted write.
+func TestInterceptedWriteCannotBeReportedAsDone(t *testing.T) {
+	runtime, base := strictWriteTestRuntime(t)
+	// The run has NOT read security/runtime guidance, so the first write-like
+	// call is consumed by the supply, exactly as in the recorded episodes.
+	runtime.state.securityRuntimeEvidence = false
+	runtime.catalogOverrideForSupply(base)
+
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { payments(insert: { id: 900001, reference: "DEEPORG-PAY-001", invoice_id: 1, amount_cents: 480000, recorded_at: "2027-01-15T12:00:00Z" }) { id } }`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(out)
+	if !strings.Contains(string(payload), "security_runtime_evidence_supplied") {
+		t.Fatalf("the first write should be consumed by the supply: %s", payload)
+	}
+	if len(base.writes) != 0 {
+		t.Fatalf("nothing may land during the supply: %v", base.writes)
+	}
+	// The model walks away and claims success — the recorded episode, verbatim.
+	resp := runtime.state.finalize(Response{Status: StatusAnswered, Answer: "Successfully recorded payment DEEPORG-PAY-001."})
+	if resp.Status != StatusBlocked {
+		t.Fatalf("a consumed-and-never-retried write cannot be reported done, got %s", resp.Status)
+	}
+	found := false
+	for _, violation := range runtime.state.violations {
+		if violation.Code == "mutation_execution_failed" {
+			found = true
+			if !strings.Contains(violation.Message, "intercepted") {
+				t.Fatalf("the refusal should say the write was intercepted: %s", violation.Message)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected mutation_execution_failed, got %+v", runtime.state.violations)
+	}
+}
+
+// The same run, one behavior stronger: the retry after the supply lands and
+// the success report is earned.
+func TestInterceptedWriteRetriedToSuccessFinalizesAnswered(t *testing.T) {
+	runtime, base := strictWriteTestRuntime(t)
+	runtime.state.securityRuntimeEvidence = false
+	runtime.catalogOverrideForSupply(base)
+
+	write := map[string]any{
+		"query": `mutation { payments(insert: { id: 900001, reference: "DEEPORG-PAY-001", invoice_id: 1, amount_cents: 480000, recorded_at: "2027-01-15T12:00:00Z" }) { id } }`,
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), write); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), write); err != nil {
+		t.Fatal(err)
+	}
+	if len(base.writes) != 1 {
+		t.Fatalf("the retry should land: %v", base.writes)
+	}
+	resp := runtime.state.finalize(Response{Status: StatusAnswered, Answer: "Recorded payment DEEPORG-PAY-001."})
+	if resp.Status != StatusAnswered {
+		t.Fatalf("a landed retry finalizes normally, got %s: %+v", resp.Status, resp.Errors)
+	}
+}

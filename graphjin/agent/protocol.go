@@ -947,6 +947,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	}
 	if !r.state.hasCatalogEvidence() {
 		err := fmt.Errorf("protocol violation: inspect catalog evidence before execute_graphql")
+		r.state.noteInterceptedWrite(query, "the write was refused pending catalog evidence and was not successfully retried")
 		r.state.addViolation("raw_graphql_catalog_required", err.Error(), "execute_graphql", true, nil)
 		action := r.state.startAction("model", "execute_graphql", args)
 		r.state.finishAction(action, "execute_graphql", args, nil, err)
@@ -966,8 +967,10 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		// up after two of these refusals and reported "no unseen events found"
 		// over an inbox it never read.
 		if supplied, ok := r.supplySystemRootDiscovery(ctx, query, args); ok {
+			r.state.noteInterceptedWrite(query, "the write was intercepted so the system-root contract could be supplied, and was not retried")
 			return supplied, nil
 		}
+		r.state.noteInterceptedWrite(query, "the write was refused pending catalog discovery and was not successfully retried")
 		err := fmt.Errorf("protocol violation: the seed and broad catalog results are not discovery detail; inspect the relevant catalog item with query_catalog({id:\"...\"}) before authoring raw GraphQL.%s", approvedSavedQuerySuffix(r.state))
 		details := map[string]any{
 			"approved_saved_queries": sortedBoolKeys(r.state.savedQueriesDiscovered),
@@ -1029,8 +1032,10 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		// substring) from a refusal the run was never taught about into the
 		// guidance itself.
 		if supplied, ok := r.supplySecurityRuntimeEvidence(ctx, args); ok {
+			r.state.noteInterceptedWrite(query, "the write was intercepted so security and runtime guidance could be supplied, and was not retried")
 			return supplied, nil
 		}
+		r.state.noteInterceptedWrite(query, "the write was refused pending security and runtime guidance and was not successfully retried")
 		err := fmt.Errorf("protocol violation: inspect security/runtime catalog guidance before write-capable or control-plane GraphQL")
 		details := map[string]any{"required": []any{"help:security", "help:runtime"}}
 		r.state.addViolation("security_runtime_discovery_required", err.Error(), "execute_graphql", true, details)
@@ -1239,6 +1244,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 						}
 					}
 					err := fmt.Errorf("protocol violation: %s. %s", described, guidance)
+					r.state.noteInterceptedWrite(query, "the write was refused for a value outside the column's observed set and was not successfully retried")
 					r.state.addViolation("observed_value_mismatch", err.Error(), "execute_graphql", true, details)
 					out := recoverableProtocolFailure("observed_value_mismatch", err.Error(), kind, next, details)
 					action := r.state.startAction("model", "execute_graphql", args)
@@ -1273,6 +1279,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				} else {
 					details := map[string]any{"root": systemRootWatch, "fault": "unescaped_subscription_string"}
 					err := fmt.Errorf(`protocol violation: the gj_watch subscription string has unescaped quotes, so this mutation does not parse. Pass the subscription as a GraphQL variable instead of inlining it: mutation CreateWatch($name: String!, $query: String!) { gj_watch(insert: {name: $name, query: $query, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name status } } with variables {"name": "...", "query": "subscription { <root>(where: {...}, first: 25, after: $cursor) { ... } <root>_cursor }"}`)
+					r.state.noteInterceptedWrite(query, "the gj_watch mutation was refused for an unparseable subscription string and was not successfully retried")
 					r.state.addViolation("watch_query_invalid", err.Error(), "execute_graphql", true, details)
 					out := recoverableProtocolFailure("watch_query_invalid", err.Error(), "watch_query_invalid",
 						catalogRepairNext(map[string]any{"ids": []any{"help:watches"}}, "Re-author the gj_watch mutation with the subscription passed as a variable, then execute it once."), details)
@@ -1308,12 +1315,14 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			// the same escape watch creation has always had. Unresolvable targets
 			// still fail loudly inside supplyMutationEvidence.
 			if containsStringFold(roots, systemRootWatch) || r.state.previouslyRefusedMutationEvidence(missing) {
+				r.state.noteInterceptedWrite(query, "the write was intercepted pending mutation-shape evidence and was not successfully retried")
 				if supplied, ok := r.supplyMutationEvidence(ctx, missing); ok {
 					action := r.state.startAction("model", "execute_graphql", args)
 					r.state.finishAction(action, "execute_graphql", args, supplied, nil)
 					return supplied, nil
 				}
 			}
+			r.state.noteInterceptedWrite(query, "the write was refused pending mutation-shape evidence and was not successfully retried")
 			err := fmt.Errorf("protocol violation: gather mutation-shape evidence for %s before executing a mutation: inspect the target table's catalog detail with query_catalog({id:\"table:...\"}), validate_where_clause the target, inspect a mutation_pattern detail row, or use an approved saved mutation", strings.Join(missing, ", "))
 			details := map[string]any{"tables": missing}
 			r.state.addViolation("mutation_evidence_required", err.Error(), "execute_graphql", true, details)
@@ -3747,6 +3756,24 @@ func (s *discoveryState) recordMissingCatalogDetails(ids []string) {
 // empty, or a catalog that returned saved queries and not this one. A run that
 // has seen no saved queries at all knows nothing, and keeps the blocking demand:
 // that is the case where the lookup is genuinely the next thing to do.
+
+// noteInterceptedWrite records that a mutation was stopped before execution.
+// Run ab4-trt measured the hole this closes: 26 action episodes made exactly
+// one write call, had it consumed by an evidence supply or a guard refusal,
+// and finalized "successfully closed/recorded..." over a database that never
+// changed — invisible to the failed-write gate because nothing had marked the
+// attempt. An intercepted write is an attempted write; only a landed one may
+// be reported as done.
+func (s *discoveryState) noteInterceptedWrite(query, reason string) {
+	if s == nil || !ContainsMutationOperation(query) {
+		return
+	}
+	s.mutationAttempted = true
+	if !s.mutationSucceeded {
+		s.lastMutationFailure = reason
+	}
+}
+
 func (s *discoveryState) savedQueryKnownAbsent(name string) bool {
 	candidates := savedQueryNameCandidates(name)
 	if len(candidates) == 0 {
