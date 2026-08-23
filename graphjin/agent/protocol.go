@@ -568,6 +568,33 @@ func attachWatchNormalizationNotice(out any, repaired string) any {
 	}
 }
 
+// attachRemoteJoinRewriteNotice tells the model what it is looking at. The data
+// it receives came back under the parent's field name with the join nested
+// inside, which is not the shape it asked for, and an unexplained reshaping is
+// how a model ends up reporting that its query returned nothing.
+func attachRemoteJoinRewriteNotice(out any, repaired, root, parent string) any {
+	recovery := map[string]any{
+		"kind":           "remote_join_route_rewritten",
+		"code":           "remote_join_route_rewritten",
+		"instruction":    root + " is an API join with no rows of its own, so the top-level query could not return data. It executed as the nested route shown in repaired_query, and the results below are " + parent + " rows with " + root + " nested inside each one. Read " + root + " from there, and query it that way from now on.",
+		"repaired_query": repaired,
+	}
+	switch res := out.(type) {
+	case executeResult:
+		res.Recovery = recovery
+		return res
+	case *executeResult:
+		res.Recovery = recovery
+		return res
+	case map[string]any:
+		res = cloneAnyMap(res)
+		res["recovery"] = recovery
+		return res
+	default:
+		return out
+	}
+}
+
 func attachEmptyDetailRecovery(out any, missedIDs []string, next map[string]any, suggestions map[string][]string) any {
 	result := cloneAnyMap(mapValue(out))
 	if len(catalogCards(result)) == 0 {
@@ -831,6 +858,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	r.addNamespace(args)
 	query := stringArg(args, "query")
 	normalizedWatchQuery := ""
+	rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent := "", "", ""
 	if r.state.hasPolicyFinalBlockingViolation() {
 		out := r.state.policyFinalExecutionResult()
 		action := r.state.startAction("model", "execute_graphql", args)
@@ -949,8 +977,17 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		// knowing the open one. The intercepted call could never succeed, so this
 		// repair replaces a doomed execution rather than costing one.
 		if root, parent, ok := r.state.topLevelRemoteJoinRoot(query); ok {
+			// Describing the shape was not enough: models rewrote the same
+			// closed route sixteen ways in one episode. Hand over the query
+			// instead, the way the value guard hands over a corrected write —
+			// with the model's own filter grafted in when every column it names
+			// belongs to the parent.
+			repaired, kind := r.remoteJoinRepairedQuery(ctx, query, root, parent)
+			details := map[string]any{"root": root, "parent": parent, "fault": "remote_join_root_top_level", "repaired_query": repaired}
 			err := fmt.Errorf("protocol violation: %s is an API join served only nested under %s, so a top-level %s query cannot return data. Re-author it as query { %s(where: {<filter on %s>}) { %s { <fields> } } } and execute that", root, parent, root, parent, parent, root)
-			details := map[string]any{"root": root, "parent": parent, "fault": "remote_join_root_top_level"}
+			if kind == remoteJoinFilterGrafted {
+				err = fmt.Errorf("protocol violation: %s is an API join served only nested under %s, so a top-level %s query cannot return data. It carried a filter legal on %s, so it was re-authored onto the nested route and executed as: %s", root, parent, root, parent, repaired)
+			}
 			if !r.state.remoteJoinNoticed[strings.ToLower(root)] {
 				if r.state.remoteJoinNoticed == nil {
 					r.state.remoteJoinNoticed = map[string]bool{}
@@ -958,30 +995,47 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				r.state.remoteJoinNoticed[strings.ToLower(root)] = true
 				r.state.addViolation("remote_join_path_required", err.Error(), "execute_graphql", true, details)
 			}
-			// Describing the shape was not enough: models rewrote the same
-			// closed route sixteen ways in one episode. Hand over the query
-			// instead, the way the value guard hands over a corrected write —
-			// with the model's own filter grafted in when every column it names
-			// belongs to the parent.
-			repaired, grafted := r.remoteJoinRepairedQuery(ctx, query, root, parent)
-			details["repaired_query"] = repaired
-			reason := "Execute next.args.query exactly as given; it queries " + parent + " and returns " + root + " nested inside it."
-			if !grafted {
-				reason += " Fill the filter placeholder from the parent columns it names before executing."
+			if kind == remoteJoinFilterGrafted {
+				// Every column of the filter is the model's own and legal on the
+				// parent, so the nested query is the unique reading of the
+				// caller's own question — the same certainty on which the watch
+				// repair executes rather than offers. Offering was measured and
+				// it failed: across the round-2 A/B the repair was handed back 7
+				// times and executed 0 times, while both cross-source passes came
+				// from nested queries models wrote for themselves. A model that
+				// has already failed to find this route is not going to adopt it
+				// from a hand-back. Every downstream guard still runs against the
+				// rewritten query, its success discharges the violation recorded
+				// above, and the result carries a notice naming the rewrite.
+				query = repaired
+				args = cloneAnyMap(args)
+				args["query"] = repaired
+				rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent = repaired, root, parent
+			} else {
+				reason := "Execute next.args.query exactly as given; it queries " + parent + " and returns " + root + " nested inside it."
+				switch {
+				case kind == remoteJoinFilterSalvaged:
+					reason += " Its filter carries the value you filtered on, moved to the " + parent + " column that can hold it; change that value only if it is not the row you meant."
+				default:
+					reason = "Replace the <filter on " + parent + "> placeholder in next.args.query with a filter built from the " + parent + " columns it names, then execute the result; it queries " + parent + " and returns " + root + " nested inside it."
+				}
+				if r.state.remoteJoinRepairSeen(root) {
+					// A repeat on the same root has already been taught the route.
+					reason = "Execute next.args.query exactly as given."
+					if kind == remoteJoinFilterHole {
+						reason = "Fill the <filter on " + parent + "> placeholder in next.args.query, then execute it."
+					}
+				}
+				out := recoverableProtocolFailure("remote_join_path_required", err.Error(), "remote_join_repair",
+					map[string]any{
+						"recommended_tool": "execute_graphql",
+						"args":             map[string]any{"query": repaired},
+						"reason":           reason,
+					}, details)
+				action := r.state.startAction("model", "execute_graphql", args)
+				r.state.finishAction(action, "execute_graphql", args, out, nil)
+				return out, nil
 			}
-			if r.state.remoteJoinRepairSeen(root) {
-				// A repeat on the same root has already been taught the route.
-				reason = "Execute next.args.query exactly as given."
-			}
-			out := recoverableProtocolFailure("remote_join_path_required", err.Error(), "remote_join_repair",
-				map[string]any{
-					"recommended_tool": "execute_graphql",
-					"args":             map[string]any{"query": repaired},
-					"reason":           reason,
-				}, details)
-			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, out, nil)
-			return out, nil
 		}
 		// A follow-up that points at "it" or "that account" has to inherit its
 		// subject from prior turns. When the retained subject is known and the
@@ -1239,6 +1293,9 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	}
 	if normalizedWatchQuery != "" && err == nil && !executionFailed(out) {
 		out = attachWatchNormalizationNotice(out, normalizedWatchQuery)
+	}
+	if rewrittenJoinQuery != "" && err == nil && !executionFailed(out) {
+		out = attachRemoteJoinRewriteNotice(out, rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent)
 	}
 	r.state.finishAction(action, "execute_graphql", args, out, err)
 	if err == nil {

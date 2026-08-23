@@ -274,10 +274,27 @@ func TestReplayCrossSourceJoinIsHandedTheNestedQuery(t *testing.T) {
 		if !observed.HasCode("remote_join_path_required") {
 			t.Fatalf("a top-level join query must still be intercepted: %+v", observed)
 		}
-		// The mechanism under test is that the recovery now carries the corrected
-		// route rather than a description of it.
-		if !observed.HasCode("remote_join_repair") {
-			t.Errorf("the interception should offer the nested query: recovery=%v", observed.RecoveryCodes)
+		// The mechanism under test is no longer that the recovery describes the
+		// corrected route, nor that it carries it: this fixture's filter is legal
+		// on accounts, so the corrected query is the unique reading of the
+		// model's own question and it runs. Offering was measured on this exact
+		// shape and lost — at 40edb30d this trajectory spent all 8 turns
+		// re-sending the closed route and ended blocked, with the repair sitting
+		// unexecuted in every recovery payload.
+		if !observed.HasCode("remote_join_route_rewritten") {
+			t.Errorf("a clean graft should execute, not be handed back: recovery=%v", observed.RecoveryCodes)
+		}
+		if observed.HasCode("remote_join_repair") {
+			t.Errorf("a clean graft must not be offered: recovery=%v", observed.RecoveryCodes)
+		}
+		// The runaway is what this fixture recorded, so its collapse is the
+		// result worth pinning. The replay still ends unanswered, and cannot do
+		// otherwise: every program here reads res.data.account_health, and the
+		// rewritten route returns accounts with the join nested inside. A live
+		// model is told that by the attached notice; a canned one cannot adapt.
+		if observed.ActorTurns >= fixture.Observed.ActorTurns {
+			t.Errorf("the repair should end the resend loop: turns=%d, recorded=%d",
+				observed.ActorTurns, fixture.Observed.ActorTurns)
 		}
 	})
 

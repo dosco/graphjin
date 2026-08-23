@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -15,13 +16,105 @@ import (
 type remoteJoinRuntime struct {
 	fakeRuntime
 	execCalls int
+	queries   []string
 }
 
 func (r *remoteJoinRuntime) ExecuteGraphQL(_ context.Context, args map[string]any) (any, error) {
+	query, _ := args["query"].(string)
+	r.queries = append(r.queries, query)
+	// The fake used to count calls without reading the query. That is exactly
+	// how a repair with the braces dropped from its where argument — `where:
+	// name: {eq: "x"}` — passed every test in this file and then reached seven
+	// benchmark episodes labelled "execute exactly as given". A stand-in for a
+	// GraphQL endpoint has to reject what a GraphQL endpoint rejects.
+	if err := checkGraphQLParses(query); err != nil {
+		return nil, err
+	}
 	r.execCalls++
 	return map[string]any{"data": map[string]any{"accounts": []any{map[string]any{
 		"name": "Meridian Robotics", "account_health": map[string]any{"health": "red", "open_risk_count": 4},
 	}}}}, nil
+}
+
+// checkGraphQLParses applies the two things a parser would reject on to any
+// string this package hands a model as ready to run: delimiters must balance,
+// and every argument value must actually be a value. A bare name where a value
+// belongs, followed by its own colon, is an object that lost its braces.
+func checkGraphQLParses(query string) error {
+	if strings.TrimSpace(query) == "" {
+		return fmt.Errorf("empty query")
+	}
+	if strings.ContainsAny(query, "<>") {
+		return fmt.Errorf("placeholder text is not executable: %s", query)
+	}
+	closers := map[byte]byte{'}': '{', ')': '(', ']': '['}
+	var open []byte
+	for i := 0; i < len(query); i++ {
+		switch c := query[i]; c {
+		case '"':
+			for i++; i < len(query); i++ {
+				if query[i] == '\\' {
+					i++
+					continue
+				}
+				if query[i] == '"' {
+					break
+				}
+			}
+			if i >= len(query) {
+				return fmt.Errorf("unterminated string: %s", query)
+			}
+		case '{', '(', '[':
+			open = append(open, c)
+		case '}', ')', ']':
+			if len(open) == 0 || open[len(open)-1] != closers[c] {
+				return fmt.Errorf("unbalanced %q at %d: %s", string(c), i, query)
+			}
+			open = open[:len(open)-1]
+		case ':':
+			value := i + 1
+			for value < len(query) && (query[value] == ' ' || query[value] == '\t' || query[value] == '\n') {
+				value++
+			}
+			end := value
+			for end < len(query) && isGraphQLNameContinue(query[end]) {
+				end++
+			}
+			if end == value {
+				continue
+			}
+			next := end
+			for next < len(query) && (query[next] == ' ' || query[next] == '\t' || query[next] == '\n') {
+				next++
+			}
+			if next < len(query) && query[next] == ':' {
+				return fmt.Errorf("argument value at %d lost its braces (%q is a key, not a value): %s", value, query[value:end], query)
+			}
+		}
+	}
+	if len(open) != 0 {
+		return fmt.Errorf("unclosed %q: %s", string(open[len(open)-1]), query)
+	}
+	return nil
+}
+
+// TestCheckGraphQLParsesCatchesTheDroppedBraces pins the checker itself: a test
+// helper that silently accepts everything is how the original bug survived.
+func TestCheckGraphQLParsesCatchesTheDroppedBraces(t *testing.T) {
+	broken := `query { accounts(where: name: {eq: "Meridian Robotics"}, limit: 20) { id name } }`
+	if err := checkGraphQLParses(broken); err == nil {
+		t.Fatal("the shipped round-2 shape must not be accepted")
+	}
+	for _, good := range []string{
+		`query { accounts(where: {name: {eq: "Meridian Robotics"}}, limit: 20) { id name account_health { health } } }`,
+		`query { accounts(where: {and: [{plan: {eq: "pro"}}, {status: {eq: "active"}}]}) { id } }`,
+		`query { accounts { id alias: name other: plan } }`,
+		`query { accounts(where: {name: {eq: "a: b"}}) { id } }`,
+	} {
+		if err := checkGraphQLParses(good); err != nil {
+			t.Fatalf("valid query rejected: %v", err)
+		}
+	}
 }
 
 func remoteJoinTestRuntime(t *testing.T) (*protocolRuntime, *remoteJoinRuntime) {
@@ -160,45 +253,53 @@ func seedRemoteJoinColumns(runtime *protocolRuntime) {
 	}
 }
 
-// The guard used to describe the nested shape in prose. One episode answered
-// that description with sixteen syntactic permutations of the closed route, so
-// the repair now carries the query itself.
-func TestRemoteJoinRepairOffersTheNestedQuery(t *testing.T) {
-	runtime, _ := remoteJoinTestRuntime(t)
+// A filter whose every column is legal on the parent makes the nested query the
+// unique reading of the model's own question, so it runs rather than being
+// handed back. Round 2 handed it back seven times and got zero executions.
+func TestRemoteJoinRepairExecutesACleanGraft(t *testing.T) {
+	runtime, base := remoteJoinTestRuntime(t)
 	seedRemoteJoinColumns(runtime)
 
 	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `query { account_health(where: {name: {eq: "Meridian Robotics"}}) { health open_risk_count } }`,
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("the rewritten query should execute: %v", err)
 	}
-	offered := stringFromMap(mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"]), "query")
-	if offered == "" {
-		t.Fatalf("repair must carry an executable query: %+v", out)
+	if base.execCalls != 1 {
+		t.Fatalf("the rewrite should reach the runtime exactly once, calls=%d queries=%q", base.execCalls, base.queries)
 	}
-	// accounts is the outer field and account_health is nested inside it — the
-	// one route the join actually has.
-	if !strings.Contains(offered, "accounts(where:") || !strings.Contains(offered, "account_health {") {
-		t.Fatalf("offered query has the wrong shape: %q", offered)
+	// What reached the endpoint is the nested route carrying the model's filter,
+	// and it parses — the assertion the substring checks here used to miss.
+	ran := base.queries[len(base.queries)-1]
+	if err := checkGraphQLParses(ran); err != nil {
+		t.Fatalf("executed query does not parse: %v", err)
 	}
-	if strings.Index(offered, "accounts(") > strings.Index(offered, "account_health {") {
-		t.Fatalf("account_health must be nested under accounts, not the other way around: %q", offered)
+	if !strings.Contains(ran, `accounts(where: {name: {eq: "Meridian Robotics"}}`) {
+		t.Fatalf("the model's own filter should ride the parent, braces and all: %q", ran)
 	}
-	// The model filtered on a real accounts column, so its own filter survives
-	// rather than being replaced by a placeholder.
-	if !strings.Contains(offered, `name: {eq: "Meridian Robotics"}`) {
-		t.Fatalf("a legal parent filter should be grafted, got %q", offered)
+	if strings.Index(ran, "accounts(") > strings.Index(ran, "account_health {") {
+		t.Fatalf("account_health must be nested under accounts, not the other way around: %q", ran)
 	}
-	if !strings.Contains(stringFromMap(mapValue(mapValue(out)["recovery"]), "instruction"), "exactly as given") {
-		t.Fatalf("recovery should state the fix as fact: %+v", mapValue(out)["recovery"])
+	// Data came back under a field name the model did not ask for, so the result
+	// says so; an unexplained reshaping is how a model reports an empty answer.
+	recovery := mapValue(mapValue(out)["recovery"])
+	if stringFromMap(recovery, "kind") != "remote_join_route_rewritten" {
+		t.Fatalf("an executed rewrite must announce itself: %+v", recovery)
+	}
+	if !strings.Contains(stringFromMap(recovery, "instruction"), "nested inside") {
+		t.Fatalf("the notice must say where to read the join from: %+v", recovery)
+	}
+	if runtime.state.hasBlockingViolation() {
+		t.Fatal("a successful rewrite should discharge the interception")
 	}
 }
 
 // A filter naming the child's own join column cannot be carried across to the
-// parent. The shape still arrives, with the columns that would work.
+// parent, and carries no value to salvage either. The shape still arrives, with
+// the columns that would work — offered, because the row is the model's choice.
 func TestRemoteJoinRepairReplacesAnUnusableFilterWithAHole(t *testing.T) {
-	runtime, _ := remoteJoinTestRuntime(t)
+	runtime, base := remoteJoinTestRuntime(t)
 	seedRemoteJoinColumns(runtime)
 
 	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
@@ -207,6 +308,9 @@ func TestRemoteJoinRepairReplacesAnUnusableFilterWithAHole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if base.execCalls != 0 {
+		t.Fatalf("a repair the model still has to complete must not run, calls=%d", base.execCalls)
+	}
 	offered := stringFromMap(mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"]), "query")
 	if strings.Contains(offered, "account_id: {eq: 1}") {
 		t.Fatalf("a child-column filter must not be grafted onto the parent: %q", offered)
@@ -214,35 +318,75 @@ func TestRemoteJoinRepairReplacesAnUnusableFilterWithAHole(t *testing.T) {
 	if !strings.Contains(offered, "<filter on accounts") || !strings.Contains(offered, "name") {
 		t.Fatalf("the hole should name real parent columns: %q", offered)
 	}
-	if !strings.Contains(stringFromMap(mapValue(mapValue(out)["recovery"]), "instruction"), "placeholder") {
-		t.Fatalf("a holed repair should say the placeholder needs filling: %+v", mapValue(out)["recovery"])
+	// The instruction has to be the one the query can actually satisfy. Round 2
+	// said "execute exactly as given" AND "fill the placeholder" in the same
+	// breath, about a string that parses as neither.
+	instruction := stringFromMap(mapValue(mapValue(out)["recovery"]), "instruction")
+	if !strings.Contains(instruction, "Replace the <filter on accounts> placeholder") {
+		t.Fatalf("a holed repair must ask for the placeholder to be filled: %q", instruction)
+	}
+	if strings.Contains(instruction, "exactly as given") {
+		t.Fatalf("a holed repair must not also claim to be ready to run: %q", instruction)
+	}
+	// And once filled, it is a real query.
+	filled := remoteJoinFillHole(offered, `{name: {eq: "Meridian Robotics"}}`)
+	if err := checkGraphQLParses(filled); err != nil {
+		t.Fatalf("the filled repair should parse: %v", err)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": filled}); err != nil {
+		t.Fatalf("the filled repair should execute: %v", err)
+	}
+	if runtime.state.hasBlockingViolation() {
+		t.Fatal("executing the filled repair should clear the block")
 	}
 }
 
-// The offered query is the whole point, so it has to actually run.
-func TestRemoteJoinRepairedQueryExecutes(t *testing.T) {
+// remoteJoinFillHole substitutes a real filter for the placeholder, the way the
+// recovery instruction asks the model to.
+func remoteJoinFillHole(offered, filter string) string {
+	start := strings.Index(offered, "{<filter on")
+	if start < 0 {
+		return offered
+	}
+	end := strings.Index(offered[start:], ">}")
+	if end < 0 {
+		return offered
+	}
+	return offered[:start] + filter + offered[start+end+2:]
+}
+
+// Every cross-source miss on record put the account's name under a column
+// accounts does not have — client, account_name, executive_owner — so the one
+// literal in the filter is a value the model chose and the column is the only
+// thing it got wrong. Move the value; offer the result rather than running it.
+func TestRemoteJoinRepairSalvagesTheModelsOwnValue(t *testing.T) {
 	runtime, base := remoteJoinTestRuntime(t)
 	seedRemoteJoinColumns(runtime)
 
 	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
-		"query": `query { account_health(where: {name: {eq: "Meridian Robotics"}}) { health } }`,
+		"query": `query { account_health(where: {client: {eq: "Meridian Robotics"}}) { health } }`,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if base.execCalls != 0 {
-		t.Fatalf("the closed route must never reach the runtime, calls=%d", base.execCalls)
+		t.Fatalf("a guessed column must not execute on the model's behalf, calls=%d", base.execCalls)
 	}
 	offered := stringFromMap(mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"]), "query")
+	if err := checkGraphQLParses(offered); err != nil {
+		t.Fatalf("the salvaged repair must be executable: %v", err)
+	}
+	if !strings.Contains(offered, `accounts(where: {name: {eq: "Meridian Robotics"}}`) {
+		t.Fatalf("the salvage should move the literal to accounts.name: %q", offered)
+	}
+	// The value is the model's and the column is ours, so the recovery says so
+	// rather than presenting the filter as settled.
+	instruction := stringFromMap(mapValue(mapValue(out)["recovery"]), "instruction")
+	if !strings.Contains(instruction, "moved to the accounts column") {
+		t.Fatalf("the salvage must disclose the inference: %q", instruction)
+	}
 	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": offered}); err != nil {
-		t.Fatalf("the offered query should execute: %v", err)
-	}
-	if base.execCalls != 1 {
-		t.Fatalf("the offered query should reach the runtime exactly once, calls=%d", base.execCalls)
-	}
-	// A successful execution discharges the guard, so the run is free to finish.
-	if runtime.state.hasBlockingViolation() {
-		t.Fatal("executing the offered query should clear the block")
+		t.Fatalf("the salvaged repair should execute: %v", err)
 	}
 }
 
@@ -251,7 +395,8 @@ func TestRemoteJoinRepairedQueryExecutes(t *testing.T) {
 func TestRemoteJoinRepairStopsRepeatingItselfButKeepsOffering(t *testing.T) {
 	runtime, _ := remoteJoinTestRuntime(t)
 	seedRemoteJoinColumns(runtime)
-	query := map[string]any{"query": `query { account_health(where: {name: {eq: "Meridian Robotics"}}) { health } }`}
+	// A hole-path filter, so the repair keeps being offered rather than run.
+	query := map[string]any{"query": `query { account_health(where: {account_id: {eq: 1}}) { health } }`}
 
 	first, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(query))
 	if err != nil {
@@ -265,6 +410,11 @@ func TestRemoteJoinRepairStopsRepeatingItselfButKeepsOffering(t *testing.T) {
 	secondReason := stringFromMap(mapValue(mapValue(mapValue(second)["recovery"])["next"]), "reason")
 	if len(secondReason) >= len(firstReason) {
 		t.Fatalf("the repeat should be terser: %q then %q", firstReason, secondReason)
+	}
+	// Terser, but still about filling the hole — a repeat that started saying
+	// "execute exactly as given" about a placeholder would be a regression.
+	if !strings.Contains(secondReason, "placeholder") {
+		t.Fatalf("the terse repeat must still name the placeholder: %q", secondReason)
 	}
 	for _, out := range []any{first, second} {
 		offered := stringFromMap(mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"]), "query")
@@ -285,32 +435,41 @@ func TestRemoteJoinRepairStopsRepeatingItselfButKeepsOffering(t *testing.T) {
 	}
 }
 
-// The graft decides whether the model's filter is trustworthy on the parent.
+// The graft decides whether the model's filter is trustworthy on the parent, and
+// therefore whether the repair may run itself.
 func TestRemoteJoinFilterGraftRules(t *testing.T) {
 	for name, tc := range map[string]struct {
 		query      string
-		wantGraft  bool
+		wantKind   remoteJoinFilterKind
 		wantInside string
 	}{
-		"parent column grafts":       {query: `query { account_health(where: {name: {eq: "x"}}) { health } }`, wantGraft: true, wantInside: `name: {eq: "x"}`},
-		"combinator of parent cols":  {query: `query { account_health(where: {and: [{plan: {eq: "pro"}}, {status: {eq: "active"}}]}) { health } }`, wantGraft: true, wantInside: "plan"},
-		"child join column rejected": {query: `query { account_health(where: {account_id: {eq: 1}}) { health } }`, wantGraft: false},
-		"invented column rejected":   {query: `query { account_health(where: {health_score: {gt: 3}}) { health } }`, wantGraft: false},
-		"variables rejected":         {query: `query($id:Int!){ account_health(where: {id: {eq: $id}}) { health } }`, wantGraft: false},
-		"no filter at all":           {query: `query { account_health { health } }`, wantGraft: false},
+		"parent column grafts":       {query: `query { account_health(where: {name: {eq: "x"}}) { health } }`, wantKind: remoteJoinFilterGrafted, wantInside: `where: {name: {eq: "x"}}`},
+		"combinator of parent cols":  {query: `query { account_health(where: {and: [{plan: {eq: "pro"}}, {status: {eq: "active"}}]}) { health } }`, wantKind: remoteJoinFilterGrafted, wantInside: `where: {and: [{plan:`},
+		"child join column salvages": {query: `query { account_health(where: {account_id: {eq: "1"}}) { health } }`, wantKind: remoteJoinFilterSalvaged, wantInside: `where: {name: {eq: "1"}}`},
+		"invented column salvages":   {query: `query { account_health(where: {client: {eq: "Meridian"}}) { health } }`, wantKind: remoteJoinFilterSalvaged, wantInside: `where: {name: {eq: "Meridian"}}`},
+		"numeric child column holes": {query: `query { account_health(where: {account_id: {eq: 1}}) { health } }`, wantKind: remoteJoinFilterHole},
+		"two literals are ambiguous": {query: `query { account_health(where: {and: [{client: {eq: "a"}}, {owner: {eq: "b"}}]}) { health } }`, wantKind: remoteJoinFilterHole},
+		"variables rejected":         {query: `query($id:Int!){ account_health(where: {id: {eq: $id}}) { health } }`, wantKind: remoteJoinFilterHole},
+		"no filter at all":           {query: `query { account_health { health } }`, wantKind: remoteJoinFilterHole},
 	} {
 		t.Run(name, func(t *testing.T) {
 			runtime, _ := remoteJoinTestRuntime(t)
 			seedRemoteJoinColumns(runtime)
-			offered, grafted := runtime.remoteJoinRepairedQuery(context.Background(), tc.query, "account_health", "accounts")
-			if grafted != tc.wantGraft {
-				t.Fatalf("grafted = %v, want %v (offer %q)", grafted, tc.wantGraft, offered)
+			offered, kind := runtime.remoteJoinRepairedQuery(context.Background(), tc.query, "account_health", "accounts")
+			if kind != tc.wantKind {
+				t.Fatalf("kind = %v, want %v (offer %q)", kind, tc.wantKind, offered)
 			}
-			if tc.wantGraft && !strings.Contains(offered, tc.wantInside) {
-				t.Fatalf("grafted offer should carry the filter: %q", offered)
+			if tc.wantInside != "" && !strings.Contains(offered, tc.wantInside) {
+				t.Fatalf("offer should carry %q: %q", tc.wantInside, offered)
 			}
-			if !tc.wantGraft && !strings.Contains(offered, "<filter on accounts") {
-				t.Fatalf("rejected filter should leave a hole: %q", offered)
+			if kind == remoteJoinFilterHole && !strings.Contains(offered, "<filter on accounts") {
+				t.Fatalf("an unsalvageable filter should leave a hole: %q", offered)
+			}
+			// Anything not holed is claimed to be runnable, so it has to parse.
+			if kind != remoteJoinFilterHole {
+				if err := checkGraphQLParses(offered); err != nil {
+					t.Fatalf("a repair offered as runnable must parse: %v", err)
+				}
 			}
 			// The route is correct either way — that is the part that is never
 			// the model's to guess.
