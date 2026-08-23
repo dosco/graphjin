@@ -914,3 +914,77 @@ func TestWatchHelpLeadsWithFilteredExample(t *testing.T) {
 		}
 	}
 }
+
+// TestFileSourceCardTeachesTheRead pins the fix for the last teaches-nothing
+// card in the catalog. A file source is queryable as a table of the same name,
+// and its card used to say only "file source read-only" with config capability
+// lines for examples and query_catalog as the suggested next step. Models
+// searching for a policy document land on this card, invent a table, get
+// table_not_found, and answer from nothing — the file half of cross-source
+// scored zero in every benchmark run on record while the join half moved.
+func TestFileSourceCardTeachesTheRead(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{
+		EnabledTools: []string{"query_catalog", "execute_graphql"},
+		Sources: []Source{{
+			Name:     "sla_policies",
+			Kind:     sourcecap.KindFile,
+			ReadOnly: true,
+			Capabilities: map[string]bool{
+				sourcecap.KeyFilesRead: true,
+			},
+		}},
+	})
+	card, ok := findCatalogCard(snap, "source:sla_policies")
+	if !ok {
+		t.Fatalf("source card not found: %+v", snap.Cards)
+	}
+	// The first example is the one models copy, so both reads have to be real
+	// GraphQL against the real table name — not config lines. Decoded, because
+	// the encoder escapes the angle brackets in the placeholder key.
+	var examples []string
+	if err := json.Unmarshal([]byte(card.ExamplesJSON), &examples); err != nil {
+		t.Fatalf("examples are not a JSON list: %s", card.ExamplesJSON)
+	}
+	want := []string{
+		`{ sla_policies(prefix: "", limit: 10) { key size content_type modified_at } }`,
+		`{ sla_policies(key: "<key>", inline_data: true) { key content_type text data } }`,
+	}
+	if len(examples) != len(want) {
+		t.Fatalf("file source examples = %q", examples)
+	}
+	for i := range want {
+		if examples[i] != want[i] {
+			t.Fatalf("file source example %d = %q, want %q", i, examples[i], want[i])
+		}
+	}
+	if !strings.Contains(card.Summary, "queryable as the sla_policies table") {
+		t.Fatalf("the summary should say the source is readable: %q", card.Summary)
+	}
+	// A card that teaches a query has to offer the tool that runs one.
+	if !strings.Contains(card.SuggestedNext, "execute_graphql") {
+		t.Fatalf("file source should suggest executing the read: %s", card.SuggestedNext)
+	}
+	for _, want := range []string{"content_type", "modified_at", "inline_data"} {
+		if !strings.Contains(card.EvidenceJSON, want) {
+			t.Fatalf("file source evidence should name its fixed surface (%q): %s", want, card.EvidenceJSON)
+		}
+	}
+}
+
+// Non-file sources keep the capability-registry card unchanged.
+func TestNonFileSourceCardKeepsCapabilityExamples(t *testing.T) {
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{
+		EnabledTools: []string{"query_catalog", "execute_graphql"},
+		Sources:      []Source{{Name: "business_code", Kind: sourcecap.KindCode}},
+	})
+	card, ok := findCatalogCard(snap, "source:business_code")
+	if !ok {
+		t.Fatal("source card not found")
+	}
+	if strings.Contains(card.Summary, "queryable as the") {
+		t.Fatalf("only file sources get the table read summary: %q", card.Summary)
+	}
+	if !strings.Contains(card.ExamplesJSON, "capabilities.") {
+		t.Fatalf("code source examples should stay capability lines: %s", card.ExamplesJSON)
+	}
+}
