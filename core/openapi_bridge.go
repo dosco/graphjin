@@ -32,13 +32,21 @@ func (b *openapiBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte, e
 		}
 	}
 	if b.topLevel {
-		return b.callTopLevel(ctx, req.Sel)
+		body, err := b.callTopLevel(ctx, req.Sel)
+		if err != nil {
+			return nil, err
+		}
+		return applyOpenAPIQuery(body, req)
 	}
 	params := openapi.CallParams{}
 	if b.pathName != "" {
 		params.PathValues = map[string]string{b.pathName: req.ID}
 	}
-	return b.caller.Call(ctx, params)
+	body, err := b.caller.Call(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return applyOpenAPIQuery(body, req)
 }
 
 func (b *openapiBridge) callTopLevel(ctx context.Context, sel *qcode.Select) ([]byte, error) {
@@ -324,6 +332,7 @@ func openAPISpecFingerprint(sp *openapi.Spec) string {
 		h.Write([]byte{0})
 		writeFingerprintJSON(h, sp.Auth)
 		writeFingerprintJSON(h, sp.Concurrency)
+		writeFingerprintJSON(h, sp.Timeout)
 		writeFingerprintJSON(h, openAPIOperationFingerprintParts(sp.Operations))
 		if sp.SourcePath != "" {
 			if b, err := os.ReadFile(sp.SourcePath); err == nil {

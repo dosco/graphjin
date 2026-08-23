@@ -1994,6 +1994,49 @@ sources:
 
 Without these caps, a 1000-row parent select would spawn 1000 parallel requests upstream — a reliable way to get rate-limited.
 
+### Per-Spec Timeout
+
+Every OpenAPI call has an end-to-end timeout. The default is `8s`; override it
+per spec when the upstream needs a smaller or larger budget:
+
+```yaml
+sources:
+  - name: upstream
+    kind: api
+    specs:
+      interaction_studio:
+        timeout: 5s
+```
+
+The timeout covers authentication, retries, and reading the response body. If
+an upstream times out, GraphJin returns that field as `null`, includes a
+GraphQL error, and preserves successful sibling roots in `data`.
+
+### Filtering, Ordering, and Paging API Results
+
+OpenAPI list roots and row-join objects support GraphJin's common query
+arguments. Declared OpenAPI path/query parameters are still sent upstream;
+`where`, `order_by`, `limit`, and `offset` are enforced on the returned JSON:
+
+```graphql
+query {
+  alerts(
+    where: { severity: { eq: "critical" } }
+    order_by: { warningCount: desc }
+    limit: 10
+  ) {
+    id
+    severity
+    warningCount
+  }
+}
+```
+
+Filtering requires object-shaped rows declared by the operation's JSON
+response schema. Unsupported operators fail with an explicit GraphQL error;
+they are never silently ignored. Cursor pagination and `distinct` are not
+supported for API responses; use `limit` and `offset` for paging.
+
 ### Operation Overrides
 
 Tweak per-operation presentation:

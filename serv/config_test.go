@@ -4,7 +4,26 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestNewConfigParsesOpenAPITimeout(t *testing.T) {
+	conf, err := NewConfig(`
+mode: dev
+sources:
+  - name: upstream
+    kind: api
+    specs:
+      billing:
+        timeout: 5s
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	if got := conf.Core.Sources[0].Specs["billing"].Timeout; got != 5*time.Second {
+		t.Fatalf("OpenAPI timeout = %s, want 5s", got)
+	}
+}
 
 func TestNewConfigCatalogEnabledAuto(t *testing.T) {
 	conf, err := NewConfig(`

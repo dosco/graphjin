@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // Caller executes a single OpenAPI operation. One Caller is constructed
@@ -27,6 +28,7 @@ type Caller struct {
 	limiter *limiter
 	http    *http.Client
 	baseURL string
+	timeout time.Duration
 }
 
 // CallParams carries the per-call inputs. PathValues populates the URL
@@ -65,12 +67,17 @@ func NewCaller(op *OpDescriptor, baseURL string, auth AuthProvider, lim *limiter
 	if op != nil && op.Mode == OpModeMutation {
 		httpClient = clientWithoutRedirects(httpClient)
 	}
+	timeout := httpClient.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
 	return &Caller{
 		op:      op,
 		auth:    auth,
 		limiter: lim,
 		http:    httpClient,
 		baseURL: strings.TrimRight(baseURL, "/"),
+		timeout: timeout,
 	}
 }
 
@@ -94,6 +101,8 @@ func clientWithoutRedirects(client *http.Client) *http.Client {
 // after invalidating the auth provider's cached token — this handles
 // the common case of a service-credential token expiring mid-flight.
 func (c *Caller) Call(ctx context.Context, p CallParams) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 	result, err := c.call(ctx, p, false)
 	if err != nil {
 		return nil, err
@@ -113,6 +122,8 @@ func (c *Caller) CallMutation(ctx context.Context, p CallParams) (CallResult, er
 	if c == nil || c.op == nil || c.op.Mode != OpModeMutation {
 		return CallResult{}, fmt.Errorf("openapi: caller is not an exposed mutation")
 	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 	return c.call(ctx, p, true)
 }
 
@@ -232,6 +243,12 @@ type upstreamTransportError struct {
 }
 
 func (e *upstreamTransportError) Error() string {
+	if errors.Is(e.err, context.DeadlineExceeded) {
+		return fmt.Sprintf("openapi: %s %s timed out", e.method, e.operationID)
+	}
+	if errors.Is(e.err, context.Canceled) {
+		return fmt.Sprintf("openapi: %s %s canceled", e.method, e.operationID)
+	}
 	return fmt.Sprintf("openapi: %s %s transport error", e.method, e.operationID)
 }
 

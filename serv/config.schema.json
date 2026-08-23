@@ -1879,6 +1879,10 @@
 				"concurrency": {
 					"$ref": "#/$defs/ConcurrencyConfig"
 				},
+				"timeout": {
+					"type": "integer",
+					"title": "Upstream Request Timeout"
+				},
 				"max_request_bytes": {
 					"type": "integer"
 				},
