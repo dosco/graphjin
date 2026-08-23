@@ -53,8 +53,17 @@ type discoveryState struct {
 	savedQueryDetailMissed  map[string]bool
 	savedQueryGraphQL       map[string]string
 	securityRuntimeEvidence bool
-	watchDefinitionMutated  bool
-	annotationMutated       bool
+	// A run's writes are accounted for at finalization: an "answered" final
+	// after nothing but failed writes reports work that never happened. Ten of
+	// fifteen action tasks in one benchmark run were lost to exactly that —
+	// one rejected mutation, then "Successfully recorded..." shipped as the
+	// answer through the exhausted-loop rescue.
+	mutationAttempted         bool
+	mutationSucceeded         bool
+	lastMutationFailure       string
+	lastMutationRepairedQuery string
+	watchDefinitionMutated    bool
+	annotationMutated         bool
 	// Per-target mutation evidence, populated only by id-detail lookups and
 	// validations in THIS run (search hits never count, mirroring the
 	// saved-query detail rule).
@@ -868,6 +877,14 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		r.state.recordExecution("execute_saved_query", args, out)
 		r.state.cacheSuccessfulExecution(executionKey, out)
 		if !executionFailed(out) {
+			// An approved saved mutation is a write like any other, so its
+			// success settles the write-accounting the finalize gate reads.
+			if ContainsMutationOperation(r.state.savedQueryGraphQLFor(name)) {
+				r.state.mutationAttempted = true
+				r.state.mutationSucceeded = true
+				r.state.lastMutationFailure = ""
+				r.state.lastMutationRepairedQuery = ""
+			}
 			r.state.emptySearchStreak = 0
 			r.state.emptyDetailStreak = 0
 			// The retained-subject guard fires on this path too, so it has to be
@@ -1310,7 +1327,20 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				out = attachWatchQueryRepair(out, ids, watchSubscriptionRoots(query, args))
 			} else {
 				out = attachExecutionRecovery(out, r.state, query)
-				out = r.attachUnknownColumnRecovery(ctx, out, query)
+				var repairedMutation string
+				out, repairedMutation = r.attachUnknownColumnRecovery(ctx, out, query)
+				if repairedMutation != "" {
+					r.state.lastMutationRepairedQuery = repairedMutation
+				}
+			}
+			// A write that reached the engine and failed left the database
+			// unchanged. The record matters at finalization: a run whose only
+			// writes failed cannot report the work as done.
+			if ContainsMutationOperation(query) {
+				r.state.mutationAttempted = true
+				if messages := executionErrorMessages(out); len(messages) != 0 {
+					r.state.lastMutationFailure = messages[0]
+				}
 			}
 			r.state.failedQueryKeys[queryKey] = true
 			if wasRepairPending {
@@ -1321,6 +1351,12 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		}
 	} else if err == nil && wasRepairPending {
 		r.state.pendingFailedQueryKey = ""
+	}
+	if ContainsMutationOperation(query) && err == nil && !executionFailed(out) {
+		r.state.mutationAttempted = true
+		r.state.mutationSucceeded = true
+		r.state.lastMutationFailure = ""
+		r.state.lastMutationRepairedQuery = ""
 	}
 	if normalizedWatchQuery != "" && err == nil && !executionFailed(out) {
 		out = attachWatchNormalizationNotice(out, normalizedWatchQuery)
@@ -2069,6 +2105,13 @@ func (s *discoveryState) completionContinuation() string {
 
 func (s *discoveryState) pendingRequiredFinalization() string {
 	if s.pendingFailedQueryKey != "" {
+		// When a corrected mutation was computed, name it: "execute one distinct
+		// repaired query" sent models back to the catalog while the exact string
+		// sat in the failed result. The generic sentence stays for every failure
+		// with no certain repair.
+		if s.lastMutationRepairedQuery != "" && !s.mutationSucceeded {
+			return "execution_repair_required: the write failed because it named columns this table does not have. The corrected mutation is in the failed result's recovery details.repaired_query — execute it exactly as given before finalizing; an identical retry of the broken write is rejected."
+		}
 		return "execution_repair_required: the first GraphQL execution failed. Read errors[].extensions.graphjin_repair and result.recovery, then execute one distinct repaired query before finalizing; an identical retry is rejected."
 	}
 	if message := s.pendingRecoverableExecution(); message != "" {
@@ -2781,6 +2824,26 @@ func (s *discoveryState) finalize(resp Response) Response {
 			resp = blockResponse(resp)
 		case !s.modelDiscoveryAction:
 			s.addViolation("model_discovery_required", "agent answered without a model-driven catalog/help/detail discovery action", "", true, nil)
+			resp = blockResponse(resp)
+		case s.mutationAttempted && !s.mutationSucceeded:
+			// The database was never changed, so an answered final would report
+			// work that did not happen — the recorded episodes say "Successfully
+			// recorded payment..." over a write the engine rejected, which in
+			// production tells a user their payment is recorded when it is not.
+			// Every earlier layer already tried to convert this run: the failure
+			// carried the real column names, a corrected mutation when one was
+			// certain, and the finalize bounce demanded a retry. This gate is
+			// what remains when none of it was taken.
+			message := "a database write this run attempted never succeeded, so the task's action did not happen"
+			if s.lastMutationFailure != "" {
+				message += ": " + s.lastMutationFailure
+			}
+			details := map[string]any{}
+			if s.lastMutationRepairedQuery != "" {
+				message += ". The corrected mutation was provided in the failed result's details.repaired_query and was not executed"
+				details["repaired_query"] = s.lastMutationRepairedQuery
+			}
+			s.addViolation("mutation_execution_failed", message, "", true, details)
 			resp = blockResponse(resp)
 		default:
 			if tokens := s.ungroundedAnswerTokens(resp.Answer); len(tokens) != 0 {
