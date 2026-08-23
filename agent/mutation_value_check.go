@@ -564,9 +564,15 @@ var unknownColumnErrorPatterns = []*regexp.Regexp{
 // family. It reuses the value check's phase-one catalog read — the returned
 // card ids encode every column name — so this costs no extra catalog calls
 // beyond the one bounded list.
-func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out any, query string) any {
+//
+// For a failed mutation whose every unknown key resolves to exactly one real
+// column, the corrected write itself is computed and returned alongside —
+// benchmark evidence is unambiguous that the exact string is the only repair
+// weak models take. The second return is that corrected mutation, empty when
+// no certain repair exists.
+func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out any, query string) (any, string) {
 	if r == nil || !executionFailed(out) {
-		return out
+		return out, ""
 	}
 	table, column := "", ""
 	for _, message := range executionErrorMessages(out) {
@@ -587,44 +593,72 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 		}
 	}
 	if column == "" {
-		return out
+		return out, ""
 	}
 	if table == "" {
 		for _, root := range append(MutationRootFields(query), QueryRootFields(query)...) {
-			if target, ok := r.state.mutationTargetTable(root); ok && target != "" {
+			// The bool reports a Hasura-style remapping, not existence; a plain
+			// root comes back as itself. A root that names no real table simply
+			// yields no observed columns below, which bails the same way.
+			if target, _ := r.state.mutationTargetTable(root); target != "" {
 				table = target
 				break
 			}
 		}
 	}
 	if table == "" {
-		return out
+		return out, ""
 	}
 	columns := r.observedColumnNames(ctx, table)
 	if len(columns) == 0 {
-		return out
+		return out, ""
 	}
 	note := fmt.Sprintf(" The column %q does not exist on %s; its columns are: %s.", column, table, strings.Join(columns, ", "))
 	details := map[string]any{"unknown_column": column, "table_columns": map[string]any{table: columns}}
+	repaired := ""
+	var next map[string]any
+	if ContainsMutationOperation(query) {
+		if fixed, renames, ok := repairUnknownMutationColumns(query, columns); ok {
+			repaired = fixed
+			renamed := make([]string, 0, len(renames))
+			for _, rename := range renames {
+				renamed = append(renamed, rename.From+" -> "+rename.To)
+			}
+			// Run 969337b6 measured the conditional framing ("if this matches
+			// your intent") losing to the factual one on the value repair, so
+			// the schema's vocabulary is stated as fact here too.
+			note = fmt.Sprintf(" This table spells those fields differently: %s. The corrected mutation is in details.repaired_query — execute it exactly as given.", strings.Join(renamed, ", "))
+			details["repaired_query"] = repaired
+			details["renamed_columns"] = renamed
+			next = map[string]any{
+				"recommended_tool": "execute_graphql",
+				"args":             map[string]any{"query": repaired},
+				"reason":           "Execute details.repaired_query exactly as given; it is this same write expressed with the column names this table actually has.",
+			}
+		}
+	}
 	amend := func(recovery map[string]any) {
 		if recovery == nil {
 			return
 		}
 		recovery["instruction"] = stringValue(recovery["instruction"]) + note
 		recovery["details"] = details
+		if next != nil {
+			recovery["next"] = next
+		}
 	}
 	switch res := out.(type) {
 	case executeResult:
 		amend(mapValue(res.Recovery))
-		return res
+		return res, repaired
 	case *executeResult:
 		amend(mapValue(res.Recovery))
-		return res
+		return res, repaired
 	case map[string]any:
 		amend(mapValue(res["recovery"]))
-		return res
+		return res, repaired
 	default:
-		return out
+		return out, repaired
 	}
 }
 

@@ -91,6 +91,10 @@ func refusalPriority(code string) int {
 		return 55
 	case "raw_graphql_catalog_required", "model_discovery_required":
 		return 50
+	case "mutation_execution_failed":
+		// A false success report over a write that never landed: the failed
+		// write is the single most actionable fact in the run.
+		return 65
 	case "ungrounded_answer_fields":
 		return 40
 	default:
@@ -135,6 +139,17 @@ func unblockStepsForViolation(s *discoveryState, v protocolViolation) []unblockS
 				Reason: "Inspect the saved query detail before executing it.",
 			},
 		}}
+	case "mutation_execution_failed":
+		if repaired := stringFromDetails(v.Details, "repaired_query"); repaired != "" {
+			return []unblockStepSpec{{
+				step: UnblockStep{
+					Tool:   "execute_graphql",
+					Args:   map[string]any{"query": repaired},
+					Reason: "Execute the corrected mutation exactly as given; it is the same write expressed with the table's real column names.",
+				},
+			}}
+		}
+		return []unblockStepSpec{catalogSearchStep("target table columns", "Re-author the write from the table's real column names, execute it, and report success only after it lands.")}
 	case "mutation_evidence_required":
 		tables := stringListFromDetails(v.Details, "tables")
 		if len(tables) == 0 {
@@ -309,6 +324,8 @@ func lawfulAlternativeForViolation(v protocolViolation) string {
 		return "Read visible security/runtime guidance first; if those roots are not visible, ask an authorized operator to perform the write."
 	case "workflow_detail_required":
 		return "Inspect the selected workflow detail by id, then execute it through the governed workflow-execution root."
+	case "mutation_execution_failed":
+		return "Execute the corrected mutation from the failed result's repaired_query (or re-author the write from the listed real columns), confirm it succeeds, and only then report the action as done."
 	case "ungrounded_answer_fields":
 		return "Re-run the governed query or workflow that actually returns the cited fields, or restate the conclusion using only fields and values observed in this run's results."
 	case "catalog_seed_failed", "catalog_seed_required", "model_discovery_required", "raw_graphql_catalog_required", "raw_graphql_discovery_required":
