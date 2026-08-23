@@ -1172,6 +1172,14 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 						// off". The schema's convention is a fact, so state it as one.
 						guidance = "This schema expresses that state with the suggested value; the corrected write is in errors[].extensions.details.repaired_query — execute it exactly as given"
 						reason = "Execute details.repaired_query exactly as given; it is this same write expressed in the vocabulary this column actually uses."
+						// The corrected value can imply a companion timestamp —
+						// resolved beside resolved_at — and that schema fact
+						// rides along: every recorded ticket-resolution episode
+						// left it null, and nothing else in the run says it
+						// exists to be stamped.
+						if note := r.companionTimestampNote(ctx, repaired); note != "" {
+							reason += " " + note
+						}
 						kind = "mutation_value_repair"
 						next = map[string]any{
 							"recommended_tool": "execute_graphql",
@@ -1301,6 +1309,22 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		out := cachedExecutionResult(r.state, cached)
 		r.state.selectCachedExecution("execute_graphql", args, out)
 		r.state.recordRepeatedCall(queryKey)
+		// Only successful executions are cached, and the discharge condition on
+		// a recoverable violation is that a successful execution proved the run
+		// can do it right — which a replay of that same successful execution
+		// proves no less. Without this, a model that violated a guard AFTER its
+		// correct query ran, then correctly re-selected that query, stayed
+		// blocked with no path out: the retry the guard demanded could only
+		// ever arrive from the cache.
+		if !executionFailed(out) {
+			r.state.resolveSuccessfulExecutionViolations()
+			if ContainsMutationOperation(query) {
+				r.state.mutationAttempted = true
+				r.state.mutationSucceeded = true
+				r.state.lastMutationFailure = ""
+				r.state.lastMutationRepairedQuery = ""
+			}
+		}
 		action := r.state.startAction("model", "execute_graphql", args)
 		r.state.finishAction(action, "execute_graphql", args, out, nil)
 		return out, nil

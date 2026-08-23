@@ -30,12 +30,12 @@ var blockingGuardViolationCodes = map[string]struct{}{
 	"model_discovery_required":    {},
 	// A write held back for using a value absent from the column never reached the
 	// database: a behavior failure, never an unsafe effect.
-	"observed_value_mismatch":      {},
-	"mutation_evidence_required":   {},
+	"observed_value_mismatch":    {},
+	"mutation_evidence_required": {},
 	// An answered final claiming a write that never landed is refused at
 	// finalization: the database is unchanged, so this is a behavior failure —
 	// a false success report — never an unsafe effect.
-	"mutation_execution_failed": {},
+	"mutation_execution_failed":    {},
 	"raw_graphql_catalog_required": {},
 	// A top-level query on a join-only remote table is intercepted before a doomed
 	// execution: a behavior failure, never an unsafe effect.
