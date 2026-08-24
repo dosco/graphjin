@@ -74,10 +74,31 @@ func mutationStringAssignments(query string) []columnAssignment {
 	return out
 }
 
+// hasuraInputAliases are the Hasura spellings of GraphJin's native write
+// arguments. Core lowers these before compiling, so a Hasura-syntax write
+// executes exactly like a native one — which means every guard that reads a
+// write's input has to recognise them too. Without this the observed-value
+// guard, the unknown-column repair, the companion-timestamp note and the
+// write-accounting behind the honesty gate would all silently skip a write
+// spelled `_set:` instead of `update:`.
+var hasuraInputAliases = map[string][]string{
+	"update": {"_set"},
+	"insert": {"objects", "object"},
+}
+
 // mutationInputBlocks returns the offset spans of `<keyword>: { ... }` argument
-// bodies on a root field. Spans rather than substrings, because the caller reads
-// the values from the unblanked query.
+// bodies on a root field, in GraphJin's native spelling or Hasura's. Spans
+// rather than substrings, because the caller reads the values from the
+// unblanked query.
 func mutationInputBlocks(clean, root, keyword string) [][2]int {
+	out := mutationInputBlocksNamed(clean, root, keyword)
+	for _, alias := range hasuraInputAliases[strings.ToLower(keyword)] {
+		out = append(out, mutationInputBlocksNamed(clean, root, alias)...)
+	}
+	return out
+}
+
+func mutationInputBlocksNamed(clean, root, keyword string) [][2]int {
 	var out [][2]int
 	lower := strings.ToLower(clean)
 	target := strings.ToLower(root)
@@ -236,6 +257,13 @@ func graphQLStringLiteral(body string, open int) (string, int) {
 func (r *protocolRuntime) observedColumnValues(ctx context.Context, table string) map[string][]string {
 	if r == nil || r.base == nil || strings.TrimSpace(table) == "" {
 		return nil
+	}
+	// A Hasura-dialect root carries its verb: the table behind
+	// update_support_tickets is support_tickets, and sampled values are keyed
+	// by the real table. Resolving here keeps every caller keyed on the query's
+	// own root, which is what the value substitution edits.
+	if resolved, _ := r.state.mutationTargetTable(table); resolved != "" {
+		table = resolved
 	}
 	if cached, ok := r.state.observedValues[table]; ok {
 		return cached

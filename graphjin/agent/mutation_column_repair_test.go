@@ -128,7 +128,9 @@ func (r *strictWriteRuntime) ExecuteGraphQL(_ context.Context, args map[string]a
 	if ContainsMutationOperation(query) {
 		clean := graphQLStructure(query)
 		for _, root := range MutationRootFields(query) {
-			columns, tracked := r.columns[strings.ToLower(root)]
+			// Core lowers a Hasura root before compiling, so the fake resolves
+			// it the same way before checking columns.
+			columns, tracked := r.columns[strings.ToLower(hasuraBaseRoot(root))]
 			if !tracked {
 				continue
 			}
@@ -575,4 +577,83 @@ func TestInterceptedWriteRetriedToSuccessFinalizesAnswered(t *testing.T) {
 	if resp.Status != StatusAnswered {
 		t.Fatalf("a landed retry finalizes normally, got %s: %+v", resp.Status, resp.Errors)
 	}
+}
+
+// Core lowers Hasura mutation syntax before compiling, so a `_set:` write
+// executes exactly like a native `update:` one. That makes it a hole in every
+// guard that reads a write's input by argument name: without the aliases, an
+// out-of-vocabulary value, an invented column, or a write that never landed
+// would all sail past the checks a native write cannot escape.
+func TestHasuraSyntaxWritesAreGuardedLikeNativeOnes(t *testing.T) {
+	// The value guard reads the written values.
+	runtime, _ := ticketValueRuntime(t)
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.securityRuntimeEvidence = true
+	runtime.state.mutationEvidenceSupplied = true
+	runtime.state.tablesDetailed["support_tickets"] = true
+	runtime.state.catalogDetails = []string{"table:app:main.support_tickets"}
+
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { update_support_tickets(where: {id: {_eq: 2}}, _set: {status: "closed"}) { affected_rows } }`,
+	})
+	if err == nil {
+		t.Fatal("a Hasura-syntax write with an out-of-vocabulary value must be refused")
+	}
+	for _, want := range []string{"did NOT execute", "open, pending, resolved", "exactly as given"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the refusal must carry %q: %v", want, err)
+		}
+	}
+	// And the corrected write it hands back keeps the caller's own dialect.
+	repaired := correctedMutationFromError(t, err)
+	if !strings.Contains(repaired, "_set:") || !strings.Contains(repaired, `status: "resolved"`) {
+		t.Fatalf("the corrected write should stay in the caller's dialect: %q", repaired)
+	}
+}
+
+// The unknown-column repair reads the same input blocks.
+func TestHasuraSyntaxWriteGetsTheColumnRepair(t *testing.T) {
+	columns := []string{"id", "invoice_id", "amount_cents", "reference", "recorded_at"}
+	repaired, renames, ok := repairUnknownMutationColumns(
+		`mutation { insert_payments(objects: { id: 900001, payment_reference: "P-1", recorded_at: "t" }) { id } }`, columns)
+	if !ok {
+		t.Fatal("a Hasura-syntax insert must be repairable like a native one")
+	}
+	if !strings.Contains(repaired, `reference: "P-1"`) || strings.Contains(repaired, "payment_reference") {
+		t.Fatalf("the repair should correct the column inside objects: %q", repaired)
+	}
+	if len(renames) != 1 {
+		t.Fatalf("renames = %+v", renames)
+	}
+}
+
+// And the write-accounting behind the honesty gate sees it too.
+func TestHasuraSyntaxWriteCannotBeReportedAsDone(t *testing.T) {
+	runtime, base := strictWriteTestRuntime(t)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { insert_payments(objects: { id: 900001, payment_reference: "P-1", invoice_id: 1, amount_cents: 1, recorded_at: "t" }) { id } }`,
+	})
+	if err == nil {
+		t.Fatal("the invented column must be refused")
+	}
+	if len(base.writes) != 0 {
+		t.Fatalf("nothing may land: %v", base.writes)
+	}
+	resp := runtime.state.finalize(Response{Status: StatusAnswered, Answer: "Recorded the payment."})
+	if resp.Status != StatusBlocked {
+		t.Fatalf("a failed Hasura-syntax write cannot be reported done, got %s", resp.Status)
+	}
+}
+
+// hasuraBaseRoot strips the Hasura verb prefix and _by_pk suffix the way core's
+// lowering does, so the strict fake validates columns against the real table.
+func hasuraBaseRoot(root string) string {
+	name := strings.ToLower(strings.TrimSpace(root))
+	for _, prefix := range []string{"insert_", "update_", "delete_"} {
+		if strings.HasPrefix(name, prefix) {
+			return strings.TrimSuffix(strings.TrimPrefix(name, prefix), "_by_pk")
+		}
+	}
+	return name
 }

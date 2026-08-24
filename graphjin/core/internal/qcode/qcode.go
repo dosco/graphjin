@@ -90,6 +90,10 @@ type QCode struct {
 	// aggregate fields; the response layer uses this plan to restore the
 	// requested nested response shape.
 	HasuraAggregates []HasuraAggregateRoot
+	// HasuraMutations records the insert_/update_/delete_ roots lowered from
+	// Hasura's mutation dialect, so the response can be restored to the shape
+	// the caller asked for.
+	HasuraMutations []HasuraMutationRoot
 	// InsertConflictAction is set for insert(..., on_conflict: get).
 	// It remains part of the insert operation rather than introducing a
 	// separate mutation type.
@@ -559,6 +563,11 @@ func (co *Compiler) Compile(
 		return nil, err
 	}
 
+	var hasuraMutations []HasuraMutationRoot
+	if hasuraMutations, err = co.rewriteHasuraMutations(&op); err != nil {
+		return nil, err
+	}
+
 	qc = &QCode{
 		Name:             op.Name,
 		SType:            QTQuery,
@@ -567,6 +576,7 @@ func (co *Compiler) Compile(
 		Fragments:        make([]Fragment, len(op.Frags)),
 		Vars:             make([]Var, len(op.VarDef)),
 		HasuraAggregates: hasuraAggregates,
+		HasuraMutations:  hasuraMutations,
 	}
 
 	for i, f := range op.Frags {

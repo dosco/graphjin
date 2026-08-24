@@ -614,32 +614,31 @@ func TestCrossSourceHandoffRequiresEverySelectedSourceDetail(t *testing.T) {
 	}
 }
 
-func TestMutationEvidenceRepairRoutesWeakModelBroadSearchToExactDialectEvidence(t *testing.T) {
+func TestMutationEvidenceRepairRoutesWeakModelBroadSearchToExactTableEvidence(t *testing.T) {
 	base := &successfulExecutionRuntime{}
 	base.catalogOverride = fakeCatalogResult
 	runtime := newProtocolRuntime(base, "close support ticket 2", "", 40, profileWithRoleAndRoots("user"), nil, CatalogSearchFeatures{})
 	if _, err := runtime.Seed(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"table:app:main.support_tickets", "help:mutations"} {
-		runtime.state.catalogIDs[id] = true
-	}
+	runtime.state.catalogIDs["table:app:main.support_tickets"] = true
 	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:app:main.support_tickets"}); err != nil {
-		t.Fatal(err)
-	}
 
+	// A Hasura-dialect root resolves to its real table: the refusal asks for
+	// support_tickets, not for the verb-prefixed spelling, and it no longer
+	// demands the mutation dialect docs — core lowers and executes this syntax.
 	query := `mutation { update_support_tickets_by_pk(pk_columns: {id: 2}, _set: {status: "resolved"}) { id } }`
 	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
 	if err == nil || !strings.Contains(err.Error(), "mutation-shape evidence") {
 		t.Fatalf("first mutation should throw the evidence requirement: %v", err)
 	}
-	for _, id := range []string{"help:mutations", "table:app:main.support_tickets"} {
-		if !strings.Contains(err.Error(), id) {
-			t.Fatalf("the thrown refusal must name %s: %v", id, err)
-		}
+	if !strings.Contains(err.Error(), "table:app:main.support_tickets") {
+		t.Fatalf("the thrown refusal must name the real table: %v", err)
+	}
+	if strings.Contains(err.Error(), "help:mutations") {
+		t.Fatalf("supported syntax must not demand dialect docs: %v", err)
 	}
 
 	// This reproduces the weak-model failure from the public run: it ignores the
@@ -649,17 +648,24 @@ func TestMutationEvidenceRepairRoutesWeakModelBroadSearchToExactDialectEvidence(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := stringSliceArg(base.args, "ids"); !containsString(got, "help:mutations") || !containsString(got, "table:app:main.support_tickets") {
+	if got := stringSliceArg(base.args, "ids"); !containsString(got, "table:app:main.support_tickets") {
 		t.Fatalf("routed catalog args = %+v, want exact pending repair", base.args)
 	}
-	if len(catalogCards(out)) != 2 || !runtime.state.hasCatalogDetailID("help:mutations") {
+	if len(catalogCards(out)) == 0 || !runtime.state.hasCatalogDetailID("table:app:main.support_tickets") {
 		t.Fatalf("routed catalog result = %+v state=%+v", out, runtime.state.catalogDetails)
 	}
 	if pending := runtime.state.pendingRequiredFinalization(); !strings.HasPrefix(pending, "execution_retry_required:") {
 		t.Fatalf("pending after routed detail = %q, want retry requirement", pending)
 	}
-}
 
+	// With the table's evidence in hand the Hasura-syntax write simply runs.
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query}); err != nil {
+		t.Fatalf("a supported-dialect write with evidence in hand must execute: %v", err)
+	}
+	if base.graphqlCalls != 1 {
+		t.Fatalf("the retry should reach the runtime once, calls=%d", base.graphqlCalls)
+	}
+}
 func TestWatchDetailDidYouMeanUsesKnownHelpID(t *testing.T) {
 	base := &fakeRuntime{catalogOverride: func(args map[string]any) any {
 		if id := stringArg(args, "id"); id == "workflow:deeporg_new_payments" {
