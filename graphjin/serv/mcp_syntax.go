@@ -340,6 +340,7 @@ var querySyntaxReference = QuerySyntaxReference{
 		RemoteJoins: []QueryExample{
 			{Description: "Query with remote API join (resolver)", Query: "{ users { email payments { desc amount } } }"},
 			{Description: "Remote join - resolver fetches data from external API using DB column as $id", Query: "{ customers(limit: 10) { name stripe_subscriptions { plan status } } }"},
+			{Description: "Filter, order, and page an OpenAPI virtual table", Query: "{ alerts(where: { severity: { eq: \"critical\" } }, order_by: { warningCount: desc }, limit: 10) { id severity warningCount } }"},
 		},
 	},
 }

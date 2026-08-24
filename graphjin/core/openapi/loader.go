@@ -112,6 +112,7 @@ func Load(opts LoaderOptions, configs map[string]SpecConfig, logger *log.Logger)
 			BaseURL:          baseURL,
 			Auth:             cfg.Auth,
 			Concurrency:      cfg.Concurrency,
+			Timeout:          cfg.Timeout,
 			MaxRequestBytes:  cfg.MaxRequestBytes,
 			MaxResponseBytes: cfg.MaxResponseBytes,
 		}
