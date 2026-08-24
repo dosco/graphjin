@@ -257,7 +257,7 @@ func TestWatchSubscriptionColumnRepair(t *testing.T) {
 // the same treatment security and mutation evidence already receive. The
 // recorded reactive episode gave up after two bare refusals of the canonical
 // inbox read and answered "no unseen events found" over an inbox it never read.
-func TestSystemRootContractIsSuppliedAndTheReadProceeds(t *testing.T) {
+func TestSystemRootDiscoveryIsSuppliedOnce(t *testing.T) {
 	base := &fakeRuntime{catalogOverride: func(args map[string]any) any {
 		ids, _ := args["ids"].([]any)
 		cards := make([]any, 0, len(ids))
@@ -271,29 +271,24 @@ func TestSystemRootContractIsSuppliedAndTheReadProceeds(t *testing.T) {
 	runtime.state.modelDiscoveryAction = true
 
 	inbox := `query { gj_watch_event(where: { seen: { eq: false } }, order_by: { created_at: desc }, limit: 1) { id watch_id data_json seen } }`
-	// A gj_* root's help card is fixed and known, so GraphJin fetches the
-	// contract itself and the read proceeds in the same turn. Refusing here
-	// enforced nothing: the model re-sent an identical call without ever
-	// reading the supplied card.
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox})
-	if err != nil {
-		t.Fatalf("a satisfiable prerequisite must not refuse the read: %v", err)
-	}
-	// This control-plane read owes both the system-root contract and the
-	// security/runtime guidance. Both are satisfiable without the model, so
-	// both are supplied in this one turn and both are reported — the ladder of
-	// refusals it used to climb bought nothing but steps.
-	guidance := stringFromMap(mapValue(out), "guidance")
-	for _, want := range []string{"system-root contract", "security and runtime guidance"} {
-		if !strings.Contains(guidance, want) {
-			t.Fatalf("guidance = %q, want it to name %q", guidance, want)
-		}
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox})
+	if err == nil || !strings.Contains(err.Error(), "did NOT execute") || !strings.Contains(err.Error(), "Re-execute the exact same call") {
+		t.Fatalf("the first system-root read should be consumed by the supply and thrown: %v", err)
 	}
 	if !containsString(runtime.state.catalogDetails, "help:watches") {
 		t.Fatalf("the supplied contract must count as detail evidence: %v", runtime.state.catalogDetails)
 	}
 	if runtime.state.hasBlockingViolation() {
 		t.Fatal("a supplied prerequisite records no violation")
+	}
+	// The control-plane read also owes the one-shot security/runtime supply,
+	// so the ladder is two supplied throws; the attempt after them executes.
+	_, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox})
+	if err == nil || !strings.Contains(err.Error(), "security and runtime guidance") {
+		t.Fatalf("the second attempt should be consumed by the security supply: %v", err)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox}); err != nil {
+		t.Fatalf("the attempt after both supplies should execute: %v", err)
 	}
 	found := false
 	for _, call := range base.calls {
@@ -302,7 +297,7 @@ func TestSystemRootContractIsSuppliedAndTheReadProceeds(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("the read should reach the runtime, calls=%v", base.calls)
+		t.Fatalf("the retry should reach the runtime, calls=%v", base.calls)
 	}
 }
 

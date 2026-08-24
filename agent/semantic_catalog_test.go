@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -104,9 +103,8 @@ func TestRuntimeSeedUsageInstructionsNameExactCodePathsAndShapes(t *testing.T) {
 		"execute_saved_query({name: card.title})",
 		"execution.data",
 		"never make another catalog call",
-		// A repeat is served from the run's evidence rather than refused, so
-		// the blob describes the cards coming back, not a rejection.
-		"repeated query_catalog request returns the same cards again",
+		"identical repeated query_catalog request is rejected before execution",
+		"returns recovery.execution instead",
 		"globalThis.graphjinLastExecution",
 		"graphjinLastExecution.result.data",
 		"Never infer that business data is absent from catalog-card prose",
@@ -309,42 +307,34 @@ func TestExecutorHandoffInstructionsRequireExplicitDiscovery(t *testing.T) {
 	}
 }
 
-func TestIdenticalCatalogRequestServesTheMemoWithGuidance(t *testing.T) {
+func TestProtocolRejectsIdenticalCatalogRequestLoopsAndReplaysExecution(t *testing.T) {
 	base := &fakeRuntime{}
 	runtime := newProtocolRuntime(base, "find customers", "", 40, nil, nil, CatalogSearchFeatures{})
 	args := map[string]any{"kind": "saved_query", "search": "daily planning", "limit": 10}
 
-	first, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
-	if err != nil {
+	if _, err := runtime.QueryCatalog(context.Background(), cloneMap(args)); err != nil {
 		t.Fatalf("first query_catalog call: %v", err)
 	}
-	// A read is a pure lookup, so repeating one returns the same cards instead
-	// of an exception. Refusing withheld evidence the model was asking for
-	// only because a thrown turn had destroyed the turn that first fetched it.
-	repeat, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
-	if err != nil {
-		t.Fatalf("the repeated read must not throw: %v", err)
-	}
-	if got, want := mapValue(repeat)["cards"], mapValue(first)["cards"]; !reflect.DeepEqual(got, want) {
-		t.Fatalf("repeated read cards = %+v, want the first call's %+v", got, want)
-	}
-	if got := stringFromMap(mapValue(repeat), "guidance"); !strings.Contains(got, "already ran in this run") {
-		t.Fatalf("repeated read guidance = %q, want a repeat notice", got)
+	if _, err := runtime.QueryCatalog(context.Background(), cloneMap(args)); err == nil || !strings.Contains(err.Error(), "duplicate query_catalog call rejected") {
+		t.Fatalf("duplicate error = %v", err)
 	}
 	if got := len(base.calls); got != 1 {
-		t.Fatalf("runtime calls = %d, want the repeat served without a second dispatch", got)
+		t.Fatalf("runtime calls = %d, want one successful catalog dispatch", got)
 	}
 
 	execution := map[string]any{"data": map[string]any{"production_orders": []any{map[string]any{"product_name": "Northstar"}}}}
 	runtime.state.recordExecution("execute_saved_query", map[string]any{"name": "daily_roast_context"}, execution)
-	// With live rows in hand the cards still come back; only the guidance
-	// changes, pointing at finalizing rather than at more discovery.
-	afterExecution, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
-	if err != nil {
-		t.Fatalf("the post-execution repeat must not throw: %v", err)
+	// The post-execution duplicate throws: the needed rows already live in the
+	// run's execution state (bound into the runtime session), and the
+	// exception directs the model to finalize from them.
+	_, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
+	if err == nil {
+		t.Fatal("the post-execution duplicate must throw")
 	}
-	if got := stringFromMap(mapValue(afterExecution), "guidance"); !strings.Contains(got, "call final") {
-		t.Fatalf("post-execution guidance = %q, want it to point at final", got)
+	for _, want := range []string{"did NOT run", "already returned evidence", "Call final now"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
 	if got := len(base.calls); got != 1 {
 		t.Fatalf("runtime calls after recovery = %d, want one catalog dispatch", got)
@@ -385,30 +375,25 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:discovery"}); err != nil {
 			t.Fatal(err)
 		}
-		// The security/runtime prerequisite is satisfiable without the model,
-		// so it is supplied and the call carries straight on to the next guard
-		// in the same turn. That next guard is the mutation-shape one, which
-		// still refuses: unlike the supplied prerequisites, its message asks
-		// for a correction only the model can make.
+		// The supply consumes the call AND throws: to straight-line executor
+		// code, any non-exception reads as a successful write.
 		_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 			"query": `mutation { products(insert: {name: "x"}) { id } }`,
 		})
-		if err == nil || !strings.Contains(err.Error(), "mutation-shape evidence") {
-			t.Fatalf("the write should reach the mutation-shape guard in one turn: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "Re-execute the exact same operation") {
+			t.Fatalf("first write should be consumed by the supply and thrown: %v", err)
 		}
 		if !runtime.state.securityRuntimeEvidence {
 			t.Fatal("the supply must record the guidance as evidence")
 		}
-		// Re-sending it climbs one rung: the mutation-shape guard supplies the
-		// target's columns and still refuses, deliberately. Unlike the gates
-		// above, its message asks for a correction — "corrected if any of its
-		// fields are not in that list" — which only the model can make, so
-		// executing the original write instead would defeat the point.
+		// The supplied evidence discharges the prerequisite: the identical
+		// re-execute progresses to the next guard on the write path instead of
+		// refusing security/runtime again.
 		_, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{
 			"query": `mutation { products(insert: {name: "x"}) { id } }`,
 		})
-		if err == nil || !strings.Contains(err.Error(), "Re-execute the mutation now, corrected") {
-			t.Fatalf("second write should reach the supplied mutation-evidence refusal: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "mutation-shape evidence") {
+			t.Fatalf("second write should progress to the mutation-evidence guard: %v", err)
 		}
 	})
 
