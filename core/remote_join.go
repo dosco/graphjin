@@ -34,24 +34,29 @@ func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 		return
 	}
 
-	to, extra, err := s.resolveRemotes(c, from, sfmap, s.requestedRootCursorFields())
-	if err != nil {
-		return
+	to, extra, resolveErr := s.resolveRemotes(c, from, sfmap, s.requestedRootCursorFields())
+	if len(to) != len(from) {
+		// Resolver lookup/marker failures are structural rather than per-field
+		// upstream failures, so there is no trustworthy replacement plan.
+		return resolveErr
 	}
 
 	var ob bytes.Buffer
 	if err = jsn.Replace(&ob, s.data, from, to); err != nil {
-		return
+		return errors.Join(resolveErr, err)
 	}
 	s.data = ob.Bytes()
 	if len(extra) != 0 {
 		if s.data, err = mergeRemoteRootFields(s.data, extra); err != nil {
-			return
+			return errors.Join(resolveErr, err)
 		}
 		s.dhash = sha256.Sum256(s.data)
 		s.data, err = encryptValues(s.data, s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
+		if err != nil {
+			return errors.Join(resolveErr, err)
+		}
 	}
-	return
+	return resolveErr
 }
 
 // resolveRemotes fetches remote data for the marked insertion points
@@ -72,8 +77,7 @@ func (s *gstate) resolveRemotes(
 	var wg sync.WaitGroup
 	wg.Add(len(from))
 
-	var cerr error
-	var cerrMutex sync.Mutex
+	resolveErrs := make([]error, len(from))
 
 	for i, id := range from {
 		// use the json key to find the related Select object
@@ -106,6 +110,10 @@ func (s *gstate) resolveRemotes(
 		if !ok {
 			return nil, nil, fmt.Errorf("no resolver found for remote %q", rkey)
 		}
+		// GraphQL partial-result semantics: a resolver failure nulls only its
+		// own field. Successful sibling roots and sibling rows are still merged
+		// into the response after every concurrent request finishes.
+		to[i] = jsn.Field{Key: []byte(sel.FieldName), Value: []byte("null")}
 
 		go func(n int, id []byte, sel *qcode.Select, r resItem, rkey string) {
 			defer wg.Done()
@@ -170,10 +178,8 @@ func (s *gstate) resolveRemotes(
 			start := time.Now()
 			b, refs, cursor, err := produce(ctx1)
 			if err != nil {
-				cerrMutex.Lock()
-				cerr = fmt.Errorf("%s: %s", sel.Table, err)
-				spanErr := cerr
-				cerrMutex.Unlock()
+				spanErr := fmt.Errorf("remote field %s: %w", sel.FieldName, err)
+				resolveErrs[n] = spanErr
 				span.Error(spanErr)
 				return
 			}
@@ -192,7 +198,7 @@ func (s *gstate) resolveRemotes(
 		}(i, rid, sel, r, rkey)
 	}
 	wg.Wait()
-	return to, extra, cerr
+	return to, extra, errors.Join(resolveErrs...)
 }
 
 func (s *gstate) requestedRootCursorFields() map[string]struct{} {

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/dosco/graphjin/core/v3/openapi"
@@ -80,6 +81,14 @@ func TestSynthesiseResolvers(t *testing.T) {
 		if tl.Props["spec_key"] != "is" {
 			t.Errorf("top-level missing spec_key: %+v", tl.Props)
 		}
+	}
+}
+
+func TestOpenAPISpecFingerprintIncludesTimeout(t *testing.T) {
+	first := &openapi.Spec{Key: "api", Timeout: time.Second}
+	second := &openapi.Spec{Key: "api", Timeout: 2 * time.Second}
+	if openAPISpecFingerprint(first) == openAPISpecFingerprint(second) {
+		t.Fatal("per-spec timeout must participate in resolver cache fingerprinting")
 	}
 }
 

@@ -6,8 +6,63 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
+
+func TestSpecRuntimeAppliesPerSpecTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   time.Duration
+		expects time.Duration
+	}{
+		{name: "default", expects: DefaultTimeout},
+		{name: "configured", value: 125 * time.Millisecond, expects: 125 * time.Millisecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := &Spec{Key: "timeout", Timeout: tt.value, Operations: []OpDescriptor{{
+				OperationID: "list", Method: http.MethodGet, PathTemplate: "/items", Mode: OpModeList,
+			}}}
+			runtime, err := NewSpecRuntime(spec, &http.Client{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			caller, ok := runtime.Caller("list")
+			if !ok {
+				t.Fatal("caller not registered")
+			}
+			if caller.http.Timeout != tt.expects {
+				t.Fatalf("HTTP timeout = %s, want %s", caller.http.Timeout, tt.expects)
+			}
+		})
+	}
+
+	t.Run("preserves stricter host timeout", func(t *testing.T) {
+		spec := &Spec{Key: "timeout", Timeout: time.Second, Operations: []OpDescriptor{{
+			OperationID: "list", Method: http.MethodGet, PathTemplate: "/items", Mode: OpModeList,
+		}}}
+		runtime, err := NewSpecRuntime(spec, &http.Client{Timeout: 50 * time.Millisecond})
+		if err != nil {
+			t.Fatal(err)
+		}
+		caller, ok := runtime.Caller("list")
+		if !ok {
+			t.Fatal("caller not registered")
+		}
+		if caller.http.Timeout != 50*time.Millisecond {
+			t.Fatalf("HTTP timeout = %s, want stricter host timeout 50ms", caller.http.Timeout)
+		}
+	})
+}
+
+func TestSpecRuntimeRejectsNegativeTimeout(t *testing.T) {
+	_, err := NewSpecRuntime(&Spec{Key: "invalid", Timeout: -time.Second}, &http.Client{})
+	if err == nil || !strings.Contains(err.Error(), "timeout must not be negative") {
+		t.Fatalf("negative timeout error = %v", err)
+	}
+}
 
 // TestEndToEndLoadAndCall exercises the full pipeline: spec on disk →
 // loader → runtime → caller hitting an httptest server. This is the

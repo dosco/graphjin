@@ -30,6 +30,19 @@ func NewSpecRuntime(spec *Spec, httpClient *http.Client) (*SpecRuntime, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+	if spec.Timeout < 0 {
+		return nil, fmt.Errorf("openapi: %s timeout must not be negative", spec.Key)
+	}
+	timeout := spec.Timeout
+	if timeout == 0 {
+		timeout = DefaultTimeout
+	}
+	if httpClient.Timeout > 0 && httpClient.Timeout < timeout {
+		timeout = httpClient.Timeout
+	}
+	client := *httpClient
+	client.Timeout = timeout
+	httpClient = &client
 
 	auth, err := NewAuthProvider(spec.Auth, httpClient)
 	if err != nil {
