@@ -166,6 +166,12 @@ func TestHasuraMutationRefusesUnsupportedShapes(t *testing.T) {
 			`mutation { update_widgets(where: { id: { _eq: 1 } }, _set: { name: "a" }) { returning { id } } }`,
 			"widgets",
 		},
+		// A recorded episode wrote update_tickets_by_pk against a schema whose
+		// table is support_tickets; a near miss must name the real root.
+		"near-miss table suggests the real root": {
+			`mutation { update_purchase_by_pk(pk_columns: { id: 3 }, _set: { quantity: 1 }) { id } }`,
+			"did you mean",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := compileMutation(t, tc.query)

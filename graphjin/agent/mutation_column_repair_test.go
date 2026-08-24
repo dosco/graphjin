@@ -610,6 +610,11 @@ func TestHasuraSyntaxWritesAreGuardedLikeNativeOnes(t *testing.T) {
 	if !strings.Contains(repaired, "_set:") || !strings.Contains(repaired, `status: "resolved"`) {
 		t.Fatalf("the corrected write should stay in the caller's dialect: %q", repaired)
 	}
+	// Offered as "execute exactly as given", so it has to survive the same
+	// parse-level check every other handed-over query does.
+	if err := checkGraphQLParses(repaired); err != nil {
+		t.Fatalf("the corrected Hasura write must parse: %v", err)
+	}
 }
 
 // The unknown-column repair reads the same input blocks.
