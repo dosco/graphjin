@@ -979,7 +979,7 @@ func (co *Compiler) addRelInfo(
 			schema = sel.Schema
 		}
 		if sel.Ti, err = co.Find(schema, name); err != nil {
-			return err
+			return co.tableNotFoundError(name, err)
 		}
 	} else {
 		sel.Ti = sel.Rel.Left.Ti

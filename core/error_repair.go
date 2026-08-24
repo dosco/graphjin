@@ -41,6 +41,7 @@ var (
 	repairFieldNotOnTable = regexp.MustCompile(`field '([^']+)' is not a column or a function`)
 	repairWrongDialectArg = regexp.MustCompile(`unknown argument\s+['"` + "`" + `]?(aggregation|aggregate)['"` + "`" + `]?`)
 	repairQualifiedRoot   = regexp.MustCompile("roots are unqualified table names: write `([^`]+)`, not `([^`]+)`")
+	repairDidYouMean      = regexp.MustCompile(`did you mean (?:one of )?(\[?"[^?]*"\]?)\?`)
 )
 
 func BuildGraphJinErrorRepair(query, errorMsg string) ErrorRepair {
@@ -86,6 +87,12 @@ func BuildGraphJinErrorRepair(query, errorMsg string) ErrorRepair {
 	case strings.Contains(errLower, "table") && (strings.Contains(errLower, "not found") || strings.Contains(errLower, "unknown")):
 		res.Kind = repairKindTableNotFound
 		res.Diagnosis = "Table name not found. Check spelling, database, schema, and role-visible catalog rows."
+		// When the compiler already worked out what the name probably meant,
+		// repeat it here. A model told only to "check spelling" re-sends the
+		// same guess; a model handed the real name uses it.
+		if named := repairSuggestedNames(errorMsg); named != "" {
+			res.Diagnosis = fmt.Sprintf("Table name not found. GraphJin matched it to %s — retry with that name, or check the catalog for the role-visible rows.", named)
+		}
 		res.Next = []string{"query_catalog"}
 	case strings.Contains(errLower, "column") && (strings.Contains(errLower, "not found") || strings.Contains(errLower, "unknown") || strings.Contains(errLower, "does not exist")):
 		res.Kind = repairKindColumnNotFound
@@ -207,4 +214,15 @@ func splitRepairCSV(csv string) []string {
 		}
 	}
 	return out
+}
+
+// repairSuggestedNames lifts the table names a "did you mean" clause already
+// carries, so the structured repair the runtime tells models to read agrees
+// with the message text instead of restating generic advice beside it.
+func repairSuggestedNames(errorMsg string) string {
+	m := repairDidYouMean.FindStringSubmatch(errorMsg)
+	if m == nil {
+		return ""
+	}
+	return m[1]
 }

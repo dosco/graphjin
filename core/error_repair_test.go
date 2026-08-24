@@ -56,3 +56,45 @@ func TestBuildGraphJinErrorRepairQualifiedRoot(t *testing.T) {
 		t.Fatalf("unexpected repaired query: %q", repair.RepairedQuery)
 	}
 }
+
+// The compiler now works out what a missing root probably meant, and the
+// structured repair a model is told to read has to say the same thing. A
+// diagnosis that only says "check spelling" is what let the recorded runs
+// re-send `policies` until the step budget ran out.
+func TestTableNotFoundRepairCarriesTheSuggestedName(t *testing.T) {
+	repair := BuildGraphJinErrorRepair(
+		`query { policies { key } }`,
+		`table not found: main.policies; did you mean "sla_policies"?`)
+
+	if repair.Kind != repairKindTableNotFound {
+		t.Fatalf("expected table-not-found repair, got %+v", repair)
+	}
+	if !strings.Contains(repair.Diagnosis, "sla_policies") {
+		t.Fatalf("diagnosis = %q, want it to name sla_policies", repair.Diagnosis)
+	}
+}
+
+func TestTableNotFoundRepairWithoutASuggestionIsUnchanged(t *testing.T) {
+	repair := BuildGraphJinErrorRepair(
+		`query { warehouses { id } }`,
+		`table not found: main.warehouses`)
+
+	if repair.Kind != repairKindTableNotFound {
+		t.Fatalf("expected table-not-found repair, got %+v", repair)
+	}
+	if !strings.Contains(repair.Diagnosis, "Check spelling") {
+		t.Fatalf("diagnosis = %q, want the generic guidance when nothing was matched", repair.Diagnosis)
+	}
+}
+
+func TestTableNotFoundRepairCarriesSeveralSuggestedNames(t *testing.T) {
+	repair := BuildGraphJinErrorRepair(
+		`query { ticket { id } }`,
+		`table not found: main.ticket; did you mean one of ["support_tickets" "ticket_events"]?`)
+
+	for _, want := range []string{"support_tickets", "ticket_events"} {
+		if !strings.Contains(repair.Diagnosis, want) {
+			t.Fatalf("diagnosis = %q, want it to name %s", repair.Diagnosis, want)
+		}
+	}
+}

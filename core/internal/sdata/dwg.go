@@ -14,6 +14,9 @@ var (
 	ErrPathNotFound       = errors.New("path not found")
 	ErrPathSearchLimit    = errors.New("path search limit reached")
 	ErrThoughNodeNotFound = errors.New("though node not found")
+	// ErrTableNotFound reports a name that matched no table. Callers that can
+	// suggest a real name check for it; the message stays as it reads today.
+	ErrTableNotFound = errors.New("table not found")
 )
 
 // FKCandidate describes one foreign key option when an A→B relationship
@@ -298,7 +301,7 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 	// Fallback: search across all schemas by name
 	nodeIDs, ok := s.nameIndex[name]
 	if !ok || len(nodeIDs) == 0 {
-		return t, fmt.Errorf("table not found: %s.%s", schema, name)
+		return t, fmt.Errorf("%w: %s.%s", ErrTableNotFound, schema, name)
 	}
 
 	// Single match: unambiguous, return it

@@ -1922,6 +1922,35 @@ func (g *GraphJin) GetTableSchemaForDatabaseSchema(database, schemaName, tableNa
 
 // getTableSchema finds and returns the schema for a table, optionally in a specific database.
 func (gj *graphjinEngine) getTableSchema(database, tableName string) (*TableSchema, error) {
+	schema, err := gj.lookupTableSchema(database, tableName)
+	if err == nil {
+		return schema, nil
+	}
+
+	// A table card publishes its title as "<database>.<schema>.<table>", so the
+	// qualified form is the name a model reads off the catalog and hands back to
+	// any tool that takes a table. Resolving it here beats making every caller
+	// strip it, and keeps the catalog and the engine agreeing on what a table is
+	// called. The plain lookup above still runs first, so a name that already
+	// resolved resolves the same way, and its error is what surfaces when none
+	// of the qualified readings match either.
+	for _, cand := range splitQualifiedTableName(database, tableName) {
+		if cand.schema != "" {
+			if s, cerr := gj.getTableSchemaWithSchema(cand.database, cand.schema, cand.table); cerr == nil {
+				return s, nil
+			}
+			continue
+		}
+		if s, cerr := gj.lookupTableSchema(cand.database, cand.table); cerr == nil {
+			return s, nil
+		}
+	}
+	return nil, err
+}
+
+// lookupTableSchema resolves a table name exactly as written, treating any dots
+// in it as part of the name rather than as qualification.
+func (gj *graphjinEngine) lookupTableSchema(database, tableName string) (*TableSchema, error) {
 	if database != "" {
 		ctx, ok := gj.GetDatabase(database)
 		if !ok {
@@ -1935,6 +1964,57 @@ func (gj *graphjinEngine) getTableSchema(database, tableName string) (*TableSche
 		return nil, err
 	}
 	return gj.buildTableSchema(ctx.schema, dbName, tableName)
+}
+
+// qualifiedTableName is one reading of a dotted table name.
+type qualifiedTableName struct {
+	database string
+	schema   string
+	table    string
+}
+
+// splitQualifiedTableName returns the readings of a dotted table name worth
+// trying, most likely first. Nothing is returned for an unqualified name, which
+// leaves the caller's original lookup as the only one that runs.
+func splitQualifiedTableName(database, tableName string) []qualifiedTableName {
+	parts := strings.Split(tableName, ".")
+	if len(parts) < 2 {
+		return nil
+	}
+	table := parts[len(parts)-1]
+	if table == "" {
+		return nil
+	}
+
+	if len(parts) == 2 {
+		// "a.b" is genuinely ambiguous: a database schema is the common
+		// meaning, but a configured database name reads the same.
+		return validQualifiedTableNames([]qualifiedTableName{
+			{database: database, schema: parts[0], table: table},
+			{database: parts[0], table: table},
+		})
+	}
+
+	// "a.b.c" is the shape the catalog publishes: database, schema, table.
+	return validQualifiedTableNames([]qualifiedTableName{
+		{database: parts[0], schema: parts[1], table: table},
+		{database: database, schema: parts[len(parts)-2], table: table},
+	})
+}
+
+// validQualifiedTableNames drops readings that an empty path segment left
+// meaningless, so a name like "a..b" cannot widen a lookup.
+func validQualifiedTableNames(in []qualifiedTableName) []qualifiedTableName {
+	out := in[:0]
+	seen := make(map[qualifiedTableName]bool, len(in))
+	for _, c := range in {
+		if c.table == "" || (c.database == "" && c.schema == "") || seen[c] {
+			continue
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+	return out
 }
 
 func (gj *graphjinEngine) getTableSchemaWithSchema(database, schemaName, tableName string) (*TableSchema, error) {
