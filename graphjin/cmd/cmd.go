@@ -38,6 +38,20 @@ var (
 func Cmd() {
 	log = newLogger(false).Sugar()
 
+	if err := newRootCmd().Execute(); err != nil {
+		var exitErr *evalExitError
+		if errors.As(err, &exitErr) {
+			fmt.Fprintln(os.Stderr, exitErr.Err)
+			os.Exit(exitErr.Code)
+		}
+		log.Fatalf("%s", err)
+	}
+}
+
+// newRootCmd builds the CLI command tree. Cmd executes it; tests parse
+// generated command lines against it so a command the CLI prints for an
+// operator to retype is checked against the flags the binary really exposes.
+func newRootCmd() *cobra.Command {
 	cobra.EnableCommandSorting = false
 	rootCmd := &cobra.Command{
 		Use:   "graphjin",
@@ -68,14 +82,7 @@ func Cmd() {
 	// 	Run:   cmdConfDump,
 	// })
 
-	if err := rootCmd.Execute(); err != nil {
-		var exitErr *evalExitError
-		if errors.As(err, &exitErr) {
-			fmt.Fprintln(os.Stderr, exitErr.Err)
-			os.Exit(exitErr.Code)
-		}
-		log.Fatalf("%s", err)
-	}
+	return rootCmd
 }
 
 // setup is a helper function to read the config file
