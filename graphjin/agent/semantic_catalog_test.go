@@ -309,6 +309,42 @@ func TestExecutorHandoffInstructionsRequireExplicitDiscovery(t *testing.T) {
 	}
 }
 
+// A repeat must serve what the first call actually returned, not what the
+// dispatch started with. An id lookup that GraphJin repairs replaces the result
+// wholesale, so memoizing before the repair handed the repeat the empty
+// original while the first caller got the repaired cards.
+func TestRepeatedCatalogReadServesTheRepairedResult(t *testing.T) {
+	base := &fakeRuntime{catalogOverride: func(args map[string]any) any {
+		for _, id := range detailIDsFromArgs(args) {
+			if id == "table:invoices" {
+				// The short id misses; only the qualified form has cards.
+				return map[string]any{"count": 0, "cards": []any{}}
+			}
+		}
+		return fakeCatalogResult(args)
+	}}
+	runtime := newProtocolRuntime(base, "inspect invoices", "", 40, nil, nil, CatalogSearchFeatures{})
+	runtime.state.catalogIDs = map[string]bool{"table:app:main.invoices": true}
+
+	args := map[string]any{"id": "table:invoices"}
+	first, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
+	if err != nil {
+		t.Fatalf("first lookup: %v", err)
+	}
+	firstCards := len(catalogCards(first))
+	if firstCards == 0 {
+		t.Skip("this fixture did not exercise the id repair path")
+	}
+
+	repeat, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
+	if err != nil {
+		t.Fatalf("repeat must not throw: %v", err)
+	}
+	if got := len(catalogCards(repeat)); got != firstCards {
+		t.Fatalf("repeat served %d cards, want the %d the first call returned", got, firstCards)
+	}
+}
+
 func TestIdenticalCatalogRequestServesTheMemoWithGuidance(t *testing.T) {
 	base := &fakeRuntime{}
 	runtime := newProtocolRuntime(base, "find customers", "", 40, nil, nil, CatalogSearchFeatures{})

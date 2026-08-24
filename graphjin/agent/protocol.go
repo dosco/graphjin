@@ -449,9 +449,6 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 	action := r.state.startAction("model", "query_catalog", args)
 	out, err := r.base.QueryCatalog(ctx, args)
 	if err == nil {
-		if requestKey != "" {
-			r.state.catalogRequestKeys[requestKey] = normalizeValue(out)
-		}
 		r.state.modelDiscoveryAction = true
 		r.state.recordCatalog(args, out, false)
 		if len(returnedCatalogDetailIDs(detailIDs, out)) != 0 {
@@ -489,6 +486,7 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 							out = attachCatalogIDRepairNotice(repaired, repairs)
 							r.state.recordCatalog(rewriteCatalogIDArgs(args, repairs), out, false)
 							r.state.lastCatalogDetail = normalizeValue(out)
+							r.state.memoizeCatalogRead(requestKey, out)
 							r.state.finishAction(action, "query_catalog", args, out, nil)
 							return out, nil
 						}
@@ -501,6 +499,9 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 				), catalogIDSuggestions(detailIDs, known))
 			}
 		}
+	}
+	if err == nil {
+		r.state.memoizeCatalogRead(requestKey, out)
 	}
 	r.state.finishAction(action, "query_catalog", args, out, err)
 	return out, err
@@ -818,8 +819,25 @@ func withGuidance(out any, guidance string) any {
 	for k, v := range m {
 		clone[k] = v
 	}
+	if existing, ok := clone["guidance"].(string); ok && existing != "" {
+		// Never drop guidance the result already carried; both are true.
+		clone["guidance"] = existing + " " + guidance
+		return clone
+	}
 	clone["guidance"] = guidance
 	return clone
+}
+
+// memoizeCatalogRead records what a successful catalog read actually returned,
+// so repeating it serves the same thing. It has to run at the return, not at
+// dispatch: an empty search gains recovery guidance afterwards, and a repaired
+// id lookup replaces the result wholesale — memoizing early handed a repeat the
+// empty original while the first caller got the repaired cards.
+func (s *discoveryState) memoizeCatalogRead(requestKey string, out any) {
+	if s == nil || requestKey == "" || s.catalogRequestKeys == nil {
+		return
+	}
+	s.catalogRequestKeys[requestKey] = normalizeValue(out)
 }
 
 // repeatedCatalogGuidance says what to do with the evidence now that it has been
@@ -4674,15 +4692,10 @@ func (r *protocolRuntime) supplySecurityRuntimeEvidence(ctx context.Context, que
 		return nil, false
 	}
 	r.state.securityRuntimeEvidenceSupplied = true
-	result := map[string]any{
-		"graphjin_protocol": "security_runtime_evidence_supplied",
-		"message":           "GraphJin fetched the security and runtime guidance this write-capable operation requires. Author the operation from the returned guidance, then execute it.",
-		"cards":             normalizeValue(mapValue(normalizeValue(out))["cards"]),
-		"next":              "Re-execute the operation now that security and runtime guidance has been inspected.",
-	}
-	action := r.state.startAction("model", "execute_graphql", queryArgs)
-	r.state.finishAction(action, "execute_graphql", queryArgs, result, nil)
-	return result, true
+	// No action is recorded here. The call this satisfies continues in the
+	// same turn and records its own; a synthetic one alongside it double-counts
+	// a single tool call in the action log and in step accounting.
+	return nil, true
 }
 
 // supplyMutationEvidence discharges a missing mutation-shape prerequisite by
@@ -4971,15 +4984,10 @@ func (r *protocolRuntime) supplySystemRootDiscovery(ctx context.Context, query s
 		return nil, false
 	}
 	r.state.systemRootDiscoverySupplied = true
-	result := map[string]any{
-		"graphjin_protocol": "system_root_discovery_supplied",
-		"message":           "GraphJin fetched the system-root contract this operation requires. Author the operation from the returned guidance, then execute it.",
-		"cards":             normalizeValue(mapValue(normalizeValue(out))["cards"]),
-		"next":              "Re-execute the operation now that the system-root contract has been inspected.",
-	}
-	action := r.state.startAction("model", "execute_graphql", queryArgs)
-	r.state.finishAction(action, "execute_graphql", queryArgs, result, nil)
-	return result, true
+	// No action is recorded here. The call this satisfies continues in the
+	// same turn and records its own; a synthetic one alongside it double-counts
+	// a single tool call in the action log and in step accounting.
+	return nil, true
 }
 
 // suppliedColumnSummary renders the column names of just-supplied mutation
