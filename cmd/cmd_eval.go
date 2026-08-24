@@ -402,7 +402,7 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 					Mode: gjeval.RunModeBenchmark, Intent: gjeval.RunIntentBench, Repeats: gjeval.DefaultRepeats, Seed: seed,
 					Provenance: evalProvenance(instance, seed, status), Baseline: baseline, Store: store,
 					ResumePolicy: policy, ResumeRunID: resumeRunID, BinaryFingerprint: evalBinaryFingerprint(),
-					InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed), Concurrency: opts.Concurrency,
+					InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed, public), Concurrency: opts.Concurrency,
 				})
 				if err != nil {
 					return nil, evalEnvironmentError(err)
@@ -628,7 +628,7 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 		Provenance: evalProvenance(instance, seed, status), Baseline: baseline, Store: store,
 		AutoBaseline: autoBaseline, DeliberatePromotion: deliberatePromotion,
 		ResumePolicy: policy, ResumeRunID: opts.ResumeRunID, BinaryFingerprint: evalBinaryFingerprint(),
-		InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed), Concurrency: opts.Concurrency,
+		InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed, false), Concurrency: opts.Concurrency,
 	})
 	if err != nil {
 		return nil, nil, evalEnvironmentError(err)
@@ -1036,16 +1036,25 @@ func evalBinaryFingerprint() string {
 	return hex.EncodeToString(sum[:])
 }
 
-func evalInvocationArgs(opts *evalCLIOptions, projectPath string, scale int, seed int64) []string {
+func evalInvocationArgs(opts *evalCLIOptions, projectPath string, scale int, seed int64, public bool) []string {
 	args := make([]string, 0, 10)
-	if opts.Demo {
+	if public {
+		// --public pins the frozen suite along with its scale, seed and demo
+		// target. Reprinting those pinned values would make the resume command
+		// fail the very validation --public enforces, so the flag stands alone
+		// and the values it pins are left off below. Dropping --public instead
+		// would be worse: the resume would load the generated suite and be
+		// rejected as incompatible with the frozen run it means to continue.
+		args = append(args, "--public")
+	}
+	if opts.Demo && !public {
 		args = append(args, "--demo")
 	}
 	if opts.Remote {
 		args = append(args, "--remote")
 	}
 	args = append(args, "--path", strconv.Quote(projectPath))
-	if scale > 0 {
+	if scale > 0 && !public {
 		args = append(args, "--scale", strconv.Itoa(scale), "--seed", strconv.FormatInt(seed, 10))
 	}
 	if opts.JSON {
