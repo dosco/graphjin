@@ -571,22 +571,26 @@ func attachCatalogIDRepairNotice(out any, repairs map[string]string) any {
 // the registry contract leaves no room for a non-blocking code — an
 // unregistered code fails safety scoring, a registered one must block.
 func attachWatchNormalizationNotice(out any, repaired string) any {
+	instruction := `The gj_watch subscription string arrived with unescaped quotes; the mutation executed as its verified re-escaping, shown in repaired_query. Escape nested quotes as \" in future watch mutations.`
 	recovery := map[string]any{
 		"kind":           "watch_subscription_normalized",
 		"code":           "watch_subscription_normalized",
-		"instruction":    `The gj_watch subscription string arrived with unescaped quotes; the mutation executed as its verified re-escaping, shown in repaired_query. Escape nested quotes as \" in future watch mutations.`,
+		"instruction":    instruction,
 		"repaired_query": repaired,
 	}
 	switch res := out.(type) {
 	case executeResult:
 		res.Recovery = recovery
+		res.Guidance = instruction
 		return res
 	case *executeResult:
 		res.Recovery = recovery
+		res.Guidance = instruction
 		return res
 	case map[string]any:
 		res = cloneAnyMap(res)
 		res["recovery"] = recovery
+		res["guidance"] = instruction
 		return res
 	default:
 		return out
@@ -967,10 +971,27 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		// up after two of these refusals and reported "no unseen events found"
 		// over an inbox it never read.
 		if supplied, ok := r.supplySystemRootDiscovery(ctx, query, args); ok {
-			r.state.noteInterceptedWrite(query, "the write was intercepted so the system-root contract could be supplied, and was not retried")
+			// A mutation stopped here must throw, not return. The model's
+			// executor code is straight-line JavaScript written before this
+			// result exists: `const res = await execute_graphql(m); await
+			// final("done")` runs final unconditionally, so a friendly return
+			// value cannot interrupt it — run ab4-trt measured 26 episodes
+			// narrating success over exactly this consumed call. An exception
+			// is the only control flow a completed program still responds to.
+			if ContainsMutationOperation(query) {
+				r.state.noteInterceptedWrite(query, "the write was intercepted so the system-root contract could be supplied, and was not retried")
+				return nil, fmt.Errorf("this write did NOT execute. GraphJin loaded the system-root contract it requires into this run's evidence. Re-execute the exact same mutation now; it will be permitted to run")
+			}
 			return supplied, nil
 		}
 		r.state.noteInterceptedWrite(query, "the write was refused pending catalog discovery and was not successfully retried")
+		if ContainsMutationOperation(query) {
+			err := fmt.Errorf("this write did NOT execute: inspect the target's catalog detail with query_catalog({id:\"...\"}) first, then re-execute the mutation.%s", approvedSavedQuerySuffix(r.state))
+			r.state.addViolation("raw_graphql_discovery_required", err.Error(), "execute_graphql", true, map[string]any{"candidate_ids": r.state.knownCatalogIDs(emptySearchKnownIDLimit)})
+			action := r.state.startAction("model", "execute_graphql", args)
+			r.state.finishAction(action, "execute_graphql", args, nil, err)
+			return nil, err
+		}
 		err := fmt.Errorf("protocol violation: the seed and broad catalog results are not discovery detail; inspect the relevant catalog item with query_catalog({id:\"...\"}) before authoring raw GraphQL.%s", approvedSavedQuerySuffix(r.state))
 		details := map[string]any{
 			"approved_saved_queries": sortedBoolKeys(r.state.savedQueriesDiscovered),
@@ -1032,12 +1053,26 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		// substring) from a refusal the run was never taught about into the
 		// guidance itself.
 		if supplied, ok := r.supplySecurityRuntimeEvidence(ctx, args); ok {
-			r.state.noteInterceptedWrite(query, "the write was intercepted so security and runtime guidance could be supplied, and was not retried")
+			// Same rule as every mutation interception: throw, because a
+			// return value cannot interrupt straight-line executor code.
+			if ContainsMutationOperation(query) {
+				r.state.noteInterceptedWrite(query, "the write was intercepted so security and runtime guidance could be supplied, and was not retried")
+				return nil, fmt.Errorf("this write did NOT execute. GraphJin loaded the required security and runtime guidance into this run's evidence. Re-execute the exact same mutation now; it will be permitted to run")
+			}
 			return supplied, nil
 		}
 		r.state.noteInterceptedWrite(query, "the write was refused pending security and runtime guidance and was not successfully retried")
-		err := fmt.Errorf("protocol violation: inspect security/runtime catalog guidance before write-capable or control-plane GraphQL")
 		details := map[string]any{"required": []any{"help:security", "help:runtime"}}
+		if ContainsMutationOperation(query) {
+			// Thrown, not returned: no exception reads as success to
+			// straight-line executor code.
+			err := fmt.Errorf("this write did NOT execute: inspect the security and runtime guidance with query_catalog({ids:[\"help:security\",\"help:runtime\"]}) first, then re-execute the mutation")
+			r.state.addViolation("security_runtime_discovery_required", err.Error(), "execute_graphql", true, details)
+			action := r.state.startAction("model", "execute_graphql", args)
+			r.state.finishAction(action, "execute_graphql", args, nil, err)
+			return nil, err
+		}
+		err := fmt.Errorf("protocol violation: inspect security/runtime catalog guidance before write-capable or control-plane GraphQL")
 		r.state.addViolation("security_runtime_discovery_required", err.Error(), "execute_graphql", true, details)
 		next := catalogRepairNext(
 			map[string]any{"ids": []any{"help:security", "help:runtime"}},
@@ -1210,46 +1245,34 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				}
 				if refuse {
 					details := map[string]any{"fault": "value_outside_observed_set"}
-					guidance := "Choose the value from that list which matches the intent and re-author the write with it"
-					reason := "Re-author the write using one of the values listed for that column, then execute it once."
-					kind := "observed_value_mismatch"
-					next := map[string]any{
-						"recommended_tool": "execute_graphql",
-						"reason":           reason,
-					}
 					if len(suggestions) != 0 {
 						details["closest_values"] = suggestions
 					}
+					// Thrown, with the corrected mutation inline: executor code is
+					// straight-line JavaScript written before this result exists,
+					// so only an exception interrupts it, and the exception text
+					// is the one channel the next turn is guaranteed to read. Run
+					// 969337b6 measured the conditional framing losing to the
+					// factual one, so the schema's convention is stated as fact.
+					err := fmt.Errorf("this write did NOT execute: %s. Choose the value from that list which matches the intent, re-author the write with it, and execute it once", described)
 					if repairExists {
 						details["repaired_query"] = repaired
-						// Run 969337b6 measured 2 of 10 episodes taking the repair when it
-						// was conditioned on "if the suggested value matches the intent" —
-						// invited to judge, the model judged that "closed" matches "close it
-						// off". The schema's convention is a fact, so state it as one.
-						guidance = "This schema expresses that state with the suggested value; the corrected write is in errors[].extensions.details.repaired_query — execute it exactly as given"
-						reason = "Execute details.repaired_query exactly as given; it is this same write expressed in the vocabulary this column actually uses."
+						message := fmt.Sprintf("this write did NOT execute: %s. Execute this corrected mutation exactly as given: %s", described, repaired)
 						// The corrected value can imply a companion timestamp —
 						// resolved beside resolved_at — and that schema fact
 						// rides along: every recorded ticket-resolution episode
 						// left it null, and nothing else in the run says it
 						// exists to be stamped.
 						if note := r.companionTimestampNote(ctx, repaired); note != "" {
-							reason += " " + note
+							message += " — " + note
 						}
-						kind = "mutation_value_repair"
-						next = map[string]any{
-							"recommended_tool": "execute_graphql",
-							"args":             map[string]any{"query": repaired},
-							"reason":           reason,
-						}
+						err = fmt.Errorf("%s", message)
 					}
-					err := fmt.Errorf("protocol violation: %s. %s", described, guidance)
 					r.state.noteInterceptedWrite(query, "the write was refused for a value outside the column's observed set and was not successfully retried")
 					r.state.addViolation("observed_value_mismatch", err.Error(), "execute_graphql", true, details)
-					out := recoverableProtocolFailure("observed_value_mismatch", err.Error(), kind, next, details)
 					action := r.state.startAction("model", "execute_graphql", args)
-					r.state.finishAction(action, "execute_graphql", args, out, nil)
-					return out, nil
+					r.state.finishAction(action, "execute_graphql", args, nil, err)
+					return nil, err
 				}
 			}
 		}
@@ -1278,14 +1301,12 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 					normalizedWatchQuery = repaired
 				} else {
 					details := map[string]any{"root": systemRootWatch, "fault": "unescaped_subscription_string"}
-					err := fmt.Errorf(`protocol violation: the gj_watch subscription string has unescaped quotes, so this mutation does not parse. Pass the subscription as a GraphQL variable instead of inlining it: mutation CreateWatch($name: String!, $query: String!) { gj_watch(insert: {name: $name, query: $query, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name status } } with variables {"name": "...", "query": "subscription { <root>(where: {...}, first: 25, after: $cursor) { ... } <root>_cursor }"}`)
+					err := fmt.Errorf(`this write did NOT execute: the gj_watch subscription string has unescaped quotes, so this mutation does not parse. Pass the subscription as a GraphQL variable instead of inlining it: mutation CreateWatch($name: String!, $query: String!) { gj_watch(insert: {name: $name, query: $query, delivery_json: {kind: "inbox", digest: {window: "1h"}}}) { id name status } } with variables {"name": "...", "query": "subscription { <root>(where: {...}, first: 25, after: $cursor) { ... } <root>_cursor }"}`)
 					r.state.noteInterceptedWrite(query, "the gj_watch mutation was refused for an unparseable subscription string and was not successfully retried")
 					r.state.addViolation("watch_query_invalid", err.Error(), "execute_graphql", true, details)
-					out := recoverableProtocolFailure("watch_query_invalid", err.Error(), "watch_query_invalid",
-						catalogRepairNext(map[string]any{"ids": []any{"help:watches"}}, "Re-author the gj_watch mutation with the subscription passed as a variable, then execute it once."), details)
 					action := r.state.startAction("model", "execute_graphql", args)
-					r.state.finishAction(action, "execute_graphql", args, out, nil)
-					return out, nil
+					r.state.finishAction(action, "execute_graphql", args, nil, err)
+					return nil, err
 				}
 			}
 			for _, root := range watchSubscriptionRoots(query, args) {
@@ -1316,21 +1337,29 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			// still fail loudly inside supplyMutationEvidence.
 			if containsStringFold(roots, systemRootWatch) || r.state.previouslyRefusedMutationEvidence(missing) {
 				r.state.noteInterceptedWrite(query, "the write was intercepted pending mutation-shape evidence and was not successfully retried")
-				if supplied, ok := r.supplyMutationEvidence(ctx, missing); ok {
+				if _, ok := r.supplyMutationEvidence(ctx, missing); ok {
+					// Throw, not return: the executor's straight-line code
+					// cannot react to a value. The evidence is in this run's
+					// state either way, so the retry is one exception away.
+					err := fmt.Errorf("this write did NOT execute. GraphJin loaded the catalog detail for %s into this run's evidence (columns: %s). Re-execute the mutation now, corrected if any of its fields are not in that list", strings.Join(missing, ", "), r.suppliedColumnSummary(ctx, missing))
 					action := r.state.startAction("model", "execute_graphql", args)
-					r.state.finishAction(action, "execute_graphql", args, supplied, nil)
-					return supplied, nil
+					r.state.finishAction(action, "execute_graphql", args, nil, err)
+					return nil, err
 				}
 			}
 			r.state.noteInterceptedWrite(query, "the write was refused pending mutation-shape evidence and was not successfully retried")
-			err := fmt.Errorf("protocol violation: gather mutation-shape evidence for %s before executing a mutation: inspect the target table's catalog detail with query_catalog({id:\"table:...\"}), validate_where_clause the target, inspect a mutation_pattern detail row, or use an approved saved mutation", strings.Join(missing, ", "))
+			// The exact catalog ids beat a generic search in every measured
+			// run, so the exception carries them verbatim.
+			exact := ""
+			if ids := stringSliceArg(mapValue(r.state.mutationEvidenceNext(missing)["args"]), "ids"); len(ids) != 0 {
+				exact = fmt.Sprintf(" — run query_catalog({ids:[\"%s\"]}) for the exact detail", strings.Join(ids, `","`))
+			}
+			err := fmt.Errorf("this write did NOT execute: gather mutation-shape evidence for %s first%s, then re-execute the mutation", strings.Join(missing, ", "), exact)
 			details := map[string]any{"tables": missing}
 			r.state.addViolation("mutation_evidence_required", err.Error(), "execute_graphql", true, details)
-			next := r.state.mutationEvidenceNext(missing)
-			out := recoverableProtocolFailure("mutation_evidence_required", err.Error(), "mutation_shape_detail_required", next, details)
 			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, out, nil)
-			return out, nil
+			r.state.finishAction(action, "execute_graphql", args, nil, err)
+			return nil, err
 		}
 		if requiresWorkflowDetail(roots) && !r.state.hasWorkflowDetailEvidence() {
 			err := fmt.Errorf("protocol violation: inspect the workflow detail by id before executing it through %s", systemRootWorkflowExec)
@@ -4857,4 +4886,20 @@ func (r *protocolRuntime) supplySystemRootDiscovery(ctx context.Context, query s
 	action := r.state.startAction("model", "execute_graphql", queryArgs)
 	r.state.finishAction(action, "execute_graphql", queryArgs, result, nil)
 	return result, true
+}
+
+// suppliedColumnSummary renders the column names of just-supplied mutation
+// targets for an exception message — the one channel a straight-line executor
+// program is guaranteed to read.
+func (r *protocolRuntime) suppliedColumnSummary(ctx context.Context, tables []string) string {
+	parts := make([]string, 0, len(tables))
+	for _, table := range tables {
+		if columns := r.observedColumnNames(ctx, table); len(columns) != 0 {
+			parts = append(parts, table+": "+strings.Join(columns, ", "))
+		}
+	}
+	if len(parts) == 0 {
+		return "see this run's catalog evidence"
+	}
+	return strings.Join(parts, "; ")
 }

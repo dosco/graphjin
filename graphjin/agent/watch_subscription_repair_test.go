@@ -127,16 +127,18 @@ func TestMalformedWatchSubscriptionExecutesNormalized(t *testing.T) {
 		t.Fatal("normalization must not leave a blocking violation behind")
 	}
 
-	// An unrepairable string keeps the historical blocking refusal.
-	blockedOut, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+	// An unrepairable string still blocks — thrown now, because straight-line
+	// executor code reads any non-exception as a successful write.
+	_, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `mutation { gj_watch(insert: { name: "broken", query: "subscription { invoices { id }`,
 	})
-	if err != nil {
-		t.Fatalf("unrepairable case should return a refusal, not an error: %v", err)
+	if err == nil {
+		t.Fatal("an unrepairable string must throw")
 	}
-	payload, _ = json.Marshal(blockedOut)
-	if !strings.Contains(string(payload), "watch_query_invalid") {
-		t.Fatalf("an unrepairable string must still block: %s", payload)
+	for _, want := range []string{"did NOT execute", "variable"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
 	if base.mutationCalls != 1 {
 		t.Fatalf("the unrepairable mutation must not dispatch, calls=%d", base.mutationCalls)

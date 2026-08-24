@@ -167,22 +167,26 @@ func (s *discoveryState) referentBindableToKnownTable(refs []entityReference) bo
 // executed scoped to the retained subject, so the rows below are that
 // subject's, and future queries should carry the same filter.
 func attachReferentBindingNotice(out any, rewritten string, binding referentBinding) any {
+	instruction := fmt.Sprintf("This follow-up inherits its subject from prior turns, so the query executed scoped to %s via %s.%s, as shown in repaired_query. The results below are for that subject only; keep the same filter on further queries about it.", binding.Ref.String(), binding.Root, binding.Column)
 	recovery := map[string]any{
 		"kind":           "history_referent_bound",
 		"code":           "history_referent_bound",
-		"instruction":    fmt.Sprintf("This follow-up inherits its subject from prior turns, so the query executed scoped to %s via %s.%s, as shown in repaired_query. The results below are for that subject only; keep the same filter on further queries about it.", binding.Ref.String(), binding.Root, binding.Column),
+		"instruction":    instruction,
 		"repaired_query": rewritten,
 	}
 	switch res := out.(type) {
 	case executeResult:
 		res.Recovery = recovery
+		res.Guidance = instruction
 		return res
 	case *executeResult:
 		res.Recovery = recovery
+		res.Guidance = instruction
 		return res
 	case map[string]any:
 		res = cloneAnyMap(res)
 		res["recovery"] = recovery
+		res["guidance"] = instruction
 		return res
 	default:
 		return out

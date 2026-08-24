@@ -118,6 +118,8 @@ github.com/ax-llm/ax/packages/go v0.0.0-20260819053613-22ed085d0f5d h1:oTfSWSOTF
 github.com/ax-llm/ax/packages/go v0.0.0-20260819053613-22ed085d0f5d/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/ax-llm/ax/packages/go v0.0.0-20260820093508-c535259a12d0 h1:dzHlm4eZi62ZQNPpv80zO00xSZYWGYzw/qbtXy4IGVM=
 github.com/ax-llm/ax/packages/go v0.0.0-20260820093508-c535259a12d0/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
+github.com/ax-llm/ax/packages/go v0.0.0-20260823224931-16d893e85969 h1:e+xaMZRcKE3ocGtzAiE+PCreO1B9XGmtEREwZ6ndy8s=
+github.com/ax-llm/ax/packages/go v0.0.0-20260823224931-16d893e85969/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/bahlo/generic-list-go v0.2.0 h1:5sz/EEAK+ls5wF+NeqDpk5+iNdMDXrh3z3nPnH1Wvgk=
 github.com/bahlo/generic-list-go v0.2.0/go.mod h1:2KvAjgMlE5NNynlg/5iLrrCCZ2+5xWbdbCW3pNTGyYg=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 h1:mXoPYz/Ul5HYEDvkta6I8/rnYM5gSdSV2tJ6XbZuEtY=
@@ -176,12 +178,14 @@ github.com/dosco/graphjin/auth/v3 v3.20.20/go.mod h1:Gj2mgs1se3KDkzccg9KOaS+huO0
 github.com/dosco/graphjin/auth/v3 v3.20.22/go.mod h1:w/PYoHWsvzBEH/IiqEwh4KhT52NOPkmXGTPo4QpuVNA=
 github.com/dosco/graphjin/auth/v3 v3.20.28/go.mod h1:5pnLV0Jhoo9cBzPRk010MFutQW2G2ZPkrqsg+LkCWa0=
 github.com/dosco/graphjin/auth/v3 v3.20.29/go.mod h1:UIDJVBVRMefvU5AWqQTaLgYsnZbpg5gtGUgKtmirUz8=
+github.com/dosco/graphjin/auth/v3 v3.20.43/go.mod h1:wPcpQewuI8s7KgO7TD/iPKjGnmMB7zzM7xrEay2e5Wo=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.2 h1:8Knx+Z9Qj89bWM6tk7hMErSxPJyC9hXEgC78nvHNyWo=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.2/go.mod h1:E27uxul4hpT9JoC+aTwITUR215ta5QmKJGRBeG8MEZQ=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.20/go.mod h1:V0pdkiiKEmp0M0cO0Slxghvwzuymh9hMgX+YYjempbI=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.22/go.mod h1:KnHyQjI/TqnDgSZIfUe6hvufkDJJ4NcB8nonjwA5G38=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.28/go.mod h1:8McEVSh1+MSC7PVQ633K85ZQ7GSPup56gVkyjnYOYK4=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.29/go.mod h1:GNH4WjZXmK01OzDeQ//61zx1G3vcM4F5pTSRZ31Np5Q=
+github.com/dosco/graphjin/plugin/otel/v3 v3.20.43/go.mod h1:FQgyYdIE3Mf4nx0me+ROT+q/b7Z7Wec2EM+3m4sq03M=
 github.com/duckdb/duckdb-go-bindings v0.10502.0 h1:Uhg/dfvPLQv4cH35lMD48hqUcdOh2Z7bcuykjr4qnOA=
 github.com/duckdb/duckdb-go-bindings v0.10502.0/go.mod h1:8KF3oEKrmYdSbZnQ1BPTdxAZDHRaM1LEv+oBvL2nSLk=
 github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10502.0 h1:1GxSHSI1ef3sCdDVrJ9l8s6aTd7P1K788os9lHrs43g=
@@ -217,6 +221,7 @@ github.com/gabriel-vasile/mimetype v1.4.7 h1:SKFKl7kD0RiPdbht0s7hFtjl489WcQ1VyPW
 github.com/gabriel-vasile/mimetype v1.4.7/go.mod h1:GDlAgAyIRT27BhFl53XNAFtfjzOkLaF35JdEG0P7LtU=
 github.com/getkin/kin-openapi v0.131.0 h1:NO2UeHnFKRYhZ8wg6Nyh5Cq7dHk4suQQr72a4pMrDxE=
 github.com/getkin/kin-openapi v0.131.0/go.mod h1:3OlG51PCYNsPByuiMB0t4fjnNlIDnaEDsjiKUV8nL58=
+github.com/getkin/kin-openapi v0.138.0/go.mod h1:vUYWaKyMqj7PfTybelXtLuLN9tReS12vxnzMRK+z2GY=
 github.com/go-faster/city v1.0.1 h1:4WAxSZ3V2Ws4QRDrscLEDcibJY8uf41H6AhXDrNDcGw=
 github.com/go-faster/city v1.0.1/go.mod h1:jKcUJId49qdW3L1qKHH/3wPeUstCVpVSXTM6vO3VcTw=
 github.com/go-faster/errors v0.7.1 h1:MkJTnDoEdi9pDabt1dpWf7AA8/BaSYZqibYyhZ20AYg=
@@ -385,8 +390,10 @@ github.com/ncruces/go-strftime v1.0.0/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJm
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=
 github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 h1:G7ERwszslrBzRxj//JalHPu/3yz+De2J+4aLtSRlHiY=
 github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037/go.mod h1:2bpvgLBZEtENV5scfDFEtB/5+1M4hkQhDQrccEJ/qGw=
+github.com/oasdiff/yaml v0.0.9/go.mod h1:8lvhgJG4xiKPj3HN5lDow4jZHPlx1i7dIwzkdAo6oAM=
 github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 h1:bQx3WeLcUWy+RletIKwUIt4x3t8n2SxavmoclizMb8c=
 github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90/go.mod h1:y5+oSEHCPT/DGrS++Wc/479ERge0zTFxaF8PbGKcg2o=
+github.com/oasdiff/yaml3 v0.0.12/go.mod h1:y5+oSEHCPT/DGrS++Wc/479ERge0zTFxaF8PbGKcg2o=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=

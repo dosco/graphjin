@@ -17,17 +17,14 @@ import (
 // fallback for a reason-less next.
 
 func TestRecoverableProtocolFailureDerivesTextFromReason(t *testing.T) {
-	runtime, _ := ticketValueRuntime(t)
-	runtime.state.seedOK = true
-	runtime.state.modelDiscoveryAction = true
-	runtime.state.securityRuntimeEvidence = true
-	runtime.state.mutationEvidenceSupplied = true
-	runtime.state.tablesDetailed["support_tickets"] = true
-	runtime.state.catalogDetails = []string{"table:app:main.support_tickets"}
-
-	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
-		"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed"}) { id status } }`,
-	})
+	// The vehicle is the unbindable-referent refusal: mutation interceptions
+	// now throw (straight-line executor code reads any non-exception as
+	// success), so the reason-derivation contract is pinned on a read-path
+	// guard that still returns a recoverable payload.
+	runtime, _ := referentTestRuntime(t, "How many rows does that widget have?",
+		Turn{Role: "user", Content: "Look at widget 9."},
+	)
+	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { invoices { id } }`})
 	if err != nil {
 		t.Fatalf("first attempt errored instead of returning a repair: %v", err)
 	}
@@ -45,7 +42,7 @@ func TestRecoverableProtocolFailureDerivesTextFromReason(t *testing.T) {
 	}
 	recovery := mapValue(decoded["recovery"])
 	instruction, _ := recovery["instruction"].(string)
-	if !strings.Contains(instruction, "repaired_query") {
+	if !strings.Contains(instruction, "scopes this query") {
 		t.Fatalf("instruction must carry the kind-specific reason, got %q", instruction)
 	}
 	next := mapValue(recovery["next"])
@@ -60,11 +57,10 @@ func TestRecoverableProtocolFailureDerivesTextFromReason(t *testing.T) {
 	if !strings.Contains(message, recoveryDirectivePrefix) {
 		t.Fatalf("directive must keep the dedupe prefix: %q", message)
 	}
-	if !strings.Contains(message, "repaired_query") {
+	if !strings.Contains(message, "scopes this query") {
 		t.Fatalf("message directive must carry the specific fix: %q", message)
 	}
 }
-
 func TestRecoverableProtocolFailureKeepsGenericTextWithoutReason(t *testing.T) {
 	out := recoverableProtocolFailure("some_code", "protocol violation: details", "some_kind",
 		map[string]any{"recommended_tool": toolQueryCatalog}, nil)

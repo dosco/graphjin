@@ -114,18 +114,15 @@ func TestDemoFailedWriteIsNotReportedDone(t *testing.T) {
 	}
 	// At 40edb30d this came out status=answered with zero violations: the
 	// exhausted-loop rescue shipped the model's claim over an unchanged
-	// database. The claim must not survive as an answer.
+	// database. With interceptions thrown, the false claim now dies inside its
+	// own turn — the run ends unanswered without the finalize gate even
+	// needing to fire.
 	if response.Status == "answered" {
 		t.Fatalf("a run whose only write failed cannot answer success: %q", response.Answer)
 	}
 	payload, _ := json.Marshal(response)
-	if !strings.Contains(string(payload), "mutation_execution_failed") {
-		t.Fatalf("the refusal should name the failed write: %s", payload)
-	}
-	// The refusal is also the last teaching moment, so it carries the exact
-	// corrected mutation the model declined to run.
-	if !strings.Contains(string(payload), `reference: \"DEEPORG-PAY-001\"`) {
-		t.Fatalf("the refusal should carry the corrected write: %s", payload)
+	if !strings.Contains(string(payload), "did NOT execute") {
+		t.Fatalf("the run should carry the thrown teaching: %s", payload)
 	}
 }
 
@@ -186,23 +183,27 @@ func TestDemoTicketResolutionChainConverts(t *testing.T) {
 	// globals — the exact handoff mechanism real runs use — rather than
 	// re-deriving state and tripping the duplicate-execution guards.
 	chain := `
+async function run(q) { try { return {ok:true, res: await execute_graphql({query:q})}; } catch (e) { return {ok:false, text: String((e && e.message) || e)}; } }
 const closed = 'mutation { support_tickets(where: { id: { eq: 1 } }, update: { status: "closed", notes: "Sorted out and resolved." }) { id status } }';
-let attempt = await execute_graphql({query: closed});
-if (!(attempt && attempt.recovery && attempt.recovery.next && attempt.recovery.next.args && attempt.recovery.next.args.query)) {
-  attempt = await execute_graphql({query: closed});
+let corrected = "";
+for (let i = 0; i < 3 && !corrected; i++) {
+  const r = await run(closed);
+  if (!r.ok) {
+    const m = r.text.match(/exactly as given: (.*?)(?: \u2014 |$)/);
+    if (m) {
+      corrected = m[1];
+      if (r.text.indexOf("resolved_at") < 0) { throw new Error("value repair did not teach resolved_at: " + r.text); }
+    }
+  }
 }
-const valueRepair = attempt && attempt.recovery && attempt.recovery.next && attempt.recovery.next.args && attempt.recovery.next.args.query;
-if (!valueRepair) { throw new Error("no value repair in " + JSON.stringify(attempt)); }
-const taught = (attempt.recovery.instruction || "") + " " + ((attempt.recovery.next && attempt.recovery.next.reason) || "");
-if (taught.indexOf("resolved_at") < 0) { throw new Error("value repair did not teach resolved_at: " + taught); }
-const second = await execute_graphql({query: valueRepair});
-const renameRepair = second && second.recovery && second.recovery.details && second.recovery.details.repaired_query;
-let stamped;
-if (renameRepair) {
-  stamped = renameRepair.replace('resolution_note:', 'resolved_at: "2027-01-15T12:00:00Z", resolution_note:');
-} else {
-  stamped = valueRepair.replace('notes:', 'resolved_at: "2027-01-15T12:00:00Z", resolution_note:');
+if (!corrected) { throw new Error("no corrected mutation was thrown"); }
+let stamped = "";
+const second = await run(corrected);
+if (second.ok) {
+  const rep = second.res && second.res.recovery && second.res.recovery.details && second.res.recovery.details.repaired_query;
+  if (rep) { stamped = rep.replace('resolution_note:', 'resolved_at: "2027-01-15T12:00:00Z", resolution_note:'); }
 }
+if (!stamped) { stamped = corrected.replace('notes:', 'resolved_at: "2027-01-15T12:00:00Z", resolution_note:'); }
 const done = await execute_graphql({query: stamped});
 await final({status:"answered", answer:"Ticket 1 is resolved with a resolution note recorded.", data:{done:done}, evidence:[done]});
 `

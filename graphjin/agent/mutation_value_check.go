@@ -696,15 +696,19 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 			recovery["next"] = next
 		}
 	}
+	guidance := strings.TrimSpace(note)
 	switch res := out.(type) {
 	case executeResult:
 		amend(mapValue(res.Recovery))
+		res.Guidance = guidance
 		return res, repaired
 	case *executeResult:
 		amend(mapValue(res.Recovery))
+		res.Guidance = guidance
 		return res, repaired
 	case map[string]any:
 		amend(mapValue(res["recovery"]))
+		res["guidance"] = guidance
 		return res, repaired
 	default:
 		return out, repaired
