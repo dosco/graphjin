@@ -89,6 +89,18 @@ paths:
 	})
 }
 
+func skipOpenAPIQueryRegressionForUnscopedFixture(t *testing.T, conf *core.Config) {
+	t.Helper()
+	// Some non-relational suites describe their shared fixture with unscoped
+	// tables. GraphJin correctly rejects those tables once an API source is also
+	// configured, before these OpenAPI response semantics can be exercised.
+	for _, table := range conf.Tables {
+		if strings.TrimSpace(table.Source) == "" {
+			t.Skipf("%s: shared fixture declares table %q without a source, which cannot coexist with an api source", dbType, table.Name)
+		}
+	}
+}
+
 func TestOpenAPIWhereOrderAndPagingAreApplied(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/alerts" {
@@ -105,7 +117,9 @@ func TestOpenAPIWhereOrderAndPagingAreApplied(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	gj, err := core.NewGraphJin(openAPIQueryRegressionConfig(t, dbType, upstream.URL, time.Second), db)
+	conf := openAPIQueryRegressionConfig(t, dbType, upstream.URL, time.Second)
+	skipOpenAPIQueryRegressionForUnscopedFixture(t, conf)
+	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +155,9 @@ func TestOpenAPIRowJoinWhereNullsNonMatchingObject(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	gj, err := core.NewGraphJin(openAPIQueryRegressionConfig(t, dbType, upstream.URL, time.Second), db)
+	conf := openAPIQueryRegressionConfig(t, dbType, upstream.URL, time.Second)
+	skipOpenAPIQueryRegressionForUnscopedFixture(t, conf)
+	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		t.Fatal(err)
 	}
