@@ -2,6 +2,7 @@ package dialect
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
@@ -81,7 +82,8 @@ import (
 type MSSQLDialect struct {
 	DBVersion       int
 	EnableCamelcase bool
-	NameMap         map[string]string // normalized→original identifier mapping
+	NameMap         map[string]string            // normalized→original identifier mapping
+	ColumnNameMap   map[string]map[string]string // normalized table→column→original column
 }
 
 func (d *MSSQLDialect) Name() string {
@@ -97,9 +99,39 @@ func (d *MSSQLDialect) QuoteIdentifier(s string) string {
 	return "[" + s + "]"
 }
 
+// QuoteColumn resolves a normalized GraphQL column name within its table.
+// A global normalized→original map is insufficient because distinct physical
+// spellings such as FlagValue and Flag_Value both normalize to flag_value.
+func (d *MSSQLDialect) QuoteColumn(table, column string) string {
+	lookupTable := table
+	if _, ok := d.ColumnNameMap[lookupTable]; !ok {
+		if split := strings.LastIndexByte(lookupTable, '_'); split > 0 {
+			if _, err := strconv.Atoi(lookupTable[split+1:]); err == nil {
+				lookupTable = lookupTable[:split]
+			}
+		}
+	}
+	if columns, ok := d.ColumnNameMap[lookupTable]; ok {
+		if original, ok := columns[column]; ok {
+			return "[" + original + "]"
+		}
+	}
+	return d.QuoteIdentifier(column)
+}
+
 // SetNameMap builds a normalized→original name mapping from discovered tables.
 func (d *MSSQLDialect) SetNameMap(tables []sdata.DBTable) {
 	d.NameMap = make(map[string]string)
+	d.ColumnNameMap = make(map[string]map[string]string)
+	setScoped := func(table, normalized, original string) {
+		if table == "" || normalized == "" || original == "" {
+			return
+		}
+		if d.ColumnNameMap[table] == nil {
+			d.ColumnNameMap[table] = make(map[string]string)
+		}
+		d.ColumnNameMap[table][normalized] = original
+	}
 	for _, t := range tables {
 		if t.OrigName != "" && t.OrigName != t.Name {
 			d.NameMap[t.Name] = t.OrigName
@@ -108,6 +140,8 @@ func (d *MSSQLDialect) SetNameMap(tables []sdata.DBTable) {
 			d.NameMap[t.Schema] = t.OrigSchema
 		}
 		for _, c := range t.Columns {
+			setScoped(t.Name, c.Name, c.OrigName)
+			setScoped(c.FKeyTable, c.FKeyCol, c.OrigFKeyCol)
 			if c.OrigName != "" && c.OrigName != c.Name {
 				d.NameMap[c.Name] = c.OrigName
 			}

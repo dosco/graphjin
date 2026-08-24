@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/stretchr/testify/assert"
@@ -163,6 +164,39 @@ func Handler() {}
 	require.NotNil(t, s.dbs["code"])
 	assert.Equal(t, "sqlite", s.runtimeCore.Databases["code"].Type)
 	assert.Equal(t, "codesql", s.conf.Core.Databases["code"].Type)
+}
+
+// TestNewDBFromDatabaseConfigHonorsPostgresTLSValidation guards #564. The
+// configured multi-database path must pass TLS fields through the same driver
+// initializer as the legacy single-database path. Missing required TLS fields
+// must therefore fail before GraphJin attempts a plaintext connection.
+func TestNewDBFromDatabaseConfigHonorsPostgresTLSValidation(t *testing.T) {
+	s := &graphjinService{
+		conf:       &Config{},
+		fs:         core.NewOsFS(""),
+		managedDBs: make(map[string]managedDB),
+	}
+
+	base := core.DatabaseConfig{
+		Type:        "postgres",
+		Host:        "127.0.0.1",
+		Port:        1,
+		DBName:      "analytics",
+		User:        "graphjin",
+		Password:    "secret",
+		EnableTLS:   true,
+		PingTimeout: time.Millisecond,
+	}
+	t.Run("server name", func(t *testing.T) {
+		_, err := s.newDBFromDatabaseConfig("analytics", base)
+		require.ErrorContains(t, err, "tls: server_name is required")
+	})
+	t.Run("server certificate", func(t *testing.T) {
+		conf := base
+		conf.ServerName = "analytics.example.com"
+		_, err := s.newDBFromDatabaseConfig("analytics", conf)
+		require.ErrorContains(t, err, "tls: server_cert is required")
+	})
 }
 
 // newTestLogger creates a no-op logger for testing
