@@ -1357,7 +1357,7 @@ func TestFinalizeRecoversSuccessfulExecutionDataIgnoredByModel(t *testing.T) {
 	}
 }
 
-func TestDuplicateSuccessfulGraphQLIsSuppressedAndArmsCompletion(t *testing.T) {
+func TestDuplicateSuccessfulGraphQLServesCacheWithGuidance(t *testing.T) {
 	base := &successfulExecutionRuntime{}
 	runtime := newProtocolRuntime(base, "Show invoice INV-1", "", 8, nil, nil, CatalogSearchFeatures{})
 	runtime.state.seedOK = true
@@ -1378,19 +1378,26 @@ func TestDuplicateSuccessfulGraphQLIsSuppressedAndArmsCompletion(t *testing.T) {
 	if err != nil || base.graphqlCalls != 1 {
 		t.Fatalf("duplicate reached database: calls=%d result=%+v err=%v", base.graphqlCalls, duplicate, err)
 	}
-	if stringFromMap(mapValue(duplicate)["recovery"].(map[string]any), "code") != "completion_required" || runtime.state.completionLatchKey == "" {
-		t.Fatalf("duplicate recovery/latch = result:%+v state:%+v", duplicate, runtime.state)
+	// The rows come back rather than an exception, so a straight-line program
+	// still has its answer, and the nudge to stop repeating rides the guidance
+	// channel instead of erasing the result.
+	if got := stringFromMap(mapValue(duplicate), "guidance"); !strings.Contains(got, "already ran in this run") {
+		t.Fatalf("duplicate guidance = %q, want a repeat notice", got)
+	}
+	if mapValue(duplicate)["data"] == nil {
+		t.Fatalf("duplicate withheld its cached rows: %+v", duplicate)
 	}
 	if got := runtime.state.actions[len(runtime.state.actions)-1].Summary["cached"]; got != true {
 		t.Fatalf("duplicate action summary cached = %v, want true", got)
 	}
-	_, err = runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
-	if err != nil || base.graphqlCalls != 1 || !runtime.state.completionReady {
-		t.Fatalf("second duplicate did not trigger completion: calls=%d ready=%t err=%v", base.graphqlCalls, runtime.state.completionReady, err)
+	// Repeating again stays free and stays non-fatal; maxSteps bounds the loop.
+	third, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err != nil || base.graphqlCalls != 1 || mapValue(third)["data"] == nil {
+		t.Fatalf("third duplicate = %+v calls=%d err=%v", third, base.graphqlCalls, err)
 	}
 }
 
-func TestDistinctExecutionClearsDuplicateCompletionLatch(t *testing.T) {
+func TestDistinctExecutionAfterDuplicateStillReachesTheDatabase(t *testing.T) {
 	base := &successfulExecutionRuntime{}
 	runtime := newProtocolRuntime(base, "Show invoice details", "", 8, nil, nil, CatalogSearchFeatures{})
 	runtime.state.seedOK = true
@@ -1407,8 +1414,8 @@ func TestDistinctExecutionClearsDuplicateCompletionLatch(t *testing.T) {
 	if _, err := runtime.ExecuteGraphQL(context.Background(), distinct); err != nil {
 		t.Fatal(err)
 	}
-	if base.graphqlCalls != 2 || runtime.state.completionLatchKey != "" || runtime.state.completionReady {
-		t.Fatalf("distinct execution did not continue cleanly: calls=%d latch=%q ready=%t", base.graphqlCalls, runtime.state.completionLatchKey, runtime.state.completionReady)
+	if base.graphqlCalls != 2 {
+		t.Fatalf("distinct execution did not reach the database: calls=%d", base.graphqlCalls)
 	}
 }
 
@@ -1449,21 +1456,11 @@ func TestDuplicateSuccessfulMutationIsNotExecutedTwice(t *testing.T) {
 	}
 }
 
-func TestFinalizeRecoversArmedCompletionOnActorExhaustion(t *testing.T) {
-	state := newDiscoveryState("Show invoice INV-1")
-	state.seedOK = true
-	state.modelDiscoveryAction = true
-	result := map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "INV-1"}}}}
-	state.recordExecution(toolExecuteGraphQL, map[string]any{"query": "query { invoices { id } }"}, result)
-	state.completionLatchKey = "execute_graphql:test"
-	resp := state.finalize(Response{Status: StatusError, Errors: []ErrorInfo{{
-		Message:    "agent actor loop exceeded max steps",
-		Extensions: map[string]any{"code": "agent_actor_steps_exhausted", "retryable": false},
-	}}})
-	if resp.Status != StatusAnswered || resp.Data == nil || len(resp.Errors) != 0 {
-		t.Fatalf("armed exhaustion did not recover cached evidence: %+v", resp)
-	}
-}
+// The duplicate-execution completion latch that used to rescue an exhausted
+// run from state.finalize is gone: a repeat now returns its cached rows, so
+// there is nothing to rescue mid-run. Genuine step exhaustion is handled by
+// forcedFinalize, covered by TestForcedFinalizeRescuesExhaustedRunWithEvidence
+// and its siblings below.
 
 func TestResponseFromErrorStructuresActorExhaustionAndKeepsUsage(t *testing.T) {
 	resp := responseFromError(errors.New("agent actor loop exceeded max steps"), "trace", &fakeProgram{}, true)

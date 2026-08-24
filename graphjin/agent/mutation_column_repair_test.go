@@ -511,52 +511,46 @@ func (r *protocolRuntime) catalogOverrideForSupply(base *strictWriteRuntime) {
 // finalized "Ticket 1 has been closed with a note" over a database that never
 // changed — invisible because nothing marked the attempt. An intercepted write
 // is an attempted write.
-func TestInterceptedWriteCannotBeReportedAsDone(t *testing.T) {
+func TestSuppliedPrerequisiteLetsTheWriteLand(t *testing.T) {
 	runtime, base := strictWriteTestRuntime(t)
-	// The run has NOT read security/runtime guidance, so the first write-like
-	// call is consumed by the supply, exactly as in the recorded episodes.
+	// The run has NOT read security/runtime guidance. GraphJin can fetch that
+	// itself — the two ids never vary — so the prerequisite is satisfied and
+	// the write runs in the same turn rather than paying a round trip to
+	// re-arrive at a call already decided to be permitted.
 	runtime.state.securityRuntimeEvidence = false
 	runtime.catalogOverrideForSupply(base)
 
-	// The supply consumes the call AND throws: straight-line executor code
-	// treats any non-exception as success, so a supplied write that returned a
-	// friendly value was narrated as done in 26 recorded episodes.
-	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `mutation { payments(insert: { id: 900001, reference: "DEEPORG-PAY-001", invoice_id: 1, amount_cents: 480000, recorded_at: "2027-01-15T12:00:00Z" }) { id } }`,
 	})
-	if err == nil {
-		t.Fatal("the consumed write must throw")
+	if err != nil {
+		t.Fatalf("a satisfiable prerequisite must not refuse the write: %v", err)
 	}
-	for _, want := range []string{"did NOT execute", "Re-execute the exact same operation"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("the exception must carry %q: %v", want, err)
-		}
+	if len(base.writes) != 1 {
+		t.Fatalf("the write should land once the prerequisite is met: %v", base.writes)
 	}
-	if len(base.writes) != 0 {
-		t.Fatalf("nothing may land during the supply: %v", base.writes)
+	if !runtime.state.securityRuntimeEvidence {
+		t.Fatal("the supplied guidance must count as evidence")
 	}
-	// The model walks away and claims success — the recorded episode, verbatim.
+	// It says so on the guidance channel, which informs without discarding the
+	// result the way an exception would.
+	if got := stringFromMap(mapValue(out), "guidance"); !strings.Contains(got, "security and runtime guidance") {
+		t.Fatalf("guidance = %q, want it to name the supplied prerequisite", got)
+	}
+	if runtime.state.hasBlockingViolation() {
+		t.Fatalf("a supplied prerequisite records no violation: %+v", runtime.state.violations)
+	}
+	// The write really happened, so reporting it done is now earned rather
+	// than narrated over an interception.
 	resp := runtime.state.finalize(Response{Status: StatusAnswered, Answer: "Successfully recorded payment DEEPORG-PAY-001."})
-	if resp.Status != StatusBlocked {
-		t.Fatalf("a consumed-and-never-retried write cannot be reported done, got %s", resp.Status)
-	}
-	found := false
-	for _, violation := range runtime.state.violations {
-		if violation.Code == "mutation_execution_failed" {
-			found = true
-			if !strings.Contains(violation.Message, "intercepted") {
-				t.Fatalf("the refusal should say the write was intercepted: %s", violation.Message)
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("expected mutation_execution_failed, got %+v", runtime.state.violations)
+	if resp.Status != StatusAnswered {
+		t.Fatalf("a landed write finalizes normally, got %s: %+v", resp.Status, resp.Errors)
 	}
 }
 
-// The same run, one behavior stronger: the retry after the supply lands and
-// the success report is earned.
-func TestInterceptedWriteRetriedToSuccessFinalizesAnswered(t *testing.T) {
+// The same run: a repeat after the write landed is served from the memo rather
+// than executed twice, and the success report stays earned.
+func TestSuppliedWriteRepeatDoesNotWriteTwice(t *testing.T) {
 	runtime, base := strictWriteTestRuntime(t)
 	runtime.state.securityRuntimeEvidence = false
 	runtime.catalogOverrideForSupply(base)
@@ -564,14 +558,16 @@ func TestInterceptedWriteRetriedToSuccessFinalizesAnswered(t *testing.T) {
 	write := map[string]any{
 		"query": `mutation { payments(insert: { id: 900001, reference: "DEEPORG-PAY-001", invoice_id: 1, amount_cents: 480000, recorded_at: "2027-01-15T12:00:00Z" }) { id } }`,
 	}
-	if _, err := runtime.ExecuteGraphQL(context.Background(), write); err == nil {
-		t.Fatal("the consumed first write must throw")
+	if _, err := runtime.ExecuteGraphQL(context.Background(), write); err != nil {
+		t.Fatal(err)
 	}
+	// A repeat of a landed write is served from the memo, so it stays at one
+	// write no matter how many times the model re-sends it.
 	if _, err := runtime.ExecuteGraphQL(context.Background(), write); err != nil {
 		t.Fatal(err)
 	}
 	if len(base.writes) != 1 {
-		t.Fatalf("the retry should land: %v", base.writes)
+		t.Fatalf("the write should land exactly once: %v", base.writes)
 	}
 	resp := runtime.state.finalize(Response{Status: StatusAnswered, Answer: "Recorded payment DEEPORG-PAY-001."})
 	if resp.Status != StatusAnswered {
