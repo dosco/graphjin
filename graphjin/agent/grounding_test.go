@@ -540,10 +540,8 @@ func TestCachedExecutionRecoveryKeepsPendingRequirement(t *testing.T) {
 	if last.Error == "" || !strings.Contains(last.Error, "database_computation_required") {
 		t.Fatalf("cached rejection action = %#v", last)
 	}
-	// A repeat with an outstanding requirement is the one case that still
-	// throws, so the rows must not come back on the guidance channel either.
-	if strings.Contains(err.Error(), "guidance") {
-		t.Fatalf("pending requirement leaked a guidance nudge: %v", err)
+	if runtime.state.completionLatchKey != "" || runtime.state.completionReady {
+		t.Fatalf("pending requirement armed completion latch: %+v", runtime.state)
 	}
 }
 

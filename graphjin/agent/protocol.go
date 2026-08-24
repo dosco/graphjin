@@ -106,6 +106,8 @@ type discoveryState struct {
 	// redundant call arms a one-turn completion grace period; another already
 	// seen call lets the runtime finalize from the governed cached evidence.
 	successfulExecutions       map[string]any
+	completionLatchKey         string
+	completionReady            bool
 	terminalContinuationIssued bool
 	// lastExecution retains the most recent successful execution result for
 	// one narrow recovery case: an actor that ignores that result and repeats
@@ -116,11 +118,11 @@ type discoveryState struct {
 	lastExecution any
 	rawGraphQL    []map[string]any
 	violations    []protocolViolation
-	// catalogRequestKeys memoizes each successful model catalog read by its
-	// normalized request, so repeating one is served from here instead of
-	// reaching the catalog again. Only successful model calls are recorded; the
-	// seed and failed attempts do not populate it.
-	catalogRequestKeys map[string]any
+	// catalogRequestKeys prevents an actor loop from issuing an identical
+	// catalog request repeatedly instead of consuming the result it already
+	// received. Only successful model calls are recorded; the seed and failed
+	// attempts do not spend this budget.
+	catalogRequestKeys map[string]bool
 	// One empty lexical/coverage search is allowed and returned with concrete
 	// recovery guidance. A second blind search is rejected before dispatch so
 	// the actor must consume known ids or enumerate the catalog by kind.
@@ -324,7 +326,7 @@ func newDiscoveryState(instruction string) *discoveryState {
 		tablesDetailed:         map[string]bool{},
 		tablesValidated:        map[string]bool{},
 		workflowsDetailed:      map[string]bool{},
-		catalogRequestKeys:     map[string]any{},
+		catalogRequestKeys:     map[string]bool{},
 		failedQueryKeys:        map[string]bool{},
 		successfulExecutions:   map[string]any{},
 	}
@@ -358,6 +360,7 @@ func (r *protocolRuntime) GraphQLHelp(ctx context.Context, args map[string]any) 
 	out, err := r.base.GraphQLHelp(ctx, args)
 	r.state.finishAction(action, "graphql_help", args, out, err)
 	if err == nil {
+		r.state.clearCompletionLatch()
 		r.state.modelDiscoveryAction = true
 		topic := stringArg(args, "for")
 		if topic == "" {
@@ -433,24 +436,29 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 		r.state.finishAction(action, "query_catalog", args, nil, err)
 		return nil, err
 	}
-	if cached, ok := r.state.catalogRequestKeys[requestKey]; ok && requestKey != "" {
-		// A catalog read is a pure lookup, so repeating one is not a failure and
-		// must not be thrown. Refusing discarded evidence the model was asking
-		// for precisely because a thrown turn had destroyed the turn that first
-		// fetched it — 91 of 98 recorded refusals withheld cards the original
-		// call had returned. Serving the memo costs nothing, nothing is
-		// re-fetched, and the nudge to move on rides the guidance channel where
-		// it informs without erasing the answer. maxSteps bounds the loop.
+	if requestKey != "" && r.state.catalogRequestKeys[requestKey] {
+		message := "duplicate query_catalog call rejected: this exact request already returned catalog evidence; reuse the prior result and follow its next guidance instead of searching again"
+		if r.state.lastExecution != nil {
+			r.state.recordRepeatedCall("query_catalog:" + requestKey)
+			// Thrown: returning cards:[] here read as a successful empty
+			// catalog to straight-line code. The needed data is already in the
+			// run's execution state; the exception says to finalize from it.
+			err := fmt.Errorf("this lookup did NOT run: the identical catalog request already returned evidence in this run, and live execution data is in hand. Call final now from the earlier execution result; do not call query_catalog again")
+			action := r.state.startAction("model", "query_catalog", args)
+			r.state.finishAction(action, "query_catalog", args, nil, err)
+			return nil, err
+		}
+		err := fmt.Errorf("%s", message)
 		action := r.state.startAction("model", "query_catalog", args)
-		out := withGuidance(cached, repeatedCatalogGuidance(r.state))
-		r.state.finishAction(action, "query_catalog", args, out, nil)
-		return out, nil
+		r.state.finishAction(action, "query_catalog", args, nil, err)
+		return nil, err
 	}
 	action := r.state.startAction("model", "query_catalog", args)
 	out, err := r.base.QueryCatalog(ctx, args)
 	if err == nil {
+		r.state.clearCompletionLatch()
 		if requestKey != "" {
-			r.state.catalogRequestKeys[requestKey] = normalizeValue(out)
+			r.state.catalogRequestKeys[requestKey] = true
 		}
 		r.state.modelDiscoveryAction = true
 		r.state.recordCatalog(args, out, false)
@@ -801,81 +809,6 @@ func (r *protocolRuntime) validateCoverageSearches(args map[string]any) ([]strin
 	return searches, nil
 }
 
-// withGuidance attaches non-error teaching to a tool result. ax lifts a
-// "guidance" key off the returned map into the agent's guidance payload, which
-// is the channel for something worth saying that is not a failure — the
-// distinction that lets a served cache be heard without having to masquerade as
-// an error and throw the result away.
-func withGuidance(out any, guidance string) any {
-	if guidance == "" {
-		return out
-	}
-	m, ok := normalizeValue(out).(map[string]any)
-	if !ok {
-		return out
-	}
-	clone := make(map[string]any, len(m)+1)
-	for k, v := range m {
-		clone[k] = v
-	}
-	clone["guidance"] = guidance
-	return clone
-}
-
-// repeatedCatalogGuidance says what to do with the evidence now that it has been
-// handed back. A run already holding live execution data has everything it
-// needs, so it is pointed at finalizing rather than at more discovery.
-func repeatedCatalogGuidance(s *discoveryState) string {
-	if s != nil && s.lastExecution != nil && s.pendingRequiredFinalization() == "" {
-		return "This catalog request already ran in this run; these are the same cards, served without another lookup. Live execution data is already in hand — call final from it now instead of searching again."
-	}
-	return "This catalog request already ran in this run; these are the same cards, served without another lookup. Author the next step from them instead of repeating the search."
-}
-
-// appendNote accumulates guidance so a call that satisfied more than one
-// prerequisite reports every one of them, rather than the last writer erasing
-// what an earlier gate supplied.
-func appendNote(note *string, text string) {
-	if *note == "" {
-		*note = text
-		return
-	}
-	*note += " " + text
-}
-
-// supplySystemRootContract satisfies the system-root discovery prerequisite
-// from the catalog when it can and reports whether the call may now proceed.
-//
-// The gate's requirement is that the contract be in evidence. When GraphJin can
-// put it there itself — a gj_* root's help card is fixed and known, so which
-// card is needed depends on nothing the model knows — refusing enforces
-// nothing: it spends a turn arriving back at a call already decided to be
-// permitted, and the model re-sends without ever reading the cards. The write
-// is not marked intercepted, because it is about to run.
-func (r *protocolRuntime) supplySystemRootContract(ctx context.Context, query string, args map[string]any, note *string) bool {
-	supplied, ok := r.supplySystemRootDiscovery(ctx, query, args)
-	if !ok {
-		return false
-	}
-	_ = supplied
-	appendNote(note, "GraphJin loaded the system-root contract this call requires into the run's evidence and ran the call. Author any follow-up from that contract.")
-	return true
-}
-
-// supplySecurityRuntimeContract does the same for the security and runtime
-// guidance a write-like call requires. Its two ids never vary, which is what
-// makes the prerequisite satisfiable without the model and the refusal pure
-// cost: 45 episodes on the frozen suite paid that round trip.
-func (r *protocolRuntime) supplySecurityRuntimeContract(ctx context.Context, args map[string]any, note *string) bool {
-	supplied, ok := r.supplySecurityRuntimeEvidence(ctx, args)
-	if !ok {
-		return false
-	}
-	_ = supplied
-	appendNote(note, "GraphJin loaded the required security and runtime guidance into the run's evidence and ran the call. Author any follow-up from that guidance.")
-	return true
-}
-
 func (r *protocolRuntime) ValidateWhereClause(ctx context.Context, args map[string]any) (any, error) {
 	r.addNamespace(args)
 	action := r.state.startAction("model", "validate_where_clause", args)
@@ -953,11 +886,12 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		}
 		out := cachedExecutionResult(r.state, cached)
 		r.state.selectCachedExecution("execute_saved_query", args, out)
-		out = withGuidance(out, "This saved query already ran in this run; these are the same rows, served without executing it again. Call final from them instead of running it again.")
+		r.state.recordRepeatedCall(executionKey)
 		action := r.state.startAction("model", "execute_saved_query", args)
 		r.state.finishAction(action, "execute_saved_query", args, out, nil)
 		return out, nil
 	}
+	r.state.clearCompletionLatch()
 	action := r.state.startAction("model", "execute_saved_query", args)
 	out, err := r.base.ExecuteSavedQuery(ctx, args)
 	r.state.finishAction(action, "execute_saved_query", args, out, err)
@@ -998,10 +932,6 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 }
 
 func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
-	// Set when a prerequisite this run could satisfy itself was satisfied and
-	// the call allowed to proceed, so the result can say so without the model
-	// having to spend a turn re-sending an identical call to learn it.
-	var suppliedEvidenceNote string
 	r.addNamespace(args)
 	query := stringArg(args, "query")
 	// An empty call used to wander into the discovery guard, collect a
@@ -1053,7 +983,26 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	// fields. Require an exact same-run detail lookup, which is also the evidence
 	// surfaced as catalog_detail_ids in the protocol response. Fail here while
 	// the run can recover and name the governed path.
-	if !r.state.hasCatalogDetailEvidence() && !r.supplySystemRootContract(ctx, query, args, &suppliedEvidenceNote) {
+	if !r.state.hasCatalogDetailEvidence() {
+		// A query whose every root is a gj_* system surface targets a contract
+		// that is fixed and known, so the demanded detail is deterministic: the
+		// run needs the system root's own help card, and which card that is
+		// does not depend on anything the model knows. Supply it once, the way
+		// security and mutation evidence are supplied — a reactive episode gave
+		// up after two of these refusals and reported "no unseen events found"
+		// over an inbox it never read.
+		if supplied, ok := r.supplySystemRootDiscovery(ctx, query, args); ok {
+			// A mutation stopped here must throw, not return. The model's
+			// executor code is straight-line JavaScript written before this
+			// result exists: `const res = await execute_graphql(m); await
+			// final("done")` runs final unconditionally, so a friendly return
+			// value cannot interrupt it — run ab4-trt measured 26 episodes
+			// narrating success over exactly this consumed call. An exception
+			// is the only control flow a completed program still responds to.
+			r.state.noteInterceptedWrite(query, "the write was intercepted so the system-root contract could be supplied, and was not retried")
+			_ = supplied
+			return nil, fmt.Errorf("this query did NOT execute. GraphJin loaded the system-root contract it requires into this run's evidence. Re-execute the exact same call now; it will be permitted to run")
+		}
 		r.state.noteInterceptedWrite(query, "the write was refused pending catalog discovery and was not successfully retried")
 		if ContainsMutationOperation(query) {
 			err := fmt.Errorf("this write did NOT execute: inspect the target's catalog detail with query_catalog({id:\"...\"}) first, then re-execute the mutation.%s", approvedSavedQuerySuffix(r.state))
@@ -1103,8 +1052,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		r.state.finishAction(action, "execute_graphql", args, nil, err)
 		return nil, err
 	}
-	if writeLikeGraphQL(query) && !r.state.securityRuntimeEvidence &&
-		!r.supplySecurityRuntimeContract(ctx, args, &suppliedEvidenceNote) {
+	if writeLikeGraphQL(query) && !r.state.securityRuntimeEvidence {
 		// The two prerequisite ids never vary, so the refusal round trip bought
 		// nothing: 35 episodes on the frozen suite paid it — about 1.8 extra
 		// turns and 43k extra tokens each — and every one then fetched the same
@@ -1115,6 +1063,15 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		// (writeLikeGraphQL matches read-only control-plane queries by
 		// substring) from a refusal the run was never taught about into the
 		// guidance itself.
+		if supplied, ok := r.supplySecurityRuntimeEvidence(ctx, args); ok {
+			// Throw, because a return value cannot interrupt straight-line
+			// executor code — writeLikeGraphQL also matches control-plane
+			// READS by substring, and those were answered "no unseen events
+			// found" over an inbox never read from exactly this supplied call.
+			r.state.noteInterceptedWrite(query, "the write was intercepted so security and runtime guidance could be supplied, and was not retried")
+			_ = supplied
+			return nil, fmt.Errorf("this call did NOT execute. GraphJin loaded the required security and runtime guidance into this run's evidence. Re-execute the exact same operation now; it will be permitted to run")
+		}
 		r.state.noteInterceptedWrite(query, "the write was refused pending security and runtime guidance and was not successfully retried")
 		details := map[string]any{"required": []any{"help:security", "help:runtime"}}
 		err := fmt.Errorf("this call did NOT execute: inspect the security and runtime guidance with query_catalog({ids:[\"help:security\",\"help:runtime\"]}) first, then re-execute the operation")
@@ -1433,6 +1390,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		}
 		out := cachedExecutionResult(r.state, cached)
 		r.state.selectCachedExecution("execute_graphql", args, out)
+		r.state.recordRepeatedCall(queryKey)
 		// Only successful executions are cached, and the discharge condition on
 		// a recoverable violation is that a successful execution proved the run
 		// can do it right — which a replay of that same successful execution
@@ -1449,14 +1407,11 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				r.state.lastMutationRepairedQuery = ""
 			}
 		}
-		// Served from the memo, so the database is never reached twice. The
-		// nudge to stop re-running it belongs on the guidance channel, not in an
-		// exception that would throw the rows away.
-		out = withGuidance(out, "This exact query already ran in this run; these are the same rows, served without touching the database again. Call final from them instead of executing it again.")
 		action := r.state.startAction("model", "execute_graphql", args)
 		r.state.finishAction(action, "execute_graphql", args, out, nil)
 		return out, nil
 	}
+	r.state.clearCompletionLatch()
 	wasRepairPending := r.state.pendingFailedQueryKey != ""
 	action := r.state.startAction("model", "execute_graphql", args)
 	out, err := r.base.ExecuteGraphQL(ctx, args)
@@ -1466,6 +1421,7 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			details := mapValue(denied.Extensions["details"])
 			r.state.addExecutionPolicyViolation(code, denied.Message, details)
 			r.state.pendingFailedQueryKey = ""
+			r.state.clearCompletionLatch()
 			out = markPolicyFinalExecution(out, code, details)
 		} else {
 			if repair, ok := systemRootDidYouMeanRepair(out, r.state, query); ok {
@@ -1554,9 +1510,6 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		"operation":  graphQLOperationKind(query),
 		"write_like": writeLikeGraphQL(query),
 	})
-	if err == nil {
-		out = withGuidance(out, suppliedEvidenceNote)
-	}
 	return out, err
 }
 
@@ -2238,12 +2191,11 @@ func cachedExecutionResult(state *discoveryState, cached any) any {
 			return out
 		}
 	}
-	// No completion recovery is synthesized here any more. It was the
-	// duplicate-execution latch's signal, and it overwrote whatever recovery
-	// the result already carried — a remote-join rewrite notice, for one, which
-	// is the difference between the model knowing it is looking at the parent
-	// row and reading the reshaping as an empty answer. What it used to say now
-	// rides the guidance channel, which adds rather than replaces.
+	out["recovery"] = map[string]any{
+		"code": "completion_required",
+		"kind": "completion_required",
+		"next": "The identical successful execution was not run again. Call final now using this cached result.data.",
+	}
 	return out
 }
 
@@ -2310,6 +2262,25 @@ func (s *discoveryState) answerReadyForCompletion() bool {
 		s.lastExecution != nil && s.pendingRequiredFinalization() == ""
 }
 
+func (s *discoveryState) recordRepeatedCall(key string) {
+	if !s.answerReadyForCompletion() {
+		return
+	}
+	if s.completionLatchKey == "" {
+		s.completionLatchKey = key
+		return
+	}
+	s.completionReady = true
+}
+
+func (s *discoveryState) clearCompletionLatch() {
+	if s == nil {
+		return
+	}
+	s.completionLatchKey = ""
+	s.completionReady = false
+}
+
 func (s *discoveryState) completionContinuation() string {
 	if s == nil {
 		return ""
@@ -2329,7 +2300,11 @@ func (s *discoveryState) completionContinuation() string {
 		}
 		return prefix + `globalThis.graphjinSystemRootRepair = await execute_graphql(` + stringify(map[string]any{"query": query}) + `); console.log(globalThis.graphjinSystemRootRepair);`
 	}
-	return ""
+	if !s.completionReady || !s.answerReadyForCompletion() {
+		return ""
+	}
+	s.completionReady = false
+	return `await final("GraphJin duplicate execution recovery completed.", {execution: globalThis.` + runtimeLastExecutionKey + `});`
 }
 
 func (s *discoveryState) pendingRequiredFinalization() string {
@@ -3059,6 +3034,7 @@ func (s *discoveryState) finalize(resp Response) Response {
 		resp = blockResponse(resp)
 	}
 	resp = s.recoverResolvedTerminalRefusalResponse(resp)
+	resp = s.recoverCompletionLatchResponse(resp)
 	resp = s.recoverLostExecutionResponse(resp)
 	resp = s.recoverLostHistoryResponse(resp)
 	if resp.Status == StatusAnswered {
@@ -3170,6 +3146,28 @@ func (s *discoveryState) hasResolvedViolation(code string) bool {
 		}
 	}
 	return false
+}
+
+// recoverCompletionLatchResponse is the hard-stop safety net for a model that
+// used its final actor step to repeat an already-successful execution. The
+// cached result has already passed the same discovery, safety, repair, and
+// database-computation guards required by the runtime auto-final path.
+func (s *discoveryState) recoverCompletionLatchResponse(resp Response) Response {
+	if s == nil || resp.Status != StatusError || s.completionLatchKey == "" ||
+		!onlyActorLoopError(resp.Errors) || !s.answerReadyForCompletion() {
+		return resp
+	}
+	data, ok := s.lastExecutionData()
+	if !ok {
+		return resp
+	}
+	resp.Status = StatusAnswered
+	resp.Answer = "The governed GraphJin execution completed successfully. Returned data:\n\n" + executionDataExcerpt(data, 8*1024)
+	resp.Data = data
+	resp.Errors = nil
+	resp.Refusal = nil
+	resp.Next = nil
+	return resp
 }
 
 // recoverLostHistoryResponse handles a narrow RLM terminal failure: the user
