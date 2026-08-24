@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -259,17 +258,13 @@ const brokenPaymentInsert = `mutation { payments(insert: { id: 900001, payment_r
 func TestFailedMutationCarriesTheCorrectedWrite(t *testing.T) {
 	runtime, base := strictWriteTestRuntime(t)
 
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": brokenPaymentInsert})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": brokenPaymentInsert})
+	if err == nil {
+		t.Fatal("a dataless engine failure must throw")
 	}
-	payload, _ := json.Marshal(out)
-	if !strings.Contains(string(payload), "repaired_query") {
-		t.Fatalf("a certain rename must hand over the corrected write: %s", payload)
-	}
-	repaired := runtime.state.lastMutationRepairedQuery
-	if repaired == "" {
-		t.Fatal("the corrected write should be retained for the finalize gate")
+	repaired := correctedMutationFromError(t, err)
+	if repaired != runtime.state.lastMutationRepairedQuery {
+		t.Fatalf("the thrown correction %q must match the retained one %q", repaired, runtime.state.lastMutationRepairedQuery)
 	}
 	if err := checkGraphQLParses(repaired); err != nil {
 		t.Fatalf("offered mutation does not parse: %v", err)
@@ -291,8 +286,8 @@ func TestFailedMutationCarriesTheCorrectedWrite(t *testing.T) {
 func TestFailedWriteCannotBeReportedAsDone(t *testing.T) {
 	runtime, base := strictWriteTestRuntime(t)
 
-	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": brokenPaymentInsert}); err != nil {
-		t.Fatal(err)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": brokenPaymentInsert}); err == nil || !strings.Contains(err.Error(), "did NOT return data") {
+		t.Fatalf("a dataless engine failure must throw: %v", err)
 	}
 	if len(base.writes) != 0 {
 		t.Fatalf("the broken write must not land: %v", base.writes)
@@ -336,8 +331,8 @@ func TestReadOnlyRunsAreUntouchedByWriteAccounting(t *testing.T) {
 
 func TestFailedThenFixedWriteFinalizesNormally(t *testing.T) {
 	runtime, base := strictWriteTestRuntime(t)
-	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": brokenPaymentInsert}); err != nil {
-		t.Fatal(err)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": brokenPaymentInsert}); err == nil {
+		t.Fatal("the broken write must throw")
 	}
 	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `mutation { payments(insert: { id: 900001, reference: "DEEPORG-PAY-001", invoice_id: 1, amount_cents: 480000, recorded_at: "2027-01-15T12:00:00Z" }) { id } }`,
@@ -357,8 +352,8 @@ func TestFailedThenFixedWriteFinalizesNormally(t *testing.T) {
 // step budget dies; when the corrected write exists, the bounce names it.
 func TestPendingFinalizationNamesTheCorrectedWrite(t *testing.T) {
 	runtime, _ := strictWriteTestRuntime(t)
-	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": brokenPaymentInsert}); err != nil {
-		t.Fatal(err)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": brokenPaymentInsert}); err == nil {
+		t.Fatal("the broken write must throw")
 	}
 	message := runtime.state.pendingRequiredFinalization()
 	if !strings.HasPrefix(message, "execution_repair_required:") {
@@ -433,11 +428,14 @@ func TestTicketResolutionChainFinalizesAnswered(t *testing.T) {
 	if !strings.Contains(valueRepair, `status: "resolved"`) {
 		t.Fatalf("the exception should carry the corrected vocabulary: %q", valueRepair)
 	}
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": valueRepair})
-	if err != nil {
-		t.Fatal(err)
+	_, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": valueRepair})
+	if err == nil {
+		t.Fatal("the wrong-column write must throw")
 	}
 	renamed := runtime.state.lastMutationRepairedQuery
+	if thrown := correctedMutationFromError(t, err); thrown != renamed {
+		t.Fatalf("the thrown correction %q must match the retained one %q", thrown, renamed)
+	}
 	if !strings.Contains(renamed, "resolution_note:") {
 		t.Fatalf("the rename repair should correct the column: %q", renamed)
 	}
@@ -452,7 +450,6 @@ func TestTicketResolutionChainFinalizesAnswered(t *testing.T) {
 	if resp.Status != StatusAnswered {
 		t.Fatalf("the completed chain finalizes normally, got %s: %+v", resp.Status, resp.Errors)
 	}
-	_ = out
 }
 
 // A model that violates a guard AFTER its correct query already ran, then
@@ -528,7 +525,7 @@ func TestInterceptedWriteCannotBeReportedAsDone(t *testing.T) {
 	if err == nil {
 		t.Fatal("the consumed write must throw")
 	}
-	for _, want := range []string{"did NOT execute", "Re-execute the exact same mutation"} {
+	for _, want := range []string{"did NOT execute", "Re-execute the exact same operation"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("the exception must carry %q: %v", want, err)
 		}

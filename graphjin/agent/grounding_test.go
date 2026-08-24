@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -62,29 +61,17 @@ func TestFailedExecutionDoesNotPerformHiddenCatalogLookup(t *testing.T) {
 	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:ops:public.green_lots"}); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
+	if err == nil {
+		t.Fatal("a dataless engine failure must throw")
 	}
-	res, ok := out.(executeResult)
-	if !ok {
-		t.Fatalf("result type = %T", out)
-	}
-	recovery, ok := res.Recovery.(map[string]any)
-	if !ok {
-		t.Fatalf("recovery = %#v", res.Recovery)
-	}
-	next, ok := recovery["next"].(map[string]any)
-	if !ok || next["recommended_tool"] != toolQueryCatalog {
-		t.Fatalf("recovery.next = %#v, want structured query_catalog pointer", recovery["next"])
-	}
-	// The directive must reach errors[].message: a model that has decided the
-	// run failed summarizes the message, not sibling guidance fields.
-	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, recoveryDirectivePrefix) {
-		t.Fatalf("error message = %q, want embedded recovery directive", res.Errors[0].Message)
-	}
-	if !strings.Contains(res.Errors[0].Message, "field 'available' is not a column") {
-		t.Fatalf("error message = %q, want the original compiler text preserved", res.Errors[0].Message)
+	// The teaching reaches the exception text: the original compiler text and
+	// the re-discover directive both survive into the one channel the next
+	// turn reads.
+	for _, want := range []string{"did NOT return data", "field 'available' is not a column", "re-discover real fields"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
 	recoveryActions := 0
 	for _, action := range runtime.state.actions {
@@ -97,8 +84,8 @@ func TestFailedExecutionDoesNotPerformHiddenCatalogLookup(t *testing.T) {
 	}
 	// It must run at most once per run, even across repeated failures.
 	before := len(base.calls)
-	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { alsoBad } }"}); err != nil {
-		t.Fatal(err)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { alsoBad } }"}); err == nil {
+		t.Fatal("the second failure must throw too")
 	}
 	if got := len(base.calls) - before; got != 1 {
 		t.Fatalf("second failure issued %d extra calls, want 1 (execute only)", got)
@@ -147,19 +134,18 @@ func TestRawGraphQLRejectedBeforeModelDiscovery(t *testing.T) {
 	if _, err := runtime.Seed(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// The refusal is now a structured repair rather than a bare error, matching
-	// every sibling guard on this path. What must not change is that the query
-	// does not run and the violation is recorded.
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
-	if err != nil {
-		t.Fatalf("the guard should hand back a recoverable repair, got a hard error: %v", err)
+	// The refusal throws, carrying the reason and the next step in the one
+	// channel straight-line executor code reads. What must not change is that
+	// the query does not run and the violation is recorded.
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
+	if err == nil {
+		t.Fatal("raw GraphQL off the seed must throw")
 	}
-	payload, _ := json.Marshal(out)
-	if !strings.Contains(string(payload), "not discovery") {
-		t.Fatalf("repair must carry the seed-is-not-discovery reason: %s", payload)
+	if !strings.Contains(err.Error(), "not discovery") {
+		t.Fatalf("refusal must carry the seed-is-not-discovery reason: %v", err)
 	}
-	if !strings.Contains(string(payload), toolQueryCatalog) {
-		t.Fatalf("repair must point at query_catalog: %s", payload)
+	if !strings.Contains(err.Error(), toolQueryCatalog) {
+		t.Fatalf("refusal must point at query_catalog: %v", err)
 	}
 	if len(base.calls) != 1 {
 		t.Fatalf("catalog calls = %v, want only the seed", base.calls)
@@ -194,18 +180,17 @@ func TestRawGraphQLRejectedAfterBroadCatalogListing(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { roast_batches { id } }"})
-	if err != nil {
-		t.Fatalf("the guard should hand back a recoverable repair, got a hard error: %v", err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { roast_batches { id } }"})
+	if err == nil {
+		t.Fatal("raw GraphQL after only a broad listing must throw")
 	}
-	payload, _ := json.Marshal(out)
-	if !strings.Contains(string(payload), "broad catalog results are not discovery detail") {
-		t.Fatalf("repair must carry the exact-detail reason: %s", payload)
+	if !strings.Contains(err.Error(), "broad catalog results are not discovery detail") {
+		t.Fatalf("refusal must carry the exact-detail reason: %v", err)
 	}
 	// The whole point of the change: a run that has already listed the catalog
-	// gets told which ids to open, instead of guessing and burning another step.
-	if !strings.Contains(string(payload), "candidate_ids") {
-		t.Fatalf("repair must name candidate ids once the catalog has been listed: %s", payload)
+	// gets told which ids to open, inline in the exception text.
+	if !strings.Contains(err.Error(), "Candidate ids:") {
+		t.Fatalf("refusal must name candidate ids once the catalog has been listed: %v", err)
 	}
 	for _, call := range base.calls {
 		if call == "execute_graphql" {
@@ -252,28 +237,17 @@ func TestExecuteGraphQLErrorAttachesCompactRecovery(t *testing.T) {
 			Extensions: map[string]any{"graphjin_repair": map[string]any{"kind": "field_not_on_table"}},
 		}},
 	})
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
+	if err == nil {
+		t.Fatal("a dataless engine failure must throw")
 	}
-	res, ok := out.(executeResult)
-	if !ok {
-		t.Fatalf("result type = %T", out)
+	for _, want := range []string{"did NOT return data", "no db column found for field 'available'", "do not report it as broken or propose schema changes"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
-	recovery, ok := res.Recovery.(map[string]any)
-	if !ok {
-		t.Fatalf("recovery = %#v", res.Recovery)
-	}
-	instruction, _ := recovery["instruction"].(string)
-	if !strings.Contains(instruction, "do not report it as broken or propose schema changes") {
-		t.Fatalf("recovery instruction = %q", instruction)
-	}
-	next, ok := recovery["next"].(map[string]any)
-	if !ok || next["recommended_tool"] != toolQueryCatalog {
-		t.Fatalf("recovery.next = %#v, want structured query_catalog pointer", recovery["next"])
-	}
-	if _, exists := recovery["approved_saved_queries"]; exists {
-		t.Fatalf("recovery should not inject saved-query cards: %#v", recovery)
+	if strings.Contains(err.Error(), "approved saved quer") {
+		t.Fatalf("the exception should not inject saved-query cards: %v", err)
 	}
 }
 
@@ -299,38 +273,24 @@ func TestWatchSystemRootDidYouMeanRepairNamesCanonicalRootsAndRecovers(t *testin
 	runtime.state.catalogDetails = []string{"help:watches"}
 	runtime.state.securityRuntimeEvidence = true
 
-	failed, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `query { watch_events_unseen { id watch_id seen } }`,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("the invented root must throw the did-you-mean teaching")
 	}
-	result, ok := failed.(executeResult)
-	if !ok || len(result.Errors) != 1 {
-		t.Fatalf("failed result = %#v", failed)
+	for _, want := range []string{"table not found: main.watch_events_unseen", `root "watch_events_unseen" is unknown`, `"gj_watch_event"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
-	extensions := result.Errors[0].Extensions
-	if got := stringFromMap(extensions, "code"); got != "system_root_did_you_mean" {
-		t.Fatalf("error code = %q, want system_root_did_you_mean", got)
+	// The corrected example is retained as state for the continuation below.
+	if !strings.Contains(runtime.state.pendingSystemRootQuery, "query { gj_watch_event(") {
+		t.Fatalf("pending system-root query = %q", runtime.state.pendingSystemRootQuery)
 	}
-	repair := mapValue(extensions["graphjin_repair"])
-	if got := stringFromMap(repair, "attempted_root"); got != "watch_events_unseen" {
-		t.Fatalf("attempted root = %q", got)
-	}
-	candidates := evidenceStringSlice(repair["available_system_roots"])
-	if len(candidates) != 2 || candidates[0] != systemRootWatchEvent || candidates[1] != systemRootWatch {
-		t.Fatalf("candidate roots = %v, want [%s %s]", candidates, systemRootWatchEvent, systemRootWatch)
-	}
-	if example := stringFromMap(repair, "example_query"); !strings.Contains(example, "query { gj_watch_event(") {
-		t.Fatalf("example query = %q", example)
-	}
-	next := mapValue(repair["next"])
-	if stringFromMap(next, "recommended_tool") != toolExecuteGraphQL {
-		t.Fatalf("repair next = %#v", next)
-	}
-	summary := runtime.state.actions[len(runtime.state.actions)-1].Summary
-	if !containsString(evidenceStringSlice(summary["recovery_codes"]), "system_root_did_you_mean") || summary["recovery_tool"] != toolExecuteGraphQL {
-		t.Fatalf("repair action summary = %#v", summary)
+	last := runtime.state.actions[len(runtime.state.actions)-1]
+	if last.Error == "" || !strings.Contains(last.Error, "gj_watch_event") {
+		t.Fatalf("repair action = %#v", last)
 	}
 	runtime.state.securityRuntimeEvidence = false
 	continuation := runtime.state.completionContinuation()
@@ -366,16 +326,15 @@ func TestSystemRootDidYouMeanDoesNotRewriteApplicationTableFailure(t *testing.T)
 	runtime.state.seedOK = true
 	runtime.state.modelDiscoveryAction = true
 	runtime.state.catalogDetails = []string{"table:main:watchlists"}
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { watchlists { id } }`})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { watchlists { id } }`})
+	if err == nil {
+		t.Fatal("a dataless engine failure must throw")
 	}
-	result := out.(executeResult)
-	if got := stringFromMap(result.Errors[0].Extensions, "code"); got == "system_root_did_you_mean" {
-		t.Fatal("ordinary application table received a system-root rewrite")
+	if strings.Contains(err.Error(), "caller-visible root") {
+		t.Fatalf("ordinary application table received a system-root rewrite: %v", err)
 	}
-	if next := mapValue(mapValue(result.Recovery)["next"]); stringFromMap(next, "recommended_tool") != toolQueryCatalog {
-		t.Fatalf("ordinary recovery = %#v", result.Recovery)
+	if !strings.Contains(err.Error(), "re-discover real fields") {
+		t.Fatalf("the generic teaching should ride the exception: %v", err)
 	}
 }
 
@@ -390,20 +349,15 @@ func TestNonAggregateUnknownFieldKeepsGenericRecovery(t *testing.T) {
 	runtime.state.seedOK = true
 	runtime.state.modelDiscoveryAction = true
 	runtime.state.catalogDetails = []string{"table:app:main.accounts"}
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts { display_label } }"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts { display_label } }"})
+	if err == nil {
+		t.Fatal("a dataless engine failure must throw")
 	}
-	res := out.(executeResult)
-	if len(res.Errors) != 1 {
-		t.Fatalf("errors = %+v", res.Errors)
+	if !strings.Contains(err.Error(), "unknown field display_label") {
+		t.Fatalf("the exception must carry the engine text: %v", err)
 	}
-	if repair := mapValue(res.Errors[0].Extensions["graphjin_repair"]); repair != nil {
-		t.Fatalf("non-aggregate failure received graphjin_repair: %+v", repair)
-	}
-	recovery := mapValue(res.Recovery)
-	if next := mapValue(recovery["next"]); next["recommended_tool"] != toolQueryCatalog {
-		t.Fatalf("recovery = %+v, want generic query_catalog path", recovery)
+	if strings.Contains(err.Error(), "exactly as given") {
+		t.Fatalf("no invented repair may ride a failure with no certain correction: %v", err)
 	}
 }
 
@@ -419,42 +373,38 @@ func TestFailedQueryRequiresDistinctRepairAndRejectsDuplicate(t *testing.T) {
 		t.Fatal(err)
 	}
 	failed := "query { accounts { wrong_count } }"
-	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": failed}); err != nil {
-		t.Fatal(err)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": failed}); err == nil {
+		t.Fatal("the first failure must throw")
 	}
 	if message := runtime.state.pendingRequiredFinalization(); !strings.HasPrefix(message, "execution_repair_required:") {
 		t.Fatalf("pending final = %q", message)
 	}
 	before := len(base.calls)
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": failed})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": failed})
+	if err == nil || !strings.Contains(err.Error(), "identical query already failed") {
+		t.Fatalf("the duplicate must throw the rejection: %v", err)
 	}
 	if len(base.calls) != before {
 		t.Fatal("identical failed query reached the database runtime")
 	}
-	duplicate := out.(executeResult)
-	if got := stringFromMap(duplicate.Errors[0].Extensions, "code"); got != "duplicate_failed_query" {
-		t.Fatalf("duplicate code = %q", got)
-	}
-	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts { count_id } }"}); err != nil {
-		t.Fatal(err)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { accounts { count_id } }"}); err == nil {
+		t.Fatal("the distinct repair also fails at the engine and must throw")
 	}
 	if runtime.state.pendingFailedQueryKey != "" || len(runtime.state.failedQueryKeys) != 2 {
 		t.Fatalf("repair state = pending:%q failed:%v", runtime.state.pendingFailedQueryKey, runtime.state.failedQueryKeys)
 	}
 	distinctFailed := "query { accounts { count_id } }"
 	before = len(base.calls)
-	out, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": distinctFailed})
-	if err != nil {
-		t.Fatal(err)
+	_, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": distinctFailed})
+	if err == nil || !strings.Contains(err.Error(), "identical query already failed") {
+		t.Fatalf("the duplicate of the distinct failure must throw: %v", err)
 	}
-	if len(base.calls) != before || stringFromMap(out.(executeResult).Errors[0].Extensions, "code") != "duplicate_failed_query" {
-		t.Fatalf("distinct failed query was re-executed: calls=%d result=%+v", len(base.calls), out)
+	if len(base.calls) != before {
+		t.Fatalf("distinct failed query was re-executed: calls=%d", len(base.calls))
 	}
 	newFailure := "query { accounts { max_id } }"
-	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": newFailure}); err != nil {
-		t.Fatal(err)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": newFailure}); err == nil {
+		t.Fatal("a fresh engine failure must throw")
 	}
 	if runtime.state.pendingFailedQueryKey != executionQueryKey(map[string]any{"query": newFailure}) || len(runtime.state.failedQueryKeys) != 3 {
 		t.Fatalf("new failed identity did not re-arm repair: pending=%q failed=%v", runtime.state.pendingFailedQueryKey, runtime.state.failedQueryKeys)
@@ -571,35 +521,24 @@ func TestCachedExecutionRecoveryKeepsPendingRequirement(t *testing.T) {
 	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args)); err != nil {
 		t.Fatal(err)
 	}
-	duplicate, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
-	if err != nil || base.graphqlCalls != 1 {
-		t.Fatalf("cached execution = %+v calls=%d err=%v", duplicate, base.graphqlCalls, err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err == nil || base.graphqlCalls != 1 {
+		t.Fatalf("the cached rejection must throw without re-executing: calls=%d err=%v", base.graphqlCalls, err)
 	}
-	result, ok := duplicate.(executeResult)
-	if !ok || len(result.Errors) != 1 {
-		t.Fatalf("cached rejection = %#v, want one structured error", duplicate)
+	// The rows are withheld by the throw itself, and the requirement rides the
+	// exception text — including the aggregate guidance and never the
+	// call-final shortcut.
+	for _, want := range []string{"did NOT execute", "identical successful query already ran", "database_computation_required", "max_<column>", "do not calculate from fetched rows"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
-	if result.Data != nil || mapValue(duplicate)["data"] != nil {
-		t.Fatalf("cached rejection exposed data: %#v", duplicate)
+	if strings.Contains(err.Error(), "Call final now") {
+		t.Fatalf("the pending requirement must not offer the call-final shortcut: %v", err)
 	}
-	errorInfo := result.Errors[0]
-	if got := stringFromMap(errorInfo.Extensions, "code"); got != "database_computation_required" {
-		t.Fatalf("cached error code = %q, want database_computation_required", got)
-	}
-	repair := mapValue(errorInfo.Extensions["graphjin_repair"])
-	next := stringFromMap(repair, "next")
-	if strings.Contains(next, "Call final now") ||
-		!strings.Contains(next, "max_<column>") ||
-		!strings.Contains(next, "do not calculate from fetched rows") {
-		t.Fatalf("cached repair guidance = %q", next)
-	}
-	if got := stringFromMap(repair, "kind"); got != "distinct_aggregate_required" {
-		t.Fatalf("cached repair kind = %q", got)
-	}
-	summary := runtime.state.actions[len(runtime.state.actions)-1].Summary
-	if summary["has_data"] == true || !containsString(evidenceStringSlice(summary["error_codes"]), "database_computation_required") ||
-		!containsString(evidenceStringSlice(summary["recovery_codes"]), "distinct_aggregate_required") {
-		t.Fatalf("cached rejection summary = %#v", summary)
+	last := runtime.state.actions[len(runtime.state.actions)-1]
+	if last.Error == "" || !strings.Contains(last.Error, "database_computation_required") {
+		t.Fatalf("cached rejection action = %#v", last)
 	}
 	if runtime.state.completionLatchKey != "" || runtime.state.completionReady {
 		t.Fatalf("pending requirement armed completion latch: %+v", runtime.state)
@@ -616,20 +555,14 @@ func TestCachedSavedQueryWithPendingRequirementWithholdsRows(t *testing.T) {
 	if _, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args)); err != nil {
 		t.Fatal(err)
 	}
-	duplicate, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
-	if err != nil || base.savedCalls != 1 {
-		t.Fatalf("cached saved query = %+v calls=%d err=%v", duplicate, base.savedCalls, err)
+	_, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
+	if err == nil || base.savedCalls != 1 {
+		t.Fatalf("the cached saved-query rejection must throw without re-executing: calls=%d err=%v", base.savedCalls, err)
 	}
-	result, ok := duplicate.(executeResult)
-	if !ok || result.Data != nil || len(result.Errors) != 1 {
-		t.Fatalf("cached saved-query rejection = %#v", duplicate)
-	}
-	if got := stringFromMap(result.Errors[0].Extensions, "code"); got != "database_computation_required" {
-		t.Fatalf("cached saved-query error code = %q", got)
-	}
-	repair := mapValue(result.Errors[0].Extensions["graphjin_repair"])
-	if next := stringFromMap(repair, "next"); !strings.Contains(next, "count_") || !strings.Contains(next, "do not calculate from fetched rows") {
-		t.Fatalf("cached saved-query repair guidance = %q", next)
+	for _, want := range []string{"a saved query is fixed, so re-running it will keep failing", "database_computation_required", "count_", "do not calculate from fetched rows"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
 }
 
@@ -647,27 +580,17 @@ func TestCachedSavedQueryRejectionPointsAtAuthoring(t *testing.T) {
 	if _, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args)); err != nil {
 		t.Fatal(err)
 	}
-	duplicate, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteSavedQuery(context.Background(), cloneAnyMap(args))
+	if err == nil {
+		t.Fatal("the cached saved-query rejection must throw")
 	}
-	savedResult, _ := duplicate.(executeResult)
-	if len(savedResult.Errors) != 1 {
-		t.Fatalf("expected one error, got %#v", duplicate)
+	for _, want := range []string{"Author the required query with execute_graphql", "count_", "do not calculate from fetched rows"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
-	repair := mapValue(savedResult.Errors[0].Extensions["graphjin_repair"])
-	if kind := stringFromMap(repair, "kind"); kind != "saved_query_cannot_satisfy_requirement" {
-		t.Fatalf("saved-query repair kind = %q", kind)
-	}
-	if tool := stringFromMap(repair, "recommended_tool"); tool != "execute_graphql" {
-		t.Fatalf("saved-query repair must name execute_graphql, got %q", tool)
-	}
-	// The guidance text every caller already reads must survive beside it.
-	if next := stringFromMap(repair, "next"); !strings.Contains(next, "count_") || !strings.Contains(next, "do not calculate from fetched rows") {
-		t.Fatalf("saved-query repair lost its guidance: %q", next)
-	}
-	if !strings.Contains(savedResult.Errors[0].Message, "re-running it will keep failing") {
-		t.Fatalf("saved-query message must say repetition cannot work: %q", savedResult.Errors[0].Message)
+	if !strings.Contains(err.Error(), "re-running it will keep failing") {
+		t.Fatalf("saved-query message must say repetition cannot work: %v", err)
 	}
 
 	// Raw GraphQL keeps the repeat-differently repair, because the caller owns the query.
@@ -818,16 +741,14 @@ func TestExecuteGraphQLErrorAttachesRecoveryToMapResults(t *testing.T) {
 	runtime := newFailingExecProtocol(t, map[string]any{
 		"errors": []any{map[string]any{"message": "column not found"}},
 	})
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": "query { green_lots { available } }"})
+	if err == nil {
+		t.Fatal("a map-shaped dataless engine failure must throw too")
 	}
-	res, ok := out.(map[string]any)
-	if !ok {
-		t.Fatalf("result type = %T", out)
-	}
-	if _, ok := res["recovery"].(map[string]any); !ok {
-		t.Fatalf("recovery = %#v", res["recovery"])
+	for _, want := range []string{"did NOT return data", "column not found", "re-discover real fields"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
 }
 

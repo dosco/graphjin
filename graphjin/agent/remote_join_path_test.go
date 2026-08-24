@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -117,6 +116,19 @@ func TestCheckGraphQLParsesCatchesTheDroppedBraces(t *testing.T) {
 	}
 }
 
+// offeredQueryFromError extracts the HOLE-form offered query from a thrown
+// join refusal: the query follows the last "then execute it: " and runs to the
+// end of the message.
+func offeredQueryFromError(t *testing.T, err error) string {
+	t.Helper()
+	marker := "then execute it: "
+	index := strings.LastIndex(err.Error(), marker)
+	if index < 0 {
+		t.Fatalf("exception does not carry the offered query: %v", err)
+	}
+	return strings.TrimSpace(err.Error()[index+len(marker):])
+}
+
 func remoteJoinTestRuntime(t *testing.T) (*protocolRuntime, *remoteJoinRuntime) {
 	t.Helper()
 	base := &remoteJoinRuntime{}
@@ -137,19 +149,27 @@ func remoteJoinTestRuntime(t *testing.T) (*protocolRuntime, *remoteJoinRuntime) 
 func TestTopLevelRemoteJoinIsRedirected(t *testing.T) {
 	runtime, base := remoteJoinTestRuntime(t)
 
-	out, err := runtime.ExecuteGraphQL(context.Background(),
+	_, err := runtime.ExecuteGraphQL(context.Background(),
 		map[string]any{"query": `query { account_health(where: {account_id: {eq: 1}}) { health open_risk_count } }`})
-	if err != nil {
-		t.Fatalf("interception should return a repair, not an error: %v", err)
+	if err == nil {
+		t.Fatal("the doomed top-level query must throw the offer")
 	}
 	if base.execCalls != 0 {
 		t.Fatalf("the doomed top-level query must not execute, calls=%d", base.execCalls)
 	}
-	payload, _ := json.Marshal(out)
-	for _, want := range []string{"remote_join_path_required", "nested under accounts", "accounts(where:"} {
-		if !strings.Contains(string(payload), want) {
-			t.Fatalf("repair must carry %q: %s", want, payload)
+	for _, want := range []string{"did NOT execute", "nested under accounts", "accounts(where:"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
 		}
+	}
+	found := false
+	for _, violation := range runtime.state.violations {
+		if violation.Code == "remote_join_path_required" && violation.Blocking {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the interception should record its violation: %+v", runtime.state.violations)
 	}
 
 	// The nested route executes untouched, and its success discharges the guard.
@@ -225,17 +245,13 @@ func TestRemoteJoinRegistersFromEdges(t *testing.T) {
 		"edges_json": `[{"id":"relationship:app:main.account_health.__account_health_id->app:main.accounts.id","kind":"relationship"}]`,
 	}}}, false)
 
-	out, err := runtime.ExecuteGraphQL(context.Background(),
+	_, err := runtime.ExecuteGraphQL(context.Background(),
 		map[string]any{"query": `query { account_health { health } }`})
-	if err != nil {
-		t.Fatalf("interception should return a repair: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "nested under accounts") {
+		t.Fatalf("the interception must throw and name the parent: %v", err)
 	}
 	if base.execCalls != 0 {
 		t.Fatalf("the doomed query must not execute, calls=%d", base.execCalls)
-	}
-	payload, _ := json.Marshal(out)
-	if !strings.Contains(string(payload), "nested under accounts") {
-		t.Fatalf("repair must name the parent: %s", payload)
 	}
 	// The ordinary foreign-key edge in the same payload must register nothing:
 	// invoices is a real table, freely queryable at the top level.
@@ -302,16 +318,16 @@ func TestRemoteJoinRepairReplacesAnUnusableFilterWithAHole(t *testing.T) {
 	runtime, base := remoteJoinTestRuntime(t)
 	seedRemoteJoinColumns(runtime)
 
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `query { account_health(where: {account_id: {eq: 1}}) { health } }`,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("the unusable filter must throw the holed offer")
 	}
 	if base.execCalls != 0 {
 		t.Fatalf("a repair the model still has to complete must not run, calls=%d", base.execCalls)
 	}
-	offered := stringFromMap(mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"]), "query")
+	offered := offeredQueryFromError(t, err)
 	if strings.Contains(offered, "account_id: {eq: 1}") {
 		t.Fatalf("a child-column filter must not be grafted onto the parent: %q", offered)
 	}
@@ -321,12 +337,11 @@ func TestRemoteJoinRepairReplacesAnUnusableFilterWithAHole(t *testing.T) {
 	// The instruction has to be the one the query can actually satisfy. Round 2
 	// said "execute exactly as given" AND "fill the placeholder" in the same
 	// breath, about a string that parses as neither.
-	instruction := stringFromMap(mapValue(mapValue(out)["recovery"]), "instruction")
-	if !strings.Contains(instruction, "Replace the <filter on accounts> placeholder") {
-		t.Fatalf("a holed repair must ask for the placeholder to be filled: %q", instruction)
+	if !strings.Contains(err.Error(), "Replace the <filter on accounts> placeholder") {
+		t.Fatalf("a holed repair must ask for the placeholder to be filled: %v", err)
 	}
-	if strings.Contains(instruction, "exactly as given") {
-		t.Fatalf("a holed repair must not also claim to be ready to run: %q", instruction)
+	if strings.Contains(err.Error(), "exactly as given") {
+		t.Fatalf("a holed repair must not also claim to be ready to run: %v", err)
 	}
 	// And once filled, it is a real query.
 	filled := remoteJoinFillHole(offered, `{name: {eq: "Meridian Robotics"}}`)
@@ -363,27 +378,26 @@ func TestRemoteJoinRepairSalvagesTheModelsOwnValue(t *testing.T) {
 	runtime, base := remoteJoinTestRuntime(t)
 	seedRemoteJoinColumns(runtime)
 
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `query { account_health(where: {client: {eq: "Meridian Robotics"}}) { health } }`,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("a guessed column must throw the salvaged offer")
 	}
 	if base.execCalls != 0 {
 		t.Fatalf("a guessed column must not execute on the model's behalf, calls=%d", base.execCalls)
 	}
-	offered := stringFromMap(mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"]), "query")
-	if err := checkGraphQLParses(offered); err != nil {
-		t.Fatalf("the salvaged repair must be executable: %v", err)
+	offered := correctedMutationFromError(t, err)
+	if parseErr := checkGraphQLParses(offered); parseErr != nil {
+		t.Fatalf("the salvaged repair must be executable: %v", parseErr)
 	}
 	if !strings.Contains(offered, `accounts(where: {name: {eq: "Meridian Robotics"}}`) {
 		t.Fatalf("the salvage should move the literal to accounts.name: %q", offered)
 	}
-	// The value is the model's and the column is ours, so the recovery says so
+	// The value is the model's and the column is ours, so the exception says so
 	// rather than presenting the filter as settled.
-	instruction := stringFromMap(mapValue(mapValue(out)["recovery"]), "instruction")
-	if !strings.Contains(instruction, "moved to the accounts column") {
-		t.Fatalf("the salvage must disclose the inference: %q", instruction)
+	if !strings.Contains(err.Error(), "moved to the accounts column") {
+		t.Fatalf("the salvage must disclose the inference: %v", err)
 	}
 	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": offered}); err != nil {
 		t.Fatalf("the salvaged repair should execute: %v", err)
@@ -393,34 +407,32 @@ func TestRemoteJoinRepairSalvagesTheModelsOwnValue(t *testing.T) {
 // A model looping on the same closed route should not be re-taught the same
 // paragraph, but must still receive the corrected query every time.
 func TestRemoteJoinRepairStopsRepeatingItselfButKeepsOffering(t *testing.T) {
+	// The repeat re-throws the full offer each time — the thrown text is the
+	// one channel the next turn reads, so there is no terser second form; the
+	// non-repetition lives in the single violation record.
 	runtime, _ := remoteJoinTestRuntime(t)
 	seedRemoteJoinColumns(runtime)
 	// A hole-path filter, so the repair keeps being offered rather than run.
 	query := map[string]any{"query": `query { account_health(where: {account_id: {eq: 1}}) { health } }`}
 
-	first, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(query))
-	if err != nil {
-		t.Fatal(err)
+	_, firstErr := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(query))
+	if firstErr == nil {
+		t.Fatal("the first fire must throw the offer")
 	}
-	second, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(query))
-	if err != nil {
-		t.Fatal(err)
+	_, secondErr := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(query))
+	if secondErr == nil {
+		t.Fatal("the repeat must throw the offer again")
 	}
-	firstReason := stringFromMap(mapValue(mapValue(mapValue(first)["recovery"])["next"]), "reason")
-	secondReason := stringFromMap(mapValue(mapValue(mapValue(second)["recovery"])["next"]), "reason")
-	if len(secondReason) >= len(firstReason) {
-		t.Fatalf("the repeat should be terser: %q then %q", firstReason, secondReason)
-	}
-	// Terser, but still about filling the hole — a repeat that started saying
-	// "execute exactly as given" about a placeholder would be a regression.
-	if !strings.Contains(secondReason, "placeholder") {
-		t.Fatalf("the terse repeat must still name the placeholder: %q", secondReason)
-	}
-	for _, out := range []any{first, second} {
-		offered := stringFromMap(mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"]), "query")
-		if !strings.Contains(offered, "accounts(where:") {
-			t.Fatalf("every fire must carry the corrected query: %q", offered)
+	for _, err := range []error{firstErr, secondErr} {
+		if !strings.Contains(err.Error(), "placeholder") {
+			t.Fatalf("every fire must name the placeholder: %v", err)
 		}
+		if !strings.Contains(offeredQueryFromError(t, err), "accounts(where:") {
+			t.Fatalf("every fire must carry the corrected query: %v", err)
+		}
+	}
+	if !runtime.state.remoteJoinRepairOffered["account_health"] {
+		t.Fatal("the repeat state should mark the root as already taught")
 	}
 	// The violation record stays single — the interception repeats, the record
 	// does not.

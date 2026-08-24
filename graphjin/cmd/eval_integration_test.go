@@ -397,12 +397,10 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 		query, _ := args["query"].(string)
 		sawInventedRoot = sawInventedRoot || strings.Contains(query, "watch_events_unseen")
 		sawCanonicalRoot = sawCanonicalRoot || strings.Contains(query, "gj_watch_event")
-		summary, _ := action["summary"].(map[string]any)
-		codes, _ := summary["recovery_codes"].([]any)
-		for _, rawCode := range codes {
-			code, _ := rawCode.(string)
-			sawSystemRootRepair = sawSystemRootRepair || code == "system_root_did_you_mean"
-		}
+		// The did-you-mean teaching now travels as a thrown exception rather
+		// than a recovery payload; the action records its text as the error.
+		errText, _ := action["error"].(string)
+		sawSystemRootRepair = sawSystemRootRepair || strings.Contains(errText, `use the caller-visible root "gj_watch_event"`)
 	}
 	if !sawInventedRoot || !sawCanonicalRoot || !sawSystemRootRepair {
 		t.Fatalf("delivery repair trail: invented=%t canonical=%t repair=%t actions=%s", sawInventedRoot, sawCanonicalRoot, sawSystemRootRepair, deliveryResponseJSON)
