@@ -204,6 +204,14 @@ type NameMapSetter interface {
 	SetNameMap(tables []sdata.DBTable)
 }
 
+// ScopedColumnQuoter is implemented by dialects whose normalized GraphQL
+// column names are not sufficient to recover a physical identifier globally.
+// SQL Server schemas can use multiple spellings such as FlagValue and
+// Flag_Value across different tables, so column lookup must include the table.
+type ScopedColumnQuoter interface {
+	QuoteColumn(table, column string) string
+}
+
 // FullQueryCompiler is an optional interface that dialects can implement
 // to handle entire query compilation themselves (bypassing SQL generation).
 // This is used by MongoDB which generates JSON query DSL, not SQL.
