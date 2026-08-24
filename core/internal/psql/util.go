@@ -24,7 +24,7 @@ func (c *compilerContext) colWithTableID(table string, id int32, col string) {
 		c.quoted(table)
 	}
 	c.w.WriteString(`.`)
-	c.quoted(col)
+	c.quotedColumn(table, col)
 }
 
 func (c *compilerContext) table(sel *qcode.Select, schema, table string, alias bool) {
@@ -41,7 +41,15 @@ func (c *compilerContext) table(sel *qcode.Select, schema, table string, alias b
 func (c *compilerContext) colWithTable(table, col string) {
 	c.quoted(table)
 	c.w.WriteString(`.`)
-	c.quoted(col)
+	c.quotedColumn(table, col)
+}
+
+func (c *compilerContext) quotedColumn(table, column string) {
+	if quoter, ok := c.dialect.(dialect.ScopedColumnQuoter); ok {
+		c.w.WriteString(quoter.QuoteColumn(table, column))
+		return
+	}
+	c.quoted(column)
 }
 
 func (c *compilerContext) quoted(identifier string) {

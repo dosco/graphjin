@@ -453,58 +453,95 @@ func (s *graphjinService) newDBFromDatabaseConfigInto(name string, dbConf core.D
 		pingTimeout = 30 * time.Second
 	}
 
-	// For SQLite, just use tryConnect directly
-	if dbType == "sqlite" {
-		path := dbConf.Path
-		if path == "" {
-			path = dbConf.ConnString
-		}
-		if path == "" {
-			return nil, fmt.Errorf("sqlite database '%s' requires a path or connection_string", name)
-		}
-		return tryConnect("sqlite", path, pingTimeout)
+	// A raw connection string already defines its database. Preserve it exactly
+	// as the previous multi-database path did; openDB only applies DBName when
+	// the connection is assembled from individual fields.
+	openDB := dbConf.ConnString == ""
+	if openDB && dbConf.DBName == "" && dbType != "sqlite" {
+		dbConf.DBName = name
 	}
-
-	// Build connection using probe helpers (reuses mcp_discover.go logic)
-	host := dbConf.Host
-	port := dbConf.Port
-	user := dbConf.User
-	password := dbConf.Password
-	dbName := dbConf.DBName
-	if dbName == "" {
-		dbName = name
+	conf := configuredDatabaseServiceConfig(dbType, dbConf)
+	fs := s.fs
+	if fs == nil {
+		fs = core.NewOsFS("")
 	}
+	driver, err := initDBDriver(conf, openDB, false, fs)
+	if err != nil {
+		return nil, err
+	}
+	return connectConfiguredDatabase(driver, conf.DB, pingTimeout)
+}
 
-	// Snowflake with key pair auth needs the connector path
-	if dbType == "snowflake" && (dbConf.PrivateKeyPath != "" || dbConf.PrivateKeyPEM != "") {
-		conf := &Config{}
-		conf.DB.ConnString = dbConf.ConnString
-		conf.DB.PrivateKeyPath = dbConf.PrivateKeyPath
-		conf.DB.PrivateKeyPEM = dbConf.PrivateKeyPEM
-		conf.DB.KeyPassphrase = dbConf.KeyPassphrase
-		dc, err := initSnowflake(conf, true, false, core.NewOsFS(""))
+// configuredDatabaseServiceConfig converts the multi-database core shape into
+// the service driver shape. Keeping this path on initDBDriver ensures TLS,
+// database-specific encryption, key-pair auth, and connector-backed drivers
+// behave exactly like the legacy single-database configuration.
+func configuredDatabaseServiceConfig(dbType string, dbConf core.DatabaseConfig) *Config {
+	poolSize := dbConf.PoolSize
+	if poolSize == 0 {
+		poolSize = dbConf.MaxIdleConns
+	}
+	maxConnections := dbConf.MaxConnections
+	if maxConnections == 0 {
+		maxConnections = dbConf.MaxOpenConns
+	}
+	return &Config{
+		Core: core.Config{DBType: dbType},
+		Serv: Serv{DB: Database{
+			Type:                   dbType,
+			ConnString:             dbConf.ConnString,
+			Host:                   dbConf.Host,
+			Port:                   uint16(dbConf.Port),
+			DBName:                 dbConf.DBName,
+			User:                   dbConf.User,
+			Password:               dbConf.Password,
+			Schema:                 dbConf.Schema,
+			Path:                   dbConf.Path,
+			PoolSize:               poolSize,
+			MaxConnections:         maxConnections,
+			MaxConnIdleTime:        dbConf.MaxConnIdleTime,
+			MaxConnLifeTime:        dbConf.MaxConnLifeTime,
+			PingTimeout:            dbConf.PingTimeout,
+			EnableTLS:              dbConf.EnableTLS,
+			ServerName:             dbConf.ServerName,
+			ServerCert:             dbConf.ServerCert,
+			ClientCert:             dbConf.ClientCert,
+			ClientKey:              dbConf.ClientKey,
+			Encrypt:                dbConf.Encrypt,
+			TrustServerCertificate: dbConf.TrustServerCertificate,
+			PrivateKeyPath:         dbConf.PrivateKeyPath,
+			PrivateKeyPEM:          dbConf.PrivateKeyPEM,
+			KeyPassphrase:          dbConf.KeyPassphrase,
+		}},
+	}
+}
+
+func connectConfiguredDatabase(driver *dbConf, conf Database, timeout time.Duration) (*sql.DB, error) {
+	var (
+		db  *sql.DB
+		err error
+	)
+	if driver.connector != nil {
+		db = sql.OpenDB(driver.connector)
+	} else {
+		db, err = sql.Open(driver.driverName, driver.connString)
 		if err != nil {
 			return nil, err
 		}
-		return sql.OpenDB(dc.connector), nil
 	}
 
-	if dbConf.ConnString != "" {
-		// Use connection string directly
-		driverName := driverForType(dbType)
-		if dbType == "postgres" {
-			driverName, _ = buildProbeConnString(dbType, "", 0, "", "", "", "tcp", dbName)
-			// Fall back to raw conn string
-			return tryConnect("pgx", dbConf.ConnString, pingTimeout)
-		}
-		return tryConnect(driverName, dbConf.ConnString, pingTimeout)
-	}
+	db.SetMaxIdleConns(conf.PoolSize)
+	db.SetMaxOpenConns(conf.MaxConnections)
+	db.SetConnMaxIdleTime(conf.MaxConnIdleTime)
+	db.SetConnMaxLifetime(conf.MaxConnLifeTime)
 
-	driverName, connString := buildProbeConnString(dbType, host, port, "", user, password, "tcp", dbName)
-	if connString == "" {
-		return nil, fmt.Errorf("could not build connection string for database '%s' (type=%s)", name, dbType)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		db.Close() //nolint:errcheck
+		return nil, err
 	}
-	return tryConnect(driverName, connString, pingTimeout)
+	return db, nil
 }
 
 // driverForType returns the Go SQL driver name for a database type.

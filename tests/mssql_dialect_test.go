@@ -125,6 +125,74 @@ func TestMSSQLPascalCaseNaming(t *testing.T) {
 	})
 }
 
+// TestMSSQLMixedColumnSpellingsStayTableScoped is the live regression for
+// #571. Both tables expose the same normalized GraphQL names while their
+// physical SQL Server identifiers use incompatible spellings.
+func TestMSSQLMixedColumnSpellingsStayTableScoped(t *testing.T) {
+	if dbType != "mssql" {
+		t.Skipf("skipping MSSQL naming test for %s", dbType)
+	}
+	stmts := []string{
+		`IF OBJECT_ID('SyntheticBeta','U') IS NOT NULL DROP TABLE SyntheticBeta`,
+		`IF OBJECT_ID('SyntheticAlpha','U') IS NOT NULL DROP TABLE SyntheticAlpha`,
+		`CREATE TABLE SyntheticAlpha (
+			Row_ID INT PRIMARY KEY,
+			Flag_Value BIT NOT NULL,
+			parent_id INT NOT NULL,
+			Payload_Kind NVARCHAR(100) NOT NULL
+		)`,
+		`CREATE TABLE SyntheticBeta (
+			RowID INT PRIMARY KEY,
+			FlagValue BIT NOT NULL,
+			parentId INT NOT NULL
+		)`,
+		`INSERT INTO SyntheticAlpha (Row_ID, Flag_Value, parent_id, Payload_Kind)
+		 VALUES (1, 1, 41, N'alpha')`,
+		`INSERT INTO SyntheticBeta (RowID, FlagValue, parentId)
+		 VALUES (1, 0, 73)`,
+	}
+	for _, stmt := range stmts {
+		_, err := db.Exec(stmt)
+		require.NoError(t, err, "fixture setup: %s", stmt)
+	}
+	t.Cleanup(func() {
+		_, _ = db.Exec(`IF OBJECT_ID('SyntheticBeta','U') IS NOT NULL DROP TABLE SyntheticBeta`)
+		_, _ = db.Exec(`IF OBJECT_ID('SyntheticAlpha','U') IS NOT NULL DROP TABLE SyntheticAlpha`)
+	})
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), `query {
+		alpha: synthetic_alpha { f: flag_value p: parent_id k: payload_kind }
+		beta: synthetic_beta { f: flag_value p: parent_id }
+	}`, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, res.Errors)
+
+	var out struct {
+		Alpha []struct {
+			Flag    bool   `json:"f"`
+			Parent  int    `json:"p"`
+			Payload string `json:"k"`
+		} `json:"alpha"`
+		Beta []struct {
+			Flag   bool `json:"f"`
+			Parent int  `json:"p"`
+		} `json:"beta"`
+	}
+	require.NoError(t, json.Unmarshal(res.Data, &out))
+	require.Len(t, out.Alpha, 1)
+	require.Len(t, out.Beta, 1)
+	assert.True(t, out.Alpha[0].Flag)
+	assert.Equal(t, 41, out.Alpha[0].Parent)
+	assert.Equal(t, "alpha", out.Alpha[0].Payload)
+	assert.False(t, out.Beta[0].Flag)
+	assert.Equal(t, 73, out.Beta[0].Parent)
+}
+
 // TestMSSQLVariableLimitUnderAnalytics guards #604: with analytics_mode on, a
 // variable limit (limit: $n) must still apply instead of returning all rows.
 func TestMSSQLVariableLimitUnderAnalytics(t *testing.T) {
