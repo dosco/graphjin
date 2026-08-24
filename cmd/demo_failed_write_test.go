@@ -134,9 +134,15 @@ func TestDemoFailedWriteRepairConverts(t *testing.T) {
 	// recovery.details.repaired_query from the failed result and executes it
 	// exactly as given — the action the recovery text asks for.
 	takeRepair := `
-const res = await execute_graphql({query:'mutation { payments(insert: { id: 900001, payment_reference: "DEEPORG-PAY-001", invoice_id: 1, amount_cents: 480000, paid_at: "2027-01-15T12:00:00Z" }) { id } }'});
-const repaired = res && res.recovery && res.recovery.details && res.recovery.details.repaired_query;
-if (!repaired) { throw new Error("no repaired_query in " + JSON.stringify(res)); }
+let repaired = "";
+try {
+  await execute_graphql({query:'mutation { payments(insert: { id: 900001, payment_reference: "DEEPORG-PAY-001", invoice_id: 1, amount_cents: 480000, paid_at: "2027-01-15T12:00:00Z" }) { id } }'});
+} catch (e) {
+  const text = String((e && e.message) || e);
+  const m = text.match(/exactly as given: (.*?)(?: \u2014 |$)/);
+  if (m) { repaired = m[1]; }
+}
+if (!repaired) { throw new Error("no corrected mutation was thrown"); }
 const done = await execute_graphql({query: repaired});
 await final({status:"answered", answer:"Recorded payment DEEPORG-PAY-001 with id 900001 for invoice 1.", data:{done:done}, evidence:[done]});
 `

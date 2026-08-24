@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -325,17 +324,23 @@ func TestProtocolRejectsIdenticalCatalogRequestLoopsAndReplaysExecution(t *testi
 
 	execution := map[string]any{"data": map[string]any{"production_orders": []any{map[string]any{"product_name": "Northstar"}}}}
 	runtime.state.recordExecution("execute_saved_query", map[string]any{"name": "daily_roast_context"}, execution)
-	replayed, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
-	if err != nil {
-		t.Fatalf("post-execution duplicate recovery: %v", err)
+	// The post-execution duplicate throws: the needed rows already live in the
+	// run's execution state (bound into the runtime session), and the
+	// exception directs the model to finalize from them.
+	_, err := runtime.QueryCatalog(context.Background(), cloneMap(args))
+	if err == nil {
+		t.Fatal("the post-execution duplicate must throw")
 	}
-	recovery := mapValue(mapValue(replayed)["recovery"])
-	replayedExecution := mapValue(recovery["execution"])
-	if got := mapValue(mapValue(replayedExecution["result"])["data"]); got == nil || got["production_orders"] == nil {
-		t.Fatalf("post-execution recovery did not replay live data: %+v", replayed)
+	for _, want := range []string{"did NOT run", "already returned evidence", "Call final now"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
 	if got := len(base.calls); got != 1 {
 		t.Fatalf("runtime calls after recovery = %d, want one catalog dispatch", got)
+	}
+	if runtime.state.lastExecution == nil {
+		t.Fatal("the earlier execution must remain available for the final")
 	}
 }
 
@@ -361,27 +366,6 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		}
 		return runtime
 	}
-	assertRepair := func(t *testing.T, out any, code string) {
-		t.Helper()
-		if !executionFailed(out) {
-			t.Fatalf("%s result = %+v, want structured execution failure", code, out)
-		}
-		result := mapValue(out)
-		errors := anySlice(result["errors"])
-		if len(errors) != 1 {
-			t.Fatalf("%s errors = %+v", code, errors)
-		}
-		extensions := mapValue(mapValue(errors[0])["extensions"])
-		repair := mapValue(extensions["graphjin_repair"])
-		next := mapValue(repair["next"])
-		if stringFromMap(extensions, "code") != code || extensions["retryable"] != true ||
-			stringFromMap(next, "recommended_tool") != toolQueryCatalog || len(mapValue(next["args"])) == 0 {
-			t.Fatalf("%s structured repair = %+v", code, result)
-		}
-		if stringFromMap(mapValue(result["recovery"]), "code") != code {
-			t.Fatalf("%s sibling recovery = %+v", code, result["recovery"])
-		}
-	}
 
 	t.Run("security runtime evidence is supplied", func(t *testing.T) {
 		// The two prerequisite ids never vary, so the guard now fetches the
@@ -396,7 +380,7 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 			"query": `mutation { products(insert: {name: "x"}) { id } }`,
 		})
-		if err == nil || !strings.Contains(err.Error(), "Re-execute the exact same mutation") {
+		if err == nil || !strings.Contains(err.Error(), "Re-execute the exact same operation") {
 			t.Fatalf("first write should be consumed by the supply and thrown: %v", err)
 		}
 		if !runtime.state.securityRuntimeEvidence {
@@ -496,13 +480,26 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
 			t.Fatal(err)
 		}
-		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 			"query": `mutation { gj_workflow_execution(insert: {name: "daily_roast"}) { id } }`,
 		})
-		if err != nil {
-			t.Fatal(err)
+		if err == nil {
+			t.Fatal("the un-inspected workflow execution must throw")
 		}
-		assertRepair(t, out, "workflow_detail_required")
+		for _, want := range []string{"did NOT run", "workflow:daily_roast", "query_catalog({ids:", "gj_workflow_execution"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("the exception must carry %q: %v", want, err)
+			}
+		}
+		found := false
+		for _, violation := range runtime.state.violations {
+			if violation.Code == "workflow_detail_required" && violation.Blocking {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("the refusal should record its violation: %+v", runtime.state.violations)
+		}
 	})
 
 	t.Run("watch mutation shape", func(t *testing.T) {
@@ -594,19 +591,16 @@ func TestCrossSourceHandoffRequiresEverySelectedSourceDetail(t *testing.T) {
 	// source has been inspected. GraphJin now does the inspecting instead of spending
 	// an actor step demanding it — the ids are already known — so the first attempt
 	// returns the source cards and still does not execute.
-	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
-	if err != nil || base.graphqlCalls != 0 {
-		t.Fatalf("cross-source guard = %+v err=%v calls=%d", first, err, base.graphqlCalls)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
+	if err == nil || base.graphqlCalls != 0 {
+		t.Fatalf("cross-source guard should supply and throw without executing: err=%v calls=%d", err, base.graphqlCalls)
 	}
-	supplied := mapValue(first)
-	if stringFromMap(supplied, "graphjin_protocol") != "cross_source_evidence_supplied" {
-		t.Fatalf("cross-source first attempt = %+v", supplied)
-	}
-	payload := stringify(normalizeValue(supplied))
-	for _, id := range []string{"source:crm", "source:support"} {
-		if !strings.Contains(payload, id) {
-			t.Fatalf("supplied evidence %q missing %q", payload, id)
+	for _, want := range []string{"did NOT execute", "GraphJin loaded the selected source details", "source:crm", "source:support"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
 		}
+	}
+	for _, id := range []string{"source:crm", "source:support"} {
 		if !runtime.state.hasCatalogDetailID(id) {
 			t.Fatalf("catalog details = %+v, missing %s", runtime.state.catalogDetails, id)
 		}
@@ -752,13 +746,14 @@ func TestInvalidWatchSubscriptionSchedulesExactCreationRepair(t *testing.T) {
 	args := map[string]any{"query": `mutation {
 		gj_watch(insert: {name: "new_payments", query: "subscription { payments { id created_at } }"}) { id name }
 	}`}
-	out, err := runtime.ExecuteGraphQL(context.Background(), args)
-	if err != nil || !executionFailed(out) || base.graphqlCalls != 1 {
-		t.Fatalf("invalid watch = %+v err=%v calls=%d", out, err, base.graphqlCalls)
+	_, err := runtime.ExecuteGraphQL(context.Background(), args)
+	if err == nil || base.graphqlCalls != 1 {
+		t.Fatalf("the invalid watch probe failure must throw after dispatch: err=%v calls=%d", err, base.graphqlCalls)
 	}
-	extensions := mapValue(mapValue(anySlice(mapValue(out)["errors"])[0])["extensions"])
-	if stringFromMap(extensions, "code") != "watch_query_invalid" || extensions["retryable"] != true {
-		t.Fatalf("invalid watch extensions = %+v", extensions)
+	for _, want := range []string{"did NOT return data", "gj_watch subscription probe failed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
 	continuation := runtime.state.pendingRequiredFinalizationContinuation()
 	for _, id := range []string{"help:watches", "table:app:main.payments"} {
@@ -794,32 +789,21 @@ func TestProtocolEscalatesConsecutiveEmptyCatalogSearches(t *testing.T) {
 		t.Fatalf("first empty search summary = %+v", firstSummary)
 	}
 
-	second, err := runtime.QueryCatalog(context.Background(), map[string]any{"search": "quantity"})
-	if err != nil {
-		t.Fatalf("second empty search refusal: %v", err)
+	_, err = runtime.QueryCatalog(context.Background(), map[string]any{"search": "quantity"})
+	if err == nil {
+		t.Fatal("the second blind search must throw the rejection")
 	}
-	refusal, ok := second.(executeResult)
-	if !ok || len(refusal.Errors) != 1 {
-		t.Fatalf("second empty search = %#v, want structured refusal", second)
-	}
-	extensions := refusal.Errors[0].Extensions
-	if stringFromMap(extensions, "code") != "empty_search_exhausted" || extensions["retryable"] != true {
-		t.Fatalf("second empty search extensions = %+v", extensions)
-	}
-	repair := mapValue(extensions["graphjin_repair"])
-	next := mapValue(repair["next"])
-	if !containsString(stringSliceArg(next, "known_ids"), knownID) ||
-		stringFromMap(next, "recommended_tool") != toolQueryCatalog ||
-		stringFromMap(mapValue(next["args"]), "kind") != "table" {
-		t.Fatalf("second empty search repair = %+v, want known id and table enumeration", repair)
+	for _, want := range []string{"did NOT run", "consecutive empty catalog search rejected", "enumerate tables by kind", knownID, "Known ids: query_catalog({ids:"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
 	if got := len(base.calls); got != 1 {
 		t.Fatalf("second blind search reached base runtime: calls=%d, want 1", got)
 	}
-	summary := runtime.state.actions[len(runtime.state.actions)-1].Summary
-	if !containsString(evidenceStringSlice(summary["error_codes"]), "empty_search_exhausted") ||
-		!containsString(evidenceStringSlice(summary["recovery_codes"]), "empty_search_exhausted") {
-		t.Fatalf("structured refusal summary = %+v", summary)
+	last := runtime.state.actions[len(runtime.state.actions)-1]
+	if last.Error == "" || !strings.Contains(last.Error, "empty catalog search") {
+		t.Fatalf("structured refusal action = %#v", last)
 	}
 }
 
@@ -918,30 +902,21 @@ func TestProtocolEscalatesConsecutiveUnknownCatalogDetails(t *testing.T) {
 	}
 
 	secondID := "table:app:main.guessed_totals"
-	second, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": secondID})
-	if err != nil {
-		t.Fatalf("second empty detail refusal: %v", err)
+	_, err = runtime.QueryCatalog(context.Background(), map[string]any{"id": secondID})
+	if err == nil {
+		t.Fatal("the second unknown detail must throw the rejection")
 	}
-	refusal, ok := second.(executeResult)
-	if !ok || len(refusal.Errors) != 1 {
-		t.Fatalf("second empty detail = %#v, want structured refusal", second)
-	}
-	extensions := refusal.Errors[0].Extensions
-	if stringFromMap(extensions, "code") != "empty_detail_exhausted" || extensions["retryable"] != true {
-		t.Fatalf("second empty detail extensions = %+v", extensions)
-	}
-	repair := mapValue(extensions["graphjin_repair"])
-	if stringFromMap(repair, "missed_id") != secondID ||
-		!containsString(stringSliceArg(repair, "known_ids"), knownID) {
-		t.Fatalf("second empty detail repair = %+v, want missed and known ids", repair)
+	for _, want := range []string{"did NOT run", "consecutive empty catalog detail lookup rejected", knownID, secondID, "(missed: ", "Known ids: query_catalog({ids:"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
 	if got := len(base.calls); got != 1 {
 		t.Fatalf("second unknown detail reached base runtime: calls=%d, want 1", got)
 	}
-	summary := runtime.state.actions[len(runtime.state.actions)-1].Summary
-	if !containsString(evidenceStringSlice(summary["error_codes"]), "empty_detail_exhausted") ||
-		!containsString(evidenceStringSlice(summary["recovery_codes"]), "empty_detail_exhausted") {
-		t.Fatalf("structured refusal summary = %+v", summary)
+	last := runtime.state.actions[len(runtime.state.actions)-1]
+	if last.Error == "" || !strings.Contains(last.Error, "empty catalog detail") {
+		t.Fatalf("structured refusal action = %#v", last)
 	}
 }
 
@@ -1115,9 +1090,9 @@ func TestProtocolEmptySavedQueryDetailDoesNotAuthorizeExecution(t *testing.T) {
 		t.Fatal("empty saved-query detail lookup authorized the guessed name")
 	}
 	before := len(base.calls)
-	out, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"})
-	if err != nil {
-		t.Fatalf("a name the catalog denies is a recoverable dead end, not a hard error: %v", err)
+	_, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"})
+	if err == nil {
+		t.Fatal("a name the catalog denies must throw its dead end")
 	}
 	if got := len(base.calls); got != before {
 		t.Fatalf("guessed saved query reached base runtime: calls=%d want=%d", got, before)
@@ -1128,12 +1103,13 @@ func TestProtocolEmptySavedQueryDetailDoesNotAuthorizeExecution(t *testing.T) {
 	// recorded was a successful execution of the query that does not exist.
 	// Episode ah1-001 answered its question correctly and finalized blocked on
 	// exactly that loop.
-	recovery := mapValue(mapValue(out)["recovery"])
-	if stringFromMap(recovery, "code") != "unknown_saved_query" {
-		t.Fatalf("a proven-absent saved query should say so: %+v", out)
+	for _, want := range []string{"did NOT execute", `saved query "usage_events_total" is not in this run's catalog`, "Author the query directly with execute_graphql"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
-	if strings.Contains(stringFromMap(recovery, "instruction"), "query_catalog") {
-		t.Fatalf("the recovery must not re-demand the lookup that just came back empty: %+v", recovery)
+	if strings.Contains(err.Error(), "query_catalog") {
+		t.Fatalf("the exception must not re-demand the lookup that just came back empty: %v", err)
 	}
 	if runtime.state.hasBlockingViolation() {
 		t.Fatal("executing a saved query the catalog denies must not block the run")
@@ -1175,18 +1151,14 @@ func TestProtocolSavedQueryAbsentFromDiscoveredSetIsRecoverable(t *testing.T) {
 	runtime := newProtocolRuntime(base, "total usage", "", 40, nil, nil, CatalogSearchFeatures{})
 	runtime.state.markSavedQueryDiscovered("daily_roast_context")
 
-	out, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "usage_events_total"})
+	if err == nil {
+		t.Fatal("a name absent from a known set must throw its dead end")
 	}
-	recovery := mapValue(mapValue(out)["recovery"])
-	if stringFromMap(recovery, "code") != "unknown_saved_query" {
-		t.Fatalf("a name absent from a known set should say so: %+v", out)
-	}
-	// details ride the error extensions rather than the recovery block.
-	payload, _ := json.Marshal(out)
-	if !strings.Contains(string(payload), `"known_saved_queries":["daily_roast_context"]`) {
-		t.Fatalf("the recovery should name the saved queries that do exist: %s", payload)
+	for _, want := range []string{"is not in this run's catalog", "approved saved queries", "daily_roast_context"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must name the saved queries that do exist, missing %q: %v", want, err)
+		}
 	}
 	if runtime.state.hasBlockingViolation() {
 		t.Fatal("a wrong saved-query name must not block the run")
@@ -1701,13 +1673,12 @@ func TestCrossSourceSupplyResolvesSectionIDs(t *testing.T) {
 		},
 	})
 
-	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { accounts { id account_health { health } } }`})
-	if err != nil || base.graphqlCalls != 0 {
-		t.Fatalf("first attempt = %+v err=%v calls=%d", first, err, base.graphqlCalls)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { accounts { id account_health { health } } }`})
+	if err == nil || base.graphqlCalls != 0 {
+		t.Fatalf("the supply should throw without executing: err=%v calls=%d", err, base.graphqlCalls)
 	}
-	supplied := mapValue(first)
-	if stringFromMap(supplied, "graphjin_protocol") != "cross_source_evidence_supplied" {
-		t.Fatalf("supply should resolve the section to its card, got %+v", supplied)
+	if !strings.Contains(err.Error(), "GraphJin loaded the selected source details") || !strings.Contains(err.Error(), "source:account_health_api:capabilities") {
+		t.Fatalf("the exception should name the resolved sections: %v", err)
 	}
 	// The card is what gets fetched; the section requirement is satisfied by it.
 	if !runtime.state.hasCatalogDetailID("source:account_health_api") {

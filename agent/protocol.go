@@ -410,34 +410,43 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 	}
 	if searchRequest && r.state.emptySearchStreak > 0 {
 		r.state.emptySearchStreak++
-		out := r.state.emptySearchExhaustedResult()
+		// Thrown: the lookup is being rejected, not answered, and a rejected
+		// call must not look like an empty success to straight-line code. The
+		// known ids ride the text — every sibling guard inlines its exact next
+		// step, and this one used to carry them only in a payload.
+		message := firstExecutionErrorMessage(r.state.emptySearchExhaustedResult(), "repeated empty catalog searches are rejected; work from evidence already returned")
+		if known := r.state.knownCatalogIDs(emptySearchKnownIDLimit); len(known) != 0 {
+			message += fmt.Sprintf(". Known ids: query_catalog({ids:[\"%s\"]})", strings.Join(known, `","`))
+		}
+		err := fmt.Errorf("this lookup did NOT run: %s", message)
 		action := r.state.startAction("model", "query_catalog", args)
-		r.state.finishAction(action, "query_catalog", args, out, nil)
-		return out, nil
+		r.state.finishAction(action, "query_catalog", args, nil, err)
+		return nil, err
 	}
 	if len(detailIDs) != 0 && r.state.emptyDetailStreak > 0 && !r.state.hasKnownCatalogID(detailIDs) {
 		r.state.emptyDetailStreak++
 		r.state.recordMissingCatalogDetails(detailIDs)
-		out := r.state.emptyDetailExhaustedResult(detailIDs)
+		message := firstExecutionErrorMessage(r.state.emptyDetailExhaustedResult(detailIDs), "repeated lookups of unknown catalog ids are rejected; use ids this run has actually seen")
+		message += fmt.Sprintf(" (missed: %s)", strings.Join(detailIDs, ", "))
+		if known := r.state.knownCatalogIDs(emptySearchKnownIDLimit); len(known) != 0 {
+			message += fmt.Sprintf(". Known ids: query_catalog({ids:[\"%s\"]})", strings.Join(known, `","`))
+		}
+		err := fmt.Errorf("this lookup did NOT run: %s", message)
 		action := r.state.startAction("model", "query_catalog", args)
-		r.state.finishAction(action, "query_catalog", args, out, nil)
-		return out, nil
+		r.state.finishAction(action, "query_catalog", args, nil, err)
+		return nil, err
 	}
 	if requestKey != "" && r.state.catalogRequestKeys[requestKey] {
 		message := "duplicate query_catalog call rejected: this exact request already returned catalog evidence; reuse the prior result and follow its next guidance instead of searching again"
 		if r.state.lastExecution != nil {
 			r.state.recordRepeatedCall("query_catalog:" + requestKey)
-			out := map[string]any{
-				"cards": []any{},
-				"recovery": map[string]any{
-					"reason":    "catalog evidence and live execution data were already returned in this run",
-					"execution": r.state.lastExecution,
-					"next":      "call final now using recovery.execution.result.data; do not call query_catalog again",
-				},
-			}
+			// Thrown: returning cards:[] here read as a successful empty
+			// catalog to straight-line code. The needed data is already in the
+			// run's execution state; the exception says to finalize from it.
+			err := fmt.Errorf("this lookup did NOT run: the identical catalog request already returned evidence in this run, and live execution data is in hand. Call final now from the earlier execution result; do not call query_catalog again")
 			action := r.state.startAction("model", "query_catalog", args)
-			r.state.finishAction(action, "query_catalog", args, out, nil)
-			return out, nil
+			r.state.finishAction(action, "query_catalog", args, nil, err)
+			return nil, err
 		}
 		err := fmt.Errorf("%s", message)
 		action := r.state.startAction("model", "query_catalog", args)
@@ -828,17 +837,14 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		// nothing was violated.
 		if r.state.savedQueryKnownAbsent(name) {
 			known := sortedBoolKeys(r.state.savedQueriesDiscovered)
-			message := fmt.Sprintf("saved query %q is not in this run's catalog", name)
-			reason := "This saved query does not exist. Author the query directly with execute_graphql from catalog detail, or run one of the approved saved queries listed in details.known_saved_queries."
-			if len(known) == 0 {
-				reason = "This saved query does not exist and this run has surfaced no approved saved queries. Author the query directly with execute_graphql from catalog detail."
+			thrown := fmt.Sprintf("this call did NOT execute: saved query %q is not in this run's catalog. Author the query directly with execute_graphql from catalog detail", name)
+			if len(known) != 0 {
+				thrown += fmt.Sprintf(", or run one of the approved saved queries: %s", strings.Join(known, ", "))
 			}
-			details := map[string]any{"name": name, "known_saved_queries": known, "fault": "unknown_saved_query"}
-			out := recoverableProtocolFailure("unknown_saved_query", message, "unknown_saved_query",
-				map[string]any{"recommended_tool": "execute_graphql", "reason": reason}, details)
+			err := fmt.Errorf("%s", thrown)
 			action := r.state.startAction("model", "execute_saved_query", args)
-			r.state.finishAction(action, "execute_saved_query", args, out, nil)
-			return out, nil
+			r.state.finishAction(action, "execute_saved_query", args, nil, err)
+			return nil, err
 		}
 		err := fmt.Errorf("protocol violation: inspect query_catalog(id: %q) before execute_saved_query", "saved_query:"+name)
 		r.state.addViolation("saved_query_detail_required", err.Error(), "execute_saved_query", true, map[string]any{"name": name})
@@ -862,24 +868,21 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		(r.state.referentBindableToKnownTable(refs) || r.state.refuseUnscopedReferent("saved:"+strings.ToLower(strings.TrimSpace(name)))) {
 		r.state.recordReferentRejection("saved:" + strings.ToLower(strings.TrimSpace(name)))
 		described := describeEntityReferences(refs)
-		err := fmt.Errorf("protocol violation: this follow-up is scoped to %s, but saved query %q does not filter on it and a saved query cannot be narrowed at call time. Author the scoped query with execute_graphql, or pass a variable this saved query accepts that binds the subject", described, name)
+		err := fmt.Errorf("this call did NOT execute: this follow-up is scoped to %s, but saved query %q does not filter on it and a saved query cannot be narrowed at call time. Author a query scoped to %s with execute_graphql and execute it once", described, name, described)
 		details := map[string]any{"retained_subject": refs, "name": name, "fault": "unscoped_saved_query_for_referent"}
 		r.state.addViolation("history_referent_unresolved", err.Error(), "execute_saved_query", true, details)
-		out := recoverableProtocolFailure("history_referent_unresolved", err.Error(), "history_referent_unresolved",
-			map[string]any{
-				"recommended_tool": "execute_graphql",
-				"reason":           "Author a query scoped to " + described + " and execute it once, rather than reporting this saved metric's unscoped result.",
-			}, details)
 		action := r.state.startAction("model", "execute_saved_query", args)
-		r.state.finishAction(action, "execute_saved_query", args, out, nil)
-		return out, nil
+		r.state.finishAction(action, "execute_saved_query", args, nil, err)
+		return nil, err
 	}
 	executionKey := savedQueryExecutionKey(args)
 	if cached, ok := r.state.cachedExecution(executionKey); ok {
-		if out, rejected := pendingCachedExecutionRejection(r.state, "", true); rejected {
+		if _, rejected := pendingCachedExecutionRejection(r.state, "", true); rejected {
+			requirement := strings.TrimSpace(r.state.pendingRequiredFinalization())
+			err := fmt.Errorf("this call did NOT execute: this saved query already ran and its rows cannot satisfy the outstanding requirement; a saved query is fixed, so re-running it will keep failing. Author the required query with execute_graphql instead. %s", requirement)
 			action := r.state.startAction("model", "execute_saved_query", args)
-			r.state.finishAction(action, "execute_saved_query", args, out, nil)
-			return out, nil
+			r.state.finishAction(action, "execute_saved_query", args, nil, err)
+			return nil, err
 		}
 		out := cachedExecutionResult(r.state, cached)
 		r.state.selectCachedExecution("execute_saved_query", args, out)
@@ -918,12 +921,30 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 		// do not let its now-satisfied protocol violation poison the final answer.
 		r.state.resolveSavedQueryDetailViolation(name)
 	}
+	// The sweep found this path attached NOTHING to an engine failure: raw
+	// errors[] rode back as a value and straight-line code read the missing
+	// data as an empty answer. Dataless failures throw like everywhere else.
+	if err == nil && executionFailed(out) && !executionPolicyFinal(out) && !executionHasUsableData(out) {
+		thrown := engineFailureError(out, "", true)
+		return nil, fmt.Errorf("%s — the saved query's text is fixed; if it cannot serve this request, author the query directly with execute_graphql", thrown.Error())
+	}
 	return out, err
 }
 
 func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
 	r.addNamespace(args)
 	query := stringArg(args, "query")
+	// An empty call used to wander into the discovery guard, collect a
+	// blocking violation, and return a refusal payload — benchmark episodes
+	// show models calling execute_graphql({}) eight times in a row, each call
+	// silently poisoning finalization. Nothing was asked, so nothing below
+	// applies: fail loudly before any guard.
+	if strings.TrimSpace(query) == "" {
+		err := fmt.Errorf("this call did NOT execute: execute_graphql requires a query string in args.query")
+		action := r.state.startAction("model", "execute_graphql", args)
+		r.state.finishAction(action, "execute_graphql", args, nil, err)
+		return nil, err
+	}
 	normalizedWatchQuery := ""
 	rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent := "", "", ""
 	boundReferentQuery, boundReferent := "", referentBinding{}
@@ -978,11 +999,9 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			// value cannot interrupt it — run ab4-trt measured 26 episodes
 			// narrating success over exactly this consumed call. An exception
 			// is the only control flow a completed program still responds to.
-			if ContainsMutationOperation(query) {
-				r.state.noteInterceptedWrite(query, "the write was intercepted so the system-root contract could be supplied, and was not retried")
-				return nil, fmt.Errorf("this write did NOT execute. GraphJin loaded the system-root contract it requires into this run's evidence. Re-execute the exact same mutation now; it will be permitted to run")
-			}
-			return supplied, nil
+			r.state.noteInterceptedWrite(query, "the write was intercepted so the system-root contract could be supplied, and was not retried")
+			_ = supplied
+			return nil, fmt.Errorf("this query did NOT execute. GraphJin loaded the system-root contract it requires into this run's evidence. Re-execute the exact same call now; it will be permitted to run")
 		}
 		r.state.noteInterceptedWrite(query, "the write was refused pending catalog discovery and was not successfully retried")
 		if ContainsMutationOperation(query) {
@@ -992,33 +1011,27 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			r.state.finishAction(action, "execute_graphql", args, nil, err)
 			return nil, err
 		}
-		err := fmt.Errorf("protocol violation: the seed and broad catalog results are not discovery detail; inspect the relevant catalog item with query_catalog({id:\"...\"}) before authoring raw GraphQL.%s", approvedSavedQuerySuffix(r.state))
+		// Thrown, with the candidate ids inline: the exception text is the one
+		// channel straight-line executor code is guaranteed to read. The
+		// structured-payload version of this guard was itself a measured
+		// improvement over a bare error (48% -> 64% pass on affected episodes)
+		// because it named which card to open; the ids survive the conversion.
+		known := r.state.knownCatalogIDs(emptySearchKnownIDLimit)
+		exact := ""
+		if len(known) != 0 {
+			exact = fmt.Sprintf(" Candidate ids: query_catalog({ids:[\"%s\"]}).", strings.Join(known, `","`))
+		}
+		err := fmt.Errorf("this query did NOT execute: the seed and broad catalog results are not discovery detail; inspect the relevant catalog item with query_catalog({id:\"...\"}) first, then re-execute it.%s%s", exact, approvedSavedQuerySuffix(r.state))
 		details := map[string]any{
 			"approved_saved_queries": sortedBoolKeys(r.state.savedQueriesDiscovered),
 		}
-		// Every sibling guard below hands back a structured repair step. This one
-		// returned a bare error, and the actor paid for the difference: on the frozen
-		// suite it fired 51 times across 25 episodes, about twice per episode, because
-		// nothing named which id to open. Those episodes averaged 5.2 actor turns
-		// against 2.8 elsewhere and passed 48% against 64%, with the extra turns coming
-		// out of an eight-step budget. The requirement is unchanged — detail evidence
-		// is still mandatory before raw GraphQL — only the reply is now actionable.
-		// A short list: this is a nudge toward the right card, not a catalog dump.
-		known := r.state.knownCatalogIDs(emptySearchKnownIDLimit)
-		repairArgs := map[string]any{}
 		if len(known) != 0 {
 			details["candidate_ids"] = known
-			repairArgs["ids"] = append([]string(nil), known...)
 		}
 		r.state.addViolation("raw_graphql_discovery_required", err.Error(), "execute_graphql", true, details)
-		next := catalogRepairNext(
-			repairArgs,
-			"Inspect the exact catalog detail for the item this query targets in one discovery-only actor step, then re-author the raw GraphQL from the returned card.",
-		)
-		out := recoverableProtocolFailure("raw_graphql_discovery_required", err.Error(), "raw_graphql_discovery_required", next, details)
 		action := r.state.startAction("model", "execute_graphql", args)
-		r.state.finishAction(action, "execute_graphql", args, out, nil)
-		return out, nil
+		r.state.finishAction(action, "execute_graphql", args, nil, err)
+		return nil, err
 	}
 	if missing := r.state.missingDistilledSourceDetails(); len(missing) != 0 {
 		// The ids are already known, so the round trip buys nothing and costs a step:
@@ -1027,19 +1040,17 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		// mutation-shape evidence already gets, and the requirement is still met by
 		// content the catalog actually returned rather than by the asking.
 		if out, ok := r.supplyCrossSourceEvidence(ctx, missing, args); ok {
-			return out, nil
+			r.state.noteInterceptedWrite(query, "the write was intercepted so cross-source evidence could be supplied, and was not retried")
+			_ = out
+			return nil, fmt.Errorf("this operation did NOT execute. GraphJin loaded the selected source details (%s) into this run's evidence. Re-execute the exact same call now; it will be permitted to run", strings.Join(missing, ", "))
 		}
-		err := fmt.Errorf("protocol violation: inspect every source selected by the distiller before authoring cross-source GraphQL: %s", strings.Join(missing, ", "))
+		r.state.noteInterceptedWrite(query, "the write was refused pending cross-source evidence and was not successfully retried")
+		err := fmt.Errorf("this operation did NOT execute: inspect every source selected by the distiller first — query_catalog({ids:[\"%s\"]}) — then re-execute it", strings.Join(missing, `","`))
 		details := map[string]any{"sources": missing}
 		r.state.addViolation("cross_source_detail_required", err.Error(), "execute_graphql", true, details)
-		next := catalogRepairNext(
-			map[string]any{"ids": append([]string(nil), missing...)},
-			"Inspect the exact source details in one discovery-only actor step, then re-author the cross-source operation from the returned source cards.",
-		)
-		out := recoverableProtocolFailure("cross_source_detail_required", err.Error(), "cross_source_detail_required", next, details)
 		action := r.state.startAction("model", "execute_graphql", args)
-		r.state.finishAction(action, "execute_graphql", args, out, nil)
-		return out, nil
+		r.state.finishAction(action, "execute_graphql", args, nil, err)
+		return nil, err
 	}
 	if writeLikeGraphQL(query) && !r.state.securityRuntimeEvidence {
 		// The two prerequisite ids never vary, so the refusal round trip bought
@@ -1053,35 +1064,21 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		// substring) from a refusal the run was never taught about into the
 		// guidance itself.
 		if supplied, ok := r.supplySecurityRuntimeEvidence(ctx, args); ok {
-			// Same rule as every mutation interception: throw, because a
-			// return value cannot interrupt straight-line executor code.
-			if ContainsMutationOperation(query) {
-				r.state.noteInterceptedWrite(query, "the write was intercepted so security and runtime guidance could be supplied, and was not retried")
-				return nil, fmt.Errorf("this write did NOT execute. GraphJin loaded the required security and runtime guidance into this run's evidence. Re-execute the exact same mutation now; it will be permitted to run")
-			}
-			return supplied, nil
+			// Throw, because a return value cannot interrupt straight-line
+			// executor code — writeLikeGraphQL also matches control-plane
+			// READS by substring, and those were answered "no unseen events
+			// found" over an inbox never read from exactly this supplied call.
+			r.state.noteInterceptedWrite(query, "the write was intercepted so security and runtime guidance could be supplied, and was not retried")
+			_ = supplied
+			return nil, fmt.Errorf("this call did NOT execute. GraphJin loaded the required security and runtime guidance into this run's evidence. Re-execute the exact same operation now; it will be permitted to run")
 		}
 		r.state.noteInterceptedWrite(query, "the write was refused pending security and runtime guidance and was not successfully retried")
 		details := map[string]any{"required": []any{"help:security", "help:runtime"}}
-		if ContainsMutationOperation(query) {
-			// Thrown, not returned: no exception reads as success to
-			// straight-line executor code.
-			err := fmt.Errorf("this write did NOT execute: inspect the security and runtime guidance with query_catalog({ids:[\"help:security\",\"help:runtime\"]}) first, then re-execute the mutation")
-			r.state.addViolation("security_runtime_discovery_required", err.Error(), "execute_graphql", true, details)
-			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, nil, err)
-			return nil, err
-		}
-		err := fmt.Errorf("protocol violation: inspect security/runtime catalog guidance before write-capable or control-plane GraphQL")
+		err := fmt.Errorf("this call did NOT execute: inspect the security and runtime guidance with query_catalog({ids:[\"help:security\",\"help:runtime\"]}) first, then re-execute the operation")
 		r.state.addViolation("security_runtime_discovery_required", err.Error(), "execute_graphql", true, details)
-		next := catalogRepairNext(
-			map[string]any{"ids": []any{"help:security", "help:runtime"}},
-			"Inspect the exact security and runtime guidance in a discovery-only actor step, then re-author the write from returned evidence.",
-		)
-		out := recoverableProtocolFailure("security_runtime_discovery_required", err.Error(), "write_prerequisite_detail_required", next, details)
 		action := r.state.startAction("model", "execute_graphql", args)
-		r.state.finishAction(action, "execute_graphql", args, out, nil)
-		return out, nil
+		r.state.finishAction(action, "execute_graphql", args, nil, err)
+		return nil, err
 	}
 	if !ContainsMutationOperation(query) {
 		// A join-only remote table cannot be queried at the top level: the table has
@@ -1126,29 +1123,21 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				args["query"] = repaired
 				rewrittenJoinQuery, rewrittenJoinRoot, rewrittenJoinParent = repaired, root, parent
 			} else {
-				reason := "Execute next.args.query exactly as given; it queries " + parent + " and returns " + root + " nested inside it."
-				switch {
-				case kind == remoteJoinFilterSalvaged:
-					reason += " Its filter carries the value you filtered on, moved to the " + parent + " column that can hold it; change that value only if it is not the row you meant."
-				default:
-					reason = "Replace the <filter on " + parent + "> placeholder in next.args.query with a filter built from the " + parent + " columns it names, then execute the result; it queries " + parent + " and returns " + root + " nested inside it."
+				// Thrown, with the corrected query inline: an offer riding a
+				// return value was measured taken 0 of 12 times — straight-line
+				// executor code cannot react to it. The exception text is the
+				// channel the next turn actually reads.
+				thrown := "this query did NOT execute: " + root + " is served only nested under " + parent + ". Execute this corrected query exactly as given: " + repaired
+				if kind == remoteJoinFilterSalvaged {
+					thrown += " — its filter carries the value you filtered on, moved to the " + parent + " column that can hold it; change that value only if it is not the row you meant"
+				} else {
+					thrown = "this query did NOT execute: " + root + " is served only nested under " + parent + ". Replace the <filter on " + parent + "> placeholder in this corrected query with a filter on the named " + parent + " columns, then execute it: " + repaired
 				}
-				if r.state.remoteJoinRepairSeen(root) {
-					// A repeat on the same root has already been taught the route.
-					reason = "Execute next.args.query exactly as given."
-					if kind == remoteJoinFilterHole {
-						reason = "Fill the <filter on " + parent + "> placeholder in next.args.query, then execute it."
-					}
-				}
-				out := recoverableProtocolFailure("remote_join_path_required", err.Error(), "remote_join_repair",
-					map[string]any{
-						"recommended_tool": "execute_graphql",
-						"args":             map[string]any{"query": repaired},
-						"reason":           reason,
-					}, details)
+				r.state.remoteJoinRepairSeen(root)
 				action := r.state.startAction("model", "execute_graphql", args)
-				r.state.finishAction(action, "execute_graphql", args, out, nil)
-				return out, nil
+				offerErr := fmt.Errorf("%s", thrown)
+				r.state.finishAction(action, "execute_graphql", args, nil, offerErr)
+				return nil, offerErr
 			}
 		}
 		// A follow-up that points at "it" or "that account" has to inherit its
@@ -1181,19 +1170,20 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 				args["query"] = rewritten
 				boundReferentQuery, boundReferent = rewritten, binding
 			} else if r.state.refuseUnscopedReferent(normalizeGraphQLIdentity(query)) {
+				// Thrown, and the strike-cap escape hatch is no longer
+				// advertised in the text — "execute it again and it will run"
+				// was measured as the first thing weak models did, and the
+				// let-through's whole-table number was then reported as the
+				// subject's. The cap itself survives so an inapplicable
+				// subject cannot strand the run.
 				r.state.recordReferentRejection(normalizeGraphQLIdentity(query))
 				described := describeEntityReferences(refs)
-				err := fmt.Errorf("protocol violation: this follow-up inherits its subject from prior turns, which retained %s, but the query filters on none of it. Re-author the query scoped to the retained subject before answering", described)
+				err := fmt.Errorf("this query did NOT execute: this follow-up inherits its subject from prior turns, which retained %s, but the query filters on none of it. Add the where clause that scopes this query to %s, then execute it once", described, described)
 				details := map[string]any{"retained_subject": refs, "fault": "unresolved_history_referent"}
 				r.state.addViolation("history_referent_unresolved", err.Error(), "execute_graphql", true, details)
-				out := recoverableProtocolFailure("history_referent_unresolved", err.Error(), "history_referent_unresolved",
-					map[string]any{
-						"recommended_tool": "execute_graphql",
-						"reason":           "Add the where clause that scopes this query to " + described + ", then execute it once. If the retained subject genuinely does not apply, execute the unscoped query again and it will run.",
-					}, details)
 				action := r.state.startAction("model", "execute_graphql", args)
-				r.state.finishAction(action, "execute_graphql", args, out, nil)
-				return out, nil
+				r.state.finishAction(action, "execute_graphql", args, nil, err)
+				return nil, err
 			}
 		}
 	}
@@ -1362,38 +1352,41 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			return nil, err
 		}
 		if requiresWorkflowDetail(roots) && !r.state.hasWorkflowDetailEvidence() {
-			err := fmt.Errorf("protocol violation: inspect the workflow detail by id before executing it through %s", systemRootWorkflowExec)
+			r.state.noteInterceptedWrite(query, "the workflow execution was refused pending workflow detail and was not successfully retried")
+			exact := ""
+			if ids := stringSliceArg(mapValue(r.state.workflowEvidenceNext()["args"]), "ids"); len(ids) != 0 {
+				exact = fmt.Sprintf(" — run query_catalog({ids:[\"%s\"]}) for the exact detail", strings.Join(ids, `","`))
+			}
+			err := fmt.Errorf("this workflow execution did NOT run: inspect the chosen workflow detail by id first%s, then re-execute it through %s", exact, systemRootWorkflowExec)
 			details := map[string]any{"root": systemRootWorkflowExec}
 			r.state.addViolation("workflow_detail_required", err.Error(), "execute_graphql", true, details)
-			next := r.state.workflowEvidenceNext()
-			out := recoverableProtocolFailure("workflow_detail_required", err.Error(), "workflow_detail_required", next, details)
 			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, out, nil)
-			return out, nil
+			r.state.finishAction(action, "execute_graphql", args, nil, err)
+			return nil, err
 		}
 	}
 	queryKey := executionQueryKey(args)
 	if r.state.failedQueryKeys[queryKey] {
-		out := attachExecutionRecovery(executeResult{Errors: []ErrorInfo{{
-			Message: "identical failed GraphQL query retry rejected; re-author the query from live GraphJin catalog/help evidence before executing again",
-			Extensions: map[string]any{
-				"code":      "duplicate_failed_query",
-				"retryable": true,
-				"graphjin_repair": map[string]any{
-					"kind": "distinct_query_required",
-					"next": catalogNext(toolQueryCatalog, "Inspect the real table/column detail or graphql_help({for:\"query\"}), then execute a distinct repaired query."),
-				},
-			},
-		}}}, r.state, "")
+		// Thrown: this exact call already failed and was NOT re-executed. When
+		// a corrected mutation is on file, the exception names it — the
+		// recorded loops resent the identical broken write up to eight times
+		// while the correction sat in a payload nothing read.
+		message := "this call did NOT execute: the identical query already failed in this run. Re-author it from live catalog/help evidence, then execute the distinct corrected form"
+		if r.state.lastMutationRepairedQuery != "" && !r.state.mutationSucceeded {
+			message = "this call did NOT execute: the identical query already failed in this run. Execute the corrected mutation exactly as given instead: " + r.state.lastMutationRepairedQuery
+		}
+		err := fmt.Errorf("%s", message)
 		action := r.state.startAction("model", "execute_graphql", args)
-		r.state.finishAction(action, "execute_graphql", args, out, nil)
-		return out, nil
+		r.state.finishAction(action, "execute_graphql", args, nil, err)
+		return nil, err
 	}
 	if cached, ok := r.state.cachedExecution(queryKey); ok {
-		if out, rejected := pendingCachedExecutionRejection(r.state, query, false); rejected {
+		if _, rejected := pendingCachedExecutionRejection(r.state, query, false); rejected {
+			requirement := strings.TrimSpace(r.state.pendingRequiredFinalization())
+			err := fmt.Errorf("this call did NOT execute: the identical successful query already ran and its rows cannot satisfy the outstanding requirement. %s", requirement)
 			action := r.state.startAction("model", "execute_graphql", args)
-			r.state.finishAction(action, "execute_graphql", args, out, nil)
-			return out, nil
+			r.state.finishAction(action, "execute_graphql", args, nil, err)
+			return nil, err
 		}
 		out := cachedExecutionResult(r.state, cached)
 		r.state.selectCachedExecution("execute_graphql", args, out)
@@ -1480,6 +1473,23 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 	if boundReferentQuery != "" && err == nil && !executionFailed(out) {
 		out = attachReferentBindingNotice(out, boundReferentQuery, boundReferent)
 	}
+	// An engine failure that produced no usable data is thrown: the query ran
+	// and returned nothing but errors, and a {data, errors} value is read as
+	// success by straight-line executor code — the file half of cross-source
+	// fabricated SLA numbers off exactly this table_not_found shape. Partial
+	// results keep the value: real data plus errors is an answer the model can
+	// still use, with the recovery riding along. Policy-final denials also
+	// keep the value; they are the terminal envelope the blocked final is
+	// built from.
+	if err == nil && executionFailed(out) && !executionPolicyFinal(out) && !executionHasUsableData(out) {
+		thrown := engineFailureError(out, r.state.lastMutationRepairedQuery, r.state.mutationSucceeded)
+		r.state.finishAction(action, "execute_graphql", args, nil, thrown)
+		r.state.rawGraphQL = append(r.state.rawGraphQL, map[string]any{
+			"operation":  graphQLOperationKind(query),
+			"write_like": writeLikeGraphQL(query),
+		})
+		return nil, thrown
+	}
 	r.state.finishAction(action, "execute_graphql", args, out, err)
 	if err == nil {
 		r.state.recordExecution("execute_graphql", args, out)
@@ -1501,6 +1511,79 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		"write_like": writeLikeGraphQL(query),
 	})
 	return out, err
+}
+
+// executionHasUsableData reports whether a failed execution still returned
+// rows worth reading: a non-empty value under some data key.
+func executionHasUsableData(out any) bool {
+	data := mapValue(normalizeValue(out))["data"]
+	switch typed := normalizeValue(data).(type) {
+	case map[string]any:
+		for _, value := range typed {
+			switch inner := value.(type) {
+			case []any:
+				if len(inner) != 0 {
+					return true
+				}
+			case map[string]any:
+				if len(inner) != 0 {
+					return true
+				}
+			case nil:
+			default:
+				return true
+			}
+		}
+		return false
+	case []any:
+		return len(typed) != 0
+	default:
+		return false
+	}
+}
+
+// executionPolicyFinal reports whether the failure is a terminal policy
+// denial, which stays a value: it is the envelope the blocked final is built
+// from, and throwing it would invite retries of a terminally-denied action.
+func executionPolicyFinal(out any) bool {
+	for _, item := range anySlice(mapValue(normalizeValue(out))["errors"]) {
+		extensions := mapValue(mapValue(item)["extensions"])
+		if extensions["policy_final"] == true {
+			return true
+		}
+	}
+	return false
+}
+
+// engineFailureError folds a dataless engine failure into one exception whose
+// text carries everything the old recovery payload did: the engine's message,
+// the attached repair instruction, and the corrected mutation when one exists.
+func engineFailureError(out any, repairedMutation string, mutationSucceeded bool) error {
+	message := "the engine returned errors"
+	if messages := executionErrorMessages(out); len(messages) != 0 {
+		message = messages[0]
+	}
+	recovery := mapValue(mapValue(normalizeValue(out))["recovery"])
+	instruction := strings.TrimSpace(stringFromMap(recovery, "instruction"))
+	// The generic schema-is-authoritative sentence is already appended into the
+	// engine message by attachExecutionRecovery; keep only what the instruction
+	// adds beyond it (rename notes, placeholder guidance, companion columns).
+	instruction = strings.TrimSpace(strings.TrimPrefix(instruction,
+		"The live schema is authoritative; do not report it as broken or propose schema changes—follow errors[].extensions.graphjin_repair and next to re-discover real fields and retry in this run."))
+	thrown := "this call did NOT return data: " + message
+	if instruction != "" {
+		thrown += " — " + instruction
+	}
+	// The corrected query rides the exception verbatim; a pointer at a payload
+	// field is useless to code that will never read the payload.
+	repaired := strings.TrimSpace(stringFromMap(mapValue(recovery["details"]), "repaired_query"))
+	if repaired == "" && !mutationSucceeded {
+		repaired = repairedMutation
+	}
+	if repaired != "" && !strings.Contains(thrown, repaired) {
+		thrown += " Execute this corrected form exactly as given: " + repaired
+	}
+	return fmt.Errorf("%s", thrown)
 }
 
 func (s *discoveryState) addExecutionPolicyViolation(code, message string, details map[string]any) {
@@ -1884,8 +1967,13 @@ func (s *discoveryState) recordValidation(args map[string]any, out any) {
 	m := mapValue(out)
 	if table := strings.ToLower(stringArg(args, "table")); table != "" {
 		// The validation attempt itself is mutation-shape evidence: the model
-		// learned the table's columns and operators even when valid=false.
-		s.tablesValidated[table] = true
+		// learned the table's columns and operators even when valid=false. A
+		// PARSE error is the exception — the compiler never ran, so nothing
+		// about the table was learned, and counting it as evidence let a
+		// garbled clause discharge the mutation-shape prerequisite.
+		if stringFromMap(m, "validated_by") != "parser" || m["valid"] != false {
+			s.tablesValidated[table] = true
+		}
 	}
 	item := map[string]any{
 		"table":    stringArg(args, "table"),
@@ -4902,4 +4990,13 @@ func (r *protocolRuntime) suppliedColumnSummary(ctx context.Context, tables []st
 		return "see this run's catalog evidence"
 	}
 	return strings.Join(parts, "; ")
+}
+
+// firstExecutionErrorMessage lifts the first errors[].message from a built
+// refusal payload so its guidance survives into a thrown exception.
+func firstExecutionErrorMessage(out any, fallback string) string {
+	if messages := executionErrorMessages(out); len(messages) != 0 {
+		return messages[0]
+	}
+	return fallback
 }

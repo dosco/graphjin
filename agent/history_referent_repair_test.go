@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -110,16 +109,26 @@ func TestUnbindableReferentKeepsTheRefusal(t *testing.T) {
 	runtime, base := referentTestRuntime(t, "How many rows does that widget have?",
 		Turn{Role: "user", Content: "Look at widget 9."},
 	)
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { invoices { id } }`})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { invoices { id } }`})
+	if err == nil {
+		t.Fatal("an unbindable subject must throw the refusal")
 	}
 	if base.execCalls != 0 {
 		t.Fatalf("an unbindable subject must not be guessed at, calls=%d", base.execCalls)
 	}
-	payload, _ := json.Marshal(out)
-	if !strings.Contains(string(payload), "history_referent_unresolved") {
-		t.Fatalf("the refusal should stand: %s", payload)
+	for _, want := range []string{"did NOT execute", "widget 9", "Add the where clause"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the refusal must carry %q: %v", want, err)
+		}
+	}
+	found := false
+	for _, violation := range runtime.state.violations {
+		if violation.Code == "history_referent_unresolved" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the refusal should record its violation: %+v", runtime.state.violations)
 	}
 }
 
@@ -153,14 +162,24 @@ func TestSavedQueryReferentRefusalStandsWhenBindable(t *testing.T) {
 		"failed_invoice_amount": `query { invoices(where: { status: { eq: "failed" } }) { sum_amount_cents } }`,
 	}
 	for attempt := 1; attempt <= 4; attempt++ {
-		out, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "failed_invoice_amount"})
-		if err != nil {
-			t.Fatal(err)
+		_, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "failed_invoice_amount"})
+		if err == nil {
+			t.Fatalf("attempt %d: the unscopable saved query must stay refused", attempt)
 		}
-		payload, _ := json.Marshal(out)
-		if !strings.Contains(string(payload), "history_referent_unresolved") {
-			t.Fatalf("attempt %d: the unscopable saved query must stay refused: %s", attempt, payload)
+		for _, want := range []string{"does not filter on it", "Author a query scoped to invoice 10 with execute_graphql"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("attempt %d: the refusal must carry %q: %v", attempt, want, err)
+			}
 		}
+	}
+	found := false
+	for _, violation := range runtime.state.violations {
+		if violation.Code == "history_referent_unresolved" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the refusal should record its violation: %+v", runtime.state.violations)
 	}
 	if got := len(base.calls); got != 0 {
 		t.Fatalf("the unscoped saved query must never reach the runtime, calls=%v", base.calls)
@@ -194,14 +213,13 @@ func TestSavedRouteDemandYieldsToRetainedSubject(t *testing.T) {
 // guard until the run died.
 func TestFailedReadCarriesTheCorrectedQuery(t *testing.T) {
 	runtime, base := referentTestRuntime(t, "What is account 1's MRR in cents?")
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `query { accounts(where: { id: { eq: 1 } }) { id name mrr } }`,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("the dataless read failure must throw")
 	}
-	recovery := mapValue(mapValue(out)["recovery"])
-	repaired := stringFromMap(mapValue(recovery["details"]), "repaired_query")
+	repaired := correctedMutationFromError(t, err)
 	if !strings.Contains(repaired, "mrr_cents") || strings.Contains(repaired, "mrr ") {
 		t.Fatalf("the read repair should rename mrr to mrr_cents: %q", repaired)
 	}
@@ -253,38 +271,33 @@ func TestSystemRootDiscoveryIsSuppliedOnce(t *testing.T) {
 	runtime.state.modelDiscoveryAction = true
 
 	inbox := `query { gj_watch_event(where: { seen: { eq: false } }, order_by: { created_at: desc }, limit: 1) { id watch_id data_json seen } }`
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox})
+	if err == nil || !strings.Contains(err.Error(), "did NOT execute") || !strings.Contains(err.Error(), "Re-execute the exact same call") {
+		t.Fatalf("the first system-root read should be consumed by the supply and thrown: %v", err)
 	}
-	payload, _ := json.Marshal(out)
-	if !strings.Contains(string(payload), "system_root_discovery_supplied") {
-		t.Fatalf("the first system-root read should be answered with the supplied contract: %s", payload)
-	}
-	if !strings.Contains(string(payload), "help:watches") {
-		t.Fatalf("the supply should carry the watch contract: %s", payload)
-	}
-	if len(runtime.state.catalogDetails) == 0 {
-		t.Fatal("the supplied contract must count as detail evidence")
+	if !containsString(runtime.state.catalogDetails, "help:watches") {
+		t.Fatalf("the supplied contract must count as detail evidence: %v", runtime.state.catalogDetails)
 	}
 	if runtime.state.hasBlockingViolation() {
 		t.Fatal("a supplied prerequisite records no violation")
 	}
 	// The control-plane read also owes the one-shot security/runtime supply,
-	// so the ladder is two supplied steps; the attempt after them executes.
+	// so the ladder is two supplied throws; the attempt after them executes.
+	_, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox})
+	if err == nil || !strings.Contains(err.Error(), "security and runtime guidance") {
+		t.Fatalf("the second attempt should be consumed by the security supply: %v", err)
+	}
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox}); err != nil {
+		t.Fatalf("the attempt after both supplies should execute: %v", err)
+	}
 	found := false
-	for attempt := 0; attempt < 3 && !found; attempt++ {
-		if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": inbox}); err != nil {
-			t.Fatal(err)
-		}
-		for _, call := range base.calls {
-			if call == toolExecuteGraphQL {
-				found = true
-			}
+	for _, call := range base.calls {
+		if call == toolExecuteGraphQL {
+			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("the retries should reach the runtime, calls=%v", base.calls)
+		t.Fatalf("the retry should reach the runtime, calls=%v", base.calls)
 	}
 }
 
@@ -296,12 +309,17 @@ func TestAppTableQueriesKeepTheDiscoveryRefusal(t *testing.T) {
 	runtime.state.seedOK = true
 	runtime.state.modelDiscoveryAction = true
 
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { invoices { id } }`})
-	if err != nil {
-		t.Fatal(err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { invoices { id } }`})
+	if err == nil || !strings.Contains(err.Error(), "did NOT execute") || !strings.Contains(err.Error(), "not discovery detail") {
+		t.Fatalf("an app table still requires model-driven discovery: %v", err)
 	}
-	payload, _ := json.Marshal(out)
-	if !strings.Contains(string(payload), "raw_graphql_discovery_required") {
-		t.Fatalf("an app table still requires model-driven discovery: %s", payload)
+	found := false
+	for _, violation := range runtime.state.violations {
+		if violation.Code == "raw_graphql_discovery_required" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the refusal should record its violation: %+v", runtime.state.violations)
 	}
 }

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -74,17 +73,20 @@ func TestExecutionRecoveryNamesRealColumnsOnUnknownColumn(t *testing.T) {
 		runtime.state.tablesDetailed["payments"] = true
 		runtime.state.catalogDetails = []string{"table:app:main.payments"}
 
-		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 			"query": `mutation { payments(insert: { id: 900002, invoice_id: 2, created_at: "2027-01-15T12:00:00Z" }) { id } }`,
 		})
-		if err != nil {
-			t.Fatalf("%q: unexpected transport error: %v", errorMessage, err)
+		if err == nil {
+			t.Fatalf("%q: a dataless engine failure must throw", errorMessage)
 		}
-		payload, _ := json.Marshal(out)
-		for _, want := range []string{"recorded_at", "unknown_column", "table_columns", "execution_error"} {
-			if !strings.Contains(string(payload), want) {
-				t.Fatalf("%q: recovery must name the real columns, missing %q: %s", errorMessage, want, payload)
+		for _, want := range []string{"did NOT return data", errorMessage, "recorded_at"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("%q: the exception must name the real columns, missing %q: %v", errorMessage, want, err)
 			}
+		}
+		repaired := correctedMutationFromError(t, err)
+		if !strings.Contains(repaired, "recorded_at:") {
+			t.Fatalf("%q: the corrected write must use the real column: %q", errorMessage, repaired)
 		}
 		if columns, ok := runtime.state.tableColumnNames["payments"]; !ok || len(columns) != 5 {
 			t.Fatalf("%q: column names must be cached for the run: %v", errorMessage, runtime.state.tableColumnNames)
