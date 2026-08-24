@@ -158,3 +158,92 @@ func describeEntityReferences(refs []entityReference) string {
 	sort.Strings(parts)
 	return strings.Join(parts, ", ")
 }
+
+// A confirmation turn names nothing. "Yes, go ahead and set that up." is the
+// whole request, and the seed searches the catalog with it — which returns
+// generic cards and no idea what is being set up. Every recorded confirmation
+// episode then invented a table that does not exist (a watch over `orders` in
+// a schema whose tables are invoices, accounts, support_tickets) and spent its
+// entire step budget looping on it, 0 of 6 across two benchmark runs.
+//
+// What the run is actually about is one turn back, in the proposal the user is
+// answering. So when the current turn carries no subject of its own, the seed
+// searches the conversation instead of the acknowledgement. The detector is
+// deliberately narrow: it fires only when nothing but confirmation and filler
+// words remain, so every instruction that names anything at all keeps today's
+// behaviour exactly.
+
+// confirmationWords are the acknowledgement and filler tokens a bare
+// confirmation is built from. A turn made only of these asks for something the
+// turn itself never names.
+var confirmationWords = map[string]bool{
+	"yes": true, "yeah": true, "yep": true, "yup": true, "sure": true, "ok": true,
+	"okay": true, "alright": true, "please": true, "go": true, "ahead": true,
+	"do": true, "doit": true, "it": true, "that": true, "this": true, "these": true,
+	"those": true, "them": true, "set": true, "up": true, "thanks": true,
+	"thank": true, "you": true, "confirm": true, "confirmed": true, "proceed": true,
+	"continue": true, "sounds": true, "good": true, "great": true, "perfect": true,
+	"fine": true, "works": true, "correct": true, "right": true, "agreed": true,
+	"affirmative": true, "now": true, "then": true, "and": true, "the": true,
+	"a": true, "an": true, "for": true, "me": true, "us": true, "we": true,
+	"i": true, "lets": true, "let": true, "make": true, "create": true, "one": true,
+}
+
+// instructionCarriesNoSubject reports whether an instruction is built entirely
+// from acknowledgement and filler, naming nothing that could be searched for.
+func instructionCarriesNoSubject(instruction string) bool {
+	trimmed := strings.TrimSpace(instruction)
+	if trimmed == "" {
+		return false
+	}
+	if instructionNamesOwnSubject(trimmed) {
+		return false
+	}
+	words := 0
+	for _, field := range strings.FieldsFunc(strings.ToLower(trimmed), func(r rune) bool {
+		return !('a' <= r && r <= 'z') && !('0' <= r && r <= '9')
+	}) {
+		if field == "" {
+			continue
+		}
+		words++
+		if !confirmationWords[field] {
+			return false
+		}
+	}
+	return words != 0
+}
+
+// seedSearchText returns the text the initial catalog search should run on:
+// the instruction itself whenever it names anything, and otherwise the most
+// recent prior turns that do. Only the seed's search text changes — the
+// instruction stays the instruction everywhere else, because every other guard
+// reads it to decide what the caller actually asked for.
+func seedSearchText(instruction string, history []Turn) string {
+	if !instructionCarriesNoSubject(instruction) {
+		return instruction
+	}
+	var parts []string
+	for i := len(history) - 1; i >= 0 && len(parts) < 2; i-- {
+		content := strings.TrimSpace(history[i].Content)
+		if content == "" || instructionCarriesNoSubject(content) {
+			continue
+		}
+		parts = append([]string{content}, parts...)
+	}
+	if len(parts) == 0 {
+		return instruction
+	}
+	// The retained context leads: it is the part that names tables, filters and
+	// actions, and the search ranks on what it reads first.
+	combined := strings.Join(append(parts, strings.TrimSpace(instruction)), " ")
+	if len(combined) > seedSearchTextLimit {
+		combined = strings.TrimSpace(combined[:seedSearchTextLimit])
+	}
+	return combined
+}
+
+// seedSearchTextLimit keeps the widened seed search close to the length of an
+// ordinary one-sentence instruction; the seed ranks on phrasing, and pasting a
+// whole transcript into it would dilute every term.
+const seedSearchTextLimit = 400
