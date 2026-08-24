@@ -420,21 +420,20 @@ func TestTicketResolutionChainFinalizesAnswered(t *testing.T) {
 		"support_tickets": {"status": {"open", "pending", "resolved"}},
 	}
 
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `mutation { support_tickets(where: { id: { eq: 1 } }, update: { status: "closed", notes: "Sorted." }) { id status } }`,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("the out-of-vocabulary write must throw")
 	}
-	recovery := mapValue(mapValue(out)["recovery"])
-	valueRepair := stringFromMap(mapValue(mapValue(recovery["next"])["args"]), "query")
+	if !strings.Contains(err.Error(), "resolved_at") {
+		t.Fatalf("the exception should teach the companion timestamp: %v", err)
+	}
+	valueRepair := correctedMutationFromError(t, err)
 	if !strings.Contains(valueRepair, `status: "resolved"`) {
-		t.Fatalf("the value repair should correct the vocabulary: %q", valueRepair)
+		t.Fatalf("the exception should carry the corrected vocabulary: %q", valueRepair)
 	}
-	if !strings.Contains(stringFromMap(mapValue(recovery["next"]), "reason"), "resolved_at") {
-		t.Fatalf("the value repair should teach the companion timestamp: %+v", recovery)
-	}
-	out, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": valueRepair})
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": valueRepair})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,11 +476,11 @@ func TestCachedSuccessDischargesLikeAFreshOne(t *testing.T) {
 	}
 	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `mutation { payments(insert: { id: 900002, reference: "INVENTED-REF", invoice_id: 1, amount_cents: 1, recorded_at: "2027-01-15T12:00:00Z" }) { id } }`,
-	}); err != nil {
-		t.Fatal(err)
+	}); err == nil {
+		t.Fatal("the out-of-vocabulary write should throw")
 	}
 	if !runtime.state.hasBlockingViolation() {
-		t.Fatal("the out-of-vocabulary write should be refused")
+		t.Fatal("the refused write should record its violation")
 	}
 	// The model re-selects its earlier correct query; the cache serves it.
 	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": good}); err != nil {
@@ -520,15 +519,19 @@ func TestInterceptedWriteCannotBeReportedAsDone(t *testing.T) {
 	runtime.state.securityRuntimeEvidence = false
 	runtime.catalogOverrideForSupply(base)
 
-	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+	// The supply consumes the call AND throws: straight-line executor code
+	// treats any non-exception as success, so a supplied write that returned a
+	// friendly value was narrated as done in 26 recorded episodes.
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 		"query": `mutation { payments(insert: { id: 900001, reference: "DEEPORG-PAY-001", invoice_id: 1, amount_cents: 480000, recorded_at: "2027-01-15T12:00:00Z" }) { id } }`,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("the consumed write must throw")
 	}
-	payload, _ := json.Marshal(out)
-	if !strings.Contains(string(payload), "security_runtime_evidence_supplied") {
-		t.Fatalf("the first write should be consumed by the supply: %s", payload)
+	for _, want := range []string{"did NOT execute", "Re-execute the exact same mutation"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the exception must carry %q: %v", want, err)
+		}
 	}
 	if len(base.writes) != 0 {
 		t.Fatalf("nothing may land during the supply: %v", base.writes)
@@ -562,8 +565,8 @@ func TestInterceptedWriteRetriedToSuccessFinalizesAnswered(t *testing.T) {
 	write := map[string]any{
 		"query": `mutation { payments(insert: { id: 900001, reference: "DEEPORG-PAY-001", invoice_id: 1, amount_cents: 480000, recorded_at: "2027-01-15T12:00:00Z" }) { id } }`,
 	}
-	if _, err := runtime.ExecuteGraphQL(context.Background(), write); err != nil {
-		t.Fatal(err)
+	if _, err := runtime.ExecuteGraphQL(context.Background(), write); err == nil {
+		t.Fatal("the consumed first write must throw")
 	}
 	if _, err := runtime.ExecuteGraphQL(context.Background(), write); err != nil {
 		t.Fatal(err)

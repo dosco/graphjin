@@ -271,8 +271,11 @@ func TestExecutorLoopRepairsMutationEvidenceWithExactContinuation(t *testing.T) 
 		t.Fatalf("raw GraphQL calls = %d, rejected mutation must not reach the base runtime", runtime.graphqlCalls)
 	}
 	repairPrompt := dumpAXValue(rec.calls[3].values) + dumpAXValue(rec.calls[3].options)
-	if !strings.Contains(repairPrompt, "mutation_evidence_required") || !strings.Contains(repairPrompt, "graphjin_repair") {
-		t.Fatal("mutation rejection did not reach the next executor turn as structured repair evidence")
+	// The rejection now travels as a thrown exception, so the next executor
+	// turn carries its text — leading with the fact nothing ran, and naming
+	// the exact catalog detail to fetch.
+	if !strings.Contains(repairPrompt, "did NOT execute") || !strings.Contains(repairPrompt, "table:app:main.products") {
+		t.Fatal("mutation rejection did not reach the next executor turn as a thrown teaching")
 	}
 	postContinuationPrompt := dumpAXValue(rec.calls[4].values) + dumpAXValue(rec.calls[4].options)
 	if !strings.Contains(postContinuationPrompt, detailSentinel) {

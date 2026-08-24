@@ -1539,6 +1539,11 @@ type executeResult struct {
 	// Recovery carries deterministic in-run repair guidance attached by the
 	// protocol runtime when Errors is non-empty.
 	Recovery any `json:"recovery,omitempty"`
+	// Guidance rides ax's trusted guidance channel: the runtime lifts it into
+	// the agent's guidance log, which is rendered into every subsequent turn's
+	// prompt. This is the one path teaching survives on when the model's
+	// already-written straight-line code never inspects the return value.
+	Guidance string `json:"guidance,omitempty"`
 	// Truncation marks result lists that reached their compiled row limit:
 	// pages, not populations. Aggregates over such lists are unsafe.
 	Truncation *TruncationInfo `json:"truncation,omitempty"`

@@ -160,69 +160,51 @@ func TestObservedValueNoticeRefusesAnIdenticalRetry(t *testing.T) {
 	runtime.state.catalogDetails = []string{"table:app:main.support_tickets"}
 	args := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed"}) { id status } }`}
 
-	first, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
-	if err != nil {
-		t.Fatalf("first attempt errored instead of returning a repair: %v", err)
+	// The refusal now THROWS: executor code is straight-line JavaScript, so a
+	// value-return cannot interrupt `await execute_graphql(m); await
+	// final("done")` — only an exception can. The message carries everything
+	// the old recovery payload did, corrected mutation included.
+	_, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err == nil {
+		t.Fatal("the out-of-vocabulary write must throw")
 	}
-	payload, _ := json.Marshal(first)
-	if !strings.Contains(string(payload), "observed_value_mismatch") {
-		t.Fatalf("first attempt should surface the vocabulary notice: %s", payload)
+	if !strings.Contains(err.Error(), "did NOT execute") {
+		t.Fatalf("the exception must lead with the fact that nothing ran: %v", err)
 	}
-	// The notice must not advertise the bypass. Offering "or re-execute this write
-	// unchanged" alongside the instruction is the option models took: across two runs
-	// "closed" writes rose from 46 to 64 while "resolved" fell to 2.
-	if strings.Contains(string(payload), "unchanged") {
-		t.Fatalf("the notice must not present re-sending unchanged as an equal choice: %s", payload)
+	// The message must not advertise the bypass. Offering "or re-execute this
+	// write unchanged" alongside the instruction is the option models took.
+	if strings.Contains(err.Error(), "unchanged") {
+		t.Fatalf("the exception must not present re-sending unchanged as an equal choice: %v", err)
 	}
-	if !strings.Contains(string(payload), "open, pending, resolved") {
-		t.Fatalf("the notice must name the values to choose from: %s", payload)
+	if !strings.Contains(err.Error(), "open, pending, resolved") {
+		t.Fatalf("the exception must name the values to choose from: %v", err)
 	}
 	if base.mutationCalls != 0 {
-		t.Fatalf("the write must not reach the database on the notice, calls=%d", base.mutationCalls)
+		t.Fatalf("the write must not reach the database, calls=%d", base.mutationCalls)
 	}
 
 	// The identical retry is refused again — and it consumes the second strike,
-	// exactly like a reworded one. Strikes are keyed on the mismatch itself
-	// (table, column, value), not the query text: a text-keyed veto was measured
-	// in run dcea36f8 to re-fire 5–7 times per episode with no let-through ever,
-	// because models reword rather than resubmit byte-identically.
-	second, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
-	if err != nil {
-		t.Fatalf("the identical retry should return a repair, not an error: %v", err)
-	}
-	payload, _ = json.Marshal(second)
-	if !strings.Contains(string(payload), "observed_value_mismatch") {
-		t.Fatalf("an identical retry must be refused again: %s", payload)
+	// exactly like a reworded one.
+	if _, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args)); err == nil {
+		t.Fatal("an identical retry must be refused again")
 	}
 	if base.mutationCalls != 0 {
 		t.Fatalf("an identical retry must not reach the database, calls=%d", base.mutationCalls)
 	}
 
-	// The third attempt used to land as an informed override (dcea36f8). The
-	// Muse-Glimmer run measured who actually used that override: 8 episodes
-	// writing "closed" into open|pending|resolved after ignoring the exact
-	// repair twice — invalid states persisted to the database. With a
-	// clear-winner repaired_query in hand the refusal now stands past the
-	// strike cap, and the repair itself is the way forward.
+	// With a clear-winner repair in hand the refusal stands past the strike
+	// cap, and the exception text itself carries the corrected mutation.
 	persisted := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed", resolution_note: "the customer insists on closed"}) { id status } }`}
-	third, err := runtime.ExecuteGraphQL(context.Background(), persisted)
-	if err != nil {
-		t.Fatalf("the third attempt should return a repair, not an error: %v", err)
-	}
-	payload, _ = json.Marshal(third)
-	for _, want := range []string{"observed_value_mismatch", "mutation_value_repair", "repaired_query"} {
-		if !strings.Contains(string(payload), want) {
-			t.Fatalf("third attempt with a repair in hand must keep refusing (missing %q): %s", want, payload)
-		}
+	_, err = runtime.ExecuteGraphQL(context.Background(), persisted)
+	if err == nil {
+		t.Fatal("third attempt with a repair in hand must keep refusing")
 	}
 	if base.mutationCalls != 0 {
 		t.Fatalf("an out-of-vocabulary write with a known repair must never reach the database, calls=%d", base.mutationCalls)
 	}
-	// The recovery's next step IS the corrected write, ready to execute.
-	next := mapValue(mapValue(mapValue(third)["recovery"])["next"])
-	repairedQuery := stringFromMap(mapValue(next["args"]), "query")
+	repairedQuery := correctedMutationFromError(t, err)
 	if !strings.Contains(repairedQuery, `"resolved"`) {
-		t.Fatalf("repair next must carry the corrected query, got %q", repairedQuery)
+		t.Fatalf("the exception must carry the corrected query, got %q", repairedQuery)
 	}
 	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": repairedQuery}); err != nil {
 		t.Fatalf("the repaired write should execute: %v", err)
@@ -230,6 +212,22 @@ func TestObservedValueNoticeRefusesAnIdenticalRetry(t *testing.T) {
 	if base.mutationCalls != 1 {
 		t.Fatalf("expected the repaired write to execute, calls=%d", base.mutationCalls)
 	}
+}
+
+// correctedMutationFromError extracts the corrected mutation the exception
+// text carries, from "Execute this corrected mutation exactly as given: ..."
+// to the end of the mutation (the message may append a schema note after an
+// em dash separator).
+func correctedMutationFromError(t *testing.T, err error) string {
+	t.Helper()
+	_, after, found := strings.Cut(err.Error(), "exactly as given: ")
+	if !found {
+		t.Fatalf("exception does not carry the corrected mutation: %v", err)
+	}
+	if query, _, split := strings.Cut(after, " — "); split {
+		return strings.TrimSpace(query)
+	}
+	return strings.TrimSpace(after)
 }
 
 // When no clear-winner repair exists — the written value resembles nothing the
@@ -247,16 +245,15 @@ func TestObservedValueListOnlyMismatchStillLandsOnThirdAttempt(t *testing.T) {
 	args := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "xx"}) { id status } }`}
 
 	for attempt := 1; attempt <= 2; attempt++ {
-		out, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
-		if err != nil {
-			t.Fatalf("attempt %d errored: %v", attempt, err)
+		_, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+		if err == nil {
+			t.Fatalf("attempt %d should be refused with an exception", attempt)
 		}
-		payload, _ := json.Marshal(out)
-		if !strings.Contains(string(payload), "observed_value_mismatch") {
-			t.Fatalf("attempt %d should be refused: %s", attempt, payload)
+		if !strings.Contains(err.Error(), "did NOT execute") {
+			t.Fatalf("attempt %d must lead with the fact that nothing ran: %v", attempt, err)
 		}
-		if strings.Contains(string(payload), "repaired_query") {
-			t.Fatalf("no repair should exist for %q: %s", "xx", payload)
+		if strings.Contains(err.Error(), "exactly as given") {
+			t.Fatalf("no repair should exist for %q: %v", "xx", err)
 		}
 	}
 	if base.mutationCalls != 0 {
@@ -391,40 +388,32 @@ func TestObservedValueNoticeCarriesTheCorrectedWrite(t *testing.T) {
 	runtime.state.catalogDetails = []string{"table:app:main.support_tickets"}
 	args := map[string]any{"query": `mutation { support_tickets(where: {id: {eq: 2}}, update: {status: "closed"}) { id status } }`}
 
-	first, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
-	if err != nil {
-		t.Fatalf("first attempt errored instead of returning a repair: %v", err)
+	// The refusal throws, and the exception text is the whole channel: it
+	// names the observed vocabulary and carries the corrected mutation inline.
+	_, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err == nil {
+		t.Fatal("the out-of-vocabulary write must throw")
 	}
-	payload, _ := json.Marshal(first)
-	for _, want := range []string{"repaired_query", "closest_values", "closest of these"} {
-		if !strings.Contains(string(payload), want) {
-			t.Fatalf("notice must carry %q: %s", want, payload)
+	for _, want := range []string{"did NOT execute", "closest of these", "exactly as given"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("exception must carry %q: %v", want, err)
 		}
 	}
-	// Assert on the decoded mutation, not on JSON escaping.
-	var decoded map[string]any
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	repairedText := ""
-	var dig func(any)
-	dig = func(v any) {
-		switch typed := v.(type) {
-		case map[string]any:
-			if q, ok := typed["repaired_query"].(string); ok {
-				repairedText = q
-			}
-			for _, item := range typed {
-				dig(item)
-			}
-		case []any:
-			for _, item := range typed {
-				dig(item)
-			}
-		}
-	}
-	dig(decoded)
+	repairedText := correctedMutationFromError(t, err)
 	if !strings.Contains(repairedText, `status: "resolved"`) {
-		t.Fatalf("repaired mutation should carry the suggested value: %q", repairedText)
+		t.Fatalf("corrected mutation should carry the suggested value: %q", repairedText)
+	}
+	// The violation record still carries the structured details for scoring.
+	found := false
+	for _, violation := range runtime.state.violations {
+		if violation.Code == "observed_value_mismatch" {
+			found = true
+			if stringFromMap(violation.Details, "repaired_query") == "" {
+				t.Fatalf("the violation should retain the repaired query: %+v", violation.Details)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("the refusal should record its violation")
 	}
 }

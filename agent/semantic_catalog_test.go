@@ -391,29 +391,26 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:discovery"}); err != nil {
 			t.Fatal(err)
 		}
-		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		// The supply consumes the call AND throws: to straight-line executor
+		// code, any non-exception reads as a successful write.
+		_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 			"query": `mutation { products(insert: {name: "x"}) { id } }`,
 		})
-		if err != nil {
-			t.Fatal(err)
+		if err == nil || !strings.Contains(err.Error(), "Re-execute the exact same mutation") {
+			t.Fatalf("first write should be consumed by the supply and thrown: %v", err)
 		}
-		result := mapValue(out)
-		if stringFromMap(result, "graphjin_protocol") != "security_runtime_evidence_supplied" {
-			t.Fatalf("first write = %+v, want supplied security/runtime guidance", out)
-		}
-		if len(anySlice(result["cards"])) == 0 {
-			t.Fatalf("supply must carry the guidance cards: %+v", out)
+		if !runtime.state.securityRuntimeEvidence {
+			t.Fatal("the supply must record the guidance as evidence")
 		}
 		// The supplied evidence discharges the prerequisite: the identical
 		// re-execute progresses to the next guard on the write path instead of
 		// refusing security/runtime again.
-		out, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		_, err = runtime.ExecuteGraphQL(context.Background(), map[string]any{
 			"query": `mutation { products(insert: {name: "x"}) { id } }`,
 		})
-		if err != nil {
-			t.Fatal(err)
+		if err == nil || !strings.Contains(err.Error(), "mutation-shape evidence") {
+			t.Fatalf("second write should progress to the mutation-evidence guard: %v", err)
 		}
-		assertRepair(t, out, "mutation_evidence_required")
 	})
 
 	t.Run("security runtime refusal stands when the cards cannot be fetched", func(t *testing.T) {
@@ -433,13 +430,12 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:discovery"}); err != nil {
 			t.Fatal(err)
 		}
-		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 			"query": `mutation { products(insert: {name: "x"}) { id } }`,
 		})
-		if err != nil {
-			t.Fatal(err)
+		if err == nil || !strings.Contains(err.Error(), "security and runtime guidance") {
+			t.Fatalf("the refusal should throw with the prerequisite named: %v", err)
 		}
-		assertRepair(t, out, "security_runtime_discovery_required")
 		if runtime.state.securityRuntimeEvidenceSupplied {
 			t.Fatal("a failed supply must leave the one-shot attempt unspent")
 		}
@@ -453,28 +449,19 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 			t.Fatal(err)
 		}
 		write := map[string]any{"query": `mutation { products(insert: {name: "x"}) { id } }`}
+		_, err := runtime.ExecuteGraphQL(context.Background(), write)
+		if err == nil || !strings.Contains(err.Error(), "mutation-shape evidence") {
+			t.Fatalf("first refusal should throw the teaching: %v", err)
+		}
+		_, err = runtime.ExecuteGraphQL(context.Background(), write)
+		if err == nil || !strings.Contains(err.Error(), "loaded the catalog detail") {
+			t.Fatalf("repeat refusal should supply the evidence and throw the retry instruction: %v", err)
+		}
 		out, err := runtime.ExecuteGraphQL(context.Background(), write)
-		if err != nil {
-			t.Fatal(err)
+		if err != nil && strings.Contains(err.Error(), "mutation-shape evidence") {
+			t.Fatalf("third attempt still refused for mutation evidence: %v", err)
 		}
-		assertRepair(t, out, "mutation_evidence_required")
-		out, err = runtime.ExecuteGraphQL(context.Background(), write)
-		if err != nil {
-			t.Fatal(err)
-		}
-		result := mapValue(out)
-		if stringFromMap(result, "graphjin_protocol") != "mutation_shape_evidence_supplied" {
-			t.Fatalf("repeat refusal = %+v, want supplied mutation-shape evidence", out)
-		}
-		out, err = runtime.ExecuteGraphQL(context.Background(), write)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if executionFailed(out) {
-			if code := stringFromMap(mapValue(mapValue(anySlice(mapValue(out)["errors"])[0])["extensions"]), "code"); code == "mutation_evidence_required" {
-				t.Fatalf("third attempt still refused for mutation evidence: %+v", out)
-			}
-		}
+		_ = out
 	})
 
 	t.Run("repeat refusal for an unresolvable table still refuses", func(t *testing.T) {
@@ -484,11 +471,10 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		}
 		write := map[string]any{"query": `mutation { ghosts(insert: {name: "x"}) { id } }`}
 		for attempt := 1; attempt <= 2; attempt++ {
-			out, err := runtime.ExecuteGraphQL(context.Background(), write)
-			if err != nil {
-				t.Fatal(err)
+			_, err := runtime.ExecuteGraphQL(context.Background(), write)
+			if err == nil || !strings.Contains(err.Error(), "mutation-shape evidence") {
+				t.Fatalf("attempt %d should refuse with the thrown teaching: %v", attempt, err)
 			}
-			assertRepair(t, out, "mutation_evidence_required")
 		}
 	})
 
@@ -497,16 +483,11 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
 			t.Fatal(err)
 		}
-		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 			"query": `mutation { products(insert: {name: "x"}) { id } }`,
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertRepair(t, out, "mutation_evidence_required")
-		next := mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"])
-		if !containsString(stringSliceArg(next, "ids"), "table:app:main.products") {
-			t.Fatalf("mutation repair did not name exact table detail: %+v", next)
+		if err == nil || !strings.Contains(err.Error(), "table:app:main.products") {
+			t.Fatalf("the thrown refusal must name the exact table detail: %v", err)
 		}
 	})
 
@@ -529,19 +510,14 @@ func TestRecoverableWriteGuardsCarryStructuredRepair(t *testing.T) {
 		if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
 			t.Fatal(err)
 		}
-		out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
 			"query": `mutation { gj_watch(insert: {name: "late_products", query: "subscription { products { id } }"}) { id } }`,
 		})
-		if err != nil {
-			t.Fatal(err)
+		if err == nil || !strings.Contains(err.Error(), "help:watches") {
+			t.Fatalf("the thrown watch refusal must name help:watches: %v", err)
 		}
-		assertRepair(t, out, "mutation_evidence_required")
-		next := mapValue(mapValue(mapValue(mapValue(out)["recovery"])["next"])["args"])
-		if !containsString(stringSliceArg(next, "ids"), "help:watches") {
-			t.Fatalf("watch repair did not name help:watches: %+v", next)
-		}
-		if !containsString(stringSliceArg(next, "ids"), "table:app:main.products") {
-			t.Fatalf("watch repair did not name embedded subscription table: %+v", next)
+		if !strings.Contains(err.Error(), "table:app:main.products") {
+			t.Fatalf("the thrown watch refusal must name the embedded subscription table: %v", err)
 		}
 	})
 }
@@ -567,9 +543,9 @@ func TestMutationEvidenceRepairRequiresSuccessfulRetryBeforeFinal(t *testing.T) 
 		t.Fatal(err)
 	}
 	query := `mutation { products(insert: {name: "x"}) { id } }`
-	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
-	if err != nil || !executionFailed(first) {
-		t.Fatalf("first mutation = %+v err=%v, want recoverable guard result", first, err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
+	if err == nil || !strings.Contains(err.Error(), "mutation-shape evidence") {
+		t.Fatalf("first mutation should throw the evidence requirement: %v", err)
 	}
 	if pending := runtime.state.pendingRequiredFinalization(); !strings.HasPrefix(pending, "execution_evidence_required:") {
 		t.Fatalf("pending before detail = %q", pending)
@@ -662,14 +638,14 @@ func TestMutationEvidenceRepairRoutesWeakModelBroadSearchToExactDialectEvidence(
 	}
 
 	query := `mutation { update_support_tickets_by_pk(pk_columns: {id: 2}, _set: {status: "resolved"}) { id } }`
-	first, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
-	if err != nil || !executionFailed(first) {
-		t.Fatalf("first mutation = %+v err=%v, want recoverable guard result", first, err)
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": query})
+	if err == nil || !strings.Contains(err.Error(), "mutation-shape evidence") {
+		t.Fatalf("first mutation should throw the evidence requirement: %v", err)
 	}
-	nextArgs := mapValue(mapValue(mapValue(mapValue(first)["recovery"])["next"])["args"])
-	ids := stringSliceArg(nextArgs, "ids")
-	if !containsString(ids, "help:mutations") || !containsString(ids, "table:app:main.support_tickets") {
-		t.Fatalf("mutation dialect repair args = %+v, want exact syntax and table detail", nextArgs)
+	for _, id := range []string{"help:mutations", "table:app:main.support_tickets"} {
+		if !strings.Contains(err.Error(), id) {
+			t.Fatalf("the thrown refusal must name %s: %v", id, err)
+		}
 	}
 
 	// This reproduces the weak-model failure from the public run: it ignores the
@@ -735,14 +711,13 @@ func TestWatchCreationRecoversThroughContractAndEmbeddedSubscriptionDetail(t *te
 			"query": `subscription($cursor: Cursor) { payments(first: 25, after: $cursor) { id created_at } payments_cursor }`,
 		}},
 	}
-	first, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
-	if err != nil || !executionFailed(first) || base.graphqlCalls != 0 {
-		t.Fatalf("watch prerequisite = %+v err=%v calls=%d", first, err, base.graphqlCalls)
+	_, err := runtime.ExecuteGraphQL(context.Background(), cloneAnyMap(args))
+	if err == nil || base.graphqlCalls != 0 {
+		t.Fatalf("watch prerequisite should throw before execution, err=%v calls=%d", err, base.graphqlCalls)
 	}
-	nextArgs := mapValue(mapValue(mapValue(mapValue(first)["recovery"])["next"])["args"])
 	for _, id := range []string{"help:watches", "table:app:main.payments"} {
-		if !containsString(stringSliceArg(nextArgs, "ids"), id) {
-			t.Fatalf("watch prerequisite args = %+v, missing %s", nextArgs, id)
+		if !strings.Contains(err.Error(), id) {
+			t.Fatalf("the thrown prerequisite must name %s: %v", id, err)
 		}
 	}
 	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"search": "another broad attempt"}); err != nil {
