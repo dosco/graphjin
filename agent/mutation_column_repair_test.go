@@ -540,6 +540,18 @@ func TestSuppliedPrerequisiteLetsTheWriteLand(t *testing.T) {
 	if runtime.state.hasBlockingViolation() {
 		t.Fatalf("a supplied prerequisite records no violation: %+v", runtime.state.violations)
 	}
+	// One tool call must leave one action behind. The supply used to record a
+	// synthetic execute_graphql beside the real one, which double-counted a
+	// single call in the action log and in step accounting.
+	calls := 0
+	for _, a := range runtime.state.actions {
+		if a.Tool == "execute_graphql" {
+			calls++
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("one call recorded %d execute_graphql actions: %+v", calls, runtime.state.actions)
+	}
 	// The write really happened, so reporting it done is now earned rather
 	// than narrated over an interception.
 	resp := runtime.state.finalize(Response{Status: StatusAnswered, Answer: "Successfully recorded payment DEEPORG-PAY-001."})
