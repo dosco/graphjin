@@ -336,7 +336,7 @@ func newDiscoveryState(instruction string) *discoveryState {
 
 func (r *protocolRuntime) Seed(ctx context.Context) (any, error) {
 	args := map[string]any{
-		"search":  r.state.instruction,
+		"search":  seedSearchText(r.state.instruction, r.state.history),
 		"explain": true,
 		"limit":   r.seedLimit,
 	}
