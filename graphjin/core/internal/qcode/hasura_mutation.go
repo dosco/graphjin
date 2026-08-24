@@ -2,7 +2,6 @@ package qcode
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
@@ -291,31 +290,11 @@ func hasuraPKColumnsToWhere(pk *graph.Node, table sdata.DBTable) (*graph.Node, e
 }
 
 func (co *Compiler) unknownHasuraMutationRootError(requestedRoot, baseName, verb string) error {
-	want := strings.ToLower(co.ParseName(baseName))
-	var suggestions []string
-	seen := make(map[string]bool)
-	for _, table := range co.s.GetTables() {
-		name := strings.ToLower(table.Name)
-		if want == "" || (!strings.Contains(name, want) && !strings.Contains(want, name) && !strings.HasSuffix(name, "_"+want)) {
-			continue
-		}
-		suggestion := verb + "_" + table.Name
-		if !seen[suggestion] {
-			seen[suggestion] = true
-			suggestions = append(suggestions, suggestion)
-		}
-	}
-	sort.Strings(suggestions)
-	if len(suggestions) > 3 {
-		suggestions = suggestions[:3]
-	}
-	if len(suggestions) == 1 {
-		return fmt.Errorf("unknown Hasura-compatible mutation root %q: table %q was not found; did you mean %q?", requestedRoot, baseName, suggestions[0])
-	}
-	if len(suggestions) > 1 {
-		return fmt.Errorf("unknown Hasura-compatible mutation root %q: table %q was not found; did you mean one of %q?", requestedRoot, baseName, suggestions)
-	}
-	return fmt.Errorf("unknown Hasura-compatible mutation root %q: table %q was not found", requestedRoot, baseName)
+	suggestions := decorateTableSuggestions(co.suggestTableNames(baseName), func(name string) string {
+		return verb + "_" + name
+	})
+	return fmt.Errorf("unknown Hasura-compatible mutation root %q: table %q was not found%s",
+		requestedRoot, baseName, didYouMeanClause(suggestions))
 }
 
 func hasuraMutationSupportError(requestedRoot, baseName, verb, detail string) error {

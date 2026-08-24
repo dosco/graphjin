@@ -1845,6 +1845,8 @@ func (r *coreRuntime) ValidateWhereClause(ctx context.Context, args map[string]a
 		return nil, fmt.Errorf("failed to get schema for table %q: %w", table, err)
 	}
 
+	table, database = resolvedValidationTarget(table, database, schema)
+
 	whereData, whereLiteral, err := parseWhereClauseInput(rawWhere)
 	if err != nil {
 		return whereValidationResult{
@@ -2188,6 +2190,30 @@ func validationSelectField(schema *core.TableSchema) string {
 		return schema.Columns[0].Name
 	}
 	return ""
+}
+
+// resolvedValidationTarget returns the table and database the validation result
+// should be built from.
+//
+// A table card titles itself with its qualified name, so "app.public.users" is
+// what a model reads off the catalog and passes here. core resolves that, but
+// everything downstream needs the bare name: the example query is GraphQL,
+// where roots are unqualified, so a dotted root is rejected outright as an
+// unsupported table name — moving the failure rather than fixing it. Only a
+// qualified name is rewritten, so a lookup that already worked is untouched.
+func resolvedValidationTarget(table, database string, schema *core.TableSchema) (string, string) {
+	if schema == nil || !strings.Contains(table, ".") {
+		return table, database
+	}
+	if schema.Name != "" {
+		table = schema.Name
+	}
+	if database == "" {
+		// The qualification named a database; keep it so the example query
+		// stays unambiguous when the bare name exists in more than one.
+		database = schema.Database
+	}
+	return table, database
 }
 
 func buildWhereValidationQuery(table, database, whereLiteral, field string) (string, error) {
