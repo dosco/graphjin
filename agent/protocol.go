@@ -2641,18 +2641,22 @@ func (s *discoveryState) missingMutationEvidence(roots []string) []string {
 		if strings.HasPrefix(root, "gj_") {
 			continue
 		}
-		table, dialectRepair := s.mutationTargetTable(root)
-		if dialectRepair && !s.hasCatalogDetailID("help:mutations") {
-			missing = appendUniqueString(missing, root)
-			continue
-		}
+		// A Hasura-dialect root (update_x, insert_x_by_pk) used to additionally
+		// demand help:mutations, because the engine rejected that syntax and
+		// the model had to learn GraphJin's. Core now lowers and executes it,
+		// so the demand is friction in front of a write that works: resolve the
+		// root to its table and require exactly what any other write requires.
+		table, _ := s.mutationTargetTable(root)
 		if s.tablesDetailed[table] || s.tablesValidated[table] {
 			continue
 		}
 		if s.detailKinds["mutation_pattern"] && s.tableSeenInCatalog(table) {
 			continue
 		}
-		missing = appendUniqueString(missing, root)
+		// Report the table the write actually targets. Naming the dialect root
+		// sent the model looking for a catalog card called
+		// update_support_tickets_by_pk, which does not exist.
+		missing = appendUniqueString(missing, table)
 	}
 	return missing
 }
@@ -2793,10 +2797,10 @@ func (s *discoveryState) mutationEvidenceNext(tables []string) map[string]any {
 			ids = append(ids, "help:watches")
 			continue
 		}
-		target, dialectRepair := s.mutationTargetTable(table)
-		if dialectRepair && !s.hasCatalogDetailID("help:mutations") {
-			ids = append(ids, "help:mutations")
-		}
+		// The dialect docs used to be added here for a Hasura-spelled root,
+		// because the engine rejected that syntax. Core lowers and executes it
+		// now, so the repair names only the evidence the write actually needs.
+		target, _ := s.mutationTargetTable(table)
 		// An unresolved target must not discard the ids that did resolve. A weak
 		// model handed a bare "enumerate visible tables" directive obeys it
 		// literally, gets a list, and retries the same rejected mutation: a list
