@@ -701,6 +701,15 @@ func databaseStrictAggregateIntent(instruction string) bool {
 	return false
 }
 
+// foldToWords lowercases text and reduces every run of non-alphanumeric
+// characters to a single space, so identifiers and prose can be compared on
+// the same footing.
+func foldToWords(text string) string {
+	return strings.Join(strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}), " ")
+}
+
 func queryUsesDatabaseRanking(query, instruction string) bool {
 	if !databaseLimitPattern.MatchString(query) {
 		return false
@@ -709,10 +718,17 @@ func queryUsesDatabaseRanking(query, instruction string) bool {
 	if len(match) != 2 {
 		return false
 	}
-	rankedColumn := strings.Join(strings.FieldsFunc(strings.ToLower(match[1]), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	}), " ")
-	return rankedColumn != "" && strings.Contains(strings.ToLower(instruction), rankedColumn)
+	// Both sides are normalized the same way. The column is folded to words
+	// ("due_at" -> "due at"), so folding only the column and searching the raw
+	// instruction compared a normalized needle against an unnormalized
+	// haystack: "the latest date recorded in invoices.due_at" does not contain
+	// "due at", so a correct order_by+limit read was judged not to rank by the
+	// asked-for column. The database-computation guard then refused to let the
+	// run finalize and the episode spent its whole budget re-querying — 12 of
+	// 15 recorded runaways, and the frozen suite's own method gate accepts that
+	// exact order_by+limit form.
+	rankedColumn := foldToWords(match[1])
+	return rankedColumn != "" && strings.Contains(foldToWords(instruction), rankedColumn)
 }
 
 func resultContainsAggregateField(value any) bool {
