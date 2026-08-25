@@ -3,61 +3,25 @@ package qcode
 import (
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
-// maxTableSuggestions caps how many names an error offers. A short list gets
-// acted on; a long one gets skimmed and the name guessed again.
-const maxTableSuggestions = 3
-
-// suggestTableNames returns the tables whose names are related to want, sorted
-// and capped, for a "did you mean" clause.
-//
-// Matching is deliberately loose rather than a spelling distance, because the
-// misses worth catching are not misspellings: a model reading "the support SLA
-// policy file" asks for `policies` when the table is `sla_policies`, or for
-// `ticket` when it is `support_tickets`. Substring and suffix cover exactly
-// that, so a dropped or added qualifier still resolves to the real name.
+// suggestTableNames returns the tables whose names are related to want. The
+// matching rule lives in sdata so the compiler and the public API cannot drift
+// apart on what counts as a near miss.
 func (co *Compiler) suggestTableNames(want string) []string {
-	want = strings.ToLower(co.ParseName(want))
-	if want == "" {
-		return nil
+	tables := co.s.GetTables()
+	names := make([]string, 0, len(tables))
+	for _, t := range tables {
+		names = append(names, t.Name)
 	}
-	var names []string
-	seen := make(map[string]bool)
-	for _, table := range co.s.GetTables() {
-		name := strings.ToLower(table.Name)
-		if !strings.Contains(name, want) && !strings.Contains(want, name) && !strings.HasSuffix(name, "_"+want) {
-			continue
-		}
-		if seen[table.Name] {
-			continue
-		}
-		seen[table.Name] = true
-		names = append(names, table.Name)
-	}
-	sort.Strings(names)
-	if len(names) > maxTableSuggestions {
-		names = names[:maxTableSuggestions]
-	}
-	return names
+	return sdata.MatchTableNames(co.ParseName(want), names)
 }
 
-// didYouMeanClause renders suggestions as an error suffix, and renders nothing
-// when there are none — an error that trails off into "did you mean?" with no
-// names is worse than one that stops.
+// didYouMeanClause renders suggestions as an error suffix.
 func didYouMeanClause(suggestions []string) string {
-	switch len(suggestions) {
-	case 0:
-		return ""
-	case 1:
-		return fmt.Sprintf("; did you mean %q?", suggestions[0])
-	default:
-		return fmt.Sprintf("; did you mean one of %q?", suggestions)
-	}
+	return sdata.DidYouMeanClause(suggestions)
 }
 
 // decorateTableSuggestions applies a root-naming scheme to suggested table

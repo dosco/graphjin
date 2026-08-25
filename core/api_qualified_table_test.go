@@ -105,3 +105,37 @@ func TestSplitQualifiedTableName(t *testing.T) {
 		})
 	}
 }
+
+// The agent's validate_where_clause hands a failed lookup to this, so a model
+// that guessed a near-miss name gets the real one back instead of a dead end.
+func TestSuggestTableNames(t *testing.T) {
+	g := newGraphJinWithSchemas(t, map[string]*sdata.DBSchema{"app": mustTestSchema(t)})
+
+	got := g.SuggestTableNames("customer")
+	if len(got) == 0 {
+		t.Fatalf("SuggestTableNames(customer) found nothing; tables are %v", tableNamesOf(g))
+	}
+	found := false
+	for _, n := range got {
+		if n == "customers" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("SuggestTableNames(customer) = %v, want it to include customers", got)
+	}
+	if unrelated := g.SuggestTableNames("warehouses"); len(unrelated) != 0 {
+		t.Fatalf("an unrelated name must stay unsuggested, got %v", unrelated)
+	}
+	if clause := DidYouMeanClause(g.SuggestTableNames("customer")); !strings.Contains(clause, "customers") {
+		t.Fatalf("clause = %q, want it to name customers", clause)
+	}
+}
+
+func tableNamesOf(g *GraphJin) []string {
+	var out []string
+	for _, t := range g.GetTables() {
+		out = append(out, t.Name)
+	}
+	return out
+}
