@@ -66,6 +66,45 @@ func TestGraphJinRuntimeScopesConsoleOutputToItsTurn(t *testing.T) {
 	}
 }
 
+// The discovery seed the agent hands the model is 25-27KB against a 16KB
+// diagnostics budget. Before ax #604 that budget deleted the whole line, so
+// console.log(seed) — the most natural thing a model does first — produced
+// silence: 14 of the 15 steps still blind after #602 were exactly this. The
+// value must come back trimmed, and say so, or the model cannot learn to
+// narrow.
+func TestGraphJinRuntimeTrimsAnOversizedLogRatherThanDroppingIt(t *testing.T) {
+	runtime := newGraphJinCodeRuntime(func() any { return nil }, nil, nil, nil)
+	session, err := runtime.CreateSession(map[string]ax.Value{
+		"inputs": map[string]any{"instruction": "inspect the catalog"},
+	}, map[string]ax.Value{"reservedNames": []any{"inputs"}})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer session.Close()
+
+	step := mapValue(session.Execute(`const seed = {cards: Array.from({length: 400}, (_, i) => ({id: "table:app:main.t" + i, summary: "y".repeat(80)}))};
+console.log(seed);`, nil))
+
+	logs, ok := step["logs"].([]ax.Value)
+	if !ok || len(logs) != 1 {
+		t.Fatalf("an oversized log must come back trimmed, not dropped: %#v", step)
+	}
+	line := strings.Join(valuesToStrings(logs), " ")
+	if !strings.Contains(line, "truncated") {
+		t.Fatalf("the trimmed line must say what happened: %q", line[max(0, len(line)-120):])
+	}
+	if !strings.Contains(line, "table:app:main.t0") {
+		t.Fatalf("the head of the value must survive: %q", line[:120])
+	}
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func valuesToStrings(values []ax.Value) []string {
 	out := make([]string, 0, len(values))
 	for _, v := range values {
