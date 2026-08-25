@@ -4,19 +4,20 @@ benchmark:
     slug: deeporg
     name: DeepORG — The Organizational Agent Benchmark
 suite:
-    generation: "2028.2"
-    comparison_generation: "2028.2"
-    scope_label: 2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source · 2028.1 — intent-phrased tasks with execution twins · 2028.2 — cross-source ruler fix (v11)
+    generation: "2028.3"
+    comparison_generation: "2028.3"
+    scope_label: 2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source · 2028.1 — intent-phrased tasks with execution twins · 2028.2 — cross-source ruler fix (v11) · 2028.3 — executable join shape for join-only tables
     generation_scopes:
         "2026.1": governed read-only Q&A
         "2026.2": governed read-only Q&A
         "2027.1": adds writes, alerts, follow-ups, multi-source
         "2028.1": intent-phrased tasks with execution twins, v10 ruler
         "2028.2": 'cross-source ruler fix (v11): argument-free file reads count'
+        "2028.3": 'catalog teaches the executable join shape for join-only tables'
     generator_version: graphjin.eval.generator/v11
-    identity: 308df3840f76a1e97096df77c3e41f1e
-    suite_fingerprint: b77fb918d9dd40dc7204cc4241d6c763
-    catalog_hash: 51a57f1958b4c8e15a09f10d73f6a3f9
+    identity: 6bbda80e4859c163152d7997061fdf13
+    suite_fingerprint: 9e9a9f53f07a6fc7b691e312a9833c30
+    catalog_hash: c4ee2c0d346f636f9230881f7fa9d912
     seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
     mode: bench
     seed: 23
@@ -90,13 +91,13 @@ runs:
         window: 0.85
       mean_reward: 0.8867989999999999
       total_tokens: 8976653
-      provider_total_tokens: 8976653
-      unsafe_effects: 0
-      accepted: true
       prompt_tokens: 8687496
       completion_tokens: 289157
+      provider_total_tokens: 8976653
       estimated_list_cost_usd: 3.329141
       estimated_list_cost_per_task_usd: 0.03329141
+      unsafe_effects: 0
+      accepted: true
     - run_id: 20260807T024250.026811000Z-e8e04365
       slug: 20260807t024250-e8e04365
       label: Gemini 3.5 Flash-Lite
@@ -687,11 +688,11 @@ runs:
       provider_total_tokens: 10881311
       latency_p50_ms: 3913
       latency_p95_ms: 10326
+      estimated_list_cost_usd: 3.78162
+      estimated_list_cost_per_task_usd: 0.03346566
       guard_interventions: 191
       unsafe_effects: 0
       accepted: true
-      estimated_list_cost_usd: 3.78162
-      estimated_list_cost_per_task_usd: 0.03346566
     - run_id: 20260813T043216.981294000Z-57cb4974
       slug: 20260813t043216-57cb4974
       label: GPT-5.4 mini
@@ -746,11 +747,11 @@ runs:
       provider_total_tokens: 8989457
       latency_p50_ms: 5673
       latency_p95_ms: 14439
+      estimated_list_cost_usd: 7.807607
+      estimated_list_cost_per_task_usd: 0.06909386
       guard_interventions: 71
       unsafe_effects: 0
       accepted: true
-      estimated_list_cost_usd: 7.807607
-      estimated_list_cost_per_task_usd: 0.06909386
     - run_id: 20260814T005526.922342000Z-0b24fec8
       slug: 20260814t005526-0b24fec8
       label: Gemini 3.7 Flash
@@ -805,11 +806,11 @@ runs:
       provider_total_tokens: 14177476
       latency_p50_ms: 17484
       latency_p95_ms: 98083
+      estimated_list_cost_usd: 10.956699
+      estimated_list_cost_per_task_usd: 0.09696194
       guard_interventions: 113
       unsafe_effects: 0
       accepted: true
-      estimated_list_cost_usd: 10.956699
-      estimated_list_cost_per_task_usd: 0.09696194
     - run_id: 20260814T082221.174245000Z-167bfd6e
       slug: 20260814t082221-167bfd6e
       label: Gemini 3.5 Flash
@@ -859,20 +860,20 @@ runs:
         window: 0.5333333333333333
       mean_reward: 0.7748061946902661
       total_tokens: 27020170
+      prompt_tokens: 25360860
+      completion_tokens: 457517
       provider_total_tokens: 27020170
       latency_p50_ms: 27699
       latency_p95_ms: 78792
+      estimated_list_cost_usd: 42.158943
+      estimated_list_cost_per_task_usd: 0.37308799
       usage_incomplete: true
+      usage_unknown_attempts: 2
+      cost_is_lower_bound: true
       guard_interventions: 120
       unsafe_effects: 0
       rescored_from: 20260813T084030.817526000Z-d86d5b60
       accepted: true
-      prompt_tokens: 25360860
-      completion_tokens: 457517
-      estimated_list_cost_usd: 42.158943
-      estimated_list_cost_per_task_usd: 0.37308799
-      usage_unknown_attempts: 2
-      cost_is_lower_bound: true
     - run_id: 20260814T084150.544485000Z-5d12a35b
       slug: 20260814t084150-5d12a35b
       label: Gemini 3.7 Flash
@@ -927,11 +928,11 @@ runs:
       provider_total_tokens: 13626436
       latency_p50_ms: 10225
       latency_p95_ms: 32128
+      estimated_list_cost_usd: 10.572142
+      estimated_list_cost_per_task_usd: 0.09355878
       guard_interventions: 127
       unsafe_effects: 0
       accepted: true
-      estimated_list_cost_usd: 10.572142
-      estimated_list_cost_per_task_usd: 0.09355878
     - run_id: 20260815T054944.123786000Z-dcea36f8
       slug: 20260815t054944-dcea36f8
       label: Gemini 3.5 Flash-Lite
@@ -986,11 +987,11 @@ runs:
       provider_total_tokens: 10593288
       latency_p50_ms: 3839
       latency_p95_ms: 9869
+      estimated_list_cost_usd: 3.680618
+      estimated_list_cost_per_task_usd: 0.03257184
       guard_interventions: 231
       unsafe_effects: 0
       accepted: true
-      estimated_list_cost_usd: 3.680618
-      estimated_list_cost_per_task_usd: 0.03257184
     - run_id: 20260816T001003.659008000Z-61f8293f
       slug: 20260816t001003-61f8293f
       label: Gemini 3.7 Flash
@@ -1053,12 +1054,12 @@ runs:
       provider_total_tokens: 13626436
       latency_p50_ms: 10225
       latency_p95_ms: 32128
+      estimated_list_cost_usd: 10.572142
+      estimated_list_cost_per_task_usd: 0.09355878
       guard_interventions: 127
       unsafe_effects: 0
       rescored_from: 20260814T084150.544485000Z-5d12a35b
       accepted: true
-      estimated_list_cost_usd: 10.572142
-      estimated_list_cost_per_task_usd: 0.09355878
     - run_id: 20260816T001039.601090000Z-72791803
       slug: 20260816t001039-72791803
       label: Gemini 3.5 Flash-Lite
@@ -1121,12 +1122,12 @@ runs:
       provider_total_tokens: 10593288
       latency_p50_ms: 3839
       latency_p95_ms: 9869
+      estimated_list_cost_usd: 3.680618
+      estimated_list_cost_per_task_usd: 0.03257184
       guard_interventions: 231
       unsafe_effects: 0
       rescored_from: 20260815T054944.123786000Z-dcea36f8
       accepted: true
-      estimated_list_cost_usd: 3.680618
-      estimated_list_cost_per_task_usd: 0.03257184
     - run_id: 20260816T012127.830979000Z-e02e25a8
       slug: 20260816t012127-e02e25a8
       label: DeepSeek V4 Flash
@@ -1189,12 +1190,12 @@ runs:
       provider_total_tokens: 22695637
       latency_p50_ms: 15951
       latency_p95_ms: 34782
+      estimated_list_cost_usd: 2.211206
+      estimated_list_cost_per_task_usd: 0.0195682
       guard_interventions: 71
       unsafe_effects: 0
       rescored_from: 20260815T234331.343589000Z-b30a7a42
       accepted: true
-      estimated_list_cost_usd: 2.211206
-      estimated_list_cost_per_task_usd: 0.0195682
     - run_id: 20260816T072200.196202000Z-3e8d5a0d
       slug: 20260816t072200-3e8d5a0d
       label: Gemini 3.5 Flash-Lite
@@ -1257,17 +1258,18 @@ runs:
       provider_total_tokens: 12594963
       latency_p50_ms: 3851
       latency_p95_ms: 11287
+      estimated_list_cost_usd: 4.403546
+      estimated_list_cost_per_task_usd: 0.03896944
       guard_interventions: 168
       unsafe_effects: 0
       accepted: true
-      estimated_list_cost_usd: 4.403546
-      estimated_list_cost_per_task_usd: 0.03896944
     - run_id: 20260817T101800.809022000Z-73745472
       slug: 20260817t101800-73745472
       label: Gemma 4 26B A4B IT (Vertex AI MaaS)
       release: 87cbb798
       notes: Vertex AI MaaS on-demand; 8 concurrent episode slots, mutation episodes exclusive, 300-second agent deadline. Resumed twice after OAuth expiry. Usage and cost withheld because 3 transient failed attempts lacked token metadata.
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.2)
       generation: "2028.2"
       generated_at: 2026-08-17T12:05:28.725921Z
       model: google/gemma-4-26b-a4b-it-maas
@@ -1383,26 +1385,27 @@ runs:
         questions: 0.4262295081967213
       mean_reward: 0.8027300884955749
       total_tokens: 29341266
+      prompt_tokens: 8113996
+      completion_tokens: 15430406
       provider_total_tokens: 29341266
       latency_p50_ms: 210206
       latency_p95_ms: 950617
+      estimated_list_cost_usd: 5.456473
+      estimated_list_cost_per_task_usd: 0.04828737
       usage_incomplete: true
+      usage_unknown_attempts: 19
+      cost_is_lower_bound: true
       guard_interventions: 100
       unsafe_effects: 0
       rescored_from: 20260817T080637.033539000Z-b3deb70b
       accepted: true
-      prompt_tokens: 8113996
-      completion_tokens: 15430406
-      estimated_list_cost_usd: 5.456473
-      estimated_list_cost_per_task_usd: 0.04828737
-      usage_unknown_attempts: 19
-      cost_is_lower_bound: true
     - run_id: 20260818T021049.661097000Z-ab21692a
       slug: 20260818t021049-ab21692a
       label: Gemini 3.5 Flash-Lite
       release: e6ea37df
       notes: Generation 2028.2 rescored from run 20260816T072200 to attach provider list pricing from the committed price card; scores are unchanged and reproduced exactly from the stored episodes.
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.2)
       generation: "2028.2"
       generated_at: 2026-08-18T02:10:49.661097Z
       model: gemini-3.5-flash-lite
@@ -1472,7 +1475,8 @@ runs:
       label: DeepSeek V4 Flash
       release: 56da87df
       notes: Generation 2028.2 under ax 23.0.16 with thinking enabled at reasoning_effort high, on the validated json_object output rung. Supersedes the earlier DeepSeek row, which ran with thinking silently disabled and scored 0.177. Episodes ran 8-wide with mutation tasks write-locked, so latency percentiles are not comparable with serial rows. Token accounting has 19 unknown attempts from provider timeouts, so usage and cost are withheld rather than understated.
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.2)
       generation: "2028.2"
       generated_at: 2026-08-19T08:21:08.835413Z
       model: deepseek-v4-flash
@@ -1524,26 +1528,27 @@ runs:
         questions: 0.4262295081967213
       mean_reward: 0.8027300884955749
       total_tokens: 29341266
+      prompt_tokens: 8113996
+      completion_tokens: 15430406
       provider_total_tokens: 29341266
       latency_p50_ms: 210206
       latency_p95_ms: 950617
+      estimated_list_cost_usd: 5.456473
+      estimated_list_cost_per_task_usd: 0.04828737
       usage_incomplete: true
+      usage_unknown_attempts: 19
+      cost_is_lower_bound: true
       guard_interventions: 100
       unsafe_effects: 0
       rescored_from: 20260817T080637.033539000Z-b3deb70b
       accepted: true
-      prompt_tokens: 8113996
-      completion_tokens: 15430406
-      estimated_list_cost_usd: 5.456473
-      estimated_list_cost_per_task_usd: 0.04828737
-      usage_unknown_attempts: 19
-      cost_is_lower_bound: true
     - run_id: 20260819T083357.332460000Z-fa494f5c
       slug: 20260819t083357-fa494f5c
       label: Gemini 3.7 Flash
       release: 2e9e4a3d
       notes: Generation 2028.2 rescored from run 20260814T084150 to attach provider list pricing from the committed price card; scores are unchanged and reproduced exactly from the stored episodes.
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.2)
       generation: "2028.2"
       generated_at: 2026-08-19T08:33:57.33246Z
       model: gemini-3.7-flash
@@ -1613,7 +1618,8 @@ runs:
       label: meta-models/Muse-Glimmer-30B
       release: c0d8130d
       notes: Run used --concurrency 3; the public suite has no mutation tasks so episodes are independent, but this is not a serial run.
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.2)
       generation: "2028.2"
       generated_at: 2026-08-21T19:14:07.926123Z
       model: meta-models/Muse-Glimmer-30B
@@ -1664,16 +1670,84 @@ runs:
         questions: 0.36065573770491804
       mean_reward: 0.8065389380530974
       total_tokens: 22471310
+      prompt_tokens: 12000461
+      completion_tokens: 5053281
       provider_total_tokens: 22471310
       latency_p50_ms: 124162
       latency_p95_ms: 512383
+      estimated_list_cost_usd: 11.780083
+      estimated_list_cost_per_task_usd: 0.10424852
       usage_incomplete: true
+      usage_unknown_attempts: 6
+      cost_is_lower_bound: true
       guard_interventions: 195
       unsafe_effects: 0
       accepted: true
-      prompt_tokens: 12000461
-      completion_tokens: 5053281
-      estimated_list_cost_usd: 11.780083
-      estimated_list_cost_per_task_usd: 0.10424852
-      usage_unknown_attempts: 6
-      cost_is_lower_bound: true
+    - run_id: 20260825T211515.779635000Z-3f73f1dc
+      slug: 20260825t211515-3f73f1dc
+      label: gemini-3.5-flash-lite
+      release: 5163ebfc
+      ranked: true
+      generation: "2028.3"
+      generated_at: 2026-08-25T21:25:44.293747Z
+      model: gemini-3.5-flash-lite
+      provider: gemini
+      graphjin_commit: 5163ebfc
+      binary_fingerprint: 0b0fce4f903a96819253d4a1533e505ac0b07402682f4ecf97b89b50c593b0d0
+      suite_identity: 6bbda80e4859c163152d7997061fdf13
+      suite_fingerprint: 9e9a9f53f07a6fc7b691e312a9833c30
+      catalog_hash: c4ee2c0d346f636f9230881f7fa9d912
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 9dc656d4a40445f883559b4e31b99a48685066c996a9ad41505e8f61be768bc2
+      data_anchor: "2026-08-25"
+      reward_version: graphjin.eval.reward/v4
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.7787610619469026
+      recall_ci_low: 0.7079646017699115
+      recall_ci_high: 0.8495575221238938
+      pass_at_k: 0.911504424778761
+      pass_power_k: 0.5575221238938053
+      ground_truth_recall: 0.7961165048543689
+      method_recall: 0.8543689320388349
+      safety_precision: 0.9911504424778761
+      behavior_recall: 0.911504424778761
+      category_recall:
+        action: 0.6666666666666666
+        aggregate: 1
+        cross-source: 0.375
+        discovery: 0.9
+        multi-turn: 0.7142857142857143
+        ranking: 0.8333333333333334
+        reactive: 0.4166666666666667
+        refusal: 1
+        saved-metric: 0.8888888888888888
+        window: 0.8666666666666667
+      rollup_recall:
+        governance: 1
+        operations: 0.5476190476190477
+        questions: 0.9016393442622951
+      rollup_pass_power:
+        governance: 0.9
+        operations: 0.35714285714285715
+        questions: 0.639344262295082
+      mean_reward: 0.8848982300884949
+      total_tokens: 12406632
+      prompt_tokens: 12123011
+      completion_tokens: 283621
+      provider_total_tokens: 12406632
+      latency_p50_ms: 4614
+      latency_p95_ms: 12331
+      prompt_price_per_million: 0.3
+      completion_price_per_million: 2.5
+      estimated_list_cost_usd: 4.3459558
+      estimated_list_cost_per_task_usd: 0.03845978584070796
+      pricing_source: https://ai.google.dev/gemini-api/docs/pricing (standard, 2026-08-06)
+      guard_interventions: 85
+      unsafe_effects: 1
+      accepted: false
