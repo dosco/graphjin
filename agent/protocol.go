@@ -2351,7 +2351,25 @@ func (s *discoveryState) pendingRecoverableExecution() string {
 		return ""
 	}
 	if s.recoverableExecutionEvidenceMissing(violation) {
-		return "execution_evidence_required: the attempted GraphQL operation is missing required same-run evidence. Follow errors[].extensions.graphjin_repair.next in a discovery-only actor step; after the result is visible, re-author and execute the operation before finalizing."
+		// Name the lookup inline. This requirement is delivered as a thrown
+		// exception, so "follow errors[].extensions.graphjin_repair.next"
+		// pointed at a payload that does not exist on the throw path — the
+		// caller was told to read a field it could not see, and had nothing to
+		// act on. Recorded runs deadlocked here: the write asked for evidence,
+		// the caller re-ran its read to comply, that read was refused for not
+		// satisfying this requirement, and it repeated the same read up to
+		// eight times before the step budget ended the run.
+		exact := ""
+		if args := s.pendingRecoverableCatalogArgs(); len(args) != 0 {
+			if ids := stringSliceArg(args, "ids"); len(ids) != 0 {
+				exact = fmt.Sprintf(" Run query_catalog({ids:[\"%s\"]}) now", strings.Join(ids, `","`))
+			}
+		}
+		if exact == "" {
+			exact = " Run the catalog lookup named by the rejected write"
+		}
+		return "execution_evidence_required: the attempted GraphQL operation is missing required same-run evidence." + exact +
+			", then re-author and execute the operation. Re-running an earlier read does not satisfy this requirement."
 	}
 	return "execution_retry_required: the required evidence is now present, but the rejected GraphQL operation has not been retried successfully. Re-author it from the returned detail and execute it before finalizing."
 }
