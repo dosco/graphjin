@@ -1722,6 +1722,24 @@ func (g *GraphJin) GetTables() []TableInfo {
 	return gj.getTables("")
 }
 
+// SuggestTableNames returns role-visible table names close to want, for a
+// "did you mean" on a lookup that found nothing. A caller handed only "not
+// found" has no way back; handed the real name, it has exactly one.
+func (g *GraphJin) SuggestTableNames(want string) []string {
+	tables := g.GetTables()
+	names := make([]string, 0, len(tables))
+	for _, t := range tables {
+		names = append(names, t.Name)
+	}
+	return sdata.MatchTableNames(want, names)
+}
+
+// DidYouMeanClause renders suggested names as an error suffix, and renders
+// nothing when there are none.
+func DidYouMeanClause(suggestions []string) string {
+	return sdata.DidYouMeanClause(suggestions)
+}
+
 // SchemaReady returns true if the engine has a usable schema.
 // Use this to check before calling methods that access the schema
 // to avoid nil pointer dereferences during partial initialization.

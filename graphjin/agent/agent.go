@@ -1842,7 +1842,13 @@ func (r *coreRuntime) ValidateWhereClause(ctx context.Context, args map[string]a
 		schema, err = r.gj.GetTableSchema(table)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get schema for table %q: %w", table, err)
+		// Name the table it probably meant. Handed only "not found", a model
+		// re-sends the same guess until its step budget runs out — the recorded
+		// runs alternated `tickets` and `support_ticket` while the real table
+		// sat there as `support_tickets`, and every episode that hit this
+		// failed. One real name is the whole difference.
+		suggestion := core.DidYouMeanClause(r.gj.SuggestTableNames(table))
+		return nil, fmt.Errorf("failed to get schema for table %q: %w%s", table, err, suggestion)
 	}
 
 	table, database = resolvedValidationTarget(table, database, schema)
