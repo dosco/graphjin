@@ -578,13 +578,43 @@ func (ti *DBTable) getColumn(name string) (DBColumn, bool) {
 	return c, false
 }
 
-// GetColumn returns a column from a table
+// GetColumn returns a column from a table.
+//
+// A miss names what the table actually has. The selection path has always
+// listed available columns; this path — which every where clause, order_by and
+// filter goes through — said only "not found", and a caller with no way back
+// re-guesses. Recorded runs spent 13 lookups alternating `priority` and
+// `urgency` on a table whose column is `severity`, which one glance at the list
+// would have settled.
 func (ti *DBTable) GetColumn(name string) (DBColumn, error) {
 	c, ok := ti.getColumn(name)
 	if ok {
 		return c, nil
 	}
-	return c, fmt.Errorf("column: '%s.%s' not found", ti.Name, name)
+	return c, fmt.Errorf("column: '%s.%s' not found%s", ti.Name, name, ti.columnHint(name))
+}
+
+// maxListedColumns bounds the column list in an error. A wide table would
+// otherwise bury the answer in its own schema.
+const maxListedColumns = 24
+
+// columnHint renders the did-you-mean and the available columns for a missed
+// lookup, in that order: the suggestion is the answer when there is one, and
+// the list is what lets a caller pick when there is not.
+func (ti *DBTable) columnHint(want string) string {
+	if len(ti.Columns) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(ti.Columns))
+	for _, c := range ti.Columns {
+		names = append(names, c.Name)
+	}
+	hint := DidYouMeanClause(MatchTableNames(want, names))
+	if len(names) > maxListedColumns {
+		return hint + fmt.Sprintf("; available columns include: %s (%d more)",
+			strings.Join(names[:maxListedColumns], ", "), len(names)-maxListedColumns)
+	}
+	return hint + "; available columns: " + strings.Join(names, ", ")
 }
 
 // ColumnExists returns true if a column exists in a table
