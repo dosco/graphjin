@@ -34,9 +34,9 @@ func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 		return
 	}
 
-	to, extra, err := s.resolveRemotes(c, from, sfmap, s.requestedRootCursorFields())
-	if err != nil {
-		return
+	to, extra, resolveErr := s.resolveRemotes(c, from, sfmap, s.requestedRootCursorFields())
+	if resolveErr != nil && len(to) != len(from) {
+		return resolveErr
 	}
 
 	var ob bytes.Buffer
@@ -50,8 +50,11 @@ func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 		}
 		s.dhash = sha256.Sum256(s.data)
 		s.data, err = encryptValues(s.data, s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
+		if err != nil {
+			return err
+		}
 	}
-	return
+	return resolveErr
 }
 
 // resolveRemotes fetches remote data for the marked insertion points
@@ -106,6 +109,9 @@ func (s *gstate) resolveRemotes(
 		if !ok {
 			return nil, nil, fmt.Errorf("no resolver found for remote %q", rkey)
 		}
+		// Keep a null replacement ready so a resolver failure cannot leak the
+		// internal marker into the partial GraphQL response.
+		to[i] = jsn.Field{Key: []byte(sel.FieldName)}
 
 		go func(n int, id []byte, sel *qcode.Select, r resItem, rkey string) {
 			defer wg.Done()
