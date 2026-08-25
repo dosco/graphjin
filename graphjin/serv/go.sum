@@ -108,6 +108,8 @@ github.com/ax-llm/ax/packages/go v0.0.0-20260823224931-16d893e85969 h1:e+xaMZRcK
 github.com/ax-llm/ax/packages/go v0.0.0-20260823224931-16d893e85969/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/ax-llm/ax/packages/go v0.0.0-20260825014147-1386c3a409b1 h1:qfzGkj1ulhmaRRFRVA3WPFWwCISxwiurfUK6xJGjO/I=
 github.com/ax-llm/ax/packages/go v0.0.0-20260825014147-1386c3a409b1/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
+github.com/ax-llm/ax/packages/go v0.0.0-20260825082915-973e292fcbcd h1:Ma3QTwkavcgj6b1mLD9J+uoOcPOs/866LZU2ix+M5eI=
+github.com/ax-llm/ax/packages/go v0.0.0-20260825082915-973e292fcbcd/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/bahlo/generic-list-go v0.2.0 h1:5sz/EEAK+ls5wF+NeqDpk5+iNdMDXrh3z3nPnH1Wvgk=
 github.com/bahlo/generic-list-go v0.2.0/go.mod h1:2KvAjgMlE5NNynlg/5iLrrCCZ2+5xWbdbCW3pNTGyYg=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 h1:mXoPYz/Ul5HYEDvkta6I8/rnYM5gSdSV2tJ6XbZuEtY=
