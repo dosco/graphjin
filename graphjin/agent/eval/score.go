@@ -469,12 +469,24 @@ func countTraceEvents(value any, match func(map[string]any) bool) int64 {
 	return count
 }
 
+// timestampPattern matches the date and clock forms that appear in answers.
+// Their digits are not quantities the model reported, and reading them as such
+// invents candidates: "2026-08-25T00:00:00Z" yields 2026, -8, -25 and three
+// zeros, so an oracle expecting 0 matched any answer carrying a timestamp
+// regardless of the number the model actually gave. A false pass is worse than
+// a false failure, because it certifies an answer nobody checked.
+var timestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?|\d{1,2}:\d{2}(?::\d{2})?`)
+
 func answerNumberCandidates(rule AnswerRule, answer string, data any) []float64 {
 	pattern := defaultNumberPattern
 	if rule.ExtractRegex != "" {
 		if custom, err := regexp.Compile(rule.ExtractRegex); err == nil {
 			pattern = custom
 		}
+	} else {
+		// Only the default extractor is filtered. A task that supplies its own
+		// regex has said exactly what it wants read, including from a date.
+		answer = timestampPattern.ReplaceAllString(answer, " ")
 	}
 	var candidates []float64
 	for _, match := range pattern.FindAllString(answer, 64) {
@@ -492,8 +504,16 @@ func answerNumberCandidates(rule AnswerRule, answer string, data any) []float64 
 	return candidates
 }
 
+// matchWithScales reports whether a candidate is the oracle value, allowing for
+// a unit scale and a percentage tolerance.
+//
+// tolerancePct is a percentage, as its name says. It used to be applied as a
+// raw fraction, so a task written with the obvious meaning — 5 for five
+// percent — got a five-hundred percent window and accepted almost any number.
+// The task schema is public and the authoring prompt asks for tolerance_pct by
+// name, so the field had to start meaning what it is called.
 func matchWithScales(candidate, oracle float64, scales []float64, tolerancePct float64) bool {
-	tolerance := tolerancePct
+	tolerance := tolerancePct / 100
 	if tolerance <= 0 {
 		tolerance = 1e-9
 	}
