@@ -88,3 +88,18 @@ func TestProviderRateLimitRecognizesGoogleQueueExhaustion(t *testing.T) {
 		t.Fatalf("rate-limit classification = %+v", classification)
 	}
 }
+
+// Cerebras reports its token bucket without the literal phrase "rate limit".
+// Missing this wording turned 236 throttled benchmark episodes into permanent
+// agent failures, so the harness scored provider weather as model quality.
+func TestProviderRateLimitRecognizesCerebrasTokenBucket(t *testing.T) {
+	for _, message := range []string{
+		"Tokens per minute limit exceeded - too many tokens processed.",
+		"Requests per minute limit exceeded.",
+	} {
+		classification := ClassifyProviderError(errors.New(message))
+		if classification.Code != ErrorCodeProviderRateLimit || !classification.Retryable {
+			t.Fatalf("ClassifyProviderError(%q) = %+v, want retryable %s", message, classification, ErrorCodeProviderRateLimit)
+		}
+	}
+}
