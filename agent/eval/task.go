@@ -292,6 +292,13 @@ func (t Task) validateShape() error {
 	if !validDifficulty(t.Difficulty) {
 		return fmt.Errorf("task %q has invalid difficulty %q", t.Slug, t.Difficulty)
 	}
+	// A percentage over 100 is a unit mistake, not an intent: it would accept
+	// numbers further from the answer than the answer itself. Catching it at
+	// load keeps a mis-typed tolerance from silently certifying wrong answers
+	// for a whole run.
+	if t.Answer.TolerancePct < 0 || t.Answer.TolerancePct > 100 {
+		return fmt.Errorf("task %q has tolerance_pct %g; it is a percentage and must be between 0 and 100", t.Slug, t.Answer.TolerancePct)
+	}
 	for index, turn := range t.Turns {
 		if turn.Role != "user" && turn.Role != "assistant" {
 			return fmt.Errorf("task %q turn %d has invalid role %q", t.Slug, index+1, turn.Role)
