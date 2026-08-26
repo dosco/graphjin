@@ -622,6 +622,14 @@ func responseEnvironmentCode(response gjagent.Response) (string, bool) {
 			retryable, _ := responseError.Extensions["retryable"].(bool)
 			return code, retryable
 		}
+		// Provider failures created by the agent have status "error" and carry a
+		// provider_* extension. Keep the message fallback for older responses that
+		// predate that structured contract, but never apply it to a governed
+		// refusal: application errors such as access_unauthorized intentionally say
+		// "unauthorized" and are model outcomes, not provider credential failures.
+		if response.Status != gjagent.StatusError {
+			continue
+		}
 		message := strings.ToLower(strings.TrimSpace(responseError.Message))
 		if raw, err := json.Marshal(responseError.Extensions); err == nil {
 			message += " " + strings.ToLower(string(raw))
