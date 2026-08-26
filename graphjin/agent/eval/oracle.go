@@ -21,10 +21,15 @@ type HTTPDoer interface {
 }
 
 type OracleResult struct {
-	Value     string         `json:"value"`
-	Dimension string         `json:"dimension,omitempty"`
-	Data      any            `json:"data,omitempty"`
-	Variables map[string]any `json:"variables,omitempty"`
+	Value     string `json:"value"`
+	Dimension string `json:"dimension,omitempty"`
+	// DimensionAlternates are other identifiers that name the same row. A task
+	// asking "which record" is answered by any unambiguous identifier, so the
+	// oracle carries every one it selected rather than forcing the one field it
+	// happened to project.
+	DimensionAlternates []string       `json:"dimension_alternates,omitempty"`
+	Data                any            `json:"data,omitempty"`
+	Variables           map[string]any `json:"variables,omitempty"`
 }
 
 type Verifier struct {
@@ -91,6 +96,15 @@ func (v Verifier) Resolve(ctx context.Context, oracle OracleSpec) (OracleResult,
 			return result, nil
 		}
 		return OracleResult{}, fmt.Errorf("oracle extract %q is empty", oracle.Extract)
+	}
+	for _, path := range oracle.DimensionAlternateExtracts {
+		raw, ok := walkPath(data, path)
+		if !ok {
+			continue
+		}
+		if alt := strings.TrimSpace(valueString(raw)); alt != "" {
+			result.DimensionAlternates = append(result.DimensionAlternates, alt)
+		}
 	}
 	if oracle.DimensionExtract != "" {
 		rawDimension, ok := walkPath(data, oracle.DimensionExtract)

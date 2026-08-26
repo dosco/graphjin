@@ -31,8 +31,13 @@ const (
 	AttemptSchemaVersion   = "graphjin.eval.attempt/v1"
 	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
 	// generated task semantics change, including method-rule dialect support.
-	GeneratorVersion      = "graphjin.eval.generator/v11"
-	RewardVersion         = "graphjin.eval.reward/v4"
+	GeneratorVersion = "graphjin.eval.generator/v11"
+	// RewardVersion v5: a "which record" answer may name the row by any
+	// identifier the oracle selected, not only the one field it projected. No
+	// frozen task declares alternates yet, so this changes no existing verdict;
+	// it is the scoring half of the fix, landed ahead of the suite regeneration
+	// that would let tasks project a second identifier.
+	RewardVersion         = "graphjin.eval.reward/v5"
 	DefaultSuiteSize      = 24
 	DefaultRepeats        = 3
 	DefaultEvaluationDir  = "eval"
@@ -157,11 +162,15 @@ type OracleSpec struct {
 	Variables        map[string]any `json:"variables,omitempty" yaml:"variables,omitempty"`
 	Extract          string         `json:"extract,omitempty" yaml:"extract,omitempty"`
 	DimensionExtract string         `json:"dimension_extract,omitempty" yaml:"dimension_extract,omitempty"`
-	DimensionLiteral string         `json:"dimension_literal,omitempty" yaml:"dimension_literal,omitempty"`
-	PickMax          *PickMaxRule   `json:"pick_max,omitempty" yaml:"pick_max,omitempty"`
-	AnchorQuery      string         `json:"anchor_query,omitempty" yaml:"anchor_query,omitempty"`
-	AnchorExtract    string         `json:"anchor_extract,omitempty" yaml:"anchor_extract,omitempty"`
-	AllowMissing     bool           `json:"allow_missing,omitempty" yaml:"allow_missing,omitempty"`
+	// DimensionAlternateExtracts name the same row by another field the query
+	// selects — typically its primary key. Any one of them satisfies the
+	// dimension check, because "which record" has more than one right answer.
+	DimensionAlternateExtracts []string     `json:"dimension_alternate_extracts,omitempty" yaml:"dimension_alternate_extracts,omitempty"`
+	DimensionLiteral           string       `json:"dimension_literal,omitempty" yaml:"dimension_literal,omitempty"`
+	PickMax                    *PickMaxRule `json:"pick_max,omitempty" yaml:"pick_max,omitempty"`
+	AnchorQuery                string       `json:"anchor_query,omitempty" yaml:"anchor_query,omitempty"`
+	AnchorExtract              string       `json:"anchor_extract,omitempty" yaml:"anchor_extract,omitempty"`
+	AllowMissing               bool         `json:"allow_missing,omitempty" yaml:"allow_missing,omitempty"`
 }
 
 type PickMaxRule struct {
