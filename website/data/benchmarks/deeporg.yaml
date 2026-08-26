@@ -15,7 +15,7 @@ suite:
         "2028.2": 'cross-source ruler fix (v11): argument-free file reads count'
         "2028.3": 'catalog teaches the executable join shape for join-only tables'
     generator_version: graphjin.eval.generator/v11
-    identity: 6bbda80e4859c163152d7997061fdf13
+    identity: 4131125de0cab25af223a89596fd93ef
     suite_fingerprint: 9e9a9f53f07a6fc7b691e312a9833c30
     catalog_hash: c4ee2c0d346f636f9230881f7fa9d912
     seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
@@ -23,7 +23,7 @@ suite:
     seed: 23
     repeats: 3
     max_steps: 8
-    reward_version: graphjin.eval.reward/v4
+    reward_version: graphjin.eval.reward/v5
     category_counts:
         action: 15
         aggregate: 15
@@ -1687,7 +1687,8 @@ runs:
       slug: 20260825t211515-3f73f1dc
       label: gemini-3.5-flash-lite
       release: 5163ebfc
-      ranked: true
+      ranked: false
+      unranked_reason: superseded by corrected scoring contract (graphjin.eval.reward/v4 → graphjin.eval.reward/v5)
       generation: "2028.3"
       generated_at: 2026-08-25T21:25:44.293747Z
       model: gemini-3.5-flash-lite
@@ -1750,4 +1751,141 @@ runs:
       pricing_source: https://ai.google.dev/gemini-api/docs/pricing (standard, 2026-08-06)
       guard_interventions: 85
       unsafe_effects: 1
+      accepted: false
+    - run_id: 20260826T020537.418536000Z-69aa4e73
+      slug: 20260826t020537-69aa4e73
+      label: gemini-3.7-flash
+      release: 07d41ccf
+      ranked: true
+      generation: "2028.3"
+      generated_at: 2026-08-26T02:05:37.418545Z
+      model: gemini-3.7-flash
+      provider: gemini
+      graphjin_commit: 07d41ccf
+      binary_fingerprint: f682dd47cbdd35df6c26b015c39c6d98bfd53f4ad02da14216c41f20adf9127f
+      suite_identity: 4131125de0cab25af223a89596fd93ef
+      suite_fingerprint: 9e9a9f53f07a6fc7b691e312a9833c30
+      catalog_hash: c4ee2c0d346f636f9230881f7fa9d912
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 15562850bb59c377ea605d005d3118f1837049a2beae127e318371f61d1cf7b0
+      data_anchor: "2026-08-26"
+      reward_version: graphjin.eval.reward/v5
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.9734513274336283
+      recall_ci_low: 0.9380530973451328
+      recall_ci_high: 1
+      pass_at_k: 0.9734513274336283
+      pass_power_k: 0.8672566371681416
+      ground_truth_recall: 0.9902912621359223
+      method_recall: 0.970873786407767
+      safety_precision: 1
+      behavior_recall: 0.9911504424778761
+      category_recall:
+        action: 1
+        aggregate: 1
+        cross-source: 0.875
+        discovery: 1
+        multi-turn: 1
+        ranking: 1
+        reactive: 0.8333333333333334
+        refusal: 1
+        saved-metric: 1
+        window: 1
+      rollup_recall:
+        governance: 1
+        operations: 0.9285714285714286
+        questions: 1
+      rollup_pass_power:
+        governance: 1
+        operations: 0.7619047619047619
+        questions: 0.9180327868852459
+      mean_reward: 0.9730044247787608
+      total_tokens: 13400110
+      prompt_tokens: 12010158
+      completion_tokens: 292612
+      provider_total_tokens: 13400110
+      latency_p50_ms: 13826
+      latency_p95_ms: 30227
+      prompt_price_per_million: 0.75
+      completion_price_per_million: 3.75
+      estimated_list_cost_usd: 10.104913499999999
+      estimated_list_cost_per_task_usd: 0.08942401327433627
+      pricing_source: https://ai.google.dev/gemini-api/docs/pricing (standard, paid tier, 2026-08-19)
+      guard_interventions: 50
+      unsafe_effects: 0
+      accepted: true
+    - run_id: 20260826T032918.353195000Z-55570119
+      slug: 20260826t032918-55570119
+      label: gemini-3.5-flash-lite
+      release: 5163ebfc
+      ranked: true
+      generation: "2028.3"
+      generated_at: 2026-08-26T03:29:18.353195Z
+      model: gemini-3.5-flash-lite
+      provider: gemini
+      graphjin_commit: 5163ebfc
+      binary_fingerprint: 0b0fce4f903a96819253d4a1533e505ac0b07402682f4ecf97b89b50c593b0d0
+      suite_identity: 4131125de0cab25af223a89596fd93ef
+      suite_fingerprint: 9e9a9f53f07a6fc7b691e312a9833c30
+      catalog_hash: c4ee2c0d346f636f9230881f7fa9d912
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 9dc656d4a40445f883559b4e31b99a48685066c996a9ad41505e8f61be768bc2
+      data_anchor: "2026-08-25"
+      reward_version: graphjin.eval.reward/v5
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.7787610619469026
+      recall_ci_low: 0.7079646017699115
+      recall_ci_high: 0.8495575221238938
+      pass_at_k: 0.911504424778761
+      pass_power_k: 0.5575221238938053
+      ground_truth_recall: 0.7961165048543689
+      method_recall: 0.8543689320388349
+      safety_precision: 0.9911504424778761
+      behavior_recall: 0.911504424778761
+      category_recall:
+        action: 0.6666666666666666
+        aggregate: 1
+        cross-source: 0.375
+        discovery: 0.9
+        multi-turn: 0.7142857142857143
+        ranking: 0.8333333333333334
+        reactive: 0.4166666666666667
+        refusal: 1
+        saved-metric: 0.8888888888888888
+        window: 0.8666666666666667
+      rollup_recall:
+        governance: 1
+        operations: 0.5476190476190477
+        questions: 0.9016393442622951
+      rollup_pass_power:
+        governance: 0.9
+        operations: 0.35714285714285715
+        questions: 0.639344262295082
+      mean_reward: 0.8848982300884949
+      total_tokens: 12406632
+      prompt_tokens: 12123011
+      completion_tokens: 283621
+      provider_total_tokens: 12406632
+      latency_p50_ms: 4614
+      latency_p95_ms: 12331
+      prompt_price_per_million: 0.3
+      completion_price_per_million: 2.5
+      estimated_list_cost_usd: 4.3459558
+      estimated_list_cost_per_task_usd: 0.03845978584070796
+      pricing_source: https://ai.google.dev/gemini-api/docs/pricing (standard, 2026-08-06)
+      guard_interventions: 85
+      unsafe_effects: 1
+      rescored_from: 20260825T211515.779635000Z-3f73f1dc
       accepted: false
