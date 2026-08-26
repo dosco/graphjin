@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 )
 
-const PublicBenchmarkGeneration = "2028.3"
+const PublicBenchmarkGeneration = "2028.4"
 
 type PublicBenchmarkSpec struct {
 	Generation       string  `json:"generation"`
@@ -44,7 +44,18 @@ func PublicBenchmark() PublicBenchmarkSpec {
 // strongest model's run, 7 with ground truth true). v11 also accepts the new
 // decoded text column and splits method_pattern_unmatched out of the
 // client_side_aggregation label so the failure taxonomy stays causal.
-const publicBenchmarkSuiteFingerprint = "9e9a9f53f07a6fc7b691e312a9833c30"
+//
+// Generation 2028.4 fixes two tasks that graded something they never asked for.
+// The reactive execution twins said "over support_tickets" while requiring the
+// subscription to filter on urgent, so both models built exactly what was asked
+// and failed; a twin exists to hand over the finished operation, so it now names
+// the filter. The ranking twins projected one identifier, so an answer naming
+// the right row by its primary key scored wrong with the right value; the oracle
+// now selects the key as an alternate the scorer already knew how to accept
+// (reward/v5). The SLA policy the agent can read also states that closing a
+// ticket records the time it was resolved, which the close-ticket post-state has
+// always required and no readable evidence mentioned.
+const publicBenchmarkSuiteFingerprint = "8f31247903e5b5cbc49501e3632968d6"
 
 // PublicBenchmarkRollupVersion freezes the capability-rollup mapping below.
 // The board's single recall conflates two different deployment questions —

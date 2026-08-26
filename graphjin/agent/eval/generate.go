@@ -597,7 +597,13 @@ func generateDeepORGCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 				Task{
 					Category: CategoryReactive, Difficulty: DifficultyT4,
 					Slug: "reactive-create-" + watch.name, Tier: TierExecution, NeedID: needID,
-					Prompt:            "Create a durable watch named " + watch.name + " over " + watch.table + " and deliver an inbox digest hourly.",
+					// The execution twin hands over the finished operation, so it
+					// has to name the filter it is graded on. Without it the
+					// prompt said "over support_tickets" while the method rule
+					// required severity urgent, and both models built exactly
+					// what was asked and failed. The intent twin above states
+					// the same principle for itself.
+					Prompt:            "Create a durable watch named " + watch.name + " over " + watchTarget(watch.table, watch.filter) + " and deliver an inbox digest hourly.",
 					Provenance:        Provenance{GeneratorVersion: GeneratorVersion, Source: "deeporg-reference-watch", Seed: seed, SourceID: watch.name},
 					CapabilityProfile: profile, ExpectedStatus: gjagent.StatusAnswered,
 					Method:   MethodRule{RequireQueryMatch: []string{watch.method, `(?s)delivery_json.*digest.*window\s*:\s*"1h"`}},
@@ -940,8 +946,31 @@ func generatedTask(seed int64, slugKey, sourceID string, category Category, diff
 	}
 }
 
+// watchTarget describes the rows a watch must cover, so an execution twin asks
+// for the filter its method rule grades. An unfiltered watch keeps the bare
+// table name.
+func watchTarget(table, filter string) string {
+	if strings.TrimSpace(filter) == "" {
+		return table
+	}
+	return filter + " " + table
+}
+
 func generatedRankingTask(seed int64, table generatorTable, value generatorColumn, label, direction, superlative string) Task {
-	query := fmt.Sprintf("query { %s(order_by: {%s: %s}, limit: 1) { %s %s } }", table.Name, value.Name, direction, label, value.Name)
+	// Select the primary key alongside the label so the oracle can accept either
+	// identifier. "Which record" is answered correctly by the row's name or by
+	// its key, and an oracle that never projects the key cannot accept an answer
+	// naming the row by it: three recorded attempts found the right row and the
+	// right date, and the two that said "account ID 8" were scored wrong.
+	// LabelColumn already prefers a name-like column and only falls back to the
+	// key, so the key stays the alternate rather than the primary evidence.
+	projection := label + " " + value.Name
+	var alternates []string
+	if pk := strings.TrimSpace(table.PrimaryKey); pk != "" && pk != label && pk != value.Name {
+		projection = pk + " " + projection
+		alternates = append(alternates, table.Name+".0."+pk)
+	}
+	query := fmt.Sprintf("query { %s(order_by: {%s: %s}, limit: 1) { %s } }", table.Name, value.Name, direction, projection)
 	answerKind := "number"
 	if isDateColumn(value) {
 		answerKind = "date"
@@ -952,6 +981,7 @@ func generatedRankingTask(seed int64, table generatorTable, value generatorColum
 		fmt.Sprintf("Which record in %s has the %s %s, and what is the value?", humanize(table.Name), superlative, humanize(value.Name)),
 		query, table.Name+".0."+value.Name, answerKind, []string{"order_by"})
 	task.Oracle.DimensionExtract = table.Name + ".0." + label
+	task.Oracle.DimensionAlternateExtracts = alternates
 	task.Method.ForbidFinalizeFromListOnly = false
 	return task
 }

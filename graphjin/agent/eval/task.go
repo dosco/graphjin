@@ -31,7 +31,7 @@ const (
 	AttemptSchemaVersion   = "graphjin.eval.attempt/v1"
 	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
 	// generated task semantics change, including method-rule dialect support.
-	GeneratorVersion = "graphjin.eval.generator/v11"
+	GeneratorVersion = "graphjin.eval.generator/v12"
 	// RewardVersion v5: a "which record" answer may name the row by any
 	// identifier the oracle selected, not only the one field it projected. No
 	// frozen task declares alternates yet, so this changes no existing verdict;
