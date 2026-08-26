@@ -174,7 +174,7 @@ func evaluateGroundTruth(task Task, oracle OracleResult, response gjagent.Respon
 	dataText := compactJSON(response.Data, 0)
 	if oracle.Dimension != "" {
 		haystack := strings.ToLower(answer + "\n" + dataText)
-		if !strings.Contains(haystack, strings.ToLower(oracle.Dimension)) {
+		if !mentionsAnyIdentifier(haystack, append([]string{oracle.Dimension}, oracle.DimensionAlternates...)) {
 			return false, fmt.Sprintf("dimension %q missing from answer", oracle.Dimension)
 		}
 	}
@@ -221,6 +221,66 @@ func evaluateGroundTruth(task Task, oracle OracleResult, response gjagent.Respon
 	default:
 		return false, fmt.Sprintf("unknown answer kind %q", task.Answer.Kind)
 	}
+}
+
+// mentionsAnyIdentifier reports whether the answer names the row by any of the
+// identifiers the oracle selected.
+//
+// A task asking "which record has the earliest X" is answered correctly by the
+// row's name or by its primary key; requiring one specific projected field
+// failed answers that identified the right row the other way. Every alternate
+// comes from the oracle's own query result, so this widens what counts as
+// naming the row without loosening which row is correct.
+func mentionsAnyIdentifier(haystack string, identifiers []string) bool {
+	for _, identifier := range identifiers {
+		needle := strings.ToLower(strings.TrimSpace(identifier))
+		if needle == "" {
+			continue
+		}
+		if isNumericIdentifier(needle) {
+			if mentionsNumericIdentifier(haystack, needle) {
+				return true
+			}
+			continue
+		}
+		if strings.Contains(haystack, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func isNumericIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// numericTokenPattern captures maximal number-like runs: digits, plus the
+// separators that join digits into one value such as a date, a decimal or a
+// thousands group.
+var numericTokenPattern = regexp.MustCompile(`[0-9][0-9.,\-/:]*[0-9]|[0-9]`)
+
+// mentionsNumericIdentifier reports whether the text names this number as a
+// value of its own rather than as part of a longer one.
+//
+// Comparing whole tokens is what separates "account 8" from "2026-08-25",
+// "480000" and "18": a substring test accepts all of them, so an answer that
+// never named the row would score as though it had. Trailing punctuation is
+// not part of the token, so "id: 8," still counts.
+func mentionsNumericIdentifier(haystack, value string) bool {
+	for _, token := range numericTokenPattern.FindAllString(haystack, -1) {
+		if token == value {
+			return true
+		}
+	}
+	return false
 }
 
 func evaluateMethod(rule MethodRule, answer AnswerRule, queries, tools []string) bool {
