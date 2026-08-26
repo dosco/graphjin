@@ -205,7 +205,11 @@ func (co *Compiler) compileChildColumns(
 				}
 			}
 		default:
-			return fmt.Errorf("field '%s' is not a column or a function", name)
+			// Name the columns the table has, and the one this probably meant.
+			// Bare, this was the most common dead end in recorded runs — 44
+			// episodes in one — and it told the caller nothing to act on:
+			// `resolution` for `resolution_note`, `amount` for `amount_cents`.
+			return fmt.Errorf("field '%s' is not a column or a function%s", name, sel.Ti.ColumnHint(name))
 		}
 
 		if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
@@ -301,12 +305,13 @@ func validateRemoteField(sel *Select, name string) error {
 	if _, ok := sel.Ti.ColumnExists(name); ok {
 		return nil
 	}
-	cols := make([]string, len(sel.Ti.Columns))
-	for i, c := range sel.Ti.Columns {
-		cols[i] = c.Name
-	}
-	return fmt.Errorf("column '%s' does not exist on table '%s'; available columns: %s",
-		name, sel.Ti.Name, strings.Join(cols, ", "))
+	// Same hint as every other missed column, so the three paths cannot drift
+	// on wording or on what counts as a near miss. The list alone was not
+	// enough: a strong model wrote `executive_owne`, was handed the list
+	// containing `executive_owner`, and re-sent the identical query until its
+	// step budget ran out.
+	return fmt.Errorf("column '%s' does not exist on table '%s'%s",
+		name, sel.Ti.Name, sel.Ti.ColumnHint(name))
 }
 
 // hasNonAggField reports whether the field list contains any FieldTypeCol

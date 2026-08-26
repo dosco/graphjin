@@ -72,3 +72,38 @@ func TestGetColumnCapsTheColumnList(t *testing.T) {
 		t.Fatalf("column list exceeded the cap: %v", err)
 	}
 }
+
+// The names below are the ones recorded runs actually produced. A caller told
+// only "not a column or a function" has nothing to act on and re-sends: the
+// bare message was the most common dead end across both models.
+func TestColumnHintNamesTheLikelyColumn(t *testing.T) {
+	ti := NewDBTable("public", "support_tickets", "", []DBColumn{
+		{Name: "id", Type: "bigint"},
+		{Name: "status", Type: "text"},
+		{Name: "severity", Type: "text"},
+		{Name: "resolution_note", Type: "text"},
+		{Name: "resolved_at", Type: "timestamp"},
+	})
+	for _, want := range []string{"resolution", "resolution_notes"} {
+		hint := (&ti).ColumnHint(want)
+		if !strings.Contains(hint, `did you mean "resolution_note"`) {
+			t.Fatalf("ColumnHint(%q) = %q, want a resolution_note suggestion", want, hint)
+		}
+	}
+	// A near miss on a remote table's column: the case that beat the strong
+	// model, which re-sent the same query until its budget ran out.
+	health := NewDBTable("public", "account_health", "remote", []DBColumn{
+		{Name: "account_id", Type: "bigint"},
+		{Name: "executive_owner", Type: "text"},
+		{Name: "health", Type: "text"},
+		{Name: "open_risk_count", Type: "int"},
+	})
+	if hint := (&health).ColumnHint("executive_owne"); !strings.Contains(hint, `did you mean "executive_owner"`) {
+		t.Fatalf("ColumnHint(executive_owne) = %q", hint)
+	}
+	// Even with no near miss, the caller learns what the table has.
+	if hint := (&health).ColumnHint("totally_unrelated"); !strings.Contains(hint, "available columns:") ||
+		!strings.Contains(hint, "open_risk_count") {
+		t.Fatalf("a miss with no near match must still list the columns: %q", hint)
+	}
+}
