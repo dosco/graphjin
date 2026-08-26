@@ -110,3 +110,31 @@ func TestGroundTruthWithoutAlternatesIsUnchanged(t *testing.T) {
 		t.Fatal("without an alternate identifier the dimension is still required")
 	}
 }
+
+// Known and deliberate limitation, pinned so a future suite regeneration does
+// not ship it unnoticed.
+//
+// A low-cardinality primary key is weak evidence that the answer named the row:
+// an answer identifying a different record can contain the correct row's id
+// incidentally. Tightening this — requiring an id-cue word, or the id in the
+// structured data — would reject "the account with the earliest last active at
+// is **8** with a value of ...", which is a correct answer to "which record"
+// and is exactly what this change exists to accept. The value check still has
+// to pass independently, so an incidental id alone cannot carry a wrong answer.
+//
+// If a generator revision starts projecting primary keys as alternates, revisit
+// this before freezing a suite: prefer a name-like column as the dimension
+// whenever the table has one.
+func TestNumericIdentifierIsWeakEvidenceByDesign(t *testing.T) {
+	answer := "the account with the highest mrr is acme (id: 5), with 1 subscription and 480000 cents"
+	if !mentionsNumericIdentifier(answer, "1") {
+		t.Fatal("behaviour changed: an incidental id no longer satisfies the identifier check")
+	}
+	// The tokenizer must still refuse digits that are part of another value,
+	// which is the failure mode that would be genuinely unsafe.
+	for _, hay := range []string{"row 10 is the answer", "value is 1.5", "on 2026-01-15", "480000 cents"} {
+		if mentionsNumericIdentifier(hay, "1") {
+			t.Fatalf("a digit inside another value must never count: %s", hay)
+		}
+	}
+}
