@@ -152,6 +152,21 @@ func TestResponseEnvironmentFailureRecognizesProviderAuthHeaderError(t *testing.
 	}
 }
 
+func TestResponseEnvironmentFailureDoesNotConfuseGovernedRefusalWithProviderAuth(t *testing.T) {
+	response := gjagent.Response{
+		Status: gjagent.StatusBlocked,
+		Errors: []gjagent.ErrorInfo{{
+			Message: "unauthorized: Query blocked: gj_config (role: user)",
+			Extensions: map[string]any{
+				"code": "access_unauthorized",
+			},
+		}},
+	}
+	if responseEnvironmentFailure(response) {
+		t.Fatal("a governed application refusal must remain a scored model outcome")
+	}
+}
+
 func TestActorTurnsPreferExecutorStageRequestTrace(t *testing.T) {
 	trace := map[string]any{"events": []any{
 		map[string]any{"kind": "stage_request", "payload": map[string]any{"stage": "distiller", "step": 1}},
