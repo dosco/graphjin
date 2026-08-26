@@ -591,17 +591,22 @@ func (ti *DBTable) GetColumn(name string) (DBColumn, error) {
 	if ok {
 		return c, nil
 	}
-	return c, fmt.Errorf("column: '%s.%s' not found%s", ti.Name, name, ti.columnHint(name))
+	return c, fmt.Errorf("column: '%s.%s' not found%s", ti.Name, name, ti.ColumnHint(name))
 }
 
 // maxListedColumns bounds the column list in an error. A wide table would
 // otherwise bury the answer in its own schema.
 const maxListedColumns = 24
 
-// columnHint renders the did-you-mean and the available columns for a missed
+// ColumnHint renders the did-you-mean and the available columns for a missed
 // lookup, in that order: the suggestion is the answer when there is one, and
 // the list is what lets a caller pick when there is not.
-func (ti *DBTable) columnHint(want string) string {
+//
+// Exported so the compiler's selection paths render the same hint as the
+// lookup path. A model that misses a column in the select list is in exactly
+// the position of one that missed it in a where clause, and was getting a
+// worse answer for it.
+func (ti *DBTable) ColumnHint(want string) string {
 	if len(ti.Columns) == 0 {
 		return ""
 	}
