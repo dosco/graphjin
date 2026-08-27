@@ -142,7 +142,11 @@ var runtimeSecretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\b[^\s"'@:;=/]+:[^\s"'@;]+@(?:tcp|unix)\([^)]+\)/[^\s"']*`),
 	regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'/@:]+:[^\s"'@/]*@[^\s"']+`),
 	regexp.MustCompile(`(?i)\b(postgres|postgresql|mysql|mariadb|sqlserver|redis|mongodb|snowflake)://[^\s"']+`),
-	regexp.MustCompile(`(?i)\b(password|pwd|token|secret|private_key|connection_string|key_passphrase|client_key|api_key|apikey)=([^\s;&,]+)`),
+	// `key` last so the longer names win the alternation, and it is what makes a
+	// Google endpoint URL safe: gemini authenticates with `?key=...`, so without
+	// it every transport error wrote the API key into the log verbatim. The value
+	// class stops at quotes so a redacted URL inside a quoted error stays readable.
+	regexp.MustCompile(`(?i)\b(password|pwd|token|secret|private_key|connection_string|key_passphrase|client_key|api_key|apikey|key)=([^\s;&,"']+)`),
 }
 
 type runtimeQueryHandler struct {
