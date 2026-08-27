@@ -43,9 +43,11 @@ func TestSelectedColumnMissNamesTheLikelyColumn(t *testing.T) {
 	if !strings.Contains(err.Error(), "is not a column or a function") {
 		t.Fatalf("original message lost: %v", err)
 	}
-	// And the caller learns what the table actually has.
-	if !strings.Contains(err.Error(), "available columns:") {
-		t.Fatalf("error must list the real columns: %v", err)
+	// The suggestion travels alone: dumping the column list behind an answer
+	// the caller already has is pure cost, and on a wide table it is an
+	// arbitrary prefix that rarely contains the column anyway.
+	if strings.Contains(err.Error(), "available columns") {
+		t.Fatalf("a named suggestion should not also carry the column list: %v", err)
 	}
 }
 

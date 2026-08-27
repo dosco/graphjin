@@ -1,6 +1,10 @@
 package sdata
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 // The names here are the ones the recorded benchmark runs actually failed on.
 func TestMatchTableNames(t *testing.T) {
@@ -38,5 +42,38 @@ func TestDidYouMeanClause(t *testing.T) {
 	}
 	if got := DidYouMeanClause([]string{"a", "b"}); got != `; did you mean one of ["a" "b"]?` {
 		t.Fatalf("multiple suggestions = %q", got)
+	}
+}
+
+// The synonym case, which is what semantic catalog search produces: the model
+// reaches the right subject under a word the schema does not use. No edit
+// distance turns `companies` into `accounts`, so the suggestion finds nothing
+// and the list is the only thing that ends the guessing.
+func TestTableHint(t *testing.T) {
+	tables := []string{"accounts", "invoices", "sla_policies", "support_tickets"}
+
+	if got := TableHint("policies", tables); got != `; did you mean "sla_policies"?` {
+		t.Fatalf("a near miss should get the suggestion alone, got %q", got)
+	}
+	if got := TableHint("companies", tables); got != "; available tables: accounts, invoices, sla_policies, support_tickets" {
+		t.Fatalf("a synonym should be handed the real tables, got %q", got)
+	}
+	if got := TableHint("companies", nil); got != "" {
+		t.Fatalf("no tables means nothing to say, got %q", got)
+	}
+
+	wide := make([]string, 0, 40)
+	for n := 0; n < 40; n++ {
+		wide = append(wide, fmt.Sprintf("table_%02d", n))
+	}
+	got := TableHint("companies", wide)
+	if !strings.HasPrefix(got, "; available tables include: table_00, ") {
+		t.Fatalf("wide schema should be bounded, got %q", got)
+	}
+	if !strings.HasSuffix(got, "(16 more)") {
+		t.Fatalf("wide schema should name what it hides, got %q", got)
+	}
+	if strings.Contains(got, "table_24") {
+		t.Fatalf("wide schema should stop at %d names, got %q", maxListedTables, got)
 	}
 }

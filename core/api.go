@@ -1781,6 +1781,19 @@ func DidYouMeanClause(suggestions []string) string {
 	return sdata.DidYouMeanClause(suggestions)
 }
 
+// TableHint is the whole suffix for a lookup that found no table: the
+// suggestion when a role-visible name is close, and otherwise the names that do
+// exist. A caller handed only "not found" has no way back, and a synonym — the
+// shape semantic search produces — is never close enough to suggest.
+func (g *GraphJin) TableHint(want string) string {
+	tables := g.GetTables()
+	names := make([]string, 0, len(tables))
+	for _, t := range tables {
+		names = append(names, t.Name)
+	}
+	return sdata.TableHint(want, names)
+}
+
 // SchemaReady returns true if the engine has a usable schema.
 // Use this to check before calling methods that access the schema
 // to avoid nil pointer dereferences during partial initialization.
