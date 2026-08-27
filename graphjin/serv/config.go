@@ -505,19 +505,19 @@ type SemanticCatalogSearchConfig struct {
 	// persisted embedding-space fingerprint.
 	BaseURL string `mapstructure:"base_url" jsonschema:"title=Embedding Provider Base URL"`
 
-	// Dimensions selects tiny (128), small (256), medium (512), or the
+	// Dimensions selects tiny (768), small (1536), medium (3072), or the
 	// provider-native default. Named sizes are validated strictly.
-	Dimensions string `mapstructure:"dimensions" jsonschema:"title=Embedding Dimensions,default=tiny,enum=tiny,enum=small,enum=medium,enum=default"`
+	Dimensions string `mapstructure:"dimensions" jsonschema:"title=Embedding Dimensions,default=small,enum=tiny,enum=small,enum=medium,enum=default"`
 }
 
 func (c SemanticCatalogSearchConfig) dimensionCount() (int, bool, error) {
 	switch strings.ToLower(strings.TrimSpace(c.Dimensions)) {
-	case "", "tiny":
-		return 128, true, nil
-	case "small":
-		return 256, true, nil
+	case "", "small":
+		return 1536, true, nil
+	case "tiny":
+		return 768, true, nil
 	case "medium":
-		return 512, true, nil
+		return 3072, true, nil
 	case "default":
 		return 0, false, nil
 	default:
@@ -1159,7 +1159,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("catalog_search.semantic.embedding_model", "")
 	vi.SetDefault("catalog_search.semantic.api_key_env", "OPENAI_API_KEY")
 	vi.SetDefault("catalog_search.semantic.base_url", "")
-	vi.SetDefault("catalog_search.semantic.dimensions", "tiny")
+	vi.SetDefault("catalog_search.semantic.dimensions", "small")
 
 	// These section names contain underscores, so the generic GJ_* underscore-
 	// to-dot compatibility mapper cannot identify their dotted boundary

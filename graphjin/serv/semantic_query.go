@@ -314,9 +314,6 @@ func (i *semanticCatalogIndex) queryVectors(ctx context.Context, queries []strin
 		return nil, fmt.Errorf("query embedding returned %d vectors, want %d", len(embedded), len(misses))
 	}
 	for n, vector := range embedded {
-		if named && len(vector) != requested {
-			return nil, fmt.Errorf("query embedding %d dimension %d does not match configured dimension %d", n, len(vector), requested)
-		}
 		if expected != 0 && len(vector) != expected {
 			return nil, fmt.Errorf("query embedding %d dimension %d does not match index dimension %d", n, len(vector), expected)
 		}

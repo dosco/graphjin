@@ -1585,8 +1585,8 @@
 						"default"
 					],
 					"title": "Embedding Dimensions",
-					"description": "Dimensions selects tiny (128), small (256), medium (512), or the\nprovider-native default. Named sizes are validated strictly.",
-					"default": "tiny"
+					"description": "Dimensions selects tiny (768), small (1536), medium (3072), or the\nprovider-native default. Named sizes are validated strictly.",
+					"default": "small"
 				}
 			},
 			"additionalProperties": false,

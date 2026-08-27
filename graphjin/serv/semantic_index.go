@@ -800,12 +800,15 @@ func (i *semanticCatalogIndex) load(id string) (*semanticPersistedIndex, error) 
 		manifest.ActualDimension <= 0 || manifest.DocumentCount < 0 {
 		return nil, errors.New("incompatible semantic index manifest")
 	}
-	requested, named, err := i.conf.dimensionCount()
-	if err != nil {
+	// No check against the configured width here: a provider is free to ignore
+	// the request, and an index built at the width it chose is still coherent.
+	// What must match is the fingerprint, verified above, which carries the
+	// requested width — so an index built under a different configuration is
+	// already rejected. Comparing the manifest to the request as well meant a
+	// legitimately-built index could never be loaded back from disk, which broke
+	// warm start and the Redis handoff while in-process search kept working.
+	if _, _, err := i.conf.dimensionCount(); err != nil {
 		return nil, err
-	}
-	if named && manifest.ActualDimension != requested {
-		return nil, fmt.Errorf("semantic index dimension %d does not match configured %d", manifest.ActualDimension, requested)
 	}
 	mapData, err := i.service.fs.Get(path.Join(dir, "documents.json"))
 	if err != nil {
@@ -1105,15 +1108,20 @@ func (i *semanticCatalogIndex) cleanupOldGenerations() {
 }
 
 func semanticEmbeddingFingerprint(conf SemanticCatalogSearchConfig) (string, error) {
-	if _, _, err := conf.dimensionCount(); err != nil {
+	requested, _, err := conf.dimensionCount()
+	if err != nil {
 		return "", err
 	}
+	// The resolved width, not just the preset name: what a name means can change
+	// between releases, and an index built at the old width must not be reused
+	// under the new one.
 	data, err := json.Marshal(map[string]string{
-		"provider":         strings.ToLower(strings.TrimSpace(conf.Provider)),
-		"model":            strings.TrimSpace(conf.EmbeddingModel),
-		"base_url":         strings.TrimRight(strings.TrimSpace(conf.BaseURL), "/"),
-		"dimension_preset": strings.ToLower(strings.TrimSpace(conf.Dimensions)),
-		"document_format":  fmt.Sprint(semanticDocumentFormatVersion),
+		"provider":            strings.ToLower(strings.TrimSpace(conf.Provider)),
+		"model":               strings.TrimSpace(conf.EmbeddingModel),
+		"base_url":            strings.TrimRight(strings.TrimSpace(conf.BaseURL), "/"),
+		"dimension_preset":    strings.ToLower(strings.TrimSpace(conf.Dimensions)),
+		"dimension_requested": fmt.Sprint(requested),
+		"document_format":     fmt.Sprint(semanticDocumentFormatVersion),
 	})
 	if err != nil {
 		return "", err
