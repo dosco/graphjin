@@ -330,15 +330,9 @@ func configureEvalInstance(config *serv.Config, spec gjeval.EnvSpec) {
 		config.Core.Watches.Runner = "off"
 	}
 	config.Core.Watches.EnrichmentWorkers = 0
-	for index := range config.Core.Sources {
-		source := &config.Core.Sources[index]
-		if source.Kind == "file" && source.Root != "" && !filepath.IsAbs(source.Root) {
-			source.Root = filepath.Join(config.ConfigPath, source.Root)
-		}
-		if source.SpecsDir != "" && !filepath.IsAbs(source.SpecsDir) {
-			source.SpecsDir = filepath.Join(config.ConfigPath, source.SpecsDir)
-		}
-	}
+
+	// No path fixups here: relative source paths (file roots, openapi specs
+	// dirs) resolve against config_path in the engine itself now.
 }
 
 func startSaaSOpsEvalAPIMock(config *serv.Config) *httptest.Server {

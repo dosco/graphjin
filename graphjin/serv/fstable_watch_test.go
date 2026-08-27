@@ -140,6 +140,37 @@ func TestLocalFilesystemWatchRootsSkipReadOnly(t *testing.T) {
 	}
 }
 
+// A relative root names a directory beside the config file, not beside
+// the process working directory. The watcher has to agree with the
+// engine here or it watches a path the backend never serves.
+func TestLocalFilesystemWatchRootsResolveAgainstConfigPath(t *testing.T) {
+	configRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(configRoot, "files"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := &graphjinService{
+		conf: &Config{
+			Core: Core{
+				Filesystems: []core.FilesystemConfig{{
+					Name:    "uploads",
+					Backend: "local",
+					Root:    "files",
+				}},
+			},
+			Serv: Serv{Production: true, ConfigPath: configRoot},
+		},
+	}
+
+	roots, err := s.localFilesystemWatchRoots()
+	if err != nil {
+		t.Fatalf("watch roots: %v", err)
+	}
+	want := filepath.Join(configRoot, "files")
+	if len(roots) != 1 || roots[0].Root != want {
+		t.Fatalf("watch roots = %+v, want root %s", roots, want)
+	}
+}
+
 func waitForCacheMiss(t *testing.T, cache *MemoryCache, key string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

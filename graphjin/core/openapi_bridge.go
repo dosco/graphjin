@@ -76,7 +76,11 @@ func (gj *graphjinEngine) loadOpenAPIIntegration() error {
 		defaultSource = ""
 	}
 	res, err := openapi.Load(
-		openapi.LoaderOptions{SpecsDir: gj.conf.OpenAPISpecsDir, DefaultSourceName: defaultSource, RequireSource: true},
+		openapi.LoaderOptions{
+			SpecsDir:          gj.configRelPath(gj.conf.OpenAPISpecsDir),
+			DefaultSourceName: defaultSource,
+			RequireSource:     true,
+		},
 		gj.conf.OpenAPI,
 		gj.log,
 	)

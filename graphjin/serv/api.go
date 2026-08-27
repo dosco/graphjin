@@ -728,8 +728,13 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		}
 		if !s.conf.Serv.Production {
 			s.gj = nil // Ensure gj is nil so checkGraphJinInitialized() works
-			s.log.Warnf("GraphJin core initialization failed: %s", err)
-			s.log.Warn("Server starting without query engine — use MCP to fix the configuration")
+			// ERR, not WRN: the server comes up but every query and
+			// everything downstream of the engine (semantic catalog index,
+			// watches, projections) is silently skipped, which is a failed
+			// startup in every sense except the process exiting. It also
+			// matches the severity already recorded on the runtime event.
+			s.log.Errorf("GraphJin core initialization failed: %s", err)
+			s.log.Error("Server starting without query engine — queries will fail until the configuration is fixed (use MCP)")
 			// Continue with gj = nil, MCP tools still work
 		} else {
 			return nil, err

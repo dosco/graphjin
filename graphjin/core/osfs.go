@@ -14,6 +14,10 @@ type osFS struct {
 // NewOsFS creates a new OSFS instance
 func NewOsFS(basePath string) *osFS { return &osFS{basePath: basePath} }
 
+// BasePath implements FSBase: the config directory every path handed to
+// this filesystem is already resolved against.
+func (f *osFS) BasePath() string { return f.basePath }
+
 // Get returns the file content
 func (f *osFS) Get(path string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(f.basePath, path))

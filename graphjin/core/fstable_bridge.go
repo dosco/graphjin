@@ -1208,6 +1208,9 @@ func (gj *graphjinEngine) registerBuiltinFilesystemFactories() {
 		return
 	}
 	gj.fsFactories["local"] = func(conf FilesystemConfig) (fstable.Backend, error) {
-		return fstable.NewLocal(fstable.LocalConfig{Root: conf.Root})
+		// A relative root resolves against the config directory, not the
+		// process working directory, so `root: files` means the files/
+		// beside the config file wherever the server is launched from.
+		return fstable.NewLocal(fstable.LocalConfig{Root: gj.configRelPath(conf.Root)})
 	}
 }
