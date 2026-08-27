@@ -3,8 +3,11 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	ax "github.com/ax-llm/ax/packages/go"
 )
 
 func TestSanitizeValueRemovesProviderCredentials(t *testing.T) {
@@ -101,5 +104,80 @@ func TestProviderRateLimitRecognizesCerebrasTokenBucket(t *testing.T) {
 		if classification.Code != ErrorCodeProviderRateLimit || !classification.Retryable {
 			t.Fatalf("ClassifyProviderError(%q) = %+v, want retryable %s", message, classification, ErrorCodeProviderRateLimit)
 		}
+	}
+}
+
+// axStatusError is the shape ax hands GraphJin once it has mapped a provider's
+// HTTP response: the status the provider returned, and a message GraphJin has
+// no control over.
+func axStatusError(status int, code, message string) error {
+	return ax.AIServiceError{AxError: ax.AxError{
+		Category: "ai", Type: "AxAIServiceStatusError",
+		Message: message, Status: status, Code: code, Retryable: status == 429,
+	}}
+}
+
+// The phrase list only ever covers wording someone has already been burned by.
+// Reading the status ax already carried means the next provider to invent its
+// own throttle sentence is classified correctly the first time.
+func TestProviderClassificationPrefersTypedStatusOverWording(t *testing.T) {
+	throttled := axStatusError(429, "", "Throughput cap reached for this deployment.")
+	for name, err := range map[string]error{
+		"direct":  throttled,
+		"wrapped": fmt.Errorf("actor step 3: %w", throttled),
+	} {
+		classification := ClassifyProviderError(err)
+		if classification.Code != ErrorCodeProviderRateLimit || !classification.Retryable {
+			t.Fatalf("%s: classification = %+v, want retryable %s", name, classification, ErrorCodeProviderRateLimit)
+		}
+	}
+}
+
+// Providers bill an exhausted account as 429 as well. Quota is terminal, so the
+// message and the provider's own code still decide that one; treating it as a
+// rate limit would retry an account that cannot recover.
+func TestProviderClassificationKeepsExhaustedQuotaTerminalAt429(t *testing.T) {
+	for name, err := range map[string]error{
+		"code only":    axStatusError(429, "insufficient_quota", "Too many requests."),
+		"message only": axStatusError(429, "", "You exceeded your current quota, please check your plan and billing details."),
+	} {
+		classification := ClassifyProviderError(err)
+		if classification.Code != ErrorCodeProviderQuota || classification.Retryable {
+			t.Fatalf("%s: classification = %+v, want terminal %s", name, classification, ErrorCodeProviderQuota)
+		}
+	}
+}
+
+func TestProviderClassificationMapsTypedStatuses(t *testing.T) {
+	cases := map[int]ProviderErrorClassification{
+		401: authClassification,
+		403: authClassification,
+		402: quotaClassification,
+		408: timeoutClassification,
+		500: serverClassification,
+		503: serverClassification,
+		529: serverClassification,
+	}
+	for status, want := range cases {
+		classification := ClassifyProviderError(axStatusError(status, "", "provider said something unfamiliar"))
+		if classification != want {
+			t.Fatalf("status %d classified %+v, want %+v", status, classification, want)
+		}
+	}
+}
+
+// A status with more than one honest reading is left to the message rather than
+// guessed at: 404 is a missing model as often as a bad route.
+func TestProviderClassificationFallsBackToMessageForUnclaimedStatus(t *testing.T) {
+	classification := ClassifyProviderError(axStatusError(404, "", "The model `gemma-4-31b` does not exist or you do not have access to it."))
+	if classification.Code != ErrorCodeProviderModelUnavailable {
+		t.Fatalf("classification = %+v, want %s", classification, ErrorCodeProviderModelUnavailable)
+	}
+}
+
+func TestProviderClassificationReadsTransportsWithoutStatus(t *testing.T) {
+	classification := ClassifyProviderError(fmt.Errorf("chat: %w", error(ax.AxError{Category: "network", Message: "socket hang up"})))
+	if classification.Code != ErrorCodeProviderTransport || !classification.Retryable {
+		t.Fatalf("classification = %+v, want retryable %s", classification, ErrorCodeProviderTransport)
 	}
 }

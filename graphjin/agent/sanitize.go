@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	ax "github.com/ax-llm/ax/packages/go"
 )
 
 const (
@@ -105,36 +107,123 @@ type ProviderErrorClassification struct {
 	Retryable bool
 }
 
+// The public classifications. Both the typed and the string path answer with
+// these, so a category always reaches callers with one wording.
+var (
+	timeoutClassification   = ProviderErrorClassification{Code: ErrorCodeProviderTimeout, Message: "The model provider did not respond before the configured timeout.", Retryable: true}
+	quotaClassification     = ProviderErrorClassification{Code: ErrorCodeProviderQuota, Message: "The model provider quota or credits are exhausted."}
+	rateLimitClassification = ProviderErrorClassification{Code: ErrorCodeProviderRateLimit, Message: "The model provider is temporarily rate-limited.", Retryable: true}
+	authClassification      = ProviderErrorClassification{Code: ErrorCodeProviderAuth, Message: "The model provider rejected the configured credentials."}
+	modelClassification     = ProviderErrorClassification{Code: ErrorCodeProviderModelUnavailable, Message: "The configured model is unavailable."}
+	serverClassification    = ProviderErrorClassification{Code: ErrorCodeProviderServer, Message: "The model provider returned a temporary server error.", Retryable: true}
+	transportClassification = ProviderErrorClassification{Code: ErrorCodeProviderTransport, Message: "The model provider request failed in transport.", Retryable: true}
+	agentClassification     = ProviderErrorClassification{Code: ErrorCodeAgentError, Message: "The GraphJin agent could not complete the request."}
+)
+
 // ClassifyProviderError maps provider failures to stable public categories.
-// Typed cancellation and deadline checks win over the compatibility string
-// matching used for provider SDKs that do not expose structured errors.
+// The typed ax envelope is read first because it carries the status the
+// provider actually returned, where Error() renders only the message: Cerebras
+// reports its token bucket without ever saying "rate limit", and 236 throttled
+// benchmark episodes scored as model failures while a 429 sat unread in the
+// error. Typed cancellation and deadline checks come next, then the string
+// matching that remains the only signal for stringified errors -- eval
+// rescoring reclassifies from a stored message -- and for provider SDKs that
+// expose no structure at all.
 func ClassifyProviderError(err error) ProviderErrorClassification {
 	if err == nil {
 		return ProviderErrorClassification{}
 	}
 	message := strings.ToLower(err.Error())
+	if classification, ok := classifyAxEnvelope(err, message); ok {
+		return classification
+	}
 	switch {
 	case errors.Is(err, context.DeadlineExceeded), strings.Contains(message, "context deadline exceeded"), strings.Contains(message, "deadline exceeded"), strings.Contains(message, "request timeout"), strings.Contains(message, "timed out"):
-		return ProviderErrorClassification{Code: ErrorCodeProviderTimeout, Message: "The model provider did not respond before the configured timeout.", Retryable: true}
-	// DeepSeek says "Insufficient Balance" and others say "insufficient funds";
-	// neither matched the older phrasings, so an exhausted account read as a
-	// generic agent error. A benchmark run then scored every remaining episode
-	// as a model failure instead of halting: 204 zeros from a billing problem.
-	case strings.Contains(message, "no credits remaining"), strings.Contains(message, "credit balance"), strings.Contains(message, "insufficient balance"), strings.Contains(message, "insufficient funds"), strings.Contains(message, "insufficient_quota"), strings.Contains(message, "quota exceeded"), strings.Contains(message, "billing"), strings.Contains(message, "payment required"), strings.Contains(message, "status code 402"):
-		return ProviderErrorClassification{Code: ErrorCodeProviderQuota, Message: "The model provider quota or credits are exhausted."}
+		return timeoutClassification
+	case quotaExhausted(message):
+		return quotaClassification
 	case strings.Contains(message, "rate limit"), strings.Contains(message, "too many requests"), strings.Contains(message, "resource exhausted"), strings.Contains(message, "resource_exhausted"), strings.Contains(message, "request queue is full"), strings.Contains(message, "tokens per minute limit exceeded"), strings.Contains(message, "requests per minute limit exceeded"):
-		return ProviderErrorClassification{Code: ErrorCodeProviderRateLimit, Message: "The model provider is temporarily rate-limited.", Retryable: true}
+		return rateLimitClassification
 	case strings.Contains(message, "invalid api key"), strings.Contains(message, "invalid x-api-key"), strings.Contains(message, "incorrect api key"), strings.Contains(message, "api key not valid"), strings.Contains(message, "api_key_invalid"), strings.Contains(message, "authentication_error"), strings.Contains(message, "invalid authentication credentials"), strings.Contains(message, "unauthenticated"), strings.Contains(message, "unauthorized"):
-		return ProviderErrorClassification{Code: ErrorCodeProviderAuth, Message: "The model provider rejected the configured credentials."}
+		return authClassification
 	case strings.Contains(message, "model_not_found"), strings.Contains(message, "model not found"), strings.Contains(message, "model is not available"), strings.Contains(message, "does not exist or you do not have access to it"), strings.Contains(message, "models/") && strings.Contains(message, "is not found"):
-		return ProviderErrorClassification{Code: ErrorCodeProviderModelUnavailable, Message: "The configured model is unavailable."}
+		return modelClassification
 	case strings.Contains(message, "status code 500"), strings.Contains(message, "status code 502"), strings.Contains(message, "status code 503"), strings.Contains(message, "status code 504"), strings.Contains(message, "http 500"), strings.Contains(message, "http 502"), strings.Contains(message, "http 503"), strings.Contains(message, "http 504"), strings.Contains(message, "error 500"), strings.Contains(message, "error 502"), strings.Contains(message, "error 503"), strings.Contains(message, "error 504"), strings.Contains(message, "internal server error"), strings.Contains(message, "service unavailable"), strings.Contains(message, "bad gateway"), strings.Contains(message, "gateway timeout"):
-		return ProviderErrorClassification{Code: ErrorCodeProviderServer, Message: "The model provider returned a temporary server error.", Retryable: true}
+		return serverClassification
 	case strings.Contains(message, "connection reset"), strings.Contains(message, "connection refused"), strings.Contains(message, "no such host"), strings.Contains(message, "network is unreachable"), strings.Contains(message, "tls handshake"), strings.Contains(message, "unexpected eof"), strings.TrimSpace(message) == "eof":
-		return ProviderErrorClassification{Code: ErrorCodeProviderTransport, Message: "The model provider request failed in transport.", Retryable: true}
+		return transportClassification
 	default:
-		return ProviderErrorClassification{Code: ErrorCodeAgentError, Message: "The GraphJin agent could not complete the request."}
+		return agentClassification
 	}
+}
+
+// DeepSeek says "Insufficient Balance" and others say "insufficient funds";
+// neither matched the older phrasings, so an exhausted account read as a
+// generic agent error. A benchmark run then scored every remaining episode
+// as a model failure instead of halting: 204 zeros from a billing problem.
+func quotaExhausted(message string) bool {
+	switch {
+	case strings.Contains(message, "no credits remaining"), strings.Contains(message, "credit balance"), strings.Contains(message, "insufficient balance"), strings.Contains(message, "insufficient funds"), strings.Contains(message, "insufficient_quota"), strings.Contains(message, "quota exceeded"), strings.Contains(message, "billing"), strings.Contains(message, "payment required"), strings.Contains(message, "status code 402"):
+		return true
+	default:
+		return false
+	}
+}
+
+// axEnvelope digs the structured ax error out of err. AIServiceError embeds
+// AxError rather than wrapping it, so the concrete type has to be checked
+// directly for ax releases before it grew an Unwrap; the AxError branch covers
+// plain envelopes, wrapped errors, and every release after.
+func axEnvelope(err error) (ax.AxError, bool) {
+	var serviceErr ax.AIServiceError
+	if errors.As(err, &serviceErr) {
+		return serviceErr.AxError, true
+	}
+	var envelope ax.AxError
+	if errors.As(err, &envelope) {
+		return envelope, true
+	}
+	return ax.AxError{}, false
+}
+
+// classifyAxEnvelope maps the provider's own status onto a public category.
+// Only statuses with a single honest reading are claimed; anything else falls
+// through to the message rather than guessing. A 429 is the one status that
+// still needs the message: providers bill exhausted credit as 429 as well, and
+// quota is terminal where a rate limit is worth waiting out.
+func classifyAxEnvelope(err error, message string) (ProviderErrorClassification, bool) {
+	envelope, ok := axEnvelope(err)
+	if !ok {
+		return ProviderErrorClassification{}, false
+	}
+	switch envelope.Status {
+	case 401, 403:
+		return authClassification, true
+	case 402:
+		return quotaClassification, true
+	case 408:
+		return timeoutClassification, true
+	case 429:
+		// The provider's own error code carries the distinction when the
+		// message is terse, so both are searched.
+		if quotaExhausted(message + " " + strings.ToLower(envelope.Code)) {
+			return quotaClassification, true
+		}
+		return rateLimitClassification, true
+	case 500, 502, 503, 504, 529:
+		return serverClassification, true
+	}
+	if envelope.Status != 0 {
+		return ProviderErrorClassification{}, false
+	}
+	// No status reached us, but ax still names transports it failed to complete.
+	switch {
+	case envelope.Type == "AxAIServiceTimeoutError":
+		return timeoutClassification, true
+	case envelope.Type == "AxAIServiceNetworkError", envelope.Category == "network":
+		return transportClassification, true
+	}
+	return ProviderErrorClassification{}, false
 }
 
 // PublicErrorInfo produces the only provider error payload GraphJin surfaces.
