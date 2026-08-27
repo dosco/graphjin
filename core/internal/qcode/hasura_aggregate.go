@@ -219,11 +219,19 @@ func aggregateResponsePath(prefix []string, parts ...string) []string {
 }
 
 func (co *Compiler) unknownHasuraAggregateRootError(requestedRoot, baseName string) error {
-	suggestions := decorateTableSuggestions(co.suggestTableNames(baseName), func(name string) string {
-		return name + hasuraAggregateSuffix
-	})
+	decorate := func(name string) string { return name + hasuraAggregateSuffix }
+	suggestions := decorateTableSuggestions(co.suggestTableNames(baseName), decorate)
+	if hint := didYouMeanClause(suggestions); hint != "" {
+		return fmt.Errorf("unknown Hasura-compatible aggregate root %q: table %q was not found%s",
+			requestedRoot, baseName, hint)
+	}
+	// Same gap the plain root had, and the one the measured run still hit after
+	// that was closed: every remaining dead end was `users_aggregate`, a base
+	// name no edit distance reaches from any real table. The roots are decorated
+	// here, so the fallback names them the way they would have to be written.
 	return fmt.Errorf("unknown Hasura-compatible aggregate root %q: table %q was not found%s",
-		requestedRoot, baseName, didYouMeanClause(suggestions))
+		requestedRoot, baseName,
+		sdata.TableHint(co.ParseName(baseName), decorateTableSuggestions(co.tableNames(), decorate)))
 }
 
 func hasAggregateFunctionChildren(op *graph.Operation, field graph.Field) bool {

@@ -141,3 +141,21 @@ func TestUnrelatedRootBoundsTheTableList(t *testing.T) {
 		t.Fatalf("error = %v, want the list truncated at 24", err)
 	}
 }
+
+// The aggregate root had the same gap as the plain one, and it was the whole
+// remainder after the plain one was closed: every genuine dead end left in the
+// measured run was `users_aggregate`, a base name no edit distance reaches from
+// any real table. The roots here are decorated, so the fallback has to name them
+// the way they would have to be written.
+func TestUnknownAggregateRootIsNamedTheRealRoots(t *testing.T) {
+	compiler := mustCompiler(t, suggestionSchema(t))
+
+	_, err := compiler.Compile([]byte(`query { users_aggregate { count } }`), nil, "user", "")
+	if err == nil {
+		t.Fatal("expected an error for an unknown aggregate root")
+	}
+	if !strings.Contains(err.Error(), "sla_policies_aggregate") ||
+		!strings.Contains(err.Error(), "support_tickets_aggregate") {
+		t.Fatalf("error = %v, want the real aggregate roots named", err)
+	}
+}
