@@ -115,6 +115,13 @@ func TestRuntimeSecretRedactionCoversDatabaseErrorShapes(t *testing.T) {
 			input:     `password=db-pass token=tok123 private_key=pem-data connection_string=postgres://u:p@example.test/db`,
 			forbidden: []string{"db-pass", "tok123", "pem-data", "postgres://u:p@example.test/db"},
 		},
+		{
+			// Gemini authenticates with a bare `key=` query parameter, so an
+			// embedding transport error used to write the API key to the log.
+			name:      "google endpoint api key in url",
+			input:     `Post "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key=AQ.notarealkey123": context canceled`,
+			forbidden: []string{"AQ.notarealkey123"},
+		},
 	}
 
 	for _, tc := range cases {
