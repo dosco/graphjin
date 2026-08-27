@@ -92,7 +92,7 @@ func TestSemanticIndexBuildsWhenProviderIgnoresRequestedDimension(t *testing.T) 
 	if warned == "" {
 		t.Fatal("ignoring the requested dimension was not reported at all")
 	}
-	if !strings.Contains(warned, "3072") || !strings.Contains(warned, "tiny") || !strings.Contains(warned, "128") {
+	if !strings.Contains(warned, "3072") || !strings.Contains(warned, "tiny") || !strings.Contains(warned, "768") {
 		t.Fatalf("warning does not name what was asked for and what came back: %q", warned)
 	}
 }

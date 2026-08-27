@@ -109,9 +109,14 @@ func TestSemanticDimensionPresetsAndValidation(t *testing.T) {
 		count int
 		named bool
 	}{
-		{name: "tiny", count: 128, named: true},
-		{name: "small", count: 256, named: true},
-		{name: "medium", count: 512, named: true},
+		// No preset sits below 768: gemini-embedding-001 is 3072-native and
+		// Google's recommended truncations are 768/1536/3072, so the old
+		// 128/256/512 ladder traded most of the recall for memory nobody asked
+		// to save. The unset case resolves to the shipped default.
+		{name: "tiny", count: 768, named: true},
+		{name: "small", count: 1536, named: true},
+		{name: "medium", count: 3072, named: true},
+		{name: "", count: 1536, named: true},
 		{name: "default", count: 0, named: false},
 	} {
 		count, named, err := (SemanticCatalogSearchConfig{Dimensions: test.name}).dimensionCount()
