@@ -260,6 +260,7 @@ If `sources:` is present, source mode is active. In source mode:
 - Use `sources[].capabilities` to enable or block source surfaces; valid capability keys depend on the source kind.
 - `tables[].read_only` blocks normal and managed mutations for that root.
 - `relationships: [{ from, to, as? }]` adds graph edges; cardinality and reverse traversal are inferred.
+- Relative paths in a source resolve against the config directory — the one holding `dev.yml`/`prod.yml`, or whatever `--path` points at — not the working directory the server was launched from. This covers `path` on `kind: code`, `root` on `kind: file`, and `specs_dir` on `kind: api`. Absolute paths are used as written. The one exception is a sqlite `path:` on `kind: database`, which is handed to the driver as written and so stays relative to the working directory.
 - Legacy MCP discovery/action tools and legacy HTTP helper endpoints (`/api/v1/discovery*`, `/api/v1/workflows/*`) are disabled by default; set `mcp.legacy_discovery: true` as an escape hatch.
 
 Direct migration:
@@ -1438,7 +1439,7 @@ tables:
 | `region` | string | - | S3 region |
 | `endpoint` | string | - | S3 endpoint override (MinIO, localstack, R2, etc.) — forces path-style addressing |
 | `prefix` | string | - | Prepended to every key (effective root for the table) |
-| `root` | string | - | Local filesystem root directory (required for `local`) |
+| `root` | string | - | Local filesystem root directory (required for `local`). Relative values resolve against the config directory, so `root: files` is the `files/` beside your config file regardless of where the server is started from |
 | `presign_ttl` | duration | `15m` | TTL for generated presigned URLs |
 | `public_base_url` | string | - | When set, replaces presigned URLs with `<base>/<key>` — useful for CDN fronting |
 | `max_list_page_size` | integer | `1000` | Caps `limit:` for list queries |

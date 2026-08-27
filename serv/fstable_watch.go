@@ -48,16 +48,31 @@ func (s *graphjinService) localFilesystemWatchRoots() ([]localFSWatchRoot, error
 	if s == nil || s.conf == nil {
 		return nil, nil
 	}
+	if len(s.conf.Core.Filesystems) == 0 {
+		return nil, nil
+	}
+	// Same base the engine resolves filesystems[].root against — the
+	// watcher has to land on the exact directory the backend serves or
+	// it silently invalidates nothing.
+	base, err := s.basePath()
+	if err != nil {
+		return nil, fmt.Errorf("filesystem watcher: resolve config path: %w", err)
+	}
 	roots := make([]localFSWatchRoot, 0, len(s.conf.Core.Filesystems))
 	for _, fc := range s.conf.Core.Filesystems {
 		if fc.ReadOnly || !strings.EqualFold(fc.Backend, "local") || strings.TrimSpace(fc.Root) == "" {
 			continue
 		}
-		root, err := filepath.Abs(fc.Root)
-		if err != nil {
-			return nil, fmt.Errorf("filesystem watcher %s: root: %w", fc.Name, err)
+		root := fc.Root
+		if !filepath.IsAbs(root) {
+			root = filepath.Join(base, root)
 		}
-		roots = append(roots, localFSWatchRoot{Name: fc.Name, Root: root})
+		// base itself can be relative (a relative --path), so still absolutise.
+		abs, absErr := filepath.Abs(root)
+		if absErr != nil {
+			return nil, fmt.Errorf("filesystem watcher %s: root: %w", fc.Name, absErr)
+		}
+		roots = append(roots, localFSWatchRoot{Name: fc.Name, Root: abs})
 	}
 	return roots, nil
 }

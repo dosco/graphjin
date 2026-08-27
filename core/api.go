@@ -1600,8 +1600,49 @@ func getFS(conf *Config) (fs FS, err error) {
 		return
 	}
 
-	fs = NewOsFS(filepath.Join(v, "config"))
+	// Wrapped so it does not satisfy FSBase. ./config here is a default
+	// core invented, not a directory the caller pointed at, and relative
+	// OS paths a caller wrote in a Go-built Config mean what they say —
+	// re-anchoring them on an invented ./config would be its own
+	// surprise. Callers with a real config directory (serv, cmd) hand one
+	// in, and their configs get the config-dir rule.
+	fs = defaultFS{NewOsFS(filepath.Join(v, "config"))}
 	return
+}
+
+// defaultFS marks the filesystem core falls back to when the caller
+// supplied none. It forwards every FS method to the wrapped osFS but
+// deliberately drops BasePath: embedding the FS interface, not the
+// concrete type, is what hides it.
+type defaultFS struct{ FS }
+
+// configDir returns the directory relative config paths resolve
+// against, or "" when the filesystem isn't backed by one (a deploy
+// bundle, an embedded FS, a test double).
+func (gj *graphjinEngine) configDir() string {
+	v, ok := gj.fs.(FSBase)
+	if !ok {
+		return ""
+	}
+	return v.BasePath()
+}
+
+// configRelPath resolves a config path that is handed to the OS
+// directly rather than read through gj.fs — a local filesystem table's
+// root, the OpenAPI specs dir. Relative values resolve against the
+// config directory, the same base every gj.fs-backed path already uses,
+// so a config keeps working no matter which working directory the
+// server was started from. Absolute values and configs with no config
+// directory behind them are returned unchanged.
+func (gj *graphjinEngine) configRelPath(p string) string {
+	if p == "" || filepath.IsAbs(p) {
+		return p
+	}
+	dir := gj.configDir()
+	if dir == "" {
+		return p
+	}
+	return filepath.Join(dir, p)
 }
 
 // newError creates a new error list
