@@ -45,9 +45,19 @@ func (co *Compiler) tableNotFoundError(name string, err error) error {
 	if !errors.Is(err, sdata.ErrTableNotFound) {
 		return err
 	}
-	clause := didYouMeanClause(co.suggestTableNames(name))
-	if clause == "" {
-		return err
+	if hint := sdata.TableHint(co.ParseName(name), co.tableNames()); hint != "" {
+		return fmt.Errorf("%w%s", err, hint)
 	}
-	return fmt.Errorf("%w%s", err, clause)
+	return err
+}
+
+// tableNames lists the schema's tables for a not-found hint.
+func (co *Compiler) tableNames() []string {
+	tables := co.s.GetTables()
+	names := make([]string, 0, len(tables))
+	for _, t := range tables {
+		names = append(names, t.Name)
+	}
+	return names
+
 }

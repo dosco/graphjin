@@ -1,6 +1,7 @@
 package sdata
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -105,5 +106,39 @@ func TestColumnHintNamesTheLikelyColumn(t *testing.T) {
 	if hint := (&health).ColumnHint("totally_unrelated"); !strings.Contains(hint, "available columns:") ||
 		!strings.Contains(hint, "open_risk_count") {
 		t.Fatalf("a miss with no near match must still list the columns: %q", hint)
+	}
+}
+
+// A hint is bounded on a wide table. Repeating hundreds of column names on
+// every miss costs real tokens and, past the first few dozen, an arbitrary
+// prefix of the schema rarely contains the column being looked for.
+func TestColumnHintStaysBoundedOnAWideTable(t *testing.T) {
+	cols := make([]DBColumn, 0, 500)
+	for i := 0; i < 500; i++ {
+		cols = append(cols, DBColumn{Name: fmt.Sprintf("field_%03d", i), Type: "text"})
+	}
+	wide := NewDBTable("public", "wide", "", cols)
+
+	// No near match: the list is the only help available, so it appears, but
+	// bounded and honest about what it is not showing.
+	miss := (&wide).ColumnHint("totally_unrelated")
+	if !strings.Contains(miss, "more)") {
+		t.Fatalf("a wide table must report a bounded list: %q", miss)
+	}
+	if len(miss) > 600 {
+		t.Fatalf("hint is %d bytes on a 500-column table; it must stay bounded", len(miss))
+	}
+
+	// A near match answers the question outright, so the list is not repeated
+	// behind it — the case that would otherwise pay the full cost every time.
+	near := (&wide).ColumnHint("field_007")
+	if !strings.Contains(near, `did you mean "field_007"`) && !strings.Contains(near, "did you mean") {
+		t.Fatalf("a near match must be named: %q", near)
+	}
+	if strings.Contains(near, "available columns") {
+		t.Fatalf("a named suggestion must not also carry the list: %q", near)
+	}
+	if len(near) > 120 {
+		t.Fatalf("a suggestion-only hint should be short, got %d bytes: %q", len(near), near)
 	}
 }

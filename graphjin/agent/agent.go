@@ -1842,13 +1842,14 @@ func (r *coreRuntime) ValidateWhereClause(ctx context.Context, args map[string]a
 		schema, err = r.gj.GetTableSchema(table)
 	}
 	if err != nil {
-		// Name the table it probably meant. Handed only "not found", a model
-		// re-sends the same guess until its step budget runs out — the recorded
-		// runs alternated `tickets` and `support_ticket` while the real table
-		// sat there as `support_tickets`, and every episode that hit this
-		// failed. One real name is the whole difference.
-		suggestion := core.DidYouMeanClause(r.gj.SuggestTableNames(table))
-		return nil, fmt.Errorf("failed to get schema for table %q: %w%s", table, err, suggestion)
+		// Name the table it probably meant, or the ones that exist. Handed only
+		// "not found", a model re-sends the same guess until its step budget
+		// runs out — the recorded runs alternated `tickets` and
+		// `support_ticket` while the real table sat there as `support_tickets`,
+		// and every episode that hit this failed. A suggestion covers that; it
+		// cannot cover a synonym like `companies` for `accounts`, which is what
+		// semantic catalog search produces, so the fallback names the schema.
+		return nil, fmt.Errorf("failed to get schema for table %q: %w%s", table, err, r.gj.TableHint(table))
 	}
 
 	table, database = resolvedValidationTarget(table, database, schema)

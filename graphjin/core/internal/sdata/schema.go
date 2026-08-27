@@ -614,12 +614,22 @@ func (ti *DBTable) ColumnHint(want string) string {
 	for _, c := range ti.Columns {
 		names = append(names, c.Name)
 	}
-	hint := DidYouMeanClause(MatchTableNames(want, names))
+	// A suggestion is the answer, so it travels alone. Appending the whole
+	// column list behind it repeated on every miss — measured at ~740 bytes a
+	// message, two thirds of them already carrying the name the caller wanted —
+	// and on a wide table the list is worse than useless: an arbitrary prefix of
+	// a few hundred columns rarely contains the one being looked for.
+	if hint := DidYouMeanClause(MatchTableNames(want, names)); hint != "" {
+		return hint
+	}
+	// Nothing matched, so the list is the only thing left that helps. It stays
+	// bounded, and says how much it is not showing rather than implying the
+	// table ends there.
 	if len(names) > maxListedColumns {
-		return hint + fmt.Sprintf("; available columns include: %s (%d more)",
+		return fmt.Sprintf("; available columns include: %s (%d more)",
 			strings.Join(names[:maxListedColumns], ", "), len(names)-maxListedColumns)
 	}
-	return hint + "; available columns: " + strings.Join(names, ", ")
+	return "; available columns: " + strings.Join(names, ", ")
 }
 
 // ColumnExists returns true if a column exists in a table
