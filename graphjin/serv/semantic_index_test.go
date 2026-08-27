@@ -311,7 +311,7 @@ func TestSemanticWhereKindRecognizesStructuredFilters(t *testing.T) {
 	}
 }
 
-func TestSemanticIndexIncrementalReuseDimensionMismatchAndWarmLoad(t *testing.T) {
+func TestSemanticIndexIncrementalReuseAndWarmLoad(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "catalog.sqlite3")
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -404,14 +404,23 @@ func TestSemanticIndexIncrementalReuseDimensionMismatchAndWarmLoad(t *testing.T)
 		}
 	}
 
+	// A full rebuild at whatever width the provider chose is coherent — reads
+	// compare against ActualDimension — so it must be accepted. Refusing it is
+	// what turned an ignored size request into permanent lexical search. Mixing
+	// widths within one generation is the case that must still fail, and
+	// TestSemanticIndexRecoversWhenCarriedVectorsChangeWidth covers it.
 	mismatch := &deterministicEmbeddingClient{dimension: 64}
 	index.embedder = mismatch
 	index.mu.Lock()
 	index.active = nil
 	index.forceFullRebuild = true
 	index.mu.Unlock()
-	if _, err := index.build(context.Background(), secondSnapshot); err == nil || !strings.Contains(err.Error(), "dimension") {
-		t.Fatalf("expected response dimension mismatch, got %v", err)
+	rebuilt, err := index.build(context.Background(), secondSnapshot)
+	if err != nil {
+		t.Fatalf("full rebuild at the provider's own dimension: %v", err)
+	}
+	if rebuilt.manifest.ActualDimension != 64 {
+		t.Fatalf("rebuilt at %d dimensions, want the 64 the provider returned", rebuilt.manifest.ActualDimension)
 	}
 
 	index.embedder = client

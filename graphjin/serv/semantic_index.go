@@ -306,7 +306,12 @@ type semanticCatalogIndex struct {
 	forceFullRebuild bool
 	dirty            chan struct{}
 	cancel           context.CancelFunc
+	buildCtx         context.Context
 	cache            *semanticQueryLRU
+
+	logReady     sync.Once
+	logDimension sync.Once
+	logBuilding  sync.Once
 }
 
 var localSemanticBuildMu sync.Mutex
@@ -366,7 +371,10 @@ func (i *semanticCatalogIndex) Start() {
 		i.setActive(warm)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	i.mu.Lock()
 	i.cancel = cancel
+	i.buildCtx = ctx
+	i.mu.Unlock()
 	go i.buildLoop(ctx)
 	i.CatalogChanged()
 }
@@ -596,13 +604,34 @@ func (i *semanticCatalogIndex) build(ctx context.Context, snapshot *core.Catalog
 				actualDimension = len(vector)
 			}
 			if len(vector) != actualDimension {
+				// Vectors carried over from an earlier generation are stale once
+				// the provider starts returning a different width — an SDK or
+				// provider upgrade can begin honouring a size request that used
+				// to be ignored. Drop them so the next build re-embeds every
+				// document at the new width instead of failing for the life of
+				// the configuration. Only a build that reused vectors reaches
+				// this, so the recovery cannot loop.
+				if len(missing) != len(documents) {
+					i.invalidateDimension()
+				}
 				return nil, fmt.Errorf("embedding response dimension changed within one generation: got %d, want %d", len(vector), actualDimension)
 			}
 			vectors[index] = vector
 		}
 	}
+	// A configured dimension is a request, not a contract. Providers are free to
+	// ignore it — not every embedding model can truncate — and taking the whole
+	// feature down over that turns `enabled: true` into silent lexical search.
+	// The index is coherent either way: reads compare against ActualDimension,
+	// which the manifest records.
 	if named && actualDimension != requested {
-		return nil, fmt.Errorf("embedding response dimension %d does not match configured %s dimension %d", actualDimension, i.conf.Dimensions, requested)
+		i.logDimension.Do(func() {
+			if i.service != nil && i.service.log != nil {
+				i.service.log.Warnf(
+					"embedding provider returned %d dimensions for the configured %s dimension (%d); the index and its memory use follow the returned size",
+					actualDimension, i.conf.Dimensions, requested)
+			}
+		})
 	}
 	for n := range vectors {
 		if len(vectors[n]) != actualDimension {
@@ -697,15 +726,14 @@ func (i *semanticCatalogIndex) embedMissing(ctx context.Context, documents []sem
 				if err == nil && len(vectors) != len(texts) {
 					err = fmt.Errorf("embedding batch returned %d vectors for %d documents", len(vectors), len(texts))
 				}
-				select {
-				case results <- result{start: job.start, vectors: vectors, err: err}:
-				case <-workerCtx.Done():
-					return
-				}
+				// An unconditional send: the collector drains until every
+				// worker has exited, so this cannot block, and racing it against
+				// workerCtx.Done() would discard exactly the failure an operator
+				// needs to see — the one that triggered the cancellation.
+				results <- result{start: job.start, vectors: vectors, err: err}
 			}
 		}()
 	}
-	batches := (len(missing) + semanticEmbeddingBatchSize - 1) / semanticEmbeddingBatchSize
 	go func() {
 		defer close(jobs)
 		for start := 0; start < len(missing); start += semanticEmbeddingBatchSize {
@@ -720,22 +748,40 @@ func (i *semanticCatalogIndex) embedMissing(ctx context.Context, documents []sem
 			}
 		}
 	}()
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
 	out := make([][]float32, len(missing))
-	for n := 0; n < batches; n++ {
-		select {
-		case <-ctx.Done():
-			cancel()
-			return nil, ctx.Err()
-		case item := <-results:
-			if item.err != nil {
-				cancel()
-				return nil, item.err
+	var failure error
+	for item := range results {
+		if item.err != nil {
+			// Cancelling to stop the siblings turns their in-flight calls into
+			// "context canceled", and those can reach this loop ahead of the
+			// failure that caused them. Keep draining so the error an operator
+			// sees names something they can act on — a quota rejection or a bad
+			// key, not the cancellation it triggered.
+			if failure == nil || (isCancellation(failure) && !isCancellation(item.err)) {
+				failure = item.err
 			}
-			copy(out[item.start:], item.vectors)
+			cancel()
+			continue
 		}
+		copy(out[item.start:], item.vectors)
 	}
-	workers.Wait()
+	if failure != nil {
+		return nil, failure
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// isCancellation reports whether err only says that work was abandoned, which
+// never explains why.
+func isCancellation(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func (i *semanticCatalogIndex) load(id string) (*semanticPersistedIndex, error) {
@@ -854,6 +900,13 @@ func (i *semanticCatalogIndex) setActive(index *semanticPersistedIndex) {
 	i.active = index
 	i.forceFullRebuild = false
 	i.mu.Unlock()
+	if index == nil || i.service == nil || i.service.log == nil {
+		return
+	}
+	i.logReady.Do(func() {
+		i.service.log.Infof("semantic catalog search ready: %d documents at %d dimensions",
+			len(index.docs), index.manifest.ActualDimension)
+	})
 }
 
 func (i *semanticCatalogIndex) generationDir(id string) string {
@@ -861,8 +914,32 @@ func (i *semanticCatalogIndex) generationDir(id string) string {
 }
 
 func (i *semanticCatalogIndex) warnFallback(err error) {
-	if i != nil && i.service != nil && i.service.log != nil && err != nil {
-		i.service.log.Warnf("semantic catalog index unavailable; using lexical search: %s", redactRuntimeError(err))
+	if i == nil || i.service == nil || i.service.log == nil || err == nil {
+		return
+	}
+	// A build cancelled because the service is closing or being swapped is not
+	// degradation. Reporting it as one made three healthy boots of the eval demo
+	// look like the feature had failed.
+	if errors.Is(err, context.Canceled) && i.closing() {
+		return
+	}
+	i.service.log.Warnf("semantic catalog index unavailable; using lexical search: %s", redactRuntimeError(err))
+}
+
+// closing reports whether the index's own background context has been cancelled,
+// which happens only in Close.
+func (i *semanticCatalogIndex) closing() bool {
+	i.mu.RLock()
+	ctx := i.buildCtx
+	i.mu.RUnlock()
+	if ctx == nil {
+		return false
+	}
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
 	}
 }
 

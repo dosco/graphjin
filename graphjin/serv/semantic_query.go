@@ -84,6 +84,15 @@ func (i *semanticCatalogIndex) hints(ctx context.Context, snapshot *core.Catalog
 func (i *semanticCatalogIndex) hintsDetailed(ctx context.Context, snapshot *core.CatalogSnapshot, query core.CatalogQuery) (semanticHintSet, error) {
 	index := i.current()
 	if index == nil || index.manifest.ActualDimension <= 0 {
+		// The index builds in the background, so the first searches after a cold
+		// boot run lexical. That is expected and brief, but it used to be
+		// entirely silent while the agent was already being told semantic recall
+		// was available.
+		i.logBuilding.Do(func() {
+			if i.service != nil && i.service.log != nil {
+				i.service.log.Infof("semantic catalog index is still building; catalog search is lexical until it is ready")
+			}
+		})
 		return semanticHintSet{}, nil
 	}
 	result := semanticHintSet{indexReady: true}
