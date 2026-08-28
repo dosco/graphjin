@@ -4,19 +4,18 @@ benchmark:
     slug: deeporg
     name: DeepORG — The Organizational Agent Benchmark
 suite:
-    generation: "2028.3"
-    comparison_generation: "2028.3"
-    scope_label: 2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source · 2028.1 — intent-phrased tasks with execution twins · 2028.2 — cross-source ruler fix (v11) · 2028.3 — executable join shape for join-only tables
+    generation: "2028.4"
+    comparison_generation: "2028.4"
+    scope_label: 2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source · 2028.1 — intent-phrased tasks with execution twins · 2028.2 — cross-source ruler fix (v11) · 2028.3 — executable join shape for join-only tables · 2028.4 — tasks state what they grade; closable tickets documented
     generation_scopes:
         "2026.1": governed read-only Q&A
         "2026.2": governed read-only Q&A
         "2027.1": adds writes, alerts, follow-ups, multi-source
         "2028.1": intent-phrased tasks with execution twins, v10 ruler
         "2028.2": 'cross-source ruler fix (v11): argument-free file reads count'
-        "2028.3": catalog teaches the executable join shape for join-only tables
-    generator_version: graphjin.eval.generator/v11
-    identity: 4131125de0cab25af223a89596fd93ef
-    suite_fingerprint: 9e9a9f53f07a6fc7b691e312a9833c30
+    generator_version: graphjin.eval.generator/v12
+    identity: 7d19c897a7eafd37279d2895643dd39c
+    suite_fingerprint: 8f31247903e5b5cbc49501e3632968d6
     catalog_hash: c4ee2c0d346f636f9230881f7fa9d912
     seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
     mode: bench
@@ -1756,7 +1755,8 @@ runs:
       slug: 20260826t020537-69aa4e73
       label: gemini-3.7-flash
       release: 07d41ccf
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.3)
       generation: "2028.3"
       generated_at: 2026-08-26T02:05:37.418545Z
       model: gemini-3.7-flash
@@ -1824,7 +1824,8 @@ runs:
       slug: 20260826t032918-55570119
       label: gemini-3.5-flash-lite
       release: 5163ebfc
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.3)
       generation: "2028.3"
       generated_at: 2026-08-26T03:29:18.353195Z
       model: gemini-3.5-flash-lite
@@ -1894,7 +1895,8 @@ runs:
       label: Gemma 4 31B (Cerebras)
       release: 1bc2d163
       notes: Cerebras reasoning_effort=high. Deterministically rescored after correcting provider/application error classification; six transport attempts have unknown usage, so reported cost is a lower bound.
-      ranked: true
+      ranked: false
+      unranked_reason: previous public benchmark cohort (2028.3)
       generation: "2028.3"
       generated_at: 2026-08-26T19:25:58.934247Z
       model: gemma-4-31b
@@ -1962,4 +1964,73 @@ runs:
       guard_interventions: 105
       unsafe_effects: 0
       rescored_from: 20260826T165542.078453000Z-d065a1aa
+      accepted: true
+    - run_id: 20260828T052855.195424000Z-d2fd05d5
+      slug: 20260828t052855-d2fd05d5
+      label: gemini-3.5-flash-lite
+      release: f5b22dd2
+      ranked: true
+      generation: "2028.4"
+      generated_at: 2026-08-28T05:28:55.195434Z
+      model: gemini-3.5-flash-lite
+      provider: gemini
+      graphjin_commit: f5b22dd2
+      binary_fingerprint: 4c5ce8c0c70e48698bd6337366c95500a88cf279e2961f09ad7f9cc7495b1a22
+      suite_identity: 7d19c897a7eafd37279d2895643dd39c
+      suite_fingerprint: 8f31247903e5b5cbc49501e3632968d6
+      catalog_hash: c4ee2c0d346f636f9230881f7fa9d912
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: f89e86bf290ec865b6bece26b0789420f7b26f0e05db8979c6b438ea3efee7e1
+      data_anchor: "2026-08-28"
+      reward_version: graphjin.eval.reward/v5
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.8407079646017699
+      recall_ci_low: 0.7699115044247787
+      recall_ci_high: 0.9026548672566371
+      pass_at_k: 0.9380530973451328
+      pass_power_k: 0.584070796460177
+      ground_truth_recall: 0.8932038834951457
+      method_recall: 0.9029126213592233
+      safety_precision: 1
+      behavior_recall: 0.9292035398230089
+      category_recall:
+        action: 0.6
+        aggregate: 1
+        cross-source: 0.25
+        discovery: 1
+        multi-turn: 0.8571428571428571
+        ranking: 1
+        reactive: 0.9166666666666666
+        refusal: 0.9
+        saved-metric: 0.8888888888888888
+        window: 0.8666666666666667
+      rollup_recall:
+        governance: 0.9
+        operations: 0.6666666666666666
+        questions: 0.9508196721311475
+      rollup_pass_power:
+        governance: 0.9
+        operations: 0.23809523809523808
+        questions: 0.7704918032786885
+      mean_reward: 0.9067433628318579
+      total_tokens: 12011974
+      prompt_tokens: 11728802
+      completion_tokens: 283172
+      provider_total_tokens: 12011974
+      latency_p50_ms: 4342
+      latency_p95_ms: 12494
+      prompt_price_per_million: 0.3
+      completion_price_per_million: 2.5
+      estimated_list_cost_usd: 4.2265706
+      estimated_list_cost_per_task_usd: 0.037403279646017695
+      pricing_source: https://ai.google.dev/gemini-api/docs/pricing (standard, 2026-08-06)
+      guard_interventions: 82
+      forbidden_attempts: 1
+      unsafe_effects: 0
       accepted: true
