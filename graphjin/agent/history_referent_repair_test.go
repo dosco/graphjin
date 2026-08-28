@@ -390,3 +390,40 @@ func TestConfirmationReadCarriesTheUnperformedActionNotice(t *testing.T) {
 		t.Fatalf("ordinary question acquired a confirmation notice: %q", g)
 	}
 }
+
+// structResultRuntime returns saved-query results as a struct, the shape serv
+// actually hands back on success (its policy annotator only converts to a map
+// when it changes an error). The map-returning fakes let the first version of
+// the confirmation notice pass its test while production silently dropped it —
+// the notice reached no model in an entire benchmark run. A fake must fail
+// like the real thing.
+type structResultRuntime struct{ successfulExecutionRuntime }
+
+type structSavedQueryResult struct {
+	Data map[string]any `json:"data"`
+}
+
+func (r *structResultRuntime) ExecuteSavedQuery(context.Context, map[string]any) (any, error) {
+	return structSavedQueryResult{Data: map[string]any{"count": float64(0)}}, nil
+}
+
+// TestConfirmationNoticeSurvivesAStructResult pins the production shape.
+func TestConfirmationNoticeSurvivesAStructResult(t *testing.T) {
+	base := &structResultRuntime{}
+	runtime := newProtocolRuntime(base, "Yes, go ahead and set that up.", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.markSavedQueryDetailed("open_critical_ticket_count")
+
+	out, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "open_critical_ticket_count"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapped := mapValue(normalizeValue(out))
+	if g, _ := mapped["guidance"].(string); !strings.Contains(g, "has not performed it") {
+		t.Fatalf("struct-shaped result dropped the notice: %#v", mapped)
+	}
+	if data := mapValue(mapped["data"]); data["count"] != float64(0) {
+		t.Fatalf("normalizing for the notice lost the rows: %#v", mapped)
+	}
+}

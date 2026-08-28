@@ -609,6 +609,18 @@ func attachConfirmationReadNotice(out any) any {
 		res["guidance"] = instruction
 		return res
 	default:
+		// The production result is not one of the typed cases: a successful
+		// saved query comes back as serv's ExecuteResult struct (the policy
+		// annotator only converts to a map when it changes an error). The first
+		// version returned such values untouched, which dropped the notice in
+		// every real run while the map-returning test fake kept the test green.
+		// Normalize and attach rather than silently doing nothing.
+		if mapped := mapValue(normalizeValue(out)); mapped != nil {
+			mapped = cloneAnyMap(mapped)
+			mapped["recovery"] = recovery
+			mapped["guidance"] = instruction
+			return mapped
+		}
 		return out
 	}
 }
