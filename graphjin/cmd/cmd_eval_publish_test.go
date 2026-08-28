@@ -61,7 +61,7 @@ func TestEvalPublishRefusalsAndLowScoreBoundary(t *testing.T) {
 		t.Fatalf("low score was refused: %v", err)
 	}
 	data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
-	if err != nil || len(data.Runs) != 1 || data.Runs[0].Accepted {
+	if err != nil || len(data.Runs) != 1 || data.Runs[0].Accepted || !data.Runs[0].BoardEligible || data.Runs[0].ModelKey == "" {
 		t.Fatalf("published low score = %+v err=%v", data.Runs, err)
 	}
 }
@@ -79,7 +79,7 @@ func TestEvalPublishSuspectScoringRequiresExplicitOverride(t *testing.T) {
 		t.Fatalf("explicit suspect override failed: %v", err)
 	}
 	data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
-	if err != nil || len(data.Runs) != 1 || !data.Runs[0].ScoringSuspect {
+	if err != nil || len(data.Runs) != 1 || !data.Runs[0].ScoringSuspect || data.Runs[0].BoardEligible {
 		t.Fatalf("suspect benchmark data = %+v err=%v", data.Runs, err)
 	}
 }
@@ -111,7 +111,7 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 		}
 	}
 	data, err := loadBenchmarkData(dataPath, publishTestBenchmark(t))
-	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || data.Runs[0].UnrankedReason != "" || data.Suite.ComparisonGeneration != gjeval.PublicBenchmarkGeneration || data.Suite.ScopeLabel != defaultBenchmarkScope || len(data.Suite.GenerationScopes) != 5 {
+	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || !data.Runs[0].BoardEligible || data.Runs[0].ModelKey == "" || data.Runs[0].UnrankedReason != "" || data.Suite.ComparisonGeneration != gjeval.PublicBenchmarkGeneration || data.Suite.ScopeLabel != defaultBenchmarkScope || len(data.Suite.GenerationScopes) != 5 {
 		t.Fatalf("data=%+v err=%v", data, err)
 	}
 	page, err := os.ReadFile(pagePath)
@@ -181,7 +181,7 @@ func TestEvalPublishOffSuiteIsSeparated(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
-	if err != nil || len(data.Runs) != 2 || data.Runs[1].Ranked || !strings.Contains(data.Runs[1].UnrankedReason, "catalog_hash") {
+	if err != nil || len(data.Runs) != 2 || data.Runs[1].Ranked || data.Runs[1].BoardEligible || !strings.Contains(data.Runs[1].UnrankedReason, "catalog_hash") {
 		t.Fatalf("data=%+v err=%v", data.Runs, err)
 	}
 }
@@ -232,7 +232,7 @@ func TestEvalPublishAdvancesOfficialCohortAndKeepsHistory(t *testing.T) {
 		SchemaVersion: benchmarkDataVersion,
 		Benchmark:     publishTestBenchmark(t),
 		Suite:         benchmarkSuite{Generation: "2026.1", Identity: "old-suite", SuiteFingerprint: "old-fingerprint"},
-		Runs: []benchmarkEntry{{RunID: "old-run", Slug: "old-run", Label: "Historical", Ranked: true,
+		Runs: []benchmarkEntry{{RunID: "old-run", Slug: "old-run", Label: "Historical", Ranked: true, BoardEligible: true,
 			Generation: "2026.1", SuiteFingerprint: "old-fingerprint"}},
 	}
 	raw, err := marshalBenchmarkData(old)
@@ -261,11 +261,11 @@ func TestEvalPublishAdvancesOfficialCohortAndKeepsHistory(t *testing.T) {
 	for _, entry := range data.Runs {
 		switch entry.RunID {
 		case "old-run":
-			if entry.Ranked || !strings.Contains(entry.UnrankedReason, "2026.1") {
+			if entry.Ranked || !entry.BoardEligible || !strings.Contains(entry.UnrankedReason, "2026.1") {
 				t.Fatalf("historical row was not demoted clearly: %+v", entry)
 			}
 		case report.RunID:
-			if !entry.Ranked {
+			if !entry.Ranked || !entry.BoardEligible || entry.ModelKey == "" {
 				t.Fatalf("current official row is unranked: %+v", entry)
 			}
 		}
@@ -305,7 +305,7 @@ func TestEvalPublishAdvancesCorrectedScoringContractAndKeepsExecutionProvenance(
 			MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature, RewardVersion: oldReport.RewardVersion,
 		},
 		Runs: []benchmarkEntry{{
-			RunID: "old-v2-run", Slug: "old-v2-run", Label: "Old scoring", Ranked: true,
+			RunID: "old-v2-run", Slug: "old-v2-run", Label: "Old scoring", Ranked: true, BoardEligible: true,
 			Generation: gjeval.PublicBenchmarkGeneration, SuiteIdentity: gjeval.SuiteIdentity(oldReport),
 			SuiteFingerprint: report.SuiteFingerprint, RewardVersion: oldReport.RewardVersion,
 		}},
@@ -331,11 +331,11 @@ func TestEvalPublishAdvancesCorrectedScoringContractAndKeepsExecutionProvenance(
 	for _, entry := range data.Runs {
 		switch entry.RunID {
 		case "old-v2-run":
-			if entry.Ranked || !strings.Contains(entry.UnrankedReason, "corrected scoring contract") {
+			if entry.Ranked || entry.BoardEligible || !strings.Contains(entry.UnrankedReason, "corrected scoring contract") {
 				t.Fatalf("old scoring row was not superseded: %+v", entry)
 			}
 		case report.RunID:
-			if !entry.Ranked || entry.RescoredFrom != report.RescoredFrom || entry.GuardInterventions != 4 || entry.ForbiddenAttempts != 7 || entry.UnsafeEffects != 0 {
+			if !entry.Ranked || !entry.BoardEligible || entry.ModelKey == "" || entry.RescoredFrom != report.RescoredFrom || entry.GuardInterventions != 4 || entry.ForbiddenAttempts != 7 || entry.UnsafeEffects != 0 {
 				t.Fatalf("rescored row metadata = %+v", entry)
 			}
 			if entry.GraphJinCommit != report.Provenance.GraphJinCommit || entry.BinaryFingerprint != report.Provenance.BinaryFingerprint {
@@ -457,6 +457,17 @@ func TestEvalPublishSupersedesByStableModelIdentity(t *testing.T) {
 				data.Runs[1].Provider != tc.secondProvider || data.Runs[1].Model != tc.secondModel {
 				t.Fatalf("publisher changed model provenance: %+v", data.Runs)
 			}
+			for _, entry := range data.Runs {
+				if entry.ModelKey == "" || !entry.BoardEligible {
+					t.Fatalf("published model is missing durable board metadata: %+v", entry)
+				}
+			}
+			if tc.name == "gemini provider aliases are canonical" && data.Runs[0].ModelKey != data.Runs[1].ModelKey {
+				t.Fatalf("Gemini aliases produced different model keys: %+v", data.Runs)
+			}
+			if tc.name == "same model name through different providers coexists" && data.Runs[0].ModelKey == data.Runs[1].ModelKey {
+				t.Fatalf("different providers collapsed into one model key: %+v", data.Runs)
+			}
 			ranked := 0
 			for _, entry := range data.Runs {
 				if entry.Ranked {
@@ -476,6 +487,42 @@ func TestEvalPublishSupersedesByStableModelIdentity(t *testing.T) {
 	}
 }
 
+func TestEvalPublishKeepsLowerNewBuildEligibleWithoutErasingBest(t *testing.T) {
+	project, site := t.TempDir(), t.TempDir()
+	first := publishTestReport("20260803T101112.000000000Z-high-score")
+	first.Metrics.Recall = .91
+	first.Metrics.GroundTruthRecall = .91
+	first.Metrics.MethodRecall = .91
+	writePublishTestReport(t, project, first)
+	if err := publishTestRun(t, project, site, first.RunID, &evalPublishOptions{Site: site}); err != nil {
+		t.Fatal(err)
+	}
+
+	second := publishTestReport("20260803T101113.000000000Z-lower-score")
+	second.Metrics.Recall = .42
+	second.Metrics.GroundTruthRecall = .42
+	second.Metrics.MethodRecall = .42
+	second.Provenance.GraphJinCommit = "newer-build"
+	writePublishTestReport(t, project, second)
+	if err := publishTestRun(t, project, site, second.RunID, &evalPublishOptions{Site: site}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := loadBenchmarkData(publishTestDataPath(site), publishTestBenchmark(t))
+	if err != nil || len(data.Runs) != 2 {
+		t.Fatalf("published rows = %+v err=%v", data.Runs, err)
+	}
+	if data.Runs[0].Ranked || !data.Runs[0].BoardEligible || data.Runs[0].Recall != .91 {
+		t.Fatalf("higher historical result was erased from best-result eligibility: %+v", data.Runs[0])
+	}
+	if !data.Runs[1].Ranked || !data.Runs[1].BoardEligible || data.Runs[1].Recall != .42 {
+		t.Fatalf("newer lower result metadata is wrong: %+v", data.Runs[1])
+	}
+	if data.Runs[0].ModelKey == "" || data.Runs[0].ModelKey != data.Runs[1].ModelKey {
+		t.Fatalf("same model does not share one canonical key: %+v", data.Runs)
+	}
+}
+
 func TestEvalPublishLegacyRowFallsBackToLabelIdentity(t *testing.T) {
 	project, site := t.TempDir(), t.TempDir()
 	report := publishTestReport("20260803T101113.000000000Z-current-model")
@@ -486,7 +533,7 @@ func TestEvalPublishLegacyRowFallsBackToLabelIdentity(t *testing.T) {
 	}
 	legacy := benchmarkEntry{
 		RunID: "20260803T101112.000000000Z-legacy-model", Slug: "legacy-model", Label: "Shared friendly label",
-		Ranked: true, Generation: gjeval.PublicBenchmarkGeneration,
+		Ranked: true, BoardEligible: true, Generation: gjeval.PublicBenchmarkGeneration,
 	}
 	data := benchmarkData{
 		SchemaVersion: benchmarkDataVersion,

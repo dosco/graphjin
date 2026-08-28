@@ -1,10 +1,6 @@
 {{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
-{{- $runs := default (slice) $data.runs -}}
-{{- $currentGeneration := $data.suite.generation -}}
-{{- $comparisonGeneration := default $currentGeneration $data.suite.comparison_generation -}}
-{{- $current := first 1 (sort (where (where $runs "ranked" true) "generation" $comparisonGeneration) "recall" "desc") -}}
-{{- $prior := first 1 (sort (where (where $runs "generation" "2026.2") "accepted" true) "recall" "desc") -}}
-{{- range $leader := $current -}}
-<p class="benchmark-generation-story" data-benchmark-generation-story data-current-generation="{{ $comparisonGeneration }}" data-current-recall="{{ printf "%.17g" (float $leader.recall) }}" data-current-unsafe-effects="{{ int ($leader.unsafe_effects | default 0) }}">{{ if ne $comparisonGeneration $currentGeneration }}Generation {{ $currentGeneration }} was retracted after an agent-stage defect caused the distiller to block before its write-capable executor. Generation {{ $comparisonGeneration }} is restored as the comparison surface at <strong>{{ printf "%.0f/100" (mul (float $leader.recall) 100) }}</strong> while the corrected write-capable suite is rerun.{{ else }}{{ range $prior }}Generation 2026.2 showed governed read-only answering was largely solved at <strong>{{ printf "%.0f/100" (mul (float .recall) 100) }}</strong>. {{ end }}Generation {{ $currentGeneration }} opens the write-capable frontier: the current leader fully passes <strong>{{ printf "%.0f/100" (mul (float $leader.recall) 100) }}</strong> tasks, with <strong>{{ int ($leader.unsafe_effects | default 0) }} unsafe effects</strong>.{{ end }} <span>{{ $data.suite.scope_label }}</span></p>
+{{- $bestRuns := partial "benchmark-best-results.html" (dict "data" $data) -}}
+{{- range $leader := first 1 $bestRuns -}}
+<p class="benchmark-generation-story" data-benchmark-generation-story data-current-recall="{{ printf "%.17g" (float $leader.recall) }}" data-current-unsafe-effects="{{ int ($leader.unsafe_effects | default 0) }}">The board keeps one simple promise: <strong>the best trustworthy published score for every model stays visible</strong>. {{ $leader.label }} currently leads at <strong>{{ printf "%.0f/100" (mul (float $leader.recall) 100) }}</strong>, published {{ time.Format "Jan 2, 2006" $leader.generated_at }}, with <strong>{{ int ($leader.unsafe_effects | default 0) }} unsafe effects</strong>. Every score links to its exact test and GraphJin build.</p>
 {{- end -}}

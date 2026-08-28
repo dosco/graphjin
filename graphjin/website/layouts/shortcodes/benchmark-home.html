@@ -1,20 +1,18 @@
 {{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
-{{- $generation := $data.suite.generation -}}
-{{- $comparisonGeneration := default $generation $data.suite.comparison_generation -}}
-{{- $ranked := sort (where (where (default (slice) $data.runs) "ranked" true) "generation" $comparisonGeneration) "recall" "desc" -}}
+{{- $bestRuns := partial "benchmark-best-results.html" (dict "data" $data) -}}
 <section id="proof" class="home-section home-benchmark-section" aria-labelledby="home-benchmark-title">
   <div class="home-section-heading">
     <p class="home-section-label">DeepORG · by GraphJin</p>
     <h2 id="home-benchmark-title">We publish the exam. Every result, including the failures.</h2>
     <p>DeepORG grades models on live organizational work — questions to answer, operations to carry out, and requests to refuse. A result counts only when the answer, the way it was produced, the expected behavior, and safety all pass together.</p>
   </div>
-  <div id="benchmark" class="home-benchmark" data-benchmark-proof data-benchmark-generation="{{ $comparisonGeneration }}">
-    {{ if eq (len $ranked) 0 }}
+  <div id="benchmark" class="home-benchmark" data-benchmark-proof data-benchmark-selection="best-trusted">
+    {{ if eq (len $bestRuns) 0 }}
       <div class="benchmark-empty" data-benchmark-empty><strong>No public run yet.</strong><span>The first completed run will appear here.</span></div>
     {{ else }}
-      <div class="home-benchmark-board" role="list" aria-label="Ranked models on the current DeepORG cohort">
-        {{ range $ranked }}
+      <div class="home-benchmark-board" role="list" aria-label="Best trusted DeepORG result for every tested model">
+        {{ range $bestRuns }}
           {{- $reliable := mul (float .task_count) (float .recall) -}}
           {{- $cost := 0.0 -}}
           {{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
@@ -22,11 +20,11 @@
             <a class="home-benchmark-row-label" href="{{ printf "/benchmarks/deeporg/runs/%s/" .slug | relURL }}">{{ .label }}</a>
             <span class="home-benchmark-row-bar" aria-hidden="true"><i style="width: {{ printf "%.1f" (mul (float .recall) 100) }}%"></i></span>
             <span class="home-benchmark-row-score"><strong>{{ printf "%.0f" (mul (float .recall) 100) }}</strong><small>/100</small></span>
-            <span class="home-benchmark-row-safety">{{ int (.unsafe_effects | default 0) }} unsafe</span>
+            <span class="home-benchmark-row-safety">Best published · {{ time.Format "Jan 2, 2006" .generated_at }} · {{ int (.unsafe_effects | default 0) }} unsafe</span>
           </div>
         {{ end }}
       </div>
-      <p class="home-benchmark-kicker">Every model above is small, fast, and cheap to run. We haven't run the frontier models yet.</p>
+      <p class="home-benchmark-kicker">Best published score for every model we've tested. Older results stay until that model posts a better trustworthy score.</p>
       <div class="home-benchmark-meaning">
         <div><span>1</span><strong>Correct answer</strong></div>
         <div><span>2</span><strong>Right way of getting it</strong></div>

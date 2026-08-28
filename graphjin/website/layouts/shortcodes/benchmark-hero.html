@@ -1,19 +1,13 @@
 {{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
-{{- $generation := $data.suite.generation -}}
-{{- $comparisonGeneration := default $generation $data.suite.comparison_generation -}}
-{{- $ranked := sort (where (where (default (slice) $data.runs) "ranked" true) "generation" $comparisonGeneration) "recall" "desc" -}}
-{{- /* Hero claims render from the leaderboard data so the homepage can never
-       outrun the published proof: attempts and unsafe effects are summed over
-       the ranked cohort, and the safety figure prints the real number. */ -}}
-{{- $models := len $ranked -}}
+{{- $runs := default (slice) $data.runs -}}
+{{- $bestRuns := partial "benchmark-best-results.html" (dict "data" $data) -}}
+{{- /* Hero claims render from the same best-result set as the public boards. */ -}}
+{{- $models := len $bestRuns -}}
 {{- $attempts := 0 -}}
 {{- $unsafe := 0 -}}
-{{- $tasks := 0 -}}
-{{- range $ranked -}}
+{{- range $bestRuns -}}
   {{- $attempts = add $attempts (int (.episode_count | default 0)) -}}
   {{- $unsafe = add $unsafe (int (.unsafe_effects | default 0)) -}}
-  {{- if eq $tasks 0 -}}{{- $tasks = int .task_count -}}{{- end -}}
 {{- end -}}
-{{- $repeats := int $data.suite.repeats -}}
-<div class="home-hero-copy" data-benchmark-hero data-hero-models="{{ $models }}" data-hero-attempts="{{ $attempts }}" data-hero-unsafe="{{ $unsafe }}" data-hero-tasks="{{ $tasks }}" data-hero-repeats="{{ $repeats }}"><p class="home-section-label">v3 · Apache 2.0</p><h1>Can an AI agent actually do what your organization needs? <span class="h1-accent">Ours can — and we publish the proof.</span></h1><p class="home-lede">One governed agent across every database, API, and file you run. It answers real questions, carries out real operations, and refuses what it shouldn't — {{ $unsafe }} unsafe effects across {{ lang.FormatNumberCustom 0 $attempts }} published attempts, all on small, fast models. We haven't even run the big ones yet.</p><div class="home-actions"><a class="button-primary" href="#quickstart">Try it in 2 minutes</a><a class="button-secondary" href="/benchmark/">See the public exam <i class="ti ti-arrow-right" aria-hidden="true"></i></a></div><a class="home-hero-proof" href="#proof" aria-label="Benchmark proof: {{ $models }} small models, {{ $tasks }} live tasks, {{ $attempts }} attempts, {{ $unsafe }} unsafe effects"><span><strong>{{ $models }}</strong> small models</span><span><strong>{{ $tasks }}</strong> live tasks</span><span><strong>{{ lang.FormatNumberCustom 0 $attempts }}</strong> attempts</span><span><strong>{{ $unsafe }}</strong> unsafe effects</span></a></div>
+<div class="home-hero-copy" data-benchmark-hero data-hero-models="{{ $models }}" data-hero-attempts="{{ $attempts }}" data-hero-unsafe="{{ $unsafe }}" data-hero-published-runs="{{ len $runs }}"><p class="home-section-label">v3 · Apache 2.0</p><h1>Can an AI agent actually do what your organization needs? <span class="h1-accent">Ours can — and we publish the proof.</span></h1><p class="home-lede">One governed agent across every database, API, and file you run. It answers real questions, carries out real operations, and refuses what it shouldn't — {{ $unsafe }} unsafe effects across {{ lang.FormatNumberCustom 0 $attempts }} attempts from the best published result for every model we've tested.</p><div class="home-actions"><a class="button-primary" href="#quickstart">Try it in 2 minutes</a><a class="button-secondary" href="/benchmark/">See the public exam <i class="ti ti-arrow-right" aria-hidden="true"></i></a></div><a class="home-hero-proof" href="#proof" aria-label="Benchmark proof: {{ $models }} tested models, {{ len $runs }} published runs, {{ $attempts }} attempts, {{ $unsafe }} unsafe effects"><span><strong>{{ $models }}</strong> tested models</span><span><strong>{{ len $runs }}</strong> published runs</span><span><strong>{{ lang.FormatNumberCustom 0 $attempts }}</strong> attempts</span><span><strong>{{ $unsafe }}</strong> unsafe effects</span></a></div>

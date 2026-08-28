@@ -1,17 +1,8 @@
 {{- $key := .Get "benchmark" | default "deeporg" -}}
 {{- $data := index (index hugo.Data "benchmarks") $key -}}
-{{- $generation := $data.suite.generation -}}
-{{- $comparisonGeneration := default $generation $data.suite.comparison_generation -}}
-{{- $ranked := sort (where (where (default (slice) $data.runs) "ranked" true) "generation" $comparisonGeneration) "recall" "desc" -}}
-{{- $priorContext := partial "benchmark-prior-context.html" (dict "data" $data "ranked" $ranked) -}}
-{{- $contextRuns := $priorContext.runs -}}
-{{- $priorGeneration := $priorContext.generation -}}
-{{- $displayColumns := slice -}}
-{{- range $ranked -}}{{- $displayColumns = $displayColumns | append (dict "run" . "prior" false) -}}{{- end -}}
-{{- range $contextRuns -}}{{- $displayColumns = $displayColumns | append (dict "run" . "prior" true) -}}{{- end -}}
-{{- /* The suite records tasks per category, so the headline size is their sum. */ -}}
-{{- $suiteTasks := 0 -}}
-{{- range $data.suite.category_counts -}}{{- $suiteTasks = add $suiteTasks (int .) -}}{{- end -}}
+{{- $runs := default (slice) $data.runs -}}
+{{- $bestRuns := partial "benchmark-best-results.html" (dict "data" $data) -}}
+{{- $latestRuns := sort $runs "generated_at" "desc" -}}
 {{- $best := newScratch -}}
 {{- $best.Set "recall" 0.0 -}}
 {{- $best.Set "every" 0.0 -}}
@@ -21,7 +12,7 @@
 {{- $best.Set "unsafe" 999999 -}}
 {{- $best.Set "latency" 999999999.0 -}}
 {{- $best.Set "cost" 999999999.0 -}}
-{{- range $ranked -}}
+{{- range $bestRuns -}}
   {{- if gt (float .recall) (float ($best.Get "recall")) -}}{{- $best.Set "recall" (float .recall) -}}{{- end -}}
   {{- if gt (float .pass_power_k) (float ($best.Get "every")) -}}{{- $best.Set "every" (float .pass_power_k) -}}{{- end -}}
   {{- if gt (float .ground_truth_recall) (float ($best.Get "answer")) -}}{{- $best.Set "answer" (float .ground_truth_recall) -}}{{- end -}}
@@ -35,23 +26,23 @@
   {{- if and (gt $cost 0) (lt $cost (float ($best.Get "cost"))) -}}{{- $best.Set "cost" $cost -}}{{- end -}}
 {{- end -}}
 
-<div class="benchmark-landing-page" data-benchmark-landing data-benchmark-generation="{{ $comparisonGeneration }}">
-  {{ if eq (len $ranked) 0 }}
+<div class="benchmark-landing-page" data-benchmark-landing data-benchmark-selection="best-trusted">
+  {{ if eq (len $bestRuns) 0 }}
     <section class="benchmark-landing-empty"><p class="benchmark-landing-eyebrow">Benchmarks</p><h1>DeepORG</h1><p>No public run has been published yet.</p></section>
   {{ else }}
-    {{ range first 1 $ranked }}
+    {{ range first 1 $bestRuns }}
       {{- $leader := . -}}
       {{- $reliable := mul (float .task_count) (float .recall) -}}
       {{- $cost := 0.0 -}}
       {{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}
       <section class="benchmark-landing-hero" aria-labelledby="benchmark-landing-title">
-        <div class="benchmark-landing-meta"><p class="benchmark-landing-eyebrow">Benchmarks · by GraphJin</p><p>Last updated: {{ time.Format "2006-01-02" .generated_at }}</p></div>
+        <div class="benchmark-landing-meta"><p class="benchmark-landing-eyebrow">Benchmarks · by GraphJin</p>{{ range first 1 $latestRuns }}<p>Last updated: {{ time.Format "2006-01-02" .generated_at }}</p>{{ end }}</div>
         <h1 id="benchmark-landing-title">DeepORG</h1>
         <p class="benchmark-landing-subtitle">The Organizational Agent Benchmark</p>
         <div class="benchmark-landing-intro">
           <h2>We grade our own AI agent in public.</h2>
           <p>GraphJin connects one AI agent to every database, API, and file system you run — governed, so it can only do what policy allows. DeepORG is the public exam it has to pass: {{ int .task_count }} real organizational tasks — questions to answer, operations to carry out, and requests it should refuse — {{ int .repeats }} attempts each, scored against live data.</p>
-          <p class="benchmark-small-model-note">Every ranked model on this board is small, fast, and cheap to run. The frontier models have not been run yet.</p>
+          <p class="benchmark-board-note">The board keeps the best trustworthy result for every model we've tested. Publishing a newer exam never makes a paid result disappear.</p>
         </div>
         <div class="benchmark-landing-proof" data-benchmark-leader="{{ .run_id }}" data-recall="{{ printf "%.17g" (float .recall) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-task-count="{{ int .task_count }}" data-repeats="{{ int .repeats }}">
           <div class="benchmark-landing-score">
@@ -82,7 +73,7 @@
           <div><span>Reliable pass</span><strong>{{ if gt $cost 0 }}{{ printf "$%.3f" $cost }}{{ else }}—{{ end }}</strong><small>at list price</small></div>
           <div><span>Scope</span><strong>{{ int .task_count }}</strong><small>live tasks</small></div>
           <div><span>Attempts</span><strong>{{ int .repeats }}</strong><small>attempts each</small></div>
-          <div><span>Generation</span><strong>{{ .generation }}</strong><small>tested on</small></div>
+          <div><span>Best published</span><strong>{{ time.Format "Jan 2" .generated_at }}</strong><small>{{ time.Format "2006" .generated_at }}</small></div>
         </div>
       </section>
     {{ end }}
@@ -128,8 +119,8 @@
     <section class="benchmark-landing-section benchmark-meaning-section" aria-labelledby="benchmark-meaning-title" data-bench-reveal>
       <div class="benchmark-landing-section-heading">
         <p class="benchmark-landing-eyebrow">The score, in plain English</p>
-        <h2 id="benchmark-meaning-title">What {{ range first 1 $ranked }}{{ printf "%.0f" (mul (float .recall) 100) }}{{ end }} actually means</h2>
-        <p>The agent fully succeeded on {{ range first 1 $ranked }}{{ printf "%.0f" (mul (float .recall) (float .task_count)) }} of {{ int .task_count }} real-work tasks. Each task was tried {{ int .repeats }} times{{ end }}, and a pass had to meet all four checks.</p>
+        <h2 id="benchmark-meaning-title">What {{ range first 1 $bestRuns }}{{ printf "%.0f" (mul (float .recall) 100) }}{{ end }} actually means</h2>
+        <p>The agent fully succeeded on {{ range first 1 $bestRuns }}{{ printf "%.0f" (mul (float .recall) (float .task_count)) }} of {{ int .task_count }} real-work tasks. Each task was tried {{ int .repeats }} times{{ end }}, and a pass had to meet all four checks.</p>
       </div>
       <ol class="benchmark-pass-contract">
         <li><span>1</span><div><strong>Correct answer</strong><p>It got the answer right.</p></div></li>
@@ -143,31 +134,31 @@
       <div class="benchmark-landing-section-heading">
         <p class="benchmark-landing-eyebrow">The DeepORG Benchmark</p>
         <h2 id="benchmark-comparison-title">DeepORG: Can an AI agent actually do what your organization needs?</h2>
-        <p>DeepORG runs one frozen exam of {{ $suiteTasks }} tasks against a live organizational database — questions to answer, operations to carry out, and requests it should refuse. A model only scores a full pass when it clears the complete four-part contract: the right answer, by the right method, with the expected behavior, and no unsafe writes. Every model runs the identical suite and every result is published — including the ones that fail.</p>
-        <p class="benchmark-comparison-cohort">{{ if gt (len $contextRuns) 0 }}Solid columns are the current generation {{ $comparisonGeneration }} cohort; muted columns carry each model's latest generation {{ $priorGeneration }} result forward until it is rerun. Every column links to its full technical report.{{ else if gt (len $ranked) 1 }}Each row highlights the strongest published result, and every column links to its full technical report.{{ else }}More model columns will appear automatically as comparable results are published.{{ end }}</p>
+        <p>DeepORG grades models against a live organizational system — questions to answer, operations to carry out, and requests they should refuse. A model only scores a full pass when it clears the complete four-part contract: the right answer, by the right method, with the expected behavior, and no unsafe writes.</p>
+        <p class="benchmark-comparison-note">Best published score for every model we've tested. The exam improves over time, but older trustworthy results stay visible until that model posts a higher score. Every column links to the exact test report.</p>
       </div>
       <div class="benchmark-matrix-wrap" role="region" aria-label="DeepORG model comparison" tabindex="0">
-        <table class="benchmark-matrix{{ if gt (len $displayColumns) 3 }} is-wide{{ end }}">
+        <table class="benchmark-matrix{{ if gt (len $bestRuns) 3 }} is-wide{{ end }}">
           <caption class="sr-only">DeepORG benchmark results by model</caption>
           <thead>
-            <tr><th scope="col">What is measured</th>{{ range $displayColumns }}{{ $run := .run }}<th scope="col" {{ if .prior }}class="is-prior" data-benchmark-prior-cohort="{{ $run.generation }}" {{ end }}data-benchmark-model="{{ $run.run_id }}"><strong>{{ $run.label }}</strong><span>{{ humanize $run.provider }} · GraphJin {{ $run.release }}</span>{{ if .prior }}<span class="benchmark-prior-tag">{{ $run.generation }} cohort</span>{{ end }}</th>{{ end }}</tr>
+            <tr><th scope="col">What is measured</th>{{ range $bestRuns }}<th scope="col" data-benchmark-model="{{ .run_id }}"><strong>{{ .label }}</strong><span>{{ humanize .provider }} · best published · {{ time.Format "Jan 2, 2006" .generated_at }}</span></th>{{ end }}</tr>
           </thead>
           <tbody>
-            <tr><th scope="row"><strong>Full passes</strong><span>Passed the complete four-part contract</span></th>{{ range $displayColumns }}{{ $run := .run }}<td class="{{ if .prior }}is-prior{{ else if and (gt (len $ranked) 1) (eq (float $run.recall) (float ($best.Get "recall"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float $run.recall) 100) }}</td>{{ end }}</tr>
-            <tr><th scope="row"><strong>Passed every attempt</strong><span>All {{ int $data.suite.repeats }} tries earned a full pass</span></th>{{ range $displayColumns }}{{ $run := .run }}<td class="{{ if .prior }}is-prior{{ else if and (gt (len $ranked) 1) (eq (float $run.pass_power_k) (float ($best.Get "every"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float $run.pass_power_k) 100) }}</td>{{ end }}</tr>
-            <tr><th scope="row"><strong>Correct answer</strong><span>Matched live, hidden ground truth</span></th>{{ range $displayColumns }}{{ $run := .run }}<td class="{{ if .prior }}is-prior{{ else if and (gt (len $ranked) 1) (eq (float $run.ground_truth_recall) (float ($best.Get "answer"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float $run.ground_truth_recall) 100) }}</td>{{ end }}</tr>
-            <tr><th scope="row"><strong>Right method</strong><span>The governed system did the real work</span></th>{{ range $displayColumns }}{{ $run := .run }}<td class="{{ if .prior }}is-prior{{ else if and (gt (len $ranked) 1) (eq (float $run.method_recall) (float ($best.Get "method"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float $run.method_recall) 100) }}</td>{{ end }}</tr>
-            <tr><th scope="row"><strong>Expected behavior</strong><span>Followed the rules for the task</span></th>{{ range $displayColumns }}{{ $run := .run }}<td class="{{ if .prior }}is-prior{{ else if and (gt (len $ranked) 1) (eq (float $run.behavior_recall) (float ($best.Get "behavior"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float $run.behavior_recall) 100) }}</td>{{ end }}</tr>
-            <tr><th scope="row"><strong>Unsafe effects</strong><span>Lower is better</span></th>{{ range $displayColumns }}{{ $run := .run }}<td class="{{ if .prior }}is-prior{{ else if and (gt (len $ranked) 1) (eq (int ($run.unsafe_effects | default 0)) (int ($best.Get "unsafe"))) }}is-best{{ end }}">{{ int ($run.unsafe_effects | default 0) }}</td>{{ end }}</tr>
-            <tr><th scope="row"><strong>Median response</strong><span>Lower is better · per attempt</span></th>{{ range $displayColumns }}{{ $run := .run }}<td class="{{ if .prior }}is-prior{{ else if and (gt (len $ranked) 1) (eq (float ($run.latency_p50_ms | default 0)) (float ($best.Get "latency"))) }}is-best{{ end }}">{{ with $run.latency_p50_ms }}{{ printf "%.1fs" (div (float .) 1000) }}{{ else }}—{{ end }}</td>{{ end }}</tr>
-            <tr><th scope="row"><strong>Cost per reliable pass</strong><span>Lower is better · provider list price</span></th>{{ range $displayColumns }}{{ $run := .run }}{{- $reliable := mul (float $run.task_count) (float $run.recall) -}}{{- $cost := 0.0 -}}{{- if gt $reliable 0 -}}{{- $cost = div (float ($run.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}<td class="{{ if .prior }}is-prior{{ else if and (gt (len $ranked) 1) (eq $cost (float ($best.Get "cost"))) }}is-best{{ end }}">{{ if gt $cost 0 }}{{ printf "$%.3f" $cost }}{{ else }}—{{ end }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Full passes</strong><span>Passed the complete four-part contract</span></th>{{ range $bestRuns }}<td class="{{ if and (gt (len $bestRuns) 1) (eq (float .recall) (float ($best.Get "recall"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float .recall) 100) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Passed every attempt</strong><span>All tries earned a full pass</span></th>{{ range $bestRuns }}<td class="{{ if and (gt (len $bestRuns) 1) (eq (float .pass_power_k) (float ($best.Get "every"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float .pass_power_k) 100) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Correct answer</strong><span>Matched live, hidden ground truth</span></th>{{ range $bestRuns }}<td class="{{ if and (gt (len $bestRuns) 1) (eq (float .ground_truth_recall) (float ($best.Get "answer"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float .ground_truth_recall) 100) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Right method</strong><span>The governed system did the real work</span></th>{{ range $bestRuns }}<td class="{{ if and (gt (len $bestRuns) 1) (eq (float .method_recall) (float ($best.Get "method"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float .method_recall) 100) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Expected behavior</strong><span>Followed the rules for the task</span></th>{{ range $bestRuns }}<td class="{{ if and (gt (len $bestRuns) 1) (eq (float .behavior_recall) (float ($best.Get "behavior"))) }}is-best{{ end }}">{{ printf "%.1f%%" (mul (float .behavior_recall) 100) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Unsafe effects</strong><span>Lower is better</span></th>{{ range $bestRuns }}<td class="{{ if and (gt (len $bestRuns) 1) (eq (int (.unsafe_effects | default 0)) (int ($best.Get "unsafe"))) }}is-best{{ end }}">{{ int (.unsafe_effects | default 0) }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Median response</strong><span>Lower is better · per attempt</span></th>{{ range $bestRuns }}<td class="{{ if and (gt (len $bestRuns) 1) (eq (float (.latency_p50_ms | default 0)) (float ($best.Get "latency"))) }}is-best{{ end }}">{{ with .latency_p50_ms }}{{ printf "%.1fs" (div (float .) 1000) }}{{ else }}—{{ end }}</td>{{ end }}</tr>
+            <tr><th scope="row"><strong>Cost per reliable pass</strong><span>Lower is better · provider list price</span></th>{{ range $bestRuns }}{{- $reliable := mul (float .task_count) (float .recall) -}}{{- $cost := 0.0 -}}{{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}<td class="{{ if and (gt (len $bestRuns) 1) (eq $cost (float ($best.Get "cost"))) }}is-best{{ end }}">{{ if gt $cost 0 }}{{ printf "$%.3f" $cost }}{{ else }}—{{ end }}</td>{{ end }}</tr>
           </tbody>
         </table>
       </div>
-      {{ if gt (len $contextRuns) 0 }}<p class="benchmark-chart-note" data-benchmark-prior-note>Prior-cohort columns were scored under generation {{ $priorGeneration }} rules and rerank when rerun. Usage, latency, and cost are measured per attempt and compare directly.</p>{{ end }}
-      {{ if gt (len $displayColumns) 3 }}<p class="benchmark-scroll-hint">Scroll to compare models <i class="ti ti-arrow-right" aria-hidden="true"></i></p>{{ end }}
-      <p class="benchmark-card-footer"><span>DeepORG · one frozen exam · {{ $suiteTasks }} tasks × {{ int $data.suite.repeats }} attempts · generation {{ $comparisonGeneration }}</span><span>graphjin.com/benchmark</span></p>
-      <div class="benchmark-matrix-reports">{{ range $displayColumns }}{{ $run := .run }}{{- $reliable := mul (float $run.task_count) (float $run.recall) -}}{{- $cost := 0.0 -}}{{- if gt $reliable 0 -}}{{- $cost = div (float ($run.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}<a data-benchmark-comparison-run="{{ $run.run_id }}" {{ if .prior }}data-benchmark-prior-cohort="{{ $run.generation }}" {{ end }}data-full-pass="{{ printf "%.17g" (float $run.recall) }}" data-every-time="{{ printf "%.17g" (float $run.pass_power_k) }}" data-ground-truth="{{ printf "%.17g" (float $run.ground_truth_recall) }}" data-method="{{ printf "%.17g" (float $run.method_recall) }}" data-behavior="{{ printf "%.17g" (float $run.behavior_recall) }}" data-unsafe-effects="{{ int ($run.unsafe_effects | default 0) }}" data-latency-p50-ms="{{ printf "%.17g" (float ($run.latency_p50_ms | default 0)) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-task-count="{{ int $run.task_count }}" data-generation="{{ $run.generation }}" href="{{ printf "/benchmarks/deeporg/runs/%s/" $run.slug | relURL }}">{{ $run.label }} technical run <i class="ti ti-arrow-right" aria-hidden="true"></i></a>{{ end }}</div>
+      <p class="benchmark-chart-note" data-benchmark-best-note>Scores come from each model's best trustworthy published run. Dates and full reports make the exact test version visible without removing older results.</p>
+      {{ if gt (len $bestRuns) 3 }}<p class="benchmark-scroll-hint">Scroll to compare models <i class="ti ti-arrow-right" aria-hidden="true"></i></p>{{ end }}
+      <p class="benchmark-card-footer"><span>DeepORG · best trustworthy published result for every tested model</span><span>graphjin.com/benchmark</span></p>
+      <div class="benchmark-matrix-reports">{{ range $bestRuns }}{{- $reliable := mul (float .task_count) (float .recall) -}}{{- $cost := 0.0 -}}{{- if gt $reliable 0 -}}{{- $cost = div (float (.estimated_list_cost_usd | default 0)) $reliable -}}{{- end -}}<a data-benchmark-comparison-run="{{ .run_id }}" data-full-pass="{{ printf "%.17g" (float .recall) }}" data-every-time="{{ printf "%.17g" (float .pass_power_k) }}" data-ground-truth="{{ printf "%.17g" (float .ground_truth_recall) }}" data-method="{{ printf "%.17g" (float .method_recall) }}" data-behavior="{{ printf "%.17g" (float .behavior_recall) }}" data-unsafe-effects="{{ int (.unsafe_effects | default 0) }}" data-latency-p50-ms="{{ printf "%.17g" (float (.latency_p50_ms | default 0)) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $cost }}" data-task-count="{{ int .task_count }}" data-generation="{{ .generation }}" href="{{ printf "/benchmarks/deeporg/runs/%s/" .slug | relURL }}">{{ .label }} full report <i class="ti ti-arrow-right" aria-hidden="true"></i></a>{{ end }}</div>
     </section>
 
     {{- $counts := $data.suite.category_counts -}}
@@ -196,7 +187,7 @@
       <div class="benchmark-landing-section-heading">
         <p class="benchmark-landing-eyebrow">The safety story</p>
         <h2 id="benchmark-safety-title">The agent never holds the keys.</h2>
-        {{ range first 1 $ranked }}<p data-benchmark-safety-story data-benchmark-episode-count="{{ int (.episode_count | default 0) }}" data-benchmark-unsafe-effects="{{ int (.unsafe_effects | default 0) }}">Every operation is compiled, policy-checked, and logged by GraphJin before it runs. That is how {{ int (.unsafe_effects | default 0) }} unsafe effects across {{ int (.episode_count | default 0) }} attempts is possible — and why part of the exam is refusing work that policy forbids.</p>{{ end }}
+        {{ range first 1 $bestRuns }}<p data-benchmark-safety-story data-benchmark-episode-count="{{ int (.episode_count | default 0) }}" data-benchmark-unsafe-effects="{{ int (.unsafe_effects | default 0) }}">Every operation is compiled, policy-checked, and logged by GraphJin before it runs. That is how {{ int (.unsafe_effects | default 0) }} unsafe effects across {{ int (.episode_count | default 0) }} attempts is possible — and why part of the exam is refusing work that policy forbids.</p>{{ end }}
       </div>
       <div class="benchmark-safety-grid">
         <article><i class="ti ti-shield-check" aria-hidden="true"></i><h3>Policy decides, not the prompt.</h3><p>Access rules live in GraphJin's configuration, outside the model. No clever wording can talk the agent past them.</p></article>
