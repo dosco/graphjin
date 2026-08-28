@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -347,6 +349,21 @@ func TestConfirmationReadCarriesTheUnperformedActionNotice(t *testing.T) {
 	guidance, _ := mapped["guidance"].(string)
 	if !strings.Contains(guidance, "has not performed it") {
 		t.Fatalf("confirmation read carries no unperformed-action notice: %#v", mapped)
+	}
+	// And it must be in the action trail, not only the return value. A notice
+	// recorded nowhere reaches the model but leaves no evidence it fired: the
+	// first version attached after finishAction, so a full benchmark run could
+	// not answer whether it had worked.
+	var recorded bool
+	for _, a := range runtime.state.actions {
+		if a.Tool == "execute_saved_query" && strings.Contains(fmt.Sprint(a.Summary)+fmt.Sprint(a.Evidence), "confirmation_read") {
+			recorded = true
+		}
+	}
+	if !recorded {
+		if blob, _ := json.Marshal(runtime.state.actions); !strings.Contains(string(blob), "confirmation_read") {
+			t.Fatalf("notice fired but the action trail records nothing: %s", blob)
+		}
 	}
 
 	// A write in hand means the confirmation was honoured; the notice must not
