@@ -713,6 +713,9 @@ if (await exists(benchmarkDataPath)) {
     if (benchmarkHTML.includes('data-benchmark-prior-cohort')) {
       failures.push('DeepORG detailed board still renders muted prior-cohort rows');
     }
+    if (/\bcohort\b/i.test(benchmarkHTML)) {
+      failures.push('DeepORG detailed board exposes internal cohort jargon');
+    }
     if (!benchmarkHTML.includes('data-benchmark-generation-history') ||
         !benchmarkHTML.includes('>Other published runs</h3>')) {
       failures.push('DeepORG board is missing its complete published-run archive');
