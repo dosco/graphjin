@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -1693,5 +1694,122 @@ func TestCrossSourceSupplyResolvesSectionIDs(t *testing.T) {
 	if len(runtime.state.missingDistilledSourceDetails()) != 0 {
 		t.Fatalf("section requirement should be satisfied by the card, still missing %v",
 			runtime.state.missingDistilledSourceDetails())
+	}
+}
+
+// echoingCatalogRuntime returns a card for whatever id was asked for, so a test
+// can satisfy a guard the way a compliant model would — by actually fetching what
+// the guard named. A fixed card list cannot, because evidence is recorded from
+// the cards that come back.
+type echoingCatalogRuntime struct{ graphqlCalls int }
+
+func (r *echoingCatalogRuntime) QueryCatalog(_ context.Context, args map[string]any) (any, error) {
+	cards := make([]any, 0, 2)
+	for _, id := range append(anySlice(args["ids"]), args["id"]) {
+		name := fmt.Sprint(id)
+		if name == "" || name == "<nil>" {
+			continue
+		}
+		card := map[string]any{"id": name, "kind": "help"}
+		if strings.HasPrefix(name, "table:") {
+			card["kind"] = "table"
+			card["table_name"] = tableNameFromCatalogID(name)
+			card["columns"] = []any{map[string]any{"name": "id"}, map[string]any{"name": "seen"}}
+		}
+		cards = append(cards, card)
+	}
+	return map[string]any{"cards": cards}, nil
+}
+
+func (r *echoingCatalogRuntime) GraphQLHelp(context.Context, map[string]any) (any, error) {
+	return map[string]any{"cards": []any{}}, nil
+}
+func (r *echoingCatalogRuntime) ValidateWhereClause(context.Context, map[string]any) (any, error) {
+	return map[string]any{}, nil
+}
+func (r *echoingCatalogRuntime) ExecuteSavedQuery(context.Context, map[string]any) (any, error) {
+	return map[string]any{}, nil
+}
+func (r *echoingCatalogRuntime) ExecuteGraphQL(context.Context, map[string]any) (any, error) {
+	r.graphqlCalls++
+	return map[string]any{"data": map[string]any{"ok": true}}, nil
+}
+
+// TestWatchRootsShareTheMutationEvidenceEscape covers the half of the reactive
+// family that never could.
+//
+// missingMutationEvidence demands evidence for gj_watch and gj_watch_event
+// identically and systemRootHelpIDs documents both, but the escape that hands
+// that evidence over matched only gj_watch, by exact name. Normally the
+// system-root contract supply masks this: it fetches help:watches, which counts
+// as watch evidence for either root. It is supplied at most once per run though,
+// so a run that already spent it — on gj_task, say — reaches the mutation with no
+// watch evidence and no way to get any. That is the state pinned here.
+//
+// Measured across a paired benchmark run, the guard demanded gj_watch_event 329
+// times against gj_watch's 132, refused 15 episodes and discharged only 4.
+func TestWatchRootsShareTheMutationEvidenceEscape(t *testing.T) {
+	for _, root := range []string{systemRootWatch, systemRootWatchEvent} {
+		t.Run(root, func(t *testing.T) {
+			base := &echoingCatalogRuntime{}
+			profile := profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent)
+			profile.AllowedActions = []string{
+				CapabilityActionDataUpdate, CapabilityActionDataInsert,
+				root + ".update", root + ".insert",
+			}
+			rt := newProtocolRuntime(base, "acknowledge the urgent ticket alerts", "", 8, profile, nil, CatalogSearchFeatures{})
+			rt.state.catalogIDs["table:"+root] = true
+			// The run already spent its one contract supply, so help:watches was
+			// never recorded and cannot be supplied again. It has inspected an
+			// unrelated table, which satisfies the generic detail requirement
+			// while leaving this write with no watch evidence at all — the exact
+			// state the recorded episodes reached.
+			rt.state.systemRootDiscoverySupplied = true
+			rt.state.catalogDetails = append(rt.state.catalogDetails, "table:app:main.support_tickets")
+			rt.state.catalogIDs["table:app:main.support_tickets"] = true
+			rt.state.tablesDetailed["support_tickets"] = true
+			args := map[string]any{
+				"query": "mutation { " + root + `(where: {id: {eq: "e1"}}, update: {seen: true}) { id } }`,
+			}
+
+			// Behave like a compliant model for the guidance guards, which any
+			// model can satisfy, but never fetch the table detail itself — that is
+			// the step the recorded episodes did not take.
+			helpIDs := regexp.MustCompile(`"(help:[a-z0-9_.:]+)"`)
+			var last error
+			for attempt := 0; attempt < 5; attempt++ {
+				if _, last = rt.ExecuteGraphQL(context.Background(), cloneAnyMap(args)); last == nil {
+					break
+				}
+				if strings.Contains(last.Error(), "mutation-shape evidence") ||
+					strings.Contains(last.Error(), "GraphJin loaded the catalog detail") {
+					break
+				}
+				asked := make([]any, 0, 2)
+				for _, m := range helpIDs.FindAllStringSubmatch(last.Error(), -1) {
+					if m[1] != "help:watches" {
+						asked = append(asked, m[1])
+					}
+				}
+				if len(asked) != 0 {
+					if _, err := rt.QueryCatalog(context.Background(), map[string]any{"ids": asked}); err != nil {
+						t.Fatalf("%s could not satisfy a guidance guard: %v", root, err)
+					}
+				}
+				// Otherwise the guard supplied what it needed itself and asked for
+				// a retry; give it one.
+			}
+			if last == nil {
+				t.Fatalf("%s never reached the mutation-evidence step", root)
+			}
+			if !strings.Contains(last.Error(), "GraphJin loaded the catalog detail") {
+				t.Fatalf("%s was refused instead of handed its evidence: %v", root, last)
+			}
+			for _, v := range rt.state.violations {
+				if v.Code == "mutation_evidence_required" {
+					t.Fatalf("%s recorded a dead-end violation despite a resolvable catalog id", root)
+				}
+			}
+		})
 	}
 }
