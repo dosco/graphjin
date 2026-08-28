@@ -577,6 +577,42 @@ func attachCatalogIDRepairNotice(out any, repairs map[string]string) any {
 	return result
 }
 
+// attachConfirmationReadNotice rides a successful saved-query result when the
+// run's whole instruction is a bare confirmation ("Yes, go ahead and set that
+// up.") and no write has happened yet. Recorded runs answered such turns with
+// the saved-query shortcut the instructions advertise — and finalized a ticket
+// count as proof of a watch that was never created: every confirmation episode
+// that reached for a saved query failed, every one that authored the mutation
+// passed. The notice is not a violation and blocks nothing, for the same
+// registry reason as the watch normalization below — and because a
+// confirmation can legitimately confirm a proposed read, which a "mutation
+// required" gate would deadlock.
+func attachConfirmationReadNotice(out any) any {
+	instruction := `This turn is a bare confirmation of an earlier proposal, and a saved query is a read. If the proposal was an action — creating a watch, changing data — this read has not performed it: author the proposed mutation with execute_graphql and execute it before finalizing. If the proposal was this read itself, final from these rows.`
+	recovery := map[string]any{
+		"kind":        "confirmation_read",
+		"code":        "confirmation_read",
+		"instruction": instruction,
+	}
+	switch res := out.(type) {
+	case executeResult:
+		res.Recovery = recovery
+		res.Guidance = instruction
+		return res
+	case *executeResult:
+		res.Recovery = recovery
+		res.Guidance = instruction
+		return res
+	case map[string]any:
+		res = cloneAnyMap(res)
+		res["recovery"] = recovery
+		res["guidance"] = instruction
+		return res
+	default:
+		return out
+	}
+}
+
 // attachWatchNormalizationNotice records that a gj_watch subscription string
 // arrived with unescaped quotes and was executed as its parse-verified
 // re-escaping. The notice rides the recovery block rather than a violation
@@ -931,6 +967,9 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 	if err == nil && executionFailed(out) && !executionPolicyFinal(out) && !executionHasUsableData(out) {
 		thrown := engineFailureError(out, "", true)
 		return nil, fmt.Errorf("%s — the saved query's text is fixed; if it cannot serve this request, author the query directly with execute_graphql", thrown.Error())
+	}
+	if err == nil && instructionCarriesNoSubject(r.state.instruction) && !r.state.mutationSucceeded {
+		out = attachConfirmationReadNotice(out)
 	}
 	return out, err
 }
