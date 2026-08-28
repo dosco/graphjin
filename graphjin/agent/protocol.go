@@ -934,6 +934,13 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 	r.state.clearCompletionLatch()
 	action := r.state.startAction("model", "execute_saved_query", args)
 	out, err := r.base.ExecuteSavedQuery(ctx, args)
+	// Attach before recording, as the execute_graphql notices do: a notice that
+	// rides the return value but not the action trail reaches the model and
+	// leaves no evidence it ever fired, which cost a whole benchmark run to
+	// discover.
+	if err == nil && instructionCarriesNoSubject(r.state.instruction) && !r.state.mutationSucceeded {
+		out = attachConfirmationReadNotice(out)
+	}
 	r.state.finishAction(action, "execute_saved_query", args, out, err)
 	if err == nil {
 		r.state.recordExecution("execute_saved_query", args, out)
@@ -967,9 +974,6 @@ func (r *protocolRuntime) ExecuteSavedQuery(ctx context.Context, args map[string
 	if err == nil && executionFailed(out) && !executionPolicyFinal(out) && !executionHasUsableData(out) {
 		thrown := engineFailureError(out, "", true)
 		return nil, fmt.Errorf("%s — the saved query's text is fixed; if it cannot serve this request, author the query directly with execute_graphql", thrown.Error())
-	}
-	if err == nil && instructionCarriesNoSubject(r.state.instruction) && !r.state.mutationSucceeded {
-		out = attachConfirmationReadNotice(out)
 	}
 	return out, err
 }
