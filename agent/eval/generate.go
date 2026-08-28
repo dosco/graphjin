@@ -33,24 +33,25 @@ type CatalogRow struct {
 }
 
 type AgentStatus struct {
-	Enabled              bool     `json:"enabled"`
-	Ready                bool     `json:"ready"`
-	ReadOnly             bool     `json:"read_only"`
-	Provider             string   `json:"provider,omitempty"`
-	Model                string   `json:"model"`
-	APIKeyEnv            string   `json:"api_key_env,omitempty"`
-	ResponseFormat       string   `json:"response_format,omitempty"`
-	StructuredOutputMode string   `json:"structured_output_mode,omitempty"`
-	TimeoutSeconds       int      `json:"timeout_seconds,omitempty"`
-	MaxSteps             int      `json:"max_steps,omitempty"`
-	Reasoning            string   `json:"reasoning,omitempty"`
-	EvalFingerprint      string   `json:"eval_fingerprint,omitempty"`
-	Namespace            string   `json:"namespace,omitempty"`
-	RoleClass            string   `json:"role_class,omitempty"`
-	AllowedActions       []string `json:"allowed_actions,omitempty"`
-	AvailableSystemRoots []string `json:"available_system_roots,omitempty"`
-	BlockedSystemRoots   []string `json:"blocked_system_roots,omitempty"`
-	Message              string   `json:"message,omitempty"`
+	Enabled              bool                    `json:"enabled"`
+	Ready                bool                    `json:"ready"`
+	ReadOnly             bool                    `json:"read_only"`
+	Provider             string                  `json:"provider,omitempty"`
+	Model                string                  `json:"model"`
+	APIKeyEnv            string                  `json:"api_key_env,omitempty"`
+	ResponseFormat       string                  `json:"response_format,omitempty"`
+	StructuredOutputMode string                  `json:"structured_output_mode,omitempty"`
+	TimeoutSeconds       int                     `json:"timeout_seconds,omitempty"`
+	MaxSteps             int                     `json:"max_steps,omitempty"`
+	Reasoning            string                  `json:"reasoning,omitempty"`
+	RateLimit            gjagent.RateLimitConfig `json:"rate_limit"`
+	EvalFingerprint      string                  `json:"eval_fingerprint,omitempty"`
+	Namespace            string                  `json:"namespace,omitempty"`
+	RoleClass            string                  `json:"role_class,omitempty"`
+	AllowedActions       []string                `json:"allowed_actions,omitempty"`
+	AvailableSystemRoots []string                `json:"available_system_roots,omitempty"`
+	BlockedSystemRoots   []string                `json:"blocked_system_roots,omitempty"`
+	Message              string                  `json:"message,omitempty"`
 }
 
 type CatalogSnapshot struct {

@@ -163,6 +163,10 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 				Model:          "test-model",
 				APIKeyEnv:      "GRAPHJIN_READY_AGENT_KEY",
 				ResponseFormat: "json_object",
+				RateLimit: gjagent.RateLimitConfig{
+					RequestsPerMinute: 20,
+					TokensPerMinute:   50000,
+				},
 				MaxSteps:       3,
 				TimeoutSeconds: 12,
 				ReadOnly:       true,
@@ -194,8 +198,42 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if !readyStatus.ReadOnly || !readyStatus.ReturnTrace {
 		t.Fatalf("agent flags not reflected in status: %+v", readyStatus)
 	}
+	if readyStatus.RateLimit.RequestsPerMinute != 20 || readyStatus.RateLimit.TokensPerMinute != 50000 {
+		t.Fatalf("agent rate limits not reflected in status: %+v", readyStatus.RateLimit)
+	}
 	if readyStatus.EvalFingerprint == "" || strings.Contains(rec.Body.String(), "test-secret") {
 		t.Fatalf("status fingerprint missing or secret leaked: %+v body=%s", readyStatus, rec.Body.String())
+	}
+}
+
+func TestAgentEvalFingerprintIncludesRateLimits(t *testing.T) {
+	base := agentStatusResponse{Provider: "openai", Model: "gpt-test", StructuredOutputMode: "auto"}
+	limited := base
+	limited.RateLimit = gjagent.RateLimitConfig{RequestsPerMinute: 20, TokensPerMinute: 50000}
+	if agentEvalFingerprint(base) == agentEvalFingerprint(limited) {
+		t.Fatal("agent rate-limit changes must alter the eval fingerprint")
+	}
+}
+
+func TestProviderAgentRateLimiterIsSharedAndHotUpdated(t *testing.T) {
+	svc := &graphjinService{}
+	first, err := svc.providerAgentRateLimiter(gjagent.RateLimitConfig{RequestsPerMinute: 10})
+	if err != nil {
+		t.Fatalf("first limiter: %v", err)
+	}
+	second, err := svc.providerAgentRateLimiter(gjagent.RateLimitConfig{RequestsPerMinute: 20, TokensPerMinute: 50000})
+	if err != nil {
+		t.Fatalf("updated limiter: %v", err)
+	}
+	if first == nil || second != first {
+		t.Fatalf("service limiter was not shared: first=%p second=%p", first, second)
+	}
+	if got := second.Config(); got.RequestsPerMinute != 20 || got.TokensPerMinute != 50000 {
+		t.Fatalf("hot limits not applied: %+v", got)
+	}
+	disabled, err := svc.providerAgentRateLimiter(gjagent.RateLimitConfig{})
+	if err != nil || disabled != nil || svc.agentRateLimiter != first {
+		t.Fatalf("disabled limiter should retain shared history: disabled=%p stored=%p err=%v", disabled, svc.agentRateLimiter, err)
 	}
 }
 

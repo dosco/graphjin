@@ -40,6 +40,7 @@ func agentConfigFromService(conf *Config) gjagent.Config {
 		ResponseFormat:       conf.Agent.ResponseFormat,
 		StructuredOutputMode: conf.Agent.StructuredOutputMode,
 		Reasoning:            conf.Agent.Reasoning,
+		RateLimit:            conf.Agent.RateLimit,
 		MaxSteps:             conf.Agent.MaxSteps,
 		TimeoutSeconds:       gjagent.EffectiveTimeoutSeconds(conf.Agent.TimeoutSeconds),
 		ReadOnly:             conf.Agent.ReadOnly,
@@ -62,6 +63,13 @@ var newGraphJinAgentRunner = func(s *graphjinService, conf gjagent.Config, opts 
 		return nil, err
 	}
 	agentOpts := []gjagent.Option{gjagent.WithRuntime(rt)}
+	limiter, err := s.providerAgentRateLimiter(conf.RateLimit)
+	if err != nil {
+		return nil, err
+	}
+	if limiter != nil {
+		agentOpts = append(agentOpts, gjagent.WithProviderRateLimiter(limiter))
+	}
 	if s.agentClientFactory != nil {
 		agentOpts = append(agentOpts, gjagent.WithClientFactory(s.agentClientFactory))
 	}
@@ -73,6 +81,30 @@ var newGraphJinAgentRunner = func(s *graphjinService, conf gjagent.Config, opts 
 	}
 	agentOpts = append(agentOpts, opts...)
 	return gjagent.New(s.gj, conf, agentOpts...)
+}
+
+// providerAgentRateLimiter returns the one process-local limiter shared by all
+// server-owned agent entrypoints. Updating it in place preserves recent usage
+// when gj_config changes the ceilings hot.
+func (s *graphjinService) providerAgentRateLimiter(config gjagent.RateLimitConfig) (*gjagent.ProviderRateLimiter, error) {
+	if s == nil {
+		return nil, nil
+	}
+	s.agentRateLimiterMu.Lock()
+	defer s.agentRateLimiterMu.Unlock()
+	if s.agentRateLimiter == nil {
+		limiter, err := gjagent.NewProviderRateLimiter(config)
+		if err != nil {
+			return nil, err
+		}
+		s.agentRateLimiter = limiter
+	} else if err := s.agentRateLimiter.Update(config); err != nil {
+		return nil, err
+	}
+	if !s.agentRateLimiter.Enabled() {
+		return nil, nil
+	}
+	return s.agentRateLimiter, nil
 }
 
 type serviceAgentRuntime struct {

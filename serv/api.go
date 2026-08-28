@@ -101,6 +101,8 @@ type graphjinService struct {
 	semantic               *semanticCatalogIndex
 	semanticEmbedder       SemanticEmbeddingClient
 	agentClientFactory     gjagent.ClientFactory
+	agentRateLimiterMu     sync.Mutex
+	agentRateLimiter       *gjagent.ProviderRateLimiter
 	watchSubscribeForTest  func(context.Context, watchRuntimeDefinition, json.RawMessage) (*core.Member, error)
 	srv                    *http.Server
 	srvMu                  sync.Mutex // guards srv: written by startHTTP, read by Shutdown

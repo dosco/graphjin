@@ -186,6 +186,9 @@ agent:
   api_key_env: OPENAI_API_KEY # must hold a non-empty value (a dummy is fine for keyless local endpoints)
   base_url: https://your-endpoint/v1
   structured_output_mode: auto # auto | native | function | json_object
+  rate_limit:
+    requests_per_minute: 60
+    tokens_per_minute: 100000
 ```
 
 Because the loop is driven by generated code rather than provider tool-calling, the practical requirement is a model that codegens well — not one with native function-calling support.
@@ -204,6 +207,27 @@ agent:
 Deployments differ in which structured-output mechanisms they support, and `auto` takes the one the profile and model rule have verified for that pairing. Set `native`, `function`, or `json_object` to override it; an explicit mode the deployment cannot serve fails before a request is sent.
 
 **Migration note.** Ax 24 separates the official `openai` profile from the conservative `openai-compatible` one. If you point GraphJin at a third-party OpenAI-compatible endpoint, use `provider: openai-compatible` so it inherits that deployment's capabilities rather than OpenAI's. The deprecated `agent.response_format` still works: `json_schema` maps to `native`, `json_object` to `json_object`.
+
+## Provider rate limits
+
+`agent.rate_limit` limits outbound Ax model calls and is separate from the
+top-level `rate_limiter` that protects inbound GraphJin HTTP traffic. Both
+`requests_per_minute` and `tokens_per_minute` are optional; zero or omission
+disables that dimension. The rolling-minute allowance is shared by the REST and
+MCP agent, watch enrichment, and watch flows inside one GraphJin process.
+Use `GJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE` and
+`GJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE` for environment-only deployments (`SG_`
+and `SJ_` remain compatibility aliases).
+Divide the provider allowance across GraphJin replicas when scaling
+horizontally.
+
+Calls wait for capacity while honoring `agent.timeout_seconds` and request
+cancellation. Token charges use the provider-reported usage from completed
+calls. Because the pending call size is not available through Ax's limiter
+metadata, leave headroom below the provider's hard TPM quota for concurrent
+in-flight calls. Responses without usage metadata receive no guessed charge.
+Semantic catalog embeddings remain governed by their separate
+`catalog_search.semantic` provider configuration.
 
 ## When to use it
 

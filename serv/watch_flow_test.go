@@ -88,6 +88,36 @@ func TestRunWatchFlowReturnsFixedVerdict(t *testing.T) {
 	}
 }
 
+func TestRunWatchFlowUsesSharedProviderRateLimiterForInjectedClient(t *testing.T) {
+	client := &watchFlowTestClient{content: `{"verdict":"digest","severity":"warn","summary":"Roast is drifting slowly."}`}
+	conf := &Config{Serv: Serv{Agent: AgentConfig{
+		Enabled: true, Provider: "openai", APIKeyEnv: "IGNORED", TimeoutSeconds: 5,
+		RateLimit: gjagent.RateLimitConfig{RequestsPerMinute: 1},
+	}}}
+	svc := &graphjinService{
+		conf:               conf,
+		agentClientFactory: func(gjagent.Config) (ax.AIClient, error) { return client, nil },
+	}
+	_, cfg, enabled, err := normalizeWatchEnrichmentJSON(`{"enabled":true,"kind":"flow","flow":"default_watch_triage"}`)
+	if err != nil || !enabled {
+		t.Fatalf("normalize builtin: enabled=%v err=%v", enabled, err)
+	}
+	inputs := map[string]ax.Value{
+		"event": map[string]any{"temperature": 410}, "watch": map[string]any{"id": "watch:coffee"}, "evidence": map[string]any{},
+	}
+	if _, err := svc.runWatchFlow(context.Background(), cfg, inputs); err != nil {
+		t.Fatalf("first flow: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := svc.runWatchFlow(ctx, cfg, inputs); err == nil || !strings.Contains(strings.ToLower(err.Error()), "canceled") {
+		t.Fatalf("second flow should stop while waiting for provider capacity, got %v", err)
+	}
+	if client.calls != 1 {
+		t.Fatalf("provider calls=%d, want the canceled second call blocked locally", client.calls)
+	}
+}
+
 func TestValidateWatchFlowResultRejectsUnsafeOutput(t *testing.T) {
 	for _, result := range []watchFlowResult{
 		{Verdict: "silence", Severity: "warn", Summary: "x"},

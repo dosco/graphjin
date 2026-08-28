@@ -30,31 +30,32 @@ const (
 )
 
 type agentStatusResponse struct {
-	Status               string   `json:"status"`
-	Enabled              bool     `json:"enabled"`
-	Ready                bool     `json:"ready"`
-	RESTReady            bool     `json:"rest_ready"`
-	ServerModelReady     bool     `json:"server_model_ready"`
-	Endpoint             string   `json:"endpoint"`
-	MCPTool              string   `json:"mcp_tool"`
-	Provider             string   `json:"provider"`
-	Model                string   `json:"model,omitempty"`
-	APIKeyEnv            string   `json:"api_key_env"`
-	APIKeyConfigured     bool     `json:"api_key_configured"`
-	ResponseFormat       string   `json:"response_format"`
-	StructuredOutputMode string   `json:"structured_output_mode"`
-	MaxSteps             int      `json:"max_steps"`
-	Reasoning            string   `json:"reasoning,omitempty"`
-	TimeoutSeconds       int      `json:"timeout_seconds"`
-	ReadOnly             bool     `json:"read_only"`
-	ReturnTrace          bool     `json:"return_trace"`
-	Namespace            string   `json:"namespace,omitempty"`
-	RoleClass            string   `json:"role_class,omitempty"`
-	AllowedActions       []string `json:"allowed_actions,omitempty"`
-	AvailableSystemRoots []string `json:"available_system_roots,omitempty"`
-	BlockedSystemRoots   []string `json:"blocked_system_roots,omitempty"`
-	EvalFingerprint      string   `json:"eval_fingerprint,omitempty"`
-	Message              string   `json:"message"`
+	Status               string                  `json:"status"`
+	Enabled              bool                    `json:"enabled"`
+	Ready                bool                    `json:"ready"`
+	RESTReady            bool                    `json:"rest_ready"`
+	ServerModelReady     bool                    `json:"server_model_ready"`
+	Endpoint             string                  `json:"endpoint"`
+	MCPTool              string                  `json:"mcp_tool"`
+	Provider             string                  `json:"provider"`
+	Model                string                  `json:"model,omitempty"`
+	APIKeyEnv            string                  `json:"api_key_env"`
+	APIKeyConfigured     bool                    `json:"api_key_configured"`
+	ResponseFormat       string                  `json:"response_format"`
+	StructuredOutputMode string                  `json:"structured_output_mode"`
+	MaxSteps             int                     `json:"max_steps"`
+	Reasoning            string                  `json:"reasoning,omitempty"`
+	RateLimit            gjagent.RateLimitConfig `json:"rate_limit"`
+	TimeoutSeconds       int                     `json:"timeout_seconds"`
+	ReadOnly             bool                    `json:"read_only"`
+	ReturnTrace          bool                    `json:"return_trace"`
+	Namespace            string                  `json:"namespace,omitempty"`
+	RoleClass            string                  `json:"role_class,omitempty"`
+	AllowedActions       []string                `json:"allowed_actions,omitempty"`
+	AvailableSystemRoots []string                `json:"available_system_roots,omitempty"`
+	BlockedSystemRoots   []string                `json:"blocked_system_roots,omitempty"`
+	EvalFingerprint      string                  `json:"eval_fingerprint,omitempty"`
+	Message              string                  `json:"message"`
 }
 
 // Agent is the HTTP handler for the server-side GraphJin agent endpoint.
@@ -270,6 +271,7 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 		StructuredOutputMode: gjagent.EffectiveStructuredOutputMode(conf.StructuredOutputMode, conf.ResponseFormat),
 		MaxSteps:             maxSteps,
 		Reasoning:            strings.TrimSpace(conf.Reasoning),
+		RateLimit:            conf.RateLimit,
 		TimeoutSeconds:       timeoutSeconds,
 		ReadOnly:             conf.ReadOnly,
 		ReturnTrace:          conf.ReturnTrace,
@@ -431,29 +433,30 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 	sort.Strings(blocked)
 	sort.Strings(allowedActions)
 	payload := struct {
-		Version              string   `json:"version"`
-		Build                string   `json:"build"`
-		PromptRegistryHash   string   `json:"prompt_registry_hash"`
-		Provider             string   `json:"provider"`
-		Model                string   `json:"model"`
-		APIKeyEnv            string   `json:"api_key_env"`
-		ResponseFormat       string   `json:"response_format,omitempty"`
-		StructuredOutputMode string   `json:"structured_output_mode"`
-		MaxSteps             int      `json:"max_steps"`
-		Reasoning            string   `json:"reasoning,omitempty"`
-		TimeoutSeconds       int      `json:"timeout_seconds"`
-		ReadOnly             bool     `json:"read_only"`
-		ReturnTrace          bool     `json:"return_trace"`
-		Namespace            string   `json:"namespace"`
-		RoleClass            string   `json:"role_class"`
-		AllowedActions       []string `json:"allowed_actions"`
-		AvailableSystemRoots []string `json:"available_system_roots"`
-		BlockedSystemRoots   []string `json:"blocked_system_roots"`
+		Version              string                  `json:"version"`
+		Build                string                  `json:"build"`
+		PromptRegistryHash   string                  `json:"prompt_registry_hash"`
+		Provider             string                  `json:"provider"`
+		Model                string                  `json:"model"`
+		APIKeyEnv            string                  `json:"api_key_env"`
+		ResponseFormat       string                  `json:"response_format,omitempty"`
+		StructuredOutputMode string                  `json:"structured_output_mode"`
+		MaxSteps             int                     `json:"max_steps"`
+		Reasoning            string                  `json:"reasoning,omitempty"`
+		RateLimit            gjagent.RateLimitConfig `json:"rate_limit"`
+		TimeoutSeconds       int                     `json:"timeout_seconds"`
+		ReadOnly             bool                    `json:"read_only"`
+		ReturnTrace          bool                    `json:"return_trace"`
+		Namespace            string                  `json:"namespace"`
+		RoleClass            string                  `json:"role_class"`
+		AllowedActions       []string                `json:"allowed_actions"`
+		AvailableSystemRoots []string                `json:"available_system_roots"`
+		BlockedSystemRoots   []string                `json:"blocked_system_roots"`
 	}{
 		Version: version, Build: agentBuildIdentity(), PromptRegistryHash: gjagent.PromptRegistryHash(),
 		Provider: status.Provider, Model: status.Model, APIKeyEnv: status.APIKeyEnv,
 		ResponseFormat: status.ResponseFormat, StructuredOutputMode: status.StructuredOutputMode,
-		MaxSteps: status.MaxSteps, Reasoning: status.Reasoning, TimeoutSeconds: status.TimeoutSeconds,
+		MaxSteps: status.MaxSteps, Reasoning: status.Reasoning, RateLimit: status.RateLimit, TimeoutSeconds: status.TimeoutSeconds,
 		ReadOnly: status.ReadOnly, ReturnTrace: status.ReturnTrace,
 		Namespace: status.Namespace, RoleClass: status.RoleClass,
 		AllowedActions:       allowedActions,

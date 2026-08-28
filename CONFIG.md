@@ -1115,6 +1115,8 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.response_format` | string | - | **Deprecated** alias of `agent.structured_output_mode`: `json_schema` maps to `native`, `json_object` to `json_object`. Set only one; the canonical key wins |
 | `agent.max_steps` | integer | `8` | Maximum agent actor steps per request |
 | `agent.timeout_seconds` | integer | `50` | Request timeout for agent runs; values below 50 are raised to the 50-second minimum |
+| `agent.rate_limit.requests_per_minute` | integer | `0` | Process-local rolling-minute ceiling for outbound model requests; zero disables request limiting |
+| `agent.rate_limit.tokens_per_minute` | integer | `0` | Process-local rolling-minute ceiling charged from provider-reported token usage; zero disables token limiting |
 | `agent.read_only` | boolean | `false` | Force the server-side agent to reject mutations, including saved-query mutations |
 | `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
 | `agent.seed_limit` | integer | `40` | Initial `query_catalog(search: instruction)` seed row cap |
@@ -1134,6 +1136,27 @@ environment variable named by `agent.api_key_env` is empty, MCP and REST fail
 closed with `model_credentials_required`. The removed `agent.sampling` and
 `mcp.http_stateful` settings are rejected with migration guidance; modern
 stateless and legacy stateful MCP routing is automatic.
+
+`agent.rate_limit` governs outbound model traffic and is separate from the
+top-level `rate_limiter`, which protects inbound GraphJin HTTP requests. Limits
+are shared by REST, MCP, watch enrichment, watch flows, and other Ax calls that
+use the configured `agent` provider inside one GraphJin process. In a
+multi-replica deployment, divide the provider allowance across replicas.
+The matching environment overrides are
+`GJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE` and
+`GJ_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE`; the existing `SG_` and `SJ_` prefixes
+remain accepted as compatibility aliases.
+Requests wait for rolling-window capacity and remain bounded by
+`agent.timeout_seconds`.
+
+Token limiting is feedback-based: GraphJin charges normalized token usage
+reported by each completed provider call, then gates later calls. Ax does not
+expose the pending prompt or a provider-neutral token estimate to the limiter,
+so concurrent in-flight calls can temporarily exceed the configured token
+ceiling. Set `tokens_per_minute` below the provider's hard quota to leave
+appropriate headroom. Calls without provider usage metadata are not assigned a
+guessed token charge. Semantic catalog embeddings use their separate
+`catalog_search.semantic` provider configuration and are not charged here.
 
 Requests may include `task_id`, the retained ID of an active (`open` or
 `verifying`) `gj_task`. GraphJin
