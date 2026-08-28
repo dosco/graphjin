@@ -147,8 +147,11 @@ func (s *graphjinService) runWatchFlow(ctx context.Context, cfg watchEnrichmentC
 		return watchFlowRun{}, fmt.Errorf("watch flow service is not configured")
 	}
 	agentConf := agentConfigFromService(s.conf)
+	limiter, err := s.providerAgentRateLimiter(agentConf.RateLimit)
+	if err != nil {
+		return watchFlowRun{}, err
+	}
 	var client ax.AIClient
-	var err error
 	if s.agentClientFactory != nil {
 		client, err = s.agentClientFactory(agentConf)
 	} else {
@@ -160,12 +163,24 @@ func (s *graphjinService) runWatchFlow(ctx context.Context, cfg watchEnrichmentC
 		}
 		return watchFlowRun{}, err
 	}
-	limited := &watchFlowAIClient{inner: client, maxCalls: defaultWatchFlowMaxCalls}
 	timeout := time.Duration(gjagent.EffectiveTimeoutSeconds(agentConf.TimeoutSeconds)) * time.Second
 	flowCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	var rateLimiter ax.AxRateLimiter
+	if limiter != nil {
+		if s.agentClientFactory != nil {
+			client = limiter.WrapAIClient(client, agentConf.Provider, agentConf.Model)
+		} else {
+			rateLimiter = limiter.Hook(flowCtx)
+		}
+	}
+	limited := &watchFlowAIClient{inner: client, maxCalls: defaultWatchFlowMaxCalls}
 	flow := ax.NewFlow(canonical)
-	output, err := flow.Forward(flowCtx, limited, inputs, nil)
+	forwardOptions := map[string]ax.Value{}
+	if rateLimiter != nil {
+		forwardOptions["rateLimiter"] = rateLimiter
+	}
+	output, err := flow.Forward(flowCtx, limited, inputs, forwardOptions)
 	if err != nil {
 		return watchFlowRun{}, err
 	}

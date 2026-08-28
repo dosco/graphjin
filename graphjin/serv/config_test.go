@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	gjagent "github.com/dosco/graphjin/agent/v3"
 )
 
 func TestNewConfigParsesOpenAPITimeout(t *testing.T) {
@@ -189,6 +191,9 @@ agent:
   api_key_env: GRAPHJIN_AGENT_KEY
   base_url: http://127.0.0.1:11434/v1
   response_format: json_object
+  rate_limit:
+    requests_per_minute: 30
+    tokens_per_minute: 75000
   max_steps: 3
   timeout_seconds: 11
   read_only: true
@@ -202,6 +207,9 @@ agent:
 	}
 	if conf.Agent.APIKeyEnv != "GRAPHJIN_AGENT_KEY" || conf.Agent.BaseURL != "http://127.0.0.1:11434/v1" || conf.Agent.ResponseFormat != "json_object" {
 		t.Fatalf("agent connection config drift: %+v", conf.Agent)
+	}
+	if conf.Agent.RateLimit.RequestsPerMinute != 30 || conf.Agent.RateLimit.TokensPerMinute != 75000 {
+		t.Fatalf("agent provider rate-limit config drift: %+v", conf.Agent.RateLimit)
 	}
 	if conf.Agent.MaxSteps != 3 || conf.Agent.TimeoutSeconds != 11 || !conf.Agent.ReadOnly || !conf.Agent.ReturnTrace {
 		t.Fatalf("agent runtime config drift: %+v", conf.Agent)
@@ -222,6 +230,50 @@ agent:
 	}
 	if defaults.Agent.MaxSteps != 8 || defaults.Agent.TimeoutSeconds != 50 || defaults.Agent.ReadOnly || defaults.Agent.ReturnTrace {
 		t.Fatalf("unexpected agent runtime defaults: %+v", defaults.Agent)
+	}
+	if defaults.Agent.RateLimit != (gjagent.RateLimitConfig{}) {
+		t.Fatalf("unexpected default agent rate limits: %+v", defaults.Agent.RateLimit)
+	}
+}
+
+func TestAgentRateLimitEnvironmentOverrides(t *testing.T) {
+	for _, prefix := range []string{"GJ", "SG", "SJ"} {
+		t.Run(prefix, func(t *testing.T) {
+			for _, clear := range []string{"GJ", "SG", "SJ"} {
+				for _, suffix := range []string{"REQUESTS_PER_MINUTE", "TOKENS_PER_MINUTE"} {
+					key := clear + "_AGENT_RATE_LIMIT_" + suffix
+					old, existed := os.LookupEnv(key)
+					if err := os.Unsetenv(key); err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() {
+						if existed {
+							_ = os.Setenv(key, old)
+						} else {
+							_ = os.Unsetenv(key)
+						}
+					})
+				}
+			}
+			t.Setenv(prefix+"_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "17")
+			t.Setenv(prefix+"_AGENT_RATE_LIMIT_TOKENS_PER_MINUTE", "42000")
+			conf, err := NewConfig("", "yaml")
+			if err != nil {
+				t.Fatalf("NewConfig: %v", err)
+			}
+			if conf.Agent.RateLimit.RequestsPerMinute != 17 || conf.Agent.RateLimit.TokensPerMinute != 42000 {
+				t.Fatalf("%s environment rate limits not applied: %+v", prefix, conf.Agent.RateLimit)
+			}
+		})
+	}
+}
+
+func TestAgentRateLimitRejectsNegativeValues(t *testing.T) {
+	if _, err := NewConfig("agent:\n  rate_limit:\n    requests_per_minute: -1\n", "yaml"); err == nil {
+		t.Fatal("expected a negative agent request limit to be rejected")
+	}
+	if _, err := NewConfig("agent:\n  rate_limit:\n    tokens_per_minute: -1\n", "yaml"); err == nil {
+		t.Fatal("expected a negative agent token limit to be rejected")
 	}
 }
 

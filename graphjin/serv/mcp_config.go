@@ -303,7 +303,7 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithStringItems(),
 		),
 		mcp.WithObject("serv",
-			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, structured_output_mode, response_format [deprecated alias], max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
+			mcp.Description("Merge-patch for server-side settings (serv.Config). Writable v1 keys: agent (model, structured_output_mode, response_format [deprecated alias], max_steps, timeout_seconds, read_only, return_trace, seed_limit, catalog_default_limit, rate_limit), log_level, log_format, web_ui, http_compress, server_timing, rate_limiter (rate, bucket, ip_header). "+
 				"agent changes are read live; the rest are persisted and take effect on the next restart (automatic when reload_on_config_change is enabled). "+
 				"Secret-bearing sections (auth, redis, uploads) are read-only on gj_config and cannot be patched here. scope reports serv or mixed and reload_mode reports hot or restart."),
 		),
@@ -1639,6 +1639,14 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 
 	if servPatch != nil && len(errors) == 0 {
 		applyServConfigPatch(ms.service.conf, servPatch)
+		if rawAgent, ok := servPatch["agent"].(map[string]any); ok {
+			if _, rateLimitChanged := rawAgent["rate_limit"]; rateLimitChanged {
+				// Validation above guarantees this update cannot fail. Apply it to
+				// the existing limiter now so queued calls wake and re-evaluate the
+				// hot limits without waiting for another agent request.
+				_, _ = ms.service.providerAgentRateLimiter(ms.service.conf.Agent.RateLimit)
+			}
+		}
 		// Stage only the patched serv keys into viper so saveConfigToDisk
 		// persists them without rewriting unrelated defaults.
 		setServPatchViper(ms.service.conf.viper, ms.service.conf, servPatch)
@@ -2363,6 +2371,7 @@ var agentWritableFields = map[string]bool{
 	"response_format": true,
 	"read_only":       true, "return_trace": true,
 	"seed_limit": true, "catalog_default_limit": true,
+	"rate_limit": true,
 }
 
 func sortedKeys[V any](m map[string]V) []string {
@@ -2424,6 +2433,34 @@ func validateServConfigPatch(patch map[string]any) (changes []string, reload str
 			}
 			if structuredMode != "" || legacyFormat != "" {
 				if err := gjagent.ValidateStructuredOutputMode(structuredMode, legacyFormat); err != nil {
+					return nil, "", err
+				}
+			}
+			if raw, exists := m["rate_limit"]; exists {
+				rateLimit, ok := raw.(map[string]any)
+				if !ok {
+					return nil, "", fmt.Errorf("serv.agent.rate_limit must be an object")
+				}
+				for field := range rateLimit {
+					if !strInSet(field, "requests_per_minute", "tokens_per_minute") {
+						return nil, "", fmt.Errorf("serv.agent.rate_limit.%s is not writable; writable fields: requests_per_minute, tokens_per_minute", field)
+					}
+				}
+				config := gjagent.RateLimitConfig{}
+				var valid bool
+				if value, exists := rateLimit["requests_per_minute"]; exists {
+					config.RequestsPerMinute, valid = configExactInt(value)
+					if !valid {
+						return nil, "", fmt.Errorf("serv.agent.rate_limit.requests_per_minute must be an integer")
+					}
+				}
+				if value, exists := rateLimit["tokens_per_minute"]; exists {
+					config.TokensPerMinute, valid = configExactInt(value)
+					if !valid {
+						return nil, "", fmt.Errorf("serv.agent.rate_limit.tokens_per_minute must be an integer")
+					}
+				}
+				if err := config.Validate(); err != nil {
 					return nil, "", err
 				}
 			}
@@ -2517,6 +2554,14 @@ func applyAgentConfigPatch(a *AgentConfig, m map[string]any) {
 	if v, ok := m["return_trace"].(bool); ok {
 		a.ReturnTrace = v
 	}
+	if raw, ok := m["rate_limit"].(map[string]any); ok {
+		if v, ok := configExactInt(raw["requests_per_minute"]); ok {
+			a.RateLimit.RequestsPerMinute = v
+		}
+		if v, ok := configExactInt(raw["tokens_per_minute"]); ok {
+			a.RateLimit.TokensPerMinute = v
+		}
+	}
 }
 
 func applyRateLimiterPatch(r *RateLimiter, m map[string]any) {
@@ -2543,6 +2588,17 @@ func configInt(v any) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func configExactInt(v any) (int, bool) {
+	n, ok := configInt(v)
+	if !ok {
+		return 0, false
+	}
+	if f, ok := v.(float64); ok && f != float64(n) {
+		return 0, false
+	}
+	return n, true
 }
 
 // parseDBConfig parses a database config from a map

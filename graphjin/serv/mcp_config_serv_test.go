@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/spf13/viper"
 )
 
@@ -36,7 +37,7 @@ func TestServConfigMap_RedactsSecretsAndExposesSettings(t *testing.T) {
 func TestValidateServConfigPatch_ClassifiesReloadAndRejectsUnknown(t *testing.T) {
 	// agent-only patch is hot
 	if _, reload, err := validateServConfigPatch(map[string]any{
-		"agent": map[string]any{"model": "gpt-x", "response_format": "json_object", "max_steps": float64(12)},
+		"agent": map[string]any{"model": "gpt-x", "response_format": "json_object", "max_steps": float64(12), "rate_limit": map[string]any{"requests_per_minute": float64(30)}},
 	}); err != nil || reload != servReloadHot {
 		t.Fatalf("agent patch: reload=%q err=%v, want hot/nil", reload, err)
 	}
@@ -72,6 +73,15 @@ func TestValidateServConfigPatch_ClassifiesReloadAndRejectsUnknown(t *testing.T)
 	}
 	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"structured_output_mode": "strict"}}); err == nil {
 		t.Fatal("expected an invalid agent.structured_output_mode to be rejected")
+	}
+	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"rate_limit": map[string]any{"requests_per_minute": float64(-1)}}}); err == nil {
+		t.Fatal("expected a negative agent request limit to be rejected")
+	}
+	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"rate_limit": map[string]any{"requests_per_minute": 1.5}}}); err == nil {
+		t.Fatal("expected a fractional agent request limit to be rejected")
+	}
+	if _, _, err := validateServConfigPatch(map[string]any{"agent": map[string]any{"rate_limit": map[string]any{"daily": float64(1)}}}); err == nil {
+		t.Fatal("expected an unknown agent rate-limit field to be rejected")
 	}
 }
 
@@ -116,10 +126,14 @@ func TestHandleUpdateCurrentConfig_ServAgentPatchHotAppliesAndPersists(t *testin
 	v := viper.New()
 	ms := newTransactionalConfigMCPServerWithOptions(t, dbPath, false, v)
 	ms.service.conf.MCP.AllowConfigUpdates = true
+	limiter, err := ms.service.providerAgentRateLimiter(gjagent.RateLimitConfig{RequestsPerMinute: 5})
+	if err != nil {
+		t.Fatalf("seed provider limiter: %v", err)
+	}
 
 	res, err := ms.handleUpdateCurrentConfig(context.Background(), newToolRequest(map[string]any{
 		"serv": map[string]any{
-			"agent": map[string]any{"model": "gpt-hot", "response_format": "json_object", "max_steps": float64(11)},
+			"agent": map[string]any{"model": "gpt-hot", "response_format": "json_object", "max_steps": float64(11), "rate_limit": map[string]any{"requests_per_minute": float64(25), "tokens_per_minute": float64(64000)}},
 		},
 	}))
 	if err != nil {
@@ -150,11 +164,17 @@ func TestHandleUpdateCurrentConfig_ServAgentPatchHotAppliesAndPersists(t *testin
 	if got := ms.service.conf.Serv.Agent.StructuredOutputMode; got != "json_object" {
 		t.Fatalf("legacy response_format did not resolve to a mode, got %q", got)
 	}
+	if got := ms.service.conf.Serv.Agent.RateLimit; got.RequestsPerMinute != 25 || got.TokensPerMinute != 64000 {
+		t.Fatalf("agent.rate_limit not applied live: %+v", got)
+	}
+	if got := limiter.Config(); got.RequestsPerMinute != 25 || got.TokensPerMinute != 64000 {
+		t.Fatalf("running provider limiter not hot-updated: %+v", got)
+	}
 	// Persisted into viper so a save writes it. viper stores the struct under
 	// "agent" (dotted traversal into a struct value is unsupported), mirroring
 	// how the existing code persists "mcp".
 	staged, ok := v.Get("agent").(AgentConfig)
-	if !ok || staged.Model != "gpt-hot" || staged.ResponseFormat != "json_object" {
+	if !ok || staged.Model != "gpt-hot" || staged.ResponseFormat != "json_object" || staged.RateLimit.RequestsPerMinute != 25 || staged.RateLimit.TokensPerMinute != 64000 {
 		t.Fatalf("agent not staged into viper for persistence, got %#v", v.Get("agent"))
 	}
 }

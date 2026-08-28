@@ -46,6 +46,9 @@ mcp:
 #   api_key_env: OPENAI_API_KEY
 #   model: gpt-4.1-mini
 #   structured_output_mode: auto      # auto | native | function | json_object
+#   rate_limit:                        # outbound provider limits; zero/omitted disables
+#     requests_per_minute: 60
+#     tokens_per_minute: 100000
 #
 # The profile owns the endpoint, auth, capabilities and model rules, so a
 # different deployment is a different profile name, not a code change:

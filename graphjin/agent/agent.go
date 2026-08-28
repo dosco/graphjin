@@ -70,11 +70,12 @@ type Config struct {
 	// exactly like a weak model, which is how a benchmark run measured 0.177
 	// before this setting existed. Accepted: none, low, medium, high, xhigh
 	// (highest). Empty keeps the provider default.
-	Reasoning      string `mapstructure:"reasoning" jsonschema:"title=Agent Reasoning Effort,description=Provider thinking effort for models that support it: none low medium high xhigh"`
-	MaxSteps       int    `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
-	TimeoutSeconds int    `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
-	ReadOnly       bool   `mapstructure:"read_only" jsonschema:"title=Force Agent Read-Only,default=false"`
-	ReturnTrace    bool   `mapstructure:"return_trace" jsonschema:"title=Return Agent Trace,default=false"`
+	Reasoning      string          `mapstructure:"reasoning" jsonschema:"title=Agent Reasoning Effort,description=Provider thinking effort for models that support it: none low medium high xhigh"`
+	RateLimit      RateLimitConfig `mapstructure:"rate_limit" jsonschema:"title=Agent Provider Rate Limits"`
+	MaxSteps       int             `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
+	TimeoutSeconds int             `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
+	ReadOnly       bool            `mapstructure:"read_only" jsonschema:"title=Force Agent Read-Only,default=false"`
+	ReturnTrace    bool            `mapstructure:"return_trace" jsonschema:"title=Return Agent Trace,default=false"`
 	// SeedLimit caps the initial query_catalog(search: instruction) seed rows.
 	SeedLimit int `mapstructure:"seed_limit" jsonschema:"title=Agent Seed Catalog Limit,default=40"`
 	// CatalogDefaultLimit is the default row limit for model-issued catalog queries.
@@ -284,11 +285,16 @@ type Agent struct {
 	newFinalizer  ProgramFactory
 	now           func() time.Time
 	catalogSearch CatalogSearchFeatures
+	rateLimiter   *ProviderRateLimiter
+	customClient  bool
 }
 
 func New(gj *core.GraphJin, config Config, options ...Option) (*Agent, error) {
 	if gj == nil {
 		return nil, ErrMissingGraphJin
+	}
+	if err := config.RateLimit.Validate(); err != nil {
+		return nil, err
 	}
 	return newAgent(config, newCoreRuntime(gj, config), options...), nil
 }
@@ -301,6 +307,7 @@ func NewCoreRuntime(gj *core.GraphJin, config Config) (GraphRuntime, error) {
 }
 
 func newAgent(config Config, rt GraphRuntime, options ...Option) *Agent {
+	rateLimiter, _ := NewProviderRateLimiter(config.RateLimit)
 	a := &Agent{
 		config:    config.withDefaults(),
 		runtime:   rt,
@@ -321,7 +328,8 @@ func newAgent(config Config, rt GraphRuntime, options ...Option) *Agent {
 		newFinalizer: func(signature string, options map[string]ax.Value) Program {
 			return finalizeProgram{gen: ax.NewAx(signature, options)}
 		},
-		now: time.Now,
+		now:         time.Now,
+		rateLimiter: rateLimiter,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -335,6 +343,17 @@ func WithClientFactory(factory ClientFactory) Option {
 	return func(a *Agent) {
 		if factory != nil {
 			a.newClient = factory
+			a.customClient = true
+		}
+	}
+}
+
+// WithProviderRateLimiter shares one process-local provider allowance across
+// independently constructed agents, such as REST, MCP, and watch runs.
+func WithProviderRateLimiter(limiter *ProviderRateLimiter) Option {
+	return func(a *Agent) {
+		if limiter != nil {
+			a.rateLimiter = limiter
 		}
 	}
 }
@@ -397,6 +416,9 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if err := ValidateStructuredOutputMode(cfg.StructuredOutputMode, cfg.ResponseFormat); err != nil {
 		return Response{}, err
 	}
+	if err := cfg.RateLimit.Validate(); err != nil {
+		return Response{}, err
+	}
 	// read_only is the single operator kill-switch (D3) that forces the agent to
 	// read/discovery-only regardless of the caller's role. It replaces the removed
 	// per-request safe/discovery_only/raw_allowed modes.
@@ -419,6 +441,14 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	client, err := a.newClient(cfg)
 	if err != nil {
 		return Response{}, err
+	}
+	var rateLimiter ax.AxRateLimiter
+	if a.rateLimiter != nil && a.rateLimiter.Enabled() {
+		if a.customClient {
+			client = a.rateLimiter.WrapAIClient(client, cfg.Provider, cfg.Model)
+		} else {
+			rateLimiter = a.rateLimiter.Hook(ctx)
+		}
 	}
 
 	var program Program
@@ -536,6 +566,17 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		"max_actor_steps": maxSteps,
 	}
 	program = a.newProgram(agentSignature, options)
+	forwardOptions := map[string]ax.Value{
+		"runtime":         runtime,
+		"max_actor_steps": maxSteps,
+		// Ax resolves this against the deployment profile and model rules, and
+		// fails before transport if the deployment cannot serve an explicit
+		// mode. GraphJin never inspects the provider or model name itself.
+		"structured_output_mode": cfg.StructuredOutputMode,
+	}
+	if rateLimiter != nil {
+		forwardOptions["rateLimiter"] = rateLimiter
+	}
 	output, err := program.Forward(ctx, client, map[string]ax.Value{
 		"instruction":    strings.TrimSpace(req.Instruction),
 		"context":        runReq.Context,
@@ -543,17 +584,10 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		"namespace":      req.Namespace,
 		"current_date":   a.now().UTC().Format("2006-01-02"),
 		"history":        historyValue(req.History),
-	}, map[string]ax.Value{
-		"runtime":         runtime,
-		"max_actor_steps": maxSteps,
-		// Ax resolves this against the deployment profile and model rules, and
-		// fails before transport if the deployment cannot serve an explicit
-		// mode. GraphJin never inspects the provider or model name itself.
-		"structured_output_mode": cfg.StructuredOutputMode,
-	})
+	}, forwardOptions)
 	if err != nil {
 		if finalResp, ok := responseFromFinalActionLog(program.GetActionLog(), traceID); ok {
-			return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, attachProgramMetadata(finalResp, program, returnTrace)), nil
+			return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, attachProgramMetadata(finalResp, program, returnTrace), rateLimiter), nil
 		}
 		// An exhausted actor loop with a complete evidence trail is a
 		// finalization failure, not a knowledge failure: 26 of the 36 runaway
@@ -562,16 +596,16 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		// Spend one tool-less model call turning that evidence into an answer;
 		// the response still passes every normal finalize gate, so an
 		// ungrounded rescue is blocked exactly like an ungrounded answer.
-		if resp, ok := a.forcedFinalize(ctx, client, protocol, program, cfg, req, traceID, returnTrace, err); ok {
+		if resp, ok := a.forcedFinalize(ctx, client, protocol, program, cfg, req, traceID, returnTrace, err, rateLimiter); ok {
 			return resp, nil
 		}
-		return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, responseFromError(err, traceID, program, returnTrace)), nil
+		return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, responseFromError(err, traceID, program, returnTrace), rateLimiter), nil
 	}
 	resp = responseFromValue(output, traceID)
 	if resp.Status == "" {
 		resp.Status = StatusAnswered
 	}
-	return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, attachProgramMetadata(resp, program, returnTrace)), nil
+	return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, attachProgramMetadata(resp, program, returnTrace), rateLimiter), nil
 }
 
 func DefaultClientFactory(cfg Config) (ax.AIClient, error) {
@@ -1187,7 +1221,7 @@ ungrounded_terms:string "The identifiers the draft named that the evidence does 
 // tool-less call restating it. The rewrite re-enters the same finalize, so every
 // gate runs again: a restatement that invents another identifier is blocked
 // exactly like the draft was, and the one-shot latch means it cannot ping-pong.
-func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AIClient, protocol *protocolRuntime, cfg Config, req Request, resp Response) Response {
+func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AIClient, protocol *protocolRuntime, cfg Config, req Request, resp Response, rateLimiter ax.AxRateLimiter) Response {
 	if protocol == nil || protocol.state == nil {
 		return resp
 	}
@@ -1210,14 +1244,16 @@ func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AICli
 	if finalizer == nil {
 		return finalized
 	}
+	forwardOptions := map[string]ax.Value{"structured_output_mode": cfg.StructuredOutputMode}
+	if rateLimiter != nil {
+		forwardOptions["rateLimiter"] = rateLimiter
+	}
 	out, err := finalizer.Forward(ctx, client, map[string]ax.Value{
 		"instruction":      strings.TrimSpace(req.Instruction),
 		"evidence":         protocol.state.finalizeEvidenceDigest(forcedFinalizeEvidenceByteLimit),
 		"draft_answer":     draft.Answer,
 		"ungrounded_terms": strings.Join(tokens, ", "),
-	}, map[string]ax.Value{
-		"structured_output_mode": cfg.StructuredOutputMode,
-	})
+	}, forwardOptions)
 	if err != nil {
 		return finalized
 	}
@@ -1241,7 +1277,7 @@ func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AICli
 // and no pending required finalization — so it cannot be used to skip a repair
 // the run still owes. On any failure the caller falls through to the original
 // exhaustion error, and the episode stays a runaway.
-func (a *Agent) forcedFinalize(ctx context.Context, client ax.AIClient, protocol *protocolRuntime, program Program, cfg Config, req Request, traceID string, returnTrace bool, err error) (Response, bool) {
+func (a *Agent) forcedFinalize(ctx context.Context, client ax.AIClient, protocol *protocolRuntime, program Program, cfg Config, req Request, traceID string, returnTrace bool, err error, rateLimiter ax.AxRateLimiter) (Response, bool) {
 	if a == nil || a.newFinalizer == nil || protocol == nil || protocol.state == nil {
 		return Response{}, false
 	}
@@ -1252,12 +1288,14 @@ func (a *Agent) forcedFinalize(ctx context.Context, client ax.AIClient, protocol
 	if finalizer == nil {
 		return Response{}, false
 	}
+	forwardOptions := map[string]ax.Value{"structured_output_mode": cfg.StructuredOutputMode}
+	if rateLimiter != nil {
+		forwardOptions["rateLimiter"] = rateLimiter
+	}
 	out, ferr := finalizer.Forward(ctx, client, map[string]ax.Value{
 		"instruction": strings.TrimSpace(req.Instruction),
 		"evidence":    protocol.state.finalizeEvidenceDigest(forcedFinalizeEvidenceByteLimit),
-	}, map[string]ax.Value{
-		"structured_output_mode": cfg.StructuredOutputMode,
-	})
+	}, forwardOptions)
 	if ferr != nil {
 		return Response{}, false
 	}
@@ -1269,7 +1307,7 @@ func (a *Agent) forcedFinalize(ctx context.Context, client ax.AIClient, protocol
 	resp := Response{Status: StatusAnswered, Answer: answer, TraceID: traceID}
 	resp = attachProgramMetadata(resp, program, returnTrace)
 	resp.Usage = mergedUsage(resp.Usage, usageSummary(finalizer))
-	return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, resp), true
+	return a.finalizeWithGroundedRewrite(ctx, client, protocol, cfg, req, resp, rateLimiter), true
 }
 
 // mergedUsage folds the finalizer's single-call usage into the main program's

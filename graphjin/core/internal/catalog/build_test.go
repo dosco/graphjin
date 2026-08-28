@@ -629,6 +629,11 @@ func TestBuildIncludesConfigRecipes(t *testing.T) {
 	if !strings.Contains(agentRecipe.ExamplesJSON, "missing server credentials fail closed") {
 		t.Fatalf("agent tuning recipe lacks server-credential guidance: %s", agentRecipe.ExamplesJSON)
 	}
+	for _, want := range []string{"requests_per_minute", "tokens_per_minute", "outbound", "process-local"} {
+		if !strings.Contains(agentRecipe.Summary+agentRecipe.ExamplesJSON+agentRecipe.GraphQLMutation, want) {
+			t.Fatalf("agent tuning recipe lacks provider rate-limit guidance %q: %+v", want, agentRecipe)
+		}
+	}
 }
 
 func TestConfigRecipeSearchRanking(t *testing.T) {

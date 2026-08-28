@@ -197,6 +197,17 @@ per action: MCP callers that send a `_meta.progressToken` receive
 default catalog page sizes are tunable via `agent.seed_limit` (default 40) and
 `agent.catalog_default_limit` (default 20).
 
+Outbound model traffic can be bounded with
+`agent.rate_limit.requests_per_minute` and
+`agent.rate_limit.tokens_per_minute`. These process-local rolling-minute limits
+cover the REST and MCP agent, watch enrichment, and watch flows that use the
+server-owned `agent` provider credentials. They are distinct from the top-level
+inbound HTTP `rate_limiter`; multi-replica deployments divide the provider
+allowance across replicas. Waiting uses the existing agent context and deadline.
+Token usage is charged from completed provider-reported usage, so operators
+should leave headroom for concurrent calls whose size is not known in advance.
+Semantic catalog embeddings remain governed by `catalog_search.semantic`.
+
 Requests may carry a retained `task_id` for an explicitly created open
 `gj_task`. GraphJin prepends the owner-scoped declared goal and up to five recent
 trail entries to `history`, then appends one server-written `agent_run` entry.

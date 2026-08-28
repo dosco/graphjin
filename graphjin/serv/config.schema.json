@@ -51,6 +51,10 @@
 					"title": "Agent Reasoning Effort",
 					"description": "Provider thinking effort for models that support it: none low medium high xhigh"
 				},
+				"rate_limit": {
+					"$ref": "#/$defs/RateLimitConfig",
+					"title": "Agent Provider Rate Limits"
+				},
 				"max_steps": {
 					"type": "integer",
 					"title": "Agent Max Steps",
@@ -1394,6 +1398,26 @@
 				},
 				"block": {
 					"type": "boolean"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"RateLimitConfig": {
+			"properties": {
+				"requests_per_minute": {
+					"type": "integer",
+					"minimum": 0,
+					"title": "Agent Provider Requests Per Minute",
+					"description": "Process-local rolling-minute request ceiling; zero disables request limiting",
+					"default": 0
+				},
+				"tokens_per_minute": {
+					"type": "integer",
+					"minimum": 0,
+					"title": "Agent Provider Tokens Per Minute",
+					"description": "Process-local rolling-minute provider-reported token ceiling; zero disables token limiting",
+					"default": 0
 				}
 			},
 			"additionalProperties": false,
