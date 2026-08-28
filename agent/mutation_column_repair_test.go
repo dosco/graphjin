@@ -320,6 +320,72 @@ func TestFailedWriteCannotBeReportedAsDone(t *testing.T) {
 	}
 }
 
+// structGraphQLFailureRuntime re-shapes an inner fake's FAILED execute_graphql
+// maps into a struct — the failure-path half of the contract whose success
+// half structGraphQLRuntime (agent_test.go) pins: a base runtime outside this
+// package returns whatever struct it built, and only a rewriting annotator
+// converts to a map. The inner fake keeps its strict-engine behavior — only
+// the failure's shape changes.
+type structGraphQLFailureRuntime struct {
+	GraphRuntime
+}
+
+type structGraphQLFailureResult struct {
+	Data   map[string]any `json:"data,omitempty"`
+	Errors []any          `json:"errors"`
+}
+
+func (r *structGraphQLFailureRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
+	out, err := r.GraphRuntime.ExecuteGraphQL(ctx, args)
+	if err != nil {
+		return out, err
+	}
+	mapped := mapValue(out)
+	if mapped == nil || len(anySlice(mapped["errors"])) == 0 {
+		return out, err
+	}
+	return structGraphQLFailureResult{Data: mapValue(mapped["data"]), Errors: anySlice(mapped["errors"])}, nil
+}
+
+// TestFailedStructWriteCannotBeReportedAsDone is the struct-shaped twin of
+// TestFailedWriteCannotBeReportedAsDone: the engine rejects the write, but the
+// failure arrives as a foreign struct. executionFailed used to read every
+// foreign shape as success, which set mutationSucceeded on the failed write,
+// skipped every recovery hook, and let the run finalize a success report over
+// an unchanged database.
+func TestFailedStructWriteCannotBeReportedAsDone(t *testing.T) {
+	runtime, base := strictWriteTestRuntime(t)
+	runtime.base = &structGraphQLFailureRuntime{GraphRuntime: base}
+
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": brokenPaymentInsert})
+	if err == nil || !strings.Contains(err.Error(), "did NOT return data") {
+		t.Fatalf("a dataless struct-shaped engine failure must throw: %v", err)
+	}
+	if len(base.writes) != 0 {
+		t.Fatalf("the broken write must not land: %v", base.writes)
+	}
+	if !runtime.state.mutationAttempted || runtime.state.mutationSucceeded {
+		t.Fatalf("a struct-shaped failure must be recorded as a failed write: attempted=%v succeeded=%v",
+			runtime.state.mutationAttempted, runtime.state.mutationSucceeded)
+	}
+	resp := runtime.state.finalize(Response{Status: StatusAnswered, Answer: "Successfully recorded payment DEEPORG-PAY-001 with id 900001."})
+	if resp.Status != StatusBlocked {
+		t.Fatalf("a run whose only write failed as a struct cannot answer success, got %s", resp.Status)
+	}
+	found := false
+	for _, violation := range runtime.state.violations {
+		if violation.Code == "mutation_execution_failed" {
+			found = true
+			if !violation.Blocking {
+				t.Fatal("the false success report must block")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected mutation_execution_failed, got %+v", runtime.state.violations)
+	}
+}
+
 func TestReadOnlyRunsAreUntouchedByWriteAccounting(t *testing.T) {
 	runtime, _ := strictWriteTestRuntime(t)
 	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { payments(limit: 5) { id reference } }`}); err != nil {

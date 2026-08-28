@@ -122,7 +122,7 @@ func (s *discoveryState) ungroundedAnswerTokens(answer string) []string {
 }
 
 // executionFailed reports whether an execution result carries GraphQL errors,
-// across both the typed and map-shaped runtime results.
+// across the typed, map-shaped, and foreign-struct runtime results.
 func executionFailed(out any) bool {
 	switch res := out.(type) {
 	case executeResult:
@@ -132,7 +132,12 @@ func executionFailed(out any) bool {
 	case map[string]any:
 		return len(anySlice(res["errors"])) != 0
 	default:
-		return false
+		// A base runtime outside this package fails as whatever struct it
+		// built — the same foreign-shape seam attachNoticeToForeignResult
+		// covers on the success path. Reading such a result as success set
+		// mutationSucceeded on a failed write and skipped every recovery
+		// hook, so normalize and read errors the way the map case does.
+		return len(anySlice(mapValue(normalizeValue(out))["errors"])) != 0
 	}
 }
 
