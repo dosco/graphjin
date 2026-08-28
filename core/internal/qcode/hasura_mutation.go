@@ -145,6 +145,18 @@ func (co *Compiler) rewriteHasuraMutationRoot(
 			if byPK {
 				return plan, unsupported("where and pk_columns cannot be combined; a _by_pk root is addressed by its primary key")
 			}
+			// An insert has no existing rows to match, so a where on one is
+			// meaningless — and it was reaching native compilation where the
+			// insert renderer ignores it in silence. A recorded run wrote
+			// `insert_payments(objects: [...], where: {id: {_eq: 900004}})`
+			// twice, evidently believing it had conditional-insert semantics,
+			// then inserted the same payment again under a fresh id when
+			// nothing behaved as expected — leaving a duplicate row and a
+			// failed collateral check. Refusing it by name is what this file
+			// does with every other shape it does not implement.
+			if verb == "insert" {
+				return plan, unsupported("where does not belong on an insert root; an insert matches no existing rows — use the native upsert argument to write conditionally")
+			}
 			args = append(args, arg)
 
 		case arg.Name == "pk_columns":
