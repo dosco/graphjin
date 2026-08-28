@@ -135,3 +135,40 @@ func TestReasoningWrapperAsksForTheThinkingItPaysFor(t *testing.T) {
 		}
 	}
 }
+
+// The two halves joined: graphjin puts showThoughts and the budget on the
+// model_config, and ax now turns both into Gemini's generationConfig.thinkingConfig
+// (ax-llm/ax#620). Pinning it here because each half is inert alone, and a future
+// ax bump that dropped the mapping would otherwise cost another silent run.
+func TestReasoningReachesTheGeminiWire(t *testing.T) {
+	transport := ax.NewScriptedTransport([]ax.Value{
+		ax.Object("status", float64(200), "json", ax.Object(
+			"candidates", ax.Array(ax.Object(
+				"content", ax.Object("parts", ax.Array(ax.Object("text", `{"answer":"ok"}`))),
+				"finishReason", "STOP",
+			)),
+		)),
+	})
+	inner := ax.NewAI("google-gemini", map[string]ax.Value{
+		"apiKey": "test-token", "api_key": "test-token",
+		"model": "gemini-3.5-flash", "transport": transport,
+	})
+	program := ax.NewAx("question:string -> answer:string", nil)
+	_, _ = program.Forward(context.Background(), &reasoningClient{inner: inner, budget: "high"},
+		map[string]ax.Value{"question": "how many customers?"}, nil)
+
+	if len(transport.Requests) == 0 {
+		t.Fatal("scripted transport captured no request")
+	}
+	raw, err := json.Marshal(transport.Requests[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	if !strings.Contains(body, "thinkingConfig") {
+		t.Fatalf("no thinkingConfig reached the wire:\n%s", truncateForLog(body))
+	}
+	if !strings.Contains(body, "includeThoughts") {
+		t.Fatalf("thinking was requested but the thoughts were not:\n%s", truncateForLog(body))
+	}
+}
