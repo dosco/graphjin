@@ -144,3 +144,40 @@ func TestMalformedWatchSubscriptionExecutesNormalized(t *testing.T) {
 		t.Fatalf("the unrepairable mutation must not dispatch, calls=%d", base.mutationCalls)
 	}
 }
+
+// TestWatchNormalizationNoticeSurvivesAStructResult pins the serv result
+// contract on this notice: a successful execution can arrive as a foreign
+// struct, and the typed switch used to return any such shape untouched — the
+// drop that cost the confirmation notice an entire benchmark run before a
+// struct-shaped fake existed.
+func TestWatchNormalizationNoticeSurvivesAStructResult(t *testing.T) {
+	base := &watchNormalizeRuntime{}
+	profile := &CapabilityProfile{RoleClass: "user", AllowedActions: []string{"gj_watch.insert", "gj_watch.update"}}
+	runtime := newProtocolRuntime(&structGraphQLRuntime{GraphRuntime: base}, "Watch failed invoices.", "", 8, profile, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.securityRuntimeEvidence = true
+	runtime.state.mutationEvidenceSupplied = true
+	runtime.state.tablesDetailed["invoices"] = true
+	runtime.state.catalogDetails = []string{"help:watches", "table:app:main.invoices"}
+
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { gj_watch(insert: { name: "failed_invoices", query: "subscription { invoices(where: { status: { eq: "failed" } }, first: 25, after: $cursor) { id } invoices_cursor }", delivery_json: { kind: "inbox" } }) { id status } }`,
+	})
+	if err != nil {
+		t.Fatalf("normalized execution errored: %v", err)
+	}
+	if base.mutationCalls != 1 {
+		t.Fatalf("the repaired mutation must execute, calls=%d", base.mutationCalls)
+	}
+	mapped := mapValue(normalizeValue(out))
+	if kind := stringFromMap(mapValue(mapped["recovery"]), "kind"); kind != "watch_subscription_normalized" {
+		t.Fatalf("struct-shaped result dropped the normalization notice: %#v", mapped)
+	}
+	if g, _ := mapped["guidance"].(string); !strings.Contains(g, "re-escaping") {
+		t.Fatalf("guidance must survive the struct shape: %#v", mapped)
+	}
+	if data := mapValue(mapped["data"]); mapValue(data["gj_watch"]) == nil {
+		t.Fatalf("normalizing for the notice lost the rows: %#v", mapped)
+	}
+}

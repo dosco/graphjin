@@ -189,6 +189,6 @@ func attachReferentBindingNotice(out any, rewritten string, binding referentBind
 		res["guidance"] = instruction
 		return res
 	default:
-		return out
+		return attachNoticeToForeignResult(out, recovery, instruction)
 	}
 }
