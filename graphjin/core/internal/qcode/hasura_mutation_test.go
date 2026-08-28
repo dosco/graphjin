@@ -166,6 +166,16 @@ func TestHasuraMutationRefusesUnsupportedShapes(t *testing.T) {
 			`mutation { update_widgets(where: { id: { _eq: 1 } }, _set: { name: "a" }) { returning { id } } }`,
 			"widgets",
 		},
+		// A recorded episode wrote insert_payments(objects: [...], where: {id:
+		// {_eq: 900004}}) twice, evidently reading the where as
+		// conditional-insert semantics. The insert renderer ignores it in
+		// silence, so nothing said otherwise; the run then inserted the same
+		// payment again under a fresh id and left a duplicate row behind. An
+		// insert matches no existing rows, so the argument is refused by name.
+		"where on an insert is refused rather than ignored": {
+			`mutation { insert_products(objects: [{ id: 1, name: "a" }], where: { id: { _eq: 1 } }) { affected_rows } }`,
+			"where does not belong on an insert root",
+		},
 		// A recorded episode wrote update_tickets_by_pk against a schema whose
 		// table is support_tickets; a near miss must name the real root.
 		"near-miss table suggests the real root": {
