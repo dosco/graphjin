@@ -680,6 +680,14 @@ func (c *reasoningClient) withBudget(req map[string]ax.Value) map[string]ax.Valu
 	}
 	config["thinkingTokenBudget"] = c.budget
 	config["thinking_token_budget"] = c.budget
+	// Ask for the thinking back, not just for it to happen. Providers gate the
+	// reasoning text behind a separate flag, so a run paid for its thinking and
+	// then dropped it: across 80 recorded episodes every one carried a chat_log
+	// and not one carried a thought, which left "why did the model do that?"
+	// answerable only by inference. merge_model_config reads either spelling
+	// from this same map and forwards it as showThoughts.
+	config["showThoughts"] = true
+	config["show_thoughts"] = true
 	req["model_config"] = config
 	return req
 }

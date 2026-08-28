@@ -104,3 +104,34 @@ func TestVertexGemmaAutoModeSurvivesReasoningWrapper(t *testing.T) {
 		t.Fatalf("Gemma thinking request transform missing under the wrapper:\n%s", truncateForLog(body))
 	}
 }
+
+// A run that enables reasoning pays for the thinking and then could not see it:
+// across 80 recorded benchmark episodes every one carried a chat_log and not one
+// carried a thought, so "why did the model do that?" was answerable only by
+// inference from the code the model emitted. Providers gate the reasoning text
+// behind a flag separate from the budget, and only the budget was being sent.
+//
+// This pins graphjin's half — that both spellings ride the same model_config ax
+// merges. Whether it reaches the wire is ax's half: the ported Gemini path
+// currently builds no thinkingConfig at all, so neither the budget nor the
+// thoughts are forwarded (ax-llm/ax, mirrored from api.ts:1148).
+func TestReasoningWrapperAsksForTheThinkingItPaysFor(t *testing.T) {
+	client := &reasoningClient{budget: "high"}
+	req := client.withBudget(map[string]ax.Value{})
+
+	config, ok := req["model_config"].(map[string]ax.Value)
+	if !ok {
+		t.Fatalf("model_config missing: %#v", req)
+	}
+	for _, key := range []string{"thinkingTokenBudget", "thinking_token_budget"} {
+		if config[key] != "high" {
+			t.Fatalf("%s = %#v, want the configured budget", key, config[key])
+		}
+	}
+	// The budget alone makes the model think in private. These return the text.
+	for _, key := range []string{"showThoughts", "show_thoughts"} {
+		if config[key] != true {
+			t.Fatalf("%s = %#v, want the thoughts requested back", key, config[key])
+		}
+	}
+}
