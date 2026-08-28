@@ -740,12 +740,12 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 		return res, repaired
 	default:
 		// Audited against the struct-drop that silenced the confirmation notice
-		// (attachNoticeToForeignResult): unreachable here. executionFailed reads
-		// every foreign shape as success, and it gates this switch twice — at
-		// the call site and at this function's top — so only the three shapes
-		// above can arrive. A normalize-here fix would be untestable dead code;
-		// if foreign-struct failures ever become real, the break to fix first
-		// is executionFailed misreading them as successes.
+		// (attachNoticeToForeignResult): unreachable here. A foreign-struct
+		// failure passes the executionFailed gate now that it normalizes, but
+		// executionErrorMessages reads no messages off a foreign shape, so it
+		// bails above at the column parse — only the three shapes above arrive
+		// with a recovery to amend. A normalize-here fix would still be
+		// untestable dead code.
 		return out, repaired
 	}
 }
