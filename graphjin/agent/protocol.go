@@ -1325,7 +1325,18 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			// violation for tables already refused gets the evidence supplied,
 			// the same escape watch creation has always had. Unresolvable targets
 			// still fail loudly inside supplyMutationEvidence.
-			if containsStringFold(roots, systemRootWatch) || r.state.previouslyRefusedMutationEvidence(missing) {
+			// Both watch roots. missingMutationEvidence demands evidence for
+			// gj_watch and gj_watch_event identically, and systemRootHelpIDs
+			// documents both, but this escape matched only gj_watch by exact
+			// name — so the acknowledge/clear half of every reactive task hit the
+			// refusal with no discharge whenever the run had already spent its
+			// one system-root contract supply elsewhere. Measured across a paired
+			// benchmark run: the guard demanded gj_watch_event 329 times against
+			// gj_watch's 132, refused 15 episodes and discharged only 4, and 12
+			// of the 15 failed outright.
+			if containsStringFold(roots, systemRootWatch) ||
+				containsStringFold(roots, systemRootWatchEvent) ||
+				r.state.previouslyRefusedMutationEvidence(missing) {
 				r.state.noteInterceptedWrite(query, "the write was intercepted pending mutation-shape evidence and was not successfully retried")
 				if _, ok := r.supplyMutationEvidence(ctx, missing); ok {
 					// Throw, not return: the executor's straight-line code
