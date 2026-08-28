@@ -323,3 +323,53 @@ func TestAppTableQueriesKeepTheDiscoveryRefusal(t *testing.T) {
 		t.Fatalf("the refusal should record its violation: %+v", runtime.state.violations)
 	}
 }
+
+// TestConfirmationReadCarriesTheUnperformedActionNotice covers the failure the
+// 2028.4 run isolated: on "Yes, go ahead and set that up." the model takes the
+// saved-query shortcut the instructions advertise, gets rows back, and
+// finalizes a count as proof of a watch that was never created. Across the
+// run's confirmation turns, every episode that reached for a saved query
+// failed and every one that authored the mutation passed. The read still
+// returns its rows — a confirmation can legitimately confirm a proposed read,
+// so this must not block — but it now says the action is unperformed.
+func TestConfirmationReadCarriesTheUnperformedActionNotice(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	runtime := newProtocolRuntime(base, "Yes, go ahead and set that up.", "", 8, nil, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.markSavedQueryDetailed("open_critical_ticket_count")
+
+	out, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "open_critical_ticket_count"})
+	if err != nil {
+		t.Fatalf("the read must still execute and return: %v", err)
+	}
+	mapped := mapValue(normalizeValue(out))
+	guidance, _ := mapped["guidance"].(string)
+	if !strings.Contains(guidance, "has not performed it") {
+		t.Fatalf("confirmation read carries no unperformed-action notice: %#v", mapped)
+	}
+
+	// A write in hand means the confirmation was honoured; the notice must not
+	// second-guess a run that already performed its action.
+	runtime.state.mutationSucceeded = true
+	after, err := runtime.ExecuteSavedQuery(context.Background(), map[string]any{"name": "open_critical_ticket_count", "variables": map[string]any{"n": 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := mapValue(normalizeValue(after))["guidance"].(string); strings.Contains(g, "has not performed it") {
+		t.Fatalf("notice still riding after the mutation succeeded: %q", g)
+	}
+
+	// A turn that names its own subject is not a confirmation; no notice.
+	plain := newProtocolRuntime(base, "Show the invoice snapshot", "", 8, nil, nil, CatalogSearchFeatures{})
+	plain.state.seedOK = true
+	plain.state.modelDiscoveryAction = true
+	plain.state.markSavedQueryDetailed("invoice_snapshot")
+	res, err := plain.ExecuteSavedQuery(context.Background(), map[string]any{"name": "invoice_snapshot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := mapValue(normalizeValue(res))["guidance"].(string); g != "" {
+		t.Fatalf("ordinary question acquired a confirmation notice: %q", g)
+	}
+}
