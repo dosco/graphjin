@@ -51,6 +51,12 @@
 					"title": "Agent Reasoning Effort",
 					"description": "Provider thinking effort for models that support it: none low medium high xhigh"
 				},
+				"show_thoughts": {
+					"type": "boolean",
+					"title": "Return Model Reasoning",
+					"description": "Return the provider's reasoning text in the chat log for debugging",
+					"default": false
+				},
 				"rate_limit": {
 					"$ref": "#/$defs/RateLimitConfig",
 					"title": "Agent Provider Rate Limits"

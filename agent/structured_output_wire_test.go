@@ -116,7 +116,7 @@ func TestVertexGemmaAutoModeSurvivesReasoningWrapper(t *testing.T) {
 // currently builds no thinkingConfig at all, so neither the budget nor the
 // thoughts are forwarded (ax-llm/ax, mirrored from api.ts:1148).
 func TestReasoningWrapperAsksForTheThinkingItPaysFor(t *testing.T) {
-	client := &reasoningClient{budget: "high"}
+	client := &reasoningClient{budget: "high", showThoughts: true}
 	req := client.withBudget(map[string]ax.Value{})
 
 	config, ok := req["model_config"].(map[string]ax.Value)
@@ -154,7 +154,7 @@ func TestReasoningReachesTheGeminiWire(t *testing.T) {
 		"model": "gemini-3.5-flash", "transport": transport,
 	})
 	program := ax.NewAx("question:string -> answer:string", nil)
-	_, _ = program.Forward(context.Background(), &reasoningClient{inner: inner, budget: "high"},
+	_, _ = program.Forward(context.Background(), &reasoningClient{inner: inner, budget: "high", showThoughts: true},
 		map[string]ax.Value{"question": "how many customers?"}, nil)
 
 	if len(transport.Requests) == 0 {
@@ -170,5 +170,33 @@ func TestReasoningReachesTheGeminiWire(t *testing.T) {
 	}
 	if !strings.Contains(body, "includeThoughts") {
 		t.Fatalf("thinking was requested but the thoughts were not:\n%s", truncateForLog(body))
+	}
+}
+
+// These models think by default, so returning the reasoning text changes what
+// is observable, not what the model does. Seeing it therefore must not require
+// setting a thinking budget, which does change behaviour: the first version
+// shipped showThoughts only inside the reasoning wrapper, so the only way to
+// read the thinking was to alter the run producing it.
+func TestShowThoughtsIsIndependentOfTheThinkingBudget(t *testing.T) {
+	observeOnly := (&reasoningClient{showThoughts: true}).withBudget(map[string]ax.Value{})
+	config, _ := observeOnly["model_config"].(map[string]ax.Value)
+	if config["showThoughts"] != true {
+		t.Fatalf("observation-only client did not ask for the thoughts: %#v", config)
+	}
+	for _, key := range []string{"thinkingTokenBudget", "thinking_token_budget"} {
+		if _, set := config[key]; set {
+			t.Fatalf("observing the thinking also set %s, which changes the run: %#v", key, config)
+		}
+	}
+
+	// And a budget without the switch stays silent, as before.
+	budgetOnly := (&reasoningClient{budget: "high"}).withBudget(map[string]ax.Value{})
+	bc, _ := budgetOnly["model_config"].(map[string]ax.Value)
+	if bc["thinkingTokenBudget"] != "high" {
+		t.Fatalf("budget was not applied: %#v", bc)
+	}
+	if _, set := bc["showThoughts"]; set {
+		t.Fatalf("a budget alone must not start returning reasoning text: %#v", bc)
 	}
 }

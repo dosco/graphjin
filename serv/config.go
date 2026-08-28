@@ -1233,6 +1233,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("agent.provider", "GJ_AGENT_PROVIDER", "SG_AGENT_PROVIDER", "SJ_AGENT_PROVIDER")                                                                                         //nolint:errcheck
 	vi.BindEnv("agent.model", "GJ_AGENT_MODEL", "SG_AGENT_MODEL", "SJ_AGENT_MODEL")                                                                                                     //nolint:errcheck
 	vi.BindEnv("agent.reasoning", "GJ_AGENT_REASONING", "SG_AGENT_REASONING", "SJ_AGENT_REASONING")                                                                                     //nolint:errcheck
+	vi.BindEnv("agent.show_thoughts", "GJ_AGENT_SHOW_THOUGHTS", "SG_AGENT_SHOW_THOUGHTS", "SJ_AGENT_SHOW_THOUGHTS")                                                                     //nolint:errcheck
 	vi.BindEnv("agent.timeout_seconds", "GJ_AGENT_TIMEOUT_SECONDS", "SG_AGENT_TIMEOUT_SECONDS", "SJ_AGENT_TIMEOUT_SECONDS")                                                             //nolint:errcheck
 	vi.BindEnv("agent.max_steps", "GJ_AGENT_MAX_STEPS", "SG_AGENT_MAX_STEPS", "SJ_AGENT_MAX_STEPS")                                                                                     //nolint:errcheck
 	vi.BindEnv("agent.base_url", "GJ_AGENT_BASE_URL", "SG_AGENT_BASE_URL", "SJ_AGENT_BASE_URL")                                                                                         //nolint:errcheck

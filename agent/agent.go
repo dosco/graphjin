@@ -70,7 +70,15 @@ type Config struct {
 	// exactly like a weak model, which is how a benchmark run measured 0.177
 	// before this setting existed. Accepted: none, low, medium, high, xhigh
 	// (highest). Empty keeps the provider default.
-	Reasoning      string          `mapstructure:"reasoning" jsonschema:"title=Agent Reasoning Effort,description=Provider thinking effort for models that support it: none low medium high xhigh"`
+	Reasoning string `mapstructure:"reasoning" jsonschema:"title=Agent Reasoning Effort,description=Provider thinking effort for models that support it: none low medium high xhigh"`
+	// ShowThoughts asks the provider to return the reasoning text it already
+	// produced. These models think by default; this only controls whether the
+	// thinking comes back, so it changes what is observable and not what the
+	// model does — which is why it is separate from Reasoning. Coupling the two
+	// meant the only way to see the thinking was to also set a thinking budget,
+	// and that does change behaviour. Off by default: the text is billed output
+	// and every episode carries it.
+	ShowThoughts   bool            `mapstructure:"show_thoughts" jsonschema:"title=Return Model Reasoning,description=Return the provider's reasoning text in the chat log for debugging,default=false"`
 	RateLimit      RateLimitConfig `mapstructure:"rate_limit" jsonschema:"title=Agent Provider Rate Limits"`
 	MaxSteps       int             `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
 	TimeoutSeconds int             `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
@@ -629,8 +637,9 @@ func DefaultClientFactory(cfg Config) (ax.AIClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	if reasoning := normalizedReasoningEffort(cfg.Reasoning); reasoning != "" {
-		client = &reasoningClient{inner: client, budget: reasoning}
+	reasoning := normalizedReasoningEffort(cfg.Reasoning)
+	if reasoning != "" || cfg.ShowThoughts {
+		client = &reasoningClient{inner: client, budget: reasoning, showThoughts: cfg.ShowThoughts}
 	}
 	return client, nil
 }
@@ -666,8 +675,9 @@ func newProfileClient(provider string, options map[string]ax.Value) (client ax.A
 // signal and disable thinking outright. Setting it here, at the boundary ax
 // itself calls, is the one place the value survives.
 type reasoningClient struct {
-	inner  ax.AIClient
-	budget string
+	inner        ax.AIClient
+	budget       string
+	showThoughts bool
 }
 
 func (c *reasoningClient) withBudget(req map[string]ax.Value) map[string]ax.Value {
@@ -678,16 +688,20 @@ func (c *reasoningClient) withBudget(req map[string]ax.Value) map[string]ax.Valu
 	if config == nil {
 		config = map[string]ax.Value{}
 	}
-	config["thinkingTokenBudget"] = c.budget
-	config["thinking_token_budget"] = c.budget
+	if c.budget != "" {
+		config["thinkingTokenBudget"] = c.budget
+		config["thinking_token_budget"] = c.budget
+	}
 	// Ask for the thinking back, not just for it to happen. Providers gate the
 	// reasoning text behind a separate flag, so a run paid for its thinking and
 	// then dropped it: across 80 recorded episodes every one carried a chat_log
 	// and not one carried a thought, which left "why did the model do that?"
 	// answerable only by inference. merge_model_config reads either spelling
 	// from this same map and forwards it as showThoughts.
-	config["showThoughts"] = true
-	config["show_thoughts"] = true
+	if c.showThoughts {
+		config["showThoughts"] = true
+		config["show_thoughts"] = true
+	}
 	req["model_config"] = config
 	return req
 }
