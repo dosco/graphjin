@@ -1813,3 +1813,57 @@ func TestWatchRootsShareTheMutationEvidenceEscape(t *testing.T) {
 		})
 	}
 }
+
+// TestRepeatedReadNamesTheWriteItShouldBeRetrying pins the exit from the trap
+// that dominates the mutation-evidence failures.
+//
+// Recorded shape, from reactive-delivery-payments and 8 siblings: a read
+// succeeds, the write acting on its row is held back pending evidence, the model
+// supplies the evidence — and then re-sends the READ. The cached-execution guard
+// is right to reject a pointless repeat, but "the rejected GraphQL operation has
+// not been retried" resolved to the read in the model's reading, because nothing
+// said which operation was meant. Nine of fifteen episodes died there, re-sending
+// the read up to six times. The evidence stage already names its exact lookup for
+// precisely this reason; the retry stage now names its exact write.
+func TestRepeatedReadNamesTheWriteItShouldBeRetrying(t *testing.T) {
+	base := &successfulExecutionRuntime{}
+	base.catalogOverride = func(args map[string]any) any {
+		if len(detailIDsFromArgs(args)) != 0 {
+			return fakeCatalogResult(args)
+		}
+		return map[string]any{"count": 1, "cards": []any{map[string]any{
+			"id": "table:app:main.products", "kind": "table", "table_name": "products",
+		}}}
+	}
+	runtime := newProtocolRuntime(base, "add a product", "", 40, profileWithRoleAndRoots("user"), nil, CatalogSearchFeatures{})
+	if _, err := runtime.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "help:security"}); err != nil {
+		t.Fatal(err)
+	}
+
+	write := `mutation { products(insert: {name: "x"}) { id } }`
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": write}); err == nil {
+		t.Fatal("the write should be held pending evidence")
+	}
+	// Stage one is unchanged: fetch the evidence, and it names the lookup.
+	if pending := runtime.state.pendingRequiredFinalization(); !strings.HasPrefix(pending, "execution_evidence_required:") {
+		t.Fatalf("pending before detail = %q", pending)
+	}
+	if _, err := runtime.QueryCatalog(context.Background(), map[string]any{"id": "table:app:main.products"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stage two: the model has complied, and must now be told what to retry.
+	pending := runtime.state.pendingRequiredFinalization()
+	if !strings.HasPrefix(pending, "execution_retry_required:") {
+		t.Fatalf("pending after detail = %q", pending)
+	}
+	if !strings.Contains(pending, `products(insert:`) {
+		t.Fatalf("retry requirement names no mutation, so a read looks like a valid retry: %q", pending)
+	}
+	if !strings.Contains(pending, "not any earlier read") {
+		t.Fatalf("retry requirement does not rule out the read the model keeps re-sending: %q", pending)
+	}
+}

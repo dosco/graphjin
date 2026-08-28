@@ -75,6 +75,10 @@ type discoveryState struct {
 	helpTopics        []string
 	catalogSearches   []map[string]any
 	catalogDetails    []string
+	// interceptedWriteQuery is the write held back pending evidence, kept so a
+	// later rejection can name it rather than leaving the model to guess which
+	// call it should be retrying.
+	interceptedWriteQuery string
 	// lastCatalogDetail retains the most recent successful exact detail result
 	// for the runtime-only distiller -> executor handoff. It is never rendered
 	// into a prompt or accepted as authorization by itself.
@@ -2382,7 +2386,17 @@ func (s *discoveryState) pendingRecoverableExecution() string {
 		return "execution_evidence_required: the attempted GraphQL operation is missing required same-run evidence." + exact +
 			", then re-author and execute the operation. Re-running an earlier read does not satisfy this requirement."
 	}
-	return "execution_retry_required: the required evidence is now present, but the rejected GraphQL operation has not been retried successfully. Re-author it from the returned detail and execute it before finalizing."
+	// Name the write. The evidence stage above already names the exact lookup,
+	// for the same reason: the caller is holding both a read and a write, and
+	// "the rejected GraphQL operation" resolved to the read in recorded runs —
+	// of 15 episodes that reached this requirement the dominant shape was the
+	// model re-sending its READ up to six times while the write it was told to
+	// retry went unmentioned.
+	retry := "execution_retry_required: the required evidence is now present, but the rejected GraphQL operation has not been retried successfully. Re-author it from the returned detail and execute it before finalizing."
+	if s.interceptedWriteQuery != "" && !s.mutationSucceeded {
+		retry += " The operation is this mutation, not any earlier read: " + s.interceptedWriteQuery
+	}
+	return retry
 }
 
 func (s *discoveryState) pendingRecoverableExecutionContinuation() string {
@@ -3921,6 +3935,11 @@ func (s *discoveryState) noteInterceptedWrite(query, reason string) {
 	s.mutationAttempted = true
 	if !s.mutationSucceeded {
 		s.lastMutationFailure = reason
+		// Keep the write itself, not just that one was intercepted. A model
+		// whose write is held pending evidence reliably goes back to re-running
+		// the read that found the row — and the cached-execution guard then
+		// rejects that repeat without ever mentioning the write still waiting.
+		s.interceptedWriteQuery = strings.TrimSpace(query)
 	}
 }
 
