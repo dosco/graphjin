@@ -427,3 +427,37 @@ func TestConfirmationNoticeSurvivesAStructResult(t *testing.T) {
 		t.Fatalf("normalizing for the notice lost the rows: %#v", mapped)
 	}
 }
+
+// TestReferentBindingNoticeSurvivesAStructResult pins the serv result contract
+// on the binding notice, the execute_graphql sibling of the confirmation-notice
+// drop above: the rows below are one subject's rows, and a model that is never
+// told so reports them as the table's.
+func TestReferentBindingNoticeSurvivesAStructResult(t *testing.T) {
+	runtime, base := referentTestRuntime(t, "How many users belong to it?",
+		Turn{Role: "user", Content: "Use Harborlight Systems, account 3."},
+		Turn{Role: "assistant", Content: "The retained account id is 3."},
+	)
+	runtime.base = &structGraphQLRuntime{GraphRuntime: base}
+
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": `query { users { id name } }`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.execCalls != 1 {
+		t.Fatalf("the scoped rewrite should execute, calls=%d", base.execCalls)
+	}
+	mapped := mapValue(normalizeValue(out))
+	recovery := mapValue(mapped["recovery"])
+	if stringFromMap(recovery, "kind") != "history_referent_bound" {
+		t.Fatalf("struct-shaped result dropped the binding notice: %#v", mapped)
+	}
+	if !strings.Contains(stringFromMap(recovery, "instruction"), "account 3") {
+		t.Fatalf("the notice should name the subject: %#v", recovery)
+	}
+	if g, _ := mapped["guidance"].(string); !strings.Contains(g, "account 3") {
+		t.Fatalf("guidance must survive the struct shape: %#v", mapped)
+	}
+	if data := mapValue(mapped["data"]); len(anySlice(data["payments"])) == 0 {
+		t.Fatalf("normalizing for the notice lost the rows: %#v", mapped)
+	}
+}

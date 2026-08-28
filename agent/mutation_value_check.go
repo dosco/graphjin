@@ -739,6 +739,13 @@ func (r *protocolRuntime) attachUnknownColumnRecovery(ctx context.Context, out a
 		res["guidance"] = guidance
 		return res, repaired
 	default:
+		// Audited against the struct-drop that silenced the confirmation notice
+		// (attachNoticeToForeignResult): unreachable here. executionFailed reads
+		// every foreign shape as success, and it gates this switch twice — at
+		// the call site and at this function's top — so only the three shapes
+		// above can arrive. A normalize-here fix would be untestable dead code;
+		// if foreign-struct failures ever become real, the break to fix first
+		// is executionFailed misreading them as successes.
 		return out, repaired
 	}
 }

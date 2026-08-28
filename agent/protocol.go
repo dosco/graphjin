@@ -609,20 +609,29 @@ func attachConfirmationReadNotice(out any) any {
 		res["guidance"] = instruction
 		return res
 	default:
-		// The production result is not one of the typed cases: a successful
-		// saved query comes back as serv's ExecuteResult struct (the policy
-		// annotator only converts to a map when it changes an error). The first
-		// version returned such values untouched, which dropped the notice in
-		// every real run while the map-returning test fake kept the test green.
-		// Normalize and attach rather than silently doing nothing.
-		if mapped := mapValue(normalizeValue(out)); mapped != nil {
-			mapped = cloneAnyMap(mapped)
-			mapped["recovery"] = recovery
-			mapped["guidance"] = instruction
-			return mapped
-		}
+		return attachNoticeToForeignResult(out, recovery, instruction)
+	}
+}
+
+// attachNoticeToForeignResult is every notice switch's default branch: the
+// result is none of the typed cases, because a base runtime outside this
+// package built its own struct — serv's saved-query override returns its
+// ExecuteResult, and its policy annotator converts to a map only when it
+// changes an error. Returning such values untouched dropped the confirmation
+// notice on every real call of a full benchmark run while map-returning test
+// fakes kept the tests green. Normalize and attach rather than silently doing
+// nothing; guidance is attached only when the caller's typed cases set it too.
+func attachNoticeToForeignResult(out any, recovery map[string]any, guidance string) any {
+	mapped := mapValue(normalizeValue(out))
+	if mapped == nil {
 		return out
 	}
+	mapped = cloneAnyMap(mapped)
+	mapped["recovery"] = recovery
+	if guidance != "" {
+		mapped["guidance"] = guidance
+	}
+	return mapped
 }
 
 // attachWatchNormalizationNotice records that a gj_watch subscription string
@@ -654,7 +663,7 @@ func attachWatchNormalizationNotice(out any, repaired string) any {
 		res["guidance"] = instruction
 		return res
 	default:
-		return out
+		return attachNoticeToForeignResult(out, recovery, instruction)
 	}
 }
 
@@ -681,7 +690,7 @@ func attachRemoteJoinRewriteNotice(out any, repaired, root, parent string) any {
 		res["recovery"] = recovery
 		return res
 	default:
-		return out
+		return attachNoticeToForeignResult(out, recovery, "")
 	}
 }
 

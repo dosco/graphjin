@@ -102,6 +102,34 @@ func (r *successfulExecutionRuntime) ExecuteSavedQuery(_ context.Context, args m
 	return map[string]any{"data": map[string]any{"invoices": []any{map[string]any{"id": "INV-1", "status": "paid"}}}}, nil
 }
 
+// structGraphQLRuntime re-shapes an inner fake's successful execute_graphql
+// maps into a struct, mirroring the serv result contract: the policy annotator
+// returns a map only when it rewrites a policy error, so results otherwise
+// arrive as whatever struct the override built. structResultRuntime
+// (history_referent_repair_test.go) pins the saved-query half of that
+// contract, where the drop shipped; this wrapper pins the execute_graphql half
+// for the notices that ride successful executions. The inner fake keeps its
+// checking behavior — only the shape changes.
+type structGraphQLRuntime struct {
+	GraphRuntime
+}
+
+type structGraphQLResult struct {
+	Data map[string]any `json:"data"`
+}
+
+func (r *structGraphQLRuntime) ExecuteGraphQL(ctx context.Context, args map[string]any) (any, error) {
+	out, err := r.GraphRuntime.ExecuteGraphQL(ctx, args)
+	if err != nil {
+		return out, err
+	}
+	mapped := mapValue(out)
+	if mapped == nil || len(anySlice(mapped["errors"])) != 0 {
+		return out, err
+	}
+	return structGraphQLResult{Data: mapValue(mapped["data"])}, nil
+}
+
 func (r *fakeRuntime) GraphQLHelp(_ context.Context, args map[string]any) (any, error) {
 	return r.record("graphql_help", args), nil
 }
