@@ -214,6 +214,34 @@ async function listFiles(dir) {
   return files;
 }
 
+function selectBestBenchmarkRuns(runs) {
+  const bestByModel = new Map();
+  for (const run of runs.filter((entry) => entry.board_eligible === true)) {
+    const key = String(run.model_key);
+    const current = bestByModel.get(key);
+    if (!current ||
+        Number(run.recall) > Number(current.recall) ||
+        (Number(run.recall) === Number(current.recall) && String(run.run_id) > String(current.run_id))) {
+      bestByModel.set(key, run);
+    }
+  }
+  return [...bestByModel.values()].sort((a, b) =>
+    Number(b.recall) - Number(a.recall) || String(b.run_id).localeCompare(String(a.run_id))
+  );
+}
+
+const selectionContract = selectBestBenchmarkRuns([
+  { run_id: '20260801T000000Z-high', model_key: 'google-gemini/model', recall: 0.8, board_eligible: true, accepted: true },
+  { run_id: '20260802T000000Z-lower', model_key: 'google-gemini/model', recall: 0.7, board_eligible: true, accepted: true },
+  { run_id: '20260803T000000Z-tie', model_key: 'google-gemini/model', recall: 0.8, board_eligible: true, accepted: false },
+  { run_id: '20260804T000000Z-invalid', model_key: 'google-gemini/model', recall: 0.99, board_eligible: false, accepted: true },
+  { run_id: '20260805T000000Z-route', model_key: 'openai-compatible/model', recall: 0.6, board_eligible: true, accepted: true },
+]);
+if (selectionContract.map((run) => run.run_id).join(',') !==
+    '20260803T000000Z-tie,20260805T000000Z-route') {
+  failures.push('Best-result selection contract failed lower-score, tie, eligibility, failed-run, or provider-route coverage');
+}
+
 for (const route of requiredRoutes) {
   if (!(await exists(path.join(publicRoot, route)))) {
     failures.push(`Missing built route or asset: ${route}`);
@@ -313,7 +341,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     'Can an AI agent actually do what your organization needs?',
     'Ours can — and we publish the proof.',
     'We publish the exam. Every result, including the failures.',
-    "We haven't run the frontier models yet.",
+    "Best published score for every model we've tested.",
     'Right way of getting it',
     'Try it in 2 minutes',
     'Boot the exact demo it was graded on',
@@ -448,8 +476,8 @@ if (await exists(benchmarkDataPath)) {
     }
   }
 
-  if (!benchmarkData.includes('schema_version: graphjin.benchmark.data/v2')) {
-    failures.push('DeepORG benchmark data is not schema v2');
+  if (!benchmarkData.includes('schema_version: graphjin.benchmark.data/v3')) {
+    failures.push('DeepORG benchmark data is not schema v3');
   }
   if (parsed.benchmark.slug !== 'deeporg' || parsed.benchmark.name !== 'DeepORG — The Organizational Agent Benchmark') {
     failures.push(`DeepORG benchmark identity is invalid (${parsed.benchmark.slug ?? 'missing'} / ${parsed.benchmark.name ?? 'missing'})`);
@@ -502,65 +530,69 @@ if (await exists(benchmarkDataPath)) {
     }
   }
   const comparisonGeneration = parsed.suite.comparison_generation ?? parsed.suite.generation;
-  const rankedRuns = parsed.runs.filter(
+  const currentRuns = parsed.runs.filter(
     (run) => run.ranked === true && run.generation === comparisonGeneration
   );
-  const topRanked = [...rankedRuns].sort((a, b) => Number(b.recall) - Number(a.recall))[0];
-  // Mirrors layouts/partials/benchmark-prior-context.html: for each model absent
-  // from the current ranked cohort, its most recent legitimately demoted cohort
-  // row from the latest prior generation. Retracted/superseded runs never qualify.
-  const priorCohortContext = (() => {
-    const rankedModels = new Set(rankedRuns.map((run) => String(run.model)));
-    const candidates = parsed.runs.filter(
-      (run) => run.accepted === true && String(run.unranked_reason ?? '').startsWith('previous public benchmark cohort')
-    );
-    const priorGeneration = candidates.map((run) => String(run.generation)).sort().at(-1);
-    if (!priorGeneration) return { generation: undefined, runs: [] };
-    const seenModels = new Set();
-    const runs = [];
-    const ordered = candidates
-      .filter((run) => String(run.generation) === priorGeneration)
-      .sort((a, b) => String(b.generated_at).localeCompare(String(a.generated_at)));
-    for (const run of ordered) {
-      const model = String(run.model);
-      if (rankedModels.has(model) || seenModels.has(model)) continue;
-      seenModels.add(model);
-      runs.push(run);
+  for (const run of parsed.runs) {
+    if (!String(run.model_key ?? '').trim()) {
+      failures.push(`DeepORG run ${run.run_id} has no canonical model_key`);
     }
-    runs.sort((a, b) => Number(b.recall) - Number(a.recall));
-    return { generation: priorGeneration, runs };
-  })();
-  const contextRuns = priorCohortContext.runs;
-  const displayedColumnCount = rankedRuns.length + contextRuns.length;
+    if (typeof run.board_eligible !== 'boolean') {
+      failures.push(`DeepORG run ${run.run_id} has no explicit board_eligible decision`);
+    }
+    if (/corrected scoring contract|agent harness defect/i.test(String(run.unranked_reason ?? '')) && run.board_eligible === true) {
+      failures.push(`Invalidated DeepORG run ${run.run_id} is still eligible for the public board`);
+    }
+  }
+
+  // Mirrors layouts/partials/benchmark-best-results.html.
+  const bestRuns = selectBestBenchmarkRuns(parsed.runs);
+  const bestRunIDs = new Set(bestRuns.map((run) => String(run.run_id)));
+  const topBest = bestRuns[0];
+  const historyRuns = parsed.runs.filter((run) => !bestRunIDs.has(String(run.run_id)));
+  const suiteTaskTotal = Object.values(parsed.suite.category_counts ?? {}).reduce(
+    (total, value) => total + Number(value),
+    0
+  );
+
   const benchmarkLandingPath = path.join(publicRoot, 'benchmark', 'index.html');
-  if (rankedRuns.length > 0 && (await exists(benchmarkLandingPath))) {
+  if (topBest && (await exists(benchmarkLandingPath))) {
     const landingHTML = await readFile(benchmarkLandingPath, 'utf8');
-    if (!landingHTML.includes('data-benchmark-landing')) {
-      failures.push('Friendly DeepORG page is missing its landing marker');
+    if (!landingHTML.includes('data-benchmark-landing') ||
+        renderedDataAttribute(landingHTML, 'data-benchmark-selection') !== 'best-trusted') {
+      failures.push('Friendly DeepORG page is missing its best-trusted selection marker');
     }
-    if (String(renderedDataAttribute(landingHTML, 'data-benchmark-generation')) !== String(comparisonGeneration)) {
-      failures.push('Friendly DeepORG page generation does not match deeporg.yaml');
+    if (/\bcohort\b/i.test(landingHTML)) {
+      failures.push('Friendly DeepORG page exposes internal cohort jargon');
     }
+    if (!landingHTML.includes('Best published score for every model')) {
+      failures.push('Friendly DeepORG page does not explain the best-result rule in plain language');
+    }
+
     const renderedModelColumns = [...landingHTML.matchAll(/data-benchmark-model=(?:"([^"]+)"|'([^']+)'|([^\s>]+))/g)]
       .map((match) => match[1] ?? match[2] ?? match[3]);
-    if (renderedModelColumns.length !== displayedColumnCount) {
-      failures.push(`Friendly DeepORG comparison rendered ${renderedModelColumns.length} model columns for ${rankedRuns.length} ranked + ${contextRuns.length} prior-cohort runs`);
+    const expectedModelColumns = bestRuns.map((run) => String(run.run_id));
+    if (renderedModelColumns.length !== expectedModelColumns.length ||
+        renderedModelColumns.some((runID, index) => runID !== expectedModelColumns[index])) {
+      failures.push(`Friendly DeepORG comparison columns do not match the ${bestRuns.length} best model results`);
     }
-    const leaderMarker = new RegExp(`data-benchmark-leader=(?:"${String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}"|'${String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}'|${String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?=\\s|>)`).exec(landingHTML);
+
+    const escapedLeaderID = String(topBest.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+    const leaderMarker = new RegExp(`data-benchmark-leader=(?:"${escapedLeaderID}"|'${escapedLeaderID}'|${escapedLeaderID})(?=\\s|>)`).exec(landingHTML);
     if (!leaderMarker) {
-      failures.push('Friendly DeepORG hero does not use the top ranked run');
+      failures.push('Friendly DeepORG hero does not use the highest trusted model result');
     } else {
       const leaderStart = landingHTML.lastIndexOf('<div', leaderMarker.index);
       const leaderEnd = landingHTML.indexOf('>', leaderMarker.index);
       const leaderTag = landingHTML.slice(leaderStart, leaderEnd + 1);
-      const reliablePasses = Number(topRanked.task_count ?? 0) * Number(topRanked.recall ?? 0);
+      const reliablePasses = Number(topBest.task_count ?? 0) * Number(topBest.recall ?? 0);
       const expectedLeaderValues = [
-        ['data-recall', Number(topRanked.recall ?? 0)],
-        ['data-unsafe-effects', Number(topRanked.unsafe_effects ?? 0)],
-        ['data-latency-p50-ms', Number(topRanked.latency_p50_ms ?? 0)],
-        ['data-cost-per-reliable-pass-usd', reliablePasses > 0 ? Number(topRanked.estimated_list_cost_usd ?? 0) / reliablePasses : 0],
-        ['data-task-count', Number(topRanked.task_count ?? 0)],
-        ['data-repeats', Number(topRanked.repeats ?? 0)],
+        ['data-recall', Number(topBest.recall ?? 0)],
+        ['data-unsafe-effects', Number(topBest.unsafe_effects ?? 0)],
+        ['data-latency-p50-ms', Number(topBest.latency_p50_ms ?? 0)],
+        ['data-cost-per-reliable-pass-usd', reliablePasses > 0 ? Number(topBest.estimated_list_cost_usd ?? 0) / reliablePasses : 0],
+        ['data-task-count', Number(topBest.task_count ?? 0)],
+        ['data-repeats', Number(topBest.repeats ?? 0)],
       ];
       for (const [field, expected] of expectedLeaderValues) {
         if (Number(renderedDataAttribute(leaderTag, field)) !== expected) {
@@ -568,44 +600,32 @@ if (await exists(benchmarkDataPath)) {
         }
       }
     }
-    // The comparison block doubles as the shareable card and the social image,
-    // so it must name the benchmark and state the suite size rather than lead
-    // with a generic "compare models" heading.
-    if (!landingHTML.includes('>The DeepORG Benchmark</p>')) {
-      failures.push('Friendly DeepORG comparison card lost its benchmark-name eyebrow');
-    }
-    if (!landingHTML.includes('>DeepORG: Can an AI agent actually do what your organization needs?</h2>')) {
-      failures.push('Friendly DeepORG comparison card lost its benchmark question heading');
-    }
-    const suiteTaskTotal = Object.values(parsed.suite.category_counts ?? {}).reduce(
-      (total, value) => total + Number(value),
-      0
-    );
-    if (!new RegExp(`DeepORG runs one frozen exam of ${suiteTaskTotal} tasks`).test(landingHTML)) {
-      failures.push('Friendly DeepORG comparison card should state the frozen suite size');
-    }
-    if (!/\bbenchmark-card-footer\b/.test(landingHTML)) {
-      failures.push('Friendly DeepORG comparison card lost its provenance footer');
+
+    if (!landingHTML.includes('>The DeepORG Benchmark</p>') ||
+        !landingHTML.includes('>DeepORG: Can an AI agent actually do what your organization needs?</h2>') ||
+        !/\bbenchmark-card-footer\b/.test(landingHTML)) {
+      failures.push('Friendly DeepORG comparison card lost its benchmark identity or provenance footer');
     }
     const hasScrollHint = /\bbenchmark-scroll-hint\b/.test(landingHTML);
-    if (hasScrollHint !== (displayedColumnCount > 3)) {
+    if (hasScrollHint !== (bestRuns.length > 3)) {
       failures.push('Friendly DeepORG comparison scroll hint does not match its model count');
     }
     const bestCellCount = (landingHTML.match(/\bis-best\b/g) ?? []).length;
-    if ((rankedRuns.length < 2 && bestCellCount > 0) || (rankedRuns.length > 1 && bestCellCount === 0)) {
+    if ((bestRuns.length < 2 && bestCellCount > 0) || (bestRuns.length > 1 && bestCellCount === 0)) {
       failures.push('Friendly DeepORG best-value highlighting does not match its model count');
     }
-    if (!landingHTML.includes(`What ${Math.round(Number(topRanked.recall) * 100)} actually means`)) {
-      failures.push('Friendly DeepORG plain-English score heading does not match the top ranked run');
+    if (!landingHTML.includes(`What ${Math.round(Number(topBest.recall) * 100)} actually means`)) {
+      failures.push('Friendly DeepORG plain-English score heading does not match the leading result');
     }
-    const validConfidence = Number.isFinite(Number(topRanked.recall_ci_low)) &&
-      Number.isFinite(Number(topRanked.recall_ci_high)) &&
-      Number(topRanked.recall_ci_low) >= 0 && Number(topRanked.recall_ci_high) <= 1 &&
-      Number(topRanked.recall_ci_high) >= Number(topRanked.recall_ci_low);
+    const validConfidence = Number.isFinite(Number(topBest.recall_ci_low)) &&
+      Number.isFinite(Number(topBest.recall_ci_high)) &&
+      Number(topBest.recall_ci_low) >= 0 && Number(topBest.recall_ci_high) <= 1 &&
+      Number(topBest.recall_ci_high) >= Number(topBest.recall_ci_low);
     const renderedConfidenceLow = renderedDataAttribute(landingHTML, 'data-recall-ci-low');
     const renderedConfidenceHigh = renderedDataAttribute(landingHTML, 'data-recall-ci-high');
     if (validConfidence) {
-      if (Number(renderedConfidenceLow) !== Number(topRanked.recall_ci_low) || Number(renderedConfidenceHigh) !== Number(topRanked.recall_ci_high)) {
+      if (Number(renderedConfidenceLow) !== Number(topBest.recall_ci_low) ||
+          Number(renderedConfidenceHigh) !== Number(topBest.recall_ci_high)) {
         failures.push('Friendly DeepORG confidence range does not match deeporg.yaml');
       }
     } else if (renderedConfidenceLow !== undefined || renderedConfidenceHigh !== undefined) {
@@ -614,27 +634,17 @@ if (await exists(benchmarkDataPath)) {
     if (!landingHTML.includes('https://graphjin.com/og/deeporg-og.png')) {
       failures.push('Friendly DeepORG page does not reference its dedicated social card');
     }
-    const landingComparisonRuns = [
-      ...rankedRuns.map((run) => ({ run, prior: false })),
-      ...contextRuns.map((run) => ({ run, prior: true })),
-    ];
-    for (const { run, prior } of landingComparisonRuns) {
-      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    for (const run of bestRuns) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
       const marker = new RegExp(`data-benchmark-comparison-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(landingHTML);
       if (!marker) {
-        failures.push(`Friendly DeepORG comparison is missing ${run.run_id}`);
+        failures.push(`Friendly DeepORG comparison is missing best result ${run.run_id}`);
         continue;
       }
       const linkStart = landingHTML.lastIndexOf('<a', marker.index);
       const linkEnd = landingHTML.indexOf('>', marker.index);
       const linkTag = landingHTML.slice(linkStart, linkEnd + 1);
-      const linkPriorCohort = renderedDataAttribute(linkTag, 'data-benchmark-prior-cohort');
-      if (prior && linkPriorCohort !== String(run.generation)) {
-        failures.push(`Friendly DeepORG prior-cohort marker for ${run.run_id} does not match deeporg.yaml`);
-      }
-      if (!prior && linkPriorCohort !== undefined) {
-        failures.push(`Friendly DeepORG ranked run ${run.run_id} must not carry a prior-cohort marker`);
-      }
       const reliablePasses = Number(run.task_count ?? 0) * Number(run.recall ?? 0);
       const expected = [
         ['data-full-pass', Number(run.recall ?? 0)],
@@ -652,76 +662,84 @@ if (await exists(benchmarkDataPath)) {
           failures.push(`Friendly DeepORG ${field} for ${run.run_id} does not match deeporg.yaml`);
         }
       }
-      if (String(renderedDataAttribute(linkTag, 'data-generation')) !== String(run.generation)) {
-        failures.push(`Friendly DeepORG generation for ${run.run_id} does not match deeporg.yaml`);
-      }
       const expectedReport = `/benchmarks/deeporg/runs/${run.slug}/`;
       if (renderedDataAttribute(linkTag, 'href') !== expectedReport) {
-        failures.push(`Friendly DeepORG technical report link for ${run.run_id} is incomplete`);
+        failures.push(`Friendly DeepORG report link for ${run.run_id} is incomplete`);
       }
     }
+    for (const run of parsed.runs.filter((entry) => entry.board_eligible !== true)) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`data-benchmark-comparison-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).test(landingHTML)) {
+        failures.push(`Ineligible run ${run.run_id} leaked onto the friendly comparison board`);
+      }
+    }
+
     const renderedTaskCounts = [...landingHTML.matchAll(/data-benchmark-task-count=(?:"(\d+)"|'(\d+)'|(\d+))/g)]
       .map((match) => Number(match[1] ?? match[2] ?? match[3]));
-    const publishedTaskCount = Object.values(parsed.suite.category_counts ?? {}).reduce((total, value) => total + Number(value), 0);
-    if (renderedTaskCounts.reduce((total, value) => total + value, 0) !== publishedTaskCount) {
-      failures.push('Friendly DeepORG task group counts do not add up to the published suite');
+    if (renderedTaskCounts.reduce((total, value) => total + value, 0) !== suiteTaskTotal) {
+      failures.push('Friendly DeepORG task group counts do not add up to the current published exam');
     }
-    if (Number(renderedDataAttribute(landingHTML, 'data-benchmark-episode-count')) !== Number(topRanked.episode_count ?? 0)) {
-      failures.push('Friendly DeepORG safety story episode count does not match deeporg.yaml');
+    if (Number(renderedDataAttribute(landingHTML, 'data-benchmark-episode-count')) !== Number(topBest.episode_count ?? 0)) {
+      failures.push('Friendly DeepORG safety story episode count does not match the leading result');
     }
   }
 
   const benchmarkOGPath = path.join(publicRoot, 'og', 'index.html');
-  if (topRanked && (await exists(benchmarkOGPath))) {
+  if (topBest && (await exists(benchmarkOGPath))) {
     const benchmarkOG = await readFile(benchmarkOGPath, 'utf8');
-    if (String(renderedDataAttribute(benchmarkOG, 'data-benchmark-generation')) !== String(comparisonGeneration)) {
-      failures.push('DeepORG social card generation does not match deeporg.yaml');
+    if (renderedDataAttribute(benchmarkOG, 'data-benchmark-selection') !== 'best-trusted') {
+      failures.push('DeepORG social card source is missing its best-trusted marker');
     }
-    if (String(renderedDataAttribute(benchmarkOG, 'data-benchmark-og-run')) !== String(topRanked.run_id)) {
-      failures.push('DeepORG social card does not use the top ranked run');
+    const ogRunIDs = [...benchmarkOG.matchAll(/data-benchmark-og-run=(?:"([^"]+)"|'([^']+)'|([^\s>]+))/g)]
+      .map((match) => match[1] ?? match[2] ?? match[3]);
+    const expectedOGRunIDs = bestRuns.slice(0, 4).map((run) => String(run.run_id));
+    if (ogRunIDs.length !== expectedOGRunIDs.length ||
+        ogRunIDs.some((runID, index) => runID !== expectedOGRunIDs[index])) {
+      failures.push('DeepORG social card does not use the leading best model results');
     }
-    if (String(renderedDataAttribute(benchmarkOG, 'data-model-label')) !== String(topRanked.label)) {
-      failures.push('DeepORG social card model label does not match deeporg.yaml');
-    }
-    if (Number(renderedDataAttribute(benchmarkOG, 'data-recall')) !== Number(topRanked.recall) ||
-        Number(renderedDataAttribute(benchmarkOG, 'data-unsafe-effects')) !== Number(topRanked.unsafe_effects ?? 0) ||
-        Number(renderedDataAttribute(benchmarkOG, 'data-task-count')) !== Number(topRanked.task_count ?? 0)) {
-      failures.push('DeepORG social card metrics do not match deeporg.yaml');
+    if (String(renderedDataAttribute(benchmarkOG, 'data-model-label')) !== String(topBest.label) ||
+        Number(renderedDataAttribute(benchmarkOG, 'data-recall')) !== Number(topBest.recall) ||
+        Number(renderedDataAttribute(benchmarkOG, 'data-unsafe-effects')) !== Number(topBest.unsafe_effects ?? 0)) {
+      failures.push('DeepORG social card leader does not match deeporg.yaml');
     }
   }
-  if (rankedRuns.length > 0 && (await exists(benchmarkIndexPath))) {
+
+  if (topBest && (await exists(benchmarkIndexPath))) {
     const benchmarkHTML = await readFile(benchmarkIndexPath, 'utf8');
-    if (String(renderedDataAttribute(benchmarkHTML, 'data-benchmark-generation-current')) !== String(comparisonGeneration)) {
-      failures.push(`DeepORG comparison generation marker does not match deeporg.yaml (${comparisonGeneration})`);
+    if (renderedDataAttribute(benchmarkHTML, 'data-benchmark-selection') !== 'best-trusted' ||
+        !benchmarkHTML.includes('data-benchmark-best-current')) {
+      failures.push('DeepORG detailed board is missing its best-trusted selection markers');
     }
-    const renderedScopeLabel = String(parsed.suite.scope_label ?? '').replaceAll('&', '&amp;');
-    if (!benchmarkHTML.includes(renderedScopeLabel)) {
-      failures.push('DeepORG board is missing its generation scope label');
+    if (benchmarkHTML.includes('data-benchmark-prior-cohort')) {
+      failures.push('DeepORG detailed board still renders muted prior-cohort rows');
     }
-    for (const [generation, scope] of Object.entries(parsed.suite.generation_scopes ?? {})) {
-      const renderedGenerationScope = `Generation ${generation} — ${String(scope).replaceAll('&', '&amp;')}`;
-      if (!benchmarkHTML.includes(renderedGenerationScope)) {
-        failures.push(`DeepORG board is missing the scope for generation ${generation}`);
-      }
+    if (!benchmarkHTML.includes('data-benchmark-generation-history') ||
+        !benchmarkHTML.includes('>Other published runs</h3>')) {
+      failures.push('DeepORG board is missing its complete published-run archive');
     }
-    if (comparisonGeneration !== parsed.suite.generation && !benchmarkHTML.includes('data-benchmark-rerun-pending')) {
-      failures.push('DeepORG board is missing the current-generation retraction notice');
-    }
-    if (!benchmarkHTML.includes('data-benchmark-generation-history')) {
-      failures.push('DeepORG board is missing collapsed prior-generation history');
-    }
-    for (const generation of new Set(parsed.runs.filter((run) => run.ranked !== true).map((run) => String(run.generation)))) {
-      const escapedGeneration = generation.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const generation of new Set(historyRuns.map((run) => String(run.generation)))) {
+      const escapedGeneration = generation.replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
       const historyPattern = new RegExp(`data-benchmark-history-group=(?:"${escapedGeneration}"|'${escapedGeneration}'|${escapedGeneration})(?=\\s|>)`);
       if (!historyPattern.test(benchmarkHTML)) {
-        failures.push(`DeepORG board is missing collapsed history group ${generation}`);
+        failures.push(`DeepORG board is missing history group ${generation}`);
       }
     }
-    for (const run of rankedRuns) {
-      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const run of historyRuns) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+      const historyMarker = new RegExp(`data-benchmark-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})[^>]*data-benchmark-history-generation=`);
+      if (!historyMarker.test(benchmarkHTML)) {
+        failures.push(`DeepORG archive is missing published run ${run.run_id}`);
+      }
+      if (run.board_eligible !== true && run.unranked_reason && !benchmarkHTML.includes(String(run.unranked_reason))) {
+        failures.push(`DeepORG archive is missing the invalidation reason for ${run.run_id}`);
+      }
+    }
+
+    for (const run of bestRuns) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
       const chartMarker = new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
       if (!chartMarker) {
-        failures.push(`DeepORG chart is missing ${run.run_id}`);
+        failures.push(`DeepORG chart is missing best result ${run.run_id}`);
       } else {
         const chartStart = benchmarkHTML.lastIndexOf('<g', chartMarker.index);
         const chartEnd = benchmarkHTML.indexOf('>', chartMarker.index);
@@ -738,28 +756,65 @@ if (await exists(benchmarkDataPath)) {
             failures.push(`DeepORG chart ${field} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expected})`);
           }
         }
+        for (const [rollup, expectedValue] of Object.entries(run.rollup_recall ?? {})) {
+          const rendered = Number(renderedDataAttribute(chartTag, `data-rollup-${rollup}`));
+          if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
+            failures.push(`DeepORG chart rollup ${rollup} for ${run.run_id} does not match deeporg.yaml`);
+          }
+        }
       }
+
+      const efficiencyMarker = new RegExp(`data-benchmark-efficiency-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
+      if (!efficiencyMarker) {
+        failures.push(`Benchmark leaderboard is missing efficiency data for best result ${run.run_id}`);
+      } else {
+        const rowStart = benchmarkHTML.lastIndexOf('<tr', efficiencyMarker.index);
+        const rowEnd = benchmarkHTML.indexOf('>', efficiencyMarker.index);
+        const rowTag = benchmarkHTML.slice(rowStart, rowEnd + 1);
+        for (const [field, expectedValue] of efficiencyFields) {
+          const rendered = renderedDataAttribute(rowTag, field);
+          const expected = Number(expectedValue(run));
+          if (rendered === undefined || Number(rendered) !== expected) {
+            failures.push(`Benchmark efficiency ${field} for ${run.run_id} does not match deeporg.yaml`);
+          }
+        }
+      }
+
+      const scoreRowPattern = new RegExp(`data-benchmark-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
+      if (!scoreRowPattern) {
+        failures.push(`Benchmark leaderboard is missing governance data for best result ${run.run_id}`);
+      } else {
+        const scoreRowStart = benchmarkHTML.lastIndexOf('<tr', scoreRowPattern.index);
+        const scoreRowEnd = benchmarkHTML.indexOf('>', scoreRowPattern.index);
+        const scoreRowTag = benchmarkHTML.slice(scoreRowStart, scoreRowEnd + 1);
+        for (const [field, expectedValue] of governanceFields) {
+          if (Number(renderedDataAttribute(scoreRowTag, field)) !== Number(expectedValue(run))) {
+            failures.push(`Benchmark governance ${field} for ${run.run_id} does not match deeporg.yaml`);
+          }
+        }
+      }
+    }
+
+    for (const run of parsed.runs.filter((entry) => entry.board_eligible !== true)) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).test(benchmarkHTML) ||
+          new RegExp(`data-benchmark-efficiency-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).test(benchmarkHTML)) {
+        failures.push(`Ineligible run ${run.run_id} leaked onto the detailed best-result board`);
+      }
+    }
+
+    for (const run of currentRuns) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
       for (const [category, expectedValue] of Object.entries(run.category_recall ?? {})) {
-        const escapedCategory = category.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedCategory = category.replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
         const categoryPattern = new RegExp(`data-category-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})\\s+data-category=(?:"${escapedCategory}"|'${escapedCategory}'|${escapedCategory})\\s+data-recall=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`);
         const match = categoryPattern.exec(benchmarkHTML);
         const rendered = match ? Number(match[1] ?? match[2] ?? match[3]) : Number.NaN;
         if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
-          failures.push(`DeepORG category chart ${category} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
+          failures.push(`DeepORG current-exam category ${category} for ${run.run_id} does not match deeporg.yaml`);
         }
       }
-      // Capability rollups: the chart's data attributes must match the row,
-      // and the row must match what the frozen mapping computes from the
-      // row's own category scores and the suite's task counts — the
-      // assertion that keeps rollups derived, never hand-typed.
-      for (const [rollup, expectedValue] of Object.entries(run.rollup_recall ?? {})) {
-        const chartTag = new RegExp(`<g[^>]*data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}')[^>]*>`).exec(benchmarkHTML)?.[0] ?? '';
-        const rendered = Number(renderedDataAttribute(chartTag, `data-rollup-${rollup}`));
-        if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
-          failures.push(`DeepORG chart rollup ${rollup} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
-        }
-      }
-      if (run.rollup_recall && run.ranked && parsed.suite?.rollup_map && parsed.suite?.category_counts) {
+      if (run.rollup_recall && parsed.suite?.rollup_map && parsed.suite?.category_counts) {
         const recomputed = {};
         const weights = {};
         for (const [category, group] of Object.entries(parsed.suite.rollup_map)) {
@@ -774,240 +829,132 @@ if (await exists(benchmarkDataPath)) {
           if (!(group in recomputed)) continue;
           const derived = recomputed[group] / weights[group];
           if (Math.abs(derived - Number(expectedValue)) > 1e-9) {
-            failures.push(`DeepORG rollup ${group} for ${run.run_id} disagrees with its category scores (${expectedValue} != derived ${derived})`);
+            failures.push(`DeepORG rollup ${group} for ${run.run_id} disagrees with its category scores`);
           }
         }
       }
-      const marker = new RegExp(`data-benchmark-efficiency-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
-      if (!marker) {
-        failures.push(`Benchmark leaderboard is missing efficiency data for ${run.run_id}`);
+    }
+    for (const run of bestRuns.filter((entry) => entry.generation !== comparisonGeneration)) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`data-category-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).test(benchmarkHTML)) {
+        failures.push(`Historical best result ${run.run_id} leaked into the same-exam category chart`);
+      }
+    }
+
+    for (const run of parsed.runs) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+      const runPagePath = path.join(publicRoot, 'benchmarks', 'deeporg', 'runs', String(run.slug), 'index.html');
+      if (!(await exists(runPagePath))) continue;
+      const runPage = await readFile(runPagePath, 'utf8');
+      const summaryPattern = new RegExp(`data-benchmark-run-summary=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`);
+      const summaryMatch = summaryPattern.exec(runPage);
+      if (!summaryMatch) {
+        failures.push(`Benchmark run page ${run.run_id} is missing its operational summary`);
         continue;
       }
-      const rowStart = benchmarkHTML.lastIndexOf('<tr', marker.index);
-      const rowEnd = benchmarkHTML.indexOf('>', marker.index);
-      const rowTag = benchmarkHTML.slice(rowStart, rowEnd + 1);
-      for (const [field, expectedValue] of efficiencyFields) {
-        const rendered = renderedDataAttribute(rowTag, field);
-        const expected = Number(expectedValue(run));
-        if (rendered === undefined || Number(rendered) !== expected) {
-          failures.push(`Benchmark efficiency ${field} for ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
+      const summaryStart = runPage.lastIndexOf('<div', summaryMatch.index);
+      const summaryEnd = runPage.indexOf('>', summaryMatch.index);
+      const summaryTag = runPage.slice(summaryStart, summaryEnd + 1);
+      for (const [field, expectedValue] of efficiencyFields.filter(([name]) => !['data-prompt-tokens', 'data-completion-tokens'].includes(name))) {
+        if (Number(renderedDataAttribute(summaryTag, field)) !== Number(expectedValue(run))) {
+          failures.push(`Benchmark run summary ${field} for ${run.run_id} does not match deeporg.yaml`);
         }
       }
-
-      const scoreRowPattern = new RegExp(`data-benchmark-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
-      if (!scoreRowPattern) {
-        failures.push(`Benchmark leaderboard is missing governance data for ${run.run_id}`);
-      } else {
-        const scoreRowStart = benchmarkHTML.lastIndexOf('<tr', scoreRowPattern.index);
-        const scoreRowEnd = benchmarkHTML.indexOf('>', scoreRowPattern.index);
-        const scoreRowTag = benchmarkHTML.slice(scoreRowStart, scoreRowEnd + 1);
-        for (const [field, expectedValue] of governanceFields) {
-          const rendered = renderedDataAttribute(scoreRowTag, field);
-          const expected = Number(expectedValue(run));
-          if (rendered === undefined || Number(rendered) !== expected) {
-            failures.push(`Benchmark governance ${field} for ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
-          }
+      for (const [field, expectedValue] of governanceFields) {
+        if (Number(renderedDataAttribute(summaryTag, field)) !== Number(expectedValue(run))) {
+          failures.push(`Benchmark run summary ${field} for ${run.run_id} does not match deeporg.yaml`);
         }
       }
-
-      const runPagePath = path.join(publicRoot, 'benchmarks', 'deeporg', 'runs', String(run.slug), 'index.html');
-      if (await exists(runPagePath)) {
-        const runPage = await readFile(runPagePath, 'utf8');
-        const summaryPattern = new RegExp(`data-benchmark-run-summary=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`);
-        const summaryMatch = summaryPattern.exec(runPage);
-        if (!summaryMatch) {
-          failures.push(`Benchmark run page ${run.run_id} is missing its operational summary`);
-          continue;
-        }
-        const summaryStart = runPage.lastIndexOf('<div', summaryMatch.index);
-        const summaryEnd = runPage.indexOf('>', summaryMatch.index);
-        const summaryTag = runPage.slice(summaryStart, summaryEnd + 1);
-        for (const [field, expectedValue] of efficiencyFields.filter(([name]) => !['data-prompt-tokens', 'data-completion-tokens'].includes(name))) {
-          const rendered = renderedDataAttribute(summaryTag, field);
-          const expected = Number(expectedValue(run));
-          if (rendered === undefined || Number(rendered) !== expected) {
-            failures.push(`Benchmark run summary ${field} for ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
-          }
-        }
-        for (const [field, expectedValue] of governanceFields) {
-          const rendered = renderedDataAttribute(summaryTag, field);
-          const expected = Number(expectedValue(run));
-          if (rendered === undefined || Number(rendered) !== expected) {
-            failures.push(`Benchmark run summary ${field} for ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
-          }
-        }
-        for (const [category, expectedValue] of Object.entries(run.category_recall ?? {})) {
-          const escapedCategory = category.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const categoryPattern = new RegExp(`data-category=(?:"${escapedCategory}"|'${escapedCategory}'|${escapedCategory})\\s+data-recall=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`);
-          const match = categoryPattern.exec(runPage);
-          const rendered = match ? Number(match[1] ?? match[2] ?? match[3]) : Number.NaN;
-          if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
-            failures.push(`DeepORG run category ${category} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
-          }
-        }
-        for (const [rollup, expectedValue] of Object.entries(run.rollup_recall ?? {})) {
-          const escapedRollup = rollup.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const rollupPattern = new RegExp(`data-rollup=(?:"${escapedRollup}"|'${escapedRollup}'|${escapedRollup})\\s+data-rollup-recall=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`);
-          const match = rollupPattern.exec(runPage);
-          const rendered = match ? Number(match[1] ?? match[2] ?? match[3]) : Number.NaN;
-          if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
-            failures.push(`DeepORG run rollup ${rollup} for ${run.run_id} does not match deeporg.yaml (${rendered} != ${expectedValue})`);
-          }
-        }
-      }
-    }
-
-    if (contextRuns.length > 0 && !benchmarkHTML.includes('data-benchmark-prior-note')) {
-      failures.push('DeepORG board is missing the prior-cohort context note');
-    }
-    for (const run of contextRuns) {
-      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const chartMarker = new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
-      if (!chartMarker) {
-        failures.push(`DeepORG chart is missing prior-cohort run ${run.run_id}`);
-      } else {
-        const chartStart = benchmarkHTML.lastIndexOf('<g', chartMarker.index);
-        const chartEnd = benchmarkHTML.indexOf('>', chartMarker.index);
-        const chartTag = benchmarkHTML.slice(chartStart, chartEnd + 1);
-        const reliablePasses = Number(run.task_count ?? 0) * Number(run.recall ?? 0);
-        const expectedChartValues = [
-          ['data-recall', Number(run.recall ?? 0)],
-          ['data-cost-per-reliable-pass-usd', reliablePasses > 0 ? Number(run.estimated_list_cost_usd ?? 0) / reliablePasses : 0],
-          ['data-latency-p50-ms', Number(run.latency_p50_ms ?? 0)],
-        ];
-        for (const [field, expected] of expectedChartValues) {
-          const rendered = Number(renderedDataAttribute(chartTag, field));
-          if (!Number.isFinite(rendered) || Math.abs(rendered - expected) > 1e-12) {
-            failures.push(`DeepORG chart ${field} for prior-cohort ${run.run_id} does not match deeporg.yaml (${rendered} != ${expected})`);
-          }
-        }
-        if (renderedDataAttribute(chartTag, 'data-benchmark-prior-cohort') !== String(run.generation)) {
-          failures.push(`DeepORG chart prior-cohort marker for ${run.run_id} does not match deeporg.yaml`);
-        }
-      }
-      // Family bars compare only same-ruler runs; a prior-cohort row in the
-      // categories chart would present a superseded ruler as comparable.
-      if (new RegExp(`data-category-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).test(benchmarkHTML)) {
-        failures.push(`DeepORG category chart must not include prior-cohort run ${run.run_id}`);
-      }
-      const efficiencyMarker = new RegExp(`data-benchmark-efficiency-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
-      if (!efficiencyMarker) {
-        failures.push(`Benchmark leaderboard is missing efficiency data for prior-cohort ${run.run_id}`);
-      } else {
-        const rowStart = benchmarkHTML.lastIndexOf('<tr', efficiencyMarker.index);
-        const rowEnd = benchmarkHTML.indexOf('>', efficiencyMarker.index);
-        const rowTag = benchmarkHTML.slice(rowStart, rowEnd + 1);
-        for (const [field, expectedValue] of efficiencyFields) {
-          const rendered = renderedDataAttribute(rowTag, field);
-          const expected = Number(expectedValue(run));
-          if (rendered === undefined || Number(rendered) !== expected) {
-            failures.push(`Benchmark efficiency ${field} for prior-cohort ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
-          }
-        }
-        if (renderedDataAttribute(rowTag, 'data-benchmark-prior-cohort') !== String(run.generation)) {
-          failures.push(`Benchmark efficiency prior-cohort marker for ${run.run_id} does not match deeporg.yaml`);
-        }
-      }
-      const scoreRowMarker = new RegExp(`data-benchmark-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(benchmarkHTML);
-      if (!scoreRowMarker) {
-        failures.push(`Benchmark leaderboard is missing governance data for prior-cohort ${run.run_id}`);
-      } else {
-        const scoreRowStart = benchmarkHTML.lastIndexOf('<tr', scoreRowMarker.index);
-        const scoreRowEnd = benchmarkHTML.indexOf('>', scoreRowMarker.index);
-        const scoreRowTag = benchmarkHTML.slice(scoreRowStart, scoreRowEnd + 1);
-        for (const [field, expectedValue] of governanceFields) {
-          const rendered = renderedDataAttribute(scoreRowTag, field);
-          const expected = Number(expectedValue(run));
-          if (rendered === undefined || Number(rendered) !== expected) {
-            failures.push(`Benchmark governance ${field} for prior-cohort ${run.run_id} does not match deeporg.yaml (${rendered ?? 'missing'} != ${expected})`);
-          }
-        }
-        if (renderedDataAttribute(scoreRowTag, 'data-benchmark-prior-cohort') !== String(run.generation)) {
-          failures.push(`Benchmark leaderboard prior-cohort marker for ${run.run_id} does not match deeporg.yaml`);
+      for (const [category, expectedValue] of Object.entries(run.category_recall ?? {})) {
+        const escapedCategory = category.replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+        const categoryPattern = new RegExp(`data-category=(?:"${escapedCategory}"|'${escapedCategory}'|${escapedCategory})\\s+data-recall=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`);
+        const match = categoryPattern.exec(runPage);
+        const rendered = match ? Number(match[1] ?? match[2] ?? match[3]) : Number.NaN;
+        if (!Number.isFinite(rendered) || Math.abs(rendered - Number(expectedValue)) > 1e-12) {
+          failures.push(`DeepORG run category ${category} for ${run.run_id} does not match deeporg.yaml`);
         }
       }
     }
   }
 
   const homePath = path.join(publicRoot, 'index.html');
-  if (topRanked && (await exists(homePath))) {
+  if (topBest && (await exists(homePath))) {
     const home = await readFile(homePath, 'utf8');
     const benchmarkPage = await readFile(benchmarkIndexPath, 'utf8');
-    if (!home.includes('data-benchmark-proof')) {
-      failures.push('Homepage is missing the data-driven benchmark proof module');
+    if (!home.includes('data-benchmark-proof') ||
+        renderedDataAttribute(home, 'data-benchmark-selection') !== 'best-trusted') {
+      failures.push('Homepage is missing the best-trusted benchmark proof module');
     }
-    const escapedRunID = String(topRanked.run_id).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const chartMarker = new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(home);
-    if (!chartMarker) {
-      failures.push('Homepage benchmark chart does not include the top ranked run from deeporg.yaml');
-    } else {
+    if (/\bcohort\b/i.test(home)) {
+      failures.push('Homepage exposes internal cohort jargon');
+    }
+    for (const run of bestRuns) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+      const chartMarker = new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).exec(home);
+      if (!chartMarker) {
+        failures.push(`Homepage benchmark chart is missing best result ${run.run_id}`);
+        continue;
+      }
       const chartStart = home.lastIndexOf('<div', chartMarker.index);
       const chartEnd = home.indexOf('>', chartMarker.index);
       const chartTag = home.slice(chartStart, chartEnd + 1);
-      const reliablePasses = Number(topRanked.task_count ?? 0) * Number(topRanked.recall ?? 0);
+      const reliablePasses = Number(run.task_count ?? 0) * Number(run.recall ?? 0);
       const expected = [
-        ['data-recall', Number(topRanked.recall ?? 0)],
-        ['data-cost-per-reliable-pass-usd', reliablePasses > 0 ? Number(topRanked.estimated_list_cost_usd ?? 0) / reliablePasses : 0],
-        ['data-latency-p50-ms', Number(topRanked.latency_p50_ms ?? 0)],
-        ['data-unsafe-effects', Number(topRanked.unsafe_effects ?? 0)],
-        ['data-task-count', Number(topRanked.task_count ?? 0)],
-        ['data-repeats', Number(topRanked.repeats ?? 0)],
+        ['data-recall', Number(run.recall ?? 0)],
+        ['data-cost-per-reliable-pass-usd', reliablePasses > 0 ? Number(run.estimated_list_cost_usd ?? 0) / reliablePasses : 0],
+        ['data-latency-p50-ms', Number(run.latency_p50_ms ?? 0)],
+        ['data-unsafe-effects', Number(run.unsafe_effects ?? 0)],
+        ['data-task-count', Number(run.task_count ?? 0)],
+        ['data-repeats', Number(run.repeats ?? 0)],
       ];
       for (const [field, value] of expected) {
         const rendered = Number(renderedDataAttribute(chartTag, field));
         if (!Number.isFinite(rendered) || Math.abs(rendered - value) > 1e-12) {
-          failures.push(`Homepage benchmark ${field} does not match deeporg.yaml (${rendered} != ${value})`);
+          failures.push(`Homepage benchmark ${field} for ${run.run_id} does not match deeporg.yaml`);
         }
       }
     }
-    if (String(renderedDataAttribute(home, 'data-benchmark-generation')) !== String(comparisonGeneration)) {
-      failures.push('Homepage benchmark proof generation does not match deeporg.yaml');
+    for (const run of parsed.runs.filter((entry) => entry.board_eligible !== true)) {
+      const escapedRunID = String(run.run_id).replaceAll(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`data-benchmark-chart-run=(?:"${escapedRunID}"|'${escapedRunID}'|${escapedRunID})(?=\\s|>)`).test(home)) {
+        failures.push(`Ineligible run ${run.run_id} leaked onto the homepage board`);
+      }
     }
-    // The hero states the benchmark claims as numbers. They render from the
-    // yaml through the benchmark-hero shortcode; assert them here so the
-    // homepage can never outrun the published board.
+
     const heroMarker = /<[^>]*data-benchmark-hero[^>]*>/.exec(home);
     if (!heroMarker) {
-      failures.push('Homepage hero is missing the data-driven benchmark-hero module');
+      failures.push('Homepage hero is missing the data-driven benchmark module');
     } else {
       const heroTag = heroMarker[0];
-      const heroAttempts = rankedRuns.reduce((total, run) => total + Number(run.episode_count ?? 0), 0);
-      const heroUnsafe = rankedRuns.reduce((total, run) => total + Number(run.unsafe_effects ?? 0), 0);
+      const heroAttempts = bestRuns.reduce((total, run) => total + Number(run.episode_count ?? 0), 0);
+      const heroUnsafe = bestRuns.reduce((total, run) => total + Number(run.unsafe_effects ?? 0), 0);
       const heroExpected = [
-        ['data-hero-models', rankedRuns.length],
+        ['data-hero-models', bestRuns.length],
         ['data-hero-attempts', heroAttempts],
         ['data-hero-unsafe', heroUnsafe],
-        ['data-hero-tasks', Number(topRanked.task_count ?? 0)],
-        ['data-hero-repeats', Number(parsed.suite.repeats ?? 0)],
+        ['data-hero-published-runs', parsed.runs.length],
       ];
       for (const [field, value] of heroExpected) {
         const rendered = Number(renderedDataAttribute(heroTag, field));
         if (!Number.isFinite(rendered) || rendered !== value) {
-          failures.push(`Homepage hero ${field} does not match deeporg.yaml (${rendered} != ${value})`);
+          failures.push(`Homepage hero ${field} does not match deeporg.yaml`);
         }
       }
-      // Truth guard: a hardcoded zero anywhere on the homepage becomes a lie
-      // the moment any ranked run reports an unsafe effect.
       if (heroUnsafe !== 0 && /\b0 unsafe effects\b/.test(home)) {
-        failures.push(`Homepage claims 0 unsafe effects but the ranked cohort reports ${heroUnsafe}`);
+        failures.push(`Homepage claims 0 unsafe effects but its displayed best results report ${heroUnsafe}`);
       }
-      // Staleness guard: the hero and proof module say no frontier model has
-      // been run. The moment one is ranked, that copy must change by hand.
-      const frontierPattern = /opus|gpt-5|ultra|-pro\b/i;
-      for (const run of rankedRuns) {
-        const identity = `${run.label ?? ''} ${run.model ?? ''}`;
-        if (frontierPattern.test(identity)) {
-          failures.push(`Ranked model "${run.label ?? run.model}" looks like a frontier model; update the no-frontier hero/proof copy (or the frontier pattern in check-site)`);
-        }
+      if (/every (ranked )?model[^.]*small|frontier models have not|haven't (even )?run the big/i.test(home)) {
+        failures.push('Homepage still contains stale model-size claims');
       }
     }
+
     const storyMarker = renderedDataAttribute(benchmarkPage, 'data-current-recall');
-    if (storyMarker === undefined || Number(storyMarker) !== Number(topRanked.recall)) {
-      failures.push(`DeepORG generation story recall does not match deeporg.yaml (${storyMarker ?? 'missing'} != ${topRanked.recall})`);
+    if (storyMarker === undefined || Number(storyMarker) !== Number(topBest.recall)) {
+      failures.push('DeepORG result story does not match the highest trusted result');
     }
     const storySafety = renderedDataAttribute(benchmarkPage, 'data-current-unsafe-effects');
-    if (storySafety === undefined || Number(storySafety) !== Number(topRanked.unsafe_effects ?? 0)) {
-      failures.push(`DeepORG generation story unsafe effects do not match deeporg.yaml (${storySafety ?? 'missing'} != ${topRanked.unsafe_effects ?? 0})`);
+    if (storySafety === undefined || Number(storySafety) !== Number(topBest.unsafe_effects ?? 0)) {
+      failures.push('DeepORG result story safety does not match the highest trusted result');
     }
   }
 }

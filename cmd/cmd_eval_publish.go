@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	benchmarkDataVersion  = "graphjin.benchmark.data/v2"
+	benchmarkDataVersion  = "graphjin.benchmark.data/v3"
 	defaultBenchmarkSlug  = "deeporg"
 	defaultBenchmarkName  = "DeepORG — The Organizational Agent Benchmark"
 	defaultBenchmarkScope = "2026.1/2026.2 — governed read-only Q&A · 2027.1 — adds writes, alerts, follow-ups, multi-source · 2028.1 — intent-phrased tasks with execution twins · 2028.2 — cross-source ruler fix (v11)"
@@ -67,6 +67,8 @@ type benchmarkEntry struct {
 	GeneratedAt    time.Time `yaml:"generated_at"`
 	Model          string    `yaml:"model"`
 	Provider       string    `yaml:"provider,omitempty"`
+	ModelKey       string    `yaml:"model_key"`
+	BoardEligible  bool      `yaml:"board_eligible"`
 	ResponseFormat string    `yaml:"response_format,omitempty"`
 	// Reasoning records the provider thinking effort the run used. It changes
 	// both capability and cost, so two rows for the same model are not
@@ -319,6 +321,7 @@ func runEvalPublish(cmd *cobra.Command, evalOpts *evalCLIOptions, opts *evalPubl
 			}
 			data.Runs[i].Ranked = false
 			if correctingScoring {
+				data.Runs[i].BoardEligible = false
 				data.Runs[i].UnrankedReason = "superseded by corrected scoring contract (" + data.Suite.RewardVersion + " → " + report.RewardVersion + ")"
 			} else {
 				data.Runs[i].UnrankedReason = "previous public benchmark cohort (" + previousGeneration + ")"
@@ -447,7 +450,12 @@ func sameBenchmarkModel(a, b benchmarkEntry) bool {
 	aIdentity, aOK := benchmarkModelIdentity(a)
 	bIdentity, bOK := benchmarkModelIdentity(b)
 	if aOK && bOK {
-		return aIdentity == bIdentity
+		if aIdentity == bIdentity {
+			return true
+		}
+		if !strings.HasPrefix(aIdentity, "legacy/") && !strings.HasPrefix(bIdentity, "legacy/") {
+			return false
+		}
 	}
 	aLabel := strings.TrimSpace(a.Label)
 	bLabel := strings.TrimSpace(b.Label)
@@ -455,12 +463,25 @@ func sameBenchmarkModel(a, b benchmarkEntry) bool {
 }
 
 func benchmarkModelIdentity(entry benchmarkEntry) (string, bool) {
+	if key := strings.TrimSpace(entry.ModelKey); key != "" {
+		return key, true
+	}
 	provider := canonicalBenchmarkProvider(entry.Provider)
 	model := strings.ToLower(strings.TrimSpace(entry.Model))
 	if provider == "" || model == "" {
 		return "", false
 	}
-	return provider + "\x00" + model, true
+	return provider + "/" + model, true
+}
+
+func benchmarkModelKey(entry benchmarkEntry) string {
+	if identity, ok := benchmarkModelIdentity(entry); ok {
+		return identity
+	}
+	if label := strings.ToLower(strings.TrimSpace(entry.Label)); label != "" {
+		return "legacy/" + label
+	}
+	return ""
 }
 
 func canonicalBenchmarkProvider(provider string) string {
@@ -582,9 +603,11 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 	if withholdUsage {
 		pricingSource = ""
 	}
+	scoringSuspect := report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics)
 	return benchmarkEntry{
 		RunID: report.RunID, Slug: slug, Label: label, Release: release, Notes: strings.TrimSpace(notes), Ranked: ranked, UnrankedReason: reason,
 		Generation: gjeval.PublicBenchmarkGeneration, GeneratedAt: report.GeneratedAt, Model: report.Provenance.Model, Provider: report.Provenance.Provider,
+		ModelKey: benchmarkModelKey(benchmarkEntry{Model: report.Provenance.Model, Provider: report.Provenance.Provider, Label: label}), BoardEligible: ranked && !scoringSuspect,
 		ResponseFormat: report.Provenance.ResponseFormat, Reasoning: report.Provenance.Reasoning,
 		GraphJinCommit: report.Provenance.GraphJinCommit, BinaryFingerprint: report.Provenance.BinaryFingerprint,
 		SuiteIdentity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
@@ -606,7 +629,7 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		LatencyP50MS:        report.Metrics.LatencyP50MS, LatencyP95MS: report.Metrics.LatencyP95MS,
 		PromptPricePerMillion: promptPrice, CompletionPricePerMillion: completionPrice,
 		EstimatedListCostUSD: estimatedCost, EstimatedListCostPerTaskUSD: costPerTask, PricingSource: pricingSource,
-		ScoringSuspect:       report.Acceptance.ScoringSuspect || gjeval.IsScoringDivergenceSuspect(report.Metrics),
+		ScoringSuspect:       scoringSuspect,
 		UsageIncomplete:      usageIncomplete,
 		UsageUnknownAttempts: unknownAttempts,
 		CostIsLowerBound:     usageIncomplete && !withholdUsage && estimatedCost > 0,
@@ -669,6 +692,11 @@ func loadBenchmarkData(path string, benchmark benchmarkIdentity) (benchmarkData,
 	}
 	if data.Runs == nil {
 		data.Runs = []benchmarkEntry{}
+	}
+	for i := range data.Runs {
+		if data.Runs[i].ModelKey == "" {
+			data.Runs[i].ModelKey = benchmarkModelKey(data.Runs[i])
+		}
 	}
 	return data, nil
 }

@@ -3846,7 +3846,6 @@ pre code {
   --benchmark-track: color-mix(in srgb, var(--line) 80%, var(--panel));
   --benchmark-accent: var(--accent-readable);
   --benchmark-accent-alt: #3b82f6;
-  --benchmark-prior: color-mix(in srgb, var(--accent-readable) 32%, var(--benchmark-track));
 }
 
 .benchmark-category-chart {
@@ -4111,40 +4110,6 @@ pre code {
   font-size: 0.75rem;
 }
 
-.benchmark-prior-tag,
-.benchmark-table .benchmark-prior-tag,
-.benchmark-matrix .benchmark-prior-tag {
-  display: inline-block;
-  margin-top: 0.3rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
-  padding: 0.08rem 0.55rem;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.64rem;
-  font-weight: 500;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.benchmark-table tr.benchmark-prior-row td,
-.benchmark-table tr.benchmark-prior-row td strong {
-  color: var(--muted);
-}
-
-.benchmark-matrix th.is-prior,
-.benchmark-matrix th.is-prior strong,
-.benchmark-matrix td.is-prior {
-  color: var(--muted);
-}
-
-.benchmark-family-prior {
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
 .benchmark-efficiency {
   margin-top: 2rem;
 }
@@ -4351,7 +4316,7 @@ pre code {
 .benchmark-landing-hero,
 .benchmark-landing-section,
 .benchmark-landing-empty {
-  width: min(100% - 2.5rem, 78rem);
+  width: min(calc(100% - 2.5rem), 78rem);
   margin-inline: auto;
   padding: clamp(3rem, 7vw, 5.5rem) clamp(1.25rem, 3vw, 2.5rem);
 }
@@ -4562,12 +4527,12 @@ pre code {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
 }
 
-.benchmark-comparison-cohort {
+.benchmark-comparison-note {
   color: var(--muted);
   font-size: 0.92rem;
 }
 
-.benchmark-small-model-note {
+.benchmark-board-note {
   margin-top: 0.9rem;
   color: var(--muted);
   font-size: 0.92rem;
@@ -5252,7 +5217,7 @@ pre code {
   .benchmark-landing-hero,
   .benchmark-landing-section,
   .benchmark-landing-empty {
-    width: min(100% - 1.25rem, 78rem);
+    width: min(calc(100% - 1.25rem), 78rem);
     padding-inline: 1rem;
   }
 

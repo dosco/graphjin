@@ -21,7 +21,7 @@ function attribute(html, name) {
   return match ? decodeHTML(match[1] ?? match[2] ?? match[3]) : undefined;
 }
 
-// Every ranked column of the current cohort, in the order the page renders
+// The highest trustworthy result for each model, in the order the page renders
 // them, so the card and the comparison table can never tell different stories.
 function columns(html) {
   return [...html.matchAll(/<div hidden data-benchmark-og-run=[^>]*><\/div>/g)]
@@ -94,11 +94,10 @@ await mkdir(path.dirname(output), { recursive: true });
 await mkdir(path.dirname(cardSource), { recursive: true });
 
 const html = await readFile(source, 'utf8');
-const generation = attribute(html, 'data-benchmark-generation') ?? 'Current public suite';
 const taskCount = Number(attribute(html, 'data-suite-tasks'));
 const repeats = Number(attribute(html, 'data-suite-repeats'));
 const models = columns(html);
-const hasRankedRun = models.length > 0;
+const hasPublishedRun = models.length > 0;
 const scope = Number.isFinite(taskCount) ? String(taskCount) : '—';
 
 const [regularFont, semiboldFont] = await Promise.all([
@@ -120,7 +119,7 @@ function bestValue(row) {
   return row.better === 'low' ? Math.min(...values) : Math.max(...values);
 }
 
-const rankedRun = hasRankedRun
+const bestRuns = hasPublishedRun
   ? `<table>
       <thead>
         <tr><th class="metric-name">What is measured</th>${models
@@ -148,7 +147,7 @@ const rankedRun = hasRankedRun
           .join('')}
       </tbody>
     </table>`
-  : `<div class="empty">No ranked model yet · frozen and reproducible</div>`;
+  : `<div class="empty">No published model yet</div>`;
 
 const card = `<!doctype html>
 <html lang="en">
@@ -183,8 +182,8 @@ const card = `<!doctype html>
 <body>
   <header><h1>DeepORG Benchmark</h1><strong>graphjin.com/benchmark</strong></header>
   <p class="question">Can an AI agent actually do what your organization needs — answer the question, carry out the operation, refuse what it should — against a live database, with no unsafe writes?</p>
-  ${rankedRun}
-  <footer><span>One frozen exam · ${escapeHTML(scope)} tasks · every model runs the same suite</span><span>Generation ${escapeHTML(generation)}</span></footer>
+  ${bestRuns}
+  <footer><span>Best trustworthy published result for every tested model</span><span>Current exam: ${escapeHTML(scope)} tasks · exact reports online</span></footer>
 </body>
 </html>`;
 

@@ -1,0 +1,23 @@
+{{- /* One highest trustworthy result for each canonical provider/model setup.
+
+     The publisher owns the structured eligibility decision. This partial only
+     chooses the highest score for each model key, using the newer run when two
+     scores tie, then orders the public board from highest score to lowest. */ -}}
+{{- $data := .data -}}
+{{- $best := newScratch -}}
+{{- $best.Set "runs" dict -}}
+{{- range where (default (slice) $data.runs) "board_eligible" true -}}
+  {{- $candidate := . -}}
+  {{- $key := string .model_key -}}
+  {{- $current := index ($best.Get "runs") $key -}}
+  {{- $replace := not $current -}}
+  {{- if $current -}}
+    {{- if gt (float $candidate.recall) (float $current.recall) -}}
+      {{- $replace = true -}}
+    {{- else if and (eq (float $candidate.recall) (float $current.recall)) (gt (string $candidate.run_id) (string $current.run_id)) -}}
+      {{- $replace = true -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if $replace -}}{{- $best.SetInMap "runs" $key $candidate -}}{{- end -}}
+{{- end -}}
+{{- return (sort ($best.GetSortedMapValues "runs") "recall" "desc") -}}

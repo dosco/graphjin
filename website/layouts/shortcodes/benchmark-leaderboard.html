@@ -4,50 +4,45 @@
 {{- $runs := default (slice) $data.runs -}}
 {{- $generation := $data.suite.generation -}}
 {{- $comparisonGeneration := default $generation $data.suite.comparison_generation -}}
-{{- $comparisonScope := index $data.suite.generation_scopes $comparisonGeneration -}}
 {{- $ranked := sort (where (where $runs "ranked" true) "generation" $comparisonGeneration) "recall" "desc" -}}
-{{- $unranked := where $runs "ranked" false -}}
-{{- $priorContext := partial "benchmark-prior-context.html" (dict "data" $data "ranked" $ranked) -}}
-{{- $contextRuns := $priorContext.runs -}}
-{{- $priorGeneration := $priorContext.generation -}}
-{{- $display := slice -}}
-{{- range $ranked -}}{{- $display = $display | append (dict "run" . "prior" false) -}}{{- end -}}
-{{- range $contextRuns -}}{{- $display = $display | append (dict "run" . "prior" true) -}}{{- end -}}
+{{- $bestRuns := partial "benchmark-best-results.html" (dict "data" $data) -}}
+{{- $selectedIDs := slice -}}
+{{- range $bestRuns -}}{{- $selectedIDs = $selectedIDs | append (string .run_id) -}}{{- end -}}
+{{- $historyRuns := slice -}}
+{{- range $runs -}}{{- if not (in $selectedIDs (string .run_id)) -}}{{- $historyRuns = $historyRuns | append . -}}{{- end -}}{{- end -}}
 {{- $view := .Get "view" | default "models" -}}
-<div class="benchmark-board benchmark-board-{{ $view }}" data-benchmark-view="{{ $view }}" data-benchmark-generation="{{ $comparisonGeneration }}" data-benchmark-target-generation="{{ $generation }}">
-  <div class="benchmark-generation-current" data-benchmark-generation-current="{{ $comparisonGeneration }}"><strong>Generation {{ $comparisonGeneration }} — {{ $comparisonScope }}</strong><span>{{ $data.suite.scope_label }}</span></div>
-  {{ if ne $comparisonGeneration $generation }}<p class="benchmark-chart-note" data-benchmark-rerun-pending><strong>Generation {{ $generation }} is unranked while the corrected agent is rerun.</strong> The most recent valid comparison surface is shown below.</p>{{ end }}
-  {{ if eq (len $ranked) 0 }}
+<div class="benchmark-board benchmark-board-{{ $view }}" data-benchmark-view="{{ $view }}" data-benchmark-selection="best-trusted">
+  <div class="benchmark-generation-current" data-benchmark-best-current><strong>Best trusted result for every model</strong><span>Older results stay until that model posts a higher trustworthy score.</span></div>
+  {{ if eq (len $bestRuns) 0 }}
     <div class="benchmark-empty" data-benchmark-empty>
       <strong>No published runs yet.</strong>
       <span>The first scored run of <code>graphjin eval bench --public</code> will appear here.</span>
     </div>
   {{ else if eq $view "chart" }}
-    {{- $height := add 34 (mul (len $display) 64) -}}
+    {{- $height := add 34 (mul (len $bestRuns) 64) -}}
     <div class="benchmark-svg-wrap">
-      <svg class="benchmark-model-chart" data-benchmark-model-chart viewBox="0 0 920 {{ $height }}" role="img" aria-label="DeepORG full-pass score, reliable-pass cost, and median latency by model">
-        <style>.track{fill:var(--benchmark-track,#e7e5e4)}.bar{fill:var(--benchmark-accent,#0f766e)}.bar.prior{fill:var(--benchmark-prior,#a8a29e)}.label,.value,.badge{fill:currentColor;font-family:system-ui,sans-serif}.label{font-size:15px;font-weight:700}.value{font-size:14px;font-weight:800;text-anchor:end}.badge{font-size:12px}.prior .label,.prior .value{opacity:.72}.prior .badge{opacity:.8}</style>
-        {{ range $index, $entry := $display }}
-          {{- $run := $entry.run -}}
+      <svg class="benchmark-model-chart" data-benchmark-model-chart viewBox="0 0 920 {{ $height }}" role="img" aria-label="Best trusted DeepORG full-pass score, reliable-pass cost, and median latency by model">
+        <style>.track{fill:var(--benchmark-track,#e7e5e4)}.bar{fill:var(--benchmark-accent,#0f766e)}.label,.value,.badge{fill:currentColor;font-family:system-ui,sans-serif}.label{font-size:15px;font-weight:700}.value{font-size:14px;font-weight:800;text-anchor:end}.badge{font-size:12px}</style>
+        {{ range $index, $run := $bestRuns }}
           {{- $y := add 30 (mul $index 64) -}}
           {{- $width := mul 520 (float $run.recall) -}}
           {{- $reliablePasses := mul (float ($run.task_count | default 0)) (float ($run.recall | default 0)) -}}
           {{- $costPerReliable := 0.0 -}}
           {{- if gt $reliablePasses 0 -}}{{- $costPerReliable = div (float ($run.estimated_list_cost_usd | default 0)) $reliablePasses -}}{{- end -}}
           {{- $rollups := $run.rollup_recall | default dict -}}
-          <g {{ if $entry.prior }}class="prior" data-benchmark-prior-cohort="{{ $run.generation }}" {{ end }}data-benchmark-chart-run="{{ $run.run_id }}" data-recall="{{ printf "%.17g" (float $run.recall) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $costPerReliable }}" data-latency-p50-ms="{{ printf "%.17g" (float ($run.latency_p50_ms | default 0)) }}"{{ if isset $rollups "questions" }} data-rollup-questions="{{ printf "%.17g" (float (index $rollups "questions")) }}"{{ end }}{{ if isset $rollups "operations" }} data-rollup-operations="{{ printf "%.17g" (float (index $rollups "operations")) }}"{{ end }}{{ if isset $rollups "governance" }} data-rollup-governance="{{ printf "%.17g" (float (index $rollups "governance")) }}"{{ end }}>
+          <g data-benchmark-chart-run="{{ $run.run_id }}" data-recall="{{ printf "%.17g" (float $run.recall) }}" data-cost-per-reliable-pass-usd="{{ printf "%.17g" $costPerReliable }}" data-latency-p50-ms="{{ printf "%.17g" (float ($run.latency_p50_ms | default 0)) }}"{{ if isset $rollups "questions" }} data-rollup-questions="{{ printf "%.17g" (float (index $rollups "questions")) }}"{{ end }}{{ if isset $rollups "operations" }} data-rollup-operations="{{ printf "%.17g" (float (index $rollups "operations")) }}"{{ end }}{{ if isset $rollups "governance" }} data-rollup-governance="{{ printf "%.17g" (float (index $rollups "governance")) }}"{{ end }}>
             <text class="label" x="0" y="{{ $y }}">{{ $run.label }}</text>
             <rect class="track" x="220" y="{{ sub $y 16 }}" width="520" height="18" rx="9"/>
-            <rect class="bar{{ if $entry.prior }} prior{{ end }}" x="220" y="{{ sub $y 16 }}" width="{{ printf "%.2f" $width }}" height="18" rx="9"/>
+            <rect class="bar" x="220" y="{{ sub $y 16 }}" width="{{ printf "%.2f" $width }}" height="18" rx="9"/>
             <text class="value" x="810" y="{{ $y }}">{{ printf "%.1f%%" (mul (float $run.recall) 100) }}</text>
-            <text class="badge" x="220" y="{{ add $y 20 }}">{{ if $entry.prior }}{{ $run.generation }} cohort · {{ end }}{{ if gt $costPerReliable 0 }}{{ printf "$%.3f / reliable pass" $costPerReliable }}{{ else }}cost unavailable{{ end }} · {{ with $run.latency_p50_ms }}{{ printf "%.1fs p50" (div (float .) 1000) }}{{ else }}latency unavailable{{ end }}{{ if isset $rollups "questions" }} · Q {{ printf "%.0f%%" (mul (float (index $rollups "questions")) 100) }}{{ if isset $rollups "operations" }} / Ops {{ printf "%.0f%%" (mul (float (index $rollups "operations")) 100) }}{{ end }}{{ if isset $rollups "governance" }} / Gov {{ printf "%.0f%%" (mul (float (index $rollups "governance")) 100) }}{{ end }}{{ end }}</text>
+            <text class="badge" x="220" y="{{ add $y 20 }}">Best published · {{ time.Format "Jan 2, 2006" $run.generated_at }} · {{ if gt $costPerReliable 0 }}{{ printf "$%.3f / reliable pass" $costPerReliable }}{{ else }}cost unavailable{{ end }} · {{ with $run.latency_p50_ms }}{{ printf "%.1fs p50" (div (float .) 1000) }}{{ else }}latency unavailable{{ end }}{{ if isset $rollups "questions" }} · Q {{ printf "%.0f%%" (mul (float (index $rollups "questions")) 100) }}{{ if isset $rollups "operations" }} / Ops {{ printf "%.0f%%" (mul (float (index $rollups "operations")) 100) }}{{ end }}{{ if isset $rollups "governance" }} / Gov {{ printf "%.0f%%" (mul (float (index $rollups "governance")) 100) }}{{ end }}{{ end }}</text>
             <a href="{{ printf "%s/runs/%s/" $benchmarkPath $run.slug | relURL }}"><text class="badge" x="820" y="{{ add $y 20 }}">report →</text></a>
           </g>
         {{ end }}
       </svg>
     </div>
     <p class="benchmark-chart-note"><strong>Full pass</strong> means the right answer, the required database method, the expected behavior, and no unsafe effect. Forbidden attempts refused by GraphJin fail behavior; executed forbidden actions fail safety. Cost uses provider list pricing; latency is per attempt. Longer bars are better. Lower cost and latency are better.</p>
-    {{ if gt (len $contextRuns) 0 }}<p class="benchmark-chart-note" data-benchmark-prior-note><strong>Muted bars are prior-cohort context.</strong> Paid reruns land one model at a time, so a model not yet rerun on generation {{ $comparisonGeneration }} keeps showing its most recent generation {{ $priorGeneration }} cohort result, scored under that generation's rules. Each model reranks when it is rerun. Retracted and superseded runs never appear here — they stay in the archive below.</p>{{ end }}
+    <p class="benchmark-chart-note" data-benchmark-best-note><strong>One result per model.</strong> This chart keeps each model's highest trustworthy published score. The date and linked report identify the exact exam and GraphJin build.</p>
   {{ else if eq $view "categories" }}
     {{- $categories := slice "aggregate" "window" "ranking" "discovery" "saved-metric" "refusal" "traversal" "action" "reactive" "multi-turn" "cross-source" -}}
     {{- $scratch := newScratch -}}
@@ -82,21 +77,20 @@
         {{ end }}
       </svg>
     </div>
-    {{ if gt (len $contextRuns) 0 }}<p class="benchmark-chart-note" data-benchmark-prior-categories-note>Family bars compare only runs scored under the same generation's rules, so prior-cohort context rows are omitted here. Each archived run report keeps its own family profile.</p>{{ end }}
+    {{ if ne (len $bestRuns) (len $ranked) }}<p class="benchmark-chart-note" data-benchmark-category-scope-note>Task-family bars only compare models run on the same current exam. Every model's full family breakdown remains available in its linked report.</p>{{ end }}
   {{ else if eq $view "operational" }}
     <div class="benchmark-table-wrap">
       <table class="benchmark-table benchmark-efficiency-table">
         <thead><tr><th>Model + GraphJin build</th><th>Provider tokens / attempt</th><th>Latency / attempt</th><th>Estimated list cost</th></tr></thead>
         <tbody>
-          {{ range $entry := $display }}
-            {{- $run := $entry.run -}}
+          {{ range $run := $bestRuns }}
             {{- $providerTokens := int (default $run.total_tokens $run.provider_total_tokens) -}}
             {{- $promptTokens := int ($run.prompt_tokens | default 0) -}}
             {{- $completionTokens := int ($run.completion_tokens | default 0) -}}
             {{- $episodes := int ($run.episode_count | default 0) -}}
             {{- $reliablePasses := mul (float ($run.task_count | default 0)) (float ($run.recall | default 0)) -}}
-            <tr {{ if $entry.prior }}class="benchmark-prior-row" data-benchmark-prior-cohort="{{ $run.generation }}" {{ end }}data-benchmark-efficiency-run="{{ $run.run_id }}" data-provider-total-tokens="{{ $providerTokens }}" data-prompt-tokens="{{ $promptTokens }}" data-completion-tokens="{{ $completionTokens }}" data-latency-p50-ms="{{ printf "%.17g" (float ($run.latency_p50_ms | default 0)) }}" data-latency-p95-ms="{{ printf "%.17g" (float ($run.latency_p95_ms | default 0)) }}" data-estimated-list-cost-usd="{{ printf "%.17g" (float ($run.estimated_list_cost_usd | default 0)) }}" data-estimated-list-cost-per-task-usd="{{ printf "%.17g" (float ($run.estimated_list_cost_per_task_usd | default 0)) }}">
-              <td data-label="Model"><strong>{{ $run.label }}</strong><small>{{ $run.provider | default "—" }} · GraphJin build {{ $run.release | default "unversioned" }}</small>{{ if $entry.prior }}<small class="benchmark-prior-tag">{{ $run.generation }} cohort</small>{{ end }}{{ with $run.notes }}<small class="benchmark-run-notes">{{ . }}</small>{{ end }}</td>
+            <tr data-benchmark-efficiency-run="{{ $run.run_id }}" data-provider-total-tokens="{{ $providerTokens }}" data-prompt-tokens="{{ $promptTokens }}" data-completion-tokens="{{ $completionTokens }}" data-latency-p50-ms="{{ printf "%.17g" (float ($run.latency_p50_ms | default 0)) }}" data-latency-p95-ms="{{ printf "%.17g" (float ($run.latency_p95_ms | default 0)) }}" data-estimated-list-cost-usd="{{ printf "%.17g" (float ($run.estimated_list_cost_usd | default 0)) }}" data-estimated-list-cost-per-task-usd="{{ printf "%.17g" (float ($run.estimated_list_cost_per_task_usd | default 0)) }}">
+              <td data-label="Model"><strong>{{ $run.label }}</strong><small>{{ $run.provider | default "—" }} · best published · {{ time.Format "Jan 2, 2006" $run.generated_at }} · GraphJin {{ $run.release | default "unversioned" }}</small>{{ with $run.notes }}<small class="benchmark-run-notes">{{ . }}</small>{{ end }}</td>
               <td data-label="Provider tokens / attempt">{{ if and (gt $providerTokens 0) (gt $episodes 0) }}<strong>{{ printf "%.1fk" (div (div (float $providerTokens) (float $episodes)) 1000) }}</strong><small>{{ printf "%.2fM total" (div (float $providerTokens) 1000000) }}{{ if and (gt $promptTokens 0) (gt $completionTokens 0) }} · {{ printf "%.2fM in / %.2fM out" (div (float $promptTokens) 1000000) (div (float $completionTokens) 1000000) }}{{ end }}</small>{{ else }}—{{ end }}</td>
               <td data-label="Latency / attempt">{{ with $run.latency_p50_ms }}<strong>{{ printf "%.1fs p50" (div (float .) 1000) }}</strong>{{ else }}—{{ end }}{{ with $run.latency_p95_ms }}<small>{{ printf "%.1fs p95" (div (float .) 1000) }}</small>{{ end }}</td>
               {{- /* A row whose token accounting had a small gap publishes its measured
@@ -109,26 +103,25 @@
         </tbody>
       </table>
     </div>
-    {{ if gt (len $contextRuns) 0 }}<p class="benchmark-chart-note" data-benchmark-prior-operational-note>Muted rows are generation {{ $priorGeneration }} cohort runs carried forward. Usage, latency, and list cost are measured per attempt at run time — they are not rescored — so they compare directly across cohorts.</p>{{ end }}
+    <p class="benchmark-chart-note" data-benchmark-best-operational-note>Usage, latency, and list cost come from the same best published run shown for each model above.</p>
   {{ else }}
     <div class="benchmark-table-wrap">
       <table class="benchmark-table">
         <thead><tr><th>Model + GraphJin build</th><th>Provider</th><th>Full pass</th><th>At least once</th><th>Every time</th><th>Database method</th><th>Governance</th><th>Run</th></tr></thead>
         <tbody>
-          {{ range $entry := $display }}
-            {{- $run := $entry.run -}}
-            <tr {{ if $entry.prior }}class="benchmark-prior-row" data-benchmark-prior-cohort="{{ $run.generation }}" {{ end }}data-benchmark-row data-benchmark-run="{{ $run.run_id }}" data-graphjin-release="{{ $run.release | default "" }}" data-guard-interventions="{{ int ($run.guard_interventions | default 0) }}" data-forbidden-attempts="{{ int ($run.forbidden_attempts | default 0) }}" data-unsafe-effects="{{ int ($run.unsafe_effects | default 0) }}"><td class="benchmark-model-cell"><strong>{{ $run.label }}</strong><small>GraphJin build {{ $run.release | default "unversioned" }}</small>{{ if $entry.prior }}<small class="benchmark-prior-tag">{{ $run.generation }} cohort · reranks when rerun</small>{{ end }}</td><td>{{ $run.provider | default "—" }}</td><td><strong>{{ printf "%.1f%%" (mul (float $run.recall) 100) }}</strong></td><td>{{ printf "%.1f%%" (mul (float $run.pass_at_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float $run.pass_power_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float $run.method_recall) 100) }}</td><td><strong>{{ int ($run.unsafe_effects | default 0) }} unsafe effects</strong><small class="benchmark-governance-detail">{{ int ($run.forbidden_attempts | default 0) }} forbidden attempts (all refused) · {{ int ($run.guard_interventions | default 0) }} governance interventions · {{ printf "%.1f%%" (mul (float $run.safety_precision) 100) }} effect safety</small></td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath $run.slug | relURL }}">Report</a></td></tr>
+          {{ range $run := $bestRuns }}
+            <tr data-benchmark-row data-benchmark-run="{{ $run.run_id }}" data-graphjin-release="{{ $run.release | default "" }}" data-guard-interventions="{{ int ($run.guard_interventions | default 0) }}" data-forbidden-attempts="{{ int ($run.forbidden_attempts | default 0) }}" data-unsafe-effects="{{ int ($run.unsafe_effects | default 0) }}"><td class="benchmark-model-cell"><strong>{{ $run.label }}</strong><small>Best published · {{ time.Format "Jan 2, 2006" $run.generated_at }} · GraphJin {{ $run.release | default "unversioned" }}</small></td><td>{{ $run.provider | default "—" }}</td><td><strong>{{ printf "%.1f%%" (mul (float $run.recall) 100) }}</strong></td><td>{{ printf "%.1f%%" (mul (float $run.pass_at_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float $run.pass_power_k) 100) }}</td><td>{{ printf "%.1f%%" (mul (float $run.method_recall) 100) }}</td><td><strong>{{ int ($run.unsafe_effects | default 0) }} unsafe effects</strong><small class="benchmark-governance-detail">{{ int ($run.forbidden_attempts | default 0) }} forbidden attempts (all refused) · {{ int ($run.guard_interventions | default 0) }} governance interventions · {{ printf "%.1f%%" (mul (float $run.safety_precision) 100) }} effect safety</small></td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath $run.slug | relURL }}">Report</a></td></tr>
           {{ end }}
         </tbody>
       </table>
     </div>
-    {{ if gt (len $unranked) 0 }}
+    {{ if gt (len $historyRuns) 0 }}
       {{- $history := newScratch -}}
-      {{- range $unranked -}}{{- $history.SetInMap "generations" .generation .generation -}}{{- end -}}
-      <div class="benchmark-history" data-benchmark-generation-history><h3>Retracted, prior-generation, and superseded runs</h3><p>Collapsed by default so generation {{ $comparisonGeneration }} remains the comparison surface. Every historical row keeps its original report.</p>
+      {{- range $historyRuns -}}{{- $history.SetInMap "generations" .generation .generation -}}{{- end -}}
+      <div class="benchmark-history" data-benchmark-generation-history><h3>Other published runs</h3><p>The best result for each model is shown above. Every other run remains here with its original score, report, and any invalidation reason.</p>
       {{- range $historyGeneration := collections.Reverse ($history.GetSortedMapValues "generations") -}}
-        {{- $historyRuns := where $unranked "generation" $historyGeneration -}}
-        <details class="benchmark-unranked" data-benchmark-history-group="{{ $historyGeneration }}"><summary><strong>Generation {{ $historyGeneration }} — {{ index $data.suite.generation_scopes $historyGeneration }}</strong> · {{ len $historyRuns }} {{ if eq (len $historyRuns) 1 }}run{{ else }}runs{{ end }}</summary><div class="benchmark-table-wrap"><table class="benchmark-table"><thead><tr><th>Label</th><th>Full pass</th><th>Why unranked</th><th>Run</th></tr></thead><tbody>{{ range sort $historyRuns "run_id" "desc" }}<tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-benchmark-history-generation="{{ .generation }}"><td><strong>{{ .label }}</strong></td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason }}</td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>{{ end }}</tbody></table></div></details>
+        {{- $generationRuns := where $historyRuns "generation" $historyGeneration -}}
+        <details class="benchmark-unranked" data-benchmark-history-group="{{ $historyGeneration }}"><summary><strong>Test version {{ $historyGeneration }}</strong> · {{ len $generationRuns }} {{ if eq (len $generationRuns) 1 }}run{{ else }}runs{{ end }}</summary><div class="benchmark-table-wrap"><table class="benchmark-table"><thead><tr><th>Model</th><th>Date</th><th>Full pass</th><th>Status</th><th>Run</th></tr></thead><tbody>{{ range sort $generationRuns "run_id" "desc" }}<tr data-benchmark-row data-benchmark-run="{{ .run_id }}" data-benchmark-history-generation="{{ .generation }}"><td><strong>{{ .label }}</strong></td><td>{{ time.Format "Jan 2, 2006" .generated_at }}</td><td>{{ printf "%.1f%%" (mul (float .recall) 100) }}</td><td>{{ .unranked_reason | default "Published result" }}</td><td><a href="{{ printf "%s/runs/%s/" $benchmarkPath .slug | relURL }}">Report</a></td></tr>{{ end }}</tbody></table></div></details>
       {{- end -}}
       </div>
     {{ end }}

@@ -20,22 +20,22 @@ context-free claim about the model. Material agent-runtime changes therefore
 require a new run and remain visible as a new GraphJin build rather than
 silently replacing history.
 
-Generation scope: **{{< benchmark-scope benchmark="deeporg" >}}.**
-When a generation is retracted, the
-board restores the most recent valid comparison surface and keeps the affected
-run reports visible with their unranked reason.
+Test-version scope: **{{< benchmark-scope benchmark="deeporg" >}}.**
+Every report keeps its exact test version, scorer contract, GraphJin build, and
+invalidation status even when it is not selected for the public board.
 
 ## Frozen suite, live verification
 
-Generation `2028.2` uses generator contract `graphjin.eval.generator/v11` and a
-committed, deterministic 113-task suite built from the bundled SaaS Ops demo at
-seed `23`. Alongside organizational questions and governed refusals, this
-generation measures writes with post-state and collateral-safety checks,
-standing-watch definition and delivery, history-grounded follow-ups, and work
-that joins database evidence with file or API sources. Tasks are intent-phrased
-with hidden executable oracles, and execution twins isolate planning from
-execution. Publishing the suite makes results reproducible. Future generations
-can rotate the questions without rewriting the history of earlier cohorts.
+The current `2028.4` test version uses generator contract
+`graphjin.eval.generator/v12` and a committed, deterministic 113-task suite
+built from the bundled SaaS Ops demo at seed `23`. Alongside organizational
+questions and governed refusals, it measures writes with post-state and
+collateral-safety checks, standing-watch definition and delivery,
+history-grounded follow-ups, and work that joins database evidence with file or
+API sources. Tasks are intent-phrased with hidden executable oracles, and
+execution twins isolate planning from execution. Publishing the suite makes a
+run reproducible. Later test versions can improve the exam without rewriting
+or hiding older trustworthy results.
 
 Before any evaluated-agent traffic, GraphJin resolves every hidden oracle
 against the live instance. A broken oracle invalidates the suite and stops the
@@ -72,7 +72,7 @@ local regression-gate result; it is not an admission threshold for this public
 board. Publish refuses incomplete, environment-failed, invalid-suite, and empty
 runs. It does not refuse a low score—a low score is a result.
 
-## Comparable cohorts
+## Test versions and board eligibility
 
 Ranked identity includes:
 
@@ -82,37 +82,51 @@ Ranked identity includes:
 - reward version.
 
 Model, provider, GraphJin commit, and binary fingerprint are presentation axes,
-not cohort keys. Oracle value hash and data anchor are audit-only because the
-demo's relative dates shift with the calendar.
+not test-version keys. Oracle value hash and data anchor are audit-only because
+the demo's relative dates shift with the calendar.
 
 A run outside the pinned cohort can be published only with an explicit
-`--allow-off-suite`; it appears in a separate unranked table with the mismatch
-reason.
+`--allow-off-suite`; it remains in the archive with the mismatch reason and is
+not eligible for the main board.
+
+The public board uses two explicit fields. `model_key` identifies the canonical
+provider/model route and normalizes known provider aliases such as `gemini` and
+`google-gemini`. `board_eligible` records the trust decision: official completed
+runs are eligible, while off-suite, broken-scorer, harness-defect, and retracted
+runs are not. The local `accepted` regression-gate result does not control board
+eligibility, so a valid failed or low-scoring run remains a real published
+result.
+
+For each `model_key`, the board selects the eligible run with the highest
+full-pass recall; an exact tie selects the newer run. Models are then ordered by
+that score. This headline comparison can include different test versions, so
+the date and exact report are part of every selected row. Task-family charts
+remain limited to runs on the same current test version.
 
 ## Scoring correction
 
-An early public run was retracted after its stale suite rejected a valid
+An early public run was invalidated after its stale suite rejected a valid
 database aggregate dialect. The model's answers were usually correct, but the
-published method score said otherwise. We removed the row instead of
-rewording the false result.
+published method score said otherwise. It remains in the archive with the
+invalidation reason and cannot become that model's best result.
 
 Three guards followed: a generator-version mismatch now makes the suite
 invalid before provider traffic starts; a large answer/method divergence marks
 the report as scoring-suspect and blocks publication; and publishing requires
 the run's binary fingerprint to match the binary doing the publishing. Older
-valid cohort pages remain historical, but the retracted result does not appear
-on the board.
+valid reports remain eligible; invalidated results remain archive-only.
 
 Reward contract `graphjin.eval.reward/v4` also separates forbidden attempts
-from unsafe effects. Only rows scored under the current reward contract can be
-ranked; earlier rows remain in the audit trail with their original reports.
+from unsafe effects. A known broken scorer contract makes affected runs
+ineligible, while trustworthy results under older contracts retain their
+original scores and reports.
 
 The same rule applied when the ruler itself was wrong: under generator `v10`,
 argument-free file reads did not count toward the method dimension, deflating
 the cross-source family to near zero for the entire `2028.1` cohort. Generator
-`v11` restores that credit, and the board rotated to generation `2028.2`
-rather than rescoring published rows in place; the `2028.1` runs remain
-visible as prior-generation history.
+`v11` restores that credit. The affected `2028.1` runs keep their reports, and
+the eligibility field records whether each original score remains trustworthy;
+published rows are never silently rescored in place.
 
 ## Privacy
 
