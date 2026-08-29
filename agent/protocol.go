@@ -156,6 +156,9 @@ type discoveryState struct {
 	// phase-one catalog read observedValues starts with) so a failed write's
 	// recovery can name the real columns without another catalog round trip.
 	tableColumnNames map[string][]string
+	// Keys a file source holds, listed once per root when a key miss needs to
+	// name the vocabulary the caller guessed at.
+	fileSourceKeys map[string][]string
 	// crossSourceEvidenceSupplied keeps the one-shot fetch of source cards from
 	// repeating if the ids ever stop registering.
 	crossSourceEvidenceSupplied bool
@@ -1612,6 +1615,28 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 			"write_like": writeLikeGraphQL(query),
 		})
 		return nil, thrown
+	}
+	// A file source answers an unknown key with an empty list and no error, so
+	// a read that guessed the key looks exactly like one whose object is empty.
+	// Every SLA episode in run r4 guessed, got silence, and answered from the
+	// model's own knowledge; one scored a full pass on a fabricated figure.
+	if err == nil && !executionFailed(out) && !ContainsMutationOperation(query) {
+		if repaired, described, ok := r.fileKeyMissRepair(ctx, query, args, out); ok {
+			details := map[string]any{"fault": "file_key_not_found"}
+			message := fmt.Sprintf("this read returned no object: %s. List the source's keys with %s(prefix: \"\", limit: 25) { key } before reading one, and select text or data with inline_data: true to get its contents", described, firstFileRootName(query, args))
+			if repaired != "" {
+				details["repaired_query"] = repaired
+				message = fmt.Sprintf("this read returned no object: %s. Execute this corrected read exactly as given: %s", described, repaired)
+			}
+			thrown := fmt.Errorf("%s", message)
+			r.state.addViolation("file_key_not_found", thrown.Error(), "execute_graphql", true, details)
+			r.state.finishAction(action, "execute_graphql", args, nil, thrown)
+			r.state.rawGraphQL = append(r.state.rawGraphQL, map[string]any{
+				"operation":  graphQLOperationKind(query),
+				"write_like": writeLikeGraphQL(query),
+			})
+			return nil, thrown
+		}
 	}
 	r.state.finishAction(action, "execute_graphql", args, out, err)
 	if err == nil {
@@ -3162,7 +3187,12 @@ func (s *discoveryState) resolveSuccessfulExecutionViolations() {
 			// blocked at finalization. That is what took multi-turn from 1/21 to 0/21
 			// between two runs of the same suite — the guard was right about the
 			// defect and wrong about being unrecoverable.
-			"history_referent_unresolved", "watch_query_invalid", "observed_value_mismatch", "remote_join_path_required":
+			"history_referent_unresolved", "watch_query_invalid", "observed_value_mismatch", "remote_join_path_required",
+			// The corrected read is handed over with the guard, so a caller
+			// that executes it has done exactly what was asked. Without this
+			// the run would satisfy the guard, read the file, and still be
+			// forced to blocked at finalization.
+			"file_key_not_found":
 		default:
 			continue
 		}

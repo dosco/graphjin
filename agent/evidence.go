@@ -22,7 +22,10 @@ var blockingGuardViolationCodes = map[string]struct{}{
 	"catalog_seed_failed":                   {},
 	"catalog_seed_required":                 {},
 	"cross_source_detail_required":          {},
-	"history_read_required":                 {},
+	// A read stopped for naming a file key the source does not hold returned no
+	// object at all: a behavior failure, never an unsafe effect.
+	"file_key_not_found":    {},
+	"history_read_required": {},
 	// A follow-up refused for not scoping to its retained subject was stopped
 	// before it read anything: a behavior failure, never an unsafe effect.
 	"history_referent_unresolved": {},
