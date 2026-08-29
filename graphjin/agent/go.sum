@@ -76,6 +76,8 @@ github.com/ax-llm/ax/packages/go v0.0.0-20260828025816-08d396d9d290 h1:3ZF1AfB6l
 github.com/ax-llm/ax/packages/go v0.0.0-20260828025816-08d396d9d290/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/ax-llm/ax/packages/go v0.0.0-20260829013354-aec5c6383aab h1:wJ+ZOhjy72q3ckBMo/f0yPHPPkWawknaG8lemrliI2A=
 github.com/ax-llm/ax/packages/go v0.0.0-20260829013354-aec5c6383aab/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
+github.com/ax-llm/ax/packages/go v0.0.0-20260829163105-30f706438059 h1:CFHdJcrqVcZ9RpPmYg1MCxR0wdDijArwotrzHaNZhUg=
+github.com/ax-llm/ax/packages/go v0.0.0-20260829163105-30f706438059/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
