@@ -200,3 +200,62 @@ func TestShowThoughtsIsIndependentOfTheThinkingBudget(t *testing.T) {
 		t.Fatalf("a budget alone must not start returning reasoning text: %#v", bc)
 	}
 }
+
+// An effort level must reach Gemini as thinkingLevel. Sent as thinkingBudget it
+// is a hard 400 — the field is an int32 — so GJ_AGENT_REASONING=high broke every
+// request rather than raising the effort (ax-llm/ax#624). The bug was invisible
+// until ax started forwarding the thinking config at all, so this pins the whole
+// chain: graphjin's effort string, ax's routing, and the two remappings Gemini 3
+// requires — it cannot disable thinking, so none is minimal, and highest is high.
+func TestEffortLevelReachesGeminiAsAThinkingLevel(t *testing.T) {
+	for _, tc := range []struct {
+		effort, level string
+		thoughts      bool
+	}{
+		{"high", "high", true},
+		{"medium", "medium", true},
+		{"xhigh", "high", true},
+		{"none", "minimal", false},
+	} {
+		t.Run(tc.effort, func(t *testing.T) {
+			transport := ax.NewScriptedTransport([]ax.Value{
+				ax.Object("status", float64(200), "json", ax.Object(
+					"candidates", ax.Array(ax.Object(
+						"content", ax.Object("parts", ax.Array(ax.Object("text", `{"answer":"ok"}`))),
+						"finishReason", "STOP")))),
+			})
+			inner := ax.NewAI("google-gemini", map[string]ax.Value{
+				"apiKey": "t", "api_key": "t", "model": "gemini-3.5-flash-lite", "transport": transport,
+			})
+			program := ax.NewAx("question:string -> answer:string", nil)
+			_, _ = program.Forward(context.Background(),
+				&reasoningClient{inner: inner, budget: normalizedReasoningEffort(tc.effort), showThoughts: true},
+				map[string]ax.Value{"question": "q"}, nil)
+
+			raw, err := json.Marshal(transport.Requests[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			var req map[string]any
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Fatal(err)
+			}
+			body, _ := req["json"].(map[string]any)
+			gen, _ := body["generationConfig"].(map[string]any)
+			thinking, _ := gen["thinkingConfig"].(map[string]any)
+			if thinking == nil {
+				t.Fatalf("no thinkingConfig on the wire: %s", truncateForLog(string(raw)))
+			}
+			if thinking["thinkingLevel"] != tc.level {
+				t.Fatalf("thinkingLevel = %v, want %q", thinking["thinkingLevel"], tc.level)
+			}
+			// The level must never ride the int32 budget field, which rejects it.
+			if _, wrong := thinking["thinkingBudget"]; wrong {
+				t.Fatalf("effort level sent as thinkingBudget, which Gemini rejects: %#v", thinking)
+			}
+			if thinking["includeThoughts"] != tc.thoughts {
+				t.Fatalf("includeThoughts = %v, want %v", thinking["includeThoughts"], tc.thoughts)
+			}
+		})
+	}
+}
