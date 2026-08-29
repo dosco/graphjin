@@ -634,6 +634,36 @@ func attachNoticeToForeignResult(out any, recovery map[string]any, guidance stri
 	return mapped
 }
 
+// attachCompanionTimestampNotice rides a successful write whose state
+// transition implies a timestamp column it did not set. Not a violation and
+// never a block: the write is legitimate on its own, and the notice carries the
+// one fact the run otherwise never states plus the follow-up that completes it.
+func attachCompanionTimestampNotice(out any, fact string) any {
+	instruction := fact + " The write above succeeded without it: execute one follow-up update stamping that column for the same row(s) before finalizing."
+	recovery := map[string]any{
+		"kind":        "companion_timestamp_unstamped",
+		"code":        "companion_timestamp_unstamped",
+		"instruction": instruction,
+	}
+	switch res := out.(type) {
+	case executeResult:
+		res.Recovery = recovery
+		res.Guidance = instruction
+		return res
+	case *executeResult:
+		res.Recovery = recovery
+		res.Guidance = instruction
+		return res
+	case map[string]any:
+		res = cloneAnyMap(res)
+		res["recovery"] = recovery
+		res["guidance"] = instruction
+		return res
+	default:
+		return attachNoticeToForeignResult(out, recovery, instruction)
+	}
+}
+
 // attachWatchNormalizationNotice records that a gj_watch subscription string
 // arrived with unescaped quotes and was executed as its parse-verified
 // re-escaping. The notice rides the recovery block rather than a violation
@@ -1314,17 +1344,20 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 					// factual one, so the schema's convention is stated as fact.
 					err := fmt.Errorf("this write did NOT execute: %s. Choose the value from that list which matches the intent, re-author the write with it, and execute it once", described)
 					if repairExists {
-						details["repaired_query"] = repaired
-						message := fmt.Sprintf("this write did NOT execute: %s. Execute this corrected mutation exactly as given: %s", described, repaired)
 						// The corrected value can imply a companion timestamp —
-						// resolved beside resolved_at — and that schema fact
-						// rides along: every recorded ticket-resolution episode
-						// left it null, and nothing else in the run says it
-						// exists to be stamped.
-						if note := r.companionTimestampNote(ctx, repaired); note != "" {
-							message += " — " + note
+						// resolved beside resolved_at. It used to ride as an
+						// aside on an imperative that said "exactly as given"
+						// while the given mutation lacked the timestamp; the
+						// recorded episodes obeyed the imperative, and 10 of 13
+						// post_state failures in run r3 were exactly that null
+						// resolved_at. The repair now carries the stamp itself.
+						companionNote := ""
+						if stamped, companion, ok := r.stampCompanionTimestamp(ctx, repaired); ok {
+							repaired = stamped
+							companionNote = fmt.Sprintf(" The repair also stamps %s at the current time, as the transition implies.", companion)
 						}
-						err = fmt.Errorf("%s", message)
+						details["repaired_query"] = repaired
+						err = fmt.Errorf("this write did NOT execute: %s.%s Execute this corrected mutation exactly as given: %s", described, companionNote, repaired)
 					}
 					r.state.noteInterceptedWrite(query, "the write was refused for a value outside the column's observed set and was not successfully retried")
 					r.state.addViolation("observed_value_mismatch", err.Error(), "execute_graphql", true, details)
@@ -1542,6 +1575,17 @@ func (r *protocolRuntime) ExecuteGraphQL(ctx context.Context, args map[string]an
 		r.state.mutationSucceeded = true
 		r.state.lastMutationFailure = ""
 		r.state.lastMutationRepairedQuery = ""
+	}
+	if err == nil && !executionFailed(out) && ContainsMutationOperation(query) {
+		// A clean first-try write gets no repair pass, so nothing ever told it
+		// about the timestamp its own transition implies: 2 of the 13
+		// post_state failures in run r3 wrote status and note correctly on the
+		// first attempt and left resolved_at null with no comment from anyone.
+		// The write stands — this is that schema fact on its success, with the
+		// concrete follow-up.
+		if note := r.companionTimestampNoteFromCache(query); note != "" {
+			out = attachCompanionTimestampNotice(out, note)
+		}
 	}
 	if normalizedWatchQuery != "" && err == nil && !executionFailed(out) {
 		out = attachWatchNormalizationNotice(out, normalizedWatchQuery)
