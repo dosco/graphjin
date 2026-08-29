@@ -86,9 +86,35 @@ func rescoreRun(episodesDir string, now func() time.Time) (Report, error) {
 	report.Metrics = calculateMetrics(tasks, verdicts, rescored, initial, report.Provenance.Seed)
 	report.Tasks = verdicts
 	report.Acceptance = compareBaseline(report, nil)
+	report.ProviderUsage = rescoredProviderUsage(store, runID, source.Report.ProviderUsage, rescored)
 	report.UsageComparison = nil
 	report.EpisodePaths = nil
 	return report, nil
+}
+
+// rescoredProviderUsage recomputes the run's token accounting from the same
+// stored records the scores came from. A rescore that recomputed every episode
+// score but copied the source report's usage verbatim left the two disagreeing:
+// the run whose accounting this recovered reported 12.4M tokens in metrics and
+// zero in provider_usage, and the publisher reads provider_usage, so the board
+// row still carried no cost.
+//
+// Attempts — the failed tries that never became episodes — are loaded from the
+// store for the same reason the runner counts them: the provider billed for
+// them. If they cannot be read, the source's own totals stand rather than a
+// number known to be short.
+func rescoredProviderUsage(store *Store, runID string, source ProviderUsage, episodes []Episode) ProviderUsage {
+	attempts, err := store.LoadAttempts(runID)
+	if err != nil {
+		return source
+	}
+	manifest := RunManifest{ProviderUsage: source}
+	rebuildRunAccounting(&manifest, episodes, attempts)
+	// Completeness is a property of what the provider reported at run time,
+	// which no amount of rescoring changes.
+	manifest.ProviderUsage.Complete = source.Complete
+	manifest.ProviderUsage.UnknownAttempts = source.UnknownAttempts
+	return manifest.ProviderUsage
 }
 
 func rescoreEpisode(episode Episode) (ScoreDetail, error) {

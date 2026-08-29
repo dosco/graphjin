@@ -142,3 +142,61 @@ func TestRescoreEpisodeKeepsMechanismCategoryOnPostStateMiss(t *testing.T) {
 		t.Fatalf("dispatched miss category = %q, want post_state_mismatch", detail.FailureCategory)
 	}
 }
+
+// TestRescoreRebuildsProviderUsageFromRecoveredEpisodes pins the second half of
+// the accounting recovery. Rescoring recomputed every episode score but copied
+// the source report's provider_usage verbatim, so a run whose usage was
+// recovered reported real tokens in metrics and zeros in provider_usage — and
+// the publisher reads provider_usage, so the board row still carried no cost.
+func TestRescoreRebuildsProviderUsageFromRecoveredEpisodes(t *testing.T) {
+	store := NewStore(filepath.Join(t.TempDir(), DefaultStateDir))
+	sourceRunID := "20260807T120000.000000000Z-bbccddee"
+	task := Task{
+		SchemaVersion: TaskSchemaVersion, ID: "task-1", Slug: "counted",
+		Category: CategoryDiscovery, Difficulty: DifficultyT1, ExpectedStatus: gjagent.StatusAnswered,
+	}
+	// Stored exactly as the runs recorded during the gap were: ax's per-stage
+	// arrays present, the flat totals absent, so the score carries zeros.
+	response := gjagent.Response{Status: gjagent.StatusAnswered, Usage: map[string]any{
+		"chat_log_entries": 1,
+		"actor":            []any{map[string]any{"prompt_tokens": 1000, "completion_tokens": 100, "total_tokens": 1100}},
+	}}
+	for repeat := 1; repeat <= 3; repeat++ {
+		if _, err := store.WriteEpisode(Episode{
+			SchemaVersion: EpisodeSchemaVersion, RewardVersion: "graphjin.eval.reward/v2",
+			RunID: sourceRunID, TaskID: task.ID, TaskSlug: task.Slug, Repeat: repeat,
+			Task: task, Response: response,
+			Score: ScoreDetail{Vector: ScoreVector{Safety: true, Behavior: true}, Pass: true},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source := Report{
+		SchemaVersion: ReportSchemaVersion, UsageAccountingVersion: UsageAccountingVersion,
+		RewardVersion: "graphjin.eval.reward/v2", RunID: sourceRunID, RunStatus: RunStatusComplete,
+		Mode: RunModeBenchmark, SuiteFingerprint: "suite", Metrics: Metrics{TaskCount: 1, EpisodeCount: 3},
+		Tasks:         []TaskVerdict{{TaskID: task.ID, Category: task.Category, Difficulty: task.Difficulty}},
+		Progress:      RunProgress{PlannedInitialSlots: 3, CompletedInitialSlots: 3, ProviderAttempts: 3},
+		ProviderUsage: ProviderUsage{Complete: true}, Acceptance: Acceptance{SuiteValid: true},
+		Provenance: RunProvenance{Seed: 23, Repeats: 3},
+	}
+	if _, err := store.WriteReport(source); err != nil {
+		t.Fatal(err)
+	}
+
+	rescored, err := rescoreRun(filepath.Join(store.Root, "episodes", sourceRunID), func() time.Time {
+		return time.Date(2026, 8, 8, 1, 2, 3, 0, time.UTC)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rescored.Metrics.PromptTokens != 3000 || rescored.Metrics.CompletionTokens != 300 {
+		t.Fatalf("metrics did not recover the stage-array tokens: %+v", rescored.Metrics)
+	}
+	if rescored.ProviderUsage.PromptTokens != 3000 || rescored.ProviderUsage.CompletionTokens != 300 || rescored.ProviderUsage.TotalTokens != 3300 {
+		t.Fatalf("provider usage was not rebuilt: %+v", rescored.ProviderUsage)
+	}
+	if !rescored.ProviderUsage.Complete {
+		t.Fatalf("run-time completeness must survive rescoring: %+v", rescored.ProviderUsage)
+	}
+}
