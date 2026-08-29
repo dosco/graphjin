@@ -1055,6 +1055,38 @@ func historyValue(turns []Turn) ax.Value {
 	return value
 }
 
+// chatLogEntryUsage reads one chat-log entry's token usage across the entry
+// shapes ax has published. Through ax 24.0.x every entry was a tuple wrapper
+// with the payload under "item1"; the flattening in ax-llm/ax#629 moved those
+// fields to the entry itself, with the provider response repeated under
+// "response". A reader that knew only the wrapper found nothing, counted no
+// calls, and emitted a usage summary with no token fields at all — silently,
+// since zero calls is indistinguishable from a run that made none. Two full
+// benchmark runs published with no cost accounting before the gap was noticed.
+//
+// The candidates are tried in order and the first hit wins: the same numbers
+// appear at both the entry and its nested response, and summing them would
+// double every token the run reports.
+func chatLogEntryUsage(entry map[string]any) map[string]any {
+	candidates := []map[string]any{entry}
+	for _, key := range []string{"item1", "response"} {
+		if nested, ok := entry[key].(map[string]any); ok {
+			candidates = append(candidates, nested)
+		}
+	}
+	for _, candidate := range candidates {
+		if usage, ok := candidate["usage"].(map[string]any); ok && len(usage) != 0 {
+			return usage
+		}
+		if modelUsage, ok := candidate["model_usage"].(map[string]any); ok {
+			if tokens, ok := modelUsage["tokens"].(map[string]any); ok && len(tokens) != 0 {
+				return tokens
+			}
+		}
+	}
+	return nil
+}
+
 // usageSummary flattens ax usage into a stable map: chat_log_entries plus
 // best-effort token totals summed from the merged stage chat logs.
 func usageSummary(program Program) any {
@@ -1072,16 +1104,7 @@ func usageSummary(program Program) any {
 		if !ok {
 			continue
 		}
-		item, ok := m["item1"].(map[string]any)
-		if !ok {
-			continue
-		}
-		usage, ok := item["usage"].(map[string]any)
-		if !ok {
-			if modelUsage, ok := item["model_usage"].(map[string]any); ok {
-				usage, _ = modelUsage["tokens"].(map[string]any)
-			}
-		}
+		usage := chatLogEntryUsage(m)
 		if usage == nil {
 			continue
 		}
@@ -1116,12 +1139,55 @@ func usageSummary(program Program) any {
 // consumers do not need to understand provider-specific response shapes.
 func SummarizeUsage(value any) UsageTotals {
 	mapped, _ := normalizeValue(value).(map[string]any)
-	return UsageTotals{
+	totals := UsageTotals{
 		PromptTokens:     int64(floatFromAny(mapped["prompt_tokens"])),
 		CompletionTokens: int64(floatFromAny(mapped["completion_tokens"])),
 		TotalTokens:      int64(floatFromAny(mapped["total_tokens"])),
 		LLMCalls:         int64(floatFromAny(mapped["llm_calls"])),
 	}
+	if totals.PromptTokens == 0 && totals.CompletionTokens == 0 && totals.TotalTokens == 0 {
+		totals = mergeStageUsage(mapped, totals)
+	}
+	return totals
+}
+
+// mergeStageUsage sums ax's own per-stage usage arrays — usage.actor and
+// usage.responder, each one entry per model call. usageSummary copies them
+// through verbatim, so they sit in every stored episode beside the flat totals.
+//
+// They are the fallback, never the primary: the flat fields and the stage
+// arrays describe the same calls, and adding them would double every token.
+// This runs only when the flat fields are absent entirely, which is what a
+// chat-log reshape upstream looks like from here — and because scoring reads
+// stored episodes through this same function, a run recorded during such a gap
+// recovers its accounting on rescore, with no provider traffic.
+func mergeStageUsage(mapped map[string]any, totals UsageTotals) UsageTotals {
+	for _, stage := range []string{"actor", "responder"} {
+		entries, ok := mapped[stage].([]any)
+		if !ok {
+			continue
+		}
+		for _, entry := range entries {
+			call, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			prompt := int64(floatFromAny(call["prompt_tokens"]))
+			completion := int64(floatFromAny(call["completion_tokens"]))
+			total := int64(floatFromAny(call["total_tokens"]))
+			if prompt == 0 && completion == 0 && total == 0 {
+				continue
+			}
+			if total == 0 {
+				total = prompt + completion
+			}
+			totals.PromptTokens += prompt
+			totals.CompletionTokens += completion
+			totals.TotalTokens += total
+			totals.LLMCalls++
+		}
+	}
+	return totals
 }
 
 func floatFromAny(value any) float64 {
