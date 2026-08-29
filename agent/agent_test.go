@@ -1874,6 +1874,73 @@ func TestUsageSummaryAxModelUsageShape(t *testing.T) {
 	}
 }
 
+// TestUsageSummaryFlattenedChatLogShape pins the entry shape ax-llm/ax#629
+// introduced: the tuple wrapper is gone and usage sits on the entry itself,
+// repeated under "response". Reading only the old wrapper counted zero calls
+// and emitted a summary with no token fields, so two full benchmark runs
+// published with no cost accounting at all. The duplicate must not be summed.
+func TestUsageSummaryFlattenedChatLogShape(t *testing.T) {
+	entry := func(prompt, completion, total int) ax.Value {
+		usage := map[string]ax.Value{
+			"prompt_tokens": prompt, "completion_tokens": completion, "total_tokens": total,
+		}
+		return map[string]ax.Value{
+			"usage":    usage,
+			"response": map[string]ax.Value{"usage": usage},
+		}
+	}
+	program := &fakeProgram{chatLog: []ax.Value{entry(3673, 145, 3818), entry(10347, 332, 10679)}}
+	usage := SummarizeUsage(usageSummary(program))
+	want := UsageTotals{PromptTokens: 14020, CompletionTokens: 477, TotalTokens: 14497, LLMCalls: 2}
+	if usage != want {
+		t.Fatalf("flattened chat-log summary = %+v, want %+v", usage, want)
+	}
+}
+
+// The wrapper shape ax published through 24.0.x still reads, so a run against
+// an older ax keeps its accounting.
+func TestUsageSummaryLegacyWrapperStillReads(t *testing.T) {
+	program := &fakeProgram{chatLog: []ax.Value{
+		map[string]ax.Value{"item1": map[string]ax.Value{"usage": map[string]ax.Value{
+			"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,
+		}}},
+	}}
+	usage := SummarizeUsage(usageSummary(program))
+	if usage != (UsageTotals{PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120, LLMCalls: 1}) {
+		t.Fatalf("legacy wrapper summary = %+v", usage)
+	}
+}
+
+// TestSummarizeUsageFallsBackToStageArrays covers the recovery path for runs
+// already on disk: their stored usage has ax's per-stage arrays but no flat
+// totals, because the chat-log reader found nothing. Rescoring reads episodes
+// through SummarizeUsage, so the fallback recovers their accounting without
+// re-running anything. Flat totals, when present, must win outright — the two
+// describe the same calls.
+func TestSummarizeUsageFallsBackToStageArrays(t *testing.T) {
+	stored := map[string]any{
+		"chat_log_entries": 2,
+		"actor": []any{
+			map[string]any{"prompt_tokens": 3673, "completion_tokens": 145, "total_tokens": 3818},
+			map[string]any{"prompt_tokens": 10347, "completion_tokens": 332, "total_tokens": 10679},
+		},
+		"responder": []any{
+			map[string]any{"prompt_tokens": 500, "completion_tokens": 60, "total_tokens": 560},
+		},
+	}
+	got := SummarizeUsage(stored)
+	want := UsageTotals{PromptTokens: 14520, CompletionTokens: 537, TotalTokens: 15057, LLMCalls: 3}
+	if got != want {
+		t.Fatalf("stage-array fallback = %+v, want %+v", got, want)
+	}
+
+	stored["prompt_tokens"], stored["completion_tokens"] = 14520, 537
+	stored["total_tokens"], stored["llm_calls"] = 15057, 3
+	if got := SummarizeUsage(stored); got != want {
+		t.Fatalf("flat totals must not be doubled by the stage arrays: %+v, want %+v", got, want)
+	}
+}
+
 func TestRunHonorsConfiguredSeedLimit(t *testing.T) {
 	rt := &fakeRuntime{}
 	var seedArgs map[string]any
