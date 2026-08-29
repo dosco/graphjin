@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // A failed write is the worst place to leave a model alone with an error
@@ -111,6 +112,105 @@ func repairUnknownMutationColumns(query string, columns []string) (string, []mut
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].From < out[j].From })
 	return repaired, out, true
+}
+
+// stampCompanionTimestamp returns the query with the companion timestamp its
+// own state transition implies written in: a status set to "resolved" beside an
+// unset resolved_at column gains resolved_at at the current UTC time.
+//
+// The note below stated the same schema fact as an aside on a refusal whose
+// imperative said "execute this corrected mutation exactly as given" — and the
+// corrected mutation did not contain the timestamp. The recorded episodes did
+// exactly as told: 10 of the 13 post_state_mismatch failures in run r3 are
+// ticket resolutions that wrote the status and the note and left resolved_at
+// null, every one downstream of that contradiction or of a first-try write
+// nothing commented on. Writing the value into the repair makes the imperative
+// truthful; the timestamp is the one value the server can author better than
+// the model, which cannot know the current time more precisely than its
+// current_date input.
+func (r *protocolRuntime) stampCompanionTimestamp(ctx context.Context, query string) (string, string, bool) {
+	clean := graphQLStructure(query)
+	for _, root := range MutationRootFields(query) {
+		table, _ := r.state.mutationTargetTable(root)
+		if table == "" {
+			continue
+		}
+		columns := r.observedColumnNames(ctx, table)
+		if len(columns) == 0 {
+			continue
+		}
+		known := map[string]string{}
+		for _, column := range columns {
+			known[strings.ToLower(strings.TrimSpace(column))] = strings.TrimSpace(column)
+		}
+		for _, keyword := range []string{"insert", "update", "upsert"} {
+			for _, span := range mutationInputBlocks(clean, root, keyword) {
+				if span[0] < 0 || span[1] > len(query) || span[0] >= span[1] {
+					continue
+				}
+				set := map[string]bool{}
+				for _, key := range graphQLTopLevelKeys(clean[span[0]:span[1]]) {
+					set[strings.ToLower(key.name)] = true
+				}
+				for field, literal := range graphQLStringFieldSpans(query[span[0]:span[1]]) {
+					companion, ok := known[strings.ToLower(strings.TrimSpace(literal.value))+"_at"]
+					if !ok || set[strings.ToLower(companion)] {
+						continue
+					}
+					_ = field
+					insert := span[0] + literal.end + 1
+					stamped := query[:insert] + fmt.Sprintf(", %s: %q", companion, time.Now().UTC().Format(time.RFC3339)) + query[insert:]
+					return stamped, companion, true
+				}
+			}
+		}
+	}
+	return "", "", false
+}
+
+// companionTimestampNoteFromCache is companionTimestampNote reading only the
+// column names this run has already discovered. The success path runs on every
+// clean write, and probing the catalog there added two runtime calls per
+// mutation — traffic the caller never asked for, caught by the call-count
+// contracts. A table the run never inspected simply gets no notice, which is
+// the right trade: the notice exists for tables the model was just working
+// with, and those are exactly the ones in the cache.
+func (r *protocolRuntime) companionTimestampNoteFromCache(query string) string {
+	clean := graphQLStructure(query)
+	for _, root := range MutationRootFields(query) {
+		table, _ := r.state.mutationTargetTable(root)
+		if table == "" {
+			continue
+		}
+		columns := r.state.tableColumnNames[table]
+		if len(columns) == 0 {
+			continue
+		}
+		known := map[string]string{}
+		for _, column := range columns {
+			known[strings.ToLower(strings.TrimSpace(column))] = strings.TrimSpace(column)
+		}
+		for _, keyword := range []string{"insert", "update", "upsert"} {
+			for _, span := range mutationInputBlocks(clean, root, keyword) {
+				if span[0] < 0 || span[1] > len(query) || span[0] >= span[1] {
+					continue
+				}
+				set := map[string]bool{}
+				for _, key := range graphQLTopLevelKeys(clean[span[0]:span[1]]) {
+					set[strings.ToLower(key.name)] = true
+				}
+				for field, literal := range graphQLStringFieldSpans(query[span[0]:span[1]]) {
+					companion, ok := known[strings.ToLower(strings.TrimSpace(literal.value))+"_at"]
+					if !ok || set[strings.ToLower(companion)] {
+						continue
+					}
+					return fmt.Sprintf("This table also carries %s; a %s transition to %q normally stamps it in the same operation, e.g. %s: \"<current timestamp>\".",
+						companion, field, literal.value, companion)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // companionTimestampNote points a write at the timestamp column its own state

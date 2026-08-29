@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -727,4 +728,85 @@ func hasuraBaseRoot(root string) string {
 		}
 	}
 	return name
+}
+
+func ticketWriteRuntime(t *testing.T) (*protocolRuntime, *strictWriteRuntime) {
+	t.Helper()
+	base := &strictWriteRuntime{columns: map[string][]string{
+		"support_tickets": {"id", "status", "resolution_note", "resolved_at", "opened_at"},
+	}}
+	profile := &CapabilityProfile{RoleClass: "user", AllowedActions: []string{CapabilityActionDataUpdate}}
+	runtime := newProtocolRuntime(base, "close ticket 1 with a note", "", 8, profile, nil, CatalogSearchFeatures{})
+	runtime.state.seedOK = true
+	runtime.state.modelDiscoveryAction = true
+	runtime.state.tableColumnNames = map[string][]string{"support_tickets": {"id", "status", "resolution_note", "resolved_at", "opened_at"}}
+	runtime.state.tablesDetailed = map[string]bool{"support_tickets": true}
+	runtime.state.catalogDetails = []string{"table:app:main.support_tickets"}
+	runtime.state.securityRuntimeEvidence = true
+	runtime.state.observedValues = map[string]map[string][]string{
+		"support_tickets": {"status": {"open", "pending", "resolved"}},
+	}
+	return runtime, base
+}
+
+// TestValueRepairCarriesTheCompanionTimestamp pins the fix for the largest
+// post_state bucket in run r3: 10 of its 13 post_state_mismatch failures were
+// ticket resolutions that wrote status and note and left resolved_at null. The
+// refusal used to say "execute this corrected mutation exactly as given" and
+// then note, as an aside, that resolved_at existed to be stamped — while the
+// given mutation lacked it. The recorded episodes obeyed the imperative. The
+// repair now carries the stamp, so obeying it is correct.
+func TestValueRepairCarriesTheCompanionTimestamp(t *testing.T) {
+	runtime, base := ticketWriteRuntime(t)
+
+	_, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { support_tickets(where: { id: { eq: 1 } }, update: { status: "closed", resolution_note: "Sorted out." }) { id status } }`,
+	})
+	if err == nil {
+		t.Fatal("the out-of-vocabulary write must throw")
+	}
+	repaired := correctedMutationFromError(t, err)
+	if !regexp.MustCompile(`resolved_at: "20\d\d-\d\d-\d\dT[0-9:]+Z?"`).MatchString(repaired) {
+		t.Fatalf("the corrected mutation itself must carry the stamped timestamp: %q", repaired)
+	}
+	if !strings.Contains(repaired, `status: "resolved"`) {
+		t.Fatalf("the corrected vocabulary must survive the stamping: %q", repaired)
+	}
+	// Obeying the imperative verbatim must now produce the complete write.
+	if _, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{"query": repaired}); err != nil {
+		t.Fatalf("executing the repair exactly as given: %v", err)
+	}
+	if len(base.writes) != 1 || !strings.Contains(base.writes[0], "resolved_at") {
+		t.Fatalf("the landed write must include the companion timestamp: %v", base.writes)
+	}
+}
+
+// TestCleanWriteIsToldAboutTheUnstampedCompanion covers the other shape from
+// run r3: a first-try write with correct columns and vocabulary succeeds, no
+// repair pass ever runs, and nothing in the run mentions that resolved_at
+// exists to be stamped. The write stands — a notice rides its success naming
+// the follow-up. A write that already stamps the companion gets no notice.
+func TestCleanWriteIsToldAboutTheUnstampedCompanion(t *testing.T) {
+	runtime, _ := ticketWriteRuntime(t)
+	out, err := runtime.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { support_tickets(where: { id: { eq: 1 } }, update: { status: "resolved", resolution_note: "Sorted out." }) { id status } }`,
+	})
+	if err != nil {
+		t.Fatalf("a clean in-vocabulary write must execute: %v", err)
+	}
+	guidance, _ := mapValue(normalizeValue(out))["guidance"].(string)
+	if !strings.Contains(guidance, "resolved_at") || !strings.Contains(guidance, "follow-up") {
+		t.Fatalf("success carries no companion-timestamp notice: %#v", guidance)
+	}
+
+	stamped, _ := ticketWriteRuntime(t)
+	out2, err := stamped.ExecuteGraphQL(context.Background(), map[string]any{
+		"query": `mutation { support_tickets(where: { id: { eq: 1 } }, update: { status: "resolved", resolution_note: "Sorted.", resolved_at: "2027-01-15T12:00:00Z" }) { id status } }`,
+	})
+	if err != nil {
+		t.Fatalf("a fully stamped write must execute: %v", err)
+	}
+	if g, _ := mapValue(normalizeValue(out2))["guidance"].(string); strings.Contains(g, "resolved_at") {
+		t.Fatalf("a write that stamped the companion must get no notice: %q", g)
+	}
 }
