@@ -130,6 +130,8 @@ github.com/ax-llm/ax/packages/go v0.0.0-20260827214759-35b0eb074af6 h1:uoxkak7Mr
 github.com/ax-llm/ax/packages/go v0.0.0-20260827214759-35b0eb074af6/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/ax-llm/ax/packages/go v0.0.0-20260828025816-08d396d9d290 h1:3ZF1AfB6lMDj1TCumfR6iKIrJ2wAukEUoYJ+kB4saSc=
 github.com/ax-llm/ax/packages/go v0.0.0-20260828025816-08d396d9d290/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
+github.com/ax-llm/ax/packages/go v0.0.0-20260829013354-aec5c6383aab h1:wJ+ZOhjy72q3ckBMo/f0yPHPPkWawknaG8lemrliI2A=
+github.com/ax-llm/ax/packages/go v0.0.0-20260829013354-aec5c6383aab/go.mod h1:dMQJNsAs4WqQTLoZzr4W0JXx6ULZqcDq8C71XFrihvc=
 github.com/bahlo/generic-list-go v0.2.0 h1:5sz/EEAK+ls5wF+NeqDpk5+iNdMDXrh3z3nPnH1Wvgk=
 github.com/bahlo/generic-list-go v0.2.0/go.mod h1:2KvAjgMlE5NNynlg/5iLrrCCZ2+5xWbdbCW3pNTGyYg=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 h1:mXoPYz/Ul5HYEDvkta6I8/rnYM5gSdSV2tJ6XbZuEtY=
@@ -193,6 +195,7 @@ github.com/dosco/graphjin/auth/v3 v3.20.51/go.mod h1:RLOlybInsSP7Gu8/7b12220cJoU
 github.com/dosco/graphjin/auth/v3 v3.20.59/go.mod h1:bI+UZy4kmudIQL+T64cLBZ51tS+Vkz3sJt+hakZqU7Y=
 github.com/dosco/graphjin/auth/v3 v3.20.61/go.mod h1:srfi1626WSkMhjYq91XK5f3vgcg5r+ZKqGsSTN6EB18=
 github.com/dosco/graphjin/auth/v3 v3.20.62/go.mod h1:At6J4PdCCFMPmqhAMm+1JgAUzNUbWkfbi7YdXoGNsPg=
+github.com/dosco/graphjin/auth/v3 v3.20.66/go.mod h1:tH2RpKccGyLg1P3YF7wTA6Wq9YS48b1H9ZlFQmWVFks=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.2 h1:8Knx+Z9Qj89bWM6tk7hMErSxPJyC9hXEgC78nvHNyWo=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.2/go.mod h1:E27uxul4hpT9JoC+aTwITUR215ta5QmKJGRBeG8MEZQ=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.20/go.mod h1:V0pdkiiKEmp0M0cO0Slxghvwzuymh9hMgX+YYjempbI=
@@ -204,6 +207,7 @@ github.com/dosco/graphjin/plugin/otel/v3 v3.20.51/go.mod h1:WMxkU9ZmPR6vwy+phATb
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.59/go.mod h1:vWsgqAzZ/RZ0tC57/n8rX4xs5UzEIEhm8X4Ry+XN8Bg=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.61/go.mod h1:KjmnkgaSMAuCwqRBStPPuzJwURhkDaQM5cyqNXjvxHE=
 github.com/dosco/graphjin/plugin/otel/v3 v3.20.62/go.mod h1:Qovzf6P4+y0GLKNbyHfz3164ZBsFA5pnNGSqQtyRrKk=
+github.com/dosco/graphjin/plugin/otel/v3 v3.20.66/go.mod h1:bFNVmpz3ZkXbgrFZZWtLskUktNXTIxa7VBpD4tQ8jYo=
 github.com/duckdb/duckdb-go-bindings v0.10502.0 h1:Uhg/dfvPLQv4cH35lMD48hqUcdOh2Z7bcuykjr4qnOA=
 github.com/duckdb/duckdb-go-bindings v0.10502.0/go.mod h1:8KF3oEKrmYdSbZnQ1BPTdxAZDHRaM1LEv+oBvL2nSLk=
 github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10502.0 h1:1GxSHSI1ef3sCdDVrJ9l8s6aTd7P1K788os9lHrs43g=

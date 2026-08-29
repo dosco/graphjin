@@ -90,7 +90,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.17 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
-	github.com/ax-llm/ax/packages/go v0.0.0-20260828025816-08d396d9d290 // indirect
+	github.com/ax-llm/ax/packages/go v0.0.0-20260829013354-aec5c6383aab // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
