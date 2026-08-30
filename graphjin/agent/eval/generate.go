@@ -184,7 +184,29 @@ var candidateFamilies = []candidateFamily{
 		Categories:   []Category{CategoryAction, CategoryReactive, CategoryMultiTurn, CategoryCrossSource},
 		Generate:     generateDeepORGCandidates,
 	},
+	{
+		Name:         "filtered-aggregate",
+		SinceVersion: "graphjin.eval.generator/v13",
+		Categories:   []Category{CategoryAggregate},
+		Generate:     generateFilteredAggregateCandidates,
+	},
+	{
+		Name:         "rel-traversal",
+		SinceVersion: "graphjin.eval.generator/v13",
+		Categories:   []Category{CategoryTraversal},
+		Generate:     generateRelTraversalCandidates,
+	},
+	{
+		Name:         "windowed-filter",
+		SinceVersion: "graphjin.eval.generator/v13",
+		Categories:   []Category{CategoryWindow},
+		Generate:     generateWindowedFilterCandidates,
+	},
 }
+
+// v12Families names the families that composed the frozen public suite. The
+// content-ID stability guard replays exactly these.
+var v12Families = []string{"catalog-core", "deeporg-reference"}
 
 // selectedFamilies returns the families named in want, in registry order. An
 // empty want selects every family, which is what every production caller does;

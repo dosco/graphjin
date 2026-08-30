@@ -31,7 +31,13 @@ const (
 	AttemptSchemaVersion   = "graphjin.eval.attempt/v1"
 	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
 	// generated task semantics change, including method-rule dialect support.
-	GeneratorVersion = "graphjin.eval.generator/v12"
+	//
+	// v13 adds the family registry and three read families — filtered
+	// aggregates over observed values, relationship traversals with join-count
+	// oracles, and windows composed with a value filter. Existing task content
+	// is untouched, so content IDs are unchanged; what changes is that a freshly
+	// generated suite draws from a wider candidate pool.
+	GeneratorVersion = "graphjin.eval.generator/v13"
 	// RewardVersion v5: a "which record" answer may name the row by any
 	// identifier the oracle selected, not only the one field it projected. No
 	// frozen task declares alternates yet, so this changes no existing verdict;
@@ -46,6 +52,24 @@ const (
 	defaultMaxActorTurns  = int64(10)
 	defaultMaxTotalTokens = int64(400000)
 )
+
+// SupportedGeneratorVersions are the suite generator contracts this binary can
+// run. A published suite is a frozen artifact, so adding a generator version
+// must not strand the cohorts already measured against the previous one: the
+// binary generates at GeneratorVersion and runs anything in this set.
+var SupportedGeneratorVersions = []string{
+	"graphjin.eval.generator/v12",
+	GeneratorVersion,
+}
+
+func IsSupportedGeneratorVersion(version string) bool {
+	for _, supported := range SupportedGeneratorVersions {
+		if version == supported {
+			return true
+		}
+	}
+	return false
+}
 
 type Category string
 
