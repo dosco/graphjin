@@ -186,6 +186,7 @@ agent:
   api_key_env: OPENAI_API_KEY # must hold a non-empty value (a dummy is fine for keyless local endpoints)
   base_url: https://your-endpoint/v1
   structured_output_mode: auto # auto | native | function | json_object
+  service_tier: auto # auto | standard | flex | priority
   rate_limit:
     requests_per_minute: 60
     tokens_per_minute: 100000
@@ -202,9 +203,24 @@ agent:
   api_key_env: VERTEX_AI_TOKEN
   base_url: https://REGION-aiplatform.googleapis.com/v1beta1/projects/PROJECT/locations/REGION/endpoints/openapi
   structured_output_mode: auto
+  service_tier: auto
 ```
 
 Deployments differ in which structured-output mechanisms they support, and `auto` takes the one the profile and model rule have verified for that pairing. Set `native`, `function`, or `json_object` to override it; an explicit mode the deployment cannot serve fails before a request is sent.
+
+## Provider service tiers
+
+`agent.service_tier` selects Ax's portable inference tier: `auto` (the default),
+`standard`, `flex`, or `priority`. Ax maps an explicit tier to the selected
+deployment's wire format and rejects it before transport when the profile/model
+pairing does not advertise support. The setting applies to the REST and MCP
+agent, recovery finalizers, watch enrichment, and watch flows; the separately
+configured semantic-search embedding client is unchanged.
+
+Use `GJ_AGENT_SERVICE_TIER` for environment-only deployments. `SG_` and `SJ_`
+remain compatibility aliases. The requested tier is included in agent status
+and evaluation provenance; `auto` continues to delegate the applied tier to the
+provider.
 
 **Migration note.** Ax 24 separates the official `openai` profile from the conservative `openai-compatible` one. If you point GraphJin at a third-party OpenAI-compatible endpoint, use `provider: openai-compatible` so it inherits that deployment's capabilities rather than OpenAI's. The deprecated `agent.response_format` still works: `json_schema` maps to `native`, `json_object` to `json_object`.
 

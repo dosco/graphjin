@@ -171,6 +171,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 				Model:          "test-model",
 				APIKeyEnv:      "GRAPHJIN_READY_AGENT_KEY",
 				ResponseFormat: "json_object",
+				ServiceTier:    gjagent.ServiceTierPriority,
 				RateLimit: gjagent.RateLimitConfig{
 					RequestsPerMinute: 20,
 					TokensPerMinute:   50000,
@@ -201,6 +202,9 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if readyStatus.StructuredOutputMode != "json_object" {
 		t.Fatalf("status structured_output_mode = %q, want json_object", readyStatus.StructuredOutputMode)
 	}
+	if readyStatus.ServiceTier != gjagent.ServiceTierPriority {
+		t.Fatalf("status service_tier = %q, want %q", readyStatus.ServiceTier, gjagent.ServiceTierPriority)
+	}
 	if readyStatus.Provider != "anthropic" || readyStatus.Model != "test-model" || readyStatus.ResponseFormat != "json_object" || readyStatus.MaxSteps != 3 || readyStatus.TimeoutSeconds != 50 {
 		t.Fatalf("configured values not reflected in status: %+v", readyStatus)
 	}
@@ -221,6 +225,15 @@ func TestAgentEvalFingerprintIncludesRateLimits(t *testing.T) {
 	limited.RateLimit = gjagent.RateLimitConfig{RequestsPerMinute: 20, TokensPerMinute: 50000}
 	if agentEvalFingerprint(base) == agentEvalFingerprint(limited) {
 		t.Fatal("agent rate-limit changes must alter the eval fingerprint")
+	}
+}
+
+func TestAgentEvalFingerprintIncludesServiceTier(t *testing.T) {
+	base := agentStatusResponse{Provider: "openai", Model: "gpt-test", StructuredOutputMode: "auto", ServiceTier: gjagent.ServiceTierAuto}
+	priority := base
+	priority.ServiceTier = gjagent.ServiceTierPriority
+	if agentEvalFingerprint(base) == agentEvalFingerprint(priority) {
+		t.Fatal("agent service-tier changes must alter the eval fingerprint")
 	}
 }
 

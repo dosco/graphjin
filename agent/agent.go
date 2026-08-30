@@ -56,6 +56,10 @@ type Config struct {
 	Model     string `mapstructure:"model" jsonschema:"title=Agent Model"`
 	APIKeyEnv string `mapstructure:"api_key_env" jsonschema:"title=Agent API Key Environment Variable,default=OPENAI_API_KEY"`
 	BaseURL   string `mapstructure:"base_url" jsonschema:"title=Agent Provider Base URL"`
+	// ServiceTier selects Ax's portable inference service tier. Auto delegates
+	// selection to the provider; explicit tiers are checked against the Ax
+	// deployment profile and model before a request is sent.
+	ServiceTier string `mapstructure:"service_tier" jsonschema:"title=Agent Service Tier,description=Portable inference service tier; auto delegates to the provider,default=auto,enum=auto,enum=standard,enum=flex,enum=priority"`
 	// StructuredOutputMode selects the Ax structured-output mechanism. "auto"
 	// lets the deployment profile and its model rules choose the mechanism Ax
 	// has verified for that pairing; the explicit values are an override.
@@ -304,6 +308,9 @@ func New(gj *core.GraphJin, config Config, options ...Option) (*Agent, error) {
 	if err := config.RateLimit.Validate(); err != nil {
 		return nil, err
 	}
+	if err := ValidateServiceTier(config.ServiceTier); err != nil {
+		return nil, err
+	}
 	return newAgent(config, newCoreRuntime(gj, config), options...), nil
 }
 
@@ -424,6 +431,9 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if err := ValidateStructuredOutputMode(cfg.StructuredOutputMode, cfg.ResponseFormat); err != nil {
 		return Response{}, err
 	}
+	if err := ValidateServiceTier(cfg.ServiceTier); err != nil {
+		return Response{}, err
+	}
 	if err := cfg.RateLimit.Validate(); err != nil {
 		return Response{}, err
 	}
@@ -450,6 +460,10 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if err != nil {
 		return Response{}, err
 	}
+	// Enforce explicit tiers at the provider boundary as well as in Ax forward
+	// options. Ax's runtime llmQuery primitive creates a nested AxGen call with
+	// fresh options, so the boundary is the only seam shared by every chat call.
+	client = wrapServiceTierAIClient(client, cfg.ServiceTier)
 	var rateLimiter ax.AxRateLimiter
 	if a.rateLimiter != nil && a.rateLimiter.Enabled() {
 		if a.customClient {
@@ -574,17 +588,12 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		"max_actor_steps": maxSteps,
 	}
 	program = a.newProgram(agentSignature, options)
-	forwardOptions := map[string]ax.Value{
-		"runtime":         runtime,
-		"max_actor_steps": maxSteps,
-		// Ax resolves this against the deployment profile and model rules, and
-		// fails before transport if the deployment cannot serve an explicit
-		// mode. GraphJin never inspects the provider or model name itself.
-		"structured_output_mode": cfg.StructuredOutputMode,
-	}
-	if rateLimiter != nil {
-		forwardOptions["rateLimiter"] = rateLimiter
-	}
+	// Ax resolves both portable controls against the deployment profile and
+	// model rules, and rejects unsupported explicit values before transport.
+	// GraphJin only carries the operator's choices through.
+	forwardOptions := modelForwardOptions(cfg, rateLimiter)
+	forwardOptions["runtime"] = runtime
+	forwardOptions["max_actor_steps"] = maxSteps
 	output, err := program.Forward(ctx, client, map[string]ax.Value{
 		"instruction":    strings.TrimSpace(req.Instruction),
 		"context":        runReq.Context,
@@ -760,6 +769,7 @@ func (c Config) withDefaults() Config {
 		c.APIKeyEnv = defaultAPIKeyEnv
 	}
 	c.StructuredOutputMode = EffectiveStructuredOutputMode(c.StructuredOutputMode, c.ResponseFormat)
+	c.ServiceTier = EffectiveServiceTier(c.ServiceTier)
 	if c.MaxSteps <= 0 {
 		c.MaxSteps = defaultMaxSteps
 	}
@@ -771,6 +781,17 @@ func (c Config) withDefaults() Config {
 	}
 	c.TimeoutSeconds = EffectiveTimeoutSeconds(c.TimeoutSeconds)
 	return c
+}
+
+func modelForwardOptions(cfg Config, rateLimiter ax.AxRateLimiter) map[string]ax.Value {
+	options := map[string]ax.Value{
+		"structured_output_mode": cfg.StructuredOutputMode,
+		"service_tier":           cfg.ServiceTier,
+	}
+	if rateLimiter != nil {
+		options["rateLimiter"] = rateLimiter
+	}
+	return options
 }
 
 func EffectiveTimeoutSeconds(timeoutSeconds int) int {
@@ -1332,10 +1353,7 @@ func (a *Agent) finalizeWithGroundedRewrite(ctx context.Context, client ax.AICli
 	if finalizer == nil {
 		return finalized
 	}
-	forwardOptions := map[string]ax.Value{"structured_output_mode": cfg.StructuredOutputMode}
-	if rateLimiter != nil {
-		forwardOptions["rateLimiter"] = rateLimiter
-	}
+	forwardOptions := modelForwardOptions(cfg, rateLimiter)
 	out, err := finalizer.Forward(ctx, client, map[string]ax.Value{
 		"instruction":      strings.TrimSpace(req.Instruction),
 		"evidence":         protocol.state.finalizeEvidenceDigest(forcedFinalizeEvidenceByteLimit),
@@ -1376,10 +1394,7 @@ func (a *Agent) forcedFinalize(ctx context.Context, client ax.AIClient, protocol
 	if finalizer == nil {
 		return Response{}, false
 	}
-	forwardOptions := map[string]ax.Value{"structured_output_mode": cfg.StructuredOutputMode}
-	if rateLimiter != nil {
-		forwardOptions["rateLimiter"] = rateLimiter
-	}
+	forwardOptions := modelForwardOptions(cfg, rateLimiter)
 	out, ferr := finalizer.Forward(ctx, client, map[string]ax.Value{
 		"instruction": strings.TrimSpace(req.Instruction),
 		"evidence":    protocol.state.finalizeEvidenceDigest(forcedFinalizeEvidenceByteLimit),

@@ -1083,12 +1083,16 @@ func normalizeAgentConfig(c *Config) error {
 	if err := gjagent.ValidateStructuredOutputMode(c.Agent.StructuredOutputMode, c.Agent.ResponseFormat); err != nil {
 		return err
 	}
+	if err := gjagent.ValidateServiceTier(c.Agent.ServiceTier); err != nil {
+		return err
+	}
 	if err := c.Agent.RateLimit.Validate(); err != nil {
 		return err
 	}
 	// Resolve the deprecated alias once, here, so every downstream reader sees a
 	// single canonical mode and never has to re-derive precedence.
 	c.Agent.StructuredOutputMode = gjagent.EffectiveStructuredOutputMode(c.Agent.StructuredOutputMode, c.Agent.ResponseFormat)
+	c.Agent.ServiceTier = gjagent.EffectiveServiceTier(c.Agent.ServiceTier)
 	return nil
 }
 
@@ -1218,6 +1222,7 @@ func newViperWithDefaults() *viper.Viper {
 	// win over an unset canonical key, and the resolver supplies "auto".
 	vi.SetDefault("agent.structured_output_mode", "")
 	vi.SetDefault("agent.response_format", "")
+	vi.SetDefault("agent.service_tier", "auto")
 	vi.SetDefault("agent.max_steps", 8)
 	vi.SetDefault("agent.timeout_seconds", 50)
 	vi.SetDefault("agent.read_only", false)
@@ -1239,6 +1244,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("agent.base_url", "GJ_AGENT_BASE_URL", "SG_AGENT_BASE_URL", "SJ_AGENT_BASE_URL")                                                                                         //nolint:errcheck
 	vi.BindEnv("agent.structured_output_mode", "GJ_AGENT_STRUCTURED_OUTPUT_MODE", "SG_AGENT_STRUCTURED_OUTPUT_MODE", "SJ_AGENT_STRUCTURED_OUTPUT_MODE")                                 //nolint:errcheck
 	vi.BindEnv("agent.response_format", "GJ_AGENT_RESPONSE_FORMAT", "SG_AGENT_RESPONSE_FORMAT", "SJ_AGENT_RESPONSE_FORMAT")                                                             //nolint:errcheck
+	vi.BindEnv("agent.service_tier", "GJ_AGENT_SERVICE_TIER", "SG_AGENT_SERVICE_TIER", "SJ_AGENT_SERVICE_TIER")                                                                         //nolint:errcheck
 	vi.BindEnv("agent.enabled", "GJ_AGENT_ENABLED", "SG_AGENT_ENABLED", "SJ_AGENT_ENABLED")                                                                                             //nolint:errcheck
 	vi.BindEnv("agent.api_key_env", "GJ_AGENT_API_KEY_ENV", "SG_AGENT_API_KEY_ENV", "SJ_AGENT_API_KEY_ENV")                                                                             //nolint:errcheck
 	vi.BindEnv("agent.rate_limit.requests_per_minute", "GJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "SG_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE", "SJ_AGENT_RATE_LIMIT_REQUESTS_PER_MINUTE") //nolint:errcheck

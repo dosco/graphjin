@@ -735,16 +735,17 @@ func configRecipes() []configRecipe {
 		{
 			ID:      "recipe.config.agent_tuning",
 			Title:   "Tune the built-in agent",
-			Summary: "Recipe for the built-in agent's runtime settings (model, max_steps, timeout_seconds, rate_limit, read_only) through the gj_config serv patch. Model source selection is automatic and server-first. Hot: read live and effective immediately.",
+			Summary: "Recipe for the built-in agent's runtime settings (model, service_tier, max_steps, timeout_seconds, rate_limit, read_only) through the gj_config serv patch. Model source selection is automatic and server-first. Hot: read live and effective immediately.",
 			IntentExamples: []string{
 				"change the agent model",
 				"increase agent max steps",
 				"set agent timeout",
+				"select the agent provider service tier",
 				"limit agent provider requests and tokens per minute",
 				"make the agent read only",
 			},
 			Preflight: commonPreflight,
-			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", serv: { agent: { model: "gpt-4o", max_steps: 12, timeout_seconds: 60, rate_limit: { requests_per_minute: 60, tokens_per_minute: 100000 } } } }) { valid scope reload_mode reload_strategy preview_id change_summary_json errors_json } }`,
+			Apply:     `mutation { gj_config(id: "current", update: { mode: "preview", expected_catalog_revision: "<catalog_revision>", serv: { agent: { model: "gpt-4o", service_tier: "priority", max_steps: 12, timeout_seconds: 60, rate_limit: { requests_per_minute: 60, tokens_per_minute: 100000 } } } }) { valid scope reload_mode reload_strategy preview_id change_summary_json errors_json } }`,
 			Verify:    commonVerify,
 			StopConditions: append([]string{
 				"agent.enabled, provider, api_key_env, and base_url are structural and are not writable at runtime; edit the config file and restart",
@@ -754,8 +755,9 @@ func configRecipes() []configRecipe {
 			}, commonForbidden...),
 			Examples: []string{
 				`query { gj_config(id: "current") { serv } }`,
-				`serv: { agent: { model: "gpt-4o", max_steps: 12, timeout_seconds: 60, rate_limit: { requests_per_minute: 60, tokens_per_minute: 100000 } } }`,
+				`serv: { agent: { model: "gpt-4o", service_tier: "priority", max_steps: 12, timeout_seconds: 60, rate_limit: { requests_per_minute: 60, tokens_per_minute: 100000 } } }`,
 				`configure agent.provider, agent.model, and agent.api_key_env; missing server credentials fail closed`,
+				`agent.service_tier accepts auto, standard, flex, or priority; Ax rejects unsupported explicit tiers before transport`,
 				`agent.rate_limit is outbound and process-local; top-level rate_limiter protects inbound HTTP traffic`,
 				`reload_mode is "hot"; agent settings are read per request and take effect immediately`,
 				`offline alternative: graphjin config set agent.model gpt-4o`,

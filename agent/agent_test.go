@@ -2209,8 +2209,9 @@ func TestUngroundedAnswerIsRestatedOnce(t *testing.T) {
 	}}
 	var sawSignature string
 	var sawValues map[string]ax.Value
+	var sawForwardOptions map[string]ax.Value
 	rewrites := 0
-	runner := newAgent(Config{TimeoutSeconds: 5}, &successfulExecutionRuntime{},
+	runner := newAgent(Config{TimeoutSeconds: 5, ServiceTier: ServiceTierFlex}, &successfulExecutionRuntime{},
 		WithClientFactory(func(Config) (ax.AIClient, error) { return fakeClient{}, nil }),
 		WithProgramFactory(func(_ string, options map[string]ax.Value) Program {
 			program.options = options
@@ -2224,7 +2225,10 @@ func TestUngroundedAnswerIsRestatedOnce(t *testing.T) {
 			rewrites++
 			sawSignature = signature
 			rewrite := &fakeProgram{output: map[string]ax.Value{"answer": "Three invoices are listed as unpaid."}}
-			rewrite.onForward = func(p *fakeProgram) { sawValues = p.forwardValues }
+			rewrite.onForward = func(p *fakeProgram) {
+				sawValues = p.forwardValues
+				sawForwardOptions = p.forwardOptions
+			}
 			return rewrite
 		}),
 	)
@@ -2245,6 +2249,9 @@ func TestUngroundedAnswerIsRestatedOnce(t *testing.T) {
 	}
 	if draft, _ := sawValues["draft_answer"].(string); !strings.Contains(draft, "sla_window") {
 		t.Fatalf("rewrite must see the draft it is replacing, got %q", draft)
+	}
+	if got := sawForwardOptions["service_tier"]; got != ServiceTierFlex {
+		t.Fatalf("grounded rewrite service_tier = %#v, want %q", got, ServiceTierFlex)
 	}
 	if responseHasProtocolError(resp, "ungrounded_answer_fields") {
 		t.Fatalf("a successful restatement must clear the rejection: %+v", resp.Errors)
