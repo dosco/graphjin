@@ -101,6 +101,7 @@ type graphjinService struct {
 	semantic               *semanticCatalogIndex
 	semanticEmbedder       SemanticEmbeddingClient
 	agentClientFactory     gjagent.ClientFactory
+	agentNow               func() time.Time
 	agentRateLimiterMu     sync.Mutex
 	agentRateLimiter       *gjagent.ProviderRateLimiter
 	watchSubscribeForTest  func(context.Context, watchRuntimeDefinition, json.RawMessage) (*core.Member, error)
@@ -503,6 +504,19 @@ func OptionSetSemanticEmbeddingClient(client SemanticEmbeddingClient) Option {
 func OptionSetAgentClientFactory(factory gjagent.ClientFactory) Option {
 	return func(s *graphjinService) error {
 		s.agentClientFactory = factory
+		return nil
+	}
+}
+
+// OptionSetAgentNow fixes the clock every server-owned agent entrypoint reads,
+// which is what the agent is told "today" is.
+//
+// It exists for evaluation and rollout environments, where a run that crosses
+// midnight otherwise asks two different questions of the same frozen data.
+// Production leaves it unset and the agent reads the wall clock.
+func OptionSetAgentNow(now func() time.Time) Option {
+	return func(s *graphjinService) error {
+		s.agentNow = now
 		return nil
 	}
 }

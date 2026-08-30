@@ -58,6 +58,23 @@ type evalCLIOptions struct {
 	Concurrency        int
 	AutoResume         bool
 	AutoResumeAttempts int
+	FreezeTime         string
+}
+
+// evalFrozenClock returns the clock the harness and its oracles read, or nil to
+// read the wall clock. It is the harness half of --freeze-time: the environment
+// freezes what the agent is told "today" is, and this freezes what the oracle
+// resolving {{today}} believes, so both sides of a graded comparison are asking
+// about the same day.
+func evalFrozenClock(opts *evalCLIOptions) (func() time.Time, error) {
+	if opts == nil || strings.TrimSpace(opts.FreezeTime) == "" {
+		return nil, nil
+	}
+	frozen, _, err := (gjeval.EnvSpec{FreezeTime: opts.FreezeTime}).FrozenTime()
+	if err != nil {
+		return nil, err
+	}
+	return func() time.Time { return frozen }, nil
 }
 
 func evalCmd() *cobra.Command {
@@ -75,6 +92,7 @@ func evalCmd() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.Yes, "yes", false, "approve provider-backed model traffic and saves")
 	cmd.PersistentFlags().BoolVar(&opts.JSON, "json", false, "emit machine-readable JSON")
 	cmd.PersistentFlags().BoolVar(&opts.Debug, "debug", false, "print local episode paths and verbose diagnoses")
+	cmd.PersistentFlags().StringVar(&opts.FreezeTime, "freeze-time", "", "run against a fixed clock (RFC3339); pins the demo's data anchor to the same day")
 
 	cmd.AddCommand(evalCreateCmd(opts))
 	cmd.AddCommand(evalAddCmd(opts))
@@ -181,14 +199,18 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: seed})
+			frozenClock, err := evalFrozenClock(opts)
+			if err != nil {
+				return err
+			}
+			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: seed, FreezeTime: opts.FreezeTime})
 			if err != nil {
 				return evalEnvironmentError(err)
 			}
 			defer instance.Close() //nolint:errcheck
 			client := &http.Client{Timeout: 120 * time.Second}
 			source := gjeval.HTTPCatalogSource{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
-			verifier := &gjeval.Verifier{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+			verifier := &gjeval.Verifier{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers(), Now: frozenClock}
 			suite, err := (gjeval.Generator{Source: source, Verifier: verifier}).Generate(cmd.Context(), gjeval.GeneratorOptions{
 				Seed: seed, Scale: scale, Families: families,
 				Composition: gjeval.Composition(composition), VerifyConcurrency: concurrency,
@@ -406,9 +428,13 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			frozenClock, err := evalFrozenClock(opts)
+			if err != nil {
+				return err
+			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			benchSpec := evalBenchEnvSpec(target, projectPath, seed, public)
+			benchSpec := evalBenchEnvSpec(target, projectPath, seed, public, opts.FreezeTime)
 			benchSpec.PinDataAnchor = evalResumeDataAnchor(projectPath, policy, opts.ResumeRunID)
 			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, benchSpec)
 			if err != nil {
@@ -426,7 +452,7 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 			} else {
 				suite, err = (gjeval.Generator{
 					Source:   gjeval.HTTPCatalogSource{Client: catalogClient, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
-					Verifier: &gjeval.Verifier{Client: catalogClient, BaseURL: instance.BaseURL(), Headers: instance.Headers()},
+					Verifier: &gjeval.Verifier{Client: catalogClient, BaseURL: instance.BaseURL(), Headers: instance.Headers(), Now: frozenClock},
 				}).Generate(ctx, gjeval.GeneratorOptions{Seed: seed, Scale: scale, Name: "GraphJin Frontier Benchmark"})
 			}
 			if err != nil {
@@ -444,7 +470,7 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 			// it would reboot the demo and shift its date-anchored seed data,
 			// changing the dataset fingerprint the resume must match.
 			attempt := func(ctx context.Context, policy gjeval.ResumePolicy, resumeRunID string) (*gjeval.Report, error) {
-				prepared, err := (gjeval.Runner{Client: evalAgentClient(status)}).Prepare(ctx, *suite, instance, gjeval.RunOptions{
+				prepared, err := (gjeval.Runner{Client: evalAgentClient(status), Now: frozenClock}).Prepare(ctx, *suite, instance, gjeval.RunOptions{
 					Mode: gjeval.RunModeBenchmark, Intent: gjeval.RunIntentBench, Repeats: gjeval.DefaultRepeats, Seed: seed,
 					Provenance: evalProvenance(instance, seed, status), Baseline: baseline, Store: store,
 					ResumePolicy: policy, ResumeRunID: resumeRunID, BinaryFingerprint: evalBinaryFingerprint(),
@@ -557,10 +583,11 @@ func evalResumeDataAnchor(projectPath string, policy gjeval.ResumePolicy, runID 
 	return anchor
 }
 
-func evalBenchEnvSpec(target gjeval.Target, projectPath string, seed int64, public bool) gjeval.EnvSpec {
+func evalBenchEnvSpec(target gjeval.Target, projectPath string, seed int64, public bool, freezeTime string) gjeval.EnvSpec {
 	return gjeval.EnvSpec{
 		Target: target, ConfigPath: projectPath, Seed: seed,
 		Writable: public, Reactive: public, Resettable: public,
+		FreezeTime: freezeTime,
 	}
 }
 
@@ -642,6 +669,10 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 	if err != nil {
 		return nil, nil, err
 	}
+	frozenClock, err := evalFrozenClock(opts)
+	if err != nil {
+		return nil, nil, err
+	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	writable, reactive, resettable := evalSuiteEnvironmentRequirements(suite)
@@ -649,6 +680,7 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 		Target: target, ConfigPath: projectPath, Seed: seed,
 		Writable: writable, Reactive: reactive, Resettable: resettable,
 		PinDataAnchor: evalResumeDataAnchor(projectPath, policy, opts.ResumeRunID),
+		FreezeTime:    opts.FreezeTime,
 	})
 	if err != nil {
 		return nil, nil, evalEnvironmentError(err)
@@ -669,7 +701,7 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 	} else if mode == gjeval.RunModeBenchmark {
 		intent = gjeval.RunIntentBench
 	}
-	prepared, err := (gjeval.Runner{Client: evalAgentClient(status)}).Prepare(ctx, suite, instance, gjeval.RunOptions{
+	prepared, err := (gjeval.Runner{Client: evalAgentClient(status), Now: frozenClock}).Prepare(ctx, suite, instance, gjeval.RunOptions{
 		Mode: mode, Intent: intent, Repeats: gjeval.DefaultRepeats, Seed: seed,
 		Provenance: evalProvenance(instance, seed, status), Baseline: baseline, Store: store,
 		AutoBaseline: autoBaseline, DeliberatePromotion: deliberatePromotion,

@@ -76,6 +76,14 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 	if err != nil {
 		return nil, err
 	}
+	frozenNow, frozenOK, err := spec.FrozenTime()
+	if err != nil {
+		return nil, err
+	}
+	dataAnchor, err := spec.EffectiveDataAnchor()
+	if err != nil {
+		return nil, err
+	}
 	configName := serv.GetConfigName()
 	if spec.Target == gjeval.TargetDemo {
 		// Embedded demo evaluation intentionally uses the dev config's trusted
@@ -115,7 +123,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		}
 		cpath = configPath
 		conf = &cloned
-		demoPinnedDataAnchor = spec.PinDataAnchor
+		demoPinnedDataAnchor = dataAnchor
 		runtime, err = StartDemo(ctx, []string{"sqlite"}, e.StatusOut)
 		if err != nil {
 			closeEvalAPIServer(apiServer)
@@ -151,6 +159,11 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		options := []serv.Option{serv.OptionSetLogOutput(os.Stderr), serv.OptionDisableQueryLearning()}
 		if e.ClientFactory != nil {
 			options = append(options, serv.OptionSetAgentClientFactory(e.ClientFactory))
+		}
+		if frozenOK {
+			// The agent is told what "today" is. Freezing the data without
+			// freezing this leaves relative questions drifting against fixed rows.
+			options = append(options, serv.OptionSetAgentNow(func() time.Time { return frozenNow }))
 		}
 		if runtime != nil && len(runtime.Databases) != 0 {
 			options = append(options, serv.OptionSetDatabases(runtime.Databases), serv.OptionSetRuntimeSchemaDDLDir(demoRuntimeSchemaDDLDir()))
@@ -304,6 +317,11 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		}
 		cpath = configPath
 		conf = &cloned
+		// A reset re-provisions the demo, which is where the date shift happens.
+		// Without the anchor still pinned here, a reset that lands after a UTC
+		// midnight would hand the next episode a world dated a day later than
+		// every episode before it.
+		demoPinnedDataAnchor = dataAnchor
 		var restartErr error
 		runtime, restartErr = StartDemo(resetCtx, []string{"sqlite"}, e.StatusOut)
 		if restartErr != nil {
