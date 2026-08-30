@@ -149,7 +149,10 @@ run_watch_fire_suite "subscription smoke_fire { support_tickets(first: 25, after
 run_artifact_suite
 
 log "checking MCP discovery surfaces"
-catalog_out="$(mcp_tool query_catalog '{"kind":"saved_query","limit":10}')"
+# The limit has to clear the demo's whole saved-query set. It was 10 while the
+# demo grew to 13, so the three queries asserted below could not all appear and
+# the check failed on ordering rather than on anything being missing.
+catalog_out="$(mcp_tool query_catalog '{"kind":"saved_query","limit":50}')"
 assert_jq "$catalog_out" '[.result.structuredContent.cards[].name] | index("churn_risk_context") != null and index("mrr_summary_context") != null and index("ticket_sla_context") != null' "MCP catalog exposes saved queries"
 
 case "$RUN_AGENT" in
