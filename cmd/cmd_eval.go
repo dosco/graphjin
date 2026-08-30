@@ -189,6 +189,8 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 		composition string
 		concurrency int
 		out         string
+		splitRatio  float64
+		splitHold   []string
 	)
 	command := &cobra.Command{
 		Use:   "create",
@@ -225,6 +227,17 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 			if err := gjeval.SaveSuite(path, *suite); err != nil {
 				return err
 			}
+			splitPath := ""
+			if splitRatio > 0 {
+				split, splitErr := gjeval.SplitSuite(*suite, splitRatio, splitHold)
+				if splitErr != nil {
+					return splitErr
+				}
+				splitPath = strings.TrimSuffix(path, filepath.Ext(path)) + ".split.json"
+				if err := gjeval.SaveSplit(splitPath, split); err != nil {
+					return err
+				}
+			}
 			// Counting the suite by family is what makes "the new families ran"
 			// checkable. A total task count cannot distinguish a family that
 			// produced nothing from one whose every candidate lost the sampling.
@@ -238,9 +251,13 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 					"seed": suite.Generator.Seed, "scale": suite.Generator.Scale,
 					"generator_version": suite.Generator.Version, "composition": string(gjeval.Composition(composition)),
 					"catalog_fingerprint": suite.CatalogFingerprint, "tasks_by_family": byFamily,
+					"split": splitPath,
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Created %s with %d verified tasks (seed %d).\n", path, len(suite.Tasks), suite.Generator.Seed)
+			if splitPath != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Wrote split manifest %s.\n", splitPath)
+			}
 			for _, name := range sortedKeys(byFamily) {
 				fmt.Fprintf(cmd.OutOrStdout(), "  %-32s %d\n", name, byFamily[name])
 			}
@@ -253,6 +270,8 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 	command.Flags().StringVar(&composition, "composition", string(gjeval.CompositionBenchmark), "sampling composition: benchmark or coverage")
 	command.Flags().IntVar(&concurrency, "verify-concurrency", 1, "how many candidate oracles to verify at once")
 	command.Flags().StringVar(&out, "out", "", "write the suite here instead of the project's eval directory")
+	command.Flags().Float64Var(&splitRatio, "split", 0, "also write a train/eval split manifest with this training share")
+	command.Flags().StringSliceVar(&splitHold, "split-holdout-families", nil, "families never placed in the training side")
 	return command
 }
 
