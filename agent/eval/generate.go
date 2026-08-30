@@ -156,11 +156,81 @@ func fetchAgentStatus(ctx context.Context, client HTTPDoer, baseURL string, head
 	return status, nil
 }
 
+// candidateFamily is one named source of task candidates. Families are plain
+// functions rather than an interface so the package stays stdlib-only and every
+// family is testable without a live instance.
+//
+// Order is load-bearing. Generate dedupes structurally on a first-wins basis, so
+// families are listed oldest-first: a newer family whose candidate collides with
+// an older one loses, and the task content that already carries a published
+// content ID is the copy that survives.
+type candidateFamily struct {
+	Name         string
+	SinceVersion string
+	Categories   []Category
+	Generate     func(CatalogSnapshot, int64) []Task
+}
+
+var candidateFamilies = []candidateFamily{
+	{
+		Name:         "catalog-core",
+		SinceVersion: "graphjin.eval.generator/v12",
+		Categories:   []Category{CategoryAggregate, CategoryWindow, CategoryRanking, CategoryDiscovery, CategorySavedMetric, CategoryRefusal},
+		Generate:     generateCatalogCandidates,
+	},
+	{
+		Name:         "deeporg-reference",
+		SinceVersion: "graphjin.eval.generator/v12",
+		Categories:   []Category{CategoryAction, CategoryReactive, CategoryMultiTurn, CategoryCrossSource},
+		Generate:     generateDeepORGCandidates,
+	},
+}
+
+// selectedFamilies returns the families named in want, in registry order. An
+// empty want selects every family, which is what every production caller does;
+// the filter exists so tests can pin one family's output and so a regeneration
+// can reproduce an older version's candidate set.
+func selectedFamilies(want []string) ([]candidateFamily, error) {
+	if len(want) == 0 {
+		return candidateFamilies, nil
+	}
+	wanted := make(map[string]bool, len(want))
+	for _, name := range want {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		wanted[name] = true
+	}
+	out := make([]candidateFamily, 0, len(wanted))
+	for _, family := range candidateFamilies {
+		if wanted[family.Name] {
+			out = append(out, family)
+			delete(wanted, family.Name)
+		}
+	}
+	if len(wanted) != 0 {
+		unknown := make([]string, 0, len(wanted))
+		for name := range wanted {
+			unknown = append(unknown, name)
+		}
+		sort.Strings(unknown)
+		return nil, fmt.Errorf("unknown task families: %s", strings.Join(unknown, ", "))
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no task families selected")
+	}
+	return out, nil
+}
+
 type GeneratorOptions struct {
 	Seed    int64
 	Scale   int
 	Name    string
 	Curated []Task
+	// Families restricts candidate generation to the named families. Empty
+	// selects every registered family.
+	Families []string
 }
 
 type Generator struct {
@@ -180,9 +250,14 @@ func (g Generator) Generate(ctx context.Context, opts GeneratorOptions) (*Suite,
 	if err != nil {
 		return nil, err
 	}
+	families, err := selectedFamilies(opts.Families)
+	if err != nil {
+		return nil, err
+	}
 	candidates := append([]Task(nil), opts.Curated...)
-	candidates = append(candidates, generateCatalogCandidates(snapshot, opts.Seed)...)
-	candidates = append(candidates, generateDeepORGCandidates(snapshot, opts.Seed)...)
+	for _, family := range families {
+		candidates = append(candidates, family.Generate(snapshot, opts.Seed)...)
+	}
 	verified := make([]Task, 0, len(candidates))
 	seen := map[string]struct{}{}
 	for i := range candidates {
