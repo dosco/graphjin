@@ -191,6 +191,7 @@ agent:
   api_key_env: GRAPHJIN_AGENT_KEY
   base_url: http://127.0.0.1:11434/v1
   response_format: json_object
+  service_tier: flex
   rate_limit:
     requests_per_minute: 30
     tokens_per_minute: 75000
@@ -207,6 +208,9 @@ agent:
 	}
 	if conf.Agent.APIKeyEnv != "GRAPHJIN_AGENT_KEY" || conf.Agent.BaseURL != "http://127.0.0.1:11434/v1" || conf.Agent.ResponseFormat != "json_object" {
 		t.Fatalf("agent connection config drift: %+v", conf.Agent)
+	}
+	if conf.Agent.ServiceTier != gjagent.ServiceTierFlex {
+		t.Fatalf("agent service tier = %q, want %q", conf.Agent.ServiceTier, gjagent.ServiceTierFlex)
 	}
 	if conf.Agent.RateLimit.RequestsPerMinute != 30 || conf.Agent.RateLimit.TokensPerMinute != 75000 {
 		t.Fatalf("agent provider rate-limit config drift: %+v", conf.Agent.RateLimit)
@@ -228,11 +232,49 @@ agent:
 	if defaults.Agent.StructuredOutputMode != "auto" || defaults.Agent.ResponseFormat != "" {
 		t.Fatalf("unexpected structured output defaults: %+v", defaults.Agent)
 	}
+	if defaults.Agent.ServiceTier != gjagent.ServiceTierAuto {
+		t.Fatalf("unexpected agent service tier default: %+v", defaults.Agent)
+	}
 	if defaults.Agent.MaxSteps != 8 || defaults.Agent.TimeoutSeconds != 50 || defaults.Agent.ReadOnly || defaults.Agent.ReturnTrace {
 		t.Fatalf("unexpected agent runtime defaults: %+v", defaults.Agent)
 	}
 	if defaults.Agent.RateLimit != (gjagent.RateLimitConfig{}) {
 		t.Fatalf("unexpected default agent rate limits: %+v", defaults.Agent.RateLimit)
+	}
+}
+
+func TestAgentServiceTierEnvironmentOverrides(t *testing.T) {
+	for _, prefix := range []string{"GJ", "SG", "SJ"} {
+		t.Run(prefix, func(t *testing.T) {
+			for _, clear := range []string{"GJ", "SG", "SJ"} {
+				key := clear + "_AGENT_SERVICE_TIER"
+				old, existed := os.LookupEnv(key)
+				if err := os.Unsetenv(key); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					if existed {
+						_ = os.Setenv(key, old)
+					} else {
+						_ = os.Unsetenv(key)
+					}
+				})
+			}
+			t.Setenv(prefix+"_AGENT_SERVICE_TIER", "priority")
+			conf, err := NewConfig("", "yaml")
+			if err != nil {
+				t.Fatalf("NewConfig: %v", err)
+			}
+			if conf.Agent.ServiceTier != gjagent.ServiceTierPriority {
+				t.Fatalf("%s environment service tier = %q, want %q", prefix, conf.Agent.ServiceTier, gjagent.ServiceTierPriority)
+			}
+		})
+	}
+}
+
+func TestAgentConfigRejectsInvalidServiceTier(t *testing.T) {
+	if _, err := NewConfig("agent:\n  service_tier: express\n", "yaml"); err == nil {
+		t.Fatal("expected invalid agent.service_tier to be rejected")
 	}
 }
 

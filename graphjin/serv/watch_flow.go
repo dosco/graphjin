@@ -177,6 +177,7 @@ func (s *graphjinService) runWatchFlow(ctx context.Context, cfg watchEnrichmentC
 	limited := &watchFlowAIClient{inner: client, maxCalls: defaultWatchFlowMaxCalls}
 	flow := ax.NewFlow(canonical)
 	forwardOptions := map[string]ax.Value{}
+	forwardOptions["service_tier"] = gjagent.EffectiveServiceTier(agentConf.ServiceTier)
 	if rateLimiter != nil {
 		forwardOptions["rateLimiter"] = rateLimiter
 	}

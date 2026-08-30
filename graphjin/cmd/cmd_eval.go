@@ -1088,6 +1088,7 @@ func evalProvenance(instance gjeval.Instance, seed int64, status gjeval.AgentSta
 		APIKeyEnv:            status.APIKeyEnv,
 		ResponseFormat:       status.ResponseFormat,
 		StructuredOutputMode: status.StructuredOutputMode,
+		ServiceTier:          status.ServiceTier,
 		ServerFingerprint:    status.EvalFingerprint,
 		AxVersion:            evalAxVersion(),
 		GraphJinCommit:       commit,

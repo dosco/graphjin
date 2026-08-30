@@ -43,6 +43,7 @@ type agentStatusResponse struct {
 	APIKeyConfigured     bool                    `json:"api_key_configured"`
 	ResponseFormat       string                  `json:"response_format"`
 	StructuredOutputMode string                  `json:"structured_output_mode"`
+	ServiceTier          string                  `json:"service_tier"`
 	MaxSteps             int                     `json:"max_steps"`
 	Reasoning            string                  `json:"reasoning,omitempty"`
 	ShowThoughts         bool                    `json:"show_thoughts"`
@@ -270,6 +271,7 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 		APIKeyConfigured:     apiKeyConfigured,
 		ResponseFormat:       strings.TrimSpace(conf.ResponseFormat),
 		StructuredOutputMode: gjagent.EffectiveStructuredOutputMode(conf.StructuredOutputMode, conf.ResponseFormat),
+		ServiceTier:          gjagent.EffectiveServiceTier(conf.ServiceTier),
 		MaxSteps:             maxSteps,
 		Reasoning:            strings.TrimSpace(conf.Reasoning),
 		ShowThoughts:         conf.ShowThoughts,
@@ -443,6 +445,7 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 		APIKeyEnv            string                  `json:"api_key_env"`
 		ResponseFormat       string                  `json:"response_format,omitempty"`
 		StructuredOutputMode string                  `json:"structured_output_mode"`
+		ServiceTier          string                  `json:"service_tier"`
 		MaxSteps             int                     `json:"max_steps"`
 		Reasoning            string                  `json:"reasoning,omitempty"`
 		ShowThoughts         bool                    `json:"show_thoughts"`
@@ -458,7 +461,7 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 	}{
 		Version: version, Build: agentBuildIdentity(), PromptRegistryHash: gjagent.PromptRegistryHash(),
 		Provider: status.Provider, Model: status.Model, APIKeyEnv: status.APIKeyEnv,
-		ResponseFormat: status.ResponseFormat, StructuredOutputMode: status.StructuredOutputMode,
+		ResponseFormat: status.ResponseFormat, StructuredOutputMode: status.StructuredOutputMode, ServiceTier: status.ServiceTier,
 		MaxSteps: status.MaxSteps, Reasoning: status.Reasoning, ShowThoughts: status.ShowThoughts,
 		RateLimit: status.RateLimit, TimeoutSeconds: status.TimeoutSeconds,
 		ReadOnly: status.ReadOnly, ReturnTrace: status.ReturnTrace,

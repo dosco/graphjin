@@ -3,7 +3,7 @@ module github.com/dosco/graphjin/agent/v3
 go 1.25.0
 
 require (
-	github.com/ax-llm/ax/packages/go v0.0.0-20260829163105-30f706438059
+	github.com/ax-llm/ax/packages/go v0.0.0-20260830031443-9ed9c82c7f62
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
 	github.com/dosco/graphjin/core/v3 v3.20.71
 	github.com/gofrs/flock v0.13.0
@@ -71,8 +71,10 @@ require (
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/snowflakedb/gosnowflake v1.19.0 // indirect
+	github.com/woodsbury/decimal128 v1.3.0 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect

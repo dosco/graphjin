@@ -70,6 +70,7 @@ type benchmarkEntry struct {
 	ModelKey       string    `yaml:"model_key"`
 	BoardEligible  bool      `yaml:"board_eligible"`
 	ResponseFormat string    `yaml:"response_format,omitempty"`
+	ServiceTier    string    `yaml:"service_tier,omitempty"`
 	// Reasoning records the provider thinking effort the run used. It changes
 	// both capability and cost, so two rows for the same model are not
 	// comparable without it — and it used to survive only as prose in the notes.
@@ -608,7 +609,7 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		RunID: report.RunID, Slug: slug, Label: label, Release: release, Notes: strings.TrimSpace(notes), Ranked: ranked, UnrankedReason: reason,
 		Generation: gjeval.PublicBenchmarkGeneration, GeneratedAt: report.GeneratedAt, Model: report.Provenance.Model, Provider: report.Provenance.Provider,
 		ModelKey: benchmarkModelKey(benchmarkEntry{Model: report.Provenance.Model, Provider: report.Provenance.Provider, Label: label}), BoardEligible: ranked && !scoringSuspect,
-		ResponseFormat: report.Provenance.ResponseFormat, Reasoning: report.Provenance.Reasoning,
+		ResponseFormat: report.Provenance.ResponseFormat, ServiceTier: report.Provenance.ServiceTier, Reasoning: report.Provenance.Reasoning,
 		GraphJinCommit: report.Provenance.GraphJinCommit, BinaryFingerprint: report.Provenance.BinaryFingerprint,
 		SuiteIdentity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
 		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,

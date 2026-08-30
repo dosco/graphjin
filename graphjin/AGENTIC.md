@@ -163,6 +163,11 @@ model rules declare which structured-output mechanisms that pairing supports.
 Set `native`, `function`, or `json_object` to override it — an explicit mode the
 deployment cannot serve fails before a request is sent rather than at parse time.
 
+`agent.service_tier` uses Ax's portable `auto`, `standard`, `flex`, and
+`priority` vocabulary. `auto` is the default and leaves selection with the
+provider. Explicit tiers are mapped by the deployment profile and rejected
+before transport when that provider/model pairing has not verified support.
+
 There are no per-request modes. A single operator kill-switch,
 `agent.read_only: true`, forces the agent read-only: mutations are rejected at
 execution — including saved mutations — regardless of the caller's role.

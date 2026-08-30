@@ -111,14 +111,14 @@ func TestEvalPublishWritesOneSafeRowAndPage(t *testing.T) {
 		}
 	}
 	data, err := loadBenchmarkData(dataPath, publishTestBenchmark(t))
-	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || !data.Runs[0].BoardEligible || data.Runs[0].ModelKey == "" || data.Runs[0].UnrankedReason != "" || data.Suite.ComparisonGeneration != gjeval.PublicBenchmarkGeneration || data.Suite.ScopeLabel != defaultBenchmarkScope || len(data.Suite.GenerationScopes) != 5 {
+	if err != nil || len(data.Runs) != 1 || !data.Runs[0].Ranked || !data.Runs[0].BoardEligible || data.Runs[0].ModelKey == "" || data.Runs[0].ServiceTier != "priority" || data.Runs[0].UnrankedReason != "" || data.Suite.ComparisonGeneration != gjeval.PublicBenchmarkGeneration || data.Suite.ScopeLabel != defaultBenchmarkScope || len(data.Suite.GenerationScopes) != 5 {
 		t.Fatalf("data=%+v err=%v", data, err)
 	}
 	page, err := os.ReadFile(pagePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, phrase := range []string{"## Evaluation complete", "## Results at a glance", "## Results by task family", "data-benchmark-category-chart", "data-category=\"aggregate\"", "## Technical benchmark report", "## Headline", "Pass@k", "/benchmark/runs/20260803t101112-ab12cd34/", "/benchmarks/organizational-agent/runs/20260803t101112-ab12cd34/"} {
+	for _, phrase := range []string{"## Evaluation complete", "## Results at a glance", "## Results by task family", "data-benchmark-category-chart", "data-category=\"aggregate\"", "## Technical benchmark report", "## Headline", "Service tier", "priority", "Pass@k", "/benchmark/runs/20260803t101112-ab12cd34/", "/benchmarks/organizational-agent/runs/20260803t101112-ab12cd34/"} {
 		if !strings.Contains(string(page), phrase) {
 			t.Fatalf("published page missing %q: %s", phrase, page)
 		}
@@ -631,7 +631,7 @@ func publishTestReport(runID string) gjeval.Report {
 		RunID: runID, RunStatus: gjeval.RunStatusComplete, Mode: gjeval.RunModeBenchmark, GeneratedAt: time.Date(2026, 8, 3, 10, 11, 12, 0, time.UTC),
 		SuiteFingerprint:   gjeval.PublicBenchmark().SuiteFingerprint,
 		DatasetFingerprint: gjeval.DatasetFingerprint{CatalogHash: "catalog", SeedManifestHash: "manifest", DataAnchor: "anchor"}, OracleValueHash: "oracle",
-		Provenance: gjeval.RunProvenance{Provider: "openai", Model: "gpt-test", GraphJinCommit: "abcdef123456", BinaryFingerprint: evalBinaryFingerprint(), Seed: 23, Repeats: 3, MaxSteps: 8},
+		Provenance: gjeval.RunProvenance{Provider: "openai", Model: "gpt-test", ServiceTier: "priority", GraphJinCommit: "abcdef123456", BinaryFingerprint: evalBinaryFingerprint(), Seed: 23, Repeats: 3, MaxSteps: 8},
 		Metrics: gjeval.Metrics{
 			TaskCount: 2, EpisodeCount: 6, Recall: .5, GroundTruthRecall: .5, MethodRecall: .5,
 			SafetyPrecision: 1, BehaviorRecall: 1, PassAtK: .75, PassPowerK: .25,

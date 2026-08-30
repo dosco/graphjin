@@ -12,12 +12,14 @@ import (
 )
 
 type watchFlowTestClient struct {
-	content string
-	calls   int
+	content     string
+	calls       int
+	lastOptions map[string]ax.Value
 }
 
-func (c *watchFlowTestClient) Chat(context.Context, map[string]ax.Value, map[string]ax.Value) (ax.Value, error) {
+func (c *watchFlowTestClient) Chat(_ context.Context, _ map[string]ax.Value, options map[string]ax.Value) (ax.Value, error) {
 	c.calls++
+	c.lastOptions = options
 	return map[string]ax.Value{
 		"results":     []ax.Value{map[string]ax.Value{"content": c.content}},
 		"model_usage": map[string]ax.Value{"tokens": map[string]ax.Value{"prompt": 10, "completion": 5}},
@@ -63,7 +65,7 @@ func TestNormalizeWatchEnrichmentJSONCanonicalizesInlineFlow(t *testing.T) {
 
 func TestRunWatchFlowReturnsFixedVerdict(t *testing.T) {
 	client := &watchFlowTestClient{content: `{"verdict":"digest","severity":"warn","summary":"Roast is drifting slowly."}`}
-	conf := &Config{Serv: Serv{Agent: AgentConfig{Enabled: true, Provider: "openai", APIKeyEnv: "IGNORED", TimeoutSeconds: 5}}}
+	conf := &Config{Serv: Serv{Agent: AgentConfig{Enabled: true, Provider: "openai", APIKeyEnv: "IGNORED", TimeoutSeconds: 5, ServiceTier: gjagent.ServiceTierStandard}}}
 	svc := &graphjinService{
 		conf:               conf,
 		agentClientFactory: func(gjagent.Config) (ax.AIClient, error) { return client, nil },
@@ -85,6 +87,9 @@ func TestRunWatchFlowReturnsFixedVerdict(t *testing.T) {
 	}
 	if client.calls != 1 {
 		t.Fatalf("client calls = %d, want 1", client.calls)
+	}
+	if got := client.lastOptions["service_tier"]; got != gjagent.ServiceTierStandard {
+		t.Fatalf("watch flow service_tier = %#v, want %q", got, gjagent.ServiceTierStandard)
 	}
 }
 

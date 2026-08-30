@@ -1099,6 +1099,11 @@ structured-output mechanisms they support, so Ax selects one from the named
 deployment profile and its model rules. `agent.structured_output_mode: auto`
 (the default) accepts that selection; the explicit modes are an override.
 
+Ax also normalizes inference service tiers across supported deployments.
+`agent.service_tier: auto` (the default) delegates selection to the provider;
+`standard`, `flex`, and `priority` request an explicit tier and fail before
+transport when the selected profile/model has not verified it.
+
 Ax 24 separates the official `openai` profile from the conservative
 `openai-compatible` one. Point third-party OpenAI-compatible endpoints
 (vLLM, OpenRouter, Together, LM Studio, …) at `provider: openai-compatible` so
@@ -1113,6 +1118,7 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.base_url` | string | - | OpenAI-compatible provider base URL (e.g. a local or self-hosted endpoint) |
 | `agent.structured_output_mode` | string | `auto` | How Ax requests structured output: `auto` lets the profile and model rule pick the verified mechanism; `native` (JSON Schema), `function`, and `json_object` force one. An explicit mode the deployment cannot serve fails before any request is sent |
 | `agent.response_format` | string | - | **Deprecated** alias of `agent.structured_output_mode`: `json_schema` maps to `native`, `json_object` to `json_object`. Set only one; the canonical key wins |
+| `agent.service_tier` | string | `auto` | Portable Ax inference tier: `auto` delegates to the provider; `standard`, `flex`, and `priority` request an explicit tier. Ax maps the value to the selected profile's wire dialect and rejects unsupported explicit tiers before transport |
 | `agent.reasoning` | string | - | Provider thinking effort for models that have one: `none`, `low`, `medium`, `high`, `xhigh`. Empty keeps the provider default, which providers disagree on — some adapters disable thinking outright unless a level is given |
 | `agent.show_thoughts` | boolean | `false` | Ask the provider to return the reasoning text it already produced, into the run's chat log (visible in the response trace when `agent.return_trace` is on, and recorded in eval episodes). These models think either way, so this changes what is observable and not what the model does — it is separate from `agent.reasoning` for that reason. Off by default: the text is billed output and every episode carries it |
 | `agent.max_steps` | integer | `8` | Maximum agent actor steps per request |
@@ -1123,6 +1129,10 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
 | `agent.seed_limit` | integer | `40` | Initial `query_catalog(search: instruction)` seed row cap |
 | `agent.catalog_default_limit` | integer | `20` | Default row limit for model-issued catalog queries |
+
+`GJ_AGENT_SERVICE_TIER` overrides `agent.service_tier` for environment-only
+deployments. `SG_AGENT_SERVICE_TIER` and `SJ_AGENT_SERVICE_TIER` remain accepted
+as compatibility aliases.
 
 There are no per-request agent modes. The server-side agent's internal runtime
 always includes discovery, validation, saved-query execution, and guarded raw

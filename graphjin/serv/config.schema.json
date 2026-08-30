@@ -27,6 +27,18 @@
 					"type": "string",
 					"title": "Agent Provider Base URL"
 				},
+				"service_tier": {
+					"type": "string",
+					"enum": [
+						"auto",
+						"standard",
+						"flex",
+						"priority"
+					],
+					"title": "Agent Service Tier",
+					"description": "Portable inference service tier; auto delegates to the provider",
+					"default": "auto"
+				},
 				"structured_output_mode": {
 					"type": "string",
 					"enum": [

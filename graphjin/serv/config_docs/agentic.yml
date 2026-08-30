@@ -53,6 +53,7 @@ mcp:
 #   api_key_env: OPENAI_API_KEY
 #   model: gpt-4.1-mini
 #   structured_output_mode: auto      # auto | native | function | json_object
+#   service_tier: auto                # auto | standard | flex | priority
 #   rate_limit:                        # outbound provider limits; zero/omitted disables
 #     requests_per_minute: 60
 #     tokens_per_minute: 100000
@@ -65,6 +66,7 @@ mcp:
 #   api_key_env: VERTEX_AI_TOKEN
 #   base_url: https://REGION-aiplatform.googleapis.com/v1beta1/projects/PROJECT/locations/REGION/endpoints/openapi
 #   structured_output_mode: auto
+#   service_tier: auto
 
 # Discovery generations are immutable files. In a horizontal deployment this
 # path must be a shared read-after-write mount; Redis coordinates the one

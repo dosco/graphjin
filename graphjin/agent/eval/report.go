@@ -17,6 +17,7 @@ type RunProvenance struct {
 	// stays defined so reports published before the rename still parse.
 	ResponseFormat       string  `json:"response_format,omitempty"`
 	StructuredOutputMode string  `json:"structured_output_mode,omitempty"`
+	ServiceTier          string  `json:"service_tier,omitempty"`
 	ServerFingerprint    string  `json:"server_eval_fingerprint,omitempty"`
 	AxVersion            string  `json:"ax_version,omitempty"`
 	GraphJinCommit       string  `json:"graphjin_commit,omitempty"`
