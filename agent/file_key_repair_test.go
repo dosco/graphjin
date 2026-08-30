@@ -40,6 +40,22 @@ func (r *fileSourceRuntime) ExecuteGraphQL(_ context.Context, args map[string]an
 		body := query[open+1 : closing]
 		spans := graphQLStringFieldSpans(body)
 		inline := strings.Contains(strings.ToLower(body), "inline_data")
+		// The bridge also honors a where filter on key; the fake mirrors that
+		// so a where-only miss produces the same empty list production does.
+		if _, ok := spans["key"]; !ok {
+			if m := whereKeyPattern.FindStringSubmatch(body); m != nil {
+				if _, exists := r.files[m[1]]; !exists {
+					data[root] = []any{}
+					continue
+				}
+				row := map[string]any{"key": m[1]}
+				if inline {
+					row["text"] = r.files[m[1]]
+				}
+				data[root] = []any{row}
+				continue
+			}
+		}
 		if key, ok := spans["key"]; ok {
 			text, exists := r.files[key.value]
 			if !exists {
@@ -61,6 +77,8 @@ func (r *fileSourceRuntime) ExecuteGraphQL(_ context.Context, args map[string]an
 	}
 	return map[string]any{"data": data}, nil
 }
+
+var whereKeyPattern = regexp.MustCompile(`key:\s*\{\s*eq:\s*"([^"]+)"`)
 
 func fileReadRuntime(t *testing.T) (*protocolRuntime, *fileSourceRuntime) {
 	t.Helper()
