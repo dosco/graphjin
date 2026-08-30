@@ -181,13 +181,26 @@ func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
 }
 
 func TestPublicBenchmarkEnvironmentSupportsBehavioralTasks(t *testing.T) {
-	public := evalBenchEnvSpec(gjeval.TargetDemo, "/tmp/deeporg", 23, true)
+	public := evalBenchEnvSpec(gjeval.TargetDemo, "/tmp/deeporg", 23, true, "")
 	if !public.Writable || !public.Reactive || !public.Resettable {
 		t.Fatalf("public benchmark environment = %+v, want writable, reactive, and resettable", public)
 	}
-	private := evalBenchEnvSpec(gjeval.TargetLocal, "/tmp/private-eval", 23, false)
+	private := evalBenchEnvSpec(gjeval.TargetLocal, "/tmp/private-eval", 23, false, "")
 	if private.Writable || private.Reactive || private.Resettable {
 		t.Fatalf("ordinary generated benchmark environment unexpectedly widened capabilities: %+v", private)
+	}
+	// A frozen clock is opt-in; the published benchmark keeps reading the wall
+	// clock unless a run explicitly asks otherwise.
+	if public.FreezeTime != "" || private.FreezeTime != "" {
+		t.Fatalf("environments froze the clock without being asked: %q / %q", public.FreezeTime, private.FreezeTime)
+	}
+	frozen := evalBenchEnvSpec(gjeval.TargetDemo, "/tmp/deeporg", 23, true, "2026-08-01T12:30:00Z")
+	anchor, err := frozen.EffectiveDataAnchor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if anchor != "2026-08-01" {
+		t.Fatalf("a frozen clock must pin the data to its own day, got %q", anchor)
 	}
 }
 

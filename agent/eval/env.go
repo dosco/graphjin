@@ -3,6 +3,9 @@ package eval
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
+	"time"
 )
 
 type Target string
@@ -28,6 +31,43 @@ type EnvSpec struct {
 	// completed episodes were graded against the previous day's data. Resuming
 	// pins the anchor the run started on and the boot leaves the dates alone.
 	PinDataAnchor string `json:"pin_data_anchor,omitempty"`
+	// FreezeTime fixes what the environment calls "now", as an RFC3339 instant.
+	//
+	// PinDataAnchor stops the seeded data from moving; this stops the questions
+	// asked about it from moving. Both are needed for a run to mean the same
+	// thing at any hour: a task that says "in the last 30 days" is answered
+	// against a window whose end is the clock, so an unfrozen clock quietly
+	// changes the question between one episode and the next. Setting it also
+	// pins the data anchor to the same day unless PinDataAnchor says otherwise.
+	FreezeTime string `json:"freeze_time,omitempty"`
+}
+
+// FrozenTime returns the fixed instant this environment runs at, and whether one
+// was requested.
+func (s EnvSpec) FrozenTime() (time.Time, bool, error) {
+	value := strings.TrimSpace(s.FreezeTime)
+	if value == "" {
+		return time.Time{}, false, nil
+	}
+	frozen, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("freeze_time %q is not an RFC3339 instant: %w", value, err)
+	}
+	return frozen.UTC(), true, nil
+}
+
+// EffectiveDataAnchor returns the day the seeded data should be pinned to. A
+// frozen clock implies its own day: seeding the data to one day and asking the
+// questions from another would make every relative window off by the gap.
+func (s EnvSpec) EffectiveDataAnchor() (string, error) {
+	if anchor := strings.TrimSpace(s.PinDataAnchor); anchor != "" {
+		return anchor, nil
+	}
+	frozen, ok, err := s.FrozenTime()
+	if err != nil || !ok {
+		return "", err
+	}
+	return frozen.Format("2006-01-02"), nil
 }
 
 type DatasetFingerprint struct {
