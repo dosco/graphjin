@@ -27,27 +27,23 @@ func (c *Config) agentOnlyMCP() bool {
 	return c != nil && c.agentEnabled() && !c.MCP.IncludeToolsWithAgent
 }
 
+// agentConfigFromService bridges the service config to the agent config every
+// server-owned entrypoint runs on: REST, MCP, watch flows, tasks, and the
+// embedded service the eval harness drives.
+//
+// serv.AgentConfig is an alias of gjagent.Config, so the whole struct copies by
+// assignment and a field added to the agent config can no longer be dropped
+// here by omission. It used to be a field-by-field literal, which is how
+// show_thoughts was settable, bound to GJ_AGENT_SHOW_THOUGHTS, populated by
+// viper — and inert for every episode ever recorded. Only the service-side
+// normalization is layered on top.
 func agentConfigFromService(conf *Config) gjagent.Config {
 	if conf == nil {
 		return gjagent.Config{}
 	}
-	return gjagent.Config{
-		Enabled:              conf.Agent.Enabled,
-		Provider:             conf.Agent.Provider,
-		Model:                conf.Agent.Model,
-		APIKeyEnv:            conf.Agent.APIKeyEnv,
-		BaseURL:              conf.Agent.BaseURL,
-		ResponseFormat:       conf.Agent.ResponseFormat,
-		StructuredOutputMode: conf.Agent.StructuredOutputMode,
-		Reasoning:            conf.Agent.Reasoning,
-		RateLimit:            conf.Agent.RateLimit,
-		MaxSteps:             conf.Agent.MaxSteps,
-		TimeoutSeconds:       gjagent.EffectiveTimeoutSeconds(conf.Agent.TimeoutSeconds),
-		ReadOnly:             conf.Agent.ReadOnly,
-		ReturnTrace:          conf.Agent.ReturnTrace,
-		SeedLimit:            conf.Agent.SeedLimit,
-		CatalogDefaultLimit:  conf.Agent.CatalogDefaultLimit,
-	}
+	cfg := conf.Agent
+	cfg.TimeoutSeconds = gjagent.EffectiveTimeoutSeconds(cfg.TimeoutSeconds)
+	return cfg
 }
 
 type graphjinAgentRunner interface {

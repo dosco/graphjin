@@ -45,6 +45,7 @@ type agentStatusResponse struct {
 	StructuredOutputMode string                  `json:"structured_output_mode"`
 	MaxSteps             int                     `json:"max_steps"`
 	Reasoning            string                  `json:"reasoning,omitempty"`
+	ShowThoughts         bool                    `json:"show_thoughts"`
 	RateLimit            gjagent.RateLimitConfig `json:"rate_limit"`
 	TimeoutSeconds       int                     `json:"timeout_seconds"`
 	ReadOnly             bool                    `json:"read_only"`
@@ -271,6 +272,7 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 		StructuredOutputMode: gjagent.EffectiveStructuredOutputMode(conf.StructuredOutputMode, conf.ResponseFormat),
 		MaxSteps:             maxSteps,
 		Reasoning:            strings.TrimSpace(conf.Reasoning),
+		ShowThoughts:         conf.ShowThoughts,
 		RateLimit:            conf.RateLimit,
 		TimeoutSeconds:       timeoutSeconds,
 		ReadOnly:             conf.ReadOnly,
@@ -443,6 +445,7 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 		StructuredOutputMode string                  `json:"structured_output_mode"`
 		MaxSteps             int                     `json:"max_steps"`
 		Reasoning            string                  `json:"reasoning,omitempty"`
+		ShowThoughts         bool                    `json:"show_thoughts"`
 		RateLimit            gjagent.RateLimitConfig `json:"rate_limit"`
 		TimeoutSeconds       int                     `json:"timeout_seconds"`
 		ReadOnly             bool                    `json:"read_only"`
@@ -456,7 +459,8 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 		Version: version, Build: agentBuildIdentity(), PromptRegistryHash: gjagent.PromptRegistryHash(),
 		Provider: status.Provider, Model: status.Model, APIKeyEnv: status.APIKeyEnv,
 		ResponseFormat: status.ResponseFormat, StructuredOutputMode: status.StructuredOutputMode,
-		MaxSteps: status.MaxSteps, Reasoning: status.Reasoning, RateLimit: status.RateLimit, TimeoutSeconds: status.TimeoutSeconds,
+		MaxSteps: status.MaxSteps, Reasoning: status.Reasoning, ShowThoughts: status.ShowThoughts,
+		RateLimit: status.RateLimit, TimeoutSeconds: status.TimeoutSeconds,
 		ReadOnly: status.ReadOnly, ReturnTrace: status.ReturnTrace,
 		Namespace: status.Namespace, RoleClass: status.RoleClass,
 		AllowedActions:       allowedActions,
