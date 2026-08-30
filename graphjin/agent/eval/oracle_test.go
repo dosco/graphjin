@@ -100,3 +100,27 @@ func TestVerifierPickMax(t *testing.T) {
 		t.Fatalf("unexpected pick_max result: %+v", result)
 	}
 }
+
+// An anchor that pins a row rather than a window is an identifier, not a date.
+// Shifting one by days still requires a timestamp, because there is nothing a
+// day before an account id.
+func TestUnshiftedAnchorNeedNotBeADate(t *testing.T) {
+	out, err := substituteOracleTokens(`where: {id: {eq: {{anchor}}}}`, "42", time.Unix(0, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != `where: {id: {eq: 42}}` {
+		t.Fatalf("unexpected substitution %q", out)
+	}
+	if _, err := substituteOracleTokens(`{{anchor-7d}}`, "42", time.Unix(0, 0).UTC()); err == nil {
+		t.Fatal("shifting a non-date anchor must fail rather than invent a value")
+	}
+	// Dates keep shifting as before.
+	shifted, err := substituteOracleTokens(`{{anchor-7d}}`, "2026-08-08", time.Unix(0, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shifted != "2026-08-01" {
+		t.Fatalf("unexpected shifted anchor %q", shifted)
+	}
+}

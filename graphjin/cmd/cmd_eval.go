@@ -193,6 +193,7 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 		out         string
 		splitRatio  float64
 		splitHold   []string
+		writable    bool
 	)
 	command := &cobra.Command{
 		Use:   "create",
@@ -207,7 +208,7 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: seed, FreezeTime: opts.FreezeTime})
+			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: seed, FreezeTime: opts.FreezeTime, Writable: writable, Resettable: writable})
 			if err != nil {
 				return evalEnvironmentError(err)
 			}
@@ -272,6 +273,7 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 	command.Flags().StringVar(&composition, "composition", string(gjeval.CompositionBenchmark), "sampling composition: benchmark or coverage")
 	command.Flags().IntVar(&concurrency, "verify-concurrency", 1, "how many candidate oracles to verify at once")
 	command.Flags().StringVar(&out, "out", "", "write the suite here instead of the project's eval directory")
+	command.Flags().BoolVar(&writable, "writable", false, "boot a writable environment so write families can generate and verify")
 	command.Flags().Float64Var(&splitRatio, "split", 0, "also write a train/eval split manifest with this training share")
 	command.Flags().StringSliceVar(&splitHold, "split-holdout-families", nil, "families never placed in the training side")
 	return command

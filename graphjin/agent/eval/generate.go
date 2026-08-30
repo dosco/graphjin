@@ -203,6 +203,12 @@ var candidateFamilies = []candidateFamily{
 		Categories:   []Category{CategoryWindow},
 		Generate:     generateWindowedFilterCandidates,
 	},
+	{
+		Name:         "row-update",
+		SinceVersion: "graphjin.eval.generator/v14",
+		Categories:   []Category{CategoryAction},
+		Generate:     generateRowUpdateCandidates,
+	},
 }
 
 // v12Families names the families that composed the frozen public suite. The
