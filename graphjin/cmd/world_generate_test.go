@@ -183,3 +183,29 @@ func TestGeneratedSeedReferencesRealParentRows(t *testing.T) {
 		}
 	}
 }
+
+// A clone's promise is that no real value crosses over, and the way anyone
+// checks that is to grep the output for a name they recognise. If the synthetic
+// vocabulary shares a proper noun with a shipped demo, that check produces a
+// false alarm at exactly the moment someone is auditing for a leak — which is
+// how this was caught: four of these names had been taken from the demo's own
+// account list.
+func TestSyntheticNamesShareNothingWithTheShippedDemo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads the embedded demo")
+	}
+	project := t.TempDir()
+	if err := extractDefaultDemo(project); err != nil {
+		t.Fatal(err)
+	}
+	seed, err := os.ReadFile(filepath.Join(project, "seed", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range worldNameParts {
+		if strings.Contains(string(seed), name) {
+			t.Fatalf("synthetic name %q also appears in the demo's own data; "+
+				"a leak audit on a clone would flag it", name)
+		}
+	}
+}

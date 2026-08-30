@@ -181,9 +181,17 @@ func worldValue(rng *rand.Rand, table worldTable, column worldColumn, index, par
 	}
 }
 
+// worldNameParts is the vocabulary synthetic names are drawn from.
+//
+// It must share nothing with the shipped demos. A clone's whole promise is that
+// no real value crosses over, and the way anyone checks that is to grep the
+// output for a name they recognise — so a synthetic name that collides with a
+// real one produces a false alarm at exactly the moment someone is auditing.
+// Four of these were originally lifted from the demo's own accounts, which is
+// how that was found.
 var worldNameParts = []string{
-	"Northwind", "Harborlight", "Meridian", "Quartzline", "Blackpine", "Evergate",
-	"Silverbrook", "Ironvale", "Redcedar", "Fairmount", "Longwater", "Ashford",
+	"Northwind", "Stonebridge", "Falconridge", "Hollowmere", "Blackpine", "Evergate",
+	"Silverbrook", "Brackenfield", "Redcedar", "Fairmount", "Longwater", "Ashford",
 	"Kingsway", "Thornbury", "Westmoor", "Calder", "Draycott", "Pellham",
 }
 
