@@ -102,6 +102,7 @@ func evalCmd() *cobra.Command {
 	cmd.AddCommand(evalBaselineCmd(opts))
 	cmd.AddCommand(evalBenchCmd(opts))
 	cmd.AddCommand(evalRescoreCmd(opts))
+	cmd.AddCommand(evalExportCmd(opts))
 	cmd.AddCommand(evalPublishCmd(opts))
 	cmd.AddCommand(evalFreezeSuiteCmd(opts))
 	cmd.AddCommand(evalImportCmd())
@@ -181,6 +182,78 @@ func evalRemoveCmd(opts *evalCLIOptions) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// evalExportCmd rewrites a completed run's episodes as training trajectories.
+func evalExportCmd(opts *evalCLIOptions) *cobra.Command {
+	var (
+		stage              string
+		includeEnvironment bool
+		profile            string
+		output             string
+	)
+	command := &cobra.Command{
+		Use:   "export <run-id>",
+		Short: "Export a completed run's episodes as CodeAct trajectories",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectPath, _, err := resolveEvalTarget(cmd, opts)
+			if err != nil {
+				return err
+			}
+			store := gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir))
+			trajectories, err := gjeval.ExportRunTrajectories(store, strings.TrimSpace(args[0]), gjeval.TrajectoryOptions{
+				Stage: stage, IncludeEnvironmentSteps: includeEnvironment,
+				Profile: gjeval.RewardProfile(profile),
+			})
+			if err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+			if len(trajectories) == 0 {
+				return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has no episodes to export", args[0])}
+			}
+			out := cmd.OutOrStdout()
+			if strings.TrimSpace(output) != "" {
+				file, err := os.OpenFile(output, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+				if err != nil {
+					return err
+				}
+				defer file.Close() //nolint:errcheck
+				out = file
+			}
+			if err := gjeval.WriteTrajectoriesJSONL(out, trajectories); err != nil {
+				return err
+			}
+			// A corpus whose gaps are discovered after a training run has cost
+			// more than it saved, so incomplete traces are reported here rather
+			// than left for the trainer to notice.
+			steps, withoutPrompts, unresolved := 0, 0, 0
+			for _, trajectory := range trajectories {
+				steps += len(trajectory.Steps)
+				if !trajectory.PromptsRecorded {
+					withoutPrompts++
+				}
+				if !trajectory.AuthorshipResolved {
+					unresolved++
+				}
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "Exported %d trajectories (%d steps).\n", len(trajectories), steps)
+			if withoutPrompts != 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(),
+					"  %d recorded no rendered prompt: usable for inspection and reward work, not for supervised training.\n", withoutPrompts)
+			}
+			if unresolved != 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(),
+					"  %d could not tell the model's programs from the runtime's own: training on these imitates the environment.\n", unresolved)
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(&stage, "stage", "executor", "restrict to one agent stage (executor, distiller, responder; empty keeps all)")
+	command.Flags().BoolVar(&includeEnvironment, "include-environment-steps", false, "keep programs GraphJin wrote itself")
+	command.Flags().StringVar(&profile, "reward-profile", string(gjeval.RewardProfileRL), "reward profile to price episodes with")
+	command.Flags().StringVar(&output, "out", "", "write JSONL here instead of stdout")
+	return command
 }
 
 func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {

@@ -27,10 +27,10 @@ type CursorCache interface {
 
 // Redis key prefixes for cursor cache
 const (
-	cursorPrefix     = "gj:cursor:"
-	cursorIDKey      = cursorPrefix + "id:"      // id:<id> -> cursor string
-	cursorRevKey     = cursorPrefix + "rev:"     // rev:<hash> -> id (for deduplication)
-	cursorNextIDKey  = cursorPrefix + "next"     // atomic counter for ID generation
+	cursorPrefix       = "gj:cursor:"
+	cursorIDKey        = cursorPrefix + "id:"  // id:<id> -> cursor string
+	cursorRevKey       = cursorPrefix + "rev:" // rev:<hash> -> id (for deduplication)
+	cursorNextIDKey    = cursorPrefix + "next" // atomic counter for ID generation
 	cursorRedisTimeout = 100 * time.Millisecond
 )
 

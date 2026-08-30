@@ -90,6 +90,39 @@ func askEvalAgent(t *testing.T, instance gjeval.Instance, instruction string) (s
 	return answer, nil
 }
 
+// askEvalAgentFull returns the whole agent response envelope.
+func askEvalAgentFull(t *testing.T, instance gjeval.Instance, instruction string) (map[string]any, error) {
+	t.Helper()
+	base := strings.TrimRight(strings.TrimSpace(instance.BaseURL()), "/")
+	for _, suffix := range []string{"/api/v1/agent/status", "/api/v1/agent", "/api/v1/graphql"} {
+		base = strings.TrimSuffix(base, suffix)
+	}
+	trace := true
+	body, err := json.Marshal(gjagent.Request{Instruction: instruction, ReturnTrace: &trace})
+	if err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequest(http.MethodPost, base+"/api/v1/agent", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	for key, value := range instance.Headers() {
+		request.Header.Set(key, value)
+	}
+	client := &http.Client{Timeout: 120 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close() //nolint:errcheck
+	var payload map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
 // The agent is told what "today" is, and a run that crosses midnight otherwise
 // asks two different questions of the same frozen rows. This asserts the frozen
 // clock actually reaches the prompt the model is rendered, through the same
