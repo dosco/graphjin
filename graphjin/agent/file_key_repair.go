@@ -57,18 +57,24 @@ func fileRootKeyReads(query string, args map[string]any) []fileRootKeyRead {
 			if close < 0 {
 				continue
 			}
-			key := graphQLStringField(query, clean, open+1, close, "key", args)
-			if strings.TrimSpace(key) == "" {
+			read := fileRootKeyRead{root: root, argOpen: open, argClose: close}
+			if span, ok := graphQLStringFieldSpans(query[open+1 : close])["key"]; ok {
+				read.key = span.value
+				read.keyStart, read.keyEnd = open+1+span.start, open+1+span.end
+			} else if span, ok := whereKeyEqualitySpan(query, clean, open+1, close); ok {
+				// The same miss arrives as a where filter — half the recorded
+				// SLA queries wrote where: { key: { eq: ... } } — and the
+				// bridge answers both forms with the same silent empty list.
+				read.key = span.value
+				read.keyStart, read.keyEnd = span.start, span.end
+			}
+			if strings.TrimSpace(read.key) == "" {
 				continue
 			}
-			read := fileRootKeyRead{root: root, key: key, argOpen: open, argClose: close}
 			for _, name := range topLevelGraphQLArgumentNames(clean[open+1 : close]) {
 				if strings.EqualFold(strings.TrimSpace(name), "inline_data") {
 					read.inlineData = true
 				}
-			}
-			if span, ok := graphQLStringFieldSpans(query[open+1 : close])["key"]; ok {
-				read.keyStart, read.keyEnd = open+1+span.start, open+1+span.end
 			}
 			// The selection body decides whether the repair needs inline_data:
 			// it is what turns a listing row into the object's contents.
@@ -81,6 +87,58 @@ func fileRootKeyReads(query string, args map[string]any) []fileRootKeyRead {
 		}
 	}
 	return out
+}
+
+// whereKeyEqualitySpan finds the literal of a where: { key: { eq: "..." } }
+// filter directly under a root's arguments, returning its span in the original
+// query so a repair can substitute the real key in place. Only the direct form
+// is recognized; a key buried under and/or composition stays untouched.
+func whereKeyEqualitySpan(query, clean string, start, end int) (stringLiteralSpan, bool) {
+	whereOpen, whereClose, ok := namedObjectSpan(clean, start, end, "where")
+	if !ok {
+		return stringLiteralSpan{}, false
+	}
+	keyOpen, keyClose, ok := namedObjectSpan(clean, whereOpen+1, whereClose, "key")
+	if !ok {
+		return stringLiteralSpan{}, false
+	}
+	span, ok := graphQLStringFieldSpans(query[keyOpen+1 : keyClose])["eq"]
+	if !ok {
+		return stringLiteralSpan{}, false
+	}
+	return stringLiteralSpan{value: span.value, start: keyOpen + 1 + span.start, end: keyOpen + 1 + span.end}, true
+}
+
+// namedObjectSpan locates `name: { ... }` inside [start,end) of the blanked
+// query, returning the braces' offsets.
+func namedObjectSpan(clean string, start, end int, name string) (int, int, bool) {
+	lower := strings.ToLower(clean[start:end])
+	for offset := 0; offset < len(lower); {
+		relative := strings.Index(lower[offset:], name)
+		if relative < 0 {
+			return 0, 0, false
+		}
+		fieldStart := start + offset + relative
+		fieldEnd := fieldStart + len(name)
+		offset += relative + len(name)
+		if (fieldStart > start && isGraphQLNameContinue(clean[fieldStart-1])) || (fieldEnd < end && isGraphQLNameContinue(clean[fieldEnd])) {
+			continue
+		}
+		colon := skipGraphQLSpace(clean, fieldEnd)
+		if colon >= end || clean[colon] != ':' {
+			continue
+		}
+		open := skipGraphQLSpace(clean, colon+1)
+		if open >= end || clean[open] != '{' {
+			continue
+		}
+		close := matchingGraphQLDelimiter(clean, open, '{', '}')
+		if close <= open || close > end {
+			continue
+		}
+		return open, close, true
+	}
+	return 0, 0, false
 }
 
 // selectionBodyAfter returns the `{ ... }` selection that follows a root's
