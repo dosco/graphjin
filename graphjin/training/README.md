@@ -20,6 +20,49 @@ on safety rather than passing.
 Because the reward comes from the environment, a number collected here and a
 number on the public leaderboard mean the same thing.
 
+## Using your own schema
+
+You do not have to point this at a demo. `graphjin env clone` reads a running
+GraphJin server's catalog — the same description of the schema any connected
+agent already sees — and writes a local SQLite project with the same tables,
+columns, keys and relationships, filled with synthetic rows:
+
+```bash
+graphjin env clone --url https://graphjin.internal --out ./clone-acme --seed 7
+```
+
+**No rows are read.** The only real values that cross over are the closed sets
+the catalog publishes for a column — the handful of statuses it is known to
+hold — because a task filtering on a state the business does not have is a task
+about nothing. The clone is writable and resettable, which is what makes write
+tasks and training possible against a schema whose real database is neither.
+
+## The authoring model is not the model being trained
+
+Counting, filtering and following a relationship can be derived from a schema.
+Knowing that *failed invoices are worth alerting on*, and phrasing that the way
+the person who wants it would, cannot. `graphjin eval author` asks a capable
+model for those judgements and builds the tasks itself:
+
+```bash
+export GJ_GENERATOR_PROVIDER=anthropic
+export GJ_GENERATOR_MODEL=<a-strong-model>
+graphjin eval author --demo --path ./clone-acme --kinds watch,confirmation,history,scenario --yes
+```
+
+`GJ_GENERATOR_*` is deliberately separate from `GJ_AGENT_*`: the model being
+trained is often small, and the model deciding what is worth asking should not
+be. With nothing set it falls back to the agent's own configuration, so one
+configured model is enough to try it.
+
+Nothing the model returns is taken on trust. Every table, column and value it
+names must exist in the schema census it was given; prose that names GraphJin's
+own vocabulary is refused, since an intent task that says "create a watch" no
+longer measures whether the agent can plan; and every task that survives is
+resolved against the live database before it can enter a suite. Refusals are
+printed with reasons. The result is written to `eval/authored.yml`, and
+`eval create` picks it up as ordinary candidates.
+
 ## Running one
 
 Generate a suite for your project, then serve it:
