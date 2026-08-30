@@ -88,16 +88,6 @@ func authoredWatchPostState(table, value string) OracleSpec {
 	}
 }
 
-// authoredSubscription is the subscription text a watch is created with.
-func authoredSubscription(name, table, column, value, projection string) string {
-	filter := ""
-	if strings.TrimSpace(column) != "" && strings.TrimSpace(value) != "" {
-		filter = fmt.Sprintf(`where: {%s: {eq: %q}}, `, column, value)
-	}
-	return fmt.Sprintf("subscription %s { %s(%sfirst: 25, after: $cursor) { %s } %s_cursor }",
-		name, table, filter, projection, table)
-}
-
 // authoredWatchTasks builds the intent/execution pair for one standing question.
 //
 // The pair exists so a failure can be read: the execution twin hands over the
