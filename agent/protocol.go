@@ -3840,6 +3840,13 @@ func resultSummary(tool string, args map[string]any, out any) map[string]any {
 				summary["has_data"] = true
 				summary["data_shape"] = dataShape(data)
 				summary["database_aggregate"] = resultContainsAggregateField(data)
+				// Which roots answered with nothing. Scoring could not tell a
+				// read that returned the policy file from one that returned an
+				// empty list, so a query naming the right root counted as
+				// having read it either way.
+				if empty := emptyResultRoots(data); len(empty) != 0 {
+					summary["empty_roots"] = empty
+				}
 			}
 			if trunc := mapValue(m["truncation"]); trunc != nil {
 				summary["truncated"] = trunc["roots"]
@@ -4754,6 +4761,34 @@ func graphQLOperationKind(query string) string {
 		return "subscription"
 	}
 	return "query"
+}
+
+// emptyResultRoots names the roots a read answered with nothing. An empty list
+// is a legitimate answer to a filter and a silent failure to an identity
+// lookup; recording which roots were empty lets the scorer tell the two apart
+// after the fact.
+func emptyResultRoots(data any) []string {
+	typed, ok := normalizeValue(data).(map[string]any)
+	if !ok {
+		return nil
+	}
+	var out []string
+	for root, value := range typed {
+		switch inner := normalizeValue(value).(type) {
+		case nil:
+			out = append(out, root)
+		case []any:
+			if len(inner) == 0 {
+				out = append(out, root)
+			}
+		case map[string]any:
+			if len(inner) == 0 {
+				out = append(out, root)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func dataShape(value any) any {

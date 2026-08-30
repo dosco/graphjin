@@ -11,13 +11,13 @@ func TestMethodAcceptsEquivalentDatabaseAggregate(t *testing.T) {
 		RequireQueryMatch:          []string{aggregateMethodPattern("sum", "quantity")},
 		ForbidFinalizeFromListOnly: true,
 	}
-	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{`{ usage_events { total_quantity: sum(expr: quantity) } }`}, nil) {
+	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{`{ usage_events { total_quantity: sum(expr: quantity) } }`}, nil, nil) {
 		t.Fatal("expression aggregate should satisfy the database-computed method rule")
 	}
-	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{`{ usage_events_aggregate { aggregate { sum { quantity } } } }`}, nil) {
+	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{`{ usage_events_aggregate { aggregate { sum { quantity } } } }`}, nil, nil) {
 		t.Fatal("Hasura-compatible aggregate should satisfy the database-computed method rule")
 	}
-	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{`{ usage_events_aggregate { sum { quantity } } }`}, nil) {
+	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{`{ usage_events_aggregate { sum { quantity } } }`}, nil, nil) {
 		t.Fatal("shallow Hasura-compatible aggregate should satisfy the database-computed method rule")
 	}
 }
@@ -25,15 +25,15 @@ func TestMethodAcceptsEquivalentDatabaseAggregate(t *testing.T) {
 func TestMethodAcceptsLatestRowQuery(t *testing.T) {
 	rule := MethodRule{RequireQueryMatch: []string{latestDateMethodPattern("started_at")}}
 	query := `query { subscriptions(order_by: { started_at: desc }, limit: 1) { started_at } }`
-	if !evaluateMethod(rule, AnswerRule{Kind: "date"}, []string{query}, nil) {
+	if !evaluateMethod(rule, AnswerRule{Kind: "date"}, []string{query}, nil, nil) {
 		t.Fatal("descending order with limit one should satisfy the latest-date method rule")
 	}
 	compat := `query { subscriptions_aggregate { aggregate { max { started_at } } } }`
-	if !evaluateMethod(rule, AnswerRule{Kind: "date"}, []string{compat}, nil) {
+	if !evaluateMethod(rule, AnswerRule{Kind: "date"}, []string{compat}, nil, nil) {
 		t.Fatal("Hasura-compatible max should satisfy the latest-date method rule")
 	}
 	shallow := `query { subscriptions_aggregate { max { started_at } } }`
-	if !evaluateMethod(rule, AnswerRule{Kind: "date"}, []string{shallow}, nil) {
+	if !evaluateMethod(rule, AnswerRule{Kind: "date"}, []string{shallow}, nil, nil) {
 		t.Fatal("shallow Hasura-compatible max should satisfy the latest-date method rule")
 	}
 }
@@ -44,11 +44,11 @@ func TestMethodAcceptsHasuraCompatibleFilteredCount(t *testing.T) {
 		ForbidFinalizeFromListOnly: true,
 	}
 	query := `query { events_aggregate(where: {occurred_at: {gte: "2026-01-01"}}) { aggregate { count } } }`
-	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{query}, nil) {
+	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{query}, nil, nil) {
 		t.Fatal("Hasura-compatible filtered count should satisfy the method rule")
 	}
 	shallow := `query { events_aggregate(where: {occurred_at: {gte: "2026-01-01"}}) { count } }`
-	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{shallow}, nil) {
+	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{shallow}, nil, nil) {
 		t.Fatal("shallow Hasura-compatible filtered count should satisfy the method rule")
 	}
 }
@@ -56,7 +56,7 @@ func TestMethodAcceptsHasuraCompatibleFilteredCount(t *testing.T) {
 func TestMethodDoesNotTreatRealAggregateSuffixTableAsComputation(t *testing.T) {
 	rule := MethodRule{ForbidFinalizeFromListOnly: true}
 	query := `query { audit_aggregate { id } }`
-	if evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{query}, nil) {
+	if evaluateMethod(rule, AnswerRule{Kind: "number"}, []string{query}, nil, nil) {
 		t.Fatal("real table with _aggregate suffix should not satisfy aggregate method guard")
 	}
 }
@@ -326,5 +326,44 @@ func TestAggregateFieldPatternAcceptsColumnArgSyntax(t *testing.T) {
 		if !aggregateFieldPattern.MatchString(query) {
 			t.Fatalf("column-arg aggregate was not recognized: %s", query)
 		}
+	}
+}
+
+// TestEmptyFileReadNoLongerCountsAsMethod pins the scorer half of the
+// cross-source false pass. A model asked sla_policies for a key the source does
+// not hold, got an empty list, and the requirement matched on the query text
+// alone — so it scored "required database method" for a file it never read,
+// then answered a figure it invented and passed on the ticket count.
+func TestEmptyFileReadNoLongerCountsAsMethod(t *testing.T) {
+	rule := MethodRule{RequireQueryMatch: []string{`(?s)sla_policies\s*(?:\([^)]*inline_data\s*:\s*true|(?:\([^)]*\))?\s*\{[^{}]*\b(?:data|text)\b)`, "support_tickets"}}
+	query := `query { support_tickets(where: {status: {eq: "open"}}) { count_id } sla_policies(key: "docs/support-sla.md") { key text } }`
+	queries := []string{query}
+
+	// The read that returned nothing for sla_policies does not demonstrate it.
+	empty := map[string][]string{query: {"sla_policies"}}
+	if evaluateMethod(rule, AnswerRule{Kind: "number"}, queries, nil, empty) {
+		t.Fatal("a file read that returned no object must not satisfy the requirement")
+	}
+
+	// The same query that actually returned the object does.
+	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, queries, nil, map[string][]string{}) {
+		t.Fatal("a read that returned the object must still satisfy the requirement")
+	}
+
+	// A root the requirement never names is unaffected: a filter legitimately
+	// matching no rows still satisfies its own pattern.
+	other := map[string][]string{query: {"unrelated_table"}}
+	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, queries, nil, other) {
+		t.Fatal("an empty root the requirement does not name must not fail it")
+	}
+}
+
+// Episodes recorded before the agent reported empty roots carry nothing, and
+// must score exactly as they did — the tightening is not retroactive.
+func TestMethodScoringUnchangedWithoutRecordedEmptyRoots(t *testing.T) {
+	rule := MethodRule{RequireQueryMatch: []string{"support_tickets"}}
+	queries := []string{`query { support_tickets { count_id } }`}
+	if !evaluateMethod(rule, AnswerRule{Kind: "number"}, queries, nil, nil) {
+		t.Fatal("with no recorded emptiness the requirement scores as before")
 	}
 }
