@@ -610,6 +610,42 @@ Instead of your client chaining `query_catalog` → `validate_where_clause` → 
 
 It is an RLM loop — the model writes JavaScript that calls the discovery tools, and the typed result is parsed from `key: value` output. It needs strong **code generation**, not provider tool-calling. Ax requests structured JSON for typed stages, choosing the mechanism from the named deployment profile (`agent.provider`) and its rules for the selected model; `agent.structured_output_mode: auto` is the default, with `native`, `function`, and `json_object` available as overrides. `agent.service_tier` similarly defaults to provider-delegated `auto`, with portable `standard`, `flex`, and `priority` requests available when the profile/model supports them. See [AGENTIC.md](AGENTIC.md#server-side-agent) and [CONFIG.md](CONFIG.md#agent-configuration).
 
+## Train And Measure Agents On Your Own Graph
+
+The same machinery that grades GraphJin's public benchmark can grade agents on
+*your* data, and serve as a reinforcement-learning environment for tuning small
+models on it.
+
+```bash
+# Generate a verified task suite from your catalog, with a train/eval split
+graphjin eval create --demo --writable --scale 500 --composition coverage \
+  --verify-concurrency 8 --split 0.8
+
+# Serve it: pooled isolated worlds, one graded episode per request
+graphjin env serve --path ./graphjin-demo --suite eval/suite.yml --pool 4 \
+  --split eval/suite.split.json --side train --freeze-time 2026-08-01T12:00:00Z
+```
+
+- **Tasks come from your schema.** Each carries a hidden oracle — a read-only
+  query that computes the answer in the database — so being plausible earns
+  nothing. Writes are graded by the state the database ended in *and* by every
+  other row staying put.
+- **Worlds are isolated and resettable.** An episode leases one, so a task that
+  writes changes only the world it was given.
+- **Your policy plugs in by configuration**, not code: point `agent.base_url` at
+  any OpenAI-compatible endpoint.
+- **Nothing memorable to overfit.** `graphjin env new-world` writes a fresh
+  organization — schema, data and all — deterministically from a seed, so you
+  can train on some companies and measure on others. Worlds can be asked for the
+  awkwardness real schemas have: one word meaning two things, a stale column
+  that still looks authoritative, fields that are usually null.
+- **Runs export as training data.** `graphjin eval export` writes trajectories
+  as JSONL, marking the programs GraphJin's runtime wrote itself so they are not
+  mistaken for the policy's.
+
+See [training/README.md](training/README.md) for the client, an example policy
+server, and what to record alongside a result.
+
 ## JS Workflows (GraphQL + REST)
 
 Workflows let an LLM run multi-step logic in JavaScript while still using GraphJin MCP tools for DB-aware operations.
