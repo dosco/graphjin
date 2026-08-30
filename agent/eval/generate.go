@@ -1325,6 +1325,24 @@ func detailBool(raw any, keys ...string) bool {
 	return found
 }
 
+// detailInt reads a numeric detail field, tolerating the float form JSON
+// numbers decode to.
+func detailInt(raw any, keys ...string) int {
+	var found int
+	walkDetailMaps(raw, func(details map[string]any) {
+		if found != 0 {
+			return
+		}
+		switch value := mapValue(details, keys...).(type) {
+		case float64:
+			found = int(value)
+		case int:
+			found = value
+		}
+	})
+	return found
+}
+
 func queryFromDetails(raw any) string {
 	var found string
 	walkDetailMaps(raw, func(details map[string]any) {
