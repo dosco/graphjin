@@ -113,8 +113,10 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 			}
 		}
 		// StartDemo is existing CLI provisioning code and uses these command
-		// globals. The eval command is single-shot, so there is no concurrent
-		// command state to contend with.
+		// globals. Serving does not touch them, so several instances can serve
+		// at once, but only one may be provisioned at a time.
+		demoBootMu.Lock()
+		defer demoBootMu.Unlock()
 		previousPath, previousConf, previousDB, previousOpened := cpath, conf, db, dbOpened
 		previousAnchor := demoPinnedDataAnchor
 		restoreDemoGlobals = func() {
@@ -315,6 +317,10 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		if err := diskSnapshot.Restore(); err != nil {
 			return err
 		}
+		// A reset re-provisions, so it contends for the same command globals a
+		// boot does.
+		demoBootMu.Lock()
+		defer demoBootMu.Unlock()
 		cpath = configPath
 		conf = &cloned
 		// A reset re-provisions the demo, which is where the date shift happens.
