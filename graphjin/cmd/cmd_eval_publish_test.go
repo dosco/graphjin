@@ -249,7 +249,15 @@ func TestEvalPublishAdvancesOfficialCohortAndKeepsHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data.Suite.SuiteFingerprint != report.SuiteFingerprint || data.Suite.GeneratorVersion != gjeval.GeneratorVersion {
+	// The published stamp names the generator that wrote the measured questions,
+	// which is the frozen public suite's version rather than whatever this binary
+	// would generate today. Crediting the board's numbers to a newer generator
+	// that never wrote them would misdescribe every cohort it carries.
+	publicSuite, err := loadPublicEvalSuite()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.Suite.SuiteFingerprint != report.SuiteFingerprint || data.Suite.GeneratorVersion != publicSuite.Generator.Version {
 		t.Fatalf("suite did not advance: %+v", data.Suite)
 	}
 	if data.Suite.ComparisonGeneration != gjeval.PublicBenchmarkGeneration || data.Suite.ScopeLabel != defaultBenchmarkScope || data.Suite.GenerationScopes["2027.1"] == "" {

@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -163,7 +164,15 @@ func evalRemoveCmd(opts *evalCLIOptions) *cobra.Command {
 }
 
 func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
-	return &cobra.Command{
+	var (
+		scale       int
+		seed        int64
+		families    []string
+		composition string
+		concurrency int
+		out         string
+	)
+	command := &cobra.Command{
 		Use:   "create",
 		Short: "Generate a verified catalog-derived evaluation suite",
 		Args:  cobra.NoArgs,
@@ -172,7 +181,7 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: 23})
+			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{Target: target, ConfigPath: projectPath, Seed: seed})
 			if err != nil {
 				return evalEnvironmentError(err)
 			}
@@ -180,21 +189,58 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 			client := &http.Client{Timeout: 120 * time.Second}
 			source := gjeval.HTTPCatalogSource{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
 			verifier := &gjeval.Verifier{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
-			suite, err := (gjeval.Generator{Source: source, Verifier: verifier}).Generate(cmd.Context(), gjeval.GeneratorOptions{Seed: 23, Scale: gjeval.DefaultSuiteSize})
+			suite, err := (gjeval.Generator{Source: source, Verifier: verifier}).Generate(cmd.Context(), gjeval.GeneratorOptions{
+				Seed: seed, Scale: scale, Families: families,
+				Composition: gjeval.Composition(composition), VerifyConcurrency: concurrency,
+			})
 			if err != nil {
 				return &evalExitError{Code: 2, Err: err}
 			}
 			path := evalSuitePath(projectPath)
+			if strings.TrimSpace(out) != "" {
+				path = out
+			}
 			if err := gjeval.SaveSuite(path, *suite); err != nil {
 				return err
 			}
+			// Counting the suite by family is what makes "the new families ran"
+			// checkable. A total task count cannot distinguish a family that
+			// produced nothing from one whose every candidate lost the sampling.
+			byFamily := map[string]int{}
+			for _, task := range suite.Tasks {
+				byFamily[task.Provenance.Source]++
+			}
 			if opts.JSON {
-				return writeEvalJSON(cmd.OutOrStdout(), map[string]any{"status": "created", "suite": path, "tasks": len(suite.Tasks), "seed": suite.Generator.Seed, "catalog_fingerprint": suite.CatalogFingerprint})
+				return writeEvalJSON(cmd.OutOrStdout(), map[string]any{
+					"status": "created", "suite": path, "tasks": len(suite.Tasks),
+					"seed": suite.Generator.Seed, "scale": suite.Generator.Scale,
+					"generator_version": suite.Generator.Version, "composition": string(gjeval.Composition(composition)),
+					"catalog_fingerprint": suite.CatalogFingerprint, "tasks_by_family": byFamily,
+				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Created %s with %d verified tasks (seed %d).\n", path, len(suite.Tasks), suite.Generator.Seed)
+			for _, name := range sortedKeys(byFamily) {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %-32s %d\n", name, byFamily[name])
+			}
 			return nil
 		},
 	}
+	command.Flags().IntVar(&scale, "scale", gjeval.DefaultSuiteSize, "number of intent-tier tasks to select")
+	command.Flags().Int64Var(&seed, "seed", 23, "generation seed")
+	command.Flags().StringSliceVar(&families, "families", nil, "restrict generation to these task families (default: all)")
+	command.Flags().StringVar(&composition, "composition", string(gjeval.CompositionBenchmark), "sampling composition: benchmark or coverage")
+	command.Flags().IntVar(&concurrency, "verify-concurrency", 1, "how many candidate oracles to verify at once")
+	command.Flags().StringVar(&out, "out", "", "write the suite here instead of the project's eval directory")
+	return command
+}
+
+func sortedKeys(values map[string]int) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func evalAddCmd(opts *evalCLIOptions) *cobra.Command {
