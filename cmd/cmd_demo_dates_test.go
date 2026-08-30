@@ -417,4 +417,3 @@ func TestDemoAnchorDeltaSignsTheMove(t *testing.T) {
 		}
 	}
 }
-

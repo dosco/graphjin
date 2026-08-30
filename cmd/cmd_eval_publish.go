@@ -513,6 +513,19 @@ func benchmarkComparabilityMismatches(report gjeval.Report, suite benchmarkSuite
 	return sortedUniqueStrings(mismatches)
 }
 
+// publishedSuiteGeneratorVersion reports the generator that produced the suite
+// a published run was measured against, which is the frozen public suite rather
+// than whatever this binary would generate today. Once the binary can run more
+// than one generator version, stamping its own constant would credit the
+// leaderboard's numbers to a generator that never wrote those questions.
+func publishedSuiteGeneratorVersion() string {
+	suite, err := loadPublicEvalSuite()
+	if err != nil || suite == nil || strings.TrimSpace(suite.Generator.Version) == "" {
+		return gjeval.GeneratorVersion
+	}
+	return suite.Generator.Version
+}
+
 func benchmarkSuiteFromReport(report gjeval.Report) benchmarkSuite {
 	categoryCounts := map[string]int{}
 	for _, task := range report.Tasks {
@@ -520,7 +533,7 @@ func benchmarkSuiteFromReport(report gjeval.Report) benchmarkSuite {
 	}
 	return benchmarkSuite{
 		Generation: gjeval.PublicBenchmarkGeneration, ComparisonGeneration: gjeval.PublicBenchmarkGeneration,
-		ScopeLabel: defaultBenchmarkScope, GenerationScopes: defaultBenchmarkGenerationScopes(), GeneratorVersion: gjeval.GeneratorVersion,
+		ScopeLabel: defaultBenchmarkScope, GenerationScopes: defaultBenchmarkGenerationScopes(), GeneratorVersion: publishedSuiteGeneratorVersion(),
 		Identity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
 		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
 		Mode: string(report.Mode), Seed: report.Provenance.Seed, Repeats: report.Provenance.Repeats,

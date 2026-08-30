@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
@@ -253,6 +254,98 @@ type GeneratorOptions struct {
 	// Families restricts candidate generation to the named families. Empty
 	// selects every registered family.
 	Families []string
+	// Composition selects how the verified pool is sampled down to Scale.
+	// Empty means CompositionBenchmark.
+	Composition Composition
+	// VerifyConcurrency bounds how many candidate oracles are resolved at once.
+	// Zero or one resolves them serially. Concurrency changes only how long
+	// verification takes, never which candidates survive or in what order.
+	VerifyConcurrency int
+}
+
+// Composition selects the sampling policy applied to the verified candidate
+// pool.
+type Composition string
+
+const (
+	// CompositionBenchmark is the published measurement composition: fixed
+	// category weights, the hand-authored reference set kept whole, and
+	// traversal held to its explicit quota.
+	CompositionBenchmark Composition = "benchmark"
+	// CompositionCoverage spreads a large suite as widely as the catalog
+	// allows. It is for generating training and diagnostic volume, not for
+	// producing a comparable benchmark number.
+	CompositionCoverage Composition = "coverage"
+)
+
+func (c Composition) normalize() (Composition, error) {
+	switch c {
+	case "", CompositionBenchmark:
+		return CompositionBenchmark, nil
+	case CompositionCoverage:
+		return CompositionCoverage, nil
+	}
+	return "", fmt.Errorf("unknown composition %q; expected %q or %q", string(c), CompositionBenchmark, CompositionCoverage)
+}
+
+// resolveCandidateOracles reports, per candidate, whether its read oracle
+// compiled and executed against the live database. A candidate whose oracle
+// cannot run is not a task anyone could answer, so it is dropped.
+//
+// Resolution is the slow part of generation and is pure I/O, so it runs in
+// bounded parallel. Nothing here decides anything: the caller still walks
+// candidates in order, which is what keeps a generated suite reproducible
+// regardless of the concurrency it was generated with.
+func (g Generator) resolveCandidateOracles(ctx context.Context, candidates []Task, concurrency int) ([]bool, error) {
+	resolved := make([]bool, len(candidates))
+	if g.Verifier == nil {
+		return resolved, nil
+	}
+	pending := make([]int, 0, len(candidates))
+	for i := range candidates {
+		if candidates[i].Oracle != nil {
+			pending = append(pending, i)
+		}
+	}
+	if len(pending) == 0 {
+		return resolved, nil
+	}
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if concurrency > len(pending) {
+		concurrency = len(pending)
+	}
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for worker := 0; worker < concurrency; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				if _, err := g.Verifier.Resolve(ctx, *candidates[index].Oracle); err == nil {
+					resolved[index] = true
+				}
+			}
+		}()
+	}
+	for _, index := range pending {
+		if ctx.Err() != nil {
+			break
+		}
+		jobs <- index
+	}
+	close(jobs)
+	wg.Wait()
+	// A cancelled context would otherwise look like a catalog whose oracles all
+	// stopped working, and the run would save a silently truncated suite.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return resolved, nil
 }
 
 type Generator struct {
@@ -276,9 +369,21 @@ func (g Generator) Generate(ctx context.Context, opts GeneratorOptions) (*Suite,
 	if err != nil {
 		return nil, err
 	}
+	composition, err := opts.Composition.normalize()
+	if err != nil {
+		return nil, err
+	}
 	candidates := append([]Task(nil), opts.Curated...)
 	for _, family := range families {
 		candidates = append(candidates, family.Generate(snapshot, opts.Seed)...)
+	}
+	// Read oracles are resolved ahead of the selection loop so a large candidate
+	// pool is not gated on a serial round trip each. Only the resolution is
+	// concurrent: the loop below still decides in candidate order, so the
+	// generated suite is byte-identical whatever concurrency was used.
+	resolved, err := g.resolveCandidateOracles(ctx, candidates, opts.VerifyConcurrency)
+	if err != nil {
+		return nil, err
 	}
 	verified := make([]Task, 0, len(candidates))
 	seen := map[string]struct{}{}
@@ -297,7 +402,7 @@ func (g Generator) Generate(ctx context.Context, opts GeneratorOptions) (*Suite,
 			if g.Verifier == nil {
 				return nil, fmt.Errorf("generator needs an oracle verifier")
 			}
-			if _, err := g.Verifier.Resolve(ctx, *candidates[i].Oracle); err != nil {
+			if !resolved[i] {
 				continue
 			}
 		}
@@ -328,7 +433,13 @@ func (g Generator) Generate(ctx context.Context, opts GeneratorOptions) (*Suite,
 	// needs were selected: sampling them competitively split pairs, and a pair with
 	// one half missing makes the planning gap uncomputable for that need.
 	intent, twins := partitionExecutionTwins(verified)
-	selected := stratifiedSample(intent, opts.Scale, opts.Seed)
+	var selected []Task
+	switch composition {
+	case CompositionCoverage:
+		selected = coverageSample(intent, opts.Scale, opts.Seed)
+	default:
+		selected = stratifiedSample(intent, opts.Scale, opts.Seed)
+	}
 	if len(selected) == 0 {
 		return nil, fmt.Errorf("generator found no valid catalog-derived tasks")
 	}
@@ -1412,6 +1523,72 @@ func stratifiedSample(tasks []Task, limit int, seed int64) []Task {
 			}
 			selected = append(selected, byCategory[spec.Category][0])
 			byCategory[spec.Category] = byCategory[spec.Category][1:]
+			progress = true
+		}
+		if !progress {
+			break
+		}
+	}
+	return append(curated, selected...)
+}
+
+// coverageSample spreads a suite as widely as the catalog allows, for training
+// and diagnostic volume rather than for a comparable benchmark number. It
+// differs from the published sampler in three ways, each of which would break
+// comparability if applied there:
+//
+//   - Every category, traversal included, can take unused slots. Traversal is
+//     excluded from backfill in the benchmark because it had no objective
+//     oracle; the join-count family gives it one, but widening the published
+//     composition is a cohort decision, not a side effect of adding a family.
+//   - The hand-authored reference set is capped rather than kept whole. It is a
+//     fixed few dozen tasks, so at volume it would otherwise shrink to a
+//     rounding error in one direction or dominate a small suite in the other.
+//   - Categories are filled in equal share instead of by measurement weight,
+//     because the aim is breadth of situation rather than a stable mix.
+func coverageSample(tasks []Task, limit int, seed int64) []Task {
+	if limit >= len(tasks) {
+		return append([]Task(nil), tasks...)
+	}
+	curated, generated := partitionCuratedTasks(tasks)
+	// Keep the reference set proportional to the suite: present at any size,
+	// never more than a quarter of it.
+	if quota := limit / 4; len(curated) > quota {
+		curated = curated[:quota]
+	}
+	limit -= len(curated)
+	if limit <= 0 {
+		return curated
+	}
+	rng := mathrand.New(mathrand.NewSource(seed))
+	byCategory := map[Category][]Task{}
+	order := make([]Category, 0, len(categoryQuotaSpecs))
+	for _, spec := range categoryQuotaSpecs {
+		var items []Task
+		for _, task := range generated {
+			if task.Category == spec.Category {
+				items = append(items, task)
+			}
+		}
+		if len(items) == 0 {
+			continue
+		}
+		byCategory[spec.Category] = orderedCategoryTasks(items, rng)
+		order = append(order, spec.Category)
+	}
+	selected := make([]Task, 0, limit)
+	for len(selected) < limit {
+		progress := false
+		for _, category := range order {
+			if len(selected) == limit {
+				break
+			}
+			items := byCategory[category]
+			if len(items) == 0 {
+				continue
+			}
+			selected = append(selected, items[0])
+			byCategory[category] = items[1:]
 			progress = true
 		}
 		if !progress {

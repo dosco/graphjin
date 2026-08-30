@@ -57,8 +57,19 @@ func TestEvalCommandSurfaceAndContextualFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if create.Flags().Lookup("scale") != nil || create.Flags().Lookup("seed") != nil {
-		t.Fatal("create exposed bench-only flags")
+	// create generates suites, so it owns the generation controls: scale, seed,
+	// which families contribute, and how the pool is sampled. What it must not
+	// grow are the flags that belong to running a suite — a create that accepted
+	// --public or --resume would read as if it could produce a benchmark result.
+	for _, name := range []string{"scale", "seed", "families", "composition", "verify-concurrency"} {
+		if create.Flags().Lookup(name) == nil {
+			t.Fatalf("create is missing the %s generation flag", name)
+		}
+	}
+	for _, name := range []string{"public", "resume", "restart", "auto-resume"} {
+		if create.Flags().Lookup(name) != nil {
+			t.Fatalf("create exposed the run-only flag %s", name)
+		}
 	}
 }
 
@@ -123,8 +134,12 @@ func TestEmbeddedPublicBenchmarkSuiteMatchesPinnedSpec(t *testing.T) {
 			t.Fatalf("need %s is missing a tier: %v", need, tiers)
 		}
 	}
-	if suite.Generator.Version != gjeval.GeneratorVersion {
-		t.Fatalf("suite generator = %q, want %q", suite.Generator.Version, gjeval.GeneratorVersion)
+	// The frozen suite keeps the generator version it was written at. Later
+	// versions must stay able to run it, because regenerating the questions is a
+	// cohort boundary rather than a routine consequence of adding a family.
+	if !gjeval.IsSupportedGeneratorVersion(suite.Generator.Version) {
+		t.Fatalf("suite generator = %q, which this binary cannot run (supports %v)",
+			suite.Generator.Version, gjeval.SupportedGeneratorVersions)
 	}
 	compatAggregate := false
 	categoryCounts := map[gjeval.Category]int{}
