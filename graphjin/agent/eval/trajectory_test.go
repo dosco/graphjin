@@ -27,14 +27,22 @@ func traceEpisode(prompts bool, programs ...string) Episode {
 		entry["item1"] = map[string]any{"content": string(completion)}
 		chatLog = append(chatLog, entry)
 	}
+	// A real trace brackets each program with the stage that produced it, and
+	// the stage is what the export reads. A fixture without those events would
+	// let a broken stage filter pass here and fail against a live run.
 	for _, program := range programs {
-		events = append(events, map[string]any{
-			"kind": "runtime_execute",
-			"payload": map[string]any{
-				"code": program, "is_error": false,
-				"result": map[string]any{"data": map[string]any{"accounts": []any{map[string]any{"count_id": 8}}}},
-			},
-		})
+		events = append(events,
+			map[string]any{"kind": "stage_request", "component_id": "agent.stage.executor",
+				"payload": map[string]any{"stage": "task"}},
+			map[string]any{"kind": "stage_response", "component_id": "agent.stage.executor",
+				"payload": map[string]any{"stage": "task"}},
+			map[string]any{
+				"kind": "runtime_execute",
+				"payload": map[string]any{
+					"code": program, "is_error": false,
+					"result": map[string]any{"data": map[string]any{"accounts": []any{map[string]any{"count_id": 8}}}},
+				},
+			})
 	}
 	return Episode{
 		RunID: "run-1", TaskID: "gjv1_abc", TaskSlug: "aggregate-accounts", Repeat: 1,
@@ -155,7 +163,14 @@ func TestTrajectoryReportsATraceThatRecordedNoCompletions(t *testing.T) {
 func TestTrajectoryCanRestrictToOneStage(t *testing.T) {
 	episode := traceEpisode(true, `await query_catalog({search: "accounts"});`, `await final({status:"answered"});`)
 	trace := episode.Response.(map[string]any)["trace"].(map[string]any)
-	trace["chat_log"].([]any)[1].(map[string]any)["name"] = "responder"
+	// The second program was produced by a different stage.
+	events := trace["events"].([]any)
+	for _, raw := range events[3:] {
+		event := raw.(map[string]any)
+		if event["component_id"] == "agent.stage.executor" {
+			event["component_id"] = "agent.stage.responder"
+		}
+	}
 
 	executor, err := BuildTrajectory(episode, TrajectoryOptions{Stage: "executor"})
 	if err != nil {

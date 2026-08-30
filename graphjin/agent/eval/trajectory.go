@@ -123,9 +123,24 @@ func BuildTrajectory(episode Episode, opts TrajectoryOptions) (Trajectory, error
 	}
 
 	index := 0
+	stage := ""
+	calls := 0
 	for _, raw := range toSlice(normalizeJSON(trace["events"])) {
 		event := toMap(raw)
-		if valueString(event["kind"]) != "runtime_execute" {
+		kind := valueString(event["kind"])
+		// The stage is read from the event stream rather than by counting model
+		// calls: a stage can run several programs, and one program can follow
+		// several calls, so any positional mapping between the two drifts.
+		if kind == "stage_request" || kind == "stage_response" {
+			if named := stageFromComponent(valueString(event["component_id"])); named != "" {
+				stage = named
+			}
+			if kind == "stage_response" {
+				calls++
+			}
+			continue
+		}
+		if kind != "runtime_execute" {
 			continue
 		}
 		payload := toMap(event["payload"])
@@ -143,7 +158,6 @@ func BuildTrajectory(episode Episode, opts TrajectoryOptions) (Trajectory, error
 		if author == AuthorEnvironment && !opts.IncludeEnvironmentSteps {
 			continue
 		}
-		stage := traceStageForStep(trace, index)
 		if opts.Stage != "" && !strings.EqualFold(stage, opts.Stage) {
 			continue
 		}
@@ -153,8 +167,10 @@ func BuildTrajectory(episode Episode, opts TrajectoryOptions) (Trajectory, error
 			Guidance:    compactJSON(payload["guidance_payload"], 2048),
 			IsError:     boolValue(payload["is_error"]),
 		}
-		if index < len(prompts) {
-			step.Prompt = prompts[index]
+		// The prompt that produced a program is the one from the model call just
+		// before it ran.
+		if promptIndex := calls - 1; promptIndex >= 0 && promptIndex < len(prompts) {
+			step.Prompt = prompts[promptIndex]
 		}
 		trajectory.Steps = append(trajectory.Steps, step)
 		index++
@@ -192,11 +208,12 @@ func renderedPrompt(item map[string]any) []TrajectoryMessage {
 	return out
 }
 
-// traceStageForStep names the stage that produced the nth executed program.
-func traceStageForStep(trace map[string]any, step int) string {
-	entries := toSlice(normalizeJSON(trace["chat_log"]))
-	if step < len(entries) {
-		return valueString(toMap(entries[step])["name"])
+// stageFromComponent reads the stage out of an event's component id, which the
+// trace spells "agent.stage.executor".
+func stageFromComponent(component string) string {
+	const prefix = "agent.stage."
+	if strings.HasPrefix(component, prefix) {
+		return strings.TrimPrefix(component, prefix)
 	}
 	return ""
 }
