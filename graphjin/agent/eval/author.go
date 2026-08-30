@@ -93,16 +93,51 @@ func decodeAuthorProposal(response gjagent.Response) (AuthorProposal, error) {
 			return proposal, nil
 		}
 	}
-	text := strings.TrimSpace(response.Answer)
+	if err := decodeFencedJSON(response.Answer, &proposal); err != nil {
+		return proposal, err
+	}
+	return proposal, nil
+}
+
+// decodeFencedJSON pulls one JSON value out of a model reply.
+//
+// Models wrap JSON in code fences, and often say something either side of it.
+// Rather than demand clean output, this finds the outermost JSON value in the
+// text: the first opening bracket through the last matching close. Both object
+// and array replies are accepted, because a call that asks for several picks
+// answers with an array.
+func decodeFencedJSON(text string, out any) error {
+	text = strings.TrimSpace(text)
 	text = strings.TrimPrefix(text, "```json")
 	text = strings.TrimPrefix(text, "```")
 	text = strings.TrimSuffix(text, "```")
-	start, end := strings.IndexByte(text, '{'), strings.LastIndexByte(text, '}')
+
+	object := jsonSpan(text, '{', '}')
+	array := jsonSpan(text, '[', ']')
+	span := object
+	// Whichever value starts first is the reply; an object containing an array
+	// must not be mistaken for the array it contains, and vice versa.
+	if array.ok && (!object.ok || array.start < object.start) {
+		span = array
+	}
+	if !span.ok {
+		return fmt.Errorf("model reply did not contain a JSON value")
+	}
+	if err := json.Unmarshal([]byte(text[span.start:span.end+1]), out); err != nil {
+		return fmt.Errorf("decode model reply: %w", err)
+	}
+	return nil
+}
+
+type jsonBounds struct {
+	start, end int
+	ok         bool
+}
+
+func jsonSpan(text string, open, close byte) jsonBounds {
+	start, end := strings.IndexByte(text, open), strings.LastIndexByte(text, close)
 	if start < 0 || end < start {
-		return proposal, fmt.Errorf("authoring response did not contain a JSON proposal")
+		return jsonBounds{}
 	}
-	if err := json.Unmarshal([]byte(text[start:end+1]), &proposal); err != nil {
-		return proposal, fmt.Errorf("decode authoring proposal: %w", err)
-	}
-	return proposal, nil
+	return jsonBounds{start: start, end: end, ok: true}
 }

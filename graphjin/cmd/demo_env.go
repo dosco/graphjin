@@ -127,6 +127,18 @@ func demoAgentKeyEnv() (string, string) {
 // provider authenticates with. Unknown providers return an empty string so
 // custom setups keep whatever the caller configured.
 func demoAgentProviderKeyEnv(provider string) string {
+	for _, candidate := range demoAgentProviderKeyCandidates(provider) {
+		if os.Getenv(candidate) != "" {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// demoAgentProviderKeyCandidates lists the credential variables a provider
+// authenticates with, set or not. Callers that must explain what they were
+// looking for need the names even when none is present.
+func demoAgentProviderKeyCandidates(provider string) []string {
 	var candidates []string
 	// Ax 24 accepts any named deployment profile, so this is convenience for the
 	// common ones and never a gate: a profile absent from this list still works
@@ -169,10 +181,5 @@ func demoAgentProviderKeyEnv(provider string) string {
 	case "openrouter":
 		candidates = []string{"OPENROUTER_API_KEY"}
 	}
-	for _, candidate := range candidates {
-		if os.Getenv(candidate) != "" {
-			return candidate
-		}
-	}
-	return ""
+	return candidates
 }
