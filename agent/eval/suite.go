@@ -59,8 +59,9 @@ func (s Suite) Validate() error {
 	if s.SchemaVersion != SuiteSchemaVersion {
 		return fmt.Errorf("unsupported suite schema_version %q", s.SchemaVersion)
 	}
-	if s.Generator.Version != GeneratorVersion {
-		return fmt.Errorf("unsupported suite generator version %q; this binary requires %q; regenerate the suite", s.Generator.Version, GeneratorVersion)
+	if !IsSupportedGeneratorVersion(s.Generator.Version) {
+		return fmt.Errorf("unsupported suite generator version %q; this binary supports %s; regenerate the suite",
+			s.Generator.Version, strings.Join(SupportedGeneratorVersions, ", "))
 	}
 	if s.Name == "" || len(s.Tasks) == 0 {
 		return errors.New("suite needs a name and at least one task")
