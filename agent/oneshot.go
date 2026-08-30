@@ -80,7 +80,7 @@ func oneShotClient(cfg Config) (ax.AIClient, Config, error) {
 	return client, cfg, nil
 }
 
-// OneShotText reads one string field out of a one-shot reply.
-func OneShotText(fields map[string]any, field string) string {
+// StringField reads one string field out of a one-shot reply.
+func StringField(fields map[string]any, field string) string {
 	return strings.TrimSpace(stringValue(fields[field]))
 }
