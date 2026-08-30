@@ -2101,7 +2101,8 @@ runs:
       slug: 20260829t230734-8e0f6e08
       label: gemini-3.5-flash-lite
       release: ebce8d29
-      ranked: true
+      ranked: false
+      unranked_reason: superseded by GraphJin build b4c428c5
       generation: "2028.4"
       generated_at: 2026-08-29T23:07:34.160731Z
       model: gemini-3.5-flash-lite
@@ -2168,4 +2169,75 @@ runs:
       forbidden_attempts: 1
       unsafe_effects: 0
       rescored_from: 20260829T174935.218079000Z-aebb91ff
+      accepted: true
+    - run_id: 20260830T004842.779487000Z-6274fffc
+      slug: 20260830t004842-6274fffc
+      label: gemini-3.5-flash-lite
+      release: b4c428c5
+      ranked: true
+      generation: "2028.4"
+      generated_at: 2026-08-30T03:12:40.290889Z
+      model: gemini-3.5-flash-lite
+      provider: gemini
+      model_key: google-gemini/gemini-3.5-flash-lite
+      board_eligible: true
+      graphjin_commit: b4c428c5
+      binary_fingerprint: 5b1b97ae1ba611a1cf35078bfbc124a63c46af6f1249a0a24bbd187d66558bf7
+      suite_identity: 7d19c897a7eafd37279d2895643dd39c
+      suite_fingerprint: 8f31247903e5b5cbc49501e3632968d6
+      catalog_hash: c4ee2c0d346f636f9230881f7fa9d912
+      seed_manifest_hash: 09dc76533c8a3dc8c6b7a8321ded613d
+      oracle_value_hash: 4e9d4b459fea775e006fd2aadc82e847e82c58f5be0145bd57f205035494d7f7
+      data_anchor: "2026-08-30"
+      reward_version: graphjin.eval.reward/v5
+      usage_accounting_version: graphjin.eval.usage/v2
+      seed: 23
+      repeats: 3
+      max_steps: 8
+      temperature: 0
+      task_count: 113
+      episode_count: 339
+      recall: 0.8849557522123894
+      recall_ci_low: 0.8230088495575221
+      recall_ci_high: 0.9380530973451328
+      pass_at_k: 0.9646017699115044
+      pass_power_k: 0.6194690265486725
+      ground_truth_recall: 0.9029126213592233
+      method_recall: 0.941747572815534
+      safety_precision: 1
+      behavior_recall: 0.9469026548672567
+      category_recall:
+        action: 1
+        aggregate: 0.8666666666666667
+        cross-source: 0.625
+        discovery: 0.9
+        multi-turn: 0.8571428571428571
+        ranking: 1
+        reactive: 0.9166666666666666
+        refusal: 0.9
+        saved-metric: 0.8888888888888888
+        window: 0.8
+      rollup_recall:
+        governance: 0.9
+        operations: 0.8809523809523809
+        questions: 0.8852459016393442
+      rollup_pass_power:
+        governance: 0.8
+        operations: 0.5238095238095238
+        questions: 0.6557377049180327
+      mean_reward: 0.9242787610619471
+      total_tokens: 12310513
+      prompt_tokens: 12031966
+      completion_tokens: 278547
+      provider_total_tokens: 12310513
+      latency_p50_ms: 4366
+      latency_p95_ms: 10737
+      prompt_price_per_million: 0.3
+      completion_price_per_million: 2.5
+      estimated_list_cost_usd: 4.305957299999999
+      estimated_list_cost_per_task_usd: 0.03810581681415929
+      pricing_source: https://ai.google.dev/gemini-api/docs/pricing (standard, 2026-08-06)
+      guard_interventions: 98
+      forbidden_attempts: 1
+      unsafe_effects: 0
       accepted: true
