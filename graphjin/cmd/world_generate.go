@@ -30,6 +30,20 @@ type worldColumn struct {
 	// Note is written into the DDL as a comment, so a pathology is discoverable
 	// by a human reading the schema even though nothing announces it.
 	Note string
+	// Ref names the table this column points at, for schemas whose tables carry
+	// more than one foreign key. A generated world has at most one parent per
+	// table and leaves this unset.
+	Ref *worldRef
+	// Unique marks a column the database will reject duplicates in, so generated
+	// values have to differ from row to row.
+	Unique bool
+}
+
+// worldRef is a foreign key's target, with the number of rows that exist to
+// point at so generated values land inside the parent's range.
+type worldRef struct {
+	Table string
+	Rows  int
 }
 
 type worldTable struct {

@@ -118,13 +118,26 @@ func worldValue(rng *rand.Rand, table worldTable, column worldColumn, index, par
 	switch {
 	case column.Name == "id":
 		return fmt.Sprintf("%d", index)
+	case column.Ref != nil:
+		// An imported schema can point at several parents from one table, so the
+		// target is carried per column rather than per table.
+		if column.Ref.Rows <= 0 {
+			return "1"
+		}
+		return fmt.Sprintf("%d", 1+rng.Intn(column.Ref.Rows))
 	case strings.HasSuffix(column.Name, "_id") && table.Parent != "":
 		if parentRows <= 0 {
 			return "1"
 		}
 		return fmt.Sprintf("%d", 1+rng.Intn(parentRows))
 	case column.Name == table.Label:
-		return fmt.Sprintf("%q", worldLabel(rng, table.Name, index))
+		label := worldLabel(rng, table.Name, index)
+		if column.Unique {
+			// A unique column cannot risk two rows drawing the same name; the
+			// row number makes it certain rather than probable.
+			label = fmt.Sprintf("%s %d", label, index)
+		}
+		return fmt.Sprintf("%q", label)
 	case len(column.Values) != 0:
 		// A nullable column with a closed set is left unset on some rows, which
 		// is what makes counting rows and counting values different questions.
@@ -137,8 +150,27 @@ func worldValue(rng *rand.Rand, table worldTable, column worldColumn, index, par
 			return ""
 		}
 		return fmt.Sprintf("%d", 100+rng.Intn(90000))
-	case strings.HasPrefix(column.Type, "TimestampWithTimeZone"):
+	case strings.HasPrefix(column.Type, "TimestampWithTimeZone"), strings.HasPrefix(column.Type, "Timestamp"):
 		return fmt.Sprintf("stamp(%d, %q)", -rng.Intn(180), fmt.Sprintf("%02d:%02d", rng.Intn(24), rng.Intn(60)))
+	case strings.HasPrefix(column.Type, "Date"):
+		return fmt.Sprintf("day(%d)", -rng.Intn(180))
+	case strings.HasPrefix(column.Type, "Boolean"):
+		if rng.Intn(2) == 0 {
+			return "false"
+		}
+		return "true"
+	case strings.HasPrefix(column.Type, "Numeric"), strings.HasPrefix(column.Type, "Decimal"),
+		strings.HasPrefix(column.Type, "Real"), strings.HasPrefix(column.Type, "Float"),
+		strings.HasPrefix(column.Type, "Double"):
+		if column.Nullable && rng.Intn(2) == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%d.%02d", rng.Intn(9000), rng.Intn(100))
+	case strings.HasPrefix(column.Type, "Int"):
+		if column.Nullable && rng.Intn(2) == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%d", 1+rng.Intn(9000))
 	case column.Nullable:
 		if rng.Intn(3) != 0 {
 			return ""

@@ -92,6 +92,7 @@ func envCmd() *cobra.Command {
 	}
 	cmd.AddCommand(envServeCmd())
 	cmd.AddCommand(envNewWorldCmd())
+	cmd.AddCommand(envCloneCmd())
 	return cmd
 }
 
@@ -409,5 +410,32 @@ func envNewWorldCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&pathologies, "pathologies", nil,
 		"schema awkwardness to build in: "+strings.Join(supportedPathologies, ", "))
 	cmd.Flags().StringVar(&out, "out", "", "directory to write the world to")
+	return cmd
+}
+
+// envCloneCmd learns a running server's schema and writes a local environment.
+func envCloneCmd() *cobra.Command {
+	var opts cloneOptions
+	cmd := &cobra.Command{
+		Use:   "clone",
+		Short: "Learn a running server's schema and write a local synthetic environment",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out, err := runClone(cmd.Context(), opts, cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"Wrote %s. Every row in it is synthetic; no data was read from the source.\n", out)
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"Next: graphjin eval create --demo --path %s --writable --composition coverage\n", out)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&opts.URL, "url", "", "server to learn from (default: the one from `graphjin cli setup`)")
+	cmd.Flags().StringVar(&opts.Out, "out", "./clone", "directory to write the environment to")
+	cmd.Flags().IntVar(&opts.Rows, "rows", 12, "synthetic rows to generate per table")
+	cmd.Flags().Int64Var(&opts.Seed, "seed", 1, "seed; the same seed produces the same synthetic data")
+	cmd.Flags().StringVar(&opts.TokenEnv, "token-env", "GRAPHJIN_EVAL_TOKEN", "environment variable holding the bearer token")
 	return cmd
 }
