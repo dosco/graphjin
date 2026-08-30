@@ -68,6 +68,7 @@ var (
 
 func Score(task Task, oracle *OracleResult, response gjagent.Response, latencyMS int64) ScoreDetail {
 	queries, successfulQueries, tools, successfulTools, outcomes, successfulOutcomes := actionInventory(response.Actions)
+	emptyRoots := emptyRootsByQuery(response.Actions)
 	failedOutcomes := subtractOutcomes(outcomes, successfulOutcomes)
 	usedSkills := make([]string, 0, len(response.Skills))
 	for _, usage := range response.Skills {
@@ -103,12 +104,12 @@ func Score(task Task, oracle *OracleResult, response gjagent.Response, latencyMS
 
 	if task.Oracle != nil && oracle != nil {
 		groundTruth, explanation := evaluateGroundTruth(task, *oracle, response)
-		method := evaluateMethod(task.Method, task.Answer, successfulQueries, successfulTools)
+		method := evaluateMethod(task.Method, task.Answer, successfulQueries, successfulTools, emptyRoots)
 		detail.Vector.GroundTruth = boolPointer(groundTruth)
 		detail.Vector.Method = boolPointer(method)
 		detail.GroundTruthDetail = explanation
 	} else if task.Mutation != nil {
-		method := evaluateMethod(task.Method, task.Answer, successfulQueries, successfulTools)
+		method := evaluateMethod(task.Method, task.Answer, successfulQueries, successfulTools, emptyRoots)
 		detail.Vector.Method = boolPointer(method)
 	}
 	detail.Vector.Efficiency = efficiencyScore(task.Budget, detail.ActorTurns, detail.Tokens.Total, latencyMS)
@@ -283,10 +284,10 @@ func mentionsNumericIdentifier(haystack, value string) bool {
 	return false
 }
 
-func evaluateMethod(rule MethodRule, answer AnswerRule, queries, tools []string) bool {
+func evaluateMethod(rule MethodRule, answer AnswerRule, queries, tools []string, emptyRoots map[string][]string) bool {
 	for _, required := range rule.RequireQueryMatch {
 		pattern, err := regexp.Compile("(?i)" + required)
-		if err != nil || !matchesAnyQuery(pattern, queries) {
+		if err != nil || !matchesRequiredQuery(pattern, required, queries, emptyRoots) {
 			return false
 		}
 	}
@@ -310,6 +311,71 @@ func evaluateMethod(rule MethodRule, answer AnswerRule, queries, tools []string)
 		return false
 	}
 	return true
+}
+
+// matchesRequiredQuery reports whether some executed query demonstrates a
+// required method. A query whose own result was empty for a root the
+// requirement names does not demonstrate it: the pattern exists to prove the
+// agent read that root, and a read returning nothing proves the opposite.
+//
+// The file half of cross-source is where this showed. A model that asked
+// sla_policies for a key the source does not hold got an empty list, matched
+// the pattern on the query text alone, and scored "required database method"
+// for a file it never read — then answered 24 hours for a policy that says 4,
+// and passed on the ticket count alone.
+//
+// Only requirements are held to this. A forbidden pattern is forbidden whether
+// or not it returned rows.
+func matchesRequiredQuery(pattern *regexp.Regexp, source string, queries []string, emptyRoots map[string][]string) bool {
+	for _, query := range queries {
+		if !pattern.MatchString(query) {
+			continue
+		}
+		if requirementNamesEmptyRoot(source, emptyRoots[query]) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// requirementNamesEmptyRoot reports whether a requirement's own text names a
+// root that came back empty. Matching on the literal root name keeps this
+// narrow: a requirement that never mentions the empty root is unaffected, so a
+// filter legitimately matching no rows still satisfies its own pattern.
+func requirementNamesEmptyRoot(source string, empty []string) bool {
+	if len(empty) == 0 {
+		return false
+	}
+	lower := strings.ToLower(source)
+	for _, root := range empty {
+		root = strings.ToLower(strings.TrimSpace(root))
+		if root != "" && strings.Contains(lower, root) {
+			return true
+		}
+	}
+	return false
+}
+
+// emptyRootsByQuery maps each executed query to the roots its result left
+// empty, as recorded by the agent at execution time. Episodes recorded before
+// the agent reported this carry nothing, and every requirement passes as it
+// did before.
+func emptyRootsByQuery(value any) map[string][]string {
+	out := map[string][]string{}
+	for _, item := range toSlice(value) {
+		action := toMap(item)
+		query := strings.TrimSpace(valueString(toMap(action["args"])["query"]))
+		if query == "" {
+			continue
+		}
+		for _, root := range toSlice(toMap(action["summary"])["empty_roots"]) {
+			if name := strings.TrimSpace(valueString(root)); name != "" {
+				out[query] = appendUnique(out[query], name)
+			}
+		}
+	}
+	return out
 }
 
 func matchesAnyQuery(pattern *regexp.Regexp, queries []string) bool {
