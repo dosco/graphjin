@@ -3743,6 +3743,13 @@ func (s *discoveryState) mergeEvidence(model any) any {
 	if s.ungroundedRewriteUsed {
 		protocol["ungrounded_rewrite"] = true
 	}
+	// A run whose evidence outgrew the corpus stops being grounding-checked, so
+	// its answer was never held to what it observed. Recording that keeps the
+	// difference visible: an answer nobody could check must not be mistaken for
+	// one that passed the check.
+	if s.groundingOverflow {
+		protocol["grounding_disabled"] = true
+	}
 	if model == nil {
 		return protocol
 	}

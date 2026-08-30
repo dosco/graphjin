@@ -107,6 +107,20 @@ func ProtocolViolationCodes(resp Response) []string {
 	return out
 }
 
+// GroundingDisabled reports whether this run's grounding check switched itself
+// off because the observed evidence outgrew the corpus it is matched against.
+//
+// It matters to anything scoring the answer. The guard fails open on purpose —
+// blocking a real answer for want of evidence it did collect would be worse —
+// but an answer that was never checked is not evidence of a grounded one, and a
+// policy being optimized against a reward would otherwise find that flooding
+// the corpus is the cheapest way to be allowed to say anything.
+func GroundingDisabled(resp Response) bool {
+	evidence := responseProtocolEvidence(resp)
+	disabled, _ := evidence["grounding_disabled"].(bool)
+	return disabled
+}
+
 func responseProtocolEvidence(resp Response) map[string]any {
 	data, err := json.Marshal(resp.Evidence)
 	if err != nil {
