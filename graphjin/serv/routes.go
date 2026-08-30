@@ -12,6 +12,7 @@ const (
 	routeAgentStatus       = "/api/v1/agent/status"
 	routeConsoleBootstrap  = "/api/v1/console/bootstrap"
 	routeEvalReports       = "/api/v1/eval/reports"
+	routeEvalScore         = "/api/v1/eval/score"
 	routeEvalReportsPrefix = "/api/v1/eval/reports/"
 	routeREST              = "/api/v1/rest/"
 	routeWorkflows         = "/api/v1/workflows/"
@@ -67,6 +68,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			mux.Handle(routeGraphQL, s1.GraphQL(ah))
 			mux.Handle(routeConsoleBootstrap, s1.ConsoleBootstrap(ah))
 			if evalReportsConfigured(s.conf) {
+				mux.Handle(routeEvalScore, s1.EvalScore(ah))
 				mux.Handle(routeEvalReports, s1.EvalReports(ah))
 				mux.Handle(routeEvalReportsPrefix, s1.EvalReports(ah))
 			}
@@ -89,6 +91,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
 			mux.Handle(routeConsoleBootstrap, s1.ConsoleBootstrapWithNS(ah, *ns))
 			if evalReportsConfigured(s.conf) {
+				mux.Handle(routeEvalScore, s1.EvalScoreWithNS(ah, *ns))
 				mux.Handle(routeEvalReports, s1.EvalReportsWithNS(ah, *ns))
 				mux.Handle(routeEvalReportsPrefix, s1.EvalReportsWithNS(ah, *ns))
 			}

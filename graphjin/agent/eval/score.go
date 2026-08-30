@@ -187,6 +187,17 @@ const (
 	RewardProfileRL RewardProfile = "rl"
 )
 
+// Validate rejects a profile this binary does not know.
+//
+// An unrecognised profile must not quietly fall back to the published contract:
+// a trainer that misspells the training profile would then optimize against
+// benchmark weights and have no way to tell, since the rewards it gets back
+// look entirely reasonable.
+func (p RewardProfile) Validate() error {
+	_, err := p.normalize()
+	return err
+}
+
 func (p RewardProfile) normalize() (RewardProfile, error) {
 	switch p {
 	case "", RewardProfileBenchmark:
