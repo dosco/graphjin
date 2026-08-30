@@ -32,6 +32,11 @@ const (
 	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
 	// generated task semantics change, including method-rule dialect support.
 	//
+	// v15 adds model-authored task families — watches, confirmations, history
+	// follow-ups and scenario phrasings — which a model chooses and phrases and
+	// the engine constructs and verifies. Tasks record the model that wrote
+	// them; provenance stays out of the content id, so ids do not move.
+	//
 	// v14 adds generated write tasks: one identified row, one field, checked
 	// against the state the database ended in and against every other row
 	// staying put.
@@ -41,7 +46,7 @@ const (
 	// oracles, and windows composed with a value filter. Existing task content
 	// is untouched, so content IDs are unchanged; what changes is that a freshly
 	// generated suite draws from a wider candidate pool.
-	GeneratorVersion = "graphjin.eval.generator/v14"
+	GeneratorVersion = "graphjin.eval.generator/v15"
 	// RewardVersion v5: a "which record" answer may name the row by any
 	// identifier the oracle selected, not only the one field it projected. No
 	// frozen task declares alternates yet, so this changes no existing verdict;
@@ -64,6 +69,7 @@ const (
 var SupportedGeneratorVersions = []string{
 	"graphjin.eval.generator/v12",
 	"graphjin.eval.generator/v13",
+	"graphjin.eval.generator/v14",
 	GeneratorVersion,
 }
 
@@ -113,6 +119,14 @@ type Provenance struct {
 	Source           string `json:"source" yaml:"source"`
 	Seed             int64  `json:"generation_seed,omitempty" yaml:"generation_seed,omitempty"`
 	SourceID         string `json:"source_id,omitempty" yaml:"source_id,omitempty"`
+	// AuthoredBy names the model that chose and phrased this task, when one did.
+	//
+	// A task a model wrote is a different kind of artifact from one derived from
+	// column statistics: it carries a judgement about what is worth asking. When
+	// such a task turns out to be wrong or unanswerable, the first question is
+	// which model wrote it, and the second is under which authoring prompts —
+	// hence "provider/model prompts@<hash>".
+	AuthoredBy string `json:"authored_by,omitempty" yaml:"authored_by,omitempty"`
 }
 
 type CapabilityProfile struct {
