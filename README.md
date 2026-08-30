@@ -634,14 +634,36 @@ graphjin env serve --path ./graphjin-demo --suite eval/suite.yml --pool 4 \
   writes changes only the world it was given.
 - **Your policy plugs in by configuration**, not code: point `agent.base_url` at
   any OpenAI-compatible endpoint.
+- **Your real schema, without your real data.** `graphjin env clone --url
+  <server>` learns a running GraphJin server's schema from its catalog and
+  writes a local SQLite copy filled with synthetic rows. No data is read: the
+  only real values that cross over are the closed sets the catalog already
+  publishes. The clone is writable and resettable, so write tasks and training
+  work against it while production is never touched.
 - **Nothing memorable to overfit.** `graphjin env new-world` writes a fresh
   organization — schema, data and all — deterministically from a seed, so you
   can train on some companies and measure on others. Worlds can be asked for the
   awkwardness real schemas have: one word meaning two things, a stale column
   that still looks authoritative, fields that are usually null.
+- **A big model writes the questions a schema cannot derive.** Counting and
+  filtering follow from column statistics; knowing that *failed invoices are
+  worth alerting on* does not. `graphjin eval author` asks a capable model —
+  configured separately from the small one being trained, via `GJ_GENERATOR_*` —
+  to choose what is worth watching and phrase it as a colleague would. Every
+  table, column and value it names must exist, and every task it produces is
+  verified against the live database before it counts.
 - **Runs export as training data.** `graphjin eval export` writes trajectories
   as JSONL, marking the programs GraphJin's runtime wrote itself so they are not
   mistaken for the policy's.
+
+```bash
+# Learn a real server's schema; write a local synthetic copy
+graphjin env clone --url https://graphjin.internal --out ./clone-acme
+
+# Have a capable model author the watch and follow-up families for it
+export GJ_GENERATOR_MODEL=<a-strong-model>
+graphjin eval author --demo --path ./clone-acme --kinds watch,confirmation --yes
+```
 
 See [training/README.md](training/README.md) for the client, an example policy
 server, and what to record alongside a result.
