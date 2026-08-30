@@ -260,6 +260,11 @@ type GeneratorOptions struct {
 	// Families restricts candidate generation to the named families. Empty
 	// selects every registered family.
 	Families []string
+	// Authored carries tasks a model wrote, to be verified and sampled beside
+	// the derived ones. They are candidates rather than a reserved set: an
+	// authored task earns its place in a suite the same way a generated one
+	// does, and is dropped just as readily when the database cannot support it.
+	Authored []Task
 	// Composition selects how the verified pool is sampled down to Scale.
 	// Empty means CompositionBenchmark.
 	Composition Composition
@@ -383,56 +388,14 @@ func (g Generator) Generate(ctx context.Context, opts GeneratorOptions) (*Suite,
 	for _, family := range families {
 		candidates = append(candidates, family.Generate(snapshot, opts.Seed)...)
 	}
+	candidates = append(candidates, opts.Authored...)
 	// Read oracles are resolved ahead of the selection loop so a large candidate
 	// pool is not gated on a serial round trip each. Only the resolution is
 	// concurrent: the loop below still decides in candidate order, so the
 	// generated suite is byte-identical whatever concurrency was used.
-	resolved, err := g.resolveCandidateOracles(ctx, candidates, opts.VerifyConcurrency)
+	verified, err := g.VerifyTasks(ctx, candidates, opts.Seed, opts.VerifyConcurrency)
 	if err != nil {
 		return nil, err
-	}
-	verified := make([]Task, 0, len(candidates))
-	seen := map[string]struct{}{}
-	for i := range candidates {
-		if candidates[i].Provenance.Seed == 0 {
-			candidates[i].Provenance.Seed = opts.Seed
-		}
-		if err := candidates[i].Normalize(); err != nil {
-			continue
-		}
-		key := taskStructureKey(candidates[i])
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		if candidates[i].Oracle != nil {
-			if g.Verifier == nil {
-				return nil, fmt.Errorf("generator needs an oracle verifier")
-			}
-			if !resolved[i] {
-				continue
-			}
-		}
-		if candidates[i].Mutation != nil {
-			if g.Verifier == nil {
-				return nil, fmt.Errorf("generator needs an oracle verifier")
-			}
-			baseline, err := g.Verifier.Resolve(ctx, candidates[i].Mutation.PostState)
-			if err != nil || baseline.Value == candidates[i].Mutation.ExpectedValue {
-				continue
-			}
-			validCollateral := true
-			for _, collateral := range candidates[i].Mutation.Collateral {
-				if _, err := g.Verifier.Resolve(ctx, collateral); err != nil {
-					validCollateral = false
-					break
-				}
-			}
-			if !validCollateral {
-				continue
-			}
-		}
-		seen[key] = struct{}{}
-		verified = append(verified, candidates[i])
 	}
 	// Scale bounds the intent tier, which is what the benchmark measures and
 	// reports. Execution twins are instrumentation and ride along with whichever
@@ -471,6 +434,66 @@ func (g Generator) Generate(ctx context.Context, opts GeneratorOptions) (*Suite,
 		return nil, err
 	}
 	return suite, nil
+}
+
+// VerifyTasks drops every candidate the live database cannot support.
+//
+// This is the bar that separates a task from a suggestion. An oracle that will
+// not compile, a write whose target state already holds, collateral that cannot
+// be read — each of those is a task that would grade something other than what
+// it claims, so it never reaches a suite. Tasks a model authored go through the
+// identical check: nothing is trusted because of where it came from.
+func (g Generator) VerifyTasks(ctx context.Context, candidates []Task, seed int64, concurrency int) ([]Task, error) {
+	resolved, err := g.resolveCandidateOracles(ctx, candidates, concurrency)
+	if err != nil {
+		return nil, err
+	}
+	verified := make([]Task, 0, len(candidates))
+	seen := map[string]struct{}{}
+	for i := range candidates {
+		if candidates[i].Provenance.Seed == 0 {
+			candidates[i].Provenance.Seed = seed
+		}
+		if err := candidates[i].Normalize(); err != nil {
+			continue
+		}
+		key := taskStructureKey(candidates[i])
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		if candidates[i].Oracle != nil {
+			if g.Verifier == nil {
+				return nil, fmt.Errorf("generator needs an oracle verifier")
+			}
+			if !resolved[i] {
+				continue
+			}
+		}
+		if candidates[i].Mutation != nil {
+			if g.Verifier == nil {
+				return nil, fmt.Errorf("generator needs an oracle verifier")
+			}
+			// A write whose expected state already holds would be passed by an
+			// agent that did nothing at all.
+			baseline, err := g.Verifier.Resolve(ctx, candidates[i].Mutation.PostState)
+			if err != nil || baseline.Value == candidates[i].Mutation.ExpectedValue {
+				continue
+			}
+			validCollateral := true
+			for _, collateral := range candidates[i].Mutation.Collateral {
+				if _, err := g.Verifier.Resolve(ctx, collateral); err != nil {
+					validCollateral = false
+					break
+				}
+			}
+			if !validCollateral {
+				continue
+			}
+		}
+		seen[key] = struct{}{}
+		verified = append(verified, candidates[i])
+	}
+	return verified, nil
 }
 
 type generatorColumn struct {

@@ -103,6 +103,7 @@ func evalCmd() *cobra.Command {
 	cmd.AddCommand(evalBenchCmd(opts))
 	cmd.AddCommand(evalRescoreCmd(opts))
 	cmd.AddCommand(evalExportCmd(opts))
+	cmd.AddCommand(evalAuthorCmd(opts))
 	cmd.AddCommand(evalPublishCmd(opts))
 	cmd.AddCommand(evalFreezeSuiteCmd(opts))
 	cmd.AddCommand(evalImportCmd())
@@ -256,6 +257,174 @@ func evalExportCmd(opts *evalCLIOptions) *cobra.Command {
 	return command
 }
 
+// evalAuthorCmd asks a capable model to write the task families that cannot be
+// derived from column statistics, and verifies everything it produces.
+func evalAuthorCmd(opts *evalCLIOptions) *cobra.Command {
+	var (
+		kinds       []string
+		count       int
+		seed        int64
+		out         string
+		genFlags    generatorFlags
+		concurrency int
+	)
+	command := &cobra.Command{
+		Use:   "author",
+		Short: "Author watch, confirmation, follow-up and scenario tasks with a capable model",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			selected, err := gjeval.ParseAuthoringKinds(kinds)
+			if err != nil {
+				return err
+			}
+			generatorConfig, label, err := resolveGeneratorConfig(genFlags)
+			if err != nil {
+				return err
+			}
+			projectPath, target, err := resolveEvalTarget(cmd, opts)
+			if err != nil {
+				return err
+			}
+			// One call per family, so the cost is knowable before it is spent.
+			if err := approveProviderTraffic(cmd, opts.Yes,
+				fmt.Sprintf("%d authoring call(s) to %s", len(selected), label)); err != nil {
+				return err
+			}
+
+			// Authoring boots the environment it will verify against: a watch
+			// task has to be resolvable, which needs writes, resets and the
+			// watch runner.
+			instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(cmd.Context(), gjeval.EnvSpec{
+				Target: target, ConfigPath: projectPath, Seed: seed,
+				Writable: true, Reactive: true, Resettable: true,
+				FreezeTime: opts.FreezeTime,
+			})
+			if err != nil {
+				return evalEnvironmentError(err)
+			}
+			defer instance.Close() //nolint:errcheck
+
+			client := &http.Client{Timeout: 120 * time.Second}
+			source := gjeval.HTTPCatalogSource{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+			verifier := &gjeval.Verifier{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+			snapshot, err := source.Snapshot(cmd.Context())
+			if err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+			generator := gjeval.Generator{Source: source, Verifier: verifier}
+
+			// Follow-ups and scenarios are built on questions already proven
+			// against this database, so their ground truth was never in doubt.
+			readPool, err := generator.Generate(cmd.Context(), gjeval.GeneratorOptions{
+				Seed: seed, Scale: 60, Families: []string{"catalog-core"},
+				Composition: gjeval.CompositionCoverage, VerifyConcurrency: concurrency,
+			})
+			if err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+
+			authored, report, err := gjeval.AuthorFamilies(cmd.Context(),
+				func(ctx context.Context, signature string, values map[string]any) (map[string]any, error) {
+					return gjagent.OneShot(ctx, generatorConfig, signature, values)
+				},
+				gjeval.BuildCensus(snapshot), readPool.Tasks,
+				gjeval.AuthoringOptions{
+					Kinds: selected, Count: count, Seed: seed,
+					AuthoredBy: label + " prompts@" + gjeval.AuthoringPromptsHash(),
+				})
+			if err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+
+			// Authored tasks meet the same bar as generated ones: an oracle that
+			// will not run, or a write whose state already holds, is dropped here
+			// rather than discovered during a run.
+			verified, err := generator.VerifyTasks(cmd.Context(), authored, seed, concurrency)
+			if err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+			for _, rejection := range report.Rejections {
+				fmt.Fprintf(cmd.ErrOrStderr(), "  refused %s\n", rejection)
+			}
+			for _, note := range report.Notes {
+				fmt.Fprintf(cmd.ErrOrStderr(), "  %s\n", note)
+			}
+			if len(verified) == 0 {
+				return &evalExitError{Code: 2, Err: errors.New(
+					"nothing the model proposed survived verification; see the refusals above")}
+			}
+
+			path := strings.TrimSpace(out)
+			if path == "" {
+				path = evalAuthoredPath(projectPath)
+			}
+			suite := gjeval.Suite{
+				SchemaVersion: gjeval.SuiteSchemaVersion, Name: "Authored tasks",
+				Description:        "Model-authored tasks, verified against this database.",
+				CatalogFingerprint: snapshot.Fingerprint,
+				Generator:          gjeval.GeneratorMeta{Version: gjeval.GeneratorVersion, Seed: seed, Scale: len(verified)},
+				Tasks:              verified,
+			}
+			if err := suite.Normalize(); err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+			if err := gjeval.SaveSuite(path, suite); err != nil {
+				return err
+			}
+			byFamily := map[string]int{}
+			for _, task := range verified {
+				byFamily[task.Provenance.Source]++
+			}
+			if opts.JSON {
+				return writeEvalJSON(cmd.OutOrStdout(), map[string]any{
+					"status": "authored", "suite": path, "tasks": len(verified),
+					"authored_by": label, "tasks_by_family": byFamily,
+					"proposed": len(authored), "refused": len(report.Rejections),
+				})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Authored %d task(s) with %s; %d proposal(s) refused.\n",
+				len(verified), label, len(report.Rejections))
+			for _, name := range sortedKeys(byFamily) {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %-28s %d\n", name, byFamily[name])
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s; `eval create` will include these.\n", path)
+			return nil
+		},
+	}
+	command.Flags().StringSliceVar(&kinds, "kinds", nil, "families to author: watch, confirmation, history, scenario (default: all)")
+	command.Flags().IntVar(&count, "count", 4, "how many picks to request per family")
+	command.Flags().Int64Var(&seed, "seed", 23, "generation seed")
+	command.Flags().IntVar(&concurrency, "verify-concurrency", 4, "how many oracles to verify at once")
+	command.Flags().StringVar(&out, "out", "", "write the authored suite here")
+	addGeneratorFlags(command, &genFlags)
+	return command
+}
+
+// loadAuthoredTasks reads previously authored tasks, if any were written.
+//
+// Their absence is normal: a project that has never run `eval author` simply
+// generates from its schema. A file that exists but cannot be read is not
+// normal, and fails rather than silently producing a smaller suite.
+func loadAuthoredTasks(projectPath string) ([]gjeval.Task, string, error) {
+	path := evalAuthoredPath(projectPath)
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, "", nil
+		}
+		return nil, "", err
+	}
+	suite, err := gjeval.LoadSuite(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("load authored tasks from %s: %w", path, err)
+	}
+	return suite.Tasks, path, nil
+}
+
+// evalAuthoredPath is where authored tasks live, beside the generated suite.
+func evalAuthoredPath(projectPath string) string {
+	return filepath.Join(projectPath, gjeval.DefaultEvaluationDir, "authored.yml")
+}
+
 func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 	var (
 		scale       int
@@ -289,8 +458,15 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 			client := &http.Client{Timeout: 120 * time.Second}
 			source := gjeval.HTTPCatalogSource{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
 			verifier := &gjeval.Verifier{Client: client, BaseURL: instance.BaseURL(), Headers: instance.Headers(), Now: frozenClock}
+			// Tasks a model authored earlier join as candidates, not as a
+			// reserved set: they are verified, deduped and sampled exactly like
+			// the derived ones, and dropped just as readily.
+			authored, authoredPath, err := loadAuthoredTasks(projectPath)
+			if err != nil {
+				return err
+			}
 			suite, err := (gjeval.Generator{Source: source, Verifier: verifier}).Generate(cmd.Context(), gjeval.GeneratorOptions{
-				Seed: seed, Scale: scale, Families: families,
+				Seed: seed, Scale: scale, Families: families, Authored: authored,
 				Composition: gjeval.Composition(composition), VerifyConcurrency: concurrency,
 			})
 			if err != nil {
@@ -331,6 +507,9 @@ func evalCreateCmd(opts *evalCLIOptions) *cobra.Command {
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Created %s with %d verified tasks (seed %d).\n", path, len(suite.Tasks), suite.Generator.Seed)
+			if len(authored) != 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "  including %d authored candidate(s) from %s\n", len(authored), authoredPath)
+			}
 			if splitPath != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "Wrote split manifest %s.\n", splitPath)
 			}
