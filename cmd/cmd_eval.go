@@ -59,6 +59,7 @@ type evalCLIOptions struct {
 	AutoResume         bool
 	AutoResumeAttempts int
 	FreezeTime         string
+	Pool               int
 }
 
 // evalFrozenClock returns the clock the harness and its oracles read, or nil to
@@ -111,6 +112,7 @@ func addEvalResumeFlags(cmd *cobra.Command, opts *evalCLIOptions) {
 	cmd.Flags().StringVar(&opts.ResumeRunID, "resume", "", "resume one compatible incomplete run by id")
 	cmd.Flags().BoolVar(&opts.Restart, "restart", false, "start a fresh run without deleting incomplete state")
 	cmd.Flags().IntVar(&opts.Concurrency, "concurrency", 1, "episodes in flight at once; mutation episodes still run exclusively (max 16)")
+	cmd.Flags().IntVar(&opts.Pool, "pool", 0, "run against N isolated demo environments so a write owns only its own world")
 }
 
 func evalResumePolicy(opts *evalCLIOptions) (gjeval.ResumePolicy, error) {
@@ -425,6 +427,12 @@ func evalBenchCmd(opts *evalCLIOptions) *cobra.Command {
 				if opts.Remote {
 					return errors.New("--public cannot be combined with --remote; the public benchmark runs against the pinned demo")
 				}
+				// The board's numbers are all measured on one world. Spreading a
+				// public run across several would make its result incomparable
+				// with every run already published.
+				if opts.Pool > 1 {
+					return errors.New("--public cannot be combined with --pool; the published benchmark runs against a single environment")
+				}
 				if cmd.Flags().Changed("scale") || cmd.Flags().Changed("seed") {
 					return fmt.Errorf("--public pins --scale=%d and --seed=%d; remove the scale and seed overrides", spec.Scale, spec.Seed)
 				}
@@ -695,16 +703,32 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	writable, reactive, resettable := evalSuiteEnvironmentRequirements(suite)
-	instance, err := (evalEnvironment{StatusOut: os.Stderr}).Start(ctx, gjeval.EnvSpec{
+	spec := gjeval.EnvSpec{
 		Target: target, ConfigPath: projectPath, Seed: seed,
 		Writable: writable, Reactive: reactive, Resettable: resettable,
 		PinDataAnchor: evalResumeDataAnchor(projectPath, policy, opts.ResumeRunID),
 		FreezeTime:    opts.FreezeTime,
-	})
-	if err != nil {
-		return nil, nil, evalEnvironmentError(err)
 	}
-	defer instance.Close() //nolint:errcheck
+	environment := evalEnvironment{StatusOut: os.Stderr}
+	var pool *evalInstancePool
+	var instance gjeval.Instance
+	if opts.Pool > 1 {
+		// Every worker must serve the same rows; the pool refuses to form
+		// otherwise. Worker zero also answers the run's own setup queries, which
+		// happen before any episode leases anything.
+		pool, err = newEvalInstancePool(ctx, environment, spec, opts.Pool)
+		if err != nil {
+			return nil, nil, evalEnvironmentError(err)
+		}
+		defer pool.Close() //nolint:errcheck
+		instance = pool.instances[0]
+	} else {
+		instance, err = environment.Start(ctx, spec)
+		if err != nil {
+			return nil, nil, evalEnvironmentError(err)
+		}
+		defer instance.Close() //nolint:errcheck
+	}
 	status, err := ensureEvalAgentReady(ctx, &http.Client{Timeout: 30 * time.Second}, instance)
 	if err != nil {
 		return nil, nil, evalEnvironmentError(err)
@@ -726,6 +750,7 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 		AutoBaseline: autoBaseline, DeliberatePromotion: deliberatePromotion,
 		ResumePolicy: policy, ResumeRunID: opts.ResumeRunID, BinaryFingerprint: evalBinaryFingerprint(),
 		InvocationArgs: evalInvocationArgs(opts, projectPath, scale, seed, false), Concurrency: opts.Concurrency,
+		Pool: poolForRun(pool),
 	})
 	if err != nil {
 		return nil, nil, evalEnvironmentError(err)

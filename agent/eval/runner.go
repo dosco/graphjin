@@ -36,6 +36,14 @@ type RunOptions struct {
 	BinaryFingerprint    string
 	InvocationArgs       []string
 	MaxTransientAttempts int
+	// Pool, when set, leases one environment per episode instead of sharing a
+	// single instance. Every worker must serve the same dataset, so the pool
+	// itself is responsible for refusing to hand out mismatched worlds.
+	//
+	// With a pool a write no longer has to stop the whole run: it owns the
+	// world it was leased and resets only that one. Without a pool the runner
+	// keeps its historical behavior, including the exclusive gate.
+	Pool InstancePool
 	// Concurrency is the number of episode slots executed at once. Zero and
 	// one mean the historical serial order, byte-for-byte. Above one,
 	// read-only episodes run in parallel while any episode that mutates the
@@ -528,32 +536,49 @@ func (p *PreparedRun) executeSlot(ctx context.Context, task Task, rep int, confi
 			return Episode{}, "", fmt.Errorf("%w: %s", ErrRunInterrupted, p.resumeCommand())
 		}
 		episode, gateCode := func() (Episode, string) {
-			if task.Mutation != nil {
+			// A pool hands each episode a world of its own, so a write only has
+			// to own the instance it was leased. Against a single shared instance
+			// a write must instead exclude every concurrent reader for the whole
+			// episode, which is what the exclusive gate is for.
+			pooled := p.opts.Pool != nil
+			if task.Mutation != nil && !pooled {
 				p.slotGate.Lock()
 				defer p.slotGate.Unlock()
 			} else {
 				p.slotGate.RLock()
 				defer p.slotGate.RUnlock()
 			}
+			instance := p.instance
+			if pooled {
+				leased, err := p.opts.Pool.Acquire(ctx)
+				if err != nil {
+					return Episode{}, "environment_unavailable"
+				}
+				defer func() { _ = p.opts.Pool.Release(leased) }()
+				instance = leased
+			}
 			var resettable ResettableInstance
 			var collateralBefore []OracleResult
 			if task.Mutation != nil {
-				resettable = p.instance.(ResettableInstance)
+				var ok bool
+				if resettable, ok = instance.(ResettableInstance); !ok {
+					return Episode{}, "reset_failed"
+				}
 				if err := resettable.Reset(ctx); err != nil {
 					return Episode{}, "reset_failed"
 				}
-				if err := prepareMutationEpisode(ctx, p.runner, p.client, p.instance, task.Mutation); err != nil {
+				if err := prepareMutationEpisode(ctx, p.runner, p.client, instance, task.Mutation); err != nil {
 					_ = resettable.Reset(ctx)
 					return Episode{}, "setup_failed"
 				}
 				var err error
-				collateralBefore, err = resolveMutationCollateral(ctx, p.runner, p.client, p.instance, task.Mutation.Collateral)
+				collateralBefore, err = resolveMutationCollateral(ctx, p.runner, p.client, instance, task.Mutation.Collateral)
 				if err != nil {
 					_ = resettable.Reset(ctx)
 					return Episode{}, "oracle_failed"
 				}
 			}
-			episode := p.runner.runEpisode(ctx, p.client, p.instance, p.opts, task, rep, confirmation, p.oracles, collateralBefore)
+			episode := p.runner.runEpisode(ctx, p.client, instance, p.opts, task, rep, confirmation, p.oracles, collateralBefore)
 			if resettable != nil {
 				if err := resettable.Reset(ctx); err != nil {
 					return Episode{}, "reset_failed"
