@@ -91,6 +91,7 @@ func envCmd() *cobra.Command {
 		SilenceUsage: true,
 	}
 	cmd.AddCommand(envServeCmd())
+	cmd.AddCommand(envNewWorldCmd())
 	return cmd
 }
 
@@ -357,4 +358,56 @@ func (s *envServer) resolveTask(request envEpisodeRequest) (gjeval.Task, bool) {
 		}
 	}
 	return gjeval.Task{}, false
+}
+
+// envNewWorldCmd writes a new generated organization to disk.
+func envNewWorldCmd() *cobra.Command {
+	var (
+		domain      string
+		seed        int64
+		tables      int
+		pathologies []string
+		out         string
+	)
+	cmd := &cobra.Command{
+		Use:   "new-world",
+		Short: "Generate a fresh organization to train or measure against",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			pack, err := packByName(domain)
+			if err != nil {
+				return err
+			}
+			applied, err := validatePathologies(pathologies)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(out) == "" {
+				out = fmt.Sprintf("./world-%s-%d", pack.Name, seed)
+			}
+			world := buildWorld(pack, seed, tables, applied, "")
+			if err := writeWorld(world, out); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s: %d tables, domain %s, seed %d.\n",
+				out, len(world.Tables), world.Domain, world.Seed)
+			if len(applied) != 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Deliberate pathologies: %s\n", strings.Join(applied, ", "))
+			}
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"Next: graphjin eval create --path %s --writable --scale 300 --composition coverage\n", out)
+			return nil
+		},
+	}
+	names := make([]string, 0, len(domainPacks))
+	for _, pack := range domainPacks {
+		names = append(names, pack.Name)
+	}
+	cmd.Flags().StringVar(&domain, "domain", domainPacks[0].Name, "vocabulary to build the world from: "+strings.Join(names, ", "))
+	cmd.Flags().Int64Var(&seed, "seed", 1, "seed; the same seed is the same company every time")
+	cmd.Flags().IntVar(&tables, "tables", 0, "how many tables to include (0 uses the whole domain)")
+	cmd.Flags().StringSliceVar(&pathologies, "pathologies", nil,
+		"schema awkwardness to build in: "+strings.Join(supportedPathologies, ", "))
+	cmd.Flags().StringVar(&out, "out", "", "directory to write the world to")
+	return cmd
 }
