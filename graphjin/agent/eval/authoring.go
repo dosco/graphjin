@@ -190,7 +190,15 @@ func checkProse(text string, minWords int) error {
 	if match := authoringIdentifierPattern.FindString(trimmed); match != "" {
 		return fmt.Errorf("names GraphJin's own vocabulary (%q)", match)
 	}
-	for _, banned := range []string{"gj_watch", "subscription", "graphql", "execute_graphql", "query_catalog"} {
+	// Only words that can mean nothing else are banned.
+	//
+	// The first version of this list also refused "subscription", and a live run
+	// promptly wrote a perfectly good need about a SaaS company's subscriptions
+	// table. Words like subscription, watch and alert are how people describe
+	// wanting to be told about something — refusing them would reject the very
+	// phrasing this is asking for, and would refuse any business whose domain
+	// happens to contain the word.
+	for _, banned := range []string{"graphql", "execute_graphql", "query_catalog", "saved query"} {
 		if strings.Contains(strings.ToLower(trimmed), banned) {
 			return fmt.Errorf("names the mechanism rather than the need (%q)", banned)
 		}

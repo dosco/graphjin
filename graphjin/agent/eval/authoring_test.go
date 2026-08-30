@@ -126,9 +126,18 @@ func TestAuthoredWatchRefusesInventedSchema(t *testing.T) {
 // An intent prompt that names the mechanism stops measuring whether the agent
 // can plan and starts measuring whether it can follow instructions.
 func TestAuthoredWatchRefusesProseThatNamesTheMechanism(t *testing.T) {
+	// Ordinary business words must survive. A live run wrote a good need about a
+	// SaaS company's subscriptions and an earlier version of this gate refused
+	// it for containing "subscription", which would reject any business whose
+	// domain contains the word.
+	ordinary := "Billing keeps missing subscriptions that lapse, and wants to be told within the hour instead of checking."
+	if err := checkProse(ordinary, 8); err != nil {
+		t.Fatalf("an ordinary business need was refused: %v", err)
+	}
+
 	for _, intent := range []string{
 		"Create a gj_watch over invoices where status is failed and deliver hourly.",
-		"Set up a subscription on the invoices table for failed payments each hour.",
+		"Run a graphql query for failed payments on a schedule each hour.",
 		"Watch it.",
 	} {
 		tasks, report, err := AuthorFamilies(context.Background(),
