@@ -266,6 +266,16 @@ func resolveOracleVariables(variables map[string]any, anchor string, now time.Ti
 		if err != nil {
 			return nil, fmt.Errorf("variable %s: %w", key, err)
 		}
+		// A variable that is nothing but an anchor carries whatever the anchor
+		// query selected. When that is a row's numeric identifier it has to stay
+		// a number: inlined as a string it becomes {eq: "7"} against an integer
+		// column, which is a different query and usually not a legal one.
+		if strings.TrimSpace(text) == "{{anchor}}" {
+			if number, convErr := strconv.ParseInt(strings.TrimSpace(out), 10, 64); convErr == nil {
+				resolved[key] = number
+				continue
+			}
+		}
 		resolved[key] = out
 	}
 	return resolved, nil
@@ -305,6 +315,12 @@ func shiftAnchor(anchor string, offsetDays int) (string, error) {
 		if err == nil {
 			return parsed.AddDate(0, 0, offsetDays).Format(layout), nil
 		}
+	}
+	// An unshifted anchor need not be a date. Tasks that pin a row rather than a
+	// window resolve the row's identifier and substitute it as-is; only shifting
+	// one by days requires a timestamp to shift.
+	if offsetDays == 0 {
+		return anchor, nil
 	}
 	return "", fmt.Errorf("anchor %q matches no supported timestamp layout", anchor)
 }

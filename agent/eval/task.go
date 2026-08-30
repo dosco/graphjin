@@ -32,12 +32,16 @@ const (
 	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
 	// generated task semantics change, including method-rule dialect support.
 	//
+	// v14 adds generated write tasks: one identified row, one field, checked
+	// against the state the database ended in and against every other row
+	// staying put.
+	//
 	// v13 adds the family registry and three read families — filtered
 	// aggregates over observed values, relationship traversals with join-count
 	// oracles, and windows composed with a value filter. Existing task content
 	// is untouched, so content IDs are unchanged; what changes is that a freshly
 	// generated suite draws from a wider candidate pool.
-	GeneratorVersion = "graphjin.eval.generator/v13"
+	GeneratorVersion = "graphjin.eval.generator/v14"
 	// RewardVersion v5: a "which record" answer may name the row by any
 	// identifier the oracle selected, not only the one field it projected. No
 	// frozen task declares alternates yet, so this changes no existing verdict;
@@ -59,6 +63,7 @@ const (
 // binary generates at GeneratorVersion and runs anything in this set.
 var SupportedGeneratorVersions = []string{
 	"graphjin.eval.generator/v12",
+	"graphjin.eval.generator/v13",
 	GeneratorVersion,
 }
 
