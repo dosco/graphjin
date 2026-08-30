@@ -1113,6 +1113,8 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.base_url` | string | - | OpenAI-compatible provider base URL (e.g. a local or self-hosted endpoint) |
 | `agent.structured_output_mode` | string | `auto` | How Ax requests structured output: `auto` lets the profile and model rule pick the verified mechanism; `native` (JSON Schema), `function`, and `json_object` force one. An explicit mode the deployment cannot serve fails before any request is sent |
 | `agent.response_format` | string | - | **Deprecated** alias of `agent.structured_output_mode`: `json_schema` maps to `native`, `json_object` to `json_object`. Set only one; the canonical key wins |
+| `agent.reasoning` | string | - | Provider thinking effort for models that have one: `none`, `low`, `medium`, `high`, `xhigh`. Empty keeps the provider default, which providers disagree on — some adapters disable thinking outright unless a level is given |
+| `agent.show_thoughts` | boolean | `false` | Ask the provider to return the reasoning text it already produced, into the run's chat log (visible in the response trace when `agent.return_trace` is on, and recorded in eval episodes). These models think either way, so this changes what is observable and not what the model does — it is separate from `agent.reasoning` for that reason. Off by default: the text is billed output and every episode carries it |
 | `agent.max_steps` | integer | `8` | Maximum agent actor steps per request |
 | `agent.timeout_seconds` | integer | `50` | Request timeout for agent runs; values below 50 are raised to the 50-second minimum |
 | `agent.rate_limit.requests_per_minute` | integer | `0` | Process-local rolling-minute ceiling for outbound model requests; zero disables request limiting |

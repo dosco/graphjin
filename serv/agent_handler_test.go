@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -127,6 +128,13 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if !strings.Contains(disabledStatus.Message, "agent.enabled") {
 		t.Fatalf("disabled status should guide configuration, got %q", disabledStatus.Message)
 	}
+	// show_thoughts is deliberately not omitempty. The operator question it
+	// answers is "is it actually on?", and a key that vanishes when the answer
+	// is no cannot answer it — which is the shape of the bug that left the flag
+	// settable and inert.
+	if !strings.Contains(rec.Body.String(), `"show_thoughts":false`) {
+		t.Fatalf("status must report show_thoughts even when off: %s", rec.Body.String())
+	}
 
 	t.Setenv("GRAPHJIN_MISSING_AGENT_KEY", "")
 	missingKey := newAgentHTTPTestService(&Config{
@@ -171,6 +179,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 				TimeoutSeconds: 12,
 				ReadOnly:       true,
 				ReturnTrace:    true,
+				ShowThoughts:   true,
 			},
 		},
 	})
@@ -195,7 +204,7 @@ func TestAgentStatusDisabledMissingKeyAndReady(t *testing.T) {
 	if readyStatus.Provider != "anthropic" || readyStatus.Model != "test-model" || readyStatus.ResponseFormat != "json_object" || readyStatus.MaxSteps != 3 || readyStatus.TimeoutSeconds != 50 {
 		t.Fatalf("configured values not reflected in status: %+v", readyStatus)
 	}
-	if !readyStatus.ReadOnly || !readyStatus.ReturnTrace {
+	if !readyStatus.ReadOnly || !readyStatus.ReturnTrace || !readyStatus.ShowThoughts {
 		t.Fatalf("agent flags not reflected in status: %+v", readyStatus)
 	}
 	if readyStatus.RateLimit.RequestsPerMinute != 20 || readyStatus.RateLimit.TokensPerMinute != 50000 {
@@ -212,6 +221,101 @@ func TestAgentEvalFingerprintIncludesRateLimits(t *testing.T) {
 	limited.RateLimit = gjagent.RateLimitConfig{RequestsPerMinute: 20, TokensPerMinute: 50000}
 	if agentEvalFingerprint(base) == agentEvalFingerprint(limited) {
 		t.Fatal("agent rate-limit changes must alter the eval fingerprint")
+	}
+}
+
+// show_thoughts changes the outbound provider request — ax turns it into
+// Gemini's thinkingConfig.includeThoughts — so an episode recorded with it on
+// carries reasoning text an episode recorded without it does not. Two runs that
+// record different things must not hash alike, or the harness will resume across
+// the toggle and reuse episodes from the other side of it. return_trace, the
+// same class of observability-only flag, is already in the payload.
+func TestAgentEvalFingerprintIncludesShowThoughts(t *testing.T) {
+	base := agentStatusResponse{Provider: "openai", Model: "gpt-test", StructuredOutputMode: "auto"}
+	observed := base
+	observed.ShowThoughts = true
+	if agentEvalFingerprint(base) == agentEvalFingerprint(observed) {
+		t.Fatal("show_thoughts changes what an episode records; it must alter the eval fingerprint")
+	}
+}
+
+// The bridge every server-owned agent entrypoint runs on used to be a
+// field-by-field struct literal, and it omitted exactly one field: ShowThoughts.
+// GJ_AGENT_SHOW_THOUGHTS was bound and viper populated conf.Agent.ShowThoughts,
+// so the flag read as configured and never reached the provider — across every
+// episode recorded under .graphjin-evals, not one carried a thought. The bridge
+// now copies the struct whole, which cannot drop a field by omission; this pins
+// that property against a refactor that reintroduces a hand-copy.
+func TestAgentConfigBridgeCarriesEveryField(t *testing.T) {
+	var want gjagent.Config
+	(&configFieldFiller{}).fill(t, reflect.ValueOf(&want).Elem(), "agent.Config")
+
+	if got := agentConfigFromService(&Config{Serv: Serv{Agent: want}}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("bridge dropped or altered a field:\n got  %+v\n want %+v", got, want)
+	}
+
+	// The one transformation the bridge is meant to apply. Without this the
+	// comparison above would also pass for a bridge that does nothing at all.
+	below := want
+	below.TimeoutSeconds = 3
+	if got := agentConfigFromService(&Config{Serv: Serv{Agent: below}}); got.TimeoutSeconds != 50 {
+		t.Fatalf("timeout_seconds below the floor = %d, want it raised to 50", got.TimeoutSeconds)
+	}
+}
+
+// configFieldFiller gives every field a distinct non-zero value, so a field the
+// bridge drops shows up as a zero in the comparison.
+type configFieldFiller struct{ n int }
+
+// fill fails on any kind it cannot set rather than skipping it. A completeness
+// guard that silently ignores a new field's type reads as coverage while
+// asserting nothing, which is the failure it exists to catch.
+func (f *configFieldFiller) fill(t *testing.T, v reflect.Value, path string) {
+	t.Helper()
+	for i := 0; i < v.NumField(); i++ {
+		name := path + "." + v.Type().Field(i).Name
+		field := v.Field(i)
+		if !field.CanSet() {
+			t.Fatalf("%s is unexported, so this guard cannot prove it survives the bridge", name)
+		}
+		switch field.Kind() {
+		case reflect.String:
+			field.SetString(name)
+		case reflect.Bool:
+			field.SetBool(true)
+		case reflect.Int, reflect.Int64:
+			// Seeded above the 50-second timeout floor so no value the filler
+			// picks is normalized by the bridge.
+			f.n++
+			field.SetInt(int64(100 + f.n))
+		case reflect.Struct:
+			f.fill(t, field, name)
+		default:
+			t.Fatalf("%s has kind %s, which this guard cannot fill: teach it that kind rather than leaving the field unchecked", name, field.Kind())
+		}
+	}
+}
+
+// The bridge fix is only worth anything if the value reaches the agent. This
+// drives the real REST handler and reads the config the bridge hands the runner,
+// which is the config gjagent.New passes to the client factory that builds the
+// reasoningClient.
+func TestAgentShowThoughtsReachesTheRunner(t *testing.T) {
+	runner := &scriptedAgentRunner{resp: gjagent.Response{Status: gjagent.StatusAnswered, Answer: "ok"}}
+	withScriptedAgentRunner(t, runner)
+
+	hs := newAgentHTTPTestService(&Config{
+		Serv: Serv{Agent: AgentConfig{Enabled: true, ShowThoughts: true}},
+	})
+	req := httptest.NewRequest(http.MethodPost, routeAgent, strings.NewReader(`{"instruction":"how many customers?"}`))
+	rec := httptest.NewRecorder()
+	hs.Agent(nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !runner.conf.ShowThoughts {
+		t.Fatalf("show_thoughts did not survive the service to agent bridge: %+v", runner.conf)
 	}
 }
 
