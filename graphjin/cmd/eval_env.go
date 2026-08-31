@@ -155,10 +155,14 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		}
 		configureEvalInstance(fresh, spec)
 		applySaaSOpsEvalAPIBaseURL(fresh, apiServer)
-		// Each embedded service owns its config for its entire lifetime. A reset
-		// may leave subscription workers finishing their shutdown after Close
-		// returns, so reusing cloned here would race those readers while the next
-		// service is initialized.
+		// Each embedded service owns its config for its entire lifetime, so one
+		// service can never observe another's being rebuilt.
+		//
+		// This used to also be load-bearing against a shutdown race: Close
+		// returned while workers were still running, and they would read a config
+		// the next boot was writing. That is fixed where it belonged — Close now
+		// waits for them — and the copy stays because a service owning its own
+		// configuration is right regardless.
 		serviceConfig := *fresh
 		// The demo keeps its trusted local dev identity, but Eval suppresses
 		// named-query learning so an episode cannot mutate benchmark identity.

@@ -272,7 +272,13 @@ func (s *externalServer) handleAnswer(w http.ResponseWriter, r *http.Request, id
 	events := episode.recorder.stop()
 	response := responseFromMCPEvents(status, request.Answer, events)
 
-	detail, evidence, err := s.env.runner.FinishEpisodeScoring(r.Context(), episode.instance, episode.task,
+	// Scoring runs on its own deadline rather than the request's. Once an answer
+	// has been submitted the episode has to be graded and the world put back —
+	// a client that hangs up mid-grade would otherwise abort the reset and hand
+	// a mutated world to whatever ran next.
+	scoreCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Minute)
+	defer cancel()
+	detail, evidence, err := s.env.runner.FinishEpisodeScoring(scoreCtx, episode.instance, episode.task,
 		episode.prep, response, time.Since(episode.started).Milliseconds(), episode.profile)
 	s.release(episode)
 	if err != nil {
