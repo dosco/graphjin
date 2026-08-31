@@ -43,6 +43,10 @@ type DemoRuntime struct {
 	Cleanups  []func(context.Context) error
 	Databases map[string]*sql.DB
 	Status    demoStatus
+	// FirstRun reports whether this boot provisioned fresh demo state. Seeding
+	// standing watches follows the same rule as seeding data: only on a fresh
+	// provision, so a reused demo keeps whatever the operator changed.
+	FirstRun bool
 }
 
 type demoStatus struct {
@@ -116,6 +120,7 @@ func StartDemo(ctx context.Context, dbFlags []string, statusOut io.Writer) (*Dem
 	runtime := &DemoRuntime{
 		Databases: make(map[string]*sql.DB),
 		Status:    status,
+		FirstRun:  state.FirstRun,
 	}
 
 	// Check if multi-database mode (conf.Core.Databases is populated)

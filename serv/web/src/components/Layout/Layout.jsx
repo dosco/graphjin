@@ -7,7 +7,7 @@ import { ConsoleProvider } from "./console-context";
 import { routeDefinition } from "@/app/workspaces";
 import { cn } from "@/lib/utils";
 import { fetchConsoleBootstrap } from "@/services/console";
-import { operatorIdentityKey, useOperatorIdentity } from "@/services/identity";
+import { adoptSuggestedIdentity, operatorIdentityKey, useOperatorIdentity } from "@/services/identity";
 
 const layoutClasses = {
   canvas: "min-h-0 overflow-hidden",
@@ -25,6 +25,11 @@ const Layout = ({ children }) => {
     staleTime: 30000,
     retry: 1,
   });
+  // Adopting rewrites identityKey, which refetches bootstrap with the new
+  // headers; the suggestion is then absent and this settles after one pass.
+  React.useEffect(() => {
+    adoptSuggestedIdentity(bootstrapQuery.data?.identity?.suggested);
+  }, [bootstrapQuery.data]);
   const route = routeDefinition(location.pathname);
   const consoleValue = React.useMemo(() => ({
     bootstrap: bootstrapQuery.data,

@@ -1,0 +1,88 @@
+# Standing questions the SaaS ops demo boots with.
+#
+# Each entry is exactly the input a gj_watch(insert: {...}) mutation takes, so
+# what the demo registers and what you would write by hand are the same object
+# created through the same public control-plane contract. DeepORG's reactive
+# tasks use that contract too, rather than a private fixture.
+#
+# `graphjin serve --demo` registers these on a first run only. Delete
+# <path>/demo to start over, which also clears the standing watches.
+
+operator:
+  user_id: demo-operator
+  # Watches run under `role`, so it stays least-privilege: these questions only
+  # ever read what an ordinary user could already query.
+  role: user
+  # The console adopts `console_role` instead. Mission Control's watch inbox
+  # reads control-plane columns (`snoozed_until`, tasks' `owner_ref`) that the
+  # user role cannot, so a console driven as `user` renders an empty inbox even
+  # when the watches are firing.
+  console_role: admin
+
+watches:
+  # Fires on boot: the seed data already contains failed invoices.
+  - name: saas_ops_failed_invoices
+    description: Alert when a failed invoice changes.
+    query: |
+      subscription saas_ops_failed_invoices {
+        invoices(where: {status: {eq: "failed"}}, first: 25, after: $cursor) {
+          id
+          account_id
+          status
+          attempts
+          last_attempt_at
+        }
+        invoices_cursor
+      }
+
+  # Fires on boot: ticket 1 is urgent, open, and already past its SLA.
+  - name: saas_ops_urgent_tickets
+    description: Alert when an open urgent support ticket changes.
+    query: |
+      subscription saas_ops_urgent_tickets {
+        support_tickets(where: {status: {eq: "open"}, severity: {eq: "urgent"}}, first: 25, after: $cursor) {
+          id
+          account_id
+          status
+          severity
+          sla_due_at
+        }
+        support_tickets_cursor
+      }
+
+  # Fires on boot: Meridian Robotics and Quartzline are seeded at churn risk.
+  - name: saas_ops_churn_risk_accounts
+    description: Alert when a churn-risk account changes.
+    query: |
+      subscription saas_ops_churn_risk_accounts {
+        accounts(where: {status: {eq: "churn_risk"}}, first: 25, after: $cursor) {
+          id
+          name
+          status
+          renewal_date
+          mrr_cents
+        }
+        accounts_cursor
+      }
+
+  # Fires from silence rather than from data. No seeded ticket is critical, so
+  # this watch matches nothing and the absence sweep reports the quiet. File a
+  # critical ticket and it fires for real instead, which resets the silence
+  # clock. The window is deliberately demo-short; production windows are hours.
+  - name: saas_ops_critical_ticket_silence
+    description: Confirm no critical incident has been declared.
+    query: |
+      subscription saas_ops_critical_ticket_silence {
+        support_tickets(where: {status: {eq: "open"}, severity: {eq: "critical"}}, first: 25, after: $cursor) {
+          id
+          account_id
+          subject
+          severity
+          opened_at
+        }
+        support_tickets_cursor
+      }
+    absence:
+      enabled: true
+      window: 2m
+      repeat: true

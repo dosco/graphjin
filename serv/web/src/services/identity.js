@@ -1,6 +1,7 @@
 import React from "react";
 
 const storageKey = "graphjin.operatorIdentity.v1";
+const suggestionDismissedKey = "graphjin.operatorIdentity.suggestionDismissed.v1";
 const identityEvent = "graphjin:operator-identity";
 const emptyIdentity = Object.freeze({ userId: "", role: "", accountId: "" });
 let cachedRaw = null;
@@ -39,9 +40,38 @@ export function writeOperatorIdentity(identity) {
 export function clearOperatorIdentity() {
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(storageKey);
+    // Remember the clear, or the server's suggestion is re-adopted on the next
+    // page load and clearing looks like it did nothing.
+    window.localStorage.setItem(suggestionDismissedKey, "1");
     cachedRaw = "";
     cachedIdentity = emptyIdentity;
     window.dispatchEvent(new CustomEvent(identityEvent));
+  }
+}
+
+// adoptSuggestedIdentity takes the development identity the server offers in
+// console bootstrap, so a zero-configuration console starts inside the owner
+// scope that already has tasks and watches. It never overwrites an identity the
+// operator set, and never returns after they have cleared one.
+export function adoptSuggestedIdentity(suggested) {
+  if (typeof window === "undefined" || !suggested?.user_id) {
+    return false;
+  }
+  try {
+    // Unlike the rest of this module, this runs on every page load rather than
+    // from a user action, so a browser that refuses storage must degrade to
+    // "no suggestion" instead of breaking the console.
+    if (window.localStorage.getItem(storageKey) || window.localStorage.getItem(suggestionDismissedKey)) {
+      return false;
+    }
+    writeOperatorIdentity({
+      userId: suggested.user_id,
+      role: suggested.role,
+      accountId: suggested.account_id,
+    });
+    return true;
+  } catch {
+    return false;
   }
 }
 

@@ -430,6 +430,36 @@ function TaskEntry({ entry }) {
   );
 }
 
+// WatchStarterHint turns the empty watch list from a dead end into the one
+// example a reader needs: a standing question is an ordinary cursor-paginated
+// subscription handed to gj_watch.
+function WatchStarterHint() {
+  return (
+    <div className="grid gap-3">
+      <p className="leading-6 text-muted-foreground">
+        A standing question is a cursor-paginated subscription. GraphJin keeps it running,
+        resumes it from its stored cursor, and files what it finds here.
+      </p>
+      <pre className="overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs leading-5">
+{`mutation {
+  gj_watch(insert: {
+    name: "urgent_tickets"
+    query: "subscription urgent_tickets { support_tickets(where: {severity: {eq: \\"urgent\\"}}, first: 25, after: $cursor) { id status } support_tickets_cursor }"
+  }) { id name status }
+}`}
+      </pre>
+      <a
+        className="text-sm font-medium underline underline-offset-4"
+        href="https://graphjin.com/watch/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        How standing questions work
+      </a>
+    </div>
+  );
+}
+
 function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onOpenTask, tasks }) {
   const queryClient = useQueryClient();
   const seenMutation = useMutation({
@@ -499,7 +529,9 @@ function WatchInboxPanel({ query, watches, events, identityKey, onOpenEvent, onO
       {!query.error && !query.isLoading && (
         <Panel title="Watches" description="Definition health and recent runner state.">
           {watches.length === 0 ? (
-            <EmptyState title="No watches" message="No standing questions are visible for this operator." />
+            <EmptyState title="No watches" message="No standing questions are visible for this operator.">
+              <WatchStarterHint />
+            </EmptyState>
           ) : (
             <Table>
               <TableHeader>

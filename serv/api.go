@@ -106,6 +106,7 @@ type graphjinService struct {
 	agentRateLimiterMu     sync.Mutex
 	agentRateLimiter       *gjagent.ProviderRateLimiter
 	watchSubscribeForTest  func(context.Context, watchRuntimeDefinition, json.RawMessage) (*core.Member, error)
+	operatorSeed           *OperatorSeed
 	srv                    *http.Server
 	srvMu                  sync.Mutex // guards srv: written by startHTTP, read by Shutdown
 	fs                     core.FS
@@ -797,6 +798,9 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		}
 		s.startProjectionPoller(context.Background())
 		s.startWatchCoordinator(context.Background())
+		// Seed before the runner starts so its first reconcile already sees the
+		// project's standing questions.
+		s.seedOperatorWatches(context.Background())
 		s.startWatchRunner(context.Background())
 		s.startTaskVerifier(context.Background())
 	}

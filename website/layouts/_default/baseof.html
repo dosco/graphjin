@@ -113,8 +113,8 @@
       <main id="main-content" class="content content-home" data-pagefind-body>
         {{ block "main" . }}{{ end }}
       </main>
-    {{ else if .Params.benchmark_landing }}
-      <main id="main-content" class="content content-benchmark-landing" data-pagefind-body>
+    {{ else if or .Params.benchmark_landing .Params.landing }}
+      <main id="main-content" class="content content-landing{{ if .Params.benchmark_landing }} content-benchmark-landing{{ end }}" data-pagefind-body>
         {{ block "main" . }}{{ end }}
       </main>
     {{ else }}

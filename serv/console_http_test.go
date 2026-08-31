@@ -128,3 +128,63 @@ func hasConsoleWorkspace(workspaces []consoleBootstrapWorkspace, id string) bool
 	}
 	return false
 }
+
+// The console adopts the suggested identity only where headers are actually
+// trusted, so the suggestion must never appear anywhere it could not work.
+func TestConsoleBootstrapSuggestsSeededOperatorInDevOnly(t *testing.T) {
+	newService := func(mutate func(*Config)) *HttpService {
+		conf := &Config{Core: core.Config{
+			Mode:      "dev",
+			Artifacts: core.ArtifactsConfig{Enabled: true},
+			Watches:   core.WatchesConfig{Enabled: true},
+		}}
+		conf.Auth.Development = true
+		if mutate != nil {
+			mutate(conf)
+		}
+		hs := newAgentHTTPTestService(conf)
+		hs.Load().(*graphjinService).operatorSeed = &OperatorSeed{UserID: "demo-operator"}
+		return hs
+	}
+	suggestionFor := func(hs *HttpService, ctx context.Context) *consoleSuggestedIdentity {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, routeConsoleBootstrap, nil)
+		if ctx != nil {
+			req = req.WithContext(ctx)
+		}
+		rec := httptest.NewRecorder()
+		hs.ConsoleBootstrap(nil).ServeHTTP(rec, req)
+		return decodeConsoleBootstrap(t, rec).Identity.Suggested
+	}
+
+	suggested := suggestionFor(newService(nil), nil)
+	if suggested == nil {
+		t.Fatal("dev mode with an operator seed should suggest an identity")
+	}
+	if suggested.UserID != "demo-operator" || suggested.Role != "user" {
+		t.Fatalf("suggestion = %+v, want demo-operator as user", suggested)
+	}
+
+	for name, tc := range map[string]struct {
+		mutate func(*Config)
+		ctx    context.Context
+	}{
+		"jwt auth":            {mutate: func(c *Config) { c.Auth.Development = false }},
+		"production":          {mutate: func(c *Config) { c.Serv.Production = true }},
+		"caller has identity": {ctx: context.WithValue(context.Background(), core.UserIDKey, "real-user")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := suggestionFor(newService(tc.mutate), tc.ctx); got != nil {
+				t.Fatalf("suggestion = %+v, want none", got)
+			}
+		})
+	}
+
+	t.Run("no seed", func(t *testing.T) {
+		conf := &Config{Core: core.Config{Mode: "dev"}}
+		conf.Auth.Development = true
+		if got := suggestionFor(newAgentHTTPTestService(conf), nil); got != nil {
+			t.Fatalf("suggestion = %+v, want none without an operator seed", got)
+		}
+	})
+}

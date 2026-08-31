@@ -20,7 +20,8 @@ Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL, Snowflake, Redshif
 - **Smart discovery before action** - Agents start with `query_catalog(search: "<user instruction>")`, `graphql_help`, relationship evidence, examples, config recipes, and safety notes before writing or running queries.
 - **Guarded action, not raw access** - Source-mode access, query allow-lists, read-only boundaries, policy-aware MCP tools, local encrypted secrets, and `gj_config` preview/apply keep changes auditable.
 - **Operational awareness** - `gj_security`, `gj_runtime`, and the built-in console expose policy and bounded runtime status so agents can check what is safe before they act.
-- **Durable memory and standing questions** - Saved queries, fragments, and workflows live in the owner-scoped `gj_artifacts` store; cursor-backed watches (`gj_watch`) run standing questions under the owner's permissions, resume from persisted subscription cursors, and deliver fired events to a durable inbox (`gj_watch_event`), webhooks, or workflows. Normal watches are durable by default; explicit ephemeral watches use TTL leases.
+- **Standing questions, not just answers** - Hand a cursor-paginated subscription to `gj_watch` and GraphJin keeps answering it under the owner's permissions, resumes from persisted cursors across restarts, treats absence as a first-class event, and files what it finds in a durable inbox (`gj_watch_event`), a webhook, or a workflow. Evaluation runs on database polls, not model calls - a model writes the watch once, and nothing calls one again unless you turn on optional per-watch triage. See [Watches](#watches-and-standing-questions).
+- **Durable memory** - Saved queries, fragments, and workflows live in the owner-scoped `gj_artifacts` store. Normal watches are durable by default; explicit ephemeral watches use TTL leases.
 
 ## Installation
 
@@ -609,6 +610,44 @@ Instead of your client chaining `query_catalog` → `validate_where_clause` → 
 - **Server-owned model:** `ask_graphjin_agent` always uses the provider, model, and credential environment variable configured under `agent`. Without server credentials it fails closed with `model_credentials_required`.
 
 It is an RLM loop — the model writes JavaScript that calls the discovery tools, and the typed result is parsed from `key: value` output. It needs strong **code generation**, not provider tool-calling. Ax requests structured JSON for typed stages, choosing the mechanism from the named deployment profile (`agent.provider`) and its rules for the selected model; `agent.structured_output_mode: auto` is the default, with `native`, `function`, and `json_object` available as overrides. `agent.service_tier` similarly defaults to provider-delegated `auto`, with portable `standard`, `flex`, and `priority` requests available when the profile/model supports them. See [AGENTIC.md](AGENTIC.md#server-side-agent) and [CONFIG.md](CONFIG.md#agent-configuration).
+
+## Watches And Standing Questions
+
+Asking is a pull: it only produces value when someone thinks to ask. A watch is the
+push direction. You hand `gj_watch` a cursor-paginated subscription once, and GraphJin
+keeps answering it against live data, under the owner's stored identity and role.
+
+```graphql
+mutation {
+  gj_watch(insert: {
+    name: "failed_invoices"
+    description: "Alert when a failed invoice changes."
+    query: "subscription failed_invoices { invoices(where: {status: {eq: \"failed\"}}, first: 25, after: $cursor) { id account_id status attempts } invoices_cursor }"
+  }) { id name status enabled }
+}
+```
+
+- **It costs database polls, not model calls.** The runner rides GraphJin's existing
+  cursor-backed subscriptions, compares a hash of each result, and writes a cursor
+  checkpoint even when nothing changed. No model is consulted to decide whether
+  something happened. A model writes the watch once; after that the only optional model
+  cost is per-watch triage in `enrich_json`, which is off by default and capped per day.
+- **Absence is a first-class event.** A watch with `absence_json` fires when the
+  expected thing *does not* arrive, so silence stops being indistinguishable from
+  health.
+- **It survives restarts.** Cursors are persisted, so a watch resumes where it left off
+  rather than replaying or skipping.
+- **It cannot outrun its owner.** A watch only ever sees what its owner could already
+  query, and both `gj_watch` and `gj_watch_event` are owner-scoped.
+- **Waking you and acting are different permissions.** Inbox delivery is immediate;
+  autonomous webhook or workflow delivery stays paused until the exact current
+  `action_hash` is approved. Alerts fail open, actions fail closed.
+
+The built-in demo registers four standing questions on a first run (declared in
+`examples/saas-ops/seed/watches.yml`), three of which have already fired by the time the
+console opens. Management, review, cleanup, and MCP resource subscriptions are covered
+under [MCP Tools](#mcp-tools); the full model is in
+[AGENTIC.md](AGENTIC.md#watches-standing-questions-with-a-durable-inbox).
 
 ## Train And Measure Agents On Your Own Graph
 

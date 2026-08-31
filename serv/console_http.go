@@ -18,6 +18,17 @@ type consoleBootstrapIdentity struct {
 	DisplayName   string `json:"display_name,omitempty"`
 	Role          string `json:"role"`
 	Authenticated bool   `json:"authenticated"`
+	// Suggested is a development identity the console may adopt when the
+	// browser has none. Advisory only: every authorization decision is still
+	// made from the request's own credentials.
+	Suggested *consoleSuggestedIdentity `json:"suggested,omitempty"`
+}
+
+type consoleSuggestedIdentity struct {
+	UserID    string `json:"user_id"`
+	Role      string `json:"role,omitempty"`
+	AccountID string `json:"account_id,omitempty"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 type consoleBootstrapScope struct {
@@ -92,6 +103,8 @@ func (s1 *HttpService) apiV1ConsoleBootstrap(ns *string) http.Handler {
 		}
 		if userID := ctx.Value(core.UserIDKey); userID != nil {
 			identity.DisplayName = fmt.Sprint(userID)
+		} else {
+			identity.Suggested = s.consoleSuggestedIdentity()
 		}
 		scope := consoleBootstrapScope{Environment: effectiveMode(s.conf)}
 		if ns != nil {
@@ -108,6 +121,29 @@ func (s1 *HttpService) apiV1ConsoleBootstrap(ns *string) http.Handler {
 			Features:      features,
 		})
 	})
+}
+
+// consoleSuggestedIdentity offers the operator identity this service seeds work
+// under, so a zero-configuration console starts inside the owner scope that
+// already has content instead of an empty one.
+//
+// It is offered only where the console could actually use it: header-trusting
+// development auth. Under JWT or in production the headers would be ignored, so
+// suggesting an identity there would be advertising something that cannot work.
+func (s *graphjinService) consoleSuggestedIdentity() *consoleSuggestedIdentity {
+	seed := s.operatorSeed
+	if seed == nil || strings.TrimSpace(seed.UserID) == "" {
+		return nil
+	}
+	if s.conf == nil || s.conf.Serv.Production || !s.conf.Auth.Development {
+		return nil
+	}
+	return &consoleSuggestedIdentity{
+		UserID:    seed.UserID,
+		Role:      seed.consoleSeedRole(),
+		AccountID: seed.AccountID,
+		Reason:    "development operator this service seeds standing questions under",
+	}
 }
 
 func consoleReadableRoots(conf *Config, role string) []string {

@@ -140,6 +140,9 @@ func cmdServ(cmd *cobra.Command, args []string) {
 			serv.OptionSetRuntimeSchemaDDLDir(demoRuntimeSchemaDDLDir()),
 		)
 	}
+	if seedOpt, ok := demoWatchSeedOption(demo, cpath); ok {
+		opt = append(opt, seedOpt)
+	}
 	// if deployActive {
 	// 	opt = append(opt, serv.OptionDeployActive())
 	// }
