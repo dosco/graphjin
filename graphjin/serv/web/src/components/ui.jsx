@@ -80,13 +80,14 @@ export function LoadingState({ label = "Loading" }) {
   );
 }
 
-export function EmptyState({ title = "No data", message = "Nothing matched this view." }) {
+export function EmptyState({ title = "No data", message = "Nothing matched this view.", children }) {
   return (
     <div className="flex min-h-32 items-start gap-3 rounded-lg border border-dashed bg-card p-5 text-sm">
       <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
-      <div>
+      <div className="min-w-0">
         <strong className="font-medium text-foreground">{title}</strong>
         <p className="mt-1 leading-6 text-muted-foreground">{message}</p>
+        {children ? <div className="mt-3">{children}</div> : null}
       </div>
     </div>
   );

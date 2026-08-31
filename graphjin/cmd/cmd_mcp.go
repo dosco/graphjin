@@ -131,6 +131,9 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 			serv.OptionSetRuntimeSchemaDDLDir(demoRuntimeSchemaDDLDir()),
 		)
 	}
+	if seedOpt, ok := demoWatchSeedOption(demo, cpath); ok {
+		opts = append(opts, seedOpt)
+	}
 	gj, err := serv.NewGraphJinService(conf, opts...)
 	if err != nil {
 		log.Fatalf("failed to initialize GraphJin: %s", err)

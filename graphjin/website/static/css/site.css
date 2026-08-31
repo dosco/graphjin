@@ -1497,6 +1497,7 @@ pre code {
   margin-bottom: 1.4rem;
 }
 
+.home-section-heading h1,
 .home-section-heading h2 {
   margin: 0.35rem 0 0;
   color: var(--heading);
@@ -1916,6 +1917,7 @@ pre code {
   max-width: 62rem;
 }
 
+.watch-automation-section .home-section-heading h1,
 .watch-automation-section .home-section-heading h2 {
   max-width: 18ch;
 }
@@ -4293,10 +4295,12 @@ pre code {
 .ti-shield-check::before { content: "\eb22"; }
 .ti-terminal-2::before { content: "\ebef"; }
 
+.content-landing,
 .content-benchmark-landing {
   width: 100%;
 }
 
+.watch-landing,
 .benchmark-landing,
 .benchmark-landing-page {
   width: 100%;

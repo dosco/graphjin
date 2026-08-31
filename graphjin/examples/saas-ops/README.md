@@ -30,10 +30,15 @@ watches, artifacts).
 - **Watches + artifacts** enabled (`gj_watch`, `gj_watch_event`,
   `gj_artifacts`; the `runbook` artifact kind is locked to demo policy
   refusals).
-- **Three reference watches** in `reference-watches.graphql` cover failed
-  invoices, urgent-ticket SLA risk, and churn-risk accounts. Apply them through
-  GraphiQL or ask the governed agent to create the equivalent standing
-  questions; DeepORG's reactive tasks use the same public `gj_watch` contract.
+- **Four standing watches**, declared in `seed/watches.yml` and registered on a
+  first run, so the demo starts with a populated watch inbox instead of an empty
+  one. Three cover failed invoices, urgent-ticket SLA risk, and churn-risk
+  accounts, and each fires immediately against the seeded data. The fourth
+  reports on silence: no seeded ticket is critical, so it demonstrates absence
+  detection a couple of minutes in. Each entry is exactly the input a
+  `gj_watch(insert: {...})` mutation takes, so seeding uses the same public
+  control-plane contract you would use by hand — as do DeepORG's reactive tasks.
+  Delete `<path>/demo` to reset the demo, including its standing watches.
 
 ## Identity
 

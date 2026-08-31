@@ -1,0 +1,65 @@
+<section class="home-section watch-automation-section" data-watch-story>
+  <div class="home-section-heading">
+    <p class="home-section-label">Standing questions</p>
+    <h1>Nothing happened. That was the problem.</h1>
+    <p>Everywhere else, you ask. Here you don’t. Leave a governed question running and GraphJin keeps answering it against live data—then speaks up when the answer changes, when something expected never arrives, or when it needs your permission to act.</p>
+  </div>
+  <div class="watch-scene" data-watch-stage="1">
+    <div class="ai-window watch-window">
+      <div class="window-chrome"><span></span><span></span><span></span><i aria-hidden="true">✣</i><strong>GraphJin Watch · #ops-shipping · 06:14</strong></div>
+      <div class="ai-conversation">
+        <p class="watch-unprompted">no prompt · nobody asked</p>
+        <div class="assistant-row">
+          <div class="assistant-avatar" aria-hidden="true">✣</div>
+          <div class="chat-assistant">
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>watch · shipment_scans</span></div><code>0 rows in 4h · absence window elapsed</code></div>
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>watch · green_lots</span></div><code>18 kg on hand · below safety buffer</code></div>
+            <div class="tool-call"><div class="tool-call-header"><span class="tool-caret" aria-hidden="true">⌄</span><span>rollup</span></div><code>2 watches correlated → 1 signal</code></div>
+            <p class="done-line"><span aria-hidden="true">✓</span><span class="done-text"> 1 conversation woken · 0 duplicates · action held</span></p>
+            <p class="assistant-copy">No shipment scan in four hours, and green-bean inventory is already under the safety buffer. Neither one is an alert on its own. Together, Tuesday’s roast stops by 14:00.</p>
+            <div class="watch-gate"><div><strong>Draft supplier escalation</strong><span>approval pending</span></div><p>Written, attached, and not sent. The workflow stays paused until you approve this exact version.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="watch-answer-grid" data-watch-stage="2">
+    <article><span>How did it know nothing happened?</span><strong>Absence is a first-class event</strong><p>You declare the window. A watch that sees zero rows in four hours fires exactly like one that sees a thousand, so silence stops vanishing between polls.</p></article>
+    <article><span>Why did it send only one message?</span><strong>Noise drains before you see it</strong><p>Routine events discard or roll into an unseen digest, and related watches correlate by exact ID into one signal. One conversation woke up, not four channels.</p></article>
+    <article><span>What if the model gets it wrong?</span><strong>It can wake you. It cannot act.</strong><p><strong>Alerts fail open.</strong> If AI triage is unavailable, GraphJin still sends the raw notification. <strong>Actions fail closed.</strong> A workflow never runs without the required approval.</p></article>
+  </div>
+</section>
+
+<section id="watch-economics" class="home-section watch-automation-section">
+  <div class="home-section-heading">
+    <p class="home-section-label">What it costs</p>
+    <h2>A question you leave running is not a model you leave running.</h2>
+    <p>The reason an organization can afford hundreds of standing questions is that keeping one alive does not involve a model at all. GraphJin compiles the question once and then answers it the way a database answers anything.</p>
+  </div>
+  <div class="watch-answer-grid">
+    <article><span>While it runs</span><strong>Database polls, not model calls</strong><p>A watch rides GraphJin’s cursor-backed subscriptions. It resumes from its stored cursor, compares a hash of what came back, and stays quiet when nothing changed. No model decides whether something happened.</p></article>
+    <article><span>When you create it</span><strong>One agent session</strong><p>Describe the question in plain language and the agent writes the subscription. That is where model cost enters — once, at authoring time — which means the model tier you choose does not change what the watch costs to keep.</p></article>
+    <article><span>When it fires</span><strong>Triage is opt-in and capped</strong><p>By default a fired watch lands in your inbox as data. AI triage that summarizes, scores, or suppresses noise is something you turn on per watch, with a daily cap so a noisy source cannot run up a bill.</p></article>
+  </div>
+</section>
+
+<section class="home-section watch-automation-section" data-watch-story>
+  <p class="watch-grid-label">Everything a standing question can do</p>
+  <div class="watch-capability-grid" data-watch-stage="3" aria-label="GraphJin reactive agent capabilities">
+    <article><span>Change</span><strong>React to live data</strong><p>Cursor-backed questions keep running across your systems.</p></article>
+    <article><span>Absence</span><strong>Notice what did not happen</strong><p>“No shipment scan in four hours” becomes a first-class event.</p></article>
+    <article><span>Digest</span><strong>Turn noise into one signal</strong><p>Routine events drain into one useful, unseen summary.</p></article>
+    <article><span>Rollup</span><strong>Correlate independent watches</strong><p>Combine exact watch IDs without unsafe loops.</p></article>
+    <article><span>Snooze</span><strong>Defer without losing the event</strong><p>Hide an unseen event until later without acknowledging it.</p></article>
+    <article><span>Recover</span><strong>Reconnect, resume, retry</strong><p>Persist cursors and back off transient failures automatically.</p></article>
+  </div>
+</section>
+
+<section class="home-section watch-automation-section">
+  <div class="home-section-heading">
+    <p class="home-section-label">Try it</p>
+    <h2>The demo starts with its inbox already full.</h2>
+    <p>Run the built-in demo and GraphJin registers four standing questions before it finishes booting. Three of them have already fired against the seeded data by the time you open the console. The fourth reports on silence: nothing in the demo is a critical incident, so a couple of minutes in it tells you so.</p>
+  </div>
+  <div class="home-actions"><a class="button-primary" href="/start/demos/">Run the demo</a><a class="button-secondary" href="/agentic/watch-automation/">Choose watches, flows, and workflows</a></div>
+</section>
