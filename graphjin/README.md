@@ -665,6 +665,12 @@ graphjin env serve --path ./graphjin-demo --suite eval/suite.yml --pool 4 \
 - **Runs export as training data.** `graphjin eval export` writes trajectories
   as JSONL, marking the programs GraphJin's runtime wrote itself so they are not
   mistaken for the policy's.
+- **Collecting is not measuring.** `graphjin eval sample --repeats 8
+  --temperature 0.8` draws many attempts at each task instead of judging one.
+  It reaches no verdict and promotes nothing, because a temperature raised on
+  purpose loses against a greedy baseline every time — and it records which side
+  of the split it drew from, so `eval export` can refuse to build a training
+  corpus out of held-out work.
 
 ```bash
 # Learn a real server's schema; write a local synthetic copy

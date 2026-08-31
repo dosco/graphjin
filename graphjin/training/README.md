@@ -233,9 +233,97 @@ producing a corpus that trains the wrong thing: one whose trace recorded no
 rendered prompt (the program is there, but not what was asked), and one where
 the policy's programs cannot be told apart from the runtime's own.
 
-Not every provider path records the rendered prompt in its trace. If the export
-reports that, the trajectories are still usable for reward work and for
-inspection — just not for supervised fine-tuning.
+If the export reports either, the trajectories are still usable for reward work
+and for inspection — just not for supervised fine-tuning.
+
+`--stage` matters more than it looks. An episode is produced by three different
+policies sharing one trace, and a corpus mixing them teaches none of them.
+Executor is the default because it is the stage that does the work.
+
+## The three workflows, in the order they depend on each other
+
+A base small model earns almost no reward on this suite — it has never seen the
+protocol, and the runtime refuses raw GraphQL from a caller that has not read
+the catalog, so most attempts score zero before the answer is even considered.
+That matters for sequencing: **GRPO cannot start from there.** If nearly every
+sample in a group scores the same zero, every advantage is zero and there is no
+gradient. Teach the format first, then select on it, then optimize.
+
+**1. Behavior cloning from a teacher.** Run a strong model over the training
+side and keep what passed.
+
+```bash
+graphjin eval create --demo --writable --scale 500 --composition coverage --split 0.8
+graphjin eval sample --demo --repeats 2 --split eval/suite.split.json --side train --yes
+graphjin eval export <run-id> --split eval/suite.split.json --side train --out teacher.jsonl
+python3 sft_from_export.py teacher.jsonl --out sft.jsonl --min-reward 1.0
+```
+
+**2. Rejection sampling from the tuned model.** Now that it produces valid
+programs, let it produce many and keep the ones that worked.
+
+```bash
+export GJ_AGENT_BASE_URL=http://127.0.0.1:8099 GJ_AGENT_MODEL=your-checkpoint
+graphjin eval sample --demo --repeats 8 --temperature 0.8 \
+  --split eval/suite.split.json --side train --yes
+graphjin eval export <run-id> --split eval/suite.split.json --side train --out sampled.jsonl
+```
+
+Without a temperature this collects eight copies of one answer: the stack pins
+temperature 0 unless something raises it. `eval sample` says so rather than
+letting you find out from a corpus with no variety in it.
+
+**3. GRPO.** Drive episodes yourself, a group at a time.
+
+```bash
+graphjin env serve --demo --suite eval/suite.yml --split eval/suite.split.json \
+  --side train --pool 4 --step --support-model <a-fast-model>
+python3 grpo_smoke.py --env http://127.0.0.1:8090 --group 4
+```
+
+Measure between epochs against the side the training never saw:
+
+```bash
+graphjin env serve --demo --suite eval/suite.yml --split eval/suite.split.json \
+  --side eval --pool 4 --listen 127.0.0.1:8091
+python3 measure.py --env http://127.0.0.1:8091 --repeats 3
+```
+
+`measure.py` prints a confidence interval and the suite's resolution floor with
+every result. The floor is real: this suite flips about 24 of 113 tasks between
+two runs of the *same* binary, so a few points of movement is noise, and reading
+it as progress is how a training run convinces itself it is working.
+
+## Held-out tasks stay held out
+
+`eval sample` records which side of the split it drew from, and `eval export`
+refuses to build a training corpus out of held-out episodes — automatically when
+the run recorded it, and on request when a split is named:
+
+```bash
+graphjin eval export <run-id> --split eval/suite.split.json --side train
+# refuses if the run contains eval-side episodes; --allow-eval-side overrides
+```
+
+Nothing about an exported file used to say where its episodes came from, so
+contaminating a corpus was silent and surfaced much later as a score that looked
+too good and could not be explained.
+
+## What your provider actually does with a temperature
+
+`agent.temperature` and `agent.top_p` (or `GJ_AGENT_TEMPERATURE` /
+`GJ_AGENT_TOP_P`) configure sampling; run provenance records what the server
+resolved, so two runs can be told apart. What reaches the wire varies:
+
+- Unset means temperature 0. The stack pins it, so repeats are identical.
+- Anthropic's adaptive models never receive it.
+- Gemini 3.7-flash, 3.6-flash and 3.5-flash-lite manage sampling server-side;
+  nothing is sent.
+- Other Gemini 3 models clamp anything below 1 up to 1.
+- DeepSeek v4 drops it whenever a thinking effort is set.
+
+If a sampling run comes back with identical rewards across a group, check this
+list before concluding anything about the model.
 
 ## What to record with a result
 
@@ -272,6 +360,8 @@ anything.
 | POST | `/episodes` | run one graded episode |
 | POST | `/step/reset`, `/step`, DELETE `/step/{id}` | drive an episode a completion at a time (`--step`) |
 | POST | `/external/episodes`, `/external/episodes/{id}/answer` | grade your own agent over MCP (`--external`) |
+
+`graphjin_env` wraps the first two: `Environment` for whole episodes, `StepEnvironment` plus `group_rollout` for step-driven ones. A GRPO group is n attempts at one task, and `group_advantages` scores each against the group's own mean — with no baseline model, the other attempts are the baseline.
 
 The `--step` and `--external` routes exist only when the flag is given.
 
