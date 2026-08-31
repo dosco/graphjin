@@ -241,7 +241,7 @@ func initDemoState(status demoStatus) (*demoState, error) {
 		} else {
 			status.Emit("state", "cleared", "control-plane store reset with demo state")
 		}
-		return &demoState{
+		fresh := &demoState{
 			Dir:      stateDir,
 			FirstRun: true,
 			Manifest: demoManifest{
@@ -251,7 +251,35 @@ func initDemoState(status demoStatus) (*demoState, error) {
 				Sources:    make(map[string]demoManifestItem),
 			},
 			Status: status,
-		}, nil
+		}
+		// A fresh provision seeds against the wall clock, so a caller that pinned
+		// an anchor gets its data on the wrong day unless it is moved.
+		//
+		// This is what lets a published environment measure the same thing on any
+		// date. A pooled evaluation worker always takes this branch — the skeleton
+		// copy deliberately excludes demo/ so every worker provisions fresh — so
+		// without this the rows follow the calendar while the frozen clock does
+		// not, and every relative-window question is asked about the wrong window.
+		if pinned := strings.TrimSpace(demoPinnedDataAnchor); pinned != "" {
+			today := time.Now().UTC().Format(demoDataAnchorLayout)
+			delta, err := demoAnchorDelta(today, pinned)
+			switch {
+			case err != nil:
+				// Fail open on a malformed operator string; the boot-time anchor
+				// check refuses the consequence, which is the better place to stop.
+				status.Emit("state", "unpinned", fmt.Sprintf("cannot read anchor %q; seeding against today", pinned))
+			case delta == 0:
+				// Already the pinned day; record it so the manifest says so rather
+				// than restamping today over it.
+				fresh.PinnedAnchor = pinned
+			default:
+				fresh.PinnedAnchor = pinned
+				fresh.ShiftDays = delta
+				status.Emit("state", "anchored", fmt.Sprintf(
+					"seeding against today, then moving demo dates %+d day(s) onto the pinned anchor %s", delta, pinned))
+			}
+		}
+		return fresh, nil
 	}
 	if err != nil {
 		status.Emit("state", "failed", err.Error())
@@ -302,6 +330,12 @@ func initDemoState(status demoStatus) (*demoState, error) {
 				status.Emit("state", "pinned", fmt.Sprintf("holding demo data at anchor %s for the resumed evaluation; skipping the %d day(s) shift", pinned, state.ShiftDays))
 			}
 			state.ShiftDays = 0
+			// Record the pin even when nothing moves. Without this the manifest
+			// is restamped with today's date over data sitting on the pinned day
+			// — invisible while the pin is today, wrong the moment it is a past
+			// date. It fires on every writable suite, because a resettable boot
+			// calls StartDemo twice and the second call lands here.
+			state.PinnedAnchor = pinned
 		} else {
 			status.Emit("state", "rewinding", fmt.Sprintf("demo data is anchored %s; moving %+d day(s) to meet the resumed run's anchor %s", manifest.DataAnchor, delta, pinned))
 			state.ShiftDays = delta
