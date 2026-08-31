@@ -14,12 +14,12 @@ import (
 func TestEnvServerValidatesTheSide(t *testing.T) {
 	suite := envTestSuite(t)
 	for _, side := range []string{"trian", "TRAIN-ish", "", "holdout"} {
-		if _, err := newEnvServer(suite, gjeval.RewardProfileRL, side, "", ""); err == nil {
+		if _, err := newEnvServer(suite, gjeval.RewardProfileRL, side, nil, ""); err == nil {
 			t.Fatalf("side %q must be refused rather than treated as eval", side)
 		}
 	}
 	for _, side := range []string{"train", "eval", " Train "} {
-		if _, err := newEnvServer(suite, gjeval.RewardProfileRL, side, "", ""); err != nil {
+		if _, err := newEnvServer(suite, gjeval.RewardProfileRL, side, nil, ""); err != nil {
 			t.Fatalf("side %q must be accepted: %v", side, err)
 		}
 	}
@@ -33,7 +33,7 @@ func TestEnvServerGivesTheRunnerTheFrozenClock(t *testing.T) {
 	suite := envTestSuite(t)
 	const frozen = "2026-08-01T12:00:00Z"
 
-	server, err := newEnvServer(suite, gjeval.RewardProfileRL, "train", "", frozen)
+	server, err := newEnvServer(suite, gjeval.RewardProfileRL, "train", nil, frozen)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestEnvServerGivesTheRunnerTheFrozenClock(t *testing.T) {
 	}
 
 	// Without the flag it stays unset, which is what makes "now" mean now.
-	plain, err := newEnvServer(suite, gjeval.RewardProfileRL, "train", "", "")
+	plain, err := newEnvServer(suite, gjeval.RewardProfileRL, "train", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestEnvServerGivesTheRunnerTheFrozenClock(t *testing.T) {
 		t.Fatal("an unfrozen environment must not pin the clock")
 	}
 	// A malformed instant is a startup error, not a silently ignored flag.
-	if _, err := newEnvServer(suite, gjeval.RewardProfileRL, "train", "", "yesterday"); err == nil {
+	if _, err := newEnvServer(suite, gjeval.RewardProfileRL, "train", nil, "yesterday"); err == nil {
 		t.Fatal("an unparseable freeze time must be refused")
 	}
 }
@@ -103,7 +103,11 @@ func TestEnvServerRefusesASplitThatSelectsNothing(t *testing.T) {
 	if err := gjeval.SaveSplit(path, split); err != nil {
 		t.Fatal(err)
 	}
-	_, err := newEnvServer(suite, gjeval.RewardProfileRL, "train", path, "")
+	resolved, _, err := resolveEnvSplit(path, suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = newEnvServer(suite, gjeval.RewardProfileRL, "train", resolved, "")
 	if err == nil {
 		t.Fatal("a split that selects none of this suite's tasks must be refused at startup")
 	}
