@@ -3,6 +3,7 @@ package eval
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -129,4 +130,66 @@ func LoadSplit(path string) (*SuiteSplit, error) {
 		return nil, err
 	}
 	return &split, nil
+}
+
+// Fingerprint identifies which split this is.
+//
+// A suite regenerated at a different ratio, or with different holdout
+// families, is a different holdout even when the tasks look familiar. Runs
+// record this so a corpus can be checked against the split it claims to come
+// from rather than against one that merely has the same filename.
+func (s SuiteSplit) Fingerprint() string {
+	canonical := struct {
+		SchemaVersion    string   `json:"schema_version"`
+		SuiteFingerprint string   `json:"suite_fingerprint"`
+		TrainRatio       float64  `json:"train_ratio"`
+		HoldoutFamilies  []string `json:"holdout_families,omitempty"`
+		Train            []string `json:"train"`
+		Eval             []string `json:"eval"`
+	}{
+		SchemaVersion: s.SchemaVersion, SuiteFingerprint: s.SuiteFingerprint,
+		TrainRatio: s.TrainRatio, HoldoutFamilies: s.HoldoutFamilies,
+		Train: s.Train, Eval: s.Eval,
+	}
+	data, err := json.Marshal(canonical)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:16])
+}
+
+// SideOf names which side a task was assigned to, or empty when the split does
+// not mention it at all — which is itself worth distinguishing, since a task
+// the split never saw is not the same as one it held out.
+func (s SuiteSplit) SideOf(taskID string) string {
+	switch {
+	case s.Contains(s.Train, taskID):
+		return "train"
+	case s.Contains(s.Eval, taskID):
+		return "eval"
+	default:
+		return ""
+	}
+}
+
+// PartitionEpisodesBySide sorts a run's episodes by which side of the split
+// their task belongs to.
+//
+// Unknown is kept separate rather than folded into either side: a task the
+// split never mentions is not held out, but it is not vouched for either, and
+// a caller deciding whether a corpus is safe to train on should be told the
+// difference.
+func PartitionEpisodesBySide(episodes []Episode, split SuiteSplit) (train, eval, unknown []Episode) {
+	for _, episode := range episodes {
+		switch split.SideOf(episode.TaskID) {
+		case "train":
+			train = append(train, episode)
+		case "eval":
+			eval = append(eval, episode)
+		default:
+			unknown = append(unknown, episode)
+		}
+	}
+	return train, eval, unknown
 }

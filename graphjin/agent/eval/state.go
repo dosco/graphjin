@@ -23,6 +23,7 @@ const (
 	RunIntentRun      RunIntent = "run"
 	RunIntentBaseline RunIntent = "baseline"
 	RunIntentBench    RunIntent = "bench"
+	RunIntentSample   RunIntent = "sample"
 )
 
 type ResumePolicy string

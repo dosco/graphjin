@@ -31,7 +31,10 @@ type routingClient struct {
 	// measured, so an unplaceable call is credited to it rather than handed to
 	// a model that would make it look better.
 	unknown atomic.Int64
-	log     io.Writer
+	// supportModel names the model the support client serves, so a capability
+	// question about it reaches the client that can answer it.
+	supportModel string
+	log          io.Writer
 }
 
 func (c *routingClient) Chat(ctx context.Context, values map[string]ax.Value, options map[string]ax.Value) (ax.Value, error) {
@@ -57,6 +60,27 @@ func (c *routingClient) clientFor(stage string) ax.AIClient {
 	return c.policy
 }
 
+// GetFeatures forwards the provider's capability report.
+//
+// ax type-asserts this to decide the structured-output mechanism, and a
+// wrapper that swallows it gets the permissive default instead — which once
+// sent DeepSeek a request it rejects, 71 times in a row. A split run has two
+// providers, so the report has to come from whichever one will answer: asking
+// the policy about the support model's capabilities would describe the wrong
+// model.
+func (c *routingClient) GetFeatures(model string) map[string]ax.Value {
+	client := c.policy
+	if c.support != nil && c.supportModel != "" && model == c.supportModel {
+		client = c.support
+	}
+	if inner, ok := client.(interface {
+		GetFeatures(string) map[string]ax.Value
+	}); ok {
+		return inner.GetFeatures(model)
+	}
+	return nil
+}
+
 // Embedding and streaming are not stage-shaped: nothing in them says which part
 // of the pipeline asked, and the policy is who the run is about.
 func (c *routingClient) Embed(ctx context.Context, values map[string]ax.Value, options map[string]ax.Value) (ax.Value, error) {
@@ -80,6 +104,6 @@ func newStageRoutingFactory(support gjagent.Config, log io.Writer) func(gjagent.
 		if err != nil {
 			return nil, fmt.Errorf("support model: %w", err)
 		}
-		return &routingClient{policy: policyClient, support: supportClient, log: log}, nil
+		return &routingClient{policy: policyClient, support: supportClient, supportModel: support.Model, log: log}, nil
 	}
 }

@@ -7,6 +7,12 @@ type RunMode string
 const (
 	RunModeRun       RunMode = "run"
 	RunModeBenchmark RunMode = "bench"
+	// RunModeSample collects several attempts at each task rather than
+	// measuring one. It is deliberately its own mode: a sampling run has no
+	// baseline to compare against and no verdict to reach, and the run
+	// identity carries the mode so its episodes can never be mistaken for a
+	// benchmark's.
+	RunModeSample RunMode = "sample"
 )
 
 type RunProvenance struct {
@@ -42,6 +48,16 @@ type RunProvenance struct {
 	// rows, which is why the row must say how it ran.
 	Concurrency int    `json:"concurrency,omitempty"`
 	Target      string `json:"target"`
+	// SplitSide and SplitFingerprint record which side of a train/eval split
+	// the run drew its tasks from.
+	//
+	// They are provenance rather than identity: they say where a corpus came
+	// from, so a training set built out of held-out tasks can be refused
+	// rather than discovered later as a score nobody can explain. The
+	// fingerprint pins which split, since a suite regenerated under a
+	// different ratio is a different holdout.
+	SplitSide        string `json:"split_side,omitempty"`
+	SplitFingerprint string `json:"split_fingerprint,omitempty"`
 }
 
 // ScoringProvenance identifies the build that deterministically rescored a

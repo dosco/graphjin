@@ -130,3 +130,50 @@ func TestRoutingUsesTheAgentsStageNames(t *testing.T) {
 		}
 	}
 }
+
+// featureReportingClient answers capability questions and records who was asked.
+type featureReportingClient struct {
+	labelledClient
+	features map[string]ax.Value
+	asked    []string
+}
+
+func (c *featureReportingClient) GetFeatures(model string) map[string]ax.Value {
+	c.asked = append(c.asked, model)
+	return c.features
+}
+
+// ax type-asserts GetFeatures to pick a structured-output mechanism, and a
+// wrapper that swallows it gets the permissive default — which once sent
+// DeepSeek a request it rejects, 71 times in a row. A split run has two
+// providers, so the answer has to come from whichever will actually serve the
+// model being asked about.
+func TestRoutingForwardsCapabilitiesToTheModelThatServes(t *testing.T) {
+	policy := &featureReportingClient{features: map[string]ax.Value{"who": "policy"}}
+	support := &featureReportingClient{features: map[string]ax.Value{"who": "support"}}
+	router := &routingClient{policy: policy, support: support, supportModel: "fast-model"}
+
+	var _ interface {
+		GetFeatures(string) map[string]ax.Value
+	} = router
+
+	if got := router.GetFeatures("the-policy"); got["who"] != "policy" {
+		t.Fatalf("a question about the policy's model reached %v", got)
+	}
+	if got := router.GetFeatures("fast-model"); got["who"] != "support" {
+		t.Fatalf("a question about the support model must reach the support client, got %v", got)
+	}
+	if len(support.asked) != 1 || support.asked[0] != "fast-model" {
+		t.Fatalf("the support client was asked about %v", support.asked)
+	}
+	// With no support model configured everything belongs to the policy.
+	solo := &routingClient{policy: policy}
+	if got := solo.GetFeatures("anything"); got["who"] != "policy" {
+		t.Fatalf("without a support model every question is the policy's: %v", got)
+	}
+	// And a provider that reports nothing must not become a panic.
+	bare := &routingClient{policy: &labelledClient{name: "bare"}}
+	if bare.GetFeatures("m") != nil {
+		t.Fatal("a featureless provider must report nothing rather than something invented")
+	}
+}
