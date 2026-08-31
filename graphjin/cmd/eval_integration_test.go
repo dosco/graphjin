@@ -362,10 +362,12 @@ await final({status:"answered", answer:"Reviewed the delivered watch event and m
 				Answer string `json:"answer"`
 				Trace  struct {
 					ChatLog []struct {
-						Name  string `json:"name"`
-						Item1 struct {
-							Content string `json:"content"`
-						} `json:"item1"`
+						Name     string `json:"name"`
+						Response struct {
+							Results []struct {
+								Content string `json:"content"`
+							} `json:"results"`
+						} `json:"response"`
 					} `json:"chat_log"`
 				} `json:"trace"`
 			}

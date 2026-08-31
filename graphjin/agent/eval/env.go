@@ -24,6 +24,13 @@ type EnvSpec struct {
 	Writable   bool   `json:"writable,omitempty"`
 	Reactive   bool   `json:"reactive,omitempty"`
 	Resettable bool   `json:"resettable,omitempty"`
+	// Temperature and TopP pin how the model under evaluation samples.
+	//
+	// Unset leaves the stack default, which is greedy. Collecting several
+	// samples of one task only produces something to select from when they
+	// can differ, so a sampling run sets these and a benchmark does not.
+	Temperature *float64 `json:"temperature,omitempty"`
+	TopP        *float64 `json:"top_p,omitempty"`
 	// PinDataAnchor freezes the demo's date-relative seed data at one anchor
 	// day. Demo dates shift forward on every boot so "today" questions keep
 	// working, but that shift changes the dataset fingerprint — so a run that

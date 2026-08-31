@@ -47,6 +47,8 @@ type agentStatusResponse struct {
 	MaxSteps             int                     `json:"max_steps"`
 	Reasoning            string                  `json:"reasoning,omitempty"`
 	ShowThoughts         bool                    `json:"show_thoughts"`
+	Temperature          *float64                `json:"temperature,omitempty"`
+	TopP                 *float64                `json:"top_p,omitempty"`
 	RateLimit            gjagent.RateLimitConfig `json:"rate_limit"`
 	TimeoutSeconds       int                     `json:"timeout_seconds"`
 	ReadOnly             bool                    `json:"read_only"`
@@ -275,6 +277,8 @@ func agentStatusFromConfig(conf gjagent.Config, ns *string, injectedServerClient
 		MaxSteps:             maxSteps,
 		Reasoning:            strings.TrimSpace(conf.Reasoning),
 		ShowThoughts:         conf.ShowThoughts,
+		Temperature:          conf.Temperature,
+		TopP:                 conf.TopP,
 		RateLimit:            conf.RateLimit,
 		TimeoutSeconds:       timeoutSeconds,
 		ReadOnly:             conf.ReadOnly,
@@ -449,6 +453,8 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 		MaxSteps             int                     `json:"max_steps"`
 		Reasoning            string                  `json:"reasoning,omitempty"`
 		ShowThoughts         bool                    `json:"show_thoughts"`
+		Temperature          *float64                `json:"temperature,omitempty"`
+		TopP                 *float64                `json:"top_p,omitempty"`
 		RateLimit            gjagent.RateLimitConfig `json:"rate_limit"`
 		TimeoutSeconds       int                     `json:"timeout_seconds"`
 		ReadOnly             bool                    `json:"read_only"`
@@ -463,6 +469,7 @@ func agentEvalFingerprint(status agentStatusResponse) string {
 		Provider: status.Provider, Model: status.Model, APIKeyEnv: status.APIKeyEnv,
 		ResponseFormat: status.ResponseFormat, StructuredOutputMode: status.StructuredOutputMode, ServiceTier: status.ServiceTier,
 		MaxSteps: status.MaxSteps, Reasoning: status.Reasoning, ShowThoughts: status.ShowThoughts,
+		Temperature: status.Temperature, TopP: status.TopP,
 		RateLimit: status.RateLimit, TimeoutSeconds: status.TimeoutSeconds,
 		ReadOnly: status.ReadOnly, ReturnTrace: status.ReturnTrace,
 		Namespace: status.Namespace, RoleClass: status.RoleClass,

@@ -134,6 +134,7 @@ type suiteIdentityProjection struct {
 	Repeats          int     `json:"repeats"`
 	MaxSteps         int     `json:"max_steps"`
 	Temperature      float64 `json:"temperature"`
+	TopP             float64 `json:"top_p,omitempty"`
 	RewardVersion    string  `json:"reward_version"`
 }
 
@@ -170,6 +171,9 @@ func SuiteIdentityMismatches(have, want Report) []string {
 	if h.Temperature != w.Temperature {
 		out = append(out, "provenance.temperature")
 	}
+	if h.TopP != w.TopP {
+		out = append(out, "provenance.top_p")
+	}
 	if h.RewardVersion != w.RewardVersion {
 		out = append(out, "reward_version")
 	}
@@ -183,6 +187,7 @@ func reportSuiteIdentity(r Report) suiteIdentityProjection {
 		SeedManifestHash: r.DatasetFingerprint.SeedManifestHash,
 		Seed:             r.Provenance.Seed, Repeats: r.Provenance.Repeats,
 		MaxSteps: r.Provenance.MaxSteps, Temperature: r.Provenance.Temperature,
+		TopP:          r.Provenance.TopP,
 		RewardVersion: r.RewardVersion,
 	}
 }

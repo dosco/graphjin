@@ -49,6 +49,7 @@ type benchmarkSuite struct {
 	Repeats              int               `yaml:"repeats,omitempty"`
 	MaxSteps             int               `yaml:"max_steps,omitempty"`
 	Temperature          float64           `yaml:"temperature,omitempty"`
+	TopP                 float64           `yaml:"top_p,omitempty"`
 	RewardVersion        string            `yaml:"reward_version,omitempty"`
 	CategoryCounts       map[string]int    `yaml:"category_counts,omitempty"`
 	RollupMapVersion     string            `yaml:"rollup_map_version,omitempty"`
@@ -89,6 +90,7 @@ type benchmarkEntry struct {
 	Repeats                     int                `yaml:"repeats"`
 	MaxSteps                    int                `yaml:"max_steps"`
 	Temperature                 float64            `yaml:"temperature"`
+	TopP                        float64            `yaml:"top_p,omitempty"`
 	TaskCount                   int                `yaml:"task_count"`
 	EpisodeCount                int                `yaml:"episode_count"`
 	Recall                      float64            `yaml:"recall"`
@@ -537,7 +539,8 @@ func benchmarkSuiteFromReport(report gjeval.Report) benchmarkSuite {
 		Identity: gjeval.SuiteIdentity(report), SuiteFingerprint: report.SuiteFingerprint,
 		CatalogHash: report.DatasetFingerprint.CatalogHash, SeedManifestHash: report.DatasetFingerprint.SeedManifestHash,
 		Mode: string(report.Mode), Seed: report.Provenance.Seed, Repeats: report.Provenance.Repeats,
-		MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature, RewardVersion: report.RewardVersion,
+		MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature,
+		TopP: report.Provenance.TopP, RewardVersion: report.RewardVersion,
 		CategoryCounts:   categoryCounts,
 		RollupMapVersion: gjeval.PublicBenchmarkRollupVersion, RollupMap: gjeval.BenchmarkRollupMap(),
 	}
@@ -557,7 +560,7 @@ func reportFromBenchmarkSuite(s benchmarkSuite) gjeval.Report {
 	return gjeval.Report{
 		Mode: gjeval.RunMode(s.Mode), SuiteFingerprint: s.SuiteFingerprint, RewardVersion: s.RewardVersion,
 		DatasetFingerprint: gjeval.DatasetFingerprint{CatalogHash: s.CatalogHash, SeedManifestHash: s.SeedManifestHash},
-		Provenance:         gjeval.RunProvenance{Seed: s.Seed, Repeats: s.Repeats, MaxSteps: s.MaxSteps, Temperature: s.Temperature},
+		Provenance:         gjeval.RunProvenance{Seed: s.Seed, Repeats: s.Repeats, MaxSteps: s.MaxSteps, Temperature: s.Temperature, TopP: s.TopP},
 	}
 }
 
@@ -629,6 +632,7 @@ func benchmarkEntryFromReport(report gjeval.Report, slug, label, release, notes 
 		OracleValueHash: report.OracleValueHash, DataAnchor: report.DatasetFingerprint.DataAnchor,
 		RewardVersion: report.RewardVersion, UsageAccountingVersion: report.UsageAccountingVersion,
 		Seed: report.Provenance.Seed, Repeats: report.Provenance.Repeats, MaxSteps: report.Provenance.MaxSteps, Temperature: report.Provenance.Temperature,
+		TopP:      report.Provenance.TopP,
 		TaskCount: report.Metrics.TaskCount, EpisodeCount: report.Metrics.EpisodeCount, Recall: report.Metrics.Recall,
 		RecallCILow: report.Metrics.RecallCI.Low, RecallCIHigh: report.Metrics.RecallCI.High,
 		PassAtK: report.Metrics.PassAtK, PassPowerK: report.Metrics.PassPowerK,

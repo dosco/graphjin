@@ -1483,14 +1483,25 @@ func evalProvenance(instance gjeval.Instance, seed int64, status gjeval.AgentSta
 		AxVersion:            evalAxVersion(),
 		GraphJinCommit:       commit,
 		PromptRegistryHash:   evalPromptRegistryHash(),
-		Temperature:          0,
-		Seed:                 seed,
-		Repeats:              gjeval.DefaultRepeats,
-		MaxSteps:             status.MaxSteps,
-		Reasoning:            status.Reasoning,
-		TimeoutSeconds:       status.TimeoutSeconds,
-		Target:               instance.Label(),
+		// Read back from the server's own resolved config rather than assumed:
+		// under --remote the only truthful source is the server that will do
+		// the sampling. Unset there means ax's own pin, which is zero.
+		Temperature:    derefFloat(status.Temperature),
+		TopP:           derefFloat(status.TopP),
+		Seed:           seed,
+		Repeats:        gjeval.DefaultRepeats,
+		MaxSteps:       status.MaxSteps,
+		Reasoning:      status.Reasoning,
+		TimeoutSeconds: status.TimeoutSeconds,
+		Target:         instance.Label(),
 	}
+}
+
+func derefFloat(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func evalAxVersion() string {

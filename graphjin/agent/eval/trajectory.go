@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -72,9 +73,14 @@ type Trajectory struct {
 	PromptsRecorded bool `json:"prompts_recorded"`
 	// AuthorshipResolved is false when the trace did not record what the model
 	// emitted, so the environment's own programs cannot be told apart.
-	AuthorshipResolved bool               `json:"authorship_resolved"`
-	Provenance         RunProvenance      `json:"provenance"`
-	Dataset            DatasetFingerprint `json:"dataset"`
+	AuthorshipResolved bool `json:"authorship_resolved"`
+	// TraceNotes records where the trace disagreed with itself — for instance a
+	// stage whose model calls and whose recorded prompts do not tally. A corpus
+	// built from a trace nobody could fully read is not obviously wrong, which is
+	// why the doubt travels with it rather than being dropped.
+	TraceNotes []string           `json:"trace_notes,omitempty"`
+	Provenance RunProvenance      `json:"provenance"`
+	Dataset    DatasetFingerprint `json:"dataset"`
 }
 
 // TrajectoryOptions selects what an export contains.
@@ -98,11 +104,19 @@ func BuildTrajectory(episode Episode, opts TrajectoryOptions) (Trajectory, error
 	}
 	response := toMap(episode.Response)
 	trace := toMap(response["trace"])
-	prompts, completions := tracePromptsAndCompletions(trace)
+	stageLogs := stageChatLogs(trace)
 	authored := map[string]bool{}
-	for _, program := range completions {
-		if program != "" {
-			authored[normalizeProgram(program)] = true
+	recordedPrompts := false
+	for _, log := range stageLogs {
+		for _, prompt := range log.prompts {
+			if len(prompt) != 0 {
+				recordedPrompts = true
+			}
+		}
+		for _, program := range log.completions {
+			if program != "" {
+				authored[normalizeProgram(program)] = true
+			}
 		}
 	}
 	trajectory := Trajectory{
@@ -114,7 +128,7 @@ func BuildTrajectory(episode Episode, opts TrajectoryOptions) (Trajectory, error
 		Status: valueString(response["status"]), Answer: valueString(response["answer"]),
 		Pass: episode.Score.Pass, Reward: episode.Score.Vector.Reward,
 		RewardVersion: RewardVersion, RewardProfile: string(profile),
-		PromptsRecorded:    len(prompts) != 0,
+		PromptsRecorded:    recordedPrompts,
 		AuthorshipResolved: len(authored) != 0,
 		Provenance:         episode.Provenance, Dataset: episode.Dataset,
 	}
@@ -124,7 +138,7 @@ func BuildTrajectory(episode Episode, opts TrajectoryOptions) (Trajectory, error
 
 	index := 0
 	stage := ""
-	calls := 0
+	calls := map[string]int{}
 	for _, raw := range toSlice(normalizeJSON(trace["events"])) {
 		event := toMap(raw)
 		kind := valueString(event["kind"])
@@ -136,7 +150,7 @@ func BuildTrajectory(episode Episode, opts TrajectoryOptions) (Trajectory, error
 				stage = named
 			}
 			if kind == "stage_response" {
-				calls++
+				calls[stage]++
 			}
 			continue
 		}
@@ -167,37 +181,81 @@ func BuildTrajectory(episode Episode, opts TrajectoryOptions) (Trajectory, error
 			Guidance:    compactJSON(payload["guidance_payload"], 2048),
 			IsError:     boolValue(payload["is_error"]),
 		}
-		// The prompt that produced a program is the one from the model call just
-		// before it ran.
-		if promptIndex := calls - 1; promptIndex >= 0 && promptIndex < len(prompts) {
-			step.Prompt = prompts[promptIndex]
+		// The prompt that produced a program is the one from that stage's most
+		// recent model call. The count is kept per stage because the chat log is
+		// grouped by stage and not ordered by time: a single counter over one
+		// flattened list hands a step another stage's prompt the moment the
+		// distiller speaks, which it does whenever a tool result is large.
+		if prompts := stageLogs[stage].prompts; len(prompts) != 0 {
+			if promptIndex := calls[stage] - 1; promptIndex >= 0 && promptIndex < len(prompts) {
+				step.Prompt = prompts[promptIndex]
+			}
 		}
 		trajectory.Steps = append(trajectory.Steps, step)
 		index++
 	}
+	trajectory.TraceNotes = chatLogDisagreements(stageLogs, calls)
 	return trajectory, nil
 }
 
-// tracePromptsAndCompletions reads the rendered prompt and the raw completion
-// for each model call, in order.
-func tracePromptsAndCompletions(trace map[string]any) ([][]TrajectoryMessage, []string) {
-	entries := toSlice(normalizeJSON(trace["chat_log"]))
-	var prompts [][]TrajectoryMessage
-	completions := make([]string, 0, len(entries))
-	for _, raw := range entries {
-		entry := toMap(raw)
-		messages := renderedPrompt(toMap(entry["item0"]))
-		if len(messages) != 0 {
-			prompts = append(prompts, messages)
-		}
-		completions = append(completions, programFromCompletion(valueString(toMap(entry["item1"])["content"])))
-	}
-	return prompts, completions
+// stageLog is one stage's model calls, in the order that stage made them.
+//
+// Prompts and completions are kept as parallel slices with a slot per call,
+// including calls whose prompt came back empty. Dropping the empty ones would
+// shorten one list and silently shift every later prompt onto the wrong
+// program.
+type stageLog struct {
+	prompts     [][]TrajectoryMessage
+	completions []string
 }
 
-func renderedPrompt(item map[string]any) []TrajectoryMessage {
+// stageChatLogs groups the trace's model calls by the stage that made them.
+//
+// The merged chat log is grouped by stage rather than ordered by time: every
+// distiller entry precedes every executor entry whatever order they ran in.
+// The stage is read from each entry's name, which is the only key that tells
+// the three apart — the entry's own "stage" field distinguishes only context
+// work from task work, so executor and responder share a value there.
+func stageChatLogs(trace map[string]any) map[string]stageLog {
+	out := map[string]stageLog{}
+	for _, raw := range toSlice(normalizeJSON(trace["chat_log"])) {
+		entry := toMap(raw)
+		name := valueString(entry["name"])
+		if name == "" {
+			continue
+		}
+		log := out[name]
+		log.prompts = append(log.prompts, chatEntryMessages(entry))
+		log.completions = append(log.completions, programFromCompletion(chatCompletionContent(entry)))
+		out[name] = log
+	}
+	return out
+}
+
+// chatLogDisagreements reports stages whose recorded calls and recorded
+// prompts do not tally.
+//
+// The two come from different halves of the trace — the event stream and the
+// chat log — and nothing guarantees a provider filled in both. When they
+// disagree some step is carrying a prompt that did not produce it, and the
+// only honest thing to do with a corpus like that is to say so on it.
+func chatLogDisagreements(stageLogs map[string]stageLog, calls map[string]int) []string {
+	var notes []string
+	for stage, count := range calls {
+		if recorded := len(stageLogs[stage].prompts); recorded < count {
+			notes = append(notes, fmt.Sprintf(
+				"stage %s made %d model call(s) but only %d prompt(s) were recorded; "+
+					"steps beyond the recorded ones carry no prompt", stage, count, recorded))
+		}
+	}
+	sort.Strings(notes)
+	return notes
+}
+
+// chatEntryMessages reads the rendered prompt out of one chat-log entry.
+func chatEntryMessages(entry map[string]any) []TrajectoryMessage {
 	var out []TrajectoryMessage
-	for _, raw := range toSlice(normalizeJSON(item["chat_prompt"])) {
+	for _, raw := range toSlice(normalizeJSON(entry["messages"])) {
 		message := toMap(raw)
 		content := strings.TrimSpace(valueString(message["content"]))
 		if content == "" {
@@ -206,6 +264,15 @@ func renderedPrompt(item map[string]any) []TrajectoryMessage {
 		out = append(out, TrajectoryMessage{Role: valueString(message["role"]), Content: content})
 	}
 	return out
+}
+
+// chatCompletionContent reads what the model actually returned for one call.
+func chatCompletionContent(entry map[string]any) string {
+	results := toSlice(normalizeJSON(toMap(entry["response"])["results"]))
+	if len(results) == 0 {
+		return ""
+	}
+	return valueString(toMap(results[0])["content"])
 }
 
 // stageFromComponent reads the stage out of an event's component id, which the

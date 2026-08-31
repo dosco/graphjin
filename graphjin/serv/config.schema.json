@@ -69,6 +69,16 @@
 					"description": "Return the provider's reasoning text in the chat log for debugging",
 					"default": false
 				},
+				"temperature": {
+					"type": "number",
+					"title": "Agent Sampling Temperature",
+					"description": "Provider sampling temperature; unset leaves the stack default"
+				},
+				"top_p": {
+					"type": "number",
+					"title": "Agent Sampling Top-P",
+					"description": "Provider nucleus sampling cutoff; unset leaves the stack default"
+				},
 				"rate_limit": {
 					"$ref": "#/$defs/RateLimitConfig",
 					"title": "Agent Provider Rate Limits"

@@ -353,6 +353,13 @@ func configureEvalInstance(config *serv.Config, spec gjeval.EnvSpec) {
 	config.Agent.Enabled = true
 	config.Agent.ReadOnly = !spec.Writable
 	config.Agent.ReturnTrace = true
+	// A sampling run pins how the model draws; a benchmark leaves it alone.
+	if spec.Temperature != nil {
+		config.Agent.Temperature = spec.Temperature
+	}
+	if spec.TopP != nil {
+		config.Agent.TopP = spec.TopP
+	}
 	config.WatchAndReload = false
 	if spec.Reactive {
 		config.Core.Watches.Runner = "all"

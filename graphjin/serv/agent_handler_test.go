@@ -291,21 +291,40 @@ func (f *configFieldFiller) fill(t *testing.T, v reflect.Value, path string) {
 		if !field.CanSet() {
 			t.Fatalf("%s is unexported, so this guard cannot prove it survives the bridge", name)
 		}
-		switch field.Kind() {
-		case reflect.String:
-			field.SetString(name)
-		case reflect.Bool:
-			field.SetBool(true)
-		case reflect.Int, reflect.Int64:
-			// Seeded above the 50-second timeout floor so no value the filler
-			// picks is normalized by the bridge.
-			f.n++
-			field.SetInt(int64(100 + f.n))
-		case reflect.Struct:
-			f.fill(t, field, name)
-		default:
-			t.Fatalf("%s has kind %s, which this guard cannot fill: teach it that kind rather than leaving the field unchecked", name, field.Kind())
-		}
+		f.set(t, field, name)
+	}
+}
+
+// set fills one value, failing on any kind it cannot handle rather than
+// skipping it. A completeness guard that silently ignores a new field's type
+// reads as coverage while asserting nothing, which is the failure it exists to
+// catch.
+func (f *configFieldFiller) set(t *testing.T, field reflect.Value, name string) {
+	t.Helper()
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(name)
+	case reflect.Bool:
+		field.SetBool(true)
+	case reflect.Int, reflect.Int64:
+		// Seeded above the 50-second timeout floor so no value the filler
+		// picks is normalized by the bridge.
+		f.n++
+		field.SetInt(int64(100 + f.n))
+	case reflect.Float64:
+		f.n++
+		field.SetFloat(float64(f.n) / 100)
+	case reflect.Ptr:
+		// A pointer distinguishes unset from a zero value, so this fills it
+		// with a non-nil pointer to a non-zero value: a bridge that dropped
+		// the field would hand back nil.
+		element := reflect.New(field.Type().Elem())
+		f.set(t, element.Elem(), name)
+		field.Set(element)
+	case reflect.Struct:
+		f.fill(t, field, name)
+	default:
+		t.Fatalf("%s has kind %s, which this guard cannot fill: teach it that kind rather than leaving the field unchecked", name, field.Kind())
 	}
 }
 

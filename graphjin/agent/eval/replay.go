@@ -90,7 +90,7 @@ func executorPrograms(response any) []string {
 		if !strings.EqualFold(valueString(item["name"]), "executor") {
 			continue
 		}
-		code := programFromCompletion(valueString(toMap(item["item1"])["content"]))
+		code := programFromCompletion(chatCompletionContent(item))
 		if code == "" {
 			continue
 		}
