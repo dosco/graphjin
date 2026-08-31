@@ -27,7 +27,10 @@ from typing import Any, Iterator
 def records(trajectory: dict[str, Any], min_reward: float) -> Iterator[dict[str, Any]]:
     if trajectory.get("reward", 0.0) < min_reward:
         return
-    for step in trajectory.get("steps", []):
+    # A trajectory with no steps serializes its list as null rather than an
+    # empty one, so the default in .get() never fires — which crashed this
+    # script on exactly the export worth investigating.
+    for step in trajectory.get("steps") or []:
         if step.get("author") != "model":
             continue
         prompt = step.get("prompt") or []

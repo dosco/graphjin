@@ -276,7 +276,7 @@ letting you find out from a corpus with no variety in it.
 **3. GRPO.** Drive episodes yourself, a group at a time.
 
 ```bash
-graphjin env serve --demo --suite eval/suite.yml --split eval/suite.split.json \
+graphjin env serve --path ./graphjin-demo --suite eval/suite.yml --split eval/suite.split.json \
   --side train --pool 4 --step --support-model <a-fast-model>
 python3 grpo_smoke.py --env http://127.0.0.1:8090 --group 4
 ```
@@ -284,7 +284,7 @@ python3 grpo_smoke.py --env http://127.0.0.1:8090 --group 4
 Measure between epochs against the side the training never saw:
 
 ```bash
-graphjin env serve --demo --suite eval/suite.yml --split eval/suite.split.json \
+graphjin env serve --path ./graphjin-demo --suite eval/suite.yml --split eval/suite.split.json \
   --side eval --pool 4 --listen 127.0.0.1:8091
 python3 measure.py --env http://127.0.0.1:8091 --repeats 3
 ```
