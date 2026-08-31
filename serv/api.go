@@ -337,6 +337,20 @@ func NewGraphJinService(conf *Config, options ...Option) (*HttpService, error) {
 
 // Close shuts down the in-process service resources owned by HttpService.
 // It is useful for embedded use and tests that do not call Start().
+// Close releases everything the service owns and does not return until the
+// background workers it started have actually stopped.
+//
+// It runs the same shutdown a listening server runs when Serve returns. It used
+// to run a second, subtly different one: it closed the core and the databases
+// without first cancelling the watch and revision workers or waiting for them.
+// A caller that closed a service and then touched its database files — which is
+// exactly what an evaluation reset does between episodes — could have those
+// files replaced underneath a goroutine still holding them open, and SQLite
+// reported the result as a malformed database several seconds later, in an
+// unrelated request.
+//
+// Two shutdown sequences for one service is how those diverge in the first
+// place, so there is now one.
 func (s *HttpService) Close() error {
 	if s == nil {
 		return nil
@@ -345,32 +359,7 @@ func (s *HttpService) Close() error {
 	if !ok || gs == nil {
 		return nil
 	}
-	gs.closeMCPHTTPTransport()
-	if gs.semantic != nil {
-		gs.semantic.Close()
-	}
-	if gs.discovery != nil {
-		gs.discovery.Close()
-	}
-	if gs.gj != nil {
-		gs.gj.Close()
-	}
-	if gs.closeFn != nil {
-		gs.closeFn()
-	}
-	if gs.cache != nil {
-		gs.cache.Close() //nolint:errcheck
-	}
-	gs.closeRuntimeEvents()
-	closedManaged := gs.closeManagedDBs(nil)
-	for name, db := range gs.dbs {
-		if _, ok := closedManaged[name]; ok {
-			continue
-		}
-		if db != nil {
-			db.Close() //nolint:errcheck
-		}
-	}
+	gs.closeServResources()
 	return nil
 }
 
@@ -402,9 +391,17 @@ func (s *HttpService) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// closeServResources releases the resources owned by a running service once
-// its HTTP listener has stopped: the MCP transport, the user close hook, the
-// response cache, runtime event streams and all database connections.
+// closeServResources releases the resources owned by a running service: the
+// MCP transport, the user close hook, the response cache, runtime event streams
+// and all database connections.
+//
+// The order is the point. Cancelling first and waiting for the workers to stop
+// before anything they use is closed means that when this returns, nothing is
+// still reading or writing a database — which is what lets a caller safely
+// replace the files afterwards.
+//
+// It is safe to call more than once: every step either nils what it released or
+// is idempotent already.
 func (s *graphjinService) closeServResources() {
 	s.closeMCPHTTPTransport()
 	if s.semantic != nil {
@@ -432,7 +429,9 @@ func (s *graphjinService) closeServResources() {
 		}
 		if db != nil {
 			db.Close() //nolint:errcheck
-			s.log.Infof("closed database connection: %s", name)
+			if s.log != nil {
+				s.log.Infof("closed database connection: %s", name)
+			}
 		}
 	}
 }
