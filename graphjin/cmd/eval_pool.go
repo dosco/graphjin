@@ -80,11 +80,42 @@ func newEvalInstancePool(ctx context.Context, envFor func(worker int) evalEnviro
 		pool.instances = append(pool.instances, instance)
 		pool.free <- instance
 	}
+	expected, err := base.EffectiveDataAnchor()
+	if err != nil {
+		pool.closeAfterFailure(ctx)
+		return nil, err
+	}
+	if err := pool.assertAnchor(expected); err != nil {
+		pool.closeAfterFailure(ctx)
+		return nil, err
+	}
 	if err := pool.assertOneWorld(); err != nil {
 		pool.closeAfterFailure(ctx)
 		return nil, err
 	}
 	return pool, nil
+}
+
+// assertAnchor refuses a pool whose worlds are not dated where they were asked
+// to be.
+//
+// assertOneWorld compares workers to each other, which catches a pool that
+// straddled a UTC midnight but not one that booted a month late — every worker
+// agrees, and they are all uniformly wrong. Checking against the pin turns
+// "this measured something else" from a silent difference into a boot error.
+// A no-op when nothing was pinned.
+func (p *evalInstancePool) assertAnchor(expected string) error {
+	if strings.TrimSpace(expected) == "" {
+		return nil
+	}
+	for index, instance := range p.instances {
+		if got := instance.Fingerprint().DataAnchor; got != expected {
+			return fmt.Errorf(
+				"pool worker %d seeded its data for %s but %s was pinned; the questions would be asked "+
+					"about a day its rows do not cover", index, got, expected)
+		}
+	}
+	return nil
 }
 
 // assertOneWorld refuses a pool whose workers do not agree on the data.

@@ -126,6 +126,7 @@ func envServeCmd() *cobra.Command {
 		poolSize    int
 		listen      string
 		freezeTime  string
+		dataAnchor  string
 		profile     string
 
 		supportFlags    generatorFlags
@@ -150,6 +151,9 @@ func envServeCmd() *cobra.Command {
 				}
 				cpath = absolute
 			}
+			if err := validateEnvAnchor(freezeTime, dataAnchor); err != nil {
+				return err
+			}
 			resolved, err := resolveDemoPath(strings.TrimSpace(projectPath) != "", os.Stderr)
 			if err != nil {
 				return err
@@ -167,7 +171,7 @@ func envServeCmd() *cobra.Command {
 			spec := gjeval.EnvSpec{
 				Target: gjeval.TargetDemo, ConfigPath: resolved, Seed: suite.Generator.Seed,
 				Writable: writable, Reactive: reactive, Resettable: resettable,
-				FreezeTime: freezeTime,
+				FreezeTime: freezeTime, PinDataAnchor: dataAnchor,
 			}
 			wiring, err := newEvalServeWiring(cmd, poolSize, evalServeOptions{
 				Support: supportFlags, Step: step, External: external,
@@ -225,6 +229,8 @@ func envServeCmd() *cobra.Command {
 	cmd.Flags().IntVar(&poolSize, "pool", 2, "isolated worlds to run episodes against")
 	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8090", "address to serve on")
 	cmd.Flags().StringVar(&freezeTime, "freeze-time", "", "run every episode against a fixed clock (RFC3339)")
+	cmd.Flags().StringVar(&dataAnchor, "data-anchor", "",
+		"pin the demo's seeded data to a day (YYYY-MM-DD) so the world is the same on any date")
 	cmd.Flags().StringVar(&profile, "reward-profile", string(gjeval.RewardProfileRL), "reward profile episodes are graded under")
 	cmd.Flags().BoolVar(&step, "step", false, "let a trainer supply each model completion instead of calling out to a provider")
 	cmd.Flags().DurationVar(&stepTimeout, "step-timeout", 5*time.Minute, "how long a step-driven episode may sit idle before its world is reclaimed")
@@ -654,4 +660,34 @@ func episodeTrajectoryStage(requested string) (string, error) {
 	default:
 		return "", fmt.Errorf("stage must be executor, distiller, responder or all, got %q", requested)
 	}
+}
+
+// validateEnvAnchor refuses the one combination that reintroduces the drift
+// both settings exist to remove.
+//
+// --freeze-time already implies the data anchor (EffectiveDataAnchor takes the
+// frozen day when no anchor is pinned), so naming a different day for each
+// asks for the questions to be frozen on one date and the rows on another —
+// which is exactly the mismatch that makes a relative-window task ask about a
+// window its data does not cover.
+func validateEnvAnchor(freezeTime, dataAnchor string) error {
+	anchor := strings.TrimSpace(dataAnchor)
+	if anchor == "" {
+		return nil
+	}
+	if _, err := time.Parse(demoDataAnchorLayout, anchor); err != nil {
+		return fmt.Errorf("--data-anchor must be a day as YYYY-MM-DD, got %q", dataAnchor)
+	}
+	frozen, ok, err := (gjeval.EnvSpec{FreezeTime: freezeTime}).FrozenTime()
+	if err != nil {
+		return err
+	}
+	if ok {
+		if day := frozen.UTC().Format(demoDataAnchorLayout); day != anchor {
+			return fmt.Errorf(
+				"--freeze-time is %s but --data-anchor is %s; the questions would be asked on one day "+
+					"and the rows dated for another", day, anchor)
+		}
+	}
+	return nil
 }
