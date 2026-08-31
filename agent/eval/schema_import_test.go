@@ -209,10 +209,13 @@ func TestImportSchemaFallsBackToProseObservedValues(t *testing.T) {
 	t.Fatal("plan column missing")
 }
 
-// GraphJin exposes file and API sources as tables in the same namespace, with
-// the same shape of card. Cloning one produces a table the schema cannot create
-// and the seed cannot insert into — which is exactly how it failed the first
-// time, on a file source called sla_policies.
+// GraphJin exposes file sources as tables in the same namespace, with the same
+// shape of card. Cloning one as a table produces something the schema cannot
+// create and the seed cannot insert into — which is exactly how it failed the
+// first time, on a file source called sla_policies.
+//
+// It is no longer a loss, though: the clone serves a file source of its own, so
+// the name is carried over as something to build rather than something to drop.
 func TestImportSchemaSkipsTablesServedByFileSources(t *testing.T) {
 	rows := append(importFixture(),
 		ImportRow{CatalogRow: CatalogRow{
@@ -234,14 +237,11 @@ func TestImportSchemaSkipsTablesServedByFileSources(t *testing.T) {
 			t.Fatal("a file-source table was cloned as a database table")
 		}
 	}
-	var explained bool
-	for _, drop := range report.Drops {
-		if drop.ID == "sla_policies" && strings.Contains(drop.Reason, "file or API source") {
-			explained = true
-		}
+	if len(schema.FileSources) != 1 || schema.FileSources[0] != "sla_policies" {
+		t.Fatalf("the file source should be carried over to be built: %v", schema.FileSources)
 	}
-	if !explained {
-		t.Fatalf("the file source was dropped without saying why: %+v", report.Drops)
+	if !strings.Contains(strings.Join(report.Notes, "\n"), "sla_policies") {
+		t.Fatalf("the file source was reclassified without saying so: %+v", report.Notes)
 	}
 }
 

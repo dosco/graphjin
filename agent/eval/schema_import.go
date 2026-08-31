@@ -63,6 +63,12 @@ type ImportedSchema struct {
 	Tables        []ImportedTable
 	Relationships []ImportedRelationship
 	SavedQueries  []ImportedSavedQuery
+	// FileSources names the file-backed roots the original served. They are not
+	// database tables and are not cloned as ones; what crosses over is the name,
+	// which the catalog publishes to every connected agent anyway. The clone
+	// materializes each with documents of its own invention, so questions whose
+	// answer is split between a database and a document have somewhere to live.
+	FileSources []string
 }
 
 // ImportDrop records something the import refused, and why. A silent drop turns
@@ -98,8 +104,13 @@ func ImportSchema(rows []ImportRow) (ImportedSchema, ImportReport, error) {
 			if name == "" || strings.HasPrefix(name, "gj_") {
 				continue
 			}
-			if looksVirtualTable(row) {
-				report.drop("table", name, "served by a file or API source rather than the database")
+			if looksFileTableCard(name, row.ExamplesJSON) {
+				// Not a database table, but not a loss either: the clone can serve a
+				// file source of its own, so this becomes something to build rather
+				// than something to drop.
+				schema.FileSources = append(schema.FileSources, name)
+				report.Notes = append(report.Notes,
+					"file source "+name+": will be served locally with documents of the clone's own invention")
 				continue
 			}
 			tableNames[name] = true
@@ -140,6 +151,7 @@ func ImportSchema(rows []ImportRow) (ImportedSchema, ImportReport, error) {
 		schema.Tables = append(schema.Tables, table)
 	}
 	sort.Slice(schema.Tables, func(i, j int) bool { return schema.Tables[i].Name < schema.Tables[j].Name })
+	sort.Strings(schema.FileSources)
 
 	if len(schema.Tables) == 0 {
 		return schema, report, fmt.Errorf("no usable tables found in the catalog")
@@ -179,21 +191,23 @@ func importObservedValues(row ImportRow) []string {
 	return observedColumnValues(row.CatalogRow)
 }
 
-// looksVirtualTable reports whether a table card describes something other than
-// a database table.
+// looksFileTableCard reports whether a table card describes a file source
+// rather than a database table.
 //
-// GraphJin exposes file and API sources as tables in the same namespace, with
-// the same shape of card, so nothing about the columns says which is which. What
-// does say it is how the catalog shows them being queried: a file listing is
-// read with prefix: or key: as root arguments, which no database table accepts.
-// Cloning one produces a table the schema cannot create and the seed cannot
-// insert into, so it is dropped with a reason rather than failing the boot.
-func looksVirtualTable(row ImportRow) bool {
-	table := strings.TrimSpace(row.TableName)
+// GraphJin exposes file sources as tables in the same namespace, with the same
+// shape of card, so nothing about the columns says which is which. What does say
+// it is how the catalog shows them being queried: a file listing is read with
+// prefix: or key: as root arguments, which no database table accepts and which
+// only a filesystem table declares.
+//
+// Cloning one as a table produces something the schema cannot create and the
+// seed cannot insert into, which is exactly how it failed the first time.
+func looksFileTableCard(table string, examples any) bool {
+	table = strings.TrimSpace(table)
 	if table == "" {
 		return false
 	}
-	for _, example := range detailStringList(row.ExamplesJSON) {
+	for _, example := range detailStringList(examples) {
 		compact := strings.ReplaceAll(example, " ", "")
 		for _, argument := range []string{"(prefix:", "(key:"} {
 			if strings.Contains(compact, table+argument) {

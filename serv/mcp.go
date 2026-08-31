@@ -172,6 +172,10 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		readOnlySources: readOnlySources,
 	}
 
+	if s.mcpToolRecorder != nil {
+		installMCPToolRecorder(mcpSrv, s.mcpToolRecorder)
+	}
+
 	// Register all MCP tools
 	ms.registerTools()
 

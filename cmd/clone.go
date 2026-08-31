@@ -215,7 +215,48 @@ func cloneWorldSpec(schema gjeval.ImportedSchema, opts cloneOptions, appName str
 		}
 		world.Tables = append(world.Tables, out)
 	}
+	for _, name := range schema.FileSources {
+		world.FileSources = append(world.FileSources, worldFileSource{
+			Name: name, Root: filepath.Join("files", name), Files: syntheticPolicyFiles(name),
+		})
+	}
 	return world, unmapped
+}
+
+// syntheticPolicyFiles writes the documents a cloned file source serves.
+//
+// Nothing here comes from the original. The catalog publishes that a document
+// source exists and what it is called; it does not publish a single file name
+// or a line of content, and the clone never asks for any. What these are is
+// somewhere plausible for an authored policy to live, and something for a
+// listing to return that is not empty.
+//
+// Three is enough: a task either lists what is there or opens one document, and
+// both work at three. Generating more would only make the clone bigger.
+func syntheticPolicyFiles(source string) []worldFile {
+	subject := strings.ReplaceAll(source, "_", " ")
+	return []worldFile{
+		{
+			Name: "policy-overview.md",
+			Contents: "# Policy overview\n\nThis directory holds the written standards for " + subject +
+				". Each document states one requirement, who it applies to, and when it was last reviewed.\n\n" +
+				"Documents here are the authority on what is required. The database records what is " +
+				"actually happening, which is not the same question.\n",
+		},
+		{
+			Name: "operations-handbook.md",
+			Contents: "# Operations handbook\n\nDay-to-day practice for the team responsible for " + subject +
+				".\n\n## Escalation\n\nAnything the team cannot resolve within its own standard is raised " +
+				"to the operations lead the same working day.\n\n## Records\n\nDecisions that change a " +
+				"published standard are recorded here before they take effect.\n",
+		},
+		{
+			Name: "reference-notes.md",
+			Contents: "# Reference notes\n\nBackground for anyone new to " + subject +
+				".\n\nThese notes explain terms used in the other documents. They do not set any " +
+				"requirement themselves; where they disagree with a published standard, the standard wins.\n",
+		},
+	}
 }
 
 // topoSortTables orders tables so every parent is created before whatever
@@ -356,6 +397,13 @@ func runClone(ctx context.Context, opts cloneOptions, status io.Writer) (string,
 	}
 	for _, drop := range report.Drops {
 		manifest.Drops = append(manifest.Drops, fmt.Sprintf("%s %s: %s", drop.Kind, drop.ID, drop.Reason))
+	}
+	for _, source := range world.FileSources {
+		// Said plainly in the artifact, because "we cloned your file source" is
+		// exactly the sentence someone would read as "you copied our documents".
+		manifest.Notes = append(manifest.Notes, fmt.Sprintf(
+			"file source %s: %d documents written by this tool; no file name or file content was read from the source",
+			source.Name, len(source.Files)))
 	}
 	if err := writeWorld(world, out); err != nil {
 		return "", err

@@ -56,6 +56,38 @@ func TestNumericIdentifierNeedsBoundaries(t *testing.T) {
 	}
 }
 
+// A phrase that begins with a number needs the same boundary a bare number
+// gets. The frozen service-level tasks state "4 hours" and "24 hours", and
+// "24 hours" contains "4 hours" — so an answer giving the wrong service level
+// scored as though it had given the right one. The cheater battery found it.
+func TestNumericPhraseIsNotSatisfiedByALargerNumber(t *testing.T) {
+	for _, answer := range []string{
+		"there are 6 open urgent tickets, and the standard is 24 hours.",
+		"we must respond within 124 hours of the report.",
+	} {
+		if mentionsAnyIdentifier(answer, []string{"4 hours"}) {
+			t.Fatalf("a larger number must not satisfy a smaller one: %s", answer)
+		}
+	}
+	// It removes false passes only: every answer that genuinely states the
+	// requirement still counts, however it is phrased around it.
+	for _, answer := range []string{
+		"the standard is 4 hours.",
+		"we are required to respond within 4 hours of the report.",
+		"response time: 4 hours (urgent).",
+		"4 hours is the requirement, and 6 tickets are open.",
+	} {
+		if !mentionsAnyIdentifier(answer, []string{"4 hours"}) {
+			t.Fatalf("a correct answer was rejected: %s", answer)
+		}
+	}
+	// A phrase that does not start with a number keeps plain substring
+	// semantics, so nothing else about matching moves.
+	if !mentionsAnyIdentifier("the health colour is green today", []string{"green"}) {
+		t.Fatal("a word dimension must still match as a substring")
+	}
+}
+
 // A name identifier keeps plain substring semantics.
 func TestNameIdentifierStillMatchesSubstring(t *testing.T) {
 	if !mentionsAnyIdentifier("the account is tidegate press, last active 2026-07-11", []string{"Tidegate Press"}) {

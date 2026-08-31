@@ -350,9 +350,41 @@ func mentionsAnyIdentifier(haystack string, identifiers []string) bool {
 			}
 			continue
 		}
-		if strings.Contains(haystack, needle) {
+		if !strings.Contains(haystack, needle) {
+			continue
+		}
+		// A phrase that starts with a number needs the same protection a bare
+		// number gets. "24 hours" contains "4 hours", so an answer stating the
+		// wrong requirement scored as though it had stated the right one — found
+		// by the cheater battery on a task whose two variants were "4 hours" and
+		// "24 hours". Requiring the number not to continue leftwards out of the
+		// match rejects that without rejecting "within 4 hours".
+		if startsWithDigit(needle) && !mentionsUnprefixedNumber(haystack, needle) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func startsWithDigit(value string) bool {
+	return value != "" && value[0] >= '0' && value[0] <= '9'
+}
+
+// mentionsUnprefixedNumber reports whether the text contains the phrase with its
+// leading number intact — that is, at least once where the character before it
+// is not another digit.
+func mentionsUnprefixedNumber(haystack, needle string) bool {
+	for offset := 0; offset <= len(haystack)-len(needle); {
+		index := strings.Index(haystack[offset:], needle)
+		if index < 0 {
+			return false
+		}
+		at := offset + index
+		if at == 0 || haystack[at-1] < '0' || haystack[at-1] > '9' {
 			return true
 		}
+		offset = at + 1
 	}
 	return false
 }

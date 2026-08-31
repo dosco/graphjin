@@ -53,10 +53,10 @@ func TestProjectSkeletonCopiesConfigButNoRuntimeState(t *testing.T) {
 }
 
 func TestPoolRejectsNonDemoTargetAndBadSize(t *testing.T) {
-	if _, err := newEvalInstancePool(context.Background(), evalEnvironment{}, gjeval.EnvSpec{Target: gjeval.TargetRemote}, 2); err == nil {
+	if _, err := newEvalInstancePool(context.Background(), func(int) evalEnvironment { return evalEnvironment{} }, gjeval.EnvSpec{Target: gjeval.TargetRemote}, 2); err == nil {
 		t.Fatal("expected a remote target to be refused")
 	}
-	if _, err := newEvalInstancePool(context.Background(), evalEnvironment{}, gjeval.EnvSpec{Target: gjeval.TargetDemo}, 0); err == nil {
+	if _, err := newEvalInstancePool(context.Background(), func(int) evalEnvironment { return evalEnvironment{} }, gjeval.EnvSpec{Target: gjeval.TargetDemo}, 0); err == nil {
 		t.Fatal("expected size 0 to be refused")
 	}
 }
@@ -133,7 +133,7 @@ func TestPoolBootsIsolatedDemoInstancesThatAgree(t *testing.T) {
 
 	client := &evalScriptClient{code: `await final({status:"blocked",answer:"not configured"});`}
 	environment := evalEnvironment{ClientFactory: func(gjagent.Config) (ax.AIClient, error) { return client, nil }}
-	pool, err := newEvalInstancePool(context.Background(), environment, gjeval.EnvSpec{
+	pool, err := newEvalInstancePool(context.Background(), func(int) evalEnvironment { return environment }, gjeval.EnvSpec{
 		Target: gjeval.TargetDemo, ConfigPath: project, Seed: 23, FreezeTime: "2026-08-01T12:00:00Z",
 	}, 2)
 	if err != nil {

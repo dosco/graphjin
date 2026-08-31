@@ -25,6 +25,10 @@ type evalEnvironment struct {
 	ClientFactory gjagent.ClientFactory
 	HTTPClient    *http.Client
 	StatusOut     *os.File
+	// MCPRecorder collects the tool calls made against this instance, so an
+	// agent the harness does not host can still be graded on what it did rather
+	// than only on what it said.
+	MCPRecorder func(serv.MCPToolEvent)
 }
 
 func (e evalEnvironment) Start(ctx context.Context, spec gjeval.EnvSpec) (gjeval.Instance, error) {
@@ -161,6 +165,9 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		options := []serv.Option{serv.OptionSetLogOutput(os.Stderr), serv.OptionDisableQueryLearning()}
 		if e.ClientFactory != nil {
 			options = append(options, serv.OptionSetAgentClientFactory(e.ClientFactory))
+		}
+		if e.MCPRecorder != nil {
+			options = append(options, serv.OptionSetMCPToolRecorder(e.MCPRecorder))
 		}
 		if frozenOK {
 			// The agent is told what "today" is. Freezing the data without

@@ -52,6 +52,25 @@ sources:
       schema.read: true
       schema.write: false
 `)
+	// Document roots are read-only on purpose. A written standard an agent could
+	// rewrite is not a standard, and a task graded against one would be gradeable
+	// by editing the answer.
+	for _, source := range world.FileSources {
+		fmt.Fprintf(&out, `
+  - name: %s
+    kind: file
+    backend: local
+    root: %s
+    read_only: true
+    max_list_page_size: 25
+    capabilities:
+      files.list: true
+      files.read: true
+      files.write: false
+      files.delete: false
+      files.watch: false
+`, source.Name, source.Root)
+	}
 	return out.String()
 }
 
@@ -217,6 +236,11 @@ func writeWorld(world worldSpec, directory string) error {
 		"seed/app.js":        renderWorldSeed(world),
 		"README.md":          renderWorldReadme(world),
 	}
+	for _, source := range world.FileSources {
+		for _, file := range source.Files {
+			files[filepath.Join(source.Root, file.Name)] = file.Contents
+		}
+	}
 	for name, contents := range files {
 		path := filepath.Join(directory, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -233,8 +257,8 @@ func renderWorldReadme(world worldSpec) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "# %s\n\nA generated GraphJin world: domain %s, seed %d.\n\n",
 		world.Name, world.Domain, world.Seed)
-	out.WriteString("Regenerate exactly:\n\n```bash\ngraphjin env new-world --domain " +
-		world.Domain + fmt.Sprintf(" --seed %d --tables %d", world.Seed, len(world.Tables)))
+	out.WriteString("Regenerate exactly:\n\n```bash\ngraphjin env new-world " +
+		worldRegenerateFlags(world) + fmt.Sprintf(" --tables %d", len(world.Tables)))
 	if len(world.Applied) != 0 {
 		out.WriteString(" --pathologies " + strings.Join(world.Applied, ","))
 	}
