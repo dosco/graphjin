@@ -33,7 +33,7 @@ const envServePrefix = "GJ_ENV_"
 var envServeFlags = []string{
 	"path", "work-dir", "suite", "split", "side", "pool", "listen",
 	"freeze-time", "data-anchor", "reward-profile", "allow-catalog-drift",
-	"step", "step-timeout", "external", "external-timeout",
+	"step", "step-timeout", "external", "external-timeout", "advertise-url",
 }
 
 // envServeVariable names the variable that configures a flag.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -166,6 +168,11 @@ type externalAnswerResponse struct {
 // the efficiency term has nothing to price. Saying so beside the number is the
 // difference between a caller comparing the right things and a caller putting
 // an external score next to a benchmark row as though they meant the same.
+// externalUnreachableNote is appended when this server could not work out an
+// address to hand out, which is a configuration problem an agent cannot solve.
+const externalUnreachableNote = "This server could not determine an address you can reach it on; " +
+	"pass --advertise-url."
+
 const externalRewardNote = "Token usage is not observable for an external agent, so the efficiency term is " +
 	"not measured here. Rewards from external episodes are comparable with each other, not with hosted runs."
 
@@ -227,14 +234,19 @@ func (s *externalServer) handleStart(w http.ResponseWriter, r *http.Request) {
 	s.episodes[episode.id] = episode
 	s.mu.Unlock()
 
+	base, reachable := s.advertisedBase(r)
+	note := externalRewardNote
+	if !reachable {
+		note += " " + externalUnreachableNote
+	}
 	s.env.writeJSON(w, http.StatusOK, externalStartResponse{
 		EpisodeID: episode.id, TaskID: task.ID, Slug: task.Slug,
 		Prompt: task.Prompt, Turns: task.Turns,
 		Headers:    episodeHeaders(instance, task),
-		MCPURL:     strings.TrimSuffix(instance.BaseURL(), "/") + "/api/v1/mcp",
-		GraphQLURL: strings.TrimSuffix(instance.BaseURL(), "/") + "/api/v1/graphql",
+		MCPURL:     base + externalWorldPrefix(episode.id) + "/api/v1/mcp",
+		GraphQLURL: base + externalWorldPrefix(episode.id) + "/api/v1/graphql",
 		Deadline:   episode.deadline.UTC().Format(time.RFC3339),
-		Note:       externalRewardNote,
+		Note:       note,
 	})
 }
 
@@ -246,11 +258,87 @@ func (s *externalServer) handleEpisodePath(w http.ResponseWriter, r *http.Reques
 		s.env.writeJSON(w, http.StatusNotFound, map[string]any{"error": "unknown_episode"})
 	case action == "answer" && r.Method == http.MethodPost:
 		s.handleAnswer(w, r, id)
+	case action == "world" || strings.HasPrefix(action, "world/"):
+		s.handleWorld(w, r, id)
 	case action == "" && r.Method == http.MethodDelete:
 		s.handleAbandon(w, id)
 	default:
 		s.env.writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method_not_allowed"})
 	}
+}
+
+// handleWorld proxies an external agent through to the world it leased.
+//
+// Each world is an in-process httptest server on a loopback port that exists
+// only inside this process. Handing an agent that address worked while the
+// agent ran on the same machine and was useless the moment the environment
+// became a container: the URL resolved to the agent's own loopback. Rewriting
+// the string would only have made it honest, not reachable — so the environment
+// carries the traffic itself, on the listener the agent already reached it on.
+//
+// The episode id in the path is the authorization: it names the lease, and a
+// lease that has ended stops routing anywhere.
+func (s *externalServer) handleWorld(w http.ResponseWriter, r *http.Request, id string) {
+	episode, ok := s.lookup(id)
+	if !ok {
+		s.env.writeJSON(w, http.StatusGone, map[string]any{
+			"error": "episode_gone", "message": "That episode has ended or timed out."})
+		return
+	}
+	target, err := url.Parse(episode.instance.BaseURL())
+	if err != nil {
+		s.env.writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": "world_unreachable", "message": err.Error()})
+		return
+	}
+	prefix := externalWorldPrefix(id)
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(request *httputil.ProxyRequest) {
+			request.SetURL(target)
+			path := strings.TrimPrefix(request.In.URL.Path, prefix)
+			if path == "" {
+				path = "/"
+			}
+			request.Out.URL.Path = path
+			request.Out.URL.RawPath = ""
+			request.Out.URL.RawQuery = request.In.URL.RawQuery
+		},
+		// MCP streams; buffering a stream turns a live session into a stall.
+		FlushInterval: -1,
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+			s.env.writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "world_unreachable", "message": err.Error()})
+		},
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+// externalWorldPrefix is the path under which one episode's world is reachable.
+func externalWorldPrefix(id string) string {
+	return "/external/episodes/" + id + "/world"
+}
+
+// advertisedBase is the address an external agent can reach this server on.
+//
+// The Host it used is right by construction — it is what actually resolved to
+// this process, through whatever port mapping or hostname sits in between.
+// --advertise-url overrides it for the case that does not hold: a proxy that
+// rewrites Host, or an agent given the URL out of band.
+func (s *externalServer) advertisedBase(r *http.Request) (string, bool) {
+	if advertised := strings.TrimSpace(s.env.advertiseURL); advertised != "" {
+		return strings.TrimSuffix(advertised, "/"), true
+	}
+	if host := strings.TrimSpace(r.Host); host != "" {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		return scheme + "://" + host, true
+	}
+	if listen := strings.TrimSpace(s.env.listenAddr); listen != "" {
+		return "http://" + listen, false
+	}
+	return "", false
 }
 
 func (s *externalServer) handleAnswer(w http.ResponseWriter, r *http.Request, id string) {
@@ -356,6 +444,15 @@ func (s *externalServer) reapUntil(ctx context.Context) {
 }
 
 // take removes an episode so two requests cannot grade or abandon the same one.
+// lookup finds a live episode without ending it, which is what every request
+// an agent makes to its world needs.
+func (s *externalServer) lookup(id string) (*externalEpisode, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	episode, ok := s.episodes[id]
+	return episode, ok
+}
+
 func (s *externalServer) take(id string) (*externalEpisode, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

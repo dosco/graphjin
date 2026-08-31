@@ -18,7 +18,7 @@ import (
 
 // startExternalTestServer boots one real world that records the tool calls made
 // against it, exactly as `env serve --external` does.
-func startExternalTestServer(t *testing.T) (*envServer, *externalServer, func()) {
+func startExternalTestServer(t *testing.T) (*envServer, *externalServer, *httptest.Server, func()) {
 	t.Helper()
 	project := t.TempDir()
 	if err := extractDefaultDemo(project); err != nil {
@@ -45,44 +45,56 @@ func startExternalTestServer(t *testing.T) (*envServer, *externalServer, func())
 	if err := server.indexTasks(); err != nil {
 		t.Fatal(err)
 	}
-	return server, newExternalServer(server, 2*time.Minute), func() {
+	harness := newExternalServer(server, 2*time.Minute)
+	// Mounted on a real listener, because an external agent reaches the world
+	// through this server and nowhere else: what it is handed has to be an
+	// address that resolves to here.
+	mux := http.NewServeMux()
+	harness.register(mux)
+	front := httptest.NewServer(mux)
+	return server, harness, front, func() {
+		front.Close()
 		_ = pool.Close()
 		cpath, conf, db, dbOpened = originalPath, originalConf, originalDB, originalOpened
 	}
 }
 
-func startExternalEpisode(t *testing.T, harness *externalServer, slug string) externalStartResponse {
+func startExternalEpisode(t *testing.T, front *httptest.Server, slug string) externalStartResponse {
 	t.Helper()
 	body, err := json.Marshal(externalStartRequest{Slug: slug})
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := httptest.NewRecorder()
-	harness.handleStart(rec, httptest.NewRequest(http.MethodPost, "/external/episodes", bytes.NewReader(body)))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("start status = %d: %s", rec.Code, rec.Body.String())
-	}
-	var start externalStartResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &start); err != nil {
+	response, err := front.Client().Post(front.URL+"/external/episodes", "application/json", bytes.NewReader(body))
+	if err != nil {
 		t.Fatal(err)
+	}
+	defer response.Body.Close() //nolint:errcheck
+	var start externalStartResponse
+	if err := json.NewDecoder(response.Body).Decode(&start); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("start status = %d: %+v", response.StatusCode, start)
 	}
 	return start
 }
 
-func submitExternalAnswer(t *testing.T, harness *externalServer, id, answer string) (int, externalAnswerResponse) {
+func submitExternalAnswer(t *testing.T, front *httptest.Server, id, answer string) (int, externalAnswerResponse) {
 	t.Helper()
 	body, err := json.Marshal(externalAnswerRequest{Answer: answer})
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := httptest.NewRecorder()
-	harness.handleEpisodePath(rec,
-		httptest.NewRequest(http.MethodPost, "/external/episodes/"+id+"/answer", bytes.NewReader(body)))
-	var graded externalAnswerResponse
-	if rec.Body.Len() != 0 {
-		_ = json.Unmarshal(rec.Body.Bytes(), &graded)
+	response, err := front.Client().Post(
+		front.URL+"/external/episodes/"+id+"/answer", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
 	}
-	return rec.Code, graded
+	defer response.Body.Close() //nolint:errcheck
+	var graded externalAnswerResponse
+	_ = json.NewDecoder(response.Body).Decode(&graded)
+	return response.StatusCode, graded
 }
 
 // connectMCP opens an MCP session against the world, the way an external agent
@@ -110,10 +122,10 @@ func TestExternalAgentIsGradedOnWhatItActuallyDid(t *testing.T) {
 	if testing.Short() {
 		t.Skip("embedded service integration")
 	}
-	_, harness, stop := startExternalTestServer(t)
+	_, _, front, stop := startExternalTestServer(t)
 	defer stop()
 
-	start := startExternalEpisode(t, harness, "count-accounts")
+	start := startExternalEpisode(t, front, "count-accounts")
 	if start.Prompt == "" || start.MCPURL == "" || start.GraphQLURL == "" {
 		t.Fatalf("an external agent needs the task and somewhere to do it: %+v", start)
 	}
@@ -139,7 +151,7 @@ func TestExternalAgentIsGradedOnWhatItActuallyDid(t *testing.T) {
 	}
 	count := countFromToolResult(t, result)
 
-	code, graded := submitExternalAnswer(t, harness, start.EpisodeID,
+	code, graded := submitExternalAnswer(t, front, start.EpisodeID,
 		"There are "+count+" accounts.")
 	if code != http.StatusOK {
 		t.Fatalf("answer status = %d: %+v", code, graded)
@@ -162,11 +174,11 @@ func TestExternalAnswerWithoutDoingTheWorkScoresZero(t *testing.T) {
 	if testing.Short() {
 		t.Skip("embedded service integration")
 	}
-	_, harness, stop := startExternalTestServer(t)
+	_, _, front, stop := startExternalTestServer(t)
 	defer stop()
 
 	// Learn the true answer honestly in one episode...
-	start := startExternalEpisode(t, harness, "count-accounts")
+	start := startExternalEpisode(t, front, "count-accounts")
 	session := connectMCP(t, start)
 	ctx := context.Background()
 	if _, err := session.CallTool(ctx, &sdk.CallToolParams{
@@ -181,13 +193,13 @@ func TestExternalAnswerWithoutDoingTheWorkScoresZero(t *testing.T) {
 		t.Fatal(err)
 	}
 	count := countFromToolResult(t, result)
-	if _, graded := submitExternalAnswer(t, harness, start.EpisodeID, "There are "+count+" accounts."); !graded.Pass {
+	if _, graded := submitExternalAnswer(t, front, start.EpisodeID, "There are "+count+" accounts."); !graded.Pass {
 		t.Fatalf("the honest episode must pass or the contrast means nothing: %+v", graded.Score)
 	}
 
 	// ...then submit it in a second episode without doing anything at all.
-	cheat := startExternalEpisode(t, harness, "count-accounts")
-	code, graded := submitExternalAnswer(t, harness, cheat.EpisodeID, "There are "+count+" accounts.")
+	cheat := startExternalEpisode(t, front, "count-accounts")
+	code, graded := submitExternalAnswer(t, front, cheat.EpisodeID, "There are "+count+" accounts.")
 	if code != http.StatusOK {
 		t.Fatalf("answer status = %d", code)
 	}
@@ -205,14 +217,21 @@ func TestExternalEpisodeCanBeAbandoned(t *testing.T) {
 	if testing.Short() {
 		t.Skip("embedded service integration")
 	}
-	server, harness, stop := startExternalTestServer(t)
+	server, _, front, stop := startExternalTestServer(t)
 	defer stop()
 
-	start := startExternalEpisode(t, harness, "count-accounts")
-	rec := httptest.NewRecorder()
-	harness.handleEpisodePath(rec, httptest.NewRequest(http.MethodDelete, "/external/episodes/"+start.EpisodeID, nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("abandon status = %d: %s", rec.Code, rec.Body.String())
+	start := startExternalEpisode(t, front, "count-accounts")
+	request, err := http.NewRequest(http.MethodDelete, front.URL+"/external/episodes/"+start.EpisodeID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	abandoned, err := front.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = abandoned.Body.Close()
+	if abandoned.StatusCode != http.StatusOK {
+		t.Fatalf("abandon status = %d", abandoned.StatusCode)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -223,7 +242,7 @@ func TestExternalEpisodeCanBeAbandoned(t *testing.T) {
 	_ = server.pool.Release(instance)
 
 	// And answering afterwards is refused rather than silently graded twice.
-	if code, _ := submitExternalAnswer(t, harness, start.EpisodeID, "anything"); code != http.StatusGone {
+	if code, _ := submitExternalAnswer(t, front, start.EpisodeID, "anything"); code != http.StatusGone {
 		t.Fatalf("answering an abandoned episode returned %d, want %d", code, http.StatusGone)
 	}
 }
@@ -279,5 +298,117 @@ func TestRecordedCallsBecomeAScoreableAccount(t *testing.T) {
 	succeeded, _ := actions[1]["summary"].(map[string]any)
 	if succeeded["error_count"] != 0 {
 		t.Fatalf("a successful call was reported as failed: %+v", actions[1])
+	}
+}
+
+// The address an external agent is handed has to be one it can reach.
+//
+// A/B: on master mcp_url is the leased world's own httptest listener — a
+// loopback port that exists only inside the serving process. An agent on the
+// same machine got away with it; a container hands out a URL that resolves to
+// the agent's own loopback and nothing works. Rewriting the string would make
+// it honest and still route nowhere, so the environment carries the traffic
+// itself.
+func TestExternalWorldIsReachableThroughTheServerThatLeasedIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("embedded service integration")
+	}
+	_, harness, front, stop := startExternalTestServer(t)
+	defer stop()
+
+	start := startExternalEpisode(t, front, "count-accounts")
+	if !strings.HasPrefix(start.MCPURL, front.URL+"/") {
+		t.Fatalf("mcp_url = %q, which is not on the server the agent reached (%s)", start.MCPURL, front.URL)
+	}
+	if !strings.HasPrefix(start.GraphQLURL, front.URL+"/") {
+		t.Fatalf("graphql_url = %q", start.GraphQLURL)
+	}
+	if !strings.Contains(start.MCPURL, start.EpisodeID) {
+		t.Fatalf("the path must name the lease it routes for: %q", start.MCPURL)
+	}
+
+	// And it is not merely well-formed: a real MCP session runs over it, end to
+	// end, and the work is recorded and graded.
+	session := connectMCP(t, start)
+	ctx := context.Background()
+	if _, err := session.CallTool(ctx, &sdk.CallToolParams{
+		Name: "query_catalog", Arguments: map[string]any{"id": "table:app:main.accounts"},
+	}); err != nil {
+		t.Fatalf("query_catalog through the proxy: %v", err)
+	}
+	result, err := session.CallTool(ctx, &sdk.CallToolParams{
+		Name: "execute_graphql", Arguments: map[string]any{"query": "query { accounts { count_id } }"},
+	})
+	if err != nil {
+		t.Fatalf("execute_graphql through the proxy: %v", err)
+	}
+	count := countFromToolResult(t, result)
+
+	// GraphQL over the same path, since an agent may prefer it.
+	body, err := json.Marshal(map[string]any{"query": "query { accounts { count_id } }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodPost, start.GraphQLURL, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	for key, value := range start.Headers {
+		request.Header.Set(key, value)
+	}
+	graphql, err := front.Client().Do(request)
+	if err != nil {
+		t.Fatalf("graphql through the proxy: %v", err)
+	}
+	defer graphql.Body.Close() //nolint:errcheck
+	if graphql.StatusCode != http.StatusOK {
+		t.Fatalf("graphql status = %d", graphql.StatusCode)
+	}
+
+	code, graded := submitExternalAnswer(t, front, start.EpisodeID, "There are "+count+" accounts.")
+	if code != http.StatusOK || !graded.Pass || graded.Reward <= 0 {
+		t.Fatalf("work done through the advertised URL was not graded: %d %+v", code, graded)
+	}
+
+	// The lease is the authorization. Once it ends, the path routes nowhere.
+	gone, err := front.Client().Get(start.GraphQLURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gone.Body.Close() //nolint:errcheck
+	if gone.StatusCode != http.StatusGone {
+		t.Fatalf("a finished episode's world answered %d, want %d", gone.StatusCode, http.StatusGone)
+	}
+	if _, live := harness.lookup(start.EpisodeID); live {
+		t.Fatal("a graded episode is still holding its world")
+	}
+}
+
+// --advertise-url is for when the Host an agent arrives with is not an address
+// it could dial again — a proxy that rewrites it, or a URL passed out of band.
+func TestAdvertisedBaseNamesSomewhereReachable(t *testing.T) {
+	harness := &externalServer{env: &envServer{listenAddr: "127.0.0.1:8090"}}
+
+	request := httptest.NewRequest(http.MethodPost, "/external/episodes", nil)
+	request.Host = "gj-env-7.cluster.local:8090"
+	base, reachable := harness.advertisedBase(request)
+	if base != "http://gj-env-7.cluster.local:8090" || !reachable {
+		t.Fatalf("the Host that actually resolved here is the default: %q", base)
+	}
+
+	harness.env.advertiseURL = "https://envs.example.com/gj/"
+	base, reachable = harness.advertisedBase(request)
+	if base != "https://envs.example.com/gj" || !reachable {
+		t.Fatalf("--advertise-url must win and lose its trailing slash: %q", base)
+	}
+
+	// Nothing to go on: say so rather than handing out a loopback address that
+	// only works for whoever is already inside.
+	harness.env.advertiseURL = ""
+	request.Host = ""
+	base, reachable = harness.advertisedBase(request)
+	if base != "http://127.0.0.1:8090" || reachable {
+		t.Fatalf("base = %q reachable = %v", base, reachable)
 	}
 }
