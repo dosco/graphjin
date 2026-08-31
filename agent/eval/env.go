@@ -38,6 +38,12 @@ type EnvSpec struct {
 	// completed episodes were graded against the previous day's data. Resuming
 	// pins the anchor the run started on and the boot leaves the dates alone.
 	PinDataAnchor string `json:"pin_data_anchor,omitempty"`
+	// AgentTimeoutSeconds caps how long one episode's agent run may take.
+	//
+	// The stack default of 50 seconds is sized for a person waiting on a
+	// request. An episode is a longer thing, and one whose completions come
+	// from a trainer is longer still. Zero leaves the configured value alone.
+	AgentTimeoutSeconds int `json:"agent_timeout_seconds,omitempty"`
 	// FreezeTime fixes what the environment calls "now", as an RFC3339 instant.
 	//
 	// PinDataAnchor stops the seeded data from moving; this stops the questions

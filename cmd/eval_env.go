@@ -360,6 +360,9 @@ func configureEvalInstance(config *serv.Config, spec gjeval.EnvSpec) {
 	if spec.TopP != nil {
 		config.Agent.TopP = spec.TopP
 	}
+	if spec.AgentTimeoutSeconds > 0 {
+		config.Agent.TimeoutSeconds = spec.AgentTimeoutSeconds
+	}
 	config.WatchAndReload = false
 	if spec.Reactive {
 		config.Core.Watches.Runner = "all"

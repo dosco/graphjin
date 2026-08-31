@@ -130,6 +130,7 @@ func envServeCmd() *cobra.Command {
 		side        string
 		poolSize    int
 		listen      string
+		workDir     string
 		freezeTime  string
 		dataAnchor  string
 		allowDrift  bool
@@ -146,6 +147,12 @@ func envServeCmd() *cobra.Command {
 		Short: "Serve graded episodes over HTTP for a training or evaluation loop",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Before anything reads a flag: a container passes its configuration
+			// in the environment, and what it passed has to be what runs.
+			fromEnv, err := applyEnvServeSettings(cmd.Flags(), os.Environ())
+			if err != nil {
+				return err
+			}
 			rewardProfile := gjeval.RewardProfile(strings.TrimSpace(profile))
 			if err := rewardProfile.Validate(); err != nil {
 				return err
@@ -157,7 +164,19 @@ func envServeCmd() *cobra.Command {
 				}
 				cpath = absolute
 			}
+			// A relative path someone typed means relative to where they typed
+			// it, so resolve the paths before --work-dir moves the process.
+			suitePath = absoluteEnvPath(suitePath, envSuiteEmbedded)
+			splitPath = absoluteEnvPath(splitPath, "auto")
+			if err := enterEnvWorkDir(workDir); err != nil {
+				return err
+			}
 			if err := validateEnvAnchor(freezeTime, dataAnchor); err != nil {
+				return err
+			}
+			agentTimeout, err := resolveEnvAgentTimeout(
+				os.Getenv("GJ_AGENT_TIMEOUT_SECONDS"), step, stepTimeout)
+			if err != nil {
 				return err
 			}
 			resolved, err := resolveDemoPath(strings.TrimSpace(projectPath) != "", os.Stderr)
@@ -182,6 +201,7 @@ func envServeCmd() *cobra.Command {
 				Target: gjeval.TargetDemo, ConfigPath: resolved, Seed: suite.Generator.Seed,
 				Writable: writable, Reactive: reactive, Resettable: resettable,
 				FreezeTime: freezeTime, PinDataAnchor: dataAnchor,
+				AgentTimeoutSeconds: agentTimeout,
 			}
 			wiring, err := newEvalServeWiring(cmd, poolSize, evalServeOptions{
 				Support: supportFlags, Step: step, External: external,
@@ -239,6 +259,9 @@ func envServeCmd() *cobra.Command {
 				"  suite %s (%s) · split %s · side %s · anchor %s\n",
 				suiteSource, suite.Generator.Version, splitLabel, server.side,
 				orUnset(pool.instances[0].Fingerprint().DataAnchor))
+			for _, line := range fromEnv {
+				fmt.Fprintf(cmd.OutOrStdout(), "  env %s\n", line)
+			}
 			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				return err
 			}
@@ -251,6 +274,8 @@ func envServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&side, "side", "train", "which side of the split to serve: train or eval")
 	cmd.Flags().IntVar(&poolSize, "pool", 2, "isolated worlds to run episodes against")
 	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8090", "address to serve on")
+	cmd.Flags().StringVar(&workDir, "work-dir", "",
+		"directory to run in; the built-in demo and each world's state are written below it")
 	cmd.Flags().StringVar(&freezeTime, "freeze-time", "", "run every episode against a fixed clock (RFC3339)")
 	cmd.Flags().StringVar(&dataAnchor, "data-anchor", "",
 		"pin the demo's seeded data to a day (YYYY-MM-DD) so the world is the same on any date")
@@ -718,4 +743,23 @@ func orUnset(value string) string {
 		return "unset"
 	}
 	return value
+}
+
+// absoluteEnvPath resolves a flag that names a file, leaving reserved words
+// alone. --suite public and --split auto are selectors, not paths.
+func absoluteEnvPath(value string, reserved ...string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return value
+	}
+	for _, word := range reserved {
+		if strings.EqualFold(trimmed, word) || strings.HasPrefix(strings.ToLower(trimmed), word+":") {
+			return value
+		}
+	}
+	absolute, err := filepath.Abs(trimmed)
+	if err != nil {
+		return value
+	}
+	return absolute
 }
