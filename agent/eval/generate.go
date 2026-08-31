@@ -46,6 +46,8 @@ type AgentStatus struct {
 	TimeoutSeconds       int                     `json:"timeout_seconds,omitempty"`
 	MaxSteps             int                     `json:"max_steps,omitempty"`
 	Reasoning            string                  `json:"reasoning,omitempty"`
+	Temperature          *float64                `json:"temperature,omitempty"`
+	TopP                 *float64                `json:"top_p,omitempty"`
 	RateLimit            gjagent.RateLimitConfig `json:"rate_limit"`
 	EvalFingerprint      string                  `json:"eval_fingerprint,omitempty"`
 	Namespace            string                  `json:"namespace,omitempty"`

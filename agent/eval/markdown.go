@@ -170,6 +170,11 @@ func writeIdentity(b *strings.Builder, r Report) {
 	writeRow(b, "Repeats", fmt.Sprint(r.Provenance.Repeats))
 	writeRow(b, "Max steps", formatPositive(r.Provenance.MaxSteps))
 	writeRow(b, "Temperature", fmt.Sprintf("%.2f", r.Provenance.Temperature))
+	// Top-p is shown only when it was pinned, so a report from a run that
+	// never configured it reads exactly as it always did.
+	if r.Provenance.TopP != 0 {
+		writeRow(b, "Top-P", fmt.Sprintf("%.2f", r.Provenance.TopP))
+	}
 	if r.RescoredFrom != "" {
 		writeRow(b, "Rescored from", r.RescoredFrom)
 	}

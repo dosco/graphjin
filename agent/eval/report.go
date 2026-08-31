@@ -24,9 +24,12 @@ type RunProvenance struct {
 	BinaryFingerprint    string  `json:"binary_fingerprint,omitempty"`
 	PromptRegistryHash   string  `json:"prompt_registry_hash,omitempty"`
 	Temperature          float64 `json:"temperature"`
-	Seed                 int64   `json:"seed"`
-	Repeats              int     `json:"repeats"`
-	MaxSteps             int     `json:"max_steps,omitempty"`
+	// TopP is omitted when unset so every run recorded before sampling was
+	// configurable keeps the provenance bytes, and the identity hash, it had.
+	TopP     float64 `json:"top_p,omitempty"`
+	Seed     int64   `json:"seed"`
+	Repeats  int     `json:"repeats"`
+	MaxSteps int     `json:"max_steps,omitempty"`
 	// Reasoning records the provider thinking effort the run used. Absent
 	// means the provider default, which for some adapters is thinking off —
 	// runs are not comparable across different values.

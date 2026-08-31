@@ -70,6 +70,9 @@ func oneShotClient(cfg Config) (ax.AIClient, Config, error) {
 	if err := ValidateServiceTier(cfg.ServiceTier); err != nil {
 		return nil, cfg, err
 	}
+	if err := ValidateSampling(cfg.Temperature, cfg.TopP); err != nil {
+		return nil, cfg, err
+	}
 	if err := cfg.RateLimit.Validate(); err != nil {
 		return nil, cfg, err
 	}

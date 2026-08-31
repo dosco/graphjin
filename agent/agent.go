@@ -82,7 +82,20 @@ type Config struct {
 	// meant the only way to see the thinking was to also set a thinking budget,
 	// and that does change behaviour. Off by default: the text is billed output
 	// and every episode carries it.
-	ShowThoughts   bool            `mapstructure:"show_thoughts" jsonschema:"title=Return Model Reasoning,description=Return the provider's reasoning text in the chat log for debugging,default=false"`
+	ShowThoughts bool `mapstructure:"show_thoughts" jsonschema:"title=Return Model Reasoning,description=Return the provider's reasoning text in the chat log for debugging,default=false"`
+	// Temperature and TopP pin the provider's sampling.
+	//
+	// They are pointers because unset and zero are different requests: ax
+	// already pins temperature 0 when a client is built without one, so nil
+	// means "whatever the stack already does" while a zero value means
+	// "greedy, on purpose, and recorded as such in run provenance".
+	//
+	// Raising the temperature is what makes rejection sampling possible at all:
+	// drawing several samples of one task only teaches anything if the samples
+	// can differ. Providers vary in what they honour — some ignore it, some
+	// clamp it — so what is configured is recorded rather than assumed.
+	Temperature    *float64        `mapstructure:"temperature" jsonschema:"title=Agent Sampling Temperature,description=Provider sampling temperature; unset leaves the stack default"`
+	TopP           *float64        `mapstructure:"top_p" jsonschema:"title=Agent Sampling Top-P,description=Provider nucleus sampling cutoff; unset leaves the stack default"`
 	RateLimit      RateLimitConfig `mapstructure:"rate_limit" jsonschema:"title=Agent Provider Rate Limits"`
 	MaxSteps       int             `mapstructure:"max_steps" jsonschema:"title=Agent Max Steps,default=8"`
 	TimeoutSeconds int             `mapstructure:"timeout_seconds" jsonschema:"title=Agent Timeout Seconds,default=50"`
@@ -311,6 +324,9 @@ func New(gj *core.GraphJin, config Config, options ...Option) (*Agent, error) {
 	if err := ValidateServiceTier(config.ServiceTier); err != nil {
 		return nil, err
 	}
+	if err := ValidateSampling(config.Temperature, config.TopP); err != nil {
+		return nil, err
+	}
 	return newAgent(config, newCoreRuntime(gj, config), options...), nil
 }
 
@@ -432,6 +448,9 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		return Response{}, err
 	}
 	if err := ValidateServiceTier(cfg.ServiceTier); err != nil {
+		return Response{}, err
+	}
+	if err := ValidateSampling(cfg.Temperature, cfg.TopP); err != nil {
 		return Response{}, err
 	}
 	if err := cfg.RateLimit.Validate(); err != nil {
@@ -649,6 +668,9 @@ func DefaultClientFactory(cfg Config) (ax.AIClient, error) {
 	reasoning := normalizedReasoningEffort(cfg.Reasoning)
 	if reasoning != "" || cfg.ShowThoughts {
 		client = &reasoningClient{inner: client, budget: reasoning, showThoughts: cfg.ShowThoughts}
+	}
+	if cfg.Temperature != nil || cfg.TopP != nil {
+		client = &samplingClient{inner: client, temperature: cfg.Temperature, topP: cfg.TopP}
 	}
 	return client, nil
 }

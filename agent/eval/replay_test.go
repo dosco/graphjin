@@ -26,16 +26,16 @@ func TestLoadReplayFixtureExtractsExecutorPrograms(t *testing.T) {
 			"status": "error",
 			"trace": map[string]any{
 				"chat_log": []any{
-					map[string]any{"name": "distiller", "item1": map[string]any{
+					map[string]any{"name": "distiller", "response": map[string]any{"results": []any{map[string]any{
 						"content": `{"javascriptCode":"await query_catalog({search:\"x\"});"}`,
-					}},
-					map[string]any{"name": "executor", "item1": map[string]any{
+					}}}},
+					map[string]any{"name": "executor", "response": map[string]any{"results": []any{map[string]any{
 						"content": `{"javascriptCode":"await execute_graphql({query:\"mutation { payments(insert: {}) { id } }\"});"}`,
-					}},
-					map[string]any{"name": "executor", "item1": map[string]any{
+					}}}},
+					map[string]any{"name": "executor", "response": map[string]any{"results": []any{map[string]any{
 						"content": `{"javascriptCode":"await final({status:\"blocked\"});"}`,
-					}},
-					map[string]any{"name": "responder", "item1": map[string]any{"content": "prose"}},
+					}}}},
+					map[string]any{"name": "responder", "response": map[string]any{"results": []any{map[string]any{"content": "prose"}}}},
 				},
 			},
 		},
