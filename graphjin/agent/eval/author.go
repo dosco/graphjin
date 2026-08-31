@@ -99,6 +99,10 @@ func decodeAuthorProposal(response gjagent.Response) (AuthorProposal, error) {
 	return proposal, nil
 }
 
+// DecodeFencedJSON pulls one JSON value out of a model reply, for callers
+// outside this package that ask a model for JSON and get prose around it.
+func DecodeFencedJSON(text string, out any) error { return decodeFencedJSON(text, out) }
+
 // decodeFencedJSON pulls one JSON value out of a model reply.
 //
 // Models wrap JSON in code fences, and often say something either side of it.

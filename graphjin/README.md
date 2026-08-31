@@ -645,6 +645,11 @@ graphjin env serve --path ./graphjin-demo --suite eval/suite.yml --pool 4 \
   can train on some companies and measure on others. Worlds can be asked for the
   awkwardness real schemas have: one word meaning two things, a stale column
   that still looks authoritative, fields that are usually null.
+- **Any industry, not three.** `graphjin env new-world --describe "genome
+  sequencing lab"` asks a capable model to name the records that business would
+  actually keep, checks every name, and saves the description as
+  `world-pack.json` inside the world. From then on the world is rebuilt from
+  that file with `--pack`: deterministic, and with no model involved.
 - **A big model writes the questions a schema cannot derive.** Counting and
   filtering follow from column statistics; knowing that *failed invoices are
   worth alerting on* does not. `graphjin eval author` asks a capable model —
@@ -652,6 +657,11 @@ graphjin env serve --path ./graphjin-demo --suite eval/suite.yml --pool 4 \
   to choose what is worth watching and phrase it as a colleague would. Every
   table, column and value it names must exist, and every task it produces is
   verified against the live database before it counts.
+- **Questions no single source answers.** Real answers are often half in the
+  database and half in something somebody wrote down. Clones carry over the
+  document sources the original served — the names only, never a file — and
+  authoring plants the standard it grades against in a document of its own, so
+  the ground truth is true by construction rather than assumed.
 - **Runs export as training data.** `graphjin eval export` writes trajectories
   as JSONL, marking the programs GraphJin's runtime wrote itself so they are not
   mistaken for the policy's.
@@ -660,9 +670,41 @@ graphjin env serve --path ./graphjin-demo --suite eval/suite.yml --pool 4 \
 # Learn a real server's schema; write a local synthetic copy
 graphjin env clone --url https://graphjin.internal --out ./clone-acme
 
-# Have a capable model author the watch and follow-up families for it
+# Have a capable model author the richer families for it
 export GJ_GENERATOR_MODEL=<a-strong-model>
-graphjin eval author --demo --path ./clone-acme --kinds watch,confirmation --yes
+graphjin eval author --demo --path ./clone-acme --kinds watch,confirmation,file --yes
+```
+
+### Driving Episodes Your Own Way
+
+Three ways in, all grading through the same contract, so a number from one is a
+number from any:
+
+- **Let GraphJin call your endpoint** — the default. Point `agent.base_url` at
+  anything OpenAI-compatible.
+- **Supply each completion yourself** — `env serve --step`. The episode runs
+  normally, but when the model is needed the call is parked and handed to you as
+  an observation; you post the completion back and it resumes. Useful when the
+  weights being updated live inside your training process and standing up an
+  inference server just to be called back is machinery you do not want.
+- **Bring your own agent entirely** — `env serve --external`. You get the task,
+  an MCP endpoint and a deadline, do the work with your own scaffold, and post
+  an answer. The server records every tool call, so the method and behavior
+  rules apply exactly as they do to a hosted run — an answer with no work behind
+  it scores zero.
+
+An agent run is several model calls with different jobs, and they need not all
+be the policy's. `--support-model` (or `GJ_SUPPORT_MODEL`) puts a fixed capable
+model in front of the distiller and responder stages while the policy answers
+the executor, so a small model is measured on the work being trained rather than
+through bottlenecks it did not create. The stages that write the final answer
+stay with the policy: letting a stronger model write those would score its care
+as the policy's grounding.
+
+```bash
+# Train only the executor; a fixed model condenses and phrases
+graphjin env serve --path ./clone-acme --suite eval/suite.yml --pool 4 \
+  --step --support-model <a-fast-model>
 ```
 
 See [training/README.md](training/README.md) for the client, an example policy

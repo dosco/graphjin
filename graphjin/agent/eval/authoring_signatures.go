@@ -36,12 +36,18 @@ tasks:string "Verified questions with their ids.",
 count:string "How many picks to return."
 -> picks_json:string "JSON array of {task_id, prompt}."`
 
+const fileAuthoringSignature = `"You are choosing rules a company writes down in a document rather than storing in its database. You are given a schema census, including one or more file sources that hold written policy documents. For each pick choose: file_root, the name of a file source from the census; table, a table from the census; optionally column and value from the census closed sets to narrow which rows matter; policy_topic, a short title for the rule such as 'incident response times'; policy_answer, the rule itself as one short phrase under forty characters, specific and checkable, such as '4 hours' or 'two business days'; intent, one or two sentences in the voice of someone who needs both the current numbers and the standard they are held to, which must NOT mention the file source, documents, or files at all, because working out that the standard is written down somewhere is the point; and execution, one or two sentences asking plainly for both the written standard and the current count. Neither sentence may name GraphJin, queries or tools. Reply with only a JSON array."
+census:string "The tables, closed value sets, relationships and file sources available.",
+count:string "How many picks to return."
+-> picks_json:string "JSON array of {file_root, table, column, value, policy_topic, policy_answer, intent, execution}."`
+
 // AuthoringPromptsHash identifies the wording a batch of tasks was authored
 // under, so provenance points at the prompts and not only at the model. A batch
 // that turns out badly can then be traced to what was asked for.
 func AuthoringPromptsHash() string {
 	sum := sha256.Sum256([]byte(
 		watchAuthoringSignature + confirmationAuthoringSignature +
-			historyAuthoringSignature + scenarioAuthoringSignature))
+			historyAuthoringSignature + scenarioAuthoringSignature +
+			fileAuthoringSignature))
 	return hex.EncodeToString(sum[:])[:8]
 }

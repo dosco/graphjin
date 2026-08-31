@@ -32,6 +32,13 @@ const (
 	// GeneratorVersion is the generated task/scoring contract. Bump it whenever
 	// generated task semantics change, including method-rule dialect support.
 	//
+	// v16 adds two authored families that were previously reachable only by the
+	// frozen reference schema: a watch whose event has already been delivered
+	// and has to be read and cleared, and a question whose answer is split
+	// between the database and a document. Both are authored only where the
+	// environment can support them — the first where rows exist for the watch to
+	// deliver, the second where a file source exists to plant the document in.
+	//
 	// v15 adds model-authored task families — watches, confirmations, history
 	// follow-ups and scenario phrasings — which a model chooses and phrases and
 	// the engine constructs and verifies. Tasks record the model that wrote
@@ -46,13 +53,21 @@ const (
 	// oracles, and windows composed with a value filter. Existing task content
 	// is untouched, so content IDs are unchanged; what changes is that a freshly
 	// generated suite draws from a wider candidate pool.
-	GeneratorVersion = "graphjin.eval.generator/v15"
-	// RewardVersion v5: a "which record" answer may name the row by any
-	// identifier the oracle selected, not only the one field it projected. No
-	// frozen task declares alternates yet, so this changes no existing verdict;
-	// it is the scoring half of the fix, landed ahead of the suite regeneration
-	// that would let tasks project a second identifier.
-	RewardVersion         = "graphjin.eval.reward/v5"
+	GeneratorVersion = "graphjin.eval.generator/v16"
+	// RewardVersion v6: a dimension that starts with a number is no longer
+	// satisfied by a larger number ending in the same digits. "24 hours"
+	// contains "4 hours", so an answer stating the wrong service level scored as
+	// though it had stated the right one — the same substring collision whole-
+	// token matching already prevented for bare numbers, reaching a case that
+	// matching did not cover. It removes false passes only: every answer that
+	// genuinely names the dimension still matches.
+	//
+	// v5: a "which record" answer may name the row by any identifier the oracle
+	// selected, not only the one field it projected. No frozen task declares
+	// alternates yet, so this changes no existing verdict; it is the scoring
+	// half of the fix, landed ahead of the suite regeneration that would let
+	// tasks project a second identifier.
+	RewardVersion         = "graphjin.eval.reward/v6"
 	DefaultSuiteSize      = 24
 	DefaultRepeats        = 3
 	DefaultEvaluationDir  = "eval"
@@ -70,6 +85,7 @@ var SupportedGeneratorVersions = []string{
 	"graphjin.eval.generator/v12",
 	"graphjin.eval.generator/v13",
 	"graphjin.eval.generator/v14",
+	"graphjin.eval.generator/v15",
 	GeneratorVersion,
 }
 

@@ -1085,27 +1085,39 @@ func (r Runner) runEpisode(ctx context.Context, client HTTPDoer, instance Instan
 		return episode
 	}
 	if task.Mutation != nil {
-		verifier := Verifier{Client: client, Now: r.Now, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
-		postState, postErr := verifier.Resolve(ctx, task.Mutation.PostState)
-		collateralAfter, collateralErr := resolveMutationCollateral(ctx, r, client, instance, task.Mutation.Collateral)
-		postPass := postErr == nil && task.Mutation.AcceptsValue(postState.Value) &&
-			task.Mutation.AcceptsDimension(postState.Dimension)
-		beforeHash := canonicalHash(collateralBefore)
-		afterHash := canonicalHash(collateralAfter)
-		collateralPass := collateralErr == nil && beforeHash == afterHash
-		episode.Mutation = &MutationEvidence{
-			PostState: postState, ExpectedValue: task.Mutation.ExpectedValue,
-			ExpectedDimension: task.Mutation.ExpectedDimension, PostStatePass: postPass,
-			CollateralBeforeHash: beforeHash, CollateralAfterHash: afterHash, CollateralPass: collateralPass,
-		}
-		episode.Score = ScoreMutation(episode.Score, MutationOutcome{
-			PostStatePass:          postPass,
-			CollateralPass:         collateralPass,
-			PostStateOracleFailed:  postErr != nil,
-			CollateralOracleFailed: collateralErr != nil,
-		}, response)
+		var outcome MutationOutcome
+		episode.Mutation, outcome = resolveMutationEvidence(ctx, r, client, instance, task, collateralBefore)
+		episode.Score = ScoreMutation(episode.Score, outcome, response)
 	}
 	return episode
+}
+
+// resolveMutationEvidence reads what a write actually did: the state it was
+// supposed to reach, and whether anything it was not supposed to touch moved.
+//
+// It is shared with the single-episode path rather than duplicated there. Two
+// copies of this would be two definitions of what counts as collateral damage,
+// and a policy trained against one of them would be measured by the other.
+func resolveMutationEvidence(ctx context.Context, r Runner, client HTTPDoer, instance Instance,
+	task Task, collateralBefore []OracleResult) (*MutationEvidence, MutationOutcome) {
+	verifier := Verifier{Client: client, Now: r.Now, BaseURL: instance.BaseURL(), Headers: instance.Headers()}
+	postState, postErr := verifier.Resolve(ctx, task.Mutation.PostState)
+	collateralAfter, collateralErr := resolveMutationCollateral(ctx, r, client, instance, task.Mutation.Collateral)
+	postPass := postErr == nil && task.Mutation.AcceptsValue(postState.Value) &&
+		task.Mutation.AcceptsDimension(postState.Dimension)
+	beforeHash := canonicalHash(collateralBefore)
+	afterHash := canonicalHash(collateralAfter)
+	collateralPass := collateralErr == nil && beforeHash == afterHash
+	return &MutationEvidence{
+		PostState: postState, ExpectedValue: task.Mutation.ExpectedValue,
+		ExpectedDimension: task.Mutation.ExpectedDimension, PostStatePass: postPass,
+		CollateralBeforeHash: beforeHash, CollateralAfterHash: afterHash, CollateralPass: collateralPass,
+	}, MutationOutcome{
+		PostStatePass:          postPass,
+		CollateralPass:         collateralPass,
+		PostStateOracleFailed:  postErr != nil,
+		CollateralOracleFailed: collateralErr != nil,
+	}
 }
 
 func cloneHeaders(headers map[string]string) map[string]string {

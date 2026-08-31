@@ -62,6 +62,27 @@ type worldSpec struct {
 	Seed    int64
 	Anchor  string
 	Applied []string
+	// FileSources are document roots served alongside the database. A world that
+	// has one can carry questions whose answer is split between a count and a
+	// written rule, which is the shape most real operational questions have.
+	FileSources []worldFileSource
+	// PackRef names the world description this was rendered from, when it came
+	// from one. It changes only what the regenerate instructions say — a world
+	// built from a description is reproduced from that description, not from a
+	// built-in domain name that never existed.
+	PackRef string
+}
+
+// worldFileSource is a document root and the documents in it.
+type worldFileSource struct {
+	Name  string
+	Root  string
+	Files []worldFile
+}
+
+type worldFile struct {
+	Name     string
+	Contents string
 }
 
 // domainPack is a vocabulary: what this kind of company keeps records about.
@@ -278,6 +299,19 @@ func singular(table string) string {
 	return strings.TrimSuffix(table, "s")
 }
 
+// worldRegenerateFlags says how to build this exact world again.
+//
+// A world built from a written description cannot be reproduced from a domain
+// name, because the domain name was invented for it and no built-in vocabulary
+// matches. What reproduces it is the description file the model's answer was
+// saved to, which is why that file is written into the world directory.
+func worldRegenerateFlags(world worldSpec) string {
+	if world.PackRef != "" {
+		return fmt.Sprintf("--pack %s --seed %d", world.PackRef, world.Seed)
+	}
+	return fmt.Sprintf("--domain %s --seed %d", world.Domain, world.Seed)
+}
+
 // renderWorldDDL writes the schema in GraphJin's DDL dialect.
 func renderWorldDDL(world worldSpec) string {
 	var out strings.Builder
@@ -285,7 +319,7 @@ func renderWorldDDL(world worldSpec) string {
 	if len(world.Applied) != 0 {
 		fmt.Fprintf(&out, "# Deliberate schema pathologies: %s\n", strings.Join(world.Applied, ", "))
 	}
-	out.WriteString("# Regenerate with: graphjin env new-world --domain " + world.Domain + fmt.Sprintf(" --seed %d\n\n", world.Seed))
+	out.WriteString("# Regenerate with: graphjin env new-world " + worldRegenerateFlags(world) + "\n\n")
 	for _, table := range world.Tables {
 		fmt.Fprintf(&out, "type %s {\n", table.Name)
 		for _, column := range table.Columns {

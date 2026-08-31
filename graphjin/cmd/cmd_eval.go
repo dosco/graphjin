@@ -331,9 +331,23 @@ func evalAuthorCmd(opts *evalCLIOptions) *cobra.Command {
 				gjeval.AuthoringOptions{
 					Kinds: selected, Count: count, Seed: seed,
 					AuthoredBy: label + " prompts@" + gjeval.AuthoringPromptsHash(),
+					// Some families can only be authored where the data supports
+					// them, and the booted instance is the only thing that knows.
+					ResolveOracle: verifier.Resolve,
 				})
 			if err != nil {
 				return &evalExitError{Code: 2, Err: err}
+			}
+
+			// Documents the tasks read have to exist before those tasks can be
+			// verified. The instance is already serving this directory, and the
+			// local file backend reads from disk, so writing them here is enough.
+			planted, err := writeAuthoredFiles(projectPath, target, report.Files)
+			if err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+			for _, path := range planted {
+				fmt.Fprintf(cmd.ErrOrStderr(), "  wrote %s\n", path)
 			}
 
 			// Authored tasks meet the same bar as generated ones: an oracle that
@@ -970,7 +984,7 @@ func executeEvalSuite(ctx context.Context, cmd *cobra.Command, opts *evalCLIOpti
 		// Every worker must serve the same rows; the pool refuses to form
 		// otherwise. Worker zero also answers the run's own setup queries, which
 		// happen before any episode leases anything.
-		pool, err = newEvalInstancePool(ctx, environment, spec, opts.Pool)
+		pool, err = newEvalInstancePool(ctx, func(int) evalEnvironment { return environment }, spec, opts.Pool)
 		if err != nil {
 			return nil, nil, evalEnvironmentError(err)
 		}

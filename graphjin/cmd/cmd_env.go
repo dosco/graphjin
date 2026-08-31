@@ -82,6 +82,19 @@ type envServer struct {
 	runner  gjeval.Runner
 	split   *gjeval.SuiteSplit
 	side    string
+	// Per-world state for the ways of driving an episode that need something
+	// inside the world. A world serves one episode at a time, so the world is
+	// the only identifier either of these needs.
+	mailboxes map[gjeval.Instance]*stepMailbox
+	recorders map[gjeval.Instance]*mcpToolRecorder
+}
+
+func (s *envServer) mailboxFor(instance gjeval.Instance) *stepMailbox {
+	return s.mailboxes[instance]
+}
+
+func (s *envServer) recorderFor(instance gjeval.Instance) *mcpToolRecorder {
+	return s.recorders[instance]
 }
 
 func envCmd() *cobra.Command {
@@ -106,6 +119,12 @@ func envServeCmd() *cobra.Command {
 		listen      string
 		freezeTime  string
 		profile     string
+
+		supportFlags    generatorFlags
+		step            bool
+		stepTimeout     time.Duration
+		external        bool
+		externalTimeout time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -152,17 +171,38 @@ func envServeCmd() *cobra.Command {
 				Writable: writable, Reactive: reactive, Resettable: resettable,
 				FreezeTime: freezeTime,
 			}
-			pool, err := newEvalInstancePool(cmd.Context(), evalEnvironment{StatusOut: os.Stderr}, spec, poolSize)
+			wiring, err := newEvalServeWiring(cmd, poolSize, evalServeOptions{
+				Support: supportFlags, Step: step, External: external,
+			})
+			if err != nil {
+				return err
+			}
+			pool, err := newEvalInstancePool(cmd.Context(), wiring.envFor, spec, poolSize)
 			if err != nil {
 				return evalEnvironmentError(err)
 			}
 			defer pool.Close() //nolint:errcheck
 			server.pool = pool
+			server.mailboxes = wiring.attachMailboxes(pool)
+			server.recorders = wiring.attachRecorders(pool)
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/health", server.handleHealth)
 			mux.HandleFunc("/tasks", server.handleTasks)
 			mux.HandleFunc("/episodes", server.handleEpisode)
+			// The extra surfaces exist only when asked for. A trainer that did not
+			// ask for them should not find endpoints it can drive into a state the
+			// ordinary path never reaches.
+			if step {
+				steps := newStepServer(server, stepTimeout)
+				steps.register(mux)
+				go steps.reapUntil(cmd.Context())
+			}
+			if external {
+				harness := newExternalServer(server, externalTimeout)
+				harness.register(mux)
+				go harness.reapUntil(cmd.Context())
+			}
 
 			httpServer := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 15 * time.Second}
 			go func() {
@@ -188,6 +228,11 @@ func envServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8090", "address to serve on")
 	cmd.Flags().StringVar(&freezeTime, "freeze-time", "", "run every episode against a fixed clock (RFC3339)")
 	cmd.Flags().StringVar(&profile, "reward-profile", string(gjeval.RewardProfileRL), "reward profile episodes are graded under")
+	cmd.Flags().BoolVar(&step, "step", false, "let a trainer supply each model completion instead of calling out to a provider")
+	cmd.Flags().DurationVar(&stepTimeout, "step-timeout", 5*time.Minute, "how long a step-driven episode may sit idle before its world is reclaimed")
+	cmd.Flags().BoolVar(&external, "external", false, "let an external agent drive episodes over MCP and submit an answer to be graded")
+	cmd.Flags().DurationVar(&externalTimeout, "external-timeout", 10*time.Minute, "how long an external episode may run before its world is reclaimed")
+	addSupportFlags(cmd, &supportFlags)
 	return cmd
 }
 
@@ -369,13 +414,21 @@ func envNewWorldCmd() *cobra.Command {
 		tables      int
 		pathologies []string
 		out         string
+		describe    string
+		packPath    string
+		yes         bool
+		genFlags    generatorFlags
 	)
 	cmd := &cobra.Command{
 		Use:   "new-world",
 		Short: "Generate a fresh organization to train or measure against",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			pack, err := packByName(domain)
+			pack, envelope, err := resolveWorldPack(cmd, worldPackRequest{
+				Describe: describe, PackPath: packPath, Domain: domain,
+				DomainSet: cmd.Flags().Changed("domain"), Tables: tables,
+				Yes: yes, Generator: genFlags,
+			})
 			if err != nil {
 				return err
 			}
@@ -387,8 +440,22 @@ func envNewWorldCmd() *cobra.Command {
 				out = fmt.Sprintf("./world-%s-%d", pack.Name, seed)
 			}
 			world := buildWorld(pack, seed, tables, applied, "")
+			if envelope != nil {
+				// A described world is reproduced from its description, never from
+				// a domain name that was invented for it and matches no built-in
+				// vocabulary. Saying so in the world's own files is the difference
+				// between reproducible and nearly reproducible.
+				world.PackRef = worldPackFilename
+			}
 			if err := writeWorld(world, out); err != nil {
 				return err
+			}
+			if envelope != nil {
+				if err := writeWorldPackFile(out, worldPackFilename, *envelope); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Saved the description to %s; rebuild with --pack.\n",
+					filepath.Join(out, worldPackFilename))
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s: %d tables, domain %s, seed %d.\n",
 				out, len(world.Tables), world.Domain, world.Seed)
@@ -410,7 +477,93 @@ func envNewWorldCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&pathologies, "pathologies", nil,
 		"schema awkwardness to build in: "+strings.Join(supportedPathologies, ", "))
 	cmd.Flags().StringVar(&out, "out", "", "directory to write the world to")
+	cmd.Flags().StringVar(&describe, "describe", "", "describe the organization in words and let a model name its records")
+	cmd.Flags().StringVar(&packPath, "pack", "", "rebuild from a saved world-pack.json instead of describing it again")
+	cmd.Flags().BoolVar(&yes, "yes", false, "do not prompt before spending on the describing model")
+	addGeneratorFlags(cmd, &genFlags)
 	return cmd
+}
+
+// worldPackFilename is where a described world keeps its description.
+const worldPackFilename = "world-pack.json"
+
+type worldPackRequest struct {
+	Describe  string
+	PackPath  string
+	Domain    string
+	DomainSet bool
+	Tables    int
+	Yes       bool
+	Generator generatorFlags
+}
+
+// resolveWorldPack decides which vocabulary a world is built from.
+//
+// A built-in domain costs nothing and is what most people want. A description
+// costs one model call and produces a vocabulary nobody shipped. A saved
+// description costs nothing again, which is the point of saving it: the world
+// is reproducible from the artifact rather than from the model that wrote it.
+//
+// The second return is non-nil only when there is a description worth saving.
+func resolveWorldPack(cmd *cobra.Command, request worldPackRequest) (domainPack, *worldPackEnvelope, error) {
+	described := strings.TrimSpace(request.Describe)
+	packPath := strings.TrimSpace(request.PackPath)
+	switch {
+	case described != "" && packPath != "":
+		return domainPack{}, nil, fmt.Errorf("--describe writes a description and --pack reads one; use one or the other")
+	case described != "" && request.DomainSet:
+		return domainPack{}, nil, fmt.Errorf("--describe names its own domain; drop --domain")
+	case packPath != "" && request.DomainSet:
+		return domainPack{}, nil, fmt.Errorf("--pack carries its own domain; drop --domain")
+	}
+
+	if packPath != "" {
+		envelope, err := loadWorldPack(packPath)
+		if err != nil {
+			return domainPack{}, nil, err
+		}
+		pack, err := validateWorldPack(envelope.Pack)
+		if err != nil {
+			return domainPack{}, nil, fmt.Errorf("%s: %w", packPath, err)
+		}
+		return pack, &envelope, nil
+	}
+
+	if described == "" {
+		pack, err := packByName(request.Domain)
+		return pack, nil, err
+	}
+
+	generatorConfig, label, err := resolveGeneratorConfig(request.Generator)
+	if err != nil {
+		return domainPack{}, nil, err
+	}
+	if err := approveProviderTraffic(cmd, request.Yes,
+		fmt.Sprintf("1 world description call to %s", label)); err != nil {
+		return domainPack{}, nil, err
+	}
+	maxTables := request.Tables
+	if maxTables <= 0 {
+		maxTables = 6
+	}
+	fields, err := gjagent.OneShot(cmd.Context(), generatorConfig, worldPackSignature, map[string]any{
+		"description": described, "max_tables": fmt.Sprint(maxTables),
+	})
+	if err != nil {
+		return domainPack{}, nil, err
+	}
+	var file worldPackFile
+	if err := gjeval.DecodeFencedJSON(gjagent.StringField(fields, "pack_json"), &file); err != nil {
+		return domainPack{}, nil, fmt.Errorf("the described world could not be read: %w", err)
+	}
+	// Validation happens before anything is written, so a world that would not
+	// have worked leaves no directory behind to clean up or mistake for one that
+	// does.
+	pack, err := validateWorldPack(file)
+	if err != nil {
+		return domainPack{}, nil, fmt.Errorf("the described world was refused: %w", err)
+	}
+	return pack, &worldPackEnvelope{Described: described, AuthoredBy: label, Pack: file}, nil
 }
 
 // envCloneCmd learns a running server's schema and writes a local environment.

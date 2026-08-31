@@ -50,7 +50,7 @@ func startEnvTestServer(t *testing.T, program string) (*envServer, func()) {
 	t.Setenv("GO_ENV", "dev")
 	client := &evalScriptClient{code: program}
 	environment := evalEnvironment{ClientFactory: func(gjagent.Config) (ax.AIClient, error) { return client, nil }}
-	pool, err := newEvalInstancePool(context.Background(), environment, gjeval.EnvSpec{
+	pool, err := newEvalInstancePool(context.Background(), func(int) evalEnvironment { return environment }, gjeval.EnvSpec{
 		Target: gjeval.TargetDemo, ConfigPath: project, Seed: 23, FreezeTime: "2026-08-01T12:00:00Z",
 	}, 1)
 	if err != nil {

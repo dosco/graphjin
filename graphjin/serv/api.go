@@ -101,6 +101,7 @@ type graphjinService struct {
 	semantic               *semanticCatalogIndex
 	semanticEmbedder       SemanticEmbeddingClient
 	agentClientFactory     gjagent.ClientFactory
+	mcpToolRecorder        func(MCPToolEvent)
 	agentNow               func() time.Time
 	agentRateLimiterMu     sync.Mutex
 	agentRateLimiter       *gjagent.ProviderRateLimiter
@@ -504,6 +505,32 @@ func OptionSetSemanticEmbeddingClient(client SemanticEmbeddingClient) Option {
 func OptionSetAgentClientFactory(factory gjagent.ClientFactory) Option {
 	return func(s *graphjinService) error {
 		s.agentClientFactory = factory
+		return nil
+	}
+}
+
+// MCPToolEvent is one tool call made over MCP.
+//
+// It exists so an evaluation harness can grade an agent it does not host. An
+// external agent connects over MCP and does the work itself; what the harness
+// needs is the same account of what was done that its own agent reports, and
+// the server is the only place that account can come from.
+type MCPToolEvent struct {
+	SessionID  string
+	Tool       string
+	Arguments  map[string]any
+	IsError    bool
+	DurationMS int64
+}
+
+// OptionSetMCPToolRecorder reports every MCP tool call to the given function.
+//
+// It is for evaluation, not for production observability: the recorder runs
+// inline with the call, so it must not block. Nil disables recording, which is
+// the default.
+func OptionSetMCPToolRecorder(recorder func(MCPToolEvent)) Option {
+	return func(s *graphjinService) error {
+		s.mcpToolRecorder = recorder
 		return nil
 	}
 }

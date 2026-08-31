@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
@@ -37,9 +38,12 @@ const (
 	AuthoringConfirmation AuthoringKind = "confirmation"
 	AuthoringHistory      AuthoringKind = "history"
 	AuthoringScenario     AuthoringKind = "scenario"
+	AuthoringFile         AuthoringKind = "file"
 )
 
-var AuthoringKinds = []AuthoringKind{AuthoringWatch, AuthoringConfirmation, AuthoringHistory, AuthoringScenario}
+var AuthoringKinds = []AuthoringKind{
+	AuthoringWatch, AuthoringConfirmation, AuthoringHistory, AuthoringScenario, AuthoringFile,
+}
 
 func ParseAuthoringKinds(values []string) ([]AuthoringKind, error) {
 	known := map[string]AuthoringKind{}
@@ -74,6 +78,13 @@ type AuthoringOptions struct {
 	Count      int
 	Seed       int64
 	AuthoredBy string
+	// ResolveOracle runs a read against the live instance the tasks are being
+	// authored against. Some families can only be built where the data supports
+	// them — a watch cannot deliver an event from an empty table — and asking
+	// the database is the only way to know. Verifier.Resolve satisfies this.
+	//
+	// Nil means those families are skipped with a note rather than guessed at.
+	ResolveOracle func(ctx context.Context, oracle OracleSpec) (OracleResult, error)
 }
 
 // AuthoringReport records what was produced and what was refused. A refusal
@@ -82,6 +93,10 @@ type AuthoringReport struct {
 	ByKind     map[AuthoringKind]int
 	Rejections []string
 	Notes      []string
+	// Files are documents the caller must write into the environment before the
+	// tasks that read them can be verified. They are handed back rather than
+	// written here because this package never touches a filesystem.
+	Files []AuthoredFile
 }
 
 func (r *AuthoringReport) reject(kind AuthoringKind, detail string) {
@@ -96,6 +111,11 @@ type SchemaCensus struct {
 	Relationships []generatorRelationship
 	SavedQueries  []string
 	Profile       CapabilityProfile
+	// FileTables are roots served from documents rather than the database. They
+	// are listed separately because everything else in the census is something a
+	// task can filter, aggregate or write, and a file source is none of those —
+	// it is a place an answer is written down.
+	FileTables []string
 }
 
 // BuildCensus reads the census out of a catalog snapshot.
@@ -111,10 +131,19 @@ func BuildCensus(snapshot CatalogSnapshot) SchemaCensus {
 		if row.Kind == "saved_query" && strings.TrimSpace(row.Name) != "" {
 			census.SavedQueries = append(census.SavedQueries, row.Name)
 		}
+		if row.Kind == "table" && looksFileTableCard(row.TableName, row.ExamplesJSON) {
+			census.FileTables = append(census.FileTables, row.TableName)
+		}
 	}
 	sort.Strings(census.SavedQueries)
+	sort.Strings(census.FileTables)
 	return census
 }
+
+// isFileTable reports whether a name is a file source rather than a table.
+// Watches, writes and confirmations over one would be unpassable: there is
+// nothing to insert into and nothing for a cursor to page through.
+func (c SchemaCensus) isFileTable(name string) bool { return contains(c.FileTables, name) }
 
 // Digest renders the census as the text a model is given.
 func (c SchemaCensus) Digest() string {
@@ -132,6 +161,10 @@ func (c SchemaCensus) Digest() string {
 	}
 	for _, edge := range c.Relationships {
 		fmt.Fprintf(&out, "relationship: %s.%s -> %s.%s\n", edge.FromTable, edge.FromColumn, edge.ToTable, edge.ToColumn)
+	}
+	for _, name := range c.FileTables {
+		fmt.Fprintf(&out, "file source %s: written policy and reference documents, not database rows; "+
+			"one document is read with %s(key: \"<name>.md\", inline_data: true) { data }\n", name, name)
 	}
 	return out.String()
 }
@@ -254,6 +287,12 @@ func authorKind(ctx context.Context, call OneShotFunc, kind AuthoringKind, censu
 				string(kind)+" skipped: no verified questions to build on")
 			return nil, nil
 		}
+	case AuthoringFile:
+		if len(census.FileTables) == 0 {
+			report.Notes = append(report.Notes,
+				"file skipped: this project serves no documents, so nothing can hold half of an answer")
+			return nil, nil
+		}
 	}
 
 	signature, values := authoringRequest(kind, census, readPool, count)
@@ -268,13 +307,15 @@ func authorKind(ctx context.Context, call OneShotFunc, kind AuthoringKind, censu
 
 	switch kind {
 	case AuthoringWatch:
-		return buildWatchTasks(raw, census, collateral, opts, report)
+		return buildWatchTasks(ctx, raw, census, collateral, opts, report)
 	case AuthoringConfirmation:
 		return buildConfirmationTasks(raw, census, collateral, opts, report)
 	case AuthoringHistory:
 		return buildHistoryTasks(raw, readPool, opts, report)
 	case AuthoringScenario:
 		return buildScenarioTasks(raw, readPool, opts, report)
+	case AuthoringFile:
+		return buildFileTasks(raw, census, opts, report)
 	}
 	return nil, fmt.Errorf("unknown authoring kind %q", kind)
 }
@@ -287,6 +328,8 @@ func authoringRequest(kind AuthoringKind, census SchemaCensus, readPool []Task, 
 		return confirmationAuthoringSignature, map[string]any{"census": census.Digest(), "count": fmt.Sprint(count)}
 	case AuthoringHistory:
 		return historyAuthoringSignature, map[string]any{"tasks": readPoolDigest(readPool), "count": fmt.Sprint(count)}
+	case AuthoringFile:
+		return fileAuthoringSignature, map[string]any{"census": census.Digest(), "count": fmt.Sprint(count)}
 	default:
 		return scenarioAuthoringSignature, map[string]any{"tasks": readPoolDigest(readPool), "count": fmt.Sprint(count)}
 	}
@@ -305,7 +348,7 @@ func readPoolDigest(pool []Task) string {
 	return out.String()
 }
 
-func buildWatchTasks(raw string, census SchemaCensus, collateral []OracleSpec, opts AuthoringOptions, report *AuthoringReport) ([]Task, error) {
+func buildWatchTasks(ctx context.Context, raw string, census SchemaCensus, collateral []OracleSpec, opts AuthoringOptions, report *AuthoringReport) ([]Task, error) {
 	var picks []WatchPick
 	if err := decodeFencedJSON(raw, &picks); err != nil {
 		return nil, err
@@ -316,6 +359,13 @@ func buildWatchTasks(raw string, census SchemaCensus, collateral []OracleSpec, o
 		table, ok := census.table(pick.Table)
 		if !ok {
 			report.reject(AuthoringWatch, fmt.Sprintf("table %q is not in the schema", pick.Table))
+			continue
+		}
+		// File sources are carded like tables, so a model can reasonably pick one.
+		// Nothing can watch documents: there are no rows to insert and no cursor
+		// to page, so the task would be unpassable rather than hard.
+		if census.isFileTable(pick.Table) {
+			report.reject(AuthoringWatch, fmt.Sprintf("%q serves documents, which cannot be watched for changes", pick.Table))
 			continue
 		}
 		if pick.Value != "" && !census.holdsValue(pick.Table, pick.Column, pick.Value) {
@@ -336,8 +386,49 @@ func buildWatchTasks(raw string, census SchemaCensus, collateral []OracleSpec, o
 		}
 		seen[pick.Table] = true
 		tasks = append(tasks, authoredWatchTasks(pick, table, census.Profile, collateral, opts.Seed, opts.AuthoredBy)...)
+		if delivery, ok := authorDeliveryVariant(ctx, pick, table, census, collateral, opts, report); ok {
+			tasks = append(tasks, delivery)
+		}
 	}
 	return tasks, nil
+}
+
+// authorDeliveryVariant adds the third task of a watch family where the data
+// allows it, and says why where it does not.
+//
+// The refusal is the interesting half. A delivery task whose watch can never
+// fire is not a hard task, it is a broken one: every episode waits out the
+// ready timeout and scores zero regardless of what the agent did. Refusing it
+// with a reason in the report keeps that failure at authoring time, where
+// someone can read it, instead of at measurement time, where it would look like
+// a model that could not answer.
+func authorDeliveryVariant(ctx context.Context, pick WatchPick, table generatorTable, census SchemaCensus,
+	collateral []OracleSpec, opts AuthoringOptions, report *AuthoringReport) (Task, bool) {
+	skip := func(reason string) (Task, bool) {
+		report.Notes = append(report.Notes,
+			fmt.Sprintf("delivery variant for %s skipped: %s", pick.Table, reason))
+		return Task{}, false
+	}
+	if opts.ResolveOracle == nil {
+		return skip("no live instance to check whether the watch would ever fire")
+	}
+	oracle, ok := deliveryEligibilityOracle(table, pick)
+	if !ok {
+		return skip("the table has no primary key to count rows by")
+	}
+	result, err := opts.ResolveOracle(ctx, oracle)
+	if err != nil {
+		return skip(fmt.Sprintf("could not count the rows it would cover: %v", err))
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(result.Value))
+	if err != nil {
+		return skip(fmt.Sprintf("row count came back as %q, which is not a number", result.Value))
+	}
+	if count <= 0 {
+		return skip(fmt.Sprintf("no rows currently match %s, so the watch would never fire during an episode",
+			watchTarget(pick.Table, pick.Value)))
+	}
+	return authoredDeliveryTask(pick, table, census.Profile, collateral, opts.Seed, opts.AuthoredBy), true
 }
 
 func buildConfirmationTasks(raw string, census SchemaCensus, collateral []OracleSpec, opts AuthoringOptions, report *AuthoringReport) ([]Task, error) {
@@ -350,6 +441,11 @@ func buildConfirmationTasks(raw string, census SchemaCensus, collateral []Oracle
 	for _, pick := range picks {
 		if _, ok := census.table(pick.Table); !ok {
 			report.reject(AuthoringConfirmation, fmt.Sprintf("table %q is not in the schema", pick.Table))
+			continue
+		}
+		if census.isFileTable(pick.Table) {
+			report.reject(AuthoringConfirmation,
+				fmt.Sprintf("%q serves documents, which cannot be watched for changes", pick.Table))
 			continue
 		}
 		if pick.Value != "" && !census.holdsValue(pick.Table, pick.Column, pick.Value) {
@@ -440,6 +536,80 @@ func buildScenarioTasks(raw string, readPool []Task, opts AuthoringOptions, repo
 			continue
 		}
 		tasks = append(tasks, authoredScenarioTask(pick, source, opts.Seed, opts.AuthoredBy))
+	}
+	return tasks, nil
+}
+
+// buildFileTasks turns a model's chosen rules into questions no single source
+// answers, and writes the documents those rules live in.
+//
+// The document is the engine's, not the model's: the model says what the rule
+// is, the engine writes it down and grades against the same words it wrote. A
+// task whose answer came from a document nobody controlled would be graded
+// against a guess.
+func buildFileTasks(raw string, census SchemaCensus, opts AuthoringOptions, report *AuthoringReport) ([]Task, error) {
+	var picks []FilePick
+	if err := decodeFencedJSON(raw, &picks); err != nil {
+		return nil, err
+	}
+	var tasks []Task
+	seen := map[string]bool{}
+	for _, pick := range picks {
+		if !census.isFileTable(pick.FileRoot) {
+			report.reject(AuthoringFile, fmt.Sprintf("%q is not one of this project's document sources", pick.FileRoot))
+			continue
+		}
+		table, ok := census.table(pick.Table)
+		if !ok {
+			report.reject(AuthoringFile, fmt.Sprintf("table %q is not in the schema", pick.Table))
+			continue
+		}
+		if table.PrimaryKey == "" {
+			report.reject(AuthoringFile, fmt.Sprintf("%s has no primary key to count rows by", pick.Table))
+			continue
+		}
+		if pick.Value != "" && !census.holdsValue(pick.Table, pick.Column, pick.Value) {
+			report.reject(AuthoringFile, fmt.Sprintf("%s.%s does not hold %q", pick.Table, pick.Column, pick.Value))
+			continue
+		}
+		if err := checkProse(pick.PolicyTopic, 2); err != nil {
+			report.reject(AuthoringFile, fmt.Sprintf("policy topic for %s %v", pick.Table, err))
+			continue
+		}
+		// The requirement is graded by comparing an answer against it, so it has
+		// to be short enough to say out loud and specific enough to be wrong.
+		answer := strings.TrimSpace(pick.PolicyAnswer)
+		if answer == "" || len(answer) > 40 || strings.ContainsAny(answer, "\n\r") {
+			report.reject(AuthoringFile,
+				fmt.Sprintf("requirement for %s must be one short phrase, got %q", pick.Table, pick.PolicyAnswer))
+			continue
+		}
+		if err := checkProse(pick.Intent, 8); err != nil {
+			report.reject(AuthoringFile, fmt.Sprintf("intent for %s %v", pick.Table, err))
+			continue
+		}
+		// Naming the document in the intent prompt hands over the discovery that
+		// the task exists to measure.
+		if strings.Contains(strings.ToLower(pick.Intent), strings.ToLower(pick.FileRoot)) {
+			report.reject(AuthoringFile,
+				fmt.Sprintf("intent for %s names %q, so it points at the document rather than asking the question",
+					pick.Table, pick.FileRoot))
+			continue
+		}
+		if err := checkProse(pick.Execution, 8); err != nil {
+			report.reject(AuthoringFile, fmt.Sprintf("execution prompt for %s %v", pick.Table, err))
+			continue
+		}
+		if seen[pick.Table] {
+			report.reject(AuthoringFile, fmt.Sprintf("a second document question was proposed for %s", pick.Table))
+			continue
+		}
+		seen[pick.Table] = true
+		key := authoredFileKey(pick.Table)
+		report.Files = append(report.Files, AuthoredFile{
+			FileRoot: pick.FileRoot, Key: key, Contents: authoredPolicyDocument(pick),
+		})
+		tasks = append(tasks, authoredFileTasks(pick, table, key, census.Profile, opts.Seed, opts.AuthoredBy)...)
 	}
 	return tasks, nil
 }

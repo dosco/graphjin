@@ -38,9 +38,18 @@ type evalInstancePool struct {
 // unless every worker reports the same dataset: episodes are compared against
 // oracles resolved once for the run, so a worker whose rows differ would score
 // correct answers as wrong, and it would look like a model regression.
-func newEvalInstancePool(ctx context.Context, env evalEnvironment, base gjeval.EnvSpec, size int) (*evalInstancePool, error) {
+// The environment is built per worker rather than shared, because some ways of
+// driving an episode need something of their own in each world — a mailbox a
+// trainer's completions arrive through, a recorder collecting the calls one
+// client made. A worker serves one episode at a time, so per-worker state
+// belongs to exactly one episode without any further bookkeeping.
+func newEvalInstancePool(ctx context.Context, envFor func(worker int) evalEnvironment,
+	base gjeval.EnvSpec, size int) (*evalInstancePool, error) {
 	if size < 1 {
 		return nil, fmt.Errorf("pool size %d must be at least 1", size)
+	}
+	if envFor == nil {
+		return nil, errors.New("a pool needs an environment for each worker")
 	}
 	if base.Target != gjeval.TargetDemo {
 		return nil, errors.New("a pooled evaluation environment currently requires the demo target")
@@ -63,7 +72,7 @@ func newEvalInstancePool(ctx context.Context, env evalEnvironment, base gjeval.E
 		}
 		spec := base
 		spec.ConfigPath = dir
-		instance, err := env.Start(ctx, spec)
+		instance, err := envFor(worker).Start(ctx, spec)
 		if err != nil {
 			pool.closeAfterFailure(ctx)
 			return nil, fmt.Errorf("start pool worker %d: %w", worker, err)
