@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -69,6 +70,49 @@ type envHealthResponse struct {
 	RewardVersion string                    `json:"reward_version"`
 	RewardProfile string                    `json:"reward_profile"`
 	Suite         gjeval.GeneratorMeta      `json:"suite"`
+	// Build and Capabilities are additive: every field above keeps its name and
+	// type, because clients read this positionally.
+	Build        envBuildInfo    `json:"build"`
+	Capabilities envCapabilities `json:"capabilities"`
+}
+
+// envBuildInfo identifies the binary serving the environment.
+//
+// Two labs comparing numbers need to know they ran the same thing. Version and
+// commit arrive as ldflags, so a plain `go build` reports what it honestly
+// knows and omits the rest rather than inventing it.
+type envBuildInfo struct {
+	Version      string `json:"version,omitempty"`
+	Commit       string `json:"commit,omitempty"`
+	Date         string `json:"date,omitempty"`
+	Go           string `json:"go"`
+	BinarySHA256 string `json:"binary_sha256,omitempty"`
+}
+
+// envCapabilities is what this server can do and how it was configured —
+// answerable before an episode is ever run.
+//
+// Everything here was previously knowable only by having seen the command line
+// that started the process, which is exactly what nobody has when the process
+// is a container somebody else started.
+type envCapabilities struct {
+	DriveModes         []string `json:"drive_modes"`
+	Writes             bool     `json:"writes"`
+	Reactive           bool     `json:"reactive"`
+	Resettable         bool     `json:"resettable"`
+	SuiteSource        string   `json:"suite_source,omitempty"`
+	SuiteFingerprint   string   `json:"suite_fingerprint,omitempty"`
+	CatalogFingerprint string   `json:"catalog_fingerprint,omitempty"`
+	// CatalogMatch is absent when the suite records no catalog to compare, so
+	// "nothing to check" never reads as "checked and drifted".
+	CatalogMatch     *bool  `json:"catalog_match,omitempty"`
+	Split            string `json:"split,omitempty"`
+	Side             string `json:"side,omitempty"`
+	Pool             int    `json:"pool"`
+	FreezeTime       string `json:"freeze_time,omitempty"`
+	FreezeTimeSource string `json:"freeze_time_source,omitempty"`
+	DataAnchor       string `json:"data_anchor,omitempty"`
+	BootMS           int64  `json:"boot_ms,omitempty"`
 }
 
 type envTaskSummary struct {
@@ -95,6 +139,12 @@ type envServer struct {
 	suiteSource  string
 	splitLabel   string
 	catalogMatch *bool
+	// build is computed once: evalBinaryFingerprint reads and hashes the whole
+	// executable, which is not something to do per request.
+	build            envBuildInfo
+	driveModes       []string
+	freezeTime       string
+	freezeTimeSource string
 	// Per-world state for the ways of driving an episode that need something
 	// inside the world. A world serves one episode at a time, so the world is
 	// the only identifier either of these needs.
@@ -117,6 +167,7 @@ func envCmd() *cobra.Command {
 		SilenceUsage: true,
 	}
 	cmd.AddCommand(envServeCmd())
+	cmd.AddCommand(envHealthCmd())
 	cmd.AddCommand(envNewWorldCmd())
 	cmd.AddCommand(envCloneCmd())
 	return cmd
@@ -220,6 +271,10 @@ func envServeCmd() *cobra.Command {
 			server.catalogMatch = catalogAgreement(suite, pool.instances[0].Fingerprint())
 			server.suiteSource = suiteSource
 			server.splitLabel = splitLabel
+			server.driveModes = envDriveModes(step, external)
+			if server.freezeTime != "" {
+				server.freezeTimeSource = "flag"
+			}
 			server.pool = pool
 			server.mailboxes = wiring.attachMailboxes(pool)
 			server.recorders = wiring.attachRecorders(pool)
@@ -329,9 +384,23 @@ func (s *envServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if len(s.pool.instances) != 0 {
 		dataset = s.pool.instances[0].Fingerprint()
 	}
+	writable, reactive, resettable := evalSuiteEnvironmentRequirements(s.suite)
+	modes := s.driveModes
+	if len(modes) == 0 {
+		modes = []string{"episodes"}
+	}
 	s.writeJSON(w, http.StatusOK, envHealthResponse{
 		Status: "ready", Workers: s.pool.Size(), Tasks: len(s.byID), Dataset: dataset,
 		RewardVersion: gjeval.RewardVersion, RewardProfile: string(s.profile), Suite: s.suite.Generator,
+		Build: s.build,
+		Capabilities: envCapabilities{
+			DriveModes: modes, Writes: writable, Reactive: reactive, Resettable: resettable,
+			SuiteSource: s.suiteSource, SuiteFingerprint: gjeval.SuiteFingerprint(s.suite),
+			CatalogFingerprint: s.suite.CatalogFingerprint, CatalogMatch: s.catalogMatch,
+			Split: s.splitLabel, Side: s.side, Pool: s.pool.Size(),
+			FreezeTime: s.freezeTime, FreezeTimeSource: s.freezeTimeSource,
+			DataAnchor: dataset.DataAnchor, BootMS: s.pool.bootMS,
+		},
 	})
 }
 
@@ -681,6 +750,11 @@ func newEnvServer(suite gjeval.Suite, profile gjeval.RewardProfile,
 		runner: gjeval.Runner{Now: frozen},
 	}
 	server.split = split
+	server.build = envBuildInfo{
+		Version: version, Commit: commit, Date: date,
+		Go: runtime.Version(), BinarySHA256: evalBinaryFingerprint(),
+	}
+	server.freezeTime = strings.TrimSpace(freezeTime)
 	if err := server.indexTasks(); err != nil {
 		return nil, err
 	}
@@ -762,4 +836,18 @@ func absoluteEnvPath(value string, reserved ...string) string {
 		return value
 	}
 	return absolute
+}
+
+// envDriveModes lists the ways an episode can be driven on this server. The
+// extra ones exist only when asked for, so a trainer can discover which of
+// them it is allowed to use instead of finding out from a 404.
+func envDriveModes(step, external bool) []string {
+	modes := []string{"episodes"}
+	if step {
+		modes = append(modes, "step")
+	}
+	if external {
+		modes = append(modes, "external")
+	}
+	return modes
 }

@@ -57,14 +57,13 @@ func startEnvTestServer(t *testing.T, program string) (*envServer, func()) {
 		cpath, conf, db, dbOpened = originalPath, originalConf, originalDB, originalOpened
 		t.Fatal(err)
 	}
-	suite := envTestSuite(t)
-	server := &envServer{
-		pool: pool, suite: suite, profile: gjeval.RewardProfileRL, side: "train",
-		byID: map[string]gjeval.Task{}, bySlug: map[string]gjeval.Task{},
-	}
-	if err := server.indexTasks(); err != nil {
+	// Through the real constructor, so a test server is configured the way a
+	// served one is.
+	server, err := newEnvServer(envTestSuite(t), gjeval.RewardProfileRL, "train", nil, "")
+	if err != nil {
 		t.Fatal(err)
 	}
+	server.pool = pool
 	return server, func() {
 		_ = pool.Close()
 		cpath, conf, db, dbOpened = originalPath, originalConf, originalDB, originalOpened

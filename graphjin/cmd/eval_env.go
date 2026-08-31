@@ -25,6 +25,9 @@ type evalEnvironment struct {
 	ClientFactory gjagent.ClientFactory
 	HTTPClient    *http.Client
 	StatusOut     *os.File
+	// BootTimer records where the time went bringing this world up. Optional;
+	// a nil timer is inert.
+	BootTimer *bootTimer
 	// MCPRecorder collects the tool calls made against this instance, so an
 	// agent the harness does not host can still be graded on what it did rather
 	// than only on what it said.
@@ -104,6 +107,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 	cloned := *loaded
 	configureEvalInstance(&cloned, spec)
 	apiServer := startSaaSOpsEvalAPIMock(&cloned)
+	e.BootTimer.mark("config")
 
 	var runtime *DemoRuntime
 	restoreDemoGlobals := func() {}
@@ -136,6 +140,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 			restoreDemoGlobals()
 			return nil, err
 		}
+		e.BootTimer.mark("provision")
 	}
 	var diskSnapshot *evalSQLiteSnapshot
 	if spec.Resettable && spec.Target != gjeval.TargetDemo {
@@ -205,6 +210,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		closeEvalAPIServer(apiServer)
 		return nil, err
 	}
+	e.BootTimer.mark("service")
 	if spec.Resettable {
 		// The managed control-plane database is created by service startup, not
 		// demo provisioning. Close once before copying so the baseline contains
@@ -229,6 +235,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 			closeEvalAPIServer(apiServer)
 			return nil, err
 		}
+		e.BootTimer.mark("snapshot")
 		cpath = configPath
 		conf = &cloned
 		runtime, err = StartDemo(ctx, []string{"sqlite"}, e.StatusOut)
@@ -238,6 +245,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 			closeEvalAPIServer(apiServer)
 			return nil, err
 		}
+		e.BootTimer.mark("reprovision")
 		if err := startService(); err != nil {
 			_ = diskSnapshot.Close()
 			if runtime != nil {
@@ -247,6 +255,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 			closeEvalAPIServer(apiServer)
 			return nil, err
 		}
+		e.BootTimer.mark("restart")
 	}
 	server := httptest.NewServer(handler)
 	headers := map[string]string{}
@@ -273,6 +282,7 @@ func (e evalEnvironment) startEmbedded(ctx context.Context, spec gjeval.EnvSpec)
 		closeEvalAPIServer(apiServer)
 		return nil, err
 	}
+	e.BootTimer.mark("catalog")
 	dataset := gjeval.DatasetFingerprint{CatalogHash: snapshot.Fingerprint}
 	if spec.Target == gjeval.TargetDemo {
 		dataset.DataAnchor, dataset.SeedManifestHash = evalDemoManifestFingerprint(configPath)
