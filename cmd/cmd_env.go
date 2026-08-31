@@ -112,6 +112,7 @@ type envCapabilities struct {
 	FreezeTime       string `json:"freeze_time,omitempty"`
 	FreezeTimeSource string `json:"freeze_time_source,omitempty"`
 	DataAnchor       string `json:"data_anchor,omitempty"`
+	AdvertiseURL     string `json:"advertise_url,omitempty"`
 	BootMS           int64  `json:"boot_ms,omitempty"`
 }
 
@@ -145,6 +146,10 @@ type envServer struct {
 	driveModes       []string
 	freezeTime       string
 	freezeTimeSource string
+	// How an external agent is told to reach this server. Empty means "use the
+	// Host you reached me on", which is right whenever nothing rewrites it.
+	advertiseURL string
+	listenAddr   string
 	// Per-world state for the ways of driving an episode that need something
 	// inside the world. A world serves one episode at a time, so the world is
 	// the only identifier either of these needs.
@@ -192,6 +197,7 @@ func envServeCmd() *cobra.Command {
 		stepTimeout     time.Duration
 		external        bool
 		externalTimeout time.Duration
+		advertiseURL    string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -272,6 +278,8 @@ func envServeCmd() *cobra.Command {
 			server.suiteSource = suiteSource
 			server.splitLabel = splitLabel
 			server.driveModes = envDriveModes(step, external)
+			server.advertiseURL = strings.TrimSpace(advertiseURL)
+			server.listenAddr = listen
 			if server.freezeTime != "" {
 				server.freezeTimeSource = "flag"
 			}
@@ -341,6 +349,8 @@ func envServeCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&stepTimeout, "step-timeout", 5*time.Minute, "how long a step-driven episode may sit idle before its world is reclaimed")
 	cmd.Flags().BoolVar(&external, "external", false, "let an external agent drive episodes over MCP and submit an answer to be graded")
 	cmd.Flags().DurationVar(&externalTimeout, "external-timeout", 10*time.Minute, "how long an external episode may run before its world is reclaimed")
+	cmd.Flags().StringVar(&advertiseURL, "advertise-url", "",
+		"base URL external agents should use to reach this server, when the Host they arrive with is not it")
 	addSupportFlags(cmd, &supportFlags)
 	return cmd
 }
@@ -399,7 +409,7 @@ func (s *envServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 			CatalogFingerprint: s.suite.CatalogFingerprint, CatalogMatch: s.catalogMatch,
 			Split: s.splitLabel, Side: s.side, Pool: s.pool.Size(),
 			FreezeTime: s.freezeTime, FreezeTimeSource: s.freezeTimeSource,
-			DataAnchor: dataset.DataAnchor, BootMS: s.pool.bootMS,
+			DataAnchor: dataset.DataAnchor, AdvertiseURL: s.advertiseURL, BootMS: s.pool.bootMS,
 		},
 	})
 }
