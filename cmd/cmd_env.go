@@ -90,6 +90,11 @@ type envServer struct {
 	runner  gjeval.Runner
 	split   *gjeval.SuiteSplit
 	side    string
+	// How this server was configured, reported by /health so a caller can tell
+	// what it is talking to without having seen the command line.
+	suiteSource  string
+	splitLabel   string
+	catalogMatch *bool
 	// Per-world state for the ways of driving an episode that need something
 	// inside the world. A world serves one episode at a time, so the world is
 	// the only identifier either of these needs.
@@ -127,6 +132,7 @@ func envServeCmd() *cobra.Command {
 		listen      string
 		freezeTime  string
 		dataAnchor  string
+		allowDrift  bool
 		profile     string
 
 		supportFlags    generatorFlags
@@ -158,16 +164,20 @@ func envServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			suite, err := gjeval.LoadSuite(suitePath)
+			suite, suiteSource, err := resolveEnvSuite(suitePath)
 			if err != nil {
-				return fmt.Errorf("load suite: %w", err)
+				return err
 			}
-			server, err := newEnvServer(*suite, rewardProfile, side, splitPath, freezeTime)
+			split, splitLabel, err := resolveEnvSplit(splitPath, suite)
+			if err != nil {
+				return err
+			}
+			server, err := newEnvServer(suite, rewardProfile, side, split, freezeTime)
 			if err != nil {
 				return err
 			}
 
-			writable, reactive, resettable := evalSuiteEnvironmentRequirements(*suite)
+			writable, reactive, resettable := evalSuiteEnvironmentRequirements(suite)
 			spec := gjeval.EnvSpec{
 				Target: gjeval.TargetDemo, ConfigPath: resolved, Seed: suite.Generator.Seed,
 				Writable: writable, Reactive: reactive, Resettable: resettable,
@@ -184,6 +194,12 @@ func envServeCmd() *cobra.Command {
 				return evalEnvironmentError(err)
 			}
 			defer pool.Close() //nolint:errcheck
+			if err := assertSuiteMatchesWorld(suite, pool.instances[0].Fingerprint(), allowDrift); err != nil {
+				return err
+			}
+			server.catalogMatch = catalogAgreement(suite, pool.instances[0].Fingerprint())
+			server.suiteSource = suiteSource
+			server.splitLabel = splitLabel
 			server.pool = pool
 			server.mailboxes = wiring.attachMailboxes(pool)
 			server.recorders = wiring.attachRecorders(pool)
@@ -216,6 +232,13 @@ func envServeCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(),
 				"GraphJin environment on %s — %d worlds, %d tasks, reward %s/%s\n",
 				listen, pool.Size(), len(server.byID), rewardProfile, gjeval.RewardVersion)
+			// One line saying what was actually resolved. A container is configured
+			// from a distance, so the log is where an operator finds out whether the
+			// suite, the holdout and the anchor are the ones they meant.
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"  suite %s (%s) · split %s · side %s · anchor %s\n",
+				suiteSource, suite.Generator.Version, splitLabel, server.side,
+				orUnset(pool.instances[0].Fingerprint().DataAnchor))
 			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				return err
 			}
@@ -231,6 +254,8 @@ func envServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&freezeTime, "freeze-time", "", "run every episode against a fixed clock (RFC3339)")
 	cmd.Flags().StringVar(&dataAnchor, "data-anchor", "",
 		"pin the demo's seeded data to a day (YYYY-MM-DD) so the world is the same on any date")
+	cmd.Flags().BoolVar(&allowDrift, "allow-catalog-drift", false,
+		"serve a suite whose oracles were verified against a different catalog")
 	cmd.Flags().StringVar(&profile, "reward-profile", string(gjeval.RewardProfileRL), "reward profile episodes are graded under")
 	cmd.Flags().BoolVar(&step, "step", false, "let a trainer supply each model completion instead of calling out to a provider")
 	cmd.Flags().DurationVar(&stepTimeout, "step-timeout", 5*time.Minute, "how long a step-driven episode may sit idle before its world is reclaimed")
@@ -616,7 +641,7 @@ func envCloneCmd() *cobra.Command {
 // the split is loaded here, where refusing it is a startup error rather than a
 // surprise on the first request.
 func newEnvServer(suite gjeval.Suite, profile gjeval.RewardProfile,
-	side, splitPath, freezeTime string) (*envServer, error) {
+	side string, split *gjeval.SuiteSplit, freezeTime string) (*envServer, error) {
 	side = strings.ToLower(strings.TrimSpace(side))
 	if side != "train" && side != "eval" {
 		return nil, fmt.Errorf("--side must be train or eval, got %q", side)
@@ -630,13 +655,7 @@ func newEnvServer(suite gjeval.Suite, profile gjeval.RewardProfile,
 		byID: map[string]gjeval.Task{}, bySlug: map[string]gjeval.Task{},
 		runner: gjeval.Runner{Now: frozen},
 	}
-	if strings.TrimSpace(splitPath) != "" {
-		split, err := gjeval.LoadSplit(splitPath)
-		if err != nil {
-			return nil, fmt.Errorf("load split: %w", err)
-		}
-		server.split = split
-	}
+	server.split = split
 	if err := server.indexTasks(); err != nil {
 		return nil, err
 	}
@@ -690,4 +709,13 @@ func validateEnvAnchor(freezeTime, dataAnchor string) error {
 		}
 	}
 	return nil
+}
+
+// orUnset renders an empty value as something a reader can tell apart from a
+// missing field.
+func orUnset(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "unset"
+	}
+	return value
 }
