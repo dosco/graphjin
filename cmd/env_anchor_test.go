@@ -27,23 +27,23 @@ func TestPinnedAnchorSurvivesAFreshProvision(t *testing.T) {
 		t.Skip("embedded service integration")
 	}
 	const anchor = "2026-08-01"
-	instances, stop := bootAnchoredPool(t, gjeval.EnvSpec{
+	pool, stop := bootAnchoredPool(t, gjeval.EnvSpec{
 		FreezeTime: anchor + "T12:00:00Z",
 	}, 2)
 	defer stop()
 
-	for index, instance := range instances {
+	for index, instance := range pool.instances {
 		if got := instance.Fingerprint().DataAnchor; got != anchor {
 			t.Fatalf("worker %d seeded for %s, want the pinned %s", index, got, anchor)
 		}
 	}
 	// And the manifest on disk agrees — /health reads its anchor from there,
 	// so a manifest stamped with today would report a different world daily.
-	for index, dir := range anchoredPoolDirs(t, instances) {
+	for index, dir := range pool.dirs {
 		var manifest struct {
 			DataAnchor string `json:"data_anchor"`
 		}
-		body, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+		body, err := os.ReadFile(filepath.Join(dir, "demo", "manifest.json"))
 		if err != nil {
 			t.Fatalf("worker %d: %v", index, err)
 		}
@@ -65,13 +65,13 @@ func TestPinnedAnchorSurvivesAResettableBoot(t *testing.T) {
 		t.Skip("embedded service integration")
 	}
 	const anchor = "2026-08-01"
-	instances, stop := bootAnchoredPool(t, gjeval.EnvSpec{
+	pool, stop := bootAnchoredPool(t, gjeval.EnvSpec{
 		FreezeTime: anchor + "T12:00:00Z",
 		Writable:   true, Resettable: true,
 	}, 1)
 	defer stop()
 
-	if got := instances[0].Fingerprint().DataAnchor; got != anchor {
+	if got := pool.instances[0].Fingerprint().DataAnchor; got != anchor {
 		t.Fatalf("a resettable world seeded for %s, want the pinned %s", got, anchor)
 	}
 }
@@ -82,9 +82,9 @@ func TestDataAnchorFlagPinsTheWorld(t *testing.T) {
 		t.Skip("embedded service integration")
 	}
 	const anchor = "2026-07-15"
-	instances, stop := bootAnchoredPool(t, gjeval.EnvSpec{PinDataAnchor: anchor}, 1)
+	pool, stop := bootAnchoredPool(t, gjeval.EnvSpec{PinDataAnchor: anchor}, 1)
 	defer stop()
-	if got := instances[0].Fingerprint().DataAnchor; got != anchor {
+	if got := pool.instances[0].Fingerprint().DataAnchor; got != anchor {
 		t.Fatalf("seeded for %s, want the pinned %s", got, anchor)
 	}
 }
@@ -109,7 +109,10 @@ func TestEnvAnchorRefusesAContradiction(t *testing.T) {
 	}
 }
 
-func bootAnchoredPool(t *testing.T, spec gjeval.EnvSpec, size int) ([]gjeval.Instance, func()) {
+// bootAnchoredPool returns the pool itself, because each worker's state has to
+// be read from the directory that worker was given. Finding them by globbing
+// TMPDIR picked up whichever pool another test happened to be running.
+func bootAnchoredPool(t *testing.T, spec gjeval.EnvSpec, size int) (*evalInstancePool, func()) {
 	t.Helper()
 	project := t.TempDir()
 	if err := extractDefaultDemo(project); err != nil {
@@ -131,24 +134,8 @@ func bootAnchoredPool(t *testing.T, spec gjeval.EnvSpec, size int) ([]gjeval.Ins
 		cpath, conf, db, dbOpened = originalPath, originalConf, originalDB, originalOpened
 		t.Fatal(err)
 	}
-	return pool.instances, func() {
+	return pool, func() {
 		_ = pool.Close()
 		cpath, conf, db, dbOpened = originalPath, originalConf, originalDB, originalOpened
 	}
-}
-
-// anchoredPoolDirs finds each worker's demo state directory.
-func anchoredPoolDirs(t *testing.T, instances []gjeval.Instance) []string {
-	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "graphjin-eval-pool-*", "demo"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(matches) == 0 {
-		t.Skip("could not locate pool worker state directories")
-	}
-	if len(matches) > len(instances) {
-		matches = matches[len(matches)-len(instances):]
-	}
-	return matches
 }

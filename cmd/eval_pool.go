@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	gjeval "github.com/dosco/graphjin/agent/v3/eval"
 )
@@ -29,6 +30,9 @@ type evalInstancePool struct {
 	free      chan gjeval.Instance
 	dirs      []string
 	closeOnce sync.Once
+	// bootMS is how long the whole pool took to come up. Workers boot in
+	// sequence, so this is the number a caller waiting on a container feels.
+	bootMS int64
 }
 
 // newEvalInstancePool boots size copies of the project at base.ConfigPath.
@@ -59,6 +63,7 @@ func newEvalInstancePool(ctx context.Context, envFor func(worker int) evalEnviro
 		return nil, err
 	}
 	pool := &evalInstancePool{free: make(chan gjeval.Instance, size)}
+	started := time.Now()
 	for worker := 0; worker < size; worker++ {
 		dir, err := os.MkdirTemp("", fmt.Sprintf("graphjin-eval-pool-%02d-", worker))
 		if err != nil {
@@ -72,14 +77,24 @@ func newEvalInstancePool(ctx context.Context, envFor func(worker int) evalEnviro
 		}
 		spec := base
 		spec.ConfigPath = dir
-		instance, err := envFor(worker).Start(ctx, spec)
+		environment := envFor(worker)
+		timer := newBootTimer(environment.StatusOut, worker)
+		environment.BootTimer = timer
+		instance, err := environment.Start(ctx, spec)
 		if err != nil {
 			pool.closeAfterFailure(ctx)
 			return nil, fmt.Errorf("start pool worker %d: %w", worker, err)
 		}
+		if environment.StatusOut != nil {
+			if summary := timer.summary(); summary != "" {
+				fmt.Fprintf(environment.StatusOut, "boot worker=%d ready in %dms — %s\n",
+					worker, timer.totalMS(), summary)
+			}
+		}
 		pool.instances = append(pool.instances, instance)
 		pool.free <- instance
 	}
+	pool.bootMS = time.Since(started).Milliseconds()
 	expected, err := base.EffectiveDataAnchor()
 	if err != nil {
 		pool.closeAfterFailure(ctx)
