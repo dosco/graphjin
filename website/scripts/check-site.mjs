@@ -39,6 +39,7 @@ const requiredRoutes = [
   'agentic/tasks/index.html',
   'agentic/watches/index.html',
   'agentic/watch-automation/index.html',
+  'watch/index.html',
   'benchmarks/index.html',
   'benchmarks/deeporg/index.html',
   'benchmarks/deeporg/methodology/index.html',
@@ -322,15 +323,15 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
       failures.push(`Homepage missing required enriched copy: ${required}`);
     }
   }
+  // The homepage carries the watch teaser; the full story lives on /watch/,
+  // which is asserted separately below so the copy cannot be lost in the move.
   for (const required of [
     'Nothing happened. That was the problem.',
     'No shipment scan in four hours',
     'absence window elapsed',
     '2 watches correlated',
     'approval pending',
-    'Reconnect, resume, retry',
-    'Alerts fail open.',
-    'Actions fail closed.',
+    'database polls, not model calls',
   ]) {
     if (!home.includes(required)) {
       failures.push(`Homepage missing watch automation copy: ${required}`);
@@ -365,8 +366,7 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     }
   }
   for (const href of [
-    '/agentic/watch-automation/',
-    '/start/demos/#coffee-roastery',
+    '/watch/',
     '/agentic/mcp/',
     '/configure/how-it-works/',
     '/benchmarks/deeporg/',
@@ -387,6 +387,39 @@ if (await exists(path.join(publicRoot, 'index.html'))) {
     if (!socialPattern.test(home)) {
       failures.push(`Homepage missing social meta ${socialMeta}`);
     }
+  }
+}
+
+// The /watch/ landing page now owns the full standing-questions story that the
+// homepage used to carry inline. Assert the copy and the deep links here so
+// moving it off the homepage cannot quietly lose it.
+const watchLandingPath = path.join(publicRoot, 'watch', 'index.html');
+if (await exists(watchLandingPath)) {
+  const watchLanding = await readFile(watchLandingPath, 'utf8');
+  for (const required of [
+    'Nothing happened. That was the problem.',
+    'Absence is a first-class event',
+    'Noise drains before you see it',
+    'Alerts fail open.',
+    'Actions fail closed.',
+    'Reconnect, resume, retry',
+    'Notice what did not happen',
+    'Database polls, not model calls',
+    'Triage is opt-in and capped',
+  ]) {
+    if (!watchLanding.includes(required)) {
+      failures.push(`Watch landing missing copy: ${required}`);
+    }
+  }
+  for (const href of ['/agentic/watch-automation/', '/start/demos/#coffee-roastery', '/start/demos/']) {
+    const escaped = href.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const hrefPattern = new RegExp(`href=(?:"${escaped}"|'${escaped}'|${escaped})(?=\\s|>)`);
+    if (!hrefPattern.test(watchLanding)) {
+      failures.push(`Watch landing missing required link: ${href}`);
+    }
+  }
+  if (!/<h1[^>]*>Nothing happened\./.test(watchLanding)) {
+    failures.push('Watch landing does not lead with its own h1');
   }
 }
 
