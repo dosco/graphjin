@@ -79,3 +79,7 @@ docs/DESIGN-OPENAPI-TOPLEVEL.md
 
 # agent data-eval ledger (reports are local artifacts)
 .graphjin-evals/
+
+# Python bytecode from the training client
+__pycache__/
+*.pyc

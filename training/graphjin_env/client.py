@@ -50,6 +50,8 @@ class Episode:
     latency_ms: int = 0
     score: dict[str, Any] = field(default_factory=dict)
     trajectory: dict[str, Any] | None = None
+    response: dict[str, Any] | None = None
+    trajectory_error: str = ""
 
     @staticmethod
     def from_json(payload: dict[str, Any]) -> "Episode":
@@ -63,6 +65,8 @@ class Episode:
             latency_ms=int(payload.get("latency_ms", 0)),
             score=payload.get("score", {}) or {},
             trajectory=payload.get("trajectory"),
+            response=payload.get("response"),
+            trajectory_error=payload.get("trajectory_error", ""),
         )
 
     @property
@@ -113,23 +117,42 @@ class Environment:
         task: Task | str | None = None,
         *,
         include_trajectory: bool = False,
+        include_response: bool = False,
         reward_profile: str | None = None,
         repeat: int = 0,
+        stage: str | None = None,
     ) -> Episode:
         """Run one graded episode.
 
         The environment leases one isolated world for the episode's duration, so
         a task that writes changes only the world it was given.
         """
-        body: dict[str, Any] = {"include_trajectory": include_trajectory, "repeat": repeat}
+        body: dict[str, Any] = {
+            "include_trajectory": include_trajectory,
+            "include_response": include_response,
+            "repeat": repeat,
+        }
         if isinstance(task, Task):
             body["task_id"] = task.task_id
         elif isinstance(task, str):
             body["slug"] = task
         if reward_profile:
             body["reward_profile"] = reward_profile
+        if stage:
+            body["stage"] = stage
         return Episode.from_json(self._request("/episodes", body))
 
     def rollout(self, tasks: list[Task], **kwargs: Any) -> Iterator[Episode]:
         for task in tasks:
             yield self.run(task, **kwargs)
+
+    def samples(self, task: Task | str, n: int, **kwargs: Any) -> list[Episode]:
+        """Run one task several times.
+
+        Attempts only differ if the model is sampling: the stack pins
+        temperature 0 unless something raises it, so without GJ_AGENT_TEMPERATURE
+        (or an `eval sample --temperature` run) this returns n copies of one
+        answer. The repeat index is passed through so episodes can be told apart
+        in a trajectory export.
+        """
+        return [self.run(task, repeat=index + 1, **kwargs) for index in range(n)]
