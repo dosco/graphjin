@@ -258,3 +258,23 @@ func TestStepMailboxUnblocksWhenTheEpisodeEnds(t *testing.T) {
 		t.Fatal("the parked call never unblocked")
 	}
 }
+
+// The stages a trainer answers have no provider to describe — the trainer is
+// the model. The support-served stages do, and ax needs that report to pick an
+// output format the support model actually accepts.
+func TestStepMailboxForwardsSupportCapabilities(t *testing.T) {
+	support := &featureReportingClient{features: map[string]ax.Value{"who": "support"}}
+	mailbox := newStepMailbox(support)
+	var _ interface {
+		GetFeatures(string) map[string]ax.Value
+	} = mailbox
+
+	if got := mailbox.GetFeatures("fast-model"); got["who"] != "support" {
+		t.Fatalf("the support model's capabilities did not survive: %v", got)
+	}
+	// Without a support model there is no provider to describe, and inventing
+	// capabilities for the trainer would be a guess about someone else's model.
+	if newStepMailbox(nil).GetFeatures("anything") != nil {
+		t.Fatal("a trainer-driven mailbox must report no capabilities")
+	}
+}

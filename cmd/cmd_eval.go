@@ -68,10 +68,23 @@ type evalCLIOptions struct {
 // resolving {{today}} believes, so both sides of a graded comparison are asking
 // about the same day.
 func evalFrozenClock(opts *evalCLIOptions) (func() time.Time, error) {
-	if opts == nil || strings.TrimSpace(opts.FreezeTime) == "" {
+	if opts == nil {
 		return nil, nil
 	}
-	frozen, _, err := (gjeval.EnvSpec{FreezeTime: opts.FreezeTime}).FrozenTime()
+	return evalFrozenClockFromString(opts.FreezeTime)
+}
+
+// evalFrozenClockFromString builds the clock the oracle reads.
+//
+// Freezing the data without freezing this leaves date-relative questions
+// drifting against fixed rows: "in the last 30 days" is answered against a
+// window whose end is the clock, so an unfrozen one quietly changes the
+// question between one episode and the next.
+func evalFrozenClockFromString(freezeTime string) (func() time.Time, error) {
+	if strings.TrimSpace(freezeTime) == "" {
+		return nil, nil
+	}
+	frozen, _, err := (gjeval.EnvSpec{FreezeTime: freezeTime}).FrozenTime()
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +114,7 @@ func evalCmd() *cobra.Command {
 	cmd.AddCommand(evalRunCmd(opts, false))
 	cmd.AddCommand(evalBaselineCmd(opts))
 	cmd.AddCommand(evalBenchCmd(opts))
+	cmd.AddCommand(evalSampleCmd(opts))
 	cmd.AddCommand(evalRescoreCmd(opts))
 	cmd.AddCommand(evalExportCmd(opts))
 	cmd.AddCommand(evalAuthorCmd(opts))
@@ -192,6 +206,9 @@ func evalExportCmd(opts *evalCLIOptions) *cobra.Command {
 		includeEnvironment bool
 		profile            string
 		output             string
+		splitPath          string
+		side               string
+		allowEvalSide      bool
 	)
 	command := &cobra.Command{
 		Use:   "export <run-id>",
@@ -203,7 +220,16 @@ func evalExportCmd(opts *evalCLIOptions) *cobra.Command {
 				return err
 			}
 			store := gjeval.NewStore(filepath.Join(projectPath, gjeval.DefaultStateDir))
-			trajectories, err := gjeval.ExportRunTrajectories(store, strings.TrimSpace(args[0]), gjeval.TrajectoryOptions{
+			runID := strings.TrimSpace(args[0])
+			episodes, err := store.LoadEpisodes(runID)
+			if err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+			episodes, err = selectExportableEpisodes(cmd, episodes, splitPath, side, allowEvalSide)
+			if err != nil {
+				return &evalExitError{Code: 2, Err: err}
+			}
+			trajectories, err := gjeval.BuildTrajectories(episodes, gjeval.TrajectoryOptions{
 				Stage: stage, IncludeEnvironmentSteps: includeEnvironment,
 				Profile: gjeval.RewardProfile(profile),
 			})
@@ -211,7 +237,7 @@ func evalExportCmd(opts *evalCLIOptions) *cobra.Command {
 				return &evalExitError{Code: 2, Err: err}
 			}
 			if len(trajectories) == 0 {
-				return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has no episodes to export", args[0])}
+				return &evalExitError{Code: 2, Err: fmt.Errorf("run %s has no episodes to export", runID)}
 			}
 			out := cmd.OutOrStdout()
 			if strings.TrimSpace(output) != "" {
@@ -254,6 +280,9 @@ func evalExportCmd(opts *evalCLIOptions) *cobra.Command {
 	command.Flags().BoolVar(&includeEnvironment, "include-environment-steps", false, "keep programs GraphJin wrote itself")
 	command.Flags().StringVar(&profile, "reward-profile", string(gjeval.RewardProfileRL), "reward profile to price episodes with")
 	command.Flags().StringVar(&output, "out", "", "write JSONL here instead of stdout")
+	command.Flags().StringVar(&splitPath, "split", "", "split manifest naming which tasks are held out")
+	command.Flags().StringVar(&side, "side", "train", "which side of the split to export: train or eval")
+	command.Flags().BoolVar(&allowEvalSide, "allow-eval-side", false, "export held-out episodes anyway")
 	return command
 }
 

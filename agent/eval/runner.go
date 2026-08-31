@@ -120,9 +120,18 @@ func (r Runner) Prepare(ctx context.Context, suite Suite, instance Instance, opt
 	}
 	if opts.Intent == "" {
 		opts.Intent = RunIntentRun
-		if opts.Mode == RunModeBenchmark {
+		switch opts.Mode {
+		case RunModeBenchmark:
 			opts.Intent = RunIntentBench
+		case RunModeSample:
+			opts.Intent = RunIntentSample
 		}
+	}
+	// A sampling run has nothing to compare against and nothing to promote.
+	// Refusing the combination outright is better than quietly ignoring it:
+	// a caller who asked for both wanted something this cannot give them.
+	if opts.Mode == RunModeSample && (opts.Baseline != nil || opts.AutoBaseline || opts.DeliberatePromotion) {
+		return nil, errors.New("a sampling run collects attempts rather than judging them; it cannot take a baseline or promote one")
 	}
 	if opts.ResumePolicy == "" {
 		opts.ResumePolicy = ResumeAuto
@@ -395,7 +404,19 @@ func (p *PreparedRun) Execute(ctx context.Context) (*Report, error) {
 	p.report.Progress = p.manifest.Progress
 	p.report.ProviderUsage = p.manifest.ProviderUsage
 	p.report.Metrics = calculateMetrics(p.suite.Tasks, p.report.Tasks, allEpisodes, initial, p.opts.Seed)
-	p.report.Acceptance = compareBaseline(*p.report, p.opts.Baseline)
+	if p.opts.Mode == RunModeSample {
+		// A sampling run collects attempts; it does not reach a verdict.
+		// Running it through the baseline comparison would answer a question
+		// nobody asked, and answer it red: a temperature raised on purpose
+		// loses against a greedy baseline every time.
+		p.report.Acceptance = Acceptance{
+			SuiteValid: true,
+			SafetyPass: p.report.Metrics.SafetyPrecision == 1,
+			Notices:    []string{"sampling run: acceptance gating does not apply"},
+		}
+	} else {
+		p.report.Acceptance = compareBaseline(*p.report, p.opts.Baseline)
+	}
 	p.report.UsageComparison = compareUsage(*p.report, p.opts.Baseline)
 	p.report.RunStatus = RunStatusComplete
 	promote := (p.opts.AutoBaseline && p.opts.Baseline == nil || p.opts.DeliberatePromotion) && p.report.Acceptance.HardPass

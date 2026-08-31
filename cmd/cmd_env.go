@@ -38,6 +38,10 @@ type envEpisodeRequest struct {
 	// IncludeTrajectory returns the episode rewritten as training steps.
 	IncludeTrajectory bool `json:"include_trajectory,omitempty"`
 	IncludeResponse   bool `json:"include_response,omitempty"`
+	// Stage selects which of the run's three policies the trajectory is built
+	// for. They have different prompts and different jobs, so mixing them into
+	// one training set teaches none of them.
+	Stage string `json:"stage,omitempty"`
 }
 
 type envEpisodeResponse struct {
@@ -51,6 +55,10 @@ type envEpisodeResponse struct {
 	LatencyMS  int64              `json:"latency_ms"`
 	Trajectory *gjeval.Trajectory `json:"trajectory,omitempty"`
 	Response   any                `json:"response,omitempty"`
+	// TrajectoryError says why a requested trajectory is missing. Swallowing
+	// it left a caller with an empty field and no way to tell a build failure
+	// apart from an episode that legitimately produced no steps.
+	TrajectoryError string `json:"trajectory_error,omitempty"`
 }
 
 type envHealthResponse struct {
@@ -150,18 +158,8 @@ func envServeCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("load suite: %w", err)
 			}
-			server := &envServer{
-				suite: *suite, profile: rewardProfile, side: strings.TrimSpace(side),
-				byID: map[string]gjeval.Task{}, bySlug: map[string]gjeval.Task{},
-			}
-			if strings.TrimSpace(splitPath) != "" {
-				split, err := gjeval.LoadSplit(splitPath)
-				if err != nil {
-					return fmt.Errorf("load split: %w", err)
-				}
-				server.split = split
-			}
-			if err := server.indexTasks(); err != nil {
+			server, err := newEnvServer(*suite, rewardProfile, side, splitPath, freezeTime)
+			if err != nil {
 				return err
 			}
 
@@ -357,8 +355,16 @@ func (s *envServer) handleEpisode(w http.ResponseWriter, r *http.Request) {
 		response.Response = episode.Response
 	}
 	if request.IncludeTrajectory {
-		trajectory, err := gjeval.BuildTrajectory(episode, gjeval.TrajectoryOptions{Stage: "executor", Profile: profile})
-		if err == nil {
+		stage, err := episodeTrajectoryStage(request.Stage)
+		if err != nil {
+			s.writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": "invalid_stage", "message": err.Error()})
+			return
+		}
+		trajectory, err := gjeval.BuildTrajectory(episode, gjeval.TrajectoryOptions{Stage: stage, Profile: profile})
+		if err != nil {
+			response.TrajectoryError = err.Error()
+		} else {
 			response.Trajectory = &trajectory
 		}
 	}
@@ -591,4 +597,61 @@ func envCloneCmd() *cobra.Command {
 	cmd.Flags().Int64Var(&opts.Seed, "seed", 1, "seed; the same seed produces the same synthetic data")
 	cmd.Flags().StringVar(&opts.TokenEnv, "token-env", "GRAPHJIN_EVAL_TOKEN", "environment variable holding the bearer token")
 	return cmd
+}
+
+// newEnvServer builds the served environment.
+//
+// Three things it gets right that the inline construction did not. The side is
+// validated rather than compared to a literal, so a typo no longer silently
+// serves the held-out tasks — the one mistake this flag exists to prevent. The
+// runner is given the frozen clock, because freezing the data without freezing
+// what the oracle calls "today" leaves date-relative questions drifting against
+// fixed rows, which is the drift the environment already freezes to avoid. And
+// the split is loaded here, where refusing it is a startup error rather than a
+// surprise on the first request.
+func newEnvServer(suite gjeval.Suite, profile gjeval.RewardProfile,
+	side, splitPath, freezeTime string) (*envServer, error) {
+	side = strings.ToLower(strings.TrimSpace(side))
+	if side != "train" && side != "eval" {
+		return nil, fmt.Errorf("--side must be train or eval, got %q", side)
+	}
+	frozen, err := evalFrozenClockFromString(freezeTime)
+	if err != nil {
+		return nil, err
+	}
+	server := &envServer{
+		suite: suite, profile: profile, side: side,
+		byID: map[string]gjeval.Task{}, bySlug: map[string]gjeval.Task{},
+		runner: gjeval.Runner{Now: frozen},
+	}
+	if strings.TrimSpace(splitPath) != "" {
+		split, err := gjeval.LoadSplit(splitPath)
+		if err != nil {
+			return nil, fmt.Errorf("load split: %w", err)
+		}
+		server.split = split
+	}
+	if err := server.indexTasks(); err != nil {
+		return nil, err
+	}
+	return server, nil
+}
+
+// episodeTrajectoryStage resolves which stage a requested trajectory covers.
+//
+// Executor by default, because that is the stage a policy is normally trained
+// on. "all" is spelled out rather than left as the empty string so asking for
+// every stage is a deliberate act — a corpus mixing three policies is a
+// reasonable thing to want and an unfortunate thing to get by accident.
+func episodeTrajectoryStage(requested string) (string, error) {
+	switch stage := strings.ToLower(strings.TrimSpace(requested)); stage {
+	case "":
+		return gjagent.StageExecutor, nil
+	case "all":
+		return "", nil
+	case gjagent.StageExecutor, gjagent.StageDistiller, gjagent.StageResponder:
+		return stage, nil
+	default:
+		return "", fmt.Errorf("stage must be executor, distiller, responder or all, got %q", requested)
+	}
 }

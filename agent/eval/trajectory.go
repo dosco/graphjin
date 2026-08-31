@@ -317,6 +317,12 @@ func ExportRunTrajectories(store *Store, runID string, opts TrajectoryOptions) (
 	if err != nil {
 		return nil, err
 	}
+	return BuildTrajectories(episodes, opts)
+}
+
+// BuildTrajectories rewrites a set of episodes, so a caller that has already
+// decided which episodes belong in a corpus can build from exactly those.
+func BuildTrajectories(episodes []Episode, opts TrajectoryOptions) ([]Trajectory, error) {
 	out := make([]Trajectory, 0, len(episodes))
 	for i := range episodes {
 		trajectory, err := BuildTrajectory(episodes[i], opts)

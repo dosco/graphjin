@@ -95,6 +95,21 @@ func (m *stepMailbox) Chat(ctx context.Context, values map[string]ax.Value, opti
 	}
 }
 
+// GetFeatures forwards the support model's capability report when there is one.
+//
+// The stages the trainer answers have no provider to describe: the trainer is
+// the model, and it decides its own output format. The support-served stages
+// do have one, and ax needs its report to pick a structured-output mechanism
+// that model actually accepts.
+func (m *stepMailbox) GetFeatures(model string) map[string]ax.Value {
+	if inner, ok := m.support.(interface {
+		GetFeatures(string) map[string]ax.Value
+	}); ok {
+		return inner.GetFeatures(model)
+	}
+	return nil
+}
+
 func (m *stepMailbox) Embed(context.Context, map[string]ax.Value, map[string]ax.Value) (ax.Value, error) {
 	return nil, fmt.Errorf("embedding is not available while an episode is driven step by step")
 }
