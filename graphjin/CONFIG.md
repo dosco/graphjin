@@ -31,6 +31,7 @@ Run `graphjin config docs` (or `graphjin serve new`) for the annotated example t
 - [Rate Limiting](#rate-limiting)
 - [MCP Configuration](#mcp-configuration)
 - [Agent Configuration](#agent-configuration)
+- [Agent Environment Configuration](#agent-environment-configuration)
 - [Task Configuration](#task-configuration)
 - [Redis Configuration](#redis-configuration)
 - [Discovery Cache and Semantic Catalog Search](#discovery-cache-and-semantic-catalog-search)
@@ -1121,6 +1122,8 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.service_tier` | string | `auto` | Portable Ax inference tier: `auto` delegates to the provider; `standard`, `flex`, and `priority` request an explicit tier. Ax maps the value to the selected profile's wire dialect and rejects unsupported explicit tiers before transport |
 | `agent.reasoning` | string | - | Provider thinking effort for models that have one: `none`, `low`, `medium`, `high`, `xhigh`. Empty keeps the provider default, which providers disagree on — some adapters disable thinking outright unless a level is given |
 | `agent.show_thoughts` | boolean | `false` | Ask the provider to return the reasoning text it already produced, into the run's chat log (visible in the response trace when `agent.return_trace` is on, and recorded in eval episodes). These models think either way, so this changes what is observable and not what the model does — it is separate from `agent.reasoning` for that reason. Off by default: the text is billed output and every episode carries it |
+| `agent.temperature` | number | - | Sampling temperature, 0–2. Unset leaves the stack default, which is greedy: repeated attempts at one task come back identical. Bound to `GJ_AGENT_TEMPERATURE` only — there is no default, so unset and zero are distinguishable |
+| `agent.top_p` | number | - | Nucleus sampling cutoff, above 0 and at most 1. Bound to `GJ_AGENT_TOP_P` only, same as above |
 | `agent.max_steps` | integer | `8` | Maximum agent actor steps per request |
 | `agent.timeout_seconds` | integer | `50` | Request timeout for agent runs; values below 50 are raised to the 50-second minimum |
 | `agent.rate_limit.requests_per_minute` | integer | `0` | Process-local rolling-minute ceiling for outbound model requests; zero disables request limiting |
@@ -1129,6 +1132,14 @@ they inherit that deployment's capabilities rather than OpenAI's.
 | `agent.return_trace` | boolean | `false` | Include agent action/trace data in responses |
 | `agent.seed_limit` | integer | `40` | Initial `query_catalog(search: instruction)` seed row cap |
 | `agent.catalog_default_limit` | integer | `20` | Default row limit for model-issued catalog queries |
+
+What a provider actually does with a temperature varies more than the key
+suggests: some adaptive models never receive it, some manage sampling
+server-side, some clamp low values upward, and some drop it when a thinking
+effort is set. Run provenance records what the server resolved rather than what
+reached the wire, which is what identity needs. The per-provider specifics are
+kept in one place, at
+[Training a policy](https://graphjin.com/environment/training/).
 
 `GJ_AGENT_SERVICE_TIER` overrides `agent.service_tier` for environment-only
 deployments. `SG_AGENT_SERVICE_TIER` and `SJ_AGENT_SERVICE_TIER` remain accepted
@@ -1178,6 +1189,52 @@ correlation label: it never grants access and never satisfies a discovery or
 mutation evidence guard.
 
 ---
+
+## Agent Environment Configuration
+
+`graphjin env serve` is configured by flags and environment variables only,
+never by the config file — it serves a project rather than being part of one,
+so there is no YAML key table here.
+
+Every flag has one `GJ_ENV_` variable. Two rules matter more than the list: **a
+flag wins when it is passed**, and **a `GJ_ENV_` variable the server does not
+read is a startup error** rather than a silent default. A typo in an
+orchestrator's manifest is otherwise indistinguishable from a default, and the
+server comes up serving something nobody asked for.
+
+| Variable | Flag |
+|----------|------|
+| `GJ_ENV_PATH` | `--path` |
+| `GJ_ENV_WORK_DIR` | `--work-dir` |
+| `GJ_ENV_SUITE` | `--suite` (`public` selects the embedded suite) |
+| `GJ_ENV_SPLIT` | `--split` (`auto[:ratio]` derives one) |
+| `GJ_ENV_SIDE` | `--side` |
+| `GJ_ENV_POOL` | `--pool` |
+| `GJ_ENV_LISTEN` | `--listen` |
+| `GJ_ENV_FREEZE_TIME` | `--freeze-time` |
+| `GJ_ENV_DATA_ANCHOR` | `--data-anchor` |
+| `GJ_ENV_REWARD_PROFILE` | `--reward-profile` |
+| `GJ_ENV_ALLOW_CATALOG_DRIFT` | `--allow-catalog-drift` |
+| `GJ_ENV_STEP`, `GJ_ENV_STEP_TIMEOUT` | `--step`, `--step-timeout` |
+| `GJ_ENV_EXTERNAL`, `GJ_ENV_EXTERNAL_TIMEOUT` | `--external`, `--external-timeout` |
+| `GJ_ENV_ADVERTISE_URL` | `--advertise-url` |
+
+### Support and generator models
+
+An agent run is three model calls with different jobs. `GJ_SUPPORT_*`
+(`PROVIDER`, `MODEL`, `BASE_URL`, `API_KEY_ENV`, `REASONING`) puts a different
+model in front of the distiller and responder stages while the model under
+evaluation serves the executor. `GJ_GENERATOR_*` (same five) selects the model
+that authors tasks.
+
+The two families differ deliberately in one way. `GJ_GENERATOR_*` falls back to
+`GJ_AGENT_*`, because authoring with the configured model is a reasonable
+default when only one is set. `GJ_SUPPORT_*` does **not** fall back: doing so
+would serve the support stages with the very model being evaluated, which is
+what the separation exists to prevent.
+
+Full reference:
+[CLI and variables](https://graphjin.com/environment/cli-reference/).
 
 ## Task Configuration
 
@@ -2537,6 +2594,10 @@ The `GJ_` prefix is stripped, then underscores are converted to dots until a mat
 ---
 
 ## Environment Variables Reference
+
+The `GJ_ENV_`, `GJ_SUPPORT_` and `GJ_GENERATOR_` families configure the agent
+environment rather than the server, and are documented under
+[Agent Environment Configuration](#agent-environment-configuration).
 
 ### Database Variables
 
