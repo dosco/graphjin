@@ -28,7 +28,7 @@ sources:
 External-source capabilities are centralized in the source capability registry. Built-in system and workflow capabilities use the separate feature capability registry. Neither category should be invented ad hoc by catalog, security, MCP, or config code.
 
 {{< verified by="TestSourceCardsUseCapabilityRegistry" file="core/internal/catalog/build_test.go" line="84" >}}
-{{< verified by="TestSecurityNanoRowsSourceCapabilities" file="serv/control_plane_graphql_test.go" line="1447" >}}
+{{< verified by="TestSecurityNanoRowsCoverSourceCapabilityRegistry" file="serv/control_plane_graphql_test.go" line="1550" >}}
 
 ## Access defaults
 

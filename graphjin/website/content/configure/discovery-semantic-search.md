@@ -304,7 +304,7 @@ use the live model agent suite to evaluate a production model's judgment.
 
 {{< verified by="TestSingleNodeDiscoveryAndSemanticWorkWithoutRedis" file="serv/discovery_coordination_test.go" line="223" >}}
 {{< verified by="TestDiscoveryRedisCoordinatesColdBuilderWarmFollowersAndFencing" file="serv/discovery_coordination_test.go" line="95" >}}
-{{< verified by="TestSemanticIndexIncrementalReuseDimensionMismatchAndWarmLoad" file="serv/semantic_index_test.go" line="236" >}}
+{{< verified by="TestSemanticIndexIncrementalReuseAndWarmLoad" file="serv/semantic_index_test.go" line="319" >}}
 {{< verified by="TestHybridCatalogRetrievalFixtureAndLexicalFallback" file="serv/semantic_query_test.go" line="51" >}}
 {{< verified by="TestCoffeeRoasteryServiceRuntimeCoverageBatch" file="serv/semantic_coverage_test.go" line="169" >}}
 {{< verified by="TestPublicMCPQueryCatalogDoesNotExposeAgentCoverageSearches" file="serv/semantic_agent_surface_test.go" line="11" >}}
