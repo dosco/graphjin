@@ -64,9 +64,8 @@ docker run -d -p 8090:8090 --tmpfs /tmp:size=1g dosco/graphjin:env-latest
 reward contract, and whether the suite matches the world it is served on.
 `/tmp` must be writable: each world provisions its own database there.
 
-The `env-*` tags are published from the next release; until then build it
-yourself with `make env-image`. See [training/README.md](training/README.md)
-for the full story.
+See [the environment docs](https://graphjin.com/environment/quickstart/) for
+the full story.
 
 ## Try It Now
 
@@ -669,109 +668,35 @@ under [MCP Tools](#mcp-tools); the full model is in
 
 ## Train And Measure Agents On Your Own Graph
 
-The same machinery that grades GraphJin's public benchmark can grade agents on
-*your* data, and serve as a reinforcement-learning environment for tuning small
+The same machinery that grades GraphJin's public benchmark grades agents on
+*your* data, and runs as a reinforcement-learning environment for tuning small
 models on it.
 
 ```bash
 # Generate a verified task suite from your catalog, with a train/eval split
-graphjin eval create --demo --writable --scale 500 --composition coverage \
-  --verify-concurrency 8 --split 0.8
+graphjin eval create --demo --writable --scale 500 --composition coverage --split 0.8
 
 # Serve it: pooled isolated worlds, one graded episode per request
 graphjin env serve --path ./graphjin-demo --suite eval/suite.yml --pool 4 \
   --split eval/suite.split.json --side train --freeze-time 2026-08-01T12:00:00Z
 ```
 
-- **Tasks come from your schema.** Each carries a hidden oracle — a read-only
-  query that computes the answer in the database — so being plausible earns
-  nothing. Writes are graded by the state the database ended in *and* by every
-  other row staying put.
+- **Tasks come from your schema, and the reward comes from the database.** Each
+  task carries a hidden oracle — a read-only query that computes the answer —
+  so being plausible earns nothing. Writes are graded by the state the database
+  ended in *and* by every other row staying put.
 - **Worlds are isolated and resettable.** An episode leases one, so a task that
   writes changes only the world it was given.
-- **Your policy plugs in by configuration**, not code: point `agent.base_url` at
-  any OpenAI-compatible endpoint.
-- **Your real schema, without your real data.** `graphjin env clone --url
-  <server>` learns a running GraphJin server's schema from its catalog and
-  writes a local SQLite copy filled with synthetic rows. No data is read: the
-  only real values that cross over are the closed sets the catalog already
-  publishes. The clone is writable and resettable, so write tasks and training
-  work against it while production is never touched.
-- **Nothing memorable to overfit.** `graphjin env new-world` writes a fresh
-  organization — schema, data and all — deterministically from a seed, so you
-  can train on some companies and measure on others. Worlds can be asked for the
-  awkwardness real schemas have: one word meaning two things, a stale column
-  that still looks authoritative, fields that are usually null.
-- **Any industry, not three.** `graphjin env new-world --describe "genome
-  sequencing lab"` asks a capable model to name the records that business would
-  actually keep, checks every name, and saves the description as
-  `world-pack.json` inside the world. From then on the world is rebuilt from
-  that file with `--pack`: deterministic, and with no model involved.
-- **A big model writes the questions a schema cannot derive.** Counting and
-  filtering follow from column statistics; knowing that *failed invoices are
-  worth alerting on* does not. `graphjin eval author` asks a capable model —
-  configured separately from the small one being trained, via `GJ_GENERATOR_*` —
-  to choose what is worth watching and phrase it as a colleague would. Every
-  table, column and value it names must exist, and every task it produces is
-  verified against the live database before it counts.
-- **Questions no single source answers.** Real answers are often half in the
-  database and half in something somebody wrote down. Clones carry over the
-  document sources the original served — the names only, never a file — and
-  authoring plants the standard it grades against in a document of its own, so
-  the ground truth is true by construction rather than assumed.
-- **Runs export as training data.** `graphjin eval export` writes trajectories
-  as JSONL, marking the programs GraphJin's runtime wrote itself so they are not
-  mistaken for the policy's.
-- **Collecting is not measuring.** `graphjin eval sample --repeats 8
-  --temperature 0.8` draws many attempts at each task instead of judging one.
-  It reaches no verdict and promotes nothing, because a temperature raised on
-  purpose loses against a greedy baseline every time — and it records which side
-  of the split it drew from, so `eval export` can refuse to build a training
-  corpus out of held-out work.
+- **Your real schema, without your real data.** `graphjin env clone` learns a
+  running server's schema from its catalog and writes a local synthetic copy.
+  No rows are read; the only real values that cross over are the closed sets
+  the catalog already publishes.
 
-```bash
-# Learn a real server's schema; write a local synthetic copy
-graphjin env clone --url https://graphjin.internal --out ./clone-acme
+Three ways to drive an episode — GraphJin calls your endpoint, you supply each
+completion, or you bring the whole agent over MCP — all grading through the same
+contract.
 
-# Have a capable model author the richer families for it
-export GJ_GENERATOR_MODEL=<a-strong-model>
-graphjin eval author --demo --path ./clone-acme --kinds watch,confirmation,file --yes
-```
-
-### Driving Episodes Your Own Way
-
-Three ways in, all grading through the same contract, so a number from one is a
-number from any:
-
-- **Let GraphJin call your endpoint** — the default. Point `agent.base_url` at
-  anything OpenAI-compatible.
-- **Supply each completion yourself** — `env serve --step`. The episode runs
-  normally, but when the model is needed the call is parked and handed to you as
-  an observation; you post the completion back and it resumes. Useful when the
-  weights being updated live inside your training process and standing up an
-  inference server just to be called back is machinery you do not want.
-- **Bring your own agent entirely** — `env serve --external`. You get the task,
-  an MCP endpoint and a deadline, do the work with your own scaffold, and post
-  an answer. The server records every tool call, so the method and behavior
-  rules apply exactly as they do to a hosted run — an answer with no work behind
-  it scores zero.
-
-An agent run is several model calls with different jobs, and they need not all
-be the policy's. `--support-model` (or `GJ_SUPPORT_MODEL`) puts a fixed capable
-model in front of the distiller and responder stages while the policy answers
-the executor, so a small model is measured on the work being trained rather than
-through bottlenecks it did not create. The stages that write the final answer
-stay with the policy: letting a stronger model write those would score its care
-as the policy's grounding.
-
-```bash
-# Train only the executor; a fixed model condenses and phrases
-graphjin env serve --path ./clone-acme --suite eval/suite.yml --pool 4 \
-  --step --support-model <a-fast-model>
-```
-
-See [training/README.md](training/README.md) for the client, an example policy
-server, and what to record alongside a result.
+**→ [The GraphJin Agent Environment](https://graphjin.com/environment/)**
 
 ## JS Workflows (GraphQL + REST)
 
@@ -1000,6 +925,8 @@ Built-in web UI at `http://localhost:8080` for query development.
 
 - [Configuration Reference](CONFIG.md)
 - [Feature Reference](FEATURES.md)
+- [Agent Environment](https://graphjin.com/environment/) — train and measure agents
+- [Agent Evaluation](https://graphjin.com/agentic/evaluation/) — gate a release
 - [Go Examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples)
 
 ## Get in Touch
