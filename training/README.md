@@ -110,6 +110,147 @@ either side stop being comparable.
 `--split` and `--side` keep training and measurement apart. Train on `train`,
 measure on `eval`, and the number at the end means something.
 
+## Running it as a container
+
+The environment also ships as an image, and it boots ready with nothing
+mounted — the demo world and the frozen 113-task public suite are both inside
+the binary:
+
+```bash
+docker run -d -p 8090:8090 --tmpfs /tmp:size=1g dosco/graphjin:env-latest
+```
+
+Measured on an arm64 laptop: healthy about four seconds after `docker run`, a
+pool of two worlds ready in ~2s and writing ~1.3MB, image ~148MB.
+
+The `env-*` tags are published from the next release. Until then, build the
+image locally — `make env-image` builds it with ko and publishes nothing, and
+`make env-image-smoke` builds it, boots it, and drives it end to end.
+
+**A writable `/tmp` is required.** Each world provisions its own SQLite
+database, discovery cache and artifact store in a temporary directory, so a
+read-only root filesystem needs `--tmpfs /tmp` or a volume. Size it for
+`pool × (project + demo database + .graphjin)`; 1GB is generous for a pool of
+eight. Startup checks that the working directory is writable and says so
+plainly rather than failing partway through provisioning.
+
+Every flag is also an environment variable, which is how you configure a
+container:
+
+| variable | flag | default in the image |
+|---|---|---|
+| `GJ_ENV_LISTEN` | `--listen` | `0.0.0.0:8090` |
+| `GJ_ENV_SUITE` | `--suite` | `public` (the embedded suite) |
+| `GJ_ENV_SPLIT` | `--split` | none |
+| `GJ_ENV_SIDE` | `--side` | `train` |
+| `GJ_ENV_POOL` | `--pool` | 2 |
+| `GJ_ENV_PATH` | `--path` | the built-in demo |
+| `GJ_ENV_WORK_DIR` | `--work-dir` | `/tmp/graphjin-env` |
+| `GJ_ENV_FREEZE_TIME` | `--freeze-time` | the image's build date |
+| `GJ_ENV_DATA_ANCHOR` | `--data-anchor` | implied by the freeze time |
+| `GJ_ENV_REWARD_PROFILE` | `--reward-profile` | `rl` |
+| `GJ_ENV_STEP`, `GJ_ENV_STEP_TIMEOUT` | `--step`, `--step-timeout` | off, 5m |
+| `GJ_ENV_EXTERNAL`, `GJ_ENV_EXTERNAL_TIMEOUT` | `--external`, `--external-timeout` | off, 10m |
+| `GJ_ENV_ADVERTISE_URL` | `--advertise-url` | the Host you reach it on |
+| `GJ_ENV_ALLOW_CATALOG_DRIFT` | `--allow-catalog-drift` | off |
+
+A flag wins over the variable, and a `GJ_ENV_` variable nothing reads is a
+startup error — a typo in an orchestrator's manifest is otherwise
+indistinguishable from a default. The model is configured separately, through
+`GJ_AGENT_*` and `GJ_SUPPORT_*`.
+
+`--suite public` is the reserved word for the embedded suite; a file genuinely
+named `public` is `./public`. `--split auto` derives a holdout from the suite
+itself — sides come from each task's content id, so two containers agree on the
+division with nothing mounted and no coordination:
+
+```bash
+docker run -d -p 8090:8090 --tmpfs /tmp:size=1g \
+  -e GJ_ENV_SPLIT=auto:0.8 -e GJ_ENV_SIDE=train dosco/graphjin:env-latest
+docker run -d -p 8091:8090 --tmpfs /tmp:size=1g \
+  -e GJ_ENV_SPLIT=auto:0.8 -e GJ_ENV_SIDE=eval  dosco/graphjin:env-latest
+```
+
+Without a split there is no holdout, and `/health` says `"split": "none"` so
+that is visible rather than assumed.
+
+The image pins its clock to its build date, so one tag measures one thing on
+any day it is run — the demo seeds date-relative data against the wall clock,
+and an unpinned tag asks a different question every morning. `/health` reports
+`freeze_time_source`, which is `build` when the image supplied it, `flag` or
+`GJ_ENV_FREEZE_TIME` when you did, and absent when nothing did.
+
+**The healthcheck.** The image has no shell and no curl, so the binary is the
+probe. It exits 0 only for a server that is actually ready:
+
+```dockerfile
+HEALTHCHECK --interval=10s --timeout=5s --retries=30 CMD ["/ko-app/v3", "env", "health"]
+```
+
+**Reading `/health`.** Two additive blocks say what you are talking to without
+having seen the command line that started it:
+
+```json
+{"build": {"version": "v3.1.0", "commit": "abc1234", "binary_sha256": "…", "image_role": "env"},
+ "capabilities": {"drive_modes": ["episodes"], "writes": true, "resettable": true,
+                  "suite_source": "public", "suite_fingerprint": "…",
+                  "catalog_match": true, "split": "auto:0.80", "side": "train",
+                  "pool": 2, "freeze_time": "…", "freeze_time_source": "build",
+                  "data_anchor": "2026-08-01", "boot_ms": 2055}}
+```
+
+`catalog_match` is the one worth checking before a long run: it is false when
+the suite's oracles were verified against a different schema than the one being
+served. Serving that combination is refused at startup unless you pass
+`--allow-catalog-drift`, and absent from `/health` entirely when the suite
+records no catalog to compare.
+
+**External agents** get URLs that route back through the server they reached:
+`mcp_url` is `<base>/external/episodes/<id>/world/api/v1/mcp`, not the world's
+own in-process port, which only ever resolved inside the serving process. The
+base is the Host your request arrived with, which is right through any port
+mapping. Set `--advertise-url` when something rewrites Host or the URL is
+passed out of band.
+
+## Baking your own world
+
+The reference image serves the demo. The real use is your own schema, and that
+is a derived image:
+
+```bash
+graphjin env clone --url https://your-graphjin --out ./clone-acme --seed 7
+graphjin eval create --path ./clone-acme --demo --writable --scale 300 \
+  --composition coverage --split 0.8
+```
+
+```dockerfile
+FROM dosco/graphjin:env-latest
+COPY clone-acme /world
+ENV GJ_ENV_PATH=/world
+ENV GJ_ENV_SUITE=/world/eval/suite.yml
+ENV GJ_ENV_SPLIT=/world/eval/suite.split.json
+ENV GJ_ENV_DATA_ANCHOR=2026-08-01
+```
+
+A derived image can set `ENTRYPOINT`, `ENV` and `WORKDIR`, which is why
+customization belongs here rather than in the base.
+
+One trap. Everything in a GraphJin config resolves against the config
+directory — except a SQLite `path:`, which is handed to the driver exactly as
+written and stays relative to the working directory. In a container the working
+directory is `/tmp/graphjin-env`, not `/world`. Make it absolute:
+
+```yaml
+database:
+  type: sqlite
+  path: /world/demo/app.sqlite3
+```
+
+Pin `GJ_ENV_DATA_ANCHOR` (or `GJ_ENV_FREEZE_TIME`) on any world with
+date-relative data. The base image pins its own clock to its build date; a
+derived image inherits that instant, which is right only if it is also right
+for your rows.
+
 ## Three ways to drive an episode
 
 All of them prepare the world the same way and grade through the same contract,
@@ -332,7 +473,9 @@ same contract. `/health` returns both:
 
 ```json
 {"dataset": {"catalog_hash": "...", "data_anchor": "2026-08-01"},
- "reward_version": "graphjin.eval.reward/v5", "reward_profile": "rl"}
+ "reward_version": "graphjin.eval.reward/v6", "reward_profile": "rl",
+ "build": {"version": "v3.1.0", "commit": "abc1234", "binary_sha256": "..."},
+ "capabilities": {"suite_fingerprint": "...", "catalog_match": true, "split": "auto:0.80"}}
 ```
 
 Keep them with your numbers. Two runs that cannot name their world and their
@@ -355,11 +498,12 @@ anything.
 
 | method | path | purpose |
 |---|---|---|
-| GET | `/health` | worlds, task count, dataset fingerprint, reward contract |
+| GET | `/health` | worlds, task count, dataset fingerprint, reward contract, `build` and `capabilities` |
 | GET | `/tasks` | the tasks being served, with prompts |
 | POST | `/episodes` | run one graded episode |
 | POST | `/step/reset`, `/step`, DELETE `/step/{id}` | drive an episode a completion at a time (`--step`) |
 | POST | `/external/episodes`, `/external/episodes/{id}/answer` | grade your own agent over MCP (`--external`) |
+| any | `/external/episodes/{id}/world/...` | the leased world itself, proxied so an agent outside the container can reach it |
 
 `graphjin_env` wraps the first two: `Environment` for whole episodes, `StepEnvironment` plus `group_rollout` for step-driven ones. A GRPO group is n attempts at one task, and `group_advantages` scores each against the group's own mean — with no baseline model, the other attempts are the baseline.
 

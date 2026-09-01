@@ -50,6 +50,24 @@ Download .deb/.rpm from [releases](https://github.com/dosco/graphjin/releases)
 docker pull dosco/graphjin
 ```
 
+**Docker — as an agent environment**
+
+The same binary also ships as a graded environment for training and evaluating
+agents. It boots ready with nothing mounted: the demo world and a 113-task
+verified suite are built in.
+
+```bash
+docker run -d -p 8090:8090 --tmpfs /tmp:size=1g dosco/graphjin:env-latest
+```
+
+`/health` says what it is — build, suite fingerprint, dataset fingerprint,
+reward contract, and whether the suite matches the world it is served on.
+`/tmp` must be writable: each world provisions its own database there.
+
+The `env-*` tags are published from the next release; until then build it
+yourself with `make env-image`. See [training/README.md](training/README.md)
+for the full story.
+
 ## Try It Now
 
 One command, no clone, no Docker. The binary ships with a built-in demo — a
