@@ -576,21 +576,41 @@ func TestInstallGraphJinEvalSkillsIdempotent(t *testing.T) {
 	opts := mcpInstallOptions{Client: "all", Scope: "project"}
 	first := installGraphJinEvalSkills(opts)
 	second := installGraphJinEvalSkills(opts)
-	if len(first) != 2 || len(second) != 2 {
+	want := len(installedSkills) * 2 // two clients
+	if len(first) != want || len(second) != want {
 		t.Fatalf("results first=%+v second=%+v", first, second)
 	}
+	// Each installed skill must land for each client, and must actually be the
+	// skill it claims to be — a copy of the wrong file installs silently.
+	marker := map[string]string{
+		"graphjin-eval": "graphjin eval bench",
+		"graphjin-env":  "catalog_match",
+	}
 	for _, client := range []string{"claude", "codex"} {
-		path := filepath.Join(dir, "."+client, "skills", "graphjin-eval", "SKILL.md")
-		data, err := os.ReadFile(path)
+		for _, skill := range installedSkills {
+			path := filepath.Join(dir, "."+client, "skills", skill, "SKILL.md")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), marker[skill]) {
+				t.Fatalf("installed %s/%s skill is not the one it claims to be", client, skill)
+			}
+			info, _ := os.Stat(path)
+			if info.Mode().Perm() != 0o600 {
+				t.Fatalf("%s skill mode = %o, want 600", skill, info.Mode().Perm())
+			}
+		}
+	}
+	// Both installed skills must know the other exists, or a coding agent that
+	// loads one is steered away from half the surface.
+	for _, pair := range [][2]string{{"graphjin-eval", "graphjin-env"}, {"graphjin-env", "graphjin-eval"}} {
+		data, err := os.ReadFile(filepath.Join(dir, ".claude", "skills", pair[0], "SKILL.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(data), "graphjin eval bench") {
-			t.Fatalf("installed %s skill is incomplete", client)
-		}
-		info, _ := os.Stat(path)
-		if info.Mode().Perm() != 0o600 {
-			t.Fatalf("skill mode = %o, want 600", info.Mode().Perm())
+		if !strings.Contains(string(data), pair[1]) {
+			t.Fatalf("the %s skill never mentions %s", pair[0], pair[1])
 		}
 	}
 }
