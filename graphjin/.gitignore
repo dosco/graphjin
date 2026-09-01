@@ -83,3 +83,4 @@ docs/DESIGN-OPENAPI-TOPLEVEL.md
 # Python bytecode from the training client
 __pycache__/
 *.pyc
+*.egg-info/

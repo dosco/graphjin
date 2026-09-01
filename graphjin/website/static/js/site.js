@@ -146,6 +146,7 @@ const sectionLabels = {
   agentic: 'Agentic',
   configure: 'Configure',
   core: 'Core',
+  environment: 'Environment',
   home: 'Home',
   integrations: 'Integrations',
   reference: 'Reference',

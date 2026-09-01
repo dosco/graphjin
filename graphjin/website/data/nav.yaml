@@ -11,6 +11,8 @@ groups:
     title: Integrations
   - id: agentic
     title: Agentic
+  - id: environment
+    title: Environment
   - id: configure
     title: Configure
   - id: reference
