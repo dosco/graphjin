@@ -84,6 +84,7 @@ const requiredAnchors = [
   'mcp',
   'codesql',
   'capabilities',
+  'environment',
   'quickstart',
 ];
 
@@ -160,6 +161,9 @@ const failures = [];
 // signal it is load-bearing and should be a link to the page that owns the
 // topic instead.
 const requiredRenderedContent = [
+  ['index.html', 'The same machinery is a training environment.'],
+  ['index.html', 'a fluent, confident, wrong answer earns nothing'],
+  ['index.html', 'never your rows'],
   ['environment/overview/index.html', 'It is entirely distinguishable to a database.'],
   ['environment/overview/index.html', 'isolated, resettable, and identical'],
   ['environment/quickstart/index.html', 'Nothing is mounted and nothing is generated.'],
@@ -1312,17 +1316,22 @@ for (const file of htmlFiles) {
 
 // The public suite's task count, which prose has already got wrong once.
 {
-  const page = path.join(publicRoot, 'environment', 'quickstart', 'index.html');
-  if (await exists(page)) {
-    const suite = JSON.parse(await readFile(path.join(repoRoot, 'cmd', 'benchmark', 'public-suite.json'), 'utf8'));
-    const actual = suite.tasks.length;
+  const suite = JSON.parse(await readFile(path.join(repoRoot, 'cmd', 'benchmark', 'public-suite.json'), 'utf8'));
+  const actual = suite.tasks.length;
+  let seen = 0;
+  for (const rel of ['index.html', 'environment/quickstart/index.html']) {
+    const page = path.join(publicRoot, rel);
+    if (!(await exists(page))) continue;
     const html = await readFile(page, 'utf8');
-    const rendered = html.match(/data-public-suite-tasks[^>]*>(\d+)</);
-    if (!rendered) {
-      failures.push('environment/quickstart no longer renders data-public-suite-tasks');
-    } else if (Number(rendered[1]) !== actual) {
-      failures.push(`environment/quickstart says ${rendered[1]} tasks; public-suite.json has ${actual}`);
+    for (const match of html.matchAll(/data-public-suite-tasks[^>]*>(\d+)</g)) {
+      seen += 1;
+      if (Number(match[1]) !== actual) {
+        failures.push(`${rel} says ${match[1]} tasks; public-suite.json has ${actual}`);
+      }
     }
+  }
+  if (seen < 2) {
+    failures.push(`only ${seen} page(s) render data-public-suite-tasks; the homepage and quickstart both should`);
   }
 }
 
