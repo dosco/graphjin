@@ -154,6 +154,11 @@ const requiredContent = [
 ];
 
 const failures = [];
+// Positive claims and structural invariants only. Never pin a sentence of the
+// form "X is not Y": when X becomes Y, the assertion still passes and the site
+// keeps saying the false thing. If a disclaimer feels worth pinning, that is a
+// signal it is load-bearing and should be a link to the page that owns the
+// topic instead.
 const requiredRenderedContent = [
   ['environment/overview/index.html', 'It is entirely distinguishable to a database.'],
   ['environment/overview/index.html', 'isolated, resettable, and identical'],
@@ -195,7 +200,13 @@ const requiredRenderedContent = [
   ['agentic/evaluation/index.html', 'Increasing <code>max_steps</code> is not the remedy'],
   ['agentic/evaluation/index.html', '<code>130</code>'],
   ['agentic/evaluation/index.html', 'run --restart --yes --json'],
-  ['agentic/evaluation/index.html', 'v1 is a reinforcement-learning trainer.'],
+  // This used to pin 'v1 is a reinforcement-learning trainer.' — the tail of a
+  // sentence disclaiming the training environment. A negative claim is the one
+  // kind of assertion that can only rot: shipping the feature does not fail the
+  // test, it just leaves the test defending a lie. It defended that one for five
+  // increments. Pin what is true, so a regression has to come back through here.
+  ['agentic/evaluation/index.html', 'This page is the release gate'],
+  ['agentic/evaluation/index.html', 'pooled, resettable worlds'],
   ['agentic/index.html', 'Use durable verified tasks'],
   ['agentic/index.html', 'Evaluate the agent'],
   ['agentic/mcp/index.html', 'Configure GraphJin from your AI IDE'],
