@@ -1,0 +1,12 @@
+{{- $m := hugo.Data.environment.measured -}}
+<table>
+  <thead><tr><th>Measured</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Image size</td><td>{{ $m.image_size }}</td></tr>
+    <tr><td>Healthy after</td><td>{{ $m.healthy_after }}</td></tr>
+    <tr><td>Pool of {{ $m.pool_workers }} worlds ready in</td><td>{{ $m.pool_ready_ms }}ms</td></tr>
+    <tr><td>Written to the work directory</td><td>{{ $m.work_dir_bytes }}</td></tr>
+    <tr><td>Tasks served</td><td><span data-public-suite-tasks>{{ $m.tasks }}</span></td></tr>
+  </tbody>
+</table>
+<p class="doc-note">Measured {{ $m.on }} on {{ $m.host }}. Re-measure with <code>make env-image-smoke</code>.</p>

@@ -1,0 +1,14 @@
+# Measured figures for the environment image, quoted by /environment/quickstart/.
+#
+# These live here rather than in prose so that a number nobody has re-measured
+# is visibly stale rather than invisibly wrong. Re-measure with
+# `make env-image-smoke`, which prints every figure below, and move the date.
+measured:
+  on: 2026-08-31
+  host: Apple silicon laptop, native arm64 image
+  image_size: 148MB
+  healthy_after: about 4 seconds from docker run
+  pool_ready_ms: 2055
+  pool_workers: 2
+  work_dir_bytes: 1.3MB
+  tasks: 113
