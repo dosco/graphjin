@@ -1,0 +1,37 @@
+# Packaging exists so the install instruction can be one line instead of "copy
+# these six files". It deliberately declares no dependencies: the client speaks
+# to the environment over HTTP with nothing but the standard library, which is
+# what lets it drop into a training image that already has opinions about
+# torch, numpy and everything else.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "graphjin-env"
+version = "0.1.0"
+description = "Client for a GraphJin agent environment: drive graded episodes for evaluation or reinforcement learning."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+authors = [{ name = "GraphJin", email = "maintainers@graphjin.com" }]
+keywords = ["graphjin", "agent", "evaluation", "reinforcement-learning", "rl-environment"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# No dependencies, and that is a feature. See the note at the top of the file.
+dependencies = []
+
+[project.urls]
+Homepage = "https://graphjin.com"
+Documentation = "https://graphjin.com/environment/"
+Source = "https://github.com/dosco/graphjin"
+
+[tool.setuptools]
+packages = ["graphjin_env"]
