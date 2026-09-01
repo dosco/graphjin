@@ -64,10 +64,10 @@ kos:
   # serve `env serve`, listen off loopback, and pin its clock to the build
   # date so one tag measures one thing forever.
   #
-  # Disabled: publishing it is a decision, not a side effect of a release.
-  # Flipping this line and cutting a release is the whole of it.
+  # Published alongside the server image under env-* tags, so `latest` and the
+  # version tag keep meaning the database server and nothing about this entry
+  # can change what an existing `docker pull dosco/graphjin` gets.
   - id: graphjin-env-docker
-    disable: true
     build: graphjin
     main: ./cmd
     repositories:
