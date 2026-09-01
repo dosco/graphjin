@@ -87,6 +87,9 @@ type envBuildInfo struct {
 	Date         string `json:"date,omitempty"`
 	Go           string `json:"go"`
 	BinarySHA256 string `json:"binary_sha256,omitempty"`
+	// ImageRole says which image this binary was built for. Absent from an
+	// ordinary build, which has no role.
+	ImageRole string `json:"image_role,omitempty"`
 }
 
 // envCapabilities is what this server can do and how it was configured —
@@ -199,11 +202,15 @@ func envServeCmd() *cobra.Command {
 		externalTimeout time.Duration
 		advertiseURL    string
 	)
+	// An image's role changes what a bare `env serve` means: a container that
+	// listens on loopback is a container nothing can reach.
+	roleDefaults := imageRoleDefaults(currentImageRole)
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Serve graded episodes over HTTP for a training or evaluation loop",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			freezeTimeFromFlag := cmd.Flags().Changed("freeze-time")
 			// Before anything reads a flag: a container passes its configuration
 			// in the environment, and what it passed has to be what runs.
 			fromEnv, err := applyEnvServeSettings(cmd.Flags(), os.Environ())
@@ -280,7 +287,18 @@ func envServeCmd() *cobra.Command {
 			server.driveModes = envDriveModes(step, external)
 			server.advertiseURL = strings.TrimSpace(advertiseURL)
 			server.listenAddr = listen
-			if server.freezeTime != "" {
+			// Where a frozen clock came from matters as much as its value: one
+			// the image supplied is what makes a tag measure the same thing on
+			// any day, and one nobody supplied means it does not.
+			switch {
+			case server.freezeTime == "":
+			case freezeTimeFromFlag:
+				server.freezeTimeSource = "flag"
+			case fromEnv.Set["freeze-time"]:
+				server.freezeTimeSource = envServeVariable("freeze-time")
+			case roleDefaults["freeze-time"] == server.freezeTime:
+				server.freezeTimeSource = "build"
+			default:
 				server.freezeTimeSource = "flag"
 			}
 			server.pool = pool
@@ -322,7 +340,7 @@ func envServeCmd() *cobra.Command {
 				"  suite %s (%s) · split %s · side %s · anchor %s\n",
 				suiteSource, suite.Generator.Version, splitLabel, server.side,
 				orUnset(pool.instances[0].Fingerprint().DataAnchor))
-			for _, line := range fromEnv {
+			for _, line := range fromEnv.Lines {
 				fmt.Fprintf(cmd.OutOrStdout(), "  env %s\n", line)
 			}
 			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -332,14 +350,15 @@ func envServeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&projectPath, "path", "", "project to serve (defaults to the built-in demo)")
-	cmd.Flags().StringVar(&suitePath, "suite", "eval/suite.yml", "task suite to serve")
+	cmd.Flags().StringVar(&suitePath, "suite", envServeDefault(roleDefaults, "suite", "eval/suite.yml"), "task suite to serve")
 	cmd.Flags().StringVar(&splitPath, "split", "", "split manifest restricting which tasks are served")
 	cmd.Flags().StringVar(&side, "side", "train", "which side of the split to serve: train or eval")
 	cmd.Flags().IntVar(&poolSize, "pool", 2, "isolated worlds to run episodes against")
-	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8090", "address to serve on")
-	cmd.Flags().StringVar(&workDir, "work-dir", "",
+	cmd.Flags().StringVar(&listen, "listen", envServeDefault(roleDefaults, "listen", "127.0.0.1:8090"), "address to serve on")
+	cmd.Flags().StringVar(&workDir, "work-dir", envServeDefault(roleDefaults, "work-dir", ""),
 		"directory to run in; the built-in demo and each world's state are written below it")
-	cmd.Flags().StringVar(&freezeTime, "freeze-time", "", "run every episode against a fixed clock (RFC3339)")
+	cmd.Flags().StringVar(&freezeTime, "freeze-time", envServeDefault(roleDefaults, "freeze-time", ""),
+		"run every episode against a fixed clock (RFC3339)")
 	cmd.Flags().StringVar(&dataAnchor, "data-anchor", "",
 		"pin the demo's seeded data to a day (YYYY-MM-DD) so the world is the same on any date")
 	cmd.Flags().BoolVar(&allowDrift, "allow-catalog-drift", false,
@@ -763,6 +782,7 @@ func newEnvServer(suite gjeval.Suite, profile gjeval.RewardProfile,
 	server.build = envBuildInfo{
 		Version: version, Commit: commit, Date: date,
 		Go: runtime.Version(), BinarySHA256: evalBinaryFingerprint(),
+		ImageRole: strings.TrimSpace(imageRole),
 	}
 	server.freezeTime = strings.TrimSpace(freezeTime)
 	if err := server.indexTasks(); err != nil {

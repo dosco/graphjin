@@ -46,8 +46,13 @@ func TestEnvServeReadsItsConfigurationFromTheEnvironment(t *testing.T) {
 			t.Fatalf("--%s = %q, want %q", flag, got, want)
 		}
 	}
-	if len(applied) != 9 {
-		t.Fatalf("the banner should name every applied variable, got %v", applied)
+	if len(applied.Lines) != 9 {
+		t.Fatalf("the banner should name every applied variable, got %v", applied.Lines)
+	}
+	for _, flag := range []string{"listen", "suite", "split", "side", "pool", "step", "step-timeout"} {
+		if !applied.Set[flag] {
+			t.Fatalf("--%s was configured by the environment but is not reported as such", flag)
+		}
 	}
 }
 
@@ -74,10 +79,13 @@ func TestEnvServeFlagsOutrankTheEnvironment(t *testing.T) {
 	}
 	// And it must say so — a variable silently overridden looks like a variable
 	// that was never read.
-	if len(applied) != 2 {
-		t.Fatalf("applied = %v", applied)
+	if len(applied.Lines) != 2 {
+		t.Fatalf("applied = %v", applied.Lines)
 	}
-	for _, line := range applied {
+	if len(applied.Set) != 0 {
+		t.Fatalf("an overridden variable must not be reported as having configured anything: %v", applied.Set)
+	}
+	for _, line := range applied.Lines {
 		if !strings.Contains(line, "ignored") {
 			t.Fatalf("an overridden variable must be reported as ignored: %q", line)
 		}

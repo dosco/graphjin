@@ -16,7 +16,7 @@ endif
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}" -X "github.com/dosco/graphjin/serv/v3.version=${BUILD_VERSION}"'
 
-.PHONY: all download-tools build wasm-build gen config-schema clean tidy test test-parallel-dbs test-sequential test-norace run demo demo-agent demo-smoke demo-agent-smoke smoke-all smoke-default run-github-actions lint changlog release version help test-mongodb test-cassandra test-clickhouse $(PLATFORMS)
+.PHONY: all download-tools build wasm-build gen config-schema clean tidy test test-parallel-dbs test-sequential test-norace run demo demo-agent demo-smoke demo-agent-smoke smoke-all smoke-default env-image env-image-smoke run-github-actions lint changlog release version help test-mongodb test-cassandra test-clickhouse $(PLATFORMS)
 
 tidy:
 	@find . -name "go.mod" -execdir go mod tidy \;
@@ -156,6 +156,16 @@ demo-agent-smoke:
 
 smoke-all:
 	@scripts/demo-smoke-all.sh $(SMOKE_ALL_ARGS)
+
+# The agent environment as a container. Builds locally with ko and publishes
+# nothing; env-image-smoke additionally boots it and drives it.
+env-image:
+	@KO_DOCKER_REPO=ko.local ko build --local --bare \
+		--ldflags '-s -w -X "main.version=$(BUILD_VERSION)" -X "main.commit=$(BUILD)" -X "main.date=$(BUILD_DATE)" -X "main.imageRole=env"' \
+		./cmd
+
+env-image-smoke:
+	@scripts/env-image-smoke.sh
 
 # Ground-truth agent data-accuracy eval loop (boots saas-ops itself).
 # Baseline before a change, candidate (gated) after; trend shows history.

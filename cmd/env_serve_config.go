@@ -41,13 +41,22 @@ func envServeVariable(flag string) string {
 	return envServePrefix + strings.ToUpper(strings.ReplaceAll(flag, "-", "_"))
 }
 
+// envServeOverlay is what the environment configured.
+type envServeOverlay struct {
+	// Lines is one entry per variable, for the startup banner.
+	Lines []string
+	// Set names the flags the environment supplied, which is how a caller
+	// tells a value that was configured from one that was defaulted.
+	Set map[string]bool
+}
+
 // applyEnvServeSettings overlays GJ_ENV_* onto the flags nobody passed.
 //
-// Setting flags rather than returning a struct means each value is parsed by
-// the flag that owns it, so a duration stays a duration and a bad one fails
-// closed naming both the variable and the value. Returns one line per applied
-// variable for the startup banner.
-func applyEnvServeSettings(flags *pflag.FlagSet, environ []string) ([]string, error) {
+// Setting flags rather than returning a struct of values means each one is
+// parsed by the flag that owns it, so a duration stays a duration and a bad one
+// fails closed naming both the variable and the value.
+func applyEnvServeSettings(flags *pflag.FlagSet, environ []string) (envServeOverlay, error) {
+	overlay := envServeOverlay{Set: map[string]bool{}}
 	present := map[string]string{}
 	for _, entry := range environ {
 		key, value, found := strings.Cut(entry, "=")
@@ -56,9 +65,8 @@ func applyEnvServeSettings(flags *pflag.FlagSet, environ []string) ([]string, er
 		}
 	}
 	if len(present) == 0 {
-		return nil, nil
+		return overlay, nil
 	}
-	var applied []string
 	for _, name := range envServeFlags {
 		variable := envServeVariable(name)
 		value, ok := present[variable]
@@ -69,13 +77,14 @@ func applyEnvServeSettings(flags *pflag.FlagSet, environ []string) ([]string, er
 		if flags.Changed(name) {
 			// The flag wins, but saying so out loud beats leaving an operator to
 			// wonder why the variable they set had no effect.
-			applied = append(applied, fmt.Sprintf("%s ignored (--%s was passed)", variable, name))
+			overlay.Lines = append(overlay.Lines, fmt.Sprintf("%s ignored (--%s was passed)", variable, name))
 			continue
 		}
 		if err := flags.Set(name, value); err != nil {
-			return nil, fmt.Errorf("%s=%q is not a valid --%s: %w", variable, value, name, err)
+			return envServeOverlay{}, fmt.Errorf("%s=%q is not a valid --%s: %w", variable, value, name, err)
 		}
-		applied = append(applied, fmt.Sprintf("%s=%s", variable, value))
+		overlay.Set[name] = true
+		overlay.Lines = append(overlay.Lines, fmt.Sprintf("%s=%s", variable, value))
 	}
 	if len(present) > 0 {
 		unknown := make([]string, 0, len(present))
@@ -87,12 +96,20 @@ func applyEnvServeSettings(flags *pflag.FlagSet, environ []string) ([]string, er
 		for _, name := range envServeFlags {
 			known = append(known, envServeVariable(name))
 		}
-		return nil, fmt.Errorf(
+		return envServeOverlay{}, fmt.Errorf(
 			"%s configures nothing; this server reads %s. The model is configured separately through "+
 				"GJ_AGENT_* and GJ_SUPPORT_*",
 			strings.Join(unknown, ", "), strings.Join(known, ", "))
 	}
-	return applied, nil
+	return overlay, nil
+}
+
+// envServeDefault is the default a flag gets, which an image's role may change.
+func envServeDefault(roleDefaults map[string]string, flag, fallback string) string {
+	if value, ok := roleDefaults[flag]; ok {
+		return value
+	}
+	return fallback
 }
 
 // enterEnvWorkDir makes the process run somewhere it is allowed to write.

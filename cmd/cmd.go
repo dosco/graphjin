@@ -38,6 +38,12 @@ var (
 func Cmd() {
 	log = newLogger(false).Sugar()
 
+	// What this binary was built to be, before anything reads a flag or an
+	// argument: an environment image supplies its own subcommand and defaults.
+	if err := applyImageRole(); err != nil {
+		log.Fatalf("%s", err)
+	}
+
 	if err := newRootCmd().Execute(); err != nil {
 		var exitErr *evalExitError
 		if errors.As(err, &exitErr) {

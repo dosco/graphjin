@@ -57,6 +57,44 @@ kos:
     env:
       - CGO_ENABLED=0
 
+  # The agent environment image. Same source, same build, same repository —
+  # only the role differs, because ko sets the entrypoint to the binary and
+  # offers no way to give it arguments (goreleaser's ko block has no
+  # entrypoint/cmd/args field). The role ldflag is how the binary knows to
+  # serve `env serve`, listen off loopback, and pin its clock to the build
+  # date so one tag measures one thing forever.
+  #
+  # Disabled: publishing it is a decision, not a side effect of a release.
+  # Flipping this line and cutting a release is the whole of it.
+  - id: graphjin-env-docker
+    disable: true
+    build: graphjin
+    main: ./cmd
+    repositories:
+      - dosco/graphjin
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - env-latest
+      - "env-{{ .Version }}"
+    bare: true
+    labels:
+      org.opencontainers.image.title: graphjin-env
+      org.opencontainers.image.description: GraphJin as a graded agent environment for training and evaluation
+      org.opencontainers.image.source: https://github.com/dosco/graphjin
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .Commit }}"
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+      - -X github.com/dosco/graphjin/serv/v3.version={{ .Version }}
+      - -X main.imageRole=env
+    env:
+      - CGO_ENABLED=0
+
 signs:
   - artifacts: checksum
     args:
