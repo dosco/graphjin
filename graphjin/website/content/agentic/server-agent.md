@@ -105,7 +105,7 @@ The public MCP `execute_graphql` tool is separate from the server-side agent's i
 
 ## Role-aware guidance
 
-The agent is caller-aware. From the request's identity it derives a capability profile limited to fixed `gj_*` system roots—never application tables—and preloads every permitted Ax skill. The 15 flat guides cover data discovery/write, code read/write, workflow discovery/execution/authoring, watch inbox/lifecycle/flow enrichment/action delivery, declared-task read/write, and admin inspection/configuration.
+The agent is caller-aware. From the request's identity it derives a capability profile limited to fixed `gj_*` system roots—never application tables—and preloads every permitted Ax skill. The 14 flat guides cover data discovery/aggregation/write, code read/write, workflow discovery/execution/authoring, watch inbox/lifecycle, declared-task read/write, and admin inspection/configuration.
 
 There is no lexical router, embedding search, skill catalog, search callback, or skill-discovery turn. Global read-only posture removes every write guide. Workflow, watch, and admin guides are included only when their governed roots are visible; admin guides also require the admin role. Multi-domain requests can use more than one preloaded guide.
 

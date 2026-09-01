@@ -27,8 +27,9 @@ For the cross-vendor public benchmark and exact per-run reports, see [DeepORG](/
 {{< callout type="note" title="Eval is a release check, not a model leaderboard." >}}
 Start with the questions your users actually ask. GraphJin builds executable
 checks from the catalog, runs the agent repeatedly, and compares the result with
-a trusted baseline. The larger frontier benchmark and RL-ready interfaces come
-later.
+a trusted baseline. The frontier benchmark is [DeepORG](/benchmarks/deeporg/),
+and the resettable training environment is
+[here](/environment/overview/) — both shipped; this page is neither.
 {{< /callout >}}
 
 ## What GraphJin checks
@@ -496,36 +497,28 @@ At 100 tasks and three initial repeats, the preview can be up to 300
 provider-backed runs, plus confirmation runs for candidate regressions. Treat
 that as an intentional benchmark budget, not the default getting-started path.
 
-## The RL-ready boundary
+## From a release gate to a training environment
 
-Versioned tasks, private episodes, reward vectors, action trails, seeds,
-provenance, and environment interfaces make the evaluation engine usable as the
-foundation of a future rollout collector. That does **not** mean GraphJin Eval
-v1 is a reinforcement-learning trainer.
+This page is the release gate: a suite generated from your catalog, repeated
+runs, a promoted baseline, and an exit code CI can act on. It answers "does the
+agent still work".
 
-V1 is deliberately:
+The same engine also runs as a graded training environment, and answers a
+different question: how well does *this policy* do, and can it be made better.
+That path serves pooled, resettable worlds — writes and mutation reset, parallel
+collection across an instance pool, multi-turn episodes, held-out splits, and
+trainer integration through three drive modes.
 
-- read-only;
-- sequential;
-- single-turn;
-- without mutation reset semantics; and
-- without parallel instance-pool collection or trainer integration.
+{{< verified by="TestPoolBootsIsolatedDemoInstancesThatAgree" file="cmd/eval_pool_test.go" >}}
 
-The reserved `turns` and `mutation` fields are rejected rather than silently
-approximated. `InstancePool` and `ResettableInstance` are future seams for safe,
-resettable rollout workers. See the compact
-[technical reference](https://github.com/dosco/graphjin/blob/master/docs/GRAPHJIN-EVAL.md)
-when building against those interfaces.
-
-The next milestone is **environment diversity**, not a more complicated reward:
-generate many distinct schemas and deterministic datasets, then run the existing
-task generator over each catalog. After that comes rollout throughput through
-per-worker SQLite file copies and `ResettableInstance.Reset`. Mutation tasks,
-multi-turn curricula, a headless batch API, and more process rewards come only
-after those two foundations.
+Both paths grade through the same reward contract, so a number from one can be
+compared with a number from the other — provided you record what the comparison
+depends on. See [the environment](/environment/overview/), and
+[reward and comparability](/environment/reward/) for the fields that decide it.
 
 ## Keep going
 
 - Learn how the evaluated [server-side agent](/agentic/server-agent/) discovers and executes governed answers.
 - Add questions from the [SaaS Ops demo](/start/demos/#saas-ops) to your suite.
 - Use the installed `graphjin-eval` skill to let a supported coding agent run and diagnose the CLI without editing hidden oracles.
+- Take a policy further with [the training environment](/environment/training/).
