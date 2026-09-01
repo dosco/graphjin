@@ -20,7 +20,7 @@ Finally we do have a lot of test for critical parts of the codebase which makes 
 
 ## Getting Started
 
-- Read the [Getting Started Guide](https://graphjin.com/guide.html#get-started)
+- Read the [Quick Start](https://graphjin.com/start/quick-start/)
 
 ## Setup Development Environment
 
@@ -52,7 +52,8 @@ go run main.go serve
 
 ### Learn how the code works
 
-[GraphJin codebase explained](https://graphjin.com/internals.html)
+[How the compiler works](https://graphjin.com/core/compiler/), and the
+[engine contract](docs/GRAPHJIN-EVAL.md) for the evaluation and environment side.
 
 ### Testing and Linting
 
