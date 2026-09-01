@@ -879,18 +879,34 @@ type evalSkillInstallResult struct {
 	Err       error
 }
 
+// installedSkills are the skills `graphjin mcp install` writes onto a machine.
+//
+// Names are stable on purpose: writeEvalSkill writes by path and never prunes,
+// so renaming one would strand the old copy on every machine that has ever run
+// this command, still teaching whatever it said at the time.
+var installedSkills = []string{"graphjin-eval", "graphjin-env"}
+
 func installGraphJinEvalSkills(opts mcpInstallOptions) []evalSkillInstallResult {
-	data, err := tmpl.ReadFile("tmpl/skills/graphjin-eval/SKILL.md")
+	var results []evalSkillInstallResult
+	for _, skill := range installedSkills {
+		results = append(results, installOneSkill(opts, skill)...)
+	}
+	return results
+}
+
+func installOneSkill(opts mcpInstallOptions, skill string) []evalSkillInstallResult {
+	embedded := "tmpl/skills/" + skill + "/SKILL.md"
+	data, err := tmpl.ReadFile(embedded)
 	if err != nil {
-		return []evalSkillInstallResult{{Client: opts.Client, Path: "embedded:tmpl/skills/graphjin-eval/SKILL.md", Err: err}}
+		return []evalSkillInstallResult{{Client: opts.Client, Path: "embedded:" + embedded, Err: err}}
 	}
 	wd, wdErr := os.Getwd()
 	home, homeErr := os.UserHomeDir()
 	var results []evalSkillInstallResult
 	install := func(client, base string, baseErr error) {
-		path := "embedded:tmpl/skills/graphjin-eval/SKILL.md"
+		path := "embedded:" + embedded
 		if baseErr == nil {
-			path = filepath.Join(base, "."+client, "skills", "graphjin-eval", "SKILL.md")
+			path = filepath.Join(base, "."+client, "skills", skill, "SKILL.md")
 		}
 		result := evalSkillInstallResult{Client: client, Path: path, Err: baseErr}
 		if result.Err == nil {

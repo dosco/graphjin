@@ -70,7 +70,11 @@ tests/.snowflake-capture/
 cmd/cmd
 
 .claude-plugins
-.claude
+# Local Claude state stays out, but skills that belong to this repo are part of
+# it: they are how a coding agent working on GraphJin learns the workflows and
+# the gates. .claude/worktrees and settings.local.json remain ignored.
+.claude/*
+!.claude/skills/
 # Local WIP status files (never commit)
 snowflake-wip.md
 docs/DESIGN-OPENAPI-TOPLEVEL.md

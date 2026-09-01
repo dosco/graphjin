@@ -126,7 +126,39 @@ candidate, or understand an evaluation failure.
    graphjin eval bench --scale 100 --seed 23 --yes --json
    ```
 
-8. Run the frozen public cohort only after the user approves provider traffic:
+8. Collect several attempts per task, for a training corpus rather than a
+   verdict:
+
+   ```sh
+   graphjin eval sample --repeats 8 --temperature 0.8 --split <split> --side train --yes --json
+   ```
+
+   Sampling reaches no verdict and promotes nothing. Without a temperature the
+   attempts come back identical.
+
+9. Export a completed run as trajectories:
+
+   ```sh
+   graphjin eval export <run-id> --stage executor --out run.jsonl
+   ```
+
+   It refuses eval-side episodes unless `--allow-eval-side` is given.
+
+10. Re-grade a completed run with no provider traffic, after a scoring change
+    or to compare profiles:
+
+    ```sh
+    graphjin eval rescore <run-id> --json
+    ```
+
+11. Have a capable model author the richer task families. This spends generator
+    tokens, so preview and approve first:
+
+    ```sh
+    graphjin eval author --kinds watch,confirmation,file --yes --json
+    ```
+
+12. Run the frozen public cohort only after the user approves provider traffic:
 
    ```sh
    graphjin eval bench --public --yes --json
@@ -141,7 +173,7 @@ candidate, or understand an evaluation failure.
 
    Do not add `--allow-off-suite` without a separate explicit ask.
 
-9. In CI, restore the deliberately promoted sanitized baseline, require it to
+13. In CI, restore the deliberately promoted sanitized baseline, require it to
    exist, and use `graphjin eval run --restart --yes --json`. Upload reports
    (`.json`, friendly `.md`, and `.technical.md`) only; never upload episodes
    or attempts.
@@ -190,3 +222,10 @@ targets through the report's suite-wide aggregate `oracle_value_hash`. If both
 the dataset fingerprint and aggregate oracle hash differ, explain that GraphJin
 intentionally falls back to method-correctness comparison instead of treating
 changing live values as a model regression.
+
+## Training an agent, not measuring one
+
+This skill covers measurement: suites, baselines, candidate comparison,
+publishing. Driving a training loop against a served environment — the
+container, the step bridge, external agents over MCP, GRPO groups — is the
+`graphjin-env` skill. Full documentation at <https://graphjin.com/environment/>.
