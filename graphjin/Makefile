@@ -21,14 +21,20 @@ BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commi
 tidy:
 	@find . -name "go.mod" -execdir go mod tidy \;
 
+# -timeout matches the per-database targets below. Without it the package suite
+# inherits Go's 600s default, and cmd/ alone boots enough real instances to sit
+# at ~556s under -race — so the default was 43 seconds from failing a green
+# build, and any test added anywhere tipped it over.
+GO_TEST_TIMEOUT ?= 30m
+
 test: test-parallel-dbs
-	@go test -v -race $(PACKAGES)
+	@go test -v -race -timeout $(GO_TEST_TIMEOUT) $(PACKAGES)
 
 test-parallel-dbs:
 	@bash scripts/test-parallel.sh
 
 test-sequential: test-postgres test-mysql test-mariadb test-sqlite test-oracle test-mssql test-mongodb test-cassandra test-clickhouse
-	@go test -v -race $(PACKAGES)
+	@go test -v -race -timeout $(GO_TEST_TIMEOUT) $(PACKAGES)
 
 test-postgres:
 	@echo "Running Postgres tests..."
