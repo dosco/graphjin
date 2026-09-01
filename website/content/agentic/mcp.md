@@ -179,4 +179,4 @@ Unsubscribing from this MCP resource only removes the in-memory resource subscri
 
 Creation, flow preview/approval, autonomous-action approval, pause/resume, and updates all use `gj_watch`. See [Choosing Watches, Flows, and Workflows](/agentic/watch-automation/) for the decision matrix and review examples.
 
-{{< verified by="TestWatchMCPPerWatchRoutingSameOwnerSessions" file="serv/watches_test.go" line="1571" >}}
+{{< verified by="TestMCPAxExactWatchSubscriptionAndRecovery" file="serv/mcp_protocol_test.go" line="388" >}}

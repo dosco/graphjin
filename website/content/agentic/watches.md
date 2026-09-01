@@ -185,7 +185,7 @@ In a multi-conversation MCP client, give each watch a unique name, retain the re
 
 MCP clients can RFC 6570-expand `graphjin://watch-events/unseen/{watch_id}` for each retained watch, percent-encoding reserved characters in the ID, and subscribe to that concrete resource. GraphJin then sends `notifications/resources/updated` only to sessions subscribed to that watch; the notification URI identifies the watch, while a resource read returns its compact event metadata. The aggregate `graphjin://watch-events/unseen` resource remains available for clients without per-URI subscription support, but those clients must filter entries to their conversation's retained watch IDs before reading or acknowledging events. Full event payloads still come from `gj_watch_event`.
 
-{{< verified by="TestWatchMCPPerWatchRoutingSameOwnerSessions" file="serv/watches_test.go" line="1571" >}}
+{{< verified by="TestMCPAxExactWatchSubscriptionAndRecovery" file="serv/mcp_protocol_test.go" line="388" >}}
 
 ## Rollup watches
 

@@ -1250,6 +1250,145 @@ for (const file of htmlFiles) {
   }
 }
 
+
+// --- Documentation that is derived from code, not restated ---------------
+//
+// Every claim below existed in prose and in a Go literal, and the prose was
+// wrong: a 100-task suite that was 113, a v1 command list missing four
+// subcommands, an env-var family documented nowhere. Prose is not a gate. These
+// read the source of truth and fail the build when the docs drift from it.
+
+// GJ_ENV_* — the CLI reference must cover exactly the flags the server reads.
+{
+  const source = await readFile(path.join(repoRoot, 'cmd', 'env_serve_config.go'), 'utf8');
+  const block = source.match(/var envServeFlags = \[\]string\{([\s\S]*?)\}/);
+  if (!block) {
+    failures.push('cmd/env_serve_config.go: envServeFlags literal moved; the GJ_ENV_ drift check cannot run');
+  } else {
+    const flags = [...block[1].matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
+    const expected = new Set(flags.map((f) => 'GJ_ENV_' + f.toUpperCase().replaceAll('-', '_')));
+    const page = path.join(publicRoot, 'environment', 'cli-reference', 'index.html');
+    if (await exists(page)) {
+      const html = await readFile(page, 'utf8');
+      const documented = new Set([...html.matchAll(/GJ_ENV_[A-Z_]+/g)].map((m) => m[0]));
+      for (const name of expected) {
+        if (!documented.has(name)) {
+          failures.push(`environment/cli-reference documents no ${name}, but the server reads it`);
+        }
+      }
+      for (const name of documented) {
+        if (!expected.has(name)) {
+          failures.push(`environment/cli-reference documents ${name}, which the server does not read`);
+        }
+      }
+    }
+  }
+}
+
+// Subcommands — every visible one documented, every hidden one not.
+{
+  const page = path.join(publicRoot, 'environment', 'cli-reference', 'index.html');
+  if (await exists(page)) {
+    const html = await readFile(page, 'utf8');
+    const hidden = ['freeze-suite', 'import-corpus'];
+    for (const [file, pattern] of [
+      ['cmd/cmd_env.go', /cmd\.AddCommand\(env([A-Za-z]+)Cmd\(\)\)/g],
+    ]) {
+      const source = await readFile(path.join(repoRoot, file), 'utf8');
+      for (const match of source.matchAll(pattern)) {
+        const name = match[1].replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+        if (!html.includes(`env ${name}`)) {
+          failures.push(`environment/cli-reference does not document \`graphjin env ${name}\``);
+        }
+      }
+    }
+    for (const name of hidden) {
+      if (html.includes(name)) {
+        failures.push(`environment/cli-reference names the hidden command \`${name}\``);
+      }
+    }
+  }
+}
+
+// The public suite's task count, which prose has already got wrong once.
+{
+  const page = path.join(publicRoot, 'environment', 'quickstart', 'index.html');
+  if (await exists(page)) {
+    const suite = JSON.parse(await readFile(path.join(repoRoot, 'cmd', 'benchmark', 'public-suite.json'), 'utf8'));
+    const actual = suite.tasks.length;
+    const html = await readFile(page, 'utf8');
+    const rendered = html.match(/data-public-suite-tasks[^>]*>(\d+)</);
+    if (!rendered) {
+      failures.push('environment/quickstart no longer renders data-public-suite-tasks');
+    } else if (Number(rendered[1]) !== actual) {
+      failures.push(`environment/quickstart says ${rendered[1]} tasks; public-suite.json has ${actual}`);
+    }
+  }
+}
+
+// The measured figures must carry a date, so a stale number is visible.
+{
+  const data = await readFile(path.join(siteRoot, 'data', 'environment.yaml'), 'utf8');
+  const measured = data.match(/^\s+on:\s*(\S+)/m);
+  if (!measured || Number.isNaN(Date.parse(measured[1]))) {
+    failures.push('data/environment.yaml: measured.on is missing or not a date');
+  }
+}
+
+// "Verified by" badges must name a test that exists. 236 of these are rendered
+// across the site and nothing checked them; three named tests that had been
+// renamed or deleted, which is the same drift that let a stale disclaimer
+// stand for five increments.
+{
+  const testIndex = new Map();
+  const findTests = async (dir) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      // Skip copies of this repo. `.claude/worktrees` holds full checkouts,
+      // and indexing their tests would let a renamed test keep validating a
+      // stale citation — the exact masking this check exists to prevent.
+      if (entry.name.startsWith('.') || entry.name === 'node_modules' ||
+          entry.name === 'public' || entry.name === 'dist' || entry.name === 'vendor') continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await findTests(full);
+      else if (entry.name.endsWith('_test.go')) {
+        const body = await readFile(full, 'utf8');
+        testIndex.set(path.relative(repoRoot, full), new Set(
+          [...body.matchAll(/^func\s+((?:Test|Example)[A-Za-z0-9_]*)/gm)].map((m) => m[1])
+        ));
+      }
+    }
+  };
+  await findTests(repoRoot);
+  const allNames = new Set([...testIndex.values()].flatMap((s) => [...s]));
+
+  const walkContent = async (dir) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { await walkContent(full); continue; }
+      if (!entry.name.endsWith('.md')) continue;
+      const body = await readFile(full, 'utf8');
+      for (const match of body.matchAll(/verified\s+by="([^"]+)"(?:\s+file="([^"]+)")?/g)) {
+        const [, name, file] = match;
+        const rel = path.relative(contentRoot, full);
+        if (name.endsWith('.sh')) {
+          // A smoke script is real evidence. Check it exists and that the two
+          // attributes agree, rather than waving it through.
+          if (!file || path.basename(file) !== name) {
+            failures.push(`${rel}: verified by="${name}" does not match its file="${file}"`);
+          } else if (!(await exists(path.join(repoRoot, file)))) {
+            failures.push(`${rel}: verified by="${name}" names a script that does not exist`);
+          }
+        } else if (!allNames.has(name)) {
+          failures.push(`${rel}: verified by="${name}" names a test that does not exist`);
+        } else if (file && testIndex.has(file) && !testIndex.get(file).has(name)) {
+          failures.push(`${rel}: verified by="${name}" is not in ${file}`);
+        }
+      }
+    }
+  };
+  await walkContent(contentRoot);
+}
+
 if (failures.length > 0) {
   console.error(failures.map((failure) => `- ${failure}`).join('\n'));
   process.exit(1);
