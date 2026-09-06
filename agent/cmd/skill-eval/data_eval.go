@@ -332,8 +332,10 @@ func postGraphQL(client *http.Client, profile endpointProfile, query string, var
 	if err != nil {
 		return nil, err
 	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
 	var envelope map[string]any
-	if err := json.Unmarshal(raw, &envelope); err != nil {
+	if err := dec.Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("decode HTTP %d oracle response: %w", status, err)
 	}
 	if errs := toSlice(envelope["errors"]); len(errs) != 0 {
@@ -605,6 +607,7 @@ func evaluateMethod(rule methodRule, answer answerRule, queries, okTools []strin
 	for _, required := range rule.RequireQueryMatch {
 		pattern, err := regexp.Compile("(?i)" + required)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: invalid method regex %q: %v\n", required, err)
 			return false
 		}
 		if !pattern.MatchString(joined) {
@@ -646,7 +649,7 @@ func executedQueries(actions any) ([]string, []string) {
 		if tool != "" {
 			okTools = appendUnique(okTools, tool)
 		}
-		if tool != "execute_graphql" && tool != "execute_saved_query" {
+		if tool != "execute_graphql" && tool != "execute_saved_query" && tool != "execute_sql" && tool != "execute_raw_query" {
 			continue
 		}
 		args := toMap(action["args"])
@@ -883,7 +886,7 @@ func valueString(value any) string {
 
 func numberFromString(text string) (float64, bool) {
 	cleaned := strings.TrimSpace(text)
-	cleaned = strings.TrimPrefix(cleaned, "$")
+	cleaned = strings.ReplaceAll(cleaned, "$", "")
 	cleaned = strings.ReplaceAll(cleaned, ",", "")
 	cleaned = strings.TrimSuffix(cleaned, "%")
 	if cleaned == "" {

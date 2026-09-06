@@ -9,6 +9,7 @@ import (
 	"io"
 	mathrand "math/rand"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -452,15 +453,18 @@ func (g Generator) VerifyTasks(ctx context.Context, candidates []Task, seed int6
 	}
 	verified := make([]Task, 0, len(candidates))
 	seen := map[string]struct{}{}
+	var droppedNorm, droppedDuplicate, droppedUnresolvedOracle, droppedUselessMutation, droppedBadCollateral int
 	for i := range candidates {
 		if candidates[i].Provenance.Seed == 0 {
 			candidates[i].Provenance.Seed = seed
 		}
 		if err := candidates[i].Normalize(); err != nil {
+			droppedNorm++
 			continue
 		}
 		key := taskStructureKey(candidates[i])
 		if _, ok := seen[key]; ok {
+			droppedDuplicate++
 			continue
 		}
 		if candidates[i].Oracle != nil {
@@ -468,6 +472,7 @@ func (g Generator) VerifyTasks(ctx context.Context, candidates []Task, seed int6
 				return nil, fmt.Errorf("generator needs an oracle verifier")
 			}
 			if !resolved[i] {
+				droppedUnresolvedOracle++
 				continue
 			}
 		}
@@ -479,6 +484,7 @@ func (g Generator) VerifyTasks(ctx context.Context, candidates []Task, seed int6
 			// agent that did nothing at all.
 			baseline, err := g.Verifier.Resolve(ctx, candidates[i].Mutation.PostState)
 			if err != nil || baseline.Value == candidates[i].Mutation.ExpectedValue {
+				droppedUselessMutation++
 				continue
 			}
 			validCollateral := true
@@ -489,11 +495,16 @@ func (g Generator) VerifyTasks(ctx context.Context, candidates []Task, seed int6
 				}
 			}
 			if !validCollateral {
+				droppedBadCollateral++
 				continue
 			}
 		}
 		seen[key] = struct{}{}
 		verified = append(verified, candidates[i])
+	}
+	droppedTotal := droppedNorm + droppedDuplicate + droppedUnresolvedOracle + droppedUselessMutation + droppedBadCollateral
+	if droppedTotal > 0 {
+		fmt.Fprintf(os.Stderr, "Dropped %d candidates: %d normalization errors, %d duplicates, %d unresolved oracles, %d useless mutations, %d bad collateral\n", droppedTotal, droppedNorm, droppedDuplicate, droppedUnresolvedOracle, droppedUselessMutation, droppedBadCollateral)
 	}
 	return verified, nil
 }
@@ -510,11 +521,12 @@ type generatorColumn struct {
 }
 
 type generatorTable struct {
-	Name        string
-	ID          string
-	Columns     []generatorColumn
-	PrimaryKey  string
-	LabelColumn string
+	Name         string
+	ID           string
+	Columns      []generatorColumn
+	PrimaryKey   string
+	CompositeKey bool
+	LabelColumn  string
 }
 
 func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
@@ -526,11 +538,24 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 	}
 	var tasks []Task
 	for _, table := range tables {
-		pk := table.PrimaryKey
-		if pk == "" && len(table.Columns) != 0 {
-			pk = table.Columns[0].Name
+		if isReservedWord(table.Name) {
+			continue
 		}
+		pk := table.PrimaryKey
 		if pk == "" {
+			for _, col := range table.Columns {
+				lower := strings.ToLower(col.Name)
+				if isIntegerLikeType(col.Type) && (strings.HasSuffix(lower, "_id") || strings.HasSuffix(lower, "_key") || lower == "id") {
+					pk = col.Name
+					break
+				}
+			}
+			// Final fallback to first column only if nothing better found
+			if pk == "" && len(table.Columns) != 0 {
+				pk = table.Columns[0].Name
+			}
+		}
+		if pk == "" || isReservedWord(pk) {
 			continue
 		}
 		tasks = append(tasks, generatedTask(seed, table.ID, table.ID, CategoryAggregate, DifficultyT1,
@@ -538,6 +563,9 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 			fmt.Sprintf("query { %s { count_%s } }", table.Name, pk), table.Name+".0.count_"+pk,
 			"number", []string{aggregateMethodPattern("count", pk)}))
 		for _, column := range table.Columns {
+			if isReservedWord(column.Name) {
+				continue
+			}
 			if !isIdentifierColumn(table, column) {
 				completenessQuery := fmt.Sprintf("query { %s(where: {not: {%s: {is_null: true}}}) { count_%s } }", table.Name, column.Name, pk)
 				tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, column.ID, CategoryDiscovery, DifficultyT2,
@@ -546,6 +574,9 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 			}
 			if isNumericType(column.Type) && !isIdentifierColumn(table, column) {
 				for _, fn := range []string{"sum", "avg", "min", "max"} {
+					if (fn == "sum" || fn == "avg") && !isSafeSumType(column.Type) {
+						continue
+					}
 					field := fn + "_" + column.Name
 					tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, column.ID, CategoryAggregate, DifficultyT1,
 						fmt.Sprintf("What is the %s %s across all %s?", aggregatePhrase(fn), humanize(column.Name), humanize(table.Name)),
@@ -553,7 +584,7 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 						"number", []string{aggregateMethodPattern(fn, column.Name)}))
 				}
 				label := table.LabelColumn
-				if label != "" && label != column.Name {
+				if label != "" && label != column.Name && !table.CompositeKey {
 					tasks = append(tasks,
 						generatedRankingTask(seed, table, column, label, "desc", "highest"),
 						generatedRankingTask(seed, table, column, label, "asc", "lowest"),
@@ -569,7 +600,7 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 					fmt.Sprintf("What is the latest date recorded in %s.%s?", table.Name, column.Name),
 					fmt.Sprintf("query { %s { %s } }", table.Name, field), table.Name+".0."+field,
 					"date", []string{latestDateMethodPattern(column.Name)}))
-				if table.LabelColumn != "" && table.LabelColumn != column.Name {
+				if table.LabelColumn != "" && table.LabelColumn != column.Name && !table.CompositeKey {
 					tasks = append(tasks,
 						generatedRankingTask(seed, table, column, table.LabelColumn, "desc", "latest"),
 						generatedRankingTask(seed, table, column, table.LabelColumn, "asc", "earliest"),
@@ -1296,6 +1327,7 @@ func mergeTableDetails(table *generatorTable, raw any) {
 		}
 		if keys := toSlice(mapValue(details, "primary_keys", "primaryKeys")); len(keys) != 0 {
 			table.PrimaryKey = valueString(keys[0])
+			table.CompositeKey = len(keys) > 1
 		}
 		name := mapString(details, "column_name", "columnName")
 		if name == "" {
@@ -1468,6 +1500,13 @@ func mapBool(values map[string]any, keys ...string) bool {
 
 func normalizeDetailKey(value string) string {
 	return strings.ToLower(strings.ReplaceAll(value, "_", ""))
+}
+
+func isSafeSumType(colType string) bool {
+	t := strings.ToLower(colType)
+	return t == "bigint" || t == "decimal" || t == "numeric" || t == "float" ||
+		t == "real" || t == "double" || t == "double precision" ||
+		t == "money" || t == "smallmoney" || t == "float8" || t == "float4"
 }
 
 func isNumericType(value string) bool {
@@ -1821,4 +1860,20 @@ func twinsForSelectedNeeds(selected, twins []Task) []Task {
 		}
 	}
 	return out
+}
+
+func isReservedWord(name string) bool {
+	switch strings.ToLower(name) {
+	case "as", "order", "select", "from", "where", "table", "column", "group", "having", "join", "on", "in", "not", "and", "or", "like", "between", "case", "when", "then", "else", "end", "null", "true", "false", "is", "set", "key", "index", "primary", "foreign", "create", "drop", "alter", "insert", "update", "delete", "into", "values", "default", "check", "constraint", "references", "unique", "date", "time", "timestamp", "type", "name", "value", "status", "level", "role", "user", "grant", "revoke", "public", "schema", "database", "desc", "asc":
+		return true
+	}
+	return false
+}
+
+func isIntegerLikeType(typeName string) bool {
+	switch strings.ToLower(typeName) {
+	case "int", "integer", "bigint", "smallint", "tinyint", "serial", "number":
+		return true
+	}
+	return false
 }
