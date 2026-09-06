@@ -537,10 +537,10 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 		profile.ReadOnly = profile.ReadOnly || snapshot.Status.ReadOnly
 	}
 	var tasks []Task
+	// Let live oracle verification reject unsupported queries or overflowing
+	// aggregates. SQL keyword and type blacklists would also discard valid
+	// tasks on databases that quote identifiers or promote aggregate types.
 	for _, table := range tables {
-		if isReservedWord(table.Name) {
-			continue
-		}
 		pk := table.PrimaryKey
 		if pk == "" {
 			for _, col := range table.Columns {
@@ -555,7 +555,7 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 				pk = table.Columns[0].Name
 			}
 		}
-		if pk == "" || isReservedWord(pk) {
+		if pk == "" {
 			continue
 		}
 		tasks = append(tasks, generatedTask(seed, table.ID, table.ID, CategoryAggregate, DifficultyT1,
@@ -563,9 +563,6 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 			fmt.Sprintf("query { %s { count_%s } }", table.Name, pk), table.Name+".0.count_"+pk,
 			"number", []string{aggregateMethodPattern("count", pk)}))
 		for _, column := range table.Columns {
-			if isReservedWord(column.Name) {
-				continue
-			}
 			if !isIdentifierColumn(table, column) {
 				completenessQuery := fmt.Sprintf("query { %s(where: {not: {%s: {is_null: true}}}) { count_%s } }", table.Name, column.Name, pk)
 				tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, column.ID, CategoryDiscovery, DifficultyT2,
@@ -574,9 +571,6 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 			}
 			if isNumericType(column.Type) && !isIdentifierColumn(table, column) {
 				for _, fn := range []string{"sum", "avg", "min", "max"} {
-					if (fn == "sum" || fn == "avg") && !isSafeSumType(column.Type) {
-						continue
-					}
 					field := fn + "_" + column.Name
 					tasks = append(tasks, generatedTask(seed, table.ID+":"+column.Name, column.ID, CategoryAggregate, DifficultyT1,
 						fmt.Sprintf("What is the %s %s across all %s?", aggregatePhrase(fn), humanize(column.Name), humanize(table.Name)),
@@ -1320,14 +1314,23 @@ func catalogTables(rows []CatalogRow) []generatorTable {
 }
 
 func mergeTableDetails(table *generatorTable, raw any) {
+	primaryKeys := map[string]struct{}{}
+	if table.PrimaryKey != "" {
+		primaryKeys[table.PrimaryKey] = struct{}{}
+	}
 	walkDetailMaps(raw, func(details map[string]any) {
 		value, _ := mapValue(details, "primary_key", "primaryKey").(string)
 		if value = strings.TrimSpace(value); value != "" {
 			table.PrimaryKey = value
+			primaryKeys[value] = struct{}{}
 		}
 		if keys := toSlice(mapValue(details, "primary_keys", "primaryKeys")); len(keys) != 0 {
 			table.PrimaryKey = valueString(keys[0])
-			table.CompositeKey = len(keys) > 1
+			for _, key := range keys {
+				if name := strings.TrimSpace(valueString(key)); name != "" {
+					primaryKeys[name] = struct{}{}
+				}
+			}
 		}
 		name := mapString(details, "column_name", "columnName")
 		if name == "" {
@@ -1340,8 +1343,10 @@ func mergeTableDetails(table *generatorTable, raw any) {
 		})
 		if mapBool(details, "primary", "primary_key", "primaryKey") {
 			table.PrimaryKey = name
+			primaryKeys[name] = struct{}{}
 		}
 	})
+	table.CompositeKey = table.CompositeKey || len(primaryKeys) > 1
 }
 
 func appendColumn(columns []generatorColumn, value generatorColumn) []generatorColumn {
@@ -1500,13 +1505,6 @@ func mapBool(values map[string]any, keys ...string) bool {
 
 func normalizeDetailKey(value string) string {
 	return strings.ToLower(strings.ReplaceAll(value, "_", ""))
-}
-
-func isSafeSumType(colType string) bool {
-	t := strings.ToLower(colType)
-	return t == "bigint" || t == "decimal" || t == "numeric" || t == "float" ||
-		t == "real" || t == "double" || t == "double precision" ||
-		t == "money" || t == "smallmoney" || t == "float8" || t == "float4"
 }
 
 func isNumericType(value string) bool {
@@ -1860,14 +1858,6 @@ func twinsForSelectedNeeds(selected, twins []Task) []Task {
 		}
 	}
 	return out
-}
-
-func isReservedWord(name string) bool {
-	switch strings.ToLower(name) {
-	case "as", "order", "select", "from", "where", "table", "column", "group", "having", "join", "on", "in", "not", "and", "or", "like", "between", "case", "when", "then", "else", "end", "null", "true", "false", "is", "set", "key", "index", "primary", "foreign", "create", "drop", "alter", "insert", "update", "delete", "into", "values", "default", "check", "constraint", "references", "unique", "date", "time", "timestamp", "type", "name", "value", "status", "level", "role", "user", "grant", "revoke", "public", "schema", "database", "desc", "asc":
-		return true
-	}
-	return false
 }
 
 func isIntegerLikeType(typeName string) bool {
