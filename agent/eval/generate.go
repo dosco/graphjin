@@ -9,6 +9,7 @@ import (
 	"io"
 	mathrand "math/rand"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -452,15 +453,18 @@ func (g Generator) VerifyTasks(ctx context.Context, candidates []Task, seed int6
 	}
 	verified := make([]Task, 0, len(candidates))
 	seen := map[string]struct{}{}
+	var droppedNorm, droppedDuplicate, droppedUnresolvedOracle, droppedUselessMutation, droppedBadCollateral int
 	for i := range candidates {
 		if candidates[i].Provenance.Seed == 0 {
 			candidates[i].Provenance.Seed = seed
 		}
 		if err := candidates[i].Normalize(); err != nil {
+			droppedNorm++
 			continue
 		}
 		key := taskStructureKey(candidates[i])
 		if _, ok := seen[key]; ok {
+			droppedDuplicate++
 			continue
 		}
 		if candidates[i].Oracle != nil {
@@ -468,6 +472,7 @@ func (g Generator) VerifyTasks(ctx context.Context, candidates []Task, seed int6
 				return nil, fmt.Errorf("generator needs an oracle verifier")
 			}
 			if !resolved[i] {
+				droppedUnresolvedOracle++
 				continue
 			}
 		}
@@ -479,6 +484,7 @@ func (g Generator) VerifyTasks(ctx context.Context, candidates []Task, seed int6
 			// agent that did nothing at all.
 			baseline, err := g.Verifier.Resolve(ctx, candidates[i].Mutation.PostState)
 			if err != nil || baseline.Value == candidates[i].Mutation.ExpectedValue {
+				droppedUselessMutation++
 				continue
 			}
 			validCollateral := true
@@ -489,11 +495,16 @@ func (g Generator) VerifyTasks(ctx context.Context, candidates []Task, seed int6
 				}
 			}
 			if !validCollateral {
+				droppedBadCollateral++
 				continue
 			}
 		}
 		seen[key] = struct{}{}
 		verified = append(verified, candidates[i])
+	}
+	droppedTotal := droppedNorm + droppedDuplicate + droppedUnresolvedOracle + droppedUselessMutation + droppedBadCollateral
+	if droppedTotal > 0 {
+		fmt.Fprintf(os.Stderr, "Dropped %d candidates: %d normalization errors, %d duplicates, %d unresolved oracles, %d useless mutations, %d bad collateral\n", droppedTotal, droppedNorm, droppedDuplicate, droppedUnresolvedOracle, droppedUselessMutation, droppedBadCollateral)
 	}
 	return verified, nil
 }
@@ -510,11 +521,12 @@ type generatorColumn struct {
 }
 
 type generatorTable struct {
-	Name        string
-	ID          string
-	Columns     []generatorColumn
-	PrimaryKey  string
-	LabelColumn string
+	Name         string
+	ID           string
+	Columns      []generatorColumn
+	PrimaryKey   string
+	CompositeKey bool
+	LabelColumn  string
 }
 
 func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
@@ -525,10 +537,23 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 		profile.ReadOnly = profile.ReadOnly || snapshot.Status.ReadOnly
 	}
 	var tasks []Task
+	// Let live oracle verification reject unsupported queries or overflowing
+	// aggregates. SQL keyword and type blacklists would also discard valid
+	// tasks on databases that quote identifiers or promote aggregate types.
 	for _, table := range tables {
 		pk := table.PrimaryKey
-		if pk == "" && len(table.Columns) != 0 {
-			pk = table.Columns[0].Name
+		if pk == "" {
+			for _, col := range table.Columns {
+				lower := strings.ToLower(col.Name)
+				if isIntegerLikeType(col.Type) && (strings.HasSuffix(lower, "_id") || strings.HasSuffix(lower, "_key") || lower == "id") {
+					pk = col.Name
+					break
+				}
+			}
+			// Final fallback to first column only if nothing better found
+			if pk == "" && len(table.Columns) != 0 {
+				pk = table.Columns[0].Name
+			}
 		}
 		if pk == "" {
 			continue
@@ -553,7 +578,7 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 						"number", []string{aggregateMethodPattern(fn, column.Name)}))
 				}
 				label := table.LabelColumn
-				if label != "" && label != column.Name {
+				if label != "" && label != column.Name && !table.CompositeKey {
 					tasks = append(tasks,
 						generatedRankingTask(seed, table, column, label, "desc", "highest"),
 						generatedRankingTask(seed, table, column, label, "asc", "lowest"),
@@ -569,7 +594,7 @@ func generateCatalogCandidates(snapshot CatalogSnapshot, seed int64) []Task {
 					fmt.Sprintf("What is the latest date recorded in %s.%s?", table.Name, column.Name),
 					fmt.Sprintf("query { %s { %s } }", table.Name, field), table.Name+".0."+field,
 					"date", []string{latestDateMethodPattern(column.Name)}))
-				if table.LabelColumn != "" && table.LabelColumn != column.Name {
+				if table.LabelColumn != "" && table.LabelColumn != column.Name && !table.CompositeKey {
 					tasks = append(tasks,
 						generatedRankingTask(seed, table, column, table.LabelColumn, "desc", "latest"),
 						generatedRankingTask(seed, table, column, table.LabelColumn, "asc", "earliest"),
@@ -1289,13 +1314,23 @@ func catalogTables(rows []CatalogRow) []generatorTable {
 }
 
 func mergeTableDetails(table *generatorTable, raw any) {
+	primaryKeys := map[string]struct{}{}
+	if table.PrimaryKey != "" {
+		primaryKeys[table.PrimaryKey] = struct{}{}
+	}
 	walkDetailMaps(raw, func(details map[string]any) {
 		value, _ := mapValue(details, "primary_key", "primaryKey").(string)
 		if value = strings.TrimSpace(value); value != "" {
 			table.PrimaryKey = value
+			primaryKeys[value] = struct{}{}
 		}
 		if keys := toSlice(mapValue(details, "primary_keys", "primaryKeys")); len(keys) != 0 {
 			table.PrimaryKey = valueString(keys[0])
+			for _, key := range keys {
+				if name := strings.TrimSpace(valueString(key)); name != "" {
+					primaryKeys[name] = struct{}{}
+				}
+			}
 		}
 		name := mapString(details, "column_name", "columnName")
 		if name == "" {
@@ -1308,8 +1343,10 @@ func mergeTableDetails(table *generatorTable, raw any) {
 		})
 		if mapBool(details, "primary", "primary_key", "primaryKey") {
 			table.PrimaryKey = name
+			primaryKeys[name] = struct{}{}
 		}
 	})
+	table.CompositeKey = table.CompositeKey || len(primaryKeys) > 1
 }
 
 func appendColumn(columns []generatorColumn, value generatorColumn) []generatorColumn {
@@ -1821,4 +1858,12 @@ func twinsForSelectedNeeds(selected, twins []Task) []Task {
 		}
 	}
 	return out
+}
+
+func isIntegerLikeType(typeName string) bool {
+	switch strings.ToLower(typeName) {
+	case "int", "integer", "bigint", "smallint", "tinyint", "serial", "number":
+		return true
+	}
+	return false
 }
