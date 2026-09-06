@@ -1,9 +1,9 @@
 # JSN - Fast low allocation JSON library
 ## Design
 
-This libary is designed as a set of seperate functions to extract data and mutate
+This library is designed as a set of separate functions to extract data and mutate
 JSON. All functions are focused on keeping allocations to a minimum and be as fast
-as possible. The functions don't validate the JSON a seperate `Validate` function
+as possible. The functions don't validate the JSON a separate `Validate` function
 does that. 
 
 ## Go JSON v2
