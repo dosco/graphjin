@@ -432,6 +432,99 @@ paths:
 	}
 }
 
+func TestClassifyExposeTopLevelMultiPath(t *testing.T) {
+	doc := loadDoc(t, `
+openapi: 3.0.0
+info: { title: Test, version: 1.0.0 }
+paths:
+  /api/datasets/{datasetId}/messages/{messageId}:
+    get:
+      operationId: exportMessages
+      parameters:
+        - { name: datasetId, in: path, required: true, schema: { type: string } }
+        - { name: messageId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+`)
+
+	spec := &Spec{Key: "is"}
+
+	// Default: skipped as multi-segment path.
+	ops, _ := classifyAll(spec, doc, SpecConfig{})
+	if len(ops) != 1 {
+		t.Fatalf("want 1 op, got %d", len(ops))
+	}
+	if ops[0].Mode != OpModeSkipped {
+		t.Fatalf("default mode = %v, want OpModeSkipped", ops[0].Mode)
+	}
+	if !contains(ops[0].SkipReason, "multi-segment path") {
+		t.Fatalf("SkipReason = %q, want multi-segment path", ops[0].SkipReason)
+	}
+
+	// Opt-in: classified as list (array payload detected from wrapper).
+	cfg := SpecConfig{Operations: map[string]OperationOverride{
+		"exportMessages": {ExposeTopLevel: true},
+	}}
+	ops, _ = classifyAll(spec, doc, cfg)
+	if len(ops) != 1 {
+		t.Fatalf("want 1 op with opt-in, got %d", len(ops))
+	}
+	if ops[0].Mode != OpModeList {
+		t.Fatalf("opt-in mode = %v, want OpModeList", ops[0].Mode)
+	}
+	if len(ops[0].PathParams) != 2 {
+		t.Fatalf("path params count = %d, want 2", len(ops[0].PathParams))
+	}
+	if ops[0].PathParams[0].Name != "datasetId" || ops[0].PathParams[1].Name != "messageId" {
+		t.Fatalf("path params = %+v", ops[0].PathParams)
+	}
+
+	doc = loadDoc(t, `
+openapi: 3.0.0
+info: { title: Test, version: 1.0.0 }
+paths:
+  /api/datasets/{datasetId}/messages/{messageId}/summary:
+    get:
+      operationId: getMessageSummary
+      parameters:
+        - { name: datasetId, in: path, required: true, schema: { type: string } }
+        - { name: messageId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject: { type: string }
+                  body: { type: string }
+`)
+
+	cfg = SpecConfig{Operations: map[string]OperationOverride{
+		"getMessageSummary": {ExposeTopLevel: true},
+	}}
+	ops, _ = classifyAll(spec, doc, cfg)
+	if len(ops) != 1 {
+		t.Fatalf("want 1 summary op with opt-in, got %d", len(ops))
+	}
+	if ops[0].Mode != OpModeSingleByID {
+		t.Fatalf("opt-in mode = %v, want OpModeSingleByID", ops[0].Mode)
+	}
+}
+
 func TestClassifyAppliesOperationDefaults(t *testing.T) {
 	doc := loadDoc(t, `
 openapi: 3.0.0
@@ -550,4 +643,47 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+func TestClassifyExposeTopLevelMultiPathJoinIgnored(t *testing.T) {
+	doc := loadDoc(t, `
+openapi: 3.0.0
+info: { title: Test, version: 1.0.0 }
+paths:
+  /api/accounts/{accountId}/regions/{region}/resources/{resourceId}:
+    get:
+      operationId: getAccountRegionResource
+      parameters:
+        - { name: accountId, in: path, required: true, schema: { type: string } }
+        - { name: region, in: path, required: true, schema: { type: string } }
+        - { name: resourceId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                
+`)
+
+	cfg := SpecConfig{Operations: map[string]OperationOverride{
+		"getAccountRegionResource": {ExposeTopLevel: true},
+	}, Joins: map[string]JoinConfig{
+		"getAccountRegionResource": {ParentTable: "accounts", ParentColumn: "region", Param: "resourceId", ExposeAs: "account_region_resource"},
+	}}
+
+	ops, _ := classifyAll(&Spec{Key: "is"}, doc, cfg)
+	if len(ops) != 1 {
+		t.Fatalf("want 1 op, got %d", len(ops))
+	}
+
+	if ops[0].Mode != OpModeSingleByID {
+		t.Fatalf("mode = %v, want OpModeSingleByID", ops[0].Mode)
+	}
+	if ops[0].Join != nil {
+		t.Fatalf("join should not be applied for multi-segment paths, got %+v", ops[0].Join)
+	}
 }

@@ -1902,7 +1902,7 @@ Every GET in the spec is classified into one of:
 | **Top-level (single)** | `GET /resource/{id}` without a `joins:` entry | Exposed as a top-level GraphQL field. The path parameter becomes a required field argument. |
 | **Top-level (list)** | `GET /resources` with optional query filters | Exposed as a top-level GraphQL field. Each query parameter becomes an optional field argument. |
 | **Mutation** | POST/PUT/PATCH/DELETE with `expose_mutation: true`, a supported JSON body, and declared 200/201/202/204 success response | Exposed only on the GraphQL mutation root through `call: JSON!`. Runtime capability, access, read-only, and role checks run before network I/O. |
-| **Skipped** | Async GET, binary response, mutating verb without explicit opt-in, unsupported request/response shape, multi-segment GET path params, or single non-trailing GET path param without opt-in | Reason logged at boot. Nothing is exposed silently. |
+| **Skipped** | Async GET, binary response, mutating verb without explicit opt-in, unsupported request/response shape, single non-trailing GET path param without opt-in, or multi-segment GET path params without `expose_top_level: true` | Reason logged at boot. Nothing is exposed silently. |
 
 #### OpenAPI mutations
 
@@ -2167,7 +2167,7 @@ Operations whose path has a single non-trailing path parameter — for example `
 { is_users(datasetId: "abc", pageSize: "200") { items { id email } } }
 ```
 
-`expose_top_level` does not opt in mutating operations or GET operations skipped for async, non-JSON, or multi-segment path shapes. Use `expose_mutation` only for non-GET operations.
+`expose_top_level` does not opt in mutating operations or GET operations skipped for async or non-JSON response shapes. Use `expose_mutation` only for non-GET operations.
 
 ### Result Path Auto-Detection
 

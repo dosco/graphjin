@@ -167,13 +167,22 @@ func classifyOne(
 			return d
 		}
 	default:
+		if override.ExposeTopLevel {
+			if d.IsArrayResponse {
+				d.Mode = OpModeList
+			} else {
+				d.Mode = OpModeSingleByID
+			}
+			break
+		}
+
 		d.SkipReason = fmt.Sprintf("multi-segment path (%d path params) — needs explicit join config", len(pathParams))
 		return d
 	}
 
 	// User-provided join wiring upgrades a SingleByID to a RowJoin so
 	// the operation is also exposed as a child field on the parent table.
-	if d.Mode == OpModeSingleByID {
+	if d.Mode == OpModeSingleByID && len(d.PathParams) == 1 {
 		if jc, ok := cfg.Joins[d.OperationID]; ok && jc.ParentTable != "" {
 			j := jc
 			d.Join = &j
