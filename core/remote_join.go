@@ -137,6 +137,11 @@ func (s *gstate) resolveRemotes(
 			if cursorWanted {
 				cacheOpts.NoStore = true
 			}
+			// Personal API results must not bypass credential checks on a cache
+			// hit or retain credentials in a stale-while-revalidate closure.
+			if bridge, ok := r.Fn.(*openapiBridge); ok && bridge.caller.UsesRequestCredentials() {
+				cacheOpts.NoStore = true
+			}
 			produce := func(c context.Context) ([]byte, []RowRef, string, error) {
 				b, err := r.Fn.Resolve(c, ResolverReq{
 					ID: string(id), Sel: sel, Log: s.gj.log, Vars: s.vmap, RequestConfig: s.r.requestconfig,

@@ -35,7 +35,7 @@ type Caller struct {
 // template's {placeholders}; QueryValues and HeaderValues populate
 // non-path parameters (query strings and HTTP headers respectively);
 // IncomingHeaders is an optional host-supplied inbound header set used only
-// for pass-through auth. The built-in GraphQL bridge currently leaves it nil.
+// for pass-through auth. When nil, trusted request context headers are used.
 type CallParams struct {
 	PathValues      map[string]string
 	QueryValues     map[string]string
@@ -203,7 +203,14 @@ func (c *Caller) doOnce(ctx context.Context, p CallParams) (CallResult, error) {
 	}
 	req.Header.Set("X-Request-ID", p.RequestID)
 
-	if err := c.auth.Apply(ctx, req, p.IncomingHeaders); err != nil {
+	incoming := p.IncomingHeaders
+	if incoming == nil && c.UsesRequestCredentials() {
+		incoming, err = incomingRequestHeaders(ctx)
+		if err != nil {
+			return result, err
+		}
+	}
+	if err := c.auth.Apply(ctx, req, incoming); err != nil {
 		return result, fmt.Errorf("openapi: auth apply: %w", err)
 	}
 

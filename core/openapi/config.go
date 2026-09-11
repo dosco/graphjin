@@ -72,9 +72,8 @@ type AuthConfig struct {
 	// Scheme: bearer | basic | api_key | oauth2_client_credentials | token_exchange
 	Scheme string `mapstructure:"scheme" json:"scheme" yaml:"scheme"`
 
-	// Bearer: a static or env-supplied token. TokenFromRequest is reserved for
-	// hosts that explicitly bridge inbound headers; the built-in GraphQL bridge
-	// does not currently forward them.
+	// Bearer: use either a static/env-supplied token or TokenFromRequest.
+	// GraphQL and HTTP MCP forward only explicitly configured credential headers.
 	Token            string            `mapstructure:"token" json:"token" yaml:"token" jsonschema_extras:"x-graphjin-sensitive=secret"`
 	TokenFromRequest *TokenFromRequest `mapstructure:"token_from_request" json:"token_from_request" yaml:"token_from_request"`
 
@@ -109,9 +108,8 @@ type AuthConfig struct {
 	CacheTTL string `mapstructure:"cache_ttl" json:"cache_ttl" yaml:"cache_ttl"`
 }
 
-// TokenFromRequest describes credentials carried on an incoming request. The
-// auth provider supports this shape, but the built-in GraphQL bridge does not
-// currently populate inbound headers, so static credentials are required there.
+// TokenFromRequest selects a required incoming credential header. It cannot
+// be combined with static credentials. Query-string credentials are unsupported.
 type TokenFromRequest struct {
 	Header string `mapstructure:"header" json:"header" yaml:"header"`
 	Query  string `mapstructure:"query" json:"query" yaml:"query"`
