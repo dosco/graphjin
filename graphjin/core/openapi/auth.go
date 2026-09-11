@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/http/httpguts"
 )
 
 // AuthProvider attaches authentication to outgoing requests to an upstream
@@ -15,8 +17,7 @@ import (
 // reused across every operation against that spec.
 //
 // Apply mutates req in place. The hdrIn parameter can carry headers from a
-// host application's incoming request. GraphJin's built-in GraphQL bridge does
-// not currently populate it, so pass-through auth there remains unavailable.
+// host application's incoming request, including GraphQL and HTTP MCP calls.
 //
 // OnUnauthorized is invoked by the resolver after a 401 response so
 // providers that cache tokens can invalidate them and the resolver can
@@ -36,6 +37,18 @@ type AuthProvider interface {
 // requests (token exchange, oauth2 client_credentials). httpClient must
 // not be nil for those schemes.
 func NewAuthProvider(cfg AuthConfig, httpClient *http.Client) (AuthProvider, error) {
+	if tfr := cfg.TokenFromRequest; tfr != nil {
+		scheme := strings.ToLower(strings.TrimSpace(cfg.Scheme))
+		if scheme != "bearer" && scheme != "api_key" && scheme != "apikey" {
+			return nil, fmt.Errorf("openapi: token_from_request requires bearer or api_key auth")
+		}
+		if cfg.Token != "" || cfg.KeyValue != "" {
+			return nil, fmt.Errorf("openapi: token_from_request cannot be combined with static credentials")
+		}
+		if tfr.Query != "" || !httpguts.ValidHeaderFieldName(tfr.Header) {
+			return nil, fmt.Errorf("openapi: token_from_request requires a valid header name; query credentials are not supported")
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(cfg.Scheme)) {
 	case "", "none":
 		return noopAuth{}, nil
@@ -166,11 +179,11 @@ func resolveToken(cfg AuthConfig, hdrIn http.Header) (string, error) {
 // query string.
 func passThroughToken(tfr TokenFromRequest, hdrIn http.Header) (string, error) {
 	if tfr.Header != "" {
-		v := hdrIn.Get(tfr.Header)
-		if v == "" {
-			return "", fmt.Errorf("openapi: pass-through header %q absent on incoming request", tfr.Header)
+		values := hdrIn.Values(tfr.Header)
+		if len(values) != 1 || strings.TrimSpace(values[0]) == "" || !httpguts.ValidHeaderFieldValue(values[0]) {
+			return "", fmt.Errorf("openapi: pass-through header %q must contain exactly one non-empty credential", tfr.Header)
 		}
-		return v, nil
+		return values[0], nil
 	}
 	return "", fmt.Errorf("openapi: token_from_request requires header field (query not yet supported)")
 }
