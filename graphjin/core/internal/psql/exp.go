@@ -23,6 +23,9 @@ func (c *compilerContext) renderExp(ti sdata.DBTable, ex *qcode.Exp, skipNested 
 }
 
 func (c *compilerContext) renderExpPath(ti sdata.DBTable, ex *qcode.Exp, skipNested bool, prefixPath []string) {
+	previous := c.columnScope
+	c.columnScope = ti
+	defer func() { c.columnScope = previous }()
 	ec := expContext{
 		compilerContext: c,
 		ti:              ti,
@@ -33,6 +36,9 @@ func (c *compilerContext) renderExpPath(ti sdata.DBTable, ex *qcode.Exp, skipNes
 }
 
 func (c *compilerContext) renderExpForSel(sel *qcode.Select, ex *qcode.Exp, skipNested bool) {
+	previous := c.columnScope
+	c.columnScope = sel.Ti
+	defer func() { c.columnScope = previous }()
 	ec := expContext{
 		compilerContext: c,
 		ti:              sel.Ti,

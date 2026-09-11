@@ -2,7 +2,9 @@ package tests_test
 
 import (
 	"context"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/stretchr/testify/require"
@@ -163,4 +165,64 @@ func TestSnowflakeOrderByAlias(t *testing.T) {
 	_, err = gj.GraphQL(context.Background(),
 		`{ users(order_by: {nm: desc}, limit: 3) { id nm: full_name } }`, nil, nil)
 	require.NoError(t, err, "alias-based order_by should resolve to underlying column")
+}
+
+func TestSnowflakePhysicalIdentifierIsolation(t *testing.T) {
+	if os.Getenv("GRAPHJIN_SNOWFLAKE_MOCK") == "1" {
+		t.Skip("the emulator lowercases quoted discovery identifiers; physical-case isolation requires native Snowflake")
+	}
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+	// Both tables are discovered by one source. Their standard field names
+	// normalize identically but must keep their own physical casing.
+	for _, fixture := range []struct{ table, columns string }{
+		{`"gj_identifier_lower"`, `"id" INTEGER PRIMARY KEY, "name" VARCHAR`},
+		{`"GjIdentifierMixed"`, `"Id" INTEGER PRIMARY KEY, "Name" VARCHAR`},
+	} {
+		_, err := db.Exec(`CREATE TABLE ` + fixture.table + ` (` + fixture.columns + `)`)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = db.Exec(`DROP TABLE IF EXISTS ` + fixture.table) })
+		_, err = db.Exec(`INSERT INTO ` + fixture.table + ` VALUES (1, 'original')`)
+		require.NoError(t, err)
+	}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	conf.DBSchemaPollDuration = 5 * time.Second
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+	for _, tc := range []struct{ table, id, name string }{
+		{"gj_identifier_lower", "id", "name"}, {"gj_identifier_mixed", "Id", "Name"},
+	} {
+		result, err := gj.GraphQL(context.Background(), `query { `+tc.table+`(where: {id: {eq: 1}}) { id name } }`, nil, nil)
+		require.NoError(t, err)
+		require.Contains(t, string(result.Data), `"name":"original"`)
+		require.Contains(t, result.SQL(), `."`+tc.id+`"`)
+		require.Contains(t, result.SQL(), `."`+tc.name+`"`)
+		_, err = gj.GraphQL(context.Background(), `mutation { `+tc.table+`(where: {id: {eq: 1}}, update: {name: "changed"}) { id name } }`, nil, nil)
+		require.NoError(t, err)
+		result, err = gj.GraphQL(context.Background(), `query { `+tc.table+`(where: {id: {eq: 1}}) { name } }`, nil, nil)
+		require.NoError(t, err)
+		require.Contains(t, string(result.Data), `"name":"changed"`)
+	}
+	changed := make(chan struct{}, 1)
+	gj.OnSchemaChange(func(string, string) {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	})
+	_, err = db.Exec(`ALTER TABLE "GjIdentifierMixed" RENAME COLUMN "Name" TO "name"`)
+	require.NoError(t, err)
+	select {
+	case <-changed:
+	case <-time.After(20 * time.Second):
+		t.Fatal("case-only change did not trigger schema reload")
+	}
+	result, err := gj.GraphQL(context.Background(), `query { gj_identifier_mixed { name } }`, nil, nil)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Data), `"name":"changed"`)
+	require.NotContains(t, result.SQL(), `."Name"`)
+	require.Contains(t, result.SQL(), `."name"`)
+
 }

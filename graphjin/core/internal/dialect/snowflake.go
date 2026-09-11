@@ -11,7 +11,7 @@ import (
 
 type SnowflakeDialect struct {
 	PostgresDialect
-	NameMap map[string]string
+	identifierNames
 }
 
 var _ Dialect = (*SnowflakeDialect)(nil)
@@ -21,38 +21,12 @@ func (d *SnowflakeDialect) Name() string {
 }
 
 func (d *SnowflakeDialect) QuoteIdentifier(s string) string {
-	if d.NameMap != nil {
-		if orig, ok := d.NameMap[s]; ok {
-			return `"` + strings.ReplaceAll(orig, `"`, `""`) + `"`
-		}
-	}
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-func (d *SnowflakeDialect) SetNameMap(tables []sdata.DBTable) {
-	d.NameMap = make(map[string]string)
-	for _, t := range tables {
-		if t.OrigName != "" && t.OrigName != t.Name {
-			d.NameMap[t.Name] = t.OrigName
-		}
-		if t.OrigSchema != "" && t.OrigSchema != t.Schema {
-			d.NameMap[t.Schema] = t.OrigSchema
-		}
-		for _, c := range t.Columns {
-			if c.OrigName != "" && c.OrigName != c.Name {
-				d.NameMap[c.Name] = c.OrigName
-			}
-			if c.OrigFKeyCol != "" && c.OrigFKeyCol != c.FKeyCol {
-				d.NameMap[c.FKeyCol] = c.OrigFKeyCol
-			}
-			if c.OrigFKeyTable != "" && c.OrigFKeyTable != c.FKeyTable {
-				d.NameMap[c.FKeyTable] = c.OrigFKeyTable
-			}
-			if c.OrigFKeySchema != "" && c.OrigFKeySchema != c.FKeySchema {
-				d.NameMap[c.FKeySchema] = c.OrigFKeySchema
-			}
-		}
-	}
+func (d *SnowflakeDialect) QuoteColumn(schema, table, column string) (string, error) {
+	name, err := d.columnName(schema, table, column)
+	return d.QuoteIdentifier(name), err
 }
 
 func (d *SnowflakeDialect) BindVar(i int) string {
@@ -696,6 +670,15 @@ func (d *SnowflakeDialect) RenderVar(ctx Context, name string) {
 	ctx.WriteString(`' ORDER BY id DESC LIMIT 1)`)
 }
 
+func (d *SnowflakeDialect) RenderDelete(ctx Context, m *qcode.Mutate, where func()) {
+	ctx.WriteString(`DELETE FROM `)
+	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
+	if where != nil {
+		ctx.WriteString(` WHERE `)
+		where()
+	}
+}
+
 func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn)) {
 	ctx.WriteString(`DELETE FROM `)
 	ctx.WriteString(d.prevIDsTableName(ctx))
@@ -707,7 +690,7 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
 	ctx.WriteString(`', TO_VARCHAR(`)
-	ctx.Quote(m.Ti.PrimaryCol.Name)
+	ctx.Quote(m.Ti.PrimaryCol.SQLName())
 	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(`; `)
@@ -721,14 +704,14 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(col.Col.Name)
+		ctx.Quote(col.Col.SQLName())
 		i++
 	}
 	for _, rcol := range m.RCols {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(rcol.Col.Name)
+		ctx.Quote(rcol.Col.SQLName())
 		i++
 	}
 	ctx.WriteString(`)`)
@@ -775,7 +758,7 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
 	ctx.WriteString(`', TO_VARCHAR(`)
-	ctx.Quote(m.Ti.PrimaryCol.Name)
+	ctx.Quote(m.Ti.PrimaryCol.SQLName())
 	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` EXCEPT SELECT '`)
@@ -802,7 +785,7 @@ func (d *SnowflakeDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *
 	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` AS `)
-	ctx.Quote(m.Ti.Name)
+	ctx.Quote(m.Ti.SQLName())
 	if m.IsJSON {
 		ctx.WriteString(`, `)
 		d.RenderMutateToRecordSet(ctx, m, 0, func() {
@@ -822,7 +805,7 @@ func (d *SnowflakeDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(col.Col.Name)
+		ctx.Quote(col.Col.SQLName())
 		ctx.WriteString(` = `)
 		renderColVal(col)
 		i++
@@ -832,9 +815,9 @@ func (d *SnowflakeDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *
 			if j > 0 {
 				ctx.WriteString(`, `)
 			}
-			ctx.Quote(pkCol.Name)
+			ctx.Quote(pkCol.SQLName())
 			ctx.WriteString(` = `)
-			ctx.Quote(pkCol.Name)
+			ctx.Quote(pkCol.SQLName())
 		}
 	}
 
@@ -858,7 +841,7 @@ func (d *SnowflakeDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *q
 	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` AS `)
-	ctx.Quote(m.Ti.Name)
+	ctx.Quote(m.Ti.SQLName())
 	ctx.WriteString(` WHERE `)
 	renderWhere()
 	ctx.WriteString(`; `)
@@ -873,7 +856,7 @@ func (d *SnowflakeDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *q
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(col.Col.Name)
+		ctx.Quote(col.Col.SQLName())
 		ctx.WriteString(` = `)
 		if col.Set {
 			d.renderMutationPresetValue(ctx, col)
@@ -888,9 +871,9 @@ func (d *SnowflakeDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *q
 			if j > 0 {
 				ctx.WriteString(`, `)
 			}
-			ctx.Quote(pkCol.Name)
+			ctx.Quote(pkCol.SQLName())
 			ctx.WriteString(` = `)
-			ctx.Quote(pkCol.Name)
+			ctx.Quote(pkCol.SQLName())
 		}
 	}
 
@@ -926,7 +909,7 @@ func (d *SnowflakeDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc 
 		ctx.WriteString(`UPDATE `)
 		d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 		ctx.WriteString(` SET `)
-		ctx.Quote(m.Rel.Left.Col.Name)
+		ctx.Quote(m.Rel.Left.Col.SQLName())
 		ctx.WriteString(` = `)
 		d.RenderVar(ctx, parentVar)
 		ctx.WriteString(` WHERE `)
@@ -952,7 +935,7 @@ func (d *SnowflakeDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, 
 	ctx.WriteString(`UPDATE `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` SET `)
-	ctx.Quote(m.Rel.Left.Col.Name)
+	ctx.Quote(m.Rel.Left.Col.SQLName())
 	ctx.WriteString(` = NULL`)
 	ctx.WriteString(` WHERE `)
 	renderFilter()
@@ -1352,7 +1335,12 @@ func (d *SnowflakeDialect) renderMutationJSONValue(ctx Context, actionVar, jsonP
 	ctx.WriteString(`')`)
 }
 
+func (d *SnowflakeDialect) RenderTableName(ctx Context, sel *qcode.Select, schema, table string) {
+	d.renderTableRef(ctx, schema, table)
+}
+
 func (d *SnowflakeDialect) renderTableRef(ctx Context, schema, table string) {
+	schema, table = d.tableNames(schema, table)
 	if schema != "" {
 		ctx.Quote(schema)
 		ctx.WriteString(`.`)

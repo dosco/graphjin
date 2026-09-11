@@ -3,7 +3,6 @@ package core
 import (
 	"bytes"
 	"database/sql"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -32,10 +31,23 @@ func TestCreateSchema(t *testing.T) {
 		ds.Functions,
 		nil)
 
-	if di1.Hash() != di2.Hash() {
-		t.Fatal(fmt.Errorf("schema hashes do not match: expected %d got %d",
-			di1.Hash(), di2.Hash()))
+	// Schema DDL omits discovery-only metadata (including database identity),
+	// so compare the column contract instead of full discovery fingerprints.
+	for _, table := range di1.Tables {
+		for _, col := range table.Columns {
+			got, err := di2.GetColumn(col.Schema, col.Table, col.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Name != col.Name || strings.TrimSuffix(got.Type, "[]") != strings.TrimSuffix(col.Type, "[]") || got.Array != col.Array ||
+				got.NotNull != col.NotNull || got.PrimaryKey != col.PrimaryKey ||
+				got.UniqueKey != col.UniqueKey || got.FullText != col.FullText ||
+				got.FKeyTable != col.FKeyTable || got.FKeyCol != col.FKeyCol {
+				t.Fatalf("column changed through schema export: want %+v, got %+v", col, got)
+			}
+		}
 	}
+
 }
 
 func TestWriteSchemaWithDatabase(t *testing.T) {
