@@ -117,3 +117,22 @@ func TestDBInfoSnapshotIsCanonicalAcrossDiscoveryOrder(t *testing.T) {
 		t.Fatalf("equivalent discovery metadata produced different snapshots\nfirst:  %s\nsecond: %s", firstData, secondData)
 	}
 }
+
+// Service discovery revisions hash the full snapshot, not the normalized catalog.
+func TestSnapshotTracksPhysicalIdentifierCase(t *testing.T) {
+	cols := []DBColumn{{Schema: "public", Table: "da", Name: "id", OrigName: "Id", Type: "int"}}
+	before := NewDBInfo("snowflake", 1, "public", "analytics", cols, nil, nil)
+	cols[0].OrigName = "id"
+	after := NewDBInfo("snowflake", 1, "public", "analytics", cols, nil, nil)
+	first, err := MarshalDBInfoSnapshot(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := MarshalDBInfoSnapshot(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(first, second) {
+		t.Fatal("case-only change lost from full discovery snapshot")
+	}
+}
