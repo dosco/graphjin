@@ -292,3 +292,44 @@ func TestCachedTokenExpiry(t *testing.T) {
 		t.Errorf("fetchCalls = %d after invalidate, want 3", fetchCalls)
 	}
 }
+
+func TestRequestCredentialConfigAndHeaders(t *testing.T) {
+	for _, cfg := range []AuthConfig{
+		{Scheme: "bearer", Token: "shared", TokenFromRequest: &TokenFromRequest{Header: "X-Token"}},
+		{Scheme: "api_key", KeyValue: "shared", TokenFromRequest: &TokenFromRequest{Header: "X-Token"}},
+		{Scheme: "basic", TokenFromRequest: &TokenFromRequest{Header: "X-Token"}},
+		{Scheme: "bearer", TokenFromRequest: &TokenFromRequest{Query: "token"}},
+		{Scheme: "bearer", TokenFromRequest: &TokenFromRequest{Header: "X Bad"}},
+	} {
+		if _, err := NewAuthProvider(cfg, nil); err == nil {
+			t.Fatal("unsafe request credential configuration accepted")
+		}
+	}
+	for _, scheme := range []string{"bearer", "api_key"} {
+		auth, err := NewAuthProvider(AuthConfig{Scheme: scheme, KeyName: "X-API-Key", TokenFromRequest: &TokenFromRequest{Header: "X-Token"}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, values := range [][]string{nil, {""}, {"  "}, {"a", "b"}, {"a\r\nb"}} {
+			if err := auth.Apply(context.Background(), newTestRequest(t, "https://example.com"), http.Header{"X-Token": values}); err == nil {
+				t.Fatal("invalid request credential accepted")
+			}
+		}
+	}
+}
+
+func TestRequestCredentialsCopiedAndExpireWithRequest(t *testing.T) {
+	parent, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	headers := http.Header{"X-Token": {"alice"}}
+	ctx := WithRequestHeaders(parent, headers)
+	headers.Set("X-Token", "bob")
+	incoming, err := incomingRequestHeaders(ctx)
+	if err != nil || incoming.Get("X-Token") != "alice" {
+		t.Fatal("credential snapshot was mutated")
+	}
+	cancel()
+	if _, err := incomingRequestHeaders(context.WithoutCancel(ctx)); err == nil {
+		t.Fatal("detached context retained usable credentials after request completed")
+	}
+}

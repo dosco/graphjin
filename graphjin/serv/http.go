@@ -64,6 +64,13 @@ func apiV1Handler(s1 *HttpService, ns *string, h http.Handler, ah auth.HandlerFu
 		zlog = s.zlog
 	}
 
+	next := h
+	h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		current := s1.Load().(*graphjinService)
+		w, r = current.withOpenAPIRequestHeaders(w, r)
+		next.ServeHTTP(w, r)
+	})
+
 	if ah != nil {
 		ah = s.observeAuthHandler(ah)
 		authOpt := auth.Options{AuthFailBlock: s.conf.AuthFailBlock}
@@ -343,7 +350,7 @@ func (s *graphjinService) responseHandler(ct context.Context,
 		s.hook(res)
 	}
 
-	if err == nil && r.Method == "GET" && res.Operation() == core.OpQuery {
+	if err == nil && r.Method == "GET" && res.Operation() == core.OpQuery && w.Header().Get("Cache-Control") != "private, no-store" {
 		switch {
 		case res.CacheControl() != "":
 			w.Header().Set("Cache-Control", res.CacheControl())

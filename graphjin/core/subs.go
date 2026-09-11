@@ -52,8 +52,9 @@ type sub struct {
 	updt         chan mmsg
 	done         chan struct{}
 
-	sizer *chunkSizer
-	kind  subscriptionKind
+	sizer   *chunkSizer
+	kind    subscriptionKind
+	initErr error
 
 	mval
 	sync.Once
@@ -331,9 +332,11 @@ func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 		sub := v.(*sub)
 
 		sub.Do(func() {
-			err = gj.initSub(c, sub)
+			sub.initErr = gj.initSub(c, sub)
 		})
-
+		// Every concurrent subscriber must observe the same initialization
+		// rejection before accessing the shared controller or compiled state.
+		err = sub.initErr
 		if err != nil {
 			gj.subs.Delete(k)
 			return
@@ -502,6 +505,15 @@ func (s *sub) systemCursorVariableNamesFromQCode() []string {
 func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 	if err = sub.s.compile(); err != nil {
 		return
+	}
+	for _, sel := range sub.s.cs.st.qc.Selects {
+		key := sel.Table
+		if sel.ParentID != -1 {
+			key += sub.s.cs.st.qc.Selects[sel.ParentID].Table
+		}
+		if bridge, ok := gj.rmap[key].Fn.(*openapiBridge); ok && bridge.caller.UsesRequestCredentials() {
+			return errors.New("subscription: request-scoped OpenAPI credentials are not supported; execute a query with fresh credentials")
+		}
 	}
 	sub.kind = gj.subscriptionKind(&sub.s)
 

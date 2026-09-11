@@ -332,6 +332,7 @@ func (s *HttpService) MCPHandler() http.Handler {
 
 		extendDeadlineForMCPRequest(w, r, s1.conf)
 
+		w, r = s1.withOpenAPIRequestHeaders(w, r)
 		s1.mcpHTTPTransport(r.Context()).ServeHTTP(w, r)
 	})
 }
@@ -356,6 +357,7 @@ func (s *HttpService) MCPMessageHandler() http.Handler {
 		// See MCPHandler — same WriteTimeout extension applies here.
 		extendDeadlineForMCPRequest(w, r, s1.conf)
 
+		w, r = s1.withOpenAPIRequestHeaders(w, r)
 		s1.mcpHTTPTransport(r.Context()).ServeHTTP(w, r)
 	})
 }
