@@ -22,12 +22,12 @@ func (d *BigQueryDialect) Name() string {
 }
 
 func (d *BigQueryDialect) QuoteIdentifier(s string) string {
-	if d.NameMap != nil {
-		if orig, ok := d.NameMap[s]; ok {
-			s = orig
-		}
-	}
 	return "`" + strings.ReplaceAll(s, "`", "\\`") + "`"
+}
+
+func (d *BigQueryDialect) QuoteColumn(schema, table, column string) (string, error) {
+	name, err := d.columnName(schema, table, column)
+	return d.QuoteIdentifier(name), err
 }
 
 func (d *BigQueryDialect) RenderJSONRoot(ctx Context, sel *qcode.Select) {

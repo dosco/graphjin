@@ -2,7 +2,6 @@ package dialect
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
@@ -82,8 +81,7 @@ import (
 type MSSQLDialect struct {
 	DBVersion       int
 	EnableCamelcase bool
-	NameMap         map[string]string            // normalized→original identifier mapping
-	ColumnNameMap   map[string]map[string]string // normalized table→column→original column
+	identifierNames
 }
 
 func (d *MSSQLDialect) Name() string {
@@ -91,71 +89,12 @@ func (d *MSSQLDialect) Name() string {
 }
 
 func (d *MSSQLDialect) QuoteIdentifier(s string) string {
-	if d.NameMap != nil {
-		if orig, ok := d.NameMap[s]; ok {
-			return "[" + orig + "]"
-		}
-	}
-	return "[" + s + "]"
+	return "[" + strings.ReplaceAll(s, "]", "]]") + "]"
 }
 
-// QuoteColumn resolves a normalized GraphQL column name within its table.
-// A global normalized→original map is insufficient because distinct physical
-// spellings such as FlagValue and Flag_Value both normalize to flag_value.
-func (d *MSSQLDialect) QuoteColumn(table, column string) string {
-	lookupTable := table
-	if _, ok := d.ColumnNameMap[lookupTable]; !ok {
-		if split := strings.LastIndexByte(lookupTable, '_'); split > 0 {
-			if _, err := strconv.Atoi(lookupTable[split+1:]); err == nil {
-				lookupTable = lookupTable[:split]
-			}
-		}
-	}
-	if columns, ok := d.ColumnNameMap[lookupTable]; ok {
-		if original, ok := columns[column]; ok {
-			return "[" + original + "]"
-		}
-	}
-	return d.QuoteIdentifier(column)
-}
-
-// SetNameMap builds a normalized→original name mapping from discovered tables.
-func (d *MSSQLDialect) SetNameMap(tables []sdata.DBTable) {
-	d.NameMap = make(map[string]string)
-	d.ColumnNameMap = make(map[string]map[string]string)
-	setScoped := func(table, normalized, original string) {
-		if table == "" || normalized == "" || original == "" {
-			return
-		}
-		if d.ColumnNameMap[table] == nil {
-			d.ColumnNameMap[table] = make(map[string]string)
-		}
-		d.ColumnNameMap[table][normalized] = original
-	}
-	for _, t := range tables {
-		if t.OrigName != "" && t.OrigName != t.Name {
-			d.NameMap[t.Name] = t.OrigName
-		}
-		if t.OrigSchema != "" && t.OrigSchema != t.Schema {
-			d.NameMap[t.Schema] = t.OrigSchema
-		}
-		for _, c := range t.Columns {
-			setScoped(t.Name, c.Name, c.OrigName)
-			setScoped(c.FKeyTable, c.FKeyCol, c.OrigFKeyCol)
-			if c.OrigName != "" && c.OrigName != c.Name {
-				d.NameMap[c.Name] = c.OrigName
-			}
-			if c.OrigFKeyCol != "" && c.OrigFKeyCol != c.FKeyCol {
-				d.NameMap[c.FKeyCol] = c.OrigFKeyCol
-			}
-			if c.OrigFKeyTable != "" && c.OrigFKeyTable != c.FKeyTable {
-				d.NameMap[c.FKeyTable] = c.OrigFKeyTable
-			}
-			if c.OrigFKeySchema != "" && c.OrigFKeySchema != c.FKeySchema {
-				d.NameMap[c.FKeySchema] = c.OrigFKeySchema
-			}
-		}
-	}
+func (d *MSSQLDialect) QuoteColumn(schema, table, column string) (string, error) {
+	name, err := d.columnName(schema, table, column)
+	return d.QuoteIdentifier(name), err
 }
 
 // BindVar returns the parameter placeholder for MSSQL.
@@ -774,7 +713,7 @@ func (d *MSSQLDialect) RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcode.Ex
 			if i != 0 {
 				ctx.WriteString(`, `)
 			}
-			ctx.Quote(col.Name)
+			ctx.Quote(col.SQLName())
 		}
 		ctx.WriteString(`), `)
 		ctx.AddParam(Param{Name: ex.Right.Val, Type: "text"})
@@ -910,7 +849,8 @@ func (d *MSSQLDialect) RenderJSONRootField(ctx Context, key string, val func()) 
 }
 
 func (d *MSSQLDialect) RenderTableName(ctx Context, sel *qcode.Select, schema, table string) {
-	if schema != "" && schema != "dbo" {
+	schema, table = d.tableNames(schema, table)
+	if schema != "" {
 		ctx.Quote(schema)
 		ctx.WriteString(`.`)
 	}
@@ -1282,8 +1222,8 @@ func (d *MSSQLDialect) renderRecursiveInlineChild(ctx Context, r InlineChildRend
 	}
 
 	// 4. Get column names
-	pkCol := sel.Ti.PrimaryCol.Name
-	fkCol := sel.Rel.Left.Col.Name // e.g., reply_to_id
+	pkCol := sel.Ti.PrimaryCol.SQLName()
+	fkCol := sel.Rel.Left.Col.SQLName() // e.g., reply_to_id
 
 	// 5. Render the query
 	ctx.WriteString(`(SELECT COALESCE((SELECT `)
@@ -1746,9 +1686,7 @@ func (d *MSSQLDialect) renderFromTable(ctx Context, r InlineChildRenderer, sel *
 		if psel != nil && psel.ID >= 0 {
 			parentAlias = fmt.Sprintf("%s_%d", sel.Rel.Left.Col.Table, psel.ID)
 		}
-		ctx.Quote(parentAlias)
-		ctx.WriteString(`.`)
-		ctx.Quote(sel.Rel.Left.Col.Name)
+		ctx.ColWithTable(parentAlias, sel.Rel.Left.Col.Name)
 		ctx.WriteString(`) WITH (`)
 		for i, col := range sel.Ti.Columns {
 			if i != 0 {
@@ -1799,7 +1737,7 @@ func (d *MSSQLDialect) renderFromTable(ctx Context, r InlineChildRenderer, sel *
 
 func (d *MSSQLDialect) renderJoinWithAlias(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select, join qcode.Join) {
 	ctx.WriteString(` INNER JOIN `)
-	ctx.Quote(join.Rel.Left.Ti.Name)
+	d.RenderTableName(ctx, nil, join.Rel.Left.Ti.Schema, join.Rel.Left.Ti.Name)
 	// Alias the join table with _0 suffix to match what renderExp produces
 	d.RenderTableAlias(ctx, fmt.Sprintf("%s_0", join.Rel.Left.Ti.Name))
 	ctx.WriteString(` ON ((`)
@@ -2591,17 +2529,17 @@ func (d *MSSQLDialect) RenderMutationPostamble(ctx Context, qc *qcode.QCode) {
 
 func (d *MSSQLDialect) RenderInsert(ctx Context, m *qcode.Mutate, values func()) {
 	ctx.WriteString(`INSERT INTO `)
-	if m.Ti.Schema != "" && m.Ti.Schema != "dbo" {
-		ctx.Quote(m.Ti.Schema)
+	if m.Ti.Schema != "" {
+		ctx.Quote(m.Ti.SQLSchema())
 		ctx.WriteString(`.`)
 	}
-	ctx.Quote(m.Ti.Name)
+	ctx.Quote(m.Ti.SQLName())
 	ctx.WriteString(` (`)
 	for i, col := range m.Cols {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(col.Col.Name)
+		ctx.Quote(col.Col.SQLName())
 	}
 	ctx.WriteString(`) `)
 	ctx.WriteString(`OUTPUT INSERTED.* `)
@@ -2610,7 +2548,7 @@ func (d *MSSQLDialect) RenderInsert(ctx Context, m *qcode.Mutate, values func())
 
 func (d *MSSQLDialect) RenderUpdate(ctx Context, m *qcode.Mutate, set func(), from func(), where func()) {
 	ctx.WriteString(`UPDATE `)
-	ctx.Quote(m.Ti.Name)
+	d.RenderTableName(ctx, nil, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` SET `)
 	set()
 	ctx.WriteString(` OUTPUT INSERTED.* `)
@@ -2625,11 +2563,11 @@ func (d *MSSQLDialect) RenderUpdate(ctx Context, m *qcode.Mutate, set func(), fr
 
 func (d *MSSQLDialect) RenderDelete(ctx Context, m *qcode.Mutate, where func()) {
 	ctx.WriteString(`DELETE FROM `)
-	if m.Ti.Schema != "" && m.Ti.Schema != "dbo" {
-		ctx.Quote(m.Ti.Schema)
+	if m.Ti.Schema != "" {
+		ctx.Quote(m.Ti.SQLSchema())
 		ctx.WriteString(`.`)
 	}
-	ctx.Quote(m.Ti.Name)
+	ctx.Quote(m.Ti.SQLName())
 	if where != nil {
 		ctx.WriteString(` WHERE `)
 		where()
@@ -2639,11 +2577,11 @@ func (d *MSSQLDialect) RenderDelete(ctx Context, m *qcode.Mutate, where func()) 
 func (d *MSSQLDialect) RenderUpsert(ctx Context, m *qcode.Mutate, insert func(), updateSet func()) {
 	// MSSQL uses MERGE for upsert
 	ctx.WriteString(`MERGE INTO `)
-	if m.Ti.Schema != "" && m.Ti.Schema != "dbo" {
-		ctx.Quote(m.Ti.Schema)
+	if m.Ti.Schema != "" {
+		ctx.Quote(m.Ti.SQLSchema())
 		ctx.WriteString(`.`)
 	}
-	ctx.Quote(m.Ti.Name)
+	ctx.Quote(m.Ti.SQLName())
 	ctx.WriteString(` AS target USING (SELECT `)
 	insert()
 	ctx.WriteString(`) AS source ON `)
@@ -2652,9 +2590,9 @@ func (d *MSSQLDialect) RenderUpsert(ctx Context, m *qcode.Mutate, insert func(),
 			ctx.WriteString(` AND `)
 		}
 		ctx.WriteString(`target.`)
-		ctx.Quote(pkCol.Name)
+		ctx.Quote(pkCol.SQLName())
 		ctx.WriteString(` = source.`)
-		ctx.Quote(pkCol.Name)
+		ctx.Quote(pkCol.SQLName())
 	}
 	ctx.WriteString(` WHEN MATCHED THEN UPDATE SET `)
 	updateSet()
@@ -2663,7 +2601,7 @@ func (d *MSSQLDialect) RenderUpsert(ctx Context, m *qcode.Mutate, insert func(),
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(col.Col.Name)
+		ctx.Quote(col.Col.SQLName())
 	}
 	ctx.WriteString(`) VALUES (`)
 	for i, col := range m.Cols {
@@ -2671,7 +2609,7 @@ func (d *MSSQLDialect) RenderUpsert(ctx Context, m *qcode.Mutate, insert func(),
 			ctx.WriteString(`, `)
 		}
 		ctx.WriteString(`source.`)
-		ctx.Quote(col.Col.Name)
+		ctx.Quote(col.Col.SQLName())
 	}
 	ctx.WriteString(`) OUTPUT INSERTED.*;`)
 }
@@ -2914,11 +2852,11 @@ func (d *MSSQLDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcod
 	// For linear execution, we don't use OUTPUT INSERTED.* because we need to capture
 	// the ID into a variable using SCOPE_IDENTITY()
 	ctx.WriteString(`INSERT INTO `)
-	if m.Ti.Schema != "" && m.Ti.Schema != "dbo" {
-		ctx.Quote(m.Ti.Schema)
+	if m.Ti.Schema != "" {
+		ctx.Quote(m.Ti.SQLSchema())
 		ctx.WriteString(`.`)
 	}
-	ctx.Quote(m.Ti.Name)
+	ctx.Quote(m.Ti.SQLName())
 	ctx.WriteString(` (`)
 
 	i := 0
@@ -2928,7 +2866,7 @@ func (d *MSSQLDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcod
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(col.Col.Name)
+		ctx.Quote(col.Col.SQLName())
 		if m.Ti.IsPKCol(col.Col.Name) {
 			hasExplicitPK = true
 			pkFieldName = col.FieldName
@@ -2939,7 +2877,7 @@ func (d *MSSQLDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcod
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(rcol.Col.Name)
+		ctx.Quote(rcol.Col.SQLName())
 		i++
 	}
 	ctx.WriteString(`)`)
@@ -3084,18 +3022,18 @@ func (d *MSSQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 			ctx.WriteString(`SELECT @`)
 			ctx.WriteString(varName)
 			ctx.WriteString(` = `)
-			ctx.Quote(m.Ti.PrimaryCol.Name)
+			ctx.Quote(m.Ti.PrimaryCol.SQLName())
 
 			// Capture all other columns for FK references
 			for _, col := range m.Ti.Columns {
 				ctx.WriteString(`, @`)
 				ctx.WriteString(varName + "_" + col.Name)
 				ctx.WriteString(` = `)
-				ctx.Quote(col.Name)
+				ctx.Quote(col.SQLName())
 			}
 
 			ctx.WriteString(` FROM `)
-			ctx.Quote(m.Ti.Name)
+			d.RenderTableName(ctx, nil, m.Ti.Schema, m.Ti.Name)
 			ctx.WriteString(` WHERE `)
 			renderWhere()
 			ctx.WriteString(`; `)
@@ -3110,7 +3048,7 @@ func (d *MSSQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 
 	// UPDATE statement
 	ctx.WriteString(`UPDATE `)
-	ctx.Quote(m.Ti.Name)
+	d.RenderTableName(ctx, nil, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` SET `)
 
 	i := 0
@@ -3119,7 +3057,7 @@ func (d *MSSQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(col.Col.Name)
+		ctx.Quote(col.Col.SQLName())
 		ctx.WriteString(` = `)
 		renderColVal(col)
 		i++
@@ -3130,7 +3068,7 @@ func (d *MSSQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(rcol.Col.Name)
+		ctx.Quote(rcol.Col.SQLName())
 		ctx.WriteString(` = `)
 
 		found := false
@@ -3156,9 +3094,9 @@ func (d *MSSQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 			if j > 0 {
 				ctx.WriteString(`, `)
 			}
-			ctx.Quote(pkCol.Name)
+			ctx.Quote(pkCol.SQLName())
 			ctx.WriteString(` = `)
-			ctx.Quote(pkCol.Name)
+			ctx.Quote(pkCol.SQLName())
 		}
 	}
 
@@ -3170,7 +3108,7 @@ func (d *MSSQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 // This extracts values from the JSON input for child table updates
 func (d *MSSQLDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, renderWhere func()) {
 	ctx.WriteString(`UPDATE `)
-	ctx.Quote(m.Ti.Name)
+	d.RenderTableName(ctx, nil, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` SET `)
 
 	// Build JSON path prefix from m.Path (e.g., ["customer"] -> "$.customer")
@@ -3188,7 +3126,7 @@ func (d *MSSQLDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *qcode
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(col.Col.Name)
+		ctx.Quote(col.Col.SQLName())
 		ctx.WriteString(` = `)
 
 		// Use JSON_VALUE(?, N'$.path.field') for MSSQL
@@ -3210,7 +3148,7 @@ func (d *MSSQLDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *qcode
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.Quote(col.Col.Name)
+		ctx.Quote(col.Col.SQLName())
 		ctx.WriteString(` = `)
 		// For preset columns, render the value directly
 		if strings.HasPrefix(col.Value, "sql:") {
@@ -3231,9 +3169,9 @@ func (d *MSSQLDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *qcode
 			if j > 0 {
 				ctx.WriteString(`, `)
 			}
-			ctx.Quote(pkCol.Name)
+			ctx.Quote(pkCol.SQLName())
 			ctx.WriteString(` = `)
-			ctx.Quote(pkCol.Name)
+			ctx.Quote(pkCol.SQLName())
 		}
 	}
 
@@ -3247,9 +3185,9 @@ func (d *MSSQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qco
 	ctx.WriteString(`SET @`)
 	ctx.WriteString(varName)
 	ctx.WriteString(` = (SELECT `)
-	ctx.Quote(m.Rel.Left.Col.Name)
+	ctx.Quote(m.Rel.Left.Col.SQLName())
 	ctx.WriteString(` FROM `)
-	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
+	d.RenderTableName(ctx, nil, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` WHERE `)
 	renderFilter()
 	ctx.WriteString(`); `)
@@ -3266,9 +3204,9 @@ func (d *MSSQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qco
 	if parentVar != "" {
 		// UPDATE table SET fk_col = @parentVar WHERE filter
 		ctx.WriteString(`UPDATE `)
-		ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
+		d.RenderTableName(ctx, nil, m.Ti.Schema, m.Ti.Name)
 		ctx.WriteString(` SET `)
-		ctx.Quote(m.Rel.Left.Col.Name)
+		ctx.Quote(m.Rel.Left.Col.SQLName())
 		ctx.WriteString(` = @`)
 		ctx.WriteString(parentVar)
 		ctx.WriteString(` WHERE `)
@@ -3282,18 +3220,18 @@ func (d *MSSQLDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *
 	ctx.WriteString(`SET @`)
 	ctx.WriteString(varName)
 	ctx.WriteString(` = (SELECT `)
-	ctx.Quote(m.Rel.Left.Col.Name)
+	ctx.Quote(m.Rel.Left.Col.SQLName())
 	ctx.WriteString(` FROM `)
-	ctx.Quote(m.Ti.Name)
+	d.RenderTableName(ctx, nil, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` WHERE `)
 	renderFilter()
 	ctx.WriteString(`); `)
 
 	// Step 2: Perform the actual disconnect (UPDATE child SET fk = NULL)
 	ctx.WriteString(`UPDATE `)
-	ctx.Quote(m.Ti.Name)
+	d.RenderTableName(ctx, nil, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` SET `)
-	ctx.Quote(m.Rel.Left.Col.Name)
+	ctx.Quote(m.Rel.Left.Col.SQLName())
 	ctx.WriteString(` = NULL WHERE `)
 	renderFilter()
 	ctx.WriteString(`; `)
@@ -3839,11 +3777,10 @@ func (d *MSSQLDialect) renderColRefRight(ctx Context, r InlineChildRenderer, sel
 }
 
 func (d *MSSQLDialect) writeQualifiedTableMSSQL(ctx Context, ti sdata.DBTable) {
-	if ti.Schema != "" {
-		ctx.Quote(ti.Schema)
-		ctx.WriteString(`.`)
+	d.RenderTableName(ctx, nil, ti.Schema, ti.Name)
+	if ti.SQLName() != ti.Name {
+		d.RenderTableAlias(ctx, ti.Name)
 	}
-	ctx.Quote(ti.Name)
 }
 
 func (d *MSSQLDialect) writeOuterColRefMSSQL(ctx Context, r InlineChildRenderer, sel *qcode.Select, col sdata.DBColumn) {

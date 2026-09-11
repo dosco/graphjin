@@ -20,11 +20,13 @@ func (co *Compiler) compileMutation(
 	md *Metadata,
 ) error {
 	c := compilerContext{
-		md:       md,
-		w:        w,
-		qc:       qc,
-		isJSON:   qc.Mutates[0].IsJSON,
-		Compiler: co,
+		md:          md,
+		w:           w,
+		qc:          qc,
+		isJSON:      qc.Mutates[0].IsJSON,
+		mutation:    true,
+		columnScope: qc.Mutates[0].Ti,
+		Compiler:    co,
 	}
 	if qc.InsertConflictAction == qcode.ConflictGet {
 		renderer, ok := co.dialect.(dialect.InsertConflictGetRenderer)
@@ -185,7 +187,7 @@ func (c *compilerContext) compileRedshiftDeleteMutation() {
 	c.w.WriteString(` AS SELECT * FROM `)
 	c.renderRedshiftMutationTableRef(m.Ti.Schema, m.Ti.Name)
 	c.w.WriteString(` AS `)
-	c.quoted(m.Ti.Name)
+	c.quoted(m.Ti.SQLName())
 	c.w.WriteString(` WHERE `)
 	c.renderExp(sel.Ti, sel.Where.Exp, false)
 	c.w.WriteString(`; `)
@@ -193,9 +195,9 @@ func (c *compilerContext) compileRedshiftDeleteMutation() {
 	c.w.WriteString(`DELETE FROM `)
 	c.renderRedshiftMutationTableRef(m.Ti.Schema, m.Ti.Name)
 	c.w.WriteString(` WHERE `)
-	c.quoted(pk.Name)
+	c.quoted(pk.SQLName())
 	c.w.WriteString(` IN (SELECT `)
-	c.quoted(pk.Name)
+	c.quoted(pk.SQLName())
 	c.w.WriteString(` FROM `)
 	c.quoted(snapshot)
 	c.w.WriteString(`); `)
@@ -235,11 +237,7 @@ func (c *compilerContext) compileRedshiftDeleteMutation() {
 }
 
 func (c *compilerContext) renderRedshiftMutationTableRef(schema, table string) {
-	if schema != "" {
-		c.quoted(schema)
-		c.w.WriteString(`.`)
-	}
-	c.quoted(table)
+	c.dialect.RenderTableName(c, nil, schema, table)
 }
 
 func (c *compilerContext) redshiftSingleMutation() (qcode.Mutate, bool) {
@@ -302,6 +300,7 @@ func (c *compilerContext) compileLinearMutation() {
 
 	for _, mid := range ordered {
 		m := c.qc.Mutates[mid]
+		c.columnScope = m.Ti
 
 		if m.Type == qcode.MTNone || m.Type == qcode.MTKeyword {
 			continue
@@ -428,7 +427,7 @@ func (c *compilerContext) compileLinearMutation() {
 							c.w.WriteString("(SELECT ")
 							c.quoted(parentCol)
 							c.w.WriteString(" FROM ")
-							c.quoted(pm.Ti.Name)
+							c.quoted(pm.Ti.SQLName())
 							c.w.WriteString(" WHERE ")
 							c.renderPKWhereVars(pm)
 							c.w.WriteString(")")
@@ -448,10 +447,10 @@ func (c *compilerContext) compileLinearMutation() {
 								c.colWithTable(pm.Ti.Name, parentCol)
 								c.w.WriteString(" FROM ")
 								if pm.Ti.Schema != "" {
-									c.quoted(pm.Ti.Schema)
+									c.quoted(pm.Ti.SQLSchema())
 									c.w.WriteString(".")
 								}
-								c.quoted(pm.Ti.Name)
+								c.quoted(pm.Ti.SQLName())
 								c.w.WriteString(" WHERE ")
 								c.renderPKWhereVarsWithTable(pm, pm.Ti.Name)
 								c.w.WriteString(")")
@@ -1095,7 +1094,7 @@ func (c *compilerContext) renderPKWhereVarsWithTable(m qcode.Mutate, table strin
 		if table != "" {
 			c.colWithTable(table, pkCol.Name)
 		} else {
-			c.quoted(pkCol.Name)
+			c.quoted(pkCol.SQLName())
 		}
 		c.w.WriteString(" = ")
 		n := vName

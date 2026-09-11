@@ -60,7 +60,10 @@ func (c *compilerContext) renderStdColumn(sel *qcode.Select, f qcode.Field) {
 }
 
 func (c *compilerContext) renderFuncColumn(sel *qcode.Select, f qcode.Field) {
-	c.colWithTableID(sel.Table, sel.ID, f.FieldName)
+	// Functions project SQL aliases, even when an alias matches a physical column.
+	c.quoted(sel.Table + "_" + strconv.Itoa(int(sel.ID)))
+	c.w.WriteString(".")
+	c.quoted(f.FieldName)
 }
 
 func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
@@ -103,12 +106,12 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 						// Wrap with JSON_QUERY to prevent double-escaping since
 						// MariaDB treats JSON as LONGTEXT and json_object would escape it
 						c.w.WriteString(`JSON_QUERY(`)
-						c.dialect.RenderInlineChild(c, c, sel, csel)
+						c.RenderInlineChild(sel, csel)
 						c.w.WriteString(`, '$')`)
 						c.alias(csel.FieldName)
 					} else if c.dialect.Name() == "mssql" {
 						// MSSQL needs its own inline child rendering
-						c.dialect.RenderInlineChild(c, c, sel, csel)
+						c.RenderInlineChild(sel, csel)
 						c.alias(csel.FieldName)
 					} else {
 						c.renderInlineChild(csel)
@@ -160,11 +163,11 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 			} else if c.dialect.RequiresJSONQueryWrapper() {
 				// MariaDB needs simplified inline child rendering
 				c.w.WriteString(`JSON_QUERY(`)
-				c.dialect.RenderInlineChild(c, c, sel, usel)
+				c.RenderInlineChild(sel, usel)
 				c.w.WriteString(`, '$') `)
 			} else if c.dialect.Name() == "mssql" {
 				// MSSQL needs its own inline child rendering for polymorphic unions
-				c.dialect.RenderInlineChild(c, c, sel, usel)
+				c.RenderInlineChild(sel, usel)
 				c.w.WriteString(` `)
 			} else {
 				c.renderInlineChild(usel)

@@ -31,11 +31,13 @@ type Metadata struct {
 }
 
 type compilerContext struct {
-	md     *Metadata
-	w      *bytes.Buffer
-	qc     *qcode.QCode
-	isJSON bool
-	err    error
+	md          *Metadata
+	w           *bytes.Buffer
+	qc          *qcode.QCode
+	isJSON      bool
+	mutation    bool
+	columnScope sdata.DBTable
+	err         error
 	*Compiler
 }
 
@@ -320,7 +322,7 @@ func (co *Compiler) CompileQuery(
 					// Dialects without LATERAL use inline subqueries
 					// Each dialect implements its own RenderInlineChild
 					c.dialect.RenderChildValue(c, sel, func() {
-						c.dialect.RenderInlineChild(c, c, nil, sel)
+						c.RenderInlineChild(nil, sel)
 					})
 				} else {
 					c.colWithTableID("__sj", sel.ID, "json")
@@ -335,7 +337,7 @@ func (co *Compiler) CompileQuery(
 					c.w.WriteString(`_cursor' VALUE `)
 					if !c.dialect.SupportsLateral() {
 						c.dialect.RenderChildCursor(c, func() {
-							c.dialect.RenderInlineChild(c, c, nil, sel)
+							c.RenderInlineChild(nil, sel)
 						})
 					} else {
 						c.colWithTableID("__sj", int32(sel.ID), "__cursor")
@@ -344,7 +346,7 @@ func (co *Compiler) CompileQuery(
 					// MSSQL needs value AS [field_cursor] format for FOR JSON PATH
 					c.w.WriteString(`, `)
 					c.dialect.RenderChildCursor(c, func() {
-						c.dialect.RenderInlineChild(c, c, nil, sel)
+						c.RenderInlineChild(nil, sel)
 					})
 					c.w.WriteString(` AS `)
 					c.quoted(sel.FieldName + "_cursor")
@@ -355,7 +357,7 @@ func (co *Compiler) CompileQuery(
 
 					if !c.dialect.SupportsLateral() {
 						c.dialect.RenderChildCursor(c, func() {
-							c.dialect.RenderInlineChild(c, c, nil, sel)
+							c.RenderInlineChild(nil, sel)
 						})
 					} else {
 						c.colWithTableID("__sj", int32(sel.ID), "__cursor")
@@ -439,6 +441,9 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 }
 
 func (c *compilerContext) renderInlineChild(sel *qcode.Select) {
+	previous := c.columnScope
+	c.columnScope = sel.Ti
+	defer func() { c.columnScope = previous }()
 	c.w.WriteString(`(`)
 	c.renderPluralSelect(sel)
 	c.renderSelect(sel)
@@ -673,12 +678,18 @@ func (c *compilerContext) GetStaticVar(name string) (string, bool) {
 func (c *compilerContext) renderJoin(join qcode.Join) {
 	c.w.WriteString(` INNER JOIN `)
 	c.table(nil, join.Rel.Left.Ti.Schema, join.Rel.Left.Ti.Name, false)
+	if join.Rel.Left.Ti.SQLName() != join.Rel.Left.Ti.Name {
+		c.alias(join.Rel.Left.Ti.Name)
+	}
 	c.w.WriteString(` ON ((`)
 	c.renderExp(join.Rel.Left.Ti, join.Filter, false)
 	c.w.WriteString(`))`)
 }
 
 func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
+	previous := c.columnScope
+	c.columnScope = sel.Ti
+	defer func() { c.columnScope = previous }()
 	c.renderCursorCTE(sel)
 	c.w.WriteString(`SELECT `)
 	c.renderDistinctOn(sel)
@@ -703,6 +714,10 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	// by INSERT/UPDATE/DELETE shadows the physical table name. This allows
 	// the SELECT to query the mutation's result set instead of the full table.
 	if c.qc.Type == qcode.QTMutation {
+		if _, mapped := c.dialect.(dialect.NameMapSetter); mapped && c.dialect.SupportsLinearExecution() {
+			c.table(sel, sel.Ti.Schema, sel.Ti.Name, true)
+			return
+		}
 		c.quoted(sel.Table)
 		c.dialect.RenderTableAlias(c, sel.Table)
 		return
