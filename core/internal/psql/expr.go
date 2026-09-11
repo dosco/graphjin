@@ -307,11 +307,10 @@ func (c *compilerContext) renderRelColRef(sel *qcode.Select, ex *qcode.Exp) erro
 // writeQualifiedTable emits `"schema"."table"` (or just `"table"` if
 // the table has no schema). Used by the correlated-subquery FROM clause.
 func (c *compilerContext) writeQualifiedTable(ti sdata.DBTable) {
-	if ti.Schema != "" {
-		c.quoted(ti.Schema)
-		c.w.WriteString(".")
+	c.table(nil, ti.Schema, ti.Name, false)
+	if ti.SQLName() != ti.Name {
+		c.alias(ti.Name)
 	}
-	c.quoted(ti.Name)
 }
 
 // writeOuterColRef emits a reference to a column on the OUTER (current)

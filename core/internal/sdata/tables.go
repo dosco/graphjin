@@ -1,9 +1,11 @@
 package sdata
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -133,19 +135,24 @@ func NewDBInfo(
 		di.AddTable(t)
 	}
 
-	h := fnv.New128()
-	hv := fmt.Sprintf("%s%d%s%s", dbType, dbVersion, dbSchema, dbName)
-	h.Write([]byte(hv))
-
+	// Hash discovery input, before config adds virtual tables or alters metadata.
+	// Discovery order and synthetic column IDs are not schema changes.
+	h := fnv.New64a()
+	enc := json.NewEncoder(h)
+	_ = enc.Encode([]any{dbType, dbVersion, dbSchema, dbName})
+	entries := make([]string, 0, len(cols)+len(funcs))
 	for _, c := range cols {
-		h.Write([]byte(c.String()))
+		c.ID = 0
+		data, _ := json.Marshal(c)
+		entries = append(entries, "column:"+string(data))
 	}
-
-	for _, fn := range funcs {
-		h.Write([]byte(fn.String()))
+	for _, f := range funcs {
+		data, _ := json.Marshal(f)
+		entries = append(entries, "function:"+string(data))
 	}
-
-	di.hash = h.Size()
+	sort.Strings(entries)
+	_ = enc.Encode(entries)
+	di.hash = int(h.Sum64() & uint64(^uint(0)>>1))
 	return di
 }
 
@@ -408,4 +415,28 @@ func isTemporalType(colType string) bool {
 	default:
 		return false
 	}
+}
+
+// SQLName returns the discovered physical column name, preserving its casing.
+func (c DBColumn) SQLName() string {
+	if c.OrigName != "" {
+		return c.OrigName
+	}
+	return c.Name
+}
+
+// SQLName returns the discovered physical table name.
+func (t DBTable) SQLName() string {
+	if t.OrigName != "" {
+		return t.OrigName
+	}
+	return t.Name
+}
+
+// SQLSchema returns the discovered physical schema name.
+func (t DBTable) SQLSchema() string {
+	if t.OrigSchema != "" {
+		return t.OrigSchema
+	}
+	return t.Schema
 }

@@ -2,8 +2,10 @@ package core
 
 import (
 	"database/sql"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -151,4 +153,48 @@ func tableInfoNamed(tables []TableInfo, name string) *TableInfo {
 		}
 	}
 	return nil
+}
+
+func TestRuntimeSchemaReloadRecompilesPhysicalCase(t *testing.T) {
+	fs := NewOsFS(t.TempDir())
+	writeGeneration := func(dir, physical string) {
+		info := sdata.NewDBInfo("snowflake", 1, "public", "analytics", []sdata.DBColumn{
+			{Schema: "public", Table: "da", Name: "id", OrigName: "id", Type: "int", PrimaryKey: true},
+			{Schema: "public", Table: "da", Name: "name", OrigName: physical, Type: "text"},
+		}, nil, nil)
+		data, err := sdata.MarshalDBInfoSnapshot(info)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = fs.Put(filepath.Join(dir, filepath.Base(RuntimeSchemaSnapshotPath(DefaultDBName))), data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeGeneration("before", "Name")
+	writeGeneration("after", "name")
+	gj, err := NewGraphJin(&Config{DBType: "snowflake", DisableAllowList: true}, nil,
+		OptionSetFS(fs), OptionSetDBSchemaWatcherDisabled(true),
+		OptionSetRuntimeSchemaDDLDir("before"), OptionSetRuntimeSchemaCacheFirst(true), OptionSetRuntimeSchemaCacheRequired(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+	query := `query { da { id name } }`
+	before, err := gj.ExplainQuery(query, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(before.CompiledQuery, `."Name"`) {
+		t.Fatalf("initial physical casing missing: %s", before.CompiledQuery)
+	}
+	if err = gj.ReloadFromRuntimeSchemaCache("after"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := gj.ExplainQuery(query, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(after.CompiledQuery, `."Name"`) || !strings.Contains(after.CompiledQuery, `."name"`) {
+		t.Fatalf("compiler retained stale physical casing: %s", after.CompiledQuery)
+	}
 }

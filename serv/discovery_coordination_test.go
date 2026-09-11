@@ -489,3 +489,52 @@ func TestSemanticRedisGenerationHandoffBuildsDocumentsOnce(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestDiscoveryRefreshRecompilesChangedColumns(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "refresh.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err = db.Exec(`CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO customers VALUES (1, 'Ada')`); err != nil {
+		t.Fatal(err)
+	}
+	fs := newAferoFS(afero.NewMemMapFs(), "/")
+	service := newCoordinationTestService(t, fs, db)
+	manager := newCoordinationTestManager(t, service, nil, "local", "gj:test:columns")
+	options := []core.Option{core.OptionSetFS(fs), core.OptionSetDBSchemaWatcherDisabled(true)}
+	dir, err := manager.InitialGeneration(context.Background(), &service.conf.Core, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.gj, err = core.NewGraphJin(&service.conf.Core, db, append(options, core.OptionSetRuntimeSchemaDDLDir(dir), core.OptionSetRuntimeSchemaCacheFirst(true), core.OptionSetRuntimeSchemaCacheRequired(true))...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.gj.Close()
+	for _, step := range []struct{ ddl, query, want string }{
+		{`ALTER TABLE customers ADD COLUMN email TEXT DEFAULT 'ada@example.test'`, `query { customers { email } }`, `ada@example.test`},
+		{`ALTER TABLE customers RENAME COLUMN name TO full_name`, `query { customers { full_name } }`, `Ada`},
+	} {
+		previous := manager.currentDiscoveryID()
+		if _, err = db.Exec(step.ddl); err != nil {
+			t.Fatal(err)
+		}
+		manager.refreshOnce(context.Background())
+		if manager.currentDiscoveryID() == previous {
+			t.Fatal("changed schema did not activate a new generation")
+		}
+		result, err := service.gj.GraphQL(context.Background(), step.query, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(result.Data), step.want) {
+			t.Fatalf("compiler remained stale: %s", result.Data)
+		}
+		stable := manager.currentDiscoveryID()
+		manager.refreshOnce(context.Background())
+		if manager.currentDiscoveryID() != stable {
+			t.Fatal("unchanged schema activated another generation")
+		}
+	}
+}

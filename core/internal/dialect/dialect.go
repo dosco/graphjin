@@ -199,17 +199,17 @@ type Dialect interface {
 
 // NameMapSetter is an optional interface that dialects can implement
 // to receive a mapping of normalized→original identifier names.
-// This is used by MSSQL to preserve PascalCase identifiers in generated SQL.
+// SQL Server and the warehouse dialects use it to preserve physical spelling.
 type NameMapSetter interface {
 	SetNameMap(tables []sdata.DBTable)
 }
 
 // ScopedColumnQuoter is implemented by dialects whose normalized GraphQL
 // column names are not sufficient to recover a physical identifier globally.
-// SQL Server schemas can use multiple spellings such as FlagValue and
-// Flag_Value across different tables, so column lookup must include the table.
+// Different schemas and tables may use different physical spellings for the
+// same normalized column. Generated aliases must use QuoteIdentifier instead.
 type ScopedColumnQuoter interface {
-	QuoteColumn(table, column string) string
+	QuoteColumn(schema, table, column string) (string, error)
 }
 
 // FullQueryCompiler is an optional interface that dialects can implement
