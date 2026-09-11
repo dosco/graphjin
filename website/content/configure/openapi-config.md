@@ -40,6 +40,46 @@ available in `data`.
 | `oauth2_client_credentials` | Machine-to-machine OAuth |
 | `token_exchange` | Vendor-specific token POST flows |
 
+## Per-user credentials
+
+Use a dedicated incoming header when each caller connects their own account:
+
+```yaml
+sources:
+  - name: google_workspace
+    kind: api
+    specs_dir: config/specs
+    specs:
+      gmail:
+        base_url: https://gmail.googleapis.com
+        auth:
+          scheme: bearer
+          token_from_request:
+            header: X-Google-Workspace-Token
+```
+
+The trusted host resolves the signed-in user's access token and sends it in
+`X-Google-Workspace-Token` on each GraphQL or HTTP MCP request. GraphJin's own
+`Authorization` header continues to authenticate the caller independently.
+Only credential headers explicitly named by configuration are made available to
+OpenAPI authentication. Do not expose account selection or tokens as GraphQL
+variables or MCP tool arguments. Browser clients using CORS must also include
+the dedicated header in `allowed_headers`.
+
+This applies to top-level reads, remote joins, and mutations. Missing, blank,
+or repeated credential headers fail before the upstream request. Combining
+`token_from_request` with a static `token` or `key_value` is rejected, so one
+user can never fall back to a deployment account. API-key auth also supports
+`token_from_request` with its configured destination `key_name`.
+
+Personal API fragments are not cached or refreshed in the background. HTTP
+responses on deployments with request-token sources use `private, no-store`.
+Subscriptions to these sources are rejected: scheduled jobs must issue a new
+query with freshly resolved credentials. GraphJin does not persist or refresh
+these tokens; OAuth consent, ownership checks, and refresh remain host duties.
+Go embedders can use `openapi.WithRequestHeaders(ctx, headers)`; the headers are
+copied and remain usable only while the original context is active.
+
 ## Overrides
 
 Use operation overrides to rename fields, set result paths, disable operations, provide default parameters, or deliberately expose top-level paths that would otherwise be skipped.
