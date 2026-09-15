@@ -1825,7 +1825,15 @@ func (d *MariaDBDialect) renderValPrefix(ctx Context, r InlineChildRenderer, pse
 		} else if ex.Left.ID >= 0 {
 			t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
 		}
+		// Text is not valid JSON, so quote it into a JSON string.
+		quote := isJSONTextColumnType(ex.Left.Col.Type)
+		if quote {
+			ctx.WriteString(`JSON_QUOTE(`)
+		}
 		r.ColWithTable(t, ex.Left.Col.Name)
+		if quote {
+			ctx.WriteString(`)`)
+		}
 
 		ctx.WriteString(`)`)
 		return true
