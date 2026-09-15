@@ -995,6 +995,8 @@ func securitySourceAccessPolicyEvaluations(conf *Config, mode string) []security
 		"role_claims":            identity.RoleClaims,
 		"namespace_claim":        identity.NamespaceClaim,
 		"admin_roles":            identity.AdminRoles,
+		"group_claims":           identity.GroupClaims,
+		"role_mode":              normalizeReportRoleMode(identity.RoleMode),
 		"identity_query_enabled": strings.TrimSpace(identity.Query) != "",
 	}
 
@@ -2450,4 +2452,12 @@ func securityIDPart(value string) string {
 		return "unknown"
 	}
 	return out
+}
+
+func normalizeReportRoleMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		return core.RoleModeFirst
+	}
+	return mode
 }

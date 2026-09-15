@@ -87,6 +87,7 @@ type graphjinEngine struct {
 	queries                    sync.Map
 	sqliteConflictGetMu        sync.Mutex
 	roles                      map[string]*Role
+	unionRoles                 sync.Map
 	roleStatement              string
 	roleStatementMetadata      psql.Metadata
 	roleQueryMode              roleQueryMode
@@ -2592,7 +2593,7 @@ func (gj *graphjinEngine) explainQueryForDatabase(database, query string, vars j
 
 	st := stmt{role: s.role}
 	var found bool
-	if st.roc, found = gj.roles[s.role]; !found {
+	if st.roc, found = gj.roleByName(s.role); !found {
 		return &QueryExplanation{
 			Operation: h.Operation,
 			Name:      h.Name,

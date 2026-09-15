@@ -96,6 +96,13 @@ func (gj *graphjinEngine) argList(c context.Context,
 				return ar, argErr(p)
 			}
 
+		case groupsVar:
+			// $groups always comes from the trusted identity, never from
+			// request variables. A caller without groups matches no group.
+			if vl[i], err = groupsArgValue(c, pc); err != nil {
+				return ar, err
+			}
+
 		case "cursor":
 			if v, ok := fields["cursor"]; ok && v[0] == '"' {
 				vl[i] = string(v[1 : len(v)-1])
@@ -198,6 +205,7 @@ func (gj *graphjinEngine) sourceModeTrustedIdentityParam(name string) bool {
 		"account_ref",
 		"user_id",
 		"user_ref",
+		groupsVar,
 		strings.ToLower(strings.TrimSpace(id.NamespaceClaim)),
 		strings.ToLower(strings.TrimSpace(id.UserIDClaim)),
 	}
@@ -207,6 +215,23 @@ func (gj *graphjinEngine) sourceModeTrustedIdentityParam(name string) bool {
 		}
 	}
 	return false
+}
+
+// groupsArgValue encodes the caller's groups as a JSON array, the same form
+// GraphJin uses for array request variables.
+func groupsArgValue(ctx context.Context, pc *psql.Compiler) (interface{}, error) {
+	groups := contextGroups(ctx)
+	if groups == nil {
+		groups = []string{}
+	}
+	b, err := json.Marshal(groups)
+	if err != nil {
+		return nil, fmt.Errorf("groups: %w", err)
+	}
+	if pc != nil && pc.GetDialect().RequiresJSONAsString() {
+		return string(b), nil
+	}
+	return json.RawMessage(b), nil
 }
 
 func identityValuePresent(v interface{}) bool {

@@ -197,7 +197,68 @@ func TestSourceModeHTTPRuntimeDenialEventsAreRedacted(t *testing.T) {
 	}
 }
 
-func newSourceModeJWTHTTPTestHandler(t *testing.T) http.Handler {
+// TestSourceModeHTTPJWTRoleModeUnion sends one token that carries two roles.
+// In first mode the caller gets the first configured role only; in union mode
+// the caller also keeps what the admin role allows.
+func TestSourceModeHTTPJWTRoleModeUnion(t *testing.T) {
+	claims := jwt.MapClaims{
+		"sub":        "user_member_admin",
+		"roles":      []string{"member", "admin"},
+		"account_id": "acct_1",
+	}
+	securityQuery := `query { gj_security(id: "summary") { id } }`
+	usersQuery := `query { users(order_by: { id: asc }) { id } }`
+
+	readSecurity := func(t *testing.T, handler http.Handler) bool {
+		t.Helper()
+		resp := postGraphQLJWT(t, handler, signSourceModeJWT(t, claims), securityQuery, nil)
+		var out struct {
+			Security *struct {
+				ID string `json:"id"`
+			} `json:"gj_security"`
+		}
+		if len(resp.Data) != 0 {
+			if err := json.Unmarshal(resp.Data, &out); err != nil {
+				t.Fatalf("decode security response: %v\n%s", err, string(resp.Data))
+			}
+		}
+		return out.Security != nil && out.Security.ID == "summary"
+	}
+	countUsers := func(t *testing.T, handler http.Handler) int {
+		t.Helper()
+		resp := postGraphQLJWT(t, handler, signSourceModeJWT(t, claims), usersQuery, nil)
+		assertNoGraphQLErrors(t, resp)
+		var out struct {
+			Users []struct {
+				ID int `json:"id"`
+			} `json:"users"`
+		}
+		if err := json.Unmarshal(resp.Data, &out); err != nil {
+			t.Fatalf("decode users response: %v\n%s", err, string(resp.Data))
+		}
+		return len(out.Users)
+	}
+
+	first := newSourceModeJWTHTTPTestHandler(t)
+	if readSecurity(t, first) {
+		t.Fatal("first mode should apply only the member role and deny gj_security")
+	}
+	if n := countUsers(t, first); n != 2 {
+		t.Fatalf("first mode should scope users to acct_1, got %d rows", n)
+	}
+
+	union := newSourceModeJWTHTTPTestHandler(t, func(conf *Config) {
+		conf.Core.Identity.RoleMode = core.RoleModeUnion
+	})
+	if !readSecurity(t, union) {
+		t.Fatal("union mode should keep the admin role's access to gj_security")
+	}
+	if n := countUsers(t, union); n != 3 {
+		t.Fatalf("union mode should include the admin role's unscoped rows, got %d rows", n)
+	}
+}
+
+func newSourceModeJWTHTTPTestHandler(t *testing.T, mutators ...func(*Config)) http.Handler {
 	t.Helper()
 
 	dbPath := createSourceModeHTTPDB(t)
@@ -210,6 +271,9 @@ func newSourceModeJWTHTTPTestHandler(t *testing.T) http.Handler {
 			JWT:  JWTConfig{Secret: sourceModeHTTPJWTSecret},
 		}
 		conf.Serv.AuthFailBlock = true
+		for _, mutate := range mutators {
+			mutate(conf)
+		}
 	})
 
 	ah, err := auth.NewAuthHandlerFunc(svc.conf.Auth)
@@ -295,4 +359,44 @@ func mustMarshalTestJSON(v any) []byte {
 		return []byte(err.Error())
 	}
 	return b
+}
+
+func TestSourceModeJWTGroupClaimsBecomeTrustedGroups(t *testing.T) {
+	dbPath := createSourceModeHTTPDB(t)
+	svc := newControlPlaneGraphQLTestServiceWithConfig(t, MCPConfig{}, dbPath, func(conf *Config) {
+		conf.Core.Mode = modeAgentic
+		conf.Core.Identity.GroupClaims = []string{"groups", "teams"}
+		conf.Serv.Auth = Auth{Type: "jwt", JWT: JWTConfig{Secret: sourceModeHTTPJWTSecret}}
+	})
+	ah, err := auth.NewAuthHandlerFunc(svc.conf.Auth)
+	if err != nil {
+		t.Fatalf("new auth handler: %v", err)
+	}
+
+	groupsFor := func(t *testing.T, claims jwt.MapClaims) (interface{}, bool) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, routeGraphQL, nil)
+		req.Header.Set("Authorization", "Bearer "+signSourceModeJWT(t, claims))
+		ctx, err := ah(httptest.NewRecorder(), req)
+		if err != nil {
+			t.Fatalf("auth handler: %v", err)
+		}
+		vars, _ := svc.applyIdentityContext(ctx).Value(core.IdentityVarsKey).(map[string]interface{})
+		v, ok := vars["groups"]
+		return v, ok
+	}
+
+	got, ok := groupsFor(t, jwt.MapClaims{
+		"sub":    "user_1",
+		"groups": []string{"finance", "__internal", "finance"},
+		"teams":  "sales, support",
+	})
+	want := []string{"finance", "sales", "support"}
+	if list, _ := got.([]string); !ok || strings.Join(list, ",") != strings.Join(want, ",") {
+		t.Fatalf("groups = %#v, want %v from both claims without reserved or duplicate names", got, want)
+	}
+
+	if got, ok := groupsFor(t, jwt.MapClaims{"sub": "user_2"}); ok {
+		t.Fatalf("a token without group claims should not set groups, got %#v", got)
+	}
 }

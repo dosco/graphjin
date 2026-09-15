@@ -82,7 +82,7 @@ func (c *Config) authorizeOpenAPIOperation(ctx context.Context, op *openapi.OpDe
 		d.Reason = fmt.Sprintf("source access.%s blocks role %q", sourcecapAction(d.Capability), role)
 		return d
 	}
-	if method != "GET" && !roleInList(role, op.AllowedRoles) {
+	if method != "GET" && !roleMatchesList(role, contextGroups(ctx), op.AllowedRoles) {
 		d.Gate = "allowed_roles"
 		d.Reason = fmt.Sprintf("role %q is not allowlisted for operation %q", role, op.OperationID)
 		return d
@@ -129,15 +129,6 @@ func sourcecapAction(capability string) string {
 	}
 }
 
-func roleInList(role string, allowed []string) bool {
-	for _, item := range allowed {
-		if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(role)) {
-			return true
-		}
-	}
-	return false
-}
-
 func apiSourceAccessAllowed(ctx context.Context, c *Config, mode, role string) bool {
 	mode = normalizeAccessMode(mode)
 	authenticated := strings.TrimSpace(role) != "" && !strings.EqualFold(role, "anon")
@@ -147,7 +138,7 @@ func apiSourceAccessAllowed(ctx context.Context, c *Config, mode, role string) b
 	case AccessModeAuthenticated:
 		return authenticated
 	case AccessModeAdmin:
-		return roleInList(role, c.EffectiveIdentityConfig().AdminRoles)
+		return roleMatchesList(role, nil, c.EffectiveIdentityConfig().AdminRoles)
 	case AccessModeAccount:
 		if !authenticated || ctx == nil {
 			return false
