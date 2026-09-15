@@ -2419,7 +2419,7 @@ For example, `finance` reads `price` on EMEA rows only, and `sales` reads every 
 
 **Limits and functions:** the merged query limit is the largest limit, or no limit if one role has none. Functions stay disabled if one role disables them.
 
-**Sources mode:** `roles[].tables` is legacy config, and sources mode rejects it. In sources mode, `union` mode merges the rules that GraphJin generates from `sources[].access` and `system.root_access`. For example, a caller with the roles `member` and `admin` keeps the admin access to `gj_security`.
+**Sources mode:** `roles[].tables` is legacy config, and sources mode rejects it. In sources mode, `union` mode merges the rules that GraphJin generates from `sources[].access`, `sources[].access.grants` and `system.root_access`. For example, a caller with the roles `member` and `admin` keeps the admin access to `gj_security`.
 
 **Rules for `union` mode:**
 
@@ -2427,6 +2427,50 @@ For example, `finance` reads `price` on EMEA rows only, and `sales` reads every 
 - `anon`, `user` and reserved roles (names that start with `__`) never join a merge.
 - A SQL or GraphQL `roles_query` returns every role whose `match` rule is true. If the query returns no row, the caller is `anon`. If no rule matches, the caller is `user`.
 - An exposed API operation allows the call if any merged role is in `allowed_roles`.
+
+### Grants in Sources Mode
+
+A grant gives one role read access to tables of a database source. Use grants for per-role columns and row filters in sources mode.
+
+```yaml
+roles:
+  - name: finance
+  - name: sales
+
+sources:
+  - name: shop
+    kind: database
+    type: postgres
+    access:
+      read: admin
+      grants:
+        - role: finance
+          tables:
+            - name: orders
+              columns: [id, region, amount]
+              filter: '{ region: { eq: "emea" } }'
+        - role: sales
+          tables:
+            - name: orders
+              columns: [id, region]
+```
+
+With `identity.role_mode: union`, a caller with `finance` and `sales` reads every order without `amount`.
+
+- A grant replaces the source read mode for its role and table. It sets the columns and adds the filter.
+- If the source read mode is `account` or `owner`, GraphJin joins that filter with the grant filter by `and`. A grant never removes the account or owner filter.
+- A role without a grant for a table keeps the source read mode.
+- Grants cover reads only. Writes and deletes keep `access.write` and `access.delete`.
+- The filter can use `$user_id`, `$account_id` and `$user_groups`.
+- Admin roles do not use grants, so a grant for an admin role is a config error.
+
+Config load fails when:
+
+- the role is not in `roles:`, and is not `user` or `anon`
+- a grant has no columns, or names a table or column that the database does not have
+- a role has two grants for one table
+- the table is in `blocked_tables`, or its read mode is `blocked`
+- the source is not a database source
 
 ### Groups
 

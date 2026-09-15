@@ -167,6 +167,40 @@ access:
 `write` covers insert, update, and upsert. `delete` is separate and should stay
 blocked unless a deployment explicitly needs it.
 
+## Role Table Rules
+
+Sources mode rejects `roles[].tables`. Move per-role columns and row filters to
+`sources[].access.grants`. A grant is read-only, and the source account or owner
+filter still applies:
+
+```yaml
+# Old (rejected in sources mode)
+roles:
+  - name: finance
+    tables:
+      - name: orders
+        query:
+          columns: [id, amount]
+          filters: ['{ region: { eq: "emea" } }']
+
+# New
+roles:
+  - name: finance
+sources:
+  - name: app
+    kind: database
+    access:
+      read: account
+      grants:
+        - role: finance
+          tables:
+            - name: orders
+              columns: [id, amount]
+              filter: '{ region: { eq: "emea" } }'
+```
+
+See "Grants in Sources Mode" in `CONFIG.md` for the full rules.
+
 API sources use the same access modes, with safe defaults of
 `read: authenticated`, `write: blocked`, and `delete: blocked`. Move OpenAPI
 configuration under an owning `kind: api` source so provenance and runtime
