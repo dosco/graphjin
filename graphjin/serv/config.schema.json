@@ -1007,6 +1007,22 @@
 				"query": {
 					"type": "string",
 					"title": "Identity Enrichment Query"
+				},
+				"group_claims": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Group Claims"
+				},
+				"role_mode": {
+					"type": "string",
+					"enum": [
+						"first",
+						"union"
+					],
+					"title": "Role Mode",
+					"default": "first"
 				}
 			},
 			"additionalProperties": false,

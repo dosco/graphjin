@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -522,6 +523,10 @@ type Compiler struct {
 	c  Config
 	s  *sdata.DBSchema
 	tr map[string]trval
+
+	// union caches merged rules for union role keys by role, schema, table
+	// and field.
+	union sync.Map
 }
 
 func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {

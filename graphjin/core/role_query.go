@@ -118,14 +118,23 @@ func (gj *graphjinEngine) executeGraphQLRoleQuery(
 		return role, nil
 	}
 
+	union := gj.conf.roleUnionEnabled()
+	var matched []string
 	for _, rm := range gj.roleGraphQLMatches {
 		ok, err := rm.expr.eval(attrs)
 		if err != nil {
 			return "", fmt.Errorf("roles_query: role %q match failed: %w", rm.role, err)
 		}
-		if ok {
+		if !ok {
+			continue
+		}
+		if !union {
 			return rm.role, nil
 		}
+		matched = append(matched, rm.role)
+	}
+	if key := gj.unionRoleKey(matched); key != "" {
+		return key, nil
 	}
 	return role, nil
 }

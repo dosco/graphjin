@@ -84,6 +84,10 @@ func (s *graphjinService) applyIdentityContext(ctx context.Context) context.Cont
 		vars["account_ref"] = ""
 	}
 
+	if groups := extractClaimRoles(claims, id.GroupClaims); len(groups) != 0 {
+		vars["groups"] = groups
+	}
+
 	roles := extractClaimRoles(claims, id.RoleClaims)
 	if len(roles) != 0 {
 		ctx = context.WithValue(ctx, core.IdentityRolesKey, roles)

@@ -115,6 +115,9 @@ func (c *Config) Validate() error {
 	if err := c.NormalizeMode(); err != nil {
 		return err
 	}
+	if err := c.validateRoleMode(); err != nil {
+		return err
+	}
 	if !c.sourcesNormalized {
 		if err := c.ValidateIsSourcesUsed(); err != nil {
 			return err
@@ -607,6 +610,9 @@ func (c *Config) normalizeIdentityDefaults() {
 	if len(c.Identity.AdminRoles) == 0 {
 		c.Identity.AdminRoles = []string{"admin"}
 	}
+	if len(c.Identity.GroupClaims) == 0 {
+		c.Identity.GroupClaims = []string{"groups"}
+	}
 	if strings.TrimSpace(c.Identity.Query) == "" && strings.TrimSpace(c.RolesQuery) != "" {
 		c.Identity.Query = c.RolesQuery
 	}
@@ -857,6 +863,9 @@ func (c IdentityConfig) clone() IdentityConfig {
 	if c.AdminRoles != nil {
 		out.AdminRoles = append([]string(nil), c.AdminRoles...)
 	}
+	if c.GroupClaims != nil {
+		out.GroupClaims = append([]string(nil), c.GroupClaims...)
+	}
 	return out
 }
 
@@ -938,7 +947,7 @@ func (c *Config) FeatureCapabilityConfigured(kind, key string) (bool, bool) {
 // EffectiveIdentityConfig returns identity config with source-mode defaults.
 func (c *Config) EffectiveIdentityConfig() IdentityConfig {
 	if c == nil {
-		return IdentityConfig{UserIDClaim: "sub", RoleClaims: []string{"role", "roles"}, NamespaceClaim: "account_id", AdminRoles: []string{"admin"}}
+		return IdentityConfig{UserIDClaim: "sub", RoleClaims: []string{"role", "roles"}, NamespaceClaim: "account_id", AdminRoles: []string{"admin"}, GroupClaims: []string{"groups"}, RoleMode: RoleModeFirst}
 	}
 	out := c.Identity.clone()
 	tmp := &Config{Identity: out, RolesQuery: c.RolesQuery, Sources: c.Sources}
@@ -1575,6 +1584,13 @@ type IdentityConfig struct {
 	NamespaceClaim string   `mapstructure:"namespace_claim" json:"namespace_claim" yaml:"namespace_claim" jsonschema:"title=Namespace Claim,default=account_id"`
 	AdminRoles     []string `mapstructure:"admin_roles" json:"admin_roles" yaml:"admin_roles" jsonschema:"title=Admin Roles"`
 	Query          string   `mapstructure:"query" json:"query" yaml:"query" jsonschema:"title=Identity Enrichment Query"`
+	// GroupClaims names the token claims that list the caller's groups. The
+	// values are exposed to filters and presets as the trusted $groups variable.
+	GroupClaims []string `mapstructure:"group_claims" json:"group_claims" yaml:"group_claims" jsonschema:"title=Group Claims"`
+	// RoleMode selects how GraphJin resolves a caller with several matching
+	// roles: "first" applies the first configured role, "union" merges the
+	// table rules of every matching role.
+	RoleMode string `mapstructure:"role_mode" json:"role_mode" yaml:"role_mode" jsonschema:"title=Role Mode,enum=first,enum=union,default=first"`
 }
 
 // ArtifactsConfig declares the GraphJin-managed SQL artifact store.
