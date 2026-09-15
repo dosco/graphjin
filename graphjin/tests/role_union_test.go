@@ -19,7 +19,8 @@ func unionRolesConfig(mode string) *core.Config {
 		panic(err)
 	}
 	if err := conf.AddRoleTable("sales", "products", core.Query{
-		Filters: []string{`{ id: { gte: 99 } }`},
+		// Bounded so rows that other examples insert stay out of the result.
+		Filters: []string{`{ and: [{ id: { gte: 99 } }, { id: { lte: 100 } }] }`},
 		Columns: []string{"id", "name"},
 	}); err != nil {
 		panic(err)
