@@ -761,6 +761,14 @@ func (d *MongoDBDialect) RoleLimitSuffix() string {
 	return ""
 }
 
+func (d *MongoDBDialect) RoleUnionSelectPrefix() string {
+	return ""
+}
+
+func (d *MongoDBDialect) RoleUnionFromSuffix() string {
+	return ""
+}
+
 func (d *MongoDBDialect) RoleDummyTable() string {
 	return ""
 }
@@ -3952,11 +3960,16 @@ func (d *MongoDBDialect) renderComparisonValue(ctx Context, exp *qcode.Exp) {
 		ctx.WriteString(`{"$lte":`)
 		d.renderValue(ctx, exp)
 		ctx.WriteString(`}`)
-	case qcode.OpIn, qcode.OpHasInCommon:
+	case qcode.OpIn, qcode.OpHasInCommon, qcode.OpNotIn:
 		// OpIn: scalar field matches any value in list
 		// OpHasInCommon: array field has any element matching values in list
 		// MongoDB's $in handles both cases with the same syntax
-		ctx.WriteString(`{"$in":`)
+		// OpNotIn uses $nin with the same list or variable forms
+		if exp.Op == qcode.OpNotIn {
+			ctx.WriteString(`{"$nin":`)
+		} else {
+			ctx.WriteString(`{"$in":`)
+		}
 		if exp.Right.ValType == qcode.ValList {
 			// Static list of values
 			ctx.WriteString(`[`)
@@ -3979,15 +3992,6 @@ func (d *MongoDBDialect) renderComparisonValue(ctx Context, exp *qcode.Exp) {
 			d.renderValue(ctx, exp)
 		}
 		ctx.WriteString(`}`)
-	case qcode.OpNotIn:
-		ctx.WriteString(`{"$nin":[`)
-		for i, v := range exp.Right.ListVal {
-			if i > 0 {
-				ctx.WriteString(`,`)
-			}
-			d.renderLiteralValue(ctx, v, exp.Right.ListType)
-		}
-		ctx.WriteString(`]}`)
 	case qcode.OpLike:
 		ctx.WriteString(`{"$regex":"`)
 		// Convert SQL LIKE pattern to regex

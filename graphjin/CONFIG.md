@@ -2382,6 +2382,120 @@ roles:
 
 ---
 
+### Callers with Several Roles
+
+A token can list several roles, and a GraphQL `roles_query` can match several roles. `identity.role_mode` sets what GraphJin does with them.
+
+```yaml
+identity:
+  role_claims: [roles]
+  role_mode: union   # first (default) or union
+```
+
+| Mode | Behaviour |
+|------|-----------|
+| `first` | GraphJin applies the first role in `roles:` config order that the caller holds. It ignores the other roles. |
+| `union` | GraphJin applies every role the caller holds and merges their table rules. |
+
+In `union` mode, GraphJin merges the rules of each table and each operation. The merged rule never allows a row, a column or an operation that no single role allows.
+
+**Reads:**
+
+| Situation | Merged rule |
+|-----------|-------------|
+| One role allows the read | The rule of that role |
+| One role has no filter and allows every column that the other roles allow | The rule of that role |
+| All roles allow the same columns | Those columns, with the role filters joined by `or` |
+| All roles use the same filter | That filter, with the columns of all roles |
+| Other cases | The columns that all roles allow, with the role filters joined by `or`. If no column is shared, GraphJin blocks the read. |
+
+For example, `finance` reads `price` on EMEA rows only, and `sales` reads every row without `price`. A caller with both roles reads every row without `price`, because no single role allows `price` on a non-EMEA row.
+
+**Writes** (insert, update, upsert, delete):
+
+- All roles that allow the write must use the same presets. Otherwise GraphJin blocks the write.
+- GraphJin allows only the columns that all these roles allow. It never combines columns from different roles, because one role must allow the whole written row.
+- If no column is shared, GraphJin blocks the write.
+
+**Limits and functions:** the merged query limit is the largest limit, or no limit if one role has none. Functions stay disabled if one role disables them.
+
+**Sources mode:** `roles[].tables` is legacy config, and sources mode rejects it. In sources mode, `union` mode merges the rules that GraphJin generates from `sources[].access`, `sources[].access.grants` and `system.root_access`. For example, a caller with the roles `member` and `admin` keeps the admin access to `gj_security`.
+
+**Rules for `union` mode:**
+
+- A role name must not contain `+`. GraphJin names a merged role by joining role names with `+`, for example `finance+sales`.
+- `anon`, `user` and reserved roles (names that start with `__`) never join a merge.
+- A SQL or GraphQL `roles_query` returns every role whose `match` rule is true. If the query returns no row, the caller is `anon`. If no rule matches, the caller is `user`.
+- An exposed API operation allows the call if any merged role is in `allowed_roles`.
+
+### Grants in Sources Mode
+
+A grant gives one role read access to tables of a database source. Use grants for per-role columns and row filters in sources mode.
+
+```yaml
+roles:
+  - name: finance
+  - name: sales
+
+sources:
+  - name: shop
+    kind: database
+    type: postgres
+    access:
+      read: admin
+      grants:
+        - role: finance
+          tables:
+            - name: orders
+              columns: [id, region, amount]
+              filter: '{ region: { eq: "emea" } }'
+        - role: sales
+          tables:
+            - name: orders
+              columns: [id, region]
+```
+
+With `identity.role_mode: union`, a caller with `finance` and `sales` reads every order without `amount`.
+
+- A grant replaces the source read mode for its role and table. It sets the columns and adds the filter.
+- If the source read mode is `account` or `owner`, GraphJin joins that filter with the grant filter by `and`. A grant never removes the account or owner filter.
+- A role without a grant for a table keeps the source read mode.
+- Grants cover reads only. Writes and deletes keep `access.write` and `access.delete`.
+- The filter can use `$user_id`, `$account_id` and `$user_groups`.
+- Admin roles do not use grants, so a grant for an admin role is a config error.
+
+Config load fails when:
+
+- the role is not in `roles:`, and is not `user` or `anon`
+- a grant has no columns, or names a table or column that the database does not have
+- a role has two grants for one table
+- the table is in `blocked_tables`, or its read mode is `blocked`
+- the source is not a database source
+
+### Groups
+
+`$user_groups` holds the groups of the caller. Use it in role filters to give access by group membership.
+
+```yaml
+identity:
+  group_claims: [groups]   # default: [groups]
+
+roles:
+  - name: member
+    tables:
+      - name: projects
+        query:
+          filters: ["{ team: { in: $user_groups } }"]
+```
+
+- GraphJin reads `$user_groups` from the claims in `identity.group_claims`. A claim can be a list or a comma-separated string.
+- `$user_groups` is a reserved variable name, like `$user_id`. It always comes from the verified identity, in role filters and in client queries. A request variable named `user_groups` never replaces it.
+- GraphJin drops group names that start with `__`, because that prefix is reserved.
+- A caller without group claims has an empty `$user_groups`, so a filter on `$user_groups` matches no rows.
+- `allowed_roles` on an exposed API operation also accepts group names.
+- When you embed GraphJin as a library, set the groups in the context: `context.WithValue(ctx, core.IdentityVarsKey, map[string]interface{}{core.UserGroupsVar: []string{"finance"}})`.
+- NanoDB binds single values only, so a filter on `$user_groups` matches no rows there.
+
 ## Multi-Database Configuration
 
 GraphJin supports querying across multiple SQL databases in a single GraphQL request. `databases:` is the legacy database-only spelling and remains supported when `sources:` is absent. In source mode, declare these same databases as `sources[].kind: database`.

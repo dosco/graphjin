@@ -115,6 +115,9 @@ func (c *Config) Validate() error {
 	if err := c.NormalizeMode(); err != nil {
 		return err
 	}
+	if err := c.validateRoleMode(); err != nil {
+		return err
+	}
 	if !c.sourcesNormalized {
 		if err := c.ValidateIsSourcesUsed(); err != nil {
 			return err
@@ -261,6 +264,9 @@ func (c *Config) validateIsSourcesUsed() error {
 			}
 		}
 		if err := validateSourceAccessConfig(name, kind, source.Access); err != nil {
+			return err
+		}
+		if err := c.validateSourceAccessGrants(name, kind, source.Access); err != nil {
 			return err
 		}
 		if kind == sourcecap.KindAPI {
@@ -607,6 +613,9 @@ func (c *Config) normalizeIdentityDefaults() {
 	if len(c.Identity.AdminRoles) == 0 {
 		c.Identity.AdminRoles = []string{"admin"}
 	}
+	if len(c.Identity.GroupClaims) == 0 {
+		c.Identity.GroupClaims = []string{"groups"}
+	}
 	if strings.TrimSpace(c.Identity.Query) == "" && strings.TrimSpace(c.RolesQuery) != "" {
 		c.Identity.Query = c.RolesQuery
 	}
@@ -857,6 +866,9 @@ func (c IdentityConfig) clone() IdentityConfig {
 	if c.AdminRoles != nil {
 		out.AdminRoles = append([]string(nil), c.AdminRoles...)
 	}
+	if c.GroupClaims != nil {
+		out.GroupClaims = append([]string(nil), c.GroupClaims...)
+	}
 	return out
 }
 
@@ -901,6 +913,19 @@ func (c SourceAccessConfig) clone() SourceAccessConfig {
 	if c.BlockedTables != nil {
 		out.BlockedTables = append([]string(nil), c.BlockedTables...)
 	}
+	if c.Grants != nil {
+		out.Grants = make([]SourceAccessGrant, len(c.Grants))
+		for i, grant := range c.Grants {
+			out.Grants[i] = SourceAccessGrant{Role: grant.Role}
+			if grant.Tables != nil {
+				out.Grants[i].Tables = make([]SourceAccessGrantTable, len(grant.Tables))
+				for j, table := range grant.Tables {
+					table.Columns = append([]string(nil), table.Columns...)
+					out.Grants[i].Tables[j] = table
+				}
+			}
+		}
+	}
 	return out
 }
 
@@ -938,7 +963,7 @@ func (c *Config) FeatureCapabilityConfigured(kind, key string) (bool, bool) {
 // EffectiveIdentityConfig returns identity config with source-mode defaults.
 func (c *Config) EffectiveIdentityConfig() IdentityConfig {
 	if c == nil {
-		return IdentityConfig{UserIDClaim: "sub", RoleClaims: []string{"role", "roles"}, NamespaceClaim: "account_id", AdminRoles: []string{"admin"}}
+		return IdentityConfig{UserIDClaim: "sub", RoleClaims: []string{"role", "roles"}, NamespaceClaim: "account_id", AdminRoles: []string{"admin"}, GroupClaims: []string{"groups"}, RoleMode: RoleModeFirst}
 	}
 	out := c.Identity.clone()
 	tmp := &Config{Identity: out, RolesQuery: c.RolesQuery, Sources: c.Sources}
@@ -1575,6 +1600,13 @@ type IdentityConfig struct {
 	NamespaceClaim string   `mapstructure:"namespace_claim" json:"namespace_claim" yaml:"namespace_claim" jsonschema:"title=Namespace Claim,default=account_id"`
 	AdminRoles     []string `mapstructure:"admin_roles" json:"admin_roles" yaml:"admin_roles" jsonschema:"title=Admin Roles"`
 	Query          string   `mapstructure:"query" json:"query" yaml:"query" jsonschema:"title=Identity Enrichment Query"`
+	// GroupClaims names the token claims that list the caller's groups. The
+	// values are exposed to filters and presets as the trusted $user_groups variable.
+	GroupClaims []string `mapstructure:"group_claims" json:"group_claims" yaml:"group_claims" jsonschema:"title=Group Claims"`
+	// RoleMode selects how GraphJin resolves a caller with several matching
+	// roles: "first" applies the first configured role, "union" merges the
+	// table rules of every matching role.
+	RoleMode string `mapstructure:"role_mode" json:"role_mode" yaml:"role_mode" jsonschema:"title=Role Mode,enum=first,enum=union,default=first"`
 }
 
 // ArtifactsConfig declares the GraphJin-managed SQL artifact store.
@@ -1617,15 +1649,31 @@ type TasksConfig struct {
 // classifications. It is intentionally small; it compiles down to legacy role
 // table rules before qcode runs.
 type SourceAccessConfig struct {
-	Read                   string   `mapstructure:"read" json:"read" yaml:"read" jsonschema:"title=Read Access Mode"`
-	Write                  string   `mapstructure:"write" json:"write" yaml:"write" jsonschema:"title=Write Access Mode"`
-	Delete                 string   `mapstructure:"delete" json:"delete" yaml:"delete" jsonschema:"title=Delete Access Mode"`
-	NamespaceColumn        string   `mapstructure:"namespace_column" json:"namespace_column" yaml:"namespace_column" jsonschema:"title=Namespace Column,default=account_id"`
-	OwnerColumn            string   `mapstructure:"owner_column" json:"owner_column" yaml:"owner_column" jsonschema:"title=Owner Column,default=user_id"`
-	MissingNamespaceColumn string   `mapstructure:"missing_namespace_column" json:"missing_namespace_column" yaml:"missing_namespace_column" jsonschema:"title=Missing Namespace Column Behavior,enum=block,enum=allow"`
-	PublicTables           []string `mapstructure:"public_tables" json:"public_tables" yaml:"public_tables" jsonschema:"title=Public Tables"`
-	AdminTables            []string `mapstructure:"admin_tables" json:"admin_tables" yaml:"admin_tables" jsonschema:"title=Admin Tables"`
-	BlockedTables          []string `mapstructure:"blocked_tables" json:"blocked_tables" yaml:"blocked_tables" jsonschema:"title=Blocked Tables"`
+	Read                   string              `mapstructure:"read" json:"read" yaml:"read" jsonschema:"title=Read Access Mode"`
+	Write                  string              `mapstructure:"write" json:"write" yaml:"write" jsonschema:"title=Write Access Mode"`
+	Delete                 string              `mapstructure:"delete" json:"delete" yaml:"delete" jsonschema:"title=Delete Access Mode"`
+	NamespaceColumn        string              `mapstructure:"namespace_column" json:"namespace_column" yaml:"namespace_column" jsonschema:"title=Namespace Column,default=account_id"`
+	OwnerColumn            string              `mapstructure:"owner_column" json:"owner_column" yaml:"owner_column" jsonschema:"title=Owner Column,default=user_id"`
+	MissingNamespaceColumn string              `mapstructure:"missing_namespace_column" json:"missing_namespace_column" yaml:"missing_namespace_column" jsonschema:"title=Missing Namespace Column Behavior,enum=block,enum=allow"`
+	PublicTables           []string            `mapstructure:"public_tables" json:"public_tables" yaml:"public_tables" jsonschema:"title=Public Tables"`
+	AdminTables            []string            `mapstructure:"admin_tables" json:"admin_tables" yaml:"admin_tables" jsonschema:"title=Admin Tables"`
+	BlockedTables          []string            `mapstructure:"blocked_tables" json:"blocked_tables" yaml:"blocked_tables" jsonschema:"title=Blocked Tables"`
+	Grants                 []SourceAccessGrant `mapstructure:"grants" json:"grants,omitempty" yaml:"grants,omitempty" jsonschema:"title=Role Grants"`
+}
+
+// SourceAccessGrant gives one role read access to tables of a database
+// source. A grant replaces the source read mode for that role and table.
+type SourceAccessGrant struct {
+	Role   string                   `mapstructure:"role" json:"role" yaml:"role" jsonschema:"title=Role"`
+	Tables []SourceAccessGrantTable `mapstructure:"tables" json:"tables" yaml:"tables" jsonschema:"title=Tables"`
+}
+
+// SourceAccessGrantTable sets the columns and the row filter of a grant.
+// The account or owner filter of the source mode still applies.
+type SourceAccessGrantTable struct {
+	Name    string   `mapstructure:"name" json:"name" yaml:"name" jsonschema:"title=Table Name"`
+	Columns []string `mapstructure:"columns" json:"columns" yaml:"columns" jsonschema:"title=Columns"`
+	Filter  string   `mapstructure:"filter" json:"filter,omitempty" yaml:"filter,omitempty" jsonschema:"title=Row Filter"`
 }
 
 // SystemConfig controls GraphJin-owned capabilities and caller access to

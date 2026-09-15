@@ -494,6 +494,8 @@ func (s *gstate) nanoTrustedVarValue(ctx context.Context, name string) (string, 
 		if v := ctx.Value(UserRoleKey); identityValuePresent(v) {
 			return fmt.Sprint(v), true
 		}
+	case UserGroupsVar:
+		return nanoMissingIdentityValue, true
 	default:
 		if v, ok := identityContextVar(ctx, canonical); ok && identityValuePresent(v) {
 			return fmt.Sprint(v), true
@@ -513,6 +515,9 @@ func (s *gstate) nanoTrustedVarName(name string) (string, bool) {
 		return "user_ref", true
 	case "account_ref", "accountRef":
 		return "account_ref", true
+	case UserGroupsVar:
+		// NanoDB binds scalar values only, so $user_groups matches nothing there.
+		return UserGroupsVar, true
 	default:
 		if s != nil && s.gj != nil && s.gj.sourceModeTrustedIdentityParam(name) {
 			return name, true

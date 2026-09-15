@@ -364,6 +364,7 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 		EnableCamelcase:     gj.conf.EnableCamelcase,
 		DBSchema:            ctx.schema.DBSchema(),
 		EnableCacheTracking: gj.conf.CacheTrackingEnabled,
+		UnionRoles:          gj.conf.roleUnionEnabled(),
 	}
 
 	ctx.qcodeCompiler, err = qcode.NewCompiler(ctx.schema, qcc)

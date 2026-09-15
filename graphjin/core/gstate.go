@@ -94,7 +94,11 @@ func (gj *graphjinEngine) initialRequestRole(ctx context.Context) (string, bool)
 	if gj != nil && gj.conf != nil {
 		candidates := contextIdentityRoles(ctx)
 		if len(candidates) != 0 {
-			if role, trusted := gj.firstConfiguredRole(ctx, candidates); role != "" {
+			resolve := gj.firstConfiguredRole
+			if gj.conf.roleUnionEnabled() {
+				resolve = gj.unionConfiguredRoles
+			}
+			if role, trusted := resolve(ctx, candidates); role != "" {
 				return role, trusted
 			}
 		}
@@ -306,7 +310,7 @@ func (s *gstate) compileQueryForRole() (err error) {
 	st := stmt{role: s.role}
 
 	var ok bool
-	if st.roc, ok = s.gj.roles[s.role]; !ok {
+	if st.roc, ok = s.gj.roleByName(s.role); !ok {
 		err = fmt.Errorf(`roles '%s' not defined in c.gj.config`, s.role)
 		return
 	}

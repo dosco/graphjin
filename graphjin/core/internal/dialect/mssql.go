@@ -3607,6 +3607,14 @@ func (d *MSSQLDialect) RoleLimitSuffix() string {
 	return `) AS _sg_auth_roles_query) ` // No LIMIT, uses TOP in prefix
 }
 
+func (d *MSSQLDialect) RoleUnionSelectPrefix() string {
+	return `SELECT TOP 1 ` // MSSQL uses TOP instead of LIMIT
+}
+
+func (d *MSSQLDialect) RoleUnionFromSuffix() string {
+	return `) AS _sg_auth_roles_query`
+}
+
 func (d *MSSQLDialect) RoleDummyTable() string {
 	return `ELSE 'anon' END) FROM (SELECT 1 AS _sg_auth_filler) AS _sg_auth_filler; `
 }
