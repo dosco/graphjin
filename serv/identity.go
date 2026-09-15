@@ -85,7 +85,7 @@ func (s *graphjinService) applyIdentityContext(ctx context.Context) context.Cont
 	}
 
 	if groups := extractClaimRoles(claims, id.GroupClaims); len(groups) != 0 {
-		vars["groups"] = groups
+		vars[core.UserGroupsVar] = groups
 	}
 
 	roles := extractClaimRoles(claims, id.RoleClaims)

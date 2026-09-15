@@ -1585,7 +1585,7 @@ type IdentityConfig struct {
 	AdminRoles     []string `mapstructure:"admin_roles" json:"admin_roles" yaml:"admin_roles" jsonschema:"title=Admin Roles"`
 	Query          string   `mapstructure:"query" json:"query" yaml:"query" jsonschema:"title=Identity Enrichment Query"`
 	// GroupClaims names the token claims that list the caller's groups. The
-	// values are exposed to filters and presets as the trusted $groups variable.
+	// values are exposed to filters and presets as the trusted $user_groups variable.
 	GroupClaims []string `mapstructure:"group_claims" json:"group_claims" yaml:"group_claims" jsonschema:"title=Group Claims"`
 	// RoleMode selects how GraphJin resolves a caller with several matching
 	// roles: "first" applies the first configured role, "union" merges the

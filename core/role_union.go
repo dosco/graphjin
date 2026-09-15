@@ -16,8 +16,10 @@ const (
 	// UnionRoleSeparator joins the component roles of a union role key.
 	UnionRoleSeparator = "+"
 
-	// groupsVar is the trusted identity variable that holds the caller's groups.
-	groupsVar = "groups"
+	// UserGroupsVar is the trusted identity variable that holds the caller's
+	// groups. Filters use it as $user_groups; embedding code sets it in the
+	// IdentityVarsKey map.
+	UserGroupsVar = "user_groups"
 )
 
 func normalizeRoleMode(mode string) string {
@@ -187,7 +189,7 @@ func contextGroups(ctx context.Context) []string {
 	if !ok {
 		return nil
 	}
-	return stringList(vars[groupsVar])
+	return stringList(vars[UserGroupsVar])
 }
 
 func stringList(v interface{}) []string {
