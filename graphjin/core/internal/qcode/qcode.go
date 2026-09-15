@@ -1851,19 +1851,22 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 			return nil, false, err
 		}
 
+		if err := validateFilterNode(node); err != nil {
+			return nil, false, fmt.Errorf("role filter %s: %w", v, err)
+		}
+
 		f, nu, err := co.compileBaseExpNode("", ti, st, node, isJSON)
 		if err != nil {
 			return nil, false, err
 		}
 
+		if f == nil {
+			return nil, false, fmt.Errorf("role filter %s: compiled to no expression", v)
+		}
+
 		if nu {
 			needsUser = true
 		}
-
-		// TODO: Invalid table names in nested where causes fail silently
-		// returning a nil 'f' this needs to be fixed
-
-		// TODO: Invalid where clauses such as missing op (eg. eq) also fail silently
 
 		if fl == nil {
 			if len(filter) == 1 {
@@ -1877,6 +1880,28 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 	}
 
 	return fl, needsUser, nil
+}
+
+// validateFilterNode rejects empty objects and lists anywhere in a role
+// filter. The expression compiler skips them, so `{ or: [{}, {}] }` would
+// otherwise load as an OR with no children and `{ and: [x, {}] }` would
+// load with a branch silently removed.
+func validateFilterNode(node *graph.Node) error {
+	if node == nil {
+		return errors.New("empty expression")
+	}
+	if (node.Type == graph.NodeObj || node.Type == graph.NodeList) && len(node.Children) == 0 {
+		if node.Name == "" {
+			return errors.New("empty object or list")
+		}
+		return fmt.Errorf("empty object or list for '%s'", node.Name)
+	}
+	for _, child := range node.Children {
+		if err := validateFilterNode(child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func getArg(args []graph.Arg, name string, validTypes ...graph.ParserType,
