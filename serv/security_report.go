@@ -1129,6 +1129,24 @@ func sourceAccessClassificationPolicies(mode, source, kind string, access core.S
 	add("public", access.PublicTables, core.AccessModePublic, "Read-only shared/reference tables with no account filter.")
 	add("admin", access.AdminTables, core.AccessModeAdmin, "Read-only admin tables.")
 	add("blocked", access.BlockedTables, core.AccessModeBlocked, "Fully blocked tables hidden from normal discovery.")
+	if len(access.Grants) != 0 {
+		var grants []string
+		for _, grant := range access.Grants {
+			for _, table := range grant.Tables {
+				grants = append(grants, grant.Role+":"+table.Name)
+			}
+		}
+		row := newSecurityPolicy(mode, "source_access."+securityIDPart(source)+".grants", "core", source, kind, "classification.grants", "read",
+			fmt.Sprintf("%s role grants", source),
+			"Per-role read columns and row filters that replace the source read mode.",
+			true, true,
+			fmt.Sprintf("sources[%s].access.grants", source), strings.Join(grants, ","),
+			true, "medium",
+			"Grants are compiled into generated role rules and keep the account or owner filter.",
+			"Grant only the columns each role needs, and prefer row filters over wide grants.")
+		row.Details = map[string]any{"grants": access.Grants}
+		rows = append(rows, row)
+	}
 	return rows
 }
 
@@ -1282,6 +1300,7 @@ func sourceAccessDetails(access core.SourceAccessConfig) map[string]any {
 		"public_tables":            access.PublicTables,
 		"admin_tables":             access.AdminTables,
 		"blocked_tables":           access.BlockedTables,
+		"grants":                   access.Grants,
 	}
 }
 
