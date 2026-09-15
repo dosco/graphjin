@@ -2,10 +2,12 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/dosco/graphjin/core/v3/internal/psql"
 	"github.com/dosco/graphjin/core/v3/openapi"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
 )
@@ -36,8 +38,7 @@ func TestValidateRoleMode(t *testing.T) {
 		{name: "union with graphql roles query", conf: Config{Identity: IdentityConfig{RoleMode: "Union"}, RolesQuery: "query { users(id: $user_id) { role } }"}},
 		{name: "unknown mode", conf: Config{Identity: IdentityConfig{RoleMode: "all"}}, wantErr: "unsupported value"},
 		{name: "separator in role name", conf: Config{Identity: IdentityConfig{RoleMode: "union"}, Roles: []Role{{Name: "a+b"}}}, wantErr: "must not contain"},
-		{name: "union with sql roles query", conf: Config{Identity: IdentityConfig{RoleMode: "union"}, RolesQuery: "SELECT * FROM users WHERE id = $user_id"}, wantErr: "GraphQL roles_query"},
-		{name: "union with sql identity query", conf: Config{Identity: IdentityConfig{RoleMode: "union", Query: "SELECT * FROM users WHERE id = $user_id"}}, wantErr: "GraphQL roles_query"},
+		{name: "union with sql roles query", conf: Config{Identity: IdentityConfig{RoleMode: "union"}, RolesQuery: "SELECT * FROM users WHERE id = $user_id"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -231,11 +232,88 @@ func TestGroupsVariableIsTrustedIdentity(t *testing.T) {
 
 func TestConfigValidateRunsRoleModeValidation(t *testing.T) {
 	conf := &Config{
-		DBType:     "postgres",
-		Identity:   IdentityConfig{RoleMode: RoleModeUnion},
-		RolesQuery: "SELECT * FROM users WHERE id = $user_id",
+		DBType:   "postgres",
+		Identity: IdentityConfig{RoleMode: RoleModeUnion},
+		Roles:    []Role{{Name: "finance+sales"}},
 	}
-	if err := conf.Validate(); err == nil || !strings.Contains(err.Error(), "GraphQL roles_query") {
-		t.Fatalf("Validate() = %v, want the union roles_query error", err)
+	if err := conf.Validate(); err == nil || !strings.Contains(err.Error(), "must not contain") {
+		t.Fatalf("Validate() = %v, want the role name error", err)
+	}
+}
+
+func TestRenderRoleUnionStatementPerDialect(t *testing.T) {
+	roles := map[string]*Role{
+		"finance": {Name: "finance", Match: "id = 1"},
+		"blocked": {Name: "blocked", Match: "disabled = true"},
+	}
+	names := []string{"finance", "blocked"}
+	const cols = "(CASE WHEN id = 1 THEN 1 ELSE 0 END), (CASE WHEN disabled = true THEN 1 ELSE 0 END)"
+	want := map[string]string{
+		"postgres": "SELECT " + cols + " FROM (SELECT * FROM users WHERE id = $1) AS _sg_auth_roles_query LIMIT 1",
+		"mysql":    "SELECT " + cols + " FROM (SELECT * FROM users WHERE id = ?) AS _sg_auth_roles_query LIMIT 1",
+		"mariadb":  "SELECT " + cols + " FROM (SELECT * FROM users WHERE id = ?) AS _sg_auth_roles_query LIMIT 1",
+		"sqlite":   "SELECT " + cols + " FROM (SELECT * FROM users WHERE id = ?) AS _sg_auth_roles_query LIMIT 1",
+		"mssql":    "SELECT TOP 1 (CASE WHEN id = 1 THEN 1 ELSE 0 END), (CASE WHEN disabled = 1 THEN 1 ELSE 0 END) FROM (SELECT * FROM users WHERE id = @p1) AS _sg_auth_roles_query",
+		"oracle":   "SELECT " + cols + ` FROM (SELECT * FROM users WHERE id = :1) "_SG_AUTH_ROLES_QUERY" FETCH FIRST 1 ROWS ONLY`,
+	}
+	for db, expected := range want {
+		var md psql.Metadata
+		pc := psql.NewCompiler(psql.Config{DBType: db})
+		got := renderRoleUnionStatement(pc, &md, "SELECT * FROM users WHERE id = $user_id", names, roles)
+		if got != expected {
+			t.Fatalf("%s union role statement:\n got: %s\nwant: %s", db, got, expected)
+		}
+		if params := md.Params(); len(params) != 1 || params[0].Name != "user_id" {
+			t.Fatalf("%s union role statement params = %+v, want user_id once", db, params)
+		}
+	}
+
+	var md psql.Metadata
+	got := renderRoleUnionStatement(psql.NewCompiler(psql.Config{DBType: "postgres"}), &md,
+		"SELECT * FROM users WHERE id = $user_id", nil, roles)
+	if got != "SELECT 1 FROM (SELECT * FROM users WHERE id = $1) AS _sg_auth_roles_query LIMIT 1" {
+		t.Fatalf("statement without match rules = %s", got)
+	}
+}
+
+func TestScanRoleUnionRowOutcomes(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	for _, stmt := range []string{
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, dept TEXT)`,
+		`INSERT INTO users (id, dept) VALUES (1, 'finance'), (2, 'none')`,
+	} {
+		if _, err := conn.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	gj := unionEngine(RoleModeUnion, "finance", "auditor")
+	gj.roles["finance"].Match = "dept = 'finance'"
+	gj.roles["auditor"].Match = "id = 1"
+	gj.roleUnionRoles = gj.matchRoleNames()
+
+	var md psql.Metadata
+	query := renderRoleUnionStatement(psql.NewCompiler(psql.Config{DBType: "sqlite"}), &md,
+		"SELECT * FROM users WHERE id = $user_id", gj.roleUnionRoles, gj.roles)
+
+	cases := map[int]string{1: "finance+auditor", 2: "user", 3: "anon"}
+	for userID, want := range cases {
+		got, err := gj.scanRoleUnionRow(ctx, "sqlite", conn, nil, query, []interface{}{userID})
+		if err != nil {
+			t.Fatalf("user %d: %v", userID, err)
+		}
+		if got != want {
+			t.Fatalf("user %d resolved to %q, want %q", userID, got, want)
+		}
 	}
 }

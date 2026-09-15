@@ -761,6 +761,14 @@ func (d *MongoDBDialect) RoleLimitSuffix() string {
 	return ""
 }
 
+func (d *MongoDBDialect) RoleUnionSelectPrefix() string {
+	return ""
+}
+
+func (d *MongoDBDialect) RoleUnionFromSuffix() string {
+	return ""
+}
+
 func (d *MongoDBDialect) RoleDummyTable() string {
 	return ""
 }

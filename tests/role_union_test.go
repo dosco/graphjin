@@ -174,3 +174,45 @@ func Example_queryUnionRolesWithGraphQLRolesQuery() {
 	}
 	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"},{"id":99,"name":"Product 99"},{"id":100,"name":"Product 100"}]}
 }
+
+func Example_queryUnionRolesWithSQLRolesQuery() {
+	// Skip for MongoDB: a SQL roles_query needs a SQL database.
+	if dbType == "mongodb" {
+		fmt.Println(`{"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"},{"id":99,"name":"Product 99"},{"id":100,"name":"Product 100"}]}`)
+		fmt.Println(`{"products":[{"id":99,"name":"Product 99"},{"id":100,"name":"Product 100"}]}`)
+		return
+	}
+
+	conf := unionRolesConfig(core.RoleModeUnion)
+	conf.RolesQuery = `SELECT * FROM users WHERE id = $user_id`
+	for i := range conf.Roles {
+		switch conf.Roles[i].Name {
+		case "finance":
+			conf.Roles[i].Match = "id = 1"
+		case "sales":
+			conf.Roles[i].Match = "id < 10"
+		}
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	// User 1 matches finance and sales; user 5 matches sales only.
+	for _, userID := range []int{1, 5} {
+		ctx := context.WithValue(context.Background(), core.UserIDKey, userID)
+		res, err := gj.GraphQL(ctx, `query {
+			products(order_by: { id: asc }) { id name }
+		}`, nil, nil)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		printJSON(res.Data)
+	}
+	// Output:
+	// {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"},{"id":99,"name":"Product 99"},{"id":100,"name":"Product 100"}]}
+	// {"products":[{"id":99,"name":"Product 99"},{"id":100,"name":"Product 100"}]}
+}

@@ -1669,6 +1669,14 @@ func (d *MySQLDialect) RoleLimitSuffix() string {
 	return `) AS _sg_auth_roles_query LIMIT 1) `
 }
 
+func (d *MySQLDialect) RoleUnionSelectPrefix() string {
+	return `SELECT `
+}
+
+func (d *MySQLDialect) RoleUnionFromSuffix() string {
+	return `) AS _sg_auth_roles_query LIMIT 1`
+}
+
 func (d *MySQLDialect) RoleDummyTable() string {
 	return `ELSE 'anon' END) FROM (VALUES ROW(1)) AS _sg_auth_filler LIMIT 1; `
 }

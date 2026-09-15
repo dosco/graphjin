@@ -1612,6 +1612,14 @@ func (d *SQLiteDialect) RoleLimitSuffix() string {
 	return `) AS _sg_auth_roles_query LIMIT 1) `
 }
 
+func (d *SQLiteDialect) RoleUnionSelectPrefix() string {
+	return `SELECT `
+}
+
+func (d *SQLiteDialect) RoleUnionFromSuffix() string {
+	return `) AS _sg_auth_roles_query LIMIT 1`
+}
+
 func (d *SQLiteDialect) RoleDummyTable() string {
 	return `ELSE 'anon' END) FROM (VALUES (1)) AS _sg_auth_filler LIMIT 1; `
 }

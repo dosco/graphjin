@@ -47,13 +47,6 @@ func (c *Config) validateRoleMode() error {
 			return fmt.Errorf("identity.role_mode union: role name %q must not contain %q", role.Name, UnionRoleSeparator)
 		}
 	}
-	rolesQuery := strings.TrimSpace(c.RolesQuery)
-	if rolesQuery == "" {
-		rolesQuery = strings.TrimSpace(c.Identity.Query)
-	}
-	if rolesQuery != "" && !isGraphQLRoleQuery(rolesQuery) {
-		return fmt.Errorf("identity.role_mode union requires role claims or a GraphQL roles_query; a SQL roles_query can match only one role")
-	}
 	return nil
 }
 
