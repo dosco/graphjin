@@ -395,14 +395,39 @@ func (d *MySQLDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 			}
 		}
 
+		if ex.Op == qcode.OpNotIn {
+			ctx.WriteString(`NOT `)
+		}
 		ctx.WriteString(`JSON_CONTAINS(`)
 		ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
-		ctx.WriteString(`, CAST(`)
-		ctx.ColWithTable(ex.Left.Col.Table, ex.Left.Col.Name)
-		ctx.WriteString(` AS JSON), '$')`)
+		// Text is not valid JSON, so quote it into a JSON string. Other scalar
+		// types cast to the matching JSON value.
+		if isJSONTextColumnType(ex.Left.Col.Type) {
+			ctx.WriteString(`, JSON_QUOTE(`)
+			ctx.ColWithTable(ex.Left.Col.Table, ex.Left.Col.Name)
+			ctx.WriteString(`), '$')`)
+		} else {
+			ctx.WriteString(`, CAST(`)
+			ctx.ColWithTable(ex.Left.Col.Table, ex.Left.Col.Name)
+			ctx.WriteString(` AS JSON), '$')`)
+		}
 		return true
 	}
 	return false
+}
+
+// isJSONTextColumnType reports whether a MySQL or MariaDB column holds text
+// that must be quoted before JSON_CONTAINS can compare it with a JSON array.
+func isJSONTextColumnType(colType string) bool {
+	t := strings.ToLower(strings.TrimSpace(colType))
+	if i := strings.IndexByte(t, '('); i != -1 {
+		t = t[:i]
+	}
+	switch t {
+	case "enum", "set", "uuid", "string":
+		return true
+	}
+	return strings.Contains(t, "char") || strings.Contains(t, "text")
 }
 
 func (d *MySQLDialect) RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcode.Exp) {
