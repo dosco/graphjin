@@ -2425,12 +2425,12 @@ For example, `finance` reads `price` on EMEA rows only, and `sales` reads every 
 
 - A role name must not contain `+`. GraphJin names a merged role by joining role names with `+`, for example `finance+sales`.
 - `anon`, `user` and reserved roles (names that start with `__`) never join a merge.
-- A SQL `roles_query` can match one role only, so GraphJin rejects it in `union` mode. Use role claims or a GraphQL `roles_query`.
+- A SQL or GraphQL `roles_query` returns every role whose `match` rule is true. If the query returns no row, the caller is `anon`. If no rule matches, the caller is `user`.
 - An exposed API operation allows the call if any merged role is in `allowed_roles`.
 
 ### Groups
 
-`$groups` holds the groups of the caller. Use it in role filters to give access by group membership.
+`$user_groups` holds the groups of the caller. Use it in role filters to give access by group membership.
 
 ```yaml
 identity:
@@ -2441,16 +2441,16 @@ roles:
     tables:
       - name: projects
         query:
-          filters: ["{ team: { in: $groups } }"]
+          filters: ["{ team: { in: $user_groups } }"]
 ```
 
-- GraphJin reads `$groups` from the claims in `identity.group_claims`. A claim can be a list or a comma-separated string.
-- `$groups` is a reserved variable name, like `$user_id`. It always comes from the verified identity, in role filters and in client queries. A request variable named `groups` never replaces it.
+- GraphJin reads `$user_groups` from the claims in `identity.group_claims`. A claim can be a list or a comma-separated string.
+- `$user_groups` is a reserved variable name, like `$user_id`. It always comes from the verified identity, in role filters and in client queries. A request variable named `user_groups` never replaces it.
 - GraphJin drops group names that start with `__`, because that prefix is reserved.
-- A caller without group claims has an empty `$groups`, so a filter on `$groups` matches no rows.
+- A caller without group claims has an empty `$user_groups`, so a filter on `$user_groups` matches no rows.
 - `allowed_roles` on an exposed API operation also accepts group names.
-- When you embed GraphJin as a library, set the groups in the context: `context.WithValue(ctx, core.IdentityVarsKey, map[string]interface{}{"groups": []string{"finance"}})`.
-- An `in` filter with a string array variable works on PostgreSQL and SQLite. MySQL and MariaDB do not support this filter on text columns, for groups or for request variables. NanoDB does not bind `$groups`, so there the filter matches no rows.
+- When you embed GraphJin as a library, set the groups in the context: `context.WithValue(ctx, core.IdentityVarsKey, map[string]interface{}{core.UserGroupsVar: []string{"finance"}})`.
+- NanoDB binds single values only, so a filter on `$user_groups` matches no rows there.
 
 ## Multi-Database Configuration
 
