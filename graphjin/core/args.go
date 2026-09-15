@@ -96,8 +96,8 @@ func (gj *graphjinEngine) argList(c context.Context,
 				return ar, argErr(p)
 			}
 
-		case groupsVar:
-			// $groups always comes from the trusted identity, never from
+		case UserGroupsVar:
+			// $user_groups always comes from the trusted identity, never from
 			// request variables. A caller without groups matches no group.
 			if vl[i], err = groupsArgValue(c, pc); err != nil {
 				return ar, err
@@ -205,7 +205,7 @@ func (gj *graphjinEngine) sourceModeTrustedIdentityParam(name string) bool {
 		"account_ref",
 		"user_id",
 		"user_ref",
-		groupsVar,
+		UserGroupsVar,
 		strings.ToLower(strings.TrimSpace(id.NamespaceClaim)),
 		strings.ToLower(strings.TrimSpace(id.UserIDClaim)),
 	}

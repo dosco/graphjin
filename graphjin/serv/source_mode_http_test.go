@@ -382,7 +382,7 @@ func TestSourceModeJWTGroupClaimsBecomeTrustedGroups(t *testing.T) {
 			t.Fatalf("auth handler: %v", err)
 		}
 		vars, _ := svc.applyIdentityContext(ctx).Value(core.IdentityVarsKey).(map[string]interface{})
-		v, ok := vars["groups"]
+		v, ok := vars[core.UserGroupsVar]
 		return v, ok
 	}
 

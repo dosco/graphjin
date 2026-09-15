@@ -175,7 +175,7 @@ func TestOpenAPIAllowedRolesAcceptsGroupsAndUnionRoles(t *testing.T) {
 		Identity: IdentityConfig{AdminRoles: []string{"admin"}},
 	}
 	base := context.WithValue(context.Background(), UserIDKey, "u-1")
-	withGroups := context.WithValue(base, IdentityVarsKey, map[string]interface{}{"groups": []string{"finance-leads"}})
+	withGroups := context.WithValue(base, IdentityVarsKey, map[string]interface{}{UserGroupsVar: []string{"finance-leads"}})
 	write := &openapi.OpDescriptor{SourceName: "external", OperationID: "refund", Method: "POST", AllowedRoles: []string{"finance-leads"}}
 	remove := &openapi.OpDescriptor{SourceName: "external", OperationID: "purge", Method: "DELETE", AllowedRoles: []string{"admin"}}
 
@@ -188,7 +188,7 @@ func TestOpenAPIAllowedRolesAcceptsGroupsAndUnionRoles(t *testing.T) {
 	if d := conf.authorizeOpenAPIOperation(base, remove, "member+admin"); !d.Allowed {
 		t.Fatalf("a union role with an admin component should pass admin access: %+v", d)
 	}
-	groupAdmin := context.WithValue(base, IdentityVarsKey, map[string]interface{}{"groups": []string{"admin"}})
+	groupAdmin := context.WithValue(base, IdentityVarsKey, map[string]interface{}{UserGroupsVar: []string{"admin"}})
 	if d := conf.authorizeOpenAPIOperation(groupAdmin, remove, "member"); d.Allowed || d.Gate != "access" {
 		t.Fatalf("a group named like an admin role must not grant admin access: %+v", d)
 	}
@@ -204,7 +204,7 @@ func TestGroupsArgValue(t *testing.T) {
 	}
 
 	ctx := context.WithValue(context.Background(), IdentityVarsKey, map[string]interface{}{
-		"groups": []interface{}{"finance", "sales"},
+		UserGroupsVar: []interface{}{"finance", "sales"},
 	})
 	v, err = groupsArgValue(ctx, nil)
 	if err != nil {
@@ -220,12 +220,12 @@ func TestGroupsVariableIsTrustedIdentity(t *testing.T) {
 	if err := gj.conf.NormalizeSources(); err != nil {
 		t.Fatalf("NormalizeSources: %v", err)
 	}
-	if !gj.sourceModeTrustedIdentityParam("groups") {
-		t.Fatal("$groups must be a trusted identity variable in sources mode")
+	if !gj.sourceModeTrustedIdentityParam("user_groups") {
+		t.Fatal("$user_groups must be a trusted identity variable in sources mode")
 	}
 	s := &gstate{gj: gj}
-	if name, trusted := s.nanoTrustedVarName("groups"); name != "groups" || !trusted {
-		t.Fatalf("nanodb must treat $groups as trusted, got %q %v", name, trusted)
+	if name, trusted := s.nanoTrustedVarName("user_groups"); name != "user_groups" || !trusted {
+		t.Fatalf("nanodb must treat $user_groups as trusted, got %q %v", name, trusted)
 	}
 }
 

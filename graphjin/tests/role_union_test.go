@@ -93,10 +93,8 @@ func Example_queryUnionRolesFirstModeUnchanged() {
 }
 
 func Example_queryWithGroupsFilter() {
-	// Run where a string array variable works with the in operator. MySQL and
-	// MariaDB render in on a text column as JSON_CONTAINS over CAST(col AS JSON),
-	// which fails for request variables too, so they skip like MongoDB.
-	if dbType != "postgres" && dbType != "sqlite" {
+	// Skip for MongoDB: role filters with column allowlists are SQL-only here.
+	if dbType == "mongodb" {
 		fmt.Println(`{"users":[{"email":"user1@test.com","id":1},{"email":"user3@test.com","id":3}]}`)
 		fmt.Println(`{"users":[]}`)
 		return
@@ -104,7 +102,7 @@ func Example_queryWithGroupsFilter() {
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	if err := conf.AddRoleTable("member", "users", core.Query{
-		Filters: []string{`{ email: { in: $groups } }`},
+		Filters: []string{`{ email: { in: $user_groups } }`},
 		Columns: []string{"id", "email"},
 	}); err != nil {
 		panic(err)
@@ -119,13 +117,13 @@ func Example_queryWithGroupsFilter() {
 	gql := `query {
 		users(order_by: { id: asc }) { id email }
 	}`
-	// A request variable named groups must not replace the trusted groups.
-	vars := json.RawMessage(`{ "groups": ["user2@test.com"] }`)
+	// A request variable named user_groups must not replace the trusted groups.
+	vars := json.RawMessage(`{ "user_groups": ["user2@test.com"] }`)
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 1)
 	ctx = context.WithValue(ctx, core.IdentityRolesKey, []string{"member"})
 	withGroups := context.WithValue(ctx, core.IdentityVarsKey, map[string]interface{}{
-		"groups": []string{"user1@test.com", "user3@test.com"},
+		core.UserGroupsVar: []string{"user1@test.com", "user3@test.com"},
 	})
 
 	for _, c := range []context.Context{withGroups, ctx} {
