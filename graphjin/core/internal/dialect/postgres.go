@@ -945,6 +945,14 @@ func (d *PostgresDialect) RoleDummyTable() string {
 	return `ELSE 'anon' END) FROM (VALUES (1)) AS _sg_auth_filler LIMIT 1; `
 }
 
+func (d *PostgresDialect) RoleUnionSelectPrefix() string {
+	return `SELECT `
+}
+
+func (d *PostgresDialect) RoleUnionFromSuffix() string {
+	return `) AS _sg_auth_roles_query LIMIT 1`
+}
+
 func (d *PostgresDialect) TransformBooleanLiterals(match string) string {
 	return match // PostgreSQL uses true/false natively
 }

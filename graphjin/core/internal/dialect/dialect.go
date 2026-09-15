@@ -162,6 +162,8 @@ type Dialect interface {
 	RoleSelectPrefix() string                     // "SELECT TOP 1 (CASE" vs "SELECT (CASE"
 	RoleLimitSuffix() string                      // Close with/without LIMIT 1
 	RoleDummyTable() string                       // Database-specific dummy table
+	RoleUnionSelectPrefix() string                // "SELECT " vs "SELECT TOP 1 " for the union role statement
+	RoleUnionFromSuffix() string                  // Closes the roles query subquery and limits it to one row
 	TransformBooleanLiterals(match string) string // "true"→"1" for MSSQL
 
 	// Driver Behavior (moves db-specific code from core/args.go and core/core.go)

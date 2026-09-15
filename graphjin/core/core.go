@@ -121,15 +121,19 @@ func (gj *graphjinEngine) executeRoleQuery(c context.Context,
 		return
 	}
 
-	err = retryOperationForDB(c1, pdb.dbtype, func() error {
-		var row *sql.Row
-		if rc != nil && rc.Tx != nil {
-			row = rc.Tx.QueryRowContext(c1, roleQuery, roleArgs...)
-		} else {
-			row = conn.QueryRowContext(c1, roleQuery, roleArgs...)
-		}
-		return row.Scan(&role)
-	})
+	if gj.conf.roleUnionEnabled() {
+		role, err = gj.scanRoleUnionRow(c1, pdb.dbtype, conn, rc, roleQuery, roleArgs)
+	} else {
+		err = retryOperationForDB(c1, pdb.dbtype, func() error {
+			var row *sql.Row
+			if rc != nil && rc.Tx != nil {
+				row = rc.Tx.QueryRowContext(c1, roleQuery, roleArgs...)
+			} else {
+				row = conn.QueryRowContext(c1, roleQuery, roleArgs...)
+			}
+			return row.Scan(&role)
+		})
+	}
 	if err != nil {
 		span.Error(err)
 		return
@@ -138,6 +142,61 @@ func (gj *graphjinEngine) executeRoleQuery(c context.Context,
 	role, trustedReservedRole = gj.requestRoleOrDefault(c, role, "user")
 	span.SetAttributesString(StringAttr{"role", role})
 	return
+}
+
+// scanRoleUnionRow runs the union mode role statement. Each column reports
+// whether one role matched. No row means the user is unknown (anon); a row
+// without any match means the default authenticated role (user).
+func (gj *graphjinEngine) scanRoleUnionRow(
+	c context.Context,
+	dbType string,
+	conn *sql.Conn,
+	rc *RequestConfig,
+	query string,
+	args []interface{},
+) (string, error) {
+	cols := len(gj.roleUnionRoles)
+	if cols == 0 {
+		cols = 1
+	}
+	flags := make([]sql.NullInt64, cols)
+	dest := make([]interface{}, cols)
+	for i := range flags {
+		dest[i] = &flags[i]
+	}
+
+	found := true
+	err := retryOperationForDB(c, dbType, func() error {
+		var row *sql.Row
+		if rc != nil && rc.Tx != nil {
+			row = rc.Tx.QueryRowContext(c, query, args...)
+		} else {
+			row = conn.QueryRowContext(c, query, args...)
+		}
+		err := row.Scan(dest...)
+		if errors.Is(err, sql.ErrNoRows) {
+			found = false
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "anon", nil
+	}
+
+	var matched []string
+	for i, name := range gj.roleUnionRoles {
+		if flags[i].Valid && flags[i].Int64 == 1 {
+			matched = append(matched, name)
+		}
+	}
+	if key := gj.unionRoleKey(matched); key != "" {
+		return key, nil
+	}
+	return "user", nil
 }
 
 // Returns the operation type for the query result

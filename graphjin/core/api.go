@@ -89,6 +89,7 @@ type graphjinEngine struct {
 	roles                      map[string]*Role
 	unionRoles                 sync.Map
 	roleStatement              string
+	roleUnionRoles             []string
 	roleStatementMetadata      psql.Metadata
 	roleQueryMode              roleQueryMode
 	roleGraphQLStmt            stmt

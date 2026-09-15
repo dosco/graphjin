@@ -1600,6 +1600,15 @@ func (d *OracleDialect) RoleLimitSuffix() string {
 	return `) "_SG_AUTH_ROLES_QUERY" FETCH FIRST 1 ROWS ONLY) `
 }
 
+func (d *OracleDialect) RoleUnionSelectPrefix() string {
+	return `SELECT `
+}
+
+func (d *OracleDialect) RoleUnionFromSuffix() string {
+	// Oracle doesn't support AS for table aliases
+	return `) "_SG_AUTH_ROLES_QUERY" FETCH FIRST 1 ROWS ONLY`
+}
+
 func (d *OracleDialect) RoleDummyTable() string {
 	return `ELSE 'anon' END) FROM DUAL FETCH FIRST 1 ROWS ONLY; `
 }
