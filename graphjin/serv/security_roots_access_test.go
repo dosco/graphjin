@@ -158,3 +158,19 @@ func roleTableFor(conf *core.Config, role, table, database string) (core.RoleTab
 	}
 	return core.RoleTable{}, false
 }
+
+func TestSecurityReportListsSourceAccessGrants(t *testing.T) {
+	access := core.SourceAccessConfig{Grants: []core.SourceAccessGrant{
+		{Role: "finance", Tables: []core.SourceAccessGrantTable{{Name: "orders", Columns: []string{"id"}}, {Name: "invoices", Columns: []string{"id"}}}},
+	}}
+	for _, row := range sourceAccessClassificationPolicies(modeAgentic, "shop", "database", access) {
+		if row.ID != "policy:source_access.shop.grants" {
+			continue
+		}
+		if row.OverrideValue != "finance:orders,finance:invoices" {
+			t.Fatalf("grants override value = %q", row.OverrideValue)
+		}
+		return
+	}
+	t.Fatal("security report has no grants row")
+}

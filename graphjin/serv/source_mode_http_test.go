@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -255,6 +256,50 @@ func TestSourceModeHTTPJWTRoleModeUnion(t *testing.T) {
 	}
 	if n := countUsers(t, union); n != 3 {
 		t.Fatalf("union mode should include the admin role's unscoped rows, got %d rows", n)
+	}
+}
+
+func TestSourceModeHTTPJWTGrantRoles(t *testing.T) {
+	handler := newSourceModeJWTHTTPTestHandler(t, func(conf *Config) {
+		conf.Core.Identity.RoleMode = core.RoleModeUnion
+		conf.Core.Roles = append(conf.Core.Roles, core.Role{Name: "support"})
+		conf.Core.Sources[0].Access.Grants = []core.SourceAccessGrant{
+			{Role: "member", Tables: []core.SourceAccessGrantTable{{Name: "users", Columns: []string{"id", "name"}, Filter: "{ id: { eq: 1 } }"}}},
+			{Role: "support", Tables: []core.SourceAccessGrantTable{{Name: "users", Columns: []string{"id", "name"}, Filter: "{ id: { in: [2, 3] } }"}}},
+		}
+	})
+	usersFor := func(t *testing.T, roles ...string) []int {
+		t.Helper()
+		token := signSourceModeJWT(t, jwt.MapClaims{"sub": "user_1", "roles": roles, "account_id": "acct_1"})
+		resp := postGraphQLJWT(t, handler, token, `query { users(order_by: { id: asc }) { id name } }`, nil)
+		assertNoGraphQLErrors(t, resp)
+		var out struct {
+			Users []struct {
+				ID int `json:"id"`
+			} `json:"users"`
+		}
+		if err := json.Unmarshal(resp.Data, &out); err != nil {
+			t.Fatalf("decode users response: %v\n%s", err, string(resp.Data))
+		}
+		ids := []int{}
+		for _, u := range out.Users {
+			ids = append(ids, u.ID)
+		}
+		return ids
+	}
+
+	if got := usersFor(t, "member"); fmt.Sprint(got) != "[1]" {
+		t.Fatalf("member grant rows = %v, want [1]", got)
+	}
+	// User 2 matches the support filter but belongs to acct_2, so the account filter removes it.
+	if got := usersFor(t, "member", "support"); fmt.Sprint(got) != "[1 3]" {
+		t.Fatalf("member+support grant rows = %v, want [1 3]", got)
+	}
+
+	token := signSourceModeJWT(t, jwt.MapClaims{"sub": "user_1", "roles": []string{"member", "support"}, "account_id": "acct_1"})
+	resp := postGraphQLJWT(t, handler, token, `query { users { id account_id } }`, nil)
+	if len(resp.Errors) == 0 || !strings.Contains(string(resp.Errors[0]), "account_id") {
+		t.Fatalf("grant columns should block account_id, got data=%s errors=%s", string(resp.Data), resp.Errors)
 	}
 }
 

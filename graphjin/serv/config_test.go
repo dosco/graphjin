@@ -27,6 +27,37 @@ sources:
 	}
 }
 
+func TestNewConfigParsesSourceAccessGrants(t *testing.T) {
+	conf, err := NewConfig(`
+mode: agentic
+roles:
+  - name: finance
+sources:
+  - name: shop
+    kind: database
+    type: sqlite
+    access:
+      read: admin
+      grants:
+        - role: finance
+          tables:
+            - name: Sales_Order
+              columns: [entity_id, grand_total]
+              filter: "{ store_id: { in: [1, 2] } }"
+`, "yaml")
+	if err != nil {
+		t.Fatalf("NewConfig: %v", err)
+	}
+	grants := conf.Core.Sources[0].Access.Grants
+	if len(grants) != 1 || grants[0].Role != "finance" || len(grants[0].Tables) != 1 {
+		t.Fatalf("grants = %+v", grants)
+	}
+	table := grants[0].Tables[0]
+	if table.Name != "Sales_Order" || strings.Join(table.Columns, ",") != "entity_id,grand_total" || table.Filter != "{ store_id: { in: [1, 2] } }" {
+		t.Fatalf("grant table = %+v", table)
+	}
+}
+
 func TestNewConfigCatalogEnabledAuto(t *testing.T) {
 	conf, err := NewConfig(`
 mode: dev

@@ -24,6 +24,7 @@ func (gj *graphjinEngine) applySourceAccessRules(dbinfo *sdata.DBInfo, database 
 	access := gj.conf.EffectiveSourceAccess(source)
 	roles := sourceAccessRoleNames(gj.conf)
 	adminRoles := stringSet(gj.conf.EffectiveIdentityConfig().AdminRoles)
+	grants := newSourceGrantIndex(source.Name, access)
 
 	for i := range dbinfo.Tables {
 		table := &dbinfo.Tables[i]
@@ -31,11 +32,17 @@ func (gj *graphjinEngine) applySourceAccessRules(dbinfo *sdata.DBInfo, database 
 			continue
 		}
 		if gj.isArtifactPhysicalTable(database, table) {
+			if err := grants.rejectClosedTable(table, "artifact tables are internal"); err != nil {
+				return err
+			}
 			table.Blocked = true
 			continue
 		}
 		class := classifySourceAccessTable(access, table)
 		if class.blocked {
+			if err := grants.rejectClosedTable(table, "the table is in blocked_tables"); err != nil {
+				return err
+			}
 			table.Blocked = true
 			continue
 		}
@@ -61,10 +68,21 @@ func (gj *graphjinEngine) applySourceAccessRules(dbinfo *sdata.DBInfo, database 
 			if err != nil {
 				return err
 			}
+			if !roleInSet(role, adminRoles) {
+				grant, err := grants.find(role, table)
+				if err != nil {
+					return err
+				}
+				if grant != nil {
+					if err := applySourceGrant(&rt, grant, table, access, tableRead, source.Name); err != nil {
+						return err
+					}
+				}
+			}
 			appendRuntimeRoleTableCore(gj.conf, role, rt)
 		}
 	}
-	return nil
+	return grants.unmatched()
 }
 
 func modeForMissingNamespaceColumn(mode string, table *sdata.DBTable, access SourceAccessConfig) string {

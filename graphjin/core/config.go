@@ -266,6 +266,9 @@ func (c *Config) validateIsSourcesUsed() error {
 		if err := validateSourceAccessConfig(name, kind, source.Access); err != nil {
 			return err
 		}
+		if err := c.validateSourceAccessGrants(name, kind, source.Access); err != nil {
+			return err
+		}
 		if kind == sourcecap.KindAPI {
 			for specKey, spec := range source.Specs {
 				if spec.MaxRequestBytes < 0 || spec.MaxResponseBytes < 0 {
@@ -909,6 +912,19 @@ func (c SourceAccessConfig) clone() SourceAccessConfig {
 	}
 	if c.BlockedTables != nil {
 		out.BlockedTables = append([]string(nil), c.BlockedTables...)
+	}
+	if c.Grants != nil {
+		out.Grants = make([]SourceAccessGrant, len(c.Grants))
+		for i, grant := range c.Grants {
+			out.Grants[i] = SourceAccessGrant{Role: grant.Role}
+			if grant.Tables != nil {
+				out.Grants[i].Tables = make([]SourceAccessGrantTable, len(grant.Tables))
+				for j, table := range grant.Tables {
+					table.Columns = append([]string(nil), table.Columns...)
+					out.Grants[i].Tables[j] = table
+				}
+			}
+		}
 	}
 	return out
 }
@@ -1633,15 +1649,31 @@ type TasksConfig struct {
 // classifications. It is intentionally small; it compiles down to legacy role
 // table rules before qcode runs.
 type SourceAccessConfig struct {
-	Read                   string   `mapstructure:"read" json:"read" yaml:"read" jsonschema:"title=Read Access Mode"`
-	Write                  string   `mapstructure:"write" json:"write" yaml:"write" jsonschema:"title=Write Access Mode"`
-	Delete                 string   `mapstructure:"delete" json:"delete" yaml:"delete" jsonschema:"title=Delete Access Mode"`
-	NamespaceColumn        string   `mapstructure:"namespace_column" json:"namespace_column" yaml:"namespace_column" jsonschema:"title=Namespace Column,default=account_id"`
-	OwnerColumn            string   `mapstructure:"owner_column" json:"owner_column" yaml:"owner_column" jsonschema:"title=Owner Column,default=user_id"`
-	MissingNamespaceColumn string   `mapstructure:"missing_namespace_column" json:"missing_namespace_column" yaml:"missing_namespace_column" jsonschema:"title=Missing Namespace Column Behavior,enum=block,enum=allow"`
-	PublicTables           []string `mapstructure:"public_tables" json:"public_tables" yaml:"public_tables" jsonschema:"title=Public Tables"`
-	AdminTables            []string `mapstructure:"admin_tables" json:"admin_tables" yaml:"admin_tables" jsonschema:"title=Admin Tables"`
-	BlockedTables          []string `mapstructure:"blocked_tables" json:"blocked_tables" yaml:"blocked_tables" jsonschema:"title=Blocked Tables"`
+	Read                   string              `mapstructure:"read" json:"read" yaml:"read" jsonschema:"title=Read Access Mode"`
+	Write                  string              `mapstructure:"write" json:"write" yaml:"write" jsonschema:"title=Write Access Mode"`
+	Delete                 string              `mapstructure:"delete" json:"delete" yaml:"delete" jsonschema:"title=Delete Access Mode"`
+	NamespaceColumn        string              `mapstructure:"namespace_column" json:"namespace_column" yaml:"namespace_column" jsonschema:"title=Namespace Column,default=account_id"`
+	OwnerColumn            string              `mapstructure:"owner_column" json:"owner_column" yaml:"owner_column" jsonschema:"title=Owner Column,default=user_id"`
+	MissingNamespaceColumn string              `mapstructure:"missing_namespace_column" json:"missing_namespace_column" yaml:"missing_namespace_column" jsonschema:"title=Missing Namespace Column Behavior,enum=block,enum=allow"`
+	PublicTables           []string            `mapstructure:"public_tables" json:"public_tables" yaml:"public_tables" jsonschema:"title=Public Tables"`
+	AdminTables            []string            `mapstructure:"admin_tables" json:"admin_tables" yaml:"admin_tables" jsonschema:"title=Admin Tables"`
+	BlockedTables          []string            `mapstructure:"blocked_tables" json:"blocked_tables" yaml:"blocked_tables" jsonschema:"title=Blocked Tables"`
+	Grants                 []SourceAccessGrant `mapstructure:"grants" json:"grants,omitempty" yaml:"grants,omitempty" jsonschema:"title=Role Grants"`
+}
+
+// SourceAccessGrant gives one role read access to tables of a database
+// source. A grant replaces the source read mode for that role and table.
+type SourceAccessGrant struct {
+	Role   string                   `mapstructure:"role" json:"role" yaml:"role" jsonschema:"title=Role"`
+	Tables []SourceAccessGrantTable `mapstructure:"tables" json:"tables" yaml:"tables" jsonschema:"title=Tables"`
+}
+
+// SourceAccessGrantTable sets the columns and the row filter of a grant.
+// The account or owner filter of the source mode still applies.
+type SourceAccessGrantTable struct {
+	Name    string   `mapstructure:"name" json:"name" yaml:"name" jsonschema:"title=Table Name"`
+	Columns []string `mapstructure:"columns" json:"columns" yaml:"columns" jsonschema:"title=Columns"`
+	Filter  string   `mapstructure:"filter" json:"filter,omitempty" yaml:"filter,omitempty" jsonschema:"title=Row Filter"`
 }
 
 // SystemConfig controls GraphJin-owned capabilities and caller access to
