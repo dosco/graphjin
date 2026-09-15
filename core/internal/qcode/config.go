@@ -1,5 +1,7 @@
 package qcode
 
+import "strings"
+
 type Config struct {
 	Vars            map[string]string
 	TConfig         map[string]TConfig
@@ -14,6 +16,10 @@ type Config struct {
 
 	// EnableCacheTracking injects __gj_id fields with primary keys for cache row tracking
 	EnableCacheTracking bool
+
+	// UnionRoles treats a role name joined with "+" as the union of its
+	// component roles and merges their table rules.
+	UnionRoles bool
 
 	defTrv trval
 }
@@ -72,6 +78,7 @@ type trval struct {
 		limit   int32
 		fil     *Exp
 		filNU   bool
+		filKey  string
 		cols    map[string]struct{}
 		disable struct{ funcs bool }
 		block   bool
@@ -86,6 +93,7 @@ type trval struct {
 	update struct {
 		fil     *Exp
 		filNU   bool
+		filKey  string
 		cols    map[string]struct{}
 		presets map[string]string
 		block   bool
@@ -94,16 +102,18 @@ type trval struct {
 	upsert struct {
 		fil     *Exp
 		filNU   bool
+		filKey  string
 		cols    map[string]struct{}
 		presets map[string]string
 		block   bool
 	}
 
 	delete struct {
-		fil   *Exp
-		filNU bool
-		cols  map[string]struct{}
-		block bool
+		fil    *Exp
+		filNU  bool
+		filKey string
+		cols   map[string]struct{}
+		block  bool
 	}
 }
 
@@ -122,6 +132,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	if err != nil {
 		return err
 	}
+	trv.query.filKey = filterKey(trc.Query.Filters)
 
 	if trc.Query.Limit > 0 {
 		trv.query.limit = int32(trc.Query.Limit)
@@ -140,6 +151,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	if err != nil {
 		return err
 	}
+	trv.update.filKey = filterKey(trc.Update.Filters)
 	trv.update.cols = makeSet(trc.Update.Columns)
 	trv.update.presets = trc.Update.Presets
 	trv.update.block = trc.Update.Block
@@ -149,6 +161,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	if err != nil {
 		return err
 	}
+	trv.upsert.filKey = filterKey(trc.Upsert.Filters)
 	trv.upsert.cols = makeSet(trc.Upsert.Columns)
 	trv.upsert.presets = trc.Upsert.Presets
 	trv.upsert.block = trc.Upsert.Block
@@ -158,6 +171,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	if err != nil {
 		return err
 	}
+	trv.delete.filKey = filterKey(trc.Delete.Filters)
 	trv.delete.cols = makeSet(trc.Delete.Columns)
 	trv.delete.block = trc.Delete.Block
 
@@ -167,6 +181,10 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 }
 
 func (co *Compiler) getRole(role, schema, table, field string) trval {
+	if co.c.UnionRoles && strings.Contains(role, unionRoleSeparator) {
+		return co.getUnionRole(role, schema, table, field)
+	}
+
 	var k string
 
 	if co.s.IsAlias(field) {
@@ -302,6 +320,12 @@ func (trv *trval) getPresets(mt MType) map[string]string {
 		return trv.upsert.presets
 	}
 	return nil
+}
+
+// filterKey identifies a role filter by its source text, so union merges can
+// tell whether two roles apply the same row filter.
+func filterKey(filters []string) string {
+	return strings.Join(filters, "\x1f")
 }
 
 func makeSet(list []string) map[string]struct{} {

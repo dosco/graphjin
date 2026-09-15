@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/psql"
 )
 
 // nolint:errcheck
@@ -27,6 +29,13 @@ func (gj *graphjinEngine) prepareRoleStmt() error {
 	pdb := gj.primaryDB()
 	if pdb == nil || pdb.psqlCompiler == nil {
 		return fmt.Errorf("roles_query: primary database not initialized")
+	}
+
+	if gj.conf.roleUnionEnabled() {
+		gj.roleUnionRoles = gj.matchRoleNames()
+		gj.roleStatement = renderRoleUnionStatement(pdb.psqlCompiler, &gj.roleStatementMetadata,
+			gj.conf.RolesQuery, gj.roleUnionRoles, gj.roles)
+		return nil
 	}
 
 	w := &bytes.Buffer{}
@@ -62,4 +71,42 @@ func (gj *graphjinEngine) prepareRoleStmt() error {
 
 	gj.roleStatement = w.String()
 	return nil
+}
+
+// matchRoleNames returns the roles that have a match rule, in config order, so
+// union role keys and statement columns stay stable across restarts.
+func (gj *graphjinEngine) matchRoleNames() []string {
+	var names []string
+	for _, role := range gj.conf.Roles {
+		if r, ok := gj.roles[role.Name]; ok && r.Match != "" {
+			names = append(names, role.Name)
+		}
+	}
+	return names
+}
+
+// renderRoleUnionStatement builds the union mode role statement. It reads the
+// first row of the roles query and returns one column per role, 1 when the
+// role's match rule is true and 0 otherwise. No row means the user is unknown.
+// nolint:errcheck
+func renderRoleUnionStatement(pc *psql.Compiler, md *psql.Metadata, rolesQuery string, names []string, roles map[string]*Role) string {
+	w := &bytes.Buffer{}
+	dialect := pc.GetDialect()
+
+	io.WriteString(w, dialect.RoleUnionSelectPrefix())
+	if len(names) == 0 {
+		io.WriteString(w, `1`)
+	}
+	for i, name := range names {
+		if i != 0 {
+			io.WriteString(w, `, `)
+		}
+		io.WriteString(w, `(CASE WHEN `)
+		io.WriteString(w, dialect.TransformBooleanLiterals(roles[name].Match))
+		io.WriteString(w, ` THEN 1 ELSE 0 END)`)
+	}
+	io.WriteString(w, ` FROM (`)
+	pc.RenderVar(w, md, rolesQuery)
+	io.WriteString(w, dialect.RoleUnionFromSuffix())
+	return w.String()
 }

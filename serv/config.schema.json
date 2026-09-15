@@ -1007,6 +1007,22 @@
 				"query": {
 					"type": "string",
 					"title": "Identity Enrichment Query"
+				},
+				"group_claims": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Group Claims"
+				},
+				"role_mode": {
+					"type": "string",
+					"enum": [
+						"first",
+						"union"
+					],
+					"title": "Role Mode",
+					"default": "first"
 				}
 			},
 			"additionalProperties": false,
@@ -1697,6 +1713,51 @@
 					},
 					"type": "array",
 					"title": "Blocked Tables"
+				},
+				"grants": {
+					"items": {
+						"$ref": "#/$defs/SourceAccessGrant"
+					},
+					"type": "array",
+					"title": "Role Grants"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"SourceAccessGrant": {
+			"properties": {
+				"role": {
+					"type": "string",
+					"title": "Role"
+				},
+				"tables": {
+					"items": {
+						"$ref": "#/$defs/SourceAccessGrantTable"
+					},
+					"type": "array",
+					"title": "Tables"
+				}
+			},
+			"additionalProperties": false,
+			"type": "object"
+		},
+		"SourceAccessGrantTable": {
+			"properties": {
+				"name": {
+					"type": "string",
+					"title": "Table Name"
+				},
+				"columns": {
+					"items": {
+						"type": "string"
+					},
+					"type": "array",
+					"title": "Columns"
+				},
+				"filter": {
+					"type": "string",
+					"title": "Row Filter"
 				}
 			},
 			"additionalProperties": false,
