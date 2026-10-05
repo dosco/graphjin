@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -217,6 +218,8 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 			return
 		}
 
+		extendDeadlineForConfigMutation(w, req.Query)
+
 		res, err := s.gj.GraphQL(ctx, req.Query, req.Vars, &rc)
 		s.recordGraphQLAccessFailures(ctx, req.Query, res, err)
 		if res == nil && err != nil {
@@ -245,6 +248,27 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 		}
 	}
 	return http.HandlerFunc(h)
+}
+
+// configMutationDeadline bounds a gj_config mutation. Preview and apply check
+// the catalog revision, which rebuilds the catalog on a large schema, and an
+// apply can reload the schema. Both outlast the 10-second server deadline.
+const configMutationDeadline = 10 * time.Minute
+
+var configMutationRoot = regexp.MustCompile(`\bgj_config\s*[({]`)
+
+// extendDeadlineForConfigMutation lifts the per-request deadlines for a
+// gj_config mutation, as extendDeadlineForMCPRequest does for MCP calls.
+func extendDeadlineForConfigMutation(w http.ResponseWriter, query string) {
+	if !isMutation(query) || !configMutationRoot.MatchString(query) {
+		return
+	}
+	deadline := time.Now().Add(configMutationDeadline)
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(deadline); err != nil {
+		return
+	}
+	_ = rc.SetReadDeadline(deadline)
 }
 
 // apiV1Rest returns a handler that handles the REST API requests
