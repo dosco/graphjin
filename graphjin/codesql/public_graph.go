@@ -67,7 +67,7 @@ func gjCodeRefreshStatements() []string {
 SELECT 'file:' || f.id, 'file', f.path, f.path, 'Source file ' || f.path, f.path, f.abs_path, f.language, f.hash, '', '', '', '',
 '', '', '', '', '', '', '', '',
 '', '', CASE WHEN f.parent_file_id IS NULL THEN '' ELSE 'file:' || f.parent_file_id END, '', 'code_files', f.id, '', '', '', '', '',
-f.start_byte, f.end_byte, f.start_row, f.start_col, f.end_row, f.end_col, '', '', '[]', '[]', '[]', '', 0, 0, '', '', '[]', '[]', '[]', '{}', f.indexed_at, f.indexed_at,
+CASE WHEN f.is_virtual THEN 0 ELSE f.start_byte END, CASE WHEN f.is_virtual THEN f.size ELSE f.end_byte END, f.start_row, f.start_col, f.end_row, f.end_col, '', '', '[]', '[]', '[]', '', 0, 0, '', '', '[]', '[]', '[]', '{}', f.indexed_at, f.indexed_at,
 f.path || ' ' || f.language
 FROM code_files f`,
 
