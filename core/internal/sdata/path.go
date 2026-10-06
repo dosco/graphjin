@@ -354,11 +354,25 @@ func (s *DBSchema) lineMatchesColumn(line util.Edge, col string) bool {
 	if !ok {
 		return false
 	}
-	if strings.EqualFold(edge.L.Name, col) || strings.EqualFold(edge.R.Name, col) {
+	// Match only the FK-owning side, regardless of traversal direction. The
+	// referenced column can be shared by several distinct FKs (issue #642).
+	// Check the target too: a referenced column may itself declare another FK.
+	fkOnLeft := edge.L.FKeyTable != "" && edge.L.Name == edge.CName &&
+		edge.L.FKeySchema == edge.R.Schema && edge.L.FKeyTable == edge.R.Table && edge.L.FKeyCol == edge.R.Name
+	fkOnRight := edge.R.FKeyTable != "" && edge.R.Name == edge.CName &&
+		edge.R.FKeySchema == edge.L.Schema && edge.R.FKeyTable == edge.L.Table && edge.R.FKeyCol == edge.L.Name
+	matchLeft, matchRight := fkOnLeft, fkOnRight
+	if !fkOnLeft && !fkOnRight {
+		// Embedded and other non-FK relationships retain either-side matching.
+		matchLeft, matchRight = true, true
+	}
+	if (matchLeft && strings.EqualFold(edge.L.Name, col)) ||
+		(matchRight && strings.EqualFold(edge.R.Name, col)) {
 		return true
 	}
 	for _, p := range edge.ExtraPairs {
-		if strings.EqualFold(p.L.Name, col) || strings.EqualFold(p.R.Name, col) {
+		if (matchLeft && strings.EqualFold(p.L.Name, col)) ||
+			(matchRight && strings.EqualFold(p.R.Name, col)) {
 			return true
 		}
 	}
