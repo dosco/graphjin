@@ -338,7 +338,9 @@ func openAPISpecFingerprint(sp *openapi.Spec) string {
 		writeFingerprintJSON(h, sp.Concurrency)
 		writeFingerprintJSON(h, sp.Timeout)
 		writeFingerprintJSON(h, openAPIOperationFingerprintParts(sp.Operations))
-		if sp.SourcePath != "" {
+		if sp.SourceDocument != nil {
+			h.Write(sp.SourceDocument)
+		} else if sp.SourcePath != "" {
 			if b, err := os.ReadFile(sp.SourcePath); err == nil {
 				h.Write(b)
 			} else {
