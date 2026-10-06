@@ -187,10 +187,10 @@ func TestStepBridgeReclaimsWorldsFromAbandonedEpisodes(t *testing.T) {
 // trainer answered, in the shape the pipeline expects from a provider.
 func TestStepMailboxRoundTripsACompletion(t *testing.T) {
 	mailbox := newStepMailbox(nil)
-	values := map[string]ax.Value{"chat_prompt": []ax.Value{
+	values := map[string]ax.Value{"chat_prompt": ax.MutableArray(
 		map[string]ax.Value{"role": "system", "content": "You (`executor`) write the code."},
 		map[string]ax.Value{"role": "user", "content": "count the accounts"},
-	}}
+	)}
 
 	done := make(chan ax.Value, 1)
 	go func() {

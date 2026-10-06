@@ -38,8 +38,8 @@ func captureRunStages(t *testing.T, responses []string, instruction string) ([]s
 }
 
 func firstPromptContent(values map[string]ax.Value) string {
-	prompt, ok := values["chat_prompt"].([]ax.Value)
-	if !ok || len(prompt) == 0 {
+	prompt, _ := normalizeValue(values["chat_prompt"]).([]any)
+	if len(prompt) == 0 {
 		return ""
 	}
 	message, ok := prompt[0].(map[string]ax.Value)
@@ -109,6 +109,7 @@ func TestStageOfMalformedRequestIsUnknown(t *testing.T) {
 	cases := map[string]map[string]ax.Value{
 		"no prompt":       {},
 		"empty prompt":    {"chat_prompt": []ax.Value{}},
+		"nil Ax array":    {"chat_prompt": (*ax.AxArray)(nil)},
 		"wrong type":      {"chat_prompt": "a string"},
 		"no content":      {"chat_prompt": []ax.Value{map[string]ax.Value{"role": "system"}}},
 		"unknown opening": {"chat_prompt": []ax.Value{map[string]ax.Value{"content": "Hello there."}}},
@@ -120,11 +121,14 @@ func TestStageOfMalformedRequestIsUnknown(t *testing.T) {
 	}
 	// And the markers themselves classify, so the table is actually wired in.
 	for _, candidate := range stageMarkers {
-		request := map[string]ax.Value{"chat_prompt": []ax.Value{
+		messages := []ax.Value{
 			map[string]ax.Value{"role": "system", "content": "preamble\n" + candidate.marker + " does the work."},
-		}}
-		if stage := StageOfChatRequest(request); stage != candidate.stage {
-			t.Fatalf("marker %q classified as %q, want %q", candidate.marker, stage, candidate.stage)
+		}
+		for _, prompt := range []ax.Value{messages, ax.MutableArray(messages...)} {
+			request := map[string]ax.Value{"chat_prompt": prompt}
+			if stage := StageOfChatRequest(request); stage != candidate.stage {
+				t.Fatalf("marker %q (%T) classified as %q, want %q", candidate.marker, prompt, stage, candidate.stage)
+			}
 		}
 	}
 }

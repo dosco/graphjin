@@ -176,7 +176,8 @@ func (s *graphjinService) runWatchFlow(ctx context.Context, cfg watchEnrichmentC
 	}
 	limited := &watchFlowAIClient{inner: client, maxCalls: defaultWatchFlowMaxCalls}
 	flow := ax.NewFlow(canonical)
-	forwardOptions := map[string]ax.Value{}
+	// Keep the watch verdict's JSON contract for scalar-only flow signatures.
+	forwardOptions := map[string]ax.Value{"forceStructured": true}
 	forwardOptions["service_tier"] = gjagent.EffectiveServiceTier(agentConf.ServiceTier)
 	if rateLimiter != nil {
 		forwardOptions["rateLimiter"] = rateLimiter
@@ -248,6 +249,15 @@ type watchFlowAIClient struct {
 	mu       sync.Mutex
 	calls    int
 	usage    []any
+}
+
+func (c *watchFlowAIClient) GetFeatures(model string) map[string]ax.Value {
+	if inner, ok := c.inner.(interface {
+		GetFeatures(string) map[string]ax.Value
+	}); ok {
+		return inner.GetFeatures(model)
+	}
+	return nil
 }
 
 func (c *watchFlowAIClient) Chat(ctx context.Context, request, options map[string]ax.Value) (ax.Value, error) {

@@ -807,6 +807,9 @@ func (c Config) withDefaults() Config {
 
 func modelForwardOptions(cfg Config, rateLimiter ax.AxRateLimiter) map[string]ax.Value {
 	options := map[string]ax.Value{
+		// GraphJin consumes named JSON fields even for simple signatures;
+		// Ax otherwise selects its text contract regardless of the mode.
+		"forceStructured":        true,
 		"structured_output_mode": cfg.StructuredOutputMode,
 		"service_tier":           cfg.ServiceTier,
 	}
