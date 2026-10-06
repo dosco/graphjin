@@ -108,6 +108,88 @@ func TestFindPathUsesWeightedEdges(t *testing.T) {
 	}
 }
 
+func TestColumnHintWithReferencedFK(t *testing.T) {
+	// b.id is both a referenced key and an FK to c. Its unrelated FK must
+	// not make it eligible to disambiguate the relationship from a to b.
+	bID := testPK("b")
+	bID.FKeySchema, bID.FKeyTable, bID.FKeyCol = "public", "c", "id"
+	s := testSchema(t, testPK("a"), testFK("a", "b_id", "b"), bID, testPK("c"))
+	for _, direction := range [][2]string{{"a", "b"}, {"b", "a"}} {
+		if _, err := s.FindPathByColumn(direction[0], direction[1], "b_id"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.FindPathByColumn(direction[0], direction[1], "id"); !errors.Is(err, ErrPathNotFound) {
+			t.Fatalf("%v: target's unrelated FK matched column hint: %v", direction, err)
+		}
+	}
+}
+
+func TestColumnHintWithRecursiveFK(t *testing.T) {
+	parentID := testFK("comments", "parent_id", "comments")
+	parentID.FKRecursive = true
+	s := testSchema(t, testPK("comments"), parentID)
+	paths, err := s.FindPathByColumn("comments", "comments", "parent_id")
+	if err != nil || len(paths) != 1 || paths[0].Rel != RelRecursive {
+		t.Fatalf("expected recursive FK path, got %+v, %v", paths, err)
+	}
+	if _, err := s.FindPathByColumn("comments", "comments", "id"); !errors.Is(err, ErrPathNotFound) {
+		t.Fatalf("referenced key matched recursive hint: %v", err)
+	}
+}
+
+func TestColumnHintWithReferencedFKInAnotherSchema(t *testing.T) {
+	// public.b.id references other.a.b_id, while public.a.b_id references
+	// public.b.id. The shared table/column names must not confuse FK ownership.
+	bID := testPK("b")
+	bID.FKeySchema, bID.FKeyTable, bID.FKeyCol = "other", "a", "b_id"
+	otherID := testPK("a")
+	otherID.Schema, otherID.Name = "other", "b_id"
+	s := testSchema(t, testPK("a"), testFK("a", "b_id", "b"), bID, otherID)
+	for _, direction := range [][2]string{{"a", "b"}, {"b", "a"}} {
+		// Pin public.a rather than the same-named table in the other schema.
+		var from, to edgeInfo
+		for _, edge := range s.edgesIndex[direction[0]] {
+			if edge.nodeID == tableNodeID(t, s, direction[0]) {
+				from = edge
+			}
+		}
+		for _, edge := range s.edgesIndex[direction[1]] {
+			if edge.nodeID == tableNodeID(t, s, direction[1]) {
+				to = edge
+			}
+		}
+		if _, err := s.resolvePathPair(from, to, pathOptions{kind: pathThroughColumn, through: "b_id"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.resolvePathPair(from, to, pathOptions{kind: pathThroughColumn, through: "id"}); !errors.Is(err, ErrPathNotFound) {
+			t.Fatalf("%v: FK to another schema matched column hint: %v", direction, err)
+		}
+	}
+}
+
+func TestColumnHintWithNonFKRelationship(t *testing.T) {
+	s := testSchema(t, testPK("a"), testPK("b"))
+	a, err := s.Find("public", "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.Find("public", "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.addToGraph(a, DBColumn{Schema: "public", Table: "a", Name: "payload"}, b, b.PrimaryCol, RelEmbedded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, direction := range [][2]string{{"a", "b"}, {"b", "a"}} {
+		for _, hint := range []string{"payload", "id"} {
+			if _, err := s.FindPathByColumn(direction[0], direction[1], hint); err != nil {
+				t.Fatalf("%v via %s: non-FK column matching changed: %v", direction, hint, err)
+			}
+		}
+	}
+}
+
 func TestReachabilityRejectsImpossiblePath(t *testing.T) {
 	s := testSchema(t,
 		testPK("a"), testFK("a", "b_id", "b"),
