@@ -250,10 +250,11 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 	return http.HandlerFunc(h)
 }
 
-// configMutationDeadline bounds a gj_config mutation. Preview and apply check
-// the catalog revision, which rebuilds the catalog on a large schema, and an
-// apply can reload the schema. Both outlast the 10-second server deadline.
-const configMutationDeadline = 10 * time.Minute
+// configMutationDeadline bounds a gj_config mutation. A preview or apply that
+// changes an API source stages a full runtime, which rediscovers every
+// database source; on a large warehouse schema that takes as long as a
+// restart, often well over ten minutes.
+const configMutationDeadline = 60 * time.Minute
 
 var configMutationRoot = regexp.MustCompile(`\bgj_config\s*[({]`)
 
