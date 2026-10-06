@@ -810,8 +810,9 @@ func (ms *mcpServer) finishConfigUpdate(ctx context.Context, result ConfigUpdate
 func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	ctx = ms.effectiveContext(ctx)
 	if ms.service != nil {
-		ms.service.configMu.Lock()
-		defer ms.service.configMu.Unlock()
+		lock := ms.service.configLocker()
+		lock.Lock()
+		defer lock.Unlock()
 	}
 
 	args := req.GetArguments()

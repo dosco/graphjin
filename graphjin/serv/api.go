@@ -127,6 +127,8 @@ type graphjinService struct {
 	runtimeEventsMu      sync.RWMutex
 	configPreviews       *configPreviewStore
 	configMu             sync.Mutex
+	configLock           *sync.Mutex      // set on scoped copies; see configLocker
+	root                 *graphjinService // set on scoped copies; see liveService
 	workflowMu           sync.Mutex
 	workflowCache        *workflowRegistrySnapshot
 	mcpHTTPMu            sync.Mutex
@@ -172,16 +174,21 @@ func (s *graphjinService) buildCoreOptionsWithDBs(dbs map[string]*sql.DB) []core
 }
 
 func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs map[string]managedDB) []core.Option {
-	controlPlane := newControlPlaneGraphQL(s)
-	artifacts := newArtifactControlPlane(s)
-	watches := newWatchControlPlane(s)
-	tasks := newTaskControlPlane(s)
-	revisions := revisionSignalHandler{service: s}
+	// Handlers bind to the live service. A config apply builds this engine
+	// from a scoped copy, then commits into the service its handler holds; a
+	// handler bound to the copy would commit later applies into the copy, out
+	// of reach of the service that serves requests.
+	live := s.liveService()
+	controlPlane := newControlPlaneGraphQL(live)
+	artifacts := newArtifactControlPlane(live)
+	watches := newWatchControlPlane(live)
+	tasks := newTaskControlPlane(live)
+	revisions := revisionSignalHandler{service: live}
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
-		core.OptionSetSavedQuerySaveHook(s.saveSavedQueryArtifactOrFallback),
-		core.OptionSetReservedRoleAuthorizer(s.authorizeReservedRole),
+		core.OptionSetSavedQuerySaveHook(live.saveSavedQueryArtifactOrFallback),
+		core.OptionSetReservedRoleAuthorizer(live.authorizeReservedRole),
 	}
 	opts = append(opts, s.coreOptions...)
 	if s.conf != nil && (s.conf.systemControlPlaneEnabled() || s.conf.workflowsEnabled()) {
@@ -203,7 +210,7 @@ func (s *graphjinService) buildCoreOptionsFor(dbs map[string]*sql.DB, managedDBs
 		if targetDB == "" {
 			targetDB = core.DefaultDBName
 		}
-		opts = append(opts, core.OptionSetManagedQueryHandler(targetDB, runtimeQueryHandler{service: s}))
+		opts = append(opts, core.OptionSetManagedQueryHandler(targetDB, runtimeQueryHandler{service: live}))
 	}
 	if s.conf != nil && s.conf.Core.Artifacts.Enabled {
 		targetDB := s.metadataDB
@@ -280,12 +287,40 @@ func (s *graphjinService) buildCoreOptionsForState(
 	if s == nil {
 		return nil
 	}
-	scoped := *s
+	return s.scopedCopy(conf, metadataDB, managedArtifactDB, systemNanoDB).buildCoreOptionsFor(dbs, managedDBs)
+}
+
+// scopedCopy returns a copy of the service for a staged runtime. The copy
+// shares the parent's config lock: a config apply builds it while holding
+// that lock, so a copied mutex would stay locked and every later gj_config
+// mutation through the copy's handlers would wait forever.
+func (s *graphjinService) scopedCopy(conf *Config, metadataDB, managedArtifactDB string, systemNanoDB *core.NanoDB) *graphjinService {
+	scoped := *s //nolint:govet // configLock below replaces the copied mutex
+	scoped.configLock = s.configLocker()
+	scoped.root = s.liveService()
 	scoped.conf = conf
 	scoped.metadataDB = metadataDB
 	scoped.managedArtifactDB = managedArtifactDB
 	scoped.systemNanoDB = systemNanoDB
-	return scoped.buildCoreOptionsFor(dbs, managedDBs)
+	return &scoped
+}
+
+// liveService returns the service that serves requests: the parent of a
+// scoped copy, or the service itself.
+func (s *graphjinService) liveService() *graphjinService {
+	if s.root != nil {
+		return s.root
+	}
+	return s
+}
+
+// configLocker returns the lock that serializes config updates for this
+// service and every scoped copy of it.
+func (s *graphjinService) configLocker() *sync.Mutex {
+	if s.configLock != nil {
+		return s.configLock
+	}
+	return &s.configMu
 }
 
 func (s *graphjinService) managedSystemRootDatabases(primary string) []string {
