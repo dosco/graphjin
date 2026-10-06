@@ -384,6 +384,9 @@ func extendDeadlineForMCPRequest(w http.ResponseWriter, r *http.Request, conf *C
 	if conf != nil && conf.agentEnabled() && mcpRequestCallsTool(r, mcpToolAskGraphJinAgent) {
 		extendDeadlineForAgent(w, conf)
 	}
+	if mcpRequestCallsTool(r, "update_current_config") {
+		extendDeadlineForConfigUpdate(w, conf)
+	}
 }
 
 func mcpRequestCallsTool(r *http.Request, tool string) bool {

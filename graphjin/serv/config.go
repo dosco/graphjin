@@ -405,6 +405,12 @@ type MCPConfig struct {
 	// WorkflowTimeout in seconds for JavaScript workflow execution.
 	// Workflows that exceed this duration are interrupted. Default: 5
 	WorkflowTimeout int `mapstructure:"workflow_timeout" jsonschema:"title=Workflow Timeout (seconds),default=5"`
+
+	// ConfigUpdateTimeout in seconds bounds a gj_config mutation or an
+	// update_current_config call. An update that changes an API source
+	// rediscovers every database source, which on a large schema takes as
+	// long as a restart. Default: 3600
+	ConfigUpdateTimeout int `mapstructure:"config_update_timeout" jsonschema:"title=Config Update Timeout (seconds),default=3600"`
 }
 
 type AgentConfig = gjagent.Config
