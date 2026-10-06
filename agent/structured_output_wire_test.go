@@ -31,10 +31,13 @@ func TestVertexGemmaAutoModeSelectsJSONObject(t *testing.T) {
 	})
 
 	program := ax.NewAx("question:string -> answer:string", nil)
-	_, _ = program.Forward(context.Background(), client,
+	_, err := program.Forward(context.Background(), client,
 		map[string]ax.Value{"question": "how many customers?"},
-		map[string]ax.Value{"structured_output_mode": StructuredOutputAuto},
+		modelForwardOptions(Config{}.withDefaults(), nil),
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(transport.Requests) == 0 {
 		t.Fatal("scripted transport captured no request")
@@ -81,10 +84,13 @@ func TestVertexGemmaAutoModeSurvivesReasoningWrapper(t *testing.T) {
 	client := &reasoningClient{inner: inner, budget: "high"}
 
 	program := ax.NewAx("question:string -> answer:string", nil)
-	_, _ = program.Forward(context.Background(), client,
+	_, err := program.Forward(context.Background(), client,
 		map[string]ax.Value{"question": "how many customers?"},
-		map[string]ax.Value{"structured_output_mode": StructuredOutputAuto},
+		modelForwardOptions(Config{}.withDefaults(), nil),
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(transport.Requests) == 0 {
 		t.Fatal("scripted transport captured no request")

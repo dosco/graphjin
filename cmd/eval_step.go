@@ -137,9 +137,14 @@ type stepMessage struct {
 
 // stepMessagesFromRequest renders the parked call as chat messages.
 func stepMessagesFromRequest(values map[string]ax.Value) []stepMessage {
-	prompt, ok := values["chat_prompt"].([]ax.Value)
-	if !ok {
-		return nil
+	var prompt []ax.Value
+	switch value := values["chat_prompt"].(type) {
+	case []ax.Value:
+		prompt = value
+	case *ax.AxArray:
+		if value != nil {
+			prompt = value.Items
+		}
 	}
 	messages := make([]stepMessage, 0, len(prompt))
 	for _, entry := range prompt {

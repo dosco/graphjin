@@ -123,6 +123,43 @@ func TestRunWatchFlowUsesSharedProviderRateLimiterForInjectedClient(t *testing.T
 	}
 }
 
+func TestRunWatchFlowPreservesProviderJSONObjectContract(t *testing.T) {
+	transport := ax.NewScriptedTransport([]ax.Value{
+		ax.Object("status", float64(200), "json", ax.Object(
+			"choices", ax.Array(ax.Object("message", ax.Object("content",
+				`{"verdict":"digest","severity":"warn","summary":"Roast is drifting slowly."}`))),
+		)),
+	})
+	client := ax.NewAI("vertex-ai", map[string]ax.Value{
+		"apiKey": "test-token", "model": "google/gemma-4-26b-a4b-it-maas",
+		"baseUrl": "https://example.invalid/openapi", "transport": transport,
+	})
+	svc := &graphjinService{
+		conf:               &Config{Serv: Serv{Agent: AgentConfig{Provider: "vertex-ai"}}},
+		agentClientFactory: func(gjagent.Config) (ax.AIClient, error) { return client, nil },
+	}
+	_, cfg, _, err := normalizeWatchEnrichmentJSON(`{"enabled":true,"kind":"flow","flow":"default_watch_triage"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := svc.runWatchFlow(context.Background(), cfg, map[string]ax.Value{
+		"event": ax.Object("temperature", 410), "watch": ax.Object("id", "watch:coffee"), "evidence": ax.Object(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Verdict != "digest" || run.ModelCalls != 1 || len(transport.Requests) != 1 {
+		t.Fatalf("unexpected run: %+v, requests=%d", run, len(transport.Requests))
+	}
+	body, err := json.Marshal(transport.Requests[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"json_object"`) || strings.Contains(string(body), `"json_schema"`) {
+		t.Fatalf("watch flow lost the provider's JSON-object contract: %s", body)
+	}
+}
+
 func TestValidateWatchFlowResultRejectsUnsafeOutput(t *testing.T) {
 	for _, result := range []watchFlowResult{
 		{Verdict: "silence", Severity: "warn", Summary: "x"},

@@ -55,8 +55,16 @@ var stageMarkers = []struct {
 // decide what to do with a call it cannot place, and quietly guessing on its
 // behalf is how a stage silently ends up served by the wrong model.
 func StageOfChatRequest(request map[string]ax.Value) string {
-	prompt, ok := request["chat_prompt"].([]ax.Value)
-	if !ok || len(prompt) == 0 {
+	var prompt []ax.Value
+	switch value := request["chat_prompt"].(type) {
+	case []ax.Value:
+		prompt = value
+	case *ax.AxArray:
+		if value != nil {
+			prompt = value.Items
+		}
+	}
+	if len(prompt) == 0 {
 		return StageUnknown
 	}
 	message, ok := prompt[0].(map[string]ax.Value)
