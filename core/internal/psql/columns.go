@@ -262,19 +262,24 @@ func (c *compilerContext) renderCodeSQLVirtualColumn(sel *qcode.Select, col sdat
 	c.w.WriteString(`codesql_source(`)
 	if sel.Ti.Name == "gj_code" {
 		c.w.WriteString(`COALESCE((SELECT `)
-		c.quoted("abs_path")
+		c.renderCodeSQLSourceInput()
 		c.w.WriteString(` FROM `)
 		c.quoted("code_files")
 		c.w.WriteString(` WHERE `)
 		c.quoted("id")
-		c.w.WriteString(` = CAST(substr(`)
+		// File rows identify themselves; other source rows carry a file_id.
+		c.w.WriteString(` = CAST(substr(CASE WHEN `)
+		c.colWithTable(sel.Table, "kind")
+		c.w.WriteString(` = 'file' THEN `)
+		c.colWithTable(sel.Table, "id")
+		c.w.WriteString(` ELSE `)
 		c.colWithTable(sel.Table, "file_id")
-		c.w.WriteString(`, 6) AS INTEGER)), `)
+		c.w.WriteString(` END, 6) AS INTEGER)), `)
 		c.colWithTable(sel.Table, "abs_path")
 		c.w.WriteString(`)`)
 	} else {
 		c.w.WriteString(`(SELECT `)
-		c.quoted("abs_path")
+		c.renderCodeSQLSourceInput()
 		c.w.WriteString(` FROM `)
 		c.quoted("code_files")
 		c.w.WriteString(` WHERE `)
@@ -289,6 +294,22 @@ func (c *compilerContext) renderCodeSQLVirtualColumn(sel *qcode.Select, col sdat
 	c.colWithTable(sel.Table, "end_byte")
 	c.w.WriteString(`, `)
 	c.w.WriteString(contextFlag)
+	c.w.WriteString(`)`)
+}
+
+// Use the indexed bytes for virtual files, whose abs_path is synthetic and
+// whose child byte ranges are relative to the fenced block.
+func (c *compilerContext) renderCodeSQLSourceInput() {
+	c.w.WriteString(`COALESCE((SELECT CAST(`)
+	c.quoted("content")
+	c.w.WriteString(` AS BLOB) FROM `)
+	c.quoted("code_injections")
+	c.w.WriteString(` WHERE `)
+	c.quoted("virtual_file_id")
+	c.w.WriteString(` = `)
+	c.colWithTable("code_files", "id")
+	c.w.WriteString(`), `)
+	c.quoted("abs_path")
 	c.w.WriteString(`)`)
 }
 

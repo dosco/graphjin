@@ -267,6 +267,90 @@ func Legacy() {}
 	}
 }
 
+func TestCodeSQLMarkdownFenceSource(t *testing.T) {
+	source := t.TempDir()
+	const first = "package main\n\nfunc FirstFence() {}\n"
+	const second = "package main\n\nfunc SecondFence() {}\n"
+	const unsupported = "some example text\n"
+	const markdown = "# Examples café\n\n```go\n" + first + "```\n\n~~~go\n" + second + "~~~\n\n```unknown\n" + unsupported + "```\n"
+	writeTestFile(t, filepath.Join(source, "README.md"), markdown)
+	writeTestFile(t, filepath.Join(source, "plain.go"), "package main\nfunc Plain() {}\n")
+
+	s, err := newGraphJinService(&Config{
+		Core: Core{
+			DisableAllowList: true,
+			Sources: []core.SourceConfig{
+				{Name: "code", Kind: "code", Path: source},
+			},
+		},
+		Serv: Serv{
+			ConfigPath: filepath.Join(t.TempDir(), "config"),
+			MCP:        MCPConfig{Disable: true},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestService(s)
+
+	// Metadata IDs may numerically collide with file IDs. They must not read
+	// source content unless the row actually identifies a file.
+	managed := s.managedDBs["code"].handle
+	if _, err := managed.DB.Exec(`INSERT INTO code_locks(id, path, expires_at)
+		SELECT id, 'metadata-only', '2099-01-01T00:00:00Z' FROM code_files WHERE path = 'README.md'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := managed.RefreshPublicGraph(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		kind, name, want, context string
+	}{
+		{"file", "README.md", markdown, markdown},
+		{"file", "README.md#fence-3.go", first, first},
+		{"file", "README.md#fence-9.go", second, second},
+		{"file", "README.md#fence-15.unknown", unsupported, unsupported},
+		{"symbol", "FirstFence", "func FirstFence() {}", first},
+		{"symbol", "SecondFence", "func SecondFence() {}", second},
+		{"lock", "metadata-only", "", ""},
+		{"symbol", "Plain", "func Plain() {}", "package main\nfunc Plain() {}\n"},
+	} {
+		t.Run(tc.kind+"/"+tc.name, func(t *testing.T) {
+			query := fmt.Sprintf(`query {
+				gj_code(where: { kind: { eq: %q }, name: { eq: %q } }) {
+					code code_context start_byte end_byte
+				}
+			}`, tc.kind, tc.name)
+			res, err := s.gj.GraphQL(context.Background(), query, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var read struct {
+				Rows []struct {
+					Code    string `json:"code"`
+					Context string `json:"code_context"`
+					Start   int64  `json:"start_byte"`
+					End     int64  `json:"end_byte"`
+				} `json:"gj_code"`
+			}
+			if err := json.Unmarshal(res.Data, &read); err != nil {
+				t.Fatal(err)
+			}
+			if len(read.Rows) != 1 {
+				t.Fatalf("want one row, got %s", res.Data)
+			}
+			row := read.Rows[0]
+			if row.Code != tc.want || row.Context != tc.context {
+				t.Fatalf("got code %q, context %q; want %q, %q", row.Code, row.Context, tc.want, tc.context)
+			}
+			if row.End-row.Start != int64(len(tc.want)) {
+				t.Fatalf("byte range %d:%d does not match snippet length %d", row.Start, row.End, len(tc.want))
+			}
+		})
+	}
+}
+
 func TestCodeSQLGraphQLSourceMutationsPreviewApplyAndLocks(t *testing.T) {
 	source := t.TempDir()
 	const before = `package main
