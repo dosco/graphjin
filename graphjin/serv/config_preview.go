@@ -17,6 +17,11 @@ type configPreviewRecord struct {
 	ID                  string
 	PatchHash           string
 	BaseCatalogRevision string
+	// BaseSourceRevisions holds the per-source catalog revisions when the
+	// preview started. Apply compares them to tell real conflicts from
+	// unrelated schema drift.
+	BaseSourceRevisions map[string]string
+	ChangedSources      []string
 	ExpiresAt           time.Time
 	ChangeSummaryJSON   string
 	FindingsJSON        string

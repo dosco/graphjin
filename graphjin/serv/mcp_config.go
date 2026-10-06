@@ -738,6 +738,69 @@ func (ms *mcpServer) currentConfigCatalogRevision(ctx context.Context) string {
 	return ""
 }
 
+func (ms *mcpServer) currentConfigSourceRevisions() map[string]string {
+	if ms == nil || ms.service == nil {
+		return nil
+	}
+	snap, err := ms.service.catalogSnapshot()
+	if err != nil || snap == nil {
+		return nil
+	}
+	return snap.SourceRevisions
+}
+
+// previewToleratesCatalogDrift reports whether an apply may proceed although
+// the catalog revision moved after its preview started. Discovery refreshes
+// can change the schema of sources the patch does not touch; that is not a
+// conflict. Any other change is.
+func (ms *mcpServer) previewToleratesCatalogDrift(mode, previewID, expectedRev string) bool {
+	if mode != "apply" || previewID == "" {
+		return false
+	}
+	rec, ok := ms.ensureConfigPreviewStore().get(previewID)
+	if !ok || rec.BaseCatalogRevision != expectedRev || len(rec.BaseSourceRevisions) == 0 {
+		return false
+	}
+	current := ms.currentConfigSourceRevisions()
+	if len(current) == 0 {
+		return false
+	}
+	return len(catalogDriftConflicts(rec.BaseSourceRevisions, current, rec.ChangedSources)) == 0
+}
+
+// catalogDriftConflicts lists the revision keys that changed between base and
+// current, ignoring schema metadata of sources outside changedSources.
+func catalogDriftConflicts(base, current map[string]string, changedSources []string) []string {
+	changed := make(map[string]struct{}, len(changedSources))
+	for _, name := range changedSources {
+		changed[name] = struct{}{}
+	}
+	keys := make(map[string]struct{}, len(base)+len(current))
+	for key := range base {
+		keys[key] = struct{}{}
+	}
+	for key := range current {
+		keys[key] = struct{}{}
+	}
+	var conflicts []string
+	for key := range keys {
+		if base[key] == current[key] {
+			continue
+		}
+		if key == "schema" {
+			continue
+		}
+		if name, ok := strings.CutPrefix(key, "schema:"); ok {
+			if _, touched := changed[name]; !touched {
+				continue
+			}
+		}
+		conflicts = append(conflicts, key)
+	}
+	sort.Strings(conflicts)
+	return conflicts
+}
+
 func (ms *mcpServer) sourceModeConfigGate(ctx context.Context, args map[string]interface{}) (mode string, expectedRev string, patchHash string, previewID string, fail *ConfigUpdateResult) {
 	mode = strings.ToLower(configStringArg(args, "mode"))
 	expectedRev = configStringArg(args, "expected_catalog_revision")
@@ -775,7 +838,7 @@ func (ms *mcpServer) sourceModeConfigGate(ctx context.Context, args map[string]i
 	if currentRev != "" && expectedRev == "" {
 		return mode, expectedRev, patchHash, previewID, failure("source-mode gj_config updates require expected_catalog_revision", "read gj_config(id: \"current\") { catalog_revision } before preview/apply")
 	}
-	if currentRev != "" && expectedRev != "" && expectedRev != currentRev {
+	if currentRev != "" && expectedRev != "" && expectedRev != currentRev && !ms.previewToleratesCatalogDrift(mode, previewID, expectedRev) {
 		return mode, expectedRev, patchHash, previewID, failure("expected_catalog_revision is stale; read gj_config again before retrying", fmt.Sprintf("expected_catalog_revision %q does not match current catalog_revision %q", expectedRev, currentRev))
 	}
 	if mode == "apply" {
@@ -820,6 +883,10 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	mode, expectedRev, patchHash, previewID, gateFailure := ms.sourceModeConfigGate(ctx, args)
 	if sourceMode && gateFailure != nil {
 		return ms.finishConfigUpdate(ctx, *gateFailure)
+	}
+	var baseSourceRevisions map[string]string
+	if sourceMode && mode == "preview" {
+		baseSourceRevisions = ms.currentConfigSourceRevisions()
 	}
 
 	if paths := plaintextSecretUpdatePaths(args); len(paths) > 0 {
@@ -1440,6 +1507,8 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			rec := ms.ensureConfigPreviewStore().put(configPreviewRecord{
 				PatchHash:           patchHash,
 				BaseCatalogRevision: expectedRev,
+				BaseSourceRevisions: baseSourceRevisions,
+				ChangedSources:      reloadPlan.changedSources,
 				ChangeSummaryJSON:   jsonStringValue(changes),
 				FindingsJSON:        findingsJSON,
 				ErrorsJSON:          "[]",
@@ -1600,6 +1669,8 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		rec := ms.ensureConfigPreviewStore().put(configPreviewRecord{
 			PatchHash:           patchHash,
 			BaseCatalogRevision: expectedRev,
+			BaseSourceRevisions: baseSourceRevisions,
+			ChangedSources:      reloadPlan.changedSources,
 			ChangeSummaryJSON:   jsonStringValue(changes),
 			FindingsJSON:        findingsJSON,
 			ErrorsJSON:          "[]",
@@ -3474,6 +3545,9 @@ func databaseSourceRuntimePatchAllowed(oldCore, newCore core.Config, sources map
 		if !hadOldSource && !hasNewSource {
 			return false
 		}
+		if apiSourcePatch(oldSource, hadOldSource, newSource, hasNewSource) {
+			continue
+		}
 		if hadOldSource && oldSource.CanonicalKind() != sourcecap.KindDatabase {
 			return false
 		}
@@ -3498,6 +3572,18 @@ func databaseSourceRuntimePatchAllowed(oldCore, newCore core.Config, sources map
 				return false
 			}
 		}
+	}
+	return true
+}
+
+// apiSourcePatch reports whether a changed source is an API source on both
+// sides of the patch. API sources open no database connection.
+func apiSourcePatch(oldSource core.SourceConfig, hadOld bool, newSource core.SourceConfig, hasNew bool) bool {
+	if hadOld && oldSource.CanonicalKind() != sourcecap.KindAPI {
+		return false
+	}
+	if hasNew && newSource.CanonicalKind() != sourcecap.KindAPI {
+		return false
 	}
 	return true
 }
