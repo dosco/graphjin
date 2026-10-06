@@ -218,7 +218,7 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 			return
 		}
 
-		extendDeadlineForConfigMutation(w, req.Query)
+		extendDeadlineForConfigMutation(w, s.conf, req.Query)
 
 		res, err := s.gj.GraphQL(ctx, req.Query, req.Vars, &rc)
 		s.recordGraphQLAccessFailures(ctx, req.Query, res, err)
@@ -250,20 +250,30 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 	return http.HandlerFunc(h)
 }
 
-// configMutationDeadline bounds a gj_config mutation. Preview and apply check
-// the catalog revision, which rebuilds the catalog on a large schema, and an
-// apply can reload the schema. Both outlast the 10-second server deadline.
-const configMutationDeadline = 10 * time.Minute
+// defaultConfigUpdateTimeout is used when mcp.config_update_timeout is unset.
+const defaultConfigUpdateTimeout = 60 * time.Minute
 
 var configMutationRoot = regexp.MustCompile(`\bgj_config\s*[({]`)
 
+// configUpdateTimeout is mcp.config_update_timeout, or the default.
+func configUpdateTimeout(conf *Config) time.Duration {
+	if conf != nil && conf.MCP.ConfigUpdateTimeout > 0 {
+		return time.Duration(conf.MCP.ConfigUpdateTimeout) * time.Second
+	}
+	return defaultConfigUpdateTimeout
+}
+
 // extendDeadlineForConfigMutation lifts the per-request deadlines for a
-// gj_config mutation, as extendDeadlineForMCPRequest does for MCP calls.
-func extendDeadlineForConfigMutation(w http.ResponseWriter, query string) {
+// gj_config mutation to mcp.config_update_timeout.
+func extendDeadlineForConfigMutation(w http.ResponseWriter, conf *Config, query string) {
 	if !isMutation(query) || !configMutationRoot.MatchString(query) {
 		return
 	}
-	deadline := time.Now().Add(configMutationDeadline)
+	extendDeadlineForConfigUpdate(w, conf)
+}
+
+func extendDeadlineForConfigUpdate(w http.ResponseWriter, conf *Config) {
+	deadline := time.Now().Add(configUpdateTimeout(conf))
 	rc := http.NewResponseController(w)
 	if err := rc.SetWriteDeadline(deadline); err != nil {
 		return

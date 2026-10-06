@@ -1051,6 +1051,7 @@ Model Context Protocol (MCP) enables AI assistants to interact with GraphJin.
 | `mcp.cursor_cache_ttl` | integer | `1800` | Cursor cache TTL in seconds (30 min) |
 | `mcp.cursor_cache_size` | integer | `10000` | Max in-memory cursor cache entries |
 | `mcp.allow_config_updates` | boolean | `false` | Allow LLMs to modify config (dangerous) |
+| `mcp.config_update_timeout` | integer | `3600` | Seconds a `gj_config` mutation or `update_current_config` call may run. An update that changes an API source rediscovers every database source |
 | `mcp.allow_schema_reload` | boolean | `false` | Allow schema reload via MCP (auto-enabled in dev mode) |
 | `mcp.allow_workflow_execution` | boolean | `false` | Allow legacy `execute_workflow` MCP tool; GraphQL `gj_workflow_execution` is controlled by `read_only` table/source config |
 | `mcp.oauth.enabled` | boolean | `false` | Enable OAuth metadata and challenges for hosted MCP clients |
