@@ -302,6 +302,8 @@ CREATE TABLE IF NOT EXISTS code_injections (
   end_col INTEGER NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_code_injections_virtual_file ON code_injections(virtual_file_id);
+
 CREATE TABLE IF NOT EXISTS code_docs (
   id INTEGER PRIMARY KEY,
   file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,

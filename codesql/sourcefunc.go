@@ -16,8 +16,10 @@ func codeSQLSourceFunc(_ *sqlite.FunctionContext, args []driver.Value) (driver.V
 	if len(args) != 4 {
 		return "", fmt.Errorf("codesql_source expects 4 arguments")
 	}
+	// Virtual files supply indexed content as a BLOB; physical files supply a path.
+	data, indexed := args[0].([]byte)
 	path, _ := args[0].(string)
-	if path == "" {
+	if !indexed && path == "" {
 		return "", nil
 	}
 	start, ok := driverInt64(args[1])
@@ -30,9 +32,14 @@ func codeSQLSourceFunc(_ *sqlite.FunctionContext, args []driver.Value) (driver.V
 	}
 	withContext, _ := driverInt64(args[3])
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
+	if !indexed {
+		var err error
+		data, err = os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		path = "indexed code block"
 	}
 	if start < 0 || end < start || end > int64(len(data)) {
 		return "", fmt.Errorf("codesql_source byte range %d:%d outside %s", start, end, path)
