@@ -25,6 +25,16 @@ type LoadResult struct {
 	Warnings []string
 }
 
+// ValidateDocument reports an error when an inline OpenAPI document does not
+// parse. Load only warns about a bad spec, so config validation calls this to
+// reject a bad inline document before it is applied.
+func ValidateDocument(document string) error {
+	loader := openapi3.NewLoader()
+	loader.IsExternalRefsAllowed = false
+	_, err := loader.LoadFromData([]byte(document))
+	return err
+}
+
 // Load discovers OpenAPI specs in opts.SpecsDir, parses each one, applies
 // per-spec user configuration, and classifies every operation. It is
 // designed to be tolerant: a bad spec produces a warning and is dropped
@@ -44,18 +54,16 @@ func Load(opts LoaderOptions, configs map[string]SpecConfig, logger *log.Logger)
 
 	res := &LoadResult{Registry: &Registry{}}
 
+	type specInput struct {
+		name, path string
+		document   []byte
+	}
+	inputs := make(map[string]specInput)
+
 	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Missing dir is fine — OpenAPI integration is just dormant.
-			return res, nil
-		}
+	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("openapi: read specs dir %q: %w", dir, err)
 	}
-
-	// Process in deterministic order so registry iteration and log output
-	// don't depend on filesystem enumeration order.
-	files := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -64,18 +72,40 @@ func Load(opts LoaderOptions, configs map[string]SpecConfig, logger *log.Logger)
 		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
 			continue
 		}
-		files = append(files, name)
+		key := strings.TrimSuffix(strings.TrimSuffix(name, ".yaml"), ".yml")
+		inputs[key] = specInput{name: name, path: filepath.Join(dir, name)}
 	}
-	sort.Strings(files)
+	for key, cfg := range configs {
+		if strings.TrimSpace(cfg.Document) == "" {
+			continue
+		}
+		if prior, ok := inputs[key]; ok && prior.document == nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("openapi: %s: inline document replaces %s", key, prior.name))
+		}
+		inputs[key] = specInput{name: key + " (inline)", path: "inline:" + key, document: []byte(cfg.Document)}
+	}
+
+	// Process in deterministic order so registry iteration and log output
+	// don't depend on filesystem enumeration order.
+	keys := make([]string, 0, len(inputs))
+	for key := range inputs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
 
 	loader := openapi3.NewLoader()
 	loader.IsExternalRefsAllowed = false
 
-	for _, name := range files {
-		path := filepath.Join(dir, name)
-		key := strings.TrimSuffix(strings.TrimSuffix(name, ".yaml"), ".yml")
+	for _, key := range keys {
+		input := inputs[key]
+		name, path := input.name, input.path
 
-		doc, err := loader.LoadFromFile(path)
+		var doc *openapi3.T
+		if input.document != nil {
+			doc, err = loader.LoadFromData(input.document)
+		} else {
+			doc, err = loader.LoadFromFile(path)
+		}
 		if err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("openapi: skip %s: parse error: %v", name, err))
 			continue
@@ -108,6 +138,7 @@ func Load(opts LoaderOptions, configs map[string]SpecConfig, logger *log.Logger)
 			Key:              key,
 			SourceName:       cfg.SourceName,
 			SourcePath:       path,
+			SourceDocument:   input.document,
 			Doc:              doc,
 			BaseURL:          baseURL,
 			Auth:             cfg.Auth,

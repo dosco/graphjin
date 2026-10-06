@@ -61,6 +61,12 @@ type SpecConfig struct {
 	// upstream responses. Zero selects conservative package defaults.
 	MaxRequestBytes  int64 `mapstructure:"max_request_bytes" json:"max_request_bytes" yaml:"max_request_bytes"`
 	MaxResponseBytes int64 `mapstructure:"max_response_bytes" json:"max_response_bytes" yaml:"max_response_bytes"`
+
+	// Document holds the OpenAPI document itself, as YAML or JSON. It lets a
+	// remote client add an API source through gj_config without access to the
+	// server's specs directory. It takes precedence over a file with the
+	// same key in specs_dir.
+	Document string `mapstructure:"document" json:"document,omitempty" yaml:"document,omitempty" jsonschema:"title=OpenAPI Document"`
 }
 
 // AuthConfig describes how outgoing requests to the upstream are authenticated.

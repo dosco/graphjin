@@ -973,6 +973,8 @@ func systemGraphQLCapabilities(enabled map[string]struct{}) []Capability {
 					"sources",
 					"update_sources",
 					"remove_sources",
+					"update_saved_queries",
+					"remove_saved_queries",
 					"databases",
 					"relationships",
 					"tables",

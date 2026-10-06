@@ -72,6 +72,7 @@ func graphjinControlPlaneTables() []core.ManagedTable {
 			cpCol("roles", "json", false), cpCol("blocklist", "json", false), cpCol("functions", "json", false), cpCol("resolvers", "json", false),
 			cpCol("mcp", "json", false), cpCol("serv", "json", false), cpCol("config_json", "json", false), cpCol("redacted_paths", "json", false), cpCol("updated_at", "text", false), cpCol("catalog_revision", "text", false),
 			cpCol("mode", "text", false), cpCol("preview_id", "text", false), cpCol("expected_catalog_revision", "text", false), cpCol("source_patches", "json", false),
+			cpCol("update_saved_queries", "json", false), cpCol("remove_saved_queries", "json", false),
 			cpCol("valid", "boolean", false), cpCol("applied", "boolean", false), cpCol("expires_at", "text", false), cpCol("change_summary_json", "json", false), cpCol("findings_json", "json", false), cpCol("errors_json", "json", false),
 			cpCol("scope", "text", false), cpCol("reload_mode", "text", false), cpCol("reload_strategy", "text", false),
 		}),

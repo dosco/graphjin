@@ -176,6 +176,7 @@ type Spec struct {
 	Key              string
 	SourceName       string
 	SourcePath       string
+	SourceDocument   []byte // set for an inline document; SourcePath is then "inline:<key>"
 	Doc              *openapi3.T
 	BaseURL          string
 	Auth             AuthConfig
