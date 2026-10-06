@@ -1082,6 +1082,23 @@ mcp:
     scopes: ["mcp"]
 ```
 
+### Saved queries through config updates
+
+A `gj_config` update can add, replace and remove saved queries in the config folder, so a remote client does not need access to the server's files. Saved queries go through the same preview and apply as the rest of the update.
+
+```graphql
+mutation {
+  gj_config(id: "current", update: {
+    mode: "preview"
+    expected_catalog_revision: "<from gj_config>"
+    update_saved_queries: [{ name: "forum_latest", query: "query forum_latest { forum_latest { title } }" }]
+    remove_saved_queries: ["old_report"]
+  }) { valid preview_id errors_json }
+}
+```
+
+Apply writes `queries/<name>.gql` and removes the named files. Names use letters, numbers, underscores and dashes. GraphJin compiles a saved query when it runs, because it often uses a source that the same update adds.
+
 ---
 
 ## Agent Configuration
@@ -1891,6 +1908,30 @@ The OpenAPI integration is the spec-driven counterpart to `remote_api` (above). 
      }
    }
    ```
+
+### Inline Specs
+
+A spec can carry its OpenAPI document inline, under `document`, instead of a file in `specs_dir`. Use this when a client adds an API source through `gj_config` and cannot write to the server's config folder. The document is YAML or JSON text. It replaces a file with the same key, and an inline-only source needs no `specs_dir`, so it can sit beside another source that has one.
+
+```yaml
+sources:
+  - name: forum
+    kind: api
+    specs:
+      discourse:
+        base_url: https://forum.example.com
+        document: |
+          openapi: 3.0.0
+          info: { title: Forum, version: "1.0" }
+          paths:
+            /latest.json:
+              get:
+                operationId: listLatestTopics
+                responses:
+                  "200": { description: ok }
+```
+
+A document that does not parse fails config validation, so a `gj_config` preview reports it before anything is applied.
 
 ### Operation Classification
 

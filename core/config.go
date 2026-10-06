@@ -1083,6 +1083,11 @@ func (c *Config) NormalizeSources() error {
 					if first, exists := specOwners[key]; exists {
 						return fmt.Errorf("sources[%q] and sources[%q]: duplicate openapi spec config %q", first, name, key)
 					}
+					if strings.TrimSpace(spec.Document) != "" {
+						if err := openapi.ValidateDocument(spec.Document); err != nil {
+							return fmt.Errorf("sources[%q].specs[%q].document: %w", name, key, err)
+						}
+					}
 					spec.SourceName = name
 					c.OpenAPI[key] = spec
 					specOwners[key] = name

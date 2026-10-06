@@ -77,6 +77,21 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.Description("Array of source names to remove from configuration."),
 			mcp.WithStringItems(),
 		),
+		mcp.WithArray("update_saved_queries",
+			mcp.Description("Saved queries to add or replace in the config folder (queries/<name>.gql). Each item is {name, query}. Names use letters, numbers, underscores and dashes."),
+			mcp.Items(map[string]any{
+				"type":     "object",
+				"required": []string{"name", "query"},
+				"properties": map[string]any{
+					"name":  map[string]any{"type": "string"},
+					"query": map[string]any{"type": "string", "description": "GraphQL document"},
+				},
+			}),
+		),
+		mcp.WithArray("remove_saved_queries",
+			mcp.Description("Names of saved queries to remove from the config folder."),
+			mcp.WithStringItems(),
+		),
 		mcp.WithArray("source_patches",
 			mcp.Description("Source mode patch-by-name updates for external sources. Preserves unmentioned source fields. Supports access read/write/delete, namespace_column, owner_column, missing_namespace_column, and public/admin/blocked table add/remove."),
 			mcp.Items(map[string]any{
@@ -1300,6 +1315,10 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		}
 	}
 
+	savedQueryWrites, savedQueryRemovals, savedQueryChanges, savedQueryErrs := parseSavedQueryUpdates(args)
+	changes = append(changes, savedQueryChanges...)
+	errors = append(errors, savedQueryErrs...)
+
 	// If no changes were made, return early
 	if len(changes) == 0 && len(errors) == 0 {
 		result := ConfigUpdateResult{
@@ -1653,6 +1672,14 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		ms.service.markCatalogChanged("config mutation")
 		if servReload == servReloadRestart {
 			changes = append(changes, "restart required for serv changes to take effect (auto when reload_on_config_change is enabled)")
+		}
+	}
+
+	if len(errors) == 0 {
+		if err := ms.applySavedQueryUpdates(savedQueryWrites, savedQueryRemovals); err != nil {
+			errors = append(errors, err.Error())
+		} else if len(savedQueryWrites) > 0 || len(savedQueryRemovals) > 0 {
+			ms.service.markCatalogChanged("saved query update")
 		}
 	}
 
