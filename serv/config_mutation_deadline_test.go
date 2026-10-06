@@ -21,7 +21,7 @@ func TestExtendDeadlineForConfigMutation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w := &deadlineCaptureWriter{}
 			before := time.Now()
-			extendDeadlineForConfigMutation(w, tc.query)
+			extendDeadlineForConfigMutation(w, nil, tc.query)
 			if !tc.extend {
 				if w.writeDeadlineCalls != 0 || w.readDeadlineCalls != 0 {
 					t.Fatalf("deadline changed for %q", tc.query)
@@ -31,9 +31,26 @@ func TestExtendDeadlineForConfigMutation(t *testing.T) {
 			if w.writeDeadlineCalls != 1 || w.readDeadlineCalls != 1 {
 				t.Fatalf("write calls=%d read calls=%d, want one each", w.writeDeadlineCalls, w.readDeadlineCalls)
 			}
-			if got := w.writeDeadline.Sub(before); got < configMutationDeadline-time.Second {
-				t.Fatalf("write deadline %v after the request, want about %v", got, configMutationDeadline)
+			if got := w.writeDeadline.Sub(before); got < defaultConfigUpdateTimeout-time.Second {
+				t.Fatalf("write deadline %v after the request, want about %v", got, defaultConfigUpdateTimeout)
 			}
 		})
+	}
+}
+
+func TestConfigUpdateTimeoutFollowsConfig(t *testing.T) {
+	if got := configUpdateTimeout(nil); got != defaultConfigUpdateTimeout {
+		t.Fatalf("default = %v, want %v", got, defaultConfigUpdateTimeout)
+	}
+	conf := &Config{}
+	conf.MCP.ConfigUpdateTimeout = 120
+	if got := configUpdateTimeout(conf); got != 2*time.Minute {
+		t.Fatalf("configured = %v, want 2m", got)
+	}
+	w := &deadlineCaptureWriter{}
+	before := time.Now()
+	extendDeadlineForConfigMutation(w, conf, `mutation { gj_config(id: "current", update: { mode: "preview" }) { valid } }`)
+	if got := w.writeDeadline.Sub(before); got < 2*time.Minute-time.Second || got > 2*time.Minute+time.Second {
+		t.Fatalf("write deadline %v after the request, want about 2m", got)
 	}
 }
