@@ -303,3 +303,33 @@ func GetTestCompositeFKDBInfo() *DBInfo {
 func GetTestCompositeFKSchema() (*DBSchema, error) {
 	return NewDBSchema(GetTestCompositeFKDBInfo(), nil)
 }
+
+// GetTestShipmentFKDBInfo reproduces issue #642: three composite FKs share
+// the same target columns, and the plain FK names also match those columns.
+func GetTestShipmentFKDBInfo() *DBInfo {
+	cols := []DBColumn{
+		{Schema: "public", Table: "warehouses", Name: "branch_id", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "warehouses", Name: "warehouse_id", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "warehouses", Name: "name", Type: "text"},
+		{Schema: "public", Table: "shipments", Name: "id", Type: "bigint", PrimaryKey: true, UniqueKey: true},
+	}
+	var fks []CompositeFKInfo
+	// Put alternates first so matching the referenced column cannot accidentally
+	// pass by choosing the first edge for the plain relationship.
+	for _, prefix := range []string{"origin_", "destination_", ""} {
+		for _, name := range []string{"branch_id", "warehouse_id"} {
+			cols = append(cols, DBColumn{
+				Schema: "public", Table: "shipments", Name: prefix + name, Type: "bigint",
+				FKeySchema: "public", FKeyTable: "warehouses", FKeyCol: name,
+			})
+		}
+		fks = append(fks, CompositeFKInfo{
+			Schema: "public", Table: "shipments", ConstraintName: prefix + "warehouse_fkey",
+			LocalCols:  []string{prefix + "branch_id", prefix + "warehouse_id"},
+			FKeySchema: "public", FKeyTable: "warehouses", FKeyCols: []string{"branch_id", "warehouse_id"},
+		})
+	}
+	di := NewDBInfo("postgres", 140000, "public", "db", cols, nil, nil)
+	di.CompositeFKs = fks
+	return di
+}
