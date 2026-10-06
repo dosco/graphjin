@@ -485,6 +485,8 @@ func configNanoColumns() []core.NanoColumn {
 		{Name: "reload_mode", Type: "text"},
 		{Name: "reload_strategy", Type: "text"},
 		{Name: "source_patches", Type: "json"},
+		{Name: "update_saved_queries", Type: "json"},
+		{Name: "remove_saved_queries", Type: "json"},
 		{Name: "valid", Type: "boolean"},
 		{Name: "applied", Type: "boolean"},
 		{Name: "expires_at", Type: "text"},
