@@ -64,8 +64,7 @@ detect_arch() {
     case "$arch" in
         x86_64|amd64) echo "amd64" ;;
         aarch64|arm64) echo "arm64" ;;
-        armv7l|armv6l) echo "arm" ;;
-        i386|i686) echo "386" ;;
+        armv7l|armv6l|i386|i686) error "No 32-bit build is published. Use a 64-bit system or build from source." ;;
         *) error "Unsupported architecture: $arch" ;;
     esac
 }
