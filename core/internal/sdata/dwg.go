@@ -203,6 +203,13 @@ func (s *DBSchema) addToGraph(
 		}
 		edgeIDs = append(edgeIDs, edgeID)
 	}
+	if alias := lcol.FKeyAlias; alias != "" && alias != relT && alias != rti.Name {
+		edgeID, err := s.addEdge(alias, e2, false)
+		if err != nil {
+			return nil, err
+		}
+		edgeIDs = append(edgeIDs, edgeID)
+	}
 
 	// fmt.Printf("1. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", lti.Name, e1.ID(), lti.Name, lcol.Name, ln.ID(), rti.Name, rcol.Name, rn.ID(), rt.String())
 	// fmt.Printf("2. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", rti.Name, e2.ID(), rti.Name, rcol.Name, rn.ID(), lti.Name, lcol.Name, ln.ID(), rt2.String())
