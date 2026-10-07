@@ -1336,6 +1336,14 @@ func (g *GraphJin) newGraphJinReloadingConfigDatabases(base *graphjinEngine, nex
 		gj.databases[name] = cloneDBContextForReload(baseCtx)
 	}
 
+	// API operations live as synthetic tables in the primary database schema,
+	// so an API source change rebuilds that schema and the OpenAPI runtime.
+	for name := range reloadSet {
+		if _, isDatabase := conf.Databases[name]; !isDatabase && gj.defaultDB != "" {
+			reloadSet[gj.defaultDB] = struct{}{}
+			break
+		}
+	}
 	reloadDefault := base.defaultDB != gj.defaultDB
 	for name := range reloadSet {
 		if name == gj.defaultDB {

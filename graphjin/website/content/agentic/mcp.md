@@ -142,7 +142,7 @@ Database changes are all-or-nothing: every new or changed connection is tested l
 | `agent.enabled`, `provider`, `api_key_env`, `base_url` | Gate startup wiring or name secrets. Only agent tuning fields are writable. |
 | `read_only: true` databases | Snapshotted at startup. A runtime patch flipping one to `false` is forced back to `true` and logged. |
 | System database names | `postgres`, `mysql`, `information_schema`, `master` and friends are rejected unless explicitly allowed. |
-| Plaintext secrets | Rejected unless a local keystore key is configured. |
+| Plaintext secrets | Rejected unless a local keystore key is configured. `gj_config` reports `serv.secrets_keystore_configured` so a client can check first. |
 
 Beyond dev, the doors close. In **agentic** mode these tools are not registered at all; config writes move to the `gj_config` GraphQL root, which is admin-only and still needs `mcp.allow_config_updates` — the shipped `agentic.yml` sets it to `false`. In **production** the surface is off and fails closed.
 

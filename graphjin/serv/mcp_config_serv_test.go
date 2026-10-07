@@ -34,6 +34,22 @@ func TestServConfigMap_RedactsSecretsAndExposesSettings(t *testing.T) {
 	}
 }
 
+func TestServConfigMap_ReportsKeystoreWithoutTheKey(t *testing.T) {
+	conf := &Config{}
+	if got := servConfigMap(conf)["secrets_keystore_configured"]; got != false {
+		t.Fatalf("secrets_keystore_configured = %v without a key, want false", got)
+	}
+	conf.Secrets.Keystore.Key = "keystore-key-value"
+	m := servConfigMap(conf)
+	if got := m["secrets_keystore_configured"]; got != true {
+		t.Fatalf("secrets_keystore_configured = %v with a key, want true", got)
+	}
+	blob, _ := json.Marshal(m)
+	if bytesContains(blob, "keystore-key-value") {
+		t.Fatalf("serv config map leaked the keystore key: %s", blob)
+	}
+}
+
 func TestValidateServConfigPatch_ClassifiesReloadAndRejectsUnknown(t *testing.T) {
 	// agent-only patch is hot
 	if _, reload, err := validateServConfigPatch(map[string]any{
