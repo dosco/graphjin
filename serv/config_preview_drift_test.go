@@ -2,13 +2,17 @@ package serv
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/core/v3/sourcecap"
+	"github.com/spf13/viper"
 )
 
 func TestCatalogDriftConflicts(t *testing.T) {
@@ -157,5 +161,58 @@ paths:
 	assertSourceScopedConfigResult(t, removed, "forum_api")
 	if _, err := ms.service.gj.GraphQL(context.Background(), `query { forum_latest { id } }`, nil, &core.RequestConfig{}); err == nil {
 		t.Fatal("expected the removed API operation to be gone")
+	}
+}
+
+func TestHandleUpdateCurrentConfig_SealedAPISecretKeepsNextPatchScoped(t *testing.T) {
+	ms := newSourceModeConfigMCPServer(t, map[string]string{"main": createSQLiteDBFile(t, "main.sqlite3", true)})
+	ms.service.conf.Secrets.Keystore.Key = base64.StdEncoding.EncodeToString(make([]byte, 32))
+	ms.service.conf.Secrets.Keystore.Path = filepath.Join(t.TempDir(), "secrets.enc.yml")
+	api := func(name string) map[string]any {
+		return map[string]any{
+			"name": name, "kind": sourcecap.KindAPI, "access": map[string]any{"read": "public"},
+			"specs": map[string]any{name: map[string]any{
+				"base_url": "http://127.0.0.1:1",
+				"document": `openapi: 3.0.0
+info: { title: Forum, version: "1.0" }
+paths:
+  /latest.json:
+    get:
+      operationId: listLatestTopics
+      responses:
+        "200": { description: ok, content: { application/json: { schema: { type: object } } } }
+`,
+				"auth":       map[string]any{"type": "api_key", "key_name": "Api-Key", "key_in": "header", "key_value": "secret-" + name},
+				"operations": map[string]any{"listLatestTopics": map[string]any{"expose_top_level": true, "expose_as": name + "_latest"}},
+			}},
+		}
+	}
+	assertSourceScopedConfigResult(t, applySourceModeConfigUpdate(t, ms, map[string]any{"update_sources": []any{api("forum_a")}}), "forum_a")
+	assertSourceScopedConfigResult(t, applySourceModeConfigUpdate(t, ms, map[string]any{"update_sources": []any{api("forum_b")}}), "forum_b")
+}
+
+func TestSyncConfigToViper_PersistsLoadableSourceTables(t *testing.T) {
+	ms := newSourceModeConfigMCPServer(t, map[string]string{"main": createSQLiteDBFile(t, "main.sqlite3", true)})
+	ms.service.conf.Core.Tables = []core.Table{{Name: "users", Source: "main"}}
+	out := applySourceModeConfigUpdate(t, ms, map[string]any{"update_sources": []any{map[string]any{
+		"name": "logs", "kind": sourcecap.KindDatabase, "type": "sqlite", "path": createSQLiteDBFile(t, "logs.sqlite3", true),
+	}}})
+	if !out.Applied {
+		t.Fatalf("expected the source update to apply: %+v", out)
+	}
+
+	v := viper.New()
+	ms.syncConfigToViper(v)
+	data, err := json.Marshal(v.Get("tables"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tables []core.Table
+	if err := json.Unmarshal(data, &tables); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := core.Config{Sources: ms.service.conf.Core.Sources, Tables: tables}
+	if err := reloaded.ValidateIsSourcesUsed(); err != nil {
+		t.Fatalf("persisted tables fail validation on the next start: %v", err)
 	}
 }

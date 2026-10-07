@@ -877,6 +877,12 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		lock.Lock()
 		defer lock.Unlock()
 	}
+	refreshDiscovery := false
+	defer func() {
+		if refreshDiscovery {
+			go ms.service.reconfigureDiscoveryInBackground(context.WithoutCancel(ctx))
+		}
+	}()
 
 	args := req.GetArguments()
 	sourceMode := ms.service != nil && ms.service.conf != nil && ms.service.conf.Core.IsSourcesUsed()
@@ -1646,10 +1652,16 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		} else {
 			ms.commitStagedRuntime(persistedCore, stage)
 		}
-		if err := ms.service.reconfigureDiscoveryAfterConfigChange(ctx); err != nil {
-			errors = append(errors, fmt.Sprintf("coordinated discovery refresh error: %s", redactRuntimeError(err)))
-		}
-		if err := ms.service.refreshCatalogAfterCoreConfigChange(oldCore, persistedCore, "config mutation"); err != nil {
+		// The live engine already serves the new config. The discovery
+		// generation only caches schema for restarts and other replicas, and
+		// on large catalogs it outlasts the caller's request deadline. It
+		// starts when the handler returns, after every write of this update.
+		refreshDiscovery = true
+		if reloadPlan.mode == "source_scoped" {
+			// commitSourceScopedRuntime refreshed the system catalog for the
+			// changed sources.
+			ms.service.recordCatalogRefreshRuntimeEvent(context.Background(), "source_scoped", reloadPlan.changedSources, "config mutation", nil)
+		} else if err := ms.service.refreshCatalogAfterCoreConfigChange(oldCore, persistedCore, "config mutation"); err != nil {
 			errors = append(errors, fmt.Sprintf("catalog refresh error: %s", redactRuntimeError(err)))
 		}
 		if ms.service.gj != nil && ms.service.gj.SchemaReady() {
@@ -3965,6 +3977,9 @@ func (ms *mcpServer) commitSourceScopedRuntime(stagedCore core.Config, stage *st
 	if err := scoped.refreshSystemNanoDBForSources(plan.changedSources); err != nil {
 		return err
 	}
+	ms.service.catalogMu.Lock()
+	ms.service.catalogCache = scoped.catalogCache
+	ms.service.catalogMu.Unlock()
 
 	ms.service.runtimeEventsMu.Lock()
 	ms.service.conf.Core = stagedCore
@@ -4403,6 +4418,23 @@ func (ms *mcpServer) saveConfigToDisk() error {
 
 // syncConfigToViper updates viper with the current config values for sections that can be modified.
 // Only sets values that are non-nil to avoid polluting viper with empty entries.
+// durableSourceTables drops what source normalization derives: generated
+// tables and the database each table inherits from its source. A config
+// file that holds them fails validation on the next start.
+func durableSourceTables(tables []core.Table) []core.Table {
+	out := make([]core.Table, 0, len(tables))
+	for _, table := range tables {
+		if table.Generated {
+			continue
+		}
+		if table.Source != "" {
+			table.Database = ""
+		}
+		out = append(out, table)
+	}
+	return out
+}
+
 func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 	conf := &ms.service.conf.Core
 
@@ -4422,7 +4454,11 @@ func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 		v.Set("metadata", conf.Metadata)
 	}
 	if conf.Tables != nil {
-		v.Set("tables", conf.Tables)
+		if conf.IsSourcesUsed() {
+			v.Set("tables", durableSourceTables(conf.Tables))
+		} else {
+			v.Set("tables", conf.Tables)
+		}
 	}
 	if conf.Roles != nil {
 		v.Set("roles", conf.Roles)

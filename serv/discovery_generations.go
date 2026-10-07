@@ -398,6 +398,16 @@ func (m *discoveryGenerationManager) RefreshNow(ctx context.Context) error {
 	}
 }
 
+var discoveryReconfigureMu sync.Mutex
+
+func (s *graphjinService) reconfigureDiscoveryInBackground(ctx context.Context) {
+	discoveryReconfigureMu.Lock()
+	defer discoveryReconfigureMu.Unlock()
+	if err := s.reconfigureDiscoveryAfterConfigChange(ctx); err != nil && s.log != nil {
+		s.log.Warnf("coordinated discovery refresh error: %s", redactRuntimeError(err))
+	}
+}
+
 // reconfigureDiscoveryAfterConfigChange moves runtime config changes onto the
 // fingerprint-scoped coordination namespace and waits for its activated cache
 // generation. The staged runtime remains the validation boundary; replicas
@@ -413,11 +423,9 @@ func (s *graphjinService) reconfigureDiscoveryAfterConfigChange(ctx context.Cont
 	previous := s.discovery
 	previous.Close()
 	s.discovery = next
-	if err := next.RefreshNow(ctx); err != nil {
-		return err
-	}
+	err = next.RefreshNow(ctx)
 	next.Start()
-	return nil
+	return err
 }
 
 func (m *discoveryGenerationManager) loadActivated(id string) {
