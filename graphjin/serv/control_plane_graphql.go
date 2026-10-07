@@ -189,6 +189,7 @@ func (h controlPlaneGraphQL) allCatalogRows(snap *core.CatalogSnapshot, result c
 func (h controlPlaneGraphQL) catalogRowsFromCards(snap *core.CatalogSnapshot, result core.CatalogQueryOutput) []map[string]any {
 	rawRows := structRows(result.Cards)
 	rows := rawRows[:0]
+	lookup := snap.CardLookup()
 	for _, row := range rawRows {
 		if fmt.Sprint(row["kind"]) == "capability" {
 			continue
@@ -199,8 +200,8 @@ func (h controlPlaneGraphQL) catalogRowsFromCards(snap *core.CatalogSnapshot, re
 		} else {
 			row["name"] = catalogItemName(row)
 		}
-		row["details_json"] = mustMarshalString(snap.CardDetails(id))
-		row["edges_json"] = mustMarshalString(snap.CardEdges(id))
+		row["details_json"] = mustMarshalString(lookup.Details(id))
+		row["edges_json"] = mustMarshalString(lookup.Edges(id))
 		if match, ok := result.Matches[id]; ok {
 			row["score"] = match.Score
 			row["search_rank"] = match.Score
