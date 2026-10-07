@@ -137,6 +137,8 @@ type graphjinService struct {
 	watchCoord           watchCoordinator
 	watchSnoozeMu        sync.Mutex
 	watchSnoozeLastSweep time.Time
+	discoveryBgMu        sync.Mutex
+	discoveryBgCancel    context.CancelFunc
 	revisionSignalWG     sync.WaitGroup
 	revisionConsumerWG   sync.WaitGroup
 	catalogMu            sync.Mutex
@@ -443,9 +445,7 @@ func (s *graphjinService) closeServResources() {
 	if s.semantic != nil {
 		s.semantic.Close()
 	}
-	if s.discovery != nil {
-		s.discovery.Close()
-	}
+	s.closeDiscovery()
 	if s.closeFn != nil {
 		s.closeFn()
 	}
