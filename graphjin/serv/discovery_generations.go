@@ -398,13 +398,48 @@ func (m *discoveryGenerationManager) RefreshNow(ctx context.Context) error {
 	}
 }
 
-var discoveryReconfigureMu sync.Mutex
-
+// reconfigureDiscoveryInBackground runs discovery after a config apply returns.
+// It holds the config lock, so the next apply waits for it. A newer apply or
+// shutdown cancels a pending run.
 func (s *graphjinService) reconfigureDiscoveryInBackground(ctx context.Context) {
-	discoveryReconfigureMu.Lock()
-	defer discoveryReconfigureMu.Unlock()
-	if err := s.reconfigureDiscoveryAfterConfigChange(ctx); err != nil && s.log != nil {
-		s.log.Warnf("coordinated discovery refresh error: %s", redactRuntimeError(err))
+	s = s.liveService()
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	s.discoveryBgMu.Lock()
+	if s.discoveryBgCancel != nil {
+		s.discoveryBgCancel()
+	}
+	s.discoveryBgCancel = cancel
+	s.discoveryBgMu.Unlock()
+
+	s.revisionConsumerWG.Add(1)
+	go func() {
+		defer s.revisionConsumerWG.Done()
+		defer cancel()
+		lock := s.configLocker()
+		lock.Lock()
+		defer lock.Unlock()
+		if ctx.Err() != nil {
+			return
+		}
+		if err := s.reconfigureDiscoveryAfterConfigChange(ctx); err != nil && ctx.Err() == nil && s.log != nil {
+			s.log.Warnf("coordinated discovery refresh error: %s", redactRuntimeError(err))
+		}
+	}()
+}
+
+// closeDiscovery cancels a pending background run and closes discovery once
+// a running one releases the config lock.
+func (s *graphjinService) closeDiscovery() {
+	s.discoveryBgMu.Lock()
+	if s.discoveryBgCancel != nil {
+		s.discoveryBgCancel()
+	}
+	s.discoveryBgMu.Unlock()
+	lock := s.configLocker()
+	lock.Lock()
+	defer lock.Unlock()
+	if s.discovery != nil {
+		s.discovery.Close()
 	}
 }
 
