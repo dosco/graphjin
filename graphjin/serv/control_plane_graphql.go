@@ -394,6 +394,9 @@ func servConfigMap(conf *Config) map[string]any {
 		"caching":                 redactedConfigValue(s.Caching),
 		"uploads":                 redactedConfigValue(s.Uploads),
 		"runtime_events":          redactedConfigValue(s.RuntimeEvents),
+		// Clients check this before a config update that carries plaintext
+		// secrets; the key itself never leaves the server.
+		"secrets_keystore_configured": strings.TrimSpace(conf.Secrets.Keystore.Key) != "",
 	}
 }
 
