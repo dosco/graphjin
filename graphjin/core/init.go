@@ -398,6 +398,11 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table, allDBInfos
 			"config: invalid foreign key defined for table '%s' and column '%s': %s",
 			t.Name, c.Name, c.ForeignKey)
 	}
+	// A source prefix that names the table's own source is a same-database key.
+	if fk.Database != "" && fk.Database == t.Database {
+		fk.Database = ""
+	}
+	c1.FKeyAlias = c.relatedAs
 
 	// Cross-database FK: resolve against the target database's DBInfo
 	if fk.Database != "" {

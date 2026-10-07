@@ -1287,12 +1287,13 @@ func (c *Config) applyRelationshipOverlays() error {
 		for ci := range table.Columns {
 			if table.Columns[ci].Name == fromColumn {
 				table.Columns[ci].ForeignKey = rel.To
+				table.Columns[ci].relatedAs = strings.TrimSpace(rel.As)
 				found = true
 				break
 			}
 		}
 		if !found {
-			table.Columns = append(table.Columns, Column{Name: fromColumn, ForeignKey: rel.To})
+			table.Columns = append(table.Columns, Column{Name: fromColumn, ForeignKey: rel.To, relatedAs: strings.TrimSpace(rel.As)})
 		}
 	}
 	return nil
@@ -2093,6 +2094,9 @@ type Column struct {
 	Array      bool
 	FullText   bool   `mapstructure:"full_text" json:"full_text" yaml:"full_text" jsonschema:"title=Full Text Search"`
 	ForeignKey string `mapstructure:"related_to" json:"related_to" yaml:"related_to" jsonschema:"title=Related To,example=other_table.id_column,example=users.id"`
+
+	// relatedAs is the field name a relationship `as` gives this foreign key.
+	relatedAs string
 }
 
 // Configuration for a database function
