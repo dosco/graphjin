@@ -385,6 +385,30 @@ func sealCoreConfigSecrets(conf *core.Config, ks *localKeystore) (map[string]str
 	if err != nil {
 		return nil, err
 	}
+	// Derived databases and OpenAPI specs were sealed under their own paths.
+	// Derive them again from the sealed sources so both carry one reference
+	// and the next patch does not see every source as changed.
+	if conf.IsSourcesUsed() {
+		derived := cloneCoreConfig(*conf)
+		if err := derived.RenormalizeSources(); err != nil {
+			return nil, err
+		}
+		sources := sourceConfigByCatalogName(conf.Sources)
+		for name, db := range derived.Databases {
+			if _, ok := sources[name]; ok {
+				if conf.Databases == nil {
+					conf.Databases = make(map[string]core.DatabaseConfig)
+				}
+				conf.Databases[name] = db
+			}
+		}
+		for key, spec := range derived.OpenAPI {
+			if _, ok := sources[spec.SourceName]; ok && conf.OpenAPI != nil {
+				conf.OpenAPI[key] = spec
+			}
+		}
+		usedRefs = make(map[string]struct{})
+	}
 	for _, ref := range secretRefsInConfig(conf) {
 		usedRefs[ref] = struct{}{}
 	}

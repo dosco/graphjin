@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -363,5 +364,42 @@ func TestCatalogShorthandArgsStillWork(t *testing.T) {
 	}
 	if len(result.Cards) != 1 || result.Cards[0].ID != "table:default.public.orders" {
 		t.Fatalf("expected shorthand filters to find orders table, got %#v", result.Cards)
+	}
+}
+
+func TestCatalogCardLookupMatchesPerCardScans(t *testing.T) {
+	col := func(table, name string, pk bool) MetadataColumn {
+		return MetadataColumn{ID: "default.public." + table + "." + name, TableID: "default.public." + table, DatabaseName: "default", SchemaName: "public", TableName: table, ColumnName: name, Type: "integer", PrimaryKey: pk}
+	}
+	snapshot := BuildCatalogSnapshot(&MetadataSnapshot{
+		Databases: []MetadataDatabase{{ID: "default", Name: "default", Type: "postgres", IsDefault: true}},
+		Tables: []MetadataTable{
+			{ID: "default.public.customers", DatabaseName: "default", SchemaName: "public", TableName: "customers", ColumnCount: 1, PrimaryKey: "id"},
+			{ID: "default.public.orders", DatabaseName: "default", SchemaName: "public", TableName: "orders", ColumnCount: 2, PrimaryKey: "id"},
+		},
+		Columns: []MetadataColumn{col("customers", "id", true), col("orders", "id", true), col("orders", "customer_id", false)},
+		Relationships: []MetadataRelationship{{
+			ID:               "default.public.orders.customer_id->default.public.customers.id",
+			FromDatabaseName: "default", FromSchemaName: "public", FromTableName: "orders", FromColumnName: "customer_id", FromColumnID: "default.public.orders.customer_id",
+			ToDatabaseName: "default", ToSchemaName: "public", ToTableName: "customers", ToColumnName: "id", ToColumnID: "default.public.customers.id",
+			RelType: "one_to_many",
+		}},
+	}, &Config{})
+
+	lookup := snapshot.CardLookup()
+	var withEdges int
+	for _, card := range snapshot.Cards {
+		if !reflect.DeepEqual(lookup.Details(card.ID), snapshot.CardDetails(card.ID)) {
+			t.Fatalf("details for %s differ", card.ID)
+		}
+		if !reflect.DeepEqual(lookup.Edges(card.ID), snapshot.CardEdges(card.ID)) {
+			t.Fatalf("edges for %s differ", card.ID)
+		}
+		if len(lookup.Edges(card.ID)) != 0 {
+			withEdges++
+		}
+	}
+	if withEdges == 0 {
+		t.Fatal("expected at least one card with edges")
 	}
 }

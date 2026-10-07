@@ -1351,17 +1351,6 @@ func (g *GraphJin) newGraphJinReloadingConfigDatabases(base *graphjinEngine, nex
 			break
 		}
 	}
-	if reloadDefault {
-		if err := gj.initResolvers(); err != nil {
-			return err
-		}
-	} else {
-		gj.rtmap = base.rtmap
-		gj.rmap = base.rmap
-		gj.openapiRuntime = base.openapiRuntime
-		gj.fsBackends = base.fsBackends
-	}
-
 	reloadNames := make([]string, 0, len(reloadSet))
 	for name := range reloadSet {
 		reloadNames = append(reloadNames, name)
@@ -1385,6 +1374,26 @@ func (g *GraphJin) newGraphJinReloadingConfigDatabases(base *graphjinEngine, nex
 			target.dbinfo = snap.DBInfo(name)
 		} else if err := gj.discoverDatabase(target); err != nil {
 			return err
+		}
+	}
+
+	// Resolvers register API operation tables into the primary schema, so
+	// they run after discovery and before finalize, as in a full start.
+	if reloadDefault {
+		if err := gj.initResolvers(); err != nil {
+			return err
+		}
+	} else {
+		gj.rtmap = base.rtmap
+		gj.rmap = base.rmap
+		gj.openapiRuntime = base.openapiRuntime
+		gj.fsBackends = base.fsBackends
+	}
+
+	for _, name := range reloadNames {
+		target := gj.databases[name]
+		if target == nil {
+			continue
 		}
 		if handler := gj.managedQueryHandlers[name]; handler != nil {
 			if err := gj.initManagedQueryTablesForDatabase(name, handler); err != nil {

@@ -105,6 +105,9 @@ func (s *graphjinService) refreshSystemNanoDBForSources(sourceNames []string) er
 
 	opts := s.catalogBuildOptions()
 	fullCatalog := core.BuildCatalogSnapshotWithOptions(snapshot, &s.conf.Core, opts)
+	s.catalogMu.Lock()
+	s.catalogCache = &catalogCacheEntry{revision: fullCatalog.Revision, snapshot: fullCatalog}
+	s.catalogMu.Unlock()
 	scopedSnapshot := filterMetadataSnapshotForCatalogSources(snapshot, sourceSet)
 	scopedOpts := filterCatalogBuildOptionsForSources(opts, sourceSet)
 	scopedCatalog := core.BuildCatalogSnapshotWithOptions(scopedSnapshot, &s.conf.Core, scopedOpts)
@@ -143,9 +146,6 @@ func (s *graphjinService) refreshSystemNanoDBForSources(sourceNames []string) er
 	}); err != nil {
 		return err
 	}
-	s.catalogMu.Lock()
-	s.catalogCache = &catalogCacheEntry{revision: fullCatalog.Revision, snapshot: fullCatalog}
-	s.catalogMu.Unlock()
 	return nil
 }
 
