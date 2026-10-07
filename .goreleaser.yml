@@ -26,14 +26,11 @@ builds:
       - linux
       - windows
       - darwin
+    # 386 and arm are paused: the ax-llm Go package does not build for
+    # 32-bit targets yet.
     goarch:
-      - 386
       - amd64
-      - arm
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm
 
 kos:
   - id: graphjin-docker
