@@ -1100,6 +1100,12 @@ mutation {
 
 Apply writes `queries/<name>.gql` and removes the named files. Names use letters, numbers, underscores and dashes. GraphJin compiles a saved query when it runs, because it often uses a source that the same update adds.
 
+### Reload scope and revision checks
+
+An update that adds, changes or removes database or API sources reloads only those sources. An API source change also rebuilds the default database schema, because API operations join it as tables. Other databases keep their connections and discovered schema.
+
+Apply compares the catalog with the state when the preview started. A schema change in a source that the update does not touch does not block the apply. A change to the config, to saved queries, to workflows or to a touched source makes the apply fail as stale. Run the preview again in that case.
+
 ---
 
 ## Agent Configuration

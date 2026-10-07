@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	gjopenapi "github.com/dosco/graphjin/core/v3/openapi"
 	"reflect"
 	"sort"
 	"strings"
@@ -1344,7 +1345,26 @@ func coreConfigChangeScopedToSources(oldCore, newCore core.Config, sources map[s
 		delete(oldCopy.Databases, source)
 		delete(newCopy.Databases, source)
 	}
+	oldCopy.OpenAPI = filterSpecsOutsideSet(oldCopy.OpenAPI, sources)
+	newCopy.OpenAPI = filterSpecsOutsideSet(newCopy.OpenAPI, sources)
 	return reflect.DeepEqual(oldCopy, newCopy)
+}
+
+func filterSpecsOutsideSet(specs map[string]gjopenapi.SpecConfig, remove map[string]struct{}) map[string]gjopenapi.SpecConfig {
+	if len(specs) == 0 {
+		return nil
+	}
+	out := make(map[string]gjopenapi.SpecConfig, len(specs))
+	for key, spec := range specs {
+		if _, ok := remove[spec.SourceName]; ok {
+			continue
+		}
+		out[key] = spec
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func sourceScopedCatalogPatchAllowed(oldCore, newCore core.Config, sources map[string]struct{}) bool {
@@ -1359,10 +1379,10 @@ func sourceScopedCatalogPatchAllowed(oldCore, newCore core.Config, sources map[s
 		if newSource, ok := newSources[name]; ok {
 			newKind = newSource.CanonicalKind()
 		}
-		if oldKind != "" && oldKind != sourcecap.KindDatabase {
+		if oldKind != "" && newKind != "" && oldKind != newKind {
 			return false
 		}
-		if newKind != "" && newKind != sourcecap.KindDatabase {
+		if !sourceScopedKind(oldKind) || !sourceScopedKind(newKind) {
 			return false
 		}
 		if oldKind == "" && newKind == "" {
@@ -1370,6 +1390,10 @@ func sourceScopedCatalogPatchAllowed(oldCore, newCore core.Config, sources map[s
 		}
 	}
 	return true
+}
+
+func sourceScopedKind(kind string) bool {
+	return kind == "" || kind == sourcecap.KindDatabase || kind == sourcecap.KindAPI
 }
 
 func filterSourcesOutsideSet(sources []core.SourceConfig, remove map[string]struct{}) []core.SourceConfig {
