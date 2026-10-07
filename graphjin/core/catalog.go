@@ -332,6 +332,50 @@ func (s *CatalogSnapshot) CardEdges(cardID string) []CatalogEdge {
 	return out
 }
 
+// CatalogCardLookup finds the details and edges of many cards in one pass
+// over the snapshot. Build it once for a loop over cards.
+type CatalogCardLookup struct {
+	details map[string][]CatalogCardDetail
+	edges   map[string][]CatalogEdge
+}
+
+func (s *CatalogSnapshot) CardLookup() CatalogCardLookup {
+	lookup := CatalogCardLookup{
+		details: make(map[string][]CatalogCardDetail),
+		edges:   make(map[string][]CatalogEdge),
+	}
+	if s == nil {
+		return lookup
+	}
+	for _, detail := range s.Details {
+		lookup.details[detail.CardID] = append(lookup.details[detail.CardID], detail)
+	}
+	nodeCards := make(map[string]string, len(s.Nodes))
+	for _, node := range s.Nodes {
+		if node.CardID != "" {
+			nodeCards[node.ID] = node.CardID
+		}
+	}
+	for _, edge := range s.Edges {
+		from, to := nodeCards[edge.FromID], nodeCards[edge.ToID]
+		if from != "" {
+			lookup.edges[from] = append(lookup.edges[from], edge)
+		}
+		if to != "" && to != from {
+			lookup.edges[to] = append(lookup.edges[to], edge)
+		}
+	}
+	return lookup
+}
+
+func (l CatalogCardLookup) Details(cardID string) []CatalogCardDetail {
+	return l.details[cardID]
+}
+
+func (l CatalogCardLookup) Edges(cardID string) []CatalogEdge {
+	return l.edges[cardID]
+}
+
 func catalogMetadataSnapshot(md *MetadataSnapshot) *catalog.MetadataSnapshot {
 	if md == nil {
 		return &catalog.MetadataSnapshot{}
