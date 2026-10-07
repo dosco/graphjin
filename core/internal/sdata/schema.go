@@ -391,7 +391,7 @@ func (s *DBSchema) FindCrossDBPath(childName, parentName string) (TPath, bool) {
 		// e.g. job_crew.employee_id → ats:employees.id
 		// GraphQL: { job_crew { employees { ... } } }
 		// FindPath is called as FindPath("employees", "job_crew")
-		if rel.SourceTable.Name == parentName && rel.TargetTable == childName {
+		if rel.SourceTable.Name == parentName && (rel.TargetTable == childName || (rel.SourceCol.FKeyAlias != "" && rel.SourceCol.FKeyAlias == childName)) {
 			return TPath{
 				Rel: RelOneToOne,
 				LT: DBTable{

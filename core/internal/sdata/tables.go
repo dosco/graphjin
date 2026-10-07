@@ -297,7 +297,8 @@ type DBColumn struct {
 	FKeySchema     string
 	FKeyTable      string
 	FKeyCol        string
-	FKeyIsUnique   bool // True if FK target column is PK/unique (for correct rel type)
+	FKeyIsUnique   bool   // True if FK target column is PK/unique (for correct rel type)
+	FKeyAlias      string // Extra field name for the relationship, from config `as`
 	Blocked        bool
 	Table          string
 	Schema         string
