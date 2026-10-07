@@ -880,7 +880,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	refreshDiscovery := false
 	defer func() {
 		if refreshDiscovery {
-			go ms.service.reconfigureDiscoveryInBackground(context.WithoutCancel(ctx))
+			ms.service.reconfigureDiscoveryInBackground(ctx)
 		}
 	}()
 
