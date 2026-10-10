@@ -1,5 +1,11 @@
 package catalog
 
+import (
+	"strings"
+
+	"github.com/dosco/graphjin/core/v3/whereop"
+)
+
 type Feature struct {
 	ID             string
 	Kind           string
@@ -252,17 +258,25 @@ var languageFeatures = []Feature{
 		SuggestedNext:  []string{"query_catalog", "graphjin_repair"},
 	},
 	{
-		ID:      "operator.filters",
-		Kind:    "operator_set",
-		Name:    "filter operators",
-		Scope:   "where",
-		Summary: "GraphJin where operators are typed by column shape.",
+		ID:    "operator.filters",
+		Kind:  "operator_set",
+		Name:  "filter operators",
+		Scope: "where",
+		Summary: "GraphJin where operators are typed by column shape. " +
+			"Numeric and date/timestamp columns: " + strings.Join(whereop.FamilyOperators(whereop.Temporal), ", ") + ". " +
+			"Text columns: " + strings.Join(whereop.FamilyOperators(whereop.Text), ", ") + ". " +
+			"Boolean and uuid columns: " + strings.Join(whereop.FamilyOperators(whereop.Boolean), ", ") + ". " +
+			"JSON columns: " + strings.Join(whereop.FamilyOperators(whereop.JSON), ", ") + ". " +
+			"Array columns: " + strings.Join(whereop.FamilyOperators(whereop.Array), ", ") + ". " +
+			"Spatial columns: " + strings.Join(whereop.FamilyOperators(whereop.Geometry), ", ") + ".",
 		Examples: []string{
 			`where: { price: { gt: 50 }, name: { ilike: "%shoe%" }, id: { in: [1, 2, 3] } }`,
+			`where: { created_at: { gte: "2025-01-01", lt: "2026-01-01" } }`,
 		},
 		CommonMistakes: []string{
 			"in/nin require arrays even for one value.",
-			"Numeric and boolean operators require numeric/boolean values, not strings.",
+			"There is no between operator; express a range as two bounds, e.g. { gte: a, lt: b }.",
+			"Numeric operators need numbers (or numeric strings); boolean operators need true/false.",
 		},
 		SuggestedNext: []string{"query_catalog", "validate_where_clause"},
 	},

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	core "github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/whereop"
 )
 
 const enumSampleCap = 101
@@ -43,18 +44,18 @@ func buildTableIndexEntry(schema *core.TableSchema, profile *TableProfile, dupli
 			})
 		}
 		if !col.PrimaryKey && col.ForeignKey == "" {
-			if isNumericType(col.Type) {
+			if isNumericColumn(col) {
 				typeSummary["numeric"]++
-			} else if isDateType(col.Type) {
+			} else if isDateColumn(col) {
 				typeSummary["date"]++
 			} else if col.FullText {
 				typeSummary["fulltext"]++
-			} else if col.Type == "text" || strings.HasPrefix(col.Type, "character") || strings.HasPrefix(col.Type, "varchar") || strings.HasPrefix(col.Type, "nvarchar") {
+			} else if whereop.Classify(col.Type, col.Array) == whereop.Text {
 				typeSummary["text"]++
 			} else {
 				typeSummary["other"]++
 			}
-			if isDateType(col.Type) || isEnumCandidateCol(col) {
+			if isDateColumn(col) || isEnumCandidateCol(col) {
 				keyCols = append(keyCols, col.Name)
 			}
 		}
@@ -311,10 +312,10 @@ func buildQueryTemplates(schemas []*core.TableSchema) []QueryTemplate {
 		var dateCols, numericCols, enumCols []core.ColumnInfo
 		var fkCols []core.ColumnInfo
 		for _, col := range schema.Columns {
-			if isDateType(col.Type) {
+			if isDateColumn(col) {
 				dateCols = append(dateCols, col)
 			}
-			if isNumericType(col.Type) && !col.PrimaryKey && !strings.HasSuffix(col.Name, "_id") {
+			if isNumericColumn(col) && !col.PrimaryKey && !strings.HasSuffix(col.Name, "_id") {
 				numericCols = append(numericCols, col)
 			}
 			if isEnumCandidateCol(col) {
@@ -449,24 +450,12 @@ func buildDuplicateIndex(schemas []*core.TableSchema) map[string][]string {
 	return byName
 }
 
-func isNumericType(colType string) bool {
-	t := strings.ToLower(colType)
-	return strings.Contains(t, "int") ||
-		strings.Contains(t, "serial") ||
-		strings.Contains(t, "decimal") ||
-		strings.Contains(t, "numeric") ||
-		strings.Contains(t, "number") ||
-		strings.Contains(t, "float") ||
-		strings.Contains(t, "double") ||
-		strings.Contains(t, "real") ||
-		strings.Contains(t, "money")
+func isNumericColumn(col core.ColumnInfo) bool {
+	return whereop.Classify(col.Type, col.Array) == whereop.Numeric
 }
 
-func isDateType(colType string) bool {
-	t := strings.ToLower(colType)
-	return strings.Contains(t, "timestamp") ||
-		strings.Contains(t, "date") ||
-		strings.Contains(t, "time")
+func isDateColumn(col core.ColumnInfo) bool {
+	return whereop.Classify(col.Type, col.Array) == whereop.Temporal
 }
 
 func isEnumCandidateCol(col core.ColumnInfo) bool {

@@ -537,6 +537,11 @@ func TestNormalizeColumnType_DialectAwareBooleans(t *testing.T) {
 		{dbType: "number(1,0)", want: "boolean"},
 		{dbType: "numeric(7,2)", want: "numeric"},
 		{dbType: "tinyint(4)", want: "numeric"},
+		{dbType: "geometry(Point,4326)", want: "geometry"},
+		{dbType: "point", want: "geometry"},
+		{dbType: "timestamp without time zone", want: "timestamp"},
+		{dbType: "double precision", want: "numeric"},
+		{dbType: "uniqueidentifier", want: "uuid"},
 	}
 
 	for _, tt := range tests {
