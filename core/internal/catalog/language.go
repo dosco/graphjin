@@ -1,10 +1,6 @@
 package catalog
 
-import (
-	"strings"
-
-	"github.com/dosco/graphjin/core/v3/whereop"
-)
+import "github.com/dosco/graphjin/core/v3/whereop"
 
 type Feature struct {
 	ID             string
@@ -258,17 +254,21 @@ var languageFeatures = []Feature{
 		SuggestedNext:  []string{"query_catalog", "graphjin_repair"},
 	},
 	{
-		ID:    "operator.filters",
-		Kind:  "operator_set",
-		Name:  "filter operators",
-		Scope: "where",
-		Summary: "GraphJin where operators are typed by column shape. " +
-			"Numeric and date/timestamp columns: " + strings.Join(whereop.FamilyOperators(whereop.Temporal), ", ") + ". " +
-			"Text columns: " + strings.Join(whereop.FamilyOperators(whereop.Text), ", ") + ". " +
-			"Boolean and uuid columns: " + strings.Join(whereop.FamilyOperators(whereop.Boolean), ", ") + ". " +
-			"JSON columns: " + strings.Join(whereop.FamilyOperators(whereop.JSON), ", ") + ". " +
-			"Array columns: " + strings.Join(whereop.FamilyOperators(whereop.Array), ", ") + ". " +
-			"Spatial columns: " + strings.Join(whereop.FamilyOperators(whereop.Geometry), ", ") + ".",
+		ID:      "operator.filters",
+		Kind:    "operator_set",
+		Name:    "filter operators",
+		Scope:   "where",
+		Summary: "GraphJin where operators are typed by column shape.",
+		// Kept out of Summary: Summary is search-indexed, and the full lists
+		// pull this row into unrelated seed searches.
+		Arguments: []FeatureArg{
+			{Name: "numeric and date/timestamp columns", Values: whereop.FamilyOperators(whereop.Temporal)},
+			{Name: "text columns", Values: whereop.FamilyOperators(whereop.Text)},
+			{Name: "boolean and uuid columns", Values: whereop.FamilyOperators(whereop.Boolean)},
+			{Name: "json columns", Values: whereop.FamilyOperators(whereop.JSON)},
+			{Name: "array columns", Values: whereop.FamilyOperators(whereop.Array)},
+			{Name: "spatial columns", Values: whereop.FamilyOperators(whereop.Geometry)},
+		},
 		Examples: []string{
 			`where: { price: { gt: 50 }, name: { ilike: "%shoe%" }, id: { in: [1, 2, 3] } }`,
 			`where: { created_at: { gte: "2025-01-01", lt: "2026-01-01" } }`,
