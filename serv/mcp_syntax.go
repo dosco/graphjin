@@ -3,6 +3,7 @@ package serv
 import (
 	"context"
 
+	"github.com/dosco/graphjin/core/v3/whereop"
 	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
@@ -76,7 +77,12 @@ type FilterOperators struct {
 	Null       []string `json:"null"`
 	Text       []string `json:"text"`
 	JSON       []string `json:"json"`
+	Array      []string `json:"array"`
 	Spatial    []string `json:"spatial"`
+	// ByColumnType lists the operators that fit each column type family, as
+	// validate_where_clause applies them. Temporal columns (date, timestamp,
+	// datetime, ...) are under "timestamp".
+	ByColumnType map[string][]string `json:"by_column_type"`
 }
 
 // PaginationSyntax shows pagination options
@@ -175,12 +181,23 @@ type QueryExample struct {
 // querySyntaxReference is the static reference data for query syntax
 var querySyntaxReference = QuerySyntaxReference{
 	FilterOperators: FilterOperators{
-		Comparison: []string{"eq", "neq", "gt", "gte", "lt", "lte"},
+		Comparison: []string{"eq", "neq", "gt", "gte", "lt", "lte", "distinct", "not_distinct"},
 		List:       []string{"in", "nin"},
 		Null:       []string{"is_null"},
-		Text:       []string{"like", "ilike", "regex", "iregex", "similar"},
+		Text:       []string{"like", "nlike", "ilike", "nilike", "regex", "nregex", "iregex", "niregex", "similar", "nsimilar"},
 		JSON:       []string{"has_key", "has_key_any", "has_key_all", "contains", "contained_in"},
+		Array:      []string{"contains", "contained_in", "has_in_common", "in"},
 		Spatial:    []string{"st_dwithin", "st_within", "st_contains", "st_intersects", "st_coveredby", "st_covers", "st_touches", "st_overlaps", "near"},
+		ByColumnType: map[string][]string{
+			string(whereop.Numeric):  whereop.FamilyOperators(whereop.Numeric),
+			string(whereop.Temporal): whereop.FamilyOperators(whereop.Temporal),
+			string(whereop.Text):     whereop.FamilyOperators(whereop.Text),
+			string(whereop.Boolean):  whereop.FamilyOperators(whereop.Boolean),
+			string(whereop.UUID):     whereop.FamilyOperators(whereop.UUID),
+			string(whereop.JSON):     whereop.FamilyOperators(whereop.JSON),
+			string(whereop.Array):    whereop.FamilyOperators(whereop.Array),
+			string(whereop.Geometry): whereop.FamilyOperators(whereop.Geometry),
+		},
 	},
 	LogicalOperators: []string{"and", "or", "not"},
 	Pagination: PaginationSyntax{

@@ -156,10 +156,10 @@ func buildTableSample(ctx context.Context, gj *core.GraphJin, database string, s
 		if len(sampleCols) < 10 {
 			sampleCols = append(sampleCols, col)
 		}
-		if isNumericType(col.Type) && !col.PrimaryKey && !strings.HasSuffix(col.Name, "_id") {
+		if isNumericColumn(col) && !col.PrimaryKey && !strings.HasSuffix(col.Name, "_id") {
 			numericCols = append(numericCols, col)
 		}
-		if isDateType(col.Type) {
+		if isDateColumn(col) {
 			dateCols = append(dateCols, col)
 		}
 		if isEnumCandidateCol(col) {

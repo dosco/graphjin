@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/whereop"
 	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
@@ -236,12 +238,25 @@ func generateAggregations(schema *core.TableSchema) AggregationInfo {
 		// All columns support count
 		available = append(available, fmt.Sprintf("count_%s", col.Name))
 
-		// Numeric columns support sum, avg, min, max
-		normalizedType := normalizeColumnType(col.Type)
-		if normalizedType == "numeric" {
+		if col.Array {
+			continue
+		}
+		switch whereop.Classify(col.Type, false) {
+		case whereop.Numeric:
+			// Keys are numeric but summing or averaging them means nothing.
+			if !col.PrimaryKey && col.ForeignKey == "" {
+				available = append(available,
+					fmt.Sprintf("sum_%s", col.Name),
+					fmt.Sprintf("avg_%s", col.Name),
+				)
+			}
 			available = append(available,
-				fmt.Sprintf("sum_%s", col.Name),
-				fmt.Sprintf("avg_%s", col.Name),
+				fmt.Sprintf("min_%s", col.Name),
+				fmt.Sprintf("max_%s", col.Name),
+			)
+		case whereop.Temporal:
+			// Earliest / latest: min and max work on any ordered type.
+			available = append(available,
 				fmt.Sprintf("min_%s", col.Name),
 				fmt.Sprintf("max_%s", col.Name),
 			)
@@ -1180,75 +1195,7 @@ func isOperator(s string) bool {
 }
 
 func canonicalWhereOperator(op string) string {
-	if op != "" && op[0] == '_' {
-		op = op[1:]
-	}
-	switch op {
-	case "eq", "equals":
-		return "eq"
-	case "neq", "notEquals", "not_equals":
-		return "neq"
-	case "gt", "greaterThan", "greater_than":
-		return "gt"
-	case "gte", "gteq", "greaterOrEquals", "greater_or_equals":
-		return "gte"
-	case "lt", "lesserThan", "lesser_than":
-		return "lt"
-	case "lte", "lteq", "lesserOrEquals", "lesser_or_equals":
-		return "lte"
-	case "in":
-		return "in"
-	case "nin", "notIn", "not_in":
-		return "nin"
-	case "like", "nlike", "notLike", "not_like":
-		return "like"
-	case "ilike", "iLike", "nilike", "notILike", "not_ilike":
-		return "ilike"
-	case "similar", "nsimilar", "notSimiliar", "not_similar":
-		return "similar"
-	case "regex", "nregex", "notRegex", "not_regex":
-		return "regex"
-	case "iregex", "niregex", "notIRegex", "not_iregex":
-		return "iregex"
-	case "contains":
-		return "contains"
-	case "containedIn", "contained_in":
-		return "contained_in"
-	case "hasInCommon", "has_in_common":
-		return "has_in_common"
-	case "hasKey", "has_key":
-		return "has_key"
-	case "hasKeyAny", "has_key_any":
-		return "has_key_any"
-	case "hasKeyAll", "has_key_all":
-		return "has_key_all"
-	case "isNull", "is_null":
-		return "is_null"
-	case "notDistinct", "ndis", "not_distinct":
-		return "not_distinct"
-	case "dis", "distinct":
-		return "distinct"
-	case "st_dwithin", "stDWithin", "st_d_within", "dwithin":
-		return "st_dwithin"
-	case "st_within", "stWithin", "within":
-		return "st_within"
-	case "st_contains", "stContains", "geoContains":
-		return "st_contains"
-	case "st_intersects", "stIntersects", "intersects":
-		return "st_intersects"
-	case "st_coveredby", "stCoveredBy", "coveredBy", "covered_by":
-		return "st_coveredby"
-	case "st_covers", "stCovers", "covers":
-		return "st_covers"
-	case "st_touches", "stTouches", "touches":
-		return "st_touches"
-	case "st_overlaps", "stOverlaps", "overlaps":
-		return "st_overlaps"
-	case "near", "geoNear":
-		return "near"
-	default:
-		return ""
-	}
+	return whereop.Canonical(op)
 }
 
 // validateColumnOperators validates operators and values for a column
@@ -1256,12 +1203,7 @@ func validateColumnOperators(operators map[string]any, col core.ColumnInfo, path
 	var errors []WhereValidationError
 
 	validOps := getValidOperators(col.Type, col.Array)
-	validOpsMap := make(map[string]bool)
-	for _, op := range validOps {
-		validOpsMap[op] = true
-	}
-
-	normalizedType := normalizeColumnType(col.Type)
+	normalizedType := string(whereop.Classify(col.Type, col.Array))
 
 	opKeys := make([]string, 0, len(operators))
 	for op := range operators {
@@ -1271,13 +1213,18 @@ func validateColumnOperators(operators map[string]any, col core.ColumnInfo, path
 	for _, op := range opKeys {
 		value := operators[op]
 		opPath := path + "." + op
-		canonicalOp := canonicalWhereOperator(op)
+		canonicalOp, allowed := whereop.Allowed(op, col.Type, col.Array)
 		if canonicalOp == "" {
-			canonicalOp = op
+			errors = append(errors, WhereValidationError{
+				Path:       opPath,
+				Error:      "unknown_operator",
+				Message:    fmt.Sprintf("'%s' is not a GraphJin where operator", op),
+				ColumnType: col.Type,
+				Suggestion: fmt.Sprintf("Valid operators for %s: %v. Express a range as two bounds, e.g. { gte: a, lt: b }.", col.Type, validOps),
+			})
+			continue
 		}
-
-		// Check if operator is valid for this column type
-		if !validOpsMap[canonicalOp] {
+		if !allowed {
 			errors = append(errors, WhereValidationError{
 				Path:       opPath,
 				Error:      "invalid_operator",
@@ -1331,14 +1278,19 @@ func validateOperatorValue(op string, value any, colType string, path string) *W
 	// Validate numeric operators require numeric values
 	numericOps := map[string]bool{"gt": true, "gte": true, "lt": true, "lte": true}
 	if numericOps[op] && colType == "numeric" {
-		switch value.(type) {
+		switch v := value.(type) {
 		case float64, int, int64:
 			// Valid
 		case string:
+			// Large integers and decimals are often passed as strings to keep
+			// their precision; only reject strings that are not numbers.
+			if _, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+				break
+			}
 			return &WhereValidationError{
 				Path:       path,
 				Error:      "type_mismatch",
-				Message:    fmt.Sprintf("Operator '%s' expects numeric value, got string", op),
+				Message:    fmt.Sprintf("Operator '%s' expects a numeric value, got %q", op, v),
 				ColumnType: colType,
 				Suggestion: fmt.Sprintf("Use a number: { %s: 50 } not { %s: \"50\" }", op, op),
 			}
@@ -1346,7 +1298,11 @@ func validateOperatorValue(op string, value any, colType string, path string) *W
 	}
 
 	// Validate text operators require string values
-	textOps := map[string]bool{"like": true, "ilike": true, "regex": true, "iregex": true, "similar": true}
+	textOps := map[string]bool{
+		"like": true, "nlike": true, "ilike": true, "nilike": true,
+		"regex": true, "nregex": true, "iregex": true, "niregex": true,
+		"similar": true, "nsimilar": true,
+	}
 	if textOps[op] {
 		if _, ok := value.(string); !ok {
 			return &WhereValidationError{

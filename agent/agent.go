@@ -13,6 +13,7 @@ import (
 
 	ax "github.com/ax-llm/ax/packages/go"
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/whereop"
 )
 
 const (
@@ -2434,6 +2435,11 @@ func validateWhereClause(where map[string]any, columns map[string]core.ColumnInf
 		}
 		col, ok := columns[key]
 		if !ok {
+			// A key that is not a column but holds no operators is a filter on
+			// a related table, which the compiler validates.
+			if valueMap, isMap := value.(map[string]any); isMap && !hasWhereOperator(valueMap) {
+				continue
+			}
 			errs = append(errs, whereValidationError{Path: currentPath, Error: "unknown_column", Message: fmt.Sprintf("column %q does not exist", key), Suggestion: "Inspect query_catalog for valid table columns."})
 			continue
 		}
@@ -2441,32 +2447,35 @@ func validateWhereClause(where map[string]any, columns map[string]core.ColumnInf
 		if !ok {
 			continue
 		}
-		valid := map[string]bool{}
-		for _, op := range validOperators(col.Type, col.Array) {
-			valid[op] = true
-		}
+		ops := make([]string, 0, len(opMap))
 		for op := range opMap {
-			if !valid[op] {
-				errs = append(errs, whereValidationError{Path: currentPath + "." + op, Error: "invalid_operator", Message: fmt.Sprintf("operator %q is not typical for %s", op, col.Type), Suggestion: "Inspect query_catalog operator_set rows for valid filters."})
+			ops = append(ops, op)
+		}
+		sort.Strings(ops)
+		for _, op := range ops {
+			canonical, allowed := whereop.Allowed(op, col.Type, col.Array)
+			switch {
+			case canonical == "":
+				errs = append(errs, whereValidationError{Path: currentPath + "." + op, Error: "unknown_operator", Message: fmt.Sprintf("%q is not a GraphJin where operator", op), Suggestion: fmt.Sprintf("Valid operators for %s: %s. Express a range as two bounds, e.g. { gte: a, lt: b }.", col.Type, strings.Join(validOperators(col.Type, col.Array), ", "))})
+			case !allowed:
+				errs = append(errs, whereValidationError{Path: currentPath + "." + op, Error: "invalid_operator", Message: fmt.Sprintf("operator %q does not apply to %s columns", op, col.Type), Suggestion: fmt.Sprintf("Valid operators for %s: %s.", col.Type, strings.Join(validOperators(col.Type, col.Array), ", "))})
 			}
 		}
 	}
 	return errs
 }
 
+func hasWhereOperator(m map[string]any) bool {
+	for k := range m {
+		if whereop.Canonical(k) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func validOperators(typ string, array bool) []string {
-	common := []string{"eq", "neq", "in", "not_in", "is_null"}
-	if array {
-		return append(common, "contains", "contained_in", "overlaps")
-	}
-	switch strings.ToLower(typ) {
-	case "int", "integer", "bigint", "smallint", "float", "double", "numeric", "decimal", "date", "datetime", "timestamp", "time":
-		return append(common, "gt", "gte", "lt", "lte")
-	case "text", "varchar", "char", "string", "uuid":
-		return append(common, "like", "ilike", "regex", "iregex")
-	default:
-		return common
-	}
+	return whereop.Operators(typ, array)
 }
 
 func quoteGraphQL(value string) string {
