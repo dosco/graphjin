@@ -1,5 +1,7 @@
 package catalog
 
+import "github.com/dosco/graphjin/core/v3/whereop"
+
 type Feature struct {
 	ID             string
 	Kind           string
@@ -257,12 +259,24 @@ var languageFeatures = []Feature{
 		Name:    "filter operators",
 		Scope:   "where",
 		Summary: "GraphJin where operators are typed by column shape.",
+		// Kept out of Summary: Summary is search-indexed, and the full lists
+		// pull this row into unrelated seed searches.
+		Arguments: []FeatureArg{
+			{Name: "numeric and date/timestamp columns", Values: whereop.FamilyOperators(whereop.Temporal)},
+			{Name: "text columns", Values: whereop.FamilyOperators(whereop.Text)},
+			{Name: "boolean and uuid columns", Values: whereop.FamilyOperators(whereop.Boolean)},
+			{Name: "json columns", Values: whereop.FamilyOperators(whereop.JSON)},
+			{Name: "array columns", Values: whereop.FamilyOperators(whereop.Array)},
+			{Name: "spatial columns", Values: whereop.FamilyOperators(whereop.Geometry)},
+		},
 		Examples: []string{
 			`where: { price: { gt: 50 }, name: { ilike: "%shoe%" }, id: { in: [1, 2, 3] } }`,
+			`where: { created_at: { gte: "2025-01-01", lt: "2026-01-01" } }`,
 		},
 		CommonMistakes: []string{
 			"in/nin require arrays even for one value.",
-			"Numeric and boolean operators require numeric/boolean values, not strings.",
+			"There is no between operator; express a range as two bounds, e.g. { gte: a, lt: b }.",
+			"Numeric operators need numbers (or numeric strings); boolean operators need true/false.",
 		},
 		SuggestedNext: []string{"query_catalog", "validate_where_clause"},
 	},

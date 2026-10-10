@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/dosco/graphjin/core/v3/whereop"
 )
 
 // A join-only remote table is reachable one way and one way only: nested under
@@ -29,16 +31,16 @@ import (
 // to fix. Anything less certain is still offered, because choosing which row to
 // ask about stays the model's job.
 
-// remoteJoinFilterOperators are the comparison and combinator keys GraphJin's
-// where grammar defines. They appear as object keys alongside column names, so
-// a graft check that did not subtract them would reject every filter as
-// referencing unknown "columns".
-var remoteJoinFilterOperators = map[string]bool{
-	"eq": true, "neq": true, "ne": true, "gt": true, "gte": true, "lt": true, "lte": true,
-	"in": true, "nin": true, "like": true, "nlike": true, "ilike": true, "nilike": true,
-	"similar": true, "nsimilar": true, "regex": true, "nregex": true, "iregex": true,
-	"has_key": true, "has_key_any": true, "has_key_all": true, "contains": true,
-	"contained_in": true, "is_null": true, "is": true, "and": true, "or": true, "not": true,
+// isRemoteJoinFilterOperator reports whether a where key is an operator or a
+// combinator rather than a column. They appear as object keys alongside column
+// names, so a graft check that did not subtract them would reject every filter
+// as referencing unknown "columns".
+func isRemoteJoinFilterOperator(key string) bool {
+	switch key {
+	case "and", "or", "not":
+		return true
+	}
+	return whereop.Canonical(key) != ""
 }
 
 const (
@@ -116,7 +118,7 @@ func (r *protocolRuntime) remoteJoinFilter(ctx context.Context, query, root, par
 		allowed[strings.ToLower(strings.TrimSpace(column))] = true
 	}
 	for key := range keys {
-		if remoteJoinFilterOperators[key] {
+		if isRemoteJoinFilterOperator(key) {
 			continue
 		}
 		if !allowed[key] {

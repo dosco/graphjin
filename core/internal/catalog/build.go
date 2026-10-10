@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/sourcecap"
+	"github.com/dosco/graphjin/core/v3/whereop"
 )
 
 func Build(snapshot *MetadataSnapshot, conf any) *Snapshot {
@@ -2301,13 +2302,22 @@ func looksForeignKey(c MetadataColumn) bool {
 }
 
 func looksDateColumn(c MetadataColumn) bool {
-	name := strings.ToLower(c.ColumnName + " " + c.Type)
-	return strings.Contains(name, "date") || strings.Contains(name, "time") || strings.Contains(name, "created_at") || strings.Contains(name, "updated_at")
+	switch whereop.Classify(c.Type, c.Array) {
+	case whereop.Temporal:
+		return true
+	case whereop.Text, whereop.Other:
+		// SQLite and schemaless sources often store dates as text, so the
+		// name is the only hint there. A typed non-date column
+		// (update_count integer, runtime_ms bigint) is never a date.
+		name := strings.ToLower(c.ColumnName)
+		return strings.Contains(name, "date") || strings.Contains(name, "time") || strings.Contains(name, "created_at") || strings.Contains(name, "updated_at")
+	default:
+		return false
+	}
 }
 
 func looksMetricColumn(c MetadataColumn) bool {
-	t := strings.ToLower(c.Type)
-	if !(strings.Contains(t, "int") || strings.Contains(t, "numeric") || strings.Contains(t, "decimal") || strings.Contains(t, "float") || strings.Contains(t, "double") || strings.Contains(t, "money") || strings.Contains(t, "number")) {
+	if whereop.Classify(c.Type, c.Array) != whereop.Numeric {
 		return false
 	}
 	name := strings.ToLower(c.ColumnName)

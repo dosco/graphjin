@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/whereop"
 	"github.com/dosco/graphjin/serv/v3/internal/mcpcompat/mcp"
 )
 
@@ -20,104 +21,16 @@ func capitalizeFirst(s string) string {
 	return s
 }
 
-// operatorTypeMapping defines which operators are valid for each column type
-var operatorTypeMapping = map[string][]string{
-	"numeric":   {"eq", "neq", "gt", "gte", "lt", "lte", "in", "nin", "is_null"},
-	"text":      {"eq", "neq", "like", "ilike", "regex", "iregex", "similar", "in", "nin", "is_null"},
-	"boolean":   {"eq", "neq", "is_null"},
-	"json":      {"has_key", "has_key_any", "has_key_all", "contains", "contained_in", "is_null"},
-	"array":     {"contains", "contained_in", "has_in_common", "is_null"},
-	"geometry":  {"st_dwithin", "st_within", "st_contains", "st_intersects", "st_coveredby", "st_covers", "st_touches", "st_overlaps", "near"},
-	"timestamp": {"eq", "neq", "gt", "gte", "lt", "lte", "in", "is_null"},
-	"uuid":      {"eq", "neq", "in", "nin", "is_null"},
-}
-
-// normalizeColumnType maps database-specific types to general categories
+// normalizeColumnType maps a database-specific column type to the operator
+// family it belongs to: "numeric", "timestamp", "text", "boolean", "json",
+// "uuid", "geometry", "array" or "other".
 func normalizeColumnType(dbType string) string {
-	dbType = strings.ToLower(strings.TrimSpace(dbType))
-	compactedType := strings.ReplaceAll(dbType, " ", "")
-
-	// Dialect-specific boolean aliases must win before numeric detection.
-	if isBooleanColumnType(compactedType) {
-		return "boolean"
-	}
-
-	// Numeric types
-	if strings.Contains(compactedType, "int") ||
-		strings.Contains(compactedType, "serial") ||
-		strings.Contains(compactedType, "decimal") ||
-		strings.Contains(compactedType, "numeric") ||
-		strings.Contains(compactedType, "number") ||
-		strings.Contains(compactedType, "float") ||
-		strings.Contains(compactedType, "double") ||
-		strings.Contains(compactedType, "real") ||
-		strings.Contains(compactedType, "money") {
-		return "numeric"
-	}
-
-	// JSON types
-	if strings.Contains(compactedType, "json") {
-		return "json"
-	}
-
-	// Array types
-	if strings.HasSuffix(compactedType, "[]") || strings.Contains(compactedType, "array") {
-		return "array"
-	}
-
-	// Geometry/Geography types
-	if strings.Contains(compactedType, "geometry") ||
-		strings.Contains(compactedType, "geography") ||
-		strings.Contains(compactedType, "point") ||
-		strings.Contains(compactedType, "polygon") ||
-		strings.Contains(compactedType, "linestring") {
-		return "geometry"
-	}
-
-	// Timestamp/Date types
-	if strings.Contains(compactedType, "timestamp") ||
-		strings.Contains(compactedType, "date") ||
-		strings.Contains(compactedType, "time") {
-		return "timestamp"
-	}
-
-	// UUID types
-	if strings.Contains(compactedType, "uuid") {
-		return "uuid"
-	}
-
-	// Default to text for varchar, char, text, etc.
-	return "text"
+	return string(whereop.Classify(dbType, false))
 }
 
-func isBooleanColumnType(dbType string) bool {
-	switch dbType {
-	case "bool", "boolean", "bit":
-		return true
-	}
-
-	if strings.HasPrefix(dbType, "tinyint(") && strings.HasSuffix(dbType, ")") {
-		return dbType == "tinyint(1)"
-	}
-
-	if strings.HasPrefix(dbType, "number(") && strings.HasSuffix(dbType, ")") {
-		precision := strings.TrimSuffix(strings.TrimPrefix(dbType, "number("), ")")
-		return precision == "1" || precision == "1,0"
-	}
-
-	return false
-}
-
-// getValidOperators returns the valid operators for a given database column type
+// getValidOperators returns the canonical where operators that fit a column.
 func getValidOperators(dbType string, isArray bool) []string {
-	if isArray {
-		return operatorTypeMapping["array"]
-	}
-	normalizedType := normalizeColumnType(dbType)
-	if ops, ok := operatorTypeMapping[normalizedType]; ok {
-		return ops
-	}
-	return operatorTypeMapping["text"] // Default to text operators
+	return whereop.Operators(dbType, isArray)
 }
 
 // registerPrompts is retained as an inert compatibility hook. Prompt guidance
