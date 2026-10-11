@@ -80,6 +80,9 @@ func (c *streamingModeClient) chat(ctx context.Context, request, options map[str
 		noteResample(err)
 		response, err = c.AIClient.Chat(ctx, request, options)
 	}
+	if err == nil {
+		guardResponses([]ax.Value{response})
+	}
 	return response, err
 }
 
@@ -118,7 +121,7 @@ func (c *streamingModeClient) StreamEvents(ctx context.Context, request, options
 		if err != nil {
 			return nil, c.record(err)
 		}
-		return &valueStream{values: values}, nil
+		return &valueStream{values: guardResponses(values)}, nil
 	}
 	stream, err := open()
 	if err != nil {

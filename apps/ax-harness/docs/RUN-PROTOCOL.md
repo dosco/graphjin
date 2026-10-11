@@ -46,7 +46,7 @@ The defaults below apply only when the host does not set a value.
 | Actor code time | The run wall clock, including tool waits | No separate limit |
 | Inline tool result | 100,000 characters | `DEFAULT_RESULT_SIZE_CHARS` |
 | Saved result preview | 1,500 characters | `DEFAULT_PREVIEW_SIZE_CHARS` |
-| Inline results per actor step | 200,000 characters | `DEFAULT_TURN_BUDGET_CHARS` |
+| Inline results per actor step | No limit: results go to actor code, and only printed output reaches the model | `DEFAULT_TURN_BUDGET_CHARS` 200,000 |
 | Stored tool result | 16 MiB; MCP results 8 MiB, below the MCP SDK frame limit | Spilled to a file |
 | Terminal timeout | Default 180 s, maximum 600 s | `TERMINAL_TIMEOUT` default 180, `FOREGROUND_MAX_TIMEOUT` 600 |
 | Terminal output | 50,000 characters, head and tail | `DEFAULT_MAX_BYTES` 50,000 |

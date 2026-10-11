@@ -406,7 +406,8 @@ export class AxEventMapper {
         this.emit({
           type: "tool_end",
           id: `ax-op-${id}`,
-          ...(event.error ? { error: event.error } : { result: event.data }),
+          ...(event.data !== undefined ? { result: event.data } : {}),
+          ...(event.error ? { error: event.error } : {}),
         });
         return;
       }

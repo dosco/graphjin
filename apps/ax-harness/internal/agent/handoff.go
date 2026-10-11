@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
+	"sync"
 
 	ax "github.com/ax-llm/ax/packages/go"
 	axgoja "github.com/ax-llm/ax/packages/go/runtime/goja"
@@ -27,7 +29,7 @@ type handoffRuntime struct {
 	onExecutorError func()
 	onStep          func(title string)
 	onExecute       func(code string, result ax.Value)
-	inline          inlineBudget
+	failures        stepFailures
 }
 
 func (r *handoffRuntime) CreateSession(globals map[string]ax.Value, options map[string]ax.Value) (ax.CodeSession, error) {
@@ -35,7 +37,7 @@ func (r *handoffRuntime) CreateSession(globals map[string]ax.Value, options map[
 	if err != nil {
 		return nil, err
 	}
-	return &handoffSession{CodeSession: base, onExecutorError: r.onExecutorError, onStep: r.onStep, onExecute: r.onExecute, inline: &r.inline}, nil
+	return &handoffSession{CodeSession: base, onExecutorError: r.onExecutorError, onStep: r.onStep, onExecute: r.onExecute, failures: &r.failures}, nil
 }
 
 type handoffSession struct {
@@ -45,12 +47,12 @@ type handoffSession struct {
 	onExecutorError func()
 	onStep          func(title string)
 	onExecute       func(code string, result ax.Value)
-	inline          *inlineBudget
+	failures        *stepFailures
 }
 
 func (s *handoffSession) Execute(code string, options map[string]ax.Value) ax.Value {
-	s.inline.reset()
-	result := s.CodeSession.Execute(code, options)
+	s.failures.take()
+	result := withFailures(s.CodeSession.Execute(code, options), s.failures.take())
 	if s.onExecute != nil {
 		s.onExecute(code, result)
 	}
@@ -266,4 +268,44 @@ func cloneHandoffMap(source map[string]ax.Value) map[string]ax.Value {
 		out[key] = value
 	}
 	return out
+}
+
+// stepFailures collects tool failures and saved references of one actor
+// step, so the step output shows them even when the code ignores the result.
+type stepFailures struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (f *stepFailures) add(line string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lines = append(f.lines, line)
+}
+
+func (f *stepFailures) take() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	lines := f.lines
+	f.lines = nil
+	return lines
+}
+
+func withFailures(result ax.Value, lines []string) ax.Value {
+	step, ok := result.(map[string]ax.Value)
+	if !ok || len(lines) == 0 {
+		return result
+	}
+	if step["is_error"] == true {
+		if text, ok := step["error"].(string); ok {
+			step["error"] = text + "\n" + strings.Join(lines, "\n")
+			return step
+		}
+	}
+	logs := items(step["logs"])
+	for _, line := range lines {
+		logs = append(logs, line)
+	}
+	step["logs"] = logs
+	return step
 }

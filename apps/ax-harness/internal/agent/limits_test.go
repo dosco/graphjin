@@ -193,13 +193,21 @@ func TestLargeToolResultsFollowHermesSizes(t *testing.T) {
 	if err != nil || result.Status != "completed" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	budget := &inlineBudget{}
-	if !budget.take(InlineResultChars) || !budget.take(InlineResultChars) || budget.take(1) {
-		t.Fatal("the per-step inline budget is not 200,000 characters")
-	}
-	budget.reset()
-	if !budget.take(1) {
-		t.Fatal("the inline budget did not reset")
+}
+
+func TestOneStepReceivesManyFullResults(t *testing.T) {
+	model := &scripted{replies: []string{
+		`{"javascriptCode":"final('Read pages',{})"}`,
+		`{"javascriptCode":"for (let i = 0; i < 12; i++) { if (lookup_data({}).reference) throw new Error('page ' + i + ' was saved'); } final('Done',{ok:true});"}`,
+		`Answer: done`,
+	}}
+	server := model.server(t)
+	var mu sync.Mutex
+	calls := 0
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "pages", InputID: "i", Prompt: "p"}, openAIClient(server),
+		Tools{Capabilities: []Capability{echoTool(&calls, &mu, strings.Repeat("y", 30_000))}}, func(Event) error { return nil })
+	if err != nil || result.Status != "completed" || calls != 12 {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
 	}
 }
 

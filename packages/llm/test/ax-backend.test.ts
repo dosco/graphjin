@@ -66,14 +66,16 @@ describe("AxBackend", () => {
       lines: [
         { sequence: 1, type: "run.started" },
         { sequence: 0, type: "thought.delta", data: { version: 0, index: 0, text: "Checking orders" } },
-        { sequence: 2, type: "tool.started", name: "mcp_neko_graphjin_query", operation_id: 1 },
+        { sequence: 2, type: "tool.started", name: "mcp_neko_graphjin_query", operation_id: 1, data: { query: "{ product { productnumber } }" } },
         { sequence: 3, type: "tool.finished", name: "mcp_neko_graphjin_query", operation_id: 1, data: { rows: 3 } },
-        { sequence: 4, type: "tool.started", name: "mcp_neko_ui_render_cards", operation_id: 2 },
-        { sequence: 5, type: "tool.finished", name: "mcp_neko_ui_render_cards", operation_id: 2, data: {} },
-        { sequence: 6, type: "skill.used", name: "sales-review" },
-        { sequence: 7, type: "model.request.finished", observed_model: "claude-sonnet-5-5-20261001", provider: "anthropic" },
+        { sequence: 4, type: "tool.started", name: "mcp_neko_graphjin_query", operation_id: 3, data: { query: "{ product { productnumbe } }" } },
+        { sequence: 5, type: "tool.finished", name: "mcp_neko_graphjin_query", operation_id: 3, error: "mcp_neko_graphjin_query_failed", data: { errors: [{ message: "did you mean productnumber?" }] } },
+        { sequence: 6, type: "tool.started", name: "mcp_neko_ui_render_cards", operation_id: 2 },
+        { sequence: 7, type: "tool.finished", name: "mcp_neko_ui_render_cards", operation_id: 2, data: {} },
+        { sequence: 8, type: "skill.used", name: "sales-review" },
+        { sequence: 9, type: "model.request.finished", observed_model: "claude-sonnet-5-5-20261001", provider: "anthropic" },
         { sequence: 0, type: "answer.delta", data: { version: 0, index: 0, text: "Revenue rose 4%.\n```neko_a2" } },
-        finished({ status: "completed", kind: "answer", answer, usage: { requests: 2, reported: 2, input_tokens: 10, output_tokens: 5, total_tokens: 15, coverage: "complete" } }, 8),
+        finished({ status: "completed", kind: "answer", answer, usage: { requests: 2, reported: 2, input_tokens: 10, output_tokens: 5, total_tokens: 15, coverage: "complete" } }, 10),
       ],
     };
     const events: AgentEvent[] = [];
@@ -82,8 +84,9 @@ describe("AxBackend", () => {
     expect(result).toMatchObject({ status: "completed", rawText: answer });
     expect(events.filter((e) => e.type === "message").map((e) => (e as { content: string }).content).join("")).toBe("Revenue rose 4%.\n```neko_followups\n[\"Why?\"]\n```");
     expect(events).toContainEqual({ type: "progress", id: "ax-summary-1", content: "Checking orders", source: "provider_summary", provider: "anthropic" });
-    expect(events).toContainEqual({ type: "tool_start", id: "ax-op-1", name: "mcp_neko_graphjin_query" });
+    expect(events).toContainEqual({ type: "tool_start", id: "ax-op-1", name: "mcp_neko_graphjin_query", input: { query: "{ product { productnumber } }" } });
     expect(events).toContainEqual({ type: "tool_end", id: "ax-op-1", result: { rows: 3 } });
+    expect(events).toContainEqual({ type: "tool_end", id: "ax-op-3", error: "mcp_neko_graphjin_query_failed", result: { errors: [{ message: "did you mean productnumber?" }] } });
     expect(events.some((e) => e.type === "tool_start" && e.name === "mcp_neko_ui_render_cards")).toBe(false);
     expect(events).toContainEqual({ type: "tool_start", id: "ax-skill-sales-review", name: "skill_used", input: { path: "/tmp/neko-ax/org/skills/sales-review/SKILL.md" } });
     expect(events).toContainEqual({

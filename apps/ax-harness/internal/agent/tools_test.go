@@ -226,3 +226,51 @@ func TestSkillDescriptionsFollowAgentSkillsLimit(t *testing.T) {
 		t.Fatal("1,025-character description admitted")
 	}
 }
+
+func TestGraphQLErrorsReachTheModelAndRepeatsStop(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Read products',{})"}`,
+		`{"javascriptCode":"const r = await query({q:'bad'}); console.log('done');"}`,
+		`{"javascriptCode":"await query({q:'bad'}); await query({q:'bad'}); console.log('again');"}`,
+		`{"javascriptCode":"final('Report',{})"}`,
+		`Answer: The products could not be read.`,
+	}
+	var calls, tools atomic.Int32
+	var mu sync.Mutex
+	var bodies []string
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(body))
+		mu.Unlock()
+		index := int(calls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer model.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	tool := Capability{Name: "query", Version: "1", Origin: "fixture", Effect: "read", Description: "Query data.", InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		tools.Add(1)
+		return json.RawMessage(`{"content":["failed"],"structured_content":{"data":null,"errors":[{"message":"field 'productnumbe' is not a column; did you mean productnumber?"}]},"is_error":false}`), nil
+	}}
+	var failed int
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "graphql-errors", InputID: "input", Prompt: "Read products"},
+		client, Tools{Capabilities: []Capability{tool}}, func(event Event) error {
+			if event.Type == "tool.finished" && event.Error == "query_failed" && len(event.Data) > 0 {
+				failed++
+			}
+			return nil
+		})
+	if err != nil || result.Status != "completed" || tools.Load() != 2 || failed != 2 {
+		t.Fatalf("result=%+v err=%v tools=%d failed=%d", result, err, tools.Load(), failed)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !strings.Contains(bodies[2], "did you mean productnumber") || !strings.Contains(bodies[3], "already failed 2 times") {
+		t.Fatalf("failures did not reach the model")
+	}
+}
