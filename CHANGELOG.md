@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.21.1](https://github.com/open-neko/openneko/compare/v3.21.0...v3.21.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **sandbox:** apply warm sandbox policy in about 1 s ([#447](https://github.com/open-neko/openneko/issues/447)) ([1b9eab4](https://github.com/open-neko/openneko/commit/1b9eab482ed10026f28f188ab237ebadc48ce1ca))
+
 ## [3.21.0](https://github.com/open-neko/openneko/compare/v3.20.0...v3.21.0) (2026-10-11)
 
 
