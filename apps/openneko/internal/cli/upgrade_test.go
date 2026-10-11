@@ -242,6 +242,7 @@ ghcr.io/open-neko/plugin-base:v0.9.0
 func TestExtraUpgradeImageRefsDedupesOverrides(t *testing.T) {
 	t.Setenv("OPENNEKO_AGENT_IMAGE", "custom/agent:v1")
 	t.Setenv("OPENNEKO_PLUGIN_BASE_IMAGE", "custom/agent:v1")
+	t.Setenv("OPENNEKO_SUPERVISOR_IMAGE", "custom/agent:v1")
 	got := extraUpgradeImageRefs("v2.0.0")
 	want := []string{"custom/agent:v1"}
 	if !reflect.DeepEqual(got, want) {

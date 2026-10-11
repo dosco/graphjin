@@ -135,6 +135,14 @@ jobs:
             file: docker/plugin-base.Dockerfile
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+          - image: openshell-supervisor
+            file: docker/openshell-supervisor.Dockerfile
+            platform: linux/amd64
+            runner: ubuntu-22.04
+          - image: openshell-supervisor
+            file: docker/openshell-supervisor.Dockerfile
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
         with:
@@ -219,7 +227,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [neko-web, neko-worker, neko-embedding, neko-librarian, neko-graphjin, records-graphjin, neko-cli, neko-db, records-db, neko-backup, agent, plugin-base]
+        image: [neko-web, neko-worker, neko-embedding, neko-librarian, neko-graphjin, records-graphjin, neko-cli, neko-db, records-db, neko-backup, agent, plugin-base, openshell-supervisor]
     steps:
       - name: Resolve release tag
         id: tag
@@ -304,7 +312,7 @@ jobs:
             "${{ matrix.arch }}" \
             "$MAX_MIB" \
             neko-web neko-worker neko-embedding neko-librarian neko-graphjin records-graphjin neko-cli \
-            neko-db records-db neko-backup agent plugin-base \
+            neko-db records-db neko-backup agent plugin-base openshell-supervisor \
             postgres:16-alpine busybox:latest \
             "ghcr.io/nvidia/openshell/gateway:${OPENSHELL_VERSION:-0.1.2}"
 

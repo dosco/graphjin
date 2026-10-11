@@ -41,6 +41,16 @@ services:
     restart: "no"
     command: ["node", "--version"]
 
+  supervisor-image:
+    image: ${OPENNEKO_SUPERVISOR_IMAGE:-openneko-supervisor:dev}
+    build:
+      context: .
+      dockerfile: docker/openshell-supervisor.Dockerfile
+      args:
+        OPENSHELL_VERSION: ${OPENSHELL_VERSION:-0.1.2}
+    restart: "no"
+    command: ["--version"]
+
   # Generate the mTLS PKI (CA + server + client + JWT signing key). Distroless
   # image → run the binary directly. The state dir is mounted at an identical
   # path so generate-certs' temp-dir rename stays on one device (requirement #2).
@@ -119,10 +129,10 @@ services:
         chmod a+r "$$tmp"
         mv "$$tmp" "$$REG/metadata.json"
         tmp="/config/openshell/gateway.toml.tmp.$$$$"
-        printf '[openshell]\nversion = 2\n\n[openshell.gateway]\ncompute_driver = "docker"\nguest_tls_ca = "%s/pki/ca.crt"\nguest_tls_cert = "%s/pki/client/tls.crt"\nguest_tls_key = "%s/pki/client/tls.key"\n\n[openshell.gateway.gateway_jwt]\nsigning_key_path = "%s/pki/jwt/signing.pem"\npublic_key_path = "%s/pki/jwt/public.pem"\nkid_path = "%s/pki/jwt/kid"\ngateway_id = "%s"\n\n[openshell.drivers.docker]\nsandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:%s"\nsupervisor_image = "ghcr.io/nvidia/openshell/supervisor:%s"\nimage_pull_policy = "if_not_present"\nsandbox_label = "%s"\ngrpc_endpoint = "https://127.0.0.1:%s"\napp_armor_profile = "Unconfined"\n' \
+        printf '[openshell]\nversion = 2\n\n[openshell.gateway]\ncompute_driver = "docker"\nguest_tls_ca = "%s/pki/ca.crt"\nguest_tls_cert = "%s/pki/client/tls.crt"\nguest_tls_key = "%s/pki/client/tls.key"\n\n[openshell.gateway.gateway_jwt]\nsigning_key_path = "%s/pki/jwt/signing.pem"\npublic_key_path = "%s/pki/jwt/public.pem"\nkid_path = "%s/pki/jwt/kid"\ngateway_id = "%s"\n\n[openshell.drivers.docker]\nsandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:%s"\nsupervisor_image = "%s"\nimage_pull_policy = "if_not_present"\nsandbox_label = "%s"\ngrpc_endpoint = "https://127.0.0.1:%s"\napp_armor_profile = "Unconfined"\n' \
           "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" \
           "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" \
-          "$$OPENNEKO_COMPOSE_NETWORK" "${OPENSHELL_VERSION:-0.1.2}" "${OPENSHELL_VERSION:-0.1.2}" "$$OPENNEKO_COMPOSE_NETWORK" "${OPENSHELL_PORT:-18080}" \
+          "$$OPENNEKO_COMPOSE_NETWORK" "${OPENSHELL_VERSION:-0.1.2}" "${OPENNEKO_SUPERVISOR_IMAGE:-openneko-supervisor:dev}" "$$OPENNEKO_COMPOSE_NETWORK" "${OPENSHELL_PORT:-18080}" \
           > "$$tmp"
         chmod a+r "$$tmp"
         mv "$$tmp" /config/openshell/gateway.toml
@@ -181,6 +191,8 @@ services:
       - "${OPENSHELL_PORT:-18080}"
     depends_on:
       openshell-reg:
+        condition: service_completed_successfully
+      supervisor-image:
         condition: service_completed_successfully
       # This private one-shot also provisions the gateway's dedicated DB role.
       neko-migrate:

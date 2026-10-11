@@ -111,10 +111,10 @@ services:
         chmod a+r "$$tmp"
         mv "$$tmp" "$$REG/metadata.json"
         tmp="/config/openshell/gateway.toml.tmp.$$$$"
-        printf '[openshell]\nversion = 2\n\n[openshell.gateway]\ncompute_driver = "docker"\nguest_tls_ca = "%s/pki/ca.crt"\nguest_tls_cert = "%s/pki/client/tls.crt"\nguest_tls_key = "%s/pki/client/tls.key"\n\n[openshell.gateway.gateway_jwt]\nsigning_key_path = "%s/pki/jwt/signing.pem"\npublic_key_path = "%s/pki/jwt/public.pem"\nkid_path = "%s/pki/jwt/kid"\ngateway_id = "%s"\n\n[openshell.drivers.docker]\nsandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:%s"\nsupervisor_image = "ghcr.io/nvidia/openshell/supervisor:%s"\nimage_pull_policy = "if_not_present"\nsandbox_label = "%s"\ngrpc_endpoint = "https://127.0.0.1:%s"\napp_armor_profile = "Unconfined"\n' \
+        printf '[openshell]\nversion = 2\n\n[openshell.gateway]\ncompute_driver = "docker"\nguest_tls_ca = "%s/pki/ca.crt"\nguest_tls_cert = "%s/pki/client/tls.crt"\nguest_tls_key = "%s/pki/client/tls.key"\n\n[openshell.gateway.gateway_jwt]\nsigning_key_path = "%s/pki/jwt/signing.pem"\npublic_key_path = "%s/pki/jwt/public.pem"\nkid_path = "%s/pki/jwt/kid"\ngateway_id = "%s"\n\n[openshell.drivers.docker]\nsandbox_runtime_image = "ghcr.io/nvidia/openshell/sandbox:%s"\nsupervisor_image = "%s"\nimage_pull_policy = "if_not_present"\nsandbox_label = "%s"\ngrpc_endpoint = "https://127.0.0.1:%s"\napp_armor_profile = "Unconfined"\n' \
           "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" \
           "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" "${OPENSHELL_STATE_DIR:-/var/lib/openneko/openshell}" \
-          "$$OPENNEKO_COMPOSE_NETWORK" "${OPENSHELL_VERSION:-0.1.2}" "${OPENSHELL_VERSION:-0.1.2}" "$$OPENNEKO_COMPOSE_NETWORK" "${OPENSHELL_PORT:-18080}" \
+          "$$OPENNEKO_COMPOSE_NETWORK" "${OPENSHELL_VERSION:-0.1.2}" "${OPENNEKO_SUPERVISOR_IMAGE:-ghcr.io/open-neko/openshell-supervisor:${OPENNEKO_VERSION:-latest}}" "$$OPENNEKO_COMPOSE_NETWORK" "${OPENSHELL_PORT:-18080}" \
           > "$$tmp"
         chmod a+r "$$tmp"
         mv "$$tmp" /config/openshell/gateway.toml

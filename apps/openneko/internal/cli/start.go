@@ -211,6 +211,7 @@ func bringUpStack(ctx context.Context, cmd *cobra.Command, mode compose.Mode, op
 	for _, img := range []string{
 		agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), os.Getenv("OPENNEKO_VERSION")),
 		pluginBaseImageRef(os.Getenv("OPENNEKO_PLUGIN_BASE_IMAGE"), os.Getenv("OPENNEKO_VERSION")),
+		supervisorImageRef(os.Getenv("OPENNEKO_SUPERVISOR_IMAGE"), os.Getenv("OPENNEKO_VERSION")),
 	} {
 		if !opts.quiet {
 			fmt.Fprintf(os.Stderr, "Pre-pulling sandbox image %s ...\n", img)

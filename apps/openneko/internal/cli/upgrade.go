@@ -359,6 +359,7 @@ func extraUpgradeImageRefs(version string) []string {
 	return uniqueStrings([]string{
 		agentImageRef(os.Getenv("OPENNEKO_AGENT_IMAGE"), version),
 		pluginBaseImageRef(os.Getenv("OPENNEKO_PLUGIN_BASE_IMAGE"), version),
+		supervisorImageRef(os.Getenv("OPENNEKO_SUPERVISOR_IMAGE"), version),
 	})
 }
 
@@ -367,6 +368,13 @@ func pluginBaseImageRef(override, version string) string {
 		return override
 	}
 	return "ghcr.io/open-neko/plugin-base:" + version
+}
+
+func supervisorImageRef(override, version string) string {
+	if override != "" {
+		return override
+	}
+	return "ghcr.io/open-neko/openshell-supervisor:" + version
 }
 
 func pruneOldOpenNekoImages(ctx context.Context, targetTag string, stdout, stderr *os.File) error {
@@ -422,15 +430,16 @@ func openNekoImageRepos() map[string]bool {
 		"ghcr.io/open-neko/records-db":  true,
 		"ghcr.io/open-neko/neko-backup": true,
 		// Legacy image retained so the first upgrade after its removal prunes it.
-		"ghcr.io/open-neko/records-storage-ops": true,
-		"ghcr.io/open-neko/neko-graphjin":       true,
-		"ghcr.io/open-neko/records-graphjin":    true,
-		"ghcr.io/open-neko/neko-web":            true,
-		"ghcr.io/open-neko/neko-worker":         true,
-		"ghcr.io/open-neko/neko-embedding":      true,
-		"ghcr.io/open-neko/neko-librarian":      true,
-		"ghcr.io/open-neko/agent":               true,
-		"ghcr.io/open-neko/plugin-base":         true,
+		"ghcr.io/open-neko/records-storage-ops":  true,
+		"ghcr.io/open-neko/neko-graphjin":        true,
+		"ghcr.io/open-neko/records-graphjin":     true,
+		"ghcr.io/open-neko/neko-web":             true,
+		"ghcr.io/open-neko/neko-worker":          true,
+		"ghcr.io/open-neko/neko-embedding":       true,
+		"ghcr.io/open-neko/neko-librarian":       true,
+		"ghcr.io/open-neko/agent":                true,
+		"ghcr.io/open-neko/plugin-base":          true,
+		"ghcr.io/open-neko/openshell-supervisor": true,
 	}
 }
 

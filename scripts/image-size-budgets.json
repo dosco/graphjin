@@ -10,6 +10,7 @@
   "neko-backup": 190,
   "agent": 800,
   "plugin-base": 100,
+  "openshell-supervisor": 70,
   "uniqueStack": 2500,
   "neko-embedding": 200
 }
