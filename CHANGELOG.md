@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.21.0](https://github.com/open-neko/openneko/compare/v3.20.0...v3.21.0) (2026-10-11)
+
+
+### Features
+
+* **ax:** keep the letter r before line breaks and show tool failures to the model ([#445](https://github.com/open-neko/openneko/issues/445)) ([ebd5392](https://github.com/open-neko/openneko/commit/ebd539263093dc090cd60f260fce1c5916a3b7b2))
+
 ## [3.20.0](https://github.com/open-neko/openneko/compare/v3.19.0...v3.20.0) (2026-10-09)
 
 
