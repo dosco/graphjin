@@ -718,6 +718,9 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		runtimeOptions["usageInstructions"] = runtimeInstructionText(a.catalogSearch) + "\n\n" + preparedDiscoveryInstructions + selectedGuides.String()
 	}
 	program = a.newProgram(agentSignature, options)
+	if prepared != nil {
+		installPreparedHandoff(ctx, program, prepared, a.runtime, req)
+	}
 	// Ax resolves both portable controls against the deployment profile and
 	// model rules, and rejects unsupported explicit values before transport.
 	// GraphJin only carries the operator's choices through.

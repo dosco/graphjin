@@ -461,7 +461,7 @@ func TestPreparedEvidenceSurvivesRealAxStageHandoff(t *testing.T) {
 	a := newAgent(Config{Selection: SelectionConfig{Enabled: true, Provider: "typesafe"}}, rt,
 		WithClientFactory(func(Config) (ax.AIClient, error) { return client, nil }),
 		WithSelectionProgramFactory(selectionFactory(selectRelevant)))
-	response, err := a.Run(context.Background(), Request{Instruction: "show invoices"})
+	response, err := a.Run(context.Background(), Request{Instruction: "show invoices", Context: map[string]any{"needs_interpretation": true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,10 +485,9 @@ func TestPreparedEvidenceSurvivesRealAxStageHandoff(t *testing.T) {
 func TestRealAxCanRecoverAnOmittedPermittedGuide(t *testing.T) {
 	rt := selectionFixture()
 	client := &recordingClient{responses: []string{
-		`{"javascriptCode":"const prepared = await use_prepared_catalog({}); await final('Show the invoices from live data.', {prepared});"}`,
-		`{"javascriptCode":"void graphjinDistilledContext.prepared; await discover({skills:['code_read']});"}`,
+		`{"javascriptCode":"void inputs.context._graphjin_prepared; await discover({skills:['code_read']});"}`,
 		`{"javascriptCode":"await used('code_read', 'Applied the loaded guide');"}`,
-		`{"javascriptCode":"const execution = await execute_graphql({query:'query { invoices { id } }'}); await final('Answer from the returned invoice data.', {execution});"}`,
+		`{"javascriptCode":"await query_catalog({id:'table:db:public.invoices'}); const execution = await execute_graphql({query:'query { invoices { id } }'}); await final('Answer from the returned invoice data.', {execution});"}`,
 		`{"status":"answered","answer":"Found invoice 1."}`,
 	}}
 	a := newAgent(Config{Selection: SelectionConfig{Enabled: true, Provider: "typesafe"}}, rt, WithClientFactory(func(Config) (ax.AIClient, error) { return client, nil }), WithSelectionProgramFactory(selectionFactory(selectRelevant)))
@@ -499,7 +498,7 @@ func TestRealAxCanRecoverAnOmittedPermittedGuide(t *testing.T) {
 	if response.Status != StatusAnswered || response.Preparation.SkillReloads != 1 || len(response.Skills) != 1 || response.Skills[0].ID != skillCodeRead {
 		t.Fatalf("guide recovery: status=%s reloads=%d used=%+v calls=%d", response.Status, response.Preparation.SkillReloads, response.Skills, len(client.calls))
 	}
-	if len(client.calls) != 5 || !strings.Contains(dumpAXValue(client.calls[2].values), "Skill: code_read") {
+	if len(client.calls) != 4 || !strings.Contains(dumpAXValue(client.calls[1].values), "Skill: code_read") {
 		t.Fatal("loaded guide absent from next executor prompt")
 	}
 }
