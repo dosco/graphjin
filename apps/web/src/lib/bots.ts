@@ -1,4 +1,4 @@
-import { and, asc, bot, db, desc, eq, inArray, sql, subscription, watcher, work_thread, workflow_definition } from "@neko/db";
+import { and, asc, bot, db, desc, eq, inArray, sql, subscription, watcher, work_thread, workflow_definition, workflow_run } from "@neko/db";
 import { nekoCoats } from "@neko/avatars";
 import { BOT_INSTRUCTIONS_MAX } from "@neko/llm/work";
 import { describeSchedule } from "@/lib/cron-english";
@@ -80,7 +80,37 @@ export async function getBotByThread(orgId: string, userId: string, threadId: st
   return row ? summary(row, null) : null;
 }
 
-export type BotRoutine = { id: string; name: string; schedule: string; enabled: boolean };
+export type BotRoutineRun = { status: string; at: string; summary: string };
+
+export type BotRoutine = {
+  id: string;
+  name: string;
+  schedule: string;
+  enabled: boolean;
+  description: string;
+  steps: string[];
+  lastRun: BotRoutineRun | null;
+};
+
+const RUN_SUMMARY_MAX = 400;
+
+export function plainSummary(text: string): string {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#*_`>|]+/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  return plain.length > RUN_SUMMARY_MAX ? `${plain.slice(0, RUN_SUMMARY_MAX - 1).trimEnd()}…` : plain;
+}
+
+export function stepTexts(steps: unknown): string[] {
+  if (!Array.isArray(steps)) return [];
+  return steps
+    .map((step) => (step && typeof step === "object" && "description" in step ? String(step.description ?? "") : ""))
+    .map((text) => text.trim())
+    .filter(Boolean);
+}
 
 export type BotLookPatch = {
   name?: string;
@@ -134,6 +164,9 @@ export async function getBotDetail(orgId: string, userId: string, botId: string)
         .select({
           id: workflow_definition.id,
           name: workflow_definition.name,
+          description: workflow_definition.description,
+          goal: workflow_definition.goal,
+          steps: workflow_definition.steps,
           cron: workflow_definition.cron,
           timezone: workflow_definition.cron_timezone,
           cronEnabled: workflow_definition.cron_enabled,
@@ -144,7 +177,7 @@ export async function getBotDetail(orgId: string, userId: string, botId: string)
         .orderBy(asc(workflow_definition.created_at))
     : [];
   const ids = routines.map((r) => r.id);
-  const [watches, events] = ids.length
+  const [watches, events, runs] = ids.length
     ? await Promise.all([
         db()
           .select({ workflowId: watcher.workflow_id, cadence: watcher.cadence_seconds })
@@ -154,13 +187,24 @@ export async function getBotDetail(orgId: string, userId: string, botId: string)
           .select({ workflowId: subscription.workflow_id, source: subscription.source_kind })
           .from(subscription)
           .where(and(eq(subscription.org_id, orgId), inArray(subscription.workflow_id, ids))),
+        db()
+          .selectDistinctOn([workflow_run.workflow_id], {
+            workflowId: workflow_run.workflow_id,
+            status: workflow_run.status,
+            at: sql<Date>`coalesce(${workflow_run.finished_at}, ${workflow_run.started_at}, ${workflow_run.created_at})`,
+            summary: workflow_run.summary,
+          })
+          .from(workflow_run)
+          .where(and(eq(workflow_run.org_id, orgId), inArray(workflow_run.workflow_id, ids)))
+          .orderBy(workflow_run.workflow_id, desc(workflow_run.created_at)),
       ])
-    : [[], []];
+    : [[], [], []];
   return {
     bot: summary(row, null),
     routines: routines.map((r): BotRoutine => {
       const watch = watches.find((w) => w.workflowId === r.id);
       const event = events.find((e) => e.workflowId === r.id);
+      const run = runs.find((x) => x.workflowId === r.id);
       return {
         id: r.id,
         name: r.name,
@@ -170,6 +214,15 @@ export async function getBotDetail(orgId: string, userId: string, botId: string)
             ? `Runs on each ${event.source.replace(/[_.-]+/g, " ")} event`
             : describeSchedule(r.cron, r.timezone, r.cronEnabled),
         enabled: r.enabled,
+        description: (r.description || r.goal).trim(),
+        steps: stepTexts(r.steps),
+        lastRun: run
+          ? {
+              status: run.status,
+              at: new Date(run.at).toISOString(),
+              summary: run.status === "completed" ? plainSummary(run.summary ?? "") : "",
+            }
+          : null,
       };
     }),
   };

@@ -7,7 +7,9 @@ import type { BotRoutine } from "@/lib/bots";
 import type { BotSummary } from "@/lib/bots";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink, IconButton } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
 import { EmptyState } from "@/components/ui/empty";
+import { LocalDateTime } from "@/components/ui/local-date-time";
 import { Field, FieldInput, Textarea } from "@/components/ui/field";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { BotAvatar } from "./BotAvatar";
@@ -17,6 +19,14 @@ import { useBots } from "./useBots";
 type Detail = { bot: BotSummary; routines: BotRoutine[] };
 
 const ADD_ROUTINE_SEED = "Add a routine: ";
+
+const RUN_STATUS: Record<string, string> = {
+  completed: "Finished",
+  failed: "Failed",
+  cancelled: "Stopped",
+  running: "Running",
+  queued: "Waiting to run",
+};
 
 type Part = "name" | "instructions" | "look";
 
@@ -227,22 +237,54 @@ export default function BotInfo({ botId }: { botId: string }) {
             No routines yet. Ask the bot to do something on a schedule or when a number changes.
           </p>
         ) : (
-          <ul className="chat-list">
+          <ul className="bot-routines">
             {routines.map((routine) => (
-              <li key={routine.id} className="bot-routine">
-                <span className="bot-routine-copy">
-                  <span className="chat-row-title">{routine.name}</span>
-                  <span className="chat-row-time">{routine.schedule}</span>
-                </span>
-                <Badge variant={routine.enabled ? "live" : "muted"}>{routine.enabled ? "On" : "Paused"}</Badge>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={routineBusy === routine.id}
-                  onClick={() => void toggleRoutine(routine)}
+              <li key={routine.id}>
+                <Disclosure
+                  title={
+                    <span className="bot-routine-copy">
+                      <span className="chat-row-title">{routine.name}</span>
+                      <span className="chat-row-time">{routine.schedule}</span>
+                    </span>
+                  }
+                  meta={<Badge variant={routine.enabled ? "live" : "muted"}>{routine.enabled ? "On" : "Paused"}</Badge>}
                 >
-                  {routine.enabled ? "Pause" : "Resume"}
-                </Button>
+                  <div className="bot-routine-body">
+                    {routine.description ? <p className="bot-info-copy">{routine.description}</p> : null}
+                    {routine.steps.length ? (
+                      <div>
+                        <h3 className="bot-routine-label">Steps</h3>
+                        <ol className="bot-routine-steps">
+                          {routine.steps.map((step, index) => (
+                            <li key={index}>{step}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    ) : null}
+                    <div>
+                      <h3 className="bot-routine-label">Last run</h3>
+                      {routine.lastRun ? (
+                        <p className="bot-info-copy">
+                          {RUN_STATUS[routine.lastRun.status] ?? "Ran"} ·{" "}
+                          <LocalDateTime value={routine.lastRun.at} relativeDay />
+                          {routine.lastRun.summary ? <span className="bot-routine-summary">{routine.lastRun.summary}</span> : null}
+                        </p>
+                      ) : (
+                        <p className="bot-info-copy">It has not run yet.</p>
+                      )}
+                    </div>
+                    <div className="bot-info-actions">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={routineBusy === routine.id}
+                        onClick={() => void toggleRoutine(routine)}
+                      >
+                        {routine.enabled ? "Pause" : "Resume"}
+                      </Button>
+                    </div>
+                  </div>
+                </Disclosure>
               </li>
             ))}
           </ul>
