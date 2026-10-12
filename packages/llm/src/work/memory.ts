@@ -366,6 +366,74 @@ export async function archiveWorkMemory(
   return true;
 }
 
+/**
+ * An agent edits a memory its run can see. A member's run edits through
+ * their personal layer (copy-on-write for team rows); a team-layer run
+ * rewrites the team row in place.
+ */
+export async function updateWorkMemoryForRun(input: {
+  orgId: string;
+  runId: string | null;
+  threadId?: string | null;
+  memoryId: string;
+  text: string;
+}): Promise<WorkMemory> {
+  const text = input.text.trim();
+  if (!text) throw new Error("Memory text is empty");
+  const layerUserId = await resolveRunMemoryLayer(input.runId);
+  const teamMemory = input.runId ? await runTeamMemory(input.orgId, input.runId) : undefined;
+  const [visible] = await db()
+    .select()
+    .from(work_memory)
+    .where(
+      and(
+        eq(work_memory.org_id, input.orgId),
+        eq(work_memory.id, input.memoryId),
+        isNull(work_memory.archived_at),
+        layerVisibilityFilter(layerUserId, teamMemory),
+      ),
+    )
+    .limit(1);
+  const target = visible ? rowToMemory(visible) : null;
+  if (!target?.integrityOk) throw new Error(`Memory not found: ${input.memoryId}`);
+  if (layerUserId) {
+    return overrideWorkMemoryForUser({
+      orgId: input.orgId,
+      userId: layerUserId,
+      memoryId: target.id,
+      text,
+      runId: input.runId,
+      threadId: input.threadId ?? null,
+    });
+  }
+  const rows = await db()
+    .update(work_memory)
+    .set({
+      text,
+      integrity_hmac: memoryIntegrityHmac({
+        orgId: input.orgId,
+        userId: null,
+        kind: target.kind,
+        scope: target.scope,
+        scopeId: target.scopeId,
+        text,
+      }),
+      embedding: null,
+      updated_at: new Date(),
+    })
+    .where(and(eq(work_memory.org_id, input.orgId), eq(work_memory.id, target.id)))
+    .returning();
+  await insertWorkMemoryEvent({
+    orgId: input.orgId,
+    memoryId: target.id,
+    runId: input.runId,
+    threadId: input.threadId ?? null,
+    action: "update",
+    payload: { previousText: target.text, text },
+  });
+  return rowToMemory(rows[0]);
+}
+
 export async function getWorkMemory(orgId: string, id: string): Promise<WorkMemory | null> {
   const rows = await db()
     .select()

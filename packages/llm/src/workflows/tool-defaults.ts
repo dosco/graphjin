@@ -25,6 +25,7 @@ export const WORKFLOW_RUNNER_DEFAULT_ALLOWED_TOOLS = [
   "mcp_neko_ui_render_cards",
   "mcp_neko_memory_search",
   "mcp_neko_memory_save",
+  "mcp_neko_memory_update",
   "mcp_neko_library_search",
   "mcp_neko_workflow_output_emit",
   "mcp_neko_action_request",
