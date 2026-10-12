@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.24.0](https://github.com/open-neko/openneko/compare/v3.23.1...v3.24.0) (2026-10-12)
+
+
+### Features
+
+* **web:** rename a bot from the top of its info page ([34b72ea](https://github.com/open-neko/openneko/commit/34b72ea3aa45237b66c5cf6c209287297b693c28))
+
 ## [3.23.1](https://github.com/open-neko/openneko/compare/v3.23.0...v3.23.1) (2026-10-12)
 
 
