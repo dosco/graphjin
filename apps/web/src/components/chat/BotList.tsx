@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { Star } from "lucide-react";
 import type { BotSummary } from "@/lib/bots";
 import { LocalDateTime } from "@/components/ui/local-date-time";
+import { prefetchThread, prefetchVisibleThreads } from "@/lib/thread-cache";
 import { BotAvatar } from "./BotAvatar";
 
 export function BotList({
@@ -15,8 +17,17 @@ export function BotList({
   activeThreadId?: string | null;
   compact?: boolean;
 }) {
+  const listRef = useRef<HTMLUListElement | null>(null);
+
+  // Phones have no hover: fetch the chats on screen while the browser is idle.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    return prefetchVisibleThreads(list.querySelectorAll<HTMLElement>("[data-thread-id]"));
+  }, [bots]);
+
   return (
-    <ul className={`chat-list${compact ? " is-compact" : ""}`}>
+    <ul ref={listRef} className={`chat-list${compact ? " is-compact" : ""}`}>
       {bots.map((bot) => {
         const active = Boolean(bot.threadId) && bot.threadId === activeThreadId;
         return (
@@ -24,7 +35,11 @@ export function BotList({
             <Link
               href={bot.threadId ? `/chat/t/${bot.threadId}` : "/chat"}
               className={`chat-row${active ? " is-active" : ""}`}
+              data-thread-id={bot.threadId ?? undefined}
               aria-current={active ? "page" : undefined}
+              onMouseEnter={() => prefetchThread(bot.threadId)}
+              onFocus={() => prefetchThread(bot.threadId)}
+              onTouchStart={() => prefetchThread(bot.threadId)}
             >
               <BotAvatar
                 coat={bot.coat}

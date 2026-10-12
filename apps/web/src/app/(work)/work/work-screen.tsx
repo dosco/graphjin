@@ -113,6 +113,10 @@ import WorkHistoryDrawer from "@/components/WorkHistoryDrawer";
 import BotGreeting from "@/components/chat/BotGreeting";
 import { useThreadBot } from "@/components/chat/useThreadBot";
 import { ThreadJump } from "@/components/chat/ThreadJump";
+import { BotAvatar } from "@/components/chat/BotAvatar";
+import { botStateForRun, useSetBotMood } from "@/components/chat/bot-mood";
+import type { NekoState } from "@neko/avatars";
+import { CHAT_PAGE_RUNS, cachedThread, fetchThreadPage, rememberThread } from "@/lib/thread-cache";
 import {
   ActionRequestCard,
   RuleSavedCard,
@@ -135,7 +139,7 @@ import {
   type WorkMention,
 } from "@/lib/workflow-mention";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonList } from "@/components/ui/skeleton";
 import { printThread } from "@/lib/print-thread";
 import { Button, IconButton } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/field";
@@ -262,7 +266,6 @@ type ThreadBundle = {
   hasOlder?: boolean;
 };
 
-const CHAT_PAGE_RUNS = 20;
 
 function prependOlder(prev: ThreadBundle, older: ThreadBundle): ThreadBundle {
   const runIds = new Set(prev.runs.map((run) => run.id));
@@ -417,6 +420,8 @@ export default function WorkScreen() {
   const [draftMentions, setDraftMentions] = useState<DraftWorkMention[]>([]);
   const mentionOptionsLoadedRef = useRef(false);
   const [loadingThread, setLoadingThread] = useState(false);
+  const routeThreadIdRef = useRef(routeThreadId);
+  routeThreadIdRef.current = routeThreadId;
   const [loadingOlder, setLoadingOlder] = useState(false);
   const olderSentinelRef = useRef<HTMLDivElement | null>(null);
   const keepOffsetRef = useRef<number | null>(null);
@@ -591,6 +596,10 @@ export default function WorkScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inBotChat, loadingThread, activeThreadId]);
 
+  useEffect(() => {
+    if (inBotChat && activeThreadId && bundle && !loadingThread) rememberThread(activeThreadId, bundle);
+  }, [inBotChat, activeThreadId, bundle, loadingThread]);
+
   useLayoutEffect(() => {
     if (keepOffsetRef.current === null) return;
     window.scrollTo({ top: document.documentElement.scrollHeight - keepOffsetRef.current, behavior: "instant" });
@@ -681,12 +690,22 @@ export default function WorkScreen() {
   }
 
   async function loadThread(threadId: string) {
-    setLoadingThread(true);
+    // A bot chat opened before shows at once and refreshes in the background.
+    const cached = inBotChat ? cachedThread<ThreadBundle>(threadId) : null;
+    if (cached) {
+      setBundle(withAssistantTimelinePlaceholders(cached));
+      activeThreadIdRef.current = threadId;
+      setActiveThreadId(threadId);
+    } else {
+      setLoadingThread(true);
+    }
     try {
-      const res = await fetch(
-        `/api/work/threads/${threadId}${inBotChat ? `?limit=${CHAT_PAGE_RUNS}` : ""}`,
-      );
-      if (!res.ok) {
+      const data = inBotChat
+        ? await fetchThreadPage<ThreadBundle>(threadId)
+        : await fetch(`/api/work/threads/${threadId}`).then((res) => (res.ok ? (res.json() as Promise<ThreadBundle>) : null));
+      if (routeThreadIdRef.current !== threadId) return;
+      if (!data) {
+        if (cached) return;
         activeRunStreamRef.current?.close();
         activeRunStreamRef.current = null;
         setSending(false);
@@ -694,7 +713,6 @@ export default function WorkScreen() {
         setBundle(null);
         return;
       }
-      const data = (await res.json()) as ThreadBundle;
       const nextBundle = withAssistantTimelinePlaceholders(data);
       setBundle(nextBundle);
       activeThreadIdRef.current = threadId;
@@ -957,7 +975,7 @@ export default function WorkScreen() {
     setSending(true);
     setStreamError(null);
 
-    let threadId = activeThreadId;
+    let threadId = activeThreadId ?? routeThreadId;
     if (!threadId) {
       threadId = await createThread();
     }
@@ -1006,7 +1024,7 @@ export default function WorkScreen() {
     if (!trimmed || sending) return;
     setSending(true);
     setStreamError(null);
-    let threadId = activeThreadId;
+    let threadId = activeThreadId ?? routeThreadId;
     if (!threadId) threadId = await createThread();
     if (!threadId) {
       setSending(false);
@@ -1334,6 +1352,33 @@ export default function WorkScreen() {
     for (const run of bundle?.runs ?? []) map.set(run.id, run);
     return map;
   }, [bundle?.runs]);
+
+  // The header neko acts out the turn: listening, thinking, searching,
+  // working, speaking, then a short happy or error face when it ends.
+  const setBotMood = useSetBotMood();
+  const running = Boolean(sending || activeRunId);
+  const latestRun = bundle?.runs[bundle.runs.length - 1] ?? null;
+  const liveState: NekoState | null = running
+    ? botStateForRun(bundle?.eventsByRun[activeRunId ?? latestRun?.id ?? ""] ?? [], true, false)
+    : null;
+  const [afterRun, setAfterRun] = useState<NekoState | null>(null);
+  const wasRunningRef = useRef(false);
+  useEffect(() => {
+    const ended = wasRunningRef.current && !running;
+    wasRunningRef.current = running;
+    if (!ended) return;
+    const face: NekoState = latestRun?.status === "failed" ? "error" : "happy";
+    const show = window.setTimeout(() => setAfterRun(face), 0);
+    const hide = window.setTimeout(() => setAfterRun(null), face === "error" ? 6000 : 3000);
+    return () => {
+      window.clearTimeout(show);
+      window.clearTimeout(hide);
+    };
+  }, [running, latestRun?.status]);
+  const botMood: NekoState = liveState ?? afterRun ?? (draft.trim() ? "listening" : "idle");
+  useEffect(() => {
+    if (inBotChat) setBotMood({ threadId: routeThreadId, state: botMood });
+  }, [inBotChat, routeThreadId, botMood, setBotMood]);
   const workPhase =
     sending || activeRunId
       ? "running"
@@ -1457,7 +1502,9 @@ export default function WorkScreen() {
             ) : null}
           </header>
         ) : null}
-        {loadingThread ? (
+        {loadingThread && inBotChat ? (
+          <SkeletonList rows={3} variant="row" label="Opening the chat" />
+        ) : loadingThread ? (
           <div className="work-loading-state" role="status">
             <span />
             Loading the work trace
@@ -1504,6 +1551,19 @@ export default function WorkScreen() {
                     pending={isPending}
                     fallbackContent={message.content}
                     reasoningExpanded={reasoningExpanded}
+                    avatar={
+                      threadBot ? (
+                        <BotAvatar
+                          coat={threadBot.coat}
+                          pattern={threadBot.pattern}
+                          size={26}
+                          state={botStateForRun(events, isPending, run?.status === "failed")}
+                          animated={isPending}
+                          interactive={false}
+                          aria-hidden
+                        />
+                      ) : undefined
+                    }
                   />
                 </div>
               );
@@ -3122,6 +3182,7 @@ function RunTimeline({
   pending,
   fallbackContent,
   reasoningExpanded,
+  avatar,
 }: {
   threadId: string;
   run: RunRecord | null;
@@ -3130,6 +3191,8 @@ function RunTimeline({
   fallbackContent: string;
   /** Show every reasoning note and tool call in full, in every run. */
   reasoningExpanded: boolean;
+  /** The bot's neko at the head of the turn, in place of the route dot. */
+  avatar?: React.ReactNode;
 }) {
   const { insertComposerRef } = useWorkShell();
   const presentation = useMemo(
@@ -3270,7 +3333,8 @@ function RunTimeline({
   );
 
   return (
-    <div className="work-timeline flex flex-col gap-2.5 mt-1">
+    <div className={`work-timeline flex flex-col gap-2.5 mt-1${avatar ? " has-avatar" : ""}`}>
+      {avatar ? <span className="work-timeline-avatar">{avatar}</span> : null}
       {foldTrail ? (
         <WorkTrail run={run} items={trail.map(({ item }) => item)}>
           {trail.map(({ item, index }) => renderItem(item, index))}
