@@ -471,6 +471,9 @@ func TestPreparedEvidenceSurvivesRealAxStageHandoff(t *testing.T) {
 	if len(client.calls) != 3 {
 		t.Fatalf("expected one distiller/executor/responder call each, got %d", len(client.calls))
 	}
+	if !strings.Contains(dumpAXValue(client.calls[0].values), "The model plans, the database computes.") {
+		t.Fatal("early execution stage did not receive the selected aggregation guide")
+	}
 	for _, call := range client.calls {
 		prompt := dumpAXValue(call.values)
 		if strings.Contains(prompt, "invoice amounts") {
@@ -555,5 +558,88 @@ func TestOrdinaryDetailLookupConsumesPreparedFactsWithoutAnotherRead(t *testing.
 	}
 	if len(result.digest()) == 0 {
 		t.Fatal("no compact schema references")
+	}
+}
+
+func TestPreparedDigestNamesPreferredSchemaWithoutLeakingDetailBodies(t *testing.T) {
+	r := &preparationResult{reads: []preparedRead{{out: map[string]any{
+		"cards": []any{
+			map[string]any{"id": "table:accounts", "kind": "table", "table_name": "accounts", "summary": "private prose"},
+			map[string]any{"id": "table:subscriptions", "kind": "table", "table_name": "subscriptions"},
+			map[string]any{"id": "relationship:accounts-subscriptions", "kind": "relationship", "title": "accounts to subscriptions"},
+		},
+		"details": []any{map[string]any{"card_id": "table:accounts", "section": "key_columns", "content": "private prose", "data_json": `{"columns":[{"ColumnName":"id","DefaultValue":"secret-default"},{"ColumnName":"mrr_cents","Comment":"private prose"}]}`}},
+	}}}, stats: PreparationStats{Decisions: []map[string]any{
+		{"id": "table:accounts", "evidence": map[string]any{"value": 2.7}},
+		{"id": "table:subscriptions", "evidence": map[string]any{"value": 2.3}},
+		{"id": "relationship:accounts-subscriptions", "evidence": map[string]any{"value": 3.0}},
+	}}}
+	digest := r.digest()
+	if len(digest) != 3 {
+		t.Fatalf("digest = %v", digest)
+	}
+	preferred := mapValue(digest[0])
+	if preferred["id"] != "table:accounts" || preferred["preference"] != "preferred" || !reflect.DeepEqual(preferred["columns"], []string{"id", "mrr_cents"}) {
+		t.Fatalf("preferred schema = %v", preferred)
+	}
+	if mapValue(digest[1])["preference"] != "supporting_alternative" {
+		t.Fatal("supporting schema lost its role")
+	}
+	text := stringify(digest)
+	if strings.Contains(text, "secret-default") || strings.Contains(text, "private prose") || len(text) > 4096 {
+		t.Fatal("detail content leaked into prompt projection")
+	}
+}
+
+func TestDiscoveryHierarchyStartsWithRootsBeforeColumns(t *testing.T) {
+	groups := discoveryGroups([]core.CatalogCard{
+		{ID: "column:accounts.mrr_cents", Kind: "column", Title: "mrr_cents"},
+		{ID: "table:accounts", Kind: "table", Title: "accounts"},
+		{ID: "workflow:report", Kind: "workflow", Title: "report"},
+	})
+	if len(groups) != 3 || !discoveryRootKind(groups[0].Cards[0].Kind) || !discoveryRootKind(groups[1].Cards[0].Kind) || groups[2].Cards[0].Kind != "column" {
+		t.Fatalf("root-first hierarchy = %+v", groups)
+	}
+}
+
+type rootPriorityRuntime struct {
+	*selectionRuntime
+	rootRead chan struct{}
+	once     sync.Once
+}
+
+func (r *rootPriorityRuntime) QueryCatalog(ctx context.Context, args map[string]any) (any, error) {
+	out, err := r.selectionRuntime.QueryCatalog(ctx, args)
+	for _, id := range detailIDsFromArgs(args) {
+		if id == "table:db:public.invoices" && err == nil {
+			r.once.Do(func() { close(r.rootRead) })
+		}
+	}
+	return out, err
+}
+
+func TestRelevantRootsAreNotStarvedBySupportingScopeJobs(t *testing.T) {
+	rt := &rootPriorityRuntime{selectionRuntime: selectionFixture(), rootRead: make(chan struct{})}
+	for i := 0; i < 60; i++ {
+		rt.snapshot.Cards = append(rt.snapshot.Cards, core.CatalogCard{ID: fmt.Sprintf("table:db:public.z%d", i), Kind: "table", Title: "noise"})
+	}
+	for i := 0; i < 5000; i++ {
+		rt.snapshot.Cards = append(rt.snapshot.Cards, core.CatalogCard{ID: fmt.Sprintf("column:db:public.noise.c%d", i), Kind: "column", Title: "noise column"})
+	}
+	factory := selectionFactory(func(ctx context.Context, candidates []map[string]any) (ax.Value, error) {
+		if len(candidates) > 0 && stringFromMap(candidates[0], "kind") == "" && strings.HasPrefix(stringFromMap(candidates[0], "id"), "column:") {
+			select {
+			case <-rt.rootRead:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		return selectRelevant(ctx, candidates)
+	})
+	a := newSelectionAgent(rt, factory)
+	a.config.Selection.StartupBudgetMS = 1000
+	result, _ := prepareForTest(t, a, Request{Instruction: "show invoice customers"})
+	if !containsString(result.stats.DetailIDs, "table:db:public.invoices") {
+		t.Fatal("supporting scopes starved the relevant starting root")
 	}
 }
