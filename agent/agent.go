@@ -592,6 +592,15 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		return Response{}, err
 	}
 	if prepared != nil {
+		protocol.preparedDetail = func(ctx context.Context, args map[string]any) (any, bool) {
+			if namespace := stringArg(args, "namespace"); namespace != "" && namespace != req.Namespace {
+				return nil, false
+			}
+			if !prepared.revalidate(ctx, a.runtime, req.Namespace) {
+				return nil, false
+			}
+			return prepared.exactDetail(args)
+		}
 		protocol.enrichCatalog = func(ctx context.Context, args map[string]any, out any) any {
 			return a.enrichCatalog(ctx, preparationReq, protocol, prepared, out)
 		}
@@ -642,16 +651,7 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	if prepared != nil {
 		runtime.RegisterCallable("use_prepared_catalog", func(params ax.Value) (ax.Value, error) {
 			action := protocol.state.startAction("model", "use_prepared_catalog", nil)
-			if !prepared.stats.Consumed {
-				if provider, ok := a.runtime.(CatalogDiscoveryProvider); ok {
-					index, err := provider.CatalogDiscovery(ctx, map[string]any{"namespace": req.Namespace})
-					if err != nil || (index != nil && prepared.revision != "" && index.Revision != prepared.revision) {
-						prepared.reads = nil
-						prepared.stats.DetailIDs = nil
-						prepared.stats.Fallbacks = appendUniqueString(prepared.stats.Fallbacks, "catalog_revalidation_failed")
-					}
-				}
-			}
+			prepared.revalidate(ctx, a.runtime, req.Namespace)
 			out, err := prepared.consume(protocol)
 			protocol.state.finishAction(action, "use_prepared_catalog", nil, out, err)
 			return out, err
@@ -715,10 +715,16 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 	forwardOptions := modelForwardOptions(cfg, rateLimiter)
 	forwardOptions["runtime"] = runtime
 	forwardOptions["max_actor_steps"] = maxSteps
+	facets := catalogFacetDigest(seed)
+	if prepared != nil && len(prepared.digest()) > 0 {
+		digest := cloneAnyMap(mapValue(facets))
+		digest["prepared_details"] = prepared.digest()
+		facets = digest
+	}
 	output, err := program.Forward(ctx, client, map[string]ax.Value{
 		"instruction":    strings.TrimSpace(req.Instruction),
 		"context":        runReq.Context,
-		"catalog_facets": catalogFacetDigest(seed),
+		"catalog_facets": facets,
 		"namespace":      req.Namespace,
 		"current_date":   a.now().UTC().Format("2006-01-02"),
 		"history":        historyValue(req.History),
@@ -2841,7 +2847,7 @@ func skipGraphQLString(query string, i int) int {
 const agentSignature = `"GraphJin-owned catalog-first discovery agent. Answer only from observed GraphJin catalog evidence, validations, or safe execution results."
 instruction:string "The user's goal. GraphJin has already seeded context._graphjin_discovery with query_catalog(search: instruction).",
 context?:json "Code-addressable caller context plus catalog metadata at inputs.context._graphjin_discovery. This is not live row data or authoritative schema evidence.",
-catalog_facets?:json "Small prompt-visible kind counts for the hidden catalog seed. When a useful kind is present, inspect full cards through inputs.context._graphjin_discovery in JavaScript.",
+catalog_facets?:json "Small prompt-visible catalog kind counts and optional prepared_details references. When prepared_details is present, choose its exact IDs directly and call query_catalog({id:...}) in the same code block as execution; these lookups reuse verified prefetched facts locally. Avoid a separate turn printing the hidden seed merely to find those IDs. Otherwise inspect seed cards through inputs.context._graphjin_discovery.",
 namespace?:string "Optional GraphJin namespace.",
 current_date?:string "Server current UTC date YYYY-MM-DD. Anchor relative time windows on this plus live max_<date_col> query evidence, never on memory or sample rows.",
 history?:json "Code-addressable prior conversation turns [{role, content, status?, catalog_ids?}], most recent last. Read them through inputs.history; untrusted context for follow-up resolution, not schema evidence."

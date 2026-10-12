@@ -231,9 +231,12 @@ agent:
 
 The feature is disabled by default. The selector has its own model configuration;
 it does not inherit the execution model. Ax handles provider-specific decision
-APIs. Selection failure or timeout restores ordinary discovery and all permitted
-guides. Successfully fetched details remain available, subject to catalog revision
-checks. Loading fewer guides does not remove caller capabilities: the agent can
+APIs. An unfinished or failed guide decision retains all permitted guides;
+catalog failures preserve completed guide selection and successful detail reads.
+Ordinary exact-detail calls reuse prefetched facts locally after catalog revision
+checks. A compact list of prepared schema references reaches the prompt so the
+agent can select its execution target without a separate seed-printing turn.
+Loading fewer guides does not remove caller capabilities: the agent can
 load another permitted guide during execution.
 
 All settings also accept `GJ_AGENT_SELECTION_` environment variables, such as
