@@ -101,14 +101,14 @@
   {
     "id": "anchor-usage-window",
     "group": "anchor",
-    "prompt": "How many usage events occurred in the five days up to and including the most recent event?",
+    "prompt": "How many usage events occurred during the five-day period ending at the most recent event's timestamp?",
     "capability_profile": {"role_class": "user", "read_only": false, "available_system_roots": []},
     "expected_status": "answered",
     "oracle": {
       "anchor_query": "query { usage_events { max_occurred_at } }",
       "anchor_extract": "usage_events.0.max_occurred_at",
-      "query": "query events($from: String!) { usage_events(where: {occurred_at: {gte: $from}}) { count_id } }",
-      "variables": {"from": "{{anchor-5d}}"},
+      "query": "query events($from: String!, $to: String!) { usage_events(where: {occurred_at: {gte: $from, lte: $to}}) { count_id } }",
+      "variables": {"from": "{{anchor-5d}}", "to": "{{anchor}}"},
       "extract": "usage_events.0.count_id"
     },
     "answer": {"kind": "number"},

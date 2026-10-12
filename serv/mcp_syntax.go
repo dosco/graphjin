@@ -299,6 +299,7 @@ var querySyntaxReference = QuerySyntaxReference{
 		},
 		Filtering: []QueryExample{
 			{Description: "Filter with comparison", Query: "{ products(where: { price: { gt: 50 } }) { id name } }"},
+			{Description: "Filter a range (operators on one column combine with AND)", Query: "{ products(where: { price: { gte: 10, lte: 100 } }) { id } }"},
 			{Description: "Filter with AND", Query: "{ products(where: { and: [{ price: { gt: 10 } }, { price: { lt: 100 } }] }) { id } }"},
 			{Description: "Filter with OR", Query: "{ products(where: { or: { name: { ilike: \"%phone%\" }, name: { ilike: \"%tablet%\" } } }) { id } }"},
 			{Description: "Filter with NOT", Query: "{ products(where: { not: { price: { is_null: true } } }) { id } }"},
