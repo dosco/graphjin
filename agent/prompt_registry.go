@@ -40,6 +40,7 @@ func PromptRegistryHash() string {
 		ExecutorExamples              []ax.Value `json:"executor_examples,omitempty"`
 		SelectionInstruction          string     `json:"selection_instruction"`
 		PreparedDiscoveryInstructions string     `json:"prepared_discovery_instructions"`
+		PreparedRequestHandoff        string     `json:"prepared_request_handoff"`
 	}
 
 	skills := make([]skillSnapshot, 0, len(builtinSkills))
@@ -66,6 +67,7 @@ func PromptRegistryHash() string {
 		ExecutorExamples:              executorTrajectoryExamples(),
 		SelectionInstruction:          selectionInstruction,
 		PreparedDiscoveryInstructions: preparedDiscoveryInstructions,
+		PreparedRequestHandoff:        preparedHandoffCode,
 	})
 	if err != nil {
 		panic(err) // The snapshot contains only JSON-native values.

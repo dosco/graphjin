@@ -79,6 +79,7 @@ type PreparationStats struct {
 	Usage            UsageTotals      `json:"usage"`
 	SkillReloads     int              `json:"skill_reloads"`
 	DetailCacheHits  int              `json:"detail_cache_hits"`
+	PreparedHandoff  bool             `json:"prepared_handoff,omitempty"`
 }
 
 type preparedRead struct {

@@ -176,8 +176,14 @@ permitted Ax skill. The fixed set is `data_discovery`, `data_aggregation`,
 `data_write`, `code_read`, `code_write`, `workflow_read`, `workflow_execute`,
 `workflow_write`, `watch_read`, `watch_write`, `task_read`, `task_write`,
 `admin_read`, and `admin_write`; `watch_write` carries the whole write side of
-watches, including flow enrichment and workflow/webhook delivery. There is no lexical router, embedding search, skill catalog, or
-skill-loading turn. Read-only posture removes all write guides; workflow,
+watches, including flow enrichment and workflow/webhook delivery. Optional
+`agent.selection` uses a separate Ax decision model to select roots from the
+caller-visible catalog, prefetch exact schema and contracts, and load relevant
+permitted guides. Fresh requests with a prepared root enter core-model execution
+through a local request handoff; follow-ups and caller context retain model
+distillation. Missing guides remain discoverable during execution. Selection is
+disabled by default; see the [server agent configuration](https://graphjin.com/agentic/server-agent/).
+Read-only posture removes all write guides; workflow,
 watch, and admin guides require their governed roots, and admin guides also
 require the admin role.
 

@@ -243,6 +243,16 @@ load another permitted guide during execution. Selected guides reach both the
 initial context stage and the executor, so early tool execution follows the same
 computation and syntax rules.
 
+For a fresh request with a prepared starting root, the request handoff runs
+locally: the core model starts at the executor instead of spending a call
+distilling already prepared discovery context. A straightforward query can
+consume cached schema, execute, and finalize in its first executor turn,
+followed by the answer stage. Requests with prior turns or caller-provided
+context retain model distillation. Selection without prepared roots retains
+the ordinary pipeline. The response reports `preparation.prepared_handoff`
+when the local handoff is installed; it grants no discovery or execution
+evidence, and every existing execution check still applies.
+
 All settings also accept `GJ_AGENT_SELECTION_` environment variables, such as
 `GJ_AGENT_SELECTION_PROVIDER` and `GJ_AGENT_SELECTION_STARTUP_BUDGET_MS`.
 Preparation is shared by REST, MCP, watch, and task runs. It performs catalog
