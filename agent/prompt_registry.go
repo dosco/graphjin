@@ -26,6 +26,7 @@ func PromptRegistryHash() string {
 		RuntimeSeedInstructions     string `json:"runtime_seed_instructions"`
 		ExecutorHandoff             string `json:"executor_handoff"`
 		RuntimeInstructions         string `json:"runtime_instructions"`
+		RuntimeResultRecovery       string `json:"runtime_result_recovery"`
 		SemanticCatalogInstructions string `json:"semantic_catalog_instructions"`
 		// ForcedFinalizeSignature is provider-visible prompt text on the
 		// tool-less finalize after actor-step exhaustion.
@@ -39,6 +40,7 @@ func PromptRegistryHash() string {
 		// prompt-registry hash.
 		ExecutorExamples              []ax.Value `json:"executor_examples,omitempty"`
 		SelectionInstruction          string     `json:"selection_instruction"`
+		RootScopeInstruction          string     `json:"root_scope_instruction"`
 		PreparedDiscoveryInstructions string     `json:"prepared_discovery_instructions"`
 		PreparedRequestHandoff        string     `json:"prepared_request_handoff"`
 	}
@@ -60,12 +62,14 @@ func PromptRegistryHash() string {
 		RuntimeSeedInstructions:       runtimeSeedUsageInstructions,
 		ExecutorHandoff:               executorHandoffInstructions,
 		RuntimeInstructions:           runtimeUsageInstructions,
+		RuntimeResultRecovery:         runtimeResultRecoveryInstructions,
 		SemanticCatalogInstructions:   semanticCatalogUsageInstructions,
 		ForcedFinalizeSignature:       finalizeSignature,
 		UngroundedRewriteSignature:    ungroundedRewriteSignature,
 		Skills:                        skills,
 		ExecutorExamples:              executorTrajectoryExamples(),
 		SelectionInstruction:          selectionInstruction,
+		RootScopeInstruction:          rootScopeInstruction,
 		PreparedDiscoveryInstructions: preparedDiscoveryInstructions,
 		PreparedRequestHandoff:        preparedHandoffCode,
 	})

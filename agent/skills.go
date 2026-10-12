@@ -370,10 +370,10 @@ const dataDiscoveryInstruction = `Skill: data_discovery. Before querying, inspec
 	`Prefer dynamic authoring: validate the shape, then execute_graphql; an approved saved query is a governed shortcut. Answer only from observed results and fields, stating derived numbers plainly. ` +
 	`On graphjin_repair, treat the failure as a query-authoring error: re-discover real fields, re-author, and retry in the same run; never advise schema or data changes.`
 
-const dataAggregationInstruction = `Skill: data_aggregation. The model plans, the database computes. Limited lists are pages: never derive totals, counts, averages, extremes, or rankings from rows. ` +
-	`Prefer native: { products { count_id sum_price avg_price min_price max_price } }. count(column: id) also executes; always alias it to the prefix name: count_id: count(column: id). Hasura-compatible: { products_aggregate { aggregate { count sum { price } avg { price } min { price } max { price } } } }. ` +
-	`Never omit aggregate: { products_aggregate { count } } is invalid. On a Hasura aggregate error, copy its Supported form or Native equivalent with verified names; do not repeat it or restart discovery. ` +
-	`Aggregates work on dates: max_<date_col> is latest. For top-N groups, select dimension and aggregate, order_by aggregate desc, and limit N. Anchor relative windows on inputs.current_date (UTC), query max_<date_col>, and state the window. On result.truncation, re-author with aggregates.`
+const dataAggregationInstruction = `Skill: data_aggregation. The model plans, the database computes. Limited lists are pages; never compute totals, counts, averages, extremes, or rankings from rows. ` +
+	`Prefer native: { products { count_id sum_price avg_price min_price max_price } }. Alias count(column: id) as count_id: count(column: id). Hasura-compatible: { products_aggregate { aggregate { count sum { price } avg { price } min { price } max { price } } } }. ` +
+	`Never omit aggregate: { products_aggregate { count } } is invalid. On an aggregate error, copy its Supported form or Native equivalent; do not repeat it or restart discovery. ` +
+	`max_<date_col> is latest. Group by selecting dimension plus aggregate; no group_by argument. For top-N, order_by aggregate desc, limit N: { products(order_by:{sum_price:desc},limit:1){category sum_price} }. Anchor relative windows on inputs.current_date (UTC), query max_<date_col>, and state the window. On result.truncation, re-author with aggregates.`
 
 const dataWriteInstruction = `Skill: data_write. ` +
 	`Inspect exact catalog IDs for help:security, help:runtime, mutation_pattern, and target table details; validate, then use execute_graphql. ` +

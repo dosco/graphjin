@@ -98,7 +98,7 @@ func selectRelevant(_ context.Context, candidates []map[string]any) (ax.Value, e
 	for i, candidate := range candidates {
 		id := stringFromMap(candidate, "id")
 		var value any = true
-		if stringFromMap(candidate, "kind") != "" {
+		if stringFromMap(candidate, "kind") != "" && candidate["scope_check"] != true {
 			value = float64(0)
 			if strings.Contains(id, "invoices") || strings.Contains(id, "customer") {
 				value = float64(3)
@@ -287,7 +287,7 @@ func TestPreparationConcurrencyBoundAndOverlap(t *testing.T) {
 }
 
 func TestSelectionRealAxEvidenceMapping(t *testing.T) {
-	for _, kind := range []string{"skills", "rank"} {
+	for _, kind := range []string{"skills", "rank", "root_scope"} {
 		t.Run(kind, func(t *testing.T) {
 			answer := map[string]ax.Value{"type": "noul", "noul": 0.85}
 			if kind == "rank" {
@@ -598,6 +598,42 @@ func TestDiscoveryHierarchyStartsWithRootsBeforeColumns(t *testing.T) {
 	})
 	if len(groups) != 3 || !discoveryRootKind(groups[0].Cards[0].Kind) || !discoveryRootKind(groups[1].Cards[0].Kind) || groups[2].Cards[0].Kind != "column" {
 		t.Fatalf("root-first hierarchy = %+v", groups)
+	}
+}
+
+func TestPreparedScopePrefersExactRootOverFilteredShortcut(t *testing.T) {
+	rt := selectionFixture()
+	rt.snapshot.Cards[2].GraphQLQuery = `query { invoices(where: {status: {eq: "paid"}}) { sum_amount_cents } }`
+	checkedDefinition := false
+	factory := selectionFactory(func(ctx context.Context, candidates []map[string]any) (ax.Value, error) {
+		out, err := selectRelevant(ctx, candidates)
+		for i, candidate := range candidates {
+			if candidate["scope_check"] == true {
+				if candidate["id"] == "saved_query:invoices" {
+					checkedDefinition = candidate["definition"] == rt.snapshot.Cards[2].GraphQLQuery
+				}
+				mapValue(mapValue(out)[fmt.Sprintf("slot%d", i)])["value"] = candidate["id"] == "table:db:public.invoices"
+			}
+		}
+		return out, err
+	})
+	prepared, _ := prepareForTest(t, newSelectionAgent(rt, factory), Request{Instruction: "Total invoice amount across all invoices"})
+	digest := prepared.digest()
+	if !checkedDefinition || len(digest) == 0 || mapValue(digest[0])["id"] != "table:db:public.invoices" || mapValue(digest[0])["scope_match"] != true {
+		t.Fatalf("actual filter scope was not checked before choosing a root: checked=%t digest=%v", checkedDefinition, digest)
+	}
+	found := false
+	for _, item := range digest {
+		ref := mapValue(item)
+		if ref["id"] == "saved_query:invoices" {
+			found = true
+			if ref["scope_match"] != false || ref["preference"] != "supporting_alternative" {
+				t.Fatalf("filtered shortcut became an execution target: %v", ref)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("scope check pruned supporting metadata")
 	}
 }
 

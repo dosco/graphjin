@@ -235,7 +235,7 @@ APIs. An unfinished or failed guide decision retains all permitted guides;
 catalog failures preserve completed guide selection and successful detail reads.
 Ordinary exact-detail calls reuse prefetched facts locally after catalog revision
 checks. A compact, ranked list of prepared schema references reaches the prompt;
-the preferred target includes up to 32 real column names, within a 4 KiB total
+table references include up to 32 real column names, within a 4 KiB total
 projection. Supporting contracts remain available in runtime context. The agent
 can author its query without a separate turn printing IDs or known columns.
 Loading fewer guides does not remove caller capabilities: the agent can
@@ -243,15 +243,25 @@ load another permitted guide during execution. Selected guides reach both the
 initial context stage and the executor, so early tool execution follows the same
 computation and syntax rules.
 
-For a fresh request with a prepared starting root, the request handoff runs
-locally: the core model starts at the executor instead of spending a call
-distilling already prepared discovery context. A straightforward query can
+After prefetch, a separate decision checks starting roots against the exact
+requested scope using saved-query definitions and table metadata. Matching
+roots take priority over related shortcuts; a query's added filter or limited
+row page cannot stand in for a requested full-scope aggregate. The digest
+reports `scope_match` when checked. Nonmatching roots remain available as
+supporting context, and failed or unfinished checks retain normal discovery.
+
+For a fresh request with a prepared starting root that passes the scope check,
+the request handoff runs locally: the core model starts at the executor without
+a call distilling already prepared discovery context. A straightforward query can
 consume cached schema, execute, and finalize in its first executor turn,
 followed by the answer stage. Requests with prior turns or caller-provided
 context retain model distillation. Selection without prepared roots retains
 the ordinary pipeline. The response reports `preparation.prepared_handoff`
 when the local handoff is installed; it grants no discovery or execution
 evidence, and every existing execution check still applies.
+
+Successful execution results remain code-addressable after a later JavaScript
+error, so recovery can reuse the actual rows without another lookup or query.
 
 All settings also accept `GJ_AGENT_SELECTION_` environment variables, such as
 `GJ_AGENT_SELECTION_PROVIDER` and `GJ_AGENT_SELECTION_STARTUP_BUDGET_MS`.
