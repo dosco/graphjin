@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.25.0](https://github.com/open-neko/openneko/compare/v3.24.0...v3.25.0) (2026-10-12)
+
+
+### Features
+
+* **llm:** give bots from older chats a short name ([7d66ee2](https://github.com/open-neko/openneko/commit/7d66ee241e0b80bfbf39bbd099b69fe430e1599d))
+* **llm:** give bots from older chats a short name ([a8688c7](https://github.com/open-neko/openneko/commit/a8688c7e1972d2e5273333cf16695fb3b8818288))
+* **web:** retire Briefing, fix phone tables and the Admin trap, and add link previews ([b3ad4be](https://github.com/open-neko/openneko/commit/b3ad4bea8abb47a04a85349a6773b49bb8a37fb9))
+* **web:** retire the Briefing page ([0237fce](https://github.com/open-neko/openneko/commit/0237fcee257ac3eaa2dde73ee61a3744852ef1d0))
+* **web:** show the chat title and bot in a chat link preview ([d84b743](https://github.com/open-neko/openneko/commit/d84b743581b5d518613fb4251b64d881fd8f327d))
+
+
+### Bug Fixes
+
+* **web:** describe OpenNeko in link previews with the tagline ([bb7c768](https://github.com/open-neko/openneko/commit/bb7c7681ce90203f1538bb508f5ef3af97af3bed))
+* **web:** give the console a way back to chats on phones ([f7aace9](https://github.com/open-neko/openneko/commit/f7aace9522ad2b0578f9c2f4b39adcf447fae282))
+* **web:** let chat tables scroll as one piece on phones ([e43e5b5](https://github.com/open-neko/openneko/commit/e43e5b53f8c4dddff855275cc63ca6ff7c75987b))
+
 ## [3.24.0](https://github.com/open-neko/openneko/compare/v3.23.1...v3.24.0) (2026-10-12)
 
 
