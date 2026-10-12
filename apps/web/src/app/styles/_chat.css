@@ -485,12 +485,60 @@ a.chat-bot-chip:hover {
   font-size: var(--type-body-sm);
 }
 
-.bot-routine {
+.bot-routines {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bot-routine-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bot-routine-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
-  min-height: 64px;
-  padding: 10px 16px;
+}
+
+.bot-routine-label {
+  margin: 0 0 4px;
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 700;
+  color: var(--text3);
+}
+
+.bot-routine-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 20px;
+  list-style: decimal;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+}
+
+.bot-routine-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.bot-routine-summary {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-line;
 }
 
 .bot-routine-copy {

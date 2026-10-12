@@ -1,4 +1,4 @@
-import { and, asc, bot, db, desc, eq, inArray, sql, subscription, watcher, work_thread, workflow_definition } from "@neko/db";
+import { and, asc, bot, db, desc, eq, inArray, lt, sql, subscription, watcher, work_thread, workflow_definition, workflow_run } from "@neko/db";
 import { nekoCoats } from "@neko/avatars";
 import { BOT_INSTRUCTIONS_MAX } from "@neko/llm/work";
 import { describeSchedule } from "@/lib/cron-english";
@@ -80,7 +80,41 @@ export async function getBotByThread(orgId: string, userId: string, threadId: st
   return row ? summary(row, null) : null;
 }
 
-export type BotRoutine = { id: string; name: string; schedule: string; enabled: boolean };
+export type BotRoutineRun = { id: string; status: string; at: string; summary: string };
+
+export type BotRoutine = {
+  id: string;
+  name: string;
+  schedule: string;
+  enabled: boolean;
+  description: string;
+  steps: string[];
+  runs: BotRoutineRun[];
+  moreRuns: boolean;
+};
+
+export const ROUTINE_RUNS_SHOWN = 3;
+export const ROUTINE_RUNS_PAGE = 10;
+
+const RUN_SUMMARY_MAX = 400;
+
+export function plainSummary(text: string): string {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#*_`>|]+/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  return plain.length > RUN_SUMMARY_MAX ? `${plain.slice(0, RUN_SUMMARY_MAX - 1).trimEnd()}…` : plain;
+}
+
+export function stepTexts(steps: unknown): string[] {
+  if (!Array.isArray(steps)) return [];
+  return steps
+    .map((step) => (step && typeof step === "object" && "description" in step ? String(step.description ?? "") : ""))
+    .map((text) => text.trim())
+    .filter(Boolean);
+}
 
 export type BotLookPatch = {
   name?: string;
@@ -134,6 +168,9 @@ export async function getBotDetail(orgId: string, userId: string, botId: string)
         .select({
           id: workflow_definition.id,
           name: workflow_definition.name,
+          description: workflow_definition.description,
+          goal: workflow_definition.goal,
+          steps: workflow_definition.steps,
           cron: workflow_definition.cron,
           timezone: workflow_definition.cron_timezone,
           cronEnabled: workflow_definition.cron_enabled,
@@ -144,7 +181,7 @@ export async function getBotDetail(orgId: string, userId: string, botId: string)
         .orderBy(asc(workflow_definition.created_at))
     : [];
   const ids = routines.map((r) => r.id);
-  const [watches, events] = ids.length
+  const [watches, events, runs] = ids.length
     ? await Promise.all([
         db()
           .select({ workflowId: watcher.workflow_id, cadence: watcher.cadence_seconds })
@@ -154,13 +191,15 @@ export async function getBotDetail(orgId: string, userId: string, botId: string)
           .select({ workflowId: subscription.workflow_id, source: subscription.source_kind })
           .from(subscription)
           .where(and(eq(subscription.org_id, orgId), inArray(subscription.workflow_id, ids))),
+        Promise.all(ids.map((id) => routineRuns(orgId, id, ROUTINE_RUNS_SHOWN))),
       ])
-    : [[], []];
+    : [[], [], []];
   return {
     bot: summary(row, null),
     routines: routines.map((r): BotRoutine => {
       const watch = watches.find((w) => w.workflowId === r.id);
       const event = events.find((e) => e.workflowId === r.id);
+      const page = runs[ids.indexOf(r.id)] ?? { runs: [], more: false };
       return {
         id: r.id,
         name: r.name,
@@ -170,9 +209,84 @@ export async function getBotDetail(orgId: string, userId: string, botId: string)
             ? `Runs on each ${event.source.replace(/[_.-]+/g, " ")} event`
             : describeSchedule(r.cron, r.timezone, r.cronEnabled),
         enabled: r.enabled,
+        description: (r.description || r.goal).trim(),
+        steps: stepTexts(r.steps),
+        runs: page.runs,
+        moreRuns: page.more,
       };
     }),
   };
+}
+
+async function routineRuns(
+  orgId: string,
+  workflowId: string,
+  limit: number,
+  before?: Date,
+): Promise<{ runs: BotRoutineRun[]; more: boolean }> {
+  const rows = await db()
+    .select({
+      id: workflow_run.id,
+      status: workflow_run.status,
+      createdAt: workflow_run.created_at,
+      at: sql<Date>`coalesce(${workflow_run.finished_at}, ${workflow_run.started_at}, ${workflow_run.created_at})`,
+      summary: workflow_run.summary,
+    })
+    .from(workflow_run)
+    .where(
+      and(
+        eq(workflow_run.org_id, orgId),
+        eq(workflow_run.workflow_id, workflowId),
+        ...(before ? [lt(workflow_run.created_at, before)] : []),
+      ),
+    )
+    .orderBy(desc(workflow_run.created_at))
+    .limit(limit + 1);
+  return {
+    more: rows.length > limit,
+    runs: rows.slice(0, limit).map((run) => ({
+      id: run.id,
+      status: run.status,
+      at: new Date(run.at).toISOString(),
+      summary: run.status === "completed" ? plainSummary(run.summary ?? "") : "",
+    })),
+  };
+}
+
+/** Older runs of a routine the bot created, for the info page. */
+export async function listBotRoutineRuns(
+  orgId: string,
+  userId: string,
+  botId: string,
+  workflowId: string,
+  beforeRunId: string | null,
+): Promise<{ runs: BotRoutineRun[]; more: boolean } | null> {
+  const [owned] = await db()
+    .select({ id: workflow_definition.id })
+    .from(workflow_definition)
+    .innerJoin(bot, eq(bot.thread_id, workflow_definition.created_by_thread_id))
+    .where(
+      and(
+        eq(bot.id, botId),
+        eq(bot.org_id, orgId),
+        eq(bot.owner_user_id, userId),
+        eq(workflow_definition.org_id, orgId),
+        eq(workflow_definition.id, workflowId),
+      ),
+    )
+    .limit(1);
+  if (!owned) return null;
+  let before: Date | undefined;
+  if (beforeRunId) {
+    const [cursor] = await db()
+      .select({ createdAt: workflow_run.created_at })
+      .from(workflow_run)
+      .where(and(eq(workflow_run.org_id, orgId), eq(workflow_run.workflow_id, workflowId), eq(workflow_run.id, beforeRunId)))
+      .limit(1);
+    if (!cursor) return null;
+    before = cursor.createdAt;
+  }
+  return routineRuns(orgId, workflowId, ROUTINE_RUNS_PAGE, before);
 }
 
 function everyLabel(seconds: number): string {
