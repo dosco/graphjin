@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { MessageCircle, Pencil, Plus } from "lucide-react";
 import type { NekoPattern } from "@neko/avatars/react";
-import type { BotRoutine } from "@/lib/bots";
+import type { BotRoutine, BotRoutineRun } from "@/lib/bots";
 import type { BotSummary } from "@/lib/bots";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink, IconButton } from "@/components/ui/button";
@@ -56,6 +56,7 @@ export default function BotInfo({ botId }: { botId: string }) {
   const [name, setName] = useState("");
   const { reload: reloadBots } = useBots();
   const [routineBusy, setRoutineBusy] = useState<string | null>(null);
+  const [runsBusy, setRunsBusy] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +119,30 @@ export default function BotInfo({ botId }: { botId: string }) {
       setNotice({ part, text: err instanceof Error ? err.message : "The change was not saved.", error: true });
     } finally {
       setSaving(null);
+    }
+  }
+
+  async function loadMoreRuns(routine: BotRoutine) {
+    const last = routine.runs[routine.runs.length - 1];
+    setRunsBusy(routine.id);
+    try {
+      const res = await fetch(
+        `/api/bots/${botId}/routines/${routine.id}${last ? `?before=${encodeURIComponent(last.id)}` : ""}`,
+      );
+      if (!res.ok) return;
+      const page = (await res.json()) as { runs: BotRoutineRun[]; more: boolean };
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              routines: prev.routines.map((r) =>
+                r.id === routine.id ? { ...r, runs: [...r.runs, ...page.runs], moreRuns: page.more } : r,
+              ),
+            }
+          : prev,
+      );
+    } finally {
+      setRunsBusy(null);
     }
   }
 
@@ -250,7 +275,42 @@ export default function BotInfo({ botId }: { botId: string }) {
                   meta={<Badge variant={routine.enabled ? "live" : "muted"}>{routine.enabled ? "On" : "Paused"}</Badge>}
                 >
                   <div className="bot-routine-body">
-                    {routine.description ? <p className="bot-info-copy">{routine.description}</p> : null}
+                    <div className="bot-routine-top">
+                      {routine.description ? <p className="bot-info-copy">{routine.description}</p> : null}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={routineBusy === routine.id}
+                        onClick={() => void toggleRoutine(routine)}
+                      >
+                        {routine.enabled ? "Pause" : "Resume"}
+                      </Button>
+                    </div>
+                    <div>
+                      <h3 className="bot-routine-label">Recent runs</h3>
+                      {routine.runs.length ? (
+                        <ul className="bot-routine-runs">
+                          {routine.runs.map((run) => (
+                            <li key={run.id} className="bot-info-copy">
+                              {RUN_STATUS[run.status] ?? "Ran"} · <LocalDateTime value={run.at} relativeDay />
+                              {run.summary ? <span className="bot-routine-summary">{run.summary}</span> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="bot-info-copy">It has not run yet.</p>
+                      )}
+                      {routine.moreRuns ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={runsBusy === routine.id}
+                          onClick={() => void loadMoreRuns(routine)}
+                        >
+                          {runsBusy === routine.id ? "Loading…" : "Show more runs"}
+                        </Button>
+                      ) : null}
+                    </div>
                     {routine.steps.length ? (
                       <div>
                         <h3 className="bot-routine-label">Steps</h3>
@@ -261,28 +321,6 @@ export default function BotInfo({ botId }: { botId: string }) {
                         </ol>
                       </div>
                     ) : null}
-                    <div>
-                      <h3 className="bot-routine-label">Last run</h3>
-                      {routine.lastRun ? (
-                        <p className="bot-info-copy">
-                          {RUN_STATUS[routine.lastRun.status] ?? "Ran"} ·{" "}
-                          <LocalDateTime value={routine.lastRun.at} relativeDay />
-                          {routine.lastRun.summary ? <span className="bot-routine-summary">{routine.lastRun.summary}</span> : null}
-                        </p>
-                      ) : (
-                        <p className="bot-info-copy">It has not run yet.</p>
-                      )}
-                    </div>
-                    <div className="bot-info-actions">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={routineBusy === routine.id}
-                        onClick={() => void toggleRoutine(routine)}
-                      >
-                        {routine.enabled ? "Pause" : "Resume"}
-                      </Button>
-                    </div>
                   </div>
                 </Disclosure>
               </li>

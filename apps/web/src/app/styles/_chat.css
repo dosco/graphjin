@@ -500,6 +500,13 @@ a.chat-bot-chip:hover {
   gap: 14px;
 }
 
+.bot-routine-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .bot-routine-label {
   margin: 0 0 4px;
   font-family: var(--font-display), 'Archivo', sans-serif;
@@ -517,6 +524,15 @@ a.chat-bot-chip:hover {
   list-style: decimal;
   color: var(--text2);
   font-size: var(--type-body-sm);
+}
+
+.bot-routine-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
 }
 
 .bot-routine-summary {
