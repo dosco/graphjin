@@ -1,21 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageCircle, Plus } from "lucide-react";
+import { MessageCircle, Pencil, Plus } from "lucide-react";
 import type { NekoPattern } from "@neko/avatars/react";
 import type { BotRoutine } from "@/lib/bots";
 import type { BotSummary } from "@/lib/bots";
 import { Badge } from "@/components/ui/badge";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { Button, ButtonLink, IconButton } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty";
-import { Field, Textarea } from "@/components/ui/field";
+import { Field, FieldInput, Textarea } from "@/components/ui/field";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { BotAvatar } from "./BotAvatar";
 import { BotLookFields, type BotLook } from "./BotLookFields";
+import { useBots } from "./useBots";
 
 type Detail = { bot: BotSummary; routines: BotRoutine[] };
 
 const ADD_ROUTINE_SEED = "Add a routine: ";
+
+type Part = "name" | "instructions" | "look";
 
 async function patchBot(botId: string, body: Record<string, unknown>): Promise<BotSummary> {
   const res = await fetch(`/api/bots/${botId}`, {
@@ -37,8 +40,11 @@ export default function BotInfo({ botId }: { botId: string }) {
   const [failed, setFailed] = useState(false);
   const [instructions, setInstructions] = useState("");
   const [look, setLook] = useState<BotLook | null>(null);
-  const [saving, setSaving] = useState<"instructions" | "look" | null>(null);
-  const [notice, setNotice] = useState<{ part: "instructions" | "look"; text: string; error?: boolean } | null>(null);
+  const [saving, setSaving] = useState<Part | null>(null);
+  const [notice, setNotice] = useState<{ part: Part; text: string; error?: boolean } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState("");
+  const { reload: reloadBots } = useBots();
   const [routineBusy, setRoutineBusy] = useState<string | null>(null);
 
   useEffect(() => {
@@ -78,17 +84,25 @@ export default function BotInfo({ botId }: { botId: string }) {
   const chatHref = bot.threadId ? `/chat/t/${bot.threadId}` : "/chat";
   const instructionsChanged = instructions.trim() !== bot.instructions.trim();
   const saved = lookOf(bot);
-  const lookChanged =
-    look.name.trim() !== saved.name || look.coat !== saved.coat || look.pattern !== saved.pattern;
+  const lookChanged = look.coat !== saved.coat || look.pattern !== saved.pattern;
+  const nameChanged = name.trim() !== "" && name.trim() !== bot.name;
 
-  async function save(part: "instructions" | "look") {
+  async function save(part: Part) {
     setSaving(part);
     setNotice(null);
     try {
-      const updated = await patchBot(botId, part === "instructions" ? { instructions } : look!);
+      const body =
+        part === "instructions"
+          ? { instructions }
+          : part === "name"
+            ? { name: name.trim() }
+            : { coat: look!.coat, pattern: look!.pattern };
+      const updated = await patchBot(botId, body);
       setDetail((prev) => (prev ? { ...prev, bot: { ...updated, threadId: prev.bot.threadId, lastMessageAt: prev.bot.lastMessageAt } } : prev));
       if (part === "instructions") setInstructions(updated.instructions);
       else setLook(lookOf(updated));
+      if (part === "name") setRenaming(false);
+      if (part !== "instructions") reloadBots();
       setNotice({ part, text: "Saved." });
     } catch (err) {
       setNotice({ part, text: err instanceof Error ? err.message : "The change was not saved.", error: true });
@@ -121,7 +135,47 @@ export default function BotInfo({ botId }: { botId: string }) {
     <main className="bot-info">
       <header className="bot-info-head">
         <BotAvatar coat={look.coat} pattern={look.pattern} size={120} />
-        <h1 className="chat-home-title">{bot.name}</h1>
+        {renaming ? (
+          <form
+            className="bot-info-rename"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (nameChanged && saving === null) void save("name");
+            }}
+          >
+            <FieldInput
+              label="Bot name"
+              value={name}
+              maxLength={40}
+              autoFocus
+              onChange={(event) => setName(event.target.value)}
+              error={notice?.part === "name" && notice.error ? notice.text : undefined}
+            />
+            <div className="bot-info-actions">
+              <Button type="submit" variant="primary" disabled={!nameChanged || saving !== null}>
+                {saving === "name" ? "Saving…" : "Save name"}
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setRenaming(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="bot-info-name">
+            <h1 className="chat-home-title">{bot.name}</h1>
+            <IconButton
+              label="Rename bot"
+              variant="ghost"
+              onClick={() => {
+                setName(bot.name);
+                setNotice(null);
+                setRenaming(true);
+              }}
+            >
+              <Pencil aria-hidden="true" strokeWidth={2} />
+            </IconButton>
+          </div>
+        )}
         <ButtonLink href={chatHref} variant="secondary">
           <MessageCircle aria-hidden="true" strokeWidth={2} />
           Open chat
@@ -201,16 +255,17 @@ export default function BotInfo({ botId }: { botId: string }) {
           className="chat-create-form"
           onSubmit={(event) => {
             event.preventDefault();
-            if (lookChanged && look.name.trim() && saving === null) void save("look");
+            if (lookChanged && saving === null) void save("look");
           }}
         >
           <BotLookFields
             look={look}
             onChange={setLook}
             error={notice?.part === "look" && notice.error ? notice.text : null}
+            showName={false}
           />
           <div className="bot-info-actions">
-            <Button type="submit" variant="primary" disabled={!lookChanged || !look.name.trim() || saving !== null}>
+            <Button type="submit" variant="primary" disabled={!lookChanged || saving !== null}>
               {saving === "look" ? "Saving…" : "Save look"}
             </Button>
             {notice?.part === "look" && !notice.error ? <span className="bot-info-copy">{notice.text}</span> : null}

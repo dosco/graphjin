@@ -6,11 +6,12 @@ import type { BotSummary } from "@/lib/bots";
 
 type BotsState = { bots: BotSummary[] | null; failed: boolean };
 
-const BotsContext = createContext<BotsState>({ bots: null, failed: false });
+const BotsContext = createContext<BotsState & { reload: () => void }>({ bots: null, failed: false, reload: () => {} });
 
 export function BotsProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [state, setState] = useState<BotsState>({ bots: null, failed: false });
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,9 +26,10 @@ export function BotsProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, [pathname, version]);
 
-  return createElement(BotsContext.Provider, { value: state }, children);
+  const reload = () => setVersion((v) => v + 1);
+  return createElement(BotsContext.Provider, { value: { ...state, reload } }, children);
 }
 
 export function useBots() {
