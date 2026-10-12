@@ -253,7 +253,8 @@ const SURFACE_COOKIE = "openneko_surface";
 /**
  * The app opens on chat. The profile menu's Admin button enters the console
  * with /?console=1, and the choice holds until the reader opens chat again,
- * so the console's own links to / keep working.
+ * so the console's own links to / keep working. A / typed in the address bar
+ * opens chat.
  */
 function chooseSurface(request: NextRequest, gated: NextResponse): NextResponse {
   if (gated.status !== 200 || gated.headers.get("x-middleware-next") !== "1") return gated;
@@ -266,7 +267,8 @@ function chooseSurface(request: NextRequest, gated: NextResponse): NextResponse 
     response.cookies.set(SURFACE_COOKIE, "console", { path: "/", sameSite: "lax" });
     return response;
   }
-  if (pathname === "/" && surface !== "console") {
+  const typed = request.headers.get("sec-fetch-site") === "none";
+  if (pathname === "/" && (surface !== "console" || typed)) {
     const url = request.nextUrl.clone();
     url.pathname = "/chat";
     return NextResponse.redirect(url, { status: 302 });

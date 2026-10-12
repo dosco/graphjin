@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronRight, Ellipsis, LogOut, UserRound, X } from "lucide-react";
+import { ChevronRight, Ellipsis, LogOut, MessageCircle, UserRound, X } from "lucide-react";
 import DensityToggle from "@/components/DensityToggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,9 +32,9 @@ const dockDestination = (href: string) => {
   return destination;
 };
 
+const CHATS: NavDestination = { href: "/chat", label: "Back to chats", shortLabel: "Chats", icon: MessageCircle };
 const DASHBOARD = dockDestination("/");
 const WORKFLOWS = dockDestination("/workflows");
-const ASK = dockDestination("/work");
 const ACTIONS = dockDestination("/actions");
 
 function DockLink({
@@ -224,6 +224,7 @@ export default function CommandDock() {
         </SheetContent>
 
         <nav className="cdock" aria-label="Primary navigation">
+          <DockLink item={CHATS} pathname={pathname} onNavigate={closeSheet} />
           <DockLink
             item={DASHBOARD}
             pathname={pathname}
@@ -234,8 +235,6 @@ export default function CommandDock() {
             pathname={pathname}
             onNavigate={closeSheet}
           />
-
-          <DockLink item={ASK} pathname={pathname} onNavigate={closeSheet} />
 
           <DockLink
             item={ACTIONS}

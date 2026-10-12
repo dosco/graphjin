@@ -293,6 +293,16 @@ describe("chat-first landing", () => {
     expect(home.headers.get("x-middleware-next")).toBe("1");
   });
 
+  it("opens chat when the reader types / in the console", async () => {
+    openMode();
+    const res = await proxy(
+      new NextRequest("http://localhost/", {
+        headers: { cookie: "openneko_surface=console", "sec-fetch-site": "none" },
+      }),
+    );
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/chat");
+  });
+
   it("returns to chat when the reader opens a chat", async () => {
     openMode();
     const res = await proxy(withSurface("http://localhost/chat", "console"));
