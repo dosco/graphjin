@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.26.0](https://github.com/open-neko/openneko/compare/v3.25.0...v3.26.0) (2026-10-12)
+
+
+### Features
+
+* **web:** open a routine on the bot info page to see what it does ([5d2fd31](https://github.com/open-neko/openneko/commit/5d2fd319687ab67756a48af6d42aac197fde3728))
+* **web:** open a routine on the bot info page to see what it does ([dfc1257](https://github.com/open-neko/openneko/commit/dfc12579f3d1cb65c877b4683d385941d8769c4b))
+* **web:** show recent routine runs and keep Pause at the top ([4718d9c](https://github.com/open-neko/openneko/commit/4718d9c5d7b11f8b95fe7501e1a4ddd2aea47faf))
+
 ## [3.25.0](https://github.com/open-neko/openneko/compare/v3.24.0...v3.25.0) (2026-10-12)
 
 
