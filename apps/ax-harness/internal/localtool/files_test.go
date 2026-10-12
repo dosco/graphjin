@@ -445,3 +445,32 @@ func mustAbs(t *testing.T, path string) string {
 	}
 	return abs
 }
+
+func TestFileWriteAcceptsAbsolutePathInsideWorkspace(t *testing.T) {
+	workspace, other := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "runs", "r1", "artifacts"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenFiles(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	write := f.Capabilities()[2].Call
+	inside, _ := json.Marshal(map[string]string{"path": filepath.Join(workspace, "runs", "r1", "artifacts", "report.csv"), "content": "a,b"})
+	result, err := write(context.Background(), inside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt struct{ Path string }
+	if json.Unmarshal(result, &receipt) != nil || receipt.Path != filepath.Join("runs", "r1", "artifacts", "report.csv") {
+		t.Fatalf("invalid write receipt: %s", result)
+	}
+	if data, err := os.ReadFile(filepath.Join(workspace, "runs", "r1", "artifacts", "report.csv")); err != nil || string(data) != "a,b" {
+		t.Fatalf("file not written: %q %v", data, err)
+	}
+	outside, _ := json.Marshal(map[string]string{"path": filepath.Join(other, "escape.txt"), "content": "no"})
+	if _, err := write(context.Background(), outside); err == nil || !strings.Contains(err.Error(), "inside the workspace") {
+		t.Fatalf("absolute path outside the workspace: %v", err)
+	}
+}
