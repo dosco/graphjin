@@ -157,6 +157,25 @@ func (ast *aexpst) parseNode(av aexp, node *graph.Node, selID int32) (*Exp, erro
 	switch node.Type {
 	// { column: { op: value } }
 	case graph.NodeObj:
+		if len(node.Children) > 1 {
+			// Several operators on a column are an implicit AND. Compile each
+			// through the single-operator path so type checks, references, and
+			// authorization retain the same behavior as an explicit AND.
+			if _, err := av.ti.GetColumn(ast.co.ParseName(name)); err == nil {
+				for _, child := range node.Children {
+					if ok, _ := ast.isOperator(child.Name); !ok {
+						return nil, fmt.Errorf("[Where] unknown operator: %s", child.Name)
+					}
+				}
+				ex.Op = OpAnd
+				for _, child := range node.Children {
+					n := *node
+					n.Children = []*graph.Node{child}
+					ast.st.Push(aexp{exp: ex, ti: av.ti, node: &n, path: av.path})
+				}
+				return ex, nil
+			}
+		}
 		if len(node.Children) != 1 {
 			return nil, fmt.Errorf("[Where] invalid operation: %s", name)
 		}
