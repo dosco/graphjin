@@ -17,9 +17,13 @@ import { mapStyleSetting } from "@/lib/map-style";
 // so the dense layout never flashes the comfortable one on load.
 const DENSITY_INIT = `(function(){try{var d=localStorage.getItem('neko-density');document.documentElement.setAttribute('data-density',d==='comfortable'?'comfortable':'compact');}catch(e){document.documentElement.setAttribute('data-density','compact');}})();`;
 
+const DESCRIPTION = "AI that helps run your business.";
+
 export const metadata: Metadata = {
   title: "OpenNeko",
-  description: "Executive intelligence for CXOs",
+  description: DESCRIPTION,
+  openGraph: { title: "OpenNeko", description: DESCRIPTION, siteName: "OpenNeko", type: "website" },
+  twitter: { card: "summary", title: "OpenNeko", description: DESCRIPTION },
 };
 
 export const viewport: Viewport = {

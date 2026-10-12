@@ -6,7 +6,6 @@ import {
   BookOpen,
   Brain,
   CheckCircle2,
-  Home,
   LibraryBig,
   MessageCircle,
   MonitorPlay,
@@ -25,14 +24,6 @@ export type NavDestination = {
 };
 
 export const PRIMARY_NAV: NavDestination[] = [
-  {
-    href: "/",
-    label: "Briefing",
-    shortLabel: "Briefing",
-    description: "Today, decisions, and signals",
-    icon: Home,
-    group: "primary",
-  },
   {
     href: "/work",
     label: "Ask",

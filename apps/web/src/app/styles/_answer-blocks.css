@@ -312,13 +312,13 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  .work-table-wrap[data-columns] .work-table th:first-child,
-  .work-table-wrap[data-columns] .work-table td:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 1;
-    background: var(--card);
-    box-shadow: 1px 0 0 var(--border);
+  .work-table-wrap [data-slot="table-container"] {
+    overflow: visible;
+  }
+
+  .work-table tbody td:first-child {
+    min-width: 8em;
+    white-space: normal;
   }
 
   .answer-compare {
