@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.28.0](https://github.com/open-neko/openneko/compare/v3.27.0...v3.28.0) (2026-10-12)
+
+
+### Features
+
+* deliver routine results to the bot's chat ([f1fa1f9](https://github.com/open-neko/openneko/commit/f1fa1f900b80dab2b1490193664714980aa919e1))
+* **llm:** run a bot's routines in its chat and keep their files ([1be5c63](https://github.com/open-neko/openneko/commit/1be5c630dafbdd7cb8f6db0eba2adaccc89729b3))
+* **web:** label routine replies and mark bots with new messages ([318f912](https://github.com/open-neko/openneko/commit/318f91260b323a97b47e90bf78760c5650545baf))
+
+
+### Bug Fixes
+
+* **ax:** accept absolute workspace paths in the file tools ([d023444](https://github.com/open-neko/openneko/commit/d02344456378536ae2b70bbe5f4fb65b98eb47fd))
+
 ## [3.27.0](https://github.com/open-neko/openneko/compare/v3.26.0...v3.27.0) (2026-10-12)
 
 
