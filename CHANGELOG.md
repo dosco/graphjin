@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.23.0](https://github.com/open-neko/openneko/compare/v3.22.0...v3.23.0) (2026-10-12)
+
+
+### Features
+
+* **llm:** keep bot instructions current with a step after each turn ([03bcb24](https://github.com/open-neko/openneko/commit/03bcb24978d20af14ee80fbdd26b68cb91d98af9))
+* **web:** bot info page, live bot avatars and instant chat opening ([6110715](https://github.com/open-neko/openneko/commit/6110715e61db7608ca689dce27f7f4c9fd881e1d))
+* **web:** bot info page, self-updating instructions and instant chats ([74f4efc](https://github.com/open-neko/openneko/commit/74f4efc819af9fdb7b0a610e87669bd1263efc17))
+
+
+### Bug Fixes
+
+* **docker:** install @neko/avatars dependencies in the image build ([ac83b2c](https://github.com/open-neko/openneko/commit/ac83b2c4bad8bda0259108af2635bdcb16022341))
+
 ## [3.22.0](https://github.com/open-neko/openneko/compare/v3.21.1...v3.22.0) (2026-10-12)
 
 
