@@ -21,6 +21,7 @@ export const QUEUE = {
   WORKFLOW_CRON_SWEEP: "workflow_cron_sweep",
   WORKFLOW_RUN_FIRE: "workflow_run_fire",
   WORKFLOW_OUTPUT_TTL_SWEEP: "workflow_output_ttl_sweep",
+  BOT_NAME_SWEEP: "bot_name_sweep",
   ACTION_EXECUTE: "action_execute",
   RECORDS_IMPORT: "records_import",
   RECORDS_IDENTITY_LINK: "records_identity_link",

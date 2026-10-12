@@ -1210,6 +1210,7 @@ export const bot = pgTable(
     pattern: text("pattern").notNull(),
     instructions: text("instructions").notNull().default(""),
     is_default: boolean("is_default").notNull().default(false),
+    name_pending: boolean("name_pending").notNull().default(false),
     thread_id: uuid("thread_id").references(() => work_thread.id, {
       onDelete: "set null",
     }),

@@ -36,6 +36,7 @@ worker_queues:
   workflow_cron_sweep: [FLOW-CRON]
   workflow_run_fire: [FLOW-RUN]
   workflow_output_ttl_sweep: [FLOW-OUTPUT-TTL]
+  bot_name_sweep: [WORK-THREAD]
   action_execute: [ACTION-EXECUTE, ACTION-IDEMPOTENCY]
   records_import: [RECORDS-IMPORT]
   records_identity_link: [RECORDS-IDENTITY]

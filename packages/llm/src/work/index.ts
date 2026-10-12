@@ -207,4 +207,5 @@ export {
 } from "./sandbox-launcher";
 
 export { BOT_INSTRUCTIONS_MAX, getThreadBot, updateThreadBotInstructions, type ThreadBot } from "./bot";
+export { nameBackfilledBots } from "./bot-names";
 export { searchSkillsForRun, syncSkillIndex, type SkillSearchResult } from "./skill-index";
