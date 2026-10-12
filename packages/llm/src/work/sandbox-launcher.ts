@@ -760,7 +760,6 @@ function makeSandboxCore(
             packActions: (input as RunAgentBackendInput).packActions,
             sourceConfigEnabled:
               (input as RunAgentBackendInput).sourceConfigEnabled ?? false,
-            botEnabled: (input as RunAgentBackendInput).botEnabled ?? false,
             dataSurface:
               (input as RunAgentBackendInput).dataSurface ?? "customer",
             ...((input as RunAgentBackendInput).graphjinToolPolicy
@@ -931,7 +930,7 @@ function makeSandboxCore(
           scope: createHash("sha256").update(JSON.stringify([
             reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
             opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
-            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.botEnabled ?? false, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
+            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
             workInput.dataSurface, workInput.graphjinToolPolicy, workInput.graphjinDataPath, workInput.nativeDelegation,
             workInput.backendState, opts.brokerUrl,
             hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,

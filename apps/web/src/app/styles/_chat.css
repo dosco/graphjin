@@ -226,6 +226,11 @@
   font-weight: 800;
   font-size: var(--type-subsection);
   color: var(--text);
+  text-decoration: none;
+}
+
+a.chat-bot-chip:hover {
+  color: var(--accent);
 }
 
 .chat-create-swatches .chat-create-swatch span[role="img"] svg {
@@ -431,4 +436,78 @@
 .chat-shell .work-transcript h2,
 .chat-shell .work-transcript h3 {
   overflow-wrap: break-word;
+}
+
+.bot-info {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 8px 0 48px;
+}
+
+.bot-info-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.bot-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bot-info-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--type-subsection);
+}
+
+.bot-info-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bot-info-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bot-info-copy {
+  margin: 0;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+}
+
+.bot-routine {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 16px;
+}
+
+.bot-routine-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.work-timeline.has-avatar::after {
+  display: none;
+}
+
+.work-timeline-avatar {
+  position: absolute;
+  top: -4px;
+  left: -6px;
+  line-height: 0;
 }

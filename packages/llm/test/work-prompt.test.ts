@@ -450,17 +450,15 @@ describe("buildWorkPrompt native delegation guidance", () => {
 });
 
 describe("buildBotSection", () => {
-  it("names the bot and follows its own instructions", () => {
-    const section = buildBotSection({ name: "Stock watcher", instructions: "Watches stock levels." }, true);
+  it("names the bot and follows its job description", () => {
+    const section = buildBotSection({ name: "Stock watcher", instructions: "Watches stock levels." });
     expect(section).toContain('"Stock watcher"');
     expect(section).toContain("Watches stock levels.");
-    expect(section).toContain("mcp_neko_bot_update_instructions");
+    expect(section).not.toContain("mcp_neko_bot_");
   });
 
-  it("describes the instructions tool only when it is mounted", () => {
-    const section = buildBotSection({ name: "Test", instructions: "" }, false);
-    expect(section).toContain("no job description yet");
-    expect(section).not.toContain("mcp_neko_bot_");
+  it("says when the bot has no job description yet", () => {
+    expect(buildBotSection({ name: "Test", instructions: "" })).toContain("no job description yet");
   });
 
   it("leaves the prompt without a bot section for an ordinary chat", () => {

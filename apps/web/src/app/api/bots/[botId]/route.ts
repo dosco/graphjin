@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentActor } from "@/lib/actor";
-import { setBotInstructions } from "@/lib/bots";
+import { cleanBotPatch, getBotDetail, updateBot } from "@/lib/bots";
 import { getOrgId } from "@/lib/db";
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ botId: string }> }) {
+type Context = { params: Promise<{ botId: string }> };
+
+export async function GET(_request: NextRequest, { params }: Context) {
   const [{ botId }, orgId, actor] = await Promise.all([params, getOrgId(), getCurrentActor()]);
   if (!actor.userId) return NextResponse.json({ error: "sign in" }, { status: 401 });
-  const body = await request.json().catch(() => ({}));
-  if (typeof body.instructions !== "string") {
-    return NextResponse.json({ error: "Send the instructions as text." }, { status: 400 });
-  }
-  const updated = await setBotInstructions(orgId, actor.userId, botId, body.instructions);
+  const detail = await getBotDetail(orgId, actor.userId, botId);
+  if (!detail) return NextResponse.json({ error: "not found" }, { status: 404 });
+  return NextResponse.json(detail);
+}
+
+export async function PATCH(request: NextRequest, { params }: Context) {
+  const [{ botId }, orgId, actor] = await Promise.all([params, getOrgId(), getCurrentActor()]);
+  if (!actor.userId) return NextResponse.json({ error: "sign in" }, { status: 401 });
+  const patch = cleanBotPatch(await request.json().catch(() => ({})));
+  if (typeof patch === "string") return NextResponse.json({ error: patch }, { status: 400 });
+  const updated = await updateBot(orgId, actor.userId, botId, patch);
   if (!updated) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json({ bot: updated });
 }

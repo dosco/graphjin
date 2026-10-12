@@ -25,7 +25,6 @@ import {
   buildSourceConfigManagerServer,
   buildUserManagerServer,
   buildWorkMemoryServer,
-  buildBotServer,
   buildSkillSearchServer,
   buildRuleBuilderServer,
   buildWorkflowActionServer,
@@ -124,8 +123,6 @@ export function buildBridgeServer(
       );
     case "neko_guides":
       return buildSkillSearchServer({ orgId, runId }, { controlPlane });
-    case "neko_bot":
-      return buildBotServer({ orgId, threadId }, { controlPlane });
     case "neko_library":
       return buildLibraryServer({ orgId, threadId, runId }, { controlPlane });
     case "neko_records":

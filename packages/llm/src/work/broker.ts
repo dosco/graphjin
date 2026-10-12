@@ -220,18 +220,6 @@ async function handle(
           ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
         }),
       );
-    case "/v1/bot/instructions":
-      // The chat comes from the run binding; an agent-supplied thread is never trusted.
-      if (!binding.threadId) return send(res, 400, { error: "no chat bound to this run" });
-      return send(
-        res,
-        200,
-        await cp.updateBotInstructions({
-          orgId: binding.orgId,
-          threadId: binding.threadId,
-          instructions: String(body.instructions ?? ""),
-        }),
-      );
     case "/v1/memory/search": {
       delete body.userId;
       const query = String(body.query ?? "");

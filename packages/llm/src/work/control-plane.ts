@@ -539,11 +539,6 @@ export interface AgentControlPlane {
     timeoutMs?: number;
   }): Promise<WaitForActionExecutionResult>;
   rememberWorkMemory(input: RememberWorkMemoryInput): Promise<{ id: string }>;
-  updateBotInstructions(input: {
-    orgId: string;
-    threadId: string;
-    instructions: string;
-  }): Promise<{ ok: boolean }>;
   searchSkillsForRun(input: {
     orgId: string;
     runId: string;
@@ -998,15 +993,6 @@ export class InProcessControlPlane implements AgentControlPlane {
     args: WorkMemorySearchArgs,
   ): Promise<WorkMemorySearchResult[]> {
     return searchWorkMemoryByContext(args);
-  }
-
-  async updateBotInstructions(input: {
-    orgId: string;
-    threadId: string;
-    instructions: string;
-  }): Promise<{ ok: boolean }> {
-    const { updateThreadBotInstructions } = await import("./bot");
-    return updateThreadBotInstructions(input);
   }
 
   async searchSkillsForRun(input: {

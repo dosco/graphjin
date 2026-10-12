@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BotAvatar } from "./BotAvatar";
+import { BotMoodProvider, useBotMood } from "./bot-mood";
 import { ChatSidebar } from "./ChatSidebar";
 import { NekoStyleProvider, useNekoStyle } from "./neko-style";
 import { BotsProvider, useBots } from "./useBots";
@@ -42,17 +43,19 @@ function initials(name: string) {
 function BotChip({ threadId }: { threadId: string }) {
   const { bots } = useBots();
   const current = bots?.find((b) => b.threadId === threadId);
+  const state = useBotMood(threadId);
   if (!current) return <span className="chat-bot-chip" />;
   return (
-    <span className="chat-bot-chip">
+    <Link href={`/chat/bots/${current.id}`} className="chat-bot-chip" title={`About ${current.name}`}>
       <BotAvatar
         coat={current.coat}
         pattern={current.pattern}
         size={32}
+        state={state}
         aria-hidden
       />
       {current.name}
-    </span>
+    </Link>
   );
 }
 
@@ -156,6 +159,7 @@ export default function ChatShell({
   return (
     <NekoStyleProvider>
       <BotsProvider>
+        <BotMoodProvider>
         <div className="chat-frame">
           <ChatSidebar activeThreadId={threadId} />
           <div className="chat-shell">
@@ -183,6 +187,7 @@ export default function ChatShell({
             {children}
           </div>
         </div>
+        </BotMoodProvider>
       </BotsProvider>
     </NekoStyleProvider>
   );

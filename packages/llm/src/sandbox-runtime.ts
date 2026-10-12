@@ -32,7 +32,6 @@ export {
   buildSourceConfigManagerServer,
   buildUserManagerServer,
   buildWorkMemoryServer,
-  buildBotServer,
   buildSkillSearchServer,
   type PluginActionDescriptor,
   type PackActionDescriptor,
