@@ -26,6 +26,7 @@ import (
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
+	"github.com/dosco/graphjin/agent/v3/internal/methodevidence"
 )
 
 type capabilityProfile struct {
@@ -159,6 +160,8 @@ type report struct {
 	DataVerdicts       []dataCaseVerdict `json:"data_verdicts,omitempty"`
 	Acceptance         acceptance        `json:"acceptance"`
 	Runs               []runResult       `json:"runs"`
+
+	MethodScoringVersion string `json:"method_scoring_version,omitempty"`
 }
 
 type task struct {
@@ -311,6 +314,8 @@ func main() {
 		Repeats:            *repeats,
 		RepresentativeOnly: !*allCases,
 		Runs:               results,
+
+		MethodScoringVersion: methodevidence.Version,
 	}
 	out.Runs = append(results, dataResults...)
 	out.Metrics = calculateMetrics(results, cases)

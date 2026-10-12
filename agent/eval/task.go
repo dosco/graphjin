@@ -53,7 +53,8 @@ const (
 	// oracles, and windows composed with a value filter. Existing task content
 	// is untouched, so content IDs are unchanged; what changes is that a freshly
 	// generated suite draws from a wider candidate pool.
-	GeneratorVersion = "graphjin.eval.generator/v16"
+	// v17 updates method-rule dialect support to parser-backed aggregate checks.
+	GeneratorVersion = "graphjin.eval.generator/v17"
 	// RewardVersion v6: a dimension that starts with a number is no longer
 	// satisfied by a larger number ending in the same digits. "24 hours"
 	// contains "4 hours", so an answer stating the wrong service level scored as
@@ -67,7 +68,9 @@ const (
 	// alternates yet, so this changes no existing verdict; it is the scoring
 	// half of the fix, landed ahead of the suite regeneration that would let
 	// tasks project a second identifier.
-	RewardVersion         = "graphjin.eval.reward/v6"
+	// v7 scores bare aggregate requirements by parsed operation/column and
+	// resolves saved executions from hash-verified same-run catalog receipts.
+	RewardVersion         = "graphjin.eval.reward/v7"
 	DefaultSuiteSize      = 24
 	DefaultRepeats        = 3
 	DefaultEvaluationDir  = "eval"
@@ -86,6 +89,7 @@ var SupportedGeneratorVersions = []string{
 	"graphjin.eval.generator/v13",
 	"graphjin.eval.generator/v14",
 	"graphjin.eval.generator/v15",
+	"graphjin.eval.generator/v16",
 	GeneratorVersion,
 }
 

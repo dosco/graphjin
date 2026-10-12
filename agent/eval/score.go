@@ -12,6 +12,7 @@ import (
 	"time"
 
 	gjagent "github.com/dosco/graphjin/agent/v3"
+	"github.com/dosco/graphjin/agent/v3/internal/methodevidence"
 )
 
 type TokenUsage struct {
@@ -96,8 +97,8 @@ func ScoreWithProfile(task Task, oracle *OracleResult, response gjagent.Response
 }
 
 func scoreComponents(task Task, oracle *OracleResult, response gjagent.Response, latencyMS int64) ScoreDetail {
-	queries, successfulQueries, tools, successfulTools, outcomes, successfulOutcomes := actionInventory(response.Actions)
-	emptyRoots := emptyRootsByQuery(response.Actions)
+	queries, successfulQueries, tools, successfulTools, outcomes, successfulOutcomes := actionInventory(response.Actions, response.Trace)
+	emptyRoots := emptyRootsByQuery(response.Actions, response.Trace)
 	failedOutcomes := subtractOutcomes(outcomes, successfulOutcomes)
 	usedSkills := make([]string, 0, len(response.Skills))
 	for _, usage := range response.Skills {
@@ -445,7 +446,7 @@ func evaluateMethod(rule MethodRule, answer AnswerRule, queries, tools []string,
 			return false
 		}
 	}
-	if rule.ForbidFinalizeFromListOnly && (answer.Kind == "number" || answer.Kind == "") && !matchesAnyQuery(aggregateFieldPattern, queries) {
+	if rule.ForbidFinalizeFromListOnly && (answer.Kind == "number" || answer.Kind == "") && !methodevidence.HasAnyAggregate(queries) {
 		return false
 	}
 	return true
@@ -466,7 +467,7 @@ func evaluateMethod(rule MethodRule, answer AnswerRule, queries, tools []string,
 // or not it returned rows.
 func matchesRequiredQuery(pattern *regexp.Regexp, source string, queries []string, emptyRoots map[string][]string) bool {
 	for _, query := range queries {
-		if !pattern.MatchString(query) {
+		if !methodevidence.MatchRequired(pattern, source, query) {
 			continue
 		}
 		if requirementNamesEmptyRoot(source, emptyRoots[query]) {
@@ -499,11 +500,17 @@ func requirementNamesEmptyRoot(source string, empty []string) bool {
 // empty, as recorded by the agent at execution time. Episodes recorded before
 // the agent reported this carry nothing, and every requirement passes as it
 // did before.
-func emptyRootsByQuery(value any) map[string][]string {
+func emptyRootsByQuery(value any, traces ...any) map[string][]string {
 	out := map[string][]string{}
+	var trace any
+	if len(traces) > 0 {
+		trace = traces[0]
+	}
+	resolver := methodevidence.NewResolver(trace)
 	for _, item := range toSlice(value) {
 		action := toMap(item)
-		query := strings.TrimSpace(valueString(toMap(action["args"])["query"]))
+		resolver.ObserveCatalog(action)
+		query := resolver.ExecutionQuery(action)
 		if query == "" {
 			continue
 		}
@@ -591,7 +598,12 @@ func executedMutation(response gjagent.Response) bool {
 	return false
 }
 
-func actionInventory(value any) (queries, successfulQueries, tools, successfulTools, outcomes, successfulOutcomes []string) {
+func actionInventory(value any, traces ...any) (queries, successfulQueries, tools, successfulTools, outcomes, successfulOutcomes []string) {
+	var trace any
+	if len(traces) > 0 {
+		trace = traces[0]
+	}
+	resolver := methodevidence.NewResolver(trace)
 	for _, item := range toSlice(value) {
 		action := toMap(item)
 		tool := strings.TrimSpace(valueString(action["tool"]))
@@ -602,6 +614,7 @@ func actionInventory(value any) (queries, successfulQueries, tools, successfulTo
 		if status != "" && status != "ok" {
 			continue
 		}
+		resolver.ObserveCatalog(action)
 		tools = appendUnique(tools, tool)
 		outcomes = append(outcomes, tool)
 		succeeded := intValue(toMap(action["summary"])["error_count"]) == 0
@@ -609,8 +622,7 @@ func actionInventory(value any) (queries, successfulQueries, tools, successfulTo
 			successfulTools = appendUnique(successfulTools, tool)
 			successfulOutcomes = append(successfulOutcomes, tool)
 		}
-		args := toMap(action["args"])
-		query := strings.TrimSpace(valueString(args["query"]))
+		query := resolver.ExecutionQuery(action)
 		if query == "" {
 			continue
 		}
@@ -837,7 +849,7 @@ func classifyFailure(task Task, detail ScoreDetail, response gjagent.Response, s
 		// that claim is false — some other required pattern went unmatched — and
 		// the old blanket label sent a whole investigation chasing delegation for
 		// a family whose actual failure was a file-read regex.
-		if matchesAnyQuery(aggregateFieldPattern, successfulQueries) {
+		if methodevidence.HasAnyAggregate(successfulQueries) {
 			return "method_pattern_unmatched"
 		}
 		return "client_side_aggregation"

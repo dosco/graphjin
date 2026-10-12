@@ -5091,6 +5091,14 @@ func catalogCardEvidence(tool string, args map[string]any, out any) map[string]a
 				fields[key] = value
 			}
 		}
+		// Preserve a complete, already caller-visible saved-query definition
+		// for execution-method scoring. Never record a truncated definition:
+		// its catalog source hash must verify the exact source bytes.
+		if stringFromMap(card, "kind") == "saved_query" {
+			if query := stringFromMap(card, "graphql_query"); query != "" && len(query) <= catalogEvidenceFieldLimit {
+				fields["graphql_query"] = query
+			}
+		}
 		if len(fields) != 0 {
 			evidence[id] = fields
 		}
