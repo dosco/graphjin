@@ -248,7 +248,40 @@ function refuse(request: NextRequest, pathname: string): NextResponse {
   return NextResponse.redirect(url, { status: 302 });
 }
 
+const SURFACE_COOKIE = "openneko_surface";
+
+/**
+ * The app opens on chat. The profile menu's Admin button enters the console
+ * with /?console=1, and the choice holds until the reader opens chat again,
+ * so the console's own links to / keep working.
+ */
+function chooseSurface(request: NextRequest, gated: NextResponse): NextResponse {
+  if (gated.status !== 200 || gated.headers.get("x-middleware-next") !== "1") return gated;
+  const { pathname, searchParams } = request.nextUrl;
+  const surface = request.cookies.get(SURFACE_COOKIE)?.value;
+  if (pathname === "/" && searchParams.get("console") === "1") {
+    const url = request.nextUrl.clone();
+    url.searchParams.delete("console");
+    const response = NextResponse.redirect(url, { status: 302 });
+    response.cookies.set(SURFACE_COOKIE, "console", { path: "/", sameSite: "lax" });
+    return response;
+  }
+  if (pathname === "/" && surface !== "console") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/chat";
+    return NextResponse.redirect(url, { status: 302 });
+  }
+  if ((pathname === "/chat" || pathname.startsWith("/chat/")) && surface === "console") {
+    gated.cookies.delete(SURFACE_COOKIE);
+  }
+  return gated;
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse> {
+  return chooseSurface(request, await gate(request));
+}
+
+async function gate(request: NextRequest): Promise<NextResponse> {
   const pathname = request.nextUrl.pathname;
   const policy = accessPolicyFor(pathname);
   if (!policy) {

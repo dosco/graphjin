@@ -97,7 +97,7 @@ function ProfileMenu({ identity }: { identity?: RailIdentity }) {
         {isAdmin ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => router.push("/")}>
+            <DropdownMenuItem onSelect={() => router.push("/?console=1")}>
               <ShieldCheck aria-hidden="true" strokeWidth={2} />
               Admin
             </DropdownMenuItem>
