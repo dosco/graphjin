@@ -1,3 +1,4 @@
+import { botChatOwner } from "../work/bot";
 import { detectMutationLoop } from "./cycle-detection";
 import {
   createSubscription,
@@ -24,9 +25,17 @@ export type SaveWorkflowWithTriggerResult = SaveWorkflowResult & {
 // `triggers.cron` makes "do Y on a schedule" one save. The workflow is always
 // persisted; a rejected trigger comes back as triggerError so the caller can
 // surface it without losing the workflow (re-saving upserts by name).
+/** A routine saved from a bot chat belongs to that chat's user and runs with their access. */
+export async function withBotChatOwner(input: SaveWorkflowInput): Promise<SaveWorkflowInput> {
+  if (input.ownerUserId || !input.createdByThreadId) return input;
+  const owner = await botChatOwner(input.orgId, input.createdByThreadId);
+  return owner ? { ...input, ownerUserId: owner } : input;
+}
+
 export async function saveWorkflowWithTrigger(
-  input: SaveWorkflowInput,
+  rawInput: SaveWorkflowInput,
 ): Promise<SaveWorkflowWithTriggerResult> {
+  const input = await withBotChatOwner(rawInput);
   const saved = await saveWorkflow(input);
 
   // OL4: a `watch` condition trigger persists a watcher tied to the

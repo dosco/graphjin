@@ -17,6 +17,7 @@ import { evaluateActionPolicy } from "../workflows/policy-engine";
 import { withActionTargets } from "../workflows/action-targets";
 import {
   saveWorkflowWithTrigger,
+  withBotChatOwner,
   type SaveWorkflowWithTriggerResult,
 } from "../workflows/save-workflow-with-trigger";
 import {
@@ -1339,8 +1340,9 @@ export class InProcessControlPlane implements AgentControlPlane {
   }
 
   async saveWorkflowWithTrigger(
-    input: SaveWorkflowInput,
+    rawInput: SaveWorkflowInput,
   ): Promise<Wire<SaveWorkflowWithTriggerResult>> {
+    const input = await withBotChatOwner(rawInput);
     if (input.createdByRunId) {
       const owner = input.ownerUserId ?? "";
       const existing = (await listWorkflows(input.orgId)).find((w) => w.name === input.name && w.ownerUserId === owner);

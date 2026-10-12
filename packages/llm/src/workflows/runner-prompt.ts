@@ -250,6 +250,12 @@ ${GRAPHJIN_DATE_RULE}
 
 ${outputsBlock}
 
+<files>
+Save every report or file you make under ${workspace.artifactRoot}. Files
+saved there become downloads for the operator. Files saved anywhere else are
+lost when the run ends.
+</files>
+
 ${actionsBlock}
 
 ${memorySection}
