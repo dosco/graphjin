@@ -511,3 +511,18 @@ a.chat-bot-chip:hover {
   left: -6px;
   line-height: 0;
 }
+
+.bot-info-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bot-info-rename {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 360px;
+  text-align: left;
+}

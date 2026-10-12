@@ -18,14 +18,17 @@ export function BotLookFields({
   onChange,
   error,
   autoFocus = false,
+  showName = true,
 }: {
   look: BotLook;
   onChange: (look: BotLook) => void;
   error?: string | null;
   autoFocus?: boolean;
+  showName?: boolean;
 }) {
   return (
     <>
+      {showName ? (
       <FieldInput
         label="Name"
         placeholder="Name your bot"
@@ -35,6 +38,7 @@ export function BotLookFields({
         onChange={(event) => onChange({ ...look, name: event.target.value })}
         error={error ?? undefined}
       />
+      ) : null}
 
       <div className="chat-create-group">
         <span className="chat-create-label" id="coat-label">Coat</span>
