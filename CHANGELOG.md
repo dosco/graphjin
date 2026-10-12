@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.22.0](https://github.com/open-neko/openneko/compare/v3.21.1...v3.22.0) (2026-10-12)
+
+
+### Features
+
+* **web:** chat-first web app with personal bots, and Ax as the default backend ([#449](https://github.com/open-neko/openneko/issues/449)) ([9df25f6](https://github.com/open-neko/openneko/commit/9df25f65902c08418d05552e660cc2c69536bf91))
+
 ## [3.21.1](https://github.com/open-neko/openneko/compare/v3.21.0...v3.21.1) (2026-10-11)
 
 
