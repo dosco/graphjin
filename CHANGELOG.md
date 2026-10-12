@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.27.0](https://github.com/open-neko/openneko/compare/v3.26.0...v3.27.0) (2026-10-12)
+
+
+### Features
+
+* **llm:** let the agent edit a saved memory ([c041d00](https://github.com/open-neko/openneko/commit/c041d00958aa690a4ae754576e4685a7ca64f5bd))
+* **llm:** let the agent edit a saved memory ([89474dd](https://github.com/open-neko/openneko/commit/89474dded2147c3c3e24d26e304f4d151602313d))
+
 ## [3.26.0](https://github.com/open-neko/openneko/compare/v3.25.0...v3.26.0) (2026-10-12)
 
 
