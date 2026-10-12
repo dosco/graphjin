@@ -500,3 +500,60 @@ func TestRealAxCanRecoverAnOmittedPermittedGuide(t *testing.T) {
 		t.Fatal("loaded guide absent from next executor prompt")
 	}
 }
+
+func TestCompletedSkillSelectionSurvivesCatalogTimeout(t *testing.T) {
+	factory := selectionFactory(func(ctx context.Context, candidates []map[string]any) (ax.Value, error) {
+		if len(candidates) > 0 && stringFromMap(candidates[0], "kind") != "" {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return selectRelevant(ctx, candidates)
+	})
+	a := newSelectionAgent(selectionFixture(), factory)
+	a.config.Selection.StartupBudgetMS = 25
+	result, _ := prepareForTest(t, a, Request{Instruction: "show invoices"})
+	if !reflect.DeepEqual(skillIDs(result.skills), []string{skillDataDiscovery, skillDataAggregation}) {
+		t.Fatalf("catalog timeout discarded skill selection: %v", skillIDs(result.skills))
+	}
+}
+
+func TestCompletedSkillSelectionSurvivesChangedCatalogRevision(t *testing.T) {
+	rt := selectionFixture()
+	rt.detailRevision = "revision-2"
+	result, _ := prepareForTest(t, newSelectionAgent(rt, selectionFactory(selectRelevant)), Request{Instruction: "show invoices"})
+	if !reflect.DeepEqual(skillIDs(result.skills), []string{skillDataDiscovery, skillDataAggregation}) {
+		t.Fatalf("catalog revision change discarded skill selection: %v", skillIDs(result.skills))
+	}
+	if len(result.stats.DetailIDs) != 0 {
+		t.Fatal("stale catalog details retained")
+	}
+}
+
+func TestOrdinaryDetailLookupConsumesPreparedFactsWithoutAnotherRead(t *testing.T) {
+	rt := selectionFixture()
+	a := newSelectionAgent(rt, selectionFactory(selectRelevant))
+	result, protocol := prepareForTest(t, a, Request{Instruction: "show invoices"})
+	protocol.preparedDetail = func(ctx context.Context, args map[string]any) (any, bool) {
+		if !result.revalidate(ctx, rt, "") {
+			return nil, false
+		}
+		return result.exactDetail(args)
+	}
+	before := len(rt.reads)
+	out, err := protocol.QueryCatalog(context.Background(), map[string]any{"id": "table:db:public.invoices"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rt.reads) != before || mapValue(out)["prefetched"] != true || !protocol.state.tablesDetailed["invoices"] || !result.stats.Consumed {
+		t.Fatal("exact lookup did not consume prepared facts locally")
+	}
+	if protocol.state.tablesDetailed["customers"] {
+		t.Fatal("cache lookup consumed an unrequested table")
+	}
+	if _, ok := result.exactDetail(map[string]any{"ids": []string{"table:db:public.invoices", "missing"}}); ok {
+		t.Fatal("partial cache batch accepted")
+	}
+	if len(result.digest()) == 0 {
+		t.Fatal("no compact schema references")
+	}
+}

@@ -78,6 +78,7 @@ type PreparationStats struct {
 	FirstExecutionMS int64            `json:"first_execution_ms,omitempty"`
 	Usage            UsageTotals      `json:"usage"`
 	SkillReloads     int              `json:"skill_reloads"`
+	DetailCacheHits  int              `json:"detail_cache_hits"`
 }
 
 type preparedRead struct {
@@ -348,6 +349,7 @@ func (p *preparation) finish(protocol *protocolRuntime, seed any) *preparationRe
 	}
 	stopped := false
 	invalidRevision := false
+	skillsDecided := false
 	for p.active > 0 || (!stopped && len(queue) > 0) {
 		for !stopped && p.ctx.Err() == nil && p.active < p.config.Concurrency && len(queue) > 0 {
 			job := queue[0]
@@ -403,13 +405,16 @@ func (p *preparation) finish(protocol *protocolRuntime, seed any) *preparationRe
 		switch event.job.kind {
 		case "skills":
 			var selected []skillDefinition
+			refused := false
 			for i, skill := range p.allowed {
+				refused = refused || stringFromMap(event.evidence[i], "status") == "refused"
 				result.stats.Decisions = append(result.stats.Decisions, map[string]any{"id": skill.id, "kind": "skill", "evidence": event.evidence[i]})
 				if skill.id == skillDataDiscovery || retainDecision(event.evidence[i]) {
 					selected = append(selected, skill)
 				}
 			}
 			result.skills = selected
+			skillsDecided = !refused
 		case "index":
 			index = event.index
 			if index == nil {
@@ -484,7 +489,6 @@ func (p *preparation) finish(protocol *protocolRuntime, seed any) *preparationRe
 				result.reads = nil
 				result.stats.DetailIDs = nil
 				result.stats.ContextBytes = 0
-				result.skills = p.allowed
 				result.stats.Fallbacks = appendUniqueString(result.stats.Fallbacks, "catalog_revision_changed")
 				invalidRevision = true
 				stopped = true
@@ -514,9 +518,9 @@ func (p *preparation) finish(protocol *protocolRuntime, seed any) *preparationRe
 			}
 		}
 	}
-	// Any uncertain branch restores guides; fetched detail evidence remains
-	// usable. Catalog recovery is never constrained to the selected subset.
-	if len(result.stats.Fallbacks) > 0 {
+	// Independent catalog failures must not discard a completed skill decision.
+	// Unfinished/refused skill decisions retain the full permitted set.
+	if !skillsDecided {
 		result.skills = p.allowed
 	}
 	for _, skill := range result.skills {
@@ -531,6 +535,110 @@ func (p *preparation) finish(protocol *protocolRuntime, seed any) *preparationRe
 		return stringFromMap(result.stats.Decisions[i], "id") < stringFromMap(result.stats.Decisions[j], "id")
 	})
 	sort.Slice(result.reads, func(i, j int) bool { return stringify(result.reads[i].args) < stringify(result.reads[j].args) })
+	return result
+}
+
+func (r *preparationResult) revalidate(ctx context.Context, rt GraphRuntime, namespace string) bool {
+	if r == nil || len(r.reads) == 0 {
+		return false
+	}
+	if provider, ok := rt.(CatalogDiscoveryProvider); ok {
+		index, err := provider.CatalogDiscovery(ctx, map[string]any{"namespace": namespace})
+		if err != nil || index == nil || (r.revision != "" && index.Revision != r.revision) {
+			r.reads = nil
+			r.stats.DetailIDs = nil
+			r.stats.ContextBytes = 0
+			r.stats.Fallbacks = appendUniqueString(r.stats.Fallbacks, "catalog_revalidation_failed")
+			return false
+		}
+	}
+	return ctx.Err() == nil
+}
+
+// exactDetail serves the ordinary discovery callable from prefetched facts.
+// The existing protocol records consumption and guards exactly as it would
+// for a fresh lookup; incomplete batches fall back to the live runtime.
+func (r *preparationResult) exactDetail(args map[string]any) (any, bool) {
+	ids := detailIDsFromArgs(args)
+	if len(ids) == 0 || len(ids) > MaxCatalogBatchIDs {
+		return nil, false
+	}
+	wanted := map[string]bool{}
+	for _, id := range ids {
+		wanted[id] = true
+	}
+	var cards, details, edges []any
+	found := map[string]bool{}
+	for _, read := range r.reads {
+		for _, card := range catalogCards(read.out) {
+			id := stringFromMap(card, "id")
+			if wanted[id] && !found[id] {
+				cards = append(cards, card)
+				found[id] = true
+			}
+		}
+		for _, detail := range anySlice(mapValue(read.out)["details"]) {
+			if wanted[stringFromMap(mapValue(detail), "card_id")] {
+				details = append(details, detail)
+			}
+		}
+		for _, edge := range anySlice(mapValue(read.out)["edges"]) {
+			value := mapValue(edge)
+			if wanted[strings.TrimPrefix(stringFromMap(value, "from_id"), "node:")] || wanted[strings.TrimPrefix(stringFromMap(value, "to_id"), "node:")] {
+				edges = append(edges, edge)
+			}
+		}
+	}
+	if len(found) != len(wanted) {
+		return nil, false
+	}
+	r.stats.DetailCacheHits++
+	r.stats.Consumed = true
+	return map[string]any{"revision": r.revision, "count": len(cards), "cards": cards, "details": details, "edges": edges, "prefetched": true}, true
+}
+
+// digest exposes only a few schema references, never full detail bodies, rows,
+// or selection probabilities. This lets the actor choose an exact lookup in
+// its execution block instead of spending a turn printing the hidden seed.
+func (r *preparationResult) digest() []any {
+	if r == nil {
+		return nil
+	}
+	scores := map[string]float64{}
+	for _, decision := range r.stats.Decisions {
+		if score, ok := selectionScore(mapValue(decision["evidence"])["value"]); ok {
+			id := stringFromMap(decision, "id")
+			if score > scores[id] {
+				scores[id] = score
+			}
+		}
+	}
+	var candidates []map[string]any
+	seen := map[string]bool{}
+	for _, read := range r.reads {
+		for _, card := range catalogCards(read.out) {
+			id, kind := stringFromMap(card, "id"), stringFromMap(card, "kind")
+			if seen[id] || (kind != "table" && kind != "saved_query" && kind != "workflow" && kind != "relationship") {
+				continue
+			}
+			seen[id] = true
+			name := stringFromMap(card, "table_name")
+			if name == "" {
+				name = stringFromMap(card, "title")
+			}
+			candidates = append(candidates, map[string]any{"id": id, "kind": kind, "name": name})
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return scores[stringFromMap(candidates[i], "id")] > scores[stringFromMap(candidates[j], "id")]
+	})
+	result := make([]any, 0, min(6, len(candidates)))
+	for _, candidate := range candidates {
+		if len(result) == 6 {
+			break
+		}
+		result = append(result, candidate)
+	}
 	return result
 }
 

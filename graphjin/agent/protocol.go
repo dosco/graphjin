@@ -28,12 +28,13 @@ const emptyDetailKnownIDLimit = 512
 const actionQueryTraceLimit = 8192
 
 type protocolRuntime struct {
-	base          GraphRuntime
-	state         *discoveryState
-	namespace     string
-	seedLimit     int
-	catalogSearch CatalogSearchFeatures
-	enrichCatalog func(context.Context, map[string]any, any) any
+	base           GraphRuntime
+	state          *discoveryState
+	namespace      string
+	seedLimit      int
+	catalogSearch  CatalogSearchFeatures
+	enrichCatalog  func(context.Context, map[string]any, any) any
+	preparedDetail func(context.Context, map[string]any) (any, bool)
 }
 
 type discoveryState struct {
@@ -463,7 +464,17 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 		return nil, err
 	}
 	action := r.state.startAction("model", "query_catalog", args)
-	out, err := r.base.QueryCatalog(ctx, args)
+	var out any
+	var err error
+	cached := false
+	if len(detailIDs) > 0 && r.preparedDetail != nil {
+		out, cached = r.preparedDetail(ctx, args)
+	}
+	if cached {
+		r.state.actions[action].Source = "prepared"
+	} else {
+		out, err = r.base.QueryCatalog(ctx, args)
+	}
 	if err == nil {
 		if len(detailIDs) == 0 && r.enrichCatalog != nil {
 			out = r.enrichCatalog(ctx, args, out)
