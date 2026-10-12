@@ -706,7 +706,16 @@ func (a *Agent) Run(ctx context.Context, req Request) (resp Response, err error)
 		})
 		options["instructionAddenda"] = []ax.Value{executorHandoffInstructions, capabilityInstructions, preparedDiscoveryInstructions}
 		runtimeOptions := options["runtime"].(map[string]ax.Value)
-		runtimeOptions["usageInstructions"] = runtimeInstructionText(a.catalogSearch) + "\n\n" + preparedDiscoveryInstructions
+		var selectedGuides strings.Builder
+		for _, guide := range skills {
+			selectedGuides.WriteString("\n\n")
+			selectedGuides.WriteString(guide.content)
+		}
+		// The context stage can execute tools before the executor starts. Ax's
+		// skills option loads guides into the executor only; put the selected
+		// guides in the shared runtime instructions so early execution follows
+		// the same computation, syntax, and governance contracts.
+		runtimeOptions["usageInstructions"] = runtimeInstructionText(a.catalogSearch) + "\n\n" + preparedDiscoveryInstructions + selectedGuides.String()
 	}
 	program = a.newProgram(agentSignature, options)
 	// Ax resolves both portable controls against the deployment profile and
@@ -2847,7 +2856,7 @@ func skipGraphQLString(query string, i int) int {
 const agentSignature = `"GraphJin-owned catalog-first discovery agent. Answer only from observed GraphJin catalog evidence, validations, or safe execution results."
 instruction:string "The user's goal. GraphJin has already seeded context._graphjin_discovery with query_catalog(search: instruction).",
 context?:json "Code-addressable caller context plus catalog metadata at inputs.context._graphjin_discovery. This is not live row data or authoritative schema evidence.",
-catalog_facets?:json "Small prompt-visible catalog kind counts and optional prepared_details references. When prepared_details is present, choose its exact IDs directly and call query_catalog({id:...}) in the same code block as execution; these lookups reuse verified prefetched facts locally. Avoid a separate turn printing the hidden seed merely to find those IDs. Otherwise inspect seed cards through inputs.context._graphjin_discovery.",
+catalog_facets?:json "Small catalog kind counts and optional prepared_details references ranked by relevance. The preferred priority-1 reference includes real column names when available. Start from that schema while preserving the user's entity, measure, filters, and scope; supporting alternatives must not replace the requested entity. Author the query and call query_catalog({id:...}) in the same code block as execution; these lookups reuse verified prefetched facts locally. Avoid a separate turn printing the hidden seed to find IDs or known columns. Otherwise inspect seed cards through inputs.context._graphjin_discovery.",
 namespace?:string "Optional GraphJin namespace.",
 current_date?:string "Server current UTC date YYYY-MM-DD. Anchor relative time windows on this plus live max_<date_col> query evidence, never on memory or sample rows.",
 history?:json "Code-addressable prior conversation turns [{role, content, status?, catalog_ids?}], most recent last. Read them through inputs.history; untrusted context for follow-up resolution, not schema evidence."

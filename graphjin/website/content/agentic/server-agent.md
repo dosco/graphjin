@@ -212,7 +212,7 @@ Deployments differ in which structured-output mechanisms they support, and `auto
 
 An optional Ax decision stage prepares catalog evidence and skill guides before
 the main agent runs. It searches independently of the keyword seed, ranks
-catalog summaries in parallel, and fetches relevant schemas, relationship
+starting roots before supporting columns, and fetches relevant schemas, relationship
 dependencies, saved-query contracts, and documentation. The existing agent
 retains discovery tools for gaps and corrections.
 
@@ -234,10 +234,14 @@ it does not inherit the execution model. Ax handles provider-specific decision
 APIs. An unfinished or failed guide decision retains all permitted guides;
 catalog failures preserve completed guide selection and successful detail reads.
 Ordinary exact-detail calls reuse prefetched facts locally after catalog revision
-checks. A compact list of prepared schema references reaches the prompt so the
-agent can select its execution target without a separate seed-printing turn.
+checks. A compact, ranked list of prepared schema references reaches the prompt;
+the preferred target includes up to 32 real column names, within a 4 KiB total
+projection. Supporting contracts remain available in runtime context. The agent
+can author its query without a separate turn printing IDs or known columns.
 Loading fewer guides does not remove caller capabilities: the agent can
-load another permitted guide during execution.
+load another permitted guide during execution. Selected guides reach both the
+initial context stage and the executor, so early tool execution follows the same
+computation and syntax rules.
 
 All settings also accept `GJ_AGENT_SELECTION_` environment variables, such as
 `GJ_AGENT_SELECTION_PROVIDER` and `GJ_AGENT_SELECTION_STARTUP_BUDGET_MS`.

@@ -10,6 +10,14 @@ import (
 
 const selectionShardSize = 24
 
+func discoveryRootKind(kind string) bool {
+	switch kind {
+	case "table", "saved_query", "workflow", "entrypoint", "api_operation":
+		return true
+	}
+	return false
+}
+
 // CatalogDiscoveryProvider is an optional runtime extension. The index must
 // have the same caller visibility as QueryCatalog, never an unfiltered global
 // inventory. Custom runtimes without it still receive seed-based preparation.
@@ -103,6 +111,9 @@ func discoveryGroups(cards []core.CatalogCard) []discoveryGroup {
 	ordered := append([]core.CatalogCard(nil), cards...)
 	sort.SliceStable(ordered, func(i, j int) bool {
 		a, b := ordered[i], ordered[j]
+		if discoveryRootKind(a.Kind) != discoveryRootKind(b.Kind) {
+			return discoveryRootKind(a.Kind)
+		}
 		return a.Kind+"/"+a.DatabaseName+"/"+a.SchemaName+"/"+a.ID < b.Kind+"/"+b.DatabaseName+"/"+b.SchemaName+"/"+b.ID
 	})
 	flush := func() {
