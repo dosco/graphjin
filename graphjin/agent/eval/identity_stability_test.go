@@ -16,10 +16,15 @@ func TestSuiteIdentityUnchangedForRunsThatPinNoSampling(t *testing.T) {
 		Mode: RunModeBenchmark, SuiteFingerprint: "suite-abc",
 		DatasetFingerprint: DatasetFingerprint{CatalogHash: "cat-1", SeedManifestHash: "seed-1"},
 		Provenance:         RunProvenance{Seed: 23, Repeats: 3, MaxSteps: 8},
-		RewardVersion:      RewardVersion,
+		RewardVersion:      "graphjin.eval.reward/v6", // the published run's version remains pinned
 	}
 	if got := SuiteIdentity(report); got != golden {
 		t.Fatalf("the identity of an existing run moved: got %s, want %s", got, golden)
+	}
+	current := report
+	current.RewardVersion = RewardVersion
+	if SuiteIdentity(current) == golden {
+		t.Fatal("new method-scoring semantics must have a distinct run identity")
 	}
 	// And a run that did pin sampling is a different thing, which is the point
 	// of recording it at all.

@@ -1721,6 +1721,9 @@ func savedQueryEvidence(sq SavedQuery, qualified string) map[string]any {
 		"qualified_name": qualified,
 		"operation":      valueOrDefault(sq.Operation, "query"),
 		"source_hash":    sq.SourceHash,
+		// SourceHash may identify the untrimmed file supplied by the service.
+		// This hash identifies the exact normalized definition published here.
+		"query_hash": hashJSON(sq.Query),
 	}
 }
 

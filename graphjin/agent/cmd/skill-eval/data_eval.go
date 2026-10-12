@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dosco/graphjin/agent/v3/internal/methodevidence"
 	"io"
 	"math"
 	"net/http"
@@ -400,7 +401,7 @@ func runDataOne(client *http.Client, item dataTask, order int) runResult {
 	result.ActorTurns, result.ActorTurnsSource = actorTurns(agentResponse.Trace, executionLLMCalls(*agentResponse))
 	result.GraphJinToolCalls, result.ActionOutcomes = actionInventory(agentResponse.Actions)
 
-	queries, okTools := executedQueries(agentResponse.Actions)
+	queries, okTools := executedQueries(agentResponse.Actions, agentResponse.Trace)
 	result.ExecutedQueries = queries
 
 	if testCase.Budget != nil {
@@ -604,14 +605,20 @@ func relativeDelta(a, b float64) float64 {
 
 // evaluateMethod scores whether the database did the computing.
 func evaluateMethod(rule methodRule, answer answerRule, queries, okTools []string, answerText string) bool {
-	joined := strings.ToLower(strings.Join(queries, "\n"))
 	for _, required := range rule.RequireQueryMatch {
 		pattern, err := regexp.Compile("(?i)" + required)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: invalid method regex %q: %v\n", required, err)
 			return false
 		}
-		if !pattern.MatchString(joined) {
+		matched := false
+		for _, query := range queries {
+			if methodevidence.MatchRequired(pattern, required, query) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false
 		}
 	}
@@ -627,7 +634,7 @@ func evaluateMethod(rule methodRule, answer answerRule, queries, okTools []strin
 	}
 	if rule.ForbidFinalizeFromListOnly {
 		numericAnswer := answer.Kind == "number" || answer.Kind == ""
-		if numericAnswer && !aggregateFieldPattern.MatchString(joined) {
+		if numericAnswer && !methodevidence.HasAnyAggregate(queries) {
 			return false
 		}
 	}
@@ -636,25 +643,30 @@ func evaluateMethod(rule methodRule, answer answerRule, queries, okTools []strin
 
 // executedQueries collects successful execution query texts and tool names
 // from the response action trail.
-func executedQueries(actions any) ([]string, []string) {
+func executedQueries(actions any, traces ...any) ([]string, []string) {
 	items := toSlice(actions)
+	var trace any
+	if len(traces) > 0 {
+		trace = traces[0]
+	}
+	resolver := methodevidence.NewResolver(trace)
 	var queries []string
 	var okTools []string
 	for _, item := range items {
 		action := toMap(item)
 		tool := stringValue(action["tool"])
 		status := stringValue(action["status"])
-		if status != "" && status != "ok" {
+		if status != "" && status != "ok" || !methodevidence.Successful(action) {
 			continue
 		}
+		resolver.ObserveCatalog(action)
 		if tool != "" {
 			okTools = appendUnique(okTools, tool)
 		}
 		if tool != "execute_graphql" && tool != "execute_saved_query" && tool != "execute_sql" && tool != "execute_raw_query" {
 			continue
 		}
-		args := toMap(action["args"])
-		if query := stringValue(args["query"]); query != "" {
+		if query := resolver.ExecutionQuery(action); query != "" {
 			queries = append(queries, query)
 		}
 	}

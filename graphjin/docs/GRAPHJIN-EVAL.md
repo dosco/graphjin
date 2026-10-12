@@ -12,7 +12,9 @@ number produced by the other.
 
 ## Engine boundary
 
-`agent/eval` depends on the agent types and the standard library only. It
+`agent/eval` depends on the agent types, shared pure query-syntax checks, and
+the standard library. The syntax checks reuse the GraphJin parser without
+instantiating an engine, connecting to a database, or adding server calls. It
 reaches GraphJin through exactly four surfaces:
 
 - `POST /api/v1/agent`
@@ -120,6 +122,28 @@ Episodes are stored one file per episode under
 so `eval rescore` and `eval export` can re-read a run without provider traffic.
 Set `eval_state_dir` to relocate the directory, or to `off` to disable the API.
 
+## Method evidence
+
+Method scoring uses successful execution receipts, excluding structured
+execution errors. Bare native aggregate requirements such as `sum_price` or
+`avg_price|sum_price` compare the parsed operation and exact column. The
+equivalent Hasura-compatible and `column:` forms receive the same credit;
+aliases, comments, argument strings, and a different column do not. Structural
+requirements such as `order_by` retain their explicit regex semantics. An
+implicit compatibility `count` proves a row count, not a particular count
+column whose schema is unknown to the scorer.
+
+Saved-query execution is resolved only from an earlier, successful same-run
+catalog detail receipt. Its complete definition must match the catalog source
+hash and qualified name. The catalog publishes `query_hash` for the exact
+normalized definition, separately from the original file's `source_hash`.
+Older records accept only source encodings that reproduce their recorded hash,
+including the service's raw file hash with a final LF or CRLF. New detail receipts retain bounded complete query
+source; older prepared recordings can use the matching host catalog snapshot.
+A saved-query name, model-generated source, prefetch without a consumed detail,
+or a changed/incomplete definition cannot earn method credit. Rescoring never
+fetches a current definition to stand in for historical evidence.
+
 ## Invariants a change must preserve
 
 1. **An oracle is verified against a booted instance before it ships.** A task
@@ -138,6 +162,8 @@ Set `eval_state_dir` to relocate the directory, or to `off` to disable the API.
 
 ## Deprecated
 
-`agent/cmd/skill-eval` is frozen and prints a deprecation notice. Its corpora
+`agent/cmd/skill-eval` is frozen and prints a deprecation notice. Scoring
+correctness fixes use the shared method checker and record its version; the
+command gains no new suite-generation surface. Its corpora
 migrate through the hidden `import-corpus` command. New suites use
 `graphjin eval`.

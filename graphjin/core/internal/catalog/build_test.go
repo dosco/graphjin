@@ -690,6 +690,27 @@ func TestBuildWithOptionsSavedQueryCards(t *testing.T) {
 	}
 }
 
+func TestSavedQueryHashIdentifiesPublishedDefinition(t *testing.T) {
+	query := "  query { users { count_id } }\n\n"
+	snap := BuildWithOptions(&MetadataSnapshot{}, nil, BuildOptions{
+		SavedQueries: []SavedQuery{{Name: "totals", Query: query, SourceHash: "original-file-hash"}},
+	})
+	card, ok := findCatalogCard(snap, "saved_query:totals")
+	if !ok {
+		t.Fatal("saved query card missing")
+	}
+	var evidence map[string]any
+	if err := json.Unmarshal([]byte(card.EvidenceJSON), &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if card.GraphQLQuery != strings.TrimSpace(query) {
+		t.Fatalf("published source = %q", card.GraphQLQuery)
+	}
+	if evidence["query_hash"] != hashJSON(card.GraphQLQuery) || evidence["source_hash"] != "original-file-hash" {
+		t.Fatalf("normalized definition hash and file revision were conflated: %v", evidence)
+	}
+}
+
 func TestWorkflowRevisionChangesWithWorkflowSourceHash(t *testing.T) {
 	base := &MetadataSnapshot{}
 	opts := BuildOptions{

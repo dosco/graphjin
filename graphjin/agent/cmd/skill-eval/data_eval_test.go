@@ -116,6 +116,19 @@ func TestEvaluateMethod(t *testing.T) {
 	if !evaluateMethod(bare, numeric, aggregateQuery, []string{"execute_graphql"}, "") {
 		t.Fatal("aggregate-backed numeric answer should pass method")
 	}
+	compat := []string{`query { accounts_aggregate { aggregate { sum { mrr_cents } } } }`}
+	if !evaluateMethod(rule, numeric, compat, []string{"execute_graphql"}, "") {
+		t.Fatal("equivalent Hasura aggregate should pass the same method rule")
+	}
+	for _, query := range []string{
+		`{ accounts { sum_mrr_cents_other } }`,
+		`{ accounts_aggregate { aggregate { sum { id } } } }`,
+		`{ accounts { sum_mrr_cents: mrr_cents } } # sum_mrr_cents`,
+	} {
+		if evaluateMethod(rule, numeric, []string{query}, []string{"execute_graphql"}, "19800") {
+			t.Fatalf("wrong-column/list query earned method credit: %s", query)
+		}
+	}
 }
 
 func TestExecutedQueries(t *testing.T) {
@@ -123,6 +136,8 @@ func TestExecutedQueries(t *testing.T) {
 		map[string]any{"tool": "query_catalog", "status": "ok", "args": map[string]any{"search": "mrr"}},
 		map[string]any{"tool": "execute_graphql", "status": "ok", "args": map[string]any{"query": "query { accounts { sum_mrr_cents } }"}},
 		map[string]any{"tool": "execute_graphql", "status": "rejected", "args": map[string]any{"query": "query { bogus { id } }"}},
+		map[string]any{"tool": "execute_graphql", "status": "ok", "args": map[string]any{"query": "query { accounts { sum_id } }"}, "summary": map[string]any{"error_count": 1}},
+		map[string]any{"tool": "execute_saved_query", "status": "ok", "args": map[string]any{"name": "invented", "query": "query { accounts { sum_mrr_cents } }"}},
 	}
 	queries, tools := executedQueries(actions)
 	if len(queries) != 1 || queries[0] != "query { accounts { sum_mrr_cents } }" {
