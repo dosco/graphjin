@@ -31,7 +31,11 @@ import {
   type WorkflowOutputRecord,
 } from "../workflows/store";
 import { notifyWorkflowOutputDeliveryHook } from "../workflows/output-delivery";
-import { rememberWorkMemory, searchWorkMemoryByContext } from "./memory";
+import {
+  rememberWorkMemory,
+  searchWorkMemoryByContext,
+  updateWorkMemoryForRun,
+} from "./memory";
 import { searchLibraryForRun } from "./library";
 import type {
   GraphjinAgentResponse,
@@ -63,6 +67,7 @@ type PolicyRequestSubject = Parameters<typeof evaluateActionPolicy>[0];
 type PolicyDecision = ReturnType<typeof evaluateActionPolicy>;
 type CreateActionRequestInput = Parameters<typeof createActionRequest>[0];
 type RememberWorkMemoryInput = Parameters<typeof rememberWorkMemory>[0];
+type UpdateWorkMemoryInput = Parameters<typeof updateWorkMemoryForRun>[0];
 type WorkMemorySearchArgs = Parameters<typeof searchWorkMemoryByContext>[0];
 type WorkMemorySearchResult = Awaited<
   ReturnType<typeof searchWorkMemoryByContext>
@@ -539,6 +544,7 @@ export interface AgentControlPlane {
     timeoutMs?: number;
   }): Promise<WaitForActionExecutionResult>;
   rememberWorkMemory(input: RememberWorkMemoryInput): Promise<{ id: string }>;
+  updateWorkMemory(input: UpdateWorkMemoryInput): Promise<{ id: string }>;
   searchSkillsForRun(input: {
     orgId: string;
     runId: string;
@@ -986,6 +992,13 @@ export class InProcessControlPlane implements AgentControlPlane {
     input: RememberWorkMemoryInput,
   ): Promise<{ id: string }> {
     const memory = await rememberWorkMemory(input);
+    return { id: memory.id };
+  }
+
+  async updateWorkMemory(
+    input: UpdateWorkMemoryInput,
+  ): Promise<{ id: string }> {
+    const memory = await updateWorkMemoryForRun(input);
     return { id: memory.id };
   }
 

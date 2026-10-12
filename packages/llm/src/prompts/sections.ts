@@ -83,7 +83,11 @@ source when you rely on one.`);
   if (saveMode === "tool") {
     usageBlocks.push(`To save a new memory: call \`mcp_neko_memory_save\` with the
 exact rule the operator stated. Use \`global\` scope unless they say
-it's only for this thread.`);
+it's only for this thread.
+
+To change a saved memory: call \`mcp_neko_memory_update\` with its id and
+the whole new text. Do this when the operator corrects or adds to a rule
+that is already saved, so one rule stays in one memory.`);
   } else if (saveMode === "fence") {
     usageBlocks.push(`To save a new memory mid-conversation, emit a fenced block:
 

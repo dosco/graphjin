@@ -1485,7 +1485,7 @@ export function buildRecordsReadServer(opts: {
   });
 }
 
-// Two-tool memory surface: `save` and `search`. Reads use pgvector
+// Memory surface: `search`, `save` and `update`. Reads use pgvector
 // context-search (matches the auto-context retrieval path), writes go
 // through the same rememberWorkMemory used by the `save:` chat command,
 // so embeddings get computed in lockstep. We deliberately don't expose
@@ -1573,10 +1573,53 @@ export function buildWorkMemoryServer(
     },
   );
 
+  const update = defineMcpTool(
+    "update",
+    [
+      "Replace the text of a saved memory. Use when the operator corrects,",
+      "extends or merges a memory that is already saved, instead of saving",
+      "a second memory. Pass the memory id from the loaded list or a search",
+      "result, and the whole new text.",
+    ].join(" "),
+    {
+      memoryId: z.string().uuid(),
+      text: z.string().min(5).max(2000),
+    },
+    async (args) => {
+      try {
+        const memory = await controlPlane.updateWorkMemory({
+          orgId: ctx.orgId,
+          runId: ctx.runId ?? null,
+          threadId: ctx.threadId ?? null,
+          memoryId: args.memoryId,
+          text: args.text,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: true, memoryId: memory.id }),
+            },
+          ],
+        };
+      } catch {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: false, error: `No saved memory ${args.memoryId} is visible to this run.` }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   return createMcpServer({
     name: "neko_memory",
     version: "1.0.0",
-    tools: exposeSave ? [search, save] : [search],
+    tools: exposeSave ? [search, save, update] : [search],
   });
 }
 

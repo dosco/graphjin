@@ -207,6 +207,18 @@ async function handle(
           runId: binding.runId,
         } as Parameters<AgentControlPlane["rememberWorkMemory"]>[0]),
       );
+    case "/v1/memory/update":
+      return send(
+        res,
+        200,
+        await cp.updateWorkMemory({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          threadId: binding.threadId ?? null,
+          memoryId: String(body.memoryId ?? ""),
+          text: String(body.text ?? ""),
+        }),
+      );
     case "/v1/skills/search":
       // The actor comes from the bound run; an agent-supplied user is never trusted.
       delete body.userId;

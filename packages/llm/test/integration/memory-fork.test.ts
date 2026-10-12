@@ -38,6 +38,7 @@ import {
   promoteWorkMemoryToOrg,
   rememberWorkMemory,
   searchWorkMemoryByContext,
+  updateWorkMemoryForRun,
 } from "../../src/work/memory";
 import { createWorkRun, createWorkThread } from "../../src/work/store";
 import { runEmbeddingIndexJob } from "../../src/embedding-jobs";
@@ -337,6 +338,57 @@ describeIfDb("CV2 memory fork overlay", () => {
     const adaIds = adaResults.map((r) => r.memory.id);
     expect(adaIds).toContain(team.id);
     expect(adaIds).toContain(personal.id);
+  });
+
+  it("an agent edit rewrites a team row for a team run and forks it for a member run", async () => {
+    const team = await rememberWorkMemory({
+      orgId,
+      text: "12x18 sheets use the small press",
+      kind: "business_rule",
+      scope: "global",
+    });
+    const updated = await updateWorkMemoryForRun({
+      orgId,
+      runId: null,
+      memoryId: team.id,
+      text: "12x18 and 18x12 sheets use the small press",
+    });
+    expect(updated.id).toBe(team.id);
+    expect(updated.text).toBe("12x18 and 18x12 sheets use the small press");
+    expect(updated.integrityOk).toBe(true);
+
+    const thread = await createWorkThread(orgId, "edit-thread", "web", ada);
+    const run = await createWorkRun(orgId, thread.id, "hermes", { userId: ada, role: "member" });
+    const forked = await updateWorkMemoryForRun({
+      orgId,
+      runId: run.id,
+      threadId: thread.id,
+      memoryId: team.id,
+      text: "Ada: all 12x18 sheets use the large press",
+    });
+    expect(forked.userId).toBe(ada);
+    expect(forked.overridesOriginId).toBe(team.originId);
+    expect((await listWorkMemories(orgId)).find((m) => m.id === team.id)?.text).toBe(
+      "12x18 and 18x12 sheets use the small press",
+    );
+  });
+
+  it("an agent cannot edit another member's memory", async () => {
+    const bobs = await rememberWorkMemory({
+      orgId,
+      userId: bob,
+      text: "Bob prefers monthly totals",
+      kind: "preference",
+      scope: "global",
+    });
+    const thread = await createWorkThread(orgId, "edit-guard", "web", ada);
+    const run = await createWorkRun(orgId, thread.id, "hermes", { userId: ada, role: "member" });
+    await expect(
+      updateWorkMemoryForRun({ orgId, runId: run.id, memoryId: bobs.id, text: "Ada rewrote this" }),
+    ).rejects.toThrow(/not found/);
+    await expect(
+      updateWorkMemoryForRun({ orgId, runId: null, memoryId: bobs.id, text: "Team rewrote this" }),
+    ).rejects.toThrow(/not found/);
   });
 
   it("existing rows are unchanged for solo orgs (backfill self-link)", async () => {
