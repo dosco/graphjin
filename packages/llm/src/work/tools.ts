@@ -2100,35 +2100,6 @@ export function buildPackActionServer(
   return buildGovernedActionServer(opts, "neko_pack_actions");
 }
 
-export function buildBotServer(
-  ctx: { orgId: string; threadId: string },
-  options: { controlPlane?: AgentControlPlane } = {},
-) {
-  const controlPlane = requireControlPlane(options.controlPlane);
-  const update = defineMcpTool(
-    "update_instructions",
-    [
-      "Replace this bot's job description with a new one. Write 1 to 4 plain",
-      "sentences in the third person that say what the bot does for the",
-      "operator, such as \"Watches stock levels and flags products below their",
-      "reorder point.\" Send the whole description each time; it replaces the",
-      "old one.",
-    ].join(" "),
-    { instructions: z.string().min(10).max(2000) },
-    async (args) => {
-      const result = await controlPlane.updateBotInstructions({
-        orgId: ctx.orgId,
-        threadId: ctx.threadId,
-        instructions: args.instructions,
-      });
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result) }],
-      };
-    },
-  );
-  return createMcpServer({ name: "neko_bot", version: "1.0.0", tools: [update] });
-}
-
 /** Semantic skill search for the Ax harness's discover(); it is never a model tool. */
 export function buildSkillSearchServer(
   ctx: { orgId: string; runId: string },

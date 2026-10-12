@@ -48,6 +48,7 @@ import { buildWorkPrompt } from "./prompt";
 import { getThreadBot } from "./bot";
 import { syncSkillIndex } from "./skill-index";
 import { compactIfNeeded, type ThreadCompaction } from "./compact-transcript";
+import { keepBotInstructionsCurrent } from "./bot-instructions";
 import { discoverRunArtifacts } from "./artifacts";
 import {
   finishWorkRun,
@@ -422,7 +423,6 @@ async function runChatTurnTraced(
     const supportsPolicyTool = customerSurface && backend.capabilities.mcpTools;
     const supportsPluginManagerTool =
       customerSurface && backend.capabilities.mcpTools;
-    const supportsBotTool = Boolean(threadBot) && backend.capabilities.mcpTools;
     const sourceConfigSettings = dataSurface === "customer"
       ? await startupPhase("config.graphjin", () => getGraphjinConfigSettingsForOrg(orgId))
       : { sourceConfigEnabled: false };
@@ -556,7 +556,7 @@ async function runChatTurnTraced(
       graphjinDataPath,
       ...(appContext ? { appContext } : {}),
       ...(recordContext ? { recordContext } : {}),
-      ...(threadBot ? { bot: threadBot, supportsBotTool } : {}),
+      ...(threadBot ? { bot: threadBot } : {}),
     });
 
     await eventTelemetry.startAgent({
@@ -587,7 +587,6 @@ async function runChatTurnTraced(
       pluginActions: customerSurface ? heldPluginActions : [],
       packActions: customerSurface ? heldPackActions : [],
       sourceConfigEnabled: supportsSourceConfigTool,
-      botEnabled: supportsBotTool,
       dataSurface,
       ...(opts.graphjinToolPolicy
         ? { graphjinToolPolicy: opts.graphjinToolPolicy }
@@ -915,6 +914,14 @@ async function runChatTurnTraced(
     // after its final assistant context has been saved, including a summary
     // for structured-only answers.
     await finishWorkRun(runId, result.status, result.error ?? null);
+
+    if (threadBot && result.status === "completed") {
+      const earlierOperatorMessages = bundle.messages
+        .filter((m) => m.role === "user" && m.runId !== runId)
+        .map((m) => m.content);
+      void keepBotInstructionsCurrent({ orgId, threadId, bot: threadBot, operatorMessage: message, botReply: persistedText, earlierOperatorMessages })
+        .catch((error) => console.warn("[bot] instructions update skipped:", error instanceof Error ? error.message : error));
+    }
 
     await wrappedEmit({
       type: "done",

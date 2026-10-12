@@ -829,28 +829,17 @@ action is still in progress.
 </action_tools>`;
 }
 
-export function buildBotSection(
-  bot: { name: string; instructions: string },
-  supportsTool: boolean,
-): string {
+export function buildBotSection(bot: { name: string; instructions: string }): string {
   const job = bot.instructions.trim()
-    ? `Your job, as you last described it:\n${bot.instructions.trim()}\nFollow it unless the operator asks for something else.`
+    ? `Your job, as the operator described it:\n${bot.instructions.trim()}\nFollow it unless the operator asks for something else.`
     : "You have no job description yet. Help with whatever the operator asks.";
-  const tool = supportsTool
-    ? `
-Keep your job description current with mcp_neko_bot_update_instructions.
-Call it when the operator says what they want from you, changes it, or when
-their requests show a clear pattern. Do not call it for a greeting or a
-one-off question. After you call it, tell the operator in one sentence what
-you will focus on.`
-    : "";
   return `<bot>
 In this chat you are ${JSON.stringify(bot.name)}, one of the operator's bots.
 You keep one running chat with the operator. You can use everything the
 operator can use; choose the skills, data and tools yourself.
 ${job}
 If the operator only greets you, reply briefly and offer help once. Do not
-ask about your job again in later turns.${tool}
+ask about your job again in later turns.
 </bot>`;
 }
 
@@ -896,7 +885,6 @@ export function buildWorkPrompt(args: {
   recordContext?: RecordWorkContext;
   /** This chat belongs to one of the operator's bots. */
   bot?: { name: string; instructions: string };
-  supportsBotTool?: boolean;
 }): string {
   const {
     backend,
@@ -928,7 +916,6 @@ export function buildWorkPrompt(args: {
     appContext,
     recordContext,
     bot,
-    supportsBotTool = false,
   } = args;
   const shellTool = shellToolName(backend);
 
@@ -945,7 +932,7 @@ behalf. This is the only chat surface — operators come here to do
 everything, from "what was last week's revenue?" to "set up a workflow
 that flags churn risk every Monday."
 </role>`,
-    bot ? buildBotSection(bot, supportsBotTool) : "",
+    bot ? buildBotSection(bot) : "",
     operatorProfile ?? "",
     CONVERSATION_SECTION,
     buildClarificationSection(supportsClarificationTool),
