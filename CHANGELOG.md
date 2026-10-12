@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.23.1](https://github.com/open-neko/openneko/compare/v3.23.0...v3.23.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **web:** open the app on chat and keep the console behind Admin ([dd80464](https://github.com/open-neko/openneko/commit/dd80464d5d60fbf736623718287b41287c49efd3))
+* **web:** open the app on chat and keep the console behind Admin ([36b5b5e](https://github.com/open-neko/openneko/commit/36b5b5e3d9d63585c65c0d2a1e0c9a7c965c61fc))
+
 ## [3.23.0](https://github.com/open-neko/openneko/compare/v3.22.0...v3.23.0) (2026-10-12)
 
 
