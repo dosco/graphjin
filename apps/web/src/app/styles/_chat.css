@@ -159,6 +159,17 @@
   border: 2px solid var(--card);
 }
 
+.chat-row-badge.is-unread {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  background: var(--success);
+}
+
+.chat-row-title.is-unread {
+  font-weight: 800;
+}
+
 .chat-row-badge svg {
   width: 10px;
   height: 10px;
@@ -573,4 +584,12 @@ a.chat-bot-chip:hover {
   width: 100%;
   max-width: 360px;
   text-align: left;
+}
+
+.chat-routine-label {
+  margin: 0;
+  color: var(--text3);
+  font-family: var(--font-display);
+  font-size: var(--type-caption);
+  font-weight: 700;
 }

@@ -112,6 +112,7 @@ import BriefingCard from "@/components/BriefingCard";
 import WorkHistoryDrawer from "@/components/WorkHistoryDrawer";
 import BotGreeting from "@/components/chat/BotGreeting";
 import { useThreadBot } from "@/components/chat/useThreadBot";
+import { useBots } from "@/components/chat/useBots";
 import { ThreadJump } from "@/components/chat/ThreadJump";
 import { BotAvatar } from "@/components/chat/BotAvatar";
 import { botStateForRun, useSetBotMood } from "@/components/chat/bot-mood";
@@ -180,6 +181,7 @@ type RunRecord = {
   analysisMinutesSaved?: number | null;
   analysisMinutesBasis?: string | null;
   actorRole?: "admin" | "member" | "service" | null;
+  routineName?: string | null;
 };
 
 export type WorkEvent =
@@ -369,14 +371,12 @@ function withAssistantTimelinePlaceholders(bundle: ThreadBundle): ThreadBundle {
 
   const messages = [...bundle.messages];
   for (const placeholder of placeholders) {
-    let insertAt = messages.length;
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const message = messages[i];
-      if (message.runId === placeholder.runId && message.role === "user") {
-        insertAt = i + 1;
-        break;
-      }
-    }
+    // After the run's own question, or at the run's start time when it has none (a routine run).
+    const asked = messages.findLastIndex(
+      (message) => message.runId === placeholder.runId && message.role === "user",
+    );
+    const later = messages.findIndex((message) => message.createdAt > placeholder.createdAt);
+    const insertAt = asked >= 0 ? asked + 1 : later >= 0 ? later : messages.length;
     messages.splice(insertAt, 0, placeholder);
   }
 
@@ -532,6 +532,57 @@ export default function WorkScreen() {
     // loadThread/resolveLandingThread are stable closures over component state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gateChecked, gateError, routeThreadId]);
+
+  // A bot chat in front of the reader is a read chat: clear its marker in the chat list.
+  const { markSeen } = useBots();
+  useEffect(() => {
+    if (!inBotChat || !activeThreadId || !bundle) return;
+    const threadId = activeThreadId;
+    const seen = () => {
+      if (document.visibilityState === "visible" && document.hasFocus()) markSeen(threadId);
+    };
+    seen();
+    window.addEventListener("focus", seen);
+    return () => window.removeEventListener("focus", seen);
+  }, [inBotChat, activeThreadId, bundle, markSeen]);
+
+  // A routine can reply in a bot chat while it is open. Check for a new or
+  // finished run when the reader returns to the tab and once a minute.
+  const latestRunRef = useRef<{ id: string; status: string } | null>(null);
+  useEffect(() => {
+    const last = bundle?.runs[bundle.runs.length - 1];
+    latestRunRef.current = last ? { id: last.id, status: last.status } : null;
+  }, [bundle]);
+  useEffect(() => {
+    if (!inBotChat || !routeThreadId) return;
+    const threadId = routeThreadId;
+    let busy = false;
+    const refresh = async () => {
+      if (busy || document.visibilityState !== "visible" || activeRunStreamRef.current) return;
+      busy = true;
+      try {
+        const data = await fetchThreadPage<ThreadBundle>(threadId);
+        if (!data || routeThreadIdRef.current !== threadId || activeRunStreamRef.current) return;
+        const latest = data.runs[data.runs.length - 1];
+        const known = latestRunRef.current;
+        if (!latest || (known?.id === latest.id && known.status === latest.status)) return;
+        const nextBundle = withAssistantTimelinePlaceholders(data);
+        setBundle(nextBundle);
+        resumeLatestInFlightRun(threadId, nextBundle);
+      } finally {
+        busy = false;
+      }
+    };
+    const onVisible = () => void refresh();
+    document.addEventListener("visibilitychange", onVisible);
+    const timer = window.setInterval(onVisible, 60_000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(timer);
+    };
+    // resumeLatestInFlightRun is a stable closure over component state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inBotChat, routeThreadId]);
 
   // Follow new output only while the reader is at the bottom of a running
   // thread. Opening a thread, scrolling up, or clicking into the transcript
@@ -1544,6 +1595,9 @@ export default function WorkScreen() {
                 (sending && activeRunId === message.runId);
               return (
                 <div key={`${message.id}-${index}`} className="flex flex-col gap-2.5">
+                  {run?.routineName ? (
+                    <p className="chat-routine-label">Routine · {run.routineName}</p>
+                  ) : null}
                   <RunTimeline
                     threadId={activeThreadId ?? ""}
                     run={run}

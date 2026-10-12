@@ -14,6 +14,7 @@ import {
   work_run,
   work_run_event,
   work_thread,
+  workflow_definition,
   workflow_run,
   pool,
   processing_job,
@@ -54,6 +55,8 @@ export type WorkRunRecord = {
   analysisMinutesSaved: number | null;
   analysisMinutesBasis: string | null;
   actorRole: "admin" | "member" | "service" | null;
+  /** Set when a routine (saved workflow) started this run. */
+  routineName: string | null;
 };
 
 export type WorkThreadBundle = {
@@ -704,6 +707,15 @@ export async function getWorkThreadBundle(
           .orderBy(asc(work_run_event.id)),
   ]);
 
+  const routineRows = runs.length
+    ? await db()
+        .select({ runId: workflow_run.work_run_id, name: workflow_definition.name })
+        .from(workflow_run)
+        .innerJoin(workflow_definition, eq(workflow_definition.id, workflow_run.workflow_id))
+        .where(and(eq(workflow_run.org_id, orgId), inArray(workflow_run.work_run_id, runs.map((row) => row.id))))
+    : [];
+  const routineByRun = new Map(routineRows.map((row) => [row.runId, row.name]));
+
   const eventsByRun: Record<string, AgentEvent[]> = {};
   for (const row of events) {
     if (!eventsByRun[row.runId]) eventsByRun[row.runId] = [];
@@ -734,6 +746,7 @@ export async function getWorkThreadBundle(
         row.actor_role === "service"
           ? row.actor_role
           : null,
+      routineName: routineByRun.get(row.id) ?? null,
     })),
     messages: messages.map((row) => ({
       id: row.id,

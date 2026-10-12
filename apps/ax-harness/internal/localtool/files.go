@@ -32,6 +32,7 @@ const (
 )
 
 type Files struct {
+	dir   string
 	root  *os.Root
 	gate  sync.RWMutex
 	mu    sync.Mutex
@@ -46,7 +47,7 @@ func OpenFiles(dir string) (*Files, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Files{root: root, reads: make(map[string]string)}, nil
+	return &Files{dir: filepath.Clean(dir), root: root, reads: make(map[string]string)}, nil
 }
 
 func (f *Files) Close() error { return f.root.Close() }
@@ -165,14 +166,34 @@ func validPath(path string) bool {
 	return len(path) <= 1024 && filepath.IsLocal(path) && filepath.Clean(path) == path && path != "."
 }
 
+// local accepts a workspace-relative path, or an absolute path inside the workspace.
+func (f *Files) local(path string) (string, bool) {
+	if filepath.IsAbs(path) {
+		rel, err := filepath.Rel(f.dir, filepath.Clean(path))
+		if err != nil {
+			return "", false
+		}
+		path = rel
+	}
+	return path, validPath(path)
+}
+
+func (f *Files) pathError() error {
+	return fmt.Errorf("path must be inside the workspace %s", f.dir)
+}
+
 func (f *Files) read(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	var input struct {
 		Path   string `json:"path"`
 		Offset int    `json:"offset"`
 		Limit  int    `json:"limit"`
 	}
-	if err := json.Unmarshal(raw, &input); err != nil || !validPath(input.Path) || input.Offset < 0 || input.Limit < 0 || input.Limit > maxReadLines {
+	if err := json.Unmarshal(raw, &input); err != nil || input.Offset < 0 || input.Limit < 0 || input.Limit > maxReadLines {
 		return nil, fmt.Errorf("invalid workspace path")
+	}
+	var ok bool
+	if input.Path, ok = f.local(input.Path); !ok {
+		return nil, f.pathError()
 	}
 	f.gate.RLock()
 	defer f.gate.RUnlock()
@@ -234,9 +255,13 @@ func (f *Files) edit(ctx context.Context, raw json.RawMessage) (json.RawMessage,
 		NewString  string `json:"new_string"`
 		ReplaceAll bool   `json:"replace_all"`
 	}
-	if err := json.Unmarshal(raw, &input); err != nil || !validPath(input.Path) || input.OldString == "" || input.OldString == input.NewString ||
+	if err := json.Unmarshal(raw, &input); err != nil || input.OldString == "" || input.OldString == input.NewString ||
 		len(input.OldString) > maxWrite || len(input.NewString) > maxWrite {
 		return nil, fmt.Errorf("invalid file edit")
+	}
+	var ok bool
+	if input.Path, ok = f.local(input.Path); !ok {
+		return nil, f.pathError()
 	}
 	f.gate.Lock()
 	defer f.gate.Unlock()
@@ -325,8 +350,12 @@ func (f *Files) write(ctx context.Context, raw json.RawMessage) (json.RawMessage
 		Path    string `json:"path"`
 		Content string `json:"content"`
 	}
-	if err := json.Unmarshal(raw, &input); err != nil || !validPath(input.Path) || len(input.Content) > maxWrite {
+	if err := json.Unmarshal(raw, &input); err != nil || len(input.Content) > maxWrite {
 		return nil, fmt.Errorf("invalid file write")
+	}
+	var ok bool
+	if input.Path, ok = f.local(input.Path); !ok {
+		return nil, f.pathError()
 	}
 	f.gate.Lock()
 	defer f.gate.Unlock()

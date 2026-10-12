@@ -21,6 +21,8 @@ import {
   setWorkRunValue,
 } from "../work/store";
 import { ensureWorkWorkspace } from "../work/workspace";
+import { discoverRunArtifacts } from "../work/artifacts";
+import { botThreadForWorkflow } from "../work/bot";
 import { inProcessControlPlane } from "../work/control-plane";
 import { createAgentEventTelemetry } from "../work/agent-event-telemetry";
 import {
@@ -96,11 +98,17 @@ export async function prepareWorkflowRun(
     const groups = await resolveUserGroups(opts.orgId, workflow.ownerUserId);
     actor = { userId: workflow.ownerUserId, role: groups.administrator ? "admin" : "member" };
   }
-  // Trigger threads live on the "workflow" channel, never "web", so they can't
-  // surface in the human Ask sidebar — even as an orphan whose work_run never
-  // persisted (the sidebar lists only "web" threads).
+  // A bot's routine runs in the bot's chat, so its reply and files land there.
+  // Other trigger threads live on the "workflow" channel, never "web", so they
+  // can't surface in the human Ask sidebar — even as an orphan whose work_run
+  // never persisted (the sidebar lists only "web" threads).
   const threadId =
     opts.threadId ??
+    (await botThreadForWorkflow({
+      orgId: opts.orgId,
+      createdByThreadId: workflow.createdByThreadId,
+      ownerUserId: workflow.ownerUserId,
+    })) ??
     (await startupPhase("workflow.create_thread", async () => createWorkThread(opts.orgId, workflow.name, "workflow"))).id;
   const created = await startupPhase("workflow.create_work_run", async () => createWorkRun(opts.orgId, threadId, backend.id, actor, {
     source: opts.triggerKind === "cron" ? "cron" : opts.triggerKind === "api" ? "api" : "trigger",
@@ -352,6 +360,12 @@ async function runWorkflowTurnTraced(
 
     if (needsInput) {
       throw new WorkflowNeedsInputError();
+    }
+
+    if (result.status === "completed") {
+      for (const artifact of await discoverRunArtifacts(workspace)) {
+        await wrappedEmit({ type: "artifact", artifact });
+      }
     }
 
     let persistedText = result.finalText.trim() || assistantText.trim();

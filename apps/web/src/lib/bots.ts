@@ -13,6 +13,8 @@ export type BotSummary = {
   threadId: string | null;
   instructions: string;
   lastMessageAt: string | null;
+  /** A message arrived after the user last opened this chat. */
+  unread: boolean;
 };
 
 export const BOT_PATTERNS = ["solid", "patch", "tabby"] as const;
@@ -28,7 +30,18 @@ function summary(row: typeof bot.$inferSelect, lastMessageAt: Date | null): BotS
     threadId: row.thread_id,
     instructions: row.instructions,
     lastMessageAt: lastMessageAt?.toISOString() ?? null,
+    unread: Boolean(lastMessageAt && lastMessageAt.getTime() > row.seen_at.getTime() + 1000),
   };
+}
+
+/** The user has seen everything in this bot's chat. */
+export async function markBotSeen(orgId: string, userId: string, threadId: string): Promise<boolean> {
+  const rows = await db()
+    .update(bot)
+    .set({ seen_at: new Date() })
+    .where(and(eq(bot.org_id, orgId), eq(bot.owner_user_id, userId), eq(bot.thread_id, threadId)))
+    .returning({ id: bot.id });
+  return rows.length > 0;
 }
 
 export async function createBot(

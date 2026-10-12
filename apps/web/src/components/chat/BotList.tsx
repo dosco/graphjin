@@ -45,10 +45,13 @@ export function BotList({
                 coat={bot.coat}
                 pattern={bot.pattern}
                 size={compact ? 36 : 44}
+                state={bot.unread ? "speaking" : "idle"}
                 animated={false}
                 aria-hidden
                 badge={
-                  bot.isDefault ? (
+                  bot.unread ? (
+                    <span className="chat-row-badge is-unread" />
+                  ) : bot.isDefault ? (
                     <span className="chat-row-badge">
                       <Star aria-hidden="true" strokeWidth={2.5} />
                     </span>
@@ -56,7 +59,10 @@ export function BotList({
                 }
               />
               <span className="chat-row-copy">
-                <span className="chat-row-title">{bot.name}</span>
+                <span className={`chat-row-title${bot.unread ? " is-unread" : ""}`}>
+                  {bot.name}
+                  {bot.unread ? <span className="sr-only">, new message</span> : null}
+                </span>
                 {bot.lastMessageAt ? (
                   <LocalDateTime value={bot.lastMessageAt} className="chat-row-time" relativeDay />
                 ) : null}
