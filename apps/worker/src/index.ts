@@ -114,7 +114,7 @@ import {
   type PluginActionSeed,
 } from "@neko/llm/workflows";
 import { resolveDeclarativePackActionAdapter, registerPackConnectionPreflight } from "./packs/declarative-action-runtime.js";
-import { ensureOrgWorkspace, getOrgAgentRoot, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
+import { ensureOrgWorkspace, getOrgAgentRoot, nameBackfilledBots, reportDeploymentProfile, setAgentSlotLimit } from "@neko/llm/work";
 import { checkOrgUpdates } from "@neko/llm/config-vcs/updates";
 import { ensureQueueExists } from "./pg-boss-helpers.js";
 import { PluginRegistry } from "./plugins/plugin-registry.js";
@@ -1586,6 +1586,15 @@ await b.schedule(QUEUE.WORKFLOW_OUTPUT_TTL_SWEEP, "0 * * * *", {}, {
   retryDelay: 60,
 });
 console.log("[worker] scheduled workflow_output ttl sweep hourly");
+
+await b.work(QUEUE.BOT_NAME_SWEEP, async () => {
+  const { named, failed } = await nameBackfilledBots();
+  if (named || failed) console.log(`[bot-names] named ${named} bot(s), ${failed} kept their chat title`);
+});
+
+await b.schedule(QUEUE.BOT_NAME_SWEEP, "*/15 * * * *", {}, { tz: "UTC", retryLimit: 0 });
+await b.send(QUEUE.BOT_NAME_SWEEP, {}, { singletonKey: "startup", retryLimit: 0 });
+console.log("[worker] scheduled bot name sweep every fifteen minutes");
 
 type CachedDataSource = { ctx: DataSourceContext; expiresAt: number };
 const DATA_SOURCE_CACHE_MS = 60_000;

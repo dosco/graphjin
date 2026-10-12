@@ -116,7 +116,7 @@ export function cleanBotPatch(body: Record<string, unknown>): BotLookPatch | str
 export async function updateBot(orgId: string, userId: string, botId: string, patch: BotLookPatch) {
   const [row] = await db()
     .update(bot)
-    .set({ ...patch, updated_at: new Date() })
+    .set({ ...patch, ...(patch.name ? { name_pending: false } : {}), updated_at: new Date() })
     .where(and(eq(bot.id, botId), eq(bot.org_id, orgId), eq(bot.owner_user_id, userId)))
     .returning();
   return row ? summary(row, null) : null;
