@@ -418,7 +418,7 @@ export default function MagentoPackAdmin({ fixture }: { fixture?: MagentoPackAdm
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {[
-                { href: "/", title: "View Magento metrics", copy: "See current store performance and findings." },
+                { href: "/chat", title: "Ask about the store", copy: "Open a chat and ask how the store is doing." },
                 { href: "/workflows", title: "Run automations", copy: "Start or review Magento workflows." },
                 { href: "/actions", title: "Review proposed changes", copy: "Approve or reject a specific Magento change prepared by OpenNeko." },
                 { href: "/skills", title: "Magento skills", copy: "Choose a focused skill for orders, fulfillment, refunds, inventory, performance, or platform health." },

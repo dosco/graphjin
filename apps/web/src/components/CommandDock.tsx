@@ -33,7 +33,6 @@ const dockDestination = (href: string) => {
 };
 
 const CHATS: NavDestination = { href: "/chat", label: "Back to chats", shortLabel: "Chats", icon: MessageCircle };
-const DASHBOARD = dockDestination("/");
 const WORKFLOWS = dockDestination("/workflows");
 const ACTIONS = dockDestination("/actions");
 
@@ -225,11 +224,6 @@ export default function CommandDock() {
 
         <nav className="cdock" aria-label="Primary navigation">
           <DockLink item={CHATS} pathname={pathname} onNavigate={closeSheet} />
-          <DockLink
-            item={DASHBOARD}
-            pathname={pathname}
-            onNavigate={closeSheet}
-          />
           <DockLink
             item={WORKFLOWS}
             pathname={pathname}

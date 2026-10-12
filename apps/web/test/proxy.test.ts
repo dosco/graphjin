@@ -273,8 +273,6 @@ describe("proxy", () => {
 describe("chat-first landing", () => {
   const openMode = () =>
     _setProviderStatusRequestForTest(freshFetch(() => Response.json({ provider: null })));
-  const withSurface = (url: string, surface: string) =>
-    new NextRequest(url, { headers: { cookie: `openneko_surface=${surface}` } });
 
   it("opens chat at the root", async () => {
     openMode();
@@ -283,30 +281,18 @@ describe("chat-first landing", () => {
     expect(new URL(res.headers.get("location")!).pathname).toBe("/chat");
   });
 
-  it("enters the console from the Admin button and stays there", async () => {
+  it("opens chat from an old console link", async () => {
     openMode();
-    const enter = await proxy(request("http://localhost/?console=1"));
-    expect(enter.status).toBe(302);
-    expect(new URL(enter.headers.get("location")!).search).toBe("");
-    expect(enter.cookies.get("openneko_surface")?.value).toBe("console");
-    const home = await proxy(withSurface("http://localhost/", "console"));
-    expect(home.headers.get("x-middleware-next")).toBe("1");
+    const res = await proxy(request("http://localhost/?console=1"));
+    const location = new URL(res.headers.get("location")!);
+    expect(location.pathname).toBe("/chat");
+    expect(location.search).toBe("");
   });
 
-  it("opens chat when the reader types / in the console", async () => {
+  it("leaves the console pages alone", async () => {
     openMode();
-    const res = await proxy(
-      new NextRequest("http://localhost/", {
-        headers: { cookie: "openneko_surface=console", "sec-fetch-site": "none" },
-      }),
-    );
-    expect(new URL(res.headers.get("location")!).pathname).toBe("/chat");
-  });
-
-  it("returns to chat when the reader opens a chat", async () => {
-    openMode();
-    const res = await proxy(withSurface("http://localhost/chat", "console"));
-    expect(res.headers.get("set-cookie")).toMatch(/openneko_surface=;/);
+    const res = await proxy(request("http://localhost/workflows"));
+    expect(res.headers.get("x-middleware-next")).toBe("1");
   });
 
   it("sends a signed-out reader to sign-in before choosing a surface", async () => {
