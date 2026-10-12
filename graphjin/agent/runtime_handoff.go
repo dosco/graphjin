@@ -14,6 +14,8 @@ const (
 	runtimeHistoryKey          = "graphjinHistory"
 )
 
+const runtimeResultRecoveryInstructions = `Number.toLocaleString and Intl formatting are unsupported in this Goja runtime. For currency, use (Number(cents) / 100).toFixed(2) and let the answer stage render it. If a query succeeds but later JavaScript fails, its actual result remains at globalThis.graphjinLastExecution.result.data. Read that result and finalize without another catalog lookup or query. Never substitute a placeholder number for unavailable data.`
+
 // graphJinCodeRuntime keeps GraphJin execution evidence available across Ax's
 // distiller -> executor session patch. The current Ax Goja session reserves
 // runtime input names, so PatchGlobals drops executorRequest and
@@ -157,6 +159,11 @@ func (s *graphJinCodeSession) Execute(code string, options map[string]ax.Value) 
 		}
 	}
 	result := s.base.Execute(code, options)
+	// A governed query can succeed before later JavaScript fails (for example
+	// unsupported formatting). Preserve its live result for the next actor
+	// step instead of requiring another catalog lookup or query. Snapshot and
+	// inspection redaction keep the rows out of staged prompts.
+	s.refreshLastExecutionBinding(options)
 	if readsHistory {
 		s.historyRead = true
 	}

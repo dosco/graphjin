@@ -30,6 +30,9 @@ func installPreparedHandoff(ctx context.Context, program Program, prepared *prep
 	if len(digest) == 0 || !discoveryRootKind(stringFromMap(mapValue(digest[0]), "kind")) {
 		return
 	}
+	if mapValue(digest[0])["scope_match"] != true {
+		return
+	}
 	if !prepared.revalidate(ctx, rt, req.Namespace) {
 		return
 	}

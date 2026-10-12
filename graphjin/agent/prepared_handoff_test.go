@@ -90,17 +90,38 @@ func TestPreparedSavedQueryExecutesOnFirstCoreModelTurn(t *testing.T) {
 	}
 }
 
+func TestPreparedExecutionSurvivesLaterJavaScriptError(t *testing.T) {
+	rt := selectionFixture()
+	client := &recordingClient{responses: []string{
+		`{"javascriptCode":"await query_catalog({id:'table:db:public.invoices'}); await execute_graphql({query:'query { invoices { id } }'}); (1).toLocaleString('en-US', {style:'currency',currency:'USD'});"}`,
+		`{"javascriptCode":"const execution = graphjinLastExecution.result; const id = execution.data.invoices[0].id; await final('Answer from the successful query.', {execution, id});"}`,
+		`{"status":"answered","answer":"Found invoice 1."}`,
+	}}
+	a := newAgent(Config{Selection: SelectionConfig{Enabled: true, Provider: "typesafe"}}, rt,
+		WithClientFactory(func(Config) (ax.AIClient, error) { return client, nil }),
+		WithSelectionProgramFactory(selectionFactory(selectRelevant)))
+	response, err := a.Run(context.Background(), Request{Instruction: "show invoices"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != StatusAnswered || rt.executions != 1 || len(client.calls) != 3 || response.Preparation.DetailCacheHits != 1 {
+		t.Fatalf("successful query was lost on a later JS error: %+v executions=%d calls=%d", response, rt.executions, len(client.calls))
+	}
+}
+
 func TestPreparedHandoffEligibility(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		req        Request
 		invalidate bool
 		empty      bool
+		unchecked  bool
 	}{
 		{name: "history", req: Request{History: []Turn{{Role: "user", Content: "previous request"}}}},
 		{name: "caller context", req: Request{Context: map[string]any{"report": "interpret me"}}},
 		{name: "changed revision", invalidate: true},
 		{name: "no prepared roots", empty: true},
+		{name: "unchecked root scope", unchecked: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			rt := selectionFixture()
@@ -110,6 +131,15 @@ func TestPreparedHandoffEligibility(t *testing.T) {
 			}
 			if test.empty {
 				prepared.reads = nil
+			}
+			if test.unchecked {
+				var decisions []map[string]any
+				for _, decision := range prepared.stats.Decisions {
+					if decision["kind"] != "root_scope" {
+						decisions = append(decisions, decision)
+					}
+				}
+				prepared.stats.Decisions = decisions
 			}
 			program := ax.NewAgent(agentSignature, map[string]ax.Value{"runtime": map[string]ax.Value{"language": "JavaScript"}})
 			installPreparedHandoff(context.Background(), program, prepared, rt, test.req)
