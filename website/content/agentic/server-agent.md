@@ -208,6 +208,54 @@ agent:
 
 Deployments differ in which structured-output mechanisms they support, and `auto` takes the one the profile and model rule have verified for that pairing. Set `native`, `function`, or `json_object` to override it; an explicit mode the deployment cannot serve fails before a request is sent.
 
+## Fast catalog discovery and skill selection
+
+An optional Ax decision stage prepares catalog evidence and skill guides before
+the main agent runs. It searches independently of the keyword seed, ranks
+catalog summaries in parallel, and fetches relevant schemas, relationship
+dependencies, saved-query contracts, and documentation. The existing agent
+retains discovery tools for gaps and corrections.
+
+```yaml
+agent:
+  selection:
+    enabled: true
+    mode: both # both | catalog | skills
+    provider: typesafe # any Ax profile supporting decision evidence
+    model: jev-latest
+    api_key_env: JEV_API_KEY
+    startup_budget_ms: 2000
+    concurrency: 4
+    context_bytes: 98304
+```
+
+The feature is disabled by default. The selector has its own model configuration;
+it does not inherit the execution model. Ax handles provider-specific decision
+APIs. Selection failure or timeout restores ordinary discovery and all permitted
+guides. Successfully fetched details remain available, subject to catalog revision
+checks. Loading fewer guides does not remove caller capabilities: the agent can
+load another permitted guide during execution.
+
+All settings also accept `GJ_AGENT_SELECTION_` environment variables, such as
+`GJ_AGENT_SELECTION_PROVIDER` and `GJ_AGENT_SELECTION_STARTUP_BUDGET_MS`.
+Preparation is shared by REST, MCP, watch, and task runs. It performs catalog
+reads; executing a query, workflow, or write remains governed by the existing
+agent and engine checks.
+
+Responses include `preparation` timings, loaded-guide bytes, decision evidence,
+fallback reasons, and provider usage. Total run usage includes decision calls.
+The skill/data evaluation reports retain preparation separately and exclude its
+calls from fallback estimates of expensive-agent turns. Agent status and the
+evaluation fingerprint include the selector configuration.
+
+To compare the four configurations, run the existing repeated data-eval harness
+with selection disabled for the baseline, then with `mode: skills`, `catalog`,
+and `both` against the same baseline. Keep the execution model, caller profile,
+corpus, and repeats constant. Compare answer and database-method recall first,
+then total latency/tokens and `preparation.first_execution_ms`; selection cost
+and latency are included rather than discounted. No speedup is assumed from
+the provider's advertised latency alone.
+
 ## Provider service tiers
 
 `agent.service_tier` selects Ax's portable inference tier: `auto` (the default),

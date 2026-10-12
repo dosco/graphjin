@@ -223,7 +223,7 @@ func TestCapabilityCompletionGuidanceIsExecutorOnly(t *testing.T) {
 			if !strings.Contains(rendered, capabilityMarker) {
 				t.Fatal("write-capable executor omitted capability-completion guidance")
 			}
-			if !strings.Contains(rendered, "watch_write is loaded for this run") || strings.Contains(rendered, "watch_write is not loaded") {
+			if !strings.Contains(rendered, "watch_write is permitted for this run") || strings.Contains(rendered, "watch_write is not permitted") {
 				t.Fatal("write-capable executor received the wrong Go-selected watch branch")
 			}
 			break

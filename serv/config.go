@@ -1098,6 +1098,9 @@ func normalizeAgentConfig(c *Config) error {
 	if err := c.Agent.RateLimit.Validate(); err != nil {
 		return err
 	}
+	if err := c.Agent.Selection.Validate(); err != nil {
+		return err
+	}
 	// Resolve the deprecated alias once, here, so every downstream reader sees a
 	// single canonical mode and never has to re-derive precedence.
 	c.Agent.StructuredOutputMode = gjagent.EffectiveStructuredOutputMode(c.Agent.StructuredOutputMode, c.Agent.ResponseFormat)
@@ -1238,6 +1241,15 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("agent.return_trace", false)
 	vi.SetDefault("agent.seed_limit", 40)
 	vi.SetDefault("agent.catalog_default_limit", 20)
+	vi.SetDefault("agent.selection.enabled", false)
+	vi.SetDefault("agent.selection.mode", "both")
+	vi.SetDefault("agent.selection.startup_budget_ms", 2000)
+	vi.SetDefault("agent.selection.concurrency", 4)
+	vi.SetDefault("agent.selection.context_bytes", 98304)
+	for _, key := range []string{"enabled", "mode", "provider", "model", "api_key_env", "base_url", "startup_budget_ms", "concurrency", "context_bytes"} {
+		suffix := strings.ToUpper(key)
+		vi.BindEnv("agent.selection."+key, "GJ_AGENT_SELECTION_"+suffix, "SG_AGENT_SELECTION_"+suffix, "SJ_AGENT_SELECTION_"+suffix) //nolint:errcheck
+	}
 	vi.SetDefault("agent.rate_limit.requests_per_minute", 0)
 	vi.SetDefault("agent.rate_limit.tokens_per_minute", 0)
 	// model and base_url both contain optional/underscored paths that are used

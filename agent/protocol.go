@@ -33,6 +33,7 @@ type protocolRuntime struct {
 	namespace     string
 	seedLimit     int
 	catalogSearch CatalogSearchFeatures
+	enrichCatalog func(context.Context, map[string]any, any) any
 }
 
 type discoveryState struct {
@@ -246,7 +247,8 @@ type protocolAction struct {
 	Evidence map[string]any `json:"evidence,omitempty"`
 	Error    string         `json:"error,omitempty"`
 
-	startedAt time.Time
+	startedAt   time.Time
+	completedAt time.Time
 }
 
 type protocolViolation struct {
@@ -463,6 +465,9 @@ func (r *protocolRuntime) QueryCatalog(ctx context.Context, args map[string]any)
 	action := r.state.startAction("model", "query_catalog", args)
 	out, err := r.base.QueryCatalog(ctx, args)
 	if err == nil {
+		if len(detailIDs) == 0 && r.enrichCatalog != nil {
+			out = r.enrichCatalog(ctx, args, out)
+		}
 		r.state.clearCompletionLatch()
 		if requestKey != "" {
 			r.state.catalogRequestKeys[requestKey] = true
@@ -1826,6 +1831,7 @@ func (s *discoveryState) finishAction(index int, tool string, args map[string]an
 		return
 	}
 	s.actions[index].Status = "ok"
+	s.actions[index].completedAt = time.Now()
 	if err != nil {
 		s.actions[index].Status = "error"
 		s.actions[index].Error = err.Error()
@@ -1860,6 +1866,12 @@ func (s *discoveryState) emitAction(action protocolAction) {
 }
 
 func (s *discoveryState) recordCatalog(args map[string]any, out any, seed bool) {
+	s.recordCatalogWithRoutes(args, out, seed, !seed)
+}
+
+// Preparation may supply exact schema evidence without implicitly choosing a
+// saved-query route. Ordinary model discovery retains its existing behavior.
+func (s *discoveryState) recordCatalogWithRoutes(args map[string]any, out any, seed, selectRoutes bool) {
 	search := stringArg(args, "search")
 	if search != "" {
 		s.catalogSearches = append(s.catalogSearches, map[string]any{
@@ -1890,7 +1902,7 @@ func (s *discoveryState) recordCatalog(args map[string]any, out any, seed bool) 
 	// unrelated saved query among many table, column, help, and workflow cards;
 	// that is context, not an unambiguous governed route selected by the model.
 	// Only model-driven discovery may arm implicit saved-query execution.
-	s.recordCatalogRows(out, !seed)
+	s.recordCatalogRows(out, selectRoutes)
 	if len(ids) != 0 {
 		s.recordDetailEvidence(ids, out)
 		if s.catalogKindSeen("saved_query") {

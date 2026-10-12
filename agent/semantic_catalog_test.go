@@ -143,11 +143,11 @@ func TestCapabilityCompletionPromptContract(t *testing.T) {
 	denied := capabilityCompletionInstructions(allowedSkills(true, profileWithRoleAndRoots("user")))
 	for _, phrase := range []string{
 		"Governed per-run capability facts",
-		"data_write is not loaded for this run",
+		"data_write is not permitted for this run",
 		"application-table mutations are not available to this caller",
-		"code_write is not loaded for this run",
-		"watch_write is not loaded for this run",
-		"admin_write is not loaded for this run",
+		"code_write is not permitted for this run",
+		"watch_write is not permitted for this run",
+		"admin_write is not permitted for this run",
 		"Never infer a global posture from another capability class",
 	} {
 		if !strings.Contains(denied, phrase) {
@@ -163,7 +163,7 @@ func TestCapabilityCompletionPromptContract(t *testing.T) {
 	watchEnabled := capabilityCompletionInstructions(allowedSkills(false,
 		profileWithRoleAndRoots("user", systemRootWatch, systemRootWatchEvent)))
 	for _, phrase := range []string{
-		"watch_write is loaded for this run",
+		"watch_write is permitted for this run",
 		"watch lifecycle writes are available to attempt",
 		"mutation { gj_watch(insert:",
 		"Do not claim that watch creation is read-only or unavailable",
@@ -172,7 +172,7 @@ func TestCapabilityCompletionPromptContract(t *testing.T) {
 			t.Fatalf("watch-enabled guidance missing %q", phrase)
 		}
 	}
-	if strings.Contains(watchEnabled, "watch_write is not loaded") {
+	if strings.Contains(watchEnabled, "watch_write is not permitted") {
 		t.Fatal("watch-enabled guidance retained the watch denial branch")
 	}
 
@@ -230,8 +230,8 @@ func TestCapabilityCompletionContractPreservesPermittedWorkAndRepair(t *testing.
 	for _, phrase := range []string{
 		"When an execution result contains errors, recover inside this run",
 		"errors[].extensions.graphjin_repair",
-		"data_write is loaded for this run",
-		"admin_write is loaded for this run",
+		"data_write is permitted for this run",
+		"admin_write is permitted for this run",
 		"only a runtime denial or failed in-run recovery may block it",
 	} {
 		if !strings.Contains(prompt, phrase) {

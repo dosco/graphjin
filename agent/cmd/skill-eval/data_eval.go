@@ -396,7 +396,8 @@ func runDataOne(client *http.Client, item dataTask, order int) runResult {
 	result.Status = agentResponse.Status
 	result.AnswerExcerpt = truncateText(agentResponse.Answer, 400)
 	result.Tokens = extractTokenUsage(agentResponse.Usage)
-	result.ActorTurns, result.ActorTurnsSource = actorTurns(agentResponse.Trace, result.Tokens.LLMCalls)
+	result.Preparation = agentResponse.Preparation
+	result.ActorTurns, result.ActorTurnsSource = actorTurns(agentResponse.Trace, executionLLMCalls(*agentResponse))
 	result.GraphJinToolCalls, result.ActionOutcomes = actionInventory(agentResponse.Actions)
 
 	queries, okTools := executedQueries(agentResponse.Actions)
