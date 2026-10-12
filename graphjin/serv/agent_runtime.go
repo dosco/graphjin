@@ -192,6 +192,29 @@ func (r *serviceAgentRuntime) QueryCatalog(ctx context.Context, args map[string]
 	return r.queryCatalogSnapshot(ctx, snap, args)
 }
 
+// CatalogDiscovery uses exactly the caller-visible snapshot used by catalog
+// reads. The shared cache stores metadata only; its index is never exposed
+// without restricting it to this snapshot, including account-owned overlays.
+func (r *serviceAgentRuntime) CatalogDiscovery(ctx context.Context, args map[string]any) (*gjagent.CatalogDiscoveryIndex, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := r.requireCatalogAccess(ctx); err != nil {
+		return nil, err
+	}
+	snap, err := r.service.catalogSnapshotForContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r.service.catalogMu.Lock()
+	var index *gjagent.CatalogDiscoveryIndex
+	if cached := r.service.catalogCache; cached != nil {
+		index = cached.discovery
+	}
+	r.service.catalogMu.Unlock()
+	return index.Restrict(snap), nil
+}
+
 // queryCatalogSnapshot is the service-runtime catalog seam used after caller
 // authorization and visibility have produced a scoped snapshot. Keeping the
 // batch path here makes it testable without exposing `searches` through MCP.

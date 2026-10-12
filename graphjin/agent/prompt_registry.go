@@ -37,7 +37,9 @@ func PromptRegistryHash() string {
 		// ExecutorExamples are provider-visible prompt content on every actor
 		// step; two eval runs differing only in examples must not share a
 		// prompt-registry hash.
-		ExecutorExamples []ax.Value `json:"executor_examples,omitempty"`
+		ExecutorExamples              []ax.Value `json:"executor_examples,omitempty"`
+		SelectionInstruction          string     `json:"selection_instruction"`
+		PreparedDiscoveryInstructions string     `json:"prepared_discovery_instructions"`
 	}
 
 	skills := make([]skillSnapshot, 0, len(builtinSkills))
@@ -53,15 +55,17 @@ func PromptRegistryHash() string {
 		})
 	}
 	payload, err := json.Marshal(registrySnapshot{
-		AgentSignature:              agentSignature,
-		RuntimeSeedInstructions:     runtimeSeedUsageInstructions,
-		ExecutorHandoff:             executorHandoffInstructions,
-		RuntimeInstructions:         runtimeUsageInstructions,
-		SemanticCatalogInstructions: semanticCatalogUsageInstructions,
-		ForcedFinalizeSignature:     finalizeSignature,
-		UngroundedRewriteSignature:  ungroundedRewriteSignature,
-		Skills:                      skills,
-		ExecutorExamples:            executorTrajectoryExamples(),
+		AgentSignature:                agentSignature,
+		RuntimeSeedInstructions:       runtimeSeedUsageInstructions,
+		ExecutorHandoff:               executorHandoffInstructions,
+		RuntimeInstructions:           runtimeUsageInstructions,
+		SemanticCatalogInstructions:   semanticCatalogUsageInstructions,
+		ForcedFinalizeSignature:       finalizeSignature,
+		UngroundedRewriteSignature:    ungroundedRewriteSignature,
+		Skills:                        skills,
+		ExecutorExamples:              executorTrajectoryExamples(),
+		SelectionInstruction:          selectionInstruction,
+		PreparedDiscoveryInstructions: preparedDiscoveryInstructions,
 	})
 	if err != nil {
 		panic(err) // The snapshot contains only JSON-native values.

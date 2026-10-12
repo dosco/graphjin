@@ -344,7 +344,7 @@ func referencesRuntimeHandoff(code string) bool {
 func referencesGraphJinCallable(code string) bool {
 	for _, name := range []string{
 		"query_catalog", "graphql_help", "validate_where_clause",
-		"execute_saved_query", "execute_graphql",
+		"execute_saved_query", "execute_graphql", "use_prepared_catalog",
 	} {
 		if referencesCallableInvocation(code, name) {
 			return true

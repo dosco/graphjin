@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	gjagent "github.com/dosco/graphjin/agent/v3"
 	"github.com/dosco/graphjin/core/v3"
 )
 
@@ -17,8 +18,9 @@ type workflowStatFS interface {
 const workflowTimestampFormat = "2006-01-02T15:04:05.000000000Z07:00"
 
 type catalogCacheEntry struct {
-	revision string
-	snapshot *core.CatalogSnapshot
+	revision  string
+	snapshot  *core.CatalogSnapshot
+	discovery *gjagent.CatalogDiscoveryIndex
 }
 
 func (s *graphjinService) catalogSnapshot() (*core.CatalogSnapshot, error) {
@@ -59,7 +61,11 @@ func (s *graphjinService) catalogSnapshot() (*core.CatalogSnapshot, error) {
 	snapshot := core.BuildCatalogSnapshotWithOptions(md, conf, opts)
 
 	s.catalogMu.Lock()
-	s.catalogCache = &catalogCacheEntry{revision: snapshot.Revision, snapshot: snapshot}
+	entry := &catalogCacheEntry{revision: snapshot.Revision, snapshot: snapshot}
+	if s.conf != nil && s.conf.Agent.Selection.Enabled {
+		entry.discovery = gjagent.NewCatalogDiscoveryIndex(snapshot)
+	}
+	s.catalogCache = entry
 	s.catalogMu.Unlock()
 	return snapshot, nil
 }

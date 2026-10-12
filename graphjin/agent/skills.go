@@ -1,6 +1,9 @@
 package agent
 
-import "strings"
+import (
+	ax "github.com/ax-llm/ax/packages/go"
+	"strings"
+)
 
 // Skill IDs are stable API and telemetry identifiers. Skills are flat,
 // independent guides: capability filtering decides which guides Ax receives,
@@ -241,20 +244,20 @@ var completionCapabilityRules = []completionCapabilityRule{
 	},
 }
 
-func capabilityCompletionInstructions(skills []skillDefinition, profiles ...*CapabilityProfile) string {
-	loaded := make(map[string]bool, len(skills))
-	for _, skill := range skills {
-		loaded[skill.id] = true
+func capabilityCompletionInstructions(permittedSkills []skillDefinition, profiles ...*CapabilityProfile) string {
+	permitted := make(map[string]bool, len(permittedSkills))
+	for _, skill := range permittedSkills {
+		permitted[skill.id] = true
 	}
 
 	var out strings.Builder
-	out.WriteString("Governed per-run capability facts. Go computed each branch below from the caller's loaded skills. Apply only the rule for the exact capability class requested; one unavailable class says nothing about any other class.\n")
+	out.WriteString("Governed per-run capability facts. Go computed each branch below from caller permissions, independently of which guides are preloaded. A permitted guide may be loaded through discover when needed. Apply only the rule for the exact capability class requested; one unavailable class says nothing about any other class.\n")
 	for _, rule := range completionCapabilityRules {
 		out.WriteString("- ")
-		if loaded[rule.skillID] {
-			out.WriteString(rule.affirmative)
+		if permitted[rule.skillID] {
+			out.WriteString(strings.ReplaceAll(rule.affirmative, " is loaded", " is permitted"))
 		} else {
-			out.WriteString(rule.denial)
+			out.WriteString(strings.ReplaceAll(rule.denial, " is not loaded", " is not permitted"))
 		}
 		out.WriteByte('\n')
 	}
@@ -271,12 +274,36 @@ func capabilityCompletionInstructions(skills []skillDefinition, profiles ...*Cap
 			out.WriteString(" is not granted for this caller; do not attempt that operation.\n")
 		}
 	}
-	out.WriteString("A loaded capability authorizes an attempt through the normal runtime guards; only a runtime denial or failed in-run recovery may block it. Never infer a global posture from another capability class.")
+	out.WriteString("A permitted capability authorizes an attempt through the normal runtime guards; only a runtime denial or failed in-run recovery may block it. Never infer a global posture from another capability class.")
 	return out.String()
 }
 
 func profileIsAdmin(profile *CapabilityProfile) bool {
 	return profile != nil && strings.EqualFold(strings.TrimSpace(profile.RoleClass), "admin")
+}
+
+func skillCatalogValues(skills []skillDefinition) []ax.Value {
+	values := make([]ax.Value, 0, len(skills))
+	for _, skill := range skills {
+		values = append(values, map[string]ax.Value{"id": skill.id, "name": skill.name, "description": truncateSelectionText(skill.content, 160)})
+	}
+	return values
+}
+
+func authorizedSkillValues(skills []skillDefinition, ids []ax.Value) []ax.Value {
+	wanted := map[string]bool{}
+	for _, id := range ids {
+		if text, ok := id.(string); ok {
+			wanted[strings.TrimSpace(text)] = true
+		}
+	}
+	var selected []skillDefinition
+	for _, skill := range skills {
+		if wanted[skill.id] {
+			selected = append(selected, skill)
+		}
+	}
+	return skillValues(selected)
 }
 
 func profileHasSystemRoot(profile *CapabilityProfile, root string) bool {

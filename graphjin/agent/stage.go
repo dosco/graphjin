@@ -26,6 +26,7 @@ const (
 	StageResponder = "responder"
 	StageFinalize  = "finalize"
 	StageUnknown   = "unknown"
+	StageSelection = "selection"
 )
 
 // stageMarkers are matched in order. Each is the sentence its stage's prompt
@@ -39,6 +40,7 @@ var stageMarkers = []struct {
 	marker string
 	stage  string
 }{
+	{"GraphJin discovery selector.", StageSelection},
 	{"You (`distiller`)", StageDistiller},
 	{"You (`executor`)", StageExecutor},
 	{"You synthesize the final answer", StageResponder},

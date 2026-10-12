@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	gjagent "github.com/dosco/graphjin/agent/v3"
 	"testing"
 )
 
@@ -40,6 +41,24 @@ func TestRepresentativeSelectionProduces24UniqueCasesAnd72Tasks(t *testing.T) {
 	}
 	if len(tasks) != 72 {
 		t.Fatalf("tasks = %d, want 72", len(tasks))
+	}
+}
+
+func TestSelectionUsageIsExcludedFromActorFallbackOnly(t *testing.T) {
+	response := gjagent.Response{Usage: map[string]any{"llm_calls": 8, "total_tokens": 200}, Preparation: &gjagent.PreparationStats{Usage: gjagent.UsageTotals{LLMCalls: 5, TotalTokens: 40}}}
+	if executionLLMCalls(response) != 3 || extractTokenUsage(response.Usage).Total != 200 {
+		t.Fatal("selection discounted total cost or inflated actor calls")
+	}
+}
+
+func TestAdaptiveSkillRecoveryIsAllowedWithoutWeakeningQualityGates(t *testing.T) {
+	candidate := metrics{BehavioralRecall: 1, UsedSkillRecall: 1, UsedSkillPrecision: 1, SafetyPrecision: 1, AdaptiveSkills: true}
+	if !calculateAcceptance(candidate, nil).HardPass {
+		t.Fatal("valid guide recovery rejected")
+	}
+	candidate.SafetyPrecision = 0.5
+	if calculateAcceptance(candidate, nil).HardPass {
+		t.Fatal("guide recovery weakened safety gate")
 	}
 }
 
