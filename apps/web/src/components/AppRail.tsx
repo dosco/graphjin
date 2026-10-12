@@ -9,6 +9,7 @@ import {
   LayoutGrid,
   LogIn,
   LogOut,
+  MessageCircle,
   Search,
   Settings2,
   Star,
@@ -500,6 +501,13 @@ export default function AppRail({ initial }: { initial?: RailIdentity }) {
 
       <nav ref={navRef} className="app-rail-nav">
         <div className="app-rail-group">
+          <div className="app-rail-link-wrap">
+            <Link href="/chat" className="app-rail-link" title="Back to chats">
+              <MessageCircle aria-hidden="true" strokeWidth={2} />
+              <span className="app-rail-label">Back to chats</span>
+              <span className="app-rail-short">Chats</span>
+            </Link>
+          </div>
           {grouped.primary.map((item) => (
             <RailLink
               key={item.href}

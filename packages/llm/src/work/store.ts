@@ -7,6 +7,8 @@ import {
   gte,
   inArray,
   isNull,
+  lt,
+  or,
   sql,
   work_message,
   work_run,
@@ -66,7 +68,23 @@ export type WorkThreadBundle = {
   runs: WorkRunRecord[];
   messages: WorkMessageRecord[];
   eventsByRun: Record<string, AgentEvent[]>;
+  hasOlder?: boolean;
 };
+
+export type WorkThreadPage = { limit: number; beforeRunId?: string | null };
+
+async function runStartedAt(orgId: string, runId: string): Promise<Date | null> {
+  const [row] = await db()
+    .select({
+      at: sql<Date>`least(${work_run.created_at}, coalesce((select min(m.created_at) from ${work_message} m where m.run_id = ${work_run.id}), ${work_run.created_at}))`.mapWith(
+        (value) => new Date(value as string),
+      ),
+    })
+    .from(work_run)
+    .where(and(eq(work_run.org_id, orgId), eq(work_run.id, runId)))
+    .limit(1);
+  return row?.at ?? null;
+}
 
 export async function listWorkThreads(
   orgId: string,
@@ -643,21 +661,20 @@ export async function getWorkThreadForRun(
 export async function getWorkThreadBundle(
   orgId: string,
   threadId: string,
+  page?: WorkThreadPage,
 ): Promise<WorkThreadBundle | null> {
   const thread = await getWorkThread(orgId, threadId);
   if (!thread) return null;
 
+  const scope = page ? await pageScope(orgId, threadId, page) : null;
   const [runs, messages, events] = await Promise.all([
-    db()
-      .select()
-      .from(work_run)
-      .where(
-        and(
-          eq(work_run.org_id, orgId),
-          eq(work_run.thread_id, threadId),
-        ),
-      )
-      .orderBy(asc(work_run.created_at)),
+    scope
+      ? Promise.resolve(scope.runs)
+      : db()
+          .select()
+          .from(work_run)
+          .where(and(eq(work_run.org_id, orgId), eq(work_run.thread_id, threadId)))
+          .orderBy(asc(work_run.created_at)),
     db()
       .select()
       .from(work_message)
@@ -665,22 +682,26 @@ export async function getWorkThreadBundle(
         and(
           eq(work_message.org_id, orgId),
           eq(work_message.thread_id, threadId),
+          ...(scope ? [scope.messageFilter] : []),
         ),
       )
       .orderBy(asc(work_message.created_at)),
-    db()
-      .select({
-        runId: work_run_event.run_id,
-        payload: work_run_event.payload,
-      })
-      .from(work_run_event)
-      .where(
-        and(
-          eq(work_run_event.org_id, orgId),
-          eq(work_run_event.thread_id, threadId),
-        ),
-      )
-      .orderBy(asc(work_run_event.id)),
+    scope && scope.runIds.length === 0
+      ? Promise.resolve([])
+      : db()
+          .select({
+            runId: work_run_event.run_id,
+            payload: work_run_event.payload,
+          })
+          .from(work_run_event)
+          .where(
+            and(
+              eq(work_run_event.org_id, orgId),
+              eq(work_run_event.thread_id, threadId),
+              ...(scope ? [inArray(work_run_event.run_id, scope.runIds)] : []),
+            ),
+          )
+          .orderBy(asc(work_run_event.id)),
   ]);
 
   const eventsByRun: Record<string, AgentEvent[]> = {};
@@ -722,7 +743,35 @@ export async function getWorkThreadBundle(
       createdAt: row.created_at.toISOString(),
     })),
     eventsByRun,
+    ...(scope ? { hasOlder: scope.hasOlder } : {}),
   };
+}
+
+async function pageScope(orgId: string, threadId: string, page: WorkThreadPage) {
+  const upperAt = page.beforeRunId ? await runStartedAt(orgId, page.beforeRunId) : null;
+  const newestFirst = await db()
+    .select()
+    .from(work_run)
+    .where(
+      and(
+        eq(work_run.org_id, orgId),
+        eq(work_run.thread_id, threadId),
+        ...(upperAt ? [lt(work_run.created_at, upperAt)] : []),
+      ),
+    )
+    .orderBy(desc(work_run.created_at))
+    .limit(page.limit + 1);
+  const hasOlder = newestFirst.length > page.limit;
+  const runs = newestFirst.slice(0, page.limit).reverse();
+  const runIds = runs.map((run) => run.id);
+  const lowerAt = hasOlder && runs[0] ? await runStartedAt(orgId, runs[0].id) : null;
+  const loose = and(
+    isNull(work_message.run_id),
+    ...(lowerAt ? [gte(work_message.created_at, lowerAt)] : []),
+    ...(upperAt ? [lt(work_message.created_at, upperAt)] : []),
+  )!;
+  const messageFilter = runIds.length ? or(inArray(work_message.run_id, runIds), loose)! : loose;
+  return { runs, runIds, hasOlder, messageFilter };
 }
 
 export function suggestWorkThreadTitle(message: string): string {

@@ -539,6 +539,17 @@ export interface AgentControlPlane {
     timeoutMs?: number;
   }): Promise<WaitForActionExecutionResult>;
   rememberWorkMemory(input: RememberWorkMemoryInput): Promise<{ id: string }>;
+  updateBotInstructions(input: {
+    orgId: string;
+    threadId: string;
+    instructions: string;
+  }): Promise<{ ok: boolean }>;
+  searchSkillsForRun(input: {
+    orgId: string;
+    runId: string;
+    query: string;
+    limit?: number;
+  }): Promise<Array<{ name: string; score: number }>>;
   searchWorkMemoryByContext(
     args: WorkMemorySearchArgs,
   ): Promise<WorkMemorySearchResult[]>;
@@ -987,6 +998,25 @@ export class InProcessControlPlane implements AgentControlPlane {
     args: WorkMemorySearchArgs,
   ): Promise<WorkMemorySearchResult[]> {
     return searchWorkMemoryByContext(args);
+  }
+
+  async updateBotInstructions(input: {
+    orgId: string;
+    threadId: string;
+    instructions: string;
+  }): Promise<{ ok: boolean }> {
+    const { updateThreadBotInstructions } = await import("./bot");
+    return updateThreadBotInstructions(input);
+  }
+
+  async searchSkillsForRun(input: {
+    orgId: string;
+    runId: string;
+    query: string;
+    limit?: number;
+  }): Promise<Array<{ name: string; score: number }>> {
+    const { searchSkillsForRun } = await import("./skill-index");
+    return searchSkillsForRun(input);
   }
 
   async searchLibraryForRun(

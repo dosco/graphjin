@@ -734,6 +734,23 @@ async function outputDedupeKey(
 export async function emitWorkflowOutput(
   input: WorkflowOutputInput,
 ): Promise<WorkflowOutputRecord> {
+  const record = await saveWorkflowOutput(input);
+  // A bot's chat hears every run, including a repeat finding the cards fold together.
+  const { postWorkflowOutputToBotChat } = await import("../work/bot");
+  await postWorkflowOutputToBotChat({
+    orgId: input.orgId,
+    workflowRunId: input.workflowRunId,
+    title: input.title ?? "",
+    body: input.body ?? "",
+  }).catch((error) => {
+    console.warn("[workflow-output] bot chat post failed:", error instanceof Error ? error.message : error);
+  });
+  return record;
+}
+
+async function saveWorkflowOutput(
+  input: WorkflowOutputInput,
+): Promise<WorkflowOutputRecord> {
   const now = new Date();
   const dedupeKey = await outputDedupeKey(input);
   if (dedupeKey) {

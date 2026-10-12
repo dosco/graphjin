@@ -33,7 +33,16 @@ export interface RunBinding {
 
 export type AgentBrokerEventSink = (event: AgentEvent) => Promise<void>;
 
-const runEventSinks = new Map<string, AgentBrokerEventSink>();
+// Next evaluates this module once per route bundle inside one process; the
+// broker, its port and its event sinks must be shared, as the warm pool is.
+type BrokerState = {
+  singleton?: AgentBrokerHandle;
+  starting?: Promise<AgentBrokerHandle | undefined>;
+  sinks: Map<string, AgentBrokerEventSink>;
+};
+const brokerHost = globalThis as typeof globalThis & { __opennekoAgentBroker?: BrokerState };
+const brokerState: BrokerState = (brokerHost.__opennekoAgentBroker ??= { sinks: new Map() });
+const runEventSinks = brokerState.sinks;
 
 /**
  * Attach the host run's normal event sink to MCP bridge emissions. This keeps
@@ -197,6 +206,31 @@ async function handle(
           orgId: binding.orgId,
           runId: binding.runId,
         } as Parameters<AgentControlPlane["rememberWorkMemory"]>[0]),
+      );
+    case "/v1/skills/search":
+      // The actor comes from the bound run; an agent-supplied user is never trusted.
+      delete body.userId;
+      return send(
+        res,
+        200,
+        await cp.searchSkillsForRun({
+          orgId: binding.orgId,
+          runId: binding.runId,
+          query: String(body.query ?? ""),
+          ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
+        }),
+      );
+    case "/v1/bot/instructions":
+      // The chat comes from the run binding; an agent-supplied thread is never trusted.
+      if (!binding.threadId) return send(res, 400, { error: "no chat bound to this run" });
+      return send(
+        res,
+        200,
+        await cp.updateBotInstructions({
+          orgId: binding.orgId,
+          threadId: binding.threadId,
+          instructions: String(body.instructions ?? ""),
+        }),
       );
     case "/v1/memory/search": {
       delete body.userId;
@@ -763,8 +797,6 @@ export async function startAgentBroker(
   };
 }
 
-let brokerSingleton: AgentBrokerHandle | undefined;
-let brokerStarting: Promise<AgentBrokerHandle | undefined> | undefined;
 
 /**
  * Lazily start the per-process agent broker, bound to the in-process control
@@ -775,10 +807,10 @@ let brokerStarting: Promise<AgentBrokerHandle | undefined> | undefined;
  * and the web chat route.
  */
 export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
-  if (brokerSingleton) return Promise.resolve(brokerSingleton);
-  if (!brokerStarting) {
+  if (brokerState.singleton) return Promise.resolve(brokerState.singleton);
+  if (!brokerState.starting) {
     const pinned = Number(process.env.OPENNEKO_BROKER_PORT) || 0;
-    brokerStarting = startAgentBroker({
+    brokerState.starting = startAgentBroker({
       controlPlane: inProcessControlPlane,
       hostAlias: sandboxBrokerHost(),
       port: pinned || 4199,
@@ -798,15 +830,15 @@ export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
         });
       })
       .then((h) => {
-        brokerSingleton = h;
+        brokerState.singleton = h;
         return h;
       })
       .catch((e) => {
-        brokerStarting = undefined; // allow a retry on the next run
+        brokerState.starting = undefined; // allow a retry on the next run
         throw e;
       });
   }
-  return brokerStarting;
+  return brokerState.starting;
 }
 
 /**
@@ -817,12 +849,12 @@ export function ensureAgentBroker(): Promise<AgentBrokerHandle | undefined> {
  * broker's listening socket does not keep the Node process alive.
  */
 export async function shutdownAgentBroker(): Promise<void> {
-  const starting = brokerStarting;
+  const starting = brokerState.starting;
   const active =
-    brokerSingleton ??
+    brokerState.singleton ??
     (starting ? await starting.catch(() => undefined) : undefined);
-  brokerSingleton = undefined;
-  brokerStarting = undefined;
+  brokerState.singleton = undefined;
+  brokerState.starting = undefined;
   await active?.close();
 }
 

@@ -22,7 +22,7 @@ async function manage(request: Request, context: Context) {
     const state = newStateToken();
     const codeVerifier = newPkceVerifier();
     const result = await beginPackUserConnection(actor, packId, connectionKey, { state, codeChallenge: pkceChallenge(codeVerifier), redirectUri });
-    await writePackOAuthState({ packId, connectionKey, state, codeVerifier, returnPath: "/integrations", ...actor, personal: true });
+    await writePackOAuthState({ packId, connectionKey, state, codeVerifier, returnPath: new URL(request.url).searchParams.get("returnTo") === "/chat/connectors" ? "/chat/connectors" : "/integrations", ...actor, personal: true });
     return NextResponse.json(result, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Connection failed" }, { status: 400 });

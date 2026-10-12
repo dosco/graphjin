@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   COMPACT_AFTER,
   KEEP_LAST,
+  compactor,
   compactIfNeeded,
 } from "../src/work/compact-transcript";
 
@@ -69,5 +70,13 @@ describe("compactIfNeeded", () => {
     expect(summarize).toHaveBeenCalledTimes(1);
     expect(summarize.mock.calls[0][0]).toBe(""); // stale prior dropped
     expect(out.kept).toHaveLength(KEEP_LAST);
+  });
+});
+
+describe("compactor signature", () => {
+  it("accepts a first fold with no prior summary", () => {
+    const fields = compactor.getSignature().getInputFields();
+    expect(fields.find((f) => f.name === "priorSummary")?.isOptional).toBe(true);
+    expect(fields.find((f) => f.name === "transcript")?.isOptional).toBeFalsy();
   });
 });

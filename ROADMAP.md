@@ -16,7 +16,8 @@ broker token. Solo deployments retain their sole active admin's sandbox, using
 their persisted local admin account ID. Solo upgrades adopt or create that account
 automatically; email is required only before enabling SSO, which links the same ID. Their idle timeout starts after the turn finishes. Other actors require an access revision; generic
 prewarming remains available without one. Expired generic spares replenish
-automatically while the host is alive.
+automatically while the host is alive. The pool serves Hermes only; Ax runs start
+in a fresh sandbox, so RBAC-1 does not apply to them.
 
 ### Revision contract
 

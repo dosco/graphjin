@@ -37,6 +37,8 @@ import {
   buildRecordsReadServer,
   buildSkillBuilderServer,
   buildWorkMemoryServer,
+  buildBotServer,
+  buildSkillSearchServer,
   type PluginActionDescriptor,
   type PackActionDescriptor,
 } from "./tools";
@@ -63,6 +65,8 @@ export interface RunAgentBackendInput {
   packActions?: readonly PackActionDescriptor[];
   /** Mount the GraphJin source-config MCP server for this admin run. */
   sourceConfigEnabled?: boolean;
+  /** Mount the bot server: this chat belongs to one of the operator's bots. */
+  botEnabled?: boolean;
   /** Selects the isolated data plane for this turn. */
   dataSurface?: WorkDataSurface;
   /** Optional backend-neutral restriction for this run's GraphJin MCP. */
@@ -106,6 +110,7 @@ export async function runAgentBackend(
     pluginActions,
     packActions = [],
     sourceConfigEnabled = false,
+    botEnabled = false,
     dataSurface = "customer",
     graphjinToolPolicy,
     graphjinDataPath = "direct",
@@ -193,6 +198,9 @@ export async function runAgentBackend(
         ...(wantsCards ? { neko_ui: buildRenderCardsServer(emit, { rich: cardSchema === "rich" }) } : {}),
         neko_skills: buildSkillBuilderServer(workspace.skillsRoot),
         neko_memory: buildWorkMemoryServer({ orgId, threadId, runId }, { controlPlane }),
+        ...(botEnabled ? { neko_bot: buildBotServer({ orgId, threadId }, { controlPlane }) } : {}),
+        // Ax's discover() reaches the semantic skill index through this server.
+        ...(backend.id === "ax" ? { neko_guides: buildSkillSearchServer({ orgId, runId }, { controlPlane }) } : {}),
         neko_library: buildLibraryServer({ orgId, threadId, runId }, { controlPlane }),
         neko_records: buildRecordsReadServer({ orgId, runId, controlPlane }),
         neko_workflow_builder: buildWorkflowBuilderServer({

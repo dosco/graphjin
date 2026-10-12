@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentWorkspace } from "../src/agent-backend";
 import type { KnowledgePackContents } from "../src/knowledge-pack";
 import type { PluginCatalog } from "../src/work/control-plane";
-import { buildWorkPrompt } from "../src/work/prompt";
+import { buildBotSection, buildWorkPrompt } from "../src/work/prompt";
 import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
 
 const workspace: AgentWorkspace = {
@@ -26,7 +26,7 @@ const knowledge: KnowledgePackContents = {
 };
 
 function build(
-  backend: "hermes",
+  backend: "hermes" | "ax",
   overrides: {
     wantsCards?: boolean;
     includeUxMetadata?: boolean;
@@ -446,5 +446,44 @@ describe("buildWorkPrompt native delegation guidance", () => {
     const prompt = build("hermes", { supportsNativeDelegation: false });
     expect(prompt).not.toContain("<delegation>");
     expect(prompt).not.toContain("delegate_task");
+  });
+});
+
+describe("buildBotSection", () => {
+  it("names the bot and follows its own instructions", () => {
+    const section = buildBotSection({ name: "Stock watcher", instructions: "Watches stock levels." }, true);
+    expect(section).toContain('"Stock watcher"');
+    expect(section).toContain("Watches stock levels.");
+    expect(section).toContain("mcp_neko_bot_update_instructions");
+  });
+
+  it("describes the instructions tool only when it is mounted", () => {
+    const section = buildBotSection({ name: "Test", instructions: "" }, false);
+    expect(section).toContain("no job description yet");
+    expect(section).not.toContain("mcp_neko_bot_");
+  });
+
+  it("leaves the prompt without a bot section for an ordinary chat", () => {
+    expect(build("hermes")).not.toContain("<bot>");
+  });
+});
+
+describe("buildWorkPrompt skills catalog", () => {
+  const installedSkills = [
+    { name: "xlsx", description: "Use this skill any time a spreadsheet file is the primary input or output" },
+    { name: "docx", description: "Create and edit Word documents" },
+  ];
+
+  it("lists installed skills for Hermes", () => {
+    const prompt = build("hermes", { installedSkills });
+    expect(prompt).toContain("- xlsx — Use this skill any time a spreadsheet");
+    expect(prompt).not.toContain("discover(");
+  });
+
+  it("sends Ax to skill search instead of listing every skill", () => {
+    const prompt = build("ax", { installedSkills });
+    expect(prompt).toContain("discover({ skills:");
+    expect(prompt).not.toContain("- xlsx —");
+    expect(prompt).not.toContain("Create and edit Word documents");
   });
 });

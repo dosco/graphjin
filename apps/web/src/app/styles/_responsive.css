@@ -12,7 +12,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overflow-x: clip;
 /* Prevent horizontal scroll caused by stray overflows. Long words
    (URLs, table-like content) wrap inside cards instead of pushing
    the layout. */
-body { overflow-x: hidden; }
+body { overflow-x: clip; }
 .icard, .briefing-card, .act-card, .workflows-row,
 .work-bubble, .work-markdown, .builder-msg, .run-output-card,
 .settings-card { overflow-wrap: anywhere; }

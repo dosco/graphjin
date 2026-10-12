@@ -24,6 +24,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_APP_VERSION: pkg.version,
   },
   transpilePackages: [
+    "@neko/avatars",
     "@neko/db",
     "@neko/llm",
     "@neko/telemetry",

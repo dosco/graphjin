@@ -24,7 +24,7 @@ if (!reachable) {
   );
 }
 
-describeIfDb("Hermes-only agent resolution", () => {
+describeIfDb("agent backend resolution", () => {
   let orgId: string;
 
   beforeAll(async () => {
@@ -44,9 +44,32 @@ describeIfDb("Hermes-only agent resolution", () => {
     await pool().end();
   });
 
-  it("always resolves the Hermes runtime", async () => {
+  it("resolves Hermes when no primary provider can run Ax", async () => {
     expect(await resolveAgentBackendId(orgId)).toBe("hermes");
     expect((await resolveAgentBackend(orgId)).id).toBe("hermes");
+  });
+
+  it("defaults to Ax when the primary provider has an Ax route", async () => {
+    await seedProvider(orgId, {
+      scope: "primary",
+      provider: "google-gemini",
+      model: "gemini-3.6-flash",
+    });
+    expect(await resolveAgentBackendId(orgId)).toBe("ax");
+  });
+
+  it("keeps a saved Hermes choice", async () => {
+    await seedProvider(orgId, {
+      scope: "primary",
+      provider: "google-gemini",
+      model: "gemini-3.6-flash",
+    });
+    await seedProvider(orgId, {
+      scope: "agent",
+      provider: "hermes",
+      config: { backend: "hermes" },
+    });
+    expect(await resolveAgentBackendId(orgId)).toBe("hermes");
   });
 
   it("exposes the exact provider and model configured for the Hermes runtime", async () => {
@@ -56,7 +79,7 @@ describeIfDb("Hermes-only agent resolution", () => {
       model: "gemini-3.6-flash",
     });
 
-    const backend = await resolveAgentBackend(orgId);
+    const backend = await resolveAgentBackend(orgId, "hermes");
     expect(backend.configuredIdentity).toEqual({
       provider: "gemini",
       model: "gemini-3.6-flash",

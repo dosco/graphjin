@@ -25,6 +25,8 @@ import {
   buildSourceConfigManagerServer,
   buildUserManagerServer,
   buildWorkMemoryServer,
+  buildBotServer,
+  buildSkillSearchServer,
   buildRuleBuilderServer,
   buildWorkflowActionServer,
   buildWorkflowBuilderServer,
@@ -120,6 +122,10 @@ export function buildBridgeServer(
           exposeSave: process.env.OPENNEKO_MCP_MEMORY_READ_ONLY !== "1",
         },
       );
+    case "neko_guides":
+      return buildSkillSearchServer({ orgId, runId }, { controlPlane });
+    case "neko_bot":
+      return buildBotServer({ orgId, threadId }, { controlPlane });
     case "neko_library":
       return buildLibraryServer({ orgId, threadId, runId }, { controlPlane });
     case "neko_records":

@@ -20,7 +20,9 @@ beforeAll(async () => {
     CREATE TABLE work_memory (id uuid PRIMARY KEY, org_id text, text text, embedding vector(384),
       archived_at timestamptz, suppressed boolean DEFAULT false, expires_at timestamptz, updated_at timestamptz DEFAULT now());
     CREATE TABLE library_concept (id uuid PRIMARY KEY, org_id text, title text, description text, body text,
-      embedding vector(384), archived_at timestamptz, updated_at timestamptz DEFAULT now());`);
+      embedding vector(384), archived_at timestamptz, updated_at timestamptz DEFAULT now());
+    CREATE TABLE skill_embedding (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id text, skill_name text,
+      document text DEFAULT '', embedding vector(384), updated_at timestamptz DEFAULT now());`);
 });
 afterAll(async () => {
   if (!url) return;

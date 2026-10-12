@@ -591,7 +591,10 @@
   font-weight: 600;
   font-size: var(--type-body-sm);
   color: var(--text);
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .work-tool-row-subtitle {
   color: var(--text3);
@@ -1323,3 +1326,37 @@ textarea.work-a2ui-input { resize: vertical; }
 
 /* A finished run's working trail, folded above the answer. */
 .work-trail summary { font-weight: 600; }
+
+.work-run-stopped {
+  margin: 8px 0 0;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+}
+
+.work-markdown .work-user-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.work-user-attachments li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: var(--type-body-sm);
+}
+
+.work-user-attachments a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.work-user-attachments span {
+  opacity: 0.7;
+}

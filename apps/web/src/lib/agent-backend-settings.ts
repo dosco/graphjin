@@ -6,6 +6,7 @@ import {
   AGENT_DEFAULT_GLOBAL_CAP,
   assertAxSupported,
   isAgentBackendId,
+  resolveAgentBackendId,
   type AgentBackendId,
 } from "@neko/llm";
 
@@ -71,7 +72,7 @@ export async function getAgentSettings(
   const globalCap = readPositiveInt(cfg.globalCap, AGENT_DEFAULT_GLOBAL_CAP);
   return {
     source: row ? "org" : "default",
-    backend: typeof cfg.backend === "string" && isAgentBackendId(cfg.backend) ? cfg.backend : "hermes",
+    backend: await resolveAgentBackendId(orgId),
     globalCap,
   };
 }
@@ -107,8 +108,7 @@ export async function saveAgentSettingsDraft(
     globalCap?: unknown;
   };
   const backend: AgentBackendId =
-    (draft.backend as AgentBackendId | undefined) ??
-    (typeof existingCfg.backend === "string" && isAgentBackendId(existingCfg.backend) ? existingCfg.backend : "hermes");
+    (draft.backend as AgentBackendId | undefined) ?? (await resolveAgentBackendId(orgId));
   if (backend === "ax") await assertAxSupported(orgId);
   const globalCap = readPositiveInt(
     draft.globalCap ?? existingCfg.globalCap,

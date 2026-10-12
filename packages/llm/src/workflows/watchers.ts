@@ -269,6 +269,7 @@ export type WatcherSweepDeps = {
     workflowId: string;
     triggerKind: "watcher";
     triggerPayload: Record<string, unknown>;
+    windowSeconds?: number;
   }) => Promise<void>;
   now?: () => Date;
 };
@@ -278,11 +279,14 @@ async function defaultEnqueueFire(payload: {
   workflowId: string;
   triggerKind: "watcher";
   triggerPayload: Record<string, unknown>;
+  windowSeconds?: number;
 }): Promise<void> {
   const { enqueue, QUEUE } = await import("@neko/db/jobs");
-  await enqueue(QUEUE.WORKFLOW_RUN_FIRE, payload, {
+  const { windowSeconds = 3600, ...job } = payload;
+  // Collapses duplicate sweeps of one check; the watcher's quiet period sets the window.
+  await enqueue(QUEUE.WORKFLOW_RUN_FIRE, job, {
     singletonKey: `watcher:${String(payload.triggerPayload.watcherId)}`,
-    singletonHours: 1,
+    singletonSeconds: windowSeconds,
   });
 }
 
@@ -358,7 +362,12 @@ export async function sweepWatchers(
     const outsideDebounce =
       !row.last_fired_at ||
       row.last_fired_at.getTime() + suppressionSeconds * 1000 <= now.getTime();
-    const fires = met && outsideDebounce;
+    // The same number as the last check, with the condition already holding, is old news.
+    const unchanged =
+      row.op !== "changed" &&
+      JSON.stringify(value) === JSON.stringify(row.last_value) &&
+      watcherConditionMet(row.op as WatcherOp, row.last_value, row.threshold, null);
+    const fires = met && outsideDebounce && !unchanged;
 
     await db()
       .update(watcher)
@@ -376,6 +385,7 @@ export async function sweepWatchers(
         orgId,
         workflowId: row.workflow_id,
         triggerKind: "watcher",
+        windowSeconds: Math.max(row.cadence_seconds, suppressionSeconds),
         triggerPayload: {
           watcherId: row.id,
           watcherName: row.name,

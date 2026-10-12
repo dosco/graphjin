@@ -409,3 +409,21 @@ describe("work run action timeline", () => {
     expect(withSurface.items.filter((item) => item.kind === "surface")).toHaveLength(1);
   });
 });
+
+describe("work run stop", () => {
+  it("shows a stopped run as stopped, and a failed run as failed", () => {
+    const stopped = buildRunTimeline([
+      { type: "error", message: "Cancelled by user." },
+      { type: "done", result: { status: "cancelled" } },
+    ] as WorkEvent[], "run-1").items.map((item) => item.kind);
+    expect(stopped).toContain("stopped");
+    expect(stopped).not.toContain("error");
+
+    const failed = buildRunTimeline([
+      { type: "error", message: "agent sandbox exited 1" },
+      { type: "done", result: { status: "failed" } },
+    ] as WorkEvent[], "run-1").items.map((item) => item.kind);
+    expect(failed).toContain("error");
+    expect(failed).not.toContain("stopped");
+  });
+});

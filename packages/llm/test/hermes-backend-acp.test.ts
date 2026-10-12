@@ -189,7 +189,7 @@ describe("HermesBackend ACP behavior", () => {
     });
     const events: Array<Record<string, unknown>> = [];
     const backend = new HermesBackend({
-      provider: "gemini",
+      provider: "google-gemini",
       model: "gemini-3.6-flash-configured",
     });
 
@@ -200,22 +200,22 @@ describe("HermesBackend ACP behavior", () => {
     });
 
     expect(backend.configuredIdentity).toEqual({
-      provider: "gemini",
+      provider: "google-gemini",
       model: "gemini-3.6-flash-configured",
     });
     expect(backend.model).toBe("gemini-3.6-flash-configured");
     expect(events.find((event) => event.type === "usage")).toEqual({
       type: "usage",
       source: "outer",
-      provider: "gemini",
+      provider: "google-gemini",
       model: "gemini-3.6-flash-observed",
       modelIdentity: {
         configured: {
-          provider: "gemini",
+          provider: "google-gemini",
           model: "gemini-3.6-flash-configured",
         },
         observed: {
-          provider: "gemini",
+          provider: "google-gemini",
           model: "gemini-3.6-flash-observed",
         },
       },
@@ -341,7 +341,7 @@ describe("HermesBackend ACP behavior", () => {
     });
     const events: Array<Record<string, unknown>> = [];
 
-    await new HermesBackend({ provider: "gemini", model: "gemini-3.6-flash" }).run({
+    await new HermesBackend({ provider: "google-gemini", model: "gemini-3.6-flash" }).run({
       prompt: "p",
       workspace: FAKE_WORKSPACE,
       onEvent: (event) => events.push(event as unknown as Record<string, unknown>),
@@ -350,11 +350,11 @@ describe("HermesBackend ACP behavior", () => {
     expect(events.find((event) => event.type === "usage")).toEqual({
       type: "usage",
       source: "outer",
-      provider: "gemini",
+      provider: "google-gemini",
       model: "gemini-3.6-flash",
       modelIdentity: {
-        configured: { provider: "gemini", model: "gemini-3.6-flash" },
-        observed: { provider: "gemini", model: "gemini-3.6-flash" },
+        configured: { provider: "google-gemini", model: "gemini-3.6-flash" },
+        observed: { provider: "google-gemini", model: "gemini-3.6-flash" },
       },
       usage: {
         coverage: "unavailable",
@@ -385,7 +385,7 @@ describe("HermesBackend ACP behavior", () => {
     const events: Array<Record<string, unknown>> = [];
 
     const result = await new HermesBackend({
-      provider: "gemini",
+      provider: "google-gemini",
       model: "gemini-3.6-flash",
     }).run({
       prompt: "p",
@@ -403,7 +403,7 @@ describe("HermesBackend ACP behavior", () => {
     expect(events.filter((event) => event.type === "message")).toEqual([]);
     expect(events.find((event) => event.type === "usage")).toMatchObject({
       modelIdentity: {
-        observed: { provider: "gemini", model: "gemini-3.6-flash" },
+        observed: { provider: "google-gemini", model: "gemini-3.6-flash" },
       },
       usage: { coverage: "unavailable" },
     });

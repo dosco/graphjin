@@ -55,6 +55,7 @@ interface SandboxJob {
   pluginActions?: RunAgentBackendInput["pluginActions"];
   packActions?: RunAgentBackendInput["packActions"];
   sourceConfigEnabled?: boolean;
+  botEnabled?: boolean;
   dataSurface?: RunAgentBackendInput["dataSurface"];
   graphjinToolPolicy?: RunAgentBackendInput["graphjinToolPolicy"];
   graphjinDataPath?: RunAgentBackendInput["graphjinDataPath"];
@@ -312,6 +313,7 @@ async function runJob(
       pluginActions: job.pluginActions ?? [],
       packActions: job.packActions ?? [],
       sourceConfigEnabled: job.sourceConfigEnabled ?? false,
+      botEnabled: job.botEnabled ?? false,
       dataSurface: job.dataSurface ?? "customer",
       ...(job.graphjinToolPolicy
         ? { graphjinToolPolicy: job.graphjinToolPolicy }

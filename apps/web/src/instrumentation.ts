@@ -7,7 +7,9 @@ export async function register() {
   try {
     const { getOrgId } = await import("@neko/db");
     const { ensureOrgWorkspace } = await import("@neko/llm/work");
-    await prepareSandboxCapacity(undefined, await ensureOrgWorkspace(await getOrgId()));
+    const { resolveAgentBackendId } = await import("@neko/llm");
+    const orgId = await getOrgId();
+    await prepareSandboxCapacity(undefined, await ensureOrgWorkspace(orgId), await resolveAgentBackendId(orgId));
   } catch (error) {
     // Keep setup and existing pages available during a gateway outage. Work
     // admission still waits for a ready sandbox; the pool retries preparation.

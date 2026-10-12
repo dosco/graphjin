@@ -1,5 +1,6 @@
 // Always session/new per turn — Hermes session/load replays history that the prompt already carries (see packages/llm/src/work/prompt.ts), double-counting context.
 
+import { nekoProviderFromHermes } from "../provider-runtime";
 import { spawn, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
@@ -537,7 +538,10 @@ async function runOnce(args: RunOnceArgs): Promise<RunOnceOutcome> {
       mcpServers,
     });
     const sessionId = fresh.sessionId;
-    const observedIdentity = parseHermesSessionIdentity(fresh);
+    const reported = parseHermesSessionIdentity(fresh);
+    const observedIdentity = reported
+      ? { ...reported, provider: nekoProviderFromHermes(reported.provider, configuredIdentity) }
+      : undefined;
     turnIdentity = observedIdentity;
 
     let accumulatedText = "";

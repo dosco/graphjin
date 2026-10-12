@@ -72,20 +72,10 @@ func (f *Files) UploadCapabilities() []agent.Capability {
 	return []agent.Capability{read, search}
 }
 
-// SkillCapabilities expose only files staged for the current operator.
-func (f *Files) SkillCapabilities() []agent.Capability {
-	all := f.UploadCapabilities()
-	all[0].Name, all[0].Origin = "skill_read", "skills"
-	all[0].Description = "Read a staged skill instruction or supporting text file by path relative to the skills root. Skills cannot call models directly."
-	all[1].Name, all[1].Origin = "skill_search", "skills"
-	all[1].Description = searchDescription("the staged skills")
-	return all
-}
-
 const maxSkillContent = 64 << 10
 
-// Skills reads each staged SKILL.md for the Ax skills catalog: the name from
-// the folder, the description from frontmatter and the body as content.
+// Skills indexes each staged SKILL.md by the name of its folder and the
+// description in its frontmatter. The body is read only when a search loads it.
 func (f *Files) Skills() ([]agent.Skill, error) {
 	root, err := f.root.Open(".")
 	if err != nil {
@@ -101,41 +91,66 @@ func (f *Files) Skills() ([]agent.Skill, error) {
 		if !entry.IsDir() || !agent.ValidSkillName(entry.Name()) {
 			continue
 		}
-		file, err := f.root.Open(entry.Name() + "/SKILL.md")
+		name := entry.Name()
+		head, err := f.skillText(name, 8192)
 		if err != nil {
 			continue
 		}
-		data, readErr := io.ReadAll(io.LimitReader(file, maxSkillContent+8192))
-		file.Close()
-		if readErr != nil {
-			return nil, readErr
-		}
-		text := string(data)
-		if !utf8.ValidString(text) || !strings.HasPrefix(text, "---\n") {
+		description, _, ok := splitFrontmatter(head)
+		if !ok {
 			continue
 		}
-		end := strings.Index(text[4:], "\n---")
-		if end < 0 {
-			continue
-		}
-		var description string
-		for _, line := range strings.Split(text[4:4+end], "\n") {
-			if strings.HasPrefix(line, "description:") {
-				description = strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "description:")), `"'`)
-				break
+		skills = append(skills, agent.Skill{Name: name, Description: description, Load: func() (string, error) {
+			text, err := f.skillText(name, maxSkillContent+8192)
+			if err != nil {
+				return "", err
 			}
-		}
-		description = runePrefix(description, 1024)
-		body := strings.TrimLeft(text[4+end+4:], "\n")
-		if len(body) > maxSkillContent {
-			body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read " + entry.Name() + "/SKILL.md with skill_read]"
-		}
-		skills = append(skills, agent.Skill{Name: entry.Name(), Description: description, Content: body})
-		if len(skills) > 256 {
-			return nil, fmt.Errorf("too many staged skills")
-		}
+			_, body, ok := splitFrontmatter(text)
+			if !ok {
+				return "", fmt.Errorf("skill %s has no frontmatter", name)
+			}
+			if len(body) > maxSkillContent {
+				body = runePrefix(body, maxSkillContent/4-64) + "\n[guide truncated; read the rest with file_read at skills/" + name + "/SKILL.md]"
+			}
+			return body, nil
+		}})
 	}
 	return skills, nil
+}
+
+func (f *Files) skillText(name string, limit int64) (string, error) {
+	file, err := f.root.Open(name + "/SKILL.md")
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, limit))
+	if err != nil {
+		return "", err
+	}
+	if !utf8.ValidString(string(data)) {
+		return "", fmt.Errorf("skill %s is not UTF-8", name)
+	}
+	return string(data), nil
+}
+
+// splitFrontmatter returns the description and the body of a SKILL.md.
+func splitFrontmatter(text string) (string, string, bool) {
+	if !strings.HasPrefix(text, "---\n") {
+		return "", "", false
+	}
+	end := strings.Index(text[4:], "\n---")
+	if end < 0 {
+		return "", "", false
+	}
+	var description string
+	for _, line := range strings.Split(text[4:4+end], "\n") {
+		if strings.HasPrefix(line, "description:") {
+			description = strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "description:")), `"'`)
+			break
+		}
+	}
+	return runePrefix(description, 1024), strings.TrimLeft(text[4+end+4:], "\n"), true
 }
 
 func runePrefix(text string, limit int) string {

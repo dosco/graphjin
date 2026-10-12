@@ -262,3 +262,34 @@ export function resolveAxModelRoute(args: {
       return { provider: AX_PROFILES[args.provider] ?? "openai-compatible", model: runtime.model, url: runtime.baseUrl, ...keyEnv };
   }
 }
+
+// Hermes names a provider its own way; OpenNeko and Ax use the names on the left.
+const HERMES_PROVIDER_NAMES: Record<string, string> = {
+  gemini: "google-gemini",
+  "openai-api": "openai",
+  "azure-foundry": "azure-openai",
+  anthropic: "anthropic",
+  deepseek: "deepseek",
+};
+
+/**
+ * The OpenNeko provider name for one Hermes reports. Hermes reuses "custom" for
+ * several providers, so the configured provider wins when it maps to the
+ * reported name.
+ */
+export function nekoProviderFromHermes(
+  hermesProvider: string,
+  configured?: { provider: string; model: string },
+): string {
+  if (configured) {
+    try {
+      const provider = configured.provider as Parameters<typeof resolveHermesProviderRuntime>[0]["provider"];
+      if (resolveHermesProviderRuntime({ provider, model: configured.model }).provider === hermesProvider) {
+        return configured.provider;
+      }
+    } catch {
+      // A provider that needs more configuration falls back to the fixed names.
+    }
+  }
+  return HERMES_PROVIDER_NAMES[hermesProvider] ?? hermesProvider;
+}

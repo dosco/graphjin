@@ -118,7 +118,11 @@ export function isActive(pathname: string, base: string) {
 }
 
 export function hideAppChrome(pathname: string) {
-  return pathname.startsWith("/signin") || pathname.startsWith("/onboarding");
+  return (
+    pathname.startsWith("/signin") ||
+    pathname.startsWith("/onboarding") ||
+    isActive(pathname, "/chat")
+  );
 }
 
 export function useApprovalsCount(enabled = true) {

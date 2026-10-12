@@ -613,13 +613,14 @@ describe("makeSandboxRunCore", () => {
     expect(logs.some(line => line.includes('"type":"sandbox_warm"'))).toBe(true);
   });
 
-  it("runs an Ax chat turn in a warm slot", async () => {
+  it("runs an Ax chat turn in a fresh sandbox, never a warm Hermes slot", async () => {
     const logs: string[] = [];
     const core = makeSandboxRunCore({ agentImage: "test", warmPoolSize: 1, onLog: line => logs.push(line) });
     const input = fakeInput(async () => {});
     input.backend = { ...input.backend, id: "ax" } as RunAgentBackendInput["backend"];
     await core(input);
-    expect(logs.some(line => line.includes('"type":"sandbox_warm"'))).toBe(true);
+    expect(logs.some(line => line.includes('"type":"sandbox_warm"'))).toBe(false);
+    expect(logs.some(line => line.includes('"phase":"create"'))).toBe(true);
   });
 
   it("reuses only the same trusted user scope and binds providers before policy readiness", async () => {

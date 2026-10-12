@@ -9,6 +9,22 @@ index](#complete-pr-index) at the bottom covers every PR in one table.
 
 ---
 
+## Your own bots
+
+The web app opens on chat. Each person makes their own bots and talks to them
+the way they would text a colleague. Admins reach the full console from the
+profile menu.
+
+| Feature | What it does for you | Shipped in |
+|---|---|---|
+| Bots you make yourself | Pick a name, a coat and a pattern on the New bot screen. Each bot gets a neko avatar and can use everything you can access. | #449 |
+| One running chat per bot | A bot keeps one conversation. Desktop shows your bots in a sidebar beside the open chat. Long chats open at the latest message and load older turns as you scroll up. | #449 |
+| Instructions the bot keeps current | The bot writes its own instructions from what you tell it and tunes them as you talk. | #449 |
+| Routines in the chat | Tell a bot when to act: on a schedule, on an event, or when a value changes. Results post to its chat. A watcher stays quiet while the value stays the same. | #449 |
+| Skills found by meaning | The bot finds the right skill among thousands by what the skill does, and you can edit a skill from the chat. | #449 |
+| Connectors | The profile menu lists the connectors you can use and the ones coming next. | #449 |
+| Existing chats carry over | On upgrade, each earlier chat thread becomes a bot with a random neko, so your history stays in the list. | #449 |
+
 ## Ask anything, get real answers
 
 Talk to your company data the way you'd talk to an analyst. The assistant
@@ -27,7 +43,7 @@ results as readable cards and charts — not raw data dumps.
 | A memory that works by meaning | Teach the assistant a fact once and it recalls it by meaning, not keywords — memory is embedding-backed and saved/searched by the agent itself. | #17 |
 | Briefing → deep dive | Any briefing card opens into a full Ask thread seeded with that card's context — from "what's this number?" to a real investigation in one click. | #8 |
 | Editable business profile | The assistant's understanding of your company is right there to read — click into it and edit it like a document. | #10 |
-| One runtime, any model provider | Hermes is the sole sandboxed agent runtime and keeps the full administrative toolset while allowing Anthropic, Google, OpenAI-compatible, and other configured model providers. | #3, #112 |
+| Two runtimes, any model provider | Admins pick Hermes or Ax as the sandboxed agent runtime for the organisation. Ax is the default when the primary model provider supports it. Both keep the full administrative toolset, work with Anthropic, Google, OpenAI-compatible and other providers, and price each run from the same model price list. | #3, #112, #436, #449 |
 | Information-dense Compact mode | A density toggle switches the whole app between a comfortable reading layout and an information-dense operator view. | #88 |
 
 ## Connect your data, conversationally
@@ -249,3 +265,4 @@ here.
 | #129 | 2026-06-12 | Thread-scale answer surfaces, sidebar timestamps, diagnosable agent exits |
 | #132 | 2026-06-12 | Agentic answers reach hand-tuned speed (join-path hubs, query pattern cards, compact digests everywhere) and the "agent died mid-run" mystery is fixed — turn timeouts are generous, configurable, and say so |
 | #220 | 2026-08-18 | Document library: uploads distilled into an OKF knowledge base the assistant searches and cites |
+| #449 | 2026-10-12 | Chat-first web app: personal bots with neko avatars, routines in chat, skills found by meaning, priced Ax runs |

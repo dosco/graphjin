@@ -3,6 +3,7 @@ const prepare = vi.hoisted(() => vi.fn());
 vi.mock('@neko/llm/work/sandbox-launcher', () => ({ prepareSandboxCapacity: prepare }));
 vi.mock('@neko/db', () => ({ getOrgId: async () => 'org-test' }));
 vi.mock('@neko/llm/work', () => ({ ensureOrgWorkspace: async (orgId: string) => ({ orgRoot: '/orgs/' + orgId }) }));
+vi.mock('@neko/llm', () => ({ resolveAgentBackendId: async () => 'hermes' }));
 import { register } from '../src/instrumentation';
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); prepare.mockReset(); });
 it('waits for warm readiness before registering the Node server', async () => {
@@ -13,7 +14,7 @@ it('waits for warm readiness before registering the Node server', async () => {
   const registration = register().then(() => { registered = true; });
   await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
   expect(registered).toBe(false);
-  expect(prepare).toHaveBeenCalledWith(undefined, { orgRoot: "/orgs/org-test" });
+  expect(prepare).toHaveBeenCalledWith(undefined, { orgRoot: "/orgs/org-test" }, 'hermes');
   ready(); await registration; expect(registered).toBe(true);
 });
 it('keeps existing pages available on preparation failure and skips unconfigured runtimes', async () => {

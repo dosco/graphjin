@@ -103,25 +103,76 @@ func TestSkillsCatalogLoadsAndReportsUse(t *testing.T) {
 		`Answer: done`,
 	}}
 	server := model.server(t)
-	var used []string
-	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "skills", InputID: "i", Prompt: "Make the daily lead report"}, openAIClient(server),
-		Tools{Skills: []Skill{{Name: "daily-lead", Description: "Build the daily lead report", Content: "Step 1: read the leads table."}}},
+	var used, loaded []string
+	skills := []Skill{{Name: "daily-lead", Description: "Build the daily lead report", Content: "Step 1: read the leads table."}}
+	for i := 0; i < 1000; i++ {
+		skills = append(skills, Skill{Name: fmt.Sprintf("other-%04d", i), Description: "Unrelated guide", Load: func() (string, error) {
+			t.Error("a guide that did not match was read")
+			return "", nil
+		}})
+	}
+	var queries []string
+	index := Capability{Name: SkillSearchTool, Version: "1", Origin: "mcp", Effect: "read", Description: "Find skills by meaning.",
+		InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
+			var input struct {
+				Query string `json:"query"`
+			}
+			_ = json.Unmarshal(raw, &input)
+			queries = append(queries, input.Query)
+			return json.RawMessage(`{"content":["{\"skills\":[{\"name\":\"daily-lead\",\"score\":0.7}]}"]}`), nil
+		}}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "skills", InputID: "i", Prompt: "Make the daily lead report", SkillQuery: "Make the daily lead report"}, openAIClient(server),
+		Tools{Capabilities: []Capability{index}, Skills: skills},
 		func(e Event) error {
-			if e.Type == "skill.used" {
+			switch e.Type {
+			case "skill.used":
 				used = append(used, e.Name)
+			case "skill.loaded":
+				loaded = append(loaded, e.Name)
 			}
 			return nil
 		})
 	if err != nil || result.Status != "completed" {
 		t.Fatalf("result=%+v err=%v calls=%d", result, err, model.calls())
 	}
-	if !strings.Contains(model.body(0), "daily-lead") || !strings.Contains(model.body(0), "Build the daily lead report") {
-		t.Fatal("the skills catalog did not reach the request")
+	if strings.Contains(model.body(0), "other-0001") {
+		t.Fatal("the skills catalog was listed in the prompt")
+	}
+	if strings.Contains(model.body(0), SkillSearchTool) {
+		t.Fatal("the skill index was offered to the model as a tool")
+	}
+	if len(queries) != 2 || queries[0] != "Make the daily lead report" || queries[1] != "daily-lead" {
+		t.Fatalf("index queries = %q", queries)
+	}
+	if strings.Contains(model.body(1), "Guide available for this request") {
+		t.Fatal("the loaded guide did not replace its stub")
 	}
 	if !strings.Contains(model.body(1), "Step 1: read the leads table.") {
 		t.Fatal("the loaded skill guide did not reach the next request")
 	}
-	if len(used) != 1 || used[0] != "daily-lead" {
-		t.Fatalf("used=%q", used)
+	if len(used) != 1 || used[0] != "daily-lead" || len(loaded) != 1 || loaded[0] != "daily-lead" {
+		t.Fatalf("used=%q loaded=%q", used, loaded)
+	}
+}
+
+func TestShortlistedGuideStubReachesTheExecutor(t *testing.T) {
+	model := &scripted{replies: []string{
+		`{"javascriptCode":"final('Make the report',{})"}`,
+		`{"javascriptCode":"final('Done',{})"}`,
+		`Answer: done`,
+	}}
+	server := model.server(t)
+	index := Capability{Name: SkillSearchTool, Version: "1", Origin: "mcp", Effect: "read", Description: "Find skills by meaning.",
+		InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{"content":["{\"skills\":[{\"name\":\"daily-lead\",\"score\":0.7}]}"]}`), nil
+		}}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "stub", InputID: "i", Prompt: "Make the daily lead report", SkillQuery: "Make the daily lead report"}, openAIClient(server),
+		Tools{Capabilities: []Capability{index}, Skills: []Skill{{Name: "daily-lead", Description: "Build the daily lead report", Content: "Step 1: read the leads table."}}},
+		func(Event) error { return nil })
+	if err != nil || result.Status != "completed" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if !strings.Contains(model.body(1), "Guide available for this request: Build the daily lead report") || strings.Contains(model.body(1), "Step 1: read the leads table.") {
+		t.Fatal("the executor did not see the stub, or saw the unloaded guide")
 	}
 }

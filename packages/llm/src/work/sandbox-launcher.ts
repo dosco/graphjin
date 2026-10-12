@@ -20,6 +20,7 @@ import {
   type AgentRunOptions,
   type AgentRunResult,
   type AgentWorkspace,
+  type AgentBackendId,
 } from "../agent-backend";
 import type { RunWorkflowAgentBackendInput } from "../workflows/agent-core";
 import type { RunWorkflowTurnDeps } from "../workflows/run-workflow-turn";
@@ -566,8 +567,14 @@ export async function sandboxAgentBackendForJob(opts: {
 const poolHost = globalThis as typeof globalThis & { __opennekoWarmPools?: Map<string, SandboxPool> };
 const warmPools = poolHost.__opennekoWarmPools ??= new Map<string, SandboxPool>();
 
-export async function prepareSandboxCapacity(opts = sandboxLauncherOptionsFromEnv(), workspace?: StableWorkspace): Promise<void> {
+export async function prepareSandboxCapacity(
+  opts = sandboxLauncherOptionsFromEnv(),
+  workspace?: StableWorkspace,
+  backendId?: AgentBackendId,
+): Promise<void> {
   makeSandboxRunCore(opts);
+  // Only Hermes uses warm slots; an Ax org keeps no idle sandboxes.
+  if (backendId === "ax") return;
   const pool = getSandboxPool(opts, workspace);
   await startupPhase("sandbox.prewarm", async () => {
     await pool?.ready();
@@ -661,9 +668,10 @@ function makeSandboxCore(
   const runInSandbox = async function (
     input: SandboxRunInput,
   ): Promise<AgentRunResult> {
-    // Warm slots preload Hermes; an Ax run uses the slot and leaves the fork server idle.
+    // Warm slots preload Hermes. Ax starts in a fresh sandbox: binding a warm
+    // slot costs it more than a create, and the idle fork server would end the slot mid-run.
     const hermes = input.backend.id === "hermes";
-    let pool = kind === "work" ? getSandboxPool(opts, input.workspace) : undefined;
+    let pool = kind === "work" && hermes ? getSandboxPool(opts, input.workspace) : undefined;
     const isJob = kind === "agent-job";
     const jobInput = isJob ? (input as RunJobAgentBackendInput) : null;
     const signal = isJob
@@ -752,6 +760,7 @@ function makeSandboxCore(
             packActions: (input as RunAgentBackendInput).packActions,
             sourceConfigEnabled:
               (input as RunAgentBackendInput).sourceConfigEnabled ?? false,
+            botEnabled: (input as RunAgentBackendInput).botEnabled ?? false,
             dataSurface:
               (input as RunAgentBackendInput).dataSurface ?? "customer",
             ...((input as RunAgentBackendInput).graphjinToolPolicy
@@ -922,7 +931,7 @@ function makeSandboxCore(
           scope: createHash("sha256").update(JSON.stringify([
             reuse.authorizationRevision, opts.modelProvider, opts.modelHosts,
             opts.keyAliases, opts.env, input.backend.id, input.backend.configuredIdentity,
-            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
+            workInput.pluginActions, workInput.packActions, workInput.sourceConfigEnabled, workInput.botEnabled ?? false, workInput.allowedSkills ?? null, workInput.allowedLibrary ?? null,
             workInput.dataSurface, workInput.graphjinToolPolicy, workInput.graphjinDataPath, workInput.nativeDelegation,
             workInput.backendState, opts.brokerUrl,
             hermesStage ? await readFile(path.join(hermesStage, "config.yaml"), "utf8") : null,

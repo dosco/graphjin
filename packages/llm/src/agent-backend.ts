@@ -8,6 +8,9 @@ import {
 export const AGENT_BACKEND_IDS = ["hermes", "ax"] as const;
 export type AgentBackendId = (typeof AGENT_BACKEND_IDS)[number];
 
+/** The backend for an org that has not chosen one, when its primary provider supports it. */
+export const DEFAULT_AGENT_BACKEND: AgentBackendId = "ax";
+
 export { AGENT_DEFAULT_GLOBAL_CAP, METRIC_REFRESH_DEFAULT_CAP } from "./agent-limits";
 
 /** Concurrent metric refreshes: OPENNEKO_METRIC_REFRESH_CONCURRENCY, else the default, never above globalCap. */
@@ -19,14 +22,14 @@ export function metricRefreshConcurrency(globalCap: number, configured?: string)
 
 export const AGENT_BACKEND_OPTIONS = [
   {
+    value: "ax",
+    label: "Ax (default)",
+    description: "OpenNeko's Go agent. Calls tools from code, so one model step can run many tools.",
+  },
+  {
     value: "hermes",
     label: "Hermes",
     description: "Subprocess agent. Works with any LLM provider.",
-  },
-  {
-    value: "ax",
-    label: "Ax",
-    description: "OpenNeko's Go agent. Calls tools from code, so one model step can run many tools.",
   },
 ] as const;
 

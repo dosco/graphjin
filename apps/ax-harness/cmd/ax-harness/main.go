@@ -81,7 +81,6 @@ func main() {
 		if err != nil {
 			fail(fmt.Errorf("skill workspace unavailable: %w", err))
 		}
-		tools.Capabilities = append(tools.Capabilities, skills.SkillCapabilities()...)
 		if tools.Skills, err = skills.Skills(); err != nil {
 			fail(fmt.Errorf("staged skills unavailable: %w", err))
 		}

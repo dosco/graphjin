@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "../src/agent-backend";
+import { MODEL_PRICES_VERSION } from "../src/spend/model-prices";
 
 type Spawned = { command: string; env: NodeJS.ProcessEnv; stdin: string };
 const spawned: Spawned[] = [];
@@ -98,7 +99,17 @@ describe("AxBackend", () => {
         configured: { provider: "anthropic", model: "claude-sonnet-5-5" },
         observed: { provider: "anthropic", model: "claude-sonnet-5-5-20261001" },
       },
-      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, coverage: "complete", costStatus: "unknown" },
+      usage: {
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 15,
+        coverage: "complete",
+        costStatus: "estimated",
+        costSource: "official_docs_snapshot",
+        currency: "USD",
+        estimatedCostUsd: expect.closeTo(0.00007, 10),
+        pricingCatalogVersion: MODEL_PRICES_VERSION,
+      },
     });
   });
 

@@ -2,7 +2,7 @@ import { pool } from '@neko/db';
 import { boss, QUEUE } from '@neko/db/jobs';
 import { embedText, vectorLiteral } from './embedding';
 
-export type EmbeddingIndexPayload = { kind: 'memory' | 'concept'; orgId: string; id: string };
+export type EmbeddingIndexPayload = { kind: 'memory' | 'concept' | 'skill'; orgId: string; id: string };
 
 // Missing vectors are the durable indexing backlog, written atomically with
 // content. A periodic dispatcher closes the save/enqueue crash window.
@@ -23,6 +23,8 @@ export async function dispatchEmbeddingJobs(): Promise<void> {
         UNION ALL
         SELECT 'concept', id, org_id, updated_at FROM library_concept
         WHERE embedding IS NULL AND archived_at IS NULL AND btrim(title || body) <> ''
+        UNION ALL
+        SELECT 'skill', id, org_id, updated_at FROM skill_embedding WHERE embedding IS NULL
       ), ranked AS (
         SELECT *, row_number() OVER (PARTITION BY org_id ORDER BY updated_at, id) AS turn
         FROM candidates c WHERE NOT EXISTS (
@@ -45,14 +47,20 @@ export async function dispatchEmbeddingJobs(): Promise<void> {
 }
 
 export async function runEmbeddingIndexJob(payload: EmbeddingIndexPayload): Promise<void> {
-  if (!payload || !['memory', 'concept'].includes(payload.kind) ||
+  if (!payload || !['memory', 'concept', 'skill'].includes(payload.kind) ||
       typeof payload.orgId !== 'string' || typeof payload.id !== 'string') {
     throw new Error('Invalid embedding job');
   }
   const memory = payload.kind === 'memory';
-  const table = memory ? 'work_memory' : 'library_concept';
-  const expression = memory ? 'text' : "title || E'\\n' || coalesce(description, '') || E'\\n' || body";
-  const eligible = `embedding IS NULL AND archived_at IS NULL${memory ? ' AND NOT suppressed AND (expires_at IS NULL OR expires_at > now())' : ''}`;
+  const table = { memory: 'work_memory', concept: 'library_concept', skill: 'skill_embedding' }[payload.kind];
+  const expression = {
+    memory: 'text',
+    concept: "title || E'\\n' || coalesce(description, '') || E'\\n' || body",
+    skill: 'document',
+  }[payload.kind];
+  const eligible = payload.kind === 'skill'
+    ? 'embedding IS NULL'
+    : `embedding IS NULL AND archived_at IS NULL${memory ? ' AND NOT suppressed AND (expires_at IS NULL OR expires_at > now())' : ''}`;
   const client = await pool().connect();
   try {
     await client.query('BEGIN');

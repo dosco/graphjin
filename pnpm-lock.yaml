@@ -31,6 +31,9 @@ importers:
       '@fontsource-variable/manrope':
         specifier: 5.3.0
         version: 5.3.0
+      '@neko/avatars':
+        specifier: workspace:*
+        version: link:../../packages/avatars
       '@neko/channels':
         specifier: workspace:*
         version: link:../../packages/channels
@@ -213,6 +216,21 @@ importers:
       esbuild:
         specifier: 0.27.7
         version: 0.27.7
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)
+
+  packages/avatars:
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.2.14
+      react:
+        specifier: 19.2.4
+        version: 19.2.4
       typescript:
         specifier: ^5
         version: 5.9.3

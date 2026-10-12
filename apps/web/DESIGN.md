@@ -248,6 +248,12 @@ denser grids, two-up briefing cards) and Comfortable (a single narrow column,
 larger rhythm). Compact adds side rails on wide viewports (a context rail on Ask,
 a reading pane on Actions) that collapse below 768px.
 
+Chat (`/chat`) uses one column of up to 760px with a 16px side gutter on phone.
+Above 1024px a 280px bot sidebar sits beside the open chat. The sidebar stays in
+place and only the chat scrolls, so `body` clips horizontal overflow with `clip`,
+which keeps sticky headers and the composer working. Wide tables, charts and code
+scroll inside their own card. On phone the composer sits at the bottom edge.
+
 Responsive behavior adapts rather than shrinks. The page clips horizontal
 overflow, forces `min-width: 0` on flex and grid children so long identifiers
 wrap instead of pushing the layout, caps inputs at full width, and honors

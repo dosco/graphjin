@@ -17,8 +17,13 @@ The first-class consumer is the CXO. A CEO, CFO, or COO reads the per-role
 briefing and asks follow-up questions. Briefing and Ask are theirs. They rarely
 touch admin.
 
-One console serves both. The durable center of gravity is the operator who keeps
-it running, with the CXO briefing as a first-class consumer surface.
+The web app opens on chat at `/chat`. Every person talks to their own bots there.
+A bot keeps one running chat, reports in that chat, and can use everything its
+owner can access. Admins open the full console from the profile menu. People
+who are not admins see only chat.
+
+The durable center of gravity is the operator who keeps it running. The bot
+chat is the first-class consumer surface.
 
 Many customers run in regulated or industrial operations. Some operate under ITAR
 and CMMC obligations.
@@ -46,7 +51,8 @@ knowing and acting.
 
 ## Operating Context
 
-The console is one product across many surfaces: Briefing, Ask, Workflows,
+Chat (`/chat`) is the default surface: the bot list, each bot's chat, New bot,
+and Connectors. The console is one product across many surfaces: Briefing, Ask, Workflows,
 Actions, Runs, Library, Memory, Skills, Integrations, Admin, Settings, Apps,
 Records, Sign-in, and Onboarding. `apps/web/AGENTS.md` is the authority on this
 scope.
@@ -66,6 +72,8 @@ production; validate changes locally first.
 
 Capabilities:
 
+- Each person creates bots from the New bot screen. A bot has a neko avatar,
+  instructions it keeps current, and routines that post to its chat.
 - A per-role briefing states what matters now for each CXO role.
 - Ask answers follow-up questions through an agent that renders A2UI cards.
 - The operator approves actions through commits, not free-form model writes.

@@ -38,6 +38,8 @@ export {
   buildSourceConfigManagerServer,
   buildUserManagerServer,
   buildWorkMemoryServer,
+  buildBotServer,
+  buildSkillSearchServer,
   type PluginActionDescriptor,
   type PackActionDescriptor,
 } from "./tools";
@@ -204,3 +206,6 @@ export {
   type OpenShellSandboxPolicy,
   type SandboxLauncherOptions,
 } from "./sandbox-launcher";
+
+export { getThreadBot, updateThreadBotInstructions, type ThreadBot } from "./bot";
+export { searchSkillsForRun, syncSkillIndex, type SkillSearchResult } from "./skill-index";

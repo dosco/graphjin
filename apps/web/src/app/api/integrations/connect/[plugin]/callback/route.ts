@@ -66,6 +66,6 @@ export async function GET(
     return appRedirect(`${stored.returnPath}?connected=${encodeURIComponent(pluginName)}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return appRedirect(`/integrations?error=${encodeURIComponent(message)}`);
+    return appRedirect(`${stored.returnPath}?error=${encodeURIComponent(message)}`);
   }
 }

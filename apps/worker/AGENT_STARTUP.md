@@ -92,6 +92,9 @@ fresh boxes have no upload baseline and unchanged built-in skills are already om
 The [user-scoped warm pool experiment](benchmarks/2026-09-12-user-warm-pool.md)
 implements generic prewarming enabled by default (one slot), user reuse, and a
 three-minute idle timeout. Set `OPENNEKO_AGENT_WARM_POOL_SIZE=0` to disable it.
+The pool serves Hermes only. An organisation on the Ax backend starts each run in
+a fresh sandbox (about 2.5 s with the current supervisor), because the warm slot's
+idle timer ends long Ax runs after three minutes.
 
 Solo admin runs reuse their assigned sandbox by default. Userless runs use the
 recorded solo owner's persisted ID. Web requests automatically adopt or create

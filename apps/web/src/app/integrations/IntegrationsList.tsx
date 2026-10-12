@@ -18,6 +18,8 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty";
 import { SearchInput } from "@/components/ui/search-input";
 import { matchesListSearch } from "@/lib/list-search";
+import Image from "next/image";
+import { COMING_SOON_CONNECTORS, SUPPORTED_CONNECTORS, connectorIcon } from "./connector-catalog";
 
 type Row = {
   pluginId: string;
@@ -32,7 +34,17 @@ type Row = {
 
 type InitialState = { workspace: Row[]; connectors: Row[]; personal?: PackUserConnectionStatus[] };
 
-export default function IntegrationsList({ initial, isAdmin = true, preview = false }: { initial: InitialState; isAdmin?: boolean; preview?: boolean }) {
+function ConnectorTitle({ label, icon }: { label: string; icon: string | null }) {
+  return (
+    <span className="flex min-w-0 items-center gap-3">
+      {icon ? <Image src={icon} alt="" width={28} height={28} className="size-7 shrink-0 object-contain" /> : null}
+      <h3 className="font-display text-ui-subsection font-bold text-text break-words">{label}</h3>
+    </span>
+  );
+}
+
+export default function IntegrationsList({ initial, isAdmin = true, preview = false, variant = "page", canSetUp = false }: { initial: InitialState; isAdmin?: boolean; preview?: boolean; variant?: "page" | "chat"; canSetUp?: boolean }) {
+  const returnQuery = variant === "chat" ? "?returnTo=/chat/connectors" : "";
   const [personal, setPersonal] = useState(initial.personal ?? []);
   const [workspace, setWorkspace] = useState<Row[]>(initial.workspace);
   const [connectors, setConnectors] = useState<Row[]>(initial.connectors);
@@ -114,7 +126,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
     if (disconnect && !await confirmDialog({ title: `Disconnect ${row.providerLabel}?`, description: "Your automations will lose access. Pending approvals using this connection will need to be requested again.", confirmLabel: "Disconnect", destructive: true })) return;
     setBusy(`${row.packId}:${row.key}`);
     try {
-      const response = await fetch(`/api/my/pack-accounts/${encodeURIComponent(row.packId)}/${encodeURIComponent(row.key)}`, { method: disconnect ? "DELETE" : "POST" });
+      const response = await fetch(`/api/my/pack-accounts/${encodeURIComponent(row.packId)}/${encodeURIComponent(row.key)}${returnQuery}`, { method: disconnect ? "DELETE" : "POST" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Connection failed");
       if (!disconnect) { window.location.assign(result.authorizationUrl); return; }
@@ -123,6 +135,19 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
     } catch (error) { toast.error(error instanceof Error ? error.message : "Connection failed"); }
     finally { setBusy(null); }
   }
+
+  async function explainSetup(label: string) {
+    await confirmDialog({
+      title: `${label} needs setup`,
+      description: `An admin sets up ${label} for your workspace first. Ask an admin to install and configure it, then connect your account here.`,
+      confirmLabel: "OK",
+      cancelLabel: "Close",
+    });
+  }
+
+  const notSetUp = variant === "chat"
+    ? SUPPORTED_CONNECTORS.filter((connector) => !personal.some((row) => row.packId === connector.packId))
+    : [];
 
   function renderPluginConnection(row: Row, isDeployment: boolean) {
     const disabled = preview || busy !== null || (isDeployment && !isAdmin);
@@ -154,7 +179,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
                 {busy === row.pluginName ? "Disconnecting…" : "Disconnect"}
               </Button>
             ) : disabled ? <Button disabled>Connect account</Button> : (
-              <ButtonLink variant="primary" href={`/api/integrations/connect/${encodeURIComponent(row.pluginName)}/start`}>Connect account</ButtonLink>
+              <ButtonLink variant="primary" href={`/api/integrations/connect/${encodeURIComponent(row.pluginName)}/start${returnQuery}`}>Connect account</ButtonLink>
             )}
           </ActionGroup>
         </CardFooter>
@@ -168,13 +193,25 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
     );
   }
 
+  const Wrapper = variant === "chat" ? "main" : "div";
   return (
-    <div className="root is-narrow">
-      <AppHeader />
-      <PageHeading
-        title="Integrations"
-        description="Connect external accounts for agent actions. Credentials remain in this deployment."
-      />
+    <Wrapper className={variant === "chat" ? "chat-connectors" : "root is-narrow"}>
+      {variant === "chat" ? (
+        <div className="chat-home-head">
+          <div>
+            <h1 className="chat-home-title">Connectors</h1>
+            <p className="chat-connectors-copy">Connect your own accounts. Your bots can use everything you connect.</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <AppHeader />
+          <PageHeading
+            title="Integrations"
+            description="Connect external accounts for agent actions. Credentials remain in this deployment."
+          />
+        </>
+      )}
 
       {preview && <p role="status" className="mt-4 text-ui-body-sm text-text2">Visual preview. Account actions are disabled.</p>}
 
@@ -195,7 +232,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
         <ul className="flex flex-col gap-3">{visiblePersonal.map(row => <Card as="li" key={`${row.packId}:${row.key}`} className="grid gap-4" aria-busy={busy === `${row.packId}:${row.key}`}>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-display text-ui-subsection font-bold text-text">{row.providerLabel}</h3>
+              <ConnectorTitle label={row.providerLabel} icon={connectorIcon(row.packId)} />
               <Badge variant={row.connected ? "success" : "muted"}>{row.connected ? "Connected" : "Not connected"}</Badge>
             </div>
             <p className="text-ui-body-sm text-text2 break-words">{row.accountLabel ?? (row.configured ? "Connect your account to get started." : "An admin needs to finish setup first.")}</p>
@@ -210,6 +247,53 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
           <Disclosure title="Permissions and help"><div className="grid min-w-0 gap-4"><ul className="min-w-0 text-ui-caption text-text2 break-all">{row.scopes.map(scope => <li key={scope}>{scope}</li>)}</ul>{row.experience?.helpUrl && <ButtonLink size="md" className="justify-self-start" href={row.experience.helpUrl} target="_blank" rel="noreferrer">Connection help</ButtonLink>}</div></Disclosure>
         </Card>)}</ul>
       </section>}
+
+      {notSetUp.length > 0 && (
+        <section aria-labelledby="available-connectors">
+          <h2 id="available-connectors" className="mt-6 mb-2 font-display text-ui-section font-bold text-text">Available</h2>
+          <ul className="flex flex-col gap-3">
+            {notSetUp.map((connector) => (
+              <Card as="li" key={connector.packId} className="grid gap-4">
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <ConnectorTitle label={connector.label} icon={connector.icon} />
+                    <Badge variant="muted">Needs setup</Badge>
+                  </div>
+                  <p className="text-ui-body-sm text-text2">{connector.description}</p>
+                </CardHeader>
+                <CardFooter>
+                  <ActionGroup align="start">
+                    {canSetUp ? (
+                      <ButtonLink href="/admin/settings/packs">Set up in Admin</ButtonLink>
+                    ) : (
+                      <Button onClick={() => void explainSetup(connector.label)}>Connect account</Button>
+                    )}
+                  </ActionGroup>
+                </CardFooter>
+              </Card>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {variant === "chat" && (
+        <section aria-labelledby="coming-soon-connectors">
+          <h2 id="coming-soon-connectors" className="mt-6 mb-2 font-display text-ui-section font-bold text-text">Coming soon</h2>
+          <ul className="flex flex-col gap-3">
+            {COMING_SOON_CONNECTORS.map((connector) => (
+              <Card as="li" key={connector.label} className="grid gap-2">
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <ConnectorTitle label={connector.label} icon={connector.icon} />
+                    <Badge variant="secondary">Coming soon</Badge>
+                  </div>
+                  <p className="text-ui-body-sm text-text2">{connector.description}</p>
+                </CardHeader>
+              </Card>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {visibleWorkspace.length > 0 && (
         <>
@@ -244,7 +328,7 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
         </>
       )}
 
-      {workspace.length === 0 && connectors.length === 0 && personal.length === 0 && (
+      {variant !== "chat" && workspace.length === 0 && connectors.length === 0 && personal.length === 0 && (
         <EmptyState
           className="py-20"
           icon={<Plug aria-hidden="true" />}
@@ -258,10 +342,10 @@ export default function IntegrationsList({ initial, isAdmin = true, preview = fa
         <EmptyState
           className="py-20"
           icon={<Plug aria-hidden="true" />}
-          title="No matching integrations"
+          title={variant === "chat" ? "No matching connectors" : "No matching integrations"}
           body="Try another provider, plugin, or scope."
         />
       ) : null}
-    </div>
+    </Wrapper>
   );
 }

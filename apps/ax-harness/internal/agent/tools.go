@@ -15,19 +15,33 @@ import (
 type Tools struct {
 	Capabilities []Capability
 	ChildTools   []string // Host-admitted tools for one owned child agent; "*" admits all. Absent names and pause tools are skipped.
-	Skills       []Skill  // Host-staged skill guides for the Ax skills catalog.
+	Skills       []Skill  // Host-staged skill guides, found by skill search.
 }
 
-// Skill is one staged guide. Content is the SKILL.md body.
+// Skill is one staged guide. Content is the SKILL.md body; Load reads it on
+// demand when Content is empty, so thousands of guides cost only their index.
 type Skill struct {
 	Name        string
 	Description string
 	Content     string
+	Load        func() (string, error)
+}
+
+// body returns the guide text, loading it when the host deferred the read.
+func (s Skill) body() string {
+	if s.Content != "" || s.Load == nil {
+		return s.Content
+	}
+	text, err := s.Load()
+	if err != nil {
+		return ""
+	}
+	return text
 }
 
 // The Agent Skills format allows descriptions of up to 1,024 characters.
 const (
-	maxSkills           = 256
+	maxSkills           = 100_000
 	maxSkillContent     = 64 << 10
 	maxSkillDescription = 1024
 )

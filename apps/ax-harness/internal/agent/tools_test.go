@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -272,5 +273,99 @@ func TestGraphQLErrorsReachTheModelAndRepeatsStop(t *testing.T) {
 	defer mu.Unlock()
 	if !strings.Contains(bodies[2], "did you mean productnumber") || !strings.Contains(bodies[3], "already failed 2 times") {
 		t.Fatalf("failures did not reach the model")
+	}
+}
+
+func TestToolFailureReadsShellExitCode(t *testing.T) {
+	failed, message := toolFailure(json.RawMessage(`{"exit_code":1,"output":"  File \"<string>\", line 1\nSyntaxError: unexpected character after line continuation character\n","timed_out":false,"truncated":false}`))
+	if !failed || !strings.Contains(message, "exited 1") || !strings.Contains(message, "SyntaxError") {
+		t.Fatalf("non-zero exit = %v %q, want a failure that names the error", failed, message)
+	}
+	if failed, _ := toolFailure(json.RawMessage(`{"exit_code":0,"output":"ok","timed_out":false}`)); failed {
+		t.Fatal("exit code 0 counted as a failure")
+	}
+	if failed, _ := toolFailure(json.RawMessage(`{"exit_code":-1,"output":"","timed_out":true}`)); !failed {
+		t.Fatal("a timed-out command did not count as a failure")
+	}
+	if failed, _ := toolFailure(json.RawMessage(`{"data":{"rows":[]}}`)); failed {
+		t.Fatal("a result without an exit code counted as a failure")
+	}
+}
+
+func TestSkillShortlistKeepsCloseStagedGuides(t *testing.T) {
+	index := &admittedTool{Capability: Capability{Name: SkillSearchTool, Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"content":["{\"skills\":[{\"name\":\"xlsx\",\"score\":0.61},{\"name\":\"gone\",\"score\":0.5},{\"name\":\"docx\",\"score\":0.12}]}"]}`), nil
+	}}}
+	skills := []Skill{{Name: "xlsx", Description: "Spreadsheets"}, {Name: "docx", Description: "Word documents"}}
+	got, names, err := skillShortlist(context.Background(), index, skills, "make an Excel file")
+	if err != nil || strings.Join(names, ",") != "xlsx" {
+		t.Fatalf("names=%q err=%v", names, err)
+	}
+	if !strings.Contains(got, "- xlsx — Spreadsheets") || strings.Contains(got, "gone") || strings.Contains(got, "docx") {
+		t.Fatalf("shortlist = %q", got)
+	}
+	if text, _, _ := skillShortlist(context.Background(), index, skills, "  "); text != "" {
+		t.Fatal("a shortlist without a query")
+	}
+	if text, _, _ := skillShortlist(context.Background(), nil, skills, "excel"); text != "" {
+		t.Fatal("a shortlist without a query or an index")
+	}
+	if got := skillMatches(json.RawMessage(`{"content":["not json"]}`)); len(got) != 0 {
+		t.Fatalf("matches from bad text = %v", got)
+	}
+}
+
+func TestFinalStopsOnceWhileAFailureIsUnfixed(t *testing.T) {
+	answers := []string{
+		`{"javascriptCode":"final('Write the file',{})"}`,
+		`{"javascriptCode":"await builder({command:'python3 build.py'}); console.log('ran');"}`,
+		`{"javascriptCode":"final('Report the file',{})"}`,
+		`{"javascriptCode":"final('Report that the build failed',{})"}`,
+		`Answer: The file was not built: build.py failed.`,
+	}
+	var calls atomic.Int32
+	var mu sync.Mutex
+	var bodies []string
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(body))
+		mu.Unlock()
+		index := int(calls.Add(1)) - 1
+		if index >= len(answers) {
+			http.Error(w, "unexpected model call", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ax.Object("choices", ax.Array(ax.Object("message", ax.Object("role", "assistant", "content", answers[index]), "finish_reason", "stop"))))
+	}))
+	defer model.Close()
+	client := ax.NewOpenAICompatibleClient(ax.Object("base_url", model.URL, "api_key", "synthetic", "model", "fixture"))
+	builder := Capability{Name: "builder", Version: "1", Origin: "fixture", Effect: "durable", Description: "Run a command.", InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"exit_code":1,"output":"SyntaxError: unexpected character","timed_out":false,"truncated":false}`), nil
+	}}
+	result, err := RunWithTools(context.Background(), Spec{Version: 1, RunID: "unfixed", InputID: "input", Prompt: "Build the file"},
+		client, Tools{Capabilities: []Capability{builder}}, func(Event) error { return nil })
+	if err != nil || result.Status != "completed" || calls.Load() != int32(len(answers)) {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !strings.Contains(bodies[3], "failed and no later call fixed them") || !strings.Contains(bodies[3], "SyntaxError") {
+		t.Fatal("final() did not stop for the unfixed failure")
+	}
+}
+
+func TestClarificationQuestionReadsAskClarification(t *testing.T) {
+	plain := ax.AxError{Category: "clarification", Payload: ax.Object("args", []ax.Value{"Which week should the report cover?"})}
+	if text, ok := clarificationQuestion(plain); !ok || text != "Which week should the report cover?" {
+		t.Fatalf("plain = %q %v", text, ok)
+	}
+	structured := ax.AxError{Category: "clarification", Payload: ax.Object("question", "Which region?", "options", []ax.Value{"North", "South"})}
+	if text, ok := clarificationQuestion(fmt.Errorf("forward: %w", structured)); !ok || text != "Which region?\n- North\n- South" {
+		t.Fatalf("structured = %q %v", text, ok)
+	}
+	if _, ok := clarificationQuestion(ax.AxError{Category: "provider", Message: "rate limited"}); ok {
+		t.Fatal("a provider error read as a clarification")
 	}
 }

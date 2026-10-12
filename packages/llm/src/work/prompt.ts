@@ -563,6 +563,7 @@ function buildSkillsSection(
   workspace: AgentWorkspace,
   installedSkills: InstalledSkill[] | undefined,
   allowCreation = true,
+  catalog: "list" | "search" = "list",
 ): string {
   const skillList =
     installedSkills && installedSkills.length > 0
@@ -584,13 +585,30 @@ function buildSkillsSection(
 agentskills.io-style files to
 \`${workspace.skillsRoot}/<skill-name>/SKILL.md\` using your shell tool.`;
 
+  const libraries = `The host image ships
+Python 3, LibreOffice (\`soffice\`), Poppler (\`pdftotext\`), qpdf, plus
+pip libs: pypdf, pdfplumber, reportlab, Pillow, openpyxl, python-pptx,
+python-docx, PyYAML.`;
+
+  if (catalog === "search") {
+    return `<skills>
+Skill guides hold the team's instructions for recurring work of every kind:
+analysis methods, reports, data checks, documents and spreadsheets, customer
+replies, and the business's own procedures. Guides that may fit the request
+are listed under it; load the one that fits with discover({ skills: ["<name>"] })
+before you start. For work no listed guide covers, search with
+discover({ skills: ["<the task, in a few words>"] }). Follow a loaded guide over
+your own approach. Each guide and its supporting files live under
+skills/<name>/; read or edit them with your file tools. ${libraries}
+
+${creationGuidance}
+</skills>`;
+  }
+
   return `<skills>
 Installed skill catalog. Match the current task to the names and descriptions
 below. When a skill matches, read its SKILL.md at the listed path and follow
-its instructions. The host image ships
-Python 3, LibreOffice (\`soffice\`), Poppler (\`pdftotext\`), qpdf, plus
-pip libs: pypdf, pdfplumber, reportlab, Pillow, openpyxl, python-pptx,
-python-docx, PyYAML.
+its instructions. ${libraries}
 
 ${skillList}
 
@@ -811,6 +829,31 @@ action is still in progress.
 </action_tools>`;
 }
 
+export function buildBotSection(
+  bot: { name: string; instructions: string },
+  supportsTool: boolean,
+): string {
+  const job = bot.instructions.trim()
+    ? `Your job, as you last described it:\n${bot.instructions.trim()}\nFollow it unless the operator asks for something else.`
+    : "You have no job description yet. Help with whatever the operator asks.";
+  const tool = supportsTool
+    ? `
+Keep your job description current with mcp_neko_bot_update_instructions.
+Call it when the operator says what they want from you, changes it, or when
+their requests show a clear pattern. Do not call it for a greeting or a
+one-off question. After you call it, tell the operator in one sentence what
+you will focus on.`
+    : "";
+  return `<bot>
+In this chat you are ${JSON.stringify(bot.name)}, one of the operator's bots.
+You keep one running chat with the operator. You can use everything the
+operator can use; choose the skills, data and tools yourself.
+${job}
+If the operator only greets you, reply briefly and offer help once. Do not
+ask about your job again in later turns.${tool}
+</bot>`;
+}
+
 export function buildWorkPrompt(args: {
   backend: AgentBackendId;
   workspace: AgentWorkspace;
@@ -851,6 +894,9 @@ export function buildWorkPrompt(args: {
   dataSurface?: WorkDataSurface;
   appContext?: AppWorkContext;
   recordContext?: RecordWorkContext;
+  /** This chat belongs to one of the operator's bots. */
+  bot?: { name: string; instructions: string };
+  supportsBotTool?: boolean;
 }): string {
   const {
     backend,
@@ -881,6 +927,8 @@ export function buildWorkPrompt(args: {
     graphjinDataPath = "direct",
     appContext,
     recordContext,
+    bot,
+    supportsBotTool = false,
   } = args;
   const shellTool = shellToolName(backend);
 
@@ -897,6 +945,7 @@ behalf. This is the only chat surface — operators come here to do
 everything, from "what was last week's revenue?" to "set up a workflow
 that flags churn risk every Monday."
 </role>`,
+    bot ? buildBotSection(bot, supportsBotTool) : "",
     operatorProfile ?? "",
     CONVERSATION_SECTION,
     buildClarificationSection(supportsClarificationTool),
@@ -909,6 +958,7 @@ that flags churn risk every Monday."
       workspace,
       installedSkills,
       dataSurface === "customer",
+      backend === "ax" ? "search" : "list",
     ),
     dataSurface === "customer"
       ? buildMemorySection({

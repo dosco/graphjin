@@ -52,9 +52,17 @@ type handoffSession struct {
 
 func (s *handoffSession) Execute(code string, options map[string]ax.Value) ax.Value {
 	s.failures.take()
+	s.failures.beginStep()
 	result := withFailures(s.CodeSession.Execute(code, options), s.failures.take())
 	if s.onExecute != nil {
 		s.onExecute(code, result)
+	}
+	if finalStep(result) {
+		if open := s.failures.unfixed(); len(open) > 0 {
+			return map[string]ax.Value{"kind": "error", "is_error": true,
+				"error": "These calls failed and no later call fixed them:\n" + strings.Join(open, "\n") +
+					"\nFix and rerun them, or call final() again with an answer that states each failure. Never report a file or result that a failed call should have made."}
+		}
 	}
 	if s.patched {
 		if envelope, ok := result.(map[string]ax.Value); ok && envelope["is_error"] == true && s.onExecutorError != nil {
@@ -270,11 +278,77 @@ func cloneHandoffMap(source map[string]ax.Value) map[string]ax.Value {
 	return out
 }
 
+// finalStep reports whether an executor step called final().
+func finalStep(result ax.Value) bool {
+	step, ok := result.(map[string]ax.Value)
+	if !ok {
+		return false
+	}
+	payload, ok := step["completion_payload"].(map[string]ax.Value)
+	if !ok {
+		payload = step
+	}
+	return payload["type"] == "final"
+}
+
 // stepFailures collects tool failures and saved references of one actor
 // step, so the step output shows them even when the code ignores the result.
+// It also keeps each changing tool whose last call failed, so a later final()
+// cannot report work that never happened.
 type stepFailures struct {
-	mu    sync.Mutex
-	lines []string
+	mu     sync.Mutex
+	lines  []string
+	step   int
+	open   map[string]openFailure
+	warned bool
+}
+
+type openFailure struct {
+	step    int
+	message string
+}
+
+func (f *stepFailures) beginStep() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.step++
+}
+
+func (f *stepFailures) failed(tool, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.open == nil {
+		f.open = map[string]openFailure{}
+	}
+	f.open[tool] = openFailure{step: f.step, message: message}
+}
+
+func (f *stepFailures) succeeded(tool string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.open, tool)
+}
+
+// unfixed returns, once per run, the failures from earlier steps that no later
+// call fixed. A failure in the final step itself reaches the answer as evidence.
+func (f *stepFailures) unfixed() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.warned {
+		return nil
+	}
+	var lines []string
+	for tool, failure := range f.open {
+		if failure.step < f.step {
+			lines = append(lines, tool+": "+failure.message)
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	f.warned = true
+	sort.Strings(lines)
+	return lines
 }
 
 func (f *stepFailures) add(line string) {

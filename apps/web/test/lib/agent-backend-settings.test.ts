@@ -58,7 +58,7 @@ describeIfDb("agent-settings", () => {
       options: AGENT_BACKEND_OPTIONS,
       defaults: { globalCap: AGENT_DEFAULT_GLOBAL_CAP },
     });
-    expect(AGENT_BACKEND_OPTIONS.map((o) => o.value)).toEqual(["hermes", "ax"]);
+    expect(AGENT_BACKEND_OPTIONS.map((o) => o.value)).toEqual(["ax", "hermes"]);
   });
 
   it("persists the backend and concurrency", async () => {

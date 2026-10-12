@@ -115,6 +115,43 @@ describeIfDb("OL4 watcher sweep", () => {
     expect(fires).toHaveLength(1);
   });
 
+  it("reports every change, including a return to an earlier value, and skips repeats", async () => {
+    const values = [120, 125, 120, 120];
+    let i = 0;
+    const fires: Array<Record<string, unknown>> = [];
+    const deps = {
+      query: async () => ({ data: { stock: { total: values[i] } } }),
+      enqueueFire: async (payload: Record<string, unknown>) => {
+        fires.push(payload);
+      },
+    };
+    for (const [op, threshold] of [["changed", null], ["gt", 100]] as const) {
+      fires.length = 0;
+      await db().delete(watcher).where(eq(watcher.org_id, orgId));
+      await upsertWatcher({
+        orgId,
+        workflowId,
+        name: `stock-${op}`,
+        query: "{ stock { total } }",
+        valuePath: "stock.total",
+        op,
+        ...(threshold === null ? {} : { threshold }),
+        cadenceSeconds: 60,
+        debounceSeconds: 0,
+      });
+      const seen: unknown[] = [];
+      for (i = 0; i < values.length; i++) {
+        await db()
+          .update(watcher)
+          .set({ last_checked_at: new Date(Date.now() - 120_000) })
+          .where(eq(watcher.org_id, orgId));
+        const result = await sweepWatchers(orgId, deps as never);
+        seen.push(...result.fired.map((f) => f.value));
+      }
+      expect(seen).toEqual(op === "changed" ? [125, 120] : [120, 125, 120]);
+    }
+  });
+
   it("query errors are recorded and never fire", async () => {
     await upsertWatcher({
       orgId,

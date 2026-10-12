@@ -11,7 +11,10 @@ export default function WorkShellLayout({
   // The context rail belongs only to Ask thread pages, not the
   // other surfaces (workflows/skills/memory) that share this shell.
   const pathname = usePathname();
-  const isWork = pathname === "/work" || pathname?.startsWith("/work/");
+  const isWork =
+    pathname === "/work" ||
+    pathname?.startsWith("/work/") ||
+    pathname?.startsWith("/chat/t");
   const isWorkflows =
     pathname === "/workflows" || pathname?.startsWith("/workflows/");
 

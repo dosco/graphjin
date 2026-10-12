@@ -13,6 +13,7 @@ import {
   type AgentBackend,
   type AgentBackendId,
   type AgentModelIdentity,
+  DEFAULT_AGENT_BACKEND,
   isAgentBackendId,
 } from "./agent-backend";
 import type { AxBackendConfig } from "./agent-backends/ax";
@@ -54,7 +55,9 @@ async function loadRow(orgId: string, scope: string): Promise<StoredRow | null> 
 export async function resolveAgentBackendId(orgId: string): Promise<AgentBackendId> {
   const row = await loadRow(orgId, "agent");
   const backend = (row?.config ?? {}).backend;
-  return typeof backend === "string" && isAgentBackendId(backend) ? backend : "hermes";
+  if (typeof backend === "string" && isAgentBackendId(backend)) return backend;
+  if (DEFAULT_AGENT_BACKEND === "ax" && !axBackendConfig(await loadRow(orgId, "primary"))) return "hermes";
+  return DEFAULT_AGENT_BACKEND;
 }
 
 export type AgentConcurrency = {

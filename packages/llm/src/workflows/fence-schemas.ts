@@ -101,7 +101,15 @@ export const WORKFLOW_SAVE_SCHEMA = z.object({
           op: z.enum(["gt", "gte", "lt", "lte", "eq", "ne", "changed"]),
           threshold: z.union([z.number(), z.string()]).optional(),
           cadence_seconds: z.number().int().min(60).max(86_400).optional(),
-          debounce_seconds: z.number().int().min(0).max(604_800).optional(),
+          debounce_seconds: z
+            .number()
+            .int()
+            .min(0)
+            .max(604_800)
+            .optional()
+            .describe(
+              "Quiet period in seconds after the watch fires; further matches inside it stay silent. Default 3600. Use 0 when the operator wants to hear about every change.",
+            ),
           severity: z.enum(["low", "medium", "high", "critical"]).optional(),
         })
         .optional(),
