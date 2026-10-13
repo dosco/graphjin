@@ -75,3 +75,31 @@ func plainValue(value ax.Value) ax.Value {
 	}
 	return value
 }
+
+// replyInResult finds a finished reply that a tool printed as a JSON object
+// with a reply_as_written field, such as a skill script's output.
+func replyInResult(raw json.RawMessage) (string, bool) {
+	var result map[string]any
+	if json.Unmarshal(raw, &result) != nil {
+		return "", false
+	}
+	if reply, ok := result["reply_as_written"]; ok {
+		text, err := writtenReply(reply)
+		return text, err == nil
+	}
+	output, _ := result["output"].(string)
+	for i := 0; i < len(output); i++ {
+		if output[i] != '{' || (i > 0 && output[i-1] != '\n') {
+			continue
+		}
+		var object map[string]any
+		if json.NewDecoder(strings.NewReader(output[i:])).Decode(&object) != nil {
+			continue
+		}
+		if reply, ok := object["reply_as_written"]; ok {
+			text, err := writtenReply(reply)
+			return text, err == nil
+		}
+	}
+	return "", false
+}
