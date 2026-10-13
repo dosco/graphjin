@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.31.2](https://github.com/open-neko/openneko/compare/v3.31.1...v3.31.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **records:** name the list cursor variable rows_cursor ([5568233](https://github.com/open-neko/openneko/commit/556823332ad6f95a7bd6e31a63346482b496b625))
+* **records:** name the list cursor variable rows_cursor ([3722fe2](https://github.com/open-neko/openneko/commit/3722fe24d240aa69ba00a95c3c5b94cfc4e1b8f9))
+
 ## [3.31.1](https://github.com/open-neko/openneko/compare/v3.31.0...v3.31.1) (2026-10-13)
 
 
