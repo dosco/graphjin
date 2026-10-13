@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.30.0](https://github.com/open-neko/openneko/compare/v3.29.0...v3.30.0) (2026-10-13)
+
+
+### Features
+
+* **web:** drill-down sub-tables, what-if choices, and replies passed through as written ([1cbf86d](https://github.com/open-neko/openneko/commit/1cbf86d9e38033ef0467dcfe92c214fe4aa01c77))
+* **web:** let answer cards open row sub-tables and offer choices in a what-if ([d202575](https://github.com/open-neko/openneko/commit/d2025755dd3515d2252b99ea85078f83e4749eac))
+
+
+### Bug Fixes
+
+* **ax:** pass a finished reply from a tool to the reader as written ([60830fa](https://github.com/open-neko/openneko/commit/60830faea00fe5b84eee41265845d9cfc1743bb2))
+* **web:** show answer text before its cards and send chips as plain questions ([04eb49c](https://github.com/open-neko/openneko/commit/04eb49c2889e9cb11a18ff65aa88868c6c55a20c))
+* **web:** use the shared select for what-if choices and keep the run status on one line ([36db029](https://github.com/open-neko/openneko/commit/36db029279545b0fd697179a2f8959f0e50a5270))
+
 ## [3.29.0](https://github.com/open-neko/openneko/compare/v3.28.0...v3.29.0) (2026-10-13)
 
 
