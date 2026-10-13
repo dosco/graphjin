@@ -132,6 +132,8 @@ export interface TableProps {
   rows: Record<string, string | number>[];
   caption?: string;
   drill?: string;
+  /** Sub-tables keyed by a row's first-column value; the row opens its sub-table in place. */
+  details?: Record<string, { columns: TableColumn[]; rows: Record<string, string | number>[] }>;
 }
 
 /**
@@ -156,6 +158,8 @@ export interface WhatIfControl {
   max: number;
   step: number;
   unit?: string;
+  /** A choice control: the reader picks one option, and formulas use its value. */
+  options?: Array<{ label: string; value: number }>;
 }
 
 export interface WhatIfOutput {

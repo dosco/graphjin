@@ -265,6 +265,45 @@
   color: var(--accent);
 }
 
+.work-table-name {
+  display: inline-flex;
+  align-items: flex-start;
+}
+
+.work-table-expand {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 0;
+  margin: -2px 6px -2px -4px;
+  padding: 0;
+  vertical-align: middle;
+  color: var(--text2);
+}
+
+.work-table-expand svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 150ms ease;
+}
+
+.work-table-expand[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.work-table tr[data-indent] > td:first-child {
+  padding-left: 26px;
+}
+
+.work-table-detail-row > td {
+  padding: 4px 0 14px 28px;
+  background: var(--neutral-soft);
+}
+
+.work-subtable {
+  font-size: 0.93em;
+}
+
 .work-choice-btn {
   max-width: 100%;
   height: auto;

@@ -3398,7 +3398,7 @@ function RunTimeline({
         <ActionApprovalRow key={`approval-${tool.id}`} threadId={threadId} runId={run?.id ?? ""} tool={tool} />
       ))}
       {presentation.items.map((item, index) =>
-        foldTrail && TRAIL_KINDS.has(item.kind) ? null : renderItem(item, index),
+        (foldTrail && TRAIL_KINDS.has(item.kind)) || (!pending && item.kind === "surface") ? null : renderItem(item, index),
       )}
 
       {fallbackIsTechnicalFailure ? (
@@ -3411,6 +3411,9 @@ function RunTimeline({
           raw={persistedText}
         />
       ) : null}
+
+      {/* A finished answer reads text first, then its cards, whatever order the events came in. */}
+      {!pending ? presentation.items.map((item, index) => item.kind === "surface" ? renderItem(item, index) : null) : null}
 
       {persistedVitals.length > 0 ? (
         <SurfaceBlock messages={persistedVitals} />

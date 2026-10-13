@@ -233,6 +233,13 @@
   font-size: var(--type-body-sm);
   padding-left: 4px;
 }
+.work-status-row > span:not(.work-status-elapsed) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .work-status-row::before {
   content: "";
   width: 4px;
@@ -1322,7 +1329,7 @@ textarea.work-a2ui-input { resize: vertical; }
   font-weight: 400;
 }
 .work-answer-evidence .work-answer-time::before { content: "· "; }
-.work-status-elapsed { margin-left: auto; }
+.work-status-elapsed { margin-left: auto; flex-shrink: 0; white-space: nowrap; }
 
 /* A finished run's working trail, folded above the answer. */
 .work-trail summary { font-weight: 600; }

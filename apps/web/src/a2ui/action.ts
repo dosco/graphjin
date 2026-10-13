@@ -3,7 +3,8 @@ export function buildActionFollowUp(context?: Record<string, unknown>): string |
   const prompt = typeof context?.prompt === "string" ? context.prompt.trim() : "";
   if (!prompt) return null;
   const submitted = Object.fromEntries(
-    Object.entries(context ?? {}).filter(([key]) => key !== "prompt"),
+    Object.entries(context ?? {}).filter(([key, value]) =>
+      key !== "prompt" && !(typeof value === "string" && prompt.includes(value.trim()))),
   );
   if (Object.keys(submitted).length === 0) return prompt;
   return [

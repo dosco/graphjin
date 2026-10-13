@@ -117,10 +117,12 @@ export const renderCardsArgsSchema = z.object({
     .describe("The table column to chart. Write its cells as plain numbers, such as 12699845.92."),
   keyFigures: z.array(text(160)).min(1).max(6).optional()
     .describe('Headline numbers, each written as "Label: value" with an optional "(note)".'),
+  rowDetails: z.array(text(8000)).min(1).max(20).optional()
+    .describe('Sub-tables that table rows open in place, each "Row name >> pipe table": the row\'s first-column name, then the sub-table\'s header row and rows, one per line.'),
   drillDown: text(200).optional()
     .describe("A follow-up question for one table row, chart point, map place, or diagram step. Write {label} where its name goes."),
   controls: z.array(text(200)).min(1).max(4).optional()
-    .describe('Inputs the reader can move, each "name: Label (unit) = default (min to max, step n)", such as "price_change: Price change (%) = 5 (-20 to 20, step 1)".'),
+    .describe('Inputs the reader can move, each "name: Label (unit) = default (min to max, step n)", such as "price_change: Price change (%) = 5 (-20 to 20, step 1)", or a choice "name: Label = Option (number) | Option (number)", where the first option is the default and formulas use the chosen number.'),
   values: z.array(text(120)).max(24).optional()
     .describe('Fixed figures the formulas use, each "name = number", such as "road_revenue = 1496791.67".'),
   computed: z.array(text(300)).min(1).max(6).optional()
@@ -139,7 +141,7 @@ export const renderCardsArgsSchema = z.object({
 });
 
 /** Fields a channel without the rich answer renderer leaves out of the tool schema. */
-export const RICH_ANSWER_FIELDS = ["layout", "drillDown", "controls", "values", "computed", "map", "mapValue", "diagram", "tool"] as const;
+export const RICH_ANSWER_FIELDS = ["layout", "rowDetails", "drillDown", "controls", "values", "computed", "map", "mapValue", "diagram", "tool"] as const;
 
 /** The card tool schema for channels that render only the core blocks. */
 export const coreRenderCardsArgsSchema = renderCardsArgsSchema.omit(
@@ -262,6 +264,25 @@ function tableRows(table: Table) {
   };
 }
 
+function rowDetails(args: RenderCardsArgs, table: Table, issues: Issue[]): Record<string, ReturnType<typeof tableRows>> | null {
+  if (!args.rowDetails) return null;
+  const names = new Set(table.rows.map((row) => row[0]!.trim()));
+  const details: Record<string, ReturnType<typeof tableRows>> = {};
+  args.rowDetails.forEach((entry, index) => {
+    const path = `rowDetails.${index}`;
+    const split = entry.indexOf(">>");
+    const name = split > 0 ? entry.slice(0, split).trim() : "";
+    if (!name || !names.has(name)) {
+      issues.push({ path, code: "row_details", message: `${path} needs "Row name >> pipe table", where the row name is a first-column cell of table.` });
+      return;
+    }
+    const sub = readTable(entry.slice(split + 2));
+    if ("issue" in sub) issues.push({ ...sub.issue, path, message: `${path}: ${sub.issue.message.replace(/^table /, "the sub-table ")}` });
+    else details[name] = tableRows(sub.value);
+  });
+  return Object.keys(details).length ? details : null;
+}
+
 function withDrill(component: Record<string, unknown>, drill: string | undefined): Record<string, unknown> {
   return drill ? { ...component, drill } : component;
 }
@@ -287,10 +308,28 @@ function labelUnit(source: string): { label: string; unit?: string } {
   return match ? { label: match[1]!.trim(), unit: match[2]!.trim() } : { label: source.trim() };
 }
 
-type Control = { name: string; label: string; value: number; min: number; max: number; step: number; unit?: string };
+type ControlOption = { label: string; value: number };
+type Control = { name: string; label: string; value: number; min: number; max: number; step: number; unit?: string; options?: ControlOption[] };
+
+function choiceControl(line: string, issue: (message: string) => Built<Control>): Built<Control> | null {
+  const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.+?)\s*=\s*(.+\|.+)$/.exec(line);
+  if (!match) return null;
+  const options: ControlOption[] = [];
+  for (const part of match[3]!.split("|")) {
+    const option = /^\s*(.+?)\s*\(\s*(-?[\d.,]+)\s*\)\s*$/.exec(part);
+    const value = option ? plainNumber(option[2]!) : undefined;
+    if (!option || value === undefined) return issue('needs each choice in the form "Option (number)", separated by |.');
+    options.push({ label: option[1]!, value });
+  }
+  if (options.length > 12) return issue("has more than 12 choices.");
+  const values = options.map((option) => option.value);
+  return { value: { name: match[1]!.toLowerCase(), ...labelUnit(match[2]!), value: values[0]!, min: Math.min(...values), max: Math.max(...values), step: 1, options } };
+}
 
 function control(line: string, index: number): Built<Control> {
   const issue = (message: string): Built<Control> => ({ issue: { path: `controls.${index}`, code: "control", message: `controls.${index} ${message}` } });
+  const choice = choiceControl(line, issue);
+  if (choice) return choice;
   const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.+?)\s*=\s*(-?[\d.,]+)\s*\(\s*(-?[\d.,]+)\s*to\s*(-?[\d.,]+)\s*(?:,\s*step\s*([\d.,]+))?\s*\)\s*$/i.exec(line);
   if (!match) return issue('needs the form "name: Label (unit) = default (min to max, step n)".');
   const [value, min, max] = [match[3]!, match[4]!, match[5]!].map((cell) => plainNumber(cell)!);
@@ -438,7 +477,7 @@ function answerComponents(args: RenderCardsArgs): { components: Array<Record<str
     for (const figure of figures) if ("issue" in figure) issues.push(figure.issue);
     components.push({ id: "keyFigures", component: "KeyFigures", items: figures.flatMap((figure) => "value" in figure ? [figure.value] : []) });
   }
-  for (const build of [whatIf, mapComponent, diagramComponent]) {
+  for (const build of [mapComponent, diagramComponent]) {
     const component = build(args, issues);
     if (component) components.push(component);
   }
@@ -460,8 +499,13 @@ function answerComponents(args: RenderCardsArgs): { components: Array<Record<str
     if (compare && (table.value.rows.length < 2 || table.value.rows.length > 6)) {
       issues.push({ path: "layout", code: "compare_rows", message: "compare needs 2 to 6 table rows; use the report layout for more." });
     }
-    components.push(withDrill({ id: "table", component: compare ? "Compare" : "Table", ...tableRows(table.value) }, args.drillDown));
+    const details = rowDetails(args, table.value, issues);
+    components.push(withDrill({ id: "table", component: compare ? "Compare" : "Table", ...tableRows(table.value), ...(details ? { details } : {}) }, args.drillDown));
+  } else if (args.rowDetails) {
+    issues.push({ path: "rowDetails", code: "row_details", message: "rowDetails open under table rows; add a table." });
   }
+  const adjust = whatIf(args, issues);
+  if (adjust) components.push(adjust);
   const tool = toolComponent(args, issues);
   if (tool) components.push(tool);
   if (args.callout) components.push({ id: "callout", component: "Callout", mood: args.mood ?? "watch", text: args.callout });

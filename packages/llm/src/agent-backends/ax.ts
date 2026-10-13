@@ -297,6 +297,8 @@ export class AxBackend implements AgentBackend {
         if (cards.messages.length) emit({ type: "surface", messages: cards.messages });
         if (cards.issues.length) console.warn(`[ax] cards in the answer not shown: ${cards.issues.join("; ")}`);
         finalText = cards.text;
+      } else {
+        finalText = extractCardFences(answer).text;
       }
       await queue;
       if (eventError) throw eventError;
