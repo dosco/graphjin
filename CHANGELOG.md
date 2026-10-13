@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.29.0](https://github.com/open-neko/openneko/compare/v3.28.0...v3.29.0) (2026-10-13)
+
+
+### Features
+
+* **web:** animate a bot in the chat list while it runs ([33a843b](https://github.com/open-neko/openneko/commit/33a843bd578c3aa94e4a57f3085f827bdf9a038c))
+
+
+### Bug Fixes
+
+* **ax:** show cards that the responder writes into its answer ([5dbe5d1](https://github.com/open-neko/openneko/commit/5dbe5d193a925fc878105d3a56ae36f638d7f075))
+* routine trigger input, Ax answer cards, and a busy bot in the chat list ([5329d58](https://github.com/open-neko/openneko/commit/5329d588b082f236180bbc164f7bb841ee9fc068))
+* **workflows:** give the agent the event that triggered a routine run ([847fd15](https://github.com/open-neko/openneko/commit/847fd151c177a28e456a68d32db5fa96bbd51cb0))
+
 ## [3.28.0](https://github.com/open-neko/openneko/compare/v3.27.0...v3.28.0) (2026-10-12)
 
 
