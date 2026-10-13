@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.30.1](https://github.com/open-neko/openneko/compare/v3.30.0...v3.30.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **ax:** show a tool's reply_as_written as the answer without relying on the model ([9e3eb9a](https://github.com/open-neko/openneko/commit/9e3eb9af82e439c10cbbc26b716d886c0594a78b))
+* **ax:** show a tool's reply_as_written as the answer without relying on the model ([94dc2bb](https://github.com/open-neko/openneko/commit/94dc2bbe9b496d7dc0725fa1d071c6b203708444))
+
 ## [3.30.0](https://github.com/open-neko/openneko/compare/v3.29.0...v3.30.0) (2026-10-13)
 
 
