@@ -15,12 +15,22 @@ export type BotSummary = {
   lastMessageAt: string | null;
   /** A message arrived after the user last opened this chat. */
   unread: boolean;
+  /** A run is in progress in this chat. */
+  running: boolean;
+  /** The latest run in this chat failed. */
+  lastRunFailed: boolean;
 };
 
 export const BOT_PATTERNS = ["solid", "patch", "tabby"] as const;
 const NAME_MAX = 40;
 
-function summary(row: typeof bot.$inferSelect, lastMessageAt: Date | null): BotSummary {
+type LastRun = { status: string; at: string } | null;
+
+// A run with no events for this long has likely lost its worker; the list stops showing it as busy.
+const RUN_STALE_MS = 5 * 60 * 1000;
+
+function summary(row: typeof bot.$inferSelect, lastMessageAt: Date | null, lastRun: LastRun = null): BotSummary {
+  const active = lastRun && ["queued", "running"].includes(lastRun.status);
   return {
     id: row.id,
     name: row.name,
@@ -31,6 +41,8 @@ function summary(row: typeof bot.$inferSelect, lastMessageAt: Date | null): BotS
     instructions: row.instructions,
     lastMessageAt: lastMessageAt?.toISOString() ?? null,
     unread: Boolean(lastMessageAt && lastMessageAt.getTime() > row.seen_at.getTime() + 1000),
+    running: Boolean(active && Date.now() - new Date(lastRun.at).getTime() < RUN_STALE_MS),
+    lastRunFailed: lastRun?.status === "failed",
   };
 }
 
@@ -71,7 +83,20 @@ export async function createBot(
 export async function listBots(orgId: string, userId: string): Promise<BotSummary[]> {
   const load = () =>
     db()
-      .select({ row: bot, lastMessageAt: work_thread.last_message_at })
+      .select({
+        row: bot,
+        lastMessageAt: work_thread.last_message_at,
+        lastRun: sql<LastRun>`(
+          select json_build_object(
+            'status', r.status,
+            'at', greatest(r.created_at, (select max(e.created_at) from work_run_event e where e.run_id = r.id))
+          )
+          from work_run r
+          where r.thread_id = ${bot.thread_id}
+          order by r.created_at desc
+          limit 1
+        )`,
+      })
       .from(bot)
       .leftJoin(work_thread, eq(work_thread.id, bot.thread_id))
       .where(and(eq(bot.org_id, orgId), eq(bot.owner_user_id, userId)))
@@ -81,7 +106,7 @@ export async function listBots(orgId: string, userId: string): Promise<BotSummar
     await createBot(orgId, userId, { name: "Neko", coat: "snow", pattern: "patch", isDefault: true }).catch(() => null);
     rows = await load();
   }
-  return rows.map(({ row, lastMessageAt }) => summary(row, lastMessageAt));
+  return rows.map(({ row, lastMessageAt, lastRun }) => summary(row, lastMessageAt, lastRun));
 }
 
 export async function getBotByThread(orgId: string, userId: string, threadId: string) {
