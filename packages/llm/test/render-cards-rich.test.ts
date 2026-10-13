@@ -56,6 +56,37 @@ describe("render_cards rich answers", () => {
     });
   });
 
+  it("builds a choice control whose chosen number feeds the formulas", () => {
+    const parts = surface({
+      title: "Prepreg cover",
+      controls: ["panels: Panels = 20 (1 to 40, step 1)", "alt: Alternative = No swap (0) | Panasonic Megtron 6 (12) | Isola Astra MT77 (0)"],
+      values: ["per_panel = 3", "stock = 29"],
+      computed: ["Still short: max(0, panels * per_panel - stock - alt)"],
+    });
+    expect((parts.whatIf as { controls: unknown[] }).controls[1]).toEqual({
+      name: "alt", label: "Alternative", value: 0, min: 0, max: 12, step: 1,
+      options: [{ label: "No swap", value: 0 }, { label: "Panasonic Megtron 6", value: 12 }, { label: "Isola Astra MT77", value: 0 }],
+    });
+    expect(issues({ title: "x", controls: ["alt: Alternative = No swap | Megtron 6 (12)"], computed: ["Out: alt"] }))
+      .toEqual(['controls.0 needs each choice in the form "Option (number)", separated by |.']);
+  });
+
+  it("opens a row's own sub-table from rowDetails", () => {
+    const parts = surface({
+      title: "Quote materials",
+      table: "Material | Needed | In stock | Status\nPrepreg 1086 | 60 | 29 | Short by 31\nCore 0.006 | 60 | 199 | Available",
+      rowDetails: ["Prepreg 1086 >> Alternative | Approval | In stock\nMegtron 6 | Preferred | 12\nAstra MT77 | Preferred | 0"],
+    });
+    expect((parts.table as { details: Record<string, unknown> }).details).toEqual({
+      "Prepreg 1086": {
+        columns: [{ key: "c0", label: "Alternative" }, { key: "c1", label: "Approval" }, { key: "c2", label: "In stock", align: "right" }],
+        rows: [{ c0: "Megtron 6", c1: "Preferred", c2: "12" }, { c0: "Astra MT77", c1: "Preferred", c2: "0" }],
+      },
+    });
+    expect(issues({ title: "x", table: "A | B\nx | 1", rowDetails: ["y >> C | D\n1 | 2"] }))
+      .toEqual(['rowDetails.0 needs "Row name >> pipe table", where the row name is a first-column cell of table.']);
+  });
+
   it("names the problem in a what-if the browser cannot compute", () => {
     expect(issues({ title: "x", controls: ["p: P = 5 (0 to 10)"], computed: ["Out: p * missing"] }))
       .toEqual(["computed.0 uses missing; name each one in controls or values."]);

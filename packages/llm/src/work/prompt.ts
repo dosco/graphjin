@@ -150,6 +150,9 @@ const RICH_CARD_CHOICES = `- Two to six items compared on the same measures for 
   figures, and computed for the results. Query the base figures once; the
   results recompute as the operator moves the controls. Show the results
   only in computed, and keep keyFigures for the fixed starting figures.
+  When the operator picks between options, such as a supplier or a substitute
+  material, add a choice control; each option carries the number the formulas
+  use.
 - Figures by place: map, one line per place with its latitude and longitude,
   and mapValue for the measure.
 - A process, a flow, or how parts connect: diagram, one arrow per link.
@@ -157,6 +160,8 @@ const RICH_CARD_CHOICES = `- Two to six items compared on the same measures for 
   fragment with inline script and every figure it needs written into it.
 - Rows, points, places, or steps the operator may open next: drillDown, a
   question with {label} where the item's name goes.
+- Detail that belongs to one row, such as the options or parts behind it:
+  rowDetails, so the row opens its own sub-table in place.
 `;
 
 const RICH_CARD_EXAMPLES = `

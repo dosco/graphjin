@@ -9,6 +9,7 @@
  */
 
 import React from "react";
+import { ChevronRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ import type {
   KeyFiguresProps,
   MarkdownProps,
   SectionProps,
+  TableColumn,
   TableProps,
   ButtonProps,
   CheckBoxProps,
@@ -362,13 +364,43 @@ registerComponent("Chart", (comp: A2UIComponent, ctx: RenderContext) => {
 // Structured tabular data. Tables used to only exist as Markdown GFM, which
 // can't carry alignment or survive a non-web channel; this is a first-class
 // component the agent addresses by columns + rows.
-registerComponent("Table", (comp: A2UIComponent, ctx: RenderContext) => {
-  const props = comp as unknown as TableProps & { id: string };
+function DataTable({ columns, rows, className }: { columns: TableColumn[]; rows: Record<string, string | number>[]; className: string }) {
+  return (
+    <Table className={className}>
+      <TableHeader>
+        <TableRow>
+          {columns.map((col) => (
+            <TableHead key={col.key} style={col.align ? { textAlign: col.align } : undefined}>{col.label}</TableHead>
+          ))}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row, r) => (
+          <TableRow key={r}>
+            {columns.map((col) => (
+              <TableCell key={col.key} style={col.align ? { textAlign: col.align } : undefined}>{String(row[col.key] ?? "")}</TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function TableBlock({ props, ctx }: { props: TableProps & { id: string }; ctx: RenderContext }) {
   const columns = Array.isArray(props.columns) ? props.columns : [];
   const rows = Array.isArray(props.rows) ? props.rows : [];
+  const details = props.details && typeof props.details === "object" ? props.details : {};
   const firstKey = columns[0]?.key;
+  const [open, setOpen] = React.useState<Set<string>>(() => new Set());
+  const toggle = (name: string) => setOpen((current) => {
+    const next = new Set(current);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    return next;
+  });
   return (
-    <div key={props.id} className="work-table-wrap" data-columns={columns.length}>
+    <div className="work-table-wrap" data-columns={columns.length}>
       {props.caption ? (
         <div className="work-table-caption">{props.caption}</div>
       ) : null}
@@ -389,35 +421,70 @@ registerComponent("Table", (comp: A2UIComponent, ctx: RenderContext) => {
           {rows.map((row, r) => {
             const name = firstKey ? String(row[firstKey] ?? "") : "";
             const drill = name ? drillPrompt(props.drill, name) : null;
+            const detail = name ? details[name] : undefined;
+            const expanded = detail ? open.has(name) : false;
+            const detailId = `${props.id}-detail-${r}`;
             return (
-              <TableRow key={r} data-drill={drill ? "" : undefined}>
-                {columns.map((col, c) => (
-                  <TableCell
-                    key={col.key}
-                    style={col.align ? { textAlign: col.align } : undefined}
-                  >
-                    {c === 0 && drill ? (
-                      <Button
-                        variant="ghost"
-                        className="work-table-drill"
-                        title={drill}
-                        onClick={() => drillInto(ctx, props.id, props.drill, name)}
-                      >
-                        {name}
-                      </Button>
-                    ) : (
-                      String(row[col.key] ?? "")
-                    )}
-                  </TableCell>
-                ))}
-              </TableRow>
+              <React.Fragment key={r}>
+                <TableRow data-drill={drill ? "" : undefined} data-expanded={detail ? String(expanded) : undefined} data-indent={!detail && Object.keys(details).length ? "" : undefined}>
+                  {columns.map((col, c) => (
+                    <TableCell
+                      key={col.key}
+                      style={col.align ? { textAlign: col.align } : undefined}
+                    >
+                      {c === 0 && detail ? (
+                        <span className="work-table-name">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="work-table-expand"
+                          aria-expanded={expanded}
+                          aria-controls={detailId}
+                          aria-label={`${expanded ? "Hide" : "Show"} details for ${name}`}
+                          onClick={() => toggle(name)}
+                        >
+                          <ChevronRight aria-hidden="true" strokeWidth={2} />
+                        </Button>
+                        {drill ? (
+                          <Button variant="ghost" className="work-table-drill" title={drill} onClick={() => drillInto(ctx, props.id, props.drill, name)}>
+                            {name}
+                          </Button>
+                        ) : name}
+                        </span>
+                      ) : c === 0 && drill ? (
+                        <Button
+                          variant="ghost"
+                          className="work-table-drill"
+                          title={drill}
+                          onClick={() => drillInto(ctx, props.id, props.drill, name)}
+                        >
+                          {name}
+                        </Button>
+                      ) : (
+                        String(row[col.key] ?? "")
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+                {detail && expanded ? (
+                  <TableRow className="work-table-detail-row" id={detailId}>
+                    <TableCell colSpan={columns.length}>
+                      <DataTable columns={detail.columns ?? []} rows={detail.rows ?? []} className="work-table work-subtable" />
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </React.Fragment>
             );
           })}
         </TableBody>
       </Table>
     </div>
   );
-});
+}
+
+registerComponent("Table", (comp: A2UIComponent, ctx: RenderContext) => (
+  <TableBlock key={comp.id} props={comp as unknown as TableProps & { id: string }} ctx={ctx} />
+));
 
 // ─── Section ───
 // A titled group of components. `collapsible` renders a native <details data-ui-bespoke-reason="agent-rendered A2UI catalog"> so

@@ -5,6 +5,7 @@ import { RotateCcw } from "lucide-react";
 import { evaluateExpression, parseExpression, type Expression } from "@neko/llm/work/answer-expression";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Slider } from "@/components/ui/slider";
 import { formatUnitValue } from "./answer-format";
 import { drillInto, drillPrompt } from "./drill";
@@ -121,28 +122,55 @@ function ControlRow({ control, value, onChange }: { control: WhatIfControl; valu
   );
 }
 
+function ChoiceRow({ control, picked, onPick }: { control: WhatIfControl; picked: number; onPick: (index: number) => void }) {
+  const id = `whatif-${control.name}`;
+  return (
+    <div className="answer-whatif-control">
+      <div className="answer-whatif-control-head">
+        <label htmlFor={id}>{control.label}</label>
+      </div>
+      <NativeSelect id={id} value={picked} onChange={(event) => onPick(Number(event.target.value))}>
+        {control.options!.map((option, index) => (
+          <option key={`${option.label}-${index}`} value={index}>{option.label}</option>
+        ))}
+      </NativeSelect>
+    </div>
+  );
+}
+
 function WhatIfBlock({ props }: { props: WhatIfProps & { id: string } }) {
   const controls = useMemo(() => (Array.isArray(props.controls) ? props.controls : []), [props.controls]);
   const outputs = useMemo(() => (Array.isArray(props.outputs) ? props.outputs : []), [props.outputs]);
   const defaults = useMemo(() => Object.fromEntries(controls.map((control) => [control.name, control.value])), [controls]);
   const [settings, setSettings] = useState<Record<string, number>>(defaults);
+  const [picks, setPicks] = useState<Record<string, number>>({});
   const expressions = useMemo(() => parseAll(outputs), [outputs]);
   const fixed = props.values ?? {};
   const results = expressions.map((expression) => expression ? evaluateExpression(expression, { ...fixed, ...settings }) : Number.NaN);
   const baseline = expressions.map((expression) => expression ? evaluateExpression(expression, { ...fixed, ...defaults }) : Number.NaN);
-  const changed = controls.some((control) => settings[control.name] !== control.value);
+  const changed = controls.some((control) => control.options ? (picks[control.name] ?? 0) !== 0 : settings[control.name] !== control.value);
   if (controls.length === 0 || outputs.length === 0) return null;
   return (
     <section className="answer-whatif" aria-label="What-if">
       <div className="answer-whatif-controls">
         <div className="answer-whatif-eyebrow">
           <span>Adjust</span>
-          <Button variant="ghost" size="sm" disabled={!changed} onClick={() => setSettings(defaults)}>
+          <Button variant="ghost" size="sm" disabled={!changed} onClick={() => { setSettings(defaults); setPicks({}); }}>
             <RotateCcw aria-hidden="true" strokeWidth={1.9} />
             Reset
           </Button>
         </div>
-        {controls.map((control) => (
+        {controls.map((control) => control.options?.length ? (
+          <ChoiceRow
+            key={control.name}
+            control={control}
+            picked={picks[control.name] ?? 0}
+            onPick={(index) => {
+              setPicks((current) => ({ ...current, [control.name]: index }));
+              setSettings((current) => ({ ...current, [control.name]: control.options![index]!.value }));
+            }}
+          />
+        ) : (
           <ControlRow
             key={control.name}
             control={control}
