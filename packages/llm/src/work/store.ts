@@ -661,6 +661,20 @@ export async function getWorkThreadForRun(
   return rows[0] ?? null;
 }
 
+const MAX_THREAD_TOOL_RESULT = 32_000;
+
+/** A chat transcript shows a tool result as a preview, so a large one is cut. */
+export function cappedToolResult(event: AgentEvent): AgentEvent {
+  if (event.type !== "tool_end" || event.result === undefined) return event;
+  const text = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
+  if (!text || text.length <= MAX_THREAD_TOOL_RESULT) return event;
+  const cut = text.length - MAX_THREAD_TOOL_RESULT;
+  return {
+    ...event,
+    result: `${text.slice(0, MAX_THREAD_TOOL_RESULT)}\n… ${cut.toLocaleString("en-US")} more characters not shown`,
+  };
+}
+
 export async function getWorkThreadBundle(
   orgId: string,
   threadId: string,
@@ -719,7 +733,7 @@ export async function getWorkThreadBundle(
   const eventsByRun: Record<string, AgentEvent[]> = {};
   for (const row of events) {
     if (!eventsByRun[row.runId]) eventsByRun[row.runId] = [];
-    eventsByRun[row.runId].push(row.payload as AgentEvent);
+    eventsByRun[row.runId].push(cappedToolResult(row.payload as AgentEvent));
   }
 
   return {
