@@ -571,7 +571,7 @@ export function buildRecordListQuery(input: {
   const variables: Record<string, unknown> = { first: boundedPageSize(input.first) };
   const clauses: string[] = [];
   const after = cursorValue(input.after);
-  if (after !== null) variables.after = after;
+  if (after !== null) variables.rows_cursor = after;
 
   const search = input.search?.trim() ?? "";
   if (search) {
@@ -612,7 +612,7 @@ export function buildRecordListQuery(input: {
   const where = whereDocument(clauses);
   const pageArguments = [
     "first: $first",
-    ...(after === null ? [] : ["after: $after"]),
+    ...(after === null ? [] : ["after: $rows_cursor"]),
     `order_by: ${order}`,
     ...(where ? [`where: ${where}`] : []),
   ];
@@ -836,7 +836,7 @@ export function buildRecordRecycleListQuery(input: {
     first: boundedPageSize(input.first),
   };
   const after = cursorValue(input.after);
-  if (after !== null) variables.after = after;
+  if (after !== null) variables.rows_cursor = after;
   const search = input.search?.trim() ?? "";
   if (search.length > MAX_SEARCH_LENGTH) {
     throw new RecordReadTargetError(
@@ -847,7 +847,7 @@ export function buildRecordRecycleListQuery(input: {
   const where = recycleTargetWhere(Boolean(search));
   const argumentsList = [
     "first: $first",
-    ...(after === null ? [] : ["after: $after"]),
+    ...(after === null ? [] : ["after: $rows_cursor"]),
     "order_by: { deleted_at: desc, record_id: asc }",
     `where: ${where}`,
   ];
