@@ -176,7 +176,7 @@ describe("generated record read queries", () => {
       "owner_user_id",
     ]);
     expect(built.query).toContain(
-      "rows: operations__work_order(first: $first, after: $after",
+      "rows: operations__work_order(first: $first, after: $rows_cursor",
     );
     expect(built.query).toContain("order_by: { status: desc, id: desc }");
     expect(built.query).toContain("operations__work_order_cursor");
@@ -185,7 +185,7 @@ describe("generated record read queries", () => {
     expect(built.query).not.toContain("50%_ready");
     expect(built.variables).toEqual({
       first: 25,
-      after: "opaque-cursor",
+      rows_cursor: "opaque-cursor",
       search: "%50\\%\\_ready%",
       viewer_id: "admin-1",
       filter_0: ["new"],
@@ -341,7 +341,7 @@ describe("generated record read queries", () => {
       search: "camera%_",
     });
     expect(list.query).toContain("query RecordsRecycleList");
-    expect(list.query).toContain("rows: recycle_record(first: $first, after: $after");
+    expect(list.query).toContain("rows: recycle_record(first: $first, after: $rows_cursor");
     expect(list.query).toContain("order_by: { deleted_at: desc, record_id: asc }");
     expect(list.query).toContain("count: count_record_id");
     expect(list.query).not.toContain("camera%_");
@@ -350,7 +350,7 @@ describe("generated record read queries", () => {
       app_id: "operations",
       object_api_name: "work_order",
       first: 20,
-      after: "recycle-cursor",
+      rows_cursor: "recycle-cursor",
       search: "%camera\\%\\_%",
     });
 
