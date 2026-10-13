@@ -5,7 +5,7 @@ import { RotateCcw } from "lucide-react";
 import { evaluateExpression, parseExpression, type Expression } from "@neko/llm/work/answer-expression";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
+import Select from "@/components/Select";
 import { Slider } from "@/components/ui/slider";
 import { formatUnitValue } from "./answer-format";
 import { drillInto, drillPrompt } from "./drill";
@@ -129,11 +129,12 @@ function ChoiceRow({ control, picked, onPick }: { control: WhatIfControl; picked
       <div className="answer-whatif-control-head">
         <label htmlFor={id}>{control.label}</label>
       </div>
-      <NativeSelect id={id} value={picked} onChange={(event) => onPick(Number(event.target.value))}>
-        {control.options!.map((option, index) => (
-          <option key={`${option.label}-${index}`} value={index}>{option.label}</option>
-        ))}
-      </NativeSelect>
+      <Select
+        id={id}
+        value={String(picked)}
+        onChange={(next) => onPick(Number(next))}
+        options={control.options!.map((option, index) => ({ value: String(index), label: option.label }))}
+      />
     </div>
   );
 }
