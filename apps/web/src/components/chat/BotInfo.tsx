@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageCircle, Pencil, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { MessageCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import type { NekoPattern } from "@neko/avatars/react";
 import type { BotRoutine, BotRoutineRun } from "@/lib/bots";
 import type { BotSummary } from "@/lib/bots";
@@ -12,6 +13,7 @@ import { EmptyState } from "@/components/ui/empty";
 import { LocalDateTime } from "@/components/ui/local-date-time";
 import { Field, FieldInput, Textarea } from "@/components/ui/field";
 import { SkeletonList } from "@/components/ui/skeleton";
+import { confirmDialog } from "@/components/ConfirmModal";
 import { BotAvatar } from "./BotAvatar";
 import { BotLookFields, type BotLook } from "./BotLookFields";
 import { useBots } from "./useBots";
@@ -57,6 +59,9 @@ export default function BotInfo({ botId }: { botId: string }) {
   const { reload: reloadBots } = useBots();
   const [routineBusy, setRoutineBusy] = useState<string | null>(null);
   const [runsBusy, setRunsBusy] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +124,31 @@ export default function BotInfo({ botId }: { botId: string }) {
       setNotice({ part, text: err instanceof Error ? err.message : "The change was not saved.", error: true });
     } finally {
       setSaving(null);
+    }
+  }
+
+  async function removeBot() {
+    const parts = routines.length
+      ? `the bot, its whole chat history and its ${routines.length === 1 ? "routine" : `${routines.length} routines`}`
+      : "the bot and its whole chat history";
+    const ok = await confirmDialog({
+      title: `Delete ${bot.name}?`,
+      description: `This deletes ${parts}. You cannot undo this.`,
+      confirmLabel: "Delete bot",
+      destructive: true,
+    });
+    if (!ok) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/bots/${botId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "The bot was not deleted. Try again.");
+      reloadBots();
+      router.push("/chat");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "The bot was not deleted. Try again.");
+      setDeleting(false);
     }
   }
 
@@ -351,6 +381,18 @@ export default function BotInfo({ botId }: { botId: string }) {
             {notice?.part === "look" && !notice.error ? <span className="bot-info-copy">{notice.text}</span> : null}
           </div>
         </form>
+      </section>
+
+      <section className="bot-info-section" aria-labelledby="bot-delete-title">
+        <h2 id="bot-delete-title" className="bot-info-title">Delete bot</h2>
+        <p className="bot-info-copy">Delete this bot, its whole chat history and its routines.</p>
+        <div className="bot-info-actions">
+          <Button variant="danger" disabled={deleting} onClick={() => void removeBot()}>
+            <Trash2 aria-hidden="true" strokeWidth={2} />
+            {deleting ? "Deleting…" : "Delete bot"}
+          </Button>
+          {deleteError ? <span className="bot-info-copy" role="alert">{deleteError}</span> : null}
+        </div>
       </section>
     </main>
   );
