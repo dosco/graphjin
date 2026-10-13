@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentWorkspace } from "../src/agent-backend";
 import type { KnowledgePackContents } from "../src/knowledge-pack";
 import type { PluginCatalog } from "../src/work/control-plane";
-import { buildBotSection, buildWorkPrompt } from "../src/work/prompt";
+import { buildBotSection, buildCardsSection, buildWorkPrompt } from "../src/work/prompt";
 import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
 
 const workspace: AgentWorkspace = {
@@ -483,5 +483,12 @@ describe("buildWorkPrompt skills catalog", () => {
     expect(prompt).toContain("discover({ skills:");
     expect(prompt).not.toContain("- xlsx —");
     expect(prompt).not.toContain("Create and edit Word documents");
+  });
+});
+
+describe("cards in the final answer", () => {
+  it("tells only the Ax responder to write a neko_cards fence", () => {
+    expect(buildCardsSection(true, true, true)).toContain("```neko_cards");
+    expect(buildCardsSection(true, true)).not.toContain("neko_cards");
   });
 });

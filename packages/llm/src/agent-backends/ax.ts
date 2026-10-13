@@ -21,7 +21,7 @@ import { registerAgentCanceller } from "../agent-shutdown";
 import type { AxModelRoute } from "../provider-runtime";
 import { A2UI_RENDER_ACP_TITLE, A2UI_RENDER_SERVER_NAME } from "../work/a2ui-contract";
 import { extractMarkdownText, outsideFenceText } from "./output";
-import { extractSurfaceMessages } from "./surface";
+import { extractCardFences, extractSurfaceMessages } from "./surface";
 
 /** Trusted, non-secret model settings, resolved on the host from admin settings. */
 export type AxBackendConfig = {
@@ -291,11 +291,17 @@ export class AxBackend implements AgentBackend {
         };
       }
       mapper.finish(answer);
+      let finalText = answer;
+      if (onEvent && opts.wantsCards) {
+        const cards = extractCardFences(answer, { rich: opts.mcpBridgeEnv?.OPENNEKO_MCP_CARD_SCHEMA === "rich" });
+        if (cards.messages.length) emit({ type: "surface", messages: cards.messages });
+        if (cards.issues.length) console.warn(`[ax] cards in the answer not shown: ${cards.issues.join("; ")}`);
+        finalText = cards.text;
+      }
       await queue;
       if (eventError) throw eventError;
-      let finalText = answer;
       if (onEvent) {
-        const parsed = extractSurfaceMessages(answer);
+        const parsed = extractSurfaceMessages(finalText);
         finalText = extractMarkdownText(parsed.messages) || parsed.text;
       }
       return {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { extractSurfaceMessages } from "../src/agent-backends/hermes";
-import { coerceGeneratedSurfaceMessages } from "../src/agent-backends/surface";
+import { coerceGeneratedSurfaceMessages, extractCardFences } from "../src/agent-backends/surface";
+import { outsideFenceText } from "../src/agent-backends/output";
 
 describe("extractSurfaceMessages", () => {
   it("returns text and empty messages when no fence is present", () => {
@@ -113,5 +114,32 @@ describe("coerceGeneratedSurfaceMessages", () => {
         },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("extractCardFences", () => {
+  const fence = '```neko_cards\n{"title": "Shortfall", "table": "Material | Short\\nFoil | 40\\nPrepreg | 31", "chart": "bar", "chartColumn": "Short"}\n```';
+
+  it("turns a neko_cards fence into a surface and removes it from the text", () => {
+    const out = extractCardFences(`Two materials are short.\n\n${fence}\n\nFoil is never swapped.`);
+    expect(out.issues).toEqual([]);
+    expect(out.messages.length).toBeGreaterThan(0);
+    expect(out.text).toBe("Two materials are short.\n\nFoil is never swapped.");
+  });
+
+  it("drops a broken fence and reports why", () => {
+    const out = extractCardFences("Answer.\n```neko_cards\n{not json}\n```");
+    expect(out.messages).toEqual([]);
+    expect(out.issues).toEqual(["neko_cards fence is not JSON"]);
+    expect(out.text).toBe("Answer.");
+  });
+
+  it("leaves text without a fence untouched", () => {
+    expect(extractCardFences("Plain answer.\n").text).toBe("Plain answer.\n");
+  });
+
+  it("keeps the fence out of the streamed text", () => {
+    expect(outsideFenceText(`Two materials are short.\n${fence}\nDone.`)).toBe("Two materials are short.\n\nDone.");
+    expect(outsideFenceText("Two materials are short.\n```neko_ca")).toBe("Two materials are short.\n");
   });
 });
