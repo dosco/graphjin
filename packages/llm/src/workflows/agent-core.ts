@@ -12,6 +12,7 @@ import {
   buildGraphjinAgentServer,
   buildGraphjinMcpServer,
   buildLibraryServer,
+  buildRecordsReadServer,
   buildWorkMemoryServer,
 } from "../work/tools";
 import { buildWorkflowActionServer } from "./action-tool-server";
@@ -123,6 +124,7 @@ export async function runWorkflowAgentBackend(
           { orgId, threadId, runId },
           { controlPlane },
         ),
+        neko_records: buildRecordsReadServer({ orgId, runId, controlPlane }),
       }
     : undefined;
 
