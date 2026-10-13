@@ -13,6 +13,10 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overflow-x: clip;
    (URLs, table-like content) wrap inside cards instead of pushing
    the layout. */
 body { overflow-x: clip; }
+/* A dialog or menu locks scroll on the viewport; a locked body would become
+   the scroll container and unstick the sticky sidebar and header. */
+html:has(> body[data-scroll-locked]) { overflow: hidden; }
+html body[data-scroll-locked] { overflow: visible !important; }
 .icard, .briefing-card, .act-card, .workflows-row,
 .work-bubble, .work-markdown, .builder-msg, .run-output-card,
 .settings-card { overflow-wrap: anywhere; }
