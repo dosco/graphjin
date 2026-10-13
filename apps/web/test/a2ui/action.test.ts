@@ -16,6 +16,13 @@ describe("buildActionFollowUp", () => {
     expect(result).toContain('"secretRef": "warehouse-password"');
   });
 
+  it("sends a follow-up chip or drill-down as its question alone", () => {
+    expect(buildActionFollowUp({ prompt: "Check alternates for prepreg 1086-68", value: "Check alternates for prepreg 1086-68" }))
+      .toBe("Check alternates for prepreg 1086-68");
+    expect(buildActionFollowUp({ prompt: "Show late shipments from Reno by carrier", value: "Reno" }))
+      .toBe("Show late shipments from Reno by carrier");
+  });
+
   it("requires an explicit action prompt", () => {
     expect(buildActionFollowUp({ values: { name: "warehouse" } })).toBeNull();
   });
