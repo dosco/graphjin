@@ -1,4 +1,4 @@
-import { and, asc, bot, db, desc, eq, inArray, lt, sql, subscription, watcher, work_thread, workflow_definition, workflow_run } from "@neko/db";
+import { and, asc, bot, db, desc, eq, inArray, lt, sql, subscription, watcher, work_run, work_thread, workflow_definition, workflow_run } from "@neko/db";
 import { nekoCoats } from "@neko/avatars";
 import { BOT_INSTRUCTIONS_MAX } from "@neko/llm/work";
 import { describeSchedule } from "@/lib/cron-english";
@@ -135,6 +135,45 @@ export const ROUTINE_RUNS_SHOWN = 3;
 export const ROUTINE_RUNS_PAGE = 10;
 
 const RUN_SUMMARY_MAX = 400;
+
+/**
+ * Delete a bot with its chat (messages, runs and their events cascade from
+ * the thread) and the routines it made. A bot with a run in progress stays.
+ */
+export async function deleteBot(orgId: string, userId: string, botId: string): Promise<"deleted" | "running" | null> {
+  const [row] = await db()
+    .select()
+    .from(bot)
+    .where(and(eq(bot.id, botId), eq(bot.org_id, orgId), eq(bot.owner_user_id, userId)))
+    .limit(1);
+  if (!row) return null;
+  const threadId = row.thread_id;
+  if (threadId) {
+    const active = await db()
+      .select({ id: work_run.id })
+      .from(work_run)
+      .where(
+        and(
+          eq(work_run.org_id, orgId),
+          eq(work_run.thread_id, threadId),
+          inArray(work_run.status, ["queued", "running"]),
+          sql`${work_run.created_at} > now() - ${`${RUN_STALE_MS / 1000} seconds`}::interval`,
+        ),
+      )
+      .limit(1);
+    if (active.length) return "running";
+  }
+  await db().transaction(async (tx) => {
+    if (threadId) {
+      await tx
+        .delete(workflow_definition)
+        .where(and(eq(workflow_definition.org_id, orgId), eq(workflow_definition.created_by_thread_id, threadId)));
+      await tx.delete(work_thread).where(and(eq(work_thread.org_id, orgId), eq(work_thread.id, threadId)));
+    }
+    await tx.delete(bot).where(eq(bot.id, row.id));
+  });
+  return "deleted";
+}
 
 export function plainSummary(text: string): string {
   const plain = text

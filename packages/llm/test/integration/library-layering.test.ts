@@ -180,6 +180,22 @@ describeIfDb("library layering and search", () => {
     }
   });
 
+  it("finds a code however the text punctuates it", async () => {
+    try {
+      for (const [path, body] of [
+        ["materials/iteq-alternates.md", "Iteq IT-180A alternates: Isola FR370HR, Ventec VT-47."],
+        ["materials/other-alternates.md", "Row 173 GIA-671(N), Polyimide: alternates EMC/Arlon 37N, Isola FR406N."],
+      ]) {
+        const { concept } = await upsertLibraryConcept({ orgId, userId: alice(), path, type: "Reference", title: path, body });
+        await runEmbeddingIndexJob({ kind: "concept", orgId, id: concept.id });
+      }
+      const results = await searchLibraryByContext({ orgId, userId: alice(), query: "671N alternates" });
+      expect(results[0]?.concept.path).toBe("materials/other-alternates.md");
+    } finally {
+      await deleteTestOrg(orgId);
+    }
+  });
+
   it("share → approve promotes a concept into everyone's view with a human verification", async () => {
     try {
       const { concept: personal } = await upsertLibraryConcept({
