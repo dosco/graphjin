@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.31.0](https://github.com/open-neko/openneko/compare/v3.30.1...v3.31.0) (2026-10-13)
+
+
+### Features
+
+* **web:** delete a bot with its chat history and routines ([e564070](https://github.com/open-neko/openneko/commit/e564070dcf180b2333517e77d3dfcbf0bc434bb2))
+
+
+### Bug Fixes
+
+* **library:** find codes and model names in agent library search ([cc6d4a9](https://github.com/open-neko/openneko/commit/cc6d4a94c1acf3ccb24c8d3d605525e553dbc2b4))
+* **library:** find codes in library search; feat(web): delete a bot ([ce1fab1](https://github.com/open-neko/openneko/commit/ce1fab175374d0082fb81c7dea8e0965280bb0b8))
+* **web:** keep the sidebar and header in place while a menu or dialog is open ([a0bab95](https://github.com/open-neko/openneko/commit/a0bab953f225fc1a077c780269be458f8922d07e))
+
 ## [3.30.1](https://github.com/open-neko/openneko/compare/v3.30.0...v3.30.1) (2026-10-13)
 
 
