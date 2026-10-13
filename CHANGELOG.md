@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.31.3](https://github.com/open-neko/openneko/compare/v3.31.2...v3.31.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* **work:** cap large tool results in the chat transcript payload ([b055fe8](https://github.com/open-neko/openneko/commit/b055fe83ade0f9d67e1d4dc685aabaf8563919ca))
+* **work:** cap large tool results in the chat transcript payload ([bd10e25](https://github.com/open-neko/openneko/commit/bd10e25024b4fcc6b25712b92a9577c9e97fad73))
+
 ## [3.31.2](https://github.com/open-neko/openneko/compare/v3.31.1...v3.31.2) (2026-10-13)
 
 
