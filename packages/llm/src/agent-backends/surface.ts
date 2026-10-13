@@ -2,9 +2,39 @@ import type { AgentSurfaceMessage } from "../agent-backend";
 import {
   coerceGeneratedSurfaceMessages,
   coerceReadableSurfaceMessages,
+  validateRenderCardsInput,
 } from "../work/a2ui-contract";
 
 const NEKO_A2UI_FENCE_RE = /```neko_a2ui\s*([\s\S]*?)```/i;
+const NEKO_CARDS_FENCE_RE = /```neko_cards\s*([\s\S]*?)\n?```/gi;
+
+/**
+ * Cards written into the final answer as render_cards arguments, for a stage
+ * that writes the answer without tool access (the Ax responder).
+ */
+export function extractCardFences(raw: string, opts: { rich?: boolean } = {}): {
+  text: string;
+  messages: AgentSurfaceMessage[];
+  issues: string[];
+} {
+  const messages: AgentSurfaceMessage[] = [];
+  const issues: string[] = [];
+  const text = raw.replace(NEKO_CARDS_FENCE_RE, (_, body: string) => {
+    let args: unknown;
+    try {
+      args = JSON.parse(body.trim());
+    } catch {
+      issues.push("neko_cards fence is not JSON");
+      return "";
+    }
+    const validated = validateRenderCardsInput(args, undefined, opts);
+    if (validated.success) messages.push(...validated.messages);
+    else issues.push(...validated.issues.map((issue) => issue.message));
+    return "";
+  });
+  return { text: messages.length || issues.length ? text.replace(/\n{3,}/g, "\n\n").trim() : raw, messages, issues };
+}
+
 const JSX_TAG_RE = /<\/?[A-Z][A-Za-z0-9]*\b[^>]*>/g;
 
 // Validate an already-parsed messages value (e.g. a render_cards tool call's

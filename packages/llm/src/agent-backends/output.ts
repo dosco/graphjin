@@ -8,6 +8,7 @@ const FENCE_CLOSE = "\n```";
 // are builder fences. Hide them from the chat stream until the closing ```.
 const HIDDEN_FENCE_OPENERS = [
   "```neko_a2ui",
+  "```neko_cards",
   "```neko_workflow_save",
   "```neko_workflow_output",
   "```neko_action_request",

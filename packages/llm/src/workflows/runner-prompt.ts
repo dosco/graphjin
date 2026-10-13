@@ -271,3 +271,34 @@ ${VALUE_ESTIMATE_INSTRUCTIONS}`}
 
 ${mode === "headless" ? HEADLESS_TAIL : LIVE_TAIL}`;
 }
+
+const TRIGGER_INPUT_MAX_CHARS = 16_000;
+
+export function buildWorkflowSeedMessage(input: {
+  workflow: Pick<WorkflowRecord, "name">;
+  triggerKind: "manual" | "cron" | "subscription" | "watcher" | "api";
+  userMessage?: string;
+  triggerPayload?: Record<string, unknown>;
+}): string {
+  const { workflow, triggerKind, userMessage, triggerPayload } = input;
+  if (userMessage?.trim()) return userMessage;
+  const now = new Date().toISOString();
+  const start =
+    triggerKind === "cron"
+      ? `[scheduled run started at ${now}] Begin executing the "${workflow.name}" workflow.`
+      : triggerKind === "subscription"
+        ? `[subscription-triggered run started at ${now}] Begin executing the "${workflow.name}" workflow.`
+        : triggerKind === "api"
+          ? `Begin executing the externally admitted "${workflow.name}" workflow with the supplied API input.`
+          : `Begin executing the "${workflow.name}" workflow.`;
+  if (!triggerPayload || Object.keys(triggerPayload).length === 0) return start;
+  let json = JSON.stringify(triggerPayload, null, 2);
+  if (json.length > TRIGGER_INPUT_MAX_CHARS) json = `${json.slice(0, TRIGGER_INPUT_MAX_CHARS)}\n... (truncated)`;
+  return `${start}
+
+This run's input is the event that triggered it. Do the work for this input.
+
+<trigger_input>
+${json}
+</trigger_input>`;
+}

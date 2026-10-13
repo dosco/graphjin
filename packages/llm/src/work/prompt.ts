@@ -93,7 +93,7 @@ heuristic as urgency, priority, or overdue status.
 
 // Web-only (callers gate this behind wantsCards). The neko_ui render_cards tool
 // declares the block fields; this section says which block fits which data.
-export function buildCardsSection(supportsCardTool: boolean, rich = false): string {
+export function buildCardsSection(supportsCardTool: boolean, rich = false, answerFence = false): string {
   const tool = supportsCardTool
     ? A2UI_RENDER_MCP_TOOL_NAME
     : A2UI_RENDER_TOOL_NAME;
@@ -131,8 +131,16 @@ neighbours by more than three times, add a watch callout that names the likely
 cause, such as incomplete data or a one-off event. A single fact needs only a
 sentence. When the tool reports a problem, fix the named fields and call it
 again. Refer to the cards in your answer only after the tool confirms them.
-${rich ? RICH_CARD_STAGES : ""}</cards>`;
+${answerFence ? ANSWER_FENCE_CARDS : ""}${rich ? RICH_CARD_STAGES : ""}</cards>`;
 }
+
+const ANSWER_FENCE_CARDS = `
+When you write the final answer and cannot call tools, put the cards in the
+answer: a \`\`\`neko_cards fence that holds one complete set of tool arguments as
+JSON, with the same fields as the examples above. Use one fence for each set of
+cards. OpenNeko shows the cards and removes the fence, so keep your plain
+sentences outside it and do not repeat the table in markdown.
+`;
 
 const RICH_CARD_CHOICES = `- Two to six items compared on the same measures for one period: the table
   with layout "compare", so each item reads as its own panel. A change over
@@ -938,7 +946,7 @@ that flags churn risk every Monday."
     buildClarificationSection(supportsClarificationTool),
     dataSurface === "customer" ? buildSelectedMentionsSection(workspace) : "",
     dataSurface === "customer" && wantsCards
-      ? buildCardsSection(supportsCardTool, richCards)
+      ? buildCardsSection(supportsCardTool, richCards, backend === "ax")
       : "",
     buildSkillsSection(
       dataSurface === "customer" && supportsSkillTool,

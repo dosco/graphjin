@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentWorkspace } from "../src/agent-backend";
-import { buildWorkflowRunnerPrompt } from "../src/workflows/runner-prompt";
+import { buildWorkflowRunnerPrompt, buildWorkflowSeedMessage } from "../src/workflows/runner-prompt";
 import type { WorkflowRecord } from "../src/workflows/store";
 import { VALUE_ESTIMATE_INSTRUCTIONS } from "../src/prompts/sections";
 import { extractValueFence } from "../src/workflows/fence-parsers";
@@ -163,4 +163,25 @@ describe("buildWorkflowRunnerPrompt", () => {
     expect(prompt).toContain("toolsets");
   });
 
+});
+
+describe("buildWorkflowSeedMessage", () => {
+  it("hands the trigger event to the agent", () => {
+    const message = buildWorkflowSeedMessage({
+      workflow: { name: "quote shortfall" },
+      triggerKind: "subscription",
+      triggerPayload: { table: "x_quote", primary_key: { xq_id: 602218 }, snapshot: { xq_ref_id: "Q1554738-14" } },
+    });
+    expect(message).toContain("<trigger_input>");
+    expect(message).toContain('"xq_ref_id": "Q1554738-14"');
+  });
+
+  it("keeps a run with no payload to the plain start line", () => {
+    const message = buildWorkflowSeedMessage({ workflow: { name: "daily" }, triggerKind: "cron", triggerPayload: {} });
+    expect(message).toMatch(/^\[scheduled run started at .+\] Begin executing the "daily" workflow\.$/);
+  });
+
+  it("prefers the operator's message", () => {
+    expect(buildWorkflowSeedMessage({ workflow: { name: "w" }, triggerKind: "manual", userMessage: "run for Q1", triggerPayload: { a: 1 } })).toBe("run for Q1");
+  });
 });

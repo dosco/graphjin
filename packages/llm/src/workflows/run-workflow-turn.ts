@@ -32,6 +32,7 @@ import { extractValueFence } from "./fence-parsers";
 import { clampAnalysisMinutes } from "./value";
 import {
   buildWorkflowRunnerPrompt,
+  buildWorkflowSeedMessage,
   type PluginActionPromptDescriptor,
 } from "./runner-prompt";
 import {
@@ -206,24 +207,6 @@ export type RunWorkflowTurnResult = {
   degraded?: boolean;
 };
 
-function synthesizeSeedMessage(
-  workflow: WorkflowRecord,
-  triggerKind: WorkflowTriggerKind,
-  userMessage: string | undefined,
-): string {
-  if (userMessage?.trim()) return userMessage;
-  if (triggerKind === "cron") {
-    return `[scheduled run started at ${new Date().toISOString()}] Begin executing the "${workflow.name}" workflow.`;
-  }
-  if (triggerKind === "subscription") {
-    return `[subscription-triggered run started at ${new Date().toISOString()}] Begin executing the "${workflow.name}" workflow.`;
-  }
-  if (triggerKind === "api") {
-    return `Begin executing the externally admitted "${workflow.name}" workflow with the supplied API input.`;
-  }
-  return `Begin executing the "${workflow.name}" workflow.`;
-}
-
 export function runWorkflowTurn(opts: RunWorkflowTurnOptions, deps: Partial<RunWorkflowTurnDeps> = {}): Promise<RunWorkflowTurnResult> {
   return withStartupTrace({ runId: opts.prepared.workRunId, threadId: opts.prepared.threadId, workflowRunId: opts.prepared.workflowRun.id, rootOperationId: `workflow:${opts.prepared.workRunId}`, observer: opts.observer }, () => runWorkflowTurnTraced(opts, deps));
 }
@@ -299,11 +282,12 @@ async function runWorkflowTurnTraced(
       pluginActions: await filterHeldActions(runActor, opts.pluginActions ?? []),
     });
 
-    const seedMessage = synthesizeSeedMessage(
+    const seedMessage = buildWorkflowSeedMessage({
       workflow,
       triggerKind,
       userMessage,
-    );
+      triggerPayload: workflowRun.triggerPayload,
+    });
 
     await eventTelemetry.startAgent({
       backend: backend.id,
