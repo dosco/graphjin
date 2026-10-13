@@ -1,0 +1,8 @@
+query top_selling_products {
+  sales(order_by: { quantity: desc }, limit: 5) {
+    product_key
+    quantity
+    unit_price
+    net_price
+  }
+}
