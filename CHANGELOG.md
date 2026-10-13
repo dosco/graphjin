@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.31.1](https://github.com/open-neko/openneko/compare/v3.31.0...v3.31.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **workflows:** give routine runs the records read tools ([009d868](https://github.com/open-neko/openneko/commit/009d8682247ef8c24454542b183f11914afcdb0e))
+* **workflows:** give routine runs the records read tools ([c234d58](https://github.com/open-neko/openneko/commit/c234d587baa72ea31bdcd4974ab6300fc53e7dce))
+
 ## [3.31.0](https://github.com/open-neko/openneko/compare/v3.30.1...v3.31.0) (2026-10-13)
 
 
