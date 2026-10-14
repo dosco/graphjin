@@ -1,4 +1,4 @@
-import { and, bot, db, eq, ne, work_message, work_thread, workflow_definition, workflow_run } from "@neko/db";
+import { and, bot, db, desc, eq, ne, work_message, work_thread, workflow_definition, workflow_output, workflow_run } from "@neko/db";
 
 export type ThreadBot = { id: string; name: string; instructions: string };
 
@@ -63,33 +63,53 @@ export async function botThreadForWorkflow(input: {
   return row?.threadId ?? null;
 }
 
-/** Posts a workflow result into the chat of the bot that created the workflow, unless the run already lives there. */
-export async function postWorkflowOutputToBotChat(input: {
-  orgId: string;
+/**
+ * Posts how a routine run ended into the chat of the bot that created the
+ * routine, unless the run already lives there: the result it published, else
+ * its answer, or why it failed or stopped.
+ */
+export async function postWorkflowRunToBotChat(input: {
   workflowRunId: string;
-  title: string;
-  body: string;
+  status: string;
+  summary?: string | null;
+  error?: string | null;
 }): Promise<boolean> {
   const [target] = await db()
-    .select({ threadId: bot.thread_id })
+    .select({ orgId: workflow_run.org_id, threadId: bot.thread_id, routine: workflow_definition.name })
     .from(workflow_run)
     .innerJoin(workflow_definition, eq(workflow_definition.id, workflow_run.workflow_id))
-    .innerJoin(bot, and(eq(bot.org_id, input.orgId), eq(bot.thread_id, workflow_definition.created_by_thread_id)))
-    .where(
-      and(
-        eq(workflow_run.id, input.workflowRunId),
-        eq(workflow_run.org_id, input.orgId),
-        ne(workflow_run.thread_id, bot.thread_id),
-      ),
-    )
+    .innerJoin(bot, and(eq(bot.org_id, workflow_run.org_id), eq(bot.thread_id, workflow_definition.created_by_thread_id)))
+    .where(and(eq(workflow_run.id, input.workflowRunId), ne(workflow_run.thread_id, bot.thread_id)))
     .limit(1);
-  const content = [input.title.trim() ? `**${input.title.trim()}**` : "", input.body.trim()]
-    .filter(Boolean)
-    .join("\n\n");
-  if (!target?.threadId || !content) return false;
+  if (!target?.threadId) return false;
+  const [output] = input.status === "completed"
+    ? await db()
+        .select({ title: workflow_output.title, body: workflow_output.body })
+        .from(workflow_output)
+        .where(eq(workflow_output.workflow_run_id, input.workflowRunId))
+        .orderBy(desc(workflow_output.created_at))
+        .limit(1)
+    : [];
+  const heading = (text: string) => `**${text.trim()}**`;
+  const parts =
+    input.status === "completed"
+      ? output?.body.trim()
+        ? [heading(output.title || target.routine), output.body.trim()]
+        : input.summary?.trim()
+          ? [heading(target.routine), input.summary.trim()]
+          : []
+      : input.status === "needs_input"
+        ? [heading(`${target.routine} is waiting for input.`), input.summary?.trim() ?? ""]
+        : input.status === "failed"
+          ? [heading(`${target.routine} failed.`), input.error?.trim() ?? ""]
+          : input.status === "cancelled"
+            ? [heading(`${target.routine} stopped.`), input.error?.trim() ?? ""]
+            : [];
+  const content = parts.filter(Boolean).join("\n\n");
+  if (!content) return false;
   const now = new Date();
   await db().insert(work_message).values({
-    org_id: input.orgId,
+    org_id: target.orgId,
     thread_id: target.threadId,
     run_id: null,
     role: "assistant",

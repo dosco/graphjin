@@ -645,6 +645,11 @@ export async function finishWorkflowRun(args: {
       updated_at: new Date(),
     })
     .where(eq(workflow_run.id, args.workflowRunId));
+  // A bot's chat hears how each of its routine runs ended, once, at the end.
+  const { postWorkflowRunToBotChat } = await import("../work/bot");
+  await postWorkflowRunToBotChat(args).catch((error) => {
+    console.warn("[workflow-run] bot chat post failed:", error instanceof Error ? error.message : error);
+  });
 }
 
 export type WorkflowOutputInput = {
@@ -734,18 +739,7 @@ async function outputDedupeKey(
 export async function emitWorkflowOutput(
   input: WorkflowOutputInput,
 ): Promise<WorkflowOutputRecord> {
-  const record = await saveWorkflowOutput(input);
-  // A bot's chat hears every run, including a repeat finding the cards fold together.
-  const { postWorkflowOutputToBotChat } = await import("../work/bot");
-  await postWorkflowOutputToBotChat({
-    orgId: input.orgId,
-    workflowRunId: input.workflowRunId,
-    title: input.title ?? "",
-    body: input.body ?? "",
-  }).catch((error) => {
-    console.warn("[workflow-output] bot chat post failed:", error instanceof Error ? error.message : error);
-  });
-  return record;
+  return saveWorkflowOutput(input);
 }
 
 async function saveWorkflowOutput(
