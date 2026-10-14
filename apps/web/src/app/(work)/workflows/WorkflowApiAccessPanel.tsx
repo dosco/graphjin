@@ -12,6 +12,7 @@ import { confirmDialog } from "@/components/ConfirmModal";
 import { ActionGroup } from "@/components/ui/action-group";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Field, Input } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,7 @@ type WorkflowApiAccess = {
   tokenRotatedAt: string | null;
   lastUsedAt: string | null;
   limits: WorkflowApiLimits;
+  includeTelemetry: boolean;
   batch: {
     available: boolean;
     recordsField: string | null;
@@ -330,6 +332,33 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
     }
   }, [applyAccess, draft, workflowId]);
 
+  const saveTelemetry = useCallback(async (includeTelemetry: boolean) => {
+    setBusy("telemetry");
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/workflows/${workflowId}/api-access`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ includeTelemetry }),
+      });
+      const body = (await response.json().catch(() => ({}))) as {
+        access?: WorkflowApiAccess;
+        error?: unknown;
+      };
+      if (!response.ok || !body.access) {
+        throw new Error(errorMessage(body, "Could not save the telemetry setting."));
+      }
+      applyAccess(body.access);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not save the telemetry setting.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }, [applyAccess, workflowId]);
+
   const copyText = useCallback(async (key: string, value: string) => {
     try {
       await writeClipboard(value);
@@ -464,6 +493,13 @@ export function WorkflowApiAccessPanel({ workflowId }: { workflowId: string }) {
 
         {error ? <p className="workflow-api-message is-error" role="alert">{error}</p> : null}
         {notice ? <p className="workflow-api-message" role="status">{notice}</p> : null}
+
+        <Checkbox
+          label="Include run telemetry (timings, tokens, cost) in poll results"
+          checked={access.includeTelemetry}
+          disabled={busy !== null}
+          onCheckedChange={(checked) => void saveTelemetry(checked === true)}
+        />
 
         <div className="workflow-api-examples">
             <ApiExample

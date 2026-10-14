@@ -14,6 +14,7 @@ import {
 } from "@neko/llm/work";
 import {
   boundedWorkflowApiResult,
+  workflowApiAnswer,
   claimWorkflowApiAdmission,
   claimWorkflowScheduleFiring,
   completeWorkflowScheduleFiring,
@@ -459,7 +460,14 @@ async function runWorkflowRunFireTraced(
         emit: ceilingGuard?.emit ?? emit,
         signal: abort.signal,
       });
-      const guardedEmit = spendGuard.emit;
+      const wantsAnswer = apiClaim?.mode === "single";
+      let answerSurface: unknown[] | null = null;
+      const guardedEmit = wantsAnswer
+        ? async (event: AgentEvent): Promise<void> => {
+            if (event.type === "surface") answerSurface = event.messages;
+            await spendGuard.emit(event);
+          }
+        : spendGuard.emit;
       const unregisterBrokerEvents = registerAgentBrokerEventSink(
         prepared.workRunId,
         guardedEmit,
@@ -476,6 +484,7 @@ async function runWorkflowRunFireTraced(
             signal: spendGuard.signal,
             timeoutMs: apiClaim ? apiClaim.limits.maxRuntimeSeconds * 1_000 : undefined,
             maxToolIterations: apiClaim ? apiClaim.limits.maxToolCalls : undefined,
+            ...(wantsAnswer ? { wantsCards: true } : {}),
             pluginActions,
             observer: telemetry.observer,
           },
@@ -499,6 +508,7 @@ async function runWorkflowRunFireTraced(
           terminalResult: boundedWorkflowApiResult(
             result.finalText,
             apiClaim!.limits.maxResultBytes,
+            answerSurface ? workflowApiAnswer(answerSurface) : null,
           ),
           error: result.error ?? null,
           errorCode:

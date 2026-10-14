@@ -107,12 +107,14 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const body = (await request.json().catch(() => ({}))) as {
       limits?: unknown;
+      includeTelemetry?: unknown;
     };
     const access = await updateWorkflowApiLimits({
       orgId: scope.orgId,
       workflowId: scope.workflowId,
       actor: scope.actor,
       limits: body.limits,
+      includeTelemetry: body.includeTelemetry,
     });
     return response({ access });
   } catch (error) {

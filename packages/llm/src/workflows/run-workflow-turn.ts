@@ -175,6 +175,8 @@ export type RunWorkflowTurnOptions = {
   timeoutMs?: number;
   /** Tool-call ceiling for the run (API runs). */
   maxToolIterations?: number;
+  /** Keep the answer card as a surface event (API runs). */
+  wantsCards?: boolean;
   /** Metadata-only observation stream shared with Ask. */
   observer?: HarnessObserver;
   /**
@@ -323,6 +325,7 @@ async function runWorkflowTurnTraced(
       reasoningEffort: budget.reasoningEffort,
       maxToolIterations: opts.maxToolIterations ?? budget.maxToolIterations,
       maxContinuations: opts.timeoutMs ? 0 : budget.maxContinuations,
+      ...(opts.wantsCards ? { wantsCards: true } : {}),
     });
     const spendStop = spendCapFromSignal(signal);
     const result = spendStop

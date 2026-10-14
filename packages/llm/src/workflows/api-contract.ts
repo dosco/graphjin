@@ -570,9 +570,63 @@ export function workflowApiLimitPatch(
   return result;
 }
 
+type AnswerTable = { columns: string[]; rows: Array<Record<string, string | number>> };
+
+function cellValue(value: unknown): string | number {
+  const text = String(value ?? "");
+  return /^-?\d+(\.\d+)?$/.test(text.trim()) ? Number(text) : text;
+}
+
+function answerTable(component: Record<string, unknown>): AnswerTable | null {
+  const columns = Array.isArray(component.columns) ? component.columns : [];
+  const rows = Array.isArray(component.rows) ? component.rows : [];
+  const keyed = columns
+    .filter(isPlainObject)
+    .map((column) => ({ key: String(column.key ?? ""), label: String(column.label ?? column.key ?? "") }));
+  if (!keyed.length) return null;
+  return {
+    columns: keyed.map((column) => column.label),
+    rows: rows.filter(isPlainObject).map((row) =>
+      Object.fromEntries(keyed.map((column) => [column.label, cellValue(row[column.key])]))),
+  };
+}
+
+/**
+ * The answer card of an API run as data: its title, main table, the sub-table
+ * behind each row, and its callout. Null when the run drew no card with a table.
+ */
+export function workflowApiAnswer(messages: readonly unknown[]): Record<string, unknown> | null {
+  const components = messages
+    .filter(isPlainObject)
+    .flatMap((message) => {
+      const surface = (message.createSurface ?? message.updateComponents) as unknown;
+      return isPlainObject(surface) && Array.isArray(surface.components) ? surface.components : [];
+    })
+    .filter(isPlainObject);
+  const table = components.find((component) => component.component === "Table");
+  const main = table ? answerTable(table) : null;
+  if (!table || !main) return null;
+  const title = components.find((component) => component.component === "Answer")?.title;
+  const callout = components.find((component) => component.component === "Callout")?.text;
+  const details = isPlainObject(table.details)
+    ? Object.fromEntries(
+        Object.entries(table.details)
+          .map(([name, sub]) => [name, isPlainObject(sub) ? answerTable(sub) : null] as const)
+          .filter((entry): entry is readonly [string, AnswerTable] => entry[1] !== null),
+      )
+    : {};
+  return {
+    ...(typeof title === "string" ? { title } : {}),
+    table: main,
+    ...(Object.keys(details).length ? { details } : {}),
+    ...(typeof callout === "string" ? { callout } : {}),
+  };
+}
+
 export function boundedWorkflowApiResult(
   finalText: string,
   maxBytes: number,
+  answer?: Record<string, unknown> | null,
 ): Record<string, unknown> {
   const trimmed = finalText.trim();
   if (trimmed) {
@@ -585,6 +639,10 @@ export function boundedWorkflowApiResult(
     } catch {
       // Plain-text workflow summaries remain a valid machine-readable object.
     }
+  }
+  if (answer) {
+    const withAnswer = { text: trimmed, answer, truncated: false };
+    if (Buffer.byteLength(JSON.stringify(withAnswer), "utf8") <= maxBytes) return withAnswer;
   }
   const complete = { text: trimmed, truncated: false };
   if (Buffer.byteLength(JSON.stringify(complete), "utf8") <= maxBytes) {

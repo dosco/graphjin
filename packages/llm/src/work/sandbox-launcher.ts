@@ -796,6 +796,7 @@ function makeSandboxCore(
             input: (input as RunWorkflowAgentBackendInput).input ?? {},
             maxContinuations:
               (input as RunWorkflowAgentBackendInput).maxContinuations ?? 0,
+            ...((input as RunWorkflowAgentBackendInput).wantsCards ? { wantsCards: true } : {}),
             agentRun: serializableAgentRunOptions({
               prompt: inputPrompt,
               timeoutMs: (input as RunWorkflowAgentBackendInput).timeoutMs,

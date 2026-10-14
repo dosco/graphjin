@@ -1197,7 +1197,8 @@ export type WorkflowApiRunStatus = {
   finishedAt: Date | null;
   expiresAt: Date;
   progress: Record<string, unknown>;
-  telemetry: HarnessRunSummary | null;
+  /** Present only when the workflow's API access includes telemetry. */
+  telemetry?: HarnessRunSummary | null;
   result: Record<string, unknown> | null;
   artifact: { url: string } | null;
   error: { code: string; message: string } | null;
@@ -1309,7 +1310,7 @@ export async function getWorkflowApiRunStatus(input: {
     finishedAt: row.finished_at,
     expiresAt: row.result_expires_at,
     progress: row.progress ?? {},
-    telemetry: row.telemetry_summary,
+    ...(verified.includeTelemetry ? { telemetry: row.telemetry_summary } : {}),
     result: terminal ? row.terminal_result : null,
     artifact:
       terminal && row.result_artifact_path
