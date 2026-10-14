@@ -57,7 +57,7 @@ if (!reachable && process.env.LIBRARY_BROWSE_REQUIRE_DB === "1") throw new Error
     await db().insert(library_concept).values([
       { id: semanticId, org_id: orgId, user_id: alice, title: "Replenishment", path: "semantic.md", type: "playbook", body: "No literal match", status: "stable", embedding: vector, source_document_id: documentId },
       { id: hiddenId, org_id: orgId, user_id: bob, title: "Private", path: "private.md", type: "secret-type", body: "rareword", status: "stable", embedding: vector },
-      { id: draftId, org_id: orgId, user_id: null, title: "Pending team", path: "draft.md", type: "review-type", body: "rareword", status: "draft", embedding: vector },
+      { id: draftId, org_id: orgId, user_id: null, title: "Pending team", path: "draft.md", type: "review-type", body: "rareword", status: "draft", embedding: vector, promoted_from_id: semanticId },
       { id: foreignId, org_id: otherOrgId, user_id: null, title: "Other organization", path: "foreign.md", type: "foreign-type", body: "rareword", status: "stable", embedding: vector },
       { id: archivedId, org_id: orgId, user_id: alice, title: "Archived", path: "archived.md", type: "archived-type", body: "rareword", status: "stable", archived_at: new Date(), embedding: vector },
       { id: teamId, org_id: orgId, user_id: null, title: "Team knowledge", path: "team.md", type: "policy", body: "Synthetic team", status: "stable" },
@@ -107,6 +107,10 @@ if (!reachable && process.env.LIBRARY_BROWSE_REQUIRE_DB === "1") throw new Error
     const team = await browseLibrary(reader, options("view=concepts&layer=team"));
     expect(team.total).toBe(1);
     expect(team.concepts[0].title).toBe("Team knowledge");
+    expect(team.concepts[0].sharing).toBe("shared");
+    expect(review.concepts[0].sharing).toBe("awaiting_approval");
+    const mine = await browseLibrary(reader, options(`view=concepts&documentId=${documentId}`));
+    expect(mine.concepts[0].sharing).toBe("awaiting_approval");
   });
 
   it("keeps literal search working without embeddings, including wildcard characters and empty results", async () => {
