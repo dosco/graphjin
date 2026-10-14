@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { MenuItem, OverflowMenu } from "@/components/ui/overflow-menu";
 import { EmptyState } from "@/components/ui/empty";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { Checkbox, CheckboxControl } from "@/components/ui/checkbox";
 import { SearchInput } from "@/components/ui/search-input";
 import { Field, Input, NativeSelect, Textarea } from "@/components/ui/field";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -26,6 +27,19 @@ import { validateLibraryUploadBatch } from "@/lib/library-upload-contract";
 type LibraryData = Awaited<ReturnType<typeof browseLibrary>>;
 type PackRow = { id: string; title: string; description: string; concepts: number };
 type Detail = { concept?: LibraryConcept; document?: LibraryDocument };
+type Sharing = LibraryData["concepts"][number]["sharing"];
+
+const SHARING_PILL: Record<NonNullable<Sharing>, { label: string; variant: BadgeVariant }> = {
+  shared: { label: "Shared", variant: "success" },
+  awaiting_approval: { label: "Awaiting approval", variant: "watch" },
+  retired: { label: "Retired", variant: "muted" },
+};
+
+function SharingPill({ sharing }: { sharing: Sharing }) {
+  if (!sharing) return null;
+  const pill = SHARING_PILL[sharing];
+  return <Badge variant={pill.variant}>{pill.label}</Badge>;
+}
 
 function statusVariant(status: string): BadgeVariant {
   if (["cataloged", "stable", "approved", "ready"].includes(status)) return "success";
@@ -53,6 +67,9 @@ function LibraryBrowser() {
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pickedState, setPickedState] = useState<{ key: string; ids: string[] }>({ key: "", ids: [] });
+  const picked = pickedState.key === requestKey ? pickedState.ids : [];
+  const setPicked = (ids: string[]) => setPickedState({ key: requestKey, ids });
   const [queryDraft, setQueryDraft] = useState({ url: q, value: q });
   const query = queryDraft.url === q ? queryDraft.value : q;
   const [version, setVersion] = useState(0);
@@ -211,6 +228,26 @@ function LibraryBrowser() {
     [act],
   );
 
+  const runBulk = useCallback(
+    async (ids: string[], path: string, body: object | null, label: string) => {
+      setBusyId("bulk");
+      let failed = 0;
+      for (const id of ids) {
+        const response = await fetch(`/api/library/concepts/${encodeURIComponent(id)}/${path}`, {
+          method: "POST",
+          ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}),
+        }).catch(() => null);
+        if (!response?.ok) failed += 1;
+      }
+      setPickedState({ key: "", ids: [] });
+      setError(failed ? `${failed} of ${ids.length} concepts could not be ${label}.` : null);
+      if (!failed) toast.success(`${ids.length} ${ids.length === 1 ? "concept" : "concepts"} ${label}.`);
+      setBusyId(null);
+      await refresh();
+    },
+    [refresh],
+  );
+
   const retryDocument = useCallback(
     (id: string) =>
       act(
@@ -350,15 +387,21 @@ function LibraryBrowser() {
   const isDocuments = view === "documents";
   const pageCount = Math.max(1, Math.ceil(data.total / data.pageSize));
   const searching = loading || query.trim() !== q;
-  const conceptActions = (concept: { id: string; title: string; layer: "personal" | "team" }) =>
+  const pickable = (concept: { status: string; layer: "personal" | "team" }) =>
+    concept.layer === "personal" || (data.isAdmin && concept.status === "draft");
+  const pickableIds = isDocuments ? [] : data.concepts.filter(pickable).map(concept => concept.id);
+  const pickedConcepts = data.concepts.filter(concept => picked.includes(concept.id));
+  const pickedPersonal = pickedConcepts.filter(concept => concept.layer === "personal").map(concept => concept.id);
+  const pickedDrafts = pickedConcepts.filter(concept => concept.layer === "team" && concept.status === "draft").map(concept => concept.id);
+  const conceptActions = (concept: { id: string; title: string; status: string; layer: "personal" | "team" }) =>
     <OverflowMenu label={`Actions for ${concept.title}`}>
       {concept.layer === "personal" ? <>
         <MenuItem disabled={busyId === concept.id} onClick={() => void share(concept.id)}><Share2 aria-hidden="true" />Share with team</MenuItem>
         <MenuItem danger disabled={busyId === concept.id} onClick={() => void archiveConcept(concept.id)}><Trash2 aria-hidden="true" />Archive concept</MenuItem>
-      </> : data.isAdmin ? view === "review" ? <>
+      </> : data.isAdmin ? concept.status === "draft" ? <>
         <MenuItem disabled={busyId === concept.id} onClick={() => void decide(concept.id, "approve")}>Approve for team</MenuItem>
         <MenuItem danger disabled={busyId === concept.id} onClick={() => void decide(concept.id, "decline")}>Decline concept</MenuItem>
-      </> : <MenuItem danger disabled={busyId === concept.id} onClick={() => void decide(concept.id, "deprecate")}>Deprecate concept</MenuItem> : null}
+      </> : concept.status === "stable" ? <MenuItem danger disabled={busyId === concept.id} onClick={() => void decide(concept.id, "deprecate")}>Deprecate concept</MenuItem> : null : null}
     </OverflowMenu>;
 
   return (
@@ -421,14 +464,28 @@ function LibraryBrowser() {
           </Field>
           </div>
         </div>
+        {data.isAdmin && view !== "review" && data.counts.review > 0 && <div className="flex flex-wrap items-center gap-2" role="status">
+          <span className="text-ui-body-sm text-text2">{data.counts.review === 1 ? "1 shared concept waits" : `${data.counts.review.toLocaleString()} shared concepts wait`} for your approval before the team can use {data.counts.review === 1 ? "it" : "them"}.</span>
+          <Button size="sm" onClick={() => change({ view: "review", page: null, id: null, type: null, status: null, layer: null, documentId: null })}>Review now</Button>
+        </div>}
         {params.get("documentId") && <div className="flex flex-wrap items-center gap-2"><span className="text-ui-body-sm text-text2">Concepts from the selected document</span><Button size="sm" variant="ghost" onClick={() => filter("documentId", "")}>Clear document filter</Button></div>}
         {error && <div className="library-error" role="alert"><span>{error}</span><Button size="sm" onClick={() => void refresh()}>Retry</Button></div>}
         {q && data.searchMode === "keyword" && !loading && <p role="status" className="text-ui-body-sm text-text2">Meaning-based search is unavailable. Showing keyword matches.</p>}
         <div className="library-browser-workspace" data-detail-open={Boolean(selectedId)}>
           <section className="library-browser-results" aria-label={isDocuments ? "Documents" : "Concepts"} aria-busy={searching}>
-            <header className="library-browser-results-head">
-              <span role="status">{searching ? "Searching library…" : `${data.total.toLocaleString()} ${isDocuments ? "documents" : "concepts"}${q ? " found" : ""}`}</span>
-              <span>{isDocuments ? "Private to you" : "Personal knowledge and approved team concepts"}</span>
+            <header className="library-browser-results-head" data-picking={picked.length > 0}>
+              {pickableIds.length > 0 && !searching && <Checkbox label={picked.length ? `${picked.length} selected` : "Select all"}
+                checked={picked.length === 0 ? false : picked.length === pickableIds.length ? true : "indeterminate"}
+                onCheckedChange={checked => setPicked(checked === true ? pickableIds : [])} />}
+              {picked.length > 0 ? <ActionGroup>
+                {pickedPersonal.length > 0 && <Button size="sm" disabled={busyId === "bulk"} onClick={() => void runBulk(pickedPersonal, "share", null, "shared with the team")}><Share2 aria-hidden="true" />Share with team</Button>}
+                {pickedDrafts.length > 0 && <Button size="sm" variant="primary" disabled={busyId === "bulk"} onClick={() => void runBulk(pickedDrafts, "decide", { action: "approve" }, "approved")}>Approve for team</Button>}
+                {pickedDrafts.length > 0 && <Button size="sm" variant="danger" disabled={busyId === "bulk"} onClick={() => void runBulk(pickedDrafts, "decide", { action: "decline" }, "declined")}>Decline</Button>}
+                <Button size="sm" variant="ghost" disabled={busyId === "bulk"} onClick={() => setPicked([])}>Clear</Button>
+              </ActionGroup> : <>
+                <span role="status">{searching ? "Searching library…" : `${data.total.toLocaleString()} ${isDocuments ? "documents" : "concepts"}${q ? " found" : ""}`}</span>
+                <span>{isDocuments ? "Private to you" : view === "review" ? "Shared concepts waiting for your approval" : "Personal knowledge and approved team concepts"}</span>
+              </>}
             </header>
             {searching ? <p className="library-browser-message" role="status">Loading results…</p> : error ? null : data.total === 0 ?
               <EmptyState className="library-empty" title={q ? "No matches" : isDocuments ? "No documents yet" : view === "review" ? "Nothing to review" : "No concepts yet"}
@@ -446,13 +503,17 @@ function LibraryBrowser() {
                     {["failed", "skipped"].includes(doc.status) && <MenuItem disabled={busyId === doc.id} onClick={() => void retryDocument(doc.id)}><RefreshCw aria-hidden="true" />Retry extraction</MenuItem>}
                     <MenuItem danger disabled={busyId === doc.id} onClick={() => void removeDocument(doc.id)}><Trash2 aria-hidden="true" />Remove from library</MenuItem>
                   </OverflowMenu>
-                </li>) : data.concepts.map(concept => <li key={concept.id} data-selected={concept.id === selectedId}>
+                </li>) : data.concepts.map(concept => <li key={concept.id} data-selected={concept.id === selectedId || picked.includes(concept.id)}>
+                  {pickableIds.length > 0 && (pickable(concept)
+                    ? <CheckboxControl aria-label={`Select ${concept.title}`} checked={picked.includes(concept.id)}
+                      onCheckedChange={checked => setPicked(checked === true ? [...picked, concept.id] : picked.filter(id => id !== concept.id))} />
+                    : <span className="size-4 shrink-0" aria-hidden="true" />)}
                   <div className="library-browser-row-copy">
                     <Link href={rowHref(concept.id)} prefetch={false} onNavigate={event => { event.preventDefault(); change({ id: concept.id }); }} aria-current={concept.id === selectedId ? "true" : undefined}>{concept.title}</Link>
                     <span>{concept.description || concept.path}</span>
                     <small>{humanize(concept.type)} · {concept.layer === "personal" ? "Personal" : "Team"} · <LocalDateTime value={concept.updatedAt} /></small>
                   </div>
-                  <Badge variant={statusVariant(concept.status)}>{humanize(concept.status)}</Badge>
+                  <SharingPill sharing={concept.sharing} />
                   {(concept.layer === "personal" || data.isAdmin) && conceptActions(concept)}
                 </li>)}
               </ul>}
@@ -469,7 +530,8 @@ function LibraryBrowser() {
             {detailError ? <div role="alert"><p>{detailError}</p><Button size="sm" onClick={() => void refresh()}>Retry details</Button></div>
               : !detail ? <p role="status">Loading details…</p>
               : selectedConcept ? <>
-                <div className="flex flex-wrap items-center gap-2"><Badge variant={statusVariant(selectedConcept.status)}>{humanize(selectedConcept.status)}</Badge><span className="text-ui-body-sm text-text2">{humanize(selectedConcept.type)}</span></div>
+                <div className="flex flex-wrap items-center gap-2"><SharingPill sharing={data.concepts.find(concept => concept.id === selectedConcept.id)?.sharing
+                  ?? (selectedConcept.userId === null ? selectedConcept.status === "stable" ? "shared" : selectedConcept.status === "draft" ? "awaiting_approval" : "retired" : null)} /><span className="text-ui-body-sm text-text2">{humanize(selectedConcept.type)}</span></div>
                 <h2>{selectedConcept.title}</h2>
                 {(selectedConcept.userId !== null || data.isAdmin) && <Button onClick={() => setEditingConcept(selectedConcept)}>Edit concept</Button>}
                 <p className="text-ui-body-sm text-text2">{selectedConcept.description}</p>
@@ -543,8 +605,8 @@ function ConceptEditor({ concept, categories, onClose, onSaved }: { concept: Lib
     <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
       <SheetHeader><SheetTitle>Edit concept</SheetTitle><SheetDescription>
         {concept.userId !== null ? "Update your personal knowledge. Sharing with the team is a separate action."
-          : concept.status === "draft" ? "This team draft will still need approval after saving."
-            : "Changes to this approved team concept will be available to the workspace after saving."}
+          : concept.status === "draft" ? "This shared concept still needs approval after saving."
+            : "Changes to this shared concept reach the team after saving."}
       </SheetDescription></SheetHeader>
       <form onSubmit={event => void save(event)} className="grid gap-5 px-4 pb-6">
         <Field label="Title" htmlFor="concept-title"><Input autoFocus id="concept-title" value={title} onChange={event => setTitle(event.target.value)} required maxLength={240} disabled={saving} /></Field>

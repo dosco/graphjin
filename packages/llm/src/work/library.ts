@@ -156,6 +156,12 @@ function visibleLibraryConcepts(reader: LibraryReader, review = false, layer = "
       : or(personal, team));
 }
 
+/** How far a concept is shared with the team: a personal concept takes its team copy's state. */
+export type LibrarySharing = "shared" | "awaiting_approval" | "retired" | null;
+function sharingState(status: string | null): LibrarySharing {
+  return status === "stable" ? "shared" : status === "draft" ? "awaiting_approval" : status === "deprecated" ? "retired" : null;
+}
+
 export async function browseLibrary(reader: LibraryReader, options: LibraryBrowseOptions) {
   const documentsVisible = and(eq(library_document.org_id, reader.orgId), userLayerCondition(library_document.user_id, reader.userId));
   const conceptsVisible = visibleLibraryConcepts(reader);
@@ -211,6 +217,9 @@ export async function browseLibrary(reader: LibraryReader, options: LibraryBrows
     id: library_concept.id, title: library_concept.title, description: library_concept.description,
     path: library_concept.path, type: library_concept.type, status: library_concept.status,
     updatedAt: library_concept.updated_at, userId: library_concept.user_id,
+    teamStatus: sql<string | null>`(select team.status from library_concept team where team.org_id = library_concept.org_id
+      and team.user_id is null and team.archived_at is null and team.promoted_from_id = library_concept.id
+      order by team.updated_at desc limit 1)`,
   }).from(library_concept).where(where)
     .orderBy(options.sort === "name" ? asc(library_concept.title) : options.sort === "relevance" && options.query ? desc(score) : desc(library_concept.updated_at), asc(library_concept.id))
     .limit(options.pageSize).offset(offset) : [];
@@ -218,7 +227,9 @@ export async function browseLibrary(reader: LibraryReader, options: LibraryBrows
     searchMode: options.query ? queryVec ? "hybrid" as const : "keyword" as const : "browse" as const,
     types: types.map(row => row.type),
     documents: documents.map(row => ({ ...row, createdAt: row.createdAt.toISOString() })),
-    concepts: concepts.map(({ userId, ...row }) => ({ ...row, updatedAt: row.updatedAt.toISOString(), layer: userId === null ? "team" as const : "personal" as const })),
+    concepts: concepts.map(({ userId, teamStatus, ...row }) => ({ ...row, updatedAt: row.updatedAt.toISOString(),
+      layer: userId === null ? "team" as const : "personal" as const,
+      sharing: sharingState(userId === null ? row.status : teamStatus) })),
   };
 }
 
