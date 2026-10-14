@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/ax-llm/ax/packages/go v0.0.0-20261011084219-1d8965b83823
 	github.com/dop251/goja v0.0.0-20260219130522-0ba9a5494a59
-	github.com/dosco/graphjin/core/v3 v3.21.12
+	github.com/dosco/graphjin/core/v3 v3.21.13
 	github.com/gofrs/flock v0.13.0
 )
 
