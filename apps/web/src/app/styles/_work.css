@@ -404,6 +404,57 @@
   padding-left: 14px;
   border-left: 1px solid var(--border);
 }
+.work-answer-files {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.work-answer-files > summary {
+  min-height: 40px;
+  padding: 8px 0;
+  color: var(--text3);
+  font-family: var(--font-display), 'Archivo', sans-serif;
+  font-size: var(--type-caption);
+  font-weight: 800;
+}
+.work-answer-files > div {
+  padding: 0 0 6px;
+  border-top: 0;
+}
+.work-answer-files ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.work-answer-files a {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.work-answer-files a svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--text3);
+}
+.work-answer-files a:hover,
+.work-answer-files a:hover svg {
+  color: var(--accent);
+}
+.work-answer-files a:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
 .work-answer-evidence span,
 .work-answer-followups > span {
   display: block;
