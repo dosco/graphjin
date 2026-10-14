@@ -414,7 +414,7 @@ function TableBlock({ props, ctx }: { props: TableProps & { id: string }; ctx: R
   const [open, setOpen] = React.useState<Set<string>>(() => new Set());
   const hasOpenable = rows.some((row) => {
     const name = firstKey ? String(row[firstKey] ?? "") : "";
-    return Boolean(name && (details[name] || drillPrompt(props.drill, name)));
+    return Boolean(name && details[name]);
   });
   const toggle = (name: string) => setOpen((current) => {
     const next = new Set(current);
@@ -445,7 +445,7 @@ function TableBlock({ props, ctx }: { props: TableProps & { id: string }; ctx: R
             const name = firstKey ? String(row[firstKey] ?? "") : "";
             const drill = name ? drillPrompt(props.drill, name) : null;
             const detail = name ? details[name] : undefined;
-            const openable = Boolean(detail || drill);
+            const openable = Boolean(detail);
             const expanded = openable && open.has(name);
             const detailId = `${props.id}-detail-${r}`;
             return (
