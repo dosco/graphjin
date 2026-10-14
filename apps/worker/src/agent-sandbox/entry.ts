@@ -288,7 +288,7 @@ async function runJob(
       steps: job.steps ?? [],
       input: job.input ?? {},
       maxContinuations: job.maxContinuations ?? 0,
-      ...(job.wantsCards ? { wantsCards: true } : {}),
+      ...(job.wantsCards === false ? { wantsCards: false } : {}),
       ...(job.allowedSkills ? { allowedSkills: job.allowedSkills } : {}),
       ...(job.agentRun?.reasoningEffort
         ? { reasoningEffort: job.agentRun.reasoningEffort }
