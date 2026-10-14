@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.32.0](https://github.com/open-neko/openneko/compare/v3.31.3...v3.32.0) (2026-10-14)
+
+
+### Features
+
+* **records:** overhaul the records list, record page and app editor ([f796e68](https://github.com/open-neko/openneko/commit/f796e68e8d46213c0c02c5977ba56c1c58ac10e6))
+* **records:** overhaul the records list, record page and app editor ([321f5b7](https://github.com/open-neko/openneko/commit/321f5b70892af3bfcc8862d010531c62a5eea16f))
+
 ## [3.31.3](https://github.com/open-neko/openneko/compare/v3.31.2...v3.31.3) (2026-10-13)
 
 
