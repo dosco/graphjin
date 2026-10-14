@@ -71,7 +71,16 @@ it, ask the user to open or provide that context rather than guessing.
 
 ## Propose governed writes
 
-Use only fields and operations permitted by the catalog.
+Use only operations permitted by the catalog, and use the catalog's existing
+fields whenever one fits.
+
+When the user wants to keep information the object has no field for, put it
+under a new snake_case key, such as `follow_up_date`. The approval then lists
+it as a new field, typed from the value: a `YYYY-MM-DD` string becomes a date,
+a number becomes a number, `true` or `false` a yes-or-no field. An
+administrator approves the new fields together with the write. Never add a
+near-duplicate of an existing field, and say in the approval which new fields
+the write adds.
 
 Create:
 
@@ -113,7 +122,8 @@ approval. A delete moves the row to the recycle bin; it is not a hard delete.
 
 ## Guardrails
 
-- Never invent app, object, field, picklist, reference, or record IDs.
+- Never invent app, object, picklist, reference, or record IDs. Add a new
+  field only when the user asks to keep information the object lacks.
 - Never update all search matches as a shortcut; one action targets one row.
 - Never bypass a denied CRUD grant or ownership boundary.
 - Never turn an informational request into a write proposal.

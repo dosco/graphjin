@@ -13,6 +13,7 @@ import { hostname } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { stringify } from "yaml";
 import {
+  RECORD_DATA_COLUMN,
   RECORD_GRAPHJIN_ROLES,
   type GraphjinRole,
 } from "../policy/graphjin";
@@ -195,6 +196,29 @@ function assertExhaustiveRoles(roles: GraphjinRole[]): void {
 }
 
 /** Build the complete standalone records config. It intentionally has no sources key. */
+/**
+ * Record documents merge on update, so a partial write changes only the keys
+ * it sends. Object tables are the ones whose service role writes the
+ * document column.
+ */
+function recordDocumentTables(roles: GraphjinRole[]) {
+  const tables = new Map<string, { name: string; schema: string }>();
+  for (const role of roles) {
+    for (const table of role.tables) {
+      if (table.update.columns?.includes(RECORD_DATA_COLUMN)) {
+        tables.set(relationKey(table), { name: table.name, schema: table.schema });
+      }
+    }
+  }
+  return [...tables.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, table]) => ({
+      name: table.name,
+      schema: table.schema,
+      columns: [{ name: RECORD_DATA_COLUMN, merge_on_update: true }],
+    }));
+}
+
 export function buildRecordsGraphjinConfig(input: BuildRecordsGraphjinConfigInput): string {
   assertExhaustiveRoles(input.roles);
   const orgId = validateOrgIdForRoleQuery(input.orgId);
@@ -283,6 +307,7 @@ export function buildRecordsGraphjinConfig(input: BuildRecordsGraphjinConfigInpu
       ),
       ping_timeout: "5s",
     },
+    tables: recordDocumentTables(input.roles),
     roles_query: buildRecordsGraphjinRoleQuery(orgId),
     roles: input.roles,
   };

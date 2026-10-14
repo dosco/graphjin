@@ -1,12 +1,10 @@
 import "server-only";
 
 import type { JsonObject, RecordFieldKind } from "@neko/records";
-import { enqueue, QUEUE } from "@neko/db/jobs";
 import { inProcessControlPlane } from "@neko/llm/work";
-import { approveActionRequest, createActionRequest } from "@neko/llm/workflows";
+import { approveActionRequest } from "@neko/llm/workflows";
 import { getCurrentActor } from "@/lib/actor";
 import {
-  getWebRecordsPool,
   loadRecordAppShellRaw,
   RecordAdminPermissionError,
   RecordAppRouteError,
@@ -224,59 +222,9 @@ export async function submitRecordSchemaChange(input: {
   });
   if (execution.status === "failed") throw new RecordFormExecutionError(execution.error, request.id);
   if (input.kind === "app_field_add" && execution.status !== "timeout") {
-    await grantNewFieldLikeObject({ orgId: input.orgId, appId: input.appId, object, payload, actorUserId: actor.userId });
     await placeNewFieldOnRecordPage({ orgId: input.orgId, appId: input.appId, object, payload });
   }
   return { status: execution.status === "timeout" ? "queued" : "executed", actionRequestId: request.id };
-}
-
-/**
- * A new field is hidden until a group holds a field grant. Give each group
- * that can read the object the same read and write access on the new field.
- */
-async function grantNewFieldLikeObject(input: {
-  orgId: string;
-  appId: string;
-  object: string;
-  payload: Record<string, unknown>;
-  actorUserId: string | null;
-}): Promise<void> {
-  const field = input.payload.field as Record<string, unknown> | undefined;
-  const fieldName = typeof field?.api_name === "string" ? field.api_name : null;
-  if (!fieldName || !input.object || !input.actorUserId) return;
-  const { rows } = await getWebRecordsPool().query<{
-    subject_type: string;
-    subject_id: string;
-    can_write: boolean;
-  }>(
-    `select subject_type, subject_id, (can_create or can_update) as can_write
-     from engine.object_access_grant
-     where org_id = $1 and app_id = $2 and object_api_name = $3 and can_read`,
-    [input.orgId, input.appId, input.object],
-  );
-  for (const row of rows) {
-    const created = await createActionRequest({
-      orgId: input.orgId,
-      scope: "internal",
-      kind: "app_field_permission_set",
-      target: input.appId,
-      payload: {
-        app: input.appId,
-        object: input.object,
-        field: fieldName,
-        subject_type: row.subject_type,
-        subject_id: row.subject_id,
-        read: true,
-        write: row.can_write,
-      },
-      status: "approved",
-      summary: `Give a group access to the new field ${input.object}.${fieldName}`,
-      intent: "The administrator added this field in the app editor; groups that can open the object get the same access to it.",
-      actorUserId: input.actorUserId,
-      actorRole: "admin",
-    });
-    await enqueue(QUEUE.ACTION_EXECUTE, { orgId: input.orgId, actionRequestId: created.id });
-  }
 }
 
 /** The record page shows only fields in its layout, so add the new field to the last section. */

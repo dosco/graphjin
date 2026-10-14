@@ -15,7 +15,7 @@ import {
   type RecordPolicyActor,
   type RecordPolicyGrant,
 } from "../policy/evaluate";
-import { RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
+import { RECORD_DATA_COLUMN, RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
 import { authorizeRecordSnapshot } from "../policy/access";
 import { RecordRegistry } from "../registry";
 import type {
@@ -202,7 +202,7 @@ function buildMutationWhere(input: {
   restore: boolean;
   includeDeleted?: boolean;
   memberOwnerUserId: string | null;
-  expectedFields: Record<string, unknown>;
+  priorMutationId: string | null;
 }): { document: string; variables: Record<string, unknown> } {
   const clauses = ["id: { eq: $record_id }"];
   if (!input.includeDeleted) {
@@ -215,19 +215,34 @@ function buildMutationWhere(input: {
     clauses.push(`${RECORD_SYSTEM_COLUMNS.ownerUserId}: { eq: $actor_user_id }`);
     variables.actor_user_id = input.memberOwnerUserId;
   }
-  for (const [index, [column, value]] of Object.entries(input.expectedFields)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .entries()) {
-    validateRecordIdentifier(column);
-    if (value === null) {
-      clauses.push(`${column}: { is_null: true }`);
-    } else {
-      const variable = `expected_${index}`;
-      clauses.push(`${column}: { eq: $${variable} }`);
-      variables[variable] = value;
-    }
+  if (input.priorMutationId !== null) {
+    clauses.push(`${RECORD_SYSTEM_COLUMNS.mutationId}: { eq: $prior_mutation_id }`);
+    variables.prior_mutation_id = input.priorMutationId;
   }
   return { document: `{ ${clauses.join(", ")} }`, variables };
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") {
+    return false;
+  }
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const leftKeys = Object.keys(left as object);
+  const rightKeys = Object.keys(right as object);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) =>
+      sameValue((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]),
+    )
+  );
+}
+
+function recordDocument(row: Record<string, unknown> | undefined): Record<string, unknown> {
+  const value = row?.[RECORD_DATA_COLUMN];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 export class RecordWriteExecutor {
@@ -338,6 +353,35 @@ export class RecordWriteExecutor {
       if (resultRows(data, target.tableName).length > 0) return true;
     }
     return false;
+  }
+
+  /**
+   * Compare the caller's expected values with the stored document. The
+   * update then applies only while the row still carries the mutation id
+   * read here, so the check and the write cannot interleave with another.
+   */
+  private async checkExpected(
+    object: RecordObject,
+    id: string,
+    expected: Record<string, unknown>,
+    token: string,
+  ): Promise<string> {
+    const operationName = "RecordsExpectedState";
+    const data = await this.dependencies.graphjin.execute<Record<string, unknown>>({
+      operationName,
+      query: `query ${operationName} { ${object.tableName}(where: { id: { eq: $id }, ${RECORD_SYSTEM_COLUMNS.deletedAt}: { is_null: true } }, limit: 1) { id ${RECORD_DATA_COLUMN} ${RECORD_SYSTEM_COLUMNS.mutationId} } }`,
+      variables: { id },
+      token,
+    });
+    const row = resultRows(data, object.tableName)[0];
+    if (!row) throw new RecordNotFoundOrDeniedError();
+    const document = recordDocument(row);
+    for (const [key, value] of Object.entries(expected)) {
+      if (!sameValue(document[key] ?? null, value ?? null)) {
+        throw new RecordConcurrencyConflictError();
+      }
+    }
+    return String(row[RECORD_SYSTEM_COLUMNS.mutationId] ?? "");
   }
 
   private async auditExists(input: {
@@ -650,6 +694,10 @@ export class RecordWriteExecutor {
       }
 
       const now = (this.dependencies.now ?? (() => new Date()))().toISOString();
+      const priorMutationId =
+        operation === "update" && Object.keys(expectedFields).length > 0
+          ? await this.checkExpected(object, id, expectedFields, token)
+          : null;
       const where = buildMutationWhere({
         id,
         restore: operation === "restore",
@@ -658,7 +706,7 @@ export class RecordWriteExecutor {
           object.visibility === "owner" && request.actor.role === "member"
             ? request.actor.userId
             : null,
-        expectedFields,
+        priorMutationId,
       });
 
       let operationName: string;
@@ -670,7 +718,7 @@ export class RecordWriteExecutor {
         variables = {
           data: {
             id,
-            ...validatedFields,
+            [RECORD_DATA_COLUMN]: validatedFields,
             ...(object.visibility === "owner"
               ? { [RECORD_SYSTEM_COLUMNS.ownerUserId]: ownerUserId }
               : {}),
@@ -690,7 +738,9 @@ export class RecordWriteExecutor {
         query = `mutation ${operationName} { ${object.tableName}(update: $data, where: ${where.document}) { id } }`;
         variables = {
           data: {
-            ...validatedFields,
+            ...(Object.keys(validatedFields).length > 0
+              ? { [RECORD_DATA_COLUMN]: validatedFields }
+              : {}),
             ...(operation === "delete"
               ? { [RECORD_SYSTEM_COLUMNS.deletedAt]: now }
               : {}),
@@ -735,7 +785,7 @@ export class RecordWriteExecutor {
           variables: {
             data: {
               id,
-              ...validatedFields,
+              [RECORD_DATA_COLUMN]: validatedFields,
               ...(object.visibility === "owner"
                 ? { [RECORD_SYSTEM_COLUMNS.ownerUserId]: ownerUserId }
                 : {}),

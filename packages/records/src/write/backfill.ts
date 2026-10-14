@@ -12,7 +12,7 @@ import {
   evaluateRecordObjectPermission,
   selectRecordPolicyGrant,
 } from "../policy/evaluate";
-import { RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
+import { RECORD_DATA_COLUMN, RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
 import { RecordRegistry } from "../registry";
 import type { RecordField, RecordObject } from "../types";
 import { RecordValidationError, validateRecordFields } from "./validate";
@@ -436,11 +436,11 @@ export class RecordBackfillExecutor {
     const variables: Record<string, unknown> = {};
     for (const [index, candidate] of input.candidates.entries()) {
       aliases.push(
-        `row_${index}: ${input.resolved.object.tableName}(update: $data_${index}, where: { id: { eq: $id_${index} }, ${input.resolved.target.columnName}: { is_null: true }, ${RECORD_SYSTEM_COLUMNS.deletedAt}: { is_null: true } }) { id }`,
+        `row_${index}: ${input.resolved.object.tableName}(update: $data_${index}, where: { id: { eq: $id_${index} }, ${RECORD_DATA_COLUMN}: { ${input.resolved.target.columnName}: { is_null: true } }, ${RECORD_SYSTEM_COLUMNS.deletedAt}: { is_null: true } }) { id }`,
       );
       variables[`id_${index}`] = candidate.id;
       variables[`data_${index}`] = {
-        [input.resolved.target.columnName]: candidate.value,
+        [RECORD_DATA_COLUMN]: { [input.resolved.target.columnName]: candidate.value },
         [RECORD_SYSTEM_COLUMNS.updatedBy]: input.request.actorUserId,
         [RECORD_SYSTEM_COLUMNS.actionRequestId]:
           input.request.actionRequestId,
@@ -497,7 +497,7 @@ export class RecordBackfillExecutor {
         leaseMs: LEASE_MS,
       });
       const where: string[] = [
-        `${input.resolved.target.columnName}: { is_null: true }`,
+        `${RECORD_DATA_COLUMN}: { ${input.resolved.target.columnName}: { is_null: true } }`,
         `${RECORD_SYSTEM_COLUMNS.deletedAt}: { is_null: true }`,
         ...(after ? ["id: { gt: $after }"] : []),
       ];
@@ -587,7 +587,7 @@ export class RecordBackfillExecutor {
           leaseMs: LEASE_MS,
         });
         const where: string[] = [
-          `${resolved.target.columnName}: { is_null: true }`,
+          `${RECORD_DATA_COLUMN}: { ${resolved.target.columnName}: { is_null: true } }`,
           `${RECORD_SYSTEM_COLUMNS.deletedAt}: { is_null: true }`,
           ...(after ? ["id: { gt: $after }"] : []),
         ];
@@ -595,7 +595,7 @@ export class RecordBackfillExecutor {
         const data: Record<string, unknown> =
           await this.dependencies.graphjin.execute<Record<string, unknown>>({
             operationName,
-            query: `query ${operationName} { rows: ${resolved.object.tableName}(where: { ${where.join(", ")} }, order_by: { id: asc }, limit: ${QUERY_PAGE_SIZE}) { id${resolved.source ? ` ${resolved.source.columnName}` : ""} } }`,
+            query: `query ${operationName} { rows: ${resolved.object.tableName}(where: { ${where.join(", ")} }, order_by: { id: asc }, limit: ${QUERY_PAGE_SIZE}) { id${resolved.source ? ` ${RECORD_DATA_COLUMN}` : ""} } }`,
             variables: after ? { after } : {},
             token,
           });
@@ -607,8 +607,11 @@ export class RecordBackfillExecutor {
         report.scanned += rows.length;
         const candidates: BackfillCandidate[] = [];
         for (const row of rows) {
+          const document = row[RECORD_DATA_COLUMN];
           const rawValue = resolved.source
-            ? row[resolved.source.columnName]
+            ? document && typeof document === "object" && !Array.isArray(document)
+              ? (document as Record<string, unknown>)[resolved.source.columnName]
+              : undefined
             : resolved.constantValue;
           if (rawValue === null || rawValue === undefined) {
             report.skippedNullSource += 1;

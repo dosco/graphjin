@@ -1,5 +1,5 @@
 import { validateRecordIdentifier } from "../naming";
-import { RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
+import { RECORD_DATA_COLUMN, RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
 import {
   evaluateRecordObjectPermission,
   selectRecordPolicyGrant,
@@ -414,6 +414,34 @@ function semanticPicklistValues(
   return values;
 }
 
+const NUMERIC_FIELD_KINDS = new Set<RecordFieldKind>(["integer", "decimal", "currency", "percent"]);
+
+/** A filter on a key inside the record document. */
+function documentClause(field: RecordField, body: string): string {
+  return `${RECORD_DATA_COLUMN}: { ${field.columnName}: ${body} }`;
+}
+
+/**
+ * GraphJin casts a JSON key only for a number or boolean literal; a variable
+ * compares as text. Validated numbers and booleans are therefore inlined.
+ */
+function typedLiteral(field: RecordField, value: unknown): string | null {
+  if (NUMERIC_FIELD_KINDS.has(field.kind)) {
+    const number = typeof value === "number" ? value : Number(value);
+    if (typeof value === "boolean" || value === "" || !Number.isFinite(number)) {
+      throw new RecordReadTargetError(`${field.apiName} filters require a number`);
+    }
+    return String(number);
+  }
+  if (field.kind === "boolean") {
+    if (typeof value !== "boolean") {
+      throw new RecordReadTargetError(`${field.apiName} filters require true or false`);
+    }
+    return value ? "true" : "false";
+  }
+  return null;
+}
+
 function filterClause(
   filter: RecordListFilter,
   variable: string,
@@ -428,7 +456,7 @@ function filterClause(
       throw new RecordReadTargetError("is_null record filters require a boolean value");
     }
     return {
-      clause: `${field.columnName}: { is_null: ${filter.value ? "true" : "false"} }`,
+      clause: documentClause(field, `{ is_null: ${filter.value ? "true" : "false"} }`),
       variables: [],
     };
   }
@@ -436,9 +464,16 @@ function filterClause(
     if (!Array.isArray(filter.value) || filter.value.length < 1 || filter.value.length > 100) {
       throw new RecordReadTargetError(`${filter.operator} record filters require 1 to 100 values`);
     }
+    if (NUMERIC_FIELD_KINDS.has(field.kind) || field.kind === "boolean") {
+      const literals = filter.value.map((value) => typedLiteral(field, value));
+      return {
+        clause: documentClause(field, `{ ${filter.operator}: [${literals.join(", ")}] }`),
+        variables: [],
+      };
+    }
     return {
-      clause: `${field.columnName}: { ${filter.operator}: $${variable} }`,
-      variables: [[variable, filter.value]],
+      clause: documentClause(field, `{ ${filter.operator}: $${variable} }`),
+      variables: [[variable, filter.value.map(String)]],
     };
   }
   if (filter.operator === "contains" || filter.operator === "starts_with") {
@@ -446,7 +481,7 @@ function filterClause(
       throw new RecordReadTargetError(`${filter.operator} record filters require text`);
     }
     return {
-      clause: `${field.columnName}: { ilike: $${variable} }`,
+      clause: documentClause(field, `{ ilike: $${variable} }`),
       variables: [
         [
           variable,
@@ -460,20 +495,23 @@ function filterClause(
       throw new RecordReadTargetError("relative record filters require a date field");
     }
     const bounds = dateBounds(filter.value, now);
+    // Documents store dates as YYYY-MM-DD and datetimes as ISO strings, so
+    // the bounds must use the same text form to compare correctly.
+    const bound = (value: string) => (field.kind === "date" ? value.slice(0, 10) : value);
     return {
       clause:
-        `and: [{ ${field.columnName}: { gte: $${variable}_start } }, ` +
-        `{ ${field.columnName}: { lt: $${variable}_end } }]`,
+        `and: [{ ${documentClause(field, `{ gte: $${variable}_start }`)} }, ` +
+        `{ ${documentClause(field, `{ lt: $${variable}_end }`)} }]`,
       variables: [
-        [`${variable}_start`, bounds.start],
-        [`${variable}_end`, bounds.end],
+        [`${variable}_start`, bound(bounds.start)],
+        [`${variable}_end`, bound(bounds.end)],
       ],
     };
   }
   if (filter.operator === "is_open" || filter.operator === "is_closed") {
     const semantic = filter.operator === "is_open" ? "open" : "closed";
     return {
-      clause: `${field.columnName}: { in: $${variable} }`,
+      clause: documentClause(field, `{ in: $${variable} }`),
       variables: [[variable, semanticPicklistValues(field, semantic)]],
     };
   }
@@ -487,9 +525,13 @@ function filterClause(
   ) {
     throw new RecordReadTargetError("unknown record filter operator");
   }
+  const literal = typedLiteral(field, filter.value);
+  if (literal !== null) {
+    return { clause: documentClause(field, `{ ${filter.operator}: ${literal} }`), variables: [] };
+  }
   return {
-    clause: `${field.columnName}: { ${filter.operator}: $${variable} }`,
-    variables: [[variable, filter.value]],
+    clause: documentClause(field, `{ ${filter.operator}: $${variable} }`),
+    variables: [[variable, field.kind === "date" ? String(filter.value).slice(0, 10) : filter.value]],
   };
 }
 
@@ -543,10 +585,48 @@ function selectorArguments(args: string[]): string {
   return args.length === 0 ? "" : `(${args.join(", ")})`;
 }
 
+const SYSTEM_COLUMN_NAMES = new Set<string>(["id", ...Object.values(RECORD_SYSTEM_COLUMNS)]);
+
+/** Fields live in the record document; system columns stay on the row. */
+export function isRecordDocumentColumn(column: Pick<RecordViewColumn, "columnName">): boolean {
+  return !SYSTEM_COLUMN_NAMES.has(column.columnName);
+}
+
 function querySelection(view: RecordObjectView): string {
-  return ["id", ...view.columns.map((column) => column.columnName)]
+  const systemColumns = view.columns
+    .filter((column) => !isRecordDocumentColumn(column))
+    .map((column) => column.columnName);
+  const hasFields = view.columns.some(isRecordDocumentColumn);
+  return ["id", ...systemColumns, ...(hasFields ? [RECORD_DATA_COLUMN] : [])]
     .filter((value, index, values) => values.indexOf(value) === index)
     .join(" ");
+}
+
+/**
+ * Flatten a stored row into the view's columns. Only fields in the view
+ * leave the document, so keys the viewer may not read are dropped here.
+ */
+export function projectRecordRow(
+  view: Pick<RecordObjectView, "columns">,
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  const raw = row[RECORD_DATA_COLUMN];
+  const document =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const projected: Record<string, unknown> = { id: row.id };
+  for (const column of view.columns) {
+    projected[column.columnName] = isRecordDocumentColumn(column)
+      ? (document[column.columnName] ?? null)
+      : (row[column.columnName] ?? null);
+  }
+  return projected;
+}
+
+export function projectRecordRows(
+  view: Pick<RecordObjectView, "columns">,
+  rows: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  return rows.map((row) => projectRecordRow(view, row));
 }
 
 export function buildRecordListQuery(input: {
@@ -578,7 +658,11 @@ export function buildRecordListQuery(input: {
     if (search.length > MAX_SEARCH_LENGTH) {
       throw new RecordReadTargetError(`record search cannot exceed ${MAX_SEARCH_LENGTH} characters`);
     }
-    clauses.push(`${view.object.nameField}: { ilike: $search }`);
+    clauses.push(
+      view.object.nameField === "id"
+        ? "id: { ilike: $search }"
+        : `${RECORD_DATA_COLUMN}: { ${view.object.nameField}: { ilike: $search } }`,
+    );
     variables.search = likeValue(search, "contains");
   }
   if (input.myRecords) {
@@ -608,7 +692,7 @@ export function buildRecordListQuery(input: {
   const order =
     sortField === "id"
       ? `{ id: ${direction} }`
-      : `{ ${sortField}: ${direction}, id: ${direction} }`;
+      : `{ ${RECORD_DATA_COLUMN}: { ${sortField}: ${direction} }, id: ${direction} }`;
   const where = whereDocument(clauses);
   const pageArguments = [
     "first: $first",
@@ -660,7 +744,7 @@ export function buildRecordAggregateQuery(input: {
     ) {
       throw new RecordReadTargetError("sum record metrics require a numeric field");
     }
-    valueField = `sum_${field.columnName}`;
+    valueField = `total: sum(expr: { cast: { expr: { json: { col: ${RECORD_DATA_COLUMN}, path: [${field.columnName}] } }, as: "numeric" } })`;
   } else if (input.field) {
     throw new RecordReadTargetError("count record metrics do not accept a field");
   }
@@ -686,7 +770,7 @@ export function buildRecordAggregateQuery(input: {
     variables,
     view,
     resultField: "metric",
-    valueField,
+    valueField: input.aggregate === "sum" ? "total" : valueField,
   };
 }
 
@@ -742,7 +826,7 @@ export function buildRecordReferenceLabelQuery(input: {
   });
   const query =
     `query RecordsReferenceLabels { rows: ${view.object.tableName}` +
-    `(where: { id: { in: $record_ids } }, limit: ${recordIds.length}) { id ${view.object.nameField} } }`;
+    `(where: { id: { in: $record_ids } }, limit: ${recordIds.length}) { ${querySelection(view)} } }`;
   return {
     operationName: "RecordsReferenceLabels",
     query,

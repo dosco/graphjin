@@ -87,8 +87,7 @@ export function recordsPolicyFixture(): RecordsGraphjinPolicyModel {
         columns: [
           id("id"),
           id("org_id"),
-          id("name"),
-          id("industry"),
+          id("data"),
           id("owner_user_id"),
           id("nk_created_at"),
           id("nk_created_by"),
@@ -105,7 +104,7 @@ export function recordsPolicyFixture(): RecordsGraphjinPolicyModel {
         columns: [
           id("id"),
           id("org_id"),
-          id("name"),
+          id("data"),
           id("owner_user_id"),
           id("nk_updated_at"),
           id("nk_deleted_at"),
