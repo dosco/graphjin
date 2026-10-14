@@ -1,6 +1,6 @@
 {
   "name": "@open-neko/plugin-types",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "Public types and RPC schema for OpenNeko plugins. Vendored from open-neko/plugins/packages/types — the canonical npm-published copy lives there for external plugin authors; this in-tree copy is what the worker consumes via workspace.",
   "license": "Apache-2.0",
   "repository": {

@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.0.1](https://github.com/open-neko/openneko/compare/v4.0.0...v4.0.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **records:** send a one-value text list filter as a plain comparison ([50b45db](https://github.com/open-neko/openneko/commit/50b45db64c869a8a560019a516904598fdad1aec))
+* **records:** send a one-value text list filter as a plain comparison ([f7344f4](https://github.com/open-neko/openneko/commit/f7344f4f8a3819d607bbae9b1af99d6946fe5754))
+
 ## [4.0.0](https://github.com/open-neko/openneko/compare/v3.32.0...v4.0.0) (2026-10-14)
 
 
