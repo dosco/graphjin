@@ -6,7 +6,7 @@ import {
   progressPreview,
   ProviderProgress,
   WorkTrail,
-} from "../src/app/(work)/work/work-screen";
+} from "../src/app/(work)/work/work-progress";
 
 const run = {
   id: "run-1",

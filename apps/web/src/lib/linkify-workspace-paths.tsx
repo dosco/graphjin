@@ -37,7 +37,7 @@ export function openFileLink(href: string): void {
 
 // ReactMarkdown components map. Routes /api/work/files anchors through
 // openFileLink (new tab + popup fallback) and leaves other anchors alone.
-// Used by both work-screen's RunTimeline and the a2ui Markdown component.
+// Used by both the work RunTimeline and the a2ui Markdown component.
 export const WORKSPACE_MARKDOWN_COMPONENTS = {
   a({
     href,
