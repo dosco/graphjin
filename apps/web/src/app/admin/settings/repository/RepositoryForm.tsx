@@ -22,6 +22,7 @@ import SectionNav from "@/components/SectionNav";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input, NativeSelect } from "@/components/ui/field";
+import { copyText } from "@/lib/copy-text";
 
 const KINDS: Array<{ kind: ContextRemoteKind; label: string; private?: boolean }> = [
   { kind: "skills", label: "Skills" },
@@ -195,7 +196,7 @@ export default function RepositoryForm({ initial }: { initial: ContextRemoteSett
                 {remote.ssh.publicKey}
               </code>
               <Button type="button" size="sm" variant="secondary"
-                onClick={() => void navigator.clipboard.writeText(remote.ssh!.publicKey).then(() => toast.success("Key copied."))}>
+                onClick={() => void copyText(remote.ssh!.publicKey).then(() => toast.success("Key copied."))}>
                 Copy
               </Button>
               <Button type="button" size="sm" variant="secondary" disabled={busy !== null} onClick={() => void newKey()}>

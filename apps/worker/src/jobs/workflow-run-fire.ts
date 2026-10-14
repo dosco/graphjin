@@ -81,6 +81,7 @@ function createApiCeilingGuard(input: {
   emit: (event: AgentEvent) => Promise<void>;
   abortWith: (error: WorkflowApiRunCeilingExceeded) => void;
   failure: () => WorkflowApiRunCeilingExceeded | null;
+  metered: () => { tokens: number; costMicros: number };
 } {
   let toolCalls = 0;
   let modelCalls = 1;
@@ -132,6 +133,7 @@ function createApiCeilingGuard(input: {
       input.abort.abort();
     },
     failure: () => exceeded,
+    metered: () => ({ tokens: Math.ceil(totalTokens), costMicros: Math.ceil(costUsd * 1_000_000) }),
   };
 }
 
@@ -171,6 +173,7 @@ async function emitRunTelemetry(input: {
   emit: (event: AgentEvent) => Promise<void>;
   prepared: PreparedWorkflowRun;
   apiClaim: ClaimedWorkflowApiAdmission | null;
+  metered?: { tokens: number; costMicros: number };
 }): Promise<void> {
   const summary = input.telemetry.snapshot();
   try {
@@ -183,6 +186,7 @@ async function emitRunTelemetry(input: {
       admissionId: input.apiClaim!.id,
       workflowRunId: input.prepared.workflowRun.id,
       summary,
+      metered: input.metered,
     });
   } else {
     await persistWorkflowRunTelemetry(input.prepared.workflowRun.id, summary);
@@ -335,6 +339,7 @@ async function runWorkflowRunFireTraced(
   let telemetry: ReturnType<typeof createWorkerHarnessObserver> | null = null;
   let emit: ((event: AgentEvent) => Promise<void>) | null = null;
   let telemetryClosed = false;
+  let meteredUsage: (() => { tokens: number; costMicros: number }) | null = null;
   const startedAt = Date.now();
 
   try {
@@ -435,6 +440,7 @@ async function runWorkflowRunFireTraced(
       const ceilingGuard = apiClaim
         ? createApiCeilingGuard({ claim: apiClaim!, abort, emit })
         : null;
+      meteredUsage = ceilingGuard?.metered ?? null;
       const maxRuntimeTimer = apiClaim && ceilingGuard
         ? setTimeout(
             () =>
@@ -539,7 +545,7 @@ async function runWorkflowRunFireTraced(
         coverage: "unavailable",
       },
     });
-    await emitRunTelemetry({ telemetry, emit, prepared, apiClaim });
+    await emitRunTelemetry({ telemetry, emit, prepared, apiClaim, metered: meteredUsage?.() });
     telemetryClosed = true;
     workflowFinished = true;
     if (scheduleFiringId) {
@@ -563,7 +569,7 @@ async function runWorkflowRunFireTraced(
           coverage: "unavailable",
         },
       });
-      await emitRunTelemetry({ telemetry, emit, prepared, apiClaim });
+      await emitRunTelemetry({ telemetry, emit, prepared, apiClaim, metered: meteredUsage?.() });
       telemetryClosed = true;
     } else if (!telemetry) {
       await failPreRun(error, payload);

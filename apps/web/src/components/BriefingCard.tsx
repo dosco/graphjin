@@ -7,6 +7,7 @@ import type { ChartDataPoint } from "./Chart";
 import KpiHeadline from "./KpiHeadline";
 import { Button, IconButton } from "@/components/ui/button";
 import { MenuItem, OverflowMenu } from "@/components/ui/overflow-menu";
+import { copyText } from "@/lib/copy-text";
 
 async function copyCardToClipboard(ins: BriefingCardData): Promise<void> {
   const lines: string[] = [];
@@ -17,7 +18,7 @@ async function copyCardToClipboard(ins: BriefingCardData): Promise<void> {
   if (ins.detail) lines.push(ins.detail);
   const text = lines.join("\n");
   try {
-    await navigator.clipboard.writeText(text);
+    await copyText(text);
   } catch {}
 }
 

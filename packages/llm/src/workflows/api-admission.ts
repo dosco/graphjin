@@ -440,22 +440,22 @@ async function checkQueueAndBudgets(
     org_cost: string;
   }>(
     `select
-       coalesce(sum(coalesce(actual_tokens, reserved_tokens)) filter (
+       coalesce(sum(coalesce(actual_tokens, 0)) filter (
          where workflow_id = $1
            and created_at >=
              $3::timestamptz - ($4::bigint * interval '1 second')
        ), 0) as workflow_tokens,
-       coalesce(sum(coalesce(actual_cost_micros, reserved_cost_micros)) filter (
+       coalesce(sum(coalesce(actual_cost_micros, 0)) filter (
          where workflow_id = $1
            and created_at >=
              $3::timestamptz - ($4::bigint * interval '1 second')
        ), 0) as workflow_cost,
-       coalesce(sum(coalesce(actual_tokens, reserved_tokens)) filter (
+       coalesce(sum(coalesce(actual_tokens, 0)) filter (
          where org_id = $2
            and created_at >=
              $3::timestamptz - ($4::bigint * interval '1 second')
        ), 0) as org_tokens,
-       coalesce(sum(coalesce(actual_cost_micros, reserved_cost_micros)) filter (
+       coalesce(sum(coalesce(actual_cost_micros, 0)) filter (
          where org_id = $2
            and created_at >=
              $3::timestamptz - ($4::bigint * interval '1 second')
@@ -469,16 +469,13 @@ async function checkQueueAndBudgets(
       input.limits.rollingWindowSeconds,
     ],
   );
+  // Budgets count what runs actually used. Each run is still stopped at its own per-run ceiling.
   const totals = usage.rows[0];
   if (
-    Number(totals?.workflow_tokens ?? 0) + reservedTokens >
-      input.limits.rollingTokenBudget ||
-    Number(totals?.workflow_cost ?? 0) + reservedCostMicros >
-      input.limits.rollingCostMicrosBudget ||
-    Number(totals?.org_tokens ?? 0) + reservedTokens >
-      orgTokenBudget ||
-    Number(totals?.org_cost ?? 0) + reservedCostMicros >
-      orgCostBudget
+    Number(totals?.workflow_tokens ?? 0) >= input.limits.rollingTokenBudget ||
+    Number(totals?.workflow_cost ?? 0) >= input.limits.rollingCostMicrosBudget ||
+    Number(totals?.org_tokens ?? 0) >= orgTokenBudget ||
+    Number(totals?.org_cost ?? 0) >= orgCostBudget
   ) {
     throw new WorkflowApiError(
       "rolling_budget_exhausted",
@@ -1082,8 +1079,14 @@ export async function persistWorkflowApiTelemetry(input: {
   admissionId: string;
   workflowRunId: string;
   summary: HarnessRunSummary;
+  /** Usage the worker metered from usage events; used when the summary has none. */
+  metered?: { tokens: number; costMicros: number };
 }): Promise<void> {
-  const actual = telemetryActuals(input.summary);
+  const reported = telemetryActuals(input.summary);
+  const actual = {
+    tokens: reported.tokens ?? input.metered?.tokens ?? null,
+    costMicros: reported.costMicros ?? input.metered?.costMicros ?? null,
+  };
   try {
     await withSerializableTransaction(async (client) => {
       await client.query(
