@@ -65,7 +65,7 @@ describe("records GraphJin schema boundary", () => {
     const calls: string[][] = [];
     const command: RecordsGraphjinSchemaCommand = async (_binary, args) => {
       calls.push(args);
-      if (args[0] === "version") return { stdout: "GraphJin 3.21.7\n", stderr: "" };
+      if (args[0] === "version") return { stdout: "GraphJin 3.21.13\n", stderr: "" };
       if (args.includes("diff")) {
         return { stdout: "CREATE TABLE example (id TEXT PRIMARY KEY);\n", stderr: "" };
       }

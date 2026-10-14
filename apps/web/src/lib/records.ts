@@ -22,6 +22,7 @@ import {
   buildRecordRecycleDetailQuery,
   buildRecordRecycleListQuery,
   buildRecordReferenceLabelQuery,
+  projectRecordRows,
   buildRecordSchemaLogQuery,
   evaluateRecordObjectPermission,
   mintRecordsGraphjinToken,
@@ -615,7 +616,7 @@ export async function readRecordAppPage(input: {
         variables: generated.variables,
         token: viewer.token,
       });
-      const rows = rowsFrom(data[generated.resultField]);
+      const rows = projectRecordRows(generated.view, rowsFrom(data[generated.resultField]));
       return {
         renderer: block.renderer,
         label: block.label,
@@ -749,7 +750,7 @@ async function resolveReferenceIdentities(input: {
           variables: generated.variables,
           token: input.token,
         });
-        for (const row of rowsFrom(data[generated.resultField])) {
+        for (const row of projectRecordRows(generated.view, rowsFrom(data[generated.resultField]))) {
           if (row.id === null || row.id === undefined) continue;
           const id = String(row.id);
           const key = recordReferenceIdentityKey(column.apiName, id);
@@ -846,7 +847,7 @@ export async function readRecordList(input: {
     variables: generated.variables,
     token: viewer.token,
   });
-  const rows = rowsFrom(data[generated.resultField]);
+  const rows = projectRecordRows(generated.view, rowsFrom(data[generated.resultField]));
   const [owners, references, pendingActions] = await Promise.all([
     resolveOwnerIdentities({
       orgId: input.orgId,
@@ -947,6 +948,23 @@ export type RecordChangeLogEntry = {
   at: string;
 };
 
+/** Drop change-log entries for fields the viewer has no grant to read. */
+function readableHistory(
+  rows: Array<Record<string, unknown>>,
+  readableKeys: ReadonlySet<string>,
+): Array<Record<string, unknown>> {
+  return rows.map((row) => {
+    const changes = row.changes;
+    if (!changes || typeof changes !== "object" || Array.isArray(changes)) return row;
+    return {
+      ...row,
+      changes: Object.fromEntries(
+        Object.entries(changes as Record<string, unknown>).filter(([key]) => readableKeys.has(key)),
+      ),
+    };
+  });
+}
+
 export async function readRecordDetail(input: {
   orgId: string;
   appId: string;
@@ -972,7 +990,14 @@ export async function readRecordDetail(input: {
     variables: generated.variables,
     token: viewer.token,
   });
-  const row = rowsFrom(data[generated.resultField])[0] ?? null;
+  const row = projectRecordRows(generated.view, rowsFrom(data[generated.resultField]))[0] ?? null;
+  const readableKeys = new Set<string>([
+    "id",
+    "owner_user_id",
+    ...shell.snapshot.fields
+      .filter((field) => field.objectId === generated.view.object.id)
+      .map((field) => String(field.apiName)),
+  ]);
   const relationships = shell.snapshot.relationships ?? [];
   const relatedTargets = relationships.flatMap((relationship) => {
     if (relationship.toObjectId !== generated.view.object.id) return [];
@@ -1007,7 +1032,7 @@ export async function readRecordDetail(input: {
               variables: relatedQuery.variables,
               token: viewer.token,
             });
-            const relatedRows = rowsFrom(relatedData[relatedQuery.resultField]);
+            const relatedRows = projectRecordRows(relatedQuery.view, rowsFrom(relatedData[relatedQuery.resultField]));
             return {
               label: relationship.label ?? source.pluralLabel,
               fieldApiName: field.apiName,
@@ -1041,7 +1066,9 @@ export async function readRecordDetail(input: {
             query: historyQuery.query,
             variables: historyQuery.variables,
             token: viewer.token,
-          }).then((history) => rowsFrom(history[historyQuery.resultField]));
+          }).then((history) =>
+            readableHistory(rowsFrom(history[historyQuery.resultField]), readableKeys),
+          );
         })(),
         resolvePendingRecordActions({
           orgId: input.orgId,

@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg";
-import { recordIdentifier, validateRecordIdentifier } from "../naming";
-import { RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
+import { validateRecordIdentifier } from "../naming";
+import { RECORD_DATA_COLUMN, RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
 import { loadRecordsCatalogSnapshot } from "./catalog";
 import type {
   RecordFieldKind,
@@ -31,6 +31,7 @@ type Queryable = Pick<Pool | PoolClient, "query">;
 
 const RESERVED_COLUMNS = new Set<string>([
   "id",
+  RECORD_DATA_COLUMN,
   RECORD_SYSTEM_COLUMNS.orgId,
   RECORD_SYSTEM_COLUMNS.ownerUserId,
   RECORD_SYSTEM_COLUMNS.createdAt,
@@ -41,100 +42,6 @@ const RESERVED_COLUMNS = new Set<string>([
   RECORD_SYSTEM_COLUMNS.mutationId,
   RECORD_SYSTEM_COLUMNS.deletedAt,
 ]);
-
-function positiveInteger(value: number | null | undefined, label: string): number | null {
-  if (value === null || value === undefined) return null;
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`${label} must be a positive integer`);
-  }
-  return value;
-}
-
-function nonNegativeInteger(
-  value: number | null | undefined,
-  label: string,
-): number | null {
-  if (value === null || value === undefined) return null;
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`${label} must be a non-negative integer`);
-  }
-  return value;
-}
-
-function graphjinType(field: RecordDdlFieldDefinition): {
-  type: string;
-  typeDirective?: string;
-} {
-  const length = positiveInteger(field.length, `${field.columnName} length`);
-  const scale = nonNegativeInteger(field.scale, `${field.columnName} scale`);
-  switch (field.kind) {
-    case "boolean":
-      return { type: "Boolean" };
-    case "integer":
-      return { type: "BigInt" };
-    case "decimal":
-    case "currency":
-    case "percent": {
-      const resolvedScale = scale ?? (field.kind === "currency" ? 2 : null);
-      if (resolvedScale === null) return { type: "Numeric" };
-      const precision = length ?? 38;
-      if (resolvedScale > precision) {
-        throw new Error(`${field.columnName} scale cannot exceed precision`);
-      }
-      return {
-        type: "Numeric",
-        typeDirective: `@type(args: ${JSON.stringify(`${precision}, ${resolvedScale}`)})`,
-      };
-    }
-    case "date":
-      return { type: "Date" };
-    case "datetime":
-      return { type: "Timestamptz" };
-    case "multipicklist":
-      return { type: "Jsonb" };
-    case "id":
-    case "text":
-    case "textarea":
-    case "email":
-    case "phone":
-    case "url":
-    case "picklist":
-    case "reference":
-    case "readonly_formula":
-      return { type: "Text" };
-  }
-}
-
-function indexDirective(tableName: RecordIdentifier, columnName: RecordIdentifier): string {
-  const indexName = recordIdentifier(`idx_${tableName}_${columnName}`);
-  return `@index(name: ${JSON.stringify(indexName)})`;
-}
-
-function fieldLine(
-  object: RecordDdlObjectDefinition,
-  field: RecordDdlFieldDefinition,
-): string {
-  const columnName = validateRecordIdentifier(field.columnName);
-  if (field.kind === "id") {
-    if (columnName !== "id") {
-      throw new Error(`id field on ${object.tableName} must use the id column`);
-    }
-    return "  id: Text! @id";
-  }
-  if (RESERVED_COLUMNS.has(columnName)) {
-    throw new Error(`field ${object.tableName}.${columnName} uses a records system column`);
-  }
-
-  const mapped = graphjinType(field);
-  const directives: string[] = [];
-  if (mapped.typeDirective) directives.push(mapped.typeDirective);
-  if (columnName === object.nameField || field.kind === "reference") {
-    directives.push(indexDirective(object.tableName, columnName));
-  }
-  return `  ${columnName}: ${mapped.type}${field.required ? "!" : ""}${
-    directives.length > 0 ? ` ${directives.join(" ")}` : ""
-  }`;
-}
 
 function objectBlock(object: RecordDdlObjectDefinition): string {
   const apiName = validateRecordIdentifier(object.apiName);
@@ -161,10 +68,6 @@ function objectBlock(object: RecordDdlObjectDefinition): string {
     throw new Error(`records DDL name field is missing: ${tableName}.${nameField}`);
   }
 
-  const userFields = liveFields
-    .filter((field) => field.kind !== "id")
-    .sort((left, right) => left.columnName.localeCompare(right.columnName))
-    .map((field) => fieldLine(object, field));
   const ownerField =
     object.visibility === "owner"
       ? [`  ${RECORD_SYSTEM_COLUMNS.ownerUserId}: Text!`]
@@ -175,7 +78,7 @@ function objectBlock(object: RecordDdlObjectDefinition): string {
     "  id: Text! @id",
     `  ${RECORD_SYSTEM_COLUMNS.orgId}: Text!`,
     ...ownerField,
-    ...userFields,
+    `  ${RECORD_DATA_COLUMN}: Jsonb!`,
     `  ${RECORD_SYSTEM_COLUMNS.createdAt}: Timestamptz!`,
     `  ${RECORD_SYSTEM_COLUMNS.createdBy}: Text!`,
     `  ${RECORD_SYSTEM_COLUMNS.updatedAt}: Timestamptz!`,
@@ -187,7 +90,11 @@ function objectBlock(object: RecordDdlObjectDefinition): string {
   ].join("\n");
 }
 
-/** Project the full desired registry shape into GraphJin's additive DDL. */
+/**
+ * Project the registry into GraphJin's additive DDL. Every object table has
+ * the same shape: system columns plus one jsonb document that holds the
+ * fields, so field changes never alter a table.
+ */
 export function buildRecordsGraphjinDdl(objects: RecordDdlObjectDefinition[]): string {
   const liveObjects = objects
     .filter((object) => !object.archived)
@@ -204,20 +111,6 @@ export function buildRecordsGraphjinDdl(objects: RecordDdlObjectDefinition[]): s
     return "# No live records objects. Archived tables remain physically retained.\n";
   }
   return `${liveObjects.map(objectBlock).join("\n\n")}\n`;
-}
-
-function expectedPostgresType(field: RecordDdlFieldDefinition): string {
-  const mapped = graphjinType(field);
-  if (mapped.type === "Boolean") return "boolean";
-  if (mapped.type === "BigInt") return "bigint";
-  if (mapped.type === "Numeric") {
-    const match = mapped.typeDirective?.match(/^@type\(args: "([0-9]+), ([0-9]+)"\)$/);
-    return match ? `numeric(${match[1]},${match[2]})` : "numeric";
-  }
-  if (mapped.type === "Date") return "date";
-  if (mapped.type === "Timestamptz") return "timestamp with time zone";
-  if (mapped.type === "Jsonb") return "jsonb";
-  return "text";
 }
 
 export type RecordsDdlVerification = {
@@ -255,13 +148,7 @@ export async function verifyRecordsGraphjinDdlApplied(
       ...(object.visibility === "owner"
         ? [{ name: RECORD_SYSTEM_COLUMNS.ownerUserId, dataType: "text", notNull: true }]
         : []),
-      ...object.fields
-        .filter((field) => !field.archived && field.kind !== "id")
-        .map((field) => ({
-          name: validateRecordIdentifier(field.columnName),
-          dataType: expectedPostgresType(field),
-          notNull: field.required,
-        })),
+      { name: RECORD_DATA_COLUMN, dataType: "jsonb", notNull: true },
       { name: RECORD_SYSTEM_COLUMNS.createdAt, dataType: "timestamp with time zone", notNull: true },
       { name: RECORD_SYSTEM_COLUMNS.createdBy, dataType: "text", notNull: true },
       { name: RECORD_SYSTEM_COLUMNS.updatedAt, dataType: "timestamp with time zone", notNull: true },
@@ -293,27 +180,6 @@ export async function verifyRecordsGraphjinDdlApplied(
         /^PRIMARY KEY \("?id"?\)$/i.test(constraint.definition),
     );
     if (!primaryKey) problems.push(`missing id primary key public.${tableName}`);
-
-    const indexedColumns = new Set(
-      object.fields
-        .filter(
-          (field) =>
-            !field.archived &&
-            field.kind !== "id" &&
-            (field.columnName === object.nameField || field.kind === "reference"),
-        )
-        .map((field) => field.columnName),
-    );
-    for (const column of indexedColumns) {
-      const escaped = column.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const index = catalog.indexes.some(
-        (candidate) =>
-          candidate.schema === "public" &&
-          candidate.table === tableName &&
-          new RegExp(`\\(\\s*"?${escaped}"?\\s*\\)`, "i").test(candidate.definition),
-      );
-      if (!index) problems.push(`missing index public.${tableName}.${column}`);
-    }
   }
   return { applied: problems.length === 0, problems };
 }

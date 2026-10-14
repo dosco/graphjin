@@ -51,7 +51,7 @@ describeIfRecordsDb("records schema substrate integration", () => {
         id text primary key,
         org_id text not null,
         owner_user_id text not null,
-        name text not null,
+        data jsonb not null,
         nk_created_at timestamptz not null,
         nk_created_by text not null,
         nk_updated_at timestamptz not null,
@@ -77,7 +77,7 @@ describeIfRecordsDb("records schema substrate integration", () => {
     expect(repeated.revision).toBe(initial.revision);
     expect(initial.revision).toMatch(/^[0-9a-f]{64}$/);
 
-    await testPool.query("create index idx_equipment_test on public.equipment__loan (name)");
+    await testPool.query("create index idx_equipment_test on public.equipment__loan ((data->>'name'))");
     const drifted = await loadRecordsCatalogSnapshot(testPool);
     expect(drifted.revision).not.toBe(initial.revision);
     expect(drifted.indexes).toEqual(
@@ -100,11 +100,11 @@ describeIfRecordsDb("records schema substrate integration", () => {
     await expect(
       testPool.query(`
         insert into public.equipment__loan (
-          id, org_id, owner_user_id, name,
+          id, org_id, owner_user_id, data,
           nk_created_at, nk_created_by, nk_updated_at, nk_updated_by,
           nk_action_request_id, nk_mutation_id
         ) values (
-          'unclaimed', 'org-a', 'member-1', 'Must Fail',
+          'unclaimed', 'org-a', 'member-1', '{"name": "Must Fail"}',
           now(), 'member-1', now(), 'member-1',
           'missing-request', 'missing-mutation'
         )
@@ -121,17 +121,17 @@ describeIfRecordsDb("records schema substrate integration", () => {
         ('request-restore', 'org-a', 'equipment', 'record_restore', 'running');
 
       insert into public.equipment__loan (
-        id, org_id, owner_user_id, name,
+        id, org_id, owner_user_id, data,
         nk_created_at, nk_created_by, nk_updated_at, nk_updated_by,
         nk_action_request_id, nk_mutation_id
       ) values (
-        'loan-1', 'org-a', 'member-1', 'Laptop',
+        'loan-1', 'org-a', 'member-1', '{"name": "Laptop"}',
         now(), 'member-1', now(), 'member-1',
         'request-create', 'mutation-create'
       );
 
       update public.equipment__loan
-      set name = 'Laptop Pro',
+      set data = data || '{"name": "Laptop Pro"}',
           nk_updated_at = now(),
           nk_updated_by = 'member-1',
           nk_action_request_id = 'request-update',

@@ -170,15 +170,11 @@ describeIfLive("records GraphJin live schema integration", () => {
         where table_schema = 'public' and table_name = 'equipment__loan'
         order by ordinal_position
       `);
+      expect(relation.rows.map((row) => row.column_name)).not.toContain("name");
       expect(relation.rows).toEqual(
         expect.arrayContaining([
           { column_name: "id", data_type: "text", is_nullable: "NO" },
-          { column_name: "name", data_type: "text", is_nullable: "NO" },
-          {
-            column_name: "replacement_cost",
-            data_type: "numeric",
-            is_nullable: "YES",
-          },
+          { column_name: "data", data_type: "jsonb", is_nullable: "NO" },
           {
             column_name: "nk_deleted_at",
             data_type: "timestamp with time zone",

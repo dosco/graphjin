@@ -1221,6 +1221,35 @@
   border-bottom: 1px solid var(--border);
 }
 
+.record-action-new-fields {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--neutral-soft);
+  color: var(--text2);
+  font-size: var(--type-body-sm);
+}
+
+.record-action-new-fields strong {
+  color: var(--text);
+}
+
+.record-action-new-fields ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.record-action-new-fields li span {
+  color: var(--text3);
+}
+
+.record-action-new-fields p {
+  margin: 0;
+  color: var(--text3);
+  font-size: var(--type-caption);
+}
+
 .record-action-diff-target {
   margin-bottom: 10px;
   display: grid;

@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import type { RecordsGraphjinTransport } from "../graphjin/client";
-import { RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
+import { RECORD_DATA_COLUMN, RECORD_SYSTEM_COLUMNS } from "../policy/graphjin";
 import { RecordRegistry } from "../registry";
 
 export type ImportedSourceUser = {
@@ -156,7 +156,7 @@ export async function readImportedSourceUsers(
       Record<string, unknown>
     >({
       operationName,
-      query: `query ${operationName} { rows: ${object.tableName}(where: { and: [{ ${RECORD_SYSTEM_COLUMNS.orgId}: { eq: $org_id } }, { ${RECORD_SYSTEM_COLUMNS.deletedAt}: { is_null: true } }${after ? ", { id: { gt: $after } }" : ""}] }, order_by: { id: asc }, limit: 500) { id ${emailColumn}${nameColumn ? ` ${nameColumn}` : ""}${activeColumn ? ` ${activeColumn}` : ""} } }`,
+      query: `query ${operationName} { rows: ${object.tableName}(where: { and: [{ ${RECORD_SYSTEM_COLUMNS.orgId}: { eq: $org_id } }, { ${RECORD_SYSTEM_COLUMNS.deletedAt}: { is_null: true } }${after ? ", { id: { gt: $after } }" : ""}] }, order_by: { id: asc }, limit: 500) { id ${RECORD_DATA_COLUMN} } }`,
       variables: { org_id: orgId, ...(after ? { after } : {}) },
       token: input.token,
     });
@@ -166,7 +166,17 @@ export async function readImportedSourceUsers(
             typeof row === "object" && row !== null && !Array.isArray(row),
         )
       : [];
-    rows.push(...page);
+    rows.push(
+      ...page.map((row) => {
+        const document = row[RECORD_DATA_COLUMN];
+        return {
+          ...(document && typeof document === "object" && !Array.isArray(document)
+            ? (document as Record<string, unknown>)
+            : {}),
+          id: row.id,
+        };
+      }),
+    );
     const lastId = page.at(-1)?.id;
     after = page.length === 500 && typeof lastId === "string" ? lastId : null;
   } while (after);

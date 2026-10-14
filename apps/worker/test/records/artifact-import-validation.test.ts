@@ -227,19 +227,19 @@ describe("artifact import Stage 6 validation", () => {
         }
         if (input.operationName === "RecordsImportValidationSample") {
           return input.query.includes("crm__account")
-            ? { rows: [{ id: "account-1", name: "Acme" }] }
+            ? { rows: [{ id: "account-1", data: { name: "Acme" } }] }
             : {
                 rows: [
-                  { id: "contact-1", name: "Ada", accountid: "account-1" },
-                  { id: "contact-2", name: "Bob", accountid: "missing-account" },
+                  { id: "contact-1", data: { name: "Ada", accountid: "account-1" } },
+                  { id: "contact-2", data: { name: "Bob", accountid: "missing-account" } },
                 ],
               };
         }
         if (input.operationName === "RecordsImportReferenceScan") {
           return {
             rows: [
-              { id: "contact-1", accountid: "account-1" },
-              { id: "contact-2", accountid: "missing-account" },
+              { id: "contact-1", data: { accountid: "account-1" } },
+              { id: "contact-2", data: { accountid: "missing-account" } },
             ],
           };
         }

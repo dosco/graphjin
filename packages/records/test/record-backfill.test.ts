@@ -182,7 +182,9 @@ function harness(input: {
       variables?: Record<string, unknown>;
     }) => {
       if (request.query.startsWith("query RecordsFieldBackfillPage")) {
-        return { rows };
+        return {
+          rows: rows.map(({ id, ...fields }) => ({ id, data: fields })),
+        };
       }
       if (
         request.query.startsWith("query RecordsFieldBackfillRemainingPage")
@@ -249,12 +251,12 @@ describe("record field backfill", () => {
     const mutation = test.execute.mock.calls.find(([request]) =>
       request.query.startsWith("mutation RecordsFieldBackfillBatch"),
     )?.[0];
-    expect(mutation.query).toContain("count_v2: { is_null: true }");
+    expect(mutation.query).toContain("data: { count_v2: { is_null: true } }");
     expect(mutation.query).toContain("nk_deleted_at: { is_null: true }");
     expect(mutation.variables).toMatchObject({
       id_0: "account-1",
       data_0: {
-        count_v2: 42,
+        data: { count_v2: 42 },
         nk_updated_by: "admin-1",
         nk_action_request_id: "request-backfill",
       },
@@ -290,7 +292,7 @@ describe("record field backfill", () => {
     expect(page?.query).not.toContain("legacy_count");
     const mutation = test.execute.mock.calls[1]?.[0];
     expect(mutation?.variables).toMatchObject({
-      data_0: { count_v2: 7 },
+      data_0: { data: { count_v2: 7 } },
     });
   });
 

@@ -154,8 +154,22 @@ function resolveActivities(snapshot: AppRegistrySnapshot): ResolvedActivity[] {
   });
 }
 
-function fieldSelection(alias: string, field: RecordField): string {
-  return `${alias}: ${field.columnName}`;
+/** Read named fields out of each record's document under stable aliases. */
+function documentRows(
+  value: unknown,
+  aliases: Record<string, RecordField | string | null | undefined>,
+): Array<Record<string, unknown>> {
+  return rows(value).map((row) => {
+    const raw = row.data;
+    const document =
+      raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+    const mapped: Record<string, unknown> = { id: row.id, owner_user_id: row.owner_user_id };
+    for (const [alias, field] of Object.entries(aliases)) {
+      if (!field) continue;
+      mapped[alias] = document[typeof field === "string" ? field : field.columnName] ?? null;
+    }
+    return mapped;
+  });
 }
 
 async function appSnapshot(
@@ -209,13 +223,13 @@ export function createRecordsWatchEvaluator(input: {
         }
         const dynamic = opportunity && activities.length > 0;
         const query = dynamic
-          ? `query EvaluateRecordsStaleOpportunities { opportunities: ${opportunity.object.tableName}(limit: 500) { id ${fieldSelection("name", opportunity.name)} owner_user_id ${fieldSelection("stage", opportunity.stage)}${opportunity.closeDate ? ` ${fieldSelection("close_date", opportunity.closeDate)}` : ""} } ${activities
+          ? `query EvaluateRecordsStaleOpportunities { opportunities: ${opportunity.object.tableName}(limit: 500) { id owner_user_id data } ${activities
               .map(
                 (activity, index) =>
-                  `activity_${index}: ${activity.object.tableName}(limit: 500) { ${fieldSelection("opportunity", activity.opportunity)} ${fieldSelection("occurred_at", activity.occurredAt)} }`,
+                  `activity_${index}: ${activity.object.tableName}(limit: 500) { id data }`,
               )
               .join(" ")} }`
-          : `query EvaluateRecordsStaleOpportunities($cutoff: Timestamptz!) { opportunities: crm__opportunity(limit: 500) { id name owner_user_id stage close_date } activities: crm__activity(where: { occurred_at: { gte: $cutoff } }, limit: 500) { opportunity } }`;
+          : `query EvaluateRecordsStaleOpportunities { opportunities: crm__opportunity(limit: 500) { id owner_user_id data } activities: crm__activity(where: { data: { occurred_at: { gte: $cutoff } } }, limit: 500) { id data } }`;
         const result = await input.graphjin.execute<Record<string, unknown>>({
           operationName: "EvaluateRecordsStaleOpportunities",
           query,
@@ -224,8 +238,13 @@ export function createRecordsWatchEvaluator(input: {
         });
         const activeOpportunityIds = new Set(
           (dynamic
-            ? activities.flatMap((_, index) => rows(result[`activity_${index}`]))
-            : rows(result.activities)
+            ? activities.flatMap((activity, index) =>
+                documentRows(result[`activity_${index}`], {
+                  opportunity: activity.opportunity,
+                  occurred_at: activity.occurredAt,
+                }),
+              )
+            : documentRows(result.activities, { opportunity: "opportunity" })
           )
             .filter(
               (row) =>
@@ -237,7 +256,12 @@ export function createRecordsWatchEvaluator(input: {
             .map((row) => stringValue(row.opportunity))
             .filter(Boolean),
         );
-        const stale = rows(result.opportunities).filter(
+        const stale = documentRows(
+          result.opportunities,
+          dynamic
+            ? { name: opportunity.name, stage: opportunity.stage, close_date: opportunity.closeDate }
+            : { name: "name", stage: "stage", close_date: "close_date" },
+        ).filter(
           (row) =>
             openStage(row.stage) &&
             typeof row.id === "string" &&
@@ -291,15 +315,23 @@ export function createRecordsWatchEvaluator(input: {
             "deals-closing watch requires an opportunity stage and close-date field",
           );
         }
-        const query = opportunity?.closeDate
-          ? `query EvaluateRecordsClosingDeals { opportunities: ${opportunity.object.tableName}(limit: 500) { id ${fieldSelection("name", opportunity.name)} owner_user_id ${fieldSelection("stage", opportunity.stage)}${opportunity.amount ? ` ${fieldSelection("amount", opportunity.amount)}` : ""} ${fieldSelection("close_date", opportunity.closeDate)} } }`
-          : `query EvaluateRecordsClosingDeals { opportunities: crm__opportunity(limit: 500) { id name owner_user_id stage amount close_date } }`;
+        const query = `query EvaluateRecordsClosingDeals { opportunities: ${opportunity?.closeDate ? opportunity.object.tableName : "crm__opportunity"}(limit: 500) { id owner_user_id data } }`;
         const result = await input.graphjin.execute<{ opportunities?: unknown }>({
           operationName: "EvaluateRecordsClosingDeals",
           query,
           token: input.token(payload.orgId),
         });
-        const closing = rows(result.opportunities).filter((row) => {
+        const closing = documentRows(
+          result.opportunities,
+          opportunity?.closeDate
+            ? {
+                name: opportunity.name,
+                stage: opportunity.stage,
+                amount: opportunity.amount,
+                close_date: opportunity.closeDate,
+              }
+            : { name: "name", stage: "stage", amount: "amount", close_date: "close_date" },
+        ).filter((row) => {
           const date = stringValue(row.close_date);
           return openStage(row.stage) && date >= bounds.start && date < bounds.end;
         });

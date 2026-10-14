@@ -9,6 +9,7 @@ import {
   buildRecordRecycleDetailQuery,
   buildRecordRecycleListQuery,
   buildRecordSchemaLogQuery,
+  projectRecordRow,
   RecordReadPermissionError,
   RecordReadTargetError,
 } from "../src/read/query";
@@ -178,7 +179,9 @@ describe("generated record read queries", () => {
     expect(built.query).toContain(
       "rows: operations__work_order(first: $first, after: $rows_cursor",
     );
-    expect(built.query).toContain("order_by: { status: desc, id: desc }");
+    expect(built.query).toContain("order_by: { data: { status: desc }, id: desc }");
+    expect(built.query).toContain("{ id owner_user_id data }");
+    expect(built.query).toContain("{ data: { subject: { ilike: $search } } }");
     expect(built.query).toContain("operations__work_order_cursor");
     expect(built.query).toContain("totals: operations__work_order");
     expect(built.query).toContain("count_id");
@@ -188,7 +191,7 @@ describe("generated record read queries", () => {
       rows_cursor: "opaque-cursor",
       search: "%50\\%\\_ready%",
       viewer_id: "admin-1",
-      filter_0: ["new"],
+      filter_0_0: "new",
     });
   });
 
@@ -199,7 +202,7 @@ describe("generated record read queries", () => {
       role: "admin",
       recordId: "wo-1",
     });
-    expect(built.query).toContain("id subject status owner_user_id nk_updated_at");
+    expect(built.query).toContain("{ id owner_user_id nk_updated_at data }");
     expect(built.variables).toEqual({ record_id: "wo-1" });
   });
 
@@ -244,9 +247,9 @@ describe("generated record read queries", () => {
       filter: { field: "status", operator: "not_in", value: ["closed"] },
     });
     expect(count.query).toContain(
-      "metric: operations__work_order(where: { status: { not_in: $filter_0 } }) { count_id }",
+      "metric: operations__work_order(where: { and: [{ data: { status: { neq: $filter_0_0 } } }] }) { count_id }",
     );
-    expect(count.variables).toEqual({ filter_0: ["closed"] });
+    expect(count.variables).toEqual({ filter_0_0: "closed" });
 
     const current = snapshot();
     current.fields.push({
@@ -273,8 +276,10 @@ describe("generated record read queries", () => {
       aggregate: "sum",
       field: "amount",
     });
-    expect(sum.query).toContain("{ sum_amount }");
-    expect(sum.valueField).toBe("sum_amount");
+    expect(sum.query).toContain(
+      '{ total: sum(expr: { cast: { expr: { json: { col: data, path: [amount] } }, as: "numeric" } }) }',
+    );
+    expect(sum.valueField).toBe("total");
   });
 
   it("compiles nested semantic filters, relative dates, and picklist groups", () => {
@@ -299,13 +304,13 @@ describe("generated record read queries", () => {
       },
     });
 
-    expect(built.query).toContain("and: [{ due_at: { gte: $filter_0_0_start }")
-    expect(built.query).toContain("or: [{ status: { in: $filter_0_1_0 } }")
+    expect(built.query).toContain("and: [{ data: { due_at: { gte: $filter_0_0_start } } }")
+    expect(built.query).toContain("or: [{ or: [{ data: { status: { eq: $filter_0_1_0_0 } } }] }")
     expect(built.query).not.toContain("blocked");
     expect(built.variables).toMatchObject({
       filter_0_0_start: "2026-07-01T00:00:00.000Z",
       filter_0_0_end: "2026-10-01T00:00:00.000Z",
-      filter_0_1_0: ["new"],
+      filter_0_1_0_0: "new",
       filter_0_1_1: "blocked",
     });
   });
@@ -422,7 +427,7 @@ describe("generated record read queries", () => {
       recordIds: ["001-b", "001-a", "001-a"],
     });
     expect(built.query).toBe(
-      "query RecordsReferenceLabels { rows: operations__account(where: { id: { in: $record_ids } }, limit: 2) { id name } }",
+      "query RecordsReferenceLabels { rows: operations__account(where: { id: { in: $record_ids } }, limit: 2) { id data } }",
     );
     expect(built.variables).toEqual({ record_ids: ["001-b", "001-a"] });
 
@@ -488,5 +493,108 @@ describe("generated record read queries", () => {
         first: 101,
       }),
     ).toThrow(/between 1 and 100/);
+  });
+});
+
+describe("record document reads", () => {
+  function withFields(...fields: Array<{ apiName: string; kind: AppRegistrySnapshot["fields"][number]["kind"] }>) {
+    const current = snapshot();
+    for (const field of fields) {
+      current.fields.push({
+        id: `field-${field.apiName}`,
+        orgId: "org-a",
+        objectId: "object-work-order",
+        apiName: id(field.apiName),
+        sourceApiName: null,
+        label: field.apiName,
+        kind: field.kind,
+        columnName: id(field.apiName),
+        required: false,
+        readOnly: false,
+        archivedAt: null,
+        picklistValues: null,
+        referenceTargets: null,
+        length: null,
+        scale: null,
+      });
+    }
+    return current;
+  }
+
+  it("inlines number and boolean filter values so the key is cast", () => {
+    const built = buildRecordListQuery({
+      snapshot: withFields({ apiName: "hours", kind: "decimal" }, { apiName: "urgent", kind: "boolean" }),
+      objectApiName: "work_order",
+      role: "admin",
+      userId: "user-1",
+      filter: {
+        op: "and",
+        clauses: [
+          { field: "hours", operator: "gt", value: 8 },
+          { field: "hours", operator: "in", value: [1, 2.5] },
+          { field: "urgent", operator: "eq", value: true },
+        ],
+      },
+    });
+    expect(built.query).toContain("{ data: { hours: { gt: 8 } } }");
+    expect(built.query).toContain("{ data: { hours: { in: [1, 2.5] } } }");
+    expect(built.query).toContain("{ data: { urgent: { eq: true } } }");
+    expect(built.variables).not.toHaveProperty("filter_0_0");
+  });
+
+  it("binds every text list value instead of writing it into the query", () => {
+    const built = buildRecordListQuery({
+      snapshot: snapshot(),
+      objectApiName: "work_order",
+      role: "admin",
+      userId: "user-1",
+      filter: { field: "status", operator: "in", value: ["it's", 'x" } }) { id } }'] },
+    });
+    expect(built.query).toContain(
+      "or: [{ data: { status: { eq: $filter_0_0 } } }, { data: { status: { eq: $filter_0_1 } } }]",
+    );
+    expect(built.query).not.toContain("it's");
+    expect(built.variables).toMatchObject({ filter_0_0: "it's", filter_0_1: 'x" } }) { id } }' });
+  });
+
+  it("rejects a number filter with a non-numeric value", () => {
+    expect(() =>
+      buildRecordListQuery({
+        snapshot: withFields({ apiName: "hours", kind: "integer" }),
+        objectApiName: "work_order",
+        role: "admin",
+        userId: "user-1",
+        filter: { field: "hours", operator: "gt", value: "8 OR 1=1" },
+      }),
+    ).toThrow(RecordReadTargetError);
+  });
+
+  it("compares date fields as YYYY-MM-DD text", () => {
+    const built = buildRecordListQuery({
+      snapshot: withFields({ apiName: "due_on", kind: "date" }),
+      objectApiName: "work_order",
+      role: "admin",
+      userId: "user-1",
+      now: new Date("2026-10-14T09:00:00Z"),
+      filter: { field: "due_on", operator: "relative", value: { macro: "this_quarter" } },
+    });
+    expect(built.variables).toMatchObject({ filter_0_start: "2026-10-01", filter_0_end: "2027-01-01" });
+  });
+
+  it("flattens the document into the view and drops keys outside it", () => {
+    const built = buildRecordDetailQuery({
+      snapshot: snapshot(),
+      objectApiName: "work_order",
+      role: "admin",
+      recordId: "wo-1",
+    });
+    const row = projectRecordRow(built.view, {
+      id: "wo-1",
+      owner_user_id: "user-1",
+      nk_updated_at: "2026-10-14T09:00:00Z",
+      data: { subject: "Pump check", status: "open", internal_cost: 900 },
+    });
+    expect(row).toMatchObject({ id: "wo-1", subject: "Pump check", owner_user_id: "user-1" });
+    expect(row).not.toHaveProperty("internal_cost");
   });
 });

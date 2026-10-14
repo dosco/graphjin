@@ -202,9 +202,7 @@ describeIfLive("records CSV import executor live integration", () => {
       create table public.equipment__loan (
         id text primary key,
         org_id text not null,
-        name text not null,
-        available boolean,
-        score__c text,
+        data jsonb not null,
         nk_created_at timestamptz not null default now(),
         nk_created_by text not null,
         nk_updated_at timestamptz not null default now(),
@@ -214,9 +212,9 @@ describeIfLive("records CSV import executor live integration", () => {
         nk_deleted_at timestamptz
       );
       insert into public.equipment__loan
-        (id, org_id, name, available, nk_created_by, nk_updated_by,
+        (id, org_id, data, nk_created_by, nk_updated_by,
          nk_action_request_id, nk_mutation_id)
-      values ('loan-existing', 'org-a', 'Existing', true, 'seed', 'seed',
+      values ('loan-existing', 'org-a', '{"name": "Existing", "available": true}', 'seed', 'seed',
               'seed-request', 'seed-mutation');
     `);
     await ensureRecordsAuditTrigger(pool, {
@@ -529,7 +527,7 @@ describeIfLive("records CSV import executor live integration", () => {
     ).resolves.toMatchObject({ inserted: 1, rejected: 0, reconciled: true });
     await expect(
       pool.query(
-        `select id, score__c from public.equipment__loan
+        `select id, data->>'score__c' as score__c from public.equipment__loan
          where id = '001A000010khO8JIAU'`,
       ),
     ).resolves.toMatchObject({

@@ -169,7 +169,7 @@ describe("projectRecordsGraphjinRoles", () => {
 
     expect(memberAccount.query).toMatchObject({
       block: false,
-      columns: expect.arrayContaining(["id", "name", "nk_created_at"]),
+      columns: expect.arrayContaining(["id", "data", "nk_created_at"]),
       filters: expect.arrayContaining([
         '{ org_id: { eq: "org-a" } }',
         "{ nk_deleted_at: { is_null: true } }",

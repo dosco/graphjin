@@ -5,7 +5,7 @@ import { buildRecordsGraphjinDdl } from "../src/schema/ddl";
 const id = validateRecordIdentifier;
 
 describe("buildRecordsGraphjinDdl", () => {
-  it("projects deterministic additive DDL with records audit conventions", () => {
+  it("gives every object the same table: system columns and one jsonb document", () => {
     const ddl = buildRecordsGraphjinDdl([
       {
         appId: "equipment",
@@ -24,20 +24,65 @@ describe("buildRecordsGraphjinDdl", () => {
       },
     ]);
 
-    expect(ddl).toContain("type equipment__loan {");
-    expect(ddl).toContain("id: Text! @id");
-    expect(ddl).toContain("owner_user_id: Text!");
-    expect(ddl).toContain('borrower_id: Text @index(name: "idx_equipment__loan_borrower_id")');
-    expect(ddl).toContain('name: Text! @index(name: "idx_equipment__loan_name")');
-    expect(ddl).toContain('replacement_cost: Numeric @type(args: "38, 2")');
-    expect(ddl).toContain("tags: Jsonb");
-    expect(ddl).toContain("nk_action_request_id: Text!");
-    expect(ddl).toContain("nk_mutation_id: Text!");
-    expect(ddl).toContain("nk_deleted_at: Timestamptz");
-    expect(ddl).not.toContain("retired_note");
-    expect(ddl).not.toContain("@default");
-    expect(ddl).not.toContain("@relation");
-    expect(ddl).not.toContain("[");
+    expect(ddl).toBe(
+      [
+        "type equipment__loan {",
+        "  id: Text! @id",
+        "  org_id: Text!",
+        "  owner_user_id: Text!",
+        "  data: Jsonb!",
+        "  nk_created_at: Timestamptz!",
+        "  nk_created_by: Text!",
+        "  nk_updated_at: Timestamptz!",
+        "  nk_updated_by: Text!",
+        "  nk_action_request_id: Text!",
+        "  nk_mutation_id: Text!",
+        "  nk_deleted_at: Timestamptz",
+        "}",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("produces the same table when fields change", () => {
+    const object = {
+      appId: "crm",
+      apiName: id("account"),
+      tableName: id("crm__account"),
+      nameField: id("name"),
+      visibility: "org" as const,
+    };
+    const before = buildRecordsGraphjinDdl([
+      { ...object, fields: [{ columnName: id("name"), kind: "text" as const, required: true }] },
+    ]);
+    const after = buildRecordsGraphjinDdl([
+      {
+        ...object,
+        fields: [
+          { columnName: id("name"), kind: "text" as const, required: true },
+          { columnName: id("industry"), kind: "picklist" as const, required: false },
+        ],
+      },
+    ]);
+    expect(after).toBe(before);
+  });
+
+  it("reserves the document column name", () => {
+    expect(() =>
+      buildRecordsGraphjinDdl([
+        {
+          appId: "crm",
+          apiName: id("account"),
+          tableName: id("crm__account"),
+          nameField: id("name"),
+          visibility: "org",
+          fields: [
+            { columnName: id("name"), kind: "text", required: true },
+            { columnName: id("data"), kind: "text", required: false },
+          ],
+        },
+      ]),
+    ).toThrow(/system column/);
   });
 
   it("omits archived objects without authoring destructive DDL", () => {

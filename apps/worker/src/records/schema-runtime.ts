@@ -13,6 +13,7 @@ import {
 } from "@neko/db/records-migrate";
 import {
   RECORDS_GRAPHJIN_CONFIG_FILENAME,
+  RecordsAccessAdmin,
   RecordsGraphjinSchemaCli,
   RecordsSchemaPlanner,
   RecordsSchemaSaga,
@@ -22,6 +23,7 @@ import {
   parseRecordAppDefinition,
   projectRecordAppDefinition,
   projectRecordsGraphjinRoles,
+  recordIdentifier,
   recordsGraphjinCursorSecret,
   recordsGraphjinSigningSecret,
   recordsWatchGraphjinCursorSecret,
@@ -142,6 +144,24 @@ function schemaChangeDefinition(change: RecordSchemaChange): RecordAppDefinition
     throw new Error("records schema artifact app does not match its journal row");
   }
   return definition;
+}
+
+/** Give groups that can open the object the same access to the added field. */
+async function grantAddedField(pool: pg.Pool, change: RecordSchemaChange): Promise<void> {
+  const payload = change.artifact.detail.payload as Record<string, unknown> | undefined;
+  const field = payload?.field as Record<string, unknown> | undefined;
+  const source = field?.api_name ?? field?.name ?? field?.label;
+  if (typeof payload?.object !== "string" || typeof source !== "string") return;
+  await new RecordsAccessAdmin(pool).grantFieldLikeObject({
+    orgId: change.orgId,
+    appId: change.appId,
+    objectApiName: recordIdentifier(payload.object),
+    fieldApiName: recordIdentifier(source),
+    actor: {
+      userId: change.artifact.actorUserId ?? "system",
+      actionRequestId: change.actionRequestId,
+    },
+  });
 }
 
 export async function projectMetadataAppState(
@@ -335,6 +355,9 @@ export async function createRecordsSchemaRuntime(options: {
           : {}),
       });
       await projectPolicy();
+      if (change.artifact.action === "app_field_add") {
+        await grantAddedField(options.pool, change);
+      }
       await projectMetadata({
         orgId: change.orgId,
         definition,
