@@ -1,5 +1,14 @@
 # Changelog
 
+## [4.3.1](https://github.com/open-neko/openneko/compare/v4.3.0...v4.3.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **library:** show sharing state and approve shared concepts in bulk ([293ee93](https://github.com/open-neko/openneko/commit/293ee93fb893c9746245aae1b04f2c649d7e92c9))
+* **library:** show sharing state and approve shared concepts in bulk ([995c5b3](https://github.com/open-neko/openneko/commit/995c5b3d34d65ccede55746adf712565084f28c4))
+* **workflows:** budget each routine by cost, not daily tokens ([3ace40a](https://github.com/open-neko/openneko/commit/3ace40a7f1b2d15acdf99bc4acd7f9ede3934a2d))
+
 ## [4.3.0](https://github.com/open-neko/openneko/compare/v4.2.0...v4.3.0) (2026-10-14)
 
 
