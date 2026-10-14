@@ -292,6 +292,7 @@ type DBColumn struct {
 	PrimaryKey     bool
 	UniqueKey      bool
 	FullText       bool
+	MergeOnUpdate  bool
 	FKRecursive    bool
 	FKeyDatabase   string // Target database for cross-database FKs (empty = same db)
 	FKeySchema     string

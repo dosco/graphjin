@@ -332,6 +332,10 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 		return fmt.Errorf("database %s: add fulltext columns failed: %w", ctx.name, err)
 	}
 
+	if err := addMergeOnUpdateColumns(gj.conf, ctx.dbinfo, ctx.name, ctx.dbtype); err != nil {
+		return fmt.Errorf("database %s: add merge_on_update columns failed: %w", ctx.name, err)
+	}
+
 	// Process functions for all databases
 	if err := addFunctions(gj.conf, ctx.dbinfo); err != nil {
 		return fmt.Errorf("database %s: add functions failed: %w", ctx.name, err)

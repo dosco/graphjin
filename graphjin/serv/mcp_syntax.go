@@ -102,6 +102,7 @@ type OrderingSyntax struct {
 	CustomList string `json:"custom_list"`
 	NullsFirst string `json:"nulls_first"`
 	NullsLast  string `json:"nulls_last"`
+	JSONKey    string `json:"json_key"`
 }
 
 // RecursiveSyntax shows recursive query options
@@ -214,6 +215,7 @@ var querySyntaxReference = QuerySyntaxReference{
 		CustomList: "order_by: { id: [$list, \"asc\"] }",
 		NullsFirst: "order_by: { price: { dir: desc, nulls: first } }",
 		NullsLast:  "order_by: { price: { dir: asc, nulls: last } }",
+		JSONKey:    "order_by: { metadata: { rank: desc_nulls_last } } — Postgres only; orders by a key inside a JSON column as jsonb (numbers numerically, strings by text) and works with first/after cursors",
 	},
 	Aggregations: AggregationsSyntax{
 		Functions: []string{
@@ -224,6 +226,7 @@ var querySyntaxReference = QuerySyntaxReference{
 			"max_<column> - maximum value",
 			"sum(expr: {...}) - sum of an arithmetic expression (revenue = price × qty, margin, ratios)",
 			"avg(expr: {...}) / min(expr: {...}) / max(expr: {...}) - same pattern for other aggregates",
+			"sum(expr: { cast: { expr: { json: { col: metadata, path: [rank] } }, as: \"numeric\" } }) - aggregate a key inside a JSON column (Postgres); values that do not convert count as null",
 		},
 		Usage:            "{ products { count_id sum_price avg_price revenue: sum(expr: { mul: [price, quantity] }) } }",
 		HasuraCompatible: "{ products_aggregate(where: {active: {eq: true}}) { aggregate { count sum { price } avg { price } min { price } max { price } } } } - compatibility syntax for query roots; nodes, count(columns:/distinct:), inner aliases, and subscriptions are not supported",

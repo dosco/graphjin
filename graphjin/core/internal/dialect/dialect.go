@@ -58,6 +58,20 @@ type InlineChildRenderer interface {
 	GetRootWithCursor() *qcode.Select // Returns first root select with cursor pagination
 }
 
+// JSONKeyRenderer is implemented by dialects that can read, order and page
+// by a key inside a JSON column. The query compiler allows these only on
+// such dialects.
+type JSONKeyRenderer interface {
+	// RenderJSONMerge renders the stored document merged with value.
+	RenderJSONMerge(ctx Context, table, col string, value func())
+	// RenderJSONTextPath renders the value at path as text.
+	RenderJSONTextPath(ctx Context, table, col string, path []string)
+	// RenderJSONBPath renders the JSON value at path, comparable as jsonb.
+	RenderJSONBPath(ctx Context, table, col string, path []string)
+	// RenderJSONBCursorValue renders that value as cursor-safe text.
+	RenderJSONBCursorValue(ctx Context, table, col string, path []string)
+}
+
 type Dialect interface {
 	Name() string
 

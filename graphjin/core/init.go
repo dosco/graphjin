@@ -495,6 +495,37 @@ func addFullTextColumns(conf *Config, di *sdata.DBInfo, targetDB string) error {
 	return nil
 }
 
+// addMergeOnUpdateColumns marks JSON columns whose updates merge into the
+// stored document.
+func addMergeOnUpdateColumns(conf *Config, di *sdata.DBInfo, targetDB, dbType string) error {
+	for _, t := range conf.Tables {
+		if t.Database != targetDB {
+			continue
+		}
+		schema := t.Schema
+		if schema == "" {
+			schema = di.Schema
+		}
+		for _, c := range t.Columns {
+			if !c.MergeOnUpdate {
+				continue
+			}
+			if dbType != "" && dbType != "postgres" {
+				return fmt.Errorf("config: merge_on_update on %s.%s is supported only on postgres", t.Name, c.Name)
+			}
+			col, err := di.GetColumn(schema, t.Name, c.Name)
+			if err != nil {
+				return fmt.Errorf("config: merge_on_update column: %w", err)
+			}
+			if col.Type != "jsonb" {
+				return fmt.Errorf("config: merge_on_update needs a jsonb column; %s.%s is %s", t.Name, c.Name, col.Type)
+			}
+			col.MergeOnUpdate = true
+		}
+	}
+	return nil
+}
+
 // addFunctions updates function configurations in the database info
 func addFunctions(conf *Config, di *sdata.DBInfo) error {
 	for _, f := range conf.Functions {

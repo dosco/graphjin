@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dosco/graphjin/core/v3/internal/dialect"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/dosco/graphjin/core/v3/internal/util"
@@ -196,8 +197,14 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		c.w.WriteString(`((`)
 
 		// Handle JSON path operations
-		if len(ex.Left.Path) > 0 {
-			switch ex.Right.ValType {
+		if len(ex.Left.Path) > 0 && ex.LeftJSONB {
+			c.renderJSONBPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
+		} else if len(ex.Left.Path) > 0 {
+			valType := ex.Right.ValType
+			if valType == qcode.ValList {
+				valType = ex.Right.ListType
+			}
+			switch valType {
 			case qcode.ValBool:
 				c.dialect.RenderTryCast(c, func() {
 					c.renderJSONPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
@@ -418,6 +425,19 @@ func (c *expContext) renderList(ex *qcode.Exp) {
 
 func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid int32) {
 	c.dialect.RenderValArrayColumn(c, ex, table, pid)
+}
+
+func (c *expContext) renderJSONBPathColumn(table, colName string, path []string, selID int32) {
+	r, ok := c.dialect.(dialect.JSONKeyRenderer)
+	if !ok {
+		c.err = fmt.Errorf("%s cannot compare keys inside a JSON column", c.dialect.Name())
+		return
+	}
+	t := table
+	if selID != -1 {
+		t = fmt.Sprintf("%s_%d", table, selID)
+	}
+	r.RenderJSONBPath(c, t, colName, path)
 }
 
 func (c *expContext) renderJSONPathColumn(table, colName string, path []string, selID int32) {

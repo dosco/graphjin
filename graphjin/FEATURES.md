@@ -522,6 +522,35 @@ query {
 # Filters where metadata->foo = true
 ```
 
+Number and boolean comparisons on a JSON key cast the value first, so `{ metadata: { rank: { gt: 8 } } }` compares 10 and 9 as numbers. Values that are not numbers do not match.
+
+**Order and page by a JSON key** (Postgres):
+
+```graphql
+query {
+  products(first: 20, after: $products_cursor, order_by: { metadata: { rank: desc_nulls_last } }) {
+    id
+    metadata
+  }
+  products_cursor
+}
+```
+
+Each nested object names one key, and the innermost value is the direction. The order compares jsonb values: numbers sort as numbers, strings as text, and a missing key sorts as null. Cursor pagination works with these orders. Keys may use letters, digits, `_` and `-`.
+
+**Aggregate a JSON key** (Postgres): the `json` expression reads a key as text. Wrap it in `cast` for numeric aggregates. Values that do not convert become null.
+
+```graphql
+query {
+  products {
+    total_rank: sum(expr: { cast: { expr: { json: { col: metadata, path: [rank] } }, as: "numeric" } })
+    ranked: count(expr: { json: { col: metadata, path: [rank] } })
+  }
+}
+```
+
+**Merge updates into a JSON document** (Postgres): set `merge_on_update: true` on a `jsonb` column in the table config. An update then merges the sent keys into the stored document, so `{ "metadata": { "rank": 3 } }` changes `rank` and keeps every other key.
+
 **Check for JSON keys**:
 
 ```graphql

@@ -65,6 +65,20 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, parent *graph.Node, cm map
 		case graph.NodeObj:
 			var path []sdata.TPath
 			if path, err = co.FindPath(node.Name, sel.Ti.Name, ""); err != nil {
+				col, ok := co.jsonOrderColumn(ti, node)
+				if !ok {
+					continue
+				}
+				if ob, err = co.jsonOrderBy(col, node); err != nil {
+					continue
+				}
+				dedupKey := "json:" + col.Name + ":" + strings.Join(ob.Path, ".")
+				if _, ok := cm[dedupKey]; ok {
+					err = fmt.Errorf("can only be defined once")
+					continue
+				}
+				cm[dedupKey] = struct{}{}
+				obList = append(obList, ob)
 				continue
 			}
 			ti = path[0].LT
@@ -133,6 +147,56 @@ func (co *Compiler) compileArgOrderByVar(sel *Select, node *graph.Node, cm map[s
 		}
 	}
 	return
+}
+
+// jsonOrderColumn reports whether an order_by object names a JSON column of
+// the table, as in order_by: { metadata: { rank: desc } }.
+func (co *Compiler) jsonOrderColumn(ti sdata.DBTable, node *graph.Node) (sdata.DBColumn, bool) {
+	col, err := ti.GetColumn(co.ParseName(node.Name))
+	if err != nil || !strings.HasPrefix(col.Type, "json") {
+		return col, false
+	}
+	return col, true
+}
+
+// jsonOrderBy builds an order on a key path inside a JSON column. Each
+// nested object adds one key; the innermost value is the direction.
+func (co *Compiler) jsonOrderBy(col sdata.DBColumn, node *graph.Node) (OrderBy, error) {
+	ob := OrderBy{Col: col}
+	if co.s.DBType() != "postgres" {
+		return ob, fmt.Errorf("ordering by a key inside a JSON column is supported only on postgres")
+	}
+	cn := node
+	for cn.Type == graph.NodeObj {
+		if len(cn.Children) != 1 {
+			return ob, fmt.Errorf("JSON key order expects one key per level, for example { %s: { key: desc } }", node.Name)
+		}
+		cn = cn.Children[0]
+		if !validJSONKey(cn.Name) {
+			return ob, fmt.Errorf("invalid JSON key in order_by: %q", cn.Name)
+		}
+		ob.Path = append(ob.Path, cn.Name)
+	}
+	if cn.Type != graph.NodeStr && cn.Type != graph.NodeLabel {
+		return ob, fmt.Errorf("JSON key order expects a direction such as asc or desc")
+	}
+	var err error
+	ob.Order, err = toOrder(cn.Val)
+	return ob, err
+}
+
+// validJSONKey limits order keys to characters that are safe inside a
+// Postgres text array literal.
+func validJSONKey(key string) bool {
+	if key == "" || len(key) > 128 {
+		return false
+	}
+	for _, r := range key {
+		if !(r == '_' || r == '-' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+			return false
+		}
+	}
+	return true
 }
 
 func (co *Compiler) setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph.Node) (err error) {
