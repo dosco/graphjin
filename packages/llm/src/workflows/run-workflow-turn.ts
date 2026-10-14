@@ -447,7 +447,9 @@ async function runWorkflowTurnTraced(
     const errMsg = spendStop
       ? spendStop.message
       : aborted
-        ? "Cancelled by user."
+        ? signal?.reason instanceof Error && signal.reason.name !== "AbortError"
+          ? signal.reason.message
+          : "Cancelled by user."
         : error instanceof Error
           ? error.message
           : "Workflow run failed unexpectedly.";

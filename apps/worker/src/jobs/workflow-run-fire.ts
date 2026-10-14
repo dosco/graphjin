@@ -93,7 +93,7 @@ function createApiCeilingGuard(input: {
   const fail = (code: string, message: string): never => {
     const error = new WorkflowApiRunCeilingExceeded(code, message);
     exceeded ??= error;
-    input.abort.abort();
+    input.abort.abort(error);
     throw error;
   };
 
@@ -131,7 +131,7 @@ function createApiCeilingGuard(input: {
     emit,
     abortWith: (error) => {
       exceeded ??= error;
-      input.abort.abort();
+      input.abort.abort(error);
     },
     failure: () => exceeded,
     metered: () => ({ tokens: Math.ceil(totalTokens), costMicros: Math.ceil(costUsd * 1_000_000) }),
