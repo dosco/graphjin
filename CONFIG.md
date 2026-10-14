@@ -1742,6 +1742,7 @@ Configure table aliases, relationships, and column metadata.
 | `array` | boolean | Column is an array type |
 | `full_text` | boolean | Enable full-text search |
 | `related_to` | string | Foreign key relationship (e.g., `users.id`) |
+| `merge_on_update` | boolean | Updates merge new keys into the stored jsonb document instead of replacing it (Postgres `jsonb` columns only) |
 
 ### Tables Examples
 

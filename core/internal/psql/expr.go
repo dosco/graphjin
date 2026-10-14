@@ -3,6 +3,7 @@ package psql
 import (
 	"fmt"
 
+	"github.com/dosco/graphjin/core/v3/internal/dialect"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
@@ -86,7 +87,13 @@ func (c *compilerContext) renderScalarExp(sel *qcode.Select, ex *qcode.Exp) erro
 		// CAST syntax (e.g. CAST(x AS numeric) for postgres,
 		// TRY_CAST for mssql variants). The val callback emits the
 		// inner expression into the same buffer.
-		c.dialect.RenderCast(c, func() {
+		// A JSON key may hold any value, so it casts with the dialect's
+		// try-cast: values that do not convert become NULL.
+		cast := c.dialect.RenderCast
+		if inner := ex.Children[0]; inner.Op == qcode.OpColRef && len(inner.Left.Path) != 0 {
+			cast = c.dialect.RenderTryCast
+		}
+		cast(c, func() {
 			if err := c.renderScalarExp(sel, ex.Children[0]); err != nil {
 				// the val callback can't return errors; the surrounding
 				// renderScalarExp call already validated structure, so
@@ -192,6 +199,15 @@ func (c *compilerContext) renderScalarCase(sel *qcode.Select, ex *qcode.Exp) err
 // aliasing in the FROM clause; MariaDB aliases the base table as
 // `<name>_<sel.ID>` and needs the suffix.
 func (c *compilerContext) renderScalarColRef(sel *qcode.Select, ex *qcode.Exp) {
+	if len(ex.Left.Path) != 0 {
+		r, ok := c.dialect.(dialect.JSONKeyRenderer)
+		if !ok {
+			c.err = fmt.Errorf("%s cannot read keys inside a JSON column", c.dialect.Name())
+			return
+		}
+		r.RenderJSONTextPath(c, ex.Left.Col.Table, ex.Left.Col.Name, ex.Left.Path)
+		return
+	}
 	if sel != nil && ex.Left.Col.Table == sel.Table && dialectAliasesBaseTable(c.dialect) {
 		c.colWithTableID(sel.Table, sel.ID, ex.Left.Col.Name)
 		return

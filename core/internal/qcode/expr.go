@@ -109,6 +109,8 @@ func (co *Compiler) compileExprNode(sel *Select, node *graph.Node, depth int) (*
 		return co.compileExprCase(sel, child, depth)
 	case "cast":
 		return co.compileExprCast(sel, child, depth)
+	case "json":
+		return co.compileExprJSON(sel, child)
 	case "sum":
 		return co.compileExprAgg(sel, child, OpAggSum, depth)
 	case "avg":
@@ -129,6 +131,59 @@ func (co *Compiler) compileExprCol(sel *Select, node *graph.Node) (*Exp, error) 
 		return nil, fmt.Errorf("expr.col: expected column name, got %s", parserTypeName(node.Type))
 	}
 	return co.compileExprColFromName(sel.Ti, node.Val)
+}
+
+// compileExprJSON reads a key inside a JSON column as text:
+// { json: { col: metadata, path: [rank] } }. Wrap it in cast to use it in
+// arithmetic or a numeric aggregate.
+func (co *Compiler) compileExprJSON(sel *Select, node *graph.Node) (*Exp, error) {
+	if co.s.DBType() != "postgres" {
+		return nil, errors.New("expr.json: reading a key inside a JSON column is supported only on postgres")
+	}
+	if node.Type != graph.NodeObj {
+		return nil, errors.New("expr.json: expected { col: <json column>, path: [<key>, ...] }")
+	}
+	var colName string
+	var path []string
+	for _, c := range node.Children {
+		switch strings.ToLower(c.Name) {
+		case "col":
+			if c.Type != graph.NodeStr && c.Type != graph.NodeLabel {
+				return nil, errors.New("expr.json: col must be a column name")
+			}
+			colName = c.Val
+		case "path":
+			if c.Type != graph.NodeList {
+				return nil, errors.New("expr.json: path must be a list of keys")
+			}
+			for _, k := range c.Children {
+				if (k.Type != graph.NodeStr && k.Type != graph.NodeLabel) || !validJSONKey(k.Val) {
+					return nil, fmt.Errorf("expr.json: invalid JSON key %q", k.Val)
+				}
+				path = append(path, k.Val)
+			}
+		default:
+			return nil, fmt.Errorf("expr.json: unknown key %q", c.Name)
+		}
+	}
+	if colName == "" || len(path) == 0 {
+		return nil, errors.New("expr.json: col and a non-empty path are required")
+	}
+	col, err := sel.Ti.GetColumn(colName)
+	if err != nil {
+		return nil, fmt.Errorf("expr.json: %w", err)
+	}
+	if col.Blocked {
+		return nil, fmt.Errorf("expr.json: column %q is blocked", colName)
+	}
+	if !strings.HasPrefix(col.Type, "json") {
+		return nil, fmt.Errorf("expr.json: column %q is not a JSON column", colName)
+	}
+	ex := newExpOp(OpColRef)
+	ex.Left.Col = col
+	ex.Left.Table = col.Table
+	ex.Left.Path = path
+	return ex, nil
 }
 
 // compileExprColFromName resolves a column name string (from either the

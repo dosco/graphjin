@@ -3,6 +3,9 @@
 package psql
 
 import (
+	"fmt"
+
+	"github.com/dosco/graphjin/core/v3/internal/dialect"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
@@ -63,7 +66,16 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate, embedded bool) {
 				}
 				c.w.WriteString(col.Col.Name)
 				c.w.WriteString(` = `)
-				c.renderColumnValue(m, col)
+				if col.Col.MergeOnUpdate {
+					r, ok := c.dialect.(dialect.JSONKeyRenderer)
+					if !ok {
+						c.err = fmt.Errorf("%s cannot merge JSON columns", c.dialect.Name())
+						return
+					}
+					r.RenderJSONMerge(c, m.Ti.Name, col.Col.Name, func() { c.renderColumnValue(m, col) })
+				} else {
+					c.renderColumnValue(m, col)
+				}
 				i++
 			}
 		}, fromFunc, func() {

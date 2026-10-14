@@ -226,6 +226,7 @@ var querySyntaxReference = QuerySyntaxReference{
 			"max_<column> - maximum value",
 			"sum(expr: {...}) - sum of an arithmetic expression (revenue = price × qty, margin, ratios)",
 			"avg(expr: {...}) / min(expr: {...}) / max(expr: {...}) - same pattern for other aggregates",
+			"sum(expr: { cast: { expr: { json: { col: metadata, path: [rank] } }, as: \"numeric\" } }) - aggregate a key inside a JSON column (Postgres); values that do not convert count as null",
 		},
 		Usage:            "{ products { count_id sum_price avg_price revenue: sum(expr: { mul: [price, quantity] }) } }",
 		HasuraCompatible: "{ products_aggregate(where: {active: {eq: true}}) { aggregate { count sum { price } avg { price } min { price } max { price } } } } - compatibility syntax for query roots; nodes, count(columns:/distinct:), inner aliases, and subscriptions are not supported",

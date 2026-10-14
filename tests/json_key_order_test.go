@@ -169,3 +169,104 @@ func Example_queryJSONKeyOrderByRejectsBadKey() {
 	fmt.Println("expected an error, got", err)
 	// Output: invalid JSON key
 }
+
+func Example_queryJSONKeyAggregate() {
+	if dbType != "postgres" {
+		fmt.Println(`{"json_key_items":[{"ranked":5,"total":47.5}]}`)
+		return
+	}
+	gj, err := jsonKeyGraphJin()
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	gql := `query {
+		json_key_items {
+			total: sum(expr: { cast: { expr: { json: { col: doc, path: [rank] } }, as: "numeric" } })
+			ranked: count(expr: { json: { col: doc, path: [rank] } })
+		}
+	}`
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	printJSON(res.Data)
+	// Output: {"json_key_items":[{"ranked":5,"total":47.5}]}
+}
+
+func Example_queryJSONKeyNumericListFilters() {
+	if dbType != "postgres" {
+		fmt.Print(`{"json_key_items":[{"id":1},{"id":3},{"id":5},{"id":6}]}
+{"json_key_items":[{"id":2},{"id":3}]}
+{"json_key_items":[{"id":1},{"id":5},{"id":6}]}
+`)
+		return
+	}
+	gj, err := jsonKeyGraphJin()
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	for _, where := range []string{
+		`{ doc: { rank: { neq: 9 } } }`,
+		`{ doc: { rank: { in: [9, 25] } } }`,
+		`{ doc: { rank: { not_in: [9, 25] } } }`,
+	} {
+		gql := `query { json_key_items(where: ` + where + `, order_by: { id: asc }) { id } }`
+		res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		printJSON(res.Data)
+	}
+	// Output:
+	// {"json_key_items":[{"id":1},{"id":3},{"id":5},{"id":6}]}
+	// {"json_key_items":[{"id":2},{"id":3}]}
+	// {"json_key_items":[{"id":1},{"id":5},{"id":6}]}
+}
+
+func Example_updateJSONColumnMerge() {
+	if dbType != "postgres" {
+		fmt.Println(`{"json_merge_items":{"doc":{"rank":3,"title":"Kept"},"id":1}}`)
+		return
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS json_merge_items (
+			id   integer PRIMARY KEY,
+			doc  jsonb NOT NULL DEFAULT '{}'
+		);
+		INSERT INTO json_merge_items (id, doc) VALUES (1, '{"rank": 1, "title": "Kept"}')
+		ON CONFLICT (id) DO UPDATE SET doc = EXCLUDED.doc`); err != nil {
+		panic(err)
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	conf.Tables = append(conf.Tables, core.Table{
+		Name:    "json_merge_items",
+		Columns: []core.Column{{Name: "doc", MergeOnUpdate: true}},
+	})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	gql := `mutation {
+		json_merge_items(id: $id, update: $data) {
+			id
+			doc
+		}
+	}`
+	vars := json.RawMessage(`{"id": 1, "data": {"doc": {"rank": 3}}}`)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	printJSON(res.Data)
+	// Output: {"json_merge_items":{"doc":{"rank":3,"title":"Kept"},"id":1}}
+}

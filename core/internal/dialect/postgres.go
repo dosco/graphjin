@@ -784,6 +784,22 @@ func (d *PostgresDialect) RenderJSONBPath(ctx Context, table, col string, path [
 	ctx.WriteString(`}')`)
 }
 
+func (d *PostgresDialect) RenderJSONMerge(ctx Context, table, col string, value func()) {
+	ctx.WriteString(`(COALESCE(`)
+	ctx.ColWithTable(table, col)
+	ctx.WriteString(`, '{}' :: jsonb) || (`)
+	value()
+	ctx.WriteString(`) :: jsonb)`)
+}
+
+func (d *PostgresDialect) RenderJSONTextPath(ctx Context, table, col string, path []string) {
+	ctx.WriteString(`((`)
+	ctx.ColWithTable(table, col)
+	ctx.WriteString(`) :: jsonb #>> '{`)
+	ctx.WriteString(strings.Join(path, ","))
+	ctx.WriteString(`}')`)
+}
+
 func (d *PostgresDialect) RenderJSONBCursorValue(ctx Context, table, col string, path []string) {
 	// Base64 keeps commas inside JSON text out of the comma-separated cursor.
 	ctx.WriteString(`COALESCE(encode(convert_to(`)

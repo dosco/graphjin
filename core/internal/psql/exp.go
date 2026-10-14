@@ -200,7 +200,11 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		if len(ex.Left.Path) > 0 && ex.LeftJSONB {
 			c.renderJSONBPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
 		} else if len(ex.Left.Path) > 0 {
-			switch ex.Right.ValType {
+			valType := ex.Right.ValType
+			if valType == qcode.ValList {
+				valType = ex.Right.ListType
+			}
+			switch valType {
 			case qcode.ValBool:
 				c.dialect.RenderTryCast(c, func() {
 					c.renderJSONPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
@@ -424,7 +428,7 @@ func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid 
 }
 
 func (c *expContext) renderJSONBPathColumn(table, colName string, path []string, selID int32) {
-	r, ok := c.dialect.(dialect.JSONOrderRenderer)
+	r, ok := c.dialect.(dialect.JSONKeyRenderer)
 	if !ok {
 		c.err = fmt.Errorf("%s cannot compare keys inside a JSON column", c.dialect.Name())
 		return

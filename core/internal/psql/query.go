@@ -606,7 +606,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
 				c.w.WriteString(` AS __cur_`)
 				int32String(c.w, int32(i))
-			} else if r, ok := c.dialect.(dialect.JSONOrderRenderer); ok && len(ob.Path) != 0 {
+			} else if r, ok := c.dialect.(dialect.JSONKeyRenderer); ok && len(ob.Path) != 0 {
 				c.w.WriteString(`, LAST_VALUE(`)
 				r.RenderJSONBCursorValue(c, fmt.Sprintf("%s_%d", sel.Table, sel.ID), ob.Col.Name, ob.Path)
 				c.w.WriteString(`) OVER() AS __cur_`)
