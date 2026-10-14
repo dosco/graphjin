@@ -115,15 +115,11 @@ describeIfLive("source-scoped records identity mapping", () => {
       rows: [
         {
           id: "005000000000001AAA",
-          email: "Alice@example.com",
-          name: "Alice",
-          is_active: true,
+          data: { email: "Alice@example.com", name: "Alice", is_active: true },
         },
         {
           id: "005000000000002AAA",
-          email: "not-an-email",
-          name: "Invalid",
-          is_active: true,
+          data: { email: "not-an-email", name: "Invalid", is_active: true },
         },
       ],
     });

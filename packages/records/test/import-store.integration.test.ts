@@ -68,7 +68,7 @@ describeIfDb("records import target-side receipts", () => {
       create table public.equipment__loan (
         id text primary key,
         org_id text not null,
-        name text not null,
+        data jsonb not null default '{}',
         nk_created_at timestamptz not null default now(),
         nk_created_by text not null,
         nk_updated_at timestamptz not null default now(),
@@ -182,12 +182,12 @@ describeIfDb("records import target-side receipts", () => {
     });
     await pool.query(`
       insert into public.equipment__loan
-        (id, org_id, name, nk_created_by, nk_updated_by,
+        (id, org_id, data, nk_created_by, nk_updated_by,
          nk_action_request_id, nk_mutation_id)
       values
-        ('loan-1', 'org-a', 'Laptop', 'admin-1', 'admin-1',
+        ('loan-1', 'org-a', '{"name": "Laptop"}', 'admin-1', 'admin-1',
          'import-action-1', 'mutation-import-1'),
-        ('loan-2', 'org-a', 'Monitor', 'admin-1', 'admin-1',
+        ('loan-2', 'org-a', '{"name": "Monitor"}', 'admin-1', 'admin-1',
          'import-action-1', 'mutation-import-2')
     `);
     expect(
@@ -220,9 +220,9 @@ describeIfDb("records import target-side receipts", () => {
       await client.query("begin");
       await client.query(`
         insert into public.equipment__loan
-          (id, org_id, name, nk_created_by, nk_updated_by,
+          (id, org_id, data, nk_created_by, nk_updated_by,
            nk_action_request_id, nk_mutation_id)
-        values ('loan-3', 'org-a', 'Dock', 'admin-1', 'admin-1',
+        values ('loan-3', 'org-a', '{"name": "Dock"}', 'admin-1', 'admin-1',
                 'import-action-1', 'mutation-import-3')
       `);
       await client.query("rollback");

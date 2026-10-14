@@ -204,10 +204,8 @@ describeIfDb("records starter watch lifecycle", () => {
           opportunities: [
             {
               id: "opportunity-1",
-              name: "Needs attention",
               owner_user_id: "owner-1",
-              stage: "proposal",
-              close_date: "2026-08-20",
+              data: { name: "Needs attention", stage: "proposal", close_date: "2026-08-20" },
             },
           ],
           activities: [],
@@ -318,6 +316,14 @@ describeIfDb("records starter watch lifecycle", () => {
       if (!item) throw new Error(`missing golden import ${objectApiName}`);
       return item.sampleRows;
     };
+    const columnFor = (objectApiName: string, sourceApiName: string): string => {
+      const object = snapshot.objects.find((candidate) => candidate.apiName === objectApiName);
+      const field = snapshot.fields.find(
+        (candidate) => candidate.objectId === object?.id && candidate.sourceApiName === sourceApiName,
+      );
+      if (!field) throw new Error(`missing golden field ${objectApiName}.${sourceApiName}`);
+      return String(field.columnName);
+    };
     const opportunityRows = sampleRows("opportunity");
     const taskRows = sampleRows("task");
     const eventRows = sampleRows("event");
@@ -363,18 +369,26 @@ describeIfDb("records starter watch lifecycle", () => {
           return {
             opportunities: opportunityRows.map((row) => ({
               id: row.Id,
-              name: row.Name,
               owner_user_id: row.OwnerId,
-              stage: row.StageName,
-              close_date: row.CloseDate,
+              data: {
+                [columnFor("opportunity", "Name")]: row.Name,
+                [columnFor("opportunity", "StageName")]: row.StageName,
+                [columnFor("opportunity", "CloseDate")]: row.CloseDate,
+              },
             })),
             activity_0: eventRows.map((row) => ({
-              opportunity: row.WhatId,
-              occurred_at: row.StartDateTime,
+              id: row.Id,
+              data: {
+                [columnFor("event", "WhatId")]: row.WhatId,
+                [columnFor("event", "StartDateTime")]: row.StartDateTime,
+              },
             })),
             activity_1: taskRows.map((row) => ({
-              opportunity: row.WhatId,
-              occurred_at: row.LastModifiedDate,
+              id: row.Id,
+              data: {
+                [columnFor("task", "WhatId")]: row.WhatId,
+                [columnFor("task", "LastModifiedDate")]: row.LastModifiedDate,
+              },
             })),
           } as T;
         }
@@ -395,11 +409,13 @@ describeIfDb("records starter watch lifecycle", () => {
           return {
             opportunities: opportunityRows.map((row) => ({
               id: row.Id,
-              name: row.Name,
               owner_user_id: row.OwnerId,
-              stage: row.StageName,
-              amount: row.Amount,
-              close_date: row.CloseDate,
+              data: {
+                [columnFor("opportunity", "Name")]: row.Name,
+                [columnFor("opportunity", "StageName")]: row.StageName,
+                [columnFor("opportunity", "Amount")]: row.Amount,
+                [columnFor("opportunity", "CloseDate")]: row.CloseDate,
+              },
             })),
           } as T;
         }
@@ -467,8 +483,7 @@ describeIfDb("records starter watch lifecycle", () => {
       "unlinked_or_departed_owners",
       "unlinked_or_departed_owners",
     ]);
-    expect(evaluationQueries.join("\n")).toContain("stage: stagename");
-    expect(evaluationQueries.join("\n")).toContain("close_date: closedate");
+    expect(evaluationQueries.join("\n")).toContain("crm__opportunity(limit: 500) { id owner_user_id data }");
     expect(evaluationQueries.join("\n")).toContain("crm__task");
     expect(evaluationQueries.join("\n")).toContain("crm__event");
   });

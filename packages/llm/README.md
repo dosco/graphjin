@@ -102,7 +102,7 @@ sed -e "s|REPLACE_WITH_PER_ORG_SECRET_B64|$SECRET|" \
     -e 's|^sources: \[\]|sources:\n  - name: app\n    kind: database\n    type: postgres\n    host: neko-live-pg\n    port: 5432\n    dbname: app\n    user: postgres\n    password: pg\n    read_only: true\n    access:\n      read: authenticated|' \
     db/graphjin/customer.sources.example.yml > /tmp/neko-live-gj/agentic.yml
 docker run -d --name neko-gj-live --network neko-live -p 127.0.0.1:8090:8080 -e GO_ENV=agentic \
-  -v /tmp/neko-live-gj:/config dosco/graphjin:3.21.7 serve --path /config
+  -v /tmp/neko-live-gj:/config dosco/graphjin:3.21.13 serve --path /config
 pnpm --filter @neko/llm exec vitest run test/integration/graphjin-mcp-live.test.ts
 docker rm -f neko-gj-live neko-live-pg && docker network rm neko-live
 ```

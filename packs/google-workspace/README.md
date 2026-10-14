@@ -34,7 +34,7 @@ Version 0.2.0 replaces the old shared-account model. Upgrade explicitly, then
 reconnect each user on Integrations; old shared access tokens are not adopted.
 Personal connections require GraphJin 3.20.77 or later, which includes the
 request-credential bridge for multi-user OAuth (dosco/graphjin PR #638).
-OpenNeko pins GraphJin to 3.21.7. This pack needs GraphJin 3.20.77 or later.
+OpenNeko pins GraphJin to 3.21.13. This pack needs GraphJin 3.20.77 or later.
 
 The upstream Google Workspace CLI skill catalog is used as a task-coverage
 reference. Its CLI commands are not copied into this pack. Each adopted task is

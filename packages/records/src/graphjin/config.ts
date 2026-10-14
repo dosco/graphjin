@@ -19,7 +19,7 @@ import {
 } from "../policy/graphjin";
 import { validateRecordIdentifier } from "../naming";
 
-export const RECORDS_GRAPHJIN_VERSION = "3.21.7";
+export const RECORDS_GRAPHJIN_VERSION = "3.21.13";
 export const RECORDS_GRAPHJIN_CONFIG_FILENAME = "dev.yml";
 export const RECORDS_WATCH_WEBHOOK_SECRET_FILENAME = ".records-watch-webhook-secret";
 
