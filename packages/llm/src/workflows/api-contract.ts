@@ -5,6 +5,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { deriveSigningSecret } from "@neko/secret-crypt";
+import { agentLimits } from "../agent-limits";
 import { canonicalJson } from "../canonical-json";
 
 export const WORKFLOW_API_TOKEN_PREFIX = "onk_wf";
@@ -46,16 +47,36 @@ export const DEFAULT_WORKFLOW_API_LIMITS: WorkflowApiLimits = {
   maxRequestBytes: 256 * 1024,
   maxResultBytes: 256 * 1024,
   maxArtifactBytes: 10 * 1024 * 1024,
-  maxRuntimeSeconds: 600,
-  maxModelCalls: 8,
-  maxToolCalls: 32,
-  maxTokensPerRun: 100_000,
+  maxRuntimeSeconds: 900,
+  maxModelCalls: 301,
+  maxToolCalls: 150,
+  maxTokensPerRun: 2_000_000,
   maxCostMicrosPerRun: 5_000_000,
   rollingWindowSeconds: 86_400,
-  rollingTokenBudget: 250_000,
+  rollingTokenBudget: 10_000_000,
   rollingCostMicrosBudget: 10_000_000,
   retentionHours: WORKFLOW_API_DEFAULT_RETENTION_HOURS,
 };
+
+/**
+ * Limits for a workflow whose API access is turned on for the first time. The
+ * runtime and tool-call ceilings come from the workflow agent limits; each tool
+ * result costs one model call, plus one for a GraphJin agent tool.
+ */
+export function defaultWorkflowApiLimits(): WorkflowApiLimits {
+  const workflow = agentLimits("workflow");
+  const clamp = (key: keyof typeof WORKFLOW_API_LIMIT_RANGES, value: number) => {
+    const [min, max] = WORKFLOW_API_LIMIT_RANGES[key];
+    return Math.min(max, Math.max(min, Math.round(value)));
+  };
+  const toolCalls = clamp("maxToolCalls", workflow.maxToolCalls ?? workflow.maxTurns);
+  return {
+    ...DEFAULT_WORKFLOW_API_LIMITS,
+    maxRuntimeSeconds: clamp("maxRuntimeSeconds", workflow.timeoutMs / 1_000),
+    maxToolCalls: toolCalls,
+    maxModelCalls: clamp("maxModelCalls", 2 * toolCalls + 1),
+  };
+}
 
 export const WORKFLOW_API_LIMIT_RANGES = {
   requestLimitPerMinute: [1, 600],
