@@ -106,6 +106,13 @@ func (d *PostgresDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
+		if len(ob.Path) != 0 {
+			ctx.WriteString(`(convert_from(decode(NULLIF(a[`)
+			ctx.Write(fmt.Sprintf("%d", i+2))
+			ctx.WriteString(`], ''), 'base64'), 'UTF8')) :: jsonb AS `)
+			ctx.Quote(ob.CursorName())
+			continue
+		}
 		ctx.WriteString(`a[`)
 		ctx.Write(fmt.Sprintf("%d", i+2))
 		ctx.WriteString(`] :: `)
@@ -151,13 +158,17 @@ func (d *PostgresDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 			// column list.
 			ctx.Quote(ob.Alias)
 		} else {
-			if ob.IsFunc {
-				ctx.WriteString(strings.ToUpper(ob.Func.Name))
-				ctx.WriteString(`(`)
-			}
-			ctx.ColWithTable(ob.Col.Table, ob.Col.Name)
-			if ob.IsFunc {
-				ctx.WriteString(`)`)
+			if len(ob.Path) != 0 {
+				d.RenderJSONBPath(ctx, ob.Col.Table, ob.Col.Name, ob.Path)
+			} else {
+				if ob.IsFunc {
+					ctx.WriteString(strings.ToUpper(ob.Func.Name))
+					ctx.WriteString(`(`)
+				}
+				ctx.ColWithTable(ob.Col.Table, ob.Col.Name)
+				if ob.IsFunc {
+					ctx.WriteString(`)`)
+				}
 			}
 		}
 		if ob.KeyVar != "" && ob.Key != "" {
@@ -758,9 +769,26 @@ func (d *PostgresDialect) RenderAssign(ctx Context, col string, val string) {
 }
 
 func (d *PostgresDialect) RenderCast(ctx Context, val func(), typ string) {
+	// :: binds tighter than ->>, so the value needs its own parentheses.
+	ctx.WriteString(`(`)
 	val()
-	ctx.WriteString(` :: `)
+	ctx.WriteString(`) :: `)
 	ctx.WriteString(typ)
+}
+
+func (d *PostgresDialect) RenderJSONBPath(ctx Context, table, col string, path []string) {
+	ctx.WriteString(`((`)
+	ctx.ColWithTable(table, col)
+	ctx.WriteString(`) :: jsonb #> '{`)
+	ctx.WriteString(strings.Join(path, ","))
+	ctx.WriteString(`}')`)
+}
+
+func (d *PostgresDialect) RenderJSONBCursorValue(ctx Context, table, col string, path []string) {
+	// Base64 keeps commas inside JSON text out of the comma-separated cursor.
+	ctx.WriteString(`COALESCE(encode(convert_to(`)
+	d.RenderJSONBPath(ctx, table, col, path)
+	ctx.WriteString(` :: text, 'UTF8'), 'base64'), '')`)
 }
 
 func (d *PostgresDialect) RenderTryCast(ctx Context, val func(), typ string) {

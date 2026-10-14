@@ -522,6 +522,22 @@ query {
 # Filters where metadata->foo = true
 ```
 
+Number and boolean comparisons on a JSON key cast the value first, so `{ metadata: { rank: { gt: 8 } } }` compares 10 and 9 as numbers. Values that are not numbers do not match.
+
+**Order and page by a JSON key** (Postgres):
+
+```graphql
+query {
+  products(first: 20, after: $products_cursor, order_by: { metadata: { rank: desc_nulls_last } }) {
+    id
+    metadata
+  }
+  products_cursor
+}
+```
+
+Each nested object names one key, and the innermost value is the direction. The order compares jsonb values: numbers sort as numbers, strings as text, and a missing key sorts as null. Cursor pagination works with these orders. Keys may use letters, digits, `_` and `-`.
+
 **Check for JSON keys**:
 
 ```graphql

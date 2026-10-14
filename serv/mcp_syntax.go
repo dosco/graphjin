@@ -102,6 +102,7 @@ type OrderingSyntax struct {
 	CustomList string `json:"custom_list"`
 	NullsFirst string `json:"nulls_first"`
 	NullsLast  string `json:"nulls_last"`
+	JSONKey    string `json:"json_key"`
 }
 
 // RecursiveSyntax shows recursive query options
@@ -214,6 +215,7 @@ var querySyntaxReference = QuerySyntaxReference{
 		CustomList: "order_by: { id: [$list, \"asc\"] }",
 		NullsFirst: "order_by: { price: { dir: desc, nulls: first } }",
 		NullsLast:  "order_by: { price: { dir: asc, nulls: last } }",
+		JSONKey:    "order_by: { metadata: { rank: desc_nulls_last } } — Postgres only; orders by a key inside a JSON column as jsonb (numbers numerically, strings by text) and works with first/after cursors",
 	},
 	Aggregations: AggregationsSyntax{
 		Functions: []string{

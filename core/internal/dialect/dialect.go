@@ -58,6 +58,16 @@ type InlineChildRenderer interface {
 	GetRootWithCursor() *qcode.Select // Returns first root select with cursor pagination
 }
 
+// JSONOrderRenderer is implemented by dialects that can order and page by a
+// key inside a JSON column. The query compiler allows such orders only on
+// these dialects.
+type JSONOrderRenderer interface {
+	// RenderJSONBPath renders the JSON value at path, comparable as jsonb.
+	RenderJSONBPath(ctx Context, table, col string, path []string)
+	// RenderJSONBCursorValue renders that value as cursor-safe text.
+	RenderJSONBCursorValue(ctx Context, table, col string, path []string)
+}
+
 type Dialect interface {
 	Name() string
 
