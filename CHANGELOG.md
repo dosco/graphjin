@@ -1,5 +1,22 @@
 # Changelog
 
+## [4.0.0](https://github.com/open-neko/openneko/compare/v3.32.0...v4.0.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **records:** existing records apps use the old column storage and must be recreated. Requires GraphJin with JSON key filters, orders, cursors, aggregates and merge_on_update (dosco/graphjin#659).
+
+### Features
+
+* **records:** store record fields as one jsonb document ([6cfea8a](https://github.com/open-neko/openneko/commit/6cfea8a03858fe6f1ccc3f7ac3090c6a8f9d4bb3))
+
+
+### Bug Fixes
+
+* **records:** bind null and text list filters on record documents ([4f25877](https://github.com/open-neko/openneko/commit/4f25877188d8f177ab0b3e9fcbb2324fa499d453))
+* **records:** read import validation samples from record documents ([a137458](https://github.com/open-neko/openneko/commit/a13745866ffcb459aa925df8199f5ea4e3dcd25b))
+
 ## [3.32.0](https://github.com/open-neko/openneko/compare/v3.31.3...v3.32.0) (2026-10-14)
 
 
